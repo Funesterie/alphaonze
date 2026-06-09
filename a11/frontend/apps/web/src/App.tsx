@@ -10293,8 +10293,22 @@ export function App() {
       setMicStatusMessage("Je n'ai pas capté d'audio micro.");
       return;
     }
-    if (capture.durationMs < 900) {
-      setMicStatusMessage("Micro trop court: retouche et parle un peu plus longtemps.");
+    if (capture.durationMs < 1200) {
+      setMicStatusMessage("Micro trop court: garde PTT appuyé un peu plus longtemps.");
+      return;
+    }
+    const captureDbfs = Number(capture.dbfs);
+    const capturePeak = Number(capture.peak);
+    const captureRms = Number(capture.rms);
+    if (
+      Number.isFinite(captureDbfs)
+      && Number.isFinite(capturePeak)
+      && Number.isFinite(captureRms)
+      && captureDbfs < -55
+      && capturePeak < 0.015
+      && captureRms < 0.003
+    ) {
+      setMicStatusMessage("Micro trop bas ou silence: rapproche-toi, parle plus fort, puis retente.");
       return;
     }
     try {
@@ -10309,6 +10323,9 @@ export function App() {
       const transcript = await transcribeAudioFile(file, {
         language: selectedA11Language.sttCode,
         provider: "auto",
+        durationMs: capture.durationMs,
+        dbfs: Number.isFinite(captureDbfs) ? captureDbfs : null,
+        peak: Number.isFinite(capturePeak) ? capturePeak : null,
       });
       const text = toUnicodeText(transcript.text, 2400).trim();
       if (!text) {

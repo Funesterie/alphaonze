@@ -13358,20 +13358,41 @@ async function proxyChatToOpenAI(req, res) {
     let content = finalizeA11AssistantContent(resolvedAssistant.content, req, systemPrompt);
 
     // Some browser-originated local requests sporadically yield an empty normalized
-    // assistant payload on the first attempt. Retry once with minimal headers and
-    // a calmer sampling setup before surfacing an empty reply to the UI.
-    if (provider === 'local' && !String(content || '').trim()) {
-      console.warn('[A11] Empty local assistant output detected, retrying upstream once.');
+    // assistant payload on the first attempt. This can also happen when Mini-Cerbere
+    // starts from a remote provider, then falls back to the local lane after quota
+    // or billing errors. Retry the actual local lane once before surfacing fallback UI.
+    const activeMiniCerbereProvider = String(miniCerbereTarget?.provider || provider || '').trim().toLowerCase();
+    if (activeMiniCerbereProvider === 'local' && !String(content || '').trim()) {
+      const localRetryUrl = getLocalCompletionsUrl() || (provider === 'local' ? upstreamUrl : '');
+      const activeLocalModel = String(miniCerbereTarget?.model || upstreamBody?.model || process.env.LOCAL_DEFAULT_MODEL || '').trim();
+      const retryModel = String(
+        process.env.A11_EMPTY_ASSISTANT_RETRY_MODEL
+        || process.env.A11_LOCAL_BACKUP_MODEL
+        || (activeLocalModel && activeLocalModel !== 'llama3.2:latest' ? 'llama3.2:latest' : activeLocalModel)
+        || process.env.LOCAL_DEFAULT_MODEL
+        || 'llama3.2:latest'
+      ).trim() || 'llama3.2:latest';
+      console.warn('[A11] Empty local assistant output detected, retrying local lane once.', {
+        target: miniCerbereTarget || null,
+        retryModel,
+      });
       const retryBody = {
         ...upstreamBody,
+        provider: 'local',
+        model: retryModel,
         temperature: 0.2,
         top_p: 0.9,
+        max_tokens: Math.max(256, Math.min(maxResponseTokens, Number(upstreamBody?.max_tokens || 0) || 1024)),
       };
       try {
-        const retryResult = await requestChatUpstream(upstreamUrl, retryBody, {
-          provider,
+        if (!localRetryUrl) {
+          throw new Error('missing_local_retry_url');
+        }
+        const retryResult = await requestChatUpstream(localRetryUrl, retryBody, {
+          provider: 'local',
           reqHeaders: {},
           requestId,
+          timeout: 90_000,
         });
         const retryRawContent = extractAssistantText(retryResult.data);
         const retryResolvedAssistant = await resolveAssistantActionEnvelope({

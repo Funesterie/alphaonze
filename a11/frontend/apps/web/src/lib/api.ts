@@ -2091,12 +2091,21 @@ export type SttTranscriptionResult = {
 
 export async function transcribeAudioFile(
   file: File,
-  options?: { language?: string; provider?: 'auto' | 'faster-whisper' | 'ollama' | 'openai' }
+  options?: {
+    language?: string;
+    provider?: 'auto' | 'faster-whisper' | 'ollama' | 'openai';
+    durationMs?: number | null;
+    dbfs?: number | null;
+    peak?: number | null;
+  }
 ): Promise<SttTranscriptionResult> {
   const form = new FormData();
   form.append('audio', file);
   if (options?.language) form.append('language', options.language);
   if (options?.provider) form.append('provider', options.provider);
+  if (Number.isFinite(Number(options?.durationMs))) form.append('durationMs', String(Math.round(Number(options?.durationMs))));
+  if (Number.isFinite(Number(options?.dbfs))) form.append('dbfs', String(Number(options?.dbfs).toFixed(1)));
+  if (Number.isFinite(Number(options?.peak))) form.append('peak', String(Number(options?.peak).toFixed(5)));
 
   const res = await authFetch(getApiUrl('/api/stt/transcribe'), {
     method: 'POST',

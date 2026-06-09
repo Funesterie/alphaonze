@@ -182,7 +182,11 @@ function buildProxyEmptyAssistantFallback(latestUserMessage = '', options = {}) 
     if (surface === 'vivy') return 'Oui, je suis là. On repart proprement.';
     return 'Oui, je suis là. Je reprends proprement.';
   }
-  return `${name} est là. Le modèle a renvoyé une réponse vide, donc je reprends sur ton dernier message sans afficher de brouillon.`;
+  const shortUserMessage = String(latestUserMessage || '').replace(/\s+/g, ' ').trim().slice(0, 180);
+  if (shortUserMessage) {
+    return `${name} t'a bien reçu: « ${shortUserMessage} ». Je reprends simplement, sans transformer ton message en brouillon.`;
+  }
+  return `${name} est là. Je reprends simplement, sans afficher de brouillon.`;
 }
 
 function postProcessProxyPayload(payload, latestUserMessage = '', options = {}) {

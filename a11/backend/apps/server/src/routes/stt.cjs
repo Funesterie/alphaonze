@@ -93,6 +93,28 @@ function createSttRouter(options = {}) {
         const mimeType = req.file.mimetype || 'audio/webm';
         const language = String(req.body?.language || req.query?.language || '').trim() || undefined;
         const provider = String(req.body?.provider || req.query?.provider || '').trim() || undefined;
+        const durationMs = Number(req.body?.durationMs || req.query?.durationMs || 0);
+        const dbfs = Number(req.body?.dbfs || req.query?.dbfs || NaN);
+        const peak = Number(req.body?.peak || req.query?.peak || NaN);
+        const minAudioBytes = Math.max(128, Number(process.env.A11_STT_MIN_AUDIO_BYTES || 1024) || 1024);
+
+        if (audioBuffer.length < minAudioBytes) {
+          logger.warn('STT audio too small', {
+            mimeType,
+            language,
+            provider,
+            fileSize: audioBuffer.length,
+            minAudioBytes,
+            durationMs: Number.isFinite(durationMs) ? durationMs : null,
+            dbfs: Number.isFinite(dbfs) ? dbfs : null,
+            peak: Number.isFinite(peak) ? peak : null,
+          });
+          return res.status(422).json({
+            ok: false,
+            error: 'audio_too_short',
+            message: "Je n'ai presque rien reçu du micro. Garde PTT un peu plus longtemps et parle plus près du micro.",
+          });
+        }
 
         logger.info('STT transcription request', {
           mimeType,
@@ -100,6 +122,9 @@ function createSttRouter(options = {}) {
           provider,
           fileSize: audioBuffer.length,
           originalName: req.file.originalname,
+          durationMs: Number.isFinite(durationMs) ? durationMs : null,
+          dbfs: Number.isFinite(dbfs) ? dbfs : null,
+          peak: Number.isFinite(peak) ? peak : null,
         });
 
         const result = await transcribe(audioBuffer, mimeType, { language, provider });
@@ -130,6 +155,14 @@ function createSttRouter(options = {}) {
             ok: false,
             error: 'stt_unavailable',
             message: err.message,
+          });
+        }
+
+        if (/réponse vide|reponse vide|empty/i.test(String(err.message || ''))) {
+          return res.status(422).json({
+            ok: false,
+            error: 'no_speech_detected',
+            message: "Je n'ai pas reconnu de parole exploitable. Parle un peu plus fort ou garde PTT plus longtemps.",
           });
         }
 

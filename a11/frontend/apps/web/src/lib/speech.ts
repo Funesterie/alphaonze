@@ -621,6 +621,9 @@ export type MicAudioCaptureResult = {
   blob: Blob;
   mimeType: string;
   durationMs: number;
+  rms?: number | null;
+  peak?: number | null;
+  dbfs?: number | null;
 };
 
 let micCaptureStream: MediaStream | null = null;
@@ -649,6 +652,40 @@ function stopMicCaptureTracks() {
     // Best effort: the browser may already have released the stream.
   }
   micCaptureStream = null;
+}
+
+async function measureMicAudioLevel(blob: Blob): Promise<Pick<MicAudioCaptureResult, 'rms' | 'peak' | 'dbfs'> | null> {
+  const AudioContextCtor = (globalThis as any).AudioContext || (globalThis as any).webkitAudioContext;
+  if (!AudioContextCtor || !blob?.size) return null;
+
+  let ctx: AudioContext | null = null;
+  try {
+    ctx = new AudioContextCtor() as AudioContext;
+    const audioCtx = ctx;
+    const audioBuffer = await audioCtx.decodeAudioData(await blob.arrayBuffer());
+    let sumSquares = 0;
+    let sampleCount = 0;
+    let peak = 0;
+
+    for (let channelIndex = 0; channelIndex < audioBuffer.numberOfChannels; channelIndex += 1) {
+      const data = audioBuffer.getChannelData(channelIndex);
+      for (let i = 0; i < data.length; i += 1) {
+        const sample = Math.abs(data[i] || 0);
+        sumSquares += sample * sample;
+        sampleCount += 1;
+        if (sample > peak) peak = sample;
+      }
+    }
+
+    if (!sampleCount) return null;
+    const rms = Math.sqrt(sumSquares / sampleCount);
+    const dbfs = rms > 0 ? 20 * Math.log10(rms) : -Infinity;
+    return { rms, peak, dbfs };
+  } catch {
+    return null;
+  } finally {
+    try { await ctx?.close?.(); } catch {}
+  }
 }
 
 export async function startMicAudioCapture(): Promise<void> {
@@ -691,25 +728,26 @@ export function stopMicAudioCapture(): Promise<MicAudioCaptureResult | null> {
   }
 
   micCaptureStopPromise = new Promise((resolve) => {
-    const finish = () => {
+    const finish = async () => {
       const mimeType = recorder.mimeType || pickMicCaptureMimeType() || 'audio/webm';
       const durationMs = Math.max(0, Date.now() - micCaptureStartedAt);
       const blob = micCaptureChunks.length ? new Blob(micCaptureChunks, { type: mimeType }) : null;
+      const level = blob?.size ? await measureMicAudioLevel(blob) : null;
       micCaptureChunks = [];
       micCaptureRecorder = null;
       micCaptureStartedAt = 0;
       stopMicCaptureTracks();
       micCaptureStopPromise = null;
-      resolve(blob?.size ? { blob, mimeType, durationMs } : null);
+      resolve(blob?.size ? { blob, mimeType, durationMs, ...(level || {}) } : null);
     };
 
-    recorder.onstop = finish;
-    recorder.onerror = () => finish();
+    recorder.onstop = () => { void finish(); };
+    recorder.onerror = () => { void finish(); };
     try {
       if (recorder.state !== 'inactive') recorder.stop();
-      else finish();
+      else void finish();
     } catch {
-      finish();
+      void finish();
     }
   });
 

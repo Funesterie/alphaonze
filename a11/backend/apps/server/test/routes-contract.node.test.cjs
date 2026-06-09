@@ -1978,6 +1978,49 @@ test('POST /api/llm/chat fills empty assistant proxy bubbles with a natural surf
   );
 });
 
+test('POST /api/llm/chat does not expose empty assistant internals to users', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-empty-generic', username: 'user-empty-generic' }, jwtSecret, { expiresIn: '1h' });
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouterForTests({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI(_req, res) {
+          return res.json({
+            choices: [{ message: { role: 'assistant', content: '' } }],
+          });
+        },
+        detectImageIntent: () => false,
+        detectWebImageIntent: () => false,
+        hasLocalChatUpstreamConfigured: () => true,
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        persona: 'a11',
+        surface: 'a11',
+        messages: [{ role: 'user', content: "et toi qu'en penses tu ?" }],
+      }, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(response.status, 200);
+      const content = String(json.choices?.[0]?.message?.content || '');
+      assert.match(content, /A11 t'a bien reçu/i);
+      assert.doesNotMatch(content, /mod[eè]le|r[ée]ponse vide/i);
+    }
+  );
+});
+
 test('POST /api/llm/chat answers MCP/Neo4j tool status without hallucinating no tools', async () => {
   const jwtSecret = 'test-secret';
   const token = jwt.sign({
