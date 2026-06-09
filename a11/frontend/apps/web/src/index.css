@@ -3892,6 +3892,7 @@ html.a11-auth-page-root body {
   width: min(100% - clamp(24px, 4vw, 56px), 1500px);
   margin: 0 auto clamp(32px, 6vw, 76px);
   padding: clamp(18px, 3vw, 34px);
+  overflow: hidden;
   border: 1px solid rgba(240, 121, 216, 0.3);
   background:
     linear-gradient(135deg, rgba(240, 121, 216, 0.12), transparent 34%),
@@ -3959,7 +3960,8 @@ html.a11-auth-page-root body {
 
 .vivy-studio-grid {
   display: grid;
-  grid-template-columns: minmax(230px, 0.72fr) minmax(320px, 1fr) minmax(320px, 1.05fr);
+  grid-template-columns: minmax(190px, 0.56fr) minmax(320px, 1.08fr) minmax(300px, 0.96fr);
+  align-items: start;
   gap: 14px;
 }
 
@@ -4061,7 +4063,8 @@ html.a11-auth-page-root body {
   border-radius: 8px;
 }
 
-.vivy-studio-consent-fieldset {
+.vivy-studio-consent-fieldset,
+.vivy-studio-voice-fieldset {
   display: grid;
   gap: 8px;
   min-width: 0;
@@ -4072,7 +4075,8 @@ html.a11-auth-page-root body {
 }
 
 .vivy-studio-artist-fieldset legend,
-.vivy-studio-consent-fieldset legend {
+.vivy-studio-consent-fieldset legend,
+.vivy-studio-voice-fieldset legend {
   padding: 0 6px;
   color: #f2cfe8;
   font-size: 12px;
@@ -4084,6 +4088,67 @@ html.a11-auth-page-root body {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.vivy-studio-voice-directory {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(142px, 1fr));
+  gap: 8px;
+}
+
+.vivy-studio-voice-card {
+  min-height: 92px;
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  padding: 11px;
+  text-align: left;
+  text-transform: none !important;
+}
+
+.vivy-studio-voice-card.is-active {
+  border-color: rgba(240, 121, 216, 0.86);
+  background: rgba(240, 121, 216, 0.18);
+}
+
+.vivy-studio-voice-card span {
+  color: #fff3fc;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.vivy-studio-voice-card small,
+.vivy-studio-voice-card em,
+.vivy-studio-voice-summary {
+  color: #d9bfd2;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-transform: none;
+}
+
+.vivy-studio-voice-card em {
+  width: fit-content;
+  margin-top: 2px;
+  border: 1px solid rgba(240, 121, 216, 0.24);
+  border-radius: 999px;
+  padding: 3px 7px;
+  font-style: normal;
+}
+
+.vivy-studio-voice-card em[data-kind="ready"] {
+  color: #bef8d2;
+  border-color: rgba(97, 236, 150, 0.38);
+}
+
+.vivy-studio-voice-card em[data-kind="awaiting"] {
+  color: #ffe3a3;
+  border-color: rgba(255, 206, 99, 0.38);
+}
+
+.vivy-studio-voice-summary {
+  margin: 0;
 }
 
 .vivy-studio-artist-option {
@@ -4237,6 +4302,33 @@ html.a11-auth-page-root body {
   color: #f079d8;
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+@media (max-width: 1200px) {
+  .vivy-studio {
+    width: calc(100% - 24px);
+    padding: 18px;
+  }
+
+  .vivy-studio-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .vivy-studio-modes {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .vivy-studio-modes button {
+    min-height: 96px;
+  }
+
+  .vivy-studio-brief {
+    grid-template-rows: auto auto auto auto;
+  }
+
+  .vivy-studio-brief pre {
+    max-height: 420px;
+  }
 }
 
 @media (max-width: 900px) {

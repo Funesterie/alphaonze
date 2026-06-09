@@ -61,6 +61,7 @@ import {
   fetchVoiceLearningStatus,
   deleteVoiceLearningCorpus,
   uploadVoiceLearningSnippet,
+  queueVoiceLearningTraining,
   uploadTtsVoiceReference,
   saveRemoteProviderProfile,
   purgeMemoryNow,
@@ -2944,6 +2945,7 @@ function writeVivySessionSunoKey(value: string) {
 }
 
 type VivyStudioArtistId = "djeff" | "vivy" | "a11" | "k44";
+type VivyStudioVoiceLearningPersona = "djeff" | "vivy" | "a11" | "kaen44" | "personal";
 
 const VIVY_STUDIO_ARTISTS: Array<{
   id: VivyStudioArtistId;
@@ -2974,6 +2976,97 @@ const VIVY_STUDIO_ARTISTS: Array<{
     label: "K44",
     tag: "[K44]",
     role: "contre-chant posé, punchlines calmes, second lead propre",
+  },
+];
+
+const VIVY_STUDIO_VOICE_DIRECTORY: Array<{
+  id: VivyStudioVoiceLearningPersona;
+  label: string;
+  shortLabel: string;
+  ownerLabel: string;
+  persona: VivyStudioVoiceLearningPersona;
+  artistId?: VivyStudioArtistId;
+  voiceTool: string;
+  ttsPersona: "vivy" | "a11" | "kaen44";
+  surface: "vivy" | "a11" | "kaen44";
+  voiceStyle: string;
+  statusLabel: string;
+  statusKind: "ready" | "awaiting" | "personal";
+  testLine: string;
+}> = [
+  {
+    id: "djeff",
+    label: "Djeff rap",
+    shortLabel: "Djeff",
+    ownerLabel: "Compte Djeff",
+    persona: "djeff",
+    artistId: "djeff",
+    voiceTool: "Voix Djeff rap",
+    ttsPersona: "a11",
+    surface: "a11",
+    voiceStyle: "djeff-rap",
+    statusLabel: "référence prête",
+    statusKind: "ready",
+    testLine: "Djeff cale le kick, pignon précis, radiateur froid, la voix reste proche du micro.",
+  },
+  {
+    id: "kaen44",
+    label: "K44 officielle",
+    shortLabel: "K44",
+    ownerLabel: "Compte famille K44",
+    persona: "kaen44",
+    artistId: "k44",
+    voiceTool: "Voix K44 officielle",
+    ttsPersona: "kaen44",
+    surface: "kaen44",
+    voiceStyle: "kaen44-official-french-narrator",
+    statusLabel: "référence prête",
+    statusKind: "ready",
+    testLine: "K44 pose la ligne calmement, chaque mot tient la route, net et sans forcer.",
+  },
+  {
+    id: "a11",
+    label: "A11 officielle",
+    shortLabel: "A11",
+    ownerLabel: "Compte famille A11",
+    persona: "a11",
+    artistId: "a11",
+    voiceTool: "Voix A11 officielle",
+    ttsPersona: "a11",
+    surface: "a11",
+    voiceStyle: "a11-official-stern-french",
+    statusLabel: "référence à importer",
+    statusKind: "awaiting",
+    testLine: "A11 garde le signal, voix basse et nette, la machine respire avec le cœur humain.",
+  },
+  {
+    id: "vivy",
+    label: "Vivy officielle",
+    shortLabel: "Vivy",
+    ownerLabel: "Compte famille Vivy",
+    persona: "vivy",
+    artistId: "vivy",
+    voiceTool: "Voix Vivy officielle",
+    ttsPersona: "vivy",
+    surface: "vivy",
+    voiceStyle: "vivy-official-french-conversational",
+    statusLabel: "référence à importer",
+    statusKind: "awaiting",
+    testLine: "Salut Jeffrey. Je suis Vivy, voix claire, proche et naturelle, prête à répondre.",
+  },
+  {
+    id: "personal",
+    label: "Ma voix",
+    shortLabel: "Ma voix",
+    ownerLabel: "Compte connecté premium",
+    persona: "personal",
+    voiceTool: "Voix Vivy + référence privée",
+    ttsPersona: "vivy",
+    surface: "vivy",
+    voiceStyle: "personal-account-voice",
+    statusLabel: "premium personnel",
+    statusKind: "personal",
+    testLine: "Je teste la voix personnelle du compte connecté avec une phrase courte et claire.",
   },
 ];
 
@@ -3014,6 +3107,20 @@ function buildVivyStudioArtistCast(ids: VivyStudioArtistId[]) {
       : `Tag conseillé dans les paroles: ${tags}.`,
   ].join(" ");
   return { ids: normalized, artists, count, countLabel, label, tags, songCast };
+}
+
+function normalizeVivyStudioVoicePersona(value: unknown, fallback: VivyStudioVoiceLearningPersona = "djeff"): VivyStudioVoiceLearningPersona {
+  const folded = foldForLookup(value);
+  if (folded === "k44" || folded === "kaen44" || folded === "kaen") return "kaen44";
+  if (folded === "djeff" || folded === "djeff-rap" || folded === "pignon") return "djeff";
+  if (folded === "vivy" || folded === "vivi") return "vivy";
+  if (folded === "a11" || folded === "alphaonze" || folded === "alpha-onze") return "a11";
+  if (folded === "personal" || folded === "ma-voix" || folded === "ma_voix" || folded === "my-voice") return "personal";
+  return fallback;
+}
+
+function getVivyStudioVoiceDirectoryEntry(persona: VivyStudioVoiceLearningPersona) {
+  return VIVY_STUDIO_VOICE_DIRECTORY.find((entry) => entry.persona === persona) || VIVY_STUDIO_VOICE_DIRECTORY[0];
 }
 
 type VivyStudioVoiceProfile = {
@@ -3296,6 +3403,14 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
   const [publishVoiceToCatalog, setPublishVoiceToCatalog] = useState(Boolean(initialDraft.publishVoiceToCatalog));
   const [catalogConsentAccepted, setCatalogConsentAccepted] = useState(Boolean(initialDraft.catalogConsentAccepted));
   const [catalogStatus, setCatalogStatus] = useState("");
+  const [voiceLearningPersona, setVoiceLearningPersona] = useState<VivyStudioVoiceLearningPersona>(() =>
+    normalizeVivyStudioVoicePersona(initialDraft.voiceLearningPersona, "djeff")
+  );
+  const [voiceLearningFile, setVoiceLearningFile] = useState<File | null>(null);
+  const [voiceLearningFileName, setVoiceLearningFileName] = useState(String(initialDraft.voiceLearningFileName || ""));
+  const [voiceLearningTranscript, setVoiceLearningTranscript] = useState(String(initialDraft.voiceLearningTranscript || ""));
+  const [voiceLearningStatus, setVoiceLearningStatus] = useState<VoiceLearningStatus | null>(null);
+  const [voiceLearningMessage, setVoiceLearningMessage] = useState("");
   const [songSource, setSongSource] = useState(String(initialDraft.songSource || "Prompt +"));
   const [songArtists, setSongArtists] = useState<VivyStudioArtistId[]>(() => normalizeVivyStudioArtists(initialDraft.songArtists));
   const [songMood, setSongMood] = useState(String(initialDraft.songMood || "Electro pop dark cinematographique"));
@@ -3378,6 +3493,9 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       catalogVoiceName,
       publishVoiceToCatalog,
       catalogConsentAccepted,
+      voiceLearningPersona,
+      voiceLearningFileName,
+      voiceLearningTranscript,
       songSource,
       songArtists,
       songMood,
@@ -3388,7 +3506,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       tokenPresent: Boolean(shareToken.trim()),
       vivyOutput,
     });
-  }, [activeMode, voiceTool, voiceInstruction, voiceFileName, voiceReferenceId, selectedCatalogVoiceId, catalogVoiceName, publishVoiceToCatalog, catalogConsentAccepted, songSource, songArtists, songMood, songText, shareTarget, shareUrl, shareInstruction, shareToken, vivyOutput]);
+  }, [activeMode, voiceTool, voiceInstruction, voiceFileName, voiceReferenceId, selectedCatalogVoiceId, catalogVoiceName, publishVoiceToCatalog, catalogConsentAccepted, voiceLearningPersona, voiceLearningFileName, voiceLearningTranscript, songSource, songArtists, songMood, songText, shareTarget, shareUrl, shareInstruction, shareToken, vivyOutput]);
 
   useEffect(() => {
     writeVivySessionSunoKey(sunoSessionKey);
@@ -3415,6 +3533,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
   }, [hasSession]);
 
   const activeMeta = VIVY_STUDIO_MODES.find((item) => item.id === activeMode) || VIVY_STUDIO_MODES[0];
+  const activeVoiceLearningEntry = getVivyStudioVoiceDirectoryEntry(voiceLearningPersona);
   const hasPrivateVoiceReference = Boolean(voiceReferenceId.trim());
   const activeVoiceProfile = useMemo(
     () => getVivyStudioVoiceProfileForTool(voiceTool, hasPrivateVoiceReference, voiceFileName),
@@ -3424,6 +3543,32 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
   const activeVoiceReferenceLabel = activeCatalogVoiceName
     ? `Catalogue: ${activeCatalogVoiceName}`
     : activeVoiceProfile.referenceLabel;
+  const voiceLearningProgressLabel = voiceLearningStatus
+    ? `${Math.round(Number(voiceLearningStatus.secondsCollected || 0))}s/${Math.round(Number(voiceLearningStatus.requiredSeconds || 0))}s, ${Number(voiceLearningStatus.clipCount || 0)} extrait${Number(voiceLearningStatus.clipCount || 0) > 1 ? "s" : ""}`
+    : "statut non chargé";
+
+  useEffect(() => {
+    if (!hasSession) {
+      setVoiceLearningStatus(null);
+      setVoiceLearningMessage("");
+      return;
+    }
+    let cancelled = false;
+    fetchVoiceLearningStatus(voiceLearningPersona)
+      .then((result) => {
+        if (cancelled) return;
+        setVoiceLearningStatus(result);
+        setVoiceLearningMessage(result?.message || "");
+      })
+      .catch((error: any) => {
+        if (cancelled) return;
+        setVoiceLearningStatus(null);
+        setVoiceLearningMessage(`Statut corpus indisponible: ${error?.message || error}`);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasSession, voiceLearningPersona]);
 
   useEffect(() => {
     if (hasPrivateVoiceReference) return;
@@ -3642,6 +3787,172 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         : `Référence voix privée active pour ${activeVoiceProfile.label}.`);
     } catch (error: any) {
       setStatus(`Upload voix indisponible: ${error?.message || error}`);
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  function readMediaDurationMs(file: File): Promise<number> {
+    return new Promise((resolve) => {
+      try {
+        const media = document.createElement(file.type.startsWith("video/") ? "video" : "audio") as HTMLMediaElement;
+        const url = URL.createObjectURL(file);
+        const cleanup = () => {
+          URL.revokeObjectURL(url);
+          media.removeAttribute("src");
+        };
+        media.preload = "metadata";
+        media.onloadedmetadata = () => {
+          const durationMs = Number.isFinite(media.duration) ? Math.round(media.duration * 1000) : 0;
+          cleanup();
+          resolve(durationMs);
+        };
+        media.onerror = () => {
+          cleanup();
+          resolve(0);
+        };
+        media.src = url;
+      } catch {
+        resolve(0);
+      }
+    });
+  }
+
+  function applyVoiceDirectoryEntry(entry = activeVoiceLearningEntry) {
+    setVoiceLearningPersona(entry.persona);
+    setVoiceTool(entry.voiceTool);
+    setSelectedCatalogVoiceId("");
+    if (entry.artistId) setSongArtists([entry.artistId]);
+    if (!voiceInstruction.trim()) {
+      setVoiceInstruction(entry.testLine);
+    }
+    setStatus(`${entry.label} sélectionnée dans le répertoire voix.`);
+  }
+
+  async function uploadVoiceLearningCorpus() {
+    if (!hasSession) {
+      setStatus("Connexion requise pour ajouter un extrait au corpus voix.");
+      return;
+    }
+    if (!voiceLearningFile) {
+      setStatus("Ajoute d'abord un extrait audio ou vidéo pour nourrir le corpus.");
+      return;
+    }
+    setIsBusy(true);
+    setVoiceLearningMessage(`Ajout corpus ${activeVoiceLearningEntry.shortLabel}...`);
+    try {
+      const durationMs = await readMediaDurationMs(voiceLearningFile);
+      const result = await uploadVoiceLearningSnippet(voiceLearningFile, {
+        persona: voiceLearningPersona,
+        durationMs,
+        transcript: voiceLearningTranscript,
+        source: "vivy-studio-upload",
+        consent: "voice-learning-v1",
+      });
+      setVoiceLearningStatus(result);
+      const progress = `${Math.round(Number(result.secondsCollected || 0))}s/${Math.round(Number(result.requiredSeconds || 0))}s`;
+      const message = result.duplicate
+        ? `Extrait déjà présent pour ${activeVoiceLearningEntry.shortLabel}: ${progress}.`
+        : `Corpus ${activeVoiceLearningEntry.shortLabel}: ${progress}.`;
+      setVoiceLearningMessage(message);
+      setStatus(message);
+    } catch (error: any) {
+      const message = `Ajout corpus impossible: ${error?.message || error}`;
+      setVoiceLearningMessage(message);
+      setStatus(message);
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function trainVoiceLearningCorpus() {
+    if (!hasSession) {
+      setStatus("Connexion requise pour lancer un entraînement voix.");
+      return;
+    }
+    setIsBusy(true);
+    setVoiceLearningMessage(`Préparation entraînement ${activeVoiceLearningEntry.shortLabel}...`);
+    try {
+      const result = await queueVoiceLearningTraining(voiceLearningPersona);
+      setVoiceLearningStatus(result);
+      const message = result.message || `Entraînement ${activeVoiceLearningEntry.shortLabel} ajouté à la file.`;
+      setVoiceLearningMessage(message);
+      setStatus(message);
+    } catch (error: any) {
+      const message = `Entraînement voix impossible: ${error?.message || error}`;
+      setVoiceLearningMessage(message);
+      setStatus(message);
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function resetVoiceLearningCorpus() {
+    if (!hasSession) {
+      setStatus("Connexion requise pour retirer un corpus voix.");
+      return;
+    }
+    const confirmed = window.confirm(`Retirer les extraits collectés pour ${activeVoiceLearningEntry.shortLabel} sur ce compte ?`);
+    if (!confirmed) return;
+    setIsBusy(true);
+    setVoiceLearningMessage(`Retrait corpus ${activeVoiceLearningEntry.shortLabel}...`);
+    try {
+      const result = await deleteVoiceLearningCorpus(voiceLearningPersona);
+      setVoiceLearningStatus(result);
+      const message = `Corpus ${activeVoiceLearningEntry.shortLabel} retiré pour ce compte.`;
+      setVoiceLearningMessage(message);
+      setStatus(message);
+    } catch (error: any) {
+      const message = `Retrait corpus impossible: ${error?.message || error}`;
+      setVoiceLearningMessage(message);
+      setStatus(message);
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function testVoiceLearningChatbot() {
+    if (!hasSession) {
+      setStatus("Connexion requise pour tester le chat vocal.");
+      return;
+    }
+    const entry = activeVoiceLearningEntry;
+    setIsBusy(true);
+    setStatus(`Test chat vocal ${entry.shortLabel}...`);
+    try {
+      const line = buildVivyPlayableText(
+        voiceInstruction.trim(),
+        `Je suis ${entry.shortLabel}. Je réponds avec la voix sélectionnée dans Funesterie, seulement avec accord.`,
+        220
+      );
+      const baseOptions = buildVivyTtsOptions("adaptive");
+      const payload = await ttsSpeak(line, entry.ttsPersona, "xtts-rvc", {
+        ...baseOptions,
+        persona: entry.ttsPersona,
+        voicePersona: entry.ttsPersona,
+        surface: entry.surface,
+        voiceStyle: entry.voiceStyle,
+        voiceReferenceName: entry.label,
+        voiceReferenceLabel: entry.voiceStyle,
+        referenceVoiceStyle: entry.voiceStyle,
+        voiceTool: entry.voiceTool,
+        vocalCast: entry.label,
+        useDefaultVoiceReference: true,
+        defaultVoiceReference: true,
+        identityVoice: true,
+        useIdentityVoice: true,
+      });
+      const mediaUrl = String(payload?.audioUrl || payload?.audio_url || payload?.url || "").trim();
+      if (!mediaUrl) throw new Error("audio_url_missing");
+      setVivyMedia({
+        kind: "audio",
+        url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
+        provider: String(payload?.provider || payload?.via || "a11-voice-module"),
+        contentType: String(payload?.contentType || payload?.content_type || "audio/wav"),
+      });
+      setStatus(`Chat vocal ${entry.shortLabel} prêt.`);
+    } catch (error: any) {
+      setStatus(`Test chat vocal indisponible: ${error?.message || error}`);
     } finally {
       setIsBusy(false);
     }
@@ -3985,6 +4296,123 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
                     </label>
                   </>
                 ) : null}
+              </fieldset>
+              <fieldset className="vivy-studio-voice-fieldset">
+                <legend>Répertoire voix Funesterie</legend>
+                <div className="vivy-studio-voice-directory">
+                  {VIVY_STUDIO_VOICE_DIRECTORY.filter((entry) => entry.id !== "personal").map((entry) => {
+                    const selected = voiceLearningPersona === entry.persona || voiceTool === entry.voiceTool;
+                    return (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        className={`vivy-studio-voice-card${selected ? " is-active" : ""}`}
+                        disabled={!hasSession || isBusy}
+                        onClick={() => applyVoiceDirectoryEntry(entry)}
+                      >
+                        <span>{entry.label}</span>
+                        <small>{entry.ownerLabel}</small>
+                        <em data-kind={entry.statusKind}>{entry.statusLabel}</em>
+                      </button>
+                    );
+                  })}
+                </div>
+                <label>
+                  Voix premium autorisée
+                  <select
+                    id="vivy-studio-catalog-voice"
+                    name="vivyCatalogVoice"
+                    value={selectedCatalogVoiceId}
+                    disabled={!hasSession || !catalogVoices.length}
+                    onChange={(event) => {
+                      const nextId = event.target.value;
+                      const nextVoice = catalogVoices.find((voice) => voice.id === nextId) || null;
+                      setSelectedCatalogVoiceId(nextId);
+                      if (nextVoice) {
+                        const nextName = String(nextVoice.catalog?.name || nextVoice.label || "").trim();
+                        setVoiceReferenceId(nextVoice.id);
+                        setVoiceFileName(nextName || nextVoice.label || "voix catalogue");
+                        setVoiceTool("Voix catalogue premium");
+                        setCatalogVoiceName(nextName);
+                        setStatus(`Voix catalogue sélectionnée: ${nextName || nextVoice.label}.`);
+                      } else {
+                        setVoiceReferenceId("");
+                        setVoiceFileName("");
+                        setStatus("Voix catalogue désactivée.");
+                      }
+                    }}
+                  >
+                    <option value="">Aucune voix catalogue</option>
+                    {catalogVoices.map((voice) => {
+                      const name = String(voice.catalog?.name || voice.label || voice.id).trim();
+                      return (
+                        <option key={voice.id} value={voice.id}>{name}</option>
+                      );
+                    })}
+                  </select>
+                </label>
+                {!catalogVoices.length ? (
+                  <p className="vivy-studio-voice-summary">Catalogue premium vide pour l’instant. Les voix publiées avec accord apparaîtront ici.</p>
+                ) : null}
+              </fieldset>
+              <fieldset className="vivy-studio-voice-fieldset">
+                <legend>Apprentissage voix</legend>
+                <label>
+                  Voix à entraîner
+                  <select
+                    id="vivy-studio-learning-persona"
+                    name="voiceLearningPersona"
+                    value={voiceLearningPersona}
+                    disabled={!hasSession || isBusy}
+                    onChange={(event) => {
+                      const persona = normalizeVivyStudioVoicePersona(event.target.value, "djeff");
+                      const entry = getVivyStudioVoiceDirectoryEntry(persona);
+                      applyVoiceDirectoryEntry(entry);
+                    }}
+                  >
+                    {VIVY_STUDIO_VOICE_DIRECTORY.map((entry) => (
+                      <option key={entry.id} value={entry.persona}>{entry.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Extrait source
+                  <input
+                    id="vivy-studio-learning-file"
+                    name="voiceLearningFile"
+                    type="file"
+                    accept="audio/*,video/quicktime,video/mp4,.wav,.mp3,.m4a,.mov,.mp4,.flac,.ogg,.webm"
+                    disabled={!hasSession || isBusy}
+                    onChange={(event) => {
+                      const file = event.currentTarget.files?.[0] || null;
+                      setVoiceLearningFile(file);
+                      setVoiceLearningFileName(file?.name || "");
+                    }}
+                  />
+                </label>
+                <label>
+                  Texte fidèle / paroles
+                  <textarea
+                    id="vivy-studio-learning-transcript"
+                    name="voiceLearningTranscript"
+                    rows={4}
+                    value={voiceLearningTranscript}
+                    disabled={!hasSession || isBusy}
+                    onChange={(event) => setVoiceLearningTranscript(event.target.value)}
+                    placeholder="Colle ici le texte exact ou corrigé de l’audio pour aider l’entraînement."
+                  />
+                </label>
+                <div className="vivy-studio-actions vivy-studio-actions--voice">
+                  <button type="button" onClick={uploadVoiceLearningCorpus} disabled={!hasSession || isBusy || !voiceLearningFile}>Ajouter au corpus</button>
+                  <button type="button" onClick={trainVoiceLearningCorpus} disabled={!hasSession || isBusy || !voiceLearningStatus?.corpusReady}>Lancer entraînement</button>
+                  <button type="button" onClick={testVoiceLearningChatbot} disabled={!hasSession || isBusy}>Tester chat vocal</button>
+                  <button type="button" onClick={resetVoiceLearningCorpus} disabled={!hasSession || isBusy || !Number(voiceLearningStatus?.clipCount || 0)}>Nettoyer corpus</button>
+                </div>
+                <p className="vivy-studio-voice-summary">
+                  {activeVoiceLearningEntry.label}: {voiceLearningProgressLabel}
+                  {voiceLearningFileName ? ` · fichier prêt: ${voiceLearningFileName}` : ""}
+                  {voiceLearningMessage ? ` · ${voiceLearningMessage}` : ""}
+                </p>
               </fieldset>
               <label>
                 Instruction voix
