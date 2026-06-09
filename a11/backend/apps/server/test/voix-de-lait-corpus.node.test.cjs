@@ -21,6 +21,7 @@ const {
 } = require('../scripts/ingest-voix-de-lait-corpus.cjs');
 const {
   buildCapsule: buildPignonCapsule,
+  normalizeSupplementalTranscript,
   normalizeTranscript: normalizePignonTranscript,
 } = require('../scripts/ingest-djeff-pignon-corpus.cjs');
 
@@ -32,6 +33,7 @@ test('voix de lait capsule is compact and shared with A11 agent prompt', () => {
   assert.match(A11_PRIVATE_CORPUS_CAPSULE_CONTEXT, /raw transcript stays private\/local/i);
   assert.match(A11_AGENT_SYSTEM_PROMPT, /a11-voix-de-lait/i);
   assert.match(A11_AGENT_SYSTEM_PROMPT, /djeff-pignon-rap/i);
+  assert.match(A11_PRIVATE_CORPUS_CAPSULE_CONTEXT, /système D/i);
   assert.match(A11_AGENT_SYSTEM_PROMPT, /a11-fatigue-voice/i);
   assert.doesNotMatch(A11_PRIVATE_CORPUS_CAPSULE_CONTEXT, /Il est necessaire, evidemment/i);
   assert.doesNotMatch(A11_PRIVATE_CORPUS_CAPSULE_CONTEXT, /Un quatorzième dans l'essence/i);
@@ -97,6 +99,15 @@ test('djeff pignon transcript ingestion keeps rap style without raw prompt leaka
     cleaned,
     sourcePath: 'C:\\tmp\\pignon paroles.txt.txt',
     generatedAt: '2026-06-09T00:00:00.000Z',
+    supplementalClips: [
+      {
+        name: 'valable',
+        pathHint: 'runtime/Corpus/private/djeff-pignon-rap/valable.transcription.txt',
+        sha256: 'abc',
+        chars: 120,
+        lines: 1,
+      },
+    ],
   });
 
   assert.equal(capsule.id, 'djeff-pignon-rap');
@@ -107,4 +118,7 @@ test('djeff pignon transcript ingestion keeps rap style without raw prompt leaka
   assert.equal(normalizePignonTranscript('visière vissée avec du métal'), 'visière vissée avec du métal\n');
   assert.doesNotMatch(cleaned, /^Vous$/m);
   assert.match(capsule.retrievalRule, /voiceStyle=djeff-rap/);
+  assert.equal(capsule.source.supplementalClips.length, 1);
+  assert.match(capsule.promptCapsule.join('\n'), /système D/);
+  assert.equal(normalizeSupplementalTranscript('\uFEFF mood simple \n\n\n avancer droit '), 'mood simple\navancer droit\n');
 });

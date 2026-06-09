@@ -29,7 +29,7 @@ $profiles = @(
   },
   [pscustomobject]@{
     persona = "djeff"
-    sources = @("djeff-rap.wav")
+    sources = @("djeff-rap-pignon.wav", "djeff-rap-valable.wav", "djeff-rap-moine.wav", "djeff-rap-temps.wav")
     direction = "rap francais technique, diction serree, grain Djeff consenti, energie mecanique pignon-couronne"
   }
 )

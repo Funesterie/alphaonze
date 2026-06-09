@@ -7,6 +7,7 @@ const path = require('node:path');
 const SERVER_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(SERVER_ROOT, '..', '..', '..', '..');
 const DEFAULT_SOURCE = 'C:\\Users\\Djeff\\Documents\\Audacity\\pignon paroles.txt.txt';
+const DEFAULT_SUPPLEMENTAL_DIR = path.join(REPO_ROOT, 'runtime', 'Corpus', 'private', 'djeff-pignon-rap');
 
 const TRANSCRIPT_CORRECTION_RULES = Object.freeze([
   [/\bquatorzieme\b/gi, 'quatorzième'],
@@ -49,11 +50,45 @@ function normalizeTranscript(raw = '') {
     .concat('\n');
 }
 
+function normalizeSupplementalTranscript(raw = '') {
+  return String(raw || '')
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+    .concat('\n');
+}
+
 function sha256(text = '') {
   return crypto.createHash('sha256').update(String(text || ''), 'utf8').digest('hex');
 }
 
-function buildCapsule({ cleaned, sourcePath, generatedAt }) {
+function readSupplementalTranscripts(supplementalDir = '') {
+  if (!supplementalDir || !fs.existsSync(supplementalDir)) return [];
+  return fs.readdirSync(supplementalDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .filter((name) => /\.transcription\.txt$/i.test(name) && !/^pignon\.transcription\.txt$/i.test(name))
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => {
+      const filePath = path.join(supplementalDir, name);
+      const cleaned = normalizeSupplementalTranscript(fs.readFileSync(filePath, 'utf8'));
+      return {
+        name: name.replace(/\.transcription\.txt$/i, ''),
+        pathHint: path.relative(REPO_ROOT, filePath).replace(/\\/g, '/'),
+        sha256: sha256(cleaned),
+        chars: cleaned.length,
+        lines: cleaned.split(/\r?\n/).filter(Boolean).length,
+      };
+    })
+    .filter((item) => item.chars > 0);
+}
+
+function buildCapsule({ cleaned, sourcePath, generatedAt, supplementalClips = [] }) {
   return {
     schema: 'funesterie.private-corpus-capsule.v1',
     id: 'djeff-pignon-rap',
@@ -66,12 +101,14 @@ function buildCapsule({ cleaned, sourcePath, generatedAt }) {
       sha256: sha256(cleaned),
       chars: cleaned.length,
       lines: cleaned.split(/\r?\n/).filter(Boolean).length,
+      supplementalClips,
     },
     appliesTo: ['vivy', 'a11', 'kaen44', 'codex', 'kiro', 'llm-router', 'voice-router'],
     promptCapsule: [
       'Use as Djeff rap style memory and voice-routing context, not as a generic A11 voice.',
       'Tone: French technical rap, direct, mechanic, concrete, nervous but controlled.',
       'Core images: pignon-couronne, double radiateur, Ipone, moteur qui respire, roues, pneus comme crayons, guidon, visière, métal, wheeling.',
+      'Supplemental clips: mood simple, avancer droit, instant présent, admettre avoir tort, ne pas faire le moine, passer au futur par action présente, système D, débrouille, détermination, responsabilité.',
       'Flow: tight diction, internal rhymes, percussive line endings, street-mechanic vocabulary, no service-client politeness.',
       'Guardrails: keep the raw audio private, do not publish the reference clip, do not smooth the slang into generic lyrics, and do not confuse Djeff rap with A11 official voice.',
     ],
@@ -91,6 +128,7 @@ function buildReadme(capsule) {
     `- source kind: ${capsule.source.kind}`,
     `- transcript sha256: ${capsule.source.sha256}`,
     `- transcript chars: ${capsule.source.chars}`,
+    `- supplemental clips: ${capsule.source.supplementalClips.length}`,
     '',
     '## Prompt Capsule',
     '',
@@ -112,6 +150,11 @@ function main(argv = process.argv.slice(2)) {
     || process.env.A11_RUNTIME_ROOT
     || path.join(REPO_ROOT, 'runtime')
   );
+  const supplementalDir = path.resolve(
+    valueAfter(argv, '--supplemental-dir')
+    || process.env.DJEFF_PIGNON_SUPPLEMENTAL_DIR
+    || (runtimeRoot ? path.join(runtimeRoot, 'Corpus', 'private', 'djeff-pignon-rap') : DEFAULT_SUPPLEMENTAL_DIR)
+  );
   const dryRun = hasFlag(argv, '--dry-run');
   if (!fs.existsSync(sourcePath)) {
     throw new Error(`source_not_found:${sourcePath}`);
@@ -119,8 +162,11 @@ function main(argv = process.argv.slice(2)) {
 
   const raw = fs.readFileSync(sourcePath, 'utf8');
   const cleaned = normalizeTranscript(raw);
+  const supplementalClips = hasFlag(argv, '--no-supplemental')
+    ? []
+    : readSupplementalTranscripts(supplementalDir);
   const generatedAt = new Date().toISOString();
-  const capsule = buildCapsule({ cleaned, sourcePath, generatedAt });
+  const capsule = buildCapsule({ cleaned, sourcePath, generatedAt, supplementalClips });
   const outDir = path.join(runtimeRoot, 'Corpus', 'private', 'djeff-pignon-rap');
   const outputs = {
     transcript: path.join(outDir, 'pignon.transcription.txt'),
@@ -146,6 +192,7 @@ function main(argv = process.argv.slice(2)) {
       chars: capsule.source.chars,
       lines: capsule.source.lines,
       sha256: capsule.source.sha256,
+      supplementalClips: capsule.source.supplementalClips.length,
     },
   }, null, 2));
 }
@@ -166,5 +213,7 @@ module.exports = {
   applyTranscriptCorrections,
   buildCapsule,
   normalizeTranscript,
+  normalizeSupplementalTranscript,
+  readSupplementalTranscripts,
   sha256,
 };

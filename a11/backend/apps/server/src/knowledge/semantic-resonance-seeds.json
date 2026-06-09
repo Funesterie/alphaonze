@@ -175,8 +175,8 @@
       "label": "Pignon - Djeff rap voice",
       "language": "fr",
       "type": "private_corpus_capsule",
-      "aliases": ["pignon", "djeff rap", "voix djeff rap", "style djeff rap", "pignon-couronne", "double radiateur", "ipone", "cruxi", "wheeling frontal", "moto rap", "voiceStyle djeff-rap"],
-      "literal": "Capsule locale privee associee a la reference voix Djeff rap Pignon et aux paroles mecanique moto.",
+      "aliases": ["pignon", "djeff rap", "voix djeff rap", "style djeff rap", "pignon-couronne", "double radiateur", "ipone", "cruxi", "wheeling frontal", "moto rap", "voiceStyle djeff-rap", "valable", "moine", "temps", "systeme d", "debrouille", "determination", "instant present", "ne fais pas le moine", "mood simple"],
+      "literal": "Capsule locale privee associee a la reference voix Djeff rap Pignon, enrichie par des clips prives valable/moine/temps pour la posture et le grain persona.",
       "trust": 0.78,
       "temporalStatus": "local-private-2026-06-09",
       "facets": [
@@ -184,9 +184,11 @@
         { "id": "motorcycle-mechanics", "label": "mecanique moto concrete", "layer": "semantic-field", "tone": "metal", "weight": 0.9 },
         { "id": "pignon-couronne", "label": "pignon-couronne", "layer": "image", "tone": "mechanic", "weight": 0.88 },
         { "id": "street-slang-retained", "label": "argot conserve", "layer": "voice-style", "tone": "direct", "weight": 0.82 },
+        { "id": "present-action-system-d", "label": "action presente et systeme D", "layer": "ethic-flow", "tone": "grounded", "weight": 0.8 },
+        { "id": "responsibility-determination", "label": "debrouille determination responsabilite", "layer": "persona", "tone": "forward", "weight": 0.78 },
         { "id": "owned-voice-reference", "label": "reference voix consentie Djeff", "layer": "privacy", "tone": "private", "weight": 0.94 }
       ],
-      "tones": ["technical-rap", "mechanic", "street", "controlled-pressure", "private-reference"],
+      "tones": ["technical-rap", "mechanic", "street", "controlled-pressure", "present-action", "private-reference"],
       "interactions": [
         {
           "target": "vivy-songcraft",
@@ -195,7 +197,7 @@
           "weight": 0.92
         }
       ],
-      "agentGuidance": "Utiliser pour router la voix/style vers djeff-rap et garder les images moto concretes. Ne pas publier l'audio brut; ne pas transformer l'argot en texte institutionnel."
+      "agentGuidance": "Utiliser pour router la voix/style vers djeff-rap et garder les images moto concretes. Les clips supplementaires orientent le persona: mood simple, avancer droit, admettre avoir tort, ne pas faire le moine, systeme D, debrouille, determination et responsabilite. Ne pas publier l'audio brut; ne pas transformer l'argot en texte institutionnel."
     },
     {
       "id": "a11-fatigue-voice",
