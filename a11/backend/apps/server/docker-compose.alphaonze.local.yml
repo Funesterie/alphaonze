@@ -48,12 +48,18 @@ services:
       - type: bind
         source: ${A11_HOST_VOICE_OUT:-D:/projets/funesterie/a11/runtime/voice-out}
         target: /app/out
+      - type: bind
+        source: ${A11_HOST_RUNTIME:-D:/projets/funesterie/a11/runtime}
+        target: /app/runtime
+        read_only: true
     environment:
+      - A11_RUNTIME_ROOT=/app/runtime
+      - A11_VOICE_REFERENCE_LIBRARY_DIRS=/app/runtime/voice-library
       - A11_VOICE_CONVERTER_PROVIDER=${A11_VOICE_CONVERTER_PROVIDER:-xtts-rvc,ffmpeg-morph}
       - A11_VOICE_XTTS_RVC_URL=${A11_VOICE_XTTS_RVC_URL:-http://host.docker.internal:5000}
       - A11_VOICE_XTTS_RVC_PROTOCOL=${A11_VOICE_XTTS_RVC_PROTOCOL:-a11}
       - A11_VOICE_XTTS_RVC_LANGUAGE=${A11_VOICE_XTTS_RVC_LANGUAGE:-fr}
       - A11_VOICE_XTTS_RVC_TIMEOUT_SECONDS=${A11_VOICE_XTTS_RVC_TIMEOUT_SECONDS:-240}
-      - A11_VOICE_XTTS_RVC_FALLBACK=${A11_VOICE_XTTS_RVC_FALLBACK:-true}
+      - A11_VOICE_XTTS_RVC_FALLBACK=${A11_VOICE_XTTS_RVC_FALLBACK:-false}
       - A11_VOICE_CONVERSION_STRENGTH=0.45
       - A11_VOICE_DEFAULT_F0_SHIFT=-1.5

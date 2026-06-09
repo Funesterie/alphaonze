@@ -3056,7 +3056,123 @@ test('tts speak route blocks ffmpeg morph for official A11 reference voice', asy
         });
 
         assert.equal(result.response.status, 424);
-        assert.equal(result.json.diagnostic, 'a11_official_ffmpeg_morph_blocked');
+        assert.equal(result.json.diagnostic, 'official_ffmpeg_morph_blocked');
+        assert.equal(bridgeCalls.length, 1);
+        assert.equal(bridgeCalls[0].body.get('engine'), 'xtts-rvc');
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('tts speak route blocks ffmpeg morph for official Vivy identity voice', async () => {
+  const previousEnv = {
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    A11_CARTESIA_TTS_DISABLED: process.env.A11_CARTESIA_TTS_DISABLED,
+    A11_AZURE_TTS_DISABLED: process.env.A11_AZURE_TTS_DISABLED,
+    A11_OPENAI_TTS_DISABLED: process.env.A11_OPENAI_TTS_DISABLED,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    TTS_URL: process.env.TTS_URL,
+    TTS_HOST: process.env.TTS_HOST,
+    TTS_BASE_URL: process.env.TTS_BASE_URL,
+    TTS_PUBLIC_BASE_URL: process.env.TTS_PUBLIC_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const bridgeCalls = [];
+
+  process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.A11_CARTESIA_TTS_DISABLED = '1';
+  process.env.A11_AZURE_TTS_DISABLED = '1';
+  process.env.A11_OPENAI_TTS_DISABLED = '1';
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  delete process.env.A11_XTTS_RVC_URL;
+  delete process.env.TTS_URL;
+  delete process.env.TTS_HOST;
+  delete process.env.TTS_BASE_URL;
+  delete process.env.TTS_PUBLIC_BASE_URL;
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'http://voice-bridge.test/api/voice/synthesize') {
+      return {
+        ok: false,
+        status: 503,
+        async text() {
+          return JSON.stringify({ ok: false, error: 'synthesize_disabled_for_test' });
+        },
+      };
+    }
+    if (value === 'http://voice-bridge.test/api/voice/convert') {
+      bridgeCalls.push({ url: value, body: options.body });
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get(name) {
+            const header = String(name || '').toLowerCase();
+            if (header === 'content-type') return 'audio/wav';
+            if (header === 'x-a11-voice-style') return 'vivy-official-french-conversational';
+            if (header === 'x-a11-voice-engine') return 'ffmpeg-morph';
+            return '';
+          },
+        },
+        async arrayBuffer() {
+          return createPcm16Wav({ frequency: 360 });
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'Salut Jeffrey, je garde une voix Vivy propre.',
+          persona: 'vivy',
+          voicePersona: 'vivy',
+          surface: 'vivy',
+          vocalMode: 'adaptive',
+          provider: 'xtts-rvc',
+          ttsProvider: 'xtts-rvc',
+          engine: 'xtts-rvc',
+          voiceEngine: 'xtts-rvc',
+          voiceConversionEngine: 'xtts-rvc',
+          conversionEngine: 'xtts-rvc',
+          useDefaultVoiceReference: true,
+          defaultVoiceReference: true,
+          voiceReferenceRequired: true,
+          referenceVoiceRequired: true,
+          identityVoice: true,
+          useIdentityVoice: true,
+          neutralVoice: false,
+          voiceConversion: true,
+          convertVoice: true,
+          morphVoice: true,
+          rvc: true,
+          allowRvc: true,
+          allowXttsRvc: true,
+          allowLegacyVoiceBridge: true,
+          xttsRvcOptIn: true,
+        });
+
+        assert.equal(result.response.status, 424);
+        assert.equal(result.json.error, 'voice_reference_tts_unavailable');
+        assert.equal(result.json.diagnostic, 'official_ffmpeg_morph_blocked');
         assert.equal(bridgeCalls.length, 1);
         assert.equal(bridgeCalls[0].body.get('engine'), 'xtts-rvc');
       }

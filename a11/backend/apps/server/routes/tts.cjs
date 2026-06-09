@@ -2448,6 +2448,13 @@ function getAudioFfmpegBinary() {
   return String(process.env.A11_AUDIO_FFMPEG_BIN || process.env.FFMPEG_BIN || 'ffmpeg').trim() || 'ffmpeg';
 }
 
+function buildTtsOutputAudioFilter() {
+  return String(
+    process.env.A11_TTS_OUTPUT_AUDIO_FILTER
+    || 'highpass=f=70,lowpass=f=12000,acompressor=threshold=-20dB:ratio=2.2:attack=8:release=120,loudnorm=I=-16:LRA=8:TP=-1.2'
+  ).trim();
+}
+
 async function transcodeAudioBuffer(buffer, targetFormat = 'mp3') {
   if (!Buffer.isBuffer(buffer) || buffer.length <= 0) return null;
   const format = String(targetFormat || '').toLowerCase();
@@ -2467,6 +2474,7 @@ async function transcodeAudioBuffer(buffer, targetFormat = 'mp3') {
         '-i',
         inputPath,
         '-vn',
+        ...(buildTtsOutputAudioFilter() ? ['-af', buildTtsOutputAudioFilter()] : []),
         '-ac',
         '1',
         '-ar',
@@ -4029,13 +4037,13 @@ async function handleTtsSpeakRequest(req, res) {
       && (!hasDirectIdentityBridge || interactiveTts || !hasExplicitDirectIdentityBridge);
     const sendFinalizedPayload = async (basePayload) => {
       const payload = await finalizeTtsPayload(basePayload, req, vocalMode);
-      if (isOwnedOfficialReferenceRequest(req) && isFfmpegMorphVoicePayload(payload)) {
+      if (strictOfficialVoice && isFfmpegMorphVoicePayload(payload)) {
         return res.status(424).json({
           ok: false,
           error: 'voice_reference_tts_unavailable',
-          message: 'Voix officielle A11 indisponible: le runtime a propose un fallback ffmpeg-morph au lieu du moteur XTTS/RVC. La fausse voix est bloquee.',
+          message: 'Voix officielle indisponible: le runtime a propose un fallback ffmpeg-morph au lieu du moteur identitaire. La fausse voix est bloquee.',
           provider: PROVIDERS.XTTS_RVC,
-          diagnostic: 'a11_official_ffmpeg_morph_blocked',
+          diagnostic: 'official_ffmpeg_morph_blocked',
           voiceConversion: payload?.voiceConversion || null,
         });
       }
@@ -4676,13 +4684,13 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
       && (!hasDirectIdentityBridge || interactiveTts || !hasExplicitDirectIdentityBridge);
     const sendFinalizedPayload = async (basePayload) => {
       const payload = await finalizeTtsPayload(basePayload, req, vocalMode);
-      if (isOwnedOfficialReferenceRequest(req) && isFfmpegMorphVoicePayload(payload)) {
+      if (strictOfficialVoice && isFfmpegMorphVoicePayload(payload)) {
         return res.status(424).json({
           ok: false,
           error: 'voice_reference_tts_unavailable',
-          message: 'Voix officielle A11 indisponible: le runtime a propose un fallback ffmpeg-morph au lieu du moteur XTTS/RVC. La fausse voix est bloquee.',
+          message: 'Voix officielle indisponible: le runtime a propose un fallback ffmpeg-morph au lieu du moteur identitaire. La fausse voix est bloquee.',
           provider: PROVIDERS.XTTS_RVC,
-          diagnostic: 'a11_official_ffmpeg_morph_blocked',
+          diagnostic: 'official_ffmpeg_morph_blocked',
           voiceConversion: payload?.voiceConversion || null,
         });
       }
