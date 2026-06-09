@@ -335,6 +335,7 @@ function envFlag(name, fallback = false) {
 
 function isElevenLabsMusicConfigured() {
   if (envFlag('VIVY_ELEVENLABS_MUSIC_DISABLED') || envFlag('ELEVENLABS_MUSIC_DISABLED')) return false;
+  if (!envFlag('VIVY_ELEVENLABS_MUSIC_ENABLED') && !envFlag('ELEVENLABS_MUSIC_ENABLED')) return false;
   return Boolean(getElevenLabsMusicApiKey());
 }
 
@@ -349,7 +350,7 @@ function getConfiguredMusicProviders() {
     .split(/[,\s]+/)
     .map((value) => value.trim())
     .filter(Boolean);
-  const order = preferred.length ? preferred : ['suno', 'elevenlabs'];
+  const order = preferred.length ? preferred : ['suno'];
   return order.filter((provider, index, list) => list.indexOf(provider) === index);
 }
 
@@ -3357,7 +3358,7 @@ async function buildRealMusicForProduction(mode, input, req) {
     || input.makeSong === true
     || input.song === true
     || envFlag('VIVY_SUNO_AUTO')
-    || envFlag('VIVY_ELEVENLABS_MUSIC_AUTO');
+    || (envFlag('VIVY_ELEVENLABS_MUSIC_AUTO') && isElevenLabsMusicConfigured());
   if (!wantsMusic) return null;
 
   const errors = [];

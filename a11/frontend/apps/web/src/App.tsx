@@ -8577,7 +8577,7 @@ export function App() {
       const via = String(detail?.via || detail?.provider || "").trim();
       if (via) {
         const label = via === "openai-tts" || via === "openai" ? "OpenAI"
-          : via.includes("cartesia") ? "Cartesia"
+          : via.includes("cartesia") || via.includes("elevenlabs") ? "Voix legacy bloquee"
             : via.includes("xtts") || via.includes("rvc") ? "XTTS/RVC privé"
             : via === "spawn" || via === "piper" ? "Voix serveur locale"
               : via === "espeak" || via === "espeak-ng" ? "Secours robot"

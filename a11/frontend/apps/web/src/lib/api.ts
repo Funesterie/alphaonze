@@ -3498,7 +3498,7 @@ export async function ttsSpeak(
     return { success: true, audioUrl, blob };
   }
 
-  // Sinon on essaie le JSON (cas ElevenLabs / fallback)
+  // Sinon on essaie le JSON (cas fournisseur distant / fallback)
   try {
     const data = await res.json();
     if (data?.async && data?.statusUrl) {

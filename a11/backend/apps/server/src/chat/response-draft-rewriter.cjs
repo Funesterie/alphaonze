@@ -290,7 +290,7 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
   }
 
   if (responseDraft.flags.includes('voice_capability_denial')) {
-    return "Tu as raison de parler de voix: ma réponse texte est séparée du module TTS, mais la voix entendue passe bien par le backend Funesterie. Pour A11, la cible officielle est la référence WAV Djeff a11-official-stern-french via XTTS/RVC. Pour Kaen44, c'est le WAV familial kaen44-official-french-narrator via XTTS/RVC. Si tu entends Cartesia, ElevenLabs, Donna ou une voix hors persona, c'est un mauvais routage ou un fallback.";
+    return "Tu as raison de parler de voix: ma réponse texte est séparée du module TTS, mais la voix entendue passe bien par le backend Funesterie. Pour A11, la cible officielle est la référence WAV Djeff a11-official-stern-french via XTTS/RVC. Pour Kaen44, c'est le WAV familial kaen44-official-french-narrator via XTTS/RVC. Si tu entends Cartesia, ElevenLabs, Donna ou une voix hors persona, c'est un mauvais routage legacy bloque par defaut.";
   }
 
   if (responseDraft.flags.includes('tool_inventory_dump')) {

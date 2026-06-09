@@ -22,8 +22,7 @@ const PROVIDERS = Object.freeze({
 
 // Provider resolution order for production requests
 const PROVIDER_ORDER = [
-  PROVIDERS.ELEVENLABS,
-  PROVIDERS.CARTESIA,
+  PROVIDERS.XTTS_RVC,
   PROVIDERS.AZURE,
   PROVIDERS.OPENAI,
   PROVIDERS.PIPER,
@@ -39,6 +38,11 @@ const LEGACY_EXPERIMENTAL_PROVIDERS = [
   PROVIDERS.CHATTERBOX,
   PROVIDERS.XTTS_RVC,
 ];
+
+const LEGACY_CLOUD_TTS_PROVIDERS = new Set([
+  PROVIDERS.CARTESIA,
+  PROVIDERS.ELEVENLABS,
+]);
 
 // Official personas — these may never fall back to a demo model
 const OFFICIAL_PERSONAS = new Set(['a11', 'kaen44', 'vivy']);
@@ -65,7 +69,7 @@ const VOICE_PERSONA_DIRECTIONS = Object.freeze({
       'Official path: owned Djeff WAV reference through the Funesterie XTTS/RVC bridge when available.',
       'Optional path: a11-voix-de-lait local reference is a persona/mood style for measured interior and symbolic clarity; it must not override the official A11 voice unless explicitly selected.',
       'Optional path: djeff-rap local reference is a consented Djeff rap style for Vivy Studio and duet drafting; it must not override A11 unless explicitly selected.',
-      'Ready-made cloud voices are fallback/explicit override only for A11, not the official default.',
+      'Cartesia/ElevenLabs are legacy cloud providers and stay disabled by default; use owned local references first.',
       'Target original A11: low, mission-focused French diction with restrained warmth.',
     ],
     prompt:
@@ -80,7 +84,7 @@ const VOICE_PERSONA_DIRECTIONS = Object.freeze({
     protectedReferences: [],
     referenceClipNotes: [
       'Official path: owned family WAV reference through the Funesterie XTTS/RVC bridge when available.',
-      'Ready-made cloud voices are fallback/explicit override only for Kaen44, not the official default.',
+      'Cartesia/ElevenLabs are legacy cloud providers and stay disabled by default; use the owned family reference first.',
       'Target original Kaen44: sharp desk-operator timing, confident warmth, fast wit.',
     ],
     prompt:
@@ -90,15 +94,15 @@ const VOICE_PERSONA_DIRECTIONS = Object.freeze({
     persona: 'vivy',
     label: 'Vivy official French creative voice',
     referenceMoodboard: [
-      'Clear conversational French female voice, creative and luminous, licensed provider voice only.',
+      'Clear conversational French female voice, creative and luminous, routed through Funesterie-owned or explicitly approved references when available.',
     ],
     protectedReferences: [],
     referenceClipNotes: [
-      'Official path: ready-made licensed French TTS voice. Anime/song references are legacy opt-in only.',
+      'Official path: Funesterie-owned or explicitly approved voice references. Cartesia/ElevenLabs are legacy opt-in only.',
       'Target original Vivy: luminous AI-singer mood, precise emotion, clean vowels, gentle musical lift.',
     ],
     prompt:
-      'Voix Vivy originale: claire, musicale, lumineuse, precise emotionnellement, avec phrasing creatif et douceur de scene. Utilise une voix prete a l emploi licenciee; ne clone aucune chanteuse, comedienne ou personnage.',
+      'Voix Vivy originale: claire, musicale, lumineuse, precise emotionnellement, avec phrasing creatif et douceur de scene. Utilise les references possedees ou explicitement approuvees par Funesterie quand elles sont disponibles; ne clone aucune chanteuse, comedienne ou personnage.',
   }),
 });
 
@@ -107,8 +111,6 @@ const OFFICIAL_READY_VOICE_PROFILES = Object.freeze({
     styleId: 'a11-official-stern-french',
     displayName: 'A11 - Djeff WAV XTTS/RVC',
     providerLabels: Object.freeze({
-      [PROVIDERS.ELEVENLABS]: 'George - Warm Captivating Storyteller',
-      [PROVIDERS.CARTESIA]: 'Laurent - Dependable Anchor',
       [PROVIDERS.AZURE]: 'fr-FR-Remy:DragonHDLatestNeural',
       [PROVIDERS.OPENAI]: 'onyx',
       [PROVIDERS.XTTS_RVC]: 'Djeff WAV - A11 official reference',
@@ -124,7 +126,6 @@ const OFFICIAL_READY_VOICE_PROFILES = Object.freeze({
     styleId: 'kaen44-official-french-narrator',
     displayName: 'Kaen44 - French Narrator Lady',
     providerLabels: Object.freeze({
-      [PROVIDERS.CARTESIA]: 'French Narrator Lady',
       [PROVIDERS.AZURE]: 'fr-FR-Vivienne:DragonHDLatestNeural',
       [PROVIDERS.OPENAI]: 'sage',
       [PROVIDERS.XTTS_RVC]: 'Family WAV - Kaen44 official reference',
@@ -137,11 +138,11 @@ const OFFICIAL_READY_VOICE_PROFILES = Object.freeze({
   }),
   vivy: Object.freeze({
     styleId: 'vivy-official-french-conversational',
-    displayName: 'Vivy - Manon Bright Belle',
+    displayName: 'Vivy - Funesterie reference',
     providerLabels: Object.freeze({
-      [PROVIDERS.CARTESIA]: 'Manon - Bright Belle',
       [PROVIDERS.AZURE]: 'fr-FR-Vivienne:DragonHDLatestNeural',
       [PROVIDERS.OPENAI]: 'coral',
+      [PROVIDERS.XTTS_RVC]: 'Vivy Funesterie approved reference',
       [PROVIDERS.PIPER]: 'fr_FR-siwis-medium',
     }),
     cartesiaVoiceId: '2f8e82c4-cb94-4e6d-8b6a-29bf58ceb60a',
@@ -159,6 +160,23 @@ function envFlag(name, fallback = false) {
 
 function hasEnvValue(...names) {
   return names.some((name) => String(process.env[name] || '').trim());
+}
+
+function isLegacyCloudTtsProvider(provider = '') {
+  return LEGACY_CLOUD_TTS_PROVIDERS.has(String(provider || '').trim().toLowerCase());
+}
+
+function isLegacyCloudTtsProviderEnabled(provider = '') {
+  const normalized = String(provider || '').trim().toLowerCase();
+  if (normalized === PROVIDERS.CARTESIA) {
+    if (envFlag('A11_CARTESIA_TTS_DISABLED') || envFlag('CARTESIA_TTS_DISABLED')) return false;
+    return envFlag('A11_CARTESIA_TTS_ENABLED') || envFlag('CARTESIA_TTS_ENABLED');
+  }
+  if (normalized === PROVIDERS.ELEVENLABS) {
+    if (envFlag('A11_ELEVENLABS_TTS_DISABLED') || envFlag('ELEVENLABS_TTS_DISABLED')) return false;
+    return envFlag('A11_ELEVENLABS_TTS_ENABLED') || envFlag('ELEVENLABS_TTS_ENABLED');
+  }
+  return true;
 }
 
 function getReadyVoiceProfile(persona = 'a11', provider = '') {
@@ -184,12 +202,12 @@ function normalizePersonaKey(persona = '') {
 function isProviderRuntimeConfigured(provider) {
   const normalized = String(provider || '').trim().toLowerCase();
   if (normalized === PROVIDERS.CARTESIA) {
-    if (envFlag('A11_CARTESIA_TTS_DISABLED') || envFlag('CARTESIA_TTS_DISABLED')) return false;
+    if (!isLegacyCloudTtsProviderEnabled(normalized)) return false;
     return hasEnvValue('A11_CARTESIA_API_KEY', 'CARTESIA_API_KEY', 'CARTESIA_TOKEN')
       || hasEnvValue('A11_CARTESIA_API_KEY_FILE', 'CARTESIA_API_KEY_FILE');
   }
   if (normalized === PROVIDERS.ELEVENLABS) {
-    if (envFlag('A11_ELEVENLABS_TTS_DISABLED') || envFlag('ELEVENLABS_TTS_DISABLED')) return false;
+    if (!isLegacyCloudTtsProviderEnabled(normalized)) return false;
     return hasEnvValue('A11_ELEVENLABS_API_KEY', 'ELEVENLABS_API_KEY', 'XI_API_KEY')
       || hasEnvValue('A11_ELEVENLABS_API_KEY_FILE', 'ELEVENLABS_API_KEY_FILE');
   }
@@ -243,8 +261,8 @@ const MANIFEST = Object.freeze({
     providers: {
       [PROVIDERS.GPT_SOVITS]: { configured: false, modelPath: null, note: 'Pending trained original A11 cybernetic voice. Licensed/consented data only; no T-800/actor clone.' },
       [PROVIDERS.CHATTERBOX]: { configured: false, refClipId: null, note: 'Pending approved ref clip for original A11 direction; public film clips are moodboard only.' },
-      [PROVIDERS.ELEVENLABS]: { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.a11.elevenLabsVoiceId, note: 'Fallback/explicit override A11 ready-made licensed voice.' },
-      [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.a11.cartesiaVoiceId, note: 'Fallback/explicit override ready-made licensed voice.' },
+      [PROVIDERS.ELEVENLABS]: { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.a11.elevenLabsVoiceId, note: 'Legacy cloud voice disabled by default; explicit emergency opt-in only.' },
+      [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.a11.cartesiaVoiceId, note: 'Legacy cloud voice disabled by default; explicit emergency opt-in only.' },
       [PROVIDERS.AZURE]:      { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.a11.azureVoice, note: 'Fallback/explicit override HD ready-made voice.' },
       [PROVIDERS.OPENAI]:     { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.a11.openAiVoice, note: 'Fallback/explicit override high-quality ready-made voice.' },
       [PROVIDERS.XTTS_RVC]:   { configured: 'runtime', modelPath: 'voice-library/a11-official-stern-french.wav', optionalStylePath: 'voice-library/a11-voix-de-lait.wav', optionalRapStylePath: 'voice-library/djeff-rap.wav', note: 'Official A11 bridge using the owned Djeff WAV reference when available; optional a11-voix-de-lait and djeff-rap styles are explicit opt-in only.' },
@@ -258,7 +276,7 @@ const MANIFEST = Object.freeze({
     providers: {
       [PROVIDERS.GPT_SOVITS]: { configured: false, modelPath: null, note: 'Pending trained original Kaen44 executive voice. Licensed/consented data only; no real-person or character clone.' },
       [PROVIDERS.CHATTERBOX]: { configured: false, refClipId: null, note: 'Pending approved ref clip for original Kaen44 direction; public TV/audio clips are moodboard only.' },
-      [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.kaen44.cartesiaVoiceId, note: 'Fallback/explicit override ready-made licensed voice.' },
+      [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.kaen44.cartesiaVoiceId, note: 'Legacy cloud voice disabled by default; explicit emergency opt-in only.' },
       [PROVIDERS.AZURE]:      { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.kaen44.azureVoice, note: 'Fallback/explicit override HD ready-made voice.' },
       [PROVIDERS.OPENAI]:     { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.kaen44.openAiVoice, note: 'Fallback/explicit override high-quality ready-made voice.' },
       [PROVIDERS.XTTS_RVC]:   { configured: 'runtime', modelPath: 'voice-library/kaen44-official-french-narrator.wav', note: 'Official Kaen44 bridge using the owned family WAV reference when available.' },
@@ -272,10 +290,10 @@ const MANIFEST = Object.freeze({
     providers: {
       [PROVIDERS.GPT_SOVITS]: { configured: false, modelPath: null, note: 'Pending trained original Vivy musical voice. Licensed/consented data only; no anime singer/voice actor clone.' },
       [PROVIDERS.CHATTERBOX]: { configured: false, refClipId: null, note: 'Pending approved ref clip for original Vivy direction; public anime songs are moodboard only.' },
-      [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.vivy.cartesiaVoiceId, note: 'Primary ready-made licensed voice.' },
+      [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.vivy.cartesiaVoiceId, note: 'Legacy cloud voice disabled by default; explicit emergency opt-in only.' },
       [PROVIDERS.AZURE]:      { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.vivy.azureVoice, note: 'Secondary HD ready-made voice.' },
       [PROVIDERS.OPENAI]:     { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.vivy.openAiVoice, note: 'Tertiary high-quality ready-made voice.' },
-      [PROVIDERS.XTTS_RVC]:   { configured: 'runtime', modelPath: null, note: 'Legacy opt-in bridge only; never auto-selected unless explicitly enabled.' },
+      [PROVIDERS.XTTS_RVC]:   { configured: 'runtime', modelPath: 'voice-library/vivy.wav', note: 'Official Vivy bridge using the Funesterie-approved local reference when available.' },
       [PROVIDERS.PIPER]:      { configured: true,  note: 'Neutral fallback when cloud voices are not configured.' },
     },
   },
@@ -328,6 +346,14 @@ function resolveVoiceProvider(persona, options = {}) {
 
   // Explicit provider requested — honour it only if allowed
   if (explicitProvider) {
+    if (isLegacyCloudTtsProvider(explicitProvider) && !isLegacyCloudTtsProviderEnabled(explicitProvider)) {
+      return {
+        provider: PROVIDERS.PIPER,
+        configured: true,
+        note: `${explicitProvider} is a disabled legacy cloud voice provider; using the local neutral fallback.`,
+        diagnostic: 'legacy_cloud_tts_disabled',
+      };
+    }
     if (explicitProvider === PROVIDERS.XTTS_RVC && !options.allowRvc) {
       return {
         provider: PROVIDERS.PIPER,
@@ -397,6 +423,7 @@ module.exports = {
   PROVIDER_ORDER,
   LOCAL_PROVIDER_ORDER,
   LEGACY_EXPERIMENTAL_PROVIDERS,
+  LEGACY_CLOUD_TTS_PROVIDERS,
   OFFICIAL_PERSONAS,
   VOICE_REFERENCE_POLICY,
   FAMILY_VOICE_IDENTITIES,
@@ -409,6 +436,8 @@ module.exports = {
   buildVoicePersonaInstruction,
   resolveVoiceProvider,
   isProviderRuntimeConfigured,
+  isLegacyCloudTtsProvider,
+  isLegacyCloudTtsProviderEnabled,
   isDemoModel,
   guardDemoModel,
 };

@@ -97,7 +97,7 @@ test('Vivy Studio calibrates Djeff rap voice through the owned A11 persona', () 
   assert.equal(result.mode, 'voice');
   assert.match(result.title, /Djeff rap/);
   assert.match(result.brief, /voicePersona: a11/);
-  assert.match(result.brief, /Djeff\/A11 officielle/);
+  assert.match(result.brief, /Djeff rap Pignon locale/);
   assert.match(result.brief, /chaîne sur couronne|chaine sur couronne/i);
   assert.match(result.brief, /Ne pas publier la référence brute/);
   assert.match(JSON.stringify(result.actions), /Tester Voix Djeff rap/);
@@ -262,11 +262,13 @@ test('POST /api/vivy/studio/produce does not attach placeholder audio unless req
   });
 });
 
-test('POST /api/vivy/studio/produce can generate real ElevenLabs music for founder accounts', async () => {
+test('POST /api/vivy/studio/produce can generate ElevenLabs music only with legacy opt-in', async () => {
   const previousEnv = {
     VIVY_ELEVENLABS_API_KEY: process.env.VIVY_ELEVENLABS_API_KEY,
+    VIVY_ELEVENLABS_MUSIC_ENABLED: process.env.VIVY_ELEVENLABS_MUSIC_ENABLED,
     VIVY_ELEVENLABS_BASE_URL: process.env.VIVY_ELEVENLABS_BASE_URL,
     VIVY_ELEVENLABS_MUSIC_MODEL: process.env.VIVY_ELEVENLABS_MUSIC_MODEL,
+    VIVY_MUSIC_PROVIDER: process.env.VIVY_MUSIC_PROVIDER,
   };
   const previousFetch = global.fetch;
   const musicBodies = [];
@@ -279,8 +281,10 @@ test('POST /api/vivy/studio/produce can generate real ElevenLabs music for found
   };
 
   process.env.VIVY_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
+  process.env.VIVY_ELEVENLABS_MUSIC_ENABLED = 'true';
   process.env.VIVY_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
   process.env.VIVY_ELEVENLABS_MUSIC_MODEL = 'music_v1';
+  process.env.VIVY_MUSIC_PROVIDER = 'elevenlabs';
   global.fetch = async (url, options = {}) => {
     const value = String(url);
     if (value === 'https://api.elevenlabs.test/v1/music?output_format=mp3_44100_128') {

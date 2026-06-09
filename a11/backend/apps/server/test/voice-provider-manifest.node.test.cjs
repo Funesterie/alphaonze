@@ -8,6 +8,7 @@ const {
   FAMILY_VOICE_IDENTITIES,
   PERSONAL_VOICE_POLICY,
   PROVIDERS,
+  PROVIDER_ORDER,
   LOCAL_PROVIDER_ORDER,
   OFFICIAL_READY_VOICE_PROFILES,
   OFFICIAL_PERSONAS,
@@ -16,6 +17,8 @@ const {
   getReadyVoiceProfile,
   resolveVoiceProvider,
   isProviderRuntimeConfigured,
+  isLegacyCloudTtsProvider,
+  isLegacyCloudTtsProviderEnabled,
   isDemoModel,
   guardDemoModel,
 } = require('../src/tts/voice-provider-manifest.cjs');
@@ -69,7 +72,7 @@ describe('voice-provider-manifest', () => {
   });
 
   describe('OFFICIAL_READY_VOICE_PROFILES', () => {
-    it('defines ready-made voice choices for every official persona', () => {
+    it('defines ready-made voice choices for every official persona without legacy labels', () => {
       for (const persona of ['a11', 'kaen44', 'vivy']) {
         const profile = OFFICIAL_READY_VOICE_PROFILES[persona];
         assert.ok(profile.styleId);
@@ -77,6 +80,7 @@ describe('voice-provider-manifest', () => {
         assert.ok(profile.azureVoice);
         assert.ok(profile.openAiVoice);
         assert.equal(getReadyVoiceProfile(persona, PROVIDERS.CARTESIA).provider, PROVIDERS.CARTESIA);
+        assert.doesNotMatch(getReadyVoiceProfile(persona, PROVIDERS.CARTESIA).label, /Laurent|Manon|George|ElevenLabs|Cartesia/i);
       }
     });
 
@@ -85,17 +89,20 @@ describe('voice-provider-manifest', () => {
       assert.doesNotMatch(serialized, /terminator|donna paulsen|t-800|schwarzenegger/);
     });
 
-    it('uses the current approved Cartesia voice picks', () => {
+    it('keeps legacy cloud voice ids only for old payload recognition', () => {
       assert.equal(OFFICIAL_READY_VOICE_PROFILES.a11.elevenLabsVoiceId, 'JBFqnCBsd6RMkjVDRZzb');
       assert.equal(OFFICIAL_READY_VOICE_PROFILES.a11.cartesiaVoiceId, '7345dfa5-ee04-44d2-abf4-29262b880ab4');
       assert.equal(OFFICIAL_READY_VOICE_PROFILES.kaen44.cartesiaVoiceId, '8832a0b5-47b2-4751-bb22-6a8e2149303d');
       assert.equal(OFFICIAL_READY_VOICE_PROFILES.vivy.cartesiaVoiceId, '2f8e82c4-cb94-4e6d-8b6a-29bf58ceb60a');
+      assert.ok(isLegacyCloudTtsProvider(PROVIDERS.CARTESIA));
+      assert.ok(isLegacyCloudTtsProvider(PROVIDERS.ELEVENLABS));
     });
   });
 
   describe('resolveVoiceProvider — official personas', () => {
     it('local/basic provider order keeps cloud voices out of the automatic path', () => {
       assert.deepEqual(LOCAL_PROVIDER_ORDER, [PROVIDERS.XTTS_RVC, PROVIDERS.PIPER]);
+      assert.deepEqual(PROVIDER_ORDER, [PROVIDERS.XTTS_RVC, PROVIDERS.AZURE, PROVIDERS.OPENAI, PROVIDERS.PIPER]);
     });
 
     for (const persona of ['a11', 'kaen44', 'vivy']) {
@@ -105,17 +112,23 @@ describe('voice-provider-manifest', () => {
         assert.equal(result.configured, true);
       });
 
-      it(`${persona}: auto-selects Cartesia when its key is configured`, () => {
+      it(`${persona}: ignores Cartesia keys unless the legacy provider is explicitly enabled`, () => {
         const previous = {
           A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+          A11_CARTESIA_TTS_ENABLED: process.env.A11_CARTESIA_TTS_ENABLED,
           A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+          A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
         };
         process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
         delete process.env.A11_ELEVENLABS_API_KEY;
+        delete process.env.A11_CARTESIA_TTS_ENABLED;
+        delete process.env.A11_ELEVENLABS_TTS_ENABLED;
         try {
-          assert.equal(isProviderRuntimeConfigured(PROVIDERS.CARTESIA), true);
+          assert.equal(isLegacyCloudTtsProviderEnabled(PROVIDERS.CARTESIA), false);
+          assert.equal(isProviderRuntimeConfigured(PROVIDERS.CARTESIA), false);
           const result = resolveVoiceProvider(persona);
-          assert.equal(result.provider, PROVIDERS.CARTESIA);
+          assert.notEqual(result.provider, PROVIDERS.CARTESIA);
+          assert.notEqual(result.provider, PROVIDERS.ELEVENLABS);
           assert.equal(result.configured, true);
         } finally {
           for (const [key, value] of Object.entries(previous)) {
@@ -143,16 +156,22 @@ describe('voice-provider-manifest', () => {
       });
     }
 
-    it('a11: auto-selects ElevenLabs before Cartesia when configured', () => {
+    it('a11: ignores ElevenLabs keys unless the legacy provider is explicitly enabled', () => {
       const previous = {
         A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+        A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
         A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+        A11_CARTESIA_TTS_ENABLED: process.env.A11_CARTESIA_TTS_ENABLED,
       };
       process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
       delete process.env.A11_CARTESIA_API_KEY;
+      delete process.env.A11_ELEVENLABS_TTS_ENABLED;
+      delete process.env.A11_CARTESIA_TTS_ENABLED;
       try {
         const result = resolveVoiceProvider('a11');
-        assert.equal(result.provider, PROVIDERS.ELEVENLABS);
+        assert.equal(isProviderRuntimeConfigured(PROVIDERS.ELEVENLABS), false);
+        assert.notEqual(result.provider, PROVIDERS.ELEVENLABS);
+        assert.notEqual(result.provider, PROVIDERS.CARTESIA);
         assert.equal(result.configured, true);
       } finally {
         for (const [key, value] of Object.entries(previous)) {

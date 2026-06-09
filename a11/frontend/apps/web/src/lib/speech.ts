@@ -32,7 +32,7 @@ let currentAudio: HTMLAudioElement | null = null;
 let currentAudioObjectUrl: string | null = null;
 let serverTtsDisabledUntil = 0;
 const OFFICIAL_VOICE_PERSONAS = new Set(['a11', 'kaen44', 'k44', 'kaen', 'vivy']);
-const IDENTITY_VOICE_PROVIDERS = new Set(['xtts-rvc', 'cartesia', 'elevenlabs', 'azure', 'openai']);
+const IDENTITY_VOICE_PROVIDERS = new Set(['xtts-rvc', 'azure', 'openai']);
 
 // Unlock audio context on first user interaction (required by autoplay policy)
 let _audioUnlocked = false;

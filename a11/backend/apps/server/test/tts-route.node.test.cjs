@@ -1089,7 +1089,7 @@ test('vivy jobs route exposes a Bat/Rome async official TTS job with web audio o
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
   };
   const previousFetch = global.fetch;
-  const cartesiaBodies = [];
+  const bridgeCalls = [];
 
   process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
   process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
@@ -1103,17 +1103,34 @@ test('vivy jobs route exposes a Bat/Rome async official TTS job with web audio o
   global.fetch = async (url, options = {}) => {
     const value = String(url);
     if (value === 'https://api.cartesia.test/tts/bytes') {
-      cartesiaBodies.push(JSON.parse(String(options.body || '{}')));
+      throw new Error('cartesia_should_not_run_for_vivy_official_job');
+    }
+    if (value === 'http://voice-bridge.test/api/voice/synthesize') {
       return {
-        ok: true,
-        status: 200,
-        async arrayBuffer() {
-          return Buffer.from('cartesia-mp3');
+        ok: false,
+        status: 503,
+        async text() {
+          return JSON.stringify({ ok: false, error: 'synthesize_disabled_for_test' });
         },
       };
     }
-    if (value === 'http://voice-bridge.test/api/voice/synthesize') {
-      throw new Error('legacy_xtts_rvc_should_not_run_for_vivy_official_job');
+    if (value === 'http://voice-bridge.test/api/voice/convert') {
+      bridgeCalls.push({ url: value, body: options.body });
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get(name) {
+            const header = String(name || '').toLowerCase();
+            if (header === 'content-type') return 'audio/wav';
+            if (header === 'x-a11-voice-engine') return 'xtts-rvc';
+            return '';
+          },
+        },
+        async arrayBuffer() {
+          return createPcm16Wav({ frequency: 220 });
+        },
+      };
     }
     if (value === 'http://a11-voice:5002/api/tts') {
       throw new Error('neutral_tts_should_not_run_for_vivy_job');
@@ -1151,12 +1168,9 @@ test('vivy jobs route exposes a Bat/Rome async official TTS job with web audio o
         }
 
         assert.equal(polled.state, 'done');
-        assert.equal(polled.provider, 'cartesia');
-        assert.match(polled.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-cartesia\.mp3$/);
-        assert.equal(cartesiaBodies.length, 1);
-        assert.equal(cartesiaBodies[0].language, 'fr');
-        assert.equal(cartesiaBodies[0].output_format.container, 'mp3');
-        assert.equal(cartesiaBodies[0].voice.mode, 'id');
+        assert.equal(polled.provider, 'xtts-rvc');
+        assert.match(polled.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
+        assert.equal(bridgeCalls.length, 1);
       }
     );
   } finally {
@@ -1182,7 +1196,7 @@ test('vivy jobs route keeps stale private voice state away from the local GPU wo
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
   };
   const previousFetch = global.fetch;
-  const cartesiaBodies = [];
+  const bridgeCalls = [];
 
   process.env.A11_TTS_LOCAL_GPU_WORKER_ENABLED = '1';
   process.env.A11_LOCAL_GPU_WORKER_TOKEN = 'test-local-gpu-worker-token';
@@ -1198,18 +1212,34 @@ test('vivy jobs route keeps stale private voice state away from the local GPU wo
   global.fetch = async (url, options = {}) => {
     const value = String(url);
     if (value === 'https://api.cartesia.test/tts/bytes') {
-      cartesiaBodies.push(JSON.parse(String(options.body || '{}')));
+      throw new Error('cartesia_should_not_run_for_stale_vivy_private_state');
+    }
+    if (value === 'http://voice-bridge.test/api/voice/synthesize') {
       return {
-        ok: true,
-        status: 200,
-        async arrayBuffer() {
-          return Buffer.from('cartesia-vivy-private-state-mp3');
+        ok: false,
+        status: 503,
+        async text() {
+          return JSON.stringify({ ok: false, error: 'synthesize_disabled_for_test' });
         },
       };
     }
-    if (value === 'http://voice-bridge.test/api/voice/convert'
-      || value === 'http://voice-bridge.test/api/voice/synthesize') {
-      throw new Error('local_gpu_or_xtts_rvc_should_not_run_for_stale_vivy_private_state');
+    if (value === 'http://voice-bridge.test/api/voice/convert') {
+      bridgeCalls.push({ url: value, body: options.body });
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get(name) {
+            const header = String(name || '').toLowerCase();
+            if (header === 'content-type') return 'audio/wav';
+            if (header === 'x-a11-voice-engine') return 'xtts-rvc';
+            return '';
+          },
+        },
+        async arrayBuffer() {
+          return createPcm16Wav({ frequency: 210 });
+        },
+      };
     }
     if (value === 'http://a11-voice:5002/api/tts') {
       throw new Error('piper_http_should_not_run_for_stale_vivy_private_state');
@@ -1246,10 +1276,9 @@ test('vivy jobs route keeps stale private voice state away from the local GPU wo
         }
 
         assert.equal(polled.state, 'done');
-        assert.equal(polled.provider, 'cartesia');
-        assert.match(polled.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-cartesia\.mp3$/);
-        assert.equal(cartesiaBodies.length, 1);
-        assert.equal(cartesiaBodies[0].voice.id, '2f8e82c4-cb94-4e6d-8b6a-29bf58ceb60a');
+        assert.equal(polled.provider, 'xtts-rvc');
+        assert.match(polled.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
+        assert.equal(bridgeCalls.length, 1);
       }
     );
   } finally {
@@ -1408,7 +1437,7 @@ test('tts piper route selects persona-specific local Piper voice when cloud TTS 
   }
 });
 
-test('tts speak route uses Cartesia ready-made voice before legacy bridge for official persona voice', async () => {
+test('tts speak route can use Cartesia only when legacy opt-in is enabled', async () => {
   const previousEnv = {
     A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
     A11_VOICE_XTTS_RVC_RETRIES: process.env.A11_VOICE_XTTS_RVC_RETRIES,
@@ -1416,6 +1445,7 @@ test('tts speak route uses Cartesia ready-made voice before legacy bridge for of
     A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
     A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
     A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+    A11_CARTESIA_TTS_ENABLED: process.env.A11_CARTESIA_TTS_ENABLED,
     A11_CARTESIA_BASE_URL: process.env.A11_CARTESIA_BASE_URL,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
@@ -1431,6 +1461,7 @@ test('tts speak route uses Cartesia ready-made voice before legacy bridge for of
   process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
   process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
   process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
+  process.env.A11_CARTESIA_TTS_ENABLED = 'true';
   process.env.A11_CARTESIA_BASE_URL = 'https://api.cartesia.test';
   process.env.ENABLE_PIPER_HTTP = 'true';
   process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
@@ -1485,7 +1516,7 @@ test('tts speak route uses Cartesia ready-made voice before legacy bridge for of
         assert.equal(result.json.provider, 'cartesia');
         assert.equal(result.json.via, 'cartesia-tts');
         assert.equal(result.json.providerCapabilities.readyMadeVoice, true);
-        assert.match(result.json.voiceReference.label, /Laurent/i);
+        assert.match(result.json.voiceReference.label, /A11/i);
         assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-cartesia\.mp3$/);
         assert.equal(cartesiaBodies.length, 1);
         assert.equal(cartesiaBodies[0].voice.id, '7345dfa5-ee04-44d2-abf4-29262b880ab4');
@@ -1501,9 +1532,10 @@ test('tts speak route uses Cartesia ready-made voice before legacy bridge for of
   }
 });
 
-test('tts speak route uses ElevenLabs as the A11 voice mode when configured', async () => {
+test('tts speak route can use ElevenLabs only when legacy opt-in is enabled', async () => {
   const previousEnv = {
     A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+    A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
     A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
     A11_ELEVENLABS_MODEL: process.env.A11_ELEVENLABS_MODEL,
     A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
@@ -1516,6 +1548,7 @@ test('tts speak route uses ElevenLabs as the A11 voice mode when configured', as
   const elevenLabsBodies = [];
 
   process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
+  process.env.A11_ELEVENLABS_TTS_ENABLED = 'true';
   process.env.A11_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
   process.env.A11_ELEVENLABS_MODEL = 'eleven_multilingual_v2';
   process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
@@ -1568,7 +1601,7 @@ test('tts speak route uses ElevenLabs as the A11 voice mode when configured', as
         assert.equal(result.response.status, 200);
         assert.equal(result.json.provider, 'elevenlabs');
         assert.equal(result.json.via, 'elevenlabs-tts');
-        assert.match(result.json.voiceReference.label, /George/i);
+        assert.match(result.json.voiceReference.label, /A11/i);
         assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-elevenlabs\.mp3$/);
         assert.equal(elevenLabsBodies.length, 1);
         assert.equal(elevenLabsBodies[0].model_id, 'eleven_multilingual_v2');
@@ -1670,12 +1703,13 @@ test('tts speak route treats official persona alone as identity voice request', 
   }
 });
 
-test('tts speak route keeps Vivy official tests on Cartesia and away from XTTS/RVC', async () => {
+test('tts speak route can use Vivy Cartesia only when legacy opt-in is enabled', async () => {
   const previousEnv = {
     A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
     A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
     A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
     A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+    A11_CARTESIA_TTS_ENABLED: process.env.A11_CARTESIA_TTS_ENABLED,
     A11_CARTESIA_BASE_URL: process.env.A11_CARTESIA_BASE_URL,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
@@ -1686,6 +1720,7 @@ test('tts speak route keeps Vivy official tests on Cartesia and away from XTTS/R
   process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
   process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
   process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
+  process.env.A11_CARTESIA_TTS_ENABLED = 'true';
   process.env.A11_CARTESIA_BASE_URL = 'https://api.cartesia.test';
   process.env.ENABLE_PIPER_HTTP = 'true';
   process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
@@ -1728,6 +1763,8 @@ test('tts speak route keeps Vivy official tests on Cartesia and away from XTTS/R
           surface: 'vivy',
           provider: 'cartesia',
           ttsProvider: 'cartesia',
+          forceCloudTts: true,
+          useReadyMadeCloudVoice: true,
           useDefaultVoiceReference: true,
           defaultVoiceReference: true,
           voiceReferenceRequired: true,
@@ -1740,7 +1777,7 @@ test('tts speak route keeps Vivy official tests on Cartesia and away from XTTS/R
         assert.equal(result.response.status, 200);
         assert.equal(result.json.provider, 'cartesia');
         assert.equal(result.json.via, 'cartesia-tts');
-        assert.match(result.json.voiceReference.label, /Manon/i);
+        assert.match(result.json.voiceReference.label, /Vivy/i);
         assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-cartesia\.mp3$/);
         assert.equal(cartesiaBodies.length, 1);
         assert.equal(cartesiaBodies[0].voice.id, '2f8e82c4-cb94-4e6d-8b6a-29bf58ceb60a');
@@ -1755,7 +1792,7 @@ test('tts speak route keeps Vivy official tests on Cartesia and away from XTTS/R
   }
 });
 
-test('tts async Vivy official Cartesia jobs bypass the local GPU worker', async () => {
+test('tts async Vivy Cartesia jobs require legacy opt-in and bypass the local GPU worker', async () => {
   const previousEnv = {
     A11_TTS_LOCAL_GPU_WORKER_ENABLED: process.env.A11_TTS_LOCAL_GPU_WORKER_ENABLED,
     A11_LOCAL_GPU_WORKER_TOKEN: process.env.A11_LOCAL_GPU_WORKER_TOKEN,
@@ -1764,6 +1801,7 @@ test('tts async Vivy official Cartesia jobs bypass the local GPU worker', async 
     A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
     A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
     A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+    A11_CARTESIA_TTS_ENABLED: process.env.A11_CARTESIA_TTS_ENABLED,
     A11_CARTESIA_BASE_URL: process.env.A11_CARTESIA_BASE_URL,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
@@ -1777,6 +1815,7 @@ test('tts async Vivy official Cartesia jobs bypass the local GPU worker', async 
   process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
   process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
   process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
+  process.env.A11_CARTESIA_TTS_ENABLED = 'true';
   process.env.A11_CARTESIA_BASE_URL = 'https://api.cartesia.test';
   process.env.ENABLE_PIPER_HTTP = 'true';
   process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
@@ -1819,6 +1858,8 @@ test('tts async Vivy official Cartesia jobs bypass the local GPU worker', async 
           surface: 'vivy',
           provider: 'cartesia',
           ttsProvider: 'cartesia',
+          forceCloudTts: true,
+          useReadyMadeCloudVoice: true,
           ttsAsync: true,
           useDefaultVoiceReference: true,
           defaultVoiceReference: true,
@@ -1855,7 +1896,7 @@ test('tts async Vivy official Cartesia jobs bypass the local GPU worker', async 
   }
 });
 
-test('tts async official auto voices prefer configured Cartesia over the local GPU worker', async () => {
+test('tts async official auto voices prefer XTTS/RVC over configured legacy cloud voices', async () => {
   const previousEnv = {
     A11_TTS_LOCAL_GPU_WORKER_ENABLED: process.env.A11_TTS_LOCAL_GPU_WORKER_ENABLED,
     A11_LOCAL_GPU_WORKER_TOKEN: process.env.A11_LOCAL_GPU_WORKER_TOKEN,
@@ -1864,19 +1905,21 @@ test('tts async official auto voices prefer configured Cartesia over the local G
     A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
     A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
     A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+    A11_CARTESIA_TTS_ENABLED: process.env.A11_CARTESIA_TTS_ENABLED,
     A11_CARTESIA_BASE_URL: process.env.A11_CARTESIA_BASE_URL,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
   };
   const previousFetch = global.fetch;
-  const cartesiaBodies = [];
+  const bridgeCalls = [];
 
-  process.env.A11_TTS_LOCAL_GPU_WORKER_ENABLED = '1';
+  process.env.A11_TTS_LOCAL_GPU_WORKER_ENABLED = '0';
   process.env.A11_LOCAL_GPU_WORKER_TOKEN = 'test-local-gpu-worker-token';
   process.env.A11_LOCAL_GPU_WORKER_MAX_ACTIVE = '1';
   process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
   process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
   process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
+  delete process.env.A11_CARTESIA_TTS_ENABLED;
   process.env.A11_CARTESIA_BASE_URL = 'https://api.cartesia.test';
   process.env.ENABLE_PIPER_HTTP = 'true';
   process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
@@ -1885,21 +1928,37 @@ test('tts async official auto voices prefer configured Cartesia over the local G
   global.fetch = async (url, options = {}) => {
     const value = String(url);
     if (value === 'https://api.cartesia.test/tts/bytes') {
-      cartesiaBodies.push(JSON.parse(String(options.body || '{}')));
+      throw new Error('cartesia_should_not_run_for_official_auto_voice');
+    }
+    if (value === 'http://voice-bridge.test/api/voice/synthesize') {
       return {
-        ok: true,
-        status: 200,
-        async arrayBuffer() {
-          return Buffer.from('cartesia-auto-official-mp3');
+        ok: false,
+        status: 503,
+        async text() {
+          return JSON.stringify({ ok: false, error: 'synthesize_disabled_for_test' });
         },
       };
     }
-    if (value === 'http://voice-bridge.test/api/voice/convert'
-      || value === 'http://voice-bridge.test/api/voice/synthesize') {
-      throw new Error('local_gpu_or_xtts_rvc_should_not_run_for_official_auto_cartesia_async');
+    if (value === 'http://voice-bridge.test/api/voice/convert') {
+      bridgeCalls.push({ url: value, body: options.body });
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get(name) {
+            const header = String(name || '').toLowerCase();
+            if (header === 'content-type') return 'audio/wav';
+            if (header === 'x-a11-voice-engine') return 'xtts-rvc';
+            return '';
+          },
+        },
+        async arrayBuffer() {
+          return createPcm16Wav({ frequency: 180 });
+        },
+      };
     }
     if (value === 'http://a11-voice:5002/api/tts') {
-      throw new Error('piper_http_should_not_run_for_official_auto_cartesia_async');
+      throw new Error('piper_http_should_not_run_for_official_auto_voice');
     }
     return previousFetch(url, options);
   };
@@ -1915,12 +1974,10 @@ test('tts async official auto voices prefer configured Cartesia over the local G
           {
             persona: 'a11',
             text: 'Je suis A11. Ma voix officielle est prête.',
-            voiceId: '7345dfa5-ee04-44d2-abf4-29262b880ab4',
           },
           {
             persona: 'vivy',
             text: 'Je suis Vivy. Ma voix officielle est prête.',
-            voiceId: '2f8e82c4-cb94-4e6d-8b6a-29bf58ceb60a',
           },
         ];
 
@@ -1932,16 +1989,11 @@ test('tts async official auto voices prefer configured Cartesia over the local G
             voicePersona: currentCase.persona,
             surface: currentCase.persona,
             provider: 'auto',
-            allowA11CloudVoice: currentCase.persona === 'a11',
-            forceCloudTts: currentCase.persona === 'a11',
-            useReadyMadeCloudVoice: currentCase.persona === 'a11',
             ttsAsync: true,
             useDefaultVoiceReference: true,
             defaultVoiceReference: true,
             voiceReferenceRequired: true,
             referenceVoiceRequired: true,
-            voiceConversion: false,
-            allowRvc: false,
             audioFormat: 'mp3',
           });
 
@@ -1957,14 +2009,11 @@ test('tts async official auto voices prefer configured Cartesia over the local G
           }
 
           assert.equal(polled.state, 'done');
-          assert.equal(polled.provider, 'cartesia');
-          assert.match(polled.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-cartesia\.mp3$/);
+          assert.equal(polled.provider, 'xtts-rvc');
+          assert.match(polled.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
         }
 
-        assert.deepEqual(
-          cartesiaBodies.map((body) => body.voice.id),
-          cases.map((currentCase) => currentCase.voiceId)
-        );
+        assert.equal(bridgeCalls.length, cases.length);
       }
     );
   } finally {
@@ -3583,7 +3632,7 @@ test('tts route blocks neutral Piper fallback for official Vivy identity voice',
 
         assert.equal(result.response.status, 424);
         assert.equal(result.json.error, 'voice_reference_tts_unavailable');
-        assert.equal(result.json.diagnostic, 'neutral_provider_blocked');
+        assert.equal(result.json.diagnostic, 'xtts_rvc_failed');
         assert.equal(
           backendCalls.some((call) => call.url === 'http://a11-voice:5002/api/tts'),
           false
