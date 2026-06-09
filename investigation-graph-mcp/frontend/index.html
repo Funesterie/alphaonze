@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Investigation Graph MCP</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0f14;
+        --panel: #111820;
+        --panel-2: #151f2a;
+        --line: #2d4054;
+        --text: #edf4fb;
+        --muted: #9cafc2;
+        --accent: #4fd1a5;
+        --warn: #f2b84b;
+        --danger: #ff6978;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      header {
+        border-bottom: 1px solid var(--line);
+        background: #081018;
+        padding: 18px 24px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 22px;
+        letter-spacing: 0;
+      }
+
+      .sub {
+        color: var(--muted);
+        margin-top: 4px;
+        font-size: 13px;
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: minmax(260px, 340px) 1fr;
+        min-height: calc(100vh - 76px);
+      }
+
+      aside {
+        border-right: 1px solid var(--line);
+        padding: 18px;
+        background: var(--panel);
+      }
+
+      section {
+        padding: 18px;
+      }
+
+      label {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        margin: 12px 0 6px;
+        text-transform: uppercase;
+      }
+
+      input,
+      select,
+      textarea,
+      button {
+        width: 100%;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+        background: #071019;
+        color: var(--text);
+        font: inherit;
+        min-height: 40px;
+      }
+
+      input,
+      select,
+      textarea {
+        padding: 9px 10px;
+      }
+
+      textarea {
+        min-height: 120px;
+        resize: vertical;
+      }
+
+      button {
+        margin-top: 10px;
+        padding: 10px 12px;
+        cursor: pointer;
+        font-weight: 800;
+      }
+
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #02110c;
+      }
+
+      button.danger {
+        border-color: var(--danger);
+        color: var(--danger);
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .toolbar {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(120px, 1fr));
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .output {
+        border: 1px solid var(--line);
+        background: var(--panel-2);
+        border-radius: 8px;
+        min-height: 480px;
+        overflow: auto;
+        padding: 14px;
+      }
+
+      pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .status {
+        min-height: 24px;
+        color: var(--warn);
+        font-size: 13px;
+        margin-top: 10px;
+      }
+
+      @media (max-width: 820px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+
+        aside {
+          border-right: none;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .toolbar {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Investigation Graph MCP</h1>
+      <div class="sub">Demo fictive, graphe source, recherche bornee, audit actif.</div>
+    </header>
+    <main>
+      <aside>
+        <label for="apiBase">API</label>
+        <input id="apiBase" value="http://localhost:8089" />
+
+        <div class="row">
+          <div>
+            <label for="role">Role</label>
+            <select id="role">
+              <option value="analyste">analyste</option>
+              <option value="enqueteur">enqueteur</option>
+              <option value="superviseur">superviseur</option>
+              <option value="public_demo">public_demo</option>
+            </select>
+          </div>
+          <div>
+            <label for="mode">Recherche</label>
+            <select id="mode">
+              <option value="lexical">lexicale</option>
+              <option value="semantic">semantique</option>
+            </select>
+          </div>
+        </div>
+
+        <label for="query">Terme</label>
+        <input id="query" value="Camille" />
+
+        <button class="primary" id="searchBtn">Rechercher</button>
+        <button id="importBtn">Importer le faux PV</button>
+        <button id="timelineBtn">Chronologie</button>
+        <button id="reportBtn">Rapport</button>
+        <button id="auditBtn">Audit</button>
+        <button class="danger" id="deleteBtn">Supprimer le dossier demo</button>
+        <div class="status" id="status"></div>
+      </aside>
+      <section>
+        <div class="toolbar">
+          <button id="healthBtn">Sante API</button>
+          <button id="toolsBtn">Outils</button>
+          <button id="semanticPresetBtn">Sens: vehicule blanc</button>
+          <button id="phonePresetBtn">Nom: telephone</button>
+          <button id="clearBtn">Effacer</button>
+        </div>
+        <div class="output">
+          <pre id="output">{}</pre>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const output = $('output');
+      const status = $('status');
+
+      function headers() {
+        return {
+          'content-type': 'application/json',
+          'x-demo-user': 'demo-ui',
+          'x-demo-role': $('role').value,
+          'x-demo-tenant': 'tenant-demo',
+          'x-demo-case': 'case-demo-001',
+          'x-demo-allowed-cases': 'case-demo-001',
+          'x-agent': 'false'
+        };
+      }
+
+      function api(path) {
+        return `${$('apiBase').value.replace(/\/$/, '')}${path}`;
+      }
+
+      async function call(path, options = {}) {
+        status.textContent = '';
+        const response = await fetch(api(path), {
+          ...options,
+          headers: headers()
+        });
+        const data = await response.json();
+        output.textContent = JSON.stringify(data, null, 2);
+        if (!response.ok) {
+          status.textContent = data.message || data.error || 'Erreur';
+        }
+        return data;
+      }
+
+      $('healthBtn').onclick = () => call('/health');
+      $('toolsBtn').onclick = () => call('/api/allowed-tools');
+      $('searchBtn').onclick = () =>
+        call(`/api/search?mode=${encodeURIComponent($('mode').value)}&q=${encodeURIComponent($('query').value)}`);
+      $('importBtn').onclick = () =>
+        call('/api/import/fake-pv', {
+          method: 'POST',
+          body: JSON.stringify({ sourceId: `fake-pv-ui-${Date.now()}` })
+        });
+      $('timelineBtn').onclick = () => call('/api/timeline');
+      $('reportBtn').onclick = () => call('/api/report');
+      $('auditBtn').onclick = () => call('/api/audit');
+      $('deleteBtn').onclick = () => call('/api/cases/case-demo-001', { method: 'DELETE' });
+      $('semanticPresetBtn').onclick = () => {
+        $('mode').value = 'semantic';
+        $('query').value = 'vehicule blanc proche du garage';
+        $('searchBtn').click();
+      };
+      $('phonePresetBtn').onclick = () => {
+        $('mode').value = 'semantic';
+        $('query').value = 'numero portable';
+        $('searchBtn').click();
+      };
+      $('clearBtn').onclick = () => {
+        output.textContent = '{}';
+        status.textContent = '';
+      };
+    </script>
+  </body>
+</html>
+

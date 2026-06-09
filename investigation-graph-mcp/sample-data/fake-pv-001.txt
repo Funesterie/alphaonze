@@ -1,0 +1,22 @@
+Proces-verbal fictif: fake-pv-001
+Tenant: tenant-demo
+Dossier: case-demo-001
+
+Le 2026-01-12 21:40, Camille Durand declare avoir vu un scooter blanc pres du
+12 rue des Mimosas, Port-Lumiere. La personne indique que le scooter semblait
+tourner autour du garage nord avant de repartir vers la place du Phare.
+
+Un numero de telephone est mentionne dans la declaration: 06 11 22 33 44.
+La plaque AB-123-CD est citee par Lina Morel comme proche du lieu, sans
+confirmation materielle dans ce document.
+
+Noe Martin declare avoir entendu parler d'une Renault Clio blanche le meme soir.
+Sami Legrand precise que le rendez-vous prevu n'a pas eu lieu.
+
+Date: 2026-01-13
+Evenement: rendez-vous manque pres du garage nord.
+Evenement: appel bref mentionne avant le depart du scooter.
+
+Note: ce document est invente pour la demonstration. Aucune personne, adresse,
+plaque ou situation reelle n'est visee.
+
