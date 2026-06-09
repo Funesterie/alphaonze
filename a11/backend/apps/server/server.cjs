@@ -7,6 +7,11 @@ const {
   setCrawlerControlAssetCacheHeaders,
 } = require('./lib/crawler-visibility.cjs');
 installCrawlerVisibilityHeaders(app);
+const {
+  injectEmbeddedUiSeo,
+  resolveEmbeddedUiAliasRedirect,
+  resolveEmbeddedUiSeo,
+} = require('./src/seo/embedded-ui-seo.cjs');
 const { execFile } = require('node:child_process');
 const { createFileStorage } = require('./lib/file-storage.cjs');
 let fileStorage = null;
@@ -7953,11 +7958,12 @@ function resolveEmbeddedUiSurface(req) {
   return 'a11';
 }
 
-function rewriteEmbeddedUiIndexForSurface(html, surface) {
+function rewriteEmbeddedUiIndexForSurface(html, surface, req = null) {
   if (!html) return html;
 
+  let rewritten = html;
   if (surface === 'funesterie') {
-    return html
+    rewritten = rewritten
       .replace(/<title>.*?<\/title>/i, '<title>Funesterie - NOSSEN</title>')
       .replace(
         /<meta name="description" content="[^"]*"\s*\/?>/i,
@@ -7967,10 +7973,8 @@ function rewriteEmbeddedUiIndexForSurface(html, surface) {
         /<meta name="apple-mobile-web-app-title" content="[^"]*"\s*\/?>/i,
         '<meta name="apple-mobile-web-app-title" content="Funesterie" />'
       );
-  }
-
-  if (surface === 'a11') {
-    return html
+  } else if (surface === 'a11') {
+    rewritten = rewritten
       .replace(/<title>.*?<\/title>/i, '<title>Alphaonze</title>')
       .replace(
         /<meta name="description" content="[^"]*"\s*\/?>/i,
@@ -8001,20 +8005,25 @@ function rewriteEmbeddedUiIndexForSurface(html, surface) {
         /Une assistante bureau claire, vocale et accessible pour organiser les documents, traiter les fichiers Google Drive partages, suivre les factures et accompagner les projets du quotidien\./g,
         'Alphaonze, aussi appele A11, est l application Funesterie qui connecte les utilisateurs a leur espace autorise pour le chat, les fichiers Google Drive, la voix, la memoire et les outils d agents.'
       );
+  } else if (surface === 'kaen44') {
+    rewritten = rewritten
+      .replace(/<title>.*?<\/title>/i, '<title>Kaen44 - Assistante bureau Funesterie</title>')
+      .replace(
+        /<meta name="description" content="[^"]*"\s*\/?>/i,
+        '<meta name="description" content="Kaen44 est une assistante bureau Funesterie pour organiser les documents, importer des fichiers Google Drive, aider aux factures, accompagner les projets et proposer une aide vocale accessible." />'
+      )
+      .replace(
+        /<meta name="apple-mobile-web-app-title" content="[^"]*"\s*\/?>/i,
+        '<meta name="apple-mobile-web-app-title" content="Kaen44" />'
+      );
   }
 
-  if (surface !== 'kaen44') return html;
-
-  return html
-    .replace(/<title>.*?<\/title>/i, '<title>Kaen44 - Assistante bureau Funesterie</title>')
-    .replace(
-      /<meta name="description" content="[^"]*"\s*\/?>/i,
-      '<meta name="description" content="Kaen44 est une assistante bureau Funesterie pour organiser les documents, importer des fichiers Google Drive, aider aux factures, accompagner les projets et proposer une aide vocale accessible." />'
-    )
-    .replace(
-      /<meta name="apple-mobile-web-app-title" content="[^"]*"\s*\/?>/i,
-      '<meta name="apple-mobile-web-app-title" content="Kaen44" />'
-    );
+  if (!req) return rewritten;
+  return injectEmbeddedUiSeo(rewritten, resolveEmbeddedUiSeo({
+    hostname: getRequestSurfaceHost(req),
+    pathname: req.originalUrl || req.path || '/',
+    surface,
+  }));
 }
 
 function sendEmbeddedUiHtml(req, res, uiStatus) {
@@ -8026,6 +8035,8 @@ function sendEmbeddedUiHtml(req, res, uiStatus) {
     if (fs.existsSync(vivyIndex)) {
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('X-A11-Build-Id', getEmbeddedUiBuildId(vivyIndex));
+      const html = readEmbeddedUiIndex(vivyIndex);
+      if (html) return res.type('html').send(rewriteEmbeddedUiIndexForSurface(html, surface, req));
       return res.sendFile(vivyIndex);
     }
   }
@@ -8035,7 +8046,7 @@ function sendEmbeddedUiHtml(req, res, uiStatus) {
 
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('X-A11-Build-Id', getEmbeddedUiBuildId(uiStatus.indexPath));
-  return res.type('html').send(rewriteEmbeddedUiIndexForSurface(html, surface));
+  return res.type('html').send(rewriteEmbeddedUiIndexForSurface(html, surface, req));
 }
 
 app.use(createEmbeddedUiAuthGate({
@@ -8345,6 +8356,11 @@ function sendEmbeddedUiStandalonePage(req, res, relativeIndexPath) {
     const pagePath = path.join(webPublic, ...relativeIndexPath.split('/').filter(Boolean));
     if (fs.existsSync(pagePath)) {
       res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('X-A11-Build-Id', getEmbeddedUiBuildId(pagePath));
+      const html = readEmbeddedUiIndex(pagePath);
+      if (html) {
+        return res.type('html').send(rewriteEmbeddedUiIndexForSurface(html, resolveEmbeddedUiSurface(req), req));
+      }
       return res.sendFile(pagePath);
     }
   }
@@ -8383,7 +8399,14 @@ function sendEmbeddedUiRoot(req, res) {
   return sendEmbeddedUiIndex(req, res);
 }
 
+function redirectEmbeddedUiAliasToRoot(req, res) {
+  const redirectPath = resolveEmbeddedUiAliasRedirect(req.originalUrl || req.path || '/');
+  if (!redirectPath) return sendEmbeddedUiIndex(req, res);
+  return res.redirect(301, redirectPath);
+}
+
 app.get('/', sendEmbeddedUiRoot);
+app.get(['/home', '/home/', '/accueil', '/accueil/'], redirectEmbeddedUiAliasToRoot);
 app.get(['/privacy', '/privacy/', '/confidentialite', '/confidentialite/'], sendEmbeddedUiPrivacyPage);
 app.get(['/terms', '/terms/', '/conditions', '/conditions/', '/cgu', '/cgu/'], sendEmbeddedUiTermsPage);
 app.get(['/architecture', '/architecture/', '/carte', '/carte/', '/graph', '/graph/'], sendEmbeddedUiArchitecturePage);
@@ -8461,7 +8484,7 @@ for (const route of ['/login', '/auth/success', '/reset-password', '/reset']) {
   app.get(route, (_req, res) => {
     const uiStatus = getEmbeddedUiStatus();
     if (uiStatus.ready) {
-      return res.sendFile(uiStatus.indexPath);
+      return sendEmbeddedUiHtml(_req, res, uiStatus);
     }
 
     if (uiStatus.enabled || String(process.env.A11_LOCAL_MODE || '').trim() === '1') {

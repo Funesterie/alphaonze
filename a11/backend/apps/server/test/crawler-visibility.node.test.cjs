@@ -27,10 +27,13 @@ test('crawler visibility marks technical routes as private for crawlers', () => 
     '/mcp',
     '/mcp/messages',
     '/.well-known/mcp',
+    '/.well-known/oauth-protected-resource/mcp',
+    '/.well-known/openid-configuration',
     '/auth/success',
     '/a11/auth/success',
     '/k44/auth/success',
     '/kaen44/auth/success',
+    '/register',
   ]) {
     assert.equal(isCrawlerPrivatePath(pathname), true, `${pathname} should be noindexed`);
   }

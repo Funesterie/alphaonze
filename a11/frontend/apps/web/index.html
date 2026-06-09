@@ -112,7 +112,11 @@
         }
 
         function isPrivateOrUtilityPath(path) {
-          return /^\/(?:login|cockpit|app|workspace|auth|reset|reset-password|compte|account)(?:\/|$)/.test(String(path || "/").toLowerCase());
+          return /^\/(?:login|cockpit|app|workspace|auth|reset|reset-password|compte|account|subscription|security|register)(?:\/|$)/.test(String(path || "/").toLowerCase());
+        }
+
+        function stripTrailingSlash(path) {
+          return String(path || "/").toLowerCase().replace(/\/+$/, "") || "/";
         }
 
         function applySeoHints() {
@@ -122,14 +126,36 @@
             canonical = "https://funesterie.me" + (publicPath || "/");
             setRobots(publicPath && !isPrivateOrUtilityPath(pathname) ? "index,follow" : "noindex,follow");
           } else if (hostname === "k44.funesterie.me" || hostname === "kaen44.funesterie.me" || isK44Path) {
-            canonical = "https://k44.funesterie.me/";
-            setRobots(isPrivateOrUtilityPath(pathname) ? "noindex,follow" : "index,follow");
+            var k44Path = stripTrailingSlash(pathname);
+            var k44PublicPath = canonicalFunesteriePath(pathname);
+            if (isPrivateOrUtilityPath(pathname)) {
+              canonical = "https://k44.funesterie.me/";
+              setRobots("noindex,follow");
+            } else if (k44Path === "/" || k44Path === "/k44" || k44Path === "/kaen44") {
+              canonical = "https://k44.funesterie.me/";
+              setRobots("index,follow");
+            } else if (k44PublicPath) {
+              canonical = "https://funesterie.me" + k44PublicPath;
+              setRobots("index,follow");
+            } else {
+              canonical = "https://k44.funesterie.me/";
+              setRobots("noindex,follow");
+            }
           } else if (hostname === "vivy.funesterie.me" || isVivyPath) {
             canonical = "https://vivy.funesterie.me/";
-            setRobots("index,follow");
-          } else if (hostname === "a11.funesterie.me") {
-            canonical = "https://a11.funesterie.me/";
             setRobots(isPrivateOrUtilityPath(pathname) ? "noindex,follow" : "index,follow");
+          } else if (hostname === "a11.funesterie.me") {
+            var a11PublicPath = canonicalFunesteriePath(pathname);
+            if (isPrivateOrUtilityPath(pathname)) {
+              canonical = "https://a11.funesterie.me/";
+              setRobots("noindex,follow");
+            } else if (a11PublicPath && stripTrailingSlash(pathname) !== "/") {
+              canonical = "https://funesterie.me" + a11PublicPath;
+              setRobots("index,follow");
+            } else {
+              canonical = "https://a11.funesterie.me/";
+              setRobots("index,follow");
+            }
           }
           if (canonical) setHeadLink("canonical", canonical);
         }

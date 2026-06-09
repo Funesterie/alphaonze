@@ -121,6 +121,7 @@ function createEmbeddedUiAuthGate({
     }
 
     res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Robots-Tag', 'noindex, follow, noarchive');
     res.setHeader('Vary', 'Cookie, Authorization');
     return res.redirect(302, buildCentralLoginRedirectUrl(req, centralLoginUrl));
   };

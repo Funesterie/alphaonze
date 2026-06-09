@@ -10,10 +10,14 @@ const CRAWLER_PRIVATE_PREFIXES = Object.freeze([
   '/oauth',
   '/mcp',
   '/.well-known/mcp',
+  '/.well-known/oauth',
+  '/.well-known/oauth-protected-resource',
+  '/.well-known/openid-configuration',
   '/auth/success',
   '/a11/auth/success',
   '/k44/auth/success',
   '/kaen44/auth/success',
+  '/register',
 ]);
 
 const CRAWLER_CONTROL_ASSET_NAMES = new Set([

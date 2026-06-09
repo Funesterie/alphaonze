@@ -93,6 +93,7 @@ test('embedded UI gate redirects unauthenticated Vivy HTML to central login', as
   assert.equal(redirect.origin + redirect.pathname, 'https://funesterie.me/login');
   assert.equal(redirect.searchParams.get('returnTo'), 'https://vivy.funesterie.me/studio?tab=voice');
   assert.equal(res.headers['cache-control'], 'no-store');
+  assert.equal(res.headers['x-robots-tag'], 'noindex, follow, noarchive');
 });
 
 test('embedded UI gate allows Vivy HTML with a current session cookie', async () => {
