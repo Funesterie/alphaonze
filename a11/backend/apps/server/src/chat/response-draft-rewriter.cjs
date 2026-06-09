@@ -13,6 +13,7 @@ const A11_RESPONSE_DRAFT_CONTEXT = `
 `.trim();
 const A11_OFFICIAL_VOICE_AUDIO_URL = '/api/tts/official/a11/audio';
 const KAEN44_OFFICIAL_VOICE_AUDIO_URL = '/api/tts/official/kaen44/audio';
+const OFFICIAL_VOICE_URL_PATTERN = /(?:https?:\/\/(?:api\.)?(?:a11\.|k44\.|kaen44\.)?funesterie\.(?:me|com|fr|pro))?\/(?:api\/)?tts\/official\/(a11|kaen44|k44)\/audio(?:\?[^)\s\]]*)?/gi;
 
 function normalizeText(value = '') {
   return String(value || '').replace(/\r\n/g, '\n').trim();
@@ -213,22 +214,24 @@ function repairOfficialVoiceListenLinks(text = '') {
   const input = normalizeText(text);
   if (!input) return input;
   const folded = foldText(input);
-  if (!/(a11|kaen44|k44|voix officielle|a11-official-stern-french|kaen44-official-french-narrator|extrait de ma voix|belle voix)/.test(folded)) {
-    return input;
-  }
+  let normalizedInput = input.replace(OFFICIAL_VOICE_URL_PATTERN, (_match, persona) => {
+    return /kaen44|k44/i.test(persona) ? KAEN44_OFFICIAL_VOICE_AUDIO_URL : A11_OFFICIAL_VOICE_AUDIO_URL;
+  });
+  if (!/(a11|kaen44|k44|voix officielle|a11-official-stern-french|kaen44-official-french-narrator|extrait de ma voix|belle voix|\/api\/tts\/official)/.test(folded)) return normalizedInput;
 
-  if (/(kaen44|k44|kaen44-official-french-narrator)/.test(folded)) {
-    let output = input.replace(
+  const normalizedFolded = foldText(normalizedInput);
+  if (/(kaen44|k44|kaen44-official-french-narrator)/.test(normalizedFolded)) {
+    let output = normalizedInput.replace(
       /\[([^\]]*(?:Kaen44|K44|kaen44|k44|voix officielle|Voix officielle|voix de Kaen44|voix de K44)[^\]]*)\]\((?!\/api\/tts\/official\/kaen44\/audio\))[^)]*\)/g,
       `[$1](${KAEN44_OFFICIAL_VOICE_AUDIO_URL})`
     );
-    if (!output.includes(KAEN44_OFFICIAL_VOICE_AUDIO_URL) && /(extrait de ma voix|kaen44-official-french-narrator)/i.test(input)) {
+    if (!output.includes(KAEN44_OFFICIAL_VOICE_AUDIO_URL) && /(extrait de ma voix|kaen44-official-french-narrator)/i.test(normalizedInput)) {
       output = `${output}\n\n[Écouter Kaen44 – voix officielle](${KAEN44_OFFICIAL_VOICE_AUDIO_URL})`;
     }
     return output;
   }
 
-  let output = input.replace(
+  let output = normalizedInput.replace(
     /\[([^\]]*(?:A11|a11|voix officielle|Voix officielle|voix d['’]?A11)[^\]]*)\]\((?!\/api\/tts\/official\/a11\/audio\))[^)]*\)/g,
     `[$1](${A11_OFFICIAL_VOICE_AUDIO_URL})`
   );
@@ -240,7 +243,7 @@ function repairOfficialVoiceListenLinks(text = '') {
     );
   }
 
-  if (!output.includes(A11_OFFICIAL_VOICE_AUDIO_URL) && /(extrait de ma voix|a11-official-stern-french)/i.test(input)) {
+  if (!output.includes(A11_OFFICIAL_VOICE_AUDIO_URL) && /(extrait de ma voix|a11-official-stern-french)/i.test(normalizedInput)) {
     output = `${output}\n\n[Écouter A11 – voix officielle](${A11_OFFICIAL_VOICE_AUDIO_URL})`;
   }
 

@@ -120,6 +120,24 @@ test('official voice link repair routes Kaen44 voice links to the Kaen44 sample'
   assert.doesNotMatch(repaired, /k44\.funesterie\.me\/cockpit/i);
 });
 
+test('official voice link repair canonicalizes wrong api.funesterie.com Kaen44 TTS urls', () => {
+  const repaired = repairOfficialVoiceListenLinks(
+    'Teste ici: https://api.funesterie.com/tts/official/kaen44/audio?text=Bonjour%20je%20suis%20Kaen44'
+  );
+
+  assert.match(repaired, /\/api\/tts\/official\/kaen44\/audio/);
+  assert.doesNotMatch(repaired, /api\.funesterie\.com|text=Bonjour/i);
+});
+
+test('official voice link repair canonicalizes missing api prefix on Funesterie voice urls', () => {
+  const repaired = repairOfficialVoiceListenLinks(
+    'Clique: https://funesterie.me/tts/official/a11/audio?text=Bonjour'
+  );
+
+  assert.match(repaired, /\/api\/tts\/official\/a11\/audio/);
+  assert.doesNotMatch(repaired, /funesterie\.me\/tts\/official|text=Bonjour/i);
+});
+
 test('response draft blocks visible draft placeholders', () => {
   const processed = postProcessA11AssistantResponse({
     userMessage: 'salut k44 ca va ?',
