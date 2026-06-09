@@ -21,6 +21,7 @@
  *   A11_STT_OPENAI_API_KEY — clé OpenAI dédiée STT (sinon OPENAI_API_KEY)
  *   A11_STT_OPENAI_BASE_URL — base URL STT (défaut: https://api.openai.com/v1)
  *   A11_STT_ALLOW_OPENAI_COMPATIBLE — autorise un endpoint non-OpenAI pour STT
+ *   A11_STT_ALLOW_OPENAI_FALLBACK — autorise le fallback OpenAI si le STT local échoue
  */
 
 const fs = require('node:fs');
@@ -47,6 +48,7 @@ function getSttConfig() {
     openaiBaseUrl: String(process.env.A11_STT_OPENAI_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').trim().replace(/\/+$/, ''),
     openaiModel: String(process.env.A11_STT_MODEL || process.env.A11_STT_OPENAI_MODEL || 'whisper-1').trim(),
     allowOpenAiCompatibleStt: isTruthy(process.env.A11_STT_ALLOW_OPENAI_COMPATIBLE),
+    allowOpenAiFallback: isTruthy(process.env.A11_STT_ALLOW_OPENAI_FALLBACK),
   };
 }
 
@@ -352,8 +354,8 @@ async function transcribe(audioBuffer, mimeType, options = {}) {
 
     return result;
   } catch (err) {
-    // Si un provider local échoue en mode auto, tenter OpenAI en fallback.
-    if ((provider === 'ollama' || provider === 'faster-whisper') && config.provider === 'auto' && hasOpenAiSttConfig(config)) {
+    // Le fallback OpenAI doit rester explicite: sinon une panne locale se transforme en quota 429.
+    if ((provider === 'ollama' || provider === 'faster-whisper') && config.provider === 'auto' && config.allowOpenAiFallback && hasOpenAiSttConfig(config)) {
       logger.warn('Local STT failed, falling back to OpenAI', { provider, error: err.message });
       const result = await transcribeWithOpenAI(audioBuffer, resolvedMime, config);
       logger.info('STT fallback to OpenAI succeeded', { textLength: result.text.length });
@@ -411,6 +413,7 @@ function getSttStatus() {
     ollamaEnabled: !!config.ollamaEnabled,
     openaiConfigured: hasOpenAiSttConfig(config),
     openaiCompatibleAllowed: !!config.allowOpenAiCompatibleStt,
+    openaiFallbackAllowed: !!config.allowOpenAiFallback,
   };
 }
 

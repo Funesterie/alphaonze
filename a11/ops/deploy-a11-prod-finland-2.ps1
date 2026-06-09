@@ -992,6 +992,7 @@ $overrides = [ordered]@{
   A11_STT_OPENAI_BASE_URL = $(if ($env:A11_STT_OPENAI_BASE_URL) { $env:A11_STT_OPENAI_BASE_URL } else { "https://api.openai.com/v1" })
   A11_STT_OPENAI_MODEL = $(if ($env:A11_STT_OPENAI_MODEL) { $env:A11_STT_OPENAI_MODEL } else { "whisper-1" })
   A11_STT_ALLOW_OPENAI_COMPATIBLE = $(if ($env:A11_STT_ALLOW_OPENAI_COMPATIBLE) { $env:A11_STT_ALLOW_OPENAI_COMPATIBLE } else { "false" })
+  A11_STT_ALLOW_OPENAI_FALLBACK = $(if ($env:A11_STT_ALLOW_OPENAI_FALLBACK) { $env:A11_STT_ALLOW_OPENAI_FALLBACK } else { "false" })
   A11_TRANSLATION_BASE_URL = "http://a11-ollama:11434"
   A11_TRANSLATION_MODEL = "gpt-oss:20b-cloud"
   A11_CERBERE_OPENAI_BASE_URL = "https://openrouter.ai/api/v1"

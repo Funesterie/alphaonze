@@ -2114,7 +2114,7 @@ export type SttTranscriptionResult = {
 
 export async function transcribeAudioFile(
   file: File,
-  options?: { language?: string; provider?: 'auto' | 'ollama' | 'openai' }
+  options?: { language?: string; provider?: 'auto' | 'faster-whisper' | 'ollama' | 'openai' }
 ): Promise<SttTranscriptionResult> {
   const form = new FormData();
   form.append('audio', file);

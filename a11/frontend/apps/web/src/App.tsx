@@ -10304,7 +10304,7 @@ export function App() {
       setMicStatusMessage("Je n'ai pas capté d'audio micro.");
       return;
     }
-    if (capture.durationMs < 450) {
+    if (capture.durationMs < 900) {
       setMicStatusMessage("Micro trop court: retouche et parle un peu plus longtemps.");
       return;
     }

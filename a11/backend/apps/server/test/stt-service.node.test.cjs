@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  transcribe,
   getSttStatus,
   hasOpenAiSttConfig,
 } = require('../lib/stt-service.cjs');
@@ -22,6 +23,7 @@ const STT_ENV_KEYS = [
   'A11_STT_OPENAI_API_KEY',
   'A11_STT_OPENAI_BASE_URL',
   'A11_STT_OPENAI_MODEL',
+  'A11_STT_ALLOW_OPENAI_FALLBACK',
   'OLLAMA_BASE',
   'OPENAI_API_KEY',
   'OPENAI_BASE_URL',
@@ -36,6 +38,23 @@ function withCleanSttEnv(fn) {
 
   try {
     fn();
+  } finally {
+    for (const key of STT_ENV_KEYS) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
+}
+
+async function withCleanSttEnvAsync(fn) {
+  const previous = {};
+  for (const key of STT_ENV_KEYS) {
+    previous[key] = process.env[key];
+    delete process.env[key];
+  }
+
+  try {
+    return await fn();
   } finally {
     for (const key of STT_ENV_KEYS) {
       if (previous[key] === undefined) delete process.env[key];
@@ -142,5 +161,66 @@ test('STT explicit OpenAI accepts the official OpenAI transcription endpoint', (
     assert.equal(status.available, true);
     assert.equal(status.provider, 'openai');
     assert.equal(status.openaiConfigured, true);
+  });
+});
+
+test('STT auto keeps local Whisper failures local unless OpenAI fallback is explicitly allowed', async () => {
+  await withCleanSttEnvAsync(async () => {
+    process.env.A11_STT_PROVIDER = 'auto';
+    process.env.A11_STT_FAST_WHISPER_ENABLED = 'true';
+    process.env.A11_STT_FAST_WHISPER_BASE_URL = 'http://local-whisper';
+    process.env.A11_STT_OPENAI_API_KEY = 'sk-test';
+    process.env.A11_STT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
+
+    const previousFetch = global.fetch;
+    const calls = [];
+    global.fetch = async (url) => {
+      calls.push(String(url));
+      return new Response('local worker down', { status: 502 });
+    };
+
+    try {
+      await assert.rejects(
+        () => transcribe(Buffer.from([1, 2, 3]), 'audio/webm'),
+        /faster-whisper STT error 502/
+      );
+      assert.deepEqual(calls, ['http://local-whisper/v1/audio/transcriptions']);
+    } finally {
+      global.fetch = previousFetch;
+    }
+  });
+});
+
+test('STT auto can fall back to OpenAI only with explicit fallback opt-in', async () => {
+  await withCleanSttEnvAsync(async () => {
+    process.env.A11_STT_PROVIDER = 'auto';
+    process.env.A11_STT_FAST_WHISPER_ENABLED = 'true';
+    process.env.A11_STT_FAST_WHISPER_BASE_URL = 'http://local-whisper';
+    process.env.A11_STT_OPENAI_API_KEY = 'sk-test';
+    process.env.A11_STT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
+    process.env.A11_STT_ALLOW_OPENAI_FALLBACK = 'true';
+
+    const previousFetch = global.fetch;
+    const calls = [];
+    global.fetch = async (url) => {
+      calls.push(String(url));
+      if (calls.length === 1) return new Response('local worker down', { status: 502 });
+      return new Response(JSON.stringify({ text: 'bonjour a11' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+
+    try {
+      const result = await transcribe(Buffer.from([1, 2, 3]), 'audio/webm');
+      assert.equal(result.provider, 'openai');
+      assert.equal(result.text, 'bonjour a11');
+      assert.deepEqual(calls, [
+        'http://local-whisper/v1/audio/transcriptions',
+        'https://api.openai.com/v1/audio/transcriptions',
+      ]);
+    } finally {
+      global.fetch = previousFetch;
+    }
   });
 });
