@@ -1215,18 +1215,19 @@ a11_env="__REMOTE_ROOT__/secrets/a11.env"
 compose_env="__REMOTE_ROOT__/secrets/compose.env"
 tmp_build="$(mktemp)"
 if [ -s "$build_env" ]; then
-  grep -v -E '^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE)=' "$build_env" > "$tmp_build" || true
+  grep -v -E '^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK)=' "$build_env" > "$tmp_build" || true
 fi
 printf 'A11_BUILD_COMMIT=%s\n' '__BUILD_COMMIT__' >> "$tmp_build"
 printf 'A11_BUILD_BRANCH=%s\n' '__BUILD_BRANCH__' >> "$tmp_build"
 printf 'A11_BUILD_DATE=%s\n' '__BUILD_DATE__' >> "$tmp_build"
+printf 'A11_VOICE_XTTS_RVC_FALLBACK=false\n' >> "$tmp_build"
 mv "$tmp_build" "$build_env"
 chmod 600 "$build_env"
 if [ -s "$a11_env" ]; then
   cat "$a11_env" "$build_env" > "$compose_env"
 else
   tmp_compose="$(mktemp)"
-  grep -v -E '^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE)=' "$compose_env" > "$tmp_compose" || true
+  grep -v -E '^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK)=' "$compose_env" > "$tmp_compose" || true
   cat "$build_env" >> "$tmp_compose"
   mv "$tmp_compose" "$compose_env"
 fi
