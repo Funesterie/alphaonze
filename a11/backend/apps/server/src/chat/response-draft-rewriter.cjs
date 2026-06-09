@@ -214,12 +214,15 @@ function repairOfficialVoiceListenLinks(text = '') {
   const input = normalizeText(text);
   if (!input) return input;
   const folded = foldText(input);
+  const hadTextQueryAdvice = /\?text=|apres\s*\?text|après\s*\?text|autre texte|tester un autre texte/i.test(input);
   let normalizedInput = input.replace(OFFICIAL_VOICE_URL_PATTERN, (_match, persona) => {
     return /kaen44|k44/i.test(persona) ? KAEN44_OFFICIAL_VOICE_AUDIO_URL : A11_OFFICIAL_VOICE_AUDIO_URL;
   });
+  normalizedInput = removeOfficialVoiceTextQueryAdvice(normalizedInput);
   if (!/(a11|kaen44|k44|voix officielle|a11-official-stern-french|kaen44-official-french-narrator|extrait de ma voix|belle voix|\/api\/tts\/official)/.test(folded)) return normalizedInput;
 
   const normalizedFolded = foldText(normalizedInput);
+  let repairedTextQueryAdvice = false;
   if (/(kaen44|k44|kaen44-official-french-narrator)/.test(normalizedFolded)) {
     let output = normalizedInput.replace(
       /\[([^\]]*(?:Kaen44|K44|kaen44|k44|voix officielle|Voix officielle|voix de Kaen44|voix de K44)[^\]]*)\]\((?!\/api\/tts\/official\/kaen44\/audio\))[^)]*\)/g,
@@ -228,6 +231,8 @@ function repairOfficialVoiceListenLinks(text = '') {
     if (!output.includes(KAEN44_OFFICIAL_VOICE_AUDIO_URL) && /(extrait de ma voix|kaen44-official-french-narrator)/i.test(normalizedInput)) {
       output = `${output}\n\n[Écouter Kaen44 – voix officielle](${KAEN44_OFFICIAL_VOICE_AUDIO_URL})`;
     }
+    repairedTextQueryAdvice = hadTextQueryAdvice && output.includes(KAEN44_OFFICIAL_VOICE_AUDIO_URL);
+    if (repairedTextQueryAdvice) output = appendOfficialVoiceStaticSampleNote(output);
     return output;
   }
 
@@ -247,7 +252,29 @@ function repairOfficialVoiceListenLinks(text = '') {
     output = `${output}\n\n[Écouter A11 – voix officielle](${A11_OFFICIAL_VOICE_AUDIO_URL})`;
   }
 
+  repairedTextQueryAdvice = hadTextQueryAdvice && output.includes(A11_OFFICIAL_VOICE_AUDIO_URL);
+  if (repairedTextQueryAdvice) output = appendOfficialVoiceStaticSampleNote(output);
   return output;
+}
+
+function removeOfficialVoiceTextQueryAdvice(text = '') {
+  return normalizeText(text)
+    .replace(/\s*Si tu préfères tester un autre texte,[\s\S]*?(?:\n\n|$)/gi, '\n\n')
+    .replace(/\s*Si tu preferes tester un autre texte,[\s\S]*?(?:\n\n|$)/gi, '\n\n')
+    .replace(/\s*Si tu veux tester un autre texte,[\s\S]*?(?:\n\n|$)/gi, '\n\n')
+    .replace(/\s*Si tu rencontres un problème ou si tu veux ajuster le texte,[^.?!]*(?:[.?!]|$)/gi, '')
+    .replace(/\s*Si tu rencontres un probleme ou si tu veux ajuster le texte,[^.?!]*(?:[.?!]|$)/gi, '')
+    .replace(/\s*remplace simplement le contenu après\s*\?text=[^.?!]*(?:[.?!]|$)/gi, '')
+    .replace(/\s*remplace simplement le contenu apres\s*\?text=[^.?!]*(?:[.?!]|$)/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function appendOfficialVoiceStaticSampleNote(text = '') {
+  const output = normalizeText(text);
+  if (/sample officiel statique|échantillon officiel statique|echantillon officiel statique/i.test(output)) return output;
+  return `${output}\n\nNote: ce lien est un sample officiel statique. Pour dire une phrase personnalisée, il faut passer par le module voix interactif, pas modifier cette URL.`;
 }
 
 function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = '', draft = null } = {}) {

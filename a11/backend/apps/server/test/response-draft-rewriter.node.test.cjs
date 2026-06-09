@@ -129,6 +129,18 @@ test('official voice link repair canonicalizes wrong api.funesterie.com Kaen44 T
   assert.doesNotMatch(repaired, /api\.funesterie\.com|text=Bonjour/i);
 });
 
+test('official voice link repair removes misleading text query advice for static samples', () => {
+  const repaired = postProcessA11AssistantResponse({
+    userMessage: 'je veux écouter la voix kaen44',
+    text: 'Voici un lien: [Écouter ma voix](https://funesterie.me/api/tts/official/kaen44/audio?text=Bonjour%20je%20suis%20Kaen44). Si tu préfères tester un autre texte, remplace simplement le contenu après ?text= par ce que tu veux.',
+  });
+
+  assert.match(repaired.content, /\[Écouter ma voix\]\(\/api\/tts\/official\/kaen44\/audio\)/);
+  assert.match(repaired.content, /sample officiel statique|module voix interactif/i);
+  assert.doesNotMatch(repaired.content, /\?text=|remplace simplement le contenu/i);
+  assert.equal(repaired.rewritten, true);
+});
+
 test('official voice link repair canonicalizes missing api prefix on Funesterie voice urls', () => {
   const repaired = repairOfficialVoiceListenLinks(
     'Clique: https://funesterie.me/tts/official/a11/audio?text=Bonjour'

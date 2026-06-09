@@ -3547,6 +3547,10 @@ router.get('/tts/references/:id/audio', requireJwt, (req, res) => {
 router.get('/tts/official/:persona/audio', (req, res) => {
   setTtsCorsHeaders(req, res);
   try {
+    if (Object.keys(req.query || {}).length > 0) {
+      res.setHeader('X-A11-Voice-Sample', 'static');
+      return res.redirect(302, `${req.baseUrl || ''}${req.path}`);
+    }
     const sample = resolveOfficialVoiceSample(req.params?.persona);
     if (!sample?.filePath) {
       return res.status(404).json({
@@ -3558,6 +3562,7 @@ router.get('/tts/official/:persona/audio', (req, res) => {
     res.setHeader('Content-Type', sample.reference?.mimeType || contentTypeForTtsAsset(sample.filePath));
     res.setHeader('Cache-Control', 'public, max-age=300');
     res.setHeader('X-A11-Voice-Persona', sample.persona);
+    res.setHeader('X-A11-Voice-Sample', 'static');
     return res.sendFile(sample.filePath);
   } catch (error_) {
     return res.status(500).json({

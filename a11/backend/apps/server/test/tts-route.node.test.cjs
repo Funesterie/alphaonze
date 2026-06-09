@@ -3435,7 +3435,16 @@ test('tts official A11 sample route serves the official library WAV', async () =
         assert.equal(response.status, 200);
         assert.match(String(response.headers.get('content-type') || ''), /audio\/wav/i);
         assert.equal(response.headers.get('x-a11-voice-persona'), 'a11');
+        assert.equal(response.headers.get('x-a11-voice-sample'), 'static');
         assert.equal(Buffer.from(await response.arrayBuffer()).length, wav.length);
+
+        const withTextQuery = await fetch(`${baseUrl}/api/tts/official/a11/audio?text=Bonjour`, {
+          headers: { 'x-test-basic': '1' },
+          redirect: 'manual',
+        });
+        assert.equal(withTextQuery.status, 302);
+        assert.equal(withTextQuery.headers.get('location'), '/api/tts/official/a11/audio');
+        assert.equal(withTextQuery.headers.get('x-a11-voice-sample'), 'static');
 
         const missing = await fetch(`${baseUrl}/api/tts/official/unknown/audio`);
         assert.equal(missing.status, 404);
