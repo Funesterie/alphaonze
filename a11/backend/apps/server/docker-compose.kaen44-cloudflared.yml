@@ -1,6 +1,6 @@
 services:
   kaen44-cloudflared:
-    image: cloudflare/cloudflared:2026.5.2
+    image: cloudflare/cloudflared:latest
     container_name: kaen44-cloudflared
     restart: unless-stopped
     network_mode: host

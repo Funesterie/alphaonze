@@ -39,6 +39,18 @@ function Get-WslState([string]$Name) {
   return "missing"
 }
 
+function Get-WslDefaultDistro {
+  if (-not (Test-CommandExists "wsl.exe")) { return "unavailable" }
+  $raw = (& wsl.exe -l -v 2>$null | Out-String) -replace "`0", ""
+  foreach ($line in $raw -split "`r?`n") {
+    if ($line.TrimStart().StartsWith("*")) {
+      $parts = ($line -replace "^\s*\*\s*", "").Trim() -split "\s+"
+      if ($parts.Count -gt 0) { return $parts[0] }
+    }
+  }
+  return "unknown"
+}
+
 function Invoke-Optional([scriptblock]$Script, [string]$Fallback = "") {
   try {
     & $Script
@@ -60,6 +72,7 @@ function Show-Status {
   Show-Profile
 
   Write-Section "WSL engines"
+  Write-Host ("default              : {0}" -f (Get-WslDefaultDistro))
   Write-Host ("docker-desktop       : {0}" -f (Get-WslState "docker-desktop"))
   Write-Host ("{0,-20}: {1}" -f $PodmanDistro, (Get-WslState $PodmanDistro))
   Write-Host ("{0,-20}: {1}" -f $PodmanNetworkDistro, (Get-WslState $PodmanNetworkDistro))

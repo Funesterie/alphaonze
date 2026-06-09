@@ -19,6 +19,9 @@ Use several container environments, but give each one a clear job.
 - Do not run Docker Desktop and Podman all day unless a build/rescue/test task needs both.
 - Keep Docker Desktop as the active NOSSEN runtime because it currently exposes the useful MCP/Neo4j containers.
 - Keep Podman as a paid/available workshop lane, not as a duplicate always-on runtime.
+- Keep WSL default on `docker-desktop` on Djeff's PC. If the default distro falls back to `podman-a11-wsl`, bare `wsl` calls can hit the workshop lane by mistake.
+- Keep Docker CLI default context on `desktop-linux`.
+- Pull the watched floating image tracks daily: `cloudflare/cloudflared:latest`, `caddy:2-alpine`, and `neo4j:latest`.
 
 ## Operator Commands
 
@@ -27,12 +30,17 @@ npm run nossen:docker:status
 npm run nossen:docker:profile
 npm run nossen:docker:atelier:on
 npm run nossen:docker:atelier:off
+npm run nossen:docker:update:check
+npm run nossen:docker:update
+npm run nossen:docker:update:recreate
+npm run nossen:docker:update:task
 ```
 
 Direct script:
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/nossen/Nossen-DockerRuntime.ps1 status
+pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/nossen/Update-FunesterieDockerImages.ps1 -Pull -SetDockerContext -EnsureWslDefault
 ```
 
 ## Verified Snapshot
@@ -48,6 +56,16 @@ On 2026-06-07:
 - Local Aura MCP `http://127.0.0.1:8788/mcp` listed 101 tools, including `container_runtime_status`.
 - Public MCP `https://mcp.funesterie.me/mcp` was redeployed on Hetzner and listed 101 tools, including `container_runtime_status`.
 - Shared and Aura Neo4j MCP status checks succeeded against database `aa4680d2`.
+
+On 2026-06-09:
+
+- WSL default was changed from `podman-a11-wsl` to `docker-desktop`.
+- Docker context was confirmed as `desktop-linux`.
+- Local floating images were pulled: `cloudflare/cloudflared:latest`, `caddy:2-alpine`, `neo4j:latest`.
+- Local `a11-mcp-cloudflared` was recreated from the updated Cloudflared image.
+- Docker Desktop Neo4j extension was recreated from the updated `neo4j:latest` image and reported Neo4j 2026.05.0 in logs.
+- Prod Caddy on Hetzner was pulled and recreated from updated `caddy:2-alpine`; public smoke checks returned HTTP 200.
+- Windows scheduled task `Funesterie Docker Image Daily Update` runs the pull/context/WSL guard daily at 09:15.
 - Kiro workspace MCP config now points to canonical `https://mcp.funesterie.me/mcp`; `/kiro/mcp` is legacy.
 
 ## Rule For Agents
