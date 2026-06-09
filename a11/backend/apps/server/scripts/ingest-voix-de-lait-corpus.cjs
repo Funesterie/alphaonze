@@ -8,6 +8,7 @@ const SERVER_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(SERVER_ROOT, '..', '..', '..', '..');
 const DEFAULT_SOURCE = 'C:\\Users\\Djeff\\Downloads\\voix de lait transcription.txt';
 const TRANSCRIPT_METADATA_LINE_PATTERNS = Object.freeze([
+  /^Message de la Voix\b/i,
   /^\(Transcrit par TurboScribe\./i,
   /^Sous-titres r(?:e|\u00e9)alis(?:e|\u00e9)s para? la communaut(?:e|\u00e9) d'Amara\.org$/i,
 ]);

@@ -36,6 +36,7 @@ test('private corpus capsule append is idempotent', () => {
 
 test('voix de lait transcript ingestion strips external banner metadata', () => {
   const cleaned = normalizeTranscript([
+    'Message de la Voix (version fidele a l audio)',
     '(Transcrit par TurboScribe. Passez a Illimite pour supprimer ce message.)',
     '',
     'Une premiere ligne utile.',
@@ -50,6 +51,7 @@ test('voix de lait transcript ingestion strips external banner metadata', () => 
     generatedAt: '2026-06-09T00:00:00.000Z',
   });
 
+  assert.doesNotMatch(cleaned, /Message de la Voix/i);
   assert.doesNotMatch(cleaned, /TurboScribe/i);
   assert.doesNotMatch(cleaned, /Amara/i);
   assert.match(cleaned, /Une premiere ligne utile/);
