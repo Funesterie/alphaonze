@@ -131,6 +131,11 @@ import {
 import handleImportFiles, { type ImportedConversationAttachment } from "./lib/importer";
 import { chatCompletionDetailed, extractAssistantDisplayContent, resolveApiAssetUrl, type Provider } from "./lib/api";
 import { foldForLookup, toUnicodeLine, toUnicodeText } from "./lib/language";
+import {
+  attachLegacyStaticUiTranslator,
+  translateLegacyStaticDocumentTitle,
+  translateLegacyStaticUi,
+} from "./lib/ui-translation";
 
 type Role = "user" | "assistant" | "system";
 
@@ -4819,6 +4824,8 @@ function VivyPublicPage({ authenticated, displayName }: VivyPublicPageProps) {
     try {
       localStorage.setItem("a11:language", vivyMenuLanguage);
       document.documentElement.lang = A11_LANGUAGE_CHOICES.find((choice) => choice.code === vivyMenuLanguage)?.speechLang || "fr-FR";
+      translateLegacyStaticUi(document.getElementById("root") || document.body, vivyMenuLanguage);
+      translateLegacyStaticDocumentTitle(vivyMenuLanguage);
     } catch {
       // ignore storage/document access issues
     }
@@ -9109,6 +9116,25 @@ export function App() {
     }
     setSpeechRecognitionLanguage(selectedA11Language.speechLang);
   }, [selectedA11Language]);
+
+  useEffect(() => attachLegacyStaticUiTranslator(selectedA11Language.code), [selectedA11Language.code]);
+
+  useEffect(() => {
+    translateLegacyStaticDocumentTitle(selectedA11Language.code);
+  }, [
+    selectedA11Language.code,
+    isGeneralAccount,
+    isGeneralAgents,
+    isGeneralArchitecture,
+    isGeneralCockpit,
+    isGeneralContact,
+    isGeneralHome,
+    isGeneralLogin,
+    isGeneralPrivacy,
+    isGeneralTerms,
+    isKaen44,
+    isVivy,
+  ]);
   const toggleLockRef = useRef(false);
   const sendLockRef = useRef(false);
   const pendingMessageKeyRef = useRef("");
