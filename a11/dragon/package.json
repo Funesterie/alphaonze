@@ -50,7 +50,7 @@
   "homepage": "https://github.com/Funesterie/funesterie/tree/master/a11/dragon#readme",
   "devDependencies": {
     "@types/node": "^25.9.0",
-    "concurrently": "^9.2.1",
+    "concurrently": "^10.0.3",
     "tsx": "^4.22.1",
     "typescript": "^6.0.3"
   },
