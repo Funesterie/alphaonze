@@ -38,7 +38,7 @@ function Resolve-VoiceReferencePath {
   return $candidates[0]
 }
 $A11VoiceReference = Resolve-VoiceReferencePath "a11-official-stern-french.wav"
-$VivyVoiceReference = Resolve-VoiceReferencePath "vivy-official-french-conversational.wav"
+$VivyVoiceReference = Resolve-VoiceReferencePath "vivy.wav"
 $Kaen44VoiceReference = Resolve-VoiceReferencePath "kaen44-official-french-narrator.wav"
 $Remote = "deploy@62.238.43.32"
 $SshKey = if ($env:A11_HETZNER_SSH_KEY) {
@@ -459,11 +459,14 @@ services:
       A11_VOICE_XTTS_RVC_PROTOCOL: ${A11_VOICE_XTTS_RVC_PROTOCOL:-a11}
       A11_VOICE_XTTS_RVC_LANGUAGE: ${A11_VOICE_XTTS_RVC_LANGUAGE:-fr}
       A11_VOICE_XTTS_RVC_TIMEOUT_SECONDS: ${A11_VOICE_XTTS_RVC_TIMEOUT_SECONDS:-240}
-      A11_VOICE_XTTS_RVC_FALLBACK: ${A11_VOICE_XTTS_RVC_FALLBACK:-true}
+      A11_VOICE_XTTS_RVC_FALLBACK: ${A11_VOICE_XTTS_RVC_FALLBACK:-false}
+      A11_RUNTIME_ROOT: /app/runtime
       A11_VOICE_REFERENCE_LIBRARY_DIR: /app/voices
+      A11_VOICE_REFERENCE_LIBRARY_DIRS: /app/voices
       A11_PIPER_MODEL_DIRS: /app/extra-models;/app/models
     volumes:
       - /srv/a11-data/a11/voice-out:/app/out
+      - /srv/a11-data/a11/runtime:/app/runtime:ro
       - /srv/a11-data/a11/runtime/voice-library:/app/voices:ro
       - /srv/a11-data/a11/tts:/app/extra-models:ro
     depends_on:
@@ -1026,7 +1029,7 @@ $overrides = [ordered]@{
   A11_VOICE_XTTS_RVC_PROTOCOL = $(if ($env:A11_VOICE_XTTS_RVC_PROTOCOL) { $env:A11_VOICE_XTTS_RVC_PROTOCOL } else { "a11" })
   A11_VOICE_XTTS_RVC_LANGUAGE = $(if ($env:A11_VOICE_XTTS_RVC_LANGUAGE) { $env:A11_VOICE_XTTS_RVC_LANGUAGE } else { "fr" })
   A11_VOICE_XTTS_RVC_TIMEOUT_SECONDS = $(if ($env:A11_VOICE_XTTS_RVC_TIMEOUT_SECONDS) { $env:A11_VOICE_XTTS_RVC_TIMEOUT_SECONDS } else { "240" })
-  A11_VOICE_XTTS_RVC_FALLBACK = $(if ($env:A11_VOICE_XTTS_RVC_FALLBACK) { $env:A11_VOICE_XTTS_RVC_FALLBACK } else { "true" })
+  A11_VOICE_XTTS_RVC_FALLBACK = $(if ($env:A11_VOICE_XTTS_RVC_FALLBACK) { $env:A11_VOICE_XTTS_RVC_FALLBACK } else { "false" })
   A11_TTS_LOCAL_GPU_WORKER_ENABLED = $(if ($env:A11_TTS_LOCAL_GPU_WORKER_ENABLED) { $env:A11_TTS_LOCAL_GPU_WORKER_ENABLED } else { "false" })
   A11_LOCAL_GPU_WORKER_TOKEN_FILE = $(if ($env:A11_LOCAL_GPU_WORKER_TOKEN_FILE) { $env:A11_LOCAL_GPU_WORKER_TOKEN_FILE } else { "/app/runtime/secrets/local_gpu_worker_token" })
   A11_LOCAL_GPU_WORKER_FALLBACK_MS = $(if ($env:A11_LOCAL_GPU_WORKER_FALLBACK_MS) { $env:A11_LOCAL_GPU_WORKER_FALLBACK_MS } else { "45000" })

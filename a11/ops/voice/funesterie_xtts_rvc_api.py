@@ -84,6 +84,12 @@ DEFAULT_PERSONA_MANIFEST = {
         "rvc": "vivy.pth",
         "index": "vivy.index",
     },
+    "vivy-official-french-conversational": {
+        "persona": "vivy",
+        "voice": "vivy.wav",
+        "rvc": "vivy.pth",
+        "index": "vivy.index",
+    },
 }
 
 for item in (XTTS_DIR, VOICES_DIR, RVCS_DIR, OUT_DIR):
@@ -168,7 +174,14 @@ def normalize_style(value: str) -> str:
         return "terminator"
     if key in {"donna", "kaen44-donna"}:
         return "donna"
-    if key == "vivy":
+    if key in {
+        "vivy",
+        "vivy-official",
+        "vivy-official-french-conversational",
+        "vivy-french",
+        "vivy-conversational",
+        "official-vivy",
+    }:
         return "vivy"
     return "a11-official-stern-french"
 
