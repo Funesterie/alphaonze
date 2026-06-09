@@ -11,6 +11,7 @@ param(
   [switch]$EnsureWslDefault,
   [string]$WslDefault = "docker-desktop",
   [switch]$RecreateKnownContainers,
+  [switch]$ForceRecreate,
   [switch]$InstallScheduledTask,
   [string]$TaskName = "Funesterie Docker Image Daily Update",
   [string]$At = "09:15",
@@ -98,7 +99,8 @@ function Register-DailyTask {
     "-File", "`"$scriptPath`"",
     "-Pull",
     "-SetDockerContext",
-    "-EnsureWslDefault"
+    "-EnsureWslDefault",
+    "-RecreateKnownContainers"
   ) -join " "
 
   $time = [datetime]::ParseExact($At, "HH:mm", [Globalization.CultureInfo]::InvariantCulture)
@@ -135,6 +137,7 @@ $report = [ordered]@{
   setDockerContext = [bool]$SetDockerContext
   ensureWslDefault = [bool]$EnsureWslDefault
   recreateKnownContainers = [bool]$RecreateKnownContainers
+  forceRecreate = [bool]$ForceRecreate
   images = @()
   actions = @()
 }
@@ -209,32 +212,49 @@ foreach ($image in $Images) {
 }
 
 if ($RecreateKnownContainers) {
+  $changedImages = @($report.images | Where-Object { $_.changed } | ForEach-Object { $_.image })
   $a11McpRoot = Join-Path $RepoRoot "a11mcp"
   $mcpCompose = Join-Path $a11McpRoot "docker-compose.yml"
   $tunnelCompose = Join-Path $a11McpRoot "docker-compose.tunnel.yml"
   if ((Test-Path -LiteralPath $mcpCompose) -and (Test-Path -LiteralPath $tunnelCompose)) {
-    $result = Invoke-LoggedCommand `
-      -FilePath "docker" `
-      -Arguments @("--context", $DockerContext, "compose", "-f", $mcpCompose, "-f", $tunnelCompose, "up", "-d", "cloudflared") `
-      -WorkingDirectory $a11McpRoot
-    $report.actions += [pscustomobject]@{
-      name = "recreate-a11-mcp-cloudflared"
-      ok = $result.ok
-      detail = $result.output
+    if ($ForceRecreate -or ($changedImages -contains "cloudflare/cloudflared:latest")) {
+      $result = Invoke-LoggedCommand `
+        -FilePath "docker" `
+        -Arguments @("--context", $DockerContext, "compose", "-f", $mcpCompose, "-f", $tunnelCompose, "up", "-d", "cloudflared") `
+        -WorkingDirectory $a11McpRoot
+      $report.actions += [pscustomobject]@{
+        name = "recreate-a11-mcp-cloudflared"
+        ok = $result.ok
+        detail = $result.output
+      }
+    } else {
+      $report.actions += [pscustomobject]@{
+        name = "skip-a11-mcp-cloudflared"
+        ok = $true
+        detail = "cloudflare/cloudflared:latest unchanged"
+      }
     }
   }
 
   $neo4jExtensionCompose = Join-Path $env:APPDATA "Docker\extensions\ajeetraina_neo4j-docker-extension\vm\docker-compose.yaml"
   if (Test-Path -LiteralPath $neo4jExtensionCompose) {
-    $neo4jDir = Split-Path -Parent $neo4jExtensionCompose
-    $result = Invoke-LoggedCommand `
-      -FilePath "docker" `
-      -Arguments @("--context", $DockerContext, "compose", "-f", $neo4jExtensionCompose, "up", "-d") `
-      -WorkingDirectory $neo4jDir
-    $report.actions += [pscustomobject]@{
-      name = "recreate-docker-desktop-neo4j-extension"
-      ok = $result.ok
-      detail = $result.output
+    if ($ForceRecreate -or ($changedImages -contains "neo4j:latest")) {
+      $neo4jDir = Split-Path -Parent $neo4jExtensionCompose
+      $result = Invoke-LoggedCommand `
+        -FilePath "docker" `
+        -Arguments @("--context", $DockerContext, "compose", "-f", $neo4jExtensionCompose, "up", "-d") `
+        -WorkingDirectory $neo4jDir
+      $report.actions += [pscustomobject]@{
+        name = "recreate-docker-desktop-neo4j-extension"
+        ok = $result.ok
+        detail = $result.output
+      }
+    } else {
+      $report.actions += [pscustomobject]@{
+        name = "skip-docker-desktop-neo4j-extension"
+        ok = $true
+        detail = "neo4j:latest unchanged"
+      }
     }
   }
 }

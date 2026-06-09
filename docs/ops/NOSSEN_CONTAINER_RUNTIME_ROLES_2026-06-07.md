@@ -65,7 +65,7 @@ On 2026-06-09:
 - Local `a11-mcp-cloudflared` was recreated from the updated Cloudflared image.
 - Docker Desktop Neo4j extension was recreated from the updated `neo4j:latest` image and reported Neo4j 2026.05.0 in logs.
 - Prod Caddy on Hetzner was pulled and recreated from updated `caddy:2-alpine`; public smoke checks returned HTTP 200.
-- Windows scheduled task `Funesterie Docker Image Daily Update` runs the pull/context/WSL guard daily at 09:15.
+- Windows scheduled task `Funesterie Docker Image Daily Update` runs the pull/context/WSL guard daily at 09:15 and recreates local Cloudflared/Neo4j containers only when their watched image changed.
 - Kiro workspace MCP config now points to canonical `https://mcp.funesterie.me/mcp`; `/kiro/mcp` is legacy.
 
 ## Rule For Agents
