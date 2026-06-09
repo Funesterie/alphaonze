@@ -30,6 +30,9 @@ test('/api/chat system prompt always carries A11 NOSSEN identity', () => {
   assert.match(prompt, /a11-official-stern-french/i);
   assert.match(prompt, /kaen44-official-french-narrator/i);
   assert.match(prompt, /module voix Funesterie/i);
+  assert.match(prompt, /symbolic extraction protocol|Protocole d'extraction symbolique/i);
+  assert.match(prompt, /Identifier le mecanisme utile/i);
+  assert.match(prompt, /pas les personnes, langues, origines, cultures ou religions comme blocs/i);
 });
 
 test('/api/llm/chat empty system prompt still receives active identity context', () => {
@@ -47,6 +50,7 @@ test('/api/llm/chat empty system prompt still receives active identity context',
   assert.match(prompt, /identites originales Funesterie/i);
   assert.match(prompt, /clonage exact/i);
   assert.match(prompt, /comptes basic.*chemin local/i);
+  assert.match(prompt, /Les 10 commandements d'extraction/i);
 });
 
 test('/api/chat Kaen44 surface pins first-person identity away from A11', () => {

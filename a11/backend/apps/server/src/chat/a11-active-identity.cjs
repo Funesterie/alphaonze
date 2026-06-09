@@ -4,6 +4,10 @@ const {
   A11_RESPONSE_DRAFT_CONTEXT,
   hasResponseDraftContext,
 } = require('./response-draft-rewriter.cjs');
+const {
+  SYMBOLIC_EXTRACTION_PROTOCOL_CONTEXT,
+  hasSymbolicExtractionProtocolContext,
+} = require('./symbolic-extraction-protocol.cjs');
 
 const A11_CHAT_IDENTITY_CONTEXT = `
 [A11/Funesterie active identity]
@@ -221,6 +225,9 @@ function buildA11ChatSystemPrompt(systemPrompt = '', options = {}) {
   if (!hasRuntimeModuleContext(basePrompt)) {
     sections.push(A11_RUNTIME_MODULE_CONTEXT);
   }
+  if (!hasSymbolicExtractionProtocolContext(basePrompt)) {
+    sections.push(SYMBOLIC_EXTRACTION_PROTOCOL_CONTEXT);
+  }
 
   return sections.filter(Boolean).join('\n\n');
 }
@@ -306,6 +313,7 @@ module.exports = {
   A11_RESPONSE_DRAFT_CONTEXT,
   A11_RUNTIME_MODULE_CONTEXT,
   A11_SESSION_ISOLATION_CONTEXT,
+  SYMBOLIC_EXTRACTION_PROTOCOL_CONTEXT,
   A11_VOICE_MODULE_CONTEXT,
   buildSurfaceIdentityContext,
   buildA11ChatSystemPrompt,
@@ -316,6 +324,7 @@ module.exports = {
   hasActiveIdentityContext,
   hasMcpContext,
   hasRuntimeModuleContext,
+  hasSymbolicExtractionProtocolContext,
   hasVoiceModuleContext,
   normalizeAgentSurface,
   isMcpAccessQuestion,

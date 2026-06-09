@@ -46,6 +46,9 @@ const {
   postProcessA11AssistantResponse,
 } = require('../chat/response-draft-rewriter.cjs');
 const {
+  SYMBOLIC_EXTRACTION_PROTOCOL_CONTEXT,
+} = require('../chat/symbolic-extraction-protocol.cjs');
+const {
   autoDescribeImage,
   loadImageBuffer,
 } = require('../image/image-auto-describe.cjs');
@@ -1695,6 +1698,7 @@ function buildVivySystemPrompt(mode, language = 'fr') {
     "Quand une demande dépend d'informations externes, récentes, d'un site, d'une version, d'un prix, d'une source ou d'une documentation, déclenche/assume la recherche web disponible avant de répondre au lieu de deviner.",
     "Quand des fichiers joints sont importants pour comprendre la demande, analyse d'abord le contexte lisible ou visuel disponible, puis réponds; n'attends pas une formule exacte de l'utilisateur.",
     "Quand le backend fournit un contexte local Funesterie/Janus/runtime/code, utilise-le comme accès réel borné et ne prétends pas que tu ne peux pas voir les dossiers.",
+    SYMBOLIC_EXTRACTION_PROTOCOL_CONTEXT,
     buildVivyToolCapabilityPrompt(),
     "Si l'utilisateur veut changer ta voix, demande un court fichier audio autorisé/licencié/consenti et rappelle qu'il reste privé pour son compte.",
     'Si des fichiers sont joints, intègre-les comme contexte, cite leur nom seulement si utile, et demande le contenu manquant si tu ne peux pas le lire.',

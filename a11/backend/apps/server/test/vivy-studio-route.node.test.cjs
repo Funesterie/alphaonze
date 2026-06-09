@@ -700,6 +700,10 @@ test('Vivy chat prompt keeps original musical direction and avoids canned replie
   assert.match(prompt, /fin de ligne/i);
   assert.match(prompt, /autorisé\/licencié\/consenti/i);
   assert.doesNotMatch(prompt, /clone Kairi/i);
+  assert.match(prompt, /symbolic extraction protocol/i);
+  assert.match(prompt, /Identifier le mecanisme utile/i);
+  assert.match(prompt, /Adapter au contexte/i);
+  assert.match(prompt, /pas les personnes, langues, origines, cultures ou religions comme blocs/i);
 });
 
 test('Vivy song guard replaces weak assistant drafts with structured lyrics', () => {
