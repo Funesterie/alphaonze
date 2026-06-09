@@ -54,6 +54,7 @@
     "memory:write-note": "node scripts/a11-memory-router.cjs write-note",
     "memory:sync-local": "node scripts/a11-memory-router.cjs sync-local",
     "memory:backup-seagate": "node scripts/a11-memory-router.cjs backup-seagate",
+    "corpus:voix-de-lait": "node scripts/ingest-voix-de-lait-corpus.cjs",
     "mcp:autopilot": "powershell -NoProfile -ExecutionPolicy Bypass -File ..\\..\\..\\ops\\a11-mcp-ai-autopilot.ps1",
     "mcp:autopilot:sync": "powershell -NoProfile -ExecutionPolicy Bypass -File ..\\..\\..\\ops\\a11-mcp-ai-autopilot.ps1 -SyncLocal -PostOk",
     "mcp:autopilot:backup": "powershell -NoProfile -ExecutionPolicy Bypass -File ..\\..\\..\\ops\\a11-mcp-ai-autopilot.ps1 -Backup -PostOk",

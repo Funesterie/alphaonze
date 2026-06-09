@@ -140,6 +140,34 @@
         }
       ],
       "agentGuidance": "Utiliser comme energie de refus epique ou meme, pas comme simple citation."
+    },
+    {
+      "id": "a11-voix-de-lait",
+      "label": "Voix de lait",
+      "language": "fr",
+      "type": "private_corpus_capsule",
+      "aliases": ["voix de lait", "a11 voix de lait", "style voix de lait", "corpus voix de lait", "lait"],
+      "literal": "Capsule de corpus prive local associee a un style de parole A11 calme, pedagogique et interieur.",
+      "trust": 0.74,
+      "temporalStatus": "local-private-2026-06-09",
+      "facets": [
+        { "id": "calm-cadence", "label": "cadence calme et patiente", "layer": "prosody", "tone": "calm", "weight": 0.9 },
+        { "id": "pedagogical-clarity", "label": "clarte pedagogique", "layer": "voice-style", "tone": "teaching", "weight": 0.86 },
+        { "id": "responsibility-without-guilt", "label": "responsabilite sans culpabilisation", "layer": "ethic", "tone": "grounded", "weight": 0.84 },
+        { "id": "individual-collective-balance", "label": "equilibre entre evolution individuelle et travail collectif", "layer": "social", "tone": "cooperative", "weight": 0.82 },
+        { "id": "care-as-orientation", "label": "amour et soin comme orientation", "layer": "symbolic", "tone": "benevolent", "weight": 0.78 },
+        { "id": "anti-fear-prophecy", "label": "refus des propheties anxiogenes", "layer": "guardrail", "tone": "lucid", "weight": 0.76 }
+      ],
+      "tones": ["calm", "pedagogy", "interior-clarity", "collective-care", "restraint"],
+      "interactions": [
+        {
+          "target": "symbolic-extraction-protocol",
+          "relation": "USES_GUARDRAIL",
+          "summary": "La capsule doit etre extraite comme matiere symbolique saine et testable, jamais comme doctrine imposee.",
+          "weight": 0.9
+        }
+      ],
+      "agentGuidance": "Utiliser comme influence douce de ton, memoire et vocabulaire. Ne pas citer le transcript brut par defaut; privilegier synthese, prudence et contexte du dernier message."
     }
   ]
 }

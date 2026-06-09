@@ -18,6 +18,8 @@ $WebDist = Join-Path $A11Root "frontend\apps\web\dist"
 $EnvSource = Join-Path $ServerRoot "profiles\a11.env"
 $McpEnvSource = Join-Path $RepoRoot "a11mcp\.env"
 $RuntimeVoiceLibrary = Join-Path $RepoRoot "runtime\voice-library"
+$RuntimeCorpusRoot = Join-Path $RepoRoot "runtime\Corpus"
+$VoixDeLaitCorpusRoot = Join-Path $RuntimeCorpusRoot "private\a11-voix-de-lait"
 function Resolve-VoiceReferencePath {
   param(
     [Parameter(Mandatory = $true)][string]$FileName
@@ -1179,6 +1181,24 @@ foreach ($voiceReference in $voiceReferenceCopies) {
   if ($LASTEXITCODE -ne 0) { throw "Copie reference voix $($voiceReference.Label) A11 echouee" }
   & scp @sshBase $voiceReference.Path "${Remote}:$RemoteDataRoot/kaen44-runtime/voice-library/$($voiceReference.Name)"
   if ($LASTEXITCODE -ne 0) { throw "Copie reference voix $($voiceReference.Label) K44 echouee" }
+}
+
+if (Test-Path -LiteralPath $VoixDeLaitCorpusRoot) {
+  $privateCorpusTargets = @(
+    "$RemoteDataRoot/runtime/Corpus/private/a11-voix-de-lait",
+    "$RemoteDataRoot/kaen44-runtime/Corpus/private/a11-voix-de-lait"
+  )
+  foreach ($privateCorpusTarget in $privateCorpusTargets) {
+    & ssh @sshBase $Remote "mkdir -p '$privateCorpusTarget'"
+    if ($LASTEXITCODE -ne 0) { throw "Creation dossier corpus prive echouee: $privateCorpusTarget" }
+    Get-ChildItem -LiteralPath $VoixDeLaitCorpusRoot -File |
+      ForEach-Object {
+        & scp @sshBase $_.FullName "${Remote}:$privateCorpusTarget/$($_.Name)"
+        if ($LASTEXITCODE -ne 0) { throw "Copie corpus voix de lait echouee: $($_.Name)" }
+      }
+  }
+} else {
+  Write-Warning "Corpus voix de lait absent localement: $VoixDeLaitCorpusRoot"
 }
 
 $remoteBuildEnvRefresh = @'

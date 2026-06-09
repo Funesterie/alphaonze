@@ -21,7 +21,7 @@ const SERVER_ROOT = path.resolve(__dirname, '..');
 const A11_ROOT = path.resolve(SERVER_ROOT, '..', '..', '..');
 const WORKSPACE_ROOT = path.resolve(A11_ROOT, '..');
 
-loadEnvIfExists(path.join(SERVER_ROOT, '.env.local'), true);
+loadEnvIfExists(path.join(SERVER_ROOT, '.env.local'), false);
 loadEnvIfExists(path.join(SERVER_ROOT, '.env'), false);
 loadEnvIfExists(path.join(WORKSPACE_ROOT, 'a11mcp', '.env'), false);
 

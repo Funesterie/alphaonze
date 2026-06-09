@@ -56,7 +56,16 @@ function loadSemanticResonanceSeeds(options = {}) {
   const seedsPath = resolveSemanticResonanceSeedsPath(options);
   const raw = fs.readFileSync(seedsPath, 'utf8');
   const parsed = JSON.parse(raw);
-  const entries = uniqueBy(asArray(parsed.entries), (entry) => normalizeText(entry?.id || entry?.label));
+  const entriesSource = asArray(parsed.entries);
+  if (!options.seedsPath && seedsPath !== PACKAGED_SEEDS_PATH && fs.existsSync(PACKAGED_SEEDS_PATH)) {
+    try {
+      const packaged = JSON.parse(fs.readFileSync(PACKAGED_SEEDS_PATH, 'utf8'));
+      entriesSource.push(...asArray(packaged.entries));
+    } catch (_) {
+      // Runtime seeds still work if the packaged fallback cannot be read.
+    }
+  }
+  const entries = uniqueBy(entriesSource, (entry) => normalizeText(entry?.id || entry?.label));
   return {
     ...parsed,
     seedsPath,

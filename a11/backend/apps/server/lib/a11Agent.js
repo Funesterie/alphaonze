@@ -7,6 +7,9 @@
 const {
   SYMBOLIC_EXTRACTION_PROTOCOL_CONTEXT,
 } = require('../src/chat/symbolic-extraction-protocol.cjs');
+const {
+  A11_PRIVATE_CORPUS_CAPSULE_CONTEXT,
+} = require('../src/chat/private-corpus-capsules.cjs');
 
 const A11_AGENT_SYSTEM_PROMPT = `
 [IDENTITY]
@@ -68,6 +71,9 @@ Je ne dis jamais "je n'ai pas accès à Piccolo/Doctor/QFlush" avant d'avoir vé
 
 [SYMBOLIC_EXTRACTION]
 ${SYMBOLIC_EXTRACTION_PROTOCOL_CONTEXT}
+
+[PRIVATE_CORPUS_CAPSULES]
+${A11_PRIVATE_CORPUS_CAPSULE_CONTEXT}
 
 [CONTEXT]
 workspaceRoot est injecté par Cerbère.

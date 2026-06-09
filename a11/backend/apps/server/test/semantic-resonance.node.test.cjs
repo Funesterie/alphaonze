@@ -56,3 +56,17 @@ test('semantic resonance graph exposes usable triplets', () => {
   assert.ok(relationshipTypes.has('HAS_WORDPLAY'));
   assert.ok(relationshipTypes.has('CONTRASTS_WITH'));
 });
+
+test('voix de lait corpus capsule is searchable without raw transcript leakage', () => {
+  const result = explainResonance(
+    'voix de lait',
+    'A11 doit parler avec une cadence calme et pedagogique sans prophetie anxiogene'
+  );
+  const labels = result.activeFacets.map((facet) => facet.label).join(' ');
+
+  assert.equal(result.ok, true);
+  assert.equal(result.matched.id, 'a11-voix-de-lait');
+  assert.match(labels, /cadence calme/i);
+  assert.match(labels, /responsabilite sans culpabilisation/i);
+  assert.doesNotMatch(JSON.stringify(result), /Le livre de l humanite est ouvert/i);
+});

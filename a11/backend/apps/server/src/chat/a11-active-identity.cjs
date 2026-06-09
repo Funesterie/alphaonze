@@ -8,6 +8,10 @@ const {
   SYMBOLIC_EXTRACTION_PROTOCOL_CONTEXT,
   hasSymbolicExtractionProtocolContext,
 } = require('./symbolic-extraction-protocol.cjs');
+const {
+  A11_PRIVATE_CORPUS_CAPSULE_CONTEXT,
+  hasPrivateCorpusCapsuleContext,
+} = require('./private-corpus-capsules.cjs');
 
 const A11_CHAT_IDENTITY_CONTEXT = `
 [A11/Funesterie active identity]
@@ -219,6 +223,9 @@ function buildA11ChatSystemPrompt(systemPrompt = '', options = {}) {
   if (!hasPersonaStyleContext(basePrompt)) {
     sections.push(A11_PERSONA_STYLE_CONTEXT);
   }
+  if (!hasPrivateCorpusCapsuleContext(basePrompt)) {
+    sections.push(A11_PRIVATE_CORPUS_CAPSULE_CONTEXT);
+  }
   if (!hasMcpContext(basePrompt)) {
     sections.push(A11_MCP_CONTEXT);
   }
@@ -310,6 +317,7 @@ module.exports = {
   A11_LIVE_TONE_CONTEXT,
   A11_MCP_CONTEXT,
   A11_PERSONA_STYLE_CONTEXT,
+  A11_PRIVATE_CORPUS_CAPSULE_CONTEXT,
   A11_RESPONSE_DRAFT_CONTEXT,
   A11_RUNTIME_MODULE_CONTEXT,
   A11_SESSION_ISOLATION_CONTEXT,

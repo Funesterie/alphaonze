@@ -30,6 +30,10 @@ test('/api/chat system prompt always carries A11 NOSSEN identity', () => {
   assert.match(prompt, /a11-official-stern-french/i);
   assert.match(prompt, /kaen44-official-french-narrator/i);
   assert.match(prompt, /module voix Funesterie/i);
+  assert.match(prompt, /Funesterie private corpus capsules/i);
+  assert.match(prompt, /a11-voix-de-lait/i);
+  assert.match(prompt, /raw transcript stays private\/local/i);
+  assert.match(prompt, /Use as a soft style and memory influence/i);
   assert.match(prompt, /symbolic extraction protocol|Protocole d'extraction symbolique/i);
   assert.match(prompt, /Identifier le mecanisme utile/i);
   assert.match(prompt, /pas les personnes, langues, origines, cultures ou religions comme blocs/i);
@@ -50,6 +54,8 @@ test('/api/llm/chat empty system prompt still receives active identity context',
   assert.match(prompt, /identites originales Funesterie/i);
   assert.match(prompt, /clonage exact/i);
   assert.match(prompt, /comptes basic.*chemin local/i);
+  assert.match(prompt, /voix-de-lait/i);
+  assert.match(prompt, /private-local-transcript-and-audio-reference/i);
   assert.match(prompt, /Les 10 commandements d'extraction/i);
 });
 
@@ -177,6 +183,15 @@ test('/api/chat prompt does not duplicate the identity block when already presen
   assert.match(prompt, /^Je suis A-11/);
   assert.equal((prompt.match(/A11\/Funesterie active identity/g) || []).length, 0);
   assert.equal((prompt.match(/A11\/Funesterie MCP status/g) || []).length, 1);
+});
+
+test('/api/chat prompt keeps voix de lait as compact capsule only', () => {
+  const prompt = chatRouter.buildA11ChatSystemPrompt('');
+
+  assert.equal((prompt.match(/Funesterie private corpus capsules/g) || []).length, 1);
+  assert.match(prompt, /a11-voix-de-lait/i);
+  assert.doesNotMatch(prompt, /Il est necessaire, evidemment/i);
+  assert.doesNotMatch(prompt, /Le livre de l humanite est ouvert/i);
 });
 
 test('/api/chat recognizes MCP access questions and answers without hallucinating no access', () => {
