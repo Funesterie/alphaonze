@@ -436,6 +436,20 @@ def get_synthesis_state() -> dict:
         }
 
 
+def check_xtts_runtime_imports() -> dict:
+    try:
+        from transformers import BeamSearchScorer, LogitsProcessorList, StoppingCriteriaList
+
+        del BeamSearchScorer, LogitsProcessorList, StoppingCriteriaList
+        return {"ok": True}
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": type(exc).__name__,
+            "message": str(exc),
+        }
+
+
 class SynthesizeRequest(BaseModel):
     text: str = ""
     persona: str = ""
@@ -531,6 +545,7 @@ def health():
         "module": "funesterie-xtts-rvc-bridge",
         "device": DEVICE,
         "language": LANGUAGE,
+        "runtimeImports": check_xtts_runtime_imports(),
         "personaManifest": str(PERSONA_MANIFEST_PATH),
         "xttsModel": (XTTS_DIR / "model.pth").exists(),
         "voices": voices,

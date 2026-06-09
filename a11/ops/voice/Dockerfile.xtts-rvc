@@ -26,6 +26,8 @@ RUN pip install --no-cache-dir "pip<24.1" "setuptools<70" wheel \
     && pip install --no-cache-dir torch==2.11.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir -r /app/requirements.xtts-rvc.txt
 
+RUN python -c "from transformers import BeamSearchScorer, LogitsProcessorList, StoppingCriteriaList; from TTS.api import TTS; print('xtts-rvc import compatibility ok')"
+
 COPY patch_fairseq_py311.py /app/patch_fairseq_py311.py
 RUN python /app/patch_fairseq_py311.py
 
