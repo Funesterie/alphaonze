@@ -34,6 +34,9 @@ const {
   normalizeOAuthConnectors,
   normalizeOAuthScopeList,
 } = require('../auth/account-connectors.cjs');
+const {
+  normalizeLanguageCode,
+} = require('../../lib/language-text.cjs');
 
 const A11_SESSION_COOKIE = 'a11_session';
 const GOOGLE_OAUTH_STATE_COOKIE = 'a11_google_oauth_state';
@@ -209,9 +212,27 @@ function normalizeAccessPacks(user = {}, extra = {}) {
 function buildAuthClaims(user = {}, extra = {}) {
   const email = normalizeEmail(extra.email || user.email);
   const role = String(extra.role || user.role || '').trim();
+  const language = normalizeLanguageCode(
+    extra.language
+      || extra.locale
+      || extra.accountLanguage
+      || extra.account_language
+      || extra.preferredLanguage
+      || extra.preferred_language
+      || user.language
+      || user.locale
+      || user.accountLanguage
+      || user.account_language
+      || user.preferredLanguage
+      || user.preferred_language
+      || 'fr',
+    'fr'
+  );
   const claims = {
     id: extra.id ?? user.id,
     username: String(extra.username || user.username || '').trim(),
+    language,
+    locale: language,
   };
   const displayName = resolvePublicDisplayName(user, extra);
   const storageScope = resolvePublicStorageScope(user, extra);
@@ -302,6 +323,8 @@ function buildPublicAuthUser(user = {}, extra = {}) {
     username: claims.username,
     displayName: claims.displayName,
     email: claims.email || normalizeEmail(user.email),
+    language: claims.language || 'fr',
+    locale: claims.locale || claims.language || 'fr',
     storageScope: claims.storageScope,
     role: claims.role || undefined,
     fullAccess: claims.fullAccess === true,

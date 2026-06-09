@@ -753,6 +753,8 @@ function setAuthUserProfile(user: any) {
       tier: user.tier || user.accountTier || user.account_tier || '',
       accountTier: user.accountTier || user.account_tier || user.tier || '',
       provider: user.provider || '',
+      language: normalizeAccountLanguage(user.language || user.locale || user.accountLanguage || user.account_language || user.preferredLanguage || user.preferred_language),
+      locale: normalizeAccountLanguage(user.locale || user.language || user.accountLanguage || user.account_language || user.preferredLanguage || user.preferred_language),
     }));
   } catch {
     // ignore storage issues
@@ -798,6 +800,44 @@ function normalizeStorageScopePart(value: unknown) {
       .replace(/^_+|_+$/g, '')
       .slice(0, 64);
   }
+}
+
+export function normalizeAccountLanguage(value: unknown, fallback = 'fr') {
+  const normalizedFallback = ['fr', 'en', 'it', 'es', 'de', 'ja', 'zh'].includes(String(fallback || '').trim().toLowerCase())
+    ? String(fallback || '').trim().toLowerCase()
+    : 'fr';
+  const raw = String(value || '').trim().toLowerCase().replace(/_/g, '-');
+  if (!raw || raw === 'auto') return normalizedFallback;
+  const first = raw.split(/[-,;]/)[0];
+  if (['fr', 'en', 'it', 'es', 'de', 'ja', 'zh'].includes(first)) return first;
+  if (['francais', 'français', 'french'].includes(raw)) return 'fr';
+  if (['english', 'anglais'].includes(raw)) return 'en';
+  if (['italiano', 'italien', 'italian'].includes(raw)) return 'it';
+  if (['espanol', 'español', 'espagnol', 'spanish'].includes(raw)) return 'es';
+  if (['deutsch', 'allemand', 'german'].includes(raw)) return 'de';
+  return normalizedFallback;
+}
+
+export function getAuthAccountLanguage(fallback = 'fr') {
+  if (hasLocalDevBypassSession()) return normalizeAccountLanguage(localStorage.getItem('a11:language'), fallback);
+
+  const payload = decodeJwtPayload(getAuthToken()) || {};
+  const storedUser = getStoredAuthUserProfile() || {};
+  return normalizeAccountLanguage(
+    payload?.language
+      || payload?.locale
+      || payload?.accountLanguage
+      || payload?.account_language
+      || payload?.preferredLanguage
+      || payload?.preferred_language
+      || storedUser?.language
+      || storedUser?.locale
+      || storedUser?.accountLanguage
+      || storedUser?.account_language
+      || storedUser?.preferredLanguage
+      || storedUser?.preferred_language,
+    fallback
+  );
 }
 
 function isLocalDevSurface() {
@@ -863,6 +903,7 @@ export function getAuthIdentity() {
     username,
     email,
     storageScope: storageScope || '',
+    language: getAuthAccountLanguage('fr'),
   };
 }
 
@@ -2319,6 +2360,7 @@ export type VivyChatFileAttachment = {
 
 export type VivyStudioProductionInput = {
   mode: VivyStudioMode;
+  language?: string;
   message?: string;
   prompt?: string;
   text?: string;
@@ -2420,6 +2462,7 @@ export async function runVivyStudioProduction(
     credentials: 'include',
     body: JSON.stringify({
       ...input,
+      language: normalizeAccountLanguage(input.language || getAuthAccountLanguage('fr')),
       shareToken: undefined,
       shareTokenPresent: Boolean(input.shareTokenPresent),
       allowPlaceholderMedia: input.allowPlaceholderMedia === true,
@@ -2455,6 +2498,7 @@ export async function chatWithVivy(
     message?: string;
     history?: VivyStudioProductionInput['history'];
     mode?: VivyChatMode;
+    language?: string;
     conversationId?: string;
     files?: VivyChatFileAttachment[];
   }
@@ -2465,6 +2509,7 @@ export async function chatWithVivy(
     credentials: 'include',
     body: JSON.stringify({
       ...input,
+      language: normalizeAccountLanguage(input.language || getAuthAccountLanguage('fr')),
       shareToken: undefined,
       shareTokenPresent: false,
       disableEmergencyMedia: true,

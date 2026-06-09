@@ -710,6 +710,17 @@ test('Vivy chat prompt keeps original musical direction and avoids canned replie
   assert.match(prompt, /pas les personnes, langues, origines, cultures ou religions comme blocs/i);
 });
 
+test('Vivy uses the account language instead of guessing from draft text', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-account-language',
+    message: 'Please keep this rap idea raw for later.',
+    history: [],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser', language: 'it-IT' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.language, 'it');
+});
+
 test('Vivy song guard replaces weak assistant drafts with structured lyrics', () => {
   const userMessage = 'Transforme cette idée en chanson Vivy avec structure et refrain. Il faut que les fins de ligne riment.';
   const weakReply = [

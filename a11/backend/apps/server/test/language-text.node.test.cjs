@@ -5,8 +5,11 @@ const {
   normalizeTextNfc,
   normalizeOneLineNfc,
   foldTextForLookup,
+  normalizeLanguageCode,
+  resolveUserLanguage,
   detectTextLanguage,
   buildLanguageInstruction,
+  buildLanguageContract,
   hasMojibake,
 } = require('../lib/language-text.cjs');
 
@@ -28,4 +31,15 @@ test('language helpers detect the requested response language', () => {
   assert.equal(detectTextLanguage('Prepara una canción con voz suave.'), 'es');
   assert.match(buildLanguageInstruction('fr'), /français/);
   assert.match(buildLanguageInstruction('fr'), /accents/);
+});
+
+test('language helpers normalize account language aliases and request headers', () => {
+  assert.equal(normalizeLanguageCode('it-IT'), 'it');
+  assert.equal(normalizeLanguageCode('Italiano'), 'it');
+  assert.equal(normalizeLanguageCode('unknown'), 'fr');
+  assert.equal(resolveUserLanguage({ user: { language: 'en-US' } }), 'en');
+  assert.equal(resolveUserLanguage({ user: { language: 'unknown' }, headers: { 'accept-language': 'it-IT' } }), 'it');
+  assert.equal(resolveUserLanguage({ headers: { 'accept-language': 'it-IT,it;q=0.9,fr;q=0.8' } }), 'it');
+  assert.match(buildLanguageContract('it'), /italiano/i);
+  assert.match(buildLanguageContract('fr'), /privacy\/conditions/);
 });

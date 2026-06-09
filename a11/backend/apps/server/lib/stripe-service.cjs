@@ -37,6 +37,12 @@ const SUBSCRIPTION_PLANS = Object.freeze({
     accountTier: 'premium',
     label: 'A11 Premium',
     monthlyEur: 8.99,
+    priceCentsEur: 899,
+    features: Object.freeze([
+      'Chat long et credits creation inclus',
+      'Catalogue voix consenties pour preview et chanson',
+      'Routage media avance',
+    ]),
     priceEnv: 'STRIPE_PREMIUM_PRICE_ID',
     fallbackPriceEnv: 'STRIPE_PRICE_ID',
     lookupSlug: 'a11_premium_monthly_899',
@@ -46,6 +52,13 @@ const SUBSCRIPTION_PLANS = Object.freeze({
     accountTier: 'founder',
     label: 'A11 Fondateur',
     monthlyEur: 29.99,
+    priceCentsEur: 2999,
+    features: Object.freeze([
+      'Priorite haute',
+      'Catalogue voix consenties pour preview et chanson',
+      'IA custom future: avatar, description, prompt et providers personnels',
+      'Acces avance MCP, Neo4j et Docker avec garde-fous',
+    ]),
     priceEnv: 'STRIPE_FOUNDER_PRICE_ID',
     lookupSlug: 'a11_founder_monthly_2999',
   }),
@@ -244,8 +257,11 @@ function isStripeEnabled(plan = 'premium') {
 function getAvailablePlans() {
   return Object.values(SUBSCRIPTION_PLANS).map((plan) => ({
     id: plan.id,
+    accountTier: plan.accountTier,
     label: plan.label,
     monthlyEur: plan.monthlyEur,
+    priceCentsEur: plan.priceCentsEur,
+    features: Array.isArray(plan.features) ? [...plan.features] : [],
   }));
 }
 

@@ -36,6 +36,7 @@ import {
   createMatchArenaSession,
   emailConversationResource,
   clearAuthToken,
+  getAuthAccountLanguage,
   getAuthDisplayName,
   getLegacyAuthStorageScopes,
   getAuthStorageScope,
@@ -4426,9 +4427,11 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           content: entry.content,
           ts: entry.ts,
         }));
+      const vivyLanguage = normalizeA11LanguageCode(getAuthAccountLanguage(localStorage.getItem("a11:language") || "fr"));
       const payload = mode === "song"
         ? await runVivyStudioProduction({
           mode: "song",
+          language: vivyLanguage,
           message: messageText,
           songSource: "Conversation",
           songMood: "Rap/chant Funesterie, couplets nets, refrain chantable",
@@ -4441,6 +4444,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         })
         : await chatWithVivy({
           mode,
+          language: vivyLanguage,
           message: messageText,
           conversationId,
           files: apiFiles,
@@ -4796,12 +4800,29 @@ function VivyPublicPage({ authenticated, displayName }: VivyPublicPageProps) {
   const [connectionStarting, setConnectionStarting] = useState(false);
   const [vivyHasSession, setVivyHasSession] = useState(() => authenticated || hasVivyAuthenticatedSession());
   const [vivyDisplayName, setVivyDisplayName] = useState(() => displayName || getAuthDisplayName() || "Connexion requise");
+  const [vivyMenuLanguage, setVivyMenuLanguage] = useState<A11LanguageCode>(() => {
+    try {
+      return normalizeA11LanguageCode(getAuthAccountLanguage(localStorage.getItem("a11:language") || "fr"));
+    } catch {
+      return "fr";
+    }
+  });
 
   useEffect(() => {
     const nextHasSession = authenticated || hasVivyAuthenticatedSession();
     setVivyHasSession(nextHasSession);
     setVivyDisplayName(nextHasSession ? (displayName || getAuthDisplayName() || "Utilisateur") : "Connexion requise");
+    if (nextHasSession) setVivyMenuLanguage(normalizeA11LanguageCode(getAuthAccountLanguage("fr")));
   }, [authenticated, displayName]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("a11:language", vivyMenuLanguage);
+      document.documentElement.lang = A11_LANGUAGE_CHOICES.find((choice) => choice.code === vivyMenuLanguage)?.speechLang || "fr-FR";
+    } catch {
+      // ignore storage/document access issues
+    }
+  }, [vivyMenuLanguage]);
 
   function openVivyAccount() {
     setConnectionStarting(true);
@@ -4865,9 +4886,14 @@ function VivyPublicPage({ authenticated, displayName }: VivyPublicPageProps) {
                   name="vivyLanguage"
                   className="vivy-agent-menu-select"
                   aria-label="Langue Vivy"
-                  defaultValue="Français"
+                  value={vivyMenuLanguage}
+                  onChange={(event) => setVivyMenuLanguage(normalizeA11LanguageCode(event.target.value))}
                 >
-                  <option>Français</option>
+                  {A11_LANGUAGE_CHOICES.map((choice) => (
+                    <option key={choice.code} value={choice.code}>
+                      {choice.label}
+                    </option>
+                  ))}
                 </select>
               </section>
               <section className="vivy-agent-menu-section" aria-label="Options">
@@ -9025,7 +9051,7 @@ export function App() {
   );
   const [a11Language, setA11Language] = useState<A11LanguageCode>(() => {
     try {
-      return normalizeA11LanguageCode(localStorage.getItem("a11:language"));
+      return normalizeA11LanguageCode(getAuthAccountLanguage(localStorage.getItem("a11:language") || "fr"));
     } catch {
       return "fr";
     }
@@ -9034,6 +9060,11 @@ export function App() {
     () => A11_LANGUAGE_CHOICES.find((choice) => choice.code === a11Language) || A11_LANGUAGE_CHOICES[0],
     [a11Language]
   );
+  useEffect(() => {
+    if (!hasPrivateSession) return;
+    const accountLanguage = normalizeA11LanguageCode(getAuthAccountLanguage(a11Language));
+    if (accountLanguage !== a11Language) setA11Language(accountLanguage);
+  }, [a11Language, hasPrivateSession]);
   const defaultVoiceReferenceLabel = useMemo(
     () => getDefaultVoiceReferenceLabel(surfaceKind),
     [surfaceKind]

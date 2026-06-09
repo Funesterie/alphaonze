@@ -1,9 +1,11 @@
 'use strict';
 
 const {
+  LANGUAGE_NAMES,
   normalizeTextNfc,
   normalizeOneLineNfc,
   foldTextForLookup,
+  normalizeLanguageCode,
 } = require('../../lib/language-text.cjs');
 
 function cleanText(value, max = 2400) {
@@ -152,6 +154,9 @@ function hasExplicitVivySongArtists(input = {}) {
 
 function buildVivySongArtistCast(input = {}) {
   const ids = normalizeVivySongArtistIds(input);
+  const language = normalizeLanguageCode(input.language || input.locale || 'fr', 'fr');
+  const languageName = LANGUAGE_NAMES[language] || LANGUAGE_NAMES.fr;
+  const languageStyle = language === 'fr' ? 'French' : `${languageName}`;
   const artists = VIVY_SONG_ARTISTS.filter((artist) => ids.includes(artist.id));
   const count = Math.max(1, artists.length);
   const rawLabel = artists.map((artist) => artist.label).join(' + ') || 'Vivy';
@@ -176,9 +181,9 @@ function buildVivySongArtistCast(input = {}) {
     label,
     tags,
     songCastLines,
-    musicLead: `Original Funesterie song for ${label}, in French.`,
+    musicLead: `Original Funesterie song for ${label}, in ${languageName}.`,
     musicMood: `${countLabel}: ${label}. Original voices only, no celebrity imitation. ${styleFragment}.`,
-    sunoStyle: `French original vocal production, ${styleFragment}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration`,
+    sunoStyle: `${languageStyle} original vocal production, ${styleFragment}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration`,
   };
 }
 

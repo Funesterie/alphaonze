@@ -25,6 +25,9 @@ const {
   foldTextForLookup,
   detectTextLanguage,
   buildLanguageInstruction,
+  buildLanguageContract,
+  normalizeLanguageCode,
+  resolveUserLanguage,
 } = require('../../lib/language-text.cjs');
 const {
   buildVivySongcraftSystemPrompt,
@@ -1139,6 +1142,15 @@ function detectVivyInputLanguage(input = {}, fallback = 'fr') {
   ].filter(Boolean).join('\n'), fallback);
 }
 
+function resolveVivyResponseLanguage(input = {}, req = null) {
+  const explicit = String(input?.language || input?.locale || '').trim();
+  if (explicit && explicit.toLowerCase() !== 'auto') {
+    return normalizeLanguageCode(explicit, 'fr');
+  }
+  if (req) return resolveUserLanguage(req, 'fr');
+  return 'fr';
+}
+
 function safeExistingPath(candidate = '') {
   const raw = String(candidate || '').trim();
   if (!raw) return '';
@@ -1691,6 +1703,7 @@ function buildVivySystemPrompt(mode, language = 'fr') {
     "Neo4j est la mémoire/graphe Funesterie. Si l'utilisateur demande Neo4j ou MCP, explique que tu passes par le pont MCP/backend autorisé, sans exposer de secret ni promettre une requête Cypher brute depuis le chat public.",
     `Mode courant: ${modeLabel}.`,
     buildLanguageInstruction(language),
+    buildLanguageContract(language),
     "Réponds librement à l'intention: pas de réponse toute faite, pas de canevas forcé, pas de refrain automatique si la discussion demande juste de réfléchir.",
     "Quand une idée arrive, tu peux reformuler, proposer une direction ou poser une vraie question, selon ce qui aide le plus.",
     "Si Jeffrey corrige ton intent, ta sensibilité, ton seuil ou ton mode de réponse, traite ça comme un réglage interne borné: accuse le réglage clairement, baisse la structuration automatique, puis réponds au fond.",
@@ -2424,7 +2437,7 @@ function buildVivyChat(input) {
   const message = cleanText(input.message || input.prompt || input.songText || input.text, 1800);
   const mode = resolveVivyChatMode(input, message);
   const files = normalizeVivyFiles(input);
-  const language = detectVivyInputLanguage({ ...input, files });
+  const language = resolveVivyResponseLanguage(input);
   const history = Array.isArray(input.history)
     ? input.history
       .slice(-6)
@@ -2515,8 +2528,8 @@ async function buildVivyAiChat(input, req) {
   const message = cleanText(input.message || input.prompt || input.songText || input.text, 2600);
   const mode = resolveVivyChatMode(input, message);
   const files = normalizeVivyFiles(input);
-  const language = detectVivyInputLanguage({ ...input, files });
-  const fallback = buildVivyChat({ ...input, files, mode });
+  const language = resolveVivyResponseLanguage(input, req);
+  const fallback = buildVivyChat({ ...input, files, mode, language });
   const userId = resolveVivyMemoryUser(req, input);
   if (!userId) {
     const error = new Error('vivy_auth_required');
@@ -2845,6 +2858,7 @@ async function buildVivyAiChat(input, req) {
 
 function buildVivyStudioProduction(input) {
   const mode = parseMode(input.mode);
+  const language = resolveVivyResponseLanguage(input);
   const production =
     mode === 'voice'
       ? buildVoiceProduction(input)
@@ -2869,6 +2883,7 @@ function buildVivyStudioProduction(input) {
     ok: true,
     service: 'vivy-studio',
     mode,
+    language,
     title: production.title,
     summary: production.summary,
     assistant: handoff,
@@ -3530,6 +3545,7 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
       const input = req.body || {};
       const payload = buildVivyStudioProduction({
         ...input,
+        language: resolveVivyResponseLanguage(input, req),
         shareToken: undefined,
         sessionSunoApiKey: undefined,
         sunoApiKey: undefined,

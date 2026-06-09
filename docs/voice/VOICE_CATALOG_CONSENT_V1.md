@@ -2,7 +2,17 @@
 
 Version: `voice-catalog-song-v1`
 
-Purpose: allow a Funesterie premium/family/admin user to select a named voice from the voice catalog for song preview or song generation, only when the voice owner has explicitly opted in.
+But par défaut: permettre à un utilisateur Funesterie Premium, Fondateur, Famille ou Admin de sélectionner une voix nommée du catalogue pour une pré-écoute chanson ou une génération chanson, uniquement si le propriétaire de la voix a explicitement donné son accord.
+
+Language contract: every UI, LLM response, legal copy, technical detail and ASCII/Zen label that exposes this consent must be rendered in the connected account language. If the account has no language, use French.
+
+## Localized Purpose
+
+| Language | Purpose |
+| --- | --- |
+| fr | Permettre à un utilisateur Funesterie Premium, Fondateur, Famille ou Admin de sélectionner une voix nommée du catalogue pour une pré-écoute chanson ou une génération chanson, uniquement si le propriétaire de la voix a explicitement donné son accord. |
+| en | Allow a Funesterie Premium, Founder, Family or Admin user to select a named voice from the voice catalog for song preview or song generation, only when the voice owner has explicitly opted in. |
+| it | Consentire a un utente Funesterie Premium, Fondatore, Famiglia o Admin di selezionare una voce nominata dal catalogo per l’anteprima o la generazione di una canzone, solo quando il proprietario della voce ha dato consenso esplicito. |
 
 ## Consent
 
@@ -22,4 +32,3 @@ The voice owner confirms that:
 - Public API responses may expose the catalog name, consent version and allowed uses, but not the raw file path.
 - Non-premium accounts cannot publish or consume catalog voices.
 - This consent reduces operational risk but is not a replacement for legal review before commercial launch.
-

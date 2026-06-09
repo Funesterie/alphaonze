@@ -41,12 +41,14 @@ const SUBSCRIPTION_PLANS: Array<{
     name: 'Fondateur',
     price: '29,99 EUR',
     period: 'par mois',
-    includedTokens: 'Priorité haute, outils avancés et cadrage privé',
+    includedTokens: 'Priorité haute, IA custom future et permissions avancées',
     features: [
       'Priorité haute sur les jobs et files de traitement',
       'Accès fondateur aux outils avancés, sessions et connecteurs',
+      'IA custom future: avatar, image, description d’entrée et prompt',
+      'Providers IA personnels: OpenAI, Grok, Claude ou compatible',
+      'Réglages avancés MCP, Neo4j et Docker avec garde-fous',
       'Canal de cadrage pour blueprint, gros achats et intégrations',
-      'Coordonnées de paiement manuel réservées aux besoins qualifiés',
     ],
   },
 ];

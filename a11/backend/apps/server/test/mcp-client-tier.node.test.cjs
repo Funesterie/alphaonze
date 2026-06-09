@@ -181,6 +181,10 @@ test('/api/mcp lets founder accounts use private tools and local install manifes
     assert.equal(tools.response.status, 200);
     assert.equal(tools.json.account.tier, 'founder');
     assert.equal(tools.json.account.permissions.destructiveActions, false);
+    assert.equal(tools.json.account.permissions.customAiProfile, true);
+    assert.equal(tools.json.account.permissions.customAiProviderKeys, true);
+    assert.equal(tools.json.account.permissions.customAiNeo4j, true);
+    assert.equal(tools.json.account.permissions.customAiDocker, true);
     assert.deepEqual(tools.json.tools.map((tool) => tool.name), ['agent_presence']);
 
     const called = await postJson(baseUrl, '/api/mcp/tools/call', {
