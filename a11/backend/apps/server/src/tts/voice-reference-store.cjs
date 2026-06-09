@@ -621,6 +621,7 @@ function getReferencePreferenceScore(ref, preferredLabel = '') {
   const agentVoiceAliases = {
     terminator: ['a11', 'alpha', 'alphaonze'],
     'a11-official-stern-french': ['a11', 'alpha', 'alphaonze'],
+    'a11-voix-de-lait': ['a11', 'alpha', 'alphaonze', 'lait'],
     donna: ['kaen44', 'k44', 'kaen'],
     'kaen44-official-french-narrator': ['kaen44', 'k44', 'kaen'],
     vivy: ['vivy'],

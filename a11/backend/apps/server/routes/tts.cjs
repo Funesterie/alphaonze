@@ -2341,6 +2341,30 @@ function getOfficialVoiceStyleId(persona = 'a11') {
   return String(profile?.styleId || `${normalizeTtsPersona(persona)}-official`).trim();
 }
 
+function normalizeRequestedOfficialVoiceStyle(value = '', persona = 'a11') {
+  const normalizedPersona = normalizeTtsPersona(persona);
+  const fallback = getOfficialVoiceStyleId(normalizedPersona);
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return fallback;
+  const compact = raw
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[_\s]+/g, '-')
+    .replace(/-+/g, '-');
+
+  if (normalizedPersona === 'a11' && [
+    'a11-voix-de-lait',
+    'voix-de-lait',
+    'voix-de-lait-a11',
+    'lait',
+    'milk',
+  ].includes(compact)) {
+    return 'a11-voix-de-lait';
+  }
+  if (compact === fallback.toLowerCase()) return fallback;
+  return fallback;
+}
+
 function normalizeTtsPersona(value = '') {
   const raw = String(value || '').trim().toLowerCase();
   const known = normalizeKnownTtsPersona(raw);
@@ -2381,9 +2405,21 @@ function getPreferredVoiceReferenceLabelForPersona(persona = 'a11') {
   return getOfficialVoiceStyleId(persona);
 }
 
+function getPreferredVoiceReferenceLabelFromBody(body = {}, persona = 'a11') {
+  return normalizeRequestedOfficialVoiceStyle(
+    body?.voiceStyle
+    || body?.voice_style
+    || body?.voiceReferenceName
+    || body?.voiceReferenceLabel
+    || body?.referenceVoiceStyle
+    || '',
+    persona
+  );
+}
+
 function getPreferredVoiceReferenceLabel(req = {}) {
   const persona = getTtsPersonaFromBody(req?.body || {});
-  return getPreferredVoiceReferenceLabelForPersona(persona);
+  return getPreferredVoiceReferenceLabelFromBody(req?.body || {}, persona);
 }
 
 function saveProviderAudioBuffer(buffer, provider = 'tts', extension = 'wav') {
@@ -2487,7 +2523,7 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
   if (!baseUrls.length) throw new Error('xtts_rvc_url_missing');
   const vocalMode = normalizeVocalMode({ ...(body || {}), ...(options || {}) });
   const persona = getTtsPersonaFromBody(body || {}, options?.persona || options?.surface || '');
-  const voiceStyle = getPreferredVoiceReferenceLabelForPersona(persona);
+  const voiceStyle = getPreferredVoiceReferenceLabelFromBody(body || {}, persona);
   const audioFormat = normalizeTtsAudioFormat(body, isInteractiveTtsRequest(body) ? 'mp3' : 'wav');
   const conversionStrength = resolveVoiceConversionStrength(body);
   const f0Shift = resolveVoiceF0Shift(body);
@@ -2738,10 +2774,11 @@ async function requestOpenAiTts(text, body = {}, options = {}) {
   const persona = getTtsPersonaFromBody(body || {}, options?.persona || options?.surface || '');
   const explicitPersona = getExplicitTtsPersonaFromBody(body || {});
   const readyVoice = getReadyVoiceProfile(persona, PROVIDERS.OPENAI);
+  const preferredVoiceStyle = getPreferredVoiceReferenceLabelFromBody(body || {}, persona);
   const reference = resolveVoiceReferenceForRequest({
     user: options.user || null,
     requestedId: String(body?.voiceReferenceId || body?.voiceRefId || body?.referenceId || '').trim(),
-    preferredLabel: getPreferredVoiceReferenceLabelForPersona(persona),
+    preferredLabel: preferredVoiceStyle,
   });
   const officialPersonaStyleFallback = !reference
     && OFFICIAL_PERSONAS.has(explicitPersona)
@@ -2811,7 +2848,7 @@ async function requestOpenAiTts(text, body = {}, options = {}) {
       : officialPersonaStyleFallback
         ? {
             id: `${persona}-interactive-style`,
-            label: getPreferredVoiceReferenceLabelForPersona(persona),
+            label: preferredVoiceStyle,
             scope: 'interactive-style',
           }
         : null,

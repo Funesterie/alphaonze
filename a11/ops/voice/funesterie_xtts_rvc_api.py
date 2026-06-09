@@ -48,6 +48,12 @@ DEFAULT_PERSONA_MANIFEST = {
         "rvc": "",
         "index": "",
     },
+    "a11-voix-de-lait": {
+        "persona": "a11",
+        "voice": "a11-voix-de-lait.wav",
+        "rvc": "",
+        "index": "",
+    },
     "kaen44-official-french-narrator": {
         "persona": "kaen44",
         "voice": "kaen44-official-french-narrator.wav",
@@ -118,11 +124,18 @@ def normalize_style(value: str) -> str:
         "alphaonze",
         "a11-official",
         "a11-official-stern-french",
+        "a11-voix-de-lait",
+        "voix-de-lait",
+        "voix de lait",
+        "lait",
+        "milk",
         "official-a11",
         "official",
         "djeff",
         "djeff-a11",
     }:
+        if key in {"a11-voix-de-lait", "voix-de-lait", "voix de lait", "lait", "milk"}:
+            return "a11-voix-de-lait"
         return "a11-official-stern-french"
     if key in {
         "k44",
@@ -251,6 +264,12 @@ STYLE_RVC_TUNING = {
         "index_rate": 0.0,
         "rms_mix_rate": 0.5,
         "protect": 0.35,
+    },
+    "a11-voix-de-lait": {
+        "pitch": 0.0,
+        "index_rate": 0.0,
+        "rms_mix_rate": 0.52,
+        "protect": 0.38,
     },
     "kaen44-official-french-narrator": {
         "pitch": 0.0,
@@ -528,7 +547,7 @@ def health():
     rvcs = sorted(item.name for item in RVCS_DIR.glob("*.pth") if item.is_file())
     rvc_indexes = sorted(item.name for item in RVCS_DIR.glob("*.index") if item.is_file())
     styles = {}
-    for style in ("a11-official-stern-french", "kaen44-official-french-narrator", "terminator", "donna", "vivy"):
+    for style in ("a11-official-stern-french", "a11-voix-de-lait", "kaen44-official-french-narrator", "terminator", "donna", "vivy"):
         binding = resolve_persona_binding(style)
         styles[style] = {
             "persona": binding["persona"],
