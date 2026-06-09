@@ -926,44 +926,21 @@ function hasAdminIdentityClaims() {
   const role = normalizeStorageScopePart(payload?.role || payload?.user_role || '');
   const storedUsername = normalizeStorageScopePart(storedUser?.username || '');
   const storedRole = normalizeStorageScopePart(storedUser?.role || '');
-  const tier = normalizeStorageScopePart(
-    payload?.tier
-    || payload?.accountTier
-    || payload?.account_tier
-    || payload?.subscriptionTier
-    || payload?.subscription_tier
-    || payload?.plan
-    || ''
-  );
-  const storedTier = normalizeStorageScopePart(
-    storedUser?.tier
-    || storedUser?.accountTier
-    || storedUser?.account_tier
-    || storedUser?.subscriptionTier
-    || storedUser?.subscription_tier
-    || storedUser?.plan
-    || ''
-  );
   const roles = Array.isArray(payload?.roles)
     ? payload.roles.map((entry: unknown) => normalizeStorageScopePart(entry)).filter(Boolean)
     : [];
   const storedRoles = Array.isArray(storedUser?.roles)
     ? storedUser.roles.map((entry: unknown) => normalizeStorageScopePart(entry)).filter(Boolean)
     : [];
-  const privilegedTiers = new Set(['admin', 'admin_family', 'founder']);
   return payload?.isAdmin === true
     || storedUser?.isAdmin === true
-    || payload?.fullAccess === true
-    || storedUser?.fullAccess === true
     || id === 'admin'
     || username === 'admin'
     || role === 'admin'
     || storedUsername === 'admin'
     || storedRole === 'admin'
-    || privilegedTiers.has(tier)
-    || privilegedTiers.has(storedTier)
-    || roles.some((entry: string) => privilegedTiers.has(entry) || entry === 'admin')
-    || storedRoles.some((entry: string) => privilegedTiers.has(entry) || entry === 'admin');
+    || roles.some((entry: string) => entry === 'admin')
+    || storedRoles.some((entry: string) => entry === 'admin');
 }
 
 export function hasAuthenticatedAdminApiAccess() {

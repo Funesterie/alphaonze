@@ -6193,6 +6193,7 @@ app.post('/api/control/:command', verifyJWT, requireRuntimeControlAccess, async 
 const isAdminRequest = createIsAdminRequest({
   env: process.env,
   defaultAdminUsername: DEFAULT_ADMIN_USERNAME,
+  defaultAdminEmail: DEFAULT_ADMIN_EMAIL,
 });
 
 const sdTools = createSdToolsRouter({
@@ -6654,6 +6655,7 @@ app.use(createAuthRouter({
   registerIssuedToken,
   localAuthStore,
   defaultAdminUsername: DEFAULT_ADMIN_USERNAME,
+  defaultAdminEmail: DEFAULT_ADMIN_EMAIL,
   defaultAdminPassword: DEFAULT_ADMIN_PASSWORD,
   emailService,
   crypto,

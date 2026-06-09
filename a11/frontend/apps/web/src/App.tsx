@@ -8468,20 +8468,9 @@ export function App() {
           setIsAuthenticated(true);
           setDisplayName(session?.user?.displayName || session?.user?.username || session?.user?.email || "Utilisateur");
           const sessionRole = String(session?.user?.role || "").trim().toLowerCase();
-          const sessionTier = String(session?.user?.tier || session?.user?.accountTier || "").trim().toLowerCase();
-          const sessionAccessPacks = Array.isArray(session?.user?.accessPacks)
-            ? (session?.user?.accessPacks || []).map((entry) => String(entry || "").trim().toLowerCase()).filter(Boolean)
-            : [];
           setIsFunesterieAdmin(Boolean(
             session?.user?.isAdmin
-            || session?.user?.fullAccess
             || sessionRole === "admin"
-            || sessionTier === "admin"
-            || sessionTier === "admin_family"
-            || sessionTier === "founder"
-            || sessionAccessPacks.includes("admin")
-            || sessionAccessPacks.includes("admin_family")
-            || sessionAccessPacks.includes("founder")
           ));
           setAuthSessionReady(true);
           if (isAuthSuccessRoute(pathname)) {

@@ -19,6 +19,9 @@ const {
   normalizeSurface,
 } = require('../auth/session-registry.cjs');
 const {
+  createIsAdminRequest,
+} = require('../security/admin-access.cjs');
+const {
   GOOGLE_CALLBACK_NAMES,
   GOOGLE_CLIENT_ID_NAMES,
   GOOGLE_CLIENT_SECRET_NAMES,
@@ -910,6 +913,7 @@ function createAuthRouter({
   registerIssuedToken,
   localAuthStore,
   defaultAdminUsername,
+  defaultAdminEmail,
   defaultAdminPassword,
   emailService,
   crypto,
@@ -923,6 +927,24 @@ function createAuthRouter({
     localAuthStore,
     logger: console,
   });
+  const isAdminRequest = createIsAdminRequest({
+    env: process.env,
+    defaultAdminUsername,
+    defaultAdminEmail,
+  });
+
+  function buildAdminAwarePublicUser(user = {}, extra = {}) {
+    const publicUser = buildPublicAuthUser(user, extra);
+    const adminCandidate = {
+      ...user,
+      ...extra,
+      ...publicUser,
+    };
+    return {
+      ...publicUser,
+      isAdmin: isAdminRequest({ user: adminCandidate }),
+    };
+  }
 
   async function issueSessionCookie(req, res, user, extra = {}) {
     const surface = normalizeSurface(extra.surface || req?.query?.surface || resolveOAuthSurfaceFromRequest(req));
@@ -968,7 +990,7 @@ function createAuthRouter({
       success: true,
       token,
       expiresIn: jwtExpiry,
-      user: buildPublicAuthUser(user, decoded),
+      user: buildAdminAwarePublicUser(user, decoded),
       session: {
         id: decoded.sid || null,
         version: decoded.sv ?? decoded.sessionGeneration ?? 0,
@@ -1847,7 +1869,7 @@ function createAuthRouter({
         ok: true,
         authenticated: true,
         token: decoded.__authTokenUsed || token,
-        user: buildPublicAuthUser(decoded, decoded),
+        user: buildAdminAwarePublicUser(decoded, decoded),
         session: {
           id: decoded.sid || null,
           version: decoded.sv ?? decoded.sessionGeneration ?? 0,
@@ -1910,7 +1932,7 @@ function createAuthRouter({
     return res.json({
       ...state,
       authenticated: Boolean(decoded),
-      user: decoded ? buildPublicAuthUser(decoded, decoded) : null,
+      user: decoded ? buildAdminAwarePublicUser(decoded, decoded) : null,
     });
   });
 

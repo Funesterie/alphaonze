@@ -131,6 +131,30 @@ test('createIsAdminRequest accepts only configured admin tokens or verified admi
   assert.equal(
     isAdminRequest({
       user: {
+        id: 'owner-id',
+        username: 'generated-oauth-name',
+        email: 'cellaurojeffrey@gmail.com',
+        role: 'user',
+      },
+    }),
+    true
+  );
+
+  assert.equal(
+    isAdminRequest({
+      user: {
+        id: 'ops-id',
+        username: 'ops',
+        email: 'ops@example.test',
+        role: 'user',
+      },
+    }),
+    false
+  );
+
+  assert.equal(
+    isAdminRequest({
+      user: {
         id: 'alice',
         username: 'alice',
         role: 'user',
