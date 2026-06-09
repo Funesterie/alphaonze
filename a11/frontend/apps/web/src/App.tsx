@@ -22,6 +22,7 @@ import {
   fetchMyStoredFiles,
   fetchRemoteProviderProfiles,
   fetchA11PortraitFramebook,
+  fetchTtsVoiceCatalog,
   fetchTtsVoiceReferences,
   fetchAuthSession,
   getSubscriptionStatus,
@@ -2643,6 +2644,7 @@ const VIVY_PUBLIC_CHAT_KEY = "vivy:public-chat:v2";
 const VIVY_PUBLIC_CONVERSATION_ID_KEY = "vivy:conversation-id";
 const VIVY_PUBLIC_VOICE_REFERENCE_KEY = "vivy:voice-reference";
 const VIVY_PRIVATE_REFERENCE_UPLOAD_LIMIT_BYTES = 20 * 1024 * 1024;
+const VIVY_VOICE_CATALOG_CONSENT = "voice-catalog-song-v1";
 
 function getVivyVoiceTuning(vocalMode?: string | null): Record<string, number> {
   return String(vocalMode || "").toLowerCase() === "sing"
@@ -3009,7 +3011,7 @@ function buildVivyStudioArtistCast(ids: VivyStudioArtistId[]) {
 }
 
 type VivyStudioVoiceProfile = {
-  id: "vivy-official" | "vivy-sing" | "vivy-private" | "djeff-rap" | "duo-djeff-vivy" | "a11-official" | "k44-official" | "diagnostic";
+  id: "vivy-official" | "vivy-sing" | "vivy-private" | "catalog-premium" | "djeff-rap" | "duo-djeff-vivy" | "a11-official" | "k44-official" | "diagnostic";
   label: string;
   ttsPersona: "vivy" | "a11" | "kaen44";
   surface: "vivy" | "a11" | "kaen44";
@@ -3116,6 +3118,22 @@ function getVivyStudioVoiceProfileForTool(
     };
   }
 
+  if (/catalogue|catalog|premium|voix autorisee|voix autorisée/.test(folded)) {
+    return {
+      id: "catalog-premium",
+      label: "Voix catalogue premium",
+      ttsPersona: "vivy",
+      surface: "vivy",
+      voiceStyle: "voice-catalog-song",
+      vocalMode: "adaptive",
+      referenceLabel: hasPrivateReference ? privateLabel : "voix autorisée à choisir",
+      briefVoicePersona: "voicePersona=vivy avec référence catalogue consentie",
+      testLine: "Je teste une voix autorisée du catalogue Funesterie, sans publier la référence brute.",
+      songCast: "La voix catalogue sélectionnée porte le lead ou le duo selon la chanson; garder les tags de chanteurs et ne pas imiter de célébrité.",
+      uploadLabel: `Catalogue - ${voiceFileName || "voix autorisée"}`,
+    };
+  }
+
   if (/chant|sing/.test(folded)) {
     return {
       id: "vivy-sing",
@@ -3169,6 +3187,8 @@ function buildVivyStudioBrief(options: {
   voiceInstruction: string;
   voiceFileName: string;
   voiceReferenceId?: string;
+  catalogVoiceName?: string;
+  catalogVoiceConsent?: string;
   songSource: string;
   songArtists: VivyStudioArtistId[];
   songMood: string;
@@ -3196,6 +3216,8 @@ function buildVivyStudioBrief(options: {
       `- Outil cible: ${options.voiceTool}`,
       `- Profil actif: ${voiceProfile.label}`,
       `- Référence audio: ${voiceProfile.referenceLabel}`,
+      options.catalogVoiceName ? `- Voix catalogue autorisée: ${options.catalogVoiceName}` : "",
+      options.catalogVoiceConsent ? `- Consentement voix: ${options.catalogVoiceConsent}` : "",
       `- Instruction: ${options.voiceInstruction || "définir le timbre, les limites et le style de modulation"}`,
       `- Sortie attendue: phrase de test avec ${voiceProfile.briefVoicePersona}, puis notes de calibration si besoin.`,
       "- Route recommandée: /api/tts/speak en XTTS/RVC quand une référence Vivy/Djeff/A11/K44 existe; texte libre, argot et diction naturelle autorisés; garder les références privées hors publication brute.",
@@ -3213,6 +3235,8 @@ function buildVivyStudioBrief(options: {
       `- Nombre de chanteurs: ${artistCast.countLabel}`,
       `- Distribution vocale: ${artistCast.songCast}`,
       `- Outil voix actif: ${voiceProfile.label}`,
+      options.catalogVoiceName ? `- Voix catalogue autorisée: ${options.catalogVoiceName}` : "",
+      options.catalogVoiceConsent ? `- Consentement voix: ${options.catalogVoiceConsent}` : "",
       `- Clé Suno personnelle: ${options.sessionSunoKeyPresent ? "oui, session navigateur seulement" : "non"}`,
       "- Sortie simple possible: vraie génération Suno ou brief chantable selon les droits disponibles.",
       "- Sortie attendue: titre, intention, structure couplet/refrain, paroles, arrangement, voix guide et assets à produire.",
@@ -3260,6 +3284,12 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
   const [voiceFile, setVoiceFile] = useState<File | null>(null);
   const [voiceFileName, setVoiceFileName] = useState(String(initialDraft.voiceFileName || ""));
   const [voiceReferenceId, setVoiceReferenceId] = useState(String(initialDraft.voiceReferenceId || ""));
+  const [catalogVoices, setCatalogVoices] = useState<TtsVoiceReference[]>([]);
+  const [selectedCatalogVoiceId, setSelectedCatalogVoiceId] = useState(String(initialDraft.selectedCatalogVoiceId || ""));
+  const [catalogVoiceName, setCatalogVoiceName] = useState(String(initialDraft.catalogVoiceName || ""));
+  const [publishVoiceToCatalog, setPublishVoiceToCatalog] = useState(Boolean(initialDraft.publishVoiceToCatalog));
+  const [catalogConsentAccepted, setCatalogConsentAccepted] = useState(Boolean(initialDraft.catalogConsentAccepted));
+  const [catalogStatus, setCatalogStatus] = useState("");
   const [songSource, setSongSource] = useState(String(initialDraft.songSource || "Prompt +"));
   const [songArtists, setSongArtists] = useState<VivyStudioArtistId[]>(() => normalizeVivyStudioArtists(initialDraft.songArtists));
   const [songMood, setSongMood] = useState(String(initialDraft.songMood || "Electro pop dark cinematographique"));
@@ -3285,12 +3315,20 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     return () => window.removeEventListener("vivy:select-mode", onSelectMode);
   }, []);
 
+  const activeCatalogVoice = useMemo(
+    () => catalogVoices.find((voice) => voice.id === selectedCatalogVoiceId) || null,
+    [catalogVoices, selectedCatalogVoiceId]
+  );
+  const activeCatalogVoiceName = String(activeCatalogVoice?.catalog?.name || activeCatalogVoice?.label || "").trim();
+
   const baseBrief = useMemo(() => buildVivyStudioBrief({
     mode: activeMode,
     voiceTool,
     voiceInstruction,
     voiceFileName,
     voiceReferenceId,
+    catalogVoiceName: activeCatalogVoiceName,
+    catalogVoiceConsent: activeCatalogVoice ? VIVY_VOICE_CATALOG_CONSENT : "",
     songSource,
     songArtists,
     songMood,
@@ -3306,6 +3344,8 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     voiceInstruction,
     voiceFileName,
     voiceReferenceId,
+    activeCatalogVoice,
+    activeCatalogVoiceName,
     songSource,
     songArtists,
     songMood,
@@ -3328,6 +3368,10 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       voiceInstruction,
       voiceFileName,
       voiceReferenceId,
+      selectedCatalogVoiceId,
+      catalogVoiceName,
+      publishVoiceToCatalog,
+      catalogConsentAccepted,
       songSource,
       songArtists,
       songMood,
@@ -3338,11 +3382,31 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       tokenPresent: Boolean(shareToken.trim()),
       vivyOutput,
     });
-  }, [activeMode, voiceTool, voiceInstruction, voiceFileName, voiceReferenceId, songSource, songArtists, songMood, songText, shareTarget, shareUrl, shareInstruction, shareToken, vivyOutput]);
+  }, [activeMode, voiceTool, voiceInstruction, voiceFileName, voiceReferenceId, selectedCatalogVoiceId, catalogVoiceName, publishVoiceToCatalog, catalogConsentAccepted, songSource, songArtists, songMood, songText, shareTarget, shareUrl, shareInstruction, shareToken, vivyOutput]);
 
   useEffect(() => {
     writeVivySessionSunoKey(sunoSessionKey);
   }, [sunoSessionKey]);
+
+  async function refreshVoiceCatalog() {
+    if (!hasSession) {
+      setCatalogVoices([]);
+      setCatalogStatus("");
+      return;
+    }
+    try {
+      const result = await fetchTtsVoiceCatalog();
+      setCatalogVoices(result.voices || []);
+      setCatalogStatus(result.message || "");
+    } catch (error: any) {
+      setCatalogVoices([]);
+      setCatalogStatus(`Catalogue voix indisponible: ${error?.message || error}`);
+    }
+  }
+
+  useEffect(() => {
+    void refreshVoiceCatalog();
+  }, [hasSession]);
 
   const activeMeta = VIVY_STUDIO_MODES.find((item) => item.id === activeMode) || VIVY_STUDIO_MODES[0];
   const hasPrivateVoiceReference = Boolean(voiceReferenceId.trim());
@@ -3351,7 +3415,9 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     [voiceTool, hasPrivateVoiceReference, voiceFileName]
   );
   const activeSongArtistCast = useMemo(() => buildVivyStudioArtistCast(songArtists), [songArtists]);
-  const activeVoiceReferenceLabel = activeVoiceProfile.referenceLabel;
+  const activeVoiceReferenceLabel = activeCatalogVoiceName
+    ? `Catalogue: ${activeCatalogVoiceName}`
+    : activeVoiceProfile.referenceLabel;
 
   useEffect(() => {
     if (hasPrivateVoiceReference) return;
@@ -3377,6 +3443,9 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     }
     if (/\ba11\b|\balpha\s*onze\b|\balphaonze\b/.test(folded)) {
       setSongArtists(["a11"]);
+      return;
+    }
+    if (/catalogue|catalog|premium|voix autorisee|voix autorisée/.test(folded)) {
       return;
     }
     if (/\bvivy\b|\bchant\b|\bsing\b/.test(folded)) {
@@ -3430,8 +3499,12 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       voicePersona: activeVoiceProfile.ttsPersona,
       surface: activeVoiceProfile.surface,
       voiceStyle: activeVoiceProfile.voiceStyle,
-      voiceReferenceLabel: activeVoiceProfile.voiceStyle,
-      referenceVoiceStyle: activeVoiceProfile.voiceStyle,
+      voiceReferenceName: activeCatalogVoiceName || voiceFileName || activeVoiceProfile.referenceLabel,
+      voiceReferenceLabel: activeCatalogVoiceName || activeVoiceProfile.voiceStyle,
+      referenceVoiceStyle: activeCatalogVoiceName || activeVoiceProfile.voiceStyle,
+      voiceCatalogName: activeCatalogVoiceName || undefined,
+      voiceCatalogConsent: activeCatalogVoice ? VIVY_VOICE_CATALOG_CONSENT : undefined,
+      licensedVoiceCatalog: Boolean(activeCatalogVoice),
       voiceTool,
       vocalCast: activeVoiceProfile.label,
       provider,
@@ -3528,16 +3601,39 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       setStatus("Fichier trop gros pour une référence privée. Utilise la voix Vivy par défaut ou découpe un extrait court de 10 à 20 secondes.");
       return;
     }
+    const publishToCatalog = publishVoiceToCatalog === true;
+    const publicVoiceName = catalogVoiceName.trim();
+    if (publishToCatalog && !publicVoiceName) {
+      setStatus("Donne un nom public unique à cette voix avant de la proposer au catalogue.");
+      return;
+    }
+    if (publishToCatalog && !catalogConsentAccepted) {
+      setStatus("Accord voix requis pour autoriser les chansons avec cette voix.");
+      return;
+    }
     setIsBusy(true);
-    setStatus("Upload référence voix...");
+    setStatus(publishToCatalog ? "Publication voix catalogue..." : "Upload référence voix...");
     try {
-      const result = await uploadTtsVoiceReference(voiceFile, activeVoiceProfile.uploadLabel, "private");
+      const result = await uploadTtsVoiceReference(
+        voiceFile,
+        publishToCatalog ? publicVoiceName : activeVoiceProfile.uploadLabel,
+        publishToCatalog ? "catalog" : "private",
+        publishToCatalog
+          ? { catalogName: publicVoiceName, consent: VIVY_VOICE_CATALOG_CONSENT }
+          : undefined
+      );
       setVoiceFileName(result.reference?.originalName || result.reference?.label || voiceFile.name);
       setVoiceReferenceId(String(result.reference?.id || ""));
-      if (!["djeff-rap", "duo-djeff-vivy", "a11-official", "k44-official"].includes(activeVoiceProfile.id)) {
+      if (publishToCatalog) {
+        setSelectedCatalogVoiceId(String(result.reference?.id || ""));
+        setVoiceTool("Voix catalogue premium");
+        void refreshVoiceCatalog();
+      } else if (!["djeff-rap", "duo-djeff-vivy", "a11-official", "k44-official"].includes(activeVoiceProfile.id)) {
         setVoiceTool("Voix Vivy + référence privée");
       }
-      setStatus(`Référence voix privée active pour ${activeVoiceProfile.label}.`);
+      setStatus(publishToCatalog
+        ? `Voix catalogue "${publicVoiceName}" active.`
+        : `Référence voix privée active pour ${activeVoiceProfile.label}.`);
     } catch (error: any) {
       setStatus(`Upload voix indisponible: ${error?.message || error}`);
     } finally {
@@ -3549,6 +3645,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     setVoiceFile(null);
     setVoiceFileName("");
     setVoiceReferenceId("");
+    setSelectedCatalogVoiceId("");
     setVoiceTool("Voix Vivy officielle");
     setSongArtists(["vivy"]);
     setStatus("Voix Vivy officielle sélectionnée. Aucun upload nécessaire.");
@@ -3654,6 +3751,9 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         voiceInstruction,
         voiceFileName,
         voiceReferenceId,
+        voiceReferenceName: activeCatalogVoiceName || voiceFileName,
+        voiceCatalogName: activeCatalogVoiceName || undefined,
+        voiceCatalogConsent: activeCatalogVoice ? VIVY_VOICE_CATALOG_CONSENT : undefined,
         songSource,
         songArtists,
         vocalCast: activeSongArtistCast.label,
@@ -3717,6 +3817,9 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         voiceInstruction,
         voiceFileName,
         voiceReferenceId,
+        voiceReferenceName: activeCatalogVoiceName || voiceFileName,
+        voiceCatalogName: activeCatalogVoiceName || undefined,
+        voiceCatalogConsent: activeCatalogVoice ? VIVY_VOICE_CATALOG_CONSENT : undefined,
         songSource,
         songArtists,
         vocalCast: activeSongArtistCast.label,
@@ -3818,6 +3921,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
                   <option>Voix K44 officielle</option>
                   <option>Duo Djeff + Vivy</option>
                   <option>Voix Vivy + référence privée</option>
+                  <option>Voix catalogue premium</option>
                   <option>Diagnostic module voix</option>
                 </select>
               </label>
@@ -3840,6 +3944,42 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
                   }}
                 />
               </label>
+              <fieldset className="vivy-studio-consent-fieldset">
+                <legend>Catalogue voix</legend>
+                <label className="vivy-studio-checkline">
+                  <input
+                    type="checkbox"
+                    checked={publishVoiceToCatalog}
+                    disabled={!hasSession}
+                    onChange={(event) => setPublishVoiceToCatalog(event.currentTarget.checked)}
+                  />
+                  <span>Proposer cette voix aux chansons autorisées</span>
+                </label>
+                {publishVoiceToCatalog ? (
+                  <>
+                    <label>
+                      Nom public unique
+                      <input
+                        id="vivy-studio-catalog-name"
+                        name="catalogVoiceName"
+                        value={catalogVoiceName}
+                        disabled={!hasSession}
+                        onChange={(event) => setCatalogVoiceName(event.target.value)}
+                        placeholder="Ex: Lara"
+                      />
+                    </label>
+                    <label className="vivy-studio-checkline">
+                      <input
+                        type="checkbox"
+                        checked={catalogConsentAccepted}
+                        disabled={!hasSession}
+                        onChange={(event) => setCatalogConsentAccepted(event.currentTarget.checked)}
+                      />
+                      <span>J’autorise les comptes Premium/Famille/Admin à créer des chansons avec cette voix.</span>
+                    </label>
+                  </>
+                ) : null}
+              </fieldset>
               <label>
                 Instruction voix
                 <textarea
@@ -3906,6 +4046,43 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
                 </div>
                 <p>{activeSongArtistCast.countLabel}: {activeSongArtistCast.label}</p>
               </fieldset>
+              <label>
+                Voix catalogue
+                <select
+                  id="vivy-studio-song-catalog-voice"
+                  name="catalogVoice"
+                  value={selectedCatalogVoiceId}
+                  disabled={!hasSession || !catalogVoices.length}
+                  onChange={(event) => {
+                    const nextId = event.target.value;
+                    const nextVoice = catalogVoices.find((voice) => voice.id === nextId) || null;
+                    setSelectedCatalogVoiceId(nextId);
+                    if (nextVoice) {
+                      const nextName = String(nextVoice.catalog?.name || nextVoice.label || "").trim();
+                      setVoiceReferenceId(nextVoice.id);
+                      setVoiceFileName(nextName || nextVoice.label || "voix catalogue");
+                      setVoiceTool("Voix catalogue premium");
+                      setCatalogVoiceName(nextName);
+                      setStatus(`Voix catalogue sélectionnée: ${nextName || nextVoice.label}.`);
+                    } else {
+                      setVoiceReferenceId("");
+                      setVoiceFileName("");
+                      setStatus("Voix catalogue désactivée pour cette chanson.");
+                    }
+                  }}
+                >
+                  <option value="">Aucune voix catalogue</option>
+                  {catalogVoices.map((voice) => {
+                    const name = String(voice.catalog?.name || voice.label || voice.id).trim();
+                    return (
+                      <option key={voice.id} value={voice.id}>{name}</option>
+                    );
+                  })}
+                </select>
+              </label>
+              {catalogStatus ? (
+                <p className="vivy-studio-active-voice">{catalogStatus}</p>
+              ) : null}
               <label>
                 Couleur sonore
                 <input
@@ -5187,6 +5364,7 @@ const VIVY_STUDIO_VALID_VOICE_TOOLS = [
   "Voix K44 officielle",
   "Duo Djeff + Vivy",
   "Voix Vivy + référence privée",
+  "Voix catalogue premium",
   "Diagnostic module voix",
 ] as const;
 

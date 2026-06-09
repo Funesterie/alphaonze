@@ -2010,6 +2010,19 @@ export type TtsVoiceReference = {
   label: string;
   scope?: string;
   source?: string;
+  catalog?: {
+    enabled?: boolean;
+    status?: string;
+    name?: string;
+    slug?: string;
+    consent?: string;
+    contractVersion?: string;
+    allowedUses?: string[];
+    consumerTier?: string;
+    rawAudioPublic?: boolean;
+    ownerRetainsRights?: boolean;
+    consentedAt?: string | null;
+  } | null;
   mimeType?: string | null;
   originalName?: string | null;
   bytes?: number;
@@ -2040,15 +2053,46 @@ export async function fetchTtsVoiceReferences(): Promise<TtsVoiceReference[]> {
   return Array.isArray(payload?.references) ? payload.references : [];
 }
 
+export async function fetchTtsVoiceCatalog(): Promise<{
+  canUse: boolean;
+  consent?: string;
+  voices: TtsVoiceReference[];
+  message?: string;
+}> {
+  if (hasLocalDevBypassSession()) return { canUse: true, voices: [] };
+
+  const res = await authFetch(getApiUrl('/api/tts/voice-catalog'), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Catalogue voix indisponible (${res.status})`);
+  }
+  return {
+    canUse: payload?.canUse === true,
+    consent: typeof payload?.consent === 'string' ? payload.consent : undefined,
+    voices: Array.isArray(payload?.voices) ? payload.voices : [],
+    message: typeof payload?.message === 'string' ? payload.message : undefined,
+  };
+}
+
 export async function uploadTtsVoiceReference(
   file: File,
   label?: string,
-  scope: 'private' | 'family' = 'private'
+  scope: 'private' | 'family' | 'catalog' = 'private',
+  options?: {
+    catalogName?: string;
+    consent?: string;
+  }
 ): Promise<{ reference: TtsVoiceReference; references: TtsVoiceReference[] }> {
   const form = new FormData();
   form.append('voiceReference', file);
   if (label) form.append('label', label);
   if (scope) form.append('scope', scope);
+  if (options?.catalogName) form.append('catalogName', options.catalogName);
+  if (options?.consent) form.append('consent', options.consent);
 
   const res = await authFetch(getApiUrl('/api/tts/references'), {
     method: 'POST',
@@ -2286,6 +2330,8 @@ export type VivyStudioProductionInput = {
   voiceFileName?: string;
   voiceReferenceId?: string;
   voiceReferenceName?: string;
+  voiceCatalogName?: string;
+  voiceCatalogConsent?: string;
   songSource?: string;
   songArtists?: string[];
   vocalCast?: string;

@@ -210,6 +210,76 @@ test('tts piper route rewrites container TTS asset URLs to backend proxy paths',
   }
 });
 
+test('tts voice catalog lists consented voices without serving raw audio to consumers', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-voice-catalog-'));
+  const previousEnv = {
+    A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
+    A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
+  };
+  process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
+  process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED = '1';
+  const store = require('../src/tts/voice-reference-store.cjs');
+  const verifyJWT = (req, _res, next) => {
+    if (!req.user && req.headers['x-test-basic'] !== '1') {
+      req.user = {
+        id: 'catalog-consumer',
+        email: 'catalog-consumer@example.local',
+        account_tier: 'premium',
+        subscription_active: true,
+      };
+    }
+    next();
+  };
+  ttsRouter.configureTtsRouter({ verifyJWT });
+
+  try {
+    const reference = store.saveVoiceReference({
+      user: { id: 'catalog-owner', email: 'catalog-owner@example.local', account_tier: 'premium', subscription_active: true },
+      file: { buffer: createPcm16Wav({ frequency: 390 }), mimetype: 'audio/wav', originalname: 'lara.wav' },
+      label: 'Lara',
+      scope: 'catalog',
+      catalogName: 'Lara',
+      consent: store.VOICE_CATALOG_CONSENT,
+    });
+
+    await withServer(
+      (app) => {
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const catalogResponse = await fetch(`${baseUrl}/api/tts/voice-catalog`);
+        const catalog = await catalogResponse.json();
+        assert.equal(catalogResponse.status, 200);
+        assert.equal(catalog.canUse, true);
+        assert.equal(catalog.voices.length, 1);
+        assert.equal(catalog.voices[0].catalog.name, 'Lara');
+        assert.equal(Object.hasOwn(catalog.voices[0], 'filePath'), false);
+
+        const rawAudio = await fetch(`${baseUrl}/api/tts/references/${reference.id}/audio`);
+        assert.equal(rawAudio.status, 404);
+
+        const form = new FormData();
+        form.append('voiceReference', new Blob([createPcm16Wav({ frequency: 440 })], { type: 'audio/wav' }), 'basic.wav');
+        form.append('scope', 'catalog');
+        form.append('catalogName', 'Basic Voice');
+        form.append('consent', store.VOICE_CATALOG_CONSENT);
+        const basicUpload = await fetch(`${baseUrl}/api/tts/references`, {
+          method: 'POST',
+          headers: { 'x-test-basic': '1' },
+          body: form,
+        });
+        assert.equal(basicUpload.status, 403);
+      }
+    );
+  } finally {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
 test('tts speak route can return an async job and poll the generated audio payload', async () => {
   const previousEnv = {
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,

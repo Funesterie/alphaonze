@@ -23,10 +23,13 @@ const {
 const {
   AUDIO_EXTENSIONS,
   AUDIO_MIME_TYPES,
+  VOICE_CATALOG_CONSENT,
   compareAudioBuffers,
   deleteVoiceReference,
   findVoiceReference,
   isAllowedAudioUpload,
+  isVoiceCatalogScope,
+  listVoiceCatalogReferences,
   listLibraryVoiceReferences,
   listVoiceReferences,
   resolveVoiceReferenceForRequest,
@@ -559,6 +562,10 @@ function canUsePaidTtsVoice(req = {}) {
   if (isPrivilegedTtsUser(req?.user || {})) return true;
   const tier = String(resolveTtsAccountProfile(req)?.tier || 'basic').trim().toLowerCase();
   return ['admin_family', 'founder', 'premium'].includes(tier);
+}
+
+function canUseSharedVoiceCatalog(req = {}) {
+  return canUsePaidTtsVoice(req);
 }
 
 function getOwnedOfficialReferencePersona(body = {}) {
@@ -1530,6 +1537,7 @@ async function enrichTtsPayloadWithAudioModule(payload, req, vocalMode) {
     user,
     requestedId,
     preferredLabel: getPreferredVoiceReferenceLabel(req),
+    includeCatalog: canUseSharedVoiceCatalog(req),
   });
 
   const baseModule = {
@@ -1633,6 +1641,7 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
     user,
     requestedId,
     preferredLabel: getPreferredVoiceReferenceLabel(req),
+    includeCatalog: canUseSharedVoiceCatalog(req),
   });
   const audioUrl = String(payload?.audioUrl || payload?.audio_url || '').trim();
 
@@ -2585,6 +2594,18 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
   const vocalMode = normalizeVocalMode({ ...(body || {}), ...(options || {}) });
   const persona = getTtsPersonaFromBody(body || {}, options?.persona || options?.surface || '');
   const voiceStyle = getPreferredVoiceReferenceLabelFromBody(body || {}, persona);
+  const requestedReferenceId = String(body?.voiceReferenceId || body?.voiceRefId || body?.referenceId || '').trim();
+  const explicitReference = requestedReferenceId
+    ? resolveVoiceReferenceForRequest({
+        user: options.user || null,
+        requestedId: requestedReferenceId,
+        preferredLabel: voiceStyle,
+        includeCatalog: canUseSharedVoiceCatalog({ user: options.user || null }),
+      })
+    : null;
+  const explicitReferenceFile = explicitReference?.filePath && fs.existsSync(explicitReference.filePath)
+    ? explicitReference
+    : null;
   const audioFormat = normalizeTtsAudioFormat(body, isInteractiveTtsRequest(body) ? 'mp3' : 'wav');
   const conversionStrength = resolveVoiceConversionStrength(body);
   const f0Shift = resolveVoiceF0Shift(body);
@@ -2596,88 +2617,92 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
   let lastError = null;
 
   for (const baseUrl of baseUrls) {
-    try {
-      const synthesizeResponse = await fetch(`${String(baseUrl).replace(/\/$/, '')}/api/voice/synthesize`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          text: String(text || '').slice(0, 4096),
-          persona,
-          surface: body?.surface || options?.surface || persona,
-          voicePersona: body?.voicePersona || persona,
-          voiceStyle,
-          vocalMode: vocalMode || 'adaptive',
-          engine: body?.engine || body?.voiceEngine || 'auto',
-          audioFormat,
-          responseFormat: audioFormat,
-          strength: conversionStrength,
-          f0Shift,
-          useDefaultVoiceReference: true,
-          defaultVoiceReference: true,
-          voiceReferenceRequired: true,
-        }),
-        signal: AbortSignal.timeout(timeoutMs),
-      });
+    if (!explicitReferenceFile) {
+      try {
+        const synthesizeResponse = await fetch(`${String(baseUrl).replace(/\/$/, '')}/api/voice/synthesize`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            text: String(text || '').slice(0, 4096),
+            persona,
+            surface: body?.surface || options?.surface || persona,
+            voicePersona: body?.voicePersona || persona,
+            voiceStyle,
+            voiceReferenceId: requestedReferenceId || undefined,
+            voiceReferenceName: body?.voiceReferenceName || body?.voiceReferenceLabel || undefined,
+            vocalMode: vocalMode || 'adaptive',
+            engine: body?.engine || body?.voiceEngine || 'auto',
+            audioFormat,
+            responseFormat: audioFormat,
+            strength: conversionStrength,
+            f0Shift,
+            useDefaultVoiceReference: true,
+            defaultVoiceReference: true,
+            voiceReferenceRequired: true,
+          }),
+          signal: AbortSignal.timeout(timeoutMs),
+        });
 
-      const synthesizeText = await synthesizeResponse.text();
-      const synthesizePayload = parseJsonMaybe(synthesizeText);
-      if (synthesizeResponse.ok && synthesizePayload?.ok !== false) {
-        const rawAudioUrl = synthesizePayload?.audio_url || synthesizePayload?.audioUrl || synthesizePayload?.url || '';
-        const remoteAudioUrl = normalizeRemoteAssetUrl(
-          baseUrl,
-          rawAudioUrl
-        );
-        const referenceAware = isReferenceAwareTtsPayload(synthesizePayload);
-        if (remoteAudioUrl && referenceAware) {
-          const sourceAudioUrl = resolveRemoteTtsAssetFetchUrl(baseUrl, rawAudioUrl) || remoteAudioUrl;
-          const materializedAudioUrl = await materializeTtsAudioUrlForFormat(sourceAudioUrl, audioFormat, 'xtts-rvc');
-          const finalAudioUrl = materializedAudioUrl || remoteAudioUrl;
-          return {
-            ...(synthesizePayload && typeof synthesizePayload === 'object' ? synthesizePayload : {}),
-            success: true,
-            provider: PROVIDERS.XTTS_RVC,
-            via: synthesizePayload?.via || 'a11-voice-module-persona',
-            text,
-            vocalMode,
-            audioFormat: materializedAudioUrl ? 'mp3' : audioExtensionFromContentType('', path.extname(new URL(finalAudioUrl, 'http://127.0.0.1').pathname).slice(1) || audioFormat || 'wav'),
-            originalAudioUrl: materializedAudioUrl ? remoteAudioUrl : undefined,
-            original_audio_url: materializedAudioUrl ? remoteAudioUrl : undefined,
-            audio_url: finalAudioUrl,
-            audioUrl: finalAudioUrl,
-            providerCapabilities: {
-              ...(synthesizePayload?.providerCapabilities || {}),
-              referenceVoice: true,
-            },
-            voiceConversion: {
-              ok: true,
-              module: synthesizePayload?.module || 'a11-voice-module',
-              provider: synthesizePayload?.voiceConversion?.provider || synthesizePayload?.provider || PROVIDERS.XTTS_RVC,
-              engine: synthesizePayload?.voiceConversion?.engine || synthesizePayload?.engine || 'persona-voice',
-              voiceStyle: synthesizePayload?.voiceConversion?.voiceStyle || synthesizePayload?.voiceStyle || voiceStyle || null,
-              rvcModel: synthesizePayload?.voiceConversion?.rvcModel || synthesizePayload?.providerCapabilities?.rvcModel || null,
-              rvcIndex: synthesizePayload?.voiceConversion?.rvcIndex || synthesizePayload?.providerCapabilities?.rvcIndex || null,
-              direction: buildVoicePersonaInstruction(persona),
-              attemptedEngines: Array.isArray(synthesizePayload?.voiceConversion?.attemptedEngines)
-                ? synthesizePayload.voiceConversion.attemptedEngines
-                : [synthesizePayload?.engine || 'persona-voice'],
-              reference: synthesizePayload?.voiceConversion?.reference || synthesizePayload?.voiceReference || {
-                id: voiceStyle,
-                label: voiceStyle,
-                scope: 'voice-library',
+        const synthesizeText = await synthesizeResponse.text();
+        const synthesizePayload = parseJsonMaybe(synthesizeText);
+        if (synthesizeResponse.ok && synthesizePayload?.ok !== false) {
+          const rawAudioUrl = synthesizePayload?.audio_url || synthesizePayload?.audioUrl || synthesizePayload?.url || '';
+          const remoteAudioUrl = normalizeRemoteAssetUrl(
+            baseUrl,
+            rawAudioUrl
+          );
+          const referenceAware = isReferenceAwareTtsPayload(synthesizePayload);
+          if (remoteAudioUrl && referenceAware) {
+            const sourceAudioUrl = resolveRemoteTtsAssetFetchUrl(baseUrl, rawAudioUrl) || remoteAudioUrl;
+            const materializedAudioUrl = await materializeTtsAudioUrlForFormat(sourceAudioUrl, audioFormat, 'xtts-rvc');
+            const finalAudioUrl = materializedAudioUrl || remoteAudioUrl;
+            return {
+              ...(synthesizePayload && typeof synthesizePayload === 'object' ? synthesizePayload : {}),
+              success: true,
+              provider: PROVIDERS.XTTS_RVC,
+              via: synthesizePayload?.via || 'a11-voice-module-persona',
+              text,
+              vocalMode,
+              audioFormat: materializedAudioUrl ? 'mp3' : audioExtensionFromContentType('', path.extname(new URL(finalAudioUrl, 'http://127.0.0.1').pathname).slice(1) || audioFormat || 'wav'),
+              originalAudioUrl: materializedAudioUrl ? remoteAudioUrl : undefined,
+              original_audio_url: materializedAudioUrl ? remoteAudioUrl : undefined,
+              audio_url: finalAudioUrl,
+              audioUrl: finalAudioUrl,
+              providerCapabilities: {
+                ...(synthesizePayload?.providerCapabilities || {}),
+                referenceVoice: true,
               },
-            },
-          };
+              voiceConversion: {
+                ok: true,
+                module: synthesizePayload?.module || 'a11-voice-module',
+                provider: synthesizePayload?.voiceConversion?.provider || synthesizePayload?.provider || PROVIDERS.XTTS_RVC,
+                engine: synthesizePayload?.voiceConversion?.engine || synthesizePayload?.engine || 'persona-voice',
+                voiceStyle: synthesizePayload?.voiceConversion?.voiceStyle || synthesizePayload?.voiceStyle || voiceStyle || null,
+                rvcModel: synthesizePayload?.voiceConversion?.rvcModel || synthesizePayload?.providerCapabilities?.rvcModel || null,
+                rvcIndex: synthesizePayload?.voiceConversion?.rvcIndex || synthesizePayload?.providerCapabilities?.rvcIndex || null,
+                direction: buildVoicePersonaInstruction(persona),
+                attemptedEngines: Array.isArray(synthesizePayload?.voiceConversion?.attemptedEngines)
+                  ? synthesizePayload.voiceConversion.attemptedEngines
+                  : [synthesizePayload?.engine || 'persona-voice'],
+                reference: synthesizePayload?.voiceConversion?.reference || synthesizePayload?.voiceReference || {
+                  id: voiceStyle,
+                  label: voiceStyle,
+                  scope: 'voice-library',
+                },
+              },
+            };
+          }
+        } else if (synthesizePayload?.detail || synthesizePayload?.error || synthesizePayload?.message) {
+          lastError = new Error(
+            errorMessageFromPayload(
+              synthesizePayload?.detail ?? synthesizePayload?.error ?? synthesizePayload?.message,
+              `voice_synthesize_http_${synthesizeResponse.status}`
+            )
+          );
         }
-      } else if (synthesizePayload?.detail || synthesizePayload?.error || synthesizePayload?.message) {
-        lastError = new Error(
-          errorMessageFromPayload(
-            synthesizePayload?.detail ?? synthesizePayload?.error ?? synthesizePayload?.message,
-            `voice_synthesize_http_${synthesizeResponse.status}`
-          )
-        );
+      } catch (error_) {
+        lastError = error_;
       }
-    } catch (error_) {
-      lastError = error_;
     }
 
     try {
@@ -2685,6 +2710,15 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
       form.append('text', String(text || '').slice(0, 4096));
       form.append('persona', persona);
       form.append('voiceStyle', voiceStyle);
+      if (requestedReferenceId) form.append('voiceReferenceId', requestedReferenceId);
+      if (body?.voiceReferenceName || body?.voiceReferenceLabel) {
+        form.append('voiceReferenceName', String(body.voiceReferenceName || body.voiceReferenceLabel));
+      }
+      if (explicitReferenceFile?.filePath) {
+        const referenceBuffer = fs.readFileSync(explicitReferenceFile.filePath);
+        const referenceBlob = new Blob([referenceBuffer], { type: explicitReferenceFile.mimeType || 'audio/wav' });
+        form.append('reference', referenceBlob, explicitReferenceFile.originalName || `${explicitReferenceFile.label || 'reference'}.wav`);
+      }
       form.append('styleInstruction', buildVoicePersonaInstruction(persona));
       form.append('mode', vocalMode || 'adaptive');
       form.append('engine', String(body?.voiceConversionEngine || body?.conversionEngine || body?.engine || body?.voiceEngine || 'auto').trim() || 'auto');
@@ -2840,6 +2874,7 @@ async function requestOpenAiTts(text, body = {}, options = {}) {
     user: options.user || null,
     requestedId: String(body?.voiceReferenceId || body?.voiceRefId || body?.referenceId || '').trim(),
     preferredLabel: preferredVoiceStyle,
+    includeCatalog: canUseSharedVoiceCatalog({ user: options.user || null }),
   });
   const officialPersonaStyleFallback = !reference
     && OFFICIAL_PERSONAS.has(explicitPersona)
@@ -3406,12 +3441,34 @@ router.get('/tts/references', requireJwt, (req, res) => {
   try {
     return res.json({
       ok: true,
-      references: listVoiceReferences({ user: req.user }),
+      references: listVoiceReferences({ user: req.user, includeCatalog: canUseSharedVoiceCatalog(req) }),
     });
   } catch (error_) {
     return res.status(500).json({
       ok: false,
       error: 'voice_reference_list_failed',
+      message: String(error_?.message || error_),
+    });
+  }
+});
+
+router.get('/tts/voice-catalog', requireJwt, (req, res) => {
+  try {
+    const canUse = canUseSharedVoiceCatalog(req);
+    return res.json({
+      ok: true,
+      enabled: true,
+      canUse,
+      consent: VOICE_CATALOG_CONSENT,
+      voices: canUse ? listVoiceCatalogReferences({ user: req.user }) : [],
+      message: canUse
+        ? 'Catalogue voix disponible pour les usages consentis.'
+        : 'Catalogue voix reserve aux comptes Premium, Fondateur, Famille ou Admin.',
+    });
+  } catch (error_) {
+    return res.status(500).json({
+      ok: false,
+      error: 'voice_catalog_list_failed',
       message: String(error_?.message || error_),
     });
   }
@@ -3428,29 +3485,43 @@ router.post('/tts/references', requireJwt, voiceReferenceUpload.any(), (req, res
         message: 'Envoie un fichier audio dans un champ voiceReference, audio ou file.',
       });
     }
+    const requestedScope = req.body?.scope || 'private';
+    if (isVoiceCatalogScope(requestedScope) && !canUseSharedVoiceCatalog(req)) {
+      return res.status(403).json({
+        ok: false,
+        error: 'voice_catalog_premium_required',
+        message: 'Publier une voix au catalogue chanson demande un compte Premium, Fondateur, Famille ou Admin.',
+        consent: VOICE_CATALOG_CONSENT,
+      });
+    }
 
     const reference = saveVoiceReference({
       user: req.user,
       file,
       label: req.body?.label || req.body?.name || file.originalname,
-      scope: req.body?.scope || 'private',
+      scope: requestedScope,
+      catalogName: req.body?.catalogName || req.body?.voiceName || req.body?.publicName || req.body?.name || req.body?.label,
+      consent: req.body?.consent || req.body?.voiceCatalogConsent || req.body?.contract || '',
     });
 
     return res.status(201).json({
       ok: true,
       reference,
-      references: listVoiceReferences({ user: req.user }),
+      consent: VOICE_CATALOG_CONSENT,
+      references: listVoiceReferences({ user: req.user, includeCatalog: canUseSharedVoiceCatalog(req) }),
     });
   } catch (error_) {
     const message = String(error_?.message || error_);
     if (error_?.code === 'account_storage_quota_exceeded') {
       return res.status(error_?.status || 413).json(buildStorageQuotaPayload(error_));
     }
-    const status = message.startsWith('unsupported_audio_type') ? 415 : 500;
+    const status = Number(error_?.status || 0)
+      || (message.startsWith('unsupported_audio_type') ? 415 : 500);
     return res.status(status).json({
       ok: false,
-      error: status === 415 ? 'unsupported_audio_type' : 'voice_reference_save_failed',
+      error: status === 415 ? 'unsupported_audio_type' : (error_?.code || 'voice_reference_save_failed'),
       message,
+      consent: VOICE_CATALOG_CONSENT,
     });
   }
 });
@@ -3504,7 +3575,7 @@ router.delete('/tts/references/:id', requireJwt, (req, res) => {
     return res.json({
       ok: true,
       deleted: true,
-      references: listVoiceReferences({ user: req.user }),
+      references: listVoiceReferences({ user: req.user, includeCatalog: canUseSharedVoiceCatalog(req) }),
     });
   } catch (error_) {
     return res.status(500).json({
@@ -3522,7 +3593,7 @@ router.post('/tts/sound/compare', requireJwt, voiceReferenceUpload.any(), (req, 
     const referenceUpload = files.find((file) => /reference|ref|voice/i.test(file.fieldname || '') && file !== generated) || files[1] || null;
     const referenceId = String(req.body?.voiceReferenceId || req.body?.voiceRefId || req.body?.referenceId || '').trim();
     const storedReference = referenceId
-      ? findVoiceReference({ user: req.user, id: referenceId, includePath: true })
+      ? findVoiceReference({ user: req.user, id: referenceId, includePath: true, includeCatalog: canUseSharedVoiceCatalog(req) })
       : null;
 
     if (!generated?.buffer?.length) {

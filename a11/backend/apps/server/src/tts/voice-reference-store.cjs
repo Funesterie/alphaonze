@@ -23,6 +23,9 @@ const AUDIO_MIME_TYPES = new Set([
   'video/quicktime',
   'video/mp4',
 ]);
+const VOICE_CATALOG_CONSENT = 'voice-catalog-song-v1';
+const VOICE_CATALOG_ALLOWED_USES = Object.freeze(['song_creation', 'voice_preview']);
+const VOICE_CATALOG_SCOPE_VALUES = new Set(['catalog', 'catalogue', 'voice-catalog', 'shared-song', 'premium-shared']);
 const libraryReferenceCache = new Map();
 
 function uniqueValues(values = []) {
@@ -44,6 +47,64 @@ function sanitizeSegment(value, fallback = 'item') {
     .replace(/^-+|-+$/g, '')
     .slice(0, 80);
   return normalized || fallback;
+}
+
+function normalizeCatalogVoiceName(value = '') {
+  return String(value || '')
+    .normalize('NFKC')
+    .replace(/[^\p{L}\p{N}\s'.-]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60);
+}
+
+function makeCatalogVoiceSlug(value = '') {
+  const normalized = normalizeCatalogVoiceName(value)
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  return normalized || '';
+}
+
+function isVoiceCatalogScope(value = '') {
+  return VOICE_CATALOG_SCOPE_VALUES.has(String(value || '').trim().toLowerCase());
+}
+
+function isVoiceCatalogConsentAccepted(value = '') {
+  const raw = String(value || '').trim().toLowerCase();
+  return raw === VOICE_CATALOG_CONSENT || raw === 'true' || raw === '1' || raw === 'yes' || raw === 'on';
+}
+
+function isCatalogReference(ref = {}) {
+  const scope = String(ref?.scope || '').trim().toLowerCase();
+  return scope === 'catalog' || ref?.catalog?.enabled === true;
+}
+
+function isActiveCatalogReference(ref = {}) {
+  if (!isCatalogReference(ref)) return false;
+  const catalog = ref.catalog || {};
+  const status = String(catalog.status || ref.catalogStatus || 'active').trim().toLowerCase();
+  const consent = catalog.consent || ref.catalogConsent || ref.consent || '';
+  return status === 'active'
+    && isVoiceCatalogConsentAccepted(consent)
+    && catalog.rawAudioPublic !== true;
+}
+
+function getCatalogReferenceName(ref = {}) {
+  return normalizeCatalogVoiceName(ref?.catalog?.name || ref?.catalogName || ref?.label || '');
+}
+
+function isCatalogVoiceNameTaken(references = [], name = '', excludeId = '') {
+  const slug = makeCatalogVoiceSlug(name);
+  if (!slug) return false;
+  return references.some((ref) => {
+    if (!isActiveCatalogReference(ref)) return false;
+    if (excludeId && ref?.id === excludeId) return false;
+    return makeCatalogVoiceSlug(getCatalogReferenceName(ref)) === slug;
+  });
 }
 
 function getUserKey(user = null) {
@@ -340,17 +401,34 @@ function serializeReference(ref, { includePath = false } = {}) {
     createdAt: ref.createdAt || null,
     updatedAt: ref.updatedAt || null,
   };
+  if (isCatalogReference(ref)) {
+    delete safe.ownerKey;
+    safe.catalog = {
+      enabled: true,
+      status: String(ref.catalog?.status || ref.catalogStatus || 'active'),
+      name: getCatalogReferenceName(ref),
+      slug: String(ref.catalog?.slug || ref.catalogSlug || makeCatalogVoiceSlug(getCatalogReferenceName(ref))),
+      consent: String(ref.catalog?.consent || ref.catalogConsent || ref.consent || VOICE_CATALOG_CONSENT),
+      contractVersion: String(ref.catalog?.contractVersion || VOICE_CATALOG_CONSENT),
+      allowedUses: Array.isArray(ref.catalog?.allowedUses) ? ref.catalog.allowedUses : [...VOICE_CATALOG_ALLOWED_USES],
+      consumerTier: String(ref.catalog?.consumerTier || 'premium'),
+      rawAudioPublic: false,
+      ownerRetainsRights: ref.catalog?.ownerRetainsRights !== false,
+      consentedAt: ref.catalog?.consentedAt || ref.catalogConsentedAt || ref.createdAt || null,
+    };
+  }
   if (includePath) safe.filePath = ref.filePath;
   return safe;
 }
 
-function canAccessReference(user, ref) {
+function canAccessReference(user, ref, { includeCatalog = false } = {}) {
   if (!ref) return false;
   if (ref.scope === 'library') return true;
   if (!user) return false;
   const userKey = getUserKey(user);
   if (ref.ownerKey && ref.ownerKey === userKey) return true;
   if (ref.scope === 'family' && hasFullAccess(user)) return true;
+  if (includeCatalog && isActiveCatalogReference(ref)) return true;
   return false;
 }
 
@@ -482,13 +560,29 @@ function listLibraryVoiceReferences({ includePath = false } = {}) {
     .map((ref) => serializeReference(ref, { includePath }));
 }
 
-function saveVoiceReference({ user, file, label, scope = 'private' } = {}) {
+function saveVoiceReference({ user, file, label, scope = 'private', catalogName = '', consent = '' } = {}) {
   if (!user) throw new Error('missing_user');
   if (!file?.buffer?.length) throw new Error('missing_audio');
   if (!isAllowedAudioUpload(file)) throw new Error(`unsupported_audio_type:${file.mimetype || 'unknown'}`);
 
   const familyScope = String(scope || '').trim().toLowerCase() === 'family';
-  const resolvedScope = familyScope && hasFullAccess(user) ? 'family' : 'private';
+  const catalogScope = isVoiceCatalogScope(scope);
+  const resolvedScope = catalogScope ? 'catalog' : (familyScope && hasFullAccess(user) ? 'family' : 'private');
+  const resolvedCatalogName = normalizeCatalogVoiceName(catalogName || label || file.originalname || '');
+  if (catalogScope) {
+    if (!resolvedCatalogName) {
+      const error = new Error('voice_catalog_name_required');
+      error.code = 'voice_catalog_name_required';
+      error.status = 400;
+      throw error;
+    }
+    if (!isVoiceCatalogConsentAccepted(consent)) {
+      const error = new Error('voice_catalog_consent_required');
+      error.code = 'voice_catalog_consent_required';
+      error.status = 400;
+      throw error;
+    }
+  }
   const ownerKey = getUserKey(user);
   assertAccountStorageQuota({
     user,
@@ -507,9 +601,17 @@ function saveVoiceReference({ user, file, label, scope = 'private' } = {}) {
   fs.writeFileSync(filePath, file.buffer);
 
   const now = new Date().toISOString();
+  const references = readIndex().filter((entry) => entry.id !== id);
+  if (catalogScope && isCatalogVoiceNameTaken(references, resolvedCatalogName, id)) {
+    const error = new Error('voice_catalog_name_taken');
+    error.code = 'voice_catalog_name_taken';
+    error.status = 409;
+    throw error;
+  }
+
   const reference = {
     id,
-    label: String(label || file.originalname || 'Reference voix').trim().slice(0, 80) || 'Reference voix',
+    label: String(resolvedCatalogName || label || file.originalname || 'Reference voix').trim().slice(0, 80) || 'Reference voix',
     scope: resolvedScope,
     ownerKey,
     ownerEmail: normalizeEmail(user.email) || null,
@@ -521,20 +623,47 @@ function saveVoiceReference({ user, file, label, scope = 'private' } = {}) {
     createdAt: now,
     updatedAt: now,
   };
+  if (catalogScope) {
+    reference.catalog = {
+      enabled: true,
+      status: 'active',
+      name: resolvedCatalogName,
+      slug: makeCatalogVoiceSlug(resolvedCatalogName),
+      consent: VOICE_CATALOG_CONSENT,
+      contractVersion: VOICE_CATALOG_CONSENT,
+      allowedUses: [...VOICE_CATALOG_ALLOWED_USES],
+      consumerTier: 'premium',
+      rawAudioPublic: false,
+      ownerRetainsRights: true,
+      consentedAt: now,
+      note: 'Owner consented to premium/family/admin song creation and preview; raw audio remains private.',
+    };
+  }
 
-  const references = readIndex().filter((entry) => entry.id !== id);
   references.push(reference);
   writeIndex(references);
   return serializeReference(reference);
 }
 
-function listVoiceReferences({ user } = {}) {
+function listVoiceReferences({ user, includeCatalog = false } = {}) {
   const stored = readIndex()
-    .filter((ref) => canAccessReference(user, ref))
+    .filter((ref) => canAccessReference(user, ref, { includeCatalog }))
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
     .map((ref) => serializeReference(ref));
   const library = listLibraryVoiceReferences().filter((ref) => canAccessReference(user, ref));
   return [...stored, ...library];
+}
+
+function listVoiceCatalogReferences({ user, includePath = false } = {}) {
+  if (!user) return [];
+  return readIndex()
+    .filter((ref) => canAccessReference(user, ref, { includeCatalog: true }) && isActiveCatalogReference(ref))
+    .sort((a, b) => {
+      const left = getCatalogReferenceName(a);
+      const right = getCatalogReferenceName(b);
+      return left.localeCompare(right, 'fr');
+    })
+    .map((ref) => serializeReference(ref, { includePath }));
 }
 
 function referenceMatchesPreference(ref, preferredLabel = '') {
@@ -650,26 +779,26 @@ function pickPreferredReference(refs = [], preferredLabel = '') {
   return best || null;
 }
 
-function findVoiceReference({ user, id, includePath = false } = {}) {
+function findVoiceReference({ user, id, includePath = false, includeCatalog = false } = {}) {
   const safeId = String(id || '').trim();
   if (!/^[a-zA-Z0-9_-]{8,80}$/.test(safeId)) return null;
   const ref = readIndex().find((entry) => entry.id === safeId)
     || listLibraryVoiceReferences({ includePath: true }).find((entry) => entry.id === safeId)
     || null;
-  if (!canAccessReference(user, ref)) return null;
+  if (!canAccessReference(user, ref, { includeCatalog })) return null;
   return serializeReference(ref, { includePath });
 }
 
-function resolveVoiceReferenceForRequest({ user, requestedId, preferredLabel = '' } = {}) {
+function resolveVoiceReferenceForRequest({ user, requestedId, preferredLabel = '', includeCatalog = false } = {}) {
   if (requestedId) {
-    const requested = findVoiceReference({ user, id: requestedId, includePath: true });
+    const requested = findVoiceReference({ user, id: requestedId, includePath: true, includeCatalog });
     if (!preferredLabel || referenceMatchesPreference(requested, preferredLabel)) {
       return requested;
     }
   }
   const accessible = user
     ? readIndex()
-      .filter((ref) => canAccessReference(user, ref))
+      .filter((ref) => canAccessReference(user, ref, { includeCatalog }))
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
     : [];
   const preferredStored = pickPreferredReference(accessible, preferredLabel);
@@ -710,6 +839,7 @@ function compareAudioBuffers({ generatedBuffer, referenceBuffer, generatedFile =
 module.exports = {
   AUDIO_EXTENSIONS,
   AUDIO_MIME_TYPES,
+  VOICE_CATALOG_CONSENT,
   analyzeAudioBuffer,
   analyzeWavBuffer,
   canAccessReference,
@@ -721,8 +851,12 @@ module.exports = {
   getVoiceReferenceStorageUsageBytes,
   getVoiceReferenceLibraryCandidates,
   isAllowedAudioUpload,
+  isVoiceCatalogConsentAccepted,
+  isVoiceCatalogScope,
   listLibraryVoiceReferences,
+  listVoiceCatalogReferences,
   listVoiceReferences,
+  normalizeCatalogVoiceName,
   resolveVoiceReferenceForRequest,
   resolveVoiceReferenceRoot,
   saveVoiceReference,

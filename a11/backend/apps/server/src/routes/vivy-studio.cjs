@@ -1741,12 +1741,39 @@ function getVivyStudioVoiceProfile(input = {}) {
   const requestedTool = cleanOneLine(input.voiceTool, '', 100);
   const referenceName = cleanOneLine(input.voiceFileName || input.voiceReferenceName, '', 160);
   const referenceId = cleanOneLine(input.voiceReferenceId || input.voiceRefId || input.referenceId, '', 160);
+  const catalogVoiceName = cleanOneLine(input.voiceCatalogName || input.catalogVoiceName, '', 80);
   const hasPrivateReference = Boolean(referenceName || referenceId);
+  const wantsCatalogVoice = Boolean(catalogVoiceName)
+    || /catalogue|catalog|premium|voix autorisee|voix autorisée/.test(folded);
   const wantsDuo = /\bduo\b|djeff.*vivy|vivy.*djeff/.test(folded);
   const wantsK44 = /\bk44\b|\bkaen44\b|\bkaen\b/.test(folded);
   const wantsA11 = /\ba11\b|\balpha\s*onze\b|\balphaonze\b/.test(folded);
   const wantsDjeff = wantsDuo || /\bdjeff\b|\brap\b|\bfraiyeur\b|\bmoto\b|\bmoteur\b|\bpignon\b|\bcouronne\b|\bchaine\b|\bradiateur\b/.test(folded);
   const wantsSing = /\bchant\b|\bsing\b|\bvocal\b/.test(folded);
+
+  if (wantsCatalogVoice) {
+    const label = catalogVoiceName || referenceName || 'voix catalogue premium';
+    return {
+      id: 'catalog-premium',
+      tool: requestedTool || 'Voix catalogue premium',
+      label: 'Voix catalogue premium',
+      summaryLabel: `voix catalogue ${label}`,
+      ttsPersona: 'vivy',
+      voiceStyle: 'voice-catalog-song',
+      vocalMode: 'adaptive',
+      lead: `${label} porte la voix sélectionnée avec consentement catalogue.`,
+      referenceLabel: hasPrivateReference ? label : 'voix catalogue autorisée à choisir',
+      defaultReferenceStep: 'Sélectionner une voix catalogue consentie; la référence brute reste privée et n’est utilisée que côté serveur.',
+      testPhrase: `Test voix catalogue ${label}. Je garde la diction claire, sans publier la référence brute.`,
+      songCastLines: [
+        `${label}: voix autorisée du catalogue Funesterie pour preview et chanson.`,
+        'Ne pas imiter de célébrité, ne pas exposer la référence brute, garder les tags de chanteurs demandés.',
+      ],
+      sunoStyle: `French original vocal production with authorized custom voice direction ${label}, structured rhymed lyrics, melodic chorus, no spoken narration`,
+      musicLead: `Original Funesterie song using authorized voice catalog reference ${label}, in French.`,
+      musicMood: `Authorized catalog voice ${label}; original voice only, consented song use, no celebrity imitation.`,
+    };
+  }
 
   if (wantsDuo) {
     return {
@@ -2944,6 +2971,8 @@ function buildVivyMusicPrompt(input = {}) {
   const source = cleanOneLine(input.songSource || input.source, 'Theme', 80);
   const mood = cleanOneLine(stripVivyAscii4SoundTokens(input.songMood || input.mood || input.style), 'electro pop dark cinematic', 180);
   const artistCast = buildVivySongArtistCast(input);
+  const voiceProfile = getVivyStudioVoiceProfile(input);
+  const catalogVoiceName = cleanOneLine(input.voiceCatalogName || input.catalogVoiceName, '', 80);
   const prosodyPlan = buildVivyProsodyPlan(input);
   const prosodyPrompt = formatVivyProsodyPlanForPrompt(prosodyPlan);
   const lyrics = buildVivyStructuredLyrics({
@@ -2955,6 +2984,9 @@ function buildVivyMusicPrompt(input = {}) {
     `Source: ${source}.`,
     `Style and production: ${mood}.`,
     `Vocal cast: ${artistCast.countLabel}: ${artistCast.label}. ${artistCast.musicMood}`,
+    catalogVoiceName
+      ? `Authorized voice catalog: ${catalogVoiceName}. Use it only as a consented original voice direction; never imitate a celebrity or expose raw reference audio.`
+      : `Voice direction: ${voiceProfile.referenceLabel}. Original voice only; no celebrity imitation.`,
     prosodyPrompt,
     'Lyrics must be sung, not spoken. Use the provided sections as real lyrics.',
     `Lyrics:\n${lyrics}`,

@@ -229,3 +229,71 @@ test('voice reference resolver prefers Vivy library samples when requested', () 
     fs.rmSync(runtimeRoot, { recursive: true, force: true });
   }
 });
+
+test('voice catalog references require consent, unique names and explicit catalog access', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-voice-catalog-'));
+  const previousRoot = process.env.A11_VOICE_REFERENCE_DIR;
+  const previousLibraryDisabled = process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
+  process.env.A11_VOICE_REFERENCE_DIR = root;
+  process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED = '1';
+  const store = require('../src/tts/voice-reference-store.cjs');
+
+  try {
+    const owner = { id: 'owner-lara', email: 'lara@example.com' };
+    const premium = { id: 'premium-user', email: 'premium@example.com' };
+    const wav = createPcm16Wav({ frequency: 330 });
+
+    assert.throws(() => store.saveVoiceReference({
+      user: owner,
+      file: { buffer: wav, mimetype: 'audio/wav', originalname: 'lara.wav' },
+      label: 'Lara',
+      scope: 'catalog',
+      catalogName: 'Lara',
+      consent: '',
+    }), (error) => error?.code === 'voice_catalog_consent_required');
+
+    const reference = store.saveVoiceReference({
+      user: owner,
+      file: { buffer: wav, mimetype: 'audio/wav', originalname: 'lara.wav' },
+      label: 'Lara',
+      scope: 'catalog',
+      catalogName: 'Lara',
+      consent: store.VOICE_CATALOG_CONSENT,
+    });
+
+    assert.equal(reference.scope, 'catalog');
+    assert.equal(reference.catalog.name, 'Lara');
+    assert.equal(reference.catalog.rawAudioPublic, false);
+    assert.equal(store.listVoiceCatalogReferences({ user: premium }).length, 1);
+    assert.equal(store.findVoiceReference({ user: premium, id: reference.id, includePath: true }), null);
+
+    const resolved = store.resolveVoiceReferenceForRequest({
+      user: premium,
+      requestedId: reference.id,
+      includeCatalog: true,
+    });
+    assert.equal(resolved.id, reference.id);
+    assert.ok(resolved.filePath);
+
+    assert.throws(() => store.saveVoiceReference({
+      user: { id: 'owner-2', email: 'owner2@example.com' },
+      file: { buffer: createPcm16Wav({ frequency: 360 }), mimetype: 'audio/wav', originalname: 'lara-2.wav' },
+      label: 'Lara',
+      scope: 'catalog',
+      catalogName: ' Lara ',
+      consent: store.VOICE_CATALOG_CONSENT,
+    }), (error) => error?.code === 'voice_catalog_name_taken');
+  } finally {
+    if (previousRoot === undefined) {
+      delete process.env.A11_VOICE_REFERENCE_DIR;
+    } else {
+      process.env.A11_VOICE_REFERENCE_DIR = previousRoot;
+    }
+    if (previousLibraryDisabled === undefined) {
+      delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
+    } else {
+      process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED = previousLibraryDisabled;
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

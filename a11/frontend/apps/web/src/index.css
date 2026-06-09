@@ -4061,7 +4061,18 @@ html.a11-auth-page-root body {
   border-radius: 8px;
 }
 
-.vivy-studio-artist-fieldset legend {
+.vivy-studio-consent-fieldset {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid rgba(240, 121, 216, 0.24);
+  border-radius: 8px;
+}
+
+.vivy-studio-artist-fieldset legend,
+.vivy-studio-consent-fieldset legend {
   padding: 0 6px;
   color: #f2cfe8;
   font-size: 12px;
@@ -4095,6 +4106,26 @@ html.a11-auth-page-root body {
 }
 
 .vivy-studio-artist-option input {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  accent-color: #f079d8;
+}
+
+.vivy-studio-checkline {
+  display: grid !important;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px !important;
+  color: #fff3fc !important;
+  font-size: 12px !important;
+  line-height: 1.35;
+  text-transform: none !important;
+}
+
+.vivy-studio-checkline input {
   width: 18px;
   min-width: 18px;
   height: 18px;
