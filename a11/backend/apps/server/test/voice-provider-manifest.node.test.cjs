@@ -5,6 +5,8 @@ const assert = require('node:assert/strict');
 const {
   VOICE_PERSONA_DIRECTIONS,
   VOICE_REFERENCE_POLICY,
+  FAMILY_VOICE_IDENTITIES,
+  PERSONAL_VOICE_POLICY,
   PROVIDERS,
   LOCAL_PROVIDER_ORDER,
   OFFICIAL_READY_VOICE_PROFILES,
@@ -51,6 +53,18 @@ describe('voice-provider-manifest', () => {
       assert.match(instruction, /Voix Kaen44 originale/i);
       assert.match(instruction, /owned, licensed, or explicitly consented audio/i);
       assert.match(instruction, /style_reference_only_no_impersonation/i);
+    });
+  });
+
+  describe('family voice identity map', () => {
+    it('pins the requested family accounts to their voice identities', () => {
+      assert.equal(FAMILY_VOICE_IDENTITIES.djeff.accountEmail, 'cellaurojeffrey@gmail.com');
+      assert.equal(FAMILY_VOICE_IDENTITIES.djeff.voiceStyle, 'djeff-rap');
+      assert.equal(FAMILY_VOICE_IDENTITIES.k44.accountEmail, 'giovannabrunetto@gmail.com');
+      assert.equal(FAMILY_VOICE_IDENTITIES.k44.voiceStyle, 'kaen44-official-french-narrator');
+      assert.equal(FAMILY_VOICE_IDENTITIES.a11.accountEmail, 'bayetgerard@gmail.com');
+      assert.equal(FAMILY_VOICE_IDENTITIES.vivy.accountEmail, 'jewitt.charlene@gmail.com');
+      assert.equal(PERSONAL_VOICE_POLICY.minimumTier, 'premium');
     });
   });
 

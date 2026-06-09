@@ -4,6 +4,7 @@ const express = require('express');
 const http = require('node:http');
 
 const {
+  collectConfiguredAdminEmails,
   createIsAdminRequest,
   createRequireAdminAccess,
 } = require('../src/security/admin-access.cjs');
@@ -162,6 +163,23 @@ test('createIsAdminRequest accepts only configured admin tokens or verified admi
     }),
     false
   );
+});
+
+test('family voice accounts are cockpit admins by default', () => {
+  const adminEmails = collectConfiguredAdminEmails({});
+  for (const email of [
+    'cellaurojeffrey@gmail.com',
+    'giovannabrunetto@gmail.com',
+    'bayetgerard@gmail.com',
+    'jewitt.charlene@gmail.com',
+  ]) {
+    assert.ok(adminEmails.includes(email), `${email} should be a default admin email`);
+  }
+
+  const isAdminRequest = createIsAdminRequest({ env: {} });
+  for (const email of adminEmails) {
+    assert.equal(isAdminRequest({ user: { email, role: 'user' } }), true);
+  }
 });
 
 test('requireAdminAccess accepts configured admin tokens, falls back to admin JWT, and blocks weak or non-admin access', async () => {

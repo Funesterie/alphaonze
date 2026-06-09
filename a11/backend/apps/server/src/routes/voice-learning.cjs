@@ -6,7 +6,18 @@ const fs = require('node:fs');
 const multer = require('multer');
 const path = require('node:path');
 const { getBackendRoot } = require('../../lib/tts-paths.cjs');
-const { normalizeEmail } = require('../auth/full-access.cjs');
+const { hasFullAccess, normalizeEmail } = require('../auth/full-access.cjs');
+const {
+  TIERS,
+  resolveMcpAccountProfileSync,
+} = require('../auth/mcp-account-tier.cjs');
+const {
+  PERSONAL_VOICE_POLICY,
+  getFamilyVoiceIdentitiesForPersona,
+  getFamilyVoiceIdentityByEmail,
+  getFamilyVoiceIdentityByKey,
+  getOfficialVoiceSourceEmailsForPersona,
+} = require('../config/family-accounts.cjs');
 const {
   analyzeWavBuffer,
   getUserKey,
@@ -19,8 +30,10 @@ const REQUIRED_CORPUS_MS = Math.max(
 );
 
 const DEFAULT_PERSONA_EMAILS = {
-  a11: ['cellaurojeffrey@gmail.com'],
+  a11: ['bayetgerard@gmail.com'],
+  djeff: ['cellaurojeffrey@gmail.com'],
   kaen44: ['giovannabrunetto@gmail.com', 'giovannabrunettogiovanna@gmail.com'],
+  vivy: ['jewitt.charlene@gmail.com', 'charlenejewitt@gmail.com'],
 };
 
 const VOICE_LEARNING_CONSENT = 'voice-learning-v1';
@@ -52,6 +65,9 @@ function parseConfiguredEmails(value = '') {
 function normalizePersona(value = '') {
   const raw = String(value || '').trim().toLowerCase();
   if (raw === 'k44' || raw === 'kaen') return 'kaen44';
+  if (raw === 'djeff' || raw === 'djeff-rap' || raw === 'pignon') return 'djeff';
+  if (raw === 'vivy' || raw === 'vivi') return 'vivy';
+  if (raw === 'personal' || raw === 'personal-voice' || raw === 'my-voice' || raw === 'myvoice' || raw === 'ma-voix' || raw === 'ma_voix') return 'personal';
   if (raw === 'a11' || raw === 'alphaonze' || raw === 'alpha-onze') return 'a11';
   if (raw === 'kaen44') return 'kaen44';
   return '';
@@ -60,13 +76,60 @@ function normalizePersona(value = '') {
 function getAllowedEmailsForPersona(persona) {
   const key = persona === 'kaen44' ? 'KAEN44' : persona.toUpperCase();
   const configured = parseConfiguredEmails(process.env[`A11_VOICE_LEARNING_${key}_EMAILS`]);
-  const defaults = DEFAULT_PERSONA_EMAILS[persona] || [];
+  const mapped = getOfficialVoiceSourceEmailsForPersona(persona);
+  const defaults = mapped.length ? mapped : (DEFAULT_PERSONA_EMAILS[persona] || []);
   return new Set((configured.length ? configured : defaults).map(normalizeLooseEmail).filter(Boolean));
 }
 
 function requireOfficialSourceAccount() {
   const raw = String(process.env.A11_VOICE_LEARNING_SOURCE_ONLY || '').trim().toLowerCase();
-  return raw === '1' || raw === 'true' || raw === 'yes';
+  if (raw === '0' || raw === 'false' || raw === 'no' || raw === 'off') return false;
+  const allowOptIn = String(process.env.A11_VOICE_LEARNING_ALLOW_OPT_IN_CONTRIBUTORS || '').trim().toLowerCase();
+  if (allowOptIn === '1' || allowOptIn === 'true' || allowOptIn === 'yes' || allowOptIn === 'on') return false;
+  return true;
+}
+
+function canUsePersonalVoice(user = {}) {
+  const profile = resolveMcpAccountProfileSync(user, { env: process.env });
+  return profile.tier === TIERS.PREMIUM
+    || profile.tier === TIERS.FOUNDER
+    || profile.tier === TIERS.ADMIN_FAMILY;
+}
+
+function buildPersonalVoiceAccess(req, email) {
+  if (!canUsePersonalVoice({ ...req.user, email })) return null;
+  const ownerIdentity = getFamilyVoiceIdentityByEmail(email);
+  return {
+    persona: 'personal',
+    email,
+    ownerKey: getUserKey({ ...req.user, email }),
+    isOfficialSource: false,
+    contributorRole: 'personal-owner',
+    voiceIdentityKey: ownerIdentity?.key || 'personal',
+    voiceIdentityLabel: ownerIdentity?.label || PERSONAL_VOICE_POLICY.label,
+    voiceStyle: ownerIdentity?.voiceStyle || 'personal-account-voice',
+    minimumTier: PERSONAL_VOICE_POLICY.minimumTier,
+  };
+}
+
+function buildOfficialVoiceAccess(req, email, candidate, isOfficialSource) {
+  const identities = getFamilyVoiceIdentitiesForPersona(candidate);
+  const emailIdentity = getFamilyVoiceIdentityByEmail(email);
+  const identity = identities.find((item) => normalizeLooseEmail(item.accountEmail) === email)
+    || (emailIdentity?.persona === candidate ? emailIdentity : null)
+    || identities[0]
+    || getFamilyVoiceIdentityByKey(candidate);
+  const curator = !isOfficialSource && hasFullAccess({ ...req.user, email }, process.env);
+  return {
+    persona: candidate,
+    email,
+    ownerKey: getUserKey({ ...req.user, email }),
+    isOfficialSource,
+    contributorRole: isOfficialSource ? 'official-source' : (curator ? 'family-admin-curator' : 'opt-in-user'),
+    voiceIdentityKey: identity?.key || candidate,
+    voiceIdentityLabel: identity?.label || candidate,
+    voiceStyle: identity?.voiceStyle || `${candidate}-voice`,
+  };
 }
 
 function resolveLearningAccess(req, requestedPersona = '') {
@@ -75,20 +138,16 @@ function resolveLearningAccess(req, requestedPersona = '') {
   const email = normalizeLooseEmail(req.user?.email || req.user?.username || '');
   if (!email) return null;
   if (hasRequestedPersona && !persona) return null;
+  if (persona === 'personal') return buildPersonalVoiceAccess(req, email);
 
-  const candidates = persona ? [persona] : ['a11', 'kaen44'];
+  const candidates = persona ? [persona] : ['a11', 'kaen44', 'vivy', 'djeff'];
   const sourceOnly = requireOfficialSourceAccount();
   for (const candidate of candidates) {
     const allowed = getAllowedEmailsForPersona(candidate);
     const isOfficialSource = allowed.has(email);
-    if (isOfficialSource || !sourceOnly) {
-      return {
-        persona: candidate,
-        email,
-        ownerKey: getUserKey({ ...req.user, email }),
-        isOfficialSource,
-        contributorRole: isOfficialSource ? 'official-source' : 'opt-in-user',
-      };
+    const isFamilyAdminCurator = hasFullAccess({ ...req.user, email }, process.env);
+    if (isOfficialSource || isFamilyAdminCurator || !sourceOnly) {
+      return buildOfficialVoiceAccess(req, email, candidate, isOfficialSource);
     }
   }
   return null;
@@ -209,6 +268,7 @@ function createVoiceLearningRouter(options = {}) {
         persona: requestedPersona || null,
         consentRequired: true,
         consent: VOICE_LEARNING_CONSENT,
+        minimumTier: requestedPersona === 'personal' ? PERSONAL_VOICE_POLICY.minimumTier : undefined,
         message: 'Connecte-toi puis active la contribution voix pour participer au corpus.',
         requiredSeconds: REQUIRED_CORPUS_MS / 1000,
       });
@@ -225,6 +285,10 @@ function createVoiceLearningRouter(options = {}) {
       consent: VOICE_LEARNING_CONSENT,
       isOfficialSource: access.isOfficialSource,
       contributorRole: access.contributorRole,
+      voiceIdentityKey: access.voiceIdentityKey,
+      voiceIdentityLabel: access.voiceIdentityLabel,
+      voiceStyle: access.voiceStyle,
+      minimumTier: access.minimumTier,
       ...summary,
       nextAction: summary.corpusReady ? 'train' : 'record',
     });
@@ -258,6 +322,10 @@ function createVoiceLearningRouter(options = {}) {
       consent: VOICE_LEARNING_CONSENT,
       isOfficialSource: access.isOfficialSource,
       contributorRole: access.contributorRole,
+      voiceIdentityKey: access.voiceIdentityKey,
+      voiceIdentityLabel: access.voiceIdentityLabel,
+      voiceStyle: access.voiceStyle,
+      minimumTier: access.minimumTier,
       ...makeSummary({ clips: [], trainRequests: [] }),
       nextAction: 'record',
     });
@@ -290,6 +358,9 @@ function createVoiceLearningRouter(options = {}) {
         persona: access.persona,
         isOfficialSource: access.isOfficialSource,
         contributorRole: access.contributorRole,
+        voiceIdentityKey: access.voiceIdentityKey,
+        voiceIdentityLabel: access.voiceIdentityLabel,
+        voiceStyle: access.voiceStyle,
         clipId: duplicate.id,
         ...makeSummary(index),
       });
@@ -313,6 +384,9 @@ function createVoiceLearningRouter(options = {}) {
       emailHash: crypto.createHash('sha256').update(access.email).digest('hex').slice(0, 16),
       contributorRole: access.contributorRole,
       isOfficialSource: access.isOfficialSource,
+      voiceIdentityKey: access.voiceIdentityKey,
+      voiceIdentityLabel: access.voiceIdentityLabel,
+      voiceStyle: access.voiceStyle,
       consent: VOICE_LEARNING_CONSENT,
       filename,
       mimeType: req.file.mimetype || null,
@@ -335,6 +409,9 @@ function createVoiceLearningRouter(options = {}) {
       persona: access.persona,
       isOfficialSource: access.isOfficialSource,
       contributorRole: access.contributorRole,
+      voiceIdentityKey: access.voiceIdentityKey,
+      voiceIdentityLabel: access.voiceIdentityLabel,
+      voiceStyle: access.voiceStyle,
       clipId: clip.id,
       durationMs,
       ...makeSummary(index),
@@ -393,6 +470,9 @@ function createVoiceLearningRouter(options = {}) {
       source: 'voice-learning',
       contributorRole: access.contributorRole,
       isOfficialSource: access.isOfficialSource,
+      voiceIdentityKey: access.voiceIdentityKey,
+      voiceIdentityLabel: access.voiceIdentityLabel,
+      voiceStyle: access.voiceStyle,
     };
     index.trainRequests.push(trainRequest);
     writeIndex(access, index);

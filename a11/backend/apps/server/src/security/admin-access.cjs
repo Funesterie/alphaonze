@@ -1,3 +1,7 @@
+const {
+  getFamilyAdminEmails,
+} = require('../config/family-accounts.cjs');
+
 function normalizeTokenValues(values = []) {
   return values
     .map((value) => String(value || '').trim())
@@ -6,9 +10,7 @@ function normalizeTokenValues(values = []) {
 }
 
 const DEFAULT_COCKPIT_ADMIN_EMAILS = Object.freeze([
-  'cellaurojeffrey@gmail.com',
-  'funesterie38@gmail.com',
-  'cellaurojeffrey@funesterie.onmicrosoft.com',
+  ...getFamilyAdminEmails(),
 ]);
 
 function normalizeEmail(value) {

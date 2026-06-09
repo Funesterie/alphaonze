@@ -46,6 +46,8 @@ async function withVoiceLearningServer(fn) {
       req.user = {
         id: 'test-user',
         email: String(req.headers['x-test-email'] || ''),
+        tier: String(req.headers['x-test-tier'] || ''),
+        subscription_active: String(req.headers['x-test-subscription-active'] || '').toLowerCase() === 'true',
       };
       next();
     },
@@ -61,7 +63,7 @@ async function withVoiceLearningServer(fn) {
   }
 }
 
-async function postAudio(baseUrl, { email, persona = 'a11', file, filename, mimeType = 'audio/wav', durationMs, consent = 'voice-learning-v1' } = {}) {
+async function postAudio(baseUrl, { email, tier = '', persona = 'a11', file, filename, mimeType = 'audio/wav', durationMs, consent = 'voice-learning-v1' } = {}) {
   const form = new FormData();
   form.append('audio', new Blob([file], { type: mimeType }), filename || `clip.${mimeType.includes('webm') ? 'webm' : 'wav'}`);
   form.append('persona', persona);
@@ -70,6 +72,7 @@ async function postAudio(baseUrl, { email, persona = 'a11', file, filename, mime
   if (durationMs) form.append('durationMs', String(durationMs));
   const headers = {};
   if (email !== undefined) headers['x-test-email'] = email;
+  if (tier) headers['x-test-tier'] = tier;
   const res = await fetch(`${baseUrl}/api/voice-learning/snippet`, {
     method: 'POST',
     headers,
@@ -82,7 +85,9 @@ async function postAudio(baseUrl, { email, persona = 'a11', file, filename, mime
 test('voice learning accepts consented snippets from any connected account', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-voice-learning-'));
   const previousRoot = process.env.A11_VOICE_LEARNING_DIR;
+  const previousAllowOptIn = process.env.A11_VOICE_LEARNING_ALLOW_OPT_IN_CONTRIBUTORS;
   process.env.A11_VOICE_LEARNING_DIR = root;
+  process.env.A11_VOICE_LEARNING_ALLOW_OPT_IN_CONTRIBUTORS = 'true';
 
   try {
     await withVoiceLearningServer(async (baseUrl) => {
@@ -132,12 +137,78 @@ test('voice learning accepts consented snippets from any connected account', asy
       assert.equal(missingConsent.payload.error, 'missing_consent');
 
       const officialStatus = await fetch(`${baseUrl}/api/voice-learning/status?persona=a11`, {
-        headers: { 'x-test-email': 'cellaurojeffrey@gmail.com' },
+        headers: { 'x-test-email': 'bayetgerard@gmail.com' },
       });
       const officialPayload = await officialStatus.json();
       assert.equal(officialStatus.status, 200);
       assert.equal(officialPayload.isOfficialSource, true);
       assert.equal(officialPayload.contributorRole, 'official-source');
+      assert.equal(officialPayload.voiceIdentityKey, 'a11');
+      assert.equal(officialPayload.voiceStyle, 'a11-official-stern-french');
+    });
+  } finally {
+    if (previousRoot === undefined) delete process.env.A11_VOICE_LEARNING_DIR;
+    else process.env.A11_VOICE_LEARNING_DIR = previousRoot;
+    if (previousAllowOptIn === undefined) delete process.env.A11_VOICE_LEARNING_ALLOW_OPT_IN_CONTRIBUTORS;
+    else process.env.A11_VOICE_LEARNING_ALLOW_OPT_IN_CONTRIBUTORS = previousAllowOptIn;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('voice learning maps family voice owners and premium personal voice access', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-voice-learning-family-'));
+  const previousRoot = process.env.A11_VOICE_LEARNING_DIR;
+  process.env.A11_VOICE_LEARNING_DIR = root;
+
+  try {
+    await withVoiceLearningServer(async (baseUrl) => {
+      const djeff = await fetch(`${baseUrl}/api/voice-learning/status?persona=djeff`, {
+        headers: { 'x-test-email': 'cellaurojeffrey@gmail.com' },
+      });
+      const djeffPayload = await djeff.json();
+      assert.equal(djeff.status, 200);
+      assert.equal(djeffPayload.canCapture, true);
+      assert.equal(djeffPayload.isOfficialSource, true);
+      assert.equal(djeffPayload.voiceIdentityKey, 'djeff');
+      assert.equal(djeffPayload.voiceStyle, 'djeff-rap');
+
+      const vivy = await fetch(`${baseUrl}/api/voice-learning/status?persona=vivy`, {
+        headers: { 'x-test-email': 'jewitt.charlene@gmail.com' },
+      });
+      const vivyPayload = await vivy.json();
+      assert.equal(vivy.status, 200);
+      assert.equal(vivyPayload.canCapture, true);
+      assert.equal(vivyPayload.isOfficialSource, true);
+      assert.equal(vivyPayload.voiceIdentityKey, 'vivy');
+      assert.equal(vivyPayload.voiceStyle, 'vivy-official-french-conversational');
+
+      const basicPersonal = await fetch(`${baseUrl}/api/voice-learning/status?persona=personal`, {
+        headers: { 'x-test-email': 'basic@example.com' },
+      });
+      const basicPersonalPayload = await basicPersonal.json();
+      assert.equal(basicPersonal.status, 200);
+      assert.equal(basicPersonalPayload.canCapture, false);
+      assert.equal(basicPersonalPayload.minimumTier, 'premium');
+
+      const randomOfficial = await fetch(`${baseUrl}/api/voice-learning/status?persona=vivy`, {
+        headers: { 'x-test-email': 'random@example.com' },
+      });
+      const randomOfficialPayload = await randomOfficial.json();
+      assert.equal(randomOfficial.status, 200);
+      assert.equal(randomOfficialPayload.canCapture, false);
+
+      const premiumPersonal = await fetch(`${baseUrl}/api/voice-learning/status?persona=personal`, {
+        headers: {
+          'x-test-email': 'premium@example.com',
+          'x-test-tier': 'premium',
+        },
+      });
+      const premiumPersonalPayload = await premiumPersonal.json();
+      assert.equal(premiumPersonal.status, 200);
+      assert.equal(premiumPersonalPayload.canCapture, true);
+      assert.equal(premiumPersonalPayload.persona, 'personal');
+      assert.equal(premiumPersonalPayload.contributorRole, 'personal-owner');
+      assert.equal(premiumPersonalPayload.minimumTier, 'premium');
     });
   } finally {
     if (previousRoot === undefined) delete process.env.A11_VOICE_LEARNING_DIR;
@@ -155,7 +226,8 @@ test('voice learning lets a connected account delete its own corpus', async () =
     await withVoiceLearningServer(async (baseUrl) => {
       const uploaded = await postAudio(baseUrl, {
         email: 'participant@example.com',
-        persona: 'kaen44',
+        tier: 'premium',
+        persona: 'personal',
         file: createPcm16Wav({ frequency: 660 }),
         filename: 'participant.wav',
       });
@@ -167,8 +239,9 @@ test('voice learning lets a connected account delete its own corpus', async () =
         headers: {
           'Content-Type': 'application/json',
           'x-test-email': 'participant@example.com',
+          'x-test-tier': 'premium',
         },
-        body: JSON.stringify({ persona: 'kaen44' }),
+        body: JSON.stringify({ persona: 'personal' }),
       });
       const missingConfirmPayload = await missingConfirm.json();
       assert.equal(missingConfirm.status, 400);
@@ -179,8 +252,9 @@ test('voice learning lets a connected account delete its own corpus', async () =
         headers: {
           'Content-Type': 'application/json',
           'x-test-email': 'participant@example.com',
+          'x-test-tier': 'premium',
         },
-        body: JSON.stringify({ persona: 'kaen44', confirm: 'delete-voice-learning-corpus' }),
+        body: JSON.stringify({ persona: 'personal', confirm: 'delete-voice-learning-corpus' }),
       });
       const deletedPayload = await deleted.json();
       assert.equal(deleted.status, 200);

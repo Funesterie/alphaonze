@@ -2137,6 +2137,10 @@ export type VoiceLearningStatus = {
   consent?: string;
   isOfficialSource?: boolean;
   contributorRole?: 'official-source' | 'opt-in-user' | string;
+  voiceIdentityKey?: string;
+  voiceIdentityLabel?: string;
+  voiceStyle?: string;
+  minimumTier?: string;
   clipCount?: number;
   secondsCollected?: number;
   requiredSeconds?: number;

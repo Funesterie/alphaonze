@@ -1,22 +1,14 @@
 'use strict';
 
+const {
+  getFamilyAdminEmails,
+} = require('../config/family-accounts.cjs');
+
 const DEFAULT_FULL_ACCESS_EMAILS = [
-  'cellaurojeffrey@gmail.com',
-  'jeffrey38330@gmail.com',
-  'cellauromarvin@gmail.com',
-  'marvincellauro@gmail.com',
-  'giovannabrunetto@gmail.com',
-  'bayetgerard@gmail.com',
+  ...getFamilyAdminEmails(),
   'cjcarme38@yahoo.fr',
   'valerie.atek@gmail.com',
-  'jewitt.charlene@gmail.com',
-  'funeste38@gmail.com',
-  'boostro38@gmail.com',
-  'charlenejewitt@gmail.com',
-  'cellaurojeffrey_38@hotmail.com',
   'k.quinquinet@hseb-dresden.de',
-  'cellaurojeffrey@hotmail.com',
-  'cellaurojeffrey@funesterie.onmicrosoft.com',
 ];
 
 function normalizeEmail(value) {

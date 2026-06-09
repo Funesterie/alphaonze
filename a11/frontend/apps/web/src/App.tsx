@@ -8341,11 +8341,13 @@ export function App() {
     ? "a11"
       : surfaceKind === "kaen44"
         ? "kaen44"
-        : "";
+        : surfaceKind === "vivy"
+          ? "vivy"
+          : "";
   const voiceLearningConsentStorageKey = voiceLearningPersona ? `funesterie:voice-learning-consent:${voiceLearningPersona}` : "";
   const canOptIntoVoiceLearning = Boolean(voiceLearningPersona && voiceLearningStatus?.canCapture);
   const canCaptureVoiceLearning = Boolean(canOptIntoVoiceLearning && voiceLearningConsentEnabled);
-  const voiceLearningPersonaLabel = voiceLearningPersona === "kaen44" ? "K44" : "A11";
+  const voiceLearningPersonaLabel = voiceLearningPersona === "kaen44" ? "K44" : voiceLearningPersona === "vivy" ? "Vivy" : "A11";
 
   useEffect(() => {
     document.title = isGeneralCockpit
@@ -10293,7 +10295,7 @@ export function App() {
       if (!status.duplicate) {
         const current = Number(status.secondsCollected || 0);
         const required = Number(status.requiredSeconds || 180);
-        setMicStatusMessage(`Corpus voix ${voiceLearningPersona === "kaen44" ? "K44" : "A11"}: ${Math.round(current)}s/${Math.round(required)}s collectées.`);
+        setMicStatusMessage(`Corpus voix ${voiceLearningPersonaLabel}: ${Math.round(current)}s/${Math.round(required)}s collectées.`);
       }
     } catch (error) {
       console.info("[A11] voice learning capture ignored", error);

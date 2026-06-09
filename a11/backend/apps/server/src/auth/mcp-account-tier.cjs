@@ -5,6 +5,9 @@ const {
   isFullAccessEmail,
   normalizeEmail,
 } = require('./full-access.cjs');
+const {
+  getFamilyAdminEmails,
+} = require('../config/family-accounts.cjs');
 
 const TIERS = Object.freeze({
   BASIC: 'basic',
@@ -67,9 +70,7 @@ const TIER_FEATURES = Object.freeze({
 });
 
 const DEFAULT_MCP_ADMIN_FAMILY_EMAILS = Object.freeze([
-  'cellaurojeffrey@gmail.com',
-  'funesterie38@gmail.com',
-  'cellaurojeffrey@funesterie.onmicrosoft.com',
+  ...getFamilyAdminEmails(),
 ]);
 
 const DEFAULT_PERMISSION_MATRIX = Object.freeze({

@@ -4,6 +4,11 @@
 // Defines persona → provider → model/ref routing for A11/K44/Vivy.
 // Rule: demo assets (demo-alice.*) are NEVER selected for official personas.
 
+const {
+  FAMILY_VOICE_IDENTITIES,
+  PERSONAL_VOICE_POLICY,
+} = require('../config/family-accounts.cjs');
+
 const PROVIDERS = Object.freeze({
   CARTESIA:   'cartesia',
   ELEVENLABS: 'elevenlabs',
@@ -43,6 +48,7 @@ const VOICE_REFERENCE_POLICY = Object.freeze({
   trainingDataRule: 'Only use owned, licensed, or explicitly consented audio for training/import.',
   publicSampleRule: 'Public soundboards and clips are moodboard references only; do not download or train on them by default.',
   sourceDiscoveryRule: 'Reference filenames may be used as search hints to find the public/YouTube source and analyze scene context, speakers, music, language, compression, and intent.',
+  accountVoiceRule: 'Family official voices are mapped to explicit owner accounts; personal voices require a connected premium/founder/admin account and opt-in consent.',
 });
 
 const VOICE_PERSONA_DIRECTIONS = Object.freeze({
@@ -393,6 +399,8 @@ module.exports = {
   LEGACY_EXPERIMENTAL_PROVIDERS,
   OFFICIAL_PERSONAS,
   VOICE_REFERENCE_POLICY,
+  FAMILY_VOICE_IDENTITIES,
+  PERSONAL_VOICE_POLICY,
   VOICE_PERSONA_DIRECTIONS,
   OFFICIAL_READY_VOICE_PROFILES,
   MANIFEST,
