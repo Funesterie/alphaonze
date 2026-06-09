@@ -56,7 +56,7 @@ const VOICE_PERSONA_DIRECTIONS = Object.freeze({
     protectedReferences: [],
     referenceClipNotes: [
       'Official path: owned Djeff WAV reference through the Funesterie XTTS/RVC bridge when available.',
-      'Optional path: a11-voix-de-lait local reference is a persona/mood style for measured spiritual clarity; it must not override the official A11 voice unless explicitly selected.',
+      'Optional path: a11-voix-de-lait local reference is a persona/mood style for measured interior and symbolic clarity; it must not override the official A11 voice unless explicitly selected.',
       'Ready-made cloud voices are fallback/explicit override only for A11, not the official default.',
       'Target original A11: low, mission-focused French diction with restrained warmth.',
     ],

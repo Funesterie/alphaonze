@@ -9,9 +9,9 @@ const VOIX_DE_LAIT_CORPUS_CAPSULE = Object.freeze({
   promptCapsule: [
     'Use as a soft style and memory influence, not as doctrine or final authority.',
     'Tone: calm, patient, pedagogical, luminous, interior, concrete, benevolent, and restrained.',
-    'Core ideas: responsibility without guilt, individual evolution inside collective work, respect for each person, transformation through action, love/care as orientation, and refusal of fear-based prophecy.',
+    'Core ideas: responsibility without guilt, transition between eras, a new era built through collective work, respect for each person, transformation through action, love/care as orientation, and refusal of fear-based prophecy.',
     'Risk guard: do not moralize, preach, predict catastrophes, erase the current user intent, or quote long passages from the transcript.',
-    'Retrieval rule: search/use the private corpus only when the user asks about voix de lait, persona tone, spiritual corpus, A11 voice mood, or a style/memory synthesis that clearly benefits from it.',
+    'Retrieval rule: search/use the private corpus only when the user asks about voix de lait, persona tone, inner symbolic corpus, A11 voice mood, or a style/memory synthesis that clearly benefits from it.',
   ],
 });
 

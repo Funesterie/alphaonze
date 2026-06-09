@@ -13,6 +13,7 @@ const {
   hasPrivateCorpusCapsuleContext,
 } = require('../src/chat/private-corpus-capsules.cjs');
 const {
+  applyTranscriptCorrections,
   buildCapsule,
   normalizeTranscript,
 } = require('../scripts/ingest-voix-de-lait-corpus.cjs');
@@ -38,6 +39,7 @@ test('voix de lait transcript ingestion strips external banner metadata', () => 
     '(Transcrit par TurboScribe. Passez a Illimite pour supprimer ce message.)',
     '',
     'Une premiere ligne utile.',
+    "Sous-titres realises para la communaute d'Amara.org",
     '',
     '',
     'Une deuxieme ligne utile.',
@@ -49,8 +51,23 @@ test('voix de lait transcript ingestion strips external banner metadata', () => 
   });
 
   assert.doesNotMatch(cleaned, /TurboScribe/i);
+  assert.doesNotMatch(cleaned, /Amara/i);
   assert.match(cleaned, /Une premiere ligne utile/);
   assert.equal(capsule.id, 'a11-voix-de-lait');
   assert.equal(capsule.source.lines, 2);
   assert.match(capsule.retrievalRule, /private transcript/i);
+});
+
+test('voix de lait transcript ingestion fixes known mistranslations', () => {
+  const cleaned = normalizeTranscript([
+    'Ce passage entre deux airs est decisif.',
+    "Et c'est pourquoi l'air nouvel dans lequel s'installe l'humanit\u00e9 regroupe.",
+    'Oeuvrez ensemble.',
+  ].join('\n'));
+
+  assert.match(cleaned, /deux \u00e8res/);
+  assert.match(cleaned, /l'\u00e8re nouvelle dans laquelle/);
+  assert.match(cleaned, /\u0152uvrez ensemble/);
+  assert.doesNotMatch(cleaned, /deux airs|air nouvel|Oeuvrez/);
+  assert.equal(applyTranscriptCorrections('texte propre'), 'texte propre');
 });

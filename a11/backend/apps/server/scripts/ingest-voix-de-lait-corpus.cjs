@@ -7,6 +7,16 @@ const path = require('node:path');
 const SERVER_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(SERVER_ROOT, '..', '..', '..', '..');
 const DEFAULT_SOURCE = 'C:\\Users\\Djeff\\Downloads\\voix de lait transcription.txt';
+const TRANSCRIPT_METADATA_LINE_PATTERNS = Object.freeze([
+  /^\(Transcrit par TurboScribe\./i,
+  /^Sous-titres r(?:e|\u00e9)alis(?:e|\u00e9)s para? la communaut(?:e|\u00e9) d'Amara\.org$/i,
+]);
+const TRANSCRIPT_CORRECTION_RULES = Object.freeze([
+  [/\bdeux airs\b/gi, 'deux \u00e8res'],
+  [/\bl['\u2019]air nouvel dans lequel\b/gi, "l'\u00e8re nouvelle dans laquelle"],
+  [/\bl['\u2019]air nouvel\b/gi, "l'\u00e8re nouvelle"],
+  [/\bOeuvrez\b/g, '\u0152uvrez'],
+]);
 
 function valueAfter(args, name) {
   const index = args.indexOf(name);
@@ -18,12 +28,26 @@ function hasFlag(args, name) {
   return args.includes(name);
 }
 
+function isTranscriptMetadataLine(line = '') {
+  const trimmed = String(line || '').trim();
+  return TRANSCRIPT_METADATA_LINE_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
+
+function applyTranscriptCorrections(text = '') {
+  return TRANSCRIPT_CORRECTION_RULES.reduce(
+    (value, [pattern, replacement]) => value.replace(pattern, replacement),
+    String(text || '')
+  );
+}
+
 function normalizeTranscript(raw = '') {
-  return String(raw || '')
+  const withoutMetadata = String(raw || '')
     .replace(/^\uFEFF/, '')
     .split(/\r?\n/)
-    .filter((line) => !/^\(Transcrit par TurboScribe\./i.test(line.trim()))
-    .join('\n')
+    .filter((line) => !isTranscriptMetadataLine(line))
+    .join('\n');
+
+  return applyTranscriptCorrections(withoutMetadata)
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
@@ -52,10 +76,10 @@ function buildCapsule({ cleaned, sourcePath, generatedAt }) {
     promptCapsule: [
       'Influence douce de style et de memoire, pas doctrine.',
       'Ton calme, patient, pedagogique, lumineux, interieur, concret, bienveillant et retenu.',
-      'Idees utiles: responsabilite sans culpabilite, evolution individuelle, travail collectif, respect de chaque personne, transformation par action, amour/soin comme orientation.',
+      'Idees utiles: responsabilite sans culpabilite, passage entre deux eres, ere nouvelle, evolution individuelle, travail collectif, respect de chaque personne, transformation par action, amour/soin comme orientation.',
       'Garde-fous: ne pas moraliser, precher, propager une prophetie anxiogene, ecraser le dernier message utilisateur, ou citer longuement le transcript brut.',
     ],
-    retrievalRule: 'Use the full private transcript only when the request explicitly benefits from voix de lait/persona/spiritual corpus/style synthesis context.',
+    retrievalRule: 'Use the full private transcript only when the request explicitly benefits from voix de lait/persona/inner symbolic corpus/style synthesis context.',
   };
 }
 
@@ -143,6 +167,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  applyTranscriptCorrections,
   buildCapsule,
   normalizeTranscript,
   sha256,
