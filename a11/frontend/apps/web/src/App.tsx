@@ -2970,6 +2970,7 @@ type VivyStudioVoiceProfile = {
   label: string;
   ttsPersona: "vivy" | "a11" | "kaen44";
   surface: "vivy" | "a11" | "kaen44";
+  voiceStyle: string;
   vocalMode: "adaptive" | "sing";
   referenceLabel: string;
   briefVoicePersona: string;
@@ -2996,11 +2997,12 @@ function getVivyStudioVoiceProfileForTool(
       label: "Duo Djeff + Vivy",
       ttsPersona: "a11",
       surface: "vivy",
+      voiceStyle: "djeff-rap",
       vocalMode: "adaptive",
       referenceLabel: hasPrivateReference
         ? `${privateLabel} + Vivy officielle`
-        : "Djeff/A11 officielle + Vivy officielle",
-      briefVoicePersona: "voicePersona=a11 pour Djeff, voicePersona=vivy pour Vivy",
+        : "Djeff rap Pignon + Vivy officielle",
+      briefVoicePersona: "voicePersona=a11, voiceStyle=djeff-rap pour Djeff; voicePersona=vivy pour Vivy",
       testLine: "Djeff cale le kick, chaîne sur couronne, pignon précis; Vivy répond dans la nuit, radiateur froid, moteur lucide.",
       songCast: "Djeff prend les couplets rap; Vivy tient les refrains et réponses mélodiques; les paroles doivent garder les tags [Djeff], [Vivy] et [Duo].",
       uploadLabel: `Djeff - ${voiceFileName || "référence rap"}`,
@@ -3013,6 +3015,7 @@ function getVivyStudioVoiceProfileForTool(
       label: "Voix K44 officielle",
       ttsPersona: "kaen44",
       surface: "kaen44",
+      voiceStyle: "kaen44-official-french-narrator",
       vocalMode: "adaptive",
       referenceLabel: hasPrivateReference ? privateLabel : "K44 officielle",
       briefVoicePersona: "voicePersona=kaen44",
@@ -3028,6 +3031,7 @@ function getVivyStudioVoiceProfileForTool(
       label: "Voix A11 officielle",
       ttsPersona: "a11",
       surface: "a11",
+      voiceStyle: "a11-official-stern-french",
       vocalMode: "adaptive",
       referenceLabel: hasPrivateReference ? privateLabel : "A11 officielle",
       briefVoicePersona: "voicePersona=a11",
@@ -3043,9 +3047,10 @@ function getVivyStudioVoiceProfileForTool(
       label: "Voix Djeff rap",
       ttsPersona: "a11",
       surface: "a11",
+      voiceStyle: "djeff-rap",
       vocalMode: "adaptive",
-      referenceLabel: hasPrivateReference ? privateLabel : "Djeff/A11 officielle",
-      briefVoicePersona: "voicePersona=a11 avec direction Djeff rap",
+      referenceLabel: hasPrivateReference ? privateLabel : "Djeff rap Pignon",
+      briefVoicePersona: "voicePersona=a11, voiceStyle=djeff-rap",
       testLine: "Djeff cale le kick, chaîne sur couronne, pignon précis, radiateur froid et moteur lucide.",
       songCast: "Djeff prend le lead rap avec diction serrée, rimes internes et image mécanique concrète.",
       uploadLabel: `Djeff - ${voiceFileName || "référence rap"}`,
@@ -3058,6 +3063,7 @@ function getVivyStudioVoiceProfileForTool(
       label: "Diagnostic module voix",
       ttsPersona: "vivy",
       surface: "vivy",
+      voiceStyle: "vivy-official-french-conversational",
       vocalMode: "adaptive",
       referenceLabel: hasPrivateReference ? privateLabel : "Vivy officielle",
       briefVoicePersona: "voicePersona=vivy en diagnostic",
@@ -3073,6 +3079,7 @@ function getVivyStudioVoiceProfileForTool(
       label: "Voix Vivy chant",
       ttsPersona: "vivy",
       surface: "vivy",
+      voiceStyle: "vivy-official-french-conversational",
       vocalMode: "sing",
       referenceLabel: hasPrivateReference ? privateLabel : "Vivy officielle",
       briefVoicePersona: "voicePersona=vivy en mode chant",
@@ -3088,6 +3095,7 @@ function getVivyStudioVoiceProfileForTool(
       label: "Voix Vivy + référence privée",
       ttsPersona: "vivy",
       surface: "vivy",
+      voiceStyle: "vivy-official-french-conversational",
       vocalMode: "adaptive",
       referenceLabel: hasPrivateReference ? privateLabel : "référence privée à ajouter",
       briefVoicePersona: "voicePersona=vivy avec référence privée",
@@ -3102,6 +3110,7 @@ function getVivyStudioVoiceProfileForTool(
     label: "Voix Vivy officielle",
     ttsPersona: "vivy",
     surface: "vivy",
+    voiceStyle: "vivy-official-french-conversational",
     vocalMode: "adaptive",
     referenceLabel: hasPrivateReference ? privateLabel : "Vivy officielle",
     briefVoicePersona: "voicePersona=vivy",
@@ -3377,6 +3386,9 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       persona: activeVoiceProfile.ttsPersona,
       voicePersona: activeVoiceProfile.ttsPersona,
       surface: activeVoiceProfile.surface,
+      voiceStyle: activeVoiceProfile.voiceStyle,
+      voiceReferenceLabel: activeVoiceProfile.voiceStyle,
+      referenceVoiceStyle: activeVoiceProfile.voiceStyle,
       voiceTool,
       vocalCast: activeVoiceProfile.label,
       provider,

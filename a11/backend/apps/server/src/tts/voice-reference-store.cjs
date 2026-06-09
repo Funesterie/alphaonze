@@ -622,6 +622,7 @@ function getReferencePreferenceScore(ref, preferredLabel = '') {
     terminator: ['a11', 'alpha', 'alphaonze'],
     'a11-official-stern-french': ['a11', 'alpha', 'alphaonze'],
     'a11-voix-de-lait': ['a11', 'alpha', 'alphaonze', 'lait'],
+    'djeff-rap': ['djeff', 'jeff', 'jeffrey', 'rap', 'pignon', 'moto'],
     donna: ['kaen44', 'k44', 'kaen'],
     'kaen44-official-french-narrator': ['kaen44', 'k44', 'kaen'],
     vivy: ['vivy'],

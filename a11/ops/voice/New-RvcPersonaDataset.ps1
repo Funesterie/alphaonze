@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet("a11", "kaen44", "vivy")]
+  [ValidateSet("a11", "kaen44", "vivy", "djeff")]
   [string]$Persona,
 
   [Parameter(Mandatory = $true)]
@@ -21,6 +21,7 @@ $artifactNames = @{
   a11 = @{ model = "a11-terminator.pth"; index = "a11-terminator.index" }
   kaen44 = @{ model = "kaen44-donna.pth"; index = "kaen44-donna.index" }
   vivy = @{ model = "vivy.pth"; index = "vivy.index" }
+  djeff = @{ model = "djeff-rap.pth"; index = "djeff-rap.index" }
 }
 
 function Get-CommandPath {
@@ -30,6 +31,27 @@ function Get-CommandPath {
     throw "$Name is required. Install ffmpeg/ffprobe first."
   }
   return $command.Source
+}
+
+function Invoke-NativeQuiet {
+  param(
+    [string]$FilePath,
+    [string[]]$Arguments,
+    [string]$FailureMessage
+  )
+
+  $previousPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = "Continue"
+    & $FilePath @Arguments 2>$null
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousPreference
+  }
+
+  if ($exitCode -ne 0) {
+    throw $FailureMessage
+  }
 }
 
 function Get-FileSha1 {
@@ -53,8 +75,16 @@ function Get-AudioDuration {
     [string]$Ffprobe,
     [string]$Path
   )
-  $raw = & $Ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 $Path 2>$null
-  if ($LASTEXITCODE -ne 0 -or -not $raw) {
+  $previousPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = "Continue"
+    $raw = & $Ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 $Path 2>$null
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousPreference
+  }
+
+  if ($exitCode -ne 0 -or -not $raw) {
     return 0.0
   }
   $value = 0.0
@@ -130,10 +160,16 @@ foreach ($file in $sourceFiles) {
   }
 
   if ($Force -or -not (Test-Path -LiteralPath $cleanTarget)) {
-    & $ffmpeg -hide_banner -y -i $file.FullName -ac 1 -ar $SampleRate -af "highpass=f=60,lowpass=f=16000,loudnorm=I=-18:TP=-3:LRA=11" -c:a pcm_s16le $cleanTarget 2>$null
-    if ($LASTEXITCODE -ne 0) {
-      throw "ffmpeg failed while cleaning $($file.Name)"
-    }
+    Invoke-NativeQuiet -FilePath $ffmpeg -Arguments @(
+      "-hide_banner",
+      "-y",
+      "-i", $file.FullName,
+      "-ac", "1",
+      "-ar", [string]$SampleRate,
+      "-af", "highpass=f=60,lowpass=f=16000,loudnorm=I=-18:TP=-3:LRA=11",
+      "-c:a", "pcm_s16le",
+      $cleanTarget
+    ) -FailureMessage "ffmpeg failed while cleaning $($file.Name)"
   }
 
   if ($Force) {
@@ -143,10 +179,16 @@ foreach ($file in $sourceFiles) {
 
   $existingChunks = @(Get-ChildItem -LiteralPath $chunksDir -File -Filter "$safeName-*.wav" -ErrorAction SilentlyContinue)
   if ($existingChunks.Count -eq 0) {
-    & $ffmpeg -hide_banner -y -i $cleanTarget -f segment -segment_time $SegmentSeconds -reset_timestamps 1 -c:a pcm_s16le $chunkPattern 2>$null
-    if ($LASTEXITCODE -ne 0) {
-      throw "ffmpeg failed while segmenting $($file.Name)"
-    }
+    Invoke-NativeQuiet -FilePath $ffmpeg -Arguments @(
+      "-hide_banner",
+      "-y",
+      "-i", $cleanTarget,
+      "-f", "segment",
+      "-segment_time", [string]$SegmentSeconds,
+      "-reset_timestamps", "1",
+      "-c:a", "pcm_s16le",
+      $chunkPattern
+    ) -FailureMessage "ffmpeg failed while segmenting $($file.Name)"
   }
 
   $sourceDuration = Get-AudioDuration -Ffprobe $ffprobe -Path $cleanTarget

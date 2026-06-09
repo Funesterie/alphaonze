@@ -2361,6 +2361,18 @@ function normalizeRequestedOfficialVoiceStyle(value = '', persona = 'a11') {
   ].includes(compact)) {
     return 'a11-voix-de-lait';
   }
+  if ([
+    'djeff',
+    'djeff-rap',
+    'rap-djeff',
+    'pignon',
+    'pignon-rap',
+    'jeff',
+    'jeffrey',
+    'moto-rap',
+  ].includes(compact)) {
+    return 'djeff-rap';
+  }
   if (compact === fallback.toLowerCase()) return fallback;
   return fallback;
 }

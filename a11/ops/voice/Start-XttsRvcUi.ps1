@@ -179,9 +179,31 @@ if (-not (Test-Path -LiteralPath $personaManifest)) {
     "voice": "vivy.wav",
     "rvc": "vivy.pth",
     "index": "vivy.index"
+  },
+  "djeff-rap": {
+    "persona": "djeff",
+    "voice": "djeff-rap.wav",
+    "rvc": "djeff-rap.pth",
+    "index": "djeff-rap.index"
   }
 }
 '@ | Set-Content -LiteralPath $personaManifest -Encoding ASCII
+}
+
+try {
+  $manifestJson = Get-Content -LiteralPath $personaManifest -Raw | ConvertFrom-Json -AsHashtable
+  if (-not $manifestJson.ContainsKey("djeff-rap")) {
+    $manifestJson["djeff-rap"] = @{
+      persona = "djeff"
+      voice = "djeff-rap.wav"
+      rvc = "djeff-rap.pth"
+      index = "djeff-rap.index"
+    }
+    $manifestJson | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $personaManifest -Encoding ASCII
+    Write-Host "Patched persona manifest: djeff-rap."
+  }
+} catch {
+  Write-Host "Persona manifest could not be patched automatically: $($_.Exception.Message)" -ForegroundColor Yellow
 }
 
 if (-not $SkipInstall) {
@@ -242,6 +264,9 @@ Copy-VoiceIfPresent -Candidates @(
   (Join-ExistingRuntime "voice-library\vivy.wav"),
   (Join-ExistingRuntime "sfx\vivy.wav")
 ) -TargetName "vivy.wav"
+Copy-VoiceIfPresent -Candidates @(
+  (Join-ExistingRuntime "voice-library\djeff-rap.wav")
+) -TargetName "djeff-rap.wav"
 foreach ($runtimeRoot in $runtimeRoots) {
   $library = Join-Path $runtimeRoot "voice-library"
   if (Test-Path -LiteralPath $library) {
@@ -258,6 +283,7 @@ Write-Host "RVC models expected in:" -ForegroundColor Green
 Write-Host "  $(Join-Path $InstallDir "rvcs\a11-terminator.pth")"
 Write-Host "  $(Join-Path $InstallDir "rvcs\kaen44-donna.pth")"
 Write-Host "  $(Join-Path $InstallDir "rvcs\vivy.pth")"
+Write-Host "  $(Join-Path $InstallDir "rvcs\djeff-rap.pth")"
 Write-Host "Optional matching .index files can be placed next to them."
 Write-Host "Persona manifest: $personaManifest"
 Write-Host ""

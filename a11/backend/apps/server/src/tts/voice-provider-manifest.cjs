@@ -52,16 +52,18 @@ const VOICE_PERSONA_DIRECTIONS = Object.freeze({
     referenceMoodboard: [
       'Stern French operator voice, gravelly and assertive, based on the owned Djeff WAV reference when available.',
       'Optional a11-voix-de-lait style: calm French teaching cadence, soft authority, interior clarity, and benevolent restraint from an approved local reference clip.',
+      'Optional djeff-rap style: owned Pignon rap reference, tighter flow, concrete motorcycle vocabulary and natural Djeff cadence.',
     ],
     protectedReferences: [],
     referenceClipNotes: [
       'Official path: owned Djeff WAV reference through the Funesterie XTTS/RVC bridge when available.',
       'Optional path: a11-voix-de-lait local reference is a persona/mood style for measured interior and symbolic clarity; it must not override the official A11 voice unless explicitly selected.',
+      'Optional path: djeff-rap local reference is a consented Djeff rap style for Vivy Studio and duet drafting; it must not override A11 unless explicitly selected.',
       'Ready-made cloud voices are fallback/explicit override only for A11, not the official default.',
       'Target original A11: low, mission-focused French diction with restrained warmth.',
     ],
     prompt:
-      'Voix A11 originale: grave, stable, protectrice, avec diction nette, economie de mots, cadence missionnelle et chaleur contenue. Le style optionnel a11-voix-de-lait ajoute une parole plus lente, pedagogique, humble et lumineuse quand il est explicitement demande. Utilise les references WAV possedees ou approuvees par Funesterie via XTTS/RVC quand elles sont disponibles; ne clone aucune personne ni personnage.',
+      'Voix A11 originale: grave, stable, protectrice, avec diction nette, economie de mots, cadence missionnelle et chaleur contenue. Le style optionnel a11-voix-de-lait ajoute une parole plus lente, pedagogique, humble et lumineuse quand il est explicitement demande. Le style optionnel djeff-rap utilise la reference Pignon consentie pour une cadence rap Djeff distincte. Utilise les references WAV possedees ou approuvees par Funesterie via XTTS/RVC quand elles sont disponibles; ne clone aucune personne ni personnage.',
   }),
   kaen44: Object.freeze({
     persona: 'kaen44',
@@ -239,7 +241,7 @@ const MANIFEST = Object.freeze({
       [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.a11.cartesiaVoiceId, note: 'Fallback/explicit override ready-made licensed voice.' },
       [PROVIDERS.AZURE]:      { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.a11.azureVoice, note: 'Fallback/explicit override HD ready-made voice.' },
       [PROVIDERS.OPENAI]:     { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.a11.openAiVoice, note: 'Fallback/explicit override high-quality ready-made voice.' },
-      [PROVIDERS.XTTS_RVC]:   { configured: 'runtime', modelPath: 'voice-library/a11-official-stern-french.wav', optionalStylePath: 'voice-library/a11-voix-de-lait.wav', note: 'Official A11 bridge using the owned Djeff WAV reference when available; optional a11-voix-de-lait style is explicit opt-in only.' },
+      [PROVIDERS.XTTS_RVC]:   { configured: 'runtime', modelPath: 'voice-library/a11-official-stern-french.wav', optionalStylePath: 'voice-library/a11-voix-de-lait.wav', optionalRapStylePath: 'voice-library/djeff-rap.wav', note: 'Official A11 bridge using the owned Djeff WAV reference when available; optional a11-voix-de-lait and djeff-rap styles are explicit opt-in only.' },
       [PROVIDERS.PIPER]:      { configured: true,  note: 'Neutral fallback when cloud voices are not configured.' },
     },
   },

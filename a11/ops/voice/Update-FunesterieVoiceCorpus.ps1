@@ -26,6 +26,11 @@ $profiles = @(
     persona = "vivy"
     sources = @("vivy.wav", "vivy-adaptive.wav", "vivy-song-context.wav", "vivy-pv-context.wav")
     direction = "voix claire, musicale, lumineuse, emotion precise, voyelles propres"
+  },
+  [pscustomobject]@{
+    persona = "djeff"
+    sources = @("djeff-rap.wav")
+    direction = "rap francais technique, diction serree, grain Djeff consenti, energie mecanique pignon-couronne"
   }
 )
 

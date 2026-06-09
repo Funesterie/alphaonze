@@ -725,6 +725,120 @@ test('tts speak route accepts explicit A11 voix de lait style', async () => {
   }
 });
 
+test('tts speak route maps Djeff/Pignon style to djeff-rap', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'djeff-pignon-style-'));
+  const previousEnv = {
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
+    A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    A11_VOICE_CONVERSION_ENABLED: process.env.A11_VOICE_CONVERSION_ENABLED,
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    TTS_URL: process.env.TTS_URL,
+    A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+    CARTESIA_API_KEY: process.env.CARTESIA_API_KEY,
+    CARTESIA_TOKEN: process.env.CARTESIA_TOKEN,
+    A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+    A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const wav = createPcm16Wav({ frequency: 180 });
+  const conversionForms = [];
+
+  fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'djeff-rap.wav'), createPcm16Wav({ frequency: 180 }));
+  process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
+  delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://127.0.0.1:5002';
+  process.env.A11_VOICE_CONVERSION_ENABLED = 'true';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.A11_CARTESIA_API_KEY = 'cartesia-should-not-be-used';
+  process.env.A11_ELEVENLABS_API_KEY = 'elevenlabs-should-not-be-used';
+  process.env.A11_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
+  delete process.env.A11_VOICE_XTTS_RVC_URL;
+  delete process.env.A11_XTTS_RVC_URL;
+  delete process.env.TTS_URL;
+  delete process.env.CARTESIA_API_KEY;
+  delete process.env.CARTESIA_TOKEN;
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'http://127.0.0.1:5002/api/voice/synthesize') {
+      return {
+        ok: false,
+        status: 503,
+        async text() {
+          return JSON.stringify({ ok: false, error: 'synthesize_disabled_for_test' });
+        },
+      };
+    }
+    if (value === 'http://127.0.0.1:5002/api/voice/convert') {
+      conversionForms.push(options.body);
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get(name) {
+            const header = String(name || '').toLowerCase();
+            if (header === 'content-type') return 'audio/wav';
+            if (header === 'x-a11-voice-style') return 'djeff-rap';
+            if (header === 'x-a11-voice-engine') return 'xtts-rvc';
+            return '';
+          },
+        },
+        async arrayBuffer() {
+          return wav;
+        },
+      };
+    }
+    if (value.includes('/tts/bytes')) {
+      throw new Error('cartesia_should_not_be_called_for_djeff_rap');
+    }
+    if (value.startsWith('https://api.elevenlabs.test/v1/')) {
+      throw new Error('elevenlabs_should_not_be_called_for_djeff_rap');
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'pignon couronne',
+          persona: 'a11',
+          provider: 'auto',
+          voiceStyle: 'pignon',
+          useDefaultVoiceReference: true,
+          vocalMode: 'adaptive',
+        });
+
+        assert.equal(result.response.status, 200);
+        assert.equal(result.json.provider, 'xtts-rvc');
+        assert.equal(conversionForms.length, 1);
+        assert.equal(conversionForms[0].get('persona'), 'a11');
+        assert.equal(conversionForms[0].get('voiceStyle'), 'djeff-rap');
+        assert.equal(result.json.voiceConversion.voiceStyle, 'djeff-rap');
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
 test('tts async official voice jobs can be claimed and completed by the local GPU worker', async () => {
   const previousEnv = {
     A11_TTS_LOCAL_GPU_WORKER_ENABLED: process.env.A11_TTS_LOCAL_GPU_WORKER_ENABLED,

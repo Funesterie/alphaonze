@@ -8,6 +8,8 @@ const {
 } = require('../lib/a11Agent.js');
 const {
   A11_PRIVATE_CORPUS_CAPSULE_CONTEXT,
+  A11_FATIGUE_VOICE_CORPUS_CAPSULE,
+  DJEFF_PIGNON_RAP_CORPUS_CAPSULE,
   VOIX_DE_LAIT_CORPUS_CAPSULE,
   appendPrivateCorpusCapsuleContext,
   hasPrivateCorpusCapsuleContext,
@@ -17,13 +19,23 @@ const {
   buildCapsule,
   normalizeTranscript,
 } = require('../scripts/ingest-voix-de-lait-corpus.cjs');
+const {
+  buildCapsule: buildPignonCapsule,
+  normalizeTranscript: normalizePignonTranscript,
+} = require('../scripts/ingest-djeff-pignon-corpus.cjs');
 
 test('voix de lait capsule is compact and shared with A11 agent prompt', () => {
   assert.equal(VOIX_DE_LAIT_CORPUS_CAPSULE.id, 'a11-voix-de-lait');
+  assert.equal(DJEFF_PIGNON_RAP_CORPUS_CAPSULE.id, 'djeff-pignon-rap');
+  assert.equal(A11_FATIGUE_VOICE_CORPUS_CAPSULE.id, 'a11-fatigue-voice');
   assert.match(A11_PRIVATE_CORPUS_CAPSULE_CONTEXT, /private corpus capsules/i);
   assert.match(A11_PRIVATE_CORPUS_CAPSULE_CONTEXT, /raw transcript stays private\/local/i);
   assert.match(A11_AGENT_SYSTEM_PROMPT, /a11-voix-de-lait/i);
+  assert.match(A11_AGENT_SYSTEM_PROMPT, /djeff-pignon-rap/i);
+  assert.match(A11_AGENT_SYSTEM_PROMPT, /a11-fatigue-voice/i);
   assert.doesNotMatch(A11_PRIVATE_CORPUS_CAPSULE_CONTEXT, /Il est necessaire, evidemment/i);
+  assert.doesNotMatch(A11_PRIVATE_CORPUS_CAPSULE_CONTEXT, /Un quatorzième dans l'essence/i);
+  assert.doesNotMatch(A11_PRIVATE_CORPUS_CAPSULE_CONTEXT, /Bonjour le monde/i);
 });
 
 test('private corpus capsule append is idempotent', () => {
@@ -72,4 +84,27 @@ test('voix de lait transcript ingestion fixes known mistranslations', () => {
   assert.match(cleaned, /\u0152uvrez ensemble/);
   assert.doesNotMatch(cleaned, /deux airs|air nouvel|Oeuvrez/);
   assert.equal(applyTranscriptCorrections('texte propre'), 'texte propre');
+});
+
+test('djeff pignon transcript ingestion keeps rap style without raw prompt leakage', () => {
+  const cleaned = normalizePignonTranscript([
+    'Vous',
+    "un quatorzieme dans l'essence, 2point 2 dans la bombonne d'Ipone",
+    'je dose au millimietre pas de hasard dans le style',
+    'visière vissé avec du metal',
+  ].join('\n'));
+  const capsule = buildPignonCapsule({
+    cleaned,
+    sourcePath: 'C:\\tmp\\pignon paroles.txt.txt',
+    generatedAt: '2026-06-09T00:00:00.000Z',
+  });
+
+  assert.equal(capsule.id, 'djeff-pignon-rap');
+  assert.match(cleaned, /quatorzième/);
+  assert.match(cleaned, /deux-point-deux/);
+  assert.match(cleaned, /millimètre/);
+  assert.match(cleaned, /visière vissée/);
+  assert.equal(normalizePignonTranscript('visière vissée avec du métal'), 'visière vissée avec du métal\n');
+  assert.doesNotMatch(cleaned, /^Vous$/m);
+  assert.match(capsule.retrievalRule, /voiceStyle=djeff-rap/);
 });

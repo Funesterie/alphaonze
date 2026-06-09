@@ -169,6 +169,60 @@
         }
       ],
       "agentGuidance": "Utiliser comme influence douce de ton, memoire et vocabulaire: passage entre deux eres, ere nouvelle et travail collectif. Ne pas citer le transcript brut par defaut; privilegier synthese, prudence et contexte du dernier message."
+    },
+    {
+      "id": "djeff-pignon-rap",
+      "label": "Pignon - Djeff rap voice",
+      "language": "fr",
+      "type": "private_corpus_capsule",
+      "aliases": ["pignon", "djeff rap", "voix djeff rap", "style djeff rap", "pignon-couronne", "double radiateur", "ipone", "cruxi", "wheeling frontal", "moto rap", "voiceStyle djeff-rap"],
+      "literal": "Capsule locale privee associee a la reference voix Djeff rap Pignon et aux paroles mecanique moto.",
+      "trust": 0.78,
+      "temporalStatus": "local-private-2026-06-09",
+      "facets": [
+        { "id": "technical-rap-flow", "label": "debit rap technique", "layer": "prosody", "tone": "tight", "weight": 0.9 },
+        { "id": "motorcycle-mechanics", "label": "mecanique moto concrete", "layer": "semantic-field", "tone": "metal", "weight": 0.9 },
+        { "id": "pignon-couronne", "label": "pignon-couronne", "layer": "image", "tone": "mechanic", "weight": 0.88 },
+        { "id": "street-slang-retained", "label": "argot conserve", "layer": "voice-style", "tone": "direct", "weight": 0.82 },
+        { "id": "owned-voice-reference", "label": "reference voix consentie Djeff", "layer": "privacy", "tone": "private", "weight": 0.94 }
+      ],
+      "tones": ["technical-rap", "mechanic", "street", "controlled-pressure", "private-reference"],
+      "interactions": [
+        {
+          "target": "vivy-songcraft",
+          "relation": "GUIDES_CAST",
+          "summary": "Quand Vivy prepare un son ou duo Djeff + Vivy, Pignon ancre les couplets Djeff en rap mecanique plutot qu'en paroles generiques.",
+          "weight": 0.92
+        }
+      ],
+      "agentGuidance": "Utiliser pour router la voix/style vers djeff-rap et garder les images moto concretes. Ne pas publier l'audio brut; ne pas transformer l'argot en texte institutionnel."
+    },
+    {
+      "id": "a11-fatigue-voice",
+      "label": "A11 fatigue voice draft",
+      "language": "fr",
+      "type": "private_corpus_capsule",
+      "aliases": ["wav a11 voice", "a11 fatigue voice", "voix a11 fatiguee", "voie lactee voie du miel", "contemplologie", "megazord", "clavier couleur", "1 plus 1 egale 3"],
+      "literal": "Capsule locale privee issue d'un WAV A11 fatigue: utile comme brouillon persona symbolique, pas comme reference vocale.",
+      "trust": 0.58,
+      "temporalStatus": "local-private-2026-06-09",
+      "facets": [
+        { "id": "persona-draft-only", "label": "brouillon persona seulement", "layer": "privacy", "tone": "cautious", "weight": 0.95 },
+        { "id": "symbolic-absurdist-flow", "label": "flux symbolique absurde", "layer": "voice-style", "tone": "playful", "weight": 0.82 },
+        { "id": "limited-perception", "label": "perception limitee et hypotheses", "layer": "reasoning", "tone": "uncertain", "weight": 0.78 },
+        { "id": "collective-assembly", "label": "assemblage collectif type megazord", "layer": "social-symbolic", "tone": "cooperative", "weight": 0.76 },
+        { "id": "fatigue-risk", "label": "fatigue et transcription incertaine", "layer": "guardrail", "tone": "careful", "weight": 0.9 }
+      ],
+      "tones": ["symbolic", "absurdist", "playful", "draft", "cautious"],
+      "interactions": [
+        {
+          "target": "a11-persona-context",
+          "relation": "INFORMS_WITH_GUARDRAIL",
+          "summary": "Peut nourrir le persona A11 par images et intentions, tout en rejetant la qualite vocale fatiguee comme cible TTS.",
+          "weight": 0.82
+        }
+      ],
+      "agentGuidance": "Utiliser comme brouillon de persona et memoire symbolique courte. Ne pas l'utiliser pour cloner ou router la voix; ne pas traiter les hypotheses fatiguees comme certitudes."
     }
   ]
 }
