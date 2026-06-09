@@ -25,9 +25,9 @@ test('XTTS/RVC runtime keeps Coqui TTS on the patched transformers stack', () =>
   const pins = readPinnedRequirements();
 
   assert.equal(pins.get('tts'), '0.22.0');
-  assert.equal(pins.get('transformers'), '4.39.3');
-  assert.equal(pins.get('tokenizers'), '0.15.2');
-  assert.equal(pins.get('huggingface-hub'), '0.20.3');
+  assert.equal(pins.get('transformers'), '4.53.3');
+  assert.equal(pins.get('tokenizers'), '0.21.4');
+  assert.equal(pins.get('huggingface-hub'), '0.36.2');
   assert.match(
     fs.readFileSync(path.resolve(__dirname, '../../../../ops/voice/Dockerfile.xtts-rvc'), 'utf8'),
     /BeamSearchScorer/,

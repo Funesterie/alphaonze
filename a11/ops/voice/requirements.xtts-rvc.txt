@@ -11,9 +11,9 @@ torch==2.11.0
 torchaudio==2.11.0
 torchcodec==0.13.0
 TTS==0.22.0
-transformers==4.39.3
-tokenizers==0.15.2
-huggingface-hub==0.20.3
+transformers==4.53.3
+tokenizers==0.21.4
+huggingface-hub==0.36.2
 fastapi==0.136.3
 starlette==1.2.0
 anyio==4.13.0
