@@ -598,6 +598,7 @@ const createCasinoRouter = require('./src/routes/casino.cjs');
 const createChatRouter = require('./src/routes/chat.cjs');
 const {
   buildA11ChatSystemPrompt,
+  buildA11CompactLocalSystemPrompt,
   buildRuntimeModulesAccessReply,
   isMcpAccessQuestion,
   isRuntimeModulesAccessQuestion,
@@ -9055,6 +9056,61 @@ function sanitizeChatMessagesForTransport(messages, options = {}) {
   return selected;
 }
 
+function clampChatPositiveInt(value, fallback, min, max) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  const resolved = Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  return Math.max(min, Math.min(max, resolved));
+}
+
+function resolveLocalChatContextTransportLimits() {
+  return {
+    historyMessages: clampChatPositiveInt(process.env.A11_LOCAL_CHAT_CONTEXT_HISTORY_MESSAGES, 8, 2, 12),
+    messageChars: clampChatPositiveInt(process.env.A11_LOCAL_CHAT_CONTEXT_MESSAGE_CHARS, 1800, 800, 5000),
+    nonSystemChars: clampChatPositiveInt(process.env.A11_LOCAL_CHAT_CONTEXT_CHARS, 5200, 1800, 12000),
+    systemChars: clampChatPositiveInt(process.env.A11_LOCAL_CHAT_SYSTEM_CONTEXT_CHARS, 4200, 1200, 9000),
+  };
+}
+
+function sanitizeLocalChatMessagesForTransport(messages = []) {
+  if (!Array.isArray(messages)) return [];
+  const limits = resolveLocalChatContextTransportLimits();
+  const systemMessages = [];
+  const conversationMessages = [];
+
+  for (const message of messages) {
+    const role = normalizeChatRole(message?.role);
+    if (!role) continue;
+    if (role === 'system') systemMessages.push(message);
+    else conversationMessages.push(message);
+  }
+
+  const keptSystemMessages = [];
+  let usedSystemChars = 0;
+  for (const message of systemMessages) {
+    const remaining = limits.systemChars - usedSystemChars;
+    if (remaining <= 0) break;
+    const maxMessageChars = keptSystemMessages.length === 0
+      ? Math.min(remaining, limits.systemChars)
+      : Math.min(remaining, 900);
+    const [sanitized] = sanitizeChatMessagesForTransport([message], {
+      dedupeAdjacent: false,
+      maxMessageChars,
+    });
+    if (!sanitized?.content) continue;
+    keptSystemMessages.push(sanitized);
+    usedSystemChars += sanitized.content.length;
+  }
+
+  const keptConversationMessages = sanitizeChatMessagesForTransport(conversationMessages, {
+    dedupeAdjacent: false,
+    limit: limits.historyMessages,
+    maxMessageChars: limits.messageChars,
+    maxTotalChars: limits.nonSystemChars,
+  });
+
+  return [...keptSystemMessages, ...keptConversationMessages];
+}
+
 function shouldIncludeTemporalContext(messages = []) {
   const latestUserMessage = getLatestUserMessageFromMessages(messages);
   const text = String(latestUserMessage || '').trim().toLowerCase();
@@ -11150,9 +11206,9 @@ function resolveChatMaxTokensForProvider(provider = '', body = {}) {
   const normalizedProvider = String(provider || '').trim().toLowerCase();
   const requested = Number(body?.max_tokens || body?.max_completion_tokens || 0);
   if (normalizedProvider === 'local') {
-    const fallback = Number(process.env.A11_LOCAL_CHAT_MAX_TOKENS || process.env.A11_CHAT_MAX_TOKENS || 700) || 700;
+    const fallback = Number(process.env.A11_LOCAL_CHAT_MAX_TOKENS || process.env.A11_CHAT_MAX_TOKENS || 420) || 420;
     const hardMax = Number(process.env.A11_LOCAL_CHAT_MAX_TOKENS_HARD_MAX || 2048) || 2048;
-    return clampChatTokenBudget(requested || fallback, 700, hardMax);
+    return clampChatTokenBudget(requested || fallback, 420, hardMax);
   }
   const fallback = Number(process.env.A11_REMOTE_CHAT_MAX_TOKENS || process.env.A11_CHAT_MAX_TOKENS || 1200) || 1200;
   const hardMax = Number(process.env.A11_REMOTE_CHAT_MAX_TOKENS_HARD_MAX || 8192) || 8192;
@@ -11161,7 +11217,9 @@ function resolveChatMaxTokensForProvider(provider = '', body = {}) {
 
 function buildChatMessagesWithMemory(baseMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '', knowledgeGraphContext = '', episodicContext = '', options = {}) {
   const messages = [];
-  const normalizedSystemPrompt = buildA11ChatSystemPrompt(systemPrompt);
+  const normalizedSystemPrompt = options.compactLocal === true
+    ? buildA11CompactLocalSystemPrompt(systemPrompt, options)
+    : buildA11ChatSystemPrompt(systemPrompt);
   const sanitizedBaseMessages = sanitizePromptMessages(baseMessages);
   const explicitSystemMessages = sanitizedBaseMessages.filter((message) => message.role === 'system');
   const nonSystemMessages = sanitizedBaseMessages.filter((message) => message.role !== 'system');
@@ -13088,7 +13146,16 @@ async function proxyChatToOpenAI(req, res) {
   const latestUserMessage = getLatestUserMessage(req.body || {});
   const userId = String(req.user?.id || req.body?._user || '').trim();
   const conversationId = resolveScopedConversationId(req.body || {}, req);
-  const systemPrompt = resolveRequestSystemPrompt(req.body || {}, req.user, req);
+  const requestSurface = resolveRequestSurface(req.body || {}, req);
+  const fullSystemPrompt = resolveRequestSystemPrompt(req.body || {}, req.user, req);
+  const systemPrompt = provider === 'local'
+    ? buildA11CompactLocalSystemPrompt(fullSystemPrompt, {
+        surface: requestSurface,
+        persona: req.body?.persona,
+        voicePersona: req.body?.voicePersona,
+        agent: req.body?.agent,
+      })
+    : fullSystemPrompt;
   let informativeToolContext = getInformativeToolContextFromBody(req.body || {});
   const requestedProviderProfileId = String(req.body?.providerProfileId || '').trim();
   const remoteProviderConfig = provider === 'local'
@@ -13207,8 +13274,9 @@ async function proxyChatToOpenAI(req, res) {
       '',
       '',
       {
-        surface: resolveRequestSurface(req.body || {}, req),
+        surface: requestSurface,
         conversationId,
+        compactLocal: provider === 'local',
       }
     );
 
@@ -13225,8 +13293,9 @@ async function proxyChatToOpenAI(req, res) {
         memoryContext.knowledgeGraphContext,
         memoryContext.episodicContext,
         {
-          surface: resolveRequestSurface(req.body || {}, req),
+          surface: requestSurface,
           conversationId,
+          compactLocal: provider === 'local',
         }
       );
     }
@@ -13319,8 +13388,9 @@ async function proxyChatToOpenAI(req, res) {
       '',
       '',
       {
-        surface: resolveRequestSurface(req.body || {}, req),
+        surface: requestSurface,
         conversationId,
+        compactLocal: provider === 'local',
       }
     );
     upstreamBody.messages = appendInformativeToolContextMessages(upstreamBody.messages, informativeToolContext);
@@ -13331,13 +13401,17 @@ async function proxyChatToOpenAI(req, res) {
   }
 
   if (Array.isArray(upstreamBody.messages)) {
-    upstreamBody.messages = sanitizeChatMessagesForTransport(upstreamBody.messages, {
-      dedupeAdjacent: false,
-      maxMessageChars: Number(process.env.A11_CHAT_MAX_MESSAGE_CHARS || 180000),
-      maxTotalChars: Number(process.env.A11_CHAT_MAX_CONTEXT_CHARS || 420000),
-    });
+    upstreamBody.messages = provider === 'local'
+      ? sanitizeLocalChatMessagesForTransport(upstreamBody.messages)
+      : sanitizeChatMessagesForTransport(upstreamBody.messages, {
+          dedupeAdjacent: false,
+          maxMessageChars: Number(process.env.A11_CHAT_MAX_MESSAGE_CHARS || 180000),
+          maxTotalChars: Number(process.env.A11_CHAT_MAX_CONTEXT_CHARS || 420000),
+        });
   }
-  if (typeof upstreamBody.prompt === 'string') {
+  if (provider === 'local') {
+    delete upstreamBody.prompt;
+  } else if (typeof upstreamBody.prompt === 'string') {
     upstreamBody.prompt = stripUnsafeUtf8Text(upstreamBody.prompt, { preserveNewlines: true }).trim();
     const maxPromptChars = Number(process.env.A11_CHAT_MAX_CONTEXT_CHARS || 420000);
     if (maxPromptChars > 0 && upstreamBody.prompt.length > maxPromptChars) {

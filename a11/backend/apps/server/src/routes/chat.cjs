@@ -12,6 +12,7 @@ const { hasFullAccess } = require('../auth/full-access.cjs');
 const { callMcpTool } = require('../mcp-client.cjs');
 const {
   buildA11ChatSystemPrompt,
+  buildA11CompactLocalSystemPrompt,
   buildMcpAccessReply,
   buildRuntimeModulesAccessReply,
   isMcpAccessQuestion,
@@ -308,7 +309,7 @@ function getOllamaConfig() {
 }
 
 function resolveLocalChatMaxTokens() {
-  const fallback = Number(process.env.A11_LOCAL_CHAT_MAX_TOKENS || process.env.A11_CHAT_MAX_TOKENS || 700) || 700;
+  const fallback = Number(process.env.A11_LOCAL_CHAT_MAX_TOKENS || process.env.A11_CHAT_MAX_TOKENS || 420) || 420;
   const hardMax = Number(process.env.A11_LOCAL_CHAT_MAX_TOKENS_HARD_MAX || 2048) || 2048;
   return Math.max(64, Math.min(hardMax, Math.round(fallback)));
 }
@@ -343,6 +344,14 @@ function resolveLocalChatStreamTimeoutMs() {
   );
 }
 
+function resolveLocalChatContextLimits() {
+  return {
+    maxHistoryMessages: clampPositiveInt(process.env.A11_LOCAL_CHAT_CONTEXT_HISTORY_MESSAGES, 8, 2, 12),
+    maxContextChars: clampPositiveInt(process.env.A11_LOCAL_CHAT_CONTEXT_CHARS, 5200, 1800, 12000),
+    maxMessageChars: clampPositiveInt(process.env.A11_LOCAL_CHAT_CONTEXT_MESSAGE_CHARS, 1800, 800, 5000),
+  };
+}
+
 function shouldAllowCloudChatFallback() {
   const explicit = String(process.env.A11_CHAT_ALLOW_CLOUD_FALLBACK || '').trim().toLowerCase();
   if (['1', 'true', 'yes', 'on'].includes(explicit)) return true;
@@ -364,11 +373,12 @@ function normalizeConversationMessages(messages, fallbackUserMessage = '', optio
 }
 
 function buildOllamaMessages(userMessageOrMessages, systemPrompt = SYSTEM_PROMPT) {
+  const limits = resolveLocalChatContextLimits();
   const conversationMessages = Array.isArray(userMessageOrMessages)
-    ? normalizeConversationMessages(userMessageOrMessages)
-    : normalizeConversationMessages([], userMessageOrMessages);
+    ? normalizeConversationMessages(userMessageOrMessages, '', limits)
+    : normalizeConversationMessages([], userMessageOrMessages, limits);
   return [
-    { role: 'system', content: buildA11ChatSystemPrompt(systemPrompt || PUBLIC_SYSTEM_PROMPT) },
+    { role: 'system', content: buildA11CompactLocalSystemPrompt(systemPrompt || PUBLIC_SYSTEM_PROMPT) },
     ...conversationMessages,
   ];
 }
@@ -1228,11 +1238,13 @@ chatEntrypoint.buildA11ChatSystemPrompt = buildA11ChatSystemPrompt;
 chatEntrypoint.buildMcpAccessReply = buildMcpAccessReply;
 chatEntrypoint.buildRuntimeModulesAccessReply = buildRuntimeModulesAccessReply;
 chatEntrypoint.buildOllamaMessages = buildOllamaMessages;
+chatEntrypoint.buildA11CompactLocalSystemPrompt = buildA11CompactLocalSystemPrompt;
 chatEntrypoint.finalizeA11ChatReply = finalizeA11ChatReply;
 chatEntrypoint.buildAssistantPresenceFallback = buildAssistantPresenceFallback;
 chatEntrypoint.normalizeConversationMessages = normalizeConversationMessages;
 chatEntrypoint.resolveLocalChatTimeoutMs = resolveLocalChatTimeoutMs;
 chatEntrypoint.resolveLocalChatStreamTimeoutMs = resolveLocalChatStreamTimeoutMs;
+chatEntrypoint.resolveLocalChatContextLimits = resolveLocalChatContextLimits;
 chatEntrypoint.isMcpAccessQuestion = isMcpAccessQuestion;
 chatEntrypoint.isRuntimeModulesAccessQuestion = isRuntimeModulesAccessQuestion;
 
