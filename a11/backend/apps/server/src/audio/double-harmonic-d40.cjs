@@ -9,17 +9,20 @@ const D40_TARGET_N = 40;
 const CANON_MG = 0.000055193627332139616;
 const MICROGAP_HALF_PLUS_CANON_MG = ((40000 * CANON_MG) / 2) + CANON_MG;
 const BALANCE_AUTO = 0.8888888888888888;
+const HARMONIC_WEIGHT_RATIO = BALANCE_AUTO;
+const HARMONIC_WEIGHT_MAX = 0.0225;
+const HARMONIC_WEIGHT_MIN = HARMONIC_WEIGHT_MAX * HARMONIC_WEIGHT_RATIO;
 
 const RAW_LOW_PRESET = Object.freeze({
   highPitch: 1.259921,
   lowPitch: 0.840896,
-  highWeight: 0.025,
-  lowWeight: 0.02,
+  highWeight: HARMONIC_WEIGHT_MAX,
+  lowWeight: HARMONIC_WEIGHT_MIN,
 });
 
 const DEFAULT_HARMONIC_INTENSITY = 1;
-const MIN_HARMONIC_INTENSITY = 0.25;
-const MAX_HARMONIC_INTENSITY = 8;
+const MIN_HARMONIC_INTENSITY = HARMONIC_WEIGHT_RATIO;
+const MAX_HARMONIC_INTENSITY = 1 / HARMONIC_WEIGHT_RATIO;
 
 const D40_PROFILES = Object.freeze({
   prime3: Object.freeze([0.7747, 0.8466, 0.8991, 0.9177, 0.9056]),
@@ -95,11 +98,11 @@ function buildD40EnvelopeExpression(options = {}) {
 
 function buildProtectMixD40Filter(options = {}) {
   const envelope = buildD40EnvelopeExpression(options);
-  const mg = clampNumber(options.mg, 0.25, 2, MICROGAP_HALF_PLUS_CANON_MG);
-  const balance = clampNumber(options.balance, 0.1, 2, BALANCE_AUTO);
+  const mg = MICROGAP_HALF_PLUS_CANON_MG;
+  const balance = HARMONIC_WEIGHT_RATIO;
   const intensity = resolveHarmonicIntensity(options.intensity || options.harmonicIntensity || options.weightScale);
-  const high = RAW_LOW_PRESET.highWeight * mg * balance * intensity;
-  const low = RAW_LOW_PRESET.lowWeight * mg / balance * intensity;
+  const high = RAW_LOW_PRESET.highWeight * mg * intensity;
+  const low = RAW_LOW_PRESET.lowWeight * mg * intensity;
   const highVolume = `${numberText(high)}*(${envelope.expression})`;
   const lowVolume = `${numberText(low)}*(${envelope.expression})`;
 
@@ -204,6 +207,9 @@ module.exports = {
   D40_SOURCE_N,
   D40_TARGET_N,
   DEFAULT_HARMONIC_INTENSITY,
+  HARMONIC_WEIGHT_MAX,
+  HARMONIC_WEIGHT_MIN,
+  HARMONIC_WEIGHT_RATIO,
   MAX_HARMONIC_INTENSITY,
   MIN_HARMONIC_INTENSITY,
   MICROGAP_HALF_PLUS_CANON_MG,

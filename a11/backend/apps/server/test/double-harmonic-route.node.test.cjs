@@ -10,9 +10,11 @@ const express = require('express');
 
 const createDoubleHarmonicRouter = require('../src/routes/double-harmonic.cjs');
 const {
+  BALANCE_AUTO,
   buildD40EnvelopeExpression,
   buildProtectMixD40Args,
   buildProtectMixD40Filter,
+  MICROGAP_HALF_PLUS_CANON_MG,
   resolveHarmonicIntensity,
   resolveD40Density,
 } = require('../src/audio/double-harmonic-d40.cjs');
@@ -44,12 +46,16 @@ test('D40 calculation uses cross multiplication from 40.0005 to 40', () => {
 
 test('harmonic intensity scales only the overlay weights and stays bounded', () => {
   const normal = buildProtectMixD40Filter({ intensity: 1 });
-  const stronger = buildProtectMixD40Filter({ intensity: 1.5 });
+  const stronger = buildProtectMixD40Filter({ intensity: 1.08 });
+  const attemptedMgOverride = buildProtectMixD40Filter({ intensity: 1, mg: 2 });
 
-  assert.equal(resolveHarmonicIntensity('999'), 8);
-  assert.equal(resolveHarmonicIntensity('0'), 0.25);
-  assert.equal(Number(stronger.highWeight.toFixed(12)), Number((normal.highWeight * 1.5).toFixed(12)));
-  assert.equal(Number(stronger.lowWeight.toFixed(12)), Number((normal.lowWeight * 1.5).toFixed(12)));
+  assert.equal(resolveHarmonicIntensity('999'), 1 / BALANCE_AUTO);
+  assert.equal(resolveHarmonicIntensity('0'), BALANCE_AUTO);
+  assert.equal(normal.mg, MICROGAP_HALF_PLUS_CANON_MG);
+  assert.equal(attemptedMgOverride.mg, MICROGAP_HALF_PLUS_CANON_MG);
+  assert.equal(Number((normal.lowWeight / normal.highWeight).toFixed(12)), Number(BALANCE_AUTO.toFixed(12)));
+  assert.equal(Number(stronger.highWeight.toFixed(12)), Number((normal.highWeight * 1.08).toFixed(12)));
+  assert.equal(Number(stronger.lowWeight.toFixed(12)), Number((normal.lowWeight * 1.08).toFixed(12)));
   assert.match(stronger.filter, /amix=inputs=3:weights='1 1 1':normalize=0/);
 
   const mp3Args = buildProtectMixD40Args({
@@ -87,7 +93,7 @@ test('double harmonic route processes upload and exposes tokenized audio link', 
     const form = new FormData();
     form.append('audio', new Blob([Buffer.from('RIFFdemoWAVEfmt ')], { type: 'audio/wav' }), 'demo.wav');
     form.append('profile', 'blend');
-    form.append('intensity', '1.5');
+    form.append('intensity', '1.08');
     const res = await fetch(`${baseUrl}/api/double-harmonic/process`, {
       method: 'POST',
       body: form,
@@ -95,8 +101,8 @@ test('double harmonic route processes upload and exposes tokenized audio link', 
     const payload = await res.json();
     assert.equal(res.status, 200);
     assert.equal(payload.ok, true);
-    assert.deepEqual(calls, [{ profile: 'blend', intensity: 1.5 }]);
-    assert.equal(payload.intensity, 1.5);
+    assert.deepEqual(calls, [{ profile: 'blend', intensity: 1.08 }]);
+    assert.equal(payload.intensity, 1.08);
     assert.deepEqual(payload.weights, { dry: 1, high: 0.03, low: 0.024 });
     assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+\.wav$/);
     assert.match(payload.shareUrl, /^http:\/\/127\.0\.0\.1:\d+\/api\/double-harmonic\/out\/.+\.wav\?token=/);

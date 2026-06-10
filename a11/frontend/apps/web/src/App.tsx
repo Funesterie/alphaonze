@@ -1993,6 +1993,9 @@ const ENABLE_GOOGLE_IDENTITY_BUTTON = String(
   import.meta.env.VITE_ENABLE_GOOGLE_IDENTITY_BUTTON
   || ""
 ).trim().toLowerCase() === "true";
+const D40_HARMONIC_RATIO = 8 / 9;
+const D40_HARMONIC_INTENSITY_MIN = D40_HARMONIC_RATIO;
+const D40_HARMONIC_INTENSITY_MAX = 1 / D40_HARMONIC_RATIO;
 
 function isLocalDevSurface() {
   if (typeof window === "undefined") return false;
@@ -4562,14 +4565,14 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     id="vivy-studio-dh-intensity"
                     name="doubleHarmonicIntensity"
                     type="range"
-                    min="0.25"
-                    max="8"
-                    step="0.05"
+                    min={D40_HARMONIC_INTENSITY_MIN}
+                    max={D40_HARMONIC_INTENSITY_MAX}
+                    step="0.005"
                     value={doubleHarmonicIntensity}
                     disabled={!hasSession || isBusy}
                     onChange={(event) => {
                       const nextValue = Number(event.currentTarget.valueAsNumber || event.currentTarget.value || 1);
-                      setDoubleHarmonicIntensity(Math.max(0.25, Math.min(8, nextValue)));
+                      setDoubleHarmonicIntensity(Math.max(D40_HARMONIC_INTENSITY_MIN, Math.min(D40_HARMONIC_INTENSITY_MAX, nextValue)));
                       setDoubleHarmonicResult(null);
                     }}
                   />
@@ -4582,7 +4585,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                   ) : null}
                 </div>
                 <p className="vivy-studio-voice-summary">
-                  {doubleHarmonicFileName ? `Fichier prêt: ${doubleHarmonicFileName}` : "Densité D40 + mg + double harmonique synchronisée."}
+                  {doubleHarmonicFileName ? `Fichier prêt: ${doubleHarmonicFileName}` : "Densité D40 + mg fixe + double harmonique synchronisée."}
                   {` · preset raw-low ${doubleHarmonicIntensityLabel}`}
                   {doubleHarmonicResult?.intensity ? ` · dernier rendu ${Number(doubleHarmonicResult.intensity).toFixed(2).replace(/\.?0+$/, "")}x` : ""}
                   {doubleHarmonicResult?.shareUrl ? " · lien exportable prêt" : ""}
