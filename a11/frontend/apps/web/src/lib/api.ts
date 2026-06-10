@@ -2292,11 +2292,17 @@ export type DoubleHarmonicProcessResult = {
   id?: string;
   method?: string;
   profile?: string;
+  intensity?: number;
   audioUrl?: string;
   shareUrl?: string;
   contentType?: string;
   filename?: string;
   bytes?: number;
+  weights?: {
+    dry?: number;
+    high?: number;
+    low?: number;
+  };
   publicSummary?: string;
   message?: string;
 };
@@ -2305,12 +2311,16 @@ export async function processDoubleHarmonicAudio(
   file: File,
   options?: {
     profile?: 'blend' | 'prime3' | 'prime11' | string;
+    intensity?: number;
     name?: string;
   }
 ): Promise<DoubleHarmonicProcessResult> {
   const form = new FormData();
   form.append('audio', file);
   form.append('profile', options?.profile || 'blend');
+  if (Number.isFinite(Number(options?.intensity))) {
+    form.append('intensity', String(options?.intensity));
+  }
   if (options?.name) form.append('name', options.name);
 
   const res = await authFetch(getApiUrl('/api/double-harmonic/process'), {

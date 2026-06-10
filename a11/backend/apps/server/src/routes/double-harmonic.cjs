@@ -7,9 +7,13 @@ const multer = require('multer');
 const path = require('node:path');
 const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
 const {
+  DEFAULT_HARMONIC_INTENSITY,
+  MAX_HARMONIC_INTENSITY,
   MICROGAP_HALF_PLUS_CANON_MG,
+  MIN_HARMONIC_INTENSITY,
   processProtectMixD40,
   resolveD40Density,
+  resolveHarmonicIntensity,
 } = require('../audio/double-harmonic-d40.cjs');
 
 const DEFAULT_MAX_MB = 80;
@@ -148,6 +152,11 @@ function createDoubleHarmonicRouter(options = {}) {
       maxMb: Math.max(1, Math.min(500, Number(process.env.A11_DH_MAX_MB || DEFAULT_MAX_MB) || DEFAULT_MAX_MB)),
       d40: resolveD40Density(),
       mg: MICROGAP_HALF_PLUS_CANON_MG,
+      intensity: {
+        default: DEFAULT_HARMONIC_INTENSITY,
+        min: MIN_HARMONIC_INTENSITY,
+        max: MAX_HARMONIC_INTENSITY,
+      },
       outputFormat: 'audio/wav',
     });
   });
@@ -168,7 +177,8 @@ function createDoubleHarmonicRouter(options = {}) {
       fs.writeFileSync(inputPath, req.file.buffer);
 
       const profile = String(req.body?.profile || req.query?.profile || 'blend').trim() || 'blend';
-      const processing = await processAudio({ inputPath, outputPath, profile });
+      const intensity = resolveHarmonicIntensity(req.body?.intensity || req.query?.intensity);
+      const processing = await processAudio({ inputPath, outputPath, profile, intensity });
       const token = crypto.randomBytes(18).toString('base64url');
       const createdAt = new Date().toISOString();
       const owner = String(req.user?.email || req.user?.username || req.user?.sub || '').trim();
@@ -183,6 +193,8 @@ function createDoubleHarmonicRouter(options = {}) {
         contentType: 'audio/wav',
         method: processing.method,
         profile: processing.profile,
+        intensity: processing.intensity || intensity,
+        weights: processing.weights || null,
         bytes: fs.statSync(outputPath).size,
       };
       const index = readIndex(indexPath);
@@ -197,6 +209,8 @@ function createDoubleHarmonicRouter(options = {}) {
         id,
         method: processing.method,
         profile: processing.profile,
+        intensity: processing.intensity || intensity,
+        weights: processing.weights || undefined,
         audioUrl,
         shareUrl: baseUrl ? `${baseUrl}${sharePath}` : sharePath,
         contentType: 'audio/wav',

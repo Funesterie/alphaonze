@@ -4151,6 +4151,28 @@ html.a11-auth-page-root body {
   margin: 0;
 }
 
+.vivy-studio-range-label {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 2fr) 48px;
+  align-items: center;
+  gap: 10px !important;
+}
+
+.vivy-studio-range-label input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  height: 22px;
+  padding: 0;
+  accent-color: #f079d8;
+}
+
+.vivy-studio-range-label strong {
+  color: #fff3fc;
+  font-size: 12px;
+  line-height: 1;
+  text-align: right;
+}
+
 .vivy-studio-artist-option {
   display: grid !important;
   grid-template-columns: 18px minmax(0, 1fr);

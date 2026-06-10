@@ -3490,6 +3490,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [voiceLearningMessage, setVoiceLearningMessage] = useState("");
   const [doubleHarmonicFile, setDoubleHarmonicFile] = useState<File | null>(null);
   const [doubleHarmonicFileName, setDoubleHarmonicFileName] = useState("");
+  const [doubleHarmonicIntensity, setDoubleHarmonicIntensity] = useState(1);
   const [doubleHarmonicResult, setDoubleHarmonicResult] = useState<DoubleHarmonicProcessResult | null>(null);
   const [songSource, setSongSource] = useState(String(initialDraft.songSource || "Prompt +"));
   const [songArtists, setSongArtists] = useState<VivyStudioArtistId[]>(() => normalizeVivyStudioArtists(initialDraft.songArtists));
@@ -3505,6 +3506,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [vivyDiagnostics, setVivyDiagnostics] = useState<VivyStudioProductionResult["prosody"] | null>(null);
   const [status, setStatus] = useState("");
   const [isBusy, setIsBusy] = useState(false);
+  const doubleHarmonicIntensityLabel = `${doubleHarmonicIntensity.toFixed(2).replace(/\.?0+$/, "")}x`;
 
   useEffect(() => {
     const onSelectMode = (event: Event) => {
@@ -4006,6 +4008,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     try {
       const result = await processDoubleHarmonicAudio(doubleHarmonicFile, {
         profile: "blend",
+        intensity: doubleHarmonicIntensity,
         name: doubleHarmonicFile.name,
       });
       const mediaUrl = String(result.shareUrl || result.audioUrl || "").trim();
@@ -4019,9 +4022,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       });
       setVivyOutput((current) => [
         current.trim(),
-        `Mix D40 prêt: ${result.shareUrl || result.audioUrl}`,
+        `Mix D40 ${doubleHarmonicIntensityLabel} prêt: ${result.shareUrl || result.audioUrl}`,
       ].filter(Boolean).join("\n\n"));
-      setStatus("Mix D40 prêt avec lien exportable.");
+      setStatus(`Mix D40 prêt avec lien exportable (${doubleHarmonicIntensityLabel}).`);
     } catch (error: any) {
       setStatus(`Traitement D40 impossible: ${error?.message || error}`);
     } finally {
@@ -4553,6 +4556,25 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     }}
                   />
                 </label>
+                <label className="vivy-studio-range-label">
+                  <span>Poids harmonique</span>
+                  <input
+                    id="vivy-studio-dh-intensity"
+                    name="doubleHarmonicIntensity"
+                    type="range"
+                    min="0.25"
+                    max="2"
+                    step="0.05"
+                    value={doubleHarmonicIntensity}
+                    disabled={!hasSession || isBusy}
+                    onChange={(event) => {
+                      const nextValue = Number(event.currentTarget.valueAsNumber || event.currentTarget.value || 1);
+                      setDoubleHarmonicIntensity(Math.max(0.25, Math.min(2, nextValue)));
+                      setDoubleHarmonicResult(null);
+                    }}
+                  />
+                  <strong>{doubleHarmonicIntensityLabel}</strong>
+                </label>
                 <div className="vivy-studio-actions vivy-studio-actions--voice">
                   <button type="button" onClick={processVivyDoubleHarmonicAudio} disabled={!hasSession || isBusy || !doubleHarmonicFile}>Mixer D40</button>
                   {doubleHarmonicResult?.shareUrl ? (
@@ -4561,6 +4583,8 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                 </div>
                 <p className="vivy-studio-voice-summary">
                   {doubleHarmonicFileName ? `Fichier prêt: ${doubleHarmonicFileName}` : "Densité D40 + mg + double harmonique synchronisée."}
+                  {` · preset raw-low ${doubleHarmonicIntensityLabel}`}
+                  {doubleHarmonicResult?.intensity ? ` · dernier rendu ${Number(doubleHarmonicResult.intensity).toFixed(2).replace(/\.?0+$/, "")}x` : ""}
                   {doubleHarmonicResult?.shareUrl ? " · lien exportable prêt" : ""}
                 </p>
               </fieldset>

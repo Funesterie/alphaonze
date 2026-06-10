@@ -16,6 +16,10 @@ const RAW_LOW_PRESET = Object.freeze({
   lowWeight: 0.02,
 });
 
+const DEFAULT_HARMONIC_INTENSITY = 1;
+const MIN_HARMONIC_INTENSITY = 0.25;
+const MAX_HARMONIC_INTENSITY = 2;
+
 const D40_PROFILES = Object.freeze({
   prime3: Object.freeze([0.7747, 0.8466, 0.8991, 0.9177, 0.9056]),
   prime11: Object.freeze([1.0085, 1.0069, 0.9937, 0.9539, 0.9146]),
@@ -38,6 +42,10 @@ function normalizeProfile(value = 'blend') {
   if (key === '11' || key === 'prime-11' || key === 'duo') return 'prime11';
   if (Object.prototype.hasOwnProperty.call(D40_PROFILES, key)) return key;
   return 'blend';
+}
+
+function resolveHarmonicIntensity(value = DEFAULT_HARMONIC_INTENSITY) {
+  return clampNumber(value, MIN_HARMONIC_INTENSITY, MAX_HARMONIC_INTENSITY, DEFAULT_HARMONIC_INTENSITY);
 }
 
 function resolveD40Density(options = {}) {
@@ -88,8 +96,9 @@ function buildProtectMixD40Filter(options = {}) {
   const envelope = buildD40EnvelopeExpression(options);
   const mg = clampNumber(options.mg, 0.25, 2, MICROGAP_HALF_PLUS_CANON_MG);
   const balance = clampNumber(options.balance, 0.1, 2, BALANCE_AUTO);
-  const high = RAW_LOW_PRESET.highWeight * mg * balance;
-  const low = RAW_LOW_PRESET.lowWeight * mg / balance;
+  const intensity = resolveHarmonicIntensity(options.intensity || options.harmonicIntensity || options.weightScale);
+  const high = RAW_LOW_PRESET.highWeight * mg * balance * intensity;
+  const low = RAW_LOW_PRESET.lowWeight * mg / balance * intensity;
   const highVolume = `${numberText(high)}*(${envelope.expression})`;
   const lowVolume = `${numberText(low)}*(${envelope.expression})`;
 
@@ -97,6 +106,7 @@ function buildProtectMixD40Filter(options = {}) {
     envelope,
     mg,
     balance,
+    intensity,
     highWeight: high,
     lowWeight: low,
     filter: [
@@ -129,10 +139,10 @@ function runFfmpeg(args, options = {}) {
   });
 }
 
-async function processProtectMixD40({ inputPath, outputPath, profile = 'blend', timeoutMs } = {}) {
+async function processProtectMixD40({ inputPath, outputPath, profile = 'blend', intensity, timeoutMs } = {}) {
   if (!inputPath) throw new Error('missing_input_path');
   if (!outputPath) throw new Error('missing_output_path');
-  const built = buildProtectMixD40Filter({ profile });
+  const built = buildProtectMixD40Filter({ profile, intensity });
   const args = [
     '-y',
     '-hide_banner',
@@ -156,6 +166,7 @@ async function processProtectMixD40({ inputPath, outputPath, profile = 'blend', 
     profile: built.envelope.profile,
     mg: built.mg,
     balance: built.balance,
+    intensity: built.intensity,
     d40: built.envelope.density,
     weights: {
       dry: 1,
@@ -172,9 +183,13 @@ module.exports = {
   D40_SOURCE_DENSITY,
   D40_SOURCE_N,
   D40_TARGET_N,
+  DEFAULT_HARMONIC_INTENSITY,
+  MAX_HARMONIC_INTENSITY,
+  MIN_HARMONIC_INTENSITY,
   MICROGAP_HALF_PLUS_CANON_MG,
   buildD40EnvelopeExpression,
   buildProtectMixD40Filter,
   processProtectMixD40,
   resolveD40Density,
+  resolveHarmonicIntensity,
 };
