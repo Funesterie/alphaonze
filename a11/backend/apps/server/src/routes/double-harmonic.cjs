@@ -15,6 +15,9 @@ const {
   resolveD40Density,
   resolveHarmonicIntensity,
 } = require('../audio/double-harmonic-d40.cjs');
+const {
+  buildPhaseLockPlan,
+} = require('../audio/double-harmonic-phase-lock-v2.cjs');
 
 const DEFAULT_MAX_MB = 80;
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -50,6 +53,11 @@ const ALLOWED_EXT = new Set(['wav', 'mp3', 'm4a', 'aac', 'flac', 'ogg', 'webm', 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+function reqNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
 }
 
 function safeBaseName(value = 'audio') {
@@ -190,6 +198,18 @@ function createDoubleHarmonicRouter(options = {}) {
       outputFormat: DEFAULT_OUTPUT_FORMAT,
       defaultResolvedOutputFormat: outputFormat.contentType,
       outputFormats: Object.keys(OUTPUT_FORMATS),
+      v2: buildPhaseLockPlan(),
+    });
+  });
+
+  router.get('/v2/status', (_req, res) => {
+    return res.json({
+      ok: true,
+      v2: buildPhaseLockPlan({
+        frameMs: reqNumber(_req.query?.frameMs),
+        cycleSeconds: reqNumber(_req.query?.cycleSeconds),
+        smoothing: _req.query?.smoothing,
+      }),
     });
   });
 

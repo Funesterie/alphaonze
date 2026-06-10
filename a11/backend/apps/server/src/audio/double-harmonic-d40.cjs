@@ -6,8 +6,14 @@ const path = require('node:path');
 const D40_SOURCE_DENSITY = 0.292;
 const D40_SOURCE_N = 40.0005;
 const D40_TARGET_N = 40;
-const CANON_MG = 0.000055193627332139616;
-const MICROGAP_HALF_PLUS_CANON_MG = ((40000 * CANON_MG) / 2) + CANON_MG;
+const PIVOT_RESIDUAL_OLD = 0.000055193627332139616;
+const AUDIO_PIVOT_GAIN_FACTOR = ((40000 * PIVOT_RESIDUAL_OLD) / 2) + PIVOT_RESIDUAL_OLD;
+const MG_PHASE = 0.001554497790530303;
+const TARGET_0005_PI = 0.0005 * Math.PI;
+const T_LINEAR = 0.3695;
+const ONE_OVER_E = 1 / Math.E;
+const CANON_MG = PIVOT_RESIDUAL_OLD;
+const MICROGAP_HALF_PLUS_CANON_MG = AUDIO_PIVOT_GAIN_FACTOR;
 const BALANCE_AUTO = 0.8888888888888888;
 const HARMONIC_WEIGHT_RATIO = BALANCE_AUTO;
 const HARMONIC_WEIGHT_MAX = 0.0225;
@@ -98,7 +104,7 @@ function buildD40EnvelopeExpression(options = {}) {
 
 function buildProtectMixD40Filter(options = {}) {
   const envelope = buildD40EnvelopeExpression(options);
-  const mg = MICROGAP_HALF_PLUS_CANON_MG;
+  const mg = AUDIO_PIVOT_GAIN_FACTOR;
   const balance = HARMONIC_WEIGHT_RATIO;
   const intensity = resolveHarmonicIntensity(options.intensity || options.harmonicIntensity || options.weightScale);
   const high = RAW_LOW_PRESET.highWeight * mg * intensity;
@@ -200,6 +206,7 @@ async function processProtectMixD40({ inputPath, outputPath, profile = 'blend', 
 }
 
 module.exports = {
+  AUDIO_PIVOT_GAIN_FACTOR,
   BALANCE_AUTO,
   CANON_MG,
   D40_PROFILES,
@@ -211,8 +218,13 @@ module.exports = {
   HARMONIC_WEIGHT_MIN,
   HARMONIC_WEIGHT_RATIO,
   MAX_HARMONIC_INTENSITY,
+  MG_PHASE,
   MIN_HARMONIC_INTENSITY,
   MICROGAP_HALF_PLUS_CANON_MG,
+  ONE_OVER_E,
+  PIVOT_RESIDUAL_OLD,
+  TARGET_0005_PI,
+  T_LINEAR,
   buildD40EnvelopeExpression,
   buildOutputCodecArgs,
   buildProtectMixD40Args,

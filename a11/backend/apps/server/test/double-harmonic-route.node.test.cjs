@@ -66,6 +66,32 @@ test('harmonic intensity scales only the overlay weights and stays bounded', () 
   assert.deepEqual(mp3Args.slice(-5), ['-codec:a', 'libmp3lame', '-b:a', '192k', 'output.mp3']);
 });
 
+test('double harmonic route exposes phase-lock v2 as status only', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-status-'));
+  const app = express();
+  app.use('/api/double-harmonic', createDoubleHarmonicRouter({ runtimeRoot }));
+
+  const { server, baseUrl } = await listen(app);
+  try {
+    const status = await fetch(`${baseUrl}/api/double-harmonic/status`);
+    const statusPayload = await status.json();
+    assert.equal(status.status, 200);
+    assert.equal(statusPayload.method, 'dry-master-plus-adaptive-d40-harmonic-overlay-v1');
+    assert.equal(statusPayload.v2.preservesV1, true);
+    assert.equal(statusPayload.v2.state, 'analysis-plan');
+
+    const v2 = await fetch(`${baseUrl}/api/double-harmonic/v2/status?smoothing=1%2Fe&frameMs=20`);
+    const v2Payload = await v2.json();
+    assert.equal(v2.status, 200);
+    assert.equal(v2Payload.v2.controls.smoothing.mode, 'one-over-e');
+    assert.equal(v2Payload.v2.frameMs, 20);
+    assert.equal(v2Payload.v2.safety.keepV1RouteUntouched, true);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
 test('double harmonic route processes upload and exposes tokenized audio link', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-'));
   const calls = [];
