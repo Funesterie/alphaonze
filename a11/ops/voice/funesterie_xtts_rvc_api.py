@@ -23,6 +23,20 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from TTS.api import TTS
 
+def patch_xtts_generation_mixin() -> bool:
+    try:
+        from transformers.generation.utils import GenerationMixin
+        from TTS.tts.layers.xtts.gpt import GPT2InferenceModel
+
+        if not hasattr(GPT2InferenceModel, "generate"):
+            GPT2InferenceModel.generate = GenerationMixin.generate
+        return hasattr(GPT2InferenceModel, "generate")
+    except Exception:
+        return False
+
+
+XTTS_GENERATE_PATCHED = patch_xtts_generation_mixin()
+
 if DEVICE.lower() == "cpu":
     # Some CUDA builds still report a device on Windows after import. RVC only
     # needs a boolean here, so keep CPU mode deterministic.
@@ -494,9 +508,10 @@ def get_synthesis_state() -> dict:
 def check_xtts_runtime_imports() -> dict:
     try:
         from transformers import BeamSearchScorer, LogitsProcessorList, StoppingCriteriaList
+        from TTS.tts.layers.xtts.gpt import GPT2InferenceModel
 
         del BeamSearchScorer, LogitsProcessorList, StoppingCriteriaList
-        return {"ok": True}
+        return {"ok": True, "xttsGenerate": hasattr(GPT2InferenceModel, "generate")}
     except Exception as exc:
         return {
             "ok": False,
