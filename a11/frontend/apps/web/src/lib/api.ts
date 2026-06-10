@@ -2312,12 +2312,16 @@ export async function processDoubleHarmonicAudio(
   options?: {
     profile?: 'blend' | 'prime3' | 'prime11' | string;
     intensity?: number;
+    format?: 'mp3' | 'm4a' | 'wav' | string;
     name?: string;
   }
 ): Promise<DoubleHarmonicProcessResult> {
   const form = new FormData();
   form.append('audio', file);
   form.append('profile', options?.profile || 'blend');
+  if (options?.format) {
+    form.append('format', options.format);
+  }
   if (Number.isFinite(Number(options?.intensity))) {
     form.append('intensity', String(options?.intensity));
   }
@@ -2643,7 +2647,7 @@ export async function chatWithVivy(
 
 export type Provider = "local" | "ollama" | "openai";
 
-const DEFAULT_OLLAMA_MODEL = 'gpt-oss:20b-cloud';
+const DEFAULT_OLLAMA_MODEL = 'llama3.2:3b';
 
 export function getModelForProvider(provider: Provider): string {
   switch (provider) {

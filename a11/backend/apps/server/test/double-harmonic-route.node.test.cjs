@@ -11,6 +11,7 @@ const express = require('express');
 const createDoubleHarmonicRouter = require('../src/routes/double-harmonic.cjs');
 const {
   buildD40EnvelopeExpression,
+  buildProtectMixD40Args,
   buildProtectMixD40Filter,
   resolveHarmonicIntensity,
   resolveD40Density,
@@ -50,6 +51,13 @@ test('harmonic intensity scales only the overlay weights and stays bounded', () 
   assert.equal(Number(stronger.highWeight.toFixed(12)), Number((normal.highWeight * 1.5).toFixed(12)));
   assert.equal(Number(stronger.lowWeight.toFixed(12)), Number((normal.lowWeight * 1.5).toFixed(12)));
   assert.match(stronger.filter, /amix=inputs=3:weights='1 1 1':normalize=0/);
+
+  const mp3Args = buildProtectMixD40Args({
+    inputPath: 'input.wav',
+    outputPath: 'output.mp3',
+    intensity: 1,
+  }).args;
+  assert.deepEqual(mp3Args.slice(-5), ['-codec:a', 'libmp3lame', '-b:a', '192k', 'output.mp3']);
 });
 
 test('double harmonic route processes upload and exposes tokenized audio link', async () => {
@@ -96,6 +104,46 @@ test('double harmonic route processes upload and exposes tokenized audio link', 
     const shared = await fetch(payload.shareUrl);
     assert.equal(shared.status, 200);
     assert.match(shared.headers.get('content-type') || '', /audio\/wav/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('double harmonic route keeps mp3 input as mp3 output', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-mp3-'));
+  const app = express();
+  app.use('/api/double-harmonic', createDoubleHarmonicRouter({
+    runtimeRoot,
+    processProtectMixD40: async ({ outputPath }) => {
+      fs.writeFileSync(outputPath, Buffer.from('processed mp3'));
+      return {
+        method: 'dry-master-plus-adaptive-d40-harmonic-overlay-v1',
+        profile: 'blend',
+        intensity: 1,
+        weights: { dry: 1, high: 0.03, low: 0.024 },
+      };
+    },
+  }));
+
+  const { server, baseUrl } = await listen(app);
+  try {
+    const form = new FormData();
+    form.append('audio', new Blob([Buffer.from('ID3demo')], { type: 'audio/mpeg' }), 'demo.mp3');
+    const res = await fetch(`${baseUrl}/api/double-harmonic/process`, {
+      method: 'POST',
+      body: form,
+    });
+    const payload = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.contentType, 'audio/mpeg');
+    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+\.mp3$/);
+    assert.match(payload.shareUrl, /^http:\/\/127\.0\.0\.1:\d+\/api\/double-harmonic\/out\/.+\.mp3\?token=/);
+
+    const shared = await fetch(payload.shareUrl);
+    assert.equal(shared.status, 200);
+    assert.match(shared.headers.get('content-type') || '', /audio\/mpeg/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(runtimeRoot, { recursive: true, force: true });

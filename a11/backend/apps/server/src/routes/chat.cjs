@@ -302,9 +302,21 @@ function getOllamaConfig() {
       process.env.LOCAL_DEFAULT_MODEL
       || process.env.DEFAULT_MODEL
       || process.env.A11_OLLAMA_PRIMARY_MODEL
-      || 'gemma4:e4b'
+      || 'llama3.2:3b'
     ).trim(),
   };
+}
+
+function resolveLocalChatMaxTokens() {
+  const fallback = Number(process.env.A11_LOCAL_CHAT_MAX_TOKENS || process.env.A11_CHAT_MAX_TOKENS || 700) || 700;
+  const hardMax = Number(process.env.A11_LOCAL_CHAT_MAX_TOKENS_HARD_MAX || 2048) || 2048;
+  return Math.max(64, Math.min(hardMax, Math.round(fallback)));
+}
+
+function resolveCloudChatMaxTokens() {
+  const fallback = Number(process.env.A11_REMOTE_CHAT_MAX_TOKENS || process.env.A11_CHAT_MAX_TOKENS || 1200) || 1200;
+  const hardMax = Number(process.env.A11_REMOTE_CHAT_MAX_TOKENS_HARD_MAX || 8192) || 8192;
+  return Math.max(64, Math.min(hardMax, Math.round(fallback)));
 }
 
 function shouldAllowCloudChatFallback() {
@@ -393,6 +405,7 @@ async function callOllama(userMessageOrMessages, systemPrompt = SYSTEM_PROMPT) {
   const bodyStr = JSON.stringify({
     model,
     messages: buildOllamaMessages(userMessageOrMessages, systemPrompt),
+    max_tokens: resolveLocalChatMaxTokens(),
     stream: false,
   });
 
@@ -1037,7 +1050,7 @@ function createChatRouter(overrides = {}) {
         model: process.env.A11_OPENAI_MODEL || 'gpt-3.5-turbo',
         messages: buildOllamaMessages(requestMessages, systemPrompt),
         temperature: 0.7,
-        max_tokens: Number(process.env.A11_CHAT_MAX_TOKENS || 16384),
+        max_tokens: resolveCloudChatMaxTokens(),
       });
 
       const text = finalizeA11ChatReply(completion?.choices?.[0]?.message?.content || '', userMessage, systemPrompt, {

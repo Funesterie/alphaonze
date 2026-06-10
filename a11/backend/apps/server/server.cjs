@@ -10590,8 +10590,9 @@ async function callChatBackend(messages, options = {}) {
             messages: sanitizedMessages,
             stream: false,
             temperature: 0.2,
+            max_tokens: Math.max(64, Math.min(600, Number(process.env.MEMORY_SUMMARY_MAX_TOKENS || 250) || 250)),
           },
-          timeout: 60000,
+          timeout: Number(process.env.A11_MEMORY_LOCAL_TIMEOUT_MS || process.env.A11_LOCAL_CHAT_TIMEOUT_MS || 45_000) || 45_000,
         });
         return extractAssistantText(upstreamRes.data).trim();
       }
@@ -10608,7 +10609,7 @@ async function callChatBackend(messages, options = {}) {
             n_predict: Number(process.env.MEMORY_SUMMARY_MAX_TOKENS || 250),
             stream: false
           },
-          timeout: 60000,
+          timeout: Number(process.env.A11_MEMORY_LOCAL_TIMEOUT_MS || process.env.A11_LOCAL_CHAT_TIMEOUT_MS || 45_000) || 45_000,
         });
         return extractLocalCompletionContent(upstreamRes.data).trim();
       }
@@ -10630,7 +10631,7 @@ async function callChatBackend(messages, options = {}) {
             stream: false,
             temperature: 0.2,
           },
-          timeout: 60000,
+          timeout: Number(process.env.A11_MEMORY_REMOTE_TIMEOUT_MS || process.env.A11_REMOTE_CHAT_TIMEOUT_MS || 45_000) || 45_000,
         });
         return extractAssistantText(upstreamRes.data).trim();
       }
@@ -10656,7 +10657,7 @@ async function callChatBackend(messages, options = {}) {
       stream: false,
       temperature: 0.2,
     },
-    timeout: 60000,
+    timeout: Number(process.env.A11_MEMORY_REMOTE_TIMEOUT_MS || process.env.A11_REMOTE_CHAT_TIMEOUT_MS || 45_000) || 45_000,
   });
 
   return extractAssistantText(upstreamRes.data).trim();
@@ -10755,6 +10756,9 @@ async function requestChatUpstream(url, body, options = {}) {
   const reqHeaders = options.reqHeaders && typeof options.reqHeaders === 'object'
     ? options.reqHeaders
     : {};
+  const defaultTimeout = provider === 'local'
+    ? Number(process.env.A11_LOCAL_CHAT_TIMEOUT_MS || process.env.A11_OLLAMA_CHAT_TIMEOUT_MS || 90_000)
+    : Number(process.env.A11_REMOTE_CHAT_TIMEOUT_MS || process.env.A11_CHAT_UPSTREAM_TIMEOUT_MS || 60_000);
   const upstreamRes = await axios({
     method: 'post',
     url,
@@ -10765,7 +10769,7 @@ async function requestChatUpstream(url, body, options = {}) {
       requestId,
     }),
     data: body && Object.keys(body).length ? body : undefined,
-    timeout: Number(options.timeout || 60000) || 60000,
+    timeout: Number(options.timeout || defaultTimeout) || defaultTimeout || 60_000,
   });
 
   return {
@@ -11128,6 +11132,25 @@ function buildConversationBoundarySystemMessage({ surface = '', conversationId =
     role: 'system',
     content: parts.join('\n'),
   };
+}
+
+function clampChatTokenBudget(value, fallback, max) {
+  const numeric = Number(value);
+  const resolved = Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+  return Math.max(64, Math.min(max, Math.round(resolved)));
+}
+
+function resolveChatMaxTokensForProvider(provider = '', body = {}) {
+  const normalizedProvider = String(provider || '').trim().toLowerCase();
+  const requested = Number(body?.max_tokens || body?.max_completion_tokens || 0);
+  if (normalizedProvider === 'local') {
+    const fallback = Number(process.env.A11_LOCAL_CHAT_MAX_TOKENS || process.env.A11_CHAT_MAX_TOKENS || 700) || 700;
+    const hardMax = Number(process.env.A11_LOCAL_CHAT_MAX_TOKENS_HARD_MAX || 2048) || 2048;
+    return clampChatTokenBudget(requested || fallback, 700, hardMax);
+  }
+  const fallback = Number(process.env.A11_REMOTE_CHAT_MAX_TOKENS || process.env.A11_CHAT_MAX_TOKENS || 1200) || 1200;
+  const hardMax = Number(process.env.A11_REMOTE_CHAT_MAX_TOKENS_HARD_MAX || 8192) || 8192;
+  return clampChatTokenBudget(requested || fallback, 1200, hardMax);
 }
 
 function buildChatMessagesWithMemory(baseMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '', knowledgeGraphContext = '', episodicContext = '', options = {}) {
@@ -12980,9 +13003,13 @@ async function proxyLocalLlamaCompletion(req, res, localLlamaCompletionUrl, body
     const prompt = typeof body.prompt === 'string' && body.prompt.trim()
       ? body.prompt
       : buildPromptFromMessages(messages);
-    const defaultChatMaxTokens = Number(process.env.A11_CHAT_MAX_TOKENS || 16384) || 16384;
+    const defaultChatMaxTokens = resolveChatMaxTokensForProvider('local', body);
     const nPredictRaw = body.n_predict ?? body.max_tokens ?? defaultChatMaxTokens;
-    const nPredict = Number.isFinite(Number(nPredictRaw)) ? Number(nPredictRaw) : defaultChatMaxTokens;
+    const nPredict = clampChatTokenBudget(
+      nPredictRaw,
+      defaultChatMaxTokens,
+      Number(process.env.A11_LOCAL_CHAT_MAX_TOKENS_HARD_MAX || 2048) || 2048
+    );
 
     const userInfo = req.user?.username ? `(user: ${req.user.username})` : '';
     console.log('[A11][Llama] Proxying local completion', userInfo, '->', localLlamaCompletionUrl);
@@ -12995,7 +13022,7 @@ async function proxyLocalLlamaCompletion(req, res, localLlamaCompletionUrl, body
         n_predict: nPredict,
         stream: false
       },
-      timeout: 60000,
+      timeout: Number(process.env.A11_LOCAL_COMPLETION_TIMEOUT_MS || process.env.A11_LOCAL_CHAT_TIMEOUT_MS || 90_000) || 90_000,
     });
 
     const rawContent = extractLocalCompletionContent(upstreamRes.data);
@@ -13311,9 +13338,13 @@ async function proxyChatToOpenAI(req, res) {
       upstreamBody.prompt = upstreamBody.prompt.slice(-maxPromptChars).trimStart();
     }
   }
-  const maxResponseTokens = Math.max(1024, Number(process.env.A11_CHAT_MAX_TOKENS || 16384) || 16384);
-  if (!Number(upstreamBody.max_tokens || upstreamBody.max_completion_tokens || 0)) {
+  const maxResponseTokens = resolveChatMaxTokensForProvider(provider, upstreamBody);
+  const requestedMaxTokens = Number(upstreamBody.max_tokens || upstreamBody.max_completion_tokens || 0);
+  if (!requestedMaxTokens) {
     upstreamBody.max_tokens = maxResponseTokens;
+  } else if (provider === 'local') {
+    upstreamBody.max_tokens = maxResponseTokens;
+    delete upstreamBody.max_completion_tokens;
   }
   if (provider !== 'local') {
     delete upstreamBody.prompt;
@@ -13988,9 +14019,10 @@ async function callA11LLMAttempt(messages, options = {}) {
     { role: 'user', content: injectedContext }
   ];
   const body = {
-    model: 'gemma4:e4b',
+    model: String(process.env.LOCAL_DEFAULT_MODEL || process.env.A11_OLLAMA_PRIMARY_MODEL || process.env.A11_AGENT_LOCAL_MODEL || 'llama3.2:3b').trim() || 'llama3.2:3b',
     messages: promptMessages,
     stream: false,
+    max_tokens: Math.max(128, Math.min(2048, Number(process.env.A11_AGENT_MAX_TOKENS || 700) || 700)),
     a11Passthrough: true,
   };
   let localUpstreamFailed = false;
@@ -14004,7 +14036,8 @@ async function callA11LLMAttempt(messages, options = {}) {
           'Content-Type': 'application/json',
           'X-A11-Passthrough': '1',
         },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(Number(process.env.A11_AGENT_LOCAL_TIMEOUT_MS || process.env.A11_LOCAL_CHAT_TIMEOUT_MS || 90_000) || 90_000),
       });
       if (!res.ok) throw new Error(`A11 LLM error: ${res.status} – ${await res.text()}`);
       const data = await res.json();
@@ -14034,7 +14067,7 @@ async function callA11LLMAttempt(messages, options = {}) {
           n_predict: Number(process.env.A11_AGENT_MAX_TOKENS || 700),
           stream: false
         },
-        timeout: 60000,
+        timeout: Number(process.env.A11_AGENT_LOCAL_TIMEOUT_MS || process.env.A11_LOCAL_CHAT_TIMEOUT_MS || 90_000) || 90_000,
       });
       return extractLocalCompletionContent(upstreamRes.data).trim();
     } catch (error_) {
@@ -14061,7 +14094,7 @@ async function callA11LLMAttempt(messages, options = {}) {
           stream: false,
           temperature: 0.2,
         },
-        timeout: 60000,
+        timeout: Number(process.env.A11_AGENT_REMOTE_TIMEOUT_MS || process.env.A11_REMOTE_CHAT_TIMEOUT_MS || 60_000) || 60_000,
       });
       return normalizeAssistantOutput(extractAssistantText(upstreamRes.data).trim());
     } catch (remoteError) {

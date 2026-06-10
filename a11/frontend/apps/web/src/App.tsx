@@ -982,10 +982,10 @@ function resolvePortraitAssetPath(src = "") {
 
 const LOCAL_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
   {
-    value: "ollama:gpt-oss:20b-cloud",
-    label: "A11 Ollama - gpt-oss 20b",
+    value: "ollama:llama3.2:3b",
+    label: "A11 Ollama - rapide local",
     provider: "ollama",
-    model: "gpt-oss:20b-cloud",
+    model: "llama3.2:3b",
   },
 ];
 
@@ -4018,7 +4018,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         kind: "audio",
         url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
         provider: "funesterie-d40",
-        contentType: String(result.contentType || "audio/wav"),
+        contentType: String(result.contentType || doubleHarmonicFile.type || "audio/mpeg"),
       });
       setVivyOutput((current) => [
         current.trim(),

@@ -18,6 +18,15 @@ const {
 
 const DEFAULT_MAX_MB = 80;
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const DEFAULT_OUTPUT_FORMAT = 'source';
+
+const OUTPUT_FORMATS = Object.freeze({
+  mp3: Object.freeze({ ext: 'mp3', contentType: 'audio/mpeg' }),
+  m4a: Object.freeze({ ext: 'm4a', contentType: 'audio/mp4' }),
+  wav: Object.freeze({ ext: 'wav', contentType: 'audio/wav' }),
+  flac: Object.freeze({ ext: 'flac', contentType: 'audio/flac' }),
+  ogg: Object.freeze({ ext: 'ogg', contentType: 'audio/ogg' }),
+});
 
 const ALLOWED_MIME = new Set([
   'audio/wav',
@@ -68,9 +77,29 @@ function contentTypeForFile(filename = '') {
   if (ext === '.mp3') return 'audio/mpeg';
   if (ext === '.flac') return 'audio/flac';
   if (ext === '.ogg') return 'audio/ogg';
-  if (ext === '.m4a' || ext === '.aac') return 'audio/aac';
+  if (ext === '.m4a') return 'audio/mp4';
+  if (ext === '.aac') return 'audio/aac';
   if (ext === '.mp4') return 'audio/mp4';
   return 'audio/wav';
+}
+
+function normalizeOutputSourceExt(value) {
+  const ext = String(value || '').trim().toLowerCase().replace(/^\./, '');
+  if (ext === 'wave') return 'wav';
+  if (ext === 'aac' || ext === 'mp4' || ext === 'mov' || ext === 'webm') return 'm4a';
+  if (Object.prototype.hasOwnProperty.call(OUTPUT_FORMATS, ext)) return ext;
+  return 'mp3';
+}
+
+function resolveOutputFormat(value, sourceExt = '') {
+  const requested = String(value || process.env.A11_DH_OUTPUT_FORMAT || DEFAULT_OUTPUT_FORMAT)
+    .trim()
+    .toLowerCase()
+    .replace(/^\./, '');
+  const key = !requested || requested === 'source'
+    ? normalizeOutputSourceExt(sourceExt)
+    : normalizeOutputSourceExt(requested);
+  return OUTPUT_FORMATS[key] || OUTPUT_FORMATS.mp3;
 }
 
 function isAllowedUpload(file = {}) {
@@ -146,6 +175,7 @@ function createDoubleHarmonicRouter(options = {}) {
   });
 
   router.get('/status', (_req, res) => {
+    const outputFormat = resolveOutputFormat();
     return res.json({
       ok: true,
       method: 'dry-master-plus-adaptive-d40-harmonic-overlay-v1',
@@ -157,7 +187,9 @@ function createDoubleHarmonicRouter(options = {}) {
         min: MIN_HARMONIC_INTENSITY,
         max: MAX_HARMONIC_INTENSITY,
       },
-      outputFormat: 'audio/wav',
+      outputFormat: DEFAULT_OUTPUT_FORMAT,
+      defaultResolvedOutputFormat: outputFormat.contentType,
+      outputFormats: Object.keys(OUTPUT_FORMATS),
     });
   });
 
@@ -170,8 +202,10 @@ function createDoubleHarmonicRouter(options = {}) {
 
       const id = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
       const base = safeBaseName(req.body?.name || req.file.originalname || 'audio');
-      const inputFilename = `${id}-${base}.${extForUpload(req.file)}`;
-      const outputFilename = `${id}-${base}-funesterie-d40.wav`;
+      const inputExt = extForUpload(req.file);
+      const inputFilename = `${id}-${base}.${inputExt}`;
+      const outputFormat = resolveOutputFormat(req.body?.format || req.query?.format, inputExt);
+      const outputFilename = `${id}-${base}-funesterie-d40.${outputFormat.ext}`;
       const inputPath = path.join(assetRoot, inputFilename);
       const outputPath = path.join(assetRoot, outputFilename);
       fs.writeFileSync(inputPath, req.file.buffer);
@@ -190,7 +224,7 @@ function createDoubleHarmonicRouter(options = {}) {
         originalName: req.file.originalname || '',
         inputFilename,
         outputFilename,
-        contentType: 'audio/wav',
+        contentType: outputFormat.contentType,
         method: processing.method,
         profile: processing.profile,
         intensity: processing.intensity || intensity,
@@ -213,7 +247,7 @@ function createDoubleHarmonicRouter(options = {}) {
         weights: processing.weights || undefined,
         audioUrl,
         shareUrl: baseUrl ? `${baseUrl}${sharePath}` : sharePath,
-        contentType: 'audio/wav',
+        contentType: outputFormat.contentType,
         filename: outputFilename,
         bytes: asset.bytes,
         publicSummary: 'Densite D40 + mg + double harmonique synchronisee en overlay protege.',
@@ -231,7 +265,7 @@ function createDoubleHarmonicRouter(options = {}) {
     try {
       pruneIndex(indexPath, assetRoot, ttlMs);
       const filename = path.basename(String(req.params.filename || ''));
-      if (!/^[\w.-]+\.wav$/i.test(filename)) {
+      if (!/^[\w.-]+\.(?:mp3|m4a|wav|flac|ogg)$/i.test(filename)) {
         return res.status(400).json({ ok: false, error: 'invalid_audio_asset' });
       }
       const index = readIndex(indexPath);

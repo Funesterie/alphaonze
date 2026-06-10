@@ -1,6 +1,7 @@
 'use strict';
 
 const { execFile } = require('node:child_process');
+const path = require('node:path');
 
 const D40_SOURCE_DENSITY = 0.292;
 const D40_SOURCE_N = 40.0005;
@@ -139,27 +140,46 @@ function runFfmpeg(args, options = {}) {
   });
 }
 
+function buildOutputCodecArgs(outputPath, options = {}) {
+  const ext = path.extname(String(outputPath || '')).toLowerCase();
+  const mp3Bitrate = String(options.mp3Bitrate || process.env.A11_DH_MP3_BITRATE || '192k').trim() || '192k';
+  const aacBitrate = String(options.aacBitrate || process.env.A11_DH_AAC_BITRATE || mp3Bitrate).trim() || mp3Bitrate;
+  if (ext === '.mp3') return ['-codec:a', 'libmp3lame', '-b:a', mp3Bitrate];
+  if (ext === '.m4a' || ext === '.aac' || ext === '.mp4') return ['-codec:a', 'aac', '-b:a', aacBitrate];
+  if (ext === '.flac') return ['-codec:a', 'flac'];
+  if (ext === '.ogg') return ['-codec:a', 'libvorbis', '-q:a', '5'];
+  return [];
+}
+
+function buildProtectMixD40Args({ inputPath, outputPath, profile = 'blend', intensity } = {}) {
+  const built = buildProtectMixD40Filter({ profile, intensity });
+  return {
+    built,
+    args: [
+      '-y',
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-i',
+      inputPath,
+      '-filter_complex',
+      built.filter,
+      '-map',
+      '[out]',
+      '-ac',
+      '2',
+      '-ar',
+      '44100',
+      ...buildOutputCodecArgs(outputPath),
+      outputPath,
+    ],
+  };
+}
+
 async function processProtectMixD40({ inputPath, outputPath, profile = 'blend', intensity, timeoutMs } = {}) {
   if (!inputPath) throw new Error('missing_input_path');
   if (!outputPath) throw new Error('missing_output_path');
-  const built = buildProtectMixD40Filter({ profile, intensity });
-  const args = [
-    '-y',
-    '-hide_banner',
-    '-loglevel',
-    'error',
-    '-i',
-    inputPath,
-    '-filter_complex',
-    built.filter,
-    '-map',
-    '[out]',
-    '-ac',
-    '2',
-    '-ar',
-    '44100',
-    outputPath,
-  ];
+  const { built, args } = buildProtectMixD40Args({ inputPath, outputPath, profile, intensity });
   await runFfmpeg(args, { timeoutMs });
   return {
     method: 'dry-master-plus-adaptive-d40-harmonic-overlay-v1',
@@ -188,6 +208,8 @@ module.exports = {
   MIN_HARMONIC_INTENSITY,
   MICROGAP_HALF_PLUS_CANON_MG,
   buildD40EnvelopeExpression,
+  buildOutputCodecArgs,
+  buildProtectMixD40Args,
   buildProtectMixD40Filter,
   processProtectMixD40,
   resolveD40Density,

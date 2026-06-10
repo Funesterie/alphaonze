@@ -2604,6 +2604,24 @@ async function saveProviderAudioBufferForFormat(buffer, provider = 'tts', reques
   return saveProviderAudioBuffer(buffer, provider, sourceExtension || targetFormat || 'wav');
 }
 
+async function materializeGeneratedTtsFileForFormat(filePath, provider = 'tts', requestedFormat = 'mp3') {
+  const sourcePath = path.resolve(String(filePath || ''));
+  if (!sourcePath || !fs.existsSync(sourcePath)) return null;
+  const targetFormat = normalizeTtsAudioFormat({ audioFormat: requestedFormat }, 'mp3');
+  if (targetFormat === 'wav') return buildBackendTtsOutPath(`/out/${path.basename(sourcePath)}`);
+
+  const convertedUrl = await saveProviderAudioBufferForFormat(
+    fs.readFileSync(sourcePath),
+    provider,
+    targetFormat,
+    contentTypeForTtsAsset(sourcePath)
+  );
+  if (convertedUrl && !convertedUrl.includes(encodeURIComponent(path.basename(sourcePath)))) {
+    deleteGeneratedTtsAsset(sourcePath);
+  }
+  return convertedUrl;
+}
+
 async function materializeTtsAudioUrlForFormat(audioUrl, requestedFormat = 'wav', provider = 'tts') {
   const targetFormat = normalizeTtsAudioFormat({ audioFormat: requestedFormat }, 'wav');
   if (targetFormat !== 'mp3') return null;
@@ -2649,7 +2667,7 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
   if (isDjeffRapVoiceStyle(voiceStyle) && !explicitReferenceFile) {
     throw new Error('djeff_rap_reference_missing');
   }
-  const audioFormat = normalizeTtsAudioFormat(body, isInteractiveTtsRequest(body) ? 'mp3' : 'wav');
+  const audioFormat = normalizeTtsAudioFormat(body, 'mp3');
   const conversionStrength = resolveVoiceConversionStrength(body);
   const f0Shift = resolveVoiceF0Shift(body);
   const timeoutMs = Number(
@@ -3141,7 +3159,7 @@ function resolveEspeakData() {
   return null;
 }
 
-function spawnPiperLocal(text, model) {
+function spawnPiperLocal(text, model, options = {}) {
   return new Promise((resolve, reject) => {
     try {
       const piper = resolvePiperBinary();
@@ -3201,11 +3219,27 @@ function spawnPiperLocal(text, model) {
         responded = true;
         if (code === 0) {
           if (fs.existsSync(outFile)) {
-            return resolve({
-              success: true,
-              audioUrl: buildBackendTtsOutPath(`/out/${outFileName}`),
-              model: path.basename(modelPath || ''),
-            });
+            return Promise.resolve()
+              .then(() => materializeGeneratedTtsFileForFormat(outFile, 'piper', normalizeTtsAudioFormat(options, 'mp3')))
+              .then((audioUrl) => {
+                const finalAudioUrl = audioUrl || buildBackendTtsOutPath(`/out/${outFileName}`);
+                return resolve({
+                  success: true,
+                  audioUrl: finalAudioUrl,
+                  audio_url: finalAudioUrl,
+                  audioFormat: /\.mp3(?:[?#].*)?$/i.test(finalAudioUrl) ? 'mp3' : 'wav',
+                  content_type: /\.mp3(?:[?#].*)?$/i.test(finalAudioUrl) ? 'audio/mpeg' : 'audio/wav',
+                  model: path.basename(modelPath || ''),
+                });
+              })
+              .catch(() => resolve({
+                success: true,
+                audioUrl: buildBackendTtsOutPath(`/out/${outFileName}`),
+                audio_url: buildBackendTtsOutPath(`/out/${outFileName}`),
+                audioFormat: 'wav',
+                content_type: 'audio/wav',
+                model: path.basename(modelPath || ''),
+              }));
           }
           return reject(new Error(`tts_failed_no_file${stderr ? ': ' + stderr.trim().slice(0, 500) : ''}`));
         }
@@ -3280,12 +3314,27 @@ function spawnEspeakLocal(text, voice, options = {}) {
       });
       p.on('close', (code) => {
         if (code === 0 && fs.existsSync(outFile)) {
-          return resolve({
-            success: true,
-            audioUrl: buildBackendTtsOutPath(`/out/${outFileName}`),
-            audio_url: buildBackendTtsOutPath(`/out/${outFileName}`),
-            provider: 'espeak-ng',
-          });
+          return Promise.resolve()
+            .then(() => materializeGeneratedTtsFileForFormat(outFile, 'espeak', normalizeTtsAudioFormat(options, 'mp3')))
+            .then((audioUrl) => {
+              const finalAudioUrl = audioUrl || buildBackendTtsOutPath(`/out/${outFileName}`);
+              return resolve({
+                success: true,
+                audioUrl: finalAudioUrl,
+                audio_url: finalAudioUrl,
+                audioFormat: /\.mp3(?:[?#].*)?$/i.test(finalAudioUrl) ? 'mp3' : 'wav',
+                content_type: /\.mp3(?:[?#].*)?$/i.test(finalAudioUrl) ? 'audio/mpeg' : 'audio/wav',
+                provider: 'espeak-ng',
+              });
+            })
+            .catch(() => resolve({
+              success: true,
+              audioUrl: buildBackendTtsOutPath(`/out/${outFileName}`),
+              audio_url: buildBackendTtsOutPath(`/out/${outFileName}`),
+              audioFormat: 'wav',
+              content_type: 'audio/wav',
+              provider: 'espeak-ng',
+            }));
         }
         const details = stderr.trim() || stdout.trim();
         return reject(new Error(`espeak_failed_exit_${code}${details ? ': ' + details.slice(0, 500) : ''}`));
@@ -4386,7 +4435,7 @@ async function handleTtsSpeakRequest(req, res) {
     }
 
     try {
-      const local = await spawnPiperLocal(readableText, voice || null);
+      const local = await spawnPiperLocal(readableText, voice || null, preparedBody);
       const absoluteAudioUrl = String(local.audioUrl || local.audio_url || '').trim();
       return sendFinalizedPayload({
         ...local,
@@ -4424,7 +4473,7 @@ async function handleTtsSpeakRequest(req, res) {
     }
 
     try {
-      const fallback = await spawnEspeakLocal(readableText, voice || null, { vocalMode });
+      const fallback = await spawnEspeakLocal(readableText, voice || null, { ...preparedBody, vocalMode });
       const absoluteAudioUrl = String(fallback.audioUrl || fallback.audio_url || '').trim();
       return sendFinalizedPayload({
         ...fallback,
@@ -5033,7 +5082,7 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
     }
 
     try {
-      const local = await spawnPiperLocal(readableText, voice || null);
+      const local = await spawnPiperLocal(readableText, voice || null, preparedBody);
       const absoluteAudioUrl = String(local.audioUrl || local.audio_url || '').trim();
       return sendFinalizedPayload({
         ...local,
@@ -5071,7 +5120,7 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
     }
 
     try {
-      const fallback = await spawnEspeakLocal(readableText, voice || null, { vocalMode });
+      const fallback = await spawnEspeakLocal(readableText, voice || null, { ...preparedBody, vocalMode });
       const absoluteAudioUrl = String(fallback.audioUrl || fallback.audio_url || '').trim();
       return sendFinalizedPayload({
         ...fallback,
