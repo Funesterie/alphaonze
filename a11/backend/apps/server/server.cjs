@@ -209,6 +209,10 @@ const fs = require('node:fs');
 const dotenv = require('dotenv');
 const { buildRuntimeConfig, getPublicRuntimeStatus } = require('./lib/runtime-config.cjs');
 const { getJanusVisionStatus } = require('./lib/janus-vision-runtime.cjs');
+const {
+  getA11Root,
+  getCanonicalRuntimeRoot,
+} = require('./lib/runtime-root.cjs');
 
 // A11Host (VSIX + headless)
 const {
@@ -705,7 +709,7 @@ const pathMem = require('node:path');
 
 const A11_WORKSPACE_ROOT =
   process.env.A11_WORKSPACE_ROOT ||
-  pathMem.resolve(__dirname, '..', '..', '..');
+  getA11Root();
 
 const A11_MEMORY_ROOT = pathMem.join(A11_WORKSPACE_ROOT, 'a11_memory');
 const A11_CONV_DIR = pathMem.join(A11_MEMORY_ROOT, 'conversations');
@@ -1185,7 +1189,7 @@ function firstExistingRoot(candidates, fallback) {
 }
 
 // Racine de travail A11: garde le runtime canonique sous a11/runtime.
-const WORKSPACE_ROOT = process.env.A11_WORKSPACE_ROOT || path.resolve(__dirname, '..', '..', '..');
+const WORKSPACE_ROOT = process.env.A11_WORKSPACE_ROOT || getA11Root();
 // Racine de lecture large pour Qflush/LLM local: repo Funesterie complet quand il est monté/disponible.
 const QFLUSH_WORKSPACE_ROOT = firstExistingRoot([
   process.env.QFLUSH_WORKSPACE_ROOT,
@@ -1194,9 +1198,7 @@ const QFLUSH_WORKSPACE_ROOT = firstExistingRoot([
   path.resolve(__dirname, '..', '..', '..', '..'),
   WORKSPACE_ROOT,
 ], WORKSPACE_ROOT);
-const PUBLIC_RUNTIME_ROOT = path.resolve(
-  String(process.env.A11_RUNTIME_ROOT || path.join(WORKSPACE_ROOT, 'runtime')).trim()
-);
+const PUBLIC_RUNTIME_ROOT = getCanonicalRuntimeRoot(process.env);
 const PUBLIC_RUNTIME_UPLOADS_ROOT = path.join(PUBLIC_RUNTIME_ROOT, 'files', 'uploads');
 
 function setPublicFileResponseHeaders(res) {
@@ -6753,6 +6755,10 @@ console.log('[Server] Vivy Alexa routes mounted under /api/vivy/alexa');
 const { createVivyStudioRouter } = require('./src/routes/vivy-studio.cjs');
 app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT }));
 console.log('[Server] Vivy Studio routes mounted under /api/vivy/studio');
+
+const createDoubleHarmonicRouter = require('./src/routes/double-harmonic.cjs');
+app.use('/api/double-harmonic', createDoubleHarmonicRouter({ verifyJWT, runtimeRoot: PUBLIC_RUNTIME_ROOT }));
+console.log('[Server] Double Harmonic D40 routes mounted under /api/double-harmonic');
 
 const createMatchArenaRouter = require('./routes/match-arena.cjs');
 app.use('/api/match-arena', createMatchArenaRouter({ verifyJWT, db, env: process.env, runtimeRoot: PUBLIC_RUNTIME_ROOT }));

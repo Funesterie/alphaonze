@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
 
 function normalizeText(value) {
   return String(value || '').trim();
@@ -55,10 +56,7 @@ function resolveRegistryFile(filePath) {
   );
   if (explicit) return path.isAbsolute(explicit) ? explicit : path.resolve(process.cwd(), explicit);
 
-  const runtimeRoot = normalizeText(process.env.A11_RUNTIME_ROOT);
-  const root = runtimeRoot
-    ? (path.isAbsolute(runtimeRoot) ? runtimeRoot : path.resolve(process.cwd(), runtimeRoot))
-    : path.join(process.cwd(), 'runtime');
+  const root = getCanonicalRuntimeRoot(process.env);
   return path.join(root, 'auth', 'auth-sessions.json');
 }
 

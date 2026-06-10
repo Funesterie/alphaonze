@@ -15,6 +15,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { getLogger } = require('./structured-logger.cjs');
+const { getCanonicalRuntimeRoot } = require('./runtime-root.cjs');
 
 const logger = getLogger({ component: 'memory-consolidator' });
 
@@ -24,7 +25,7 @@ const CONVERSATIONS_DIR = path.resolve(
   'a11_memory/conversations'
 );
 const CONSOLIDATION_STATE_PATH = path.resolve(
-  process.env.A11_RUNTIME_ROOT || path.resolve(__dirname, '../../../runtime'),
+  getCanonicalRuntimeRoot(process.env),
   'memory-consolidation-state.json'
 );
 

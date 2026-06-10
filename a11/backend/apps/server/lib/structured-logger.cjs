@@ -4,6 +4,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { getCanonicalRuntimeRoot } = require('./runtime-root.cjs');
 
 const LOG_LEVELS = {
   DEBUG: 0,
@@ -178,7 +179,7 @@ let defaultLogger = null;
 
 function getLogger(context = {}) {
   if (!defaultLogger) {
-    const logDir = process.env.A11_LOG_DIR || path.join(process.env.A11_RUNTIME_ROOT || process.cwd(), 'logs');
+    const logDir = process.env.A11_LOG_DIR || path.join(getCanonicalRuntimeRoot(process.env), 'logs');
     const minLevel = process.env.A11_LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'INFO' : 'DEBUG');
 
     defaultLogger = new StructuredLogger({

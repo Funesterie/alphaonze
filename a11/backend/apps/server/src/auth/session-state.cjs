@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
 
 function normalizeSessionUserKey(user = {}) {
   const raw = typeof user === 'string' || typeof user === 'number'
@@ -14,10 +15,7 @@ function resolveSessionStateFile() {
     return path.isAbsolute(explicit) ? explicit : path.resolve(process.cwd(), explicit);
   }
 
-  const runtimeRoot = String(process.env.A11_RUNTIME_ROOT || '').trim();
-  const root = runtimeRoot
-    ? (path.isAbsolute(runtimeRoot) ? runtimeRoot : path.resolve(process.cwd(), runtimeRoot))
-    : path.join(process.cwd(), 'runtime');
+  const root = getCanonicalRuntimeRoot(process.env);
   return path.join(root, 'auth', 'session-state.json');
 }
 

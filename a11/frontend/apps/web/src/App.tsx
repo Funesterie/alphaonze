@@ -63,6 +63,7 @@ import {
   uploadVoiceLearningSnippet,
   queueVoiceLearningTraining,
   uploadTtsVoiceReference,
+  processDoubleHarmonicAudio,
   saveRemoteProviderProfile,
   purgeMemoryNow,
   purgeTechnicalMemos,
@@ -76,6 +77,7 @@ import {
   type TechnicalMemoSummaryResponse,
   type TtsVoiceReference,
   type VoiceLearningStatus,
+  type DoubleHarmonicProcessResult,
   type VivyChatFileAttachment,
   type A11PortraitFrame,
   type A11PortraitFramebook,
@@ -90,6 +92,7 @@ import {
   type MatchArenaSession,
   type MatchArenaStatus,
   type SubscriptionStatus,
+  type VivyStudioProductionResult,
 } from "./lib/api";
 import { A11HistoryPanel } from "./components/A11HistoryPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
@@ -3382,9 +3385,83 @@ function buildVivyStudioBrief(options: {
 
 type VivySessionProps = {
   hasSession: boolean;
+  diagnosticsAllowed?: boolean;
 };
 
-function VivyStudioLab({ hasSession }: VivySessionProps) {
+function formatVivyDiagnosticNumber(value: unknown, digits = 2) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "0";
+  return numeric.toFixed(digits).replace(/\.?0+$/, "");
+}
+
+function buildVivyD9SegmentReason(segment: NonNullable<VivyStudioProductionResult["prosody"]>["doubleHarmonic"] extends infer D
+  ? D extends { segments?: Array<infer S> } ? S : Record<string, unknown>
+  : Record<string, unknown>) {
+  const semantic = (segment as any)?.semantic || {};
+  const sync = (segment as any)?.sync || {};
+  const navigation = (segment as any)?.navigation || {};
+  const anchors = Array.isArray(semantic.anchors) ? semantic.anchors.filter(Boolean).join(", ") : "";
+  const forceSignature = String(semantic.forceSignature || "").trim();
+  const instruction = String(sync.instruction || "").trim();
+  const branchLabel = String(navigation.branchLabel || "").trim();
+  return [branchLabel, anchors ? `ancres ${anchors}` : "", forceSignature && forceSignature !== "neutral" ? forceSignature : "", instruction]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function VivyD9DiagnosticsPanel({ prosody }: { prosody: VivyStudioProductionResult["prosody"] | null }) {
+  const sync = prosody?.doubleHarmonic;
+  const segments = Array.isArray(sync?.segments) ? sync.segments : [];
+  if (!sync || !segments.length) return null;
+  const equation = String((sync as any)?.basis?.navigationEquation || segments[0]?.navigation?.equation || "n_next=n+k*M*b*(H1+iH2)");
+  const branchCompass = Array.isArray((sync as any)?.basis?.branchCompass)
+    ? (sync as any).basis.branchCompass.map((branch: any) => String(branch?.symbol || "").trim()).filter(Boolean).join(" ")
+    : "{1 i 0 -i -1}";
+  return (
+    <details className="vivy-studio-diagnostics">
+      <summary>
+        <span>Diagnostic D8/D9</span>
+        <small>{segments.length} segment{segments.length > 1 ? "s" : ""} · verrou {formatVivyDiagnosticNumber(sync.lockRatio, 2)}</small>
+      </summary>
+      <div className="vivy-studio-diagnostics-meta">
+        <span>Équation {equation}</span>
+        <span>Boussole {branchCompass}</span>
+        <span>Tempo moyen {Math.round(Number(sync.avgTempoBpm || 0))} bpm</span>
+      </div>
+      <div className="vivy-studio-diagnostics-grid">
+        {segments.slice(0, 9).map((segment, index) => {
+          const navigation = segment.navigation || {};
+          const audio = segment.audio || {};
+          const syncState = segment.sync || {};
+          const semantic = segment.semantic || {};
+          const key = segment.id || segment.segmentId || `${segment.label || "segment"}-${index}`;
+          return (
+            <article key={key} className="vivy-studio-diagnostic-card">
+              <header>
+                <strong>{segment.label || `Segment ${index + 1}`}</strong>
+                <span>{segment.roleLabel || segment.roleId || "Vivy"}</span>
+              </header>
+              <div className="vivy-studio-diagnostic-values">
+                <span><b>{navigation.branchSymbol || "0"}</b> branche</span>
+                <span><b>{formatVivyDiagnosticNumber(navigation.accelerationK, 2)}</b> k</span>
+                <span><b>{formatVivyDiagnosticNumber(navigation.coherenceM, 2)}</b> M</span>
+                <span><b>{formatVivyDiagnosticNumber(navigation.h1Real, 2)}</b> H1</span>
+                <span><b>{formatVivyDiagnosticNumber(navigation.h2Imaginary, 2)}</b> H2</span>
+                <span><b>{Math.round(Number(audio.tempoBpm || 0))}</b> bpm</span>
+              </div>
+              <p>{buildVivyD9SegmentReason(segment)}</p>
+              <small>
+                sync {syncState.state || "n/a"} · tri {syncState.triState || "00000"} · sens {semantic.forceSignature || "neutral"} · next {formatVivyDiagnosticNumber(navigation.nextReal, 2)}/{formatVivyDiagnosticNumber(navigation.nextImaginary, 2)}
+              </small>
+            </article>
+          );
+        })}
+      </div>
+    </details>
+  );
+}
+
+function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionProps) {
   const initialDraft = readVivyStudioDraft() || {};
   const [activeMode, setActiveMode] = useState<VivyStudioMode>(normalizeVivyStudioMode(initialDraft.mode) || "voice");
   const savedVoiceTool = String(initialDraft.voiceTool || "");
@@ -3411,6 +3488,9 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
   const [voiceLearningTranscript, setVoiceLearningTranscript] = useState(String(initialDraft.voiceLearningTranscript || ""));
   const [voiceLearningStatus, setVoiceLearningStatus] = useState<VoiceLearningStatus | null>(null);
   const [voiceLearningMessage, setVoiceLearningMessage] = useState("");
+  const [doubleHarmonicFile, setDoubleHarmonicFile] = useState<File | null>(null);
+  const [doubleHarmonicFileName, setDoubleHarmonicFileName] = useState("");
+  const [doubleHarmonicResult, setDoubleHarmonicResult] = useState<DoubleHarmonicProcessResult | null>(null);
   const [songSource, setSongSource] = useState(String(initialDraft.songSource || "Prompt +"));
   const [songArtists, setSongArtists] = useState<VivyStudioArtistId[]>(() => normalizeVivyStudioArtists(initialDraft.songArtists));
   const [songMood, setSongMood] = useState(String(initialDraft.songMood || "Electro pop dark cinematographique"));
@@ -3422,6 +3502,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
   const [shareInstruction, setShareInstruction] = useState(String(initialDraft.shareInstruction || ""));
   const [vivyOutput, setVivyOutput] = useState(String(initialDraft.vivyOutput || ""));
   const [vivyMedia, setVivyMedia] = useState<VivyStudioMediaPreview | null>(null);
+  const [vivyDiagnostics, setVivyDiagnostics] = useState<VivyStudioProductionResult["prosody"] | null>(null);
   const [status, setStatus] = useState("");
   const [isBusy, setIsBusy] = useState(false);
 
@@ -3911,6 +3992,43 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     }
   }
 
+  async function processVivyDoubleHarmonicAudio() {
+    if (!hasSession) {
+      setStatus("Connexion requise pour créer un mix D40.");
+      return;
+    }
+    if (!doubleHarmonicFile) {
+      setStatus("Ajoute d'abord un fichier audio à traiter en D40.");
+      return;
+    }
+    setIsBusy(true);
+    setStatus("Traitement D40 en cours...");
+    try {
+      const result = await processDoubleHarmonicAudio(doubleHarmonicFile, {
+        profile: "blend",
+        name: doubleHarmonicFile.name,
+      });
+      const mediaUrl = String(result.shareUrl || result.audioUrl || "").trim();
+      if (!mediaUrl) throw new Error("audio_url_missing");
+      setDoubleHarmonicResult(result);
+      setVivyMedia({
+        kind: "audio",
+        url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
+        provider: "funesterie-d40",
+        contentType: String(result.contentType || "audio/wav"),
+      });
+      setVivyOutput((current) => [
+        current.trim(),
+        `Mix D40 prêt: ${result.shareUrl || result.audioUrl}`,
+      ].filter(Boolean).join("\n\n"));
+      setStatus("Mix D40 prêt avec lien exportable.");
+    } catch (error: any) {
+      setStatus(`Traitement D40 impossible: ${error?.message || error}`);
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function testVoiceLearningChatbot() {
     if (!hasSession) {
       setStatus("Connexion requise pour tester le chat vocal.");
@@ -4087,11 +4205,13 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       });
       const payloadAny = payload as any;
       let finalPayload: any = payloadAny;
+      setVivyDiagnostics(payload.prosody || null);
       let mediaUrl = getVivySongMediaUrl(finalPayload);
       const taskId = String(payloadAny?.mediaStatus?.taskId || payloadAny?.musicJob?.taskId || payloadAny?.media?.taskId || "").trim();
       if (!mediaUrl && taskId) {
         setStatus("Suno compose la chanson Vivy. Je récupère le MP3 dès qu’il est prêt...");
         finalPayload = await waitForVivySongJob(taskId);
+        if (!payload.prosody && finalPayload?.prosody) setVivyDiagnostics(finalPayload.prosody);
         mediaUrl = getVivySongMediaUrl(finalPayload);
       }
       if (!mediaUrl) throw new Error("audio_url_missing");
@@ -4158,6 +4278,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       });
       const text = String(payload?.assistant || payload?.message || payload?.content || "").trim();
       if (!text) throw new Error("reponse_vide");
+      setVivyDiagnostics(payload.prosody || null);
       const audioUrl = String(payload?.audioUrl || payload?.audio_url || payload?.media?.audioUrl || payload?.media?.audio_url || "").trim();
       const videoUrl = String(payload?.videoUrl || payload?.video_url || payload?.media?.videoUrl || payload?.media?.video_url || "").trim();
       const mediaUrl = audioUrl || videoUrl;
@@ -4414,6 +4535,35 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
                   {voiceLearningMessage ? ` · ${voiceLearningMessage}` : ""}
                 </p>
               </fieldset>
+              <fieldset className="vivy-studio-voice-fieldset">
+                <legend>Mix D40</legend>
+                <label>
+                  Audio à traiter
+                  <input
+                    id="vivy-studio-dh-file"
+                    name="doubleHarmonicFile"
+                    type="file"
+                    accept="audio/*,video/quicktime,video/mp4,.wav,.mp3,.m4a,.mov,.mp4,.flac,.ogg,.webm"
+                    disabled={!hasSession || isBusy}
+                    onChange={(event) => {
+                      const file = event.currentTarget.files?.[0] || null;
+                      setDoubleHarmonicFile(file);
+                      setDoubleHarmonicFileName(file?.name || "");
+                      setDoubleHarmonicResult(null);
+                    }}
+                  />
+                </label>
+                <div className="vivy-studio-actions vivy-studio-actions--voice">
+                  <button type="button" onClick={processVivyDoubleHarmonicAudio} disabled={!hasSession || isBusy || !doubleHarmonicFile}>Mixer D40</button>
+                  {doubleHarmonicResult?.shareUrl ? (
+                    <a className="vivy-studio-action-link" href={doubleHarmonicResult.shareUrl} target="_blank" rel="noreferrer">Ouvrir le lien</a>
+                  ) : null}
+                </div>
+                <p className="vivy-studio-voice-summary">
+                  {doubleHarmonicFileName ? `Fichier prêt: ${doubleHarmonicFileName}` : "Densité D40 + mg + double harmonique synchronisée."}
+                  {doubleHarmonicResult?.shareUrl ? " · lien exportable prêt" : ""}
+                </p>
+              </fieldset>
               <label>
                 Instruction voix
                 <textarea
@@ -4637,6 +4787,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
             <button type="button" onClick={shareBrief}>Partager</button>
           </div>
           {status && <p>{status}</p>}
+          {diagnosticsAllowed ? <VivyD9DiagnosticsPanel prosody={vivyDiagnostics} /> : null}
           {vivyMedia && (
             <div className="vivy-studio-media">
               <strong>{String(vivyMedia.provider || "").includes("emergency") ? (vivyMedia.kind === "audio" ? "Maquette audio locale" : "Maquette vidéo locale") : (vivyMedia.kind === "audio" ? "Audio Vivy prêt" : "Clip Vivy prêt")}</strong>
@@ -5177,7 +5328,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   );
 }
 
-function VivyPublicSurface({ hasSession }: VivySessionProps) {
+function VivyPublicSurface({ hasSession, diagnosticsAllowed = false }: VivySessionProps) {
   const hotspots: Array<{ mode: VivyStudioMode; label: string }> = [
     { mode: "voice", label: "Ouvrir création voix dans le Studio Vivy" },
     { mode: "song", label: "Ouvrir Composition production dans le Studio Vivy" },
@@ -5207,7 +5358,7 @@ function VivyPublicSurface({ hasSession }: VivySessionProps) {
         </div>
       </section>
       <VivyPublicChat hasSession={hasSession} />
-      <VivyStudioLab hasSession={hasSession} />
+      <VivyStudioLab hasSession={hasSession} diagnosticsAllowed={diagnosticsAllowed} />
     </>
   );
 }
@@ -5215,11 +5366,12 @@ function VivyPublicSurface({ hasSession }: VivySessionProps) {
 type VivyPublicPageProps = {
   authenticated: boolean;
   displayName: string;
+  diagnosticsAllowed?: boolean;
 };
 
 // CANONICAL React Vivy shell. Static production copy lives in public/vivy/index.html;
 // keep both aligned for session/logout behavior and never rely on localStorage alone.
-function VivyPublicPage({ authenticated, displayName }: VivyPublicPageProps) {
+function VivyPublicPage({ authenticated, displayName, diagnosticsAllowed = false }: VivyPublicPageProps) {
   useEffect(() => {
     document.documentElement.classList.add("vivy-public-page-root");
     document.body.classList.add("vivy-public-page-body");
@@ -5422,7 +5574,7 @@ function VivyPublicPage({ authenticated, displayName }: VivyPublicPageProps) {
           </details>
         </div>
       </nav>
-      <VivyPublicSurface hasSession={vivyHasSession} />
+      <VivyPublicSurface hasSession={vivyHasSession} diagnosticsAllowed={diagnosticsAllowed} />
     </main>
   );
 }
@@ -12016,7 +12168,10 @@ export function App() {
         setIsFunesterieAdmin(hasAuthenticatedAdminApiAccess());
       }} />;
     }
-    return <VivyPublicPage authenticated={hasPrivateSession} displayName={displayName} />;
+    const diagnosticsAllowed = isLocalDevSurface()
+      || isFunesterieAdmin
+      || ["founder", "admin_family", "admin"].includes(String(voiceAccountTier || "").trim().toLowerCase());
+    return <VivyPublicPage authenticated={hasPrivateSession} displayName={displayName} diagnosticsAllowed={diagnosticsAllowed} />;
   }
 
   if (!isAuthenticated) {

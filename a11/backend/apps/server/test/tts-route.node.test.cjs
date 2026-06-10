@@ -858,6 +858,7 @@ test('tts speak route maps Djeff/Pignon style to djeff-rap', async () => {
             if (header === 'content-type') return 'audio/wav';
             if (header === 'x-a11-voice-style') return 'djeff-rap';
             if (header === 'x-a11-voice-engine') return 'xtts-rvc';
+            if (header === 'x-a11-reference-source') return 'upload';
             return '';
           },
         },
@@ -2701,6 +2702,161 @@ test('tts speak route uses the voice module directly for Kaen44 official referen
   }
 });
 
+test('tts speak route sends Djeff rap WAV reference to XTTS/RVC when voiceStyle is djeff-rap', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-djeff-rap-reference-'));
+  const previousEnv = {
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
+    A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
+    A11_VOICE_CONVERSION_ENABLED: process.env.A11_VOICE_CONVERSION_ENABLED,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    A11_CARTESIA_TTS_DISABLED: process.env.A11_CARTESIA_TTS_DISABLED,
+    A11_AZURE_TTS_DISABLED: process.env.A11_AZURE_TTS_DISABLED,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    OPENAI_TTS_API_KEY: process.env.OPENAI_TTS_API_KEY,
+    A11_OPENAI_TTS_API_KEY: process.env.A11_OPENAI_TTS_API_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    A11_OPENAI_API_KEY: process.env.A11_OPENAI_API_KEY,
+    TTS_URL: process.env.TTS_URL,
+    TTS_HOST: process.env.TTS_HOST,
+    TTS_BASE_URL: process.env.TTS_BASE_URL,
+    TTS_PUBLIC_BASE_URL: process.env.TTS_PUBLIC_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const wav = createPcm16Wav({ frequency: 210 });
+  const calls = [];
+  const convertReferences = [];
+
+  fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'djeff-rap.wav'), createPcm16Wav({ frequency: 180 }));
+  process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
+  delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
+  process.env.A11_VOICE_CONVERSION_ENABLED = 'true';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.A11_CARTESIA_TTS_DISABLED = '0';
+  process.env.A11_AZURE_TTS_DISABLED = '1';
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_XTTS_RVC_URL = 'http://a11-voice:5002';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  delete process.env.A11_XTTS_RVC_URL;
+  process.env.OPENAI_TTS_API_KEY = '';
+  delete process.env.A11_OPENAI_TTS_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.A11_OPENAI_API_KEY;
+  delete process.env.TTS_URL;
+  delete process.env.TTS_HOST;
+  delete process.env.TTS_BASE_URL;
+  delete process.env.TTS_PUBLIC_BASE_URL;
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    calls.push(value);
+    if (value.includes('cartesia')) {
+      throw new Error('cartesia_must_not_be_used_for_djeff_rap_reference');
+    }
+    if (value === 'http://a11-voice:5002/api/voice/synthesize') {
+      throw new Error('synthesize_should_be_skipped_when_djeff_reference_file_exists');
+    }
+    if (value === 'http://a11-voice:5002/api/voice/convert') {
+      assert.equal(options.method, 'POST');
+      assert.equal(options.body?.get?.('persona'), 'a11');
+      assert.equal(options.body?.get?.('voiceStyle'), 'djeff-rap');
+      const reference = options.body?.get?.('reference');
+      assert.ok(reference, 'Djeff rap conversion must include the local reference WAV');
+      assert.match(String(reference?.name || ''), /djeff-rap\.wav/i);
+      convertReferences.push(reference);
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get(header) {
+            const key = String(header || '').toLowerCase();
+            if (key === 'content-type') return 'audio/wav';
+            if (key === 'x-a11-voice-engine') return 'xtts-reference';
+            if (key === 'x-a11-voice-style') return 'djeff-rap';
+            if (key === 'x-a11-reference-source') return 'upload';
+            return '';
+          },
+        },
+        async arrayBuffer() {
+          return wav;
+        },
+      };
+    }
+    if (value.startsWith('http://a11-voice:5002/out/djeff-converted.wav')) {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'audio/wav' },
+        async arrayBuffer() {
+          return wav;
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'Djeff cale le kick, pignon précis, radiateur froid.',
+          persona: 'a11',
+          voicePersona: 'a11',
+          surface: 'a11',
+          voiceStyle: 'djeff-rap',
+          provider: 'xtts-rvc',
+          ttsProvider: 'xtts-rvc',
+          engine: 'xtts-rvc',
+          voiceEngine: 'xtts-rvc',
+          voiceConversionEngine: 'xtts-rvc',
+          conversionEngine: 'xtts-rvc',
+          vocalMode: 'adaptive',
+          useDefaultVoiceReference: true,
+          defaultVoiceReference: true,
+          voiceReferenceRequired: true,
+          referenceVoiceRequired: true,
+          requireVoiceReference: true,
+          voiceConversion: true,
+          convertVoice: true,
+          morphVoice: true,
+          rvc: true,
+          allowRvc: true,
+          allowXttsRvc: true,
+          allowLegacyVoiceBridge: true,
+          xttsRvcOptIn: true,
+          audioFormat: 'mp3',
+          responseFormat: 'mp3',
+        });
+
+        assert.equal(result.response.status, 200);
+        assert.equal(result.json.provider, 'xtts-rvc');
+        assert.equal(result.json.voiceConversion.ok, true);
+        assert.equal(result.json.voiceConversion.voiceStyle, 'djeff-rap');
+        assert.equal(result.json.voiceConversion.referenceSource, 'upload');
+        assert.match(result.json.voiceConversion.reference.label, /Djeff Rap/i);
+        assert.equal(convertReferences.length, 1);
+        assert.equal(calls.some((call) => /cartesia/i.test(call)), false);
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
 test('tts speak route accepts audioModule reference metadata from direct Vivy synthesize', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-vivy-audiomodule-reference-'));
   const previousEnv = {
@@ -3408,7 +3564,7 @@ test('tts speak route blocks ffmpeg morph for official Vivy identity voice', asy
   }
 });
 
-test('tts official A11 sample route serves the official library WAV', async () => {
+test('tts official sample route serves A11 and Djeff library WAVs', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-official-sample-'));
   const previousEnv = {
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
@@ -3416,9 +3572,11 @@ test('tts official A11 sample route serves the official library WAV', async () =
     A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
   };
   const wav = createPcm16Wav({ frequency: 180 });
+  const djeffWav = createPcm16Wav({ frequency: 220 });
 
   fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
   fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'a11-official-stern-french.wav'), wav);
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'djeff-rap.wav'), djeffWav);
   process.env.A11_RUNTIME_ROOT = runtimeRoot;
   process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
   delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
@@ -3445,6 +3603,23 @@ test('tts official A11 sample route serves the official library WAV', async () =
         assert.equal(withTextQuery.status, 302);
         assert.equal(withTextQuery.headers.get('location'), '/api/tts/official/a11/audio');
         assert.equal(withTextQuery.headers.get('x-a11-voice-sample'), 'static');
+
+        const djeff = await fetch(`${baseUrl}/api/tts/official/djeff/audio`, {
+          headers: { 'x-test-basic': '1' },
+        });
+        assert.equal(djeff.status, 200);
+        assert.match(String(djeff.headers.get('content-type') || ''), /audio\/wav/i);
+        assert.equal(djeff.headers.get('x-a11-voice-persona'), 'djeff');
+        assert.equal(djeff.headers.get('x-a11-voice-sample'), 'static');
+        assert.equal(Buffer.from(await djeff.arrayBuffer()).length, djeffWav.length);
+
+        const djeffAlias = await fetch(`${baseUrl}/api/tts/official/pignon/audio?text=Salut`, {
+          headers: { 'x-test-basic': '1' },
+          redirect: 'manual',
+        });
+        assert.equal(djeffAlias.status, 302);
+        assert.equal(djeffAlias.headers.get('location'), '/api/tts/official/pignon/audio');
+        assert.equal(djeffAlias.headers.get('x-a11-voice-sample'), 'static');
 
         const missing = await fetch(`${baseUrl}/api/tts/official/unknown/audio`);
         assert.equal(missing.status, 404);

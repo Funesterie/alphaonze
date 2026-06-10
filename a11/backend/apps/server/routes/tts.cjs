@@ -65,6 +65,7 @@ const TTS_PRIORITY_SCORES = {
 };
 const OFFICIAL_VOICE_SAMPLE_FILES = {
   a11: 'a11-official-stern-french.wav',
+  djeff: 'djeff-rap.wav',
   kaen44: 'kaen44-official-french-narrator.wav',
   k44: 'kaen44-official-french-narrator.wav',
   vivy: 'vivy-official-french-conversational.wav',
@@ -2484,6 +2485,44 @@ function getPreferredVoiceReferenceLabel(req = {}) {
   return getPreferredVoiceReferenceLabelFromBody(req?.body || {}, persona);
 }
 
+function isDjeffRapVoiceStyle(value = '') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[_\s]+/g, '-')
+    .replace(/-+/g, '-');
+  return ['djeff', 'djeff-rap', 'rap-djeff', 'pignon', 'pignon-rap', 'moto-rap', 'jeff', 'jeffrey'].includes(normalized);
+}
+
+function shouldResolveLocalVoiceReference(body = {}, voiceStyle = '', requestedReferenceId = '') {
+  if (requestedReferenceId) return true;
+  if (!voiceStyle) return false;
+  return wantsDefaultVoiceReference(body)
+    || requiresReferenceVoice(body)
+    || wantsSpecificLocalVoiceReference(body)
+    || allowsXttsRvcForBody(body);
+}
+
+function serializeVoiceReferenceForPayload(ref = null, fallbackLabel = '') {
+  if (!ref) {
+    return {
+      id: fallbackLabel || null,
+      label: fallbackLabel || null,
+      scope: fallbackLabel ? 'voice-library' : null,
+    };
+  }
+  return {
+    id: ref.id || fallbackLabel || null,
+    label: ref.label || fallbackLabel || null,
+    scope: ref.scope || ref.source || 'voice-library',
+    source: ref.source || null,
+    originalName: ref.originalName || null,
+    bytes: ref.bytes || 0,
+  };
+}
+
 function saveProviderAudioBuffer(buffer, provider = 'tts', extension = 'wav') {
   if (!Buffer.isBuffer(buffer) || buffer.length <= 0) return null;
   const safeProvider = String(provider || 'tts').toLowerCase().replace(/[^a-z0-9_-]+/g, '-') || 'tts';
@@ -2595,7 +2634,8 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
   const persona = getTtsPersonaFromBody(body || {}, options?.persona || options?.surface || '');
   const voiceStyle = getPreferredVoiceReferenceLabelFromBody(body || {}, persona);
   const requestedReferenceId = String(body?.voiceReferenceId || body?.voiceRefId || body?.referenceId || '').trim();
-  const explicitReference = requestedReferenceId
+  const shouldResolveReference = shouldResolveLocalVoiceReference(body, voiceStyle, requestedReferenceId);
+  const explicitReference = shouldResolveReference
     ? resolveVoiceReferenceForRequest({
         user: options.user || null,
         requestedId: requestedReferenceId,
@@ -2606,6 +2646,9 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
   const explicitReferenceFile = explicitReference?.filePath && fs.existsSync(explicitReference.filePath)
     ? explicitReference
     : null;
+  if (isDjeffRapVoiceStyle(voiceStyle) && !explicitReferenceFile) {
+    throw new Error('djeff_rap_reference_missing');
+  }
   const audioFormat = normalizeTtsAudioFormat(body, isInteractiveTtsRequest(body) ? 'mp3' : 'wav');
   const conversionStrength = resolveVoiceConversionStrength(body);
   const f0Shift = resolveVoiceF0Shift(body);
@@ -2617,7 +2660,7 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
   let lastError = null;
 
   for (const baseUrl of baseUrls) {
-    if (!explicitReferenceFile) {
+    if (!explicitReferenceFile || !isDjeffRapVoiceStyle(voiceStyle)) {
       try {
         const synthesizeResponse = await fetch(`${String(baseUrl).replace(/\/$/, '')}/api/voice/synthesize`, {
           method: 'POST',
@@ -2684,11 +2727,9 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
                 attemptedEngines: Array.isArray(synthesizePayload?.voiceConversion?.attemptedEngines)
                   ? synthesizePayload.voiceConversion.attemptedEngines
                   : [synthesizePayload?.engine || 'persona-voice'],
-                reference: synthesizePayload?.voiceConversion?.reference || synthesizePayload?.voiceReference || {
-                  id: voiceStyle,
-                  label: voiceStyle,
-                  scope: 'voice-library',
-                },
+                reference: synthesizePayload?.voiceConversion?.reference
+                  || synthesizePayload?.voiceReference
+                  || serializeVoiceReferenceForPayload(explicitReferenceFile, voiceStyle),
               },
             };
           }
@@ -2738,6 +2779,10 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
 
       const contentType = String(response.headers?.get?.('content-type') || '').toLowerCase();
       if (response.ok && (contentType.startsWith('audio/') || contentType === 'application/octet-stream')) {
+        const referenceSource = String(response.headers?.get?.('x-a11-reference-source') || '').trim().toLowerCase();
+        if (isDjeffRapVoiceStyle(voiceStyle) && explicitReferenceFile && referenceSource !== 'upload') {
+          throw new Error('djeff_rap_reference_not_applied');
+        }
         const extension = audioExtensionFromContentType(contentType, audioFormat || 'wav');
         const audioUrl = await saveProviderAudioBufferForFormat(
           Buffer.from(await response.arrayBuffer()),
@@ -2764,15 +2809,12 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
             provider: PROVIDERS.XTTS_RVC,
             engine: response.headers?.get?.('x-a11-voice-engine') || 'xtts-rvc',
             voiceStyle: response.headers?.get?.('x-a11-voice-style') || voiceStyle || null,
+            referenceSource: referenceSource || null,
             rvcModel: rvcModel || null,
             rvcIndex: rvcIndex || null,
             direction: buildVoicePersonaInstruction(persona),
             attemptedEngines: [PROVIDERS.XTTS_RVC],
-            reference: {
-              id: voiceStyle,
-              label: voiceStyle,
-              scope: 'bridge',
-            },
+            reference: serializeVoiceReferenceForPayload(explicitReferenceFile, voiceStyle),
           },
         };
       }
@@ -2814,11 +2856,9 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
           rvcIndex: parsed?.voiceConversion?.rvcIndex || parsed?.providerCapabilities?.rvcIndex || null,
           direction: buildVoicePersonaInstruction(persona),
           attemptedEngines: Array.isArray(parsed?.attemptedEngines) ? parsed.attemptedEngines : [PROVIDERS.XTTS_RVC],
-          reference: {
-            id: voiceStyle,
-            label: voiceStyle,
-            scope: 'bridge',
-          },
+          reference: parsed?.voiceConversion?.reference
+            || parsed?.voiceReference
+            || serializeVoiceReferenceForPayload(explicitReferenceFile, voiceStyle),
         },
       };
     } catch (error_) {
@@ -3669,6 +3709,7 @@ function contentTypeForTtsAsset(filename = '') {
 function normalizeOfficialVoiceSamplePersona(value = '') {
   const normalized = String(value || '').trim().toLowerCase();
   if (['a11', 'alphaonze', 'alpha-onze', 'a-11'].includes(normalized)) return 'a11';
+  if (['djeff', 'jeff', 'jeffrey', 'djeff-rap', 'pignon', 'pignon-rap'].includes(normalized)) return 'djeff';
   if (['k44', 'kaen44', 'kaen'].includes(normalized)) return 'kaen44';
   if (['vivy', 'vivy-one', 'vivy_one'].includes(normalized)) return 'vivy';
   return '';

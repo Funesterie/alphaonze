@@ -20,6 +20,9 @@ const { spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
 const http = require('node:http');
+const { getCanonicalRuntimeRoot } = require('./lib/runtime-root.cjs');
+
+const RUNTIME_ROOT = getCanonicalRuntimeRoot(process.env);
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -43,16 +46,10 @@ const CONFIG = {
 
   // Auto-save mémoire
   autoSaveIntervalMs: 5 * 60_000, // Toutes les 5 minutes
-  autoSaveDir: path.resolve(
-    process.env.A11_RUNTIME_ROOT || path.resolve(__dirname, '../../../runtime'),
-    'watchdog-snapshots'
-  ),
+  autoSaveDir: path.join(RUNTIME_ROOT, 'watchdog-snapshots'),
 
   // Logs
-  logFile: path.resolve(
-    process.env.A11_RUNTIME_ROOT || path.resolve(__dirname, '../../../runtime'),
-    'logs/cerbere-watchdog.log'
-  ),
+  logFile: path.join(RUNTIME_ROOT, 'logs/cerbere-watchdog.log'),
 };
 
 // ─── État interne ─────────────────────────────────────────────────────────────

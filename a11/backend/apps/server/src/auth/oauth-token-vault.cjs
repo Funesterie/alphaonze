@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
 
 const SCHEMA = 'funesterie.oauth-token-vault.v1';
 
@@ -20,10 +21,7 @@ function normalizeProvider(value = '') {
 function resolveVaultFile(filePath = '') {
   const explicit = cleanText(filePath || process.env.A11_OAUTH_TOKEN_VAULT_FILE || process.env.OAUTH_TOKEN_VAULT_FILE);
   if (explicit) return path.isAbsolute(explicit) ? explicit : path.resolve(process.cwd(), explicit);
-  const runtimeRoot = cleanText(process.env.A11_RUNTIME_ROOT);
-  const root = runtimeRoot
-    ? (path.isAbsolute(runtimeRoot) ? runtimeRoot : path.resolve(process.cwd(), runtimeRoot))
-    : path.join(process.cwd(), 'runtime');
+  const root = getCanonicalRuntimeRoot(process.env);
   return path.join(root, 'auth', 'oauth-token-vault.json');
 }
 

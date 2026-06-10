@@ -4240,6 +4240,21 @@ html.a11-auth-page-root body {
   border-color: transparent;
 }
 
+.vivy-studio-action-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid rgba(240, 121, 216, 0.42);
+  color: #ffe7fb;
+  background: rgba(240, 121, 216, 0.12);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .vivy-studio-brief {
   display: grid;
   grid-template-rows: auto minmax(260px, 1fr) auto auto;
@@ -4272,6 +4287,112 @@ html.a11-auth-page-root body {
   color: #ffd2f4;
   font-size: 13px;
   line-height: 1.45;
+}
+
+.vivy-studio-diagnostics {
+  border: 1px solid rgba(99, 194, 255, 0.28);
+  background: rgba(3, 12, 24, 0.72);
+  padding: 10px;
+}
+
+.vivy-studio-diagnostics summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #d9f0ff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.vivy-studio-diagnostics summary small,
+.vivy-studio-diagnostics-meta,
+.vivy-studio-diagnostic-card small {
+  color: #a8d9ff;
+  font-size: 11px;
+  line-height: 1.35;
+  text-transform: none;
+}
+
+.vivy-studio-diagnostics-meta {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 7px !important;
+  margin-top: 10px;
+}
+
+.vivy-studio-diagnostics-meta span {
+  border: 1px solid rgba(99, 194, 255, 0.22);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(99, 194, 255, 0.08);
+}
+
+.vivy-studio-diagnostics-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px !important;
+  margin-top: 10px;
+}
+
+.vivy-studio-diagnostic-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid rgba(99, 194, 255, 0.2);
+  background: rgba(1, 6, 14, 0.62);
+  padding: 10px;
+}
+
+.vivy-studio-diagnostic-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.vivy-studio-diagnostic-card strong {
+  color: #f2fbff;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.vivy-studio-diagnostic-card header span {
+  color: #ffc4f1;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.vivy-studio-diagnostic-values {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px !important;
+}
+
+.vivy-studio-diagnostic-values span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  border: 1px solid rgba(99, 194, 255, 0.16);
+  background: rgba(99, 194, 255, 0.06);
+  padding: 6px;
+  color: #b9e5ff;
+  font-size: 10px;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.vivy-studio-diagnostic-values b {
+  color: #ffffff;
+  font-size: 13px;
+}
+
+.vivy-studio-diagnostic-card p {
+  color: #d9f0ff;
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .vivy-studio-media {

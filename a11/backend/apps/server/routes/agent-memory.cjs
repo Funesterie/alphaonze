@@ -11,9 +11,9 @@
 
 const path = require('node:path');
 const fs = require('node:fs');
+const { getCanonicalRuntimeRoot } = require('../lib/runtime-root.cjs');
 
-const RUNTIME_ROOT = process.env.A11_RUNTIME_ROOT
-  || path.resolve(__dirname, '../../../../runtime');
+const RUNTIME_ROOT = getCanonicalRuntimeRoot(process.env);
 
 module.exports = function registerAgentMemoryRoutes({ app, consolidator, moduleLoader, verifyJWT }) {
 

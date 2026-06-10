@@ -14,15 +14,19 @@ SAMPLE_RATE_HZ = {
 }
 
 
-def run_python(rvc_root: Path, script: str, args: list[str], *, env: dict[str, str]) -> None:
+def run_python(rvc_root: Path, script: str, args: list[str], *, env: dict[str, str], check: bool = True) -> int:
     command = [sys.executable, script, *args]
     print("RVC:", " ".join(command), flush=True)
-    subprocess.run(command, cwd=str(rvc_root), env=env, check=True)
+    result = subprocess.run(command, cwd=str(rvc_root), env=env, check=False)
+    if check and result.returncode != 0:
+        result.check_returncode()
+    return result.returncode
 
 
 def cpu_safe_env(gpu: str) -> dict[str, str]:
     env = os.environ.copy()
     env["PYTHONUTF8"] = "1"
+    env["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
     if gpu.lower() in {"", "cpu", "none", "-1"}:
         env["CUDA_VISIBLE_DEVICES"] = "-1"
         env["NVIDIA_VISIBLE_DEVICES"] = "none"
@@ -214,7 +218,7 @@ def main() -> int:
         status["steps"].append("filelist")
 
         gpu_arg = "cpu" if args.gpu.lower() in {"", "cpu", "none", "-1"} else args.gpu
-        run_python(
+        train_exit_code = run_python(
             rvc_root,
             "infer/modules/train/train.py",
             [
@@ -246,8 +250,10 @@ def main() -> int:
                 args.version,
             ],
             env=env,
+            check=False,
         )
         status["steps"].append("train")
+        status["trainExitCode"] = train_exit_code
 
         index_source = build_index(exp_dir, exp_name, args.version)
         expected_index.parent.mkdir(parents=True, exist_ok=True)

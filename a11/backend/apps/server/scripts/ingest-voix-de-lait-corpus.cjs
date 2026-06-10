@@ -3,10 +3,11 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { getCanonicalRuntimeRoot } = require('../lib/runtime-root.cjs');
 
 const SERVER_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(SERVER_ROOT, '..', '..', '..', '..');
-const DEFAULT_SOURCE = 'C:\\Users\\Djeff\\Downloads\\voix de lait transcription.txt';
+const DEFAULT_SOURCE = 'C:\\Users\\Djeff\\Downloads\\voix de lait.txt';
 const TRANSCRIPT_METADATA_LINE_PATTERNS = Object.freeze([
   /^Message de la Voix\b/i,
   /^\(Transcrit par TurboScribe\./i,
@@ -114,8 +115,7 @@ function main(argv = process.argv.slice(2)) {
   const sourcePath = path.resolve(valueAfter(argv, '--source') || DEFAULT_SOURCE);
   const runtimeRoot = path.resolve(
     valueAfter(argv, '--runtime-root')
-    || process.env.A11_RUNTIME_ROOT
-    || path.join(REPO_ROOT, 'runtime')
+    || getCanonicalRuntimeRoot(process.env)
   );
   const dryRun = hasFlag(argv, '--dry-run');
   if (!fs.existsSync(sourcePath)) {

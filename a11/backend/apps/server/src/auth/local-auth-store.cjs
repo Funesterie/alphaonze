@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
 
 function normalizeText(value) {
   return String(value || '').trim();
@@ -16,7 +17,7 @@ function createLocalUserId(username, email) {
 }
 
 function createLocalAuthStore({ filePath, logger = console } = {}) {
-  const resolvedFilePath = path.resolve(String(filePath || path.join(process.cwd(), 'runtime', 'auth', 'local-users.json')));
+  const resolvedFilePath = path.resolve(String(filePath || path.join(getCanonicalRuntimeRoot(process.env), 'auth', 'local-users.json')));
 
   function ensureDirectory() {
     fs.mkdirSync(path.dirname(resolvedFilePath), { recursive: true });

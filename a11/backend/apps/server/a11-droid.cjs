@@ -18,6 +18,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { getCanonicalRuntimeRoot } = require('./lib/runtime-root.cjs');
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -25,12 +26,7 @@ const crypto = require('node:crypto');
 
 const DROID_VERSION = '1.0.0';
 const ROOT = process.cwd();
-const RUNTIME_ROOT = path.resolve(
-  process.env.A11_RUNTIME_DIR
-  || process.env.A11_RUNTIME_ROOT
-  || process.env.RUNTIME_DIR
-  || path.join(ROOT, 'runtime')
-);
+const RUNTIME_ROOT = getCanonicalRuntimeRoot(process.env);
 const QFLUSH_DIR = path.resolve(
   process.env.A11_QFLUSH_STATE_DIR
   || process.env.QFLUSH_STATE_DIR

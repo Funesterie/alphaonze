@@ -5,6 +5,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { getLogger } = require('./structured-logger.cjs');
+const { getCanonicalRuntimeRoot } = require('./runtime-root.cjs');
 const {
   isSemanticMemoryText,
   shouldStoreSemanticExchange,
@@ -141,7 +142,7 @@ class VectorMemory {
     this.userId = options.userId;
     this.conversationId = options.conversationId || 'default';
     this.storageDir = options.storageDir || path.join(
-      process.env.A11_RUNTIME_ROOT || process.cwd(),
+      getCanonicalRuntimeRoot(process.env),
       'vector-memory'
     );
     this.maxEntries = options.maxEntries || 1000;

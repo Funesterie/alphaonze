@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
+os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
+
 DEVICE = os.environ.get("A11_XTTS_RVC_DEVICE", "cpu").strip() or "cpu"
 if DEVICE.lower() == "cpu":
     # The upstream RVC helper checks torch.cuda before honoring the requested
@@ -57,8 +59,8 @@ DEFAULT_PERSONA_MANIFEST = {
     "djeff-rap": {
         "persona": "djeff",
         "voice": "djeff-rap.wav",
-        "rvc": "",
-        "index": "",
+        "rvc": "djeff-rap.pth",
+        "index": "djeff-rap.index",
     },
     "kaen44-official-french-narrator": {
         "persona": "kaen44",
@@ -300,10 +302,10 @@ STYLE_RVC_TUNING = {
         "protect": 0.38,
     },
     "djeff-rap": {
-        "pitch": 0.0,
-        "index_rate": 0.0,
-        "rms_mix_rate": 0.54,
-        "protect": 0.36,
+        "pitch": -2.0,
+        "index_rate": 0.10,
+        "rms_mix_rate": 0.35,
+        "protect": 0.50,
     },
     "kaen44-official-french-narrator": {
         "pitch": 0.0,
@@ -513,7 +515,18 @@ class SynthesizeRequest(BaseModel):
     f0Shift: Optional[float] = None
 
 
-def synthesize_persona_voice(text: str, persona: str = "", voice_style: str = "", f0_shift: Optional[float] = None) -> dict:
+def synthesize_persona_voice(
+    text: str,
+    persona: str = "",
+    voice_style: str = "",
+    f0_shift: Optional[float] = None,
+    index_rate_override: Optional[float] = None,
+    rms_mix_rate_override: Optional[float] = None,
+    protect_override: Optional[float] = None,
+    use_rvc: bool = True,
+    speaker_wav_override: Optional[Path] = None,
+    speaker_source: str = "style",
+) -> dict:
     clean_text = " ".join((text or "").split())
     if not clean_text:
         raise HTTPException(status_code=400, detail="text_required_for_xtts_rvc")
@@ -525,6 +538,8 @@ def synthesize_persona_voice(text: str, persona: str = "", voice_style: str = ""
     rvc_index_path = binding["indexPath"]
     if not voice_path.exists():
         raise HTTPException(status_code=404, detail=f"voice_sample_missing:{voice_path.name}")
+    speaker_wav_path = speaker_wav_override if speaker_wav_override and speaker_wav_override.is_file() else voice_path
+    speaker_source = "upload" if speaker_wav_override and speaker_wav_override.is_file() else "style"
 
     with _synthesis_lock:
         set_synthesis_state(True, style)
@@ -534,14 +549,20 @@ def synthesize_persona_voice(text: str, persona: str = "", voice_style: str = ""
             final_path = OUT_DIR / f"xtts-rvc-{style}-{stamp}.wav"
             get_tts().tts_to_file(
                 text=clean_text,
-                speaker_wav=str(voice_path),
+                speaker_wav=str(speaker_wav_path),
                 language=LANGUAGE,
                 file_path=str(xtts_path),
             )
 
             engine = "xtts-reference"
             tuning = resolve_rvc_tuning(style, f0_shift)
-            if rvc_path.is_file():
+            if index_rate_override is not None:
+                tuning["index_rate"] = max(0.0, min(1.0, float(index_rate_override)))
+            if rms_mix_rate_override is not None:
+                tuning["rms_mix_rate"] = max(0.0, min(1.0, float(rms_mix_rate_override)))
+            if protect_override is not None:
+                tuning["protect"] = max(0.0, min(0.5, float(protect_override)))
+            if use_rvc and rvc_path.is_file():
                 run_rvc(
                     xtts_path,
                     final_path,
@@ -571,6 +592,8 @@ def synthesize_persona_voice(text: str, persona: str = "", voice_style: str = ""
         "rvcIndexPath": rvc_index_path,
         "hasRvc": rvc_path.is_file(),
         "hasRvcIndex": rvc_index_path.is_file(),
+        "speakerSource": speaker_source,
+        "speakerPath": speaker_wav_path,
         "tuning": tuning,
     }
 
@@ -619,9 +642,38 @@ async def convert_voice(
     voiceStyle: str = Form(default=""),
     mode: str = Form(default="adaptive"),
     f0Shift: Optional[float] = Form(default=None),
+    indexRate: Optional[float] = Form(default=None),
+    rmsMixRate: Optional[float] = Form(default=None),
+    protect: Optional[float] = Form(default=None),
+    useRvc: bool = Form(default=True),
 ):
-    del generated, reference, mode
-    result = synthesize_persona_voice(text, persona=persona, voice_style=voiceStyle, f0_shift=f0Shift)
+    del generated, mode
+    uploaded_reference_path = None
+    try:
+        if reference is not None:
+            reference_bytes = await reference.read()
+            if not reference_bytes:
+                raise HTTPException(status_code=400, detail="reference_audio_empty")
+            suffix = Path(reference.filename or "reference.wav").suffix.lower()
+            if suffix not in {".wav", ".mp3", ".flac", ".ogg", ".m4a"}:
+                suffix = ".wav"
+            uploaded_reference_path = OUT_DIR / f"uploaded-reference-{int(time.time() * 1000)}{suffix}"
+            uploaded_reference_path.write_bytes(reference_bytes)
+
+        result = synthesize_persona_voice(
+            text,
+            persona=persona,
+            voice_style=voiceStyle,
+            f0_shift=f0Shift,
+            index_rate_override=indexRate,
+            rms_mix_rate_override=rmsMixRate,
+            protect_override=protect,
+            use_rvc=useRvc,
+            speaker_wav_override=uploaded_reference_path,
+        )
+    finally:
+        if uploaded_reference_path is not None:
+            remove_later(uploaded_reference_path)
     final_path = result["path"]
     rvc_path = result["rvcPath"]
     rvc_index_path = result["rvcIndexPath"]
@@ -634,6 +686,8 @@ async def convert_voice(
         headers={
             "X-A11-Voice-Engine": result["engine"],
             "X-A11-Voice-Style": result["style"],
+            "X-A11-Reference-Source": result.get("speakerSource", "style"),
+            "X-A11-Speaker-Wav": result.get("speakerPath", Path()).name if result.get("speakerPath") else "",
             "X-A11-RVC-Model": rvc_path.name if rvc_path.is_file() else "",
             "X-A11-RVC-Index": rvc_index_path.name if rvc_index_path.is_file() else "",
         },
@@ -667,12 +721,14 @@ def synthesize_voice(req: SynthesizeRequest):
             "styleVoice": True,
             "rvcModel": result["hasRvc"],
             "rvcIndex": result["hasRvcIndex"],
+            "referenceSource": result.get("speakerSource", "style"),
         },
         "voiceConversion": {
             "ok": True,
             "provider": "xtts-rvc",
             "engine": result["engine"],
             "voiceStyle": result["style"],
+            "referenceSource": result.get("speakerSource", "style"),
             "attemptedEngines": [result["engine"]],
             "rvcModel": rvc_path.name if rvc_path.is_file() else "",
             "rvcIndex": rvc_index_path.name if rvc_index_path.is_file() else "",

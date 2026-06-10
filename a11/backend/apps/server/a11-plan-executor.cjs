@@ -20,6 +20,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { getCanonicalRuntimeRoot } = require('./lib/runtime-root.cjs');
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -83,8 +84,7 @@ const _rateLimiterState = new Map();
 // ---------------------------------------------------------------------------
 
 const _logDir = (() => {
-  // Chercher un dossier logs/ à côté du fichier courant
-  const candidate = path.join(__dirname, 'logs');
+  const candidate = path.join(getCanonicalRuntimeRoot(process.env), 'logs');
   try {
     if (!fs.existsSync(candidate)) fs.mkdirSync(candidate, { recursive: true });
   } catch (_e) {
@@ -266,12 +266,7 @@ async function _writeTaskNodeNeo4j(task, plan, duration) {
 
   // Fallback JSON local: runtime/ d'abord, ancien fichier repo en lecture de migration.
   try {
-    const runtimeRoot = path.resolve(
-      process.env.A11_RUNTIME_DIR
-      || process.env.A11_RUNTIME_ROOT
-      || process.env.RUNTIME_DIR
-      || path.join(__dirname, 'runtime')
-    );
+    const runtimeRoot = getCanonicalRuntimeRoot(process.env);
     const kgDir = path.join(runtimeRoot, 'knowledge-graph');
     if (!fs.existsSync(kgDir)) fs.mkdirSync(kgDir, { recursive: true });
     const kgFile = path.join(kgDir, 'tasks.json');

@@ -3,11 +3,13 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { getCanonicalRuntimeRoot } = require('../lib/runtime-root.cjs');
 
 const SERVER_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(SERVER_ROOT, '..', '..', '..', '..');
-const DEFAULT_SOURCE = 'C:\\Users\\Djeff\\Documents\\Audacity\\pignon paroles.txt.txt';
-const DEFAULT_SUPPLEMENTAL_DIR = path.join(REPO_ROOT, 'runtime', 'Corpus', 'private', 'djeff-pignon-rap');
+const DEFAULT_AUDACITY_DIR = 'C:\\Users\\Djeff\\Documents\\Audacity';
+const DEFAULT_SOURCE = path.join(DEFAULT_AUDACITY_DIR, 'pignon.txt');
+const DEFAULT_SUPPLEMENTAL_DIR = DEFAULT_AUDACITY_DIR;
 
 const TRANSCRIPT_CORRECTION_RULES = Object.freeze([
   [/\bquatorzieme\b/gi, 'quatorzième'],
@@ -67,18 +69,32 @@ function sha256(text = '') {
   return crypto.createHash('sha256').update(String(text || ''), 'utf8').digest('hex');
 }
 
+function isSupplementalTranscriptName(name = '') {
+  const normalized = String(name || '').trim();
+  if (!/\.txt$/i.test(normalized)) return false;
+  if (/^pignon(?:\.transcription)?\.txt$/i.test(normalized)) return false;
+  if (/^djeffvoice(?:\.transcription)?\.txt$/i.test(normalized)) return false;
+  return true;
+}
+
+function getSupplementalTranscriptLabel(name = '') {
+  return String(name || '')
+    .replace(/\.transcription\.txt$/i, '')
+    .replace(/\.txt$/i, '');
+}
+
 function readSupplementalTranscripts(supplementalDir = '') {
   if (!supplementalDir || !fs.existsSync(supplementalDir)) return [];
   return fs.readdirSync(supplementalDir, { withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => entry.name)
-    .filter((name) => /\.transcription\.txt$/i.test(name) && !/^pignon\.transcription\.txt$/i.test(name))
+    .filter(isSupplementalTranscriptName)
     .sort((a, b) => a.localeCompare(b))
     .map((name) => {
       const filePath = path.join(supplementalDir, name);
       const cleaned = normalizeSupplementalTranscript(fs.readFileSync(filePath, 'utf8'));
       return {
-        name: name.replace(/\.transcription\.txt$/i, ''),
+        name: getSupplementalTranscriptLabel(name),
         pathHint: path.relative(REPO_ROOT, filePath).replace(/\\/g, '/'),
         sha256: sha256(cleaned),
         chars: cleaned.length,
@@ -147,13 +163,12 @@ function main(argv = process.argv.slice(2)) {
   const sourcePath = path.resolve(valueAfter(argv, '--source') || DEFAULT_SOURCE);
   const runtimeRoot = path.resolve(
     valueAfter(argv, '--runtime-root')
-    || process.env.A11_RUNTIME_ROOT
-    || path.join(REPO_ROOT, 'runtime')
+    || getCanonicalRuntimeRoot(process.env)
   );
   const supplementalDir = path.resolve(
     valueAfter(argv, '--supplemental-dir')
     || process.env.DJEFF_PIGNON_SUPPLEMENTAL_DIR
-    || (runtimeRoot ? path.join(runtimeRoot, 'Corpus', 'private', 'djeff-pignon-rap') : DEFAULT_SUPPLEMENTAL_DIR)
+    || DEFAULT_SUPPLEMENTAL_DIR
   );
   const dryRun = hasFlag(argv, '--dry-run');
   if (!fs.existsSync(sourcePath)) {
@@ -215,5 +230,6 @@ module.exports = {
   normalizeTranscript,
   normalizeSupplementalTranscript,
   readSupplementalTranscripts,
+  isSupplementalTranscriptName,
   sha256,
 };

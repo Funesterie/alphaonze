@@ -4,12 +4,13 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { createKnowledgeGraph } = require('../lib/knowledge-graph.cjs');
+const { getCanonicalRuntimeRoot } = require('../lib/runtime-root.cjs');
 
 const SERVER_ROOT = path.resolve(__dirname, '..');
 loadEnv(path.join(SERVER_ROOT, '.env.local'));
 
 const runtimeRoot = path.resolve(
-  process.env.A11_RUNTIME_ROOT || path.join(SERVER_ROOT, '..', '..', '..', 'runtime')
+  getCanonicalRuntimeRoot(process.env)
 );
 const graphDir = path.join(runtimeRoot, 'knowledge-graph');
 const generatedAt = new Date().toISOString();
@@ -32,7 +33,7 @@ const routeMap = {
     workspace: 'D:\\projets\\funesterie',
     a11: 'D:\\projets\\funesterie\\a11',
     runtime: runtimeRoot,
-    corpus: 'D:\\projets\\funesterie\\runtime\\Corpus',
+    corpus: path.join(runtimeRoot, 'Corpus'),
     a11Memory: 'D:\\projets\\funesterie\\a11\\a11_memory',
     vectorMemory: path.join(runtimeRoot, 'vector-memory'),
     visionMemory: path.join(runtimeRoot, 'vision-memory'),

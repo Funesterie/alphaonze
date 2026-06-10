@@ -103,6 +103,59 @@ function Start-PodmanMachineIfNeeded {
   }
 }
 
+function Start-LocalSttIfNeeded {
+  if ($env:A11_START_LOCAL_STT -eq "0") {
+    Write-Step "STT local ignore: A11_START_LOCAL_STT=0."
+    return
+  }
+
+  $sttScript = Join-Path $A11Root "ops\stt\Start-LocalFasterWhisper.ps1"
+  if (-not (Test-Path -LiteralPath $sttScript)) {
+    Write-Step "STT local introuvable: $sttScript"
+    return
+  }
+
+  $port = 17911
+  if ($env:A11_STT_PORT) {
+    try { $port = [int]$env:A11_STT_PORT } catch { $port = 17911 }
+  }
+
+  $baseUrl = "http://127.0.0.1:$port"
+  $healthUrl = "$baseUrl/health"
+
+  if (-not (Test-HttpOk $healthUrl 4)) {
+    Write-Step "Demarrage STT local Faster-Whisper..."
+    try {
+      $stdout = Join-Path $LogRoot "stt-local.stdout.log"
+      $stderr = Join-Path $LogRoot "stt-local.stderr.log"
+      Start-Process -FilePath "powershell.exe" `
+        -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$sttScript`"", "-Port", "$port") `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $stdout `
+        -RedirectStandardError $stderr | Out-Null
+
+      for ($i = 0; $i -lt 45; $i++) {
+        Start-Sleep -Seconds 2
+        if (Test-HttpOk $healthUrl 4) { break }
+      }
+    } catch {
+      Write-Step "STT local start error: $($_.Exception.Message)"
+    }
+  }
+
+  if (Test-HttpOk $healthUrl 5) {
+    $env:A11_STT_PROVIDER = "faster-whisper"
+    $env:A11_STT_FAST_WHISPER_ENABLED = "true"
+    $env:A11_STT_FAST_WHISPER_BASE_URL = $baseUrl
+    if (-not $env:A11_STT_FAST_WHISPER_MODEL) {
+      $env:A11_STT_FAST_WHISPER_MODEL = "Systran/faster-whisper-large-v3"
+    }
+    Write-Step "STT local OK: $baseUrl"
+  } else {
+    Write-Step "STT local non joignable; backend gardera sa configuration STT existante. Logs: $LogRoot\stt-local.stdout.log / $LogRoot\stt-local.stderr.log"
+  }
+}
+
 function Start-ContainerIfPresent {
   param([string]$Name)
   try {
@@ -252,10 +305,26 @@ function Sync-CodexNeo4j {
     ForEach-Object { Write-Step "neo4j-sync: $_" }
 }
 
+function Stop-ProcessTree {
+  param([int]$RootPid)
+
+  $children = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.ParentProcessId -eq $RootPid })
+
+  foreach ($child in $children) {
+    Stop-ProcessTree -RootPid ([int]$child.ProcessId)
+  }
+
+  try {
+    Stop-Process -Id $RootPid -Force -ErrorAction SilentlyContinue
+  } catch {}
+}
+
 function Invoke-ServerNpmScript {
   param(
     [string]$ScriptName,
-    [string]$Label
+    [string]$Label,
+    [int]$TimeoutSec = 60
   )
 
   if (-not (Test-Path -LiteralPath (Join-Path $ServerRoot "package.json"))) {
@@ -265,13 +334,37 @@ function Invoke-ServerNpmScript {
 
   Write-Step "$Label..."
   try {
-    & npm.cmd --prefix $ServerRoot run $ScriptName 2>&1 |
-      ForEach-Object { Write-Step "${ScriptName}: $_" }
-    if ($LASTEXITCODE -eq 0) {
+    $safeScriptName = $ScriptName -replace "[^A-Za-z0-9_.-]", "-"
+    $stdout = Join-Path $LogRoot "$safeScriptName.stdout.log"
+    $stderr = Join-Path $LogRoot "$safeScriptName.stderr.log"
+    Remove-Item -LiteralPath $stdout, $stderr -Force -ErrorAction SilentlyContinue
+
+    $proc = Start-Process -FilePath "npm.cmd" `
+      -ArgumentList @("--prefix", $ServerRoot, "run", $ScriptName) `
+      -WorkingDirectory $ServerRoot `
+      -WindowStyle Hidden `
+      -RedirectStandardOutput $stdout `
+      -RedirectStandardError $stderr `
+      -PassThru
+
+    if (-not $proc.WaitForExit($TimeoutSec * 1000)) {
+      Stop-ProcessTree -RootPid $proc.Id
+      Write-Step "$Label timeout apres ${TimeoutSec}s; suite du demarrage conservee. Logs: $stdout / $stderr"
+      return $false
+    }
+
+    foreach ($line in @(Get-Content -LiteralPath $stdout -Tail 40 -ErrorAction SilentlyContinue)) {
+      Write-Step "${ScriptName}: $line"
+    }
+    foreach ($line in @(Get-Content -LiteralPath $stderr -Tail 20 -ErrorAction SilentlyContinue)) {
+      Write-Step "${ScriptName}: $line"
+    }
+
+    if ($proc.ExitCode -eq 0) {
       Write-Step "$Label OK."
       return $true
     }
-    Write-Step "$Label termine avec code $LASTEXITCODE."
+    Write-Step "$Label termine avec code $($proc.ExitCode)."
     return $false
   } catch {
     Write-Step "$Label impossible: $($_.Exception.Message)"
@@ -281,14 +374,14 @@ function Invoke-ServerNpmScript {
 
 function Sync-A11MemoryRouter {
   Write-Step "Verification routeur memoire Neo4j..."
-  [void](Invoke-ServerNpmScript -ScriptName "memory:status" -Label "Memoire A11 status")
+  [void](Invoke-ServerNpmScript -ScriptName "memory:status" -Label "Memoire A11 status" -TimeoutSec 45)
 
   Write-Step "Synchronisation memoire Aura vers Neo4j Podman..."
-  [void](Invoke-ServerNpmScript -ScriptName "memory:sync-local" -Label "Memoire A11 sync-local")
+  [void](Invoke-ServerNpmScript -ScriptName "memory:sync-local" -Label "Memoire A11 sync-local" -TimeoutSec 90)
 
   if (Test-Path -LiteralPath "E:\") {
     Write-Step "Backup memoire Seagate detecte sur E:."
-    [void](Invoke-ServerNpmScript -ScriptName "memory:backup-seagate" -Label "Memoire A11 backup Seagate")
+    [void](Invoke-ServerNpmScript -ScriptName "memory:backup-seagate" -Label "Memoire A11 backup Seagate" -TimeoutSec 90)
   } else {
     Write-Step "Backup Seagate ignore: lecteur E: non present."
   }
@@ -432,6 +525,7 @@ if ($env:A11_START_LEGACY_NEO4J_SYNC -eq "1") {
   Write-Step "Neo4j local dedie utilise; ancien conteneur a11-neo4j-sync ignore."
 }
 Start-A11Mcp
+Start-LocalSttIfNeeded
 Start-A11BackendIfNeeded
 Start-Kaen44BackendIfNeeded
 Start-FrontendIfNeeded

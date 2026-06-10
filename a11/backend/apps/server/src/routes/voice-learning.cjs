@@ -5,7 +5,10 @@ const express = require('express');
 const fs = require('node:fs');
 const multer = require('multer');
 const path = require('node:path');
-const { getBackendRoot } = require('../../lib/tts-paths.cjs');
+const {
+  getCanonicalRuntimeRoot,
+  getRuntimeRootCandidates,
+} = require('../../lib/runtime-root.cjs');
 const { hasFullAccess, normalizeEmail } = require('../auth/full-access.cjs');
 const {
   TIERS,
@@ -157,10 +160,14 @@ function resolveVoiceLearningRoot() {
   const configured = String(process.env.A11_VOICE_LEARNING_DIR || '').trim();
   if (configured) return path.resolve(configured);
 
-  const runtimeRoot = String(process.env.A11_RUNTIME_ROOT || '').trim();
-  if (runtimeRoot) return path.resolve(runtimeRoot, 'voice-learning');
+  return path.join(getCanonicalRuntimeRoot(process.env), 'voice-learning');
+}
 
-  return path.resolve(getBackendRoot(), 'runtime', 'voice-learning');
+function resolveVoiceLearningRootCandidates() {
+  const configured = String(process.env.A11_VOICE_LEARNING_DIR || '').trim();
+  if (configured) return [path.resolve(configured)];
+  return getRuntimeRootCandidates(process.env)
+    .map((runtimeRoot) => path.join(runtimeRoot, 'voice-learning'));
 }
 
 function ensureDir(dir) {
@@ -168,21 +175,40 @@ function ensureDir(dir) {
   return dir;
 }
 
-function getCorpusDir(access) {
-  return ensureDir(path.join(resolveVoiceLearningRoot(), access.persona, access.ownerKey));
+function getCorpusDir(access, { root = resolveVoiceLearningRoot(), ensure = true } = {}) {
+  const dir = path.join(root, access.persona, access.ownerKey);
+  return ensure ? ensureDir(dir) : dir;
 }
 
-function getIndexPath(access) {
-  return path.join(getCorpusDir(access), 'index.json');
+function getCorpusDirs(access, { ensure = false } = {}) {
+  return resolveVoiceLearningRootCandidates()
+    .map((root) => getCorpusDir(access, { root, ensure }));
 }
 
-function readIndex(access) {
+function getIndexPath(access, options = {}) {
+  return path.join(getCorpusDir(access, options), 'index.json');
+}
+
+function withRuntimeCorpusDir(clip, corpusDir) {
+  return {
+    ...clip,
+    __runtimeCorpusDir: corpusDir,
+  };
+}
+
+function stripRuntimeFields(clip = {}) {
+  const { __runtimeCorpusDir, ...clean } = clip || {};
+  return clean;
+}
+
+function readIndexFile(indexPath, corpusDir) {
   try {
-    const indexPath = getIndexPath(access);
     if (!fs.existsSync(indexPath)) return { clips: [], trainRequests: [] };
     const parsed = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
     return {
-      clips: Array.isArray(parsed?.clips) ? parsed.clips : [],
+      clips: Array.isArray(parsed?.clips)
+        ? parsed.clips.map((clip) => withRuntimeCorpusDir(clip, corpusDir))
+        : [],
       trainRequests: Array.isArray(parsed?.trainRequests) ? parsed.trainRequests : [],
     };
   } catch {
@@ -190,11 +216,70 @@ function readIndex(access) {
   }
 }
 
+function clipMergeKey(clip = {}) {
+  return String(clip.sha256 || clip.id || clip.filename || '').trim();
+}
+
+function trainMergeKey(job = {}) {
+  return String(job.id || `${job.createdAt || ''}:${job.state || ''}`).trim();
+}
+
+function mergeIndexes(indexes = []) {
+  const clips = [];
+  const clipKeys = new Set();
+  const trainRequests = [];
+  const trainKeys = new Set();
+
+  for (const index of indexes) {
+    for (const clip of (index?.clips || [])) {
+      const key = clipMergeKey(clip);
+      if (key && clipKeys.has(key)) continue;
+      if (key) clipKeys.add(key);
+      clips.push(clip);
+    }
+    for (const job of (index?.trainRequests || [])) {
+      const key = trainMergeKey(job);
+      if (key && trainKeys.has(key)) continue;
+      if (key) trainKeys.add(key);
+      trainRequests.push(job);
+    }
+  }
+
+  clips.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  trainRequests.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  return { clips, trainRequests };
+}
+
+function readIndex(access) {
+  const indexes = getCorpusDirs(access, { ensure: false })
+    .map((corpusDir) => readIndexFile(path.join(corpusDir, 'index.json'), corpusDir));
+  return mergeIndexes(indexes);
+}
+
+function syncLegacyClipToCanonical(access, clip = {}, canonicalDir) {
+  const legacyDir = String(clip.__runtimeCorpusDir || '').trim();
+  const filename = String(clip.filename || '').trim();
+  if (!legacyDir || !filename || path.resolve(legacyDir) === path.resolve(canonicalDir)) return;
+  const sourcePath = path.join(legacyDir, filename);
+  const targetPath = path.join(canonicalDir, filename);
+  try {
+    if (fs.existsSync(sourcePath) && !fs.existsSync(targetPath)) {
+      fs.copyFileSync(sourcePath, targetPath);
+    }
+  } catch {
+    // The metadata still contributes to status; unavailable legacy files can be cleaned later.
+  }
+}
+
 function writeIndex(access, index) {
-  const indexPath = getIndexPath(access);
+  const canonicalDir = getCorpusDir(access);
+  for (const clip of (index?.clips || [])) {
+    syncLegacyClipToCanonical(access, clip, canonicalDir);
+  }
+  const indexPath = path.join(canonicalDir, 'index.json');
   const tmpPath = `${indexPath}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(tmpPath, JSON.stringify({
-    clips: Array.isArray(index.clips) ? index.clips : [],
+    clips: Array.isArray(index.clips) ? index.clips.map(stripRuntimeFields) : [],
     trainRequests: Array.isArray(index.trainRequests) ? index.trainRequests : [],
   }, null, 2));
   fs.renameSync(tmpPath, indexPath);
@@ -310,8 +395,9 @@ function createVoiceLearningRouter(options = {}) {
         message: 'Compte connecte requis pour retirer ce corpus voix.',
       });
     }
-    const corpusDir = getCorpusDir(access);
-    fs.rmSync(corpusDir, { recursive: true, force: true });
+    for (const corpusDir of getCorpusDirs(access, { ensure: false })) {
+      fs.rmSync(corpusDir, { recursive: true, force: true });
+    }
     return res.json({
       ok: true,
       enabled: true,

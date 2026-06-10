@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { getLogger } = require('./structured-logger.cjs');
 const { isSemanticMemoryText } = require('./semantic-memory-filter.cjs');
+const { getCanonicalRuntimeRoot } = require('./runtime-root.cjs');
 
 const logger = getLogger({ component: 'knowledge-graph' });
 
@@ -124,7 +125,7 @@ class KnowledgeGraph {
   constructor(options = {}) {
     this.userId = options.userId;
     this.storageDir = options.storageDir || path.join(
-      process.env.A11_RUNTIME_ROOT || process.cwd(),
+      getCanonicalRuntimeRoot(process.env),
       'knowledge-graph'
     );
     this.nodes = new Map(); // Map<entityId, {id, label, type, metadata}>

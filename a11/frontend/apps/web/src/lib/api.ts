@@ -2287,6 +2287,45 @@ export async function uploadVoiceLearningSnippet(
   return payload as VoiceLearningStatus;
 }
 
+export type DoubleHarmonicProcessResult = {
+  ok: boolean;
+  id?: string;
+  method?: string;
+  profile?: string;
+  audioUrl?: string;
+  shareUrl?: string;
+  contentType?: string;
+  filename?: string;
+  bytes?: number;
+  publicSummary?: string;
+  message?: string;
+};
+
+export async function processDoubleHarmonicAudio(
+  file: File,
+  options?: {
+    profile?: 'blend' | 'prime3' | 'prime11' | string;
+    name?: string;
+  }
+): Promise<DoubleHarmonicProcessResult> {
+  const form = new FormData();
+  form.append('audio', file);
+  form.append('profile', options?.profile || 'blend');
+  if (options?.name) form.append('name', options.name);
+
+  const res = await authFetch(getApiUrl('/api/double-harmonic/process'), {
+    method: 'POST',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+    body: form,
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Traitement D40 impossible (${res.status})`);
+  }
+  return payload as DoubleHarmonicProcessResult;
+}
+
 export async function deleteVoiceLearningCorpus(persona: 'a11' | 'kaen44' | string): Promise<VoiceLearningStatus> {
   const res = await authFetch(getApiUrl('/api/voice-learning/corpus'), {
     method: 'DELETE',
@@ -2341,6 +2380,55 @@ export type VivyStudioMedia = {
   video_url?: string;
   content_type?: string;
   filename?: string;
+};
+
+export type VivyDoubleHarmonicNavigation = {
+  equation?: string;
+  branchId?: string;
+  branchSymbol?: string;
+  branchLabel?: string;
+  branchReal?: number;
+  branchImaginary?: number;
+  h1Real?: number;
+  h2Imaginary?: number;
+  accelerationK?: number;
+  coherenceM?: number;
+  deltaReal?: number;
+  deltaImaginary?: number;
+  nextReal?: number;
+  nextImaginary?: number;
+};
+
+export type VivyDoubleHarmonicSegment = {
+  id?: string;
+  segmentId?: string;
+  order?: number;
+  label?: string;
+  roleId?: string;
+  roleLabel?: string;
+  audio?: {
+    phase?: number;
+    tempoBpm?: number;
+    subdivision?: string;
+    energy?: number;
+    grain?: number;
+    breathMs?: number;
+  };
+  semantic?: {
+    phase?: number;
+    weight?: number;
+    anchors?: string[];
+    forceSignature?: string;
+  };
+  sync?: {
+    state?: string;
+    delta?: number;
+    triState?: string;
+    gain?: number;
+    instruction?: string;
+  };
+  navigation?: VivyDoubleHarmonicNavigation;
+  control?: string;
 };
 
 export type VivyChatFileAttachment = {
@@ -2406,6 +2494,27 @@ export type VivyStudioProductionResult = {
   actions?: VivyStudioAction[];
   routing?: string[];
   media?: VivyStudioMedia;
+  prosody?: {
+    schema?: string;
+    id?: string;
+    model?: string;
+    summary?: string;
+    cast?: Record<string, unknown>;
+    primeSignature?: number[];
+    complexBasis?: Record<string, unknown>;
+    doubleHarmonic?: {
+      schema?: string;
+      id?: string;
+      summary?: string;
+      avgTempoBpm?: number;
+      lockRatio?: number;
+      dominantAnchors?: string[];
+      controlTags?: string[];
+      segments?: VivyDoubleHarmonicSegment[];
+    };
+    neo4j?: Record<string, unknown>;
+    segments?: Array<Record<string, unknown>>;
+  };
   audioUrl?: string;
   audio_url?: string;
   videoUrl?: string;

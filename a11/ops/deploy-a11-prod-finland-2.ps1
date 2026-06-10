@@ -1,5 +1,7 @@
 ﻿param(
   [string]$RepoRoot = "D:\projets\funesterie",
+  [string]$Remote = $(if ($env:A11_HETZNER_REMOTE) { $env:A11_HETZNER_REMOTE } else { "deploy@37.27.63.109" }),
+  [string]$SshKey = $(if ($env:A11_HETZNER_SSH_KEY) { $env:A11_HETZNER_SSH_KEY } else { "C:\Users\Djeff\.ssh\codex-a11-hetzner-20260602_ed25519" }),
   [switch]$ReuseRemoteSecrets,
   [switch]$BlueGreen,
   [switch]$CleanOldBlueGreen
@@ -40,12 +42,6 @@ function Resolve-VoiceReferencePath {
 $A11VoiceReference = Resolve-VoiceReferencePath "a11-official-stern-french.wav"
 $VivyVoiceReference = Resolve-VoiceReferencePath "vivy.wav"
 $Kaen44VoiceReference = Resolve-VoiceReferencePath "kaen44-official-french-narrator.wav"
-$Remote = "deploy@62.238.43.32"
-$SshKey = if ($env:A11_HETZNER_SSH_KEY) {
-  $env:A11_HETZNER_SSH_KEY
-} else {
-  "C:\Users\Djeff\.ssh\codex-a11-hetzner-20260602_ed25519"
-}
 $Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $TmpRoot = Join-Path $RepoRoot ".codex-tmp"
 $StageRoot = Join-Path $TmpRoot "a11-prod-finland-2-$Stamp"
@@ -1261,7 +1257,21 @@ chmod 600 $RemoteRoot/secrets/compose.env
 
 $remoteOllamaStep = @'
 mkdir -p /srv/a11-data/ollama
-docker network inspect server_default >/dev/null 2>&1 || docker network create server_default >/dev/null
+ensure_server_default_network() {
+  if docker network inspect server_default >/tmp/server-default-network.json 2>/dev/null; then
+    compose_project="$(docker network inspect server_default --format '{{ index .Labels "com.docker.compose.project" }}' 2>/dev/null || true)"
+    compose_network="$(docker network inspect server_default --format '{{ index .Labels "com.docker.compose.network" }}' 2>/dev/null || true)"
+    if [ "$compose_project" != "server" ] || [ "$compose_network" != "default" ]; then
+      docker rm -f a11-ollama >/dev/null 2>&1 || true
+      docker network rm server_default >/dev/null 2>&1 || true
+    fi
+  fi
+  docker network inspect server_default >/dev/null 2>&1 || docker network create \
+    --label com.docker.compose.project=server \
+    --label com.docker.compose.network=default \
+    server_default >/dev/null
+}
+ensure_server_default_network
 if docker inspect a11-ollama >/dev/null 2>&1; then
   docker start a11-ollama >/dev/null 2>&1 || true
 else

@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
 const {
   buildIdentityPromptFragment,
   compactIdentityProfile,
@@ -422,7 +423,7 @@ const HOOKS = [
 
 function buildAgentDomainPack(options = {}) {
   const generatedAt = options.generatedAt || new Date().toISOString();
-  const runtimeRoot = options.runtimeRoot || process.env.A11_RUNTIME_ROOT || path.resolve(__dirname, '..', '..', '..', '..', 'runtime');
+  const runtimeRoot = options.runtimeRoot || getCanonicalRuntimeRoot(process.env);
   const workspaceRoot = options.workspaceRoot || path.resolve(__dirname, '..', '..', '..', '..', '..');
   const sfxAssets = options.sfxAssets || collectSfxAssets({ runtimeRoot, workspaceRoot });
 

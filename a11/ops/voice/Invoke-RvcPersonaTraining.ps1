@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet("a11", "kaen44", "vivy")]
+  [ValidateSet("a11", "kaen44", "vivy", "djeff")]
   [string]$Persona,
 
   [string]$DatasetRoot = "D:\agent-bus\voice\personas",

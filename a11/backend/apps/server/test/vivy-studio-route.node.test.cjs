@@ -114,9 +114,11 @@ test('Vivy Studio hides legacy sound tokens and builds prime-complex prosody', (
   assert.equal(result.mode, 'voice');
   assert.match(result.brief, /Prosodie interne/i);
   assert.match(result.brief, /impulsions premieres/i);
+  assert.match(result.brief, /Double harmonique interne/i);
   assert.doesNotMatch(result.brief, /\[a4:/);
   assert.doesNotMatch(result.brief, /ASCII4|NUMA8/i);
   assert.equal(result.prosody.schema, 'funesterie.vivy.prosody-prime-complex.v1');
+  assert.equal(result.prosody.doubleHarmonic.schema, 'funesterie.vivy.double-harmonic-sync.v1');
   assert.ok(result.prosody.segments.length >= 1);
   assert.equal(Number.isInteger(result.prosody.segments[0].prime), true);
   assert.equal(typeof result.prosody.segments[0].imaginary, 'number');
@@ -139,7 +141,9 @@ test('Vivy Studio turns legacy color bindings into hidden continuous phase', () 
   assert.doesNotMatch(result.brief, /NUMA8|ASCII4/i);
   assert.ok(result.prosody.neo4j.labels.includes('ComplexPhase'));
   assert.ok(result.prosody.neo4j.labels.includes('PrimePulse'));
+  assert.ok(result.prosody.neo4j.labels.includes('VivyDoubleHarmonicSync'));
   assert.ok(result.prosody.segments.every((segment) => typeof segment.real === 'number' && typeof segment.imaginary === 'number'));
+  assert.ok(result.prosody.doubleHarmonic.segments.every((segment) => /^[+0-]{5}$/.test(segment.sync.triState)));
 });
 
 test('Vivy Suno lyrics strip legacy signal tokens before music generation', () => {
@@ -157,6 +161,7 @@ test('Vivy Suno lyrics strip legacy signal tokens before music generation', () =
   assert.doesNotMatch(payload.title, /numa8:/);
   assert.doesNotMatch(payload.style, /numa8:/);
   assert.match(payload.style, /prime-pulsed phrasing/i);
+  assert.match(payload.style, /double-harmonic synchronized flow/i);
   assert.match(payload.prompt, /\[Verse 1 - Djeff\]/);
   assert.match(payload.style, /Djeff rap verses and Vivy melodic hook/i);
 });
@@ -783,6 +788,110 @@ test('Vivy chat mode does not structure raw rap material sent with Envoyer', asy
   assert.doesNotMatch(result.assistant, /\[Intro(?: - [^\]]+)?\]/);
   assert.doesNotMatch(result.assistant, /\[Verse 1(?: - [^\]]+)?\]/);
   assert.doesNotMatch(result.assistant, /Garde la lumière/);
+});
+
+test('Vivy chat fallback answers Djeff rap draft naturally after a short acknowledgement', async () => {
+  const rapDraft = [
+    'titre :Fuyante NOSSEN By Djeff',
+    "Un quatorzième dans l'essence, deux-point-deux dans la bombonne d'Ipone,",
+    'Je dose au millimètre, pas de hasard dans le style.',
+    'Double radiateur fresh, ça fait de la vapeur, wesh.',
+    'La main guide le geste, le Cruxi tourne lucide.',
+    'Casque vissé, pignon-couronne cranté.',
+    "Le mur du son a une porte et j'ai pas besoin de la clef.",
+    'Quand la vitesse monte et que le moteur respire, les roues en font tout un rayon.',
+  ].join('\n');
+
+  const first = await buildVivyAiChat({
+    conversationId: 'vivy-chat-djeff-rap-natural',
+    message: rapDraft,
+    history: [],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(first.ok, true);
+  assert.equal(first.mode, 'chat');
+  assert.match(first.assistant, /Djeff|pignon|radiateur|moteur|base/i);
+  assert.doesNotMatch(first.assistant, /Je capte:/i);
+  assert.doesNotMatch(first.assistant, /discussion libre/i);
+  assert.doesNotMatch(first.assistant, /bascule en composition/i);
+
+  const acknowledged = await buildVivyAiChat({
+    conversationId: 'vivy-chat-djeff-rap-natural',
+    message: "d'accord",
+    history: [
+      { role: 'user', content: rapDraft },
+      { role: 'assistant', content: first.assistant },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(acknowledged.ok, true);
+  assert.equal(acknowledged.mode, 'chat');
+  assert.match(acknowledged.assistant, /Fuyante NOSSEN|Djeff|mécanique|mecanique|base/i);
+  assert.doesNotMatch(acknowledged.assistant, /Je capte:/i);
+  assert.doesNotMatch(acknowledged.assistant, /discussion libre/i);
+  assert.doesNotMatch(acknowledged.assistant, /clique sur Chanson|bascule en composition/i);
+});
+
+test('Vivy understands a Djeff rap voice setup instead of answering with generic filler', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-djeff-rap-voice-setup',
+    message: 'je veux faire un rp avec la voix de djeff',
+    history: [],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.match(result.assistant, /Djeff|rap|voix/i);
+  assert.match(result.assistant, /mati[èe]re|couplet|texte|paroles|base/i);
+  assert.doesNotMatch(result.assistant, /Je vois l'idée/i);
+  assert.doesNotMatch(result.assistant, /Ce que je prends surtout/i);
+});
+
+test('Vivy routes continue les paroles to songcraft and cleans UI/brief contamination', async () => {
+  const rawDraft = [
+    "Un quatorzième dans l'essence, deux-point-deux dans la bombonne d'Ipone,",
+    'Je dose au millimètre, pas de hasard dans le style.',
+    'Double radiateur fresh, ça fait de la vapeur, wesh.',
+    'La main guide le geste, le Cruxi tourne lucide.',
+    'Casque vissé, pignon-couronne cranté.',
+    "Le mur du son a une porte et j'ai pas besoin de la clef.",
+    'Quand la vitesse monte et que le moteur respire,',
+    'Les pneus en guise de crayon.',
+  ].join('\n');
+  const contaminatedPrompt = [
+    'Je suis Vivy. Parle-moi d’une voix, d’une chanson, d’une ambiance ou d’une scène à publier.',
+    'Vivy',
+    'Oui, je reste en discussion libre.',
+    'Je capte: ancien message',
+    'VIVY_SONG_PRODUCTION',
+    'Source: Conversation',
+    'Paroles guide:',
+    '[Verse 1 - Djeff]',
+    'VIVY_SONG_PRODUCTION',
+    'Source: Conversation',
+    rawDraft,
+    '',
+    'continue les paroles',
+  ].join('\n');
+
+  assert.equal(isDirectSongwritingRequest(contaminatedPrompt), true);
+
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-continue-djeff-lyrics-clean',
+    message: contaminatedPrompt,
+    history: [
+      { role: 'assistant', content: 'Carte active:\n- audio.voice: pipeline audio A11.' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'song');
+  assert.equal(result.aiMode, 'deterministic_songcraft');
+  assert.match(result.assistant, /\[Verse 1 - Djeff\]/);
+  assert.match(result.assistant, /quatorzi[èe]me dans l'essence/i);
+  assert.doesNotMatch(result.assistant, /Carte active|audio\.voice/i);
+  assert.doesNotMatch(result.assistant, /Je suis Vivy|Je capte:/i);
+  assert.doesNotMatch(result.assistant, /\[Verse 1 - Djeff\]\s*VIVY_SONG_PRODUCTION/i);
 });
 
 test('Vivy chat fallback answers philosophical follow-ups instead of canned notebook text', async () => {

@@ -23,6 +23,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { getCanonicalRuntimeRoot } = require('./runtime-root.cjs');
 
 // ─── Synthèse WAV ─────────────────────────────────────────────────────────────
 
@@ -293,9 +294,7 @@ const SFX_DEFINITIONS = {
 // ─── Gestion des fichiers SFX ─────────────────────────────────────────────────
 
 function getSfxDir(runtimeRoot) {
-  const root = runtimeRoot
-    || process.env.A11_RUNTIME_ROOT
-    || path.resolve(__dirname, '..', '..', '..', '..', 'runtime');
+  const root = runtimeRoot || getCanonicalRuntimeRoot(process.env);
   return path.join(root, 'sfx');
 }
 

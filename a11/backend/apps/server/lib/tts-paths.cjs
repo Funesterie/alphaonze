@@ -1,9 +1,19 @@
 const path = require('node:path');
 const fs = require('node:fs');
+const {
+  getA11Root,
+  getAppsRoot,
+  getBackendRoot,
+  getCanonicalRuntimeRoot,
+  getRepoRoot,
+  getRuntimeRootCandidates,
+  getServerRoot,
+  resolveRuntimePath,
+} = require('./runtime-root.cjs');
 
-const backendRoot = path.resolve(__dirname, '..', '..', '..');
-const appsRoot = path.join(backendRoot, 'apps');
-const serverRoot = path.join(appsRoot, 'server');
+const backendRoot = getBackendRoot();
+const appsRoot = getAppsRoot();
+const serverRoot = getServerRoot();
 const canonicalTtsDir = path.join(appsRoot, 'tts');
 const publicTtsDir = path.join(backendRoot, 'public', 'tts');
 
@@ -20,18 +30,6 @@ function firstExistingPath(candidates = []) {
     }
   }
   return null;
-}
-
-function getBackendRoot() {
-  return backendRoot;
-}
-
-function getAppsRoot() {
-  return appsRoot;
-}
-
-function getServerRoot() {
-  return serverRoot;
 }
 
 function getCanonicalTtsDir() {
@@ -117,13 +115,18 @@ module.exports = {
   DEFAULT_TTS_MODEL_NAME,
   findTTSScript,
   firstExistingPath,
+  getA11Root,
   getAppsRoot,
   getBackendRoot,
+  getCanonicalRuntimeRoot,
   getCanonicalTtsDir,
+  getRepoRoot,
   getPublicTtsDir,
+  getRuntimeRootCandidates,
   getServerRoot,
   getTtsBinaryPathCandidates,
   getTtsEspeakPathCandidates,
   getTtsModelDirCandidates,
   getTtsScriptCandidates,
+  resolveRuntimePath,
 };

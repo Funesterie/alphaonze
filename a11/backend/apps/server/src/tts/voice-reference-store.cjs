@@ -3,7 +3,10 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { getBackendRoot } = require('../../lib/tts-paths.cjs');
+const {
+  getCanonicalRuntimeRoot,
+  getRuntimeRootCandidates,
+} = require('../../lib/runtime-root.cjs');
 const { hasFullAccess, normalizeEmail } = require('../auth/full-access.cjs');
 const { assertAccountStorageQuota } = require('../storage/account-storage-quota.cjs');
 
@@ -117,24 +120,11 @@ function resolveVoiceReferenceRoot() {
   const configured = String(process.env.A11_VOICE_REFERENCE_DIR || '').trim();
   if (configured) return path.resolve(configured);
 
-  const runtimeRoot = String(process.env.A11_RUNTIME_ROOT || '').trim();
-  if (runtimeRoot) return path.resolve(runtimeRoot, 'voice-references');
-
-  return path.resolve(getBackendRoot(), 'runtime', 'voice-references');
+  return path.join(getCanonicalRuntimeRoot(process.env), 'voice-references');
 }
 
 function resolveRuntimeRootCandidates() {
-  const backendRoot = getBackendRoot();
-  return uniqueValues([
-    process.env.A11_RUNTIME_ROOT,
-    path.resolve(backendRoot, 'runtime'),
-    path.resolve(backendRoot, '..', 'runtime'),
-    path.resolve(backendRoot, '..', '..', 'runtime'),
-    path.resolve(backendRoot, '..', '..', '..', 'runtime'),
-    path.resolve(backendRoot, '..', '..', '..', '..', 'runtime'),
-    '/app/runtime',
-    '/srv/a11/runtime',
-  ]);
+  return getRuntimeRootCandidates(process.env);
 }
 
 function parseLibraryPathList(value = '') {
@@ -705,6 +695,8 @@ function getRuntimeAffinityScore(ref) {
 
   const configuredRoots = [
     process.env.A11_RUNTIME_ROOT,
+    getCanonicalRuntimeRoot(process.env),
+    ...getRuntimeRootCandidates(process.env),
     ...parseLibraryPathList(process.env.A11_VOICE_REFERENCE_LIBRARY_DIRS),
     ...parseLibraryPathList(process.env.A11_VOICE_REFERENCE_LIBRARY_DIR),
     ...parseLibraryPathList(process.env.A11_VOICE_REFERENCE_LIBRARY_PATHS),

@@ -217,6 +217,80 @@ test('voice learning maps family voice owners and premium personal voice access'
   }
 });
 
+test('voice learning reads legacy runtime corpus and syncs it to canonical runtime on train', async () => {
+  const canonicalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-voice-learning-canonical-'));
+  const legacyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-voice-learning-legacy-'));
+  const previousRuntimeRoot = process.env.A11_RUNTIME_ROOT;
+  const previousLegacyRoots = process.env.A11_RUNTIME_ROOT_LEGACY_DIRS;
+  const previousDisableImplicitLegacy = process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY;
+  const previousVoiceLearningDir = process.env.A11_VOICE_LEARNING_DIR;
+  process.env.A11_RUNTIME_ROOT = canonicalRoot;
+  process.env.A11_RUNTIME_ROOT_LEGACY_DIRS = legacyRoot;
+  process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY = '1';
+  delete process.env.A11_VOICE_LEARNING_DIR;
+
+  try {
+    const ownerKey = 'cellaurojeffrey-gmail.com';
+    const legacyCorpusDir = path.join(legacyRoot, 'voice-learning', 'djeff', ownerKey);
+    fs.mkdirSync(legacyCorpusDir, { recursive: true });
+    const legacyWav = createPcm16Wav({ durationSec: 0.2, frequency: 180 });
+    const legacyFile = path.join(legacyCorpusDir, 'legacy-djeff.wav');
+    fs.writeFileSync(legacyFile, legacyWav);
+    fs.writeFileSync(path.join(legacyCorpusDir, 'index.json'), JSON.stringify({
+      clips: [{
+        id: 'legacy-djeff',
+        persona: 'djeff',
+        ownerKey,
+        filename: 'legacy-djeff.wav',
+        sha256: 'legacy-djeff-sha',
+        durationMs: 181000,
+        bytes: legacyWav.length,
+        createdAt: '2026-06-10T00:00:00.000Z',
+      }],
+      trainRequests: [],
+    }, null, 2));
+
+    await withVoiceLearningServer(async (baseUrl) => {
+      const status = await fetch(`${baseUrl}/api/voice-learning/status?persona=djeff`, {
+        headers: { 'x-test-email': 'cellaurojeffrey@gmail.com' },
+      });
+      const payload = await status.json();
+      assert.equal(status.status, 200);
+      assert.equal(payload.clipCount, 1);
+      assert.equal(payload.secondsCollected, 181);
+      assert.equal(payload.corpusReady, true);
+
+      const train = await fetch(`${baseUrl}/api/voice-learning/train`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-test-email': 'cellaurojeffrey@gmail.com',
+        },
+        body: JSON.stringify({ persona: 'djeff', consent: 'voice-learning-v1' }),
+      });
+      const trainPayload = await train.json();
+      assert.equal(train.status, 200);
+      assert.equal(trainPayload.ok, true);
+      assert.equal(trainPayload.clipCount, 1);
+
+      const canonicalCorpusDir = path.join(canonicalRoot, 'voice-learning', 'djeff', ownerKey);
+      assert.equal(fs.existsSync(path.join(canonicalCorpusDir, 'index.json')), true);
+      assert.equal(fs.existsSync(path.join(canonicalCorpusDir, 'legacy-djeff.wav')), true);
+    });
+  } finally {
+    if (previousRuntimeRoot === undefined) delete process.env.A11_RUNTIME_ROOT;
+    else process.env.A11_RUNTIME_ROOT = previousRuntimeRoot;
+    if (previousLegacyRoots === undefined) delete process.env.A11_RUNTIME_ROOT_LEGACY_DIRS;
+    else process.env.A11_RUNTIME_ROOT_LEGACY_DIRS = previousLegacyRoots;
+    if (previousDisableImplicitLegacy === undefined) delete process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY;
+    else process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY = previousDisableImplicitLegacy;
+    if (previousVoiceLearningDir === undefined) delete process.env.A11_VOICE_LEARNING_DIR;
+    else process.env.A11_VOICE_LEARNING_DIR = previousVoiceLearningDir;
+    fs.rmSync(canonicalRoot, { recursive: true, force: true });
+    fs.rmSync(legacyRoot, { recursive: true, force: true });
+  }
+});
+
 test('voice learning lets a connected account delete its own corpus', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-voice-learning-delete-'));
   const previousRoot = process.env.A11_VOICE_LEARNING_DIR;

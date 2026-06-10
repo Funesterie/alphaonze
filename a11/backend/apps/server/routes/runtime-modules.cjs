@@ -4,6 +4,10 @@ const express = require('express');
 const fs = require('node:fs');
 const path = require('node:path');
 const {
+  getCanonicalRuntimeRoot,
+  getRuntimeRootCandidates,
+} = require('../lib/runtime-root.cjs');
+const {
   buildChopperStatus,
   buildMarkdown: buildChopperMarkdown,
 } = require('../lib/westside-chopper.cjs');
@@ -79,17 +83,7 @@ function countModuleDirs(modulesRoot) {
 }
 
 function resolveRuntimeRoot() {
-  const candidates = [
-    process.env.A11_RUNTIME_ROOT,
-    path.resolve(process.cwd(), 'runtime'),
-    path.resolve(process.cwd(), '..', 'runtime'),
-    path.resolve(process.cwd(), '..', '..', 'runtime'),
-    path.resolve(process.cwd(), '..', '..', '..', 'runtime'),
-    path.resolve(process.cwd(), '..', '..', '..', '..', 'runtime'),
-    path.resolve(process.cwd(), '..', '..', '..', '..', '..', 'runtime'),
-    path.resolve(__dirname, '..', '..', '..', '..', '..', 'runtime'),
-    path.resolve(__dirname, '..', '..', '..', '..', '..', '..', 'runtime'),
-  ].filter(Boolean);
+  const candidates = getRuntimeRootCandidates(process.env);
 
   let firstExisting = '';
   for (const candidate of candidates) {
@@ -155,7 +149,7 @@ function resolveRuntimeRoot() {
     return firstExisting;
   }
 
-  return path.resolve(process.cwd(), 'runtime');
+  return getCanonicalRuntimeRoot(process.env);
 }
 
 function readPackage(modulePath) {

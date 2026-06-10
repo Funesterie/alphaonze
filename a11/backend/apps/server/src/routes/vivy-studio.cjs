@@ -4,6 +4,7 @@ const express = require('express');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
 const { extractRequestAuthToken } = require('../middleware/jwt-auth.cjs');
 const {
   buildMediaPipeline,
@@ -34,6 +35,7 @@ const {
   buildVivySongProductionBrief,
   buildVivyStructuredLyrics,
   buildVivySongArtistCast,
+  sanitizeVivySongMaterial,
   inferTitle,
   stripSongCommand,
   looksLikeCompleteLyrics,
@@ -1998,17 +2000,17 @@ function buildSongProduction(input) {
     input.instruction,
     input.prompt,
   ], 2400);
-  const materialForLyrics = stripVivyAscii4SoundTokens(material);
+  const materialForLyrics = sanitizeVivySongMaterial(stripVivyAscii4SoundTokens(material), 2400);
   const hasMaterial = Boolean(materialForLyrics || material);
   const prosodyPlan = buildVivyProsodyPlan({
     ...input,
     mode: 'song',
-    songText: materialForLyrics || material || input.songText,
+    songText: materialForLyrics || sanitizeVivySongMaterial(material, 2400) || input.songText,
   });
   const prosodyBrief = formatVivyProsodyPlanForBrief(prosodyPlan);
   const songcraft = buildVivySongProductionBrief({
     ...input,
-    songText: materialForLyrics || material || input.songText,
+    songText: materialForLyrics || sanitizeVivySongMaterial(material, 2400) || input.songText,
     songTitle: input.songTitle || input.title,
   });
 
@@ -2141,6 +2143,121 @@ function isVivyOpinionFollowup(message = '') {
   return /\b(et\s+toi|toi\s+tu|tu\s+en\s+penses|t\s*en\s+penses|qu\s*en\s+penses|ton\s+avis|tu\s+penses\s+quoi)\b/.test(normalized);
 }
 
+function isVivyDjeffRapSetupRequest(message = '', historyText = '') {
+  const current = foldTextForLookup(message);
+  const context = foldTextForLookup(`${historyText}\n${message}`);
+  const wantsRap = /\b(rap|rp|rapper|raper|couplet|paroles|son)\b/.test(context);
+  const mentionsDjeffVoice = /\bdjeff\b/.test(context) && /\b(voix|voice|timbre|reference|référence)\b/.test(context);
+  const shortRapFollowup = /^(un\s+)?rap$/.test(current) && mentionsDjeffVoice;
+  return (wantsRap && mentionsDjeffVoice) || shortRapFollowup;
+}
+
+function buildVivyDjeffRapSetupReply({ fileLine = '' } = {}) {
+  return cleanText([
+    'Oui, on part sur un rap avec la voix Djeff.',
+    "Le bon flux: tu poses tes lignes brutes, je garde le vocabulaire mécanique et la diction proche micro, puis le mode chanson structure les couplets/refrain sans lisser le grain.",
+    'Pour la voix, je priorise le profil Djeff rap et la référence autorisée; Vivy peut répondre en refrain si tu coches le duo.',
+    fileLine,
+  ].filter(Boolean).join('\n\n'), 1400);
+}
+
+function isShortVivyAcknowledgement(message = '') {
+  const normalized = foldTextForLookup(message)
+    .replace(/[.!?]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return /^(ok|okay|oui|ouais|yes|daccord|d accord|dac|ca marche|parfait|nickel|grave|go|vas y|continue|bien|tres bien|merci)$/.test(normalized);
+}
+
+function getLastVivyUserHistoryMessage(history = []) {
+  if (!Array.isArray(history)) return '';
+  for (const entry of history.slice(-10).reverse()) {
+    if (String(entry?.role || '').toLowerCase() === 'assistant') continue;
+    const content = cleanText(entry?.content, 1400);
+    if (content) return content;
+  }
+  return '';
+}
+
+function countVivyDjeffRapSignals(value = '') {
+  const normalized = foldTextForLookup(value);
+  if (!normalized) return 0;
+
+  const terms = [
+    'nossen',
+    'djeff',
+    'pignon',
+    'couronne',
+    'radiateur',
+    'essence',
+    'ipone',
+    'bombonne',
+    'cruxi',
+    'moteur',
+    'guidon',
+    'visiere',
+    'wheeling',
+    'giro',
+    'giros',
+    'shmit',
+    'shmite',
+    'motard',
+    'motards',
+    'pneu',
+    'pneus',
+    'gomme',
+    'rossi',
+    'course poursuite',
+    'metrakit',
+    'metra kit',
+    'cale pied',
+    'cales pieds',
+    'bolide',
+    'mur du son',
+  ];
+
+  return terms.reduce((score, term) => score + (normalized.includes(term) ? 1 : 0), 0);
+}
+
+function hasVivyDjeffRapMaterial(value = '') {
+  const normalized = foldTextForLookup(value);
+  const score = countVivyDjeffRapSignals(value);
+  if (score >= 3) return true;
+  if (/\btitre\s*:/.test(normalized) && /\b(nossen|djeff|pignon)\b/.test(normalized)) return true;
+  return /\b(rap|rapper|raper|rime|couplet)\b/.test(normalized) && score >= 2;
+}
+
+function inferVivyDraftTitle(value = '') {
+  const match = String(value || '').match(/(?:^|\n)\s*titre\s*:\s*([^\r\n]+)/i);
+  return cleanOneLine(match?.[1], 'cette base Djeff', 96);
+}
+
+function buildVivyDjeffRapChatReply({ sourceText = '', isAcknowledgement = false, fileLine = '' } = {}) {
+  const title = inferVivyDraftTitle(sourceText);
+  const titleLabel = /^cette\b/i.test(title) ? title : `"${title}"`;
+  const signalCount = countVivyDjeffRapSignals(sourceText);
+  const detailLine = signalCount >= 5
+    ? "Ce qui tient fort: la mécanique précise, la fuite qui pulse, le pignon-couronne, le double radiateur et le moteur qui respire."
+    : "Ce qui tient fort: le grain mécanique, la vitesse et le vocabulaire très concret.";
+
+  if (isAcknowledgement) {
+    return cleanText([
+      `Parfait, on garde ${titleLabel} comme base brute.`,
+      `${detailLine} Ça parle mieux quand on garde tes images concrètes au lieu de lisser en texte générique.`,
+      "Je garde ce grain Djeff pour la suite: nerveux, technique, proche du bitume.",
+      fileLine,
+    ].filter(Boolean).join('\n\n'), 1600);
+  }
+
+  return cleanText([
+    "Là oui, il y a une vraie base Djeff.",
+    `Je retiens surtout ${titleLabel}: essence/Ipone, double radiateur, Cruxi, pignon-couronne, mur du son. On sent le moteur et le stress de la poursuite.`,
+    "Le bon réglage, c'est de garder le vocabulaire mécanique tel quel et de nettoyer seulement ce qui gêne le débit.",
+    fileLine,
+  ].filter(Boolean).join('\n\n'), 1600);
+}
+
 function buildVivyFreeformChatReply({ message = '', files = [], history = [] } = {}) {
   const current = summarizeChatMessage(message);
   const historyText = getVivyUserHistoryText(history);
@@ -2148,6 +2265,23 @@ function buildVivyFreeformChatReply({ message = '', files = [], history = [] } =
   const fileLine = files.length
     ? `J'ai aussi ${files.length} fichier${files.length > 1 ? 's' : ''} en contexte: ${files.map((file) => file.filename).join(', ')}.`
     : '';
+  const lastUserMessage = getLastVivyUserHistoryMessage(history);
+  const isAcknowledgement = isShortVivyAcknowledgement(message);
+  const djeffRapSource = hasVivyDjeffRapMaterial(message)
+    ? message
+    : (isAcknowledgement && hasVivyDjeffRapMaterial(lastUserMessage) ? lastUserMessage : '');
+
+  if (isVivyDjeffRapSetupRequest(message, historyText)) {
+    return buildVivyDjeffRapSetupReply({ fileLine });
+  }
+
+  if (djeffRapSource) {
+    return buildVivyDjeffRapChatReply({
+      sourceText: djeffRapSource,
+      isAcknowledgement,
+      fileLine,
+    });
+  }
 
   if (isVivyOpinionFollowup(message) && /\b(cerveau|interpretation|interprete|donnee|donnees|yeux|oreilles|bouche|voir|entendre|parler|signaux|signal)\b/.test(foldedContext)) {
     return cleanText([
@@ -2167,11 +2301,19 @@ function buildVivyFreeformChatReply({ message = '', files = [], history = [] } =
     ].filter(Boolean).join('\n\n'), 1600);
   }
 
+  if (isAcknowledgement) {
+    return cleanText([
+      "Ok, on garde le fil.",
+      "Continue comme ça: je réponds au sens de ce que tu poses, sans forcer une structure autour.",
+      fileLine,
+    ].filter(Boolean).join('\n\n'), 900);
+  }
+
   return cleanText([
-    "Oui, je reste en discussion libre.",
-    `Je capte: ${current}`,
+    "Je vois l'idée.",
+    `Ce que je prends surtout: ${current}`,
     fileLine,
-    "Je ne transforme pas ça en paroles automatiquement: je réponds d'abord à l'idée, et on bascule en composition seulement quand tu le demandes vraiment.",
+    "Je réponds au fond et on affine à partir de là.",
   ].filter(Boolean).join('\n\n'), 1600);
 }
 
@@ -2235,6 +2377,8 @@ function isDirectSongwritingRequest(message = '') {
   const normalized = foldTextForLookup(message);
   return /\b(fais|fait|ecris|ecrit|compose|genere|genere|cree|crée)\b.{0,80}\b(chanson|musique|son|paroles|lyrics|refrain|couplet)\b/.test(normalized)
     || /\b(transforme|structure|arrange|mets|met)\b.{0,100}\b(chanson|musique|son|paroles|lyrics|refrain|couplet)\b/.test(normalized)
+    || /\b(continue|continuer|reprends|reprendre|poursuis|poursuivre|complete|complète|termine|enchaîne|enchaine)\b.{0,90}\b(paroles|lyrics|couplet|couplets|refrain|rap)\b/.test(normalized)
+    || /\b(paroles|lyrics|couplet|couplets|refrain|rap)\b.{0,90}\b(continue|continuer|reprends|reprendre|poursuis|poursuivre|complete|complète|termine|enchaîne|enchaine)\b/.test(normalized)
     || /\b(chanson|paroles|lyrics)\b.{0,80}\b(structure|refrain|couplet|rime|rimes)\b/.test(normalized)
     || /\b(vivy_intent|instruction)\b.{0,180}\b(chanson|paroles|refrain|couplet|composition)\b/.test(normalized);
 }
@@ -2255,7 +2399,7 @@ function looksLikeWeakSongwritingReply(text = '') {
 }
 
 function buildVivyDirectSongReply(input = {}) {
-  const historyText = getVivyUserHistoryText(input.history);
+  const historyText = sanitizeVivySongMaterial(getVivyUserHistoryText(input.history), 1600);
   const material = stripVivyAscii4SoundTokens(compactUniqueLines([
     historyText,
     input.message,
@@ -2265,10 +2409,11 @@ function buildVivyDirectSongReply(input = {}) {
     input.theme,
     input.instruction,
   ], 2600));
-  const voiceProfile = getVivyStudioVoiceProfile({ ...input, songText: material || input.songText || input.message });
+  const cleanMaterial = sanitizeVivySongMaterial(material, 2600);
+  const voiceProfile = getVivyStudioVoiceProfile({ ...input, songText: cleanMaterial || material || input.songText || input.message });
   const songcraft = buildVivySongProductionBrief({
     ...input,
-    songText: material || input.songText || input.message,
+    songText: cleanMaterial || material || input.songText || input.message,
     rhymeScheme: input.rhymeScheme || 'Fins de lignes rimées par paires, images mécaniques et sémantiques, refrain stable et chantable.',
   });
   const lyrics = cleanText(songcraft.lyrics.replace(/^\[Title:\s*[^\]]+\]\s*/i, '').trim(), 2600);
@@ -2576,7 +2721,7 @@ async function buildVivyAiChat(input, req) {
     };
   }
 
-  if (isVivyToolCapabilityQuestion(input, message)) {
+  if (mode !== 'song' && isVivyToolCapabilityQuestion(input, message)) {
     const capabilityContext = localContext || buildVivyLocalContextSnapshot(message);
     const capabilityReply = buildVivyToolCapabilityReply({ localContext: capabilityContext, language });
     rememberVivyEpisode(userId, 'vivy_reply', capabilityReply.assistant, {
@@ -2900,6 +3045,7 @@ function buildVivyStudioProduction(input) {
       cast: prosodyPlan.cast,
       primeSignature: prosodyPlan.primeSignature,
       complexBasis: prosodyPlan.complexBasis,
+      doubleHarmonic: prosodyPlan.doubleHarmonic,
       neo4j: prosodyPlan.neo4j,
       segments: prosodyPlan.segments.map((segment) => ({
         id: segment.id,
@@ -2990,9 +3136,10 @@ function buildVivyMusicPrompt(input = {}) {
   const catalogVoiceName = cleanOneLine(input.voiceCatalogName || input.catalogVoiceName, '', 80);
   const prosodyPlan = buildVivyProsodyPlan(input);
   const prosodyPrompt = formatVivyProsodyPlanForPrompt(prosodyPlan);
+  const songMaterial = sanitizeVivySongMaterial(stripVivyAscii4SoundTokens(input.songText || input.lyrics || input.text || input.theme || input.prompt), 2400);
   const lyrics = buildVivyStructuredLyrics({
     ...input,
-    songText: stripVivyAscii4SoundTokens(input.songText || input.lyrics || input.text || input.theme || input.prompt),
+    songText: songMaterial,
   });
   return [
     artistCast.musicLead,
@@ -3010,14 +3157,14 @@ function buildVivyMusicPrompt(input = {}) {
 }
 
 function buildVivySunoLyrics(input = {}) {
-  const material = stripVivyAscii4SoundTokens(compactUniqueLines([
+  const material = sanitizeVivySongMaterial(stripVivyAscii4SoundTokens(compactUniqueLines([
     input.lyrics,
     input.songText,
     input.text,
     input.theme,
     input.instruction,
     input.prompt,
-  ], 2200));
+  ], 2200)), 2200);
   if (looksLikeCompleteLyrics(material)) {
     return cleanText(material, 2200);
   }
@@ -3029,7 +3176,7 @@ function buildVivySunoPayload(input = {}, req = null) {
   const artistCast = buildVivySongArtistCast(input);
   const prosodyPlan = buildVivyProsodyPlan(input);
   const prosodyStyle = buildVivyProsodyStyleHint(prosodyPlan);
-  const titleMaterial = stripVivyAscii4SoundTokens(input.songText || input.theme || input.prompt);
+  const titleMaterial = sanitizeVivySongMaterial(stripVivyAscii4SoundTokens(input.songText || input.theme || input.prompt), 1200);
   const titleSeed = cleanOneLine(
     input.songTitle || input.title || inferTitle(titleMaterial),
     'Vivy garde la lumière',
@@ -3095,8 +3242,7 @@ function buildSunoCallbackUrl(req = null) {
 }
 
 function getVivySunoCallbackDir() {
-  const root = cleanOneLine(process.env.A11_RUNTIME_ROOT || process.env.RUNTIME_ROOT, '', 500)
-    || path.join(process.cwd(), 'runtime');
+  const root = getCanonicalRuntimeRoot(process.env);
   return path.join(root, 'vivy-suno-callbacks');
 }
 

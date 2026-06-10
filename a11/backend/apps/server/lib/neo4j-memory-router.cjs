@@ -71,12 +71,20 @@ function resolveRouterConfig(env = process.env) {
   const local = {
     name: 'local',
     uri: pick(env.A11_LOCAL_NEO4J_URI, env.NEO4J_LOCAL_URI, envLocalUri, DEFAULT_LOCAL_URI),
-    username: hasEnvLocalAuth
-      ? pick(env.NEO4J_USERNAME, env.NEO4J_USER)
-      : pick(env.A11_LOCAL_NEO4J_USER, env.NEO4J_LOCAL_USER, envLocalUri ? env.NEO4J_USERNAME : '', envLocalUri ? env.NEO4J_USER : '', 'neo4j'),
-    password: hasEnvLocalAuth
-      ? pick(env.NEO4J_PASSWORD)
-      : pick(env.A11_LOCAL_NEO4J_PASSWORD, env.NEO4J_LOCAL_PASSWORD, envLocalUri ? env.NEO4J_PASSWORD : ''),
+    username: pick(
+      env.A11_LOCAL_NEO4J_USER,
+      env.NEO4J_LOCAL_USER,
+      hasEnvLocalAuth ? pick(env.NEO4J_USERNAME, env.NEO4J_USER) : '',
+      envLocalUri ? env.NEO4J_USERNAME : '',
+      envLocalUri ? env.NEO4J_USER : '',
+      'neo4j'
+    ),
+    password: pick(
+      env.A11_LOCAL_NEO4J_PASSWORD,
+      env.NEO4J_LOCAL_PASSWORD,
+      hasEnvLocalAuth ? env.NEO4J_PASSWORD : '',
+      envLocalUri ? env.NEO4J_PASSWORD : ''
+    ),
     database: pick(env.A11_LOCAL_NEO4J_DATABASE, env.NEO4J_LOCAL_DATABASE, envLocalUri ? env.NEO4J_DATABASE : '', DEFAULT_LOCAL_DATABASE),
     auth: isNoAuth(pick(env.A11_LOCAL_NEO4J_AUTH, env.NEO4J_LOCAL_AUTH, envLocalUri ? env.NEO4J_AUTH : ''))
       ? 'none'

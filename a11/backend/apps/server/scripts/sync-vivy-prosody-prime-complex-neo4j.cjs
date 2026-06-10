@@ -32,7 +32,7 @@ function loadEnvFiles() {
   ];
   for (const envPath of candidates) {
     if (!fs.existsSync(envPath)) continue;
-    dotenv.config({ path: envPath, override: false, quiet: true });
+    dotenv.config({ path: envPath, override: /\.env\.local$/i.test(envPath), quiet: true });
   }
 }
 
@@ -97,6 +97,7 @@ async function applyToNeo4j(rows, target) {
       database: target.database,
       segments: first ? Number(first.get('segments')?.toNumber?.() ?? first.get('segments') ?? 0) : 0,
       points: first ? Number(first.get('points')?.toNumber?.() ?? first.get('points') ?? 0) : 0,
+      syncNodes: first ? Number(first.get('syncNodes')?.toNumber?.() ?? first.get('syncNodes') ?? 0) : 0,
     };
   });
 }

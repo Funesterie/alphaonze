@@ -18,14 +18,52 @@ function cleanOneLine(value, fallback = '', max = 160) {
 
 function stripSongCommand(value = '') {
   return cleanOneLine(value, '', 360)
-    .replace(/^(fais|fait|cr[ée]e?|g[ée]n[èe]re?|compose|chante|transforme|écris|ecris)\s+(moi\s+)?(une?\s+)?(chanson|musique|son|paroles|lyrics)\s*(sur|avec|pour|à propos de)?\s*/i, '')
+    .replace(/^(fais|fait|cr[ée]e?|g[ée]n[èe]re?|compose|chante|transforme|écris|ecris|continue|continuer|reprends|poursuis|compl[èe]te)\s+(moi\s+)?(une?\s+)?(chanson|musique|son|paroles|lyrics|rap|couplet|refrain)\s*(sur|avec|pour|à propos de)?\s*/i, '')
     .replace(/\b(prompt|instruction|consigne)\b\s*:?\s*/ig, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
+function looksLikeVivySongUiNoiseLine(line = '') {
+  const raw = String(line || '').trim();
+  const folded = foldTextForLookup(raw);
+  if (!folded) return true;
+
+  if (/^je suis vivy\s+parle moi d/.test(folded)) return true;
+  if (/^(vivy|vous|accueil|discussion|menu|voix|chanson|scene|scène|fichier|envoyer|copier|partager|defaut|défaut|audio perso|importer|ptt)$/.test(folded)) return true;
+  if (/^(vivy_song_production|vivy_studio_handoff|vivy_production|vivy_voice_calibration|vivy_scene_share|vivy song production|vivy studio handoff|vivy production|vivy voice calibration|vivy scene share)\b/.test(folded)) return true;
+  if (/^(oui je reste en discussion libre|je capte|je ne transforme pas|je vois l idee|ce que je prends surtout|je reponds au fond|la voix vivy par defaut|idee rangee dans la memoire vivy)\b/.test(folded)) return true;
+  if (/^(source|direction sonore|titre de travail|structure proposee|assets a produire|paroles guide|routage|flux chanson|atelier|objectif|brief agents|composition production|creation voix|scene partage|sortie attendue|routage recommande|media pret|média prêt|multimodal runtime|janus vision|janus pro|provider|modele|modèle|device|worker|gpu|vram|recommendation|recommandation|dernier scan|safety lane|nerve routing|a11host|bridge vsix|headless|qflush flow|process supervises|clé suno personnelle|cle suno personnelle)\b/.test(folded)) return true;
+  if (/^-\s*(kaen44|vivy|a11|ekko|pink-ward)\s*:/.test(folded)) return true;
+  if (/^-\s*(source|direction sonore|titre|rimes|motif|structure|intention|artistes coches|artistes cochés|distribution vocale|outil voix actif|prosodie interne|nombre de chanteurs|tags obligatoires|intro|couplet|pre-refrain|pré-refrain|refrain guide|pont|final|role|rôle|sortie simple possible)\b/.test(folded)) return true;
+  if (/^(continue|continuer|reprends|poursuis|compl[èe]te)\s+(les\s+)?(paroles|lyrics|couplets?|refrain|rap)\b/.test(folded)) return true;
+  if (/^(ex\s*:|exemple\s*:|créer vraie chanson suno|creer vraie chanson suno|oublier cle suno|oublier clé suno|preparer chanson|préparer chanson|demander a vivy|demander à vivy|ouvrir a11|sauver dans a11|kaen44)$/.test(folded)) return true;
+
+  return false;
+}
+
+function sanitizeVivySongMaterial(value = '', max = 2400) {
+  const text = cleanText(value, Math.max(max, 3200));
+  if (!text) return '';
+
+  const kept = [];
+  const seen = new Set();
+  for (const line of text.split(/\r?\n+/)) {
+    const cleaned = cleanOneLine(String(line || '').replace(/^[\s>*]+/g, ''), '', 320);
+    if (!cleaned || looksLikeVivySongUiNoiseLine(cleaned)) continue;
+
+    const folded = foldTextForLookup(cleaned);
+    const key = folded.replace(/\s+/g, ' ');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    kept.push(cleaned);
+  }
+
+  return cleanText(kept.join('\n'), max);
+}
+
 function looksLikeCompleteLyrics(value = '') {
-  const text = cleanText(value, 2400);
+  const text = sanitizeVivySongMaterial(value, 2400);
   if (!text) return false;
   const sectionCount = (text.match(/\[(verse|chorus|bridge|intro|outro|couplet|refrain|pont|pré-refrain|pre-chorus)\]/ig) || []).length;
   const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
@@ -417,7 +455,7 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
 }
 
 function buildVivyStructuredLyrics(input = {}) {
-  const material = cleanText([
+  const material = sanitizeVivySongMaterial([
     input.lyrics,
     input.songText,
     input.text,
@@ -527,6 +565,7 @@ module.exports = {
   buildVivyStructuredLyrics,
   buildVivySongArtistCast,
   extractDjeffRapSeedLines,
+  sanitizeVivySongMaterial,
   inferTitle,
   stripSongCommand,
   looksLikeCompleteLyrics,

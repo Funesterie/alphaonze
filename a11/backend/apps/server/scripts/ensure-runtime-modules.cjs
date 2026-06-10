@@ -4,11 +4,16 @@
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
+const {
+  getA11Root,
+  getCanonicalRuntimeRoot,
+  getRepoRoot,
+  getRuntimeRootCandidates,
+} = require('../lib/runtime-root.cjs');
 
 const SERVER_ROOT = path.resolve(__dirname, '..');
-const A11_ROOT = path.resolve(SERVER_ROOT, '..', '..', '..');
-const REPO_ROOT = path.resolve(A11_ROOT, '..');
-const SERVER_RUNTIME_ROOT = path.resolve(SERVER_ROOT, 'runtime');
+const A11_ROOT = getA11Root();
+const REPO_ROOT = getRepoRoot();
 
 const MINIMUM_MODULES = ['rome', 'corpus', 'linguistic-core'];
 
@@ -204,16 +209,13 @@ function pickWorkspaceRoot() {
 function pickRuntimeRoot(workspaceRoot) {
   const configured = String(process.env.A11_RUNTIME_ROOT || '').trim();
   if (configured) return path.resolve(configured);
-  if (SERVER_ROOT === '/app' && pathExists(SERVER_RUNTIME_ROOT)) return SERVER_RUNTIME_ROOT;
-  return path.resolve(
-    path.join(A11_ROOT, 'runtime')
-    || path.join(workspaceRoot, 'runtime')
-  );
+  return getCanonicalRuntimeRoot(process.env);
 }
 
 function candidateRuntimeRoots({ workspaceRoot, runtimeRoot }) {
   return uniquePaths([
     runtimeRoot,
+    ...getRuntimeRootCandidates(process.env),
     path.join(workspaceRoot, 'runtime'),
     path.join(REPO_ROOT, 'runtime'),
     path.join(A11_ROOT, 'runtime'),
