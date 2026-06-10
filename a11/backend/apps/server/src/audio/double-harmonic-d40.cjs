@@ -102,6 +102,28 @@ function buildD40EnvelopeExpression(options = {}) {
   };
 }
 
+function sampleD40EnvelopeAt(timeSeconds = 0, options = {}) {
+  const profile = normalizeProfile(options.profile || options.d40Profile);
+  const anchors = D40_PROFILES[profile] || D40_PROFILES.blend;
+  const period = clampNumber(options.periodSeconds || options.d40Seconds, 0.25, 30, 4);
+  const wet = clampNumber(options.wet || options.wetScale, 0.05, 2, 1);
+  const density = resolveD40Density(options);
+  const position = ((Number(timeSeconds) % period) + period) % period;
+  const step = period / (anchors.length - 1);
+  const index = Math.min(anchors.length - 2, Math.floor(position / step));
+  const local = (position - index * step) / step;
+  const value = anchors[index] + (anchors[index + 1] - anchors[index]) * local;
+  return {
+    profile,
+    period,
+    position,
+    density,
+    value,
+    correction: density.correction,
+    gain: wet * density.correction * value,
+  };
+}
+
 function buildProtectMixD40Filter(options = {}) {
   const envelope = buildD40EnvelopeExpression(options);
   const mg = AUDIO_PIVOT_GAIN_FACTOR;
@@ -230,6 +252,8 @@ module.exports = {
   buildProtectMixD40Args,
   buildProtectMixD40Filter,
   processProtectMixD40,
+  normalizeProfile,
   resolveD40Density,
   resolveHarmonicIntensity,
+  sampleD40EnvelopeAt,
 };

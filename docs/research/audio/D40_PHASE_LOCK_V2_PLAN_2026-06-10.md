@@ -45,6 +45,18 @@ Move from a static protected overlay to a measured phase-lock workflow:
 8. export in a source-compatible format;
 9. require A/B and phase metrics before making V2 default.
 
+## Current V2 Implementation
+
+The first V2 code path is analysis-only and exposed separately from V1:
+
+- `GET /api/double-harmonic/v2/status` returns the V2 constants and phase-lock plan.
+- `POST /api/double-harmonic/v2/analyze` accepts one bounded audio upload and returns measured frame data.
+- The analyzer decodes a temporary mono PCM stream, estimates `f0` with autocorrelation, estimates local phase around `f0`, measures coarse band energy, detects transient jumps, and samples the D40 envelope per frame.
+- Temporary analysis files are deleted after the request.
+- No V2 processing route is default yet.
+
+The analysis payload is the contract for the next processing step. It should let the processor align the high/low overlay layers to the measured frame phase instead of applying a fixed overlay blindly.
+
 ## Guardrails
 
 - Do not rename `PIVOT_RESIDUAL_OLD` back to `mg`.

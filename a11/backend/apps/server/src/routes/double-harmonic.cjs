@@ -16,6 +16,7 @@ const {
   resolveHarmonicIntensity,
 } = require('../audio/double-harmonic-d40.cjs');
 const {
+  analyzePhaseLockV2,
   buildPhaseLockPlan,
 } = require('../audio/double-harmonic-phase-lock-v2.cjs');
 
@@ -165,6 +166,9 @@ function createDoubleHarmonicRouter(options = {}) {
   const processAudio = typeof options.processProtectMixD40 === 'function'
     ? options.processProtectMixD40
     : processProtectMixD40;
+  const analyzeAudio = typeof options.analyzePhaseLockV2 === 'function'
+    ? options.analyzePhaseLockV2
+    : analyzePhaseLockV2;
   const runtimeRoot = path.resolve(options.runtimeRoot || getCanonicalRuntimeRoot(process.env));
   const assetRoot = ensureDir(path.join(runtimeRoot, 'double-harmonic-d40'));
   const indexPath = path.join(assetRoot, 'index.json');
@@ -211,6 +215,52 @@ function createDoubleHarmonicRouter(options = {}) {
         smoothing: _req.query?.smoothing,
       }),
     });
+  });
+
+  router.post('/v2/analyze', verifyJWT, upload.single('audio'), async (req, res) => {
+    const tempFiles = [];
+    try {
+      if (!req.file?.buffer?.length) {
+        return res.status(400).json({ ok: false, error: 'missing_audio', message: 'Ajoute un fichier audio.' });
+      }
+
+      const id = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+      const base = safeBaseName(req.body?.name || req.file.originalname || 'audio');
+      const inputExt = extForUpload(req.file);
+      const inputFilename = `${id}-${base}-v2-analyze.${inputExt}`;
+      const inputPath = path.join(assetRoot, inputFilename);
+      fs.writeFileSync(inputPath, req.file.buffer);
+      tempFiles.push(inputPath);
+
+      const analysis = await analyzeAudio({
+        inputPath,
+        profile: String(req.body?.profile || req.query?.profile || 'blend').trim() || 'blend',
+        frameMs: reqNumber(req.body?.frameMs || req.query?.frameMs),
+        cycleSeconds: reqNumber(req.body?.cycleSeconds || req.query?.cycleSeconds),
+        smoothing: req.body?.smoothing || req.query?.smoothing,
+        maxSeconds: reqNumber(req.body?.maxSeconds || req.query?.maxSeconds),
+        maxFrames: reqNumber(req.body?.maxFrames || req.query?.maxFrames),
+        maxFrameDetails: reqNumber(req.body?.maxFrameDetails || req.query?.maxFrameDetails),
+      });
+
+      return res.json({
+        ok: true,
+        id,
+        method: analysis.method,
+        v2: analysis,
+        publicSummary: 'Analyse V2: f0, phase, energie par bandes, transitoires et enveloppe D40 pour synchronisation harmonique.',
+      });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        error: 'double_harmonic_v2_analyze_failed',
+        message: String(error?.message || error),
+      });
+    } finally {
+      for (const filePath of tempFiles) {
+        try { fs.rmSync(filePath, { force: true }); } catch {}
+      }
+    }
   });
 
   router.post('/process', verifyJWT, upload.single('audio'), async (req, res) => {
@@ -308,7 +358,7 @@ function createDoubleHarmonicRouter(options = {}) {
     }
   });
 
-  router.use('/process', (err, _req, res, _next) => {
+  router.use(['/process', '/v2/analyze'], (err, _req, res, _next) => {
     return res.status(400).json({
       ok: false,
       error: 'double_harmonic_upload_failed',
