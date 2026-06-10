@@ -20,6 +20,10 @@ const {
   buildPhaseLockPlan,
   processPhaseAwareD40V2,
 } = require('../audio/double-harmonic-phase-lock-v2.cjs');
+const {
+  buildDynamicWeightPlanV3,
+  processDynamicWeightD40V3,
+} = require('../audio/double-harmonic-dynamic-v3.cjs');
 
 const DEFAULT_MAX_MB = 80;
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -173,6 +177,9 @@ function createDoubleHarmonicRouter(options = {}) {
   const processAudioV2 = typeof options.processPhaseAwareD40V2 === 'function'
     ? options.processPhaseAwareD40V2
     : processPhaseAwareD40V2;
+  const processAudioV3 = typeof options.processDynamicWeightD40V3 === 'function'
+    ? options.processDynamicWeightD40V3
+    : processDynamicWeightD40V3;
   const runtimeRoot = path.resolve(options.runtimeRoot || getCanonicalRuntimeRoot(process.env));
   const assetRoot = ensureDir(path.join(runtimeRoot, 'double-harmonic-d40'));
   const indexPath = path.join(assetRoot, 'index.json');
@@ -207,6 +214,7 @@ function createDoubleHarmonicRouter(options = {}) {
       defaultResolvedOutputFormat: outputFormat.contentType,
       outputFormats: Object.keys(OUTPUT_FORMATS),
       v2: buildPhaseLockPlan(),
+      v3: buildDynamicWeightPlanV3(),
     });
   });
 
@@ -217,6 +225,16 @@ function createDoubleHarmonicRouter(options = {}) {
         frameMs: reqNumber(_req.query?.frameMs),
         cycleSeconds: reqNumber(_req.query?.cycleSeconds),
         smoothing: _req.query?.smoothing,
+      }),
+    });
+  });
+
+  router.get('/v3/status', (_req, res) => {
+    return res.json({
+      ok: true,
+      v3: buildDynamicWeightPlanV3({
+        frameMs: reqNumber(_req.query?.frameMs),
+        maxSeconds: reqNumber(_req.query?.maxSeconds),
       }),
     });
   });
@@ -346,6 +364,85 @@ function createDoubleHarmonicRouter(options = {}) {
       return res.status(500).json({
         ok: false,
         error: 'double_harmonic_v2_process_failed',
+        message: String(error?.message || error),
+      });
+    }
+  });
+
+  router.post('/v3/process', verifyJWT, upload.single('audio'), async (req, res) => {
+    try {
+      pruneIndex(indexPath, assetRoot, ttlMs);
+      if (!req.file?.buffer?.length) {
+        return res.status(400).json({ ok: false, error: 'missing_audio', message: 'Ajoute un fichier audio.' });
+      }
+
+      const id = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+      const base = safeBaseName(req.body?.name || req.file.originalname || 'audio');
+      const inputExt = extForUpload(req.file);
+      const inputFilename = `${id}-${base}-v3-input.${inputExt}`;
+      const outputFormat = resolveOutputFormat(req.body?.format || req.query?.format, inputExt);
+      const outputFilename = `${id}-${base}-funesterie-d40-v3.${outputFormat.ext}`;
+      const inputPath = path.join(assetRoot, inputFilename);
+      const outputPath = path.join(assetRoot, outputFilename);
+      fs.writeFileSync(inputPath, req.file.buffer);
+
+      const profile = String(req.body?.profile || req.query?.profile || 'blend').trim() || 'blend';
+      const processing = await processAudioV3({
+        inputPath,
+        outputPath,
+        profile,
+        analysisOptions: {
+          frameMs: reqNumber(req.body?.frameMs || req.query?.frameMs),
+          maxSeconds: reqNumber(req.body?.maxSeconds || req.query?.maxSeconds),
+          maxSegments: reqNumber(req.body?.maxSegments || req.query?.maxSegments),
+        },
+      });
+      const token = crypto.randomBytes(18).toString('base64url');
+      const createdAt = new Date().toISOString();
+      const owner = String(req.user?.email || req.user?.username || req.user?.sub || '').trim();
+      const asset = {
+        id,
+        token,
+        createdAt,
+        owner,
+        originalName: req.file.originalname || '',
+        inputFilename,
+        outputFilename,
+        contentType: outputFormat.contentType,
+        method: processing.method,
+        profile: processing.profile,
+        intensity: 'auto',
+        weights: processing.weights || null,
+        dynamicSummary: processing.dynamic?.summary || null,
+        bytes: fs.statSync(outputPath).size,
+      };
+      const index = readIndex(indexPath);
+      index.assets = [asset, ...index.assets].slice(0, 300);
+      writeIndex(indexPath, index);
+
+      const baseUrl = routePublicBase(req);
+      const audioUrl = `/api/double-harmonic/out/${encodeURIComponent(outputFilename)}`;
+      const sharePath = `${audioUrl}?token=${encodeURIComponent(token)}`;
+      return res.json({
+        ok: true,
+        id,
+        method: processing.method,
+        state: processing.state,
+        profile: processing.profile,
+        intensity: 'auto',
+        dynamic: processing.dynamic,
+        weights: processing.weights || undefined,
+        audioUrl,
+        shareUrl: baseUrl ? `${baseUrl}${sharePath}` : sharePath,
+        contentType: outputFormat.contentType,
+        filename: outputFilename,
+        bytes: asset.bytes,
+        publicSummary: 'V3 auto: poids harmonique dynamique selon les dB, mg fixe, mix D40 protege.',
+      });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        error: 'double_harmonic_v3_process_failed',
         message: String(error?.message || error),
       });
     }

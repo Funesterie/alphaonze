@@ -14,10 +14,16 @@ const {
   buildD40EnvelopeExpression,
   buildProtectMixD40Args,
   buildProtectMixD40Filter,
+  MAX_HARMONIC_INTENSITY,
   MICROGAP_HALF_PLUS_CANON_MG,
+  MIN_HARMONIC_INTENSITY,
   resolveHarmonicIntensity,
   resolveD40Density,
 } = require('../src/audio/double-harmonic-d40.cjs');
+const {
+  analyzePcmDynamicWeightV3,
+  buildDynamicWeightD40Filter,
+} = require('../src/audio/double-harmonic-dynamic-v3.cjs');
 
 function listen(app) {
   return new Promise((resolve) => {
@@ -27,6 +33,16 @@ function listen(app) {
       resolve({ server, baseUrl: `http://127.0.0.1:${address.port}` });
     });
   });
+}
+
+function twoLevelSignal({ sampleRate = 16000, seconds = 4 } = {}) {
+  const samples = new Float32Array(sampleRate * seconds);
+  const half = samples.length / 2;
+  for (let index = 0; index < samples.length; index += 1) {
+    const amp = index < half ? 0.035 : 0.75;
+    samples[index] = Math.sin((Math.PI * 2 * 220 * index) / sampleRate) * amp;
+  }
+  return samples;
 }
 
 test('D40 calculation uses cross multiplication from 40.0005 to 40', () => {
@@ -79,6 +95,9 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(statusPayload.method, 'dry-master-plus-adaptive-d40-harmonic-overlay-v1');
     assert.equal(statusPayload.v2.preservesV1, true);
     assert.equal(statusPayload.v2.state, 'analysis-plan');
+    assert.equal(statusPayload.v3.controls.minWeight, MIN_HARMONIC_INTENSITY);
+    assert.equal(statusPayload.v3.controls.maxWeight, MAX_HARMONIC_INTENSITY);
+    assert.equal(statusPayload.v3.controls.mgFixed, MICROGAP_HALF_PLUS_CANON_MG);
 
     const v2 = await fetch(`${baseUrl}/api/double-harmonic/v2/status?smoothing=1%2Fe&frameMs=20`);
     const v2Payload = await v2.json();
@@ -90,6 +109,26 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(runtimeRoot, { recursive: true, force: true });
   }
+});
+
+test('dynamic v3 maps quiet frames toward 8/9 and loud frames toward 9/8 with fixed mg', () => {
+  const analysis = analyzePcmDynamicWeightV3({
+    samples: twoLevelSignal(),
+    sampleRate: 16000,
+    frameMs: 250,
+    maxSegments: 64,
+  });
+  const built = buildDynamicWeightD40Filter({ analysis, profile: 'blend' });
+
+  assert.equal(analysis.controls.minWeight, MIN_HARMONIC_INTENSITY);
+  assert.equal(analysis.controls.maxWeight, MAX_HARMONIC_INTENSITY);
+  assert.equal(analysis.controls.mgFixed, MICROGAP_HALF_PLUS_CANON_MG);
+  assert.ok(analysis.summary.weightMin <= MIN_HARMONIC_INTENSITY + 0.01);
+  assert.ok(analysis.summary.weightMax >= MAX_HARMONIC_INTENSITY - 0.01);
+  assert.ok(analysis.frames[0].weightScale < analysis.frames[analysis.frames.length - 1].weightScale);
+  assert.equal(Number((built.lowBaseWeight / built.highBaseWeight).toFixed(12)), Number(BALANCE_AUTO.toFixed(12)));
+  assert.match(built.filter, /if\(lt\(t\\,/);
+  assert.match(built.filter, /phase=laminar/);
 });
 
 test('double harmonic route processes upload and exposes tokenized audio link', async () => {
@@ -243,6 +282,59 @@ test('double harmonic route processes upload through experimental phase-lock v2'
     assert.equal(payload.contentType, 'audio/mpeg');
     assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v2\.mp3$/);
     assert.deepEqual(calls, [{ profile: 'blend', intensity: 1.08, frameMs: 20 }]);
+
+    const shared = await fetch(payload.shareUrl);
+    assert.equal(shared.status, 200);
+    assert.match(shared.headers.get('content-type') || '', /audio\/mpeg/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('double harmonic route processes upload through dynamic v3 and keeps source format', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-v3-process-'));
+  const calls = [];
+  const app = express();
+  app.use('/api/double-harmonic', createDoubleHarmonicRouter({
+    runtimeRoot,
+    processDynamicWeightD40V3: async ({ outputPath, profile, analysisOptions }) => {
+      calls.push({ profile, frameMs: analysisOptions.frameMs, maxSegments: analysisOptions.maxSegments });
+      fs.writeFileSync(outputPath, Buffer.from('processed v3 mp3'));
+      return {
+        method: 'dry-first-d40-db-dynamic-overlay-v3',
+        state: 'dynamic-process',
+        profile,
+        intensity: 'auto',
+        dynamic: { summary: { frames: 8, weightMin: MIN_HARMONIC_INTENSITY, weightMax: MAX_HARMONIC_INTENSITY } },
+        weights: { dry: 1, dynamicMin: MIN_HARMONIC_INTENSITY, dynamicMax: MAX_HARMONIC_INTENSITY, ratio: BALANCE_AUTO },
+      };
+    },
+    verifyJWT: (req, _res, next) => {
+      req.user = { email: 'djeff@example.test' };
+      next();
+    },
+  }));
+
+  const { server, baseUrl } = await listen(app);
+  try {
+    const form = new FormData();
+    form.append('audio', new Blob([Buffer.from('ID3demo')], { type: 'audio/mpeg' }), 'demo.mp3');
+    form.append('profile', 'blend');
+    form.append('frameMs', '250');
+    form.append('maxSegments', '64');
+    const res = await fetch(`${baseUrl}/api/double-harmonic/v3/process`, {
+      method: 'POST',
+      body: form,
+    });
+    const payload = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.method, 'dry-first-d40-db-dynamic-overlay-v3');
+    assert.equal(payload.intensity, 'auto');
+    assert.equal(payload.contentType, 'audio/mpeg');
+    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v3\.mp3$/);
+    assert.deepEqual(calls, [{ profile: 'blend', frameMs: 250, maxSegments: 64 }]);
 
     const shared = await fetch(payload.shareUrl);
     assert.equal(shared.status, 200);

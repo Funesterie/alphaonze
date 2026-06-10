@@ -2003,6 +2003,7 @@ const D40_HARMONIC_INTENSITY_MAX = 1 / D40_HARMONIC_RATIO;
 const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v1: "V1 stable",
   v2: "V2 Release",
+  v3: "V3 auto",
 };
 
 function isLocalDevSurface() {
@@ -4608,15 +4609,17 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     value={doubleHarmonicMode}
                     disabled={!hasSession || isBusy}
                     onChange={(event) => {
-                      const nextMode = event.currentTarget.value === "v2" ? "v2" : "v1";
+                      const rawMode = event.currentTarget.value;
+                      const nextMode: DoubleHarmonicProcessMode = rawMode === "v3" ? "v3" : rawMode === "v2" ? "v2" : "v1";
                       setDoubleHarmonicMode(nextMode);
                       setDoubleHarmonicResult(null);
                     }}
                   >
                     <option value="v1">V1 stable</option>
                     <option value="v2">V2 Release</option>
+                    <option value="v3">V3 auto</option>
                   </select>
-                  <strong>{doubleHarmonicMode === "v2" ? "V2" : "V1"}</strong>
+                  <strong>{doubleHarmonicMode === "v3" ? "V3" : doubleHarmonicMode === "v2" ? "V2" : "V1"}</strong>
                 </label>
                 <label className="vivy-studio-range-label">
                   <span>Poids harmonique</span>
@@ -4628,14 +4631,14 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     max={D40_HARMONIC_INTENSITY_MAX}
                     step="0.005"
                     value={doubleHarmonicIntensity}
-                    disabled={!hasSession || isBusy}
+                    disabled={!hasSession || isBusy || doubleHarmonicMode === "v3"}
                     onChange={(event) => {
                       const nextValue = Number(event.currentTarget.valueAsNumber || event.currentTarget.value || 1);
                       setDoubleHarmonicIntensity(Math.max(D40_HARMONIC_INTENSITY_MIN, Math.min(D40_HARMONIC_INTENSITY_MAX, nextValue)));
                       setDoubleHarmonicResult(null);
                     }}
                   />
-                  <strong>{doubleHarmonicIntensityLabel}</strong>
+                  <strong>{doubleHarmonicMode === "v3" ? "Auto" : doubleHarmonicIntensityLabel}</strong>
                 </label>
                 <div className="vivy-studio-actions vivy-studio-actions--voice">
                   <button type="button" onClick={processVivyDoubleHarmonicAudio} disabled={!hasSession || isBusy || !doubleHarmonicFile}>Mixer D40</button>
@@ -4656,7 +4659,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                   ) : null}
                 </div>
                 <p className="vivy-studio-voice-summary">
-                  {`Version : ${doubleHarmonicModeLabel}`}
+                  {doubleHarmonicMode === "v3"
+                    ? "Version : V3 auto"
+                    : `Version : ${doubleHarmonicModeLabel}`}
                 </p>
               </fieldset>
               <label>
