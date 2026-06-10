@@ -4569,7 +4569,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     disabled={!hasSession || isBusy}
                     onChange={(event) => {
                       const nextValue = Number(event.currentTarget.valueAsNumber || event.currentTarget.value || 1);
-                      setDoubleHarmonicIntensity(Math.max(0.25, Math.min(2, nextValue)));
+                      setDoubleHarmonicIntensity(Math.max(0.25, Math.min(8, nextValue)));
                       setDoubleHarmonicResult(null);
                     }}
                   />
