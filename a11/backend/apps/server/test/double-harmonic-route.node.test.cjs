@@ -199,6 +199,60 @@ test('double harmonic route analyzes upload through phase-lock v2 without writin
   }
 });
 
+test('double harmonic route processes upload through experimental phase-lock v2', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-v2-process-'));
+  const calls = [];
+  const app = express();
+  app.use('/api/double-harmonic', createDoubleHarmonicRouter({
+    runtimeRoot,
+    processPhaseAwareD40V2: async ({ outputPath, profile, intensity, analysisOptions }) => {
+      calls.push({ profile, intensity, frameMs: analysisOptions.frameMs });
+      fs.writeFileSync(outputPath, Buffer.from('processed v2 mp3'));
+      return {
+        method: 'dry-first-d40-phase-aware-overlay-v2',
+        state: 'experimental-process',
+        profile,
+        intensity,
+        phase: { score: 1.01, delaySamples: 0.08 },
+        analysis: { summary: { frames: 4, medianF0: 220 }, frameMs: analysisOptions.frameMs },
+        weights: { dry: 1, high: 0.028, low: 0.02488888888888889, ratio: 0.8888888888888888 },
+      };
+    },
+    verifyJWT: (req, _res, next) => {
+      req.user = { email: 'djeff@example.test' };
+      next();
+    },
+  }));
+
+  const { server, baseUrl } = await listen(app);
+  try {
+    const form = new FormData();
+    form.append('audio', new Blob([Buffer.from('ID3demo')], { type: 'audio/mpeg' }), 'demo.mp3');
+    form.append('profile', 'blend');
+    form.append('intensity', '1.08');
+    form.append('frameMs', '20');
+    const res = await fetch(`${baseUrl}/api/double-harmonic/v2/process`, {
+      method: 'POST',
+      body: form,
+    });
+    const payload = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.method, 'dry-first-d40-phase-aware-overlay-v2');
+    assert.equal(payload.state, 'experimental-process');
+    assert.equal(payload.contentType, 'audio/mpeg');
+    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v2\.mp3$/);
+    assert.deepEqual(calls, [{ profile: 'blend', intensity: 1.08, frameMs: 20 }]);
+
+    const shared = await fetch(payload.shareUrl);
+    assert.equal(shared.status, 200);
+    assert.match(shared.headers.get('content-type') || '', /audio\/mpeg/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
 test('double harmonic route keeps mp3 input as mp3 output', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-mp3-'));
   const app = express();

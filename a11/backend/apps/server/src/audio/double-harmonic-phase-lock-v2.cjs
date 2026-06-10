@@ -1,18 +1,25 @@
 'use strict';
 
 const { execFile } = require('node:child_process');
+const path = require('node:path');
 
 const {
   AUDIO_PIVOT_GAIN_FACTOR,
+  BALANCE_AUTO,
   D40_SOURCE_DENSITY,
   D40_SOURCE_N,
   D40_TARGET_N,
   MG_PHASE,
   ONE_OVER_E,
   PIVOT_RESIDUAL_OLD,
+  RAW_LOW_PRESET,
   TARGET_0005_PI,
   T_LINEAR,
+  buildD40EnvelopeExpression,
+  buildOutputCodecArgs,
+  resolveHarmonicIntensity,
   resolveD40Density,
+  runFfmpeg,
   sampleD40EnvelopeAt,
 } = require('./double-harmonic-d40.cjs');
 
@@ -30,6 +37,10 @@ function clampNumber(value, min, max, fallback) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.max(min, Math.min(max, numeric));
+}
+
+function numberText(value, digits = 12) {
+  return Number(value).toFixed(digits).replace(/0+$/g, '').replace(/\.$/g, '');
 }
 
 function normalizeSmoothing(value = DEFAULT_SMOOTHING) {
@@ -362,6 +373,130 @@ async function analyzePhaseLockV2({ inputPath, ...options } = {}) {
   });
 }
 
+function resolvePhaseAwareMix(analysis = {}, options = {}) {
+  const summary = analysis.summary || {};
+  const constants = analysis.constants || resolvePhaseLockConstants(options);
+  const intensity = resolveHarmonicIntensity(options.intensity || options.harmonicIntensity || options.weightScale);
+  const voicedRatio = clampNumber(summary.voicedRatio, 0, 1, 0);
+  const confidence = clampNumber(summary.meanF0Confidence, 0, 1, 0);
+  const frames = Math.max(1, Number(summary.frames || 1));
+  const transientRatio = clampNumber((summary.transientFrames || 0) / frames, 0, 1, 0);
+  const phaseScore = clampNumber((0.65 + voicedRatio * 0.35) * (0.65 + confidence * 0.35) * (1 - transientRatio * 0.25), 0.45, 1.08, 1);
+  const medianF0 = clampNumber(summary.medianF0, 40, 1400, 220);
+  const sampleRate = clampNumber(options.outputSampleRate || options.sampleRate, 8000, 96000, 44100);
+  const phaseDelaySamples = constants.phaseCorrectionRadians / (Math.PI * 2 * medianF0) * sampleRate;
+  const phaseDelayMs = phaseDelaySamples * 1000 / sampleRate;
+  const highWeight = RAW_LOW_PRESET.highWeight * AUDIO_PIVOT_GAIN_FACTOR * intensity * phaseScore;
+  const lowWeight = RAW_LOW_PRESET.lowWeight * AUDIO_PIVOT_GAIN_FACTOR * intensity * phaseScore;
+
+  return {
+    intensity,
+    phaseScore,
+    voicedRatio,
+    confidence,
+    transientRatio,
+    medianF0,
+    phaseDelaySamples,
+    phaseDelayMs,
+    highWeight,
+    lowWeight,
+    ratio: lowWeight / highWeight,
+    balance: BALANCE_AUTO,
+  };
+}
+
+function buildPhaseAwareD40Filter({ analysis, profile = 'blend', intensity, cycleSeconds } = {}) {
+  const envelope = buildD40EnvelopeExpression({ profile, periodSeconds: cycleSeconds });
+  const mix = resolvePhaseAwareMix(analysis, { intensity, sampleRate: 44100 });
+  const highVolume = `${numberText(mix.highWeight)}*(${envelope.expression})`;
+  const lowVolume = `${numberText(mix.lowWeight)}*(${envelope.expression})`;
+  const rubberbandOptions = 'transients=crisp:detector=compound:phase=laminar:window=short:smoothing=on:formant=preserved:pitchq=consistency:channels=together';
+
+  return {
+    envelope,
+    mix,
+    filter: [
+      '[0:a]asplit=2[full][work]',
+      '[full]aresample=44100,aformat=channel_layouts=stereo[dryfull]',
+      '[work]aformat=channel_layouts=mono,highpass=f=120,lowpass=f=6500,afftdn=nf=-28,asplit=2[h1][h2]',
+      `[h1]rubberband=pitch=${RAW_LOW_PRESET.highPitch}:${rubberbandOptions},highpass=f=1200,lowpass=f=10000,volume='${highVolume}':eval=frame,pan=stereo|c0=c0|c1=c0[h1o]`,
+      `[h2]rubberband=pitch=${RAW_LOW_PRESET.lowPitch}:${rubberbandOptions},highpass=f=90,lowpass=f=2600,volume='${lowVolume}':eval=frame,pan=stereo|c0=c0|c1=c0[h2o]`,
+      '[dryfull][h1o][h2o]amix=inputs=3:weights=\'1 1 1\':normalize=0,alimiter=limit=0.97[out]',
+    ].join(';'),
+  };
+}
+
+function buildPhaseAwareD40Args({ inputPath, outputPath, analysis, profile = 'blend', intensity, cycleSeconds } = {}) {
+  const built = buildPhaseAwareD40Filter({ analysis, profile, intensity, cycleSeconds });
+  return {
+    built,
+    args: [
+      '-y',
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-i',
+      inputPath,
+      '-filter_complex',
+      built.filter,
+      '-map',
+      '[out]',
+      '-ac',
+      '2',
+      '-ar',
+      '44100',
+      ...buildOutputCodecArgs(outputPath),
+      outputPath,
+    ],
+  };
+}
+
+async function processPhaseAwareD40V2({ inputPath, outputPath, profile = 'blend', intensity, timeoutMs, analysisOptions = {} } = {}) {
+  if (!inputPath) throw new Error('missing_input_path');
+  if (!outputPath) throw new Error('missing_output_path');
+  const analysis = await analyzePhaseLockV2({
+    inputPath,
+    profile,
+    maxFrameDetails: 180,
+    ...analysisOptions,
+  });
+  const { built, args } = buildPhaseAwareD40Args({
+    inputPath,
+    outputPath,
+    analysis,
+    profile,
+    intensity,
+    cycleSeconds: analysisOptions.cycleSeconds,
+  });
+  await runFfmpeg(args, { timeoutMs });
+  return {
+    method: 'dry-first-d40-phase-aware-overlay-v2',
+    state: 'experimental-process',
+    profile: built.envelope.profile,
+    intensity: built.mix.intensity,
+    d40: built.envelope.density,
+    phase: {
+      mgPhase: analysis.constants.mgPhase,
+      correctionRadians: analysis.constants.phaseCorrectionRadians,
+      delaySamples: built.mix.phaseDelaySamples,
+      delayMs: built.mix.phaseDelayMs,
+      score: built.mix.phaseScore,
+    },
+    analysis: {
+      summary: analysis.summary,
+      frameMs: analysis.frameMs,
+      hopMs: analysis.hopMs,
+      cycleSeconds: analysis.cycleSeconds,
+    },
+    weights: {
+      dry: 1,
+      high: built.mix.highWeight,
+      low: built.mix.lowWeight,
+      ratio: built.mix.ratio,
+    },
+  };
+}
+
 function buildPhaseLockPlan(options = {}) {
   const constants = resolvePhaseLockConstants(options);
   const frameMs = clampNumber(options.frameMs, 5, 200, DEFAULT_FRAME_MS);
@@ -436,10 +571,14 @@ module.exports = {
   PHASE_LOCK_SCHEMA,
   analyzePcmPhaseLockV2,
   analyzePhaseLockV2,
+  buildPhaseAwareD40Args,
+  buildPhaseAwareD40Filter,
   buildPhaseLockPlan,
   decodePcmMono,
   normalizeSmoothing,
   pcm16leToFloat32,
+  processPhaseAwareD40V2,
+  resolvePhaseAwareMix,
   resolvePhaseLockConstants,
   wrapRadians,
 };

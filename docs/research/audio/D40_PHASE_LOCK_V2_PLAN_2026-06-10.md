@@ -51,11 +51,12 @@ The first V2 code path is analysis-only and exposed separately from V1:
 
 - `GET /api/double-harmonic/v2/status` returns the V2 constants and phase-lock plan.
 - `POST /api/double-harmonic/v2/analyze` accepts one bounded audio upload and returns measured frame data.
+- `POST /api/double-harmonic/v2/process` is the first experimental renderer. It keeps the source output format, runs the V2 analyzer, then renders a dry-first D40 overlay using Rubber Band `phase=laminar`, crisp transient handling, preserved formants, and consistency pitch quality.
 - The analyzer decodes a temporary mono PCM stream, estimates `f0` with autocorrelation, estimates local phase around `f0`, measures coarse band energy, detects transient jumps, and samples the D40 envelope per frame.
 - Temporary analysis files are deleted after the request.
 - No V2 processing route is default yet.
 
-The analysis payload is the contract for the next processing step. It should let the processor align the high/low overlay layers to the measured frame phase instead of applying a fixed overlay blindly.
+The analysis payload is the contract for the next processing step. The current renderer uses it to scale the overlay with voiced confidence, phase score and transient ratio. A later V2 should use the frame stream for deeper per-frame phase correction once the measured route proves useful by ear and by metrics.
 
 ## Guardrails
 

@@ -245,6 +245,7 @@ module.exports = {
   MICROGAP_HALF_PLUS_CANON_MG,
   ONE_OVER_E,
   PIVOT_RESIDUAL_OLD,
+  RAW_LOW_PRESET,
   TARGET_0005_PI,
   T_LINEAR,
   buildD40EnvelopeExpression,
@@ -255,5 +256,6 @@ module.exports = {
   normalizeProfile,
   resolveD40Density,
   resolveHarmonicIntensity,
+  runFfmpeg,
   sampleD40EnvelopeAt,
 };

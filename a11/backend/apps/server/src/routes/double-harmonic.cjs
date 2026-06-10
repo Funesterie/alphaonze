@@ -18,6 +18,7 @@ const {
 const {
   analyzePhaseLockV2,
   buildPhaseLockPlan,
+  processPhaseAwareD40V2,
 } = require('../audio/double-harmonic-phase-lock-v2.cjs');
 
 const DEFAULT_MAX_MB = 80;
@@ -169,6 +170,9 @@ function createDoubleHarmonicRouter(options = {}) {
   const analyzeAudio = typeof options.analyzePhaseLockV2 === 'function'
     ? options.analyzePhaseLockV2
     : analyzePhaseLockV2;
+  const processAudioV2 = typeof options.processPhaseAwareD40V2 === 'function'
+    ? options.processPhaseAwareD40V2
+    : processPhaseAwareD40V2;
   const runtimeRoot = path.resolve(options.runtimeRoot || getCanonicalRuntimeRoot(process.env));
   const assetRoot = ensureDir(path.join(runtimeRoot, 'double-harmonic-d40'));
   const indexPath = path.join(assetRoot, 'index.json');
@@ -260,6 +264,90 @@ function createDoubleHarmonicRouter(options = {}) {
       for (const filePath of tempFiles) {
         try { fs.rmSync(filePath, { force: true }); } catch {}
       }
+    }
+  });
+
+  router.post('/v2/process', verifyJWT, upload.single('audio'), async (req, res) => {
+    try {
+      pruneIndex(indexPath, assetRoot, ttlMs);
+      if (!req.file?.buffer?.length) {
+        return res.status(400).json({ ok: false, error: 'missing_audio', message: 'Ajoute un fichier audio.' });
+      }
+
+      const id = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+      const base = safeBaseName(req.body?.name || req.file.originalname || 'audio');
+      const inputExt = extForUpload(req.file);
+      const inputFilename = `${id}-${base}-v2-input.${inputExt}`;
+      const outputFormat = resolveOutputFormat(req.body?.format || req.query?.format, inputExt);
+      const outputFilename = `${id}-${base}-funesterie-d40-v2.${outputFormat.ext}`;
+      const inputPath = path.join(assetRoot, inputFilename);
+      const outputPath = path.join(assetRoot, outputFilename);
+      fs.writeFileSync(inputPath, req.file.buffer);
+
+      const profile = String(req.body?.profile || req.query?.profile || 'blend').trim() || 'blend';
+      const intensity = resolveHarmonicIntensity(req.body?.intensity || req.query?.intensity);
+      const processing = await processAudioV2({
+        inputPath,
+        outputPath,
+        profile,
+        intensity,
+        analysisOptions: {
+          frameMs: reqNumber(req.body?.frameMs || req.query?.frameMs),
+          cycleSeconds: reqNumber(req.body?.cycleSeconds || req.query?.cycleSeconds),
+          smoothing: req.body?.smoothing || req.query?.smoothing,
+          maxSeconds: reqNumber(req.body?.maxSeconds || req.query?.maxSeconds),
+          maxFrames: reqNumber(req.body?.maxFrames || req.query?.maxFrames),
+        },
+      });
+      const token = crypto.randomBytes(18).toString('base64url');
+      const createdAt = new Date().toISOString();
+      const owner = String(req.user?.email || req.user?.username || req.user?.sub || '').trim();
+      const asset = {
+        id,
+        token,
+        createdAt,
+        owner,
+        originalName: req.file.originalname || '',
+        inputFilename,
+        outputFilename,
+        contentType: outputFormat.contentType,
+        method: processing.method,
+        profile: processing.profile,
+        intensity: processing.intensity || intensity,
+        weights: processing.weights || null,
+        analysisSummary: processing.analysis?.summary || null,
+        bytes: fs.statSync(outputPath).size,
+      };
+      const index = readIndex(indexPath);
+      index.assets = [asset, ...index.assets].slice(0, 300);
+      writeIndex(indexPath, index);
+
+      const baseUrl = routePublicBase(req);
+      const audioUrl = `/api/double-harmonic/out/${encodeURIComponent(outputFilename)}`;
+      const sharePath = `${audioUrl}?token=${encodeURIComponent(token)}`;
+      return res.json({
+        ok: true,
+        id,
+        method: processing.method,
+        state: processing.state,
+        profile: processing.profile,
+        intensity: processing.intensity || intensity,
+        phase: processing.phase,
+        analysis: processing.analysis,
+        weights: processing.weights || undefined,
+        audioUrl,
+        shareUrl: baseUrl ? `${baseUrl}${sharePath}` : sharePath,
+        contentType: outputFormat.contentType,
+        filename: outputFilename,
+        bytes: asset.bytes,
+        publicSummary: 'V2 experimentale: analyse f0/phase, Rubber Band phase laminar, transitoires crisp et mix D40 protege.',
+      });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        error: 'double_harmonic_v2_process_failed',
+        message: String(error?.message || error),
+      });
     }
   });
 
@@ -358,7 +446,7 @@ function createDoubleHarmonicRouter(options = {}) {
     }
   });
 
-  router.use(['/process', '/v2/analyze'], (err, _req, res, _next) => {
+  router.use(['/process', '/v2/analyze', '/v2/process'], (err, _req, res, _next) => {
     return res.status(400).json({
       ok: false,
       error: 'double_harmonic_upload_failed',

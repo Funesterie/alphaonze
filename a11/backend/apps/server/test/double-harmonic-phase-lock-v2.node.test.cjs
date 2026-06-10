@@ -14,8 +14,10 @@ const {
 const {
   PHASE_LOCK_SCHEMA,
   analyzePcmPhaseLockV2,
+  buildPhaseAwareD40Filter,
   buildPhaseLockPlan,
   normalizeSmoothing,
+  resolvePhaseAwareMix,
   resolvePhaseLockConstants,
 } = require('../src/audio/double-harmonic-phase-lock-v2.cjs');
 
@@ -91,4 +93,25 @@ test('phase-lock v2 analysis extracts f0, phase and D40 frame guidance', () => {
   assert.ok(analysis.summary.d40GainMax > analysis.summary.d40GainMin);
   assert.equal(analysis.frames[0].phaseTargetRadians, analysis.frames[0].phaseErrorRadians + analysis.frames[0].phaseRadians);
   assert.ok(Object.prototype.hasOwnProperty.call(analysis.frames[0].bandEnergy, 'presence'));
+});
+
+test('phase-aware v2 mix keeps dry-first ratio while using analysis guidance', () => {
+  const analysis = analyzePcmPhaseLockV2({
+    samples: sineWave({ frequency: 220 }),
+    sampleRate: 16000,
+    frameMs: 40,
+    cycleSeconds: 4,
+    maxFrameDetails: 12,
+  });
+  const mix = resolvePhaseAwareMix(analysis, { intensity: 1.08 });
+  const built = buildPhaseAwareD40Filter({ analysis, profile: 'blend', intensity: 1.08 });
+
+  assert.ok(mix.phaseScore > 0.9);
+  assert.ok(mix.phaseDelaySamples > 0);
+  assert.equal(Number(mix.ratio.toFixed(12)), Number((0.8888888888888888).toFixed(12)));
+  assert.match(built.filter, /phase=laminar/);
+  assert.match(built.filter, /transients=crisp/);
+  assert.match(built.filter, /formant=preserved/);
+  assert.match(built.filter, /pitchq=consistency/);
+  assert.match(built.filter, /amix=inputs=3:weights='1 1 1':normalize=0/);
 });
