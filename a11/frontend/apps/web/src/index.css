@@ -4445,11 +4445,28 @@ html.a11-auth-page-root body {
   background: #05030a;
 }
 
+.vivy-studio-media-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .vivy-studio-media a,
+.vivy-studio-media button,
 .vivy-studio-media small {
   color: #f079d8;
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+.vivy-studio-media button {
+  width: fit-content;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  text-transform: none;
 }
 
 @media (max-width: 1200px) {

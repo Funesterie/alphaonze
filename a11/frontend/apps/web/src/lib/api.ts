@@ -576,6 +576,17 @@ export function resolveApiAssetUrl(rawValue: string | null | undefined) {
     try {
       const parsed = new URL(raw, globalThis.location?.origin || 'http://178.105.86.89');
       if (/^\/sandbox:/i.test(parsed.pathname) || /\/sandbox:\//i.test(parsed.pathname)) return null;
+      const pathLike = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+      const currentHost = globalThis.location?.hostname || '';
+      const currentOrigin = globalThis.location?.origin || '';
+      if (
+        currentOrigin
+        && isLocalWebHost(currentHost)
+        && isLocalApiBaseCandidate(`${parsed.protocol}//${parsed.host}`)
+        && shouldUseSameOriginDevProxy(getCurrentApiBase(), parsed.pathname)
+      ) {
+        return `${currentOrigin}${pathLike}`;
+      }
       const assetHost = parsed.hostname.toLowerCase();
       if (
         [
@@ -600,6 +611,13 @@ export function resolveApiAssetUrl(rawValue: string | null | undefined) {
   }
   const origin = getApiOrigin();
   const normalizedRaw = raw.replace(/\\/g, '/');
+  if (
+    /^\/(?:api|v1|files)\//i.test(normalizedRaw)
+    && shouldUseSameOriginDevProxy(getCurrentApiBase(), normalizedRaw)
+    && globalThis.location?.origin
+  ) {
+    return `${globalThis.location.origin}${normalizedRaw}`;
+  }
   if (/^\/files\//i.test(normalizedRaw)) {
     return origin ? `${origin}${normalizedRaw}` : normalizedRaw;
   }

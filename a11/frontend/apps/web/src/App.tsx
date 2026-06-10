@@ -2002,7 +2002,7 @@ const D40_HARMONIC_INTENSITY_MIN = D40_HARMONIC_RATIO;
 const D40_HARMONIC_INTENSITY_MAX = 1 / D40_HARMONIC_RATIO;
 const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v1: "V1 stable",
-  v2: "V2 expérimental",
+  v2: "V2 Release",
 };
 
 function isLocalDevSurface() {
@@ -2655,8 +2655,10 @@ type VivyStudioMode = "voice" | "song" | "share";
 type VivyStudioMediaPreview = {
   kind: "audio" | "video";
   url: string;
+  downloadUrl?: string;
   provider?: string;
   contentType?: string;
+  filename?: string;
 };
 
 const VIVY_STUDIO_DRAFT_KEY = "vivy:studio:draft:v2";
@@ -4027,12 +4029,15 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       });
       const mediaUrl = String(result.shareUrl || result.audioUrl || "").trim();
       if (!mediaUrl) throw new Error("audio_url_missing");
+      const downloadUrl = String(result.audioUrl || result.shareUrl || "").trim();
       setDoubleHarmonicResult(result);
       setVivyMedia({
         kind: "audio",
         url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
+        downloadUrl: resolveApiAssetUrl(downloadUrl) || downloadUrl || mediaUrl,
         provider: "funesterie-d40",
         contentType: String(result.contentType || doubleHarmonicFile.type || "audio/mpeg"),
+        filename: String(result.filename || doubleHarmonicFile.name || "funesterie-d40-audio"),
       });
       setVivyOutput((current) => [
         current.trim(),
@@ -4043,6 +4048,31 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       setStatus(`Traitement D40 impossible: ${error?.message || error}`);
     } finally {
       setIsBusy(false);
+    }
+  }
+
+  async function downloadVivyMediaFile(url: string | null | undefined, filename: string | null | undefined) {
+    const resolvedUrl = resolveApiAssetUrl(url || "") || String(url || "").trim();
+    if (!resolvedUrl) {
+      setStatus("Aucun audio à télécharger.");
+      return;
+    }
+    setStatus("Téléchargement audio...");
+    try {
+      const response = await fetch(resolvedUrl, { credentials: "include" });
+      if (!response.ok) throw new Error(`download_failed_${response.status}`);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = String(filename || "funesterie-audio").replace(/[\\/:*?"<>|]+/g, "-");
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      setStatus("Téléchargement audio lancé.");
+    } catch (error: any) {
+      setStatus(`Téléchargement audio impossible: ${error?.message || error}`);
     }
   }
 
@@ -4571,7 +4601,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                   />
                 </label>
                 <label className="vivy-studio-range-label">
-                  <span>Version D40</span>
+                  <span>Version</span>
                   <select
                     id="vivy-studio-dh-mode"
                     name="doubleHarmonicMode"
@@ -4584,7 +4614,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     }}
                   >
                     <option value="v1">V1 stable</option>
-                    <option value="v2">V2 expérimental</option>
+                    <option value="v2">V2 Release</option>
                   </select>
                   <strong>{doubleHarmonicMode === "v2" ? "V2" : "V1"}</strong>
                 </label>
@@ -4610,17 +4640,23 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                 <div className="vivy-studio-actions vivy-studio-actions--voice">
                   <button type="button" onClick={processVivyDoubleHarmonicAudio} disabled={!hasSession || isBusy || !doubleHarmonicFile}>Mixer D40</button>
                   {doubleHarmonicResult?.shareUrl ? (
-                    <a className="vivy-studio-action-link" href={doubleHarmonicResult.shareUrl} target="_blank" rel="noreferrer">Ouvrir le lien</a>
+                    <>
+                      <button
+                        type="button"
+                        className="vivy-studio-action-link"
+                        onClick={() => void downloadVivyMediaFile(
+                          doubleHarmonicResult.audioUrl || doubleHarmonicResult.shareUrl,
+                          doubleHarmonicResult.filename || "funesterie-d40-audio"
+                        )}
+                      >
+                        Télécharger
+                      </button>
+                      <a className="vivy-studio-action-link" href={doubleHarmonicResult.shareUrl} target="_blank" rel="noreferrer">Ouvrir</a>
+                    </>
                   ) : null}
                 </div>
                 <p className="vivy-studio-voice-summary">
-                  {doubleHarmonicFileName ? `Fichier prêt: ${doubleHarmonicFileName}` : "Densité D40 + mg fixe + double harmonique synchronisée."}
-                  {` · ${doubleHarmonicModeLabel}`}
-                  {` · preset raw-low ${doubleHarmonicIntensityLabel}`}
-                  {doubleHarmonicResult?.method ? ` · ${doubleHarmonicResult.method.includes("v2") ? "rendu V2" : "rendu V1"}` : ""}
-                  {doubleHarmonicResult?.intensity ? ` · dernier rendu ${Number(doubleHarmonicResult.intensity).toFixed(2).replace(/\.?0+$/, "")}x` : ""}
-                  {doubleHarmonicResult?.analysis?.summary?.medianF0 ? ` · f0 ${Math.round(Number(doubleHarmonicResult.analysis.summary.medianF0))} Hz` : ""}
-                  {doubleHarmonicResult?.shareUrl ? " · lien exportable prêt" : ""}
+                  {`Version : ${doubleHarmonicModeLabel}`}
                 </p>
               </fieldset>
               <label>
@@ -4872,9 +4908,17 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                   }}
                 />
               )}
-              <a href={vivyMedia.url} target="_blank" rel="noreferrer">
-                Ouvrir le media
-              </a>
+              <div className="vivy-studio-media-actions">
+                <button
+                  type="button"
+                  onClick={() => void downloadVivyMediaFile(vivyMedia.downloadUrl || vivyMedia.url, vivyMedia.filename || "funesterie-media")}
+                >
+                  Télécharger
+                </button>
+                <a href={vivyMedia.url} target="_blank" rel="noreferrer">
+                  Ouvrir
+                </a>
+              </div>
               {(vivyMedia.provider || vivyMedia.contentType) && (
                 <small>{[vivyMedia.provider, vivyMedia.contentType].filter(Boolean).join(" - ")}</small>
               )}

@@ -1,5 +1,7 @@
 import react from '@vitejs/plugin-react-swc';
 
+const apiProxyTarget = process.env.A11_VITE_PROXY_TARGET || 'http://127.0.0.1:3000';
+
 // Dev helper plugin: serve placeholder source maps / anonymous script to avoid devtools 404/parse errors
 function placeholderMapsPlugin() {
   const buildPlaceholderMap = (fileName: string, sourceBody = '') => JSON.stringify({
@@ -45,17 +47,17 @@ export default {
     allowedHosts: ['host.docker.internal'],
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:3000',
+        target: apiProxyTarget,
         changeOrigin: true,
         secure: false
       },
       '/v1': {
-        target: 'http://127.0.0.1:3000',
+        target: apiProxyTarget,
         changeOrigin: true,
         secure: false
       },
       '/files': {
-        target: 'http://127.0.0.1:3000',
+        target: apiProxyTarget,
         changeOrigin: true,
         secure: false
       }
