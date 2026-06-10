@@ -518,6 +518,8 @@ services:
       LOCAL_DEFAULT_MODEL: llama3.2:3b
       A11_LLM_FALLBACK_PROVIDER: ollama
       A11_LLM_RUNTIME_FALLBACK_ORDER: ollama
+      A11_CERBERE_LOCAL_ONLY: "true"
+      A11_LOCAL_CHAT_TIMEOUT_MS: "180000"
       A11_VISION_PROVIDER: janus
       A11_JANUS_ENABLED: "true"
       A11_JANUS_PYTHON_PATH: /opt/janus-venv/bin/python
@@ -603,6 +605,8 @@ services:
       LOCAL_DEFAULT_MODEL: llama3.2:3b
       A11_LLM_FALLBACK_PROVIDER: ollama
       A11_LLM_RUNTIME_FALLBACK_ORDER: ollama
+      A11_CERBERE_LOCAL_ONLY: "true"
+      A11_LOCAL_CHAT_TIMEOUT_MS: "180000"
       A11_VISION_PROVIDER: janus
       A11_JANUS_ENABLED: "true"
       A11_JANUS_PYTHON_PATH: /opt/janus-venv/bin/python
@@ -1018,6 +1022,8 @@ $overrides = [ordered]@{
   A11_CERBERE_PREFER_NON_GROQ = "false"
   A11_LLM_FALLBACK_PROVIDER = "ollama"
   A11_LLM_RUNTIME_FALLBACK_ORDER = "ollama"
+  A11_CERBERE_LOCAL_ONLY = "true"
+  A11_LOCAL_CHAT_TIMEOUT_MS = "180000"
   A11_RUNTIME_ROOT = "/app/runtime"
   A11_RUNTIME_PROFILE = "prod"
   A11_PRODUCT = "a11"
@@ -1239,7 +1245,7 @@ build_env="__REMOTE_ROOT__/secrets/build.env"
 a11_env="__REMOTE_ROOT__/secrets/a11.env"
 compose_env="__REMOTE_ROOT__/secrets/compose.env"
 tmp_build="$(mktemp)"
-managed_keys='^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK|A11_LLM_PROVIDER|A11_OLLAMA_PRIMARY_MODEL|A11_OLLAMA_FALLBACK_MODEL|A11_TRANSLATION_MODEL|LOCAL_DEFAULT_MODEL|A11_LLM_FALLBACK_PROVIDER|A11_LLM_RUNTIME_FALLBACK_ORDER|A11_RUNTIME_ROOT)='
+managed_keys='^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK|A11_LLM_PROVIDER|A11_OLLAMA_PRIMARY_MODEL|A11_OLLAMA_FALLBACK_MODEL|A11_TRANSLATION_MODEL|LOCAL_DEFAULT_MODEL|A11_LLM_FALLBACK_PROVIDER|A11_LLM_RUNTIME_FALLBACK_ORDER|A11_CERBERE_LOCAL_ONLY|A11_LOCAL_CHAT_TIMEOUT_MS|A11_RUNTIME_ROOT)='
 if [ -s "$build_env" ]; then
   grep -v -E "$managed_keys" "$build_env" > "$tmp_build" || true
 fi
@@ -1254,6 +1260,8 @@ printf 'A11_TRANSLATION_MODEL=llama3.2:3b\n' >> "$tmp_build"
 printf 'LOCAL_DEFAULT_MODEL=llama3.2:3b\n' >> "$tmp_build"
 printf 'A11_LLM_FALLBACK_PROVIDER=ollama\n' >> "$tmp_build"
 printf 'A11_LLM_RUNTIME_FALLBACK_ORDER=ollama\n' >> "$tmp_build"
+printf 'A11_CERBERE_LOCAL_ONLY=true\n' >> "$tmp_build"
+printf 'A11_LOCAL_CHAT_TIMEOUT_MS=180000\n' >> "$tmp_build"
 printf 'A11_RUNTIME_ROOT=/app/runtime\n' >> "$tmp_build"
 mv "$tmp_build" "$build_env"
 chmod 600 "$build_env"

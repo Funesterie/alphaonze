@@ -76,6 +76,50 @@ function addOpenAiCompatibleTarget(targets, {
   targets.push(target);
 }
 
+function parseProviderOrder(value = '') {
+  return String(value || '')
+    .split(/[,\s;|>]+/g)
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function isLocalOnlyRuntime(env = process.env) {
+  if (isTruthyEnv(env.A11_CERBERE_LOCAL_ONLY) || isTruthyEnv(env.A11_LLM_LOCAL_ONLY)) return true;
+  const provider = String(env.A11_LLM_PROVIDER || env.LLM_PROVIDER || env.BACKEND || '').trim().toLowerCase();
+  const fallbackProvider = String(env.A11_LLM_FALLBACK_PROVIDER || '').trim().toLowerCase();
+  const order = parseProviderOrder(env.A11_LLM_RUNTIME_FALLBACK_ORDER);
+  const localNames = new Set(['local', 'ollama', 'llama', 'llama_server']);
+  const orderIsLocalOnly = order.length > 0 && order.every((item) => localNames.has(item));
+  return orderIsLocalOnly && (localNames.has(provider) || localNames.has(fallbackProvider));
+}
+
+function addLocalTarget(targets, {
+  role = 'fallback-local',
+  env = process.env,
+  upstreamBody = {},
+  getLocalCompletionsUrl = null,
+} = {}) {
+  const localUrl = typeof getLocalCompletionsUrl === 'function' ? getLocalCompletionsUrl() : '';
+  if (!localUrl) return;
+  const localModel = String(
+    env.LOCAL_DEFAULT_MODEL
+    || env.A11_OLLAMA_PRIMARY_MODEL
+    || env.A11_OLLAMA_FALLBACK_MODEL
+    || 'llama3.2:3b'
+  ).trim() || 'llama3.2:3b';
+  const localTarget = {
+    role,
+    provider: 'local',
+    url: localUrl,
+    body: sanitizeBodyForLocal(upstreamBody, localModel),
+    apiKey: '',
+    authToken: '',
+    model: localModel,
+  };
+  localTarget.id = makeTargetId(localTarget);
+  targets.push(localTarget);
+}
+
 function parseDurationTextMs(text) {
   const raw = String(text || '').trim();
   if (!raw) return 0;
@@ -406,6 +450,15 @@ function buildChatTargets({
   const primaryProvider = String(provider || upstreamBody?.provider || 'openai').trim().toLowerCase();
   const primaryModel = String(upstreamBody?.model || remoteProviderConfig?.model || env.OPENAI_MODEL || env.A11_OPENAI_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
   const targets = [];
+  if (isLocalOnlyRuntime(env)) {
+    addLocalTarget(targets, {
+      role: 'primary-local',
+      env,
+      upstreamBody,
+      getLocalCompletionsUrl,
+    });
+    return targets;
+  }
 
   if (upstreamUrl) {
     const primary = {
@@ -472,19 +525,13 @@ function buildChatTargets({
     }
   }
 
-  const localUrl = typeof getLocalCompletionsUrl === 'function' ? getLocalCompletionsUrl() : '';
-  if (localUrl && primaryProvider !== 'local') {
-    const localModel = String(env.LOCAL_DEFAULT_MODEL || 'gemma4:e4b').trim() || 'gemma4:e4b';
-    const localTarget = {
+  if (primaryProvider !== 'local') {
+    addLocalTarget(targets, {
       role: 'fallback-local',
-      provider: 'local',
-      url: localUrl,
-      body: sanitizeBodyForLocal(upstreamBody, localModel),
-      apiKey: '',
-      model: localModel,
-    };
-    localTarget.id = makeTargetId(localTarget);
-    targets.push(localTarget);
+      env,
+      upstreamBody,
+      getLocalCompletionsUrl,
+    });
   }
 
   const preferNonGroq = !isDisabledEnv(env.A11_CERBERE_PREFER_NON_GROQ);
@@ -524,6 +571,13 @@ function clampTargetLimit(value, env = process.env) {
   const configuredMax = parsePositiveInt(env.A11_CERBERE_MULTI_MAX_TARGETS, DEFAULT_MULTI_MAX_TARGETS);
   const requested = parsePositiveInt(value, configuredMax);
   return Math.max(1, Math.min(MAX_MULTI_TARGETS, configuredMax, requested));
+}
+
+function getTargetTimeoutMs(target, env = process.env) {
+  if (String(target?.provider || '').trim().toLowerCase() === 'local') {
+    return parsePositiveInt(env.A11_LOCAL_CHAT_TIMEOUT_MS || env.A11_OLLAMA_CHAT_TIMEOUT_MS, 180_000);
+  }
+  return parsePositiveInt(env.A11_REMOTE_CHAT_TIMEOUT_MS || env.A11_CHAT_UPSTREAM_TIMEOUT_MS, 60_000);
 }
 
 function compactMultiError(error_) {
@@ -621,6 +675,7 @@ function createMiniCerbereRuntime({
           apiKey: target.authToken,
           reqHeaders,
           requestId,
+          timeout: getTargetTimeoutMs(target, env),
         });
         return {
           ...result,
@@ -702,6 +757,7 @@ function createMiniCerbereRuntime({
           apiKey: target.authToken,
           reqHeaders,
           requestId,
+          timeout: getTargetTimeoutMs(target, env),
         });
         return {
           ok: true,
@@ -758,6 +814,7 @@ function createMiniCerbereRuntime({
     return {
       enabled: !isTruthyEnv(env.A11_CERBERE_DISABLED),
       preferNonGroq: !isDisabledEnv(env.A11_CERBERE_PREFER_NON_GROQ),
+      localOnly: isLocalOnlyRuntime(env),
       cooldowns: cooldownList,
       cooldownCount: cooldownList.length,
       configuredProviders: {
@@ -812,4 +869,5 @@ module.exports = {
   parseRetryAfterHeaderMs,
   parseRetryDelayMs,
   shouldSkipTargetByMismatch,
+  isLocalOnlyRuntime,
 };

@@ -107,7 +107,7 @@ const {
   isSemanticMemoryText,
   shouldStoreSemanticExchange,
 } = require('./lib/semantic-memory-filter.cjs');
-const { createMiniCerbereRuntime, isGroqLikeUrl, redactSecretLikeValue } = require('./lib/mini-cerbere.cjs');
+const { createMiniCerbereRuntime, isGroqLikeUrl, isLocalOnlyRuntime, redactSecretLikeValue } = require('./lib/mini-cerbere.cjs');
 let miniCerbereRuntime = null;
 
 // Reflection Loop (Self-Correction)
@@ -13050,7 +13050,8 @@ async function proxyLocalLlamaCompletion(req, res, localLlamaCompletionUrl, body
 async function proxyChatToOpenAI(req, res) {
   const requestId = ensureRequestId(req, res);
   const requestedProvider = String(req.body?.provider || '').trim().toLowerCase();
-  const provider = requestedProvider || (BACKEND === 'local' ? 'local' : 'openai');
+  const forceLocalProvider = isLocalOnlyRuntime(process.env) && requestedProvider !== 'qflush';
+  const provider = forceLocalProvider ? 'local' : (requestedProvider || (BACKEND === 'local' ? 'local' : 'openai'));
   const latestUserMessage = getLatestUserMessage(req.body || {});
   const userId = String(req.user?.id || req.body?._user || '').trim();
   const conversationId = resolveScopedConversationId(req.body || {}, req);
@@ -13235,6 +13236,8 @@ async function proxyChatToOpenAI(req, res) {
   let upstreamBody = req.body ? { ...req.body } : {};
   if (!String(upstreamBody.provider || '').trim()) {
     upstreamBody.provider = provider;
+  } else if (forceLocalProvider) {
+    upstreamBody.provider = 'local';
   }
   if (remoteProviderConfig) {
     upstreamBody.providerConfig = remoteProviderConfig;

@@ -119,6 +119,39 @@ test('mini cerbere forwards primary remote provider API key', async () => {
   assert.equal(seen[0].options.apiKey, 'openrouter-profile-key');
 });
 
+test('mini cerbere local-only runtime ignores remote primary and external fallbacks', () => {
+  const runtime = createMiniCerbereRuntime({
+    env: {
+      A11_LLM_PROVIDER: 'ollama',
+      A11_LLM_FALLBACK_PROVIDER: 'ollama',
+      A11_LLM_RUNTIME_FALLBACK_ORDER: 'ollama',
+      LOCAL_DEFAULT_MODEL: 'llama3.2:3b',
+      A11_CERBERE_OPENAI_API_KEY: 'sk-test',
+      A11_CERBERE_TOGETHER_API_KEY: 'together-test-key',
+    },
+    requestChatUpstream: async () => {
+      throw new Error('not called');
+    },
+    getLocalCompletionsUrl: () => 'http://a11-ollama:11434/v1/chat/completions',
+    logger: { warn() {} },
+  });
+
+  const targets = runtime._buildTargets({
+    provider: 'openai',
+    upstreamUrl: 'https://openrouter.ai/api/v1/chat/completions',
+    upstreamBody: {
+      model: 'meta-llama/llama-3.3-70b-instruct',
+      messages: [{ role: 'user', content: 'salut' }],
+    },
+  });
+
+  assert.equal(targets.length, 1);
+  assert.equal(targets[0].provider, 'local');
+  assert.equal(targets[0].role, 'primary-local');
+  assert.equal(targets[0].model, 'llama3.2:3b');
+  assert.match(targets[0].url, /a11-ollama:11434/);
+});
+
 test('mini cerbere adds Janus Llama Pro fallback for vision requests', () => {
   const runtime = createMiniCerbereRuntime({
     env: {
