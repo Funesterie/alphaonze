@@ -18,7 +18,7 @@ const RAW_LOW_PRESET = Object.freeze({
 
 const DEFAULT_HARMONIC_INTENSITY = 1;
 const MIN_HARMONIC_INTENSITY = 0.25;
-const MAX_HARMONIC_INTENSITY = 2;
+const MAX_HARMONIC_INTENSITY = 8;
 
 const D40_PROFILES = Object.freeze({
   prime3: Object.freeze([0.7747, 0.8466, 0.8991, 0.9177, 0.9056]),

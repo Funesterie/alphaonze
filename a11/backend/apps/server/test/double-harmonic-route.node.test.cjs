@@ -45,7 +45,7 @@ test('harmonic intensity scales only the overlay weights and stays bounded', () 
   const normal = buildProtectMixD40Filter({ intensity: 1 });
   const stronger = buildProtectMixD40Filter({ intensity: 1.5 });
 
-  assert.equal(resolveHarmonicIntensity('999'), 2);
+  assert.equal(resolveHarmonicIntensity('999'), 8);
   assert.equal(resolveHarmonicIntensity('0'), 0.25);
   assert.equal(Number(stronger.highWeight.toFixed(12)), Number((normal.highWeight * 1.5).toFixed(12)));
   assert.equal(Number(stronger.lowWeight.toFixed(12)), Number((normal.lowWeight * 1.5).toFixed(12)));
