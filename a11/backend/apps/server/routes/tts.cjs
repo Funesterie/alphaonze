@@ -1704,7 +1704,7 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
 
         const contentType = String(response.headers?.get?.('content-type') || '').toLowerCase();
         if (response.ok && (contentType.startsWith('audio/') || contentType === 'application/octet-stream')) {
-          const requestedFormat = normalizeTtsAudioFormat(req?.body || {}, audioExtensionFromContentType(contentType, 'wav'));
+          const requestedFormat = normalizeTtsAudioFormat(req?.body || {}, 'mp3');
           const convertedUrl = await saveProviderAudioBufferForFormat(
             Buffer.from(await response.arrayBuffer()),
             'xtts-rvc',
@@ -1749,8 +1749,13 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
         if (!response.ok || parsed?.ok === false) {
           throw new Error(errorMessageFromPayload(parsed?.detail ?? parsed?.message ?? parsed?.error, `voice_conversion_http_${response.status}`));
         }
-        const convertedUrl = normalizeRemoteAssetUrl(baseUrl, parsed?.audio_url || parsed?.audioUrl || parsed?.url || '');
-        if (!convertedUrl) throw new Error('voice_conversion_missing_audio_url');
+        const rawConvertedUrl = parsed?.audio_url || parsed?.audioUrl || parsed?.url || '';
+        const normalizedConvertedUrl = normalizeRemoteAssetUrl(baseUrl, rawConvertedUrl);
+        if (!normalizedConvertedUrl) throw new Error('voice_conversion_missing_audio_url');
+        const requestedFormat = normalizeTtsAudioFormat(req?.body || {}, 'mp3');
+        const convertedSourceUrl = resolveRemoteTtsAssetFetchUrl(baseUrl, rawConvertedUrl) || normalizedConvertedUrl;
+        const materializedConvertedUrl = await materializeTtsAudioUrlForFormat(convertedSourceUrl, requestedFormat, 'xtts-rvc');
+        const convertedUrl = materializedConvertedUrl || normalizedConvertedUrl;
         await loadTtsAudioBuffer(audioUrl, { consume: true }).catch(() => null);
         return {
           ...payload,
@@ -1758,6 +1763,7 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
           original_audio_url: audioUrl,
           audioUrl: convertedUrl,
           audio_url: convertedUrl,
+          audioFormat: materializedConvertedUrl ? 'mp3' : audioExtensionFromContentType('', path.extname(new URL(convertedUrl, 'http://127.0.0.1').pathname).slice(1) || requestedFormat || 'wav'),
           provider: parsed?.provider || parsed?.engine || PROVIDERS.XTTS_RVC,
           via: `${payload?.via || payload?.provider || 'tts'}+voice-convert`,
           providerCapabilities: {
@@ -1924,9 +1930,16 @@ async function requestRemoteTts(payload) {
       const assetBaseUrl = preferredPublicBaseUrl || candidateBaseUrl;
       if (typeof parsed === 'string' && parsed.endsWith('.wav')) {
         const audioUrl = normalizeRemoteAssetUrl(assetBaseUrl, parsed);
+        const requestedFormat = normalizeTtsAudioFormat(payload, 'mp3');
+        const sourceAudioUrl = resolveRemoteTtsAssetFetchUrl(candidateBaseUrl, parsed) || audioUrl;
+        const materializedAudioUrl = await materializeTtsAudioUrlForFormat(sourceAudioUrl, requestedFormat, 'http-tts');
+        const finalAudioUrl = materializedAudioUrl || audioUrl;
         return {
-          audio_url: audioUrl,
-          audioUrl,
+          audio_url: finalAudioUrl,
+          audioUrl: finalAudioUrl,
+          originalAudioUrl: materializedAudioUrl ? audioUrl : undefined,
+          original_audio_url: materializedAudioUrl ? audioUrl : undefined,
+          audioFormat: materializedAudioUrl ? 'mp3' : audioExtensionFromContentType('', path.extname(new URL(finalAudioUrl, 'http://127.0.0.1').pathname).slice(1) || requestedFormat || 'wav'),
           via: 'http-string',
           requestBaseUrl: candidateBaseUrl,
           publicBaseUrl: assetBaseUrl,
@@ -1939,10 +1952,17 @@ async function requestRemoteTts(payload) {
       }
 
       const normalizedAudioUrl = normalizeRemoteAssetUrl(assetBaseUrl, audioUrl);
+      const requestedFormat = normalizeTtsAudioFormat(payload, 'mp3');
+      const sourceAudioUrl = resolveRemoteTtsAssetFetchUrl(candidateBaseUrl, audioUrl) || normalizedAudioUrl;
+      const materializedAudioUrl = await materializeTtsAudioUrlForFormat(sourceAudioUrl, requestedFormat, 'http-tts');
+      const finalAudioUrl = materializedAudioUrl || normalizedAudioUrl;
       const normalizedGifUrl = normalizeRemoteAssetUrl(assetBaseUrl, parsed?.gif_url || parsed?.gifUrl || null);
       return {
-        audio_url: normalizedAudioUrl,
-        audioUrl: normalizedAudioUrl,
+        audio_url: finalAudioUrl,
+        audioUrl: finalAudioUrl,
+        originalAudioUrl: materializedAudioUrl ? normalizedAudioUrl : undefined,
+        original_audio_url: materializedAudioUrl ? normalizedAudioUrl : undefined,
+        audioFormat: materializedAudioUrl ? 'mp3' : audioExtensionFromContentType('', path.extname(new URL(finalAudioUrl, 'http://127.0.0.1').pathname).slice(1) || requestedFormat || 'wav'),
         gif_url: normalizedGifUrl,
         gifUrl: normalizedGifUrl,
         gif_duration_ms: parsed?.gif_duration_ms ?? parsed?.gifDurationMs ?? null,

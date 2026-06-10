@@ -3258,10 +3258,12 @@ test('tts piper route can stream a generated audio asset and consume it', async 
         });
 
         assert.equal(response.status, 200);
-        assert.match(String(response.headers.get('content-type') || ''), /audio\/wav/i);
+        assert.match(String(response.headers.get('content-type') || ''), /audio\/mpeg/i);
         assert.equal(response.headers.get('x-a11-tts-stream'), 'consumed');
-        assert.equal(Buffer.from(await response.arrayBuffer()).subarray(0, 4).toString('ascii'), 'RIFF');
-        assert.equal(ttsAssetCalls.at(-1), 'http://a11-voice:5002/out/streamed.wav?consume=1');
+        const streamedAudio = Buffer.from(await response.arrayBuffer());
+        assert.ok(streamedAudio.length > 0);
+        assert.notEqual(streamedAudio.subarray(0, 4).toString('ascii'), 'RIFF');
+        assert.equal(ttsAssetCalls.at(-1), 'http://a11-voice:5002/out/streamed.wav');
       }
     );
   } finally {
@@ -3735,8 +3737,9 @@ test('tts route can run generated audio through the voice conversion module', as
         });
 
         assert.equal(result.response.status, 200);
-        assert.equal(result.json.audio_url, '/api/tts/out/converted.wav');
-        assert.equal(result.json.originalAudioUrl, '/api/tts/out/source.wav');
+        assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
+        assert.match(result.json.originalAudioUrl, /^\/api\/tts\/out\/tts-out-\d+-http-tts\.mp3$/);
+        assert.equal(result.json.audioFormat, 'mp3');
         assert.equal(result.json.voiceConversion.ok, true);
         assert.equal(result.json.voiceConversion.provider, 'xtts-rvc');
         assert.equal(result.json.voiceConversion.engine, 'xtts-rvc-api');
@@ -3748,7 +3751,11 @@ test('tts route can run generated audio through the voice conversion module', as
           1
         );
         assert.equal(
-          backendCalls.some((call) => call.url === 'http://a11-voice:5002/out/source.wav?consume=1'),
+          backendCalls.some((call) => call.url === 'http://a11-voice:5002/out/source.wav'),
+          true
+        );
+        assert.equal(
+          backendCalls.some((call) => call.url === 'http://a11-voice:5002/out/converted.wav'),
           true
         );
       }
