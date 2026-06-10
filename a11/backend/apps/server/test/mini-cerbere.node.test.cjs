@@ -147,7 +147,7 @@ test('mini cerbere local-only runtime ignores remote primary and external fallba
 
   assert.equal(targets.length, 1);
   assert.equal(targets[0].provider, 'local');
-  assert.equal(targets[0].role, 'primary-local');
+  assert.equal(targets[0].role, 'primary');
   assert.equal(targets[0].model, 'llama3.2:3b');
   assert.match(targets[0].url, /a11-ollama:11434/);
 });

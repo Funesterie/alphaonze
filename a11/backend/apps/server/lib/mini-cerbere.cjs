@@ -452,7 +452,7 @@ function buildChatTargets({
   const targets = [];
   if (isLocalOnlyRuntime(env)) {
     addLocalTarget(targets, {
-      role: 'primary-local',
+      role: 'primary',
       env,
       upstreamBody,
       getLocalCompletionsUrl,
