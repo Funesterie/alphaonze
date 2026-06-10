@@ -510,6 +510,14 @@ services:
     environment:
       A11_WEB_DIST_DIR: /web/dist
       A11_PROFILE_ENV: /app/profiles/a11.prod.env.disabled
+      A11_RUNTIME_ROOT: /app/runtime
+      A11_LLM_PROVIDER: ollama
+      A11_OLLAMA_PRIMARY_MODEL: llama3.2:3b
+      A11_OLLAMA_FALLBACK_MODEL: llama3.2:3b
+      A11_TRANSLATION_MODEL: llama3.2:3b
+      LOCAL_DEFAULT_MODEL: llama3.2:3b
+      A11_LLM_FALLBACK_PROVIDER: ollama
+      A11_LLM_RUNTIME_FALLBACK_ORDER: ollama
       A11_VISION_PROVIDER: janus
       A11_JANUS_ENABLED: "true"
       A11_JANUS_PYTHON_PATH: /opt/janus-venv/bin/python
@@ -587,6 +595,14 @@ services:
       A11_WEB_DIST_DIR: /web/dist
       A11_PROFILE_ENV: /app/profiles/kaen44.prod.env.disabled
       KAEN44_PROFILE_ENV: /app/profiles/kaen44.prod.env.disabled
+      A11_RUNTIME_ROOT: /app/runtime
+      A11_LLM_PROVIDER: ollama
+      A11_OLLAMA_PRIMARY_MODEL: llama3.2:3b
+      A11_OLLAMA_FALLBACK_MODEL: llama3.2:3b
+      A11_TRANSLATION_MODEL: llama3.2:3b
+      LOCAL_DEFAULT_MODEL: llama3.2:3b
+      A11_LLM_FALLBACK_PROVIDER: ollama
+      A11_LLM_RUNTIME_FALLBACK_ORDER: ollama
       A11_VISION_PROVIDER: janus
       A11_JANUS_ENABLED: "true"
       A11_JANUS_PYTHON_PATH: /opt/janus-venv/bin/python
@@ -650,8 +666,8 @@ services:
         condition: service_started
     volumes:
       - /srv/a11-data/a11/kaen44-logs:/app/logs
-      - /srv/a11-data/a11/kaen44-runtime:/app/runtime
-      - /srv/a11-data/a11/kaen44-uploads:/app/runtime/files/uploads
+      - /srv/a11-data/a11/runtime:/app/runtime
+      - /srv/a11-data/a11/uploads:/app/runtime/files/uploads
       - /home/deploy/a11-data/tts:/data/tts:ro
       - /srv/a11/current/web/dist:/web/dist:ro
     expose:
@@ -977,8 +993,8 @@ $overrides = [ordered]@{
   OLLAMA_HOST = "a11-ollama"
   OLLAMA_PORT = "11434"
   A11_OLLAMA_BASE = "http://a11-ollama:11434"
-  A11_OLLAMA_PRIMARY_MODEL = "gpt-oss:20b-cloud"
-  A11_OLLAMA_FALLBACK_MODEL = "llama3.2:latest"
+  A11_OLLAMA_PRIMARY_MODEL = "llama3.2:3b"
+  A11_OLLAMA_FALLBACK_MODEL = "llama3.2:3b"
   A11_ENABLE_EMBEDDINGS = "true"
   A11_EMBEDDING_BASE_URL = "http://a11-ollama:11434"
   A11_EMBEDDING_MODEL = "nomic-embed-text"
@@ -995,13 +1011,14 @@ $overrides = [ordered]@{
   A11_STT_ALLOW_OPENAI_COMPATIBLE = $(if ($env:A11_STT_ALLOW_OPENAI_COMPATIBLE) { $env:A11_STT_ALLOW_OPENAI_COMPATIBLE } else { "false" })
   A11_STT_ALLOW_OPENAI_FALLBACK = $(if ($env:A11_STT_ALLOW_OPENAI_FALLBACK) { $env:A11_STT_ALLOW_OPENAI_FALLBACK } else { "false" })
   A11_TRANSLATION_BASE_URL = "http://a11-ollama:11434"
-  A11_TRANSLATION_MODEL = "gpt-oss:20b-cloud"
+  A11_TRANSLATION_MODEL = "llama3.2:3b"
   A11_CERBERE_OPENAI_BASE_URL = "https://openrouter.ai/api/v1"
   A11_CERBERE_OPENAI_API_KEY = $(if ($mcpEnvMap.Contains("OPENROUTER_API_KEY") -and -not [string]::IsNullOrWhiteSpace($mcpEnvMap["OPENROUTER_API_KEY"])) { $mcpEnvMap["OPENROUTER_API_KEY"] } elseif ($envMap.Contains("OPENROUTER_API_KEY")) { $envMap["OPENROUTER_API_KEY"] } else { "" })
-  LOCAL_DEFAULT_MODEL = "gpt-oss:20b-cloud"
+  LOCAL_DEFAULT_MODEL = "llama3.2:3b"
   A11_CERBERE_PREFER_NON_GROQ = "false"
-  A11_LLM_FALLBACK_PROVIDER = "openai"
-  A11_LLM_RUNTIME_FALLBACK_ORDER = "ollama,openai,groq,together,xai,huggingface,deepseek"
+  A11_LLM_FALLBACK_PROVIDER = "ollama"
+  A11_LLM_RUNTIME_FALLBACK_ORDER = "ollama"
+  A11_RUNTIME_ROOT = "/app/runtime"
   A11_RUNTIME_PROFILE = "prod"
   A11_PRODUCT = "a11"
   A11_INSTANCE_NAME = "Alpha Onze"
@@ -1102,7 +1119,17 @@ if ($LASTEXITCODE -ne 0) { throw "Creation archive echouee" }
 $archiveSizeMb = [Math]::Round((Get-Item -LiteralPath $Archive).Length / 1MB, 2)
 Write-Host "Archive creee: $Archive ($archiveSizeMb MB)" -ForegroundColor DarkCyan
 
-$remotePrepare = "mkdir -p $RemoteRoot/secrets $RemoteRoot/releases $RemoteDataRoot/postgres $RemoteDataRoot/redis $RemoteDataRoot/logs $RemoteDataRoot/runtime $RemoteDataRoot/runtime/secrets $RemoteDataRoot/runtime/voice-library $RemoteDataRoot/uploads $RemoteDataRoot/tts $RemoteDataRoot/stt/whisper $RemoteDataRoot/voice-out $RemoteDataRoot/xtts-rvc/models $RemoteDataRoot/xtts-rvc/rvcs $RemoteDataRoot/xtts-rvc/outputs $RemoteDataRoot/kaen44-logs $RemoteDataRoot/kaen44-runtime $RemoteDataRoot/kaen44-runtime/secrets $RemoteDataRoot/kaen44-runtime/voice-library $RemoteDataRoot/kaen44-uploads $RemoteDataRoot/caddy-data $RemoteDataRoot/caddy-config && chmod 700 $RemoteRoot/secrets"
+$remotePrepare = @"
+set -e
+mkdir -p $RemoteRoot/secrets $RemoteRoot/releases $RemoteDataRoot/postgres $RemoteDataRoot/redis $RemoteDataRoot/logs $RemoteDataRoot/runtime $RemoteDataRoot/runtime/secrets $RemoteDataRoot/runtime/voice-library $RemoteDataRoot/uploads $RemoteDataRoot/tts $RemoteDataRoot/stt/whisper $RemoteDataRoot/voice-out $RemoteDataRoot/xtts-rvc/models $RemoteDataRoot/xtts-rvc/rvcs $RemoteDataRoot/xtts-rvc/outputs $RemoteDataRoot/kaen44-logs $RemoteDataRoot/caddy-data $RemoteDataRoot/caddy-config
+chmod 700 $RemoteRoot/secrets
+if [ -d $RemoteDataRoot/kaen44-runtime ]; then
+  cp -an $RemoteDataRoot/kaen44-runtime/. $RemoteDataRoot/runtime/ 2>/dev/null || true
+fi
+if [ -d $RemoteDataRoot/kaen44-uploads ]; then
+  cp -an $RemoteDataRoot/kaen44-uploads/. $RemoteDataRoot/uploads/ 2>/dev/null || true
+fi
+"@
 & ssh @sshBase $Remote $remotePrepare
 if ($LASTEXITCODE -ne 0) { throw "Preparation distante echouee" }
 
@@ -1112,16 +1139,12 @@ $localSunoSecret = if ($env:VIVY_SUNO_LOCAL_API_KEY_FILE) {
   Join-Path $A11Root "runtime\secrets\suno_api_key"
 }
 if (Test-Path -LiteralPath $localSunoSecret) {
-  foreach ($remoteSunoSecret in @(
-    "$RemoteDataRoot/runtime/secrets/suno_api_key",
-    "$RemoteDataRoot/kaen44-runtime/secrets/suno_api_key"
-  )) {
-    & scp @sshBase $localSunoSecret "${Remote}:$remoteSunoSecret"
-    if ($LASTEXITCODE -ne 0) { throw "Copie secret Suno echouee vers $remoteSunoSecret" }
-  }
-  & ssh @sshBase $Remote "chmod 600 $RemoteDataRoot/runtime/secrets/suno_api_key $RemoteDataRoot/kaen44-runtime/secrets/suno_api_key"
+  $remoteSunoSecret = "$RemoteDataRoot/runtime/secrets/suno_api_key"
+  & scp @sshBase $localSunoSecret "${Remote}:$remoteSunoSecret"
+  if ($LASTEXITCODE -ne 0) { throw "Copie secret Suno echouee vers $remoteSunoSecret" }
+  & ssh @sshBase $Remote "chmod 600 $RemoteDataRoot/runtime/secrets/suno_api_key"
   if ($LASTEXITCODE -ne 0) { throw "Permissions secret Suno echouees" }
-  Write-Host "Secret Suno synchronise vers les runtimes A11 et Vivy/Kaen44." -ForegroundColor DarkCyan
+  Write-Host "Secret Suno synchronise vers le runtime canonique." -ForegroundColor DarkCyan
 }
 
 $piperVoiceDownload = @"
@@ -1186,9 +1209,7 @@ foreach ($voiceReference in $voiceReferenceCopies) {
     continue
   }
   & scp @sshBase $voiceReference.Path "${Remote}:$RemoteDataRoot/runtime/voice-library/$($voiceReference.Name)"
-  if ($LASTEXITCODE -ne 0) { throw "Copie reference voix $($voiceReference.Label) A11 echouee" }
-  & scp @sshBase $voiceReference.Path "${Remote}:$RemoteDataRoot/kaen44-runtime/voice-library/$($voiceReference.Name)"
-  if ($LASTEXITCODE -ne 0) { throw "Copie reference voix $($voiceReference.Label) K44 echouee" }
+  if ($LASTEXITCODE -ne 0) { throw "Copie reference voix $($voiceReference.Label) echouee" }
 }
 
 if (Test-Path -LiteralPath $PrivateCorpusRoot) {
@@ -1196,8 +1217,7 @@ if (Test-Path -LiteralPath $PrivateCorpusRoot) {
     ForEach-Object {
       $corpusDir = $_
       $privateCorpusTargets = @(
-        "$RemoteDataRoot/runtime/Corpus/private/$($corpusDir.Name)",
-        "$RemoteDataRoot/kaen44-runtime/Corpus/private/$($corpusDir.Name)"
+        "$RemoteDataRoot/runtime/Corpus/private/$($corpusDir.Name)"
       )
       foreach ($privateCorpusTarget in $privateCorpusTargets) {
         & ssh @sshBase $Remote "mkdir -p '$privateCorpusTarget'"
@@ -1219,20 +1239,32 @@ build_env="__REMOTE_ROOT__/secrets/build.env"
 a11_env="__REMOTE_ROOT__/secrets/a11.env"
 compose_env="__REMOTE_ROOT__/secrets/compose.env"
 tmp_build="$(mktemp)"
+managed_keys='^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK|A11_LLM_PROVIDER|A11_OLLAMA_PRIMARY_MODEL|A11_OLLAMA_FALLBACK_MODEL|A11_TRANSLATION_MODEL|LOCAL_DEFAULT_MODEL|A11_LLM_FALLBACK_PROVIDER|A11_LLM_RUNTIME_FALLBACK_ORDER|A11_RUNTIME_ROOT)='
 if [ -s "$build_env" ]; then
-  grep -v -E '^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK)=' "$build_env" > "$tmp_build" || true
+  grep -v -E "$managed_keys" "$build_env" > "$tmp_build" || true
 fi
 printf 'A11_BUILD_COMMIT=%s\n' '__BUILD_COMMIT__' >> "$tmp_build"
 printf 'A11_BUILD_BRANCH=%s\n' '__BUILD_BRANCH__' >> "$tmp_build"
 printf 'A11_BUILD_DATE=%s\n' '__BUILD_DATE__' >> "$tmp_build"
 printf 'A11_VOICE_XTTS_RVC_FALLBACK=false\n' >> "$tmp_build"
+printf 'A11_LLM_PROVIDER=ollama\n' >> "$tmp_build"
+printf 'A11_OLLAMA_PRIMARY_MODEL=llama3.2:3b\n' >> "$tmp_build"
+printf 'A11_OLLAMA_FALLBACK_MODEL=llama3.2:3b\n' >> "$tmp_build"
+printf 'A11_TRANSLATION_MODEL=llama3.2:3b\n' >> "$tmp_build"
+printf 'LOCAL_DEFAULT_MODEL=llama3.2:3b\n' >> "$tmp_build"
+printf 'A11_LLM_FALLBACK_PROVIDER=ollama\n' >> "$tmp_build"
+printf 'A11_LLM_RUNTIME_FALLBACK_ORDER=ollama\n' >> "$tmp_build"
+printf 'A11_RUNTIME_ROOT=/app/runtime\n' >> "$tmp_build"
 mv "$tmp_build" "$build_env"
 chmod 600 "$build_env"
 if [ -s "$a11_env" ]; then
-  cat "$a11_env" "$build_env" > "$compose_env"
+  tmp_compose="$(mktemp)"
+  grep -v -E "$managed_keys" "$a11_env" > "$tmp_compose" || true
+  cat "$build_env" >> "$tmp_compose"
+  mv "$tmp_compose" "$compose_env"
 else
   tmp_compose="$(mktemp)"
-  grep -v -E '^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK)=' "$compose_env" > "$tmp_compose" || true
+  grep -v -E "$managed_keys" "$compose_env" > "$tmp_compose" || true
   cat "$build_env" >> "$tmp_compose"
   mv "$tmp_compose" "$compose_env"
 fi
@@ -1292,6 +1324,7 @@ fi
 docker update --restart unless-stopped a11-ollama >/dev/null
 docker exec a11-ollama sh -lc 'mkdir -p /root/.ollama; if [ ! -s /root/.ollama/id_ed25519.pub ]; then ollama signin >/dev/null 2>&1 || true; fi'
 docker exec a11-ollama sh -lc 'ollama pull nomic-embed-text >/dev/null 2>&1 || true'
+docker exec a11-ollama sh -lc 'ollama pull llama3.2:3b >/dev/null 2>&1 || true'
 '@
 
 $remoteComposeOwnershipStep = @'

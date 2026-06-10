@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const fs = require('node:fs');
 
 const SERVER_ROOT = path.resolve(__dirname, '..');
 const APPS_ROOT = path.resolve(SERVER_ROOT, '..');
@@ -56,7 +57,14 @@ function getRepoRoot() {
 
 function getCanonicalRuntimeRoot(env = process.env) {
   return cleanPath(env.A11_RUNTIME_ROOT || env.A11_RUNTIME_DIR || env.RUNTIME_ROOT || env.RUNTIME_DIR)
-    || path.join(A11_ROOT, 'runtime');
+    || getDefaultRuntimeRoot();
+}
+
+function getDefaultRuntimeRoot() {
+  if (process.platform !== 'win32' && fs.existsSync('/app/runtime')) {
+    return '/app/runtime';
+  }
+  return path.join(A11_ROOT, 'runtime');
 }
 
 function isTruthy(value = '') {
