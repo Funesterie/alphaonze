@@ -12,6 +12,7 @@ const {
   generateEmbedding,
   isEmbeddingTemporarilyPaused,
   resolveEmbeddingBaseUrl,
+  resolveEmbeddingTimeoutMs,
 } = require('../lib/vector-memory.cjs');
 const {
   isTripletExtractionEnabled,
@@ -80,6 +81,33 @@ test('embedding model 404 pauses vector calls briefly instead of spamming Ollama
 
     assert.equal(await generateEmbedding(text, { ollamaBase: baseUrl, model }), null);
     assert.equal(calls, 1);
+  } finally {
+    global.fetch = previousFetch;
+  }
+});
+
+test('embedding calls time out quickly and pause the model', async () => {
+  const previousFetch = global.fetch;
+  const baseUrl = `http://slow-embed-${Date.now()}.local`;
+  const model = `slow-${Date.now()}`;
+  let calls = 0;
+  global.fetch = async (_url, options = {}) => {
+    calls += 1;
+    return new Promise((_resolve, reject) => {
+      options.signal?.addEventListener('abort', () => {
+        const error = new Error('embedding timeout');
+        error.name = 'AbortError';
+        reject(error);
+      }, { once: true });
+    });
+  };
+
+  try {
+    const text = 'Je garde une note de mémoire sémantique assez claire pour tester le timeout.';
+    assert.equal(resolveEmbeddingTimeoutMs({ timeoutMs: 75 }), 75);
+    assert.equal(await generateEmbedding(text, { ollamaBase: baseUrl, model, timeoutMs: 75 }), null);
+    assert.equal(calls, 1);
+    assert.equal(isEmbeddingTemporarilyPaused(baseUrl, model), true);
   } finally {
     global.fetch = previousFetch;
   }

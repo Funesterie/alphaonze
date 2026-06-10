@@ -10539,7 +10539,7 @@ async function invokeResponderChannelReply(request = {}) {
       userId: request?.userId || null,
       conversationId: request?.conversationId || null,
     }),
-    signal: AbortSignal.timeout(90_000),
+    signal: AbortSignal.timeout(Number(process.env.A11_RESPONDER_CHAT_TIMEOUT_MS || process.env.A11_LOCAL_CHAT_TIMEOUT_MS || 18_000) || 18_000),
   });
 
   const raw = await response.text();
@@ -10576,6 +10576,8 @@ async function callChatBackend(messages, options = {}) {
   const provider = String(options.provider || getMemorySummaryProvider()).trim().toLowerCase();
   const model = String(options.model || process.env.MEMORY_SUMMARY_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini').trim();
   const sanitizedMessages = sanitizeChatMessagesForTransport(messages, { dedupeAdjacent: false });
+  const memoryLocalTimeoutMs = Number(process.env.A11_MEMORY_LOCAL_TIMEOUT_MS || 3500) || 3500;
+  const memoryRemoteTimeoutMs = Number(process.env.A11_MEMORY_REMOTE_TIMEOUT_MS || 5000) || 5000;
 
   if (provider === 'local') {
     try {
@@ -10592,7 +10594,7 @@ async function callChatBackend(messages, options = {}) {
             temperature: 0.2,
             max_tokens: Math.max(64, Math.min(600, Number(process.env.MEMORY_SUMMARY_MAX_TOKENS || 250) || 250)),
           },
-          timeout: Number(process.env.A11_MEMORY_LOCAL_TIMEOUT_MS || process.env.A11_LOCAL_CHAT_TIMEOUT_MS || 45_000) || 45_000,
+          timeout: memoryLocalTimeoutMs,
         });
         return extractAssistantText(upstreamRes.data).trim();
       }
@@ -10609,7 +10611,7 @@ async function callChatBackend(messages, options = {}) {
             n_predict: Number(process.env.MEMORY_SUMMARY_MAX_TOKENS || 250),
             stream: false
           },
-          timeout: Number(process.env.A11_MEMORY_LOCAL_TIMEOUT_MS || process.env.A11_LOCAL_CHAT_TIMEOUT_MS || 45_000) || 45_000,
+          timeout: memoryLocalTimeoutMs,
         });
         return extractLocalCompletionContent(upstreamRes.data).trim();
       }
@@ -10631,7 +10633,7 @@ async function callChatBackend(messages, options = {}) {
             stream: false,
             temperature: 0.2,
           },
-          timeout: Number(process.env.A11_MEMORY_REMOTE_TIMEOUT_MS || process.env.A11_REMOTE_CHAT_TIMEOUT_MS || 45_000) || 45_000,
+          timeout: memoryRemoteTimeoutMs,
         });
         return extractAssistantText(upstreamRes.data).trim();
       }
@@ -10657,7 +10659,7 @@ async function callChatBackend(messages, options = {}) {
       stream: false,
       temperature: 0.2,
     },
-    timeout: Number(process.env.A11_MEMORY_REMOTE_TIMEOUT_MS || process.env.A11_REMOTE_CHAT_TIMEOUT_MS || 45_000) || 45_000,
+    timeout: memoryRemoteTimeoutMs,
   });
 
   return extractAssistantText(upstreamRes.data).trim();
@@ -11026,8 +11028,12 @@ async function loadUserMemoryContext(userId, latestUserMessage, conversationId) 
   const messageCount = await countUserMessages(normalizedUserId);
 
   if (shouldRefreshLogicalMemory(messageCount)) {
-    const refreshed = await refreshLogicalUserMemory(normalizedUserId, normalizedLatestMessage, storedMessages);
-    logicalMemory = refreshed || logicalMemory;
+    try {
+      const refreshed = await refreshLogicalUserMemory(normalizedUserId, normalizedLatestMessage, storedMessages);
+      logicalMemory = refreshed || logicalMemory;
+    } catch (error_) {
+      console.warn('[A11][memory] logical refresh skipped:', error_?.message || error_);
+    }
   }
 
   if (messageCount > 0 && messageCount % 25 === 0) {

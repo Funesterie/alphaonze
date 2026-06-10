@@ -59,6 +59,28 @@ function resolveEmbeddingBaseUrl(options = {}, env = process.env) {
   return options.ollamaBase || env.A11_EMBEDDING_BASE_URL || env.OLLAMA_BASE || 'http://127.0.0.1:11434';
 }
 
+function resolveEmbeddingTimeoutMs(options = {}, env = process.env) {
+  const parsed = Number.parseInt(
+    String(options.timeoutMs || env.A11_EMBEDDING_TIMEOUT_MS || env.A11_MEMORY_EMBEDDING_TIMEOUT_MS || 2500),
+    10
+  );
+  const resolved = Number.isFinite(parsed) && parsed > 0 ? parsed : 2500;
+  return Math.max(50, Math.min(10000, resolved));
+}
+
+function createAbortSignal(timeoutMs) {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return { signal: AbortSignal.timeout(timeoutMs), cancel: () => {} };
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  timeout.unref?.();
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timeout),
+  };
+}
+
 function getEmbeddingFailureKey(baseUrl, model) {
   return `${String(baseUrl || '').trim()}|${String(model || '').trim()}`;
 }
@@ -104,6 +126,8 @@ async function generateEmbedding(text, options = {}) {
   }
 
   try {
+    const timeoutMs = resolveEmbeddingTimeoutMs(options);
+    const abort = createAbortSignal(timeoutMs);
     const response = await fetch(`${ollamaBase}/api/embeddings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -111,7 +135,9 @@ async function generateEmbedding(text, options = {}) {
         model,
         prompt: normalizedText,
       }),
+      signal: abort.signal,
     });
+    abort.cancel();
 
     if (!response.ok) {
       const errText = await response.text().catch(() => '');
@@ -129,6 +155,9 @@ async function generateEmbedding(text, options = {}) {
     const data = await response.json();
     return Array.isArray(data.embedding) ? data.embedding : null;
   } catch (error) {
+    if (/abort|timeout/i.test(String(error?.name || error?.message || error))) {
+      pauseEmbeddingModel(ollamaBase, model);
+    }
     logger.warn('Failed to generate embedding', { error: String(error?.message || error) });
     return null;
   }
@@ -389,5 +418,6 @@ module.exports = {
   cosineSimilarity,
   areEmbeddingsEnabled,
   resolveEmbeddingBaseUrl,
+  resolveEmbeddingTimeoutMs,
   isEmbeddingTemporarilyPaused,
 };

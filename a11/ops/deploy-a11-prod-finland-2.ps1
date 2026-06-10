@@ -520,6 +520,9 @@ services:
       A11_LLM_RUNTIME_FALLBACK_ORDER: ollama
       A11_CERBERE_LOCAL_ONLY: "true"
       A11_LOCAL_CHAT_TIMEOUT_MS: "18000"
+      A11_MEMORY_LOCAL_TIMEOUT_MS: "3500"
+      A11_MEMORY_REMOTE_TIMEOUT_MS: "5000"
+      A11_EMBEDDING_TIMEOUT_MS: "2500"
       A11_VISION_PROVIDER: janus
       A11_JANUS_ENABLED: "true"
       A11_JANUS_PYTHON_PATH: /opt/janus-venv/bin/python
@@ -607,6 +610,9 @@ services:
       A11_LLM_RUNTIME_FALLBACK_ORDER: ollama
       A11_CERBERE_LOCAL_ONLY: "true"
       A11_LOCAL_CHAT_TIMEOUT_MS: "18000"
+      A11_MEMORY_LOCAL_TIMEOUT_MS: "3500"
+      A11_MEMORY_REMOTE_TIMEOUT_MS: "5000"
+      A11_EMBEDDING_TIMEOUT_MS: "2500"
       A11_VISION_PROVIDER: janus
       A11_JANUS_ENABLED: "true"
       A11_JANUS_PYTHON_PATH: /opt/janus-venv/bin/python
@@ -1024,6 +1030,9 @@ $overrides = [ordered]@{
   A11_LLM_RUNTIME_FALLBACK_ORDER = "ollama"
   A11_CERBERE_LOCAL_ONLY = "true"
   A11_LOCAL_CHAT_TIMEOUT_MS = "18000"
+  A11_MEMORY_LOCAL_TIMEOUT_MS = "3500"
+  A11_MEMORY_REMOTE_TIMEOUT_MS = "5000"
+  A11_EMBEDDING_TIMEOUT_MS = "2500"
   A11_RUNTIME_ROOT = "/app/runtime"
   A11_RUNTIME_PROFILE = "prod"
   A11_PRODUCT = "a11"
@@ -1245,7 +1254,7 @@ build_env="__REMOTE_ROOT__/secrets/build.env"
 a11_env="__REMOTE_ROOT__/secrets/a11.env"
 compose_env="__REMOTE_ROOT__/secrets/compose.env"
 tmp_build="$(mktemp)"
-managed_keys='^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK|A11_LLM_PROVIDER|A11_OLLAMA_PRIMARY_MODEL|A11_OLLAMA_FALLBACK_MODEL|A11_TRANSLATION_MODEL|LOCAL_DEFAULT_MODEL|A11_LLM_FALLBACK_PROVIDER|A11_LLM_RUNTIME_FALLBACK_ORDER|A11_CERBERE_LOCAL_ONLY|A11_LOCAL_CHAT_TIMEOUT_MS|A11_RUNTIME_ROOT)='
+managed_keys='^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK|A11_LLM_PROVIDER|A11_OLLAMA_PRIMARY_MODEL|A11_OLLAMA_FALLBACK_MODEL|A11_TRANSLATION_MODEL|LOCAL_DEFAULT_MODEL|A11_LLM_FALLBACK_PROVIDER|A11_LLM_RUNTIME_FALLBACK_ORDER|A11_CERBERE_LOCAL_ONLY|A11_LOCAL_CHAT_TIMEOUT_MS|A11_MEMORY_LOCAL_TIMEOUT_MS|A11_MEMORY_REMOTE_TIMEOUT_MS|A11_EMBEDDING_TIMEOUT_MS|A11_RUNTIME_ROOT)='
 if [ -s "$build_env" ]; then
   grep -v -E "$managed_keys" "$build_env" > "$tmp_build" || true
 fi
@@ -1262,6 +1271,9 @@ printf 'A11_LLM_FALLBACK_PROVIDER=ollama\n' >> "$tmp_build"
 printf 'A11_LLM_RUNTIME_FALLBACK_ORDER=ollama\n' >> "$tmp_build"
 printf 'A11_CERBERE_LOCAL_ONLY=true\n' >> "$tmp_build"
 printf 'A11_LOCAL_CHAT_TIMEOUT_MS=18000\n' >> "$tmp_build"
+printf 'A11_MEMORY_LOCAL_TIMEOUT_MS=3500\n' >> "$tmp_build"
+printf 'A11_MEMORY_REMOTE_TIMEOUT_MS=5000\n' >> "$tmp_build"
+printf 'A11_EMBEDDING_TIMEOUT_MS=2500\n' >> "$tmp_build"
 printf 'A11_RUNTIME_ROOT=/app/runtime\n' >> "$tmp_build"
 mv "$tmp_build" "$build_env"
 chmod 600 "$build_env"
@@ -1331,8 +1343,8 @@ if ! docker inspect a11-ollama --format '{{json .NetworkSettings.Networks}}' | g
 fi
 docker update --restart unless-stopped a11-ollama >/dev/null
 docker exec a11-ollama sh -lc 'mkdir -p /root/.ollama; if [ ! -s /root/.ollama/id_ed25519.pub ]; then ollama signin >/dev/null 2>&1 || true; fi'
-docker exec a11-ollama sh -lc 'ollama pull nomic-embed-text >/dev/null 2>&1 || true'
-docker exec a11-ollama sh -lc 'ollama pull llama3.2:3b >/dev/null 2>&1 || true'
+docker exec a11-ollama sh -lc 'ollama list | awk "NR>1 {print \$1}" | grep -qx nomic-embed-text || ollama pull nomic-embed-text >/dev/null 2>&1 || true'
+docker exec a11-ollama sh -lc 'ollama list | awk "NR>1 {print \$1}" | grep -qx llama3.2:3b || ollama pull llama3.2:3b >/dev/null 2>&1 || true'
 '@
 
 $remoteComposeOwnershipStep = @'
