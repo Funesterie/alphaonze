@@ -4724,6 +4724,209 @@ html.a11-auth-page-root body {
   }
 }
 
+@media (max-width: 640px) {
+  .vivy-studio {
+    width: calc(100% - 16px);
+    margin-bottom: 22px;
+    padding: 12px;
+    border-radius: 0;
+  }
+
+  .vivy-studio-head {
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .vivy-studio-head h2 {
+    font-size: 28px;
+    line-height: 1.05;
+  }
+
+  .vivy-studio-head p {
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .vivy-studio-head > button {
+    min-height: 42px;
+  }
+
+  .vivy-studio-grid {
+    gap: 10px;
+  }
+
+  .vivy-studio-modes {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .vivy-studio-modes button {
+    min-height: 56px;
+    align-content: center;
+    justify-items: center;
+    gap: 0;
+    padding: 8px 5px;
+    text-align: center;
+  }
+
+  .vivy-studio-modes button.is-active {
+    box-shadow: inset 0 -3px 0 #f079d8;
+  }
+
+  .vivy-studio-modes span {
+    max-width: 100%;
+    font-size: 10px;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+  }
+
+  .vivy-studio-modes small {
+    display: none;
+  }
+
+  .vivy-studio-form,
+  .vivy-studio-brief {
+    padding: 11px;
+  }
+
+  .vivy-studio-form {
+    gap: 10px;
+  }
+
+  .vivy-studio-form h3,
+  .vivy-studio-brief h3 {
+    margin-bottom: 0;
+    font-size: 18px;
+  }
+
+  .vivy-studio-form label {
+    gap: 6px;
+    font-size: 11px;
+    line-height: 1.2;
+  }
+
+  .vivy-studio input,
+  .vivy-studio select,
+  .vivy-studio textarea {
+    min-height: 42px;
+    padding: 9px 10px;
+    font-size: 16px;
+  }
+
+  .vivy-studio textarea {
+    min-height: 104px;
+  }
+
+  .vivy-studio-artist-fieldset,
+  .vivy-studio-consent-fieldset,
+  .vivy-studio-voice-fieldset {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .vivy-studio-artist-grid,
+  .vivy-studio-voice-directory {
+    grid-template-columns: 1fr;
+  }
+
+  .vivy-studio-voice-card {
+    min-height: 58px;
+    gap: 4px;
+    padding: 9px;
+  }
+
+  .vivy-studio-voice-card small {
+    display: none;
+  }
+
+  .vivy-studio-range-label {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "label value"
+      "control control";
+    gap: 6px !important;
+  }
+
+  .vivy-studio-range-label > span {
+    grid-area: label;
+  }
+
+  .vivy-studio-range-label > select,
+  .vivy-studio-range-label > input[type="range"] {
+    grid-area: control;
+  }
+
+  .vivy-studio-range-label > strong {
+    grid-area: value;
+    min-width: 42px;
+  }
+
+  .vivy-studio-actions,
+  .vivy-studio-brief div,
+  .vivy-studio-media-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .vivy-studio-actions button,
+  .vivy-studio-action-link {
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .vivy-studio-active-voice,
+  .vivy-studio-voice-summary,
+  .vivy-studio-brief p {
+    font-size: 12px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .vivy-studio-brief {
+    gap: 10px;
+    grid-template-rows: auto auto auto auto;
+  }
+
+  .vivy-studio-brief pre {
+    min-height: 154px;
+    max-height: 260px;
+    padding: 10px;
+    font-size: 10.5px;
+    line-height: 1.38;
+  }
+
+  .vivy-studio-media {
+    padding: 10px;
+  }
+
+  .vivy-studio-media strong {
+    font-size: 13px;
+  }
+
+  .vivy-studio-diagnostics {
+    padding: 9px;
+  }
+
+  .vivy-studio-diagnostics summary {
+    display: grid;
+    gap: 5px;
+  }
+
+  .vivy-studio-diagnostics-grid,
+  .vivy-studio-diagnostic-values {
+    grid-template-columns: 1fr !important;
+  }
+
+  .vivy-studio-diagnostic-card header {
+    display: grid;
+  }
+
+  .vivy-studio-diagnostic-card header span {
+    white-space: normal;
+  }
+}
+
 @keyframes ekko-pulse {
   0% { box-shadow: 0 0 0 0 rgba(239,68,68,0.7); }
   70% { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
