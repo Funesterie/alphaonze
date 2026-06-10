@@ -7,6 +7,7 @@ const {
   createMiniCerbereRuntime,
   parseDurationTextMs,
   redactSecretLikeText,
+  getTargetTimeoutMs,
   shouldSkipTargetByMismatch,
 } = require('../lib/mini-cerbere.cjs');
 
@@ -117,6 +118,43 @@ test('mini cerbere forwards primary remote provider API key', async () => {
   assert.equal(result.target.role, 'primary');
   assert.equal(seen.length, 1);
   assert.equal(seen[0].options.apiKey, 'openrouter-profile-key');
+  assert.equal(seen[0].options.timeout, 25_000);
+});
+
+test('mini cerbere keeps interactive chat timeouts short by default', async () => {
+  const seen = [];
+  const runtime = createMiniCerbereRuntime({
+    env: {
+      A11_LLM_PROVIDER: 'ollama',
+      A11_LLM_FALLBACK_PROVIDER: 'ollama',
+      A11_LLM_RUNTIME_FALLBACK_ORDER: 'ollama',
+      LOCAL_DEFAULT_MODEL: 'llama3.2:3b',
+    },
+    requestChatUpstream: async (url, body, options) => {
+      seen.push({ url, body, options });
+      return {
+        upstreamRes: { status: 200 },
+        data: { choices: [{ message: { role: 'assistant', content: 'ok local' } }] },
+      };
+    },
+    getLocalCompletionsUrl: () => 'http://a11-ollama:11434/v1/chat/completions',
+    logger: { warn() {} },
+  });
+
+  await runtime.requestChat({
+    provider: 'local',
+    upstreamUrl: 'http://a11-ollama:11434/v1/chat/completions',
+    upstreamBody: {
+      model: 'llama3.2:3b',
+      messages: [{ role: 'user', content: 'salut' }],
+    },
+    reqHeaders: {},
+    requestId: 'interactive-timeout-test',
+  });
+
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].options.timeout, 18_000);
+  assert.equal(getTargetTimeoutMs({ provider: 'openai' }, {}), 25_000);
 });
 
 test('mini cerbere local-only runtime ignores remote primary and external fallbacks', () => {

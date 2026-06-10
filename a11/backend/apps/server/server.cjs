@@ -10757,8 +10757,8 @@ async function requestChatUpstream(url, body, options = {}) {
     ? options.reqHeaders
     : {};
   const defaultTimeout = provider === 'local'
-    ? Number(process.env.A11_LOCAL_CHAT_TIMEOUT_MS || process.env.A11_OLLAMA_CHAT_TIMEOUT_MS || 90_000)
-    : Number(process.env.A11_REMOTE_CHAT_TIMEOUT_MS || process.env.A11_CHAT_UPSTREAM_TIMEOUT_MS || 60_000);
+    ? Number(process.env.A11_LOCAL_CHAT_TIMEOUT_MS || process.env.A11_OLLAMA_CHAT_TIMEOUT_MS || 18_000)
+    : Number(process.env.A11_REMOTE_CHAT_TIMEOUT_MS || process.env.A11_CHAT_UPSTREAM_TIMEOUT_MS || 25_000);
   const upstreamRes = await axios({
     method: 'post',
     url,
@@ -10942,7 +10942,7 @@ async function runApiChatFallbackForQflush(req, requestId) {
     method: 'POST',
     headers,
     body: JSON.stringify(fallbackBody),
-    signal: AbortSignal.timeout(Number(process.env.A11_QFLUSH_CHAT_FALLBACK_TIMEOUT_MS || 90000) || 90000),
+    signal: AbortSignal.timeout(Number(process.env.A11_QFLUSH_CHAT_FALLBACK_TIMEOUT_MS || process.env.A11_LOCAL_CHAT_TIMEOUT_MS || 18_000) || 18_000),
   });
 
   const raw = await response.text();
@@ -13022,7 +13022,7 @@ async function proxyLocalLlamaCompletion(req, res, localLlamaCompletionUrl, body
         n_predict: nPredict,
         stream: false
       },
-      timeout: Number(process.env.A11_LOCAL_COMPLETION_TIMEOUT_MS || process.env.A11_LOCAL_CHAT_TIMEOUT_MS || 90_000) || 90_000,
+      timeout: Number(process.env.A11_LOCAL_COMPLETION_TIMEOUT_MS || process.env.A11_LOCAL_CHAT_TIMEOUT_MS || 18_000) || 18_000,
     });
 
     const rawContent = extractLocalCompletionContent(upstreamRes.data);
@@ -13455,7 +13455,7 @@ async function proxyChatToOpenAI(req, res) {
           provider: 'local',
           reqHeaders: {},
           requestId,
-          timeout: 90_000,
+          timeout: Number(process.env.A11_LOCAL_CHAT_TIMEOUT_MS || 18_000) || 18_000,
         });
         const retryRawContent = extractAssistantText(retryResult.data);
         const retryResolvedAssistant = await resolveAssistantActionEnvelope({

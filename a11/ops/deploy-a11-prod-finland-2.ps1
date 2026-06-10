@@ -519,7 +519,7 @@ services:
       A11_LLM_FALLBACK_PROVIDER: ollama
       A11_LLM_RUNTIME_FALLBACK_ORDER: ollama
       A11_CERBERE_LOCAL_ONLY: "true"
-      A11_LOCAL_CHAT_TIMEOUT_MS: "180000"
+      A11_LOCAL_CHAT_TIMEOUT_MS: "18000"
       A11_VISION_PROVIDER: janus
       A11_JANUS_ENABLED: "true"
       A11_JANUS_PYTHON_PATH: /opt/janus-venv/bin/python
@@ -606,7 +606,7 @@ services:
       A11_LLM_FALLBACK_PROVIDER: ollama
       A11_LLM_RUNTIME_FALLBACK_ORDER: ollama
       A11_CERBERE_LOCAL_ONLY: "true"
-      A11_LOCAL_CHAT_TIMEOUT_MS: "180000"
+      A11_LOCAL_CHAT_TIMEOUT_MS: "18000"
       A11_VISION_PROVIDER: janus
       A11_JANUS_ENABLED: "true"
       A11_JANUS_PYTHON_PATH: /opt/janus-venv/bin/python
@@ -1023,7 +1023,7 @@ $overrides = [ordered]@{
   A11_LLM_FALLBACK_PROVIDER = "ollama"
   A11_LLM_RUNTIME_FALLBACK_ORDER = "ollama"
   A11_CERBERE_LOCAL_ONLY = "true"
-  A11_LOCAL_CHAT_TIMEOUT_MS = "180000"
+  A11_LOCAL_CHAT_TIMEOUT_MS = "18000"
   A11_RUNTIME_ROOT = "/app/runtime"
   A11_RUNTIME_PROFILE = "prod"
   A11_PRODUCT = "a11"
@@ -1261,7 +1261,7 @@ printf 'LOCAL_DEFAULT_MODEL=llama3.2:3b\n' >> "$tmp_build"
 printf 'A11_LLM_FALLBACK_PROVIDER=ollama\n' >> "$tmp_build"
 printf 'A11_LLM_RUNTIME_FALLBACK_ORDER=ollama\n' >> "$tmp_build"
 printf 'A11_CERBERE_LOCAL_ONLY=true\n' >> "$tmp_build"
-printf 'A11_LOCAL_CHAT_TIMEOUT_MS=180000\n' >> "$tmp_build"
+printf 'A11_LOCAL_CHAT_TIMEOUT_MS=18000\n' >> "$tmp_build"
 printf 'A11_RUNTIME_ROOT=/app/runtime\n' >> "$tmp_build"
 mv "$tmp_build" "$build_env"
 chmod 600 "$build_env"

@@ -19,7 +19,7 @@
 
 const MAX_CONCURRENT  = Number(process.env.OLLAMA_BACKEND_PARALLEL  || 2);
 const MAX_QUEUE_SIZE  = Number(process.env.OLLAMA_BACKEND_QUEUE_SIZE || 8);
-const QUEUE_TIMEOUT_MS = Number(process.env.OLLAMA_BACKEND_TIMEOUT_MS || 120_000);
+const QUEUE_TIMEOUT_MS = Number(process.env.OLLAMA_BACKEND_TIMEOUT_MS || process.env.A11_LOCAL_CHAT_TIMEOUT_MS || 20_000);
 
 let active = 0;
 const queue = [];

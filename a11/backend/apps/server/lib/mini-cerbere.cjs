@@ -575,9 +575,9 @@ function clampTargetLimit(value, env = process.env) {
 
 function getTargetTimeoutMs(target, env = process.env) {
   if (String(target?.provider || '').trim().toLowerCase() === 'local') {
-    return parsePositiveInt(env.A11_LOCAL_CHAT_TIMEOUT_MS || env.A11_OLLAMA_CHAT_TIMEOUT_MS, 90_000);
+    return parsePositiveInt(env.A11_LOCAL_CHAT_TIMEOUT_MS || env.A11_OLLAMA_CHAT_TIMEOUT_MS, 18_000);
   }
-  return parsePositiveInt(env.A11_REMOTE_CHAT_TIMEOUT_MS || env.A11_CHAT_UPSTREAM_TIMEOUT_MS, 60_000);
+  return parsePositiveInt(env.A11_REMOTE_CHAT_TIMEOUT_MS || env.A11_CHAT_UPSTREAM_TIMEOUT_MS, 25_000);
 }
 
 function compactMultiError(error_) {
@@ -869,5 +869,6 @@ module.exports = {
   parseRetryAfterHeaderMs,
   parseRetryDelayMs,
   shouldSkipTargetByMismatch,
+  getTargetTimeoutMs,
   isLocalOnlyRuntime,
 };

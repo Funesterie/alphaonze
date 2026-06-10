@@ -152,6 +152,16 @@ async function withMobileLongTaskGuard<T>(maxWaitMs: number, task: () => Promise
   }
 }
 
+function resolveChatRequestTimeoutMs() {
+  const raw = Number(
+    import.meta.env?.VITE_A11_CHAT_REQUEST_TIMEOUT_MS
+    || import.meta.env?.VITE_A11_CHAT_TIMEOUT_MS
+    || 30_000
+  );
+  const resolved = Number.isFinite(raw) && raw > 0 ? raw : 30_000;
+  return Math.max(10_000, Math.min(60_000, Math.round(resolved)));
+}
+
 export async function generatePngWithPrompt(
   prompt: string,
   options: A11GenerationSourceOptions = {}
@@ -3397,6 +3407,16 @@ async function apiPost(body: unknown) {
     // ignore
   }
 
+  const chatTimeoutMs = resolveChatRequestTimeoutMs();
+  let didAbortChatRequest = false;
+  const abortController = new AbortController();
+  const timeoutId = globalThis.setTimeout(() => {
+    didAbortChatRequest = true;
+    abortController.abort();
+  }, chatTimeoutMs);
+  fetchOptions.signal = abortController.signal;
+
+  try {
   const res = await authFetch(url, fetchOptions);
 
   // If response is an event-stream, process incrementally
@@ -3518,6 +3538,14 @@ async function apiPost(body: unknown) {
   }
 
   return data;
+  } catch (error_) {
+    if (didAbortChatRequest || (error_ as any)?.name === 'AbortError') {
+      throw new Error("Le serveur IA met trop longtemps à répondre. J'ai coupé la requête proprement; réessaie dans quelques secondes.");
+    }
+    throw error_;
+  } finally {
+    globalThis.clearTimeout(timeoutId);
+  }
 }
 
 // Appel OpenAI-like, now accepts provider

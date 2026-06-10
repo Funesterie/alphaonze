@@ -319,6 +319,30 @@ function resolveCloudChatMaxTokens() {
   return Math.max(64, Math.min(hardMax, Math.round(fallback)));
 }
 
+function clampPositiveInt(value, fallback, min, max) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  const resolved = Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  return Math.max(min, Math.min(max, resolved));
+}
+
+function resolveLocalChatTimeoutMs() {
+  return clampPositiveInt(
+    process.env.A11_LOCAL_CHAT_TIMEOUT_MS || process.env.A11_OLLAMA_CHAT_TIMEOUT_MS,
+    18_000,
+    5_000,
+    45_000
+  );
+}
+
+function resolveLocalChatStreamTimeoutMs() {
+  return clampPositiveInt(
+    process.env.A11_LOCAL_CHAT_STREAM_TIMEOUT_MS || process.env.A11_LOCAL_CHAT_TIMEOUT_MS || process.env.A11_OLLAMA_CHAT_TIMEOUT_MS,
+    30_000,
+    5_000,
+    90_000
+  );
+}
+
 function shouldAllowCloudChatFallback() {
   const explicit = String(process.env.A11_CHAT_ALLOW_CLOUD_FALLBACK || '').trim().toLowerCase();
   if (['1', 'true', 'yes', 'on'].includes(explicit)) return true;
@@ -444,7 +468,7 @@ async function callOllama(userMessageOrMessages, systemPrompt = SYSTEM_PROMPT) {
       }
     );
     req.on('error', () => resolve(null));
-    req.setTimeout(90_000, () => { req.destroy(); resolve(null); });
+    req.setTimeout(resolveLocalChatTimeoutMs(), () => { req.destroy(); resolve(null); });
     req.write(bodyStr);
     req.end();
   });
@@ -523,7 +547,7 @@ function streamOllama(userMessageOrMessages, res, systemPrompt = SYSTEM_PROMPT) 
     res.write('data: {"error":"ollama_unreachable"}\n\n');
     res.end();
   });
-  req.setTimeout(120_000, () => {
+  req.setTimeout(resolveLocalChatStreamTimeoutMs(), () => {
     req.destroy();
     res.write('data: {"error":"ollama_timeout"}\n\n');
     res.end();
@@ -1207,6 +1231,8 @@ chatEntrypoint.buildOllamaMessages = buildOllamaMessages;
 chatEntrypoint.finalizeA11ChatReply = finalizeA11ChatReply;
 chatEntrypoint.buildAssistantPresenceFallback = buildAssistantPresenceFallback;
 chatEntrypoint.normalizeConversationMessages = normalizeConversationMessages;
+chatEntrypoint.resolveLocalChatTimeoutMs = resolveLocalChatTimeoutMs;
+chatEntrypoint.resolveLocalChatStreamTimeoutMs = resolveLocalChatStreamTimeoutMs;
 chatEntrypoint.isMcpAccessQuestion = isMcpAccessQuestion;
 chatEntrypoint.isRuntimeModulesAccessQuestion = isRuntimeModulesAccessQuestion;
 
