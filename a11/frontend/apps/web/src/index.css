@@ -4166,6 +4166,11 @@ html.a11-auth-page-root body {
   accent-color: #f079d8;
 }
 
+.vivy-studio-range-label select {
+  width: 100%;
+  min-width: 0;
+}
+
 .vivy-studio-range-label strong {
   color: #fff3fc;
   font-size: 12px;
