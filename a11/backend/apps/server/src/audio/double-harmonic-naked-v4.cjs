@@ -36,7 +36,7 @@ const MIN_V4_HIGH_GRAIN_POWER = 0.25;
 const MAX_V4_HIGH_GRAIN_POWER = 4;
 const DEFAULT_V4_WEIGHT_SCALE = 1;
 const MIN_V4_WEIGHT_SCALE = 0.5;
-const MAX_V4_WEIGHT_SCALE = 12;
+const MAX_V4_WEIGHT_SCALE = 4;
 
 function numberText(value, digits = 12) {
   return Number(value).toFixed(digits).replace(/0+$/g, '').replace(/\.$/g, '');

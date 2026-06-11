@@ -2003,7 +2003,7 @@ const D40_HARMONIC_INTENSITY_MAX = 1 / D40_HARMONIC_RATIO;
 const D40_V4_LOW_GRAIN_MULTIPLIER = 2;
 const D40_V4_HIGH_GRAIN_POWER = 3;
 const D40_V4_INTENSITY_MIN = 0.5;
-const D40_V4_INTENSITY_MAX = 12;
+const D40_V4_INTENSITY_MAX = 4;
 const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v1: "V1 stable",
   v2: "V2 Release",

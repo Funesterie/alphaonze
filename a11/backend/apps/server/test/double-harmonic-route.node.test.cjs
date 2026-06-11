@@ -301,7 +301,7 @@ test('naked d40 v4 keeps the validated D40 overlay without filters or final db c
   assert.equal(resolveHighGrainPower(-1), 3);
   assert.equal(resolveHighGrainPower(99), 4);
   assert.equal(resolveV4WeightScale(-1), 1);
-  assert.equal(resolveV4WeightScale(99), 12);
+  assert.equal(resolveV4WeightScale(99), 4);
   assert.equal(built.lowGrainMultiplier, 2);
   assert.equal(built.highGrainPower, 3);
   assert.equal(built.weightScale, 1);
@@ -331,10 +331,10 @@ test('naked d40 v4 keeps the validated D40 overlay without filters or final db c
   assert.equal(Number(stronger.highWeight.toFixed(12)), Number((built.highBaseWeight * 2).toFixed(12)));
   assert.equal(Number(stronger.lowWeight.toFixed(12)), Number((built.lowBaseWeight * 2).toFixed(12)));
   assert.match(stronger.filter, new RegExp(`volume=${Number((built.highBaseWeight * 2).toFixed(12)).toString().replace('.', '\\.')}`));
-  const demoBoost = buildNakedD40FilterV4({ profile: 'blend', weightScale: 12 });
-  assert.equal(demoBoost.weightScale, 12);
-  assert.equal(Number(demoBoost.highWeight.toFixed(12)), Number((built.highBaseWeight * 12).toFixed(12)));
-  assert.equal(Number(demoBoost.lowWeight.toFixed(12)), Number((built.lowBaseWeight * 12).toFixed(12)));
+  const demoBoost = buildNakedD40FilterV4({ profile: 'blend', weightScale: 4 });
+  assert.equal(demoBoost.weightScale, 4);
+  assert.equal(Number(demoBoost.highWeight.toFixed(12)), Number((built.highBaseWeight * 4).toFixed(12)));
+  assert.equal(Number(demoBoost.lowWeight.toFixed(12)), Number((built.lowBaseWeight * 4).toFixed(12)));
 });
 
 test('double harmonic route processes upload and exposes tokenized audio link', async () => {
