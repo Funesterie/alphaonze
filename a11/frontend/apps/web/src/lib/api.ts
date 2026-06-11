@@ -2341,6 +2341,7 @@ export type DoubleHarmonicProcessResult = {
     lowMax?: number;
     ratio?: number;
     lowGrainMultiplier?: number;
+    highGrainPower?: number;
     highPitch?: number;
     lowPitch?: number;
     dynamicMin?: number;
@@ -2390,6 +2391,7 @@ export async function processDoubleHarmonicAudio(
     name?: string;
     mode?: DoubleHarmonicProcessMode;
     lowGrainMultiplier?: number;
+    highGrainPower?: number;
   }
 ): Promise<DoubleHarmonicProcessResult> {
   const form = new FormData();
@@ -2403,6 +2405,9 @@ export async function processDoubleHarmonicAudio(
   }
   if (Number.isFinite(Number(options?.lowGrainMultiplier))) {
     form.append('lowGrainMultiplier', String(options?.lowGrainMultiplier));
+  }
+  if (Number.isFinite(Number(options?.highGrainPower))) {
+    form.append('highGrainPower', String(options?.highGrainPower));
   }
   if (options?.name) form.append('name', options.name);
 

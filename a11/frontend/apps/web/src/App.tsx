@@ -2000,6 +2000,8 @@ const ENABLE_GOOGLE_IDENTITY_BUTTON = String(
 const D40_HARMONIC_RATIO = 8 / 9;
 const D40_HARMONIC_INTENSITY_MIN = D40_HARMONIC_RATIO;
 const D40_HARMONIC_INTENSITY_MAX = 1 / D40_HARMONIC_RATIO;
+const D40_V4_LOW_GRAIN_MULTIPLIER = 2;
+const D40_V4_HIGH_GRAIN_POWER = 3;
 const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v1: "V1 stable",
   v2: "V2 Release",
@@ -3528,8 +3530,11 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const doubleHarmonicWeightLabel = doubleHarmonicMode === "v3"
     ? "Auto"
     : doubleHarmonicMode === "v4"
-      ? "D40"
+      ? `grain bas x${D40_V4_LOW_GRAIN_MULTIPLIER} · haut ^${D40_V4_HIGH_GRAIN_POWER}`
       : doubleHarmonicIntensityLabel;
+  const doubleHarmonicIntensityTitle = doubleHarmonicMode === "v4"
+    ? "Recette V4 Stable"
+    : "Poids harmonique";
 
   useEffect(() => {
     const onSelectMode = (event: Event) => {
@@ -4034,6 +4039,8 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         intensity: doubleHarmonicIntensity,
         name: doubleHarmonicFile.name,
         mode: doubleHarmonicMode,
+        lowGrainMultiplier: doubleHarmonicMode === "v4" ? D40_V4_LOW_GRAIN_MULTIPLIER : undefined,
+        highGrainPower: doubleHarmonicMode === "v4" ? D40_V4_HIGH_GRAIN_POWER : undefined,
       });
       const mediaUrl = String(result.shareUrl || result.audioUrl || "").trim();
       if (!mediaUrl) throw new Error("audio_url_missing");
@@ -4636,7 +4643,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                   <strong>{doubleHarmonicModeLabel}</strong>
                 </label>
                 <label className="vivy-studio-range-label">
-                  <span>Poids harmonique</span>
+                  <span>{doubleHarmonicIntensityTitle}</span>
                   <input
                     id="vivy-studio-dh-intensity"
                     name="doubleHarmonicIntensity"
