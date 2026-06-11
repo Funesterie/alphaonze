@@ -2002,6 +2002,8 @@ const D40_HARMONIC_INTENSITY_MIN = D40_HARMONIC_RATIO;
 const D40_HARMONIC_INTENSITY_MAX = 1 / D40_HARMONIC_RATIO;
 const D40_V4_LOW_GRAIN_MULTIPLIER = 2;
 const D40_V4_HIGH_GRAIN_POWER = 3;
+const D40_V4_INTENSITY_MIN = 0.5;
+const D40_V4_INTENSITY_MAX = 4;
 const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v1: "V1 stable",
   v2: "V2 Release",
@@ -3526,15 +3528,25 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [isBusy, setIsBusy] = useState(false);
   const doubleHarmonicIntensityLabel = `${doubleHarmonicIntensity.toFixed(2).replace(/\.?0+$/, "")}x`;
   const doubleHarmonicModeLabel = D40_PROCESS_MODE_LABELS[doubleHarmonicMode];
-  const doubleHarmonicUsesFixedWeight = doubleHarmonicMode === "v3" || doubleHarmonicMode === "v4";
+  const doubleHarmonicIntensityMin = doubleHarmonicMode === "v4" ? D40_V4_INTENSITY_MIN : D40_HARMONIC_INTENSITY_MIN;
+  const doubleHarmonicIntensityMax = doubleHarmonicMode === "v4" ? D40_V4_INTENSITY_MAX : D40_HARMONIC_INTENSITY_MAX;
+  const doubleHarmonicIntensityStep = doubleHarmonicMode === "v4" ? "0.05" : "0.005";
+  const doubleHarmonicUsesFixedWeight = doubleHarmonicMode === "v3";
   const doubleHarmonicWeightLabel = doubleHarmonicMode === "v3"
     ? "Auto"
     : doubleHarmonicMode === "v4"
-      ? `grain bas x${D40_V4_LOW_GRAIN_MULTIPLIER} · haut ^${D40_V4_HIGH_GRAIN_POWER}`
+      ? `${doubleHarmonicIntensityLabel} · grain bas x${D40_V4_LOW_GRAIN_MULTIPLIER} · haut ^${D40_V4_HIGH_GRAIN_POWER}`
       : doubleHarmonicIntensityLabel;
   const doubleHarmonicIntensityTitle = doubleHarmonicMode === "v4"
     ? "Recette V4 Stable"
     : "Poids harmonique";
+
+  useEffect(() => {
+    setDoubleHarmonicIntensity((current) => Math.max(
+      doubleHarmonicIntensityMin,
+      Math.min(doubleHarmonicIntensityMax, current)
+    ));
+  }, [doubleHarmonicIntensityMax, doubleHarmonicIntensityMin]);
 
   useEffect(() => {
     const onSelectMode = (event: Event) => {
@@ -4648,14 +4660,14 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     id="vivy-studio-dh-intensity"
                     name="doubleHarmonicIntensity"
                     type="range"
-                    min={D40_HARMONIC_INTENSITY_MIN}
-                    max={D40_HARMONIC_INTENSITY_MAX}
-                    step="0.005"
+                    min={doubleHarmonicIntensityMin}
+                    max={doubleHarmonicIntensityMax}
+                    step={doubleHarmonicIntensityStep}
                     value={doubleHarmonicIntensity}
                     disabled={!hasSession || isBusy || doubleHarmonicUsesFixedWeight}
                     onChange={(event) => {
                       const nextValue = Number(event.currentTarget.valueAsNumber || event.currentTarget.value || 1);
-                      setDoubleHarmonicIntensity(Math.max(D40_HARMONIC_INTENSITY_MIN, Math.min(D40_HARMONIC_INTENSITY_MAX, nextValue)));
+                      setDoubleHarmonicIntensity(Math.max(doubleHarmonicIntensityMin, Math.min(doubleHarmonicIntensityMax, nextValue)));
                       setDoubleHarmonicResult(null);
                     }}
                   />

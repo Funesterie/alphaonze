@@ -34,6 +34,9 @@ const MAX_V4_LOW_GRAIN_MULTIPLIER = 4;
 const DEFAULT_V4_HIGH_GRAIN_POWER = 3;
 const MIN_V4_HIGH_GRAIN_POWER = 0.25;
 const MAX_V4_HIGH_GRAIN_POWER = 4;
+const DEFAULT_V4_WEIGHT_SCALE = 1;
+const MIN_V4_WEIGHT_SCALE = 0.5;
+const MAX_V4_WEIGHT_SCALE = 4;
 
 function numberText(value, digits = 12) {
   return Number(value).toFixed(digits).replace(/0+$/g, '').replace(/\.$/g, '');
@@ -56,12 +59,27 @@ function resolveHighGrainPower(value) {
   return Math.max(MIN_V4_HIGH_GRAIN_POWER, Math.min(MAX_V4_HIGH_GRAIN_POWER, numeric));
 }
 
-function buildNakedD40FilterV4({ profile = 'blend', cycleSeconds, lowGrainMultiplier, highGrainPower } = {}) {
+function resolveV4WeightScale(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return DEFAULT_V4_WEIGHT_SCALE;
+  return Math.max(MIN_V4_WEIGHT_SCALE, Math.min(MAX_V4_WEIGHT_SCALE, numeric));
+}
+
+function buildNakedD40FilterV4({
+  profile = 'blend',
+  cycleSeconds,
+  lowGrainMultiplier,
+  highGrainPower,
+  weightScale,
+} = {}) {
   const envelopeProbe = sampleD40EnvelopeAt(0, { profile, periodSeconds: cycleSeconds });
   const highBaseWeight = RAW_LOW_PRESET.highWeight * AUDIO_PIVOT_GAIN_FACTOR;
   const lowBaseWeight = RAW_LOW_PRESET.lowWeight * AUDIO_PIVOT_GAIN_FACTOR;
   const resolvedLowGrainMultiplier = resolveLowGrainMultiplier(lowGrainMultiplier);
   const resolvedHighGrainPower = resolveHighGrainPower(highGrainPower);
+  const resolvedWeightScale = resolveV4WeightScale(weightScale);
+  const highWeight = highBaseWeight * resolvedWeightScale;
+  const lowWeight = lowBaseWeight * resolvedWeightScale;
   const highPitch = GRAIN_SPECTRAL_HIGH ** resolvedHighGrainPower;
   const lowPitch = GRAIN_SPECTRAL_LOW * resolvedLowGrainMultiplier;
 
@@ -80,6 +98,9 @@ function buildNakedD40FilterV4({ profile = 'blend', cycleSeconds, lowGrainMultip
     preset: 'raw-low',
     highBaseWeight,
     lowBaseWeight,
+    highWeight,
+    lowWeight,
+    weightScale: resolvedWeightScale,
     lowGrainMultiplier: resolvedLowGrainMultiplier,
     highGrainPower: resolvedHighGrainPower,
     highPitch,
@@ -94,8 +115,8 @@ function buildNakedD40FilterV4({ profile = 'blend', cycleSeconds, lowGrainMultip
     filter: [
       '[0:a]asplit=3[dry][h][l]',
       '[1:a]asplit=2[eh][el]',
-      `[h]rubberband=pitch=${numberText(highPitch)},volume=${numberText(highBaseWeight)}:eval=frame[hb]`,
-      `[l]rubberband=pitch=${numberText(lowPitch)},volume=${numberText(lowBaseWeight)}:eval=frame[lb]`,
+      `[h]rubberband=pitch=${numberText(highPitch)},volume=${numberText(highWeight)}:eval=frame[hb]`,
+      `[l]rubberband=pitch=${numberText(lowPitch)},volume=${numberText(lowWeight)}:eval=frame[lb]`,
       '[hb][eh]amultiply[ho]',
       '[lb][el]amultiply[lo]',
       "[dry][ho][lo]amix=inputs=3:weights='1 1 1':normalize=0[out]",
@@ -111,9 +132,16 @@ function buildNakedD40ArgsV4({
   envelopePath,
   lowGrainMultiplier,
   highGrainPower,
+  weightScale,
 } = {}) {
   if (!envelopePath) throw new Error('missing_envelope_path');
-  const built = buildNakedD40FilterV4({ profile, cycleSeconds, lowGrainMultiplier, highGrainPower });
+  const built = buildNakedD40FilterV4({
+    profile,
+    cycleSeconds,
+    lowGrainMultiplier,
+    highGrainPower,
+    weightScale,
+  });
   return {
     built,
     args: [
@@ -188,6 +216,7 @@ async function processNakedD40V4({
       envelopePath,
       lowGrainMultiplier: analysisOptions.lowGrainMultiplier,
       highGrainPower: analysisOptions.highGrainPower,
+      weightScale: analysisOptions.weightScale || analysisOptions.intensity || analysisOptions.harmonicIntensity,
     });
     built = planned.built;
     await runFfmpeg(planned.args, { timeoutMs });
@@ -221,7 +250,10 @@ async function processNakedD40V4({
       dry: 1,
       highBase: built.highBaseWeight,
       lowBase: built.lowBaseWeight,
-      ratio: built.lowBaseWeight / built.highBaseWeight,
+      high: built.highWeight,
+      low: built.lowWeight,
+      ratio: built.lowWeight / built.highWeight,
+      weightScale: built.weightScale,
       dynamicMin: analysis.summary.weightMin,
       dynamicMax: analysis.summary.weightMax,
       dynamicMean: analysis.summary.weightMean,
@@ -243,6 +275,7 @@ function buildNakedD40PlanV4(options = {}) {
     cycleSeconds: options.cycleSeconds,
     lowGrainMultiplier: options.lowGrainMultiplier,
     highGrainPower: options.highGrainPower,
+    weightScale: options.weightScale || options.intensity || options.harmonicIntensity,
   });
   return {
     schema: NAKED_D40_V4_SCHEMA,
@@ -255,7 +288,10 @@ function buildNakedD40PlanV4(options = {}) {
       dry: 1,
       highBase: built.highBaseWeight,
       lowBase: built.lowBaseWeight,
-      ratio: built.lowBaseWeight / built.highBaseWeight,
+      high: built.highWeight,
+      low: built.lowWeight,
+      ratio: built.lowWeight / built.highWeight,
+      weightScale: built.weightScale,
       lowGrainMultiplier: built.lowGrainMultiplier,
       highGrainPower: built.highGrainPower,
       highPitch: built.highPitch,
@@ -269,6 +305,11 @@ function buildNakedD40PlanV4(options = {}) {
       attack: DEFAULT_V4_ATTACK,
       release: DEFAULT_V4_RELEASE,
       minDbSpan: DEFAULT_V4_MIN_DB_SPAN,
+      weightScale: {
+        default: DEFAULT_V4_WEIGHT_SCALE,
+        min: MIN_V4_WEIGHT_SCALE,
+        max: MAX_V4_WEIGHT_SCALE,
+      },
     },
     safety: built.safety,
   };
@@ -284,10 +325,13 @@ module.exports = {
   DEFAULT_V4_MAX_SEGMENTS,
   DEFAULT_V4_MIN_DB_SPAN,
   DEFAULT_V4_RELEASE,
+  DEFAULT_V4_WEIGHT_SCALE,
   MAX_V4_HIGH_GRAIN_POWER,
   MAX_V4_LOW_GRAIN_MULTIPLIER,
+  MAX_V4_WEIGHT_SCALE,
   MIN_V4_HIGH_GRAIN_POWER,
   MIN_V4_LOW_GRAIN_MULTIPLIER,
+  MIN_V4_WEIGHT_SCALE,
   NAKED_D40_V4_SCHEMA,
   buildNakedD40ArgsV4,
   buildNakedD40FilterV4,
@@ -295,4 +339,5 @@ module.exports = {
   processNakedD40V4,
   resolveHighGrainPower,
   resolveLowGrainMultiplier,
+  resolveV4WeightScale,
 };

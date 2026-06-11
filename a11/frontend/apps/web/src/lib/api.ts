@@ -2335,6 +2335,7 @@ export type DoubleHarmonicProcessResult = {
     low?: number;
     highBase?: number;
     lowBase?: number;
+    weightScale?: number;
     highMin?: number;
     highMax?: number;
     lowMin?: number;
@@ -2400,7 +2401,7 @@ export async function processDoubleHarmonicAudio(
   if (options?.format) {
     form.append('format', options.format);
   }
-  if ((options?.mode === 'v1' || options?.mode === 'v2' || !options?.mode) && Number.isFinite(Number(options?.intensity))) {
+  if ((options?.mode === 'v1' || options?.mode === 'v2' || options?.mode === 'v4' || !options?.mode) && Number.isFinite(Number(options?.intensity))) {
     form.append('intensity', String(options?.intensity));
   }
   if (Number.isFinite(Number(options?.lowGrainMultiplier))) {

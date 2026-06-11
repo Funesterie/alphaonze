@@ -265,6 +265,7 @@ function createDoubleHarmonicRouter(options = {}) {
         cycleSeconds: reqNumber(_req.query?.cycleSeconds),
         lowGrainMultiplier: reqNumber(_req.query?.lowGrainMultiplier),
         highGrainPower: reqNumber(_req.query?.highGrainPower),
+        weightScale: reqNumber(_req.query?.weightScale || _req.query?.intensity || _req.query?.harmonicIntensity),
       }),
     });
   });
@@ -522,6 +523,14 @@ function createDoubleHarmonicRouter(options = {}) {
           cycleSeconds: reqNumber(req.body?.cycleSeconds || req.query?.cycleSeconds),
           lowGrainMultiplier: reqNumber(req.body?.lowGrainMultiplier || req.query?.lowGrainMultiplier),
           highGrainPower: reqNumber(req.body?.highGrainPower || req.query?.highGrainPower),
+          weightScale: reqNumber(
+            req.body?.weightScale
+            || req.query?.weightScale
+            || req.body?.intensity
+            || req.query?.intensity
+            || req.body?.harmonicIntensity
+            || req.query?.harmonicIntensity
+          ),
         },
       });
       const token = crypto.randomBytes(18).toString('base64url');

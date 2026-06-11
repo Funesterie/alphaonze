@@ -48,6 +48,7 @@ const {
   buildNakedD40PlanV4,
   resolveHighGrainPower,
   resolveLowGrainMultiplier,
+  resolveV4WeightScale,
 } = require('../src/audio/double-harmonic-naked-v4.cjs');
 
 function listen(app) {
@@ -127,6 +128,9 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(statusPayload.v4.safety.noLimiter, true);
     assert.equal(statusPayload.v4.weights.lowGrainMultiplier, 2);
     assert.equal(statusPayload.v4.weights.highGrainPower, 3);
+    assert.equal(statusPayload.v4.weights.weightScale, 1);
+    assert.equal(statusPayload.v4.weights.high, statusPayload.v4.weights.highBase);
+    assert.equal(statusPayload.v4.weights.low, statusPayload.v4.weights.lowBase);
     assert.equal(Number(statusPayload.v4.weights.lowPitch.toFixed(12)), 0.738955471386);
     assert.equal(Number(statusPayload.v4.weights.highPitch.toFixed(12)), 2.475319049392);
 
@@ -296,8 +300,13 @@ test('naked d40 v4 keeps the validated D40 overlay without filters or final db c
   assert.equal(resolveLowGrainMultiplier(99), 4);
   assert.equal(resolveHighGrainPower(-1), 3);
   assert.equal(resolveHighGrainPower(99), 4);
+  assert.equal(resolveV4WeightScale(-1), 1);
+  assert.equal(resolveV4WeightScale(99), 4);
   assert.equal(built.lowGrainMultiplier, 2);
   assert.equal(built.highGrainPower, 3);
+  assert.equal(built.weightScale, 1);
+  assert.equal(built.highWeight, built.highBaseWeight);
+  assert.equal(built.lowWeight, built.lowBaseWeight);
   assert.equal(built.safety.noEqFilters, true);
   assert.equal(built.safety.noNoiseReduction, true);
   assert.equal(built.safety.noLimiter, true);
@@ -317,6 +326,11 @@ test('naked d40 v4 keeps the validated D40 overlay without filters or final db c
   assert.doesNotMatch(built.filter, /asoftclip/);
   assert.doesNotMatch(built.filter, /volume=4dB/);
   assert.equal(Number((built.lowBaseWeight / built.highBaseWeight).toFixed(12)), Number(BALANCE_AUTO.toFixed(12)));
+  const stronger = buildNakedD40FilterV4({ profile: 'blend', weightScale: 2 });
+  assert.equal(stronger.weightScale, 2);
+  assert.equal(Number(stronger.highWeight.toFixed(12)), Number((built.highBaseWeight * 2).toFixed(12)));
+  assert.equal(Number(stronger.lowWeight.toFixed(12)), Number((built.lowBaseWeight * 2).toFixed(12)));
+  assert.match(stronger.filter, new RegExp(`volume=${Number((built.highBaseWeight * 2).toFixed(12)).toString().replace('.', '\\.')}`));
 });
 
 test('double harmonic route processes upload and exposes tokenized audio link', async () => {
@@ -556,6 +570,7 @@ test('double harmonic route publishes naked d40 v4 and keeps source format', asy
         curveAmount: analysisOptions.curveAmount,
         lowGrainMultiplier: analysisOptions.lowGrainMultiplier,
         highGrainPower: analysisOptions.highGrainPower,
+        weightScale: analysisOptions.weightScale,
       });
       fs.writeFileSync(outputPath, Buffer.from('processed v4 mp3'));
       return {
@@ -571,6 +586,7 @@ test('double harmonic route publishes naked d40 v4 and keeps source format', asy
           dynamicMin: MIN_HARMONIC_INTENSITY,
           dynamicMax: MAX_HARMONIC_INTENSITY,
           ratio: BALANCE_AUTO,
+          weightScale: analysisOptions.weightScale || 1,
           lowGrainMultiplier: analysisOptions.lowGrainMultiplier || 1,
           highGrainPower: analysisOptions.highGrainPower || 1,
           finalGainDb: 0,
@@ -596,6 +612,7 @@ test('double harmonic route publishes naked d40 v4 and keeps source format', asy
     form.append('curveAmount', '0.3');
     form.append('lowGrainMultiplier', '2');
     form.append('highGrainPower', '3');
+    form.append('intensity', '2.5');
     const res = await fetch(`${baseUrl}/api/double-harmonic/v4/process`, {
       method: 'POST',
       body: form,
@@ -610,6 +627,7 @@ test('double harmonic route publishes naked d40 v4 and keeps source format', asy
     assert.equal(payload.safety.noLimiter, true);
     assert.equal(payload.weights.lowGrainMultiplier, 2);
     assert.equal(payload.weights.highGrainPower, 3);
+    assert.equal(payload.weights.weightScale, 2.5);
     assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v4\.mp3$/);
     assert.deepEqual(calls, [{
       profile: 'blend',
@@ -619,6 +637,7 @@ test('double harmonic route publishes naked d40 v4 and keeps source format', asy
       curveAmount: 0.3,
       lowGrainMultiplier: 2,
       highGrainPower: 3,
+      weightScale: 2.5,
     }]);
 
     const shared = await fetch(payload.shareUrl);
