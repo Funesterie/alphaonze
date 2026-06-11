@@ -2008,12 +2008,16 @@ const D40_V4_INTENSITY_MAX = 4;
 const D40_V5_INTENSITY_MIN = 0.5;
 const D40_V5_INTENSITY_MAX = 3;
 const D40_V5_DEFAULT_INTENSITY = 2;
+const D40_V6_INTENSITY_MIN = 0.1;
+const D40_V6_INTENSITY_MAX = 10;
+const D40_V6_DEFAULT_INTENSITY = 2;
 const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v1: "V1 stable",
   v2: "V2 Release",
   v3: "V3 auto",
   v4: "V4 Stable",
   v5: "V5 Release",
+  v6: "V6 experimental",
 };
 const D40_OUTPUT_FORMAT_LABELS: Record<DoubleHarmonicOutputFormat, string> = {
   flac: "FLAC master",
@@ -3542,26 +3546,34 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const doubleHarmonicIntensityLabel = `${doubleHarmonicIntensity.toFixed(2).replace(/\.?0+$/, "")}x`;
   const doubleHarmonicModeLabel = D40_PROCESS_MODE_LABELS[doubleHarmonicMode];
   const doubleHarmonicOutputFormatLabel = D40_OUTPUT_FORMAT_LABELS[doubleHarmonicOutputFormat];
-  const doubleHarmonicIntensityMin = doubleHarmonicMode === "v5"
+  const doubleHarmonicIntensityMin = doubleHarmonicMode === "v6"
+    ? D40_V6_INTENSITY_MIN
+    : doubleHarmonicMode === "v5"
     ? D40_V5_INTENSITY_MIN
     : doubleHarmonicMode === "v4"
       ? D40_V4_INTENSITY_MIN
       : D40_HARMONIC_INTENSITY_MIN;
-  const doubleHarmonicIntensityMax = doubleHarmonicMode === "v5"
+  const doubleHarmonicIntensityMax = doubleHarmonicMode === "v6"
+    ? D40_V6_INTENSITY_MAX
+    : doubleHarmonicMode === "v5"
     ? D40_V5_INTENSITY_MAX
     : doubleHarmonicMode === "v4"
       ? D40_V4_INTENSITY_MAX
       : D40_HARMONIC_INTENSITY_MAX;
-  const doubleHarmonicIntensityStep = doubleHarmonicMode === "v4" || doubleHarmonicMode === "v5" ? "0.05" : "0.005";
+  const doubleHarmonicIntensityStep = doubleHarmonicMode === "v6" ? "0.1" : doubleHarmonicMode === "v4" || doubleHarmonicMode === "v5" ? "0.05" : "0.005";
   const doubleHarmonicUsesFixedWeight = doubleHarmonicMode === "v3";
   const doubleHarmonicWeightLabel = doubleHarmonicMode === "v3"
     ? "Auto"
-    : doubleHarmonicMode === "v5"
+    : doubleHarmonicMode === "v6"
+      ? `k ${doubleHarmonicIntensityLabel} · ratio ln(3D/2D) · Mk`
+      : doubleHarmonicMode === "v5"
       ? `${doubleHarmonicIntensityLabel} · bas 1/2D · haut ln(3D)`
       : doubleHarmonicMode === "v4"
         ? `${doubleHarmonicIntensityLabel} · grain bas x${D40_V4_LOW_GRAIN_MULTIPLIER} · haut ^${D40_V4_HIGH_GRAIN_POWER}`
         : doubleHarmonicIntensityLabel;
-  const doubleHarmonicIntensityTitle = doubleHarmonicMode === "v5"
+  const doubleHarmonicIntensityTitle = doubleHarmonicMode === "v6"
+    ? "Resonance V6"
+    : doubleHarmonicMode === "v5"
     ? "Recette V5 Release"
     : doubleHarmonicMode === "v4"
       ? "Recette V4 Stable"
@@ -4663,9 +4675,11 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     disabled={!hasSession || isBusy}
                     onChange={(event) => {
                       const rawMode = event.currentTarget.value;
-                      const nextMode: DoubleHarmonicProcessMode = rawMode === "v5"
-                        ? "v5"
-                        : rawMode === "v4"
+                      const nextMode: DoubleHarmonicProcessMode = rawMode === "v6"
+                        ? "v6"
+                        : rawMode === "v5"
+                          ? "v5"
+                          : rawMode === "v4"
                           ? "v4"
                           : rawMode === "v3"
                             ? "v3"
@@ -4673,10 +4687,11 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                               ? "v2"
                               : "v1";
                       setDoubleHarmonicMode(nextMode);
-                      setDoubleHarmonicIntensity(nextMode === "v5" ? D40_V5_DEFAULT_INTENSITY : 1);
+                      setDoubleHarmonicIntensity(nextMode === "v6" ? D40_V6_DEFAULT_INTENSITY : nextMode === "v5" ? D40_V5_DEFAULT_INTENSITY : 1);
                       setDoubleHarmonicResult(null);
                     }}
                   >
+                    <option value="v6">V6 experimental</option>
                     <option value="v5">V5 Release</option>
                     <option value="v1">V1 stable</option>
                     <option value="v2">V2 Release</option>

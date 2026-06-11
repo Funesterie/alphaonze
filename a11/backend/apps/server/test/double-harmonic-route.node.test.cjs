@@ -56,6 +56,13 @@ const {
   resolveLogDimensionPairV5,
   resolveV5WeightScale,
 } = require('../src/audio/double-harmonic-log-v5.cjs');
+const {
+  buildResonanceD40FilterV6,
+  buildResonanceD40PlanV6,
+  resolveResonanceDimensionPairV6,
+  resolveV6UserK,
+  sampleResonanceMkV6At,
+} = require('../src/audio/double-harmonic-resonance-v6.cjs');
 
 function listen(app) {
   return new Promise((resolve) => {
@@ -143,6 +150,10 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(statusPayload.v5.weights.weightScale, 2);
     assert.equal(Number(statusPayload.v5.weights.lowPitch.toFixed(12)), 0.730205372411);
     assert.equal(Number(statusPayload.v5.weights.highPitch.toFixed(12)), 1.329405380761);
+    assert.equal(statusPayload.v6.method, 'dry-first-mk-log-ratio-d40-harmonic-overlay-v6');
+    assert.equal(Number(statusPayload.v6.weights.lowPitch.toFixed(12)), 0.684738867846);
+    assert.equal(Number(statusPayload.v6.weights.highPitch.toFixed(12)), 1.889397887364);
+    assert.equal(Number(statusPayload.v6.weights.ratio.toFixed(12)), Number(Math.log(statusPayload.v6.dimensions.threeD / statusPayload.v6.dimensions.twoD).toFixed(12)));
 
     const v2 = await fetch(`${baseUrl}/api/double-harmonic/v2/status?smoothing=1%2Fe&frameMs=20`);
     const v2Payload = await v2.json();
@@ -368,6 +379,40 @@ test('log d40 v5 folds 3D with ln and defaults to clean x2', () => {
   assert.equal(Number((built.lowWeight / built.highWeight).toFixed(12)), Number(BALANCE_AUTO.toFixed(12)));
   assert.match(built.filter, /rubberband=pitch=1\.329405380761:transients=crisp/);
   assert.match(built.filter, /rubberband=pitch=0\.730205372411:transients=crisp/);
+  assert.doesNotMatch(built.filter, /alimiter/);
+  assert.doesNotMatch(built.filter, /highpass=/);
+});
+
+test('resonance d40 v6 uses 2D/2, 3D/2 and log high low ratio with folded Mk', () => {
+  const dimensions = resolveResonanceDimensionPairV6();
+  const built = buildResonanceD40FilterV6({ profile: 'blend', userK: 2 });
+  const boosted = buildResonanceD40FilterV6({ profile: 'blend', userK: 99 });
+  const plan = buildResonanceD40PlanV6({ profile: 'blend' });
+  const quiet = sampleResonanceMkV6At({
+    frames: [{ endTime: 1, normalizedEnergy: 0, curvedEnergy: 0 }],
+  }, 0, { userK: 2 });
+  const loud = sampleResonanceMkV6At({
+    frames: [{ endTime: 1, normalizedEnergy: 1, curvedEnergy: 1 }],
+  }, 0, { userK: 2 });
+
+  assert.equal(Number(dimensions.twoD.toFixed(12)), 1.369477735693);
+  assert.equal(Number(dimensions.threeD.toFixed(12)), 3.778795774729);
+  assert.equal(Number(dimensions.lowPitch.toFixed(12)), 0.684738867846);
+  assert.equal(Number(dimensions.highPitch.toFixed(12)), 1.889397887364);
+  assert.equal(Number(dimensions.ratioHighToLow.toFixed(12)), 1.014975928424);
+  assert.equal(dimensions.ratioFormula, 'ln(3D/2D)');
+  assert.equal(resolveV6UserK(undefined), 2);
+  assert.equal(resolveV6UserK(99), 10);
+  assert.equal(built.userK, 2);
+  assert.equal(boosted.userK, 10);
+  assert.equal(plan.defaults.userK.default, 2);
+  assert.equal(plan.defaults.userK.max, 10);
+  assert.equal(Number((built.highWeight / built.lowWeight).toFixed(12)), Number(dimensions.ratioHighToLow.toFixed(12)));
+  assert.ok(loud.folded > quiet.folded);
+  assert.ok(loud.mk > quiet.mk);
+  assert.ok(loud.folded <= 1);
+  assert.match(built.filter, /rubberband=pitch=1\.889397887364:transients=crisp/);
+  assert.match(built.filter, /rubberband=pitch=0\.684738867846:transients=crisp/);
   assert.doesNotMatch(built.filter, /alimiter/);
   assert.doesNotMatch(built.filter, /highpass=/);
 });
@@ -804,6 +849,94 @@ test('double harmonic route publishes log d40 v5 as lossless flac by default', a
       curve: 'grain-6d7d8d',
       curveAmount: 0.3,
       weightScale: 2,
+    }]);
+
+    const shared = await fetch(payload.shareUrl);
+    assert.equal(shared.status, 200);
+    assert.match(shared.headers.get('content-type') || '', /audio\/flac/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('double harmonic route publishes resonance d40 v6 with user k', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-v6-process-'));
+  const calls = [];
+  const app = express();
+  app.use('/api/double-harmonic', createDoubleHarmonicRouter({
+    runtimeRoot,
+    processResonanceD40V6: async ({ outputPath, profile, analysisOptions }) => {
+      calls.push({
+        profile,
+        frameMs: analysisOptions.frameMs,
+        maxSegments: analysisOptions.maxSegments,
+        userK: analysisOptions.userK,
+        kCeiling: analysisOptions.kCeiling,
+      });
+      fs.writeFileSync(outputPath, Buffer.from('processed v6 flac'));
+      return {
+        method: 'dry-first-mk-log-ratio-d40-harmonic-overlay-v6',
+        state: 'v6-experimental',
+        profile,
+        preset: 'mk-log-ratio',
+        intensity: 'mk-log',
+        d40: resolveD40Density(),
+        resonance: {
+          userK: analysisOptions.userK || 2,
+          kCeiling: analysisOptions.kCeiling || 10,
+          ratioHighToLow: 1.0149759284240818,
+          ratioFormula: 'ln(3D/2D)',
+        },
+        dynamic: { summary: { frames: 8, weightMin: MIN_HARMONIC_INTENSITY, weightMax: MAX_HARMONIC_INTENSITY } },
+        weights: {
+          dry: 1,
+          ratio: 1.0149759284240818,
+          userK: analysisOptions.userK || 2,
+          kCeiling: analysisOptions.kCeiling || 10,
+          highPitch: 1.889397887364303,
+          lowPitch: 0.6847388678464575,
+        },
+        safety: { noLimiter: true, noFinalGain: true, publicMaxUserK: 10 },
+      };
+    },
+    verifyJWT: (req, _res, next) => {
+      req.user = { email: 'djeff@example.test' };
+      next();
+    },
+  }));
+
+  const { server, baseUrl } = await listen(app);
+  try {
+    const form = new FormData();
+    form.append('audio', new Blob([Buffer.from('ID3demo')], { type: 'audio/mpeg' }), 'demo.mp3');
+    form.append('profile', 'blend');
+    form.append('frameMs', '250');
+    form.append('maxSegments', '64');
+    form.append('intensity', '6');
+    form.append('kCeiling', '10');
+    const res = await fetch(`${baseUrl}/api/double-harmonic/v6/process`, {
+      method: 'POST',
+      body: form,
+    });
+    const payload = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.method, 'dry-first-mk-log-ratio-d40-harmonic-overlay-v6');
+    assert.equal(payload.state, 'v6-experimental');
+    assert.equal(payload.intensity, 'mk-log');
+    assert.equal(payload.contentType, 'audio/flac');
+    assert.equal(payload.resonance.userK, 6);
+    assert.equal(Number(payload.weights.lowPitch.toFixed(12)), 0.684738867846);
+    assert.equal(Number(payload.weights.highPitch.toFixed(12)), 1.889397887364);
+    assert.equal(Number(payload.weights.ratio.toFixed(12)), 1.014975928424);
+    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v6\.flac$/);
+    assert.deepEqual(calls, [{
+      profile: 'blend',
+      frameMs: 250,
+      maxSegments: 64,
+      userK: 6,
+      kCeiling: 10,
     }]);
 
     const shared = await fetch(payload.shareUrl);
