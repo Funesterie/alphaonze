@@ -849,7 +849,7 @@ function createDoubleHarmonicRouter(options = {}) {
         contentType: outputFormat.contentType,
         filename: outputFilename,
         bytes: asset.bytes,
-        publicSummary: 'V6 soft-fold: ratio haut/bas ln(3D/2D), M/K freine le surplus quand k depasse la masse, sans augmenter le plafond audio.',
+        publicSummary: 'V6 soft-fold: ratio haut/bas ln(3D/2D), K/M calcule le transfert d energie et la resonance reste plafonnee a 1.',
       });
     } catch (error) {
       return res.status(500).json({

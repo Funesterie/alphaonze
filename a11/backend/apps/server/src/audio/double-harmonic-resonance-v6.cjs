@@ -34,10 +34,10 @@ const DEFAULT_V6_K_CEILING = 10;
 const MIN_V6_K_CEILING = 2;
 const MAX_V6_K_CEILING = 64;
 const V6_RESONANCE_MODE = 'soft-fold';
-const V6_QUOTIENT_MODE = 'm-over-k-surplus-fold';
-const V6_METHOD = 'dry-first-soft-fold-m-over-k-d40-harmonic-overlay-v6';
+const V6_TRANSFER_MODE = 'k-over-m-energy-transfer';
+const V6_METHOD = 'dry-first-energy-transfer-k-over-m-d40-harmonic-overlay-v6';
 const V6_STATE = 'v6-soft-fold-active';
-const V6_PRESET = 'soft-fold-m-over-k';
+const V6_PRESET = 'energy-transfer-k-over-m';
 
 function numberText(value, digits = 12) {
   return Number(value).toFixed(digits).replace(/0+$/g, '').replace(/\.$/g, '');
@@ -126,8 +126,9 @@ function sampleResonanceMkV6At(analysis = {}, timeSeconds = 0, options = {}) {
   const surplus = Math.max(0, mk - 1);
   const mOverK = bassMassM / Math.max(0.000001, measuredK);
   const kOverM = measuredK / Math.max(0.000001, bassMassM);
-  const quotientDamper = clampNumber(Math.min(1, mOverK), 0, 1, 1);
-  const foldedSurplus = surplus * quotientDamper;
+  const energyTransfer = kOverM;
+  const resonanceCap = clampNumber(Math.min(1, energyTransfer), 0, 1, 0);
+  const foldedSurplus = surplus * resonanceCap;
   const folded = clampNumber(Math.log1p(foldedSurplus) / Math.log1p(kCeiling - 1), 0, 1, 0);
   return {
     energy,
@@ -138,11 +139,12 @@ function sampleResonanceMkV6At(analysis = {}, timeSeconds = 0, options = {}) {
     mk,
     mOverK,
     kOverM,
-    quotientDamper,
+    energyTransfer,
+    resonanceCap,
     surplus,
     foldedSurplus,
     folded,
-    quotientMode: V6_QUOTIENT_MODE,
+    transferMode: V6_TRANSFER_MODE,
     userK,
     kCeiling,
     twoD: dimensions.twoD,
@@ -240,7 +242,7 @@ function buildResonanceD40FilterV6({
     mg: AUDIO_PIVOT_GAIN_FACTOR,
     preset: V6_PRESET,
     resonanceMode: V6_RESONANCE_MODE,
-    quotientMode: V6_QUOTIENT_MODE,
+    transferMode: V6_TRANSFER_MODE,
     userK: resolvedUserK,
     kCeiling: resolvedKCeiling,
     wetCeiling,
@@ -465,12 +467,12 @@ function buildResonanceD40PlanV6(options = {}) {
     resonance: {
       userK,
       kCeiling,
-      formula: 'folded=ln(1+surplus(M*k)*min(1,M/K))/ln(1+kCeiling-1)',
-      quotient: 'M/K damps only the surplus when K outruns M',
+      formula: 'folded=ln(1+surplus(M*k)*min(1,K/M))/ln(1+kCeiling-1)',
+      transfer: 'energyTransfer=K/M; resonanceCap=min(1,K/M)',
       massM: '1+(1-energy)*grainBas',
       measuredK: '1+tension*kResonance',
       mode: V6_RESONANCE_MODE,
-      quotientMode: V6_QUOTIENT_MODE,
+      transferMode: V6_TRANSFER_MODE,
       ratioHighToLow: dimensions.ratioHighToLow,
       ratioFormula: dimensions.ratioFormula,
       wetCeiling: built.wetCeiling,
@@ -515,8 +517,8 @@ module.exports = {
   RESONANCE_D40_V6_SCHEMA,
   V6_METHOD,
   V6_PRESET,
-  V6_QUOTIENT_MODE,
   V6_STATE,
+  V6_TRANSFER_MODE,
   buildResonanceAutomationSamplesV6,
   buildResonanceD40ArgsV6,
   buildResonanceD40FilterV6,
