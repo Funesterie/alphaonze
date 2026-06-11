@@ -137,11 +137,30 @@ function isAllowedUpload(file = {}) {
   return ALLOWED_MIME.has(mime) || ALLOWED_EXT.has(ext);
 }
 
+function isLocalRouteHost(host) {
+  const value = String(host || '').trim().toLowerCase().replace(/^\[|\]$/g, '').split(':')[0];
+  if (!value) return false;
+  if (value === 'localhost' || value === '::1' || value === '0.0.0.0') return true;
+  if (/^127\./.test(value) || /^10\./.test(value) || /^192\.168\./.test(value)) return true;
+  const private172 = value.match(/^172\.(\d+)\./);
+  return private172 ? Number(private172[1]) >= 16 && Number(private172[1]) <= 31 : false;
+}
+
+function resolvePublicRouteProtocol(req, host) {
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+  const requestProto = String(req.protocol || '').trim().toLowerCase();
+  const proto = (forwardedProto || requestProto || 'https').replace(/:$/, '');
+  if (proto === 'https') return 'https';
+  if (isLocalRouteHost(host)) return proto || 'http';
+  if (req.secure || req.socket?.encrypted) return 'https';
+  return 'https';
+}
+
 function routePublicBase(req) {
   const configured = String(process.env.A11_PUBLIC_BASE_URL || process.env.PUBLIC_BASE_URL || '').trim();
   if (configured) return configured.replace(/\/$/, '');
-  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
   const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+  const proto = resolvePublicRouteProtocol(req, host);
   return host ? `${proto}://${host}` : '';
 }
 

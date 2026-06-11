@@ -579,6 +579,16 @@ export function resolveApiAssetUrl(rawValue: string | null | undefined) {
       const pathLike = `${parsed.pathname}${parsed.search}${parsed.hash}`;
       const currentHost = globalThis.location?.hostname || '';
       const currentOrigin = globalThis.location?.origin || '';
+      const assetHost = parsed.hostname.toLowerCase();
+      const isFunesterieHost = assetHost === 'funesterie.me' || assetHost.endsWith('.funesterie.me');
+      if (
+        parsed.protocol === 'http:'
+        && globalThis.location?.protocol === 'https:'
+        && (assetHost === currentHost.toLowerCase() || isFunesterieHost)
+      ) {
+        parsed.protocol = 'https:';
+        return parsed.toString();
+      }
       if (
         currentOrigin
         && isLocalWebHost(currentHost)
@@ -587,7 +597,6 @@ export function resolveApiAssetUrl(rawValue: string | null | undefined) {
       ) {
         return `${currentOrigin}${pathLike}`;
       }
-      const assetHost = parsed.hostname.toLowerCase();
       if (
         [
           'a11.funesterie.me',

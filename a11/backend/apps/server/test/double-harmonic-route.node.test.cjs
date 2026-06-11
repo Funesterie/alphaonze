@@ -654,6 +654,49 @@ test('double harmonic route publishes naked d40 v4 as lossless flac by default',
   }
 });
 
+test('double harmonic route emits https share links for public forwarded hosts', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-https-'));
+  const app = express();
+  app.use('/api/double-harmonic', createDoubleHarmonicRouter({
+    runtimeRoot,
+    processNakedD40V4: async ({ outputPath, profile, analysisOptions }) => {
+      fs.writeFileSync(outputPath, Buffer.from('processed v4 flac'));
+      return {
+        method: 'dry-first-naked-d40-harmonic-overlay-v4',
+        state: 'v4-release',
+        profile,
+        preset: 'raw-low',
+        intensity: 'd40',
+        d40: resolveD40Density(),
+        dynamic: { summary: { frames: 1 } },
+        weights: { dry: 1, weightScale: analysisOptions.weightScale || 1 },
+        safety: { noLimiter: true, noFinalGain: true },
+      };
+    },
+  }));
+
+  const { server, baseUrl } = await listen(app);
+  try {
+    const form = new FormData();
+    form.append('audio', new Blob([Buffer.from('ID3demo')], { type: 'audio/mpeg' }), 'demo.mp3');
+    const res = await fetch(`${baseUrl}/api/double-harmonic/v4/process`, {
+      method: 'POST',
+      headers: {
+        'x-forwarded-host': 'vivy.funesterie.me',
+        'x-forwarded-proto': 'http',
+      },
+      body: form,
+    });
+    const payload = await res.json();
+    assert.equal(res.status, 200);
+    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v4\.flac$/);
+    assert.match(payload.shareUrl, /^https:\/\/vivy\.funesterie\.me\/api\/double-harmonic\/out\/.+\.flac\?token=/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
 test('double harmonic route keeps mp3 input as mp3 output when source format is requested', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-mp3-'));
   const app = express();
