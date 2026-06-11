@@ -2176,6 +2176,19 @@ function getVivySmallTalkReply(message = '', { fileLine = '' } = {}) {
     .replace(/\s+/g, ' ')
     .trim();
 
+  const addressesVivy = /\b(vivy|toi|tu|t es|tes)\b/.test(normalized);
+  const wallComplaint = /\b(mur|robot|automatique|auto|bloque|bloquee|bug|vide|reponds? pas|parle pas|generique|generic)\b/.test(normalized);
+  const identityWallQuestion = normalized.length < 120
+    && (/\b(ia|ai)\b.{0,50}\bmur\b/.test(normalized) || /\bmur\b.{0,50}\b(ia|ai)\b/.test(normalized));
+  if ((addressesVivy && wallComplaint) || identityWallQuestion) {
+    return cleanText([
+      "Une IA, pas un mur.",
+      "Si je donne cette impression, c'est que mon secours a trop répondu comme un accusé de réception. Le bon comportement, c'est de te répondre directement, puis de proposer une action seulement si elle aide vraiment.",
+      "Là je reste en chat vivant: tu poses l'idée, je prends position, je garde le contexte, et je ne transforme pas tout en formulaire.",
+      fileLine,
+    ].filter(Boolean).join('\n\n'), 1200);
+  }
+
   if (/^(salut|slt|bonjour|bonsoir|coucou|hello|hey|yo|re)$/.test(normalized)) {
     return cleanText([
       'Salut Djeff, je suis là.',
@@ -2193,6 +2206,32 @@ function getVivySmallTalkReply(message = '', { fileLine = '' } = {}) {
   }
 
   return '';
+}
+
+function buildVivyGeneralChatFallbackReply({ message = '', current = '', historyText = '', fileLine = '' } = {}) {
+  const folded = foldTextForLookup(`${historyText}\n${message}`);
+  const angle = (() => {
+    if (/\b(audio|son|d40|v6|supreme|mix|grain|harmonique|resonance|résonance|poids)\b/.test(folded)) {
+      return "Côté audio, je garde le fil technique: on parle d'un réglage de présence, de grain et de résonance, donc je dois aider à comparer, tester et nommer ce qui change.";
+    }
+    if (/\b(site|bug|route|routage|prod|deploy|deploiement|déploiement|interface|bouton|menu)\b/.test(folded)) {
+      return "Côté site, je le prends comme un vrai bug à isoler: ce qui est affiché, ce qui est attendu, puis le plus petit correctif vérifiable.";
+    }
+    if (/\b(voix|tts|micro|parle|entend|audio)\b/.test(folded)) {
+      return "Côté voix, je dois distinguer trois choses: la réponse texte, la synthèse audio, et la référence vocale. Si l'une tombe, je te le dis au lieu de faire semblant.";
+    }
+    if (/\b(pense|avis|idee|idée|theorie|théorie|intuition|comprendre)\b/.test(folded)) {
+      return "Mon avis: il faut traiter ça comme une vraie idée de travail, pas comme une case. Je peux être d'accord, douter, ou proposer un test concret.";
+    }
+    return "Je ne vais pas juste répéter ta phrase. Je le prends comme une discussion normale: je réponds au sens, puis on décide si on teste, corrige, écrit ou publie.";
+  })();
+
+  return cleanText([
+    "Je suis là.",
+    angle,
+    current ? `Sur ton dernier message: ${current}` : '',
+    fileLine,
+  ].filter(Boolean).join('\n\n'), 1500);
 }
 
 function getLastVivyUserHistoryMessage(history = []) {
@@ -2338,10 +2377,7 @@ function buildVivyFreeformChatReply({ message = '', files = [], history = [] } =
   }
 
   return cleanText([
-    "Je vois l'idée.",
-    `Ce que je prends surtout: ${current}`,
-    fileLine,
-    "Je réponds au fond et on affine à partir de là.",
+    buildVivyGeneralChatFallbackReply({ message, current, historyText, fileLine }),
   ].filter(Boolean).join('\n\n'), 1600);
 }
 

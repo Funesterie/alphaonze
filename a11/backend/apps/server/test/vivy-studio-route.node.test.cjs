@@ -873,6 +873,21 @@ test('Vivy chat fallback answers simple greetings naturally', async () => {
   assert.doesNotMatch(checkIn.assistant, /Ce que je prends surtout/i);
 });
 
+test('Vivy chat fallback answers meta complaints instead of acting like a wall', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-not-a-wall',
+    message: 'vivy est une ia ou un mur ?',
+    history: [],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.match(result.assistant, /IA|mur|chat vivant|répondre directement/i);
+  assert.doesNotMatch(result.assistant, /Je vois l'idée/i);
+  assert.doesNotMatch(result.assistant, /Ce que je prends surtout/i);
+  assert.doesNotMatch(result.assistant, /Je réponds au fond/i);
+});
+
 test('Vivy routes continue les paroles to songcraft and cleans UI/brief contamination', async () => {
   const rawDraft = [
     "Un quatorzième dans l'essence, deux-point-deux dans la bombonne d'Ipone,",
