@@ -36,6 +36,10 @@ const {
   buildResonanceD40PlanV6,
   processResonanceD40V6,
 } = require('../audio/double-harmonic-resonance-v6.cjs');
+const {
+  buildBricksD40PlanV7,
+  processBricksD40V7,
+} = require('../audio/double-harmonic-bricks-v7.cjs');
 
 const DEFAULT_MAX_MB = 80;
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -231,6 +235,9 @@ function createDoubleHarmonicRouter(options = {}) {
   const processAudioV6 = typeof options.processResonanceD40V6 === 'function'
     ? options.processResonanceD40V6
     : processResonanceD40V6;
+  const processAudioV7 = typeof options.processBricksD40V7 === 'function'
+    ? options.processBricksD40V7
+    : processBricksD40V7;
   const runtimeRoot = path.resolve(options.runtimeRoot || getCanonicalRuntimeRoot(process.env));
   const assetRoot = ensureDir(path.join(runtimeRoot, 'double-harmonic-d40'));
   const indexPath = path.join(assetRoot, 'index.json');
@@ -269,6 +276,7 @@ function createDoubleHarmonicRouter(options = {}) {
       v4: buildNakedD40PlanV4(),
       v5: buildLogD40PlanV5(),
       v6: buildResonanceD40PlanV6(),
+      v7: buildBricksD40PlanV7(),
     });
   });
 
@@ -334,6 +342,28 @@ function createDoubleHarmonicRouter(options = {}) {
           || _req.query?.harmonicIntensity
         ),
         kCeiling: reqNumber(_req.query?.kCeiling),
+      }),
+    });
+  });
+
+  router.get('/v7/status', (_req, res) => {
+    return res.json({
+      ok: true,
+      v7: buildBricksD40PlanV7({
+        frameMs: reqNumber(_req.query?.frameMs),
+        maxSeconds: reqNumber(_req.query?.maxSeconds),
+        cycleSeconds: reqNumber(_req.query?.cycleSeconds),
+        userK: reqNumber(
+          _req.query?.userK
+          || _req.query?.resonanceK
+          || _req.query?.weightScale
+          || _req.query?.intensity
+          || _req.query?.harmonicIntensity
+        ),
+        kCeiling: reqNumber(_req.query?.kCeiling),
+        minBricks: reqNumber(_req.query?.minBricks),
+        maxBricks: reqNumber(_req.query?.maxBricks),
+        brickInfluence: reqNumber(_req.query?.brickInfluence),
       }),
     });
   });
@@ -860,6 +890,116 @@ function createDoubleHarmonicRouter(options = {}) {
     }
   });
 
+  router.post('/v7/process', verifyJWT, upload.single('audio'), async (req, res) => {
+    try {
+      pruneIndex(indexPath, assetRoot, ttlMs);
+      if (!req.file?.buffer?.length) {
+        return res.status(400).json({ ok: false, error: 'missing_audio', message: 'Ajoute un fichier audio.' });
+      }
+
+      const id = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+      const base = safeBaseName(req.body?.name || req.file.originalname || 'audio');
+      const inputExt = extForUpload(req.file);
+      const inputFilename = `${id}-${base}-v7-input.${inputExt}`;
+      const outputFormat = resolveOutputFormat(req.body?.format || req.query?.format, inputExt);
+      const outputFilename = `${id}-${base}-funesterie-d40-v7.${outputFormat.ext}`;
+      const inputPath = path.join(assetRoot, inputFilename);
+      const outputPath = path.join(assetRoot, outputFilename);
+      fs.writeFileSync(inputPath, req.file.buffer);
+
+      const profile = String(req.body?.profile || req.query?.profile || 'blend').trim() || 'blend';
+      const processing = await processAudioV7({
+        inputPath,
+        outputPath,
+        profile,
+        analysisOptions: {
+          frameMs: reqNumber(req.body?.frameMs || req.query?.frameMs),
+          maxSeconds: reqNumber(req.body?.maxSeconds || req.query?.maxSeconds),
+          maxSegments: reqNumber(req.body?.maxSegments || req.query?.maxSegments),
+          curve: req.body?.curve || req.query?.curve,
+          curveAmount: reqNumber(req.body?.curveAmount || req.query?.curveAmount),
+          attack: reqNumber(req.body?.attack || req.query?.attack),
+          release: reqNumber(req.body?.release || req.query?.release),
+          minDbSpan: reqNumber(req.body?.minDbSpan || req.query?.minDbSpan),
+          cycleSeconds: reqNumber(req.body?.cycleSeconds || req.query?.cycleSeconds),
+          userK: reqNumber(
+            req.body?.userK
+            || req.query?.userK
+            || req.body?.resonanceK
+            || req.query?.resonanceK
+            || req.body?.weightScale
+            || req.query?.weightScale
+            || req.body?.intensity
+            || req.query?.intensity
+            || req.body?.harmonicIntensity
+            || req.query?.harmonicIntensity
+          ),
+          kCeiling: reqNumber(req.body?.kCeiling || req.query?.kCeiling),
+          minBricks: reqNumber(req.body?.minBricks || req.query?.minBricks),
+          maxBricks: reqNumber(req.body?.maxBricks || req.query?.maxBricks),
+          brickInfluence: reqNumber(req.body?.brickInfluence || req.query?.brickInfluence),
+        },
+      });
+      const token = crypto.randomBytes(18).toString('base64url');
+      const createdAt = new Date().toISOString();
+      const owner = String(req.user?.email || req.user?.username || req.user?.sub || '').trim();
+      const asset = {
+        id,
+        token,
+        createdAt,
+        owner,
+        originalName: req.file.originalname || '',
+        inputFilename,
+        outputFilename,
+        contentType: outputFormat.contentType,
+        method: processing.method,
+        profile: processing.profile,
+        preset: processing.preset,
+        intensity: processing.intensity || 'bricks-adaptive',
+        resonance: processing.resonance || null,
+        bricks: processing.bricks || null,
+        weights: processing.weights || null,
+        dynamicSummary: processing.dynamic?.summary || null,
+        safety: processing.safety || null,
+        bytes: fs.statSync(outputPath).size,
+      };
+      const index = readIndex(indexPath);
+      index.assets = [asset, ...index.assets].slice(0, 300);
+      writeIndex(indexPath, index);
+
+      const baseUrl = routePublicBase(req);
+      const audioUrl = `/api/double-harmonic/out/${encodeURIComponent(outputFilename)}`;
+      const sharePath = `${audioUrl}?token=${encodeURIComponent(token)}`;
+      return res.json({
+        ok: true,
+        id,
+        method: processing.method,
+        state: processing.state,
+        profile: processing.profile,
+        preset: processing.preset,
+        intensity: processing.intensity || 'bricks-adaptive',
+        d40: processing.d40,
+        resonance: processing.resonance,
+        bricks: processing.bricks,
+        dynamic: processing.dynamic,
+        weights: processing.weights || undefined,
+        safety: processing.safety || undefined,
+        audioUrl,
+        shareUrl: baseUrl ? `${baseUrl}${sharePath}` : sharePath,
+        contentType: outputFormat.contentType,
+        filename: outputFilename,
+        bytes: asset.bytes,
+        publicSummary: 'V7 Briques: V6 Supreme reste intacte; les trous du signal recoivent plus de briques mg_phase adaptatives, sans changer mg_phase ni le format source.',
+      });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        error: 'double_harmonic_v7_process_failed',
+        message: String(error?.message || error),
+      });
+    }
+  });
+
   router.post('/process', verifyJWT, upload.single('audio'), async (req, res) => {
     try {
       pruneIndex(indexPath, assetRoot, ttlMs);
@@ -955,7 +1095,7 @@ function createDoubleHarmonicRouter(options = {}) {
     }
   });
 
-  router.use(['/process', '/v2/analyze', '/v2/process', '/v3/process', '/v4/process', '/v5/process', '/v6/process'], (err, _req, res, _next) => {
+  router.use(['/process', '/v2/analyze', '/v2/process', '/v3/process', '/v4/process', '/v5/process', '/v6/process', '/v7/process'], (err, _req, res, _next) => {
     return res.status(400).json({
       ok: false,
       error: 'double_harmonic_upload_failed',

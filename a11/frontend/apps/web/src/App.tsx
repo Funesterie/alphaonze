@@ -2016,6 +2016,9 @@ const D40_V5_DEFAULT_INTENSITY = 2;
 const D40_V6_INTENSITY_MIN = 0.1;
 const D40_V6_INTENSITY_MAX = 10;
 const D40_V6_DEFAULT_INTENSITY = 3;
+const D40_V7_INTENSITY_MIN = 0.1;
+const D40_V7_INTENSITY_MAX = 10;
+const D40_V7_DEFAULT_INTENSITY = 3;
 const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v1: "V1 stable",
   v2: "V2 Release",
@@ -2023,6 +2026,7 @@ const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v4: "V4 Stable",
   v5: "V5 Release",
   v6: "V6 Supreme",
+  v7: "V7 Briques",
 };
 const D40_OUTPUT_FORMAT_LABELS: Record<DoubleHarmonicOutputFormat, string> = {
   flac: "FLAC master",
@@ -3496,24 +3500,30 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const doubleHarmonicIntensityLabel = `${doubleHarmonicIntensity.toFixed(2).replace(/\.?0+$/, "")}x`;
   const doubleHarmonicModeLabel = D40_PROCESS_MODE_LABELS[doubleHarmonicMode];
   const doubleHarmonicOutputFormatLabel = D40_OUTPUT_FORMAT_LABELS[doubleHarmonicOutputFormat];
-  const doubleHarmonicIntensityMin = doubleHarmonicMode === "v6"
+  const doubleHarmonicIntensityMin = doubleHarmonicMode === "v7"
+    ? D40_V7_INTENSITY_MIN
+    : doubleHarmonicMode === "v6"
     ? D40_V6_INTENSITY_MIN
     : doubleHarmonicMode === "v5"
     ? D40_V5_INTENSITY_MIN
     : doubleHarmonicMode === "v4"
       ? D40_V4_INTENSITY_MIN
       : D40_HARMONIC_INTENSITY_MIN;
-  const doubleHarmonicIntensityMax = doubleHarmonicMode === "v6"
+  const doubleHarmonicIntensityMax = doubleHarmonicMode === "v7"
+    ? D40_V7_INTENSITY_MAX
+    : doubleHarmonicMode === "v6"
     ? D40_V6_INTENSITY_MAX
     : doubleHarmonicMode === "v5"
     ? D40_V5_INTENSITY_MAX
     : doubleHarmonicMode === "v4"
       ? D40_V4_INTENSITY_MAX
       : D40_HARMONIC_INTENSITY_MAX;
-  const doubleHarmonicIntensityStep = doubleHarmonicMode === "v6" ? "0.1" : doubleHarmonicMode === "v4" || doubleHarmonicMode === "v5" ? "0.05" : "0.005";
+  const doubleHarmonicIntensityStep = doubleHarmonicMode === "v6" || doubleHarmonicMode === "v7" ? "0.1" : doubleHarmonicMode === "v4" || doubleHarmonicMode === "v5" ? "0.05" : "0.005";
   const doubleHarmonicUsesFixedWeight = doubleHarmonicMode === "v3";
   const doubleHarmonicWeightLabel = doubleHarmonicMode === "v3"
     ? "Auto"
+    : doubleHarmonicMode === "v7"
+      ? `k ${doubleHarmonicIntensityLabel} · 10 briques · mg_phase`
     : doubleHarmonicMode === "v6"
       ? `k ${doubleHarmonicIntensityLabel} · M/K · D40`
       : doubleHarmonicMode === "v5"
@@ -3521,7 +3531,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         : doubleHarmonicMode === "v4"
           ? `${doubleHarmonicIntensityLabel} · grain bas x${D40_V4_LOW_GRAIN_MULTIPLIER} · haut ^${D40_V4_HIGH_GRAIN_POWER}`
           : doubleHarmonicIntensityLabel;
-  const doubleHarmonicIntensityTitle = doubleHarmonicMode === "v6"
+  const doubleHarmonicIntensityTitle = doubleHarmonicMode === "v7"
+    ? "Briques V7"
+    : doubleHarmonicMode === "v6"
     ? "Résonance V6"
     : doubleHarmonicMode === "v5"
       ? "Recette V5 Release"
@@ -4831,7 +4843,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                 disabled={!hasSession || isBusy}
                 onChange={(event) => {
                   const rawMode = event.currentTarget.value;
-                  const nextMode: DoubleHarmonicProcessMode = rawMode === "v6"
+                  const nextMode: DoubleHarmonicProcessMode = rawMode === "v7"
+                    ? "v7"
+                    : rawMode === "v6"
                     ? "v6"
                     : rawMode === "v5"
                       ? "v5"
@@ -4843,11 +4857,12 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                           ? "v2"
                           : "v1";
                   setDoubleHarmonicMode(nextMode);
-                  setDoubleHarmonicIntensity(nextMode === "v6" ? D40_V6_DEFAULT_INTENSITY : nextMode === "v5" ? D40_V5_DEFAULT_INTENSITY : 1);
+                  setDoubleHarmonicIntensity(nextMode === "v7" ? D40_V7_DEFAULT_INTENSITY : nextMode === "v6" ? D40_V6_DEFAULT_INTENSITY : nextMode === "v5" ? D40_V5_DEFAULT_INTENSITY : 1);
                   setDoubleHarmonicResult(null);
                 }}
               >
                 <option value="v6">V6 Supreme</option>
+                <option value="v7">V7 Briques</option>
                 <option value="v5">V5 Release</option>
                 <option value="v1">V1 stable</option>
                 <option value="v2">V2 Release</option>

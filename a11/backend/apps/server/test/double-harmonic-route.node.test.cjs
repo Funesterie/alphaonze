@@ -63,6 +63,12 @@ const {
   resolveV6UserK,
   sampleResonanceMkV6At,
 } = require('../src/audio/double-harmonic-resonance-v6.cjs');
+const {
+  buildBricksD40FilterV7,
+  buildBricksD40PlanV7,
+  resolveV7MaxBricks,
+  sampleBrickResonanceV7At,
+} = require('../src/audio/double-harmonic-bricks-v7.cjs');
 
 function listen(app) {
   return new Promise((resolve) => {
@@ -157,6 +163,10 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(Number(statusPayload.v6.weights.lowPitch.toFixed(12)), 0.684738867846);
     assert.equal(Number(statusPayload.v6.weights.highPitch.toFixed(12)), 1.889397887364);
     assert.equal(Number(statusPayload.v6.weights.ratio.toFixed(12)), Number(Math.log(statusPayload.v6.dimensions.threeD / statusPayload.v6.dimensions.twoD).toFixed(12)));
+    assert.equal(statusPayload.v7.method, 'dry-first-flappy-bricks-mg-phase-d40-harmonic-overlay-v7');
+    assert.equal(statusPayload.v7.state, 'v7-experimental-bricks');
+    assert.equal(statusPayload.v7.bricks.max, 10);
+    assert.equal(statusPayload.v7.safety.v6StableUntouched, true);
 
     const v2 = await fetch(`${baseUrl}/api/double-harmonic/v2/status?smoothing=1%2Fe&frameMs=20`);
     const v2Payload = await v2.json();
@@ -432,6 +442,34 @@ test('resonance d40 v6 uses 2D/2, 3D/2 and M/K energy transfer cap', () => {
   assert.match(built.filter, /rubberband=pitch=0\.684738867846:transients=crisp/);
   assert.doesNotMatch(built.filter, /alimiter/);
   assert.doesNotMatch(built.filter, /highpass=/);
+});
+
+test('bricks d40 v7 adds more mg_phase bricks when signal height is low', () => {
+  const built = buildBricksD40FilterV7({ profile: 'blend', userK: 3 });
+  const plan = buildBricksD40PlanV7({ profile: 'blend' });
+  const quiet = sampleBrickResonanceV7At({
+    frames: [{ endTime: 1, normalizedEnergy: 0, curvedEnergy: 0, weightScale: 1 }],
+  }, 0, { userK: 3 });
+  const loud = sampleBrickResonanceV7At({
+    frames: [{ endTime: 1, normalizedEnergy: 1, curvedEnergy: 1, weightScale: 1 }],
+  }, 0, { userK: 3 });
+
+  assert.equal(built.method, 'dry-first-flappy-bricks-mg-phase-d40-harmonic-overlay-v7');
+  assert.equal(plan.state, 'v7-experimental-bricks');
+  assert.equal(resolveV7MaxBricks(99), 32);
+  assert.equal(plan.bricks.max, 10);
+  assert.equal(plan.safety.v6StableUntouched, true);
+  assert.equal(plan.safety.mgPhaseFixed, true);
+  assert.ok(quiet.activeBricks > loud.activeBricks);
+  assert.equal(loud.activeBricks, 1);
+  assert.equal(quiet.maxBricks, 10);
+  assert.ok(quiet.hole > loud.hole);
+  assert.ok(quiet.folded >= quiet.baseFolded);
+  assert.ok(loud.folded >= loud.baseFolded);
+  assert.equal(Number((built.weights?.ratioHighToLow || built.ratioHighToLow).toFixed(12)), 1.014975928424);
+  assert.match(built.filter, /rubberband=pitch=1\.889397887364:transients=crisp/);
+  assert.match(built.filter, /rubberband=pitch=0\.684738867846:transients=crisp/);
+  assert.doesNotMatch(built.filter, /alimiter/);
 });
 
 test('double harmonic route processes upload and exposes tokenized audio link', async () => {
@@ -954,6 +992,109 @@ test('double harmonic route publishes resonance d40 v6 with user k', async () =>
       maxSegments: 64,
       userK: 6,
       kCeiling: 10,
+    }]);
+
+    const shared = await fetch(payload.shareUrl);
+    assert.equal(shared.status, 200);
+    assert.match(shared.headers.get('content-type') || '', /audio\/flac/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('double harmonic route publishes adaptive bricks d40 v7 with user k', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-v7-process-'));
+  const calls = [];
+  const app = express();
+  app.use('/api/double-harmonic', createDoubleHarmonicRouter({
+    runtimeRoot,
+    processBricksD40V7: async ({ outputPath, profile, analysisOptions }) => {
+      calls.push({
+        profile,
+        frameMs: analysisOptions.frameMs,
+        maxSegments: analysisOptions.maxSegments,
+        userK: analysisOptions.userK,
+        kCeiling: analysisOptions.kCeiling,
+        minBricks: analysisOptions.minBricks,
+        maxBricks: analysisOptions.maxBricks,
+        brickInfluence: analysisOptions.brickInfluence,
+      });
+      fs.writeFileSync(outputPath, Buffer.from('processed v7 flac'));
+      return {
+        method: 'dry-first-flappy-bricks-mg-phase-d40-harmonic-overlay-v7',
+        state: 'v7-experimental-bricks',
+        profile,
+        preset: 'v7-flappy-bricks-mg-phase-k3',
+        intensity: 'bricks-adaptive',
+        d40: resolveD40Density(),
+        resonance: {
+          userK: analysisOptions.userK || 3,
+          kCeiling: analysisOptions.kCeiling || 10,
+          transferMode: 'mg-phase-brick-allocation',
+        },
+        bricks: {
+          min: analysisOptions.minBricks || 1,
+          max: analysisOptions.maxBricks || 10,
+          brickInfluence: analysisOptions.brickInfluence || 0.45,
+          summary: { brickMin: 1, brickMax: 10, brickMean: 5.5 },
+        },
+        dynamic: { summary: { frames: 8 } },
+        weights: {
+          dry: 1,
+          ratio: 1.0149759284240818,
+          userK: analysisOptions.userK || 3,
+          kCeiling: analysisOptions.kCeiling || 10,
+          brickMin: 1,
+          brickMax: 10,
+          highPitch: 1.889397887364303,
+          lowPitch: 0.6847388678464575,
+        },
+        safety: { noLimiter: true, noFinalGain: true, mgPhaseFixed: true, v6StableUntouched: true },
+      };
+    },
+    verifyJWT: (req, _res, next) => {
+      req.user = { email: 'djeff@example.test' };
+      next();
+    },
+  }));
+
+  const { server, baseUrl } = await listen(app);
+  try {
+    const form = new FormData();
+    form.append('audio', new Blob([Buffer.from('ID3demo')], { type: 'audio/mpeg' }), 'demo.mp3');
+    form.append('profile', 'blend');
+    form.append('frameMs', '250');
+    form.append('maxSegments', '64');
+    form.append('intensity', '4');
+    form.append('kCeiling', '10');
+    form.append('minBricks', '1');
+    form.append('maxBricks', '10');
+    form.append('brickInfluence', '0.45');
+    const res = await fetch(`${baseUrl}/api/double-harmonic/v7/process`, {
+      method: 'POST',
+      body: form,
+    });
+    const payload = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.method, 'dry-first-flappy-bricks-mg-phase-d40-harmonic-overlay-v7');
+    assert.equal(payload.state, 'v7-experimental-bricks');
+    assert.equal(payload.intensity, 'bricks-adaptive');
+    assert.equal(payload.contentType, 'audio/flac');
+    assert.equal(payload.resonance.userK, 4);
+    assert.equal(payload.bricks.max, 10);
+    assert.equal(payload.safety.v6StableUntouched, true);
+    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v7\.flac$/);
+    assert.deepEqual(calls, [{
+      profile: 'blend',
+      frameMs: 250,
+      maxSegments: 64,
+      userK: 4,
+      kCeiling: 10,
+      minBricks: 1,
+      maxBricks: 10,
+      brickInfluence: 0.45,
     }]);
 
     const shared = await fetch(payload.shareUrl);
