@@ -3428,76 +3428,21 @@ type VivySessionProps = {
   diagnosticsAllowed?: boolean;
 };
 
-function formatVivyDiagnosticNumber(value: unknown, digits = 2) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return "0";
-  return numeric.toFixed(digits).replace(/\.?0+$/, "");
-}
-
-function buildVivyD9SegmentReason(segment: NonNullable<VivyStudioProductionResult["prosody"]>["doubleHarmonic"] extends infer D
-  ? D extends { segments?: Array<infer S> } ? S : Record<string, unknown>
-  : Record<string, unknown>) {
-  const semantic = (segment as any)?.semantic || {};
-  const sync = (segment as any)?.sync || {};
-  const navigation = (segment as any)?.navigation || {};
-  const anchors = Array.isArray(semantic.anchors) ? semantic.anchors.filter(Boolean).join(", ") : "";
-  const forceSignature = String(semantic.forceSignature || "").trim();
-  const instruction = String(sync.instruction || "").trim();
-  const branchLabel = String(navigation.branchLabel || "").trim();
-  return [branchLabel, anchors ? `ancres ${anchors}` : "", forceSignature && forceSignature !== "neutral" ? forceSignature : "", instruction]
-    .filter(Boolean)
-    .join(" · ");
-}
-
 function VivyD9DiagnosticsPanel({ prosody }: { prosody: VivyStudioProductionResult["prosody"] | null }) {
   const sync = prosody?.doubleHarmonic;
   const segments = Array.isArray(sync?.segments) ? sync.segments : [];
-  if (!sync || !segments.length) return null;
-  const equation = String((sync as any)?.basis?.navigationEquation || segments[0]?.navigation?.equation || "n_next=n+k*M*b*(H1+iH2)");
-  const branchCompass = Array.isArray((sync as any)?.basis?.branchCompass)
-    ? (sync as any).basis.branchCompass.map((branch: any) => String(branch?.symbol || "").trim()).filter(Boolean).join(" ")
-    : "{1 i 0 -i -1}";
+  if (!sync) return null;
   return (
-    <details className="vivy-studio-diagnostics">
-      <summary>
-        <span>Diagnostic D8/D9</span>
-        <small>{segments.length} segment{segments.length > 1 ? "s" : ""} · verrou {formatVivyDiagnosticNumber(sync.lockRatio, 2)}</small>
-      </summary>
-      <div className="vivy-studio-diagnostics-meta">
-        <span>Équation {equation}</span>
-        <span>Boussole {branchCompass}</span>
-        <span>Tempo moyen {Math.round(Number(sync.avgTempoBpm || 0))} bpm</span>
-      </div>
-      <div className="vivy-studio-diagnostics-grid">
-        {segments.slice(0, 9).map((segment, index) => {
-          const navigation = segment.navigation || {};
-          const audio = segment.audio || {};
-          const syncState = segment.sync || {};
-          const semantic = segment.semantic || {};
-          const key = segment.id || segment.segmentId || `${segment.label || "segment"}-${index}`;
-          return (
-            <article key={key} className="vivy-studio-diagnostic-card">
-              <header>
-                <strong>{segment.label || `Segment ${index + 1}`}</strong>
-                <span>{segment.roleLabel || segment.roleId || "Vivy"}</span>
-              </header>
-              <div className="vivy-studio-diagnostic-values">
-                <span><b>{navigation.branchSymbol || "0"}</b> branche</span>
-                <span><b>{formatVivyDiagnosticNumber(navigation.accelerationK, 2)}</b> k</span>
-                <span><b>{formatVivyDiagnosticNumber(navigation.coherenceM, 2)}</b> M</span>
-                <span><b>{formatVivyDiagnosticNumber(navigation.h1Real, 2)}</b> H1</span>
-                <span><b>{formatVivyDiagnosticNumber(navigation.h2Imaginary, 2)}</b> H2</span>
-                <span><b>{Math.round(Number(audio.tempoBpm || 0))}</b> bpm</span>
-              </div>
-              <p>{buildVivyD9SegmentReason(segment)}</p>
-              <small>
-                sync {syncState.state || "n/a"} · tri {syncState.triState || "00000"} · sens {semantic.forceSignature || "neutral"} · next {formatVivyDiagnosticNumber(navigation.nextReal, 2)}/{formatVivyDiagnosticNumber(navigation.nextImaginary, 2)}
-              </small>
-            </article>
-          );
-        })}
-      </div>
-    </details>
+    <section className="vivy-studio-diagnostics vivy-studio-diagnostics--supreme" aria-label="Version audio Vivy">
+      <header>
+        <span>Version : V6 Supreme</span>
+        <small>Même format par défaut · k 3x · M/K · D40</small>
+      </header>
+      <p>
+        Préparation Vivy prête: {segments.length || 1} segment{(segments.length || 1) > 1 ? "s" : ""} calé{(segments.length || 1) > 1 ? "s" : ""}.
+        Le traitement audio final se fait avec Mix D40 V6 Supreme.
+      </p>
+    </section>
   );
 }
 
@@ -4411,7 +4356,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         : null);
       setStatus(mediaUrl
         ? (wantsSongPreview && audioUrl
-          ? (payload.summary || "Maquette audio locale prête avant Suno.")
+          ? (payload.summary || "Préécoute chanson prête avant Suno.")
           : (payload.summary || "Production Vivy ajoutée au brief."))
         : (payload.mediaStatus?.message || payload.summary || "Brief Vivy prêt. Le bouton chanson crée un audio via la voix Vivy active."));
     } catch (error: any) {
@@ -4653,129 +4598,6 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                   {voiceLearningMessage ? ` · ${voiceLearningMessage}` : ""}
                 </p>
               </fieldset>
-              <fieldset className="vivy-studio-voice-fieldset">
-                <legend>Mix D40</legend>
-                <label>
-                  Audio à traiter
-                  <input
-                    id="vivy-studio-dh-file"
-                    name="doubleHarmonicFile"
-                    type="file"
-                    accept="audio/*,video/quicktime,video/mp4,.wav,.mp3,.m4a,.mov,.mp4,.flac,.ogg,.webm"
-                    disabled={!hasSession || isBusy}
-                    onChange={(event) => {
-                      const file = event.currentTarget.files?.[0] || null;
-                      setDoubleHarmonicFile(file);
-                      setDoubleHarmonicFileName(file?.name || "");
-                      setDoubleHarmonicResult(null);
-                    }}
-                  />
-                </label>
-                <label className="vivy-studio-range-label">
-                  <span>Version</span>
-                  <select
-                    id="vivy-studio-dh-mode"
-                    name="doubleHarmonicMode"
-                    value={doubleHarmonicMode}
-                    disabled={!hasSession || isBusy}
-                    onChange={(event) => {
-                      const rawMode = event.currentTarget.value;
-                      const nextMode: DoubleHarmonicProcessMode = rawMode === "v6"
-                        ? "v6"
-                        : rawMode === "v5"
-                          ? "v5"
-                          : rawMode === "v4"
-                          ? "v4"
-                          : rawMode === "v3"
-                            ? "v3"
-                            : rawMode === "v2"
-                              ? "v2"
-                              : "v1";
-                      setDoubleHarmonicMode(nextMode);
-                      setDoubleHarmonicIntensity(nextMode === "v6" ? D40_V6_DEFAULT_INTENSITY : nextMode === "v5" ? D40_V5_DEFAULT_INTENSITY : 1);
-                      setDoubleHarmonicResult(null);
-                    }}
-                  >
-                    <option value="v6">V6 Supreme</option>
-                    <option value="v5">V5 Release</option>
-                    <option value="v1">V1 stable</option>
-                    <option value="v2">V2 Release</option>
-                    <option value="v3">V3 auto</option>
-                    <option value="v4">V4 Stable</option>
-                  </select>
-                  <strong>{doubleHarmonicModeLabel}</strong>
-                </label>
-                <label className="vivy-studio-range-label">
-                  <span>Sortie</span>
-                  <select
-                    id="vivy-studio-dh-format"
-                    name="doubleHarmonicOutputFormat"
-                    value={doubleHarmonicOutputFormat}
-                    disabled={!hasSession || isBusy}
-                    onChange={(event) => {
-                      const rawFormat = event.currentTarget.value;
-                      const nextFormat: DoubleHarmonicOutputFormat = rawFormat === "source"
-                        ? "source"
-                        : rawFormat === "mp3"
-                          ? "mp3"
-                          : rawFormat === "m4a"
-                            ? "m4a"
-                            : rawFormat === "wav"
-                              ? "wav"
-                              : "flac";
-                      setDoubleHarmonicOutputFormat(nextFormat);
-                      setDoubleHarmonicResult(null);
-                    }}
-                  >
-                    <option value="source">Même format</option>
-                    <option value="flac">FLAC master</option>
-                    <option value="mp3">MP3 léger</option>
-                    <option value="m4a">M4A léger</option>
-                    <option value="wav">WAV brut</option>
-                  </select>
-                  <strong>{doubleHarmonicOutputFormatLabel}</strong>
-                </label>
-                <label className="vivy-studio-range-label">
-                  <span>{doubleHarmonicIntensityTitle}</span>
-                  <input
-                    id="vivy-studio-dh-intensity"
-                    name="doubleHarmonicIntensity"
-                    type="range"
-                    min={doubleHarmonicIntensityMin}
-                    max={doubleHarmonicIntensityMax}
-                    step={doubleHarmonicIntensityStep}
-                    value={doubleHarmonicIntensity}
-                    disabled={!hasSession || isBusy || doubleHarmonicUsesFixedWeight}
-                    onChange={(event) => {
-                      const nextValue = Number(event.currentTarget.valueAsNumber || event.currentTarget.value || 1);
-                      setDoubleHarmonicIntensity(Math.max(doubleHarmonicIntensityMin, Math.min(doubleHarmonicIntensityMax, nextValue)));
-                      setDoubleHarmonicResult(null);
-                    }}
-                  />
-                  <strong>{doubleHarmonicWeightLabel}</strong>
-                </label>
-                <div className="vivy-studio-actions vivy-studio-actions--voice">
-                  <button type="button" onClick={processVivyDoubleHarmonicAudio} disabled={!hasSession || isBusy || !doubleHarmonicFile}>Mixer D40</button>
-                  {doubleHarmonicResult?.shareUrl ? (
-                    <>
-                      <button
-                        type="button"
-                        className="vivy-studio-action-link"
-                        onClick={() => void downloadVivyMediaFile(
-                          doubleHarmonicResult.audioUrl || doubleHarmonicResult.shareUrl,
-                          doubleHarmonicResult.filename || "funesterie-d40-audio"
-                        )}
-                      >
-                        Télécharger
-                      </button>
-                      <a className="vivy-studio-action-link" href={doubleHarmonicResult.shareUrl} target="_blank" rel="noreferrer">Ouvrir</a>
-                    </>
-                  ) : null}
-                </div>
-                <p className="vivy-studio-voice-summary">
-                  {`Version : ${doubleHarmonicModeLabel}`}
-                </p>
-              </fieldset>
               <label>
                 Instruction voix
                 <textarea
@@ -4982,6 +4804,130 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
             </>
           )}
 
+          <fieldset className="vivy-studio-voice-fieldset vivy-studio-d40-fieldset">
+            <legend>Mix D40</legend>
+            <label>
+              Audio à traiter
+              <input
+                id="vivy-studio-dh-file"
+                name="doubleHarmonicFile"
+                type="file"
+                accept="audio/*,video/quicktime,video/mp4,.wav,.mp3,.m4a,.mov,.mp4,.flac,.ogg,.webm"
+                disabled={!hasSession || isBusy}
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0] || null;
+                  setDoubleHarmonicFile(file);
+                  setDoubleHarmonicFileName(file?.name || "");
+                  setDoubleHarmonicResult(null);
+                }}
+              />
+            </label>
+            <label className="vivy-studio-range-label">
+              <span>Version</span>
+              <select
+                id="vivy-studio-dh-mode"
+                name="doubleHarmonicMode"
+                value={doubleHarmonicMode}
+                disabled={!hasSession || isBusy}
+                onChange={(event) => {
+                  const rawMode = event.currentTarget.value;
+                  const nextMode: DoubleHarmonicProcessMode = rawMode === "v6"
+                    ? "v6"
+                    : rawMode === "v5"
+                      ? "v5"
+                      : rawMode === "v4"
+                      ? "v4"
+                      : rawMode === "v3"
+                        ? "v3"
+                        : rawMode === "v2"
+                          ? "v2"
+                          : "v1";
+                  setDoubleHarmonicMode(nextMode);
+                  setDoubleHarmonicIntensity(nextMode === "v6" ? D40_V6_DEFAULT_INTENSITY : nextMode === "v5" ? D40_V5_DEFAULT_INTENSITY : 1);
+                  setDoubleHarmonicResult(null);
+                }}
+              >
+                <option value="v6">V6 Supreme</option>
+                <option value="v5">V5 Release</option>
+                <option value="v1">V1 stable</option>
+                <option value="v2">V2 Release</option>
+                <option value="v3">V3 auto</option>
+                <option value="v4">V4 Stable</option>
+              </select>
+              <strong>{doubleHarmonicModeLabel}</strong>
+            </label>
+            <label className="vivy-studio-range-label">
+              <span>Sortie</span>
+              <select
+                id="vivy-studio-dh-format"
+                name="doubleHarmonicOutputFormat"
+                value={doubleHarmonicOutputFormat}
+                disabled={!hasSession || isBusy}
+                onChange={(event) => {
+                  const rawFormat = event.currentTarget.value;
+                  const nextFormat: DoubleHarmonicOutputFormat = rawFormat === "source"
+                    ? "source"
+                    : rawFormat === "mp3"
+                      ? "mp3"
+                      : rawFormat === "m4a"
+                        ? "m4a"
+                        : rawFormat === "wav"
+                          ? "wav"
+                          : "flac";
+                  setDoubleHarmonicOutputFormat(nextFormat);
+                  setDoubleHarmonicResult(null);
+                }}
+              >
+                <option value="source">Même format</option>
+                <option value="flac">FLAC master</option>
+                <option value="mp3">MP3 léger</option>
+                <option value="m4a">M4A léger</option>
+                <option value="wav">WAV brut</option>
+              </select>
+              <strong>{doubleHarmonicOutputFormatLabel}</strong>
+            </label>
+            <label className="vivy-studio-range-label">
+              <span>{doubleHarmonicIntensityTitle}</span>
+              <input
+                id="vivy-studio-dh-intensity"
+                name="doubleHarmonicIntensity"
+                type="range"
+                min={doubleHarmonicIntensityMin}
+                max={doubleHarmonicIntensityMax}
+                step={doubleHarmonicIntensityStep}
+                value={doubleHarmonicIntensity}
+                disabled={!hasSession || isBusy || doubleHarmonicUsesFixedWeight}
+                onChange={(event) => {
+                  const nextValue = Number(event.currentTarget.valueAsNumber || event.currentTarget.value || 1);
+                  setDoubleHarmonicIntensity(Math.max(doubleHarmonicIntensityMin, Math.min(doubleHarmonicIntensityMax, nextValue)));
+                  setDoubleHarmonicResult(null);
+                }}
+              />
+              <strong>{doubleHarmonicWeightLabel}</strong>
+            </label>
+            <div className="vivy-studio-actions vivy-studio-actions--voice">
+              <button type="button" onClick={processVivyDoubleHarmonicAudio} disabled={!hasSession || isBusy || !doubleHarmonicFile}>Mixer D40</button>
+              {doubleHarmonicResult?.shareUrl ? (
+                <>
+                  <button
+                    type="button"
+                    className="vivy-studio-action-link"
+                    onClick={() => void downloadVivyMediaFile(
+                      doubleHarmonicResult.audioUrl || doubleHarmonicResult.shareUrl,
+                      doubleHarmonicResult.filename || "funesterie-d40-audio"
+                    )}
+                  >
+                    Télécharger
+                  </button>
+                  <a className="vivy-studio-action-link" href={doubleHarmonicResult.shareUrl} target="_blank" rel="noreferrer">Ouvrir</a>
+                </>
+              ) : null}
+            </div>
+            <p className="vivy-studio-voice-summary">
+              {`Version : ${doubleHarmonicModeLabel} · Sortie : ${doubleHarmonicOutputFormatLabel}`}
+            </p>
+          </fieldset>
+
           <div className="vivy-studio-actions">
             <button type="submit" disabled={!hasSession || isBusy}>{activeMeta.action}</button>
             <button type="button" onClick={askVivy} disabled={!hasSession || isBusy}>Demander à Vivy</button>
@@ -5002,7 +4948,11 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
           {diagnosticsAllowed ? <VivyD9DiagnosticsPanel prosody={vivyDiagnostics} /> : null}
           {vivyMedia && (
             <div className="vivy-studio-media">
-              <strong>{String(vivyMedia.provider || "").includes("emergency") ? (vivyMedia.kind === "audio" ? "Maquette audio locale" : "Maquette vidéo locale") : (vivyMedia.kind === "audio" ? "Audio Vivy prêt" : "Clip Vivy prêt")}</strong>
+              <strong>{String(vivyMedia.provider || "") === "funesterie-d40"
+                ? `Audio ${doubleHarmonicModeLabel} prêt`
+                : String(vivyMedia.provider || "").includes("emergency")
+                  ? (vivyMedia.kind === "audio" ? "Préécoute chanson" : "Maquette vidéo locale")
+                  : (vivyMedia.kind === "audio" ? "Audio Vivy prêt" : "Clip Vivy prêt")}</strong>
               {vivyMedia.kind === "audio" ? (
                 <audio
                   src={vivyMedia.url}

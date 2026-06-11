@@ -4322,6 +4322,38 @@ html.a11-auth-page-root body {
   padding: 10px;
 }
 
+.vivy-studio-diagnostics--supreme {
+  display: grid;
+  gap: 8px;
+  border-color: rgba(231, 92, 218, 0.5);
+  background:
+    linear-gradient(135deg, rgba(231, 92, 218, 0.13), rgba(99, 194, 255, 0.08)),
+    rgba(3, 12, 24, 0.78);
+}
+
+.vivy-studio-diagnostics--supreme header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #ffd2f4;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.vivy-studio-diagnostics--supreme header small {
+  color: #a8d9ff;
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: right;
+  text-transform: none;
+}
+
+.vivy-studio-diagnostics--supreme p {
+  color: #d9f0ff;
+}
+
 .vivy-studio-diagnostics summary {
   display: flex;
   align-items: center;
