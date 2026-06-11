@@ -124,7 +124,7 @@ const LEGACY_UI_TEXT_ENTRIES: Array<[string, TranslationSet]> = [
   tr("Voix, chanson, ambiance ou scène: Vivy transforme l'idée en direction exploitable.", "Voice, song, mood or scene: Vivy turns the idea into usable direction.", "Voce, canzone, atmosfera o scena: Vivy trasforma l'idea in una direzione utilizzabile.", "Voz, canción, ambiente o escena: Vivy convierte la idea en una dirección usable.", "Stimme, Song, Stimmung oder Szene: Vivy macht aus der Idee eine nutzbare Richtung."),
   tr("Reset", "Reset", "Reset", "Reiniciar", "Zurücksetzen"),
   tr("Je compose la réponse...", "Composing the reply...", "Sto componendo la risposta...", "Compongo la respuesta...", "Antwort wird erstellt..."),
-  tr("Maquette audio locale", "Local audio mockup", "Bozza audio locale", "Maqueta de audio local", "Lokale Audio-Demo"),
+  tr("Préécoute chanson", "Song preview", "Anteprima canzone", "Preescucha de canción", "Song-Vorschau"),
   tr("Maquette vidéo locale", "Local video mockup", "Bozza video locale", "Maqueta de vídeo local", "Lokale Video-Demo"),
   tr("Audio Vivy prêt", "Vivy audio ready", "Audio Vivy pronto", "Audio Vivy listo", "Vivy-Audio bereit"),
   tr("Clip Vivy prêt", "Vivy clip ready", "Clip Vivy pronto", "Clip Vivy listo", "Vivy-Clip bereit"),
