@@ -33,7 +33,7 @@ const MAX_V6_USER_K = 10;
 const DEFAULT_V6_K_CEILING = 10;
 const MIN_V6_K_CEILING = 2;
 const MAX_V6_K_CEILING = 64;
-const MAX_V6_WET_SCALE = 3;
+const V6_RESONANCE_MODE = 'soft-fold';
 
 function numberText(value, digits = 12) {
   return Number(value).toFixed(digits).replace(/0+$/g, '').replace(/\.$/g, '');
@@ -82,11 +82,9 @@ function resolveResonanceDimensionPairV6() {
   };
 }
 
-function resolveV6WetCeiling({ userK, baseTotalWeight } = {}) {
-  const k = resolveV6UserK(userK);
+function resolveV6WetCeiling({ baseTotalWeight } = {}) {
   const base = clampNumber(baseTotalWeight, 0.001, 1, 0.045);
-  const foldedUserK = Math.log1p(k) / Math.log1p(MAX_V6_USER_K);
-  return base * (1 + foldedUserK * (MAX_V6_WET_SCALE - 1));
+  return base;
 }
 
 function selectAnalysisFrameAt(analysis = {}, timeSeconds = 0) {
@@ -116,15 +114,21 @@ function sampleResonanceMkV6At(analysis = {}, timeSeconds = 0, options = {}) {
   const userK = resolveV6UserK(options.userK ?? options.resonanceK ?? options.intensity);
   const kCeiling = resolveV6KCeiling(options.kCeiling);
   const pivot = clampNumber(options.spectralPivot, 0.001, 0.999, DEFAULT_SPECTRAL_PIVOT);
-  const measuredK = 1 + (energy / pivot);
+  const tension = clampNumber(Math.max(0, energy - pivot) / Math.max(0.001, 1 - pivot), 0, 1, 0);
+  const userResonance = Math.log1p(Math.max(0, userK - 1)) / Math.log1p(Math.max(1, kCeiling - 1));
+  const measuredK = 1 + tension * userResonance;
   const bassMassM = 1 + (1 - energy) * GRAIN_SPECTRAL_LOW;
-  const mk = bassMassM * measuredK * userK;
-  const folded = clampNumber(Math.log1p(mk) / Math.log1p(kCeiling), 0, 1, 0);
+  const mk = bassMassM * measuredK;
+  const surplus = Math.max(0, mk - 1);
+  const folded = clampNumber(Math.log1p(surplus) / Math.log1p(kCeiling - 1), 0, 1, 0);
   return {
     energy,
+    tension,
+    userResonance,
     measuredK,
     bassMassM,
     mk,
+    surplus,
     folded,
     userK,
     kCeiling,
@@ -203,7 +207,7 @@ function buildResonanceD40FilterV6({
   const baseTotalWeight = highBaseWeight + lowBaseWeight;
   const resolvedUserK = resolveV6UserK(userK);
   const resolvedKCeiling = resolveV6KCeiling(kCeiling);
-  const wetCeiling = resolveV6WetCeiling({ userK: resolvedUserK, baseTotalWeight });
+  const wetCeiling = resolveV6WetCeiling({ baseTotalWeight });
   const highShare = dimensions.ratioHighToLow / (1 + dimensions.ratioHighToLow);
   const lowShare = 1 / (1 + dimensions.ratioHighToLow);
   const highWeight = wetCeiling * highShare;
@@ -222,6 +226,7 @@ function buildResonanceD40FilterV6({
     },
     mg: AUDIO_PIVOT_GAIN_FACTOR,
     preset: 'mk-log-ratio',
+    resonanceMode: V6_RESONANCE_MODE,
     userK: resolvedUserK,
     kCeiling: resolvedKCeiling,
     wetCeiling,
@@ -245,7 +250,7 @@ function buildResonanceD40FilterV6({
       noFinalGain: true,
       sourceFormatOutput: true,
       publicMaxUserK: MAX_V6_USER_K,
-      wetScaleMax: MAX_V6_WET_SCALE,
+      wetScaleMax: 1,
     },
     filter: [
       '[0:a]asplit=3[dry][h][l]',
@@ -379,6 +384,7 @@ async function processResonanceD40V6({
       kCeiling,
       ratioHighToLow: built.ratioHighToLow,
       ratioFormula: built.dimensions.ratioFormula,
+      mode: built.resonanceMode,
       wetCeiling: built.wetCeiling,
       highShare: built.highShare,
       lowShare: built.lowShare,
@@ -445,9 +451,10 @@ function buildResonanceD40PlanV6(options = {}) {
     resonance: {
       userK,
       kCeiling,
-      formula: 'folded=ln(1+M*k)/ln(1+kCeiling)',
+      formula: 'folded=ln(1+surplus(M*k))/ln(1+kCeiling-1)',
       massM: '1+(1-energy)*grainBas',
-      measuredK: '1+energy/pivot0.292',
+      measuredK: '1+tension*kResonance',
+      mode: V6_RESONANCE_MODE,
       ratioHighToLow: dimensions.ratioHighToLow,
       ratioFormula: dimensions.ratioFormula,
       wetCeiling: built.wetCeiling,

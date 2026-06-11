@@ -394,6 +394,9 @@ test('resonance d40 v6 uses 2D/2, 3D/2 and log high low ratio with folded Mk', (
   const loud = sampleResonanceMkV6At({
     frames: [{ endTime: 1, normalizedEnergy: 1, curvedEnergy: 1 }],
   }, 0, { userK: 2 });
+  const louderK = sampleResonanceMkV6At({
+    frames: [{ endTime: 1, normalizedEnergy: 1, curvedEnergy: 1 }],
+  }, 0, { userK: 10 });
 
   assert.equal(Number(dimensions.twoD.toFixed(12)), 1.369477735693);
   assert.equal(Number(dimensions.threeD.toFixed(12)), 3.778795774729);
@@ -405,11 +408,15 @@ test('resonance d40 v6 uses 2D/2, 3D/2 and log high low ratio with folded Mk', (
   assert.equal(resolveV6UserK(99), 10);
   assert.equal(built.userK, 2);
   assert.equal(boosted.userK, 10);
+  assert.equal(boosted.wetCeiling, built.wetCeiling);
+  assert.equal(built.safety.wetScaleMax, 1);
+  assert.equal(plan.resonance.mode, 'soft-fold');
   assert.equal(plan.defaults.userK.default, 2);
   assert.equal(plan.defaults.userK.max, 10);
   assert.equal(Number((built.highWeight / built.lowWeight).toFixed(12)), Number(dimensions.ratioHighToLow.toFixed(12)));
-  assert.ok(loud.folded > quiet.folded);
-  assert.ok(loud.mk > quiet.mk);
+  assert.ok(louderK.folded > loud.folded);
+  assert.ok(loud.measuredK > quiet.measuredK);
+  assert.equal(Number(quiet.measuredK.toFixed(12)), 1);
   assert.ok(loud.folded <= 1);
   assert.match(built.filter, /rubberband=pitch=1\.889397887364:transients=crisp/);
   assert.match(built.filter, /rubberband=pitch=0\.684738867846:transients=crisp/);
