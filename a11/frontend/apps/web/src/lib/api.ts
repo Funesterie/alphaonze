@@ -2315,7 +2315,7 @@ export async function uploadVoiceLearningSnippet(
   return payload as VoiceLearningStatus;
 }
 
-export type DoubleHarmonicProcessMode = 'v1' | 'v2' | 'v3' | 'v4' | 'v4-lowx2';
+export type DoubleHarmonicProcessMode = 'v1' | 'v2' | 'v3' | 'v4';
 
 export type DoubleHarmonicProcessResult = {
   ok: boolean;
@@ -2401,14 +2401,12 @@ export async function processDoubleHarmonicAudio(
   if ((options?.mode === 'v1' || options?.mode === 'v2' || !options?.mode) && Number.isFinite(Number(options?.intensity))) {
     form.append('intensity', String(options?.intensity));
   }
-  if (options?.mode === 'v4-lowx2') {
-    form.append('lowGrainMultiplier', String(options.lowGrainMultiplier || 2));
-  } else if (Number.isFinite(Number(options?.lowGrainMultiplier))) {
+  if (Number.isFinite(Number(options?.lowGrainMultiplier))) {
     form.append('lowGrainMultiplier', String(options?.lowGrainMultiplier));
   }
   if (options?.name) form.append('name', options.name);
 
-  const endpoint = options?.mode === 'v4' || options?.mode === 'v4-lowx2'
+  const endpoint = options?.mode === 'v4'
     ? '/api/double-harmonic/v4/process'
     : options?.mode === 'v3'
       ? '/api/double-harmonic/v3/process'
