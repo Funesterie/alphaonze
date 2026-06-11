@@ -2170,6 +2170,31 @@ function isShortVivyAcknowledgement(message = '') {
   return /^(ok|okay|oui|ouais|yes|daccord|d accord|dac|ca marche|parfait|nickel|grave|go|vas y|continue|bien|tres bien|merci)$/.test(normalized);
 }
 
+function getVivySmallTalkReply(message = '', { fileLine = '' } = {}) {
+  const normalized = foldTextForLookup(message)
+    .replace(/[.!?]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (/^(salut|slt|bonjour|bonsoir|coucou|hello|hey|yo|re)$/.test(normalized)) {
+    return cleanText([
+      'Salut Djeff, je suis là.',
+      'On repart tranquille: tu me dis ce que tu veux faire et je te suis.',
+      fileLine,
+    ].filter(Boolean).join('\n\n'), 700);
+  }
+
+  if (/^(ca va|ça va|comment ca va|comment ça va|tu vas bien|ca va vivy|ça va vivy)$/.test(normalized)) {
+    return cleanText([
+      'Oui, je suis là et je te suis.',
+      'Je reste en chat normal tant que tu ne demandes pas clairement une chanson, une voix ou une scène.',
+      fileLine,
+    ].filter(Boolean).join('\n\n'), 800);
+  }
+
+  return '';
+}
+
 function getLastVivyUserHistoryMessage(history = []) {
   if (!Array.isArray(history)) return '';
   for (const entry of history.slice(-10).reverse()) {
@@ -2274,6 +2299,9 @@ function buildVivyFreeformChatReply({ message = '', files = [], history = [] } =
   if (isVivyDjeffRapSetupRequest(message, historyText)) {
     return buildVivyDjeffRapSetupReply({ fileLine });
   }
+
+  const smallTalkReply = getVivySmallTalkReply(message, { fileLine });
+  if (smallTalkReply) return smallTalkReply;
 
   if (djeffRapSource) {
     return buildVivyDjeffRapChatReply({

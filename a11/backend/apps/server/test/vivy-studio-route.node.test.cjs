@@ -847,6 +847,32 @@ test('Vivy understands a Djeff rap voice setup instead of answering with generic
   assert.doesNotMatch(result.assistant, /Ce que je prends surtout/i);
 });
 
+test('Vivy chat fallback answers simple greetings naturally', async () => {
+  const greeting = await buildVivyAiChat({
+    conversationId: 'vivy-smalltalk-greeting',
+    message: 'salut',
+    history: [],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(greeting.ok, true);
+  assert.equal(greeting.mode, 'chat');
+  assert.match(greeting.assistant, /Salut Djeff|je suis là/i);
+  assert.doesNotMatch(greeting.assistant, /Je vois l'idée/i);
+  assert.doesNotMatch(greeting.assistant, /Ce que je prends surtout/i);
+  assert.doesNotMatch(greeting.assistant, /Je réponds au fond/i);
+
+  const checkIn = await buildVivyAiChat({
+    conversationId: 'vivy-smalltalk-checkin',
+    message: 'ça va ?',
+    history: [],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(checkIn.ok, true);
+  assert.equal(checkIn.mode, 'chat');
+  assert.match(checkIn.assistant, /je suis là|je te suis/i);
+  assert.doesNotMatch(checkIn.assistant, /Ce que je prends surtout/i);
+});
+
 test('Vivy routes continue les paroles to songcraft and cleans UI/brief contamination', async () => {
   const rawDraft = [
     "Un quatorzième dans l'essence, deux-point-deux dans la bombonne d'Ipone,",
