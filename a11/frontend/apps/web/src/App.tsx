@@ -2021,9 +2021,9 @@ const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
 };
 const D40_OUTPUT_FORMAT_LABELS: Record<DoubleHarmonicOutputFormat, string> = {
   flac: "FLAC master",
-  source: "Meme format",
-  mp3: "MP3 leger",
-  m4a: "M4A leger",
+  source: "Même format",
+  mp3: "MP3 léger",
+  m4a: "M4A léger",
   wav: "WAV brut",
 };
 
@@ -3525,9 +3525,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [voiceLearningMessage, setVoiceLearningMessage] = useState("");
   const [doubleHarmonicFile, setDoubleHarmonicFile] = useState<File | null>(null);
   const [doubleHarmonicFileName, setDoubleHarmonicFileName] = useState("");
-  const [doubleHarmonicMode, setDoubleHarmonicMode] = useState<DoubleHarmonicProcessMode>("v5");
-  const [doubleHarmonicOutputFormat, setDoubleHarmonicOutputFormat] = useState<DoubleHarmonicOutputFormat>("flac");
-  const [doubleHarmonicIntensity, setDoubleHarmonicIntensity] = useState(D40_V5_DEFAULT_INTENSITY);
+  const [doubleHarmonicMode, setDoubleHarmonicMode] = useState<DoubleHarmonicProcessMode>("v6");
+  const [doubleHarmonicOutputFormat, setDoubleHarmonicOutputFormat] = useState<DoubleHarmonicOutputFormat>("source");
+  const [doubleHarmonicIntensity, setDoubleHarmonicIntensity] = useState(D40_V6_DEFAULT_INTENSITY);
   const [doubleHarmonicResult, setDoubleHarmonicResult] = useState<DoubleHarmonicProcessResult | null>(null);
   const [songSource, setSongSource] = useState(String(initialDraft.songSource || "Prompt +"));
   const [songArtists, setSongArtists] = useState<VivyStudioArtistId[]>(() => normalizeVivyStudioArtists(initialDraft.songArtists));
@@ -4722,10 +4722,10 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                       setDoubleHarmonicResult(null);
                     }}
                   >
+                    <option value="source">Même format</option>
                     <option value="flac">FLAC master</option>
-                    <option value="source">Meme format</option>
-                    <option value="mp3">MP3 leger</option>
-                    <option value="m4a">M4A leger</option>
+                    <option value="mp3">MP3 léger</option>
+                    <option value="m4a">M4A léger</option>
                     <option value="wav">WAV brut</option>
                   </select>
                   <strong>{doubleHarmonicOutputFormatLabel}</strong>
