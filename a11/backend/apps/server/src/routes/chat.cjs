@@ -329,7 +329,7 @@ function clampPositiveInt(value, fallback, min, max) {
 function resolveLocalChatTimeoutMs() {
   return clampPositiveInt(
     process.env.A11_LOCAL_CHAT_TIMEOUT_MS || process.env.A11_OLLAMA_CHAT_TIMEOUT_MS,
-    18_000,
+    35_000,
     5_000,
     45_000
   );
@@ -440,6 +440,7 @@ async function callOllama(userMessageOrMessages, systemPrompt = SYSTEM_PROMPT) {
     model,
     messages: buildOllamaMessages(userMessageOrMessages, systemPrompt),
     max_tokens: resolveLocalChatMaxTokens(),
+    keep_alive: String(process.env.A11_OLLAMA_KEEP_ALIVE || '30m').trim() || '30m',
     stream: false,
   });
 
@@ -499,6 +500,7 @@ function streamOllama(userMessageOrMessages, res, systemPrompt = SYSTEM_PROMPT) 
   const bodyStr = JSON.stringify({
     model,
     messages: buildOllamaMessages(userMessageOrMessages, systemPrompt),
+    keep_alive: String(process.env.A11_OLLAMA_KEEP_ALIVE || '30m').trim() || '30m',
     stream: true,
   });
 

@@ -10815,7 +10815,7 @@ async function requestChatUpstream(url, body, options = {}) {
     ? options.reqHeaders
     : {};
   const defaultTimeout = provider === 'local'
-    ? Number(process.env.A11_LOCAL_CHAT_TIMEOUT_MS || process.env.A11_OLLAMA_CHAT_TIMEOUT_MS || 18_000)
+    ? Number(process.env.A11_LOCAL_CHAT_TIMEOUT_MS || process.env.A11_OLLAMA_CHAT_TIMEOUT_MS || 35_000)
     : Number(process.env.A11_REMOTE_CHAT_TIMEOUT_MS || process.env.A11_CHAT_UPSTREAM_TIMEOUT_MS || 25_000);
   const upstreamRes = await axios({
     method: 'post',
@@ -13535,7 +13535,7 @@ async function proxyChatToOpenAI(req, res) {
           provider: 'local',
           reqHeaders: {},
           requestId,
-          timeout: Number(process.env.A11_LOCAL_CHAT_TIMEOUT_MS || 18_000) || 18_000,
+          timeout: Number(process.env.A11_LOCAL_CHAT_TIMEOUT_MS || 35_000) || 35_000,
         });
         const retryRawContent = extractAssistantText(retryResult.data);
         const retryResolvedAssistant = await resolveAssistantActionEnvelope({

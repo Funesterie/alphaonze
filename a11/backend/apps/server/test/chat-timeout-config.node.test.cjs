@@ -34,7 +34,7 @@ test('chat route keeps local interactive timeout bounded', () => {
     A11_LOCAL_CHAT_TIMEOUT_MS: null,
     A11_OLLAMA_CHAT_TIMEOUT_MS: null,
   }, () => {
-    assert.equal(chatRoute.resolveLocalChatTimeoutMs(), 18_000);
+    assert.equal(chatRoute.resolveLocalChatTimeoutMs(), 35_000);
   });
 
   withEnv({

@@ -45,8 +45,8 @@ const LEGACY_CLOUD_TTS_PROVIDERS = new Set([
   PROVIDERS.ELEVENLABS,
 ]);
 
-const CLOUD_DEFAULT_PERSONAS = new Set(['a11', 'vivy']);
-const LOCAL_OFFICIAL_PRIORITY_PERSONAS = new Set(['kaen44', 'k44', 'kaen', 'djeff', 'djeff-rap']);
+const CLOUD_DEFAULT_PERSONAS = new Set([]);
+const LOCAL_OFFICIAL_PRIORITY_PERSONAS = new Set(['a11', 'kaen44', 'k44', 'kaen', 'vivy', 'djeff', 'djeff-rap']);
 const DEFAULT_ELEVENLABS_FAMILY_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb';
 
 // Official personas — these may never fall back to a demo model
@@ -74,7 +74,7 @@ const VOICE_PERSONA_DIRECTIONS = Object.freeze({
       'Official path: owned Djeff WAV reference through the Funesterie XTTS/RVC bridge when available.',
       'Optional path: a11-voix-de-lait local reference is a persona/mood style for measured interior and symbolic clarity; it must not override the official A11 voice unless explicitly selected.',
       'Optional path: djeff-rap local reference is a consented Djeff rap style for Vivy Studio and duet drafting; it must not override A11 unless explicitly selected.',
-      'ElevenLabs and Cartesia are privileged ready-made choices; default cloud routing may be used until the definitive family WAV is provided, while the owned local reference remains the official route.',
+      'ElevenLabs and Cartesia are privileged explicit choices only; the owned local reference remains the official route.',
       'Target original A11: low, mission-focused French diction with restrained warmth.',
     ],
     prompt:
@@ -103,7 +103,7 @@ const VOICE_PERSONA_DIRECTIONS = Object.freeze({
     ],
     protectedReferences: [],
     referenceClipNotes: [
-      'Official path: Funesterie-owned or explicitly approved voice references. ElevenLabs is the temporary privileged default until the definitive family WAV is provided; Cartesia is explicit opt-in.',
+      'Official path: Funesterie-owned or explicitly approved voice references. ElevenLabs and Cartesia are privileged explicit choices only.',
       'Target original Vivy: luminous AI-singer mood, precise emotion, clean vowels, gentle musical lift.',
     ],
     prompt:
@@ -283,7 +283,7 @@ const MANIFEST = Object.freeze({
     providers: {
       [PROVIDERS.GPT_SOVITS]: { configured: false, modelPath: null, note: 'Pending trained original A11 cybernetic voice. Licensed/consented data only; no T-800/actor clone.' },
       [PROVIDERS.CHATTERBOX]: { configured: false, refClipId: null, note: 'Pending approved ref clip for original A11 direction; public film clips are moodboard only.' },
-      [PROVIDERS.ELEVENLABS]: { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.a11.elevenLabsVoiceId, note: 'Privileged ready-made default until the definitive A11 WAV is provided.' },
+      [PROVIDERS.ELEVENLABS]: { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.a11.elevenLabsVoiceId, note: 'Privileged explicit ready-made voice choice.' },
       [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.a11.cartesiaVoiceId, note: 'Privileged explicit ready-made voice choice.' },
       [PROVIDERS.AZURE]:      { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.a11.azureVoice, note: 'Fallback/explicit override HD ready-made voice.' },
       [PROVIDERS.OPENAI]:     { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.a11.openAiVoice, note: 'Fallback/explicit override high-quality ready-made voice.' },
@@ -312,7 +312,7 @@ const MANIFEST = Object.freeze({
     providers: {
       [PROVIDERS.GPT_SOVITS]: { configured: false, modelPath: null, note: 'Pending trained original Vivy musical voice. Licensed/consented data only; no anime singer/voice actor clone.' },
       [PROVIDERS.CHATTERBOX]: { configured: false, refClipId: null, note: 'Pending approved ref clip for original Vivy direction; public anime songs are moodboard only.' },
-      [PROVIDERS.ELEVENLABS]: { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.vivy.elevenLabsVoiceId, note: 'Privileged ready-made default until the definitive Vivy WAV is provided.' },
+      [PROVIDERS.ELEVENLABS]: { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.vivy.elevenLabsVoiceId, note: 'Privileged explicit ready-made voice choice.' },
       [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.vivy.cartesiaVoiceId, note: 'Privileged explicit ready-made voice choice.' },
       [PROVIDERS.AZURE]:      { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.vivy.azureVoice, note: 'Secondary HD ready-made voice.' },
       [PROVIDERS.OPENAI]:     { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.vivy.openAiVoice, note: 'Tertiary high-quality ready-made voice.' },
@@ -399,9 +399,10 @@ function resolveVoiceProvider(persona, options = {}) {
     }
   }
 
-  // Auto-select: paid plans prefer ready-made licensed cloud voices.
-  // Basic/public requests keep the path local so they do not silently spend provider credits.
-  const providerOrder = options.allowCloud === false ? LOCAL_PROVIDER_ORDER : PROVIDER_ORDER;
+  // Auto-select: official family personas prefer owned local references.
+  // Cloud voices remain available only through explicit privileged choices.
+  const prefersLocalOfficial = LOCAL_OFFICIAL_PRIORITY_PERSONAS.has(normalizedPersona);
+  const providerOrder = options.allowCloud === false || prefersLocalOfficial ? LOCAL_PROVIDER_ORDER : PROVIDER_ORDER;
   for (const provider of providerOrder) {
     const providerConfig = entry.providers[provider];
     const configured = providerConfig?.configured === 'runtime'

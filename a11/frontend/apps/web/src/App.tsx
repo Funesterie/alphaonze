@@ -229,21 +229,19 @@ function normalizeTtsProviderMode(value: unknown, fallback: TtsProviderMode = "a
   return TTS_PROVIDER_MODE_VALUES.has(raw) ? raw : fallback;
 }
 
-function getDefaultTtsProviderMode(surface: FunesterieSurface): TtsProviderMode {
-  if (surface === "kaen44") return "official";
-  return "elevenlabs";
+function getDefaultTtsProviderMode(_surface: FunesterieSurface): TtsProviderMode {
+  return "official";
 }
 
 function getTtsProviderStorageKey(surface: FunesterieSurface) {
-  return `a11:tts:provider-mode:${surface}`;
+  return `a11:tts:provider-mode:v2:${surface}`;
 }
 
 function readStoredTtsProviderMode(surface: FunesterieSurface): TtsProviderMode {
   const fallback = getDefaultTtsProviderMode(surface);
   try {
     return normalizeTtsProviderMode(
-      localStorage.getItem(getTtsProviderStorageKey(surface))
-      || localStorage.getItem("a11:tts:provider-mode"),
+      localStorage.getItem(getTtsProviderStorageKey(surface)),
       fallback
     );
   } catch {
@@ -1528,7 +1526,14 @@ function canReuseLastMediaForRequest(value: string) {
     && /\b(image|photo|visuel|capture|dessus|analyse|decris|decrit|vois)\b/.test(text);
 }
 
-function formatChatErrorForUser(error: unknown) {
+function getSurfaceChatLabel(surface: FunesterieSurface | string = "a11") {
+  const normalized = String(surface || "").trim().toLowerCase();
+  if (normalized === "kaen44" || normalized === "k44" || normalized === "kaen") return "Kaen44";
+  if (normalized === "vivy" || normalized === "vivi") return "Vivy";
+  return "A11";
+}
+
+function formatChatErrorForUser(error: unknown, surface: FunesterieSurface | string = "a11") {
   let message = String((error as any)?.message || "").trim();
   if (!message && error && typeof error === "object") {
     const candidate = error as any;
@@ -1561,7 +1566,7 @@ function formatChatErrorForUser(error: unknown) {
   if (/\b(API\s*)?(502|503|504|524)\b/i.test(message) || /html inattendue|timeout|surcharge|upstream/i.test(message)) {
     return "Le serveur IA ou un fournisseur externe a coupé la réponse. Réessaie dans quelques instants; la priorité de ton compte reste conservée.";
   }
-  return `Erreur lors de l'appel au chat A11 : ${message || "erreur inconnue"}`;
+  return `Erreur lors de l'appel au chat ${getSurfaceChatLabel(surface)} : ${message || "erreur inconnue"}`;
 }
 
 function findLastVisibleMedia(messages: ChatMessage[]) {
@@ -3073,8 +3078,8 @@ const VIVY_STUDIO_VOICE_DIRECTORY: Array<{
     ttsPersona: "a11",
     surface: "a11",
     voiceStyle: "a11-official-stern-french",
-    statusLabel: "référence à importer",
-    statusKind: "awaiting",
+    statusLabel: "référence prête",
+    statusKind: "ready",
     testLine: "A11 garde le signal, voix basse et nette, la machine respire avec le cœur humain.",
   },
   {
@@ -3088,8 +3093,8 @@ const VIVY_STUDIO_VOICE_DIRECTORY: Array<{
     ttsPersona: "vivy",
     surface: "vivy",
     voiceStyle: "vivy-official-french-conversational",
-    statusLabel: "référence à importer",
-    statusKind: "awaiting",
+    statusLabel: "référence prête",
+    statusKind: "ready",
     testLine: "Salut Jeffrey. Je suis Vivy, voix claire, proche et naturelle, prête à répondre.",
   },
   {
@@ -9897,11 +9902,10 @@ export function App() {
       localStorage.setItem(voiceReferenceStorageKey, selectedVoiceReferenceId || "");
       localStorage.setItem("a11:tts:vocal-mode", ttsVocalMode);
       localStorage.setItem(ttsProviderStorageKey, ttsProviderMode);
-      localStorage.setItem("a11:tts:provider-mode", effectiveTtsProviderMode);
     } catch {
       // ignore storage access errors
     }
-  }, [effectiveTtsProviderMode, selectedVoiceReferenceId, ttsProviderMode, ttsProviderStorageKey, ttsVocalMode, voiceReferenceStorageKey]);
+  }, [selectedVoiceReferenceId, ttsProviderMode, ttsProviderStorageKey, ttsVocalMode, voiceReferenceStorageKey]);
   useEffect(() => {
     try {
       localStorage.setItem("a11:language", selectedA11Language.code);
@@ -11303,7 +11307,7 @@ export function App() {
         const errMsg: ChatMessage = {
           id: `e-${Date.now()}`,
           role: "assistant",
-          content: formatChatErrorForUser(err),
+          content: formatChatErrorForUser(err, surfaceKind),
           ts: new Date().toISOString(),
         };
         setMessages((prev) => {
@@ -12800,7 +12804,7 @@ export function App() {
                       </select>
                     </label>
                     <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.35 }}>
-                      Défaut: {surfaceKind === "kaen44" ? "voix officielle K44" : "ElevenLabs temporaire"}. Cloud réservé Premium/Famille/Admin.
+                      Défaut: voix officielle {productName}. Cloud réservé Premium/Famille/Admin.
                     </div>
                     <div className="a11-menu-voice-tools" aria-label="Réglages voix">
                       <button
