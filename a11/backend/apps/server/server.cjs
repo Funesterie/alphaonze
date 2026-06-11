@@ -10817,6 +10817,10 @@ async function requestChatUpstream(url, body, options = {}) {
   const defaultTimeout = provider === 'local'
     ? Number(process.env.A11_LOCAL_CHAT_TIMEOUT_MS || process.env.A11_OLLAMA_CHAT_TIMEOUT_MS || 35_000)
     : Number(process.env.A11_REMOTE_CHAT_TIMEOUT_MS || process.env.A11_CHAT_UPSTREAM_TIMEOUT_MS || 25_000);
+  const upstreamBody = body && Object.keys(body).length ? { ...body } : undefined;
+  if (provider === 'local' && upstreamBody && !Object.prototype.hasOwnProperty.call(upstreamBody, 'keep_alive')) {
+    upstreamBody.keep_alive = String(process.env.A11_OLLAMA_KEEP_ALIVE || '30m').trim() || '30m';
+  }
   const upstreamRes = await axios({
     method: 'post',
     url,
@@ -10826,7 +10830,7 @@ async function requestChatUpstream(url, body, options = {}) {
       url,
       requestId,
     }),
-    data: body && Object.keys(body).length ? body : undefined,
+    data: upstreamBody,
     timeout: Number(options.timeout || defaultTimeout) || defaultTimeout || 60_000,
   });
 

@@ -1340,6 +1340,7 @@ else
     -p 127.0.0.1:11434:11434 \
     -v /srv/a11-data/ollama:/root/.ollama \
     -e OLLAMA_HOST=0.0.0.0:11434 \
+    -e OLLAMA_KEEP_ALIVE=30m \
     ollama/ollama:latest >/dev/null
 fi
 if ! docker inspect a11-ollama --format '{{json .NetworkSettings.Networks}}' | grep -q '"server_default"'; then
