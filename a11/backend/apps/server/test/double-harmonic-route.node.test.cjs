@@ -365,6 +365,7 @@ test('double harmonic route processes upload and exposes tokenized audio link', 
     form.append('audio', new Blob([Buffer.from('RIFFdemoWAVEfmt ')], { type: 'audio/wav' }), 'demo.wav');
     form.append('profile', 'blend');
     form.append('intensity', '1.08');
+    form.append('format', 'source');
     const res = await fetch(`${baseUrl}/api/double-harmonic/process`, {
       method: 'POST',
       body: form,
@@ -452,7 +453,7 @@ test('double harmonic route processes upload through experimental phase-lock v2'
     runtimeRoot,
     processPhaseAwareD40V2: async ({ outputPath, profile, intensity, analysisOptions }) => {
       calls.push({ profile, intensity, frameMs: analysisOptions.frameMs });
-      fs.writeFileSync(outputPath, Buffer.from('processed v2 mp3'));
+      fs.writeFileSync(outputPath, Buffer.from('processed v2 flac'));
       return {
         method: 'dry-first-d40-phase-aware-overlay-v2',
         state: 'experimental-process',
@@ -485,20 +486,20 @@ test('double harmonic route processes upload through experimental phase-lock v2'
     assert.equal(payload.ok, true);
     assert.equal(payload.method, 'dry-first-d40-phase-aware-overlay-v2');
     assert.equal(payload.state, 'experimental-process');
-    assert.equal(payload.contentType, 'audio/mpeg');
-    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v2\.mp3$/);
+    assert.equal(payload.contentType, 'audio/flac');
+    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v2\.flac$/);
     assert.deepEqual(calls, [{ profile: 'blend', intensity: 1.08, frameMs: 20 }]);
 
     const shared = await fetch(payload.shareUrl);
     assert.equal(shared.status, 200);
-    assert.match(shared.headers.get('content-type') || '', /audio\/mpeg/);
+    assert.match(shared.headers.get('content-type') || '', /audio\/flac/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(runtimeRoot, { recursive: true, force: true });
   }
 });
 
-test('double harmonic route processes upload through dynamic v3 and keeps source format', async () => {
+test('double harmonic route processes upload through dynamic v3 as lossless flac by default', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-v3-process-'));
   const calls = [];
   const app = express();
@@ -512,7 +513,7 @@ test('double harmonic route processes upload through dynamic v3 and keeps source
         curve: analysisOptions.curve,
         curveAmount: analysisOptions.curveAmount,
       });
-      fs.writeFileSync(outputPath, Buffer.from('processed v3 mp3'));
+      fs.writeFileSync(outputPath, Buffer.from('processed v3 flac'));
       return {
         method: 'dry-first-d40-db-dynamic-overlay-v3',
         state: 'dynamic-process',
@@ -546,20 +547,20 @@ test('double harmonic route processes upload through dynamic v3 and keeps source
     assert.equal(payload.ok, true);
     assert.equal(payload.method, 'dry-first-d40-db-dynamic-overlay-v3');
     assert.equal(payload.intensity, 'auto');
-    assert.equal(payload.contentType, 'audio/mpeg');
-    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v3\.mp3$/);
+    assert.equal(payload.contentType, 'audio/flac');
+    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v3\.flac$/);
     assert.deepEqual(calls, [{ profile: 'blend', frameMs: 250, maxSegments: 64, curve: 'ln-exp', curveAmount: 0.38 }]);
 
     const shared = await fetch(payload.shareUrl);
     assert.equal(shared.status, 200);
-    assert.match(shared.headers.get('content-type') || '', /audio\/mpeg/);
+    assert.match(shared.headers.get('content-type') || '', /audio\/flac/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(runtimeRoot, { recursive: true, force: true });
   }
 });
 
-test('double harmonic route publishes naked d40 v4 and keeps source format', async () => {
+test('double harmonic route publishes naked d40 v4 as lossless flac by default', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-v4-process-'));
   const calls = [];
   const app = express();
@@ -576,7 +577,7 @@ test('double harmonic route publishes naked d40 v4 and keeps source format', asy
         highGrainPower: analysisOptions.highGrainPower,
         weightScale: analysisOptions.weightScale,
       });
-      fs.writeFileSync(outputPath, Buffer.from('processed v4 mp3'));
+      fs.writeFileSync(outputPath, Buffer.from('processed v4 flac'));
       return {
         method: 'dry-first-naked-d40-harmonic-overlay-v4',
         state: 'v4-release',
@@ -627,12 +628,12 @@ test('double harmonic route publishes naked d40 v4 and keeps source format', asy
     assert.equal(payload.method, 'dry-first-naked-d40-harmonic-overlay-v4');
     assert.equal(payload.state, 'v4-release');
     assert.equal(payload.intensity, 'd40');
-    assert.equal(payload.contentType, 'audio/mpeg');
+    assert.equal(payload.contentType, 'audio/flac');
     assert.equal(payload.safety.noLimiter, true);
     assert.equal(payload.weights.lowGrainMultiplier, 2);
     assert.equal(payload.weights.highGrainPower, 3);
     assert.equal(payload.weights.weightScale, 2.5);
-    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v4\.mp3$/);
+    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v4\.flac$/);
     assert.deepEqual(calls, [{
       profile: 'blend',
       frameMs: 250,
@@ -646,14 +647,14 @@ test('double harmonic route publishes naked d40 v4 and keeps source format', asy
 
     const shared = await fetch(payload.shareUrl);
     assert.equal(shared.status, 200);
-    assert.match(shared.headers.get('content-type') || '', /audio\/mpeg/);
+    assert.match(shared.headers.get('content-type') || '', /audio\/flac/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(runtimeRoot, { recursive: true, force: true });
   }
 });
 
-test('double harmonic route keeps mp3 input as mp3 output', async () => {
+test('double harmonic route keeps mp3 input as mp3 output when source format is requested', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-mp3-'));
   const app = express();
   app.use('/api/double-harmonic', createDoubleHarmonicRouter({
@@ -673,6 +674,7 @@ test('double harmonic route keeps mp3 input as mp3 output', async () => {
   try {
     const form = new FormData();
     form.append('audio', new Blob([Buffer.from('ID3demo')], { type: 'audio/mpeg' }), 'demo.mp3');
+    form.append('format', 'source');
     const res = await fetch(`${baseUrl}/api/double-harmonic/process`, {
       method: 'POST',
       body: form,

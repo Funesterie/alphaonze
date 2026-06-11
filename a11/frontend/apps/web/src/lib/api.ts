@@ -2316,6 +2316,7 @@ export async function uploadVoiceLearningSnippet(
 }
 
 export type DoubleHarmonicProcessMode = 'v1' | 'v2' | 'v3' | 'v4';
+export type DoubleHarmonicOutputFormat = 'source' | 'flac' | 'mp3' | 'm4a' | 'wav';
 
 export type DoubleHarmonicProcessResult = {
   ok: boolean;
@@ -2388,7 +2389,7 @@ export async function processDoubleHarmonicAudio(
   options?: {
     profile?: 'blend' | 'prime3' | 'prime11' | string;
     intensity?: number;
-    format?: 'mp3' | 'm4a' | 'wav' | string;
+    format?: DoubleHarmonicOutputFormat | string;
     name?: string;
     mode?: DoubleHarmonicProcessMode;
     lowGrainMultiplier?: number;

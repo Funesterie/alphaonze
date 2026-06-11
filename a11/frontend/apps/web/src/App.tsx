@@ -77,6 +77,7 @@ import {
   type TechnicalMemoSummaryResponse,
   type TtsVoiceReference,
   type VoiceLearningStatus,
+  type DoubleHarmonicOutputFormat,
   type DoubleHarmonicProcessMode,
   type DoubleHarmonicProcessResult,
   type VivyChatFileAttachment,
@@ -2010,6 +2011,13 @@ const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v3: "V3 auto",
   v4: "V4 Stable",
 };
+const D40_OUTPUT_FORMAT_LABELS: Record<DoubleHarmonicOutputFormat, string> = {
+  flac: "FLAC master",
+  source: "Meme format",
+  mp3: "MP3 leger",
+  m4a: "M4A leger",
+  wav: "WAV brut",
+};
 
 function isLocalDevSurface() {
   if (typeof window === "undefined") return false;
@@ -3510,6 +3518,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [doubleHarmonicFile, setDoubleHarmonicFile] = useState<File | null>(null);
   const [doubleHarmonicFileName, setDoubleHarmonicFileName] = useState("");
   const [doubleHarmonicMode, setDoubleHarmonicMode] = useState<DoubleHarmonicProcessMode>("v4");
+  const [doubleHarmonicOutputFormat, setDoubleHarmonicOutputFormat] = useState<DoubleHarmonicOutputFormat>("flac");
   const [doubleHarmonicIntensity, setDoubleHarmonicIntensity] = useState(1);
   const [doubleHarmonicResult, setDoubleHarmonicResult] = useState<DoubleHarmonicProcessResult | null>(null);
   const [songSource, setSongSource] = useState(String(initialDraft.songSource || "Prompt +"));
@@ -3528,6 +3537,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [isBusy, setIsBusy] = useState(false);
   const doubleHarmonicIntensityLabel = `${doubleHarmonicIntensity.toFixed(2).replace(/\.?0+$/, "")}x`;
   const doubleHarmonicModeLabel = D40_PROCESS_MODE_LABELS[doubleHarmonicMode];
+  const doubleHarmonicOutputFormatLabel = D40_OUTPUT_FORMAT_LABELS[doubleHarmonicOutputFormat];
   const doubleHarmonicIntensityMin = doubleHarmonicMode === "v4" ? D40_V4_INTENSITY_MIN : D40_HARMONIC_INTENSITY_MIN;
   const doubleHarmonicIntensityMax = doubleHarmonicMode === "v4" ? D40_V4_INTENSITY_MAX : D40_HARMONIC_INTENSITY_MAX;
   const doubleHarmonicIntensityStep = doubleHarmonicMode === "v4" ? "0.05" : "0.005";
@@ -4049,6 +4059,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       const result = await processDoubleHarmonicAudio(doubleHarmonicFile, {
         profile: "blend",
         intensity: doubleHarmonicIntensity,
+        format: doubleHarmonicOutputFormat,
         name: doubleHarmonicFile.name,
         mode: doubleHarmonicMode,
         lowGrainMultiplier: doubleHarmonicMode === "v4" ? D40_V4_LOW_GRAIN_MULTIPLIER : undefined,
@@ -4068,9 +4079,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       });
       setVivyOutput((current) => [
         current.trim(),
-        `Mix D40 ${doubleHarmonicModeLabel} ${doubleHarmonicWeightLabel} prêt: ${result.shareUrl || result.audioUrl}`,
+        `Mix D40 ${doubleHarmonicModeLabel} ${doubleHarmonicWeightLabel} ${doubleHarmonicOutputFormatLabel} prêt: ${result.shareUrl || result.audioUrl}`,
       ].filter(Boolean).join("\n\n"));
-      setStatus(`Mix D40 ${doubleHarmonicModeLabel} prêt avec lien exportable (${doubleHarmonicWeightLabel}).`);
+      setStatus(`Mix D40 ${doubleHarmonicModeLabel} prêt avec lien exportable (${doubleHarmonicWeightLabel}, ${doubleHarmonicOutputFormatLabel}).`);
     } catch (error: any) {
       setStatus(`Traitement D40 impossible: ${error?.message || error}`);
     } finally {
@@ -4653,6 +4664,36 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     <option value="v4">V4 Stable</option>
                   </select>
                   <strong>{doubleHarmonicModeLabel}</strong>
+                </label>
+                <label className="vivy-studio-range-label">
+                  <span>Sortie</span>
+                  <select
+                    id="vivy-studio-dh-format"
+                    name="doubleHarmonicOutputFormat"
+                    value={doubleHarmonicOutputFormat}
+                    disabled={!hasSession || isBusy}
+                    onChange={(event) => {
+                      const rawFormat = event.currentTarget.value;
+                      const nextFormat: DoubleHarmonicOutputFormat = rawFormat === "source"
+                        ? "source"
+                        : rawFormat === "mp3"
+                          ? "mp3"
+                          : rawFormat === "m4a"
+                            ? "m4a"
+                            : rawFormat === "wav"
+                              ? "wav"
+                              : "flac";
+                      setDoubleHarmonicOutputFormat(nextFormat);
+                      setDoubleHarmonicResult(null);
+                    }}
+                  >
+                    <option value="flac">FLAC master</option>
+                    <option value="source">Meme format</option>
+                    <option value="mp3">MP3 leger</option>
+                    <option value="m4a">M4A leger</option>
+                    <option value="wav">WAV brut</option>
+                  </select>
+                  <strong>{doubleHarmonicOutputFormatLabel}</strong>
                 </label>
                 <label className="vivy-studio-range-label">
                   <span>{doubleHarmonicIntensityTitle}</span>

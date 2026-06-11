@@ -31,7 +31,7 @@ const {
 
 const DEFAULT_MAX_MB = 80;
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const DEFAULT_OUTPUT_FORMAT = 'source';
+const DEFAULT_OUTPUT_FORMAT = 'flac';
 
 const OUTPUT_FORMATS = Object.freeze({
   mp3: Object.freeze({ ext: 'mp3', contentType: 'audio/mpeg' }),
@@ -112,10 +112,11 @@ function contentTypeForFile(filename = '') {
 
 function normalizeOutputSourceExt(value) {
   const ext = String(value || '').trim().toLowerCase().replace(/^\./, '');
+  if (ext === 'source') return 'source';
   if (ext === 'wave') return 'wav';
   if (ext === 'aac' || ext === 'mp4' || ext === 'mov' || ext === 'webm') return 'm4a';
   if (Object.prototype.hasOwnProperty.call(OUTPUT_FORMATS, ext)) return ext;
-  return 'mp3';
+  return 'flac';
 }
 
 function resolveOutputFormat(value, sourceExt = '') {
@@ -126,6 +127,7 @@ function resolveOutputFormat(value, sourceExt = '') {
   const key = !requested || requested === 'source'
     ? normalizeOutputSourceExt(sourceExt)
     : normalizeOutputSourceExt(requested);
+  if (key === 'source') return OUTPUT_FORMATS[normalizeOutputSourceExt(sourceExt)] || OUTPUT_FORMATS.mp3;
   return OUTPUT_FORMATS[key] || OUTPUT_FORMATS.mp3;
 }
 
