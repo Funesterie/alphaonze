@@ -2005,6 +2005,7 @@ const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v2: "V2 Release",
   v3: "V3 auto",
   v4: "V4 Release",
+  "v4-lowx2": "V4 grain bas x2",
 };
 
 function isLocalDevSurface() {
@@ -3524,10 +3525,10 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [isBusy, setIsBusy] = useState(false);
   const doubleHarmonicIntensityLabel = `${doubleHarmonicIntensity.toFixed(2).replace(/\.?0+$/, "")}x`;
   const doubleHarmonicModeLabel = D40_PROCESS_MODE_LABELS[doubleHarmonicMode];
-  const doubleHarmonicUsesFixedWeight = doubleHarmonicMode === "v3" || doubleHarmonicMode === "v4";
+  const doubleHarmonicUsesFixedWeight = doubleHarmonicMode === "v3" || doubleHarmonicMode === "v4" || doubleHarmonicMode === "v4-lowx2";
   const doubleHarmonicWeightLabel = doubleHarmonicMode === "v3"
     ? "Auto"
-    : doubleHarmonicMode === "v4"
+    : doubleHarmonicMode === "v4" || doubleHarmonicMode === "v4-lowx2"
       ? "D40"
       : doubleHarmonicIntensityLabel;
 
@@ -4034,6 +4035,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         intensity: doubleHarmonicIntensity,
         name: doubleHarmonicFile.name,
         mode: doubleHarmonicMode,
+        lowGrainMultiplier: doubleHarmonicMode === "v4-lowx2" ? 2 : undefined,
       });
       const mediaUrl = String(result.shareUrl || result.audioUrl || "").trim();
       if (!mediaUrl) throw new Error("audio_url_missing");
@@ -4617,13 +4619,15 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     disabled={!hasSession || isBusy}
                     onChange={(event) => {
                       const rawMode = event.currentTarget.value;
-                      const nextMode: DoubleHarmonicProcessMode = rawMode === "v4"
-                        ? "v4"
-                        : rawMode === "v3"
-                          ? "v3"
-                          : rawMode === "v2"
-                            ? "v2"
-                            : "v1";
+                      const nextMode: DoubleHarmonicProcessMode = rawMode === "v4-lowx2"
+                        ? "v4-lowx2"
+                        : rawMode === "v4"
+                          ? "v4"
+                          : rawMode === "v3"
+                            ? "v3"
+                            : rawMode === "v2"
+                              ? "v2"
+                              : "v1";
                       setDoubleHarmonicMode(nextMode);
                       setDoubleHarmonicResult(null);
                     }}
@@ -4632,6 +4636,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     <option value="v2">V2 Release</option>
                     <option value="v3">V3 auto</option>
                     <option value="v4">V4 Release</option>
+                    <option value="v4-lowx2">V4 grain bas x2</option>
                   </select>
                   <strong>{doubleHarmonicModeLabel}</strong>
                 </label>

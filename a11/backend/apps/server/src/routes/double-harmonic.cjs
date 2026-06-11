@@ -232,6 +232,7 @@ function createDoubleHarmonicRouter(options = {}) {
       v2: buildPhaseLockPlan(),
       v3: buildDynamicWeightPlanV3(),
       v4: buildNakedD40PlanV4(),
+      v4LowX2: buildNakedD40PlanV4({ lowGrainMultiplier: 2 }),
     });
   });
 
@@ -263,6 +264,7 @@ function createDoubleHarmonicRouter(options = {}) {
         frameMs: reqNumber(_req.query?.frameMs),
         maxSeconds: reqNumber(_req.query?.maxSeconds),
         cycleSeconds: reqNumber(_req.query?.cycleSeconds),
+        lowGrainMultiplier: reqNumber(_req.query?.lowGrainMultiplier),
       }),
     });
   });
@@ -518,6 +520,7 @@ function createDoubleHarmonicRouter(options = {}) {
           release: reqNumber(req.body?.release || req.query?.release),
           minDbSpan: reqNumber(req.body?.minDbSpan || req.query?.minDbSpan),
           cycleSeconds: reqNumber(req.body?.cycleSeconds || req.query?.cycleSeconds),
+          lowGrainMultiplier: reqNumber(req.body?.lowGrainMultiplier || req.query?.lowGrainMultiplier),
         },
       });
       const token = crypto.randomBytes(18).toString('base64url');

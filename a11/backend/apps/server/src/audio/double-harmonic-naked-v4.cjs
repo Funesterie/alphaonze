@@ -28,6 +28,9 @@ const DEFAULT_V4_CURVE_AMOUNT = 0.3;
 const DEFAULT_V4_ATTACK = 0.78;
 const DEFAULT_V4_RELEASE = 0.32;
 const DEFAULT_V4_MIN_DB_SPAN = 8;
+const DEFAULT_V4_LOW_GRAIN_MULTIPLIER = 1;
+const MIN_V4_LOW_GRAIN_MULTIPLIER = 0.25;
+const MAX_V4_LOW_GRAIN_MULTIPLIER = 4;
 
 function numberText(value, digits = 12) {
   return Number(value).toFixed(digits).replace(/0+$/g, '').replace(/\.$/g, '');
@@ -38,12 +41,19 @@ function buildNakedD40EnvelopePath(outputPath) {
   return path.join(path.dirname(outputPath), `.${safeBase}.v4-envelope.wav`);
 }
 
-function buildNakedD40FilterV4({ profile = 'blend', cycleSeconds } = {}) {
+function resolveLowGrainMultiplier(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return DEFAULT_V4_LOW_GRAIN_MULTIPLIER;
+  return Math.max(MIN_V4_LOW_GRAIN_MULTIPLIER, Math.min(MAX_V4_LOW_GRAIN_MULTIPLIER, numeric));
+}
+
+function buildNakedD40FilterV4({ profile = 'blend', cycleSeconds, lowGrainMultiplier } = {}) {
   const envelopeProbe = sampleD40EnvelopeAt(0, { profile, periodSeconds: cycleSeconds });
   const highBaseWeight = RAW_LOW_PRESET.highWeight * AUDIO_PIVOT_GAIN_FACTOR;
   const lowBaseWeight = RAW_LOW_PRESET.lowWeight * AUDIO_PIVOT_GAIN_FACTOR;
+  const resolvedLowGrainMultiplier = resolveLowGrainMultiplier(lowGrainMultiplier);
   const highPitch = GRAIN_SPECTRAL_HIGH;
-  const lowPitch = GRAIN_SPECTRAL_LOW;
+  const lowPitch = GRAIN_SPECTRAL_LOW * resolvedLowGrainMultiplier;
 
   return {
     schema: NAKED_D40_V4_SCHEMA,
@@ -60,6 +70,7 @@ function buildNakedD40FilterV4({ profile = 'blend', cycleSeconds } = {}) {
     preset: 'raw-low',
     highBaseWeight,
     lowBaseWeight,
+    lowGrainMultiplier: resolvedLowGrainMultiplier,
     highPitch,
     lowPitch,
     safety: {
@@ -81,9 +92,9 @@ function buildNakedD40FilterV4({ profile = 'blend', cycleSeconds } = {}) {
   };
 }
 
-function buildNakedD40ArgsV4({ inputPath, outputPath, profile = 'blend', cycleSeconds, envelopePath } = {}) {
+function buildNakedD40ArgsV4({ inputPath, outputPath, profile = 'blend', cycleSeconds, envelopePath, lowGrainMultiplier } = {}) {
   if (!envelopePath) throw new Error('missing_envelope_path');
-  const built = buildNakedD40FilterV4({ profile, cycleSeconds });
+  const built = buildNakedD40FilterV4({ profile, cycleSeconds, lowGrainMultiplier });
   return {
     built,
     args: [
@@ -156,6 +167,7 @@ async function processNakedD40V4({
       profile,
       cycleSeconds: analysisOptions.cycleSeconds,
       envelopePath,
+      lowGrainMultiplier: analysisOptions.lowGrainMultiplier,
     });
     built = planned.built;
     await runFfmpeg(planned.args, { timeoutMs });
@@ -193,6 +205,7 @@ async function processNakedD40V4({
       dynamicMin: analysis.summary.weightMin,
       dynamicMax: analysis.summary.weightMax,
       dynamicMean: analysis.summary.weightMean,
+      lowGrainMultiplier: built.lowGrainMultiplier,
       highPitch: built.highPitch,
       lowPitch: built.lowPitch,
       finalGainDb: 0,
@@ -207,6 +220,7 @@ function buildNakedD40PlanV4(options = {}) {
   const built = buildNakedD40FilterV4({
     profile: options.profile || 'blend',
     cycleSeconds: options.cycleSeconds,
+    lowGrainMultiplier: options.lowGrainMultiplier,
   });
   return {
     schema: NAKED_D40_V4_SCHEMA,
@@ -220,6 +234,7 @@ function buildNakedD40PlanV4(options = {}) {
       highBase: built.highBaseWeight,
       lowBase: built.lowBaseWeight,
       ratio: built.lowBaseWeight / built.highBaseWeight,
+      lowGrainMultiplier: built.lowGrainMultiplier,
       highPitch: built.highPitch,
       lowPitch: built.lowPitch,
     },
@@ -241,12 +256,16 @@ module.exports = {
   DEFAULT_V4_CURVE,
   DEFAULT_V4_CURVE_AMOUNT,
   DEFAULT_V4_FRAME_MS,
+  DEFAULT_V4_LOW_GRAIN_MULTIPLIER,
   DEFAULT_V4_MAX_SEGMENTS,
   DEFAULT_V4_MIN_DB_SPAN,
   DEFAULT_V4_RELEASE,
+  MAX_V4_LOW_GRAIN_MULTIPLIER,
+  MIN_V4_LOW_GRAIN_MULTIPLIER,
   NAKED_D40_V4_SCHEMA,
   buildNakedD40ArgsV4,
   buildNakedD40FilterV4,
   buildNakedD40PlanV4,
   processNakedD40V4,
+  resolveLowGrainMultiplier,
 };
