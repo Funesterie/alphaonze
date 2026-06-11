@@ -11206,9 +11206,9 @@ function resolveChatMaxTokensForProvider(provider = '', body = {}) {
   const normalizedProvider = String(provider || '').trim().toLowerCase();
   const requested = Number(body?.max_tokens || body?.max_completion_tokens || 0);
   if (normalizedProvider === 'local') {
-    const fallback = Number(process.env.A11_LOCAL_CHAT_MAX_TOKENS || process.env.A11_CHAT_MAX_TOKENS || 420) || 420;
+    const fallback = Number(process.env.A11_LOCAL_CHAT_MAX_TOKENS || process.env.A11_CHAT_MAX_TOKENS || 640) || 640;
     const hardMax = Number(process.env.A11_LOCAL_CHAT_MAX_TOKENS_HARD_MAX || 2048) || 2048;
-    return clampChatTokenBudget(requested || fallback, 420, hardMax);
+    return clampChatTokenBudget(requested || fallback, 640, hardMax);
   }
   const fallback = Number(process.env.A11_REMOTE_CHAT_MAX_TOKENS || process.env.A11_CHAT_MAX_TOKENS || 1200) || 1200;
   const hardMax = Number(process.env.A11_REMOTE_CHAT_MAX_TOKENS_HARD_MAX || 8192) || 8192;

@@ -22,6 +22,7 @@ const {
 } = require('../src/audio/double-harmonic-d40.cjs');
 const {
   analyzePcmDynamicWeightV3,
+  buildDynamicAutomationSamples,
   buildDynamicWeightD40Filter,
 } = require('../src/audio/double-harmonic-dynamic-v3.cjs');
 
@@ -119,6 +120,12 @@ test('dynamic v3 maps quiet frames toward 8/9 and loud frames toward 9/8 with fi
     maxSegments: 64,
   });
   const built = buildDynamicWeightD40Filter({ analysis, profile: 'blend' });
+  const automation = buildDynamicAutomationSamples({
+    analysis,
+    profile: 'blend',
+    durationSeconds: 4,
+    sampleRate: 100,
+  });
 
   assert.equal(analysis.controls.minWeight, MIN_HARMONIC_INTENSITY);
   assert.equal(analysis.controls.maxWeight, MAX_HARMONIC_INTENSITY);
@@ -127,7 +134,12 @@ test('dynamic v3 maps quiet frames toward 8/9 and loud frames toward 9/8 with fi
   assert.ok(analysis.summary.weightMax >= MAX_HARMONIC_INTENSITY - 0.01);
   assert.ok(analysis.frames[0].weightScale < analysis.frames[analysis.frames.length - 1].weightScale);
   assert.equal(Number((built.lowBaseWeight / built.highBaseWeight).toFixed(12)), Number(BALANCE_AUTO.toFixed(12)));
-  assert.match(built.filter, /if\(lt\(t\\,/);
+  assert.equal(built.automation.mode, 'wav-envelope');
+  assert.equal(automation.mode, 'wav-envelope');
+  assert.ok(automation.summary.min < automation.summary.max);
+  assert.doesNotMatch(built.filter, /if\(lt\(t\\,/);
+  assert.match(built.filter, /\[1:a\]/);
+  assert.match(built.filter, /amultiply/);
   assert.match(built.filter, /phase=laminar/);
 });
 

@@ -309,7 +309,7 @@ function getOllamaConfig() {
 }
 
 function resolveLocalChatMaxTokens() {
-  const fallback = Number(process.env.A11_LOCAL_CHAT_MAX_TOKENS || process.env.A11_CHAT_MAX_TOKENS || 420) || 420;
+  const fallback = Number(process.env.A11_LOCAL_CHAT_MAX_TOKENS || process.env.A11_CHAT_MAX_TOKENS || 640) || 640;
   const hardMax = Number(process.env.A11_LOCAL_CHAT_MAX_TOKENS_HARD_MAX || 2048) || 2048;
   return Math.max(64, Math.min(hardMax, Math.round(fallback)));
 }

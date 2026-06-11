@@ -1,5 +1,9 @@
 'use strict';
 
+const { execFile } = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
+
 const {
   AUDIO_PIVOT_GAIN_FACTOR,
   BALANCE_AUTO,
@@ -7,9 +11,9 @@ const {
   MAX_HARMONIC_INTENSITY,
   MIN_HARMONIC_INTENSITY,
   RAW_LOW_PRESET,
-  buildD40EnvelopeExpression,
   buildOutputCodecArgs,
   runFfmpeg,
+  sampleD40EnvelopeAt,
 } = require('./double-harmonic-d40.cjs');
 const {
   DEFAULT_ANALYSIS_SAMPLE_RATE,
@@ -23,6 +27,7 @@ const DEFAULT_DYNAMIC_MAX_SEGMENTS = 360;
 const DEFAULT_DYNAMIC_FLOOR_PERCENTILE = 0.1;
 const DEFAULT_DYNAMIC_CEIL_PERCENTILE = 0.9;
 const DEFAULT_DYNAMIC_MIN_DB_SPAN = 12;
+const DEFAULT_DYNAMIC_AUTOMATION_SAMPLE_RATE = 400;
 const DB_EPSILON = 1e-7;
 
 function clampNumber(value, min, max, fallback) {
@@ -33,6 +38,55 @@ function clampNumber(value, min, max, fallback) {
 
 function numberText(value, digits = 12) {
   return Number(value).toFixed(digits).replace(/0+$/g, '').replace(/\.$/g, '');
+}
+
+function resolveAutomationSampleRate(value) {
+  return Math.round(clampNumber(
+    value || process.env.A11_DH_V3_ENVELOPE_SAMPLE_RATE,
+    50,
+    2000,
+    DEFAULT_DYNAMIC_AUTOMATION_SAMPLE_RATE
+  ));
+}
+
+function resolveFfprobeBin() {
+  const explicit = String(process.env.A11_DH_FFPROBE_BIN || process.env.FFPROBE_BIN || '').trim();
+  if (explicit) return explicit;
+  const ffmpeg = String(process.env.A11_DH_FFMPEG_BIN || process.env.FFMPEG_BIN || '').trim();
+  if (ffmpeg) {
+    const basename = path.basename(ffmpeg);
+    if (/^ffmpeg(?:\.exe)?$/i.test(basename)) {
+      return path.join(path.dirname(ffmpeg), basename.replace(/^ffmpeg/i, 'ffprobe'));
+    }
+  }
+  return 'ffprobe';
+}
+
+function probeAudioDurationSeconds(inputPath, options = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(resolveFfprobeBin(), [
+      '-v',
+      'error',
+      '-show_entries',
+      'format=duration',
+      '-of',
+      'default=noprint_wrappers=1:nokey=1',
+      inputPath,
+    ], {
+      windowsHide: true,
+      timeout: Number(options.timeoutMs || process.env.A11_DH_FFPROBE_TIMEOUT_MS || 20_000),
+      maxBuffer: 64 * 1024,
+    }, (error, stdout, stderr) => {
+      if (error) {
+        const err = new Error(`ffprobe_failed:${error.message}`);
+        err.stderr = stderr;
+        return reject(err);
+      }
+      const duration = Number(String(stdout || '').trim().split(/\s+/)[0]);
+      if (!Number.isFinite(duration) || duration <= 0) return reject(new Error('ffprobe_invalid_duration'));
+      return resolve(duration);
+    });
+  });
 }
 
 function mean(values) {
@@ -212,14 +266,111 @@ function buildDynamicWeightExpression(analysis = {}) {
   return expression;
 }
 
+function sampleDynamicWeightAt(analysis = {}, timeSeconds = 0) {
+  const frames = Array.isArray(analysis.frames) && analysis.frames.length
+    ? analysis.frames
+    : [{ endTime: Number.POSITIVE_INFINITY, weightScale: 1 }];
+  const time = Math.max(0, Number(timeSeconds) || 0);
+  let selected = frames[frames.length - 1];
+  for (const frame of frames) {
+    if (time < Number(frame.endTime || 0)) {
+      selected = frame;
+      break;
+    }
+  }
+  return clampNumber(selected.weightScale, MIN_HARMONIC_INTENSITY, MAX_HARMONIC_INTENSITY, 1);
+}
+
+function buildDynamicAutomationSamples({
+  analysis,
+  profile = 'blend',
+  cycleSeconds,
+  durationSeconds,
+  sampleRate,
+} = {}) {
+  const resolvedSampleRate = resolveAutomationSampleRate(sampleRate);
+  const fallbackDuration = Number(analysis?.summary?.durationSeconds || 1) || 1;
+  const duration = clampNumber(durationSeconds, 0.05, 7200, fallbackDuration);
+  const sampleCount = Math.max(1, Math.ceil(duration * resolvedSampleRate));
+  const samples = new Float32Array(sampleCount);
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  let sum = 0;
+
+  for (let index = 0; index < sampleCount; index += 1) {
+    const time = index / resolvedSampleRate;
+    const dynamic = sampleDynamicWeightAt(analysis, time);
+    const d40 = sampleD40EnvelopeAt(time, { profile, periodSeconds: cycleSeconds });
+    const value = d40.gain * dynamic;
+    samples[index] = value;
+    min = Math.min(min, value);
+    max = Math.max(max, value);
+    sum += value;
+  }
+
+  const probe = sampleD40EnvelopeAt(0, { profile, periodSeconds: cycleSeconds });
+  return {
+    mode: 'wav-envelope',
+    sampleRate: resolvedSampleRate,
+    durationSeconds: sampleCount / resolvedSampleRate,
+    sampleCount,
+    samples,
+    profile: probe.profile,
+    period: probe.period,
+    density: probe.density,
+    summary: {
+      min,
+      max,
+      mean: sum / sampleCount,
+    },
+  };
+}
+
+function writeFloat32MonoWav(filePath, samples, sampleRate = DEFAULT_DYNAMIC_AUTOMATION_SAMPLE_RATE) {
+  const resolvedSampleRate = resolveAutomationSampleRate(sampleRate);
+  const dataBytes = samples.length * 4;
+  const buffer = Buffer.allocUnsafe(44 + dataBytes);
+  buffer.write('RIFF', 0);
+  buffer.writeUInt32LE(36 + dataBytes, 4);
+  buffer.write('WAVE', 8);
+  buffer.write('fmt ', 12);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(3, 20);
+  buffer.writeUInt16LE(1, 22);
+  buffer.writeUInt32LE(resolvedSampleRate, 24);
+  buffer.writeUInt32LE(resolvedSampleRate * 4, 28);
+  buffer.writeUInt16LE(4, 32);
+  buffer.writeUInt16LE(32, 34);
+  buffer.write('data', 36);
+  buffer.writeUInt32LE(dataBytes, 40);
+  for (let index = 0; index < samples.length; index += 1) {
+    buffer.writeFloatLE(Number(samples[index]) || 0, 44 + index * 4);
+  }
+  fs.writeFileSync(filePath, buffer);
+  return {
+    path: filePath,
+    sampleRate: resolvedSampleRate,
+    samples: samples.length,
+    bytes: buffer.length,
+  };
+}
+
+function buildAutomationEnvelopePath(outputPath) {
+  const safeBase = path.basename(String(outputPath || 'd40-v3')).replace(/[^a-z0-9._-]+/gi, '_');
+  return path.join(path.dirname(outputPath), `.${safeBase}.automation.wav`);
+}
+
 function buildDynamicWeightD40Filter({ analysis, profile = 'blend', cycleSeconds } = {}) {
-  const envelope = buildD40EnvelopeExpression({ profile, periodSeconds: cycleSeconds });
-  const dynamicExpression = buildDynamicWeightExpression(analysis);
+  const envelopeProbe = sampleD40EnvelopeAt(0, { profile, periodSeconds: cycleSeconds });
+  const envelope = {
+    mode: 'wav-envelope',
+    profile: envelopeProbe.profile,
+    period: envelopeProbe.period,
+    density: envelopeProbe.density,
+  };
   const mg = AUDIO_PIVOT_GAIN_FACTOR;
   const highBaseWeight = RAW_LOW_PRESET.highWeight * mg;
   const lowBaseWeight = RAW_LOW_PRESET.lowWeight * mg;
-  const highVolume = `${numberText(highBaseWeight)}*(${envelope.expression})*(${dynamicExpression})`;
-  const lowVolume = `${numberText(lowBaseWeight)}*(${envelope.expression})*(${dynamicExpression})`;
   const rubberbandOptions = 'transients=crisp:detector=compound:phase=laminar:window=short:smoothing=on:formant=preserved:pitchq=consistency:channels=together';
 
   return {
@@ -227,7 +378,8 @@ function buildDynamicWeightD40Filter({ analysis, profile = 'blend', cycleSeconds
     analysis,
     mg,
     balance: BALANCE_AUTO,
-    dynamicExpression,
+    automation: envelope,
+    dynamicExpression: null,
     highBaseWeight,
     lowBaseWeight,
     highWeightMin: highBaseWeight * MIN_HARMONIC_INTENSITY,
@@ -237,15 +389,20 @@ function buildDynamicWeightD40Filter({ analysis, profile = 'blend', cycleSeconds
     filter: [
       '[0:a]asplit=2[full][work]',
       '[full]aresample=44100,aformat=channel_layouts=stereo[dryfull]',
+      '[1:a]aresample=44100,aformat=sample_fmts=flt:channel_layouts=mono,pan=stereo|c0=c0|c1=c0[autoenv]',
+      '[autoenv]asplit=2[envh][envl]',
       '[work]aformat=channel_layouts=mono,highpass=f=120,lowpass=f=6500,afftdn=nf=-28,asplit=2[h1][h2]',
-      `[h1]rubberband=pitch=${RAW_LOW_PRESET.highPitch}:${rubberbandOptions},highpass=f=1200,lowpass=f=10000,volume='${highVolume}':eval=frame,pan=stereo|c0=c0|c1=c0[h1o]`,
-      `[h2]rubberband=pitch=${RAW_LOW_PRESET.lowPitch}:${rubberbandOptions},highpass=f=90,lowpass=f=2600,volume='${lowVolume}':eval=frame,pan=stereo|c0=c0|c1=c0[h2o]`,
+      `[h1]rubberband=pitch=${RAW_LOW_PRESET.highPitch}:${rubberbandOptions},highpass=f=1200,lowpass=f=10000,volume=${numberText(highBaseWeight)}:eval=frame,pan=stereo|c0=c0|c1=c0,aformat=sample_fmts=flt:channel_layouts=stereo[h1base]`,
+      `[h2]rubberband=pitch=${RAW_LOW_PRESET.lowPitch}:${rubberbandOptions},highpass=f=90,lowpass=f=2600,volume=${numberText(lowBaseWeight)}:eval=frame,pan=stereo|c0=c0|c1=c0,aformat=sample_fmts=flt:channel_layouts=stereo[h2base]`,
+      '[h1base][envh]amultiply[h1o]',
+      '[h2base][envl]amultiply[h2o]',
       '[dryfull][h1o][h2o]amix=inputs=3:weights=\'1 1 1\':normalize=0,alimiter=limit=0.97[out]',
     ].join(';'),
   };
 }
 
-function buildDynamicWeightD40Args({ inputPath, outputPath, analysis, profile = 'blend', cycleSeconds } = {}) {
+function buildDynamicWeightD40Args({ inputPath, outputPath, analysis, profile = 'blend', cycleSeconds, envelopePath } = {}) {
+  if (!envelopePath) throw new Error('missing_envelope_path');
   const built = buildDynamicWeightD40Filter({ analysis, profile, cycleSeconds });
   return {
     built,
@@ -256,6 +413,8 @@ function buildDynamicWeightD40Args({ inputPath, outputPath, analysis, profile = 
       'error',
       '-i',
       inputPath,
+      '-i',
+      envelopePath,
       '-filter_complex',
       built.filter,
       '-map',
@@ -282,14 +441,38 @@ async function processDynamicWeightD40V3({ inputPath, outputPath, profile = 'ble
     cycleSeconds: analysisOptions.cycleSeconds,
     timeoutMs,
   });
-  const { built, args } = buildDynamicWeightD40Args({
-    inputPath,
-    outputPath,
+  const probedDuration = await probeAudioDurationSeconds(inputPath, { timeoutMs }).catch(() => 0);
+  const durationSeconds = Math.max(
+    0.5,
+    Number(probedDuration) || 0,
+    Number(analysis.summary?.durationSeconds) || 0
+  ) + 0.25;
+  const automation = buildDynamicAutomationSamples({
     analysis,
     profile,
     cycleSeconds: analysisOptions.cycleSeconds,
+    durationSeconds,
+    sampleRate: analysisOptions.automationSampleRate,
   });
-  await runFfmpeg(args, { timeoutMs });
+  const envelopePath = buildAutomationEnvelopePath(outputPath);
+  writeFloat32MonoWav(envelopePath, automation.samples, automation.sampleRate);
+  let built;
+  try {
+    const planned = buildDynamicWeightD40Args({
+      inputPath,
+      outputPath,
+      analysis,
+      profile,
+      cycleSeconds: analysisOptions.cycleSeconds,
+      envelopePath,
+    });
+    built = planned.built;
+    await runFfmpeg(planned.args, { timeoutMs });
+  } finally {
+    if (process.env.A11_DH_V3_KEEP_ENVELOPE !== '1') {
+      fs.rmSync(envelopePath, { force: true });
+    }
+  }
   return {
     method: 'dry-first-d40-db-dynamic-overlay-v3',
     state: 'dynamic-process',
@@ -301,6 +484,13 @@ async function processDynamicWeightD40V3({ inputPath, outputPath, profile = 'ble
       frameMs: analysis.frameMs,
       controls: analysis.controls,
       summary: analysis.summary,
+      automation: {
+        mode: automation.mode,
+        sampleRate: automation.sampleRate,
+        durationSeconds: automation.durationSeconds,
+        sampleCount: automation.sampleCount,
+        summary: automation.summary,
+      },
     },
     weights: {
       dry: 1,
@@ -351,9 +541,13 @@ module.exports = {
   DYNAMIC_WEIGHT_SCHEMA,
   analyzeDynamicWeightV3,
   analyzePcmDynamicWeightV3,
+  buildDynamicAutomationSamples,
   buildDynamicWeightD40Args,
   buildDynamicWeightD40Filter,
   buildDynamicWeightExpression,
   buildDynamicWeightPlanV3,
+  probeAudioDurationSeconds,
   processDynamicWeightD40V3,
+  sampleDynamicWeightAt,
+  writeFloat32MonoWav,
 };
