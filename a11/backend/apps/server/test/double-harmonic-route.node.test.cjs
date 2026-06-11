@@ -24,7 +24,29 @@ const {
   analyzePcmDynamicWeightV3,
   buildDynamicAutomationSamples,
   buildDynamicWeightD40Filter,
+  buildDynamicWeightPlanV3,
+  GRAIN_18_36_DELTA,
+  GRAIN_6D_LOG_WEIGHT,
+  GRAIN_7D_LN_WEIGHT,
+  GRAIN_8D_BASS_WEIGHT,
+  GRAIN_SPECTRAL_HIGH,
+  GRAIN_SPECTRAL_LOW,
+  D8_BASS_HIGHPASS_HZ,
+  D8_BASS_LOW_CUTOFF_HZ,
+  D8_BASS_SHARE,
+  D8_BODY_LOW_CUTOFF_HZ,
+  D8_BODY_SHARE,
+  MG_PHASE_TARGET_RATIO,
+  DEFAULT_FINAL_SAFETY_FILTER,
+  resolveGrainPair,
+  resolvePitchPair,
+  shapeDynamicEnergy,
+  SWAP_FINAL_SAFETY_FILTER,
 } = require('../src/audio/double-harmonic-dynamic-v3.cjs');
+const {
+  buildNakedD40FilterV4,
+  buildNakedD40PlanV4,
+} = require('../src/audio/double-harmonic-naked-v4.cjs');
 
 function listen(app) {
   return new Promise((resolve) => {
@@ -99,6 +121,8 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(statusPayload.v3.controls.minWeight, MIN_HARMONIC_INTENSITY);
     assert.equal(statusPayload.v3.controls.maxWeight, MAX_HARMONIC_INTENSITY);
     assert.equal(statusPayload.v3.controls.mgFixed, MICROGAP_HALF_PLUS_CANON_MG);
+    assert.equal(statusPayload.v4.method, 'dry-first-naked-d40-harmonic-overlay-v4');
+    assert.equal(statusPayload.v4.safety.noLimiter, true);
 
     const v2 = await fetch(`${baseUrl}/api/double-harmonic/v2/status?smoothing=1%2Fe&frameMs=20`);
     const v2Payload = await v2.json();
@@ -130,6 +154,7 @@ test('dynamic v3 maps quiet frames toward 8/9 and loud frames toward 9/8 with fi
   assert.equal(analysis.controls.minWeight, MIN_HARMONIC_INTENSITY);
   assert.equal(analysis.controls.maxWeight, MAX_HARMONIC_INTENSITY);
   assert.equal(analysis.controls.mgFixed, MICROGAP_HALF_PLUS_CANON_MG);
+  assert.equal(analysis.controls.curve, 'ln-exp');
   assert.ok(analysis.summary.weightMin <= MIN_HARMONIC_INTENSITY + 0.01);
   assert.ok(analysis.summary.weightMax >= MAX_HARMONIC_INTENSITY - 0.01);
   assert.ok(analysis.frames[0].weightScale < analysis.frames[analysis.frames.length - 1].weightScale);
@@ -141,6 +166,140 @@ test('dynamic v3 maps quiet frames toward 8/9 and loud frames toward 9/8 with fi
   assert.match(built.filter, /\[1:a\]/);
   assert.match(built.filter, /amultiply/);
   assert.match(built.filter, /phase=laminar/);
+  assert.equal(built.finalSafetyFilter, DEFAULT_FINAL_SAFETY_FILTER);
+  assert.match(built.filter, /alimiter=limit=0\.97/);
+  assert.match(built.filter, /level=false/);
+});
+
+test('dynamic v3 ln-exp curve keeps linear fallback while shaping rise and fall', () => {
+  const rising = shapeDynamicEnergy(0.45, 0.2, { curve: 'ln-exp' });
+  const falling = shapeDynamicEnergy(0.45, 0.7, { curve: 'ln-exp' });
+  const linear = shapeDynamicEnergy(0.45, 0.2, { curve: 'linear' });
+
+  assert.equal(linear.curvedEnergy, 0.45);
+  assert.equal(rising.direction, 'rise');
+  assert.equal(falling.direction, 'fall');
+  assert.notEqual(Number(rising.curvedEnergy.toFixed(6)), Number(linear.curvedEnergy.toFixed(6)));
+  assert.notEqual(Number(falling.curvedEnergy.toFixed(6)), Number(linear.curvedEnergy.toFixed(6)));
+});
+
+test('dynamic v3 mg-ratio curve compares mg phase to the 0.0005*pi target', () => {
+  const low = shapeDynamicEnergy(0.25, 0.2, { curve: 'mg-ratio', curveAmount: 0.5 });
+  const rising = shapeDynamicEnergy(0.78, 0.4, { curve: 'mg-ratio', curveAmount: 0.5 });
+  const linear = shapeDynamicEnergy(0.78, 0.4, { curve: 'linear' });
+
+  assert.ok(Math.abs(MG_PHASE_TARGET_RATIO - 1.010485) < 0.000001);
+  assert.equal(rising.direction, 'rise');
+  assert.equal(rising.mgRatio, MG_PHASE_TARGET_RATIO);
+  assert.ok(low.curvedEnergy < rising.curvedEnergy);
+  assert.notEqual(Number(rising.curvedEnergy.toFixed(6)), Number(linear.curvedEnergy.toFixed(6)));
+});
+
+test('dynamic v3 grain 18/36 curve links spectral low and high without moving weight bounds', () => {
+  const low = shapeDynamicEnergy(0.25, 0.2, { curve: 'grain-18-36', curveAmount: 0.42 });
+  const rising = shapeDynamicEnergy(0.78, 0.4, { curve: 'grain-18-36', curveAmount: 0.42 });
+  const falling = shapeDynamicEnergy(0.78, 0.9, { curve: 'grain-18-36', curveAmount: 0.42 });
+
+  assert.equal(Number((GRAIN_SPECTRAL_HIGH - GRAIN_SPECTRAL_LOW).toFixed(12)), Number(GRAIN_18_36_DELTA.toFixed(12)));
+  assert.equal(Number(GRAIN_18_36_DELTA.toFixed(5)), 0.98325);
+  assert.equal(rising.grainLow, GRAIN_SPECTRAL_LOW);
+  assert.equal(rising.grainHigh, GRAIN_SPECTRAL_HIGH);
+  assert.equal(rising.direction, 'rise');
+  assert.equal(falling.direction, 'fall');
+  assert.ok(low.curvedEnergy < rising.curvedEnergy);
+  assert.ok(rising.curvedEnergy >= 0 && rising.curvedEnergy <= 1);
+});
+
+test('dynamic v3 grain 6D/7D/8D curve stacks log, ln and bass resonance for soft rise', () => {
+  const rising = shapeDynamicEnergy(0.78, 0.4, { curve: 'grain-6d7d8d', curveAmount: 0.3 });
+  const falling = shapeDynamicEnergy(0.78, 0.9, { curve: 'grain-6d7d8d', curveAmount: 0.3 });
+  const grain1836 = shapeDynamicEnergy(0.78, 0.4, { curve: 'grain-18-36', curveAmount: 0.3 });
+
+  assert.equal(rising.direction, 'rise');
+  assert.equal(falling.direction, 'fall');
+  assert.equal(rising.grain6dLogWeight, GRAIN_6D_LOG_WEIGHT);
+  assert.equal(rising.grain7dLnWeight, GRAIN_7D_LN_WEIGHT);
+  assert.equal(rising.grain8dBassWeight, GRAIN_8D_BASS_WEIGHT);
+  assert.equal(rising.grain8dMode, 'bass-resonance');
+  assert.equal(Number((GRAIN_6D_LOG_WEIGHT + GRAIN_7D_LN_WEIGHT + GRAIN_8D_BASS_WEIGHT).toFixed(12)), 1);
+  assert.ok(rising.curvedEnergy >= 0 && rising.curvedEnergy <= 1);
+  assert.notEqual(Number(rising.curvedEnergy.toFixed(6)), Number(grain1836.curvedEnergy.toFixed(6)));
+});
+
+test('dynamic v3 can swap pitch and grain values for experimental listening', () => {
+  const grain = resolveGrainPair({ swapPitchGrain: true });
+  const pitch = resolvePitchPair({ swapPitchGrain: true });
+  const analysis = analyzePcmDynamicWeightV3({
+    samples: new Float32Array([0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.16, 0.08]),
+    sampleRate: 8,
+    frameMs: 250,
+    curve: 'grain-6d7d8d',
+    swapPitchGrain: true,
+  });
+  const plan = buildDynamicWeightPlanV3({
+    curve: 'grain-6d7d8d',
+    swapPitchGrain: true,
+  });
+  const shaped = shapeDynamicEnergy(0.78, 0.4, {
+    curve: 'grain-6d7d8d',
+    curveAmount: 0.3,
+    swapPitchGrain: true,
+  });
+
+  assert.equal(grain.low, 0.840896);
+  assert.equal(grain.high, 1.259921);
+  assert.equal(pitch.highPitch, GRAIN_SPECTRAL_HIGH);
+  assert.equal(pitch.lowPitch, GRAIN_SPECTRAL_LOW);
+  assert.equal(shaped.swapPitchGrain, true);
+  assert.equal(shaped.grainLow, 0.840896);
+  assert.equal(shaped.grainHigh, 1.259921);
+  assert.equal(analysis.controls.grainLow, 0.840896);
+  assert.equal(analysis.controls.grainHigh, 1.259921);
+  assert.equal(plan.controls.grainLow, 0.840896);
+  assert.equal(plan.controls.grainHigh, 1.259921);
+  assert.equal(plan.controls.highPitch, GRAIN_SPECTRAL_HIGH);
+  assert.equal(plan.controls.lowPitch, GRAIN_SPECTRAL_LOW);
+
+  const built = buildDynamicWeightD40Filter({
+    analysis,
+    profile: 'raw-low',
+    swapPitchGrain: true,
+  });
+  assert.equal(built.finalSafetyFilter, SWAP_FINAL_SAFETY_FILTER);
+  assert.equal(built.d8BassBranch, true);
+  assert.equal(Number((built.bodyBaseWeight / built.lowBaseWeight).toFixed(12)), Number(D8_BODY_SHARE.toFixed(12)));
+  assert.equal(Number((built.bassBaseWeight / built.lowBaseWeight).toFixed(12)), Number(D8_BASS_SHARE.toFixed(12)));
+  assert.match(built.filter, /asoftclip=type=tanh:threshold=0\.88/);
+  assert.match(built.filter, /volume=4dB/);
+  assert.match(built.filter, /alimiter=limit=0\.94/);
+  assert.match(built.filter, /amix=inputs=4/);
+  assert.match(built.filter, new RegExp(`highpass=f=${D8_BODY_LOW_CUTOFF_HZ}`));
+  assert.match(built.filter, new RegExp(`highpass=f=${D8_BASS_HIGHPASS_HZ}`));
+  assert.match(built.filter, new RegExp(`lowpass=f=${D8_BASS_LOW_CUTOFF_HZ}`));
+  assert.match(built.filter, /level=false/);
+});
+
+test('naked d40 v4 keeps the validated D40 overlay without filters or final db changes', () => {
+  const built = buildNakedD40FilterV4({ profile: 'blend' });
+  const plan = buildNakedD40PlanV4({ profile: 'blend' });
+
+  assert.equal(built.method, 'dry-first-naked-d40-harmonic-overlay-v4');
+  assert.equal(plan.state, 'v4-release-plan');
+  assert.equal(built.safety.noEqFilters, true);
+  assert.equal(built.safety.noNoiseReduction, true);
+  assert.equal(built.safety.noLimiter, true);
+  assert.equal(built.safety.noFinalGain, true);
+  assert.match(built.filter, /rubberband=pitch=1\.352727735693/);
+  assert.match(built.filter, /rubberband=pitch=0\.369477735693/);
+  assert.match(built.filter, /amultiply/);
+  assert.match(built.filter, /amix=inputs=3:weights='1 1 1':normalize=0\[out\]/);
+  assert.doesNotMatch(built.filter, /highpass=/);
+  assert.doesNotMatch(built.filter, /lowpass=/);
+  assert.doesNotMatch(built.filter, /afftdn/);
+  assert.doesNotMatch(built.filter, /alimiter/);
+  assert.doesNotMatch(built.filter, /asoftclip/);
+  assert.doesNotMatch(built.filter, /volume=4dB/);
+  assert.equal(Number((built.lowBaseWeight / built.highBaseWeight).toFixed(12)), Number(BALANCE_AUTO.toFixed(12)));
 });
 
 test('double harmonic route processes upload and exposes tokenized audio link', async () => {
@@ -311,7 +470,13 @@ test('double harmonic route processes upload through dynamic v3 and keeps source
   app.use('/api/double-harmonic', createDoubleHarmonicRouter({
     runtimeRoot,
     processDynamicWeightD40V3: async ({ outputPath, profile, analysisOptions }) => {
-      calls.push({ profile, frameMs: analysisOptions.frameMs, maxSegments: analysisOptions.maxSegments });
+      calls.push({
+        profile,
+        frameMs: analysisOptions.frameMs,
+        maxSegments: analysisOptions.maxSegments,
+        curve: analysisOptions.curve,
+        curveAmount: analysisOptions.curveAmount,
+      });
       fs.writeFileSync(outputPath, Buffer.from('processed v3 mp3'));
       return {
         method: 'dry-first-d40-db-dynamic-overlay-v3',
@@ -335,6 +500,8 @@ test('double harmonic route processes upload through dynamic v3 and keeps source
     form.append('profile', 'blend');
     form.append('frameMs', '250');
     form.append('maxSegments', '64');
+    form.append('curve', 'ln-exp');
+    form.append('curveAmount', '0.38');
     const res = await fetch(`${baseUrl}/api/double-harmonic/v3/process`, {
       method: 'POST',
       body: form,
@@ -346,7 +513,80 @@ test('double harmonic route processes upload through dynamic v3 and keeps source
     assert.equal(payload.intensity, 'auto');
     assert.equal(payload.contentType, 'audio/mpeg');
     assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v3\.mp3$/);
-    assert.deepEqual(calls, [{ profile: 'blend', frameMs: 250, maxSegments: 64 }]);
+    assert.deepEqual(calls, [{ profile: 'blend', frameMs: 250, maxSegments: 64, curve: 'ln-exp', curveAmount: 0.38 }]);
+
+    const shared = await fetch(payload.shareUrl);
+    assert.equal(shared.status, 200);
+    assert.match(shared.headers.get('content-type') || '', /audio\/mpeg/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('double harmonic route publishes naked d40 v4 and keeps source format', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-v4-process-'));
+  const calls = [];
+  const app = express();
+  app.use('/api/double-harmonic', createDoubleHarmonicRouter({
+    runtimeRoot,
+    processNakedD40V4: async ({ outputPath, profile, analysisOptions }) => {
+      calls.push({
+        profile,
+        frameMs: analysisOptions.frameMs,
+        maxSegments: analysisOptions.maxSegments,
+        curve: analysisOptions.curve,
+        curveAmount: analysisOptions.curveAmount,
+      });
+      fs.writeFileSync(outputPath, Buffer.from('processed v4 mp3'));
+      return {
+        method: 'dry-first-naked-d40-harmonic-overlay-v4',
+        state: 'v4-release',
+        profile,
+        preset: 'raw-low',
+        intensity: 'd40',
+        d40: resolveD40Density(),
+        dynamic: { summary: { frames: 8, weightMin: MIN_HARMONIC_INTENSITY, weightMax: MAX_HARMONIC_INTENSITY } },
+        weights: {
+          dry: 1,
+          dynamicMin: MIN_HARMONIC_INTENSITY,
+          dynamicMax: MAX_HARMONIC_INTENSITY,
+          ratio: BALANCE_AUTO,
+          finalGainDb: 0,
+          filters: 'none',
+        },
+        safety: { noLimiter: true, noFinalGain: true, sourceFormatOutput: true },
+      };
+    },
+    verifyJWT: (req, _res, next) => {
+      req.user = { email: 'djeff@example.test' };
+      next();
+    },
+  }));
+
+  const { server, baseUrl } = await listen(app);
+  try {
+    const form = new FormData();
+    form.append('audio', new Blob([Buffer.from('ID3demo')], { type: 'audio/mpeg' }), 'demo.mp3');
+    form.append('profile', 'blend');
+    form.append('frameMs', '250');
+    form.append('maxSegments', '64');
+    form.append('curve', 'grain-6d7d8d');
+    form.append('curveAmount', '0.3');
+    const res = await fetch(`${baseUrl}/api/double-harmonic/v4/process`, {
+      method: 'POST',
+      body: form,
+    });
+    const payload = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.method, 'dry-first-naked-d40-harmonic-overlay-v4');
+    assert.equal(payload.state, 'v4-release');
+    assert.equal(payload.intensity, 'd40');
+    assert.equal(payload.contentType, 'audio/mpeg');
+    assert.equal(payload.safety.noLimiter, true);
+    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v4\.mp3$/);
+    assert.deepEqual(calls, [{ profile: 'blend', frameMs: 250, maxSegments: 64, curve: 'grain-6d7d8d', curveAmount: 0.3 }]);
 
     const shared = await fetch(payload.shareUrl);
     assert.equal(shared.status, 200);

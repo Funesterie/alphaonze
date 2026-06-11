@@ -24,6 +24,10 @@ const {
   buildDynamicWeightPlanV3,
   processDynamicWeightD40V3,
 } = require('../audio/double-harmonic-dynamic-v3.cjs');
+const {
+  buildNakedD40PlanV4,
+  processNakedD40V4,
+} = require('../audio/double-harmonic-naked-v4.cjs');
 
 const DEFAULT_MAX_MB = 80;
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -64,6 +68,15 @@ function ensureDir(dir) {
 function reqNumber(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : undefined;
+}
+
+function reqBoolean(value) {
+  if (typeof value === 'boolean') return value;
+  const text = String(value ?? '').trim().toLowerCase();
+  if (!text) return undefined;
+  if (text === '1' || text === 'true' || text === 'yes' || text === 'on') return true;
+  if (text === '0' || text === 'false' || text === 'no' || text === 'off') return false;
+  return undefined;
 }
 
 function safeBaseName(value = 'audio') {
@@ -180,6 +193,9 @@ function createDoubleHarmonicRouter(options = {}) {
   const processAudioV3 = typeof options.processDynamicWeightD40V3 === 'function'
     ? options.processDynamicWeightD40V3
     : processDynamicWeightD40V3;
+  const processAudioV4 = typeof options.processNakedD40V4 === 'function'
+    ? options.processNakedD40V4
+    : processNakedD40V4;
   const runtimeRoot = path.resolve(options.runtimeRoot || getCanonicalRuntimeRoot(process.env));
   const assetRoot = ensureDir(path.join(runtimeRoot, 'double-harmonic-d40'));
   const indexPath = path.join(assetRoot, 'index.json');
@@ -215,6 +231,7 @@ function createDoubleHarmonicRouter(options = {}) {
       outputFormats: Object.keys(OUTPUT_FORMATS),
       v2: buildPhaseLockPlan(),
       v3: buildDynamicWeightPlanV3(),
+      v4: buildNakedD40PlanV4(),
     });
   });
 
@@ -235,6 +252,17 @@ function createDoubleHarmonicRouter(options = {}) {
       v3: buildDynamicWeightPlanV3({
         frameMs: reqNumber(_req.query?.frameMs),
         maxSeconds: reqNumber(_req.query?.maxSeconds),
+      }),
+    });
+  });
+
+  router.get('/v4/status', (_req, res) => {
+    return res.json({
+      ok: true,
+      v4: buildNakedD40PlanV4({
+        frameMs: reqNumber(_req.query?.frameMs),
+        maxSeconds: reqNumber(_req.query?.maxSeconds),
+        cycleSeconds: reqNumber(_req.query?.cycleSeconds),
       }),
     });
   });
@@ -395,6 +423,16 @@ function createDoubleHarmonicRouter(options = {}) {
           frameMs: reqNumber(req.body?.frameMs || req.query?.frameMs),
           maxSeconds: reqNumber(req.body?.maxSeconds || req.query?.maxSeconds),
           maxSegments: reqNumber(req.body?.maxSegments || req.query?.maxSegments),
+          curve: req.body?.curve || req.query?.curve,
+          curveAmount: reqNumber(req.body?.curveAmount || req.query?.curveAmount),
+          riseLog: reqNumber(req.body?.riseLog || req.query?.riseLog),
+          fallExp: reqNumber(req.body?.fallExp || req.query?.fallExp),
+          attack: reqNumber(req.body?.attack || req.query?.attack),
+          release: reqNumber(req.body?.release || req.query?.release),
+          minDbSpan: reqNumber(req.body?.minDbSpan || req.query?.minDbSpan),
+          invertGrain: reqBoolean(req.body?.invertGrain ?? req.query?.invertGrain),
+          invertPitch: reqBoolean(req.body?.invertPitch ?? req.query?.invertPitch),
+          swapPitchGrain: reqBoolean(req.body?.swapPitchGrain ?? req.query?.swapPitchGrain),
         },
       });
       const token = crypto.randomBytes(18).toString('base64url');
@@ -443,6 +481,96 @@ function createDoubleHarmonicRouter(options = {}) {
       return res.status(500).json({
         ok: false,
         error: 'double_harmonic_v3_process_failed',
+        message: String(error?.message || error),
+      });
+    }
+  });
+
+  router.post('/v4/process', verifyJWT, upload.single('audio'), async (req, res) => {
+    try {
+      pruneIndex(indexPath, assetRoot, ttlMs);
+      if (!req.file?.buffer?.length) {
+        return res.status(400).json({ ok: false, error: 'missing_audio', message: 'Ajoute un fichier audio.' });
+      }
+
+      const id = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+      const base = safeBaseName(req.body?.name || req.file.originalname || 'audio');
+      const inputExt = extForUpload(req.file);
+      const inputFilename = `${id}-${base}-v4-input.${inputExt}`;
+      const outputFormat = resolveOutputFormat(req.body?.format || req.query?.format, inputExt);
+      const outputFilename = `${id}-${base}-funesterie-d40-v4.${outputFormat.ext}`;
+      const inputPath = path.join(assetRoot, inputFilename);
+      const outputPath = path.join(assetRoot, outputFilename);
+      fs.writeFileSync(inputPath, req.file.buffer);
+
+      const profile = String(req.body?.profile || req.query?.profile || 'blend').trim() || 'blend';
+      const processing = await processAudioV4({
+        inputPath,
+        outputPath,
+        profile,
+        analysisOptions: {
+          frameMs: reqNumber(req.body?.frameMs || req.query?.frameMs),
+          maxSeconds: reqNumber(req.body?.maxSeconds || req.query?.maxSeconds),
+          maxSegments: reqNumber(req.body?.maxSegments || req.query?.maxSegments),
+          curve: req.body?.curve || req.query?.curve,
+          curveAmount: reqNumber(req.body?.curveAmount || req.query?.curveAmount),
+          attack: reqNumber(req.body?.attack || req.query?.attack),
+          release: reqNumber(req.body?.release || req.query?.release),
+          minDbSpan: reqNumber(req.body?.minDbSpan || req.query?.minDbSpan),
+          cycleSeconds: reqNumber(req.body?.cycleSeconds || req.query?.cycleSeconds),
+        },
+      });
+      const token = crypto.randomBytes(18).toString('base64url');
+      const createdAt = new Date().toISOString();
+      const owner = String(req.user?.email || req.user?.username || req.user?.sub || '').trim();
+      const asset = {
+        id,
+        token,
+        createdAt,
+        owner,
+        originalName: req.file.originalname || '',
+        inputFilename,
+        outputFilename,
+        contentType: outputFormat.contentType,
+        method: processing.method,
+        profile: processing.profile,
+        preset: processing.preset,
+        intensity: processing.intensity || 'd40',
+        weights: processing.weights || null,
+        dynamicSummary: processing.dynamic?.summary || null,
+        safety: processing.safety || null,
+        bytes: fs.statSync(outputPath).size,
+      };
+      const index = readIndex(indexPath);
+      index.assets = [asset, ...index.assets].slice(0, 300);
+      writeIndex(indexPath, index);
+
+      const baseUrl = routePublicBase(req);
+      const audioUrl = `/api/double-harmonic/out/${encodeURIComponent(outputFilename)}`;
+      const sharePath = `${audioUrl}?token=${encodeURIComponent(token)}`;
+      return res.json({
+        ok: true,
+        id,
+        method: processing.method,
+        state: processing.state,
+        profile: processing.profile,
+        preset: processing.preset,
+        intensity: processing.intensity || 'd40',
+        d40: processing.d40,
+        dynamic: processing.dynamic,
+        weights: processing.weights || undefined,
+        safety: processing.safety || undefined,
+        audioUrl,
+        shareUrl: baseUrl ? `${baseUrl}${sharePath}` : sharePath,
+        contentType: outputFormat.contentType,
+        filename: outputFilename,
+        bytes: asset.bytes,
+        publicSummary: 'V4 Release: D40 nu, double harmonique sans filtres, sans limiteur et sans gain final.',
+      });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        error: 'double_harmonic_v4_process_failed',
         message: String(error?.message || error),
       });
     }
@@ -543,7 +671,7 @@ function createDoubleHarmonicRouter(options = {}) {
     }
   });
 
-  router.use(['/process', '/v2/analyze', '/v2/process'], (err, _req, res, _next) => {
+  router.use(['/process', '/v2/analyze', '/v2/process', '/v3/process', '/v4/process'], (err, _req, res, _next) => {
     return res.status(400).json({
       ok: false,
       error: 'double_harmonic_upload_failed',

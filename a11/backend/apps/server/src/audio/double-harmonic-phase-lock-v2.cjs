@@ -210,7 +210,7 @@ function pcm16leToFloat32(buffer) {
 
 function decodePcmMono(inputPath, options = {}) {
   const sampleRate = Math.round(clampNumber(options.sampleRate, 8000, 48000, DEFAULT_ANALYSIS_SAMPLE_RATE));
-  const maxSeconds = clampNumber(options.maxSeconds, 0.25, 120, DEFAULT_MAX_SECONDS);
+  const maxSeconds = clampNumber(options.maxSeconds, 0.25, 900, DEFAULT_MAX_SECONDS);
   const bin = String(options.ffmpegPath || process.env.A11_DH_FFMPEG_BIN || process.env.FFMPEG_BIN || 'ffmpeg').trim() || 'ffmpeg';
   const args = [
     '-hide_banner',

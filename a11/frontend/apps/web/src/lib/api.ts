@@ -2315,7 +2315,7 @@ export async function uploadVoiceLearningSnippet(
   return payload as VoiceLearningStatus;
 }
 
-export type DoubleHarmonicProcessMode = 'v1' | 'v2' | 'v3';
+export type DoubleHarmonicProcessMode = 'v1' | 'v2' | 'v3' | 'v4';
 
 export type DoubleHarmonicProcessResult = {
   ok: boolean;
@@ -2323,7 +2323,7 @@ export type DoubleHarmonicProcessResult = {
   method?: string;
   state?: string;
   profile?: string;
-  intensity?: number;
+  intensity?: number | string;
   audioUrl?: string;
   shareUrl?: string;
   contentType?: string;
@@ -2394,16 +2394,18 @@ export async function processDoubleHarmonicAudio(
   if (options?.format) {
     form.append('format', options.format);
   }
-  if (options?.mode !== 'v3' && Number.isFinite(Number(options?.intensity))) {
+  if ((options?.mode === 'v1' || options?.mode === 'v2' || !options?.mode) && Number.isFinite(Number(options?.intensity))) {
     form.append('intensity', String(options?.intensity));
   }
   if (options?.name) form.append('name', options.name);
 
-  const endpoint = options?.mode === 'v3'
-    ? '/api/double-harmonic/v3/process'
-    : options?.mode === 'v2'
-      ? '/api/double-harmonic/v2/process'
-      : '/api/double-harmonic/process';
+  const endpoint = options?.mode === 'v4'
+    ? '/api/double-harmonic/v4/process'
+    : options?.mode === 'v3'
+      ? '/api/double-harmonic/v3/process'
+      : options?.mode === 'v2'
+        ? '/api/double-harmonic/v2/process'
+        : '/api/double-harmonic/process';
   const res = await authFetch(getApiUrl(endpoint), {
     method: 'POST',
     headers: buildAuthHeaders(),

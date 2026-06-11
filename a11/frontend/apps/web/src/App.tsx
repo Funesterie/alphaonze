@@ -2004,6 +2004,7 @@ const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v1: "V1 stable",
   v2: "V2 Release",
   v3: "V3 auto",
+  v4: "V4 Release",
 };
 
 function isLocalDevSurface() {
@@ -3504,7 +3505,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [voiceLearningMessage, setVoiceLearningMessage] = useState("");
   const [doubleHarmonicFile, setDoubleHarmonicFile] = useState<File | null>(null);
   const [doubleHarmonicFileName, setDoubleHarmonicFileName] = useState("");
-  const [doubleHarmonicMode, setDoubleHarmonicMode] = useState<DoubleHarmonicProcessMode>("v1");
+  const [doubleHarmonicMode, setDoubleHarmonicMode] = useState<DoubleHarmonicProcessMode>("v4");
   const [doubleHarmonicIntensity, setDoubleHarmonicIntensity] = useState(1);
   const [doubleHarmonicResult, setDoubleHarmonicResult] = useState<DoubleHarmonicProcessResult | null>(null);
   const [songSource, setSongSource] = useState(String(initialDraft.songSource || "Prompt +"));
@@ -3523,6 +3524,12 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [isBusy, setIsBusy] = useState(false);
   const doubleHarmonicIntensityLabel = `${doubleHarmonicIntensity.toFixed(2).replace(/\.?0+$/, "")}x`;
   const doubleHarmonicModeLabel = D40_PROCESS_MODE_LABELS[doubleHarmonicMode];
+  const doubleHarmonicUsesFixedWeight = doubleHarmonicMode === "v3" || doubleHarmonicMode === "v4";
+  const doubleHarmonicWeightLabel = doubleHarmonicMode === "v3"
+    ? "Auto"
+    : doubleHarmonicMode === "v4"
+      ? "D40"
+      : doubleHarmonicIntensityLabel;
 
   useEffect(() => {
     const onSelectMode = (event: Event) => {
@@ -4042,9 +4049,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       });
       setVivyOutput((current) => [
         current.trim(),
-        `Mix D40 ${doubleHarmonicModeLabel} ${doubleHarmonicIntensityLabel} prêt: ${result.shareUrl || result.audioUrl}`,
+        `Mix D40 ${doubleHarmonicModeLabel} ${doubleHarmonicWeightLabel} prêt: ${result.shareUrl || result.audioUrl}`,
       ].filter(Boolean).join("\n\n"));
-      setStatus(`Mix D40 ${doubleHarmonicModeLabel} prêt avec lien exportable (${doubleHarmonicIntensityLabel}).`);
+      setStatus(`Mix D40 ${doubleHarmonicModeLabel} prêt avec lien exportable (${doubleHarmonicWeightLabel}).`);
     } catch (error: any) {
       setStatus(`Traitement D40 impossible: ${error?.message || error}`);
     } finally {
@@ -4610,7 +4617,13 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     disabled={!hasSession || isBusy}
                     onChange={(event) => {
                       const rawMode = event.currentTarget.value;
-                      const nextMode: DoubleHarmonicProcessMode = rawMode === "v3" ? "v3" : rawMode === "v2" ? "v2" : "v1";
+                      const nextMode: DoubleHarmonicProcessMode = rawMode === "v4"
+                        ? "v4"
+                        : rawMode === "v3"
+                          ? "v3"
+                          : rawMode === "v2"
+                            ? "v2"
+                            : "v1";
                       setDoubleHarmonicMode(nextMode);
                       setDoubleHarmonicResult(null);
                     }}
@@ -4618,8 +4631,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     <option value="v1">V1 stable</option>
                     <option value="v2">V2 Release</option>
                     <option value="v3">V3 auto</option>
+                    <option value="v4">V4 Release</option>
                   </select>
-                  <strong>{doubleHarmonicMode === "v3" ? "V3" : doubleHarmonicMode === "v2" ? "V2" : "V1"}</strong>
+                  <strong>{doubleHarmonicModeLabel}</strong>
                 </label>
                 <label className="vivy-studio-range-label">
                   <span>Poids harmonique</span>
@@ -4631,14 +4645,14 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     max={D40_HARMONIC_INTENSITY_MAX}
                     step="0.005"
                     value={doubleHarmonicIntensity}
-                    disabled={!hasSession || isBusy || doubleHarmonicMode === "v3"}
+                    disabled={!hasSession || isBusy || doubleHarmonicUsesFixedWeight}
                     onChange={(event) => {
                       const nextValue = Number(event.currentTarget.valueAsNumber || event.currentTarget.value || 1);
                       setDoubleHarmonicIntensity(Math.max(D40_HARMONIC_INTENSITY_MIN, Math.min(D40_HARMONIC_INTENSITY_MAX, nextValue)));
                       setDoubleHarmonicResult(null);
                     }}
                   />
-                  <strong>{doubleHarmonicMode === "v3" ? "Auto" : doubleHarmonicIntensityLabel}</strong>
+                  <strong>{doubleHarmonicWeightLabel}</strong>
                 </label>
                 <div className="vivy-studio-actions vivy-studio-actions--voice">
                   <button type="button" onClick={processVivyDoubleHarmonicAudio} disabled={!hasSession || isBusy || !doubleHarmonicFile}>Mixer D40</button>
@@ -4659,9 +4673,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                   ) : null}
                 </div>
                 <p className="vivy-studio-voice-summary">
-                  {doubleHarmonicMode === "v3"
-                    ? "Version : V3 auto"
-                    : `Version : ${doubleHarmonicModeLabel}`}
+                  {`Version : ${doubleHarmonicModeLabel}`}
                 </p>
               </fieldset>
               <label>
