@@ -2017,7 +2017,7 @@ const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v3: "V3 auto",
   v4: "V4 Stable",
   v5: "V5 Release",
-  v6: "V6 experimental",
+  v6: "V6 soft-fold",
 };
 const D40_OUTPUT_FORMAT_LABELS: Record<DoubleHarmonicOutputFormat, string> = {
   flac: "FLAC master",
@@ -4691,7 +4691,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                       setDoubleHarmonicResult(null);
                     }}
                   >
-                    <option value="v6">V6 experimental</option>
+                    <option value="v6">V6 soft-fold</option>
                     <option value="v5">V5 Release</option>
                     <option value="v1">V1 stable</option>
                     <option value="v2">V2 Release</option>

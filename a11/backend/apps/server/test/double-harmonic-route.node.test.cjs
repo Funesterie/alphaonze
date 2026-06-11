@@ -150,7 +150,9 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(statusPayload.v5.weights.weightScale, 2);
     assert.equal(Number(statusPayload.v5.weights.lowPitch.toFixed(12)), 0.730205372411);
     assert.equal(Number(statusPayload.v5.weights.highPitch.toFixed(12)), 1.329405380761);
-    assert.equal(statusPayload.v6.method, 'dry-first-mk-log-ratio-d40-harmonic-overlay-v6');
+    assert.equal(statusPayload.v6.method, 'dry-first-soft-fold-mk-log-ratio-d40-harmonic-overlay-v6');
+    assert.equal(statusPayload.v6.state, 'v6-soft-fold-active');
+    assert.equal(statusPayload.v6.preset, 'soft-fold-mk-log-ratio');
     assert.equal(Number(statusPayload.v6.weights.lowPitch.toFixed(12)), 0.684738867846);
     assert.equal(Number(statusPayload.v6.weights.highPitch.toFixed(12)), 1.889397887364);
     assert.equal(Number(statusPayload.v6.weights.ratio.toFixed(12)), Number(Math.log(statusPayload.v6.dimensions.threeD / statusPayload.v6.dimensions.twoD).toFixed(12)));
@@ -883,11 +885,11 @@ test('double harmonic route publishes resonance d40 v6 with user k', async () =>
       });
       fs.writeFileSync(outputPath, Buffer.from('processed v6 flac'));
       return {
-        method: 'dry-first-mk-log-ratio-d40-harmonic-overlay-v6',
-        state: 'v6-experimental',
+        method: 'dry-first-soft-fold-mk-log-ratio-d40-harmonic-overlay-v6',
+        state: 'v6-soft-fold-active',
         profile,
-        preset: 'mk-log-ratio',
-        intensity: 'mk-log',
+        preset: 'soft-fold-mk-log-ratio',
+        intensity: 'soft-fold',
         d40: resolveD40Density(),
         resonance: {
           userK: analysisOptions.userK || 2,
@@ -929,9 +931,9 @@ test('double harmonic route publishes resonance d40 v6 with user k', async () =>
     const payload = await res.json();
     assert.equal(res.status, 200);
     assert.equal(payload.ok, true);
-    assert.equal(payload.method, 'dry-first-mk-log-ratio-d40-harmonic-overlay-v6');
-    assert.equal(payload.state, 'v6-experimental');
-    assert.equal(payload.intensity, 'mk-log');
+    assert.equal(payload.method, 'dry-first-soft-fold-mk-log-ratio-d40-harmonic-overlay-v6');
+    assert.equal(payload.state, 'v6-soft-fold-active');
+    assert.equal(payload.intensity, 'soft-fold');
     assert.equal(payload.contentType, 'audio/flac');
     assert.equal(payload.resonance.userK, 6);
     assert.equal(Number(payload.weights.lowPitch.toFixed(12)), 0.684738867846);

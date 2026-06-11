@@ -849,7 +849,7 @@ function createDoubleHarmonicRouter(options = {}) {
         contentType: outputFormat.contentType,
         filename: outputFilename,
         bytes: asset.bytes,
-        publicSummary: 'V6 experimentale: ratio haut/bas ln(3D/2D), k utilisateur et resonance M*k repliee en log.',
+        publicSummary: 'V6 soft-fold: ratio haut/bas ln(3D/2D), k utilisateur plie en resonance sans augmenter le plafond audio.',
       });
     } catch (error) {
       return res.status(500).json({

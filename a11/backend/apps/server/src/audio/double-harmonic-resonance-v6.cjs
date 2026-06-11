@@ -34,6 +34,9 @@ const DEFAULT_V6_K_CEILING = 10;
 const MIN_V6_K_CEILING = 2;
 const MAX_V6_K_CEILING = 64;
 const V6_RESONANCE_MODE = 'soft-fold';
+const V6_METHOD = 'dry-first-soft-fold-mk-log-ratio-d40-harmonic-overlay-v6';
+const V6_STATE = 'v6-soft-fold-active';
+const V6_PRESET = 'soft-fold-mk-log-ratio';
 
 function numberText(value, digits = 12) {
   return Number(value).toFixed(digits).replace(/0+$/g, '').replace(/\.$/g, '');
@@ -216,8 +219,8 @@ function buildResonanceD40FilterV6({
 
   return {
     schema: RESONANCE_D40_V6_SCHEMA,
-    method: 'dry-first-mk-log-ratio-d40-harmonic-overlay-v6',
-    state: 'v6-experimental-plan',
+    method: V6_METHOD,
+    state: V6_STATE,
     envelope: {
       mode: 'wav-envelope',
       profile: envelopeProbe.profile,
@@ -225,7 +228,7 @@ function buildResonanceD40FilterV6({
       density: envelopeProbe.density,
     },
     mg: AUDIO_PIVOT_GAIN_FACTOR,
-    preset: 'mk-log-ratio',
+    preset: V6_PRESET,
     resonanceMode: V6_RESONANCE_MODE,
     userK: resolvedUserK,
     kCeiling: resolvedKCeiling,
@@ -374,10 +377,10 @@ async function processResonanceD40V6({
 
   return {
     method: built.method,
-    state: 'v6-experimental',
+    state: built.state,
     profile: built.envelope.profile,
     preset: built.preset,
-    intensity: 'mk-log',
+    intensity: 'soft-fold',
     d40: built.envelope.density,
     resonance: {
       userK,
@@ -440,10 +443,10 @@ function buildResonanceD40PlanV6(options = {}) {
   const built = buildResonanceD40FilterV6({ userK, kCeiling, profile: options.profile || 'blend' });
   return {
     schema: RESONANCE_D40_V6_SCHEMA,
-    method: 'dry-first-mk-log-ratio-d40-harmonic-overlay-v6',
-    state: 'v6-experimental-plan',
+    method: V6_METHOD,
+    state: V6_STATE,
     profile: 'blend',
-    preset: 'mk-log-ratio',
+    preset: V6_PRESET,
     frameMs,
     maxSeconds,
     d40: built.envelope.density,
@@ -497,6 +500,9 @@ module.exports = {
   MAX_V6_USER_K,
   MIN_V6_USER_K,
   RESONANCE_D40_V6_SCHEMA,
+  V6_METHOD,
+  V6_PRESET,
+  V6_STATE,
   buildResonanceAutomationSamplesV6,
   buildResonanceD40ArgsV6,
   buildResonanceD40FilterV6,
