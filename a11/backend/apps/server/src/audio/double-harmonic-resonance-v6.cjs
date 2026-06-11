@@ -34,10 +34,10 @@ const DEFAULT_V6_K_CEILING = 10;
 const MIN_V6_K_CEILING = 2;
 const MAX_V6_K_CEILING = 64;
 const V6_RESONANCE_MODE = 'soft-fold';
-const V6_TRANSFER_MODE = 'k-over-m-energy-transfer';
-const V6_METHOD = 'dry-first-energy-transfer-k-over-m-d40-harmonic-overlay-v6';
+const V6_TRANSFER_MODE = 'm-over-k-energy-transfer';
+const V6_METHOD = 'dry-first-energy-transfer-m-over-k-d40-harmonic-overlay-v6';
 const V6_STATE = 'v6-soft-fold-active';
-const V6_PRESET = 'energy-transfer-k-over-m';
+const V6_PRESET = 'energy-transfer-m-over-k';
 
 function numberText(value, digits = 12) {
   return Number(value).toFixed(digits).replace(/0+$/g, '').replace(/\.$/g, '');
@@ -126,7 +126,7 @@ function sampleResonanceMkV6At(analysis = {}, timeSeconds = 0, options = {}) {
   const surplus = Math.max(0, mk - 1);
   const mOverK = bassMassM / Math.max(0.000001, measuredK);
   const kOverM = measuredK / Math.max(0.000001, bassMassM);
-  const energyTransfer = kOverM;
+  const energyTransfer = mOverK;
   const resonanceCap = clampNumber(Math.min(1, energyTransfer), 0, 1, 0);
   const foldedSurplus = surplus * resonanceCap;
   const folded = clampNumber(Math.log1p(foldedSurplus) / Math.log1p(kCeiling - 1), 0, 1, 0);
@@ -467,8 +467,8 @@ function buildResonanceD40PlanV6(options = {}) {
     resonance: {
       userK,
       kCeiling,
-      formula: 'folded=ln(1+surplus(M*k)*min(1,K/M))/ln(1+kCeiling-1)',
-      transfer: 'energyTransfer=K/M; resonanceCap=min(1,K/M)',
+      formula: 'folded=ln(1+surplus(M*k)*min(1,M/K))/ln(1+kCeiling-1)',
+      transfer: 'energyTransfer=M/K; resonanceCap=min(1,M/K)',
       massM: '1+(1-energy)*grainBas',
       measuredK: '1+tension*kResonance',
       mode: V6_RESONANCE_MODE,
