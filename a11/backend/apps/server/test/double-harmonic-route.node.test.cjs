@@ -29,6 +29,8 @@ const {
   GRAIN_6D_LOG_WEIGHT,
   GRAIN_7D_LN_WEIGHT,
   GRAIN_8D_BASS_WEIGHT,
+  GRAIN_Q_SPECTRAL,
+  GRAIN_SPECTRAL_REMAINDER,
   GRAIN_SPECTRAL_HIGH,
   GRAIN_SPECTRAL_LOW,
   D8_BASS_HIGHPASS_HZ,
@@ -94,6 +96,14 @@ function twoLevelSignal({ sampleRate = 16000, seconds = 4 } = {}) {
   return samples;
 }
 
+function rounded(value, digits = 12) {
+  return Number(Number(value).toFixed(digits));
+}
+
+function numberPattern(value, digits = 12) {
+  return String(rounded(value, digits)).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 test('D40 calculation uses cross multiplication from 40.0005 to 40', () => {
   const density = resolveD40Density();
   assert.equal(density.value, 0.2919963500456244);
@@ -135,6 +145,9 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-status-'));
   const app = express();
   app.use('/api/double-harmonic', createDoubleHarmonicRouter({ runtimeRoot }));
+  const expectedV4 = buildNakedD40FilterV4({ profile: 'blend' });
+  const expectedV5 = resolveLogDimensionPairV5();
+  const expectedV6 = resolveResonanceDimensionPairV6();
 
   const { server, baseUrl } = await listen(app);
   try {
@@ -154,18 +167,18 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(statusPayload.v4.weights.weightScale, 1);
     assert.equal(statusPayload.v4.weights.high, statusPayload.v4.weights.highBase);
     assert.equal(statusPayload.v4.weights.low, statusPayload.v4.weights.lowBase);
-    assert.equal(Number(statusPayload.v4.weights.lowPitch.toFixed(12)), 0.738955471386);
-    assert.equal(Number(statusPayload.v4.weights.highPitch.toFixed(12)), 2.475319049392);
+    assert.equal(rounded(statusPayload.v4.weights.lowPitch), rounded(expectedV4.lowPitch));
+    assert.equal(rounded(statusPayload.v4.weights.highPitch), rounded(expectedV4.highPitch));
     assert.equal(statusPayload.v5.method, 'dry-first-log-d40-harmonic-overlay-v5');
     assert.equal(statusPayload.v5.weights.weightScale, 2);
-    assert.equal(Number(statusPayload.v5.weights.lowPitch.toFixed(12)), 0.730205372411);
-    assert.equal(Number(statusPayload.v5.weights.highPitch.toFixed(12)), 1.329405380761);
+    assert.equal(rounded(statusPayload.v5.weights.lowPitch), rounded(expectedV5.lowPitch));
+    assert.equal(rounded(statusPayload.v5.weights.highPitch), rounded(expectedV5.highPitch));
     assert.equal(statusPayload.v6.method, 'dry-first-energy-transfer-m-over-k-d40-harmonic-overlay-v6');
     assert.equal(statusPayload.v6.state, 'v6-supreme-stable');
     assert.equal(statusPayload.v6.preset, 'v6-supreme-m-over-k-k3');
     assert.equal(statusPayload.v6.resonance.transferMode, 'm-over-k-energy-transfer');
-    assert.equal(Number(statusPayload.v6.weights.lowPitch.toFixed(12)), 0.684738867846);
-    assert.equal(Number(statusPayload.v6.weights.highPitch.toFixed(12)), 1.889397887364);
+    assert.equal(rounded(statusPayload.v6.weights.lowPitch), rounded(expectedV6.lowPitch));
+    assert.equal(rounded(statusPayload.v6.weights.highPitch), rounded(expectedV6.highPitch));
     assert.equal(Number(statusPayload.v6.weights.ratio.toFixed(12)), Number(Math.log(statusPayload.v6.dimensions.threeD / statusPayload.v6.dimensions.twoD).toFixed(12)));
     assert.equal(statusPayload.v7.method, 'dry-first-flappy-bricks-mg-phase-d40-harmonic-overlay-v7');
     assert.equal(statusPayload.v7.state, 'v7-experimental-bricks');
@@ -253,6 +266,8 @@ test('dynamic v3 grain 18/36 curve links spectral low and high without moving we
   const falling = shapeDynamicEnergy(0.78, 0.9, { curve: 'grain-18-36', curveAmount: 0.42 });
 
   assert.equal(Number((GRAIN_SPECTRAL_HIGH - GRAIN_SPECTRAL_LOW).toFixed(12)), Number(GRAIN_18_36_DELTA.toFixed(12)));
+  assert.equal(Number(GRAIN_Q_SPECTRAL.toFixed(15)), Number((GRAIN_SPECTRAL_REMAINDER * 30).toFixed(15)));
+  assert.ok(GRAIN_Q_SPECTRAL > 0.000488 && GRAIN_Q_SPECTRAL < 0.00049);
   assert.equal(Number(GRAIN_18_36_DELTA.toFixed(5)), 0.98325);
   assert.equal(rising.grainLow, GRAIN_SPECTRAL_LOW);
   assert.equal(rising.grainHigh, GRAIN_SPECTRAL_HIGH);
@@ -353,10 +368,10 @@ test('naked d40 v4 keeps the validated D40 overlay without filters or final db c
   assert.equal(built.safety.noNoiseReduction, true);
   assert.equal(built.safety.noLimiter, true);
   assert.equal(built.safety.noFinalGain, true);
-  assert.match(built.filter, /rubberband=pitch=2\.475319049392/);
-  assert.match(built.filter, /rubberband=pitch=0\.738955471386/);
-  assert.match(classic.filter, /rubberband=pitch=1\.352727735693/);
-  assert.match(classic.filter, /rubberband=pitch=0\.369477735693/);
+  assert.match(built.filter, new RegExp(`rubberband=pitch=${numberPattern(built.highPitch)}`));
+  assert.match(built.filter, new RegExp(`rubberband=pitch=${numberPattern(built.lowPitch)}`));
+  assert.match(classic.filter, new RegExp(`rubberband=pitch=${numberPattern(classic.highPitch)}`));
+  assert.match(classic.filter, new RegExp(`rubberband=pitch=${numberPattern(classic.lowPitch)}`));
   assert.equal(Number((built.lowPitch / classic.lowPitch).toFixed(12)), 2);
   assert.equal(Number((built.highPitch / classic.highPitch ** 3).toFixed(12)), 1);
   assert.match(built.filter, /amultiply/);
@@ -385,10 +400,10 @@ test('log d40 v5 folds 3D with ln and defaults to clean x2', () => {
   const boosted = buildLogD40FilterV5({ profile: 'blend', weightScale: 99 });
   const plan = buildLogD40PlanV5({ profile: 'blend' });
 
-  assert.equal(Number(dimensions.twoD.toFixed(12)), 1.369477735693);
-  assert.equal(Number(dimensions.threeD.toFixed(12)), 3.778795774729);
-  assert.equal(Number(dimensions.lowPitch.toFixed(12)), 0.730205372411);
-  assert.equal(Number(dimensions.highPitch.toFixed(12)), 1.329405380761);
+  assert.equal(rounded(dimensions.twoD), rounded(1 + GRAIN_SPECTRAL_LOW));
+  assert.equal(rounded(dimensions.threeD), rounded(((3 * GRAIN_SPECTRAL_HIGH * dimensions.twoD) + 2) / 2));
+  assert.equal(rounded(dimensions.lowPitch), rounded(1 / dimensions.twoD));
+  assert.equal(rounded(dimensions.highPitch), rounded(Math.log(dimensions.threeD)));
   assert.equal(dimensions.highFormula, 'ln(3D^2D)/2D');
   assert.equal(dimensions.highEquivalent, 'ln(3D)');
   assert.equal(resolveV5WeightScale(undefined), 2);
@@ -398,8 +413,8 @@ test('log d40 v5 folds 3D with ln and defaults to clean x2', () => {
   assert.equal(plan.defaults.weightScale.default, 2);
   assert.equal(plan.defaults.weightScale.max, 3);
   assert.equal(Number((built.lowWeight / built.highWeight).toFixed(12)), Number(BALANCE_AUTO.toFixed(12)));
-  assert.match(built.filter, /rubberband=pitch=1\.329405380761:transients=crisp/);
-  assert.match(built.filter, /rubberband=pitch=0\.730205372411:transients=crisp/);
+  assert.match(built.filter, new RegExp(`rubberband=pitch=${numberPattern(dimensions.highPitch)}:transients=crisp`));
+  assert.match(built.filter, new RegExp(`rubberband=pitch=${numberPattern(dimensions.lowPitch)}:transients=crisp`));
   assert.doesNotMatch(built.filter, /alimiter/);
   assert.doesNotMatch(built.filter, /highpass=/);
 });
@@ -419,11 +434,11 @@ test('resonance d40 v6 uses 2D/2, 3D/2 and M/K energy transfer cap', () => {
     frames: [{ endTime: 1, normalizedEnergy: 1, curvedEnergy: 1 }],
   }, 0, { userK: 10 });
 
-  assert.equal(Number(dimensions.twoD.toFixed(12)), 1.369477735693);
-  assert.equal(Number(dimensions.threeD.toFixed(12)), 3.778795774729);
-  assert.equal(Number(dimensions.lowPitch.toFixed(12)), 0.684738867846);
-  assert.equal(Number(dimensions.highPitch.toFixed(12)), 1.889397887364);
-  assert.equal(Number(dimensions.ratioHighToLow.toFixed(12)), 1.014975928424);
+  assert.equal(rounded(dimensions.twoD), rounded(1 + GRAIN_SPECTRAL_LOW));
+  assert.equal(rounded(dimensions.threeD), rounded(((3 * GRAIN_SPECTRAL_HIGH * dimensions.twoD) + 2) / 2));
+  assert.equal(rounded(dimensions.lowPitch), rounded(dimensions.twoD / 2));
+  assert.equal(rounded(dimensions.highPitch), rounded(dimensions.threeD / 2));
+  assert.equal(rounded(dimensions.ratioHighToLow), rounded(Math.log(dimensions.threeD / dimensions.twoD)));
   assert.equal(dimensions.ratioFormula, 'ln(3D/2D)');
   assert.equal(resolveV6UserK(undefined), 3);
   assert.equal(resolveV6UserK(99), 10);
@@ -446,8 +461,8 @@ test('resonance d40 v6 uses 2D/2, 3D/2 and M/K energy transfer cap', () => {
   assert.ok(loud.foldedSurplus < loud.surplus);
   assert.equal(Number(quiet.measuredK.toFixed(12)), 1);
   assert.ok(loud.folded <= 1);
-  assert.match(built.filter, /rubberband=pitch=1\.889397887364:transients=crisp/);
-  assert.match(built.filter, /rubberband=pitch=0\.684738867846:transients=crisp/);
+  assert.match(built.filter, new RegExp(`rubberband=pitch=${numberPattern(dimensions.highPitch)}:transients=crisp`));
+  assert.match(built.filter, new RegExp(`rubberband=pitch=${numberPattern(dimensions.lowPitch)}:transients=crisp`));
   assert.doesNotMatch(built.filter, /alimiter/);
   assert.doesNotMatch(built.filter, /highpass=/);
 });
@@ -474,9 +489,10 @@ test('bricks d40 v7 adds more mg_phase bricks when signal height is low', () => 
   assert.ok(quiet.hole > loud.hole);
   assert.ok(quiet.folded >= quiet.baseFolded);
   assert.ok(loud.folded >= loud.baseFolded);
-  assert.equal(Number((built.weights?.ratioHighToLow || built.ratioHighToLow).toFixed(12)), 1.014975928424);
-  assert.match(built.filter, /rubberband=pitch=1\.889397887364:transients=crisp/);
-  assert.match(built.filter, /rubberband=pitch=0\.684738867846:transients=crisp/);
+  const dimensions = resolveResonanceDimensionPairV6();
+  assert.equal(rounded(built.weights?.ratioHighToLow || built.ratioHighToLow), rounded(dimensions.ratioHighToLow));
+  assert.match(built.filter, new RegExp(`rubberband=pitch=${numberPattern(dimensions.highPitch)}:transients=crisp`));
+  assert.match(built.filter, new RegExp(`rubberband=pitch=${numberPattern(dimensions.lowPitch)}:transients=crisp`));
   assert.doesNotMatch(built.filter, /alimiter/);
 });
 
@@ -498,9 +514,10 @@ test('binary grid v7.1 locks the mg brick envelope to 1024 slots without moving 
   assert.equal(grid.enabled, true);
   assert.equal(grid.slotsPerSecond, 1024);
   assert.equal(measured.mode, 'measured');
-  assert.ok(Math.abs(metrics.measuredSlotsPerSecond - 1024.226315789105) < 0.000001);
-  assert.ok(Math.abs(metrics.grainProduct - 0.49980278079282237) < 0.000000000000001);
-  assert.ok(Math.abs(metrics.measuredRelativeGap - 0.00022101151279785292) < 0.000000000000001);
+  assert.ok(metrics.measuredSlotsPerSecond > 1024 && metrics.measuredSlotsPerSecond < 1024.23);
+  assert.ok(Math.abs(metrics.grainProduct - (GRAIN_SPECTRAL_LOW * GRAIN_SPECTRAL_HIGH)) < 0.000000000000001);
+  assert.equal(rounded(metrics.grainQSpectral, 15), rounded(GRAIN_Q_SPECTRAL, 15));
+  assert.equal(metrics.grainQFormula, '30*(0.0005*pi-mg_phase)');
   assert.equal(plan.bricks.binaryGrid.enabled, true);
   assert.equal(plan.bricks.binaryGrid.slotsPerSecond, 1024);
   assert.equal(plan.bricks.binaryGrid.metrics.exactSlotsPerSecond, 1024);

@@ -36,9 +36,10 @@ const DEFAULT_DYNAMIC_RISE_LOG = 2.6;
 const DEFAULT_DYNAMIC_FALL_EXP = 2.1;
 const DEFAULT_SPECTRAL_PIVOT = 0.292;
 const MG_PHASE_TARGET_RATIO = TARGET_0005_PI / MG_PHASE;
-const GRAIN_Q_0005 = 0.0005;
+const GRAIN_SPECTRAL_REMAINDER = TARGET_0005_PI - MG_PHASE;
+const GRAIN_Q_SPECTRAL = GRAIN_SPECTRAL_REMAINDER * 30;
 const GRAIN_SPECTRAL_LOW = 0.3694777356929151;
-const GRAIN_18_36_DELTA = 1 - ((0.3 + 3 * GRAIN_Q_0005) / 18);
+const GRAIN_18_36_DELTA = 1 - ((0.3 + 3 * GRAIN_Q_SPECTRAL) / 18);
 const GRAIN_SPECTRAL_HIGH = GRAIN_SPECTRAL_LOW + GRAIN_18_36_DELTA;
 const GRAIN_6D_LOG_WEIGHT = 0.24;
 const GRAIN_7D_LN_WEIGHT = 0.52;
@@ -257,6 +258,8 @@ function shapeDynamicEnergy(normalizedEnergy, previousEnergy, options = {}) {
     shapedEnergy: shaped,
     curveAmount: motionAmount,
     mgRatio: curve === 'mg-ratio' ? MG_PHASE_TARGET_RATIO : undefined,
+    grainQSpectral: curve === 'grain-18-36' || curve === 'grain-6d7d8d' ? GRAIN_Q_SPECTRAL : undefined,
+    grainSpectralRemainder: curve === 'grain-18-36' || curve === 'grain-6d7d8d' ? GRAIN_SPECTRAL_REMAINDER : undefined,
     grainLow: grainPair ? grainPair.low : undefined,
     grainHigh: grainPair ? grainPair.high : undefined,
     grainDelta: curve === 'grain-18-36' ? GRAIN_18_36_DELTA : undefined,
@@ -429,6 +432,8 @@ function analyzePcmDynamicWeightV3({ samples, sampleRate = DEFAULT_ANALYSIS_SAMP
       mgPhase: MG_PHASE,
       target0005Pi: TARGET_0005_PI,
       mgRatio: MG_PHASE_TARGET_RATIO,
+      grainQSpectral: GRAIN_Q_SPECTRAL,
+      grainSpectralRemainder: GRAIN_SPECTRAL_REMAINDER,
       spectralPivot: DEFAULT_SPECTRAL_PIVOT,
       grainLow: grainPair.low,
       grainHigh: grainPair.high,
@@ -830,6 +835,8 @@ function buildDynamicWeightPlanV3(options = {}) {
       mgPhase: MG_PHASE,
       target0005Pi: TARGET_0005_PI,
       mgRatio: MG_PHASE_TARGET_RATIO,
+      grainQSpectral: GRAIN_Q_SPECTRAL,
+      grainSpectralRemainder: GRAIN_SPECTRAL_REMAINDER,
       spectralPivot: DEFAULT_SPECTRAL_PIVOT,
       grainLow: grainPair.low,
       grainHigh: grainPair.high,
@@ -862,6 +869,8 @@ module.exports = {
   GRAIN_6D_LOG_WEIGHT,
   GRAIN_7D_LN_WEIGHT,
   GRAIN_8D_BASS_WEIGHT,
+  GRAIN_Q_SPECTRAL,
+  GRAIN_SPECTRAL_REMAINDER,
   GRAIN_SPECTRAL_HIGH,
   GRAIN_SPECTRAL_LOW,
   D8_BASS_HIGHPASS_HZ,

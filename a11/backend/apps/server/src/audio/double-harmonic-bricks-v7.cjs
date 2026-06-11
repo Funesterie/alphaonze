@@ -14,6 +14,8 @@ const {
 } = require('./double-harmonic-d40.cjs');
 const {
   DEFAULT_SPECTRAL_PIVOT,
+  GRAIN_Q_SPECTRAL,
+  GRAIN_SPECTRAL_REMAINDER,
   GRAIN_SPECTRAL_HIGH,
   GRAIN_SPECTRAL_LOW,
   MG_PHASE_TARGET_RATIO,
@@ -104,6 +106,11 @@ function buildBinaryGridMetricsV71() {
     measuredSlotsPerSecond,
     measuredGapTo1024: measuredSlotsPerSecond - V71_EXACT_GRID_SLOTS,
     measuredRelativeGap: (measuredSlotsPerSecond - V71_EXACT_GRID_SLOTS) / V71_EXACT_GRID_SLOTS,
+    target0005Pi: TARGET_0005_PI,
+    mgPhase: MG_PHASE,
+    grainSpectralRemainder: GRAIN_SPECTRAL_REMAINDER,
+    grainQSpectral: GRAIN_Q_SPECTRAL,
+    grainQFormula: '30*(0.0005*pi-mg_phase)',
     grainLow: GRAIN_SPECTRAL_LOW,
     grainHigh: GRAIN_SPECTRAL_HIGH,
     grainProduct,
