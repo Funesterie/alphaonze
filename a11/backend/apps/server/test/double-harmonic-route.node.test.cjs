@@ -150,9 +150,10 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(statusPayload.v5.weights.weightScale, 2);
     assert.equal(Number(statusPayload.v5.weights.lowPitch.toFixed(12)), 0.730205372411);
     assert.equal(Number(statusPayload.v5.weights.highPitch.toFixed(12)), 1.329405380761);
-    assert.equal(statusPayload.v6.method, 'dry-first-soft-fold-mk-log-ratio-d40-harmonic-overlay-v6');
+    assert.equal(statusPayload.v6.method, 'dry-first-soft-fold-m-over-k-d40-harmonic-overlay-v6');
     assert.equal(statusPayload.v6.state, 'v6-soft-fold-active');
-    assert.equal(statusPayload.v6.preset, 'soft-fold-mk-log-ratio');
+    assert.equal(statusPayload.v6.preset, 'soft-fold-m-over-k');
+    assert.equal(statusPayload.v6.resonance.quotientMode, 'm-over-k-surplus-fold');
     assert.equal(Number(statusPayload.v6.weights.lowPitch.toFixed(12)), 0.684738867846);
     assert.equal(Number(statusPayload.v6.weights.highPitch.toFixed(12)), 1.889397887364);
     assert.equal(Number(statusPayload.v6.weights.ratio.toFixed(12)), Number(Math.log(statusPayload.v6.dimensions.threeD / statusPayload.v6.dimensions.twoD).toFixed(12)));
@@ -385,7 +386,7 @@ test('log d40 v5 folds 3D with ln and defaults to clean x2', () => {
   assert.doesNotMatch(built.filter, /highpass=/);
 });
 
-test('resonance d40 v6 uses 2D/2, 3D/2 and log high low ratio with folded Mk', () => {
+test('resonance d40 v6 uses 2D/2, 3D/2 and M/K surplus fold', () => {
   const dimensions = resolveResonanceDimensionPairV6();
   const built = buildResonanceD40FilterV6({ profile: 'blend', userK: 2 });
   const boosted = buildResonanceD40FilterV6({ profile: 'blend', userK: 99 });
@@ -413,11 +414,17 @@ test('resonance d40 v6 uses 2D/2, 3D/2 and log high low ratio with folded Mk', (
   assert.equal(boosted.wetCeiling, built.wetCeiling);
   assert.equal(built.safety.wetScaleMax, 1);
   assert.equal(plan.resonance.mode, 'soft-fold');
+  assert.equal(plan.resonance.quotientMode, 'm-over-k-surplus-fold');
+  assert.ok(plan.resonance.formula.includes('min(1,M/K)'));
   assert.equal(plan.defaults.userK.default, 2);
   assert.equal(plan.defaults.userK.max, 10);
   assert.equal(Number((built.highWeight / built.lowWeight).toFixed(12)), Number(dimensions.ratioHighToLow.toFixed(12)));
   assert.ok(louderK.folded > loud.folded);
   assert.ok(loud.measuredK > quiet.measuredK);
+  assert.equal(loud.mOverK, 1 / loud.measuredK);
+  assert.equal(loud.quotientDamper, loud.mOverK);
+  assert.equal(quiet.quotientDamper, 1);
+  assert.ok(loud.foldedSurplus < loud.surplus);
   assert.equal(Number(quiet.measuredK.toFixed(12)), 1);
   assert.ok(loud.folded <= 1);
   assert.match(built.filter, /rubberband=pitch=1\.889397887364:transients=crisp/);
@@ -885,10 +892,10 @@ test('double harmonic route publishes resonance d40 v6 with user k', async () =>
       });
       fs.writeFileSync(outputPath, Buffer.from('processed v6 flac'));
       return {
-        method: 'dry-first-soft-fold-mk-log-ratio-d40-harmonic-overlay-v6',
+        method: 'dry-first-soft-fold-m-over-k-d40-harmonic-overlay-v6',
         state: 'v6-soft-fold-active',
         profile,
-        preset: 'soft-fold-mk-log-ratio',
+        preset: 'soft-fold-m-over-k',
         intensity: 'soft-fold',
         d40: resolveD40Density(),
         resonance: {
@@ -931,7 +938,7 @@ test('double harmonic route publishes resonance d40 v6 with user k', async () =>
     const payload = await res.json();
     assert.equal(res.status, 200);
     assert.equal(payload.ok, true);
-    assert.equal(payload.method, 'dry-first-soft-fold-mk-log-ratio-d40-harmonic-overlay-v6');
+    assert.equal(payload.method, 'dry-first-soft-fold-m-over-k-d40-harmonic-overlay-v6');
     assert.equal(payload.state, 'v6-soft-fold-active');
     assert.equal(payload.intensity, 'soft-fold');
     assert.equal(payload.contentType, 'audio/flac');
