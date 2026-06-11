@@ -151,8 +151,8 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(Number(statusPayload.v5.weights.lowPitch.toFixed(12)), 0.730205372411);
     assert.equal(Number(statusPayload.v5.weights.highPitch.toFixed(12)), 1.329405380761);
     assert.equal(statusPayload.v6.method, 'dry-first-energy-transfer-m-over-k-d40-harmonic-overlay-v6');
-    assert.equal(statusPayload.v6.state, 'v6-soft-fold-active');
-    assert.equal(statusPayload.v6.preset, 'energy-transfer-m-over-k');
+    assert.equal(statusPayload.v6.state, 'v6-supreme-stable');
+    assert.equal(statusPayload.v6.preset, 'v6-supreme-m-over-k-k3');
     assert.equal(statusPayload.v6.resonance.transferMode, 'm-over-k-energy-transfer');
     assert.equal(Number(statusPayload.v6.weights.lowPitch.toFixed(12)), 0.684738867846);
     assert.equal(Number(statusPayload.v6.weights.highPitch.toFixed(12)), 1.889397887364);
@@ -407,7 +407,7 @@ test('resonance d40 v6 uses 2D/2, 3D/2 and M/K energy transfer cap', () => {
   assert.equal(Number(dimensions.highPitch.toFixed(12)), 1.889397887364);
   assert.equal(Number(dimensions.ratioHighToLow.toFixed(12)), 1.014975928424);
   assert.equal(dimensions.ratioFormula, 'ln(3D/2D)');
-  assert.equal(resolveV6UserK(undefined), 2);
+  assert.equal(resolveV6UserK(undefined), 3);
   assert.equal(resolveV6UserK(99), 10);
   assert.equal(built.userK, 2);
   assert.equal(boosted.userK, 10);
@@ -416,7 +416,7 @@ test('resonance d40 v6 uses 2D/2, 3D/2 and M/K energy transfer cap', () => {
   assert.equal(plan.resonance.mode, 'soft-fold');
   assert.equal(plan.resonance.transferMode, 'm-over-k-energy-transfer');
   assert.ok(plan.resonance.formula.includes('min(1,M/K)'));
-  assert.equal(plan.defaults.userK.default, 2);
+  assert.equal(plan.defaults.userK.default, 3);
   assert.equal(plan.defaults.userK.max, 10);
   assert.equal(Number((built.highWeight / built.lowWeight).toFixed(12)), Number(dimensions.ratioHighToLow.toFixed(12)));
   assert.ok(louderK.folded > loud.folded);
@@ -894,13 +894,13 @@ test('double harmonic route publishes resonance d40 v6 with user k', async () =>
       fs.writeFileSync(outputPath, Buffer.from('processed v6 flac'));
       return {
         method: 'dry-first-energy-transfer-m-over-k-d40-harmonic-overlay-v6',
-        state: 'v6-soft-fold-active',
+        state: 'v6-supreme-stable',
         profile,
-        preset: 'energy-transfer-m-over-k',
+        preset: 'v6-supreme-m-over-k-k3',
         intensity: 'soft-fold',
         d40: resolveD40Density(),
         resonance: {
-          userK: analysisOptions.userK || 2,
+          userK: analysisOptions.userK || 3,
           kCeiling: analysisOptions.kCeiling || 10,
           ratioHighToLow: 1.0149759284240818,
           ratioFormula: 'ln(3D/2D)',
@@ -909,7 +909,7 @@ test('double harmonic route publishes resonance d40 v6 with user k', async () =>
         weights: {
           dry: 1,
           ratio: 1.0149759284240818,
-          userK: analysisOptions.userK || 2,
+          userK: analysisOptions.userK || 3,
           kCeiling: analysisOptions.kCeiling || 10,
           highPitch: 1.889397887364303,
           lowPitch: 0.6847388678464575,
@@ -940,7 +940,7 @@ test('double harmonic route publishes resonance d40 v6 with user k', async () =>
     assert.equal(res.status, 200);
     assert.equal(payload.ok, true);
     assert.equal(payload.method, 'dry-first-energy-transfer-m-over-k-d40-harmonic-overlay-v6');
-    assert.equal(payload.state, 'v6-soft-fold-active');
+    assert.equal(payload.state, 'v6-supreme-stable');
     assert.equal(payload.intensity, 'soft-fold');
     assert.equal(payload.contentType, 'audio/flac');
     assert.equal(payload.resonance.userK, 6);

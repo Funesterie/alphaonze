@@ -2010,14 +2010,14 @@ const D40_V5_INTENSITY_MAX = 3;
 const D40_V5_DEFAULT_INTENSITY = 2;
 const D40_V6_INTENSITY_MIN = 0.1;
 const D40_V6_INTENSITY_MAX = 10;
-const D40_V6_DEFAULT_INTENSITY = 2;
+const D40_V6_DEFAULT_INTENSITY = 3;
 const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v1: "V1 stable",
   v2: "V2 Release",
   v3: "V3 auto",
   v4: "V4 Stable",
   v5: "V5 Release",
-  v6: "V6 soft-fold",
+  v6: "V6 Supreme",
 };
 const D40_OUTPUT_FORMAT_LABELS: Record<DoubleHarmonicOutputFormat, string> = {
   flac: "FLAC master",
@@ -3565,19 +3565,19 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const doubleHarmonicWeightLabel = doubleHarmonicMode === "v3"
     ? "Auto"
     : doubleHarmonicMode === "v6"
-      ? `k ${doubleHarmonicIntensityLabel} · ratio ln(3D/2D) · Mk`
+      ? `k ${doubleHarmonicIntensityLabel} · M/K · D40`
       : doubleHarmonicMode === "v5"
-      ? `${doubleHarmonicIntensityLabel} · bas 1/2D · haut ln(3D)`
-      : doubleHarmonicMode === "v4"
-        ? `${doubleHarmonicIntensityLabel} · grain bas x${D40_V4_LOW_GRAIN_MULTIPLIER} · haut ^${D40_V4_HIGH_GRAIN_POWER}`
-        : doubleHarmonicIntensityLabel;
+        ? `${doubleHarmonicIntensityLabel} · bas 1/2D · haut ln(3D)`
+        : doubleHarmonicMode === "v4"
+          ? `${doubleHarmonicIntensityLabel} · grain bas x${D40_V4_LOW_GRAIN_MULTIPLIER} · haut ^${D40_V4_HIGH_GRAIN_POWER}`
+          : doubleHarmonicIntensityLabel;
   const doubleHarmonicIntensityTitle = doubleHarmonicMode === "v6"
-    ? "Resonance V6"
+    ? "Résonance V6"
     : doubleHarmonicMode === "v5"
-    ? "Recette V5 Release"
-    : doubleHarmonicMode === "v4"
-      ? "Recette V4 Stable"
-      : "Poids harmonique";
+      ? "Recette V5 Release"
+      : doubleHarmonicMode === "v4"
+        ? "Recette V4 Stable"
+        : "Poids harmonique";
 
   useEffect(() => {
     setDoubleHarmonicIntensity((current) => Math.max(
@@ -4691,7 +4691,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                       setDoubleHarmonicResult(null);
                     }}
                   >
-                    <option value="v6">V6 soft-fold</option>
+                    <option value="v6">V6 Supreme</option>
                     <option value="v5">V5 Release</option>
                     <option value="v1">V1 stable</option>
                     <option value="v2">V2 Release</option>

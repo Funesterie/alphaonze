@@ -27,7 +27,7 @@ const DEFAULT_V6_CURVE_AMOUNT = 0.3;
 const DEFAULT_V6_ATTACK = 0.78;
 const DEFAULT_V6_RELEASE = 0.32;
 const DEFAULT_V6_MIN_DB_SPAN = 8;
-const DEFAULT_V6_USER_K = 2;
+const DEFAULT_V6_USER_K = 3;
 const MIN_V6_USER_K = 0.1;
 const MAX_V6_USER_K = 10;
 const DEFAULT_V6_K_CEILING = 10;
@@ -36,8 +36,8 @@ const MAX_V6_K_CEILING = 64;
 const V6_RESONANCE_MODE = 'soft-fold';
 const V6_TRANSFER_MODE = 'm-over-k-energy-transfer';
 const V6_METHOD = 'dry-first-energy-transfer-m-over-k-d40-harmonic-overlay-v6';
-const V6_STATE = 'v6-soft-fold-active';
-const V6_PRESET = 'energy-transfer-m-over-k';
+const V6_STATE = 'v6-supreme-stable';
+const V6_PRESET = 'v6-supreme-m-over-k-k3';
 
 function numberText(value, digits = 12) {
   return Number(value).toFixed(digits).replace(/0+$/g, '').replace(/\.$/g, '');
