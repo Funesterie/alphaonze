@@ -64,8 +64,12 @@ const {
   sampleResonanceMkV6At,
 } = require('../src/audio/double-harmonic-resonance-v6.cjs');
 const {
+  V71_METHOD,
+  buildBinaryGridMetricsV71,
+  buildBricksAutomationSamplesV7,
   buildBricksD40FilterV7,
   buildBricksD40PlanV7,
+  resolveV71BinaryGrid,
   resolveV7MaxBricks,
   sampleBrickResonanceV7At,
 } = require('../src/audio/double-harmonic-bricks-v7.cjs');
@@ -167,6 +171,10 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(statusPayload.v7.state, 'v7-experimental-bricks');
     assert.equal(statusPayload.v7.bricks.max, 10);
     assert.equal(statusPayload.v7.safety.v6StableUntouched, true);
+    assert.equal(statusPayload.v71.method, 'dry-first-binary-grid-1024-mg-bricks-d40-harmonic-overlay-v7-1');
+    assert.equal(statusPayload.v71.state, 'v7-1-experimental-binary-grid');
+    assert.equal(statusPayload.v71.bricks.binaryGrid.slotsPerSecond, 1024);
+    assert.equal(statusPayload.v71.safety.binaryGridEnabled, true);
 
     const v2 = await fetch(`${baseUrl}/api/double-harmonic/v2/status?smoothing=1%2Fe&frameMs=20`);
     const v2Payload = await v2.json();
@@ -470,6 +478,36 @@ test('bricks d40 v7 adds more mg_phase bricks when signal height is low', () => 
   assert.match(built.filter, /rubberband=pitch=1\.889397887364:transients=crisp/);
   assert.match(built.filter, /rubberband=pitch=0\.684738867846:transients=crisp/);
   assert.doesNotMatch(built.filter, /alimiter/);
+});
+
+test('binary grid v7.1 locks the mg brick envelope to 1024 slots without moving mg_phase', () => {
+  const metrics = buildBinaryGridMetricsV71();
+  const grid = resolveV71BinaryGrid('exact1024');
+  const measured = resolveV71BinaryGrid('measured');
+  const built = buildBricksD40FilterV7({ profile: 'blend', userK: 3, binaryGrid: 'exact1024' });
+  const plan = buildBricksD40PlanV7({ profile: 'blend', binaryGrid: 'exact1024' });
+  const automation = buildBricksAutomationSamplesV7({
+    analysis: { frames: [{ endTime: 1, normalizedEnergy: 0.2, curvedEnergy: 0.2, weightScale: 1 }], summary: { durationSeconds: 1 } },
+    durationSeconds: 1,
+    userK: 3,
+    binaryGrid: 'exact1024',
+  });
+
+  assert.equal(built.method, V71_METHOD);
+  assert.equal(plan.state, 'v7-1-experimental-binary-grid');
+  assert.equal(grid.enabled, true);
+  assert.equal(grid.slotsPerSecond, 1024);
+  assert.equal(measured.mode, 'measured');
+  assert.ok(Math.abs(metrics.measuredSlotsPerSecond - 1024.226315789105) < 0.000001);
+  assert.ok(Math.abs(metrics.grainProduct - 0.49980278079282237) < 0.000000000000001);
+  assert.ok(Math.abs(metrics.measuredRelativeGap - 0.00022101151279785292) < 0.000000000000001);
+  assert.equal(plan.bricks.binaryGrid.enabled, true);
+  assert.equal(plan.bricks.binaryGrid.slotsPerSecond, 1024);
+  assert.equal(plan.bricks.binaryGrid.metrics.exactSlotsPerSecond, 1024);
+  assert.equal(plan.safety.binaryGridDoesNotChangeMgPhase, true);
+  assert.equal(automation.sampleRate, 1024);
+  assert.equal(automation.binaryGrid.enabled, true);
+  assert.equal(automation.binaryGrid.outputSampleRate, 1024);
 });
 
 test('double harmonic route processes upload and exposes tokenized audio link', async () => {
@@ -1096,6 +1134,76 @@ test('double harmonic route publishes adaptive bricks d40 v7 with user k', async
       maxBricks: 10,
       brickInfluence: 0.45,
     }]);
+
+    const shared = await fetch(payload.shareUrl);
+    assert.equal(shared.status, 200);
+    assert.match(shared.headers.get('content-type') || '', /audio\/flac/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('double harmonic route publishes binary grid d40 v7.1 with exact 1024 slots', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-v71-process-'));
+  const calls = [];
+  const app = express();
+  app.use('/api/double-harmonic', createDoubleHarmonicRouter({
+    runtimeRoot,
+    processBricksD40V7: async ({ outputPath, profile, analysisOptions }) => {
+      calls.push({
+        profile,
+        userK: analysisOptions.userK,
+        binaryGrid: analysisOptions.binaryGrid,
+      });
+      fs.writeFileSync(outputPath, Buffer.from('processed v71 flac'));
+      return {
+        method: 'dry-first-binary-grid-1024-mg-bricks-d40-harmonic-overlay-v7-1',
+        state: 'v7-1-experimental-binary-grid',
+        profile,
+        preset: 'v7-1-binary-1024-mg-phase-k3',
+        intensity: 'binary-bricks-adaptive',
+        d40: resolveD40Density(),
+        resonance: { userK: analysisOptions.userK || 3, binaryGrid: 'enabled' },
+        bricks: {
+          min: 1,
+          max: 10,
+          binaryGrid: {
+            enabled: true,
+            mode: 'exact1024',
+            slotsPerSecond: 1024,
+          },
+        },
+        dynamic: { automation: { sampleRate: 1024, binaryGrid: { enabled: true } } },
+        weights: { dry: 1, highPitch: 1.889397887364303, lowPitch: 0.6847388678464575 },
+        safety: { noLimiter: true, noFinalGain: true, mgPhaseFixed: true, v6StableUntouched: true, binaryGridEnabled: true },
+      };
+    },
+    verifyJWT: (req, _res, next) => {
+      req.user = { email: 'djeff@example.test' };
+      next();
+    },
+  }));
+
+  const { server, baseUrl } = await listen(app);
+  try {
+    const form = new FormData();
+    form.append('audio', new Blob([Buffer.from('ID3demo')], { type: 'audio/mpeg' }), 'demo.mp3');
+    form.append('profile', 'blend');
+    form.append('intensity', '3');
+    const res = await fetch(`${baseUrl}/api/double-harmonic/v71/process`, {
+      method: 'POST',
+      body: form,
+    });
+    const payload = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.method, 'dry-first-binary-grid-1024-mg-bricks-d40-harmonic-overlay-v7-1');
+    assert.equal(payload.state, 'v7-1-experimental-binary-grid');
+    assert.equal(payload.bricks.binaryGrid.slotsPerSecond, 1024);
+    assert.equal(payload.safety.binaryGridEnabled, true);
+    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v71\.flac$/);
+    assert.deepEqual(calls, [{ profile: 'blend', userK: 3, binaryGrid: 'exact1024' }]);
 
     const shared = await fetch(payload.shareUrl);
     assert.equal(shared.status, 200);

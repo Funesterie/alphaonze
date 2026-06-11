@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const {
+  D40_SOURCE_N,
   MAX_HARMONIC_INTENSITY,
   MG_PHASE,
   MIN_HARMONIC_INTENSITY,
@@ -31,9 +32,13 @@ const {
 } = require('./double-harmonic-resonance-v6.cjs');
 
 const BRICKS_D40_V7_SCHEMA = 'funesterie.audio.double-harmonic-bricks-d40.v7';
+const BRICKS_D40_V71_SCHEMA = 'funesterie.audio.double-harmonic-binary-grid-d40.v7-1';
 const V7_METHOD = 'dry-first-flappy-bricks-mg-phase-d40-harmonic-overlay-v7';
+const V71_METHOD = 'dry-first-binary-grid-1024-mg-bricks-d40-harmonic-overlay-v7-1';
 const V7_STATE = 'v7-experimental-bricks';
+const V71_STATE = 'v7-1-experimental-binary-grid';
 const V7_PRESET = 'v7-flappy-bricks-mg-phase-k3';
+const V71_PRESET = 'v7-1-binary-1024-mg-phase-k3';
 const DEFAULT_V7_FRAME_MS = 250;
 const DEFAULT_V7_MAX_SEGMENTS = 2400;
 const DEFAULT_V7_CURVE = 'grain-6d7d8d';
@@ -44,6 +49,8 @@ const DEFAULT_V7_MIN_DB_SPAN = 8;
 const DEFAULT_V7_MIN_BRICKS = 1;
 const DEFAULT_V7_MAX_BRICKS = 10;
 const DEFAULT_V7_BRICK_INFLUENCE = 0.45;
+const DEFAULT_V71_GRID_MODE = 'exact1024';
+const V71_EXACT_GRID_SLOTS = 1024;
 
 function clampNumber(value, min, max, fallback) {
   const numeric = Number(value);
@@ -82,6 +89,78 @@ function resolveV7MaxBricks(value) {
 
 function resolveV7BrickInfluence(value) {
   return clampNumber(value, 0.05, 1, DEFAULT_V7_BRICK_INFLUENCE);
+}
+
+function buildBinaryGridMetricsV71() {
+  const grainProduct = GRAIN_SPECTRAL_LOW * GRAIN_SPECTRAL_HIGH;
+  const smallMg = grainProduct * MG_PHASE;
+  const inverseSmallMg = 1 / smallMg;
+  const cyclePi = D40_SOURCE_N * Math.PI;
+  const measuredSlotsPerSecond = inverseSmallMg / cyclePi * 100;
+  const neededProductFor1024 = 100 / (V71_EXACT_GRID_SLOTS * MG_PHASE * cyclePi);
+  return {
+    mode: DEFAULT_V71_GRID_MODE,
+    exactSlotsPerSecond: V71_EXACT_GRID_SLOTS,
+    measuredSlotsPerSecond,
+    measuredGapTo1024: measuredSlotsPerSecond - V71_EXACT_GRID_SLOTS,
+    measuredRelativeGap: (measuredSlotsPerSecond - V71_EXACT_GRID_SLOTS) / V71_EXACT_GRID_SLOTS,
+    grainLow: GRAIN_SPECTRAL_LOW,
+    grainHigh: GRAIN_SPECTRAL_HIGH,
+    grainProduct,
+    grainProductGapToHalf: grainProduct - 0.5,
+    smallMg,
+    inverseSmallMg,
+    cyclePi,
+    neededProductFor1024,
+    productDeltaFor1024: neededProductFor1024 - grainProduct,
+    formula: '100/(grainLow*grainHigh*mg_phase*(40.0005*pi))',
+  };
+}
+
+function resolveV71BinaryGrid(value) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw || raw === '0' || raw === 'false' || raw === 'off' || raw === 'none') {
+    return {
+      enabled: false,
+      mode: 'off',
+      slotsPerSecond: 0,
+      metrics: buildBinaryGridMetricsV71(),
+    };
+  }
+  const metrics = buildBinaryGridMetricsV71();
+  if (raw === 'measured' || raw === '1024.226' || raw === '1024-measured') {
+    return {
+      enabled: true,
+      mode: 'measured',
+      slotsPerSecond: metrics.measuredSlotsPerSecond,
+      outputSampleRate: V71_EXACT_GRID_SLOTS,
+      metrics,
+    };
+  }
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric) && numeric >= 128 && numeric <= 8192) {
+    return {
+      enabled: true,
+      mode: 'custom',
+      slotsPerSecond: numeric,
+      outputSampleRate: Math.round(numeric),
+      metrics,
+    };
+  }
+  return {
+    enabled: true,
+    mode: DEFAULT_V71_GRID_MODE,
+    slotsPerSecond: V71_EXACT_GRID_SLOTS,
+    outputSampleRate: V71_EXACT_GRID_SLOTS,
+    metrics,
+  };
+}
+
+function quantizeTimeToBinaryGrid(timeSeconds, binaryGrid) {
+  if (!binaryGrid?.enabled || !Number.isFinite(binaryGrid.slotsPerSecond) || binaryGrid.slotsPerSecond <= 0) {
+    return timeSeconds;
+  }
+  return Math.round(timeSeconds * binaryGrid.slotsPerSecond) / binaryGrid.slotsPerSecond;
 }
 
 function buildBricksD40EnvelopePath(outputPath) {
@@ -167,14 +246,19 @@ function buildBricksAutomationSamplesV7({
   profile = 'blend',
   cycleSeconds,
   durationSeconds,
-  sampleRate = 400,
+  sampleRate,
   userK,
   kCeiling,
   minBricks,
   maxBricks,
   brickInfluence,
+  binaryGrid,
 } = {}) {
-  const resolvedSampleRate = Math.round(clampNumber(sampleRate, 50, 2000, 400));
+  const resolvedBinaryGrid = resolveV71BinaryGrid(binaryGrid);
+  const defaultSampleRate = resolvedBinaryGrid.enabled
+    ? Math.round(clampNumber(resolvedBinaryGrid.outputSampleRate || resolvedBinaryGrid.slotsPerSecond, 128, 8192, V71_EXACT_GRID_SLOTS))
+    : 400;
+  const resolvedSampleRate = Math.round(clampNumber(sampleRate, 50, 8192, defaultSampleRate));
   const fallbackDuration = Number(analysis?.summary?.durationSeconds || 1) || 1;
   const duration = clampNumber(durationSeconds, 0.05, 7200, fallbackDuration);
   const sampleCount = Math.max(1, Math.ceil(duration * resolvedSampleRate));
@@ -189,14 +273,15 @@ function buildBricksAutomationSamplesV7({
 
   for (let index = 0; index < sampleCount; index += 1) {
     const time = index / resolvedSampleRate;
-    const brick = sampleBrickResonanceV7At(analysis, time, {
+    const sampleTime = quantizeTimeToBinaryGrid(time, resolvedBinaryGrid);
+    const brick = sampleBrickResonanceV7At(analysis, sampleTime, {
       userK,
       kCeiling,
       minBricks,
       maxBricks,
       brickInfluence,
     });
-    const d40 = sampleD40EnvelopeAt(time, { profile, periodSeconds: cycleSeconds });
+    const d40 = sampleD40EnvelopeAt(sampleTime, { profile, periodSeconds: cycleSeconds });
     const value = d40.gain * brick.folded;
     samples[index] = value;
     min = Math.min(min, value);
@@ -218,6 +303,19 @@ function buildBricksAutomationSamplesV7({
     profile: probe.profile,
     period: probe.period,
     density: probe.density,
+    binaryGrid: resolvedBinaryGrid.enabled ? {
+      enabled: true,
+      mode: resolvedBinaryGrid.mode,
+      slotsPerSecond: resolvedBinaryGrid.slotsPerSecond,
+      outputSampleRate: resolvedSampleRate,
+      metrics: resolvedBinaryGrid.metrics,
+    } : {
+      enabled: false,
+      mode: 'off',
+      slotsPerSecond: 0,
+      outputSampleRate: resolvedSampleRate,
+      metrics: resolvedBinaryGrid.metrics,
+    },
     summary: {
       min,
       max,
@@ -244,14 +342,17 @@ function buildBricksD40FilterV7({
   minBricks,
   maxBricks,
   brickInfluence,
+  binaryGrid,
 } = {}) {
   const built = buildResonanceD40FilterV6({ profile, cycleSeconds, userK, kCeiling });
+  const resolvedBinaryGrid = resolveV71BinaryGrid(binaryGrid);
+  const isBinaryGrid = resolvedBinaryGrid.enabled;
   return {
     ...built,
-    schema: BRICKS_D40_V7_SCHEMA,
-    method: V7_METHOD,
-    state: V7_STATE,
-    preset: V7_PRESET,
+    schema: isBinaryGrid ? BRICKS_D40_V71_SCHEMA : BRICKS_D40_V7_SCHEMA,
+    method: isBinaryGrid ? V71_METHOD : V7_METHOD,
+    state: isBinaryGrid ? V71_STATE : V7_STATE,
+    preset: isBinaryGrid ? V71_PRESET : V7_PRESET,
     bricks: {
       min: resolveV7MinBricks(minBricks),
       max: resolveV7MaxBricks(maxBricks),
@@ -262,12 +363,26 @@ function buildBricksD40FilterV7({
       heightFormula: 'height=0.55*energy+0.25*spectralHeight+0.20*phasePresence',
       allocation: 'activeBricks=round(min+(1-height)*(max-min))',
       support: 'folded=v6+(1-v6)*log1p(activeBricks*mgRatio)/log1p(maxBricks*mgRatio)*(1-height)*brickInfluence',
+      binaryGrid: isBinaryGrid ? {
+        enabled: true,
+        mode: resolvedBinaryGrid.mode,
+        slotsPerSecond: resolvedBinaryGrid.slotsPerSecond,
+        outputSampleRate: resolvedBinaryGrid.outputSampleRate,
+        metrics: resolvedBinaryGrid.metrics,
+      } : {
+        enabled: false,
+        mode: 'off',
+        slotsPerSecond: 0,
+        metrics: resolvedBinaryGrid.metrics,
+      },
     },
     safety: {
       ...built.safety,
       mgPhaseFixed: true,
       v6StableUntouched: true,
       brickCountMax: resolveV7MaxBricks(maxBricks),
+      binaryGridEnabled: isBinaryGrid,
+      binaryGridDoesNotChangeMgPhase: true,
     },
   };
 }
@@ -292,6 +407,7 @@ async function processBricksD40V7({
   const minBricks = resolveV7MinBricks(analysisOptions.minBricks);
   const maxBricks = resolveV7MaxBricks(analysisOptions.maxBricks);
   const brickInfluence = resolveV7BrickInfluence(analysisOptions.brickInfluence);
+  const binaryGrid = resolveV71BinaryGrid(analysisOptions.binaryGrid);
   const probedDuration = await probeAudioDurationSeconds(inputPath, { timeoutMs }).catch(() => 0);
   const analysisMaxSeconds = analysisOptions.maxSeconds
     || (probedDuration ? Math.min(900, probedDuration + 0.5) : undefined);
@@ -326,6 +442,7 @@ async function processBricksD40V7({
     minBricks,
     maxBricks,
     brickInfluence,
+    binaryGrid: binaryGrid.enabled ? binaryGrid.mode : 'off',
   });
   const envelopePath = buildBricksD40EnvelopePath(outputPath);
   writeFloat32MonoWav(envelopePath, automation.samples, automation.sampleRate);
@@ -349,6 +466,7 @@ async function processBricksD40V7({
       minBricks,
       maxBricks,
       brickInfluence,
+      binaryGrid: binaryGrid.enabled ? binaryGrid.mode : 'off',
     });
     await runFfmpeg(planned.args, { timeoutMs });
   } finally {
@@ -358,11 +476,11 @@ async function processBricksD40V7({
   }
 
   return {
-    method: V7_METHOD,
-    state: V7_STATE,
+    method: built.method,
+    state: built.state,
     profile: built.envelope.profile,
-    preset: V7_PRESET,
-    intensity: 'bricks-adaptive',
+    preset: built.preset,
+    intensity: binaryGrid.enabled ? 'binary-bricks-adaptive' : 'bricks-adaptive',
     d40: built.envelope.density,
     resonance: {
       userK,
@@ -383,6 +501,7 @@ async function processBricksD40V7({
       target0005Pi: TARGET_0005_PI,
       mgRatio: MG_PHASE_TARGET_RATIO,
       summary: automation.summary,
+      binaryGrid: automation.binaryGrid,
     },
     dynamic: {
       schema: analysis.schema,
@@ -394,6 +513,7 @@ async function processBricksD40V7({
         sampleRate: automation.sampleRate,
         durationSeconds: automation.durationSeconds,
         sampleCount: automation.sampleCount,
+        binaryGrid: automation.binaryGrid,
         summary: automation.summary,
       },
     },
@@ -436,20 +556,22 @@ function buildBricksD40PlanV7(options = {}) {
   const minBricks = resolveV7MinBricks(options.minBricks);
   const maxBricks = resolveV7MaxBricks(options.maxBricks);
   const brickInfluence = resolveV7BrickInfluence(options.brickInfluence);
+  const binaryGrid = resolveV71BinaryGrid(options.binaryGrid);
   const built = buildBricksD40FilterV7({
     userK,
     kCeiling,
     minBricks,
     maxBricks,
     brickInfluence,
+    binaryGrid: binaryGrid.enabled ? binaryGrid.mode : 'off',
     profile: options.profile || 'blend',
   });
   return {
-    schema: BRICKS_D40_V7_SCHEMA,
-    method: V7_METHOD,
-    state: V7_STATE,
+    schema: built.schema,
+    method: built.method,
+    state: built.state,
     profile: 'blend',
-    preset: V7_PRESET,
+    preset: built.preset,
     frameMs,
     maxSeconds,
     d40: built.envelope.density,
@@ -461,6 +583,7 @@ function buildBricksD40PlanV7(options = {}) {
       transferMode: 'mg-phase-brick-allocation',
       base: 'V6 Supreme wet ceiling, pitches and M/K ratio are preserved.',
       wetCeiling: built.wetCeiling,
+      binaryGrid: binaryGrid.enabled ? 'enabled' : 'off',
     },
     bricks: built.bricks,
     weights: {
@@ -501,13 +624,19 @@ function buildBricksD40PlanV7(options = {}) {
 
 module.exports = {
   BRICKS_D40_V7_SCHEMA,
+  BRICKS_D40_V71_SCHEMA,
+  V71_METHOD,
+  V71_PRESET,
+  V71_STATE,
   V7_METHOD,
   V7_PRESET,
   V7_STATE,
+  buildBinaryGridMetricsV71,
   buildBricksAutomationSamplesV7,
   buildBricksD40FilterV7,
   buildBricksD40PlanV7,
   processBricksD40V7,
+  resolveV71BinaryGrid,
   resolveV7BrickInfluence,
   resolveV7MaxBricks,
   resolveV7MinBricks,
