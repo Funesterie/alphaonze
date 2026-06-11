@@ -50,6 +50,12 @@ const {
   resolveLowGrainMultiplier,
   resolveV4WeightScale,
 } = require('../src/audio/double-harmonic-naked-v4.cjs');
+const {
+  buildLogD40FilterV5,
+  buildLogD40PlanV5,
+  resolveLogDimensionPairV5,
+  resolveV5WeightScale,
+} = require('../src/audio/double-harmonic-log-v5.cjs');
 
 function listen(app) {
   return new Promise((resolve) => {
@@ -133,6 +139,10 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(statusPayload.v4.weights.low, statusPayload.v4.weights.lowBase);
     assert.equal(Number(statusPayload.v4.weights.lowPitch.toFixed(12)), 0.738955471386);
     assert.equal(Number(statusPayload.v4.weights.highPitch.toFixed(12)), 2.475319049392);
+    assert.equal(statusPayload.v5.method, 'dry-first-log-d40-harmonic-overlay-v5');
+    assert.equal(statusPayload.v5.weights.weightScale, 2);
+    assert.equal(Number(statusPayload.v5.weights.lowPitch.toFixed(12)), 0.730205372411);
+    assert.equal(Number(statusPayload.v5.weights.highPitch.toFixed(12)), 1.329405380761);
 
     const v2 = await fetch(`${baseUrl}/api/double-harmonic/v2/status?smoothing=1%2Fe&frameMs=20`);
     const v2Payload = await v2.json();
@@ -335,6 +345,31 @@ test('naked d40 v4 keeps the validated D40 overlay without filters or final db c
   assert.equal(demoBoost.weightScale, 4);
   assert.equal(Number(demoBoost.highWeight.toFixed(12)), Number((built.highBaseWeight * 4).toFixed(12)));
   assert.equal(Number(demoBoost.lowWeight.toFixed(12)), Number((built.lowBaseWeight * 4).toFixed(12)));
+});
+
+test('log d40 v5 folds 3D with ln and defaults to clean x2', () => {
+  const dimensions = resolveLogDimensionPairV5();
+  const built = buildLogD40FilterV5({ profile: 'blend' });
+  const boosted = buildLogD40FilterV5({ profile: 'blend', weightScale: 99 });
+  const plan = buildLogD40PlanV5({ profile: 'blend' });
+
+  assert.equal(Number(dimensions.twoD.toFixed(12)), 1.369477735693);
+  assert.equal(Number(dimensions.threeD.toFixed(12)), 3.778795774729);
+  assert.equal(Number(dimensions.lowPitch.toFixed(12)), 0.730205372411);
+  assert.equal(Number(dimensions.highPitch.toFixed(12)), 1.329405380761);
+  assert.equal(dimensions.highFormula, 'ln(3D^2D)/2D');
+  assert.equal(dimensions.highEquivalent, 'ln(3D)');
+  assert.equal(resolveV5WeightScale(undefined), 2);
+  assert.equal(resolveV5WeightScale(99), 3);
+  assert.equal(built.weightScale, 2);
+  assert.equal(boosted.weightScale, 3);
+  assert.equal(plan.defaults.weightScale.default, 2);
+  assert.equal(plan.defaults.weightScale.max, 3);
+  assert.equal(Number((built.lowWeight / built.highWeight).toFixed(12)), Number(BALANCE_AUTO.toFixed(12)));
+  assert.match(built.filter, /rubberband=pitch=1\.329405380761:transients=crisp/);
+  assert.match(built.filter, /rubberband=pitch=0\.730205372411:transients=crisp/);
+  assert.doesNotMatch(built.filter, /alimiter/);
+  assert.doesNotMatch(built.filter, /highpass=/);
 });
 
 test('double harmonic route processes upload and exposes tokenized audio link', async () => {
@@ -691,6 +726,89 @@ test('double harmonic route emits https share links for public forwarded hosts',
     assert.equal(res.status, 200);
     assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v4\.flac$/);
     assert.match(payload.shareUrl, /^https:\/\/vivy\.funesterie\.me\/api\/double-harmonic\/out\/.+\.flac\?token=/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('double harmonic route publishes log d40 v5 as lossless flac by default', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-v5-process-'));
+  const calls = [];
+  const app = express();
+  app.use('/api/double-harmonic', createDoubleHarmonicRouter({
+    runtimeRoot,
+    processLogD40V5: async ({ outputPath, profile, analysisOptions }) => {
+      calls.push({
+        profile,
+        frameMs: analysisOptions.frameMs,
+        maxSegments: analysisOptions.maxSegments,
+        curve: analysisOptions.curve,
+        curveAmount: analysisOptions.curveAmount,
+        weightScale: analysisOptions.weightScale,
+      });
+      fs.writeFileSync(outputPath, Buffer.from('processed v5 flac'));
+      return {
+        method: 'dry-first-log-d40-harmonic-overlay-v5',
+        state: 'v5-release',
+        profile,
+        preset: 'log-3d-x2',
+        intensity: 'd40-log',
+        d40: resolveD40Density(),
+        dynamic: { summary: { frames: 8, weightMin: MIN_HARMONIC_INTENSITY, weightMax: MAX_HARMONIC_INTENSITY } },
+        weights: {
+          dry: 1,
+          ratio: BALANCE_AUTO,
+          weightScale: analysisOptions.weightScale || 2,
+          highPitch: 1.3294053807605832,
+          lowPitch: 0.7302053724108407,
+        },
+        safety: { noLimiter: true, noFinalGain: true, publicMaxWeightScale: 3 },
+      };
+    },
+    verifyJWT: (req, _res, next) => {
+      req.user = { email: 'djeff@example.test' };
+      next();
+    },
+  }));
+
+  const { server, baseUrl } = await listen(app);
+  try {
+    const form = new FormData();
+    form.append('audio', new Blob([Buffer.from('ID3demo')], { type: 'audio/mpeg' }), 'demo.mp3');
+    form.append('profile', 'blend');
+    form.append('frameMs', '250');
+    form.append('maxSegments', '64');
+    form.append('curve', 'grain-6d7d8d');
+    form.append('curveAmount', '0.3');
+    form.append('intensity', '2');
+    const res = await fetch(`${baseUrl}/api/double-harmonic/v5/process`, {
+      method: 'POST',
+      body: form,
+    });
+    const payload = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.method, 'dry-first-log-d40-harmonic-overlay-v5');
+    assert.equal(payload.state, 'v5-release');
+    assert.equal(payload.intensity, 'd40-log');
+    assert.equal(payload.contentType, 'audio/flac');
+    assert.equal(payload.weights.weightScale, 2);
+    assert.equal(Number(payload.weights.lowPitch.toFixed(12)), 0.730205372411);
+    assert.equal(Number(payload.weights.highPitch.toFixed(12)), 1.329405380761);
+    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v5\.flac$/);
+    assert.deepEqual(calls, [{
+      profile: 'blend',
+      frameMs: 250,
+      maxSegments: 64,
+      curve: 'grain-6d7d8d',
+      curveAmount: 0.3,
+      weightScale: 2,
+    }]);
+
+    const shared = await fetch(payload.shareUrl);
+    assert.equal(shared.status, 200);
+    assert.match(shared.headers.get('content-type') || '', /audio\/flac/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(runtimeRoot, { recursive: true, force: true });

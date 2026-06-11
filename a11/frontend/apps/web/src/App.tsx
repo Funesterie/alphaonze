@@ -2005,11 +2005,15 @@ const D40_V4_LOW_GRAIN_MULTIPLIER = 2;
 const D40_V4_HIGH_GRAIN_POWER = 3;
 const D40_V4_INTENSITY_MIN = 0.5;
 const D40_V4_INTENSITY_MAX = 4;
+const D40_V5_INTENSITY_MIN = 0.5;
+const D40_V5_INTENSITY_MAX = 3;
+const D40_V5_DEFAULT_INTENSITY = 2;
 const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v1: "V1 stable",
   v2: "V2 Release",
   v3: "V3 auto",
   v4: "V4 Stable",
+  v5: "V5 Release",
 };
 const D40_OUTPUT_FORMAT_LABELS: Record<DoubleHarmonicOutputFormat, string> = {
   flac: "FLAC master",
@@ -3517,9 +3521,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [voiceLearningMessage, setVoiceLearningMessage] = useState("");
   const [doubleHarmonicFile, setDoubleHarmonicFile] = useState<File | null>(null);
   const [doubleHarmonicFileName, setDoubleHarmonicFileName] = useState("");
-  const [doubleHarmonicMode, setDoubleHarmonicMode] = useState<DoubleHarmonicProcessMode>("v4");
+  const [doubleHarmonicMode, setDoubleHarmonicMode] = useState<DoubleHarmonicProcessMode>("v5");
   const [doubleHarmonicOutputFormat, setDoubleHarmonicOutputFormat] = useState<DoubleHarmonicOutputFormat>("flac");
-  const [doubleHarmonicIntensity, setDoubleHarmonicIntensity] = useState(1);
+  const [doubleHarmonicIntensity, setDoubleHarmonicIntensity] = useState(D40_V5_DEFAULT_INTENSITY);
   const [doubleHarmonicResult, setDoubleHarmonicResult] = useState<DoubleHarmonicProcessResult | null>(null);
   const [songSource, setSongSource] = useState(String(initialDraft.songSource || "Prompt +"));
   const [songArtists, setSongArtists] = useState<VivyStudioArtistId[]>(() => normalizeVivyStudioArtists(initialDraft.songArtists));
@@ -3538,18 +3542,30 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const doubleHarmonicIntensityLabel = `${doubleHarmonicIntensity.toFixed(2).replace(/\.?0+$/, "")}x`;
   const doubleHarmonicModeLabel = D40_PROCESS_MODE_LABELS[doubleHarmonicMode];
   const doubleHarmonicOutputFormatLabel = D40_OUTPUT_FORMAT_LABELS[doubleHarmonicOutputFormat];
-  const doubleHarmonicIntensityMin = doubleHarmonicMode === "v4" ? D40_V4_INTENSITY_MIN : D40_HARMONIC_INTENSITY_MIN;
-  const doubleHarmonicIntensityMax = doubleHarmonicMode === "v4" ? D40_V4_INTENSITY_MAX : D40_HARMONIC_INTENSITY_MAX;
-  const doubleHarmonicIntensityStep = doubleHarmonicMode === "v4" ? "0.05" : "0.005";
+  const doubleHarmonicIntensityMin = doubleHarmonicMode === "v5"
+    ? D40_V5_INTENSITY_MIN
+    : doubleHarmonicMode === "v4"
+      ? D40_V4_INTENSITY_MIN
+      : D40_HARMONIC_INTENSITY_MIN;
+  const doubleHarmonicIntensityMax = doubleHarmonicMode === "v5"
+    ? D40_V5_INTENSITY_MAX
+    : doubleHarmonicMode === "v4"
+      ? D40_V4_INTENSITY_MAX
+      : D40_HARMONIC_INTENSITY_MAX;
+  const doubleHarmonicIntensityStep = doubleHarmonicMode === "v4" || doubleHarmonicMode === "v5" ? "0.05" : "0.005";
   const doubleHarmonicUsesFixedWeight = doubleHarmonicMode === "v3";
   const doubleHarmonicWeightLabel = doubleHarmonicMode === "v3"
     ? "Auto"
+    : doubleHarmonicMode === "v5"
+      ? `${doubleHarmonicIntensityLabel} · bas 1/2D · haut ln(3D)`
+      : doubleHarmonicMode === "v4"
+        ? `${doubleHarmonicIntensityLabel} · grain bas x${D40_V4_LOW_GRAIN_MULTIPLIER} · haut ^${D40_V4_HIGH_GRAIN_POWER}`
+        : doubleHarmonicIntensityLabel;
+  const doubleHarmonicIntensityTitle = doubleHarmonicMode === "v5"
+    ? "Recette V5 Release"
     : doubleHarmonicMode === "v4"
-      ? `${doubleHarmonicIntensityLabel} · grain bas x${D40_V4_LOW_GRAIN_MULTIPLIER} · haut ^${D40_V4_HIGH_GRAIN_POWER}`
-      : doubleHarmonicIntensityLabel;
-  const doubleHarmonicIntensityTitle = doubleHarmonicMode === "v4"
-    ? "Recette V4 Stable"
-    : "Poids harmonique";
+      ? "Recette V4 Stable"
+      : "Poids harmonique";
 
   useEffect(() => {
     setDoubleHarmonicIntensity((current) => Math.max(
@@ -4647,17 +4663,21 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     disabled={!hasSession || isBusy}
                     onChange={(event) => {
                       const rawMode = event.currentTarget.value;
-                      const nextMode: DoubleHarmonicProcessMode = rawMode === "v4"
-                        ? "v4"
-                        : rawMode === "v3"
-                          ? "v3"
-                          : rawMode === "v2"
-                            ? "v2"
-                            : "v1";
+                      const nextMode: DoubleHarmonicProcessMode = rawMode === "v5"
+                        ? "v5"
+                        : rawMode === "v4"
+                          ? "v4"
+                          : rawMode === "v3"
+                            ? "v3"
+                            : rawMode === "v2"
+                              ? "v2"
+                              : "v1";
                       setDoubleHarmonicMode(nextMode);
+                      setDoubleHarmonicIntensity(nextMode === "v5" ? D40_V5_DEFAULT_INTENSITY : 1);
                       setDoubleHarmonicResult(null);
                     }}
                   >
+                    <option value="v5">V5 Release</option>
                     <option value="v1">V1 stable</option>
                     <option value="v2">V2 Release</option>
                     <option value="v3">V3 auto</option>
