@@ -34,15 +34,19 @@ const {
 const CLOSED_PHASE_D40_V8_SCHEMA = 'funesterie.audio.double-harmonic-closed-phase-d40.v8';
 const CLOSED_PHASE_D40_V8_PLUS_SCHEMA = 'funesterie.audio.double-harmonic-closed-phase-d40.v8-plus';
 const CLOSED_PHASE_D40_V8_PIVOT_SCHEMA = 'funesterie.audio.double-harmonic-closed-phase-d40.v8-pivot';
+const TURBO_D40_V9_SCHEMA = 'funesterie.audio.double-harmonic-turbo-d40.v9';
 const V8_METHOD = 'dry-first-centered-increment-mg-phase-1024-d40-harmonic-overlay-v8';
 const V8_PLUS_METHOD = 'dry-first-e2-grain-centered-increment-mg-phase-1024-d40-harmonic-overlay-v8-plus';
 const V8_PIVOT_METHOD = 'dry-first-pivot-1024-centered-increment-mg-phase-d40-harmonic-overlay-v8-pivot';
+const V9_TURBO_METHOD = 'dry-first-pivot-1024-vocal-safe-90ms-dynamic-weight-d40-harmonic-overlay-v9-turbo';
 const V8_STATE = 'v8-closed-phase-candidate';
 const V8_PLUS_STATE = 'v8-plus-e2-grain-listening-candidate';
 const V8_PIVOT_STATE = 'v8-pivot-1024-listening-validated';
+const V9_TURBO_STATE = 'v9-turbo-90ms-listening-validated';
 const V8_PRESET = 'v8-fermeture-1024-mg-phase-c7-k3';
 const V8_PLUS_PRESET = 'v8-plus-e2-grain-1024-mg-phase-c7-k3';
 const V8_PIVOT_PRESET = 'v8-pivot-1024-pivot-0292-mg-phase-c7-k3';
+const V9_TURBO_PRESET = 'v9-turbo-pivot-1024-vocal-safe-90ms-k3';
 const DEFAULT_V8_FRAME_MS = 250;
 const DEFAULT_V8_MAX_SEGMENTS = 2400;
 const DEFAULT_V8_CURVE = 'grain-6d7d8d';
@@ -51,6 +55,23 @@ const DEFAULT_V8_ATTACK = 0.78;
 const DEFAULT_V8_RELEASE = 0.32;
 const DEFAULT_V8_MIN_DB_SPAN = 8;
 const DEFAULT_V8_PHASE_SLOTS = 1024;
+const DEFAULT_V9_TURBO_FRAME_MS = 90;
+const DEFAULT_V9_TURBO_MAX_SEGMENTS = 12000;
+const DEFAULT_V9_TURBO_ATTACK = 0.9711111111111111;
+const DEFAULT_V9_TURBO_RELEASE = 0.7888888888888889;
+const V9_TURBO_TRANSITION = Object.freeze({
+  frameMs: DEFAULT_V9_TURBO_FRAME_MS,
+  riseScale: 12.333333333333334,
+  deltaScale: 9.333333333333334,
+  riseStable: 4.977777777777778,
+  deltaStable: 6.6,
+  riseBoost: 0.06055555555555556,
+  deltaBoost: 0.050555555555555555,
+  openGamma: 0.7422222222222222,
+  openFloor: 0.04111111111111111,
+  openRange: 0.6288888888888888,
+  openMax: 0.8755555555555555,
+});
 const MIN_V8_PHASE_SLOTS = 128;
 const MAX_V8_PHASE_SLOTS = 8192;
 const TWO_PI = 2 * Math.PI;
@@ -104,6 +125,17 @@ const V8_VARIANTS = Object.freeze({
     grainMode: 'pivot-1024-listening-validated',
     publicSummary: 'V8 Pivot: branche validee a l ecoute, produit ajuste pour 1024 exact et pivot 0.292 exact, fermeture mg_phase conservee.',
   }),
+  v9turbo: Object.freeze({
+    key: 'v9turbo',
+    schema: TURBO_D40_V9_SCHEMA,
+    method: V9_TURBO_METHOD,
+    state: V9_TURBO_STATE,
+    preset: V9_TURBO_PRESET,
+    intensity: 'vocal-safe-90ms-turbo-1024',
+    envelopeTag: 'v9-turbo-90ms',
+    grainMode: 'v9-turbo-pivot-1024-vocal-safe-90ms',
+    publicSummary: 'V9 Turbo: V8 Pivot valide, poids haut/bas dynamiques vocal-safe a 90 ms, fermeture 1024 et mg_phase conservees.',
+  }),
 });
 
 function numberText(value, digits = 12) {
@@ -127,7 +159,15 @@ function resolveV8Variant(value) {
   if (raw === 'pivot' || raw === 'v8pivot' || raw === 'v8pv' || raw === '1024pivot') {
     return V8_VARIANTS.v8pivot;
   }
+  if (raw === 'v9' || raw === 'v9turbo' || raw === 'turbo' || raw === 'v9t' || raw === '90' || raw === '90ms') {
+    return V8_VARIANTS.v9turbo;
+  }
   return V8_VARIANTS.v8;
+}
+
+function isPivotGrainVariant(variantValue) {
+  const variant = resolveV8Variant(variantValue);
+  return variant.key === 'v8pivot' || variant.key === 'v9turbo';
 }
 
 function buildV8PivotLock(low, high) {
@@ -151,12 +191,12 @@ function resolveV8GrainPair(variantValue) {
   const variant = resolveV8Variant(variantValue);
   const low = variant.key === 'v8plus'
     ? GRAIN_E2_LOW
-    : variant.key === 'v8pivot'
+    : isPivotGrainVariant(variant)
       ? GRAIN_PIVOT_LOW
       : GRAIN_SPECTRAL_LOW;
   const high = variant.key === 'v8plus'
     ? GRAIN_E2_HIGH
-    : variant.key === 'v8pivot'
+    : isPivotGrainVariant(variant)
       ? GRAIN_PIVOT_HIGH
       : GRAIN_SPECTRAL_HIGH;
   return {
@@ -194,9 +234,11 @@ function buildV8GrainResearch(variantValue) {
       productFormula: '100/(1024*mg_phase*(40.0005*pi))',
       deltaFormula: '0.9837777777777778 locks pivot to 0.292 through the 18-step bridge',
     },
-    recommendation: variant.key === 'v8pivot'
-      ? 'Promoted listening path: V8 Pivot keeps centered mg_phase closure and locks 1024 + pivot 0.292 together.'
-      : variant.key === 'v8plus'
+    recommendation: variant.key === 'v9turbo'
+      ? 'Promoted turbo path: V9 Turbo keeps V8 Pivot grain/closure and adds vocal-safe 90 ms dynamic high/low weights.'
+      : variant.key === 'v8pivot'
+        ? 'Promoted listening path: V8 Pivot keeps centered mg_phase closure and locks 1024 + pivot 0.292 together.'
+        : variant.key === 'v8plus'
         ? 'Grok path: compare e2 grain by ear beside locked V8; do not promote to canon yet.'
         : 'Locked V8 path: keep historical grain validated by listening.',
   };
@@ -384,7 +426,9 @@ function buildClosedPhaseMetricsV8(options = {}) {
   return {
     schema: variant.key === 'v8plus'
       ? 'funesterie.audio.double-harmonic-closed-phase-metrics.v8-plus'
-      : variant.key === 'v8pivot'
+      : variant.key === 'v9turbo'
+        ? 'funesterie.audio.double-harmonic-closed-phase-metrics.v9-turbo'
+      : isPivotGrainVariant(variant)
         ? 'funesterie.audio.double-harmonic-closed-phase-metrics.v8-pivot'
       : 'funesterie.audio.double-harmonic-closed-phase-metrics.v8',
     variant: variant.key,
@@ -569,6 +613,7 @@ function buildClosedPhaseD40FilterV8({
     grainHigh: grainPair.high,
   });
   const metrics = buildClosedPhaseMetricsV8({ variant, phaseSlots, c7PhaseScale });
+  const pivotGrain = isPivotGrainVariant(variant);
   return {
     ...built,
     schema: variant.schema,
@@ -583,12 +628,16 @@ function buildClosedPhaseD40FilterV8({
     phaseClosure: metrics.closure,
     resonanceMode: variant.key === 'v8plus'
       ? 'centered-phase-soft-fold-e2-grain'
-      : variant.key === 'v8pivot'
+      : variant.key === 'v9turbo'
+        ? 'centered-phase-soft-fold-pivot-1024-vocal-safe-90ms'
+      : pivotGrain
         ? 'centered-phase-soft-fold-pivot-1024'
         : 'centered-phase-soft-fold',
     transferMode: variant.key === 'v8plus'
       ? 'centered-increment-mg-phase-e2-grain-test'
-      : variant.key === 'v8pivot'
+      : variant.key === 'v9turbo'
+        ? 'centered-increment-mg-phase-pivot-1024-dynamic-high-low-90ms'
+      : pivotGrain
         ? 'centered-increment-mg-phase-pivot-1024'
         : 'centered-increment-mg-phase',
     safety: {
@@ -605,9 +654,12 @@ function buildClosedPhaseD40FilterV8({
       pivotResidualOldIsNotMgPhase: true,
       e2GrainCandidate: variant.key === 'v8plus',
       e2GrainNotCanon: variant.key === 'v8plus',
-      pivot1024Candidate: variant.key === 'v8pivot',
-      pivot1024ListeningValidated: variant.key === 'v8pivot',
-      exact1024AndPivot0292: variant.key === 'v8pivot',
+      pivot1024Candidate: pivotGrain,
+      pivot1024ListeningValidated: pivotGrain,
+      exact1024AndPivot0292: pivotGrain,
+      dynamicHighLowWeights: variant.key === 'v9turbo',
+      vocalSafe90ms: variant.key === 'v9turbo',
+      turbo90ListeningValidated: variant.key === 'v9turbo',
     },
   };
 }
@@ -645,6 +697,288 @@ function buildClosedPhaseD40ArgsV8({
       inputPath,
       '-i',
       envelopePath,
+      '-filter_complex',
+      built.filter,
+      '-map',
+      '[out]',
+      ...buildOutputCodecArgs(outputPath),
+      outputPath,
+    ],
+  };
+}
+
+function resolveV9TurboTransitionConfig(options = {}) {
+  return {
+    ...V9_TURBO_TRANSITION,
+    frameMs: clampNumber(options.frameMs, 50, 1000, DEFAULT_V9_TURBO_FRAME_MS),
+    riseScale: clampNumber(options.riseScale, 1, 32, V9_TURBO_TRANSITION.riseScale),
+    deltaScale: clampNumber(options.deltaScale, 1, 32, V9_TURBO_TRANSITION.deltaScale),
+    riseStable: clampNumber(options.riseStable, 0, 16, V9_TURBO_TRANSITION.riseStable),
+    deltaStable: clampNumber(options.deltaStable, 0, 16, V9_TURBO_TRANSITION.deltaStable),
+    riseBoost: clampNumber(options.riseBoost, 0, 0.25, V9_TURBO_TRANSITION.riseBoost),
+    deltaBoost: clampNumber(options.deltaBoost, 0, 0.25, V9_TURBO_TRANSITION.deltaBoost),
+    openGamma: clampNumber(options.openGamma, 0.25, 2, V9_TURBO_TRANSITION.openGamma),
+    openFloor: clampNumber(options.openFloor, 0, 0.5, V9_TURBO_TRANSITION.openFloor),
+    openRange: clampNumber(options.openRange, 0, 1, V9_TURBO_TRANSITION.openRange),
+    openMax: clampNumber(options.openMax, 0.1, 1, V9_TURBO_TRANSITION.openMax),
+  };
+}
+
+function lerpNumber(a, b, t) {
+  return a + ((b - a) * clampNumber(t, 0, 1, 0));
+}
+
+function buildV9TurboOpenProfile(force, phaseGate, rise) {
+  return {
+    high: clampNumber(1 + (0.18 * force) + (0.055 * phaseGate) + (0.07 * rise), 1.02, 1.30, 1.02),
+    low: clampNumber(1 - (0.070 * force) - (0.025 * rise), 0.88, 0.99, 0.99),
+  };
+}
+
+function buildV9TurboAirProfile(force, phaseGate, rise) {
+  return {
+    high: 1.035 * clampNumber(1 + (0.14 * force) + (0.020 * phaseGate) + (0.16 * rise), 1.01, 1.34, 1.01),
+    low: 0.985 * clampNumber(1 - (0.045 * force) - (0.040 * rise), 0.90, 1.00, 1.00),
+  };
+}
+
+function sampleV9TurboOpenBlend({ force, tension, rise, forceDelta, transition }) {
+  const stable = clampNumber(1 - (transition.riseStable * rise) - (transition.deltaStable * forceDelta), 0, 1, 0);
+  const midForce = clampNumber(1 - (Math.abs(force - 0.50) / 0.50), 0, 1, 0);
+  const voiceAffinity = clampNumber((0.56 * stable) + (0.28 * midForce) + (0.16 * (1 - tension)), 0, 1, 0);
+  const rawOpen = clampNumber(1 - voiceAffinity, 0, 1, 0);
+  const shapedOpen = rawOpen ** transition.openGamma;
+  const edgeBoost = (transition.riseBoost * rise) + (transition.deltaBoost * forceDelta);
+  return clampNumber(transition.openFloor + (transition.openRange * shapedOpen) + edgeBoost, 0, transition.openMax, 0);
+}
+
+function buildTurboAutomationSamplesV9({
+  analysis,
+  profile = 'blend',
+  cycleSeconds,
+  durationSeconds,
+  sampleRate,
+  userK,
+  kCeiling,
+  phaseSlots,
+  c7PhaseScale,
+  transition: transitionOptions,
+} = {}) {
+  const variant = resolveV8Variant('v9turbo');
+  const transition = resolveV9TurboTransitionConfig(transitionOptions);
+  const resolvedPhaseSlots = resolveV8PhaseSlots(phaseSlots);
+  const resolvedSampleRate = Math.round(clampNumber(sampleRate, MIN_V8_PHASE_SLOTS, MAX_V8_PHASE_SLOTS, resolvedPhaseSlots));
+  const fallbackDuration = Number(analysis?.summary?.durationSeconds || 1) || 1;
+  const duration = clampNumber(durationSeconds, 0.05, 7200, fallbackDuration);
+  const sampleCount = Math.max(1, Math.ceil(duration * resolvedSampleRate));
+  const highSamples = new Float32Array(sampleCount);
+  const lowSamples = new Float32Array(sampleCount);
+  const forces = new Float64Array(sampleCount);
+  const tensions = new Float64Array(sampleCount);
+  const c7Carriers = new Float64Array(sampleCount);
+  const folded = new Float64Array(sampleCount);
+  const d40Gains = new Float64Array(sampleCount);
+  const baseStats = makeStats();
+  const highStats = makeStats();
+  const lowStats = makeStats();
+  const foldedStats = makeStats();
+  const forceStats = makeStats();
+  const tensionStats = makeStats();
+  const phaseGateStats = makeStats();
+  const openBlendStats = makeStats();
+  const riseStats = makeStats();
+  const forceDeltaStats = makeStats();
+  const highMultiplierStats = makeStats();
+  const lowMultiplierStats = makeStats();
+  const highMultiplierStepStats = makeStats();
+  const lowMultiplierStepStats = makeStats();
+  const blockGapStats = makeStats();
+  const resolvedC7Scale = resolveV8C7PhaseScale(c7PhaseScale);
+  const blockSize = Math.max(1, resolvedPhaseSlots);
+  let blockCount = 0;
+
+  for (let index = 0; index < sampleCount; index += 1) {
+    const time = index / resolvedSampleRate;
+    const closed = sampleClosedPhaseV8At(analysis, time, {
+      variant,
+      userK,
+      kCeiling,
+      phaseSlots: resolvedPhaseSlots,
+    });
+    const d40 = sampleD40EnvelopeAt(time, { profile, periodSeconds: cycleSeconds });
+    forces[index] = closed.force;
+    tensions[index] = closed.tension || 0;
+    c7Carriers[index] = closed.c7Carrier;
+    folded[index] = closed.folded;
+    d40Gains[index] = d40.gain;
+    addStat(foldedStats, closed.folded);
+    addStat(forceStats, closed.force);
+    addStat(tensionStats, closed.tension || 0);
+  }
+
+  let previousFolded = folded[0] || 0;
+  let previousForce = forces[0] || 0;
+  let previousHighMultiplier = null;
+  let previousLowMultiplier = null;
+
+  for (let start = 0; start < sampleCount; start += blockSize) {
+    const end = Math.min(sampleCount, start + blockSize);
+    const closure = buildCenteredPhaseClosureV8({
+      forces: forces.subarray(start, end),
+      c7Carriers: c7Carriers.subarray(start, end),
+      c7PhaseScale: resolvedC7Scale,
+      includePhases: true,
+    });
+    blockCount += 1;
+    addStat(blockGapStats, Math.abs(closure.centered.closingGap));
+    for (let localIndex = 0; localIndex < end - start; localIndex += 1) {
+      const index = start + localIndex;
+      const phaseGate = 0.5 + (0.5 * Math.sin(closure.phases[localIndex] + PHI));
+      const base = d40Gains[index] * folded[index] * (0.72 + (0.28 * phaseGate));
+      const force = clampNumber(forces[index], 0, 1, 0);
+      const tension = clampNumber(tensions[index], 0, 1, 0);
+      const rise = clampNumber((folded[index] - previousFolded) * transition.riseScale, 0, 1, 0);
+      const forceDelta = clampNumber(Math.abs(force - previousForce) * transition.deltaScale, 0, 1, 0);
+      const openBlend = sampleV9TurboOpenBlend({ force, tension, rise, forceDelta, transition });
+      const open = buildV9TurboOpenProfile(force, phaseGate, rise);
+      const air = buildV9TurboAirProfile(force, phaseGate, rise);
+      const highMultiplier = lerpNumber(air.high, open.high, openBlend);
+      const lowMultiplier = lerpNumber(air.low, open.low, openBlend);
+      const highValue = base * highMultiplier;
+      const lowValue = base * lowMultiplier;
+
+      highSamples[index] = highValue;
+      lowSamples[index] = lowValue;
+      addStat(baseStats, base);
+      addStat(highStats, highValue);
+      addStat(lowStats, lowValue);
+      addStat(phaseGateStats, phaseGate);
+      addStat(openBlendStats, openBlend);
+      addStat(riseStats, rise);
+      addStat(forceDeltaStats, forceDelta);
+      addStat(highMultiplierStats, highMultiplier);
+      addStat(lowMultiplierStats, lowMultiplier);
+      if (previousHighMultiplier !== null) addStat(highMultiplierStepStats, Math.abs(highMultiplier - previousHighMultiplier));
+      if (previousLowMultiplier !== null) addStat(lowMultiplierStepStats, Math.abs(lowMultiplier - previousLowMultiplier));
+
+      previousFolded = folded[index];
+      previousForce = force;
+      previousHighMultiplier = highMultiplier;
+      previousLowMultiplier = lowMultiplier;
+    }
+  }
+
+  const probe = sampleD40EnvelopeAt(0, { profile, periodSeconds: cycleSeconds });
+  const canonical = buildClosedPhaseMetricsV8({
+    variant,
+    phaseSlots: resolvedPhaseSlots,
+    c7PhaseScale: resolvedC7Scale,
+  });
+  return {
+    mode: 'dual-wav-envelope',
+    variant: variant.key,
+    sampleRate: resolvedSampleRate,
+    durationSeconds: sampleCount / resolvedSampleRate,
+    sampleCount,
+    highSamples,
+    lowSamples,
+    profile: probe.profile,
+    period: probe.period,
+    density: probe.density,
+    transition,
+    phaseClosure: {
+      slots: resolvedPhaseSlots,
+      sampleRate: resolvedSampleRate,
+      blockSize,
+      blockCount,
+      c7PhaseScale: resolvedC7Scale,
+      canonical: canonical.closure,
+      blockClosingGap: finishStats(blockGapStats),
+    },
+    summary: {
+      base: finishStats(baseStats),
+      high: finishStats(highStats),
+      low: finishStats(lowStats),
+      folded: finishStats(foldedStats),
+      force: finishStats(forceStats),
+      tension: finishStats(tensionStats),
+      phaseGate: finishStats(phaseGateStats),
+      openBlend: finishStats(openBlendStats),
+      rise: finishStats(riseStats),
+      forceDelta: finishStats(forceDeltaStats),
+      highMultiplier: finishStats(highMultiplierStats),
+      lowMultiplier: finishStats(lowMultiplierStats),
+      highMultiplierStepDelta: finishStats(highMultiplierStepStats),
+      lowMultiplierStepDelta: finishStats(lowMultiplierStepStats),
+    },
+  };
+}
+
+function buildTurboEnvelopePathsV9(outputPath) {
+  const safeBase = path.basename(String(outputPath || 'd40-v9-turbo')).replace(/[^a-z0-9._-]+/gi, '_');
+  const dir = path.dirname(outputPath);
+  return {
+    high: path.join(dir, `.${safeBase}.v9-turbo-high-envelope.wav`),
+    low: path.join(dir, `.${safeBase}.v9-turbo-low-envelope.wav`),
+  };
+}
+
+function buildTurboD40FilterV9(options = {}) {
+  const built = buildClosedPhaseD40FilterV8({
+    ...options,
+    variant: 'v9turbo',
+  });
+  const rubberbandOptions = 'transients=crisp:detector=compound:phase=laminar:window=short:smoothing=on:formant=preserved:pitchq=consistency:channels=together';
+  return {
+    ...built,
+    filter: [
+      '[0:a]asplit=3[dry][h][l]',
+      '[1:a]aformat=sample_fmts=fltp:channel_layouts=mono[eh]',
+      '[2:a]aformat=sample_fmts=fltp:channel_layouts=mono[el]',
+      `[h]rubberband=pitch=${numberText(built.highPitch)}:${rubberbandOptions},volume=${numberText(built.highWeight)}:eval=frame[hb]`,
+      `[l]rubberband=pitch=${numberText(built.lowPitch)}:${rubberbandOptions},volume=${numberText(built.lowWeight)}:eval=frame[lb]`,
+      '[hb][eh]amultiply[ho]',
+      '[lb][el]amultiply[lo]',
+      "[dry][ho][lo]amix=inputs=3:weights='1 1 1':normalize=0[out]",
+    ].join(';'),
+  };
+}
+
+function buildTurboD40ArgsV9({
+  inputPath,
+  outputPath,
+  profile = 'blend',
+  cycleSeconds,
+  highEnvelopePath,
+  lowEnvelopePath,
+  userK,
+  kCeiling,
+  phaseSlots,
+  c7PhaseScale,
+} = {}) {
+  if (!highEnvelopePath) throw new Error('missing_high_envelope_path');
+  if (!lowEnvelopePath) throw new Error('missing_low_envelope_path');
+  const built = buildTurboD40FilterV9({
+    profile,
+    cycleSeconds,
+    userK,
+    kCeiling,
+    phaseSlots,
+    c7PhaseScale,
+  });
+  return {
+    built,
+    args: [
+      '-y',
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-i',
+      inputPath,
+      '-i',
+      highEnvelopePath,
+      '-i',
+      lowEnvelopePath,
       '-filter_complex',
       built.filter,
       '-map',
@@ -812,9 +1146,189 @@ async function processClosedPhaseD40V8({
   };
 }
 
+async function processTurboD40V9({
+  inputPath,
+  outputPath,
+  profile = 'blend',
+  timeoutMs,
+  analysisOptions = {},
+} = {}) {
+  if (!inputPath) throw new Error('missing_input_path');
+  if (!outputPath) throw new Error('missing_output_path');
+
+  const variant = resolveV8Variant('v9turbo');
+  const grainPair = resolveV8GrainPair(variant);
+  const transition = resolveV9TurboTransitionConfig({
+    ...analysisOptions,
+    frameMs: analysisOptions.frameMs || DEFAULT_V9_TURBO_FRAME_MS,
+  });
+  const userK = resolveV6UserK(
+    analysisOptions.userK
+    ?? analysisOptions.resonanceK
+    ?? analysisOptions.intensity
+    ?? analysisOptions.harmonicIntensity
+  );
+  const kCeiling = resolveV6KCeiling(analysisOptions.kCeiling);
+  const phaseSlots = resolveV8PhaseSlots(analysisOptions.phaseSlots || analysisOptions.binaryGridSlots);
+  const c7PhaseScale = resolveV8C7PhaseScale(analysisOptions.c7PhaseScale);
+  const probedDuration = await probeAudioDurationSeconds(inputPath, { timeoutMs }).catch(() => 0);
+  const analysisMaxSeconds = analysisOptions.maxSeconds
+    || (probedDuration ? Math.min(900, probedDuration + 0.5) : undefined);
+  const analysis = await analyzeDynamicWeightV3({
+    inputPath,
+    frameMs: transition.frameMs,
+    maxSeconds: analysisMaxSeconds,
+    maxSegments: analysisOptions.maxSegments || DEFAULT_V9_TURBO_MAX_SEGMENTS,
+    sampleRate: analysisOptions.sampleRate,
+    curve: analysisOptions.curve || DEFAULT_V8_CURVE,
+    curveAmount: analysisOptions.curveAmount ?? DEFAULT_V8_CURVE_AMOUNT,
+    attack: analysisOptions.attack ?? DEFAULT_V9_TURBO_ATTACK,
+    release: analysisOptions.release ?? DEFAULT_V9_TURBO_RELEASE,
+    minDbSpan: analysisOptions.minDbSpan || DEFAULT_V8_MIN_DB_SPAN,
+    grainLow: grainPair.low,
+    grainHigh: grainPair.high,
+    swapPitchGrain: true,
+    cycleSeconds: analysisOptions.cycleSeconds,
+    timeoutMs,
+  });
+  const durationSeconds = Math.max(
+    0.5,
+    Number(probedDuration) || 0,
+    Number(analysis.summary?.durationSeconds) || 0
+  ) + 0.25;
+  const automation = buildTurboAutomationSamplesV9({
+    analysis,
+    profile,
+    cycleSeconds: analysisOptions.cycleSeconds,
+    durationSeconds,
+    sampleRate: analysisOptions.automationSampleRate,
+    userK,
+    kCeiling,
+    phaseSlots,
+    c7PhaseScale,
+    transition,
+  });
+  const envelopePaths = buildTurboEnvelopePathsV9(outputPath);
+  writeFloat32MonoWav(envelopePaths.high, automation.highSamples, automation.sampleRate);
+  writeFloat32MonoWav(envelopePaths.low, automation.lowSamples, automation.sampleRate);
+
+  let built;
+  try {
+    const planned = buildTurboD40ArgsV9({
+      inputPath,
+      outputPath,
+      profile,
+      cycleSeconds: analysisOptions.cycleSeconds,
+      highEnvelopePath: envelopePaths.high,
+      lowEnvelopePath: envelopePaths.low,
+      userK,
+      kCeiling,
+      phaseSlots,
+      c7PhaseScale,
+    });
+    built = planned.built;
+    await runFfmpeg(planned.args, { timeoutMs });
+  } finally {
+    if (process.env.A11_DH_V9_KEEP_ENVELOPE !== '1') {
+      fs.rmSync(envelopePaths.high, { force: true });
+      fs.rmSync(envelopePaths.low, { force: true });
+    }
+  }
+
+  return {
+    method: built.method,
+    state: built.state,
+    variant: built.variant,
+    profile: built.envelope.profile,
+    preset: built.preset,
+    intensity: variant.intensity,
+    d40: built.envelope.density,
+    resonance: {
+      userK,
+      kCeiling,
+      ratioHighToLow: built.ratioHighToLow,
+      ratioFormula: built.dimensions.ratioFormula,
+      mode: built.resonanceMode,
+      transferMode: built.transferMode,
+      wetCeiling: built.wetCeiling,
+      highShare: built.highShare,
+      lowShare: built.lowShare,
+    },
+    operators: built.operators,
+    projection: built.projection,
+    grain: built.grain,
+    binaryGrid: built.binaryGrid,
+    phaseClosure: {
+      ...built.phaseClosure,
+      runtime: automation.phaseClosure,
+    },
+    dynamic: {
+      schema: analysis.schema,
+      frameMs: analysis.frameMs,
+      controls: analysis.controls,
+      summary: analysis.summary,
+      transition: automation.transition,
+      automation: {
+        mode: automation.mode,
+        sampleRate: automation.sampleRate,
+        durationSeconds: automation.durationSeconds,
+        sampleCount: automation.sampleCount,
+        phaseClosure: automation.phaseClosure,
+        summary: automation.summary,
+      },
+    },
+    weights: {
+      dry: 1,
+      highBase: built.highBaseWeight,
+      lowBase: built.lowBaseWeight,
+      baseTotal: built.baseTotalWeight,
+      wetCeiling: built.wetCeiling,
+      high: built.highWeight,
+      low: built.lowWeight,
+      ratio: built.highWeight / built.lowWeight,
+      ratioHighToLow: built.ratioHighToLow,
+      userK,
+      kCeiling,
+      grainMode: built.grain.mode,
+      transitionFrameMs: automation.transition.frameMs,
+      dynamicMin: automation.summary.base.min,
+      dynamicMax: automation.summary.base.max,
+      dynamicMean: automation.summary.base.mean,
+      highDynamicMin: automation.summary.high.min,
+      highDynamicMax: automation.summary.high.max,
+      highDynamicMean: automation.summary.high.mean,
+      lowDynamicMin: automation.summary.low.min,
+      lowDynamicMax: automation.summary.low.max,
+      lowDynamicMean: automation.summary.low.mean,
+      highMultiplierMean: automation.summary.highMultiplier.mean,
+      lowMultiplierMean: automation.summary.lowMultiplier.mean,
+      highMultiplierStepMean: automation.summary.highMultiplierStepDelta.mean,
+      lowMultiplierStepMean: automation.summary.lowMultiplierStepDelta.mean,
+      openBlendMean: automation.summary.openBlend.mean,
+      forceMin: automation.summary.force.min,
+      forceMax: automation.summary.force.max,
+      forceMean: automation.summary.force.mean,
+      phaseGateMin: automation.summary.phaseGate.min,
+      phaseGateMax: automation.summary.phaseGate.max,
+      phaseGateMean: automation.summary.phaseGate.mean,
+      highPitch: built.highPitch,
+      lowPitch: built.lowPitch,
+      dimensions: built.dimensions,
+      finalGainDb: 0,
+      finalLimiter: false,
+      filters: 'none',
+    },
+    safety: built.safety,
+  };
+}
+
 function buildClosedPhaseD40PlanV8(options = {}) {
   const variant = resolveV8Variant(options.variant);
-  const frameMs = clampNumber(options.frameMs, 50, 1000, DEFAULT_V8_FRAME_MS);
+  const isTurbo = variant.key === 'v9turbo';
+  const transition = isTurbo
+    ? resolveV9TurboTransitionConfig({ ...options, frameMs: options.frameMs || DEFAULT_V9_TURBO_FRAME_MS })
+    : null;
+  const frameMs = clampNumber(options.frameMs, 50, 1000, isTurbo ? DEFAULT_V9_TURBO_FRAME_MS : DEFAULT_V8_FRAME_MS);
   const maxSeconds = clampNumber(options.maxSeconds, 1, 900, 480);
   const userK = resolveV6UserK(options.userK ?? options.resonanceK ?? options.intensity ?? options.harmonicIntensity);
   const kCeiling = resolveV6KCeiling(options.kCeiling);
@@ -828,6 +1342,7 @@ function buildClosedPhaseD40PlanV8(options = {}) {
     c7PhaseScale,
     profile: options.profile || 'blend',
   });
+  const pivotGrain = isPivotGrainVariant(variant);
   return {
     schema: variant.schema,
     method: variant.method,
@@ -846,7 +1361,9 @@ function buildClosedPhaseD40PlanV8(options = {}) {
       transferMode: built.transferMode,
       base: variant.key === 'v8plus'
         ? 'V8 closure preserved, grain pair switched to e2 for parallel listening test.'
-        : variant.key === 'v8pivot'
+        : variant.key === 'v9turbo'
+          ? 'V8 Pivot closure and grain preserved, high/low branch weights get vocal-safe 90 ms dynamic envelopes.'
+        : pivotGrain
           ? 'V8 closure preserved, grain pair locks exact 1024 slots and pivot 0.292.'
         : 'V6 Supreme wet ceiling, pitches and M/K ratio are preserved.',
       wetCeiling: built.wetCeiling,
@@ -879,13 +1396,14 @@ function buildClosedPhaseD40PlanV8(options = {}) {
       kCeiling: 10,
       phaseSlots: DEFAULT_V8_PHASE_SLOTS,
       c7PhaseScale: C7_PHASE_SCALE,
-      frameMs: DEFAULT_V8_FRAME_MS,
-      maxSegments: DEFAULT_V8_MAX_SEGMENTS,
+      frameMs: isTurbo ? DEFAULT_V9_TURBO_FRAME_MS : DEFAULT_V8_FRAME_MS,
+      maxSegments: isTurbo ? DEFAULT_V9_TURBO_MAX_SEGMENTS : DEFAULT_V8_MAX_SEGMENTS,
       curve: DEFAULT_V8_CURVE,
       curveAmount: DEFAULT_V8_CURVE_AMOUNT,
-      attack: DEFAULT_V8_ATTACK,
-      release: DEFAULT_V8_RELEASE,
+      attack: isTurbo ? DEFAULT_V9_TURBO_ATTACK : DEFAULT_V8_ATTACK,
+      release: isTurbo ? DEFAULT_V9_TURBO_RELEASE : DEFAULT_V8_RELEASE,
       minDbSpan: DEFAULT_V8_MIN_DB_SPAN,
+      transition: transition || undefined,
     },
     safety: built.safety,
   };
@@ -902,6 +1420,14 @@ function buildClosedPhaseD40PlanV8Pivot(options = {}) {
   return buildClosedPhaseD40PlanV8({
     ...options,
     variant: 'v8pivot',
+  });
+}
+
+function buildTurboD40PlanV9(options = {}) {
+  return buildClosedPhaseD40PlanV8({
+    ...options,
+    frameMs: options.frameMs || DEFAULT_V9_TURBO_FRAME_MS,
+    variant: 'v9turbo',
   });
 }
 
@@ -931,6 +1457,10 @@ module.exports = {
   CLOSED_PHASE_D40_V8_SCHEMA,
   CLOSED_PHASE_D40_V8_PLUS_SCHEMA,
   CLOSED_PHASE_D40_V8_PIVOT_SCHEMA,
+  DEFAULT_V9_TURBO_FRAME_MS,
+  DEFAULT_V9_TURBO_MAX_SEGMENTS,
+  DEFAULT_V9_TURBO_ATTACK,
+  DEFAULT_V9_TURBO_RELEASE,
   GRAIN_E2_HIGH,
   GRAIN_E2_LOW,
   GRAIN_PIVOT_DELTA,
@@ -945,12 +1475,17 @@ module.exports = {
   V8_METHOD,
   V8_PLUS_METHOD,
   V8_PIVOT_METHOD,
+  V9_TURBO_METHOD,
   V8_PLUS_PRESET,
   V8_PLUS_STATE,
   V8_PIVOT_PRESET,
   V8_PIVOT_STATE,
+  V9_TURBO_PRESET,
+  V9_TURBO_STATE,
   V8_PRESET,
   V8_STATE,
+  V9_TURBO_TRANSITION,
+  TURBO_D40_V9_SCHEMA,
   buildClosedPhaseD40PlanV8Pivot,
   buildClosedPhaseD40PlanV8Plus,
   buildCenteredPhaseClosureV8,
@@ -961,10 +1496,16 @@ module.exports = {
   buildClosedPhaseMetricsV8,
   buildClosedPhaseOperatorsV8,
   buildD40StepProjectionV8,
+  buildTurboAutomationSamplesV9,
+  buildTurboD40ArgsV9,
+  buildTurboD40FilterV9,
+  buildTurboD40PlanV9,
   buildV8GrainResearch,
   processClosedPhaseD40V8,
   processClosedPhaseD40V8Pivot,
   processClosedPhaseD40V8Plus,
+  processTurboD40V9,
+  resolveV9TurboTransitionConfig,
   resolveV8C7PhaseScale,
   resolveV8GrainPair,
   resolveV8PhaseSlots,

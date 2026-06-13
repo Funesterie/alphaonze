@@ -1083,3 +1083,34 @@ avec `grainHigh - grainLow = 0.9837777777777778`, ce qui verrouille la relation
 de pivot de travail sur `0.292`. Validation utilisateur : V8 Pivot est la version
 a mettre en ligne. V8 Fermeture et V8 Plus e2 restent disponibles comme branches
 de comparaison.
+
+## 11. V9 Turbo 90 ms - 2026-06-14
+
+Après les tests d'aigus dynamiques, l'écoute retient la couleur `hybrid vocal-safe` :
+`open` aide l'instrumental, `air` respecte mieux la voix. La correction finale
+porte sur la vitesse de transition des poids haut/bas.
+
+Décision utilisateur : `90 ms` est la valeur exacte a publier en `V9 Turbo`.
+
+Principes conservés :
+
+```text
+grainLow  = 0.3694286611319218
+grainHigh = 1.3532064389096996
+slots     = 1024
+pivot     = 0.292
+mg_phase  = increment centre
+```
+
+Changement V9 :
+
+```text
+fenetre dynamique = 90 ms
+haut = enveloppe dynamique separee, profile open/air
+bas  = enveloppe dynamique separee, profile open/air
+stable/soutenu = tendance air
+dense/transitoire = tendance open
+```
+
+La chaine reste dry-first : pas d'EQ, pas de limiteur, pas de gain final.
+V8 Pivot reste disponible comme référence stable.

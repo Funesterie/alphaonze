@@ -85,12 +85,18 @@ const {
   V8_METHOD,
   V8_PLUS_METHOD,
   V8_PIVOT_METHOD,
+  V9_TURBO_METHOD,
+  V9_TURBO_STATE,
+  DEFAULT_V9_TURBO_FRAME_MS,
   buildClosedPhaseAutomationSamplesV8,
   buildClosedPhaseD40FilterV8,
   buildClosedPhaseD40PlanV8,
   buildClosedPhaseD40PlanV8Pivot,
   buildClosedPhaseD40PlanV8Plus,
   buildClosedPhaseMetricsV8,
+  buildTurboAutomationSamplesV9,
+  buildTurboD40FilterV9,
+  buildTurboD40PlanV9,
 } = require('../src/audio/double-harmonic-closed-phase-v8.cjs');
 
 function listen(app) {
@@ -226,6 +232,14 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(Number(statusPayload.v8pivot.grain.active.product.toFixed(15)), Number(GRAIN_PIVOT_PRODUCT_1024.toFixed(15)));
     assert.equal(Number(statusPayload.v8pivot.grain.active.pivot.toFixed(12)), GRAIN_PIVOT_TARGET);
     assert.ok(Math.abs(statusPayload.v8pivot.binaryGrid.measuredSlotsPerSecond - 1024) < 1e-9);
+    assert.equal(statusPayload.v9turbo.method, V9_TURBO_METHOD);
+    assert.equal(statusPayload.v9turbo.state, V9_TURBO_STATE);
+    assert.equal(statusPayload.v9turbo.variant, 'v9turbo');
+    assert.equal(statusPayload.v9turbo.frameMs, DEFAULT_V9_TURBO_FRAME_MS);
+    assert.equal(statusPayload.v9turbo.defaults.transition.frameMs, DEFAULT_V9_TURBO_FRAME_MS);
+    assert.equal(statusPayload.v9turbo.safety.dynamicHighLowWeights, true);
+    assert.equal(statusPayload.v9turbo.safety.vocalSafe90ms, true);
+    assert.equal(statusPayload.v9turbo.safety.turbo90ListeningValidated, true);
 
     const v2 = await fetch(`${baseUrl}/api/double-harmonic/v2/status?smoothing=1%2Fe&frameMs=20`);
     const v2Payload = await v2.json();
@@ -654,6 +668,43 @@ test('closed phase d40 v8 pivot locks 1024 slots and pivot 0.292', () => {
   assert.equal(automation.phaseClosure.slots, 1024);
   assert.match(built.filter, /rubberband=pitch=/);
   assert.match(built.filter, /amix=inputs=3:weights='1 1 1':normalize=0\[out\]/);
+});
+
+test('turbo d40 v9 keeps pivot closure and splits high low dynamic envelopes at 90 ms', () => {
+  const metrics = buildClosedPhaseMetricsV8({ variant: 'v9turbo', phaseSlots: 1024 });
+  const built = buildTurboD40FilterV9({ profile: 'blend', userK: 3 });
+  const plan = buildTurboD40PlanV9({ profile: 'blend' });
+  const automation = buildTurboAutomationSamplesV9({
+    analysis: { frames: [{ endTime: 1, normalizedEnergy: 0.6, curvedEnergy: 0.6, weightScale: 1 }], summary: { durationSeconds: 1 } },
+    durationSeconds: 1,
+    sampleRate: 1024,
+    userK: 3,
+  });
+
+  assert.equal(built.method, V9_TURBO_METHOD);
+  assert.equal(plan.state, V9_TURBO_STATE);
+  assert.equal(plan.variant, 'v9turbo');
+  assert.equal(plan.frameMs, DEFAULT_V9_TURBO_FRAME_MS);
+  assert.equal(plan.defaults.transition.frameMs, DEFAULT_V9_TURBO_FRAME_MS);
+  assert.equal(plan.safety.dynamicHighLowWeights, true);
+  assert.equal(plan.safety.vocalSafe90ms, true);
+  assert.equal(plan.safety.pivot1024ListeningValidated, true);
+  assert.equal(Number(plan.grain.active.low.toFixed(15)), Number(GRAIN_PIVOT_LOW.toFixed(15)));
+  assert.equal(Number(plan.grain.active.high.toFixed(15)), Number(GRAIN_PIVOT_HIGH.toFixed(15)));
+  assert.equal(Number(plan.grain.active.product.toFixed(15)), Number(GRAIN_PIVOT_PRODUCT_1024.toFixed(15)));
+  assert.ok(Math.abs(metrics.binaryGrid.measuredSlotsPerSecond - 1024) < 1e-9);
+  assert.ok(Math.abs(metrics.closure.centered.closingGap) < 1e-12);
+  assert.equal(automation.variant, 'v9turbo');
+  assert.equal(automation.mode, 'dual-wav-envelope');
+  assert.equal(automation.transition.frameMs, DEFAULT_V9_TURBO_FRAME_MS);
+  assert.equal(automation.highSamples.length, automation.lowSamples.length);
+  assert.equal(automation.phaseClosure.slots, 1024);
+  assert.ok(automation.summary.highMultiplier.mean > 1);
+  assert.ok(automation.summary.lowMultiplier.mean < 1);
+  assert.match(built.filter, /\[1:a\]aformat=.*\[eh\]/);
+  assert.match(built.filter, /\[2:a\]aformat=.*\[el\]/);
+  assert.match(built.filter, /amix=inputs=3:weights='1 1 1':normalize=0\[out\]/);
+  assert.doesNotMatch(built.filter, /alimiter/);
 });
 
 test('double harmonic route processes upload and exposes tokenized audio link', async () => {
@@ -1638,6 +1689,128 @@ test('double harmonic route publishes closed phase d40 v8 pivot with exact 1024 
     assert.equal(payload.safety.exact1024AndPivot0292, true);
     assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v8pivot\.flac$/);
     assert.deepEqual(calls, [{ profile: 'blend', userK: 5, phaseSlots: 1024 }]);
+
+    const shared = await fetch(payload.shareUrl);
+    assert.equal(shared.status, 200);
+    assert.match(shared.headers.get('content-type') || '', /audio\/flac/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('double harmonic route publishes turbo d40 v9 at locked 90 ms', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-v9turbo-process-'));
+  const calls = [];
+  const app = express();
+  app.use('/api/double-harmonic', createDoubleHarmonicRouter({
+    runtimeRoot,
+    processTurboD40V9: async ({ outputPath, profile, analysisOptions }) => {
+      calls.push({
+        profile,
+        frameMs: analysisOptions.frameMs,
+        userK: analysisOptions.userK,
+        phaseSlots: analysisOptions.phaseSlots,
+      });
+      fs.writeFileSync(outputPath, Buffer.from('processed v9 turbo flac'));
+      return {
+        method: V9_TURBO_METHOD,
+        state: V9_TURBO_STATE,
+        variant: 'v9turbo',
+        profile,
+        preset: 'v9-turbo-pivot-1024-vocal-safe-90ms-k3',
+        intensity: 'vocal-safe-90ms-turbo-1024',
+        d40: resolveD40Density(),
+        resonance: {
+          userK: analysisOptions.userK || 3,
+          kCeiling: 10,
+          transferMode: 'centered-increment-mg-phase-pivot-1024-dynamic-high-low-90ms',
+        },
+        grain: {
+          mode: 'v9-turbo-pivot-1024-vocal-safe-90ms',
+          active: {
+            low: GRAIN_PIVOT_LOW,
+            high: GRAIN_PIVOT_HIGH,
+            product: GRAIN_PIVOT_LOW * GRAIN_PIVOT_HIGH,
+            product1024Target: GRAIN_PIVOT_PRODUCT_1024,
+            pivot: GRAIN_PIVOT_TARGET,
+          },
+        },
+        binaryGrid: {
+          grainProduct: GRAIN_PIVOT_LOW * GRAIN_PIVOT_HIGH,
+          measuredSlotsPerSecond: 1024,
+          measuredGapTo1024: 0,
+        },
+        phaseClosure: {
+          slots: 1024,
+          centered: { closingGap: 0 },
+          runtime: { slots: 1024 },
+        },
+        dynamic: {
+          frameMs: 90,
+          transition: { frameMs: 90 },
+          automation: {
+            mode: 'dual-wav-envelope',
+            sampleRate: 1024,
+            summary: {
+              highMultiplier: { mean: 1.085 },
+              lowMultiplier: { mean: 0.974 },
+            },
+          },
+        },
+        weights: {
+          dry: 1,
+          transitionFrameMs: 90,
+          highMultiplierMean: 1.085,
+          lowMultiplierMean: 0.974,
+          highPitch: 1.8898397614034042,
+          lowPitch: 0.6847143305659609,
+        },
+        safety: {
+          noLimiter: true,
+          noFinalGain: true,
+          mgPhaseFixed: true,
+          noDirectMgOffset: true,
+          centeredIncrements: true,
+          dynamicHighLowWeights: true,
+          vocalSafe90ms: true,
+          turbo90ListeningValidated: true,
+          pivot1024ListeningValidated: true,
+          exact1024AndPivot0292: true,
+        },
+      };
+    },
+    verifyJWT: (req, _res, next) => {
+      req.user = { email: 'djeff@example.test' };
+      next();
+    },
+  }));
+
+  const { server, baseUrl } = await listen(app);
+  try {
+    const form = new FormData();
+    form.append('audio', new Blob([Buffer.from('ID3demo')], { type: 'audio/mpeg' }), 'demo.mp3');
+    form.append('profile', 'blend');
+    form.append('intensity', '5');
+    form.append('phaseSlots', '1024');
+    form.append('frameMs', '250');
+    const res = await fetch(`${baseUrl}/api/double-harmonic/v9turbo/process`, {
+      method: 'POST',
+      body: form,
+    });
+    const payload = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.method, V9_TURBO_METHOD);
+    assert.equal(payload.state, V9_TURBO_STATE);
+    assert.equal(payload.variant, 'v9turbo');
+    assert.equal(payload.intensity, 'vocal-safe-90ms-turbo-1024');
+    assert.equal(payload.dynamic.transition.frameMs, DEFAULT_V9_TURBO_FRAME_MS);
+    assert.equal(payload.weights.transitionFrameMs, DEFAULT_V9_TURBO_FRAME_MS);
+    assert.equal(payload.safety.dynamicHighLowWeights, true);
+    assert.equal(payload.safety.vocalSafe90ms, true);
+    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v9turbo\.flac$/);
+    assert.deepEqual(calls, [{ profile: 'blend', frameMs: 90, userK: 5, phaseSlots: 1024 }]);
 
     const shared = await fetch(payload.shareUrl);
     assert.equal(shared.status, 200);
