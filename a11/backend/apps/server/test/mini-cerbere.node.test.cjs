@@ -190,6 +190,67 @@ test('mini cerbere local-only runtime ignores remote primary and external fallba
   assert.match(targets[0].url, /a11-ollama:11434/);
 });
 
+test('mini cerbere adds Groq after local when runtime fallback order requests it', async () => {
+  const calls = [];
+  const runtime = createMiniCerbereRuntime({
+    env: {
+      A11_LLM_PROVIDER: 'ollama',
+      A11_LLM_FALLBACK_PROVIDER: 'groq',
+      A11_LLM_RUNTIME_FALLBACK_ORDER: 'ollama,groq',
+      A11_CERBERE_LOCAL_ONLY: 'false',
+      LOCAL_DEFAULT_MODEL: 'llama3.2:3b',
+      GROQ_API_KEY: 'groq-test-key',
+      A11_CERBERE_GROQ_MODEL: 'llama-3.3-70b-versatile',
+      A11_LOCAL_CHAT_TIMEOUT_MS: '20000',
+    },
+    requestChatUpstream: async (url, body, options) => {
+      calls.push({ url, body, options });
+      if (url.includes('a11-ollama')) {
+        const error = new Error('timeout of 20000ms exceeded');
+        error.code = 'ECONNABORTED';
+        throw error;
+      }
+      return {
+        upstreamRes: { status: 200 },
+        data: { choices: [{ message: { role: 'assistant', content: 'ok groq' } }] },
+      };
+    },
+    getLocalCompletionsUrl: () => 'http://a11-ollama:11434/v1/chat/completions',
+    logger: { warn() {} },
+  });
+
+  const targets = runtime._buildTargets({
+    provider: 'local',
+    upstreamUrl: 'http://a11-ollama:11434/v1/chat/completions',
+    upstreamBody: {
+      model: 'llama3.2:3b',
+      messages: [{ role: 'user', content: 'salut' }],
+    },
+  });
+
+  assert.deepEqual(targets.map((target) => target.role), ['primary', 'fallback-groq']);
+  assert.match(targets[1].url, /api\.groq\.com\/openai\/v1\/chat\/completions/);
+  assert.equal(targets[1].model, 'llama-3.3-70b-versatile');
+
+  const result = await runtime.requestChat({
+    provider: 'local',
+    upstreamUrl: 'http://a11-ollama:11434/v1/chat/completions',
+    upstreamBody: {
+      model: 'llama3.2:3b',
+      messages: [{ role: 'user', content: 'salut' }],
+    },
+    reqHeaders: {},
+    requestId: 'local-to-groq-fallback-test',
+  });
+
+  assert.equal(result.target.role, 'fallback-groq');
+  assert.equal(calls.length, 2);
+  assert.match(calls[0].url, /a11-ollama/);
+  assert.match(calls[1].url, /api\.groq\.com/);
+  assert.equal(calls[1].options.apiKey, 'groq-test-key');
+  assert.equal(calls[1].options.timeout, 25_000);
+});
+
 test('mini cerbere adds Janus Llama Pro fallback for vision requests', () => {
   const runtime = createMiniCerbereRuntime({
     env: {

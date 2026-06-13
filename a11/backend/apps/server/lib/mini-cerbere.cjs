@@ -2,6 +2,8 @@
 
 const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
+const DEFAULT_GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
+const DEFAULT_GROQ_MODEL = 'llama-3.3-70b-versatile';
 const DEFAULT_TOGETHER_BASE_URL = 'https://api.together.xyz/v1';
 const DEFAULT_TOGETHER_MODEL = 'meta-llama/Llama-3.3-70B-Instruct-Turbo';
 const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com/v1';
@@ -74,6 +76,34 @@ function addOpenAiCompatibleTarget(targets, {
   };
   target.id = makeTargetId(target);
   targets.push(target);
+}
+
+function getGroqApiKey(env = process.env) {
+  return firstConfiguredValue(
+    env.A11_CERBERE_GROQ_API_KEY,
+    env.A11_GROQ_API_KEY,
+    env.GROQ_API_KEY
+  );
+}
+
+function shouldAddGroqFallback(env = process.env) {
+  const fallbackProvider = String(env.A11_LLM_FALLBACK_PROVIDER || '').trim().toLowerCase();
+  const order = parseProviderOrder(env.A11_LLM_RUNTIME_FALLBACK_ORDER);
+  return fallbackProvider === 'groq' || order.includes('groq');
+}
+
+function addGroqTarget(targets, {
+  env = process.env,
+  upstreamBody = {},
+} = {}) {
+  if (!shouldAddGroqFallback(env)) return;
+  addOpenAiCompatibleTarget(targets, {
+    role: 'fallback-groq',
+    baseUrl: env.A11_CERBERE_GROQ_BASE_URL || env.GROQ_BASE_URL || DEFAULT_GROQ_BASE_URL,
+    authToken: getGroqApiKey(env),
+    model: env.A11_CERBERE_GROQ_MODEL || env.GROQ_MODEL || DEFAULT_GROQ_MODEL,
+    upstreamBody,
+  });
 }
 
 function parseProviderOrder(value = '') {
@@ -525,6 +555,11 @@ function buildChatTargets({
     }
   }
 
+  addGroqTarget(targets, {
+    env,
+    upstreamBody,
+  });
+
   if (primaryProvider !== 'local') {
     addLocalTarget(targets, {
       role: 'fallback-local',
@@ -827,6 +862,7 @@ function createMiniCerbereRuntime({
         ).trim(),
         together: !!String(env.A11_CERBERE_TOGETHER_API_KEY || env.TOGETHER_API_KEY || '').trim(),
         deepseek: !!String(env.A11_CERBERE_DEEPSEEK_API_KEY || env.DEEPSEEK_API_KEY || '').trim(),
+        groq: !!getGroqApiKey(env),
         llamaPro: getLlamaProStatus(env),
       },
       openAiDirectConfigured: !!String(
