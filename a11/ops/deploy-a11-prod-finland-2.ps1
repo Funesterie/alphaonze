@@ -516,10 +516,10 @@ services:
       A11_OLLAMA_FALLBACK_MODEL: llama3.2:3b
       A11_TRANSLATION_MODEL: llama3.2:3b
       LOCAL_DEFAULT_MODEL: llama3.2:3b
-      A11_LLM_FALLBACK_PROVIDER: ollama
-      A11_LLM_RUNTIME_FALLBACK_ORDER: ollama
-      A11_CERBERE_LOCAL_ONLY: "true"
-      A11_LOCAL_CHAT_TIMEOUT_MS: "35000"
+      A11_LLM_FALLBACK_PROVIDER: groq
+      A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,groq
+      A11_CERBERE_LOCAL_ONLY: "false"
+      A11_LOCAL_CHAT_TIMEOUT_MS: "20000"
       A11_OLLAMA_KEEP_ALIVE: "30m"
       A11_MEMORY_LOCAL_TIMEOUT_MS: "3500"
       A11_MEMORY_REMOTE_TIMEOUT_MS: "5000"
@@ -607,10 +607,10 @@ services:
       A11_OLLAMA_FALLBACK_MODEL: llama3.2:3b
       A11_TRANSLATION_MODEL: llama3.2:3b
       LOCAL_DEFAULT_MODEL: llama3.2:3b
-      A11_LLM_FALLBACK_PROVIDER: ollama
-      A11_LLM_RUNTIME_FALLBACK_ORDER: ollama
-      A11_CERBERE_LOCAL_ONLY: "true"
-      A11_LOCAL_CHAT_TIMEOUT_MS: "35000"
+      A11_LLM_FALLBACK_PROVIDER: groq
+      A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,groq
+      A11_CERBERE_LOCAL_ONLY: "false"
+      A11_LOCAL_CHAT_TIMEOUT_MS: "20000"
       A11_OLLAMA_KEEP_ALIVE: "30m"
       A11_MEMORY_LOCAL_TIMEOUT_MS: "3500"
       A11_MEMORY_REMOTE_TIMEOUT_MS: "5000"
@@ -1028,10 +1028,10 @@ $overrides = [ordered]@{
   A11_CERBERE_OPENAI_API_KEY = $(if ($mcpEnvMap.Contains("OPENROUTER_API_KEY") -and -not [string]::IsNullOrWhiteSpace($mcpEnvMap["OPENROUTER_API_KEY"])) { $mcpEnvMap["OPENROUTER_API_KEY"] } elseif ($envMap.Contains("OPENROUTER_API_KEY")) { $envMap["OPENROUTER_API_KEY"] } else { "" })
   LOCAL_DEFAULT_MODEL = "llama3.2:3b"
   A11_CERBERE_PREFER_NON_GROQ = "false"
-  A11_LLM_FALLBACK_PROVIDER = "ollama"
-  A11_LLM_RUNTIME_FALLBACK_ORDER = "ollama"
-  A11_CERBERE_LOCAL_ONLY = "true"
-  A11_LOCAL_CHAT_TIMEOUT_MS = "35000"
+  A11_LLM_FALLBACK_PROVIDER = "groq"
+  A11_LLM_RUNTIME_FALLBACK_ORDER = "ollama,groq"
+  A11_CERBERE_LOCAL_ONLY = "false"
+  A11_LOCAL_CHAT_TIMEOUT_MS = "20000"
   A11_OLLAMA_KEEP_ALIVE = "30m"
   A11_MEMORY_LOCAL_TIMEOUT_MS = "3500"
   A11_MEMORY_REMOTE_TIMEOUT_MS = "5000"
@@ -1270,10 +1270,10 @@ printf 'A11_OLLAMA_PRIMARY_MODEL=llama3.2:3b\n' >> "$tmp_build"
 printf 'A11_OLLAMA_FALLBACK_MODEL=llama3.2:3b\n' >> "$tmp_build"
 printf 'A11_TRANSLATION_MODEL=llama3.2:3b\n' >> "$tmp_build"
 printf 'LOCAL_DEFAULT_MODEL=llama3.2:3b\n' >> "$tmp_build"
-printf 'A11_LLM_FALLBACK_PROVIDER=ollama\n' >> "$tmp_build"
-printf 'A11_LLM_RUNTIME_FALLBACK_ORDER=ollama\n' >> "$tmp_build"
-printf 'A11_CERBERE_LOCAL_ONLY=true\n' >> "$tmp_build"
-printf 'A11_LOCAL_CHAT_TIMEOUT_MS=35000\n' >> "$tmp_build"
+printf 'A11_LLM_FALLBACK_PROVIDER=groq\n' >> "$tmp_build"
+printf 'A11_LLM_RUNTIME_FALLBACK_ORDER=ollama,groq\n' >> "$tmp_build"
+printf 'A11_CERBERE_LOCAL_ONLY=false\n' >> "$tmp_build"
+printf 'A11_LOCAL_CHAT_TIMEOUT_MS=20000\n' >> "$tmp_build"
 printf 'A11_OLLAMA_KEEP_ALIVE=30m\n' >> "$tmp_build"
 printf 'A11_MEMORY_LOCAL_TIMEOUT_MS=3500\n' >> "$tmp_build"
 printf 'A11_MEMORY_REMOTE_TIMEOUT_MS=5000\n' >> "$tmp_build"
