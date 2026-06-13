@@ -38,15 +38,15 @@ const TURBO_D40_V9_SCHEMA = 'funesterie.audio.double-harmonic-turbo-d40.v9';
 const V8_METHOD = 'dry-first-centered-increment-mg-phase-1024-d40-harmonic-overlay-v8';
 const V8_PLUS_METHOD = 'dry-first-e2-grain-centered-increment-mg-phase-1024-d40-harmonic-overlay-v8-plus';
 const V8_PIVOT_METHOD = 'dry-first-pivot-1024-centered-increment-mg-phase-d40-harmonic-overlay-v8-pivot';
-const V9_TURBO_METHOD = 'dry-first-pivot-1024-vocal-safe-90ms-dynamic-weight-d40-harmonic-overlay-v9-turbo';
+const V9_TURBO_METHOD = 'dry-first-pivot-1024-vocal-safe-96ms-dynamic-weight-d40-harmonic-overlay-v9-turbo';
 const V8_STATE = 'v8-closed-phase-candidate';
 const V8_PLUS_STATE = 'v8-plus-e2-grain-listening-candidate';
 const V8_PIVOT_STATE = 'v8-pivot-1024-listening-validated';
-const V9_TURBO_STATE = 'v9-turbo-90ms-listening-validated';
+const V9_TURBO_STATE = 'v9-turbo-96ms-listening-validated';
 const V8_PRESET = 'v8-fermeture-1024-mg-phase-c7-k3';
 const V8_PLUS_PRESET = 'v8-plus-e2-grain-1024-mg-phase-c7-k3';
 const V8_PIVOT_PRESET = 'v8-pivot-1024-pivot-0292-mg-phase-c7-k3';
-const V9_TURBO_PRESET = 'v9-turbo-pivot-1024-vocal-safe-90ms-k3';
+const V9_TURBO_PRESET = 'v9-turbo-pivot-1024-vocal-safe-96ms-k3';
 const DEFAULT_V8_FRAME_MS = 250;
 const DEFAULT_V8_MAX_SEGMENTS = 2400;
 const DEFAULT_V8_CURVE = 'grain-6d7d8d';
@@ -55,22 +55,22 @@ const DEFAULT_V8_ATTACK = 0.78;
 const DEFAULT_V8_RELEASE = 0.32;
 const DEFAULT_V8_MIN_DB_SPAN = 8;
 const DEFAULT_V8_PHASE_SLOTS = 1024;
-const DEFAULT_V9_TURBO_FRAME_MS = 90;
+const DEFAULT_V9_TURBO_FRAME_MS = 96;
 const DEFAULT_V9_TURBO_MAX_SEGMENTS = 12000;
-const DEFAULT_V9_TURBO_ATTACK = 0.9711111111111111;
-const DEFAULT_V9_TURBO_RELEASE = 0.7888888888888889;
+const DEFAULT_V9_TURBO_ATTACK = 0.9656;
+const DEFAULT_V9_TURBO_RELEASE = 0.7704;
 const V9_TURBO_TRANSITION = Object.freeze({
   frameMs: DEFAULT_V9_TURBO_FRAME_MS,
-  riseScale: 12.333333333333334,
-  deltaScale: 9.333333333333334,
-  riseStable: 4.977777777777778,
-  deltaStable: 6.6,
-  riseBoost: 0.06055555555555556,
-  deltaBoost: 0.050555555555555555,
-  openGamma: 0.7422222222222222,
-  openFloor: 0.04111111111111111,
-  openRange: 0.6288888888888888,
-  openMax: 0.8755555555555555,
+  riseScale: 11.936,
+  deltaScale: 8.936,
+  riseStable: 4.848,
+  deltaStable: 6.36,
+  riseBoost: 0.0578,
+  deltaBoost: 0.0478,
+  openGamma: 0.756,
+  openFloor: 0.0416,
+  openRange: 0.6344,
+  openMax: 0.8728,
 });
 const MIN_V8_PHASE_SLOTS = 128;
 const MAX_V8_PHASE_SLOTS = 8192;
@@ -131,10 +131,10 @@ const V8_VARIANTS = Object.freeze({
     method: V9_TURBO_METHOD,
     state: V9_TURBO_STATE,
     preset: V9_TURBO_PRESET,
-    intensity: 'vocal-safe-90ms-turbo-1024',
-    envelopeTag: 'v9-turbo-90ms',
-    grainMode: 'v9-turbo-pivot-1024-vocal-safe-90ms',
-    publicSummary: 'V9 Turbo: V8 Pivot valide, poids haut/bas dynamiques vocal-safe a 90 ms, fermeture 1024 et mg_phase conservees.',
+    intensity: 'vocal-safe-96ms-turbo-1024',
+    envelopeTag: 'v9-turbo-96ms',
+    grainMode: 'v9-turbo-pivot-1024-vocal-safe-96ms',
+    publicSummary: 'V9 Turbo: V8 Pivot valide, poids haut/bas dynamiques vocal-safe a 96 ms, fermeture 1024 et mg_phase conservees.',
   }),
 });
 
@@ -159,7 +159,7 @@ function resolveV8Variant(value) {
   if (raw === 'pivot' || raw === 'v8pivot' || raw === 'v8pv' || raw === '1024pivot') {
     return V8_VARIANTS.v8pivot;
   }
-  if (raw === 'v9' || raw === 'v9turbo' || raw === 'turbo' || raw === 'v9t' || raw === '90' || raw === '90ms') {
+  if (raw === 'v9' || raw === 'v9turbo' || raw === 'turbo' || raw === 'v9t' || raw === '96' || raw === '96ms') {
     return V8_VARIANTS.v9turbo;
   }
   return V8_VARIANTS.v8;
@@ -235,7 +235,7 @@ function buildV8GrainResearch(variantValue) {
       deltaFormula: '0.9837777777777778 locks pivot to 0.292 through the 18-step bridge',
     },
     recommendation: variant.key === 'v9turbo'
-      ? 'Promoted turbo path: V9 Turbo keeps V8 Pivot grain/closure and adds vocal-safe 90 ms dynamic high/low weights.'
+      ? 'Promoted turbo path: V9 Turbo keeps V8 Pivot grain/closure and adds vocal-safe 96 ms dynamic high/low weights.'
       : variant.key === 'v8pivot'
         ? 'Promoted listening path: V8 Pivot keeps centered mg_phase closure and locks 1024 + pivot 0.292 together.'
         : variant.key === 'v8plus'
@@ -629,14 +629,14 @@ function buildClosedPhaseD40FilterV8({
     resonanceMode: variant.key === 'v8plus'
       ? 'centered-phase-soft-fold-e2-grain'
       : variant.key === 'v9turbo'
-        ? 'centered-phase-soft-fold-pivot-1024-vocal-safe-90ms'
+        ? 'centered-phase-soft-fold-pivot-1024-vocal-safe-96ms'
       : pivotGrain
         ? 'centered-phase-soft-fold-pivot-1024'
         : 'centered-phase-soft-fold',
     transferMode: variant.key === 'v8plus'
       ? 'centered-increment-mg-phase-e2-grain-test'
       : variant.key === 'v9turbo'
-        ? 'centered-increment-mg-phase-pivot-1024-dynamic-high-low-90ms'
+        ? 'centered-increment-mg-phase-pivot-1024-dynamic-high-low-96ms'
       : pivotGrain
         ? 'centered-increment-mg-phase-pivot-1024'
         : 'centered-increment-mg-phase',
@@ -658,8 +658,8 @@ function buildClosedPhaseD40FilterV8({
       pivot1024ListeningValidated: pivotGrain,
       exact1024AndPivot0292: pivotGrain,
       dynamicHighLowWeights: variant.key === 'v9turbo',
-      vocalSafe90ms: variant.key === 'v9turbo',
-      turbo90ListeningValidated: variant.key === 'v9turbo',
+      vocalSafe96ms: variant.key === 'v9turbo',
+      turbo96ListeningValidated: variant.key === 'v9turbo',
     },
   };
 }
@@ -1362,7 +1362,7 @@ function buildClosedPhaseD40PlanV8(options = {}) {
       base: variant.key === 'v8plus'
         ? 'V8 closure preserved, grain pair switched to e2 for parallel listening test.'
         : variant.key === 'v9turbo'
-          ? 'V8 Pivot closure and grain preserved, high/low branch weights get vocal-safe 90 ms dynamic envelopes.'
+          ? 'V8 Pivot closure and grain preserved, high/low branch weights get vocal-safe 96 ms dynamic envelopes.'
         : pivotGrain
           ? 'V8 closure preserved, grain pair locks exact 1024 slots and pivot 0.292.'
         : 'V6 Supreme wet ceiling, pitches and M/K ratio are preserved.',

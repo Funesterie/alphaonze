@@ -1084,13 +1084,13 @@ de pivot de travail sur `0.292`. Validation utilisateur : V8 Pivot est la versio
 a mettre en ligne. V8 Fermeture et V8 Plus e2 restent disponibles comme branches
 de comparaison.
 
-## 11. V9 Turbo 90 ms - 2026-06-14
+## 11. V9 Turbo 96 ms - 2026-06-14
 
 Après les tests d'aigus dynamiques, l'écoute retient la couleur `hybrid vocal-safe` :
 `open` aide l'instrumental, `air` respecte mieux la voix. La correction finale
 porte sur la vitesse de transition des poids haut/bas.
 
-Décision utilisateur : `90 ms` est la valeur exacte a publier en `V9 Turbo`.
+Décision utilisateur finale : `96 ms` est la valeur exacte a publier en `V9 Turbo`.
 
 Principes conservés :
 
@@ -1105,7 +1105,7 @@ mg_phase  = increment centre
 Changement V9 :
 
 ```text
-fenetre dynamique = 90 ms
+fenetre dynamique = 96 ms
 haut = enveloppe dynamique separee, profile open/air
 bas  = enveloppe dynamique separee, profile open/air
 stable/soutenu = tendance air

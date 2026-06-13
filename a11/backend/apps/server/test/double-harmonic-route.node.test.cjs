@@ -238,8 +238,8 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(statusPayload.v9turbo.frameMs, DEFAULT_V9_TURBO_FRAME_MS);
     assert.equal(statusPayload.v9turbo.defaults.transition.frameMs, DEFAULT_V9_TURBO_FRAME_MS);
     assert.equal(statusPayload.v9turbo.safety.dynamicHighLowWeights, true);
-    assert.equal(statusPayload.v9turbo.safety.vocalSafe90ms, true);
-    assert.equal(statusPayload.v9turbo.safety.turbo90ListeningValidated, true);
+    assert.equal(statusPayload.v9turbo.safety.vocalSafe96ms, true);
+    assert.equal(statusPayload.v9turbo.safety.turbo96ListeningValidated, true);
 
     const v2 = await fetch(`${baseUrl}/api/double-harmonic/v2/status?smoothing=1%2Fe&frameMs=20`);
     const v2Payload = await v2.json();
@@ -670,7 +670,7 @@ test('closed phase d40 v8 pivot locks 1024 slots and pivot 0.292', () => {
   assert.match(built.filter, /amix=inputs=3:weights='1 1 1':normalize=0\[out\]/);
 });
 
-test('turbo d40 v9 keeps pivot closure and splits high low dynamic envelopes at 90 ms', () => {
+test('turbo d40 v9 keeps pivot closure and splits high low dynamic envelopes at 96 ms', () => {
   const metrics = buildClosedPhaseMetricsV8({ variant: 'v9turbo', phaseSlots: 1024 });
   const built = buildTurboD40FilterV9({ profile: 'blend', userK: 3 });
   const plan = buildTurboD40PlanV9({ profile: 'blend' });
@@ -687,7 +687,7 @@ test('turbo d40 v9 keeps pivot closure and splits high low dynamic envelopes at 
   assert.equal(plan.frameMs, DEFAULT_V9_TURBO_FRAME_MS);
   assert.equal(plan.defaults.transition.frameMs, DEFAULT_V9_TURBO_FRAME_MS);
   assert.equal(plan.safety.dynamicHighLowWeights, true);
-  assert.equal(plan.safety.vocalSafe90ms, true);
+  assert.equal(plan.safety.vocalSafe96ms, true);
   assert.equal(plan.safety.pivot1024ListeningValidated, true);
   assert.equal(Number(plan.grain.active.low.toFixed(15)), Number(GRAIN_PIVOT_LOW.toFixed(15)));
   assert.equal(Number(plan.grain.active.high.toFixed(15)), Number(GRAIN_PIVOT_HIGH.toFixed(15)));
@@ -1699,7 +1699,7 @@ test('double harmonic route publishes closed phase d40 v8 pivot with exact 1024 
   }
 });
 
-test('double harmonic route publishes turbo d40 v9 at locked 90 ms', async () => {
+test('double harmonic route publishes turbo d40 v9 at locked 96 ms', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-v9turbo-process-'));
   const calls = [];
   const app = express();
@@ -1718,16 +1718,16 @@ test('double harmonic route publishes turbo d40 v9 at locked 90 ms', async () =>
         state: V9_TURBO_STATE,
         variant: 'v9turbo',
         profile,
-        preset: 'v9-turbo-pivot-1024-vocal-safe-90ms-k3',
-        intensity: 'vocal-safe-90ms-turbo-1024',
+        preset: 'v9-turbo-pivot-1024-vocal-safe-96ms-k3',
+        intensity: 'vocal-safe-96ms-turbo-1024',
         d40: resolveD40Density(),
         resonance: {
           userK: analysisOptions.userK || 3,
           kCeiling: 10,
-          transferMode: 'centered-increment-mg-phase-pivot-1024-dynamic-high-low-90ms',
+          transferMode: 'centered-increment-mg-phase-pivot-1024-dynamic-high-low-96ms',
         },
         grain: {
-          mode: 'v9-turbo-pivot-1024-vocal-safe-90ms',
+          mode: 'v9-turbo-pivot-1024-vocal-safe-96ms',
           active: {
             low: GRAIN_PIVOT_LOW,
             high: GRAIN_PIVOT_HIGH,
@@ -1747,8 +1747,8 @@ test('double harmonic route publishes turbo d40 v9 at locked 90 ms', async () =>
           runtime: { slots: 1024 },
         },
         dynamic: {
-          frameMs: 90,
-          transition: { frameMs: 90 },
+          frameMs: 96,
+          transition: { frameMs: 96 },
           automation: {
             mode: 'dual-wav-envelope',
             sampleRate: 1024,
@@ -1760,7 +1760,7 @@ test('double harmonic route publishes turbo d40 v9 at locked 90 ms', async () =>
         },
         weights: {
           dry: 1,
-          transitionFrameMs: 90,
+          transitionFrameMs: 96,
           highMultiplierMean: 1.085,
           lowMultiplierMean: 0.974,
           highPitch: 1.8898397614034042,
@@ -1773,8 +1773,8 @@ test('double harmonic route publishes turbo d40 v9 at locked 90 ms', async () =>
           noDirectMgOffset: true,
           centeredIncrements: true,
           dynamicHighLowWeights: true,
-          vocalSafe90ms: true,
-          turbo90ListeningValidated: true,
+          vocalSafe96ms: true,
+          turbo96ListeningValidated: true,
           pivot1024ListeningValidated: true,
           exact1024AndPivot0292: true,
         },
@@ -1804,13 +1804,13 @@ test('double harmonic route publishes turbo d40 v9 at locked 90 ms', async () =>
     assert.equal(payload.method, V9_TURBO_METHOD);
     assert.equal(payload.state, V9_TURBO_STATE);
     assert.equal(payload.variant, 'v9turbo');
-    assert.equal(payload.intensity, 'vocal-safe-90ms-turbo-1024');
+    assert.equal(payload.intensity, 'vocal-safe-96ms-turbo-1024');
     assert.equal(payload.dynamic.transition.frameMs, DEFAULT_V9_TURBO_FRAME_MS);
     assert.equal(payload.weights.transitionFrameMs, DEFAULT_V9_TURBO_FRAME_MS);
     assert.equal(payload.safety.dynamicHighLowWeights, true);
-    assert.equal(payload.safety.vocalSafe90ms, true);
+    assert.equal(payload.safety.vocalSafe96ms, true);
     assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v9turbo\.flac$/);
-    assert.deepEqual(calls, [{ profile: 'blend', frameMs: 90, userK: 5, phaseSlots: 1024 }]);
+    assert.deepEqual(calls, [{ profile: 'blend', frameMs: 96, userK: 5, phaseSlots: 1024 }]);
 
     const shared = await fetch(payload.shareUrl);
     assert.equal(shared.status, 200);
