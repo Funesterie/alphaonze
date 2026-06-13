@@ -35,8 +35,12 @@ test('XTTS/RVC runtime keeps Coqui TTS on the patched transformers stack', () =>
   assert.match(dockerfile, /GPT2InferenceModel/);
   assert.match(dockerfile, /'generate'/);
   assert.match(dockerfile, /_prepare_generation_config/);
+  assert.match(dockerfile, /GenerationConfig/);
+  assert.match(dockerfile, /getattr_static/);
 
   const bridge = fs.readFileSync(bridgePath, 'utf8');
   assert.match(bridge, /_prepare_generation_config/);
   assert.match(bridge, /xttsPrepareGenerationConfig/);
+  assert.match(bridge, /GenerationConfig\.from_model_config/);
+  assert.match(bridge, /getattr_static/);
 });

@@ -28,9 +28,12 @@ RUN pip install --no-cache-dir "pip<24.1" "setuptools<70" wheel \
 
 RUN python <<'PY'
 from transformers import BeamSearchScorer, LogitsProcessorList, StoppingCriteriaList
+from transformers import GenerationConfig
 from transformers.generation.utils import GenerationMixin
 from TTS.api import TTS
 from TTS.tts.layers.xtts.gpt import GPT2InferenceModel
+from functools import wraps
+from inspect import getattr_static
 
 del BeamSearchScorer, LogitsProcessorList, StoppingCriteriaList, TTS
 
@@ -39,10 +42,22 @@ for method_name in dir(GenerationMixin):
         continue
     method = getattr(GenerationMixin, method_name)
     if callable(method) and not hasattr(GPT2InferenceModel, method_name):
-        setattr(GPT2InferenceModel, method_name, method)
+        setattr(GPT2InferenceModel, method_name, getattr_static(GenerationMixin, method_name))
+
+original_init = GPT2InferenceModel.__init__
+
+@wraps(original_init)
+def init_with_generation_config(self, *args, **kwargs):
+    original_init(self, *args, **kwargs)
+    if getattr(self, 'generation_config', None) is None:
+        self.generation_config = GenerationConfig.from_model_config(self.config)
+
+GPT2InferenceModel.__init__ = init_with_generation_config
+GPT2InferenceModel._a11_generation_config_patched = True
 
 assert hasattr(GPT2InferenceModel, 'generate'), 'Coqui XTTS requires GPT2InferenceModel.generate'
 assert hasattr(GPT2InferenceModel, '_prepare_generation_config'), 'Coqui XTTS requires GPT2InferenceModel._prepare_generation_config'
+assert getattr(GPT2InferenceModel, '_a11_generation_config_patched'), 'Coqui XTTS requires GPT2InferenceModel.generation_config'
 print('xtts-rvc import compatibility ok')
 PY
 

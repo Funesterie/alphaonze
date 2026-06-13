@@ -25,6 +25,9 @@ from TTS.api import TTS
 
 def patch_xtts_generation_mixin() -> bool:
     try:
+        from functools import wraps
+        from inspect import getattr_static
+        from transformers import GenerationConfig
         from transformers.generation.utils import GenerationMixin
         from TTS.tts.layers.xtts.gpt import GPT2InferenceModel
 
@@ -33,7 +36,20 @@ def patch_xtts_generation_mixin() -> bool:
                 continue
             member = getattr(GenerationMixin, name)
             if callable(member) and not hasattr(GPT2InferenceModel, name):
-                setattr(GPT2InferenceModel, name, member)
+                setattr(GPT2InferenceModel, name, getattr_static(GenerationMixin, name))
+
+        if not getattr(GPT2InferenceModel, "_a11_generation_config_patched", False):
+            original_init = GPT2InferenceModel.__init__
+
+            @wraps(original_init)
+            def init_with_generation_config(self, *args, **kwargs):
+                original_init(self, *args, **kwargs)
+                if getattr(self, "generation_config", None) is None:
+                    self.generation_config = GenerationConfig.from_model_config(self.config)
+
+            GPT2InferenceModel.__init__ = init_with_generation_config
+            GPT2InferenceModel._a11_generation_config_patched = True
+
         return all(
             hasattr(GPT2InferenceModel, name)
             for name in ("generate", "_prepare_generation_config")
@@ -522,6 +538,9 @@ def check_xtts_runtime_imports() -> dict:
             "ok": True,
             "xttsGenerate": hasattr(GPT2InferenceModel, "generate"),
             "xttsPrepareGenerationConfig": hasattr(GPT2InferenceModel, "_prepare_generation_config"),
+            "xttsGenerationConfigPatched": bool(
+                getattr(GPT2InferenceModel, "_a11_generation_config_patched", False)
+            ),
         }
     except Exception as exc:
         return {
