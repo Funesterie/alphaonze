@@ -3486,9 +3486,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [voiceLearningMessage, setVoiceLearningMessage] = useState("");
   const [doubleHarmonicFile, setDoubleHarmonicFile] = useState<File | null>(null);
   const [doubleHarmonicFileName, setDoubleHarmonicFileName] = useState("");
-  const [doubleHarmonicMode, setDoubleHarmonicMode] = useState<DoubleHarmonicProcessMode>("v6");
+  const [doubleHarmonicMode, setDoubleHarmonicMode] = useState<DoubleHarmonicProcessMode>("v8pivot");
   const [doubleHarmonicOutputFormat, setDoubleHarmonicOutputFormat] = useState<DoubleHarmonicOutputFormat>("source");
-  const [doubleHarmonicIntensity, setDoubleHarmonicIntensity] = useState(D40_V6_DEFAULT_INTENSITY);
+  const [doubleHarmonicIntensity, setDoubleHarmonicIntensity] = useState(D40_V8_DEFAULT_INTENSITY);
   const [doubleHarmonicResult, setDoubleHarmonicResult] = useState<DoubleHarmonicProcessResult | null>(null);
   const [songSource, setSongSource] = useState(String(initialDraft.songSource || "Prompt +"));
   const [songArtists, setSongArtists] = useState<VivyStudioArtistId[]>(() => normalizeVivyStudioArtists(initialDraft.songArtists));
