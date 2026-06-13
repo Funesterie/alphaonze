@@ -2705,11 +2705,14 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
   const audioFormat = normalizeTtsAudioFormat(body, 'mp3');
   const conversionStrength = resolveVoiceConversionStrength(body);
   const f0Shift = resolveVoiceF0Shift(body);
+  const interactiveRequest = isInteractiveTtsRequest(body);
+  const officialReferenceRequired = requiresReferenceVoice(body) || shouldBlockNeutralVoiceFallback(body);
+  const defaultInteractiveTimeoutMs = officialReferenceRequired ? 90000 : 22000;
   const timeoutMs = Number(
-    isInteractiveTtsRequest(body)
-      ? (process.env.A11_VOICE_XTTS_RVC_INTERACTIVE_TIMEOUT_MS || 22000)
+    interactiveRequest
+      ? (process.env.A11_VOICE_XTTS_RVC_INTERACTIVE_TIMEOUT_MS || defaultInteractiveTimeoutMs)
       : (process.env.A11_VOICE_XTTS_RVC_TIMEOUT_MS || 240000)
-  ) || (isInteractiveTtsRequest(body) ? 22000 : 240000);
+  ) || (interactiveRequest ? defaultInteractiveTimeoutMs : 240000);
   let lastError = null;
 
   for (const baseUrl of baseUrls) {

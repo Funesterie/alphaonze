@@ -2307,6 +2307,129 @@ test('tts speak route ignores stale Piper preference for official reference voic
   }
 });
 
+test('tts speak route gives interactive official XTTS/RVC voices enough CPU time', async () => {
+  const previousEnv = {
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_VOICE_XTTS_RVC_INTERACTIVE_TIMEOUT_MS: process.env.A11_VOICE_XTTS_RVC_INTERACTIVE_TIMEOUT_MS,
+    A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    A11_CARTESIA_TTS_DISABLED: process.env.A11_CARTESIA_TTS_DISABLED,
+    A11_AZURE_TTS_DISABLED: process.env.A11_AZURE_TTS_DISABLED,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    TTS_URL: process.env.TTS_URL,
+    TTS_HOST: process.env.TTS_HOST,
+    TTS_BASE_URL: process.env.TTS_BASE_URL,
+    TTS_PUBLIC_BASE_URL: process.env.TTS_PUBLIC_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const previousAbortTimeout = AbortSignal.timeout;
+  const timeoutCalls = [];
+  const wav = createPcm16Wav({ frequency: 330 });
+
+  process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.A11_CARTESIA_TTS_DISABLED = '1';
+  process.env.A11_AZURE_TTS_DISABLED = '1';
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  delete process.env.A11_VOICE_XTTS_RVC_INTERACTIVE_TIMEOUT_MS;
+  delete process.env.A11_XTTS_RVC_URL;
+  delete process.env.TTS_URL;
+  delete process.env.TTS_HOST;
+  delete process.env.TTS_BASE_URL;
+  delete process.env.TTS_PUBLIC_BASE_URL;
+
+  AbortSignal.timeout = (milliseconds) => {
+    timeoutCalls.push(milliseconds);
+    return previousAbortTimeout.call(AbortSignal, milliseconds);
+  };
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'http://voice-bridge.test/api/voice/synthesize') {
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            ok: true,
+            provider: 'xtts-rvc',
+            via: 'funesterie-xtts-rvc-bridge',
+            engine: 'xtts-reference',
+            voiceStyle: 'kaen44-official-french-narrator',
+            audio_url: '/out/k44.wav',
+            providerCapabilities: { referenceVoice: true, styleVoice: true },
+            voiceConversion: {
+              ok: true,
+              provider: 'xtts-rvc',
+              engine: 'xtts-reference',
+              voiceStyle: 'kaen44-official-french-narrator',
+            },
+          });
+        },
+      };
+    }
+    if (value === 'http://voice-bridge.test/out/k44.wav') {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'audio/wav' },
+        async arrayBuffer() {
+          return wav;
+        },
+      };
+    }
+    if (value === 'http://voice-bridge.test/api/voice/convert') {
+      throw new Error('convert_should_not_be_called_when_synthesize_succeeds');
+    }
+    if (value === 'http://a11-voice:5002/api/tts') {
+      throw new Error('piper_should_not_be_called_for_official_xtts_rvc');
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'salut',
+          persona: 'kaen44',
+          voicePersona: 'kaen44',
+          voiceStyle: 'kaen44-official-french-narrator',
+          voiceReferenceLabel: 'kaen44-official-french-narrator',
+          vocalMode: 'adaptive',
+          latencyMode: 'interactive',
+          audioFormat: 'wav',
+          ttsProvider: 'xtts-rvc',
+          provider: 'xtts-rvc',
+          allowXttsRvc: true,
+          xttsRvcOptIn: true,
+          useDefaultVoiceReference: true,
+          voiceReferenceRequired: true,
+          referenceVoiceRequired: true,
+        });
+
+        assert.equal(result.response.status, 200);
+        assert.equal(result.json.provider, 'xtts-rvc');
+        assert.equal(result.json.voiceConversion.voiceStyle, 'kaen44-official-french-narrator');
+        assert.ok(timeoutCalls.some((value) => value >= 60000), `expected official XTTS/RVC timeout >= 60000ms, got ${timeoutCalls.join(',')}`);
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    AbortSignal.timeout = previousAbortTimeout;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('tts speak route uses ready-made OpenAI style when cloud voices are unavailable', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-openai-identity-fallback-'));
   const previousEnv = {
