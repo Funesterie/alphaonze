@@ -1148,7 +1148,8 @@ if [ -d $RemoteDataRoot/kaen44-uploads ]; then
   cp -an $RemoteDataRoot/kaen44-uploads/. $RemoteDataRoot/uploads/ 2>/dev/null || true
 fi
 "@
-& ssh @sshBase $Remote $remotePrepare
+$remotePrepareEncoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remotePrepare.Replace("`r`n", "`n").Replace("`r", "`n")))
+& ssh @sshBase $Remote "printf '%s' '$remotePrepareEncoded' | base64 -d | bash"
 if ($LASTEXITCODE -ne 0) { throw "Preparation distante echouee" }
 
 $localSunoSecret = if ($env:VIVY_SUNO_LOCAL_API_KEY_FILE) {
@@ -1180,8 +1181,8 @@ download_voice "https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_F
 download_voice "https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/tom/medium/fr_FR-tom-medium.onnx" "$RemoteDataRoot/tts/fr_FR-tom-medium.onnx"
 download_voice "https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/tom/medium/fr_FR-tom-medium.onnx.json" "$RemoteDataRoot/tts/fr_FR-tom-medium.onnx.json"
 "@
-$piperVoiceDownload = $piperVoiceDownload -replace "`r`n?", "`n"
-& ssh @sshBase $Remote $piperVoiceDownload
+$piperVoiceDownloadEncoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($piperVoiceDownload.Replace("`r`n", "`n").Replace("`r", "`n")))
+& ssh @sshBase $Remote "printf '%s' '$piperVoiceDownloadEncoded' | base64 -d | bash"
 if ($LASTEXITCODE -ne 0) { throw "Telechargement voix Piper distantes echoue" }
 
 & scp @sshBase $Archive "${Remote}:$RemoteArchive"
