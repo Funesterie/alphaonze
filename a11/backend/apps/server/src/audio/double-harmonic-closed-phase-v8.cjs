@@ -59,6 +59,7 @@ const DEFAULT_V9_TURBO_FRAME_MS = 96;
 const DEFAULT_V9_TURBO_MAX_SEGMENTS = 12000;
 const DEFAULT_V9_TURBO_ATTACK = 0.9656;
 const DEFAULT_V9_TURBO_RELEASE = 0.7704;
+const D40_RENDER_SAMPLE_RATE = 44100;
 const V9_TURBO_TRANSITION = Object.freeze({
   frameMs: DEFAULT_V9_TURBO_FRAME_MS,
   riseScale: 11.936,
@@ -701,6 +702,10 @@ function buildClosedPhaseD40ArgsV8({
       built.filter,
       '-map',
       '[out]',
+      '-ac',
+      '2',
+      '-ar',
+      String(D40_RENDER_SAMPLE_RATE),
       ...buildOutputCodecArgs(outputPath),
       outputPath,
     ],
@@ -932,11 +937,12 @@ function buildTurboD40FilterV9(options = {}) {
   return {
     ...built,
     filter: [
-      '[0:a]asplit=3[dry][h][l]',
-      '[1:a]aformat=sample_fmts=fltp:channel_layouts=mono[eh]',
-      '[2:a]aformat=sample_fmts=fltp:channel_layouts=mono[el]',
-      `[h]rubberband=pitch=${numberText(built.highPitch)}:${rubberbandOptions},volume=${numberText(built.highWeight)}:eval=frame[hb]`,
-      `[l]rubberband=pitch=${numberText(built.lowPitch)}:${rubberbandOptions},volume=${numberText(built.lowWeight)}:eval=frame[lb]`,
+      '[0:a]asplit=3[full][h][l]',
+      `[full]aresample=${D40_RENDER_SAMPLE_RATE},aformat=sample_fmts=flt:channel_layouts=stereo[dry]`,
+      `[1:a]aresample=${D40_RENDER_SAMPLE_RATE},aformat=sample_fmts=flt:channel_layouts=mono,pan=stereo|c0=c0|c1=c0[eh]`,
+      `[2:a]aresample=${D40_RENDER_SAMPLE_RATE},aformat=sample_fmts=flt:channel_layouts=mono,pan=stereo|c0=c0|c1=c0[el]`,
+      `[h]rubberband=pitch=${numberText(built.highPitch)}:${rubberbandOptions},volume=${numberText(built.highWeight)}:eval=frame,aresample=${D40_RENDER_SAMPLE_RATE},aformat=sample_fmts=flt:channel_layouts=stereo[hb]`,
+      `[l]rubberband=pitch=${numberText(built.lowPitch)}:${rubberbandOptions},volume=${numberText(built.lowWeight)}:eval=frame,aresample=${D40_RENDER_SAMPLE_RATE},aformat=sample_fmts=flt:channel_layouts=stereo[lb]`,
       '[hb][eh]amultiply[ho]',
       '[lb][el]amultiply[lo]',
       "[dry][ho][lo]amix=inputs=3:weights='1 1 1':normalize=0[out]",
@@ -983,6 +989,10 @@ function buildTurboD40ArgsV9({
       built.filter,
       '-map',
       '[out]',
+      '-ac',
+      '2',
+      '-ar',
+      String(D40_RENDER_SAMPLE_RATE),
       ...buildOutputCodecArgs(outputPath),
       outputPath,
     ],

@@ -59,6 +59,7 @@ const {
   resolveV5WeightScale,
 } = require('../src/audio/double-harmonic-log-v5.cjs');
 const {
+  buildResonanceD40ArgsV6,
   buildResonanceD40FilterV6,
   buildResonanceD40PlanV6,
   resolveResonanceDimensionPairV6,
@@ -89,12 +90,14 @@ const {
   V9_TURBO_STATE,
   DEFAULT_V9_TURBO_FRAME_MS,
   buildClosedPhaseAutomationSamplesV8,
+  buildClosedPhaseD40ArgsV8,
   buildClosedPhaseD40FilterV8,
   buildClosedPhaseD40PlanV8,
   buildClosedPhaseD40PlanV8Pivot,
   buildClosedPhaseD40PlanV8Plus,
   buildClosedPhaseMetricsV8,
   buildTurboAutomationSamplesV9,
+  buildTurboD40ArgsV9,
   buildTurboD40FilterV9,
   buildTurboD40PlanV9,
 } = require('../src/audio/double-harmonic-closed-phase-v8.cjs');
@@ -701,10 +704,41 @@ test('turbo d40 v9 keeps pivot closure and splits high low dynamic envelopes at 
   assert.equal(automation.phaseClosure.slots, 1024);
   assert.ok(automation.summary.highMultiplier.mean > 1);
   assert.ok(automation.summary.lowMultiplier.mean < 1);
-  assert.match(built.filter, /\[1:a\]aformat=.*\[eh\]/);
-  assert.match(built.filter, /\[2:a\]aformat=.*\[el\]/);
+  assert.match(built.filter, /\[1:a\]aresample=44100,aformat=.*pan=stereo\|c0=c0\|c1=c0\[eh\]/);
+  assert.match(built.filter, /\[2:a\]aresample=44100,aformat=.*pan=stereo\|c0=c0\|c1=c0\[el\]/);
   assert.match(built.filter, /amix=inputs=3:weights='1 1 1':normalize=0\[out\]/);
   assert.doesNotMatch(built.filter, /alimiter/);
+});
+
+test('d40 envelope renders do not leak the 1024 automation rate into wav output', () => {
+  const resonance = buildResonanceD40ArgsV6({
+    inputPath: 'in.wav',
+    outputPath: 'out.wav',
+    envelopePath: 'env.wav',
+  });
+  const closed = buildClosedPhaseD40ArgsV8({
+    inputPath: 'in.wav',
+    outputPath: 'out.wav',
+    envelopePath: 'env.wav',
+    variant: 'v8pivot',
+  });
+  const turbo = buildTurboD40ArgsV9({
+    inputPath: 'in.wav',
+    outputPath: 'out.wav',
+    highEnvelopePath: 'env-high.wav',
+    lowEnvelopePath: 'env-low.wav',
+  });
+
+  for (const planned of [resonance, closed, turbo]) {
+    assert.match(planned.built.filter, /aresample=44100/);
+    assert.match(planned.built.filter, /channel_layouts=stereo/);
+    assert.match(planned.built.filter, /pan=stereo\|c0=c0\|c1=c0/);
+    const acIndex = planned.args.lastIndexOf('-ac');
+    const arIndex = planned.args.lastIndexOf('-ar');
+    assert.equal(planned.args[acIndex + 1], '2');
+    assert.equal(planned.args[arIndex + 1], '44100');
+    assert.ok(arIndex > acIndex);
+  }
 });
 
 test('double harmonic route processes upload and exposes tokenized audio link', async () => {

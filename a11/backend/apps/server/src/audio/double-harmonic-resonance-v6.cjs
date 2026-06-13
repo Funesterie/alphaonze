@@ -38,6 +38,7 @@ const V6_TRANSFER_MODE = 'm-over-k-energy-transfer';
 const V6_METHOD = 'dry-first-energy-transfer-m-over-k-d40-harmonic-overlay-v6';
 const V6_STATE = 'v6-supreme-stable';
 const V6_PRESET = 'v6-supreme-m-over-k-k3';
+const D40_RENDER_SAMPLE_RATE = 44100;
 
 function numberText(value, digits = 12) {
   return Number(value).toFixed(digits).replace(/0+$/g, '').replace(/\.$/g, '');
@@ -286,10 +287,12 @@ function buildResonanceD40FilterV6({
       wetScaleMax: 1,
     },
     filter: [
-      '[0:a]asplit=3[dry][h][l]',
-      '[1:a]asplit=2[eh][el]',
-      `[h]rubberband=pitch=${numberText(dimensions.highPitch)}:${rubberbandOptions},volume=${numberText(highWeight)}:eval=frame[hb]`,
-      `[l]rubberband=pitch=${numberText(dimensions.lowPitch)}:${rubberbandOptions},volume=${numberText(lowWeight)}:eval=frame[lb]`,
+      '[0:a]asplit=3[full][h][l]',
+      `[full]aresample=${D40_RENDER_SAMPLE_RATE},aformat=sample_fmts=flt:channel_layouts=stereo[dry]`,
+      `[1:a]aresample=${D40_RENDER_SAMPLE_RATE},aformat=sample_fmts=flt:channel_layouts=mono,pan=stereo|c0=c0|c1=c0[env]`,
+      '[env]asplit=2[eh][el]',
+      `[h]rubberband=pitch=${numberText(dimensions.highPitch)}:${rubberbandOptions},volume=${numberText(highWeight)}:eval=frame,aresample=${D40_RENDER_SAMPLE_RATE},aformat=sample_fmts=flt:channel_layouts=stereo[hb]`,
+      `[l]rubberband=pitch=${numberText(dimensions.lowPitch)}:${rubberbandOptions},volume=${numberText(lowWeight)}:eval=frame,aresample=${D40_RENDER_SAMPLE_RATE},aformat=sample_fmts=flt:channel_layouts=stereo[lb]`,
       '[hb][eh]amultiply[ho]',
       '[lb][el]amultiply[lo]',
       "[dry][ho][lo]amix=inputs=3:weights='1 1 1':normalize=0[out]",
@@ -332,6 +335,10 @@ function buildResonanceD40ArgsV6({
       built.filter,
       '-map',
       '[out]',
+      '-ac',
+      '2',
+      '-ar',
+      String(D40_RENDER_SAMPLE_RATE),
       ...buildOutputCodecArgs(outputPath),
       outputPath,
     ],
