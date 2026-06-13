@@ -1053,3 +1053,33 @@ mais statut abaissé : opérateur non sourcé, piste demi-delta/Sym à continuer
 0.5/1024/e²/137/17/8-9 documenté comme carte de travail, pas canon.*  
 *V8 site ajoutée en sortie de session : fermeture D40 par incréments centrés, sans
 réinterpréter `pivot_residual_old` comme `mg_phase`.*
+*V8 Plus ajoutée après conseil Grok : branche d'écoute parallèle avec
+`grainLow_e2 = 2e²/40.0005`, `grainHigh_e2 = 40.0005/(4e²)` et produit `1/2`,
+sans remplacer le grain historique validé par V8.*
+
+## 10. V8 Pivot promue - 2026-06-13
+
+Après écoute RADWIMPS, V8 Plus e2 ne bat pas clairement V8 Fermeture. La piste
+retenue est donc la branche qui fait tomber ensemble `1024` et le pivot `0.292`.
+
+Version promue :
+
+```text
+grainLow  = 0.3694286611319218
+grainHigh = 1.3532064389096996
+product   = 0.4999132429615061
+slots     = 1024
+pivot     = 0.292
+```
+
+Ce n'est pas le produit e2 exact `1/2`. C'est le produit exact requis par la
+grille `1024` :
+
+```text
+product1024 = 100 / (1024 * mg_phase * (40.0005 * pi))
+```
+
+avec `grainHigh - grainLow = 0.9837777777777778`, ce qui verrouille la relation
+de pivot de travail sur `0.292`. Validation utilisateur : V8 Pivot est la version
+a mettre en ligne. V8 Fermeture et V8 Plus e2 restent disponibles comme branches
+de comparaison.

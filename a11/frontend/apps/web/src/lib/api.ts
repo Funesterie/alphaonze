@@ -2324,7 +2324,7 @@ export async function uploadVoiceLearningSnippet(
   return payload as VoiceLearningStatus;
 }
 
-export type DoubleHarmonicProcessMode = 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7' | 'v71' | 'v8';
+export type DoubleHarmonicProcessMode = 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7' | 'v71' | 'v8' | 'v8plus' | 'v8pivot';
 export type DoubleHarmonicOutputFormat = 'source' | 'flac' | 'mp3' | 'm4a' | 'wav';
 
 export type DoubleHarmonicProcessResult = {
@@ -2332,6 +2332,7 @@ export type DoubleHarmonicProcessResult = {
   id?: string;
   method?: string;
   state?: string;
+  variant?: string;
   profile?: string;
   intensity?: number | string;
   audioUrl?: string;
@@ -2380,6 +2381,21 @@ export type DoubleHarmonicProcessResult = {
     correctionRadians?: number;
     mgPhase?: number;
   };
+  grain?: {
+    mode?: string;
+    active?: {
+      low?: number;
+      high?: number;
+      product?: number;
+      productGapToHalf?: number;
+    };
+  };
+  binaryGrid?: {
+    measuredSlotsPerSecond?: number;
+    measuredGapTo1024?: number;
+    grainProduct?: number;
+    grainProductGapToHalf?: number;
+  };
   analysis?: {
     summary?: {
       frames?: number;
@@ -2415,7 +2431,7 @@ export async function processDoubleHarmonicAudio(
   if (options?.format) {
     form.append('format', options.format);
   }
-  if ((options?.mode === 'v1' || options?.mode === 'v2' || options?.mode === 'v4' || options?.mode === 'v5' || options?.mode === 'v6' || options?.mode === 'v7' || options?.mode === 'v71' || options?.mode === 'v8' || !options?.mode) && Number.isFinite(Number(options?.intensity))) {
+  if ((options?.mode === 'v1' || options?.mode === 'v2' || options?.mode === 'v4' || options?.mode === 'v5' || options?.mode === 'v6' || options?.mode === 'v7' || options?.mode === 'v71' || options?.mode === 'v8' || options?.mode === 'v8plus' || options?.mode === 'v8pivot' || !options?.mode) && Number.isFinite(Number(options?.intensity))) {
     form.append('intensity', String(options?.intensity));
   }
   if (Number.isFinite(Number(options?.lowGrainMultiplier))) {
@@ -2438,7 +2454,11 @@ export async function processDoubleHarmonicAudio(
   }
   if (options?.name) form.append('name', options.name);
 
-  const endpoint = options?.mode === 'v8'
+  const endpoint = options?.mode === 'v8pivot'
+    ? '/api/double-harmonic/v8pivot/process'
+    : options?.mode === 'v8plus'
+    ? '/api/double-harmonic/v8plus/process'
+    : options?.mode === 'v8'
     ? '/api/double-harmonic/v8/process'
     : options?.mode === 'v71'
     ? '/api/double-harmonic/v71/process'

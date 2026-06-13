@@ -93,8 +93,10 @@ function resolveV7BrickInfluence(value) {
   return clampNumber(value, 0.05, 1, DEFAULT_V7_BRICK_INFLUENCE);
 }
 
-function buildBinaryGridMetricsV71() {
-  const grainProduct = GRAIN_SPECTRAL_LOW * GRAIN_SPECTRAL_HIGH;
+function buildBinaryGridMetricsV71(options = {}) {
+  const grainLow = clampNumber(options.grainLow, 0.001, 20, GRAIN_SPECTRAL_LOW);
+  const grainHigh = clampNumber(options.grainHigh, grainLow + 0.001, 20, GRAIN_SPECTRAL_HIGH);
+  const grainProduct = grainLow * grainHigh;
   const smallMg = grainProduct * MG_PHASE;
   const inverseSmallMg = 1 / smallMg;
   const cyclePi = D40_SOURCE_N * Math.PI;
@@ -111,8 +113,8 @@ function buildBinaryGridMetricsV71() {
     grainSpectralRemainder: GRAIN_SPECTRAL_REMAINDER,
     grainQSpectral: GRAIN_Q_SPECTRAL,
     grainQFormula: '30*(0.0005*pi-mg_phase)',
-    grainLow: GRAIN_SPECTRAL_LOW,
-    grainHigh: GRAIN_SPECTRAL_HIGH,
+    grainLow,
+    grainHigh,
     grainProduct,
     grainProductGapToHalf: grainProduct - 0.5,
     smallMg,

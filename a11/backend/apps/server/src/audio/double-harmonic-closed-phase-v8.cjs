@@ -22,7 +22,6 @@ const {
 } = require('./double-harmonic-dynamic-v3.cjs');
 const {
   DEFAULT_V6_USER_K,
-  resolveResonanceDimensionPairV6,
   resolveV6KCeiling,
   resolveV6UserK,
   buildResonanceD40FilterV6,
@@ -33,9 +32,17 @@ const {
 } = require('./double-harmonic-bricks-v7.cjs');
 
 const CLOSED_PHASE_D40_V8_SCHEMA = 'funesterie.audio.double-harmonic-closed-phase-d40.v8';
+const CLOSED_PHASE_D40_V8_PLUS_SCHEMA = 'funesterie.audio.double-harmonic-closed-phase-d40.v8-plus';
+const CLOSED_PHASE_D40_V8_PIVOT_SCHEMA = 'funesterie.audio.double-harmonic-closed-phase-d40.v8-pivot';
 const V8_METHOD = 'dry-first-centered-increment-mg-phase-1024-d40-harmonic-overlay-v8';
+const V8_PLUS_METHOD = 'dry-first-e2-grain-centered-increment-mg-phase-1024-d40-harmonic-overlay-v8-plus';
+const V8_PIVOT_METHOD = 'dry-first-pivot-1024-centered-increment-mg-phase-d40-harmonic-overlay-v8-pivot';
 const V8_STATE = 'v8-closed-phase-candidate';
+const V8_PLUS_STATE = 'v8-plus-e2-grain-listening-candidate';
+const V8_PIVOT_STATE = 'v8-pivot-1024-listening-validated';
 const V8_PRESET = 'v8-fermeture-1024-mg-phase-c7-k3';
+const V8_PLUS_PRESET = 'v8-plus-e2-grain-1024-mg-phase-c7-k3';
+const V8_PIVOT_PRESET = 'v8-pivot-1024-pivot-0292-mg-phase-c7-k3';
 const DEFAULT_V8_FRAME_MS = 250;
 const DEFAULT_V8_MAX_SEGMENTS = 2400;
 const DEFAULT_V8_CURVE = 'grain-6d7d8d';
@@ -54,6 +61,50 @@ const PHASE_DELTA = TARGET_0005_PI - MG_PHASE;
 const C7_PHASE_SCALE = PHASE_DELTA / C7;
 const H_D40 = (360 * D40_TARGET_N) / (D40_SOURCE_N * 4 * Math.PI);
 const H_D40_FULL = 2 * H_D40;
+const E_SQUARED = Math.E * Math.E;
+const GRAIN_E2_LOW = (2 * E_SQUARED) / D40_SOURCE_N;
+const GRAIN_E2_HIGH = D40_SOURCE_N / (4 * E_SQUARED);
+const GRAIN_PIVOT_TARGET = 0.292;
+const GRAIN_PIVOT_DELTA = 0.9837777777777778;
+const GRAIN_PIVOT_PRODUCT_1024 = 100 / (DEFAULT_V8_PHASE_SLOTS * MG_PHASE * D40_SOURCE_N * Math.PI);
+const GRAIN_PIVOT_LOW = (Math.sqrt((GRAIN_PIVOT_DELTA ** 2) + (4 * GRAIN_PIVOT_PRODUCT_1024)) - GRAIN_PIVOT_DELTA) / 2;
+const GRAIN_PIVOT_HIGH = GRAIN_PIVOT_LOW + GRAIN_PIVOT_DELTA;
+
+const V8_VARIANTS = Object.freeze({
+  v8: Object.freeze({
+    key: 'v8',
+    schema: CLOSED_PHASE_D40_V8_SCHEMA,
+    method: V8_METHOD,
+    state: V8_STATE,
+    preset: V8_PRESET,
+    intensity: 'closed-phase-1024',
+    envelopeTag: 'v8-closed-phase',
+    grainMode: 'historical-listening-locked',
+    publicSummary: 'V8 Fermeture: V6 Supreme conservee, mg_phase applique en increments recentres sur grille 1024, c7 projete sans changer le gain.',
+  }),
+  v8plus: Object.freeze({
+    key: 'v8plus',
+    schema: CLOSED_PHASE_D40_V8_PLUS_SCHEMA,
+    method: V8_PLUS_METHOD,
+    state: V8_PLUS_STATE,
+    preset: V8_PLUS_PRESET,
+    intensity: 'e2-grain-closed-phase-1024',
+    envelopeTag: 'v8-plus-e2-closed-phase',
+    grainMode: 'e2-parallel-listening-test',
+    publicSummary: 'V8 Plus: branche e2 en parallele, produit grainLow*grainHigh=1/2, fermeture mg_phase 1024 conservee pour test d ecoute.',
+  }),
+  v8pivot: Object.freeze({
+    key: 'v8pivot',
+    schema: CLOSED_PHASE_D40_V8_PIVOT_SCHEMA,
+    method: V8_PIVOT_METHOD,
+    state: V8_PIVOT_STATE,
+    preset: V8_PIVOT_PRESET,
+    intensity: 'pivot-1024-closed-phase',
+    envelopeTag: 'v8-pivot-closed-phase',
+    grainMode: 'pivot-1024-listening-validated',
+    publicSummary: 'V8 Pivot: branche validee a l ecoute, produit ajuste pour 1024 exact et pivot 0.292 exact, fermeture mg_phase conservee.',
+  }),
+});
 
 function numberText(value, digits = 12) {
   return Number(value).toFixed(digits).replace(/0+$/g, '').replace(/\.$/g, '');
@@ -63,6 +114,92 @@ function clampNumber(value, min, max, fallback) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.max(min, Math.min(max, numeric));
+}
+
+function resolveV8Variant(value) {
+  if (value && typeof value === 'object' && V8_VARIANTS[value.key]) {
+    return V8_VARIANTS[value.key];
+  }
+  const raw = String(value ?? '').trim().toLowerCase().replace(/[-_\s]+/g, '');
+  if (raw === 'plus' || raw === 'v8plus' || raw === 'v8p' || raw === 'e2') {
+    return V8_VARIANTS.v8plus;
+  }
+  if (raw === 'pivot' || raw === 'v8pivot' || raw === 'v8pv' || raw === '1024pivot') {
+    return V8_VARIANTS.v8pivot;
+  }
+  return V8_VARIANTS.v8;
+}
+
+function buildV8PivotLock(low, high) {
+  const delta = high - low;
+  const product = low * high;
+  const pivot = GRAIN_PIVOT_TARGET + (18 * (GRAIN_PIVOT_DELTA - delta));
+  return {
+    delta,
+    product,
+    productGapToHalf: product - 0.5,
+    product1024Target: GRAIN_PIVOT_PRODUCT_1024,
+    productGapTo1024: product - GRAIN_PIVOT_PRODUCT_1024,
+    pivot,
+    pivotTarget: GRAIN_PIVOT_TARGET,
+    pivotGapToTarget: pivot - GRAIN_PIVOT_TARGET,
+    pivotFormula: '0.292 + 18*(0.9837777777777778-(grainHigh-grainLow))',
+  };
+}
+
+function resolveV8GrainPair(variantValue) {
+  const variant = resolveV8Variant(variantValue);
+  const low = variant.key === 'v8plus'
+    ? GRAIN_E2_LOW
+    : variant.key === 'v8pivot'
+      ? GRAIN_PIVOT_LOW
+      : GRAIN_SPECTRAL_LOW;
+  const high = variant.key === 'v8plus'
+    ? GRAIN_E2_HIGH
+    : variant.key === 'v8pivot'
+      ? GRAIN_PIVOT_HIGH
+      : GRAIN_SPECTRAL_HIGH;
+  return {
+    mode: variant.grainMode,
+    low,
+    high,
+    ...buildV8PivotLock(low, high),
+  };
+}
+
+function buildV8GrainResearch(variantValue) {
+  const variant = resolveV8Variant(variantValue);
+  const active = resolveV8GrainPair(variant);
+  const historicalProduct = GRAIN_SPECTRAL_LOW * GRAIN_SPECTRAL_HIGH;
+  return {
+    mode: active.mode,
+    active,
+    historical: {
+      low: GRAIN_SPECTRAL_LOW,
+      high: GRAIN_SPECTRAL_HIGH,
+      product: historicalProduct,
+      productGapToHalf: historicalProduct - 0.5,
+    },
+    e2: {
+      low: GRAIN_E2_LOW,
+      high: GRAIN_E2_HIGH,
+      ...buildV8PivotLock(GRAIN_E2_LOW, GRAIN_E2_HIGH),
+      lowFormula: '2*e^2/40.0005',
+      highFormula: '40.0005/(4*e^2)',
+    },
+    pivot1024: {
+      low: GRAIN_PIVOT_LOW,
+      high: GRAIN_PIVOT_HIGH,
+      ...buildV8PivotLock(GRAIN_PIVOT_LOW, GRAIN_PIVOT_HIGH),
+      productFormula: '100/(1024*mg_phase*(40.0005*pi))',
+      deltaFormula: '0.9837777777777778 locks pivot to 0.292 through the 18-step bridge',
+    },
+    recommendation: variant.key === 'v8pivot'
+      ? 'Promoted listening path: V8 Pivot keeps centered mg_phase closure and locks 1024 + pivot 0.292 together.'
+      : variant.key === 'v8plus'
+        ? 'Grok path: compare e2 grain by ear beside locked V8; do not promote to canon yet.'
+        : 'Locked V8 path: keep historical grain validated by listening.',
+  };
 }
 
 function mean(values) {
@@ -234,6 +371,8 @@ function buildCenteredPhaseClosureV8({
 }
 
 function buildClosedPhaseMetricsV8(options = {}) {
+  const variant = resolveV8Variant(options.variant);
+  const grainPair = resolveV8GrainPair(variant);
   const phaseSlots = resolveV8PhaseSlots(options.phaseSlots || options.slots);
   const c7PhaseScale = resolveV8C7PhaseScale(options.c7PhaseScale);
   const canonical = buildCanonicalClosureInputsV8(phaseSlots);
@@ -243,10 +382,19 @@ function buildClosedPhaseMetricsV8(options = {}) {
     c7PhaseScale,
   });
   return {
-    schema: 'funesterie.audio.double-harmonic-closed-phase-metrics.v8',
+    schema: variant.key === 'v8plus'
+      ? 'funesterie.audio.double-harmonic-closed-phase-metrics.v8-plus'
+      : variant.key === 'v8pivot'
+        ? 'funesterie.audio.double-harmonic-closed-phase-metrics.v8-pivot'
+      : 'funesterie.audio.double-harmonic-closed-phase-metrics.v8',
+    variant: variant.key,
     operators: buildClosedPhaseOperatorsV8(),
     projection: buildD40StepProjectionV8(),
-    binaryGrid: buildBinaryGridMetricsV71(),
+    grain: buildV8GrainResearch(variant),
+    binaryGrid: buildBinaryGridMetricsV71({
+      grainLow: grainPair.low,
+      grainHigh: grainPair.high,
+    }),
     closure: {
       mode: closure.mode,
       slots: closure.slots,
@@ -259,13 +407,20 @@ function buildClosedPhaseMetricsV8(options = {}) {
   };
 }
 
-function buildClosedPhaseEnvelopePath(outputPath) {
+function buildClosedPhaseEnvelopePath(outputPath, variantValue) {
+  const variant = resolveV8Variant(variantValue);
   const safeBase = path.basename(String(outputPath || 'd40-v8')).replace(/[^a-z0-9._-]+/gi, '_');
-  return path.join(path.dirname(outputPath), `.${safeBase}.v8-closed-phase-envelope.wav`);
+  return path.join(path.dirname(outputPath), `.${safeBase}.${variant.envelopeTag}-envelope.wav`);
 }
 
 function sampleClosedPhaseV8At(analysis = {}, timeSeconds = 0, options = {}) {
-  const v6 = sampleResonanceMkV6At(analysis, timeSeconds, options);
+  const variant = resolveV8Variant(options.variant);
+  const grainPair = resolveV8GrainPair(variant);
+  const v6 = sampleResonanceMkV6At(analysis, timeSeconds, {
+    ...options,
+    grainLow: grainPair.low,
+    grainHigh: grainPair.high,
+  });
   const force = clampNumber(
     (0.64 * v6.folded) + (0.26 * v6.energy) + (0.10 * v6.tension),
     0,
@@ -285,12 +440,14 @@ function sampleClosedPhaseV8At(analysis = {}, timeSeconds = 0, options = {}) {
     target0005Pi: TARGET_0005_PI,
     phaseDelta: PHASE_DELTA,
     c7: C7,
+    grain: grainPair,
   };
 }
 
 function buildClosedPhaseAutomationSamplesV8({
   analysis,
   profile = 'blend',
+  variant: variantValue,
   cycleSeconds,
   durationSeconds,
   sampleRate,
@@ -299,6 +456,7 @@ function buildClosedPhaseAutomationSamplesV8({
   phaseSlots,
   c7PhaseScale,
 } = {}) {
+  const variant = resolveV8Variant(variantValue);
   const resolvedPhaseSlots = resolveV8PhaseSlots(phaseSlots);
   const resolvedSampleRate = Math.round(clampNumber(sampleRate, MIN_V8_PHASE_SLOTS, MAX_V8_PHASE_SLOTS, resolvedPhaseSlots));
   const fallbackDuration = Number(analysis?.summary?.durationSeconds || 1) || 1;
@@ -321,6 +479,7 @@ function buildClosedPhaseAutomationSamplesV8({
   for (let index = 0; index < sampleCount; index += 1) {
     const time = index / resolvedSampleRate;
     const closed = sampleClosedPhaseV8At(analysis, time, {
+      variant,
       userK,
       kCeiling,
       phaseSlots: resolvedPhaseSlots,
@@ -358,11 +517,13 @@ function buildClosedPhaseAutomationSamplesV8({
 
   const probe = sampleD40EnvelopeAt(0, { profile, periodSeconds: cycleSeconds });
   const canonical = buildClosedPhaseMetricsV8({
+    variant,
     phaseSlots: resolvedPhaseSlots,
     c7PhaseScale: resolvedC7Scale,
   });
   return {
     mode: 'wav-envelope',
+    variant: variant.key,
     sampleRate: resolvedSampleRate,
     durationSeconds: sampleCount / resolvedSampleRate,
     sampleCount,
@@ -390,28 +551,50 @@ function buildClosedPhaseAutomationSamplesV8({
 
 function buildClosedPhaseD40FilterV8({
   profile = 'blend',
+  variant: variantValue,
   cycleSeconds,
   userK,
   kCeiling,
   phaseSlots,
   c7PhaseScale,
 } = {}) {
-  const built = buildResonanceD40FilterV6({ profile, cycleSeconds, userK, kCeiling });
-  const metrics = buildClosedPhaseMetricsV8({ phaseSlots, c7PhaseScale });
+  const variant = resolveV8Variant(variantValue);
+  const grainPair = resolveV8GrainPair(variant);
+  const built = buildResonanceD40FilterV6({
+    profile,
+    cycleSeconds,
+    userK,
+    kCeiling,
+    grainLow: grainPair.low,
+    grainHigh: grainPair.high,
+  });
+  const metrics = buildClosedPhaseMetricsV8({ variant, phaseSlots, c7PhaseScale });
   return {
     ...built,
-    schema: CLOSED_PHASE_D40_V8_SCHEMA,
-    method: V8_METHOD,
-    state: V8_STATE,
-    preset: V8_PRESET,
+    schema: variant.schema,
+    method: variant.method,
+    state: variant.state,
+    preset: variant.preset,
+    variant: variant.key,
     operators: metrics.operators,
     projection: metrics.projection,
+    grain: metrics.grain,
+    binaryGrid: metrics.binaryGrid,
     phaseClosure: metrics.closure,
-    resonanceMode: 'centered-phase-soft-fold',
-    transferMode: 'centered-increment-mg-phase',
+    resonanceMode: variant.key === 'v8plus'
+      ? 'centered-phase-soft-fold-e2-grain'
+      : variant.key === 'v8pivot'
+        ? 'centered-phase-soft-fold-pivot-1024'
+        : 'centered-phase-soft-fold',
+    transferMode: variant.key === 'v8plus'
+      ? 'centered-increment-mg-phase-e2-grain-test'
+      : variant.key === 'v8pivot'
+        ? 'centered-increment-mg-phase-pivot-1024'
+        : 'centered-increment-mg-phase',
     safety: {
       ...built.safety,
       v6StableUntouched: true,
+      historicalV8Untouched: variant.key !== 'v8',
       mgPhaseFixed: true,
       mgPhaseIsPhaseIncrement: true,
       noDirectMgOffset: true,
@@ -420,6 +603,11 @@ function buildClosedPhaseD40FilterV8({
       exact1024GridDefault: metrics.closure.slots === DEFAULT_V8_PHASE_SLOTS,
       c7IsProjectionNotGain: true,
       pivotResidualOldIsNotMgPhase: true,
+      e2GrainCandidate: variant.key === 'v8plus',
+      e2GrainNotCanon: variant.key === 'v8plus',
+      pivot1024Candidate: variant.key === 'v8pivot',
+      pivot1024ListeningValidated: variant.key === 'v8pivot',
+      exact1024AndPivot0292: variant.key === 'v8pivot',
     },
   };
 }
@@ -428,6 +616,7 @@ function buildClosedPhaseD40ArgsV8({
   inputPath,
   outputPath,
   profile = 'blend',
+  variant,
   cycleSeconds,
   envelopePath,
   userK,
@@ -438,6 +627,7 @@ function buildClosedPhaseD40ArgsV8({
   if (!envelopePath) throw new Error('missing_envelope_path');
   const built = buildClosedPhaseD40FilterV8({
     profile,
+    variant,
     cycleSeconds,
     userK,
     kCeiling,
@@ -475,6 +665,8 @@ async function processClosedPhaseD40V8({
   if (!inputPath) throw new Error('missing_input_path');
   if (!outputPath) throw new Error('missing_output_path');
 
+  const variant = resolveV8Variant(analysisOptions.variant);
+  const grainPair = resolveV8GrainPair(variant);
   const userK = resolveV6UserK(
     analysisOptions.userK
     ?? analysisOptions.resonanceK
@@ -498,6 +690,8 @@ async function processClosedPhaseD40V8({
     attack: analysisOptions.attack ?? DEFAULT_V8_ATTACK,
     release: analysisOptions.release ?? DEFAULT_V8_RELEASE,
     minDbSpan: analysisOptions.minDbSpan || DEFAULT_V8_MIN_DB_SPAN,
+    grainLow: grainPair.low,
+    grainHigh: grainPair.high,
     swapPitchGrain: true,
     cycleSeconds: analysisOptions.cycleSeconds,
     timeoutMs,
@@ -510,6 +704,7 @@ async function processClosedPhaseD40V8({
   const automation = buildClosedPhaseAutomationSamplesV8({
     analysis,
     profile,
+    variant,
     cycleSeconds: analysisOptions.cycleSeconds,
     durationSeconds,
     sampleRate: analysisOptions.automationSampleRate,
@@ -518,7 +713,7 @@ async function processClosedPhaseD40V8({
     phaseSlots,
     c7PhaseScale,
   });
-  const envelopePath = buildClosedPhaseEnvelopePath(outputPath);
+  const envelopePath = buildClosedPhaseEnvelopePath(outputPath, variant);
   writeFloat32MonoWav(envelopePath, automation.samples, automation.sampleRate);
 
   let built;
@@ -527,6 +722,7 @@ async function processClosedPhaseD40V8({
       inputPath,
       outputPath,
       profile,
+      variant,
       cycleSeconds: analysisOptions.cycleSeconds,
       envelopePath,
       userK,
@@ -545,9 +741,10 @@ async function processClosedPhaseD40V8({
   return {
     method: built.method,
     state: built.state,
+    variant: built.variant,
     profile: built.envelope.profile,
     preset: built.preset,
-    intensity: 'closed-phase-1024',
+    intensity: variant.intensity,
     d40: built.envelope.density,
     resonance: {
       userK,
@@ -562,6 +759,8 @@ async function processClosedPhaseD40V8({
     },
     operators: built.operators,
     projection: built.projection,
+    grain: built.grain,
+    binaryGrid: built.binaryGrid,
     phaseClosure: {
       ...built.phaseClosure,
       runtime: automation.phaseClosure,
@@ -592,6 +791,7 @@ async function processClosedPhaseD40V8({
       ratioHighToLow: built.ratioHighToLow,
       userK,
       kCeiling,
+      grainMode: built.grain.mode,
       dynamicMin: automation.summary.folded.min,
       dynamicMax: automation.summary.folded.max,
       dynamicMean: automation.summary.folded.mean,
@@ -613,6 +813,7 @@ async function processClosedPhaseD40V8({
 }
 
 function buildClosedPhaseD40PlanV8(options = {}) {
+  const variant = resolveV8Variant(options.variant);
   const frameMs = clampNumber(options.frameMs, 50, 1000, DEFAULT_V8_FRAME_MS);
   const maxSeconds = clampNumber(options.maxSeconds, 1, 900, 480);
   const userK = resolveV6UserK(options.userK ?? options.resonanceK ?? options.intensity ?? options.harmonicIntensity);
@@ -620,6 +821,7 @@ function buildClosedPhaseD40PlanV8(options = {}) {
   const phaseSlots = resolveV8PhaseSlots(options.phaseSlots || options.binaryGridSlots);
   const c7PhaseScale = resolveV8C7PhaseScale(options.c7PhaseScale);
   const built = buildClosedPhaseD40FilterV8({
+    variant,
     userK,
     kCeiling,
     phaseSlots,
@@ -627,25 +829,32 @@ function buildClosedPhaseD40PlanV8(options = {}) {
     profile: options.profile || 'blend',
   });
   return {
-    schema: CLOSED_PHASE_D40_V8_SCHEMA,
-    method: V8_METHOD,
-    state: V8_STATE,
+    schema: variant.schema,
+    method: variant.method,
+    state: variant.state,
+    variant: variant.key,
     profile: 'blend',
-    preset: V8_PRESET,
+    preset: variant.preset,
     frameMs,
     maxSeconds,
     d40: built.envelope.density,
-    dimensions: resolveResonanceDimensionPairV6(),
+    dimensions: built.dimensions,
     resonance: {
       userK,
       kCeiling,
       mode: built.resonanceMode,
       transferMode: built.transferMode,
-      base: 'V6 Supreme wet ceiling, pitches and M/K ratio are preserved.',
+      base: variant.key === 'v8plus'
+        ? 'V8 closure preserved, grain pair switched to e2 for parallel listening test.'
+        : variant.key === 'v8pivot'
+          ? 'V8 closure preserved, grain pair locks exact 1024 slots and pivot 0.292.'
+        : 'V6 Supreme wet ceiling, pitches and M/K ratio are preserved.',
       wetCeiling: built.wetCeiling,
     },
     operators: built.operators,
     projection: built.projection,
+    grain: built.grain,
+    binaryGrid: built.binaryGrid,
     phaseClosure: built.phaseClosure,
     weights: {
       dry: 1,
@@ -682,17 +891,68 @@ function buildClosedPhaseD40PlanV8(options = {}) {
   };
 }
 
+function buildClosedPhaseD40PlanV8Plus(options = {}) {
+  return buildClosedPhaseD40PlanV8({
+    ...options,
+    variant: 'v8plus',
+  });
+}
+
+function buildClosedPhaseD40PlanV8Pivot(options = {}) {
+  return buildClosedPhaseD40PlanV8({
+    ...options,
+    variant: 'v8pivot',
+  });
+}
+
+async function processClosedPhaseD40V8Plus(options = {}) {
+  return processClosedPhaseD40V8({
+    ...options,
+    analysisOptions: {
+      ...(options.analysisOptions || {}),
+      variant: 'v8plus',
+    },
+  });
+}
+
+async function processClosedPhaseD40V8Pivot(options = {}) {
+  return processClosedPhaseD40V8({
+    ...options,
+    analysisOptions: {
+      ...(options.analysisOptions || {}),
+      variant: 'v8pivot',
+    },
+  });
+}
+
 module.exports = {
   C7,
   C7_PHASE_SCALE,
   CLOSED_PHASE_D40_V8_SCHEMA,
+  CLOSED_PHASE_D40_V8_PLUS_SCHEMA,
+  CLOSED_PHASE_D40_V8_PIVOT_SCHEMA,
+  GRAIN_E2_HIGH,
+  GRAIN_E2_LOW,
+  GRAIN_PIVOT_DELTA,
+  GRAIN_PIVOT_HIGH,
+  GRAIN_PIVOT_LOW,
+  GRAIN_PIVOT_PRODUCT_1024,
+  GRAIN_PIVOT_TARGET,
   H_D40,
   JHI,
   PHASE_DELTA,
   PHI,
   V8_METHOD,
+  V8_PLUS_METHOD,
+  V8_PIVOT_METHOD,
+  V8_PLUS_PRESET,
+  V8_PLUS_STATE,
+  V8_PIVOT_PRESET,
+  V8_PIVOT_STATE,
   V8_PRESET,
   V8_STATE,
+  buildClosedPhaseD40PlanV8Pivot,
+  buildClosedPhaseD40PlanV8Plus,
   buildCenteredPhaseClosureV8,
   buildClosedPhaseAutomationSamplesV8,
   buildClosedPhaseD40ArgsV8,
@@ -701,8 +961,13 @@ module.exports = {
   buildClosedPhaseMetricsV8,
   buildClosedPhaseOperatorsV8,
   buildD40StepProjectionV8,
+  buildV8GrainResearch,
   processClosedPhaseD40V8,
+  processClosedPhaseD40V8Pivot,
+  processClosedPhaseD40V8Plus,
   resolveV8C7PhaseScale,
+  resolveV8GrainPair,
   resolveV8PhaseSlots,
+  resolveV8Variant,
   sampleClosedPhaseV8At,
 };

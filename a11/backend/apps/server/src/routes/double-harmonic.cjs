@@ -42,7 +42,11 @@ const {
 } = require('../audio/double-harmonic-bricks-v7.cjs');
 const {
   buildClosedPhaseD40PlanV8,
+  buildClosedPhaseD40PlanV8Pivot,
+  buildClosedPhaseD40PlanV8Plus,
   processClosedPhaseD40V8,
+  processClosedPhaseD40V8Pivot,
+  processClosedPhaseD40V8Plus,
 } = require('../audio/double-harmonic-closed-phase-v8.cjs');
 
 const DEFAULT_MAX_MB = 80;
@@ -245,6 +249,12 @@ function createDoubleHarmonicRouter(options = {}) {
   const processAudioV8 = typeof options.processClosedPhaseD40V8 === 'function'
     ? options.processClosedPhaseD40V8
     : processClosedPhaseD40V8;
+  const processAudioV8Plus = typeof options.processClosedPhaseD40V8Plus === 'function'
+    ? options.processClosedPhaseD40V8Plus
+    : processClosedPhaseD40V8Plus;
+  const processAudioV8Pivot = typeof options.processClosedPhaseD40V8Pivot === 'function'
+    ? options.processClosedPhaseD40V8Pivot
+    : processClosedPhaseD40V8Pivot;
   const runtimeRoot = path.resolve(options.runtimeRoot || getCanonicalRuntimeRoot(process.env));
   const assetRoot = ensureDir(path.join(runtimeRoot, 'double-harmonic-d40'));
   const indexPath = path.join(assetRoot, 'index.json');
@@ -286,6 +296,8 @@ function createDoubleHarmonicRouter(options = {}) {
       v7: buildBricksD40PlanV7(),
       v71: buildBricksD40PlanV7({ binaryGrid: 'exact1024' }),
       v8: buildClosedPhaseD40PlanV8(),
+      v8plus: buildClosedPhaseD40PlanV8Plus(),
+      v8pivot: buildClosedPhaseD40PlanV8Pivot(),
     });
   });
 
@@ -404,6 +416,48 @@ function createDoubleHarmonicRouter(options = {}) {
     return res.json({
       ok: true,
       v8: buildClosedPhaseD40PlanV8({
+        frameMs: reqNumber(_req.query?.frameMs),
+        maxSeconds: reqNumber(_req.query?.maxSeconds),
+        cycleSeconds: reqNumber(_req.query?.cycleSeconds),
+        userK: reqNumber(
+          _req.query?.userK
+          || _req.query?.resonanceK
+          || _req.query?.weightScale
+          || _req.query?.intensity
+          || _req.query?.harmonicIntensity
+        ),
+        kCeiling: reqNumber(_req.query?.kCeiling),
+        phaseSlots: reqNumber(_req.query?.phaseSlots || _req.query?.binaryGridSlots),
+        c7PhaseScale: reqNumber(_req.query?.c7PhaseScale),
+      }),
+    });
+  });
+
+  router.get('/v8plus/status', (_req, res) => {
+    return res.json({
+      ok: true,
+      v8plus: buildClosedPhaseD40PlanV8Plus({
+        frameMs: reqNumber(_req.query?.frameMs),
+        maxSeconds: reqNumber(_req.query?.maxSeconds),
+        cycleSeconds: reqNumber(_req.query?.cycleSeconds),
+        userK: reqNumber(
+          _req.query?.userK
+          || _req.query?.resonanceK
+          || _req.query?.weightScale
+          || _req.query?.intensity
+          || _req.query?.harmonicIntensity
+        ),
+        kCeiling: reqNumber(_req.query?.kCeiling),
+        phaseSlots: reqNumber(_req.query?.phaseSlots || _req.query?.binaryGridSlots),
+        c7PhaseScale: reqNumber(_req.query?.c7PhaseScale),
+      }),
+    });
+  });
+
+  router.get('/v8pivot/status', (_req, res) => {
+    return res.json({
+      ok: true,
+      v8pivot: buildClosedPhaseD40PlanV8Pivot({
         frameMs: reqNumber(_req.query?.frameMs),
         maxSeconds: reqNumber(_req.query?.maxSeconds),
         cycleSeconds: reqNumber(_req.query?.cycleSeconds),
@@ -1229,9 +1283,12 @@ function createDoubleHarmonicRouter(options = {}) {
         profile: processing.profile,
         preset: processing.preset,
         intensity: processing.intensity || 'closed-phase-1024',
+        variant: processing.variant || 'v8',
         resonance: processing.resonance || null,
         operators: processing.operators || null,
         projection: processing.projection || null,
+        grain: processing.grain || null,
+        binaryGrid: processing.binaryGrid || null,
         phaseClosure: processing.phaseClosure || null,
         weights: processing.weights || null,
         dynamicSummary: processing.dynamic?.summary || null,
@@ -1250,6 +1307,7 @@ function createDoubleHarmonicRouter(options = {}) {
         id,
         method: processing.method,
         state: processing.state,
+        variant: processing.variant || 'v8',
         profile: processing.profile,
         preset: processing.preset,
         intensity: processing.intensity || 'closed-phase-1024',
@@ -1257,6 +1315,8 @@ function createDoubleHarmonicRouter(options = {}) {
         resonance: processing.resonance,
         operators: processing.operators,
         projection: processing.projection,
+        grain: processing.grain,
+        binaryGrid: processing.binaryGrid,
         phaseClosure: processing.phaseClosure,
         dynamic: processing.dynamic,
         weights: processing.weights || undefined,
@@ -1272,6 +1332,244 @@ function createDoubleHarmonicRouter(options = {}) {
       return res.status(500).json({
         ok: false,
         error: 'double_harmonic_v8_process_failed',
+        message: String(error?.message || error),
+      });
+    }
+  });
+
+  router.post('/v8plus/process', verifyJWT, upload.single('audio'), async (req, res) => {
+    try {
+      pruneIndex(indexPath, assetRoot, ttlMs);
+      if (!req.file?.buffer?.length) {
+        return res.status(400).json({ ok: false, error: 'missing_audio', message: 'Ajoute un fichier audio.' });
+      }
+
+      const id = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+      const base = safeBaseName(req.body?.name || req.file.originalname || 'audio');
+      const inputExt = extForUpload(req.file);
+      const inputFilename = `${id}-${base}-v8plus-input.${inputExt}`;
+      const outputFormat = resolveOutputFormat(req.body?.format || req.query?.format, inputExt);
+      const outputFilename = `${id}-${base}-funesterie-d40-v8plus.${outputFormat.ext}`;
+      const inputPath = path.join(assetRoot, inputFilename);
+      const outputPath = path.join(assetRoot, outputFilename);
+      fs.writeFileSync(inputPath, req.file.buffer);
+
+      const profile = String(req.body?.profile || req.query?.profile || 'blend').trim() || 'blend';
+      const processing = await processAudioV8Plus({
+        inputPath,
+        outputPath,
+        profile,
+        analysisOptions: {
+          frameMs: reqNumber(req.body?.frameMs || req.query?.frameMs),
+          maxSeconds: reqNumber(req.body?.maxSeconds || req.query?.maxSeconds),
+          maxSegments: reqNumber(req.body?.maxSegments || req.query?.maxSegments),
+          curve: req.body?.curve || req.query?.curve,
+          curveAmount: reqNumber(req.body?.curveAmount || req.query?.curveAmount),
+          attack: reqNumber(req.body?.attack || req.query?.attack),
+          release: reqNumber(req.body?.release || req.query?.release),
+          minDbSpan: reqNumber(req.body?.minDbSpan || req.query?.minDbSpan),
+          cycleSeconds: reqNumber(req.body?.cycleSeconds || req.query?.cycleSeconds),
+          userK: reqNumber(
+            req.body?.userK
+            || req.query?.userK
+            || req.body?.resonanceK
+            || req.query?.resonanceK
+            || req.body?.weightScale
+            || req.query?.weightScale
+            || req.body?.intensity
+            || req.query?.intensity
+            || req.body?.harmonicIntensity
+            || req.query?.harmonicIntensity
+          ),
+          kCeiling: reqNumber(req.body?.kCeiling || req.query?.kCeiling),
+          phaseSlots: reqNumber(req.body?.phaseSlots || req.query?.phaseSlots || req.body?.binaryGridSlots || req.query?.binaryGridSlots),
+          c7PhaseScale: reqNumber(req.body?.c7PhaseScale || req.query?.c7PhaseScale),
+        },
+      });
+      const token = crypto.randomBytes(18).toString('base64url');
+      const createdAt = new Date().toISOString();
+      const owner = String(req.user?.email || req.user?.username || req.user?.sub || '').trim();
+      const asset = {
+        id,
+        token,
+        createdAt,
+        owner,
+        originalName: req.file.originalname || '',
+        inputFilename,
+        outputFilename,
+        contentType: outputFormat.contentType,
+        method: processing.method,
+        profile: processing.profile,
+        preset: processing.preset,
+        intensity: processing.intensity || 'e2-grain-closed-phase-1024',
+        variant: processing.variant || 'v8plus',
+        resonance: processing.resonance || null,
+        operators: processing.operators || null,
+        projection: processing.projection || null,
+        grain: processing.grain || null,
+        binaryGrid: processing.binaryGrid || null,
+        phaseClosure: processing.phaseClosure || null,
+        weights: processing.weights || null,
+        dynamicSummary: processing.dynamic?.summary || null,
+        safety: processing.safety || null,
+        bytes: fs.statSync(outputPath).size,
+      };
+      const index = readIndex(indexPath);
+      index.assets = [asset, ...index.assets].slice(0, 300);
+      writeIndex(indexPath, index);
+
+      const baseUrl = routePublicBase(req);
+      const audioUrl = `/api/double-harmonic/out/${encodeURIComponent(outputFilename)}`;
+      const sharePath = `${audioUrl}?token=${encodeURIComponent(token)}`;
+      return res.json({
+        ok: true,
+        id,
+        method: processing.method,
+        state: processing.state,
+        variant: processing.variant,
+        profile: processing.profile,
+        preset: processing.preset,
+        intensity: processing.intensity || 'e2-grain-closed-phase-1024',
+        d40: processing.d40,
+        resonance: processing.resonance,
+        operators: processing.operators,
+        projection: processing.projection,
+        grain: processing.grain,
+        binaryGrid: processing.binaryGrid,
+        phaseClosure: processing.phaseClosure,
+        dynamic: processing.dynamic,
+        weights: processing.weights || undefined,
+        safety: processing.safety || undefined,
+        audioUrl,
+        shareUrl: baseUrl ? `${baseUrl}${sharePath}` : sharePath,
+        contentType: outputFormat.contentType,
+        filename: outputFilename,
+        bytes: asset.bytes,
+        publicSummary: 'V8 Plus: test e2 parallele a V8, produit grainLow*grainHigh=1/2, fermeture 1024 et mg_phase recentre conserves.',
+      });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        error: 'double_harmonic_v8plus_process_failed',
+        message: String(error?.message || error),
+      });
+    }
+  });
+
+  router.post('/v8pivot/process', verifyJWT, upload.single('audio'), async (req, res) => {
+    try {
+      pruneIndex(indexPath, assetRoot, ttlMs);
+      if (!req.file?.buffer?.length) {
+        return res.status(400).json({ ok: false, error: 'missing_audio', message: 'Ajoute un fichier audio.' });
+      }
+
+      const id = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+      const base = safeBaseName(req.body?.name || req.file.originalname || 'audio');
+      const inputExt = extForUpload(req.file);
+      const inputFilename = `${id}-${base}-v8pivot-input.${inputExt}`;
+      const outputFormat = resolveOutputFormat(req.body?.format || req.query?.format, inputExt);
+      const outputFilename = `${id}-${base}-funesterie-d40-v8pivot.${outputFormat.ext}`;
+      const inputPath = path.join(assetRoot, inputFilename);
+      const outputPath = path.join(assetRoot, outputFilename);
+      fs.writeFileSync(inputPath, req.file.buffer);
+
+      const profile = String(req.body?.profile || req.query?.profile || 'blend').trim() || 'blend';
+      const processing = await processAudioV8Pivot({
+        inputPath,
+        outputPath,
+        profile,
+        analysisOptions: {
+          frameMs: reqNumber(req.body?.frameMs || req.query?.frameMs),
+          maxSeconds: reqNumber(req.body?.maxSeconds || req.query?.maxSeconds),
+          maxSegments: reqNumber(req.body?.maxSegments || req.query?.maxSegments),
+          curve: req.body?.curve || req.query?.curve,
+          curveAmount: reqNumber(req.body?.curveAmount || req.query?.curveAmount),
+          attack: reqNumber(req.body?.attack || req.query?.attack),
+          release: reqNumber(req.body?.release || req.query?.release),
+          minDbSpan: reqNumber(req.body?.minDbSpan || req.query?.minDbSpan),
+          cycleSeconds: reqNumber(req.body?.cycleSeconds || req.query?.cycleSeconds),
+          userK: reqNumber(
+            req.body?.userK
+            || req.query?.userK
+            || req.body?.resonanceK
+            || req.query?.resonanceK
+            || req.body?.weightScale
+            || req.query?.weightScale
+            || req.body?.intensity
+            || req.query?.intensity
+            || req.body?.harmonicIntensity
+            || req.query?.harmonicIntensity
+          ),
+          kCeiling: reqNumber(req.body?.kCeiling || req.query?.kCeiling),
+          phaseSlots: reqNumber(req.body?.phaseSlots || req.query?.phaseSlots || req.body?.binaryGridSlots || req.query?.binaryGridSlots),
+          c7PhaseScale: reqNumber(req.body?.c7PhaseScale || req.query?.c7PhaseScale),
+        },
+      });
+      const token = crypto.randomBytes(18).toString('base64url');
+      const createdAt = new Date().toISOString();
+      const owner = String(req.user?.email || req.user?.username || req.user?.sub || '').trim();
+      const asset = {
+        id,
+        token,
+        createdAt,
+        owner,
+        originalName: req.file.originalname || '',
+        inputFilename,
+        outputFilename,
+        contentType: outputFormat.contentType,
+        method: processing.method,
+        profile: processing.profile,
+        preset: processing.preset,
+        intensity: processing.intensity || 'pivot-1024-closed-phase',
+        variant: processing.variant || 'v8pivot',
+        resonance: processing.resonance || null,
+        operators: processing.operators || null,
+        projection: processing.projection || null,
+        grain: processing.grain || null,
+        binaryGrid: processing.binaryGrid || null,
+        phaseClosure: processing.phaseClosure || null,
+        weights: processing.weights || null,
+        dynamicSummary: processing.dynamic?.summary || null,
+        safety: processing.safety || null,
+        bytes: fs.statSync(outputPath).size,
+      };
+      const index = readIndex(indexPath);
+      index.assets = [asset, ...index.assets].slice(0, 300);
+      writeIndex(indexPath, index);
+
+      const baseUrl = routePublicBase(req);
+      const audioUrl = `/api/double-harmonic/out/${encodeURIComponent(outputFilename)}`;
+      const sharePath = `${audioUrl}?token=${encodeURIComponent(token)}`;
+      return res.json({
+        ok: true,
+        id,
+        method: processing.method,
+        state: processing.state,
+        variant: processing.variant,
+        profile: processing.profile,
+        preset: processing.preset,
+        intensity: processing.intensity || 'pivot-1024-closed-phase',
+        d40: processing.d40,
+        resonance: processing.resonance,
+        operators: processing.operators,
+        projection: processing.projection,
+        grain: processing.grain,
+        binaryGrid: processing.binaryGrid,
+        phaseClosure: processing.phaseClosure,
+        dynamic: processing.dynamic,
+        weights: processing.weights || undefined,
+        safety: processing.safety || undefined,
+        audioUrl,
+        shareUrl: baseUrl ? `${baseUrl}${sharePath}` : sharePath,
+        contentType: outputFormat.contentType,
+        filename: outputFilename,
+        bytes: asset.bytes,
+        publicSummary: 'V8 Pivot: version validee, fermeture 1024 exacte et pivot 0.292 exact avec mg_phase recentre conserve.',
+      });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        error: 'double_harmonic_v8pivot_process_failed',
         message: String(error?.message || error),
       });
     }
@@ -1372,7 +1670,7 @@ function createDoubleHarmonicRouter(options = {}) {
     }
   });
 
-  router.use(['/process', '/v2/analyze', '/v2/process', '/v3/process', '/v4/process', '/v5/process', '/v6/process', '/v7/process', '/v71/process', '/v8/process'], (err, _req, res, _next) => {
+  router.use(['/process', '/v2/analyze', '/v2/process', '/v3/process', '/v4/process', '/v5/process', '/v6/process', '/v7/process', '/v71/process', '/v8/process', '/v8plus/process', '/v8pivot/process'], (err, _req, res, _next) => {
     return res.status(400).json({
       ok: false,
       error: 'double_harmonic_upload_failed',

@@ -76,10 +76,20 @@ const {
   sampleBrickResonanceV7At,
 } = require('../src/audio/double-harmonic-bricks-v7.cjs');
 const {
+  GRAIN_E2_HIGH,
+  GRAIN_E2_LOW,
+  GRAIN_PIVOT_HIGH,
+  GRAIN_PIVOT_LOW,
+  GRAIN_PIVOT_PRODUCT_1024,
+  GRAIN_PIVOT_TARGET,
   V8_METHOD,
+  V8_PLUS_METHOD,
+  V8_PIVOT_METHOD,
   buildClosedPhaseAutomationSamplesV8,
   buildClosedPhaseD40FilterV8,
   buildClosedPhaseD40PlanV8,
+  buildClosedPhaseD40PlanV8Pivot,
+  buildClosedPhaseD40PlanV8Plus,
   buildClosedPhaseMetricsV8,
 } = require('../src/audio/double-harmonic-closed-phase-v8.cjs');
 
@@ -200,6 +210,22 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(statusPayload.v8.phaseClosure.slots, 1024);
     assert.equal(statusPayload.v8.safety.noDirectMgOffset, true);
     assert.equal(statusPayload.v8.safety.pivotResidualOldIsNotMgPhase, true);
+    assert.equal(statusPayload.v8plus.method, V8_PLUS_METHOD);
+    assert.equal(statusPayload.v8plus.state, 'v8-plus-e2-grain-listening-candidate');
+    assert.equal(statusPayload.v8plus.variant, 'v8plus');
+    assert.equal(statusPayload.v8plus.phaseClosure.slots, 1024);
+    assert.equal(statusPayload.v8plus.safety.e2GrainCandidate, true);
+    assert.equal(Number(statusPayload.v8plus.grain.active.product.toFixed(15)), 0.5);
+    assert.equal(statusPayload.v8pivot.method, V8_PIVOT_METHOD);
+    assert.equal(statusPayload.v8pivot.state, 'v8-pivot-1024-listening-validated');
+    assert.equal(statusPayload.v8pivot.variant, 'v8pivot');
+    assert.equal(statusPayload.v8pivot.phaseClosure.slots, 1024);
+    assert.equal(statusPayload.v8pivot.safety.pivot1024ListeningValidated, true);
+    assert.equal(Number(statusPayload.v8pivot.grain.active.low.toFixed(15)), Number(GRAIN_PIVOT_LOW.toFixed(15)));
+    assert.equal(Number(statusPayload.v8pivot.grain.active.high.toFixed(15)), Number(GRAIN_PIVOT_HIGH.toFixed(15)));
+    assert.equal(Number(statusPayload.v8pivot.grain.active.product.toFixed(15)), Number(GRAIN_PIVOT_PRODUCT_1024.toFixed(15)));
+    assert.equal(Number(statusPayload.v8pivot.grain.active.pivot.toFixed(12)), GRAIN_PIVOT_TARGET);
+    assert.ok(Math.abs(statusPayload.v8pivot.binaryGrid.measuredSlotsPerSecond - 1024) < 1e-9);
 
     const v2 = await fetch(`${baseUrl}/api/double-harmonic/v2/status?smoothing=1%2Fe&frameMs=20`);
     const v2Payload = await v2.json();
@@ -568,6 +594,66 @@ test('closed phase d40 v8 centers mg_phase increments and keeps V6 stable', () =
   assert.match(built.filter, /rubberband=pitch=/);
   assert.match(built.filter, /amix=inputs=3:weights='1 1 1':normalize=0\[out\]/);
   assert.doesNotMatch(built.filter, /alimiter/);
+});
+
+test('closed phase d40 v8 plus uses e2 grains as a parallel listening candidate', () => {
+  const metrics = buildClosedPhaseMetricsV8({ variant: 'v8plus', phaseSlots: 1024 });
+  const built = buildClosedPhaseD40FilterV8({ variant: 'v8plus', profile: 'blend', userK: 3 });
+  const plan = buildClosedPhaseD40PlanV8Plus({ profile: 'blend' });
+  const automation = buildClosedPhaseAutomationSamplesV8({
+    variant: 'v8plus',
+    analysis: { frames: [{ endTime: 1, normalizedEnergy: 0.6, curvedEnergy: 0.6, weightScale: 1 }], summary: { durationSeconds: 1 } },
+    durationSeconds: 1,
+    sampleRate: 1024,
+    userK: 3,
+  });
+
+  assert.equal(built.method, V8_PLUS_METHOD);
+  assert.equal(plan.state, 'v8-plus-e2-grain-listening-candidate');
+  assert.equal(plan.variant, 'v8plus');
+  assert.equal(plan.safety.e2GrainCandidate, true);
+  assert.equal(plan.safety.e2GrainNotCanon, true);
+  assert.equal(Number(plan.grain.active.low.toFixed(15)), Number(GRAIN_E2_LOW.toFixed(15)));
+  assert.equal(Number(plan.grain.active.high.toFixed(15)), Number(GRAIN_E2_HIGH.toFixed(15)));
+  assert.equal(Number(plan.grain.active.product.toFixed(15)), 0.5);
+  assert.equal(Number(plan.dimensions.grainLow.toFixed(15)), Number(GRAIN_E2_LOW.toFixed(15)));
+  assert.equal(Number(plan.dimensions.grainHigh.toFixed(15)), Number(GRAIN_E2_HIGH.toFixed(15)));
+  assert.ok(Math.abs(metrics.closure.centered.closingGap) < 1e-12);
+  assert.ok(Math.abs(metrics.binaryGrid.grainProductGapToHalf) < 1e-15);
+  assert.equal(automation.variant, 'v8plus');
+  assert.equal(automation.phaseClosure.slots, 1024);
+  assert.match(built.filter, /rubberband=pitch=/);
+  assert.match(built.filter, /amix=inputs=3:weights='1 1 1':normalize=0\[out\]/);
+});
+
+test('closed phase d40 v8 pivot locks 1024 slots and pivot 0.292', () => {
+  const metrics = buildClosedPhaseMetricsV8({ variant: 'v8pivot', phaseSlots: 1024 });
+  const built = buildClosedPhaseD40FilterV8({ variant: 'v8pivot', profile: 'blend', userK: 3 });
+  const plan = buildClosedPhaseD40PlanV8Pivot({ profile: 'blend' });
+  const automation = buildClosedPhaseAutomationSamplesV8({
+    variant: 'v8pivot',
+    analysis: { frames: [{ endTime: 1, normalizedEnergy: 0.6, curvedEnergy: 0.6, weightScale: 1 }], summary: { durationSeconds: 1 } },
+    durationSeconds: 1,
+    sampleRate: 1024,
+    userK: 3,
+  });
+
+  assert.equal(built.method, V8_PIVOT_METHOD);
+  assert.equal(plan.state, 'v8-pivot-1024-listening-validated');
+  assert.equal(plan.variant, 'v8pivot');
+  assert.equal(plan.safety.pivot1024Candidate, true);
+  assert.equal(plan.safety.pivot1024ListeningValidated, true);
+  assert.equal(plan.safety.exact1024AndPivot0292, true);
+  assert.equal(Number(plan.grain.active.low.toFixed(15)), Number(GRAIN_PIVOT_LOW.toFixed(15)));
+  assert.equal(Number(plan.grain.active.high.toFixed(15)), Number(GRAIN_PIVOT_HIGH.toFixed(15)));
+  assert.equal(Number(plan.grain.active.product.toFixed(15)), Number(GRAIN_PIVOT_PRODUCT_1024.toFixed(15)));
+  assert.equal(Number(plan.grain.active.pivot.toFixed(12)), GRAIN_PIVOT_TARGET);
+  assert.ok(Math.abs(metrics.binaryGrid.measuredSlotsPerSecond - 1024) < 1e-9);
+  assert.ok(Math.abs(metrics.closure.centered.closingGap) < 1e-12);
+  assert.equal(automation.variant, 'v8pivot');
+  assert.equal(automation.phaseClosure.slots, 1024);
+  assert.match(built.filter, /rubberband=pitch=/);
+  assert.match(built.filter, /amix=inputs=3:weights='1 1 1':normalize=0\[out\]/);
 });
 
 test('double harmonic route processes upload and exposes tokenized audio link', async () => {
@@ -1348,6 +1434,209 @@ test('double harmonic route publishes closed phase d40 v8 with centered 1024 clo
     assert.equal(payload.safety.noDirectMgOffset, true);
     assert.equal(payload.safety.centeredIncrements, true);
     assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v8\.flac$/);
+    assert.deepEqual(calls, [{ profile: 'blend', userK: 5, phaseSlots: 1024 }]);
+
+    const shared = await fetch(payload.shareUrl);
+    assert.equal(shared.status, 200);
+    assert.match(shared.headers.get('content-type') || '', /audio\/flac/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('double harmonic route publishes closed phase d40 v8 plus with e2 grain branch', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-v8plus-process-'));
+  const calls = [];
+  const app = express();
+  app.use('/api/double-harmonic', createDoubleHarmonicRouter({
+    runtimeRoot,
+    processClosedPhaseD40V8Plus: async ({ outputPath, profile, analysisOptions }) => {
+      calls.push({
+        profile,
+        userK: analysisOptions.userK,
+        phaseSlots: analysisOptions.phaseSlots,
+      });
+      fs.writeFileSync(outputPath, Buffer.from('processed v8 plus flac'));
+      return {
+        method: V8_PLUS_METHOD,
+        state: 'v8-plus-e2-grain-listening-candidate',
+        variant: 'v8plus',
+        profile,
+        preset: 'v8-plus-e2-grain-1024-mg-phase-c7-k3',
+        intensity: 'e2-grain-closed-phase-1024',
+        d40: resolveD40Density(),
+        resonance: {
+          userK: analysisOptions.userK || 3,
+          kCeiling: 10,
+          transferMode: 'centered-increment-mg-phase-e2-grain-test',
+        },
+        grain: {
+          mode: 'e2-parallel-listening-test',
+          active: {
+            low: GRAIN_E2_LOW,
+            high: GRAIN_E2_HIGH,
+            product: GRAIN_E2_LOW * GRAIN_E2_HIGH,
+          },
+        },
+        binaryGrid: {
+          grainProduct: GRAIN_E2_LOW * GRAIN_E2_HIGH,
+          grainProductGapToHalf: (GRAIN_E2_LOW * GRAIN_E2_HIGH) - 0.5,
+        },
+        operators: {
+          c7: 0.029194480637266783,
+          mgPhase: 0.001554497790530303,
+          phaseDelta: 0.00001629853626459359,
+        },
+        projection: {
+          hD40: 28.64753166239538,
+          steps: {
+            pivot10c7: 8.36349808423289,
+            mgPhase: 0.04453252467334052,
+          },
+        },
+        phaseClosure: {
+          slots: 1024,
+          centered: { closingGap: 0 },
+          instantOffset: { closingGap: -0.0009 },
+        },
+        dynamic: { automation: { sampleRate: 1024, phaseClosure: { slots: 1024 } } },
+        weights: { dry: 1, highPitch: 1.890697731549768, lowPitch: 0.6847240934220985 },
+        safety: { noLimiter: true, noFinalGain: true, mgPhaseFixed: true, historicalV8Untouched: true, noDirectMgOffset: true, centeredIncrements: true, e2GrainCandidate: true, e2GrainNotCanon: true },
+      };
+    },
+    verifyJWT: (req, _res, next) => {
+      req.user = { email: 'djeff@example.test' };
+      next();
+    },
+  }));
+
+  const { server, baseUrl } = await listen(app);
+  try {
+    const form = new FormData();
+    form.append('audio', new Blob([Buffer.from('ID3demo')], { type: 'audio/mpeg' }), 'demo.mp3');
+    form.append('profile', 'blend');
+    form.append('intensity', '5');
+    form.append('phaseSlots', '1024');
+    const res = await fetch(`${baseUrl}/api/double-harmonic/v8plus/process`, {
+      method: 'POST',
+      body: form,
+    });
+    const payload = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.method, V8_PLUS_METHOD);
+    assert.equal(payload.state, 'v8-plus-e2-grain-listening-candidate');
+    assert.equal(payload.variant, 'v8plus');
+    assert.equal(payload.intensity, 'e2-grain-closed-phase-1024');
+    assert.equal(Number(payload.grain.active.product.toFixed(15)), 0.5);
+    assert.equal(payload.safety.e2GrainCandidate, true);
+    assert.equal(payload.safety.e2GrainNotCanon, true);
+    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v8plus\.flac$/);
+    assert.deepEqual(calls, [{ profile: 'blend', userK: 5, phaseSlots: 1024 }]);
+
+    const shared = await fetch(payload.shareUrl);
+    assert.equal(shared.status, 200);
+    assert.match(shared.headers.get('content-type') || '', /audio\/flac/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('double harmonic route publishes closed phase d40 v8 pivot with exact 1024 and pivot 0.292', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-v8pivot-process-'));
+  const calls = [];
+  const app = express();
+  app.use('/api/double-harmonic', createDoubleHarmonicRouter({
+    runtimeRoot,
+    processClosedPhaseD40V8Pivot: async ({ outputPath, profile, analysisOptions }) => {
+      calls.push({
+        profile,
+        userK: analysisOptions.userK,
+        phaseSlots: analysisOptions.phaseSlots,
+      });
+      fs.writeFileSync(outputPath, Buffer.from('processed v8 pivot flac'));
+      return {
+        method: V8_PIVOT_METHOD,
+        state: 'v8-pivot-1024-listening-validated',
+        variant: 'v8pivot',
+        profile,
+        preset: 'v8-pivot-1024-pivot-0292-mg-phase-c7-k3',
+        intensity: 'pivot-1024-closed-phase',
+        d40: resolveD40Density(),
+        resonance: {
+          userK: analysisOptions.userK || 3,
+          kCeiling: 10,
+          transferMode: 'centered-increment-mg-phase-pivot-1024',
+        },
+        grain: {
+          mode: 'pivot-1024-listening-validated',
+          active: {
+            low: GRAIN_PIVOT_LOW,
+            high: GRAIN_PIVOT_HIGH,
+            product: GRAIN_PIVOT_LOW * GRAIN_PIVOT_HIGH,
+            product1024Target: GRAIN_PIVOT_PRODUCT_1024,
+            pivot: GRAIN_PIVOT_TARGET,
+          },
+        },
+        binaryGrid: {
+          grainProduct: GRAIN_PIVOT_LOW * GRAIN_PIVOT_HIGH,
+          grainProductGapToHalf: (GRAIN_PIVOT_LOW * GRAIN_PIVOT_HIGH) - 0.5,
+          measuredSlotsPerSecond: 1024,
+          measuredGapTo1024: 0,
+        },
+        operators: {
+          c7: 0.029194480637266783,
+          mgPhase: 0.001554497790530303,
+          phaseDelta: 0.00001629853626459359,
+        },
+        projection: {
+          hD40: 28.64753166239538,
+          steps: {
+            pivot10c7: 8.36349808423289,
+            mgPhase: 0.04453252467334052,
+          },
+        },
+        phaseClosure: {
+          slots: 1024,
+          centered: { closingGap: 0 },
+          instantOffset: { closingGap: -0.0009 },
+        },
+        dynamic: { automation: { sampleRate: 1024, phaseClosure: { slots: 1024 } } },
+        weights: { dry: 1, highPitch: 1.8898397614034042, lowPitch: 0.6847143305659609 },
+        safety: { noLimiter: true, noFinalGain: true, mgPhaseFixed: true, historicalV8Untouched: true, noDirectMgOffset: true, centeredIncrements: true, pivot1024Candidate: true, pivot1024ListeningValidated: true, exact1024AndPivot0292: true },
+      };
+    },
+    verifyJWT: (req, _res, next) => {
+      req.user = { email: 'djeff@example.test' };
+      next();
+    },
+  }));
+
+  const { server, baseUrl } = await listen(app);
+  try {
+    const form = new FormData();
+    form.append('audio', new Blob([Buffer.from('ID3demo')], { type: 'audio/mpeg' }), 'demo.mp3');
+    form.append('profile', 'blend');
+    form.append('intensity', '5');
+    form.append('phaseSlots', '1024');
+    const res = await fetch(`${baseUrl}/api/double-harmonic/v8pivot/process`, {
+      method: 'POST',
+      body: form,
+    });
+    const payload = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.method, V8_PIVOT_METHOD);
+    assert.equal(payload.state, 'v8-pivot-1024-listening-validated');
+    assert.equal(payload.variant, 'v8pivot');
+    assert.equal(payload.intensity, 'pivot-1024-closed-phase');
+    assert.equal(Number(payload.grain.active.product.toFixed(15)), Number(GRAIN_PIVOT_PRODUCT_1024.toFixed(15)));
+    assert.equal(Number(payload.grain.active.pivot.toFixed(12)), GRAIN_PIVOT_TARGET);
+    assert.equal(payload.safety.pivot1024ListeningValidated, true);
+    assert.equal(payload.safety.exact1024AndPivot0292, true);
+    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v8pivot\.flac$/);
     assert.deepEqual(calls, [{ profile: 'blend', userK: 5, phaseSlots: 1024 }]);
 
     const shared = await fetch(payload.shareUrl);

@@ -2032,6 +2032,8 @@ const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v7: "V7 Briques",
   v71: "V7.1 1024",
   v8: "V8 Fermeture",
+  v8plus: "V8 Plus e2",
+  v8pivot: "V8 Pivot",
 };
 const D40_OUTPUT_FORMAT_LABELS: Record<DoubleHarmonicOutputFormat, string> = {
   flac: "FLAC master",
@@ -3505,7 +3507,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const doubleHarmonicIntensityLabel = `${doubleHarmonicIntensity.toFixed(2).replace(/\.?0+$/, "")}x`;
   const doubleHarmonicModeLabel = D40_PROCESS_MODE_LABELS[doubleHarmonicMode];
   const doubleHarmonicOutputFormatLabel = D40_OUTPUT_FORMAT_LABELS[doubleHarmonicOutputFormat];
-  const doubleHarmonicIntensityMin = doubleHarmonicMode === "v8"
+  const doubleHarmonicIntensityMin = doubleHarmonicMode === "v8" || doubleHarmonicMode === "v8plus" || doubleHarmonicMode === "v8pivot"
     ? D40_V8_INTENSITY_MIN
     : doubleHarmonicMode === "v7" || doubleHarmonicMode === "v71"
     ? D40_V7_INTENSITY_MIN
@@ -3516,7 +3518,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     : doubleHarmonicMode === "v4"
       ? D40_V4_INTENSITY_MIN
       : D40_HARMONIC_INTENSITY_MIN;
-  const doubleHarmonicIntensityMax = doubleHarmonicMode === "v8"
+  const doubleHarmonicIntensityMax = doubleHarmonicMode === "v8" || doubleHarmonicMode === "v8plus" || doubleHarmonicMode === "v8pivot"
     ? D40_V8_INTENSITY_MAX
     : doubleHarmonicMode === "v7" || doubleHarmonicMode === "v71"
     ? D40_V7_INTENSITY_MAX
@@ -3527,10 +3529,14 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     : doubleHarmonicMode === "v4"
       ? D40_V4_INTENSITY_MAX
       : D40_HARMONIC_INTENSITY_MAX;
-  const doubleHarmonicIntensityStep = doubleHarmonicMode === "v6" || doubleHarmonicMode === "v7" || doubleHarmonicMode === "v71" || doubleHarmonicMode === "v8" ? "0.1" : doubleHarmonicMode === "v4" || doubleHarmonicMode === "v5" ? "0.05" : "0.005";
+  const doubleHarmonicIntensityStep = doubleHarmonicMode === "v6" || doubleHarmonicMode === "v7" || doubleHarmonicMode === "v71" || doubleHarmonicMode === "v8" || doubleHarmonicMode === "v8plus" || doubleHarmonicMode === "v8pivot" ? "0.1" : doubleHarmonicMode === "v4" || doubleHarmonicMode === "v5" ? "0.05" : "0.005";
   const doubleHarmonicUsesFixedWeight = doubleHarmonicMode === "v3";
   const doubleHarmonicWeightLabel = doubleHarmonicMode === "v3"
     ? "Auto"
+    : doubleHarmonicMode === "v8pivot"
+      ? `k ${doubleHarmonicIntensityLabel} · pivot 0.292 · 1024`
+    : doubleHarmonicMode === "v8plus"
+      ? `k ${doubleHarmonicIntensityLabel} · e2 · 1024 · mg_phase`
     : doubleHarmonicMode === "v8"
       ? `k ${doubleHarmonicIntensityLabel} · fermeture 1024 · mg_phase`
     : doubleHarmonicMode === "v71"
@@ -3544,7 +3550,11 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         : doubleHarmonicMode === "v4"
           ? `${doubleHarmonicIntensityLabel} · grain bas x${D40_V4_LOW_GRAIN_MULTIPLIER} · haut ^${D40_V4_HIGH_GRAIN_POWER}`
           : doubleHarmonicIntensityLabel;
-  const doubleHarmonicIntensityTitle = doubleHarmonicMode === "v8"
+  const doubleHarmonicIntensityTitle = doubleHarmonicMode === "v8pivot"
+    ? "V8 Pivot"
+    : doubleHarmonicMode === "v8plus"
+    ? "V8 Plus e2"
+    : doubleHarmonicMode === "v8"
     ? "Fermeture V8"
     : doubleHarmonicMode === "v71"
     ? "Grille V7.1"
@@ -4861,7 +4871,11 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                 disabled={!hasSession || isBusy}
                 onChange={(event) => {
                   const rawMode = event.currentTarget.value;
-                  const nextMode: DoubleHarmonicProcessMode = rawMode === "v8"
+                  const nextMode: DoubleHarmonicProcessMode = rawMode === "v8pivot"
+                    ? "v8pivot"
+                    : rawMode === "v8plus"
+                    ? "v8plus"
+                    : rawMode === "v8"
                     ? "v8"
                     : rawMode === "v71"
                     ? "v71"
@@ -4879,10 +4893,12 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                           ? "v2"
                           : "v1";
                   setDoubleHarmonicMode(nextMode);
-                  setDoubleHarmonicIntensity(nextMode === "v8" ? D40_V8_DEFAULT_INTENSITY : nextMode === "v71" ? D40_V7_DEFAULT_INTENSITY : nextMode === "v7" ? D40_V7_DEFAULT_INTENSITY : nextMode === "v6" ? D40_V6_DEFAULT_INTENSITY : nextMode === "v5" ? D40_V5_DEFAULT_INTENSITY : 1);
+                  setDoubleHarmonicIntensity(nextMode === "v8" || nextMode === "v8plus" || nextMode === "v8pivot" ? D40_V8_DEFAULT_INTENSITY : nextMode === "v71" ? D40_V7_DEFAULT_INTENSITY : nextMode === "v7" ? D40_V7_DEFAULT_INTENSITY : nextMode === "v6" ? D40_V6_DEFAULT_INTENSITY : nextMode === "v5" ? D40_V5_DEFAULT_INTENSITY : 1);
                   setDoubleHarmonicResult(null);
                 }}
               >
+                <option value="v8pivot">V8 Pivot</option>
+                <option value="v8plus">V8 Plus e2</option>
                 <option value="v8">V8 Fermeture</option>
                 <option value="v6">V6 Supreme</option>
                 <option value="v7">V7 Briques</option>

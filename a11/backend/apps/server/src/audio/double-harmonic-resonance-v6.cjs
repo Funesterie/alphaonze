@@ -68,13 +68,23 @@ function resolveV6KCeiling(value) {
   return clampNumber(value, MIN_V6_K_CEILING, MAX_V6_K_CEILING, DEFAULT_V6_K_CEILING);
 }
 
-function resolveResonanceDimensionPairV6() {
-  const twoD = (2 + (2 * GRAIN_SPECTRAL_LOW)) / 2;
-  const threeD = ((3 * GRAIN_SPECTRAL_HIGH * twoD) + 2) / 2;
+function resolveResonanceGrainPairV6(options = {}) {
+  const low = clampNumber(options.grainLow, 0.001, 20, GRAIN_SPECTRAL_LOW);
+  const high = clampNumber(options.grainHigh, low + 0.001, 20, GRAIN_SPECTRAL_HIGH);
+  return { low, high, product: low * high };
+}
+
+function resolveResonanceDimensionPairV6(options = {}) {
+  const grain = resolveResonanceGrainPairV6(options);
+  const twoD = (2 + (2 * grain.low)) / 2;
+  const threeD = ((3 * grain.high * twoD) + 2) / 2;
   const lowPitch = twoD / 2;
   const highPitch = threeD / 2;
   const ratioHighToLow = Math.log(threeD / twoD);
   return {
+    grainLow: grain.low,
+    grainHigh: grain.high,
+    grainProduct: grain.product,
     twoD,
     threeD,
     lowPitch,
@@ -108,7 +118,10 @@ function selectAnalysisFrameAt(analysis = {}, timeSeconds = 0) {
 
 function sampleResonanceMkV6At(analysis = {}, timeSeconds = 0, options = {}) {
   const frame = selectAnalysisFrameAt(analysis, timeSeconds);
-  const dimensions = resolveResonanceDimensionPairV6();
+  const dimensions = resolveResonanceDimensionPairV6({
+    grainLow: options.grainLow,
+    grainHigh: options.grainHigh,
+  });
   const energy = clampNumber(
     Number(frame.curvedEnergy ?? frame.normalizedEnergy ?? 0),
     0,
@@ -121,7 +134,7 @@ function sampleResonanceMkV6At(analysis = {}, timeSeconds = 0, options = {}) {
   const tension = clampNumber(Math.max(0, energy - pivot) / Math.max(0.001, 1 - pivot), 0, 1, 0);
   const userResonance = Math.log1p(Math.max(0, userK - 1)) / Math.log1p(Math.max(1, kCeiling - 1));
   const measuredK = 1 + tension * userResonance;
-  const bassMassM = 1 + (1 - energy) * GRAIN_SPECTRAL_LOW;
+  const bassMassM = 1 + (1 - energy) * dimensions.grainLow;
   const mk = bassMassM * measuredK;
   const surplus = Math.max(0, mk - 1);
   const mOverK = bassMassM / Math.max(0.000001, measuredK);
@@ -160,6 +173,8 @@ function buildResonanceAutomationSamplesV6({
   sampleRate = 400,
   userK,
   kCeiling,
+  grainLow,
+  grainHigh,
 } = {}) {
   const resolvedSampleRate = Math.round(clampNumber(sampleRate, 50, 2000, 400));
   const fallbackDuration = Number(analysis?.summary?.durationSeconds || 1) || 1;
@@ -174,7 +189,7 @@ function buildResonanceAutomationSamplesV6({
 
   for (let index = 0; index < sampleCount; index += 1) {
     const time = index / resolvedSampleRate;
-    const resonance = sampleResonanceMkV6At(analysis, time, { userK, kCeiling });
+    const resonance = sampleResonanceMkV6At(analysis, time, { userK, kCeiling, grainLow, grainHigh });
     const d40 = sampleD40EnvelopeAt(time, { profile, periodSeconds: cycleSeconds });
     const value = d40.gain * resonance.folded;
     samples[index] = value;
@@ -214,9 +229,11 @@ function buildResonanceD40FilterV6({
   cycleSeconds,
   userK,
   kCeiling,
+  grainLow,
+  grainHigh,
 } = {}) {
   const envelopeProbe = sampleD40EnvelopeAt(0, { profile, periodSeconds: cycleSeconds });
-  const dimensions = resolveResonanceDimensionPairV6();
+  const dimensions = resolveResonanceDimensionPairV6({ grainLow, grainHigh });
   const highBaseWeight = RAW_LOW_PRESET.highWeight * AUDIO_PIVOT_GAIN_FACTOR;
   const lowBaseWeight = RAW_LOW_PRESET.lowWeight * AUDIO_PIVOT_GAIN_FACTOR;
   const baseTotalWeight = highBaseWeight + lowBaseWeight;
@@ -288,6 +305,8 @@ function buildResonanceD40ArgsV6({
   envelopePath,
   userK,
   kCeiling,
+  grainLow,
+  grainHigh,
 } = {}) {
   if (!envelopePath) throw new Error('missing_envelope_path');
   const built = buildResonanceD40FilterV6({
@@ -295,6 +314,8 @@ function buildResonanceD40ArgsV6({
     cycleSeconds,
     userK,
     kCeiling,
+    grainLow,
+    grainHigh,
   });
   return {
     built,
@@ -525,6 +546,7 @@ module.exports = {
   buildResonanceD40PlanV6,
   processResonanceD40V6,
   resolveResonanceDimensionPairV6,
+  resolveResonanceGrainPairV6,
   resolveV6KCeiling,
   resolveV6UserK,
   sampleResonanceMkV6At,
