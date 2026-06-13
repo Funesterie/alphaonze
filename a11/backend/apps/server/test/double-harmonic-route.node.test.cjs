@@ -75,6 +75,13 @@ const {
   resolveV7MaxBricks,
   sampleBrickResonanceV7At,
 } = require('../src/audio/double-harmonic-bricks-v7.cjs');
+const {
+  V8_METHOD,
+  buildClosedPhaseAutomationSamplesV8,
+  buildClosedPhaseD40FilterV8,
+  buildClosedPhaseD40PlanV8,
+  buildClosedPhaseMetricsV8,
+} = require('../src/audio/double-harmonic-closed-phase-v8.cjs');
 
 function listen(app) {
   return new Promise((resolve) => {
@@ -188,6 +195,11 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(statusPayload.v71.state, 'v7-1-experimental-binary-grid');
     assert.equal(statusPayload.v71.bricks.binaryGrid.slotsPerSecond, 1024);
     assert.equal(statusPayload.v71.safety.binaryGridEnabled, true);
+    assert.equal(statusPayload.v8.method, V8_METHOD);
+    assert.equal(statusPayload.v8.state, 'v8-closed-phase-candidate');
+    assert.equal(statusPayload.v8.phaseClosure.slots, 1024);
+    assert.equal(statusPayload.v8.safety.noDirectMgOffset, true);
+    assert.equal(statusPayload.v8.safety.pivotResidualOldIsNotMgPhase, true);
 
     const v2 = await fetch(`${baseUrl}/api/double-harmonic/v2/status?smoothing=1%2Fe&frameMs=20`);
     const v2Payload = await v2.json();
@@ -525,6 +537,37 @@ test('binary grid v7.1 locks the mg brick envelope to 1024 slots without moving 
   assert.equal(automation.sampleRate, 1024);
   assert.equal(automation.binaryGrid.enabled, true);
   assert.equal(automation.binaryGrid.outputSampleRate, 1024);
+});
+
+test('closed phase d40 v8 centers mg_phase increments and keeps V6 stable', () => {
+  const metrics = buildClosedPhaseMetricsV8({ phaseSlots: 1024 });
+  const built = buildClosedPhaseD40FilterV8({ profile: 'blend', userK: 3 });
+  const plan = buildClosedPhaseD40PlanV8({ profile: 'blend' });
+  const automation = buildClosedPhaseAutomationSamplesV8({
+    analysis: { frames: [{ endTime: 1, normalizedEnergy: 0.6, curvedEnergy: 0.6, weightScale: 1 }], summary: { durationSeconds: 1 } },
+    durationSeconds: 1,
+    sampleRate: 1024,
+    userK: 3,
+  });
+
+  assert.equal(built.method, V8_METHOD);
+  assert.equal(plan.state, 'v8-closed-phase-candidate');
+  assert.equal(plan.phaseClosure.slots, 1024);
+  assert.equal(plan.safety.v6StableUntouched, true);
+  assert.equal(plan.safety.mgPhaseFixed, true);
+  assert.equal(plan.safety.noDirectMgOffset, true);
+  assert.equal(plan.safety.centeredIncrements, true);
+  assert.equal(Number(plan.operators.c7.toFixed(15)), 0.029194480637267);
+  assert.equal(Number(plan.projection.steps.pivot10c7.toFixed(12)), 8.363498084233);
+  assert.equal(Number(plan.projection.steps.mgPhase.toFixed(12)), 0.044532524673);
+  assert.ok(Math.abs(metrics.closure.centered.closingGap) < 1e-12);
+  assert.ok(Math.abs(metrics.closure.instantOffset.closingGap) > 1e-8);
+  assert.equal(automation.sampleRate, 1024);
+  assert.equal(automation.phaseClosure.slots, 1024);
+  assert.ok(automation.phaseClosure.blockClosingGap.max < 1e-12);
+  assert.match(built.filter, /rubberband=pitch=/);
+  assert.match(built.filter, /amix=inputs=3:weights='1 1 1':normalize=0\[out\]/);
+  assert.doesNotMatch(built.filter, /alimiter/);
 });
 
 test('double harmonic route processes upload and exposes tokenized audio link', async () => {
@@ -1221,6 +1264,91 @@ test('double harmonic route publishes binary grid d40 v7.1 with exact 1024 slots
     assert.equal(payload.safety.binaryGridEnabled, true);
     assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v71\.flac$/);
     assert.deepEqual(calls, [{ profile: 'blend', userK: 3, binaryGrid: 'exact1024' }]);
+
+    const shared = await fetch(payload.shareUrl);
+    assert.equal(shared.status, 200);
+    assert.match(shared.headers.get('content-type') || '', /audio\/flac/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('double harmonic route publishes closed phase d40 v8 with centered 1024 closure', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-v8-process-'));
+  const calls = [];
+  const app = express();
+  app.use('/api/double-harmonic', createDoubleHarmonicRouter({
+    runtimeRoot,
+    processClosedPhaseD40V8: async ({ outputPath, profile, analysisOptions }) => {
+      calls.push({
+        profile,
+        userK: analysisOptions.userK,
+        phaseSlots: analysisOptions.phaseSlots,
+      });
+      fs.writeFileSync(outputPath, Buffer.from('processed v8 flac'));
+      return {
+        method: V8_METHOD,
+        state: 'v8-closed-phase-candidate',
+        profile,
+        preset: 'v8-fermeture-1024-mg-phase-c7-k3',
+        intensity: 'closed-phase-1024',
+        d40: resolveD40Density(),
+        resonance: {
+          userK: analysisOptions.userK || 3,
+          kCeiling: 10,
+          transferMode: 'centered-increment-mg-phase',
+        },
+        operators: {
+          c7: 0.029194480637266783,
+          mgPhase: 0.001554497790530303,
+          phaseDelta: 0.00001629853626459359,
+        },
+        projection: {
+          hD40: 28.64753166239538,
+          steps: {
+            pivot10c7: 8.36349808423289,
+            mgPhase: 0.04453252467334052,
+          },
+        },
+        phaseClosure: {
+          slots: 1024,
+          centered: { closingGap: 0 },
+          instantOffset: { closingGap: -0.0009 },
+        },
+        dynamic: { automation: { sampleRate: 1024, phaseClosure: { slots: 1024 } } },
+        weights: { dry: 1, highPitch: 1.889397887364303, lowPitch: 0.6847388678464575 },
+        safety: { noLimiter: true, noFinalGain: true, mgPhaseFixed: true, v6StableUntouched: true, noDirectMgOffset: true, centeredIncrements: true },
+      };
+    },
+    verifyJWT: (req, _res, next) => {
+      req.user = { email: 'djeff@example.test' };
+      next();
+    },
+  }));
+
+  const { server, baseUrl } = await listen(app);
+  try {
+    const form = new FormData();
+    form.append('audio', new Blob([Buffer.from('ID3demo')], { type: 'audio/mpeg' }), 'demo.mp3');
+    form.append('profile', 'blend');
+    form.append('intensity', '5');
+    form.append('phaseSlots', '1024');
+    const res = await fetch(`${baseUrl}/api/double-harmonic/v8/process`, {
+      method: 'POST',
+      body: form,
+    });
+    const payload = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.method, V8_METHOD);
+    assert.equal(payload.state, 'v8-closed-phase-candidate');
+    assert.equal(payload.intensity, 'closed-phase-1024');
+    assert.equal(payload.phaseClosure.slots, 1024);
+    assert.equal(payload.safety.noDirectMgOffset, true);
+    assert.equal(payload.safety.centeredIncrements, true);
+    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v8\.flac$/);
+    assert.deepEqual(calls, [{ profile: 'blend', userK: 5, phaseSlots: 1024 }]);
 
     const shared = await fetch(payload.shareUrl);
     assert.equal(shared.status, 200);
