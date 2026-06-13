@@ -26,7 +26,25 @@ RUN pip install --no-cache-dir "pip<24.1" "setuptools<70" wheel \
     && pip install --no-cache-dir torch==2.11.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir -r /app/requirements.xtts-rvc.txt
 
-RUN python -c "from transformers import BeamSearchScorer, LogitsProcessorList, StoppingCriteriaList; from transformers.generation.utils import GenerationMixin; from TTS.api import TTS; from TTS.tts.layers.xtts.gpt import GPT2InferenceModel; setattr(GPT2InferenceModel, 'generate', getattr(GPT2InferenceModel, 'generate', GenerationMixin.generate)); assert hasattr(GPT2InferenceModel, 'generate'), 'Coqui XTTS requires GPT2InferenceModel.generate'; print('xtts-rvc import compatibility ok')"
+RUN python <<'PY'
+from transformers import BeamSearchScorer, LogitsProcessorList, StoppingCriteriaList
+from transformers.generation.utils import GenerationMixin
+from TTS.api import TTS
+from TTS.tts.layers.xtts.gpt import GPT2InferenceModel
+
+del BeamSearchScorer, LogitsProcessorList, StoppingCriteriaList, TTS
+
+for method_name in dir(GenerationMixin):
+    if method_name.startswith("__"):
+        continue
+    method = getattr(GenerationMixin, method_name)
+    if callable(method) and not hasattr(GPT2InferenceModel, method_name):
+        setattr(GPT2InferenceModel, method_name, method)
+
+assert hasattr(GPT2InferenceModel, 'generate'), 'Coqui XTTS requires GPT2InferenceModel.generate'
+assert hasattr(GPT2InferenceModel, '_prepare_generation_config'), 'Coqui XTTS requires GPT2InferenceModel._prepare_generation_config'
+print('xtts-rvc import compatibility ok')
+PY
 
 COPY patch_fairseq_py311.py /app/patch_fairseq_py311.py
 RUN python /app/patch_fairseq_py311.py

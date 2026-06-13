@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const requirementsPath = path.resolve(__dirname, '../../../../ops/voice/requirements.xtts-rvc.txt');
+const bridgePath = path.resolve(__dirname, '../../../../ops/voice/funesterie_xtts_rvc_api.py');
 
 function readPinnedRequirements() {
   const text = fs.readFileSync(requirementsPath, 'utf8');
@@ -31,5 +32,11 @@ test('XTTS/RVC runtime keeps Coqui TTS on the patched transformers stack', () =>
   const dockerfile = fs.readFileSync(path.resolve(__dirname, '../../../../ops/voice/Dockerfile.xtts-rvc'), 'utf8');
   assert.match(dockerfile, /BeamSearchScorer/);
   assert.match(dockerfile, /GenerationMixin/);
-  assert.match(dockerfile, /GPT2InferenceModel, 'generate'/);
+  assert.match(dockerfile, /GPT2InferenceModel/);
+  assert.match(dockerfile, /'generate'/);
+  assert.match(dockerfile, /_prepare_generation_config/);
+
+  const bridge = fs.readFileSync(bridgePath, 'utf8');
+  assert.match(bridge, /_prepare_generation_config/);
+  assert.match(bridge, /xttsPrepareGenerationConfig/);
 });

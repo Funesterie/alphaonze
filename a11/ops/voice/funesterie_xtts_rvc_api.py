@@ -28,9 +28,16 @@ def patch_xtts_generation_mixin() -> bool:
         from transformers.generation.utils import GenerationMixin
         from TTS.tts.layers.xtts.gpt import GPT2InferenceModel
 
-        if not hasattr(GPT2InferenceModel, "generate"):
-            GPT2InferenceModel.generate = GenerationMixin.generate
-        return hasattr(GPT2InferenceModel, "generate")
+        for name in dir(GenerationMixin):
+            if name.startswith("__"):
+                continue
+            member = getattr(GenerationMixin, name)
+            if callable(member) and not hasattr(GPT2InferenceModel, name):
+                setattr(GPT2InferenceModel, name, member)
+        return all(
+            hasattr(GPT2InferenceModel, name)
+            for name in ("generate", "_prepare_generation_config")
+        )
     except Exception:
         return False
 
@@ -511,7 +518,11 @@ def check_xtts_runtime_imports() -> dict:
         from TTS.tts.layers.xtts.gpt import GPT2InferenceModel
 
         del BeamSearchScorer, LogitsProcessorList, StoppingCriteriaList
-        return {"ok": True, "xttsGenerate": hasattr(GPT2InferenceModel, "generate")}
+        return {
+            "ok": True,
+            "xttsGenerate": hasattr(GPT2InferenceModel, "generate"),
+            "xttsPrepareGenerationConfig": hasattr(GPT2InferenceModel, "_prepare_generation_config"),
+        }
     except Exception as exc:
         return {
             "ok": False,
