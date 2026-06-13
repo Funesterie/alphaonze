@@ -406,6 +406,8 @@ function sanitizeBodyForRemote(body, model) {
   delete next.acceptAsyncImageJob;
   delete next.sourceImageUrl;
   delete next.systemPrompt;
+  delete next.language;
+  delete next.locale;
   return next;
 }
 
