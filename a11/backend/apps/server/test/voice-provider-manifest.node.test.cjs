@@ -91,6 +91,8 @@ describe('voice-provider-manifest', () => {
 
     it('keeps legacy cloud voice ids only for old payload recognition', () => {
       assert.equal(OFFICIAL_READY_VOICE_PROFILES.a11.elevenLabsVoiceId, 'JBFqnCBsd6RMkjVDRZzb');
+      assert.equal(OFFICIAL_READY_VOICE_PROFILES.kaen44.elevenLabsVoiceId, 'JBFqnCBsd6RMkjVDRZzb');
+      assert.equal(OFFICIAL_READY_VOICE_PROFILES.vivy.elevenLabsVoiceId, 'JBFqnCBsd6RMkjVDRZzb');
       assert.equal(OFFICIAL_READY_VOICE_PROFILES.a11.cartesiaVoiceId, '7345dfa5-ee04-44d2-abf4-29262b880ab4');
       assert.equal(OFFICIAL_READY_VOICE_PROFILES.kaen44.cartesiaVoiceId, '8832a0b5-47b2-4751-bb22-6a8e2149303d');
       assert.equal(OFFICIAL_READY_VOICE_PROFILES.vivy.cartesiaVoiceId, '2f8e82c4-cb94-4e6d-8b6a-29bf58ceb60a');
@@ -159,16 +161,18 @@ describe('voice-provider-manifest', () => {
       });
     }
 
-    it('a11 and vivy: keep local official priority even when ElevenLabs is configured', () => {
+    it('official personas prefer ElevenLabs when it is configured', () => {
       const previous = {
         A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
         A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
+        A11_TTS_DEFAULT_PROVIDER: process.env.A11_TTS_DEFAULT_PROVIDER,
         A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
         A11_CARTESIA_TTS_ENABLED: process.env.A11_CARTESIA_TTS_ENABLED,
         A11_TTS_ALLOW_XTTS_RVC_AUTO: process.env.A11_TTS_ALLOW_XTTS_RVC_AUTO,
         A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
       };
       process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
+      delete process.env.A11_TTS_DEFAULT_PROVIDER;
       process.env.A11_TTS_ALLOW_XTTS_RVC_AUTO = 'true';
       process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
       delete process.env.A11_CARTESIA_API_KEY;
@@ -176,8 +180,9 @@ describe('voice-provider-manifest', () => {
       delete process.env.A11_CARTESIA_TTS_ENABLED;
       try {
         assert.equal(isProviderRuntimeConfigured(PROVIDERS.ELEVENLABS), true);
-        assert.equal(resolveVoiceProvider('a11').provider, PROVIDERS.XTTS_RVC);
-        assert.equal(resolveVoiceProvider('vivy').provider, PROVIDERS.XTTS_RVC);
+        assert.equal(resolveVoiceProvider('a11').provider, PROVIDERS.ELEVENLABS);
+        assert.equal(resolveVoiceProvider('kaen44').provider, PROVIDERS.ELEVENLABS);
+        assert.equal(resolveVoiceProvider('vivy').provider, PROVIDERS.ELEVENLABS);
       } finally {
         for (const [key, value] of Object.entries(previous)) {
           if (value === undefined) delete process.env[key];
@@ -232,16 +237,22 @@ describe('voice-provider-manifest', () => {
       }
     });
 
-    it('kaen44, a11 and vivy do not auto-select ElevenLabs just because its key exists', () => {
-      const previous = process.env.A11_ELEVENLABS_API_KEY;
+    it('kaen44, a11 and vivy auto-select ElevenLabs when its key exists', () => {
+      const previous = {
+        A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+        A11_TTS_DEFAULT_PROVIDER: process.env.A11_TTS_DEFAULT_PROVIDER,
+      };
       process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
+      delete process.env.A11_TTS_DEFAULT_PROVIDER;
       try {
-        assert.notEqual(resolveVoiceProvider('kaen44').provider, PROVIDERS.ELEVENLABS);
-        assert.notEqual(resolveVoiceProvider('a11').provider, PROVIDERS.ELEVENLABS);
-        assert.notEqual(resolveVoiceProvider('vivy').provider, PROVIDERS.ELEVENLABS);
+        assert.equal(resolveVoiceProvider('kaen44').provider, PROVIDERS.ELEVENLABS);
+        assert.equal(resolveVoiceProvider('a11').provider, PROVIDERS.ELEVENLABS);
+        assert.equal(resolveVoiceProvider('vivy').provider, PROVIDERS.ELEVENLABS);
       } finally {
-        if (previous === undefined) delete process.env.A11_ELEVENLABS_API_KEY;
-        else process.env.A11_ELEVENLABS_API_KEY = previous;
+        for (const [key, value] of Object.entries(previous)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
       }
     });
   });

@@ -1697,7 +1697,7 @@ test('tts speak route can use ElevenLabs when selected explicitly by an authoriz
   }
 });
 
-test('tts speak route defaults A11 and Vivy auto voices to ElevenLabs when configured', async () => {
+test('tts speak route defaults official auto voices to ElevenLabs when configured', async () => {
   const previousEnv = {
     A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
     A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
@@ -1748,7 +1748,7 @@ test('tts speak route defaults A11 and Vivy auto voices to ElevenLabs when confi
         app.use('/api', ttsRouter);
       },
       async (baseUrl) => {
-        for (const persona of ['a11', 'vivy']) {
+        for (const persona of ['a11', 'kaen44', 'vivy']) {
           const result = await postJson(baseUrl, '/api/tts/speak', {
             text: `Bonjour ${persona}`,
             persona,
@@ -1764,10 +1764,10 @@ test('tts speak route defaults A11 and Vivy auto voices to ElevenLabs when confi
           assert.equal(result.response.status, 200);
           assert.equal(result.json.provider, 'elevenlabs');
           assert.equal(result.json.via, 'elevenlabs-tts');
-          assert.match(result.json.voiceReference.label, new RegExp(persona === 'a11' ? 'A11' : 'Vivy', 'i'));
+          assert.match(result.json.voiceReference.label, new RegExp(persona === 'a11' ? 'A11' : persona === 'kaen44' ? 'Kaen44' : 'Vivy', 'i'));
           assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-elevenlabs\.mp3$/);
         }
-        assert.equal(elevenLabsBodies.length, 2);
+        assert.equal(elevenLabsBodies.length, 3);
       }
     );
   } finally {

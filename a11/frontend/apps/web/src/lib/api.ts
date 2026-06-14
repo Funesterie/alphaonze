@@ -2795,12 +2795,15 @@ export async function chatWithVivy(
   return payload as VivyStudioProductionResult;
 }
 
-export type Provider = "local" | "ollama" | "openai";
+export type Provider = "local" | "ollama" | "openai" | "groq";
 
 const DEFAULT_OLLAMA_MODEL = 'llama3.2:3b';
+const DEFAULT_GROQ_MODEL = 'llama-3.3-70b-versatile';
 
 export function getModelForProvider(provider: Provider): string {
   switch (provider) {
+    case 'groq':
+      return DEFAULT_GROQ_MODEL;
     case 'openai':
       return 'meta-llama/llama-3.3-70b-instruct';
     case 'ollama':

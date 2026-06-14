@@ -511,13 +511,13 @@ services:
       A11_WEB_DIST_DIR: /web/dist
       A11_PROFILE_ENV: /app/profiles/a11.prod.env.disabled
       A11_RUNTIME_ROOT: /app/runtime
-      A11_LLM_PROVIDER: ollama
+      A11_LLM_PROVIDER: groq
       A11_OLLAMA_PRIMARY_MODEL: llama3.2:3b
       A11_OLLAMA_FALLBACK_MODEL: llama3.2:3b
       A11_TRANSLATION_MODEL: llama3.2:3b
       LOCAL_DEFAULT_MODEL: llama3.2:3b
-      A11_LLM_FALLBACK_PROVIDER: groq
-      A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,groq
+      A11_LLM_FALLBACK_PROVIDER: ollama
+      A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,openai,gemini,xai,huggingface,deepseek,together
       A11_CERBERE_LOCAL_ONLY: "false"
       A11_LOCAL_CHAT_TIMEOUT_MS: "20000"
       A11_OLLAMA_KEEP_ALIVE: "30m"
@@ -602,13 +602,13 @@ services:
       A11_PROFILE_ENV: /app/profiles/kaen44.prod.env.disabled
       KAEN44_PROFILE_ENV: /app/profiles/kaen44.prod.env.disabled
       A11_RUNTIME_ROOT: /app/runtime
-      A11_LLM_PROVIDER: ollama
+      A11_LLM_PROVIDER: groq
       A11_OLLAMA_PRIMARY_MODEL: llama3.2:3b
       A11_OLLAMA_FALLBACK_MODEL: llama3.2:3b
       A11_TRANSLATION_MODEL: llama3.2:3b
       LOCAL_DEFAULT_MODEL: llama3.2:3b
-      A11_LLM_FALLBACK_PROVIDER: groq
-      A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,groq
+      A11_LLM_FALLBACK_PROVIDER: ollama
+      A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,openai,gemini,xai,huggingface,deepseek,together
       A11_CERBERE_LOCAL_ONLY: "false"
       A11_LOCAL_CHAT_TIMEOUT_MS: "20000"
       A11_OLLAMA_KEEP_ALIVE: "30m"
@@ -999,7 +999,7 @@ $overrides = [ordered]@{
   OPENAI_BASE_URL = "https://openrouter.ai/api/v1"
   OPENAI_MODEL = "meta-llama/llama-3.3-70b-instruct"
   A11_OPENAI_MODEL = "meta-llama/llama-3.3-70b-instruct"
-  A11_LLM_PROVIDER = "ollama"
+  A11_LLM_PROVIDER = "groq"
   OLLAMA_BASE = "http://a11-ollama:11434"
   LLAMA_BASE = "http://a11-ollama:11434"
   OLLAMA_HOST = "a11-ollama"
@@ -1028,8 +1028,8 @@ $overrides = [ordered]@{
   A11_CERBERE_OPENAI_API_KEY = $(if ($mcpEnvMap.Contains("OPENROUTER_API_KEY") -and -not [string]::IsNullOrWhiteSpace($mcpEnvMap["OPENROUTER_API_KEY"])) { $mcpEnvMap["OPENROUTER_API_KEY"] } elseif ($envMap.Contains("OPENROUTER_API_KEY")) { $envMap["OPENROUTER_API_KEY"] } else { "" })
   LOCAL_DEFAULT_MODEL = "llama3.2:3b"
   A11_CERBERE_PREFER_NON_GROQ = "false"
-  A11_LLM_FALLBACK_PROVIDER = "groq"
-  A11_LLM_RUNTIME_FALLBACK_ORDER = "ollama,groq"
+  A11_LLM_FALLBACK_PROVIDER = "ollama"
+  A11_LLM_RUNTIME_FALLBACK_ORDER = "ollama,openai,gemini,xai,huggingface,deepseek,together"
   A11_CERBERE_LOCAL_ONLY = "false"
   A11_LOCAL_CHAT_TIMEOUT_MS = "20000"
   A11_OLLAMA_KEEP_ALIVE = "30m"
@@ -1056,6 +1056,7 @@ $overrides = [ordered]@{
   A11_ELEVENLABS_API_KEY_FILE = $(if ($env:A11_ELEVENLABS_API_KEY_FILE) { $env:A11_ELEVENLABS_API_KEY_FILE } else { "/app/runtime/secrets/elevenlabs_api_key" })
   VIVY_ELEVENLABS_API_KEY_FILE = $(if ($env:VIVY_ELEVENLABS_API_KEY_FILE) { $env:VIVY_ELEVENLABS_API_KEY_FILE } else { "/app/runtime/secrets/elevenlabs_api_key" })
   A11_ELEVENLABS_A11_VOICE_ID = $(if ($env:A11_ELEVENLABS_A11_VOICE_ID) { $env:A11_ELEVENLABS_A11_VOICE_ID } else { "JBFqnCBsd6RMkjVDRZzb" })
+  A11_ELEVENLABS_KAEN44_VOICE_ID = $(if ($env:A11_ELEVENLABS_KAEN44_VOICE_ID) { $env:A11_ELEVENLABS_KAEN44_VOICE_ID } else { "JBFqnCBsd6RMkjVDRZzb" })
   A11_ELEVENLABS_VIVY_VOICE_ID = $(if ($env:A11_ELEVENLABS_VIVY_VOICE_ID) { $env:A11_ELEVENLABS_VIVY_VOICE_ID } else { "JBFqnCBsd6RMkjVDRZzb" })
   VIVY_ELEVENLABS_MUSIC_MODEL = $(if ($env:VIVY_ELEVENLABS_MUSIC_MODEL) { $env:VIVY_ELEVENLABS_MUSIC_MODEL } else { "" })
   VIVY_MUSIC_PROVIDER = $(if ($env:VIVY_MUSIC_PROVIDER) { $env:VIVY_MUSIC_PROVIDER } else { "suno" })
@@ -1266,13 +1267,13 @@ printf 'A11_BUILD_COMMIT=%s\n' '__BUILD_COMMIT__' >> "$tmp_build"
 printf 'A11_BUILD_BRANCH=%s\n' '__BUILD_BRANCH__' >> "$tmp_build"
 printf 'A11_BUILD_DATE=%s\n' '__BUILD_DATE__' >> "$tmp_build"
 printf 'A11_VOICE_XTTS_RVC_FALLBACK=false\n' >> "$tmp_build"
-printf 'A11_LLM_PROVIDER=ollama\n' >> "$tmp_build"
+printf 'A11_LLM_PROVIDER=groq\n' >> "$tmp_build"
 printf 'A11_OLLAMA_PRIMARY_MODEL=llama3.2:3b\n' >> "$tmp_build"
 printf 'A11_OLLAMA_FALLBACK_MODEL=llama3.2:3b\n' >> "$tmp_build"
 printf 'A11_TRANSLATION_MODEL=llama3.2:3b\n' >> "$tmp_build"
 printf 'LOCAL_DEFAULT_MODEL=llama3.2:3b\n' >> "$tmp_build"
-printf 'A11_LLM_FALLBACK_PROVIDER=groq\n' >> "$tmp_build"
-printf 'A11_LLM_RUNTIME_FALLBACK_ORDER=ollama,groq\n' >> "$tmp_build"
+printf 'A11_LLM_FALLBACK_PROVIDER=ollama\n' >> "$tmp_build"
+printf 'A11_LLM_RUNTIME_FALLBACK_ORDER=ollama,openai,gemini,xai,huggingface,deepseek,together\n' >> "$tmp_build"
 printf 'A11_CERBERE_LOCAL_ONLY=false\n' >> "$tmp_build"
 printf 'A11_LOCAL_CHAT_TIMEOUT_MS=20000\n' >> "$tmp_build"
 printf 'A11_OLLAMA_KEEP_ALIVE=30m\n' >> "$tmp_build"

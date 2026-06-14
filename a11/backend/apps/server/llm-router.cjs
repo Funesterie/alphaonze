@@ -171,6 +171,7 @@ function normalizeLlmProvider(value, fallback = "none") {
 function deriveDefaultLlmProvider() {
   const explicit = normalizeLlmProvider(process.env.A11_LLM_PROVIDER, "");
   if (explicit) return explicit;
+  if (process.env.GROQ_API_KEY) return "groq";
   if (process.env.OLLAMA_BASE || process.env.OLLAMA_HOST || process.env.OLLAMA_PORT) return "ollama";
   if (process.env.A11_OPENAI_API_KEY || process.env.OPENAI_API_KEY) return "openai";
   return "none";
@@ -223,7 +224,7 @@ const LLM_REQUEST_TIMEOUT_MS = Number(process.env.A11_LLM_REQUEST_TIMEOUT_MS || 
 const OLLAMA_TAGS_CACHE_TTL_MS = Number(process.env.A11_OLLAMA_TAGS_CACHE_TTL_MS || 5000) || 5000;
 const RUNTIME_FALLBACK_ORDER = String(
   process.env.A11_LLM_RUNTIME_FALLBACK_ORDER
-  || "ollama,openai,gemini,deepseek,together,xai,huggingface"
+  || "groq,ollama,openai,gemini,deepseek,together,xai,huggingface"
 )
   .split(",")
   .map((entry) => normalizeLlmProvider(entry, ""))
@@ -331,6 +332,16 @@ function buildHuggingFacePublicStatus() {
       endpoint: imageEndpoint,
       defaultSteps: Math.max(1, Math.min(12, Math.round(Number(process.env.A11_HF_IMAGE_STEPS || 4) || 4))),
     },
+  };
+}
+
+function buildGroqPublicStatus() {
+  return {
+    configured: hasProviderCredential("groq"),
+    enabled: LLM_PROVIDER === "groq" || LLM_FALLBACK_PROVIDER === "groq" || RUNTIME_FALLBACK_ORDER.includes("groq"),
+    baseUrl: BACKENDS.groq,
+    model: DEFAULT_GROQ_MODEL,
+    fallbackProviderEnabled: LLM_FALLBACK_PROVIDER === "groq" || RUNTIME_FALLBACK_ORDER.includes("groq"),
   };
 }
 
@@ -846,6 +857,20 @@ async function resolveLlmTarget(requestedModel = "", { emitLogs = true } = {}) {
   }
 
   if (provider === "groq") {
+    if (!hasProviderCredential("groq")) {
+      const fallbackTargets = await resolveRuntimeFallbackTargets(
+        { provider: "groq", baseUrl: BACKENDS.groq, model: requestedModel || DEFAULT_GROQ_MODEL },
+        "",
+        "groq_credentials_missing"
+      );
+      const fallbackTarget = fallbackTargets[0] || null;
+      if (fallbackTarget) {
+        if (emitLogs) logWarn(`[LLM] provider=groq sans clé; fallback=${fallbackTarget.provider} model=${fallbackTarget.model}`);
+        rememberResolvedTarget(fallbackTarget, { reason: "groq_credentials_missing" });
+        return fallbackTarget;
+      }
+      throw new Error("groq_credentials_missing");
+    }
     const groqTarget = resolveGroqTarget(requestedModel, "provider_forced");
     if (!groqTarget) {
       throw new Error("groq_base_missing");
@@ -1302,17 +1327,19 @@ async function getLlmDebugSnapshot({ force = false } = {}) {
       ollamaPrimaryModel: OLLAMA_PRIMARY_MODEL,
       ollamaFallbackModel: OLLAMA_FALLBACK_MODEL,
       openaiModel: DEFAULT_OPENAI_MODEL,
+      groqModel: DEFAULT_GROQ_MODEL,
       geminiModel: DEFAULT_GEMINI_MODEL,
       localModel: DEFAULT_LOCAL_MODEL,
     },
     active,
     providers: {
       openai: {
-        configured: true,
+        configured: hasProviderCredential("openai"),
         baseUrl: BACKENDS.openai,
         model: DEFAULT_OPENAI_MODEL,
-        apiKeyConfigured: Boolean(String(process.env.OPENAI_API_KEY || "").trim()),
+        apiKeyConfigured: hasProviderCredential("openai"),
       },
+      groq: buildGroqPublicStatus(),
       huggingface: buildHuggingFacePublicStatus(),
       gemini: buildGeminiPublicStatus(),
       ollama: {
@@ -1343,6 +1370,7 @@ async function getLlmDebugSnapshot({ force = false } = {}) {
 router.get(["/api/stats", "/api/llm/stats"], (req, res) => {
   const huggingface = buildHuggingFacePublicStatus();
   const gemini = buildGeminiPublicStatus();
+  const groq = buildGroqPublicStatus();
   res.json({
     service: "cerbere-router",
     version: "2.0.0",
@@ -1359,12 +1387,15 @@ router.get(["/api/stats", "/api/llm/stats"], (req, res) => {
       ollamaFallbackModel: OLLAMA_FALLBACK_MODEL,
       localModel: DEFAULT_LOCAL_MODEL,
       openaiModel: DEFAULT_OPENAI_MODEL,
+      groqModel: DEFAULT_GROQ_MODEL,
       geminiModel: DEFAULT_GEMINI_MODEL,
       huggingfaceModel: DEFAULT_HF_MODEL,
       huggingface,
       gemini,
+      groq,
     },
     providers: {
+      groq,
       huggingface,
       gemini,
     },

@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('node:fs');
+
 // Voice provider manifest — By Djeff / Funesterie
 // Defines persona → provider → model/ref routing for A11/K44/Vivy.
 // Rule: demo assets (demo-alice.*) are NEVER selected for official personas.
@@ -45,7 +47,7 @@ const LEGACY_CLOUD_TTS_PROVIDERS = new Set([
   PROVIDERS.ELEVENLABS,
 ]);
 
-const CLOUD_DEFAULT_PERSONAS = new Set([]);
+const CLOUD_DEFAULT_PERSONAS = new Set(['a11', 'kaen44', 'vivy']);
 const LOCAL_OFFICIAL_PRIORITY_PERSONAS = new Set(['a11', 'kaen44', 'k44', 'kaen', 'vivy', 'djeff', 'djeff-rap']);
 const DEFAULT_ELEVENLABS_FAMILY_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb';
 
@@ -85,11 +87,12 @@ const VOICE_PERSONA_DIRECTIONS = Object.freeze({
     label: 'Kaen44 official French desk operator',
     referenceMoodboard: [
       'Elegant French desk-operator voice, based on the owned family WAV reference when available.',
+      'If ElevenLabs is configured, use a crisp French operator voice: feminine, quick, elegant, confident, never cartoonish.',
     ],
     protectedReferences: [],
     referenceClipNotes: [
       'Official path: owned family WAV reference through the Funesterie XTTS/RVC bridge when available.',
-      'Cartesia/ElevenLabs remain explicit privileged choices only; use the owned family reference first.',
+      'ElevenLabs is the preferred ready-made cloud route when configured; otherwise use the owned family reference first.',
       'Target original Kaen44: sharp desk-operator timing, confident warmth, fast wit.',
     ],
     prompt:
@@ -132,11 +135,13 @@ const OFFICIAL_READY_VOICE_PROFILES = Object.freeze({
     styleId: 'kaen44-official-french-narrator',
     displayName: 'Kaen44 - French Narrator Lady',
     providerLabels: Object.freeze({
+      [PROVIDERS.ELEVENLABS]: 'ElevenLabs Kaen44 family default',
       [PROVIDERS.AZURE]: 'fr-FR-Vivienne:DragonHDLatestNeural',
       [PROVIDERS.OPENAI]: 'sage',
       [PROVIDERS.XTTS_RVC]: 'Family WAV - Kaen44 official reference',
       [PROVIDERS.PIPER]: 'fr_FR-siwis-medium',
     }),
+    elevenLabsVoiceId: DEFAULT_ELEVENLABS_FAMILY_VOICE_ID,
     cartesiaVoiceId: '8832a0b5-47b2-4751-bb22-6a8e2149303d',
     azureVoice: 'fr-FR-Vivienne:DragonHDLatestNeural',
     openAiVoice: 'sage',
@@ -170,6 +175,19 @@ function hasEnvValue(...names) {
   return names.some((name) => String(process.env[name] || '').trim());
 }
 
+function hasExistingEnvFileValue(...names) {
+  return names.some((name) => {
+    const filePath = String(process.env[name] || '').trim();
+    if (!filePath) return false;
+    try {
+      const stat = fs.statSync(filePath);
+      return stat.isFile() && stat.size > 0;
+    } catch {
+      return false;
+    }
+  });
+}
+
 function envExplicitlyDisabled(...names) {
   return names.some((name) => {
     const raw = String(process.env[name] || '').trim().toLowerCase();
@@ -196,8 +214,17 @@ function isLegacyCloudTtsProviderEnabled(provider = '') {
 
 function getDefaultVoiceProviderForPersona(persona = 'a11') {
   const normalized = normalizePersonaKey(persona);
+  const preferred = String(
+    process.env.A11_TTS_DEFAULT_PROVIDER
+    || process.env.A11_VOICE_DEFAULT_PROVIDER
+    || process.env.TTS_DEFAULT_PROVIDER
+    || (CLOUD_DEFAULT_PERSONAS.has(normalized) ? PROVIDERS.ELEVENLABS : '')
+  ).trim().toLowerCase();
+  if (preferred === PROVIDERS.ELEVENLABS && isProviderRuntimeConfigured(PROVIDERS.ELEVENLABS)) return PROVIDERS.ELEVENLABS;
+  if (preferred === PROVIDERS.CARTESIA && isProviderRuntimeConfigured(PROVIDERS.CARTESIA)) return PROVIDERS.CARTESIA;
+  if (preferred === PROVIDERS.AZURE && isProviderRuntimeConfigured(PROVIDERS.AZURE)) return PROVIDERS.AZURE;
+  if (preferred === PROVIDERS.OPENAI && isProviderRuntimeConfigured(PROVIDERS.OPENAI)) return PROVIDERS.OPENAI;
   if (LOCAL_OFFICIAL_PRIORITY_PERSONAS.has(normalized)) return PROVIDERS.XTTS_RVC;
-  if (CLOUD_DEFAULT_PERSONAS.has(normalized)) return PROVIDERS.ELEVENLABS;
   return PROVIDERS.XTTS_RVC;
 }
 
@@ -226,12 +253,12 @@ function isProviderRuntimeConfigured(provider) {
   if (normalized === PROVIDERS.CARTESIA) {
     if (!isLegacyCloudTtsProviderEnabled(normalized)) return false;
     return hasEnvValue('A11_CARTESIA_API_KEY', 'CARTESIA_API_KEY', 'CARTESIA_TOKEN')
-      || hasEnvValue('A11_CARTESIA_API_KEY_FILE', 'CARTESIA_API_KEY_FILE');
+      || hasExistingEnvFileValue('A11_CARTESIA_API_KEY_FILE', 'CARTESIA_API_KEY_FILE');
   }
   if (normalized === PROVIDERS.ELEVENLABS) {
     if (!isLegacyCloudTtsProviderEnabled(normalized)) return false;
     return hasEnvValue('A11_ELEVENLABS_API_KEY', 'ELEVENLABS_API_KEY', 'XI_API_KEY')
-      || hasEnvValue('A11_ELEVENLABS_API_KEY_FILE', 'ELEVENLABS_API_KEY_FILE');
+      || hasExistingEnvFileValue('A11_ELEVENLABS_API_KEY_FILE', 'ELEVENLABS_API_KEY_FILE');
   }
   if (normalized === PROVIDERS.AZURE) {
     if (envFlag('A11_AZURE_TTS_DISABLED') || envFlag('AZURE_TTS_DISABLED')) return false;
@@ -244,7 +271,7 @@ function isProviderRuntimeConfigured(provider) {
   if (normalized === PROVIDERS.OPENAI) {
     if (envFlag('A11_OPENAI_TTS_DISABLED') || envFlag('OPENAI_TTS_DISABLED')) return false;
     return hasEnvValue('OPENAI_TTS_API_KEY', 'A11_OPENAI_TTS_API_KEY', 'OPENAI_API_KEY', 'A11_OPENAI_API_KEY')
-      || hasEnvValue('OPENAI_TTS_API_KEY_FILE', 'A11_OPENAI_TTS_API_KEY_FILE');
+      || hasExistingEnvFileValue('OPENAI_TTS_API_KEY_FILE', 'A11_OPENAI_TTS_API_KEY_FILE');
   }
   if (normalized === PROVIDERS.XTTS_RVC) {
     return envFlag('A11_TTS_ALLOW_XTTS_RVC_AUTO', false)
@@ -298,6 +325,7 @@ const MANIFEST = Object.freeze({
     providers: {
       [PROVIDERS.GPT_SOVITS]: { configured: false, modelPath: null, note: 'Pending trained original Kaen44 executive voice. Licensed/consented data only; no real-person or character clone.' },
       [PROVIDERS.CHATTERBOX]: { configured: false, refClipId: null, note: 'Pending approved ref clip for original Kaen44 direction; public TV/audio clips are moodboard only.' },
+      [PROVIDERS.ELEVENLABS]: { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.kaen44.elevenLabsVoiceId, note: 'Preferred ready-made ElevenLabs voice when configured; local K44 official reference remains fallback.' },
       [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.kaen44.cartesiaVoiceId, note: 'Privileged explicit ready-made voice choice; local K44 official reference stays first.' },
       [PROVIDERS.AZURE]:      { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.kaen44.azureVoice, note: 'Fallback/explicit override HD ready-made voice.' },
       [PROVIDERS.OPENAI]:     { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.kaen44.openAiVoice, note: 'Fallback/explicit override high-quality ready-made voice.' },
@@ -399,10 +427,17 @@ function resolveVoiceProvider(persona, options = {}) {
     }
   }
 
-  // Auto-select: official family personas prefer owned local references.
-  // Cloud voices remain available only through explicit privileged choices.
+  // Auto-select: official family personas use the configured cloud default first,
+  // then fall back to owned local references and finally neutral Piper.
   const prefersLocalOfficial = LOCAL_OFFICIAL_PRIORITY_PERSONAS.has(normalizedPersona);
-  const providerOrder = options.allowCloud === false || prefersLocalOfficial ? LOCAL_PROVIDER_ORDER : PROVIDER_ORDER;
+  const defaultProvider = getDefaultVoiceProviderForPersona(normalizedPersona);
+  const providerOrder = options.allowCloud === false
+    ? LOCAL_PROVIDER_ORDER
+    : Array.from(new Set([
+      defaultProvider,
+      ...(prefersLocalOfficial ? LOCAL_PROVIDER_ORDER : []),
+      ...PROVIDER_ORDER,
+    ].filter(Boolean)));
   for (const provider of providerOrder) {
     const providerConfig = entry.providers[provider];
     const configured = providerConfig?.configured === 'runtime'

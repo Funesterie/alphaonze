@@ -2303,7 +2303,7 @@ function shouldTryElevenLabsTts(body = {}) {
   if (requestedProvider && requestedProvider !== 'auto' && requestedProvider !== PROVIDERS.ELEVENLABS) return false;
   if (!requestedProvider || requestedProvider === 'auto') {
     const persona = getTtsPersonaFromBody(body);
-    if (!['a11', 'vivy'].includes(persona)) return false;
+    if (!['a11', 'kaen44', 'vivy'].includes(persona)) return false;
   }
   return Boolean(getElevenLabsTtsApiKey());
 }

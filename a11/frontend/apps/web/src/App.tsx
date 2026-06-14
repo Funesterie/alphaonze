@@ -230,11 +230,11 @@ function normalizeTtsProviderMode(value: unknown, fallback: TtsProviderMode = "a
 }
 
 function getDefaultTtsProviderMode(_surface: FunesterieSurface): TtsProviderMode {
-  return "official";
+  return isOfficialVoiceSurface(_surface) ? "elevenlabs" : "auto";
 }
 
 function getTtsProviderStorageKey(surface: FunesterieSurface) {
-  return `a11:tts:provider-mode:v2:${surface}`;
+  return `a11:tts:provider-mode:v3:${surface}`;
 }
 
 function readStoredTtsProviderMode(surface: FunesterieSurface): TtsProviderMode {
@@ -991,6 +991,12 @@ const LOCAL_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
 
 const DEFAULT_REMOTE_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
   {
+    value: "groq:llama-3.3-70b-versatile",
+    label: "Groq - Llama 3.3 70B rapide",
+    provider: "groq",
+    model: "llama-3.3-70b-versatile",
+  },
+  {
     value: "openai:meta-llama/llama-3.3-70b-instruct",
     label: "OpenRouter secours - Llama 3.3 70B",
     provider: "openai",
@@ -1006,7 +1012,7 @@ function buildChatModelChoices(remoteProfiles: RemoteProviderProfile[]) {
     model: profile.model,
     providerProfileId: profile.id,
   }));
-  return [...LOCAL_CHAT_MODEL_CHOICES, ...DEFAULT_REMOTE_CHAT_MODEL_CHOICES, ...remoteChoices];
+  return [...DEFAULT_REMOTE_CHAT_MODEL_CHOICES, ...LOCAL_CHAT_MODEL_CHOICES, ...remoteChoices];
 }
 
 function resolveChatModelChoice(
@@ -1024,7 +1030,7 @@ function resolveChatModelChoice(
   const legacyRemote = DEFAULT_REMOTE_CHAT_MODEL_CHOICES.find((entry) => entry.model === normalizedSelection);
   if (legacyRemote) return legacyRemote;
 
-  return LOCAL_CHAT_MODEL_CHOICES[0];
+  return DEFAULT_REMOTE_CHAT_MODEL_CHOICES[0];
 }
 
 function buildFreshChat(name = "Session actuelle") {
@@ -9968,7 +9974,7 @@ export function App() {
   const chatScrollFrameRef = useRef<HTMLDivElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
-  const [model, setModel] = useState(LOCAL_CHAT_MODEL_CHOICES[0].value);
+  const [model, setModel] = useState(DEFAULT_REMOTE_CHAT_MODEL_CHOICES[0].value);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [remoteProviderProfiles, setRemoteProviderProfiles] = useState<RemoteProviderProfile[]>([]);
   const [loadingRemoteProviders, setLoadingRemoteProviders] = useState(false);
@@ -10526,7 +10532,7 @@ export function App() {
       await deleteRemoteProviderProfile(normalizedId);
       const activeChoice = resolveChatModelChoice(model, remoteProviderProfiles);
       if (activeChoice.providerProfileId === normalizedId) {
-        setModel(LOCAL_CHAT_MODEL_CHOICES[0].value);
+        setModel(DEFAULT_REMOTE_CHAT_MODEL_CHOICES[0].value);
       }
       await refreshRemoteAiProfiles();
     } catch (error_) {
@@ -12817,7 +12823,7 @@ export function App() {
                       </select>
                     </label>
                     <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.35 }}>
-                      Défaut: voix officielle {productName}. Cloud réservé Premium/Famille/Admin.
+                      Défaut: ElevenLabs si disponible, sinon voix officielle {productName}. Cloud réservé Premium/Famille/Admin.
                     </div>
                     <div className="a11-menu-voice-tools" aria-label="Réglages voix">
                       <button
