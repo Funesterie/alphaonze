@@ -52,6 +52,10 @@ const {
   isMcpAccessQuestion,
 } = require('../chat/a11-active-identity.cjs');
 const {
+  prepareA11Request,
+  summarizeA11PlanForClient,
+} = require('../chat/request-planner.cjs');
+const {
   postProcessA11AssistantResponse,
 } = require('../chat/response-draft-rewriter.cjs');
 const {
@@ -128,6 +132,17 @@ function buildInternalAccessDeniedPayload() {
     content,
     assistant: content,
     choices: buildAssistantChoice(content),
+  };
+}
+
+function buildFastGreetingPayload(latestUserMessage = '', options = {}) {
+  const content = buildProxyEmptyAssistantFallback(latestUserMessage, options);
+  return {
+    ok: true,
+    content,
+    assistant: content,
+    choices: buildAssistantChoice(content),
+    model: 'a11-fast-greeting',
   };
 }
 
@@ -627,6 +642,75 @@ function normalizeProxyMessagesForModel(messages = [], latestUserMessage = '') {
 function sanitizeProxyRequestHistory(req, latestUserMessage = '') {
   if (!req?.body || typeof req.body !== 'object') return;
   req.body.messages = normalizeProxyMessagesForModel(req.body.messages, latestUserMessage);
+}
+
+function resolveRequestPlannerTraceId(req = {}, res = null) {
+  return String(
+    res?.getHeader?.('X-Request-Id')
+    || req?.headers?.['x-request-id']
+    || req?.headers?.['x-trace-id']
+    || ''
+  ).trim();
+}
+
+function resolveSecretIntakeVaultSecret(env = process.env) {
+  return String(
+    env.A11_NEZ_SECRET_INTAKE_KEY
+    || env.NEZ_SECRET_INTAKE_KEY
+    || env.A11_SECRET_INTAKE_KEY
+    || ''
+  ).trim();
+}
+
+function installRequestPlannerResponseMetadata(res) {
+  if (!res || res.locals?.a11RequestPlannerMetadataInstalled) return;
+  res.locals = res.locals || {};
+  res.locals.a11RequestPlannerMetadataInstalled = true;
+  const originalJson = res.json.bind(res);
+  res.json = (payload) => {
+    if (
+      payload
+      && typeof payload === 'object'
+      && !Array.isArray(payload)
+      && res.locals?.a11RequestPlan
+      && !payload.a11Plan
+    ) {
+      return originalJson({
+        ...payload,
+        a11Plan: summarizeA11PlanForClient(
+          res.locals.a11RequestPlan,
+          res.locals.a11SecretIntake
+        ),
+      });
+    }
+    return originalJson(payload);
+  };
+}
+
+function prepareProxyA11Request(req, res) {
+  installRequestPlannerResponseMetadata(res);
+  const prepared = prepareA11Request({
+    body: req?.body || {},
+    traceId: resolveRequestPlannerTraceId(req, res),
+    vaultSecret: resolveSecretIntakeVaultSecret(process.env),
+  });
+  req.body = prepared.body;
+  req.a11RequestPlan = prepared.plan;
+  req.a11SecretIntake = prepared.secretIntake;
+  res.locals = res.locals || {};
+  res.locals.a11RequestPlan = prepared.plan;
+  res.locals.a11SecretIntake = prepared.secretIntake;
+  return prepared;
+}
+
+function shouldReturnFastGreeting(requestPlan = {}) {
+  return requestPlan?.mode === 'fast'
+    && requestPlan?.intent === 'chat.greeting'
+    && requestPlan?.needs?.mcp !== true
+    && requestPlan?.needs?.neo4j !== true
+    && requestPlan?.needs?.nez !== true
+    && requestPlan?.needs?.systemTool !== true
+    && requestPlan?.needs?.webOrExternal !== true;
 }
 
 function buildIntentScopedBody(rawBody = {}, latestUserMessage = '') {
@@ -2278,6 +2362,10 @@ function createProtectedChatProxyRouter({
   async function tryHandleIntentRequest(req, res) {
     const latestUserMessage = extractLatestUserMessage(req.body || {});
     if (!latestUserMessage) return false;
+    const requestPlan = res?.locals?.a11RequestPlan || req?.a11RequestPlan || null;
+    if (shouldReturnFastGreeting(requestPlan)) {
+      return false;
+    }
 
     if (isOperatorAssistanceRequest(latestUserMessage)) {
       return res.status(200).json(await buildOperatorAssistancePayload(req, latestUserMessage, mcp));
@@ -2561,14 +2649,23 @@ function createProtectedChatProxyRouter({
   }
 
   async function handleProxy(req, res) {
+    const preparedRequest = prepareProxyA11Request(req, res);
     const familyAccess = hasFamilyAccess(req?.user);
-    const latestUserMessage = extractLatestUserMessage(req.body || {});
+    const latestUserMessage = preparedRequest.latestUserMessage || extractLatestUserMessage(req.body || {});
     sanitizeProxyRequestHistory(req, latestUserMessage);
     if (!familyAccess) {
       guardNonFamilyPromptAccess(req);
       if (isInternalDisclosureRequest(latestUserMessage)) {
         return res.status(200).json(buildInternalAccessDeniedPayload());
       }
+    }
+
+    if (shouldReturnFastGreeting(preparedRequest.plan)) {
+      return res.status(200).json(buildFastGreetingPayload(latestUserMessage, {
+        surface: req.body?.surface,
+        persona: req.body?.persona,
+        voicePersona: req.body?.voicePersona,
+      }));
     }
 
     const intentHandled = await tryHandleIntentRequest(req, res);

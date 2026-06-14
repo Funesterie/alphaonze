@@ -139,7 +139,7 @@ test('protected chat proxy returns requestId in header and body when upstream th
     },
     async (baseUrl) => {
       const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
-        messages: [{ role: 'user', content: 'hello' }],
+        messages: [{ role: 'user', content: 'raconte une phrase de test' }],
       }, {
         'X-Request-Id': 'req-proxy-1',
       });
@@ -180,7 +180,7 @@ test('protected chat proxy sanitizes upstream html timeout pages', async () => {
     },
     async (baseUrl) => {
       const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
-        messages: [{ role: 'user', content: 'hello' }],
+        messages: [{ role: 'user', content: 'raconte une phrase de test' }],
       }, {
         'X-Request-Id': 'req-proxy-html-1',
       });
@@ -216,7 +216,7 @@ test('protected chat proxy reports video provider authorization failures without
     },
     async (baseUrl) => {
       const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
-        messages: [{ role: 'user', content: 'hello' }],
+        messages: [{ role: 'user', content: 'raconte une phrase de test' }],
       }, {
         'X-Request-Id': 'req-proxy-hf-video-401',
       });
@@ -225,6 +225,106 @@ test('protected chat proxy reports video provider authorization failures without
       assert.equal(json.requestId, 'req-proxy-hf-video-401');
       assert.match(json.message, /fournisseur vidéo\/image/i);
       assert.doesNotMatch(json.message, /Basic|surcharg/i);
+    }
+  );
+});
+
+test('protected chat proxy redacts user tokens before forwarding to the upstream model', async () => {
+  const rawToken = 'ghp_1234567890abcdefghijklmnopqrstuvwxyzABCD';
+  const previousSecret = process.env.A11_NEZ_SECRET_INTAKE_KEY;
+  let forwardedBody = null;
+  process.env.A11_NEZ_SECRET_INTAKE_KEY = 'unit-proxy-secret';
+
+  try {
+    await withServer(
+      (app) => {
+        app.use('/api', createProtectedChatProxyRouter({
+          verifyJWT(_req, _res, next) {
+            next();
+          },
+          proxyChatToOpenAI(req, res) {
+            forwardedBody = req.body;
+            return res.json({
+              ok: true,
+              content: 'Token recu et garde hors modele.',
+              choices: [
+                {
+                  index: 0,
+                  message: { role: 'assistant', content: 'Token recu et garde hors modele.' },
+                  finish_reason: 'stop',
+                },
+              ],
+            });
+          },
+          detectImageIntent: () => false,
+          detectWebImageIntent: () => false,
+          generateSd: async () => {
+            throw new Error('should_not_be_called');
+          },
+        }));
+      },
+      async (baseUrl) => {
+        const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+          messages: [
+            { role: 'user', content: `voici mon token GitHub ${rawToken}, garde le cache` },
+          ],
+        }, {
+          'X-Request-Id': 'req-proxy-secret-1',
+        });
+
+        assert.equal(response.status, 200);
+        assert.ok(forwardedBody);
+        assert.equal(JSON.stringify(forwardedBody).includes(rawToken), false);
+        assert.match(JSON.stringify(forwardedBody), /secret:\/\/nez\/github\/[a-f0-9]{12}/);
+        assert.equal(JSON.stringify(json).includes(rawToken), false);
+        assert.equal(json.a11Plan.mode, 'admin');
+        assert.equal(json.a11Plan.secretIntake.detected, true);
+        assert.equal(json.a11Plan.secretIntake.count, 1);
+      }
+    );
+  } finally {
+    if (previousSecret === undefined) delete process.env.A11_NEZ_SECRET_INTAKE_KEY;
+    else process.env.A11_NEZ_SECRET_INTAKE_KEY = previousSecret;
+  }
+});
+
+test('protected chat proxy answers simple greetings without waiting on upstream chat', async () => {
+  let upstreamCalls = 0;
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouter({
+        verifyJWT(_req, _res, next) {
+          next();
+        },
+        proxyChatToOpenAI() {
+          upstreamCalls += 1;
+          throw new Error('should_not_hit_upstream_for_greeting');
+        },
+        detectImageIntent: () => false,
+        detectWebImageIntent: () => false,
+        generateSd: async () => {
+          throw new Error('should_not_generate_image_for_greeting');
+        },
+      }));
+    },
+    async (baseUrl) => {
+      const startedAt = Date.now();
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        messages: [{ role: 'user', content: 'salut ca va ?' }],
+        provider: 'groq',
+      }, {
+        'X-Request-Id': 'req-fast-greeting-1',
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(upstreamCalls, 0);
+      assert.equal(json.ok, true);
+      assert.equal(json.model, 'a11-fast-greeting');
+      assert.match(json.choices?.[0]?.message?.content || '', /je suis l[àa]|reprends/i);
+      assert.equal(json.a11Plan.mode, 'fast');
+      assert.equal(json.a11Plan.intent, 'chat.greeting');
+      assert.ok(Date.now() - startedAt < 1000);
     }
   );
 });

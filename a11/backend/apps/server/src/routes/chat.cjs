@@ -19,6 +19,10 @@ const {
   isRuntimeModulesAccessQuestion,
 } = require('../chat/a11-active-identity.cjs');
 const {
+  prepareA11Request,
+  summarizeA11PlanForClient,
+} = require('../chat/request-planner.cjs');
+const {
   postProcessA11AssistantResponse,
 } = require('../chat/response-draft-rewriter.cjs');
 const {
@@ -592,6 +596,73 @@ function attachIntentDebug(payload) {
   return payload;
 }
 
+function resolveChatPlannerTraceId(req = {}, res = null) {
+  return String(
+    res?.getHeader?.('X-Request-Id')
+    || req?.headers?.['x-request-id']
+    || req?.headers?.['x-trace-id']
+    || ''
+  ).trim();
+}
+
+function resolveChatSecretIntakeVaultSecret(env = process.env) {
+  return String(
+    env.A11_NEZ_SECRET_INTAKE_KEY
+    || env.NEZ_SECRET_INTAKE_KEY
+    || env.A11_SECRET_INTAKE_KEY
+    || ''
+  ).trim();
+}
+
+function installChatRequestPlanResponseMetadata(res) {
+  if (!res || res.locals?.a11RequestPlannerMetadataInstalled) return;
+  res.locals = res.locals || {};
+  res.locals.a11RequestPlannerMetadataInstalled = true;
+  const originalJson = res.json.bind(res);
+  res.json = (payload) => {
+    if (
+      payload
+      && typeof payload === 'object'
+      && !Array.isArray(payload)
+      && res.locals?.a11RequestPlan
+      && !payload.a11Plan
+    ) {
+      return originalJson({
+        ...payload,
+        a11Plan: summarizeA11PlanForClient(
+          res.locals.a11RequestPlan,
+          res.locals.a11SecretIntake
+        ),
+      });
+    }
+    return originalJson(payload);
+  };
+}
+
+function prepareChatA11Request(req, res) {
+  installChatRequestPlanResponseMetadata(res);
+  const prepared = prepareA11Request({
+    body: req?.body || {},
+    traceId: resolveChatPlannerTraceId(req, res),
+    vaultSecret: resolveChatSecretIntakeVaultSecret(process.env),
+  });
+  req.body = prepared.body;
+  req.a11RequestPlan = prepared.plan;
+  req.a11SecretIntake = prepared.secretIntake;
+  res.locals = res.locals || {};
+  res.locals.a11RequestPlan = prepared.plan;
+  res.locals.a11SecretIntake = prepared.secretIntake;
+  return prepared;
+}
+
+function shouldSkipIntentResolverForChatPlan(plan = {}) {
+  return plan?.mode === 'fast'
+    && plan?.intent === 'chat.greeting'
+    && plan?.needs?.mcp !== true
+    && plan?.needs?.neo4j !== true
+    && plan?.needs?.nez !== true;
+}
+
 function createChatRouter(overrides = {}) {
   const {
     verifyJWT,
@@ -633,7 +704,13 @@ function createChatRouter(overrides = {}) {
     let resolution = null;
     let pendingStructuredPayload = null;
     try {
-      const userMessage = String(req.body?.message || req.body?.prompt || '').trim();
+      const preparedRequest = prepareChatA11Request(req, res);
+      const userMessage = String(
+        preparedRequest.latestUserMessage
+        || req.body?.message
+        || req.body?.prompt
+        || ''
+      ).trim();
       if (!userMessage) {
         return res.status(400).json({ ok: false, error: 'missing_message' });
       }
@@ -899,13 +976,21 @@ function createChatRouter(overrides = {}) {
         ].join('\n'));
       }
 
-      resolution = await intentResolver.resolveUserRequest({
-        req,
-        body: req.body || {},
-        userText: userMessage,
-        messages: requestMessages,
-        executeRuntime: true,
-      });
+      if (shouldSkipIntentResolverForChatPlan(preparedRequest.plan)) {
+        resolution = {
+          traceId: preparedRequest.plan.traceId,
+          pipeline: 'a11-request-planner-fast',
+          kind: 'chat.reply',
+        };
+      } else {
+        resolution = await intentResolver.resolveUserRequest({
+          req,
+          body: req.body || {},
+          userText: userMessage,
+          messages: requestMessages,
+          executeRuntime: true,
+        });
+      }
 
       if (
         resolution.kind !== 'chat.reply'
@@ -1117,7 +1202,13 @@ function createChatRouter(overrides = {}) {
   // Format : data: {"delta":"..."}\n\n  ...  data: [DONE]\n\n
   // Le client peut aussi passer ?stream=1 sur /chat pour activer le streaming.
   router.post('/chat/stream', requireAuth, express.json({ limit: '2mb' }), async (req, res) => {
-    const userMessage = String(req.body?.message || req.body?.prompt || '').trim();
+    const preparedRequest = prepareChatA11Request(req, res);
+    const userMessage = String(
+      preparedRequest.latestUserMessage
+      || req.body?.message
+      || req.body?.prompt
+      || ''
+    ).trim();
     if (!userMessage) {
       res.status(400).json({ ok: false, error: 'missing_message' });
       return;

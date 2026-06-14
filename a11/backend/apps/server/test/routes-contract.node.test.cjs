@@ -1734,7 +1734,7 @@ test('POST /api/llm/chat forwards explicit remote provider requests to remote pr
         const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
           provider: 'openai',
           model: 'gpt-oss:20b-cloud',
-          messages: [{ role: 'user', content: 't es la' }],
+          messages: [{ role: 'user', content: 'raconte une phrase de test' }],
         }, {
           authorization: `Bearer ${token}`,
         });
