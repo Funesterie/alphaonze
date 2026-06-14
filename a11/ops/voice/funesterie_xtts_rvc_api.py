@@ -2,9 +2,11 @@ import gc
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import threading
 import time
+import wave
 from pathlib import Path
 from typing import Optional
 
@@ -378,6 +380,226 @@ def env_float(name: str, fallback: float) -> float:
         return fallback
 
 
+def env_bool(name: str, fallback: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return fallback
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def probe_audio_duration_seconds(path: Path) -> Optional[float]:
+    try:
+        if path.suffix.lower() == ".wav":
+            with wave.open(str(path), "rb") as handle:
+                rate = handle.getframerate()
+                frames = handle.getnframes()
+                if rate > 0 and frames >= 0:
+                    return frames / float(rate)
+    except Exception:
+        pass
+
+    ffprobe = os.environ.get("A11_FFPROBE_BIN", "ffprobe")
+    try:
+        result = subprocess.run(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=nw=1:nk=1",
+                str(path),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+        if result.returncode != 0:
+            return None
+        duration = float((result.stdout or "").strip())
+        return duration if duration >= 0 else None
+    except Exception:
+        return None
+
+
+def round_seconds(value: Optional[float]) -> Optional[float]:
+    return round(value, 3) if value is not None else None
+
+
+def expected_xtts_duration_seconds(text: str, vocal_mode: str = "adaptive") -> float:
+    clean_text = " ".join((text or "").split())
+    if not clean_text:
+        return 0.0
+
+    word_count = len([part for part in clean_text.split(" ") if part])
+    char_count = len(clean_text)
+    words_per_second = max(1.6, env_float("A11_XTTS_RVC_WORDS_PER_SECOND", 2.55))
+    expected = max(word_count / words_per_second, char_count / 18.0, 1.25)
+    mode = (vocal_mode or "adaptive").strip().lower()
+    if mode in {"slow", "calm", "pose", "posed", "narration"}:
+        expected *= 1.18
+    elif mode in {"fast", "rapide", "energetic", "energie", "énergie"}:
+        expected *= 0.9
+    return expected + 0.55
+
+
+def xtts_duration_window(text: str, vocal_mode: str = "adaptive") -> dict:
+    expected = expected_xtts_duration_seconds(text, vocal_mode)
+    hard_max = max(8.0, env_float("A11_XTTS_RVC_OUTPUT_HARD_MAX_SECONDS", 90.0))
+    target = min(hard_max, max(2.4, expected * 1.35 + 0.65))
+    max_allowed = min(
+        hard_max,
+        max(target + 2.0, expected * 2.05 + 1.8, env_float("A11_XTTS_RVC_OUTPUT_MIN_GUARD_SECONDS", 6.0)),
+    )
+    return {
+        "expectedSeconds": expected,
+        "targetSeconds": target,
+        "maxAllowedSeconds": max(max_allowed, target),
+        "hardMaxSeconds": hard_max,
+    }
+
+
+def prepare_xtts_speaker_wav(source_path: Path, style: str, stamp: int) -> dict:
+    source_duration = probe_audio_duration_seconds(source_path)
+    max_seconds = max(3.0, env_float("A11_XTTS_RVC_SPEAKER_MAX_SECONDS", 7.5))
+    metadata = {
+        "enabled": env_bool("A11_XTTS_RVC_PREPARE_SPEAKER_WAV", True),
+        "action": "original",
+        "path": source_path,
+        "sourceSeconds": round_seconds(source_duration),
+        "preparedSeconds": None,
+        "maxSeconds": max_seconds,
+    }
+    if not metadata["enabled"]:
+        return metadata
+
+    ffmpeg = os.environ.get("A11_FFMPEG_BIN", "ffmpeg")
+    prepared_path = OUT_DIR / f"xtts-speaker-{style}-{stamp}.wav"
+    audio_filter = (
+        "highpass=f=70,"
+        "lowpass=f=7600,"
+        "silenceremove=start_periods=1:start_duration=0.05:start_threshold=-42dB,"
+        f"atrim=0:{max_seconds:.3f},"
+        "asetpts=N/SR/TB,"
+        "loudnorm=I=-20:TP=-2:LRA=9"
+    )
+    try:
+        result = subprocess.run(
+            [
+                ffmpeg,
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(source_path),
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                "24000",
+                "-af",
+                audio_filter,
+                str(prepared_path),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if result.returncode != 0 or not prepared_path.exists() or prepared_path.stat().st_size <= 0:
+            remove_later(prepared_path)
+            metadata["error"] = (result.stderr or "speaker_prepare_failed")[-220:]
+            return metadata
+        prepared_duration = probe_audio_duration_seconds(prepared_path)
+        metadata.update(
+            {
+                "action": "prepared",
+                "path": prepared_path,
+                "preparedSeconds": round_seconds(prepared_duration),
+            }
+        )
+        return metadata
+    except Exception as exc:
+        remove_later(prepared_path)
+        metadata["error"] = f"{type(exc).__name__}: {exc}"
+        return metadata
+
+
+def constrain_xtts_output_duration(xtts_path: Path, text: str, vocal_mode: str, style: str) -> dict:
+    limits = xtts_duration_window(text, vocal_mode)
+    original_duration = probe_audio_duration_seconds(xtts_path)
+    metadata = {
+        "enabled": env_bool("A11_XTTS_RVC_DURATION_GUARD", True),
+        "action": "none",
+        "originalSeconds": round_seconds(original_duration),
+        "expectedSeconds": round_seconds(limits["expectedSeconds"]),
+        "targetSeconds": round_seconds(limits["targetSeconds"]),
+        "maxAllowedSeconds": round_seconds(limits["maxAllowedSeconds"]),
+    }
+    if not metadata["enabled"] or original_duration is None:
+        return metadata
+    if original_duration <= limits["maxAllowedSeconds"]:
+        return metadata
+
+    ffmpeg = os.environ.get("A11_FFMPEG_BIN", "ffmpeg")
+    target_seconds = max(1.5, min(limits["targetSeconds"], original_duration))
+    fade_duration = min(0.28, max(0.12, target_seconds / 8.0))
+    fade_start = max(0.1, target_seconds - fade_duration)
+    guarded_path = OUT_DIR / f"xtts-guarded-{style}-{int(time.time() * 1000)}.wav"
+    audio_filter = (
+        "silenceremove=start_periods=1:start_duration=0.05:start_threshold=-45dB,"
+        f"atrim=0:{target_seconds:.3f},"
+        "asetpts=N/SR/TB,"
+        f"afade=t=out:st={fade_start:.3f}:d={fade_duration:.3f},"
+        "loudnorm=I=-18:TP=-1.5:LRA=9"
+    )
+    try:
+        result = subprocess.run(
+            [
+                ffmpeg,
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(xtts_path),
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                "22050",
+                "-af",
+                audio_filter,
+                str(guarded_path),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if result.returncode != 0 or not guarded_path.exists() or guarded_path.stat().st_size <= 0:
+            remove_later(guarded_path)
+            metadata["action"] = "guard_failed"
+            metadata["error"] = (result.stderr or "duration_guard_failed")[-220:]
+            return metadata
+        shutil.move(str(guarded_path), str(xtts_path))
+        metadata.update(
+            {
+                "action": "trimmed",
+                "finalSeconds": round_seconds(probe_audio_duration_seconds(xtts_path)),
+            }
+        )
+        return metadata
+    except Exception as exc:
+        remove_later(guarded_path)
+        metadata["action"] = "guard_failed"
+        metadata["error"] = f"{type(exc).__name__}: {exc}"
+        return metadata
+
+
 def resolve_rvc_tuning(style: str, requested_pitch: Optional[float] = None) -> dict:
     defaults = STYLE_RVC_TUNING.get(style, STYLE_RVC_TUNING["terminator"])
     style_key = style.upper().replace("-", "_")
@@ -564,6 +786,7 @@ def synthesize_persona_voice(
     text: str,
     persona: str = "",
     voice_style: str = "",
+    vocal_mode: str = "adaptive",
     f0_shift: Optional[float] = None,
     index_rate_override: Optional[float] = None,
     rms_mix_rate_override: Optional[float] = None,
@@ -592,12 +815,15 @@ def synthesize_persona_voice(
             stamp = int(time.time() * 1000)
             xtts_path = OUT_DIR / f"xtts-{style}-{stamp}.wav"
             final_path = OUT_DIR / f"xtts-rvc-{style}-{stamp}.wav"
+            speaker_preparation = prepare_xtts_speaker_wav(speaker_wav_path, style, stamp)
+            prepared_speaker_path = speaker_preparation.get("path") or speaker_wav_path
             get_tts().tts_to_file(
                 text=clean_text,
-                speaker_wav=str(speaker_wav_path),
+                speaker_wav=str(prepared_speaker_path),
                 language=LANGUAGE,
                 file_path=str(xtts_path),
             )
+            duration_guard = constrain_xtts_output_duration(xtts_path, clean_text, vocal_mode, style)
 
             engine = "xtts-reference"
             tuning = resolve_rvc_tuning(style, f0_shift)
@@ -623,9 +849,13 @@ def synthesize_persona_voice(
                 shutil.copyfile(xtts_path, final_path)
 
             remove_later(xtts_path)
+            if prepared_speaker_path != speaker_wav_path:
+                remove_later(prepared_speaker_path)
             if not final_path.exists() or final_path.stat().st_size <= 0:
                 raise HTTPException(status_code=500, detail="voice_output_missing")
         finally:
+            if "prepared_speaker_path" in locals() and prepared_speaker_path != speaker_wav_path:
+                remove_later(prepared_speaker_path)
             set_synthesis_state(False)
 
     return {
@@ -639,6 +869,12 @@ def synthesize_persona_voice(
         "hasRvcIndex": rvc_index_path.is_file(),
         "speakerSource": speaker_source,
         "speakerPath": speaker_wav_path,
+        "speakerPreparation": {
+            key: (value.name if isinstance(value, Path) else value)
+            for key, value in speaker_preparation.items()
+            if key != "path"
+        },
+        "durationGuard": duration_guard,
         "tuning": tuning,
     }
 
@@ -692,7 +928,7 @@ async def convert_voice(
     protect: Optional[float] = Form(default=None),
     useRvc: bool = Form(default=True),
 ):
-    del generated, mode
+    del generated
     uploaded_reference_path = None
     try:
         if reference is not None:
@@ -710,6 +946,7 @@ async def convert_voice(
             persona=persona,
             voice_style=voiceStyle,
             f0_shift=f0Shift,
+            vocal_mode=mode,
             index_rate_override=indexRate,
             rms_mix_rate_override=rmsMixRate,
             protect_override=protect,
@@ -733,6 +970,8 @@ async def convert_voice(
             "X-A11-Voice-Style": result["style"],
             "X-A11-Reference-Source": result.get("speakerSource", "style"),
             "X-A11-Speaker-Wav": result.get("speakerPath", Path()).name if result.get("speakerPath") else "",
+            "X-A11-Speaker-Preparation": result.get("speakerPreparation", {}).get("action", ""),
+            "X-A11-XTTS-Duration-Guard": result.get("durationGuard", {}).get("action", ""),
             "X-A11-RVC-Model": rvc_path.name if rvc_path.is_file() else "",
             "X-A11-RVC-Index": rvc_index_path.name if rvc_index_path.is_file() else "",
         },
@@ -747,6 +986,7 @@ def synthesize_voice(req: SynthesizeRequest):
         req.text,
         persona=persona,
         voice_style=req.voiceStyle,
+        vocal_mode=req.vocalMode,
         f0_shift=req.f0Shift,
     )
     rvc_path = result["rvcPath"]
@@ -767,6 +1007,8 @@ def synthesize_voice(req: SynthesizeRequest):
             "rvcModel": result["hasRvc"],
             "rvcIndex": result["hasRvcIndex"],
             "referenceSource": result.get("speakerSource", "style"),
+            "speakerPreparation": result.get("speakerPreparation"),
+            "durationGuard": result.get("durationGuard"),
         },
         "voiceConversion": {
             "ok": True,
@@ -774,6 +1016,8 @@ def synthesize_voice(req: SynthesizeRequest):
             "engine": result["engine"],
             "voiceStyle": result["style"],
             "referenceSource": result.get("speakerSource", "style"),
+            "speakerPreparation": result.get("speakerPreparation"),
+            "durationGuard": result.get("durationGuard"),
             "attemptedEngines": [result["engine"]],
             "rvcModel": rvc_path.name if rvc_path.is_file() else "",
             "rvcIndex": rvc_index_path.name if rvc_index_path.is_file() else "",
