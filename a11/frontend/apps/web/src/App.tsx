@@ -11003,11 +11003,16 @@ export function App() {
     const selectedProviderMode = effectiveTtsProviderMode;
     const wantsCloudProvider = CLOUD_TTS_PROVIDER_MODES.has(selectedProviderMode);
     const canUseSelectedCloudProvider = wantsCloudProvider && canUseReadyMadeVoiceProviders;
-    const useOwnedOfficialReference = useOfficialIdentityVoice
-      && (!wantsCloudProvider || !canUseSelectedCloudProvider || selectedProviderMode === "official");
+    const useOwnedOfficialReference = useOfficialIdentityVoice && selectedProviderMode === "official";
+    const useCloudIdentityVoice = useOfficialIdentityVoice
+      && canUseSelectedCloudProvider
+      && selectedProviderMode !== "official";
+    const useIdentityVoice = useOwnedOfficialReference || useCloudIdentityVoice;
     const provider = useOwnedOfficialReference
       ? "xtts-rvc"
+      : useCloudIdentityVoice ? selectedProviderMode
       : (selectedProviderMode === "auto" ? undefined : selectedProviderMode);
+    const forceNeutralOfficialVoice = useOfficialIdentityVoice && !useIdentityVoice;
     return {
       lang: selectedA11Language.speechLang,
       voiceReferenceId: speechVoiceReferenceId || undefined,
@@ -11020,28 +11025,28 @@ export function App() {
       rvc: useOwnedOfficialReference,
       persona: surfaceKind,
       voicePersona: surfaceKind,
-      voiceReferenceRequired: useOfficialIdentityVoice,
-      referenceVoiceRequired: useOfficialIdentityVoice,
-      useDefaultVoiceReference: true,
-      defaultVoiceReference: true,
-      usePersonaVoiceReference: useOfficialIdentityVoice,
-      identityVoice: useOfficialIdentityVoice,
-      useIdentityVoice: useOfficialIdentityVoice,
-      neutralVoice: useOfficialIdentityVoice ? false : undefined,
-      allowPaidTtsVoice: useOwnedOfficialReference ? false : undefined,
-      paidTtsAllowed: useOwnedOfficialReference ? false : undefined,
-      allowCloudTts: useOwnedOfficialReference ? false : undefined,
-      allowReadyMadeCloudVoice: useOwnedOfficialReference ? false : undefined,
-      useReadyMadeCloudVoice: useOwnedOfficialReference ? false : undefined,
-      allowOfficialCloudVoice: canUseSelectedCloudProvider || undefined,
-      allowIdentityCloudVoice: canUseSelectedCloudProvider || undefined,
-      forceCloudTts: canUseSelectedCloudProvider || undefined,
+      voiceReferenceRequired: useIdentityVoice,
+      referenceVoiceRequired: useIdentityVoice,
+      useDefaultVoiceReference: useIdentityVoice,
+      defaultVoiceReference: useIdentityVoice,
+      usePersonaVoiceReference: useIdentityVoice,
+      identityVoice: useIdentityVoice,
+      useIdentityVoice,
+      neutralVoice: forceNeutralOfficialVoice ? true : (useIdentityVoice ? false : undefined),
+      allowPaidTtsVoice: useOwnedOfficialReference ? false : (useCloudIdentityVoice ? true : undefined),
+      paidTtsAllowed: useOwnedOfficialReference ? false : (useCloudIdentityVoice ? true : undefined),
+      allowCloudTts: useOwnedOfficialReference ? false : (useCloudIdentityVoice ? true : undefined),
+      allowReadyMadeCloudVoice: useOwnedOfficialReference ? false : (useCloudIdentityVoice ? true : undefined),
+      useReadyMadeCloudVoice: useOwnedOfficialReference ? false : (useCloudIdentityVoice ? true : undefined),
+      allowOfficialCloudVoice: useCloudIdentityVoice || undefined,
+      allowIdentityCloudVoice: useCloudIdentityVoice || undefined,
+      forceCloudTts: useCloudIdentityVoice || undefined,
       allowRvc: useOwnedOfficialReference,
       allowXttsRvc: useOwnedOfficialReference,
       allowLegacyVoiceBridge: useOwnedOfficialReference,
       xttsRvcOptIn: useOwnedOfficialReference,
       ttsCostPolicy: useOwnedOfficialReference ? `${surfaceKind}_official_reference` : undefined,
-      allowBrowserSpeechFallback: !useOfficialIdentityVoice,
+      allowBrowserSpeechFallback: !useIdentityVoice,
       provider,
       ttsProvider: provider || selectedProviderMode,
     };
@@ -11725,9 +11730,19 @@ export function App() {
       const text = String(firstAsSurface ? maybeText : first || maybeText || "").trim()
         || defaultVoiceTextForSurface(targetSurface);
       const vocalMode = targetSurface === "vivy" ? "adaptive" : ttsVocalMode;
-      const usesOwnedOfficialReference = ["a11", "kaen44", "k44", "kaen"].includes(targetSurface);
       const usesOfficialIdentityVoice = ["a11", "kaen44", "k44", "kaen", "vivy"].includes(targetSurface);
-      const voiceProvider = usesOwnedOfficialReference ? "xtts-rvc" : "auto";
+      const requestedProvider = String(
+        extraOptions?.provider
+        || extraOptions?.ttsProvider
+        || extraOptions?.voiceProvider
+        || ""
+      ).trim().toLowerCase();
+      const usesOwnedOfficialReference = ["a11", "kaen44", "k44", "kaen", "vivy"].includes(targetSurface)
+        && ["official", "xtts-rvc", "rvc", "local-reference", "reference"].includes(requestedProvider);
+      const usesCloudIdentityVoice = usesOfficialIdentityVoice
+        && ["openai", "elevenlabs", "cartesia", "azure"].includes(requestedProvider);
+      const usesIdentityVoice = usesOwnedOfficialReference || usesCloudIdentityVoice;
+      const voiceProvider = usesOwnedOfficialReference ? "xtts-rvc" : (usesCloudIdentityVoice ? requestedProvider : "auto");
       const voiceOptions: Record<string, unknown> = {
         lang: selectedA11Language.speechLang,
         voice: targetSurface === "kaen44" ? "kaen44" : targetSurface,
@@ -11744,25 +11759,28 @@ export function App() {
         convertVoice: usesOwnedOfficialReference,
         morphVoice: usesOwnedOfficialReference,
         rvc: usesOwnedOfficialReference,
-        useDefaultVoiceReference: true,
-        defaultVoiceReference: true,
-        usePersonaVoiceReference: usesOfficialIdentityVoice,
-        voiceReferenceRequired: usesOfficialIdentityVoice,
-        referenceVoiceRequired: usesOfficialIdentityVoice,
-        identityVoice: usesOfficialIdentityVoice,
-        useIdentityVoice: usesOfficialIdentityVoice,
-        neutralVoice: usesOfficialIdentityVoice ? false : undefined,
-        allowPaidTtsVoice: usesOwnedOfficialReference ? false : undefined,
-        paidTtsAllowed: usesOwnedOfficialReference ? false : undefined,
-        allowCloudTts: usesOwnedOfficialReference ? false : undefined,
-        allowReadyMadeCloudVoice: usesOwnedOfficialReference ? false : undefined,
-        useReadyMadeCloudVoice: usesOwnedOfficialReference ? false : undefined,
+        useDefaultVoiceReference: usesIdentityVoice,
+        defaultVoiceReference: usesIdentityVoice,
+        usePersonaVoiceReference: usesIdentityVoice,
+        voiceReferenceRequired: usesIdentityVoice,
+        referenceVoiceRequired: usesIdentityVoice,
+        identityVoice: usesIdentityVoice,
+        useIdentityVoice: usesIdentityVoice,
+        neutralVoice: usesOfficialIdentityVoice && !usesIdentityVoice ? true : (usesIdentityVoice ? false : undefined),
+        allowPaidTtsVoice: usesOwnedOfficialReference ? false : (usesCloudIdentityVoice ? true : undefined),
+        paidTtsAllowed: usesOwnedOfficialReference ? false : (usesCloudIdentityVoice ? true : undefined),
+        allowCloudTts: usesOwnedOfficialReference ? false : (usesCloudIdentityVoice ? true : undefined),
+        allowReadyMadeCloudVoice: usesOwnedOfficialReference ? false : (usesCloudIdentityVoice ? true : undefined),
+        useReadyMadeCloudVoice: usesOwnedOfficialReference ? false : (usesCloudIdentityVoice ? true : undefined),
+        allowOfficialCloudVoice: usesCloudIdentityVoice || undefined,
+        allowIdentityCloudVoice: usesCloudIdentityVoice || undefined,
+        forceCloudTts: usesCloudIdentityVoice || undefined,
         allowRvc: usesOwnedOfficialReference,
         allowXttsRvc: usesOwnedOfficialReference,
         allowLegacyVoiceBridge: usesOwnedOfficialReference,
         xttsRvcOptIn: usesOwnedOfficialReference,
         ttsCostPolicy: usesOwnedOfficialReference ? `${targetSurface}_official_reference` : undefined,
-        allowBrowserSpeechFallback: !usesOfficialIdentityVoice,
+        allowBrowserSpeechFallback: !usesIdentityVoice,
         ...(targetSurface === "vivy" ? getVivyVoiceTuning(vocalMode) : {}),
         ...(extraOptions || {}),
       };
