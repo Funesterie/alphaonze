@@ -45,6 +45,7 @@ const {
   buildClosedPhaseD40PlanV8Pivot,
   buildClosedPhaseD40PlanV8Plus,
   buildTurboD40PlanV9,
+  DEFAULT_V9_TURBO_FRAME_MS,
   processClosedPhaseD40V8,
   processClosedPhaseD40V8Pivot,
   processClosedPhaseD40V8Plus,
@@ -1624,7 +1625,7 @@ function createDoubleHarmonicRouter(options = {}) {
         outputPath,
         profile,
         analysisOptions: {
-          frameMs: 96,
+          frameMs: DEFAULT_V9_TURBO_FRAME_MS,
           maxSeconds: reqNumber(req.body?.maxSeconds || req.query?.maxSeconds),
           cycleSeconds: reqNumber(req.body?.cycleSeconds || req.query?.cycleSeconds),
           userK: reqNumber(
@@ -1659,7 +1660,7 @@ function createDoubleHarmonicRouter(options = {}) {
         method: processing.method,
         profile: processing.profile,
         preset: processing.preset,
-        intensity: processing.intensity || 'vocal-safe-96ms-turbo-1024',
+        intensity: processing.intensity || 'vocal-safe-99ms-turbo-1024',
         variant: processing.variant || 'v9turbo',
         resonance: processing.resonance || null,
         operators: processing.operators || null,
@@ -1687,7 +1688,7 @@ function createDoubleHarmonicRouter(options = {}) {
         variant: processing.variant,
         profile: processing.profile,
         preset: processing.preset,
-        intensity: processing.intensity || 'vocal-safe-96ms-turbo-1024',
+        intensity: processing.intensity || 'vocal-safe-99ms-turbo-1024',
         d40: processing.d40,
         resonance: processing.resonance,
         operators: processing.operators,
@@ -1703,7 +1704,7 @@ function createDoubleHarmonicRouter(options = {}) {
         contentType: outputFormat.contentType,
         filename: outputFilename,
         bytes: asset.bytes,
-        publicSummary: 'V9 Turbo: V8 Pivot valide, poids haut/bas dynamiques vocal-safe a 96 ms, fermeture 1024 et mg_phase recentre conserves.',
+        publicSummary: 'V9 Turbo: V8 Pivot valide, poids haut/bas dynamiques vocal-safe a 99 ms, fermeture 1024 et mg_phase recentre conserves.',
       });
     } catch (error) {
       return res.status(500).json({

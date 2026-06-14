@@ -3541,7 +3541,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const doubleHarmonicWeightLabel = doubleHarmonicMode === "v3"
     ? "Auto"
     : doubleHarmonicMode === "v9turbo"
-      ? `k ${doubleHarmonicIntensityLabel} · turbo 96 ms · pivot 0.292 · 1024`
+      ? `k ${doubleHarmonicIntensityLabel} · turbo 99 ms · pivot 0.292 · 1024`
     : doubleHarmonicMode === "v8pivot"
       ? `k ${doubleHarmonicIntensityLabel} · pivot 0.292 · 1024`
     : doubleHarmonicMode === "v8plus"
