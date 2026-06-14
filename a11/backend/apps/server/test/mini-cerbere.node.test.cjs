@@ -121,6 +121,34 @@ test('mini cerbere forwards primary remote provider API key', async () => {
   assert.equal(seen[0].options.timeout, 25_000);
 });
 
+test('mini cerbere routes forced Groq primary to Groq API even when caller gives OpenRouter URL', () => {
+  const runtime = createMiniCerbereRuntime({
+    env: {
+      GROQ_API_KEY: 'groq-test-key',
+      GROQ_BASE_URL: 'https://api.groq.com/openai/v1',
+    },
+    requestChatUpstream: async () => {
+      throw new Error('not called');
+    },
+    getLocalCompletionsUrl: () => '',
+    logger: { warn() {} },
+  });
+
+  const targets = runtime._buildTargets({
+    provider: 'groq',
+    upstreamUrl: 'https://openrouter.ai/api/v1/chat/completions',
+    upstreamBody: {
+      model: 'llama-3.3-70b-versatile',
+      messages: [{ role: 'user', content: 'yo' }],
+    },
+  });
+
+  assert.equal(targets[0].role, 'primary');
+  assert.equal(targets[0].provider, 'groq');
+  assert.match(targets[0].url, /api\.groq\.com\/openai\/v1\/chat\/completions/);
+  assert.equal(targets[0].model, 'llama-3.3-70b-versatile');
+});
+
 test('mini cerbere keeps interactive chat timeouts short by default', async () => {
   const seen = [];
   const runtime = createMiniCerbereRuntime({

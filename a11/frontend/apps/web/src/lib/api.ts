@@ -3185,7 +3185,13 @@ function buildFriendlyChatApiErrorMessage(status: number, rawValue: unknown) {
       parsed = null;
     }
   }
-  const serverMessage = String(parsed?.message || parsed?.error || '').trim();
+  const serverMessage = String(
+    parsed?.message
+    || parsed?.error_description
+    || parsed?.error?.message
+    || (typeof parsed?.error === 'string' ? parsed.error : '')
+    || ''
+  ).trim();
   const combinedMessage = `${serverMessage}\n${raw}`;
   if (/video_engine_unavailable|generateVideo handler unavailable|real_video_unavailable|video_proxy_fetch_unavailable|local video runner|mochi|A11_VIDEO_LOCAL_RUNNER/i.test(combinedMessage)) {
     return "Le moteur vidéo local n'est pas encore prêt: le routage est actif, mais le worker de rendu vidéo n'est pas lancé ou pas branché. Les poids locaux sont installés; il faut démarrer le runner vidéo avant de lancer le clip.";

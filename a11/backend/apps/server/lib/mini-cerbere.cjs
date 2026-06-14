@@ -493,10 +493,13 @@ function buildChatTargets({
   }
 
   if (upstreamUrl) {
+    const primaryUrl = primaryProvider === 'groq' && !isGroqLikeUrl(upstreamUrl)
+      ? normalizeCompletionsUrl(env.A11_CERBERE_GROQ_BASE_URL || env.GROQ_BASE_URL || DEFAULT_GROQ_BASE_URL)
+      : upstreamUrl;
     const primary = {
       role: 'primary',
       provider: primaryProvider,
-      url: upstreamUrl,
+      url: primaryUrl,
       body: primaryProvider === 'local'
         ? sanitizeBodyForLocal(upstreamBody, primaryModel)
         : sanitizeBodyForRemote(upstreamBody, primaryModel),

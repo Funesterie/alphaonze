@@ -8513,6 +8513,17 @@ function getOpenAICompletionsUrl(baseUrl = process.env.OPENAI_BASE_URL || 'https
   return base.endsWith('/v1') ? `${base}/chat/completions` : `${base}/v1/chat/completions`;
 }
 
+function getGroqCompletionsUrl(baseUrl = process.env.A11_CERBERE_GROQ_BASE_URL || process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1') {
+  const base = String(baseUrl || 'https://api.groq.com/openai/v1').trim().replace(/\/$/, '');
+  if (!base) {
+    return 'https://api.groq.com/openai/v1/chat/completions';
+  }
+  if (/\/v1\/chat\/completions$/i.test(base) || /\/chat\/completions$/i.test(base)) {
+    return base;
+  }
+  return base.endsWith('/v1') ? `${base}/chat/completions` : `${base}/v1/chat/completions`;
+}
+
 function resolveRemoteProviderCatalogPath() {
   const configuredPath = String(process.env.A11_REMOTE_PROVIDER_CATALOG_FILE || '').trim();
   if (configuredPath) {
@@ -10437,6 +10448,9 @@ function getCompletionsUrlForRequest(body) {
   }
   const remoteProfileUrl = String(body?.providerConfig?.url || '').trim();
   const remoteProfileBaseUrl = String(body?.providerConfig?.baseUrl || '').trim();
+  if (!remoteProfileUrl && !remoteProfileBaseUrl && provider === 'groq') {
+    return getGroqCompletionsUrl();
+  }
   return getOpenAICompletionsUrl(remoteProfileUrl || remoteProfileBaseUrl || undefined);
 }
 
