@@ -873,6 +873,22 @@ test('Vivy chat fallback answers simple greetings naturally', async () => {
   assert.doesNotMatch(checkIn.assistant, /Ce que je prends surtout/i);
 });
 
+test('Vivy chat fallback treats parle normalement as style correction', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-normal-speech',
+    message: 'parle normalement',
+    history: [
+      { role: 'assistant', content: 'Salut Djeff, je suis là.' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.match(result.assistant, /reprends normal|réponds directement/i);
+  assert.doesNotMatch(result.assistant, /Côté voix/i);
+  assert.doesNotMatch(result.assistant, /synthèse audio|référence vocale|trois choses/i);
+});
+
 test('Vivy chat fallback answers meta complaints instead of acting like a wall', async () => {
   const result = await buildVivyAiChat({
     conversationId: 'vivy-not-a-wall',

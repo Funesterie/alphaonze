@@ -2170,11 +2170,34 @@ function isShortVivyAcknowledgement(message = '') {
   return /^(ok|okay|oui|ouais|yes|daccord|d accord|dac|ca marche|parfait|nickel|grave|go|vas y|continue|bien|tres bien|merci)$/.test(normalized);
 }
 
+function isVivyNormalSpeechRequest(message = '') {
+  const normalized = foldTextForLookup(message)
+    .replace(/[.!?]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized || normalized.length > 180) return false;
+
+  return /\b(parle|reponds?|discute|cause)\s+(normalement|normal|naturellement|naturel|simplement)\b/.test(normalized)
+    || /\b(parle|reponds?)\s+comme\s+(une\s+)?personne\b/.test(normalized)
+    || /\bpas\s+comme\s+(un\s+)?robot\b/.test(normalized)
+    || /\b(arrete|stop|range|laisse)\b.{0,60}\b(diagnostic|formulaire|robot|mode voix|technique)\b/.test(normalized)
+    || /\bpas\s+de\s+(diagnostic|formulaire|mode voix|technique)\b/.test(normalized);
+}
+
 function getVivySmallTalkReply(message = '', { fileLine = '' } = {}) {
   const normalized = foldTextForLookup(message)
     .replace(/[.!?]+$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+
+  if (isVivyNormalSpeechRequest(message)) {
+    return cleanText([
+      'Oui. Je reprends normal.',
+      'Je te réponds directement, sans mode formulaire ni diagnostic technique.',
+      'Dis-moi ce qui bloque là maintenant, et on le remet droit.',
+      fileLine,
+    ].filter(Boolean).join('\n\n'), 900);
+  }
 
   const addressesVivy = /\b(vivy|toi|tu|t es|tes)\b/.test(normalized);
   const wallComplaint = /\b(mur|robot|automatique|auto|bloque|bloquee|bug|vide|reponds? pas|parle pas|generique|generic)\b/.test(normalized);
@@ -2217,7 +2240,7 @@ function buildVivyGeneralChatFallbackReply({ message = '', current = '', history
     if (/\b(site|bug|route|routage|prod|deploy|deploiement|déploiement|interface|bouton|menu)\b/.test(folded)) {
       return "Côté site, je le prends comme un vrai bug à isoler: ce qui est affiché, ce qui est attendu, puis le plus petit correctif vérifiable.";
     }
-    if (/\b(voix|tts|micro|parle|entend|audio)\b/.test(folded)) {
+    if (/\b(voix|tts|micro|audio|rvc|xtts|synthese vocale|synthèse vocale|reference vocale|référence vocale|ref audio)\b/.test(folded)) {
       return "Côté voix, je dois distinguer trois choses: la réponse texte, la synthèse audio, et la référence vocale. Si l'une tombe, je te le dis au lieu de faire semblant.";
     }
     if (/\b(pense|avis|idee|idée|theorie|théorie|intuition|comprendre)\b/.test(folded)) {
