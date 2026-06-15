@@ -71,7 +71,10 @@
     "rubixcube:vault": "node scripts/rubixgate/rubixcube-vault.cjs",
     "ollama:up": "docker compose -f docker-compose.ollama.yml up -d ollama",
     "ollama:up:gpu": "docker compose -f docker-compose.ollama.yml -f docker-compose.ollama.gpu.yml up -d ollama",
-    "ollama:down": "docker compose -f docker-compose.ollama.yml down"
+    "ollama:down": "docker compose -f docker-compose.ollama.yml down",
+    "research:d40:closure": "node scripts/research/scan-d40-spiral-closure.cjs",
+    "research:d40:7d": "node scripts/research/scan-d40-dimensional-7d.cjs",
+    "research:d40:music": "node scripts/research/render-d40-spiral-music-test.cjs"
   },
   "version": "0.0.1",
   "funding": [
