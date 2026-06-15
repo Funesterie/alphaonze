@@ -9,8 +9,9 @@ const express = require('express');
 
 const videoGenerateModule = require('../src/routes/video-generate.cjs');
 
-test('video generate router proxies requests when A11_VIDEO_PROXY_URL is configured', async () => {
+test('video generate router proxies requests when A11_VIDEO_LOCAL_RUNNER_URL is configured', async () => {
   const previousEnv = {
+    A11_VIDEO_LOCAL_RUNNER_URL: process.env.A11_VIDEO_LOCAL_RUNNER_URL,
     A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
     A11_VIDEO_PROXY_TIMEOUT_MS: process.env.A11_VIDEO_PROXY_TIMEOUT_MS,
     A11_VIDEO_PROXY_TOKEN: process.env.A11_VIDEO_PROXY_TOKEN,
@@ -50,7 +51,8 @@ test('video generate router proxies requests when A11_VIDEO_PROXY_URL is configu
 
   await new Promise((resolve) => proxyServer.listen(0, '127.0.0.1', resolve));
   const address = proxyServer.address();
-  process.env.A11_VIDEO_PROXY_URL = `http://127.0.0.1:${address.port}/api/tools/generate_video`;
+  process.env.A11_VIDEO_LOCAL_RUNNER_URL = `http://127.0.0.1:${address.port}/api/tools/generate_video`;
+  delete process.env.A11_VIDEO_PROXY_URL;
   process.env.A11_VIDEO_PROXY_TIMEOUT_MS = '30000';
   delete process.env.A11_VIDEO_PROXY_TOKEN;
   delete process.env.A11_VIDEO_BRIDGE_TOKEN;
@@ -69,7 +71,7 @@ test('video generate router proxies requests when A11_VIDEO_PROXY_URL is configu
   app.use(express.json({ limit: '4mb' }));
   app.use('/api', videoGenerateModule.createVideoGenerateRouter({
     generateVideo: async () => {
-      throw new Error('local generator should not be called when proxy is configured');
+      throw new Error('local generator should not be called when local runner is configured');
     },
   }).router);
 
@@ -113,6 +115,7 @@ test('video generate router proxies requests when A11_VIDEO_PROXY_URL is configu
 
 test('video generate router forwards personal session provider tokens to the proxy without leaking them', async () => {
   const previousEnv = {
+    A11_VIDEO_LOCAL_RUNNER_URL: process.env.A11_VIDEO_LOCAL_RUNNER_URL,
     A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
     A11_VIDEO_PROXY_TIMEOUT_MS: process.env.A11_VIDEO_PROXY_TIMEOUT_MS,
     A11_VIDEO_PROXY_TOKEN: process.env.A11_VIDEO_PROXY_TOKEN,
@@ -136,6 +139,7 @@ test('video generate router forwards personal session provider tokens to the pro
 
   await new Promise((resolve) => proxyServer.listen(0, '127.0.0.1', resolve));
   const address = proxyServer.address();
+  delete process.env.A11_VIDEO_LOCAL_RUNNER_URL;
   process.env.A11_VIDEO_PROXY_URL = `http://127.0.0.1:${address.port}/api/tools/generate_video`;
   process.env.A11_VIDEO_PROXY_TIMEOUT_MS = '30000';
 
@@ -432,6 +436,7 @@ test('video generate router can proxy through the local video runner env', async
 
 test('video generate router sends the dedicated video bridge token when configured', async () => {
   const previousEnv = {
+    A11_VIDEO_LOCAL_RUNNER_URL: process.env.A11_VIDEO_LOCAL_RUNNER_URL,
     A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
     A11_VIDEO_PROXY_TOKEN: process.env.A11_VIDEO_PROXY_TOKEN,
     A11_VIDEO_BRIDGE_TOKEN: process.env.A11_VIDEO_BRIDGE_TOKEN,
@@ -463,7 +468,8 @@ test('video generate router sends the dedicated video bridge token when configur
 
   await new Promise((resolve) => proxyServer.listen(0, '127.0.0.1', resolve));
   const address = proxyServer.address();
-  process.env.A11_VIDEO_PROXY_URL = `http://127.0.0.1:${address.port}/api/tools/generate_video`;
+  process.env.A11_VIDEO_LOCAL_RUNNER_URL = `http://127.0.0.1:${address.port}/api/tools/generate_video`;
+  delete process.env.A11_VIDEO_PROXY_URL;
   process.env.A11_VIDEO_PROXY_TOKEN = 'video-bridge-token';
   delete process.env.A11_VIDEO_BRIDGE_TOKEN;
   delete process.env.VIDEO_PROXY_TOKEN;
@@ -481,7 +487,7 @@ test('video generate router sends the dedicated video bridge token when configur
   app.use(express.json({ limit: '4mb' }));
   app.use('/api', videoGenerateModule.createVideoGenerateRouter({
     generateVideo: async () => {
-      throw new Error('local generator should not be called when proxy is configured');
+      throw new Error('local generator should not be called when local runner is configured');
     },
   }).router);
 
@@ -520,6 +526,7 @@ test('video generate router sends the dedicated video bridge token when configur
 
 test('video generate router polls async local video proxy jobs', async () => {
   const previousEnv = {
+    A11_VIDEO_LOCAL_RUNNER_URL: process.env.A11_VIDEO_LOCAL_RUNNER_URL,
     A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
     A11_VIDEO_PROXY_TIMEOUT_MS: process.env.A11_VIDEO_PROXY_TIMEOUT_MS,
     A11_VIDEO_PROXY_TOKEN: process.env.A11_VIDEO_PROXY_TOKEN,
@@ -591,7 +598,8 @@ test('video generate router polls async local video proxy jobs', async () => {
 
   await new Promise((resolve) => proxyServer.listen(0, '127.0.0.1', resolve));
   const address = proxyServer.address();
-  process.env.A11_VIDEO_PROXY_URL = `http://127.0.0.1:${address.port}/api/tools/generate_video`;
+  process.env.A11_VIDEO_LOCAL_RUNNER_URL = `http://127.0.0.1:${address.port}/api/tools/generate_video`;
+  delete process.env.A11_VIDEO_PROXY_URL;
   process.env.A11_VIDEO_PROXY_TIMEOUT_MS = '30000';
   process.env.A11_VIDEO_PROXY_TOKEN = 'video-bridge-token';
   process.env.A11_VIDEO_PROXY_FORCE_ASYNC = 'true';
@@ -1165,6 +1173,7 @@ test('video generate router does not use emergency color bars by default in prod
 
 test('video proxy rewrites local generated media paths to the public backend origin', async () => {
   const previousEnv = {
+    A11_VIDEO_LOCAL_RUNNER_URL: process.env.A11_VIDEO_LOCAL_RUNNER_URL,
     A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
     A11_VIDEO_PROXY_TIMEOUT_MS: process.env.A11_VIDEO_PROXY_TIMEOUT_MS,
     A11_VIDEO_PUBLIC_FILE_BASE_URL: process.env.A11_VIDEO_PUBLIC_FILE_BASE_URL,
@@ -1192,7 +1201,8 @@ test('video proxy rewrites local generated media paths to the public backend ori
 
   await new Promise((resolve) => proxyServer.listen(0, '127.0.0.1', resolve));
   const address = proxyServer.address();
-  process.env.A11_VIDEO_PROXY_URL = `http://127.0.0.1:${address.port}/api/tools/generate_video`;
+  process.env.A11_VIDEO_LOCAL_RUNNER_URL = `http://127.0.0.1:${address.port}/api/tools/generate_video`;
+  delete process.env.A11_VIDEO_PROXY_URL;
   process.env.A11_VIDEO_PROXY_TIMEOUT_MS = '30000';
   delete process.env.A11_VIDEO_PUBLIC_FILE_BASE_URL;
   delete process.env.A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL;
@@ -1205,7 +1215,7 @@ test('video proxy rewrites local generated media paths to the public backend ori
   app.use(express.json({ limit: '4mb' }));
   app.use('/api', videoGenerateModule.createVideoGenerateRouter({
     generateVideo: async () => {
-      throw new Error('local generator should not be called when proxy is configured');
+      throw new Error('local generator should not be called when local runner is configured');
     },
   }).router);
 

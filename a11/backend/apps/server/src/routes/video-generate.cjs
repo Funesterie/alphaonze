@@ -178,14 +178,47 @@ function buildAiServiceAuthHeaders(req = null, body = {}) {
   return headers;
 }
 
-function resolveVideoProxyUrl() {
+function resolveLocalRunnerUrl() {
   return normalizeProxyUrl(
-    process.env.A11_VIDEO_PROXY_URL
-    || process.env.VIDEO_PROXY_URL
-    || process.env.A11_VIDEO_LOCAL_RUNNER_URL
+    process.env.A11_VIDEO_LOCAL_RUNNER_URL
     || process.env.A11_MOCHI_RUNNER_URL
     || ''
   );
+}
+
+function resolvePlatformCloudUrl() {
+  return normalizeProxyUrl(
+    process.env.A11_VIDEO_PROXY_URL
+    || process.env.VIDEO_PROXY_URL
+    || ''
+  );
+}
+
+function resolveVideoProxyUrl() {
+  return resolveLocalRunnerUrl() || resolvePlatformCloudUrl();
+}
+
+function resolveUserRole(req = null) {
+  if (!req?.user) return 'guest';
+  const profile = resolveMcpAccountProfileSync(req.user || {});
+  return String(profile?.tier || 'basic').trim().toLowerCase();
+}
+
+function canUsePlatformCloudVideo(req = null) {
+  const role = resolveUserRole(req);
+  return ['founder', 'admin_family'].includes(role);
+}
+
+function enrichVideoResult(result, meta = {}) {
+  if (!result || typeof result !== 'object') return result;
+  return {
+    ...result,
+    providerUsed: meta.providerUsed || 'unknown',
+    chargedCredits: meta.chargedCredits !== undefined ? meta.chargedCredits : false,
+    role: String(meta.role || 'unknown'),
+    fallbackUsed: Boolean(meta.fallbackUsed),
+    requiresConfirmation: Boolean(meta.requiresConfirmation),
+  };
 }
 
 const LOCAL_VIDEO_WEIGHT_FILES = [
@@ -901,8 +934,8 @@ function createVideoGenerateRouter(overrides = {}) {
     throw error;
   }
 
-  async function generateViaProxy({ req = null, body = {}, prompt = '' } = {}) {
-    const videoProxyUrl = resolveVideoProxyUrl();
+  async function generateViaProxy({ req = null, body = {}, prompt = '', proxyUrl = null } = {}) {
+    const videoProxyUrl = proxyUrl !== null ? proxyUrl : resolveVideoProxyUrl();
     if (!videoProxyUrl) return null;
     if (typeof fetchImpl !== 'function') {
       const error = new Error('fetch_unavailable_for_video_proxy');
@@ -970,17 +1003,17 @@ function createVideoGenerateRouter(overrides = {}) {
     const prompt = options.prompt || body.prompt || body.message || '';
     const requestedProvider = resolveRequestedVideoProvider(body, req);
     const sessionVideoTokens = resolveSessionVideoTokens(req, body);
+    const role = resolveUserRole(req);
+
     if (shouldUseEmergencyVideoFirst(body)) {
-      return createEmergencyVideoAsset({
-        prompt,
-        body,
-        req,
-      });
+      return createEmergencyVideoAsset({ prompt, body, req });
     }
 
+    // Step 1: xAI — BYOK (user_cloud) or platform (premium/founder/admin allowed)
     const xaiVideoConfig = resolveXaiVideoConfig(process.env, { token: sessionVideoTokens.xai });
     if (isXaiVideoProvider(requestedProvider) || sessionVideoTokens.xai) {
-      const usesServerToken = Boolean(!sessionVideoTokens.xai && xaiVideoConfig.token);
+      const hasByok = Boolean(sessionVideoTokens.xai);
+      const usesServerToken = Boolean(!hasByok && xaiVideoConfig.token);
       if (usesServerToken && !canUseServerPaidVideo(req)) {
         const error = new Error('paid_video_demo_required');
         error.statusCode = 402;
@@ -988,48 +1021,55 @@ function createVideoGenerateRouter(overrides = {}) {
         throw error;
       }
       const xaiResult = await tryGenerateVideoWithXai({
-        req,
-        body,
-        prompt,
-        fetchImpl,
+        req, body, prompt, fetchImpl,
         uploadBufferToR2Impl: overrides.uploadBufferToR2,
         tokenOverride: sessionVideoTokens.xai,
       });
-      if (xaiResult?.ok) return rewriteVideoProxyPayload(xaiResult, req);
+      if (xaiResult?.ok) {
+        return enrichVideoResult(rewriteVideoProxyPayload(xaiResult, req), {
+          providerUsed: hasByok ? 'user_cloud' : 'platform_cloud',
+          chargedCredits: hasByok ? 'user_token' : 'platform',
+          role,
+          requiresConfirmation: hasByok,
+        });
+      }
       if (isXaiVideoProvider(requestedProvider) || xaiVideoConfig.strict) {
         const error = new Error(xaiResult?.message || xaiResult?.error || 'xai_video_failed');
         error.statusCode = xaiResult?.statusCode || 502;
-        error.payload = xaiResult || {
-          ok: false,
-          error: 'xai_video_failed',
-          message: 'xai_video_failed',
-        };
+        error.payload = xaiResult || { ok: false, error: 'xai_video_failed', message: 'xai_video_failed' };
         throw error;
       }
       console.warn('[A11][video-route] xAI video unavailable, falling back:', String(xaiResult?.message || xaiResult?.error || 'unknown'));
     }
 
+    // Step 2: RunComfy explicit — needs a proxy URL
     if (isRunComfyVideoProvider(requestedProvider) && !resolveVideoProxyUrl()) {
       const error = new Error('runcomfy_proxy_missing');
       error.statusCode = 424;
       error.payload = {
-        ok: false,
-        error: 'runcomfy_proxy_missing',
+        ok: false, error: 'runcomfy_proxy_missing',
         message: 'RunComfy/Comfy demande une URL proxy A11_VIDEO_PROXY_URL ou A11_VIDEO_LOCAL_RUNNER_URL.',
         provider: 'runcomfy',
       };
       throw error;
     }
 
+    // Step 3: Local runner — free, available to all, no role check
     if (!isHuggingFaceVideoProvider(requestedProvider) && !isXaiVideoProvider(requestedProvider)) {
-      const proxied = await generateViaProxy({
-        req,
-        body,
-        prompt,
-      });
-      if (proxied) return proxied;
+      const localUrl = resolveLocalRunnerUrl();
+      if (localUrl) {
+        const localResult = await generateViaProxy({ req, body, prompt, proxyUrl: localUrl });
+        if (localResult) {
+          return enrichVideoResult(localResult, {
+            providerUsed: 'local',
+            chargedCredits: false,
+            role,
+          });
+        }
+      }
     }
 
+    // Step 4: HuggingFace / Replicate — BYOK (user_cloud) or platform (premium/founder/admin allowed)
     const hfProviderOverride = isHuggingFaceVideoProvider(requestedProvider) ? requestedProvider : '';
     const hfVideoConfig = resolveHuggingFaceVideoConfig(process.env, {
       token: sessionVideoTokens.huggingface,
@@ -1037,7 +1077,8 @@ function createVideoGenerateRouter(overrides = {}) {
       provider: hfProviderOverride,
     });
     if (isHuggingFaceVideoProvider(requestedProvider) || hfVideoConfig.enabled) {
-      const usesServerToken = Boolean(!sessionVideoTokens.huggingface && !sessionVideoTokens.replicate && hfVideoConfig.token);
+      const hasByok = Boolean(sessionVideoTokens.huggingface || sessionVideoTokens.replicate);
+      const usesServerToken = Boolean(!hasByok && hfVideoConfig.token);
       if (usesServerToken && !canUseServerPaidVideo(req)) {
         if (isHuggingFaceVideoProvider(requestedProvider)) {
           const error = new Error('paid_video_demo_required');
@@ -1045,51 +1086,80 @@ function createVideoGenerateRouter(overrides = {}) {
           error.payload = buildPaidVideoDeniedPayload(hfVideoConfig.provider || 'huggingface');
           throw error;
         }
+        // Not explicitly requested + role insufficient → skip silently, continue to next step
       } else {
         const hfResult = await tryGenerateVideoWithHuggingFace({
-          req,
-          body,
-          prompt,
-          fetchImpl,
+          req, body, prompt, fetchImpl,
           uploadBufferToR2Impl: overrides.uploadBufferToR2,
           tokenOverride: sessionVideoTokens.huggingface,
-          configOverrides: {
-            provider: hfProviderOverride,
-            replicateToken: sessionVideoTokens.replicate,
-          },
+          configOverrides: { provider: hfProviderOverride, replicateToken: sessionVideoTokens.replicate },
         });
-        if (hfResult?.ok) return rewriteVideoProxyPayload(hfResult, req);
+        if (hfResult?.ok) {
+          return enrichVideoResult(rewriteVideoProxyPayload(hfResult, req), {
+            providerUsed: hasByok ? 'user_cloud' : 'platform_cloud',
+            chargedCredits: hasByok ? 'user_token' : 'platform',
+            role,
+            requiresConfirmation: hasByok,
+          });
+        }
         if (isHuggingFaceVideoProvider(requestedProvider) || hfVideoConfig.strict) {
           const error = new Error(hfResult?.message || hfResult?.error || 'hf_video_failed');
           error.statusCode = hfResult?.statusCode || 502;
-          error.payload = hfResult || {
-            ok: false,
-            error: 'hf_video_failed',
-            message: 'hf_video_failed',
-          };
+          error.payload = hfResult || { ok: false, error: 'hf_video_failed', message: 'hf_video_failed' };
           throw error;
         }
         console.warn('[A11][video-route] Hugging Face video unavailable, falling back:', String(hfResult?.message || hfResult?.error || 'unknown'));
       }
     }
 
-    const proxied = await generateViaProxy({
-      req,
-      body,
-      prompt,
-    });
-    if (proxied) return proxied;
+    // Step 5: Platform cloud proxy — BYOK allowed for all, server credits = admin/founder only
+    const platformCloudUrl = resolvePlatformCloudUrl();
+    if (platformCloudUrl) {
+      const hasByokForCloud = Boolean(
+        sessionVideoTokens.runcomfy
+        || sessionVideoTokens.xai
+        || sessionVideoTokens.huggingface
+        || sessionVideoTokens.replicate
+        || sessionVideoTokens.civitai
+      );
+      if (!hasByokForCloud && !canUsePlatformCloudVideo(req)) {
+        const error = new Error('platform_cloud_video_forbidden');
+        error.statusCode = 403;
+        error.payload = {
+          ok: false,
+          error: 'platform_cloud_video_forbidden',
+          message: 'Génération vidéo via le cloud plateforme réservée aux fondateurs et administrateurs. Aucun runner local ni token BYOK disponible.',
+          providerUsed: null,
+          chargedCredits: null,
+          role,
+        };
+        throw error;
+      }
+      const cloudResult = await generateViaProxy({ req, body, prompt, proxyUrl: platformCloudUrl });
+      if (cloudResult) {
+        return enrichVideoResult(cloudResult, {
+          providerUsed: hasByokForCloud ? 'user_cloud' : 'platform_cloud',
+          chargedCredits: hasByokForCloud ? 'user_token' : 'platform',
+          role,
+          fallbackUsed: !hasByokForCloud,
+          requiresConfirmation: hasByokForCloud,
+        });
+      }
+    }
 
+    // Step 6: Mochi local weights inference
     try {
-      return await localGenerateVideoInternal(options);
+      const mochiResult = await localGenerateVideoInternal(options);
+      return enrichVideoResult(mochiResult, {
+        providerUsed: 'local',
+        chargedCredits: false,
+        role,
+        fallbackUsed: true,
+      });
     } catch (error_) {
       if (!shouldFallbackToEmergencyVideo(body)) throw error_;
       console.error('[A11][video-route] emergency fallback after local failure:', String(error_?.message || error_));
-      return createEmergencyVideoAsset({
-        prompt,
-        body,
-        req,
-      });
+      return createEmergencyVideoAsset({ prompt, body, req });
     }
   }
 
@@ -1200,6 +1270,8 @@ function createVideoGenerateRouter(overrides = {}) {
     res.json({
       ok: true,
       service: 'a11-video',
+      localRunnerConfigured: Boolean(resolveLocalRunnerUrl()),
+      platformCloudConfigured: Boolean(resolvePlatformCloudUrl()),
       proxyConfigured: Boolean(resolveVideoProxyUrl()),
       huggingFaceConfigured: Boolean(resolveHuggingFaceVideoConfig().enabled && resolveHuggingFaceVideoConfig().token),
       huggingFaceProvider: resolveHuggingFaceVideoConfig().provider,
