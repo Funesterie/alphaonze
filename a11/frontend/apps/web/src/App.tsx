@@ -11157,7 +11157,6 @@ export function App() {
     if (!effectiveText) return;
     const lastMediaForVision = !explicitSourceImageUrl
       && isImageInspectionRequest(effectiveText)
-      && canReuseLastMediaForRequest(effectiveText)
       ? findLastVisibleMedia(messages)
       : null;
     const sourceImageUrl = explicitSourceImageUrl

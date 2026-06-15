@@ -2703,6 +2703,20 @@ function createProtectedChatProxyRouter({
     const shouldBypassCache = resolution.kind === 'image.generate' && resolution.shouldBypassImageRequestCache === true;
     const acceptsAsyncImageJob = resolution.kind === 'image.generate' && isAsyncImageJobRequested(req.body || {});
 
+    if (resolution.kind === 'video.generate' && isAsyncImageJobRequested(req.body || {})) {
+      cleanupExpiredAsyncImageJobs();
+      const vRequestKeys = buildResolvedRequestKeys(req, latestUserMessage, resolution);
+      const pendingVideoJob = findPendingAsyncImageJob(vRequestKeys);
+      if (pendingVideoJob) {
+        console.log(`[A11][video-async] reuse pending job key=${vRequestKeys[0]?.slice(0, 10)} job=${pendingVideoJob.id}`);
+        return res.status(200).json(attachIntentDebug(buildPendingImageJobPayload(pendingVideoJob, resolution), resolution, req.body || {}));
+      }
+      const videoJob = createAsyncImageJob(req, resolution, vRequestKeys);
+      startAsyncImageJob(videoJob, resolution, req, false);
+      console.log(`[A11][video-async] queued video job key=${vRequestKeys[0]?.slice(0, 10)} job=${videoJob.id}`);
+      return res.status(200).json(attachIntentDebug(buildPendingImageJobPayload(videoJob, resolution), resolution, req.body || {}));
+    }
+
     if (!isCacheable) {
       const executionContext = getResolutionExecutionContext(resolution, req);
       const payload = resolution.responsePayload
