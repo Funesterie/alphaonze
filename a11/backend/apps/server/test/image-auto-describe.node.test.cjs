@@ -126,3 +126,130 @@ test('autoDescribeImage local fallback skips OCR for tiny images without crashin
     }
   });
 });
+
+test('autoDescribeImage uses configured remote vision provider without entering Janus', async () => {
+  await withTempRuntime(async (runtimeRoot) => {
+    const previousEnv = {
+      A11_VISION_PROVIDER: process.env.A11_VISION_PROVIDER,
+      A11_VISION_API_KEY: process.env.A11_VISION_API_KEY,
+      A11_VISION_BASE_URL: process.env.A11_VISION_BASE_URL,
+      A11_VISION_MODEL: process.env.A11_VISION_MODEL,
+    };
+    const previousFetch = global.fetch;
+    let fetchCalls = 0;
+
+    process.env.A11_VISION_PROVIDER = 'remote';
+    process.env.A11_VISION_API_KEY = 'test-vision-key';
+    process.env.A11_VISION_BASE_URL = 'https://vision.example.test/v1';
+    process.env.A11_VISION_MODEL = 'vision-test-model';
+    global.fetch = async (url, options = {}) => {
+      fetchCalls += 1;
+      assert.equal(String(url), 'https://vision.example.test/v1/chat/completions');
+      const body = JSON.parse(String(options.body || '{}'));
+      assert.equal(body.model, 'vision-test-model');
+      assert.equal(body.messages?.[1]?.content?.[1]?.type, 'image_url');
+      assert.match(body.messages[1].content[1].image_url.url, /^data:image\/png;base64,/);
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: 'On voit un carré de test net, utilisé pour valider la vision distante.',
+              },
+            },
+          ],
+        }),
+      };
+    };
+
+    try {
+      const uploadDir = path.join(runtimeRoot, 'files', 'uploads');
+      fs.mkdirSync(uploadDir, { recursive: true });
+      fs.writeFileSync(path.join(uploadDir, 'remote.png'), ONE_PIXEL_PNG);
+
+      const result = await autoDescribeImage({
+        imageLocator: '/files/runtime/files/uploads/remote.png',
+        runtimeRoot,
+        timeoutMs: 5000,
+      });
+
+      assert.equal(fetchCalls, 1);
+      assert.equal(result.skipped, false);
+      assert.equal(result.fallback, false);
+      assert.equal(result.visualReliable, true);
+      assert.equal(result.provider, 'remote-vision:vision-test-model');
+      assert.match(result.description, /vision distante/i);
+    } finally {
+      global.fetch = previousFetch;
+      for (const [key, value] of Object.entries(previousEnv)) {
+        if (value == null) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+});
+
+test('autoDescribeImage remote provider falls back locally without starting Janus', async () => {
+  await withTempRuntime(async (runtimeRoot) => {
+    const previousEnv = {
+      A11_VISION_PROVIDER: process.env.A11_VISION_PROVIDER,
+      A11_VISION_API_KEY: process.env.A11_VISION_API_KEY,
+      A11_VISION_BASE_URL: process.env.A11_VISION_BASE_URL,
+      A11_VISION_MODEL: process.env.A11_VISION_MODEL,
+      A11_JANUS_PYTHON_PATH: process.env.A11_JANUS_PYTHON_PATH,
+      GROQ_API_KEY: process.env.GROQ_API_KEY,
+      GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+      OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+      VIVY_OPENAI_API_KEY: process.env.VIVY_OPENAI_API_KEY,
+      A11_OPENAI_API_KEY: process.env.A11_OPENAI_API_KEY,
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    };
+    const previousFetch = global.fetch;
+    let fetchCalls = 0;
+
+    process.env.A11_VISION_PROVIDER = 'remote';
+    process.env.A11_VISION_API_KEY = 'test-vision-key';
+    process.env.A11_VISION_BASE_URL = 'https://vision.example.test/v1';
+    process.env.A11_VISION_MODEL = 'vision-test-model';
+    process.env.A11_JANUS_PYTHON_PATH = 'Z:\\missing\\janus-python.exe';
+    delete process.env.GROQ_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.VIVY_OPENAI_API_KEY;
+    delete process.env.A11_OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    global.fetch = async () => {
+      fetchCalls += 1;
+      throw new Error('remote_down');
+    };
+
+    try {
+      const uploadDir = path.join(runtimeRoot, 'files', 'uploads');
+      fs.mkdirSync(uploadDir, { recursive: true });
+      fs.writeFileSync(path.join(uploadDir, 'remote-down.png'), ONE_PIXEL_PNG);
+
+      const startedAt = Date.now();
+      const result = await autoDescribeImage({
+        imageLocator: '/files/runtime/files/uploads/remote-down.png',
+        runtimeRoot,
+        timeoutMs: 5000,
+      });
+
+      assert.equal(fetchCalls, 1);
+      assert.ok(Date.now() - startedAt < 1500);
+      assert.equal(result.skipped, false);
+      assert.equal(result.fallback, true);
+      assert.equal(result.visualReliable, false);
+      assert.equal(result.provider, 'remote-vision+local-image-fallback');
+      assert.equal(result.reason, 'remote_vision_unavailable');
+    } finally {
+      global.fetch = previousFetch;
+      for (const [key, value] of Object.entries(previousEnv)) {
+        if (value == null) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+});

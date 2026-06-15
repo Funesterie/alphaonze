@@ -2561,6 +2561,8 @@ function createProtectedChatProxyRouter({
         timeoutMs: visionTimeoutMs,
         requestId: `chat-vision-${Date.now()}`,
         prompt: buildVisionQuestionPrompt(latestUserMessage),
+        visionProvider: 'remote',
+        preferRemoteVision: true,
       }), {
         timeoutMs: visionTimeoutMs,
         provider: 'janus',

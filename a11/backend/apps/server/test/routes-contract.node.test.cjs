@@ -1930,9 +1930,11 @@ test('POST /api/llm/chat answers image inspection with vision instead of proxyin
         },
         detectImageIntent: () => false,
         detectWebImageIntent: () => false,
-        autoDescribeImage: async ({ imageLocator, prompt }) => {
+        autoDescribeImage: async ({ imageLocator, prompt, preferRemoteVision, visionProvider }) => {
           assert.equal(imageLocator, 'https://assets.example.test/k44.png');
           assert.match(prompt, /français/i);
+          assert.equal(preferRemoteVision, true);
+          assert.equal(visionProvider, 'remote');
           return {
             skipped: false,
             provider: 'janus-test',
@@ -1987,8 +1989,10 @@ test('POST /api/llm/chat bypasses slow intent detection for attached image inspe
           throw new Error('image_intent_should_not_be_called');
         },
         detectWebImageIntent: () => false,
-        autoDescribeImage: async ({ imageLocator }) => {
+        autoDescribeImage: async ({ imageLocator, preferRemoteVision, visionProvider }) => {
           assert.equal(imageLocator, 'https://assets.example.test/k44-fast.png');
+          assert.equal(preferRemoteVision, true);
+          assert.equal(visionProvider, 'remote');
           return {
             skipped: false,
             provider: 'janus-test',

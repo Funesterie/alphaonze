@@ -129,6 +129,254 @@ function buildLocalVisionFallbackText({ metadata = '', preview = '', reason = ''
   return parts.join(' ');
 }
 
+function resolveRemoteVisionConfig(options = {}, env = process.env) {
+  return resolveRemoteVisionConfigs(options, env)[0] || {
+    baseUrl: '',
+    apiKey: '',
+    model: '',
+    timeoutMs: Math.max(3_000, Math.min(60_000, Number(options.timeoutMs || env.A11_REMOTE_VISION_TIMEOUT_MS || 25_000) || 25_000)),
+    available: false,
+    label: 'remote-vision',
+  };
+}
+
+function makeRemoteVisionCandidate({
+  label = 'remote-vision',
+  baseUrl = '',
+  apiKey = '',
+  model = '',
+  timeoutMs = 25_000,
+} = {}) {
+  return {
+    label: String(label || 'remote-vision').trim() || 'remote-vision',
+    baseUrl: String(baseUrl || '').trim(),
+    apiKey: String(apiKey || '').trim(),
+    model: String(model || '').trim(),
+    timeoutMs: Math.max(3_000, Math.min(60_000, Number(timeoutMs) || 25_000)),
+    available: Boolean(apiKey && baseUrl && model),
+  };
+}
+
+function resolveRemoteVisionConfigs(options = {}, env = process.env) {
+  const timeoutMs = Math.max(
+    3_000,
+    Math.min(60_000, Number(options.timeoutMs || env.A11_REMOTE_VISION_TIMEOUT_MS || 25_000) || 25_000)
+  );
+  const candidates = [];
+
+  const explicitBaseUrl = String(options.baseUrl || env.A11_VISION_BASE_URL || '').trim();
+  const explicitModel = String(options.model || env.A11_VISION_MODEL || '').trim();
+  const explicitApiKey = String(options.apiKey || env.A11_VISION_API_KEY || '').trim();
+  if (explicitBaseUrl || explicitModel || explicitApiKey) {
+    const baseUrl = explicitBaseUrl || 'https://api.openai.com/v1';
+    const baseLower = baseUrl.toLowerCase();
+    candidates.push(makeRemoteVisionCandidate({
+      label: 'remote-vision',
+      baseUrl,
+      apiKey: explicitApiKey
+        || (baseLower.includes('groq') ? env.GROQ_API_KEY : '')
+        || (baseLower.includes('openrouter') ? env.OPENROUTER_API_KEY : '')
+        || env.VIVY_OPENAI_API_KEY
+        || env.A11_OPENAI_API_KEY
+        || env.OPENAI_API_KEY
+        || env.GEMINI_API_KEY
+        || '',
+      model: explicitModel
+        || (baseLower.includes('groq') ? (env.GROQ_VISION_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct') : '')
+        || (baseLower.includes('openrouter') ? (env.OPENROUTER_VISION_MODEL || 'google/gemini-2.5-flash') : '')
+        || (baseLower.includes('googleapis') ? (env.GEMINI_VISION_MODEL || 'gemini-2.5-flash') : '')
+        || env.OPENAI_VISION_MODEL
+        || 'gpt-4o-mini',
+      timeoutMs,
+    }));
+  }
+
+  if (env.GROQ_API_KEY) {
+    candidates.push(makeRemoteVisionCandidate({
+      label: 'groq-vision',
+      baseUrl: 'https://api.groq.com/openai/v1',
+      apiKey: env.GROQ_API_KEY,
+      model: env.GROQ_VISION_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct',
+      timeoutMs,
+    }));
+  }
+
+  if (env.VIVY_OPENAI_API_KEY || env.A11_OPENAI_API_KEY || env.OPENAI_API_KEY) {
+    candidates.push(makeRemoteVisionCandidate({
+      label: 'openai-vision',
+      baseUrl: env.VIVY_OPENAI_BASE_URL || env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+      apiKey: env.VIVY_OPENAI_API_KEY || env.A11_OPENAI_API_KEY || env.OPENAI_API_KEY,
+      model: env.VIVY_VISION_MODEL || env.OPENAI_VISION_MODEL || 'gpt-4o-mini',
+      timeoutMs,
+    }));
+  }
+
+  if (env.GEMINI_API_KEY) {
+    candidates.push(makeRemoteVisionCandidate({
+      label: 'gemini-vision',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      apiKey: env.GEMINI_API_KEY,
+      model: env.GEMINI_VISION_MODEL || 'gemini-2.5-flash',
+      timeoutMs,
+    }));
+  }
+
+  if (env.OPENROUTER_API_KEY) {
+    candidates.push(makeRemoteVisionCandidate({
+      label: 'openrouter-vision',
+      baseUrl: 'https://openrouter.ai/api/v1',
+      apiKey: env.OPENROUTER_API_KEY,
+      model: env.OPENROUTER_VISION_MODEL || 'google/gemini-2.5-flash',
+      timeoutMs,
+    }));
+  }
+
+  const seen = new Set();
+  return candidates.filter((candidate) => {
+    if (!candidate.available) return false;
+    const key = `${candidate.label}\n${candidate.baseUrl}\n${candidate.model}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function remoteVisionProviderLabel(config = {}) {
+  const label = String(config.label || 'remote-vision').trim() || 'remote-vision';
+  const model = String(config.model || '').trim();
+  if (label === 'remote-vision') return `remote-vision:${model}`;
+  return `${label}:${model}`;
+}
+
+async function fetchRemoteVisionDescription({
+  buffer,
+  contentType = 'image/png',
+  prompt = AUTO_DESCRIBE_PROMPT,
+  config,
+} = {}) {
+  if (!Buffer.isBuffer(buffer) || !buffer.length || !config?.available) return null;
+  const url = buildRemoteVisionUrl(config.baseUrl);
+  if (!url) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), config.timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages: [
+          {
+            role: 'system',
+            content: "Tu es le module vision d'A11. Réponds en français, décris seulement ce qui est visible, sans détails techniques internes.",
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: String(prompt || AUTO_DESCRIBE_PROMPT).trim() || AUTO_DESCRIBE_PROMPT },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${String(contentType || 'image/png').trim() || 'image/png'};base64,${buffer.toString('base64')}`,
+                },
+              },
+            ],
+          },
+        ],
+        temperature: 0.2,
+        max_tokens: 500,
+        stream: false,
+      }),
+    });
+
+    const rawText = await response.text();
+    if (!response.ok) {
+      throw new Error(`remote_vision_failed:${response.status}`);
+    }
+
+    let parsed = null;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      parsed = null;
+    }
+    const text = parsed
+      ? extractRemoteVisionText(parsed?.choices?.[0]?.message?.content || parsed?.output_text || parsed?.text)
+      : rawText.trim();
+    if (!text) return null;
+    return {
+      description: text,
+      provider: remoteVisionProviderLabel(config),
+      skipped: false,
+      fallback: false,
+      visualReliable: true,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function buildRemoteVisionUrl(baseUrl = '') {
+  const normalizedBase = String(baseUrl || '').trim().replace(/\/+$/, '');
+  if (!normalizedBase) return '';
+  return normalizedBase.endsWith('/v1')
+    ? `${normalizedBase}/chat/completions`
+    : `${normalizedBase}/v1/chat/completions`;
+}
+
+function extractRemoteVisionText(value) {
+  if (typeof value === 'string') return value.trim();
+  if (Array.isArray(value)) {
+    return value.map(extractRemoteVisionText).filter(Boolean).join('\n').trim();
+  }
+  if (value && typeof value === 'object') {
+    return String(
+      value.text
+      || value.content
+      || value.output_text
+      || ''
+    ).trim();
+  }
+  return '';
+}
+
+async function describeImageWithRemoteVision({
+  buffer,
+  contentType = 'image/png',
+  prompt = AUTO_DESCRIBE_PROMPT,
+  timeoutMs,
+  config = null,
+  configs = null,
+} = {}) {
+  if (!Buffer.isBuffer(buffer) || !buffer.length) return null;
+  const candidates = Array.isArray(configs) && configs.length
+    ? configs
+    : (config ? [config] : resolveRemoteVisionConfigs({ timeoutMs }));
+  let lastError = null;
+  for (const candidate of candidates) {
+    if (!candidate?.available) continue;
+    try {
+      const result = await fetchRemoteVisionDescription({
+        buffer,
+        contentType,
+        prompt,
+        config: candidate,
+      });
+      if (result?.description) return result;
+    } catch (error) {
+      lastError = error;
+      console.warn(`[A11][auto-describe] ${candidate.label || 'remote-vision'} failed: ${String(error?.message || error)}`);
+    }
+  }
+  if (lastError) throw lastError;
+  return null;
+}
+
 async function buildLocalImageFallbackDescription({ buffer, contentType, reason }) {
   try {
     const { analyzeUploadedResource } = require('../../lib/resource-reader.cjs');
@@ -247,13 +495,15 @@ async function autoDescribeImage({
   requestId = '',
   prompt = AUTO_DESCRIBE_PROMPT,
   maxNewTokens = Number(process.env.A11_IMAGE_REFERENCE_JANUS_MAX_TOKENS || process.env.A11_JANUS_MAX_NEW_TOKENS || 640),
+  visionProvider = '',
+  preferRemoteVision = false,
 } = {}) {
   const locator = String(imageLocator || '').trim();
   if (!locator) {
     return { description: '', provider: 'none', skipped: true, fallback: false, visualReliable: false, reason: 'no_locator' };
   }
 
-  const provider = resolveVisionProvider();
+  const provider = resolveVisionProvider({ provider: visionProvider });
   let imageBuffer;
   let contentType;
   try {
@@ -263,6 +513,53 @@ async function autoDescribeImage({
   } catch (loadErr) {
     console.warn(`[A11][auto-describe] Failed to load image: ${String(loadErr?.message || loadErr)}`);
     return { description: '', provider, skipped: true, reason: String(loadErr?.message || 'load_failed') };
+  }
+
+  const remoteConfigs = resolveRemoteVisionConfigs({ timeoutMs });
+  const remoteConfig = remoteConfigs[0] || resolveRemoteVisionConfig({ timeoutMs });
+  const shouldTryRemoteFirst = Boolean(preferRemoteVision)
+    || provider === 'remote'
+    || (provider === 'ollama' && remoteConfig.available);
+  let remoteTried = false;
+
+  async function tryRemoteVision(reason = '') {
+    if (remoteTried || !remoteConfig.available) return null;
+    remoteTried = true;
+    try {
+      const remote = await describeImageWithRemoteVision({
+        buffer: imageBuffer,
+        contentType,
+        prompt,
+        timeoutMs,
+        configs: remoteConfigs,
+      });
+      if (remote?.description) return remote;
+    } catch (remoteError) {
+      console.warn(`[A11][auto-describe] Remote vision failed${reason ? ` after ${reason}` : ''}: ${String(remoteError?.message || remoteError)}`);
+    }
+    return null;
+  }
+
+  if (shouldTryRemoteFirst) {
+    const remote = await tryRemoteVision('preferred');
+    if (remote?.description) return remote;
+  }
+
+  if (provider === 'remote') {
+    const fallback = await buildLocalImageFallbackDescription({
+      buffer: imageBuffer,
+      contentType,
+      reason: remoteConfig.available ? 'remote_vision_unavailable' : 'remote_vision_not_configured',
+    });
+    return {
+      description: fallback.description,
+      provider: 'remote-vision+local-image-fallback',
+      skipped: false,
+      fallback: true,
+      visualReliable: false,
+      reason: remoteConfig.available ? 'remote_vision_unavailable' : 'remote_vision_not_configured',
+      analysis: fallback.analysis || null,
+    };
   }
 
   // Vérifier si Janus est disponible après chargement pour garder un fallback local.
@@ -306,6 +603,9 @@ async function autoDescribeImage({
   } catch (janusErr) {
     console.warn(`[A11][auto-describe] Janus vision failed: ${String(janusErr?.message || janusErr)}`);
     const reason = String(janusErr?.message || 'janus_failed');
+    const remote = await tryRemoteVision(reason);
+    if (remote?.description) return remote;
+
     const fallback = await buildLocalImageFallbackDescription({
       buffer: imageBuffer,
       contentType,
@@ -335,6 +635,9 @@ function buildAutoDescribeUserMessage(description = '') {
 
 module.exports = {
   autoDescribeImage,
+  describeImageWithRemoteVision,
+  resolveRemoteVisionConfig,
+  resolveRemoteVisionConfigs,
   buildAutoDescribeUserMessage,
   buildLocalImageFallbackDescription,
   buildLocalVisionFallbackText,
