@@ -262,6 +262,7 @@ function attachDirectSourceImageToMask(mask = {}, body = {}, messages = []) {
 function isImageTransformRequest(text = '') {
   const normalized = normalizeLookup(text);
   if (!normalized) return false;
+  if (/\b(video|clip|film)\b/.test(normalized)) return false;
 
   const referenceCue = /\b(cette|cet|ce|ces|ca|cela|celle ci|celui ci|l image|les images|la photo|les photos|le portrait|les portraits|image jointe|images jointes|photo jointe|photos jointes|reference|references|ref|refs|dessus|this|these)\b/.test(normalized);
   const transformCue = /\b(retravaille|retravailler|retouche|retoucher|modifie|modifier|change|changer|transforme|transformer|transformation|adapte|adapter|remix|recompose|recomposer|corrige|corriger|ameliore|ameliorer|refais|refaire|remake|rework|edit|modify|transform|transformation|enhance|upscale|stylise|styliser)\b/.test(normalized);
@@ -282,6 +283,7 @@ function isVisualFeedbackEditRequest(text = '') {
 function isExplicitImageGenerationRequest(text = '') {
   const normalized = normalizeLookup(text);
   if (!normalized) return false;
+  if (/\b(video|clip|film)\b/.test(normalized)) return false;
 
   const creationCue = /\b(genere|generer|cree|creer|dessine|dessiner|fabrique|produis|prepare|rends moi|fais moi|fais|fait|make|generate|create|draw)\b/.test(normalized);
   const imageCue = /\b(image|illustration|dessin|photo|visuel|portrait|artwork)\b/.test(normalized);
