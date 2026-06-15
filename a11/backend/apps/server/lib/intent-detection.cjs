@@ -31,7 +31,7 @@ function isLegacyWordIntentDetectorsEnabled(env = process.env) {
 // Ne retourne jamais false — retourne null si incertain.
 
 function fastPathImageIntent(normalized) {
-  const hasCreationVerb = /\b(g[eé]n[eè]re[rz]?|cr[eé]e[rz]?|dessine[rz]?|fabrique[rz]?|produis|generate|create|draw|make|render)\b/i.test(normalized);
+  const hasCreationVerb = /\b(g[eé]n[eéè]re[rz]?|cr[eé]e[rz]?|dessine[rz]?|fabrique[rz]?|produis|generate|create|draw|make|render)\b/i.test(normalized);
   const hasVisualWord = /\b(image|illustration|dessin|photo|visuel|portrait)\b/i.test(normalized);
   const hasVisualStyle = /\b(cartoon|anime|pixel art|watercolor|cinematic|manga|render|3d|stylis[eÃ©]|stylized)\b/i.test(normalized);
   const hasTroubleshooting = /\b(explique|pourquoi|probl[eè]me|bug|erreur|fonctionne|marche)\b/i.test(normalized);
@@ -41,7 +41,7 @@ function fastPathImageIntent(normalized) {
 }
 
 function fastPathVideoIntent(normalized) {
-  const hasCreationVerb = /\b(g[eé]n[eè]re[rz]?|cr[eé]e[rz]?|fais|fabrique[rz]?|produis|generate|create|make|render)\b/i.test(normalized);
+  const hasCreationVerb = /\b(g[eé]n[eéè]re[rz]?|cr[eé]e[rz]?|fais|fabrique[rz]?|produis|generate|create|make|render)\b/i.test(normalized);
   const hasVideoWord = /\b(vid[eé]o|animation|gif|mp4|clip)\b/i.test(normalized);
   if (hasCreationVerb && hasVideoWord) return { intent: 'video.generate', confidence: 0.95, reason: 'fast_path_creation_verb_video_word' };
   return null;
@@ -49,7 +49,7 @@ function fastPathVideoIntent(normalized) {
 
 function fastPathWebImageIntent(normalized) {
   const hasSearchVerb = /\b(montre|affiche|cherche|trouve|show|find|search)\b/i.test(normalized);
-  const hasCreationVerb = /\b(g[eé]n[eè]re|cr[eé]e|dessine|fabrique|produis|generate|create|draw|make|render)\b/i.test(normalized);
+  const hasCreationVerb = /\b(g[eé]n[eéè]re|cr[eé]e|dessine|fabrique|produis|generate|create|draw|make|render)\b/i.test(normalized);
   if (hasSearchVerb && !hasCreationVerb && /\b(image|photo|illustration)\b/i.test(normalized)) {
     return { intent: 'web.image.search', confidence: 0.90, reason: 'fast_path_search_verb_image_word' };
   }
@@ -57,7 +57,7 @@ function fastPathWebImageIntent(normalized) {
 }
 
 function fastPathSoundIntent(normalized) {
-  const hasCreationVerb = /\b(g[eé]n[eè]re|cr[eé]e|produis|compose|generate|create|make|produce|synthesize)\b/i.test(normalized);
+  const hasCreationVerb = /\b(g[eé]n[eéè]re|cr[eé]e|produis|compose|generate|create|make|produce|synthesize)\b/i.test(normalized);
   const hasSoundWord = /\b(son|audio|musique|music|sound|bruit|noise|tts|voix|voice|parole|speech|mp3|wav|ogg)\b/i.test(normalized);
   if (hasCreationVerb && hasSoundWord) return { intent: 'sound.generate', confidence: 0.90, reason: 'fast_path_creation_verb_sound_word' };
   return null;
@@ -69,7 +69,7 @@ function fastPathAgentIntent(normalized) {
   const agentPatterns = [
     /^a11,?\s+(fais|fait|peux[-\s]?tu|pourrais[-\s]?tu|veux[-\s]?tu|va|vas)\s+(.+)/i,
     /^a11,?\s+(lance|d[eé]marre|ex[eé]cute|effectue|r[eé]alise|accomplis)\s+(.+)/i,
-    /^a11,?\s+(cr[eé]e|g[eé]n[eè]re|produis|fabrique|construis)\s+(.+)/i,
+    /^a11,?\s+(cr[eé]e|g[eé]n[eéè]re|produis|fabrique|construis)\s+(.+)/i,
   ];
 
   for (const pattern of agentPatterns) {
@@ -159,9 +159,12 @@ Intents:
 
 Key rules:
 - The user message is the primary signal. Read it carefully.
-- An empty message or a comment ("regarde", "c'est beau", "j'aime ça") → chat.reply
-- A question → chat.reply
-- An explicit creation verb (génère, crée, dessine, fais, make, draw, create, render, transform) → image.generate or video.generate
+- Any question (ends with ? or uses interrogative words: que, quoi, pourquoi, comment, où, qui, what, how, why) → ALWAYS chat.reply, even if the question mentions an image
+- "que vois-tu", "que vois tu", "que voit-on", "décris cette image", "qu'est-ce que tu vois", "describe this image", "what do you see" → chat.reply (vision question)
+- "regarde", "c'est beau", "j'aime ça", "voici" → chat.reply
+- Only image.generate if the user EXPLICITLY asks to CREATE something new: génère, crée, dessine, fais, make, draw, create, render, transform
+- "générer une vidéo", "crée une vidéo", "make a video", "generate a video" → video.generate (NOT image.generate)
+- When video is explicitly mentioned → video.generate, not image.generate
 - Sharing an image without asking for anything → chat.reply
 - "Montre-moi une image de X" → web.image.search, not image.generate
 - When unsure, prefer chat.reply over image.generate
