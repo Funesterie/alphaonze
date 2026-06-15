@@ -4310,6 +4310,7 @@ async function handleTtsSpeakRequest(req, res) {
     const strictOfficialVoice = shouldBlockNeutralVoiceFallback(preparedBody);
     const canUseOpenAiIdentityFallback = shouldTryOpenAiTts(preparedBody);
     const interactiveTts = isInteractiveTtsRequest(preparedBody);
+    const shouldUseHttpTts = preferHttpTts && !(isResolvedNeutralVoice && interactiveTts);
     const hasDirectIdentityBridge = resolvedProvider.provider === PROVIDERS.XTTS_RVC
       && resolvedProvider.configured !== false;
     const hasExplicitDirectIdentityBridge = hasExplicitXttsRvcBridgeConfig();
@@ -4470,7 +4471,7 @@ async function handleTtsSpeakRequest(req, res) {
       });
     }
 
-    if (preferHttpTts) {
+    if (shouldUseHttpTts) {
       try {
         const remote = await requestRemoteTts(preparedBody);
         return sendFinalizedPayload({ ...remote, text: readableText, vocalMode });
@@ -4984,6 +4985,7 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
     const strictOfficialVoice = shouldBlockNeutralVoiceFallback(preparedBody);
     const canUseOpenAiIdentityFallback = shouldTryOpenAiTts(preparedBody);
     const interactiveTts = isInteractiveTtsRequest(preparedBody);
+    const shouldUseHttpTts = preferHttpTts && !(isResolvedNeutralVoice && interactiveTts);
     const hasDirectIdentityBridge = resolvedProvider.provider === PROVIDERS.XTTS_RVC
       && resolvedProvider.configured !== false;
     const hasExplicitDirectIdentityBridge = hasExplicitXttsRvcBridgeConfig();
@@ -5144,7 +5146,7 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
       });
     }
 
-    if (preferHttpTts) {
+    if (shouldUseHttpTts) {
       try {
         const remote = await requestRemoteTts(preparedBody);
         return sendFinalizedPayload({ ...remote, text: readableText, vocalMode });
