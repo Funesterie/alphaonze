@@ -149,7 +149,7 @@
     "playwright": "^1.60.0",
     "react-markdown": "^10.1.0",
     "resend": "^6.12.4",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.1",
     "stripe": "^22.2.0",
     "tesseract.js": "^7.0.0",
     "ws": "^8.21.0"
