@@ -224,13 +224,23 @@ const CLOUD_TTS_PROVIDER_MODES = new Set<TtsProviderMode>([
   "cartesia",
 ]);
 
+const LOCAL_OFFICIAL_TTS_REFERENCE_ENABLED = /^(1|true|yes|on)$/i.test(String(
+  import.meta.env?.VITE_A11_ENABLE_LOCAL_OFFICIAL_TTS_REFERENCE
+  || import.meta.env?.VITE_A11_ENABLE_OFFICIAL_XTTS_RVC
+  || ""
+).trim());
+
 function normalizeTtsProviderMode(value: unknown, fallback: TtsProviderMode = "auto"): TtsProviderMode {
   const raw = String(value || "").trim().toLowerCase() as TtsProviderMode;
-  return TTS_PROVIDER_MODE_VALUES.has(raw) ? raw : fallback;
+  if (!TTS_PROVIDER_MODE_VALUES.has(raw)) return fallback;
+  if (raw === "official" && !LOCAL_OFFICIAL_TTS_REFERENCE_ENABLED) {
+    return fallback === "official" ? "auto" : fallback;
+  }
+  return raw;
 }
 
 function getDefaultTtsProviderMode(_surface: FunesterieSurface): TtsProviderMode {
-  return isOfficialVoiceSurface(_surface) ? "elevenlabs" : "auto";
+  return "auto";
 }
 
 function getTtsProviderStorageKey(surface: FunesterieSurface) {
@@ -11003,7 +11013,9 @@ export function App() {
     const selectedProviderMode = effectiveTtsProviderMode;
     const wantsCloudProvider = CLOUD_TTS_PROVIDER_MODES.has(selectedProviderMode);
     const canUseSelectedCloudProvider = wantsCloudProvider && canUseReadyMadeVoiceProviders;
-    const useOwnedOfficialReference = useOfficialIdentityVoice && selectedProviderMode === "official";
+    const useOwnedOfficialReference = useOfficialIdentityVoice
+      && LOCAL_OFFICIAL_TTS_REFERENCE_ENABLED
+      && selectedProviderMode === "official";
     const useCloudIdentityVoice = useOfficialIdentityVoice
       && canUseSelectedCloudProvider
       && selectedProviderMode !== "official";
@@ -11011,7 +11023,7 @@ export function App() {
     const provider = useOwnedOfficialReference
       ? "xtts-rvc"
       : useCloudIdentityVoice ? selectedProviderMode
-      : (selectedProviderMode === "auto" ? undefined : selectedProviderMode);
+      : (selectedProviderMode === "piper" ? "piper" : undefined);
     const forceNeutralOfficialVoice = useOfficialIdentityVoice && !useIdentityVoice;
     return {
       lang: selectedA11Language.speechLang,
@@ -11048,7 +11060,7 @@ export function App() {
       ttsCostPolicy: useOwnedOfficialReference ? `${surfaceKind}_official_reference` : undefined,
       allowBrowserSpeechFallback: !useIdentityVoice,
       provider,
-      ttsProvider: provider || selectedProviderMode,
+      ttsProvider: provider || "auto",
     };
   }
 
@@ -11737,7 +11749,8 @@ export function App() {
         || extraOptions?.voiceProvider
         || ""
       ).trim().toLowerCase();
-      const usesOwnedOfficialReference = ["a11", "kaen44", "k44", "kaen", "vivy"].includes(targetSurface)
+      const usesOwnedOfficialReference = LOCAL_OFFICIAL_TTS_REFERENCE_ENABLED
+        && ["a11", "kaen44", "k44", "kaen", "vivy"].includes(targetSurface)
         && ["official", "xtts-rvc", "rvc", "local-reference", "reference"].includes(requestedProvider);
       const usesCloudIdentityVoice = usesOfficialIdentityVoice
         && ["openai", "elevenlabs", "cartesia", "azure"].includes(requestedProvider);
@@ -12826,7 +12839,9 @@ export function App() {
                         style={{ ...headerSelectStyle, width: "100%", maxWidth: "100%" }}
                         title="Choisir la route voix pour cette IA"
                       >
-                        <option value="official">Voix officielle</option>
+                        <option value="official" disabled={!LOCAL_OFFICIAL_TTS_REFERENCE_ENABLED}>
+                          Voix officielle
+                        </option>
                         <option value="elevenlabs" disabled={!canUseReadyMadeVoiceProviders}>
                           ElevenLabs
                         </option>
@@ -12841,7 +12856,7 @@ export function App() {
                       </select>
                     </label>
                     <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.35 }}>
-                      Défaut: ElevenLabs si disponible, sinon voix officielle {productName}. Cloud réservé Premium/Famille/Admin.
+                      Défaut: voix claire automatique. Cloud réservé Premium/Famille/Admin.
                     </div>
                     <div className="a11-menu-voice-tools" aria-label="Réglages voix">
                       <button

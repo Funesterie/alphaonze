@@ -746,6 +746,133 @@ function isCurrentTurnImageActionRequest(text = '', body = {}) {
   return (hasCreationVerb && (hasImageNoun || hasVisualStyle)) || (hasCurrentImage && (hasImageNoun || hasEditVerb || isVisionInspectionChatRequest(text)));
 }
 
+function normalizeFastImageText(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’']/g, ' ')
+    .replace(/[-/]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+    .trim();
+}
+
+function hasSpecificImageRequestText(text = '') {
+  const stripped = normalizeFastImageText(text)
+    .replace(/\b(?:tu|peux|pourrais|me|moi|stp|svp|s|il|te|plait|genere|generer|cree|creer|dessine|dessiner|fabrique|produis|prepare|imagine|fais|faire|une?|des?|l|la|le|les|image|photo|illustration|visuel|dessin|portrait|de|d|du|avec|dans|sur|un)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return stripped.length >= 3;
+}
+
+function getProxyMessageText(message = {}) {
+  const content = message?.content;
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (part && typeof part === 'object') return part.text || part.content || '';
+        return '';
+      })
+      .join(' ');
+  }
+  return '';
+}
+
+function isAssistantImageClarificationText(text = '') {
+  const normalized = normalizeFastImageText(text);
+  if (!normalized) return false;
+  const asksForImageDetails = /\b(?:quelle|quel|precise|choisis|decris|dis moi)\b/.test(normalized)
+    && /\b(?:scene|decor|style|image|visuel|composition|ambiance|couleur|format|version)\b/.test(normalized);
+  const asksWhatToGenerate = /\b(?:veux|souhaites|voudrais)\b/.test(normalized)
+    && /\b(?:generer|creer|dessiner|faire)\b/.test(normalized);
+  return asksForImageDetails || asksWhatToGenerate;
+}
+
+function isImageClarificationAnswer(text = '') {
+  const normalized = normalizeFastImageText(text);
+  if (!normalized) return false;
+  if (/^(?:non|annule|stop|cancel|laisse tomber|pas maintenant|rien)\b/.test(normalized)) return false;
+  return normalized.length >= 3;
+}
+
+function findLastUserMessageIndex(messages = []) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (String(messages[index]?.role || '').toLowerCase() === 'user') return index;
+  }
+  return -1;
+}
+
+function buildImageClarificationContinuation(body = {}, latestUserMessage = '') {
+  const latestText = String(latestUserMessage || '').trim();
+  if (!isImageClarificationAnswer(latestText)) return null;
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  const latestUserIndex = findLastUserMessageIndex(messages);
+  if (latestUserIndex <= 0) return null;
+
+  let assistantIndex = -1;
+  for (let index = latestUserIndex - 1; index >= 0; index -= 1) {
+    if (String(messages[index]?.role || '').toLowerCase() !== 'assistant') continue;
+    if (isAssistantImageClarificationText(getProxyMessageText(messages[index]))) {
+      assistantIndex = index;
+      break;
+    }
+    break;
+  }
+  if (assistantIndex <= 0) return null;
+
+  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+    if (String(messages[index]?.role || '').toLowerCase() !== 'user') continue;
+    const previousUserText = getProxyMessageText(messages[index]).trim();
+    if (!previousUserText) continue;
+    if (!isCurrentTurnImageActionRequest(previousUserText, body) || !hasSpecificImageRequestText(previousUserText)) {
+      continue;
+    }
+    return {
+      source: 'clarification-continuation',
+      requestText: `Demande image initiale: ${previousUserText}. Scene precisee: ${latestText}`,
+      cacheText: `${previousUserText}\n${latestText}`,
+    };
+  }
+  return null;
+}
+
+function buildFastAsyncImageRequestCandidate(body = {}, latestUserMessage = '') {
+  const latestText = String(latestUserMessage || '').trim();
+  if (
+    isCurrentTurnImageActionRequest(latestText, body)
+    && hasSpecificImageRequestText(latestText)
+  ) {
+    return {
+      source: 'current-turn',
+      requestText: latestText,
+      cacheText: latestText,
+    };
+  }
+  return buildImageClarificationContinuation(body, latestText);
+}
+
+function buildFastAsyncImageResolution(candidate = {}, scopedBody = {}, scopedMessages = []) {
+  const requestText = String(candidate?.requestText || '').trim();
+  return {
+    traceId: `fast-async-image-${Date.now()}`,
+    pipeline: 'fast-async-image',
+    kind: 'image.generate',
+    semantic: null,
+    responsePayload: null,
+    requestText: {
+      original: requestText,
+      smoothed: requestText,
+      changed: false,
+      fastAsync: true,
+      source: String(candidate?.source || 'fast-async'),
+    },
+    _scopedBody: scopedBody,
+    _scopedMessages: scopedMessages,
+  };
+}
+
 function isProxyTransientOverloadError(error_, status = 0) {
   const numericStatus = Number(status || error_?.status || error_?.statusCode || 0);
   const summary = summarizeProxyError(error_, 'proxy_error');
@@ -2426,6 +2553,42 @@ function createProtectedChatProxyRouter({
         downloadFile,
       });
       return res.status(200).json(compoundPayload);
+    }
+
+    const fastAsyncImageRequest = isAsyncImageJobRequested(req.body || {})
+      ? buildFastAsyncImageRequestCandidate(req.body || {}, latestUserMessage)
+      : null;
+    if (fastAsyncImageRequest) {
+      cleanupExpiredImageCache(recentImageResponses);
+      cleanupExpiredAsyncImageJobs();
+
+      const scopedBody = buildIntentScopedBody(req.body || {}, fastAsyncImageRequest.requestText);
+      const scopedMessages = Array.isArray(scopedBody.messages) ? scopedBody.messages : [];
+      const resolution = buildFastAsyncImageResolution(fastAsyncImageRequest, scopedBody, scopedMessages);
+      const requestKeys = buildResolvedRequestKeys(
+        req,
+        fastAsyncImageRequest.cacheText || fastAsyncImageRequest.requestText,
+        resolution
+      );
+      const requestKey = requestKeys[0] || 'no-key';
+      const cachedExecution = requestKeys
+        .map((key) => recentImageResponses.get(key))
+        .find(Boolean);
+      if (cachedExecution) {
+        console.log(`[A11][intent-async-fast] reuse recent result key=${requestKey.slice(0, 10)} source=${fastAsyncImageRequest.source}`);
+        return res.status(200).json(attachIntentDebug(cachedExecution.result, resolution, req.body || {}));
+      }
+
+      const pendingJob = findPendingAsyncImageJob(requestKeys);
+      if (pendingJob) {
+        console.log(`[A11][intent-async-fast] reuse pending job key=${requestKey.slice(0, 10)} job=${pendingJob.id} source=${fastAsyncImageRequest.source}`);
+        return res.status(200).json(attachIntentDebug(buildPendingImageJobPayload(pendingJob, resolution), resolution, req.body || {}));
+      }
+
+      const job = createAsyncImageJob(req, resolution, requestKeys);
+      startAsyncImageJob(job, resolution, req, true);
+      console.log(`[A11][intent-async-fast] queued image job key=${requestKey.slice(0, 10)} job=${job.id} source=${fastAsyncImageRequest.source}`);
+      return res.status(200).json(attachIntentDebug(buildPendingImageJobPayload(job, resolution), resolution, req.body || {}));
     }
 
     const scopedBody = buildIntentScopedBody(req.body || {}, latestUserMessage);

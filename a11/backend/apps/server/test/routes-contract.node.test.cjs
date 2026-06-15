@@ -646,6 +646,88 @@ test('POST /api/llm/chat queues an async image job when requested and exposes a 
   );
 });
 
+test('POST /api/llm/chat treats image clarification answers as async image continuations', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
+  let generateCalls = 0;
+  let proxyCalls = 0;
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouterForTests({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI(_req, res) {
+          proxyCalls += 1;
+          return res.json({
+            choices: [{ message: { role: 'assistant', content: 'fallback llm' } }],
+          });
+        },
+        detectImageIntent: () => false,
+        detectWebImageIntent: () => false,
+        hasLocalChatUpstreamConfigured: () => true,
+        generateSd: async () => {
+          generateCalls += 1;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          return {
+            ok: true,
+            artifact_type: 'image',
+            image_url: 'https://files.example.com/sonic-loop.png',
+            filename: 'sonic-loop.png',
+          };
+        },
+      }));
+    },
+    async (baseUrl) => {
+      const body = {
+        a11Dev: true,
+        acceptAsyncImageJob: true,
+        conversationId: 'conv-async-sonic',
+        messages: [
+          { role: 'user', content: 'tu peux genere une image de sonic' },
+          { role: 'assistant', content: 'Quelle est la scène que tu veux générer avec Sonic ? (par exemple, un combat, une course, etc.)' },
+          { role: 'user', content: 'une course avec les anneaux dans un looping' },
+        ],
+      };
+
+      const queued = await postJson(baseUrl, '/api/llm/chat', body, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(queued.response.status, 200);
+      assert.equal(queued.json.status, 'pending');
+      assert.equal(queued.json.mode, 'generate_image_async');
+      assert.equal(typeof queued.json.asyncJob?.jobId, 'string');
+      assert.equal(proxyCalls, 0);
+
+      let polled = null;
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        polled = await getJson(
+          baseUrl,
+          `/api/llm/jobs/image/${encodeURIComponent(queued.json.asyncJob.jobId)}`,
+          { authorization: `Bearer ${token}` }
+        );
+        if (polled.json?.status === 'done') break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+
+      assert.ok(polled);
+      assert.equal(polled.response.status, 200);
+      assert.equal(polled.json.status, 'done');
+      assert.equal(polled.json.result.imagePath, 'https://files.example.com/sonic-loop.png');
+      assert.equal(generateCalls, 1);
+      assert.equal(proxyCalls, 0);
+    }
+  );
+});
+
 test('POST /api/llm/chat reuses a recent identical image request instead of generating twice', async () => {
   const jwtSecret = 'test-secret';
   const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
