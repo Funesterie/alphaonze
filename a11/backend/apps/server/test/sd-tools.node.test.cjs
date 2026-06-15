@@ -1017,3 +1017,51 @@ test('generateImageInternal can produce an emergency synthetic image when reques
     }
   }
 });
+
+test('generateImageInternal keeps emergency fallback success message clean after upstream failures', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-emergency-image-clean-'));
+  const previous = {
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    PUBLIC_API_URL: process.env.PUBLIC_API_URL,
+    NODE_ENV: process.env.NODE_ENV,
+    A11_IMAGE_PROVIDER_ORDER: process.env.A11_IMAGE_PROVIDER_ORDER,
+    A11_ENABLE_EMERGENCY_IMAGE_FALLBACK: process.env.A11_ENABLE_EMERGENCY_IMAGE_FALLBACK,
+    ENABLE_SD: process.env.ENABLE_SD,
+    A11_SD_ALLOW_LOCAL_FALLBACK: process.env.A11_SD_ALLOW_LOCAL_FALLBACK,
+  };
+
+  process.env.A11_RUNTIME_ROOT = tempRoot;
+  process.env.PUBLIC_API_URL = 'https://a11.example.test';
+  process.env.NODE_ENV = 'production';
+  process.env.A11_IMAGE_PROVIDER_ORDER = 'sd';
+  process.env.A11_ENABLE_EMERGENCY_IMAGE_FALLBACK = 'true';
+  delete process.env.ENABLE_SD;
+  delete process.env.A11_SD_ALLOW_LOCAL_FALLBACK;
+
+  try {
+    const { generateImageInternal } = createSdToolsRouter({
+      resolveSdProxyUrl: () => '',
+      resolveSdScriptPath: () => '',
+    });
+
+    const response = await generateImageInternal({
+      req: { headers: {} },
+      prompt: 'lapin astronaute dans une serre',
+      body: { prompt: 'lapin astronaute dans une serre', width: 512, height: 512 },
+    });
+
+    assert.equal(response.ok, true);
+    assert.equal(response.mode, 'synthetic-frame');
+    assert.equal(response.content_type, 'image/svg+xml');
+    assert.equal(response.warning, 'sd_failed');
+    assert.match(String(response.upstream_warning || ''), /backend SD local bloque en production|Stable Diffusion d[eé]sactiv/i);
+    assert.doesNotMatch(String(response.message || ''), /backend SD local bloque|Stable Diffusion d[eé]sactiv|pollinations|x402/i);
+    assert.equal(fs.existsSync(response.output_path), true);
+  } finally {
+    try { fs.rmSync(tempRoot, { recursive: true, force: true }); } catch {}
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});

@@ -1995,7 +1995,8 @@ function createSdToolsRouter(overrides = {}) {
           mode: emergencyResult.mode || 'synthetic-frame',
           provider: emergencyResult.provider || 'a11-emergency-svg',
           warning: lastFailure?.error || undefined,
-          message: lastFailure?.message || emergencyResult.message,
+          upstream_warning: lastFailure?.message || undefined,
+          message: emergencyResult.message || 'Image de secours generee localement.',
         }, 'synthetic-frame', { providerOrder });
         analyzeGeneratedImage(payload);
         return payload;
