@@ -21,8 +21,9 @@ function Resolve-RepoRoot {
 }
 
 function Resolve-ToolName([string]$Name) {
-  if ($env:OS -eq "Windows_NT" -and $Name -eq "npm") {
-    return "npm.cmd"
+  if ($env:OS -eq "Windows_NT") {
+    if ($Name -eq "npm") { return "npm.cmd" }
+    if ($Name -eq "tar") { return "$env:SystemRoot\System32\tar.exe" }
   }
   return $Name
 }
@@ -189,7 +190,7 @@ foreach ($pkg in $packages) {
 
     $extractRoot = Join-Path $workRoot "extract"
     $null = New-Item -ItemType Directory -Path $extractRoot -Force
-    & tar -xzf $tarball -C $extractRoot
+    & (Resolve-ToolName "tar") -xzf $tarball -C $extractRoot
     if ($LASTEXITCODE -ne 0) {
       throw "tar extraction failed for $tarball"
     }
@@ -277,15 +278,19 @@ foreach ($pkg in $packages) {
         ) -WorkingDirectory $packageRoot
       }
       foreach ($tagName in @($allTags)) {
-        Invoke-Tool -Command @(
-          "npm",
-          "dist-tag",
-          "add",
-          $packageSpec,
-          $tagName,
-          "--registry", $Registry,
-          "--userconfig", $NpmrcPath
-        ) -WorkingDirectory $packageRoot
+        try {
+          Invoke-Tool -Command @(
+            "npm",
+            "dist-tag",
+            "add",
+            $packageSpec,
+            $tagName,
+            "--registry", $Registry,
+            "--userconfig", $NpmrcPath
+          ) -WorkingDirectory $packageRoot
+        } catch {
+          Write-Warning "dist-tag '$tagName' skipped for $packageSpec (registry may not support tag updates): $_"
+        }
       }
       $results.Add([pscustomobject]@{
         id = $id
