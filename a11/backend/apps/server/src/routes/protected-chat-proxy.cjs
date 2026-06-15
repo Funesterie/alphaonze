@@ -904,6 +904,9 @@ function buildImageContextCarryover(body = {}, latestUserMessage = '') {
   if (body?._a11ImageContextCarryover && typeof body._a11ImageContextCarryover === 'object') {
     return body._a11ImageContextCarryover;
   }
+  // Si l'utilisateur joint une image dans la requête courante, elle prime sur
+  // tout contexte vision précédent — pas de carryover depuis l'historique.
+  if (extractVisionImageLocator(body)) return null;
   return findPreviousVisionAnalysisContext(body);
 }
 
