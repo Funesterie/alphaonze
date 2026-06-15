@@ -497,7 +497,6 @@ test('protected chat proxy returns a diagnostic when the image canonicalizer is 
     },
     async (baseUrl) => {
       const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
-        acceptAsyncImageJob: true,
         messages: [{ role: 'user', content: 'genere une image de pomme' }],
       }, {
         'X-Request-Id': 'req-proxy-canon-1',
