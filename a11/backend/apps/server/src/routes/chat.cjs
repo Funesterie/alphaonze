@@ -1024,8 +1024,43 @@ function createChatRouter(overrides = {}) {
       console.log(`[A11][chat] Intention: fallback LLM | message: ${userMessage}`);
 
       // ── Vision Janus : si une image est jointe et que l'intention est chat, analyser avec Janus ──
-      const sourceImageUrl = String(req.body?.sourceImageUrl || req.body?.source_image_url || req.body?.imageUrl || '').trim();
-      const inlineImageData = String(req.body?.image || req.body?.imageBase64 || '').trim();
+      const sourceImageUrl = String(
+        req.body?.sourceImageUrl
+        || req.body?.source_image_url
+        || req.body?.imageUrl
+        || req.body?.image_url
+        || (() => {
+          // Fallback : scanner les messages content-parts (format OpenAI image_url)
+          for (const msg of (Array.isArray(requestMessages) ? requestMessages : [])) {
+            if (!Array.isArray(msg?.content)) continue;
+            for (const part of msg.content) {
+              if (!part || typeof part !== 'object') continue;
+              const t = String(part.type || '').toLowerCase();
+              if (!['image_url', 'image', 'input_image'].includes(t)) continue;
+              const u = String(part?.image_url?.url || part?.image_url || part?.url || part?.imageUrl || '').trim();
+              if (u && !u.startsWith('data:')) return u;
+            }
+            const directUrl = String(msg?.imageUrl || msg?.image_url || '').trim();
+            if (directUrl && !directUrl.startsWith('data:')) return directUrl;
+          }
+          return '';
+        })()
+        || ''
+      ).trim();
+      const inlineImageData = String(req.body?.image || req.body?.imageBase64 || (() => {
+        // Fallback inline : scanner les messages content-parts pour les data-URLs
+        for (const msg of (Array.isArray(requestMessages) ? requestMessages : [])) {
+          if (!Array.isArray(msg?.content)) continue;
+          for (const part of msg.content) {
+            if (!part || typeof part !== 'object') continue;
+            const t = String(part.type || '').toLowerCase();
+            if (!['image_url', 'image', 'input_image'].includes(t)) continue;
+            const u = String(part?.image_url?.url || part?.image_url || part?.url || part?.imageUrl || '').trim();
+            if (u && u.startsWith('data:')) return u;
+          }
+        }
+        return '';
+      })() || '').trim();
       let janusVisionContext = '';
 
       if ((sourceImageUrl || inlineImageData) && resolveVisionProvider() !== 'none') {

@@ -41,7 +41,7 @@ function fastPathImageIntent(normalized) {
 }
 
 function fastPathVideoIntent(normalized) {
-  const hasCreationVerb = /\b(g[eé]n[eè]re|cr[eé]e|fais|fabrique|produis|generate|create|make|render)\b/i.test(normalized);
+  const hasCreationVerb = /\b(g[eé]n[eè]re[rz]?|cr[eé]e[rz]?|fais|fabrique[rz]?|produis|generate|create|make|render)\b/i.test(normalized);
   const hasVideoWord = /\b(vid[eé]o|animation|gif|mp4|clip)\b/i.test(normalized);
   if (hasCreationVerb && hasVideoWord) return { intent: 'video.generate', confidence: 0.95, reason: 'fast_path_creation_verb_video_word' };
   return null;
