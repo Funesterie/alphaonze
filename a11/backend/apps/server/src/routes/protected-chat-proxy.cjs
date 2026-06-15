@@ -2609,6 +2609,13 @@ function createProtectedChatProxyRouter({
 
     const visionImageLocator = extractVisionImageLocator(req.body || {});
     if (
+      resolution.kind === 'image.generate'
+      && visionImageLocator
+      && isVisionInspectionChatRequest(latestUserMessage)
+    ) {
+      resolution = { ...resolution, kind: 'chat.reply', _intentOverride: 'vision_guard' };
+    }
+    if (
       resolution.kind === 'chat.reply'
       && visionImageLocator
       && isVisionInspectionChatRequest(latestUserMessage)
