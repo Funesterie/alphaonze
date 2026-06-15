@@ -840,6 +840,11 @@ function buildImageClarificationContinuation(body = {}, latestUserMessage = '') 
 
 function buildFastAsyncImageRequestCandidate(body = {}, latestUserMessage = '') {
   const latestText = String(latestUserMessage || '').trim();
+  const normalizedFast = latestText.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/['']/g, ' ').toLowerCase();
+  const fastHasCreationVerb = /\b(genere|generer|cree|creer|dessine|dessiner|fabrique|produis|prepare|imagine|fais|faire)\b/.test(normalizedFast);
+  if (!fastHasCreationVerb && isVisionInspectionChatRequest(latestText)) {
+    return null;
+  }
   if (
     isCurrentTurnImageActionRequest(latestText, body)
     && hasSpecificImageRequestText(latestText)
