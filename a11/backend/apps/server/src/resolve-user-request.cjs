@@ -745,16 +745,8 @@ function createIntentResolver(overrides = {}) {
     const hasReferenceImageForRequest = earlyImageReferencesForIntent.length > 0;
     const allowLegacySemanticFallback = isLegacySemanticIntentFallbackEnabled();
     const allowSafeSemanticFallback = shouldUseSemanticIntentFallback(llmIntentResult);
-    const allowExplicitImageIntentFallback = input.allowExplicitImageIntentFallback === true;
     const allowVisualImageBrainFallback = input.allowVisualImageBrainFallback === true;
-    const forcedReferenceImageIntent = (allowLegacySemanticFallback || allowSafeSemanticFallback)
-      && hasReferenceImageForRequest
-      && (isImageTransformRequest(userText) || isVisualFeedbackEditRequest(userText));
-    const forcedExplicitImageIntent = (allowExplicitImageIntentFallback || allowLegacySemanticFallback || allowSafeSemanticFallback)
-      && isExplicitImageGenerationRequest(userText);
-    const llmIntentType = (forcedReferenceImageIntent || forcedExplicitImageIntent)
-      ? 'image.generate'
-      : (shouldAcceptLlmIntent(llmIntentResult) ? llmIntentResult.intent : null);
+    const llmIntentType = shouldAcceptLlmIntent(llmIntentResult) ? llmIntentResult.intent : null;
     const semanticIntentType = clarification?.selectedIntentType || semantic?.topIntents?.[0]?.type || 'chat.reply';
     const allowSemanticIntentFallback = allowLegacySemanticFallback || shouldUseSemanticIntentFallback(llmIntentResult);
     const selectedIntentType = llmIntentType || (allowSemanticIntentFallback ? semanticIntentType : 'chat.reply');
@@ -764,13 +756,11 @@ function createIntentResolver(overrides = {}) {
         `[A11][intent] llm=${llmIntentResult.intent}(${llmIntentResult.confidence.toFixed(2)})`
         + ` semantic=${semanticIntentType}`
         + ` final=${selectedIntentType}`
-        + ` reason=${forcedReferenceImageIntent
-          ? 'forced_reference_image_transform'
-          : (forcedExplicitImageIntent ? 'forced_explicit_image_generation' : llmIntentResult.reason)}`
+        + ` reason=${llmIntentResult.reason}`
       );
     }
 
-    if (allowSemanticIntentFallback && clarification?.shouldClarify && !llmIntentType && !forcedExplicitImageIntent) {
+    if (allowSemanticIntentFallback && clarification?.shouldClarify && !llmIntentType) {
       return {
         traceId,
         pipeline,

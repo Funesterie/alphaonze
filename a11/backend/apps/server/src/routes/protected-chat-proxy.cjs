@@ -750,6 +750,7 @@ function isCurrentTurnImageActionRequest(text = '', body = {}) {
     .toLowerCase()
     .trim();
   if (!normalized) return false;
+  if (/\b(video|clip|film)\b/.test(normalized)) return false;
   const hasCurrentImage = Boolean(extractVisionImageLocator(body));
   const hasImageNoun = /\b(image|photo|illustration|visuel|avatar|logo|dessin|portrait|capture|screenshot|screen)\b/.test(normalized);
   const hasVisualStyle = /\b(cartoon|anime|manga|pixel art|pixelart|comic|bd|rendu|render|3d|cinematique|cinematic|stylise|styliser|affiche|poster)\b/.test(normalized);
@@ -2899,7 +2900,7 @@ function createProtectedChatProxyRouter({
       executeImage: false,
       canonicalizeImage: true,
       executeWebSearch: true,
-      allowExplicitImageIntentFallback: true,
+
       allowVisualImageBrainFallback: true,
     });
     resolution._scopedBody = scopedBody;

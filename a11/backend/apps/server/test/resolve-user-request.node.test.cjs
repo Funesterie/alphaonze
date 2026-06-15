@@ -117,6 +117,7 @@ function createTestIntentResolver(overrides = {}) {
       reason: 'test_default_disabled',
       manifests: [],
     }),
+    detectIntentWithLlm: async () => ({ intent: 'chat.reply', confidence: 0.5, reason: 'structured_intent_fallback', subject: '' }),
     ...overrides,
   });
 }
@@ -507,7 +508,9 @@ test('resolveUserRequest injects sourceImageUrl into image masks for direct img2
 });
 
 test('resolveUserRequest treats visual feedback on a source image as an image edit request', async () => {
-  const resolver = createTestIntentResolver();
+  const resolver = createTestIntentResolver({
+    detectIntentWithLlm: async () => ({ intent: 'image.generate', confidence: 0.75, reason: 'visual_feedback_edit', subject: '' }),
+  });
   const resolution = await resolver.resolveUserRequest({
     userText: "c'est pas mal, mais elle a les yeux bleus",
     body: {
@@ -527,6 +530,7 @@ test('resolveUserRequest treats visual feedback on a source image as an image ed
 
 test('resolveUserRequest lets A11 promote the Janus-selected primary image instead of blindly keeping the first reference', async () => {
   const resolver = createTestIntentResolver({
+    detectIntentWithLlm: async () => ({ intent: 'image.generate', confidence: 0.75, reason: 'reference_image_transform', subject: '' }),
     canonicalizeImageGenerateRequest: async () => ({
       needsClarification: false,
       clarificationQuestion: '',
@@ -606,6 +610,7 @@ test('resolveUserRequest lets A11 promote the Janus-selected primary image inste
 
 test('resolveUserRequest falls back to an A11 auto decision when Janus is unavailable', async () => {
   const resolver = createTestIntentResolver({
+    detectIntentWithLlm: async () => ({ intent: 'image.generate', confidence: 0.75, reason: 'reference_image_transform', subject: '' }),
     canonicalizeImageGenerateRequest: async () => ({
       needsClarification: false,
       clarificationQuestion: '',
@@ -662,6 +667,7 @@ test('resolveUserRequest falls back to an A11 auto decision when Janus is unavai
 
 test('resolveUserRequest asks for clarification when Janus finds multiple competing identity references', async () => {
   const resolver = createTestIntentResolver({
+    detectIntentWithLlm: async () => ({ intent: 'image.generate', confidence: 0.75, reason: 'reference_image_transform', subject: '' }),
     canonicalizeImageGenerateRequest: async () => ({
       needsClarification: false,
       clarificationQuestion: '',
