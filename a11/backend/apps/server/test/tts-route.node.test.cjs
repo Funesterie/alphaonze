@@ -436,6 +436,104 @@ test('tts speak route keeps basic/public accounts on neutral SIWIS instead of pa
   }
 });
 
+test('tts speak route keeps explicit neutral official personas on Piper for premium accounts', async () => {
+  const previousEnv = {
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    TTS_URL: process.env.TTS_URL,
+    OPENAI_TTS_API_KEY: process.env.OPENAI_TTS_API_KEY,
+    A11_OPENAI_TTS_API_KEY: process.env.A11_OPENAI_TTS_API_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    A11_OPENAI_API_KEY: process.env.A11_OPENAI_API_KEY,
+    A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+    A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const backendBodies = [];
+  const forbiddenCalls = [];
+
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.TTS_URL = 'http://127.0.0.1:5002';
+  process.env.OPENAI_TTS_API_KEY = 'openai-should-not-be-used';
+  process.env.A11_ELEVENLABS_API_KEY = 'elevenlabs-should-not-be-used';
+  process.env.A11_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
+  delete process.env.A11_OPENAI_TTS_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.A11_OPENAI_API_KEY;
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'http://127.0.0.1:5002/api/tts') {
+      backendBodies.push(JSON.parse(String(options.body || '{}')));
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({ audio_url: '/api/tts/out/premium-neutral-siwis.mp3', via: 'http' });
+        },
+      };
+    }
+    if (
+      value.includes('/api/voice/synthesize')
+      || value.includes('/api/voice/convert')
+      || value.includes('api.openai')
+      || value.includes('api.elevenlabs.test')
+    ) {
+      forbiddenCalls.push(value);
+      throw new Error(`forbidden_tts_call:${value}`);
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'Salut Jeffrey. Je parle clairement.',
+          voice: 'fr_FR-siwis-medium',
+          provider: 'auto',
+          ttsProvider: 'auto',
+          persona: 'a11',
+          surface: 'a11',
+          voicePersona: 'a11',
+          neutralVoice: true,
+          identityVoice: false,
+          useIdentityVoice: false,
+          voiceConversion: false,
+          convertVoice: false,
+          morphVoice: false,
+          rvc: false,
+          allowRvc: false,
+          allowXttsRvc: false,
+          allowLegacyVoiceBridge: false,
+          xttsRvcOptIn: false,
+          vocalMode: 'speech',
+        });
+
+        assert.equal(result.response.status, 200);
+        assert.equal(result.json.via, 'http');
+        assert.equal(backendBodies.length, 1);
+        assert.equal(backendBodies[0].provider, 'piper');
+        assert.equal(backendBodies[0].ttsProvider, 'piper');
+        assert.equal(backendBodies[0].voice, 'fr_FR-siwis-medium');
+        assert.equal(backendBodies[0].voiceConversion, false);
+        assert.equal(backendBodies[0].identityVoice, false);
+        assert.deepEqual(forbiddenCalls, []);
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('tts speak route gives basic A11 the official local reference without paid cloud TTS', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-basic-official-voice-'));
   const previousEnv = {

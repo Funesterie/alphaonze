@@ -2279,9 +2279,10 @@ function resolveTtsProviderForRequest(body = {}) {
 function shouldTryOpenAiTts(body = {}) {
   if (shouldUseA11OfficialReferenceVoice(body)) return false;
   if (!allowsPaidTtsVoiceForBody(body)) return false;
+  const requestedProvider = getRequestedTtsProvider(body);
+  if (isExplicitNeutralVoiceRequest(body) && !isExplicitOpenAiProvider(requestedProvider)) return false;
   const disabled = String(process.env.A11_OPENAI_TTS_ENABLED || process.env.OPENAI_TTS_ENABLED || '').trim().toLowerCase();
   if (disabled === '0' || disabled === 'false' || disabled === 'off') return false;
-  const requestedProvider = getRequestedTtsProvider(body);
   if (requestedProvider === 'piper' || requestedProvider === 'local' || requestedProvider === 'espeak') return false;
   return Boolean(getOpenAiTtsApiKey());
 }
@@ -4279,6 +4280,33 @@ async function handleTtsSpeakRequest(req, res) {
     req.body = preparedBody;
     let openAiTtsErrorMessage = null;
     const resolvedProvider = resolveTtsProviderForRequest(preparedBody);
+    const isResolvedNeutralVoice = isExplicitNeutralVoiceRequest(preparedBody)
+      && isNeutralTtsProvider(resolvedProvider.provider);
+    if (isResolvedNeutralVoice) {
+      preparedBody = {
+        ...preparedBody,
+        provider: resolvedProvider.provider,
+        ttsProvider: resolvedProvider.provider,
+        voiceConversion: false,
+        convertVoice: false,
+        morphVoice: false,
+        rvc: false,
+        allowRvc: false,
+        allowXttsRvc: false,
+        allowLegacyVoiceBridge: false,
+        xttsRvcOptIn: false,
+        voiceReferenceRequired: false,
+        requireVoiceReference: false,
+        referenceVoiceRequired: false,
+        useDefaultVoiceReference: false,
+        defaultVoiceReference: false,
+        usePersonaVoiceReference: false,
+        identityVoice: false,
+        useIdentityVoice: false,
+        neutralVoice: true,
+      };
+      req.body = preparedBody;
+    }
     const strictOfficialVoice = shouldBlockNeutralVoiceFallback(preparedBody);
     const canUseOpenAiIdentityFallback = shouldTryOpenAiTts(preparedBody);
     const interactiveTts = isInteractiveTtsRequest(preparedBody);
@@ -4926,6 +4954,33 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
     req.body = preparedBody;
     let openAiTtsErrorMessage = null;
     const resolvedProvider = resolveTtsProviderForRequest(preparedBody);
+    const isResolvedNeutralVoice = isExplicitNeutralVoiceRequest(preparedBody)
+      && isNeutralTtsProvider(resolvedProvider.provider);
+    if (isResolvedNeutralVoice) {
+      preparedBody = {
+        ...preparedBody,
+        provider: resolvedProvider.provider,
+        ttsProvider: resolvedProvider.provider,
+        voiceConversion: false,
+        convertVoice: false,
+        morphVoice: false,
+        rvc: false,
+        allowRvc: false,
+        allowXttsRvc: false,
+        allowLegacyVoiceBridge: false,
+        xttsRvcOptIn: false,
+        voiceReferenceRequired: false,
+        requireVoiceReference: false,
+        referenceVoiceRequired: false,
+        useDefaultVoiceReference: false,
+        defaultVoiceReference: false,
+        usePersonaVoiceReference: false,
+        identityVoice: false,
+        useIdentityVoice: false,
+        neutralVoice: true,
+      };
+      req.body = preparedBody;
+    }
     const strictOfficialVoice = shouldBlockNeutralVoiceFallback(preparedBody);
     const canUseOpenAiIdentityFallback = shouldTryOpenAiTts(preparedBody);
     const interactiveTts = isInteractiveTtsRequest(preparedBody);
