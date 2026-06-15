@@ -848,6 +848,7 @@ function shouldCarryVisionAnalysisIntoImageGeneration(text = '') {
   if (!hasImageCreationVerbInText(text) && !isCurrentTurnImageActionRequest(text, {})) return false;
   const normalized = normalizeFastImageText(text);
   if (!normalized) return false;
+  if (/\b(video|clip|film)\b/.test(normalized)) return false;
   return /\b(?:ces|cette|cet|ce|ca|cela|celle|celui|eux|elles|ils|memes?|meme|same|these|those|this|them)\b/.test(normalized)
     || /\b(?:ces|les memes?|meme|same|these|those)\s+(?:personnes|gens|sujets|people|persons|subjects)\b/.test(normalized)
     || /\b(?:image|photo|reference)\s+(?:precedente|jointe|de reference|ci|la)\b/.test(normalized)

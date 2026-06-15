@@ -1049,6 +1049,87 @@ test('POST /api/llm/chat returns a video payload for explicit video requests', a
   );
 });
 
+test('POST /api/llm/chat routes video request to video.generate even when prior vision analysis exists in conversation', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
+  let generateSdCalls = 0;
+  let generateVideoCalls = 0;
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouterForTests({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI(_req, res) {
+          return res.json({
+            choices: [{ message: { role: 'assistant', content: 'fallback llm' } }],
+          });
+        },
+        detectImageIntent: () => false,
+        detectWebImageIntent: () => false,
+        hasLocalChatUpstreamConfigured: () => true,
+        generateSd: async () => {
+          generateSdCalls += 1;
+          return { ok: true, artifact_type: 'image', image_url: 'https://files.example.com/wrong.png', filename: 'wrong.png' };
+        },
+        generateVideo: async ({ prompt }) => {
+          generateVideoCalls += 1;
+          return {
+            ok: true,
+            tool: 'generate_video',
+            artifact_type: 'video',
+            prompt,
+            format: 'mp4',
+            durationSeconds: 3,
+            fps: 6,
+            frameCount: 18,
+            video_url: 'https://files.example.com/volcanic-people.mp4',
+            filename: 'volcanic-people.mp4',
+          };
+        },
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        a11Dev: true,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'que vois tu ?' },
+              { type: 'image_url', image_url: { url: 'https://files.example.com/snow-scooter.jpg' } },
+            ],
+          },
+          {
+            role: 'assistant',
+            content: 'Je vois deux personnes sur un scooter blanc dans la neige avec des montagnes en arriere-plan.',
+          },
+          {
+            role: 'user',
+            content: 'genere une video des ces personnes faisant la course dans un monde volcanique',
+          },
+        ],
+      }, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.artifact_type, 'video');
+      assert.equal(json.kind, 'video.generate');
+      assert.equal(generateSdCalls, 0, 'generateSd should NOT be called for a video request');
+      assert.equal(generateVideoCalls, 1, 'generateVideo should be called exactly once');
+      assert.match(String(json.choices?.[0]?.message?.content || ''), /ouvrir la video/i);
+    }
+  );
+});
+
 test('POST /api/llm/chat returns the same image payload without requiring dev mode', async () => {
   const jwtSecret = 'test-secret';
   const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
