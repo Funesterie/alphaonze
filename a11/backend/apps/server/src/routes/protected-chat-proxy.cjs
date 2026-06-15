@@ -2608,9 +2608,12 @@ function createProtectedChatProxyRouter({
     resolution._scopedMessages = scopedMessages;
 
     const visionImageLocator = extractVisionImageLocator(req.body || {});
+    const hasImageCreationVerb = /\b(genere|generer|cree|creer|fabrique|fabriquer|dessine|dessiner|fais|faire|produis|produire|imagine|invente)\b/.test(
+      String(latestUserMessage || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/['']/g, ' ').toLowerCase()
+    );
     if (
       resolution.kind === 'image.generate'
-      && visionImageLocator
+      && !hasImageCreationVerb
       && isVisionInspectionChatRequest(latestUserMessage)
     ) {
       resolution = { ...resolution, kind: 'chat.reply', _intentOverride: 'vision_guard' };
