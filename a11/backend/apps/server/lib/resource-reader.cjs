@@ -415,6 +415,24 @@ async function analyzeImageBuffer(buffer, mime) {
     note: 'image_recue_sans_texte_detecte',
   };
 
+  const imageWidth = Number(base.width || 0);
+  const imageHeight = Number(base.height || 0);
+  if (!imageWidth || !imageHeight) {
+    return {
+      ...base,
+      parser: 'image_ocr_skipped_metadata',
+      note: 'ocr_image_ignoree_metadonnees_invalides',
+    };
+  }
+
+  if (imageWidth < 32 || imageHeight < 32 || preparedBuffer.length < 256) {
+    return {
+      ...base,
+      parser: 'image_ocr_skipped_small',
+      note: 'ocr_image_ignoree_trop_petite',
+    };
+  }
+
   if (!IMAGE_OCR_ENABLED) {
     return {
       ...base,

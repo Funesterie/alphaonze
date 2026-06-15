@@ -1426,6 +1426,12 @@ function isVisionInspectionChatRequest(text = '') {
     || /tu.{0,12}vois/.test(normalized);
 }
 
+function hasImageCreationVerbInText(text = '') {
+  return /\b(genere|generer|cree|creer|fabrique|fabriquer|dessine|dessiner|fais|faire|produis|produire|imagine|invente)\b/.test(
+    String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/['']/g, ' ').toLowerCase()
+  );
+}
+
 function buildVisionQuestionPrompt(userMessage = '') {
   const question = String(userMessage || '').trim();
   return [
@@ -1472,6 +1478,55 @@ function buildVisionFallbackChatContent(visionResult = {}) {
     `Raison: ${reason}.`,
     "Relance l'analyse ou renvoie l'image, et je retente le passage vision proprement.",
   ].filter(Boolean).join(' ');
+}
+
+function resolveChatVisionTimeoutMs(body = {}, env = process.env) {
+  const maxRaw = Number(env.A11_CHAT_VISION_TIMEOUT_MAX_MS || 25_000);
+  const max = Number.isFinite(maxRaw)
+    ? Math.max(1_000, Math.min(29_000, Math.floor(maxRaw)))
+    : 25_000;
+  const minRaw = Number(env.A11_CHAT_VISION_TIMEOUT_MIN_MS || 50);
+  const min = Number.isFinite(minRaw)
+    ? Math.max(50, Math.min(max, Math.floor(minRaw)))
+    : 50;
+  const defaultMs = Math.max(min, Math.min(max, 18_000));
+  const requested = Number(
+    body?.visionTimeoutMs
+    || env.A11_CHAT_VISION_TIMEOUT_MS
+    || defaultMs
+  );
+  if (!Number.isFinite(requested)) return defaultMs;
+  return Math.max(min, Math.min(max, Math.floor(requested)));
+}
+
+async function runChatVisionWithTimeout(task, { timeoutMs = 18_000, provider = 'janus' } = {}) {
+  let timeoutHandle = null;
+  const visionPromise = Promise.resolve().then(task);
+  const guardedVisionPromise = visionPromise.then(
+    (value) => ({ type: 'result', value }),
+    (error) => ({ type: 'error', error })
+  );
+  const timeoutPromise = new Promise((resolve) => {
+    timeoutHandle = setTimeout(() => resolve({ type: 'timeout' }), Math.max(50, Number(timeoutMs) || 18_000));
+    if (typeof timeoutHandle.unref === 'function') timeoutHandle.unref();
+  });
+
+  const outcome = await Promise.race([guardedVisionPromise, timeoutPromise]);
+  if (outcome?.type === 'timeout') {
+    visionPromise.catch(() => {});
+    return {
+      description: '',
+      provider,
+      skipped: true,
+      fallback: false,
+      visualReliable: false,
+      reason: `chat_vision_timeout_${Math.max(50, Number(timeoutMs) || 18_000)}ms`,
+    };
+  }
+
+  if (timeoutHandle) clearTimeout(timeoutHandle);
+  if (outcome?.type === 'error') throw outcome.error;
+  return outcome?.value;
 }
 
 function buildIllustratedPdfFallbackPrompt(sourceText = '') {
@@ -2491,6 +2546,62 @@ function createProtectedChatProxyRouter({
     return executionPromise;
   }
 
+  async function buildVisionInspectionChatPayload(req, latestUserMessage = '', visionImageLocator = '') {
+    const runtimeRoot = String(
+      process.env.A11_RUNTIME_ROOT
+      || path.resolve(__dirname, '..', '..', '..', 'runtime')
+    ).trim();
+    const locator = String(visionImageLocator || extractVisionImageLocator(req.body || '')).trim();
+    const visionTimeoutMs = resolveChatVisionTimeoutMs(req.body || {});
+    let visionResult = null;
+    try {
+      visionResult = await runChatVisionWithTimeout(() => autoDescribeImage({
+        imageLocator: locator,
+        runtimeRoot,
+        timeoutMs: visionTimeoutMs,
+        requestId: `chat-vision-${Date.now()}`,
+        prompt: buildVisionQuestionPrompt(latestUserMessage),
+      }), {
+        timeoutMs: visionTimeoutMs,
+        provider: 'janus',
+      });
+    } catch (visionError) {
+      visionResult = {
+        skipped: true,
+        provider: 'janus',
+        reason: String(visionError?.message || visionError || 'vision_failed'),
+      };
+    }
+
+    const description = String(visionResult?.description || '').trim();
+    if (description && visionResult?.skipped !== true) {
+      if (visionResult?.fallback || visionResult?.visualReliable === false) {
+        return buildVisionChatPayload({
+          content: buildVisionFallbackChatContent(visionResult),
+          provider: visionResult?.provider,
+          sourceImageUrl: locator,
+          skipped: true,
+          fallback: true,
+          reason: visionResult?.reason || 'vision_fallback',
+        });
+      }
+      return buildVisionChatPayload({
+        content: `Oui, je la vois. ${description}`,
+        provider: visionResult?.provider,
+        sourceImageUrl: locator,
+      });
+    }
+
+    const reason = String(visionResult?.reason || 'vision_unavailable').trim();
+    return buildVisionChatPayload({
+      content: "Je vois bien qu'une image est jointe, mais le module vision n'a pas reussi a l'analyser cette fois. Je garde l'image rattachee a la conversation; retente l'analyse ou renvoie-la si tu veux que je relance le passage vision.",
+      provider: visionResult?.provider,
+      sourceImageUrl: locator,
+      skipped: true,
+      reason,
+    });
+  }
+
   async function tryHandleIntentRequest(req, res) {
     const latestUserMessage = extractLatestUserMessage(req.body || {});
     if (!latestUserMessage) return false;
@@ -2560,6 +2671,14 @@ function createProtectedChatProxyRouter({
       return res.status(200).json(compoundPayload);
     }
 
+    const earlyVisionImageLocator = extractVisionImageLocator(req.body || {});
+    const isPureVisionInspection = Boolean(earlyVisionImageLocator)
+      && !hasImageCreationVerbInText(latestUserMessage)
+      && isVisionInspectionChatRequest(latestUserMessage);
+    if (isPureVisionInspection) {
+      return res.status(200).json(await buildVisionInspectionChatPayload(req, latestUserMessage, earlyVisionImageLocator));
+    }
+
     const fastAsyncImageRequest = isAsyncImageJobRequested(req.body || {})
       ? buildFastAsyncImageRequestCandidate(req.body || {}, latestUserMessage)
       : null;
@@ -2613,69 +2732,24 @@ function createProtectedChatProxyRouter({
     resolution._scopedMessages = scopedMessages;
 
     const visionImageLocator = extractVisionImageLocator(req.body || {});
-    const hasImageCreationVerb = /\b(genere|generer|cree|creer|fabrique|fabriquer|dessine|dessiner|fais|faire|produis|produire|imagine|invente)\b/.test(
-      String(latestUserMessage || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/['']/g, ' ').toLowerCase()
-    );
+    const isResolvedPureVisionInspection = Boolean(visionImageLocator)
+      && !hasImageCreationVerbInText(latestUserMessage)
+      && isVisionInspectionChatRequest(latestUserMessage);
     if (
       resolution.kind === 'image.generate'
-      && !hasImageCreationVerb
-      && isVisionInspectionChatRequest(latestUserMessage)
+      && isResolvedPureVisionInspection
     ) {
       resolution = { ...resolution, kind: 'chat.reply', _intentOverride: 'vision_guard' };
     }
     if (
       resolution.kind === 'chat.reply'
-      && visionImageLocator
-      && isVisionInspectionChatRequest(latestUserMessage)
+      && isResolvedPureVisionInspection
     ) {
-      const runtimeRoot = String(
-        process.env.A11_RUNTIME_ROOT
-        || path.resolve(__dirname, '..', '..', '..', 'runtime')
-      ).trim();
-      let visionResult = null;
-      try {
-        visionResult = await autoDescribeImage({
-          imageLocator: visionImageLocator,
-          runtimeRoot,
-          timeoutMs: Number(req.body?.visionTimeoutMs || process.env.A11_CHAT_VISION_TIMEOUT_MS || 75000),
-          requestId: `chat-vision-${Date.now()}`,
-          prompt: buildVisionQuestionPrompt(latestUserMessage),
-        });
-      } catch (visionError) {
-        visionResult = {
-          skipped: true,
-          provider: 'janus',
-          reason: String(visionError?.message || visionError || 'vision_failed'),
-        };
-      }
-
-      const description = String(visionResult?.description || '').trim();
-      if (description && visionResult?.skipped !== true) {
-        if (visionResult?.fallback || visionResult?.visualReliable === false) {
-          return res.status(200).json(attachIntentDebug(buildVisionChatPayload({
-            content: buildVisionFallbackChatContent(visionResult),
-            provider: visionResult?.provider,
-            sourceImageUrl: visionImageLocator,
-            skipped: true,
-            fallback: true,
-            reason: visionResult?.reason || 'vision_fallback',
-          }), resolution, req.body || {}));
-        }
-        return res.status(200).json(attachIntentDebug(buildVisionChatPayload({
-          content: `Oui, je la vois. ${description}`,
-          provider: visionResult?.provider,
-          sourceImageUrl: visionImageLocator,
-        }), resolution, req.body || {}));
-      }
-
-      const reason = String(visionResult?.reason || 'vision_unavailable').trim();
-      return res.status(200).json(attachIntentDebug(buildVisionChatPayload({
-        content: "Je vois bien qu'une image est jointe, mais le module vision n'a pas reussi a l'analyser cette fois. Je garde l'image rattachee a la conversation; retente l'analyse ou renvoie-la si tu veux que je relance le passage vision.",
-        provider: visionResult?.provider,
-        sourceImageUrl: visionImageLocator,
-        skipped: true,
-        reason,
-      }), resolution, req.body || {}));
+      return res.status(200).json(attachIntentDebug(
+        await buildVisionInspectionChatPayload(req, latestUserMessage, visionImageLocator),
+        resolution,
+        req.body || {}
+      ));
     }
 
     if (

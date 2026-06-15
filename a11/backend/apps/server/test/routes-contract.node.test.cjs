@@ -1963,6 +1963,73 @@ test('POST /api/llm/chat answers image inspection with vision instead of proxyin
   );
 });
 
+test('POST /api/llm/chat bypasses slow intent detection for attached image inspection', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-vision-fast', username: 'user-vision-fast' }, jwtSecret, { expiresIn: '1h' });
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouterForTests({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI() {
+          throw new Error('text_proxy_should_not_be_called');
+        },
+        specialCompilerCallStructuredLlmJson: async () => new Promise(() => {}),
+        detectImageIntent: () => {
+          throw new Error('image_intent_should_not_be_called');
+        },
+        detectWebImageIntent: () => false,
+        autoDescribeImage: async ({ imageLocator }) => {
+          assert.equal(imageLocator, 'https://assets.example.test/k44-fast.png');
+          return {
+            skipped: false,
+            provider: 'janus-test',
+            description: 'Image de test K44 lue sans passer par la detection intention lourde.',
+          };
+        },
+        generateSd: async () => {
+          throw new Error('should_not_be_called');
+        },
+      }));
+    },
+    async (baseUrl) => {
+      const controller = new AbortController();
+      const abortTimer = setTimeout(() => controller.abort(), 750);
+      try {
+        const response = await fetch(`${baseUrl}/api/llm/chat`, {
+          method: 'POST',
+          signal: controller.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: 'que vois tu ?' }],
+            sourceImageUrl: 'https://assets.example.test/k44-fast.png',
+          }),
+        });
+        const json = await response.json();
+
+        assert.equal(response.status, 200);
+        assert.equal(json.ok, true);
+        assert.equal(json.mode, 'vision_chat');
+        assert.equal(json.provider, 'janus-test');
+        assert.match(json.assistant, /K44/i);
+      } finally {
+        clearTimeout(abortTimer);
+      }
+    }
+  );
+});
+
 test('POST /api/llm/chat does not claim visual certainty from local OCR fallback', async () => {
   const jwtSecret = 'test-secret';
   const token = jwt.sign({ id: 'user-vision-fallback', username: 'user-vision-fallback' }, jwtSecret, { expiresIn: '1h' });
@@ -2015,6 +2082,72 @@ test('POST /api/llm/chat does not claim visual certainty from local OCR fallback
       assert.doesNotMatch(json.assistant, /oui, je la vois|bureau|ecran|clavier/i);
     }
   );
+});
+
+test('POST /api/llm/chat falls back before frontend timeout when image vision stalls', async () => {
+  const previousVisionTimeout = process.env.A11_CHAT_VISION_TIMEOUT_MS;
+  process.env.A11_CHAT_VISION_TIMEOUT_MS = '75';
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-vision-stall', username: 'user-vision-stall' }, jwtSecret, { expiresIn: '1h' });
+
+  try {
+    await withServer(
+      (app) => {
+        app.use('/api', createProtectedChatProxyRouterForTests({
+          verifyJWT(req, res, next) {
+            try {
+              const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+              req.user = jwt.verify(bearer, jwtSecret);
+              next();
+            } catch (error_) {
+              res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+            }
+          },
+          proxyChatToOpenAI() {
+            throw new Error('text_proxy_should_not_be_called');
+          },
+          detectImageIntent: () => false,
+          detectWebImageIntent: () => false,
+          autoDescribeImage: async () => new Promise(() => {}),
+          generateSd: async () => {
+            throw new Error('should_not_be_called');
+          },
+        }));
+      },
+      async (baseUrl) => {
+        const controller = new AbortController();
+        const abortTimer = setTimeout(() => controller.abort(), 750);
+        try {
+          const startedAt = Date.now();
+          const response = await fetch(`${baseUrl}/api/llm/chat`, {
+            method: 'POST',
+            signal: controller.signal,
+            headers: {
+              'Content-Type': 'application/json',
+              authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              messages: [{ role: 'user', content: 'que vois tu ?' }],
+              sourceImageUrl: 'https://assets.example.test/stalled-vision.png',
+            }),
+          });
+          const json = await response.json();
+
+          assert.equal(response.status, 200);
+          assert.equal(json.ok, true);
+          assert.equal(json.mode, 'vision_chat');
+          assert.equal(json.skipped, true);
+          assert.match(json.reason, /timeout/i);
+          assert.ok(Date.now() - startedAt < 700);
+        } finally {
+          clearTimeout(abortTimer);
+        }
+      }
+    );
+  } finally {
+    if (previousVisionTimeout == null) delete process.env.A11_CHAT_VISION_TIMEOUT_MS;
+    else process.env.A11_CHAT_VISION_TIMEOUT_MS = previousVisionTimeout;
+  }
 });
 
 test('POST /api/llm/chat fills empty assistant proxy bubbles with a natural surface fallback', async () => {

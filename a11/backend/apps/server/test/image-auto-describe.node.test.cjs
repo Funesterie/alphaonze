@@ -97,3 +97,32 @@ test('autoDescribeImage keeps a local fallback when Janus is disabled', async ()
     }
   });
 });
+
+test('autoDescribeImage local fallback skips OCR for tiny images without crashing', async () => {
+  await withTempRuntime(async (runtimeRoot) => {
+    const previousProvider = process.env.A11_VISION_PROVIDER;
+    process.env.A11_VISION_PROVIDER = 'none';
+    try {
+      const uploadDir = path.join(runtimeRoot, 'files', 'uploads');
+      fs.mkdirSync(uploadDir, { recursive: true });
+      fs.writeFileSync(path.join(uploadDir, 'tiny.png'), ONE_PIXEL_PNG);
+
+      const result = await autoDescribeImage({
+        imageLocator: '/files/runtime/files/uploads/tiny.png',
+        runtimeRoot,
+      });
+
+      assert.equal(result.skipped, false);
+      assert.equal(result.fallback, true);
+      assert.equal(result.visualReliable, false);
+      assert.equal(result.analysis?.parser, 'image_ocr_skipped_small');
+      assert.match(result.description, /1x1px|lecture locale de secours/i);
+    } finally {
+      if (previousProvider == null) {
+        delete process.env.A11_VISION_PROVIDER;
+      } else {
+        process.env.A11_VISION_PROVIDER = previousProvider;
+      }
+    }
+  });
+});
