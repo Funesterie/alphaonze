@@ -18,6 +18,9 @@ const {
   isIntentRouterV2Enabled,
 } = require('../resolve-user-request.cjs');
 const {
+  extractRequestImageReferences,
+} = require('../image/janus-image-manifest.cjs');
+const {
   autoDescribeImage: defaultAutoDescribeImage,
 } = require('../image/image-auto-describe.cjs');
 const {
@@ -713,12 +716,21 @@ function shouldReturnFastGreeting(requestPlan = {}) {
     && requestPlan?.needs?.webOrExternal !== true;
 }
 
-function buildIntentScopedBody(rawBody = {}, latestUserMessage = '') {
+function buildIntentScopedBody(rawBody = {}, latestUserMessage = '', imageContextCarryover = null) {
   const body = { ...(rawBody || {}) };
   const text = String(latestUserMessage || '').trim();
   body.messages = text ? [{ role: 'user', content: text }] : [];
   body.message = text || body.message;
   body.prompt = text || body.prompt;
+  if (imageContextCarryover && typeof imageContextCarryover === 'object') {
+    body._a11ImageContextCarryover = imageContextCarryover;
+    const sourceImageUrl = String(imageContextCarryover.sourceImageUrl || '').trim();
+    if (sourceImageUrl) {
+      body.sourceImageUrl = String(body.sourceImageUrl || body.source_image_url || sourceImageUrl).trim() || sourceImageUrl;
+      body.referenceImageUrl = String(body.referenceImageUrl || body.reference_image_url || sourceImageUrl).trim() || sourceImageUrl;
+      body.initImageUrl = String(body.initImageUrl || body.init_image_url || sourceImageUrl).trim() || sourceImageUrl;
+    }
+  }
   return body;
 }
 
@@ -778,6 +790,135 @@ function getProxyMessageText(message = {}) {
       .join(' ');
   }
   return '';
+}
+
+function cleanVisionAnalysisText(text = '') {
+  let cleaned = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+  const normalized = normalizeFastImageText(cleaned);
+  if (
+    /\b(?:module vision n a pas reussi|vision indisponible|vision_unavailable|vision_failed|janus vision avancee n a pas produit|je ne vais pas inventer)\b/.test(normalized)
+  ) {
+    return '';
+  }
+  cleaned = cleaned
+    .replace(/^oui[, ]+je la vois\.?\s*/i, '')
+    .replace(/^oui[, ]+je le vois\.?\s*/i, '')
+    .replace(/^je la vois\.?\s*/i, '')
+    .replace(/^je le vois\.?\s*/i, '')
+    .replace(/^analyse vision\s*:\s*/i, '')
+    .trim();
+  return cleaned.slice(0, 900).trim();
+}
+
+function looksLikeVisionAnalysisAssistant(message = {}, text = '') {
+  if (String(message?.mode || '').trim() === 'vision_chat') return true;
+  if (message?.sourceImageUrl || message?.source_image_url) return true;
+  const normalized = normalizeFastImageText(text);
+  if (!normalized) return false;
+  return /\b(?:oui je la vois|oui je le vois|je la vois|je le vois|on voit|l image montre|la photo montre|dans l image|sur la photo|image jointe)\b/.test(normalized);
+}
+
+function extractMessageSourceImageUrl(message = {}) {
+  return String(
+    message?.sourceImageUrl
+    || message?.source_image_url
+    || message?.imageUrl
+    || message?.image_url
+    || message?.referenceImageUrl
+    || message?.reference_image_url
+    || message?.a11Agent?.sourceImageUrl
+    || message?.a11Agent?.imageDraft?.initImageUrl
+    || ''
+  ).trim();
+}
+
+function buildVisionCarryoverStrengthComponents() {
+  return {
+    identity: { profile: 'preserve', reason: 'previous_vision_identity_lock', strength: 0.24 },
+    anatomy: { profile: 'preserve', reason: 'previous_vision_subject_structure', strength: 0.28 },
+    outfit: { profile: 'preserve', reason: 'previous_vision_visible_clothing', strength: 0.34 },
+    background: { profile: 'restyle', reason: 'new_user_environment_request', strength: 0.72 },
+  };
+}
+
+function shouldCarryVisionAnalysisIntoImageGeneration(text = '') {
+  if (!hasImageCreationVerbInText(text) && !isCurrentTurnImageActionRequest(text, {})) return false;
+  const normalized = normalizeFastImageText(text);
+  if (!normalized) return false;
+  return /\b(?:ces|cette|cet|ce|ca|cela|celle|celui|eux|elles|ils|memes?|meme|same|these|those|this|them)\b/.test(normalized)
+    || /\b(?:ces|les memes?|meme|same|these|those)\s+(?:personnes|gens|sujets|people|persons|subjects)\b/.test(normalized)
+    || /\b(?:image|photo|reference)\s+(?:precedente|jointe|de reference|ci|la)\b/.test(normalized)
+    || /\b(?:sur|dans|depuis|avec)\s+(?:l|la|cette|ce)\s+(?:image|photo|reference)\b/.test(normalized);
+}
+
+function findPreviousVisionAnalysisContext(body = {}) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  if (!messages.length) return null;
+  const latestUserIndex = findLastUserMessageIndex(messages);
+  const endIndex = latestUserIndex >= 0 ? latestUserIndex : messages.length;
+
+  for (let index = endIndex - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (String(message?.role || '').trim().toLowerCase() !== 'assistant') continue;
+    const text = getProxyMessageText(message);
+    if (!looksLikeVisionAnalysisAssistant(message, text)) continue;
+    const summary = cleanVisionAnalysisText(text);
+    if (!summary) continue;
+
+    let sourceImageUrl = extractMessageSourceImageUrl(message);
+    if (!sourceImageUrl) {
+      const previousReferences = extractRequestImageReferences({
+        body: {},
+        messages: messages.slice(0, index),
+      });
+      sourceImageUrl = String(previousReferences[previousReferences.length - 1]?.locator || '').trim();
+    }
+    if (!sourceImageUrl) {
+      sourceImageUrl = extractVisionImageLocator(body);
+    }
+
+    return {
+      source: 'previous_vision_analysis',
+      sourceImageUrl,
+      summary,
+      promptInstructions: [
+        'reuse the same visible people or subjects from the previous vision analysis',
+        'preserve visible identity, clothing, pose, subject count, and strong visual cues when possible',
+        'apply only the new environment, style, or action requested by the user',
+      ],
+      strengthProfile: 'preserve',
+      strengthReason: 'previous_vision_analysis_reference',
+      strengthComponents: buildVisionCarryoverStrengthComponents(),
+    };
+  }
+
+  return null;
+}
+
+function buildImageContextCarryover(body = {}, latestUserMessage = '') {
+  if (!shouldCarryVisionAnalysisIntoImageGeneration(latestUserMessage)) return null;
+  if (body?._a11ImageContextCarryover && typeof body._a11ImageContextCarryover === 'object') {
+    return body._a11ImageContextCarryover;
+  }
+  return findPreviousVisionAnalysisContext(body);
+}
+
+function buildImageContextCarryoverRequestText(latestUserMessage = '', carryover = null) {
+  const userText = String(latestUserMessage || '').trim();
+  if (!carryover || typeof carryover !== 'object') return userText;
+  const summary = String(carryover.summary || '').trim();
+  if (!summary) return userText;
+  return [
+    userText,
+    '',
+    'Contexte image de reference reutilisable pour la generation:',
+    carryover.sourceImageUrl ? `- Image de reference: ${carryover.sourceImageUrl}` : '',
+    `- Analyse vision precedente: ${summary}`,
+    '- Contrainte: reutiliser les memes personnes ou sujets visibles; preserver le nombre de sujets, les visages/identites visibles, les vetements, la pose et les signes distinctifs autant que possible; changer seulement le decor, le style ou l action demandes maintenant.',
+  ].filter(Boolean).join('\n');
 }
 
 function isAssistantImageClarificationText(text = '') {
@@ -849,13 +990,32 @@ function buildFastAsyncImageRequestCandidate(body = {}, latestUserMessage = '') 
     isCurrentTurnImageActionRequest(latestText, body)
     && hasSpecificImageRequestText(latestText)
   ) {
+    const imageContextCarryover = buildImageContextCarryover(body, latestText);
+    const requestText = imageContextCarryover
+      ? buildImageContextCarryoverRequestText(latestText, imageContextCarryover)
+      : latestText;
     return {
       source: 'current-turn',
-      requestText: latestText,
-      cacheText: latestText,
+      requestText,
+      cacheText: imageContextCarryover
+        ? `${latestText}\n${imageContextCarryover.sourceImageUrl || ''}\n${imageContextCarryover.summary || ''}`
+        : latestText,
+      imageContextCarryover,
     };
   }
-  return buildImageClarificationContinuation(body, latestText);
+  const continuation = buildImageClarificationContinuation(body, latestText);
+  if (!continuation) return null;
+  const imageContextCarryover = buildImageContextCarryover(body, continuation.requestText || latestText);
+  return {
+    ...continuation,
+    requestText: imageContextCarryover
+      ? buildImageContextCarryoverRequestText(continuation.requestText, imageContextCarryover)
+      : continuation.requestText,
+    cacheText: imageContextCarryover
+      ? `${continuation.cacheText || continuation.requestText}\n${imageContextCarryover.sourceImageUrl || ''}\n${imageContextCarryover.summary || ''}`
+      : continuation.cacheText,
+    imageContextCarryover,
+  };
 }
 
 function buildFastAsyncImageResolution(candidate = {}, scopedBody = {}, scopedMessages = []) {
@@ -2688,7 +2848,11 @@ function createProtectedChatProxyRouter({
       cleanupExpiredImageCache(recentImageResponses);
       cleanupExpiredAsyncImageJobs();
 
-      const scopedBody = buildIntentScopedBody(req.body || {}, fastAsyncImageRequest.requestText);
+      const scopedBody = buildIntentScopedBody(
+        req.body || {},
+        fastAsyncImageRequest.requestText,
+        fastAsyncImageRequest.imageContextCarryover
+      );
       const scopedMessages = Array.isArray(scopedBody.messages) ? scopedBody.messages : [];
       const resolution = buildFastAsyncImageResolution(fastAsyncImageRequest, scopedBody, scopedMessages);
       const requestKeys = buildResolvedRequestKeys(
@@ -2717,7 +2881,11 @@ function createProtectedChatProxyRouter({
       return res.status(200).json(attachIntentDebug(buildPendingImageJobPayload(job, resolution), resolution, req.body || {}));
     }
 
-    const scopedBody = buildIntentScopedBody(req.body || {}, latestUserMessage);
+    const imageContextCarryover = buildImageContextCarryover(req.body || {}, latestUserMessage);
+    const scopedLatestUserMessage = imageContextCarryover
+      ? buildImageContextCarryoverRequestText(latestUserMessage, imageContextCarryover)
+      : latestUserMessage;
+    const scopedBody = buildIntentScopedBody(req.body || {}, scopedLatestUserMessage, imageContextCarryover);
     const scopedMessages = Array.isArray(scopedBody.messages) ? scopedBody.messages : [];
     const resolution = await intentResolver.resolveUserRequest({
       req,
@@ -2920,7 +3088,11 @@ function createProtectedChatProxyRouter({
     const preparedRequest = prepareProxyA11Request(req, res);
     const familyAccess = hasFamilyAccess(req?.user);
     const latestUserMessage = preparedRequest.latestUserMessage || extractLatestUserMessage(req.body || {});
+    const preSanitizeImageContextCarryover = buildImageContextCarryover(req.body || {}, latestUserMessage);
     sanitizeProxyRequestHistory(req, latestUserMessage);
+    if (preSanitizeImageContextCarryover && req?.body && typeof req.body === 'object') {
+      req.body._a11ImageContextCarryover = preSanitizeImageContextCarryover;
+    }
     if (!familyAccess) {
       guardNonFamilyPromptAccess(req);
       if (isInternalDisclosureRequest(latestUserMessage)) {

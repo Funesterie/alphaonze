@@ -204,6 +204,9 @@ function attachDirectSourceImageToMask(mask = {}, body = {}, messages = []) {
   const sourceImageUrl = extractSourceImageUrl(body, messages);
   if (!sourceImageUrl) return mask;
   if (String(mask?.intent || '').trim() !== 'image.generate') return mask;
+  const imageContextCarryover = body?._a11ImageContextCarryover && typeof body._a11ImageContextCarryover === 'object'
+    ? body._a11ImageContextCarryover
+    : null;
 
   const nextMask = {
     ...(mask && typeof mask === 'object' ? mask : {}),
@@ -230,7 +233,23 @@ function attachDirectSourceImageToMask(mask = {}, body = {}, messages = []) {
     reason: String(existingWebDraft.reason || 'chat_source_image_url').trim() || 'chat_source_image_url',
     explicitReferenceAnchor: existingWebDraft.explicitReferenceAnchor !== false,
     fromChatSourceImage: true,
+    ...(imageContextCarryover?.strengthProfile ? { strengthProfile: String(imageContextCarryover.strengthProfile).trim() } : {}),
+    ...(imageContextCarryover?.strengthReason ? { strengthReason: String(imageContextCarryover.strengthReason).trim() } : {}),
+    ...(imageContextCarryover?.strengthComponents && typeof imageContextCarryover.strengthComponents === 'object'
+      ? { strengthComponents: imageContextCarryover.strengthComponents }
+      : {}),
   };
+  if (imageContextCarryover) {
+    nextMask.meta.previousVisionAnalysis = {
+      source: String(imageContextCarryover.source || 'previous_vision_analysis').trim() || 'previous_vision_analysis',
+      sourceImageUrl,
+      summary: String(imageContextCarryover.summary || '').trim(),
+    };
+    nextMask.meta.promptInstructions = [
+      ...(Array.isArray(nextMask.meta.promptInstructions) ? nextMask.meta.promptInstructions : []),
+      ...(Array.isArray(imageContextCarryover.promptInstructions) ? imageContextCarryover.promptInstructions : []),
+    ].filter(Boolean);
+  }
   if (Array.isArray(nextMask.inputs?.subject) && isPlaceholderSourceImageSubject(nextMask.inputs.subject[0] || '')) {
     nextMask.inputs.subject = ['reference subject'];
     if (nextMask.meta.canonicalSubject && isPlaceholderSourceImageSubject(nextMask.meta.canonicalSubject)) {
@@ -508,6 +527,7 @@ async function executeResolvedRuntime(resolution, input = {}, deps = {}) {
       userMessage: resolution.requestText?.original || normalizeUserText(input),
       referenceImageUrl: isLocalPath ? '' : referenceImageUrl,
       referenceImagePath: isLocalPath ? referenceImageUrl : '',
+      imageContextCarryover: input.body?._a11ImageContextCarryover || resolution.imageContextCarryover || null,
       req: input.req,
       generateSd: deps.generateSd,
       callStructuredLlmJson: deps.specialCompilerCallStructuredLlmJson,

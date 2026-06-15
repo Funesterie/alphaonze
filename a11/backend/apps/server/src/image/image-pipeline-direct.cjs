@@ -106,14 +106,16 @@ function buildFallbackImageSdPayload({
   hasReference = false,
   referenceImageUrl = '',
   referenceImagePath = '',
+  imageContextCarryover = null,
   env = process.env,
   reason = 'structured_llm_unavailable',
 } = {}) {
   const sourceText = normalizeText(userMessage);
+  const carryoverSummary = normalizeText(imageContextCarryover?.summary || '');
   const translated = normalizeText(translateImagePromptToEnglish(sourceText) || sourceText);
   const prompt = normalizeText(
     hasReference
-      ? `${translated}. Preserve the reference image identity and visual coherence.`
+      ? `${translated}. ${carryoverSummary ? `Reference vision analysis: ${carryoverSummary}. ` : ''}Preserve the reference image identity and visual coherence.`
       : translated
   ) || sourceText;
   const { width, height } = resolveDirectImageDimensions(1024, 1024, env);
@@ -134,6 +136,7 @@ function buildFallbackImageSdPayload({
     seed: undefined,
     init_image_url: referenceImageUrl || undefined,
     init_image_path: referenceImagePath || undefined,
+    imageContextCarryover: imageContextCarryover || null,
     fallback: true,
     fallbackReason: String(reason || 'structured_llm_unavailable'),
   };
@@ -143,6 +146,7 @@ async function buildImageSdPayload({
   userMessage = '',
   referenceImageUrl = '',
   referenceImagePath = '',
+  imageContextCarryover = null,
   callStructuredLlmJson = defaultCallStructuredLlmJson,
   timeoutMs = 25000,
   env = process.env,
@@ -159,6 +163,7 @@ async function buildImageSdPayload({
       hasReference,
       referenceImageUrl,
       referenceImagePath,
+      imageContextCarryover,
       env,
       reason: 'llm_unavailable',
     });
@@ -168,6 +173,7 @@ async function buildImageSdPayload({
     user_request: userMessage,
     has_reference_image: hasReference,
     reference_image_url: referenceImageUrl || null,
+    image_context_carryover: imageContextCarryover || null,
   });
 
   let response = null;
@@ -187,6 +193,7 @@ async function buildImageSdPayload({
       hasReference,
       referenceImageUrl,
       referenceImagePath,
+      imageContextCarryover,
       env,
       reason: error?.code || error?.message || 'structured_llm_error',
     });
@@ -198,6 +205,7 @@ async function buildImageSdPayload({
       hasReference,
       referenceImageUrl,
       referenceImagePath,
+      imageContextCarryover,
       env,
       reason: 'structured_prompt_fallback',
     });
@@ -210,6 +218,7 @@ async function buildImageSdPayload({
       hasReference,
       referenceImageUrl,
       referenceImagePath,
+      imageContextCarryover,
       env,
       reason: 'llm_empty_prompt',
     });
@@ -243,6 +252,7 @@ async function buildImageSdPayload({
     seed: undefined,
     init_image_url: referenceImageUrl || undefined,
     init_image_path: referenceImagePath || undefined,
+    imageContextCarryover: imageContextCarryover || null,
   };
 }
 
@@ -250,6 +260,7 @@ async function executeDirectImagePipeline({
   userMessage = '',
   referenceImageUrl = '',
   referenceImagePath = '',
+  imageContextCarryover = null,
   req = null,
   generateSd,
   callStructuredLlmJson = defaultCallStructuredLlmJson,
@@ -267,6 +278,7 @@ async function executeDirectImagePipeline({
     userMessage,
     referenceImageUrl,
     referenceImagePath,
+    imageContextCarryover,
     callStructuredLlmJson,
     timeoutMs,
     env,
@@ -282,6 +294,10 @@ async function executeDirectImagePipeline({
     prompt_prebuilt: true,
     ...(sdPayload.init_image_url ? { init_image_url: sdPayload.init_image_url } : {}),
     ...(sdPayload.init_image_path ? { init_image_path: sdPayload.init_image_path } : {}),
+    ...(sdPayload.imageContextCarryover ? { image_context_carryover: sdPayload.imageContextCarryover } : {}),
+    ...(sdPayload.imageContextCarryover?.strengthProfile ? { strength_profile: sdPayload.imageContextCarryover.strengthProfile } : {}),
+    ...(sdPayload.imageContextCarryover?.strengthReason ? { strength_reason: sdPayload.imageContextCarryover.strengthReason } : {}),
+    ...(sdPayload.imageContextCarryover?.strengthComponents ? { strength_components: sdPayload.imageContextCarryover.strengthComponents } : {}),
   };
 
   const result = await generateSd({ req, body: sdBody, prompt: sdPayload.prompt });

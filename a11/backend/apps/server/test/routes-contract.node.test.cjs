@@ -646,6 +646,117 @@ test('POST /api/llm/chat queues an async image job when requested and exposes a 
   );
 });
 
+test('POST /api/llm/chat carries previous vision analysis into async image generation', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
+  const structuredInputs = [];
+  const sdBodies = [];
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouterForTests({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI(_req, res) {
+          return res.json({
+            choices: [{ message: { role: 'assistant', content: 'fallback llm' } }],
+          });
+        },
+        detectImageIntent: () => true,
+        detectWebImageIntent: () => false,
+        hasLocalChatUpstreamConfigured: () => true,
+        specialCompilerCallStructuredLlmJson: async ({ text }) => {
+          const input = JSON.parse(String(text || '{}'));
+          structuredInputs.push(input);
+          return {
+            prompt: String(input.user_request || ''),
+            negative_prompt: '',
+            subject: 'the same two people from the reference image',
+            style: 'photorealistic volcanic landscape',
+            width: 768,
+            height: 1024,
+            has_reference_image: input.has_reference_image === true,
+            preserve_identity: true,
+            transformation_description: 'place the same people in a volcanic landscape',
+          };
+        },
+        generateSd: async ({ body }) => {
+          sdBodies.push(body);
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          return {
+            ok: true,
+            artifact_type: 'image',
+            image_url: 'https://files.example.com/volcanic-people.png',
+            filename: 'volcanic-people.png',
+          };
+        },
+      }));
+    },
+    async (baseUrl) => {
+      const body = {
+        a11Dev: true,
+        acceptAsyncImageJob: true,
+        conversationId: 'conv-vision-carryover',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'que vois tu ? analyse cette image' },
+              { type: 'image_url', image_url: { url: 'https://files.example.com/snow-scooter.jpg' } },
+            ],
+          },
+          {
+            role: 'assistant',
+            content: 'Oui, je la vois. On voit deux personnes assises sur un scooter blanc dans la neige, avec des montagnes et des sapins en arriere-plan. La personne a gauche porte une veste sombre; la personne a droite porte un bonnet rouge et une echarpe.',
+          },
+          {
+            role: 'user',
+            content: 'genere une image de ces personnes dans un paysage volcanique',
+          },
+        ],
+      };
+
+      const queued = await postJson(baseUrl, '/api/llm/chat', body, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(queued.response.status, 200);
+      assert.equal(queued.json.status, 'pending');
+      assert.equal(queued.json.mode, 'generate_image_async');
+
+      let polled = null;
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        polled = await getJson(
+          baseUrl,
+          `/api/llm/jobs/image/${encodeURIComponent(queued.json.asyncJob.jobId)}`,
+          { authorization: `Bearer ${token}` }
+        );
+        if (polled.json?.status === 'done') break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+
+      assert.ok(polled);
+      assert.equal(polled.response.status, 200);
+      assert.equal(polled.json.status, 'done');
+      assert.equal(structuredInputs.length, 1);
+      assert.equal(structuredInputs[0].has_reference_image, true);
+      assert.equal(sdBodies[0]?.init_image_url, 'https://files.example.com/snow-scooter.jpg');
+      assert.equal(sdBodies[0]?.strength_components?.identity?.profile, 'preserve');
+      assert.equal(sdBodies[0]?.strength_components?.background?.profile, 'restyle');
+      assert.match(String(structuredInputs[0].user_request || ''), /scooter blanc|white scooter/i);
+      assert.match(String(structuredInputs[0].user_request || ''), /bonnet rouge|red hat/i);
+      assert.match(String(structuredInputs[0].user_request || ''), /paysage volcanique|volcanic landscape/i);
+    }
+  );
+});
+
 test('POST /api/llm/chat treats image clarification answers as async image continuations', async () => {
   const jwtSecret = 'test-secret';
   const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
