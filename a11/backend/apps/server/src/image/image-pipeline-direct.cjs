@@ -33,7 +33,8 @@ function buildGroqCallStructuredLlmJson(env = process.env) {
         { role: 'system', content: String(systemPrompt || '') },
         { role: 'user', content: String(text || '') },
       ],
-      ...(responseFormat ? { response_format: responseFormat } : {}),
+      // llama-3.3-70b-versatile doesn't support json_schema — use json_object which all Groq models support
+      response_format: { type: 'json_object' },
     };
     const ctrl = new AbortController();
     const tid = setTimeout(() => ctrl.abort(), Math.max(5000, Number(timeoutMs) || 25000));
