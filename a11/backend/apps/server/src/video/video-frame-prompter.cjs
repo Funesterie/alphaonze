@@ -309,50 +309,8 @@ function resolveMaxTokensForChunk(chunkSize) {
   return Math.max(1200, chunkSize * 180);
 }
 
-// Schéma JSON strict pour le response_format Ollama-compatible.
-const FRAME_PROMPTER_RESPONSE_FORMAT = Object.freeze({
-  type: 'json_schema',
-  json_schema: {
-    name: 'video_frame_beats',
-    strict: true,
-    schema: {
-      type: 'object',
-      required: ['subject_type', 'motion_description', 'scene_context', 'frame_beats'],
-      properties: {
-        subject_type: { type: 'string' },
-        motion_description: { type: 'string' },
-        scene_context: { type: 'string' },
-        continuity_locks: { type: 'array', items: { type: 'string' } },
-        sound_cues: { type: 'array', items: { type: 'string' } },
-        frame_beats: {
-          type: 'array',
-          items: {
-            type: 'object',
-            required: ['label', 'prompt'],
-            properties: {
-              label: { type: 'string' },
-              prompt: { type: 'string' },
-              sound_cues: { type: 'array', items: { type: 'string' } },
-              continuity_locks: { type: 'array', items: { type: 'string' } },
-              scene_context: { type: 'string' },
-            },
-          },
-        },
-        frames: {
-          type: 'array',
-          items: {
-            type: 'object',
-            required: ['label', 'prompt'],
-            properties: {
-              label: { type: 'string' },
-              prompt: { type: 'string' },
-            },
-          },
-        },
-      },
-    },
-  },
-});
+// json_schema not supported by llama-3.3-70b-versatile on Groq — structure is described in system prompt
+const FRAME_PROMPTER_RESPONSE_FORMAT = Object.freeze({ type: 'json_object' });
 
 async function callLlmWithRetry({
   callLlm,

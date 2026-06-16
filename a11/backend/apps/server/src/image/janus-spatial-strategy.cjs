@@ -15,59 +15,8 @@ const VALID_STRENGTH_PROFILES = Object.freeze([
   'restyle',
 ]);
 
-const JANUS_STRATEGY_RESPONSE_FORMAT = Object.freeze({
-  type: 'json_schema',
-  json_schema: {
-    name: 'janus_spatial_strategy',
-    strict: true,
-    schema: {
-      type: 'object',
-      required: [
-        'global_strength_profile',
-        'global_strength_reason',
-        'component_profiles',
-        'preserve_zones',
-        'rewrite_zones',
-        'spatial_prompt_hints',
-        'strategy_confidence',
-      ],
-      properties: {
-        global_strength_profile: {
-          type: 'string',
-          enum: ['preserve', 'balanced', 'restyle'],
-        },
-        global_strength_reason: { type: 'string' },
-        component_profiles: {
-          type: 'object',
-          properties: {
-            identity: { type: 'string', enum: ['preserve', 'balanced', 'restyle'] },
-            anatomy: { type: 'string', enum: ['preserve', 'balanced', 'restyle'] },
-            outfit: { type: 'string', enum: ['preserve', 'balanced', 'restyle'] },
-            background: { type: 'string', enum: ['preserve', 'balanced', 'restyle'] },
-            effects: { type: 'string', enum: ['preserve', 'balanced', 'restyle'] },
-            props: { type: 'string', enum: ['preserve', 'balanced', 'restyle'] },
-          },
-          required: ['identity', 'anatomy', 'outfit', 'background', 'effects', 'props'],
-          additionalProperties: false,
-        },
-        preserve_zones: {
-          type: 'array',
-          items: { type: 'string' },
-        },
-        rewrite_zones: {
-          type: 'array',
-          items: { type: 'string' },
-        },
-        spatial_prompt_hints: {
-          type: 'array',
-          items: { type: 'string' },
-        },
-        strategy_confidence: { type: 'number' },
-      },
-      additionalProperties: false,
-    },
-  },
-});
+// json_schema not supported by llama-3.3-70b-versatile on Groq — structure is described in system prompt
+const JANUS_STRATEGY_RESPONSE_FORMAT = Object.freeze({ type: 'json_object' });
 
 const JANUS_STRATEGY_SYSTEM_PROMPT = `You are a spatial generation strategist for a Stable Diffusion 3.5 image pipeline.
 

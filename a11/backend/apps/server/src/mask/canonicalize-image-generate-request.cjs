@@ -84,69 +84,8 @@ Return strict JSON only:
   }
 }`;
 
-const CANONICAL_IMAGE_GENERATE_REQUEST_RESPONSE_FORMAT = {
-  type: 'json_schema',
-  json_schema: {
-    name: 'canonical_image_generate_request',
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        needsClarification: { type: 'boolean' },
-        clarificationQuestion: { type: 'string' },
-        canonicalEnglishInput: { type: 'string' },
-        structuredFields: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            subject: { type: 'array', items: { type: 'string' } },
-            environment: { type: 'array', items: { type: 'string' } },
-            style: { type: 'array', items: { type: 'string' } },
-            composition: { type: 'array', items: { type: 'string' } },
-            lighting: { type: 'array', items: { type: 'string' } },
-            palette: { type: 'array', items: { type: 'string' } },
-            constraints: {
-              type: 'object',
-              additionalProperties: false,
-              properties: {
-                promptInstructions: { type: 'array', items: { type: 'string' } },
-                negativeHints: { type: 'array', items: { type: 'string' } },
-                noText: { type: 'boolean' },
-                safeMode: { type: 'boolean' },
-              },
-              required: ['promptInstructions', 'negativeHints', 'noText', 'safeMode'],
-            },
-          },
-          required: ['subject', 'environment', 'style', 'composition', 'lighting', 'palette', 'constraints'],
-        },
-        scenePolicy: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            subjectMode: {
-              type: 'string',
-              enum: ['single', 'pair', 'group', 'unspecified'],
-            },
-            explicitSubjectCount: {
-              anyOf: [
-                { type: 'integer' },
-                { type: 'null' },
-              ],
-            },
-          },
-          required: ['subjectMode', 'explicitSubjectCount'],
-        },
-      },
-      required: [
-        'needsClarification',
-        'clarificationQuestion',
-        'canonicalEnglishInput',
-        'structuredFields',
-        'scenePolicy',
-      ],
-    },
-  },
-};
+// json_schema not supported by llama-3.3-70b-versatile on Groq — structure is described in system prompt
+const CANONICAL_IMAGE_GENERATE_REQUEST_RESPONSE_FORMAT = { type: 'json_object' };
 
 const FRENCH_LEAK_PATTERNS = [
   /\b(?:avec|sans|visage|identite|identité|decor|décor|personnage|lumiere|lumière|maquillage|batte|immeuble|sujet|tenue|cadrage|corpulence|theatrale|théâtrale|sombre|cinematographique|cinématographique|realiste|réaliste|lisible)\b/i,

@@ -15,57 +15,8 @@ const {
   callStructuredLlmJson: defaultCallStructuredLlmJson,
 } = require('../mask/resolve-text-to-wazaa.cjs');
 
-const VIDEO_SPATIAL_STRATEGY_RESPONSE_FORMAT = Object.freeze({
-  type: 'json_schema',
-  json_schema: {
-    name: 'video_spatial_strategy',
-    strict: true,
-    schema: {
-      type: 'object',
-      required: [
-        'stable_zones',
-        'motion_zones',
-        'spatial_continuity_hints',
-        'physical_sound_cues',
-        'frame_strength_profile',
-        'strategy_confidence',
-      ],
-      properties: {
-        stable_zones: {
-          type: 'array',
-          items: { type: 'string' },
-        },
-        motion_zones: {
-          type: 'array',
-          items: { type: 'string' },
-        },
-        spatial_continuity_hints: {
-          type: 'array',
-          items: { type: 'string' },
-        },
-        physical_sound_cues: {
-          type: 'array',
-          items: {
-            type: 'object',
-            required: ['label', 'source', 'timing'],
-            properties: {
-              label: { type: 'string' },
-              source: { type: 'string' },
-              timing: { type: 'string' },
-            },
-            additionalProperties: false,
-          },
-        },
-        frame_strength_profile: {
-          type: 'string',
-          enum: ['preserve', 'balanced', 'restyle'],
-        },
-        strategy_confidence: { type: 'number' },
-      },
-      additionalProperties: false,
-    },
-  },
-});
+// json_schema not supported by llama-3.3-70b-versatile on Groq — structure is described in system prompt
+const VIDEO_SPATIAL_STRATEGY_RESPONSE_FORMAT = Object.freeze({ type: 'json_object' });
 
 const VIDEO_SPATIAL_STRATEGY_SYSTEM_PROMPT = `You are a spatial and sound strategist for a frame-by-frame video renderer using Stable Diffusion 3.5.
 
