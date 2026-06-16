@@ -1115,8 +1115,9 @@ function createVideoGenerateRouter(overrides = {}) {
           timeoutMs: 10000,
         });
         const cloudPrompt = builtPrompt?.prompt || prompt;
+        const cloudNegativePrompt = builtPrompt?.negativePrompt || body?.negative_prompt || '';
         const hfResult = await tryGenerateVideoWithHuggingFace({
-          req, body: { ...body, prompt: cloudPrompt }, prompt: cloudPrompt, fetchImpl,
+          req, body: { ...body, prompt: cloudPrompt, negative_prompt: cloudNegativePrompt }, prompt: cloudPrompt, fetchImpl,
           uploadBufferToR2Impl: overrides.uploadBufferToR2,
           tokenOverride: sessionVideoTokens.huggingface,
           configOverrides: { provider: hfProviderOverride, replicateToken: sessionVideoTokens.replicate },
