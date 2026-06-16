@@ -1,4 +1,4 @@
-﻿param(
+param(
   [string]$RepoRoot = "D:\projets\funesterie",
   [string]$Remote = $(if ($env:A11_HETZNER_REMOTE) { $env:A11_HETZNER_REMOTE } else { "deploy@37.27.63.109" }),
   [string]$SshKey = $(if ($env:A11_HETZNER_SSH_KEY) { $env:A11_HETZNER_SSH_KEY } else { "C:\Users\Djeff\.ssh\codex-a11-hetzner-20260602_ed25519" }),
@@ -519,7 +519,7 @@ services:
       A11_LLM_FALLBACK_PROVIDER: ollama
       A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,openai,gemini,xai,huggingface,deepseek,together
       A11_CERBERE_LOCAL_ONLY: "false"
-      A11_LOCAL_CHAT_TIMEOUT_MS: "20000"
+      A11_LOCAL_CHAT_TIMEOUT_MS = "45000"
       A11_OLLAMA_KEEP_ALIVE: "30m"
       A11_MEMORY_LOCAL_TIMEOUT_MS: "3500"
       A11_MEMORY_REMOTE_TIMEOUT_MS: "5000"
@@ -610,7 +610,7 @@ services:
       A11_LLM_FALLBACK_PROVIDER: ollama
       A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,openai,gemini,xai,huggingface,deepseek,together
       A11_CERBERE_LOCAL_ONLY: "false"
-      A11_LOCAL_CHAT_TIMEOUT_MS: "20000"
+      A11_LOCAL_CHAT_TIMEOUT_MS = "45000"
       A11_OLLAMA_KEEP_ALIVE: "30m"
       A11_MEMORY_LOCAL_TIMEOUT_MS: "3500"
       A11_MEMORY_REMOTE_TIMEOUT_MS: "5000"
@@ -1031,7 +1031,7 @@ $overrides = [ordered]@{
   A11_LLM_FALLBACK_PROVIDER = "ollama"
   A11_LLM_RUNTIME_FALLBACK_ORDER = "ollama,openai,gemini,xai,huggingface,deepseek,together"
   A11_CERBERE_LOCAL_ONLY = "false"
-  A11_LOCAL_CHAT_TIMEOUT_MS = "20000"
+  A11_LOCAL_CHAT_TIMEOUT_MS = "45000"
   A11_OLLAMA_KEEP_ALIVE = "30m"
   A11_MEMORY_LOCAL_TIMEOUT_MS = "3500"
   A11_MEMORY_REMOTE_TIMEOUT_MS = "5000"
@@ -1275,7 +1275,7 @@ printf 'LOCAL_DEFAULT_MODEL=llama3.2:3b\n' >> "$tmp_build"
 printf 'A11_LLM_FALLBACK_PROVIDER=ollama\n' >> "$tmp_build"
 printf 'A11_LLM_RUNTIME_FALLBACK_ORDER=ollama,openai,gemini,xai,huggingface,deepseek,together\n' >> "$tmp_build"
 printf 'A11_CERBERE_LOCAL_ONLY=false\n' >> "$tmp_build"
-printf 'A11_LOCAL_CHAT_TIMEOUT_MS=20000\n' >> "$tmp_build"
+printf 'A11_LOCAL_CHAT_TIMEOUT_MS = "45000"\n' >> "$tmp_build"
 printf 'A11_OLLAMA_KEEP_ALIVE=30m\n' >> "$tmp_build"
 printf 'A11_MEMORY_LOCAL_TIMEOUT_MS=3500\n' >> "$tmp_build"
 printf 'A11_MEMORY_REMOTE_TIMEOUT_MS=5000\n' >> "$tmp_build"
@@ -1463,3 +1463,4 @@ if ($BlueGreen) {
 } else {
   Write-Host "Deploy A11 prod Finlande termine: $Remote / release $Stamp" -ForegroundColor Green
 }
+

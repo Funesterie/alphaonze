@@ -156,10 +156,10 @@ function resolveChatRequestTimeoutMs() {
   const raw = Number(
     import.meta.env?.VITE_A11_CHAT_REQUEST_TIMEOUT_MS
     || import.meta.env?.VITE_A11_CHAT_TIMEOUT_MS
-    || 30_000
+    || 60_000
   );
-  const resolved = Number.isFinite(raw) && raw > 0 ? raw : 30_000;
-  return Math.max(10_000, Math.min(60_000, Math.round(resolved)));
+  const resolved = Number.isFinite(raw) && raw > 0 ? raw : 60_000;
+  return Math.max(10_000, Math.min(120_000, Math.round(resolved)));
 }
 
 export async function generatePngWithPrompt(
@@ -862,17 +862,17 @@ export function getAuthAccountLanguage(fallback = 'fr') {
   const storedUser = getStoredAuthUserProfile() || {};
   return normalizeAccountLanguage(
     payload?.language
-      || payload?.locale
-      || payload?.accountLanguage
-      || payload?.account_language
-      || payload?.preferredLanguage
-      || payload?.preferred_language
-      || storedUser?.language
-      || storedUser?.locale
-      || storedUser?.accountLanguage
-      || storedUser?.account_language
-      || storedUser?.preferredLanguage
-      || storedUser?.preferred_language,
+    || payload?.locale
+    || payload?.accountLanguage
+    || payload?.account_language
+    || payload?.preferredLanguage
+    || payload?.preferred_language
+    || storedUser?.language
+    || storedUser?.locale
+    || storedUser?.accountLanguage
+    || storedUser?.account_language
+    || storedUser?.preferredLanguage
+    || storedUser?.preferred_language,
     fallback
   );
 }
@@ -2457,26 +2457,26 @@ export async function processDoubleHarmonicAudio(
   const endpoint = options?.mode === 'v9turbo'
     ? '/api/double-harmonic/v9turbo/process'
     : options?.mode === 'v8pivot'
-    ? '/api/double-harmonic/v8pivot/process'
-    : options?.mode === 'v8plus'
-    ? '/api/double-harmonic/v8plus/process'
-    : options?.mode === 'v8'
-    ? '/api/double-harmonic/v8/process'
-    : options?.mode === 'v71'
-    ? '/api/double-harmonic/v71/process'
-    : options?.mode === 'v7'
-    ? '/api/double-harmonic/v7/process'
-    : options?.mode === 'v6'
-    ? '/api/double-harmonic/v6/process'
-    : options?.mode === 'v5'
-    ? '/api/double-harmonic/v5/process'
-    : options?.mode === 'v4'
-    ? '/api/double-harmonic/v4/process'
-    : options?.mode === 'v3'
-      ? '/api/double-harmonic/v3/process'
-      : options?.mode === 'v2'
-        ? '/api/double-harmonic/v2/process'
-        : '/api/double-harmonic/process';
+      ? '/api/double-harmonic/v8pivot/process'
+      : options?.mode === 'v8plus'
+        ? '/api/double-harmonic/v8plus/process'
+        : options?.mode === 'v8'
+          ? '/api/double-harmonic/v8/process'
+          : options?.mode === 'v71'
+            ? '/api/double-harmonic/v71/process'
+            : options?.mode === 'v7'
+              ? '/api/double-harmonic/v7/process'
+              : options?.mode === 'v6'
+                ? '/api/double-harmonic/v6/process'
+                : options?.mode === 'v5'
+                  ? '/api/double-harmonic/v5/process'
+                  : options?.mode === 'v4'
+                    ? '/api/double-harmonic/v4/process'
+                    : options?.mode === 'v3'
+                      ? '/api/double-harmonic/v3/process'
+                      : options?.mode === 'v2'
+                        ? '/api/double-harmonic/v2/process'
+                        : '/api/double-harmonic/process';
   const res = await authFetch(getApiUrl(endpoint), {
     method: 'POST',
     headers: buildAuthHeaders(),
@@ -3566,127 +3566,127 @@ async function apiPost(body: unknown) {
   fetchOptions.signal = abortController.signal;
 
   try {
-  const res = await authFetch(url, fetchOptions);
+    const res = await authFetch(url, fetchOptions);
 
-  // If response is an event-stream, process incrementally
-  const contentType = res.headers.get('content-type') || '';
-  if (res.ok && (contentType.includes('text/event-stream') || contentType.includes('text/plain'))) {
-    // Try to stream-process SSE-style responses
-    try {
-      const reader = res.body?.getReader();
-      if (reader) {
-        const decoder = new TextDecoder();
-        let buf = '';
-        let aggregated = '';
+    // If response is an event-stream, process incrementally
+    const contentType = res.headers.get('content-type') || '';
+    if (res.ok && (contentType.includes('text/event-stream') || contentType.includes('text/plain'))) {
+      // Try to stream-process SSE-style responses
+      try {
+        const reader = res.body?.getReader();
+        if (reader) {
+          const decoder = new TextDecoder();
+          let buf = '';
+          let aggregated = '';
 
-        // Helper to process a full line starting with 'data:'
-        const processDataLine = (line: string) => {
-          const payload = line.slice(5).trim(); // after 'data:'
-          if (!payload) return;
-          if (payload === '[DONE]') {
-            dispatchBrowserEvent(new CustomEvent('a11:assistant.done'));
-            return;
-          }
-          let parsed = null;
-          try { parsed = JSON.parse(payload); } catch { return; }
-          const chunk = parsed?.choices?.[0]?.delta?.content ?? parsed?.choices?.[0]?.message?.content ?? parsed?.response ?? '';
-          if (chunk) {
-            aggregated += String(chunk);
-            dispatchBrowserEvent(new CustomEvent('a11:assistant.delta', { detail: String(chunk) }));
-          }
-        };
+          // Helper to process a full line starting with 'data:'
+          const processDataLine = (line: string) => {
+            const payload = line.slice(5).trim(); // after 'data:'
+            if (!payload) return;
+            if (payload === '[DONE]') {
+              dispatchBrowserEvent(new CustomEvent('a11:assistant.done'));
+              return;
+            }
+            let parsed = null;
+            try { parsed = JSON.parse(payload); } catch { return; }
+            const chunk = parsed?.choices?.[0]?.delta?.content ?? parsed?.choices?.[0]?.message?.content ?? parsed?.response ?? '';
+            if (chunk) {
+              aggregated += String(chunk);
+              dispatchBrowserEvent(new CustomEvent('a11:assistant.delta', { detail: String(chunk) }));
+            }
+          };
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += decoder.decode(value, { stream: true });
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
 
-          // split on double-newline which typically separates SSE events
-          let parts = buf.split(/\n\n/);
-          // keep last partial in buffer
-          buf = parts.pop() || '';
+            // split on double-newline which typically separates SSE events
+            let parts = buf.split(/\n\n/);
+            // keep last partial in buffer
+            buf = parts.pop() || '';
 
-          for (const p of parts) {
-            const lines = p.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-            for (const line of lines) {
-              if (line.startsWith('data:')) {
-                if (shouldLogRawChatPayload()) {
-                  console.log('[A11][RAW] 200 data:', line.slice(5).trim());
+            for (const p of parts) {
+              const lines = p.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+              for (const line of lines) {
+                if (line.startsWith('data:')) {
+                  if (shouldLogRawChatPayload()) {
+                    console.log('[A11][RAW] 200 data:', line.slice(5).trim());
+                  }
+                  processDataLine(line);
                 }
-                processDataLine(line);
               }
             }
           }
-        }
 
-        // Final flush if buffer contains a data: line
-        const finalLines = buf.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-        for (const line of finalLines) {
-          if (line.startsWith('data:')) {
-            if (shouldLogRawChatPayload()) {
-              console.log('[A11][RAW] 200 data:', line.slice(5).trim());
+          // Final flush if buffer contains a data: line
+          const finalLines = buf.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+          for (const line of finalLines) {
+            if (line.startsWith('data:')) {
+              if (shouldLogRawChatPayload()) {
+                console.log('[A11][RAW] 200 data:', line.slice(5).trim());
+              }
+              processDataLine(line);
             }
-            processDataLine(line);
+          }
+
+          // Return OpenAI-like structure with aggregated content
+          return {
+            choices: [{ message: { role: 'assistant', content: aggregated } }]
+          };
+        }
+      } catch (error_) {
+        console.warn('[A11][STREAM] streaming parse failed, falling back to full read', error_);
+        // fallthrough to full-text handling
+      }
+    }
+
+    // Try streaming text if needed; for now read full text
+    const text = await res.text();
+    if (shouldLogRawChatPayload()) {
+      console.log('[A11][RAW]', res.status, text);
+    }
+
+    if (!res.ok) {
+      throw new Error(buildFriendlyChatApiErrorMessage(res.status, text));
+    }
+
+    let data: any;
+    try {
+      // Handle event-stream / SSE style responses that prefix lines with "data: {...}"
+      const trimmed = text.trim();
+      if (trimmed.startsWith('data:') || trimmed.includes('\ndata:')) {
+        // Extract JSON blobs from lines starting with 'data: '
+        const re = /data:\s*(\{[\s\S]*?\})(?:\s*\n|$)/g;
+        let match: RegExpExecArray | null;
+        let lastJsonStr: string | null = null;
+        const parts: string[] = [];
+        while ((match = re.exec(text)) !== null) {
+          lastJsonStr = match[1];
+          try {
+            const parsed = JSON.parse(lastJsonStr);
+            const chunk = parsed?.choices?.[0]?.delta?.content ?? parsed?.choices?.[0]?.message?.content ?? parsed?.response ?? null;
+            if (chunk) parts.push(String(chunk));
+          } catch {
+            // ignore
           }
         }
-
-        // Return OpenAI-like structure with aggregated content
-        return {
-          choices: [{ message: { role: 'assistant', content: aggregated } }]
-        };
-      }
-    } catch (error_) {
-      console.warn('[A11][STREAM] streaming parse failed, falling back to full read', error_);
-      // fallthrough to full-text handling
-    }
-  }
-
-  // Try streaming text if needed; for now read full text
-  const text = await res.text();
-  if (shouldLogRawChatPayload()) {
-    console.log('[A11][RAW]', res.status, text);
-  }
-
-  if (!res.ok) {
-    throw new Error(buildFriendlyChatApiErrorMessage(res.status, text));
-  }
-
-  let data: any;
-  try {
-    // Handle event-stream / SSE style responses that prefix lines with "data: {...}"
-    const trimmed = text.trim();
-    if (trimmed.startsWith('data:') || trimmed.includes('\ndata:')) {
-      // Extract JSON blobs from lines starting with 'data: '
-      const re = /data:\s*(\{[\s\S]*?\})(?:\s*\n|$)/g;
-      let match: RegExpExecArray | null;
-      let lastJsonStr: string | null = null;
-      const parts: string[] = [];
-      while ((match = re.exec(text)) !== null) {
-        lastJsonStr = match[1];
-        try {
-          const parsed = JSON.parse(lastJsonStr);
-          const chunk = parsed?.choices?.[0]?.delta?.content ?? parsed?.choices?.[0]?.message?.content ?? parsed?.response ?? null;
-          if (chunk) parts.push(String(chunk));
-        } catch {
-          // ignore
+        if (parts.length) {
+          data = { choices: [{ message: { role: 'assistant', content: parts.join('') } }] };
+        } else if (lastJsonStr) {
+          try { data = JSON.parse(lastJsonStr); } catch { data = { raw: text }; }
+        } else {
+          data = { raw: text };
         }
-      }
-      if (parts.length) {
-        data = { choices: [{ message: { role: 'assistant', content: parts.join('') } }] };
-      } else if (lastJsonStr) {
-        try { data = JSON.parse(lastJsonStr); } catch { data = { raw: text }; }
       } else {
-        data = { raw: text };
+        data = JSON.parse(text);
       }
-    } else {
-      data = JSON.parse(text);
+    } catch {
+      // If parsing fails, return raw text wrapped
+      if (!data) data = { raw: text };
     }
-  } catch {
-    // If parsing fails, return raw text wrapped
-    if (!data) data = { raw: text };
-  }
 
-  return data;
+    return data;
   } catch (error_) {
     if (didAbortChatRequest || (error_ as any)?.name === 'AbortError') {
       throw new Error("Le serveur IA met trop longtemps à répondre. J'ai coupé la requête proprement; réessaie dans quelques secondes.");

@@ -509,8 +509,10 @@ function parseRetryDelayMs(error_, nowMs = Date.now()) {
 
   const status = getErrorStatus(error_);
   if (status === 402) return 10 * 60_000;
-  if (status === 429) return 10 * 60_000;
-  if (status >= 500) return 2 * 60_000;
+  // Groq/OpenRouter 429 : rate limit généralement court (quelques secondes à 1 min)
+  // 10 min de cooldown bloque trop longtemps → 45 secondes max, le header retry-after est prioritaire
+  if (status === 429) return 45_000;
+  if (status >= 500) return 30_000;
   return DEFAULT_COOLDOWN_MS;
 }
 

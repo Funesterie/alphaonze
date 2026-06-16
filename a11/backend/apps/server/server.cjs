@@ -7818,10 +7818,10 @@ function createRateLimiter({ windowMs = 60_000, max = 100, message = 'Too many r
 }
 
 // Rate limits par route
-app.use('/api/auth', createRateLimiter({ windowMs: 60_000, max: 10, message: 'Trop de tentatives de connexion' }));
-app.use('/api/chat', createRateLimiter({ windowMs: 60_000, max: 30, message: 'Trop de requêtes chat' }));
-app.use('/api/image-generate', createRateLimiter({ windowMs: 60_000, max: 5, message: 'Trop de générations d\'images' }));
-app.use('/api', createRateLimiter({ windowMs: 60_000, max: 200, message: 'Trop de requêtes' }));
+app.use('/api/auth', createRateLimiter({ windowMs: 60_000, max: 20, message: 'Trop de tentatives de connexion' }));
+app.use('/api/chat', createRateLimiter({ windowMs: 60_000, max: 60, message: 'Trop de requêtes chat' }));
+app.use('/api/image-generate', createRateLimiter({ windowMs: 60_000, max: 20, message: 'Trop de générations d\'images' }));
+app.use('/api', createRateLimiter({ windowMs: 60_000, max: 300, message: 'Trop de requêtes' }));
 
 app.use(cookieParser());
 
@@ -13168,11 +13168,11 @@ async function proxyChatToOpenAI(req, res) {
   const fullSystemPrompt = resolveRequestSystemPrompt(req.body || {}, req.user, req);
   const systemPrompt = provider === 'local'
     ? buildA11CompactLocalSystemPrompt(fullSystemPrompt, {
-        surface: requestSurface,
-        persona: req.body?.persona,
-        voicePersona: req.body?.voicePersona,
-        agent: req.body?.agent,
-      })
+      surface: requestSurface,
+      persona: req.body?.persona,
+      voicePersona: req.body?.voicePersona,
+      agent: req.body?.agent,
+    })
     : fullSystemPrompt;
   let informativeToolContext = getInformativeToolContextFromBody(req.body || {});
   const requestedProviderProfileId = String(req.body?.providerProfileId || '').trim();
@@ -13422,10 +13422,10 @@ async function proxyChatToOpenAI(req, res) {
     upstreamBody.messages = provider === 'local'
       ? sanitizeLocalChatMessagesForTransport(upstreamBody.messages)
       : sanitizeChatMessagesForTransport(upstreamBody.messages, {
-          dedupeAdjacent: false,
-          maxMessageChars: Number(process.env.A11_CHAT_MAX_MESSAGE_CHARS || 180000),
-          maxTotalChars: Number(process.env.A11_CHAT_MAX_CONTEXT_CHARS || 420000),
-        });
+        dedupeAdjacent: false,
+        maxMessageChars: Number(process.env.A11_CHAT_MAX_MESSAGE_CHARS || 180000),
+        maxTotalChars: Number(process.env.A11_CHAT_MAX_CONTEXT_CHARS || 420000),
+      });
   }
   if (provider === 'local') {
     delete upstreamBody.prompt;
