@@ -627,7 +627,10 @@ async function executeResolvedRuntime(resolution, input = {}, deps = {}) {
 
     // sourceImageUrl : priorité à ce qui est déjà dans videoRequest, sinon première image du message
     const resolvedSourceImageUrl = String(resolution.videoRequest?.sourceImageUrl || firstVideoImageRef || '').trim();
-    const isLocalVideoRef = resolvedSourceImageUrl && !resolvedSourceImageUrl.startsWith('http');
+    // data: URIs are valid for remote APIs (Replicate accepts them); only treat actual file paths as local
+    const isDataUrl = resolvedSourceImageUrl.startsWith('data:');
+    const isLocalVideoRef = resolvedSourceImageUrl && !resolvedSourceImageUrl.startsWith('http') && !isDataUrl;
+    console.log(`[A11][video-resolve] sourceImageUrl="${resolvedSourceImageUrl.slice(0, 80)}" isLocal=${isLocalVideoRef} isData=${isDataUrl}`);
 
     const videoResult = await deps.generateVideo({
       req: input.req,

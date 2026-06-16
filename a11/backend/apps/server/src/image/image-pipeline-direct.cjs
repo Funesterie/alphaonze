@@ -68,29 +68,8 @@ const {
   translateImagePromptToEnglish,
 } = require('../mask/build-sd-prompt-bundle.cjs');
 
-const IMAGE_PIPELINE_RESPONSE_FORMAT = Object.freeze({
-  type: 'json_schema',
-  json_schema: {
-    name: 'image_generation_request',
-    strict: true,
-    schema: {
-      type: 'object',
-      required: ['prompt', 'negative_prompt', 'subject', 'style', 'width', 'height'],
-      properties: {
-        prompt: { type: 'string' },
-        negative_prompt: { type: 'string' },
-        subject: { type: 'string' },
-        style: { type: 'string' },
-        width: { type: 'integer' },
-        height: { type: 'integer' },
-        has_reference_image: { type: 'boolean' },
-        preserve_identity: { type: 'boolean' },
-        transformation_description: { type: 'string' },
-      },
-      additionalProperties: false,
-    },
-  },
-});
+// json_schema not supported by llama-3.3-70b-versatile on Groq — use json_object universally
+const IMAGE_PIPELINE_RESPONSE_FORMAT = Object.freeze({ type: 'json_object' });
 
 const IMAGE_PIPELINE_SYSTEM_PROMPT = `I am A11, a cinematic image editor and visual director.
 
