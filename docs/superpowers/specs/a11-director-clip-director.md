@@ -385,3 +385,12 @@ This design is ready for implementation planning when:
 ## Out Of Scope
 
 This spec does not choose a final video provider, implement a web crawler, change deployment secrets, build a UI, or implement the async job system. Those actions require a separate implementation plan after user validation.
+
+## MVP V1 Implementation Status
+
+- Director contract, 50cc domain resolver, MVP orchestrator, and video runtime branch are implemented.
+- The public video route contract is unchanged.
+- Director enrichment runs before `video-sequence-planner` and falls back to existing behavior on error.
+- Web research and reference composites remain disabled by default; V1 only supports injected helpers/stubs.
+- Tests cover OKO/powerjet, Metrakit low-passage exhaust, lateral radiators, headlight plate preservation, positive spatial model, reference role separation, regeneration policy, big-bike/pocket-bike/front-radiator rejection, and runtime metadata.
+- Planner fallback diagnostics now preserve image-aware reference errors when the LLM path falls back to heuristic planning.
