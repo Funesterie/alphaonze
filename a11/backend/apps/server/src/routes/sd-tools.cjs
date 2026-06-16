@@ -1755,9 +1755,13 @@ function createSdToolsRouter(overrides = {}) {
           const userMsg = String(requestBody?.userMessage || '').trim();
           // Si Janus a échoué (description locale de secours), l'ancrage identité est critique.
           const janusOk = janusSummary && !janusSummary.startsWith('Vision avancee indisponible');
+          // editInstruction = LLM transformation desc (specific) + raw user request (intent fallback).
+          // The LLM desc may be partial (e.g. 3B model skips background change) — userMsg fills the gap.
+          const editInstruction = transformDesc
+            ? (userMsg ? `${transformDesc}\nUser request: ${userMsg}` : transformDesc)
+            : (userMsg || rawPrompt);
           const kontextPrompt = [
-            // Instruction d'édition principale — concise et directe
-            transformDesc || userMsg || rawPrompt,
+            editInstruction,
             // Ancrage sujet si Janus a réussi
             janusOk ? `The subject in the image: ${janusSummary}.` : '',
             // Ancrage identité — plus fort quand Janus a échoué

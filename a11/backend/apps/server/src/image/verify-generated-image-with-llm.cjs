@@ -131,6 +131,17 @@ function isImageLlmJudgeEnabled(explicitValue) {
   return true;
 }
 
+function resolveImageLlmJudgeSampleRate(env = process.env) {
+  const raw = Number(env.A11_IMAGE_LLM_JUDGE_SAMPLE_RATE);
+  if (!Number.isFinite(raw) || raw <= 0) return 1;
+  return Math.min(1, raw);
+}
+
+function shouldSampleImageLlmJudge(env = process.env) {
+  const rate = resolveImageLlmJudgeSampleRate(env);
+  return rate >= 1 || Math.random() < rate;
+}
+
 function guessContentTypeFromPath(filePath = '') {
   switch (path.extname(String(filePath || '')).toLowerCase()) {
     case '.jpg':
@@ -450,11 +461,11 @@ async function verifyGeneratedImageWithLlmJudge({
   visionProvider,
 } = {}) {
   if (!isImageLlmJudgeEnabled(enabled)) {
-    return {
-      ok: false,
-      skipped: true,
-      reason: 'vision_llm_disabled',
-    };
+    return { ok: false, skipped: true, reason: 'vision_llm_disabled' };
+  }
+
+  if (!shouldSampleImageLlmJudge()) {
+    return { ok: false, skipped: true, reason: 'vision_llm_sampled_out' };
   }
 
   const normalizedImageUrl = normalizeText(imageUrl);
@@ -542,6 +553,8 @@ module.exports = {
   buildVisionJudgePayload,
   callStructuredVisionJudgeJson,
   isImageLlmJudgeEnabled,
+  resolveImageLlmJudgeSampleRate,
+  shouldSampleImageLlmJudge,
   normalizeVisionJudgeResult,
   resolveVisionJudgeConfig,
   verifyGeneratedImageWithLlmJudge,

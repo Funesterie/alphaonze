@@ -245,4 +245,7 @@ module.exports = {
   extractSceneDescription,
   extractSubjectEntity,
   looksLikeShowRequest,
+  normalizeAnatomyPrompt,
+  looksLikeInventoryAnatomy,
+  hasExplicitMultiIntent,
 };

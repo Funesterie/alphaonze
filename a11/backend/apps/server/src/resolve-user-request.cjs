@@ -516,8 +516,15 @@ async function executeResolvedRuntime(resolution, input = {}, deps = {}) {
   if (!resolution || typeof resolution !== 'object') return resolution;
 
   if (resolution.kind === 'image.generate') {
-    // Pipeline direct : 1 LLM call → prompt SD → génération.
-    // Le LLM reçoit le message brut avec accents et produit directement le prompt SD.
+    // PIPELINE ACTIF : executeDirectImagePipeline (image-pipeline-direct.cjs)
+    // Chemin : message brut → LLM structuré (Groq 70B si A11_IMAGE_DIRECT_GROQ_ENABLED=1) → prompt SD → generateSd → Kontext si init_image_url
+    //
+    // Chemin alternatif (NON actif ici) : a11-image-brain → buildCanonicalImageMaskFromText → wazaa/mask → generateImageFromMask
+    // Ce chemin passe par sd-tools.cjs et utilise le canonicalizer + mask enrichi.
+    // Pour activer l'ancien chemin, le kind doit être routé vers createImageBrainRuntime (voir deps.createA11ImageBrain).
+    //
+    // Décision de commutation : toute résolution kind=image.generate passe par le chemin direct.
+    // Si besoin de revenir au chemin mask, changer l'appel ci-dessous vers deps.imageBrainRuntime.planRequest().
     const imageReferences = extractRequestImageReferences({
       body: input.body || {},
       messages: Array.isArray(input.messages) ? input.messages : [],

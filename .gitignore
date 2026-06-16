@@ -81,5 +81,10 @@ a11/backend/apps/server/.qflush/
 a11/backend/apps/server/knowledge-graph/tasks.json
 a11/backend/apps/server/runtime/
 
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
 # Local Netlify folder
 .netlify
