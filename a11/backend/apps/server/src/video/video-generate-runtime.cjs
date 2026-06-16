@@ -26,6 +26,12 @@ const {
   resolveSequencePlanningEnvConfig,
 } = require('./video-sequence-planner.cjs');
 const {
+  buildDirectorPlannerContext,
+} = require('./a11-director-contract.cjs');
+const {
+  planA11DirectorMvp,
+} = require('./a11-director-mvp.cjs');
+const {
   classifyImg2ImgSource,
   probeImg2ImgSource,
   resolveImg2ImgCanvasPlan,
@@ -3122,22 +3128,50 @@ function createGenerateVideoHandler(overrides = {}) {
     request.sourceImageHeight = Number(referenceAnalysis?.sourceMeta?.height || 0) || 0;
 
     const compiledBasePrompt = String(request.prompt).trim();
+    const plannerSourceImagePath = String(
+      effectiveInitialReference.initImagePath
+      || request.sourceImagePath
+      || (request.sourceType === 'image' ? request.sourcePath : '')
+      || ''
+    ).trim();
+    const plannerSourceImageUrl = String(
+      effectiveInitialReference.initImageUrl
+      || request.sourceImageUrl
+      || (request.sourceType === 'image' ? request.sourceUrl : '')
+      || ''
+    ).trim();
+
+    let a11DirectorPlan = null;
+    let effectiveCompiledBasePrompt = compiledBasePrompt;
+    try {
+      a11DirectorPlan = await planA11DirectorMvp({
+        request,
+        prompt: compiledBasePrompt,
+        sourceImagePath: plannerSourceImagePath,
+        sourceImageUrl: plannerSourceImageUrl,
+        fetchImpl,
+      });
+      const directorContext = buildDirectorPlannerContext(a11DirectorPlan, {
+        compiledBasePrompt,
+        existingVisualContext: request.compiledVisualContext,
+        existingSubjectFacts: request.subjectFacts,
+      });
+      effectiveCompiledBasePrompt = String(directorContext.compiledBasePrompt || compiledBasePrompt).trim();
+      request.compiledVisualContext = String(directorContext.compiledVisualContext || '').trim();
+      request.subjectFacts = Array.isArray(directorContext.subjectFacts)
+        ? directorContext.subjectFacts.slice()
+        : [];
+    } catch (directorError) {
+      console.warn(`[A11][video-director] fallback: ${String(directorError?.message || directorError)}`);
+      a11DirectorPlan = null;
+      effectiveCompiledBasePrompt = compiledBasePrompt;
+    }
 
     const sequencePlan = await planVideoSequence({
       request,
-      compiledBasePrompt,
-      sourceImagePath: String(
-        effectiveInitialReference.initImagePath
-        || request.sourceImagePath
-        || (request.sourceType === 'image' ? request.sourcePath : '')
-        || ''
-      ).trim(),
-      sourceImageUrl: String(
-        effectiveInitialReference.initImageUrl
-        || request.sourceImageUrl
-        || (request.sourceType === 'image' ? request.sourceUrl : '')
-        || ''
-      ).trim(),
+      compiledBasePrompt: effectiveCompiledBasePrompt,
+      sourceImagePath: plannerSourceImagePath,
+      sourceImageUrl: plannerSourceImageUrl,
       fetchImpl,
     });
     const canApplyRuntimeStoryboardFrameCount = Boolean(
@@ -3656,6 +3690,9 @@ function createGenerateVideoHandler(overrides = {}) {
         visualAnalysisProvider: String(sequencePlan.visualAnalysisProvider || '').trim() || null,
         visualAnalysis: sequencePlan.visualAnalysis && typeof sequencePlan.visualAnalysis === 'object'
           ? JSON.parse(JSON.stringify(sequencePlan.visualAnalysis))
+          : null,
+        a11Director: a11DirectorPlan && typeof a11DirectorPlan === 'object'
+          ? JSON.parse(JSON.stringify(a11DirectorPlan))
           : null,
         beats: Array.isArray(sequencePlan.beats)
           ? sequencePlan.beats.map((beat) => ({
