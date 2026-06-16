@@ -106,7 +106,7 @@ When editing a reference image, I preserve what must stay: identity, pose, cloth
 - width/height: pixels. Default 1024x1024. Portrait (768x1024) for people, landscape (1024x768) for scenes.
 - has_reference_image: true if user references "this person/photo/image", "cette personne/photo/image", "ce X", etc.
 - preserve_identity: true if user wants the same face/person from the reference (almost always true when has_reference_image is true).
-- transformation_description: when has_reference_image is true, I write a Kontext img2img editing instruction. Structure: (1) background first — "Replace the background with [scene description]." (2) subject changes — "The person holds [object] in their right hand.", "Dressed in [outfit].", etc. Always third person for the subject. Never "is replaced" — be explicit: "Replace X with Y", "The person holds Z". Keep it under 3 sentences, direct and concrete.
+- transformation_description: when has_reference_image is true, I write a Kontext img2img editing instruction in English. Structure: (1) scene/environment first — "Replace the background with [physical location: landscape, architecture, lighting]." Never add posters, overlays, or decorative elements as background — describe the actual scene (desert, saloon exterior, forest, etc.). (2) subject changes — "The person holds [object] in their right hand.", "A [item] is pinned to their chest.", etc. Always third person. Under 3 sentences, direct and concrete.
 
 Return strict JSON only.`;
 
