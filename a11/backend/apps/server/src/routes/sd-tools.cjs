@@ -57,7 +57,7 @@ const {
 let _visionMemory = null;
 function getVisionMemory() {
   if (!_visionMemory) {
-    try { _visionMemory = require('../../lib/vision-memory.cjs'); } catch (_) {}
+    try { _visionMemory = require('../../lib/vision-memory.cjs'); } catch (_) { }
   }
   return _visionMemory;
 }
@@ -1449,30 +1449,30 @@ function createSdToolsRouter(overrides = {}) {
     const outputJson = await runExclusiveLocalGpuTask('sd:render', async () => {
       await drainLocalGpuBeforeSd({ modelProfile: modelProfilePlan?.profile || '' });
       return runSdScript({
-      prompt: finalPrompt,
-      prompt_prebuilt: true,
-      ...(semanticCompiledState?.sdBody?.prompt_language
-        ? { prompt_language: String(semanticCompiledState.sdBody.prompt_language).trim() }
-        : {}),
-      ...(finalPrompt2 ? { prompt_2: finalPrompt2, prompt_2_prebuilt: true } : {}),
-      ...(finalPrompt3 ? { prompt_3: finalPrompt3, prompt_3_prebuilt: true } : {}),
-      ...(finalNegativePrompt ? { negative_prompt: finalNegativePrompt, negative_prompt_prebuilt: true } : {}),
-      ...(finalNegativePrompt2 ? { negative_prompt_2: finalNegativePrompt2, negative_prompt_2_prebuilt: true } : {}),
-      ...(finalNegativePrompt3 ? { negative_prompt_3: finalNegativePrompt3, negative_prompt_3_prebuilt: true } : {}),
-      num_inference_steps,
-      guidance_scale,
-      width,
-      height,
-      size_source: sizeSource,
-      size_reason: sizeReason,
-      requested_width: Number.isFinite(requestedWidth) ? requestedWidth : null,
-      requested_height: Number.isFinite(requestedHeight) ? requestedHeight : null,
-      ...(modelProfilePlan?.profile ? { model_profile: modelProfilePlan.profile } : {}),
-      ...(initImage ? { init_image_url: initImage } : {}),
-      ...buildStrengthPlanPayload(strengthPlan, strength),
-      ...(seed !== undefined ? { seed } : {}),
-      output: outputPath,
-    }, { scriptPath });
+        prompt: finalPrompt,
+        prompt_prebuilt: true,
+        ...(semanticCompiledState?.sdBody?.prompt_language
+          ? { prompt_language: String(semanticCompiledState.sdBody.prompt_language).trim() }
+          : {}),
+        ...(finalPrompt2 ? { prompt_2: finalPrompt2, prompt_2_prebuilt: true } : {}),
+        ...(finalPrompt3 ? { prompt_3: finalPrompt3, prompt_3_prebuilt: true } : {}),
+        ...(finalNegativePrompt ? { negative_prompt: finalNegativePrompt, negative_prompt_prebuilt: true } : {}),
+        ...(finalNegativePrompt2 ? { negative_prompt_2: finalNegativePrompt2, negative_prompt_2_prebuilt: true } : {}),
+        ...(finalNegativePrompt3 ? { negative_prompt_3: finalNegativePrompt3, negative_prompt_3_prebuilt: true } : {}),
+        num_inference_steps,
+        guidance_scale,
+        width,
+        height,
+        size_source: sizeSource,
+        size_reason: sizeReason,
+        requested_width: Number.isFinite(requestedWidth) ? requestedWidth : null,
+        requested_height: Number.isFinite(requestedHeight) ? requestedHeight : null,
+        ...(modelProfilePlan?.profile ? { model_profile: modelProfilePlan.profile } : {}),
+        ...(initImage ? { init_image_url: initImage } : {}),
+        ...buildStrengthPlanPayload(strengthPlan, strength),
+        ...(seed !== undefined ? { seed } : {}),
+        output: outputPath,
+      }, { scriptPath });
     });
     const actualWidth = Number(outputJson?.output_width || outputJson?.width || 0) || width;
     const actualHeight = Number(outputJson?.output_height || outputJson?.height || 0) || height;
@@ -1563,7 +1563,7 @@ function createSdToolsRouter(overrides = {}) {
       const resolvedPublicUrl = uploadResult.url || proxyUrl || null;
       try {
         fs.unlinkSync(outputJson.output_path);
-      } catch {}
+      } catch { }
 
       return {
         ok: true,
@@ -1755,19 +1755,21 @@ function createSdToolsRouter(overrides = {}) {
           const userMsg = String(requestBody?.userMessage || '').trim();
           // Si Janus a échoué (description locale de secours), l'ancrage identité est critique.
           const janusOk = janusSummary && !janusSummary.startsWith('Vision avancee indisponible');
-          // editInstruction = LLM transformation desc (specific) + raw user request (intent fallback).
-          // The LLM desc may be partial (e.g. 3B model skips background change) — userMsg fills the gap.
-          const editInstruction = transformDesc
-            ? (userMsg ? `${transformDesc}\nUser request: ${userMsg}` : transformDesc)
-            : (userMsg || rawPrompt);
+          // Use LLM transformation desc when available — it's already complete.
+          // Appending raw userMsg introduces noisy French text that confuses Kontext.
+          const editInstruction = transformDesc || userMsg || rawPrompt;
+
+          // Ancrage identité : protéger le visage/corps SANS bloquer les changements demandés.
+          // Ne pas dire "only background and prop changes" — ça empêche Kontext d'ajouter
+          // des éléments sur la personne (badges, vêtements, accessoires).
+          const identityAnchor = janusOk
+            ? `Keep the exact face, identity, and skin tone of the person unchanged. Apply all requested scene, outfit, and prop changes as described.`
+            : `Keep the person's face and identity exactly as in the input image. Apply all requested changes (background, scene, clothing, props, accessories) as described above.`;
+
           const kontextPrompt = [
             editInstruction,
-            // Ancrage sujet si Janus a réussi
-            janusOk ? `The subject in the image: ${janusSummary}.` : '',
-            // Ancrage identité — plus fort quand Janus a échoué
-            janusOk
-              ? 'Keep the exact face, skin tone, body, and clothing of the person. Only change background, props, and accessories as requested.'
-              : 'CRITICAL: Do not change the person\'s face, skin, body, hair, or clothing. Keep the person 100% identical to the input image. Only apply the requested background and prop changes.',
+            janusSummary ? `Reference: ${janusSummary}.` : '',
+            identityAnchor,
           ].filter(Boolean).join(' ');
           console.log(`[A11][kontext] edit prompt: "${kontextPrompt.slice(0, 120)}"`);
 
