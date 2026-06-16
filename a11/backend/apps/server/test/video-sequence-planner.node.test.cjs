@@ -462,7 +462,7 @@ test('planVideoSequence keeps the LLM as planner when Janus visual scan returns 
   });
 });
 
-test('planVideoSequence throws video_sequence_planner_failed when LLM is disabled in auto mode', async () => {
+test('planVideoSequence falls back to heuristic when LLM is disabled in auto mode', async () => {
   await withPlannerStubs({
     janus: {
       resolveVisionProvider: () => 'none',
@@ -471,30 +471,26 @@ test('planVideoSequence throws video_sequence_planner_failed when LLM is disable
       isLlmFramePrompterEnabled: () => false,
     },
   }, async ({ planVideoSequence }) => {
-    await assert.rejects(
-      () => planVideoSequence({
-        request: {
-          prompt: 'goku se transformant en super saiyan divin',
-          frameCount: 10,
-          timingPlan: {
-            motionProfile: 'transformation_rise',
-          },
-          config: {
-            sequencePlanner: 'auto',
-            sequencePlannerImageAware: false,
-            sequencePlannerTimeoutMs: 15_000,
-            frameReanchorEvery: 0,
-          },
+    const plan = await planVideoSequence({
+      request: {
+        prompt: 'goku se transformant en super saiyan divin',
+        frameCount: 10,
+        timingPlan: {
+          motionProfile: 'transformation_rise',
         },
-        compiledBasePrompt: 'goku se transformant en super saiyan divin, illustration anime de combat nette, tenue orange et bleue lisible, fond simple cohérent avec le personnage',
-      }),
-      (error) => {
-        assert.equal(error.code, 'video_sequence_planner_failed');
-        assert.equal(error.policy, 'llm_only_no_heuristic_fallback');
-        assert.equal(error.llmFailureReason, 'llm_prompter_disabled');
-        return true;
-      }
-    );
+        config: {
+          sequencePlanner: 'auto',
+          sequencePlannerImageAware: false,
+          sequencePlannerTimeoutMs: 15_000,
+          frameReanchorEvery: 0,
+        },
+      },
+      compiledBasePrompt: 'goku se transformant en super saiyan divin, illustration anime de combat nette, tenue orange et bleue lisible, fond simple cohérent avec le personnage',
+    });
+    assert.equal(plan.providerRequested, 'auto');
+    assert.equal(plan.providerUsed, 'heuristic');
+    assert.equal(plan.fallbackReason, 'llm_prompter_disabled');
+    assert.ok(plan.beats.length > 0);
   });
 });
 
@@ -560,7 +556,7 @@ test('planVideoSequence only enables Janus visual scan when a real source image 
   });
 });
 
-test('planVideoSequence throws video_sequence_planner_failed when LLM is disabled and image source is invalid', async () => {
+test('planVideoSequence falls back to heuristic when LLM is disabled and image source is invalid', async () => {
   await withPlannerStubs({
     janus: {
       resolveVisionProvider: () => 'janus',
@@ -572,23 +568,20 @@ test('planVideoSequence throws video_sequence_planner_failed when LLM is disable
       isLlmFramePrompterEnabled: () => false,
     },
   }, async ({ planVideoSequence }) => {
-    await assert.rejects(
-      () => planVideoSequence({
-        request: buildRequest({ sequencePlanner: 'auto', sequencePlannerImageAware: true }),
-        compiledBasePrompt: 'mario avancant sur le chemin un pas devant l autre',
-        sourceImageUrl: 'file:///etc/passwd',
-      }),
-      (error) => {
-        assert.equal(error.code, 'video_sequence_planner_failed');
-        assert.equal(error.policy, 'llm_only_no_heuristic_fallback');
-        assert.equal(error.imageAwareError, 'janus_image_source_url_not_allowed');
-        return true;
-      }
-    );
+    const plan = await planVideoSequence({
+      request: buildRequest({ sequencePlanner: 'auto', sequencePlannerImageAware: true }),
+      compiledBasePrompt: 'mario avancant sur le chemin un pas devant l autre',
+      sourceImageUrl: 'file:///etc/passwd',
+    });
+    assert.equal(plan.providerRequested, 'auto');
+    assert.equal(plan.providerUsed, 'heuristic');
+    assert.equal(plan.fallbackReason, 'llm_prompter_disabled');
+    assert.equal(plan.imageAwareUsed, false);
+    assert.equal(plan.imageAwareError, 'janus_image_source_url_not_allowed');
   });
 });
 
-test('planVideoSequence rejects with video_sequence_planner_failed when LLM returns truncated JSON twice', async () => {
+test('planVideoSequence falls back to heuristic when LLM returns truncated JSON twice', async () => {
   let llmCallCount = 0;
   await withPlannerStubs({
     janus: {
@@ -603,18 +596,14 @@ test('planVideoSequence rejects with video_sequence_planner_failed when LLM retu
       },
     },
   }, async ({ planVideoSequence }) => {
-    await assert.rejects(
-      () => planVideoSequence({
-        request: buildRequest({ sequencePlanner: 'auto', sequencePlannerImageAware: false }),
-        compiledBasePrompt: 'mario avancant sur le chemin un pas devant l autre',
-      }),
-      (error) => {
-        assert.equal(error.code, 'video_sequence_planner_failed');
-        assert.equal(error.policy, 'llm_only_no_heuristic_fallback');
-        assert.match(String(error.llmFailureReason || ''), /invalid_llm_response/i);
-        return true;
-      }
-    );
+    const plan = await planVideoSequence({
+      request: buildRequest({ sequencePlanner: 'auto', sequencePlannerImageAware: false }),
+      compiledBasePrompt: 'mario avancant sur le chemin un pas devant l autre',
+    });
+    assert.equal(plan.providerRequested, 'auto');
+    assert.equal(plan.providerUsed, 'heuristic');
+    assert.match(String(plan.fallbackReason || ''), /invalid_llm_response/i);
+    assert.ok(plan.beats.length > 0);
     // Le prompter a bien été appelé (le retry est géré dans video-frame-prompter, pas ici)
     assert.ok(llmCallCount >= 1);
   });

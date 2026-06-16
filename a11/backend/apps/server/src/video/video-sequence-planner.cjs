@@ -1014,12 +1014,20 @@ async function planVideoSequence({
         llmFailureReason = String(llmResult.reason || 'llm_prompter_failed').trim() || 'llm_prompter_failed';
         console.warn(`[A11][video-prompter] LLM prompter failed: ${llmFailureReason}, using heuristic fallback`);
 
-        return buildHeuristicFallbackPlan(request, providerRequested, llmFailureReason);
+        return {
+          ...heuristicFallbackPlan,
+          providerUsed: 'heuristic',
+          fallbackReason: llmFailureReason,
+        };
       } else {
         llmFailureReason = 'llm_prompter_disabled';
         console.warn(`[A11][video-prompter] LLM prompter disabled, using heuristic fallback`);
 
-        return buildHeuristicFallbackPlan(request, providerRequested, llmFailureReason);
+        return {
+          ...heuristicFallbackPlan,
+          providerUsed: 'heuristic',
+          fallbackReason: llmFailureReason,
+        };
       }
     }
 
