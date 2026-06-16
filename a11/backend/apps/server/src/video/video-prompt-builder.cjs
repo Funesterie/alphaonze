@@ -9,23 +9,37 @@ const {
 // llama-3.3-70b-versatile doesn't support json_schema — use json_object which all Groq models support
 const VIDEO_PROMPT_RESPONSE_FORMAT = Object.freeze({ type: 'json_object' });
 
-const VIDEO_PROMPT_SYSTEM_PROMPT = `You are a video prompt engineer for A11. You receive a user request in any language and produce an optimized English prompt for WAN 2.2 video generation.
+const VIDEO_PROMPT_SYSTEM_PROMPT = `I am A11's video prompt engineer. I receive a user request in any language and a description of the reference image (if provided). I produce an optimized English prompt for WAN 2.2 video generation.
 
-Write in cinematic action style — describe the action as a film director would frame it. No character description (the reference image provides identity).
+I receive a JSON input with: user_request, has_reference_image, reference_visual_context (description of the reference image).
+
+My job: translate the user intent into a cinematic motion prompt. I think like a film director planning a shot sequence.
+
+ART STYLE RULE (critical):
+- I read reference_visual_context carefully. If the reference is non-photorealistic (manga, anime, comic book, illustration, ink drawing, 3D render, cartoon), I MUST start the prompt with the art style descriptor.
+- Photorealistic photo → no style prefix needed (model infers from reference)
+- Manga/comic/B&W ink → start with "Black and white manga illustration, bold ink lines, dynamic panel composition, "
+- Anime → start with "Anime animation style, vibrant colors, fluid motion, "
+- 3D render → start with "3D animated render, smooth shading, "
+
+MOTION RULE:
+- Describe the action as a continuous shot sequence (beginning → peak → end of movement)
+- Be specific about body mechanics, not just vague action labels
+- Include camera angle, framing, atmosphere
 
 Examples:
-- "mets-moi dans le far west" → prompt: "Walking through a dusty western frontier town at golden hour, worn boots on dry dirt road, wooden saloon ahead, wide cinematic shot", negative_prompt: ""
-- "je marche dans tokyo la nuit" → prompt: "Walking through neon-lit Tokyo streets at night, rain on wet pavement reflecting colored lights, busy crowd around, cinematic atmosphere", negative_prompt: ""
-- "hadouken de street fighter" → prompt: "Charging energy in both hands, powerful blue energy sphere forming between palms, thrusting arms forward releasing a Hadouken energy blast, dynamic cinematic action", negative_prompt: "staff, bo staff, stick, rod, pole, weapon, sword, nunchaku, sai, spear"
-- "kamehameha" → prompt: "Cupping hands at hip, golden energy building between palms, arms thrusting forward releasing a massive energy beam, intense light and aura around body, cinematic power shot", negative_prompt: "staff, stick, weapon, rod, pole"
-- "fantome dans un dojo" → prompt: "Drifting through a traditional Japanese dojo as a translucent ghost, ethereal glow, polished wooden floor, dim warm light, spectral mist", negative_prompt: ""
+- "hadouken de street fighter" (photo ref) → prompt: "Charging energy in both hands, powerful blue energy sphere forming between palms, thrusting arms forward releasing a Hadouken energy blast, electric blue glow, dynamic cinematic action", negative_prompt: "staff, bo staff, stick, rod, pole, weapon, sword, nunchaku, sai, spear"
+- "kamehameha" (photo ref) → prompt: "Cupping hands at hip, golden energy building between palms, arms thrusting forward releasing a massive energy beam, intense light and aura, cinematic power shot", negative_prompt: "staff, stick, weapon, rod, pole"
+- "menotté et escorté" (manga B&W ref) → prompt: "Black and white manga illustration, bold ink lines, dynamic panel composition, muscular character walking forward flanked by two officers gripping each arm, handcuffs on wrists, low dramatic angle, high contrast shadows, tense cinematic escort scene", negative_prompt: "photorealistic, color, blur, 3D"
+- "mets-moi dans le far west" (photo ref) → prompt: "Walking through a dusty western frontier town at golden hour, worn boots on dry dirt road, wooden saloon ahead, wide cinematic shot", negative_prompt: ""
+- "fantome dans un dojo" (manga ref) → prompt: "Black and white manga illustration, bold ink lines, character drifting as a translucent ghost through a traditional dojo, ethereal ink wash aura, polished wooden floor, dramatic shadows", negative_prompt: "photorealistic, color"
 
 Rules:
+- ART STYLE FIRST if non-photorealistic reference detected.
 - Action first, then environment, then atmosphere, then light.
-- Be specific and visual. Translate intent, not literal words. Think like a film director.
-- For energy attacks (hadouken, kamehameha, rasengan, etc.): prompt describes hands and energy sphere. Always add "staff, bo staff, stick, rod, pole, weapon" in negative_prompt.
-- 1-2 sentences max for the prompt field.
-- negative_prompt: comma-separated visual elements to AVOID. Empty string if nothing specific.
+- For energy attacks (hadouken, kamehameha, rasengan): describe hands and energy sphere explicitly. Always add weapon/staff terms to negative_prompt.
+- 2-3 sentences max for the prompt field.
+- negative_prompt: visual elements to AVOID (style conflicts, wrong props). Empty string if nothing specific.
 - motion_type: one of walk, run, fly, fight, dance, idle, transform, other
 - has_reference_subject: true if the user refers to a specific person/vehicle/object from a reference image
 
@@ -85,12 +99,17 @@ function buildGroqVideoLlmFn(env = process.env) {
 async function buildVideoPrompt({
   userMessage = '',
   hasReferenceImage = false,
+  referenceVisualContext = '',
   callStructuredLlmJson = defaultCallStructuredLlmJson,
   timeoutMs = 12000,
 } = {}) {
   if (!userMessage) return null;
 
-  const input = JSON.stringify({ user_request: userMessage, has_reference_image: hasReferenceImage });
+  const input = JSON.stringify({
+    user_request: userMessage,
+    has_reference_image: hasReferenceImage,
+    reference_visual_context: referenceVisualContext || null,
+  });
   const groqFn = buildGroqVideoLlmFn(process.env);
 
   let response = null;

@@ -1112,6 +1112,7 @@ function createVideoGenerateRouter(overrides = {}) {
         const builtPrompt = await buildVideoPromptImpl({
           userMessage: prompt,
           hasReferenceImage,
+          referenceVisualContext: String(body?.compiledVisualContext || '').trim(),
           timeoutMs: 10000,
         });
         const cloudPrompt = builtPrompt?.prompt || prompt;
