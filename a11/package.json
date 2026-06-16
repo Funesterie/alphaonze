@@ -28,7 +28,7 @@
     "test:all": "npm run test:backend",
     "check:llm-assets": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./llm/scripts/check-local-assets.ps1",
     "doctor:git": "git -C .. status --short",
-    "doctor:prod": "pwsh -NoProfile -ExecutionPolicy Bypass -Command \"$status = (Invoke-WebRequest -UseBasicParsing 'https://a11.funesterie.me/api/status' | Select-Object -ExpandProperty Content | ConvertFrom-Json); $status | ConvertTo-Json -Depth 10; Write-Host ''; $remoteUrl = [string]$status.integrations.qflush.remoteUrl; if ([string]::IsNullOrWhiteSpace($remoteUrl)) { throw 'Missing qflush remoteUrl in backend status payload.' }; (Invoke-WebRequest -UseBasicParsing (($remoteUrl.TrimEnd('/')) + '/health')).Content\"",
+    "doctor:prod": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./ops/Doctor-A11Prod.ps1",
     "docker:health": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./ops/funesterie-docker/health.ps1",
     "docker:login": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./ops/funesterie-docker/login.ps1",
     "docker:build:a11": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./ops/funesterie-docker/build-a11.ps1 -Latest",
