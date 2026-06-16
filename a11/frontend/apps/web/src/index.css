@@ -8301,6 +8301,7 @@ body {
 
 .fun-architecture-hero,
 .fun-architecture-map,
+.fun-architecture-modules,
 .fun-architecture-proof-grid,
 .fun-architecture-flow {
   width: min(1180px, 100%);
@@ -8582,6 +8583,139 @@ body {
   line-height: 1.65;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.fun-architecture-modules {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--fun-line);
+  border-radius: 8px;
+  padding: clamp(16px, 2.6vw, 26px);
+  background:
+    linear-gradient(135deg, rgba(233, 184, 108, 0.11), rgba(54, 212, 196, 0.08) 48%, rgba(183, 92, 255, 0.09)),
+    rgba(7, 9, 15, 0.74);
+}
+
+.fun-architecture-modules > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.fun-architecture-modules > header div {
+  display: grid;
+  gap: 6px;
+}
+
+.fun-architecture-modules > header span,
+.fun-architecture-module-card span {
+  color: #e9b86c;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.fun-architecture-modules h2 {
+  max-width: 780px;
+  margin: 0;
+  color: #fff8ff;
+  font-size: clamp(26px, 4vw, 44px);
+  line-height: 1.04;
+}
+
+.fun-architecture-modules > header > a,
+.fun-architecture-module-card > a {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(233, 184, 108, 0.34);
+  border-radius: 8px;
+  padding: 0 12px;
+  color: #fff4dc;
+  background: rgba(233, 184, 108, 0.1);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.fun-architecture-module-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.fun-architecture-module-card {
+  --module-accent: #e9b86c;
+  min-height: 268px;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 12px;
+  border: 1px solid color-mix(in srgb, var(--module-accent) 42%, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  padding: 15px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--module-accent) 11%, transparent), transparent 46%),
+    rgba(255, 255, 255, 0.04);
+}
+
+.fun-architecture-module-card--bat,
+.fun-architecture-module-card--bat-system {
+  --module-accent: #64fff0;
+}
+
+.fun-architecture-module-card--a11-director {
+  --module-accent: #b75cff;
+}
+
+.fun-architecture-module-card div {
+  display: grid;
+  gap: 5px;
+}
+
+.fun-architecture-module-card h3 {
+  margin: 0;
+  color: #fff8ff;
+  font-size: clamp(21px, 2.4vw, 28px);
+  line-height: 1.06;
+  overflow-wrap: anywhere;
+}
+
+.fun-architecture-module-card em {
+  color: color-mix(in srgb, var(--module-accent) 72%, #ffffff);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.fun-architecture-module-card p {
+  margin: 0;
+  color: var(--fun-muted);
+  font-size: 13px;
+  line-height: 1.48;
+}
+
+.fun-architecture-module-card ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fun-architecture-module-card li {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  padding: 6px 9px;
+  color: #f4ecff;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 @keyframes funGraphDash {
@@ -9565,6 +9699,10 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .fun-architecture-module-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .fun-architecture-map,
   .fun-architecture-proof-grid,
   .fun-architecture-flow ol {
@@ -9737,6 +9875,19 @@ body {
     width: 100%;
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .fun-architecture-modules > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .fun-architecture-modules > header > a {
+    width: 100%;
+  }
+
+  .fun-architecture-module-grid {
+    grid-template-columns: 1fr;
   }
 
   .fun-home-brand span {

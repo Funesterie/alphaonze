@@ -6010,6 +6010,46 @@ const NOSSEN_PUBLIC_PACKAGES = [
   "a11-coder",
 ] as const;
 
+type NossenFeaturedModule = {
+  id: string;
+  name: string;
+  family: string;
+  status: string;
+  summary: string;
+  proof: string[];
+  href: string;
+};
+
+const NOSSEN_FEATURED_MODULES = [
+  {
+    id: "bat",
+    name: "@nossen/bat",
+    family: "Réactivité locale",
+    status: "Claude review follow-up",
+    summary: "Module BAT durci après revue Claude: attente par promesse, mesures RTT réelles et concurrence bornée.",
+    proof: ["wait queue sans spin 10 ms", "RTT succès/échec mesuré", "maxConcurrency clampé"],
+    href: buildNpmPackageUrl("@nossen/bat"),
+  },
+  {
+    id: "bat-system",
+    name: "@nossen/bat-system",
+    family: "Coordination runtime",
+    status: "Claude review follow-up",
+    summary: "Couche système BAT nettoyée: profils d'aile plus stables, branche remote simplifiée et hormones qui décroissent quand le stress est relu.",
+    proof: ["wing heal vers baseline", "remote branch dédupliquée", "hormones decay sur lecture stress"],
+    href: buildNpmPackageUrl("@nossen/bat-system"),
+  },
+  {
+    id: "a11-director",
+    name: "A11 Director",
+    family: "Pré-planner vidéo",
+    status: "Prod 20260616-034716",
+    summary: "Module Director branché avant la génération vidéo: object cards, spatial locks, reference board et vérification positive-first.",
+    proof: ["cas 50cc OKO/Metrakit couvert", "radiateurs latéraux verrouillés", "radiateur frontal rejeté"],
+    href: "https://github.com/Funesterie/alphaonze/blob/master/docs/superpowers/specs/a11-director-clip-director.md",
+  },
+] as const satisfies ReadonlyArray<NossenFeaturedModule>;
+
 function buildNpmPackageUrl(packageName: string) {
   return `https://www.npmjs.com/package/${packageName}`;
 }
@@ -6134,6 +6174,8 @@ const FUNESTERIE_ARCHITECTURE_GRAPH_NODES: ReadonlyArray<FunesterieGraphNode> = 
   { id: "nossenDragon", label: "@nossen/dragon", kind: "module", x: 1030, y: 82 },
   { id: "qflush", label: "Qflush", kind: "module", x: 1085, y: 445 },
   { id: "allInOne", label: "@nossen/all-in-one", kind: "module", x: 1120, y: 560 },
+  { id: "nossenBat", label: "@nossen/bat", kind: "module", x: 1060, y: 310 },
+  { id: "a11Director", label: "A11 Director", kind: "module", x: 1035, y: 390 },
   { id: "github", label: "GitHub", kind: "publish", x: 960, y: 600 },
   { id: "npm", label: "npm", kind: "publish", x: 1120, y: 680 },
   { id: "jfrog", label: "JFrog possible", kind: "publish", x: 980, y: 730 },
@@ -6179,14 +6221,19 @@ const FUNESTERIE_ARCHITECTURE_GRAPH_LINKS: ReadonlyArray<FunesterieGraphLink> = 
   { from: "nossenSecurity", to: "preflight", label: "module", kind: "guard" },
   { from: "nossenMedia", to: "a11", label: "module", kind: "data" },
   { from: "nossenDragon", to: "agents", label: "module", kind: "runtime" },
+  { from: "nossenBat", to: "mcp", label: "réactivité", kind: "runtime" },
+  { from: "a11Director", to: "a11", label: "pré-plan", kind: "data" },
   { from: "qflush", to: "k44", label: "contrôle", kind: "runtime" },
   { from: "allInOne", to: "agents", label: "agrège", kind: "runtime" },
   { from: "github", to: "nossenBus", label: "source", kind: "publish" },
   { from: "github", to: "nossenMemory", label: "source", kind: "publish" },
   { from: "github", to: "nossenSecurity", label: "source", kind: "publish" },
+  { from: "github", to: "nossenBat", label: "source", kind: "publish" },
+  { from: "github", to: "a11Director", label: "source", kind: "publish" },
   { from: "npm", to: "nossenBus", label: "publie", kind: "publish" },
   { from: "npm", to: "nossenMemory", label: "publie", kind: "publish" },
   { from: "npm", to: "nossenSecurity", label: "publie", kind: "publish" },
+  { from: "npm", to: "nossenBat", label: "publie", kind: "publish" },
   { from: "jfrog", to: "nossenSecurity", label: "partenariat possible", kind: "publish" },
   { from: "jfrog", to: "allInOne", label: "distribution possible", kind: "publish" },
 ] as const;
@@ -7182,6 +7229,42 @@ function FunesterieArchitectureGraph() {
   );
 }
 
+function FunesterieFeaturedModulesPanel() {
+  return (
+    <section className="fun-architecture-modules" aria-label="Modules NOSSEN retravaillés">
+      <header>
+        <div>
+          <span>Modules retravaillés</span>
+          <h2>Claude a renforcé la couche BAT, A11 Director est en prod.</h2>
+        </div>
+        <a href="https://www.npmjs.com/search?q=%40nossen" target="_blank" rel="noreferrer">
+          Catalogue @nossen
+        </a>
+      </header>
+      <div className="fun-architecture-module-grid">
+        {NOSSEN_FEATURED_MODULES.map((module) => (
+          <article key={module.id} className={`fun-architecture-module-card fun-architecture-module-card--${module.id}`}>
+            <div>
+              <span>{module.family}</span>
+              <h3>{module.name}</h3>
+              <em>{module.status}</em>
+            </div>
+            <p>{module.summary}</p>
+            <ul>
+              {module.proof.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+            <a href={module.href} target={module.href.startsWith("http") ? "_blank" : undefined} rel={module.href.startsWith("http") ? "noreferrer" : undefined}>
+              Ouvrir
+            </a>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function FunesterieArchitecturePage({
   surfaceLinks,
   authenticated = false,
@@ -7220,6 +7303,8 @@ function FunesterieArchitecturePage({
       </section>
 
       <FunesterieArchitectureGraph />
+
+      <FunesterieFeaturedModulesPanel />
 
       <section className="fun-architecture-map" aria-label="Carte des liaisons Funesterie">
         <div className="fun-architecture-core">
