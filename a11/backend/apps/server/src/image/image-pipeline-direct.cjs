@@ -114,6 +114,35 @@ function normalizeText(value = '') {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
+async function translateToEnglishViaOllama(text, env = process.env) {
+  const base = String(env.OLLAMA_BASE || 'http://127.0.0.1:11434').trim().replace(/\/$/, '');
+  const model = String(env.A11_OLLAMA_PRIMARY_MODEL || 'llama3.2:3b').trim();
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    const res = await fetch(`${base}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        prompt: `Translate the following to English. Return only the translation, no explanation:\n\n${text}`,
+        stream: false,
+        options: { temperature: 0, num_predict: 256 },
+      }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(tid);
+    if (!res.ok) return text;
+    const data = await res.json();
+    const translated = String(data?.response || '').trim();
+    if (translated) console.log(`[A11][translate] "${text.slice(0, 60)}" → "${translated.slice(0, 60)}"`);
+    return translated || text;
+  } catch {
+    clearTimeout(tid);
+    return text;
+  }
+}
+
 function resolveImageDimensions(width, height, env = process.env) {
   const config = resolveImageDimensionConfig(env);
   const requestedWidth = Number(width) > 0 ? Number(width) : config.defaultWidth;
@@ -220,8 +249,12 @@ async function buildImageSdPayload({
     });
   }
 
+  // Pre-translate user message to English via Ollama 3B so A11 writes clean English output.
+  // Falls back to original message if Ollama is unavailable or times out.
+  const translatedMessage = await translateToEnglishViaOllama(userMessage, env);
+
   const input = JSON.stringify({
-    user_request: userMessage,
+    user_request: translatedMessage,
     has_reference_image: hasReference,
     reference_image_url: referenceImageUrl || null,
     image_context_carryover: imageContextCarryover || null,
