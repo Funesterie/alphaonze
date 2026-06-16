@@ -521,7 +521,7 @@ function resolveOpenAiPreferredForImage(requestBody = {}) {
   if (explicitEngine === 'sd' || explicitEngine === 'stable-diffusion') return false;
   if (explicitEngine === 'openai' || explicitEngine === 'openai-image') return true;
 
-  const order = String(process.env.A11_IMAGE_PROVIDER_ORDER || 'sd,hf,openai')
+  const order = String(process.env.A11_IMAGE_PROVIDER_ORDER || 'replicate,pollinations,hf,openai,sd')
     .split(',')
     .map((entry) => String(entry || '').trim().toLowerCase())
     .filter(Boolean);
@@ -541,7 +541,7 @@ function resolveHuggingFacePreferredForImage(requestBody = {}) {
   if (explicitEngine === 'sd' || explicitEngine === 'stable-diffusion') return false;
   if (explicitEngine === 'hf' || explicitEngine === 'huggingface' || explicitEngine === 'huggingface-image') return true;
 
-  const order = String(process.env.A11_IMAGE_PROVIDER_ORDER || 'sd,hf,openai')
+  const order = String(process.env.A11_IMAGE_PROVIDER_ORDER || 'replicate,pollinations,hf,openai,sd')
     .split(',')
     .map((entry) => String(entry || '').trim().toLowerCase())
     .filter(Boolean);
@@ -587,7 +587,7 @@ function resolveImageProviderOrder(requestBody = {}) {
   );
   if (explicit) return [explicit];
 
-  const configured = String(process.env.A11_IMAGE_PROVIDER_ORDER || 'sd,hf,openai')
+  const configured = String(process.env.A11_IMAGE_PROVIDER_ORDER || 'replicate,pollinations,hf,openai,sd')
     .split(',')
     .map(normalizeImageProviderName)
     .filter(Boolean);
@@ -2175,3 +2175,4 @@ sdToolsEntrypoint.createSdToolsRouter = createSdToolsRouter;
 sdToolsEntrypoint.buildSdBackendUnavailablePayload = buildSdBackendUnavailablePayload;
 
 module.exports = sdToolsEntrypoint;
+
