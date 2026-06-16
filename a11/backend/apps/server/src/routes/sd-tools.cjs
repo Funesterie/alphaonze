@@ -31,6 +31,7 @@ const {
 } = require('../../lib/hf-image.cjs');
 const {
   tryGenerateImageWithReplicate,
+  tryGenerateImageWithReplicateKontext,
   resolveReplicateImageConfig,
 } = require('../../lib/replicate-image.cjs');
 const {
@@ -1733,6 +1734,58 @@ function createSdToolsRouter(overrides = {}) {
         console.warn(`[A11][generate_image] ${provider} failed, fallback to next provider:`, message);
       }
     };
+
+    // Référence image HTTP présente → Replicate Kontext (préservation d'identité)
+    // FLUX.1-schnell (HF) ne supporte pas l'img2img : on court-circuite avant le loop.
+    const initImageForKontext = String(
+      requestBody?.init_image_url || requestBody?.initImageUrl
+      || requestBody?.reference_image_url || requestBody?.referenceImageUrl
+      || requestBody?.init_image || requestBody?.initImage
+      || ''
+    ).trim();
+    if (initImageForKontext && /^https?:\/\//i.test(initImageForKontext)) {
+      const kontextToken = String(process.env.A11_REPLICATE_IMAGE_TOKEN || process.env.REPLICATE_API_TOKEN || '').trim();
+      if (kontextToken) {
+        try {
+          const tempDir = resolveGeneratedImageWorkRoot();
+          fs.mkdirSync(tempDir, { recursive: true });
+          const outputName = `img_kontext_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.webp`;
+          const outputPath = path.join(tempDir, outputName);
+          const kontextResult = await tryGenerateImageWithReplicateKontext({
+            prompt: rawPrompt,
+            inputImageUrl: initImageForKontext,
+            outputPath,
+            width,
+            height,
+            userId: req?.user?.id || 'image-tool',
+          });
+          if (kontextResult?.ok) {
+            const localPublicUrl = buildGeneratedImageLocalPublicUrl(req, kontextResult.outputPath || outputPath);
+            const imageUrl = kontextResult.sourceUrl || localPublicUrl || null;
+            const payload = normalizeImageToolPayload({
+              ok: true,
+              artifact_type: 'image',
+              url: imageUrl,
+              image_url: imageUrl,
+              output_path: kontextResult.outputPath || outputPath,
+              local_path: kontextResult.outputPath || outputPath,
+              filename: path.basename(kontextResult.outputPath || outputPath),
+              prompt: rawPrompt,
+              width: kontextResult.width || width,
+              height: kontextResult.height || height,
+              mode: 'replicate-kontext',
+              content_type: kontextResult.contentType || 'image/webp',
+              init_image_url: initImageForKontext,
+            }, 'replicate');
+            analyzeGeneratedImage(payload);
+            return payload;
+          }
+          console.warn(`[A11][kontext] failed (${kontextResult?.error}), fallback to normal pipeline`);
+        } catch (kontextError) {
+          console.warn(`[A11][kontext] exception: ${kontextError?.message}, fallback to normal pipeline`);
+        }
+      }
+    }
 
     for (const provider of providerOrder) {
       if (provider === 'synthetic') {

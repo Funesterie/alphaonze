@@ -260,8 +260,125 @@ async function tryGenerateImageWithReplicate({
   };
 }
 
+async function tryGenerateImageWithReplicateKontext({
+  prompt,
+  inputImageUrl,
+  outputPath,
+  width,
+  height,
+  userId = 'image-tool',
+  env = process.env,
+}) {
+  const config = resolveReplicateImageConfig(env);
+  const token = config.token || String(env.REPLICATE_API_TOKEN || '').trim();
+  if (!token) {
+    return { ok: false, error: 'replicate_kontext_unconfigured', message: 'REPLICATE_API_TOKEN manquant.' };
+  }
+  if (!inputImageUrl || !/^https?:\/\//i.test(String(inputImageUrl))) {
+    return { ok: false, error: 'replicate_kontext_no_image', message: 'input_image_url manquant ou non-HTTP.' };
+  }
+
+  const kontextModel = String(env.A11_REPLICATE_KONTEXT_MODEL || 'black-forest-labs/flux-kontext-pro').trim();
+  const modelPath = kontextModel.split('/').map(encodeURIComponent).join('/');
+  const endpoint = `${config.baseUrl}/models/${modelPath}/predictions`;
+
+  const payload = {
+    input: {
+      prompt: String(prompt || '').trim(),
+      input_image: String(inputImageUrl).trim(),
+      aspect_ratio: normalizeReplicateAspectRatio(width, height),
+      output_format: 'webp',
+      output_quality: 85,
+      safety_tolerance: 2,
+    },
+  };
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      Prefer: `wait=${Math.min(60, Math.ceil(config.timeoutMs / 1000))}`,
+    },
+    body: JSON.stringify(payload),
+  }).catch((error_) => ({
+    ok: false,
+    status: 0,
+    text: async () => String(error_?.message || error_),
+  }));
+
+  let prediction = await parseJsonResponse(response);
+  if (!response.ok) {
+    return {
+      ok: false,
+      error: String(prediction?.detail || prediction?.error || 'replicate_kontext_failed'),
+      message: String(prediction?.detail || prediction?.error || prediction?.rawText || `replicate_kontext_status_${response.status}`),
+      statusCode: Number(response.status || 0) || undefined,
+      model: kontextModel,
+    };
+  }
+
+  prediction = await fetchPredictionUntilDone({ prediction, token, timeoutMs: config.timeoutMs });
+
+  if (String(prediction?.status || '').toLowerCase() !== 'succeeded') {
+    return {
+      ok: false,
+      error: String(prediction?.error || `replicate_kontext_${prediction?.status || 'unknown'}`),
+      message: String(prediction?.error || prediction?.logs || `Replicate Kontext status: ${prediction?.status || 'unknown'}`).slice(0, 1200),
+      model: kontextModel,
+    };
+  }
+
+  const imageUrl = resolveReplicateOutputUrl(prediction);
+  if (!imageUrl) {
+    return { ok: false, error: 'replicate_kontext_missing_output', message: 'Kontext: pas d URL image.', model: kontextModel };
+  }
+
+  const imageResponse = await fetch(imageUrl);
+  if (!imageResponse.ok) {
+    return { ok: false, error: 'replicate_kontext_download_failed', message: `download_status_${imageResponse.status}`, model: kontextModel };
+  }
+
+  const contentType = String(imageResponse.headers?.get?.('content-type') || 'image/webp').trim();
+  const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+  if (!imageBuffer.length) {
+    return { ok: false, error: 'replicate_kontext_empty_download', model: kontextModel };
+  }
+
+  const finalOutputPath = outputPathWithExtension(outputPath, imageExtensionFromContentType(contentType));
+  await fsp.writeFile(finalOutputPath, imageBuffer);
+
+  let uploadedUrl = '';
+  try {
+    const uploadResult = await uploadBufferToR2({
+      userId,
+      filename: path.basename(finalOutputPath),
+      buffer: imageBuffer,
+      contentType: contentType || 'image/webp',
+    });
+    uploadedUrl = String(uploadResult?.url || '').trim();
+  } catch {
+    // ok, local fallback
+  }
+
+  return {
+    ok: true,
+    outputPath: finalOutputPath,
+    width: Number(width || 0) || undefined,
+    height: Number(height || 0) || undefined,
+    mode: 'replicate-kontext',
+    prompt: String(prompt || '').trim(),
+    inputImageUrl: String(inputImageUrl).trim(),
+    sourceUrl: uploadedUrl || imageUrl,
+    model: kontextModel,
+    predictionId: prediction?.id || null,
+    contentType: contentType || 'image/webp',
+  };
+}
+
 module.exports = {
   tryGenerateImageWithReplicate,
+  tryGenerateImageWithReplicateKontext,
   resolveReplicateImageConfig,
   isReplicateImageEnabled,
 };
