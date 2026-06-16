@@ -860,23 +860,26 @@ function createIntentResolver(overrides = {}) {
         || require('node:path').resolve(__dirname, '..', '..', '..', 'runtime')
       ).trim();
 
-      const videoImageDescriptions = [];
-      for (const ref of videoImageRefsEarly.slice(0, 3)) {
-        try {
-          const desc = await autoDescribeImage({
-            imageLocator: ref.locator,
-            runtimeRoot: runtimeRootForVideo,
-            timeoutMs: 20000,
-            requestId: `${traceId}-video-ref-${ref.image_id}`,
-          });
-          if (!desc.skipped && desc.description) {
-            videoImageDescriptions.push(desc.description);
-            console.log(`[A11][video-ref-describe] ${ref.image_id}: "${desc.description.slice(0, 80)}"`);
-          }
-        } catch {
-          // skip silently
-        }
-      }
+      const videoImageDescriptions = (
+        await Promise.allSettled(
+          videoImageRefsEarly.slice(0, 3).map((ref) =>
+            autoDescribeImage({
+              imageLocator: ref.locator,
+              runtimeRoot: runtimeRootForVideo,
+              timeoutMs: 7000,
+              requestId: `${traceId}-video-ref-${ref.image_id}`,
+            }).then((desc) => {
+              if (!desc.skipped && desc.description) {
+                console.log(`[A11][video-ref-describe] ${ref.image_id}: "${desc.description.slice(0, 80)}"`);
+                return desc.description;
+              }
+              return null;
+            })
+          )
+        )
+      )
+        .filter((r) => r.status === 'fulfilled' && r.value)
+        .map((r) => r.value);
 
       // Enrichir le prompt vidéo avec les descriptions des images de référence
       const videoRequest = parseVideoGenerateRequest(userText, input.body || {});

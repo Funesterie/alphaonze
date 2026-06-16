@@ -1012,23 +1012,14 @@ async function planVideoSequence({
         }
 
         llmFailureReason = String(llmResult.reason || 'llm_prompter_failed').trim() || 'llm_prompter_failed';
-        console.warn(`[A11][video-prompter] LLM prompter failed: ${llmFailureReason}, refusing heuristic fallback`);
+        console.warn(`[A11][video-prompter] LLM prompter failed: ${llmFailureReason}, using heuristic fallback`);
 
-        // Fallback heuristique — le LLM local a échoué mais on peut quand même générer
-        throwVideoSequencePlannerFailed({
-          providerRequested,
-          llmFailureReason,
-          imageAwareError,
-        });
+        return buildHeuristicFallbackPlan(request, providerRequested, llmFailureReason);
       } else {
         llmFailureReason = 'llm_prompter_disabled';
-        console.warn(`[A11][video-prompter] LLM prompter disabled, refusing heuristic fallback`);
+        console.warn(`[A11][video-prompter] LLM prompter disabled, using heuristic fallback`);
 
-        throwVideoSequencePlannerFailed({
-          providerRequested,
-          llmFailureReason,
-          imageAwareError,
-        });
+        return buildHeuristicFallbackPlan(request, providerRequested, llmFailureReason);
       }
     }
 
