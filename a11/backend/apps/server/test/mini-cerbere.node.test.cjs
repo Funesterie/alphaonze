@@ -8,6 +8,8 @@ const {
   parseDurationTextMs,
   redactSecretLikeText,
   getTargetTimeoutMs,
+  resolveRemoteChatTransportLimits,
+  trimRemoteChatMessagesForTransport,
   shouldSkipTargetByMismatch,
 } = require('../lib/mini-cerbere.cjs');
 
@@ -83,6 +85,67 @@ test('mini cerbere adds Together as an OpenAI-compatible fallback', () => {
   assert.match(together.url, /api\.together\.xyz/);
   assert.equal(together.model, 'meta-llama/Llama-3.3-70B-Instruct-Turbo');
   assert.equal(shouldSkipTargetByMismatch(together), false);
+});
+
+test('mini cerbere compacts remote chat context before cloud provider calls', () => {
+  const env = {
+    A11_CERBERE_OPENAI_API_KEY: 'sk-test',
+    A11_CERBERE_OPENAI_MODEL: 'gpt-4o-mini',
+    A11_REMOTE_CHAT_MAX_CONTEXT_CHARS: '900',
+    A11_REMOTE_CHAT_MAX_MESSAGE_CHARS: '400',
+  };
+  const runtime = createMiniCerbereRuntime({
+    env,
+    requestChatUpstream: async () => {
+      throw new Error('not called');
+    },
+    getLocalCompletionsUrl: () => '',
+    logger: { warn() {} },
+  });
+  const hugeMemory = 'memoire distante '.repeat(800);
+  const latestQuestion = 'explique-moi simplement pourquoi la generation video depasse';
+
+  const targets = runtime._buildTargets({
+    provider: 'openai',
+    upstreamUrl: 'https://api.openai.com/v1/chat/completions',
+    upstreamBody: {
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: 'identite A11' },
+        { role: 'system', content: hugeMemory },
+        { role: 'user', content: 'ancienne question '.repeat(600) },
+        { role: 'assistant', content: 'ancienne reponse '.repeat(600) },
+        { role: 'user', content: latestQuestion },
+      ],
+    },
+  });
+
+  const messages = targets[0].body.messages;
+  const serialized = JSON.stringify(messages);
+  assert.ok(serialized.length < 2200);
+  assert.match(serialized, /identite A11/);
+  assert.match(serialized, /explique-moi simplement/);
+  assert.match(serialized, /contexte compresse/);
+});
+
+test('remote chat transport limits clamp oversized generic context defaults', () => {
+  const limits = resolveRemoteChatTransportLimits({
+    A11_CHAT_MAX_CONTEXT_CHARS: '420000',
+    A11_CHAT_MAX_MESSAGE_CHARS: '180000',
+  });
+  assert.equal(limits.maxTotalChars, 64_000);
+  assert.equal(limits.maxMessageChars, 64_000);
+
+  const compacted = trimRemoteChatMessagesForTransport([
+    { role: 'system', content: 'system' },
+    { role: 'user', content: 'x'.repeat(5000) },
+  ], {
+    A11_REMOTE_CHAT_MAX_CONTEXT_CHARS: '1200',
+    A11_REMOTE_CHAT_MAX_MESSAGE_CHARS: '500',
+  });
+  assert.equal(compacted.length, 2);
+  assert.ok(compacted[1].content.length <= 500);
+  assert.match(compacted[1].content, /contexte compresse/);
 });
 
 test('mini cerbere forwards primary remote provider API key', async () => {

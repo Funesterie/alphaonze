@@ -2426,7 +2426,7 @@ test('POST /api/llm/chat does not expose empty assistant internals to users', as
 
       assert.equal(response.status, 200);
       const content = String(json.choices?.[0]?.message?.content || '');
-      assert.match(content, /A11 t'a bien reçu/i);
+      assert.match(content, /J[’']ai bien reçu/i);
       assert.doesNotMatch(content, /mod[eè]le|r[ée]ponse vide/i);
     }
   );

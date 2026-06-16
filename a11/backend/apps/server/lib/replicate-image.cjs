@@ -287,7 +287,7 @@ async function tryGenerateImageWithReplicateKontext({
       prompt: String(prompt || '').trim(),
       input_image: String(inputImageUrl).trim(),
       aspect_ratio: normalizeReplicateAspectRatio(width, height),
-      output_format: 'webp',
+      output_format: 'jpg',  // flux-kontext-pro n'accepte que jpg/png, pas webp
       output_quality: 85,
       safety_tolerance: 2,
     },

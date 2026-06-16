@@ -1747,12 +1747,32 @@ function createSdToolsRouter(overrides = {}) {
       const kontextToken = String(process.env.A11_REPLICATE_IMAGE_TOKEN || process.env.REPLICATE_API_TOKEN || '').trim();
       if (kontextToken) {
         try {
+          // Kontext attend une instruction d'édition, pas un prompt SD génératif.
+          // On privilégie transformationDescription (en anglais, généré par le LLM)
+          // puis userMessage brut, puis rawPrompt en dernier recours.
+          const janusSummary = String(requestBody?.image_context_carryover?.summary || '').trim();
+          const transformDesc = String(requestBody?.transformationDescription || '').trim();
+          const userMsg = String(requestBody?.userMessage || '').trim();
+          // Si Janus a échoué (description locale de secours), l'ancrage identité est critique.
+          const janusOk = janusSummary && !janusSummary.startsWith('Vision avancee indisponible');
+          const kontextPrompt = [
+            // Instruction d'édition principale — concise et directe
+            transformDesc || userMsg || rawPrompt,
+            // Ancrage sujet si Janus a réussi
+            janusOk ? `The subject in the image: ${janusSummary}.` : '',
+            // Ancrage identité — plus fort quand Janus a échoué
+            janusOk
+              ? 'Keep the exact face, skin tone, body, and clothing of the person. Only change background, props, and accessories as requested.'
+              : 'CRITICAL: Do not change the person\'s face, skin, body, hair, or clothing. Keep the person 100% identical to the input image. Only apply the requested background and prop changes.',
+          ].filter(Boolean).join(' ');
+          console.log(`[A11][kontext] edit prompt: "${kontextPrompt.slice(0, 120)}"`);
+
           const tempDir = resolveGeneratedImageWorkRoot();
           fs.mkdirSync(tempDir, { recursive: true });
           const outputName = `img_kontext_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.webp`;
           const outputPath = path.join(tempDir, outputName);
           const kontextResult = await tryGenerateImageWithReplicateKontext({
-            prompt: rawPrompt,
+            prompt: kontextPrompt,
             inputImageUrl: initImageForKontext,
             outputPath,
             width,

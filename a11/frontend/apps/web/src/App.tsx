@@ -1582,7 +1582,7 @@ function formatChatErrorForUser(error: unknown, surface: FunesterieSurface | str
   if (/\b(API\s*)?(502|503|504|524)\b/i.test(message) || /html inattendue|timeout|surcharge|upstream/i.test(message)) {
     return "Le serveur IA ou un fournisseur externe a coupé la réponse. Réessaie dans quelques instants; la priorité de ton compte reste conservée.";
   }
-  return `Erreur lors de l'appel au chat ${getSurfaceChatLabel(surface)} : ${message || "erreur inconnue"}`;
+  return message || "Une erreur s'est produite lors de la requête.";
 }
 
 function findLastVisibleMedia(messages: ChatMessage[]) {

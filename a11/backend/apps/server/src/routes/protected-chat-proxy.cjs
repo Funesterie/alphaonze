@@ -193,10 +193,9 @@ function buildProxyEmptyAssistantFallback(latestUserMessage = '', options = {}) 
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
   const surface = normalizeProxySurface(options.surface || options.persona || options.voicePersona);
-  const name = surface === 'kaen44' ? 'Kaen44' : surface === 'vivy' ? 'Vivy' : 'A11';
 
   if (/(allo|t es la|tu es la|vous etes la|quelqu un|reponds|réponds)/.test(folded)) {
-    return `Oui, je suis là. ${name} reprend normalement.`;
+    return 'Oui, je suis là. Je reprends normalement.';
   }
   if (/(ca va|ça va|comment tu vas|salut|bonjour|coucou)/.test(folded)) {
     if (surface === 'kaen44') return 'Oui, je suis là. On reprend simplement: qu’est-ce que tu veux faire ?';
@@ -205,9 +204,9 @@ function buildProxyEmptyAssistantFallback(latestUserMessage = '', options = {}) 
   }
   const shortUserMessage = String(latestUserMessage || '').replace(/\s+/g, ' ').trim().slice(0, 180);
   if (shortUserMessage) {
-    return `${name} t'a bien reçu: « ${shortUserMessage} ». Je reprends simplement, sans transformer ton message en brouillon.`;
+    return `J’ai bien reçu: « ${shortUserMessage} ». Je reprends simplement, sans transformer ton message en brouillon.`;
   }
-  return `${name} est là. Je reprends simplement, sans afficher de brouillon.`;
+  return 'Je suis là. Je reprends simplement, sans afficher de brouillon.';
 }
 
 function postProcessProxyPayload(payload, latestUserMessage = '', options = {}) {
@@ -2011,7 +2010,7 @@ async function executeCompoundActionRequest({
             {
               heading: fallbackMode === 'generated_image' ? 'Illustration' : 'Images de la conversation',
               text: fallbackMode === 'generated_image'
-                ? `A11 a genere une illustration sur le theme demande pour completer ce PDF : ${pdfTopic || compound.sourceText}.`
+                ? `J'ai genere une illustration sur le theme demande pour completer ce PDF : ${pdfTopic || compound.sourceText}.`
                 : compound.sourceText,
               images: imageRefs,
             },
@@ -2020,7 +2019,7 @@ async function executeCompoundActionRequest({
             ...enrichedPdf.sections,
             {
               heading: 'Note',
-              text: "Aucune image recente n'etait disponible dans cette conversation. A11 a donc produit une version PDF textuelle sur le theme demande.",
+              text: "Aucune image recente n'etait disponible dans cette conversation. J'ai donc produit une version PDF textuelle sur le theme demande.",
             },
           ],
       _context: context,

@@ -735,7 +735,7 @@ test('video generate router uses Hugging Face video when enabled', async () => {
     assert.equal(payload.provider, 'fal-ai');
     assert.match(payload.video_url, /^https:\/\/a11\.funesterie\.me\/files\/runtime\/files\/generated\/videos\/a11-hf-video-/);
     assert.equal(calls.length, 2);
-    assert.equal(calls[0].body.prompt, 'genere une video neon de moto');
+    assert.match(calls[0].body.prompt, /Riding forward|neon-lit Tokyo|moto/i);
     assert.equal(calls[0].body.num_frames, 8);
     assert.equal(calls[0].body.num_inference_steps, 2);
     assert.equal(calls[0].headers.Authorization, 'Bearer hf_test_video_token');
@@ -858,7 +858,7 @@ test('video generate router follows Hugging Face fal queue responses', async () 
     assert.equal(payload.provider, 'fal-ai');
     assert.match(payload.video_url, /^https:\/\/a11\.funesterie\.me\/files\/runtime\/files\/generated\/videos\/a11-hf-video-/);
     assert.equal(calls.length, 4);
-    assert.equal(calls[0].body.prompt, 'genere une video gothique pour vivy');
+    assert.match(calls[0].body.prompt, /gothique|cinematic motion/i);
     assert.equal(calls[1].url, 'https://queue.example.com/status/fal-request-1');
     assert.equal(calls[2].url, 'https://queue.example.com/response/fal-request-1');
     assert.equal(calls[3].url, 'https://cdn.example.com/fal-video.mp4');
@@ -977,7 +977,7 @@ test('video generate router follows Hugging Face replicate predictions', async (
     assert.equal(payload.provider, 'replicate');
     assert.match(payload.video_url, /^https:\/\/a11\.funesterie\.me\/files\/runtime\/files\/generated\/videos\/a11-hf-video-/);
     assert.equal(calls.length, 3);
-    assert.equal(calls[0].body.input.prompt, 'genere une video sombre pour vivy');
+    assert.match(calls[0].body.input.prompt, /sombre|reference subject|cinematic motion/i);
     assert.equal(calls[0].body.input.image, 'https://files.example.com/vivy-cover.png');
     assert.equal(calls[0].body.input.num_frames, 81);
     assert.equal(calls[0].body.input.num_inference_steps, 2);
@@ -1104,10 +1104,139 @@ test('video generate router uses direct Replicate token for replicate video prov
     assert.equal(calls[0].url, 'https://api.replicate.com/v1/models/wan-video/wan-2.2-5b-fast/predictions');
     assert.equal(calls[0].headers.Authorization, 'Bearer r8_test_video_token');
     assert.equal(calls[0].headers.Prefer, 'wait=60');
-    assert.equal(calls[0].body.input.prompt, 'vivy passe en hypervitesse dans une cite magenta');
+    assert.match(calls[0].body.input.prompt, /hypervitesse|reference subject|cinematic motion/i);
     assert.equal(calls[0].body.input.image, 'https://files.example.com/vivy-cover.png');
     assert.equal(calls[1].headers.Authorization, 'Bearer r8_test_video_token');
     assert.equal(calls[2].headers.Authorization, undefined);
+  } finally {
+    await new Promise((resolve) => appServer.close(resolve));
+    await fsp.rm(runtimeRoot, { recursive: true, force: true });
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('video generate router builds a first-person cloud prompt before Replicate WAN when server cloud is open', async () => {
+  const previousEnv = {
+    A11_ENABLE_HF_VIDEO: process.env.A11_ENABLE_HF_VIDEO,
+    A11_HF_VIDEO_PROVIDER: process.env.A11_HF_VIDEO_PROVIDER,
+    A11_HF_VIDEO_MODEL: process.env.A11_HF_VIDEO_MODEL,
+    A11_HF_VIDEO_TOKEN: process.env.A11_HF_VIDEO_TOKEN,
+    A11_REPLICATE_VIDEO_TOKEN: process.env.A11_REPLICATE_VIDEO_TOKEN,
+    REPLICATE_API_TOKEN: process.env.REPLICATE_API_TOKEN,
+    A11_REPLICATE_VIDEO_MODEL: process.env.A11_REPLICATE_VIDEO_MODEL,
+    A11_REPLICATE_BASE_URL: process.env.A11_REPLICATE_BASE_URL,
+    A11_HF_VIDEO_FRAMES: process.env.A11_HF_VIDEO_FRAMES,
+    A11_HF_VIDEO_STEPS: process.env.A11_HF_VIDEO_STEPS,
+    A11_HF_VIDEO_POLL_INTERVAL_MS: process.env.A11_HF_VIDEO_POLL_INTERVAL_MS,
+    A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
+    VIDEO_PROXY_URL: process.env.VIDEO_PROXY_URL,
+    A11_VIDEO_LOCAL_RUNNER_URL: process.env.A11_VIDEO_LOCAL_RUNNER_URL,
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_VIDEO_SERVER_CLOUD_OPEN: process.env.A11_VIDEO_SERVER_CLOUD_OPEN,
+  };
+  const runtimeRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'a11-replicate-prompt-builder-'));
+  const calls = [];
+  const promptBuilderCalls = [];
+  const fakeFetch = async (url, options = {}) => {
+    calls.push({
+      url: String(url),
+      headers: options.headers || {},
+      body: options.body ? JSON.parse(String(options.body)) : null,
+    });
+    if (calls.length === 1) {
+      return new Response(JSON.stringify({
+        status: 'processing',
+        urls: { get: 'https://api.replicate.com/v1/predictions/replicate-built-prompt-1' },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    if (String(url).includes('/predictions/')) {
+      return new Response(JSON.stringify({
+        status: 'succeeded',
+        output: ['https://replicate.delivery/built-prompt-video.mp4'],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return new Response(Buffer.from('fake-built-prompt-mp4'), {
+      status: 200,
+      headers: { 'Content-Type': 'video/mp4' },
+    });
+  };
+
+  process.env.A11_ENABLE_HF_VIDEO = 'true';
+  process.env.A11_HF_VIDEO_PROVIDER = 'replicate';
+  process.env.A11_HF_VIDEO_MODEL = 'Wan-AI/Wan2.2-TI2V-5B';
+  process.env.REPLICATE_API_TOKEN = 'r8_test_video_token';
+  process.env.A11_VIDEO_SERVER_CLOUD_OPEN = '1';
+  delete process.env.A11_HF_VIDEO_TOKEN;
+  delete process.env.A11_REPLICATE_VIDEO_TOKEN;
+  delete process.env.A11_REPLICATE_VIDEO_MODEL;
+  delete process.env.A11_REPLICATE_BASE_URL;
+  process.env.A11_HF_VIDEO_FRAMES = '16';
+  process.env.A11_HF_VIDEO_STEPS = '2';
+  process.env.A11_HF_VIDEO_POLL_INTERVAL_MS = '10';
+  process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  delete process.env.A11_VIDEO_PROXY_URL;
+  delete process.env.VIDEO_PROXY_URL;
+  delete process.env.A11_VIDEO_LOCAL_RUNNER_URL;
+
+  const app = express();
+  app.use(express.json({ limit: '4mb' }));
+  app.use('/api', videoGenerateModule.createVideoGenerateRouter({
+    fetch: fakeFetch,
+    buildVideoPrompt: async (input) => {
+      promptBuilderCalls.push(input);
+      return {
+        prompt: 'Walking through neon Tokyo streets at night, rain reflecting magenta light, first-person cinematic motion',
+        hasReferenceSubject: true,
+        motionType: 'walk',
+      };
+    },
+    uploadBufferToR2: async () => {
+      throw new Error('r2 unavailable in test');
+    },
+    generateVideo: async () => {
+      throw new Error('local generator should not be called when direct Replicate video is configured');
+    },
+  }).router);
+
+  const appServer = http.createServer(app);
+  await new Promise((resolve) => appServer.listen(0, '127.0.0.1', resolve));
+  const appAddress = appServer.address();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${appAddress.port}/api/video/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        host: 'a11.funesterie.me',
+        'x-forwarded-host': 'a11.funesterie.me',
+        'x-forwarded-proto': 'https',
+      },
+      body: JSON.stringify({
+        prompt: 'je marche dans tokyo la nuit',
+        sourceImageUrl: 'https://files.example.com/selfie.png',
+        provider: 'replicate',
+      }),
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.provider, 'replicate');
+    assert.equal(promptBuilderCalls.length, 1);
+    assert.equal(promptBuilderCalls[0].userMessage, 'je marche dans tokyo la nuit');
+    assert.equal(promptBuilderCalls[0].hasReferenceImage, true);
+    assert.equal(calls[0].body.input.prompt, 'Walking through neon Tokyo streets at night, rain reflecting magenta light, first-person cinematic motion');
+    assert.equal(calls[0].body.input.image, 'https://files.example.com/selfie.png');
+    assert.equal(payload.prompt, 'Walking through neon Tokyo streets at night, rain reflecting magenta light, first-person cinematic motion');
   } finally {
     await new Promise((resolve) => appServer.close(resolve));
     await fsp.rm(runtimeRoot, { recursive: true, force: true });

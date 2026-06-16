@@ -524,12 +524,49 @@ async function executeResolvedRuntime(resolution, input = {}, deps = {}) {
     });
     const referenceImageUrl = String(imageReferences[0]?.locator || '').trim();
     const isLocalPath = referenceImageUrl && !referenceImageUrl.startsWith('http');
+    const publicReferenceImageUrl = isLocalPath ? '' : referenceImageUrl;
+
+    let imageContextCarryover = input.body?._a11ImageContextCarryover || resolution.imageContextCarryover || null;
+
+    // Pas de carryover vision mais image de référence HTTP → décrire via Janus.
+    // Fallback gratuit à Kontext : enrichit le prompt pour mieux préserver l'identité du sujet.
+    if (publicReferenceImageUrl && !imageContextCarryover) {
+      try {
+        const runtimeRootForDescribe = String(
+          process.env.A11_RUNTIME_ROOT
+          || require('node:path').resolve(__dirname, '..', '..', '..', 'runtime')
+        ).trim();
+        const describeResult = await autoDescribeImage({
+          imageLocator: publicReferenceImageUrl,
+          runtimeRoot: runtimeRootForDescribe,
+          timeoutMs: 5000,
+          requestId: `ref-img-describe-${Date.now()}`,
+        });
+        if (!describeResult.skipped && describeResult.description) {
+          console.log(`[A11][ref-describe] enriching image prompt: "${describeResult.description.slice(0, 80)}"`);
+          imageContextCarryover = {
+            source: 'reference_image_describe',
+            sourceImageUrl: publicReferenceImageUrl,
+            summary: describeResult.description,
+            promptInstructions: [
+              'preserve the identity, model, and visual appearance of the subject from the reference image',
+              'apply only the new background, setting, or style requested by the user',
+              'keep the same vehicle, person, or object identity from the reference',
+            ],
+            strengthProfile: 'preserve',
+            strengthReason: 'reference_image_describe',
+          };
+        }
+      } catch {
+        // ok, continue without enrichment
+      }
+    }
 
     const imageResult = await executeDirectImagePipeline({
       userMessage: resolution.requestText?.original || normalizeUserText(input),
-      referenceImageUrl: isLocalPath ? '' : referenceImageUrl,
+      referenceImageUrl: publicReferenceImageUrl,
       referenceImagePath: isLocalPath ? referenceImageUrl : '',
-      imageContextCarryover: input.body?._a11ImageContextCarryover || resolution.imageContextCarryover || null,
+      imageContextCarryover,
       req: input.req,
       generateSd: deps.generateSd,
       callStructuredLlmJson: deps.specialCompilerCallStructuredLlmJson,

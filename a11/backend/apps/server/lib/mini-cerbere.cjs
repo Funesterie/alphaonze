@@ -15,6 +15,9 @@ const DEFAULT_COOLDOWN_MS = 60_000;
 const MAX_COOLDOWN_MS = 60 * 60_000;
 const DEFAULT_MULTI_MAX_TARGETS = 3;
 const MAX_MULTI_TARGETS = 5;
+const DEFAULT_REMOTE_CONTEXT_CHARS = 32_000;
+const DEFAULT_REMOTE_MESSAGE_CHARS = 12_000;
+const DEFAULT_REMOTE_CONTEXT_HARD_MAX = 64_000;
 const NETWORK_ERROR_CODES = new Set([
   'ECONNABORTED',
   'ECONNRESET',
@@ -55,6 +58,7 @@ function isLikelyGroqModel(model) {
 }
 
 function addOpenAiCompatibleTarget(targets, {
+  env = process.env,
   role,
   baseUrl,
   authToken,
@@ -70,7 +74,7 @@ function addOpenAiCompatibleTarget(targets, {
     role,
     provider: 'openai',
     url: normalizeCompletionsUrl(resolvedBaseUrl),
-    body: sanitizeBodyForRemote(upstreamBody, resolvedModel),
+    body: sanitizeBodyForRemote(upstreamBody, resolvedModel, env),
     authToken: resolvedApiKey,
     model: resolvedModel,
   };
@@ -98,6 +102,7 @@ function addGroqTarget(targets, {
 } = {}) {
   if (!shouldAddGroqFallback(env)) return;
   addOpenAiCompatibleTarget(targets, {
+    env,
     role: 'fallback-groq',
     baseUrl: env.A11_CERBERE_GROQ_BASE_URL || env.GROQ_BASE_URL || DEFAULT_GROQ_BASE_URL,
     authToken: getGroqApiKey(env),
@@ -200,6 +205,34 @@ function firstConfiguredValue(...values) {
   return '';
 }
 
+function parseBoundedInt(value, fallback, min, max) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  const resolved = Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  return Math.max(min, Math.min(max, resolved));
+}
+
+function resolveRemoteChatTransportLimits(env = process.env) {
+  const hardMaxTotalChars = parseBoundedInt(
+    firstConfiguredValue(env.A11_REMOTE_CHAT_CONTEXT_HARD_MAX, env.A11_REMOTE_CHAT_MAX_CONTEXT_HARD_MAX),
+    DEFAULT_REMOTE_CONTEXT_HARD_MAX,
+    4_000,
+    500_000
+  );
+  const maxTotalChars = parseBoundedInt(
+    firstConfiguredValue(env.A11_REMOTE_CHAT_MAX_CONTEXT_CHARS, env.A11_REMOTE_CHAT_CONTEXT_CHARS, env.A11_CHAT_MAX_CONTEXT_CHARS),
+    DEFAULT_REMOTE_CONTEXT_CHARS,
+    1_000,
+    hardMaxTotalChars
+  );
+  const maxMessageChars = parseBoundedInt(
+    firstConfiguredValue(env.A11_REMOTE_CHAT_MAX_MESSAGE_CHARS, env.A11_REMOTE_CHAT_CONTEXT_MESSAGE_CHARS, env.A11_CHAT_MAX_MESSAGE_CHARS),
+    Math.min(DEFAULT_REMOTE_MESSAGE_CHARS, maxTotalChars),
+    500,
+    maxTotalChars
+  );
+  return { maxTotalChars, maxMessageChars, hardMaxTotalChars };
+}
+
 function stringifyMessageContent(content) {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
@@ -211,6 +244,92 @@ function stringifyMessageContent(content) {
     }).filter(Boolean).join('\n');
   }
   return safeStringify(content);
+}
+
+function truncateRemoteText(text = '', maxChars = DEFAULT_REMOTE_MESSAGE_CHARS) {
+  const raw = String(text || '');
+  const limit = Math.max(64, Number(maxChars) || DEFAULT_REMOTE_MESSAGE_CHARS);
+  if (raw.length <= limit) return raw;
+  const marker = '\n[...contexte compresse pour le provider distant...]\n';
+  const keep = Math.max(32, limit - marker.length);
+  const headChars = Math.min(600, Math.floor(keep * 0.25));
+  const tailChars = Math.max(32, keep - headChars);
+  const compacted = `${raw.slice(0, headChars)}${marker}${raw.slice(-tailChars)}`;
+  return compacted.length > limit ? compacted.slice(0, limit) : compacted;
+}
+
+function trimRemoteContent(content, maxMessageChars) {
+  if (typeof content === 'string') return truncateRemoteText(content, maxMessageChars);
+  if (Array.isArray(content)) {
+    let remaining = Math.max(64, Number(maxMessageChars) || DEFAULT_REMOTE_MESSAGE_CHARS);
+    return content.map((part) => {
+      if (typeof part === 'string') {
+        const next = truncateRemoteText(part, remaining);
+        remaining = Math.max(0, remaining - next.length);
+        return next;
+      }
+      if (part?.type === 'text' || Object.prototype.hasOwnProperty.call(part || {}, 'text')) {
+        const text = truncateRemoteText(part.text || '', remaining);
+        remaining = Math.max(0, remaining - text.length);
+        return { ...part, text };
+      }
+      return part;
+    });
+  }
+  return content;
+}
+
+function messageContentLength(message = {}) {
+  return stringifyMessageContent(message?.content).length;
+}
+
+function trimRemoteChatMessagesForTransport(messages = [], env = process.env) {
+  if (!Array.isArray(messages)) return messages;
+  const { maxTotalChars, maxMessageChars } = resolveRemoteChatTransportLimits(env);
+  const prepared = messages
+    .map((message) => ({
+      ...(message || {}),
+      content: trimRemoteContent(message?.content, maxMessageChars),
+    }))
+    .filter((message) => String(message?.role || '').trim() || stringifyMessageContent(message?.content).trim());
+
+  if (!prepared.length) return prepared;
+
+  const pinned = [];
+  for (let index = 0; index < prepared.length && pinned.length < 2; index += 1) {
+    if (String(prepared[index]?.role || '').trim().toLowerCase() === 'system') {
+      pinned.push(index);
+    }
+  }
+
+  const selected = new Set(pinned);
+  let totalChars = pinned.reduce((sum, index) => sum + messageContentLength(prepared[index]), 0);
+  let latestUserIncluded = false;
+
+  for (let index = prepared.length - 1; index >= 0; index -= 1) {
+    if (selected.has(index)) continue;
+    const message = prepared[index];
+    const role = String(message?.role || '').trim().toLowerCase();
+    const size = messageContentLength(message);
+    const mustKeepLatestUser = !latestUserIncluded && role === 'user';
+    if (totalChars + size <= maxTotalChars || mustKeepLatestUser) {
+      selected.add(index);
+      totalChars += size;
+      if (role === 'user') latestUserIncluded = true;
+    }
+  }
+
+  if (!latestUserIncluded) {
+    const lastUser = prepared
+      .map((message, index) => ({ message, index }))
+      .reverse()
+      .find((entry) => String(entry.message?.role || '').trim().toLowerCase() === 'user');
+    if (lastUser) selected.add(lastUser.index);
+  }
+
+  return [...selected]
+    .sort((left, right) => left - right)
+    .map((index) => prepared[index]);
 }
 
 function getConversationText(upstreamBody = {}) {
@@ -395,9 +514,12 @@ function parseRetryDelayMs(error_, nowMs = Date.now()) {
   return DEFAULT_COOLDOWN_MS;
 }
 
-function sanitizeBodyForRemote(body, model) {
+function sanitizeBodyForRemote(body, model, env = process.env) {
   const next = { ...(body || {}) };
   next.model = String(model || next.model || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
+  if (Array.isArray(next.messages)) {
+    next.messages = trimRemoteChatMessagesForTransport(next.messages, env);
+  }
   delete next.prompt;
   delete next.provider;
   delete next.providerConfig;
@@ -502,7 +624,7 @@ function buildChatTargets({
       url: primaryUrl,
       body: primaryProvider === 'local'
         ? sanitizeBodyForLocal(upstreamBody, primaryModel)
-        : sanitizeBodyForRemote(upstreamBody, primaryModel),
+        : sanitizeBodyForRemote(upstreamBody, primaryModel, env),
       apiKey: String(remoteProviderConfig?.apiKey || '').trim(),
       authToken: String(remoteProviderConfig?.apiKey || '').trim(),
       model: primaryModel,
@@ -525,6 +647,7 @@ function buildChatTargets({
 
   if (primaryProvider !== 'local') {
     addOpenAiCompatibleTarget(targets, {
+      env,
       role: 'fallback-openai',
       baseUrl: directOpenAiBaseUrl,
       authToken: directOpenAiKey,
@@ -533,6 +656,7 @@ function buildChatTargets({
     });
 
     addOpenAiCompatibleTarget(targets, {
+      env,
       role: 'fallback-together',
       baseUrl: env.A11_CERBERE_TOGETHER_BASE_URL || DEFAULT_TOGETHER_BASE_URL,
       authToken: togetherCredential,
@@ -541,6 +665,7 @@ function buildChatTargets({
     });
 
     addOpenAiCompatibleTarget(targets, {
+      env,
       role: 'fallback-deepseek',
       baseUrl: env.A11_CERBERE_DEEPSEEK_BASE_URL || DEFAULT_DEEPSEEK_BASE_URL,
       authToken: deepSeekCredential,
@@ -551,6 +676,7 @@ function buildChatTargets({
     const llamaProTarget = selectLlamaProTarget(env, upstreamBody);
     if (llamaProTarget) {
       addOpenAiCompatibleTarget(targets, {
+        env,
         role: llamaProTarget.role,
         baseUrl: llamaProTarget.baseUrl,
         authToken: llamaProTarget.apiKey,
@@ -784,15 +910,14 @@ function createMiniCerbereRuntime({
       selected.push(target);
     }
 
-    const safeBody = redactSecretLikeValue(upstreamBody || {});
     const settled = await Promise.allSettled(selected.map(async (target) => {
       try {
-        const result = await requestChatUpstream(target.url, {
-          ...(target.body || {}),
-          ...safeBody,
-          model: target.body?.model || safeBody.model,
-          messages: safeBody.messages || target.body?.messages || [],
-        }, {
+        const safeTargetBody = sanitizeBodyForRemote(
+          redactSecretLikeValue(target.body || {}),
+          target.model,
+          env
+        );
+        const result = await requestChatUpstream(target.url, safeTargetBody, {
           provider: target.provider,
           apiKey: target.authToken,
           reqHeaders,
@@ -909,6 +1034,8 @@ module.exports = {
   parseDurationTextMs,
   parseRetryAfterHeaderMs,
   parseRetryDelayMs,
+  resolveRemoteChatTransportLimits,
+  trimRemoteChatMessagesForTransport,
   shouldSkipTargetByMismatch,
   getTargetTimeoutMs,
   isLocalOnlyRuntime,

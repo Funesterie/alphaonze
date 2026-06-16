@@ -11,6 +11,9 @@ const {
   createEmergencyVideoAsset,
 } = require('../media/emergency-media.cjs');
 const {
+  buildVideoPrompt,
+} = require('../video/video-prompt-builder.cjs');
+const {
   tryGenerateVideoWithHuggingFace,
   resolveHuggingFaceVideoConfig,
 } = require('../../lib/hf-video.cjs');
@@ -122,7 +125,21 @@ function isRunComfyVideoProvider(provider = '') {
   return normalizeVideoProvider(provider) === 'runcomfy';
 }
 
+function hasVideoReferenceImage(body = {}) {
+  return Boolean(
+    body?.sourceImageUrl
+    || body?.source_image_url
+    || body?.referenceImageUrl
+    || body?.reference_image_url
+    || body?.initImageUrl
+    || body?.init_image_url
+    || body?.imageUrl
+    || body?.image_url
+  );
+}
+
 function canUseServerPaidVideo(req = null) {
+  if (isTruthy(process.env.A11_VIDEO_SERVER_CLOUD_OPEN)) return true;
   if (!req?.user) return false;
   const profile = resolveMcpAccountProfileSync(req.user || {});
   return ['premium', 'founder', 'admin_family'].includes(String(profile?.tier || '').trim().toLowerCase());
@@ -852,6 +869,9 @@ function createVideoGenerateRouter(overrides = {}) {
     runFfmpeg: overrides.runFfmpeg,
   });
   const fetchImpl = overrides.fetch || (typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : null);
+  const buildVideoPromptImpl = typeof overrides.buildVideoPrompt === 'function'
+    ? overrides.buildVideoPrompt
+    : buildVideoPrompt;
 
   async function pollVideoProxyJob({ videoProxyUrl = '', initialPayload = {}, req = null } = {}) {
     const pollUrl = resolveProxyPollUrl(videoProxyUrl, initialPayload);
@@ -1088,8 +1108,15 @@ function createVideoGenerateRouter(overrides = {}) {
         }
         // Not explicitly requested + role insufficient → skip silently, continue to next step
       } else {
+        const hasReferenceImage = hasVideoReferenceImage(body);
+        const builtPrompt = await buildVideoPromptImpl({
+          userMessage: prompt,
+          hasReferenceImage,
+          timeoutMs: 10000,
+        });
+        const cloudPrompt = builtPrompt?.prompt || prompt;
         const hfResult = await tryGenerateVideoWithHuggingFace({
-          req, body, prompt, fetchImpl,
+          req, body: { ...body, prompt: cloudPrompt }, prompt: cloudPrompt, fetchImpl,
           uploadBufferToR2Impl: overrides.uploadBufferToR2,
           tokenOverride: sessionVideoTokens.huggingface,
           configOverrides: { provider: hfProviderOverride, replicateToken: sessionVideoTokens.replicate },
@@ -1323,6 +1350,7 @@ function looksLikeDependencyBag(value) {
       || 'buildCanonicalImageMaskFromText' in value
       || 'compileMaskImageGenerateRuntime' in value
       || 'runFfmpeg' in value
+      || 'buildVideoPrompt' in value
     )
   );
 }
@@ -1340,5 +1368,6 @@ videoGenerateEntrypoint.router = defaultVideoRouter.router;
 videoGenerateEntrypoint.generateVideoInternal = defaultVideoRouter.generateVideoInternal;
 videoGenerateEntrypoint.createVideoGenerateRouter = createVideoGenerateRouter;
 videoGenerateEntrypoint.resolveLocalVideoWeightsStatus = resolveLocalVideoWeightsStatus;
+videoGenerateEntrypoint.hasVideoReferenceImage = hasVideoReferenceImage;
 
 module.exports = videoGenerateEntrypoint;

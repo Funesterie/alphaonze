@@ -10949,13 +10949,13 @@ function shouldReturnMiniCerbereDegradedReply(error_) {
     }
   })();
   const text = `${String(error_?.message || '')} ${dataText}`.toLowerCase();
-  return /mini_cerbere_all_targets_skipped|insufficient_quota|insufficient_balance|insufficient balance|payment required|billing|rate_limit|tokens per day|quota/.test(text);
+  return /mini_cerbere_all_targets_skipped|insufficient_quota|insufficient_balance|insufficient balance|payment required|billing|rate[_ -]?limit|too many requests|request(?:s)? (?:limit|exceeded)|tokens? per (?:day|minute|hour)|context length|maximum context|request too large|quota/.test(text);
 }
 
 function buildMiniCerbereDegradedReply() {
   return [
-    'Je suis en mode relais de secours: mes fournisseurs LLM sont en limite de crédit, de facturation ou de quota.',
-    'Je ne relance pas le même provider en boucle. Je garde la session propre, et je retenterai automatiquement au prochain message quand un fournisseur redevient disponible.',
+    'Je suis en mode relais de secours: le fournisseur LLM a refusé la requête à cause d’une limite de quota, de débit ou de contexte.',
+    'Je ne relance pas le même provider en boucle. Je garde la session propre, je compacte le contexte distant, et je retenterai automatiquement au prochain message quand un fournisseur redevient disponible.',
   ].join(' ');
 }
 
