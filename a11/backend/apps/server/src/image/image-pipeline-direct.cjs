@@ -7,6 +7,7 @@
 const {
   callStructuredLlmJson: defaultCallStructuredLlmJson,
 } = require('../mask/resolve-text-to-wazaa.cjs');
+const { getKbRulesForContext } = require('../knowledge/kb-lookup.cjs');
 
 // Direct Groq call — only when A11_IMAGE_DIRECT_GROQ_ENABLED=1 is explicitly set.
 // Also activates when A11_TRANSLATION_BASE_URL already points to Groq (consistent with compose config).
@@ -96,15 +97,16 @@ You receive a user request (may be in French or any language). Your job is NOT t
 
 Think like a film director: what does the scene actually look like? What is the lighting, the environment, the mood, the visual effects?
 
-## PROP RESEARCH RULE
+## PROP DESCRIPTION RULE
 
-When any specific prop, badge, weapon, tool, or accessory is mentioned, use your visual knowledge to describe what it actually looks like. Describe it concretely (material, shape, size, color, texture, engravings). Never describe a prop by its name alone — always describe its visible physical appearance.
+For every prop, accessory, or object to add or place, use this pattern:
+  [action verb] + [material] + [shape/size] + [finish/surface detail] + [placement] + "while keeping [adjacent element] unchanged"
 
-Three critical rules for props on clothing:
-- "étoile de shérif" is a physical 3D metal star BADGE — gold or silver, 5-to-6-pointed, ~2.5 inches, with "SHERIFF" engraved, pinned onto the chest fabric. It is a SEPARATE OBJECT on top of the clothing, NOT text printed on the fabric, NOT a design on the shirt. Never write anything on clothing to represent a badge.
-- Any badge, pin, brooch, or medal is always a physical 3D metallic object resting on top of the clothing, catching light. Do NOT alter the clothing fabric itself.
-- The existing clothing (t-shirt print, logos, text, colors) must be preserved exactly as-is. Only add or replace objects that are held, worn separately, or pinned on top.
-- When replacing an object in a hand, describe the replacement object in full visual detail (material, shape, size, color, texture, engravings).
+Example: "attach a polished gold star-shaped metal pin, ~2.5 inches wide, with engraved lettering, to the left chest of the shirt, while keeping the existing shirt print unchanged"
+
+- Use concrete action verbs: attach, pin, clip, place, hold, rest on — never just "add" or "put"
+- Describe the object in physical terms: material, shape, size, finish, surface detail — never by name alone
+- Always close with a "while keeping [the surrounding clothing / hand / background element] unchanged" clause when the object touches an existing element
 
 ## SCENE & ATMOSPHERE INTERPRETATION
 
@@ -127,7 +129,7 @@ Examples (do not copy literally — use as visual reasoning examples):
 - transformation_description: when has_reference_image is true, write a detailed English editing instruction:
   1. Background/environment change (full visual scene)
   2. Object replacements: "Replace the [existing object] in subject's [location] with [FULL VISUAL DESCRIPTION of the new object — material, shape, size, color, engravings, style]"
-  3. New items to ADD on the subject (describe exactly: where, what it looks like)
+  3. New items to ADD on the subject: describe exactly where and what it looks like as a physical object (material, shape, size, finish, shadow, clasp). Make the description so visually specific that the model renders the object itself.
   4. Any visual effects or style changes on the subject itself
   Rule: never refer to a prop by name only — describe what it looks like well enough that an artist could render it without knowing the name.
 
@@ -250,11 +252,25 @@ async function buildImageSdPayload({
     image_context_carryover: imageContextCarryover || null,
   });
 
+  // Injection KB basée sur le contexte d'exécution, pas sur des mots-clés dans le texte.
+  // - hasReferenceImage → règles Kontext img2img (toujours, quelle que soit la formulation)
+  // - isStructuredLlm: true → règles structured output (on attend du JSON)
+  // - isImagePipeline: true → règles semantic intent (on est dans un pipeline image)
+  const kbRules = getKbRulesForContext({
+    hasReferenceImage: hasReference,
+    isEditing: hasReference,
+    isStructuredLlm: true,
+    isImagePipeline: true,
+  });
+  const effectiveSystemPrompt = kbRules
+    ? `${IMAGE_PIPELINE_SYSTEM_PROMPT}\n\n## ADDITIONAL RULES (context-specific)\n${kbRules}`
+    : IMAGE_PIPELINE_SYSTEM_PROMPT;
+
   let response = null;
   try {
     response = await effectiveCallLlm({
       text: input,
-      systemPrompt: IMAGE_PIPELINE_SYSTEM_PROMPT,
+      systemPrompt: effectiveSystemPrompt,
       temperature: 0.2,
       maxTokens: 600,
       timeoutMs: Math.max(5000, Number(timeoutMs) || 25000),
