@@ -92,7 +92,7 @@ Rules:
 - If the user wants to keep the person/character recognizable, use preserve for identity
 - preserve_zones: short descriptions of what must stay the same (e.g. "face and hair", "sword in right hand")
 - rewrite_zones: short descriptions of what must change (e.g. "full body armor", "background scene", "blue aura around blade")
-- spatial_prompt_hints: concrete SD3 prompt fragments that describe the spatial transformation (e.g. "blue energy aura surrounding the blade", "stone courtyard background replacing previous setting")
+- spatial_prompt_hints: concrete SD3 prompt fragments that describe the spatial transformation, including exact colors ("deep burgundy badge"), materials ("polished gold metal pin"), sizes relative to frame ("~10% frame width star shape"), and placement ("pinned to upper-left chest"). Examples: "blue energy aura surrounding the blade", "star-shaped polished gold badge ~8% frame width pinned center-left chest", "stone courtyard background replacing previous setting"
 - Keep all text in English
 - Be decisive: pick clear profiles, do not hedge with all-balanced
 
@@ -157,8 +157,8 @@ function buildManifestSummaryForLlm(manifest = {}) {
     for (const obj of manifest.objects.slice(0, 6)) {
       const label = normalizeText(obj?.label || 'object');
       const bbox = Array.isArray(obj?.bbox) ? `bbox [${obj.bbox.join(', ')}]` : '';
-      const attrs = Array.isArray(obj?.attributes) ? obj.attributes.slice(0, 3).join(', ') : '';
-      parts.push([`object: ${label}`, bbox, attrs].filter(Boolean).join(' | '));
+      const attrs = Array.isArray(obj?.attributes) ? obj.attributes.slice(0, 5).join(', ') : '';
+      parts.push([`object: ${label}`, bbox, attrs ? `[${attrs}]` : ''].filter(Boolean).join(' | '));
     }
   }
 

@@ -13,10 +13,16 @@ const { callJanusVisionText, resolveVisionProvider } = require('../../lib/janus-
 // On demande à Janus de décrire l'image de façon concise et visuelle,
 // comme si on voulait la recréer ou la transformer.
 const AUTO_DESCRIBE_PROMPT = [
-  'Describe this image in one or two concise English sentences.',
-  'Focus on: main subject, visual style, colors, mood, and any distinctive details.',
-  'Be specific and visual. Do not say "the image shows" — just describe directly.',
-  'Example: "A young woman with long red hair standing in a misty forest, soft golden light, painterly style."',
+  'Describe this image in two to four concise English sentences for use as a visual generation prompt.',
+  'Cover ALL of the following in order:',
+  '1. SUBJECT — who or what is the main subject, their approximate position in frame (center/left/right/foreground/background), and rough proportions.',
+  '2. COLORS — dominant colors and color palette (be precise: "deep burgundy", "muted olive green", not just "red" or "green").',
+  '3. SPATIAL LAYOUT — where objects/people are positioned relative to each other (left of, above, behind, overlapping).',
+  '4. KEY DETAILS — materials, textures, finishes of important props or clothing ("polished gold metal", "rough linen fabric", "glossy acrylic").',
+  '5. LIGHTING & MOOD — light direction, quality, and emotional tone.',
+  '6. STYLE — visual rendering style (photorealistic, painterly, anime, etc.).',
+  'Be specific and physical. Do not say "the image shows" — describe directly as if guiding an artist.',
+  'Example: "A young woman occupying the center two-thirds of the frame, long deep-auburn hair falling past her shoulders. She wears a matte black leather jacket with silver zipper pulls on the left chest. Soft diffused golden light from the upper-left. Misty forest background, blurred. Painterly, slightly desaturated."',
 ].join(' ');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
