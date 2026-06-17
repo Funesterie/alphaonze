@@ -39,6 +39,67 @@ const {
 } = require('../../lib/janus-vision-runtime.cjs');
 const westsideChopper = require('../../lib/westside-chopper.cjs');
 const funesterieMixer = require('../../lib/funesterie-mixer.cjs');
+const { transcribe: sttTranscribe } = require('../../lib/stt-service.cjs');
+
+// Auto-analyse un fichier audio depuis une URL publique — retourne la transcription ou null
+async function autoTranscribeAudioUrl(url, { lang } = {}) {
+  if (!url || typeof url !== 'string') return null;
+  try {
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 12000);
+    const resp = await fetch(url, { signal: ctrl.signal }).catch(() => null);
+    clearTimeout(tid);
+    if (!resp?.ok) return null;
+    const buf = Buffer.from(await resp.arrayBuffer());
+    if (!buf.length) return null;
+    const contentType = resp.headers.get('content-type') || 'audio/mpeg';
+    const result = await sttTranscribe(buf, contentType, { language: lang || undefined }).catch(() => null);
+    return result?.text?.trim() || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function extractMediaMarkerUrls(messages = [], kind = '') {
+  const normalizedKind = String(kind || '').trim().toLowerCase();
+  if (!normalizedKind) return [];
+  const re = new RegExp(`\\[${normalizedKind}:([^\\]]+)\\]`, 'gi');
+  const output = [];
+  const seen = new Set();
+  for (const message of Array.isArray(messages) ? messages : []) {
+    const content = String(message?.content || '');
+    if (!content) continue;
+    let match = null;
+    while ((match = re.exec(content))) {
+      const url = String(match[1] || '').trim();
+      if (!url) continue;
+      const key = url.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      output.push(url);
+      if (output.length >= 12) return output;
+    }
+  }
+  return output;
+}
+
+function toUniqueMediaUrls(...sources) {
+  const output = [];
+  const seen = new Set();
+  for (const source of sources) {
+    const entries = Array.isArray(source) ? source : [source];
+    for (const entry of entries) {
+      const url = String(entry || '').trim();
+      if (!url) continue;
+      const key = url.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      output.push(url);
+      if (output.length >= 12) return output;
+    }
+  }
+  return output;
+}
 
 // Charge le system prompt depuis system_prompt.txt (première personne, identité complète d'A11)
 function loadSystemPrompt() {
@@ -728,6 +789,39 @@ function createChatRouter(overrides = {}) {
         }
       );
       const informativeContexts = [];
+      const rawRequestMessages = Array.isArray(req.body?.messages) ? req.body.messages : [];
+
+      // Auto-analyse audio/vidéo joints comme références
+      const bodyAudioUrls = toUniqueMediaUrls(
+        req.body?.audioUrl,
+        req.body?.referenceAudioUrls,
+        extractMediaMarkerUrls(rawRequestMessages, 'audio')
+      );
+      if (bodyAudioUrls.length > 0) {
+        const transcripts = (await Promise.all(
+          bodyAudioUrls.slice(0, 3).map((u) => autoTranscribeAudioUrl(u, { lang: req.body?.language }))
+        )).filter(Boolean);
+        if (transcripts.length > 0) {
+          informativeContexts.push([
+            '[Contexte audio — transcription automatique]',
+            transcripts.map((t, i) => `Audio ${bodyAudioUrls.length > 1 ? i + 1 : ''}: "${t}"`).join('\n'),
+            'Utilise ce contenu pour répondre directement à la demande de l\'utilisateur sur cet audio.',
+          ].join('\n'));
+        }
+      }
+      const bodyVideoUrls = toUniqueMediaUrls(
+        req.body?.sourceVideoUrl,
+        req.body?.referenceVideoUrls,
+        extractMediaMarkerUrls(rawRequestMessages, 'video')
+      );
+      if (bodyVideoUrls.length > 0) {
+        informativeContexts.push([
+          '[Contexte vidéo — références jointes]',
+          bodyVideoUrls.slice(0, 3).map((u, i) => `Vidéo ${bodyVideoUrls.length > 1 ? i + 1 : ''}: ${u.split('/').pop()?.split('?')[0] || u}`).join('\n'),
+          'Ces vidéos sont des références de mouvement/montage pour la génération. Utilise-les selon la demande.',
+        ].join('\n'));
+      }
+
       if (!(await enforcePaidLongChat(req, res, db, familyAccess, userMessage))) return;
       if (!familyAccess) {
         delete req.body.systemPrompt;

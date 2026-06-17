@@ -524,10 +524,12 @@ function formatVivyToolCapabilityLines() {
 
 function buildVivyToolCapabilityPrompt() {
   return [
-    'Carte outils Vivy autorisée:',
+    'Carte outils Vivy autorisée (carte bornée, pas débridage sauvage):',
     ...formatVivyToolCapabilityLines(),
-    "Règle: si un outil autorisé peut aider, utilise l'intent ou le contexte backend disponible au lieu de répondre que tu ne peux rien faire.",
+    "Règle routing: si un outil autorisé peut aider, route vers l'intent disponible au lieu de faire semblant d'être aveugle.",
     "Règle sécurité: ne contourne pas les garde-fous, ne lis pas de secrets, ne promets pas d'exécuter une commande non autorisée; nomme le verrou probable et l'action bornée suivante.",
+    "Journalisation décision outils: pour chaque outil appelé, indiquer pourquoi (intent choisi), ce qui est envoyé (sans secret), quel verrou s'applique, résultat résumé sans secret, source/fichier/url si applicable.",
+    "Confirmation opérateur obligatoire si l'action peut: modifier, supprimer, coûter de l'argent, exposer un secret, publier, déployer ou contacter un service externe sensible.",
   ].join('\n');
 }
 

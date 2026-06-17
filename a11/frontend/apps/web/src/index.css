@@ -3825,6 +3825,29 @@ html.a11-auth-page-root body {
   line-height: 1.48;
 }
 
+.vivy-chat-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 6px;
+  min-height: 24px !important;
+  padding: 0 8px !important;
+  border: 1px solid rgba(240, 121, 216, 0.28) !important;
+  border-radius: 6px !important;
+  background: none !important;
+  color: #c084b8 !important;
+  font-size: 11px !important;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 0.15s;
+}
+
+.vivy-chat-copy-btn:hover {
+  opacity: 1;
+  border-color: rgba(240, 121, 216, 0.7) !important;
+  color: #f079d8 !important;
+}
+
 .vivy-chat-file-list,
 .vivy-chat-attachments {
   display: flex;

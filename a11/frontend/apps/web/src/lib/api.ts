@@ -4317,6 +4317,14 @@ export async function pinResourceToLibrary(resourceId: number, alias?: string): 
   return res.ok;
 }
 
+export async function unpinResourceFromLibrary(resourceId: number): Promise<boolean> {
+  const res = await authFetch(getApiUrl(`/api/user/library/${resourceId}/unpin`), {
+    method: 'POST',
+    headers: buildAuthHeaders(),
+  });
+  return res.ok;
+}
+
 export type SessionDriveStorageStatus = {
   ok: boolean;
   storagePreference?: 'session-drive';

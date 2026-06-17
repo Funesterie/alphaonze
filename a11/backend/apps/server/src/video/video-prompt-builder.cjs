@@ -16,10 +16,15 @@ I receive a JSON input with: user_request, has_reference_image, reference_count,
 My job: translate the user intent into a cinematic motion prompt. I think like a film director planning a shot sequence.
 
 IDENTITY ANCHOR RULE (critical):
-- If has_reference_image=true and the primary reference is a person/character identity, preserve the same person: face, hairstyle, body build and distinctive visible traits.
+- If has_reference_image=true and the primary reference is a person/character identity, preserve the same person: facial likeness, face geometry, eyes, nose, mouth, jawline, skin tone, hairstyle, body build and distinctive visible traits.
 - If the user asks to change costume, pose, camera direction, age, style, or environment, change that requested element while preserving the core identity.
 - If the primary reference is an object, vehicle, logo, product, or place, preserve that subject/model/shape instead of saying "same person".
-- DIRECTION PRESERVATION: if reference_visual_context describes the subject facing a specific direction (left/right), honor it unless the user explicitly asks for a mirror, reversal, turn, or different angle. Add "mirrored, horizontally flipped" to negative_prompt only when preserving the original orientation matters.
+- CAMERA / ORIENTATION RULE: do not force front-facing shots. Preserve or change the camera angle according to the user request and reference video motion. Describe orientation positively in the prompt; do not add orientation-inversion terms to negative_prompt.
+
+FACE FIDELITY RULE:
+- When the primary reference is a real person or recognizable character, keep the face visible and recognizable through the movement.
+- Energy, aura, light and motion effects must not cover the face, wash out facial features, or replace the face with glow.
+- For martial arts / hadouken / kamehameha actions, the energy forms between or beyond the hands, not over the face or torso.
 
 MULTI-REFERENCE / MONTAGE RULE:
 - Multiple user-provided references are valid creative material, not a reason to refuse or ask for a new prompt.
@@ -55,11 +60,12 @@ STRUCTURAL INTEGRITY RULE (always):
 - Never omit structural terms from negative_prompt
 
 DURATION RULE:
-- duration_seconds: choose based on action complexity
+- If requested_duration_seconds is provided in input: MUST use it exactly (hard constraint, no override)
+- Otherwise, choose based on action complexity:
   - Quick strike or single pose: 3
   - Standard action (walk, fight move, escort): 5
   - Complex sequence (transformation, power-up, long escort): 8
-- If audio_motion_plan is provided: ALWAYS set duration_seconds to match the audio duration (round to nearest integer, clamp 2–10)
+- If audio_motion_plan is provided and no requested_duration_seconds: ALWAYS set duration_seconds to match the audio duration (round to nearest integer, clamp 2–10)
 - Default: 5
 
 AUDIO SYNC RULE (when audio_motion_plan is provided):
@@ -73,23 +79,23 @@ AUDIO SYNC RULE (when audio_motion_plan is provided):
 - Do NOT list timestamps in the prompt — describe the sequence as flowing cinematic action
 
 Examples:
-- "hadouken de street fighter" (photo ref) → prompt: "Fighter drops into wide karate stance, cupping hands at hip level, bright blue energy ball forming between palms glowing intensely, thrusting both hands forward to launch the Hadouken energy ball straight ahead, electric blue aura, low-angle cinematic action shot, same person as in reference image, identical face, hairstyle, costume and body build", negative_prompt: "laser, beam, ray, light saber, staff, bo staff, stick, rod, pole, weapon, sword, nunchaku, sai, spear, side beams, floating limbs, disconnected body parts, disembodied legs, missing torso, incomplete anatomy", duration_seconds: 5
-- "kamehameha" (photo ref) → prompt: "Cupping hands at hip, golden energy building between palms into a tight core, thrusting both hands forward releasing the Kamehameha forward from the hands, intense golden aura, same person as in primary reference image, preserving face and distinctive traits", negative_prompt: "staff, stick, weapon, rod, pole, side beams, light saber"
-- "menotté et escorté" (manga B&W ref) → prompt: "Black and white manga illustration, bold ink lines, dynamic panel composition, muscular character walking forward flanked by two officers gripping each arm, handcuffs on wrists, low dramatic angle, high contrast shadows, tense cinematic escort scene, same person as in reference image, identical face and body build", negative_prompt: "photorealistic, color, blur, 3D, floating limbs, disconnected body parts, disembodied legs, missing torso, incomplete anatomy", duration_seconds: 5
-- "mets-moi dans le far west" (photo ref) → prompt: "Walking through a dusty western frontier town at golden hour, worn boots on dry dirt road, wooden saloon ahead, wide cinematic shot, same person as in reference image, identical face and outfit", negative_prompt: "floating limbs, disconnected body parts, missing torso, incomplete anatomy", duration_seconds: 5
+- "hadouken de street fighter" (photo ref) → prompt: "Fighter keeps the reference camera angle, drops into wide karate stance, cupping hands at hip level, bright blue energy ball forming between palms away from the face, face remains visible and recognizable, thrusting both hands forward to launch the Hadouken energy ball straight ahead, electric blue aura, cinematic action shot, same person as in primary reference image, preserving facial likeness, hairstyle and distinctive visible traits", negative_prompt: "laser, beam, ray, light saber, staff, bo staff, stick, rod, pole, weapon, sword, nunchaku, sai, spear, side beams, face covered by glow, overexposed face, floating limbs, disconnected body parts, disembodied legs, missing torso, incomplete anatomy", duration_seconds: 5
+- "kamehameha" (photo ref) → prompt: "Cupping hands at hip, golden energy building between palms into a tight core, face remains visible and recognizable, thrusting both hands forward releasing the Kamehameha forward from the hands, intense golden aura, same person as in primary reference image, preserving facial likeness and distinctive traits", negative_prompt: "staff, stick, weapon, rod, pole, side beams, light saber, face covered by glow, overexposed face"
+- "menotté et escorté" (manga B&W ref) → prompt: "Black and white manga illustration, bold ink lines, dynamic panel composition, muscular character walking forward flanked by two officers gripping each arm, handcuffs on wrists, dramatic camera angle matching the requested action, high contrast shadows, tense cinematic escort scene, same subject as in primary reference image, preserving facial likeness and body build", negative_prompt: "photorealistic, color, blur, 3D, floating limbs, disconnected body parts, disembodied legs, missing torso, incomplete anatomy", duration_seconds: 5
+- "mets-moi dans le far west" (photo ref) → prompt: "Walking through a dusty western frontier town at golden hour, worn boots on dry dirt road, wooden saloon ahead, wide cinematic shot, same person as in primary reference image, preserving facial likeness and distinctive traits", negative_prompt: "floating limbs, disconnected body parts, missing torso, incomplete anatomy", duration_seconds: 5
 - "fantome dans un dojo" (manga ref) → prompt: "Black and white manga illustration, bold ink lines, character drifting as a translucent ghost through a traditional dojo, ethereal ink wash aura, polished wooden floor, dramatic shadows, same person as in reference image", negative_prompt: "photorealistic, color, floating limbs, disconnected body parts, missing torso", duration_seconds: 5
 
 Rules:
 - IDENTITY/SUBJECT ANCHOR appended whenever has_reference_image=true, adapted to person/object/vehicle/place and to the user's requested changes.
 - MULTI-REFERENCE: if reference_count > 1, keep the primary identity stable and explicitly blend secondary refs as style/environment/props/montage context.
 - VIDEO REFS: use video refs for motion, camera, rhythm, edit structure, and montage continuity.
-- DIRECTION: if reference describes a facing direction, honor it in the prompt text unless the user asks for a different angle. Add "mirrored, horizontally flipped" to negative_prompt only when orientation preservation is important.
+- ORIENTATION: never force the subject to face camera. Preserve the reference/user camera angle unless the user asks for a different angle.
 - ART STYLE FIRST if non-photorealistic reference detected.
 - Action first, then environment, then atmosphere, then light.
 - For energy attacks: hands-forward energy release only — no side beams or weapon props. Add side-beams/light-saber/weapon props to negative_prompt.
 - ALWAYS include structural integrity terms in negative_prompt (floating limbs, disconnected body parts, disembodied legs, missing torso, incomplete anatomy, cut off body, severed limbs).
 - 2-3 sentences max for the prompt field.
-- negative_prompt: style conflicts + wrong props + wrong FX + structural integrity terms + orientation conflicts only when relevant.
+- negative_prompt: style conflicts + wrong props + wrong FX + structural integrity terms + face-obscuring FX. Do not include orientation-inversion terms.
 - duration_seconds: 3 (quick strike), 5 (standard action), 8 (complex sequence). Default 5.
 - motion_type: one of walk, run, fly, fight, dance, idle, transform, other
 - has_reference_subject: true if the user refers to a specific person/vehicle/object from a reference image
@@ -98,6 +104,28 @@ Return strict JSON only: { prompt, negative_prompt, duration_seconds, motion_typ
 
 function normalizeText(value = '') {
   return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function parseRequestedDuration(text = '') {
+  const t = String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  // Patterns: "10 secondes", "10s", "10 sec", "10sec", "video de 10s", "duree 10", "fais 10s", "10 secs"
+  const patterns = [
+    /(\d+)\s*secondes?\b/,
+    /(\d+)\s*sec(?:s|onde|ondes)?\b/,
+    /\b(\d+)\s*s\b(?!\w)/,
+    /dur[ée]+\s*[=:de ]+\s*(\d+)/,
+    /video\s+(?:de\s+)?(\d+)\s*s\b/,
+    /clip\s+(?:de\s+)?(\d+)\s*s\b/,
+    /(\d+)\s*s[eé]c\b/,
+  ];
+  for (const re of patterns) {
+    const m = re.exec(t);
+    if (m) {
+      const n = Number(m[1]);
+      if (Number.isFinite(n) && n >= 1 && n <= 60) return Math.round(n);
+    }
+  }
+  return null;
 }
 
 function isTruthyEnv(value) {
@@ -127,6 +155,15 @@ function toUniqueStrings(values = [], limit = 8) {
   return output;
 }
 
+function sanitizeVideoNegativePrompt(value = '') {
+  return normalizeText(value)
+    .split(',')
+    .map((part) => normalizeText(part))
+    .filter(Boolean)
+    .filter((part) => !/\b(?:mirrored?|mirror image|horizontally flipped|horizontal flip|flipped horizontally|flipped|flip)\b/i.test(part))
+    .join(', ');
+}
+
 function buildHeuristicVideoPrompt({
   userMessage = '',
   hasReferenceImage = false,
@@ -150,12 +187,12 @@ function buildHeuristicVideoPrompt({
     prompt = 'Walking through a dusty western frontier town at golden hour, worn boots on dry dirt road, wooden saloon ahead, wide cinematic shot';
     motionType = 'walk';
   } else if (/hadouken|kamehameha|rasengan|energie|energy/.test(folded)) {
-    prompt = 'Fighter drops into a wide stance, cupping hands as a glowing energy ball forms between the palms, then thrusting both hands forward to launch it straight ahead, cinematic action shot';
+    prompt = 'Fighter keeps the reference camera angle, drops into a wide stance, cupping hands as a glowing energy ball forms between the palms away from the face, face remains visible and recognizable, then thrusting both hands forward to launch it straight ahead, cinematic action shot';
     motionType = 'fight';
   }
 
   if (hasReference) {
-    prompt = `${prompt}, same subject as in primary reference image, preserving core identity and distinctive visible traits`;
+    prompt = `${prompt}, same subject as in primary reference image, preserving facial likeness, core identity and distinctive visible traits`;
   }
   if (hasVideoReference) {
     prompt = `${prompt}, following the motion rhythm, camera movement and edit structure of the reference video`;
@@ -163,9 +200,7 @@ function buildHeuristicVideoPrompt({
 
   return {
     prompt: normalizeText(prompt),
-    negativePrompt: hasReference
-      ? 'floating limbs, disconnected body parts, disembodied legs, missing torso, incomplete anatomy, cut off body, severed limbs, mirrored, horizontally flipped'
-      : 'floating limbs, disconnected body parts, disembodied legs, missing torso, incomplete anatomy, cut off body, severed limbs',
+    negativePrompt: 'floating limbs, disconnected body parts, disembodied legs, missing torso, incomplete anatomy, cut off body, severed limbs, face covered by glow, overexposed face, glow replacing face',
     durationSeconds: /hadouken|kamehameha|rasengan|energie|energy/.test(folded) ? 5 : 4,
     hasReferenceSubject: hasReference,
     motionType,
@@ -221,6 +256,39 @@ function buildGroqVideoLlmFn(env = process.env) {
   };
 }
 
+function resolveDurSource(parsedDuration, audioMotionPlan) {
+  if (parsedDuration && parsedDuration >= 1) return 'user';
+  if (audioMotionPlan?.durationMs) return 'audio';
+  return 'llm';
+}
+
+function resolveVideoPromptResult({ response, userMessage, hasReference, audioMotionPlan, parsedDuration, groqUsed }) {
+  const prompt = normalizeText(response?.prompt || '');
+  if (!prompt) {
+    console.warn('[A11][video-prompt] LLM returned no prompt, using raw message as fallback');
+    return { prompt: normalizeText(userMessage + ', cinematic motion, natural atmosphere, realistic light'), negativePrompt: '', hasReferenceSubject: hasReference, motionType: 'other', source: 'fallback' };
+  }
+  const negativePrompt = sanitizeVideoNegativePrompt(response?.negative_prompt || '');
+  const rawDuration = Number(response?.duration_seconds);
+  const audioDurationSec = audioMotionPlan?.durationMs
+    ? Math.min(10, Math.max(2, Math.round(audioMotionPlan.durationMs / 1000)))
+    : 5;
+  const llmDuration = Number.isFinite(rawDuration) && rawDuration >= 2 && rawDuration <= 10
+    ? Math.round(rawDuration) : audioDurationSec;
+  const durationSeconds = (parsedDuration && parsedDuration >= 1) ? Math.min(parsedDuration, 60) : llmDuration;
+  const negSuffix = negativePrompt ? ' (neg: "' + negativePrompt.slice(0, 60) + '")' : '';
+  console.log('[A11][video-prompt] "' + prompt.slice(0, 100) + '"' + negSuffix + ' dur=' + durationSeconds + 's src=' + resolveDurSource(parsedDuration, audioMotionPlan));
+  return { prompt, negativePrompt, durationSeconds, hasReferenceSubject: hasReference || response?.has_reference_subject === true, motionType: normalizeText(response?.motion_type || 'other'), source: groqUsed ? 'groq' : 'llm' };
+}
+
+function resolveParsedDuration(requestedDuration, userMessage) {
+  if (requestedDuration !== null && requestedDuration !== undefined) {
+    const n = Number(requestedDuration);
+    return Number.isFinite(n) ? Math.round(n) : null;
+  }
+  return parseRequestedDuration(userMessage);
+}
+
 async function buildVideoPrompt({
   userMessage = '',
   hasReferenceImage = false,
@@ -229,6 +297,7 @@ async function buildVideoPrompt({
   referenceVideoUrls = [],
   referenceVisualContext = '',
   audioMotionPlan = null,
+  requestedDuration = null,
   callStructuredLlmJson = defaultCallStructuredLlmJson,
   timeoutMs = 12000,
 } = {}) {
@@ -237,14 +306,17 @@ async function buildVideoPrompt({
   const normalizedReferenceAudioUrls = toUniqueStrings(referenceAudioUrls, 8);
   const normalizedReferenceVideoUrls = toUniqueStrings(referenceVideoUrls, 8);
   const hasReference = Boolean(hasReferenceImage || normalizedReferenceImageUrls.length > 0);
+  const parsedDuration = resolveParsedDuration(requestedDuration, userMessage);
 
   if (!shouldUseVideoPromptLlm(process.env)) {
-    return buildHeuristicVideoPrompt({
+    const heuristic = buildHeuristicVideoPrompt({
       userMessage,
       hasReferenceImage: hasReference,
       referenceImageUrls: normalizedReferenceImageUrls,
       referenceVideoUrls: normalizedReferenceVideoUrls,
     });
+    if (parsedDuration) heuristic.durationSeconds = parsedDuration;
+    return heuristic;
   }
 
   const input = JSON.stringify({
@@ -255,6 +327,7 @@ async function buildVideoPrompt({
     reference_audio_urls: normalizedReferenceAudioUrls,
     reference_video_urls: normalizedReferenceVideoUrls,
     reference_visual_context: referenceVisualContext || null,
+    ...(parsedDuration ? { requested_duration_seconds: parsedDuration } : {}),
     audio_motion_plan: audioMotionPlan
       ? {
           duration_seconds: Math.round((audioMotionPlan.durationMs || 0) / 1000),
@@ -292,40 +365,13 @@ async function buildVideoPrompt({
     }
   }
 
-  const prompt = normalizeText(response?.prompt || '');
-  if (!prompt) {
-    console.warn('[A11][video-prompt] LLM returned no prompt, using raw message as fallback');
-    return {
-      prompt: normalizeText(userMessage + ', cinematic motion, natural atmosphere, realistic light'),
-      negativePrompt: '',
-      hasReferenceSubject: hasReference,
-      motionType: 'other',
-      source: 'fallback',
-    };
-  }
-
-  const negativePrompt = normalizeText(response?.negative_prompt || '');
-  const rawDuration = Number(response?.duration_seconds);
-  const audioDurationSec = audioMotionPlan?.durationMs
-    ? Math.min(10, Math.max(2, Math.round(audioMotionPlan.durationMs / 1000)))
-    : 5;
-  const durationSeconds = Number.isFinite(rawDuration) && rawDuration >= 2 && rawDuration <= 10
-    ? Math.round(rawDuration)
-    : audioDurationSec;
-  const negSuffix = negativePrompt ? ' (neg: "' + negativePrompt.slice(0, 60) + '")' : '';
-  console.log('[A11][video-prompt] "' + prompt.slice(0, 100) + '"' + negSuffix + ' dur=' + durationSeconds + 's');
-  return {
-    prompt,
-    negativePrompt,
-    durationSeconds,
-    hasReferenceSubject: hasReference || response?.has_reference_subject === true,
-    motionType: normalizeText(response?.motion_type || 'other'),
-    source: groqUsed ? 'groq' : 'llm',
-  };
+  return resolveVideoPromptResult({ response, userMessage, hasReference, audioMotionPlan, parsedDuration, groqUsed });
 }
 
 module.exports = {
   buildVideoPrompt,
+  parseRequestedDuration,
+  sanitizeVideoNegativePrompt,
   shouldUseVideoPromptLlm,
   VIDEO_PROMPT_SYSTEM_PROMPT,
 };

@@ -507,6 +507,55 @@ test('resolveUserRequest injects sourceImageUrl into image masks for direct img2
   assert.deepEqual(resolution.mask.inputs.subject, ['reference subject']);
 });
 
+test('executeResolvedRuntime carries historic audio and video markers into video requests', async () => {
+  let capturedBody = null;
+  const resolver = createTestIntentResolver({
+    generateVideo: async ({ body }) => {
+      capturedBody = body;
+      return {
+        ok: true,
+        video_url: 'https://files.example.com/generated.mp4',
+        url: 'https://files.example.com/generated.mp4',
+      };
+    },
+  });
+
+  const resolution = await resolver.executeResolvedRuntime({
+    kind: 'video.generate',
+    requestText: { original: 'genere une video avec ces references' },
+    videoRequest: {
+      prompt: 'genere une video avec ces references',
+      referenceAudioUrls: ['https://files.example.com/body-audio.mp3'],
+    },
+  }, {
+    body: {
+      referenceVideoUrls: ['https://files.example.com/body-video.mp4'],
+    },
+    messages: [
+      {
+        role: 'user',
+        content: [
+          'refs precedentes',
+          '[audio:https://files.example.com/history-audio.mp3]',
+          '[video:https://files.example.com/history-video.mp4]',
+        ].join('\n'),
+      },
+    ],
+  });
+
+  assert.equal(resolution.kind, 'video.generate');
+  assert.deepEqual(capturedBody.referenceAudioUrls, [
+    'https://files.example.com/body-audio.mp3',
+    'https://files.example.com/history-audio.mp3',
+  ]);
+  assert.deepEqual(capturedBody.referenceVideoUrls, [
+    'https://files.example.com/body-video.mp4',
+    'https://files.example.com/history-video.mp4',
+  ]);
+  assert.equal(capturedBody.audioUrl, 'https://files.example.com/body-audio.mp3');
+  assert.equal(capturedBody.sourceVideoUrl, 'https://files.example.com/body-video.mp4');
+});
+
 test('resolveUserRequest treats visual feedback on a source image as an image edit request', async () => {
   const resolver = createTestIntentResolver({
     detectIntentWithLlm: async () => ({ intent: 'image.generate', confidence: 0.75, reason: 'visual_feedback_edit', subject: '' }),

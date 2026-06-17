@@ -97,6 +97,7 @@ import {
   type VivyStudioProductionResult,
   fetchUserLibrary,
   pinResourceToLibrary,
+  unpinResourceFromLibrary,
 } from "./lib/api";
 import { A11HistoryPanel } from "./components/A11HistoryPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
@@ -154,7 +155,9 @@ interface ChatMessage {
   imageUrl?: string | null;
   imageUrls?: string[] | null;
   audioUrl?: string | null;
+  audioUrls?: string[] | null;
   videoUrl?: string | null;
+  videoUrls?: string[] | null;
   fileUrl?: string | null;
   qflushVerification?: {
     suspicious?: boolean;
@@ -349,6 +352,23 @@ function appendUniqueUrl(list: string[], url: string) {
   const normalized = String(url || "").trim();
   if (!normalized) return list;
   return Array.from(new Set([...list, normalized]));
+}
+
+function uniqueMediaUrls(...sources: Array<string | string[] | null | undefined>) {
+  const output: string[] = [];
+  const seen = new Set<string>();
+  for (const source of sources) {
+    const entries = Array.isArray(source) ? source : [source];
+    for (const entry of entries) {
+      const url = String(entry || "").trim();
+      if (!url) continue;
+      const key = url.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      output.push(url);
+    }
+  }
+  return output;
 }
 
 function toSyntheticFileList(files: File[]): FileList {
@@ -1150,17 +1170,20 @@ function buildChatMessageClipboardText(
 
   lines.push("", "Texte:", String(message.content || "").trim() || "(message vide)");
 
-  const imageUrls = Array.isArray(message.imageUrls) && message.imageUrls.length
-    ? message.imageUrls
-    : message.imageUrl
-      ? [message.imageUrl]
-      : [];
+  const imageUrls = uniqueMediaUrls(message.imageUrl, message.imageUrls || []);
+  const audioUrls = uniqueMediaUrls(message.audioUrl, message.audioUrls || []);
+  const videoUrls = uniqueMediaUrls(message.videoUrl, message.videoUrls || []);
 
   const mediaLines: string[] = [];
   imageUrls.forEach((url, imageIndex) => {
     if (url) mediaLines.push(`- Image ${imageIndex + 1}: ${url}`);
   });
-  if (message.videoUrl) mediaLines.push(`- Vidéo: ${message.videoUrl}`);
+  audioUrls.forEach((url, audioIndex) => {
+    if (url) mediaLines.push(`- Audio ${audioIndex + 1}: ${url}`);
+  });
+  videoUrls.forEach((url, videoIndex) => {
+    if (url) mediaLines.push(`- Vidéo ${videoIndex + 1}: ${url}`);
+  });
   if (message.fileUrl) mediaLines.push(`- Fichier: ${message.fileUrl}`);
 
   if (mediaLines.length) {
@@ -1431,13 +1454,20 @@ function isRenderableChatMessage(message: ChatMessage) {
       || message.videoUrl
       || message.fileUrl
       || (Array.isArray(message.imageUrls) && message.imageUrls.length > 0)
+      || message.audioUrl
+      || (Array.isArray(message.audioUrls) && message.audioUrls.length > 0)
+      || (Array.isArray(message.videoUrls) && message.videoUrls.length > 0)
     );
   }
   if (message.role === "assistant") {
     return Boolean(
       String(message.content || "").trim()
       || message.imageUrl
+      || (Array.isArray(message.imageUrls) && message.imageUrls.length > 0)
+      || message.audioUrl
+      || (Array.isArray(message.audioUrls) && message.audioUrls.length > 0)
       || message.videoUrl
+      || (Array.isArray(message.videoUrls) && message.videoUrls.length > 0)
       || message.fileUrl
     );
   }
@@ -1494,6 +1524,20 @@ function stripHistoricalMediaMarkersForModel(content: string) {
     .trim();
 }
 
+function buildModelMediaMarkers(message: ChatMessage) {
+  if (!message || message.role === "system") return [];
+  const imageUrls = uniqueMediaUrls(message.imageUrl, message.imageUrls || []);
+  const audioUrls = uniqueMediaUrls(message.audioUrl, message.audioUrls || []);
+  const videoUrls = uniqueMediaUrls(message.videoUrl, message.videoUrls || []);
+  const fileUrls = uniqueMediaUrls(message.fileUrl);
+  return [
+    ...imageUrls.map((url) => `[image:${url}]`),
+    ...audioUrls.map((url) => `[audio:${url}]`),
+    ...videoUrls.map((url) => `[video:${url}]`),
+    ...fileUrls.map((url) => `[file:${url}]`),
+  ];
+}
+
 function sanitizeConversationHistoryForModel(messages: ChatMessage[]) {
   const cleanMessages = (Array.isArray(messages) ? messages : []).filter((message) => {
     if (!message || message.role === "system") return false;
@@ -1514,14 +1558,13 @@ function sanitizeConversationHistoryForModel(messages: ChatMessage[]) {
       ? String(message.content || "").trim()
       : stripHistoricalMediaMarkersForModel(message.content);
 
+    const mediaMarkers = buildModelMediaMarkers(message);
     return {
       ...message,
       content: trimChatContentForContext(
         [
           baseContent,
-          keepCurrentMediaMarkers && message.imageUrl ? `[image:${message.imageUrl}]` : "",
-          keepCurrentMediaMarkers && message.videoUrl ? `[video:${message.videoUrl}]` : "",
-          keepCurrentMediaMarkers && message.fileUrl ? `[file:${message.fileUrl}]` : "",
+          ...mediaMarkers,
         ].filter(Boolean).join("\n"),
         A11_MAX_MESSAGE_CHARS
       ),
@@ -1635,11 +1678,12 @@ function findLastVisibleMedia(messages: ChatMessage[]) {
   const list = Array.isArray(messages) ? [...messages].reverse() : [];
   for (const message of list) {
     if (!message || message.role === "system") continue;
-    if (message.imageUrl) return { kind: "image" as const, url: message.imageUrl };
-    if (Array.isArray(message.imageUrls) && message.imageUrls[0]) {
-      return { kind: "image" as const, url: message.imageUrls[0] };
-    }
-    if (message.videoUrl) return { kind: "video" as const, url: message.videoUrl };
+    const imageUrls = uniqueMediaUrls(message.imageUrl, message.imageUrls || []);
+    const videoUrls = uniqueMediaUrls(message.videoUrl, message.videoUrls || []);
+    const audioUrls = uniqueMediaUrls(message.audioUrl, message.audioUrls || []);
+    if (imageUrls[0]) return { kind: "image" as const, url: imageUrls[0] };
+    if (videoUrls[0]) return { kind: "video" as const, url: videoUrls[0] };
+    if (audioUrls[0]) return { kind: "audio" as const, url: audioUrls[0] };
     if (message.fileUrl) return { kind: "file" as const, url: message.fileUrl };
   }
   return null;
@@ -3872,38 +3916,31 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     voiceTool: string;
     surface: "vivy" | "a11" | "kaen44";
   }) {
+    // Appel TTS simple pour test — pas de chemin "référence obligatoire" qui bloque en 424.
+    // identityVoice:false évite normalizeA11OfficialReferenceRequest côté backend.
+    // vocalMode:"speech" évite le déclenchement de la conversion vocale XTTS-RVC.
     return {
       persona: entry.ttsPersona,
       voicePersona: entry.ttsPersona,
       surface: entry.surface,
-      voiceStyle: entry.voiceStyle,
-      voiceReferenceName: entry.label,
-      voiceReferenceLabel: entry.voiceStyle,
-      referenceVoiceStyle: entry.voiceStyle,
-      voiceTool: entry.voiceTool,
       vocalCast: entry.label,
       provider: "auto",
       ttsProvider: "auto",
-      engine: "auto",
-      voiceEngine: "auto",
-      voiceConversionEngine: "auto",
-      conversionEngine: "auto",
-      vocalMode: "adaptive",
-      ...getVivyVoiceTuning("adaptive"),
+      vocalMode: "speech",
       ttsAsync: true,
       asyncTts: true,
-      ttsJobTimeoutMs: 180000,
+      ttsJobTimeoutMs: 60000,
       audioFormat: "mp3",
       responseFormat: "mp3",
-      useDefaultVoiceReference: true,
-      defaultVoiceReference: true,
-      identityVoice: true,
-      useIdentityVoice: true,
+      identityVoice: false,
+      useIdentityVoice: false,
+      useDefaultVoiceReference: false,
+      defaultVoiceReference: false,
       neutralVoice: false,
       voiceReferenceRequired: false,
       referenceVoiceRequired: false,
       requireVoiceReference: false,
-      allowBrowserSpeechFallback: false,
+      allowBrowserSpeechFallback: true,
     };
   }
 
@@ -5307,6 +5344,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
   const voiceReferenceInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [copiedMsgId, setCopiedMsgId] = useState("");
 
   useEffect(() => {
     writeVivyPublicChat(messages);
@@ -5690,6 +5728,20 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
                 ))}
               </div>
             ) : null}
+            {message.role === "assistant" && (
+              <button
+                type="button"
+                className="vivy-chat-copy-btn"
+                onClick={() => {
+                  void navigator.clipboard.writeText(message.content).then(() => {
+                    setCopiedMsgId(message.id);
+                    setTimeout(() => setCopiedMsgId((current) => current === message.id ? "" : current), 2000);
+                  });
+                }}
+              >
+                {copiedMsgId === message.id ? "Copié" : "Copier"}
+              </button>
+            )}
           </article>
         ))}
         {isSending && (
@@ -10325,11 +10377,16 @@ export function App() {
   const [loadingResources, setLoadingResources] = useState(false);
   const [resourceError, setResourceError] = useState("");
   const [uploadFeedback, setUploadFeedback] = useState("");
+  const [mediaImporting, setMediaImporting] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [imageJobActive, setImageJobActive] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [dragPreviewUrls, setDragPreviewUrls] = useState<ComposerPreviewItem[]>([]);
   const [libraryImages, setLibraryImages] = useState<A11ConversationResource[]>([]);
+  const [libraryAudio, setLibraryAudio] = useState<A11ConversationResource[]>([]);
+  const [libraryVideo, setLibraryVideo] = useState<A11ConversationResource[]>([]);
+  const [libraryTab, setLibraryTab] = useState<'image' | 'audio' | 'video'>('image');
+  const [librarySelection, setLibrarySelection] = useState<{ images: string[]; audios: string[]; videos: string[] }>({ images: [], audios: [], videos: [] });
   const [showLibraryPanel, setShowLibraryPanel] = useState(false);
   const [previewCarouselIndex, setPreviewCarouselIndex] = useState(0);
   const dragCounterRef = useRef(0);
@@ -10339,6 +10396,7 @@ export function App() {
   const pendingImportedVideoUrlsRef = useRef<string[]>([]);
   const pendingImportedFileUrlsRef = useRef<string[]>([]);
   const pendingAudioUrlRef = useRef<string | null>(null);
+  const mediaImportingRef = useRef(false);
   const dismissedImportedNamesRef = useRef<Set<string>>(new Set());
   const mobileAudioPrepKeyRef = useRef("");
   const copyMessageFeedbackTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
@@ -10995,11 +11053,19 @@ export function App() {
   }
 
   async function refreshLibrary() {
-    if (!hasPrivateSession) { setLibraryImages([]); return; }
+    if (!hasPrivateSession) { setLibraryImages([]); setLibraryAudio([]); setLibraryVideo([]); return; }
     try {
-      const images = await fetchUserLibrary({ kind: 'image', limit: 30 });
+      const [images, audios, videos] = await Promise.all([
+        fetchUserLibrary({ kind: 'image', limit: 30 }),
+        fetchUserLibrary({ kind: 'audio', limit: 20 }),
+        fetchUserLibrary({ kind: 'video', limit: 20 }),
+      ]);
       setLibraryImages(images);
-    } catch { setLibraryImages([]); }
+      setLibraryAudio(audios);
+      setLibraryVideo(videos);
+    } catch {
+      setLibraryImages([]); setLibraryAudio([]); setLibraryVideo([]);
+    }
   }
 
   async function refreshVoiceReferences() {
@@ -11114,6 +11180,9 @@ export function App() {
     }
     recentFileImportRef.current = { key: importKey, at: now };
 
+    mediaImportingRef.current = true;
+    setMediaImporting(true);
+    try {
     const conversationId = buildSurfaceConversationId(a11ConvId || selectedChatId || undefined, surfaceKind) || undefined;
     const audioFiles = allFiles.filter(isAudioLikeFile);
     const videoFiles = allFiles.filter((file) => !isAudioLikeFile(file) && isVideoLikeFile(file));
@@ -11300,6 +11369,10 @@ export function App() {
         setUploadFeedback(`Echec import: ${failed.join(", ")}`);
       }
     }
+    } finally {
+      mediaImportingRef.current = false;
+      setMediaImporting(false);
+    }
   }
 
   async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -11341,6 +11414,8 @@ export function App() {
     pendingImportedVideoUrlsRef.current = [];
     pendingImportedFileUrlsRef.current = [];
     pendingAudioUrlRef.current = null;
+    mediaImportingRef.current = false;
+    setMediaImporting(false);
     setAudioSyncReady(false);
     dismissedImportedNamesRef.current.clear();
     setSidebarOpen(false);
@@ -11524,6 +11599,10 @@ export function App() {
   }
   // File d'attente : l'utilisateur peut écrire pendant qu'A11 réfléchit
   async function sendMessage(forcedText?: string) {
+    if (mediaImportingRef.current) {
+      setUploadFeedback("Import refs en cours: attends la fin pour que les médias restent attachés.");
+      return;
+    }
     const text = (forcedText ?? input).trim();
     const { cleanText: cleanedInput, imageUrls } = extractImageUrlsFromText(text);
     const hasPendingAudioPreview = dragPreviewUrls.some((item) => getComposerPreviewKind(item) === "audio");
@@ -11553,7 +11632,7 @@ export function App() {
     }
     const previewImageUrl = allImageUrls[0] ?? "";
     const explicitSourceImageUrl = previewImageUrl || undefined;
-    const MAX_MEDIA_REFS = 6;
+    const MAX_MEDIA_REFS = 3;
     const allVideoUrls = Array.from(new Set(pendingVideoUrls)).slice(0, MAX_MEDIA_REFS);
     if (pendingVideoUrls.length > MAX_MEDIA_REFS) {
       setUploadFeedback(`${MAX_MEDIA_REFS} références vidéo max utilisées (${pendingVideoUrls.length - MAX_MEDIA_REFS} ignorée(s)).`);
@@ -11572,7 +11651,7 @@ export function App() {
       : null;
     const sourceImageUrl = explicitSourceImageUrl
       || (lastMediaForVision?.kind === "image" ? lastMediaForVision.url : undefined);
-    const submitKey = normalizeOutgoingMessageKey(`${effectiveText}\n${sourceImageUrl || ""}\n${sourceVideoUrl || ""}\n${pendingAudioUrls.join("|")}`);
+    const submitKey = normalizeOutgoingMessageKey(`${effectiveText}\n${sourceImageUrl || ""}\n${allImageUrls.join("|")}\n${sourceVideoUrl || ""}\n${allVideoUrls.join("|")}\n${pendingAudioUrls.join("|")}`);
     const now = Date.now();
     if (
       submitKey
@@ -11599,7 +11678,9 @@ export function App() {
       imageUrl: previewImageUrl || (sourceImageUrl && canReuseLastMediaForRequest(effectiveText) ? sourceImageUrl : null),
       imageUrls: allImageUrls.length > 1 ? allImageUrls : null,
       audioUrl: pendingAudioUrl || null,
+      audioUrls: pendingAudioUrls.length > 0 ? pendingAudioUrls : null,
       videoUrl: sourceVideoUrl || null,
+      videoUrls: allVideoUrls.length > 0 ? allVideoUrls : null,
       fileUrl: pendingFileUrls[0] || null,
       ts: new Date().toISOString(),
     };
@@ -11636,6 +11717,7 @@ export function App() {
           ? (lastMedia.kind === "image" ? "Oui, la voici." : "Oui, je te la remets ici.")
           : "Je n'ai pas encore d'image affichable dans cette conversation.",
         imageUrl: lastMedia?.kind === "image" ? lastMedia.url : null,
+        audioUrl: lastMedia?.kind === "audio" ? lastMedia.url : null,
         videoUrl: lastMedia?.kind === "video" ? lastMedia.url : null,
         fileUrl: lastMedia?.kind === "file" ? lastMedia.url : null,
         ts: new Date().toISOString(),
@@ -14203,77 +14285,90 @@ export function App() {
                             />
                           );
                         })()}
-                        {m.audioUrl && !m.imageUrl && !m.videoUrl && (
-                          <div
-                            style={{
-                              marginTop: 12,
-                              display: "grid",
-                              gap: 8,
-                              maxWidth: 360,
-                            }}
-                          >
-                            <audio src={m.audioUrl} controls preload="metadata" style={{ width: "100%" }} />
-                            <a
-                              href={m.audioUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{ fontSize: 12, color: "#93c5fd", textDecoration: "none" }}
-                            >
-                              Ouvrir l'audio
-                            </a>
-                          </div>
-                        )}
-                        {m.videoUrl && !m.imageUrl && (
-                          <div
-                            style={{
-                              marginTop: 12,
-                              display: "grid",
-                              gap: 10,
-                            }}
-                          >
-                            {/\.gif(?:[?#].*)?$/i.test(String(m.videoUrl || "")) ? (
-                              <a
-                                href={m.videoUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                style={{ display: "inline-block", width: "fit-content" }}
-                              >
-                                <img
-                                  src={m.videoUrl}
-                                  alt={`Animation generee par ${productName}`}
-                                  style={{ maxWidth: "320px", borderRadius: 12 }}
-                                />
-                              </a>
-                            ) : (
-                              <video
-                                src={m.videoUrl}
-                                controls
-                                preload="metadata"
-                                playsInline
-                                style={{ maxWidth: "320px", borderRadius: 12, background: "#020617" }}
-                              />
-                            )}
-                            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                              <a
-                                href={m.videoUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                style={{ fontSize: 12, color: "#93c5fd", textDecoration: "none" }}
-                              >
-                                Ouvrir la vidéo
-                              </a>
-                              <a
-                                href={m.videoUrl}
-                                download
-                                rel="noreferrer"
-                                style={{ fontSize: 12, color: "#86efac", textDecoration: "none", fontWeight: 600 }}
-                              >
-                                ⬇ Télécharger
-                              </a>
+                        {(() => {
+                          const audioRefs = uniqueMediaUrls(m.audioUrl, m.audioUrls || []);
+                          if (audioRefs.length === 0) return null;
+                          return (
+                            <div style={{ marginTop: 12, display: "grid", gap: 10, maxWidth: 420 }}>
+                              {audioRefs.map((audioRef, audioIndex) => (
+                                <div key={`${audioRef}-${audioIndex}`} style={{ display: "grid", gap: 6 }}>
+                                  {audioRefs.length > 1 && (
+                                    <div style={{ fontSize: 11, color: "#93c5fd", fontWeight: 700 }}>
+                                      Audio ref {audioIndex + 1}/{audioRefs.length}
+                                    </div>
+                                  )}
+                                  <audio src={audioRef} controls preload="metadata" style={{ width: "100%" }} />
+                                  <a
+                                    href={audioRef}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{ fontSize: 12, color: "#93c5fd", textDecoration: "none" }}
+                                  >
+                                    Ouvrir l'audio
+                                  </a>
+                                </div>
+                              ))}
                             </div>
-                          </div>
-                        )}
-                        {m.fileUrl && !m.imageUrl && !m.videoUrl && (
+                          );
+                        })()}
+                        {(() => {
+                          const videoRefs = uniqueMediaUrls(m.videoUrl, m.videoUrls || []);
+                          if (videoRefs.length === 0) return null;
+                          return (
+                            <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
+                              {videoRefs.map((videoRef, videoIndex) => (
+                                <div key={`${videoRef}-${videoIndex}`} style={{ display: "grid", gap: 8 }}>
+                                  {videoRefs.length > 1 && (
+                                    <div style={{ fontSize: 11, color: "#c084fc", fontWeight: 700 }}>
+                                      Vidéo ref {videoIndex + 1}/{videoRefs.length}
+                                    </div>
+                                  )}
+                                  {/\.gif(?:[?#].*)?$/i.test(String(videoRef || "")) ? (
+                                    <a
+                                      href={videoRef}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      style={{ display: "inline-block", width: "fit-content" }}
+                                    >
+                                      <img
+                                        src={videoRef}
+                                        alt={`Animation generee par ${productName}`}
+                                        style={{ maxWidth: "320px", borderRadius: 12 }}
+                                      />
+                                    </a>
+                                  ) : (
+                                    <video
+                                      src={videoRef}
+                                      controls
+                                      preload="metadata"
+                                      playsInline
+                                      style={{ maxWidth: "320px", borderRadius: 12, background: "#020617" }}
+                                    />
+                                  )}
+                                  <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <a
+                                      href={videoRef}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      style={{ fontSize: 12, color: "#93c5fd", textDecoration: "none" }}
+                                    >
+                                      Ouvrir la vidéo
+                                    </a>
+                                    <a
+                                      href={videoRef}
+                                      download
+                                      rel="noreferrer"
+                                      style={{ fontSize: 12, color: "#86efac", textDecoration: "none", fontWeight: 600 }}
+                                    >
+                                      ⬇ Télécharger
+                                    </a>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                        {m.fileUrl && (
                           <div
                             style={{
                               marginTop: 12,
@@ -14372,75 +14467,166 @@ export function App() {
                     >
                       {isCompactLayout ? "Réfs" : "Références"}
                     </button>
-                    {showLibraryPanel && (
-                      <div
-                        style={{
-                          position: 'absolute', bottom: '110%', left: 0, zIndex: 200,
-                          background: 'var(--bg-2, #1e1e2e)', border: '1px solid var(--border, #444)',
-                          borderRadius: 8, padding: 8, minWidth: 280, maxWidth: 420, boxShadow: '0 4px 20px #0008',
-                        }}
-                        onMouseLeave={() => setShowLibraryPanel(false)}
-                      >
-                        <div style={{ fontSize: 11, color: 'var(--text-muted, #888)', marginBottom: 6 }}>
-                          Images de référence — clic pour insérer
-                        </div>
-                        {libraryImages.length === 0 ? (
-                          <div style={{ fontSize: 12, color: 'var(--text-muted, #888)', padding: '8px 0' }}>
-                            Aucune image sauvegardée. Importe une image pour la retrouver ici.
-                          </div>
-                        ) : (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                            {libraryImages.map((img) => {
-                              const imageAlias = String((img as any).alias || "").trim();
-                              const imageLabel = imageAlias || img.filename;
-                              const imageUrl = (img as any).downloadUrl || img.url || "";
+                    {showLibraryPanel && (() => {
+                      // MIME-type filters so each tab only shows its real format
+                      const isImgRes = (r: A11ConversationResource) => { const ct = (r.contentType || '').toLowerCase(); const fn = r.filename.toLowerCase(); return ct.startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp|svg|avif|heic)$/.test(fn); };
+                      const isAudRes = (r: A11ConversationResource) => { const ct = (r.contentType || '').toLowerCase(); const fn = r.filename.toLowerCase(); return ct.startsWith('audio/') || /\.(mp3|wav|ogg|flac|aac|m4a|opus)$/.test(fn); };
+                      const isVidRes = (r: A11ConversationResource) => { const ct = (r.contentType || '').toLowerCase(); const fn = r.filename.toLowerCase(); return ct.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm|flv|m4v)$/.test(fn); };
+                      const filteredImages = libraryImages.filter(isImgRes);
+                      const filteredAudio = libraryAudio.filter(isAudRes);
+                      const filteredVideo = libraryVideo.filter(isVidRes);
+
+                      const totalSelected = librarySelection.images.length + librarySelection.audios.length + librarySelection.videos.length;
+
+                      const toggleSel = (kind: 'images' | 'audios' | 'videos', url: string) => {
+                        setLibrarySelection((prev) => {
+                          const cur = prev[kind];
+                          if (cur.includes(url)) return { ...prev, [kind]: cur.filter((u) => u !== url) };
+                          if (cur.length >= 3) { setUploadFeedback(`Max 3 références ${kind}.`); return prev; }
+                          return { ...prev, [kind]: [...cur, url] };
+                        });
+                      };
+
+                      const commitSelection = () => {
+                        librarySelection.images.forEach((url) => {
+                          const item = filteredImages.find((r) => ((r as any).downloadUrl || r.url) === url);
+                          const lbl = item ? (String((item as any).alias || '').trim() || item.filename) : url.split('/').pop() || url;
+                          pendingImportedImageUrlsRef.current = Array.from(new Set([...pendingImportedImageUrlsRef.current, url]));
+                          setDragPreviewUrls((prev) => [...prev, { id: `lib-img-${url}`, name: lbl, url, isImage: true, mediaKind: 'image' as const, remoteUrl: url }]);
+                        });
+                        librarySelection.audios.forEach((url) => {
+                          const item = filteredAudio.find((r) => ((r as any).downloadUrl || r.url) === url);
+                          const lbl = item ? (String((item as any).alias || '').trim() || item.filename) : url.split('/').pop() || url;
+                          pendingImportedAudioUrlsRef.current = Array.from(new Set([...pendingImportedAudioUrlsRef.current, url]));
+                          if (!pendingAudioUrlRef.current) pendingAudioUrlRef.current = url;
+                          setDragPreviewUrls((prev) => [...prev, { id: `lib-aud-${url}`, name: lbl, url, isImage: false, mediaKind: 'audio' as const, remoteUrl: url }]);
+                        });
+                        librarySelection.videos.forEach((url) => {
+                          const item = filteredVideo.find((r) => ((r as any).downloadUrl || r.url) === url);
+                          const lbl = item ? (String((item as any).alias || '').trim() || item.filename) : url.split('/').pop() || url;
+                          pendingImportedVideoUrlsRef.current = Array.from(new Set([...pendingImportedVideoUrlsRef.current, url]));
+                          setDragPreviewUrls((prev) => [...prev, { id: `lib-vid-${url}`, name: lbl, url, isImage: false, mediaKind: 'video' as const, remoteUrl: url }]);
+                        });
+                        const parts = [librarySelection.images.length && `${librarySelection.images.length} image(s)`, librarySelection.audios.length && `${librarySelection.audios.length} audio(s)`, librarySelection.videos.length && `${librarySelection.videos.length} vidéo(s)`].filter(Boolean);
+                        if (parts.length) setUploadFeedback(`Références insérées: ${parts.join(', ')}`);
+                        setLibrarySelection({ images: [], audios: [], videos: [] });
+                        setShowLibraryPanel(false);
+                      };
+
+                      const btnBase = { flexShrink: 0 as const, width: 22, height: 22, background: 'var(--bg-3, #2a2a3e)', border: '1px solid var(--border, #555)', borderRadius: 5, cursor: 'pointer' as const, color: '#aaa', fontSize: 11, display: 'flex' as const, alignItems: 'center' as const, justifyContent: 'center' as const, padding: 0 as const };
+
+                      return (
+                        <div
+                          style={{ position: 'absolute', bottom: '110%', left: 0, zIndex: 200, background: 'var(--bg-2, #1e1e2e)', border: '1px solid var(--border, #444)', borderRadius: 8, padding: 8, minWidth: 310, maxWidth: 460, boxShadow: '0 4px 20px #0008' }}
+                          onMouseLeave={() => setShowLibraryPanel(false)}
+                        >
+                          {/* Tabs */}
+                          <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+                            {(['image', 'audio', 'video'] as const).map((tab) => {
+                              const cnt = tab === 'image' ? filteredImages.length : tab === 'audio' ? filteredAudio.length : filteredVideo.length;
+                              const selCnt = tab === 'image' ? librarySelection.images.length : tab === 'audio' ? librarySelection.audios.length : librarySelection.videos.length;
+                              const icon = tab === 'image' ? '🖼' : tab === 'audio' ? '🎵' : '🎬';
+                              const label = tab === 'image' ? 'Images' : tab === 'audio' ? 'Audio' : 'Vidéo';
                               return (
-                                <button
-                                  key={img.id}
-                                  type="button"
-                                  title={imageLabel}
-                                  style={{
-                                    background: 'none', border: '1px solid var(--border, #555)',
-                                    borderRadius: 6, padding: 2, cursor: 'pointer', display: 'flex',
-                                    flexDirection: 'column', alignItems: 'center', width: 72,
-                                  }}
-                                  onClick={() => {
-                                    if (imageUrl) {
-                                      pendingImportedImageUrlsRef.current = Array.from(new Set([
-                                        ...pendingImportedImageUrlsRef.current, imageUrl,
-                                      ]));
-                                      setDragPreviewUrls((prev) => [
-                                        ...prev,
-                                        {
-                                          id: `library-${img.id || imageUrl}`,
-                                          name: imageLabel,
-                                          url: imageUrl,
-                                          isImage: true,
-                                          mediaKind: "image",
-                                          remoteUrl: imageUrl,
-                                        },
-                                      ]);
-                                      setUploadFeedback(`Référence ajoutée: ${imageLabel}`);
-                                    }
-                                    setShowLibraryPanel(false);
-                                  }}
-                                >
-                                  <img
-                                    src={imageUrl}
-                                    alt={imageLabel}
-                                    style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 4 }}
-                                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                                  />
-                                  <span style={{ fontSize: 10, color: 'var(--text-muted, #aaa)', marginTop: 2, maxWidth: 68, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {imageAlias || img.filename.split('.')[0].slice(0, 10)}
-                                  </span>
+                                <button key={tab} type="button" onClick={() => setLibraryTab(tab)} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, border: 'none', cursor: 'pointer', background: libraryTab === tab ? 'var(--accent, #7c3aed)' : 'var(--bg-3, #2a2a3e)', color: libraryTab === tab ? '#fff' : 'var(--text-muted, #aaa)', position: 'relative' as const }}>
+                                  {icon} {label}{cnt ? ` (${cnt})` : ''}{selCnt ? <span style={{ marginLeft: 4, background: '#22c55e', color: '#fff', borderRadius: '50%', width: 14, height: 14, fontSize: 9, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{selCnt}</span> : null}
                                 </button>
                               );
                             })}
                           </div>
-                        )}
-                      </div>
-                    )}
+                          <div style={{ fontSize: 11, color: 'var(--text-muted, #888)', marginBottom: 6 }}>
+                            Clic = sélectionner • ✕ = supprimer de la bibliothèque • max 3/type
+                          </div>
+
+                          {/* Image tab */}
+                          {libraryTab === 'image' && (filteredImages.length === 0
+                            ? <div style={{ fontSize: 12, color: 'var(--text-muted, #888)', padding: '8px 0' }}>Aucune image sauvegardée.</div>
+                            : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 200, overflowY: 'auto', paddingRight: 2 }}>
+                              {filteredImages.map((img) => {
+                                const alias = String((img as any).alias || '').trim();
+                                const lbl = alias || img.filename;
+                                const url = (img as any).downloadUrl || img.url || '';
+                                const selected = librarySelection.images.includes(url);
+                                return (
+                                  <div key={img.id} style={{ position: 'relative', width: 72 }}>
+                                    <button type="button" title={lbl} onClick={() => toggleSel('images', url)} style={{ background: selected ? 'rgba(124,58,237,0.25)' : 'none', border: `2px solid ${selected ? '#7c3aed' : 'var(--border, #555)'}`, borderRadius: 6, padding: 2, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+                                      <img src={url} alt={lbl} style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 4 }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                                      <span style={{ fontSize: 10, color: 'var(--text-muted, #aaa)', marginTop: 2, maxWidth: 68, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{alias || img.filename.split('.')[0].slice(0, 10)}</span>
+                                    </button>
+                                    <button type="button" title="Retirer de la bibliothèque" style={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, background: 'rgba(0,0,0,0.7)', border: 'none', borderRadius: '50%', cursor: 'pointer', color: '#ccc', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const resourceId = Number(img.id || 0);
+                                        if (!resourceId) return;
+                                        void unpinResourceFromLibrary(resourceId).then(() => refreshLibrary());
+                                      }}>✕</button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Audio tab */}
+                          {libraryTab === 'audio' && (filteredAudio.length === 0
+                            ? <div style={{ fontSize: 12, color: 'var(--text-muted, #888)', padding: '8px 0' }}>Aucun audio sauvegardé.</div>
+                            : <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 200, overflowY: 'auto', paddingRight: 2 }}>
+                              {filteredAudio.map((item) => {
+                                const alias = String((item as any).alias || '').trim();
+                                const lbl = alias || item.filename;
+                                const url = (item as any).downloadUrl || item.url || '';
+                                const selected = librarySelection.audios.includes(url);
+                                return (
+                                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <button type="button" title={lbl} onClick={() => toggleSel('audios', url)} style={{ flex: 1, background: selected ? 'rgba(124,58,237,0.2)' : 'var(--bg-3, #2a2a3e)', border: `1px solid ${selected ? '#7c3aed' : 'var(--border, #555)'}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left', minWidth: 0 }}>
+                                      <span style={{ fontSize: 14, flexShrink: 0 }}>🎵</span>
+                                      <span style={{ fontSize: 12, color: 'var(--text, #eee)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lbl}</span>
+                                    </button>
+                                    <button type="button" title="Retirer de la bibliothèque" style={btnBase} onClick={() => {
+                                      const resourceId = Number(item.id || 0);
+                                      if (!resourceId) return;
+                                      void unpinResourceFromLibrary(resourceId).then(() => refreshLibrary());
+                                    }}>✕</button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Video tab */}
+                          {libraryTab === 'video' && (filteredVideo.length === 0
+                            ? <div style={{ fontSize: 12, color: 'var(--text-muted, #888)', padding: '8px 0' }}>Aucune vidéo sauvegardée.</div>
+                            : <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 200, overflowY: 'auto', paddingRight: 2 }}>
+                              {filteredVideo.map((item) => {
+                                const alias = String((item as any).alias || '').trim();
+                                const lbl = alias || item.filename;
+                                const url = (item as any).downloadUrl || item.url || '';
+                                const selected = librarySelection.videos.includes(url);
+                                return (
+                                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <button type="button" title={lbl} onClick={() => toggleSel('videos', url)} style={{ flex: 1, background: selected ? 'rgba(124,58,237,0.2)' : 'var(--bg-3, #2a2a3e)', border: `1px solid ${selected ? '#7c3aed' : 'var(--border, #555)'}`, borderRadius: 6, padding: '6px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left', minWidth: 0 }}>
+                                      <span style={{ fontSize: 14, flexShrink: 0 }}>🎬</span>
+                                      <span style={{ fontSize: 12, color: 'var(--text, #eee)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lbl}</span>
+                                    </button>
+                                    <button type="button" title="Retirer de la bibliothèque" style={btnBase} onClick={() => {
+                                      const resourceId = Number(item.id || 0);
+                                      if (!resourceId) return;
+                                      void unpinResourceFromLibrary(resourceId).then(() => refreshLibrary());
+                                    }}>✕</button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Insert button — shown when at least one item selected */}
+                          {totalSelected > 0 && (
+                            <button type="button" onClick={commitSelection} style={{ marginTop: 8, width: '100%', padding: '7px 0', background: 'var(--accent, #7c3aed)', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                              Insérer {totalSelected} référence{totalSelected > 1 ? 's' : ''} →
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div className="a11-input-wrap" style={{ flex: 1, minWidth: 0, position: 'relative' }}>
@@ -14511,11 +14697,13 @@ export function App() {
                     type="button"
                     className="send-button"
                     onClick={() => sendMessage()}
-                    disabled={audioTranscribing || (!input.trim() && dragPreviewUrls.length === 0)}
-                    title="Entrée pour envoyer, Shift+Entrée pour aller à la ligne"
+                    disabled={mediaImporting || audioTranscribing || (!input.trim() && dragPreviewUrls.length === 0)}
+                    title={mediaImporting ? "Import des références en cours" : "Entrée pour envoyer, Shift+Entrée pour aller à la ligne"}
                     style={{ ...(sending && { opacity: 0.7 }) }}
                   >
-                    {sending
+                    {mediaImporting
+                      ? "Import..."
+                      : sending
                       ? (messageQueueRef.current.length > 0 ? `+${messageQueueRef.current.length}` : "...")
                       : "Envoyer"
                     }
@@ -14527,7 +14715,7 @@ export function App() {
                     type="button"
                     className={`nossen-mic-btn inline ${(voiceListening || micStarting || audioPlaying || audioTranscribing) ? "listening" : ""}`}
                     onClick={toggleMic}
-                    disabled={micStarting || audioTranscribing}
+                    disabled={micStarting || audioTranscribing || mediaImporting}
                     aria-pressed={voiceListening}
                     aria-label={mobileVoiceReady ? `Jouer la voix ${productName}` : audioTranscribing ? "Transcription du micro" : micPermissionBlocked ? "Micro bloqué" : voiceListening ? "Arrêter le micro" : shouldUseServerPushToTalk(surfaceKind) ? "Démarrer le push-to-talk serveur" : "Démarrer le micro"}
                     title={mobileVoiceReady ? (preparingMobileAudio ? "Préparation audio mobile" : `Jouer la voix ${productName}`) : audioTranscribing ? "Transcription du micro" : micPermissionBlocked ? "Micro bloqué par le navigateur" : voiceListening ? "Arrêter le micro" : shouldUseServerPushToTalk(surfaceKind) ? "Push-to-talk serveur: touche pour enregistrer, retouche pour envoyer" : "Démarrer le micro"}
@@ -14538,7 +14726,7 @@ export function App() {
                       color: micPermissionBlocked ? "#fecaca" : undefined,
                     }}
                   >
-                    {micStarting || audioTranscribing ? "..." : mobileVoiceReady ? (preparingMobileAudio ? "..." : "Play") : voiceListening ? "ON" : micPermissionBlocked ? "!" : shouldUseServerPushToTalk(surfaceKind) ? "PTT" : "MIC"}
+                    {micStarting || audioTranscribing || mediaImporting ? "..." : mobileVoiceReady ? (preparingMobileAudio ? "..." : "Play") : voiceListening ? "ON" : micPermissionBlocked ? "!" : shouldUseServerPushToTalk(surfaceKind) ? "PTT" : "MIC"}
                   </button>
                 </div>
                 <div className="hint">

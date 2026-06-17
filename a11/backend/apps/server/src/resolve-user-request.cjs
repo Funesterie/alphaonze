@@ -162,6 +162,47 @@ function extractSourceImageUrl(body = {}, messages = []) {
   return String(references[0]?.locator || '').trim();
 }
 
+function extractMediaMarkerUrls(messages = [], kind = '') {
+  const normalizedKind = String(kind || '').trim().toLowerCase();
+  if (!normalizedKind) return [];
+  const re = new RegExp(`\\[${normalizedKind}:([^\\]]+)\\]`, 'gi');
+  const output = [];
+  const seen = new Set();
+  for (const message of Array.isArray(messages) ? messages : []) {
+    const content = String(message?.content || '');
+    if (!content) continue;
+    let match = null;
+    while ((match = re.exec(content))) {
+      const url = String(match[1] || '').trim();
+      if (!url) continue;
+      const key = url.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      output.push(url);
+      if (output.length >= 12) return output;
+    }
+  }
+  return output;
+}
+
+function toUniqueReferenceUrls(...sources) {
+  const output = [];
+  const seen = new Set();
+  for (const source of sources) {
+    const entries = Array.isArray(source) ? source : [source];
+    for (const entry of entries) {
+      const url = String(entry || '').trim();
+      if (!url) continue;
+      const key = url.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      output.push(url);
+      if (output.length >= 12) return output;
+    }
+  }
+  return output;
+}
+
 function normalizeLookup(value = '') {
   return String(value || '')
     .normalize('NFD')
@@ -624,6 +665,26 @@ async function executeResolvedRuntime(resolution, input = {}, deps = {}) {
     });
     const firstVideoImageRef = String(videoImageRefs[0]?.locator || '').trim();
     const allVideoImageUrls = videoImageRefs.map((r) => r.locator).filter(Boolean);
+    const messageAudioRefs = extractMediaMarkerUrls(input.messages, 'audio');
+    const messageVideoRefs = extractMediaMarkerUrls(input.messages, 'video');
+    const resolvedReferenceAudioUrls = toUniqueReferenceUrls(
+      resolution.videoRequest?.referenceAudioUrls,
+      input.body?.referenceAudioUrls,
+      input.body?.reference_audio_urls,
+      resolution.videoRequest?.audioUrl,
+      input.body?.audioUrl,
+      input.body?.audio_url,
+      messageAudioRefs
+    );
+    const resolvedReferenceVideoUrls = toUniqueReferenceUrls(
+      resolution.videoRequest?.referenceVideoUrls,
+      input.body?.referenceVideoUrls,
+      input.body?.reference_video_urls,
+      resolution.videoRequest?.sourceVideoUrl,
+      input.body?.sourceVideoUrl,
+      input.body?.source_video_url,
+      messageVideoRefs
+    );
 
     // sourceImageUrl : priorité à ce qui est déjà dans videoRequest, sinon première image du message
     const resolvedSourceImageUrl = String(resolution.videoRequest?.sourceImageUrl || firstVideoImageRef || '').trim();
@@ -649,11 +710,11 @@ async function executeResolvedRuntime(resolution, input = {}, deps = {}) {
         // Injecter les images de référence extraites du message
         sourceImageUrl: isLocalVideoRef ? '' : resolvedSourceImageUrl,
         sourceImagePath: isLocalVideoRef ? resolvedSourceImageUrl : (resolution.videoRequest?.sourceImagePath || ''),
-        sourceVideoUrl: resolution.videoRequest?.sourceVideoUrl,
+        sourceVideoUrl: resolution.videoRequest?.sourceVideoUrl || resolvedReferenceVideoUrls[0] || '',
         sourceVideoPath: resolution.videoRequest?.sourceVideoPath,
-        audioUrl: resolution.videoRequest?.audioUrl || input.body?.audioUrl || input.body?.audio_url,
-        referenceAudioUrls: resolution.videoRequest?.referenceAudioUrls || input.body?.referenceAudioUrls || input.body?.reference_audio_urls,
-        referenceVideoUrls: resolution.videoRequest?.referenceVideoUrls || input.body?.referenceVideoUrls || input.body?.reference_video_urls,
+        audioUrl: resolvedReferenceAudioUrls[0] || '',
+        referenceAudioUrls: resolvedReferenceAudioUrls,
+        referenceVideoUrls: resolvedReferenceVideoUrls,
         // Toutes les images pour le contexte multi-référence
         referenceImageUrls: allVideoImageUrls.length > 1 ? allVideoImageUrls : undefined,
         // Contexte visuel enrichi par les descriptions Janus des images de référence

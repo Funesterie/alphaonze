@@ -6014,7 +6014,8 @@ function resolvePublicApiBaseUrl(req = null) {
       return PUBLIC_API_BASE_URL;
     }
     const protoHeader = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
-    const protocol = protoHeader || req?.protocol || 'https';
+    const rawProto = protoHeader || req?.protocol || 'https';
+    const protocol = rawProto === 'http' && !isLoopbackHost ? 'https' : rawProto;
     return normalizePublicAppUrl(`${protocol}://${requestHost}`);
   }
   return PUBLIC_API_BASE_URL;
@@ -7382,12 +7383,16 @@ app.get('/api/public/resources/:id/download', async (req, res) => {
 
     return res.status(200).send(downloaded.buffer);
   } catch (e) {
-    console.error('[RESOURCES] public download failed:', e?.message);
-    notifySlackError('RESOURCES public download failed', e?.message, {
+    const msg = String(e?.message || '');
+    if (/NoSuchKey|The specified key does not exist|not found|missing/i.test(msg)) {
+      return res.status(404).json({ ok: false, error: 'resource_file_not_found', message: 'Le fichier a été supprimé ou expiré. Réimporte-le.' });
+    }
+    console.error('[RESOURCES] public download failed:', msg);
+    notifySlackError('RESOURCES public download failed', msg, {
       route: `/api/public/resources/${req.params?.id || ''}/download`,
       resourceId: req.params?.id || '',
     });
-    return res.status(500).json({ ok: false, error: 'public_resource_download_failed', message: String(e?.message) });
+    return res.status(500).json({ ok: false, error: 'public_resource_download_failed', message: msg });
   }
 });
 
@@ -13556,6 +13561,10 @@ async function proxyChatToOpenAI(req, res) {
     delete upstreamBody.conversationId;
     delete upstreamBody.acceptAsyncImageJob;
     delete upstreamBody.sourceImageUrl;
+    delete upstreamBody.audioUrl;
+    delete upstreamBody.referenceAudioUrls;
+    delete upstreamBody.referenceVideoUrls;
+    delete upstreamBody.sourceVideoUrl;
     delete upstreamBody.systemPrompt;
     delete upstreamBody.system_prompt;
     delete upstreamBody.surface;

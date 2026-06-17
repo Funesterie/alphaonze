@@ -520,6 +520,8 @@ services:
       A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,openai,gemini,xai,huggingface,deepseek,together
       A11_CERBERE_LOCAL_ONLY: "false"
       A11_LOCAL_CHAT_TIMEOUT_MS: "45000"
+      A11_VIDEO_PROMPT_GROQ_ENABLED: ${A11_VIDEO_PROMPT_GROQ_ENABLED:-1}
+      A11_VIDEO_PROMPT_BUILDER_LLM: ${A11_VIDEO_PROMPT_BUILDER_LLM:-1}
       A11_OLLAMA_KEEP_ALIVE: "30m"
       A11_MEMORY_LOCAL_TIMEOUT_MS: "3500"
       A11_MEMORY_REMOTE_TIMEOUT_MS: "5000"
@@ -611,6 +613,8 @@ services:
       A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,openai,gemini,xai,huggingface,deepseek,together
       A11_CERBERE_LOCAL_ONLY: "false"
       A11_LOCAL_CHAT_TIMEOUT_MS: "45000"
+      A11_VIDEO_PROMPT_GROQ_ENABLED: ${A11_VIDEO_PROMPT_GROQ_ENABLED:-1}
+      A11_VIDEO_PROMPT_BUILDER_LLM: ${A11_VIDEO_PROMPT_BUILDER_LLM:-1}
       A11_OLLAMA_KEEP_ALIVE: "30m"
       A11_MEMORY_LOCAL_TIMEOUT_MS: "3500"
       A11_MEMORY_REMOTE_TIMEOUT_MS: "5000"
@@ -731,6 +735,7 @@ $caddy = @"
   reverse_proxy ${caddyA11BackendService}:3000 {
     header_up Host {host}
     header_up X-Forwarded-Host {host}
+    header_up X-Forwarded-Proto https
     lb_try_duration 45s
     lb_try_interval 250ms
   }
@@ -740,6 +745,7 @@ $caddy = @"
   reverse_proxy ${caddyKaen44BackendService}:3001 {
     header_up Host {host}
     header_up X-Forwarded-Host {host}
+    header_up X-Forwarded-Proto https
     lb_try_duration 45s
     lb_try_interval 250ms
   }

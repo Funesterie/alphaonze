@@ -12,6 +12,7 @@ const {
 } = require('../media/emergency-media.cjs');
 const {
   buildVideoPrompt,
+  parseRequestedDuration,
 } = require('../video/video-prompt-builder.cjs');
 const {
   buildAudioMotionPlan,
@@ -1207,6 +1208,7 @@ function createVideoGenerateRouter(overrides = {}) {
         if (audioMotionPlan) {
           console.log(`[A11][audio-sync] plan=${audioMotionPlan.source} dur=${(audioMotionPlan.durationMs / 1000).toFixed(1)}s events=${audioMotionPlan.events?.length}`);
         }
+        const userRequestedDuration = parseRequestedDuration(prompt);
         const builtPrompt = await buildVideoPromptImpl({
           userMessage: prompt,
           hasReferenceImage,
@@ -1215,16 +1217,17 @@ function createVideoGenerateRouter(overrides = {}) {
           referenceVideoUrls,
           referenceVisualContext: String(body?.compiledVisualContext || '').trim(),
           audioMotionPlan: audioMotionPlan || null,
+          requestedDuration: userRequestedDuration,
           timeoutMs: 10000,
         });
         const cloudPrompt = builtPrompt?.prompt || prompt;
         const cloudNegativePrompt = builtPrompt?.negativePrompt || body?.negative_prompt || '';
-        // Duration: audio takes priority over LLM choice. Wan2.2 ≈ 16fps.
+        // Duration priority: user explicit > audio length > LLM choice > default 5s
         const audioDurationSec = audioMotionPlan?.durationMs
           ? Math.min(10, Math.max(2, Math.round(audioMotionPlan.durationMs / 1000)))
           : 0;
         const llmDurationSec = Number(builtPrompt?.durationSeconds || 5);
-        const effectiveDurationSec = audioDurationSec || llmDurationSec || 5;
+        const effectiveDurationSec = userRequestedDuration || audioDurationSec || llmDurationSec || 5;
         const llmFrameCount = Math.round(Math.max(2, Math.min(10, effectiveDurationSec)) * 16);
         const hfResult = await tryGenerateVideoWithHuggingFace({
           req,

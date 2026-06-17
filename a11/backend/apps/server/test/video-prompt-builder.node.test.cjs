@@ -5,6 +5,7 @@ const test = require('node:test');
 
 const {
   buildVideoPrompt,
+  sanitizeVideoNegativePrompt,
   shouldUseVideoPromptLlm,
 } = require('../src/video/video-prompt-builder.cjs');
 
@@ -91,4 +92,36 @@ test('video prompt builder can use the LLM when explicitly enabled', async () =>
     assert.equal(result.source, 'llm');
     assert.match(result.prompt, /western town/);
   });
+});
+
+test('video prompt builder keeps energy effects off the face without orientation inversion bans', async () => {
+  await withEnv({
+    A11_VIDEO_PROMPT_BUILDER_LLM: null,
+    A11_VIDEO_PROMPT_LLM: null,
+    A11_VIDEO_PROMPT_GROQ_ENABLED: null,
+  }, async () => {
+    const result = await buildVideoPrompt({
+      userMessage: 'génère une vidéo du karatéka qui lance un hadouken',
+      hasReferenceImage: true,
+      referenceImageUrls: ['https://files.example.com/karateka.png'],
+      referenceVideoUrls: ['https://files.example.com/hadouken-ref.mp4'],
+      callStructuredLlmJson: async () => {
+        throw new Error('LLM should not be called in heuristic test');
+      },
+    });
+
+    assert.equal(result.source, 'heuristic');
+    assert.equal(result.motionType, 'fight');
+    assert.match(result.prompt, /reference camera angle/i);
+    assert.match(result.prompt, /facial likeness/i);
+    assert.match(result.prompt, /face remains visible/i);
+    assert.match(result.prompt, /reference video/i);
+    assert.match(result.negativePrompt, /face covered by glow/i);
+    assert.doesNotMatch(result.negativePrompt, /mirror|flipped|horizontal flip/i);
+  });
+});
+
+test('video prompt negative prompt sanitizer strips orientation inversion terms', () => {
+  const clean = sanitizeVideoNegativePrompt('blur, mirrored, horizontally flipped, floating limbs');
+  assert.equal(clean, 'blur, floating limbs');
 });
