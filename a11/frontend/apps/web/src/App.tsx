@@ -97,7 +97,6 @@ import {
   type VivyStudioProductionResult,
   fetchUserLibrary,
   pinResourceToLibrary,
-  type A11ConversationResource,
 } from "./lib/api";
 import { A11HistoryPanel } from "./components/A11HistoryPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
@@ -2006,6 +2005,9 @@ function MsgImageCarousel({ images, onExpand }: { images: string[]; onExpand: (u
         >
           <span style={{ fontSize: 12, color: "#93c5fd" }}>Agrandir l'image</span>
         </button>
+        <a href={current} download rel="noreferrer" style={{ fontSize: 12, color: '#86efac', textDecoration: 'none', fontWeight: 600 }}>
+          ⬇ Télécharger
+        </a>
       </div>
     </div>
   );
@@ -2709,7 +2711,8 @@ function FunesteriePrivateGateLoading({ surface }: { surface: FunesterieSurface 
   );
 }
 
-type VivyStudioMode = "voice" | "song" | "share";
+type VivyStudioMode = "voice" | "test" | "song" | "share";
+type VivyStudioProductionMode = Exclude<VivyStudioMode, "test">;
 type VivyStudioMediaPreview = {
   kind: "audio" | "video";
   url: string;
@@ -2746,7 +2749,7 @@ type VivyPublicChatMessage = {
   ts: string;
   files?: VivyPublicChatFile[];
 };
-type VivyPublicChatMode = "chat" | VivyStudioMode;
+type VivyPublicChatMode = "chat" | VivyStudioProductionMode;
 
 const VIVY_STUDIO_MODES: Array<{
   id: VivyStudioMode;
@@ -2759,6 +2762,12 @@ const VIVY_STUDIO_MODES: Array<{
       title: "Création voix",
       label: "Utiliser la voix Vivy officielle du module voix, tester une phrase et remplacer la référence seulement si besoin.",
       action: "Préparer calibration",
+    },
+    {
+      id: "test",
+      title: "Test voix",
+      label: "Écouter chaque voix directement — Vivy, K44, A11, Djeff et les voix contribuées.",
+      action: "Tester",
     },
     {
       id: "song",
@@ -2961,7 +2970,7 @@ function isVivyVoiceChangeRequest(text: string) {
 
 function normalizeVivyStudioMode(value: unknown): VivyStudioMode | null {
   const raw = String(value || "").trim().toLowerCase();
-  return raw === "voice" || raw === "song" || raw === "share" ? raw : null;
+  return raw === "voice" || raw === "test" || raw === "song" || raw === "share" ? raw : null;
 }
 
 function openVivyStudioMode(mode: VivyStudioMode) {
@@ -3524,6 +3533,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [vivyDiagnostics, setVivyDiagnostics] = useState<VivyStudioProductionResult["prosody"] | null>(null);
   const [status, setStatus] = useState("");
   const [isBusy, setIsBusy] = useState(false);
+  const [testingVoiceId, setTestingVoiceId] = useState<string>("");
   const doubleHarmonicIntensityLabel = `${doubleHarmonicIntensity.toFixed(2).replace(/\.?0+$/, "")}x`;
   const doubleHarmonicModeLabel = D40_PROCESS_MODE_LABELS[doubleHarmonicMode];
   const doubleHarmonicOutputFormatLabel = D40_OUTPUT_FORMAT_LABELS[doubleHarmonicOutputFormat];
@@ -3800,6 +3810,57 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       .replace(/\s+/g, " ")
       .trim();
     return toUnicodeText(raw || fallback, maxLength).trim();
+  }
+
+  function buildVivyAutoVoiceTestLine(entry: { label: string; shortLabel?: string; voiceStyle: string; testLine?: string }) {
+    const safeLine = buildVivyPlayableText(
+      "",
+      entry.testLine || `${entry.shortLabel || entry.label} teste une phrase courte, claire et naturelle.`,
+      150
+    );
+    return safeLine || `${entry.shortLabel || entry.label} teste une phrase courte, claire et naturelle.`;
+  }
+
+  function buildVivyAutoTtsOptions(entry: {
+    label: string;
+    ttsPersona: "vivy" | "a11" | "kaen44";
+    voiceStyle: string;
+    voiceTool: string;
+    surface: "vivy" | "a11" | "kaen44";
+  }) {
+    return {
+      persona: entry.ttsPersona,
+      voicePersona: entry.ttsPersona,
+      surface: entry.surface,
+      voiceStyle: entry.voiceStyle,
+      voiceReferenceName: entry.label,
+      voiceReferenceLabel: entry.voiceStyle,
+      referenceVoiceStyle: entry.voiceStyle,
+      voiceTool: entry.voiceTool,
+      vocalCast: entry.label,
+      provider: "auto",
+      ttsProvider: "auto",
+      engine: "auto",
+      voiceEngine: "auto",
+      voiceConversionEngine: "auto",
+      conversionEngine: "auto",
+      vocalMode: "adaptive",
+      ...getVivyVoiceTuning("adaptive"),
+      ttsAsync: true,
+      asyncTts: true,
+      ttsJobTimeoutMs: 180000,
+      audioFormat: "mp3",
+      responseFormat: "mp3",
+      useDefaultVoiceReference: true,
+      defaultVoiceReference: true,
+      identityVoice: true,
+      useIdentityVoice: true,
+      neutralVoice: false,
+      voiceReferenceRequired: false,
+      referenceVoiceRequired: false,
+      requireVoiceReference: false,
+      allowBrowserSpeechFallback: false,
+    };
   }
 
   function buildVivyVoiceReferenceOptions(): Record<string, unknown> {
@@ -4165,28 +4226,8 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     setIsBusy(true);
     setStatus(`Test chat vocal ${entry.shortLabel}...`);
     try {
-      const line = buildVivyPlayableText(
-        voiceInstruction.trim(),
-        `Je suis ${entry.shortLabel}. Je réponds avec la voix sélectionnée dans Funesterie, seulement avec accord.`,
-        220
-      );
-      const baseOptions = buildVivyTtsOptions("adaptive");
-      const payload = await ttsSpeak(line, entry.ttsPersona, "xtts-rvc", {
-        ...baseOptions,
-        persona: entry.ttsPersona,
-        voicePersona: entry.ttsPersona,
-        surface: entry.surface,
-        voiceStyle: entry.voiceStyle,
-        voiceReferenceName: entry.label,
-        voiceReferenceLabel: entry.voiceStyle,
-        referenceVoiceStyle: entry.voiceStyle,
-        voiceTool: entry.voiceTool,
-        vocalCast: entry.label,
-        useDefaultVoiceReference: true,
-        defaultVoiceReference: true,
-        identityVoice: true,
-        useIdentityVoice: true,
-      });
+      const line = buildVivyAutoVoiceTestLine(entry);
+      const payload = await ttsSpeak(line, entry.ttsPersona, "auto", buildVivyAutoTtsOptions(entry));
       const mediaUrl = String(payload?.audioUrl || payload?.audio_url || payload?.url || "").trim();
       if (!mediaUrl) throw new Error("audio_url_missing");
       setVivyMedia({
@@ -4198,6 +4239,29 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       setStatus(`Chat vocal ${entry.shortLabel} prêt.`);
     } catch (error: any) {
       setStatus(`Test chat vocal indisponible: ${error?.message || error}`);
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function testSpecificVoiceEntry(entry: typeof VIVY_STUDIO_VOICE_DIRECTORY[0] | { id: string; label: string; shortLabel: string; ttsPersona: "vivy" | "a11" | "kaen44"; voiceStyle: string; voiceTool: string; surface: "vivy" | "a11" | "kaen44"; testLine?: string }) {
+    if (!hasSession) { setStatus("Connexion requise pour tester."); return; }
+    setIsBusy(true);
+    setStatus(`Test ${entry.label}...`);
+    try {
+      const line = buildVivyAutoVoiceTestLine(entry);
+      const payload = await ttsSpeak(line, entry.ttsPersona, "auto", buildVivyAutoTtsOptions(entry));
+      const mediaUrl = String(payload?.audioUrl || payload?.audio_url || payload?.url || "").trim();
+      if (!mediaUrl) throw new Error("audio_url_missing");
+      setVivyMedia({
+        kind: "audio",
+        url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
+        provider: String(payload?.provider || payload?.via || "a11-voice-module"),
+        contentType: String(payload?.contentType || payload?.content_type || "audio/wav"),
+      });
+      setStatus(`${entry.label} prête.`);
+    } catch (error: any) {
+      setStatus(`${entry.label}: ${error?.message || error}`);
     } finally {
       setIsBusy(false);
     }
@@ -4369,14 +4433,19 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       setStatus("Connexion requise pour produire avec Vivy.");
       return;
     }
+    if (activeMode === "test") {
+      setStatus("Choisis une voix dans la liste, puis lance son bouton Tester.");
+      return;
+    }
     const wantsSongPreview = activeMode === "song";
+    const productionMode: VivyStudioProductionMode = activeMode;
     setIsBusy(true);
     setStatus(wantsSongPreview
       ? "Vivy Studio prépare la chanson et une maquette audio locale..."
       : "Vivy Studio prépare la production...");
     try {
       const payload = await runVivyStudioProduction({
-        mode: activeMode,
+        mode: productionMode,
         voiceTool,
         voiceInstruction,
         voiceFileName,
@@ -4470,6 +4539,8 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
 
           {activeMode === "voice" && (
             <>
+              <details style={{ marginBottom: 8 }}>
+              <summary style={{ cursor: "pointer", fontSize: 13, color: "#a78bfa", userSelect: "none", listStyle: "none", display: "flex", alignItems: "center", gap: 6 }}>Options avancées</summary>
               <label>
                 Méthode voix
                 <select
@@ -4603,6 +4674,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                   <p className="vivy-studio-voice-summary">Catalogue premium vide pour l’instant. Les voix publiées avec accord apparaîtront ici.</p>
                 ) : null}
               </fieldset>
+              </details>
+              <details style={{ marginTop: 8 }}>
+              <summary style={{ cursor: "pointer", fontSize: 13, color: "#a78bfa", userSelect: "none", listStyle: "none", display: "flex", alignItems: "center", gap: 6 }}>Apprentissage voix (avancé)</summary>
               <fieldset className="vivy-studio-voice-fieldset">
                 <legend>Apprentissage voix</legend>
                 <label>
@@ -4662,6 +4736,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                   {voiceLearningMessage ? ` · ${voiceLearningMessage}` : ""}
                 </p>
               </fieldset>
+              </details>
               <label>
                 Instruction voix
                 <textarea
@@ -4675,11 +4750,91 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                 />
               </label>
               <div className="vivy-studio-actions vivy-studio-actions--voice">
-                <button type="button" onClick={useDefaultVivyVoice} disabled={!hasSession || isBusy}>Voix Vivy par défaut</button>
-                <button type="button" onClick={testDefaultVivyVoice} disabled={!hasSession || isBusy}>Tester voix active</button>
-                <button type="button" onClick={uploadVoiceReference} disabled={!hasSession || isBusy || !voiceFile}>Remplacer référence</button>
+                <button type="button" className="vivy-studio-primary-action" onClick={testDefaultVivyVoice} disabled={!hasSession || isBusy}>
+                  {isBusy ? "Génération..." : "Tester voix active"}
+                </button>
+                <button type="button" onClick={useDefaultVivyVoice} disabled={!hasSession || isBusy} style={{ opacity: 0.7 }}>Voix Vivy par défaut</button>
+                <button type="button" onClick={uploadVoiceReference} disabled={!hasSession || isBusy || !voiceFile} style={{ opacity: 0.7 }}>Remplacer référence</button>
               </div>
               <p className="vivy-studio-active-voice">Voix active: {activeVoiceReferenceLabel}</p>
+            </>
+          )}
+
+          {activeMode === "test" && (
+            <>
+              <p style={{ fontSize: 12, color: "var(--muted, #8892a6)", marginBottom: 12 }}>
+                Teste chaque voix avec une phrase courte auto, sans reprendre le prompt Studio.
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {VIVY_STUDIO_VOICE_DIRECTORY.filter((e) => e.id !== "personal").map((entry) => {
+                  const isTesting = testingVoiceId === entry.id && isBusy;
+                  return (
+                    <div key={entry.id} className="vivy-studio-voice-card" style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", padding: "10px 14px" }}>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>{entry.label}</div>
+                        <div style={{ fontSize: 11, color: "var(--muted, #8892a6)" }}>{entry.voiceStyle}</div>
+                        <div style={{ fontSize: 10, color: "#4ade80", marginTop: 2 }}>{entry.statusLabel}</div>
+                      </div>
+                      <button
+                        type="button"
+                        className="vivy-studio-primary-action"
+                        disabled={!hasSession || isBusy}
+                        style={{ minWidth: 80, flexShrink: 0 }}
+                        onClick={async () => {
+                          setTestingVoiceId(entry.id);
+                          await testSpecificVoiceEntry(entry);
+                          setTestingVoiceId("");
+                        }}
+                      >
+                        {isTesting ? "..." : "▶ Tester"}
+                      </button>
+                    </div>
+                  );
+                })}
+                {catalogVoices.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 11, color: "var(--muted, #8892a6)", marginTop: 6, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Voix contribuées</div>
+                    {catalogVoices.map((voice) => {
+                      const name = String(voice.catalog?.name || voice.label || voice.id).trim();
+                      const isTesting = testingVoiceId === voice.id && isBusy;
+                      const catalogEntry = {
+                        id: voice.id,
+                        label: name,
+                        shortLabel: name,
+                        ttsPersona: "vivy" as const,
+                        voiceStyle: (voice.catalog as any)?.voiceStyle || name,
+                        voiceTool: "Voix catalogue premium",
+                        surface: "vivy" as const,
+                        testLine: `Je suis ${name}, voix Funesterie.`,
+                      };
+                      return (
+                        <div key={voice.id} className="vivy-studio-voice-card" style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", padding: "10px 14px" }}>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 13 }}>{name}</div>
+                            <div style={{ fontSize: 10, color: "#a78bfa", marginTop: 2 }}>catalogue premium</div>
+                          </div>
+                          <button
+                            type="button"
+                            className="vivy-studio-primary-action"
+                            disabled={!hasSession || isBusy}
+                            style={{ minWidth: 80, flexShrink: 0 }}
+                            onClick={async () => {
+                              setTestingVoiceId(voice.id);
+                              await testSpecificVoiceEntry(catalogEntry);
+                              setTestingVoiceId("");
+                            }}
+                          >
+                            {isTesting ? "..." : "▶ Tester"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+                {!catalogVoices.length && (
+                  <p style={{ fontSize: 12, color: "var(--muted, #8892a6)" }}>Aucune voix contribuée pour l'instant.</p>
+                )}
+              </div>
             </>
           )}
 
@@ -5011,23 +5166,18 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
           </fieldset>
 
           <div className="vivy-studio-actions">
-            <button type="submit" disabled={!hasSession || isBusy}>{activeMeta.action}</button>
-            <button type="button" onClick={askVivy} disabled={!hasSession || isBusy}>Demander à Vivy</button>
+            {activeMode !== "voice" && activeMode !== "test" && (
+              <button type="submit" disabled={!hasSession || isBusy}>{activeMeta.action}</button>
+            )}
+            {activeMode !== "voice" && activeMode !== "test" && (
+              <button type="button" onClick={askVivy} disabled={!hasSession || isBusy}>Demander à Vivy</button>
+            )}
             <button type="button" onClick={() => openAgent("a11")}>Ouvrir A11</button>
-            <button type="button" onClick={() => openAgent("k44")}>Kaen44</button>
-            <button type="button" onClick={saveBriefArtifact} disabled={!hasSession || isBusy}>Sauver dans A11</button>
+            <button type="button" onClick={saveBriefArtifact} disabled={!hasSession || isBusy} style={{ opacity: 0.7 }}>Sauver dans A11</button>
           </div>
         </form>
 
         <aside className="vivy-studio-brief" aria-live="polite">
-          <h3>Brief agents</h3>
-          <pre>{brief}</pre>
-          <div>
-            <button type="button" onClick={() => copyBrief()}>Copier</button>
-            <button type="button" onClick={shareBrief}>Partager</button>
-          </div>
-          {status && <p>{status}</p>}
-          {diagnosticsAllowed ? <VivyD9DiagnosticsPanel prosody={vivyDiagnostics} /> : null}
           {vivyMedia && (
             <div className="vivy-studio-media">
               <strong>{String(vivyMedia.provider || "") === "funesterie-d40"
@@ -5039,6 +5189,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                 <audio
                   src={vivyMedia.url}
                   controls
+                  autoPlay
                   preload="metadata"
                   onError={() => {
                     setVivyMedia(null);
@@ -5073,6 +5224,16 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
               )}
             </div>
           )}
+          {status && <p className="vivy-studio-status-msg">{status}</p>}
+          {diagnosticsAllowed ? <VivyD9DiagnosticsPanel prosody={vivyDiagnostics} /> : null}
+          <details style={{ marginTop: 12 }}>
+            <summary style={{ cursor: "pointer", fontSize: 13, color: "#94a3b8", userSelect: "none" }}>Brief agents</summary>
+            <pre style={{ marginTop: 8 }}>{brief}</pre>
+            <div>
+              <button type="button" onClick={() => copyBrief()}>Copier</button>
+              <button type="button" onClick={shareBrief}>Partager</button>
+            </div>
+          </details>
         </aside>
       </div>
 
@@ -5202,7 +5363,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     setStatus(`${label}: écris ton idée dans la bulle, ou remplis le bloc Studio.`);
   }
 
-  function sendModeFromComposer(mode: VivyStudioMode) {
+  function sendModeFromComposer(mode: VivyStudioProductionMode) {
     const hasDraft = Boolean(draft.trim() || attachedFiles.length);
     if (!hasDraft) {
       openStudioModeFromChat(mode);
@@ -5264,21 +5425,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           ts: entry.ts,
         }));
       const vivyLanguage = normalizeA11LanguageCode(getAuthAccountLanguage(localStorage.getItem("a11:language") || "fr"));
-      const payload = mode === "song"
-        ? await runVivyStudioProduction({
-          mode: "song",
-          language: vivyLanguage,
-          message: messageText,
-          songSource: "Conversation",
-          songMood: "Rap/chant Funesterie, couplets nets, refrain chantable",
-          songText: messageText,
-          conversationId,
-          files: apiFiles,
-          history: apiHistory,
-          disableEmergencyMedia: true,
-          allowPlaceholderMedia: false,
-        })
-        : await chatWithVivy({
+      const payload = await chatWithVivy({
           mode,
           language: vivyLanguage,
           message: messageText,
@@ -8129,6 +8276,34 @@ function FunesterieAccountPage({
               {inventory.files.length} fichier{inventory.files.length > 1 ? "s" : ""} compte,
               {" "}{inventory.resources.length} ressource{inventory.resources.length > 1 ? "s" : ""} conversation.
             </p>
+            {(() => {
+              const IMG_EXT = /\.(jpe?g|png|gif|webp|bmp|svg)$/i;
+              const imgResources = inventory.resources
+                .filter((r) => IMG_EXT.test(r.filename || '') || String((r as any).contentType || '').startsWith('image/'))
+                .slice(0, 12);
+              if (!imgResources.length) return null;
+              return (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0' }}>
+                  {imgResources.map((r, i) => {
+                    const url = resolveApiAssetUrl(getStoredFileUrl(r)) || getStoredFileUrl(r);
+                    return url ? (
+                      <a key={r.filename + i} href={url} target="_blank" rel="noreferrer"
+                         title={r.filename || `image-${i + 1}`}
+                         style={{ display: 'block', borderRadius: 6, overflow: 'hidden', border: '1px solid #334155' }}>
+                        <img src={url} alt={r.filename || `image-${i + 1}`}
+                             style={{ width: 56, height: 56, objectFit: 'cover', display: 'block' }}
+                             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      </a>
+                    ) : null;
+                  })}
+                  {inventory.resources.filter((r) => IMG_EXT.test(r.filename || '')).length > 12 && (
+                    <span style={{ fontSize: 11, color: '#94a3b8', alignSelf: 'center' }}>
+                      +{inventory.resources.filter((r) => IMG_EXT.test(r.filename || '')).length - 12} de plus
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
             <div className="fun-account-mini-list">
               {latestFiles.length ? latestFiles.map((file, index) => {
                 const url = getStoredFileUrl(file);
@@ -10941,7 +11116,6 @@ export function App() {
       });
     }
 
-    const audioTranscriptByName = new Map<string, string>();
     if (audioFiles.length > 0) {
       setAudioTranscribing(true);
       setUploadFeedback(`Transcription audio de ${audioFiles.length} fichier(s)...`);
@@ -10951,8 +11125,7 @@ export function App() {
         try {
           const transcript = await transcribeAudioFile(file, { language: selectedA11Language.sttCode, provider: "auto" });
           if (transcript.text) {
-            audioTranscriptByName.set(file.name, transcript.text);
-            transcriptBlocks.push(`[audio:${file.name}]\n${transcript.text}`);
+            transcriptBlocks.push(transcript.text);
           } else {
             failedAudio.push(file.name);
           }
@@ -10967,17 +11140,10 @@ export function App() {
           return prev ? `${prev}\n${nextText}` : nextText;
         });
       }
-      if (failedAudio.length > 0) {
-        const fallbackBlocks = failedAudio.map((name) => (
-          `[audio:${name}]\nAudio importe. La transcription automatique n'a pas abouti; garde ce fichier comme contexte de conversation et signale si tu as besoin d'un extrait plus court.`
-        ));
-        setInput((prev) => {
-          const nextText = fallbackBlocks.join("\n\n");
-          return prev ? `${prev}\n${nextText}` : nextText;
-        });
-      }
       setUploadFeedback(failedAudio.length > 0
-        ? `Transcription audio partielle: ${transcriptBlocks.length} ok, ${failedAudio.length} en echec.`
+        ? (transcriptBlocks.length > 0
+          ? `Transcription audio partielle: ${transcriptBlocks.length} ok. Le reste reste joint sans texte.`
+          : `Audio joint sans transcription exploitable.`)
         : `${transcriptBlocks.length} audio(s) transcrit(s).`
       );
       // Upload audio file for backend sync analysis BEFORE releasing the transcribing lock —
@@ -11256,6 +11422,8 @@ export function App() {
   async function sendMessage(forcedText?: string) {
     const text = (forcedText ?? input).trim();
     const { cleanText: cleanedInput, imageUrls } = extractImageUrlsFromText(text);
+    const hasPendingAudioPreview = dragPreviewUrls.some((item) => !item.isImage && AUDIO_FILE_NAME_RE.test(item.name));
+    const pendingAudioUrl = pendingAudioUrlRef.current;
     const pendingImageUrls = pendingImportedImageUrlsRef.current
       .map((u) => resolveApiAssetUrl(u) || u)
       .filter(Boolean);
@@ -11274,7 +11442,7 @@ export function App() {
     const previewImageUrl = allImageUrls[0] ?? "";
     const explicitSourceImageUrl = previewImageUrl || undefined;
     const effectiveText = cleanedInput
-      || (explicitSourceImageUrl ? "Image jointe." : pendingFileUrls.length ? "Fichier joint." : text);
+      || (explicitSourceImageUrl ? "Image jointe." : pendingFileUrls.length ? "Fichier joint." : (pendingAudioUrl || hasPendingAudioPreview) ? "Audio joint." : text);
     if (!effectiveText) return;
     const lastMediaForVision = !explicitSourceImageUrl
       && isImageInspectionRequest(effectiveText)
@@ -11319,7 +11487,7 @@ export function App() {
     setInput("");
     pendingImportedImageUrlsRef.current = [];
     pendingImportedFileUrlsRef.current = [];
-    const capturedAudioUrl = pendingAudioUrlRef.current;
+    const capturedAudioUrl = pendingAudioUrl;
     pendingAudioUrlRef.current = null;
     setAudioSyncReady(false);
     recentFileImportRef.current = { key: "", at: 0 };
@@ -13869,8 +14037,15 @@ export function App() {
                                   aria-label="Agrandir l'image"
                                 >
                                   <img src={imgs[0]} alt={`Resultat ${productName}`} style={{ maxWidth: "320px", borderRadius: 12 }} />
-                                  <span style={{ fontSize: 12, color: "#93c5fd" }}>Agrandir l'image</span>
                                 </button>
+                                <div style={{ display: 'flex', gap: 12, marginTop: 4 }}>
+                                  <button type="button" className="image-preview-trigger" onClick={() => setPreviewImageUrl(imgs[0])} style={{ background: 'none', border: 'none', padding: 0, fontSize: 12, color: '#93c5fd', cursor: 'pointer' }}>
+                                    Agrandir l'image
+                                  </button>
+                                  <a href={imgs[0]} download rel="noreferrer" style={{ fontSize: 12, color: '#86efac', textDecoration: 'none', fontWeight: 600 }}>
+                                    ⬇ Télécharger
+                                  </a>
+                                </div>
                               </div>
                             );
                           }
@@ -13912,19 +14087,24 @@ export function App() {
                                 style={{ maxWidth: "320px", borderRadius: 12, background: "#020617" }}
                               />
                             )}
-                            <a
-                              href={m.videoUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{
-                                fontSize: 12,
-                                color: "#93c5fd",
-                                textDecoration: "none",
-                                wordBreak: "break-all",
-                              }}
-                            >
-                              Ouvrir la vidéo
-                            </a>
+                            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <a
+                                href={m.videoUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ fontSize: 12, color: "#93c5fd", textDecoration: "none" }}
+                              >
+                                Ouvrir la vidéo
+                              </a>
+                              <a
+                                href={m.videoUrl}
+                                download
+                                rel="noreferrer"
+                                style={{ fontSize: 12, color: "#86efac", textDecoration: "none", fontWeight: 600 }}
+                              >
+                                ⬇ Télécharger
+                              </a>
+                            </div>
                           </div>
                         )}
                         {m.fileUrl && !m.imageUrl && !m.videoUrl && (
@@ -14016,7 +14196,7 @@ export function App() {
                   >
                     {isCompactLayout ? "Import" : "Importer"}
                   </button>
-                  <div style={{ position: 'relative', marginRight: 8 }}>
+                  <div className="a11-refs-wrap" style={{ position: 'relative', marginRight: 8 }}>
                     <button
                       type="button"
                       className="btn ghost import-inline"
@@ -14044,41 +14224,45 @@ export function App() {
                           </div>
                         ) : (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                            {libraryImages.map((img) => (
-                              <button
-                                key={img.id}
-                                type="button"
-                                title={img.alias || img.filename}
-                                style={{
-                                  background: 'none', border: '1px solid var(--border, #555)',
-                                  borderRadius: 6, padding: 2, cursor: 'pointer', display: 'flex',
-                                  flexDirection: 'column', alignItems: 'center', width: 72,
-                                }}
-                                onClick={() => {
-                                  const url = (img as any).downloadUrl || img.url || '';
-                                  if (url) {
-                                    pendingImportedImageUrlsRef.current = Array.from(new Set([
-                                      ...pendingImportedImageUrlsRef.current, url,
-                                    ]));
-                                    setDragPreviewUrls((prev) => [
-                                      ...prev, { name: img.alias || img.filename, url, isImage: true },
-                                    ]);
-                                    setUploadFeedback(`Référence ajoutée: ${img.alias || img.filename}`);
-                                  }
-                                  setShowLibraryPanel(false);
-                                }}
-                              >
-                                <img
-                                  src={(img as any).downloadUrl || img.url}
-                                  alt={img.alias || img.filename}
-                                  style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 4 }}
-                                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                                />
-                                <span style={{ fontSize: 10, color: 'var(--text-muted, #aaa)', marginTop: 2, maxWidth: 68, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {img.alias || img.filename.split('.')[0].slice(0, 10)}
-                                </span>
-                              </button>
-                            ))}
+                            {libraryImages.map((img) => {
+                              const imageAlias = String((img as any).alias || "").trim();
+                              const imageLabel = imageAlias || img.filename;
+                              const imageUrl = (img as any).downloadUrl || img.url || "";
+                              return (
+                                <button
+                                  key={img.id}
+                                  type="button"
+                                  title={imageLabel}
+                                  style={{
+                                    background: 'none', border: '1px solid var(--border, #555)',
+                                    borderRadius: 6, padding: 2, cursor: 'pointer', display: 'flex',
+                                    flexDirection: 'column', alignItems: 'center', width: 72,
+                                  }}
+                                  onClick={() => {
+                                    if (imageUrl) {
+                                      pendingImportedImageUrlsRef.current = Array.from(new Set([
+                                        ...pendingImportedImageUrlsRef.current, imageUrl,
+                                      ]));
+                                      setDragPreviewUrls((prev) => [
+                                        ...prev, { name: imageLabel, url: imageUrl, isImage: true },
+                                      ]);
+                                      setUploadFeedback(`Référence ajoutée: ${imageLabel}`);
+                                    }
+                                    setShowLibraryPanel(false);
+                                  }}
+                                >
+                                  <img
+                                    src={imageUrl}
+                                    alt={imageLabel}
+                                    style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 4 }}
+                                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                  />
+                                  <span style={{ fontSize: 10, color: 'var(--text-muted, #aaa)', marginTop: 2, maxWidth: 68, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {imageAlias || img.filename.split('.')[0].slice(0, 10)}
+                                  </span>
+                                </button>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -14137,6 +14321,7 @@ export function App() {
                         resize: 'none',
                         minHeight: isCompactLayout ? '44px' : '42px',
                         maxHeight: isCompactLayout ? '22vh' : '35vh',
+                        fontSize: 16,
                         background: '#0d0f13',
                         color: 'var(--text)',
                         border: '1px solid var(--border)',
@@ -14152,9 +14337,9 @@ export function App() {
                     type="button"
                     className="send-button"
                     onClick={() => sendMessage()}
-                    disabled={!input.trim() && dragPreviewUrls.length === 0}
+                    disabled={audioTranscribing || (!input.trim() && dragPreviewUrls.length === 0)}
                     title="Entrée pour envoyer, Shift+Entrée pour aller à la ligne"
-                    style={sending ? { opacity: 0.7 } : undefined}
+                    style={{ ...(sending && { opacity: 0.7 }) }}
                   >
                     {sending
                       ? (messageQueueRef.current.length > 0 ? `+${messageQueueRef.current.length}` : "...")
@@ -14162,7 +14347,7 @@ export function App() {
                     }
                   </button>
 
-                  <EkkoIndicator />
+                  <div className="a11-ekko-wrap"><EkkoIndicator /></div>
 
                   <button
                     type="button"
@@ -14282,6 +14467,7 @@ export function App() {
                         className="a11-drop-carousel-remove"
                         aria-label={`Retirer ${p.name}`}
                         onClick={() => {
+                          const isAudioPreview = !p.isImage && AUDIO_FILE_NAME_RE.test(p.name);
                           if (p.url) URL.revokeObjectURL(p.url);
                           dismissedImportedNamesRef.current.add(p.name);
                           setDragPreviewUrls((prev) => {
@@ -14291,16 +14477,23 @@ export function App() {
                               .filter((entry) => entry.isImage).length - 1;
                             const fileIndex = prev
                               .slice(0, idx + 1)
-                              .filter((entry) => !entry.isImage).length - 1;
+                              .filter((entry) => !entry.isImage && !AUDIO_FILE_NAME_RE.test(entry.name)).length - 1;
                             if (p.isImage && imageIndex >= 0) {
                               pendingImportedImageUrlsRef.current = pendingImportedImageUrlsRef.current
                                 .filter((_, entryIndex) => entryIndex !== imageIndex);
-                            } else if (!p.isImage && fileIndex >= 0) {
+                            } else if (isAudioPreview) {
+                              pendingAudioUrlRef.current = null;
+                              setAudioSyncReady(false);
+                            } else if (fileIndex >= 0) {
                               pendingImportedFileUrlsRef.current = pendingImportedFileUrlsRef.current
                                 .filter((_, entryIndex) => entryIndex !== fileIndex);
                             }
                             if (!next.some((entry) => entry.isImage)) pendingImportedImageUrlsRef.current = [];
-                            if (!next.some((entry) => !entry.isImage)) pendingImportedFileUrlsRef.current = [];
+                            if (!next.some((entry) => !entry.isImage && !AUDIO_FILE_NAME_RE.test(entry.name))) pendingImportedFileUrlsRef.current = [];
+                            if (!next.some((entry) => !entry.isImage && AUDIO_FILE_NAME_RE.test(entry.name))) {
+                              pendingAudioUrlRef.current = null;
+                              setAudioSyncReady(false);
+                            }
                             if (next.length === 0) setUploadFeedback("");
                             setPreviewCarouselIndex(Math.max(0, Math.min(idx, next.length - 1)));
                             return next;

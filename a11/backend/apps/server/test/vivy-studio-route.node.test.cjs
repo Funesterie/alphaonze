@@ -1013,6 +1013,26 @@ test('Vivy song mode structures the same rap draft when Chanson is explicit', as
   assert.match(result.assistant, /\[Chorus(?: - [^\]]+)?\]/);
 });
 
+test('Vivy song fallback extracts a clean summer theme instead of pasting the whole prompt', async () => {
+  const summerPrompt = "salut tu as une idée de chanson sur la nature et le soleil, un son d'ambiance pour cet été qui ferait de la techno dance un super tube de crème solaire sous le sable chaud";
+
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-song-summer-theme-clean',
+    mode: 'song',
+    message: summerPrompt,
+    history: [],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'song');
+  assert.equal(result.aiMode, 'deterministic_songcraft');
+  assert.match(result.assistant, /\[Verse 1(?: - [^\]]+)?\]/);
+  assert.match(result.assistant, /nature|soleil|été|ete|sable|techno/i);
+  assert.doesNotMatch(result.assistant, /Tout semble petit:/i);
+  assert.doesNotMatch(result.assistant, /salut tu as une idée de chanson/i);
+  assert.doesNotMatch(result.assistant, /tu as une idée/i);
+});
+
 test('Vivy intent header routes Chanson to Djeff songcraft while preserving raw rap grain', async () => {
   const rawDjeffDraft = [
     'VIVY_INTENT',

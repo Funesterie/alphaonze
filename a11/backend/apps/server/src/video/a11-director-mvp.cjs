@@ -46,7 +46,10 @@ function buildCreativeBrief({ prompt = '', request = {}, sourceImagePath = '', s
       sourceImageUrl,
       request?.sourceImageUrl,
       request?.initImageUrl,
+      request?.referenceImageUrl,
       request?.reference_image_url,
+      request?.referenceImageUrls,
+      request?.reference_image_urls,
     ], 12),
     referenceImagePaths: toUniqueStrings([
       sourceImagePath,

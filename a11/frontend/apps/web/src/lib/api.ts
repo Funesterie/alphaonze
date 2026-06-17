@@ -2209,6 +2209,9 @@ export type SttTranscriptionResult = {
   provider?: string | null;
   model?: string | null;
   elapsed?: number | null;
+  message?: string | null;
+  status?: number | null;
+  error?: string | null;
 };
 
 export async function transcribeAudioFile(
@@ -2237,7 +2240,26 @@ export async function transcribeAudioFile(
   });
   const payload = await res.json().catch(() => ({}));
   if (!res.ok || payload?.ok === false) {
-    throw new Error(payload?.message || payload?.error || `Transcription audio impossible (${res.status})`);
+    const message = payload?.message || payload?.error || `Transcription audio impossible (${res.status})`;
+    if (res.status === 422) {
+      return {
+        ok: false,
+        text: '',
+        language: payload?.language || null,
+        duration: payload?.duration ?? null,
+        provider: payload?.provider || null,
+        model: payload?.model || null,
+        elapsed: payload?.elapsed ?? null,
+        message,
+        status: res.status,
+        error: payload?.error || null,
+      };
+    }
+    const error: Error & { status?: number; payload?: any; code?: string } = new Error(message);
+    error.status = res.status;
+    error.payload = payload;
+    error.code = payload?.error;
+    throw error;
   }
   return {
     ok: true,

@@ -74,6 +74,7 @@ function looksLikeCompleteLyrics(value = '') {
 function inferMotif(theme = '') {
   const folded = foldTextForLookup(theme);
   if (/djeff|duo|rap|moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/.test(folded)) return 'le moteur qui respire dans la nuit';
+  if (/soleil|nature|ete|été|sable|plage|creme|crème|dance|techno|estival|summer/.test(folded)) return 'un soleil qui colle à la peau';
   if (/neige|flocon|hiver|bol/.test(folded)) return 'un flocon dans le bol du matin';
   if (/lapin|court|course/.test(folded)) return 'une ombre vive qui traverse les néons';
   if (/pluie|orage|averse/.test(folded)) return 'la pluie qui écrit sur les vitres';
@@ -99,6 +100,33 @@ function inferTitle(theme = '') {
   return words
     .map((word) => word.charAt(0).toLocaleUpperCase('fr-FR') + word.slice(1).toLocaleLowerCase('fr-FR'))
     .join(' ');
+}
+
+function buildVivyThemeSeed(value = '', fallback = 'Vivy garde la lumière') {
+  const material = sanitizeVivySongMaterial(value, 900);
+  let seed = stripSongCommand(material)
+    .replace(/^(?:salut|bonjour|coucou|hey)\b[\s,;:.!?-]*/i, '')
+    .replace(/^(?:tu\s+as\s+|t['’]\s*as\s+)?(?:une?\s+)?id[ée]e\s+de\s+chanson\s+(?:sur|pour|avec)\s+/i, '')
+    .replace(/^(?:theme|th[èe]me)\s*:?\s*/i, '')
+    .replace(/\b(?:un\s+)?son\s+d['’]ambiance\s+(?:pour|sur|avec)?\s*/ig, '')
+    .replace(/\b(?:prépare|prepare)\s+(?:un\s+)?prompt\s+suno\b/ig, '')
+    .replace(/\b(?:continue|continuer|reprends|poursuis)\s+(?:ce\s+)?(?:texte|couplet|refrain|rap)\b/ig, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const usefulParts = seed
+    .split(/[.!?;\n]+/)
+    .map((part) => cleanOneLine(part, '', 180))
+    .filter((part) => {
+      const folded = foldTextForLookup(part);
+      return folded
+        && !looksLikeVivySongUiNoiseLine(part)
+        && !/^(salut|tu as|t as|est ce que|peux tu|peut tu|j aimerais|je voudrais)\b/.test(folded);
+    })
+    .slice(0, 3);
+
+  const cleaned = cleanOneLine(usefulParts.join(', '), '', 220);
+  return cleaned || fallback;
 }
 
 function buildVivySongcraftSystemPrompt(mode = 'song') {
@@ -484,7 +512,7 @@ function buildVivyStructuredLyrics(input = {}) {
     return buildDjeffRapDuoLyrics(input, material);
   }
 
-  const theme = stripSongCommand(material) || 'Vivy garde la lumière';
+  const theme = buildVivyThemeSeed(material, 'Vivy garde la lumière');
   const motif = inferMotif(theme);
   const title = cleanOneLine(input.songTitle || input.title || inferTitle(theme), 'Je garde la lumière', 80);
 
@@ -498,8 +526,8 @@ function buildVivyStructuredLyrics(input = {}) {
     '[Verse 1]',
     'Je cherche un signe au bord de la nuit,',
     'Un fil de néon tremble dans le bruit.',
-    `Tout semble petit: ${theme},`,
-    'Mais sous la surface, un monde me suit.',
+    `Le décor s'ouvre sur ${theme},`,
+    'Et sous la surface, le rythme me suit.',
     '',
     '[Pre-Chorus]',
     'Je cache un soleil sous ma voix légère,',

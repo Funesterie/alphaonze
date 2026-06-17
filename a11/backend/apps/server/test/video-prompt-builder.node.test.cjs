@@ -53,6 +53,10 @@ test('video prompt builder can use the LLM when explicitly enabled', async () =>
     const result = await buildVideoPrompt({
       userMessage: 'mets-moi dans le far west',
       hasReferenceImage: true,
+      referenceImageUrls: [
+        'https://files.example.com/identity.png',
+        'https://files.example.com/desert-style.png',
+      ],
       callStructuredLlmJson: async (payload) => {
         calls.push(payload);
         return {
@@ -65,6 +69,13 @@ test('video prompt builder can use the LLM when explicitly enabled', async () =>
 
     assert.equal(calls.length, 1);
     assert.equal(calls[0].stage, 'video_prompt_builder');
+    const llmInput = JSON.parse(calls[0].text);
+    assert.equal(llmInput.has_reference_image, true);
+    assert.equal(llmInput.reference_count, 2);
+    assert.deepEqual(llmInput.reference_image_urls, [
+      'https://files.example.com/identity.png',
+      'https://files.example.com/desert-style.png',
+    ]);
     assert.equal(result.source, 'llm');
     assert.match(result.prompt, /western town/);
   });

@@ -9,16 +9,23 @@ const {
 // llama-3.3-70b-versatile doesn't support json_schema — use json_object which all Groq models support
 const VIDEO_PROMPT_RESPONSE_FORMAT = Object.freeze({ type: 'json_object' });
 
-const VIDEO_PROMPT_SYSTEM_PROMPT = `I am A11's video prompt engineer. I receive a user request in any language and a description of the reference image (if provided). I produce an optimized English prompt for WAN 2.2 video generation.
+const VIDEO_PROMPT_SYSTEM_PROMPT = `I am A11's video prompt engineer. I receive a user request in any language and descriptions of the user's reference images (if provided). I produce an optimized English prompt for WAN 2.2 video generation.
 
-I receive a JSON input with: user_request, has_reference_image, reference_visual_context (description of the reference image).
+I receive a JSON input with: user_request, has_reference_image, reference_count, reference_image_urls, reference_visual_context (description of one or more reference images).
 
 My job: translate the user intent into a cinematic motion prompt. I think like a film director planning a shot sequence.
 
 IDENTITY ANCHOR RULE (critical):
-- If has_reference_image=true, I MUST append to the prompt: "same person as in reference image, identical face, hairstyle, costume and body build"
-- I never invent a new character look — the reference image is the ground truth identity
+- If has_reference_image=true, I MUST append to the prompt: "same person as in primary reference image, identical face, hairstyle, costume and body build"
+- I never invent a new character look when an identity reference is present -- the primary reference image is the ground truth identity
 - DIRECTION PRESERVATION: if reference_visual_context describes the subject facing a specific direction (left/right), write the action prompt in that same direction. Add "mirrored, horizontally flipped" to negative_prompt.
+
+MULTI-REFERENCE / MONTAGE RULE:
+- Multiple user-provided references are valid creative material, not a reason to refuse or ask for a new prompt.
+- If reference_count > 1, use the first/source reference as the primary identity or main subject unless the user says otherwise.
+- Use the other references as role-separated material: style, pose, background, props, lighting, scene parts, or montage inserts.
+- For montage, clip, trailer, remix, or "utilise plusieurs refs", describe an ordered composite shot or sequence that combines the references without replacing the primary identity.
+- If references conflict, preserve the primary identity and use secondary references only for style/environment/props.
 
 ART STYLE RULE (critical):
 - I read reference_visual_context carefully. If the reference is non-photorealistic (manga, anime, comic book, illustration, ink drawing, 3D render, cartoon), I MUST start the prompt with the art style descriptor.
@@ -68,6 +75,7 @@ Examples:
 
 Rules:
 - IDENTITY ANCHOR appended whenever has_reference_image=true.
+- MULTI-REFERENCE: if reference_count > 1, keep the primary identity stable and explicitly blend secondary refs as style/environment/props/montage context.
 - DIRECTION: if reference describes a facing direction, honor it in the prompt text. Add "mirrored, horizontally flipped" to negative_prompt when has_reference_image=true.
 - ART STYLE FIRST if non-photorealistic reference detected.
 - Action first, then environment, then atmosphere, then light.
@@ -85,12 +93,80 @@ function normalizeText(value = '') {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
+function isTruthyEnv(value) {
+  return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function shouldUseVideoPromptLlm(env = process.env) {
+  return isTruthyEnv(env.A11_VIDEO_PROMPT_BUILDER_LLM)
+    || isTruthyEnv(env.A11_VIDEO_PROMPT_LLM)
+    || isTruthyEnv(env.A11_VIDEO_PROMPT_GROQ_ENABLED)
+    || isTruthyEnv(env.A11_IMAGE_DIRECT_GROQ_ENABLED);
+}
+
+function toUniqueStrings(values = [], limit = 8) {
+  const source = Array.isArray(values) ? values : [values];
+  const output = [];
+  const seen = new Set();
+  for (const entry of source) {
+    const text = normalizeText(entry);
+    if (!text) continue;
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(text);
+    if (output.length >= limit) break;
+  }
+  return output;
+}
+
+function buildHeuristicVideoPrompt({
+  userMessage = '',
+  hasReferenceImage = false,
+  referenceImageUrls = [],
+} = {}) {
+  const message = normalizeText(userMessage);
+  const folded = message
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const hasReference = Boolean(hasReferenceImage || toUniqueStrings(referenceImageUrls).length > 0);
+  let prompt = message ? `${message}, cinematic motion, natural atmosphere, realistic light` : 'cinematic motion, natural atmosphere, realistic light';
+  let motionType = 'other';
+
+  if (/tokyo|shibuya|neon|nuit|night/.test(folded) && /march|walk/.test(folded)) {
+    prompt = 'Walking through Tokyo streets at night, rain reflecting neon light, first-person cinematic motion, natural camera sway';
+    motionType = 'walk';
+  } else if (/far west|western|cowboy|saloon/.test(folded)) {
+    prompt = 'Walking through a dusty western frontier town at golden hour, worn boots on dry dirt road, wooden saloon ahead, wide cinematic shot';
+    motionType = 'walk';
+  } else if (/hadouken|kamehameha|rasengan|energie|energy/.test(folded)) {
+    prompt = 'Fighter drops into a wide stance, cupping hands as a glowing energy ball forms between the palms, then thrusting both hands forward to launch it straight ahead, cinematic action shot';
+    motionType = 'fight';
+  }
+
+  if (hasReference) {
+    prompt = `${prompt}, same person as in primary reference image, identical face, hairstyle, costume and body build`;
+  }
+
+  return {
+    prompt: normalizeText(prompt),
+    negativePrompt: hasReference
+      ? 'floating limbs, disconnected body parts, disembodied legs, missing torso, incomplete anatomy, cut off body, severed limbs, mirrored, horizontally flipped'
+      : 'floating limbs, disconnected body parts, disembodied legs, missing torso, incomplete anatomy, cut off body, severed limbs',
+    durationSeconds: /hadouken|kamehameha|rasengan|energie|energy/.test(folded) ? 5 : 4,
+    hasReferenceSubject: hasReference,
+    motionType,
+    source: 'heuristic',
+  };
+}
+
 function buildGroqVideoLlmFn(env = process.env) {
   const groqKey = String(env.GROQ_API_KEY || '').trim();
   if (!groqKey) return null;
   // A11_VIDEO_PROMPT_GROQ_ENABLED is preferred; A11_IMAGE_DIRECT_GROQ_ENABLED accepted for backward compat
-  const isEnabled = ['1', 'true', 'yes', 'on'].includes(String(env.A11_VIDEO_PROMPT_GROQ_ENABLED || '').trim().toLowerCase())
-    || ['1', 'true', 'yes', 'on'].includes(String(env.A11_IMAGE_DIRECT_GROQ_ENABLED || '').trim().toLowerCase());
+  const isEnabled = isTruthyEnv(env.A11_VIDEO_PROMPT_GROQ_ENABLED)
+    || isTruthyEnv(env.A11_IMAGE_DIRECT_GROQ_ENABLED);
   if (!isEnabled) return null;
 
   const groqModel = String(env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim();
@@ -136,16 +212,29 @@ function buildGroqVideoLlmFn(env = process.env) {
 async function buildVideoPrompt({
   userMessage = '',
   hasReferenceImage = false,
+  referenceImageUrls = [],
   referenceVisualContext = '',
   audioMotionPlan = null,
   callStructuredLlmJson = defaultCallStructuredLlmJson,
   timeoutMs = 12000,
 } = {}) {
   if (!userMessage) return null;
+  const normalizedReferenceImageUrls = toUniqueStrings(referenceImageUrls, 8);
+  const hasReference = Boolean(hasReferenceImage || normalizedReferenceImageUrls.length > 0);
+
+  if (!shouldUseVideoPromptLlm(process.env)) {
+    return buildHeuristicVideoPrompt({
+      userMessage,
+      hasReferenceImage: hasReference,
+      referenceImageUrls: normalizedReferenceImageUrls,
+    });
+  }
 
   const input = JSON.stringify({
     user_request: userMessage,
-    has_reference_image: hasReferenceImage,
+    has_reference_image: hasReference,
+    reference_count: normalizedReferenceImageUrls.length || (hasReference ? 1 : 0),
+    reference_image_urls: normalizedReferenceImageUrls,
     reference_visual_context: referenceVisualContext || null,
     audio_motion_plan: audioMotionPlan
       ? {
@@ -190,7 +279,7 @@ async function buildVideoPrompt({
     return {
       prompt: normalizeText(userMessage + ', cinematic motion, natural atmosphere, realistic light'),
       negativePrompt: '',
-      hasReferenceSubject: hasReferenceImage,
+      hasReferenceSubject: hasReference,
       motionType: 'other',
       source: 'fallback',
     };
@@ -210,7 +299,7 @@ async function buildVideoPrompt({
     prompt,
     negativePrompt,
     durationSeconds,
-    hasReferenceSubject: hasReferenceImage || response?.has_reference_subject === true,
+    hasReferenceSubject: hasReference || response?.has_reference_subject === true,
     motionType: normalizeText(response?.motion_type || 'other'),
     source: groqUsed ? 'groq' : 'llm',
   };
@@ -218,5 +307,6 @@ async function buildVideoPrompt({
 
 module.exports = {
   buildVideoPrompt,
+  shouldUseVideoPromptLlm,
   VIDEO_PROMPT_SYSTEM_PROMPT,
 };

@@ -128,18 +128,38 @@ function isRunComfyVideoProvider(provider = '') {
   return normalizeVideoProvider(provider) === 'runcomfy';
 }
 
+function normalizeReferenceImageUrls(body = {}) {
+  const source = [
+    body?.sourceImageUrl,
+    body?.source_image_url,
+    body?.referenceImageUrl,
+    body?.reference_image_url,
+    body?.initImageUrl,
+    body?.init_image_url,
+    body?.imageUrl,
+    body?.image_url,
+    body?.referenceImageUrls,
+    body?.reference_image_urls,
+  ];
+  const output = [];
+  const seen = new Set();
+  for (const value of source) {
+    const entries = Array.isArray(value) ? value : [value];
+    for (const entry of entries) {
+      const text = String(entry || '').trim();
+      if (!text) continue;
+      const key = text.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      output.push(text);
+      if (output.length >= 12) return output;
+    }
+  }
+  return output;
+}
+
 function hasVideoReferenceImage(body = {}) {
-  return Boolean(
-    body?.sourceImageUrl
-    || body?.source_image_url
-    || body?.referenceImageUrl
-    || body?.reference_image_url
-    || body?.initImageUrl
-    || body?.init_image_url
-    || body?.imageUrl
-    || body?.image_url
-    || (Array.isArray(body?.referenceImageUrls) && body.referenceImageUrls.length > 0)
-  );
+  return normalizeReferenceImageUrls(body).length > 0;
 }
 
 function canUseServerPaidVideo(req = null) {
@@ -1112,7 +1132,8 @@ function createVideoGenerateRouter(overrides = {}) {
         }
         // Not explicitly requested + role insufficient → skip silently, continue to next step
       } else {
-        const hasReferenceImage = hasVideoReferenceImage(body);
+        const referenceImageUrls = normalizeReferenceImageUrls(body);
+        const hasReferenceImage = referenceImageUrls.length > 0;
         const bodyAudioUrl = String(body?.audioUrl || body?.audio_url || '').trim();
         // Analyse audio first (V9 Turbo 99ms granularity), then build prompt with sync context in one LLM call
         const audioMotionPlan = bodyAudioUrl
@@ -1127,6 +1148,7 @@ function createVideoGenerateRouter(overrides = {}) {
         const builtPrompt = await buildVideoPromptImpl({
           userMessage: prompt,
           hasReferenceImage,
+          referenceImageUrls,
           referenceVisualContext: String(body?.compiledVisualContext || '').trim(),
           audioMotionPlan: audioMotionPlan || null,
           timeoutMs: 10000,

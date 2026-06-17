@@ -1223,6 +1223,10 @@ test('video generate router builds a first-person cloud prompt before Replicate 
       body: JSON.stringify({
         prompt: 'je marche dans tokyo la nuit',
         sourceImageUrl: 'https://files.example.com/selfie.png',
+        referenceImageUrls: [
+          'https://files.example.com/selfie.png',
+          'https://files.example.com/tokyo-neon-style.png',
+        ],
         provider: 'replicate',
       }),
     });
@@ -1234,6 +1238,10 @@ test('video generate router builds a first-person cloud prompt before Replicate 
     assert.equal(promptBuilderCalls.length, 1);
     assert.equal(promptBuilderCalls[0].userMessage, 'je marche dans tokyo la nuit');
     assert.equal(promptBuilderCalls[0].hasReferenceImage, true);
+    assert.deepEqual(promptBuilderCalls[0].referenceImageUrls, [
+      'https://files.example.com/selfie.png',
+      'https://files.example.com/tokyo-neon-style.png',
+    ]);
     assert.equal(calls[0].body.input.prompt, 'Walking through neon Tokyo streets at night, rain reflecting magenta light, first-person cinematic motion');
     assert.equal(calls[0].body.input.image, 'https://files.example.com/selfie.png');
     assert.equal(payload.prompt, 'Walking through neon Tokyo streets at night, rain reflecting magenta light, first-person cinematic motion');

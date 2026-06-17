@@ -21,6 +21,25 @@ function normalizeVideoBoolean(value, fallback = null) {
   return fallback;
 }
 
+function toVideoStringList(values = [], limit = 12) {
+  const source = Array.isArray(values) ? values : [values];
+  const output = [];
+  const seen = new Set();
+  for (const value of source) {
+    const entries = Array.isArray(value) ? value : [value];
+    for (const entry of entries) {
+      const text = String(entry || '').trim();
+      if (!text) continue;
+      const key = text.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      output.push(text);
+      if (output.length >= limit) return output;
+    }
+  }
+  return output;
+}
+
 function normalizeSequencePlannerMode(value = '', fallback = '') {
   const normalized = String(value || '').trim().toLowerCase();
   if (!normalized) return fallback;
@@ -98,6 +117,16 @@ function parseVideoGenerateRequest(text = '', body = {}) {
     || ''
   );
   const prompt = explicitPrompt || extractPromptFromVideoText(rawText);
+  const sourceImageUrl = String(body?.sourceImageUrl || body?.source_image_url || body?.imageUrl || body?.image_url || '').trim();
+  const referenceImageUrls = toVideoStringList([
+    sourceImageUrl,
+    body?.referenceImageUrl,
+    body?.reference_image_url,
+    body?.initImageUrl,
+    body?.init_image_url,
+    body?.referenceImageUrls,
+    body?.reference_image_urls,
+  ], 12);
 
   return {
     rawText,
@@ -120,7 +149,8 @@ function parseVideoGenerateRequest(text = '', body = {}) {
     sourceType: String(body?.sourceType || body?.source_type || '').trim().toLowerCase(),
     sourceUrl: String(body?.sourceUrl || body?.source_url || '').trim(),
     sourcePath: String(body?.sourcePath || body?.source_path || '').trim(),
-    sourceImageUrl: String(body?.sourceImageUrl || body?.source_image_url || body?.imageUrl || body?.image_url || '').trim(),
+    sourceImageUrl,
+    referenceImageUrls,
     sourceImagePath: String(body?.sourceImagePath || body?.source_image_path || body?.imagePath || body?.image_path || '').trim(),
     sourceVideoUrl: String(body?.sourceVideoUrl || body?.source_video_url || body?.videoUrl || body?.video_url || '').trim(),
     sourceVideoPath: String(body?.sourceVideoPath || body?.source_video_path || body?.videoPath || body?.video_path || '').trim(),

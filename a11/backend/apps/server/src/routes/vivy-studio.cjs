@@ -377,16 +377,24 @@ function isVivyFounderUser(user = {}) {
 }
 
 function getVivyOpenAIConfig() {
-  const baseURL = process.env.VIVY_OPENAI_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+  const groqApiKey = process.env.VIVY_GROQ_API_KEY || process.env.GROQ_API_KEY || '';
+  const explicitVivyBaseURL = cleanOneLine(process.env.VIVY_OPENAI_BASE_URL, '', 300);
+  const baseURL = explicitVivyBaseURL
+    || (groqApiKey ? 'https://api.groq.com/openai/v1' : (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'));
   const normalizedBaseUrl = String(baseURL || '');
   const apiKey = /groq/i.test(normalizedBaseUrl)
-    ? (process.env.VIVY_GROQ_API_KEY || process.env.GROQ_API_KEY || process.env.VIVY_OPENAI_API_KEY || process.env.OPENAI_API_KEY)
+    ? (groqApiKey || process.env.VIVY_OPENAI_API_KEY || process.env.OPENAI_API_KEY)
     : (/openrouter\.ai/i.test(normalizedBaseUrl)
       ? (process.env.VIVY_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || process.env.VIVY_OPENAI_API_KEY || process.env.OPENAI_API_KEY)
       : (process.env.VIVY_OPENAI_API_KEY || process.env.OPENAI_API_KEY || process.env.A11_OPENAI_API_KEY));
+  const defaultModel = /groq/i.test(normalizedBaseUrl)
+    ? (process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile')
+    : (/openrouter\.ai/i.test(normalizedBaseUrl)
+      ? 'meta-llama/llama-3.3-70b-instruct'
+      : 'gpt-4o-mini');
   const model = cleanOneLine(
-    process.env.VIVY_CHAT_MODEL || process.env.A11_OPENAI_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
-    'gpt-4o-mini',
+    process.env.VIVY_CHAT_MODEL || process.env.VIVY_OPENAI_MODEL || defaultModel,
+    defaultModel,
     80
   );
 
@@ -2934,6 +2942,7 @@ async function buildVivyAiChat(input, req) {
   }
 
   const llmDisabled = String(process.env.VIVY_CHAT_DISABLE_LLM || '').toLowerCase() === 'true';
+  const llmBundle = createVivyOpenAIClient();
 
   if (localContext && llmDisabled && mode !== 'song') {
     const assistant = buildVivyLocalContextReply(localContext);
@@ -2966,7 +2975,7 @@ async function buildVivyAiChat(input, req) {
     };
   }
 
-  if (mode === 'song') {
+  if (mode === 'song' && (!llmBundle || llmDisabled)) {
     const history = normalizeVivyChatHistory(input.history);
     const assistant = buildVivyDirectSongReply({ ...input, message, files, history });
     rememberVivyEpisode(userId, 'vivy_reply', assistant, {
@@ -2985,7 +2994,6 @@ async function buildVivyAiChat(input, req) {
     };
   }
 
-  const llmBundle = createVivyOpenAIClient();
   if (!llmBundle || llmDisabled) {
     if (localContext) {
       const assistant = buildVivyLocalContextReply(localContext);

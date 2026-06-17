@@ -600,6 +600,7 @@ function hasExplicitVideoVisualSource(request = {}) {
     || String(request?.sourceImagePath || '').trim()
     || String(request?.sourceVideoUrl || '').trim()
     || String(request?.sourceVideoPath || '').trim()
+    || (Array.isArray(request?.referenceImageUrls) && request.referenceImageUrls.length > 0)
     || (
       String(request?.sourceType || '').trim()
       && (
@@ -1676,6 +1677,7 @@ function normalizeVideoRequest(body = {}, promptOverride = '') {
     sourceUrl: parsed.sourceUrl || '',
     sourcePath: parsed.sourcePath || '',
     sourceImageUrl: parsed.sourceImageUrl || '',
+    referenceImageUrls: Array.isArray(parsed.referenceImageUrls) ? parsed.referenceImageUrls.slice(0, 12) : [],
     sourceImagePath: parsed.sourceImagePath || '',
     sourceVideoUrl: parsed.sourceVideoUrl || '',
     sourceVideoPath: parsed.sourceVideoPath || '',

@@ -1547,6 +1547,61 @@
     width: 100%;
   }
 
+  /* Composer mobile: textarea pleine largeur, actions compactes sur une ligne. */
+  .row.a11-composer-row {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .row.a11-composer-row .a11-input-wrap {
+    order: 1;
+    flex: 0 0 100% !important;
+    width: 100%;
+    min-width: 0;
+  }
+  .row.a11-composer-row > .btn.import-inline {
+    order: 2;
+    flex: 0 1 78px;
+    min-width: 0;
+    margin: 0 !important;
+    padding: 0 10px !important;
+    white-space: nowrap;
+  }
+  .row.a11-composer-row .a11-refs-wrap {
+    order: 3;
+    flex: 0 1 68px;
+    min-width: 0;
+    margin-right: 0 !important;
+  }
+  .row.a11-composer-row .a11-refs-wrap .import-inline {
+    width: 100%;
+    min-width: 0;
+    margin: 0 !important;
+    padding: 0 10px !important;
+    white-space: nowrap;
+  }
+  .row.a11-composer-row .send-button {
+    order: 4;
+    flex: 1 1 94px;
+    width: auto !important;
+    min-width: 82px !important;
+    margin-left: 0 !important;
+  }
+  .row.a11-composer-row .a11-ekko-wrap {
+    order: 5;
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+  .row.a11-composer-row .nossen-mic-btn.inline {
+    order: 6;
+    flex: 0 0 44px;
+    width: 44px;
+    margin-left: 0 !important;
+  }
+
   .composer textarea {
     min-width: 0;
     width: 100%;
@@ -3972,6 +4027,7 @@ html.a11-auth-page-root body {
 
 .vivy-studio-modes {
   display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 10px;
   align-content: start;
 }
@@ -4512,7 +4568,7 @@ html.a11-auth-page-root body {
   }
 
   .vivy-studio-modes {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .vivy-studio-modes button {
@@ -4654,7 +4710,7 @@ html.a11-auth-page-root body {
   }
 
   .vivy-studio-modes {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .vivy-studio-modes button {
@@ -4789,7 +4845,7 @@ html.a11-auth-page-root body {
   }
 
   .vivy-studio-modes {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
   }
 
@@ -10066,11 +10122,49 @@ body {
   }
 }
 
+@media (hover: none) and (pointer: coarse) {
+  .composer textarea,
+  .a11-input-wrap textarea,
+  .vivy-chat textarea,
+  .vivy-studio input,
+  .vivy-studio select,
+  .vivy-studio textarea,
+  .fun-mcp-console input,
+  .fun-session-token-field input {
+    font-size: 16px !important;
+  }
+}
+
 @media (max-width: 760px) {
+  .composer textarea,
+  .a11-input-wrap textarea,
+  .vivy-chat textarea,
+  .vivy-studio input,
+  .vivy-studio select,
+  .vivy-studio textarea,
+  .fun-mcp-console input,
+  .fun-session-token-field input {
+    font-size: 16px !important;
+  }
+
   .composer .a11-composer-row {
+    display: flex !important;
     flex-wrap: wrap !important;
     align-items: stretch !important;
-    gap: 8px !important;
+    gap: 4px !important;
+  }
+
+  .composer .a11-composer-row > .btn.import-inline {
+    flex: 0 1 60px;
+    padding-inline: 8px !important;
+  }
+
+  .composer .a11-composer-row .a11-refs-wrap {
+    flex: 0 1 54px;
+  }
+
+  .composer .a11-composer-row .a11-refs-wrap .import-inline {
+    padding-inline: 8px !important;
   }
 
   .composer .a11-input-wrap {
@@ -10097,18 +10191,18 @@ body {
     min-height: 40px !important;
   }
 
-  .composer .send-button {
-    flex: 1 1 108px;
-    order: 2;
+  .composer .a11-composer-row .send-button {
+    flex: 1 1 78px;
+    order: 4;
     width: auto !important;
-    min-width: 0 !important;
+    min-width: 74px !important;
     min-height: 40px;
   }
 
-  .composer .nossen-mic-btn.inline {
-    order: 2;
-    width: 48px !important;
-    flex: 0 0 48px;
+  .composer .a11-composer-row .nossen-mic-btn.inline {
+    order: 6;
+    width: 42px !important;
+    flex: 0 0 42px;
     margin-left: 0 !important;
   }
 

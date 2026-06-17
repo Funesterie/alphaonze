@@ -77,6 +77,25 @@ test('normalizeVideoRequest upgrades suspiciously low video dimensions to a safe
   }
 });
 
+test('normalizeVideoRequest preserves multi-reference image urls', () => {
+  const request = normalizeVideoRequest({
+    prompt: 'genere un montage video',
+    sourceImageUrl: 'https://files.example.com/identity.png',
+    referenceImageUrls: [
+      'https://files.example.com/identity.png',
+      'https://files.example.com/style.png',
+      'https://files.example.com/decor.png',
+    ],
+  });
+
+  assert.equal(request.sourceImageUrl, 'https://files.example.com/identity.png');
+  assert.deepEqual(request.referenceImageUrls, [
+    'https://files.example.com/identity.png',
+    'https://files.example.com/style.png',
+    'https://files.example.com/decor.png',
+  ]);
+});
+
 test('fitRenderDimensionsWithinLimits keeps video frames compatible with SD latent dimensions', () => {
   const fitted = fitRenderDimensionsWithinLimits({
     width: 682,
