@@ -9497,6 +9497,7 @@ export function App() {
   const [preparingMobileAudio, setPreparingMobileAudio] = useState(false);
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [audioTranscribing, setAudioTranscribing] = useState(false);
+  const [audioSyncReady, setAudioSyncReady] = useState(false);
   const [micStarting, setMicStarting] = useState(false);
   const [micDictationFallbackActive, setMicDictationFallbackActive] = useState(false);
   const [micPermissionBlocked, setMicPermissionBlocked] = useState(false);
@@ -10982,19 +10983,17 @@ export function App() {
       // Upload audio file for backend sync analysis BEFORE releasing the transcribing lock —
       // pendingAudioUrlRef must be set before the user can hit send, otherwise the ref is empty at capture time.
       if (audioFiles[0]) {
-        setUploadFeedback("Préparation sync audio vidéo...");
+        setAudioSyncReady(false);
         try {
           const audioUpload = await uploadConversationFile(audioFiles[0], { conversationId });
           const audioResource = audioUpload.conversationResource || audioUpload.file || null;
           const audioResourceUrl = String(audioResource?.downloadUrl || audioResource?.url || "").trim();
           if (audioResourceUrl) {
             pendingAudioUrlRef.current = resolveApiAssetUrl(audioResourceUrl) || audioResourceUrl;
-            setUploadFeedback("Audio prêt pour sync vidéo — envoie ton message.");
-          } else {
-            setUploadFeedback("Audio importé (sync vidéo indisponible — envoie quand même).");
+            setAudioSyncReady(true);
           }
         } catch {
-          setUploadFeedback("Audio importé (sync vidéo indisponible — envoie quand même).");
+          // Audio URL unavailable — video sync will use fallback phases
         }
       }
       setAudioTranscribing(false);
@@ -11322,6 +11321,7 @@ export function App() {
     pendingImportedFileUrlsRef.current = [];
     const capturedAudioUrl = pendingAudioUrlRef.current;
     pendingAudioUrlRef.current = null;
+    setAudioSyncReady(false);
     recentFileImportRef.current = { key: "", at: 0 };
     dismissedImportedNamesRef.current.clear();
     setDragPreviewUrls((prev) => {
@@ -14238,7 +14238,15 @@ export function App() {
                       <div className="a11-drop-carousel-media">
                         {p.isImage
                           ? <img src={p.url} alt={p.name} className="a11-drop-carousel-img" />
-                          : <span className="a11-drop-carousel-file-icon">FILE</span>
+                          : AUDIO_FILE_NAME_RE.test(p.name)
+                            ? <span className="a11-drop-carousel-file-icon" style={{
+                                background: audioSyncReady ? '#166534' : audioTranscribing ? '#78350f' : '#1e3a5f',
+                                color: audioSyncReady ? '#86efac' : audioTranscribing ? '#fde68a' : '#93c5fd',
+                                fontSize: 10, padding: '2px 6px', borderRadius: 4,
+                              }}>
+                                {audioSyncReady ? 'AUDIO SYNC' : audioTranscribing ? 'ANALYSE...' : 'AUDIO'}
+                              </span>
+                            : <span className="a11-drop-carousel-file-icon">FILE</span>
                         }
                       </div>
 
