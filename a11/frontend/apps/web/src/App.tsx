@@ -11258,10 +11258,15 @@ export function App() {
     const pendingFileUrls = pendingImportedFileUrlsRef.current
       .map((u) => resolveApiAssetUrl(u) || u)
       .filter(Boolean);
-    const allImageUrls = Array.from(new Set([
+    const rawImageUrls = Array.from(new Set([
       ...imageUrls.map((u) => resolveApiAssetUrl(u) || u).filter(Boolean),
       ...pendingImageUrls,
     ]));
+    const MAX_VIDEO_REFS = 3;
+    const allImageUrls = rawImageUrls.slice(0, MAX_VIDEO_REFS);
+    if (rawImageUrls.length > MAX_VIDEO_REFS) {
+      setUploadFeedback(`3 références max utilisées pour la vidéo (${rawImageUrls.length - MAX_VIDEO_REFS} ignorée(s)).`);
+    }
     const previewImageUrl = allImageUrls[0] ?? "";
     const explicitSourceImageUrl = previewImageUrl || undefined;
     const effectiveText = cleanedInput
