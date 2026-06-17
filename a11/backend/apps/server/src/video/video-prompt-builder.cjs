@@ -52,8 +52,9 @@ function normalizeText(value = '') {
 function buildGroqVideoLlmFn(env = process.env) {
   const groqKey = String(env.GROQ_API_KEY || '').trim();
   if (!groqKey) return null;
-  const isEnabled = ['1', 'true', 'yes', 'on'].includes(String(env.A11_IMAGE_DIRECT_GROQ_ENABLED || '').trim().toLowerCase())
-    || /groq\.com/i.test(String(env.A11_TRANSLATION_BASE_URL || '').trim());
+  // A11_VIDEO_PROMPT_GROQ_ENABLED is preferred; A11_IMAGE_DIRECT_GROQ_ENABLED accepted for backward compat
+  const isEnabled = ['1', 'true', 'yes', 'on'].includes(String(env.A11_VIDEO_PROMPT_GROQ_ENABLED || '').trim().toLowerCase())
+    || ['1', 'true', 'yes', 'on'].includes(String(env.A11_IMAGE_DIRECT_GROQ_ENABLED || '').trim().toLowerCase());
   if (!isEnabled) return null;
 
   const groqModel = String(env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim();
@@ -113,10 +114,18 @@ async function buildVideoPrompt({
   const groqFn = buildGroqVideoLlmFn(process.env);
 
   let response = null;
-  try {
-    if (groqFn) {
+  let groqUsed = false;
+  if (groqFn) {
+    try {
       response = await groqFn({ text: input, systemPrompt: VIDEO_PROMPT_SYSTEM_PROMPT, timeoutMs });
-    } else if (typeof callStructuredLlmJson === 'function') {
+      groqUsed = true;
+    } catch (err) {
+      console.warn('[A11][video-prompt] groq-direct failed, trying callStructuredLlmJson:', String(err?.message || err));
+    }
+  }
+
+  if (!response && typeof callStructuredLlmJson === 'function') {
+    try {
       response = await callStructuredLlmJson({
         text: input,
         systemPrompt: VIDEO_PROMPT_SYSTEM_PROMPT,
@@ -126,9 +135,9 @@ async function buildVideoPrompt({
         responseFormat: VIDEO_PROMPT_RESPONSE_FORMAT,
         stage: 'video_prompt_builder',
       });
+    } catch (err) {
+      console.warn('[A11][video-prompt] callStructuredLlmJson failed:', String(err?.message || err));
     }
-  } catch (err) {
-    console.warn('[A11][video-prompt] LLM call failed:', String(err?.message || err));
   }
 
   const prompt = normalizeText(response?.prompt || '');
@@ -149,9 +158,9 @@ async function buildVideoPrompt({
   return {
     prompt,
     negativePrompt,
-    hasReferenceSubject: response?.has_reference_subject === true,
+    hasReferenceSubject: hasReferenceImage || response?.has_reference_subject === true,
     motionType: normalizeText(response?.motion_type || 'other'),
-    source: groqFn ? 'groq' : 'llm',
+    source: groqUsed ? 'groq' : 'llm',
   };
 }
 
