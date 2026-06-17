@@ -10979,8 +10979,8 @@ export function App() {
         ? `Transcription audio partielle: ${transcriptBlocks.length} ok, ${failedAudio.length} en echec.`
         : `${transcriptBlocks.length} audio(s) transcrit(s).`
       );
-      setAudioTranscribing(false);
-      // Upload the first audio file to get a resource URL for backend audio sync analysis
+      // Upload audio file for backend sync analysis BEFORE releasing the transcribing lock —
+      // pendingAudioUrlRef must be set before the user can hit send, otherwise the ref is empty at capture time.
       if (audioFiles[0]) {
         try {
           const audioUpload = await uploadConversationFile(audioFiles[0], { conversationId });
@@ -10993,6 +10993,7 @@ export function App() {
           // Audio URL unavailable — video sync will use fallback phases
         }
       }
+      setAudioTranscribing(false);
     }
 
     // Upload des fichiers non-image dans la conversation (PDF, etc.) — exclure les audios déjà traités
