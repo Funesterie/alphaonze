@@ -10365,9 +10365,13 @@ function isSiwisStatusQuestion(value) {
 }
 
 function isOfficialVoiceStatusQuestion(value) {
-  const text = String(value || '').trim().toLowerCase();
-  if (!text || isSiwisStatusQuestion(text)) return false;
-  const mentionsVoice = /voix|voice|parle|parler|audio|son/.test(text);
+  const raw = String(value || '').trim();
+  if (!raw || isSiwisStatusQuestion(raw)) return false;
+  // audio import markers ([audio:filename]) are not voice status questions
+  if (/^\[audio:/i.test(raw)) return false;
+  const text = raw.toLowerCase();
+  // exclude "audio" — too broad, matches [audio:filename] import markers
+  const mentionsVoice = /voix|voice|parle|parler|son/.test(text);
   const asksStatus = /marche|fonctionne|disponible|status|etat|up|down|ok|cass|bug|repond|répond/.test(text);
   return mentionsVoice && asksStatus;
 }

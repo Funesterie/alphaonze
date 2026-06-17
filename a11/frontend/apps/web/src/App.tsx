@@ -10968,8 +10968,8 @@ export function App() {
       setAudioTranscribing(false);
     }
 
-    // Upload des fichiers non-image dans la conversation (PDF, etc.)
-    const nonImageFiles = allFiles.filter((f) => !f.type.startsWith('image/'));
+    // Upload des fichiers non-image dans la conversation (PDF, etc.) — exclure les audios déjà traités
+    const nonImageFiles = allFiles.filter((f) => !f.type.startsWith('image/') && !isAudioLikeFile(f));
     if (nonImageFiles.length > 0) {
       const uploaded: string[] = [];
       const failed: string[] = [];
