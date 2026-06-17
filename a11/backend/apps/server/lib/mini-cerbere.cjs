@@ -12,7 +12,9 @@ const DEFAULT_LLAMA_PRO_MODEL = 'Llama-3.3-70B-Instruct';
 const DEFAULT_LLAMA_PRO_JANUS_MODEL = 'llama-3.2-vision:11b';
 const DEFAULT_LLAMA_PRO_VIVY_MODEL = 'Llama-3.3-70B-Instruct';
 const DEFAULT_COOLDOWN_MS = 60_000;
-const MAX_COOLDOWN_MS = 60 * 60_000;
+// Plafonner à 3 minutes max — on préfère retenter plutôt que d'attendre 1h
+// même si Groq/OpenRouter disent "retry in 1h" via header retry-after
+const MAX_COOLDOWN_MS = 3 * 60_000;
 const DEFAULT_MULTI_MAX_TARGETS = 3;
 const MAX_MULTI_TARGETS = 5;
 const DEFAULT_REMOTE_CONTEXT_CHARS = 32_000;
