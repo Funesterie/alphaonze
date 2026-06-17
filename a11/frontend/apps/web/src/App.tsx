@@ -9870,7 +9870,7 @@ export function App() {
   const [portraitFramebook, setPortraitFramebook] = useState<A11PortraitFramebook>(DEFAULT_A11_PORTRAIT_FRAMEBOOK);
   const [portraitFrameIndex, setPortraitFrameIndex] = useState(0);
   // File d'attente : messages envoyés pendant qu'A11 réfléchit
-  const messageQueueRef = useRef<Array<{ text: string; imageUrl?: string }>>([]);
+  const messageQueueRef = useRef<Array<{ text: string; imageUrl?: string; imageUrls?: string[]; audioUrl?: string }>>([]);
   const queueProcessingRef = useRef(false);
 
   useEffect(() => {
@@ -10116,6 +10116,7 @@ export function App() {
   const recentFileImportRef = useRef<{ key: string; at: number }>({ key: "", at: 0 });
   const pendingImportedImageUrlsRef = useRef<string[]>([]);
   const pendingImportedFileUrlsRef = useRef<string[]>([]);
+  const pendingAudioUrlRef = useRef<string | null>(null);
   const dismissedImportedNamesRef = useRef<Set<string>>(new Set());
   const mobileAudioPrepKeyRef = useRef("");
   const copyMessageFeedbackTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
@@ -10979,6 +10980,19 @@ export function App() {
         : `${transcriptBlocks.length} audio(s) transcrit(s).`
       );
       setAudioTranscribing(false);
+      // Upload the first audio file to get a resource URL for backend audio sync analysis
+      if (audioFiles[0]) {
+        try {
+          const audioUpload = await uploadConversationFile(audioFiles[0], { conversationId });
+          const audioResource = audioUpload.conversationResource || audioUpload.file || null;
+          const audioResourceUrl = String(audioResource?.downloadUrl || audioResource?.url || "").trim();
+          if (audioResourceUrl) {
+            pendingAudioUrlRef.current = resolveApiAssetUrl(audioResourceUrl) || audioResourceUrl;
+          }
+        } catch {
+          // Audio URL unavailable — video sync will use fallback phases
+        }
+      }
     }
 
     // Upload des fichiers non-image dans la conversation (PDF, etc.) — exclure les audios déjà traités
@@ -11296,6 +11310,8 @@ export function App() {
     setInput("");
     pendingImportedImageUrlsRef.current = [];
     pendingImportedFileUrlsRef.current = [];
+    const capturedAudioUrl = pendingAudioUrlRef.current;
+    pendingAudioUrlRef.current = null;
     recentFileImportRef.current = { key: "", at: 0 };
     dismissedImportedNamesRef.current.clear();
     setDragPreviewUrls((prev) => {
@@ -11330,22 +11346,22 @@ export function App() {
 
     // Si A11 traite déjà, mettre en file : l'utilisateur peut continuer à écrire
     if (queueProcessingRef.current) {
-      messageQueueRef.current.push({ text: effectiveText, imageUrl: sourceImageUrl });
+      messageQueueRef.current.push({ text: effectiveText, imageUrl: sourceImageUrl, imageUrls: allImageUrls, audioUrl: capturedAudioUrl ?? undefined });
       return;
     }
 
     // Sinon démarrer le traitement
-    void processMessageQueue(effectiveText, sourceImageUrl);
+    void processMessageQueue(effectiveText, sourceImageUrl, allImageUrls, capturedAudioUrl ?? undefined);
   }
 
-  async function processMessageQueue(firstText: string, firstImageUrl?: string) {
+  async function processMessageQueue(firstText: string, firstImageUrl?: string, firstImageUrls?: string[], firstAudioUrl?: string) {
     if (queueProcessingRef.current) return;
     queueProcessingRef.current = true;
     setSending(true);
     startActivity();
 
-    const toProcess: Array<{ text: string; imageUrl?: string }> = [
-      { text: firstText, imageUrl: firstImageUrl },
+    const toProcess: Array<{ text: string; imageUrl?: string; imageUrls?: string[]; audioUrl?: string }> = [
+      { text: firstText, imageUrl: firstImageUrl, imageUrls: firstImageUrls, audioUrl: firstAudioUrl },
     ];
 
     while (toProcess.length > 0) {
@@ -11388,6 +11404,8 @@ export function App() {
             voicePersona: surfaceKind,
             language: selectedA11Language.code,
             sourceImageUrl: item.imageUrl,
+            referenceImageUrls: item.imageUrls && item.imageUrls.length > 1 ? item.imageUrls : undefined,
+            audioUrl: item.audioUrl || undefined,
           }
         );
         const normalizedAssistant = normalizeAssistantMessagePayload(

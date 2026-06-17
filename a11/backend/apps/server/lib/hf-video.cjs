@@ -169,7 +169,10 @@ function resolveVideoReferenceImageUrl(request = {}) {
     request.initImageUrl,
     request.init_image_url,
     request.imageUrl,
-    request.image_url
+    request.image_url,
+    Array.isArray(request.referenceImageUrls) && request.referenceImageUrls[0]
+      ? request.referenceImageUrls[0]
+      : ''
   );
 }
 

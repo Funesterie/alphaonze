@@ -3709,7 +3709,7 @@ export async function chatCompletion(
 export async function chatCompletionDetailed(
   messages: Msg[],
   provider: Provider = 'local',
-  systemPromptOrOptions?: string | { turbo?: boolean; systemPrompt?: string; model?: string; conversationId?: string; providerProfileId?: string; sourceImageUrl?: string; surface?: string; persona?: string; voicePersona?: string; language?: string }
+  systemPromptOrOptions?: string | { turbo?: boolean; systemPrompt?: string; model?: string; conversationId?: string; providerProfileId?: string; sourceImageUrl?: string; referenceImageUrls?: string[]; audioUrl?: string; surface?: string; persona?: string; voicePersona?: string; language?: string }
 ) {
   let systemPrompt: string | undefined;
   let turboFlag = false;
@@ -3717,6 +3717,8 @@ export async function chatCompletionDetailed(
   let conversationId: string | undefined;
   let providerProfileId: string | undefined;
   let sourceImageUrl: string | undefined;
+  let referenceImageUrls: string[] | undefined;
+  let audioUrl: string | undefined;
   let surface: string | undefined;
   let persona: string | undefined;
   let voicePersona: string | undefined;
@@ -3735,6 +3737,12 @@ export async function chatCompletionDetailed(
       : undefined;
     sourceImageUrl = typeof systemPromptOrOptions.sourceImageUrl === 'string'
       ? systemPromptOrOptions.sourceImageUrl.trim() || undefined
+      : undefined;
+    referenceImageUrls = Array.isArray(systemPromptOrOptions.referenceImageUrls)
+      ? systemPromptOrOptions.referenceImageUrls.filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
+      : undefined;
+    audioUrl = typeof systemPromptOrOptions.audioUrl === 'string' && systemPromptOrOptions.audioUrl.trim()
+      ? systemPromptOrOptions.audioUrl.trim()
       : undefined;
     surface = typeof systemPromptOrOptions.surface === 'string'
       ? systemPromptOrOptions.surface.trim().toLowerCase() || undefined
@@ -3776,6 +3784,8 @@ export async function chatCompletionDetailed(
     language,
     acceptAsyncImageJob: true,
     ...(sourceImageUrl ? { sourceImageUrl } : {}),
+    ...(referenceImageUrls && referenceImageUrls.length > 1 ? { referenceImageUrls } : {}),
+    ...(audioUrl ? { audioUrl } : {}),
   };
   // Always post to router (apiPost ignores the path and uses router endpoint)
   const initialData = await apiPost(payload);
