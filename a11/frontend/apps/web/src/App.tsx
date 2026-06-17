@@ -10982,15 +10982,19 @@ export function App() {
       // Upload audio file for backend sync analysis BEFORE releasing the transcribing lock —
       // pendingAudioUrlRef must be set before the user can hit send, otherwise the ref is empty at capture time.
       if (audioFiles[0]) {
+        setUploadFeedback("Préparation sync audio vidéo...");
         try {
           const audioUpload = await uploadConversationFile(audioFiles[0], { conversationId });
           const audioResource = audioUpload.conversationResource || audioUpload.file || null;
           const audioResourceUrl = String(audioResource?.downloadUrl || audioResource?.url || "").trim();
           if (audioResourceUrl) {
             pendingAudioUrlRef.current = resolveApiAssetUrl(audioResourceUrl) || audioResourceUrl;
+            setUploadFeedback("Audio prêt pour sync vidéo — envoie ton message.");
+          } else {
+            setUploadFeedback("Audio importé (sync vidéo indisponible — envoie quand même).");
           }
         } catch {
-          // Audio URL unavailable — video sync will use fallback phases
+          setUploadFeedback("Audio importé (sync vidéo indisponible — envoie quand même).");
         }
       }
       setAudioTranscribing(false);
