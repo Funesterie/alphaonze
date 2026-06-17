@@ -182,6 +182,7 @@ type QueuedChatItem = {
   text: string;
   imageUrl?: string;
   imageUrls?: string[];
+  referenceVisualContext?: string;
   audioUrl?: string;
   audioUrls?: string[];
   videoUrl?: string;
@@ -3910,37 +3911,58 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   }
 
   function buildVivyAutoTtsOptions(entry: {
+    id?: string;
     label: string;
     ttsPersona: "vivy" | "a11" | "kaen44";
     voiceStyle: string;
     voiceTool: string;
     surface: "vivy" | "a11" | "kaen44";
   }) {
-    // Appel TTS simple pour test — pas de chemin "référence obligatoire" qui bloque en 424.
-    // identityVoice:false évite normalizeA11OfficialReferenceRequest côté backend.
-    // vocalMode:"speech" évite le déclenchement de la conversion vocale XTTS-RVC.
+    const officialVoiceIds = new Set(["djeff", "kaen44", "a11", "vivy"]);
+    const entryId = String(entry.id || "").trim().toLowerCase();
+    const usesOfficialReference = officialVoiceIds.has(entryId)
+      || /\b(?:djeff|kaen44|a11|vivy|official|officiel|rap)\b/i.test(`${entry.voiceStyle} ${entry.voiceTool}`);
+    const provider = usesOfficialReference ? "xtts-rvc" : "auto";
     return {
       persona: entry.ttsPersona,
       voicePersona: entry.ttsPersona,
+      ttsPersona: entry.ttsPersona,
       surface: entry.surface,
+      voiceStyle: entry.voiceStyle,
+      voiceReferenceName: entry.voiceStyle || entry.label,
+      voiceReferenceLabel: entry.voiceStyle || entry.label,
+      referenceVoiceStyle: entry.voiceStyle || entry.label,
+      voiceTool: entry.voiceTool,
       vocalCast: entry.label,
-      provider: "auto",
-      ttsProvider: "auto",
-      vocalMode: "speech",
+      provider,
+      ttsProvider: provider,
+      engine: provider,
+      voiceEngine: provider,
+      vocalMode: usesOfficialReference ? "adaptive" : "speech",
       ttsAsync: true,
       asyncTts: true,
       ttsJobTimeoutMs: 60000,
       audioFormat: "mp3",
       responseFormat: "mp3",
-      identityVoice: false,
-      useIdentityVoice: false,
-      useDefaultVoiceReference: false,
-      defaultVoiceReference: false,
-      neutralVoice: false,
-      voiceReferenceRequired: false,
-      referenceVoiceRequired: false,
-      requireVoiceReference: false,
-      allowBrowserSpeechFallback: true,
+      identityVoice: usesOfficialReference,
+      useIdentityVoice: usesOfficialReference,
+      useDefaultVoiceReference: usesOfficialReference,
+      defaultVoiceReference: usesOfficialReference,
+      usePersonaVoiceReference: usesOfficialReference,
+      neutralVoice: usesOfficialReference ? false : undefined,
+      voiceReferenceRequired: usesOfficialReference,
+      referenceVoiceRequired: usesOfficialReference,
+      requireVoiceReference: usesOfficialReference,
+      voiceConversion: usesOfficialReference,
+      convertVoice: usesOfficialReference,
+      morphVoice: usesOfficialReference,
+      rvc: usesOfficialReference,
+      allowRvc: usesOfficialReference,
+      allowXttsRvc: usesOfficialReference,
+      allowLegacyVoiceBridge: usesOfficialReference,
+      xttsRvcOptIn: usesOfficialReference,
+      allowBrowserSpeechFallback: !usesOfficialReference,
+      ttsCostPolicy: usesOfficialReference ? `${entry.surface}_vivy_studio_voice_test` : undefined,
     };
   }
 
@@ -11149,6 +11171,9 @@ export function App() {
         : name;
       return `${stableName}:${file.size}:${file.type}`;
     };
+    const buildLibraryAlias = (file: File) => (
+      toUnicodeLine(String(file.name || "").replace(/\.[^.]+$/, ""), "référence média", 80)
+    );
     const seenFileKeys = new Set<string>();
     let duplicateImportCount = 0;
     const allFiles = Array.from(files).filter((file) => {
@@ -11187,6 +11212,8 @@ export function App() {
     const audioFiles = allFiles.filter(isAudioLikeFile);
     const videoFiles = allFiles.filter((file) => !isAudioLikeFile(file) && isVideoLikeFile(file));
     const importerFiles = allFiles.filter((file) => !isAudioLikeFile(file) && !isVideoLikeFile(file));
+    let libraryNeedsRefresh = false;
+    let conversationResourcesNeedRefresh = false;
     allFiles.forEach((file) => dismissedImportedNamesRef.current.delete(file.name));
 
     // Previews locaux immédiats (object URL, pas de réseau) : accumulés, pas remplacés
@@ -11228,6 +11255,8 @@ export function App() {
           if (dismissedImportedNamesRef.current.has(attachment.name)) return;
           const resolvedUrl = resolveApiAssetUrl(attachment.url) || attachment.url;
           pendingImportedImageUrlsRef.current = appendUniqueUrl(pendingImportedImageUrlsRef.current, resolvedUrl);
+          libraryNeedsRefresh = true;
+          conversationResourcesNeedRefresh = true;
           setDragPreviewUrls((prev) => prev.map((item) => (
             item.name === attachment.name && getComposerPreviewKind(item) === "image"
               ? { ...item, remoteUrl: resolvedUrl }
@@ -11274,7 +11303,13 @@ export function App() {
       for (const file of audioFiles) {
         if (dismissedImportedNamesRef.current.has(file.name)) continue;
         try {
-          const audioUpload = await uploadConversationFile(file, { conversationId });
+          const audioUpload = await uploadConversationFile(file, {
+            conversationId,
+            surface: surfaceKind,
+            pinToLibrary: true,
+            alias: buildLibraryAlias(file),
+            resourceKind: "audio",
+          });
           const audioResource = audioUpload.conversationResource || audioUpload.file || null;
           const audioResourceUrl = String(audioResource?.downloadUrl || audioResource?.url || "").trim();
           if (audioResourceUrl && !dismissedImportedNamesRef.current.has(file.name)) {
@@ -11287,6 +11322,8 @@ export function App() {
                 : item
             )));
             setAudioSyncReady(true);
+            libraryNeedsRefresh = true;
+            conversationResourcesNeedRefresh = true;
           }
         } catch (error_) {
           console.warn("[A11] audio reference upload failed", file.name, error_);
@@ -11302,7 +11339,13 @@ export function App() {
       for (const file of videoFiles) {
         if (dismissedImportedNamesRef.current.has(file.name)) continue;
         try {
-          const upload = await uploadConversationFile(file, { conversationId });
+          const upload = await uploadConversationFile(file, {
+            conversationId,
+            surface: surfaceKind,
+            pinToLibrary: true,
+            alias: buildLibraryAlias(file),
+            resourceKind: "video",
+          });
           const resource = upload.conversationResource || upload.file || null;
           const resourceUrl = String(resource?.downloadUrl || resource?.url || "").trim();
           if (resourceUrl && !dismissedImportedNamesRef.current.has(file.name)) {
@@ -11314,6 +11357,8 @@ export function App() {
                 : item
             )));
             uploadedVideos.push(file.name);
+            libraryNeedsRefresh = true;
+            conversationResourcesNeedRefresh = true;
           } else {
             failedVideos.push(file.name);
           }
@@ -11368,6 +11413,13 @@ export function App() {
       } else if (failed.length) {
         setUploadFeedback(`Echec import: ${failed.join(", ")}`);
       }
+    }
+    if (conversationResourcesNeedRefresh && conversationId) {
+      await refreshConversationActivity(conversationId);
+      await refreshConversationResources(conversationId);
+    }
+    if (libraryNeedsRefresh) {
+      await refreshLibrary();
     }
     } finally {
       mediaImportingRef.current = false;
@@ -11812,6 +11864,7 @@ export function App() {
             referenceAudioUrls: item.audioUrls && item.audioUrls.length > 0 ? item.audioUrls : undefined,
             sourceVideoUrl: item.videoUrl || undefined,
             referenceVideoUrls: item.videoUrls && item.videoUrls.length > 0 ? item.videoUrls : undefined,
+            referenceVisualContext: item.referenceVisualContext || undefined,
           }
         );
         const normalizedAssistant = normalizeAssistantMessagePayload(

@@ -6,6 +6,7 @@ type A11GenerationSourceOptions = {
   referenceAudioUrls?: string[];
   sourceVideoUrl?: string | null;
   referenceVideoUrls?: string[];
+  referenceVisualContext?: string;
   provider?: string;
   videoProvider?: string;
   width?: number;
@@ -52,22 +53,39 @@ function normalizeVideoProviderName(value = "") {
   return normalized;
 }
 
-function resolveSessionVideoProvider(tokens: Record<string, string>, requestedProvider = "") {
+function looksLikeGroqApiKey(value = "") {
+  return /^gsk_/i.test(String(value || "").trim());
+}
+
+function resolveSessionXaiToken(tokens: Record<string, string>) {
+  const direct = String(tokens.xai || "").trim();
+  if (direct && !looksLikeGroqApiKey(direct)) return direct;
+  const grokAlias = String(tokens.grok || "").trim();
+  return grokAlias && !looksLikeGroqApiKey(grokAlias) ? grokAlias : "";
+}
+
+function resolveSessionVideoProvider(tokens: Record<string, string>, requestedProvider = "", options?: { hasVisualReference?: boolean }) {
   const requested = normalizeVideoProviderName(requestedProvider);
   if (requested) return requested;
-  if (tokens.xai || tokens.grok) return "xai";
+  if (options?.hasVisualReference) {
+    if (tokens.replicate) return "replicate";
+    if (tokens.huggingface || tokens.hf) return "huggingface";
+    if (tokens.runcomfy || tokens.comfy) return "runcomfy";
+    return "";
+  }
+  if (resolveSessionXaiToken(tokens)) return "xai";
   if (tokens.huggingface || tokens.hf) return "huggingface";
   if (tokens.runcomfy || tokens.comfy) return "runcomfy";
   if (tokens.replicate) return "replicate";
   return "";
 }
 
-function buildSessionVideoProviderHeaders(requestedProvider = "") {
+function buildSessionVideoProviderHeaders(requestedProvider = "", options?: { hasVisualReference?: boolean }) {
   const tokens = readSessionAppTokenMapForApi();
-  const provider = resolveSessionVideoProvider(tokens, requestedProvider);
+  const provider = resolveSessionVideoProvider(tokens, requestedProvider, options);
   const headers: Record<string, string> = {};
   if (provider) headers["X-A11-Video-Provider"] = provider;
-  const xaiToken = tokens.xai || tokens.grok;
+  const xaiToken = resolveSessionXaiToken(tokens);
   if (xaiToken) {
     headers["X-A11-XAI-Key"] = xaiToken;
     headers["X-A11-Grok-Key"] = xaiToken;
@@ -235,7 +253,8 @@ export async function generateVideoWithPrompt(
   const sdSteps = resolvePositiveNumber(options.sdSteps, options.steps);
   const guidanceScale = resolvePositiveNumber(options.guidanceScale);
   const requestedProvider = normalizeVideoProviderName(options.videoProvider || options.provider || "");
-  const sessionVideoAuth = buildSessionVideoProviderHeaders(requestedProvider);
+  const hasVisualReference = Boolean(sourceImageUrl || referenceImageUrls.length > 0);
+  const sessionVideoAuth = buildSessionVideoProviderHeaders(requestedProvider, { hasVisualReference });
   const hasManualTiming = Boolean(durationSeconds || fps || frameCount);
   const mobileAsync = options.mobileAsync ?? isMobileLongTaskClient();
   const maxWaitMs = Math.max(
@@ -272,6 +291,10 @@ export async function generateVideoWithPrompt(
   if (referenceAudioUrls.length > 0) body.referenceAudioUrls = referenceAudioUrls;
   if (sourceVideoUrl) body.sourceVideoUrl = sourceVideoUrl;
   if (referenceVideoUrls.length > 0) body.referenceVideoUrls = referenceVideoUrls;
+  if (options.referenceVisualContext?.trim()) {
+    body.referenceVisualContext = options.referenceVisualContext.trim();
+    body.compiledVisualContext = options.referenceVisualContext.trim();
+  }
 
   return withMobileLongTaskGuard(maxWaitMs, async () => {
     const res = await fetch(getApiUrl('/api/video/generate'), {
@@ -3759,7 +3782,7 @@ export async function chatCompletion(
 export async function chatCompletionDetailed(
   messages: Msg[],
   provider: Provider = 'local',
-  systemPromptOrOptions?: string | { turbo?: boolean; systemPrompt?: string; model?: string; conversationId?: string; providerProfileId?: string; sourceImageUrl?: string; referenceImageUrls?: string[]; audioUrl?: string; referenceAudioUrls?: string[]; sourceVideoUrl?: string; referenceVideoUrls?: string[]; surface?: string; persona?: string; voicePersona?: string; language?: string }
+  systemPromptOrOptions?: string | { turbo?: boolean; systemPrompt?: string; model?: string; conversationId?: string; providerProfileId?: string; sourceImageUrl?: string; referenceImageUrls?: string[]; audioUrl?: string; referenceAudioUrls?: string[]; sourceVideoUrl?: string; referenceVideoUrls?: string[]; referenceVisualContext?: string; surface?: string; persona?: string; voicePersona?: string; language?: string }
 ) {
   let systemPrompt: string | undefined;
   let turboFlag = false;
@@ -3772,6 +3795,7 @@ export async function chatCompletionDetailed(
   let referenceAudioUrls: string[] | undefined;
   let sourceVideoUrl: string | undefined;
   let referenceVideoUrls: string[] | undefined;
+  let referenceVisualContext: string | undefined;
   let surface: string | undefined;
   let persona: string | undefined;
   let voicePersona: string | undefined;
@@ -3805,6 +3829,9 @@ export async function chatCompletionDetailed(
       : undefined;
     referenceVideoUrls = Array.isArray(systemPromptOrOptions.referenceVideoUrls)
       ? systemPromptOrOptions.referenceVideoUrls.filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
+      : undefined;
+    referenceVisualContext = typeof systemPromptOrOptions.referenceVisualContext === 'string' && systemPromptOrOptions.referenceVisualContext.trim()
+      ? systemPromptOrOptions.referenceVisualContext.trim()
       : undefined;
     surface = typeof systemPromptOrOptions.surface === 'string'
       ? systemPromptOrOptions.surface.trim().toLowerCase() || undefined
@@ -3851,6 +3878,7 @@ export async function chatCompletionDetailed(
     ...(referenceAudioUrls && referenceAudioUrls.length > 0 ? { referenceAudioUrls } : {}),
     ...(sourceVideoUrl ? { sourceVideoUrl } : {}),
     ...(referenceVideoUrls && referenceVideoUrls.length > 0 ? { referenceVideoUrls } : {}),
+    ...(referenceVisualContext ? { referenceVisualContext, compiledVisualContext: referenceVisualContext } : {}),
   };
   // Always post to router (apiPost ignores the path and uses router endpoint)
   const initialData = await apiPost(payload);
@@ -4250,6 +4278,10 @@ export async function uploadConversationFile(file: File, options?: {
   surface?: string;
   storagePreference?: 'server-local' | 'session-drive' | string;
   preferExternalStorage?: boolean;
+  pinToLibrary?: boolean;
+  alias?: string;
+  resourceKind?: string;
+  kind?: string;
 }) {
   const contentBase64 = await readFileAsDataUrl(file);
   const res = await authFetch(getApiUrl('/api/files/upload'), {
@@ -4264,6 +4296,10 @@ export async function uploadConversationFile(file: File, options?: {
       surface: options?.surface,
       storagePreference: options?.storagePreference,
       preferExternalStorage: options?.preferExternalStorage,
+      pinToLibrary: options?.pinToLibrary,
+      alias: options?.alias,
+      resourceKind: options?.resourceKind,
+      kind: options?.kind,
     }),
   });
 

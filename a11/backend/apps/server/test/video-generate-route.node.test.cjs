@@ -297,6 +297,151 @@ test('video generate router can use Grok Imagine xAI with a personal session key
   }
 });
 
+test('video generate router does not let implicit xAI session auth steal visual-reference jobs from image-aware runners', async () => {
+  const previousEnv = {
+    A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
+    VIDEO_PROXY_URL: process.env.VIDEO_PROXY_URL,
+    A11_VIDEO_LOCAL_RUNNER_URL: process.env.A11_VIDEO_LOCAL_RUNNER_URL,
+    A11_XAI_BASE_URL: process.env.A11_XAI_BASE_URL,
+    A11_XAI_VIDEO_MODEL: process.env.A11_XAI_VIDEO_MODEL,
+  };
+  const calls = [];
+  delete process.env.A11_VIDEO_PROXY_URL;
+  delete process.env.VIDEO_PROXY_URL;
+  process.env.A11_VIDEO_LOCAL_RUNNER_URL = 'https://runner.example.com/api/tools/generate_video';
+  process.env.A11_XAI_BASE_URL = 'https://api.x.ai/v1';
+  process.env.A11_XAI_VIDEO_MODEL = 'grok-imagine-video';
+
+  const fakeFetch = async (url, init = {}) => {
+    calls.push({
+      url: String(url),
+      headers: init.headers || {},
+      body: init.body ? JSON.parse(String(init.body)) : null,
+    });
+    if (String(url).includes('/videos/generations')) {
+      throw new Error('xAI should not be called for implicit visual-reference routing');
+    }
+    return new Response(JSON.stringify({
+      ok: true,
+      tool: 'generate_video',
+      video_url: 'https://video.example.com/image-aware-runner.mp4',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  const app = express();
+  app.use(express.json({ limit: '4mb' }));
+  app.use('/api', videoGenerateModule.createVideoGenerateRouter({
+    fetch: fakeFetch,
+    generateVideo: async () => {
+      throw new Error('local generator should not be called when local runner is configured');
+    },
+  }).router);
+
+  const appServer = http.createServer(app);
+  await new Promise((resolve) => appServer.listen(0, '127.0.0.1', resolve));
+  const appAddress = appServer.address();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${appAddress.port}/api/video/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-A11-XAI-Key': 'session-xai-secret',
+      },
+      body: JSON.stringify({
+        prompt: 'genere une video du karateka dans le meme dojo',
+        sourceImageUrl: 'https://files.example.com/karateka.png',
+      }),
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.video_url, 'https://video.example.com/image-aware-runner.mp4');
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, 'https://runner.example.com/api/tools/generate_video');
+    assert.equal(calls[0].body.sourceImageUrl, 'https://files.example.com/karateka.png');
+    assert.equal(calls[0].headers['x-a11-xai-key'], 'session-xai-secret');
+    assert.equal(calls.some((call) => call.url.includes('/videos/generations')), false);
+  } finally {
+    await new Promise((resolve) => appServer.close(resolve));
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('video generate router does not treat Groq gsk keys as xAI video tokens', async () => {
+  const previousEnv = {
+    A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
+    VIDEO_PROXY_URL: process.env.VIDEO_PROXY_URL,
+    A11_VIDEO_LOCAL_RUNNER_URL: process.env.A11_VIDEO_LOCAL_RUNNER_URL,
+  };
+  const calls = [];
+  delete process.env.A11_VIDEO_PROXY_URL;
+  delete process.env.VIDEO_PROXY_URL;
+  process.env.A11_VIDEO_LOCAL_RUNNER_URL = 'https://runner.example.com/api/tools/generate_video';
+
+  const app = express();
+  app.use(express.json({ limit: '4mb' }));
+  app.use('/api', videoGenerateModule.createVideoGenerateRouter({
+    fetch: async (url, init = {}) => {
+      calls.push({
+        url: String(url),
+        headers: init.headers || {},
+        body: init.body ? JSON.parse(String(init.body)) : null,
+      });
+      return new Response(JSON.stringify({
+        ok: true,
+        tool: 'generate_video',
+        video_url: 'https://video.example.com/groq-not-xai.mp4',
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    },
+    generateVideo: async () => {
+      throw new Error('local generator should not be called when local runner is configured');
+    },
+  }).router);
+
+  const appServer = http.createServer(app);
+  await new Promise((resolve) => appServer.listen(0, '127.0.0.1', resolve));
+  const appAddress = appServer.address();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${appAddress.port}/api/video/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-A11-Grok-Key': 'gsk_test_groq_key_not_xai',
+      },
+      body: JSON.stringify({
+        prompt: 'clip test avec une image',
+        sourceImageUrl: 'https://files.example.com/ref.png',
+      }),
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].headers['x-a11-xai-key'], undefined);
+    assert.equal(calls[0].headers['x-a11-grok-key'], undefined);
+    assert.equal(calls[0].headers['x-xai-api-key'], undefined);
+  } finally {
+    await new Promise((resolve) => appServer.close(resolve));
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('video generate router blocks server-paid xAI video without an authenticated premium tier', async () => {
   const previousEnv = {
     A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,

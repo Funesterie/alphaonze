@@ -4609,7 +4609,22 @@ async function listEphemeralConversationMemory(userId, conversationId, limit = P
 function normalizeConversationResourceKind(resourceKind) {
   const normalized = String(resourceKind || '').trim().toLowerCase();
   if (normalized === 'artifact') return 'artifact';
+  if (['image', 'audio', 'video', 'pdf', 'document', 'file'].includes(normalized)) return normalized;
   return 'file';
+}
+
+function inferConversationResourceKind({ resourceKind, filename, contentType } = {}) {
+  const requested = normalizeConversationResourceKind(resourceKind);
+  const rawRequested = String(resourceKind || '').trim().toLowerCase();
+  if (rawRequested && requested !== 'file') return requested;
+
+  const mime = String(contentType || '').trim().toLowerCase();
+  const name = String(filename || '').trim().toLowerCase();
+  if (mime.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(name)) return 'image';
+  if (mime.startsWith('audio/') || /\.(mp3|wav|ogg|flac|aac|m4a|opus|aiff?|wma)$/i.test(name)) return 'audio';
+  if (mime.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v|mpeg|mpg)$/i.test(name)) return 'video';
+  if (mime === 'application/pdf' || /\.pdf$/i.test(name)) return 'pdf';
+  return requested;
 }
 
 function parseConversationResourceMetadata(value) {
@@ -6965,6 +6980,9 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
       storageBackend,
       storageTarget,
       preferExternalStorage,
+      resourceKind,
+      kind,
+      alias,
     } = req.body || {};
     const requestSurface = resolveRequestSurface(req.body || {}, req);
     const uploadLooksLikeImage = isImageUploadCandidate({ filename, contentType });
@@ -7003,6 +7021,11 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
       conversationId || convId || sessionId,
       requestSurface
     );
+    const resolvedResourceKind = inferConversationResourceKind({
+      resourceKind: resourceKind || kind,
+      filename,
+      contentType,
+    });
     const resolvedExpiresAt = normalizeOptionalTimestamp(expiresAt)
       || buildTemporaryFileExpiryDate(Number(ttlSeconds || 0) > 0 ? Number(ttlSeconds) * 1000 : TEMP_SHARED_FILE_TTL_MS);
     const pinToLibrary = req.body?.pinToLibrary === true || uploadLooksLikeImage;
@@ -7014,7 +7037,7 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
       maxBytes: FILE_UPLOAD_MAX_BYTES,
       origin: 'upload',
       conversationId: normalizedConversationId,
-      resourceKind: 'file',
+      resourceKind: resolvedResourceKind,
       resourceMetadata: {
         source: 'api.files.upload',
         surface: requestSurface,
@@ -7036,9 +7059,10 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
     });
     // Auto-pin images to library (no expiry) so they're reusable across conversations
     if (pinToLibrary && ingestion?.conversationResource?.id && db) {
-      db.query(
-        'UPDATE conversation_resources SET is_pinned=TRUE, expires_at=NULL WHERE id=$1 AND user_id=$2',
-        [ingestion.conversationResource.id, userId]
+      const normalizedAlias = String(alias || '').trim().slice(0, 100) || null;
+      await db.query(
+        'UPDATE conversation_resources SET is_pinned=TRUE, alias=COALESCE($3, alias), expires_at=NULL WHERE id=$1 AND user_id=$2',
+        [ingestion.conversationResource.id, userId, normalizedAlias]
       ).catch((e) => console.warn('[library] auto-pin failed', e?.message));
     }
 
@@ -7198,7 +7222,13 @@ app.get('/api/user/library', async (req, res) => {
       `SELECT id, user_id, conversation_id, resource_kind, origin, filename, storage_key, url, content_type, size_bytes, metadata_json, expires_at, is_pinned, alias, created_at, updated_at
        FROM conversation_resources
        WHERE user_id=$1 AND is_pinned=TRUE
-         AND (resource_kind=$2 OR $2='all')
+         AND (
+           resource_kind=$2
+           OR $2='all'
+           OR ($2='image' AND resource_kind='file' AND content_type ILIKE 'image/%')
+           OR ($2='audio' AND resource_kind='file' AND content_type ILIKE 'audio/%')
+           OR ($2='video' AND resource_kind='file' AND content_type ILIKE 'video/%')
+         )
          AND (expires_at IS NULL OR expires_at > NOW())
        ORDER BY updated_at DESC, id DESC
        LIMIT $3`,

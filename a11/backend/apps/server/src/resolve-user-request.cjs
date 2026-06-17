@@ -692,6 +692,41 @@ async function executeResolvedRuntime(resolution, input = {}, deps = {}) {
     const isDataUrl = resolvedSourceImageUrl.startsWith('data:');
     const isLocalVideoRef = resolvedSourceImageUrl && !resolvedSourceImageUrl.startsWith('http') && !isDataUrl;
     console.log(`[A11][video-resolve] sourceImageUrl="${resolvedSourceImageUrl.slice(0, 80)}" isLocal=${isLocalVideoRef} isData=${isDataUrl}`);
+    let compiledVisualContext = String(
+      resolution.videoRequest?.compiledVisualContext
+      || input.body?.compiledVisualContext
+      || input.body?.referenceVisualContext
+      || input.body?.reference_visual_context
+      || input.body?._a11ImageContextCarryover?.summary
+      || ''
+    ).trim();
+    const canAutoDescribeVideoReference = /^https?:\/\//i.test(resolvedSourceImageUrl);
+    if (canAutoDescribeVideoReference && !compiledVisualContext) {
+      try {
+        const runtimeRootForDescribe = String(
+          process.env.A11_RUNTIME_ROOT
+          || require('node:path').resolve(__dirname, '..', '..', '..', 'runtime')
+        ).trim();
+        const describeResult = await autoDescribeImage({
+          imageLocator: resolvedSourceImageUrl,
+          runtimeRoot: runtimeRootForDescribe,
+          timeoutMs: 7000,
+          requestId: `video-ref-describe-${Date.now()}`,
+          prompt: [
+            'Describe the visible person or subject, face traits, clothing, pose, room/decor, lighting, and camera angle for a video generation reference.',
+            'Be concrete and concise. Do not invent hidden details.',
+          ].join(' '),
+          visionProvider: 'remote',
+          preferRemoteVision: true,
+        });
+        if (!describeResult.skipped && describeResult.description) {
+          compiledVisualContext = String(describeResult.description || '').trim().slice(0, 1200);
+          console.log(`[A11][video-ref-describe] "${compiledVisualContext.slice(0, 90)}"`);
+        }
+      } catch (error_) {
+        console.warn('[A11][video-ref-describe] skipped:', String(error_?.message || error_));
+      }
+    }
 
     const videoResult = await deps.generateVideo({
       req: input.req,
@@ -718,7 +753,8 @@ async function executeResolvedRuntime(resolution, input = {}, deps = {}) {
         // Toutes les images pour le contexte multi-référence
         referenceImageUrls: allVideoImageUrls.length > 1 ? allVideoImageUrls : undefined,
         // Contexte visuel enrichi par les descriptions Janus des images de référence
-        compiledVisualContext: resolution.videoRequest?.compiledVisualContext || undefined,
+        compiledVisualContext: compiledVisualContext || undefined,
+        referenceVisualContext: compiledVisualContext || undefined,
       },
     });
     return {

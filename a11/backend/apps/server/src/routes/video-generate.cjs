@@ -57,6 +57,12 @@ function sanitizeSessionProviderToken(value = '') {
   return token;
 }
 
+function sanitizeXaiVideoToken(value = '') {
+  const token = sanitizeSessionProviderToken(value);
+  if (/^gsk_/i.test(token)) return '';
+  return token;
+}
+
 function resolveSessionVideoTokens(req = null, body = {}) {
   return {
     huggingface: sanitizeSessionProviderToken(
@@ -78,7 +84,7 @@ function resolveSessionVideoTokens(req = null, body = {}) {
       || getRequestHeader(req, 'x-a11-comfy-key')
       || getRequestHeader(req, 'x-comfy-api-key')
     ),
-    xai: sanitizeSessionProviderToken(
+    xai: sanitizeXaiVideoToken(
       body.sessionXaiKey
       || body.sessionGrokKey
       || getRequestHeader(req, 'x-a11-xai-key')
@@ -217,6 +223,68 @@ function normalizeReferenceVideoUrls(body = {}) {
     }
   }
   return output;
+}
+
+function normalizeReferenceContextText(value = '', maxLength = 1400) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  return text.slice(0, Math.max(80, Number(maxLength) || 1400)).trim();
+}
+
+function collectReferenceVisualContext(body = {}) {
+  const candidates = [
+    body?.compiledVisualContext,
+    body?.compiled_visual_context,
+    body?.referenceVisualContext,
+    body?.reference_visual_context,
+    body?.visualContext,
+    body?.visual_context,
+    body?.visualDescription,
+    body?.visual_description,
+    body?.analysisSummary,
+    body?.analysis_summary,
+    body?._a11ImageContextCarryover?.summary,
+  ];
+  for (const collection of [body?.referenceMedia, body?.reference_media, body?.files, body?.attachments]) {
+    if (!Array.isArray(collection)) continue;
+    for (const item of collection) {
+      if (!item || typeof item !== 'object') continue;
+      candidates.push(
+        item.visualDescription,
+        item.visual_description,
+        item.analysisSummary,
+        item.analysis_summary,
+        item.description,
+        item.summary
+      );
+      const analysis = item.analysis && typeof item.analysis === 'object' ? item.analysis : null;
+      if (analysis) candidates.push(analysis.description, analysis.summary, analysis.preview);
+    }
+  }
+
+  const output = [];
+  const seen = new Set();
+  for (const candidate of candidates) {
+    const text = normalizeReferenceContextText(candidate, 700);
+    if (!text) continue;
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(text);
+    if (output.join(' ').length >= 1400) break;
+  }
+  return normalizeReferenceContextText(output.join(' | '), 1400);
+}
+
+function enrichVideoBodyWithReferenceContext(body = {}) {
+  const referenceVisualContext = collectReferenceVisualContext(body);
+  if (!referenceVisualContext) return body;
+  return {
+    ...(body || {}),
+    compiledVisualContext: body.compiledVisualContext || referenceVisualContext,
+    referenceVisualContext: body.referenceVisualContext || referenceVisualContext,
+    reference_visual_context: body.reference_visual_context || referenceVisualContext,
+  };
 }
 
 function hasVideoReferenceImage(body = {}) {
@@ -1103,8 +1171,11 @@ function createVideoGenerateRouter(overrides = {}) {
   }
 
   async function generateVideoInternal(options = {}) {
-    const body = options.body || options.req?.body || {};
+    let body = options.body || options.req?.body || {};
     const req = options.req || null;
+    const referenceImageUrlsForRouting = normalizeReferenceImageUrls(body);
+    const hasVisualReferenceForRouting = referenceImageUrlsForRouting.length > 0;
+    body = enrichVideoBodyWithReferenceContext(body);
     const prompt = options.prompt || body.prompt || body.message || '';
     const requestedProvider = resolveRequestedVideoProvider(body, req);
     const sessionVideoTokens = resolveSessionVideoTokens(req, body);
@@ -1116,7 +1187,9 @@ function createVideoGenerateRouter(overrides = {}) {
 
     // Step 1: xAI — BYOK (user_cloud) or platform (premium/founder/admin allowed)
     const xaiVideoConfig = resolveXaiVideoConfig(process.env, { token: sessionVideoTokens.xai });
-    if (isXaiVideoProvider(requestedProvider) || sessionVideoTokens.xai) {
+    const xaiExplicitlyRequested = isXaiVideoProvider(requestedProvider);
+    const xaiImplicitByokAllowed = Boolean(sessionVideoTokens.xai && !hasVisualReferenceForRouting);
+    if (xaiExplicitlyRequested || xaiImplicitByokAllowed) {
       const hasByok = Boolean(sessionVideoTokens.xai);
       const usesServerToken = Boolean(!hasByok && xaiVideoConfig.token);
       if (usesServerToken && !canUseServerPaidVideo(req)) {
@@ -1138,7 +1211,7 @@ function createVideoGenerateRouter(overrides = {}) {
           requiresConfirmation: hasByok,
         });
       }
-      if (isXaiVideoProvider(requestedProvider) || xaiVideoConfig.strict) {
+      if (xaiExplicitlyRequested || xaiVideoConfig.strict) {
         const error = new Error(xaiResult?.message || xaiResult?.error || 'xai_video_failed');
         error.statusCode = xaiResult?.statusCode || 502;
         error.payload = xaiResult || { ok: false, error: 'xai_video_failed', message: 'xai_video_failed' };

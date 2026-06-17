@@ -64,6 +64,7 @@ test('video prompt builder can use the LLM when explicitly enabled', async () =>
       referenceVideoUrls: [
         'https://files.example.com/motion-ref.mp4',
       ],
+      referenceVisualContext: 'A young man in a white karate gi with a black belt, short dark hair, standing on a sports hall floor with colored court lines.',
       callStructuredLlmJson: async (payload) => {
         calls.push(payload);
         return {
@@ -89,8 +90,10 @@ test('video prompt builder can use the LLM when explicitly enabled', async () =>
     assert.deepEqual(llmInput.reference_video_urls, [
       'https://files.example.com/motion-ref.mp4',
     ]);
+    assert.equal(llmInput.reference_visual_context, 'A young man in a white karate gi with a black belt, short dark hair, standing on a sports hall floor with colored court lines.');
     assert.equal(result.source, 'llm');
     assert.match(result.prompt, /western town/);
+    assert.match(result.prompt, /karate gi|sports hall floor/i);
   });
 });
 
@@ -105,6 +108,7 @@ test('video prompt builder keeps energy effects off the face without orientation
       hasReferenceImage: true,
       referenceImageUrls: ['https://files.example.com/karateka.png'],
       referenceVideoUrls: ['https://files.example.com/hadouken-ref.mp4'],
+      referenceVisualContext: 'Young dark-haired karateka, white gi, black belt, sports gym floor with red, yellow and blue court lines, high angle camera.',
       callStructuredLlmJson: async () => {
         throw new Error('LLM should not be called in heuristic test');
       },
@@ -116,6 +120,7 @@ test('video prompt builder keeps energy effects off the face without orientation
     assert.match(result.prompt, /facial likeness/i);
     assert.match(result.prompt, /face remains visible/i);
     assert.match(result.prompt, /reference video/i);
+    assert.match(result.prompt, /white gi|black belt|sports gym floor/i);
     assert.match(result.negativePrompt, /face covered by glow/i);
     assert.doesNotMatch(result.negativePrompt, /mirror|flipped|horizontal flip/i);
   });

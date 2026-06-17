@@ -17,6 +17,8 @@ My job: translate the user intent into a cinematic motion prompt. I think like a
 
 IDENTITY ANCHOR RULE (critical):
 - If has_reference_image=true and the primary reference is a person/character identity, preserve the same person: facial likeness, face geometry, eyes, nose, mouth, jawline, skin tone, hairstyle, body build and distinctive visible traits.
+- If reference_visual_context describes a face, outfit, pose, place, room, sport hall, dojo, lighting or decor, explicitly recreate those visible characteristics in the prompt before the generic "same person" clause.
+- Do not rely only on "same person as reference"; name the concrete traits and setting from reference_visual_context whenever available.
 - If the user asks to change costume, pose, camera direction, age, style, or environment, change that requested element while preserving the core identity.
 - If the primary reference is an object, vehicle, logo, product, or place, preserve that subject/model/shape instead of saying "same person".
 - CAMERA / ORIENTATION RULE: do not force front-facing shots. Preserve or change the camera angle according to the user request and reference video motion. Describe orientation positively in the prompt; do not add orientation-inversion terms to negative_prompt.
@@ -164,11 +166,21 @@ function sanitizeVideoNegativePrompt(value = '') {
     .join(', ');
 }
 
+function buildReferenceVisualContextClause(value = '') {
+  const context = normalizeText(value);
+  if (!context) return '';
+  return context
+    .replace(/\b(?:image|photo|reference)\s+(?:de\s+)?(?:reference|jointe)\s*[:;-]?\s*/gi, '')
+    .slice(0, 360)
+    .trim();
+}
+
 function buildHeuristicVideoPrompt({
   userMessage = '',
   hasReferenceImage = false,
   referenceImageUrls = [],
   referenceVideoUrls = [],
+  referenceVisualContext = '',
 } = {}) {
   const message = normalizeText(userMessage);
   const folded = message
@@ -193,6 +205,10 @@ function buildHeuristicVideoPrompt({
 
   if (hasReference) {
     prompt = `${prompt}, same subject as in primary reference image, preserving facial likeness, core identity and distinctive visible traits`;
+  }
+  const referenceContextClause = buildReferenceVisualContextClause(referenceVisualContext);
+  if (hasReference && referenceContextClause) {
+    prompt = `${prompt}, explicitly recreating the visible reference traits and setting: ${referenceContextClause}`;
   }
   if (hasVideoReference) {
     prompt = `${prompt}, following the motion rhythm, camera movement and edit structure of the reference video`;
@@ -262,12 +278,17 @@ function resolveDurSource(parsedDuration, audioMotionPlan) {
   return 'llm';
 }
 
-function resolveVideoPromptResult({ response, userMessage, hasReference, audioMotionPlan, parsedDuration, groqUsed }) {
+function resolveVideoPromptResult({ response, userMessage, hasReference, referenceVisualContext = '', audioMotionPlan, parsedDuration, groqUsed }) {
   const prompt = normalizeText(response?.prompt || '');
   if (!prompt) {
     console.warn('[A11][video-prompt] LLM returned no prompt, using raw message as fallback');
     return { prompt: normalizeText(userMessage + ', cinematic motion, natural atmosphere, realistic light'), negativePrompt: '', hasReferenceSubject: hasReference, motionType: 'other', source: 'fallback' };
   }
+  const referenceContextClause = hasReference ? buildReferenceVisualContextClause(referenceVisualContext) : '';
+  const anchoredPrompt = referenceContextClause
+    && !prompt.toLowerCase().includes(referenceContextClause.slice(0, 48).toLowerCase())
+    ? normalizeText(`${prompt}. Reference identity and setting anchor to preserve/recreate: ${referenceContextClause}`)
+    : prompt;
   const negativePrompt = sanitizeVideoNegativePrompt(response?.negative_prompt || '');
   const rawDuration = Number(response?.duration_seconds);
   const audioDurationSec = audioMotionPlan?.durationMs
@@ -277,8 +298,8 @@ function resolveVideoPromptResult({ response, userMessage, hasReference, audioMo
     ? Math.round(rawDuration) : audioDurationSec;
   const durationSeconds = (parsedDuration && parsedDuration >= 1) ? Math.min(parsedDuration, 60) : llmDuration;
   const negSuffix = negativePrompt ? ' (neg: "' + negativePrompt.slice(0, 60) + '")' : '';
-  console.log('[A11][video-prompt] "' + prompt.slice(0, 100) + '"' + negSuffix + ' dur=' + durationSeconds + 's src=' + resolveDurSource(parsedDuration, audioMotionPlan));
-  return { prompt, negativePrompt, durationSeconds, hasReferenceSubject: hasReference || response?.has_reference_subject === true, motionType: normalizeText(response?.motion_type || 'other'), source: groqUsed ? 'groq' : 'llm' };
+  console.log('[A11][video-prompt] "' + anchoredPrompt.slice(0, 100) + '"' + negSuffix + ' dur=' + durationSeconds + 's src=' + resolveDurSource(parsedDuration, audioMotionPlan));
+  return { prompt: anchoredPrompt, negativePrompt, durationSeconds, hasReferenceSubject: hasReference || response?.has_reference_subject === true, motionType: normalizeText(response?.motion_type || 'other'), source: groqUsed ? 'groq' : 'llm' };
 }
 
 function resolveParsedDuration(requestedDuration, userMessage) {
@@ -314,6 +335,7 @@ async function buildVideoPrompt({
       hasReferenceImage: hasReference,
       referenceImageUrls: normalizedReferenceImageUrls,
       referenceVideoUrls: normalizedReferenceVideoUrls,
+      referenceVisualContext,
     });
     if (parsedDuration) heuristic.durationSeconds = parsedDuration;
     return heuristic;
@@ -365,7 +387,7 @@ async function buildVideoPrompt({
     }
   }
 
-  return resolveVideoPromptResult({ response, userMessage, hasReference, audioMotionPlan, parsedDuration, groqUsed });
+  return resolveVideoPromptResult({ response, userMessage, hasReference, referenceVisualContext, audioMotionPlan, parsedDuration, groqUsed });
 }
 
 module.exports = {
