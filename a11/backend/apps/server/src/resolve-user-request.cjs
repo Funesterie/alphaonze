@@ -733,6 +733,9 @@ async function executeResolvedRuntime(resolution, input = {}, deps = {}) {
       prompt: resolution.videoRequest?.prompt || input.body?.prompt || '',
       body: {
         ...(input.body || {}),
+        // Depuis le chat, eviter le timeout 60s en laissant la route video creer un job.
+        acceptAsyncVideoJob: true,
+        mobileAsync: true,
         prompt: resolution.videoRequest?.prompt || input.body?.prompt || '',
         durationSeconds: resolution.videoRequest?.durationSeconds,
         fps: resolution.videoRequest?.fps,

@@ -803,6 +803,8 @@ test('video generate router uses Hugging Face video when enabled', async () => {
     A11_HF_VIDEO_TOKEN: process.env.A11_HF_VIDEO_TOKEN,
     A11_HF_VIDEO_FRAMES: process.env.A11_HF_VIDEO_FRAMES,
     A11_HF_VIDEO_STEPS: process.env.A11_HF_VIDEO_STEPS,
+    A11_VIDEO_LOCAL_RUNNER_URL: process.env.A11_VIDEO_LOCAL_RUNNER_URL,
+    A11_VIDEO_PROXY_FORCE_ASYNC: process.env.A11_VIDEO_PROXY_FORCE_ASYNC,
     A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
     VIDEO_PROXY_URL: process.env.VIDEO_PROXY_URL,
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
@@ -836,6 +838,8 @@ test('video generate router uses Hugging Face video when enabled', async () => {
   process.env.A11_HF_VIDEO_FRAMES = '8';
   process.env.A11_HF_VIDEO_STEPS = '2';
   process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  delete process.env.A11_VIDEO_LOCAL_RUNNER_URL;
+  delete process.env.A11_VIDEO_PROXY_FORCE_ASYNC;
   delete process.env.A11_VIDEO_PROXY_URL;
   delete process.env.VIDEO_PROXY_URL;
 
@@ -881,7 +885,7 @@ test('video generate router uses Hugging Face video when enabled', async () => {
     assert.match(payload.video_url, /^https:\/\/a11\.funesterie\.me\/files\/runtime\/files\/generated\/videos\/a11-hf-video-/);
     assert.equal(calls.length, 2);
     assert.match(calls[0].body.prompt, /Riding forward|neon-lit Tokyo|moto/i);
-    assert.equal(calls[0].body.num_frames, 8);
+    assert.equal(calls[0].body.num_frames, 64);
     assert.equal(calls[0].body.num_inference_steps, 2);
     assert.equal(calls[0].headers.Authorization, 'Bearer hf_test_video_token');
   } finally {
@@ -905,6 +909,8 @@ test('video generate router follows Hugging Face fal queue responses', async () 
     A11_HF_VIDEO_FRAMES: process.env.A11_HF_VIDEO_FRAMES,
     A11_HF_VIDEO_STEPS: process.env.A11_HF_VIDEO_STEPS,
     A11_HF_VIDEO_POLL_INTERVAL_MS: process.env.A11_HF_VIDEO_POLL_INTERVAL_MS,
+    A11_VIDEO_LOCAL_RUNNER_URL: process.env.A11_VIDEO_LOCAL_RUNNER_URL,
+    A11_VIDEO_PROXY_FORCE_ASYNC: process.env.A11_VIDEO_PROXY_FORCE_ASYNC,
     A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
     VIDEO_PROXY_URL: process.env.VIDEO_PROXY_URL,
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
@@ -959,6 +965,8 @@ test('video generate router follows Hugging Face fal queue responses', async () 
   process.env.A11_HF_VIDEO_STEPS = '2';
   process.env.A11_HF_VIDEO_POLL_INTERVAL_MS = '10';
   process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  delete process.env.A11_VIDEO_LOCAL_RUNNER_URL;
+  delete process.env.A11_VIDEO_PROXY_FORCE_ASYNC;
   delete process.env.A11_VIDEO_PROXY_URL;
   delete process.env.VIDEO_PROXY_URL;
 
@@ -1030,6 +1038,8 @@ test('video generate router follows Hugging Face replicate predictions', async (
     A11_HF_VIDEO_FRAMES: process.env.A11_HF_VIDEO_FRAMES,
     A11_HF_VIDEO_STEPS: process.env.A11_HF_VIDEO_STEPS,
     A11_HF_VIDEO_POLL_INTERVAL_MS: process.env.A11_HF_VIDEO_POLL_INTERVAL_MS,
+    A11_VIDEO_LOCAL_RUNNER_URL: process.env.A11_VIDEO_LOCAL_RUNNER_URL,
+    A11_VIDEO_PROXY_FORCE_ASYNC: process.env.A11_VIDEO_PROXY_FORCE_ASYNC,
     A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
     VIDEO_PROXY_URL: process.env.VIDEO_PROXY_URL,
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
@@ -1076,6 +1086,8 @@ test('video generate router follows Hugging Face replicate predictions', async (
   process.env.A11_HF_VIDEO_STEPS = '2';
   process.env.A11_HF_VIDEO_POLL_INTERVAL_MS = '10';
   process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  delete process.env.A11_VIDEO_LOCAL_RUNNER_URL;
+  delete process.env.A11_VIDEO_PROXY_FORCE_ASYNC;
   delete process.env.A11_VIDEO_PROXY_URL;
   delete process.env.VIDEO_PROXY_URL;
 
@@ -1126,7 +1138,8 @@ test('video generate router follows Hugging Face replicate predictions', async (
     assert.equal(calls[0].body.input.image, 'https://files.example.com/vivy-cover.png');
     assert.equal(calls[0].body.input.num_frames, 81);
     assert.equal(calls[0].body.input.num_inference_steps, 2);
-    assert.equal(calls[0].body.input.negative_prompt, 'text, watermark');
+    assert.match(calls[0].body.input.negative_prompt, /floating limbs/);
+    assert.match(calls[0].body.input.negative_prompt, /face covered by glow/);
     assert.equal(calls[1].headers.Authorization, 'Bearer hf_test_video_token');
     assert.equal(calls[2].headers.Authorization, undefined);
   } finally {

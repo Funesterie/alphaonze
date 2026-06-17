@@ -554,6 +554,8 @@ test('executeResolvedRuntime carries historic audio and video markers into video
   ]);
   assert.equal(capturedBody.audioUrl, 'https://files.example.com/body-audio.mp3');
   assert.equal(capturedBody.sourceVideoUrl, 'https://files.example.com/body-video.mp4');
+  assert.equal(capturedBody.acceptAsyncVideoJob, true);
+  assert.equal(capturedBody.mobileAsync, true);
 });
 
 test('resolveUserRequest treats visual feedback on a source image as an image edit request', async () => {
