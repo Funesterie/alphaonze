@@ -95,6 +95,9 @@ import {
   type MatchArenaStatus,
   type SubscriptionStatus,
   type VivyStudioProductionResult,
+  fetchUserLibrary,
+  pinResourceToLibrary,
+  type A11ConversationResource,
 } from "./lib/api";
 import { A11HistoryPanel } from "./components/A11HistoryPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
@@ -10106,6 +10109,8 @@ export function App() {
   const [imageJobActive, setImageJobActive] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [dragPreviewUrls, setDragPreviewUrls] = useState<{ name: string; url: string; isImage: boolean }[]>([]);
+  const [libraryImages, setLibraryImages] = useState<A11ConversationResource[]>([]);
+  const [showLibraryPanel, setShowLibraryPanel] = useState(false);
   const [previewCarouselIndex, setPreviewCarouselIndex] = useState(0);
   const dragCounterRef = useRef(0);
   const recentFileImportRef = useRef<{ key: string; at: number }>({ key: "", at: 0 });
@@ -10764,6 +10769,14 @@ export function App() {
 
   function onImportClick() {
     fileInputRef.current?.click();
+  }
+
+  async function refreshLibrary() {
+    if (!hasPrivateSession) { setLibraryImages([]); return; }
+    try {
+      const images = await fetchUserLibrary({ kind: 'image', limit: 30 });
+      setLibraryImages(images);
+    } catch { setLibraryImages([]); }
   }
 
   async function refreshVoiceReferences() {
@@ -13971,10 +13984,78 @@ export function App() {
                     className="btn ghost import-inline"
                     onClick={onImportClick}
                     title="Importer un fichier ou une image"
-                    style={{ marginRight: 8, padding: isCompactLayout ? "0 10px" : undefined }}
+                    style={{ marginRight: 4, padding: isCompactLayout ? "0 10px" : undefined }}
                   >
                     {isCompactLayout ? "Import" : "Importer"}
                   </button>
+                  <div style={{ position: 'relative', marginRight: 8 }}>
+                    <button
+                      type="button"
+                      className="btn ghost import-inline"
+                      title="Mes images de référence"
+                      style={{ padding: isCompactLayout ? "0 10px" : undefined }}
+                      onClick={() => { refreshLibrary(); setShowLibraryPanel((v) => !v); }}
+                    >
+                      {isCompactLayout ? "Réfs" : "Références"}
+                    </button>
+                    {showLibraryPanel && (
+                      <div
+                        style={{
+                          position: 'absolute', bottom: '110%', left: 0, zIndex: 200,
+                          background: 'var(--bg-2, #1e1e2e)', border: '1px solid var(--border, #444)',
+                          borderRadius: 8, padding: 8, minWidth: 280, maxWidth: 420, boxShadow: '0 4px 20px #0008',
+                        }}
+                        onMouseLeave={() => setShowLibraryPanel(false)}
+                      >
+                        <div style={{ fontSize: 11, color: 'var(--text-muted, #888)', marginBottom: 6 }}>
+                          Images de référence — clic pour insérer
+                        </div>
+                        {libraryImages.length === 0 ? (
+                          <div style={{ fontSize: 12, color: 'var(--text-muted, #888)', padding: '8px 0' }}>
+                            Aucune image sauvegardée. Importe une image pour la retrouver ici.
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {libraryImages.map((img) => (
+                              <button
+                                key={img.id}
+                                type="button"
+                                title={img.alias || img.filename}
+                                style={{
+                                  background: 'none', border: '1px solid var(--border, #555)',
+                                  borderRadius: 6, padding: 2, cursor: 'pointer', display: 'flex',
+                                  flexDirection: 'column', alignItems: 'center', width: 72,
+                                }}
+                                onClick={() => {
+                                  const url = (img as any).downloadUrl || img.url || '';
+                                  if (url) {
+                                    pendingImportedImageUrlsRef.current = Array.from(new Set([
+                                      ...pendingImportedImageUrlsRef.current, url,
+                                    ]));
+                                    setDragPreviewUrls((prev) => [
+                                      ...prev, { name: img.alias || img.filename, url, isImage: true },
+                                    ]);
+                                    setUploadFeedback(`Référence ajoutée: ${img.alias || img.filename}`);
+                                  }
+                                  setShowLibraryPanel(false);
+                                }}
+                              >
+                                <img
+                                  src={(img as any).downloadUrl || img.url}
+                                  alt={img.alias || img.filename}
+                                  style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 4 }}
+                                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                />
+                                <span style={{ fontSize: 10, color: 'var(--text-muted, #aaa)', marginTop: 2, maxWidth: 68, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {img.alias || img.filename.split('.')[0].slice(0, 10)}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   <div className="a11-input-wrap" style={{ flex: 1, minWidth: 0, position: 'relative' }}>
                     <textarea

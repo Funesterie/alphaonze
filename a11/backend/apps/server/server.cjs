@@ -1718,9 +1718,12 @@ if (db) {
         await db.query('ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS metadata_json JSONB');
         await db.query('ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()');
         await db.query('ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP');
+        await db.query('ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN NOT NULL DEFAULT FALSE');
+        await db.query('ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS alias TEXT');
         await db.query('CREATE INDEX IF NOT EXISTS idx_conversation_resources_user_conversation_created ON conversation_resources (user_id, conversation_id, created_at DESC)');
         await db.query('CREATE INDEX IF NOT EXISTS idx_conversation_resources_user_kind_updated ON conversation_resources (user_id, resource_kind, updated_at DESC)');
         await db.query('CREATE INDEX IF NOT EXISTS idx_conversation_resources_expires_at ON conversation_resources (expires_at)');
+        await db.query('CREATE INDEX IF NOT EXISTS idx_conversation_resources_pinned ON conversation_resources (user_id, is_pinned, created_at DESC) WHERE is_pinned = TRUE');
         await db.query(`
           CREATE TABLE IF NOT EXISTS a11_pending_clarifications (
             id SERIAL PRIMARY KEY,
@@ -4636,6 +4639,8 @@ function mapConversationResourceRow(row) {
     sizeBytes: Number(row.size_bytes || 0),
     metadata: parseConversationResourceMetadata(row.metadata_json),
     expiresAt: row.expires_at || null,
+    isPinned: Boolean(row.is_pinned),
+    alias: row.alias ? String(row.alias) : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -4691,7 +4696,7 @@ async function linkConversationResource({
        metadata_json=EXCLUDED.metadata_json,
        expires_at=EXCLUDED.expires_at,
        updated_at=NOW()
-     RETURNING id, user_id, conversation_id, resource_kind, origin, filename, storage_key, url, content_type, size_bytes, metadata_json, expires_at, created_at, updated_at`,
+     RETURNING id, user_id, conversation_id, resource_kind, origin, filename, storage_key, url, content_type, size_bytes, metadata_json, expires_at, is_pinned, alias, created_at, updated_at`,
     [
       normalizedUserId,
       normalizedConversationId,
@@ -4718,26 +4723,24 @@ async function findConversationResourceByContentHash({
   resourceKind = 'file',
 }) {
   const normalizedUserId = String(userId || '').trim();
-  const normalizedConversationId = normalizeConversationId(conversationId);
   const normalizedHash = String(contentHash || '').trim().toLowerCase();
-  if (!db || !normalizedUserId || !normalizedConversationId || !normalizedHash) return null;
+  if (!db || !normalizedUserId || !normalizedHash) return null;
 
+  // Search across ALL conversations for this user — dedup works cross-conversation
   const result = await db.query(
-    `SELECT id, user_id, conversation_id, resource_kind, origin, filename, storage_key, url, content_type, size_bytes, metadata_json, expires_at, created_at, updated_at
+    `SELECT id, user_id, conversation_id, resource_kind, origin, filename, storage_key, url, content_type, size_bytes, metadata_json, expires_at, is_pinned, alias, created_at, updated_at
      FROM conversation_resources
      WHERE user_id=$1
-       AND conversation_id=$2
-       AND resource_kind=$3
+       AND resource_kind=$2
        AND (expires_at IS NULL OR expires_at > NOW())
        AND (
-         metadata_json->>'contentHash' = $4
-         OR metadata_json->>'sha256' = $4
+         metadata_json->>'contentHash' = $3
+         OR metadata_json->>'sha256' = $3
        )
-     ORDER BY updated_at DESC, created_at DESC, id DESC
+     ORDER BY is_pinned DESC NULLS LAST, updated_at DESC, created_at DESC, id DESC
      LIMIT 1`,
     [
       normalizedUserId,
-      normalizedConversationId,
       normalizeConversationResourceKind(resourceKind),
       normalizedHash,
     ]
@@ -4772,7 +4775,7 @@ async function listConversationResources(userId, { conversationId, resourceKind,
 
   params.push(normalizedLimit);
   const result = await db.query(
-    `SELECT id, user_id, conversation_id, resource_kind, origin, filename, storage_key, url, content_type, size_bytes, metadata_json, expires_at, created_at, updated_at
+    `SELECT id, user_id, conversation_id, resource_kind, origin, filename, storage_key, url, content_type, size_bytes, metadata_json, expires_at, is_pinned, alias, created_at, updated_at
      FROM conversation_resources
      WHERE ${conditions.join(' AND ')}
        AND (expires_at IS NULL OR expires_at > NOW())
@@ -4805,7 +4808,7 @@ async function getConversationResourceById(userId, resourceId) {
   if (!db || !normalizedUserId || !Number.isFinite(normalizedResourceId) || normalizedResourceId <= 0) return null;
 
   const result = await db.query(
-    `SELECT id, user_id, conversation_id, resource_kind, origin, filename, storage_key, url, content_type, size_bytes, metadata_json, expires_at, created_at, updated_at
+    `SELECT id, user_id, conversation_id, resource_kind, origin, filename, storage_key, url, content_type, size_bytes, metadata_json, expires_at, is_pinned, alias, created_at, updated_at
      FROM conversation_resources
      WHERE user_id=$1 AND id=$2
        AND (expires_at IS NULL OR expires_at > NOW())
@@ -7001,6 +7004,7 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
     );
     const resolvedExpiresAt = normalizeOptionalTimestamp(expiresAt)
       || buildTemporaryFileExpiryDate(Number(ttlSeconds || 0) > 0 ? Number(ttlSeconds) * 1000 : TEMP_SHARED_FILE_TTL_MS);
+    const pinToLibrary = req.body?.pinToLibrary === true || uploadLooksLikeImage;
     const ingestion = await ingestUploadedFile({
       userId,
       filename,
@@ -7027,8 +7031,15 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
         subject: 'file_upload',
       }),
       sanitizeFileName,
-      expiresAt: resolvedExpiresAt,
+      expiresAt: pinToLibrary ? null : resolvedExpiresAt,
     });
+    // Auto-pin images to library (no expiry) so they're reusable across conversations
+    if (pinToLibrary && ingestion?.conversationResource?.id && db) {
+      db.query(
+        'UPDATE conversation_resources SET is_pinned=TRUE, expires_at=NULL WHERE id=$1 AND user_id=$2',
+        [ingestion.conversationResource.id, userId]
+      ).catch((e) => console.warn('[library] auto-pin failed', e?.message));
+    }
 
     const publicConversationResource = ingestion.conversationResource
       ? attachPublicDownloadUrl(ingestion.conversationResource, req)
@@ -7172,6 +7183,92 @@ app.get('/api/resources/my', async (req, res) => {
     return res.status(500).json({ ok: false, error: 'resource_list_failed', message: String(e?.message) });
   }
 });
+
+// ── Image library endpoints ───────────────────────────────────────────────
+
+app.get('/api/user/library', async (req, res) => {
+  try {
+    const userId = String(req.user?.id || '').trim();
+    if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
+    if (!db) return res.status(503).json({ ok: false, error: 'database_unavailable' });
+    const kind = String(req.query.kind || 'image').trim();
+    const limit = Math.max(1, Math.min(100, Number(req.query.limit || 50)));
+    const result = await db.query(
+      `SELECT id, user_id, conversation_id, resource_kind, origin, filename, storage_key, url, content_type, size_bytes, metadata_json, expires_at, is_pinned, alias, created_at, updated_at
+       FROM conversation_resources
+       WHERE user_id=$1 AND is_pinned=TRUE
+         AND (resource_kind=$2 OR $2='all')
+         AND (expires_at IS NULL OR expires_at > NOW())
+       ORDER BY updated_at DESC, id DESC
+       LIMIT $3`,
+      [userId, kind === 'all' ? 'all' : normalizeConversationResourceKind(kind || 'image'), limit]
+    );
+    const resources = result.rows.map((row) => {
+      const r = mapConversationResourceRow(row);
+      return attachPublicDownloadUrl(r, req);
+    });
+    return res.json({ ok: true, resources, count: resources.length });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: 'library_list_failed', message: String(e?.message) });
+  }
+});
+
+app.post('/api/user/library/:id/pin', async (req, res) => {
+  try {
+    const userId = String(req.user?.id || '').trim();
+    if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
+    if (!db) return res.status(503).json({ ok: false, error: 'database_unavailable' });
+    const resourceId = Number(req.params?.id || 0);
+    const alias = String(req.body?.alias || '').trim().slice(0, 100) || null;
+    const result = await db.query(
+      `UPDATE conversation_resources
+       SET is_pinned=TRUE, alias=COALESCE($3, alias), expires_at=NULL, updated_at=NOW()
+       WHERE id=$1 AND user_id=$2
+       RETURNING id, is_pinned, alias, filename`,
+      [resourceId, userId, alias]
+    );
+    if (!result.rows.length) return res.status(404).json({ ok: false, error: 'resource_not_found' });
+    return res.json({ ok: true, resource: result.rows[0] });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: 'pin_failed', message: String(e?.message) });
+  }
+});
+
+app.post('/api/user/library/:id/unpin', async (req, res) => {
+  try {
+    const userId = String(req.user?.id || '').trim();
+    if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
+    if (!db) return res.status(503).json({ ok: false, error: 'database_unavailable' });
+    const resourceId = Number(req.params?.id || 0);
+    await db.query(
+      `UPDATE conversation_resources SET is_pinned=FALSE, updated_at=NOW() WHERE id=$1 AND user_id=$2`,
+      [resourceId, userId]
+    );
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: 'unpin_failed', message: String(e?.message) });
+  }
+});
+
+app.patch('/api/user/library/:id/alias', express.json({ limit: '1kb' }), async (req, res) => {
+  try {
+    const userId = String(req.user?.id || '').trim();
+    if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
+    if (!db) return res.status(503).json({ ok: false, error: 'database_unavailable' });
+    const resourceId = Number(req.params?.id || 0);
+    const alias = String(req.body?.alias || '').trim().slice(0, 100) || null;
+    const result = await db.query(
+      `UPDATE conversation_resources SET alias=$3, updated_at=NOW() WHERE id=$1 AND user_id=$2 RETURNING id, alias`,
+      [resourceId, userId, alias]
+    );
+    if (!result.rows.length) return res.status(404).json({ ok: false, error: 'resource_not_found' });
+    return res.json({ ok: true, resource: result.rows[0] });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: 'alias_failed', message: String(e?.message) });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 app.get('/api/resources/:id/download', async (req, res) => {
   try {

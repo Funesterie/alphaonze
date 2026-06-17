@@ -4220,6 +4220,28 @@ export async function uploadConversationFile(file: File, options?: {
   };
 }
 
+export async function fetchUserLibrary(options?: { kind?: string; limit?: number }): Promise<A11ConversationResource[]> {
+  const params = new URLSearchParams();
+  if (options?.kind) params.set('kind', options.kind);
+  if (options?.limit) params.set('limit', String(options.limit));
+  const res = await authFetch(getApiUrl(`/api/user/library?${params}`), {
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  if (!res.ok) return [];
+  const data = await res.json().catch(() => ({}));
+  return Array.isArray(data?.resources) ? data.resources : [];
+}
+
+export async function pinResourceToLibrary(resourceId: number, alias?: string): Promise<boolean> {
+  const res = await authFetch(getApiUrl(`/api/user/library/${resourceId}/pin`), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    body: JSON.stringify({ alias }),
+  });
+  return res.ok;
+}
+
 export type SessionDriveStorageStatus = {
   ok: boolean;
   storagePreference?: 'session-drive';
