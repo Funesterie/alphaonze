@@ -1117,8 +1117,14 @@ function createVideoGenerateRouter(overrides = {}) {
         });
         const cloudPrompt = builtPrompt?.prompt || prompt;
         const cloudNegativePrompt = builtPrompt?.negativePrompt || body?.negative_prompt || '';
+        // LLM-controlled duration: convert seconds → frames (Wan2.2 ≈ 16fps). Default 5s = 80 frames.
+        const llmDurationSec = Number(builtPrompt?.durationSeconds || 5);
+        const llmFrameCount = Math.round(Math.max(2, Math.min(10, llmDurationSec)) * 16);
         const hfResult = await tryGenerateVideoWithHuggingFace({
-          req, body: { ...body, prompt: cloudPrompt, negative_prompt: cloudNegativePrompt }, prompt: cloudPrompt, fetchImpl,
+          req,
+          body: { ...body, prompt: cloudPrompt, negative_prompt: cloudNegativePrompt, frameCount: llmFrameCount },
+          prompt: cloudPrompt,
+          fetchImpl,
           uploadBufferToR2Impl: overrides.uploadBufferToR2,
           tokenOverride: sessionVideoTokens.huggingface,
           configOverrides: { provider: hfProviderOverride, replicateToken: sessionVideoTokens.replicate },

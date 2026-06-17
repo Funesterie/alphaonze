@@ -36,24 +36,37 @@ ENERGY ATTACK RULE:
 - Never describe side beams, lateral rays, or light-saber effects — those are wrong
 - Describe: cupping hands → glowing ball between palms → thrust forward → ball launches ahead
 
+STRUCTURAL INTEGRITY RULE (always):
+- negative_prompt MUST always include: "floating limbs, disconnected body parts, disembodied legs, missing torso, incomplete anatomy, cut off body, severed limbs"
+- Never omit structural terms from negative_prompt
+
+DURATION RULE:
+- duration_seconds: choose based on action complexity
+  - Quick strike or single pose: 3
+  - Standard action (walk, fight move, escort): 5
+  - Complex sequence (transformation, power-up, long escort): 8
+- Default: 5
+
 Examples:
-- "hadouken de street fighter" (photo ref) → prompt: "Fighter drops into wide karate stance, cupping hands at hip level, bright blue energy ball forming between palms glowing intensely, thrusting both hands forward to launch the Hadouken energy ball straight ahead, electric blue aura, low-angle cinematic action shot, same person as in reference image, identical face, hairstyle, costume and body build", negative_prompt: "laser, beam, ray, light saber, staff, bo staff, stick, rod, pole, weapon, sword, nunchaku, sai, spear, side beams"
+- "hadouken de street fighter" (photo ref) → prompt: "Fighter drops into wide karate stance, cupping hands at hip level, bright blue energy ball forming between palms glowing intensely, thrusting both hands forward to launch the Hadouken energy ball straight ahead, electric blue aura, low-angle cinematic action shot, same person as in reference image, identical face, hairstyle, costume and body build", negative_prompt: "laser, beam, ray, light saber, staff, bo staff, stick, rod, pole, weapon, sword, nunchaku, sai, spear, side beams, floating limbs, disconnected body parts, disembodied legs, missing torso, incomplete anatomy", duration_seconds: 5
 - "kamehameha" (photo ref) → prompt: "Cupping hands at hip, golden energy building between palms into a tight ball, thrusting both hands forward releasing the Kamehameha energy beam straight ahead, intense golden aura, same person as in reference image, identical face and costume", negative_prompt: "staff, stick, weapon, rod, pole, laser, side beams, light saber"
-- "menotté et escorté" (manga B&W ref) → prompt: "Black and white manga illustration, bold ink lines, dynamic panel composition, muscular character walking forward flanked by two officers gripping each arm, handcuffs on wrists, low dramatic angle, high contrast shadows, tense cinematic escort scene, same person as in reference image, identical face and body build", negative_prompt: "photorealistic, color, blur, 3D"
-- "mets-moi dans le far west" (photo ref) → prompt: "Walking through a dusty western frontier town at golden hour, worn boots on dry dirt road, wooden saloon ahead, wide cinematic shot, same person as in reference image, identical face and outfit", negative_prompt: ""
-- "fantome dans un dojo" (manga ref) → prompt: "Black and white manga illustration, bold ink lines, character drifting as a translucent ghost through a traditional dojo, ethereal ink wash aura, polished wooden floor, dramatic shadows, same person as in reference image", negative_prompt: "photorealistic, color"
+- "menotté et escorté" (manga B&W ref) → prompt: "Black and white manga illustration, bold ink lines, dynamic panel composition, muscular character walking forward flanked by two officers gripping each arm, handcuffs on wrists, low dramatic angle, high contrast shadows, tense cinematic escort scene, same person as in reference image, identical face and body build", negative_prompt: "photorealistic, color, blur, 3D, floating limbs, disconnected body parts, disembodied legs, missing torso, incomplete anatomy", duration_seconds: 5
+- "mets-moi dans le far west" (photo ref) → prompt: "Walking through a dusty western frontier town at golden hour, worn boots on dry dirt road, wooden saloon ahead, wide cinematic shot, same person as in reference image, identical face and outfit", negative_prompt: "floating limbs, disconnected body parts, missing torso, incomplete anatomy", duration_seconds: 5
+- "fantome dans un dojo" (manga ref) → prompt: "Black and white manga illustration, bold ink lines, character drifting as a translucent ghost through a traditional dojo, ethereal ink wash aura, polished wooden floor, dramatic shadows, same person as in reference image", negative_prompt: "photorealistic, color, floating limbs, disconnected body parts, missing torso", duration_seconds: 5
 
 Rules:
 - IDENTITY ANCHOR appended whenever has_reference_image=true.
 - ART STYLE FIRST if non-photorealistic reference detected.
 - Action first, then environment, then atmosphere, then light.
 - For energy attacks: palms-forward ball only — no side beams. Add laser/beam/ray to negative_prompt.
+- ALWAYS include structural integrity terms in negative_prompt (floating limbs, disconnected body parts, disembodied legs, missing torso, incomplete anatomy, cut off body, severed limbs).
 - 2-3 sentences max for the prompt field.
-- negative_prompt: visual elements to AVOID (style conflicts, wrong props, wrong FX). Empty string if nothing specific.
+- negative_prompt: style conflicts + wrong props + wrong FX + structural integrity terms (always).
+- duration_seconds: 3 (quick strike), 5 (standard action), 8 (complex sequence). Default 5.
 - motion_type: one of walk, run, fly, fight, dance, idle, transform, other
 - has_reference_subject: true if the user refers to a specific person/vehicle/object from a reference image
 
-Return strict JSON only.`;
+Return strict JSON only: { prompt, negative_prompt, duration_seconds, motion_type, has_reference_subject }`;
 
 function normalizeText(value = '') {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -163,11 +176,16 @@ async function buildVideoPrompt({
   }
 
   const negativePrompt = normalizeText(response?.negative_prompt || '');
+  const rawDuration = Number(response?.duration_seconds);
+  const durationSeconds = Number.isFinite(rawDuration) && rawDuration >= 2 && rawDuration <= 10
+    ? Math.round(rawDuration)
+    : 5;
   const negSuffix = negativePrompt ? ' (neg: "' + negativePrompt.slice(0, 60) + '")' : '';
-  console.log('[A11][video-prompt] "' + prompt.slice(0, 100) + '"' + negSuffix);
+  console.log('[A11][video-prompt] "' + prompt.slice(0, 100) + '"' + negSuffix + ' dur=' + durationSeconds + 's');
   return {
     prompt,
     negativePrompt,
+    durationSeconds,
     hasReferenceSubject: hasReferenceImage || response?.has_reference_subject === true,
     motionType: normalizeText(response?.motion_type || 'other'),
     source: groqUsed ? 'groq' : 'llm',
