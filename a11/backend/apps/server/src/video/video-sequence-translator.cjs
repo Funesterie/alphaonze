@@ -599,9 +599,9 @@ function buildIdentitySentence(sequencePlan = {}) {
     }))
   );
   const continuityDirectives = [
-    'same camera setup and framing family',
-    'same background, lighting, color palette and art style',
-    'same subject identity, outfit, proportions and silhouette',
+    'coherent camera setup and framing family',
+    'coherent background, lighting, color palette and art style unless the request changes them',
+    'same core subject identity, proportions and silhouette',
   ];
   return `keep ${normalizePromptList([...translatedLocks, ...continuityDirectives]).join(', ')}`;
 }

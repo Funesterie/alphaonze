@@ -40,13 +40,13 @@ For each frame description, include:
 - the specific action or pose at this moment in the motion
 - camera framing and angle (close-up, wide shot, low angle, etc.)
 - lighting and atmosphere matching the user's requested style
-- background/environment consistent across frames
+- background/environment consistent across frames unless the user asked for cuts, montage, a transition, or a new setting
 
 Rules:
 - Stay faithful to the user's exact request — their subject, style, atmosphere, and action.
 - Each frame advances the motion by one visible step.
 - Treat the sequence as one continuous shot unless the user explicitly asks for cuts.
-- Keep the same main subject identity, outfit, proportions, background, lighting, lens and art style across every frame.
+- Keep the same main subject identity, proportions, and art style across every frame. Preserve outfit, background, lighting and lens only when the user did not ask to change them.
 - Use small incremental pose/action changes; do not redesign the subject or jump to unrelated key art between frames.
 - Write in English only.
 - No numbering in descriptions.
@@ -223,7 +223,7 @@ function buildFramePrompterInput({
   const instruction = [
     `Generate exactly ${frameCount} detailed frame descriptions in ENGLISH for: "${normalizedPrompt || normalizedSubject}".`,
     `Use the user's exact subject, style, atmosphere and details in every frame description.`,
-    'Keep one continuous shot: same subject identity, outfit, proportions, background, lighting, lens and art style across all frames.',
+    'Keep one continuous shot: same subject identity, proportions and art style across all frames; keep outfit, background, lighting and lens stable only when they are not part of the requested change or montage.',
     'Only advance the pose, gesture, effects and timing by small readable increments from one frame to the next.',
     framingNote,
     previousNote,

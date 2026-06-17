@@ -198,18 +198,18 @@ function resolveDefaultIdentityLocks(motionProfile = 'generic', prompt = '') {
   switch (String(motionProfile || 'generic').trim() || 'generic') {
     case 'power_up_loop':
     case 'transformation_rise':
-      return ['same face', 'same outfit', 'same silhouette'];
+      return ['same face', 'same core identity', 'same silhouette'];
     case 'mounted_archery':
       return ['same rider', 'same horse', 'same saddle'];
     case 'archery_shot':
-      return ['same face', 'same outfit', 'same shooting stance'];
+      return ['same face', 'same core identity', 'same shooting stance'];
     case 'walk_cycle':
     case 'run_cycle':
-      if (subjectType === 'horse') return ['same pony', 'same rider', 'same background'];
-      if (subjectType === 'quadruped' || subjectType === 'dragon') return ['same animal', 'same silhouette', 'same background'];
-      return ['same face', 'same outfit', 'same background'];
+      if (subjectType === 'horse') return ['same pony', 'same rider', 'coherent environment'];
+      if (subjectType === 'quadruped' || subjectType === 'dragon') return ['same animal', 'same silhouette', 'coherent environment'];
+      return ['same face', 'same core identity', 'coherent environment'];
     default:
-      return ['same face', 'same outfit', 'same background'];
+      return ['same core identity', 'same silhouette', 'coherent environment'];
   }
 }
 

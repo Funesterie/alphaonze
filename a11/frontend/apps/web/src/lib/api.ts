@@ -1,6 +1,11 @@
 // --- Génération d'image via backend DALL·E ---
 type A11GenerationSourceOptions = {
   sourceImageUrl?: string | null;
+  referenceImageUrls?: string[];
+  audioUrl?: string | null;
+  referenceAudioUrls?: string[];
+  sourceVideoUrl?: string | null;
+  referenceVideoUrls?: string[];
   provider?: string;
   videoProvider?: string;
   width?: number;
@@ -167,6 +172,9 @@ export async function generatePngWithPrompt(
   options: A11GenerationSourceOptions = {}
 ): Promise<{ url: string, filename: string, prompt: string }> {
   const sourceImageUrl = String(options.sourceImageUrl || '').trim();
+  const referenceImageUrls = Array.isArray(options.referenceImageUrls)
+    ? options.referenceImageUrls.map((u) => String(u || '').trim()).filter(Boolean)
+    : [];
   const body: Record<string, any> = {
     prompt,
     width: options.width || 384,
@@ -183,6 +191,10 @@ export async function generatePngWithPrompt(
       strength: 0.34,
     });
   }
+  if (referenceImageUrls.length > 0) {
+    body.referenceImageUrls = referenceImageUrls;
+    body.reference_image_urls = referenceImageUrls;
+  }
   const res = await fetch(getApiUrl('/api/tools/generate_sd'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -197,6 +209,17 @@ export async function generateVideoWithPrompt(
   options: A11GenerationSourceOptions = {}
 ): Promise<{ ok?: boolean; url?: string; videoUrl?: string; video_url?: string; filename?: string; prompt?: string; raw?: any }> {
   const sourceImageUrl = String(options.sourceImageUrl || '').trim();
+  const sourceVideoUrl = String(options.sourceVideoUrl || '').trim();
+  const audioUrl = String(options.audioUrl || '').trim();
+  const referenceImageUrls = Array.isArray(options.referenceImageUrls)
+    ? options.referenceImageUrls.map((u) => String(u || '').trim()).filter(Boolean)
+    : [];
+  const referenceAudioUrls = Array.isArray(options.referenceAudioUrls)
+    ? options.referenceAudioUrls.map((u) => String(u || '').trim()).filter(Boolean)
+    : [];
+  const referenceVideoUrls = Array.isArray(options.referenceVideoUrls)
+    ? options.referenceVideoUrls.map((u) => String(u || '').trim()).filter(Boolean)
+    : [];
   const resolvePositiveNumber = (...values: Array<number | undefined>) => {
     for (const value of values) {
       const numeric = Number(value);
@@ -244,6 +267,11 @@ export async function generateVideoWithPrompt(
   if (sdSteps) body.sdSteps = sdSteps;
   if (guidanceScale) body.guidanceScale = guidanceScale;
   if (sourceImageUrl) body.sourceImageUrl = sourceImageUrl;
+  if (referenceImageUrls.length > 0) body.referenceImageUrls = referenceImageUrls;
+  if (audioUrl) body.audioUrl = audioUrl;
+  if (referenceAudioUrls.length > 0) body.referenceAudioUrls = referenceAudioUrls;
+  if (sourceVideoUrl) body.sourceVideoUrl = sourceVideoUrl;
+  if (referenceVideoUrls.length > 0) body.referenceVideoUrls = referenceVideoUrls;
 
   return withMobileLongTaskGuard(maxWaitMs, async () => {
     const res = await fetch(getApiUrl('/api/video/generate'), {
@@ -3731,7 +3759,7 @@ export async function chatCompletion(
 export async function chatCompletionDetailed(
   messages: Msg[],
   provider: Provider = 'local',
-  systemPromptOrOptions?: string | { turbo?: boolean; systemPrompt?: string; model?: string; conversationId?: string; providerProfileId?: string; sourceImageUrl?: string; referenceImageUrls?: string[]; audioUrl?: string; surface?: string; persona?: string; voicePersona?: string; language?: string }
+  systemPromptOrOptions?: string | { turbo?: boolean; systemPrompt?: string; model?: string; conversationId?: string; providerProfileId?: string; sourceImageUrl?: string; referenceImageUrls?: string[]; audioUrl?: string; referenceAudioUrls?: string[]; sourceVideoUrl?: string; referenceVideoUrls?: string[]; surface?: string; persona?: string; voicePersona?: string; language?: string }
 ) {
   let systemPrompt: string | undefined;
   let turboFlag = false;
@@ -3741,6 +3769,9 @@ export async function chatCompletionDetailed(
   let sourceImageUrl: string | undefined;
   let referenceImageUrls: string[] | undefined;
   let audioUrl: string | undefined;
+  let referenceAudioUrls: string[] | undefined;
+  let sourceVideoUrl: string | undefined;
+  let referenceVideoUrls: string[] | undefined;
   let surface: string | undefined;
   let persona: string | undefined;
   let voicePersona: string | undefined;
@@ -3765,6 +3796,15 @@ export async function chatCompletionDetailed(
       : undefined;
     audioUrl = typeof systemPromptOrOptions.audioUrl === 'string' && systemPromptOrOptions.audioUrl.trim()
       ? systemPromptOrOptions.audioUrl.trim()
+      : undefined;
+    referenceAudioUrls = Array.isArray(systemPromptOrOptions.referenceAudioUrls)
+      ? systemPromptOrOptions.referenceAudioUrls.filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
+      : undefined;
+    sourceVideoUrl = typeof systemPromptOrOptions.sourceVideoUrl === 'string' && systemPromptOrOptions.sourceVideoUrl.trim()
+      ? systemPromptOrOptions.sourceVideoUrl.trim()
+      : undefined;
+    referenceVideoUrls = Array.isArray(systemPromptOrOptions.referenceVideoUrls)
+      ? systemPromptOrOptions.referenceVideoUrls.filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
       : undefined;
     surface = typeof systemPromptOrOptions.surface === 'string'
       ? systemPromptOrOptions.surface.trim().toLowerCase() || undefined
@@ -3808,6 +3848,9 @@ export async function chatCompletionDetailed(
     ...(sourceImageUrl ? { sourceImageUrl } : {}),
     ...(referenceImageUrls && referenceImageUrls.length > 1 ? { referenceImageUrls } : {}),
     ...(audioUrl ? { audioUrl } : {}),
+    ...(referenceAudioUrls && referenceAudioUrls.length > 0 ? { referenceAudioUrls } : {}),
+    ...(sourceVideoUrl ? { sourceVideoUrl } : {}),
+    ...(referenceVideoUrls && referenceVideoUrls.length > 0 ? { referenceVideoUrls } : {}),
   };
   // Always post to router (apiPost ignores the path and uses router endpoint)
   const initialData = await apiPost(payload);

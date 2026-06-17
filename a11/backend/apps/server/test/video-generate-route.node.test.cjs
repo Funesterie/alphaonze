@@ -1141,12 +1141,19 @@ test('video generate router builds a first-person cloud prompt before Replicate 
   const calls = [];
   const promptBuilderCalls = [];
   const fakeFetch = async (url, options = {}) => {
+    const parsedBody = options.body ? JSON.parse(String(options.body)) : null;
     calls.push({
       url: String(url),
       headers: options.headers || {},
-      body: options.body ? JSON.parse(String(options.body)) : null,
+      body: parsedBody,
     });
-    if (calls.length === 1) {
+    if (/\/refs\/(?:impact|voice)\.(?:mp3|wav)$/i.test(String(url))) {
+      return new Response(Buffer.from('fake-audio-reference'), {
+        status: 200,
+        headers: { 'Content-Type': 'audio/mpeg' },
+      });
+    }
+    if (parsedBody?.input?.prompt) {
       return new Response(JSON.stringify({
         status: 'processing',
         urls: { get: 'https://api.replicate.com/v1/predictions/replicate-built-prompt-1' },
@@ -1227,6 +1234,16 @@ test('video generate router builds a first-person cloud prompt before Replicate 
           'https://files.example.com/selfie.png',
           'https://files.example.com/tokyo-neon-style.png',
         ],
+        audioUrl: 'https://files.example.com/refs/impact.mp3',
+        referenceAudioUrls: [
+          'https://files.example.com/refs/impact.mp3',
+          'https://files.example.com/refs/voice.wav',
+        ],
+        sourceVideoUrl: 'https://files.example.com/refs/action-ref.mp4',
+        referenceVideoUrls: [
+          'https://files.example.com/refs/action-ref.mp4',
+          'https://files.example.com/refs/camera-ref.mp4',
+        ],
         provider: 'replicate',
       }),
     });
@@ -1242,8 +1259,18 @@ test('video generate router builds a first-person cloud prompt before Replicate 
       'https://files.example.com/selfie.png',
       'https://files.example.com/tokyo-neon-style.png',
     ]);
-    assert.equal(calls[0].body.input.prompt, 'Walking through neon Tokyo streets at night, rain reflecting magenta light, first-person cinematic motion');
-    assert.equal(calls[0].body.input.image, 'https://files.example.com/selfie.png');
+    assert.deepEqual(promptBuilderCalls[0].referenceAudioUrls, [
+      'https://files.example.com/refs/impact.mp3',
+      'https://files.example.com/refs/voice.wav',
+    ]);
+    assert.deepEqual(promptBuilderCalls[0].referenceVideoUrls, [
+      'https://files.example.com/refs/action-ref.mp4',
+      'https://files.example.com/refs/camera-ref.mp4',
+    ]);
+    const replicatePredictionCall = calls.find((call) => call.body?.input?.prompt);
+    assert.ok(replicatePredictionCall);
+    assert.equal(replicatePredictionCall.body.input.prompt, 'Walking through neon Tokyo streets at night, rain reflecting magenta light, first-person cinematic motion');
+    assert.equal(replicatePredictionCall.body.input.image, 'https://files.example.com/selfie.png');
     assert.equal(payload.prompt, 'Walking through neon Tokyo streets at night, rain reflecting magenta light, first-person cinematic motion');
   } finally {
     await new Promise((resolve) => appServer.close(resolve));

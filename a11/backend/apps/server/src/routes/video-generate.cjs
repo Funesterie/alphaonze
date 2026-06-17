@@ -158,6 +158,66 @@ function normalizeReferenceImageUrls(body = {}) {
   return output;
 }
 
+function normalizeReferenceAudioUrls(body = {}) {
+  const source = [
+    body?.audioUrl,
+    body?.audio_url,
+    body?.sourceAudioUrl,
+    body?.source_audio_url,
+    body?.referenceAudioUrl,
+    body?.reference_audio_url,
+    body?.referenceAudioUrls,
+    body?.reference_audio_urls,
+    body?.audioUrls,
+    body?.audio_urls,
+  ];
+  const output = [];
+  const seen = new Set();
+  for (const value of source) {
+    const entries = Array.isArray(value) ? value : [value];
+    for (const entry of entries) {
+      const text = String(entry || '').trim();
+      if (!text) continue;
+      const key = text.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      output.push(text);
+      if (output.length >= 12) return output;
+    }
+  }
+  return output;
+}
+
+function normalizeReferenceVideoUrls(body = {}) {
+  const source = [
+    body?.sourceVideoUrl,
+    body?.source_video_url,
+    body?.videoUrl,
+    body?.video_url,
+    body?.referenceVideoUrl,
+    body?.reference_video_url,
+    body?.referenceVideoUrls,
+    body?.reference_video_urls,
+    body?.videoUrls,
+    body?.video_urls,
+  ];
+  const output = [];
+  const seen = new Set();
+  for (const value of source) {
+    const entries = Array.isArray(value) ? value : [value];
+    for (const entry of entries) {
+      const text = String(entry || '').trim();
+      if (!text) continue;
+      const key = text.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      output.push(text);
+      if (output.length >= 12) return output;
+    }
+  }
+  return output;
+}
+
 function hasVideoReferenceImage(body = {}) {
   return normalizeReferenceImageUrls(body).length > 0;
 }
@@ -1133,8 +1193,10 @@ function createVideoGenerateRouter(overrides = {}) {
         // Not explicitly requested + role insufficient → skip silently, continue to next step
       } else {
         const referenceImageUrls = normalizeReferenceImageUrls(body);
+        const referenceAudioUrls = normalizeReferenceAudioUrls(body);
+        const referenceVideoUrls = normalizeReferenceVideoUrls(body);
         const hasReferenceImage = referenceImageUrls.length > 0;
-        const bodyAudioUrl = String(body?.audioUrl || body?.audio_url || '').trim();
+        const bodyAudioUrl = referenceAudioUrls[0] || '';
         // Analyse audio first (V9 Turbo 99ms granularity), then build prompt with sync context in one LLM call
         const audioMotionPlan = bodyAudioUrl
           ? await buildAudioMotionPlan(bodyAudioUrl, { fetchImpl, fps: 16 }).catch((e) => {
@@ -1149,6 +1211,8 @@ function createVideoGenerateRouter(overrides = {}) {
           userMessage: prompt,
           hasReferenceImage,
           referenceImageUrls,
+          referenceAudioUrls,
+          referenceVideoUrls,
           referenceVisualContext: String(body?.compiledVisualContext || '').trim(),
           audioMotionPlan: audioMotionPlan || null,
           timeoutMs: 10000,
@@ -1164,7 +1228,16 @@ function createVideoGenerateRouter(overrides = {}) {
         const llmFrameCount = Math.round(Math.max(2, Math.min(10, effectiveDurationSec)) * 16);
         const hfResult = await tryGenerateVideoWithHuggingFace({
           req,
-          body: { ...body, prompt: cloudPrompt, negative_prompt: cloudNegativePrompt, frameCount: llmFrameCount },
+          body: {
+            ...body,
+            prompt: cloudPrompt,
+            negative_prompt: cloudNegativePrompt,
+            frameCount: llmFrameCount,
+            audioUrl: bodyAudioUrl || body?.audioUrl || body?.audio_url,
+            referenceAudioUrls,
+            sourceVideoUrl: referenceVideoUrls[0] || body?.sourceVideoUrl || body?.source_video_url,
+            referenceVideoUrls,
+          },
           prompt: cloudPrompt,
           fetchImpl,
           uploadBufferToR2Impl: overrides.uploadBufferToR2,

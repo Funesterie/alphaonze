@@ -50,6 +50,8 @@ function normalizeCreativeBrief(brief = {}) {
     lyricsFragments: toStringList(source.lyricsFragments || source.lyrics_fragments || [], { limit: 12 }),
     referenceImageUrls: toStringList(source.referenceImageUrls || source.reference_image_urls || [], { limit: 12 }),
     referenceImagePaths: toStringList(source.referenceImagePaths || source.reference_image_paths || [], { limit: 12 }),
+    referenceAudioUrls: toStringList(source.referenceAudioUrls || source.reference_audio_urls || [], { limit: 12 }),
+    referenceVideoUrls: toStringList(source.referenceVideoUrls || source.reference_video_urls || [], { limit: 12 }),
     styleHints: toStringList(source.styleHints || source.style_hints || [], { limit: 12 }),
     userForbidden: toStringList(source.userForbidden || source.user_forbidden || [], { limit: 12 }),
   };

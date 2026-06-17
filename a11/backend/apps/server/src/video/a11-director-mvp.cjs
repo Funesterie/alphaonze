@@ -56,6 +56,22 @@ function buildCreativeBrief({ prompt = '', request = {}, sourceImagePath = '', s
       request?.sourceImagePath,
       request?.initImagePath,
     ], 12),
+    referenceAudioUrls: toUniqueStrings([
+      request?.audioUrl,
+      request?.audio_url,
+      request?.referenceAudioUrl,
+      request?.reference_audio_url,
+      request?.referenceAudioUrls,
+      request?.reference_audio_urls,
+    ], 12),
+    referenceVideoUrls: toUniqueStrings([
+      request?.sourceVideoUrl,
+      request?.source_video_url,
+      request?.referenceVideoUrl,
+      request?.reference_video_url,
+      request?.referenceVideoUrls,
+      request?.reference_video_urls,
+    ], 12),
     styleHints: toUniqueStrings(request?.styleHints || request?.style_hints || [], 12),
     userForbidden: toUniqueStrings(request?.userForbidden || request?.user_forbidden || [], 12),
   };

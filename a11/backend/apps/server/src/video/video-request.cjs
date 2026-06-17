@@ -127,6 +127,28 @@ function parseVideoGenerateRequest(text = '', body = {}) {
     body?.referenceImageUrls,
     body?.reference_image_urls,
   ], 12);
+  const referenceAudioUrls = toVideoStringList([
+    body?.audioUrl,
+    body?.audio_url,
+    body?.sourceAudioUrl,
+    body?.source_audio_url,
+    body?.referenceAudioUrl,
+    body?.reference_audio_url,
+    body?.referenceAudioUrls,
+    body?.reference_audio_urls,
+    body?.audioUrls,
+    body?.audio_urls,
+  ], 12);
+  const sourceVideoUrl = String(body?.sourceVideoUrl || body?.source_video_url || body?.videoUrl || body?.video_url || '').trim();
+  const referenceVideoUrls = toVideoStringList([
+    sourceVideoUrl,
+    body?.referenceVideoUrl,
+    body?.reference_video_url,
+    body?.referenceVideoUrls,
+    body?.reference_video_urls,
+    body?.videoUrls,
+    body?.video_urls,
+  ], 12);
 
   return {
     rawText,
@@ -152,9 +174,11 @@ function parseVideoGenerateRequest(text = '', body = {}) {
     sourceImageUrl,
     referenceImageUrls,
     sourceImagePath: String(body?.sourceImagePath || body?.source_image_path || body?.imagePath || body?.image_path || '').trim(),
-    sourceVideoUrl: String(body?.sourceVideoUrl || body?.source_video_url || body?.videoUrl || body?.video_url || '').trim(),
+    sourceVideoUrl,
     sourceVideoPath: String(body?.sourceVideoPath || body?.source_video_path || body?.videoPath || body?.video_path || '').trim(),
-    audioUrl: String(body?.audioUrl || body?.audio_url || '').trim(),
+    audioUrl: referenceAudioUrls[0] || '',
+    referenceAudioUrls,
+    referenceVideoUrls,
     sequencePlanner: normalizeSequencePlannerMode(
       body?.sequencePlanner
       || body?.sequence_planner

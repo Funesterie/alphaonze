@@ -96,6 +96,33 @@ test('normalizeVideoRequest preserves multi-reference image urls', () => {
   ]);
 });
 
+test('normalizeVideoRequest preserves audio and video reference urls', () => {
+  const request = normalizeVideoRequest({
+    prompt: 'genere un montage cale sur le son et la video ref',
+    audioUrl: 'https://files.example.com/beat.wav',
+    referenceAudioUrls: [
+      'https://files.example.com/beat.wav',
+      'https://files.example.com/impact.mp3',
+    ],
+    sourceVideoUrl: 'https://files.example.com/motion.mp4',
+    referenceVideoUrls: [
+      'https://files.example.com/motion.mp4',
+      'https://files.example.com/editing.webm',
+    ],
+  });
+
+  assert.equal(request.audioUrl, 'https://files.example.com/beat.wav');
+  assert.deepEqual(request.referenceAudioUrls, [
+    'https://files.example.com/beat.wav',
+    'https://files.example.com/impact.mp3',
+  ]);
+  assert.equal(request.sourceVideoUrl, 'https://files.example.com/motion.mp4');
+  assert.deepEqual(request.referenceVideoUrls, [
+    'https://files.example.com/motion.mp4',
+    'https://files.example.com/editing.webm',
+  ]);
+});
+
 test('fitRenderDimensionsWithinLimits keeps video frames compatible with SD latent dimensions', () => {
   const fitted = fitRenderDimensionsWithinLimits({
     width: 682,

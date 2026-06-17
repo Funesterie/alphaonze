@@ -57,6 +57,12 @@ test('video prompt builder can use the LLM when explicitly enabled', async () =>
         'https://files.example.com/identity.png',
         'https://files.example.com/desert-style.png',
       ],
+      referenceAudioUrls: [
+        'https://files.example.com/sync.wav',
+      ],
+      referenceVideoUrls: [
+        'https://files.example.com/motion-ref.mp4',
+      ],
       callStructuredLlmJson: async (payload) => {
         calls.push(payload);
         return {
@@ -75,6 +81,12 @@ test('video prompt builder can use the LLM when explicitly enabled', async () =>
     assert.deepEqual(llmInput.reference_image_urls, [
       'https://files.example.com/identity.png',
       'https://files.example.com/desert-style.png',
+    ]);
+    assert.deepEqual(llmInput.reference_audio_urls, [
+      'https://files.example.com/sync.wav',
+    ]);
+    assert.deepEqual(llmInput.reference_video_urls, [
+      'https://files.example.com/motion-ref.mp4',
     ]);
     assert.equal(result.source, 'llm');
     assert.match(result.prompt, /western town/);

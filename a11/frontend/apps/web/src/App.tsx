@@ -153,6 +153,7 @@ interface ChatMessage {
   content: string;
   imageUrl?: string | null;
   imageUrls?: string[] | null;
+  audioUrl?: string | null;
   videoUrl?: string | null;
   fileUrl?: string | null;
   qflushVerification?: {
@@ -162,6 +163,27 @@ interface ChatMessage {
   } | null;
   ts?: string;
 }
+
+type ComposerPreviewKind = "image" | "audio" | "video" | "file";
+
+type ComposerPreviewItem = {
+  id: string;
+  name: string;
+  url: string;
+  isImage: boolean;
+  mediaKind: ComposerPreviewKind;
+  remoteUrl?: string;
+};
+
+type QueuedChatItem = {
+  text: string;
+  imageUrl?: string;
+  imageUrls?: string[];
+  audioUrl?: string;
+  audioUrls?: string[];
+  videoUrl?: string;
+  videoUrls?: string[];
+};
 
 interface PurgeHistoryEntry {
   at: string;
@@ -297,14 +319,36 @@ function normalizeA11LanguageCode(value: unknown): A11LanguageCode {
   return (A11_LANGUAGE_CHOICES.some((choice) => choice.code === raw) ? raw : "fr") as A11LanguageCode;
 }
 
-const AUDIO_FILE_NAME_RE = /\.(wav|mp3|m4a|mp4|mov|ogg|opus|webm|flac)$/i;
+const AUDIO_FILE_NAME_RE = /\.(wav|mp3|m4a|aac|ogg|opus|flac)$/i;
+const VIDEO_FILE_NAME_RE = /\.(mp4|mov|m4v|webm|mkv|avi)$/i;
 
 function isAudioLikeFile(file: File) {
   const mime = String(file?.type || "").toLowerCase();
   return mime.startsWith("audio/")
-    || mime === "video/webm"
-    || mime === "video/quicktime"
     || AUDIO_FILE_NAME_RE.test(String(file?.name || ""));
+}
+
+function isVideoLikeFile(file: File) {
+  const mime = String(file?.type || "").toLowerCase();
+  return mime.startsWith("video/")
+    || VIDEO_FILE_NAME_RE.test(String(file?.name || ""));
+}
+
+function getFilePreviewKind(file: File): ComposerPreviewKind {
+  if (file.type.startsWith("image/")) return "image";
+  if (isAudioLikeFile(file)) return "audio";
+  if (isVideoLikeFile(file)) return "video";
+  return "file";
+}
+
+function getComposerPreviewKind(item: ComposerPreviewItem): ComposerPreviewKind {
+  return item.mediaKind || (item.isImage ? "image" : AUDIO_FILE_NAME_RE.test(item.name) ? "audio" : VIDEO_FILE_NAME_RE.test(item.name) ? "video" : "file");
+}
+
+function appendUniqueUrl(list: string[], url: string) {
+  const normalized = String(url || "").trim();
+  if (!normalized) return list;
+  return Array.from(new Set([...list, normalized]));
 }
 
 function toSyntheticFileList(files: File[]): FileList {
@@ -10046,7 +10090,7 @@ export function App() {
   const [portraitFramebook, setPortraitFramebook] = useState<A11PortraitFramebook>(DEFAULT_A11_PORTRAIT_FRAMEBOOK);
   const [portraitFrameIndex, setPortraitFrameIndex] = useState(0);
   // File d'attente : messages envoyés pendant qu'A11 réfléchit
-  const messageQueueRef = useRef<Array<{ text: string; imageUrl?: string; imageUrls?: string[]; audioUrl?: string }>>([]);
+  const messageQueueRef = useRef<QueuedChatItem[]>([]);
   const queueProcessingRef = useRef(false);
 
   useEffect(() => {
@@ -10284,13 +10328,15 @@ export function App() {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [imageJobActive, setImageJobActive] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [dragPreviewUrls, setDragPreviewUrls] = useState<{ name: string; url: string; isImage: boolean }[]>([]);
+  const [dragPreviewUrls, setDragPreviewUrls] = useState<ComposerPreviewItem[]>([]);
   const [libraryImages, setLibraryImages] = useState<A11ConversationResource[]>([]);
   const [showLibraryPanel, setShowLibraryPanel] = useState(false);
   const [previewCarouselIndex, setPreviewCarouselIndex] = useState(0);
   const dragCounterRef = useRef(0);
   const recentFileImportRef = useRef<{ key: string; at: number }>({ key: "", at: 0 });
   const pendingImportedImageUrlsRef = useRef<string[]>([]);
+  const pendingImportedAudioUrlsRef = useRef<string[]>([]);
+  const pendingImportedVideoUrlsRef = useRef<string[]>([]);
   const pendingImportedFileUrlsRef = useRef<string[]>([]);
   const pendingAudioUrlRef = useRef<string | null>(null);
   const dismissedImportedNamesRef = useRef<Set<string>>(new Set());
@@ -11070,17 +11116,22 @@ export function App() {
 
     const conversationId = buildSurfaceConversationId(a11ConvId || selectedChatId || undefined, surfaceKind) || undefined;
     const audioFiles = allFiles.filter(isAudioLikeFile);
-    const importerFiles = allFiles.filter((file) => !isAudioLikeFile(file));
+    const videoFiles = allFiles.filter((file) => !isAudioLikeFile(file) && isVideoLikeFile(file));
+    const importerFiles = allFiles.filter((file) => !isAudioLikeFile(file) && !isVideoLikeFile(file));
     allFiles.forEach((file) => dismissedImportedNamesRef.current.delete(file.name));
 
     // Previews locaux immédiats (object URL, pas de réseau) : accumulés, pas remplacés
-    const newPreviews: { name: string; url: string; isImage: boolean }[] = [];
+    const newPreviews: ComposerPreviewItem[] = [];
     for (const file of allFiles) {
-      if (file.type.startsWith('image/')) {
-        newPreviews.push({ name: file.name, url: URL.createObjectURL(file), isImage: true });
-      } else {
-        newPreviews.push({ name: file.name, url: '', isImage: false });
-      }
+      const mediaKind = getFilePreviewKind(file);
+      const hasLocalPreview = mediaKind === "image" || mediaKind === "video" || mediaKind === "audio";
+      newPreviews.push({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name}`,
+        name: file.name,
+        url: hasLocalPreview ? URL.createObjectURL(file) : "",
+        isImage: mediaKind === "image",
+        mediaKind,
+      });
     }
     if (newPreviews.length > 0) {
       // Accumuler : plusieurs drops successifs s'ajoutent
@@ -11107,10 +11158,12 @@ export function App() {
           if (attachment.kind !== "image" || !attachment.url) return;
           if (dismissedImportedNamesRef.current.has(attachment.name)) return;
           const resolvedUrl = resolveApiAssetUrl(attachment.url) || attachment.url;
-          pendingImportedImageUrlsRef.current = Array.from(new Set([
-            ...pendingImportedImageUrlsRef.current,
-            resolvedUrl,
-          ]));
+          pendingImportedImageUrlsRef.current = appendUniqueUrl(pendingImportedImageUrlsRef.current, resolvedUrl);
+          setDragPreviewUrls((prev) => prev.map((item) => (
+            item.name === attachment.name && getComposerPreviewKind(item) === "image"
+              ? { ...item, remoteUrl: resolvedUrl }
+              : item
+          )));
           setUploadFeedback(`${pendingImportedImageUrlsRef.current.length} image(s) prêtes pour l'analyse.`);
         },
       });
@@ -11146,27 +11199,71 @@ export function App() {
           : `Audio joint sans transcription exploitable.`)
         : `${transcriptBlocks.length} audio(s) transcrit(s).`
       );
-      // Upload audio file for backend sync analysis BEFORE releasing the transcribing lock —
-      // pendingAudioUrlRef must be set before the user can hit send, otherwise the ref is empty at capture time.
-      if (audioFiles[0]) {
-        setAudioSyncReady(false);
+      // Upload audio refs for backend sync analysis BEFORE releasing the transcribing lock.
+      // The first one remains audioUrl for backward compatibility; the full list is sent as referenceAudioUrls.
+      setAudioSyncReady(false);
+      for (const file of audioFiles) {
+        if (dismissedImportedNamesRef.current.has(file.name)) continue;
         try {
-          const audioUpload = await uploadConversationFile(audioFiles[0], { conversationId });
+          const audioUpload = await uploadConversationFile(file, { conversationId });
           const audioResource = audioUpload.conversationResource || audioUpload.file || null;
           const audioResourceUrl = String(audioResource?.downloadUrl || audioResource?.url || "").trim();
-          if (audioResourceUrl) {
-            pendingAudioUrlRef.current = resolveApiAssetUrl(audioResourceUrl) || audioResourceUrl;
+          if (audioResourceUrl && !dismissedImportedNamesRef.current.has(file.name)) {
+            const resolvedAudioUrl = resolveApiAssetUrl(audioResourceUrl) || audioResourceUrl;
+            pendingImportedAudioUrlsRef.current = appendUniqueUrl(pendingImportedAudioUrlsRef.current, resolvedAudioUrl);
+            pendingAudioUrlRef.current = pendingImportedAudioUrlsRef.current[0] || resolvedAudioUrl;
+            setDragPreviewUrls((prev) => prev.map((item) => (
+              item.name === file.name && getComposerPreviewKind(item) === "audio"
+                ? { ...item, remoteUrl: resolvedAudioUrl }
+                : item
+            )));
             setAudioSyncReady(true);
           }
-        } catch {
-          // Audio URL unavailable — video sync will use fallback phases
+        } catch (error_) {
+          console.warn("[A11] audio reference upload failed", file.name, error_);
         }
       }
       setAudioTranscribing(false);
     }
 
+    if (videoFiles.length > 0) {
+      const uploadedVideos: string[] = [];
+      const failedVideos: string[] = [];
+      setUploadFeedback(`Import de ${videoFiles.length} référence(s) vidéo...`);
+      for (const file of videoFiles) {
+        if (dismissedImportedNamesRef.current.has(file.name)) continue;
+        try {
+          const upload = await uploadConversationFile(file, { conversationId });
+          const resource = upload.conversationResource || upload.file || null;
+          const resourceUrl = String(resource?.downloadUrl || resource?.url || "").trim();
+          if (resourceUrl && !dismissedImportedNamesRef.current.has(file.name)) {
+            const resolvedVideoUrl = resolveApiAssetUrl(resourceUrl) || resourceUrl;
+            pendingImportedVideoUrlsRef.current = appendUniqueUrl(pendingImportedVideoUrlsRef.current, resolvedVideoUrl);
+            setDragPreviewUrls((prev) => prev.map((item) => (
+              item.name === file.name && getComposerPreviewKind(item) === "video"
+                ? { ...item, remoteUrl: resolvedVideoUrl }
+                : item
+            )));
+            uploadedVideos.push(file.name);
+          } else {
+            failedVideos.push(file.name);
+          }
+        } catch (error_) {
+          console.warn("[A11] video reference upload failed", file.name, error_);
+          failedVideos.push(file.name);
+        }
+      }
+      if (uploadedVideos.length && failedVideos.length) {
+        setUploadFeedback(`Refs vidéo partielles: ${uploadedVideos.length} ok, ${failedVideos.length} en échec.`);
+      } else if (uploadedVideos.length) {
+        setUploadFeedback(`${uploadedVideos.length} référence(s) vidéo prête(s).`);
+      } else if (failedVideos.length) {
+        setUploadFeedback(`Échec refs vidéo: ${failedVideos.join(", ")}`);
+      }
+    }
+
     // Upload des fichiers non-image dans la conversation (PDF, etc.) — exclure les audios déjà traités
-    const nonImageFiles = allFiles.filter((f) => !f.type.startsWith('image/') && !isAudioLikeFile(f));
+    const nonImageFiles = allFiles.filter((f) => !f.type.startsWith('image/') && !isAudioLikeFile(f) && !isVideoLikeFile(f));
     if (nonImageFiles.length > 0) {
       const uploaded: string[] = [];
       const failed: string[] = [];
@@ -11177,10 +11274,13 @@ export function App() {
           const resource = upload.conversationResource || upload.file || null;
           const resourceUrl = String(resource?.downloadUrl || resource?.url || "").trim();
           if (resourceUrl) {
-            pendingImportedFileUrlsRef.current = Array.from(new Set([
-              ...pendingImportedFileUrlsRef.current,
-              resolveApiAssetUrl(resourceUrl) || resourceUrl,
-            ]));
+            const resolvedFileUrl = resolveApiAssetUrl(resourceUrl) || resourceUrl;
+            pendingImportedFileUrlsRef.current = appendUniqueUrl(pendingImportedFileUrlsRef.current, resolvedFileUrl);
+            setDragPreviewUrls((prev) => prev.map((item) => (
+              item.name === file.name && getComposerPreviewKind(item) === "file"
+                ? { ...item, remoteUrl: resolvedFileUrl }
+                : item
+            )));
           }
           uploaded.push(file.name);
         } catch (error_) {
@@ -11237,7 +11337,11 @@ export function App() {
     setActivityError("");
     setUploadFeedback("");
     pendingImportedImageUrlsRef.current = [];
+    pendingImportedAudioUrlsRef.current = [];
+    pendingImportedVideoUrlsRef.current = [];
     pendingImportedFileUrlsRef.current = [];
+    pendingAudioUrlRef.current = null;
+    setAudioSyncReady(false);
     dismissedImportedNamesRef.current.clear();
     setSidebarOpen(false);
   }
@@ -11422,8 +11526,16 @@ export function App() {
   async function sendMessage(forcedText?: string) {
     const text = (forcedText ?? input).trim();
     const { cleanText: cleanedInput, imageUrls } = extractImageUrlsFromText(text);
-    const hasPendingAudioPreview = dragPreviewUrls.some((item) => !item.isImage && AUDIO_FILE_NAME_RE.test(item.name));
-    const pendingAudioUrl = pendingAudioUrlRef.current;
+    const hasPendingAudioPreview = dragPreviewUrls.some((item) => getComposerPreviewKind(item) === "audio");
+    const hasPendingVideoPreview = dragPreviewUrls.some((item) => getComposerPreviewKind(item) === "video");
+    const pendingAudioUrls = Array.from(new Set([
+      ...pendingImportedAudioUrlsRef.current,
+      ...(pendingAudioUrlRef.current ? [pendingAudioUrlRef.current] : []),
+    ].map((u) => resolveApiAssetUrl(u) || u).filter(Boolean)));
+    const pendingAudioUrl = pendingAudioUrls[0] || null;
+    const pendingVideoUrls = pendingImportedVideoUrlsRef.current
+      .map((u) => resolveApiAssetUrl(u) || u)
+      .filter(Boolean);
     const pendingImageUrls = pendingImportedImageUrlsRef.current
       .map((u) => resolveApiAssetUrl(u) || u)
       .filter(Boolean);
@@ -11441,8 +11553,18 @@ export function App() {
     }
     const previewImageUrl = allImageUrls[0] ?? "";
     const explicitSourceImageUrl = previewImageUrl || undefined;
+    const MAX_MEDIA_REFS = 6;
+    const allVideoUrls = Array.from(new Set(pendingVideoUrls)).slice(0, MAX_MEDIA_REFS);
+    if (pendingVideoUrls.length > MAX_MEDIA_REFS) {
+      setUploadFeedback(`${MAX_MEDIA_REFS} références vidéo max utilisées (${pendingVideoUrls.length - MAX_MEDIA_REFS} ignorée(s)).`);
+    }
+    const sourceVideoUrl = allVideoUrls[0] || undefined;
     const effectiveText = cleanedInput
-      || (explicitSourceImageUrl ? "Image jointe." : pendingFileUrls.length ? "Fichier joint." : (pendingAudioUrl || hasPendingAudioPreview) ? "Audio joint." : text);
+      || (explicitSourceImageUrl ? "Image jointe."
+        : sourceVideoUrl || hasPendingVideoPreview ? "Vidéo jointe."
+        : pendingFileUrls.length ? "Fichier joint."
+        : (pendingAudioUrl || hasPendingAudioPreview) ? "Audio joint."
+        : text);
     if (!effectiveText) return;
     const lastMediaForVision = !explicitSourceImageUrl
       && isImageInspectionRequest(effectiveText)
@@ -11450,7 +11572,7 @@ export function App() {
       : null;
     const sourceImageUrl = explicitSourceImageUrl
       || (lastMediaForVision?.kind === "image" ? lastMediaForVision.url : undefined);
-    const submitKey = normalizeOutgoingMessageKey(`${effectiveText}\n${sourceImageUrl || ""}`);
+    const submitKey = normalizeOutgoingMessageKey(`${effectiveText}\n${sourceImageUrl || ""}\n${sourceVideoUrl || ""}\n${pendingAudioUrls.join("|")}`);
     const now = Date.now();
     if (
       submitKey
@@ -11476,6 +11598,8 @@ export function App() {
       content: effectiveText,
       imageUrl: previewImageUrl || (sourceImageUrl && canReuseLastMediaForRequest(effectiveText) ? sourceImageUrl : null),
       imageUrls: allImageUrls.length > 1 ? allImageUrls : null,
+      audioUrl: pendingAudioUrl || null,
+      videoUrl: sourceVideoUrl || null,
       fileUrl: pendingFileUrls[0] || null,
       ts: new Date().toISOString(),
     };
@@ -11486,8 +11610,13 @@ export function App() {
     });
     setInput("");
     pendingImportedImageUrlsRef.current = [];
+    pendingImportedAudioUrlsRef.current = [];
+    pendingImportedVideoUrlsRef.current = [];
     pendingImportedFileUrlsRef.current = [];
     const capturedAudioUrl = pendingAudioUrl;
+    const capturedAudioUrls = pendingAudioUrls;
+    const capturedVideoUrl = sourceVideoUrl;
+    const capturedVideoUrls = allVideoUrls;
     pendingAudioUrlRef.current = null;
     setAudioSyncReady(false);
     recentFileImportRef.current = { key: "", at: 0 };
@@ -11524,23 +11653,37 @@ export function App() {
 
     // Si A11 traite déjà, mettre en file : l'utilisateur peut continuer à écrire
     if (queueProcessingRef.current) {
-      messageQueueRef.current.push({ text: effectiveText, imageUrl: sourceImageUrl, imageUrls: allImageUrls, audioUrl: capturedAudioUrl ?? undefined });
+      messageQueueRef.current.push({
+        text: effectiveText,
+        imageUrl: sourceImageUrl,
+        imageUrls: allImageUrls,
+        audioUrl: capturedAudioUrl ?? undefined,
+        audioUrls: capturedAudioUrls,
+        videoUrl: capturedVideoUrl,
+        videoUrls: capturedVideoUrls,
+      });
       return;
     }
 
     // Sinon démarrer le traitement
-    void processMessageQueue(effectiveText, sourceImageUrl, allImageUrls, capturedAudioUrl ?? undefined);
+    void processMessageQueue({
+      text: effectiveText,
+      imageUrl: sourceImageUrl,
+      imageUrls: allImageUrls,
+      audioUrl: capturedAudioUrl ?? undefined,
+      audioUrls: capturedAudioUrls,
+      videoUrl: capturedVideoUrl,
+      videoUrls: capturedVideoUrls,
+    });
   }
 
-  async function processMessageQueue(firstText: string, firstImageUrl?: string, firstImageUrls?: string[], firstAudioUrl?: string) {
+  async function processMessageQueue(firstItem: QueuedChatItem) {
     if (queueProcessingRef.current) return;
     queueProcessingRef.current = true;
     setSending(true);
     startActivity();
 
-    const toProcess: Array<{ text: string; imageUrl?: string; imageUrls?: string[]; audioUrl?: string }> = [
-      { text: firstText, imageUrl: firstImageUrl, imageUrls: firstImageUrls, audioUrl: firstAudioUrl },
-    ];
+    const toProcess: QueuedChatItem[] = [firstItem];
 
     while (toProcess.length > 0) {
       const item = toProcess.shift()!;
@@ -11584,6 +11727,9 @@ export function App() {
             sourceImageUrl: item.imageUrl,
             referenceImageUrls: item.imageUrls && item.imageUrls.length > 1 ? item.imageUrls : undefined,
             audioUrl: item.audioUrl || undefined,
+            referenceAudioUrls: item.audioUrls && item.audioUrls.length > 0 ? item.audioUrls : undefined,
+            sourceVideoUrl: item.videoUrl || undefined,
+            referenceVideoUrls: item.videoUrls && item.videoUrls.length > 0 ? item.videoUrls : undefined,
           }
         );
         const normalizedAssistant = normalizeAssistantMessagePayload(
@@ -14057,6 +14203,26 @@ export function App() {
                             />
                           );
                         })()}
+                        {m.audioUrl && !m.imageUrl && !m.videoUrl && (
+                          <div
+                            style={{
+                              marginTop: 12,
+                              display: "grid",
+                              gap: 8,
+                              maxWidth: 360,
+                            }}
+                          >
+                            <audio src={m.audioUrl} controls preload="metadata" style={{ width: "100%" }} />
+                            <a
+                              href={m.audioUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ fontSize: 12, color: "#93c5fd", textDecoration: "none" }}
+                            >
+                              Ouvrir l'audio
+                            </a>
+                          </div>
+                        )}
                         {m.videoUrl && !m.imageUrl && (
                           <div
                             style={{
@@ -14244,7 +14410,15 @@ export function App() {
                                         ...pendingImportedImageUrlsRef.current, imageUrl,
                                       ]));
                                       setDragPreviewUrls((prev) => [
-                                        ...prev, { name: imageLabel, url: imageUrl, isImage: true },
+                                        ...prev,
+                                        {
+                                          id: `library-${img.id || imageUrl}`,
+                                          name: imageLabel,
+                                          url: imageUrl,
+                                          isImage: true,
+                                          mediaKind: "image",
+                                          remoteUrl: imageUrl,
+                                        },
                                       ]);
                                       setUploadFeedback(`Référence ajoutée: ${imageLabel}`);
                                     }
@@ -14417,13 +14591,22 @@ export function App() {
                   const total = dragPreviewUrls.length;
                   const idx = Math.min(previewCarouselIndex, total - 1);
                   const p = dragPreviewUrls[idx];
+                  const previewKind = getComposerPreviewKind(p);
                   return (
                     <div className="a11-drop-carousel">
                       {/* Thumbnail ou icône */}
                       <div className="a11-drop-carousel-media">
-                        {p.isImage
+                        {previewKind === "image"
                           ? <img src={p.url} alt={p.name} className="a11-drop-carousel-img" />
-                          : AUDIO_FILE_NAME_RE.test(p.name)
+                          : previewKind === "video"
+                            ? <span className="a11-drop-carousel-file-icon" style={{
+                                background: '#3b0764',
+                                color: '#f0abfc',
+                                fontSize: 10, padding: '2px 6px', borderRadius: 4,
+                              }}>
+                                VIDEO REF
+                              </span>
+                          : previewKind === "audio"
                             ? <span className="a11-drop-carousel-file-icon" style={{
                                 background: audioSyncReady ? '#166534' : audioTranscribing ? '#78350f' : '#1e3a5f',
                                 color: audioSyncReady ? '#86efac' : audioTranscribing ? '#fde68a' : '#93c5fd',
@@ -14467,33 +14650,39 @@ export function App() {
                         className="a11-drop-carousel-remove"
                         aria-label={`Retirer ${p.name}`}
                         onClick={() => {
-                          const isAudioPreview = !p.isImage && AUDIO_FILE_NAME_RE.test(p.name);
+                          const removedKind = getComposerPreviewKind(p);
+                          const remoteUrl = String(p.remoteUrl || (removedKind === "image" ? p.url : "") || "").trim();
                           if (p.url) URL.revokeObjectURL(p.url);
                           dismissedImportedNamesRef.current.add(p.name);
                           setDragPreviewUrls((prev) => {
                             const next = prev.filter((_, j) => j !== idx);
-                            const imageIndex = prev
-                              .slice(0, idx + 1)
-                              .filter((entry) => entry.isImage).length - 1;
-                            const fileIndex = prev
-                              .slice(0, idx + 1)
-                              .filter((entry) => !entry.isImage && !AUDIO_FILE_NAME_RE.test(entry.name)).length - 1;
-                            if (p.isImage && imageIndex >= 0) {
-                              pendingImportedImageUrlsRef.current = pendingImportedImageUrlsRef.current
-                                .filter((_, entryIndex) => entryIndex !== imageIndex);
-                            } else if (isAudioPreview) {
+                            if (removedKind === "image") {
+                              pendingImportedImageUrlsRef.current = remoteUrl
+                                ? pendingImportedImageUrlsRef.current.filter((url) => url !== remoteUrl)
+                                : pendingImportedImageUrlsRef.current.filter((_, entryIndex) => entryIndex !== prev.slice(0, idx + 1).filter((entry) => getComposerPreviewKind(entry) === "image").length - 1);
+                            } else if (removedKind === "audio") {
+                              pendingImportedAudioUrlsRef.current = remoteUrl
+                                ? pendingImportedAudioUrlsRef.current.filter((url) => url !== remoteUrl)
+                                : pendingImportedAudioUrlsRef.current;
+                              pendingAudioUrlRef.current = pendingImportedAudioUrlsRef.current[0] || null;
+                              setAudioSyncReady(pendingImportedAudioUrlsRef.current.length > 0);
+                            } else if (removedKind === "video") {
+                              pendingImportedVideoUrlsRef.current = remoteUrl
+                                ? pendingImportedVideoUrlsRef.current.filter((url) => url !== remoteUrl)
+                                : pendingImportedVideoUrlsRef.current;
+                            } else {
+                              pendingImportedFileUrlsRef.current = remoteUrl
+                                ? pendingImportedFileUrlsRef.current.filter((url) => url !== remoteUrl)
+                                : pendingImportedFileUrlsRef.current.filter((_, entryIndex) => entryIndex !== prev.slice(0, idx + 1).filter((entry) => getComposerPreviewKind(entry) === "file").length - 1);
+                            }
+                            if (!next.some((entry) => getComposerPreviewKind(entry) === "image")) pendingImportedImageUrlsRef.current = [];
+                            if (!next.some((entry) => getComposerPreviewKind(entry) === "audio")) {
+                              pendingImportedAudioUrlsRef.current = [];
                               pendingAudioUrlRef.current = null;
                               setAudioSyncReady(false);
-                            } else if (fileIndex >= 0) {
-                              pendingImportedFileUrlsRef.current = pendingImportedFileUrlsRef.current
-                                .filter((_, entryIndex) => entryIndex !== fileIndex);
                             }
-                            if (!next.some((entry) => entry.isImage)) pendingImportedImageUrlsRef.current = [];
-                            if (!next.some((entry) => !entry.isImage && !AUDIO_FILE_NAME_RE.test(entry.name))) pendingImportedFileUrlsRef.current = [];
-                            if (!next.some((entry) => !entry.isImage && AUDIO_FILE_NAME_RE.test(entry.name))) {
-                              pendingAudioUrlRef.current = null;
-                              setAudioSyncReady(false);
-                            }
+                            if (!next.some((entry) => getComposerPreviewKind(entry) === "video")) pendingImportedVideoUrlsRef.current = [];
+                            if (!next.some((entry) => getComposerPreviewKind(entry) === "file")) pendingImportedFileUrlsRef.current = [];
                             if (next.length === 0) setUploadFeedback("");
                             setPreviewCarouselIndex(Math.max(0, Math.min(idx, next.length - 1)));
                             return next;

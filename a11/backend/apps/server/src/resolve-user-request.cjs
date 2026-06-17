@@ -651,6 +651,9 @@ async function executeResolvedRuntime(resolution, input = {}, deps = {}) {
         sourceImagePath: isLocalVideoRef ? resolvedSourceImageUrl : (resolution.videoRequest?.sourceImagePath || ''),
         sourceVideoUrl: resolution.videoRequest?.sourceVideoUrl,
         sourceVideoPath: resolution.videoRequest?.sourceVideoPath,
+        audioUrl: resolution.videoRequest?.audioUrl || input.body?.audioUrl || input.body?.audio_url,
+        referenceAudioUrls: resolution.videoRequest?.referenceAudioUrls || input.body?.referenceAudioUrls || input.body?.reference_audio_urls,
+        referenceVideoUrls: resolution.videoRequest?.referenceVideoUrls || input.body?.referenceVideoUrls || input.body?.reference_video_urls,
         // Toutes les images pour le contexte multi-référence
         referenceImageUrls: allVideoImageUrls.length > 1 ? allVideoImageUrls : undefined,
         // Contexte visuel enrichi par les descriptions Janus des images de référence
