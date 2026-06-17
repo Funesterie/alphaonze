@@ -124,6 +124,7 @@ function parseVideoGenerateRequest(text = '', body = {}) {
     sourceImagePath: String(body?.sourceImagePath || body?.source_image_path || body?.imagePath || body?.image_path || '').trim(),
     sourceVideoUrl: String(body?.sourceVideoUrl || body?.source_video_url || body?.videoUrl || body?.video_url || '').trim(),
     sourceVideoPath: String(body?.sourceVideoPath || body?.source_video_path || body?.videoPath || body?.video_path || '').trim(),
+    audioUrl: String(body?.audioUrl || body?.audio_url || '').trim(),
     sequencePlanner: normalizeSequencePlannerMode(
       body?.sequencePlanner
       || body?.sequence_planner

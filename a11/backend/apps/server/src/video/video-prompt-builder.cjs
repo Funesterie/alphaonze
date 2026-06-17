@@ -45,7 +45,18 @@ DURATION RULE:
   - Quick strike or single pose: 3
   - Standard action (walk, fight move, escort): 5
   - Complex sequence (transformation, power-up, long escort): 8
+- If audio_motion_plan is provided: ALWAYS set duration_seconds to match the audio duration (round to nearest integer, clamp 2–10)
 - Default: 5
+
+AUDIO SYNC RULE (when audio_motion_plan is provided):
+- The audio_motion_plan gives you a TemporalActionField: tMs=time in ms, layer=what changes, action=what happens
+- Your prompt MUST describe the motion as a sequence that matches these sync points
+- layer "camera" → camera move or cut
+- layer "body" → character posture change or motion peak
+- layer "background_fx" → energy burst, flash, FX in background
+- layer "face" → facial expression change, vocal phrase
+- Weave the temporal sync points into the motion description naturally (beginning → peak → end)
+- Do NOT list timestamps in the prompt — describe the sequence as flowing cinematic action
 
 Examples:
 - "hadouken de street fighter" (photo ref) → prompt: "Fighter drops into wide karate stance, cupping hands at hip level, bright blue energy ball forming between palms glowing intensely, thrusting both hands forward to launch the Hadouken energy ball straight ahead, electric blue aura, low-angle cinematic action shot, same person as in reference image, identical face, hairstyle, costume and body build", negative_prompt: "laser, beam, ray, light saber, staff, bo staff, stick, rod, pole, weapon, sword, nunchaku, sai, spear, side beams, floating limbs, disconnected body parts, disembodied legs, missing torso, incomplete anatomy", duration_seconds: 5
@@ -124,6 +135,7 @@ async function buildVideoPrompt({
   userMessage = '',
   hasReferenceImage = false,
   referenceVisualContext = '',
+  audioMotionPlan = null,
   callStructuredLlmJson = defaultCallStructuredLlmJson,
   timeoutMs = 12000,
 } = {}) {
@@ -133,6 +145,13 @@ async function buildVideoPrompt({
     user_request: userMessage,
     has_reference_image: hasReferenceImage,
     reference_visual_context: referenceVisualContext || null,
+    audio_motion_plan: audioMotionPlan
+      ? {
+          duration_seconds: Math.round((audioMotionPlan.durationMs || 0) / 1000),
+          fps: audioMotionPlan.fps,
+          events: audioMotionPlan.events,
+        }
+      : null,
   });
   const groqFn = buildGroqVideoLlmFn(process.env);
 
@@ -177,9 +196,12 @@ async function buildVideoPrompt({
 
   const negativePrompt = normalizeText(response?.negative_prompt || '');
   const rawDuration = Number(response?.duration_seconds);
+  const audioDurationSec = audioMotionPlan?.durationMs
+    ? Math.min(10, Math.max(2, Math.round(audioMotionPlan.durationMs / 1000)))
+    : 5;
   const durationSeconds = Number.isFinite(rawDuration) && rawDuration >= 2 && rawDuration <= 10
     ? Math.round(rawDuration)
-    : 5;
+    : audioDurationSec;
   const negSuffix = negativePrompt ? ' (neg: "' + negativePrompt.slice(0, 60) + '")' : '';
   console.log('[A11][video-prompt] "' + prompt.slice(0, 100) + '"' + negSuffix + ' dur=' + durationSeconds + 's');
   return {

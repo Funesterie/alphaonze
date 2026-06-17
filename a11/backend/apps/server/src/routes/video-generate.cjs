@@ -14,6 +14,9 @@ const {
   buildVideoPrompt,
 } = require('../video/video-prompt-builder.cjs');
 const {
+  buildAudioMotionPlan,
+} = require('../video/audio-motion-plan.cjs');
+const {
   tryGenerateVideoWithHuggingFace,
   resolveHuggingFaceVideoConfig,
 } = require('../../lib/hf-video.cjs');
@@ -135,6 +138,7 @@ function hasVideoReferenceImage(body = {}) {
     || body?.init_image_url
     || body?.imageUrl
     || body?.image_url
+    || (Array.isArray(body?.referenceImageUrls) && body.referenceImageUrls.length > 0)
   );
 }
 
@@ -1109,17 +1113,33 @@ function createVideoGenerateRouter(overrides = {}) {
         // Not explicitly requested + role insufficient → skip silently, continue to next step
       } else {
         const hasReferenceImage = hasVideoReferenceImage(body);
+        const bodyAudioUrl = String(body?.audioUrl || body?.audio_url || '').trim();
+        // Analyse audio first (V9 Turbo 99ms granularity), then build prompt with sync context in one LLM call
+        const audioMotionPlan = bodyAudioUrl
+          ? await buildAudioMotionPlan(bodyAudioUrl, { fetchImpl, fps: 16 }).catch((e) => {
+              console.warn('[A11][audio-sync] analysis failed:', String(e?.message || e));
+              return null;
+            })
+          : null;
+        if (audioMotionPlan) {
+          console.log(`[A11][audio-sync] plan=${audioMotionPlan.source} dur=${(audioMotionPlan.durationMs / 1000).toFixed(1)}s events=${audioMotionPlan.events?.length}`);
+        }
         const builtPrompt = await buildVideoPromptImpl({
           userMessage: prompt,
           hasReferenceImage,
           referenceVisualContext: String(body?.compiledVisualContext || '').trim(),
+          audioMotionPlan: audioMotionPlan || null,
           timeoutMs: 10000,
         });
         const cloudPrompt = builtPrompt?.prompt || prompt;
         const cloudNegativePrompt = builtPrompt?.negativePrompt || body?.negative_prompt || '';
-        // LLM-controlled duration: convert seconds → frames (Wan2.2 ≈ 16fps). Default 5s = 80 frames.
+        // Duration: audio takes priority over LLM choice. Wan2.2 ≈ 16fps.
+        const audioDurationSec = audioMotionPlan?.durationMs
+          ? Math.min(10, Math.max(2, Math.round(audioMotionPlan.durationMs / 1000)))
+          : 0;
         const llmDurationSec = Number(builtPrompt?.durationSeconds || 5);
-        const llmFrameCount = Math.round(Math.max(2, Math.min(10, llmDurationSec)) * 16);
+        const effectiveDurationSec = audioDurationSec || llmDurationSec || 5;
+        const llmFrameCount = Math.round(Math.max(2, Math.min(10, effectiveDurationSec)) * 16);
         const hfResult = await tryGenerateVideoWithHuggingFace({
           req,
           body: { ...body, prompt: cloudPrompt, negative_prompt: cloudNegativePrompt, frameCount: llmFrameCount },
