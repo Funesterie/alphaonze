@@ -10130,7 +10130,9 @@ body {
   .vivy-studio select,
   .vivy-studio textarea,
   .fun-mcp-console input,
-  .fun-session-token-field input {
+  .fun-session-token-field input,
+  .alpha-auth-shell input,
+  .kaen-auth-shell input {
     font-size: 16px !important;
   }
 }
@@ -10143,7 +10145,9 @@ body {
   .vivy-studio select,
   .vivy-studio textarea,
   .fun-mcp-console input,
-  .fun-session-token-field input {
+  .fun-session-token-field input,
+  .alpha-auth-shell input,
+  .kaen-auth-shell input {
     font-size: 16px !important;
   }
 
