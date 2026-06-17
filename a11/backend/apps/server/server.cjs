@@ -6022,7 +6022,10 @@ function resolvePublicResourceLinkExpiry(resource) {
   if (resourceExpiry && resourceExpiry.getTime() > Date.now()) {
     return resourceExpiry;
   }
-  return new Date(Date.now() + TEMP_SHARED_FILE_TTL_MS);
+  // permanent resources (no expires_at) get 24h token so conversation history stays accessible
+  const isPermResource = !resource?.expiresAt && !resource?.expires_at;
+  const tokenTtl = isPermResource ? 24 * 60 * 60 * 1000 : TEMP_SHARED_FILE_TTL_MS;
+  return new Date(Date.now() + tokenTtl);
 }
 
 function buildPublicResourceDownloadUrl(resource, req = null) {
