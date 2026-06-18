@@ -79,7 +79,7 @@ const LEGACY_UI_TEXT_ENTRIES: Array<[string, TranslationSet]> = [
 
   tr("Studio Vivy", "Vivy Studio", "Studio Vivy", "Estudio Vivy", "Vivy Studio"),
   tr("Voix, chanson, clip et partage prêts depuis les trois blocs de droite.", "Voice, song, clip and sharing are ready from the three blocks on the right.", "Voce, canzone, clip e condivisione sono pronti dai tre blocchi a destra.", "Voz, canción, clip y publicación están listos desde los tres bloques de la derecha.", "Stimme, Song, Clip und Teilen sind in den drei Blöcken rechts bereit."),
-  tr("Partager le brief", "Share brief", "Condividi brief", "Compartir brief", "Brief teilen"),
+  tr("Partager la sortie", "Share output", "Condividi uscita", "Compartir salida", "Ausgabe teilen"),
   tr("Modules Vivy", "Vivy modules", "Moduli Vivy", "Módulos Vivy", "Vivy-Module"),
   tr("Création voix", "Voice creation", "Creazione voce", "Creación de voz", "Stimmerstellung"),
   tr("Utiliser la voix Vivy officielle du module voix, tester une phrase et remplacer la référence seulement si besoin.", "Use the official Vivy voice from the voice module, test one phrase and replace the reference only if needed.", "Usa la voce Vivy ufficiale del modulo voce, prova una frase e sostituisci il riferimento solo se serve.", "Usar la voz Vivy oficial del módulo de voz, probar una frase y reemplazar la referencia solo si hace falta.", "Die offizielle Vivy-Stimme aus dem Stimmmodul nutzen, einen Satz testen und die Referenz nur bei Bedarf ersetzen."),
@@ -117,7 +117,7 @@ const LEGACY_UI_TEXT_ENTRIES: Array<[string, TranslationSet]> = [
   tr("Demander à Vivy", "Ask Vivy", "Chiedi a Vivy", "Pedir a Vivy", "Vivy fragen"),
   tr("Ouvrir A11", "Open A11", "Apri A11", "Abrir A11", "A11 öffnen"),
   tr("Sauver dans A11", "Save in A11", "Salva in A11", "Guardar en A11", "In A11 speichern"),
-  tr("Brief agents", "Agent brief", "Brief agenti", "Brief de agentes", "Agentenbrief"),
+  tr("Debug agents", "Agent debug", "Debug agenti", "Depuracion de agentes", "Agenten-Debug"),
   tr("Copier", "Copy", "Copia", "Copiar", "Kopieren"),
   tr("Partager", "Share", "Condividi", "Compartir", "Teilen"),
   tr("Parler à Vivy", "Talk to Vivy", "Parla con Vivy", "Hablar con Vivy", "Mit Vivy sprechen"),
