@@ -98,6 +98,7 @@ def normalize_persona(value: Optional[str]) -> str:
 def preferred_reference_names(persona: str, mode: str) -> list[str]:
     if persona == "a11":
         return [
+            "A11 ref.wav",
             "a11-official-stern-french.wav",
             "a11-official-stern-french-context.wav",
             "a11-terminator.wav",
@@ -105,6 +106,7 @@ def preferred_reference_names(persona: str, mode: str) -> list[str]:
         ]
     if persona == "kaen44":
         return [
+            "K44 Ref.wav",
             "kaen44-official-french-narrator.wav",
             "kaen44-donna.wav",
             "kaen44-donna-extra.wav",
@@ -112,8 +114,8 @@ def preferred_reference_names(persona: str, mode: str) -> list[str]:
         ]
     if persona == "vivy":
         if mode == "sing":
-            return ["vivy.wav", "vivy-song-context.wav", "vivy-pv-context.wav", "vivy-adaptive.wav"]
-        return ["vivy.wav", "vivy-adaptive.wav", "vivy-pv-context.wav", "vivy-song-context.wav"]
+            return ["Vivy ref.wav", "vivy.wav", "vivy-song-context.wav", "vivy-pv-context.wav", "vivy-adaptive.wav"]
+        return ["Vivy ref.wav", "vivy.wav", "vivy-adaptive.wav", "vivy-pv-context.wav", "vivy-song-context.wav"]
     return []
 
 
@@ -487,10 +489,14 @@ def xtts_rvc_env_name(reference_style: str, kind: Literal["voice", "rvc"]) -> st
         if value:
             return value
     default_voice = {
-        "kaen44-official-french-narrator": "kaen44-official-french-narrator.wav",
+        "a11-official-stern-french": "A11 ref.wav",
+        "kaen44": "K44 Ref.wav",
+        "k44": "K44 Ref.wav",
+        "vivy-official-french-conversational": "Vivy ref.wav",
+        "kaen44-official-french-narrator": "K44 Ref.wav",
         "terminator": "a11-terminator.wav",
         "donna": "kaen44-donna.wav",
-        "vivy": "vivy.wav",
+        "vivy": "Vivy ref.wav",
     }
     default_rvc = {
         "kaen44-official-french-narrator": "",

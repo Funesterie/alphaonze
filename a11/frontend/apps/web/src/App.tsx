@@ -621,9 +621,9 @@ function voiceReferenceMatchesSurface(ref: TtsVoiceReference, surface: Funesteri
 }
 
 function getDefaultVoiceReferenceLabel(surface: FunesterieSurface) {
-  if (surface === "vivy") return "French Conversational Lady";
-  if (surface === "kaen44") return "French Narrator Lady";
-  return "Stern French Man";
+  if (surface === "vivy") return "Vivy ref.wav";
+  if (surface === "kaen44") return "K44 Ref.wav";
+  return "A11 ref.wav";
 }
 
 function getDefaultVoiceReferenceStatus(surface: FunesterieSurface) {
@@ -3370,6 +3370,7 @@ const VIVY_STUDIO_VOICE_DIRECTORY: Array<{
   ttsPersona: "vivy" | "a11" | "kaen44";
   surface: "vivy" | "a11" | "kaen44";
   voiceStyle: string;
+  referenceLabel: string;
   statusLabel: string;
   statusKind: "ready" | "awaiting" | "personal";
   testLine: string;
@@ -3385,6 +3386,7 @@ const VIVY_STUDIO_VOICE_DIRECTORY: Array<{
     ttsPersona: "a11",
     surface: "a11",
     voiceStyle: "djeff-rap",
+    referenceLabel: "Djeff ref.wav",
     statusLabel: "référence prête",
     statusKind: "ready",
     testLine: "Djeff cale le kick, pignon précis, radiateur froid, la voix reste proche du micro.",
@@ -3400,6 +3402,7 @@ const VIVY_STUDIO_VOICE_DIRECTORY: Array<{
     ttsPersona: "kaen44",
     surface: "kaen44",
     voiceStyle: "kaen44-official-french-narrator",
+    referenceLabel: "K44 Ref.wav",
     statusLabel: "référence prête",
     statusKind: "ready",
     testLine: "K44 pose la ligne calmement, chaque mot tient la route, net et sans forcer.",
@@ -3415,6 +3418,7 @@ const VIVY_STUDIO_VOICE_DIRECTORY: Array<{
     ttsPersona: "a11",
     surface: "a11",
     voiceStyle: "a11-official-stern-french",
+    referenceLabel: "A11 ref.wav",
     statusLabel: "référence prête",
     statusKind: "ready",
     testLine: "A11 garde le signal, voix basse et nette, la machine respire avec le cœur humain.",
@@ -3430,6 +3434,7 @@ const VIVY_STUDIO_VOICE_DIRECTORY: Array<{
     ttsPersona: "vivy",
     surface: "vivy",
     voiceStyle: "vivy-official-french-conversational",
+    referenceLabel: "Vivy ref.wav",
     statusLabel: "référence prête",
     statusKind: "ready",
     testLine: "Salut Jeffrey. Je suis Vivy, voix claire, proche et naturelle, prête à répondre.",
@@ -3444,6 +3449,7 @@ const VIVY_STUDIO_VOICE_DIRECTORY: Array<{
     ttsPersona: "vivy",
     surface: "vivy",
     voiceStyle: "personal-account-voice",
+    referenceLabel: "référence privée",
     statusLabel: "premium personnel",
     statusKind: "personal",
     testLine: "Je teste la voix personnelle du compte connecté avec une phrase courte et claire.",
@@ -3456,6 +3462,7 @@ type VivyStudioVoiceTestEntry = (typeof VIVY_STUDIO_VOICE_DIRECTORY)[number] | {
   shortLabel: string;
   ttsPersona: "vivy" | "a11" | "kaen44";
   voiceStyle: string;
+  referenceLabel?: string;
   voiceTool: string;
   surface: "vivy" | "a11" | "kaen44";
   testLine?: string;
@@ -3549,8 +3556,8 @@ function getVivyStudioVoiceProfileForTool(
       voiceStyle: "djeff-rap",
       vocalMode: "adaptive",
       referenceLabel: hasPrivateReference
-        ? `${privateLabel} + Vivy officielle`
-        : "Djeff rap Pignon + Vivy officielle",
+        ? `${privateLabel} + Vivy ref.wav`
+        : "Djeff ref.wav + Vivy ref.wav",
       briefVoicePersona: "voicePersona=a11, voiceStyle=djeff-rap pour Djeff; voicePersona=vivy pour Vivy",
       testLine: "Djeff cale le kick, chaîne sur couronne, pignon précis; Vivy répond dans la nuit, radiateur froid, moteur lucide.",
       songCast: "Djeff prend les couplets rap; Vivy tient les refrains et réponses mélodiques; les paroles doivent garder les tags [Djeff], [Vivy] et [Duo].",
@@ -3566,7 +3573,7 @@ function getVivyStudioVoiceProfileForTool(
       surface: "kaen44",
       voiceStyle: "kaen44-official-french-narrator",
       vocalMode: "adaptive",
-      referenceLabel: hasPrivateReference ? privateLabel : "K44 officielle",
+      referenceLabel: hasPrivateReference ? privateLabel : "K44 Ref.wav",
       briefVoicePersona: "voicePersona=kaen44",
       testLine: "K44 pose la ligne, calme dans la cabine, chaque mot verrouille le rythme sans forcer.",
       songCast: "K44 prend le contre-chant posé, les réponses propres et les punchlines calmes.",
@@ -3582,7 +3589,7 @@ function getVivyStudioVoiceProfileForTool(
       surface: "a11",
       voiceStyle: "a11-official-stern-french",
       vocalMode: "adaptive",
-      referenceLabel: hasPrivateReference ? privateLabel : "A11 officielle",
+      referenceLabel: hasPrivateReference ? privateLabel : "A11 ref.wav",
       briefVoicePersona: "voicePersona=a11",
       testLine: "A11 garde le signal, voix basse et nette, la machine respire avec le cœur humain.",
       songCast: "A11 prend les ponts graves, les réponses synthétiques et la tension machine humaine.",
@@ -3598,7 +3605,7 @@ function getVivyStudioVoiceProfileForTool(
       surface: "a11",
       voiceStyle: "djeff-rap",
       vocalMode: "adaptive",
-      referenceLabel: hasPrivateReference ? privateLabel : "Djeff rap Pignon",
+      referenceLabel: hasPrivateReference ? privateLabel : "Djeff ref.wav",
       briefVoicePersona: "voicePersona=a11, voiceStyle=djeff-rap",
       testLine: "Djeff cale le kick, chaîne sur couronne, pignon précis, radiateur froid et moteur lucide.",
       songCast: "Djeff prend le lead rap avec diction serrée, rimes internes et image mécanique concrète.",
@@ -3614,7 +3621,7 @@ function getVivyStudioVoiceProfileForTool(
       surface: "vivy",
       voiceStyle: "vivy-official-french-conversational",
       vocalMode: "adaptive",
-      referenceLabel: hasPrivateReference ? privateLabel : "Vivy officielle",
+      referenceLabel: hasPrivateReference ? privateLabel : "Vivy ref.wav",
       briefVoicePersona: "voicePersona=vivy en diagnostic",
       testLine: "Diagnostic Vivy. Je teste la chaîne voix avec une phrase courte et claire.",
       songCast: "Vivy reste la voix de test pendant le diagnostic du module.",
@@ -3646,7 +3653,7 @@ function getVivyStudioVoiceProfileForTool(
       surface: "vivy",
       voiceStyle: "vivy-official-french-conversational",
       vocalMode: "sing",
-      referenceLabel: hasPrivateReference ? privateLabel : "Vivy officielle",
+      referenceLabel: hasPrivateReference ? privateLabel : "Vivy ref.wav",
       briefVoicePersona: "voicePersona=vivy en mode chant",
       testLine: "Je garde ma voix claire, proche du micro, et je transforme la nuit en refrain.",
       songCast: "Vivy porte le chant principal avec diction française claire et refrain mémorable.",
@@ -3677,7 +3684,7 @@ function getVivyStudioVoiceProfileForTool(
     surface: "vivy",
     voiceStyle: "vivy-official-french-conversational",
     vocalMode: "adaptive",
-    referenceLabel: hasPrivateReference ? privateLabel : "Vivy officielle",
+    referenceLabel: hasPrivateReference ? privateLabel : "Vivy ref.wav",
     briefVoicePersona: "voicePersona=vivy",
     testLine: "Salut Jeffrey. Je suis Vivy. Je parle doucement, avec une voix claire et proche.",
     songCast: "Vivy porte la voix principale claire, musicale et précise émotionnellement.",
@@ -4171,6 +4178,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     label: string;
     ttsPersona: "vivy" | "a11" | "kaen44";
     voiceStyle: string;
+    referenceLabel?: string;
     voiceTool: string;
     surface: "vivy" | "a11" | "kaen44";
   }) {
@@ -4179,15 +4187,16 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     const usesOfficialReference = officialVoiceIds.has(entryId)
       || /\b(?:djeff|kaen44|a11|vivy|official|officiel|rap)\b/i.test(`${entry.voiceStyle} ${entry.voiceTool}`);
     const provider = usesOfficialReference ? "elevenlabs" : "auto";
+    const referenceLabel = String(entry.referenceLabel || entry.voiceStyle || entry.label).trim();
     return {
       persona: entry.ttsPersona,
       voicePersona: entry.ttsPersona,
       ttsPersona: entry.ttsPersona,
       surface: entry.surface,
       voiceStyle: entry.voiceStyle,
-      voiceReferenceName: entry.voiceStyle || entry.label,
-      voiceReferenceLabel: entry.voiceStyle || entry.label,
-      referenceVoiceStyle: entry.voiceStyle || entry.label,
+      voiceReferenceName: referenceLabel,
+      voiceReferenceLabel: referenceLabel,
+      referenceVoiceStyle: entry.voiceStyle || referenceLabel,
       voiceTool: entry.voiceTool,
       vocalCast: entry.label,
       provider,
@@ -4252,7 +4261,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       surface: activeVoiceProfile.surface,
       voiceStyle: activeVoiceProfile.voiceStyle,
       voiceReferenceName: activeCatalogVoiceName || voiceFileName || activeVoiceProfile.referenceLabel,
-      voiceReferenceLabel: activeCatalogVoiceName || activeVoiceProfile.voiceStyle,
+      voiceReferenceLabel: activeCatalogVoiceName || activeVoiceProfile.referenceLabel,
       referenceVoiceStyle: activeCatalogVoiceName || activeVoiceProfile.voiceStyle,
       voiceCatalogName: activeCatalogVoiceName || undefined,
       voiceCatalogConsent: activeCatalogVoice ? VIVY_VOICE_CATALOG_CONSENT : undefined,
@@ -5162,7 +5171,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     <div key={entry.id} className="vivy-studio-voice-card" style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", padding: "10px 14px" }}>
                       <div>
                         <div style={{ fontWeight: 700, fontSize: 13 }}>{entry.label}</div>
-                        <div style={{ fontSize: 11, color: "var(--muted, #8892a6)" }}>{entry.voiceStyle}</div>
+                        <div style={{ fontSize: 11, color: "var(--muted, #8892a6)" }}>{entry.referenceLabel || entry.voiceStyle}</div>
                         <div style={{ fontSize: 10, color: "#4ade80", marginTop: 2 }}>{entry.statusLabel}</div>
                       </div>
                       <button
@@ -6530,7 +6539,7 @@ const FUNESTERIE_VOICE_PERSONAS: FunesterieVoicePersona[] = [
     id: "a11",
     name: "A11",
     role: "Voix grave, nette, opérateur média",
-    signal: "Stern French Man",
+    signal: "A11 ref.wav",
     detail: "Analyse, cadrage, vidéo, synthèse et réponse posée.",
     sample: "A11 en ligne. Je garde le cap: analyse propre, action courte, résultat vérifiable.",
     image: NOSSEN_A11_DERBI_SRC,
@@ -6541,7 +6550,7 @@ const FUNESTERIE_VOICE_PERSONAS: FunesterieVoicePersona[] = [
     id: "kaen44",
     name: "Kaen44",
     role: "Voix bureau, vive, copilote quotidien",
-    signal: "French Narrator Lady",
+    signal: "K44 Ref.wav",
     detail: "Priorités, documents, organisation et retour au calme.",
     sample: "Kaen44 prête. On range le chaos, on choisit la prochaine action, et on avance.",
     image: NOSSEN_K44_TZR_SRC,
@@ -6552,7 +6561,7 @@ const FUNESTERIE_VOICE_PERSONAS: FunesterieVoicePersona[] = [
     id: "vivy",
     name: "Vivy",
     role: "Voix musicale, sensible, scène créative",
-    signal: "French Conversational Lady",
+    signal: "Vivy ref.wav",
     detail: "Chansons, ambiance, voix, harmonies et présence de scène.",
     sample: "Je suis Vivy. Donne-moi une émotion, je la transforme en scène, en voix, en lumière.",
     image: NOSSEN_VIVY_BOOSTER_SRC,
