@@ -444,25 +444,34 @@ function getVivyOpenAIConfig(options = {}) {
   const mode = cleanOneLine(options.mode || options.chatMode, '', 24).toLowerCase();
   const groqApiKey = process.env.VIVY_GROQ_API_KEY || process.env.GROQ_API_KEY || '';
   const songGroqApiKey = process.env.VIVY_SONG_GROQ_API_KEY || groqApiKey;
+  const xaiApiKey = process.env.VIVY_XAI_API_KEY || process.env.XAI_API_KEY || process.env.X_AI_API_KEY || '';
+  const providerHint = cleanOneLine(process.env.VIVY_CHAT_PROVIDER || process.env.VIVY_LLM_PROVIDER || '', '', 40).toLowerCase();
   const wantsSongGroq = mode === 'song' && Boolean(songGroqApiKey);
   const explicitVivyBaseURL = cleanOneLine(process.env.VIVY_OPENAI_BASE_URL, '', 300);
   const explicitSongBaseURL = cleanOneLine(process.env.VIVY_SONG_OPENAI_BASE_URL || process.env.VIVY_SONG_BASE_URL, '', 300);
+  const explicitBaseURL = (mode === 'song' && explicitSongBaseURL) || explicitVivyBaseURL;
+  const wantsXai = /^(xai|x-ai|grok)$/.test(providerHint) || /x\.ai|grok/i.test(explicitBaseURL);
   const baseURL = (mode === 'song' && explicitSongBaseURL)
     || explicitVivyBaseURL
+    || (wantsXai && xaiApiKey ? 'https://api.x.ai/v1' : '')
     || (wantsSongGroq || groqApiKey ? 'https://api.groq.com/openai/v1' : (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'));
   const normalizedBaseUrl = String(baseURL || '');
   const apiKey = /groq/i.test(normalizedBaseUrl)
     ? ((mode === 'song' ? songGroqApiKey : groqApiKey) || process.env.VIVY_OPENAI_API_KEY || process.env.OPENAI_API_KEY)
+    : (/x\.ai|grok/i.test(normalizedBaseUrl)
+      ? (xaiApiKey || process.env.VIVY_OPENAI_API_KEY || process.env.OPENAI_API_KEY)
     : (/openrouter\.ai/i.test(normalizedBaseUrl)
       ? (process.env.VIVY_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || process.env.VIVY_OPENAI_API_KEY || process.env.OPENAI_API_KEY)
-      : (process.env.VIVY_OPENAI_API_KEY || process.env.OPENAI_API_KEY || process.env.A11_OPENAI_API_KEY));
+      : (process.env.VIVY_OPENAI_API_KEY || process.env.OPENAI_API_KEY || process.env.A11_OPENAI_API_KEY)));
   const defaultModel = /groq/i.test(normalizedBaseUrl)
     ? (mode === 'song'
       ? (process.env.VIVY_SONG_GROQ_MODEL || process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile')
       : (process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'))
+    : (/x\.ai|grok/i.test(normalizedBaseUrl)
+      ? (process.env.VIVY_XAI_MODEL || process.env.XAI_MODEL || 'grok-3-fast')
     : (/openrouter\.ai/i.test(normalizedBaseUrl)
       ? 'meta-llama/llama-3.3-70b-instruct'
-      : 'gpt-4o-mini');
+      : 'gpt-4o-mini'));
   const model = cleanOneLine(
     mode === 'song'
       ? (process.env.VIVY_SONG_MODEL || process.env.VIVY_SONG_OPENAI_MODEL || defaultModel)
@@ -480,7 +489,9 @@ function getVivyOpenAIConfig(options = {}) {
       ? 'groq-openai-compatible'
       : getVivyProviderFromBaseUrl(normalizedBaseUrl) === 'openrouter'
         ? 'openrouter-openai-compatible'
-        : 'openai-compatible',
+        : getVivyProviderFromBaseUrl(normalizedBaseUrl) === 'xai'
+          ? 'xai-openai-compatible'
+          : 'openai-compatible',
   };
 }
 
@@ -2249,6 +2260,27 @@ function isVivyOpinionFollowup(message = '') {
   return /\b(et\s+toi|toi\s+tu|tu\s+en\s+penses|t\s*en\s+penses|qu\s*en\s+penses|ton\s+avis|tu\s+penses\s+quoi)\b/.test(normalized);
 }
 
+function isVivyRhythmFeelingRequest(message = '') {
+  const normalized = foldTextForLookup(message);
+  if (!normalized) return false;
+  const musicSignal = /\b(rythme|rhythm|tempo|cadence|flow|debit|débit|mesure|kick|refrain|couplet|musique|chanson|paroles|ecriture|écriture|ecris|écris|ecrit|écrit)\b/.test(normalized);
+  const feelingSignal = /\b(ressenti|sentir|sens|sent|comment|quand|lorsque|pendant|ecrire|écrire|ecrit|écrit|compose|composer)\b/.test(normalized);
+  return musicSignal && feelingSignal;
+}
+
+function buildVivyRhythmFeelingReply({ isAcknowledgement = false, fileLine = '' } = {}) {
+  const opener = isAcknowledgement
+    ? "Oui, exactement: le rythme doit rester une sensation avant d'être une grille."
+    : "Quand j'écris, je pense le rythme comme une respiration: d'abord le poids des mots, puis la cadence, puis seulement la structure.";
+  return cleanText([
+    opener,
+    "Une phrase chantable n'est pas juste jolie sur la page. Elle doit avoir des appuis: des mots courts pour frapper, des voyelles ouvertes pour tenir, et des silences assez nets pour laisser revenir le refrain.",
+    "Si le thème est sombre, je ralentis les images et je garde des fins de lignes qui se répondent. Si le morceau doit avancer, je resserre les consonnes, je coupe les phrases trop longues et je cherche le moment où la bouche peut suivre sans trébucher.",
+    "Donc mon bon réflexe ici: écrire moins « texte explicatif » et plus matière à dire au micro, avec un débit qu'on peut réellement poser.",
+    fileLine,
+  ].filter(Boolean).join('\n\n'), 1600);
+}
+
 function isVivyDjeffRapSetupRequest(message = '', historyText = '') {
   const current = foldTextForLookup(message);
   const context = foldTextForLookup(`${historyText}\n${message}`);
@@ -2352,13 +2384,12 @@ function buildVivyGeneralChatFallbackReply({ message = '', current = '', history
     if (/\b(pense|avis|idee|idée|theorie|théorie|intuition|comprendre)\b/.test(folded)) {
       return "Mon avis: il faut traiter ça comme une vraie idée de travail, pas comme une case. Je peux être d'accord, douter, ou proposer un test concret.";
     }
-    return "Je ne vais pas juste répéter ta phrase. Je le prends comme une discussion normale: je réponds au sens, puis on décide si on teste, corrige, écrit ou publie.";
+    return "Je le prends comme une conversation vivante: je réponds au fond, puis je propose une action seulement si elle aide vraiment.";
   })();
 
   return cleanText([
-    "Je suis là.",
     angle,
-    current ? `Sur ton dernier message: ${current}` : '',
+    current ? `Ce que je comprends ici: ${current}` : '',
     fileLine,
   ].filter(Boolean).join('\n\n'), 1500);
 }
@@ -2479,6 +2510,10 @@ function buildVivyFreeformChatReply({ message = '', files = [], history = [] } =
     });
   }
 
+  if (isVivyRhythmFeelingRequest(message) || (isAcknowledgement && isVivyRhythmFeelingRequest(lastUserMessage))) {
+    return buildVivyRhythmFeelingReply({ isAcknowledgement, fileLine });
+  }
+
   if (isVivyOpinionFollowup(message) && /\b(cerveau|interpretation|interprete|donnee|donnees|yeux|oreilles|bouche|voir|entendre|parler|signaux|signal)\b/.test(foldedContext)) {
     return cleanText([
       "Je pense que tu touches un truc juste: voir, entendre et parler, ce n'est pas juste des organes, c'est un flux de signaux que le cerveau transforme en monde.",
@@ -2499,8 +2534,8 @@ function buildVivyFreeformChatReply({ message = '', files = [], history = [] } =
 
   if (isAcknowledgement) {
     return cleanText([
-      "Ok, on garde le fil.",
-      "Continue comme ça: je réponds au sens de ce que tu poses, sans forcer une structure autour.",
+      "Oui, je garde l'idée et je réponds sobrement.",
+      "Le plus utile maintenant, c'est de préciser le prochain geste: on peut continuer à discuter, tester une voix, ou transformer ça en paroles seulement si tu le demandes.",
       fileLine,
     ].filter(Boolean).join('\n\n'), 900);
   }
@@ -4148,6 +4183,7 @@ module.exports = {
   buildVivyStudioProduction,
   buildVivyChat,
   buildVivyAiChat,
+  getVivyOpenAIConfig,
   buildVivySystemPrompt,
   buildVivyDirectSongReply,
   buildVivyPublicLyrics,

@@ -3217,10 +3217,22 @@ function cleanVivyStudioOutputLine(line: string) {
     .trim();
   if (!cleaned) return "";
   if (/^VIVY_(?:STUDIO_HANDOFF|PRODUCTION|SONG_PRODUCTION|VOICE_CALIBRATION|SCENE_SHARE)\b/i.test(cleaned)) return "";
+  if (/^(?:Atelier|Objectif|Flux\s+(?:voix|test voix|chanson|sc[èe]ne|partage)|R[oô]le|Sortie attendue)\s*:/i.test(cleaned)) return "";
   if (/^Routage recommand[ée]\s*:/i.test(cleaned)) return "";
   if (/^-\s*(?:Vivy|A11|Kaen44)\s*:/i.test(cleaned)) return "";
+  if (/^-\s*(?:Outil cible|Profil actif|R[ée]f[ée]rence|Instruction|Route recommand[ée]e|S[ée]curit[ée]|Voix s[ée]lectionn[ée]e|Phrase test|Source|Direction sonore|Mati[èe]re|Casting vocal|Nombre de chanteurs|Distribution vocale|Cl[ée] Suno|Sortie simple possible|Sortie attendue|R[oô]le)\s*:/i.test(cleaned)) return "";
   if (/^Job Suno\s*:/i.test(cleaned)) return "Job Suno: lancé (identifiant masqué du brief)";
   return cleaned;
+}
+
+function cleanVivyStudioPublicBlock(value: string, maxLines = 80) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const lines = raw
+    .split(/\r?\n+/)
+    .map(cleanVivyStudioOutputLine)
+    .filter(Boolean);
+  return lines.slice(0, maxLines).join("\n").trim();
 }
 
 function normalizeVivyStudioOutputForState(value: string, maxLines = 6) {
@@ -3978,6 +3990,27 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     () => productionStatusBrief ? `${baseBrief}\n\n${productionStatusBrief}` : baseBrief,
     [baseBrief, productionStatusBrief]
   );
+  const activeMeta = VIVY_STUDIO_MODES.find((item) => item.id === activeMode) || VIVY_STUDIO_MODES[0];
+  const publicStudioOutput = useMemo(() => {
+    const lyrics = activeMode === "song" ? cleanVivyStudioPublicBlock(vivyLyrics, 120) : "";
+    const statusBlock = cleanVivyStudioPublicBlock(vivyOutput, 12);
+    const mediaLine = vivyMedia
+      ? `Média ${vivyMedia.kind === "audio" ? "audio" : "vidéo"} prêt dans le Studio Vivy.`
+      : "";
+    const body = lyrics || statusBlock || cleanVivyStudioPublicBlock(status, 4) || activeMeta.label;
+    return [
+      `Vivy - ${activeMeta.title}`,
+      body,
+      mediaLine,
+    ].filter(Boolean).join("\n\n").trim();
+  }, [activeMode, activeMeta.title, activeMeta.label, vivyLyrics, vivyOutput, vivyMedia, status]);
+  const showAgentDebug = diagnosticsAllowed && (() => {
+    try {
+      return globalThis.localStorage?.getItem("vivy:agent-debug") === "true";
+    } catch {
+      return false;
+    }
+  })();
 
   useEffect(() => {
     writeVivyStudioDraft({
@@ -4029,7 +4062,6 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     void refreshVoiceCatalog();
   }, [hasSession]);
 
-  const activeMeta = VIVY_STUDIO_MODES.find((item) => item.id === activeMode) || VIVY_STUDIO_MODES[0];
   const activeVoiceLearningEntry = getVivyStudioVoiceDirectoryEntry(voiceLearningPersona);
   const hasPrivateVoiceReference = Boolean(voiceReferenceId.trim());
   const activeVoiceProfile = useMemo(
@@ -4211,8 +4243,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
 
   function buildVivyTtsOptions(vocalMode: "adaptive" | "sing") {
     const diagnosticMode = /diagnostic/.test(foldForLookup(voiceTool));
-    const voiceConversion = !diagnosticMode || hasPrivateVoiceReference;
-    const provider = "xtts-rvc";
+    const usesPrivateOrCatalogReference = hasPrivateVoiceReference || Boolean(activeCatalogVoiceName);
+    const provider = usesPrivateOrCatalogReference ? "xtts-rvc" : "elevenlabs";
+    const voiceConversion = provider === "xtts-rvc" && (!diagnosticMode || hasPrivateVoiceReference);
     return {
       persona: activeVoiceProfile.ttsPersona,
       voicePersona: activeVoiceProfile.ttsPersona,
@@ -4230,8 +4263,8 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       ttsProvider: provider,
       engine: provider,
       voiceEngine: provider,
-      voiceConversionEngine: "xtts-rvc",
-      conversionEngine: "xtts-rvc",
+      voiceConversionEngine: provider === "xtts-rvc" ? "xtts-rvc" : undefined,
+      conversionEngine: provider === "xtts-rvc" ? "xtts-rvc" : undefined,
       vocalMode,
       ...getVivyVoiceTuning(vocalMode),
       ttsAsync: true,
@@ -4239,10 +4272,14 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       ttsJobTimeoutMs: vocalMode === "sing" ? 240000 : 180000,
       audioFormat: "mp3",
       responseFormat: "mp3",
-      ...buildVivyVoiceReferenceOptions(),
-      voiceReferenceRequired: !diagnosticMode,
-      referenceVoiceRequired: !diagnosticMode,
-      requireVoiceReference: !diagnosticMode,
+      ...(provider === "xtts-rvc" ? buildVivyVoiceReferenceOptions() : {
+        useDefaultVoiceReference: false,
+        defaultVoiceReference: false,
+        usePersonaVoiceReference: false,
+      }),
+      voiceReferenceRequired: provider === "xtts-rvc" && !diagnosticMode,
+      referenceVoiceRequired: provider === "xtts-rvc" && !diagnosticMode,
+      requireVoiceReference: provider === "xtts-rvc" && !diagnosticMode,
       voiceConversion,
       convertVoice: voiceConversion,
       morphVoice: voiceConversion,
@@ -4250,29 +4287,36 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       identityVoice: true,
       useIdentityVoice: true,
       neutralVoice: false,
-      allowRvc: true,
-      allowXttsRvc: true,
-      allowLegacyVoiceBridge: true,
-      xttsRvcOptIn: true,
+      allowRvc: provider === "xtts-rvc",
+      allowXttsRvc: provider === "xtts-rvc",
+      allowLegacyVoiceBridge: provider === "xtts-rvc",
+      xttsRvcOptIn: provider === "xtts-rvc",
+      allowPaidTtsVoice: provider === "elevenlabs" || undefined,
+      allowCloudTts: provider === "elevenlabs" || undefined,
+      allowReadyMadeCloudVoice: provider === "elevenlabs" || undefined,
+      allowOfficialCloudVoice: provider === "elevenlabs" || undefined,
+      forceCloudTts: provider === "elevenlabs" || undefined,
+      useReadyMadeCloudVoice: provider === "elevenlabs" || undefined,
       allowBrowserSpeechFallback: false,
+      ttsCostPolicy: provider === "elevenlabs" ? `${activeVoiceProfile.surface}_vivy_studio_active_voice_test` : undefined,
     };
   }
 
-  async function copyBrief(nextStatus = "Brief copié pour les agents.") {
+  async function copyStudioPublicOutput(nextStatus = "Sortie Vivy copiée.") {
     try {
-      await navigator.clipboard?.writeText(brief);
+      await navigator.clipboard?.writeText(publicStudioOutput);
       setStatus(nextStatus);
     } catch {
-      setStatus("Copie auto indisponible: sélectionne le brief et copie-le.");
+      setStatus("Copie auto indisponible: sélectionne la sortie Vivy et copie-la.");
     }
   }
 
-  async function shareBrief() {
+  async function shareStudioPublicOutput() {
     if (navigator.share) {
       try {
         await navigator.share({
           title: `Vivy - ${activeMeta.title}`,
-          text: brief,
+          text: publicStudioOutput,
         });
         setStatus("Partage système ouvert.");
         return;
@@ -4280,26 +4324,35 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         // Fall back to clipboard below.
       }
     }
-    await copyBrief("Brief prêt à coller dans l'équipe.");
+    await copyStudioPublicOutput("Sortie Vivy prête à partager.");
+  }
+
+  async function copyInternalBrief(nextStatus = "Brief interne copié pour debug agent.") {
+    try {
+      await navigator.clipboard?.writeText(brief);
+      setStatus(nextStatus);
+    } catch {
+      setStatus("Copie debug indisponible: sélectionne le brief interne et copie-le.");
+    }
   }
 
   async function saveBriefArtifact() {
     if (!hasSession) {
-      setStatus("Connexion requise pour sauvegarder un brief Vivy.");
+      setStatus("Connexion requise pour sauvegarder la sortie Vivy.");
       return;
     }
     setIsBusy(true);
-    setStatus("Sauvegarde du brief...");
+    setStatus("Sauvegarde de la sortie Vivy...");
     try {
       const slug = activeMode === "voice" ? "creation-voix" : activeMode === "song" ? "composition" : "scene-partage";
       const result = await createTextArtifact({
         filename: `vivy-${slug}-${Date.now()}.md`,
-        text: `# Vivy - ${activeMeta.title}\n\n${brief}\n`,
+        text: `# Vivy - ${activeMeta.title}\n\n${publicStudioOutput}\n`,
         contentType: "text/markdown;charset=utf-8",
-        kind: "vivy_studio_brief",
-        description: `Brief Vivy ${activeMeta.title}`,
+        kind: "vivy_studio_public_output",
+        description: `Sortie Vivy ${activeMeta.title}`,
       });
-      setStatus(result?.artifact?.url ? `Brief sauvegarde: ${result.artifact.url}` : "Brief sauvegarde dans A11.");
+      setStatus(result?.artifact?.url ? `Sortie sauvegardée: ${result.artifact.url}` : "Sortie sauvegardée dans A11.");
     } catch (error: any) {
       setStatus(`Sauvegarde A11 indisponible: ${error?.message || error}`);
     } finally {
@@ -4837,7 +4890,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   }
 
   async function openAgent(target: "a11" | "k44") {
-    await copyBrief(target === "a11" ? "Brief copié. Ouverture A11..." : "Brief copié. Ouverture Kaen44...");
+    await copyStudioPublicOutput(target === "a11" ? "Sortie Vivy copiée. Ouverture A11..." : "Sortie Vivy copiée. Ouverture Kaen44...");
     const url = target === "a11"
       ? buildSessionBridgeUrl(new URL("/cockpit", A11_PUBLIC_APP_URL).toString())
       : buildSessionBridgeUrl(new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString());
@@ -4851,7 +4904,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
           <h2>Studio Vivy</h2>
           <p>Voix, chanson, clip et partage prêts depuis les trois blocs de droite.</p>
         </div>
-        <button type="button" onClick={shareBrief}>Partager le brief</button>
+        <button type="button" onClick={shareStudioPublicOutput}>Partager la sortie</button>
       </div>
 
       <div className="vivy-studio-grid">
@@ -5570,14 +5623,16 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
               <button type="button" style={{ marginTop: 6, fontSize: 12 }} onClick={() => { navigator.clipboard?.writeText(vivyLyrics).catch(() => {}); }}>Copier paroles</button>
             </div>
           )}
-          <details style={{ marginTop: 12 }}>
-            <summary style={{ cursor: "pointer", fontSize: 13, color: "#94a3b8", userSelect: "none" }}>Brief agents</summary>
-            <pre style={{ marginTop: 8 }}>{brief}</pre>
-            <div>
-              <button type="button" onClick={() => copyBrief()}>Copier</button>
-              <button type="button" onClick={shareBrief}>Partager</button>
-            </div>
-          </details>
+          {showAgentDebug ? (
+            <details style={{ marginTop: 12 }}>
+              <summary style={{ cursor: "pointer", fontSize: 13, color: "#94a3b8", userSelect: "none" }}>Debug agents</summary>
+              <pre style={{ marginTop: 8 }}>{brief}</pre>
+              <div>
+                <button type="button" onClick={() => copyInternalBrief()}>Copier debug</button>
+                <button type="button" onClick={shareStudioPublicOutput}>Partager sortie</button>
+              </div>
+            </details>
+          ) : null}
         </aside>
       </div>
 

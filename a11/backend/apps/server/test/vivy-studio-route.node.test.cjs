@@ -20,6 +20,7 @@ const {
   buildVivySystemPrompt,
   buildVivySunoPayload,
   buildVivyWebSearchQuery,
+  getVivyOpenAIConfig,
   isDirectSongwritingRequest,
   isVivyMcpNeo4jQuestion,
   isVivyToolCapabilityQuestion,
@@ -783,6 +784,30 @@ test('Vivy frontend prioritizes publicLyrics and keeps voice-test TTS on short p
   assert.doesNotMatch(voiceTestBlock, /VIVY_STUDIO_HANDOFF|brief|buildVivyStudioBrief/);
 });
 
+test('Vivy frontend shares public output instead of the internal agent handoff', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  assert.match(appSource, /Partager la sortie/);
+  assert.match(appSource, /publicStudioOutput/);
+  assert.match(appSource, /vivy:agent-debug/);
+  assert.doesNotMatch(appSource, /Partager le brief|Brief agents/);
+
+  const shareStart = appSource.indexOf('async function shareStudioPublicOutput');
+  const shareEnd = appSource.indexOf('async function copyInternalBrief');
+  const shareBlock = appSource.slice(shareStart, shareEnd);
+  assert.match(shareBlock, /text:\s*publicStudioOutput/);
+  assert.doesNotMatch(shareBlock, /\bbrief\b|VIVY_STUDIO_HANDOFF/);
+
+  const saveStart = appSource.indexOf('async function saveBriefArtifact');
+  const saveEnd = appSource.indexOf('async function uploadVoiceReference');
+  const saveBlock = appSource.slice(saveStart, saveEnd);
+  assert.match(saveBlock, /vivy_studio_public_output/);
+  assert.match(saveBlock, /publicStudioOutput/);
+  assert.doesNotMatch(saveBlock, /VIVY_STUDIO_HANDOFF/);
+});
+
 test('Vivy uses the account language instead of guessing from draft text', async () => {
   const result = await buildVivyAiChat({
     conversationId: 'vivy-account-language',
@@ -1151,6 +1176,67 @@ test('Vivy chat fallback answers philosophical follow-ups instead of canned note
   assert.doesNotMatch(result.assistant, /^Je te suis\./);
   assert.doesNotMatch(result.assistant, /clique sur Chanson/i);
   assert.doesNotMatch(result.assistant, /\*\*Titre :\*\*/);
+});
+
+test('Vivy chat fallback answers rhythm writing questions substantively', async () => {
+  const first = await buildVivyAiChat({
+    conversationId: 'vivy-chat-rhythm-feeling',
+    message: 'parle moi de ton ressentis sur le rythme de la musique quand tu écrit',
+    history: [],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(first.ok, true);
+  assert.equal(first.mode, 'chat');
+  assert.match(first.assistant, /rythme|respiration|cadence|micro|refrain/i);
+  assert.doesNotMatch(first.assistant, /Je ne vais pas juste répéter|Sur ton dernier message|Continue comme ça|Je suis là/);
+
+  const followup = await buildVivyAiChat({
+    conversationId: 'vivy-chat-rhythm-feeling-followup',
+    message: 'oui',
+    history: [
+      { role: 'user', content: 'parle moi de ton ressentis sur le rythme de la musique quand tu écrit' },
+      { role: 'assistant', content: first.assistant },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(followup.ok, true);
+  assert.equal(followup.mode, 'chat');
+  assert.match(followup.assistant, /rythme|sensation|grille|micro|débit|debit/i);
+  assert.doesNotMatch(followup.assistant, /Ok, on garde le fil|Continue comme ça|Sur ton dernier message|Je suis là/);
+});
+
+test('Vivy LLM config can use xAI credentials when requested', () => {
+  const previous = {
+    VIVY_CHAT_PROVIDER: process.env.VIVY_CHAT_PROVIDER,
+    VIVY_OPENAI_BASE_URL: process.env.VIVY_OPENAI_BASE_URL,
+    VIVY_OPENAI_API_KEY: process.env.VIVY_OPENAI_API_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    GROQ_API_KEY: process.env.GROQ_API_KEY,
+    VIVY_XAI_API_KEY: process.env.VIVY_XAI_API_KEY,
+    XAI_API_KEY: process.env.XAI_API_KEY,
+    VIVY_XAI_MODEL: process.env.VIVY_XAI_MODEL,
+  };
+  try {
+    delete process.env.VIVY_OPENAI_BASE_URL;
+    delete process.env.VIVY_OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.GROQ_API_KEY;
+    process.env.VIVY_CHAT_PROVIDER = 'xai';
+    process.env.XAI_API_KEY = 'test-xai-key';
+    process.env.VIVY_XAI_MODEL = 'grok-test-model';
+
+    const config = getVivyOpenAIConfig({ mode: 'chat' });
+    assert.equal(config.provider, 'xai');
+    assert.equal(config.source, 'xai-openai-compatible');
+    assert.equal(config.baseURL, 'https://api.x.ai/v1');
+    assert.equal(config.apiKey, 'test-xai-key');
+    assert.equal(config.model, 'grok-test-model');
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 test('Vivy can lower internal intent sensitivity from user feedback', async () => {
