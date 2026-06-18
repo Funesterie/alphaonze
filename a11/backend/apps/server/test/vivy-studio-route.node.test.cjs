@@ -86,6 +86,22 @@ test('Vivy Studio produces a song handoff without storing tokens', () => {
   assert.doesNotMatch(result.brief, /must-not-leak/);
 });
 
+test('Vivy Studio keeps internal briefs out of public voice output', () => {
+  const result = buildVivyStudioProduction({
+    mode: 'voice',
+    voiceTool: 'Voix Vivy officielle',
+    voiceInstruction: 'phrase test courte, douce, claire',
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'voice');
+  assert.match(result.internalBrief, /VIVY_VOICE_CALIBRATION/);
+  assert.match(result.brief, /VIVY_VOICE_CALIBRATION/);
+  assert.match(result.publicText, /phrase test|calibration|voix/i);
+  assert.doesNotMatch(result.assistant, /VIVY_STUDIO_HANDOFF|VIVY_VOICE_CALIBRATION|Routage:/);
+  assert.doesNotMatch(result.publicText, /VIVY_STUDIO_HANDOFF|VIVY_VOICE_CALIBRATION|Routage:/);
+});
+
 test('Vivy Studio calibrates Djeff rap voice through the owned A11 persona', () => {
   const result = buildVivyStudioProduction({
     mode: 'voice',
@@ -207,6 +223,34 @@ test('Vivy Studio song handoff supports selected Djeff A11 K44 Vivy singers', ()
   assert.match(result.brief, /\[Verse 2 - A11\]/);
   assert.match(result.brief, /\[Bridge - K44\]/);
   assert.match(result.brief, /\[Chorus - Tous\]/);
+});
+
+test('Vivy Studio song output separates public lyrics from the internal brief', () => {
+  const result = buildVivyStudioProduction({
+    mode: 'song',
+    songSource: 'Conversation',
+    songArtists: ['djeff', 'k44'],
+    songMood: 'rap sombre technique',
+    songText: [
+      'VIVY_STUDIO_HANDOFF',
+      'Atelier: Test voix',
+      'J’espère que cette chanson te plaira.',
+      'Djeff et K44 sur une course poursuite mécanique, pignon, radiateur, couronne.',
+    ].join('\n'),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'song');
+  assert.match(result.internalBrief, /VIVY_SONG_PRODUCTION/);
+  assert.match(result.brief, /VIVY_SONG_PRODUCTION/);
+  assert.ok(result.publicLyrics);
+  assert.equal(result.assistant, result.publicLyrics);
+  assert.equal(result.publicText, result.publicLyrics);
+  assert.match(result.publicLyrics, /\[Djeff\]/);
+  assert.match(result.publicLyrics, /\[K44\]/);
+  assert.match(result.publicLyrics, /\[(Duo|Tous)\]/);
+  assert.doesNotMatch(result.publicLyrics, /VIVY_STUDIO_HANDOFF|VIVY_SONG_PRODUCTION|Atelier:|Routage:/);
+  assert.doesNotMatch(result.publicLyrics, /J[’']?esp[eè]re/i);
 });
 
 test('Vivy Studio can calibrate A11 and K44 official voices', () => {
@@ -720,6 +764,23 @@ test('Vivy chat prompt keeps original musical direction and avoids canned replie
   assert.match(prompt, /pas les personnes, langues, origines, cultures ou religions comme blocs/i);
 });
 
+test('Vivy frontend prioritizes publicLyrics and keeps voice-test TTS on short phrases', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const chatBlockStart = appSource.indexOf('const payload = await chatWithVivy');
+  const chatBlock = appSource.slice(chatBlockStart, chatBlockStart + 1400);
+  assert.match(chatBlock, /payload\.publicLyrics[\s\S]{0,120}\|\|[\s\S]{0,120}payload\.assistant/);
+
+  const testVoiceStart = appSource.indexOf('async function testVoiceLearningChatbot');
+  const testVoiceEnd = appSource.indexOf('function useDefaultVivyVoice');
+  const voiceTestBlock = appSource.slice(testVoiceStart, testVoiceEnd);
+  assert.match(voiceTestBlock, /buildVivyAutoVoiceTestLine\(entry\)/);
+  assert.match(voiceTestBlock, /ttsSpeak\(\s*line\s*,/);
+  assert.doesNotMatch(voiceTestBlock, /VIVY_STUDIO_HANDOFF|brief|buildVivyStudioBrief/);
+});
+
 test('Vivy uses the account language instead of guessing from draft text', async () => {
   const result = await buildVivyAiChat({
     conversationId: 'vivy-account-language',
@@ -960,6 +1021,36 @@ test('Vivy routes continue les paroles to songcraft and cleans UI/brief contamin
   assert.doesNotMatch(result.assistant, /Mix D40|double-harmonic|must-not-leak|token=/i);
 });
 
+test('Vivy chat song mode exposes clean publicLyrics instead of an agent handoff', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-song-public-lyrics-clean',
+    mode: 'song',
+    songArtists: ['djeff', 'k44'],
+    message: [
+      'VIVY_STUDIO_HANDOFF',
+      'Atelier: Test voix',
+      'J’espère que cette chanson te plaira.',
+      'Écris une chanson en duo Djeff et K44 sur pignon, radiateur, couronne et course nocturne.',
+    ].join('\n'),
+    history: [
+      { role: 'assistant', content: 'VIVY_SONG_PRODUCTION\nRoutage recommandé: ne doit pas sortir côté public.' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'song');
+  assert.ok(result.publicLyrics);
+  assert.equal(result.assistant, result.publicLyrics);
+  assert.equal(result.content, result.publicLyrics);
+  assert.equal(result.publicText, result.publicLyrics);
+  assert.match(result.publicLyrics, /\[Djeff\]/);
+  assert.match(result.publicLyrics, /\[K44\]/);
+  assert.match(result.publicLyrics, /\[(Duo|Tous)\]/);
+  assert.doesNotMatch(result.publicLyrics, /VIVY_STUDIO_HANDOFF|VIVY_SONG_PRODUCTION|Routage recommandé|Atelier:/);
+  assert.doesNotMatch(result.publicLyrics, /J[’']?esp[eè]re/i);
+  assert.doesNotMatch(result.publicLyrics, /\*\*Titre\s*:\*\*|\*\*Intention\s*:\*\*|\*\*Rimes/i);
+});
+
 test('Vivy songcraft removes pasted assistant explanations from the lyric seed', async () => {
   const pastedAssistantDraft = [
     'oui les planete les astres la voie lactée, le soleil du matin etc',
@@ -1050,7 +1141,8 @@ test('Vivy song mode structures the same rap draft when Chanson is explicit', as
 
   assert.equal(result.ok, true);
   assert.equal(result.mode, 'song');
-  assert.match(result.assistant, /\*\*Titre :\*\*/);
+  assert.equal(result.assistant, result.publicLyrics);
+  assert.doesNotMatch(result.assistant, /\*\*Titre\s*:\*\*|\*\*Intention\s*:\*\*|\*\*Rimes/i);
   assert.match(result.assistant, /\[Intro(?: - [^\]]+)?\]/);
   assert.match(result.assistant, /\[Chorus(?: - [^\]]+)?\]/);
 });
@@ -1102,7 +1194,8 @@ test('Vivy intent header routes Chanson to Djeff songcraft while preserving raw 
   assert.equal(result.ok, true);
   assert.equal(result.mode, 'song');
   assert.equal(result.aiMode, 'deterministic_songcraft');
-  assert.match(result.assistant, /\*\*Titre :\*\*/);
+  assert.equal(result.assistant, result.publicLyrics);
+  assert.doesNotMatch(result.assistant, /\*\*Titre\s*:\*\*|\*\*Intention\s*:\*\*|\*\*Rimes/i);
   assert.match(result.assistant, /\[Verse 1 - Djeff\]/);
   assert.match(result.assistant, /quatorzieme dans la bombonne/i);
   assert.match(result.assistant, /2point 2/i);

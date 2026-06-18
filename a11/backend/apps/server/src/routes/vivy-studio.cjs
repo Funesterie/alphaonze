@@ -405,34 +405,60 @@ function isVivyFounderUser(user = {}) {
     || values.some((value) => /\b(admin|owner|founder|fondateur|djeff|jeffrey|funeste)\b/i.test(value));
 }
 
-function getVivyOpenAIConfig() {
+function getVivyProviderFromBaseUrl(baseURL = '') {
+  if (/groq/i.test(baseURL)) return 'groq';
+  if (/openrouter\.ai/i.test(baseURL)) return 'openrouter';
+  if (/x\.ai|grok/i.test(baseURL)) return 'xai';
+  return 'openai';
+}
+
+function getVivyOpenAIConfig(options = {}) {
+  const mode = cleanOneLine(options.mode || options.chatMode, '', 24).toLowerCase();
   const groqApiKey = process.env.VIVY_GROQ_API_KEY || process.env.GROQ_API_KEY || '';
+  const songGroqApiKey = process.env.VIVY_SONG_GROQ_API_KEY || groqApiKey;
+  const wantsSongGroq = mode === 'song' && Boolean(songGroqApiKey);
   const explicitVivyBaseURL = cleanOneLine(process.env.VIVY_OPENAI_BASE_URL, '', 300);
-  const baseURL = explicitVivyBaseURL
-    || (groqApiKey ? 'https://api.groq.com/openai/v1' : (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'));
+  const explicitSongBaseURL = cleanOneLine(process.env.VIVY_SONG_OPENAI_BASE_URL || process.env.VIVY_SONG_BASE_URL, '', 300);
+  const baseURL = (mode === 'song' && explicitSongBaseURL)
+    || explicitVivyBaseURL
+    || (wantsSongGroq || groqApiKey ? 'https://api.groq.com/openai/v1' : (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'));
   const normalizedBaseUrl = String(baseURL || '');
   const apiKey = /groq/i.test(normalizedBaseUrl)
-    ? (groqApiKey || process.env.VIVY_OPENAI_API_KEY || process.env.OPENAI_API_KEY)
+    ? ((mode === 'song' ? songGroqApiKey : groqApiKey) || process.env.VIVY_OPENAI_API_KEY || process.env.OPENAI_API_KEY)
     : (/openrouter\.ai/i.test(normalizedBaseUrl)
       ? (process.env.VIVY_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || process.env.VIVY_OPENAI_API_KEY || process.env.OPENAI_API_KEY)
       : (process.env.VIVY_OPENAI_API_KEY || process.env.OPENAI_API_KEY || process.env.A11_OPENAI_API_KEY));
   const defaultModel = /groq/i.test(normalizedBaseUrl)
-    ? (process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile')
+    ? (mode === 'song'
+      ? (process.env.VIVY_SONG_GROQ_MODEL || process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile')
+      : (process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'))
     : (/openrouter\.ai/i.test(normalizedBaseUrl)
       ? 'meta-llama/llama-3.3-70b-instruct'
       : 'gpt-4o-mini');
   const model = cleanOneLine(
-    process.env.VIVY_CHAT_MODEL || process.env.VIVY_OPENAI_MODEL || defaultModel,
+    mode === 'song'
+      ? (process.env.VIVY_SONG_MODEL || process.env.VIVY_SONG_OPENAI_MODEL || defaultModel)
+      : (process.env.VIVY_CHAT_MODEL || process.env.VIVY_OPENAI_MODEL || defaultModel),
     defaultModel,
     80
   );
 
-  return { baseURL, apiKey: String(apiKey || '').trim(), model };
+  return {
+    baseURL,
+    apiKey: String(apiKey || '').trim(),
+    model,
+    provider: getVivyProviderFromBaseUrl(normalizedBaseUrl),
+    source: getVivyProviderFromBaseUrl(normalizedBaseUrl) === 'groq'
+      ? 'groq-openai-compatible'
+      : getVivyProviderFromBaseUrl(normalizedBaseUrl) === 'openrouter'
+        ? 'openrouter-openai-compatible'
+        : 'openai-compatible',
+  };
 }
 
-function createVivyOpenAIClient() {
+function createVivyOpenAIClient(options = {}) {
   if (!OpenAI) return null;
-  const config = getVivyOpenAIConfig();
+  const config = getVivyOpenAIConfig(options);
   if (!config.apiKey) return null;
   return {
     client: new OpenAI({
@@ -443,6 +469,9 @@ function createVivyOpenAIClient() {
       },
     }),
     model: config.model,
+    baseURL: config.baseURL,
+    provider: config.provider,
+    source: config.source,
   };
 }
 
@@ -1753,7 +1782,7 @@ function buildVivySystemPrompt(mode, language, input) {
     buildLanguageInstruction(language),
     buildLanguageContract(language),
     FUNESTERIE_SOURCE_PRINCIPLE_CONTEXT_FR,
-    "Réponds librement à l'intention: pas de réponse toute faite, pas de canevas forcé, pas de refrain automatique si la discussion demande juste de réfléchir.",
+    "Réponds librement à l'intention: pas de réponse toute faite, pas de canevas forcé, pas de refrain automatique si la discussion demande juste de réfléchir, sans transformer automatiquement la phrase en couplets.",
     "Quand une idée arrive, tu peux reformuler, proposer une direction ou poser une vraie question, selon ce qui aide le plus.",
     "Si Jeffrey corrige ton intent, ta sensibilité, ton seuil ou ton mode de réponse, traite ça comme un réglage interne borné: accuse le réglage clairement, baisse la structuration automatique, puis réponds au fond.",
     "Adresse-toi à Jeffrey/Djeff en tutoyant. N'utilise pas un vouvoiement générique de service client.",
@@ -2067,8 +2096,9 @@ function buildSongProduction(input) {
   const title = cleanOneLine(titleSeed, 'Echoes of Vivy', 46)
     .replace(/^["'“”]+|["'“”]+$/g, '');
 
+  const publicLyrics = sanitizeVivyPublicLyrics(songcraft.lyrics);
   const chorus = hasMaterial
-    ? songcraft.lyrics.split(/\n+/).filter((line) => !/^\[/.test(line)).slice(0, 4).join(' / ')
+    ? publicLyrics.split(/\n+/).filter((line) => !/^\[/.test(line)).slice(0, 4).join(' / ')
     : 'Donne-moi un thème, quelques paroles ou une intention pour produire une chanson complète.';
 
   const briefLines = [
@@ -2119,7 +2149,7 @@ function buildSongProduction(input) {
       { id: 'cover_image', label: 'Créer miniature A11', target: '/api/tools/generate_sd', ready: hasMaterial },
       { id: 'clip_video', label: 'Créer clip A11', target: '/api/video/generate', ready: hasMaterial },
     ],
-    publicLyrics: songcraft.lyrics,
+    publicLyrics,
     prosodyPlan,
   };
 }
@@ -2541,6 +2571,59 @@ function looksLikeWeakSongwritingReply(text = '') {
   return asksInsteadOfWriting || serviceWrapper || genericRapFiller || metaInsteadOfLyrics || brokenRhymeExercise;
 }
 
+function isVivyPublicLyricsNoiseLine(line = '') {
+  const raw = String(line || '').trim();
+  const folded = foldTextForLookup(raw);
+  if (!folded) return false;
+  if (/^(vivy_studio_handoff|vivy_song_production|vivy_voice_calibration|vivy_scene_share|vivy_production)\b/.test(folded)) return true;
+  if (/^\[title\s*:/.test(folded)) return true;
+  if (/^(?:\*\*)?\s*(titre|intention|rimes?|rimes\s*\/\s*debit|source|direction sonore|titre de travail|structure proposee|assets a produire|paroles guide|routage|routage recommande|atelier|objectif|flux chanson|sortie attendue|role|rôle|media pret|média prêt|production plan)\b/.test(folded)) return true;
+  if (/^(voici une chanson|voici les paroles|je vais continuer|je comprends mieux|quel est le message|quel est le ton|poser quelques questions)\b/.test(folded)) return true;
+  if (/\b(j espere que cette chanson|j espere que cela|j espere que ca|n hesite pas a|n hesitez pas|feedbacks?|modifications? si necessaire|vous attendiez)\b/.test(folded)) return true;
+  if (/https?:\/\/\S*(?:token=|\/api\/double-harmonic\/out\/)/i.test(raw)) return true;
+  if (/\b(?:token|access_token|signature|sig|key)=\S+/i.test(raw)) return true;
+  return false;
+}
+
+function sanitizeVivyPublicLyrics(value = '', max = 3200) {
+  const text = cleanText(value, Math.max(max, 4200));
+  if (!text) return '';
+  const kept = [];
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = String(line || '').trim();
+    if (!trimmed) {
+      if (kept.length && kept[kept.length - 1] !== '') kept.push('');
+      continue;
+    }
+    if (isVivyPublicLyricsNoiseLine(trimmed)) continue;
+    kept.push(trimmed);
+  }
+  return cleanText(kept.join('\n').replace(/\n{3,}/g, '\n\n'), max);
+}
+
+function buildVivyPublicLyrics(input = {}, rawAssistant = '', fallbackLyrics = '') {
+  let publicLyrics = sanitizeVivyPublicLyrics(rawAssistant);
+  if (!publicLyrics || looksLikeWeakSongwritingReply(publicLyrics)) {
+    publicLyrics = sanitizeVivyPublicLyrics(fallbackLyrics);
+  }
+  if (!publicLyrics || looksLikeWeakSongwritingReply(publicLyrics)) {
+    publicLyrics = sanitizeVivyPublicLyrics(buildVivySongProductionBrief({
+      ...input,
+      songText: input.songText || input.message || input.prompt || input.text || input.theme,
+    }).lyrics);
+  }
+  return publicLyrics;
+}
+
+function logVivySongcraftTrace({ provider = 'deterministic', model = 'vivy-songcraft', source = 'local', fallback = false, latencyMs = 0 } = {}) {
+  console.info('[vivy-songcraft] provider=%s model=%s source=%s fallback=%s latencyMs=%d',
+    provider,
+    model,
+    source,
+    fallback ? 'true' : 'false',
+    Number.isFinite(latencyMs) ? latencyMs : 0);
+}
+
 function buildVivyDirectSongReply(input = {}) {
   const historyText = sanitizeVivySongMaterial(getVivyUserHistoryText(input.history), 1600);
   const material = stripVivyAscii4SoundTokens(compactUniqueLines([
@@ -2772,7 +2855,11 @@ function buildVivyChat(input) {
     ? `J'ai aussi noté ${files.length} fichier${files.length > 1 ? 's' : ''}: ${files.map((file) => file.filename).join(', ')}.`
     : '';
   const assistant = mode === 'song'
-    ? buildVivyDirectSongReply({ ...input, message, files, history })
+    ? buildVivyPublicLyrics(
+      { ...input, message, files, history },
+      buildVivyDirectSongReply({ ...input, message, files, history }),
+      production.publicLyrics
+    )
     : [
       `Je te suis. Je garde cette idée dans le fil Vivy et je pars sur ${modeLabel}.`,
       `Ce que je comprends: ${summarizeChatMessage(message)}`,
@@ -2793,6 +2880,10 @@ function buildVivyChat(input) {
     summary: production.summary,
     actions: production.actions,
     routing: production.routing,
+    internalBrief: production.internalBrief,
+    productionPlan: production.productionPlan,
+    publicText: assistant,
+    publicLyrics: mode === 'song' ? assistant : undefined,
     tokenStored: false,
     writesByDefault: false,
     aiMode: mode === 'song' ? 'fallback_songcraft' : 'fallback',
@@ -2992,7 +3083,7 @@ async function buildVivyAiChat(input, req) {
   }
 
   const llmDisabled = String(process.env.VIVY_CHAT_DISABLE_LLM || '').toLowerCase() === 'true';
-  const llmBundle = createVivyOpenAIClient();
+  const llmBundle = createVivyOpenAIClient({ mode });
 
   if (localContext && llmDisabled && mode !== 'song') {
     const assistant = buildVivyLocalContextReply(localContext);
@@ -3026,8 +3117,20 @@ async function buildVivyAiChat(input, req) {
   }
 
   if (mode === 'song' && (!llmBundle || llmDisabled)) {
+    const songStart = Date.now();
     const history = normalizeVivyChatHistory(input.history);
-    const assistant = buildVivyDirectSongReply({ ...input, message, files, history });
+    const assistant = buildVivyPublicLyrics(
+      { ...input, message, files, history },
+      buildVivyDirectSongReply({ ...input, message, files, history }),
+      fallback.publicLyrics
+    );
+    logVivySongcraftTrace({
+      provider: 'deterministic',
+      model: 'vivy-songcraft',
+      source: llmDisabled ? 'llm-disabled' : 'llm-unavailable',
+      fallback: true,
+      latencyMs: Date.now() - songStart,
+    });
     rememberVivyEpisode(userId, 'vivy_reply', assistant, {
       mode,
       conversationId: cleanOneLine(input.conversationId, '', 120),
@@ -3037,7 +3140,8 @@ async function buildVivyAiChat(input, req) {
       ...fallback,
       assistant,
       content: assistant,
-      publicLyrics: mode === 'song' ? assistant : undefined,
+      publicText: assistant,
+      publicLyrics: assistant,
       aiMode: 'deterministic_songcraft',
       semanticMemory,
       memoryStored: semanticMemory.stored,
@@ -3103,18 +3207,34 @@ async function buildVivyAiChat(input, req) {
     });
     const rawAssistant = cleanText(completion?.choices?.[0]?.message?.content, 3200);
     const _vivyLlmLatency = Date.now() - _vivyLlmStart;
-    console.log('[vivy-chat] provider=%s model=%s source=%s latencyMs=%d mode=%s',
-      /groq/i.test(llmBundle.baseURL || '') ? 'groq' : /openrouter/i.test(llmBundle.baseURL || '') ? 'openrouter' : 'openai',
-      llmBundle.model, llmBundle.baseURL || 'default', _vivyLlmLatency, mode);
     const processed = postProcessVivyAssistantText({
       text: rawAssistant,
       userMessage: message,
       systemPrompt,
     });
+    let usedSongcraftFallback = false;
+    const assistantCandidate = mode === 'song' && looksLikeWeakSongwritingReply(processed.content)
+      ? (() => {
+        usedSongcraftFallback = true;
+        return buildVivyDirectSongReply({ ...input, message, files, history });
+      })()
+      : processed.content;
     const assistant = mode === 'song'
-      && looksLikeWeakSongwritingReply(processed.content)
-        ? buildVivyDirectSongReply({ ...input, message, files, history })
-        : processed.content;
+      ? buildVivyPublicLyrics({ ...input, message, files, history }, assistantCandidate, fallback.publicLyrics)
+      : assistantCandidate;
+    if (mode === 'song') {
+      logVivySongcraftTrace({
+        provider: llmBundle.provider || getVivyProviderFromBaseUrl(llmBundle.baseURL || ''),
+        model: llmBundle.model,
+        source: llmBundle.source || 'openai-compatible',
+        fallback: usedSongcraftFallback,
+        latencyMs: _vivyLlmLatency,
+      });
+    } else {
+      console.log('[vivy-chat] provider=%s model=%s source=%s latencyMs=%d mode=%s',
+        llmBundle.provider || getVivyProviderFromBaseUrl(llmBundle.baseURL || ''),
+        llmBundle.model, llmBundle.source || 'openai-compatible', _vivyLlmLatency, mode);
+    }
     if (!assistant) {
       return {
         ...fallback,
@@ -3132,10 +3252,11 @@ async function buildVivyAiChat(input, req) {
       ...fallback,
       assistant,
       content: assistant,
+      publicText: assistant,
       publicLyrics: mode === 'song' ? assistant : undefined,
       aiMode: 'llm',
       model: llmBundle.model,
-      provider: /groq/i.test(llmBundle.baseURL || '') ? 'groq' : /openrouter/i.test(llmBundle.baseURL || '') ? 'openrouter' : 'openai',
+      provider: llmBundle.provider || getVivyProviderFromBaseUrl(llmBundle.baseURL || ''),
       semanticMemory,
       memoryStored: semanticMemory.stored,
     };
@@ -3174,6 +3295,21 @@ function buildVivyStudioProduction(input) {
   ].join('\n');
   const safeHandoff = cleanVivyAgentBrief(handoff, 7000);
   const prosodyPlan = production.prosodyPlan || null;
+  const publicLyrics = mode === 'song' && production.publicLyrics
+    ? sanitizeVivyPublicLyrics(production.publicLyrics)
+    : undefined;
+  const publicText = mode === 'song'
+    ? (publicLyrics || 'Ajoute un thème, un texte ou des paroles pour lancer la chanson.')
+    : cleanText(production.publicText || production.summary, 1800);
+  const productionPlan = {
+    mode,
+    title: production.title,
+    summary: production.summary,
+    actions: production.actions,
+    routing,
+    hasPublicLyrics: Boolean(publicLyrics),
+    prosodySchema: prosodyPlan?.schema || null,
+  };
 
   return {
     ok: true,
@@ -3182,8 +3318,12 @@ function buildVivyStudioProduction(input) {
     language,
     title: production.title,
     summary: production.summary,
-    assistant: safeHandoff,
+    assistant: publicText,
+    content: publicText,
+    publicText,
+    internalBrief: safeHandoff,
     brief: safeHandoff,
+    productionPlan,
     actions: production.actions,
     routing,
     mediaAgentRoles,
@@ -3226,7 +3366,7 @@ function buildVivyStudioProduction(input) {
       visionQaOwner: mediaAgentRoles.vision_qa.primary,
       clientHandoffOwner: mediaAgentRoles.client_handoff.primary,
     },
-    publicLyrics: mode === 'song' && production.publicLyrics ? String(production.publicLyrics).slice(0, 3200) : undefined,
+    publicLyrics,
     tokenStored: false,
   };
 }

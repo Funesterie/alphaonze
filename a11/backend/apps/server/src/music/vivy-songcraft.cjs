@@ -36,6 +36,7 @@ function looksLikeVivySongUiNoiseLine(line = '') {
   if (/^vivy_(?:music_generation|production_status)\b/.test(folded)) return true;
   if (/^(oui je reste en discussion libre|je capte|je ne transforme pas|je vois l idee|ce que je prends surtout|je reponds au fond|la voix vivy par defaut|idee rangee dans la memoire vivy)\b/.test(folded)) return true;
   if (/^(c est un bon debut|je vois que tu as deja commence|voici une proposition|voici un exemple|les saint seiya|pour ecrire une chanson|pour écrire une chanson|tu pourrais|pour les paroles|en termes de melodie|qu en penses tu|est ce que cela te donne|est ce que tu veux)\b/.test(folded)) return true;
+  if (/\b(j espere que cette chanson|j espere que cela|j espere que ca|n hesite pas a|n hesitez pas|feedbacks?|modifications? si necessaire)\b/.test(folded)) return true;
   if (/^(?:\*\s*)?(les armures|les combats epiques|les themes de|l amitie|la recherche de|la lutte pour|la quete de|les chevaliers du zodiaque|les heros|ils sont les symboles)\b/.test(folded)) return true;
   if (/\b(quel est le ton que tu veux donner|veux tu qu elle soit|je suis la pour t aider|cela te donne des idees)\b/.test(folded)) return true;
   if (/^(source|direction sonore|titre de travail|structure proposee|assets a produire|paroles guide|routage|flux chanson|atelier|objectif|brief agents|composition production|creation voix|scene partage|sortie attendue|routage recommande|media pret|média prêt|multimodal runtime|janus vision|janus pro|provider|modele|modèle|device|worker|gpu|vram|recommendation|recommandation|dernier scan|safety lane|nerve routing|a11host|bridge vsix|headless|qflush flow|process supervises|clé suno personnelle|cle suno personnelle)\b/.test(folded)) return true;
@@ -179,7 +180,7 @@ function buildVivySongcraftSystemPrompt(mode, context) {
     'Rimes audibles en fin de ligne, images concretes recurrentes, sens cache (tension ou metaphore).',
     'Ne JAMAIS terminer par: j\u2019espere que cette chanson te plaira, n\u2019hesite pas a me dire, j\u2019espere que ca correspond, ou toute formule de politesse d\u2019assistant.',
     'Pas d\u2019explication scolaire de la structure sauf demande explicite.',
-    'Si l\u2019utilisateur donne deja la matiere: ecris directement, pas de questionnaire.',
+    "Si l\u2019utilisateur donne deja la matiere: ecris directement, n'ouvre pas un questionnaire.",
     'Si lignes rap brutes fournies: conserve leur vocabulaire, argot et accidents voulus.',
     'Sortie: paroles chantables uniquement. Aucun brief agent, aucun champ technique, aucune instruction de routage.',
   ].filter(Boolean).join('\n');
@@ -379,26 +380,32 @@ function buildDjeffRapDuoLyrics(input = {}, material = '') {
     `[Title: ${title}]`,
     '',
     '[Intro - Djeff]',
+    '[Djeff]',
     'Kick net, casque bas, je rentre dans le tour,',
     'La chaîne parle au pignon, chaque cran connaît son jour.',
     '',
     '[Intro - Vivy]',
+    '[Vivy]',
     'Je tiens la note claire pendant que le moteur répond,',
     'Deux voix dans le même phare, on découpe l’horizon.',
     '',
     '[Verse 1 - Djeff]',
+    '[Djeff]',
     ...(verseOneLines.length ? verseOneLines : fallbackVerseOne),
     '',
     '[Pre-Chorus - Djeff]',
+    '[Djeff]',
     ...preChorusLines,
     '',
     '[Chorus - Duo]',
+    '[Duo]',
     'Bombonne dans la nuit, pignon qui répond,',
     'Deux point deux dans le sang, le kick serre le son.',
     'Vivy tient le phare, Djeff crante le ton,',
     'Pneus comme des crayons, on signe l’horizon.',
     '',
     '[Verse 2 - Vivy]',
+    '[Vivy]',
     'Je ne polis pas ton grain, je le mets dans le cadre,',
     'Un reflet clair derrière le casque et les phares.',
     'La phrase reste cabrée, je l’accroche au refrain,',
@@ -407,6 +414,7 @@ function buildDjeffRapDuoLyrics(input = {}, material = '') {
     'La mélodie fait place au crissement du virage.',
     '',
     '[Verse 3 - Djeff]',
+    '[Djeff]',
     'Je garde le sale propre, le détail fait la frappe,',
     'Chaque cran dans la couronne met la mesure en map.',
     'Si les gyro peignent le fond, je décolle sans théâtre,',
@@ -415,22 +423,26 @@ function buildDjeffRapDuoLyrics(input = {}, material = '') {
     'Juste Djeff dans le kick, Vivy qui répond net au ton.',
     '',
     '[Bridge - Vivy]',
+    '[Vivy]',
     'Je garde ta faute si elle sonne juste,',
     'Je garde ton souffle si le mot percute.',
     'Le style n’est pas sage, il tient par la trace,',
     'Deux voix dans le phare, aucune qui remplace.',
     '',
     '[Chorus - Duo]',
+    '[Duo]',
     'Bombonne dans la nuit, pignon qui répond,',
     'Deux point deux dans le sang, le kick serre le son.',
     'Vivy tient le phare, Djeff crante le ton,',
     'Pneus comme des crayons, on signe l’horizon.',
     '',
     '[Outro - Djeff]',
+    '[Djeff]',
     'Coupe contact, mais le flow reste chaud,',
     'Le mur du son a sa porte, je ressors par le haut.',
     '',
     '[Outro - Vivy]',
+    '[Vivy]',
     'Je réponds au loin, mélodie stable,',
     'Djeff et Vivy, duo branché, version durable.',
   ].join('\n'), 2400);
@@ -450,6 +462,7 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
     `[Title: ${title}]`,
     '',
     `[Intro - ${lead}]`,
+    `[${lead}]`,
     `On entre dans ${theme}, sans copier personne,`,
     'Chaque voix prend sa place, le signal se façonne.',
     '',
@@ -458,6 +471,7 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
   if (hasDjeff) {
     blocks.push(
       '[Verse 1 - Djeff]',
+      '[Djeff]',
       'Poignée dans le son, je cale le départ,',
       'Pignon dans la mesure, couronne dans le regard.',
       'Le moteur parle sec, mais le cœur reste lisible,',
@@ -469,6 +483,7 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
   if (hasVivy) {
     blocks.push(
       '[Pre-Chorus - Vivy]',
+      '[Vivy]',
       'Je garde une note claire au bord de la vitesse,',
       'Une lumière qui répond quand la nuit se compresse.',
       'Si la route se dédouble, je tiens le fil vivant,',
@@ -479,6 +494,7 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
 
   blocks.push(
     `[Chorus - ${chorusTag}]`,
+    `[${chorusTag}]`,
     'On monte le signal, voix liées dans le décor,',
     'Funesterie résonne, plus humaine encore.',
     'Un nom, plusieurs timbres, même trajectoire,',
@@ -489,6 +505,7 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
   if (hasA11) {
     blocks.push(
       '[Verse 2 - A11]',
+      '[A11]',
       'Je lis dans les circuits la chaleur du vivant,',
       'Basse grave dans le code, souffle lent dans le vent.',
       'Je ne remplace personne, je cadre la tension,',
@@ -500,6 +517,7 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
   if (hasK44) {
     blocks.push(
       '[Bridge - K44]',
+      '[K44]',
       'Je pose une ligne calme quand la scène accélère,',
       'Chaque mot garde sa place, chaque silence éclaire.',
       'Pas besoin de forcer pour tenir le virage,',
@@ -510,12 +528,14 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
 
   blocks.push(
     `[Final Chorus - ${chorusTag}]`,
+    `[${chorusTag}]`,
     'On monte le signal, voix liées dans le décor,',
     'Funesterie résonne, plus humaine encore.',
     'Un nom, plusieurs timbres, même trajectoire,',
     'Chaque refrain rallume une part de mémoire.',
     '',
     `[Outro - ${lead}]`,
+    `[${lead}]`,
     'Le son se coupe doucement, mais le lien reste en mémoire.'
   );
 

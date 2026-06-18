@@ -2728,7 +2728,11 @@ export type VivyStudioProductionResult = {
   summary?: string;
   assistant?: string;
   content?: string;
+  publicText?: string;
+  publicLyrics?: string;
+  internalBrief?: string;
   brief?: string;
+  productionPlan?: Record<string, unknown>;
   actions?: VivyStudioAction[];
   routing?: string[];
   media?: VivyStudioMedia;

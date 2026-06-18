@@ -5803,7 +5803,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           files: apiFiles,
           history: apiHistory,
         });
-      const assistantText = toUnicodeText(payload.assistant || payload.content || payload.brief || payload.summary)
+      const assistantText = toUnicodeText(payload.publicLyrics || payload.publicText || payload.assistant || payload.content || payload.summary)
         || (mode === "song"
           ? "Je suis là, mais je n'ai pas encore assez de matière pour structurer la chanson."
           : "Je suis là, je garde le fil.");
