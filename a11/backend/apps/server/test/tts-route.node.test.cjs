@@ -3402,6 +3402,119 @@ test('tts piper route respects OpenAI-first voice persona before HTTP module', a
   }
 });
 
+test('tts speak route lets basic Vivy Studio official voice tests use ElevenLabs cloud', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-basic-vivy-elevenlabs-'));
+  const previousEnv = {
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    VIVY_ELEVENLABS_API_KEY: process.env.VIVY_ELEVENLABS_API_KEY,
+    A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+    ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY,
+    XI_API_KEY: process.env.XI_API_KEY,
+    VIVY_ELEVENLABS_API_KEY_FILE: process.env.VIVY_ELEVENLABS_API_KEY_FILE,
+    A11_ELEVENLABS_API_KEY_FILE: process.env.A11_ELEVENLABS_API_KEY_FILE,
+    ELEVENLABS_API_KEY_FILE: process.env.ELEVENLABS_API_KEY_FILE,
+    ELEVENLABS_BASE_URL: process.env.ELEVENLABS_BASE_URL,
+    A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
+    A11_ELEVENLABS_TTS_DISABLED: process.env.A11_ELEVENLABS_TTS_DISABLED,
+    ELEVENLABS_TTS_DISABLED: process.env.ELEVENLABS_TTS_DISABLED,
+    A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
+    ELEVENLABS_TTS_ENABLED: process.env.ELEVENLABS_TTS_ENABLED,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    TTS_URL: process.env.TTS_URL,
+    TTS_HOST: process.env.TTS_HOST,
+    TTS_BASE_URL: process.env.TTS_BASE_URL,
+    TTS_PUBLIC_BASE_URL: process.env.TTS_PUBLIC_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const wav = createPcm16Wav();
+  const elevenBodies = [];
+  const remoteTtsCalls = [];
+
+  process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.VIVY_ELEVENLABS_API_KEY = 'test-vivy-elevenlabs-key';
+  delete process.env.A11_ELEVENLABS_API_KEY;
+  delete process.env.ELEVENLABS_API_KEY;
+  delete process.env.XI_API_KEY;
+  delete process.env.VIVY_ELEVENLABS_API_KEY_FILE;
+  delete process.env.A11_ELEVENLABS_API_KEY_FILE;
+  delete process.env.ELEVENLABS_API_KEY_FILE;
+  process.env.ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
+  delete process.env.A11_ELEVENLABS_BASE_URL;
+  delete process.env.A11_ELEVENLABS_TTS_DISABLED;
+  delete process.env.ELEVENLABS_TTS_DISABLED;
+  delete process.env.A11_ELEVENLABS_TTS_ENABLED;
+  delete process.env.ELEVENLABS_TTS_ENABLED;
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  delete process.env.TTS_URL;
+  delete process.env.TTS_HOST;
+  delete process.env.TTS_BASE_URL;
+  delete process.env.TTS_PUBLIC_BASE_URL;
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value.startsWith('https://api.elevenlabs.test/v1/text-to-speech/')) {
+      elevenBodies.push(JSON.parse(String(options.body || '{}')));
+      return {
+        ok: true,
+        status: 200,
+        async arrayBuffer() {
+          return wav;
+        },
+      };
+    }
+    if (value === 'http://a11-voice:5002/api/tts') {
+      remoteTtsCalls.push(value);
+      throw new Error('local_voice_module_should_not_be_called_for_vivy_studio_cloud_test');
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'Salut Jeffrey. Je suis Vivy. Je parle doucement, avec une voix claire et proche.',
+          persona: 'vivy',
+          voicePersona: 'vivy',
+          ttsPersona: 'vivy',
+          surface: 'vivy',
+          provider: 'elevenlabs',
+          ttsProvider: 'elevenlabs',
+          engine: 'elevenlabs',
+          voiceEngine: 'elevenlabs',
+          identityVoice: true,
+          useIdentityVoice: true,
+          forceCloudTts: true,
+          allowCloudTts: true,
+          allowReadyMadeCloudVoice: true,
+          allowOfficialCloudVoice: true,
+          ttsCostPolicy: 'vivy_vivy_studio_cloud_voice_test',
+        }, { 'x-test-basic': '1' });
+
+        assert.equal(result.response.status, 200);
+        assert.equal(result.json.provider, 'elevenlabs');
+        assert.equal(result.json.via, 'elevenlabs-tts');
+        assert.ok(result.json.audioUrl);
+        assert.equal(elevenBodies.length, 1);
+        assert.equal(remoteTtsCalls.length, 0);
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
 test('tts piper route blocks raw OpenAI audio for non-official voices when a reference voice is required', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-openai-reference-required-'));
   const previousEnv = {
