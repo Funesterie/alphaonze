@@ -129,11 +129,21 @@ function buildVivyThemeSeed(value = '', fallback = 'Vivy garde la lumière') {
     .replace(/^(?:salut|bonjour|coucou|hey)\b[\s,;:.!?-]*/i, '')
     .replace(/^(?:tu\s+as\s+|t['’]\s*as\s+)?(?:une?\s+)?id[ée]e\s+de\s+chanson\s+(?:sur|pour|avec)\s+/i, '')
     .replace(/^(?:theme|th[èe]me)\s*:?\s*/i, '')
+    .replace(/\ben\s+duo\s+[A-Za-zÀ-ÿ0-9_-]+(?:\s+(?:et|avec)\s+[A-Za-zÀ-ÿ0-9_-]+)?/ig, '')
+    .replace(/\b(paroles?|lyrics|tags?\s+vocaux?|obligatoires?|chantables?|refrain\s+clair)\b.*$/i, '')
     .replace(/\b(?:un\s+)?son\s+d['’]ambiance\s+(?:pour|sur|avec)?\s*/ig, '')
     .replace(/\b(?:prépare|prepare)\s+(?:un\s+)?prompt\s+suno\b/ig, '')
     .replace(/\b(?:continue|continuer|reprends|poursuis)\s+(?:ce\s+)?(?:texte|couplet|refrain|rap)\b/ig, '')
     .replace(/\s+/g, ' ')
     .trim();
+
+  seed = seed.replace(
+    /^(sombre|dark|douce?|doux|cin[ée]matographique|cinematic)(?:\s+mais\s+(sombre|dark|douce?|doux|cin[ée]matographique|cinematic))?\s+sur\s+(.+)$/i,
+    (_match, first, second, topic) => {
+      const qualities = [first, second].filter(Boolean).join(' et ');
+      return `${cleanOneLine(topic, '', 140)}, ambiance ${qualities}`;
+    }
+  );
 
   const usefulParts = seed
     .split(/[.!?;\n]+/)
@@ -449,7 +459,7 @@ function buildDjeffRapDuoLyrics(input = {}, material = '') {
 }
 
 function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buildVivySongArtistCast(input)) {
-  const theme = stripSongCommand(material) || 'Funesterie en multi-voix';
+  const theme = buildVivyThemeSeed(material, 'Funesterie en multi-voix');
   const title = cleanOneLine(input.songTitle || input.title || inferTitle(theme), 'Signal multi-voix', 80);
   const hasDjeff = artistCast.ids.includes('djeff');
   const hasVivy = artistCast.ids.includes('vivy');

@@ -1298,6 +1298,24 @@ test('Vivy song fallback extracts a clean summer theme instead of pasting the wh
   assert.doesNotMatch(result.assistant, /tu as une idée/i);
 });
 
+test('Vivy song fallback cleans command phrasing for Djeff and K44 duet themes', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-song-djeff-k44-theme-clean',
+    mode: 'song',
+    songArtists: ['djeff', 'k44'],
+    message: 'Fais une chanson sombre mais douce sur Nossen en duo Djeff et K44. Paroles chantables, refrain clair, tags vocaux obligatoires.',
+    history: [],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'song');
+  assert.match(result.assistant, /\[Djeff\]/);
+  assert.match(result.assistant, /\[K44\]/);
+  assert.match(result.assistant, /\[(Duo|Tous)\]/);
+  assert.match(result.assistant, /Nossen|sombre|douce/i);
+  assert.doesNotMatch(result.assistant, /Fais une chanson|On entre dans sombre mais douce sur|Paroles chantables|tags vocaux obligatoires/i);
+});
+
 test('Vivy intent header routes Chanson to Djeff songcraft while preserving raw rap grain', async () => {
   const rawDjeffDraft = [
     'VIVY_INTENT',
