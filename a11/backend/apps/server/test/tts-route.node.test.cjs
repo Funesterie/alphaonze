@@ -538,6 +538,7 @@ test('tts speak route gives basic A11 the official local reference without paid 
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-basic-official-voice-'));
   const previousEnv = {
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_RUNTIME_DISABLE_IMPLICIT_LEGACY: process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY,
     A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
     A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
@@ -557,8 +558,9 @@ test('tts speak route gives basic A11 the official local reference without paid 
   const conversionForms = [];
 
   fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
-  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'a11-official-stern-french.wav'), createPcm16Wav({ frequency: 180 }));
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'A11 ref.wav'), createPcm16Wav({ frequency: 180 }));
   process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY = '1';
   process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
   delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
   process.env.ENABLE_PIPER_HTTP = 'true';
@@ -653,7 +655,7 @@ test('tts speak route gives basic A11 the official local reference without paid 
         assert.equal(conversionForms.length, 1);
         assert.equal(conversionForms[0].get('persona'), 'a11');
         assert.equal(conversionForms[0].get('voiceStyle'), 'a11-official-stern-french');
-        assert.match(result.json.audioModule.reference.label, /A11 Official Stern French/i);
+        assert.match(result.json.audioModule.reference.label, /A11 Ref/i);
       }
     );
   } finally {
@@ -670,6 +672,7 @@ test('tts speak route keeps premium A11 on the official WAV reference when offic
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-premium-official-voice-'));
   const previousEnv = {
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_RUNTIME_DISABLE_IMPLICIT_LEGACY: process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY,
     A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
     A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
@@ -690,8 +693,9 @@ test('tts speak route keeps premium A11 on the official WAV reference when offic
   const conversionForms = [];
 
   fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
-  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'a11-official-stern-french.wav'), createPcm16Wav({ frequency: 160 }));
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'A11 ref.wav'), createPcm16Wav({ frequency: 160 }));
   process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY = '1';
   process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
   delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
   process.env.ENABLE_PIPER_HTTP = 'true';
@@ -782,6 +786,7 @@ test('tts speak route accepts explicit A11 voix de lait style', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-voix-de-lait-style-'));
   const previousEnv = {
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_RUNTIME_DISABLE_IMPLICIT_LEGACY: process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY,
     A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
     A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
@@ -802,9 +807,10 @@ test('tts speak route accepts explicit A11 voix de lait style', async () => {
   const conversionForms = [];
 
   fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
-  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'a11-official-stern-french.wav'), createPcm16Wav({ frequency: 160 }));
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'A11 ref.wav'), createPcm16Wav({ frequency: 160 }));
   fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'a11-voix-de-lait.wav'), createPcm16Wav({ frequency: 150 }));
   process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY = '1';
   process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
   delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
   process.env.ENABLE_PIPER_HTTP = 'true';
@@ -897,6 +903,7 @@ test('tts speak route maps Djeff/Pignon style to djeff-rap', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'djeff-pignon-style-'));
   const previousEnv = {
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_RUNTIME_DISABLE_IMPLICIT_LEGACY: process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY,
     A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
     A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
@@ -917,8 +924,9 @@ test('tts speak route maps Djeff/Pignon style to djeff-rap', async () => {
   const conversionForms = [];
 
   fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
-  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'djeff-rap.wav'), createPcm16Wav({ frequency: 180 }));
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'Djeff ref.wav'), createPcm16Wav({ frequency: 180 }));
   process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY = '1';
   process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
   delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
   process.env.ENABLE_PIPER_HTTP = 'true';
@@ -3007,6 +3015,7 @@ test('tts speak route sends Djeff rap WAV reference to XTTS/RVC when voiceStyle 
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-djeff-rap-reference-'));
   const previousEnv = {
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_RUNTIME_DISABLE_IMPLICIT_LEGACY: process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY,
     A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
     A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
     A11_VOICE_CONVERSION_ENABLED: process.env.A11_VOICE_CONVERSION_ENABLED,
@@ -3032,8 +3041,9 @@ test('tts speak route sends Djeff rap WAV reference to XTTS/RVC when voiceStyle 
   const convertReferences = [];
 
   fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
-  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'djeff-rap.wav'), createPcm16Wav({ frequency: 180 }));
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'Djeff ref.wav'), createPcm16Wav({ frequency: 180 }));
   process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY = '1';
   process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
   delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
   process.env.A11_VOICE_CONVERSION_ENABLED = 'true';
@@ -3068,7 +3078,7 @@ test('tts speak route sends Djeff rap WAV reference to XTTS/RVC when voiceStyle 
       assert.equal(options.body?.get?.('voiceStyle'), 'djeff-rap');
       const reference = options.body?.get?.('reference');
       assert.ok(reference, 'Djeff rap conversion must include the local reference WAV');
-      assert.match(String(reference?.name || ''), /djeff-rap\.wav/i);
+      assert.match(String(reference?.name || ''), /Djeff ref\.wav/i);
       convertReferences.push(reference);
       return {
         ok: true,
@@ -3143,7 +3153,7 @@ test('tts speak route sends Djeff rap WAV reference to XTTS/RVC when voiceStyle 
         assert.equal(result.json.voiceConversion.ok, true);
         assert.equal(result.json.voiceConversion.voiceStyle, 'djeff-rap');
         assert.equal(result.json.voiceConversion.referenceSource, 'upload');
-        assert.match(result.json.voiceConversion.reference.label, /Djeff Rap/i);
+        assert.match(result.json.voiceConversion.reference.label, /Djeff Ref/i);
         assert.equal(convertReferences.length, 1);
         assert.equal(calls.some((call) => /cartesia/i.test(call)), false);
       }
@@ -3162,6 +3172,7 @@ test('tts speak route accepts audioModule reference metadata from direct Vivy sy
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-vivy-audiomodule-reference-'));
   const previousEnv = {
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_RUNTIME_DISABLE_IMPLICIT_LEGACY: process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY,
     A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
     A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
     A11_VOICE_CONVERSION_ENABLED: process.env.A11_VOICE_CONVERSION_ENABLED,
@@ -3182,8 +3193,9 @@ test('tts speak route accepts audioModule reference metadata from direct Vivy sy
   const calls = [];
 
   fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
-  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'vivy-official-french-conversational.wav'), createPcm16Wav({ frequency: 260 }));
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'Vivy ref.wav'), createPcm16Wav({ frequency: 260 }));
   process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY = '1';
   process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
   delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
   process.env.A11_VOICE_CONVERSION_ENABLED = 'true';
@@ -3218,7 +3230,7 @@ test('tts speak route accepts audioModule reference metadata from direct Vivy sy
               ok: true,
               reference: {
                 id: 'library_vivy_official',
-                label: 'Vivy Official French Conversational',
+                label: 'Vivy Ref',
                 scope: 'library',
               },
               comparison: {
@@ -3284,7 +3296,7 @@ test('tts speak route accepts audioModule reference metadata from direct Vivy sy
 
         assert.equal(result.response.status, 200);
         assert.equal(result.json.provider, 'xtts-rvc');
-        assert.match(result.json.audioModule.reference.label, /Vivy Official French Conversational/i);
+        assert.match(result.json.audioModule.reference.label, /Vivy Ref/i);
         assert.equal(result.json.voiceConversion.ok, true);
         assert.equal(calls.filter((call) => call === 'http://a11-voice:5002/api/voice/synthesize').length, 1);
         assert.equal(calls.filter((call) => call === 'http://a11-voice:5002/api/voice/convert').length, 0);
@@ -4107,6 +4119,7 @@ test('tts route can run generated audio through the voice conversion module', as
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-conversion-'));
   const previousEnv = {
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_RUNTIME_DISABLE_IMPLICIT_LEGACY: process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY,
     A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
     A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
@@ -4125,8 +4138,9 @@ test('tts route can run generated audio through the voice conversion module', as
   const backendCalls = [];
 
   fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
-  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'a11-official-stern-french.wav'), createPcm16Wav({ frequency: 220 }));
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'A11 ref.wav'), createPcm16Wav({ frequency: 220 }));
   process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY = '1';
   process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
   delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
   process.env.ENABLE_PIPER_HTTP = 'true';
@@ -4212,7 +4226,7 @@ test('tts route can run generated audio through the voice conversion module', as
         assert.equal(result.json.voiceConversion.engine, 'xtts-rvc-api');
         assert.equal(result.json.voiceConversion.voiceStyle, 'a11-official-stern-french');
         assert.deepEqual(result.json.voiceConversion.attemptedEngines, ['xtts-rvc']);
-        assert.match(result.json.audioModule.reference.label, /A11 Official Stern French/i);
+        assert.match(result.json.audioModule.reference.label, /A11 Ref/i);
         assert.equal(
           backendCalls.filter((call) => call.url === 'http://a11-voice:5002/api/voice/convert').length,
           1
@@ -4241,6 +4255,7 @@ test('tts route blocks Piper audio when an official reference voice conversion f
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-block-piper-official-'));
   const previousEnv = {
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_RUNTIME_DISABLE_IMPLICIT_LEGACY: process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY,
     A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
     A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
@@ -4259,8 +4274,9 @@ test('tts route blocks Piper audio when an official reference voice conversion f
   const backendCalls = [];
 
   fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
-  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'a11-official-stern-french.wav'), createPcm16Wav({ frequency: 190 }));
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'A11 ref.wav'), createPcm16Wav({ frequency: 190 }));
   process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY = '1';
   process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
   delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
   process.env.ENABLE_PIPER_HTTP = 'true';

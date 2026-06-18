@@ -194,6 +194,10 @@ test('voice reference resolver prefers Vivy library samples when requested', () 
     const libraryDir = path.join(runtimeRoot, 'voice-library');
     fs.mkdirSync(libraryDir, { recursive: true });
     fs.writeFileSync(path.join(libraryDir, 'neutral-reference.wav'), createPcm16Wav({ frequency: 220 }));
+    fs.writeFileSync(path.join(libraryDir, 'a11-official-stern-french.wav'), createPcm16Wav({ frequency: 115 }));
+    fs.writeFileSync(path.join(libraryDir, 'djeff-rap.wav'), createPcm16Wav({ frequency: 185 }));
+    fs.writeFileSync(path.join(libraryDir, 'kaen44-official-french-narrator.wav'), createPcm16Wav({ frequency: 525 }));
+    fs.writeFileSync(path.join(libraryDir, 'vivy.wav'), createPcm16Wav({ frequency: 445 }));
     fs.writeFileSync(path.join(libraryDir, 'Vivy ref.wav'), createPcm16Wav({ frequency: 440 }));
     fs.writeFileSync(path.join(libraryDir, 'K44 Ref.wav'), createPcm16Wav({ frequency: 520 }));
     fs.writeFileSync(path.join(libraryDir, 'A11 ref.wav'), createPcm16Wav({ frequency: 110 }));

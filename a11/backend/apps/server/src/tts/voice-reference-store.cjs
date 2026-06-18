@@ -743,7 +743,7 @@ function getReferencePreferenceScore(ref, preferredLabel = '') {
   const fileBase = base;
   const fileAliases = agentVoiceAliases[fileBase] || [];
   if (fileAliases.includes(needle)) {
-    score = Math.max(score, 95);
+    score = Math.max(score, 130);
   }
   const agentAliases = agentVoiceAliases[needle] || [];
   if (score > 0 && agentAliases.some((alias) => tokens.has(alias) || base.includes(alias))) {
