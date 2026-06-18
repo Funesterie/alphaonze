@@ -29,11 +29,15 @@ function looksLikeVivySongUiNoiseLine(line = '') {
   const folded = foldTextForLookup(raw);
   if (!folded) return true;
 
-  if (/^je suis vivy\s+parle moi d/.test(folded)) return true;
+  if (/^je suis vivy(?:\b|$)/.test(folded)) return true;
+  if (/^parle moi d une (?:voix|chanson|ambiance|scene)\b/.test(folded)) return true;
   if (/^(vivy|vous|accueil|discussion|menu|voix|chanson|scene|scène|fichier|envoyer|copier|partager|defaut|défaut|audio perso|importer|ptt)$/.test(folded)) return true;
   if (/^(vivy_song_production|vivy_studio_handoff|vivy_production|vivy_voice_calibration|vivy_scene_share|vivy song production|vivy studio handoff|vivy production|vivy voice calibration|vivy scene share)\b/.test(folded)) return true;
   if (/^vivy_(?:music_generation|production_status)\b/.test(folded)) return true;
   if (/^(oui je reste en discussion libre|je capte|je ne transforme pas|je vois l idee|ce que je prends surtout|je reponds au fond|la voix vivy par defaut|idee rangee dans la memoire vivy)\b/.test(folded)) return true;
+  if (/^(c est un bon debut|je vois que tu as deja commence|voici une proposition|voici un exemple|les saint seiya|pour ecrire une chanson|pour écrire une chanson|tu pourrais|pour les paroles|en termes de melodie|qu en penses tu|est ce que cela te donne|est ce que tu veux)\b/.test(folded)) return true;
+  if (/^(?:\*\s*)?(les armures|les combats epiques|les themes de|l amitie|la recherche de|la lutte pour|la quete de|les chevaliers du zodiaque|les heros|ils sont les symboles)\b/.test(folded)) return true;
+  if (/\b(quel est le ton que tu veux donner|veux tu qu elle soit|je suis la pour t aider|cela te donne des idees)\b/.test(folded)) return true;
   if (/^(source|direction sonore|titre de travail|structure proposee|assets a produire|paroles guide|routage|flux chanson|atelier|objectif|brief agents|composition production|creation voix|scene partage|sortie attendue|routage recommande|media pret|média prêt|multimodal runtime|janus vision|janus pro|provider|modele|modèle|device|worker|gpu|vram|recommendation|recommandation|dernier scan|safety lane|nerve routing|a11host|bridge vsix|headless|qflush flow|process supervises|clé suno personnelle|cle suno personnelle)\b/.test(folded)) return true;
   if (/^mix d40\b/.test(folded)) return true;
   if (/\b(?:meme|même)\s+format\s+pret\b|\bformat\s+pret\b/.test(folded)) return true;
@@ -47,13 +51,22 @@ function looksLikeVivySongUiNoiseLine(line = '') {
   return false;
 }
 
+function splitVivySongMaterialCandidates(value = '') {
+  return String(value || '')
+    .replace(/([.!?])\s+/g, '$1\n')
+    .replace(/\s+(\*\s+)/g, '\n$1')
+    .split(/\r?\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
 function sanitizeVivySongMaterial(value = '', max = 2400) {
   const text = cleanText(value, Math.max(max, 3200));
   if (!text) return '';
 
   const kept = [];
   const seen = new Set();
-  for (const line of text.split(/\r?\n+/)) {
+  for (const line of splitVivySongMaterialCandidates(text)) {
     const cleaned = cleanOneLine(String(line || '').replace(/^[\s>*]+/g, ''), '', 320);
     if (!cleaned || looksLikeVivySongUiNoiseLine(cleaned)) continue;
 
@@ -79,6 +92,7 @@ function looksLikeCompleteLyrics(value = '') {
 function inferMotif(theme = '') {
   const folded = foldTextForLookup(theme);
   if (/djeff|duo|rap|moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/.test(folded)) return 'le moteur qui respire dans la nuit';
+  if (/planete|planète|astre|voie lactee|voie lactée|zodiaque|saint seiya|chevalier|cosmos|galaxie|etoile|étoile|constellation/.test(folded)) return 'un cosmos qui brûle sous l’armure';
   if (/soleil|nature|ete|été|sable|plage|creme|crème|dance|techno|estival|summer/.test(folded)) return 'un soleil qui colle à la peau';
   if (/neige|flocon|hiver|bol/.test(folded)) return 'un flocon dans le bol du matin';
   if (/lapin|court|course/.test(folded)) return 'une ombre vive qui traverse les néons';
@@ -93,6 +107,7 @@ function inferTitle(theme = '') {
   const stripped = stripSongCommand(theme);
   const motif = inferMotif(stripped);
   if (/djeff|duo|rap|moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/i.test(stripped)) return 'Pignon dans la nuit';
+  if (/planete|planète|astre|voie lact[ée]e|zodiaque|saint seiya|chevalier|cosmos|galaxie|[ée]toile|constellation/i.test(stripped)) return 'Cosmos du matin';
   if (/flocon|neige|bol/i.test(stripped)) return 'Flocon d’émerveillement';
   if (/lapin/i.test(stripped)) return 'Course sous les néons';
   if (/nossen|funesterie/i.test(stripped)) return 'Signal Funesterie';

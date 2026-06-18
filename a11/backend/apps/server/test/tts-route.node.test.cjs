@@ -3796,10 +3796,12 @@ test('tts official sample route serves A11 and Djeff library WAVs', async () => 
   };
   const wav = createPcm16Wav({ frequency: 180 });
   const djeffWav = createPcm16Wav({ frequency: 220 });
+  const vivyWav = createPcm16Wav({ frequency: 260, durationSec: 0.19 });
 
   fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
   fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'a11-official-stern-french.wav'), wav);
   fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'djeff-rap.wav'), djeffWav);
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'vivy.wav'), vivyWav);
   process.env.A11_RUNTIME_ROOT = runtimeRoot;
   process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
   delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
@@ -3843,6 +3845,15 @@ test('tts official sample route serves A11 and Djeff library WAVs', async () => 
         assert.equal(djeffAlias.status, 302);
         assert.equal(djeffAlias.headers.get('location'), '/api/tts/official/pignon/audio');
         assert.equal(djeffAlias.headers.get('x-a11-voice-sample'), 'static');
+
+        const vivy = await fetch(`${baseUrl}/api/tts/official/vivy/audio`, {
+          headers: { 'x-test-basic': '1' },
+        });
+        assert.equal(vivy.status, 200);
+        assert.match(String(vivy.headers.get('content-type') || ''), /audio\/wav/i);
+        assert.equal(vivy.headers.get('x-a11-voice-persona'), 'vivy');
+        assert.equal(vivy.headers.get('x-a11-voice-sample'), 'static');
+        assert.equal(Buffer.from(await vivy.arrayBuffer()).length, vivyWav.length);
 
         const missing = await fetch(`${baseUrl}/api/tts/official/unknown/audio`);
         assert.equal(missing.status, 404);

@@ -10603,6 +10603,12 @@ export function App() {
   const chatScrollFrameRef = useRef<HTMLDivElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const resetComposerTextareaHeight = useCallback(() => {
+    const textarea = composerInputRef.current;
+    if (!textarea) return;
+    textarea.style.height = "";
+    textarea.style.overflowY = "";
+  }, []);
   const [model, setModel] = useState(DEFAULT_REMOTE_CHAT_MODEL_CHOICES[0].value);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [remoteProviderProfiles, setRemoteProviderProfiles] = useState<RemoteProviderProfile[]>([]);
@@ -11689,6 +11695,7 @@ export function App() {
     setA11ConvMsgs([]);
     setMessages(newChat.messages);
     setInput("");
+    resetComposerTextareaHeight();
     mobileAudioPrepKeyRef.current = "";
     setPendingMobileSpeech("");
     setPendingMobileAudioUrl(null);
@@ -11746,6 +11753,7 @@ export function App() {
     initSpeech((txt: string, isFinal?: boolean) => {
       if (isFinal) {
         setInput(""); // vide l'input
+        resetComposerTextareaHeight();
         sendMessage(txt); // envoie direct le texte reconnu
       } else {
         setInput(() => txt);
@@ -11979,6 +11987,8 @@ export function App() {
       return nm;
     });
     setInput("");
+    resetComposerTextareaHeight();
+    requestAnimationFrame(resetComposerTextareaHeight);
     pendingImportedImageUrlsRef.current = [];
     pendingImportedAudioUrlsRef.current = [];
     pendingImportedVideoUrlsRef.current = [];
@@ -12952,6 +12962,7 @@ export function App() {
     setSelectedChatId(freshChat.id);
     setMessages(freshChat.messages);
     setInput("");
+    resetComposerTextareaHeight();
     setA11ConvId(null);
     setA11ConvMsgs([]);
     setA11History([]);
@@ -14935,7 +14946,8 @@ export function App() {
                         // Auto-resize
                         const el = e.target as HTMLTextAreaElement;
                         el.style.height = 'auto';
-                        el.style.height = Math.min(el.scrollHeight, window.innerHeight * 0.35) + 'px';
+                        el.style.height = Math.min(el.scrollHeight, window.innerHeight * 0.28, 220) + 'px';
+                        el.style.overflowY = el.scrollHeight > el.clientHeight ? 'auto' : 'hidden';
                       }}
                       onKeyDown={handleKeyDown}
                       onPaste={async (e) => {

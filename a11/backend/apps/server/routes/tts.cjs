@@ -68,7 +68,7 @@ const OFFICIAL_VOICE_SAMPLE_FILES = {
   djeff: 'djeff-rap.wav',
   kaen44: 'kaen44-official-french-narrator.wav',
   k44: 'kaen44-official-french-narrator.wav',
-  vivy: 'vivy-official-french-conversational.wav',
+  vivy: ['vivy.wav', 'vivy-official-french-conversational.wav'],
 };
 const OWNED_OFFICIAL_REFERENCE_PERSONAS = new Set(['a11', 'kaen44', 'vivy']);
 const BASIC_OWNED_OFFICIAL_REFERENCE_PERSONAS = new Set(['a11', 'kaen44']);
@@ -3805,13 +3805,16 @@ function normalizeOfficialVoiceSamplePersona(value = '') {
 
 function resolveOfficialVoiceSample(persona = '') {
   const normalized = normalizeOfficialVoiceSamplePersona(persona);
-  const expectedFile = OFFICIAL_VOICE_SAMPLE_FILES[normalized];
-  if (!expectedFile) return null;
+  const expectedFiles = []
+    .concat(OFFICIAL_VOICE_SAMPLE_FILES[normalized] || [])
+    .map((name) => String(name || '').trim().toLowerCase())
+    .filter(Boolean);
+  if (!expectedFiles.length) return null;
 
   const references = listLibraryVoiceReferences({ includePath: true });
   const match = references.find((reference) => (
-    String(reference?.originalName || '').toLowerCase() === expectedFile
-    || path.basename(String(reference?.filePath || '')).toLowerCase() === expectedFile
+    expectedFiles.includes(String(reference?.originalName || '').toLowerCase())
+    || expectedFiles.includes(path.basename(String(reference?.filePath || '')).toLowerCase())
   ));
   if (!match?.filePath || !fs.existsSync(match.filePath)) return null;
   return {

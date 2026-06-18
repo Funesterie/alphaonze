@@ -960,6 +960,39 @@ test('Vivy routes continue les paroles to songcraft and cleans UI/brief contamin
   assert.doesNotMatch(result.assistant, /Mix D40|double-harmonic|must-not-leak|token=/i);
 });
 
+test('Vivy songcraft removes pasted assistant explanations from the lyric seed', async () => {
+  const pastedAssistantDraft = [
+    'oui les planete les astres la voie lactée, le soleil du matin etc',
+    'Vivy',
+    "C'est un bon début pour une chanson cosmique.",
+    "Les Saint Seiya, c'est une série mythique qui peut apporter une dimension épique et héroïque à ta chanson.",
+    'Pour écrire une chanson, tu pourrais explorer plusieurs thèmes inspirés par Saint Seiya:',
+    "* Les armures et les constellations, comme symboles de protection et d'identité.",
+    "* Les combats épiques entre les chevaliers et les forces du mal.",
+    '* La recherche de la justice et de la protection de la Terre.',
+    'Qu’en penses-tu ? Est-ce que cela te donne des idées pour continuer ?',
+    'écris une chanson avec ça, faut que ca rimes et que ca soit stylé a chanté',
+  ].join('\n');
+
+  assert.equal(isDirectSongwritingRequest(pastedAssistantDraft), true);
+
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-clean-pasted-assistant-song-seed',
+    message: pastedAssistantDraft,
+    history: [],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'song');
+  assert.equal(result.aiMode, 'deterministic_songcraft');
+  assert.match(result.assistant, /\*\*Titre\s*:\*\*|\[Chorus\]|\[Refrain\]/i);
+  assert.match(result.assistant, /plan[èe]te|astres?|voie lact[ée]e|soleil|cosmos|chevaliers?/i);
+  assert.doesNotMatch(result.assistant, /Pour écrire une chanson/i);
+  assert.doesNotMatch(result.assistant, /Les Saint Seiya, c'est une série mythique/i);
+  assert.doesNotMatch(result.assistant, /Qu.en penses-tu|Est-ce que cela te donne/i);
+  assert.doesNotMatch(result.assistant, /Le décor s'ouvre sur .*Pour écrire une chanson/is);
+});
+
 test('Vivy chat fallback answers philosophical follow-ups instead of canned notebook text', async () => {
   const result = await buildVivyAiChat({
     conversationId: 'vivy-chat-freeform-philosophy',

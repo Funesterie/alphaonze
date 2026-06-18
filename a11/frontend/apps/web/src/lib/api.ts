@@ -176,13 +176,14 @@ async function withMobileLongTaskGuard<T>(maxWaitMs: number, task: () => Promise
 }
 
 function resolveChatRequestTimeoutMs() {
+  const defaultTimeoutMs = 150_000;
   const raw = Number(
     import.meta.env?.VITE_A11_CHAT_REQUEST_TIMEOUT_MS
     || import.meta.env?.VITE_A11_CHAT_TIMEOUT_MS
-    || 60_000
+    || defaultTimeoutMs
   );
-  const resolved = Number.isFinite(raw) && raw > 0 ? raw : 60_000;
-  return Math.max(10_000, Math.min(120_000, Math.round(resolved)));
+  const resolved = Number.isFinite(raw) && raw > 0 ? raw : defaultTimeoutMs;
+  return Math.max(30_000, Math.min(240_000, Math.round(resolved)));
 }
 
 export async function generatePngWithPrompt(
