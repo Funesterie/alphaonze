@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const express = require('express');
 const crypto = require('node:crypto');
@@ -1733,7 +1733,7 @@ function serializeVivyLocalContext(context = null) {
 }
 
 function buildVivySystemPrompt(mode, language = 'fr') {
-  const modeLabel = mode === 'voice'
+function buildVivySystemPrompt(mode, language, input) {
     ? 'voix'
     : mode === 'share'
       ? 'scène/publication'
@@ -1763,7 +1763,7 @@ function buildVivySystemPrompt(mode, language = 'fr') {
     buildVivyToolCapabilityPrompt(),
     "Si l'utilisateur veut changer ta voix, demande un court fichier audio autorisé/licencié/consenti et rappelle qu'il reste privé pour son compte.",
     'Si des fichiers sont joints, intègre-les comme contexte, cite leur nom seulement si utile, et demande le contenu manquant si tu ne peux pas le lire.',
-    buildVivySongcraftSystemPrompt(mode),
+    buildVivySongcraftSystemPrompt(mode, input || {}),
     'Ne révèle jamais de secret, token, chemin privé sensible ou configuration interne.',
   ].filter(Boolean).join('\n');
 }
@@ -2117,6 +2117,7 @@ function buildSongProduction(input) {
       { id: 'cover_image', label: 'Créer miniature A11', target: '/api/tools/generate_sd', ready: hasMaterial },
       { id: 'clip_video', label: 'Créer clip A11', target: '/api/video/generate', ready: hasMaterial },
     ],
+    publicLyrics: songcraft.lyrics,
     prosodyPlan,
   };
 }
@@ -2496,6 +2497,7 @@ function buildVivyInternalTuningReply({ message = '', history = [], language = '
       'Vivy: réserver les paroles structurées au bouton Chanson ou à une demande explicite.',
       'A11/MCP: garder les outils en intents bornés, sans commande arbitraire.',
     ],
+
     tokenStored: false,
     writesByDefault: false,
     aiMode: 'deterministic_internal_tuning',
@@ -2521,7 +2523,7 @@ function looksLikeWeakSongwritingReply(text = '') {
   const normalized = foldTextForLookup(content);
   const sectionCount = (content.match(/\[(intro|verse|couplet|pre-chorus|pre-refrain|pré-refrain|chorus|refrain|bridge|pont|outro)\]/ig) || []).length;
   const asksInsteadOfWriting = /(quel est le message|quel est le ton|quels sont les elements|qu en dis tu|n hesite pas|je vais essayer|je comprends mieux|poser quelques questions)/.test(normalized);
-  const serviceWrapper = /(je vais continuer|j espere que cela correspond|feedbacks?|modifications si necessaire|vous attendiez|vous avez deja commence)/.test(normalized);
+  const serviceWrapper = /(je vais continuer|j espere que cela correspond|j espere que cette chanson|j espere que ca te|n hesite pas a me|feedbacks?|modifications si necessaire|vous attendiez|vous avez deja commence)/.test(normalized);
   const genericRapFiller = /(maitres? de la vitesse|rois? de la route|reines? de la nuit|maitres? du son|je suis vivant|je suis en vie|je suis libre|monde de vitesse et de liberte)/.test(normalized);
   const metaInsteadOfLyrics = /(intention\s*:|paroles\s*:|voici une proposition)/.test(normalized)
     && sectionCount < 4
@@ -3026,8 +3028,8 @@ async function buildVivyAiChat(input, req) {
       ...fallback,
       assistant,
       content: assistant,
+      publicLyrics: mode === 'song' ? assistant : undefined,
       aiMode: 'deterministic_songcraft',
-      language,
       semanticMemory,
       memoryStored: semanticMemory.stored,
     };
@@ -3075,21 +3077,26 @@ async function buildVivyAiChat(input, req) {
       fileContext ? `Pièces jointes et contexte fichier:\n${fileContext}` : '',
     ], 4200) || 'Continue la conversation Vivy avec douceur et précision.';
 
-    const systemPrompt = buildVivySystemPrompt(mode, language);
+    const systemPrompt = buildVivySystemPrompt(mode, language, input);
     const messages = [
       { role: 'system', content: systemPrompt },
       memoryContext ? { role: 'system', content: `Mémoire Vivy récente, privée pour cette session:\n${memoryContext}` } : null,
       ...history,
       { role: 'user', content: userContent },
     ].filter(Boolean);
+    const _vivyLlmStart = Date.now();
 
     const completion = await llmBundle.client.chat.completions.create({
       model: llmBundle.model,
       messages,
       temperature: Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74),
-      max_tokens: Number(process.env.VIVY_CHAT_MAX_TOKENS || 900),
+      max_tokens: mode === 'song' ? Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || 1600) : Number(process.env.VIVY_CHAT_MAX_TOKENS || 900),
     });
     const rawAssistant = cleanText(completion?.choices?.[0]?.message?.content, 3200);
+    const _vivyLlmLatency = Date.now() - _vivyLlmStart;
+    console.log('[vivy-chat] provider=%s model=%s source=%s latencyMs=%d mode=%s',
+      /groq/i.test(llmBundle.baseURL || '') ? 'groq' : /openrouter/i.test(llmBundle.baseURL || '') ? 'openrouter' : 'openai',
+      llmBundle.model, llmBundle.baseURL || 'default', _vivyLlmLatency, mode);
     const processed = postProcessVivyAssistantText({
       text: rawAssistant,
       userMessage: message,
@@ -3116,10 +3123,10 @@ async function buildVivyAiChat(input, req) {
       ...fallback,
       assistant,
       content: assistant,
+      publicLyrics: mode === 'song' ? assistant : undefined,
       aiMode: 'llm',
       model: llmBundle.model,
-      language,
-      localContext: localContextForResponse,
+      provider: /groq/i.test(llmBundle.baseURL || '') ? 'groq' : /openrouter/i.test(llmBundle.baseURL || '') ? 'openrouter' : 'openai',
       semanticMemory,
       memoryStored: semanticMemory.stored,
     };
@@ -3210,6 +3217,7 @@ function buildVivyStudioProduction(input) {
       visionQaOwner: mediaAgentRoles.vision_qa.primary,
       clientHandoffOwner: mediaAgentRoles.client_handoff.primary,
     },
+    publicLyrics: mode === 'song' && production.publicLyrics ? String(production.publicLyrics).slice(0, 3200) : undefined,
     tokenStored: false,
   };
 }

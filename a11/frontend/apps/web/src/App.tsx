@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
+﻿import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import {
   clearA11History,
   createTextArtifact,
@@ -3762,6 +3762,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [shareToken, setShareToken] = useState("");
   const [shareInstruction, setShareInstruction] = useState(String(initialDraft.shareInstruction || ""));
   const [vivyOutput, setVivyOutput] = useState(normalizeVivyStudioOutputForState(String(initialDraft.vivyOutput || "")));
+  const [vivyLyrics, setVivyLyrics] = useState<string>("");
   const [vivyMedia, setVivyMedia] = useState<VivyStudioMediaPreview | null>(null);
   const [vivyDiagnostics, setVivyDiagnostics] = useState<VivyStudioProductionResult["prosody"] | null>(null);
   const [status, setStatus] = useState("");
@@ -4731,6 +4732,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       const text = String(payload?.assistant || payload?.message || payload?.content || "").trim();
       if (!text) throw new Error("reponse_vide");
       setVivyDiagnostics(payload.prosody || null);
+      setVivyLyrics(String((payload as any)?.publicLyrics || "").trim());
       const audioUrl = String(payload?.audioUrl || payload?.audio_url || payload?.media?.audioUrl || payload?.media?.audio_url || "").trim();
       const videoUrl = String(payload?.videoUrl || payload?.video_url || payload?.media?.videoUrl || payload?.media?.video_url || "").trim();
       const mediaUrl = audioUrl || videoUrl;
@@ -5486,6 +5488,13 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
           )}
           {status && <p className="vivy-studio-status-msg">{status}</p>}
           {diagnosticsAllowed ? <VivyD9DiagnosticsPanel prosody={vivyDiagnostics} /> : null}
+          {activeMode === "song" && vivyLyrics && (
+            <div className="vivy-studio-lyrics" style={{ marginTop: 12 }}>
+              <strong style={{ fontSize: 13, color: "#a78bfa" }}>Paroles</strong>
+              <pre style={{ marginTop: 6, whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.6 }}>{vivyLyrics}</pre>
+              <button type="button" style={{ marginTop: 6, fontSize: 12 }} onClick={() => { navigator.clipboard?.writeText(vivyLyrics).catch(() => {}); }}>Copier paroles</button>
+            </div>
+          )}
           <details style={{ marginTop: 12 }}>
             <summary style={{ cursor: "pointer", fontSize: 13, color: "#94a3b8", userSelect: "none" }}>Brief agents</summary>
             <pre style={{ marginTop: 8 }}>{brief}</pre>

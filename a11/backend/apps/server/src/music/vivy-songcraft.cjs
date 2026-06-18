@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const {
   LANGUAGE_NAMES,
@@ -149,22 +149,40 @@ function buildVivyThemeSeed(value = '', fallback = 'Vivy garde la lumière') {
   return cleaned || fallback;
 }
 
-function buildVivySongcraftSystemPrompt(mode = 'song') {
+function buildVivySongcraftSystemPrompt(mode, context) {
   if (mode !== 'song') return '';
+  context = context || {};
+  var songMood = cleanOneLine(context.songMood || context.mood || context.style, '', 160);
+  var artists = Array.isArray(context.artists) ? context.artists : [];
+  var tags = artists.length
+    ? artists.map(function(a) { return a.tag || ('[' + a.label + ']'); }).join(', ')
+    : '[Vivy]';
+  var hasDuo = artists.length > 1;
+  var artistInstruction = artists.length
+    ? [
+        'Artistes de cette chanson: ' + artists.map(function(a) { return a.label + ' (' + a.role + ')'; }).join('; ') + '.',
+        'Tags obligatoires en debut de section: ' + tags + (hasDuo ? ', et [Duo] ou [Tous] pour les passages communs' : '') + '.',
+        'Chaque section doit commencer par le tag de l\u2019artiste entre crochets sur sa propre ligne.',
+      ].join('\n')
+    : 'Utilise [Vivy] comme tag de section par defaut.';
+  var moodInstruction = songMood
+    ? 'Direction sonore imposee: ' + songMood + '. Incarne-la dans les images et le rythme des vers - ne l\u2019explique pas, montre-la.'
+    : '';
   return [
     'Module Vivy Songcraft actif.',
-    "Application Songcraft du principe source: préserver le grain, l'argot, les accidents utiles et l'intention émotionnelle avant de lisser la forme.",
-    "Si l'utilisateur demande une chanson, des paroles, un refrain, un couplet ou une composition, réponds comme une artiste-auteure, pas comme un assistant qui explique.",
-    'Format attendu sauf demande contraire: Titre, intention courte, puis paroles complètes avec [Intro], [Verse 1], [Pre-Chorus], [Chorus], [Verse 2], [Bridge], [Outro].',
-    'Chaque couplet doit avoir au moins 4 vers; le refrain doit être mémorable et revenir comme un vrai hook.',
-    'Utilise des rimes audibles, des reprises internes et une image concrète récurrente. Évite les généralités plates du type "la vie est une aventure" ou "nouveau miracle" si elles ne sont pas transformées en image.',
-    'Ajoute du sens caché: une tension, une métaphore ou une contradiction douce entre surface et profondeur.',
-    'Ne termine pas par une explication scolaire de la structure, sauf si l’utilisateur le demande explicitement.',
-    "Si l'utilisateur donne déjà la matière et demande une chanson, n'ouvre pas un questionnaire: écris directement une première version complète.",
-    "Si l'utilisateur donne des lignes rap brutes, conserve leur vocabulaire, leurs tics, leur argot et leurs accidents voulus; ne les remplace pas par des slogans génériques.",
-    "Si la demande ressemble à un échange de réflexion et pas à une commande chanson, réponds au fond sans transformer automatiquement la phrase en couplets.",
-    "Les rimes se font surtout en fin de ligne; n'empile pas des mots rimés dans la même phrase comme un exercice de diction.",
-  ].join('\n');
+    'Application Songcraft: preserver le grain, les accidents utiles et l\u2019intention emotionnelle avant de lisser.',
+    'Si l\u2019utilisateur demande une chanson, reponds comme une artiste-auteure, pas comme un assistant qui explique.',
+    'Format: **Titre**, intention courte, puis paroles avec [Intro], [Verse 1], [Pre-Chorus], [Chorus], [Verse 2], [Bridge], [Outro].',
+    artistInstruction,
+    moodInstruction,
+    'Chaque couplet: minimum 4 vers. Refrain memorable, minimum 3 sections de paroles avec contenu reel.',
+    'Rimes audibles en fin de ligne, images concretes recurrentes, sens cache (tension ou metaphore).',
+    'Ne JAMAIS terminer par: j\u2019espere que cette chanson te plaira, n\u2019hesite pas a me dire, j\u2019espere que ca correspond, ou toute formule de politesse d\u2019assistant.',
+    'Pas d\u2019explication scolaire de la structure sauf demande explicite.',
+    'Si l\u2019utilisateur donne deja la matiere: ecris directement, pas de questionnaire.',
+    'Si lignes rap brutes fournies: conserve leur vocabulaire, argot et accidents voulus.',
+    'Sortie: paroles chantables uniquement. Aucun brief agent, aucun champ technique, aucune instruction de routage.',
+  ].filter(Boolean).join('\n');
 }
 
 const VIVY_SONG_ARTISTS = [
