@@ -21,6 +21,7 @@ const {
   isLegacyCloudTtsProviderEnabled,
   isDemoModel,
   guardDemoModel,
+  MANIFEST,
 } = require('../src/tts/voice-provider-manifest.cjs');
 
 describe('voice-provider-manifest', () => {
@@ -101,6 +102,12 @@ describe('voice-provider-manifest', () => {
       assert.equal(OFFICIAL_READY_VOICE_PROFILES.vivy.cartesiaVoiceId, '2f8e82c4-cb94-4e6d-8b6a-29bf58ceb60a');
       assert.ok(isLegacyCloudTtsProvider(PROVIDERS.CARTESIA));
       assert.ok(isLegacyCloudTtsProvider(PROVIDERS.ELEVENLABS));
+    });
+
+    it('keeps local official references on readable source filenames', () => {
+      assert.equal(MANIFEST.a11.providers[PROVIDERS.XTTS_RVC].modelPath, 'voice-library/A11 ref.wav');
+      assert.equal(MANIFEST.kaen44.providers[PROVIDERS.XTTS_RVC].modelPath, 'voice-library/K44 Ref.wav');
+      assert.equal(MANIFEST.vivy.providers[PROVIDERS.XTTS_RVC].modelPath, 'voice-library/Vivy ref.wav');
     });
   });
 

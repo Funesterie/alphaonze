@@ -131,14 +131,16 @@ test('voice reference library exposes WAV files as audio references without tran
   const previousLibraryDir = process.env.A11_VOICE_REFERENCE_LIBRARY_DIR;
   const previousLibraryPaths = process.env.A11_VOICE_REFERENCE_LIBRARY_PATHS;
   const previousLibraryDisabled = process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
+  const previousImplicitLegacy = process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY;
   const store = require('../src/tts/voice-reference-store.cjs');
 
   try {
-    const sfxDir = path.join(runtimeRoot, 'sfx');
-    fs.mkdirSync(sfxDir, { recursive: true });
-    fs.writeFileSync(path.join(sfxDir, 'terminator.wav'), createPcm16Wav({ frequency: 220 }));
+    const libraryDir = path.join(runtimeRoot, 'voice-library');
+    fs.mkdirSync(libraryDir, { recursive: true });
+    fs.writeFileSync(path.join(libraryDir, 'A11 ref.wav'), createPcm16Wav({ frequency: 220 }));
 
     process.env.A11_RUNTIME_ROOT = runtimeRoot;
+    process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY = '1';
     process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
     delete process.env.A11_VOICE_REFERENCE_LIBRARY_DIRS;
     delete process.env.A11_VOICE_REFERENCE_LIBRARY_DIR;
@@ -147,7 +149,7 @@ test('voice reference library exposes WAV files as audio references without tran
 
     const user = { id: 'u1', email: 'u1@example.com' };
     const refs = store.listVoiceReferences({ user });
-    const libraryRef = refs.find((ref) => ref.source === 'library' && ref.originalName === 'terminator.wav');
+    const libraryRef = refs.find((ref) => ref.source === 'library' && ref.originalName === 'A11 ref.wav');
 
     assert.ok(libraryRef);
     assert.equal(libraryRef.scope, 'library');
@@ -157,7 +159,7 @@ test('voice reference library exposes WAV files as audio references without tran
 
     const resolved = store.findVoiceReference({ user, id: libraryRef.id, includePath: true });
     assert.equal(resolved.id, libraryRef.id);
-    assert.ok(resolved.filePath.endsWith('terminator.wav'));
+    assert.ok(resolved.filePath.endsWith('A11 ref.wav'));
   } finally {
     if (previousRuntimeRoot === undefined) delete process.env.A11_RUNTIME_ROOT;
     else process.env.A11_RUNTIME_ROOT = previousRuntimeRoot;
@@ -171,6 +173,8 @@ test('voice reference library exposes WAV files as audio references without tran
     else process.env.A11_VOICE_REFERENCE_LIBRARY_PATHS = previousLibraryPaths;
     if (previousLibraryDisabled === undefined) delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
     else process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED = previousLibraryDisabled;
+    if (previousImplicitLegacy === undefined) delete process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY;
+    else process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY = previousImplicitLegacy;
     fs.rmSync(runtimeRoot, { recursive: true, force: true });
   }
 });
@@ -183,17 +187,20 @@ test('voice reference resolver prefers Vivy library samples when requested', () 
   const previousLibraryDir = process.env.A11_VOICE_REFERENCE_LIBRARY_DIR;
   const previousLibraryPaths = process.env.A11_VOICE_REFERENCE_LIBRARY_PATHS;
   const previousLibraryDisabled = process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
+  const previousImplicitLegacy = process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY;
   const store = require('../src/tts/voice-reference-store.cjs');
 
   try {
     const libraryDir = path.join(runtimeRoot, 'voice-library');
     fs.mkdirSync(libraryDir, { recursive: true });
     fs.writeFileSync(path.join(libraryDir, 'neutral-reference.wav'), createPcm16Wav({ frequency: 220 }));
-    fs.writeFileSync(path.join(libraryDir, 'vivy.wav'), createPcm16Wav({ frequency: 440 }));
-    fs.writeFileSync(path.join(libraryDir, 'kaen44-donna.wav'), createPcm16Wav({ frequency: 520 }));
-    fs.writeFileSync(path.join(libraryDir, 'a11-terminator.wav'), createPcm16Wav({ frequency: 110 }));
+    fs.writeFileSync(path.join(libraryDir, 'Vivy ref.wav'), createPcm16Wav({ frequency: 440 }));
+    fs.writeFileSync(path.join(libraryDir, 'K44 Ref.wav'), createPcm16Wav({ frequency: 520 }));
+    fs.writeFileSync(path.join(libraryDir, 'A11 ref.wav'), createPcm16Wav({ frequency: 110 }));
+    fs.writeFileSync(path.join(libraryDir, 'Djeff ref.wav'), createPcm16Wav({ frequency: 180 }));
 
     process.env.A11_RUNTIME_ROOT = runtimeRoot;
+    process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY = '1';
     process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
     delete process.env.A11_VOICE_REFERENCE_LIBRARY_DIRS;
     delete process.env.A11_VOICE_REFERENCE_LIBRARY_DIR;
@@ -202,17 +209,20 @@ test('voice reference resolver prefers Vivy library samples when requested', () 
 
     const user = { id: 'u1', email: 'u1@example.com' };
     const resolved = store.resolveVoiceReferenceForRequest({ user, preferredLabel: 'vivy' });
-    const kaen44 = store.resolveVoiceReferenceForRequest({ user, preferredLabel: 'donna' });
-    const a11 = store.resolveVoiceReferenceForRequest({ user, preferredLabel: 'terminator' });
+    const kaen44 = store.resolveVoiceReferenceForRequest({ user, preferredLabel: 'k44' });
+    const a11 = store.resolveVoiceReferenceForRequest({ user, preferredLabel: 'a11' });
+    const djeff = store.resolveVoiceReferenceForRequest({ user, preferredLabel: 'djeff' });
 
     assert.ok(resolved);
     assert.equal(resolved.source, 'library');
-    assert.equal(resolved.originalName, 'vivy.wav');
-    assert.ok(resolved.filePath.endsWith('vivy.wav'));
-    assert.equal(kaen44.originalName, 'kaen44-donna.wav');
-    assert.ok(kaen44.filePath.endsWith('kaen44-donna.wav'));
-    assert.equal(a11.originalName, 'a11-terminator.wav');
-    assert.ok(a11.filePath.endsWith('a11-terminator.wav'));
+    assert.equal(resolved.originalName, 'Vivy ref.wav');
+    assert.ok(resolved.filePath.endsWith('Vivy ref.wav'));
+    assert.equal(kaen44.originalName, 'K44 Ref.wav');
+    assert.ok(kaen44.filePath.endsWith('K44 Ref.wav'));
+    assert.equal(a11.originalName, 'A11 ref.wav');
+    assert.ok(a11.filePath.endsWith('A11 ref.wav'));
+    assert.equal(djeff.originalName, 'Djeff ref.wav');
+    assert.ok(djeff.filePath.endsWith('Djeff ref.wav'));
   } finally {
     if (previousRuntimeRoot === undefined) delete process.env.A11_RUNTIME_ROOT;
     else process.env.A11_RUNTIME_ROOT = previousRuntimeRoot;
@@ -226,6 +236,8 @@ test('voice reference resolver prefers Vivy library samples when requested', () 
     else process.env.A11_VOICE_REFERENCE_LIBRARY_PATHS = previousLibraryPaths;
     if (previousLibraryDisabled === undefined) delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
     else process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED = previousLibraryDisabled;
+    if (previousImplicitLegacy === undefined) delete process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY;
+    else process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY = previousImplicitLegacy;
     fs.rmSync(runtimeRoot, { recursive: true, force: true });
   }
 });

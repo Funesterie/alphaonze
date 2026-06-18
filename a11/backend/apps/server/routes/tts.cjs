@@ -64,11 +64,11 @@ const TTS_PRIORITY_SCORES = {
   public: 10,
 };
 const OFFICIAL_VOICE_SAMPLE_FILES = {
-  a11: 'a11-official-stern-french.wav',
-  djeff: 'djeff-rap.wav',
-  kaen44: 'kaen44-official-french-narrator.wav',
-  k44: 'kaen44-official-french-narrator.wav',
-  vivy: ['vivy.wav', 'vivy-official-french-conversational.wav'],
+  a11: 'A11 ref.wav',
+  djeff: 'Djeff ref.wav',
+  kaen44: 'K44 Ref.wav',
+  k44: 'K44 Ref.wav',
+  vivy: 'Vivy ref.wav',
 };
 const DEFAULT_ELEVENLABS_DJEFF_RAP_VOICE_ID = 'ErXwobaYiN019PkySvjV';
 const OWNED_OFFICIAL_REFERENCE_PERSONAS = new Set(['a11', 'kaen44', 'vivy']);

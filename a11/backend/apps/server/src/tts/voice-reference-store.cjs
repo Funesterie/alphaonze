@@ -149,15 +149,10 @@ function getVoiceReferenceLibraryCandidates() {
   const defaults = [];
   for (const runtimeRoot of resolveRuntimeRootCandidates()) {
     defaults.push(
-      path.join(runtimeRoot, 'sfx', 'terminator'),
-      path.join(runtimeRoot, 'sfx', 'terminator.wav'),
-      path.join(runtimeRoot, 'sfx', 'a11-official-stern-french.wav'),
-      path.join(runtimeRoot, 'voice-library', 'a11-terminator.wav'),
-      path.join(runtimeRoot, 'voice-library', 'a11-official-stern-french.wav'),
-      path.join(runtimeRoot, 'voice-library', 'vivy.wav'),
-      path.join(runtimeRoot, 'voice-library', 'vivy-official-french-conversational.wav'),
-      path.join(runtimeRoot, 'voice-library', 'kaen44-official-french-narrator.wav'),
-      path.join(runtimeRoot, 'voice-library', 'kaen44-donna.wav'),
+      path.join(runtimeRoot, 'voice-library', 'A11 ref.wav'),
+      path.join(runtimeRoot, 'voice-library', 'Djeff ref.wav'),
+      path.join(runtimeRoot, 'voice-library', 'K44 Ref.wav'),
+      path.join(runtimeRoot, 'voice-library', 'Vivy ref.wav'),
       path.join(runtimeRoot, 'voice-library'),
       path.join(runtimeRoot, 'voice-references', 'library')
     );
@@ -740,15 +735,16 @@ function getReferencePreferenceScore(ref, preferredLabel = '') {
   if (referenceMatchesPreference(ref, preferredLabel)) score = Math.max(score, 50);
 
   const agentVoiceAliases = {
-    terminator: ['a11', 'alpha', 'alphaonze'],
-    'a11-official-stern-french': ['a11', 'alpha', 'alphaonze'],
-    'a11-voix-de-lait': ['a11', 'alpha', 'alphaonze', 'lait'],
-    'djeff-rap': ['djeff', 'jeff', 'jeffrey', 'rap', 'pignon', 'moto'],
-    donna: ['kaen44', 'k44', 'kaen'],
-    'kaen44-official-french-narrator': ['kaen44', 'k44', 'kaen'],
-    vivy: ['vivy'],
-    'vivy-official-french-conversational': ['vivy'],
+    'a11 ref': ['a11', 'alpha', 'alphaonze', 'terminator', 'a11-terminator', 'a11-official-stern-french'],
+    'djeff ref': ['djeff', 'jeff', 'jeffrey', 'rap', 'pignon', 'moto', 'djeff-rap', 'pignon-rap'],
+    'k44 ref': ['kaen44', 'k44', 'kaen', 'donna', 'kaen44-donna', 'kaen44-official-french-narrator'],
+    'vivy ref': ['vivy', 'vivy-one', 'vivy-official-french-conversational'],
   };
+  const fileBase = base;
+  const fileAliases = agentVoiceAliases[fileBase] || [];
+  if (fileAliases.includes(needle)) {
+    score = Math.max(score, 95);
+  }
   const agentAliases = agentVoiceAliases[needle] || [];
   if (score > 0 && agentAliases.some((alias) => tokens.has(alias) || base.includes(alias))) {
     score += 30;
