@@ -70,6 +70,7 @@ const OFFICIAL_VOICE_SAMPLE_FILES = {
   k44: 'kaen44-official-french-narrator.wav',
   vivy: ['vivy.wav', 'vivy-official-french-conversational.wav'],
 };
+const DEFAULT_ELEVENLABS_DJEFF_RAP_VOICE_ID = 'ErXwobaYiN019PkySvjV';
 const OWNED_OFFICIAL_REFERENCE_PERSONAS = new Set(['a11', 'kaen44', 'vivy']);
 const BASIC_OWNED_OFFICIAL_REFERENCE_PERSONAS = new Set(['a11', 'kaen44']);
 
@@ -567,6 +568,11 @@ function canUsePaidTtsVoice(req = {}) {
 
 function canUseSharedVoiceCatalog(req = {}) {
   return canUsePaidTtsVoice(req);
+}
+
+function canServeOfficialVoiceSample(req = {}) {
+  if (envBool('A11_TTS_PUBLIC_OFFICIAL_SAMPLES', false)) return true;
+  return isPrivilegedTtsUser(req?.user || {});
 }
 
 function getOwnedOfficialReferencePersona(body = {}) {
@@ -3672,9 +3678,16 @@ router.get('/tts/references/:id/audio', requireJwt, (req, res) => {
   }
 });
 
-router.get('/tts/official/:persona/audio', (req, res) => {
+router.get('/tts/official/:persona/audio', runOptionalJwt, (req, res) => {
   setTtsCorsHeaders(req, res);
   try {
+    if (!canServeOfficialVoiceSample(req)) {
+      return res.status(403).json({
+        ok: false,
+        error: 'official_voice_sample_private',
+        message: 'Reference vocale officielle privee: utilise le module voix connecte pour generer un extrait.',
+      });
+    }
     if (Object.keys(req.query || {}).length > 0) {
       res.setHeader('X-A11-Voice-Sample', 'static');
       return res.redirect(302, `${req.baseUrl || ''}${req.path}`);
@@ -3688,7 +3701,7 @@ router.get('/tts/official/:persona/audio', (req, res) => {
       });
     }
     res.setHeader('Content-Type', sample.reference?.mimeType || contentTypeForTtsAsset(sample.filePath));
-    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.setHeader('Cache-Control', envBool('A11_TTS_PUBLIC_OFFICIAL_SAMPLES', false) ? 'public, max-age=300' : 'private, no-store');
     res.setHeader('X-A11-Voice-Persona', sample.persona);
     res.setHeader('X-A11-Voice-Sample', 'static');
     return res.sendFile(sample.filePath);
@@ -4006,13 +4019,38 @@ function resolveCartesiaVoiceId(persona, body = {}) {
   ).trim();
 }
 
+function isDjeffRapVoiceRequest(body = {}) {
+  const marker = String([
+    body?.voiceStyle,
+    body?.voice_style,
+    body?.voiceReferenceName,
+    body?.voiceReferenceLabel,
+    body?.referenceVoiceStyle,
+    body?.voiceTool,
+    body?.vocalCast,
+  ].filter(Boolean).join(' ')).trim().toLowerCase();
+  return /\b(?:djeff|djeff-rap|rap-djeff|pignon|pignon-rap|moto-rap)\b/.test(marker);
+}
+
 function resolveElevenLabsVoiceId(persona, body = {}) {
   const profile = getReadyVoiceProfile(persona, PROVIDERS.ELEVENLABS);
+  const djeffRapVoiceId = isDjeffRapVoiceRequest(body)
+    ? String(
+      body?.djeffElevenLabsVoiceId
+      || body?.djeff_elevenlabs_voice_id
+      || process.env.A11_ELEVENLABS_DJEFF_VOICE_ID
+      || process.env.ELEVENLABS_DJEFF_VOICE_ID
+      || process.env.A11_TTS_DJEFF_ELEVENLABS_VOICE_ID
+      || DEFAULT_ELEVENLABS_DJEFF_RAP_VOICE_ID
+      || ''
+    ).trim()
+    : '';
   return String(
     body?.elevenLabsVoiceId
     || body?.elevenlabsVoiceId
     || body?.elevenlabs_voice_id
     || body?.providerVoiceId
+    || djeffRapVoiceId
     || getPersonaScopedEnvValue('A11_ELEVENLABS', persona, ['VOICE_ID', 'VOICE'])
     || getPersonaScopedEnvValue('ELEVENLABS', persona, ['VOICE_ID', 'VOICE'])
     || getPersonaScopedEnvValue('A11_TTS', persona, ['ELEVENLABS_VOICE_ID'])

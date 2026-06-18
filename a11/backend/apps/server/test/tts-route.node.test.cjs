@@ -1737,7 +1737,7 @@ test('tts speak route can use ElevenLabs when selected explicitly by an authoriz
 
   global.fetch = async (url, options = {}) => {
     const value = String(url);
-    if (value === 'https://api.elevenlabs.test/v1/text-to-speech/JBFqnCBsd6RMkjVDRZzb?output_format=mp3_44100_128') {
+    if (value === 'https://api.elevenlabs.test/v1/text-to-speech/pNInz6obpgDQGcFmaJgB?output_format=mp3_44100_128') {
       elevenLabsBodies.push(JSON.parse(String(options.body || '{}')));
       assert.equal(options.method, 'POST');
       assert.equal(options.headers['xi-api-key'], 'test-elevenlabs-key');
@@ -1795,6 +1795,78 @@ test('tts speak route can use ElevenLabs when selected explicitly by an authoriz
   }
 });
 
+test('tts speak route gives Djeff rap cloud tests a distinct ElevenLabs voice', async () => {
+  const previousEnv = {
+    A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+    A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
+    A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+  };
+  const previousFetch = global.fetch;
+  const calls = [];
+
+  process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
+  process.env.A11_ELEVENLABS_TTS_ENABLED = 'true';
+  process.env.A11_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'https://api.elevenlabs.test/v1/text-to-speech/ErXwobaYiN019PkySvjV?output_format=mp3_44100_128') {
+      calls.push(JSON.parse(String(options.body || '{}')));
+      return {
+        ok: true,
+        status: 200,
+        async arrayBuffer() {
+          return Buffer.from('elevenlabs-djeff-rap-mp3');
+        },
+      };
+    }
+    if (value === 'http://a11-voice:5002/api/tts') {
+      throw new Error('piper_http_should_not_be_called_for_djeff_elevenlabs');
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'Djeff teste une phrase courte.',
+          persona: 'a11',
+          voicePersona: 'a11',
+          surface: 'a11',
+          provider: 'elevenlabs',
+          voiceStyle: 'djeff-rap',
+          allowOfficialCloudVoice: true,
+          forceCloudTts: true,
+          vocalMode: 'adaptive',
+          audioFormat: 'mp3',
+        });
+
+        assert.equal(result.response.status, 200);
+        assert.equal(result.json.provider, 'elevenlabs');
+        assert.equal(result.json.voice, 'ErXwobaYiN019PkySvjV');
+        assert.equal(calls.length, 1);
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('tts speak route defaults official auto voices to ElevenLabs when configured', async () => {
   const previousEnv = {
     A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
@@ -1808,6 +1880,11 @@ test('tts speak route defaults official auto voices to ElevenLabs when configure
   };
   const previousFetch = global.fetch;
   const elevenLabsBodies = [];
+  const expectedVoiceIds = new Map([
+    ['a11', 'pNInz6obpgDQGcFmaJgB'],
+    ['kaen44', 'EXAVITQu4vr4xnSDxMaL'],
+    ['vivy', '21m00Tcm4TlvDq8ikWAM'],
+  ]);
 
   process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
   process.env.A11_ELEVENLABS_TTS_ENABLED = 'true';
@@ -1820,8 +1897,10 @@ test('tts speak route defaults official auto voices to ElevenLabs when configure
 
   global.fetch = async (url, options = {}) => {
     const value = String(url);
-    if (value === 'https://api.elevenlabs.test/v1/text-to-speech/JBFqnCBsd6RMkjVDRZzb?output_format=mp3_44100_128') {
-      elevenLabsBodies.push(JSON.parse(String(options.body || '{}')));
+    const matchedPersona = Array.from(expectedVoiceIds.entries())
+      .find(([, voiceId]) => value === `https://api.elevenlabs.test/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`)?.[0];
+    if (matchedPersona) {
+      elevenLabsBodies.push({ persona: matchedPersona, body: JSON.parse(String(options.body || '{}')) });
       return {
         ok: true,
         status: 200,
@@ -1866,6 +1945,7 @@ test('tts speak route defaults official auto voices to ElevenLabs when configure
           assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-elevenlabs\.mp3$/);
         }
         assert.equal(elevenLabsBodies.length, 3);
+        assert.deepEqual(elevenLabsBodies.map((entry) => entry.persona).sort(), ['a11', 'kaen44', 'vivy']);
       }
     );
   } finally {
@@ -3787,12 +3867,53 @@ test('tts speak route blocks ffmpeg morph for official Vivy identity voice', asy
   }
 });
 
-test('tts official sample route serves A11 and Djeff library WAVs', async () => {
+test('tts official sample route is private by default', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-official-sample-private-'));
+  const previousEnv = {
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
+    A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
+    A11_TTS_PUBLIC_OFFICIAL_SAMPLES: process.env.A11_TTS_PUBLIC_OFFICIAL_SAMPLES,
+  };
+  const wav = createPcm16Wav({ frequency: 180 });
+
+  fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'a11-official-stern-french.wav'), wav);
+  process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
+  delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
+  delete process.env.A11_TTS_PUBLIC_OFFICIAL_SAMPLES;
+
+  try {
+    await withServer(
+      (app) => {
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/tts/official/a11/audio`, {
+          headers: { 'x-test-basic': '1' },
+        });
+        assert.equal(response.status, 403);
+        const payload = await response.json();
+        assert.equal(payload.error, 'official_voice_sample_private');
+      }
+    );
+  } finally {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('tts official sample route serves A11 and Djeff library WAVs when explicitly enabled', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-official-sample-'));
   const previousEnv = {
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
     A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
     A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
+    A11_TTS_PUBLIC_OFFICIAL_SAMPLES: process.env.A11_TTS_PUBLIC_OFFICIAL_SAMPLES,
   };
   const wav = createPcm16Wav({ frequency: 180 });
   const djeffWav = createPcm16Wav({ frequency: 220 });
@@ -3805,6 +3926,7 @@ test('tts official sample route serves A11 and Djeff library WAVs', async () => 
   process.env.A11_RUNTIME_ROOT = runtimeRoot;
   process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
   delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
+  process.env.A11_TTS_PUBLIC_OFFICIAL_SAMPLES = '1';
 
   try {
     await withServer(

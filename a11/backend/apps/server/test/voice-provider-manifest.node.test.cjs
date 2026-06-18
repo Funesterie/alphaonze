@@ -89,10 +89,13 @@ describe('voice-provider-manifest', () => {
       assert.doesNotMatch(serialized, /terminator|donna paulsen|t-800|schwarzenegger/);
     });
 
-    it('keeps legacy cloud voice ids only for old payload recognition', () => {
-      assert.equal(OFFICIAL_READY_VOICE_PROFILES.a11.elevenLabsVoiceId, 'JBFqnCBsd6RMkjVDRZzb');
-      assert.equal(OFFICIAL_READY_VOICE_PROFILES.kaen44.elevenLabsVoiceId, 'JBFqnCBsd6RMkjVDRZzb');
-      assert.equal(OFFICIAL_READY_VOICE_PROFILES.vivy.elevenLabsVoiceId, 'JBFqnCBsd6RMkjVDRZzb');
+    it('uses distinct ready-made ElevenLabs voice ids for public voice tests', () => {
+      assert.equal(OFFICIAL_READY_VOICE_PROFILES.a11.elevenLabsVoiceId, 'pNInz6obpgDQGcFmaJgB');
+      assert.equal(OFFICIAL_READY_VOICE_PROFILES.kaen44.elevenLabsVoiceId, 'EXAVITQu4vr4xnSDxMaL');
+      assert.equal(OFFICIAL_READY_VOICE_PROFILES.vivy.elevenLabsVoiceId, '21m00Tcm4TlvDq8ikWAM');
+      assert.notEqual(OFFICIAL_READY_VOICE_PROFILES.a11.elevenLabsVoiceId, OFFICIAL_READY_VOICE_PROFILES.kaen44.elevenLabsVoiceId);
+      assert.notEqual(OFFICIAL_READY_VOICE_PROFILES.a11.elevenLabsVoiceId, OFFICIAL_READY_VOICE_PROFILES.vivy.elevenLabsVoiceId);
+      assert.notEqual(OFFICIAL_READY_VOICE_PROFILES.kaen44.elevenLabsVoiceId, OFFICIAL_READY_VOICE_PROFILES.vivy.elevenLabsVoiceId);
       assert.equal(OFFICIAL_READY_VOICE_PROFILES.a11.cartesiaVoiceId, '7345dfa5-ee04-44d2-abf4-29262b880ab4');
       assert.equal(OFFICIAL_READY_VOICE_PROFILES.kaen44.cartesiaVoiceId, '8832a0b5-47b2-4751-bb22-6a8e2149303d');
       assert.equal(OFFICIAL_READY_VOICE_PROFILES.vivy.cartesiaVoiceId, '2f8e82c4-cb94-4e6d-8b6a-29bf58ceb60a');

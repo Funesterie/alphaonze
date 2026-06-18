@@ -49,7 +49,9 @@ const LEGACY_CLOUD_TTS_PROVIDERS = new Set([
 
 const CLOUD_DEFAULT_PERSONAS = new Set(['a11', 'kaen44', 'vivy']);
 const LOCAL_OFFICIAL_PRIORITY_PERSONAS = new Set(['a11', 'kaen44', 'k44', 'kaen', 'vivy', 'djeff', 'djeff-rap']);
-const DEFAULT_ELEVENLABS_FAMILY_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb';
+const DEFAULT_ELEVENLABS_A11_VOICE_ID = 'pNInz6obpgDQGcFmaJgB';
+const DEFAULT_ELEVENLABS_KAEN44_VOICE_ID = 'EXAVITQu4vr4xnSDxMaL';
+const DEFAULT_ELEVENLABS_VIVY_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
 
 // Official personas — these may never fall back to a demo model
 const OFFICIAL_PERSONAS = new Set(['a11', 'kaen44', 'vivy']);
@@ -125,7 +127,7 @@ const OFFICIAL_READY_VOICE_PROFILES = Object.freeze({
       [PROVIDERS.XTTS_RVC]: 'Djeff WAV - A11 official reference',
       [PROVIDERS.PIPER]: 'fr_FR-tom-medium',
     }),
-    elevenLabsVoiceId: DEFAULT_ELEVENLABS_FAMILY_VOICE_ID,
+    elevenLabsVoiceId: DEFAULT_ELEVENLABS_A11_VOICE_ID,
     cartesiaVoiceId: '7345dfa5-ee04-44d2-abf4-29262b880ab4',
     azureVoice: 'fr-FR-Remy:DragonHDLatestNeural',
     openAiVoice: 'onyx',
@@ -141,7 +143,7 @@ const OFFICIAL_READY_VOICE_PROFILES = Object.freeze({
       [PROVIDERS.XTTS_RVC]: 'Family WAV - Kaen44 official reference',
       [PROVIDERS.PIPER]: 'fr_FR-siwis-medium',
     }),
-    elevenLabsVoiceId: DEFAULT_ELEVENLABS_FAMILY_VOICE_ID,
+    elevenLabsVoiceId: DEFAULT_ELEVENLABS_KAEN44_VOICE_ID,
     cartesiaVoiceId: '8832a0b5-47b2-4751-bb22-6a8e2149303d',
     azureVoice: 'fr-FR-Vivienne:DragonHDLatestNeural',
     openAiVoice: 'sage',
@@ -157,7 +159,7 @@ const OFFICIAL_READY_VOICE_PROFILES = Object.freeze({
       [PROVIDERS.XTTS_RVC]: 'Vivy Funesterie approved reference',
       [PROVIDERS.PIPER]: 'fr_FR-siwis-medium',
     }),
-    elevenLabsVoiceId: DEFAULT_ELEVENLABS_FAMILY_VOICE_ID,
+    elevenLabsVoiceId: DEFAULT_ELEVENLABS_VIVY_VOICE_ID,
     cartesiaVoiceId: '2f8e82c4-cb94-4e6d-8b6a-29bf58ceb60a',
     azureVoice: 'fr-FR-Vivienne:DragonHDLatestNeural',
     openAiVoice: 'coral',

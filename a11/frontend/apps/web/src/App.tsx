@@ -4070,7 +4070,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     const entryId = String(entry.id || "").trim().toLowerCase();
     const usesOfficialReference = officialVoiceIds.has(entryId)
       || /\b(?:djeff|kaen44|a11|vivy|official|officiel|rap)\b/i.test(`${entry.voiceStyle} ${entry.voiceTool}`);
-    const provider = usesOfficialReference ? "xtts-rvc" : "auto";
+    const provider = usesOfficialReference ? "elevenlabs" : "auto";
     return {
       persona: entry.ttsPersona,
       voicePersona: entry.ttsPersona,
@@ -4094,52 +4094,30 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       responseFormat: "mp3",
       identityVoice: usesOfficialReference,
       useIdentityVoice: usesOfficialReference,
-      useDefaultVoiceReference: usesOfficialReference,
-      defaultVoiceReference: usesOfficialReference,
-      usePersonaVoiceReference: usesOfficialReference,
+      useDefaultVoiceReference: false,
+      defaultVoiceReference: false,
+      usePersonaVoiceReference: false,
       neutralVoice: usesOfficialReference ? false : undefined,
-      voiceReferenceRequired: usesOfficialReference,
-      referenceVoiceRequired: usesOfficialReference,
-      requireVoiceReference: usesOfficialReference,
-      voiceConversion: usesOfficialReference,
-      convertVoice: usesOfficialReference,
-      morphVoice: usesOfficialReference,
-      rvc: usesOfficialReference,
-      allowRvc: usesOfficialReference,
-      allowXttsRvc: usesOfficialReference,
-      allowLegacyVoiceBridge: usesOfficialReference,
-      xttsRvcOptIn: usesOfficialReference,
+      voiceReferenceRequired: false,
+      referenceVoiceRequired: false,
+      requireVoiceReference: false,
+      voiceConversion: false,
+      convertVoice: false,
+      morphVoice: false,
+      rvc: false,
+      allowRvc: false,
+      allowXttsRvc: false,
+      allowLegacyVoiceBridge: false,
+      xttsRvcOptIn: false,
+      allowPaidTtsVoice: usesOfficialReference || undefined,
+      allowCloudTts: usesOfficialReference || undefined,
+      allowReadyMadeCloudVoice: usesOfficialReference || undefined,
+      allowOfficialCloudVoice: usesOfficialReference || undefined,
+      forceCloudTts: usesOfficialReference || undefined,
+      useReadyMadeCloudVoice: usesOfficialReference || undefined,
       allowBrowserSpeechFallback: !usesOfficialReference,
-      ttsCostPolicy: usesOfficialReference ? `${entry.surface}_vivy_studio_voice_test` : undefined,
+      ttsCostPolicy: usesOfficialReference ? `${entry.surface}_vivy_studio_cloud_voice_test` : undefined,
     };
-  }
-
-  function resolveVivyOfficialVoiceSamplePersona(entry: Partial<VivyStudioVoiceTestEntry> | null | undefined): "djeff" | "kaen44" | "a11" | "vivy" | "" {
-    const marker = foldForLookup(`${entry?.id || ""} ${entry?.voiceStyle || ""} ${entry?.voiceTool || ""} ${entry?.label || ""}`);
-    if (!marker || /\bpersonal\b|catalog|catalogue|premium|duo/.test(marker)) return "";
-    if (/\bdjeff\b|\bpignon\b|djeff-rap/.test(marker)) return "djeff";
-    if (/\bkaen44\b|\bk44\b|\bkaen\b/.test(marker)) return "kaen44";
-    if (/\ba11\b|\balphaonze\b|alpha-onze/.test(marker)) return "a11";
-    if (/\bvivy\b|\bvivi\b/.test(marker)) return "vivy";
-    return "";
-  }
-
-  function playVivyOfficialVoiceSample(entry: Partial<VivyStudioVoiceTestEntry> | null | undefined, statusLabel?: string) {
-    const persona = resolveVivyOfficialVoiceSamplePersona(entry);
-    if (!persona) return false;
-    const samplePath = `/api/tts/official/${persona}/audio`;
-    const sampleUrl = resolveApiAssetUrl(samplePath) || samplePath;
-    const label = String(statusLabel || entry?.label || persona).trim();
-    setVivyMedia({
-      kind: "audio",
-      url: sampleUrl,
-      downloadUrl: sampleUrl,
-      provider: "official-sample",
-      contentType: "audio/wav",
-      filename: `${persona}-official-sample.wav`,
-    });
-    setStatus(`${label} prête (sample officiel).`);
-    return true;
   }
 
   function buildVivyVoiceReferenceOptions(): Record<string, unknown> {
@@ -4505,7 +4483,6 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     setIsBusy(true);
     setStatus(`Test chat vocal ${entry.shortLabel}...`);
     try {
-      if (playVivyOfficialVoiceSample(entry, `Chat vocal ${entry.shortLabel}`)) return;
       const line = buildVivyAutoVoiceTestLine(entry);
       const payload = await ttsSpeak(line, entry.ttsPersona, "auto", buildVivyAutoTtsOptions(entry));
       const mediaUrl = String(payload?.audioUrl || payload?.audio_url || payload?.url || "").trim();
@@ -4529,7 +4506,6 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     setIsBusy(true);
     setStatus(`Test ${entry.label}...`);
     try {
-      if (playVivyOfficialVoiceSample(entry)) return;
       const line = buildVivyAutoVoiceTestLine(entry);
       const payload = await ttsSpeak(line, entry.ttsPersona, "auto", buildVivyAutoTtsOptions(entry));
       const mediaUrl = String(payload?.audioUrl || payload?.audio_url || payload?.url || "").trim();
@@ -4572,7 +4548,6 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     setIsBusy(true);
     setStatus(`Test ${activeVoiceProfile.label}: ${activeVoiceReferenceLabel}...`);
     try {
-      if (!hasPrivateVoiceReference && !selectedCatalogVoiceId && playVivyOfficialVoiceSample(activeVoiceProfile, activeVoiceProfile.label)) return;
       const testLine = buildVivyPlayableText(
         voiceInstruction.trim(),
         activeVoiceProfile.testLine,
