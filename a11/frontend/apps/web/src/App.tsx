@@ -100,6 +100,7 @@ import {
   fetchUserLibrary,
   pinResourceToLibrary,
   unpinResourceFromLibrary,
+  clearVivyMemory,
 } from "./lib/api";
 import { A11HistoryPanel } from "./components/A11HistoryPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
@@ -2946,6 +2947,80 @@ function getVivyChatStorageKey() {
   }
 }
 
+// --- Sessions multiples Vivy Chat ---
+const VIVY_CHAT_SESSIONS_KEY = "vivy:chat-sessions:v1";
+const VIVY_CHAT_MAX_SESSIONS = 5;
+
+type VivyChatSessionMeta = { id: string; name: string; createdAt: string; updatedAt: string; };
+
+function getVivySessionsStorageKey() {
+  try { return `${VIVY_CHAT_SESSIONS_KEY}:${getAuthStorageScope() || "locked"}`; }
+  catch { return `${VIVY_CHAT_SESSIONS_KEY}:locked`; }
+}
+
+function getVivyChatStorageKeyForSession(sessionId: string) {
+  const base = getVivyChatStorageKey();
+  return sessionId === "default" ? base : `${base}:s:${sessionId}`;
+}
+
+function listVivyChatSessions(): VivyChatSessionMeta[] {
+  try {
+    const raw = globalThis.localStorage?.getItem(getVivySessionsStorageKey());
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    if (!Array.isArray(parsed)) return [];
+    return (parsed as VivyChatSessionMeta[]).filter((s) => s?.id && s?.name).slice(0, VIVY_CHAT_MAX_SESSIONS);
+  } catch { return []; }
+}
+
+function saveVivyChatSessions(sessions: VivyChatSessionMeta[]) {
+  try { globalThis.localStorage?.setItem(getVivySessionsStorageKey(), JSON.stringify(sessions.slice(0, VIVY_CHAT_MAX_SESSIONS))); }
+  catch { }
+}
+
+function createVivyChatSession(name: string): VivyChatSessionMeta {
+  const id = `s${Date.now().toString(36)}`;
+  const now = new Date().toISOString();
+  const meta: VivyChatSessionMeta = { id, name: name.trim().slice(0, 40) || `Session ${id}`, createdAt: now, updatedAt: now };
+  const sessions = listVivyChatSessions();
+  saveVivyChatSessions([...sessions, meta]);
+  return meta;
+}
+
+function deleteVivyChatSession(sessionId: string) {
+  try {
+    const key = getVivyChatStorageKeyForSession(sessionId);
+    globalThis.localStorage?.removeItem(key);
+  } catch { }
+  const sessions = listVivyChatSessions().filter((s) => s.id !== sessionId);
+  saveVivyChatSessions(sessions);
+}
+
+function readVivyChatSession(sessionId: string): VivyPublicChatMessage[] {
+  if (!hasVivyAuthenticatedSession()) return [buildVivyLockedMessage()];
+  const key = getVivyChatStorageKeyForSession(sessionId);
+  try {
+    const raw = globalThis.localStorage?.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (!Array.isArray(parsed) || !parsed.length) return [buildVivyGreeting()];
+    return parsed.map((e: any) => ({
+      id: String(e?.id || `vivy-${Date.now()}`), role: (e?.role === "user" ? "user" : "assistant") as "user" | "assistant",
+      content: toUnicodeText(e?.content), ts: String(e?.ts || new Date().toISOString()),
+    })).filter((m) => m.content).slice(-24);
+  } catch { return [buildVivyGreeting()]; }
+}
+
+function writeVivyChatSession(sessionId: string, messages: VivyPublicChatMessage[]) {
+  if (!hasVivyAuthenticatedSession()) return;
+  const key = getVivyChatStorageKeyForSession(sessionId);
+  try {
+    globalThis.localStorage?.setItem(key, JSON.stringify(messages.slice(-24)));
+    const sessions = listVivyChatSessions();
+    const idx = sessions.findIndex((s) => s.id === sessionId);
+    if (idx >= 0) { sessions[idx].updatedAt = new Date().toISOString(); saveVivyChatSessions(sessions); }
+  } catch { }
+}
+// --- Fin sessions multiples ---
+
 function readVivyPublicChat(): VivyPublicChatMessage[] {
   if (!hasVivyAuthenticatedSession()) return [buildVivyLockedMessage()];
   try {
@@ -5533,9 +5608,34 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   const voiceReferenceInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [copiedMsgId, setCopiedMsgId] = useState("");
+  const [chatSessions, setChatSessions] = useState<VivyChatSessionMeta[]>(() => hasSession ? listVivyChatSessions() : []);
+  const [activeChatSessionId, setActiveChatSessionId] = useState("default");
+
+  function switchSession(id: string) {
+    const msgs = id === "default" ? readVivyPublicChat() : readVivyChatSession(id);
+    setMessages(msgs);
+    setActiveChatSessionId(id);
+    setAttachedFiles([]);
+    setStatus("");
+  }
+
+  function addSession() {
+    const name = prompt("Nom de la nouvelle session (ex: Saint Seiya, Moto, Zodiaque):");
+    if (!name?.trim()) return;
+    const meta = createVivyChatSession(name.trim());
+    setChatSessions(listVivyChatSessions());
+    switchSession(meta.id);
+  }
+
+  function deleteCurrentSession() {
+    if (activeChatSessionId === "default") return;
+    deleteVivyChatSession(activeChatSessionId);
+    setChatSessions(listVivyChatSessions());
+    switchSession("default");
+  }
 
   useEffect(() => {
-    writeVivyPublicChat(messages);
+    if (activeChatSessionId === "default") { writeVivyPublicChat(messages); } else { writeVivyChatSession(activeChatSessionId, messages); }
   }, [messages]);
 
   useEffect(() => {
@@ -5880,16 +5980,24 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           : "Fichiers ajoutés en contexte local");
   }
 
-  function resetChat() {
+  async function resetChat() {
     if (!hasSession) {
       setMessages([buildVivyLockedMessage()]);
       setStatus("Connexion requise pour utiliser Vivy.");
       return;
     }
+    // Vider le localStorage pour cette session
+    try { globalThis.localStorage?.removeItem(getVivyChatStorageKey()); } catch { }
     const next = [buildVivyGreeting()];
     setMessages(next);
     setAttachedFiles([]);
-    setStatus("Conversation remise à zéro");
+    // Effacer aussi la memoire episodique backend
+    try {
+      const result = await clearVivyMemory();
+      setStatus(`Conversation et mémoire remises à zéro (${result.cleared} épisode(s) effacé(s)).`);
+    } catch {
+      setStatus("Conversation locale remise à zéro. Mémoire backend inchangée.");
+    }
   }
 
   return (
@@ -5899,7 +6007,25 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           <h2>Parler à Vivy</h2>
           <p>Voix, chanson, ambiance ou scène: Vivy transforme l'idée en direction exploitable.</p>
         </div>
-        <button type="button" onClick={resetChat} disabled={!hasSession}>Reset</button>
+        <div className="vivy-chat-sessions">
+          <select
+            value={activeChatSessionId}
+            onChange={(e) => switchSession(e.target.value)}
+            disabled={!hasSession}
+            aria-label="Session de conversation"
+            style={{ fontSize: 12, maxWidth: 140 }}
+          >
+            <option value="default">Session principale</option>
+            {chatSessions.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+          <button type="button" onClick={addSession} disabled={!hasSession} title="Nouvelle session" style={{ fontSize: 12 }}>+</button>
+          {activeChatSessionId !== "default" && (
+            <button type="button" onClick={deleteCurrentSession} disabled={!hasSession} title="Supprimer cette session" style={{ fontSize: 12 }}>✕</button>
+          )}
+          <button type="button" onClick={resetChat} disabled={!hasSession} style={{ fontSize: 12 }}>Réinit.</button>
+        </div>
       </div>
 
       <div className="vivy-chat-log" aria-live="polite">

@@ -5988,3 +5988,16 @@ export async function fetchEkkoStatus(): Promise<EkkoStatusResponse> {
 
   return data as EkkoStatusResponse;
 }
+
+export async function clearVivyMemory(): Promise<{ ok: boolean; cleared: number }> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/memory'), {
+    method: 'DELETE',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Mémoire Vivy non effacée (${res.status})`);
+  }
+  return { ok: true, cleared: Number(data?.cleared ?? 0) };
+}

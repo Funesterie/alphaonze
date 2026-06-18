@@ -19,6 +19,7 @@ const {
 const {
   addEpisode,
   getEpisodes,
+  clearUserEpisodes,
 } = require('../../lib/episodic-memory.cjs');
 const {
   normalizeTextNfc,
@@ -2521,13 +2522,20 @@ function looksLikeWeakSongwritingReply(text = '') {
   const content = cleanText(text, 3200);
   if (!content) return true;
   const normalized = foldTextForLookup(content);
-  const sectionCount = (content.match(/\[(intro|verse|couplet|pre-chorus|pre-refrain|pré-refrain|chorus|refrain|bridge|pont|outro)\]/ig) || []).length;
-  const asksInsteadOfWriting = /(quel est le message|quel est le ton|quels sont les elements|qu en dis tu|n hesite pas|je vais essayer|je comprends mieux|poser quelques questions)/.test(normalized);
+  // Compter sections: brackets [Chorus] OU bold **Refrain** OU **Couplet**
+  const bracketSections = (content.match(/\[(intro|verse|couplet|pre-chorus|pre-refrain|pré-refrain|chorus|refrain|bridge|pont|outro)\]/ig) || []).length;
+  const boldSections = (content.match(/\*\*(intro|verse|couplet|pre-chorus|refrain|chorus|bridge|pont|outro|couplet\s*\d+|refrain\s*\()/ig) || []).length;
+  const sectionCount = bracketSections + boldSections;
+  const lineCount = content.split(/\n+/).filter((line) => line.trim()).length;
+  // Si la reponse a suffisamment de sections ET de lignes, c'est une vraie chanson
+  if (sectionCount >= 3 && lineCount >= 12) return false;
+  const asksInsteadOfWriting = /(quel est le message|quel est le ton|quels sont les elements|qu en dis tu|je vais essayer|je comprends mieux|poser quelques questions)/.test(normalized);
   const serviceWrapper = /(je vais continuer|j espere que cela correspond|j espere que cette chanson|j espere que ca te|n hesite pas a me|feedbacks?|modifications si necessaire|vous attendiez|vous avez deja commence)/.test(normalized);
-  const genericRapFiller = /(maitres? de la vitesse|rois? de la route|reines? de la nuit|maitres? du son|je suis vivant|je suis en vie|je suis libre|monde de vitesse et de liberte)/.test(normalized);
+  // genericRapFiller: seulement si PAS assez de sections (eviter les faux positifs sur vraies chansons)
+  const genericRapFiller = sectionCount < 2 && /(maitres? de la vitesse|rois? de la route|reines? de la nuit|maitres? du son|je suis vivant.*libre|monde de vitesse et de liberte)/.test(normalized);
   const metaInsteadOfLyrics = /(intention\s*:|paroles\s*:|voici une proposition)/.test(normalized)
-    && sectionCount < 4
-    && content.split(/\n+/).filter((line) => line.trim()).length < 12;
+    && sectionCount < 3
+    && lineCount < 10;
   const brokenRhymeExercise = /(je suis en trousse|avec une rescousse|je trousse|liberte libre|detstresse)/.test(normalized);
   return asksInsteadOfWriting || serviceWrapper || genericRapFiller || metaInsteadOfLyrics || brokenRhymeExercise;
 }
@@ -3915,6 +3923,19 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
         error: error?.code || 'vivy_chat_failed',
         message: error?.message || String(error),
       });
+    }
+  });
+
+
+  // DELETE /memory - efface les episodes memoire de l'utilisateur (reset chat backend)
+  router.delete('/memory', requireAuth, async (req, res) => {
+    try {
+      const userId = resolveVivyMemoryUser(req, req.body || {});
+      if (!userId) return res.status(401).json({ ok: false, error: 'vivy_auth_required' });
+      const result = clearUserEpisodes(userId);
+      res.json({ ok: true, cleared: result?.removed ?? 0 });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: 'vivy_memory_clear_failed', message: String(error?.message || error) });
     }
   });
 
