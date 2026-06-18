@@ -2,6 +2,7 @@
 // --- Express setup: always at the very top ---
 const express = require('express');
 const app = express();
+const AdmZip = require('adm-zip');
 const {
   installCrawlerVisibilityHeaders,
   setCrawlerControlAssetCacheHeaders,
@@ -4851,6 +4852,112 @@ async function getConversationResourceById(userId, resourceId) {
   };
 }
 
+function mapAccountStoredFileRow(row) {
+  if (!row) return null;
+  return {
+    id: Number(row.id || 0),
+    userId: String(row.user_id || ''),
+    filename: String(row.filename || ''),
+    storageKey: String(row.storage_key || ''),
+    url: String(row.url || ''),
+    contentType: String(row.content_type || ''),
+    sizeBytes: Number(row.size_bytes || 0),
+    expiresAt: row.expires_at || null,
+    createdAt: row.created_at || null,
+  };
+}
+
+async function getAccountStoredFileById(userId, fileId) {
+  const normalizedUserId = String(userId || '').trim();
+  const normalizedFileId = Number(fileId || 0);
+  if (!db || !normalizedUserId || !Number.isFinite(normalizedFileId) || normalizedFileId <= 0) return null;
+
+  const result = await db.query(
+    `SELECT id, user_id, filename, storage_key, url, content_type, size_bytes, expires_at, created_at
+     FROM files
+     WHERE user_id=$1 AND id=$2
+       AND (expires_at IS NULL OR expires_at > NOW())
+     LIMIT 1`,
+    [normalizedUserId, normalizedFileId]
+  );
+
+  return mapAccountStoredFileRow(result.rows[0] || null);
+}
+
+async function listAccountStoredFiles(userId, { limit = 100 } = {}) {
+  const normalizedUserId = String(userId || '').trim();
+  if (!db || !normalizedUserId) return [];
+
+  const normalizedLimit = Math.max(1, Math.min(200, Number(limit || 100)));
+  const result = await db.query(
+    `SELECT id, user_id, filename, storage_key, url, content_type, size_bytes, expires_at, created_at
+     FROM files
+     WHERE user_id=$1
+       AND (expires_at IS NULL OR expires_at > NOW())
+     ORDER BY created_at DESC, id DESC
+     LIMIT $2`,
+    [normalizedUserId, normalizedLimit]
+  );
+
+  return result.rows.map(mapAccountStoredFileRow).filter(Boolean);
+}
+
+function inferInventoryMediaType(item = {}) {
+  const contentType = String(item.contentType || '').trim().toLowerCase();
+  if (contentType.startsWith('image/')) return 'image';
+  if (contentType.startsWith('audio/')) return 'audio';
+  if (contentType.startsWith('video/')) return 'video';
+  const extension = path.extname(String(item.filename || '').trim()).toLowerCase();
+  if (['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.avif', '.svg'].includes(extension)) return 'image';
+  if (['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac', '.webm'].includes(extension)) return 'audio';
+  if (['.mp4', '.mov', '.mkv', '.avi', '.webm', '.m4v'].includes(extension)) return 'video';
+  return 'file';
+}
+
+function buildSafeZipEntryPath(item, usedPaths, index) {
+  const filename = sanitizeFileName(item.filename || `fichier-${index + 1}.bin`);
+  const mediaType = inferInventoryMediaType(item);
+  const folder = item.source === 'resource'
+    ? `conversations/${sanitizeFileName(item.conversationId || 'default') || 'default'}`
+    : 'compte';
+  const basePath = `${folder}/${mediaType}/${filename}`;
+  const extension = path.extname(filename);
+  const stem = extension ? filename.slice(0, -extension.length) : filename;
+  let candidate = basePath;
+  let suffix = 2;
+  while (usedPaths.has(candidate)) {
+    candidate = `${folder}/${mediaType}/${stem}-${suffix}${extension}`;
+    suffix += 1;
+  }
+  usedPaths.add(candidate);
+  return candidate;
+}
+
+async function listAccountInventoryDownloadItems(userId, { limit = 200 } = {}) {
+  const normalizedLimit = Math.max(1, Math.min(200, Number(limit || 200)));
+  const [resources, files] = await Promise.all([
+    listConversationResources(userId, { limit: normalizedLimit }),
+    listAccountStoredFiles(userId, { limit: normalizedLimit }),
+  ]);
+
+  const seenStorageKeys = new Set();
+  const items = [];
+  for (const resource of resources) {
+    const storageKey = String(resource.storageKey || '').trim();
+    if (!storageKey || seenStorageKeys.has(storageKey)) continue;
+    seenStorageKeys.add(storageKey);
+    items.push({ ...resource, source: 'resource' });
+  }
+  for (const file of files) {
+    const storageKey = String(file.storageKey || '').trim();
+    if (!storageKey || seenStorageKeys.has(storageKey)) continue;
+    seenStorageKeys.add(storageKey);
+    items.push({ ...file, source: 'file' });
+  }
+
+  return items;
+}
+
 async function markConversationResourceEmailed(userId, resourceId, emailRecord) {
   const normalizedUserId = String(userId || '').trim();
   const normalizedResourceId = Number(resourceId || 0);
@@ -7361,6 +7468,124 @@ app.get('/api/resources/:id/download', async (req, res) => {
   }
 });
 
+app.get('/api/files/:id/download', async (req, res) => {
+  try {
+    const userId = String(req.user?.id || '').trim();
+    if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
+    if (!db) return res.status(503).json({ ok: false, error: 'database_unavailable' });
+    await cleanupExpiredSharedFiles({ userId, limit: 200 });
+
+    const fileId = Number(req.params?.id || 0);
+    if (!Number.isFinite(fileId) || fileId <= 0) {
+      return res.status(400).json({ ok: false, error: 'invalid_file_id' });
+    }
+
+    const file = await getAccountStoredFileById(userId, fileId);
+    if (!file) {
+      return res.status(404).json({ ok: false, error: 'file_not_found' });
+    }
+    if (isResourceExpired(file)) {
+      return res.status(410).json({ ok: false, error: 'file_expired' });
+    }
+    if (!isStoredResourceDownloadAvailable(file.storageKey)) {
+      return res.status(409).json({ ok: false, error: 'file_download_not_available' });
+    }
+
+    const downloaded = await downloadBufferFromR2(file.storageKey);
+    const downloadName = sanitizeFileName(file.filename || `file-${fileId}.bin`);
+    const encodedDownloadName = encodeURIComponent(downloadName);
+
+    res.setHeader('Content-Type', downloaded.contentType || file.contentType || 'application/octet-stream');
+    if (downloaded.contentLength || file.sizeBytes) {
+      res.setHeader('Content-Length', String(downloaded.contentLength || file.sizeBytes || 0));
+    }
+    res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"; filename*=UTF-8''${encodedDownloadName}`);
+    res.setHeader('Cache-Control', 'private, no-store');
+
+    appendConversationLog({
+      type: 'account_file_downloaded',
+      userId,
+      conversationId: 'account',
+      file: {
+        id: file.id,
+        filename: file.filename,
+        contentType: file.contentType,
+        sizeBytes: file.sizeBytes,
+      },
+    });
+
+    return res.status(200).send(downloaded.buffer);
+  } catch (e) {
+    console.error('[FILES] download failed:', e?.message);
+    notifySlackError('FILES download failed', e?.message, {
+      route: `/api/files/${req.params?.id || ''}/download`,
+      userId: req.user?.id || '',
+      fileId: req.params?.id || '',
+    });
+    return res.status(500).json({ ok: false, error: 'file_download_failed', message: String(e?.message) });
+  }
+});
+
+app.get('/api/account/inventory.zip', verifyJWT, async (req, res) => {
+  try {
+    const userId = String(req.user?.id || '').trim();
+    if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
+    if (!db) return res.status(503).json({ ok: false, error: 'database_unavailable' });
+    await cleanupExpiredSharedFiles({ userId, limit: 200 });
+
+    const limit = Math.max(1, Math.min(200, Number(req.query.limit || 200)));
+    const items = await listAccountInventoryDownloadItems(userId, { limit });
+    const zip = new AdmZip();
+    const usedPaths = new Set();
+    const manifest = {
+      exportedAt: new Date().toISOString(),
+      count: 0,
+      skipped: 0,
+      files: [],
+    };
+
+    for (const [index, item] of items.entries()) {
+      if (!isStoredResourceDownloadAvailable(item.storageKey)) {
+        manifest.skipped += 1;
+        continue;
+      }
+      try {
+        const downloaded = await downloadBufferFromR2(item.storageKey);
+        const entryPath = buildSafeZipEntryPath(item, usedPaths, index);
+        zip.addFile(entryPath, downloaded.buffer);
+        manifest.count += 1;
+        manifest.files.push({
+          path: entryPath,
+          source: item.source === 'resource' ? 'conversation' : 'account',
+          id: Number(item.id || 0) || null,
+          conversationId: item.source === 'resource' ? String(item.conversationId || 'default') : null,
+          kind: inferInventoryMediaType(item),
+          filename: String(item.filename || ''),
+          contentType: String(downloaded.contentType || item.contentType || ''),
+          sizeBytes: Number(downloaded.contentLength || item.sizeBytes || downloaded.buffer?.length || 0),
+          createdAt: item.createdAt || null,
+          updatedAt: item.updatedAt || null,
+        });
+      } catch {
+        manifest.skipped += 1;
+      }
+    }
+
+    zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'));
+    const zipBuffer = zip.toBuffer();
+    const dateLabel = new Date().toISOString().slice(0, 10);
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Length', String(zipBuffer.length));
+    res.setHeader('Content-Disposition', `attachment; filename="funesterie-inventaire-medias-${dateLabel}.zip"`);
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.status(200).send(zipBuffer);
+  } catch (e) {
+    console.error('[ACCOUNT] inventory zip failed:', e?.message);
+    return res.status(500).json({ ok: false, error: 'inventory_zip_failed', message: String(e?.message) });
+  }
+});
+
 app.get('/api/public/resources/:id/download', async (req, res) => {
   try {
     if (!db) return res.status(503).json({ ok: false, error: 'database_unavailable' });
@@ -7593,7 +7818,14 @@ app.get('/api/files/my', async (req, res) => {
       [userId, limit]
     );
 
-    return res.json({ ok: true, files: result.rows, count: result.rows.length });
+    return res.json({
+      ok: true,
+      files: result.rows.map((row) => ({
+        ...row,
+        downloadUrl: `/api/files/${Number(row.id || 0)}/download`,
+      })),
+      count: result.rows.length,
+    });
   } catch (e) {
     console.error('[FILES] list failed:', e?.message);
     return res.status(500).json({ ok: false, error: 'list_failed', message: String(e?.message) });

@@ -5,6 +5,9 @@
 const {
   callStructuredLlmJson: defaultCallStructuredLlmJson,
 } = require('../mask/resolve-text-to-wazaa.cjs');
+const {
+  FUNESTERIE_SOURCE_PRINCIPLE_CONTEXT_EN,
+} = require('../chat/funesterie-source-principle.cjs');
 
 // llama-3.3-70b-versatile doesn't support json_schema — use json_object which all Groq models support
 const VIDEO_PROMPT_RESPONSE_FORMAT = Object.freeze({ type: 'json_object' });
@@ -14,6 +17,8 @@ const VIDEO_PROMPT_SYSTEM_PROMPT = `I am A11's video prompt engineer. I receive 
 I receive a JSON input with: user_request, has_reference_image, reference_count, reference_image_urls, reference_video_urls, reference_audio_urls, reference_visual_context (description of one or more reference images), audio_motion_plan.
 
 My job: translate the user intent into a cinematic motion prompt. I think like a film director planning a shot sequence.
+
+${FUNESTERIE_SOURCE_PRINCIPLE_CONTEXT_EN}
 
 IDENTITY ANCHOR RULE (critical):
 - If has_reference_image=true and the primary reference is a person/character identity, preserve the same person: facial likeness, face geometry, eyes, nose, mouth, jawline, skin tone, hairstyle, body build and distinctive visible traits.

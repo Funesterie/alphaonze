@@ -37,6 +37,9 @@ test('/api/chat system prompt always carries A11 NOSSEN identity', () => {
   assert.match(prompt, /symbolic extraction protocol|Protocole d'extraction symbolique/i);
   assert.match(prompt, /Identifier le mecanisme utile/i);
   assert.match(prompt, /pas les personnes, langues, origines, cultures ou religions comme blocs/i);
+  assert.match(prompt, /Principe source Funesterie/i);
+  assert.match(prompt, /source d'intention/i);
+  assert.match(prompt, /références ne sont pas décoratives/i);
 });
 
 test('/api/llm/chat empty system prompt still receives active identity context', () => {
@@ -57,6 +60,8 @@ test('/api/llm/chat empty system prompt still receives active identity context',
   assert.match(prompt, /voix-de-lait/i);
   assert.match(prompt, /private-local-transcript-and-audio-reference/i);
   assert.match(prompt, /Les 10 commandements d'extraction/i);
+  assert.match(prompt, /clarifie sans salir/i);
+  assert.match(prompt, /surface active parle en "je"/i);
 });
 
 test('/api/chat Kaen44 surface pins first-person identity away from A11', () => {
@@ -123,6 +128,8 @@ test('/api/chat local Ollama prompt stays compact enough for the local model', (
   assert.match(compact, /Surface active: Kaen44/i);
   assert.match(compact, /Funesterie[\s\S]*NOSSEN/i);
   assert.match(compact, /derniere demande utilisateur/i);
+  assert.match(compact, /demande utilisateur porte l'intention/i);
+  assert.match(compact, /roles nets/i);
   assert.doesNotMatch(compact, /Funesterie private corpus capsules/i);
 
   const noisyHistory = Array.from({ length: 20 }, (_, index) => ({

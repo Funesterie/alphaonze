@@ -4,11 +4,20 @@ const {
 const {
   callStructuredLlmJson: defaultCallStructuredLlmJson,
 } = require('./resolve-text-to-wazaa.cjs');
+const {
+  FUNESTERIE_SOURCE_PRINCIPLE_CONTEXT_EN,
+} = require('../chat/funesterie-source-principle.cjs');
 
-const CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT = `You are the canonical request normalizer for A11 image.generate.
+const CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT = `Role: A11 image prompt canonicalizer.
+Task: convert the received user request into a polished English image-generation prompt and strict structured JSON.
 
-You receive a raw user request that may be written in French or another language.
-Your job is to convert it into a single canonical English source of truth for the whole image generation pipeline.
+You receive the user's request exactly as sent. It may be French, another language, mixed-language, voice-transcribed, slang, shorthand, telegraphic, or written with spelling mistakes, missing accents, and rough punctuation.
+Your first job is to understand the intended image from the received request, correct obvious wording mentally without changing the request, then write a polished, stylish English image-generation prompt that a renderer can actually use.
+
+Do not translate word-for-word. Turn rough received text into clean natural English visual direction: subject, action, setting, style, composition, light, mood, texture, and constraints.
+The JSON output is still the canonical English source of truth for the image pipeline.
+
+${FUNESTERIE_SOURCE_PRINCIPLE_CONTEXT_EN}
 
 Rules:
 - Output useful prompt data in English only.

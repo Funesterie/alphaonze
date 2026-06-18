@@ -227,6 +227,18 @@ test('canonicalizer prompt explicitly forbids named-entity substitution and cont
   assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /sole subject when the user requested actors/i);
 });
 
+test('canonicalizer prompt prioritizes received rough requests to stylish English image prompts', () => {
+  assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /Role: A11 image prompt canonicalizer/i);
+  assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /source of intent/i);
+  assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /request exactly as sent/i);
+  assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /mixed-language, voice-transcribed/i);
+  assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /correct obvious wording mentally/i);
+  assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /polished, stylish English image-generation prompt/i);
+  assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /Do not translate word-for-word/i);
+  assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /references are not decorative/i);
+  assert.doesNotMatch(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /You are A11's raw-request-to-English/i);
+});
+
 test('validateCanonicalizedImageGenerateRequest accepts payloads where named entities differ from raw input', () => {
   // named entity validation removed — LLM decides preservation, not heuristics
   const payload = normalizeCanonicalizedImageGenerateRequest({

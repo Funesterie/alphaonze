@@ -3,7 +3,9 @@ import {
   clearA11History,
   createTextArtifact,
   deleteRemoteProviderProfile,
+  downloadAccountInventoryZip,
   downloadConversationResource,
+  downloadStoredAccountFile,
   fetchTechnicalMemoSummary,
   fetchA11HistoryList,
   fetchA11Conversation,
@@ -3078,11 +3080,85 @@ function openVivyStudioMode(mode: VivyStudioMode) {
   }
 }
 
+function redactVivyStudioSensitiveOutput(value: string) {
+  return String(value || "")
+    .replace(/https?:\/\/[^\s<>"')]+/gi, (url) => {
+      if (/[?&](?:token|key|signature|sig|access_token)=/i.test(url)) return "[lien média sécurisé masqué]";
+      if (/\/api\/double-harmonic\/out\//i.test(url)) return "[lien média D40 masqué]";
+      return url.replace(/[?&].*$/, "");
+    })
+    .replace(/\b(?:token|key|signature|sig|access_token)=\S+/gi, (match) => `${match.split("=")[0]}=[masqué]`)
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanVivyStudioOutputLine(line: string) {
+  const cleaned = redactVivyStudioSensitiveOutput(line)
+    .replace(/\s*pr[êe]t\s*:\s*\[lien média [^\]]+\]/i, " prêt")
+    .replace(/\s*M[êe]me format pr[êe]t\s*:\s*\[lien média [^\]]+\]/i, " prêt")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return "";
+  if (/^VIVY_(?:STUDIO_HANDOFF|PRODUCTION|SONG_PRODUCTION|VOICE_CALIBRATION|SCENE_SHARE)\b/i.test(cleaned)) return "";
+  if (/^Routage recommand[ée]\s*:/i.test(cleaned)) return "";
+  if (/^-\s*(?:Vivy|A11|Kaen44)\s*:/i.test(cleaned)) return "";
+  if (/^Job Suno\s*:/i.test(cleaned)) return "Job Suno: lancé (identifiant masqué du brief)";
+  return cleaned;
+}
+
+function normalizeVivyStudioOutputForState(value: string, maxLines = 6) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const lines = raw
+    .split(/\r?\n+/)
+    .map(cleanVivyStudioOutputLine)
+    .filter(Boolean);
+  const compact: string[] = [];
+  const seen = new Set<string>();
+  for (const line of lines) {
+    const key = foldForLookup(line);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    compact.push(line);
+  }
+  return compact.slice(-maxLines).join("\n");
+}
+
+function appendVivyStudioOutputStatus(current: string, next: string) {
+  return normalizeVivyStudioOutputForState([current, next].filter(Boolean).join("\n"), 6);
+}
+
+function buildVivyStudioProductionStatus(output: string) {
+  const normalized = normalizeVivyStudioOutputForState(output, 6);
+  if (!normalized) return "";
+  const lines = normalized.split(/\r?\n+/).filter(Boolean);
+  const d40Lines = lines.filter((line) => /^Mix D40\b/i.test(line));
+  if (d40Lines.length) {
+    return [
+      "VIVY_PRODUCTION_STATUS",
+      `Dernier média: ${d40Lines[d40Lines.length - 1]}`,
+      d40Lines.length > 1 ? `Historique local: ${d40Lines.length} sorties D40 prêtes, liens masqués du brief.` : "",
+      "Média: disponible dans le lecteur du Studio, pas recopié dans le brief agents.",
+    ].filter(Boolean).join("\n");
+  }
+  return [
+    "VIVY_PRODUCTION_STATUS",
+    ...lines,
+  ].join("\n");
+}
+
 function readVivyStudioDraft() {
   try {
     const raw = globalThis.localStorage?.getItem(VIVY_STUDIO_DRAFT_KEY);
     if (!raw) return null;
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      return {
+        ...parsed,
+        vivyOutput: normalizeVivyStudioOutputForState(String(parsed.vivyOutput || "")),
+      };
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -3090,7 +3166,10 @@ function readVivyStudioDraft() {
 
 function writeVivyStudioDraft(value: Record<string, unknown>) {
   try {
-    globalThis.localStorage?.setItem(VIVY_STUDIO_DRAFT_KEY, JSON.stringify(value));
+    globalThis.localStorage?.setItem(VIVY_STUDIO_DRAFT_KEY, JSON.stringify({
+      ...value,
+      vivyOutput: normalizeVivyStudioOutputForState(String(value.vivyOutput || "")),
+    }));
   } catch {
     // Storage is optional for the public page.
   }
@@ -3510,6 +3589,18 @@ function buildVivyStudioBrief(options: {
     );
   }
 
+  if (options.mode === "test") {
+    lines.push(
+      "Flux test voix:",
+      `- Voix sélectionnée: ${voiceProfile.label}`,
+      `- Référence active: ${voiceProfile.referenceLabel}`,
+      `- Phrase test: ${voiceProfile.testLine}`,
+      "- Objectif: écouter une voix à la fois, vérifier timbre, diction, souffle, proximité micro et identité.",
+      "- Sortie attendue: aperçu audio court dans le lecteur du Studio; aucun historique de production ni lien signé dans ce brief.",
+      "- Sécurité: références privées et liens médias restent dans l’UI, pas dans le brief agents."
+    );
+  }
+
   if (options.mode === "song") {
     lines.push(
       "Flux chanson:",
@@ -3533,7 +3624,7 @@ function buildVivyStudioBrief(options: {
     lines.push(
       "Flux scène / partage:",
       `- Canal: ${options.shareTarget}`,
-      `- Lien: ${options.shareUrl || "à fournir"}`,
+      `- Lien: ${options.shareUrl ? redactVivyStudioSensitiveOutput(options.shareUrl) : "à fournir"}`,
       `- Token fourni dans l'interface: ${options.shareTokenPresent ? "oui, local seulement" : "non"}`,
       `- Instruction: ${options.shareInstruction || "préparer clip, titre, description et checklist publication"}`,
       "- Sortie attendue: clip/short, titre, description, tags, miniature, checklist OBS ou upload.",
@@ -3617,7 +3708,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [shareUrl, setShareUrl] = useState(String(initialDraft.shareUrl || ""));
   const [shareToken, setShareToken] = useState("");
   const [shareInstruction, setShareInstruction] = useState(String(initialDraft.shareInstruction || ""));
-  const [vivyOutput, setVivyOutput] = useState(String(initialDraft.vivyOutput || ""));
+  const [vivyOutput, setVivyOutput] = useState(normalizeVivyStudioOutputForState(String(initialDraft.vivyOutput || "")));
   const [vivyMedia, setVivyMedia] = useState<VivyStudioMediaPreview | null>(null);
   const [vivyDiagnostics, setVivyDiagnostics] = useState<VivyStudioProductionResult["prosody"] | null>(null);
   const [status, setStatus] = useState("");
@@ -3750,9 +3841,13 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     shareToken,
     shareInstruction,
   ]);
+  const productionStatusBrief = useMemo(
+    () => buildVivyStudioProductionStatus(vivyOutput),
+    [vivyOutput]
+  );
   const brief = useMemo(
-    () => vivyOutput.trim() ? `${baseBrief}\n\nVIVY_PRODUCTION\n${vivyOutput.trim()}` : baseBrief,
-    [baseBrief, vivyOutput]
+    () => productionStatusBrief ? `${baseBrief}\n\n${productionStatusBrief}` : baseBrief,
+    [baseBrief, productionStatusBrief]
   );
 
   useEffect(() => {
@@ -3777,7 +3872,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       shareUrl,
       shareInstruction,
       tokenPresent: Boolean(shareToken.trim()),
-      vivyOutput,
+      vivyOutput: normalizeVivyStudioOutputForState(vivyOutput),
     });
   }, [activeMode, voiceTool, voiceInstruction, voiceFileName, voiceReferenceId, selectedCatalogVoiceId, catalogVoiceName, publishVoiceToCatalog, catalogConsentAccepted, voiceLearningPersona, voiceLearningFileName, voiceLearningTranscript, songSource, songArtists, songMood, songText, shareTarget, shareUrl, shareInstruction, shareToken, vivyOutput]);
 
@@ -4283,10 +4378,10 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         contentType: String(result.contentType || doubleHarmonicFile.type || "audio/mpeg"),
         filename: String(result.filename || doubleHarmonicFile.name || "funesterie-d40-audio"),
       });
-      setVivyOutput((current) => [
-        current.trim(),
-        `Mix D40 ${doubleHarmonicModeLabel} ${doubleHarmonicWeightLabel} ${doubleHarmonicOutputFormatLabel} prêt: ${result.shareUrl || result.audioUrl}`,
-      ].filter(Boolean).join("\n\n"));
+      setVivyOutput((current) => appendVivyStudioOutputStatus(
+        current,
+        `Mix D40 ${doubleHarmonicModeLabel} ${doubleHarmonicWeightLabel} ${doubleHarmonicOutputFormatLabel} prêt`
+      ));
       setStatus(`Mix D40 ${doubleHarmonicModeLabel} prêt avec lien exportable (${doubleHarmonicWeightLabel}, ${doubleHarmonicOutputFormatLabel}).`);
     } catch (error: any) {
       setStatus(`Traitement D40 impossible: ${error?.message || error}`);
@@ -4515,14 +4610,13 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         provider: String(finalPayload?.media?.provider || payloadAny?.mediaStatus?.provider || "vivy-music"),
         contentType: String(finalPayload?.media?.content_type || finalPayload?.contentType || finalPayload?.content_type || "audio/mpeg"),
       });
-      setVivyOutput([
-        "VIVY_MUSIC_GENERATION",
+      setVivyOutput(normalizeVivyStudioOutputForState([
+        "Production musicale Vivy prête.",
         `Direction: ${songMood || "electro pop dark cinematographique"}`,
         `Casting vocal: ${activeSongArtistCast.countLabel} - ${activeSongArtistCast.label}`,
-        taskId ? `Job Suno: ${taskId}` : `Prompt: ${playablePrompt}`,
-        "",
+        taskId ? "Job Suno: lancé (identifiant masqué du brief)" : "",
         finalPayload?.summary || payload?.summary || "Sortie: chanson audio Vivy générée.",
-      ].join("\n"));
+      ].filter(Boolean).join("\n")));
       setStatus(activeVoiceProfile.id === "duo-djeff-vivy" ? "Duo Djeff + Vivy prêt." : "Chanson Vivy prête.");
     } catch (error: any) {
       setStatus(`Chanson Vivy indisponible: ${error?.message || error}`);
@@ -4581,7 +4675,11 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       const audioUrl = String(payload?.audioUrl || payload?.audio_url || payload?.media?.audioUrl || payload?.media?.audio_url || "").trim();
       const videoUrl = String(payload?.videoUrl || payload?.video_url || payload?.media?.videoUrl || payload?.media?.video_url || "").trim();
       const mediaUrl = audioUrl || videoUrl;
-      setVivyOutput(text);
+      setVivyOutput(normalizeVivyStudioOutputForState([
+        payload.summary || "Production Vivy prête.",
+        mediaUrl ? `Média ${audioUrl ? "audio" : "vidéo"} disponible dans le lecteur du Studio.` : "",
+        text && !/^VIVY_/i.test(text) ? text : "",
+      ].filter(Boolean).join("\n")));
       setVivyMedia(mediaUrl
         ? {
           kind: audioUrl ? "audio" : "video",
@@ -7811,6 +7909,18 @@ type FunesterieAccountInventory = {
 type FunesterieAccessPreferences = Record<string, boolean>;
 type FunesterieSessionAppTokenMap = Record<string, string>;
 
+type FunesterieInventoryFileItem = {
+  key: string;
+  source: "resource" | "file";
+  resource?: A11ConversationResource;
+  file?: A11UserStoredFile;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  createdAt: string;
+  conversationId?: string | null;
+};
+
 type FunesterieSessionAppTokenConfig = {
   id: string;
   label: string;
@@ -8027,7 +8137,72 @@ function getStoredFileDate(file: A11UserStoredFile | A11ConversationResource) {
 }
 
 function getStoredFileUrl(file: A11UserStoredFile | A11ConversationResource) {
-  return String((file as A11ConversationResource).downloadUrl || (file as A11ConversationResource).url || (file as A11UserStoredFile).url || "");
+  return String((file as A11ConversationResource).downloadUrl || (file as A11UserStoredFile).downloadUrl || (file as A11ConversationResource).url || (file as A11UserStoredFile).url || "");
+}
+
+function redactAccountInventoryText(value: unknown) {
+  return String(value ?? "")
+    .replace(/https?:\/\/[^\s"'<>]+/gi, "[lien masque]")
+    .replace(/\b(token|access_token|refresh_token|api[_-]?key|secret|signature|sig)=([^&\s"'<>]+)/gi, "$1=[masque]")
+    .replace(/\b(gsk|sk|rk|pk|hf|ghp|glpat|xox[baprs])_[A-Za-z0-9_\-]{12,}\b/g, "[secret masque]")
+    .replace(/\b[A-Za-z0-9_\-]{28,}\.[A-Za-z0-9_\-]{16,}\.[A-Za-z0-9_\-]{16,}\b/g, "[jeton masque]")
+    .trim();
+}
+
+function getInventoryMediaKind(file: A11UserStoredFile | A11ConversationResource) {
+  const contentType = String((file as A11ConversationResource).contentType || (file as A11UserStoredFile).contentType || (file as A11UserStoredFile).content_type || "").toLowerCase();
+  if (contentType.startsWith("image/")) return "image";
+  if (contentType.startsWith("audio/")) return "audio";
+  if (contentType.startsWith("video/")) return "vidéo";
+  const name = String(file.filename || "").toLowerCase();
+  if (/\.(png|jpe?g|webp|gif|bmp|avif|svg)$/.test(name)) return "image";
+  if (/\.(mp3|wav|ogg|m4a|flac|aac|webm)$/.test(name)) return "audio";
+  if (/\.(mp4|mov|mkv|avi|webm|m4v)$/.test(name)) return "vidéo";
+  return "fichier";
+}
+
+function buildAccountInventoryFiles(files: A11UserStoredFile[], resources: A11ConversationResource[]): FunesterieInventoryFileItem[] {
+  const seen = new Set<string>();
+  const items: FunesterieInventoryFileItem[] = [];
+  const remember = (key: string) => {
+    const normalized = String(key || "").trim();
+    if (!normalized) return false;
+    if (seen.has(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  };
+
+  for (const resource of resources) {
+    const key = String(resource.storageKey || resource.downloadUrl || resource.url || `${resource.id || ""}:${resource.filename || ""}`).trim();
+    if (!remember(key)) continue;
+    items.push({
+      key: `resource:${resource.id || key}`,
+      source: "resource",
+      resource,
+      filename: redactAccountInventoryText(resource.filename || "fichier"),
+      contentType: String(resource.contentType || ""),
+      sizeBytes: getStoredFileSize(resource),
+      createdAt: getStoredFileDate(resource),
+      conversationId: resource.conversationId || null,
+    });
+  }
+
+  for (const file of files) {
+    const key = String(file.storageKey || file.storage_key || file.downloadUrl || file.url || `${file.id || ""}:${file.filename || ""}`).trim();
+    if (!remember(key)) continue;
+    items.push({
+      key: `file:${file.id || key}`,
+      source: "file",
+      file,
+      filename: redactAccountInventoryText(file.filename || "fichier"),
+      contentType: String(file.contentType || file.content_type || ""),
+      sizeBytes: getStoredFileSize(file),
+      createdAt: getStoredFileDate(file),
+      conversationId: null,
+    });
+  }
+
+  return items.sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")));
 }
 
 function getSubscriptionAccountLabel(status: SubscriptionStatus | null, authenticated: boolean) {
@@ -8093,6 +8268,7 @@ function FunesterieAccountPage({
     error: "",
   });
   const [paymentBusy, setPaymentBusy] = useState<"" | "premium" | "founder" | "portal" | "cancel">("");
+  const [inventoryDownloadBusy, setInventoryDownloadBusy] = useState("");
   const [sessionAppTokens, setSessionAppTokens] = useState<FunesterieSessionAppTokenMap>(() => readSessionAppTokens());
   const [sessionAppTokenDrafts, setSessionAppTokenDrafts] = useState<FunesterieSessionAppTokenMap>(() => readSessionAppTokens());
 
@@ -8165,10 +8341,20 @@ function FunesterieAccountPage({
   const messageTotal = Object.values(inventory.conversations).reduce((sum, entries) => (
     sum + entries.reduce((inner, entry) => inner + Number(entry.messageCount || 0), 0)
   ), 0);
-  const resourceTotal = inventory.files.length + inventory.resources.length;
-  const latestFiles = [...inventory.resources, ...inventory.files]
-    .sort((left, right) => getStoredFileDate(right).localeCompare(getStoredFileDate(left)))
-    .slice(0, 3);
+  const inventoryFiles = useMemo(
+    () => buildAccountInventoryFiles(inventory.files, inventory.resources),
+    [inventory.files, inventory.resources]
+  );
+  const conversationRecap = useMemo(() => FUNESTERIE_CHAT_SURFACES.flatMap((surface) => (
+    (inventory.conversations[surface] || []).map((entry) => ({
+      surface,
+      label: FUNESTERIE_SURFACE_LABELS[surface],
+      id: redactAccountInventoryText(entry.id),
+      name: redactAccountInventoryText(entry.name || "Conversation"),
+      updated: entry.updated || "",
+      messageCount: Number(entry.messageCount || 0),
+    }))
+  )).sort((left, right) => String(right.updated || "").localeCompare(String(left.updated || ""))), [inventory.conversations]);
   const subscriptionLabel = getSubscriptionAccountLabel(inventory.subscription, authenticated);
   const subscriptionText = getSubscriptionAccountText(inventory.subscription, authenticated);
   const accessAccount = inventory.mcpAccess?.account || null;
@@ -8181,33 +8367,83 @@ function FunesterieAccountPage({
 
   function exportAccountInventory() {
     const today = new Date().toISOString().slice(0, 10);
-    downloadFunesterieJson(`funesterie-inventaire-${today}.json`, {
+    downloadFunesterieJson(`funesterie-recap-conversations-${today}.json`, {
       exportedAt: new Date().toISOString(),
-      account: {
-        authenticated,
-        displayName: displayName || null,
-        subscription: inventory.subscription ? {
-          active: inventory.subscription.active,
-          fullAccess: inventory.subscription.fullAccess,
-          tier: inventory.subscription.tier,
-          plan: inventory.subscription.plan,
-          endDate: inventory.subscription.endDate,
-          stripeStatus: inventory.subscription.stripeStatus,
-        } : null,
+      compte: {
+        nom: redactAccountInventoryText(displayName || "Compte Funesterie"),
+        connecte: authenticated,
       },
-      localOverview: overview,
-      toolsAccess: {
-        accountTier: accessAccount?.tier || null,
-        accountLabel: accessAccount?.label || null,
-        preferences: inventory.accessPreferences,
-        capabilities: accessCapabilities,
-        tiers: accessTiers,
+      conversations: {
+        total: conversationTotal,
+        messages: messageTotal,
+        parAgent: Object.fromEntries(FUNESTERIE_CHAT_SURFACES.map((surface) => [
+          FUNESTERIE_SURFACE_LABELS[surface],
+          inventory.conversations[surface].length,
+        ])),
+        recap: conversationRecap.map((entry) => ({
+          agent: entry.label,
+          titre: entry.name,
+          messages: entry.messageCount,
+          derniereMiseAJour: entry.updated || null,
+          conversationId: entry.id || null,
+        })),
       },
-      sessionAppTokens: getSessionAppTokenPresence(sessionAppTokens),
-      conversations: inventory.conversations,
-      files: inventory.files,
-      resources: inventory.resources,
+      mediasEtFichiers: {
+        total: inventoryFiles.length,
+        items: inventoryFiles.map((item) => ({
+          type: getInventoryMediaKind(item.resource || item.file || ({ filename: item.filename } as A11ConversationResource)),
+          source: item.source === "resource" ? "conversation" : "compte",
+          nom: item.filename,
+          taille: item.sizeBytes || null,
+          contentType: item.contentType || null,
+          date: item.createdAt || null,
+          conversationId: item.conversationId ? redactAccountInventoryText(item.conversationId) : null,
+        })),
+      },
+      note: "Export recapitulatif sans jeton, sans URL signee et sans cle technique.",
     });
+  }
+
+  async function downloadInventoryFile(item: FunesterieInventoryFileItem) {
+    const busyKey = item.key;
+    setInventoryDownloadBusy(busyKey);
+    try {
+      const result = item.source === "resource" && item.resource
+        ? await downloadConversationResource(item.resource)
+        : item.file
+          ? await downloadStoredAccountFile(item.file)
+          : null;
+      if (!result) return;
+      setInventory((current) => ({
+        ...current,
+        error: `Téléchargement lancé: ${redactAccountInventoryText(result.filename)}`,
+      }));
+    } catch (error) {
+      setInventory((current) => ({
+        ...current,
+        error: (error as Error).message || "Téléchargement impossible",
+      }));
+    } finally {
+      setInventoryDownloadBusy("");
+    }
+  }
+
+  async function downloadInventoryArchive() {
+    setInventoryDownloadBusy("zip");
+    try {
+      const result = await downloadAccountInventoryZip();
+      setInventory((current) => ({
+        ...current,
+        error: `Archive lancée: ${redactAccountInventoryText(result.filename)}`,
+      }));
+    } catch (error) {
+      setInventory((current) => ({
+        ...current,
+        error: (error as Error).message || "Archive ZIP indisponible",
+      }));
+    } finally {
+      setInventoryDownloadBusy("");
+    }
   }
 
   function toggleAccessCapability(id: string, enabled: boolean) {
@@ -8306,28 +8542,6 @@ function FunesterieAccountPage({
           <h1>Compte</h1>
           <p>{authenticated ? (displayName || "Compte connecté") : "Connecte-toi pour gérer ton compte Funesterie."}</p>
         </div>
-        <div className="fun-account-grid">
-          <article>
-            <strong>Profil</strong>
-            <span>{authenticated ? "Compte connecté" : "Compte non connecté"}</span>
-          </article>
-          <article>
-            <strong>Historique</strong>
-            <span>{conversationTotal || overview.conversations} conversation{(conversationTotal || overview.conversations) > 1 ? "s" : ""}</span>
-          </article>
-          <article>
-            <strong>Fichiers</strong>
-            <span>{resourceTotal || overview.files} média/fichier{(resourceTotal || overview.files) > 1 ? "s" : ""}</span>
-          </article>
-          <article>
-            <strong>Abonnement</strong>
-            <span>{subscriptionLabel}</span>
-          </article>
-          <article>
-            <strong>Outils</strong>
-            <span>{authenticated ? `${enabledAccessCount}/${allowedAccessCount || accessCapabilities.length || 0} actifs` : "Connexion requise"}</span>
-          </article>
-        </div>
       </section>
 
       <section id="paiements" className="fun-token-panel" aria-label="Actions compte">
@@ -8360,86 +8574,109 @@ function FunesterieAccountPage({
               )}
             </footer>
           </article>
-          <article className="fun-token-card">
+          <article className="fun-token-card fun-token-card--conversation-recap">
             <header>
               <h3>Conversations</h3>
-              <span>Inventaire</span>
+              <span>Récap</span>
             </header>
             <p>
               {conversationTotal} conversation{conversationTotal > 1 ? "s" : ""} serveur,
-              {messageTotal ? ` ${messageTotal} message${messageTotal > 1 ? "s" : ""},` : ""} cache local: {overview.conversations}.
+              {messageTotal ? ` ${messageTotal} message${messageTotal > 1 ? "s" : ""}.` : " aucun message serveur détaillé."}
             </p>
-            <div className="fun-account-mini-list">
+            <div className="fun-account-mini-list" aria-label="Conversations par agent">
               <span>A11: {inventory.conversations.a11.length}</span>
               <span>K44: {inventory.conversations.kaen44.length}</span>
               <span>Vivy: {inventory.conversations.vivy.length}</span>
             </div>
+            <ul className="fun-conversation-recap-list" aria-label="Dernières conversations">
+              {conversationRecap.slice(0, 6).map((entry) => (
+                <li key={`${entry.surface}-${entry.id || entry.name}`}>
+                  <strong>{entry.name || "Conversation"}</strong>
+                  <span>{entry.label} · {entry.messageCount || 0} message{entry.messageCount > 1 ? "s" : ""}{entry.updated ? ` · ${formatAccountDate(entry.updated)}` : ""}</span>
+                </li>
+              ))}
+              {!conversationRecap.length && (
+                <li>
+                  <strong>Aucune conversation serveur chargée</strong>
+                  <span>Le cache local indique {overview.conversations} conversation{overview.conversations > 1 ? "s" : ""}.</span>
+                </li>
+              )}
+            </ul>
             <footer>
               <div className="fun-token-card-actions">
                 <button type="button" onClick={loadAccountInventory} disabled={!authenticated || inventory.loading}>
                   {inventory.loading ? "Chargement" : "Actualiser"}
                 </button>
                 <button type="button" onClick={exportAccountInventory} disabled={!authenticated}>
-                  Export JSON
+                  Exporter le récap
                 </button>
               </div>
             </footer>
           </article>
-          <article className="fun-token-card">
+          <article className="fun-token-card fun-token-card--media-inventory">
             <header>
               <h3>Fichiers</h3>
               <span>Médias</span>
             </header>
             <p>
-              {inventory.files.length} fichier{inventory.files.length > 1 ? "s" : ""} compte,
-              {" "}{inventory.resources.length} ressource{inventory.resources.length > 1 ? "s" : ""} conversation.
+              {inventoryFiles.length} élément{inventoryFiles.length > 1 ? "s" : ""} disponible{inventoryFiles.length > 1 ? "s" : ""}: images, audio, vidéos et fichiers de conversation.
             </p>
-            {(() => {
-              const IMG_EXT = /\.(jpe?g|png|gif|webp|bmp|svg)$/i;
-              const imgResources = inventory.resources
-                .filter((r) => IMG_EXT.test(r.filename || '') || String((r as any).contentType || '').startsWith('image/'))
-                .slice(0, 12);
-              if (!imgResources.length) return null;
-              return (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0' }}>
-                  {imgResources.map((r, i) => {
-                    const url = resolveApiAssetUrl(getStoredFileUrl(r)) || getStoredFileUrl(r);
-                    return url ? (
-                      <a key={r.filename + i} href={url} target="_blank" rel="noreferrer"
-                         title={r.filename || `image-${i + 1}`}
-                         style={{ display: 'block', borderRadius: 6, overflow: 'hidden', border: '1px solid #334155' }}>
-                        <img src={url} alt={r.filename || `image-${i + 1}`}
-                             style={{ width: 56, height: 56, objectFit: 'cover', display: 'block' }}
-                             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                      </a>
-                    ) : null;
-                  })}
-                  {inventory.resources.filter((r) => IMG_EXT.test(r.filename || '')).length > 12 && (
-                    <span style={{ fontSize: 11, color: '#94a3b8', alignSelf: 'center' }}>
-                      +{inventory.resources.filter((r) => IMG_EXT.test(r.filename || '')).length - 12} de plus
-                    </span>
-                  )}
-                </div>
-              );
-            })()}
-            <div className="fun-account-mini-list">
-              {latestFiles.length ? latestFiles.map((file, index) => {
-                const url = getStoredFileUrl(file);
-                const name = String(file.filename || `fichier-${index + 1}`);
-                const label = `${name} · ${formatCompactFileSize(getStoredFileSize(file))}`;
-                return url ? (
-                  <a key={`${name}-${index}`} href={resolveApiAssetUrl(url) || url} target="_blank" rel="noreferrer">{label}</a>
-                ) : (
-                  <span key={`${name}-${index}`}>{label}</span>
+            <ul className="fun-media-inventory-list" aria-label="Inventaire des médias et fichiers">
+              {inventoryFiles.map((item) => {
+                const rawFile = item.resource || item.file;
+                const previewUrl = rawFile && getInventoryMediaKind(rawFile) === "image"
+                  ? (resolveApiAssetUrl(getStoredFileUrl(rawFile)) || getStoredFileUrl(rawFile))
+                  : "";
+                const kind = rawFile ? getInventoryMediaKind(rawFile) : "fichier";
+                const busy = inventoryDownloadBusy === item.key;
+                return (
+                  <li key={item.key}>
+                    <div className="fun-media-inventory-main">
+                      {previewUrl ? (
+                        <img src={previewUrl} alt="" onError={(event) => { (event.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                      ) : (
+                        <span className="fun-media-inventory-badge">{kind}</span>
+                      )}
+                      <span>
+                        <strong title={item.filename}>{item.filename}</strong>
+                        <small>
+                          {item.source === "resource" ? "Conversation" : "Compte"} · {kind} · {formatCompactFileSize(item.sizeBytes)}
+                          {item.createdAt ? ` · ${formatAccountDate(item.createdAt)}` : ""}
+                        </small>
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => downloadInventoryFile(item)}
+                      disabled={!authenticated || busy || inventoryDownloadBusy === "zip"}
+                      aria-label={`Télécharger ${item.filename}`}
+                    >
+                      {busy ? "..." : "Télécharger"}
+                    </button>
+                  </li>
                 );
-              }) : (
-                <span>{overview.files} élément{overview.files > 1 ? "s" : ""} local{overview.files > 1 ? "aux" : ""}; Vivy: {overview.vivyMessages} message{overview.vivyMessages > 1 ? "s" : ""}</span>
+              })}
+              {!inventoryFiles.length && (
+                <li>
+                  <div className="fun-media-inventory-main">
+                    <span className="fun-media-inventory-badge">vide</span>
+                    <span>
+                      <strong>Aucun fichier serveur chargé</strong>
+                      <small>{overview.files} élément{overview.files > 1 ? "s" : ""} local{overview.files > 1 ? "aux" : ""}; Vivy: {overview.vivyMessages} message{overview.vivyMessages > 1 ? "s" : ""}</small>
+                    </span>
+                  </div>
+                </li>
               )}
-            </div>
+            </ul>
             <footer>
-              <button type="button" onClick={exportAccountInventory} disabled={!authenticated}>
-                Télécharger l'inventaire
-              </button>
+              <div className="fun-token-card-actions">
+                <button type="button" onClick={downloadInventoryArchive} disabled={!authenticated || inventory.loading || !!inventoryDownloadBusy || !inventoryFiles.length}>
+                  {inventoryDownloadBusy === "zip" ? "Préparation" : "Tout télécharger ZIP"}
+                </button>
+                <button type="button" onClick={exportAccountInventory} disabled={!authenticated}>
+                  Exporter le récap
+                </button>
+              </div>
             </footer>
           </article>
           <article className="fun-token-card">

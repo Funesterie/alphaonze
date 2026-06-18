@@ -7,6 +7,7 @@ const {
   buildVideoPrompt,
   sanitizeVideoNegativePrompt,
   shouldUseVideoPromptLlm,
+  VIDEO_PROMPT_SYSTEM_PROMPT,
 } = require('../src/video/video-prompt-builder.cjs');
 
 function withEnv(values, fn) {
@@ -129,4 +130,12 @@ test('video prompt builder keeps energy effects off the face without orientation
 test('video prompt negative prompt sanitizer strips orientation inversion terms', () => {
   const clean = sanitizeVideoNegativePrompt('blur, mirrored, horizontally flipped, floating limbs');
   assert.equal(clean, 'blur, floating limbs');
+});
+
+test('video prompt system keeps Funesterie source intent and role-separated references', () => {
+  assert.match(VIDEO_PROMPT_SYSTEM_PROMPT, /Funesterie source principle/i);
+  assert.match(VIDEO_PROMPT_SYSTEM_PROMPT, /source of intent/i);
+  assert.match(VIDEO_PROMPT_SYSTEM_PROMPT, /Keep roles separate/i);
+  assert.match(VIDEO_PROMPT_SYSTEM_PROMPT, /references are not decorative/i);
+  assert.match(VIDEO_PROMPT_SYSTEM_PROMPT, /identity, setting, rhythm, style, voice, montage/i);
 });

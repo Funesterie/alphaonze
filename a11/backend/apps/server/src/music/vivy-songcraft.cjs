@@ -32,8 +32,13 @@ function looksLikeVivySongUiNoiseLine(line = '') {
   if (/^je suis vivy\s+parle moi d/.test(folded)) return true;
   if (/^(vivy|vous|accueil|discussion|menu|voix|chanson|scene|scène|fichier|envoyer|copier|partager|defaut|défaut|audio perso|importer|ptt)$/.test(folded)) return true;
   if (/^(vivy_song_production|vivy_studio_handoff|vivy_production|vivy_voice_calibration|vivy_scene_share|vivy song production|vivy studio handoff|vivy production|vivy voice calibration|vivy scene share)\b/.test(folded)) return true;
+  if (/^vivy_(?:music_generation|production_status)\b/.test(folded)) return true;
   if (/^(oui je reste en discussion libre|je capte|je ne transforme pas|je vois l idee|ce que je prends surtout|je reponds au fond|la voix vivy par defaut|idee rangee dans la memoire vivy)\b/.test(folded)) return true;
   if (/^(source|direction sonore|titre de travail|structure proposee|assets a produire|paroles guide|routage|flux chanson|atelier|objectif|brief agents|composition production|creation voix|scene partage|sortie attendue|routage recommande|media pret|média prêt|multimodal runtime|janus vision|janus pro|provider|modele|modèle|device|worker|gpu|vram|recommendation|recommandation|dernier scan|safety lane|nerve routing|a11host|bridge vsix|headless|qflush flow|process supervises|clé suno personnelle|cle suno personnelle)\b/.test(folded)) return true;
+  if (/^mix d40\b/.test(folded)) return true;
+  if (/\b(?:meme|même)\s+format\s+pret\b|\bformat\s+pret\b/.test(folded)) return true;
+  if (/https?:\/\/\S*(?:token=|\/api\/double-harmonic\/out\/)/i.test(raw)) return true;
+  if (/\b(?:token|access_token|signature|sig|key)=\S+/i.test(raw)) return true;
   if (/^-\s*(kaen44|vivy|a11|ekko|pink-ward)\s*:/.test(folded)) return true;
   if (/^-\s*(source|direction sonore|titre|rimes|motif|structure|intention|artistes coches|artistes cochés|distribution vocale|outil voix actif|prosodie interne|nombre de chanteurs|tags obligatoires|intro|couplet|pre-refrain|pré-refrain|refrain guide|pont|final|role|rôle|sortie simple possible)\b/.test(folded)) return true;
   if (/^(continue|continuer|reprends|poursuis|compl[èe]te)\s+(les\s+)?(paroles|lyrics|couplets?|refrain|rap)\b/.test(folded)) return true;
@@ -133,6 +138,7 @@ function buildVivySongcraftSystemPrompt(mode = 'song') {
   if (mode !== 'song') return '';
   return [
     'Module Vivy Songcraft actif.',
+    "Application Songcraft du principe source: préserver le grain, l'argot, les accidents utiles et l'intention émotionnelle avant de lisser la forme.",
     "Si l'utilisateur demande une chanson, des paroles, un refrain, un couplet ou une composition, réponds comme une artiste-auteure, pas comme un assistant qui explique.",
     'Format attendu sauf demande contraire: Titre, intention courte, puis paroles complètes avec [Intro], [Verse 1], [Pre-Chorus], [Chorus], [Verse 2], [Bridge], [Outro].',
     'Chaque couplet doit avoir au moins 4 vers; le refrain doit être mémorable et revenir comme un vrai hook.',
@@ -141,6 +147,7 @@ function buildVivySongcraftSystemPrompt(mode = 'song') {
     'Ne termine pas par une explication scolaire de la structure, sauf si l’utilisateur le demande explicitement.',
     "Si l'utilisateur donne déjà la matière et demande une chanson, n'ouvre pas un questionnaire: écris directement une première version complète.",
     "Si l'utilisateur donne des lignes rap brutes, conserve leur vocabulaire, leurs tics, leur argot et leurs accidents voulus; ne les remplace pas par des slogans génériques.",
+    "Si la demande ressemble à un échange de réflexion et pas à une commande chanson, réponds au fond sans transformer automatiquement la phrase en couplets.",
     "Les rimes se font surtout en fin de ligne; n'empile pas des mots rimés dans la même phrase comme un exercice de diction.",
   ].join('\n');
 }

@@ -225,6 +225,14 @@ test('isLlmFramePrompterEnabled obeys the environment toggle', () => {
   }
 });
 
+test('frame prompter system keeps source intent and references as continuity anchors', () => {
+  const { VIDEO_FRAME_PROMPTER_SYSTEM_PROMPT } = loadPrompterModule();
+  assert.match(VIDEO_FRAME_PROMPTER_SYSTEM_PROMPT, /Funesterie source principle/i);
+  assert.match(VIDEO_FRAME_PROMPTER_SYSTEM_PROMPT, /source of intent/i);
+  assert.match(VIDEO_FRAME_PROMPTER_SYSTEM_PROMPT, /references are not decorative/i);
+  assert.match(VIDEO_FRAME_PROMPTER_SYSTEM_PROMPT, /rule with life/i);
+});
+
 test('generateFramePromptsWithLlm retries once on invalid response and succeeds on second call', async () => {
   const restoreEnv = withEnv('A11_VIDEO_LLM_PROMPTER', 'true');
   try {

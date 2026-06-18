@@ -709,6 +709,11 @@ test('Vivy chat prompt keeps original musical direction and avoids canned replie
   assert.match(prompt, /fin de ligne/i);
   assert.match(prompt, /autorisé\/licencié\/consenti/i);
   assert.doesNotMatch(prompt, /clone Kairi/i);
+  assert.match(prompt, /Principe source Funesterie/i);
+  assert.match(prompt, /source d'intention/i);
+  assert.match(prompt, /pas de canevas forcé/i);
+  assert.match(prompt, /références ne sont pas décoratives/i);
+  assert.match(prompt, /sans transformer automatiquement la phrase en couplets/i);
   assert.match(prompt, /symbolic extraction protocol/i);
   assert.match(prompt, /Identifier le mecanisme utile/i);
   assert.match(prompt, /Adapter au contexte/i);
@@ -928,6 +933,9 @@ test('Vivy routes continue les paroles to songcraft and cleans UI/brief contamin
     'Source: Conversation',
     rawDraft,
     '',
+    'VIVY_PRODUCTION',
+    'Mix D40 V9 Turbo k 3x · turbo 99 ms · pivot 0.292 · 1024 Même format prêt: https://vivy.funesterie.me/api/double-harmonic/out/example.wav?token=must-not-leak',
+    '',
     'continue les paroles',
   ].join('\n');
 
@@ -949,6 +957,7 @@ test('Vivy routes continue les paroles to songcraft and cleans UI/brief contamin
   assert.doesNotMatch(result.assistant, /Carte active|audio\.voice/i);
   assert.doesNotMatch(result.assistant, /Je suis Vivy|Je capte:/i);
   assert.doesNotMatch(result.assistant, /\[Verse 1 - Djeff\]\s*VIVY_SONG_PRODUCTION/i);
+  assert.doesNotMatch(result.assistant, /Mix D40|double-harmonic|must-not-leak|token=/i);
 });
 
 test('Vivy chat fallback answers philosophical follow-ups instead of canned notebook text', async () => {

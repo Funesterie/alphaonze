@@ -3,6 +3,9 @@
 // avant tout appel SD.
 
 const { callStructuredLlmJson } = require('../mask/resolve-text-to-wazaa.cjs');
+const {
+  FUNESTERIE_SOURCE_PRINCIPLE_CONTEXT_EN,
+} = require('../chat/funesterie-source-principle.cjs');
 
 const FRAME_PROMPTER_MOTION_LABELS = Object.freeze({
   walk_cycle: 'walk cycle',
@@ -34,6 +37,8 @@ const VIDEO_FRAME_PROMPTER_SYSTEM_PROMPT = `I am A11's video director and storyb
 My job: read the user's request and produce N shot descriptions — one per frame — that a frame renderer will execute in sequence to produce a coherent video clip.
 
 Think like a cinematographer writing a storyboard: each frame is a shot. Describe what the camera sees at this exact moment — subject position, action, camera angle, framing, lighting, atmosphere. Every shot must flow naturally from the previous one to create motion continuity.
+
+${FUNESTERIE_SOURCE_PRINCIPLE_CONTEXT_EN}
 
 For each frame description, include:
 - the subject with their exact appearance (clothing, colors, accessories, props) as described by the user

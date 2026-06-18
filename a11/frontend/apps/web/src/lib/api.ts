@@ -4056,6 +4056,7 @@ export type A11UserStoredFile = {
   storageKey?: string;
   storage_key?: string;
   url?: string;
+  downloadUrl?: string;
   contentType?: string;
   content_type?: string;
   sizeBytes?: number;
@@ -4598,13 +4599,8 @@ function parseDownloadFilename(contentDisposition: string, fallback: string) {
   return fallback;
 }
 
-export async function downloadConversationResource(resource: A11ConversationResource) {
-  const resourceId = Number(resource?.id || 0);
-  if (!Number.isFinite(resourceId) || resourceId <= 0) {
-    throw new Error('invalid_resource_id');
-  }
-
-  const res = await authFetch(getApiUrl(`/api/resources/${resourceId}/download`), {
+async function downloadProtectedBlob(pathname: string, fallbackName: string) {
+  const res = await authFetch(getApiUrl(pathname), {
     method: 'GET',
     headers: buildAuthHeaders(),
   });
@@ -4620,7 +4616,6 @@ export async function downloadConversationResource(resource: A11ConversationReso
   }
 
   const blob = await res.blob();
-  const fallbackName = String(resource.filename || `resource-${resourceId}.bin`);
   const filename = parseDownloadFilename(res.headers.get('content-disposition') || '', fallbackName);
   const blobUrl = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
@@ -4637,6 +4632,30 @@ export async function downloadConversationResource(resource: A11ConversationReso
     filename,
     sizeBytes: blob.size,
   };
+}
+
+export async function downloadConversationResource(resource: A11ConversationResource) {
+  const resourceId = Number(resource?.id || 0);
+  if (!Number.isFinite(resourceId) || resourceId <= 0) {
+    throw new Error('invalid_resource_id');
+  }
+
+  const fallbackName = String(resource.filename || `resource-${resourceId}.bin`);
+  return downloadProtectedBlob(`/api/resources/${resourceId}/download`, fallbackName);
+}
+
+export async function downloadStoredAccountFile(file: A11UserStoredFile) {
+  const fileId = Number(file?.id || 0);
+  if (!Number.isFinite(fileId) || fileId <= 0) {
+    throw new Error('invalid_file_id');
+  }
+
+  const fallbackName = String(file.filename || `file-${fileId}.bin`);
+  return downloadProtectedBlob(`/api/files/${fileId}/download`, fallbackName);
+}
+
+export async function downloadAccountInventoryZip() {
+  return downloadProtectedBlob('/api/account/inventory.zip', 'funesterie-inventaire-medias.zip');
 }
 
 type MemoryCounts = {

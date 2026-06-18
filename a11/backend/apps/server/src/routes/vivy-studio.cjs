@@ -54,6 +54,9 @@ const {
   SYMBOLIC_EXTRACTION_PROTOCOL_CONTEXT,
 } = require('../chat/symbolic-extraction-protocol.cjs');
 const {
+  FUNESTERIE_SOURCE_PRINCIPLE_CONTEXT_FR,
+} = require('../chat/funesterie-source-principle.cjs');
+const {
   autoDescribeImage,
   loadImageBuffer,
 } = require('../image/image-auto-describe.cjs');
@@ -188,7 +191,8 @@ function parseVivyChatMode(value) {
 function resolveVivyChatMode(input = {}, message = '') {
   const rawMode = cleanOneLine(input.mode, '', 24);
   if (rawMode) return parseVivyChatMode(rawMode);
-  return inferVivyChatMode(message);
+  if (isDirectSongwritingRequest(message)) return 'song';
+  return inferVivyChatMode(cleanVivyMessageForIntent(message));
 }
 
 function lineList(items) {
@@ -211,6 +215,30 @@ function compactUniqueLines(items, max = 2400) {
   }
 
   return cleanText(lines.join('\n\n'), max);
+}
+
+function redactVivyAgentBriefSecrets(value = '') {
+  return String(value || '')
+    .replace(/https?:\/\/[^\s<>"')]+/gi, (url) => {
+      if (/[?&](?:token|key|signature|sig|access_token)=/i.test(url)) return '[lien média sécurisé masqué]';
+      if (/\/api\/double-harmonic\/out\//i.test(url)) return '[lien média D40 masqué]';
+      return url.replace(/[?&].*$/, '');
+    })
+    .replace(/\b(?:token|key|signature|sig|access_token)=\S+/gi, (match) => `${match.split('=')[0]}=[masqué]`);
+}
+
+function cleanVivyAgentBrief(value = '', max = 6000) {
+  return cleanText(redactVivyAgentBriefSecrets(value), max);
+}
+
+function cleanVivyMessageForIntent(value = '') {
+  const raw = cleanText(value, 2600);
+  if (!raw) return '';
+  if (!/\bVIVY_|VIVY\s+PRODUCTION|Mix D40|double-harmonic|Même format prêt|Meme format pret|token=/i.test(raw)) {
+    return raw;
+  }
+  const songMaterial = sanitizeVivySongMaterial(raw, 2400);
+  return cleanText(songMaterial || redactVivyAgentBriefSecrets(raw), 2400);
 }
 
 function stripVivyAscii4SoundTokens(value = '') {
@@ -904,6 +932,12 @@ function shouldVivyAutoWebSearch(message = '', mode = 'chat') {
   const searchableMessage = stripVivyOperatorTranscript(message);
   const normalized = foldTextForLookup(searchableMessage);
   if (!normalized) return false;
+  if (mode === 'song' && isDirectSongwritingRequest(searchableMessage)) {
+    const intentCleaned = foldTextForLookup(cleanVivyMessageForIntent(searchableMessage));
+    if (!/\b(actualite|actualites|recent|recente|dernier|derniere|latest|source|sources|web|internet|site|url|github|npm|docker)\b/.test(intentCleaned)) {
+      return false;
+    }
+  }
   if (mode === 'song' && isDirectSongwritingRequest(searchableMessage) && !/\b(actualite|actualites|recent|recente|dernier|derniere|latest|source|sources|web|internet|site|url|github|npm|docker)\b/.test(normalized)) {
     return false;
   }
@@ -1716,6 +1750,7 @@ function buildVivySystemPrompt(mode, language = 'fr') {
     `Mode courant: ${modeLabel}.`,
     buildLanguageInstruction(language),
     buildLanguageContract(language),
+    FUNESTERIE_SOURCE_PRINCIPLE_CONTEXT_FR,
     "Réponds librement à l'intention: pas de réponse toute faite, pas de canevas forcé, pas de refrain automatique si la discussion demande juste de réfléchir.",
     "Quand une idée arrive, tu peux reformuler, proposer une direction ou poser une vraie question, selon ce qui aide le plus.",
     "Si Jeffrey corrige ton intent, ta sensibilité, ton seuil ou ton mode de réponse, traite ça comme un réglage interne borné: accuse le réglage clairement, baisse la structuration automatique, puis réponds au fond.",
@@ -2088,7 +2123,7 @@ function buildSongProduction(input) {
 
 function buildShareProduction(input) {
   const target = cleanOneLine(input.shareTarget, 'YouTube', 80);
-  const url = cleanOneLine(input.shareUrl, '', 500);
+  const url = cleanOneLine(redactVivyAgentBriefSecrets(input.shareUrl), '', 500);
   const instruction = cleanText(input.shareInstruction, 1000);
   const tokenPresent = Boolean(input.shareTokenPresent);
 
@@ -2677,6 +2712,7 @@ function buildVivyToolCapabilityReply({ localContext = null, language = 'fr' } =
 
 function buildVivyChat(input) {
   const message = cleanText(input.message || input.prompt || input.songText || input.text, 1800);
+  const intentMessage = cleanVivyMessageForIntent(message);
   const mode = resolveVivyChatMode(input, message);
   const files = normalizeVivyFiles(input);
   const language = resolveVivyResponseLanguage(input);
@@ -2710,9 +2746,9 @@ function buildVivyChat(input) {
     ...input,
     mode: MODES.has(mode) ? mode : 'song',
     songSource: input.songSource || 'Conversation',
-    songText: mode === 'song' ? compactUniqueLines([history.join('\n'), message], 2200) : input.songText,
-    voiceInstruction: mode === 'voice' ? compactUniqueLines([history.join('\n'), message], 1200) : input.voiceInstruction,
-    shareInstruction: mode === 'share' ? compactUniqueLines([history.join('\n'), message], 1200) : input.shareInstruction,
+    songText: mode === 'song' ? compactUniqueLines([history.join('\n'), intentMessage || message], 2200) : input.songText,
+    voiceInstruction: mode === 'voice' ? compactUniqueLines([history.join('\n'), intentMessage || message], 1200) : input.voiceInstruction,
+    shareInstruction: mode === 'share' ? compactUniqueLines([history.join('\n'), intentMessage || message], 1200) : input.shareInstruction,
     shareToken: undefined,
     shareTokenPresent: false,
   });
@@ -2768,6 +2804,7 @@ function postProcessVivyAssistantText({ text = '', userMessage = '', systemPromp
 
 async function buildVivyAiChat(input, req) {
   const message = cleanText(input.message || input.prompt || input.songText || input.text, 2600);
+  const intentMessage = cleanVivyMessageForIntent(message);
   const mode = resolveVivyChatMode(input, message);
   const files = normalizeVivyFiles(input);
   const language = resolveVivyResponseLanguage(input, req);
@@ -2781,7 +2818,7 @@ async function buildVivyAiChat(input, req) {
   }
   const fileContext = formatVivyFilesForPrompt(files);
   const memoryText = compactUniqueLines([
-    message ? `Message: ${message}` : '',
+    (intentMessage || message) ? `Message: ${intentMessage || message}` : '',
     fileContext ? `Fichiers:\n${fileContext}` : '',
   ], 1800);
   const semanticMemory = memoryText
@@ -2791,13 +2828,13 @@ async function buildVivyAiChat(input, req) {
       fileCount: files.length,
     })
     : { stored: false };
-  const localContext = shouldVivyUseLocalContext(message)
-    ? buildVivyLocalContextSnapshot(message)
+  const localContext = shouldVivyUseLocalContext(intentMessage || message)
+    ? buildVivyLocalContextSnapshot(intentMessage || message)
     : null;
   const localContextForResponse = serializeVivyLocalContext(localContext);
 
-  if (isVivyInternalTuningRequest(input, message)) {
-    const tuningReply = buildVivyInternalTuningReply({ message, history: input.history, language });
+  if (isVivyInternalTuningRequest(input, intentMessage || message)) {
+    const tuningReply = buildVivyInternalTuningReply({ message: intentMessage || message, history: input.history, language });
     rememberVivyEpisode(userId, 'vivy_settings', JSON.stringify(tuningReply.settings), {
       mode: 'chat',
       conversationId: cleanOneLine(input.conversationId, '', 120),
@@ -2818,8 +2855,8 @@ async function buildVivyAiChat(input, req) {
     };
   }
 
-  if (mode !== 'song' && isVivyToolCapabilityQuestion(input, message)) {
-    const capabilityContext = localContext || buildVivyLocalContextSnapshot(message);
+  if (mode !== 'song' && isVivyToolCapabilityQuestion(input, intentMessage || message)) {
+    const capabilityContext = localContext || buildVivyLocalContextSnapshot(intentMessage || message);
     const capabilityReply = buildVivyToolCapabilityReply({ localContext: capabilityContext, language });
     rememberVivyEpisode(userId, 'vivy_reply', capabilityReply.assistant, {
       mode: 'chat',
@@ -2836,7 +2873,7 @@ async function buildVivyAiChat(input, req) {
     };
   }
 
-  if (isVivyMcpNeo4jQuestion(input, message)) {
+  if (isVivyMcpNeo4jQuestion(input, intentMessage || message)) {
     const mcpReply = buildVivyMcpNeo4jReply({ language });
     rememberVivyEpisode(userId, 'vivy_reply', mcpReply.assistant, {
       mode: 'chat',
@@ -2878,8 +2915,8 @@ async function buildVivyAiChat(input, req) {
     };
   }
 
-  if (shouldVivyAutoWebSearch(message, mode)) {
-    const research = await buildVivyWebResearchReply({ ...input, message, files });
+  if (shouldVivyAutoWebSearch(intentMessage || message, mode)) {
+    const research = await buildVivyWebResearchReply({ ...input, message: intentMessage || message, files });
     rememberVivyEpisode(userId, 'vivy_reply', research.assistant, {
       mode: 'chat',
       conversationId: cleanOneLine(input.conversationId, '', 120),
@@ -2912,8 +2949,8 @@ async function buildVivyAiChat(input, req) {
     };
   }
 
-  if (isVivyFileInspectionRequest(message, files)) {
-    const assistant = buildVivyFileAttachmentReply({ ...input, message, files });
+  if (isVivyFileInspectionRequest(intentMessage || message, files)) {
+    const assistant = buildVivyFileAttachmentReply({ ...input, message: intentMessage || message, files });
     rememberVivyEpisode(userId, 'vivy_reply', assistant, {
       mode: 'chat',
       conversationId: cleanOneLine(input.conversationId, '', 120),
@@ -3033,7 +3070,7 @@ async function buildVivyAiChat(input, req) {
     const memoryContext = buildVivyMemoryContext(userId);
     const history = normalizeVivyChatHistory(input.history);
     const userContent = compactUniqueLines([
-      message,
+      intentMessage || message,
       localContext ? `Contexte local Funesterie/A11 en lecture seule:\n${localContext.prompt}` : '',
       fileContext ? `Pièces jointes et contexte fichier:\n${fileContext}` : '',
     ], 4200) || 'Continue la conversation Vivy avec douceur et précision.';
@@ -3119,6 +3156,7 @@ function buildVivyStudioProduction(input) {
     'Routage:',
     lineList(routing),
   ].join('\n');
+  const safeHandoff = cleanVivyAgentBrief(handoff, 7000);
   const prosodyPlan = production.prosodyPlan || null;
 
   return {
@@ -3128,8 +3166,8 @@ function buildVivyStudioProduction(input) {
     language,
     title: production.title,
     summary: production.summary,
-    assistant: handoff,
-    brief: handoff,
+    assistant: safeHandoff,
+    brief: safeHandoff,
     actions: production.actions,
     routing,
     mediaAgentRoles,
