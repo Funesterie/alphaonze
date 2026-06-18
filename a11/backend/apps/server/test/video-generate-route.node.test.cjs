@@ -8,6 +8,16 @@ const fsp = require('node:fs/promises');
 const express = require('express');
 
 const videoGenerateModule = require('../src/routes/video-generate.cjs');
+const { resolveXaiVideoConfig } = require('../lib/xai-video.cjs');
+
+test('xAI video config ignores Groq gsk server keys', () => {
+  const config = resolveXaiVideoConfig({
+    GROQ_API_KEY: 'gsk_test_groq_key_not_xai',
+  });
+
+  assert.equal(config.token, '');
+  assert.equal(config.enabled, false);
+});
 
 test('video generate router proxies requests when A11_VIDEO_LOCAL_RUNNER_URL is configured', async () => {
   const previousEnv = {
@@ -504,6 +514,115 @@ test('video generate router blocks server-paid xAI video without an authenticate
   }
 });
 
+test('video generate router can prefer server-paid xAI for premium prompt-only jobs', async () => {
+  const previousEnv = {
+    A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
+    VIDEO_PROXY_URL: process.env.VIDEO_PROXY_URL,
+    A11_VIDEO_LOCAL_RUNNER_URL: process.env.A11_VIDEO_LOCAL_RUNNER_URL,
+    A11_ENABLE_HF_VIDEO: process.env.A11_ENABLE_HF_VIDEO,
+    A11_ENABLE_HUGGINGFACE_VIDEO: process.env.A11_ENABLE_HUGGINGFACE_VIDEO,
+    A11_HF_VIDEO_TOKEN: process.env.A11_HF_VIDEO_TOKEN,
+    HF_TOKEN: process.env.HF_TOKEN,
+    A11_ENABLE_XAI_VIDEO: process.env.A11_ENABLE_XAI_VIDEO,
+    A11_VIDEO_PREFER_XAI: process.env.A11_VIDEO_PREFER_XAI,
+    A11_XAI_VIDEO_TOKEN: process.env.A11_XAI_VIDEO_TOKEN,
+    A11_XAI_BASE_URL: process.env.A11_XAI_BASE_URL,
+    A11_XAI_VIDEO_MODEL: process.env.A11_XAI_VIDEO_MODEL,
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+  };
+  const tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'a11-xai-server-video-'));
+  const calls = [];
+  process.env.A11_RUNTIME_ROOT = tempRoot;
+  delete process.env.A11_VIDEO_PROXY_URL;
+  delete process.env.VIDEO_PROXY_URL;
+  delete process.env.A11_VIDEO_LOCAL_RUNNER_URL;
+  delete process.env.A11_ENABLE_HF_VIDEO;
+  delete process.env.A11_ENABLE_HUGGINGFACE_VIDEO;
+  delete process.env.A11_HF_VIDEO_TOKEN;
+  delete process.env.HF_TOKEN;
+  process.env.A11_ENABLE_XAI_VIDEO = '1';
+  process.env.A11_VIDEO_PREFER_XAI = '1';
+  process.env.A11_XAI_VIDEO_TOKEN = 'server-paid-xai-secret';
+  process.env.A11_XAI_BASE_URL = 'https://api.x.ai/v1';
+  process.env.A11_XAI_VIDEO_MODEL = 'grok-imagine-video';
+
+  const fakeFetch = async (url, init = {}) => {
+    calls.push({ url: String(url), init });
+    if (String(url).endsWith('/videos/generations')) {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        arrayBuffer: async () => Buffer.from(JSON.stringify({
+          video_url: 'https://cdn.x.ai/server-demo.mp4',
+        })),
+      };
+    }
+    if (String(url) === 'https://cdn.x.ai/server-demo.mp4') {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'video/mp4' },
+        arrayBuffer: async () => Buffer.from('fake-server-mp4-payload'),
+      };
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const app = express();
+  app.use(express.json({ limit: '4mb' }));
+  app.use((req, _res, next) => {
+    req.user = { id: 'premium-xai-test', email: 'premium-xai@example.com', tier: 'premium' };
+    next();
+  });
+  app.use('/api', videoGenerateModule.createVideoGenerateRouter({
+    fetch: fakeFetch,
+    uploadBufferToR2: async ({ filename, buffer }) => ({
+      filename,
+      storageKey: `tests/${filename}`,
+      url: `https://r2.example.com/tests/${filename}`,
+      sizeBytes: buffer.length,
+    }),
+    generateVideo: async () => {
+      throw new Error('local generator should not be called when server xAI is preferred');
+    },
+  }).router);
+
+  const appServer = http.createServer(app);
+  await new Promise((resolve) => appServer.listen(0, '127.0.0.1', resolve));
+  const appAddress = appServer.address();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${appAddress.port}/api/video/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: 'Vivy traverse un ciel de neon en plan large.',
+        durationSeconds: 6,
+      }),
+    });
+    const payload = await response.json();
+    const generationCall = calls.find((call) => call.url.endsWith('/videos/generations'));
+    const serializedPayload = JSON.stringify(payload);
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.backend, 'xai-video');
+    assert.equal(payload.provider, 'xai');
+    assert.equal(payload.providerUsed, 'platform_cloud');
+    assert.equal(payload.chargedCredits, 'platform');
+    assert.equal(generationCall?.init?.headers?.Authorization, 'Bearer server-paid-xai-secret');
+    assert.doesNotMatch(serializedPayload, /server-paid-xai-secret/);
+  } finally {
+    await new Promise((resolve) => appServer.close(resolve));
+    await fsp.rm(tempRoot, { recursive: true, force: true });
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('video generate router can proxy through the local video runner env', async () => {
   const previousEnv = {
     A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
@@ -807,6 +926,13 @@ test('video generate router uses Hugging Face video when enabled', async () => {
     A11_VIDEO_PROXY_FORCE_ASYNC: process.env.A11_VIDEO_PROXY_FORCE_ASYNC,
     A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
     VIDEO_PROXY_URL: process.env.VIDEO_PROXY_URL,
+    A11_VIDEO_BACKEND: process.env.A11_VIDEO_BACKEND,
+    VIDEO_BACKEND: process.env.VIDEO_BACKEND,
+    A11_ENABLE_XAI_VIDEO: process.env.A11_ENABLE_XAI_VIDEO,
+    A11_VIDEO_PREFER_XAI: process.env.A11_VIDEO_PREFER_XAI,
+    A11_XAI_VIDEO_TOKEN: process.env.A11_XAI_VIDEO_TOKEN,
+    XAI_API_KEY: process.env.XAI_API_KEY,
+    GROQ_API_KEY: process.env.GROQ_API_KEY,
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
   };
   const runtimeRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'a11-hf-video-'));
@@ -842,6 +968,13 @@ test('video generate router uses Hugging Face video when enabled', async () => {
   delete process.env.A11_VIDEO_PROXY_FORCE_ASYNC;
   delete process.env.A11_VIDEO_PROXY_URL;
   delete process.env.VIDEO_PROXY_URL;
+  delete process.env.A11_VIDEO_BACKEND;
+  delete process.env.VIDEO_BACKEND;
+  delete process.env.A11_ENABLE_XAI_VIDEO;
+  delete process.env.A11_VIDEO_PREFER_XAI;
+  delete process.env.A11_XAI_VIDEO_TOKEN;
+  delete process.env.XAI_API_KEY;
+  delete process.env.GROQ_API_KEY;
 
   const app = express();
   app.use(express.json({ limit: '4mb' }));
@@ -913,6 +1046,13 @@ test('video generate router follows Hugging Face fal queue responses', async () 
     A11_VIDEO_PROXY_FORCE_ASYNC: process.env.A11_VIDEO_PROXY_FORCE_ASYNC,
     A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
     VIDEO_PROXY_URL: process.env.VIDEO_PROXY_URL,
+    A11_VIDEO_BACKEND: process.env.A11_VIDEO_BACKEND,
+    VIDEO_BACKEND: process.env.VIDEO_BACKEND,
+    A11_ENABLE_XAI_VIDEO: process.env.A11_ENABLE_XAI_VIDEO,
+    A11_VIDEO_PREFER_XAI: process.env.A11_VIDEO_PREFER_XAI,
+    A11_XAI_VIDEO_TOKEN: process.env.A11_XAI_VIDEO_TOKEN,
+    XAI_API_KEY: process.env.XAI_API_KEY,
+    GROQ_API_KEY: process.env.GROQ_API_KEY,
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
   };
   const runtimeRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'a11-hf-fal-video-'));
@@ -969,6 +1109,13 @@ test('video generate router follows Hugging Face fal queue responses', async () 
   delete process.env.A11_VIDEO_PROXY_FORCE_ASYNC;
   delete process.env.A11_VIDEO_PROXY_URL;
   delete process.env.VIDEO_PROXY_URL;
+  delete process.env.A11_VIDEO_BACKEND;
+  delete process.env.VIDEO_BACKEND;
+  delete process.env.A11_ENABLE_XAI_VIDEO;
+  delete process.env.A11_VIDEO_PREFER_XAI;
+  delete process.env.A11_XAI_VIDEO_TOKEN;
+  delete process.env.XAI_API_KEY;
+  delete process.env.GROQ_API_KEY;
 
   const app = express();
   app.use(express.json({ limit: '4mb' }));
@@ -1042,6 +1189,13 @@ test('video generate router follows Hugging Face replicate predictions', async (
     A11_VIDEO_PROXY_FORCE_ASYNC: process.env.A11_VIDEO_PROXY_FORCE_ASYNC,
     A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
     VIDEO_PROXY_URL: process.env.VIDEO_PROXY_URL,
+    A11_VIDEO_BACKEND: process.env.A11_VIDEO_BACKEND,
+    VIDEO_BACKEND: process.env.VIDEO_BACKEND,
+    A11_ENABLE_XAI_VIDEO: process.env.A11_ENABLE_XAI_VIDEO,
+    A11_VIDEO_PREFER_XAI: process.env.A11_VIDEO_PREFER_XAI,
+    A11_XAI_VIDEO_TOKEN: process.env.A11_XAI_VIDEO_TOKEN,
+    XAI_API_KEY: process.env.XAI_API_KEY,
+    GROQ_API_KEY: process.env.GROQ_API_KEY,
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
   };
   const runtimeRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'a11-hf-replicate-video-'));
@@ -1090,6 +1244,13 @@ test('video generate router follows Hugging Face replicate predictions', async (
   delete process.env.A11_VIDEO_PROXY_FORCE_ASYNC;
   delete process.env.A11_VIDEO_PROXY_URL;
   delete process.env.VIDEO_PROXY_URL;
+  delete process.env.A11_VIDEO_BACKEND;
+  delete process.env.VIDEO_BACKEND;
+  delete process.env.A11_ENABLE_XAI_VIDEO;
+  delete process.env.A11_VIDEO_PREFER_XAI;
+  delete process.env.A11_XAI_VIDEO_TOKEN;
+  delete process.env.XAI_API_KEY;
+  delete process.env.GROQ_API_KEY;
 
   const app = express();
   app.use(express.json({ limit: '4mb' }));

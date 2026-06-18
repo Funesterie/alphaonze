@@ -142,6 +142,7 @@ import {
 import handleImportFiles, { type ImportedConversationAttachment } from "./lib/importer";
 import { chatCompletionDetailed, extractAssistantDisplayContent, resolveApiAssetUrl, type Provider } from "./lib/api";
 import { foldForLookup, toUnicodeLine, toUnicodeText } from "./lib/language";
+import { sanitizeMediaDisplayName, sanitizeMediaDisplayNameFromUrl } from "./lib/safe-media-name";
 import {
   attachLegacyStaticUiTranslator,
   translateLegacyStaticDocumentTitle,
@@ -349,6 +350,47 @@ function getFilePreviewKind(file: File): ComposerPreviewKind {
 
 function getComposerPreviewKind(item: ComposerPreviewItem): ComposerPreviewKind {
   return item.mediaKind || (item.isImage ? "image" : AUDIO_FILE_NAME_RE.test(item.name) ? "audio" : VIDEO_FILE_NAME_RE.test(item.name) ? "video" : "file");
+}
+
+function composerReferenceFallbackName(kind: ComposerPreviewKind) {
+  if (kind === "image") return "reference-image";
+  if (kind === "audio") return "reference-audio";
+  if (kind === "video") return "reference-video";
+  return "reference-fichier";
+}
+
+function getLibraryResourceDisplayName(resource: A11ConversationResource | null | undefined, kind: ComposerPreviewKind) {
+  const fallback = composerReferenceFallbackName(kind);
+  const alias = sanitizeMediaDisplayName((resource as any)?.alias || "", "");
+  if (alias) return alias;
+  const filename = sanitizeMediaDisplayName(resource?.filename || "", "");
+  if (filename) return filename;
+  return sanitizeMediaDisplayNameFromUrl((resource as any)?.downloadUrl || resource?.url || "", fallback);
+}
+
+function buildComposerReferencePreviewItem(
+  kind: ComposerPreviewKind,
+  url: string,
+  label: unknown,
+  idPrefix: string
+): ComposerPreviewItem {
+  const safeName = sanitizeMediaDisplayName(label, composerReferenceFallbackName(kind));
+  return {
+    id: `${idPrefix}-${kind}-${url}`,
+    name: safeName,
+    url,
+    isImage: kind === "image",
+    mediaKind: kind,
+    remoteUrl: url,
+  };
+}
+
+function appendUniqueComposerPreview(prev: ComposerPreviewItem[], item: ComposerPreviewItem) {
+  const targetUrl = String(item.remoteUrl || item.url || "").trim().toLowerCase();
+  if (targetUrl && prev.some((entry) => getComposerPreviewKind(entry) === item.mediaKind && String(entry.remoteUrl || entry.url || "").trim().toLowerCase() === targetUrl)) {
+    return prev;
+  }
+  return [...prev, item];
 }
 
 function appendUniqueUrl(list: string[], url: string) {
@@ -3321,6 +3363,17 @@ const VIVY_STUDIO_VOICE_DIRECTORY: Array<{
   },
 ];
 
+type VivyStudioVoiceTestEntry = (typeof VIVY_STUDIO_VOICE_DIRECTORY)[number] | {
+  id: string;
+  label: string;
+  shortLabel: string;
+  ttsPersona: "vivy" | "a11" | "kaen44";
+  voiceStyle: string;
+  voiceTool: string;
+  surface: "vivy" | "a11" | "kaen44";
+  testLine?: string;
+};
+
 const DEFAULT_VIVY_STUDIO_ARTISTS: VivyStudioArtistId[] = ["vivy"];
 
 function normalizeVivyStudioArtists(value: unknown, fallback: VivyStudioArtistId[] = DEFAULT_VIVY_STUDIO_ARTISTS): VivyStudioArtistId[] {
@@ -4061,6 +4114,34 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     };
   }
 
+  function resolveVivyOfficialVoiceSamplePersona(entry: Partial<VivyStudioVoiceTestEntry> | null | undefined): "djeff" | "kaen44" | "a11" | "vivy" | "" {
+    const marker = foldForLookup(`${entry?.id || ""} ${entry?.voiceStyle || ""} ${entry?.voiceTool || ""} ${entry?.label || ""}`);
+    if (!marker || /\bpersonal\b|catalog|catalogue|premium|duo/.test(marker)) return "";
+    if (/\bdjeff\b|\bpignon\b|djeff-rap/.test(marker)) return "djeff";
+    if (/\bkaen44\b|\bk44\b|\bkaen\b/.test(marker)) return "kaen44";
+    if (/\ba11\b|\balphaonze\b|alpha-onze/.test(marker)) return "a11";
+    if (/\bvivy\b|\bvivi\b/.test(marker)) return "vivy";
+    return "";
+  }
+
+  function playVivyOfficialVoiceSample(entry: Partial<VivyStudioVoiceTestEntry> | null | undefined, statusLabel?: string) {
+    const persona = resolveVivyOfficialVoiceSamplePersona(entry);
+    if (!persona) return false;
+    const samplePath = `/api/tts/official/${persona}/audio`;
+    const sampleUrl = resolveApiAssetUrl(samplePath) || samplePath;
+    const label = String(statusLabel || entry?.label || persona).trim();
+    setVivyMedia({
+      kind: "audio",
+      url: sampleUrl,
+      downloadUrl: sampleUrl,
+      provider: "official-sample",
+      contentType: "audio/wav",
+      filename: `${persona}-official-sample.wav`,
+    });
+    setStatus(`${label} prête (sample officiel).`);
+    return true;
+  }
+
   function buildVivyVoiceReferenceOptions(): Record<string, unknown> {
     if (hasPrivateVoiceReference) {
       return {
@@ -4424,6 +4505,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     setIsBusy(true);
     setStatus(`Test chat vocal ${entry.shortLabel}...`);
     try {
+      if (playVivyOfficialVoiceSample(entry, `Chat vocal ${entry.shortLabel}`)) return;
       const line = buildVivyAutoVoiceTestLine(entry);
       const payload = await ttsSpeak(line, entry.ttsPersona, "auto", buildVivyAutoTtsOptions(entry));
       const mediaUrl = String(payload?.audioUrl || payload?.audio_url || payload?.url || "").trim();
@@ -4442,11 +4524,12 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     }
   }
 
-  async function testSpecificVoiceEntry(entry: typeof VIVY_STUDIO_VOICE_DIRECTORY[0] | { id: string; label: string; shortLabel: string; ttsPersona: "vivy" | "a11" | "kaen44"; voiceStyle: string; voiceTool: string; surface: "vivy" | "a11" | "kaen44"; testLine?: string }) {
+  async function testSpecificVoiceEntry(entry: VivyStudioVoiceTestEntry) {
     if (!hasSession) { setStatus("Connexion requise pour tester."); return; }
     setIsBusy(true);
     setStatus(`Test ${entry.label}...`);
     try {
+      if (playVivyOfficialVoiceSample(entry)) return;
       const line = buildVivyAutoVoiceTestLine(entry);
       const payload = await ttsSpeak(line, entry.ttsPersona, "auto", buildVivyAutoTtsOptions(entry));
       const mediaUrl = String(payload?.audioUrl || payload?.audio_url || payload?.url || "").trim();
@@ -4489,6 +4572,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     setIsBusy(true);
     setStatus(`Test ${activeVoiceProfile.label}: ${activeVoiceReferenceLabel}...`);
     try {
+      if (!hasPrivateVoiceReference && !selectedCatalogVoiceId && playVivyOfficialVoiceSample(activeVoiceProfile, activeVoiceProfile.label)) return;
       const testLine = buildVivyPlayableText(
         voiceInstruction.trim(),
         activeVoiceProfile.testLine,
@@ -14791,22 +14875,22 @@ export function App() {
                       const commitSelection = () => {
                         librarySelection.images.forEach((url) => {
                           const item = filteredImages.find((r) => ((r as any).downloadUrl || r.url) === url);
-                          const lbl = item ? (String((item as any).alias || '').trim() || item.filename) : url.split('/').pop() || url;
+                          const lbl = item ? getLibraryResourceDisplayName(item, 'image') : sanitizeMediaDisplayNameFromUrl(url, composerReferenceFallbackName('image'));
                           pendingImportedImageUrlsRef.current = Array.from(new Set([...pendingImportedImageUrlsRef.current, url]));
-                          setDragPreviewUrls((prev) => [...prev, { id: `lib-img-${url}`, name: lbl, url, isImage: true, mediaKind: 'image' as const, remoteUrl: url }]);
+                          setDragPreviewUrls((prev) => appendUniqueComposerPreview(prev, buildComposerReferencePreviewItem('image', url, lbl, 'lib-img')));
                         });
                         librarySelection.audios.forEach((url) => {
                           const item = filteredAudio.find((r) => ((r as any).downloadUrl || r.url) === url);
-                          const lbl = item ? (String((item as any).alias || '').trim() || item.filename) : url.split('/').pop() || url;
+                          const lbl = item ? getLibraryResourceDisplayName(item, 'audio') : sanitizeMediaDisplayNameFromUrl(url, composerReferenceFallbackName('audio'));
                           pendingImportedAudioUrlsRef.current = Array.from(new Set([...pendingImportedAudioUrlsRef.current, url]));
                           if (!pendingAudioUrlRef.current) pendingAudioUrlRef.current = url;
-                          setDragPreviewUrls((prev) => [...prev, { id: `lib-aud-${url}`, name: lbl, url, isImage: false, mediaKind: 'audio' as const, remoteUrl: url }]);
+                          setDragPreviewUrls((prev) => appendUniqueComposerPreview(prev, buildComposerReferencePreviewItem('audio', url, lbl, 'lib-aud')));
                         });
                         librarySelection.videos.forEach((url) => {
                           const item = filteredVideo.find((r) => ((r as any).downloadUrl || r.url) === url);
-                          const lbl = item ? (String((item as any).alias || '').trim() || item.filename) : url.split('/').pop() || url;
+                          const lbl = item ? getLibraryResourceDisplayName(item, 'video') : sanitizeMediaDisplayNameFromUrl(url, composerReferenceFallbackName('video'));
                           pendingImportedVideoUrlsRef.current = Array.from(new Set([...pendingImportedVideoUrlsRef.current, url]));
-                          setDragPreviewUrls((prev) => [...prev, { id: `lib-vid-${url}`, name: lbl, url, isImage: false, mediaKind: 'video' as const, remoteUrl: url }]);
+                          setDragPreviewUrls((prev) => appendUniqueComposerPreview(prev, buildComposerReferencePreviewItem('video', url, lbl, 'lib-vid')));
                         });
                         const parts = [librarySelection.images.length && `${librarySelection.images.length} image(s)`, librarySelection.audios.length && `${librarySelection.audios.length} audio(s)`, librarySelection.videos.length && `${librarySelection.videos.length} vidéo(s)`].filter(Boolean);
                         if (parts.length) setUploadFeedback(`Références insérées: ${parts.join(', ')}`);
@@ -14844,15 +14928,14 @@ export function App() {
                             ? <div style={{ fontSize: 12, color: 'var(--text-muted, #888)', padding: '8px 0' }}>Aucune image sauvegardée.</div>
                             : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 200, overflowY: 'auto', paddingRight: 2 }}>
                               {filteredImages.map((img) => {
-                                const alias = String((img as any).alias || '').trim();
-                                const lbl = alias || img.filename;
+                                const lbl = getLibraryResourceDisplayName(img, 'image');
                                 const url = (img as any).downloadUrl || img.url || '';
                                 const selected = librarySelection.images.includes(url);
                                 return (
                                   <div key={img.id} style={{ position: 'relative', width: 72 }}>
                                     <button type="button" title={lbl} onClick={() => toggleSel('images', url)} style={{ background: selected ? 'rgba(124,58,237,0.25)' : 'none', border: `2px solid ${selected ? '#7c3aed' : 'var(--border, #555)'}`, borderRadius: 6, padding: 2, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
                                       <img src={url} alt={lbl} style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 4 }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                                      <span style={{ fontSize: 10, color: 'var(--text-muted, #aaa)', marginTop: 2, maxWidth: 68, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{alias || img.filename.split('.')[0].slice(0, 10)}</span>
+                                      <span style={{ fontSize: 10, color: 'var(--text-muted, #aaa)', marginTop: 2, maxWidth: 68, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lbl.split('.')[0].slice(0, 10)}</span>
                                     </button>
                                     <button type="button" title="Retirer de la bibliothèque" style={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, background: 'rgba(0,0,0,0.7)', border: 'none', borderRadius: '50%', cursor: 'pointer', color: '#ccc', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
                                       onClick={(e) => {
@@ -14872,8 +14955,7 @@ export function App() {
                             ? <div style={{ fontSize: 12, color: 'var(--text-muted, #888)', padding: '8px 0' }}>Aucun audio sauvegardé.</div>
                             : <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 200, overflowY: 'auto', paddingRight: 2 }}>
                               {filteredAudio.map((item) => {
-                                const alias = String((item as any).alias || '').trim();
-                                const lbl = alias || item.filename;
+                                const lbl = getLibraryResourceDisplayName(item, 'audio');
                                 const url = (item as any).downloadUrl || item.url || '';
                                 const selected = librarySelection.audios.includes(url);
                                 return (
@@ -14898,8 +14980,7 @@ export function App() {
                             ? <div style={{ fontSize: 12, color: 'var(--text-muted, #888)', padding: '8px 0' }}>Aucune vidéo sauvegardée.</div>
                             : <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 200, overflowY: 'auto', paddingRight: 2 }}>
                               {filteredVideo.map((item) => {
-                                const alias = String((item as any).alias || '').trim();
-                                const lbl = alias || item.filename;
+                                const lbl = getLibraryResourceDisplayName(item, 'video');
                                 const url = (item as any).downloadUrl || item.url || '';
                                 const selected = librarySelection.videos.includes(url);
                                 return (
@@ -15082,12 +15163,13 @@ export function App() {
                   const idx = Math.min(previewCarouselIndex, total - 1);
                   const p = dragPreviewUrls[idx];
                   const previewKind = getComposerPreviewKind(p);
+                  const previewName = sanitizeMediaDisplayName(p.name, composerReferenceFallbackName(previewKind));
                   return (
                     <div className="a11-drop-carousel">
                       {/* Thumbnail ou icône */}
                       <div className="a11-drop-carousel-media">
                         {previewKind === "image"
-                          ? <img src={p.url} alt={p.name} className="a11-drop-carousel-img" />
+                          ? <img src={p.url} alt={previewName} className="a11-drop-carousel-img" />
                           : previewKind === "video"
                             ? <span className="a11-drop-carousel-file-icon" style={{
                                 background: '#3b0764',
@@ -15110,7 +15192,7 @@ export function App() {
 
                       {/* Infos + navigation */}
                       <div className="a11-drop-carousel-info">
-                        <span className="a11-drop-carousel-name">{p.name}</span>
+                        <span className="a11-drop-carousel-name">{previewName}</span>
                         {total > 1 && (
                           <span className="a11-drop-carousel-counter">{idx + 1}/{total}</span>
                         )}
@@ -15138,12 +15220,12 @@ export function App() {
                       <button
                         type="button"
                         className="a11-drop-carousel-remove"
-                        aria-label={`Retirer ${p.name}`}
+                        aria-label={`Retirer ${previewName}`}
                         onClick={() => {
                           const removedKind = getComposerPreviewKind(p);
                           const remoteUrl = String(p.remoteUrl || (removedKind === "image" ? p.url : "") || "").trim();
                           if (p.url) URL.revokeObjectURL(p.url);
-                          dismissedImportedNamesRef.current.add(p.name);
+                          dismissedImportedNamesRef.current.add(previewName);
                           setDragPreviewUrls((prev) => {
                             const next = prev.filter((_, j) => j !== idx);
                             if (removedKind === "image") {

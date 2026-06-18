@@ -298,6 +298,12 @@ function canUseServerPaidVideo(req = null) {
   return ['premium', 'founder', 'admin_family'].includes(String(profile?.tier || '').trim().toLowerCase());
 }
 
+function shouldPreferXaiVideo(env = process.env) {
+  return isTruthy(env.A11_VIDEO_PREFER_XAI)
+    || isTruthy(env.A11_VIDEO_PREFER_GROK)
+    || ['xai', 'grok', 'grok-imagine', 'xai-video'].includes(String(env.A11_VIDEO_BACKEND || env.VIDEO_BACKEND || '').trim().toLowerCase());
+}
+
 function buildPaidVideoDeniedPayload(provider = 'video') {
   return {
     ok: false,
@@ -1180,6 +1186,12 @@ function createVideoGenerateRouter(overrides = {}) {
     const requestedProvider = resolveRequestedVideoProvider(body, req);
     const sessionVideoTokens = resolveSessionVideoTokens(req, body);
     const role = resolveUserRole(req);
+    const hfProviderOverride = isHuggingFaceVideoProvider(requestedProvider) ? requestedProvider : '';
+    const hfVideoConfig = resolveHuggingFaceVideoConfig(process.env, {
+      token: sessionVideoTokens.huggingface,
+      replicateToken: sessionVideoTokens.replicate,
+      provider: hfProviderOverride,
+    });
 
     if (shouldUseEmergencyVideoFirst(body)) {
       return createEmergencyVideoAsset({ prompt, body, req });
@@ -1189,7 +1201,15 @@ function createVideoGenerateRouter(overrides = {}) {
     const xaiVideoConfig = resolveXaiVideoConfig(process.env, { token: sessionVideoTokens.xai });
     const xaiExplicitlyRequested = isXaiVideoProvider(requestedProvider);
     const xaiImplicitByokAllowed = Boolean(sessionVideoTokens.xai && !hasVisualReferenceForRouting);
-    if (xaiExplicitlyRequested || xaiImplicitByokAllowed) {
+    const xaiImplicitPlatformAllowed = Boolean(
+      !requestedProvider
+      && !hasVisualReferenceForRouting
+      && xaiVideoConfig.enabled
+      && xaiVideoConfig.token
+      && canUseServerPaidVideo(req)
+      && (shouldPreferXaiVideo() || !(hfVideoConfig.enabled && hfVideoConfig.token))
+    );
+    if (xaiExplicitlyRequested || xaiImplicitByokAllowed || xaiImplicitPlatformAllowed) {
       const hasByok = Boolean(sessionVideoTokens.xai);
       const usesServerToken = Boolean(!hasByok && xaiVideoConfig.token);
       if (usesServerToken && !canUseServerPaidVideo(req)) {
@@ -1248,12 +1268,6 @@ function createVideoGenerateRouter(overrides = {}) {
     }
 
     // Step 4: HuggingFace / Replicate — BYOK (user_cloud) or platform (premium/founder/admin allowed)
-    const hfProviderOverride = isHuggingFaceVideoProvider(requestedProvider) ? requestedProvider : '';
-    const hfVideoConfig = resolveHuggingFaceVideoConfig(process.env, {
-      token: sessionVideoTokens.huggingface,
-      replicateToken: sessionVideoTokens.replicate,
-      provider: hfProviderOverride,
-    });
     if (isHuggingFaceVideoProvider(requestedProvider) || hfVideoConfig.enabled) {
       const hasByok = Boolean(sessionVideoTokens.huggingface || sessionVideoTokens.replicate);
       const usesServerToken = Boolean(!hasByok && hfVideoConfig.token);

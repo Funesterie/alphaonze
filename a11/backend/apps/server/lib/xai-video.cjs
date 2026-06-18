@@ -20,20 +20,31 @@ function normalizeBaseUrl(value = '') {
   return raw.replace(/\/+$/, '');
 }
 
+function sanitizeXaiVideoToken(value = '') {
+  const token = String(value || '').trim();
+  if (!token || /^gsk_/i.test(token)) return '';
+  return token;
+}
+
 function resolveXaiVideoToken(env = process.env, override = '') {
-  return String(
-    override
-    || env.A11_XAI_VIDEO_TOKEN
-    || env.A11_GROK_VIDEO_TOKEN
-    || env.XAI_API_KEY
-    || env.GROK_API_KEY
-    || ''
-  ).trim();
+  const candidates = [
+    override,
+    env.A11_XAI_VIDEO_TOKEN,
+    env.A11_GROK_VIDEO_TOKEN,
+    env.XAI_API_KEY,
+    env.GROK_API_KEY,
+  ];
+  for (const candidate of candidates) {
+    const token = sanitizeXaiVideoToken(candidate);
+    if (token) return token;
+  }
+  return '';
 }
 
 function isXaiVideoEnabled(env = process.env, tokenOverride = '') {
   const backend = String(env.A11_VIDEO_BACKEND || env.VIDEO_BACKEND || '').trim().toLowerCase();
-  return Boolean(String(tokenOverride || '').trim())
+  const token = resolveXaiVideoToken(env, tokenOverride);
+  return Boolean(token)
     || isTruthy(env.A11_ENABLE_XAI_VIDEO)
     || isTruthy(env.A11_ENABLE_GROK_VIDEO)
     || ['xai', 'grok', 'grok-imagine', 'xai-video'].includes(backend);
