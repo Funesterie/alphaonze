@@ -141,7 +141,8 @@ function buildVivyThemeSeed(value = '', fallback = 'Vivy garde la lumière') {
     /^(sombre|dark|douce?|doux|cin[ée]matographique|cinematic)(?:\s+mais\s+(sombre|dark|douce?|doux|cin[ée]matographique|cinematic))?\s+sur\s+(.+)$/i,
     (_match, first, second, topic) => {
       const qualities = [first, second].filter(Boolean).join(' et ');
-      return `${cleanOneLine(topic, '', 140)}, ambiance ${qualities}`;
+      const subject = cleanOneLine(topic, '', 140).replace(/[,\s.;:!?-]+$/g, '').trim();
+      return `${subject}, ambiance ${qualities}`;
     }
   );
 
@@ -156,7 +157,12 @@ function buildVivyThemeSeed(value = '', fallback = 'Vivy garde la lumière') {
     })
     .slice(0, 3);
 
-  const cleaned = cleanOneLine(usefulParts.join(', '), '', 220);
+  const cleaned = cleanOneLine(usefulParts.join(', '), '', 220)
+    .replace(/,\s*,+/g, ',')
+    .replace(/\s+,/g, ',')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[,.;:\s-]+|[,.;:\s-]+$/g, '')
+    .trim();
   return cleaned || fallback;
 }
 

@@ -1314,6 +1314,7 @@ test('Vivy song fallback cleans command phrasing for Djeff and K44 duet themes',
   assert.match(result.assistant, /\[(Duo|Tous)\]/);
   assert.match(result.assistant, /Nossen|sombre|douce/i);
   assert.doesNotMatch(result.assistant, /Fais une chanson|On entre dans sombre mais douce sur|Paroles chantables|tags vocaux obligatoires/i);
+  assert.doesNotMatch(result.assistant, /Nossen,\s*,/i);
 });
 
 test('Vivy intent header routes Chanson to Djeff songcraft while preserving raw rap grain', async () => {
