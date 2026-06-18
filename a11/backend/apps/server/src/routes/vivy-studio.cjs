@@ -1733,8 +1733,9 @@ function serializeVivyLocalContext(context = null) {
   };
 }
 
-function buildVivySystemPrompt(mode, language = 'fr') {
 function buildVivySystemPrompt(mode, language, input) {
+  if (!language) language = 'fr';
+  const modeLabel = mode === 'voice'
     ? 'voix'
     : mode === 'share'
       ? 'scène/publication'
