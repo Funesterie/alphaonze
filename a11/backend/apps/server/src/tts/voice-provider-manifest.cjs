@@ -259,8 +259,8 @@ function isProviderRuntimeConfigured(provider) {
   }
   if (normalized === PROVIDERS.ELEVENLABS) {
     if (!isLegacyCloudTtsProviderEnabled(normalized)) return false;
-    return hasEnvValue('A11_ELEVENLABS_API_KEY', 'ELEVENLABS_API_KEY', 'XI_API_KEY')
-      || hasExistingEnvFileValue('A11_ELEVENLABS_API_KEY_FILE', 'ELEVENLABS_API_KEY_FILE');
+    return hasEnvValue('VIVY_ELEVENLABS_API_KEY', 'A11_ELEVENLABS_API_KEY', 'ELEVENLABS_API_KEY', 'XI_API_KEY')
+      || hasExistingEnvFileValue('VIVY_ELEVENLABS_API_KEY_FILE', 'A11_ELEVENLABS_API_KEY_FILE', 'ELEVENLABS_API_KEY_FILE');
   }
   if (normalized === PROVIDERS.AZURE) {
     if (envFlag('A11_AZURE_TTS_DISABLED') || envFlag('AZURE_TTS_DISABLED')) return false;

@@ -2037,11 +2037,12 @@ function getCartesiaTtsApiKey() {
 function getElevenLabsTtsApiKey() {
   return readFirstSecretValue(
     [
+      process.env.VIVY_ELEVENLABS_API_KEY_FILE,
       process.env.A11_ELEVENLABS_API_KEY_FILE,
       process.env.ELEVENLABS_API_KEY_FILE,
       '/app/runtime/secrets/elevenlabs_api_key',
     ],
-    ['A11_ELEVENLABS_API_KEY', 'ELEVENLABS_API_KEY', 'XI_API_KEY']
+    ['VIVY_ELEVENLABS_API_KEY', 'A11_ELEVENLABS_API_KEY', 'ELEVENLABS_API_KEY', 'XI_API_KEY']
   );
 }
 

@@ -194,6 +194,38 @@ describe('voice-provider-manifest', () => {
       }
     });
 
+    it('official personas accept the Vivy ElevenLabs secret names used in production', () => {
+      const previous = {
+        VIVY_ELEVENLABS_API_KEY: process.env.VIVY_ELEVENLABS_API_KEY,
+        A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+        ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY,
+        XI_API_KEY: process.env.XI_API_KEY,
+        A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
+        ELEVENLABS_TTS_ENABLED: process.env.ELEVENLABS_TTS_ENABLED,
+        A11_ELEVENLABS_TTS_DISABLED: process.env.A11_ELEVENLABS_TTS_DISABLED,
+        ELEVENLABS_TTS_DISABLED: process.env.ELEVENLABS_TTS_DISABLED,
+        A11_TTS_DEFAULT_PROVIDER: process.env.A11_TTS_DEFAULT_PROVIDER,
+      };
+      process.env.VIVY_ELEVENLABS_API_KEY = 'test-vivy-elevenlabs-key';
+      delete process.env.A11_ELEVENLABS_API_KEY;
+      delete process.env.ELEVENLABS_API_KEY;
+      delete process.env.XI_API_KEY;
+      delete process.env.A11_ELEVENLABS_TTS_ENABLED;
+      delete process.env.ELEVENLABS_TTS_ENABLED;
+      delete process.env.A11_ELEVENLABS_TTS_DISABLED;
+      delete process.env.ELEVENLABS_TTS_DISABLED;
+      delete process.env.A11_TTS_DEFAULT_PROVIDER;
+      try {
+        assert.equal(isProviderRuntimeConfigured(PROVIDERS.ELEVENLABS), true);
+        assert.equal(resolveVoiceProvider('vivy').provider, PROVIDERS.ELEVENLABS);
+      } finally {
+        for (const [key, value] of Object.entries(previous)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
+    });
+
     it('a11: local/basic auto-select ignores configured cloud voices', () => {
       const previous = {
         A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
