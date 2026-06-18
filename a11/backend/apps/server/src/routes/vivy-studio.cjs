@@ -242,6 +242,34 @@ function cleanVivyMessageForIntent(value = '') {
   return cleanText(songMaterial || redactVivyAgentBriefSecrets(raw), 2400);
 }
 
+function isVivyInternalPublicLeakLine(line = '') {
+  const raw = String(line || '').trim();
+  const folded = foldTextForLookup(raw);
+  if (!folded) return false;
+  if (/\b(vivy_studio_handoff|vivy_song_production|vivy_voice_calibration|vivy_scene_share|vivy_production)\b/.test(folded)) return true;
+  if (/^(atelier|objectif|routage|routage recommande|brief agents|production plan|paroles guide)\b/.test(folded)) return true;
+  if (/^(ce que je comprends|je capte|message utilisateur|demande recue)\b/.test(folded) && /\b(vivy_|atelier|routage|j espere|token)\b/.test(folded)) return true;
+  if (/\b(j espere que cette chanson|j espere que cela|j espere que ca|n hesite pas a|n hesitez pas)\b/.test(folded)) return true;
+  return false;
+}
+
+function sanitizeVivyPublicText(value = '', max = 1800) {
+  const text = cleanText(redactVivyAgentBriefSecrets(value), Math.max(max, 2200));
+  if (!text) return '';
+  const kept = [];
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = String(line || '').trim();
+    if (!trimmed) {
+      if (kept.length && kept[kept.length - 1] !== '') kept.push('');
+      continue;
+    }
+    if (isVivyInternalPublicLeakLine(trimmed)) continue;
+    if (typeof isVivyPublicLyricsNoiseLine === 'function' && isVivyPublicLyricsNoiseLine(trimmed)) continue;
+    kept.push(trimmed);
+  }
+  return cleanText(kept.join('\n').replace(/\n{3,}/g, '\n\n'), max);
+}
+
 function stripVivyAscii4SoundTokens(value = '') {
   return cleanText(stripLegacySignalTokens(value), 2600);
 }
@@ -2211,7 +2239,7 @@ function inferVivyChatMode(message = '') {
 }
 
 function summarizeChatMessage(message = '') {
-  const cleaned = cleanText(message, 360);
+  const cleaned = sanitizeVivyPublicText(cleanVivyMessageForIntent(message), 360);
   if (!cleaned) return 'on part sur une intention musicale à préciser.';
   return cleaned.replace(/\s+/g, ' ');
 }
@@ -2601,6 +2629,35 @@ function sanitizeVivyPublicLyrics(value = '', max = 3200) {
   return cleanText(kept.join('\n').replace(/\n{3,}/g, '\n\n'), max);
 }
 
+function escapeRegExp(value = '') {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function hasVivyLyricsTag(text = '', tag = '') {
+  if (!tag) return false;
+  return new RegExp(`(^|\\n)\\s*${escapeRegExp(tag)}\\s*(\\n|$)`, 'i').test(String(text || ''));
+}
+
+function ensureVivyPublicLyricsArtistTags(input = {}, lyrics = '') {
+  let publicLyrics = sanitizeVivyPublicLyrics(lyrics);
+  if (!publicLyrics) return '';
+
+  const artistCast = buildVivySongArtistCast(input);
+  if (!artistCast || artistCast.count <= 1) return publicLyrics;
+
+  const missingArtistTag = artistCast.artists.some((artist) => !hasVivyLyricsTag(publicLyrics, artist.tag));
+  const missingSharedTag = !/(^|\n)\s*\[(Duo|Tous)\]\s*(\n|$)/i.test(publicLyrics);
+  if (!missingArtistTag && !missingSharedTag) return publicLyrics;
+
+  const fallback = sanitizeVivyPublicLyrics(buildVivySongProductionBrief({
+    ...input,
+    songText: input.songText || input.message || input.prompt || input.text || input.theme,
+  }).lyrics);
+  if (fallback) return fallback;
+
+  return publicLyrics;
+}
+
 function buildVivyPublicLyrics(input = {}, rawAssistant = '', fallbackLyrics = '') {
   let publicLyrics = sanitizeVivyPublicLyrics(rawAssistant);
   if (!publicLyrics || looksLikeWeakSongwritingReply(publicLyrics)) {
@@ -2612,7 +2669,7 @@ function buildVivyPublicLyrics(input = {}, rawAssistant = '', fallbackLyrics = '
       songText: input.songText || input.message || input.prompt || input.text || input.theme,
     }).lyrics);
   }
-  return publicLyrics;
+  return ensureVivyPublicLyricsArtistTags(input, publicLyrics);
 }
 
 function logVivySongcraftTrace({ provider = 'deterministic', model = 'vivy-songcraft', source = 'local', fallback = false, latencyMs = 0 } = {}) {
@@ -2854,7 +2911,7 @@ function buildVivyChat(input) {
   const fileLine = files.length
     ? `J'ai aussi noté ${files.length} fichier${files.length > 1 ? 's' : ''}: ${files.map((file) => file.filename).join(', ')}.`
     : '';
-  const assistant = mode === 'song'
+  const assistantDraft = mode === 'song'
     ? buildVivyPublicLyrics(
       { ...input, message, files, history },
       buildVivyDirectSongReply({ ...input, message, files, history }),
@@ -2870,6 +2927,9 @@ function buildVivyChat(input) {
         ? 'Envoie-moi une intention de timbre, une phrase test ou une référence vocale, et je te fais une calibration propre.'
         : 'Donne-moi le canal, le format et la contrainte de publication, et je prépare le plan de scène.',
     ].join('\n\n');
+  const assistant = mode === 'song'
+    ? assistantDraft
+    : sanitizeVivyPublicText(assistantDraft, 1800);
 
   return {
     ok: true,
@@ -3221,7 +3281,7 @@ async function buildVivyAiChat(input, req) {
       : processed.content;
     const assistant = mode === 'song'
       ? buildVivyPublicLyrics({ ...input, message, files, history }, assistantCandidate, fallback.publicLyrics)
-      : assistantCandidate;
+      : sanitizeVivyPublicText(assistantCandidate, 1800);
     if (mode === 'song') {
       logVivySongcraftTrace({
         provider: llmBundle.provider || getVivyProviderFromBaseUrl(llmBundle.baseURL || ''),
@@ -3300,7 +3360,7 @@ function buildVivyStudioProduction(input) {
     : undefined;
   const publicText = mode === 'song'
     ? (publicLyrics || 'Ajoute un thème, un texte ou des paroles pour lancer la chanson.')
-    : cleanText(production.publicText || production.summary, 1800);
+    : sanitizeVivyPublicText(production.publicText || production.summary, 1800);
   const productionPlan = {
     mode,
     title: production.title,
@@ -4090,9 +4150,11 @@ module.exports = {
   buildVivyAiChat,
   buildVivySystemPrompt,
   buildVivyDirectSongReply,
+  buildVivyPublicLyrics,
   buildVivySunoPayload,
   buildVivyWebSearchQuery,
   postProcessVivyAssistantText,
+  sanitizeVivyPublicText,
   isDirectSongwritingRequest,
   shouldVivyAutoWebSearch,
   looksLikeWeakSongwritingReply,

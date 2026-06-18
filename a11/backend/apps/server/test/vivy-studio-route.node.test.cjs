@@ -15,6 +15,7 @@ const {
   createVivyStudioRouter,
   buildVivyAiChat,
   buildVivyDirectSongReply,
+  buildVivyPublicLyrics,
   buildVivyStudioProduction,
   buildVivySystemPrompt,
   buildVivySunoPayload,
@@ -24,6 +25,7 @@ const {
   isVivyToolCapabilityQuestion,
   looksLikeWeakSongwritingReply,
   postProcessVivyAssistantText,
+  sanitizeVivyPublicText,
   shouldVivyAutoWebSearch,
 } = require('../src/routes/vivy-studio.cjs');
 
@@ -1049,6 +1051,49 @@ test('Vivy chat song mode exposes clean publicLyrics instead of an agent handoff
   assert.doesNotMatch(result.publicLyrics, /VIVY_STUDIO_HANDOFF|VIVY_SONG_PRODUCTION|Routage recommandé|Atelier:/);
   assert.doesNotMatch(result.publicLyrics, /J[’']?esp[eè]re/i);
   assert.doesNotMatch(result.publicLyrics, /\*\*Titre\s*:\*\*|\*\*Intention\s*:\*\*|\*\*Rimes/i);
+});
+
+test('Vivy public lyrics enforce requested singer tags when provider output forgets them', () => {
+  const result = buildVivyPublicLyrics({
+    mode: 'song',
+    songArtists: ['djeff', 'k44'],
+    message: 'Écris une chanson en duo Djeff et K44 sur pignon, radiateur, couronne et course nocturne.',
+  }, [
+    '[Intro - Djeff]',
+    'On démarre la nuit sans tag vocal explicite,',
+    '[Chorus]',
+    'Le moteur répond et la route crépite.',
+  ].join('\n'), '');
+
+  assert.match(result, /\[Djeff\]/);
+  assert.match(result, /\[K44\]/);
+  assert.match(result, /\[(Duo|Tous)\]/);
+  assert.doesNotMatch(result, /VIVY_STUDIO_HANDOFF|VIVY_SONG_PRODUCTION|Atelier:|Routage recommandé/);
+});
+
+test('Vivy voice public text drops pasted internal handoff blocks', async () => {
+  assert.equal(
+    sanitizeVivyPublicText('Ce que je comprends: VIVY_STUDIO_HANDOFF Atelier: Test voix\nPhrase test propre.'),
+    'Phrase test propre.'
+  );
+
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-voice-public-clean',
+    mode: 'voice',
+    voice: 'vivy',
+    phraseTest: 'Salut Jeffrey. Je suis Vivy. Je parle doucement, avec une voix claire et proche.',
+    message: [
+      'VIVY_STUDIO_HANDOFF',
+      'Atelier: Test voix',
+      'Teste la voix Vivy avec une phrase courte.',
+    ].join('\n'),
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'voice');
+  assert.doesNotMatch(result.assistant, /VIVY_STUDIO_HANDOFF|VIVY_VOICE_CALIBRATION|Atelier:|Routage recommandé/);
+  assert.doesNotMatch(result.publicText, /VIVY_STUDIO_HANDOFF|VIVY_VOICE_CALIBRATION|Atelier:|Routage recommandé/);
+  assert.match(result.internalBrief, /VIVY_VOICE_CALIBRATION/);
 });
 
 test('Vivy songcraft removes pasted assistant explanations from the lyric seed', async () => {
