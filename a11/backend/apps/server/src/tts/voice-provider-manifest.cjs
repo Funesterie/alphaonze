@@ -430,8 +430,8 @@ function resolveVoiceProvider(persona, options = {}) {
     }
   }
 
-  // Auto-select: official family personas use the configured cloud default first,
-  // then fall back to owned local references and finally neutral Piper.
+  // Auto-select: official family personas use owned local references first,
+  // with configured cloud voices kept as explicit or later fallback choices.
   const prefersLocalOfficial = LOCAL_OFFICIAL_PRIORITY_PERSONAS.has(normalizedPersona);
   const defaultProvider = getDefaultVoiceProviderForPersona(normalizedPersona);
   const providerOrder = options.allowCloud === false

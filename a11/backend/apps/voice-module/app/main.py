@@ -434,13 +434,56 @@ def infer_reference_style(reference_file: Optional[Path]) -> str:
         return "a11-official-stern-french"
     if "kaen44-official-french-narrator" in key or (("kaen44" in key or "k44" in key) and "official" in key):
         return "kaen44-official-french-narrator"
-    if "terminator" in key or "a11" in key:
+    if "terminator" in key or "robot" in key:
         return "terminator"
+    if "a11" in key:
+        return "a11-official-stern-french"
     if "donna" in key or "kaen44" in key or "k44" in key:
         return "kaen44-official-french-narrator"
     if "vivy" in key:
         return "vivy"
     return ""
+
+
+def style_for_persona(persona: str) -> str:
+    normalized = normalize_persona(persona)
+    if normalized == "a11":
+        return "a11-official-stern-french"
+    if normalized == "kaen44":
+        return "kaen44-official-french-narrator"
+    if normalized == "vivy":
+        return "vivy"
+    return ""
+
+
+def normalize_voice_style(value: Optional[str]) -> str:
+    raw = str(value or "").strip().lower()
+    if raw in {"", "default", "voice", "speech", "song", "sing", "chant", "music", "musique"}:
+        return ""
+    compact = re.sub(r"[^a-z0-9]+", "", raw)
+    if "vivy" in compact or "vivi" in compact:
+        return "vivy"
+    if "kaen44" in compact or "k44" in compact or compact == "kaen":
+        return "kaen44-official-french-narrator"
+    if "a11officialsternfrench" in compact or ("a11" in compact and "official" in compact):
+        return "a11-official-stern-french"
+    if compact in {"a11", "alpha11", "alphaonze", "aonze"}:
+        return "a11-official-stern-french"
+    if "terminator" in compact or "robot" in compact:
+        return "terminator"
+    if "donna" in compact:
+        return "donna"
+    if "djeff" in compact or "pignon" in compact:
+        return "djeff-rap"
+    return ""
+
+
+def resolve_reference_style(reference_file: Optional[Path], persona: str = "", voice_style: str = "") -> str:
+    return (
+        normalize_voice_style(voice_style)
+        or infer_reference_style(reference_file)
+        or style_for_persona(persona)
+    )
 
 
 def parse_mapping_env(name: str) -> dict:
@@ -556,6 +599,7 @@ def run_xtts_rvc_a11_api(
     strength: float,
     f0_shift: Optional[float],
     reference_style: str,
+    persona: str = "",
 ) -> dict:
     endpoint = os.environ.get("A11_VOICE_XTTS_RVC_ENDPOINT", "/api/voice/convert").strip() or "/api/voice/convert"
     url = urljoin(XTTS_RVC_URL.rstrip("/") + "/", endpoint.lstrip("/"))
@@ -570,6 +614,9 @@ def run_xtts_rvc_a11_api(
             "strength": str(strength),
             "voiceStyle": reference_style,
         }
+        normalized_persona = normalize_persona(persona)
+        if normalized_persona:
+            data["persona"] = normalized_persona
         if f0_shift is not None:
             data["f0Shift"] = str(f0_shift)
         response = requests.post(url, files=files, data=data, timeout=XTTS_RVC_TIMEOUT)
@@ -662,14 +709,16 @@ def run_xtts_rvc(
     text: str,
     strength: float,
     f0_shift: Optional[float],
+    persona: str = "",
+    voice_style: str = "",
 ) -> dict:
     if not XTTS_RVC_URL:
         raise RuntimeError("xtts_rvc_url_missing")
-    reference_style = infer_reference_style(reference_file)
+    reference_style = resolve_reference_style(reference_file, persona, voice_style)
     protocol = XTTS_RVC_PROTOCOL
     if protocol in {"gradio", "xtts-rvc-ui"}:
         return run_xtts_rvc_gradio(out_file, mode, text, f0_shift, reference_style)
-    return run_xtts_rvc_a11_api(generated_file, reference_file, out_file, mode, text, strength, f0_shift, reference_style)
+    return run_xtts_rvc_a11_api(generated_file, reference_file, out_file, mode, text, strength, f0_shift, reference_style, persona)
 
 
 def ffmpeg_morph_filter(mode: str, strength: float, f0_shift: Optional[float], generated_profile: dict, reference_profile: dict, reference_style: str = "") -> str:
@@ -1006,6 +1055,8 @@ def synthesize(req: SynthesizeRequest) -> dict:
                             text,
                             morph_strength,
                             morph_f0_shift,
+                            persona,
+                            req.voiceStyle or reference_style,
                         )
                         break
                     if provider in {"ffmpeg", "ffmpeg-morph", "morph"}:
@@ -1135,7 +1186,17 @@ async def convert_voice(
             attempted.append(provider)
             try:
                 if is_xtts_rvc_provider(provider):
-                    meta = run_xtts_rvc(generated_file, reference_file, out_file, mode, clean_text(text), morph_strength, morph_f0_shift)
+                    meta = run_xtts_rvc(
+                        generated_file,
+                        reference_file,
+                        out_file,
+                        mode,
+                        clean_text(text),
+                        morph_strength,
+                        morph_f0_shift,
+                        normalized_persona,
+                        voiceStyle or reference_style,
+                    )
                     break
                 if provider in {"ffmpeg", "ffmpeg-morph", "morph"}:
                     meta = run_ffmpeg_morph(generated_file, reference_file, out_file, mode, morph_strength, morph_f0_shift)

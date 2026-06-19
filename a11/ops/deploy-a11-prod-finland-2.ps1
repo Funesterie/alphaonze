@@ -509,6 +509,13 @@ services:
       - /srv/a11/secrets/a11.env
     environment:
       A11_WEB_DIST_DIR: /web/dist
+      TTS_URL: ${TTS_URL:-http://a11-voice:5002}
+      VOICE_MODULE_URL: ${VOICE_MODULE_URL:-http://a11-voice:5002}
+      A11_VOICE_MODULE_URL: ${A11_VOICE_MODULE_URL:-http://a11-voice:5002}
+      ENABLE_PIPER_HTTP: ${ENABLE_PIPER_HTTP:-true}
+      A11_TTS_ALLOW_XTTS_RVC_AUTO: ${A11_TTS_ALLOW_XTTS_RVC_AUTO:-true}
+      A11_VOICE_CONVERSION_ENABLED: ${A11_VOICE_CONVERSION_ENABLED:-true}
+      A11_VOICE_XTTS_RVC_URL: ${A11_VOICE_XTTS_RVC_URL:-http://a11-xtts-rvc:5000}
       A11_PROFILE_ENV: /app/profiles/a11.prod.env.disabled
       A11_RUNTIME_ROOT: /app/runtime
       A11_LLM_PROVIDER: groq
@@ -601,6 +608,13 @@ services:
     environment:
       PORT: "3001"
       A11_WEB_DIST_DIR: /web/dist
+      TTS_URL: ${TTS_URL:-http://a11-voice:5002}
+      VOICE_MODULE_URL: ${VOICE_MODULE_URL:-http://a11-voice:5002}
+      A11_VOICE_MODULE_URL: ${A11_VOICE_MODULE_URL:-http://a11-voice:5002}
+      ENABLE_PIPER_HTTP: ${ENABLE_PIPER_HTTP:-true}
+      A11_TTS_ALLOW_XTTS_RVC_AUTO: ${A11_TTS_ALLOW_XTTS_RVC_AUTO:-true}
+      A11_VOICE_CONVERSION_ENABLED: ${A11_VOICE_CONVERSION_ENABLED:-true}
+      A11_VOICE_XTTS_RVC_URL: ${A11_VOICE_XTTS_RVC_URL:-http://a11-xtts-rvc:5000}
       A11_PROFILE_ENV: /app/profiles/kaen44.prod.env.disabled
       KAEN44_PROFILE_ENV: /app/profiles/kaen44.prod.env.disabled
       A11_RUNTIME_ROOT: /app/runtime
@@ -1061,9 +1075,10 @@ $overrides = [ordered]@{
   A11_CARTESIA_API_KEY_FILE = $(if ($env:A11_CARTESIA_API_KEY_FILE) { $env:A11_CARTESIA_API_KEY_FILE } else { "/app/runtime/secrets/cartesia_api_key" })
   A11_ELEVENLABS_API_KEY_FILE = $(if ($env:A11_ELEVENLABS_API_KEY_FILE) { $env:A11_ELEVENLABS_API_KEY_FILE } else { "/app/runtime/secrets/elevenlabs_api_key" })
   VIVY_ELEVENLABS_API_KEY_FILE = $(if ($env:VIVY_ELEVENLABS_API_KEY_FILE) { $env:VIVY_ELEVENLABS_API_KEY_FILE } else { "/app/runtime/secrets/elevenlabs_api_key" })
-  A11_ELEVENLABS_A11_VOICE_ID = $(if ($env:A11_ELEVENLABS_A11_VOICE_ID) { $env:A11_ELEVENLABS_A11_VOICE_ID } else { "JBFqnCBsd6RMkjVDRZzb" })
-  A11_ELEVENLABS_KAEN44_VOICE_ID = $(if ($env:A11_ELEVENLABS_KAEN44_VOICE_ID) { $env:A11_ELEVENLABS_KAEN44_VOICE_ID } else { "JBFqnCBsd6RMkjVDRZzb" })
-  A11_ELEVENLABS_VIVY_VOICE_ID = $(if ($env:A11_ELEVENLABS_VIVY_VOICE_ID) { $env:A11_ELEVENLABS_VIVY_VOICE_ID } else { "JBFqnCBsd6RMkjVDRZzb" })
+  A11_ELEVENLABS_A11_VOICE_ID = $(if ($env:A11_ELEVENLABS_A11_VOICE_ID) { $env:A11_ELEVENLABS_A11_VOICE_ID } else { "pNInz6obpgDQGcFmaJgB" })
+  A11_ELEVENLABS_KAEN44_VOICE_ID = $(if ($env:A11_ELEVENLABS_KAEN44_VOICE_ID) { $env:A11_ELEVENLABS_KAEN44_VOICE_ID } else { "EXAVITQu4vr4xnSDxMaL" })
+  A11_ELEVENLABS_K44_VOICE_ID = $(if ($env:A11_ELEVENLABS_K44_VOICE_ID) { $env:A11_ELEVENLABS_K44_VOICE_ID } elseif ($env:A11_ELEVENLABS_KAEN44_VOICE_ID) { $env:A11_ELEVENLABS_KAEN44_VOICE_ID } else { "EXAVITQu4vr4xnSDxMaL" })
+  A11_ELEVENLABS_VIVY_VOICE_ID = $(if ($env:A11_ELEVENLABS_VIVY_VOICE_ID) { $env:A11_ELEVENLABS_VIVY_VOICE_ID } else { "21m00Tcm4TlvDq8ikWAM" })
   VIVY_ELEVENLABS_MUSIC_MODEL = $(if ($env:VIVY_ELEVENLABS_MUSIC_MODEL) { $env:VIVY_ELEVENLABS_MUSIC_MODEL } else { "" })
   VIVY_MUSIC_PROVIDER = $(if ($env:VIVY_MUSIC_PROVIDER) { $env:VIVY_MUSIC_PROVIDER } else { "suno" })
   VIVY_SUNO_API_KEY_FILE = $(if ($env:VIVY_SUNO_API_KEY_FILE) { $env:VIVY_SUNO_API_KEY_FILE } else { "/app/runtime/secrets/suno_api_key" })
@@ -1071,6 +1086,9 @@ $overrides = [ordered]@{
   VIVY_SUNO_MODEL = $(if ($env:VIVY_SUNO_MODEL) { $env:VIVY_SUNO_MODEL } else { "V4_5" })
   VIVY_SUNO_CALLBACK_URL = $(if ($env:VIVY_SUNO_CALLBACK_URL) { $env:VIVY_SUNO_CALLBACK_URL } else { "https://vivy.funesterie.me/api/vivy/studio/suno/callback" })
   VIVY_SUNO_CALLBACK_TOKEN = $(if ($env:VIVY_SUNO_CALLBACK_TOKEN) { $env:VIVY_SUNO_CALLBACK_TOKEN } else { "" })
+  ENABLE_PIPER_HTTP = $(if ($env:ENABLE_PIPER_HTTP) { $env:ENABLE_PIPER_HTTP } else { "true" })
+  A11_TTS_ALLOW_XTTS_RVC_AUTO = $(if ($env:A11_TTS_ALLOW_XTTS_RVC_AUTO) { $env:A11_TTS_ALLOW_XTTS_RVC_AUTO } else { "true" })
+  A11_VOICE_CONVERSION_ENABLED = $(if ($env:A11_VOICE_CONVERSION_ENABLED) { $env:A11_VOICE_CONVERSION_ENABLED } else { "true" })
   A11_VOICE_CONVERTER_PROVIDER = $(if ($env:A11_VOICE_CONVERTER_PROVIDER) { $env:A11_VOICE_CONVERTER_PROVIDER } else { "xtts-rvc,ffmpeg-morph" })
   A11_VOICE_XTTS_RVC_URL = $(if ($env:A11_VOICE_XTTS_RVC_URL) { $env:A11_VOICE_XTTS_RVC_URL } else { "http://a11-xtts-rvc:5000" })
   A11_VOICE_XTTS_RVC_PROTOCOL = $(if ($env:A11_VOICE_XTTS_RVC_PROTOCOL) { $env:A11_VOICE_XTTS_RVC_PROTOCOL } else { "a11" })

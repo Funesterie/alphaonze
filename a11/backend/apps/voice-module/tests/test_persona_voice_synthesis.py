@@ -20,6 +20,68 @@ def write_wav(path: pathlib.Path) -> None:
 
 
 class PersonaVoiceSynthesisTests(unittest.TestCase):
+    def test_xtts_rvc_api_receives_explicit_persona_and_voice_style(self):
+        previous_url = main.XTTS_RVC_URL
+        previous_protocol = main.XTTS_RVC_PROTOCOL
+        previous_post = main.requests.post
+
+        class FakeResponse:
+            def __init__(self, content: bytes):
+                self.headers = {"content-type": "audio/wav"}
+                self.content = content
+
+            def raise_for_status(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as temp_root:
+            temp = pathlib.Path(temp_root)
+            generated = temp / "generated.wav"
+            reference = temp / "neutral-reference.wav"
+            out_file = temp / "out.wav"
+            write_wav(generated)
+            write_wav(reference)
+            wav_bytes = generated.read_bytes()
+            captured = {}
+
+            def fake_post(url, files, data, timeout):
+                captured["url"] = url
+                captured["data"] = dict(data)
+                return FakeResponse(wav_bytes)
+
+            main.XTTS_RVC_URL = "http://xtts-rvc.local:5000"
+            main.XTTS_RVC_PROTOCOL = "a11"
+            main.requests.post = fake_post
+
+            try:
+                result = main.run_xtts_rvc(
+                    generated,
+                    reference,
+                    out_file,
+                    "adaptive",
+                    "bonjour",
+                    0.4,
+                    None,
+                    persona="vivy",
+                    voice_style="vivy-official-french-conversational",
+                )
+            finally:
+                main.XTTS_RVC_URL = previous_url
+                main.XTTS_RVC_PROTOCOL = previous_protocol
+                main.requests.post = previous_post
+
+            self.assertEqual(captured["url"], "http://xtts-rvc.local:5000/api/voice/convert")
+            self.assertEqual(captured["data"]["persona"], "vivy")
+            self.assertEqual(captured["data"]["voiceStyle"], "vivy")
+            self.assertEqual(result["voiceStyle"], "vivy")
+            self.assertTrue(out_file.exists())
+
+    def test_a11_ref_infers_official_voice_not_robot_style(self):
+        with tempfile.TemporaryDirectory() as temp_root:
+            reference = pathlib.Path(temp_root) / "A11 ref.wav"
+            write_wav(reference)
+
+            self.assertEqual(main.infer_reference_style(reference), "a11-official-stern-french")
+
     def test_resolve_piper_model_uses_requested_model_directory(self):
         previous_model_dirs = os.environ.get("A11_PIPER_MODEL_DIRS")
 
