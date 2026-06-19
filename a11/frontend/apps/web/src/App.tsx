@@ -4237,7 +4237,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     const entryId = String(entry.id || "").trim().toLowerCase();
     const usesOfficialReference = officialVoiceIds.has(entryId)
       || /\b(?:djeff|kaen44|a11|vivy|official|officiel|rap)\b/i.test(`${entry.voiceStyle} ${entry.voiceTool}`);
-    const provider = usesOfficialReference ? "xtts-rvc" : "auto";
+    const usesCleanCloudVoice = usesOfficialReference && (entryId === "djeff" || entryId === "vivy");
+    const provider = usesCleanCloudVoice ? "elevenlabs" : (usesOfficialReference ? "xtts-rvc" : "auto");
+    const voiceConversion = usesOfficialReference && !usesCleanCloudVoice;
     const referenceLabel = String(entry.referenceLabel || entry.voiceStyle || entry.label).trim();
     const referenceFileName = String(entry.referenceFileName || referenceLabel).trim();
     return {
@@ -4262,31 +4264,31 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       audioFormat: "mp3",
       responseFormat: "mp3",
       voiceTestMode: mode.id,
-      useRvc: usesOfficialReference ? mode.useRvc : undefined,
-      use_rvc: usesOfficialReference ? mode.useRvc : undefined,
+      useRvc: voiceConversion ? mode.useRvc : false,
+      use_rvc: voiceConversion ? mode.useRvc : false,
       identityVoice: usesOfficialReference,
       useIdentityVoice: usesOfficialReference,
-      useDefaultVoiceReference: usesOfficialReference,
-      defaultVoiceReference: usesOfficialReference,
-      usePersonaVoiceReference: usesOfficialReference,
+      useDefaultVoiceReference: voiceConversion,
+      defaultVoiceReference: voiceConversion,
+      usePersonaVoiceReference: voiceConversion,
       neutralVoice: usesOfficialReference ? false : undefined,
-      voiceReferenceRequired: usesOfficialReference,
-      referenceVoiceRequired: usesOfficialReference,
-      requireVoiceReference: usesOfficialReference,
-      voiceConversion: usesOfficialReference,
-      convertVoice: usesOfficialReference,
-      morphVoice: usesOfficialReference,
-      rvc: usesOfficialReference ? mode.useRvc : undefined,
-      allowRvc: usesOfficialReference,
-      allowXttsRvc: usesOfficialReference,
-      allowLegacyVoiceBridge: usesOfficialReference,
-      xttsRvcOptIn: usesOfficialReference,
-      allowPaidTtsVoice: undefined,
-      allowCloudTts: undefined,
-      allowReadyMadeCloudVoice: undefined,
-      allowOfficialCloudVoice: undefined,
-      forceCloudTts: undefined,
-      useReadyMadeCloudVoice: undefined,
+      voiceReferenceRequired: voiceConversion,
+      referenceVoiceRequired: voiceConversion,
+      requireVoiceReference: voiceConversion,
+      voiceConversion,
+      convertVoice: voiceConversion,
+      morphVoice: voiceConversion,
+      rvc: voiceConversion ? mode.useRvc : false,
+      allowRvc: voiceConversion,
+      allowXttsRvc: voiceConversion,
+      allowLegacyVoiceBridge: voiceConversion,
+      xttsRvcOptIn: voiceConversion,
+      allowPaidTtsVoice: usesCleanCloudVoice ? true : undefined,
+      allowCloudTts: usesCleanCloudVoice ? true : undefined,
+      allowReadyMadeCloudVoice: usesCleanCloudVoice ? true : undefined,
+      allowOfficialCloudVoice: usesCleanCloudVoice ? true : undefined,
+      forceCloudTts: usesCleanCloudVoice ? true : undefined,
+      useReadyMadeCloudVoice: usesCleanCloudVoice ? true : undefined,
       allowBrowserSpeechFallback: !usesOfficialReference,
       ttsCostPolicy: undefined,
     };
@@ -4306,8 +4308,12 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   }
 
   function buildVivyTtsOptions(vocalMode: "adaptive" | "sing", useRvc = true) {
-    const provider = "xtts-rvc";
-    const voiceConversion = true;
+    const usesCleanCloudVoice = !hasPrivateVoiceReference
+      && !activeCatalogVoice
+      && (activeVoiceProfile.id === "djeff-rap" || activeVoiceProfile.id === "vivy-official");
+    const provider = usesCleanCloudVoice ? "elevenlabs" : "xtts-rvc";
+    const voiceConversion = !usesCleanCloudVoice;
+    const resolvedUseRvc = voiceConversion ? useRvc : false;
     return {
       persona: activeVoiceProfile.ttsPersona,
       voicePersona: activeVoiceProfile.ttsPersona,
@@ -4328,8 +4334,8 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       voiceConversionEngine: provider === "xtts-rvc" ? "xtts-rvc" : undefined,
       conversionEngine: provider === "xtts-rvc" ? "xtts-rvc" : undefined,
       vocalMode,
-      useRvc,
-      use_rvc: useRvc,
+      useRvc: resolvedUseRvc,
+      use_rvc: resolvedUseRvc,
       ...getVivyVoiceTuning(vocalMode),
       ttsAsync: true,
       asyncTts: true,
@@ -4337,27 +4343,27 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       audioFormat: "mp3",
       responseFormat: "mp3",
       ...buildVivyVoiceReferenceOptions(),
-      usePersonaVoiceReference: !hasPrivateVoiceReference,
-      voiceReferenceRequired: true,
-      referenceVoiceRequired: true,
-      requireVoiceReference: true,
+      usePersonaVoiceReference: voiceConversion && !hasPrivateVoiceReference,
+      voiceReferenceRequired: voiceConversion,
+      referenceVoiceRequired: voiceConversion,
+      requireVoiceReference: voiceConversion,
       voiceConversion,
       convertVoice: voiceConversion,
       morphVoice: voiceConversion,
-      rvc: voiceConversion ? useRvc : undefined,
+      rvc: voiceConversion ? resolvedUseRvc : false,
       identityVoice: true,
       useIdentityVoice: true,
       neutralVoice: false,
-      allowRvc: true,
-      allowXttsRvc: true,
-      allowLegacyVoiceBridge: true,
-      xttsRvcOptIn: true,
-      allowPaidTtsVoice: undefined,
-      allowCloudTts: undefined,
-      allowReadyMadeCloudVoice: undefined,
-      allowOfficialCloudVoice: undefined,
-      forceCloudTts: undefined,
-      useReadyMadeCloudVoice: undefined,
+      allowRvc: voiceConversion,
+      allowXttsRvc: voiceConversion,
+      allowLegacyVoiceBridge: voiceConversion,
+      xttsRvcOptIn: voiceConversion,
+      allowPaidTtsVoice: usesCleanCloudVoice ? true : undefined,
+      allowCloudTts: usesCleanCloudVoice ? true : undefined,
+      allowReadyMadeCloudVoice: usesCleanCloudVoice ? true : undefined,
+      allowOfficialCloudVoice: usesCleanCloudVoice ? true : undefined,
+      forceCloudTts: usesCleanCloudVoice ? true : undefined,
+      useReadyMadeCloudVoice: usesCleanCloudVoice ? true : undefined,
       allowBrowserSpeechFallback: false,
       ttsCostPolicy: undefined,
     };
