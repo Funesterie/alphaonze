@@ -49,7 +49,7 @@ const AGENTS = [
   },
   {
     id: 'kaen44',
-    name: 'Kaen44',
+    name: 'K44',
     role: 'daily copilot, client surface and accessibility guide',
     surface: 'https://k44.funesterie.me/',
     nindo: 'Make the work usable for people, keep it kind, clear and shareable.',
@@ -212,7 +212,7 @@ const DOMAINS = [
     label: 'Client workflows and handoff',
     category: 'operations',
     summary: 'Briefs, follow-up, invoices, project status, shared links and clear next actions.',
-    educationalUse: 'Help Kaen44 present useful work without exposing internal machinery.',
+    educationalUse: 'Help K44 present useful work without exposing internal machinery.',
     examples: ['client brief', 'handoff checklist', 'next step summary', 'file follow-up', 'public demo'],
     tags: ['client', 'workflow', 'handoff', 'brief'],
   },
@@ -385,7 +385,7 @@ const SEED_CARDS = [
     domain: 'language',
     title: 'Register is part of meaning',
     body: 'A sentence can be correct and still wrong for the moment; tone, audience and stakes decide the right wording.',
-    useFor: ['Kaen44 client copy', 'Vivy lyrics', 'A11 prompts'],
+    useFor: ['K44 client copy', 'Vivy lyrics', 'A11 prompts'],
   },
   {
     id: 'seed-books-public-domain',

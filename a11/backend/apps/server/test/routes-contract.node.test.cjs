@@ -2130,7 +2130,7 @@ test('POST /api/llm/chat answers image inspection with vision instead of proxyin
           return {
             skipped: false,
             provider: 'janus-test',
-            description: 'Portrait stylisé de Kaen44 dans un cercle violet, avec un blouson futuriste et le texte KAEN44.',
+            description: 'Portrait stylisé de K44 dans un cercle violet, avec un blouson futuriste et le texte KAEN44.',
           };
         },
         generateSd: async () => {
@@ -2151,7 +2151,7 @@ test('POST /api/llm/chat answers image inspection with vision instead of proxyin
       assert.equal(json.mode, 'vision_chat');
       assert.equal(json.provider, 'janus-test');
       assert.match(json.assistant, /je la vois/i);
-      assert.match(json.assistant, /Kaen44/i);
+      assert.match(json.assistant, /K44/i);
       assert.equal(json.sourceImageUrl, 'https://assets.example.test/k44.png');
     }
   );
@@ -2386,7 +2386,7 @@ test('POST /api/llm/chat fills empty assistant proxy bubbles with a natural surf
 
       assert.equal(response.status, 200);
       const content = String(json.choices?.[0]?.message?.content || '');
-      assert.match(content, /Kaen44 reprend normalement|je suis là/i);
+      assert.match(content, /K44 reprend normalement|je suis là/i);
       assert.doesNotMatch(content, /^\s*$/);
     }
   );

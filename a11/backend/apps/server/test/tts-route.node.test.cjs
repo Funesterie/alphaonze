@@ -2754,7 +2754,7 @@ test('tts speak route uses ready-made OpenAI style when cloud voices are unavail
         assert.match(result.json.voiceReference.label, /kaen44-official-french-narrator/i);
         assert.equal(bridgeCalls.length, 0);
         assert.equal(openAiBodies.length, 1);
-        assert.match(openAiBodies[0].instructions, /Voix Kaen44/i);
+        assert.match(openAiBodies[0].instructions, /Voix K44/i);
         assert.equal(remoteTtsCalls.length, 0);
       }
     );
@@ -2885,7 +2885,7 @@ test('tts speak route uses low-latency OpenAI MP3 and skips slow XTTS/RVC bridge
   }
 });
 
-test('tts speak route uses the voice module directly for Kaen44 official reference voices', async () => {
+test('tts speak route uses the voice module directly for K44 official reference voices', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-openai-rate-limited-'));
   const previousEnv = {
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,

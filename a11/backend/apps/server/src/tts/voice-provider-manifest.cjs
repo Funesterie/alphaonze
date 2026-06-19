@@ -86,7 +86,7 @@ const VOICE_PERSONA_DIRECTIONS = Object.freeze({
   }),
   kaen44: Object.freeze({
     persona: 'kaen44',
-    label: 'Kaen44 official French desk operator',
+    label: 'K44 official French desk operator',
     referenceMoodboard: [
       'Elegant French desk-operator voice, based on the owned family WAV reference when available.',
       'If ElevenLabs is configured, use a crisp French operator voice: feminine, quick, elegant, confident, never cartoonish.',
@@ -95,10 +95,10 @@ const VOICE_PERSONA_DIRECTIONS = Object.freeze({
     referenceClipNotes: [
       'Official path: owned family WAV reference through the Funesterie XTTS/RVC bridge when available.',
       'ElevenLabs is the preferred ready-made cloud route when configured; otherwise use the owned family reference first.',
-      'Target original Kaen44: sharp desk-operator timing, confident warmth, fast wit.',
+      'Target original K44: sharp desk-operator timing, confident warmth, fast wit.',
     ],
     prompt:
-      'Voix Kaen44 originale: operatrice vive, elegante et sure d elle, precise sans etre froide, esprit rapide, tact humain, sens du dossier et repliques courtes. Utilise la reference WAV familiale consentie par Funesterie via XTTS/RVC quand elle est disponible; ne clone aucune personne ni personnage sans consentement explicite.',
+      'Voix K44 originale: operatrice vive, elegante et sure d elle, precise sans etre froide, esprit rapide, tact humain, sens du dossier et repliques courtes. Utilise la reference WAV familiale consentie par Funesterie via XTTS/RVC quand elle est disponible; ne clone aucune personne ni personnage sans consentement explicite.',
   }),
   vivy: Object.freeze({
     persona: 'vivy',
@@ -135,12 +135,12 @@ const OFFICIAL_READY_VOICE_PROFILES = Object.freeze({
   }),
   kaen44: Object.freeze({
     styleId: 'kaen44-official-french-narrator',
-    displayName: 'Kaen44 - French Narrator Lady',
+    displayName: 'K44 - French Narrator Lady',
     providerLabels: Object.freeze({
-      [PROVIDERS.ELEVENLABS]: 'ElevenLabs Kaen44 family default',
+      [PROVIDERS.ELEVENLABS]: 'ElevenLabs K44 family default',
       [PROVIDERS.AZURE]: 'fr-FR-Vivienne:DragonHDLatestNeural',
       [PROVIDERS.OPENAI]: 'sage',
-      [PROVIDERS.XTTS_RVC]: 'Family WAV - Kaen44 official reference',
+      [PROVIDERS.XTTS_RVC]: 'Family WAV - K44 official reference',
       [PROVIDERS.PIPER]: 'fr_FR-siwis-medium',
     }),
     elevenLabsVoiceId: DEFAULT_ELEVENLABS_KAEN44_VOICE_ID,
@@ -326,8 +326,8 @@ const MANIFEST = Object.freeze({
     official: true,
     direction: VOICE_PERSONA_DIRECTIONS.kaen44,
     providers: {
-      [PROVIDERS.GPT_SOVITS]: { configured: false, modelPath: null, note: 'Pending trained original Kaen44 executive voice. Licensed/consented data only; no real-person or character clone.' },
-      [PROVIDERS.CHATTERBOX]: { configured: false, refClipId: null, note: 'Pending approved ref clip for original Kaen44 direction; public TV/audio clips are moodboard only.' },
+      [PROVIDERS.GPT_SOVITS]: { configured: false, modelPath: null, note: 'Pending trained original K44 executive voice. Licensed/consented data only; no real-person or character clone.' },
+      [PROVIDERS.CHATTERBOX]: { configured: false, refClipId: null, note: 'Pending approved ref clip for original K44 direction; public TV/audio clips are moodboard only.' },
       [PROVIDERS.ELEVENLABS]: { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.kaen44.elevenLabsVoiceId, note: 'Preferred ready-made ElevenLabs voice when configured; local K44 official reference remains fallback.' },
       [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.kaen44.cartesiaVoiceId, note: 'Privileged explicit ready-made voice choice; local K44 official reference stays first.' },
       [PROVIDERS.AZURE]:      { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.kaen44.azureVoice, note: 'Fallback/explicit override HD ready-made voice.' },

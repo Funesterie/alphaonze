@@ -111,16 +111,16 @@ test('official voice link repair adds a real link when the model only names the 
   assert.match(repaired, /\[Écouter A11 – voix officielle\]\(\/api\/tts\/official\/a11\/audio\)/);
 });
 
-test('official voice link repair routes Kaen44 voice links to the Kaen44 sample', () => {
+test('official voice link repair routes K44 voice links to the K44 sample', () => {
   const repaired = repairOfficialVoiceListenLinks(
-    'Voici ma voix: [Écouter Kaen44 – voix officielle](https://k44.funesterie.me/cockpit). kaen44-official-french-narrator.wav.'
+    'Voici ma voix: [Écouter K44 – voix officielle](https://k44.funesterie.me/cockpit). kaen44-official-french-narrator.wav.'
   );
 
-  assert.match(repaired, /\[Écouter Kaen44 – voix officielle\]\(\/api\/tts\/official\/kaen44\/audio\)/);
+  assert.match(repaired, /\[Écouter K44 – voix officielle\]\(\/api\/tts\/official\/kaen44\/audio\)/);
   assert.doesNotMatch(repaired, /k44\.funesterie\.me\/cockpit/i);
 });
 
-test('official voice link repair canonicalizes wrong api.funesterie.com Kaen44 TTS urls', () => {
+test('official voice link repair canonicalizes wrong api.funesterie.com K44 TTS urls', () => {
   const repaired = repairOfficialVoiceListenLinks(
     'Teste ici: https://api.funesterie.com/tts/official/kaen44/audio?text=Bonjour%20je%20suis%20Kaen44'
   );
@@ -211,7 +211,7 @@ test('response draft catches long repeated meta loops from streamed providers', 
   assert.doesNotMatch(processed.content, /The user wants|We respond|<\|channel\|>/i);
 });
 
-test('response draft catches the We just answer leak seen in Kaen44 history', () => {
+test('response draft catches the We just answer leak seen in K44 history', () => {
   const processed = postProcessA11AssistantResponse({
     userMessage: 'ca va mieux ?',
     text: [

@@ -194,7 +194,7 @@ function buildProxyEmptyAssistantFallback(latestUserMessage = '', options = {}) 
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
   const surface = normalizeProxySurface(options.surface || options.persona || options.voicePersona);
-  const name = surface === 'kaen44' ? 'Kaen44' : surface === 'vivy' ? 'Vivy' : 'A11';
+  const name = surface === 'kaen44' ? 'K44' : surface === 'vivy' ? 'Vivy' : 'A11';
 
   if (/(allo|t es la|tu es la|vous etes la|quelqu un|reponds|réponds)/.test(folded)) {
     return `Oui, je suis là. ${name} reprend normalement.`;

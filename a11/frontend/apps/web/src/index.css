@@ -611,7 +611,7 @@
 }
 
 .kaen-shell .footer::before {
-  content: "Kaen44 · voix · documents · Funesterie";
+  content: "K44 · voix · documents · Funesterie";
   font-size: 12px;
 }
 
@@ -5128,7 +5128,7 @@ html.a11-auth-page-root body {
 
 
 /* ================================================================
-   NOSSEN v2 — Design system A11 / Kaen44
+   NOSSEN v2 — Design system A11 / K44
    Priorité haute (en fin de fichier) — surclasse le legacy.
    ================================================================ */
 
@@ -5152,7 +5152,7 @@ html.a11-auth-page-root body {
   --a11-c2:         #38bdf8;
   --a11-c3:         #818cf8;
   --a11-glow:       rgba(34,211,238,0.18);
-  /* Kaen44 */
+  /* K44 */
   --kaen-c1:        #f59e0b;
   --kaen-c2:        #ef4444;
   --kaen-c3:        #e879f9;
@@ -5193,7 +5193,7 @@ body {
   transition: background 0.4s ease;
 }
 
-/* Kaen44 override */
+/* K44 override */
 [data-surface="kaen44"] .header::before {
   background: linear-gradient(90deg,
     var(--kaen-c2) 0%,
@@ -5323,7 +5323,7 @@ body {
   box-shadow: 0 2px 14px rgba(14,84,120,0.35);
 }
 
-/* Bulle utilisateur — Kaen44 */
+/* Bulle utilisateur - K44 */
 [data-surface="kaen44"] .row.user .bubble {
   background: linear-gradient(145deg, #5a1e06 0%, #7c2a08 50%, #9a3410 100%) !important;
   color: #ffe8d4 !important;
@@ -5331,7 +5331,7 @@ body {
   box-shadow: 0 2px 14px rgba(154,52,16,0.3);
 }
 
-/* IA Kaen44 — légèrement plus chaud */
+/* IA K44 - légèrement plus chaud */
 [data-surface="kaen44"] .row.assistant .bubble {
   background: linear-gradient(155deg, #1a1008 0%, #110c06 100%) !important;
   border: 1px solid rgba(245,158,11,0.07) !important;

@@ -37,7 +37,7 @@ const FALLBACK_REPOS = [
 const LOCAL_MODULES = [
   ['alphaonze-root', 'AlphaOnze workspace root', '.', 'monorepo-root', 'Shared git root, docs, scripts and high-level deployment files.'],
   ['a11-backend-server', 'A11 backend server', 'a11/backend/apps/server', 'backend', 'Express/API/MCP-facing backend, image/video/audio routes and Neo4j sync scripts.'],
-  ['a11-frontend-web', 'A11/K44/Vivy web surfaces', 'a11/frontend/apps/web', 'frontend', 'React/Vite surfaces for A11, Kaen44, Vivy, casino and cockpit-style UI.'],
+  ['a11-frontend-web', 'A11/K44/Vivy web surfaces', 'a11/frontend/apps/web', 'frontend', 'React/Vite surfaces for A11, K44, Vivy, casino and cockpit-style UI.'],
   ['a11mcp-bridge', 'A11 MCP shared bridge', 'a11mcp', 'mcp', 'HTTP/stdio MCP bridge, agent bus, discussions, public/private tool boundaries.'],
   ['qflush-libs', 'QFlush shared libs', 'a11/backend/libs', 'runtime-library', 'QFlush/Cortex/Spyder/Rome/Piccolo/Doctor module layer.'],
   ['dragon-runtime', 'Dragon runtime', 'a11/dragon', 'runtime-app', 'Dragon daemon/API/web contracts and shared packages.'],
@@ -96,7 +96,7 @@ const CONTRACTS = [
   ['a11mcp-http-jsonrpc', 'A11MCP HTTP JSON-RPC', 'a11mcp/README.md', 'mcp-contract', 'Shared HTTP MCP endpoint, public/private split, token policy and agent bus docs.'],
   ['route-map-json', 'A11 route map JSON', 'a11/runtime/knowledge-graph/a11-route-map.json', 'semantic-contract', 'Recovery map for local services, identities, endpoints and graph roots.'],
   ['runtime-hooks-json', 'A11 runtime hooks JSON', 'a11/runtime/knowledge-graph/a11-runtime-hooks.json', 'semantic-contract', 'Runtime hook map for Cortex, Spyder, Rome, Doctor, Piccolo, Corpus and Neo4j.'],
-  ['agent-domain-pack-json', 'Agent domain pack JSON', 'a11/runtime/knowledge-graph/a11-agent-domain-pack.json', 'semantic-contract', 'A11/Kaen44/Vivy domains, tools, SFX, culture lanes and source policy.'],
+  ['agent-domain-pack-json', 'Agent domain pack JSON', 'a11/runtime/knowledge-graph/a11-agent-domain-pack.json', 'semantic-contract', 'A11/K44/Vivy domains, tools, SFX, culture lanes and source policy.'],
   ['ecosystem-scope-json', 'Ecosystem scope JSON', 'a11/runtime/knowledge-graph/funesterie-ecosystem-scope.json', 'semantic-contract', 'Full org/module/package/contract/runtime connector visibility map.'],
   ['dragon-manifest', 'Dragon manifest', 'a11/dragon/DRAGON_MANIFEST.json', 'runtime-contract', 'Dragon package/app/daemon/API manifest.'],
   ['kiro-mcp-settings', 'Kiro MCP settings', '.kiro/settings/mcp.json', 'mcp-config', 'Local MCP server wiring; secrets must stay redacted and out of graph properties.'],
@@ -109,7 +109,7 @@ const SHARED_RUNTIMES = [
   ['agent-bus', 'Agent bus', 'coordination', 'Append-only presence, jobs, discussions and coordination messages.'],
   ['r2-files', 'Cloudflare R2 files', 'object-storage', 'Generated/public assets and controlled downloadable artifacts.'],
   ['netlify-surfaces', 'Netlify surfaces', 'frontend-hosting', 'Cockpit, public pages and static deployment routes.'],
-  ['render-services', 'Render services', 'backend-hosting', 'A11/Kaen44/Vivy backend deployment targets.'],
+  ['render-services', 'Render services', 'backend-hosting', 'A11/K44/Vivy backend deployment targets.'],
   ['qflush-runtime', 'QFlush runtime bus', 'local-action', 'Bounded gamepad, keyboard, mouse and demo/runtime actions.'],
   ['corpus-library', 'Corpus library', 'knowledge-store', 'Future source-card and educational corpus library.'],
 ];
@@ -122,7 +122,7 @@ const SEMANTIC_TOOLS = [
   ['cortex', 'Cortex', 'packet-router', 'Routes runtime packets and action hints.'],
   ['telemetry', 'Telemetry', 'events', 'Keeps runtime history and event traces queryable.'],
   ['corpus', 'Corpus', 'source-index', 'Indexes curated source cards, local docs and safe summaries.'],
-  ['agent-domain-pack', 'Agent Domain Pack', 'domain-index', 'Maps A11/Kaen44/Vivy domains, culture lanes and SFX.'],
+  ['agent-domain-pack', 'Agent Domain Pack', 'domain-index', 'Maps A11/K44/Vivy domains, culture lanes and SFX.'],
   ['ecosystem-scope', 'Ecosystem Scope', 'org-index', 'Maps repos, packages, contracts, runtimes and connector visibility.'],
   ['neo4j-memory-router', 'Neo4j Memory Router', 'graph-router', 'Routes safe memory writes/searches between local and Aura graphs.'],
 ];
@@ -160,7 +160,7 @@ const ACCESS_PROFILES = [
 ];
 
 const REPO_PROFILES = {
-  alphaonze: ['monorepo', 'Main application monorepo for A11, Kaen44, Vivy, backend routes, frontend surfaces, desktop packaging, runtime scripts and deployment glue.', ['a11', 'frontend', 'backend', 'desktop', 'mcp', 'neo4j', 'runtime'], 'high', ['github-description', 'local-workspace']],
+  alphaonze: ['monorepo', 'Main application monorepo for A11, K44, Vivy, backend routes, frontend surfaces, desktop packaging, runtime scripts and deployment glue.', ['a11', 'frontend', 'backend', 'desktop', 'mcp', 'neo4j', 'runtime'], 'high', ['github-description', 'local-workspace']],
   a11mcp: ['mcp-bridge', 'Shared MCP bridge for Funesterie agents, Neo4j/Aura, Podman profiles, public/private tool boundaries, discussions and agent bus coordination.', ['mcp', 'agent-bus', 'neo4j', 'coordination'], 'high', ['github-description', 'local-workspace']],
   flush: ['runtime-orchestrator', 'Unified QFlush runtime repository for bounded orchestration, command surfaces, gamepad/demo control and shared automation primitives.', ['qflush', 'runtime', 'orchestration', 'local-actions'], 'high', ['github-description', 'language-map']],
   carmelo: ['game-ui', 'Pirate-slots React/Vite/Electron game or demo surface with smoke playtests and Netlify/Vite packaging.', ['game', 'react', 'vite', 'electron', 'playtest'], 'medium', ['package-name:pirate-slots', 'root-files:index.html,src,public']],

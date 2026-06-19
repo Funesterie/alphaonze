@@ -873,6 +873,17 @@ function shouldDefaultOfficialToElevenLabsRvc(body = {}) {
   return Boolean(String(voiceId).trim());
 }
 
+// Final gate for the official ElevenLabs+RVC route: paid tier AND ElevenLabs
+// actually configured. Requiring ElevenLabs here means an explicit voiceMode
+// request gracefully falls back to the XTTS/RVC official route when ElevenLabs
+// is unavailable, instead of erroring — we never want a cold XTTS pass on a
+// clean ElevenLabs clip, but with no ElevenLabs clip the official route is fine.
+function shouldRouteOfficialToElevenLabsRvc(req = {}, body = {}) {
+  if (!canUsePaidTtsVoice(req)) return false;
+  if (!isProviderRuntimeConfigured(PROVIDERS.ELEVENLABS)) return false;
+  return wantsElevenLabsRvcPipeline(body) || shouldDefaultOfficialToElevenLabsRvc(body);
+}
+
 function enforceBasicTtsCostPolicy(req = {}, body = {}) {
   if (canUsePaidTtsVoice(req)) return body;
   if (shouldAllowBasicOwnedOfficialCloudVoice(body)) {
@@ -2682,10 +2693,10 @@ function getOfficialElevenLabsVoiceEnvValue(persona = 'a11') {
   const normalized = normalizeTtsPersona(persona);
   const candidates = normalized === 'kaen44'
     ? [
-      'A11_ELEVENLABS_KAEN44_VOICE_ID',
       'A11_ELEVENLABS_K44_VOICE_ID',
-      'ELEVENLABS_KAEN44_VOICE_ID',
+      'A11_ELEVENLABS_KAEN44_VOICE_ID',
       'ELEVENLABS_K44_VOICE_ID',
+      'ELEVENLABS_KAEN44_VOICE_ID',
     ]
     : normalized === 'vivy'
       ? [
@@ -4589,8 +4600,7 @@ async function handleTtsSpeakRequest(req, res) {
     // officielle" button gets clean ElevenLabs words + RVC re-timbre without any
     // client change. Basic tiers keep their gating; no-ElevenLabs envs stay on
     // the XTTS/RVC official route.
-    const useElevenLabsRvc = canUsePaidTtsVoice(req)
-      && (wantsElevenLabsRvcPipeline(req.body || {}) || shouldDefaultOfficialToElevenLabsRvc(baseBody));
+    const useElevenLabsRvc = shouldRouteOfficialToElevenLabsRvc(req, baseBody);
     let requestBody = useElevenLabsRvc
       ? normalizeElevenLabsRvcRequest({ ...baseBody, voiceMode: 'elevenlabs-rvc' })
       : normalizeA11OfficialReferenceRequest(baseBody);
@@ -5593,4 +5603,5 @@ module.exports.configureTtsRouter = configureTtsRouter;
 module.exports.normalizeElevenLabsRvcRequest = normalizeElevenLabsRvcRequest;
 module.exports.wantsElevenLabsRvcPipeline = wantsElevenLabsRvcPipeline;
 module.exports.shouldDefaultOfficialToElevenLabsRvc = shouldDefaultOfficialToElevenLabsRvc;
+module.exports.shouldRouteOfficialToElevenLabsRvc = shouldRouteOfficialToElevenLabsRvc;
 module.exports.hasSpecialLocalVoiceStyle = hasSpecialLocalVoiceStyle;

@@ -107,7 +107,7 @@ function createCallToolStub() {
           totalCount: 4,
           agents: [
             { id: 'a11', name: 'A11', active: true },
-            { id: 'kaen44', name: 'Kaen44', active: true },
+            { id: 'kaen44', name: 'K44', active: true },
             { id: 'vivy', name: 'Vivy', active: true },
             { id: 'neo4j-secret-port', name: 'Neo4j token tunnel', active: true },
           ],
@@ -329,7 +329,7 @@ test('private MCP cockpit summarizes MCP state for allowed admin accounts withou
     assert.equal(json.vivy.ok, true);
     assert.equal(json.vivy.audio, true);
     assert.equal(json.agents.active, 3);
-    assert.deepEqual(json.agents.names, ['A11', 'Kaen44', 'Vivy', 'Agent 4']);
+    assert.deepEqual(json.agents.names, ['A11', 'K44', 'Vivy', 'Agent 4']);
     assert.equal(json.jobs.running, 1);
     assert.equal(json.jobs.ready, 1);
     assert.equal(json.game.ready, true);

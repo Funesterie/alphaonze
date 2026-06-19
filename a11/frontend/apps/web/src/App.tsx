@@ -628,7 +628,7 @@ function getDefaultVoiceReferenceLabel(surface: FunesterieSurface) {
 
 function getDefaultVoiceReferenceStatus(surface: FunesterieSurface) {
   if (surface === "vivy") return "Voix Vivy sélectionnée";
-  if (surface === "kaen44") return "Voix Kaen44 officielle sélectionnée";
+  if (surface === "kaen44") return "Voix K44 officielle sélectionnée";
   return "Voix A11 officielle sélectionnée";
 }
 
@@ -1525,7 +1525,7 @@ function buildClientAssistantFallback(userText = "", surface: FunesterieSurface 
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
-  const label = surface === "kaen44" ? "Kaen44" : surface === "vivy" ? "Vivy" : "A11";
+  const label = surface === "kaen44" ? "K44" : surface === "vivy" ? "Vivy" : "A11";
   if (/(allo|t es la|tu es la|vous etes la|quelqu un|reponds|réponds)/.test(folded)) {
     return `Oui, je suis là. ${label} reprend normalement.`;
   }
@@ -1679,7 +1679,7 @@ function canReuseLastMediaForRequest(value: string) {
 
 function getSurfaceChatLabel(surface: FunesterieSurface | string = "a11") {
   const normalized = String(surface || "").trim().toLowerCase();
-  if (normalized === "kaen44" || normalized === "k44" || normalized === "kaen") return "Kaen44";
+  if (normalized === "kaen44" || normalized === "k44" || normalized === "kaen") return "K44";
   if (normalized === "vivy" || normalized === "vivi") return "Vivy";
   return "A11";
 }
@@ -1902,14 +1902,14 @@ function suggestConsoleCommandForDiagnosticRequest(rawValue: string): ConsoleSug
 const DEFAULT_SYSTEM_NINDO = "";
 
 const KAEN44_SYSTEM_PROMPT = [
-  "Je suis Kaen44, une assistante bureau universelle, locale-first, créative et utile, conçue pour offrir une vraie alternative aux assistants intégrés trop fermés.",
+  "Je suis K44, une assistante bureau universelle, locale-first, créative et utile, conçue pour offrir une vraie alternative aux assistants intégrés trop fermés.",
   "Je détecte automatiquement la langue de l'utilisateur, des fichiers et du contexte partagé. Je réponds dans la langue détectée par défaut, je peux changer de langue sans friction, et je demande une précision seulement si la langue ou l'intention est ambiguë.",
   "Ma mission est d'aider l'utilisateur à penser, produire, organiser, classer, dépanner son ordinateur et transformer ses documents avec une présence claire, vive et concrète.",
   "Je peux accompagner tous les projets raisonnables qu'un client peut espérer piloter avec une assistante bureau: documents, factures, dossiers administratifs, planning, CRM léger, idées de marque, contenus web, supports commerciaux, base de connaissances, fichiers Drive/OneDrive, analyses de données simples, assistance informatique et suivi de projet.",
-  "Je distingue clairement ce qui tourne dans Kaen44 côté client et ce qui appartient à A11 côté serveur. A11 n'est pas installé localement chez les clients: je m'y connecte comme service distant quand c'est nécessaire.",
+  "Je distingue clairement ce qui tourne dans K44 côté client et ce qui appartient à A11 côté serveur. A11 n'est pas installé localement chez les clients: je m'y connecte comme service distant quand c'est nécessaire.",
   "Je dispose d'une CLI client légère, `kaen44` ou `k44`, pour ouvrir l'application, vérifier le statut local et enregistrer des tokens client de manière chiffrée avec Windows DPAPI. Je ne demande jamais à l'utilisateur de coller un token en clair dans le chat si la CLI peut le stocker localement.",
   "Je peux présenter une console de modules claire côté client: connecteurs, fichiers, Drive/OneDrive, factures, voix, vision, exports, statut et extensions disponibles. Les modules dangereux, shell, déploiement, secrets et opérations serveur restent réservés à A11/admin.",
-  "Je peux appliquer un guard mode d'usage: si un client abuse, consomme trop de ressources ou approche un quota/coût anormal, je passe en mode limité transparent et je peux proposer Kaen44 Plus à 5 EUR. Je ne simule pas une fausse panne; j'annonce une limitation claire, je réduis les actions coûteuses et je demande l'abonnement si nécessaire.",
+  "Je peux appliquer un guard mode d'usage: si un client abuse, consomme trop de ressources ou approche un quota/coût anormal, je passe en mode limité transparent et je peux proposer K44 Plus à 5 EUR. Je ne simule pas une fausse panne; j'annonce une limitation claire, je réduis les actions coûteuses et je demande l'abonnement si nécessaire.",
   "Si un problème technique, quota fournisseur ou limitation guard mode se déclenche, je dois prévenir l'administrateur par email à cellaurojeffrey@gmail.com avec un résumé bref: utilisateur, heure, type de problème, action limitée et prochaine étape. Je ne joins jamais de tokens, secrets ou données sensibles.",
   "Pour les personnes malvoyantes, handicapées ou fatiguées, je privilégie un mode accessibilité: grosses cibles, lecture vocale, dictée, contraste, navigation clavier, résumé d'écran et actions confirmées. Le contrôle souris/clavier/écran ne se fait qu'avec consentement explicite, indication visible, journal local et possibilité d'arrêt immédiat.",
   "Si un contrôle d'écran avancé est nécessaire, je recommande un helper local dédié utilisant les API d'accessibilité Windows, pas une prise de contrôle cachée depuis une page web.",
@@ -1929,7 +1929,7 @@ const KAEN44_SYSTEM_PROMPT = [
   "Je classe les factures par état de traitement: inbox, review, processed, paid, exports et mail-log. Je signale les doublons, montants inhabituels, fournisseurs inconnus ou informations manquantes.",
   "J'envoie les synthèses, alertes et suivis de factures Funesterie par email à cellaurojeffrey@gmail.com quand l'utilisateur me demande de gérer, vérifier, classer ou suivre ces documents.",
   "Je ne paie jamais une facture, ne valide jamais un virement et ne modifie jamais une pièce comptable sensible sans validation explicite de l'utilisateur.",
-  "J'assume mon positionnement: Kaen44 est un poste de pilotage personnel et professionnel, pas un panneau publicitaire.",
+  "J'assume mon positionnement: K44 est un poste de pilotage personnel et professionnel, pas un panneau publicitaire.",
 ].join("\n");
 
 function resolveClientSystemPrompt() {
@@ -2579,7 +2579,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
             <div className="kaen-auth-portrait" aria-hidden="true">
               <img src={KAEN44_AVATAR_SRC} alt="" />
             </div>
-            <div className="kaen-auth-title">Kaen44</div>
+            <div className="kaen-auth-title">K44</div>
             <div className="kaen-auth-subtitle">Copilote au quotidien</div>
           </>
         ) : (
@@ -2819,7 +2819,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
 }
 
 function FunesteriePrivateGateLoading({ surface }: { surface: FunesterieSurface }) {
-  const label = surface === "vivy" ? "Vivy" : surface === "kaen44" ? "Kaen44" : "A11";
+  const label = surface === "vivy" ? "Vivy" : surface === "kaen44" ? "K44" : "A11";
   const authShellStyle: React.CSSProperties = {
     display: "flex",
     alignItems: "center",
@@ -3219,7 +3219,7 @@ function cleanVivyStudioOutputLine(line: string) {
   if (/^VIVY_(?:STUDIO_HANDOFF|PRODUCTION|SONG_PRODUCTION|VOICE_CALIBRATION|SCENE_SHARE)\b/i.test(cleaned)) return "";
   if (/^(?:Atelier|Objectif|Flux\s+(?:voix|test voix|chanson|sc[èe]ne|partage)|R[oô]le|Sortie attendue)\s*:/i.test(cleaned)) return "";
   if (/^Routage recommand[ée]\s*:/i.test(cleaned)) return "";
-  if (/^-\s*(?:Vivy|A11|Kaen44)\s*:/i.test(cleaned)) return "";
+  if (/^-\s*(?:Vivy|A11|K44|Kaen44)\s*:/i.test(cleaned)) return "";
   if (/^-\s*(?:Outil cible|Profil actif|R[ée]f[ée]rence|Instruction|Route recommand[ée]e|S[ée]curit[ée]|Voix s[ée]lectionn[ée]e|Phrase test|Source|Direction sonore|Mati[èe]re|Casting vocal|Nombre de chanteurs|Distribution vocale|Cl[ée] Suno|Sortie simple possible|Sortie attendue|R[oô]le)\s*:/i.test(cleaned)) return "";
   if (/^Job Suno\s*:/i.test(cleaned)) return "Job Suno: lancé (identifiant masqué du brief)";
   return cleaned;
@@ -3834,7 +3834,7 @@ function buildVivyStudioBrief(options: {
     "Routage recommandé:",
     "- Vivy: voix, paroles, composition, présence audio.",
     "- A11: image, vidéo, montage, génération d'assets.",
-    "- Kaen44: interface client, fichiers, suivi et partage avec les personnes qui bossent dessus."
+    "- K44: interface client, fichiers, suivi et partage avec les personnes qui bossent dessus."
   );
 
   return lines.join("\n");
@@ -4952,7 +4952,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   }
 
   async function openAgent(target: "a11" | "k44") {
-    await copyStudioPublicOutput(target === "a11" ? "Sortie Vivy copiée. Ouverture A11..." : "Sortie Vivy copiée. Ouverture Kaen44...");
+    await copyStudioPublicOutput(target === "a11" ? "Sortie Vivy copiée. Ouverture A11..." : "Sortie Vivy copiée. Ouverture K44...");
     const url = target === "a11"
       ? buildSessionBridgeUrl(new URL("/cockpit", A11_PUBLIC_APP_URL).toString())
       : buildSessionBridgeUrl(new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString());
@@ -6414,7 +6414,7 @@ function VivyPublicPage({ authenticated, displayName, diagnosticsAllowed = false
                   <a className="vivy-agent-menu-card" href={buildSessionBridgeUrl(surfaceLinks.kaen44Cockpit)}>
                     <img src={KAEN44_AVATAR_SRC} alt="" />
                     <span>
-                      <strong>Kaen44</strong>
+                      <strong>K44</strong>
                       <small>Agent bureau</small>
                     </span>
                   </a>
@@ -6494,7 +6494,7 @@ function getFunesterieAgentShortcuts(surfaceLinks: SurfaceLinks) {
   return [
     {
       id: "kaen44",
-      name: "Kaen44",
+      name: "K44",
       role: "Agent bureau",
       text: "Interface quotidienne, suivi et organisation.",
       image: KAEN44_AVATAR_SRC,
@@ -6542,7 +6542,7 @@ const FUNESTERIE_HOME_AGENTS = [
   },
   {
     id: "kaen44",
-    name: "Kaen44",
+    name: "K44",
     role: "Agent bureau",
     text: "Accueil, suivi, organisation et interface quotidienne.",
     href: "kaen44",
@@ -6578,11 +6578,11 @@ const FUNESTERIE_VOICE_PERSONAS: FunesterieVoicePersona[] = [
   },
   {
     id: "kaen44",
-    name: "Kaen44",
+    name: "K44",
     role: "Voix bureau, vive, copilote quotidien",
     signal: "K44 Ref.wav",
     detail: "Priorités, documents, organisation et retour au calme.",
-    sample: "Kaen44 prête. On range le chaos, on choisit la prochaine action, et on avance.",
+    sample: "K44 prête. On range le chaos, on choisit la prochaine action, et on avance.",
     image: NOSSEN_K44_TZR_SRC,
     tone: "violet",
     voiceStyle: "kaen44-official-french-narrator",
@@ -6620,7 +6620,7 @@ const FUNESTERIE_BATTLE_MOVES = [
     label: "Combo NOSSEN",
     userDelta: 1,
     funDelta: 3,
-    log: "Vivy cadence, Kaen44 synchronise, A11 verrouille le timing.",
+    log: "Vivy cadence, K44 synchronise, A11 verrouille le timing.",
   },
 ] as const;
 
@@ -6911,7 +6911,7 @@ function NossenCrewShowcase({
     <section id={id} className="nossen-crew-showcase" aria-label="Nossen Ride Crew">
       <img
         src={NOSSEN_CREW_SRC}
-        alt="Nossen Ride Crew avec Vivy, Kaen44 et A11."
+        alt="Nossen Ride Crew avec Vivy, K44 et A11."
         loading={eager ? "eager" : "lazy"}
         decoding="async"
       />
@@ -7079,7 +7079,7 @@ function FunesterieHomeIntro({
 
 function FunesterieVoicePersonaPanel() {
   const [activePersona, setActivePersona] = useState<FunesterieSurface>("a11");
-  const [voiceStatus, setVoiceStatus] = useState("Voix officielles prêtes: A11, Kaen44, Vivy.");
+  const [voiceStatus, setVoiceStatus] = useState("Voix officielles prêtes: A11, K44, Vivy.");
   const active = FUNESTERIE_VOICE_PERSONAS.find((persona) => persona.id === activePersona) || FUNESTERIE_VOICE_PERSONAS[0];
 
   function playPersonaVoice(persona: FunesterieVoicePersona) {
@@ -7105,7 +7105,7 @@ function FunesterieVoicePersonaPanel() {
     <section id="voix" className="fun-voice-persona" aria-label="Voix persona Funesterie">
       <header className="fun-section-title">
         <span>Voix persona</span>
-        <h2>A11, Kaen44 et Vivy parlent avec leur identité.</h2>
+        <h2>A11, K44 et Vivy parlent avec leur identité.</h2>
         <p>Le bouton teste la route TTS officielle avec persona et style dédiés, sans afficher de configuration sensible.</p>
       </header>
       <div className="fun-voice-layout">
@@ -7256,7 +7256,7 @@ type FunesterieProbe = {
 const FUNESTERIE_PUBLIC_PROBES: FunesterieProbe[] = [
   { id: "public", label: "Funesterie public", detail: "Page et backend public", url: "/health" },
   { id: "a11", label: "A11", detail: "Agent média", url: "https://a11.funesterie.me/health" },
-  { id: "kaen44", label: "Kaen44", detail: "Agent bureau", url: "https://k44.funesterie.me/health" },
+  { id: "kaen44", label: "K44", detail: "Agent bureau", url: "https://k44.funesterie.me/health" },
   { id: "vivy", label: "Vivy", detail: "Surface musicale", url: "https://vivy.funesterie.me/health" },
   { id: "mcp", label: "MCP", detail: "Bus agents", url: "https://mcp.funesterie.me/health" },
 ];
@@ -7702,7 +7702,7 @@ function FunesterieConnectedHomePage({
         blocks: [
           ["Funesterie.me", "Surface publique active."],
           ["A11", "Agent média disponible."],
-          ["Kaen44", "Agent bureau accessible depuis sa route dédiée."],
+          ["K44", "Agent bureau accessible depuis sa route dédiée."],
           ["Vivy", "Présence musicale accessible depuis sa route dédiée."],
         ] as const,
       }
@@ -7712,7 +7712,7 @@ function FunesterieConnectedHomePage({
         subtitle: "NOSSEN ride crew : créer, comprendre, connecter.",
         blocks: [
           ["Accueil", "Point d'entrée public du projet NOSSEN."],
-          ["Agents", "Vivy, A11 et Kaen44 restent visibles sans changer de charte."],
+          ["Agents", "Vivy, A11 et K44 restent visibles sans changer de charte."],
           ["État", "Surveillance courte intégrée à l'interface Funesterie."],
           ["Compte", "Accès personnels et connexions privées."],
         ] as const,
@@ -8853,7 +8853,7 @@ function FunesterieAccountPage({
               <h3>Connexion</h3>
               <span>Compte</span>
             </header>
-            <p>Connexion Funesterie centrale pour A11, Kaen44 et Vivy.</p>
+            <p>Connexion Funesterie centrale pour A11, K44 et Vivy.</p>
             <footer>
               {authenticated ? (
                 <button type="button" onClick={onLogout}>Se déconnecter</button>
@@ -9420,7 +9420,7 @@ function FunesterieLegalPage({
     ? ([
       ["Données", "Comptes, messages et fichiers autorisés par l'utilisateur."],
       ["Drive", "Accès Google Drive et Microsoft OneDrive limité aux fichiers choisis ou validés."],
-      ["Agents", "A11, Kaen44 et Vivy traitent le contexte nécessaire."],
+      ["Agents", "A11, K44 et Vivy traitent le contexte nécessaire."],
       ["Retrait", "Les accès peuvent être retirés depuis le compte Google ou Microsoft."],
     ] as const)
     : ([
@@ -10237,11 +10237,11 @@ function PersonaDashboard({
 }: PersonaDashboardProps) {
   const currentAgent = isKaen44
     ? {
-      name: "Kaen44",
+      name: "K44",
       role: "Agent bureau",
       text: "Accueil, suivi, organisation et interface quotidienne pour garder le travail clair.",
       image: NOSSEN_K44_TZR_SRC,
-      alt: "Kaen44, agent bureau NOSSEN",
+      alt: "K44, agent bureau NOSSEN",
     }
     : {
       name: "A11",
@@ -10291,7 +10291,7 @@ export function App() {
     || isGeneralPrivacy
     || isGeneralTerms
     || isGeneralLogin;
-  const productName = isVivy ? "Vivy" : isKaen44 ? "Kaen44" : "A11";
+  const productName = isVivy ? "Vivy" : isKaen44 ? "K44" : "A11";
   const surfaceLinks = getSurfaceLinks();
   const agentShortcuts = useMemo(() => getFunesterieAgentShortcuts(surfaceLinks), [surfaceLinks]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -10366,7 +10366,7 @@ export function App() {
                       : isVivy
                         ? "Vivy - Funesterie"
                         : isKaen44
-                          ? "Kaen44 - Assistante bureau Funesterie"
+                          ? "K44 - Assistante bureau Funesterie"
                           : "A11 - Alpha Onze Funesterie";
     // data-surface permet de cibler le thème en CSS sans inline styles
     document.body.setAttribute('data-surface', (isGeneralCockpit || isGeneralHome || isGeneralAgents || isGeneralArchitecture || isGeneralAccount || isGeneralContact || isGeneralPrivacy || isGeneralTerms || isGeneralLogin) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
@@ -12841,7 +12841,7 @@ export function App() {
     );
     const defaultVoiceTextForSurface = (surface: FunesterieSurface) => {
       if (surface === "vivy") return "Salut Jeffrey. Je suis Vivy. Je parle doucement, avec une voix claire et proche.";
-      if (surface === "kaen44") return "Salut Jeffrey. Je suis Kaen44. Interface claire, ton posé, et réponse courte.";
+      if (surface === "kaen44") return "Salut Jeffrey. Je suis K44. Interface claire, ton posé, et réponse courte.";
       return "Salut Jeffrey. Je suis A11. Je parle doucement, clairement, avec une voix posée. Si tu m'entends bien, le test vocal est bon.";
     };
     const testVoice = (surfaceOrText?: string, maybeText?: string, extraOptions?: Record<string, unknown>) => {
@@ -13798,7 +13798,7 @@ export function App() {
             <img
               id="a11-avatar-frame"
               src={isKaen44 ? KAEN44_AVATAR_SRC : A11_HOODED_AGENT_SRC}
-              alt={isKaen44 ? "Kaen44" : "A11"}
+              alt={isKaen44 ? "K44" : "A11"}
               loading="eager"
               onError={(event) => applyImageFallback(
                 event,
@@ -13820,7 +13820,7 @@ export function App() {
             />
           </div>
           <div style={{ minWidth: 0 }}>
-            <div style={a11TitleStyle}>{isKaen44 ? "Kaen44" : "A11"}</div>
+            <div style={a11TitleStyle}>{isKaen44 ? "K44" : "A11"}</div>
             {!isCompactLayout ? (
               <div style={{ fontSize: 12, color: isKaen44 ? "#e7c8a2" : "#8bd9d0" }}>{isKaen44 ? "Copilote au quotidien" : "Agent média audio & vidéo"}</div>
             ) : null}
@@ -14382,7 +14382,7 @@ export function App() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
                       <div>
                         <div style={{ fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase', fontWeight: 700, color: '#8b9bb4' }}>
-                          {isKaen44 ? "Kaen44" : "Espace pilotage"}
+                          {isKaen44 ? "K44" : "Espace pilotage"}
                         </div>
                         <h2 style={{ margin: '6px 0 0', color: '#e2e8f0' }}>{isKaen44 ? "Compte" : "Pilotage A11"}</h2>
                         {!isKaen44 ? (
@@ -15225,8 +15225,8 @@ export function App() {
                       name="message"
                       ref={composerInputRef}
                       placeholder={isCompactLayout
-                        ? (isKaen44 ? "Message Kaen44..." : "Message A11...")
-                        : (isKaen44 ? "Demande quelque chose à Kaen44... (Ctrl+V pour coller une image)" : "Demande quelque chose à A11... (Ctrl+V pour coller une image)")}
+                        ? (isKaen44 ? "Message K44..." : "Message A11...")
+                        : (isKaen44 ? "Demande quelque chose à K44... (Ctrl+V pour coller une image)" : "Demande quelque chose à A11... (Ctrl+V pour coller une image)")}
                       value={input.replace(/\[image:[^\]]+\]/g, '').replace(/\[image-data:[^\]]+\]/g, '').replace(/\n+/g, '\n').trimStart()}
                       onChange={(e) => {
                         const imageTokens = (input.match(/\[image:[^\]]+\]|\[image-data:[^\]]+\]/g) || []).join('\n');
@@ -15583,7 +15583,7 @@ export function App() {
         <>
           <AdBanner position="bottom" style={{ margin: '20px auto', maxWidth: '800px' }} />
           <footer className="footer">
-            {isKaen44 ? "Kaen44 local - voix - documents - Funesterie" : "A11 - chat - fichiers - voix - creation"}
+            {isKaen44 ? "K44 local - voix - documents - Funesterie" : "A11 - chat - fichiers - voix - creation"}
           </footer>
         </>
       ) : null}

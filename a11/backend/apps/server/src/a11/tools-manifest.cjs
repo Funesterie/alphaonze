@@ -219,7 +219,7 @@ const TOOL_MANIFEST = {
     args: { text: "string", task: "string (ex: 'summary', 'bullet-points', 'explain', 'refactor')" }
   },
   agent_role_route: {
-    description: "Route une demande vers le bon agent Funesterie: A11 media/image/video, Vivy audio, Kaen44 prompts/client, QFlush runtime, Nexus supervision.",
+    description: "Route une demande vers le bon agent Funesterie: A11 media/image/video, Vivy audio, K44 prompts/client, QFlush runtime, Nexus supervision.",
     dangerLevel: "low",
     args: {
       task: "string (demande utilisateur ou mission)",

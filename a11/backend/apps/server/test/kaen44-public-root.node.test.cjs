@@ -5,7 +5,7 @@ const path = require('node:path');
 
 const serverPath = path.resolve(__dirname, '..', 'server.cjs');
 
-test('Kaen44 public root is served as a public page, not redirected to cockpit', () => {
+test('K44 public root is served as a public page, not redirected to cockpit', () => {
   const serverSource = fs.readFileSync(serverPath, 'utf8');
   const match = serverSource.match(/function sendEmbeddedUiRoot\(req, res\) \{[\s\S]*?\n\}/);
 

@@ -48,7 +48,7 @@ test('/api/llm/chat empty system prompt still receives active identity context',
   assert.match(prompt, /\bNOSSEN\b/);
   assert.match(prompt, /Je connais Funesterie comme l'espace de travail/i);
   assert.match(prompt, /identites front distinctes/i);
-  assert.match(prompt, /Si la surface active est Kaen44\/K44/i);
+  assert.match(prompt, /Si la surface active est K44\/kaen44/i);
   assert.match(prompt, /\bVivy\b/);
   assert.match(prompt, /identite musicale/i);
   assert.match(prompt, /A11 MCP/i);
@@ -64,19 +64,19 @@ test('/api/llm/chat empty system prompt still receives active identity context',
   assert.match(prompt, /surface active parle en "je"/i);
 });
 
-test('/api/chat Kaen44 surface pins first-person identity away from A11', () => {
-  const prompt = chatRouter.buildA11ChatSystemPrompt('Je suis Kaen44.', {
+test('/api/chat K44 surface pins first-person identity away from A11', () => {
+  const prompt = chatRouter.buildA11ChatSystemPrompt('Je suis K44.', {
     surface: 'kaen44',
     persona: 'kaen44',
   });
 
-  assert.match(prompt, /Surface active: Kaen44/i);
-  assert.match(prompt, /Quand je dis "je", je suis Kaen44/i);
+  assert.match(prompt, /Surface active: K44/i);
+  assert.match(prompt, /Quand je dis "je", je suis K44/i);
   assert.match(prompt, /copilote de bureau Funesterie/i);
   assert.match(prompt, /je ne reponds pas comme "A11"/i);
   assert.match(prompt, /je n utilise pas "we"/i);
   assert.match(prompt, /kaen44-official-french-narrator/i);
-  assert.doesNotMatch(prompt, /ma surface client est Kaen44/i);
+  assert.doesNotMatch(prompt, /ma surface client est Kaen44|ma surface client est K44/i);
 });
 
 test('/api/chat system prompt avoids priming leaked reasoning phrases', () => {
@@ -88,17 +88,17 @@ test('/api/chat system prompt avoids priming leaked reasoning phrases', () => {
   assert.match(prompt, /sans trop divaguer/i);
 });
 
-test('/api/chat finalizer never returns an empty Kaen44 assistant bubble', () => {
+test('/api/chat finalizer never returns an empty K44 assistant bubble', () => {
   const content = chatRouter.finalizeA11ChatReply('', 'allo ?', '', {
     surface: 'kaen44',
     persona: 'kaen44',
   });
 
-  assert.match(content, /Kaen44|je suis là/i);
+  assert.match(content, /K44|je suis là/i);
   assert.doesNotMatch(content, /^\s*$/);
 });
 
-test('/api/chat finalizer rewrites Kaen44 internal reasoning leaks naturally', () => {
+test('/api/chat finalizer rewrites K44 internal reasoning leaks naturally', () => {
   const content = chatRouter.finalizeA11ChatReply(
     'We just answer. The user is asking for a short answer. Respond in French. Provide short.',
     'ca va mieux ?',
@@ -125,7 +125,7 @@ test('/api/chat local Ollama prompt stays compact enough for the local model', (
   const compact = chatRouter.buildA11CompactLocalSystemPrompt('', { surface: 'kaen44' });
 
   assert.ok(compact.length < 1800);
-  assert.match(compact, /Surface active: Kaen44/i);
+  assert.match(compact, /Surface active: K44/i);
   assert.match(compact, /Funesterie[\s\S]*NOSSEN/i);
   assert.match(compact, /derniere demande utilisateur/i);
   assert.match(compact, /demande utilisateur porte l'intention/i);

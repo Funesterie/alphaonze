@@ -54,7 +54,7 @@ describe('voice-provider-manifest', () => {
 
     it('builds provider instructions with the licensed-data guardrail', () => {
       const instruction = buildVoicePersonaInstruction('kaen44');
-      assert.match(instruction, /Voix Kaen44 originale/i);
+      assert.match(instruction, /Voix K44 originale/i);
       assert.match(instruction, /owned, licensed, or explicitly consented audio/i);
       assert.match(instruction, /style_reference_only_no_impersonation/i);
     });

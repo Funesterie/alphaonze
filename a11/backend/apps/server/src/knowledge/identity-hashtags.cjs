@@ -50,7 +50,7 @@ const REGISTRY = [
     },
     routing: ['mcp', 'memory', 'image-video', 'coding', 'orchestration'],
   }),
-  profile('kaen44', 'Kaen44', 'agent', {
+  profile('kaen44', 'K44', 'agent', {
     functional: ['#field-agent', '#desktop-runtime', '#copilot', '#workflow', '#operator'],
     narrative: ['#daily-copilot', '#kind-operator', '#client-ready', '#accessible-work'],
     visual: {
@@ -59,7 +59,7 @@ const REGISTRY = [
       representation: 'friendly copilot figure or clean client-control interface',
       symbolicRepresentation: 'K mark, assistive icons and desktop orbit',
       humanRepresentationAllowed: true,
-      promptAnchor: 'Kaen44 as a warm violet daily copilot, accessible client workflow UI, clean assistant presence and desktop orbit.',
+      promptAnchor: 'K44 as a warm violet daily copilot, accessible client workflow UI, clean assistant presence and desktop orbit.',
     },
     routing: ['client-workflows', 'accessibility', 'documents', 'desktop', 'handoff'],
   }),

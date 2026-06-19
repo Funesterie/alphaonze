@@ -10,7 +10,7 @@ const ROLE_DEFINITIONS = {
   },
   kaen44: {
     id: 'kaen44',
-    name: 'Kaen44',
+    name: 'K44',
     role: 'client-copilot-and-prompt-steward',
     owns: ['prompt', 'brief', 'document', 'invoice', 'client-flow', 'accessibility', 'planning'],
     fallback: ['a11', 'qflush', 'vivy'],

@@ -156,14 +156,14 @@ function buildMemoryGraph(options = {}) {
 
   addNode(graph, 'project:funesterie', ['Project'], {
     name: 'Funesterie',
-    summary: 'A11, Kaen44, Vivy, MCP, Qflush and graph memory workspace.',
+    summary: 'A11, K44, Vivy, MCP, Qflush and graph memory workspace.',
     workspaceRoot: WORKSPACE_ROOT,
     sourcePolicy: 'metadata-only-no-secrets',
   });
 
   for (const agent of [
     ['agent:a11', 'A11', 'media-audio-video'],
-    ['agent:kaen44', 'Kaen44', 'copilot-quotidien'],
+    ['agent:kaen44', 'K44', 'copilot-quotidien'],
     ['agent:vivy', 'Vivy', 'musical-agent'],
     ['agent:codex', 'Codex', 'coding-agent'],
     ['agent:grok', 'Grok', 'review-build-agent'],
