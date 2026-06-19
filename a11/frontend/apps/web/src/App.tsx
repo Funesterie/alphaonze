@@ -4648,25 +4648,32 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   async function downloadVivyMediaFile(url: string | null | undefined, filename: string | null | undefined) {
     const resolvedUrl = resolveApiAssetUrl(url || "") || String(url || "").trim();
     if (!resolvedUrl) {
-      setStatus("Aucun audio à télécharger.");
+      setStatus("Aucun média à télécharger.");
       return;
     }
-    setStatus("Téléchargement audio...");
+    setStatus("Téléchargement...");
+    const safeName = String(filename || "funesterie-media").replace(/[\\/:*?"<>|]+/g, "-");
     try {
-      const response = await fetch(resolvedUrl, { credentials: "include" });
-      if (!response.ok) throw new Error(`download_failed_${response.status}`);
+      let response: Response;
+      try {
+        response = await fetch(resolvedUrl, { credentials: "include" });
+        if (!response.ok) throw new Error(`status_${response.status}`);
+      } catch {
+        response = await fetch(resolvedUrl, { credentials: "omit" });
+        if (!response.ok) throw new Error(`download_failed_${response.status}`);
+      }
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
-      anchor.download = String(filename || "funesterie-audio").replace(/[\\/:*?"<>|]+/g, "-");
+      anchor.download = safeName;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-      setStatus("Téléchargement audio lancé.");
+      setStatus("Téléchargement lancé.");
     } catch (error: any) {
-      setStatus(`Téléchargement audio impossible: ${error?.message || error}`);
+      setStatus(`Téléchargement impossible: ${error?.message || error}`);
     }
   }
 
@@ -4686,8 +4693,10 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       setVivyMedia({
         kind: "audio",
         url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
+        downloadUrl: resolveApiAssetUrl(mediaUrl) || mediaUrl,
         provider: String(payload?.provider || payload?.via || "a11-voice-module"),
         contentType: String(payload?.contentType || payload?.content_type || "audio/wav"),
+        filename: String(payload?.filename || `vivy-chat-vocal-${entry.shortLabel}.wav`),
       });
       setStatus(`Chat vocal ${entry.shortLabel} prêt.`);
     } catch (error: any) {
@@ -4709,8 +4718,10 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       setVivyMedia({
         kind: "audio",
         url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
+        downloadUrl: resolveApiAssetUrl(mediaUrl) || mediaUrl,
         provider: String(payload?.provider || payload?.via || "a11-voice-module"),
         contentType: String(payload?.contentType || payload?.content_type || "audio/wav"),
+        filename: String(payload?.filename || `vivy-voice-${entry.shortLabel}-${mode.id}.wav`),
       });
       const engine = String(payload?.voiceConversion?.engine || payload?.engine || payload?.provider || "").trim();
       setStatus(`${entry.label} prête (${mode.statusLabel}${engine ? `, ${engine}` : ""}).`);
@@ -4767,8 +4778,10 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       setVivyMedia({
         kind: "audio",
         url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
+        downloadUrl: resolveApiAssetUrl(mediaUrl) || mediaUrl,
         provider: String(payload?.provider || payload?.via || "a11-voice-module"),
         contentType: String(payload?.contentType || payload?.content_type || "audio/wav"),
+        filename: String(payload?.filename || `vivy-voice-${activeVoiceProfile.id}.wav`),
       });
       setStatus(payload?.promptRenderedAsSpeech === false
         ? `Maquette ${activeVoiceProfile.label} prête depuis ${activeVoiceReferenceLabel}.`
@@ -4863,8 +4876,10 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       setVivyMedia({
         kind: "audio",
         url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
+        downloadUrl: resolveApiAssetUrl(mediaUrl) || mediaUrl,
         provider: String(finalPayload?.media?.provider || payloadAny?.mediaStatus?.provider || "vivy-music"),
         contentType: String(finalPayload?.media?.content_type || finalPayload?.contentType || finalPayload?.content_type || "audio/mpeg"),
+        filename: String(finalPayload?.media?.filename || finalPayload?.filename || "vivy-chanson.mp3"),
       });
       setVivyOutput(normalizeVivyStudioOutputForState([
         "Production musicale Vivy prête.",
@@ -4941,8 +4956,10 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         ? {
           kind: audioUrl ? "audio" : "video",
           url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
+          downloadUrl: resolveApiAssetUrl(mediaUrl) || mediaUrl,
           provider: String(payload?.media?.provider || "").trim() || undefined,
           contentType: String(payload?.media?.content_type || "").trim() || undefined,
+          filename: String(payload?.media?.filename || (audioUrl ? "vivy-audio.mp3" : "vivy-video.mp4")),
         }
         : null);
       setStatus(mediaUrl

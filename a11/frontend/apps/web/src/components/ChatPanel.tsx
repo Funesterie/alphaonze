@@ -171,13 +171,35 @@ const ChatPanel: React.FC = () => {
                   />
                   <span style={{ display: 'none', color: '#f87171', fontSize: 13 }}>Image indisponible</span>
                 </a>
-                {m.tool === 'generate_sd' && (
-                  <div style={{ marginTop: 4 }}>
+                <div style={{ marginTop: 4, display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center' }}>
+                  {m.tool === 'generate_sd' && (
                     <span style={{ background: '#334155', color: '#fbbf24', fontSize: 12, borderRadius: 6, padding: '2px 8px', fontWeight: 500 }}>
                       Stable Diffusion
                     </span>
-                  </div>
-                )}
+                  )}
+                  <button
+                    type="button"
+                    style={{ fontSize: 12, color: '#94a3b8', background: 'none', border: '1px solid #334155', borderRadius: 6, padding: '2px 8px', cursor: 'pointer' }}
+                    onClick={async () => {
+                      const src = m.imageUrl!;
+                      try {
+                        let res = await fetch(src, { credentials: 'include' }).catch(() => fetch(src, { credentials: 'omit' }));
+                        if (!res.ok) throw new Error('fetch_failed');
+                        const blob = await res.blob();
+                        const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+                        const a = document.createElement('a');
+                        a.href = URL.createObjectURL(blob);
+                        a.download = `image-${Date.now()}.${ext}`;
+                        a.click();
+                        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+                      } catch {
+                        window.open(src, '_blank', 'noopener,noreferrer');
+                      }
+                    }}
+                  >
+                    Télécharger
+                  </button>
+                </div>
               </div>
             )}
           </div>
