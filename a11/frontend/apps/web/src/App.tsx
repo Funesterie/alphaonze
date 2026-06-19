@@ -6382,32 +6382,28 @@ function VivyPublicPage({ authenticated, displayName, diagnosticsAllowed = false
           </span>
         </a>
         <div className="vivy-agent-actions">
-          <a href={surfaceLinks.home} className="vivy-agent-home">Accueil</a>
-          <details className="vivy-agent-session-menu">
-            <summary>Discussion</summary>
-            <div className="vivy-agent-session-panel">
-              <a className="vivy-agent-menu-row" href="#vivy-chat">
-                <span>Discussion</span>
-                <span>Ouvrir</span>
-              </a>
-              <a className="vivy-agent-menu-row" href="#vivy-studio">
-                <span>Studio</span>
-                <span>Vivy</span>
-              </a>
-              <button
-                type="button"
-                className="kaen-public-login vivy-agent-menu-session-button"
-                onClick={openVivyAccount}
-                disabled={connectionStarting}
-              >
-                <span>Compte</span>
-                <strong>{connectionStarting ? "Connexion..." : vivyHasSession ? vivyDisplayName : "Connexion"}</strong>
-              </button>
-            </div>
-          </details>
           <details className="vivy-agent-menu">
             <summary>Menu</summary>
             <div className="vivy-agent-menu-panel">
+              <section className="vivy-agent-menu-section" aria-label="Navigation">
+                <p className="vivy-agent-menu-title">Navigation</p>
+                <a className="vivy-agent-menu-row" href={surfaceLinks.home}>
+                  <span>Accueil</span>
+                  <span>Public</span>
+                </a>
+                <a className="vivy-agent-menu-row" href="#vivy-chat">
+                  <span>Discussion</span>
+                  <span>Ouvrir</span>
+                </a>
+                <a className="vivy-agent-menu-row" href="#vivy-studio">
+                  <span>Studio</span>
+                  <span>Vivy</span>
+                </a>
+                <a className="vivy-agent-menu-row" href={surfaceLinks.cockpit}>
+                  <span>Cockpit</span>
+                  <span>État</span>
+                </a>
+              </section>
               <section className="vivy-agent-menu-section" aria-label="Langue">
                 <p className="vivy-agent-menu-title">Langue</p>
                 <select
@@ -6424,13 +6420,6 @@ function VivyPublicPage({ authenticated, displayName, diagnosticsAllowed = false
                     </option>
                   ))}
                 </select>
-              </section>
-              <section className="vivy-agent-menu-section" aria-label="Options">
-                <p className="vivy-agent-menu-title">Options</p>
-                <a className="vivy-agent-menu-row" href="#vivy-studio">
-                  <span>Panneau studio</span>
-                  <span>Ouvrir</span>
-                </a>
               </section>
               <section className="vivy-agent-menu-section" aria-label="Agents">
                 <p className="vivy-agent-menu-title">Agents</p>
@@ -6457,21 +6446,6 @@ function VivyPublicPage({ authenticated, displayName, diagnosticsAllowed = false
                     </span>
                   </a>
                 </div>
-              </section>
-              <section className="vivy-agent-menu-section" aria-label="Services">
-                <p className="vivy-agent-menu-title">Services</p>
-                <a className="vivy-agent-menu-row" href={surfaceLinks.home}>
-                  <span>Accueil</span>
-                  <span>Public</span>
-                </a>
-                <a className="vivy-agent-menu-row" href="#vivy-studio">
-                  <span>Studio</span>
-                  <span>Vivy</span>
-                </a>
-                <a className="vivy-agent-menu-row" href={surfaceLinks.cockpit}>
-                  <span>Cockpit</span>
-                  <span>État</span>
-                </a>
               </section>
               <section className="vivy-agent-menu-section" aria-label="Légal">
                 <p className="vivy-agent-menu-title">Légal</p>
@@ -13713,6 +13687,22 @@ export function App() {
     letterSpacing: 0.8,
     fontWeight: 700,
   };
+  const menuActionStackStyle: React.CSSProperties = {
+    width: "100%",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    justifyContent: "center",
+    gap: 3,
+    textAlign: "left",
+    whiteSpace: "normal",
+  };
+  const menuActionSubLabelStyle: React.CSSProperties = {
+    color: "#94a3b8",
+    fontWeight: 760,
+    fontSize: 11,
+    lineHeight: 1.15,
+  };
   const a11TitleStyle: React.CSSProperties = {
     fontWeight: 900,
     fontSize: isCompactLayout ? 17 : 22,
@@ -14052,11 +14042,11 @@ export function App() {
                         if (isCompactLayout) setSettingsMenuOpen(false);
                       }}
                       className="btn ghost"
-                      style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+                      style={menuActionStackStyle}
                       title="Afficher les ressources et l'activite de conversation"
                     >
                       <span>Panneau conversation</span>
-                      <span style={{ color: "#94a3b8", fontWeight: 700 }}>
+                      <span style={menuActionSubLabelStyle}>
                         {inspectorOpen ? "Ouvert" : (inspectorBadgeCount ? `${inspectorBadgeCount}` : "Ferme")}
                       </span>
                     </button>
@@ -14088,10 +14078,10 @@ export function App() {
                       type="button"
                       onClick={openChatView}
                       className="btn ghost"
-                      style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+                      style={menuActionStackStyle}
                     >
                       <span>Chat</span>
-                      <span style={{ color: "#94a3b8", fontWeight: 700 }}>Direct</span>
+                      <span style={menuActionSubLabelStyle}>Direct</span>
                     </button>
                     {!isKaen44 ? (
                       <button
@@ -14103,10 +14093,10 @@ export function App() {
                           setSidebarOpen(false);
                         }}
                         className="btn ghost"
-                        style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+                        style={menuActionStackStyle}
                       >
                         <span>Aides connectees</span>
-                        <span style={{ color: "#94a3b8", fontWeight: 700 }}>{remoteProviderProfiles.length}</span>
+                        <span style={menuActionSubLabelStyle}>{remoteProviderProfiles.length}</span>
                       </button>
                     ) : null}
                     <button
@@ -14118,10 +14108,10 @@ export function App() {
                         setSidebarOpen(false);
                       }}
                       className="btn ghost"
-                      style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+                      style={menuActionStackStyle}
                     >
                       <span>{isKaen44 ? "Services" : "Pilotage"}</span>
-                      <span style={{ color: "#94a3b8", fontWeight: 700 }}>{isKaen44 ? "Client" : "A11"}</span>
+                      <span style={menuActionSubLabelStyle}>{isKaen44 ? "Client" : "A11"}</span>
                     </button>
                   </div>
 
@@ -14136,10 +14126,10 @@ export function App() {
                         setSidebarOpen(false);
                       }}
                       className="btn ghost"
-                      style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+                      style={menuActionStackStyle}
                     >
                       <span>Plan</span>
-                      <span style={{ color: "#94a3b8", fontWeight: 700 }}>Compte</span>
+                      <span style={menuActionSubLabelStyle}>Compte</span>
                     </button>
                   </div>
 
@@ -14149,31 +14139,23 @@ export function App() {
                       href={isKaen44 ? surfaceLinks.kaen44Privacy : surfaceLinks.privacy}
                       className="btn ghost"
                       style={{
-                        width: "100%",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 10,
+                        ...menuActionStackStyle,
                         textDecoration: "none",
                       }}
                     >
                       <span>Confidentialité</span>
-                      <span style={{ color: "#94a3b8", fontWeight: 700 }}>Vie privée</span>
+                      <span style={menuActionSubLabelStyle}>Vie privée</span>
                     </a>
                     <a
                       href={isKaen44 ? surfaceLinks.kaen44Terms : surfaceLinks.terms}
                       className="btn ghost"
                       style={{
-                        width: "100%",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 10,
+                        ...menuActionStackStyle,
                         textDecoration: "none",
                       }}
                     >
                       <span>Conditions</span>
-                      <span style={{ color: "#94a3b8", fontWeight: 700 }}>Utilisation</span>
+                      <span style={menuActionSubLabelStyle}>Utilisation</span>
                     </a>
                   </div>
 
@@ -14202,18 +14184,14 @@ export function App() {
                       }}
                       className="btn ghost"
                       style={{
-                        width: "100%",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 10,
+                        ...menuActionStackStyle,
                         color: "#fecaca",
                         borderColor: "#991b1b",
                       }}
                       title="Se deconnecter de Funesterie partout"
                     >
                       <span>Se deconnecter</span>
-                      <span style={{ fontWeight: 700 }}>Global</span>
+                      <span style={{ ...menuActionSubLabelStyle, color: "#fecaca" }}>Global</span>
                     </button>
                   </div>
                 </div>

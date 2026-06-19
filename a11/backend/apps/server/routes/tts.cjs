@@ -831,11 +831,51 @@ function enforceBasicTtsCostPolicy(req = {}, body = {}) {
       || body?.neutralVoice === false
     );
   if (explicitIdentityRequest) {
+    const strictReferenceRequest = requiresReferenceVoice(body)
+      || body?.identityVoice === true
+      || body?.useIdentityVoice === true
+      || body?.neutralVoice === false;
+    if (strictReferenceRequest) {
+      return {
+        ...(body || {}),
+        blockedOfficialIdentityVoice: true,
+        allowPaidTtsVoice: false,
+        paidTtsAllowed: false,
+        allowCloudTts: false,
+        allowReadyMadeCloudVoice: false,
+        allowOfficialCloudVoice: false,
+        allowRvc: false,
+        allowXttsRvc: false,
+        allowLegacyVoiceBridge: false,
+        xttsRvcOptIn: false,
+        ttsCostPolicy: `basic_${explicitPersona}_identity_blocked`,
+      };
+    }
     return {
       ...(body || {}),
-      identityVoice: true,
-      useIdentityVoice: true,
-      neutralVoice: false,
+      provider: PROVIDERS.PIPER,
+      ttsProvider: PROVIDERS.PIPER,
+      voice: 'fr_FR-siwis-medium',
+      model: 'fr_FR-siwis-medium',
+      piperVoice: 'fr_FR-siwis-medium',
+      vocalMode: 'speech',
+      voiceConversion: false,
+      convertVoice: false,
+      morphVoice: false,
+      rvc: false,
+      voiceReferenceRequired: false,
+      requireVoiceReference: false,
+      referenceVoiceRequired: false,
+      useDefaultVoiceReference: false,
+      defaultVoiceReference: false,
+      usePersonaVoiceReference: false,
+      identityVoice: false,
+      useIdentityVoice: false,
+      neutralVoice: true,
+      allowRvc: false,
+      allowXttsRvc: false,
+      allowLegacyVoiceBridge: false,
+      xttsRvcOptIn: false,
       allowPaidTtsVoice: false,
       paidTtsAllowed: false,
       allowCloudTts: false,
@@ -876,6 +916,25 @@ function enforceBasicTtsCostPolicy(req = {}, body = {}) {
     allowLegacyVoiceBridge: false,
     xttsRvcOptIn: false,
     ttsCostPolicy: 'basic_siwis_only',
+  };
+}
+
+function shouldRejectBlockedOfficialIdentityRequest(body = {}) {
+  const costPolicy = String(body?.ttsCostPolicy || '').trim().toLowerCase();
+  return body?.blockedOfficialIdentityVoice === true
+    && costPolicy.startsWith('basic_')
+    && costPolicy.endsWith('_identity_blocked');
+}
+
+function buildBlockedOfficialIdentityPayload(body = {}) {
+  const persona = getExplicitTtsPersonaFromBody(body) || getTtsPersonaFromBody(body) || 'a11';
+  return {
+    ok: false,
+    error: 'voice_reference_tts_unavailable',
+    message: `Voix officielle ${persona} indisponible pour ce profil: la reference locale est reservee aux comptes autorises.`,
+    provider: PROVIDERS.XTTS_RVC,
+    diagnostic: 'xtts_rvc_failed',
+    ttsCostPolicy: String(body?.ttsCostPolicy || '').trim() || `basic_${persona}_identity_blocked`,
   };
 }
 
@@ -4388,6 +4447,9 @@ async function handleTtsSpeakRequest(req, res) {
   try {
     const requestBody = normalizeA11OfficialReferenceRequest(enforceBasicTtsCostPolicy(req, req.body || {}));
     req.body = requestBody;
+    if (shouldRejectBlockedOfficialIdentityRequest(requestBody)) {
+      return res.status(424).json(buildBlockedOfficialIdentityPayload(requestBody));
+    }
     const text = String(requestBody?.text || '').trim();
     const vocalMode = normalizeVocalMode(requestBody || {});
     const readableText = shapeTextForVocalMode(buildTtsReadableText(text), vocalMode);
@@ -4751,6 +4813,9 @@ function startTtsAsyncJob(req, res, options = {}) {
   }
   const requestBody = normalizeA11OfficialReferenceRequest(enforceBasicTtsCostPolicy(req, req.body || {}));
   req.body = requestBody;
+  if (shouldRejectBlockedOfficialIdentityRequest(requestBody)) {
+    return res.status(424).json(buildBlockedOfficialIdentityPayload(requestBody));
+  }
   const body = buildAsyncTtsJobBody(requestBody);
   const routeToLocalGpu = shouldRouteTtsJobToLocalGpuWorker(body);
   const priorityLane = resolveTtsPriorityLane(req, body);
@@ -5059,6 +5124,9 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
   setTtsCorsHeaders(req, res);
   const requestBody = normalizeA11OfficialReferenceRequest(enforceBasicTtsCostPolicy(req, req.body || {}));
   req.body = requestBody;
+  if (shouldRejectBlockedOfficialIdentityRequest(requestBody)) {
+    return res.status(424).json(buildBlockedOfficialIdentityPayload(requestBody));
+  }
   if (wantsAsyncTtsJob(requestBody) && String(req.headers?.['x-a11-internal-tts-job'] || '') !== '1') {
     return startTtsAsyncJob(req, res);
   }
