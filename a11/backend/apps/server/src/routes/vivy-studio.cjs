@@ -3301,19 +3301,48 @@ async function buildVivyAiChat(input, req) {
       max_tokens: mode === 'song' ? Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || 1600) : Number(process.env.VIVY_CHAT_MAX_TOKENS || 900),
     });
     const rawAssistant = cleanText(completion?.choices?.[0]?.message?.content, 3200);
-    const _vivyLlmLatency = Date.now() - _vivyLlmStart;
+    let _vivyLlmLatency = Date.now() - _vivyLlmStart;
     const processed = postProcessVivyAssistantText({
       text: rawAssistant,
       userMessage: message,
       systemPrompt,
     });
     let usedSongcraftFallback = false;
-    const assistantCandidate = mode === 'song' && looksLikeWeakSongwritingReply(processed.content)
-      ? (() => {
+    let llmRetried = false;
+    let assistantCandidate = processed.content;
+
+    if (mode === 'song' && looksLikeWeakSongwritingReply(processed.content)) {
+      const _retryStart = Date.now();
+      try {
+        const retryCompletion = await llmBundle.client.chat.completions.create({
+          model: llmBundle.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            memoryContext ? { role: 'system', content: `Mémoire Vivy récente:\n${memoryContext}` } : null,
+            ...history,
+            { role: 'user', content: userContent },
+            { role: 'assistant', content: processed.content },
+            { role: 'user', content: 'Écris uniquement les paroles complètes. Pas d’explication, pas de commentaire. Format: [Intro], [Verse 1], [Chorus], [Bridge], [Outro].' },
+          ].filter(Boolean),
+          temperature: Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74),
+          max_tokens: Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || 1600),
+        });
+        const retryRaw = cleanText(retryCompletion?.choices?.[0]?.message?.content, 3200);
+        const retryProcessed = postProcessVivyAssistantText({ text: retryRaw, userMessage: message, systemPrompt });
+        if (retryProcessed.content && !looksLikeWeakSongwritingReply(retryProcessed.content)) {
+          llmRetried = true;
+          assistantCandidate = retryProcessed.content;
+        } else {
+          usedSongcraftFallback = true;
+          assistantCandidate = buildVivyDirectSongReply({ ...input, message, files, history });
+        }
+      } catch (_retryErr) {
         usedSongcraftFallback = true;
-        return buildVivyDirectSongReply({ ...input, message, files, history });
-      })()
-      : processed.content;
+        assistantCandidate = buildVivyDirectSongReply({ ...input, message, files, history });
+      }
+      _vivyLlmLatency += Date.now() - _retryStart;
+    }
+
     const assistant = mode === 'song'
       ? buildVivyPublicLyrics({ ...input, message, files, history }, assistantCandidate, fallback.publicLyrics)
       : sanitizeVivyPublicText(assistantCandidate, 1800);
@@ -3321,7 +3350,7 @@ async function buildVivyAiChat(input, req) {
       logVivySongcraftTrace({
         provider: llmBundle.provider || getVivyProviderFromBaseUrl(llmBundle.baseURL || ''),
         model: llmBundle.model,
-        source: llmBundle.source || 'openai-compatible',
+        source: llmRetried ? 'llm_retry' : (llmBundle.source || 'openai-compatible'),
         fallback: usedSongcraftFallback,
         latencyMs: _vivyLlmLatency,
       });
@@ -3349,7 +3378,7 @@ async function buildVivyAiChat(input, req) {
       content: assistant,
       publicText: assistant,
       publicLyrics: mode === 'song' ? assistant : undefined,
-      aiMode: 'llm',
+      aiMode: usedSongcraftFallback ? 'deterministic_fallback' : llmRetried ? 'llm_retry' : 'llm',
       model: llmBundle.model,
       provider: llmBundle.provider || getVivyProviderFromBaseUrl(llmBundle.baseURL || ''),
       semanticMemory,

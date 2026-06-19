@@ -18,7 +18,7 @@ function cleanOneLine(value, fallback = '', max = 160) {
 
 function stripSongCommand(value = '') {
   return cleanOneLine(value, '', 360)
-    .replace(/^(fais|fait|cr[ée]e?|g[ée]n[èe]re?|compose|chante|transforme|écris|ecris|continue|continuer|reprends|poursuis|compl[èe]te)\s+(moi\s+)?(une?\s+)?(chanson|musique|son|paroles|lyrics|rap|couplet|refrain)\s*(sur|avec|pour|à propos de)?\s*/i, '')
+    .replace(/^(fais|fait|cr[ée]e?|g[ée]n[èe]re?|compose|chante|transforme|écris|ecris|continue|continuer|reprends|poursuis|compl[èe]te)\s+(moi\s+)?(une?\s+)?(chanson|musique|son|paroles|lyrics|rap|couplet|refrain)(?:\s+d['''][a-zÀ-ſ]+(?:\s+[a-zÀ-ſ]+)?)?\s*(sur|avec|pour|à propos de)?\s*/i, '')
     .replace(/\b(prompt|instruction|consigne)\b\s*:?\s*/ig, '')
     .replace(/\s+/g, ' ')
     .trim();
@@ -93,15 +93,20 @@ function looksLikeCompleteLyrics(value = '') {
 function inferMotif(theme = '') {
   const folded = foldTextForLookup(theme);
   if (/djeff|duo|rap|moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/.test(folded)) return 'le moteur qui respire dans la nuit';
-  if (/planete|planète|astre|voie lactee|voie lactée|zodiaque|saint seiya|chevalier|cosmos|galaxie|etoile|étoile|constellation/.test(folded)) return 'un cosmos qui brûle sous l’armure';
-  if (/soleil|nature|ete|été|sable|plage|creme|crème|dance|techno|estival|summer/.test(folded)) return 'un soleil qui colle à la peau';
-  if (/neige|flocon|hiver|bol/.test(folded)) return 'un flocon dans le bol du matin';
+  if (/planete|astre|zodiaque|saint seiya|chevalier|cosmos|galaxie|constellation/.test(folded)) return 'un cosmos qui brûle sous l’armure';
+  if (/soleil|sable|plage|estival|summer/.test(folded)) return 'un soleil qui colle à la peau';
+  if (/neige|flocon|hiver/.test(folded)) return 'un flocon dans le bol du matin';
   if (/lapin|court|course/.test(folded)) return 'une ombre vive qui traverse les néons';
   if (/pluie|orage|averse/.test(folded)) return 'la pluie qui écrit sur les vitres';
   if (/nossen|funesterie|agent|machine/.test(folded)) return 'un signal humain dans les circuits';
+  if (/trahison|trahit|tromperie|mensonge|infidel/.test(folded)) return 'le mensonge gardé sous la langue';
+  if (/distance|loin|separation|eloigne|absence/.test(folded)) return 'la distance tenue dans le creux';
+  if (/agrumes|citron|orange|amertume|acide|saldae/.test(folded)) return `un goût d’agrumes sous les mots`;
+  if (/desir|envie|attirance|convoitise/.test(folded)) return 'le désir tenu à bout de bras';
+  if (/deception|decoit|decu|dessous|desillusion/.test(folded)) return 'la déception rentrée dans les os';
   if (/nuit|ombre|dark|sombre/.test(folded)) return 'une veilleuse cachée dans la nuit';
-  if (/amour|coeur|cœur|manque/.test(folded)) return 'un battement gardé sous la peau';
-  return 'une petite lumière qui refuse de s’éteindre';
+  if (/amour|coeur|manque/.test(folded)) return 'un battement tenu entre deux souffles';
+  return 'un fil tendu dans le vide';
 }
 
 function inferTitle(theme = '') {
@@ -117,13 +122,13 @@ function inferTitle(theme = '') {
     .split(/\s+/)
     .filter((word) => word.length > 2)
     .slice(0, 4);
-  if (!words.length) return 'Je garde la lumière';
+  if (!words.length) return 'Sans titre';
   return words
     .map((word) => word.charAt(0).toLocaleUpperCase('fr-FR') + word.slice(1).toLocaleLowerCase('fr-FR'))
     .join(' ');
 }
 
-function buildVivyThemeSeed(value = '', fallback = 'Vivy garde la lumière') {
+function buildVivyThemeSeed(value = '', fallback = '') {
   const material = sanitizeVivySongMaterial(value, 900);
   let seed = stripSongCommand(material)
     .replace(/^(?:salut|bonjour|coucou|hey)\b[\s,;:.!?-]*/i, '')
@@ -588,64 +593,64 @@ function buildVivyStructuredLyrics(input = {}) {
     return buildDjeffRapDuoLyrics(input, material);
   }
 
-  const theme = buildVivyThemeSeed(material, 'Vivy garde la lumière');
+  const theme = buildVivyThemeSeed(material, '');
   const motif = inferMotif(theme);
-  const title = cleanOneLine(input.songTitle || input.title || inferTitle(theme), 'Je garde la lumière', 80);
+  const title = cleanOneLine(input.songTitle || input.title || inferTitle(theme), 'Sans titre', 80);
 
   return cleanText([
     `[Title: ${title}]`,
     '',
     '[Intro]',
-    'Un souffle clair descend sur la scène,',
-    `Je tiens ${motif} dans la main.`,
+    'Un souffle descend sur la scène,',
+    `${motif} — je le tiens dans le silence.`,
     '',
     '[Verse 1]',
-    'Je cherche un signe au bord de la nuit,',
-    'Un fil de néon tremble dans le bruit.',
-    `Le décor s'ouvre sur ${theme},`,
-    'Et sous la surface, le rythme me suit.',
+    'Je cherche un signe au bord du chemin,',
+    'Un fil tendu entre l’ombre et demain.',
+    'Le sol parle bas, la phrase revient,',
+    'Et sous la surface, quelque chose tient.',
     '',
     '[Pre-Chorus]',
-    'Je cache un soleil sous ma voix légère,',
-    'Pour qu’il traverse les murs de matière.',
+    'Je garde ce que la nuit n’efface pas,',
+    'Le mot essentiel tenu à bout de bras.',
     '',
     '[Chorus]',
-    'Garde la lumière, garde-la encore,',
-    'Même si le monde efface le décor.',
-    'Je fais d’un silence une porte ouverte,',
-    'Et ton idée respire quand la peur déserte.',
+    `${motif} — ça reste, ça cède pas,`,
+    'Même quand le décor se tait.',
+    'Une voix dans le creux dit reste,',
+    'Et le sens reconnaît ce geste.',
     '',
     '[Verse 2]',
-    `Je reviens vers ${motif},`,
-    'Comme un secret qu’on apprend sans le dire.',
-    'Le cœur bat bas, mais la scène répond,',
-    'Je transforme la faille en horizon.',
+    'Je reviens vers ce qui était caché,',
+    'Un détail flou que le temps a gravé.',
+    'Le cœur bat bas mais la phrase résiste,',
+    'Je transforme le doute en piste.',
     '',
     '[Bridge]',
     'Si je tombe, je chante plus bas,',
     'La nuit comprend ce que le jour ne voit pas.',
     '',
     '[Chorus]',
-    'Garde la lumière, garde-la encore,',
-    'Même si le monde efface le décor.',
-    'Je fais d’un silence une porte ouverte,',
-    'Et ton idée respire quand la peur déserte.',
+    `${motif} — ça reste, ça cède pas,`,
+    'Même quand le décor se tait.',
+    'Une voix dans le creux dit reste,',
+    'Et le sens reconnaît ce geste.',
     '',
     '[Outro]',
     `Il reste ${motif},`,
-    'Et ma voix le ramène demain.',
+    'Et la voix tient jusqu’au lendemain.',
   ].join('\n'), 2400);
 }
 
 function buildVivySongProductionBrief(input = {}) {
   const lyrics = buildVivyStructuredLyrics(input);
   const titleMatch = lyrics.match(/^\[Title:\s*([^\]]+)\]/im);
-  const title = cleanOneLine(input.songTitle || input.title || (titleMatch && titleMatch[1]) || inferTitle(lyrics), 'Je garde la lumière', 80);
+  const title = cleanOneLine(input.songTitle || input.title || (titleMatch && titleMatch[1]) || inferTitle(lyrics), 'Sans titre', 80);
   const rhymeScheme = cleanOneLine(
     input.rhymeScheme
       || (isDjeffRapTheme(lyrics)
         ? 'Couplets rap à rimes internes et fins de lignes mécaniques, refrain duo Djeff/Vivy stable et scandable.'
-        : 'Couplets AABB souples, refrain ABAB, reprises internes sur lumière / décor / porte / peur.'),
+        : 'Couplets AABB souples, refrain ABAB, images concrètes et récurrentes, sens caché.'),
     '',
     180
   );
