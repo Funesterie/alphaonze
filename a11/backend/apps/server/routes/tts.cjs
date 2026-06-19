@@ -2749,6 +2749,9 @@ function normalizeRequestedOfficialVoiceStyle(value = '', persona = 'a11') {
   if ([
     'djeff',
     'djeff-rap',
+    'djeff-official',
+    'djeff-officielle',
+    'voix-djeff-officielle',
     'rap-djeff',
     'pignon',
     'pignon-rap',
@@ -2827,7 +2830,19 @@ function isDjeffRapVoiceStyle(value = '') {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[_\s]+/g, '-')
     .replace(/-+/g, '-');
-  return ['djeff', 'djeff-rap', 'rap-djeff', 'pignon', 'pignon-rap', 'moto-rap', 'jeff', 'jeffrey'].includes(normalized);
+  return [
+    'djeff',
+    'djeff-rap',
+    'djeff-official',
+    'djeff-officielle',
+    'voix-djeff-officielle',
+    'rap-djeff',
+    'pignon',
+    'pignon-rap',
+    'moto-rap',
+    'jeff',
+    'jeffrey',
+  ].includes(normalized);
 }
 
 function shouldResolveLocalVoiceReference(body = {}, voiceStyle = '', requestedReferenceId = '') {
@@ -4105,7 +4120,7 @@ function contentTypeForTtsAsset(filename = '') {
 function normalizeOfficialVoiceSamplePersona(value = '') {
   const normalized = String(value || '').trim().toLowerCase();
   if (['a11', 'alphaonze', 'alpha-onze', 'a-11'].includes(normalized)) return 'a11';
-  if (['djeff', 'jeff', 'jeffrey', 'djeff-rap', 'pignon', 'pignon-rap'].includes(normalized)) return 'djeff';
+  if (['djeff', 'jeff', 'jeffrey', 'djeff-rap', 'djeff-official', 'djeff-officielle', 'pignon', 'pignon-rap'].includes(normalized)) return 'djeff';
   if (['k44', 'kaen44', 'kaen'].includes(normalized)) return 'kaen44';
   if (['vivy', 'vivy-one', 'vivy_one'].includes(normalized)) return 'vivy';
   return '';
@@ -4324,7 +4339,7 @@ function isDjeffRapVoiceRequest(body = {}) {
     body?.voiceTool,
     body?.vocalCast,
   ].filter(Boolean).join(' ')).trim().toLowerCase();
-  return /\b(?:djeff|djeff-rap|rap-djeff|pignon|pignon-rap|moto-rap)\b/.test(marker);
+  return /\b(?:djeff|djeff-rap|djeff-official|djeff-officielle|voix-djeff-officielle|rap-djeff|pignon|pignon-rap|moto-rap)\b/.test(marker);
 }
 
 function resolveElevenLabsVoiceId(persona, body = {}) {

@@ -1910,15 +1910,15 @@ function getVivyStudioVoiceProfile(input = {}) {
       id: 'duo-djeff-vivy',
       tool: requestedTool || 'Duo Djeff + Vivy',
       label: 'Duo Djeff + Vivy',
-      summaryLabel: 'duo Djeff rap + Vivy',
+      summaryLabel: 'duo Djeff officielle + Vivy',
       ttsPersona: 'a11',
       voiceStyle: 'djeff-rap',
       vocalMode: 'adaptive',
       lead: 'Djeff rappe les couplets avec grain A11/Djeff; Vivy porte les refrains et réponses mélodiques.',
       referenceLabel: hasPrivateReference
         ? (referenceName || 'référence privée Djeff active')
-        : 'Djeff rap Pignon + Vivy officielle',
-      defaultReferenceStep: 'Base Djeff rap Pignon locale pour les couplets, Vivy officielle pour les refrains; référence privée optionnelle pour affiner le grain Djeff.',
+        : 'Djeff officielle + Vivy officielle',
+      defaultReferenceStep: 'Base Djeff officielle locale pour les couplets, Vivy officielle pour les refrains; référence privée optionnelle pour affiner le grain Djeff.',
       testPhrase: 'Djeff cale le kick, chaîne sur couronne, pignon précis; Vivy répond dans la nuit, radiateur froid, moteur lucide.',
       songCastLines: [
         'Djeff: couplets rap techniques, diction serrée, grain grave A11/Djeff ou référence privée.',
@@ -1978,17 +1978,17 @@ function getVivyStudioVoiceProfile(input = {}) {
   if (wantsDjeff) {
     return {
       id: 'djeff-rap',
-      tool: requestedTool || 'Voix Djeff rap',
-      label: 'Voix Djeff rap',
-      summaryLabel: 'voix Djeff rap',
+      tool: requestedTool || 'Voix Djeff officielle',
+      label: 'Voix Djeff officielle',
+      summaryLabel: 'voix Djeff officielle',
       ttsPersona: 'a11',
       voiceStyle: 'djeff-rap',
       vocalMode: 'adaptive',
       lead: 'Djeff prend les couplets rap avec base Pignon locale ou référence privée.',
       referenceLabel: hasPrivateReference
         ? (referenceName || 'référence privée Djeff active')
-        : 'Djeff rap Pignon locale',
-      defaultReferenceStep: 'Voix Djeff rap Pignon locale active; référence privée courte possible pour un grain rap plus proche.',
+        : 'Djeff officielle locale',
+      defaultReferenceStep: 'Voix Djeff officielle locale active; référence privée courte possible pour un grain plus proche.',
       testPhrase: 'Djeff cale le kick, chaîne sur couronne, pignon précis, radiateur froid et moteur lucide.',
       songCastLines: [
         'Djeff: lead rap technique, diction nette, rimes internes et fins de lignes percussives.',
@@ -2294,7 +2294,7 @@ function buildVivyDjeffRapSetupReply({ fileLine = '' } = {}) {
   return cleanText([
     'Oui, on part sur un rap avec la voix Djeff.',
     "Le bon flux: tu poses tes lignes brutes, je garde le vocabulaire mécanique et la diction proche micro, puis le mode chanson structure les couplets/refrain sans lisser le grain.",
-    'Pour la voix, je priorise le profil Djeff rap et la référence autorisée; Vivy peut répondre en refrain si tu coches le duo.',
+    'Pour la voix, je priorise le profil Djeff officielle et la référence autorisée; Vivy peut répondre en refrain si tu coches le duo.',
     fileLine,
   ].filter(Boolean).join('\n\n'), 1400);
 }
@@ -2738,7 +2738,7 @@ function buildVivyDirectSongReply(input = {}) {
   const intention = voiceProfile.id === 'duo-djeff-vivy'
     ? 'duo rap Djeff + Vivy, mécanique moto concrète, couplets techniques et refrain chantable.'
     : voiceProfile.id === 'djeff-rap'
-      ? 'voix Djeff rap, mécanique précise, débit serré et refrain prêt à répondre avec Vivy.'
+      ? 'voix Djeff officielle, mécanique précise, débit serré et refrain prêt à répondre avec Vivy.'
       : 'ouverture du skill tree, fuite hypervitesse et retour sémantique à la réalité.';
   return cleanText([
     `**Titre :** ${songcraft.title}`,

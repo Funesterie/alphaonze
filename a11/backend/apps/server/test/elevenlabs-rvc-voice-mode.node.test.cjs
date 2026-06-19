@@ -147,6 +147,7 @@ test('official voice routing requires a paid tier', () => {
 
 test('detects dedicated local RVC styles', () => {
   assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: 'djeff-rap' }), true);
+  assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: 'djeff-officielle' }), true);
   assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: 'a11-voix-de-lait' }), true);
   assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: 'terminator' }), true);
   assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: 'donna' }), true);

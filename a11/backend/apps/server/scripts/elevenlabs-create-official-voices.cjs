@@ -42,9 +42,12 @@ const VOICES = [
     name: 'Funesterie Djeff officiel',
     env: 'A11_ELEVENLABS_DJEFF_VOICE_ID',
     refs: [
-      'C:\\Users\\Djeff\\Desktop\\voix\\Djeff ref.m4a',
+      'C:\\Users\\Djeff\\Desktop\\voix\\Djeff ref elevenlabs.mp3',
       'C:\\Users\\Djeff\\Desktop\\voix\\Djeff ref.wav',
+      'C:\\Users\\Djeff\\Desktop\\voix\\Djeff ref.m4a',
       'C:\\Users\\Djeff\\Downloads\\Djeff ref.m4a',
+      path.join(BACKEND_ROOT, 'runtime', 'voice-library', 'Djeff ref.wav'),
+      path.join(SERVER_ROOT, 'runtime', 'voice-library', 'Djeff ref.wav'),
       path.join(BACKEND_ROOT, 'runtime', 'voice-library', 'djeff-rap.wav'),
       path.join(SERVER_ROOT, 'runtime', 'voice-library', 'djeff-rap.wav'),
     ],

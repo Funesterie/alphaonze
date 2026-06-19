@@ -295,6 +295,74 @@ test('compileMaskToImagePrompt rebuilds canonical image prompts from english str
   assert.doesNotMatch(String(compiled.negative_prompt || ''), /\b(?:visage|decor)\b/i);
 });
 
+test('compileMaskToImagePrompt strengthens reference human Shrek-style transformations', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'genere cette personne en Shrek',
+    compiler: {
+      target: 'image-prompt-en',
+      version: '1.0',
+    },
+    inputs: {
+      subject: ['placeholder sujet'],
+      environment: [],
+      style: [],
+      composition: [],
+      lighting: [],
+      palette: [],
+    },
+    meta: {
+      webImageDraft: {
+        initImageUrl: 'https://images.example.com/person-ref.png',
+      },
+      subjectProfile: {
+        type: 'single_human_figure',
+      },
+      canonicalizedRequest: {
+        canonicalEnglishInput: 'Use the reference image as identity, pose, and framing reference. Transform the person into a Shrek-inspired green ogre fantasy character while keeping the person recognizable.',
+        structuredFields: {
+          subject: ['the person from the reference image as a Shrek-inspired green ogre'],
+          environment: ['subtle swamp fantasy background'],
+          style: ['cinematic fairytale fantasy portrait'],
+          composition: ['single readable subject'],
+          lighting: ['soft dramatic light'],
+          palette: ['green', 'earth tones'],
+          constraints: {
+            promptInstructions: ['preserve the recognizable face and pose from the reference image'],
+            negativeHints: [],
+            noText: true,
+            safeMode: true,
+          },
+        },
+        scenePolicy: {
+          subjectMode: 'single',
+          explicitSubjectCount: 1,
+        },
+        audit: {
+          rawUserInput: 'genere cette personne en Shrek',
+        },
+      },
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  const prompt = String(compiled.prompt || '');
+  const negativePrompt = String(compiled.negative_prompt || '');
+
+  assert.equal(compiled.prompt_language, 'en');
+  assert.match(prompt, /^the exact same person from the reference image in a clearly recognizable green ogre fantasy transformation/i);
+  assert.match(prompt, /turn the skin clearly green while keeping the person recognizable/i);
+  assert.match(prompt, /rounded ogre ears/i);
+  assert.match(prompt, /fairytale ogre facial proportions/i);
+  assert.match(prompt, /subtle swamp fantasy background/i);
+  assert.match(negativePrompt, /unchanged human skin/i);
+  assert.match(negativePrompt, /plain original photo/i);
+  assert.match(negativePrompt, /subtle filter/i);
+  assert.doesNotMatch(prompt, /\b(?:genere|cette personne|vert)\b/i);
+});
+
 test('compileMaskToImagePrompt preserves long rich reference prompts instead of collapsing to a minimal subject', () => {
   const compiled = compileMaskToImagePrompt({
     raw: 'Utilise l image d entree comme reference d identite, de pose et de cadrage. Transforme la personne en personnage inspire du Joker, dans un style sombre, cinematographique et realiste, tout en conservant un visage reconnaissable, la meme structure faciale, la meme corpulence, la meme posture et la meme presence generale. Remplace la batte en bois par une batte custom menaceante et theatrale, et transforme le decor en rue brute inspiree de Harlem avec graffitis, immeubles uses, sol sale, reflets de neons et lumiere dramatique.',

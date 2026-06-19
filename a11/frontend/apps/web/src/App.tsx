@@ -3378,17 +3378,17 @@ const VIVY_STUDIO_VOICE_DIRECTORY: Array<{
 }> = [
   {
     id: "djeff",
-    label: "Djeff rap",
+    label: "Djeff officielle",
     shortLabel: "Djeff",
     ownerLabel: "Compte Djeff",
     persona: "djeff",
     artistId: "djeff",
-    voiceTool: "Voix Djeff rap",
+    voiceTool: "Voix Djeff officielle",
     ttsPersona: "a11",
     surface: "a11",
-    voiceStyle: "djeff-rap",
+    voiceStyle: "djeff-officielle",
     referenceLabel: "Djeff ref.wav",
-    referenceFileName: "djeff-rap.wav",
+    referenceFileName: "Djeff ref.wav",
     statusLabel: "référence prête",
     statusKind: "ready",
     testLine: "Djeff cale le kick, pignon précis, radiateur froid, la voix reste proche du micro.",
@@ -3552,7 +3552,7 @@ function buildVivyStudioArtistCast(ids: VivyStudioArtistId[]) {
 function normalizeVivyStudioVoicePersona(value: unknown, fallback: VivyStudioVoiceLearningPersona = "djeff"): VivyStudioVoiceLearningPersona {
   const folded = foldForLookup(value);
   if (folded === "k44" || folded === "kaen44" || folded === "kaen") return "kaen44";
-  if (folded === "djeff" || folded === "djeff-rap" || folded === "pignon") return "djeff";
+  if (folded === "djeff" || folded === "djeff-rap" || folded === "djeff-officielle" || folded === "djeff-official" || folded === "pignon") return "djeff";
   if (folded === "vivy" || folded === "vivi") return "vivy";
   if (folded === "a11" || folded === "alphaonze" || folded === "alpha-onze") return "a11";
   if (folded === "personal" || folded === "ma-voix" || folded === "ma_voix" || folded === "my-voice") return "personal";
@@ -3596,13 +3596,13 @@ function getVivyStudioVoiceProfileForTool(
       label: "Duo Djeff + Vivy",
       ttsPersona: "a11",
       surface: "vivy",
-      voiceStyle: "djeff-rap",
+      voiceStyle: "djeff-officielle",
       vocalMode: "adaptive",
       referenceLabel: hasPrivateReference
         ? `${privateLabel} + Vivy ref.wav`
         : "Djeff ref.wav + Vivy ref.wav",
-      referenceFileName: hasPrivateReference ? undefined : "djeff-rap.wav",
-      briefVoicePersona: "voicePersona=a11, voiceStyle=djeff-rap pour Djeff; voicePersona=vivy pour Vivy",
+      referenceFileName: hasPrivateReference ? undefined : "Djeff ref.wav",
+      briefVoicePersona: "voicePersona=a11, voiceStyle=djeff-officielle pour Djeff; voicePersona=vivy pour Vivy",
       testLine: "Djeff cale le kick, chaîne sur couronne, pignon précis; Vivy répond dans la nuit, radiateur froid, moteur lucide.",
       songCast: "Djeff prend les couplets rap; Vivy tient les refrains et réponses mélodiques; les paroles doivent garder les tags [Djeff], [Vivy] et [Duo].",
       uploadLabel: `Djeff - ${voiceFileName || "référence rap"}`,
@@ -3646,14 +3646,14 @@ function getVivyStudioVoiceProfileForTool(
   if (wantsDjeff) {
     return {
       id: "djeff-rap",
-      label: "Voix Djeff rap",
+      label: "Voix Djeff officielle",
       ttsPersona: "a11",
       surface: "a11",
-      voiceStyle: "djeff-rap",
+      voiceStyle: "djeff-officielle",
       vocalMode: "adaptive",
       referenceLabel: hasPrivateReference ? privateLabel : "Djeff ref.wav",
-      referenceFileName: hasPrivateReference ? undefined : "djeff-rap.wav",
-      briefVoicePersona: "voicePersona=a11, voiceStyle=djeff-rap",
+      referenceFileName: hasPrivateReference ? undefined : "Djeff ref.wav",
+      briefVoicePersona: "voicePersona=a11, voiceStyle=djeff-officielle",
       testLine: "Djeff cale le kick, chaîne sur couronne, pignon précis, radiateur froid et moteur lucide.",
       songCast: "Djeff prend le lead rap avec diction serrée, rimes internes et image mécanique concrète.",
       uploadLabel: `Djeff - ${voiceFileName || "référence rap"}`,
@@ -5010,7 +5010,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                 >
                   <option>Voix Vivy officielle</option>
                   <option>Voix Vivy chant</option>
-                  <option>Voix Djeff rap</option>
+                  <option>Voix Djeff officielle</option>
                   <option>Voix A11 officielle</option>
                   <option>Voix K44 officielle</option>
                   <option>Duo Djeff + Vivy</option>
@@ -6928,7 +6928,7 @@ function NossenCrewShowcase({
 const VIVY_STUDIO_VALID_VOICE_TOOLS = [
   "Voix Vivy officielle",
   "Voix Vivy chant",
-  "Voix Djeff rap",
+  "Voix Djeff officielle",
   "Voix A11 officielle",
   "Voix K44 officielle",
   "Duo Djeff + Vivy",

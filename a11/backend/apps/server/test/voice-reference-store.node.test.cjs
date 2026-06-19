@@ -216,6 +216,7 @@ test('voice reference resolver prefers Vivy library samples when requested', () 
     const kaen44 = store.resolveVoiceReferenceForRequest({ user, preferredLabel: 'k44' });
     const a11 = store.resolveVoiceReferenceForRequest({ user, preferredLabel: 'a11' });
     const djeff = store.resolveVoiceReferenceForRequest({ user, preferredLabel: 'djeff' });
+    const djeffOfficial = store.resolveVoiceReferenceForRequest({ user, preferredLabel: 'djeff-officielle' });
 
     assert.ok(resolved);
     assert.equal(resolved.source, 'library');
@@ -227,6 +228,8 @@ test('voice reference resolver prefers Vivy library samples when requested', () 
     assert.ok(a11.filePath.endsWith('A11 ref.wav'));
     assert.equal(djeff.originalName, 'Djeff ref.wav');
     assert.ok(djeff.filePath.endsWith('Djeff ref.wav'));
+    assert.equal(djeffOfficial.originalName, 'Djeff ref.wav');
+    assert.ok(djeffOfficial.filePath.endsWith('Djeff ref.wav'));
   } finally {
     if (previousRuntimeRoot === undefined) delete process.env.A11_RUNTIME_ROOT;
     else process.env.A11_RUNTIME_ROOT = previousRuntimeRoot;

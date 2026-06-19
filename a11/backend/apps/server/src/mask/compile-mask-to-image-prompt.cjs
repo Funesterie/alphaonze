@@ -251,7 +251,7 @@ function resolveCanonicalAssemblyBucket(value = '', sourceBucket = '') {
     return 'pose';
   }
   if (
-    /\bjoker\b|\bmakeup\b|\bcostume\b|\boutfit\b|\bprop\b|\bbat\b|\bweapon\b|\bexpression\b|\bclown\b|\btheatrical\b/.test(lookup)
+    /\bjoker\b|\bogre\b|\bgreen skin\b|\bogre ears\b|\bfairytale\b|\bswamp\b|\bmakeup\b|\bcostume\b|\boutfit\b|\bprop\b|\bbat\b|\bweapon\b|\bexpression\b|\bclown\b|\btheatrical\b/.test(lookup)
   ) {
     return 'transformation';
   }
@@ -660,8 +660,23 @@ function buildReferenceHumanIdentityLockHints(language = 'en') {
   ];
 }
 
+function hasGreenOgreTransformationSignal(value = '') {
+  return /\b(?:shrek|green ogre|ogre vert|ogre-inspired|ogre inspired|fairytale ogre|ogre fantasy|ogre)\b/i.test(String(value || ''));
+}
+
 function hasJokerStyleTransformationSignal(value = '') {
   return /\b(joker(?:[ -]?style|[ -]?themed)?|joker-inspired|joker inspired|character inspired by the joker|personnage inspire du joker|joker portrait|joker-style transformation|joker style transformation)\b/i.test(String(value || ''));
+}
+
+function isReferenceHumanGreenOgreTransformation(mask = {}, value = '') {
+  if (!isReferenceHumanFigure(mask)) return false;
+  return hasGreenOgreTransformationSignal([
+    value,
+    mask?.raw,
+    mask?.meta?.originalSourceText,
+    mask?.meta?.canonicalizedRequest?.canonicalEnglishInput,
+    mask?.meta?.promptCanonicalization?.canonicalEnglishInput,
+  ].filter(Boolean).join(' '));
 }
 
 function isReferenceHumanJokerTransformation(mask = {}, value = '') {
@@ -681,6 +696,9 @@ function rewriteReferenceHumanStyledSubject(value = '', mask = {}) {
 
   const rewriteInspiredSubject = (styleLabel = '') => {
     const normalizedStyleLabel = normalizeLookup(styleLabel);
+    if (hasGreenOgreTransformationSignal(normalizedStyleLabel)) {
+      return 'the same person from the reference image transformed into a clearly recognizable green ogre fantasy version';
+    }
     if (normalizedStyleLabel.includes('joker')) {
       return 'the same person from the reference image transformed into a Joker-style version';
     }
@@ -696,6 +714,10 @@ function rewriteReferenceHumanStyledSubject(value = '', mask = {}) {
       .replace(
         /\bcharacter inspired by ([a-z][a-z0-9' -]{0,40})\b/gi,
         (_match, styleLabel) => rewriteInspiredSubject(styleLabel)
+      )
+      .replace(
+        /\b(?:as|into|like)\s+(?:shrek|a green ogre|an ogre|ogre)\b/gi,
+        'as a clearly recognizable green ogre fantasy transformation'
       )
   );
 }
@@ -1065,6 +1087,9 @@ function buildCanonicalEnglishLead(subject = [], mask = {}) {
   const joinedSubject = subject.length <= 2
     ? subject.join(' and ')
     : subject.join(', ');
+  if (isReferenceHumanGreenOgreTransformation(mask, joinedSubject)) {
+    return 'the exact same person from the reference image in a clearly recognizable green ogre fantasy transformation';
+  }
   if (isReferenceHumanJokerTransformation(mask, joinedSubject)) {
     return 'the exact same person from the reference image in a Joker-style transformation';
   }
@@ -1121,6 +1146,14 @@ function buildCanonicalEnglishNegativePrompt(mask = {}, canonicalizedState = nul
 
   if (canonicalizedState?.structuredFields?.constraints?.noText === true) {
     hints.push('readable text', 'watermark', 'logo', 'signature');
+  }
+
+  if (isReferenceHumanGreenOgreTransformation(mask, [
+    canonicalizedState?.canonicalEnglishInput,
+    ...(canonicalizedState?.structuredFields?.subject || []),
+    ...(canonicalizedState?.structuredFields?.style || []),
+  ].filter(Boolean).join(' '))) {
+    hints.push('unchanged human skin', 'plain original photo', 'subtle filter', 'normal human ears');
   }
 
   if (hasReferenceInitImage(mask)) {
@@ -1240,12 +1273,32 @@ function buildPrimaryReferenceAnchorHints(mask = {}, language = 'en') {
   ];
 }
 
+function buildReferenceHumanVisibleTransformationHints(mask = {}, canonicalizedState = null) {
+  const sourceText = [
+    canonicalizedState?.canonicalEnglishInput,
+    ...(canonicalizedState?.structuredFields?.subject || []),
+    ...(canonicalizedState?.structuredFields?.style || []),
+    mask?.raw,
+    mask?.meta?.originalSourceText,
+  ].filter(Boolean).join(' ');
+
+  if (!isReferenceHumanGreenOgreTransformation(mask, sourceText)) return [];
+
+  return [
+    'make the transformation visually obvious, not a subtle portrait filter',
+    'turn the skin clearly green while keeping the person recognizable',
+    'add rounded ogre ears and broad fairytale ogre facial proportions',
+    'use swamp-fantasy styling only as supporting context, not as the main subject',
+  ];
+}
+
 function buildCanonicalEnglishPromptInstructions(mask = {}, canonicalizedState = null) {
   return normalizeList([
     sanitizePositivePromptHint(mask?.meta?.subjectProfile?.promptInstruction || ''),
     ...(Array.isArray(mask?.meta?.promptInstructions) ? mask.meta.promptInstructions : []),
     ...(canonicalizedState?.structuredFields?.constraints?.promptInstructions || []),
     ...(isReferenceHumanFigure(mask) ? buildReferenceHumanIdentityLockHints('en') : []),
+    ...buildReferenceHumanVisibleTransformationHints(mask, canonicalizedState),
     ...buildPrimaryReferenceAnchorHints(mask, 'en'),
   ]).filter((entry) => looksCanonicalEnglishLiteral(entry));
 }

@@ -249,9 +249,26 @@ function hasJokerStyleTransformationSignal(value = '') {
   return /\b(joker(?:[ -]?style|[ -]?themed)?|joker-inspired|joker inspired|character inspired by the joker|personnage inspire du joker|joker portrait|joker-style transformation|joker style transformation)\b/i.test(String(value || ''));
 }
 
+function hasGreenOgreTransformationSignal(value = '') {
+  return /\b(?:shrek|green ogre|ogre vert|ogre-inspired|ogre inspired|fairytale ogre|ogre fantasy|ogre)\b/i.test(String(value || ''));
+}
+
 function isReferenceHumanJokerTransformation(mask = {}, prompt = '') {
   if (!hasReferenceHumanFigure(mask)) return false;
   return hasJokerStyleTransformationSignal([
+    prompt,
+    mask?.raw,
+    mask?.meta?.initialRawUserInput,
+    mask?.meta?.userSourceText,
+    mask?.meta?.originalSourceText,
+    mask?.meta?.canonicalizedRequest?.canonicalEnglishInput,
+    mask?.meta?.promptCanonicalization?.canonicalEnglishInput,
+  ].filter(Boolean).join(' '));
+}
+
+function isReferenceHumanGreenOgreTransformation(mask = {}, prompt = '') {
+  if (!hasReferenceHumanFigure(mask)) return false;
+  return hasGreenOgreTransformationSignal([
     prompt,
     mask?.raw,
     mask?.meta?.initialRawUserInput,
@@ -1007,6 +1024,31 @@ function normalizeReferenceHumanEnglishPromptContract(prompt = '', mask = {}) {
   if (!text) return '';
   if (!hasReferenceInitImage(mask)) return text;
   if (normalizeLookup(mask?.meta?.subjectProfile?.type || '') !== 'single_human_figure') return text;
+  if (isReferenceHumanGreenOgreTransformation(mask, text)) {
+    if (!/\bthe exact same person from the reference image in a clearly recognizable green ogre fantasy transformation\b/i.test(text)) {
+      const remainder = normalizeText(
+        text
+          .replace(/^use the input image as an identity, pose(?:, and framing)? reference\.?\s*/i, '')
+          .replace(/^the same person from the reference image,?\s*/i, '')
+      );
+      text = normalizeText([
+        'the exact same person from the reference image in a clearly recognizable green ogre fantasy transformation',
+        remainder,
+      ].filter(Boolean).join(', '));
+    }
+
+    for (const fragment of [
+      'visibly green skin',
+      'rounded ogre ears',
+      'broad fairytale ogre facial proportions',
+      'recognizable identity from the reference image',
+    ]) {
+      if (!text.toLowerCase().includes(fragment.toLowerCase())) {
+        text = normalizeText(`${text}, ${fragment}`);
+      }
+    }
+    return text;
+  }
   if (!/\bjoker(?:[ -]?style|[ -]?themed| inspired| portrait)\b/i.test(text)) return text;
 
   text = text

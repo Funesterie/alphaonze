@@ -28,6 +28,7 @@ Rules:
 - Translate only common descriptive words and localized franchise names when needed; never substitute one named character for another.
 - If the request is ambiguous in a way that blocks image generation, ask for clarification instead of guessing.
 - If a reference image is present, reflect that in the English request and keep identity/pose/framing preservation when explicitly requested.
+- If a reference human is transformed into a named character, creature, costume, or visual archetype, keep the identity anchor but make the requested transformation visually explicit and strong enough to render. Do not collapse it into an almost unchanged portrait.
 - Treat solo portrait requests as single-subject unless there is a strong explicit signal for two or more subjects.
 - Treat "versus", "vs", "against", "duel", "fight", "battle", "combat between", and equivalent wording as a pair or group scene when named subjects are present. Do not emit "single subject" instructions for pair or group scenes.
 - Preserve explicit cardinality from raw_user_input: if the user asks for two subjects, both subjects, a duel, 1v1, face-to-face combat, or "between two" actors, scenePolicy.subjectMode must be "pair", explicitSubjectCount must be 2, and structuredFields.subject must contain two separate subject entries.

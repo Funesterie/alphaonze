@@ -105,7 +105,7 @@ test('Vivy Studio keeps internal briefs out of public voice output', () => {
   assert.doesNotMatch(result.publicText, /VIVY_STUDIO_HANDOFF|VIVY_VOICE_CALIBRATION|Routage:/);
 });
 
-test('Vivy Studio calibrates Djeff rap voice through the owned A11 persona', () => {
+test('Vivy Studio calibrates Djeff official voice through the owned A11 persona', () => {
   const result = buildVivyStudioProduction({
     mode: 'voice',
     voiceTool: 'Voix Djeff rap',
@@ -114,12 +114,12 @@ test('Vivy Studio calibrates Djeff rap voice through the owned A11 persona', () 
 
   assert.equal(result.ok, true);
   assert.equal(result.mode, 'voice');
-  assert.match(result.title, /Djeff rap/);
+  assert.match(result.title, /Djeff officielle/);
   assert.match(result.brief, /voicePersona: a11/);
-  assert.match(result.brief, /Djeff rap Pignon locale/);
+  assert.match(result.brief, /Djeff officielle locale/);
   assert.match(result.brief, /chaîne sur couronne|chaine sur couronne/i);
   assert.match(result.brief, /Ne pas publier la référence brute/);
-  assert.match(JSON.stringify(result.actions), /Tester Voix Djeff rap/);
+  assert.match(JSON.stringify(result.actions), /Tester Voix Djeff officielle/);
 });
 
 test('Vivy Studio hides legacy sound tokens and builds prime-complex prosody', () => {
