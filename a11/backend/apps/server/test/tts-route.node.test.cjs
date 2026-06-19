@@ -374,6 +374,8 @@ test('tts speak route keeps basic/public accounts on neutral SIWIS instead of pa
     CARTESIA_TOKEN: process.env.CARTESIA_TOKEN,
     A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
     A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
+    A11_ELEVENLABS_TTS_DISABLED: process.env.A11_ELEVENLABS_TTS_DISABLED,
+    A11_TTS_OFFICIAL_ELEVENLABS_RVC_DEFAULT: process.env.A11_TTS_OFFICIAL_ELEVENLABS_RVC_DEFAULT,
   };
   const previousFetch = global.fetch;
   const backendBodies = [];
@@ -383,6 +385,8 @@ test('tts speak route keeps basic/public accounts on neutral SIWIS instead of pa
   process.env.A11_CARTESIA_API_KEY = 'cartesia-should-not-be-used';
   process.env.A11_ELEVENLABS_API_KEY = 'elevenlabs-should-not-be-used';
   process.env.A11_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
+  process.env.A11_ELEVENLABS_TTS_DISABLED = '1';
+  process.env.A11_TTS_OFFICIAL_ELEVENLABS_RVC_DEFAULT = '0';
   delete process.env.CARTESIA_API_KEY;
   delete process.env.CARTESIA_TOKEN;
 
@@ -551,6 +555,8 @@ test('tts speak route gives basic A11 the official local reference without paid 
     CARTESIA_TOKEN: process.env.CARTESIA_TOKEN,
     A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
     A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
+    A11_ELEVENLABS_TTS_DISABLED: process.env.A11_ELEVENLABS_TTS_DISABLED,
+    A11_TTS_OFFICIAL_ELEVENLABS_RVC_DEFAULT: process.env.A11_TTS_OFFICIAL_ELEVENLABS_RVC_DEFAULT,
   };
   const previousFetch = global.fetch;
   const wav = createPcm16Wav();
@@ -705,6 +711,8 @@ test('tts speak route keeps premium A11 on the official WAV reference when offic
   process.env.A11_CARTESIA_API_KEY = 'cartesia-should-not-be-used';
   process.env.A11_ELEVENLABS_API_KEY = 'elevenlabs-should-not-be-used';
   process.env.A11_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
+  process.env.A11_ELEVENLABS_TTS_DISABLED = '1';
+  process.env.A11_TTS_OFFICIAL_ELEVENLABS_RVC_DEFAULT = '0';
   delete process.env.A11_VOICE_XTTS_RVC_URL;
   delete process.env.A11_XTTS_RVC_URL;
   delete process.env.TTS_URL;
@@ -1722,6 +1730,8 @@ test('tts speak route can use ElevenLabs when selected explicitly by an authoriz
   const previousEnv = {
     A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
     A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
+    A11_ELEVENLABS_TTS_DISABLED: process.env.A11_ELEVENLABS_TTS_DISABLED,
+    ELEVENLABS_TTS_DISABLED: process.env.ELEVENLABS_TTS_DISABLED,
     A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
     A11_ELEVENLABS_MODEL: process.env.A11_ELEVENLABS_MODEL,
     A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
@@ -1735,6 +1745,8 @@ test('tts speak route can use ElevenLabs when selected explicitly by an authoriz
 
   process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
   process.env.A11_ELEVENLABS_TTS_ENABLED = 'true';
+  delete process.env.A11_ELEVENLABS_TTS_DISABLED;
+  delete process.env.ELEVENLABS_TTS_DISABLED;
   process.env.A11_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
   process.env.A11_ELEVENLABS_MODEL = 'eleven_multilingual_v2';
   process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
@@ -1807,6 +1819,8 @@ test('tts speak route gives Djeff rap cloud tests a distinct ElevenLabs voice', 
   const previousEnv = {
     A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
     A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
+    A11_ELEVENLABS_TTS_DISABLED: process.env.A11_ELEVENLABS_TTS_DISABLED,
+    ELEVENLABS_TTS_DISABLED: process.env.ELEVENLABS_TTS_DISABLED,
     A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
     A11_ELEVENLABS_DJEFF_VOICE_ID: process.env.A11_ELEVENLABS_DJEFF_VOICE_ID,
     A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
@@ -1818,6 +1832,8 @@ test('tts speak route gives Djeff rap cloud tests a distinct ElevenLabs voice', 
 
   process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
   process.env.A11_ELEVENLABS_TTS_ENABLED = 'true';
+  delete process.env.A11_ELEVENLABS_TTS_DISABLED;
+  delete process.env.ELEVENLABS_TTS_DISABLED;
   process.env.A11_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
   process.env.A11_ELEVENLABS_DJEFF_VOICE_ID = 'djeff-official-test';
   process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
@@ -1880,14 +1896,26 @@ test('tts speak route gives Djeff rap cloud tests a distinct ElevenLabs voice', 
   }
 });
 
-test('tts speak route keeps official auto voices on local XTTS/RVC refs when cloud is configured', async () => {
+test('tts speak route defaults official auto voices to ElevenLabs before any RVC conversion', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-official-elevenlabs-rvc-'));
   const previousEnv = {
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_RUNTIME_DISABLE_IMPLICIT_LEGACY: process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY,
+    A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
+    A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
     A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
     A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
+    A11_ELEVENLABS_TTS_DISABLED: process.env.A11_ELEVENLABS_TTS_DISABLED,
+    ELEVENLABS_TTS_DISABLED: process.env.ELEVENLABS_TTS_DISABLED,
     A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
     A11_ELEVENLABS_MODEL: process.env.A11_ELEVENLABS_MODEL,
+    A11_ELEVENLABS_A11_VOICE_ID: process.env.A11_ELEVENLABS_A11_VOICE_ID,
+    A11_ELEVENLABS_K44_VOICE_ID: process.env.A11_ELEVENLABS_K44_VOICE_ID,
+    A11_ELEVENLABS_KAEN44_VOICE_ID: process.env.A11_ELEVENLABS_KAEN44_VOICE_ID,
+    A11_ELEVENLABS_VIVY_VOICE_ID: process.env.A11_ELEVENLABS_VIVY_VOICE_ID,
     A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
     A11_TTS_ALLOW_XTTS_RVC_AUTO: process.env.A11_TTS_ALLOW_XTTS_RVC_AUTO,
+    A11_TTS_OFFICIAL_ELEVENLABS_RVC_DEFAULT: process.env.A11_TTS_OFFICIAL_ELEVENLABS_RVC_DEFAULT,
     A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
     A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
@@ -1898,17 +1926,32 @@ test('tts speak route keeps official auto voices on local XTTS/RVC refs when clo
   const bridgeCalls = [];
   const wav = createPcm16Wav({ frequency: 440 });
   const expectedVoiceIds = new Map([
-    ['a11', 'pNInz6obpgDQGcFmaJgB'],
-    ['kaen44', 'EXAVITQu4vr4xnSDxMaL'],
-    ['vivy', '21m00Tcm4TlvDq8ikWAM'],
+    ['a11', 'a11-official-test'],
+    ['kaen44', 'k44-official-test'],
+    ['vivy', 'vivy-official-test'],
   ]);
 
+  fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'a11-official-stern-french.wav'), createPcm16Wav({ frequency: 180 }));
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'kaen44-official-french-narrator.wav'), createPcm16Wav({ frequency: 330 }));
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'vivy.wav'), createPcm16Wav({ frequency: 260 }));
+  process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY = '1';
+  process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
+  delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
   process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
   process.env.A11_ELEVENLABS_TTS_ENABLED = 'true';
+  delete process.env.A11_ELEVENLABS_TTS_DISABLED;
+  delete process.env.ELEVENLABS_TTS_DISABLED;
   process.env.A11_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
   process.env.A11_ELEVENLABS_MODEL = 'eleven_multilingual_v2';
+  process.env.A11_ELEVENLABS_A11_VOICE_ID = 'a11-official-test';
+  process.env.A11_ELEVENLABS_K44_VOICE_ID = 'k44-official-test';
+  process.env.A11_ELEVENLABS_KAEN44_VOICE_ID = 'k44-official-test';
+  process.env.A11_ELEVENLABS_VIVY_VOICE_ID = 'vivy-official-test';
   process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
   process.env.A11_TTS_ALLOW_XTTS_RVC_AUTO = 'true';
+  process.env.A11_TTS_OFFICIAL_ELEVENLABS_RVC_DEFAULT = 'true';
   process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
   process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
   process.env.ENABLE_PIPER_HTTP = 'true';
@@ -1920,7 +1963,13 @@ test('tts speak route keeps official auto voices on local XTTS/RVC refs when clo
       .find(([, voiceId]) => value === `https://api.elevenlabs.test/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`)?.[0];
     if (matchedPersona) {
       elevenLabsBodies.push({ persona: matchedPersona, body: JSON.parse(String(options.body || '{}')) });
-      throw new Error(`elevenlabs_should_not_be_called_for_official_auto_${matchedPersona}`);
+      return {
+        ok: true,
+        status: 200,
+        async arrayBuffer() {
+          return Buffer.from(`elevenlabs-${matchedPersona}-mp3`);
+        },
+      };
     }
     if (value === 'http://voice-bridge.test/api/voice/convert') {
       bridgeCalls.push({ url: value, body: options.body });
@@ -1939,6 +1988,9 @@ test('tts speak route keeps official auto voices on local XTTS/RVC refs when clo
           return wav;
         },
       };
+    }
+    if (value === 'http://voice-bridge.test/api/voice/synthesize') {
+      throw new Error('xtts_synthesize_should_not_be_called_for_elevenlabs_rvc');
     }
     if (value === 'https://api.cartesia.test/tts/bytes') {
       throw new Error('cartesia_should_not_be_called_for_auto_default');
@@ -1970,14 +2022,23 @@ test('tts speak route keeps official auto voices on local XTTS/RVC refs when clo
           });
 
           assert.equal(result.response.status, 200);
-          assert.equal(result.json.provider, 'xtts-rvc');
-          assert.match(result.json.via, /xtts-rvc/);
+          assert.match(result.json.via, /^elevenlabs-tts(?:\+xtts-rvc)?$/);
+          assert.notEqual(result.json.via, 'xtts-rvc-direct');
+          assert.notEqual(result.json.via, 'funesterie-xtts-rvc-bridge');
+          if (result.json.via === 'elevenlabs-tts+xtts-rvc') {
+            assert.equal(result.json.provider, 'xtts-rvc');
+            assert.match(result.json.originalAudioUrl, /^\/api\/tts\/out\/tts-out-\d+-elevenlabs\.mp3$/);
+            assert.equal(result.json.voiceConversion.engine, 'xtts-rvc');
+            assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
+          } else {
+            assert.equal(result.json.provider, 'elevenlabs');
+            assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-elevenlabs\.mp3$/);
+          }
           assert.equal(result.json.providerCapabilities.referenceVoice, true);
-          assert.equal(result.json.voiceConversion.engine, 'xtts-rvc');
-          assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
         }
-        assert.equal(elevenLabsBodies.length, 0);
-        assert.equal(bridgeCalls.length, 3);
+        assert.deepEqual(elevenLabsBodies.map((entry) => entry.persona), ['a11', 'kaen44', 'vivy']);
+        assert.equal(elevenLabsBodies.every((entry) => entry.body.model_id === 'eleven_multilingual_v2'), true);
+        assert.ok(bridgeCalls.length <= 3);
       }
     );
   } finally {
@@ -1986,6 +2047,7 @@ test('tts speak route keeps official auto voices on local XTTS/RVC refs when clo
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
   }
 });
 

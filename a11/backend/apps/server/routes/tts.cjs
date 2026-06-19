@@ -2075,7 +2075,7 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
 }
 
 async function finalizeTtsPayload(payload, req, vocalMode) {
-  if (isReferenceAwareTtsPayload(payload)) {
+  if (isReferenceAwareTtsPayload(payload) && !wantsElevenLabsRvcPipeline(req?.body || {})) {
     return enrichTtsPayloadWithAudioModule(payload, req, vocalMode);
   }
   const converted = await requestVoiceConversionWithModule(payload, req, vocalMode);
@@ -4626,7 +4626,9 @@ async function handleTtsSpeakRequest(req, res) {
       model: voice || requestBody?.model,
       vocalMode,
     };
-    preparedBody = normalizeA11OfficialReferenceRequest(preparedBody);
+    preparedBody = useElevenLabsRvc
+      ? normalizeElevenLabsRvcRequest({ ...preparedBody, voiceMode: 'elevenlabs-rvc' })
+      : normalizeA11OfficialReferenceRequest(preparedBody);
     req.body = preparedBody;
     let openAiTtsErrorMessage = null;
     const resolvedProvider = resolveTtsProviderForRequest(preparedBody);
@@ -5280,7 +5282,11 @@ router.get('/tts/out/:filename', async (req, res) => {
 
 router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
   setTtsCorsHeaders(req, res);
-  const requestBody = normalizeA11OfficialReferenceRequest(enforceBasicTtsCostPolicy(req, req.body || {}));
+  const baseBody = enforceBasicTtsCostPolicy(req, req.body || {});
+  const useElevenLabsRvc = shouldRouteOfficialToElevenLabsRvc(req, baseBody);
+  const requestBody = useElevenLabsRvc
+    ? normalizeElevenLabsRvcRequest({ ...baseBody, voiceMode: 'elevenlabs-rvc' })
+    : normalizeA11OfficialReferenceRequest(baseBody);
   req.body = requestBody;
   if (shouldRejectBlockedOfficialIdentityRequest(requestBody)) {
     return res.status(424).json(buildBlockedOfficialIdentityPayload(requestBody));
@@ -5307,7 +5313,9 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
       model: voice || requestBody?.model,
       vocalMode,
     };
-    preparedBody = normalizeA11OfficialReferenceRequest(preparedBody);
+    preparedBody = useElevenLabsRvc
+      ? normalizeElevenLabsRvcRequest({ ...preparedBody, voiceMode: 'elevenlabs-rvc' })
+      : normalizeA11OfficialReferenceRequest(preparedBody);
     req.body = preparedBody;
     let openAiTtsErrorMessage = null;
     const resolvedProvider = resolveTtsProviderForRequest(preparedBody);
