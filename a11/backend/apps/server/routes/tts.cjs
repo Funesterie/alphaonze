@@ -2569,6 +2569,33 @@ function getPersonaScopedEnvValue(prefix, persona, suffixes = []) {
   return '';
 }
 
+function getOfficialElevenLabsVoiceEnvValue(persona = 'a11') {
+  const normalized = normalizeTtsPersona(persona);
+  const candidates = normalized === 'kaen44'
+    ? [
+      'A11_ELEVENLABS_KAEN44_VOICE_ID',
+      'A11_ELEVENLABS_K44_VOICE_ID',
+      'ELEVENLABS_KAEN44_VOICE_ID',
+      'ELEVENLABS_K44_VOICE_ID',
+    ]
+    : normalized === 'vivy'
+      ? [
+        'A11_ELEVENLABS_VIVY_VOICE_ID',
+        'VIVY_ELEVENLABS_VOICE_ID',
+        'ELEVENLABS_VIVY_VOICE_ID',
+      ]
+      : [
+        'A11_ELEVENLABS_A11_VOICE_ID',
+        'A11_TTS_A11_ELEVENLABS_VOICE_ID',
+        'ELEVENLABS_A11_VOICE_ID',
+      ];
+  for (const name of candidates) {
+    const value = String(process.env[name] || '').trim();
+    if (value) return value;
+  }
+  return '';
+}
+
 function getOfficialVoiceStyleLabel(persona = 'a11', provider = '') {
   const profile = getReadyVoiceProfile(persona, provider);
   return String(profile?.label || profile?.displayName || profile?.styleId || `${normalizeTtsPersona(persona)}-official`).trim();
@@ -4199,6 +4226,7 @@ function resolveElevenLabsVoiceId(persona, body = {}) {
     || body?.elevenlabs_voice_id
     || body?.providerVoiceId
     || djeffRapVoiceId
+    || getOfficialElevenLabsVoiceEnvValue(persona)
     || getPersonaScopedEnvValue('A11_ELEVENLABS', persona, ['VOICE_ID', 'VOICE'])
     || getPersonaScopedEnvValue('ELEVENLABS', persona, ['VOICE_ID', 'VOICE'])
     || getPersonaScopedEnvValue('A11_TTS', persona, ['ELEVENLABS_VOICE_ID'])

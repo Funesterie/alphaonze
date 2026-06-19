@@ -19,13 +19,20 @@ test('prod deploy keeps official ElevenLabs fallback voice ids distinct', () => 
   const script = readDeployScript();
 
   assert.match(script, /A11_ELEVENLABS_A11_VOICE_ID\s*=\s*\$\(if \(\$env:A11_ELEVENLABS_A11_VOICE_ID\)[\s\S]+?"pNInz6obpgDQGcFmaJgB"/);
+  assert.match(script, /A11_ELEVENLABS_DJEFF_VOICE_ID\s*=\s*\$\(if \(\$env:A11_ELEVENLABS_DJEFF_VOICE_ID\)[\s\S]+?else \{ "" \}/);
   assert.match(script, /A11_ELEVENLABS_KAEN44_VOICE_ID\s*=\s*\$\(if \(\$env:A11_ELEVENLABS_KAEN44_VOICE_ID\)[\s\S]+?"EXAVITQu4vr4xnSDxMaL"/);
   assert.match(script, /A11_ELEVENLABS_K44_VOICE_ID\s*=\s*\$\(if \(\$env:A11_ELEVENLABS_K44_VOICE_ID\)[\s\S]+?"EXAVITQu4vr4xnSDxMaL"/);
   assert.match(script, /A11_ELEVENLABS_VIVY_VOICE_ID\s*=\s*\$\(if \(\$env:A11_ELEVENLABS_VIVY_VOICE_ID\)[\s\S]+?"21m00Tcm4TlvDq8ikWAM"/);
+  assert.match(script, /\$envMap\["A11_ELEVENLABS_A11_VOICE_ID"\]/);
+  assert.match(script, /\$envMap\["A11_ELEVENLABS_DJEFF_VOICE_ID"\]/);
+  assert.match(script, /\$envMap\["A11_ELEVENLABS_KAEN44_VOICE_ID"\]/);
+  assert.match(script, /\$envMap\["A11_ELEVENLABS_K44_VOICE_ID"\]/);
+  assert.match(script, /\$envMap\["A11_ELEVENLABS_VIVY_VOICE_ID"\]/);
 
   assert.doesNotMatch(script, /A11_ELEVENLABS_KAEN44_VOICE_ID[^\r\n]+"JBFqnCBsd6RMkjVDRZzb"/);
   assert.doesNotMatch(script, /A11_ELEVENLABS_K44_VOICE_ID[^\r\n]+"JBFqnCBsd6RMkjVDRZzb"/);
   assert.doesNotMatch(script, /A11_ELEVENLABS_VIVY_VOICE_ID[^\r\n]+"JBFqnCBsd6RMkjVDRZzb"/);
+  assert.doesNotMatch(script, /A11_ELEVENLABS_DJEFF_VOICE_ID[^\r\n]+"ErXwobaYiN019PkySvjV"/);
 });
 
 test('prod deploy injects voice module and XTTS/RVC env into both backend services', () => {

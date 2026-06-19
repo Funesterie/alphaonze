@@ -3474,6 +3474,8 @@ html.a11-auth-page-root body {
   overflow-y: auto;
   display: flex !important;
   flex-direction: column;
+  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr) !important;
   gap: 14px !important;
   border: 1px solid rgba(240, 121, 216, 0.28);
   border-radius: 10px;
@@ -3505,6 +3507,8 @@ html.a11-auth-page-root body {
 
 .vivy-agent-menu-section {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 8px;
 }
 
@@ -3582,6 +3586,7 @@ html.a11-auth-page-root body {
 
 .vivy-agent-menu-grid {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 

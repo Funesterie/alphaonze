@@ -6382,28 +6382,15 @@ function VivyPublicPage({ authenticated, displayName, diagnosticsAllowed = false
           </span>
         </a>
         <div className="vivy-agent-actions">
+          <a className="vivy-agent-home" href={surfaceLinks.home}>
+            Accueil
+          </a>
+          <a className="vivy-agent-discussion" href="#vivy-chat">
+            Discussion
+          </a>
           <details className="vivy-agent-menu">
             <summary>Menu</summary>
             <div className="vivy-agent-menu-panel">
-              <section className="vivy-agent-menu-section" aria-label="Navigation">
-                <p className="vivy-agent-menu-title">Navigation</p>
-                <a className="vivy-agent-menu-row" href={surfaceLinks.home}>
-                  <span>Accueil</span>
-                  <span>Public</span>
-                </a>
-                <a className="vivy-agent-menu-row" href="#vivy-chat">
-                  <span>Discussion</span>
-                  <span>Ouvrir</span>
-                </a>
-                <a className="vivy-agent-menu-row" href="#vivy-studio">
-                  <span>Studio</span>
-                  <span>Vivy</span>
-                </a>
-                <a className="vivy-agent-menu-row" href={surfaceLinks.cockpit}>
-                  <span>Cockpit</span>
-                  <span>État</span>
-                </a>
-              </section>
               <section className="vivy-agent-menu-section" aria-label="Langue">
                 <p className="vivy-agent-menu-title">Langue</p>
                 <select

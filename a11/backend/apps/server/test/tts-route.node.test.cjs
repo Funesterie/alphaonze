@@ -1808,6 +1808,7 @@ test('tts speak route gives Djeff rap cloud tests a distinct ElevenLabs voice', 
     A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
     A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
     A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
+    A11_ELEVENLABS_DJEFF_VOICE_ID: process.env.A11_ELEVENLABS_DJEFF_VOICE_ID,
     A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
@@ -1818,13 +1819,14 @@ test('tts speak route gives Djeff rap cloud tests a distinct ElevenLabs voice', 
   process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
   process.env.A11_ELEVENLABS_TTS_ENABLED = 'true';
   process.env.A11_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
+  process.env.A11_ELEVENLABS_DJEFF_VOICE_ID = 'djeff-official-test';
   process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
   process.env.ENABLE_PIPER_HTTP = 'true';
   process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
 
   global.fetch = async (url, options = {}) => {
     const value = String(url);
-    if (value === 'https://api.elevenlabs.test/v1/text-to-speech/ErXwobaYiN019PkySvjV?output_format=mp3_44100_128') {
+    if (value === 'https://api.elevenlabs.test/v1/text-to-speech/djeff-official-test?output_format=mp3_44100_128') {
       calls.push(JSON.parse(String(options.body || '{}')));
       return {
         ok: true,
@@ -1833,6 +1835,9 @@ test('tts speak route gives Djeff rap cloud tests a distinct ElevenLabs voice', 
           return Buffer.from('elevenlabs-djeff-rap-mp3');
         },
       };
+    }
+    if (value.startsWith('https://api.elevenlabs.test/v1/text-to-speech/')) {
+      throw new Error(`unexpected_djeff_elevenlabs_voice_url: ${value}`);
     }
     if (value === 'http://a11-voice:5002/api/tts') {
       throw new Error('piper_http_should_not_be_called_for_djeff_elevenlabs');
@@ -1862,7 +1867,7 @@ test('tts speak route gives Djeff rap cloud tests a distinct ElevenLabs voice', 
 
         assert.equal(result.response.status, 200);
         assert.equal(result.json.provider, 'elevenlabs');
-        assert.equal(result.json.voice, 'ErXwobaYiN019PkySvjV');
+        assert.equal(result.json.voice, 'djeff-official-test');
         assert.equal(calls.length, 1);
       }
     );
@@ -3446,6 +3451,7 @@ test('tts speak route lets basic Vivy Studio official voice tests use ElevenLabs
     ELEVENLABS_API_KEY_FILE: process.env.ELEVENLABS_API_KEY_FILE,
     ELEVENLABS_BASE_URL: process.env.ELEVENLABS_BASE_URL,
     A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
+    A11_ELEVENLABS_VIVY_VOICE_ID: process.env.A11_ELEVENLABS_VIVY_VOICE_ID,
     A11_ELEVENLABS_TTS_DISABLED: process.env.A11_ELEVENLABS_TTS_DISABLED,
     ELEVENLABS_TTS_DISABLED: process.env.ELEVENLABS_TTS_DISABLED,
     A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
@@ -3471,6 +3477,7 @@ test('tts speak route lets basic Vivy Studio official voice tests use ElevenLabs
   delete process.env.A11_ELEVENLABS_API_KEY_FILE;
   delete process.env.ELEVENLABS_API_KEY_FILE;
   process.env.ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
+  process.env.A11_ELEVENLABS_VIVY_VOICE_ID = 'vivy-official-test';
   delete process.env.A11_ELEVENLABS_BASE_URL;
   delete process.env.A11_ELEVENLABS_TTS_DISABLED;
   delete process.env.ELEVENLABS_TTS_DISABLED;
@@ -3485,7 +3492,7 @@ test('tts speak route lets basic Vivy Studio official voice tests use ElevenLabs
 
   global.fetch = async (url, options = {}) => {
     const value = String(url);
-    if (value.startsWith('https://api.elevenlabs.test/v1/text-to-speech/')) {
+    if (value === 'https://api.elevenlabs.test/v1/text-to-speech/vivy-official-test?output_format=mp3_44100_128') {
       elevenBodies.push(JSON.parse(String(options.body || '{}')));
       return {
         ok: true,
@@ -3494,6 +3501,9 @@ test('tts speak route lets basic Vivy Studio official voice tests use ElevenLabs
           return wav;
         },
       };
+    }
+    if (value.startsWith('https://api.elevenlabs.test/v1/text-to-speech/')) {
+      throw new Error(`unexpected_vivy_elevenlabs_voice_url: ${value}`);
     }
     if (value === 'http://a11-voice:5002/api/tts') {
       remoteTtsCalls.push(value);
@@ -3531,6 +3541,7 @@ test('tts speak route lets basic Vivy Studio official voice tests use ElevenLabs
         assert.equal(result.response.status, 200);
         assert.equal(result.json.provider, 'elevenlabs');
         assert.equal(result.json.via, 'elevenlabs-tts');
+        assert.equal(result.json.voice, 'vivy-official-test');
         assert.ok(result.json.audioUrl);
         assert.equal(elevenBodies.length, 1);
         assert.equal(remoteTtsCalls.length, 0);
