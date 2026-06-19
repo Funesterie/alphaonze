@@ -774,6 +774,68 @@ function normalizeA11OfficialReferenceRequest(body = {}) {
   };
 }
 
+// Official "ElevenLabs + RVC" voice: ElevenLabs renders clean, intelligible
+// French (its cloned per-persona voice carries the reference timbre), then the
+// XTTS/RVC bridge re-timbres that clean clip through the persona .pth model.
+// This avoids the cold-XTTS phoneme hallucination ("aopueuàueeeoih") because
+// ElevenLabs — never XTTS — produces the words.
+const ELEVENLABS_RVC_MODE_ALIASES = new Set([
+  'elevenlabs-rvc',
+  'eleven-rvc',
+  'elevenlabs+rvc',
+  'elevenlabs-sts-rvc',
+  'xi-rvc',
+  'official-elevenlabs-rvc',
+]);
+
+function wantsElevenLabsRvcPipeline(body = {}) {
+  const mode = String(
+    body?.voiceMode
+    || body?.voicePipeline
+    || body?.ttsPipeline
+    || body?.pipeline
+    || body?.voiceConversionEngine
+    || body?.conversionEngine
+    || ''
+  ).trim().toLowerCase().replace(/[\s_]+/g, '-');
+  return ELEVENLABS_RVC_MODE_ALIASES.has(mode);
+}
+
+function normalizeElevenLabsRvcRequest(body = {}) {
+  if (!wantsElevenLabsRvcPipeline(body)) return body;
+  const persona = getExplicitTtsPersonaFromBody(body) || getTtsPersonaFromBody(body) || 'a11';
+  return {
+    ...(body || {}),
+    provider: PROVIDERS.ELEVENLABS,
+    ttsProvider: PROVIDERS.ELEVENLABS,
+    engine: PROVIDERS.ELEVENLABS,
+    voiceEngine: PROVIDERS.ELEVENLABS,
+    persona,
+    voicePersona: body?.voicePersona || persona,
+    surface: body?.surface || persona,
+    voiceConversion: true,
+    convertVoice: true,
+    morphVoice: true,
+    rvc: true,
+    useRvc: true,
+    allowRvc: true,
+    allowXttsRvc: true,
+    allowLegacyVoiceBridge: true,
+    voiceConversionEngine: 'elevenlabs-rvc',
+    conversionEngine: 'elevenlabs-rvc',
+    voiceConversionSourceEngine: 'elevenlabs',
+    voiceConversionPipeline: 'convert',
+    identityVoice: true,
+    useIdentityVoice: true,
+    neutralVoice: false,
+    allowPaidTtsVoice: true,
+    paidTtsAllowed: true,
+    allowCloudTts: true,
+    allowReadyMadeCloudVoice: true,
+    allowOfficialCloudVoice: true,
+  };
+}
+
 function enforceBasicTtsCostPolicy(req = {}, body = {}) {
   if (canUsePaidTtsVoice(req)) return body;
   if (shouldAllowBasicOwnedOfficialCloudVoice(body)) {
@@ -1832,6 +1894,16 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
       form.append('persona', String(req?.body?.voicePersona || req?.body?.ttsPersona || req?.body?.persona || req?.body?.surface || '').slice(0, 120));
       form.append('voiceStyle', String(getPreferredVoiceReferenceLabel(req) || '').slice(0, 120));
       form.append('useRvc', String(resolveUseRvc(req?.body || {}, true)));
+      // Tell the bridge which engine produced the clip and to convert that audio
+      // (audio-to-audio RVC / clean passthrough) rather than cold-resynthesizing
+      // it from text — this is what keeps an ElevenLabs render intelligible.
+      form.append('sourceEngine', String(
+        req?.body?.voiceConversionSourceEngine
+        || payload?.provider
+        || payload?.via
+        || 'audio'
+      ).slice(0, 60));
+      form.append('pipeline', String(req?.body?.voiceConversionPipeline || 'convert').slice(0, 20));
       if (req?.body?.voiceConversionStrength !== undefined) {
         form.append('strength', String(req.body.voiceConversionStrength));
       }
@@ -4473,7 +4545,12 @@ router.options(['/tts/piper', '/tts/speak', '/tts/jobs/:jobId', '/vivy/jobs', '/
 
 async function handleTtsSpeakRequest(req, res) {
   try {
-    const requestBody = normalizeA11OfficialReferenceRequest(enforceBasicTtsCostPolicy(req, req.body || {}));
+    let requestBody = normalizeA11OfficialReferenceRequest(enforceBasicTtsCostPolicy(req, req.body || {}));
+    // The explicit "ElevenLabs + RVC" official voice is a paid cloud path; only
+    // privileged/premium tiers may trigger it, basic accounts keep their gating.
+    if (wantsElevenLabsRvcPipeline(req.body || {}) && canUsePaidTtsVoice(req)) {
+      requestBody = normalizeElevenLabsRvcRequest(requestBody);
+    }
     req.body = requestBody;
     if (shouldRejectBlockedOfficialIdentityRequest(requestBody)) {
       return res.status(424).json(buildBlockedOfficialIdentityPayload(requestBody));
@@ -5470,3 +5547,5 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
 
 module.exports = router;
 module.exports.configureTtsRouter = configureTtsRouter;
+module.exports.normalizeElevenLabsRvcRequest = normalizeElevenLabsRvcRequest;
+module.exports.wantsElevenLabsRvcPipeline = wantsElevenLabsRvcPipeline;

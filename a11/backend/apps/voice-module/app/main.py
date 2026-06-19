@@ -602,6 +602,7 @@ def run_xtts_rvc_a11_api(
     reference_style: str,
     persona: str = "",
     use_rvc: bool = True,
+    source_engine: str = "",
 ) -> dict:
     endpoint = os.environ.get("A11_VOICE_XTTS_RVC_ENDPOINT", "/api/voice/convert").strip() or "/api/voice/convert"
     url = urljoin(XTTS_RVC_URL.rstrip("/") + "/", endpoint.lstrip("/"))
@@ -613,10 +614,15 @@ def run_xtts_rvc_a11_api(
             "text": text,
             "mode": mode,
             "engine": "xtts-rvc",
+            # Convert the already-spoken clip (audio-to-audio RVC / clean
+            # passthrough) instead of letting the bridge cold-resynthesize it.
+            "pipeline": "convert",
             "strength": str(strength),
             "voiceStyle": reference_style,
             "useRvc": "true" if use_rvc else "false",
         }
+        if source_engine:
+            data["sourceEngine"] = source_engine
         normalized_persona = normalize_persona(persona)
         if normalized_persona:
             data["persona"] = normalized_persona
@@ -715,6 +721,7 @@ def run_xtts_rvc(
     persona: str = "",
     voice_style: str = "",
     use_rvc: bool = True,
+    source_engine: str = "",
 ) -> dict:
     if not XTTS_RVC_URL:
         raise RuntimeError("xtts_rvc_url_missing")
@@ -733,6 +740,7 @@ def run_xtts_rvc(
         reference_style,
         persona,
         use_rvc,
+        source_engine,
     )
 
 
@@ -1073,6 +1081,7 @@ def synthesize(req: SynthesizeRequest) -> dict:
                             persona,
                             req.voiceStyle or reference_style,
                             req.useRvc if req.useRvc is not None else True,
+                            source_engine=(meta or {}).get("via") or "piper",
                         )
                         break
                     if provider in {"ffmpeg", "ffmpeg-morph", "morph"}:
@@ -1179,6 +1188,7 @@ async def convert_voice(
     useRvc: bool = Form(default=True),
     strength: Optional[float] = Form(default=None),
     f0Shift: Optional[float] = Form(default=None),
+    sourceEngine: str = Form(default=""),
 ):
     prune_old_audio()
     generated_file = await save_upload(generated, "generated")
@@ -1214,6 +1224,7 @@ async def convert_voice(
                         normalized_persona,
                         voiceStyle or reference_style,
                         useRvc,
+                        source_engine=sourceEngine or "cloud",
                     )
                     break
                 if provider in {"ffmpeg", "ffmpeg-morph", "morph"}:

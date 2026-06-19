@@ -136,5 +136,77 @@ class XttsRvcBridgeAudioGuardTests(unittest.TestCase):
                 restore_env(previous_env)
 
 
+class GeneratedAudioConversionTests(unittest.TestCase):
+    def test_convert_without_rvc_model_passes_clean_audio_through_without_xtts(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = pathlib.Path(temp_dir)
+            bridge, previous_env = import_bridge(temp_root)
+            try:
+                generated = bridge.OUT_DIR / "elevenlabs-input.wav"
+                write_tone_wav(generated, duration_sec=2.0)
+
+                def fail_xtts():
+                    raise AssertionError("XTTS must not run during audio-to-audio conversion")
+
+                bridge.get_tts = fail_xtts
+
+                result = bridge.convert_generated_audio(
+                    generated,
+                    persona="a11",
+                    voice_style="a11-official-stern-french",
+                    use_rvc=True,
+                    source_engine="elevenlabs",
+                )
+
+                # a11 has no .pth in the default manifest -> clean passthrough, not garbled XTTS
+                self.assertEqual(result["engine"], "elevenlabs-clean")
+                self.assertEqual(result["pipeline"], "convert")
+                self.assertFalse(result["hasRvc"])
+                self.assertTrue(result["path"].exists())
+                self.assertGreater(result["path"].stat().st_size, 0)
+            finally:
+                restore_env(previous_env)
+
+    def test_convert_with_rvc_model_runs_rvc_on_generated_audio_not_text(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = pathlib.Path(temp_dir)
+            bridge, previous_env = import_bridge(temp_root)
+            try:
+                generated = bridge.OUT_DIR / "elevenlabs-input.wav"
+                write_tone_wav(generated, duration_sec=2.0)
+                # Provide a persona RVC model so the conversion re-timbres the clip.
+                (bridge.RVCS_DIR / "vivy.pth").write_bytes(b"fake-rvc-model")
+                captured = {}
+
+                def fake_run_rvc(input_path, output_path, rvc_path, *args, **kwargs):
+                    captured["input"] = pathlib.Path(input_path)
+                    captured["rvc"] = pathlib.Path(rvc_path)
+                    write_tone_wav(pathlib.Path(output_path), duration_sec=2.0)
+
+                def fail_xtts():
+                    raise AssertionError("XTTS must not run during audio-to-audio conversion")
+
+                bridge.run_rvc = fake_run_rvc
+                bridge.get_tts = fail_xtts
+
+                result = bridge.convert_generated_audio(
+                    generated,
+                    persona="vivy",
+                    voice_style="vivy",
+                    use_rvc=True,
+                    source_engine="elevenlabs",
+                )
+
+                self.assertEqual(result["engine"], "elevenlabs-rvc")
+                self.assertTrue(result["hasRvc"])
+                self.assertEqual(captured["rvc"].name, "vivy.pth")
+                # The RVC input must be the supplied clip (or its prepared copy),
+                # never a freshly synthesized XTTS file.
+                self.assertTrue(captured["input"].name.startswith(("elevenlabs-input", "convert-src-")))
+                self.assertTrue(result["path"].exists())
+            finally:
+                restore_env(previous_env)
+
+
 if __name__ == "__main__":
     unittest.main()
