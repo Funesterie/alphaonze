@@ -4016,6 +4016,9 @@ test('tts official sample route is private by default', async () => {
   const previousEnv = {
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
     A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
+    A11_VOICE_REFERENCE_LIBRARY_DIRS: process.env.A11_VOICE_REFERENCE_LIBRARY_DIRS,
+    A11_VOICE_REFERENCE_LIBRARY_DIR: process.env.A11_VOICE_REFERENCE_LIBRARY_DIR,
+    A11_VOICE_REFERENCE_LIBRARY_PATHS: process.env.A11_VOICE_REFERENCE_LIBRARY_PATHS,
     A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
     A11_TTS_PUBLIC_OFFICIAL_SAMPLES: process.env.A11_TTS_PUBLIC_OFFICIAL_SAMPLES,
   };
@@ -4064,11 +4067,14 @@ test('tts official sample route serves A11 and Djeff library WAVs when explicitl
   const vivyWav = createPcm16Wav({ frequency: 260, durationSec: 0.19 });
 
   fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
-  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'A11 ref.wav'), wav);
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'a11-official-stern-french.wav'), wav);
   fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'Djeff ref.wav'), djeffWav);
-  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'Vivy ref.wav'), vivyWav);
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'vivy.wav'), vivyWav);
   process.env.A11_RUNTIME_ROOT = runtimeRoot;
   process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
+  delete process.env.A11_VOICE_REFERENCE_LIBRARY_DIRS;
+  delete process.env.A11_VOICE_REFERENCE_LIBRARY_DIR;
+  delete process.env.A11_VOICE_REFERENCE_LIBRARY_PATHS;
   delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
   process.env.A11_TTS_PUBLIC_OFFICIAL_SAMPLES = '1';
 

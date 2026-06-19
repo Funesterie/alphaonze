@@ -149,9 +149,13 @@ function getVoiceReferenceLibraryCandidates() {
   const defaults = [];
   for (const runtimeRoot of resolveRuntimeRootCandidates()) {
     defaults.push(
+      path.join(runtimeRoot, 'voice-library', 'a11-official-stern-french.wav'),
       path.join(runtimeRoot, 'voice-library', 'A11 ref.wav'),
+      path.join(runtimeRoot, 'voice-library', 'djeff-rap.wav'),
       path.join(runtimeRoot, 'voice-library', 'Djeff ref.wav'),
+      path.join(runtimeRoot, 'voice-library', 'kaen44-official-french-narrator.wav'),
       path.join(runtimeRoot, 'voice-library', 'K44 Ref.wav'),
+      path.join(runtimeRoot, 'voice-library', 'vivy.wav'),
       path.join(runtimeRoot, 'voice-library', 'Vivy ref.wav'),
       path.join(runtimeRoot, 'voice-library'),
       path.join(runtimeRoot, 'voice-references', 'library')
