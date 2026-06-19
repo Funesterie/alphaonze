@@ -108,7 +108,7 @@ class XttsRvcBridgeAudioGuardTests(unittest.TestCase):
 
                 self.assertEqual(result["engine"], "xtts-reference")
                 self.assertEqual(result["speakerPreparation"]["action"], "prepared")
-                self.assertLessEqual(captured["speakerSeconds"], 8.1)
+                self.assertLessEqual(captured["speakerSeconds"], 12.2)
                 self.assertEqual(result["durationGuard"]["action"], "trimmed")
                 self.assertLessEqual(result["durationGuard"]["finalSeconds"], 7.0)
                 self.assertLess(bridge.probe_audio_duration_seconds(result["path"]), 7.0)

@@ -98,24 +98,24 @@ def normalize_persona(value: Optional[str]) -> str:
 def preferred_reference_names(persona: str, mode: str) -> list[str]:
     if persona == "a11":
         return [
-            "A11 ref.wav",
             "a11-official-stern-french.wav",
+            "A11 ref.wav",
             "a11-official-stern-french-context.wav",
             "a11-terminator.wav",
             "a11-terminator-context.wav",
         ]
     if persona == "kaen44":
         return [
-            "K44 Ref.wav",
             "kaen44-official-french-narrator.wav",
+            "K44 Ref.wav",
             "kaen44-donna.wav",
             "kaen44-donna-extra.wav",
             "kaen44-donna-context.wav",
         ]
     if persona == "vivy":
         if mode == "sing":
-            return ["Vivy ref.wav", "vivy.wav", "vivy-song-context.wav", "vivy-pv-context.wav", "vivy-adaptive.wav"]
-        return ["Vivy ref.wav", "vivy.wav", "vivy-adaptive.wav", "vivy-pv-context.wav", "vivy-song-context.wav"]
+            return ["vivy-song-context.wav", "vivy.wav", "Vivy ref.wav", "vivy-pv-context.wav", "vivy-adaptive.wav"]
+        return ["vivy-adaptive.wav", "vivy.wav", "Vivy ref.wav", "vivy-pv-context.wav", "vivy-song-context.wav"]
     return []
 
 
@@ -189,6 +189,7 @@ class SynthesizeRequest(BaseModel):
     engine: Optional[str] = None
     strength: Optional[float] = Field(default=None, ge=0.05, le=1.0)
     f0Shift: Optional[float] = Field(default=None, ge=-12.0, le=12.0)
+    useRvc: Optional[bool] = None
     voiceReferenceRequired: bool = False
     referenceVoiceRequired: bool = False
     useDefaultVoiceReference: bool = False
@@ -600,6 +601,7 @@ def run_xtts_rvc_a11_api(
     f0_shift: Optional[float],
     reference_style: str,
     persona: str = "",
+    use_rvc: bool = True,
 ) -> dict:
     endpoint = os.environ.get("A11_VOICE_XTTS_RVC_ENDPOINT", "/api/voice/convert").strip() or "/api/voice/convert"
     url = urljoin(XTTS_RVC_URL.rstrip("/") + "/", endpoint.lstrip("/"))
@@ -613,6 +615,7 @@ def run_xtts_rvc_a11_api(
             "engine": "xtts-rvc",
             "strength": str(strength),
             "voiceStyle": reference_style,
+            "useRvc": "true" if use_rvc else "false",
         }
         normalized_persona = normalize_persona(persona)
         if normalized_persona:
@@ -711,6 +714,7 @@ def run_xtts_rvc(
     f0_shift: Optional[float],
     persona: str = "",
     voice_style: str = "",
+    use_rvc: bool = True,
 ) -> dict:
     if not XTTS_RVC_URL:
         raise RuntimeError("xtts_rvc_url_missing")
@@ -718,7 +722,18 @@ def run_xtts_rvc(
     protocol = XTTS_RVC_PROTOCOL
     if protocol in {"gradio", "xtts-rvc-ui"}:
         return run_xtts_rvc_gradio(out_file, mode, text, f0_shift, reference_style)
-    return run_xtts_rvc_a11_api(generated_file, reference_file, out_file, mode, text, strength, f0_shift, reference_style, persona)
+    return run_xtts_rvc_a11_api(
+        generated_file,
+        reference_file,
+        out_file,
+        mode,
+        text,
+        strength,
+        f0_shift,
+        reference_style,
+        persona,
+        use_rvc,
+    )
 
 
 def ffmpeg_morph_filter(mode: str, strength: float, f0_shift: Optional[float], generated_profile: dict, reference_profile: dict, reference_style: str = "") -> str:
@@ -1057,6 +1072,7 @@ def synthesize(req: SynthesizeRequest) -> dict:
                             morph_f0_shift,
                             persona,
                             req.voiceStyle or reference_style,
+                            req.useRvc if req.useRvc is not None else True,
                         )
                         break
                     if provider in {"ffmpeg", "ffmpeg-morph", "morph"}:
@@ -1160,6 +1176,7 @@ async def convert_voice(
     text: str = Form(default=""),
     persona: str = Form(default=""),
     voiceStyle: str = Form(default=""),
+    useRvc: bool = Form(default=True),
     strength: Optional[float] = Form(default=None),
     f0Shift: Optional[float] = Form(default=None),
 ):
@@ -1196,6 +1213,7 @@ async def convert_voice(
                         morph_f0_shift,
                         normalized_persona,
                         voiceStyle or reference_style,
+                        useRvc,
                     )
                     break
                 if provider in {"ffmpeg", "ffmpeg-morph", "morph"}:

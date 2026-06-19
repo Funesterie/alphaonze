@@ -4232,6 +4232,37 @@ html.a11-auth-page-root body {
   margin: 0;
 }
 
+.vivy-studio-test-list {
+  display: grid;
+  gap: 10px;
+}
+
+.vivy-studio-test-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+}
+
+.vivy-studio-test-card-copy {
+  min-width: 0;
+}
+
+.vivy-studio-test-mode-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(56px, auto));
+  gap: 6px;
+  align-items: center;
+}
+
+.vivy-studio-test-mode-buttons button {
+  min-width: 56px;
+  min-height: 34px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
 .vivy-studio-range-label {
   display: grid !important;
   grid-template-columns: minmax(0, 1fr) minmax(120px, 2fr) 48px;
@@ -4815,9 +4846,14 @@ html.a11-auth-page-root body {
 
   .vivy-agent-session-panel,
   .vivy-agent-menu-panel {
-    right: 0;
-    width: min(320px, calc(100vw - 16px));
+    position: fixed;
+    top: 58px;
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-width: none;
     max-height: 72vh;
+    box-sizing: border-box;
   }
 
   .vivy-agent-session-panel .vivy-agent-menu-row,
@@ -4947,6 +4983,23 @@ html.a11-auth-page-root body {
     min-height: 58px;
     gap: 4px;
     padding: 9px;
+  }
+
+  .vivy-studio-test-card {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .vivy-studio-test-mode-buttons {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .vivy-studio-test-mode-buttons button {
+    width: 100%;
+    min-width: 0;
+    padding: 0 6px;
   }
 
   .vivy-studio-voice-card small {

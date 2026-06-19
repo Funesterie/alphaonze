@@ -621,9 +621,9 @@ function voiceReferenceMatchesSurface(ref: TtsVoiceReference, surface: Funesteri
 }
 
 function getDefaultVoiceReferenceLabel(surface: FunesterieSurface) {
-  if (surface === "vivy") return "Vivy ref.wav";
-  if (surface === "kaen44") return "K44 Ref.wav";
-  return "A11 ref.wav";
+  if (surface === "vivy") return "vivy.wav";
+  if (surface === "kaen44") return "kaen44-official-french-narrator.wav";
+  return "a11-official-stern-french.wav";
 }
 
 function getDefaultVoiceReferenceStatus(surface: FunesterieSurface) {
@@ -3371,6 +3371,7 @@ const VIVY_STUDIO_VOICE_DIRECTORY: Array<{
   surface: "vivy" | "a11" | "kaen44";
   voiceStyle: string;
   referenceLabel: string;
+  referenceFileName?: string;
   statusLabel: string;
   statusKind: "ready" | "awaiting" | "personal";
   testLine: string;
@@ -3387,6 +3388,7 @@ const VIVY_STUDIO_VOICE_DIRECTORY: Array<{
     surface: "a11",
     voiceStyle: "djeff-rap",
     referenceLabel: "Djeff ref.wav",
+    referenceFileName: "djeff-rap.wav",
     statusLabel: "référence prête",
     statusKind: "ready",
     testLine: "Djeff cale le kick, pignon précis, radiateur froid, la voix reste proche du micro.",
@@ -3403,6 +3405,7 @@ const VIVY_STUDIO_VOICE_DIRECTORY: Array<{
     surface: "kaen44",
     voiceStyle: "kaen44-official-french-narrator",
     referenceLabel: "K44 Ref.wav",
+    referenceFileName: "kaen44-official-french-narrator.wav",
     statusLabel: "référence prête",
     statusKind: "ready",
     testLine: "K44 pose la ligne calmement, chaque mot tient la route, net et sans forcer.",
@@ -3419,6 +3422,7 @@ const VIVY_STUDIO_VOICE_DIRECTORY: Array<{
     surface: "a11",
     voiceStyle: "a11-official-stern-french",
     referenceLabel: "A11 ref.wav",
+    referenceFileName: "a11-official-stern-french.wav",
     statusLabel: "référence prête",
     statusKind: "ready",
     testLine: "A11 garde le signal, voix basse et nette, la machine respire avec le cœur humain.",
@@ -3435,6 +3439,7 @@ const VIVY_STUDIO_VOICE_DIRECTORY: Array<{
     surface: "vivy",
     voiceStyle: "vivy-official-french-conversational",
     referenceLabel: "Vivy ref.wav",
+    referenceFileName: "vivy.wav",
     statusLabel: "référence prête",
     statusKind: "ready",
     testLine: "Salut Jeffrey. Je suis Vivy, voix claire, proche et naturelle, prête à répondre.",
@@ -3463,10 +3468,47 @@ type VivyStudioVoiceTestEntry = (typeof VIVY_STUDIO_VOICE_DIRECTORY)[number] | {
   ttsPersona: "vivy" | "a11" | "kaen44";
   voiceStyle: string;
   referenceLabel?: string;
+  referenceFileName?: string;
   voiceTool: string;
   surface: "vivy" | "a11" | "kaen44";
   testLine?: string;
 };
+
+type VivyStudioVoiceTestMode = {
+  id: "ref" | "rvc" | "sing";
+  label: string;
+  statusLabel: string;
+  vocalMode: "adaptive" | "sing";
+  useRvc: boolean;
+  timeoutMs: number;
+};
+
+const VIVY_STUDIO_VOICE_TEST_MODES: VivyStudioVoiceTestMode[] = [
+  {
+    id: "ref",
+    label: "Ref",
+    statusLabel: "référence seule",
+    vocalMode: "adaptive",
+    useRvc: false,
+    timeoutMs: 180000,
+  },
+  {
+    id: "rvc",
+    label: "RVC",
+    statusLabel: "référence + RVC",
+    vocalMode: "adaptive",
+    useRvc: true,
+    timeoutMs: 240000,
+  },
+  {
+    id: "sing",
+    label: "Chant",
+    statusLabel: "mode chant",
+    vocalMode: "sing",
+    useRvc: false,
+    timeoutMs: 240000,
+  },
+];
 
 const DEFAULT_VIVY_STUDIO_ARTISTS: VivyStudioArtistId[] = ["vivy"];
 
@@ -3529,6 +3571,7 @@ type VivyStudioVoiceProfile = {
   voiceStyle: string;
   vocalMode: "adaptive" | "sing";
   referenceLabel: string;
+  referenceFileName?: string;
   briefVoicePersona: string;
   testLine: string;
   songCast: string;
@@ -3558,6 +3601,7 @@ function getVivyStudioVoiceProfileForTool(
       referenceLabel: hasPrivateReference
         ? `${privateLabel} + Vivy ref.wav`
         : "Djeff ref.wav + Vivy ref.wav",
+      referenceFileName: hasPrivateReference ? undefined : "djeff-rap.wav",
       briefVoicePersona: "voicePersona=a11, voiceStyle=djeff-rap pour Djeff; voicePersona=vivy pour Vivy",
       testLine: "Djeff cale le kick, chaîne sur couronne, pignon précis; Vivy répond dans la nuit, radiateur froid, moteur lucide.",
       songCast: "Djeff prend les couplets rap; Vivy tient les refrains et réponses mélodiques; les paroles doivent garder les tags [Djeff], [Vivy] et [Duo].",
@@ -3574,6 +3618,7 @@ function getVivyStudioVoiceProfileForTool(
       voiceStyle: "kaen44-official-french-narrator",
       vocalMode: "adaptive",
       referenceLabel: hasPrivateReference ? privateLabel : "K44 Ref.wav",
+      referenceFileName: hasPrivateReference ? undefined : "kaen44-official-french-narrator.wav",
       briefVoicePersona: "voicePersona=kaen44",
       testLine: "K44 pose la ligne, calme dans la cabine, chaque mot verrouille le rythme sans forcer.",
       songCast: "K44 prend le contre-chant posé, les réponses propres et les punchlines calmes.",
@@ -3590,6 +3635,7 @@ function getVivyStudioVoiceProfileForTool(
       voiceStyle: "a11-official-stern-french",
       vocalMode: "adaptive",
       referenceLabel: hasPrivateReference ? privateLabel : "A11 ref.wav",
+      referenceFileName: hasPrivateReference ? undefined : "a11-official-stern-french.wav",
       briefVoicePersona: "voicePersona=a11",
       testLine: "A11 garde le signal, voix basse et nette, la machine respire avec le cœur humain.",
       songCast: "A11 prend les ponts graves, les réponses synthétiques et la tension machine humaine.",
@@ -3606,6 +3652,7 @@ function getVivyStudioVoiceProfileForTool(
       voiceStyle: "djeff-rap",
       vocalMode: "adaptive",
       referenceLabel: hasPrivateReference ? privateLabel : "Djeff ref.wav",
+      referenceFileName: hasPrivateReference ? undefined : "djeff-rap.wav",
       briefVoicePersona: "voicePersona=a11, voiceStyle=djeff-rap",
       testLine: "Djeff cale le kick, chaîne sur couronne, pignon précis, radiateur froid et moteur lucide.",
       songCast: "Djeff prend le lead rap avec diction serrée, rimes internes et image mécanique concrète.",
@@ -3622,6 +3669,7 @@ function getVivyStudioVoiceProfileForTool(
       voiceStyle: "vivy-official-french-conversational",
       vocalMode: "adaptive",
       referenceLabel: hasPrivateReference ? privateLabel : "Vivy ref.wav",
+      referenceFileName: hasPrivateReference ? undefined : "vivy.wav",
       briefVoicePersona: "voicePersona=vivy en diagnostic",
       testLine: "Diagnostic Vivy. Je teste la chaîne voix avec une phrase courte et claire.",
       songCast: "Vivy reste la voix de test pendant le diagnostic du module.",
@@ -3654,6 +3702,7 @@ function getVivyStudioVoiceProfileForTool(
       voiceStyle: "vivy-official-french-conversational",
       vocalMode: "sing",
       referenceLabel: hasPrivateReference ? privateLabel : "Vivy ref.wav",
+      referenceFileName: hasPrivateReference ? undefined : "vivy-song-context.wav",
       briefVoicePersona: "voicePersona=vivy en mode chant",
       testLine: "Je garde ma voix claire, proche du micro, et je transforme la nuit en refrain.",
       songCast: "Vivy porte le chant principal avec diction française claire et refrain mémorable.",
@@ -3685,6 +3734,7 @@ function getVivyStudioVoiceProfileForTool(
     voiceStyle: "vivy-official-french-conversational",
     vocalMode: "adaptive",
     referenceLabel: hasPrivateReference ? privateLabel : "Vivy ref.wav",
+    referenceFileName: hasPrivateReference ? undefined : "vivy.wav",
     briefVoicePersona: "voicePersona=vivy",
     testLine: "Salut Jeffrey. Je suis Vivy. Je parle doucement, avec une voix claire et proche.",
     songCast: "Vivy porte la voix principale claire, musicale et précise émotionnellement.",
@@ -4179,22 +4229,24 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     ttsPersona: "vivy" | "a11" | "kaen44";
     voiceStyle: string;
     referenceLabel?: string;
+    referenceFileName?: string;
     voiceTool: string;
     surface: "vivy" | "a11" | "kaen44";
-  }) {
+  }, mode: VivyStudioVoiceTestMode = VIVY_STUDIO_VOICE_TEST_MODES[0]) {
     const officialVoiceIds = new Set(["djeff", "kaen44", "a11", "vivy"]);
     const entryId = String(entry.id || "").trim().toLowerCase();
     const usesOfficialReference = officialVoiceIds.has(entryId)
       || /\b(?:djeff|kaen44|a11|vivy|official|officiel|rap)\b/i.test(`${entry.voiceStyle} ${entry.voiceTool}`);
     const provider = usesOfficialReference ? "xtts-rvc" : "auto";
     const referenceLabel = String(entry.referenceLabel || entry.voiceStyle || entry.label).trim();
+    const referenceFileName = String(entry.referenceFileName || referenceLabel).trim();
     return {
       persona: entry.ttsPersona,
       voicePersona: entry.ttsPersona,
       ttsPersona: entry.ttsPersona,
       surface: entry.surface,
       voiceStyle: entry.voiceStyle,
-      voiceReferenceName: referenceLabel,
+      voiceReferenceName: referenceFileName,
       voiceReferenceLabel: referenceLabel,
       referenceVoiceStyle: entry.voiceStyle || referenceLabel,
       voiceTool: entry.voiceTool,
@@ -4203,12 +4255,15 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       ttsProvider: provider,
       engine: provider,
       voiceEngine: provider,
-      vocalMode: usesOfficialReference ? "adaptive" : "speech",
+      vocalMode: usesOfficialReference ? mode.vocalMode : "speech",
       ttsAsync: true,
       asyncTts: true,
-      ttsJobTimeoutMs: usesOfficialReference ? 180000 : 60000,
+      ttsJobTimeoutMs: usesOfficialReference ? mode.timeoutMs : 60000,
       audioFormat: "mp3",
       responseFormat: "mp3",
+      voiceTestMode: mode.id,
+      useRvc: usesOfficialReference ? mode.useRvc : undefined,
+      use_rvc: usesOfficialReference ? mode.useRvc : undefined,
       identityVoice: usesOfficialReference,
       useIdentityVoice: usesOfficialReference,
       useDefaultVoiceReference: usesOfficialReference,
@@ -4221,7 +4276,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       voiceConversion: usesOfficialReference,
       convertVoice: usesOfficialReference,
       morphVoice: usesOfficialReference,
-      rvc: usesOfficialReference,
+      rvc: usesOfficialReference ? mode.useRvc : undefined,
       allowRvc: usesOfficialReference,
       allowXttsRvc: usesOfficialReference,
       allowLegacyVoiceBridge: usesOfficialReference,
@@ -4250,7 +4305,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     };
   }
 
-  function buildVivyTtsOptions(vocalMode: "adaptive" | "sing") {
+  function buildVivyTtsOptions(vocalMode: "adaptive" | "sing", useRvc = true) {
     const provider = "xtts-rvc";
     const voiceConversion = true;
     return {
@@ -4258,7 +4313,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       voicePersona: activeVoiceProfile.ttsPersona,
       surface: activeVoiceProfile.surface,
       voiceStyle: activeVoiceProfile.voiceStyle,
-      voiceReferenceName: activeCatalogVoiceName || voiceFileName || activeVoiceProfile.referenceLabel,
+      voiceReferenceName: activeCatalogVoiceName || voiceFileName || activeVoiceProfile.referenceFileName || activeVoiceProfile.referenceLabel,
       voiceReferenceLabel: activeCatalogVoiceName || activeVoiceProfile.referenceLabel,
       referenceVoiceStyle: activeCatalogVoiceName || activeVoiceProfile.voiceStyle,
       voiceCatalogName: activeCatalogVoiceName || undefined,
@@ -4273,6 +4328,8 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       voiceConversionEngine: provider === "xtts-rvc" ? "xtts-rvc" : undefined,
       conversionEngine: provider === "xtts-rvc" ? "xtts-rvc" : undefined,
       vocalMode,
+      useRvc,
+      use_rvc: useRvc,
       ...getVivyVoiceTuning(vocalMode),
       ttsAsync: true,
       asyncTts: true,
@@ -4287,7 +4344,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       voiceConversion,
       convertVoice: voiceConversion,
       morphVoice: voiceConversion,
-      rvc: voiceConversion,
+      rvc: voiceConversion ? useRvc : undefined,
       identityVoice: true,
       useIdentityVoice: true,
       neutralVoice: false,
@@ -4634,13 +4691,13 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     }
   }
 
-  async function testSpecificVoiceEntry(entry: VivyStudioVoiceTestEntry) {
+  async function testSpecificVoiceEntry(entry: VivyStudioVoiceTestEntry, mode: VivyStudioVoiceTestMode = VIVY_STUDIO_VOICE_TEST_MODES[0]) {
     if (!hasSession) { setStatus("Connexion requise pour tester."); return; }
     setIsBusy(true);
-    setStatus(`Test ${entry.label}...`);
+    setStatus(`Test ${entry.label} · ${mode.statusLabel}...`);
     try {
       const line = buildVivyAutoVoiceTestLine(entry);
-      const payload = await ttsSpeak(line, entry.ttsPersona, "auto", buildVivyAutoTtsOptions(entry));
+      const payload = await ttsSpeak(line, entry.ttsPersona, "auto", buildVivyAutoTtsOptions(entry, mode));
       const mediaUrl = String(payload?.audioUrl || payload?.audio_url || payload?.url || "").trim();
       if (!mediaUrl) throw new Error("audio_url_missing");
       setVivyMedia({
@@ -4649,9 +4706,10 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         provider: String(payload?.provider || payload?.via || "a11-voice-module"),
         contentType: String(payload?.contentType || payload?.content_type || "audio/wav"),
       });
-      setStatus(`${entry.label} prête.`);
+      const engine = String(payload?.voiceConversion?.engine || payload?.engine || payload?.provider || "").trim();
+      setStatus(`${entry.label} prête (${mode.statusLabel}${engine ? `, ${engine}` : ""}).`);
     } catch (error: any) {
-      setStatus(`${entry.label}: ${error?.message || error}`);
+      setStatus(`${entry.label} · ${mode.statusLabel}: ${error?.message || error}`);
     } finally {
       setIsBusy(false);
     }
@@ -5159,29 +5217,37 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
               <p style={{ fontSize: 12, color: "var(--muted, #8892a6)", marginBottom: 12 }}>
                 Teste chaque voix avec une phrase courte auto, sans reprendre le prompt Studio.
               </p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div className="vivy-studio-test-list">
                 {VIVY_STUDIO_VOICE_DIRECTORY.filter((e) => e.id !== "personal").map((entry) => {
-                  const isTesting = testingVoiceId === entry.id && isBusy;
                   return (
-                    <div key={entry.id} className="vivy-studio-voice-card" style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", padding: "10px 14px" }}>
-                      <div>
+                    <div key={entry.id} className="vivy-studio-voice-card vivy-studio-test-card">
+                      <div className="vivy-studio-test-card-copy">
                         <div style={{ fontWeight: 700, fontSize: 13 }}>{entry.label}</div>
                         <div style={{ fontSize: 11, color: "var(--muted, #8892a6)" }}>{entry.referenceLabel || entry.voiceStyle}</div>
                         <div style={{ fontSize: 10, color: "#4ade80", marginTop: 2 }}>{entry.statusLabel}</div>
                       </div>
-                      <button
-                        type="button"
-                        className="vivy-studio-primary-action"
-                        disabled={!hasSession || isBusy}
-                        style={{ minWidth: 80, flexShrink: 0 }}
-                        onClick={async () => {
-                          setTestingVoiceId(entry.id);
-                          await testSpecificVoiceEntry(entry);
-                          setTestingVoiceId("");
-                        }}
-                      >
-                        {isTesting ? "..." : "▶ Tester"}
-                      </button>
+                      <div className="vivy-studio-test-mode-buttons" aria-label={`Modes de test ${entry.label}`}>
+                        {VIVY_STUDIO_VOICE_TEST_MODES.map((mode) => {
+                          const testKey = `${entry.id}:${mode.id}`;
+                          const isTesting = testingVoiceId === testKey && isBusy;
+                          return (
+                            <button
+                              key={mode.id}
+                              type="button"
+                              className="vivy-studio-primary-action"
+                              disabled={!hasSession || isBusy}
+                              title={`${entry.label} · ${mode.statusLabel}`}
+                              onClick={async () => {
+                                setTestingVoiceId(testKey);
+                                await testSpecificVoiceEntry(entry, mode);
+                                setTestingVoiceId("");
+                              }}
+                            >
+                              {isTesting ? "..." : mode.label}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   );
                 })}
@@ -5190,7 +5256,6 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     <div style={{ fontSize: 11, color: "var(--muted, #8892a6)", marginTop: 6, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Voix contribuées</div>
                     {catalogVoices.map((voice) => {
                       const name = String(voice.catalog?.name || voice.label || voice.id).trim();
-                      const isTesting = testingVoiceId === voice.id && isBusy;
                       const catalogEntry = {
                         id: voice.id,
                         label: name,
@@ -5202,24 +5267,33 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                         testLine: `Je suis ${name}, voix Funesterie.`,
                       };
                       return (
-                        <div key={voice.id} className="vivy-studio-voice-card" style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", padding: "10px 14px" }}>
-                          <div>
+                        <div key={voice.id} className="vivy-studio-voice-card vivy-studio-test-card">
+                          <div className="vivy-studio-test-card-copy">
                             <div style={{ fontWeight: 700, fontSize: 13 }}>{name}</div>
                             <div style={{ fontSize: 10, color: "#a78bfa", marginTop: 2 }}>catalogue premium</div>
                           </div>
-                          <button
-                            type="button"
-                            className="vivy-studio-primary-action"
-                            disabled={!hasSession || isBusy}
-                            style={{ minWidth: 80, flexShrink: 0 }}
-                            onClick={async () => {
-                              setTestingVoiceId(voice.id);
-                              await testSpecificVoiceEntry(catalogEntry);
-                              setTestingVoiceId("");
-                            }}
-                          >
-                            {isTesting ? "..." : "▶ Tester"}
-                          </button>
+                          <div className="vivy-studio-test-mode-buttons" aria-label={`Modes de test ${name}`}>
+                            {VIVY_STUDIO_VOICE_TEST_MODES.map((mode) => {
+                              const testKey = `${voice.id}:${mode.id}`;
+                              const isTesting = testingVoiceId === testKey && isBusy;
+                              return (
+                                <button
+                                  key={mode.id}
+                                  type="button"
+                                  className="vivy-studio-primary-action"
+                                  disabled={!hasSession || isBusy}
+                                  title={`${name} · ${mode.statusLabel}`}
+                                  onClick={async () => {
+                                    setTestingVoiceId(testKey);
+                                    await testSpecificVoiceEntry(catalogEntry, mode);
+                                    setTestingVoiceId("");
+                                  }}
+                                >
+                                  {isTesting ? "..." : mode.label}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       );
                     })}

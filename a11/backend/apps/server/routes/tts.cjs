@@ -1200,6 +1200,13 @@ function resolveVoiceF0Shift(body = {}) {
   return Math.max(-12, Math.min(12, numeric));
 }
 
+function resolveUseRvc(body = {}, fallback = true) {
+  return parseOptionalBoolean(
+    body?.useRvc ?? body?.use_rvc ?? body?.rvc ?? body?.applyRvc ?? body?.apply_rvc,
+    fallback
+  );
+}
+
 function shouldTryVoiceConversion(req = {}, vocalMode = 'speech') {
   const body = req?.body || {};
   const explicitBody = parseOptionalBoolean(
@@ -1765,6 +1772,7 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
       form.append('text', String(req?.body?.text || req?.body?.prompt || '').slice(0, 4096));
       form.append('persona', String(req?.body?.voicePersona || req?.body?.ttsPersona || req?.body?.persona || req?.body?.surface || '').slice(0, 120));
       form.append('voiceStyle', String(getPreferredVoiceReferenceLabel(req) || '').slice(0, 120));
+      form.append('useRvc', String(resolveUseRvc(req?.body || {}, true)));
       if (req?.body?.voiceConversionStrength !== undefined) {
         form.append('strength', String(req.body.voiceConversionStrength));
       }
@@ -2790,6 +2798,7 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
   const audioFormat = normalizeTtsAudioFormat(body, 'mp3');
   const conversionStrength = resolveVoiceConversionStrength(body);
   const f0Shift = resolveVoiceF0Shift(body);
+  const useRvc = resolveUseRvc(body, true);
   const interactiveRequest = isInteractiveTtsRequest(body);
   const officialReferenceRequired = requiresReferenceVoice(body) || shouldBlockNeutralVoiceFallback(body);
   const defaultInteractiveTimeoutMs = officialReferenceRequired ? 90000 : 22000;
@@ -2820,6 +2829,7 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
             responseFormat: audioFormat,
             strength: conversionStrength,
             f0Shift,
+            useRvc,
             useDefaultVoiceReference: true,
             defaultVoiceReference: true,
             voiceReferenceRequired: true,
@@ -2905,6 +2915,7 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
       form.append('mode', vocalMode || 'adaptive');
       form.append('engine', String(body?.voiceConversionEngine || body?.conversionEngine || body?.engine || body?.voiceEngine || 'auto').trim() || 'auto');
       form.append('audioFormat', audioFormat);
+      form.append('useRvc', String(useRvc));
       if (conversionStrength !== undefined) {
         form.append('strength', String(conversionStrength));
       }

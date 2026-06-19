@@ -63,6 +63,7 @@ class PersonaVoiceSynthesisTests(unittest.TestCase):
                     None,
                     persona="vivy",
                     voice_style="vivy-official-french-conversational",
+                    use_rvc=False,
                 )
             finally:
                 main.XTTS_RVC_URL = previous_url
@@ -72,6 +73,7 @@ class PersonaVoiceSynthesisTests(unittest.TestCase):
             self.assertEqual(captured["url"], "http://xtts-rvc.local:5000/api/voice/convert")
             self.assertEqual(captured["data"]["persona"], "vivy")
             self.assertEqual(captured["data"]["voiceStyle"], "vivy")
+            self.assertEqual(captured["data"]["useRvc"], "false")
             self.assertEqual(result["voiceStyle"], "vivy")
             self.assertTrue(out_file.exists())
 
@@ -134,7 +136,7 @@ class PersonaVoiceSynthesisTests(unittest.TestCase):
                 raise AssertionError("espeak should not run when piper succeeds")
 
             def fake_morph(generated_file, reference_file, out_file, mode, strength, f0_shift):
-                self.assertEqual(reference_file.name, "A11 ref.wav")
+                self.assertEqual(reference_file.name, "a11-official-stern-french.wav")
                 self.assertEqual(round(strength, 2), 0.62)
                 self.assertEqual(round(f0_shift, 1), -2.4)
                 write_wav(out_file)
@@ -169,7 +171,7 @@ class PersonaVoiceSynthesisTests(unittest.TestCase):
                     os.environ["A11_VOICE_LIBRARY_DIR"] = previous_library
 
         self.assertTrue(payload["ok"])
-        self.assertEqual(payload["voiceReference"]["label"], "A11 ref.wav")
+        self.assertEqual(payload["voiceReference"]["label"], "a11-official-stern-french.wav")
         self.assertEqual(payload["voiceConversion"]["voiceStyle"], "a11-official-stern-french")
 
     def test_kaen44_official_persona_synthesis_uses_owned_family_reference_voice(self):
@@ -199,7 +201,7 @@ class PersonaVoiceSynthesisTests(unittest.TestCase):
                 raise AssertionError("espeak should not run when piper succeeds")
 
             def fake_morph(generated_file, reference_file, out_file, mode, strength, f0_shift):
-                self.assertEqual(reference_file.name, "K44 Ref.wav")
+                self.assertEqual(reference_file.name, "kaen44-official-french-narrator.wav")
                 write_wav(out_file)
                 return {"provider": "ffmpeg-morph", "engine": "test-morph", "voiceStyle": "kaen44-official-french-narrator"}
 
@@ -230,7 +232,7 @@ class PersonaVoiceSynthesisTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["providerCapabilities"]["referenceVoice"], True)
         self.assertEqual(payload["voiceConversion"]["ok"], True)
-        self.assertEqual(payload["voiceReference"]["label"], "K44 Ref.wav")
+        self.assertEqual(payload["voiceReference"]["label"], "kaen44-official-french-narrator.wav")
         self.assertEqual(payload["voiceConversion"]["voiceStyle"], "kaen44-official-french-narrator")
         self.assertEqual(payload["via"], "a11-voice-module-persona")
 

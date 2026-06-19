@@ -463,7 +463,7 @@ def xtts_duration_window(text: str, vocal_mode: str = "adaptive") -> dict:
 
 def prepare_xtts_speaker_wav(source_path: Path, style: str, stamp: int) -> dict:
     source_duration = probe_audio_duration_seconds(source_path)
-    max_seconds = max(3.0, env_float("A11_XTTS_RVC_SPEAKER_MAX_SECONDS", 7.5))
+    max_seconds = max(3.0, env_float("A11_XTTS_RVC_SPEAKER_MAX_SECONDS", 12.0))
     metadata = {
         "enabled": env_bool("A11_XTTS_RVC_PREPARE_SPEAKER_WAV", True),
         "action": "original",
@@ -480,7 +480,8 @@ def prepare_xtts_speaker_wav(source_path: Path, style: str, stamp: int) -> dict:
     audio_filter = (
         "highpass=f=70,"
         "lowpass=f=7600,"
-        "silenceremove=start_periods=1:start_duration=0.05:start_threshold=-42dB,"
+        "silenceremove=start_periods=1:start_duration=0.05:start_threshold=-42dB:"
+        "stop_periods=-1:stop_duration=0.35:stop_threshold=-42dB,"
         f"atrim=0:{max_seconds:.3f},"
         "asetpts=N/SR/TB,"
         "loudnorm=I=-20:TP=-2:LRA=9"
