@@ -1875,19 +1875,23 @@ test('tts speak route gives Djeff rap cloud tests a distinct ElevenLabs voice', 
   }
 });
 
-test('tts speak route defaults official auto voices to ElevenLabs when configured', async () => {
+test('tts speak route keeps official auto voices on local XTTS/RVC refs when cloud is configured', async () => {
   const previousEnv = {
     A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
     A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
     A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
     A11_ELEVENLABS_MODEL: process.env.A11_ELEVENLABS_MODEL,
     A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+    A11_TTS_ALLOW_XTTS_RVC_AUTO: process.env.A11_TTS_ALLOW_XTTS_RVC_AUTO,
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
     A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
   };
   const previousFetch = global.fetch;
   const elevenLabsBodies = [];
+  const bridgeCalls = [];
+  const wav = createPcm16Wav({ frequency: 440 });
   const expectedVoiceIds = new Map([
     ['a11', 'pNInz6obpgDQGcFmaJgB'],
     ['kaen44', 'EXAVITQu4vr4xnSDxMaL'],
@@ -1899,6 +1903,8 @@ test('tts speak route defaults official auto voices to ElevenLabs when configure
   process.env.A11_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
   process.env.A11_ELEVENLABS_MODEL = 'eleven_multilingual_v2';
   process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
+  process.env.A11_TTS_ALLOW_XTTS_RVC_AUTO = 'true';
+  process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
   process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
   process.env.ENABLE_PIPER_HTTP = 'true';
   process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
@@ -1909,11 +1915,23 @@ test('tts speak route defaults official auto voices to ElevenLabs when configure
       .find(([, voiceId]) => value === `https://api.elevenlabs.test/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`)?.[0];
     if (matchedPersona) {
       elevenLabsBodies.push({ persona: matchedPersona, body: JSON.parse(String(options.body || '{}')) });
+      throw new Error(`elevenlabs_should_not_be_called_for_official_auto_${matchedPersona}`);
+    }
+    if (value === 'http://voice-bridge.test/api/voice/convert') {
+      bridgeCalls.push({ url: value, body: options.body });
       return {
         ok: true,
         status: 200,
+        headers: {
+          get(name) {
+            const header = String(name || '').toLowerCase();
+            if (header === 'content-type') return 'audio/wav';
+            if (header === 'x-a11-voice-engine') return 'xtts-rvc';
+            return '';
+          },
+        },
         async arrayBuffer() {
-          return Buffer.from('elevenlabs-auto-mp3');
+          return wav;
         },
       };
     }
@@ -1947,13 +1965,14 @@ test('tts speak route defaults official auto voices to ElevenLabs when configure
           });
 
           assert.equal(result.response.status, 200);
-          assert.equal(result.json.provider, 'elevenlabs');
-          assert.equal(result.json.via, 'elevenlabs-tts');
-          assert.match(result.json.voiceReference.label, new RegExp(persona === 'a11' ? 'A11' : persona === 'kaen44' ? 'Kaen44' : 'Vivy', 'i'));
-          assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-elevenlabs\.mp3$/);
+          assert.equal(result.json.provider, 'xtts-rvc');
+          assert.match(result.json.via, /xtts-rvc/);
+          assert.equal(result.json.providerCapabilities.referenceVoice, true);
+          assert.equal(result.json.voiceConversion.engine, 'xtts-rvc');
+          assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
         }
-        assert.equal(elevenLabsBodies.length, 3);
-        assert.deepEqual(elevenLabsBodies.map((entry) => entry.persona).sort(), ['a11', 'kaen44', 'vivy']);
+        assert.equal(elevenLabsBodies.length, 0);
+        assert.equal(bridgeCalls.length, 3);
       }
     );
   } finally {

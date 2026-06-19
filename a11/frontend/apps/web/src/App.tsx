@@ -4186,7 +4186,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     const entryId = String(entry.id || "").trim().toLowerCase();
     const usesOfficialReference = officialVoiceIds.has(entryId)
       || /\b(?:djeff|kaen44|a11|vivy|official|officiel|rap)\b/i.test(`${entry.voiceStyle} ${entry.voiceTool}`);
-    const provider = usesOfficialReference ? "elevenlabs" : "auto";
+    const provider = usesOfficialReference ? "xtts-rvc" : "auto";
     const referenceLabel = String(entry.referenceLabel || entry.voiceStyle || entry.label).trim();
     return {
       persona: entry.ttsPersona,
@@ -4206,34 +4206,34 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       vocalMode: usesOfficialReference ? "adaptive" : "speech",
       ttsAsync: true,
       asyncTts: true,
-      ttsJobTimeoutMs: 60000,
+      ttsJobTimeoutMs: usesOfficialReference ? 180000 : 60000,
       audioFormat: "mp3",
       responseFormat: "mp3",
       identityVoice: usesOfficialReference,
       useIdentityVoice: usesOfficialReference,
-      useDefaultVoiceReference: false,
-      defaultVoiceReference: false,
-      usePersonaVoiceReference: false,
+      useDefaultVoiceReference: usesOfficialReference,
+      defaultVoiceReference: usesOfficialReference,
+      usePersonaVoiceReference: usesOfficialReference,
       neutralVoice: usesOfficialReference ? false : undefined,
-      voiceReferenceRequired: false,
-      referenceVoiceRequired: false,
-      requireVoiceReference: false,
-      voiceConversion: false,
-      convertVoice: false,
-      morphVoice: false,
-      rvc: false,
-      allowRvc: false,
-      allowXttsRvc: false,
-      allowLegacyVoiceBridge: false,
-      xttsRvcOptIn: false,
-      allowPaidTtsVoice: usesOfficialReference || undefined,
-      allowCloudTts: usesOfficialReference || undefined,
-      allowReadyMadeCloudVoice: usesOfficialReference || undefined,
-      allowOfficialCloudVoice: usesOfficialReference || undefined,
-      forceCloudTts: usesOfficialReference || undefined,
-      useReadyMadeCloudVoice: usesOfficialReference || undefined,
+      voiceReferenceRequired: usesOfficialReference,
+      referenceVoiceRequired: usesOfficialReference,
+      requireVoiceReference: usesOfficialReference,
+      voiceConversion: usesOfficialReference,
+      convertVoice: usesOfficialReference,
+      morphVoice: usesOfficialReference,
+      rvc: usesOfficialReference,
+      allowRvc: usesOfficialReference,
+      allowXttsRvc: usesOfficialReference,
+      allowLegacyVoiceBridge: usesOfficialReference,
+      xttsRvcOptIn: usesOfficialReference,
+      allowPaidTtsVoice: undefined,
+      allowCloudTts: undefined,
+      allowReadyMadeCloudVoice: undefined,
+      allowOfficialCloudVoice: undefined,
+      forceCloudTts: undefined,
+      useReadyMadeCloudVoice: undefined,
       allowBrowserSpeechFallback: !usesOfficialReference,
-      ttsCostPolicy: usesOfficialReference ? `${entry.surface}_vivy_studio_cloud_voice_test` : undefined,
+      ttsCostPolicy: undefined,
     };
   }
 
@@ -4251,10 +4251,8 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   }
 
   function buildVivyTtsOptions(vocalMode: "adaptive" | "sing") {
-    const diagnosticMode = /diagnostic/.test(foldForLookup(voiceTool));
-    const usesPrivateOrCatalogReference = hasPrivateVoiceReference || Boolean(activeCatalogVoiceName);
-    const provider = usesPrivateOrCatalogReference ? "xtts-rvc" : "elevenlabs";
-    const voiceConversion = provider === "xtts-rvc" && (!diagnosticMode || hasPrivateVoiceReference);
+    const provider = "xtts-rvc";
+    const voiceConversion = true;
     return {
       persona: activeVoiceProfile.ttsPersona,
       voicePersona: activeVoiceProfile.ttsPersona,
@@ -4281,14 +4279,11 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       ttsJobTimeoutMs: vocalMode === "sing" ? 240000 : 180000,
       audioFormat: "mp3",
       responseFormat: "mp3",
-      ...(provider === "xtts-rvc" ? buildVivyVoiceReferenceOptions() : {
-        useDefaultVoiceReference: false,
-        defaultVoiceReference: false,
-        usePersonaVoiceReference: false,
-      }),
-      voiceReferenceRequired: provider === "xtts-rvc" && !diagnosticMode,
-      referenceVoiceRequired: provider === "xtts-rvc" && !diagnosticMode,
-      requireVoiceReference: provider === "xtts-rvc" && !diagnosticMode,
+      ...buildVivyVoiceReferenceOptions(),
+      usePersonaVoiceReference: !hasPrivateVoiceReference,
+      voiceReferenceRequired: true,
+      referenceVoiceRequired: true,
+      requireVoiceReference: true,
       voiceConversion,
       convertVoice: voiceConversion,
       morphVoice: voiceConversion,
@@ -4296,18 +4291,18 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       identityVoice: true,
       useIdentityVoice: true,
       neutralVoice: false,
-      allowRvc: provider === "xtts-rvc",
-      allowXttsRvc: provider === "xtts-rvc",
-      allowLegacyVoiceBridge: provider === "xtts-rvc",
-      xttsRvcOptIn: provider === "xtts-rvc",
-      allowPaidTtsVoice: provider === "elevenlabs" || undefined,
-      allowCloudTts: provider === "elevenlabs" || undefined,
-      allowReadyMadeCloudVoice: provider === "elevenlabs" || undefined,
-      allowOfficialCloudVoice: provider === "elevenlabs" || undefined,
-      forceCloudTts: provider === "elevenlabs" || undefined,
-      useReadyMadeCloudVoice: provider === "elevenlabs" || undefined,
+      allowRvc: true,
+      allowXttsRvc: true,
+      allowLegacyVoiceBridge: true,
+      xttsRvcOptIn: true,
+      allowPaidTtsVoice: undefined,
+      allowCloudTts: undefined,
+      allowReadyMadeCloudVoice: undefined,
+      allowOfficialCloudVoice: undefined,
+      forceCloudTts: undefined,
+      useReadyMadeCloudVoice: undefined,
       allowBrowserSpeechFallback: false,
-      ttsCostPolicy: provider === "elevenlabs" ? `${activeVoiceProfile.surface}_vivy_studio_active_voice_test` : undefined,
+      ttsCostPolicy: undefined,
     };
   }
 

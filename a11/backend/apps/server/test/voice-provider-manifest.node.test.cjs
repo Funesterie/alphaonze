@@ -171,7 +171,7 @@ describe('voice-provider-manifest', () => {
       });
     }
 
-    it('official personas prefer ElevenLabs when it is configured', () => {
+    it('official personas prefer local XTTS/RVC references even when ElevenLabs is configured', () => {
       const previous = {
         A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
         A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
@@ -190,9 +190,9 @@ describe('voice-provider-manifest', () => {
       delete process.env.A11_CARTESIA_TTS_ENABLED;
       try {
         assert.equal(isProviderRuntimeConfigured(PROVIDERS.ELEVENLABS), true);
-        assert.equal(resolveVoiceProvider('a11').provider, PROVIDERS.ELEVENLABS);
-        assert.equal(resolveVoiceProvider('kaen44').provider, PROVIDERS.ELEVENLABS);
-        assert.equal(resolveVoiceProvider('vivy').provider, PROVIDERS.ELEVENLABS);
+        assert.equal(resolveVoiceProvider('a11').provider, PROVIDERS.XTTS_RVC);
+        assert.equal(resolveVoiceProvider('kaen44').provider, PROVIDERS.XTTS_RVC);
+        assert.equal(resolveVoiceProvider('vivy').provider, PROVIDERS.XTTS_RVC);
       } finally {
         for (const [key, value] of Object.entries(previous)) {
           if (value === undefined) delete process.env[key];
@@ -224,7 +224,11 @@ describe('voice-provider-manifest', () => {
       delete process.env.A11_TTS_DEFAULT_PROVIDER;
       try {
         assert.equal(isProviderRuntimeConfigured(PROVIDERS.ELEVENLABS), true);
-        assert.equal(resolveVoiceProvider('vivy').provider, PROVIDERS.ELEVENLABS);
+        assert.equal(isProviderRuntimeConfigured(PROVIDERS.ELEVENLABS), true);
+        assert.equal(resolveVoiceProvider('vivy', {
+          explicitProvider: PROVIDERS.ELEVENLABS,
+          allowCloud: true,
+        }).provider, PROVIDERS.ELEVENLABS);
       } finally {
         for (const [key, value] of Object.entries(previous)) {
           if (value === undefined) delete process.env[key];
@@ -279,7 +283,7 @@ describe('voice-provider-manifest', () => {
       }
     });
 
-    it('kaen44, a11 and vivy auto-select ElevenLabs when its key exists', () => {
+    it('kaen44, a11 and vivy do not auto-select ElevenLabs just because its key exists', () => {
       const previous = {
         A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
         A11_TTS_DEFAULT_PROVIDER: process.env.A11_TTS_DEFAULT_PROVIDER,
@@ -287,9 +291,9 @@ describe('voice-provider-manifest', () => {
       process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
       delete process.env.A11_TTS_DEFAULT_PROVIDER;
       try {
-        assert.equal(resolveVoiceProvider('kaen44').provider, PROVIDERS.ELEVENLABS);
-        assert.equal(resolveVoiceProvider('a11').provider, PROVIDERS.ELEVENLABS);
-        assert.equal(resolveVoiceProvider('vivy').provider, PROVIDERS.ELEVENLABS);
+        assert.notEqual(resolveVoiceProvider('kaen44').provider, PROVIDERS.ELEVENLABS);
+        assert.notEqual(resolveVoiceProvider('a11').provider, PROVIDERS.ELEVENLABS);
+        assert.notEqual(resolveVoiceProvider('vivy').provider, PROVIDERS.ELEVENLABS);
       } finally {
         for (const [key, value] of Object.entries(previous)) {
           if (value === undefined) delete process.env[key];

@@ -216,17 +216,18 @@ function isLegacyCloudTtsProviderEnabled(provider = '') {
 
 function getDefaultVoiceProviderForPersona(persona = 'a11') {
   const normalized = normalizePersonaKey(persona);
+  if (LOCAL_OFFICIAL_PRIORITY_PERSONAS.has(normalized)) return PROVIDERS.XTTS_RVC;
+
   const preferred = String(
     process.env.A11_TTS_DEFAULT_PROVIDER
     || process.env.A11_VOICE_DEFAULT_PROVIDER
     || process.env.TTS_DEFAULT_PROVIDER
-    || (CLOUD_DEFAULT_PERSONAS.has(normalized) ? PROVIDERS.ELEVENLABS : '')
+    || ''
   ).trim().toLowerCase();
   if (preferred === PROVIDERS.ELEVENLABS && isProviderRuntimeConfigured(PROVIDERS.ELEVENLABS)) return PROVIDERS.ELEVENLABS;
   if (preferred === PROVIDERS.CARTESIA && isProviderRuntimeConfigured(PROVIDERS.CARTESIA)) return PROVIDERS.CARTESIA;
   if (preferred === PROVIDERS.AZURE && isProviderRuntimeConfigured(PROVIDERS.AZURE)) return PROVIDERS.AZURE;
   if (preferred === PROVIDERS.OPENAI && isProviderRuntimeConfigured(PROVIDERS.OPENAI)) return PROVIDERS.OPENAI;
-  if (LOCAL_OFFICIAL_PRIORITY_PERSONAS.has(normalized)) return PROVIDERS.XTTS_RVC;
   return PROVIDERS.XTTS_RVC;
 }
 

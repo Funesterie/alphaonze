@@ -2273,9 +2273,9 @@ test('POST /api/llm/chat does not claim visual certainty from local OCR fallback
       assert.equal(json.mode, 'vision_chat');
       assert.equal(json.fallback, true);
       assert.equal(json.skipped, true);
-      assert.match(json.assistant, /Janus\/vision avancee/i);
-      assert.match(json.assistant, /je ne vais pas inventer/i);
-      assert.doesNotMatch(json.assistant, /oui, je la vois|bureau|ecran|clavier/i);
+      assert.match(json.assistant, /Analyse image indisponible|module vision/i);
+      assert.match(json.assistant, /n'invente pas|n.est pas devine/i);
+      assert.doesNotMatch(json.assistant, /oui, je la vois|Je vois bien qu'une image|bureau|ecran|clavier/i);
     }
   );
 });
@@ -2333,7 +2333,10 @@ test('POST /api/llm/chat falls back before frontend timeout when image vision st
           assert.equal(json.ok, true);
           assert.equal(json.mode, 'vision_chat');
           assert.equal(json.skipped, true);
+          assert.equal(json.fallback, true);
           assert.match(json.reason, /timeout/i);
+          assert.match(json.assistant, /Analyse image indisponible|module vision/i);
+          assert.doesNotMatch(json.assistant, /Je vois bien qu'une image|retente l'analyse|renvoie-la|relance le passage vision/i);
           assert.ok(Date.now() - startedAt < 700);
         } finally {
           clearTimeout(abortTimer);

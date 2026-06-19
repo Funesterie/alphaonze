@@ -1638,11 +1638,10 @@ function buildVisionFallbackChatContent(visionResult = {}) {
     ? ` Lecture locale disponible: ${description}`
     : '';
   return [
-    "Je vois bien qu'une image est jointe, mais Janus/vision avancee n'a pas produit de lecture fiable cette fois.",
-    "Je ne vais pas inventer le sujet de l'image a partir du prompt ou de l'OCR.",
+    "Analyse image indisponible: le module vision n'a pas produit de description fiable.",
+    "Le contenu visuel n'est pas devine depuis le prompt ou l'OCR.",
     details,
     `Raison: ${reason}.`,
-    "Relance l'analyse ou renvoie l'image, et je retente le passage vision proprement.",
   ].filter(Boolean).join(' ');
 }
 
@@ -2762,10 +2761,14 @@ function createProtectedChatProxyRouter({
 
     const reason = String(visionResult?.reason || 'vision_unavailable').trim();
     return buildVisionChatPayload({
-      content: "Je vois bien qu'une image est jointe, mais le module vision n'a pas reussi a l'analyser cette fois. Je garde l'image rattachee a la conversation; retente l'analyse ou renvoie-la si tu veux que je relance le passage vision.",
+      content: buildVisionFallbackChatContent({
+        ...visionResult,
+        reason,
+      }),
       provider: visionResult?.provider,
       sourceImageUrl: locator,
       skipped: true,
+      fallback: true,
       reason,
     });
   }
