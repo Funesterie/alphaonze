@@ -774,6 +774,105 @@ function normalizeA11OfficialReferenceRequest(body = {}) {
   };
 }
 
+// Official "ElevenLabs + RVC" voice: ElevenLabs renders clean, intelligible
+// French (its cloned per-persona voice carries the reference timbre), then the
+// XTTS/RVC bridge re-timbres that clean clip through the persona .pth model.
+// This avoids the cold-XTTS phoneme hallucination ("aopueuàueeeoih") because
+// ElevenLabs — never XTTS — produces the words.
+const ELEVENLABS_RVC_MODE_ALIASES = new Set([
+  'elevenlabs-rvc',
+  'eleven-rvc',
+  'elevenlabs+rvc',
+  'elevenlabs-sts-rvc',
+  'xi-rvc',
+  'official-elevenlabs-rvc',
+]);
+
+function wantsElevenLabsRvcPipeline(body = {}) {
+  const mode = String(
+    body?.voiceMode
+    || body?.voicePipeline
+    || body?.ttsPipeline
+    || body?.pipeline
+    || body?.voiceConversionEngine
+    || body?.conversionEngine
+    || ''
+  ).trim().toLowerCase().replace(/[\s_]+/g, '-');
+  return ELEVENLABS_RVC_MODE_ALIASES.has(mode);
+}
+
+function normalizeElevenLabsRvcRequest(body = {}) {
+  if (!wantsElevenLabsRvcPipeline(body)) return body;
+  const persona = getExplicitTtsPersonaFromBody(body) || getTtsPersonaFromBody(body) || 'a11';
+  return {
+    ...(body || {}),
+    provider: PROVIDERS.ELEVENLABS,
+    ttsProvider: PROVIDERS.ELEVENLABS,
+    engine: PROVIDERS.ELEVENLABS,
+    voiceEngine: PROVIDERS.ELEVENLABS,
+    persona,
+    voicePersona: body?.voicePersona || persona,
+    surface: body?.surface || persona,
+    voiceConversion: true,
+    convertVoice: true,
+    morphVoice: true,
+    rvc: true,
+    useRvc: true,
+    allowRvc: true,
+    allowXttsRvc: true,
+    allowLegacyVoiceBridge: true,
+    voiceConversionEngine: 'elevenlabs-rvc',
+    conversionEngine: 'elevenlabs-rvc',
+    voiceConversionSourceEngine: 'elevenlabs',
+    voiceConversionPipeline: 'convert',
+    identityVoice: true,
+    useIdentityVoice: true,
+    neutralVoice: false,
+    allowPaidTtsVoice: true,
+    paidTtsAllowed: true,
+    allowCloudTts: true,
+    allowReadyMadeCloudVoice: true,
+    allowOfficialCloudVoice: true,
+  };
+}
+
+// Local-only RVC styles (voix-de-lait, djeff-rap, terminator, donna) keep their
+// dedicated XTTS/RVC reference route and must not be hijacked by the ElevenLabs
+// default — only the plain official persona voice defaults to ElevenLabs+RVC.
+function hasSpecialLocalVoiceStyle(body = {}) {
+  const raw = String(
+    body?.voiceStyle
+    || body?.voice_style
+    || body?.referenceVoiceStyle
+    || body?.voiceReferenceName
+    || body?.voiceReferenceLabel
+    || ''
+  ).trim().toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[_\s]+/g, '-');
+  if (!raw) return false;
+  return /voix-de-lait|lait|milk|djeff|pignon|rap|terminator|robot|donna/.test(raw);
+}
+
+// Should an official identity voice request default to the ElevenLabs+RVC
+// pipeline? Only when ElevenLabs is actually configured with a persona voice id,
+// so environments without ElevenLabs keep the existing XTTS/RVC official route
+// (graceful fallback, no regression). Paid-tier gating is applied by the caller.
+function shouldDefaultOfficialToElevenLabsRvc(body = {}) {
+  if (!envBool('A11_TTS_OFFICIAL_ELEVENLABS_RVC_DEFAULT', true)) return false;
+  if (wantsElevenLabsRvcPipeline(body)) return false; // explicit request handled separately
+  if (isExplicitNeutralVoiceRequest(body)) return false;
+  const persona = getExplicitTtsPersonaFromBody(body);
+  if (!OFFICIAL_PERSONAS.has(persona)) return false;
+  if (!(wantsOfficialIdentityVoice(body) || requiresReferenceVoice(body) || wantsDefaultVoiceReference(body))) return false;
+  const requestedProvider = getRequestedTtsProvider(body);
+  if (requestedProvider && requestedProvider !== 'auto' && requestedProvider !== PROVIDERS.XTTS_RVC) return false;
+  if (hasSpecialLocalVoiceStyle(body)) return false;
+  if (!isProviderRuntimeConfigured(PROVIDERS.ELEVENLABS)) return false;
+  const voiceId = getOfficialElevenLabsVoiceEnvValue(persona)
+    || getReadyVoiceProfile(persona, PROVIDERS.ELEVENLABS)?.elevenLabsVoiceId
+    || '';
+  return Boolean(String(voiceId).trim());
+}
+
 function enforceBasicTtsCostPolicy(req = {}, body = {}) {
   if (canUsePaidTtsVoice(req)) return body;
   if (shouldAllowBasicOwnedOfficialCloudVoice(body)) {
@@ -1832,6 +1931,16 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
       form.append('persona', String(req?.body?.voicePersona || req?.body?.ttsPersona || req?.body?.persona || req?.body?.surface || '').slice(0, 120));
       form.append('voiceStyle', String(getPreferredVoiceReferenceLabel(req) || '').slice(0, 120));
       form.append('useRvc', String(resolveUseRvc(req?.body || {}, true)));
+      // Tell the bridge which engine produced the clip and to convert that audio
+      // (audio-to-audio RVC / clean passthrough) rather than cold-resynthesizing
+      // it from text — this is what keeps an ElevenLabs render intelligible.
+      form.append('sourceEngine', String(
+        req?.body?.voiceConversionSourceEngine
+        || payload?.provider
+        || payload?.via
+        || 'audio'
+      ).slice(0, 60));
+      form.append('pipeline', String(req?.body?.voiceConversionPipeline || 'convert').slice(0, 20));
       if (req?.body?.voiceConversionStrength !== undefined) {
         form.append('strength', String(req.body.voiceConversionStrength));
       }
@@ -4473,7 +4582,18 @@ router.options(['/tts/piper', '/tts/speak', '/tts/jobs/:jobId', '/vivy/jobs', '/
 
 async function handleTtsSpeakRequest(req, res) {
   try {
-    const requestBody = normalizeA11OfficialReferenceRequest(enforceBasicTtsCostPolicy(req, req.body || {}));
+    const baseBody = enforceBasicTtsCostPolicy(req, req.body || {});
+    // The "ElevenLabs + RVC" official voice is a paid cloud path. It runs when
+    // the client asks for it explicitly (voiceMode) OR, for an official persona
+    // identity request, by default once ElevenLabs is configured — so the "voix
+    // officielle" button gets clean ElevenLabs words + RVC re-timbre without any
+    // client change. Basic tiers keep their gating; no-ElevenLabs envs stay on
+    // the XTTS/RVC official route.
+    const useElevenLabsRvc = canUsePaidTtsVoice(req)
+      && (wantsElevenLabsRvcPipeline(req.body || {}) || shouldDefaultOfficialToElevenLabsRvc(baseBody));
+    let requestBody = useElevenLabsRvc
+      ? normalizeElevenLabsRvcRequest({ ...baseBody, voiceMode: 'elevenlabs-rvc' })
+      : normalizeA11OfficialReferenceRequest(baseBody);
     req.body = requestBody;
     if (shouldRejectBlockedOfficialIdentityRequest(requestBody)) {
       return res.status(424).json(buildBlockedOfficialIdentityPayload(requestBody));
@@ -5470,3 +5590,7 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
 
 module.exports = router;
 module.exports.configureTtsRouter = configureTtsRouter;
+module.exports.normalizeElevenLabsRvcRequest = normalizeElevenLabsRvcRequest;
+module.exports.wantsElevenLabsRvcPipeline = wantsElevenLabsRvcPipeline;
+module.exports.shouldDefaultOfficialToElevenLabsRvc = shouldDefaultOfficialToElevenLabsRvc;
+module.exports.hasSpecialLocalVoiceStyle = hasSpecialLocalVoiceStyle;

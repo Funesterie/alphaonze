@@ -880,6 +880,140 @@ def synthesize_persona_voice(
     }
 
 
+def prepare_generated_wav(source_path: Path, target_path: Path) -> Path:
+    """Decode an already-spoken clip (mp3/wav/m4a...) to mono PCM wav.
+
+    Used before true voice conversion so RVC (and the no-model passthrough) can
+    consume a clean ElevenLabs/Piper/cloud render. Falls back to the original
+    file when ffmpeg is unavailable so conversion never hard-fails on decode.
+    """
+    if not env_bool("A11_XTTS_RVC_PREPARE_GENERATED_WAV", True):
+        return source_path
+    ffmpeg = os.environ.get("A11_FFMPEG_BIN", "ffmpeg")
+    audio_filter = "highpass=f=60,loudnorm=I=-18:TP=-1.5:LRA=11"
+    try:
+        result = subprocess.run(
+            [
+                ffmpeg,
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(source_path),
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                "44100",
+                "-af",
+                audio_filter,
+                str(target_path),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode == 0 and target_path.exists() and target_path.stat().st_size > 0:
+            return target_path
+        remove_later(target_path)
+    except Exception:
+        remove_later(target_path)
+    return source_path
+
+
+def convert_generated_audio(
+    generated_path: Path,
+    persona: str = "",
+    voice_style: str = "",
+    vocal_mode: str = "adaptive",
+    f0_shift: Optional[float] = None,
+    index_rate_override: Optional[float] = None,
+    rms_mix_rate_override: Optional[float] = None,
+    protect_override: Optional[float] = None,
+    use_rvc: bool = True,
+    source_engine: str = "",
+) -> dict:
+    """True audio-to-audio voice conversion of an already-spoken clip.
+
+    Unlike :func:`synthesize_persona_voice`, this never re-runs XTTS: it keeps
+    the words and prosody of the supplied clip (typically a clean ElevenLabs
+    render) and only re-timbres it through RVC when a persona ``.pth`` model is
+    available. When no RVC model exists the clean source is returned as-is, so
+    the official voice stays intelligible instead of being replaced by the
+    hallucinated phonemes a cold XTTS pass produces.
+    """
+    if not generated_path.is_file():
+        raise HTTPException(status_code=400, detail="generated_audio_required")
+
+    style = resolve_style(persona, voice_style)
+    binding = resolve_persona_binding(style)
+    rvc_path = binding["rvcPath"]
+    rvc_index_path = binding["indexPath"]
+    source_label = (source_engine or "").strip().lower() or "audio"
+
+    with _synthesis_lock:
+        set_synthesis_state(True, style)
+        prepared_source = generated_path
+        try:
+            stamp = int(time.time() * 1000)
+            prepared_target = OUT_DIR / f"convert-src-{style}-{stamp}.wav"
+            prepared_source = prepare_generated_wav(generated_path, prepared_target)
+            final_path = OUT_DIR / f"convert-{style}-{stamp}.wav"
+
+            tuning = resolve_rvc_tuning(style, f0_shift)
+            if index_rate_override is not None:
+                tuning["index_rate"] = max(0.0, min(1.0, float(index_rate_override)))
+            if rms_mix_rate_override is not None:
+                tuning["rms_mix_rate"] = max(0.0, min(1.0, float(rms_mix_rate_override)))
+            if protect_override is not None:
+                tuning["protect"] = max(0.0, min(0.5, float(protect_override)))
+
+            if use_rvc and rvc_path.is_file():
+                run_rvc(
+                    prepared_source,
+                    final_path,
+                    rvc_path,
+                    tuning["pitch"],
+                    tuning["index_rate"],
+                    index_path=rvc_index_path if rvc_index_path.is_file() else None,
+                    rms_mix_rate=tuning["rms_mix_rate"],
+                    protect=tuning["protect"],
+                )
+                engine = f"{source_label}-rvc"
+            else:
+                shutil.copyfile(prepared_source, final_path)
+                engine = f"{source_label}-clean"
+
+            if prepared_source != generated_path:
+                remove_later(prepared_source)
+            if not final_path.exists() or final_path.stat().st_size <= 0:
+                raise HTTPException(status_code=500, detail="voice_output_missing")
+        finally:
+            if prepared_source != generated_path:
+                remove_later(prepared_source)
+            set_synthesis_state(False)
+
+    return {
+        "path": final_path,
+        "filename": final_path.name,
+        "style": style,
+        "engine": engine,
+        "pipeline": "convert",
+        "sourceEngine": source_label,
+        "rvcPath": rvc_path,
+        "rvcIndexPath": rvc_index_path,
+        "hasRvc": rvc_path.is_file(),
+        "hasRvcIndex": rvc_index_path.is_file(),
+        "speakerSource": "generated",
+        "speakerPath": generated_path,
+        "speakerPreparation": {"action": "generated-source", "enabled": True},
+        "durationGuard": {"action": "none"},
+        "tuning": tuning,
+    }
+
+
 @app.get("/health")
 def health():
     voices = sorted(item.name for item in VOICES_DIR.glob("*") if item.is_file())
@@ -928,33 +1062,70 @@ async def convert_voice(
     rmsMixRate: Optional[float] = Form(default=None),
     protect: Optional[float] = Form(default=None),
     useRvc: bool = Form(default=True),
+    sourceEngine: str = Form(default=""),
+    pipeline: str = Form(default="auto"),
+    resynthesize: bool = Form(default=False),
 ):
-    del generated
+    # Default behaviour: when an already-spoken clip is supplied, convert *that
+    # audio* (true audio-to-audio RVC, or clean passthrough when no model). Only
+    # fall back to a cold XTTS re-synthesis from text when explicitly forced or
+    # when no clip is provided. This is what keeps an ElevenLabs render clean
+    # instead of being replaced by hallucinated phonemes.
+    pipeline_mode = (pipeline or "auto").strip().lower()
+    force_resynthesize = bool(resynthesize) or pipeline_mode in {"xtts", "synthesize", "resynthesize"}
+
+    generated_path = None
     uploaded_reference_path = None
     try:
+        if generated is not None:
+            generated_bytes = await generated.read()
+            if generated_bytes and not force_resynthesize:
+                suffix = Path(generated.filename or "generated.wav").suffix.lower()
+                if suffix not in {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".mp4", ".webm"}:
+                    suffix = ".wav"
+                generated_path = OUT_DIR / f"convert-input-{int(time.time() * 1000)}{suffix}"
+                generated_path.write_bytes(generated_bytes)
+
         if reference is not None:
             reference_bytes = await reference.read()
-            if not reference_bytes:
+            if not reference_bytes and generated_path is None:
                 raise HTTPException(status_code=400, detail="reference_audio_empty")
-            suffix = Path(reference.filename or "reference.wav").suffix.lower()
-            if suffix not in {".wav", ".mp3", ".flac", ".ogg", ".m4a"}:
-                suffix = ".wav"
-            uploaded_reference_path = OUT_DIR / f"uploaded-reference-{int(time.time() * 1000)}{suffix}"
-            uploaded_reference_path.write_bytes(reference_bytes)
+            if reference_bytes:
+                suffix = Path(reference.filename or "reference.wav").suffix.lower()
+                if suffix not in {".wav", ".mp3", ".flac", ".ogg", ".m4a"}:
+                    suffix = ".wav"
+                uploaded_reference_path = OUT_DIR / f"uploaded-reference-{int(time.time() * 1000)}{suffix}"
+                uploaded_reference_path.write_bytes(reference_bytes)
 
-        result = synthesize_persona_voice(
-            text,
-            persona=persona,
-            voice_style=voiceStyle,
-            f0_shift=f0Shift,
-            vocal_mode=mode,
-            index_rate_override=indexRate,
-            rms_mix_rate_override=rmsMixRate,
-            protect_override=protect,
-            use_rvc=useRvc,
-            speaker_wav_override=uploaded_reference_path,
-        )
+        if generated_path is not None:
+            result = convert_generated_audio(
+                generated_path,
+                persona=persona,
+                voice_style=voiceStyle,
+                vocal_mode=mode,
+                f0_shift=f0Shift,
+                index_rate_override=indexRate,
+                rms_mix_rate_override=rmsMixRate,
+                protect_override=protect,
+                use_rvc=useRvc,
+                source_engine=sourceEngine,
+            )
+        else:
+            result = synthesize_persona_voice(
+                text,
+                persona=persona,
+                voice_style=voiceStyle,
+                f0_shift=f0Shift,
+                vocal_mode=mode,
+                index_rate_override=indexRate,
+                rms_mix_rate_override=rmsMixRate,
+                protect_override=protect,
+                use_rvc=useRvc,
+                speaker_wav_override=uploaded_reference_path,
+            )
     finally:
+        if generated_path is not None:
+            remove_later(generated_path)
         if uploaded_reference_path is not None:
             remove_later(uploaded_reference_path)
     final_path = result["path"]
@@ -969,6 +1140,8 @@ async def convert_voice(
         headers={
             "X-A11-Voice-Engine": result["engine"],
             "X-A11-Voice-Style": result["style"],
+            "X-A11-Voice-Pipeline": result.get("pipeline", "synthesize"),
+            "X-A11-Voice-Source-Engine": result.get("sourceEngine", ""),
             "X-A11-Reference-Source": result.get("speakerSource", "style"),
             "X-A11-Speaker-Wav": result.get("speakerPath", Path()).name if result.get("speakerPath") else "",
             "X-A11-Speaker-Preparation": result.get("speakerPreparation", {}).get("action", ""),
