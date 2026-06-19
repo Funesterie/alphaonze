@@ -836,6 +836,43 @@ function normalizeElevenLabsRvcRequest(body = {}) {
   };
 }
 
+// Local-only RVC styles (voix-de-lait, djeff-rap, terminator, donna) keep their
+// dedicated XTTS/RVC reference route and must not be hijacked by the ElevenLabs
+// default — only the plain official persona voice defaults to ElevenLabs+RVC.
+function hasSpecialLocalVoiceStyle(body = {}) {
+  const raw = String(
+    body?.voiceStyle
+    || body?.voice_style
+    || body?.referenceVoiceStyle
+    || body?.voiceReferenceName
+    || body?.voiceReferenceLabel
+    || ''
+  ).trim().toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[_\s]+/g, '-');
+  if (!raw) return false;
+  return /voix-de-lait|lait|milk|djeff|pignon|rap|terminator|robot|donna/.test(raw);
+}
+
+// Should an official identity voice request default to the ElevenLabs+RVC
+// pipeline? Only when ElevenLabs is actually configured with a persona voice id,
+// so environments without ElevenLabs keep the existing XTTS/RVC official route
+// (graceful fallback, no regression). Paid-tier gating is applied by the caller.
+function shouldDefaultOfficialToElevenLabsRvc(body = {}) {
+  if (!envBool('A11_TTS_OFFICIAL_ELEVENLABS_RVC_DEFAULT', true)) return false;
+  if (wantsElevenLabsRvcPipeline(body)) return false; // explicit request handled separately
+  if (isExplicitNeutralVoiceRequest(body)) return false;
+  const persona = getExplicitTtsPersonaFromBody(body);
+  if (!OFFICIAL_PERSONAS.has(persona)) return false;
+  if (!(wantsOfficialIdentityVoice(body) || requiresReferenceVoice(body) || wantsDefaultVoiceReference(body))) return false;
+  const requestedProvider = getRequestedTtsProvider(body);
+  if (requestedProvider && requestedProvider !== 'auto' && requestedProvider !== PROVIDERS.XTTS_RVC) return false;
+  if (hasSpecialLocalVoiceStyle(body)) return false;
+  if (!isProviderRuntimeConfigured(PROVIDERS.ELEVENLABS)) return false;
+  const voiceId = getOfficialElevenLabsVoiceEnvValue(persona)
+    || getReadyVoiceProfile(persona, PROVIDERS.ELEVENLABS)?.elevenLabsVoiceId
+    || '';
+  return Boolean(String(voiceId).trim());
+}
+
 function enforceBasicTtsCostPolicy(req = {}, body = {}) {
   if (canUsePaidTtsVoice(req)) return body;
   if (shouldAllowBasicOwnedOfficialCloudVoice(body)) {
@@ -4545,12 +4582,18 @@ router.options(['/tts/piper', '/tts/speak', '/tts/jobs/:jobId', '/vivy/jobs', '/
 
 async function handleTtsSpeakRequest(req, res) {
   try {
-    let requestBody = normalizeA11OfficialReferenceRequest(enforceBasicTtsCostPolicy(req, req.body || {}));
-    // The explicit "ElevenLabs + RVC" official voice is a paid cloud path; only
-    // privileged/premium tiers may trigger it, basic accounts keep their gating.
-    if (wantsElevenLabsRvcPipeline(req.body || {}) && canUsePaidTtsVoice(req)) {
-      requestBody = normalizeElevenLabsRvcRequest(requestBody);
-    }
+    const baseBody = enforceBasicTtsCostPolicy(req, req.body || {});
+    // The "ElevenLabs + RVC" official voice is a paid cloud path. It runs when
+    // the client asks for it explicitly (voiceMode) OR, for an official persona
+    // identity request, by default once ElevenLabs is configured — so the "voix
+    // officielle" button gets clean ElevenLabs words + RVC re-timbre without any
+    // client change. Basic tiers keep their gating; no-ElevenLabs envs stay on
+    // the XTTS/RVC official route.
+    const useElevenLabsRvc = canUsePaidTtsVoice(req)
+      && (wantsElevenLabsRvcPipeline(req.body || {}) || shouldDefaultOfficialToElevenLabsRvc(baseBody));
+    let requestBody = useElevenLabsRvc
+      ? normalizeElevenLabsRvcRequest({ ...baseBody, voiceMode: 'elevenlabs-rvc' })
+      : normalizeA11OfficialReferenceRequest(baseBody);
     req.body = requestBody;
     if (shouldRejectBlockedOfficialIdentityRequest(requestBody)) {
       return res.status(424).json(buildBlockedOfficialIdentityPayload(requestBody));
@@ -5549,3 +5592,5 @@ module.exports = router;
 module.exports.configureTtsRouter = configureTtsRouter;
 module.exports.normalizeElevenLabsRvcRequest = normalizeElevenLabsRvcRequest;
 module.exports.wantsElevenLabsRvcPipeline = wantsElevenLabsRvcPipeline;
+module.exports.shouldDefaultOfficialToElevenLabsRvc = shouldDefaultOfficialToElevenLabsRvc;
+module.exports.hasSpecialLocalVoiceStyle = hasSpecialLocalVoiceStyle;

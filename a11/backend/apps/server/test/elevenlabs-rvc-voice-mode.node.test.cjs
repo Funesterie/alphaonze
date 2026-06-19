@@ -4,7 +4,31 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const ttsRouter = require('../routes/tts.cjs');
-const { normalizeElevenLabsRvcRequest, wantsElevenLabsRvcPipeline } = ttsRouter;
+const {
+  normalizeElevenLabsRvcRequest,
+  wantsElevenLabsRvcPipeline,
+  shouldDefaultOfficialToElevenLabsRvc,
+  hasSpecialLocalVoiceStyle,
+} = ttsRouter;
+
+function withElevenLabsEnv(overrides, run) {
+  const keys = [
+    'A11_ELEVENLABS_API_KEY',
+    'A11_ELEVENLABS_VIVY_VOICE_ID',
+    'A11_ELEVENLABS_TTS_DISABLED',
+    'A11_TTS_OFFICIAL_ELEVENLABS_RVC_DEFAULT',
+  ];
+  const previous = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  Object.assign(process.env, overrides);
+  try {
+    return run();
+  } finally {
+    for (const k of keys) {
+      if (previous[k] === undefined) delete process.env[k];
+      else process.env[k] = previous[k];
+    }
+  }
+}
 
 test('detects the explicit elevenlabs+rvc voice mode and its aliases', () => {
   assert.equal(wantsElevenLabsRvcPipeline({ voiceMode: 'elevenlabs-rvc' }), true);
@@ -52,4 +76,48 @@ test('requests without the mode are returned unchanged', () => {
   const normalized = normalizeElevenLabsRvcRequest(body);
   assert.equal(normalized, body);
   assert.equal(normalized.provider, 'piper');
+});
+
+test('official voice defaults to elevenlabs+rvc only when ElevenLabs is configured', () => {
+  const officialRequest = { persona: 'vivy', voiceReferenceRequired: true, text: 'Bonjour' };
+
+  // ElevenLabs configured with a Vivy voice id -> default the official voice to it.
+  withElevenLabsEnv(
+    { A11_ELEVENLABS_API_KEY: 'test-key', A11_ELEVENLABS_VIVY_VOICE_ID: 'voice-vivy' },
+    () => assert.equal(shouldDefaultOfficialToElevenLabsRvc(officialRequest), true)
+  );
+
+  // No ElevenLabs key -> keep the existing XTTS/RVC official route (no regression).
+  withElevenLabsEnv(
+    { A11_ELEVENLABS_API_KEY: '', A11_ELEVENLABS_VIVY_VOICE_ID: '', A11_ELEVENLABS_TTS_DISABLED: 'true' },
+    () => assert.equal(shouldDefaultOfficialToElevenLabsRvc(officialRequest), false)
+  );
+});
+
+test('official elevenlabs default respects neutral voice, special styles and the kill switch', () => {
+  withElevenLabsEnv(
+    { A11_ELEVENLABS_API_KEY: 'test-key', A11_ELEVENLABS_VIVY_VOICE_ID: 'voice-vivy' },
+    () => {
+      // explicit neutral voice must never be hijacked
+      assert.equal(shouldDefaultOfficialToElevenLabsRvc({ persona: 'vivy', neutralVoice: true }), false);
+      // a dedicated local RVC style keeps its XTTS/RVC route
+      assert.equal(shouldDefaultOfficialToElevenLabsRvc({ persona: 'a11', voiceReferenceRequired: true, voiceStyle: 'a11-voix-de-lait' }), false);
+      // non-official persona is out of scope
+      assert.equal(shouldDefaultOfficialToElevenLabsRvc({ persona: 'demo-alice', voiceReferenceRequired: true }), false);
+      // kill switch disables the default
+      withElevenLabsEnv(
+        { A11_TTS_OFFICIAL_ELEVENLABS_RVC_DEFAULT: 'false' },
+        () => assert.equal(shouldDefaultOfficialToElevenLabsRvc({ persona: 'vivy', voiceReferenceRequired: true }), false)
+      );
+    }
+  );
+});
+
+test('detects dedicated local RVC styles', () => {
+  assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: 'djeff-rap' }), true);
+  assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: 'a11-voix-de-lait' }), true);
+  assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: 'terminator' }), true);
+  assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: 'donna' }), true);
+  assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: '' }), false);
+  assert.equal(hasSpecialLocalVoiceStyle({}), false);
 });
