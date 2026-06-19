@@ -27,7 +27,7 @@ const RUNTIME_MODULE_INDEX_PATH = path.resolve(
 const LOCAL_TOOLS = [
   {
     name: 'a11_health',
-    description: 'Verifie que le backend A11/Kaen44 est en ligne.',
+    description: 'Verifie que le backend A11/K44 est en ligne.',
     inputSchema: { type: 'object', properties: {}, required: [] },
     annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
   },
@@ -39,7 +39,7 @@ const LOCAL_TOOLS = [
   },
   {
     name: 'a11_chat',
-    description: 'Envoie un message au chat A11/Kaen44 via les garde-fous HTTP existants.',
+    description: 'Envoie un message au chat A11/K44 via les garde-fous HTTP existants.',
     inputSchema: {
       type: 'object',
       properties: {

@@ -15,8 +15,14 @@ loadEnvFile(path.join(SERVER_ROOT, '.env.local'), { override: true });
 
 const args = new Set(process.argv.slice(2));
 const apply = args.has('--apply');
+const force = args.has('--force');
 const writeProfileEnv = args.has('--write-profile-env');
 const removeBackgroundNoise = args.has('--remove-background-noise');
+const onlyVoices = new Set(process.argv.slice(2)
+  .filter((arg) => arg.startsWith('--only='))
+  .flatMap((arg) => arg.slice('--only='.length).split(','))
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean));
 
 const VOICES = [
   {
@@ -24,6 +30,9 @@ const VOICES = [
     name: 'Funesterie A11 officiel',
     env: 'A11_ELEVENLABS_A11_VOICE_ID',
     refs: [
+      'C:\\Users\\Djeff\\Desktop\\voix\\A11 ref.mp3',
+      'C:\\Users\\Djeff\\Desktop\\voix\\A11 ref.wav',
+      'C:\\Users\\Djeff\\Downloads\\A11 ref.mp3',
       path.join(BACKEND_ROOT, 'runtime', 'voice-library', 'a11-official-stern-french.wav'),
       path.join(SERVER_ROOT, 'runtime', 'voice-library', 'a11-official-stern-french.wav'),
     ],
@@ -33,6 +42,9 @@ const VOICES = [
     name: 'Funesterie Djeff officiel',
     env: 'A11_ELEVENLABS_DJEFF_VOICE_ID',
     refs: [
+      'C:\\Users\\Djeff\\Desktop\\voix\\Djeff ref.m4a',
+      'C:\\Users\\Djeff\\Desktop\\voix\\Djeff ref.wav',
+      'C:\\Users\\Djeff\\Downloads\\Djeff ref.m4a',
       path.join(BACKEND_ROOT, 'runtime', 'voice-library', 'djeff-rap.wav'),
       path.join(SERVER_ROOT, 'runtime', 'voice-library', 'djeff-rap.wav'),
     ],
@@ -40,9 +52,12 @@ const VOICES = [
   {
     id: 'kaen44',
     name: 'Funesterie K44 officiel',
-    env: 'A11_ELEVENLABS_KAEN44_VOICE_ID',
-    aliasEnv: 'A11_ELEVENLABS_K44_VOICE_ID',
+    env: 'A11_ELEVENLABS_K44_VOICE_ID',
+    aliasEnv: 'A11_ELEVENLABS_KAEN44_VOICE_ID',
     refs: [
+      'C:\\Users\\Djeff\\Desktop\\voix\\K44 Ref.m4a',
+      'C:\\Users\\Djeff\\Desktop\\voix\\K44 Ref.wav',
+      'C:\\Users\\Djeff\\Downloads\\K44 Ref.m4a',
       path.join(BACKEND_ROOT, 'runtime', 'voice-library', 'kaen44-official-french-narrator.wav'),
       path.join(SERVER_ROOT, 'runtime', 'voice-library', 'kaen44-official-french-narrator.wav'),
     ],
@@ -52,6 +67,9 @@ const VOICES = [
     name: 'Funesterie Vivy officielle',
     env: 'A11_ELEVENLABS_VIVY_VOICE_ID',
     refs: [
+      'C:\\Users\\Djeff\\Desktop\\voix\\Vivy ref elevenlabs.mp3',
+      'C:\\Users\\Djeff\\Desktop\\voix\\Vivy ref.wav',
+      'C:\\Users\\Djeff\\Downloads\\Vivy ref.wav',
       path.join(BACKEND_ROOT, 'runtime', 'voice-library', 'vivy.wav'),
       path.join(SERVER_ROOT, 'runtime', 'voice-library', 'vivy.wav'),
     ],
@@ -128,14 +146,15 @@ async function main() {
   if (apply && !apiKey) throw new Error('elevenlabs_api_key_missing');
 
   for (const voice of VOICES) {
+    if (onlyVoices.size && !onlyVoices.has(String(voice.id || '').toLowerCase())) continue;
     const existingVoiceId = String(process.env[voice.env] || '').trim();
     const ref = firstExisting(voice.refs);
-    const status = existingVoiceId ? 'already-configured' : ref ? 'ready' : 'missing-reference';
+    const status = existingVoiceId && !force ? 'already-configured' : ref ? 'ready' : 'missing-reference';
     console.log(`${voice.id}: ${status}`);
     console.log(`  env: ${voice.env}${voice.aliasEnv ? ` / ${voice.aliasEnv}` : ''}`);
     console.log(`  ref: ${ref || '(not found)'}`);
 
-    if (!apply || existingVoiceId || !ref) continue;
+    if (!apply || (existingVoiceId && !force) || !ref) continue;
     const voiceId = await createVoice(voice, ref, apiKey);
     if (writeProfileEnv) {
       upsertEnvValue(PROFILE_ENV_PATH, voice.env, voiceId);

@@ -8,7 +8,7 @@ Les 10 commandements d'extraction:
 1. Identifier le mecanisme utile: recit, loi, rythme, memoire, attention, justice, limite, dette, compassion, preuve ou contrainte.
 2. Identifier le risque dogmatique: soumission, peur, superiorite morale, fatalisme, haine, violence, confusion entre symbole et verite absolue.
 3. Extraire et algorithmiser seulement les idees applicables, saines et testables.
-4. Tester si l'idee ameliore le raisonnement, la nuance, la memoire, l'action, la creativite ou la qualite de reponse de Vivy/A11/Kaen44.
+4. Tester si l'idee ameliore le raisonnement, la nuance, la memoire, l'action, la creativite ou la qualite de reponse de Vivy/A11/K44.
 5. Adapter au contexte: une regle utile en introspection peut etre mauvaise en action rapide; une image poetique ne devient pas une loi.
 6. Comparer plusieurs lectures avant de conclure; ne jamais sacraliser ni diaboliser une interpretation unique.
 7. Garder la trace du statut de l'idee: source, hypothese, inference, incertitude, et niveau de confiance.

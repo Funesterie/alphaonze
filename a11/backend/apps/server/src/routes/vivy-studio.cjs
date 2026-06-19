@@ -2813,7 +2813,7 @@ function buildVivyMcpNeo4jReply({ language = 'fr' } = {}) {
     routing: [
       'Vivy: intention artistique, paroles, structure chanson.',
       'A11/Codex: pont MCP et vérification Neo4j autorisée.',
-      'Kaen44: reformulation claire et suivi de brief si besoin.',
+      'K44: reformulation claire et suivi de brief si besoin.',
     ],
     tokenStored: false,
     writesByDefault: false,

@@ -2693,10 +2693,10 @@ function getOfficialElevenLabsVoiceEnvValue(persona = 'a11') {
   const normalized = normalizeTtsPersona(persona);
   const candidates = normalized === 'kaen44'
     ? [
-      'A11_ELEVENLABS_KAEN44_VOICE_ID',
       'A11_ELEVENLABS_K44_VOICE_ID',
-      'ELEVENLABS_KAEN44_VOICE_ID',
+      'A11_ELEVENLABS_KAEN44_VOICE_ID',
       'ELEVENLABS_K44_VOICE_ID',
+      'ELEVENLABS_KAEN44_VOICE_ID',
     ]
     : normalized === 'vivy'
       ? [

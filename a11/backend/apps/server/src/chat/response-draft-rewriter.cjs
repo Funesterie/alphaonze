@@ -228,8 +228,12 @@ function repairOfficialVoiceListenLinks(text = '') {
       /\[([^\]]*(?:Kaen44|K44|kaen44|k44|voix officielle|Voix officielle|voix de Kaen44|voix de K44)[^\]]*)\]\((?!\/api\/tts\/official\/kaen44\/audio\))[^)]*\)/g,
       `[$1](${KAEN44_OFFICIAL_VOICE_AUDIO_URL})`
     );
+    output = output.replace(
+      /\[([^\]]*?)Kaen44([^\]]*?)\]\(\/api\/tts\/official\/kaen44\/audio\)/g,
+      `[$1K44$2](${KAEN44_OFFICIAL_VOICE_AUDIO_URL})`
+    );
     if (!output.includes(KAEN44_OFFICIAL_VOICE_AUDIO_URL) && /(extrait de ma voix|kaen44-official-french-narrator)/i.test(normalizedInput)) {
-      output = `${output}\n\n[Écouter Kaen44 – voix officielle](${KAEN44_OFFICIAL_VOICE_AUDIO_URL})`;
+      output = `${output}\n\n[Écouter K44 – voix officielle](${KAEN44_OFFICIAL_VOICE_AUDIO_URL})`;
     }
     repairedTextQueryAdvice = hadTextQueryAdvice && output.includes(KAEN44_OFFICIAL_VOICE_AUDIO_URL);
     if (repairedTextQueryAdvice) output = appendOfficialVoiceStaticSampleNote(output);
@@ -320,7 +324,7 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
   }
 
   if (responseDraft.flags.includes('voice_capability_denial')) {
-    return "Tu as raison de parler de voix: ma réponse texte est séparée du module TTS, mais la voix entendue passe bien par le backend Funesterie. La route Voix officielle utilise les références privées via XTTS/RVC quand elles existent: a11-official-stern-french pour A11, kaen44-official-french-narrator pour K44, et djeff-rap pour Djeff. Pour A11 et Vivy, ElevenLabs peut servir de voix temporaire pour les comptes autorisés tant que les WAV définitifs ne sont pas fournis. Pour Kaen44 et Djeff, la priorité reste la voix officielle locale.";
+    return "Tu as raison de parler de voix: ma réponse texte est séparée du module TTS, mais la voix entendue passe bien par le backend Funesterie. La route Voix officielle utilise les références privées via XTTS/RVC quand elles existent: a11-official-stern-french pour A11, kaen44-official-french-narrator pour K44, et djeff-rap pour Djeff. Pour A11 et Vivy, ElevenLabs peut servir de voix temporaire pour les comptes autorisés tant que les WAV définitifs ne sont pas fournis. Pour K44 et Djeff, la priorité reste la voix officielle locale.";
   }
 
   if (responseDraft.flags.includes('tool_inventory_dump')) {

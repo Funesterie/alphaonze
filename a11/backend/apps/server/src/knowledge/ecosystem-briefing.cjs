@@ -52,7 +52,7 @@ function buildEcosystemBriefing(scope, corpus, options = {}) {
       nextMoves: [
         'Produire une presentation Google/PDF propre a partir de ce briefing.',
         'Curater les repos encore peu fiables au lieu de laisser les agents deviner.',
-        'Relier les cartes Corpus aux contenus educatifs et domaines de A11, Kaen44 et Vivy.',
+        'Relier les cartes Corpus aux contenus educatifs et domaines de A11, K44 et Vivy.',
         'Utiliser la matrice identity-hashtags pour les prochaines affiches, prompts image, UI et source cards.',
         'Ajouter de petits hooks Neo4j pour les nouveaux livrables de briefing et exports de presentation.',
       ],
@@ -368,7 +368,7 @@ function buildArchitecturePages({ scope, corpus, domainStats, repoMatrix, bounda
     page(10, 'Prochaine passe implementation', [
       'Generer une presentation Google/PDF a partir de ce briefing.',
       'Curater les cartes repo vides et ajouter le contexte manquant seulement avec des preuves.',
-      'Attacher les cartes Corpus educatives/culturelles de A11, Kaen44 et Vivy par domaine.',
+      'Attacher les cartes Corpus educatives/culturelles de A11, K44 et Vivy par domaine.',
       'Faire remonter les outputs briefing dans la carte runtime via hooks Neo4j.',
     ], [
       ['Checklist immediate', ['Publier le briefing en interne.', 'L utiliser comme point d entree pour la navigation Kiro/Codex.', 'Garder les cartes restricted-vault hors des resumes publics.']],

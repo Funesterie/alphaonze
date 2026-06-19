@@ -220,8 +220,8 @@ function buildRuntimeHooksDiagnosticAssistant(snapshot = {}) {
       ? `A11 health: OK (${a11Health.status.url}).`
       : 'A11 health: KO ou indisponible.',
     kaen44Health?.status?.ok === true
-      ? `Kaen44 health: OK (${kaen44Health.status.url}).`
-      : 'Kaen44 health: KO ou indisponible.',
+      ? `K44 health: OK (${kaen44Health.status.url}).`
+      : 'K44 health: KO ou indisponible.',
   ];
   return lines.filter(Boolean).join('\n');
 }
@@ -460,7 +460,7 @@ function buildAssistantPresenceFallback(userMessage = '', options = {}) {
   const folded = foldChatText(userMessage);
   const isKaen44 = surface === 'kaen44' || surface === 'k44';
   const isVivy = surface === 'vivy';
-  const name = isKaen44 ? 'Kaen44' : isVivy ? 'Vivy' : 'A11';
+  const name = isKaen44 ? 'K44' : isVivy ? 'Vivy' : 'A11';
 
   if (/(allo|t es la|tu es la|vous etes la|quelqu un|reponds|réponds)/.test(folded)) {
     return `Oui, je suis là. ${name} reprend normalement.`;

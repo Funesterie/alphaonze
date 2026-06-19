@@ -122,7 +122,7 @@ test('construit un etat Fondateur avec connecteurs avances annonces mais bornes 
 
 test('injecte le bloc connecteurs une seule fois dans le prompt systeme', () => {
   const state = buildAccountConnectorState({ user: { id: 'u1' }, env: {} });
-  const prompt = buildConnectorAwareSystemPrompt('Je suis Kaen44.', state);
+  const prompt = buildConnectorAwareSystemPrompt('Je suis K44.', state);
   const twice = buildConnectorAwareSystemPrompt(prompt, state);
 
   assert.match(prompt, /Contexte connecteurs Funesterie/);

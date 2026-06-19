@@ -13,7 +13,7 @@ const {
   buildGraphTriplets,
 } = require('../scripts/seed-agent-domain-pack.cjs');
 
-test('agent domain pack covers A11, Kaen44 and Vivy with broad domains', () => {
+test('agent domain pack covers A11, K44 and Vivy with broad domains', () => {
   const pack = buildAgentDomainPack({
     generatedAt: '2026-05-14T00:00:00.000Z',
     sfxAssets: [
