@@ -251,15 +251,23 @@ async function createEmergencySongAsset(input = {}, req = null) {
     input.songMood,
   ].filter(Boolean).join('\n'), 1600);
   const title = cleanText(input.title || input.songTitle || material.split(/\n|[.!?]/).find(Boolean), 80) || 'Vivy emergency song';
-  const digest = crypto.createHash('sha1').update(`${title}\n${material}`).digest('hex').slice(0, 10);
-  const filename = `vivy-song-${slugify(title, 'song')}-${digest}.wav`;
+
+  // Voice/persona routing: the placeholder must reflect the casting voice that
+  // was actually selected. `a11-emergency-*` is reserved for the A11 persona
+  // only — it must never silently stand in for a Vivy/K44/Djeff/catalog voice.
+  const personaSlug = slugify(String(input.voicePersona || input.persona || 'vivy'), 'vivy');
+  const voiceLabel = cleanText(input.voiceLabel || input.voiceCastLabel || '', 120) || personaSlug;
+  const voiceProfileId = cleanText(input.voiceProfileId || '', 120) || personaSlug;
+
+  const digest = crypto.createHash('sha1').update(`${personaSlug}\n${title}\n${material}`).digest('hex').slice(0, 10);
+  const filename = `${personaSlug}-song-${slugify(title, 'song')}-${digest}.wav`;
   const dir = getVivyGeneratedDir();
   const filePath = path.join(dir, filename);
 
   await fsp.mkdir(dir, { recursive: true });
   if (!fs.existsSync(filePath)) {
     const wav = createEmergencyWavBuffer({
-      seedText: `${title}\n${material}`,
+      seedText: `${personaSlug}\n${title}\n${material}`,
       durationSeconds: input.durationSeconds || input.duration || 12,
     });
     await fsp.writeFile(filePath, wav);
@@ -269,7 +277,7 @@ async function createEmergencySongAsset(input = {}, req = null) {
   return {
     ok: true,
     kind: 'audio',
-    provider: 'a11-emergency-wav',
+    provider: `${personaSlug}-emergency-wav`,
     mode: 'emergency_music_demo',
     title,
     filename,
@@ -279,6 +287,10 @@ async function createEmergencySongAsset(input = {}, req = null) {
     audioUrl: url,
     content_type: 'audio/wav',
     durationSeconds: Math.max(3, Math.min(24, Number(input.durationSeconds || input.duration || 12) || 12)),
+    voice: voiceLabel,
+    persona: personaSlug,
+    voiceProfileId,
+    isA11Emergency: personaSlug === 'a11',
     emergencyFallback: true,
   };
 }

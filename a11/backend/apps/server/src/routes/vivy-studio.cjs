@@ -3524,7 +3524,21 @@ async function buildEmergencyMediaForProduction(mode, input, req) {
   if (!shouldAttachPlaceholderMedia(input)) return null;
   if (input.disableEmergencyMedia === true || input.disableMedia === true) return null;
   if (mode === 'song' || mode === 'voice') {
-    return createEmergencySongAsset(input, req);
+    // Carry the selected casting voice all the way to the placeholder generator
+    // so the fallback reflects the real persona instead of a generic A11 file.
+    const artistCast = buildVivySongArtistCast(input);
+    const catalogVoiceName = cleanOneLine(input.voiceCatalogName || input.catalogVoiceName, '', 80);
+    const voiceProfile = getVivyStudioVoiceProfile(input);
+    const voicePersona = catalogVoiceName
+      ? 'catalog'
+      : (Array.isArray(artistCast.ids) && artistCast.ids.length ? artistCast.ids.join('-') : 'vivy');
+    const voiceLabel = catalogVoiceName || artistCast.label || voiceProfile.label || 'Vivy';
+    return createEmergencySongAsset({
+      ...input,
+      voicePersona,
+      voiceLabel,
+      voiceProfileId: voiceProfile.id || voicePersona,
+    }, req);
   }
   if (mode === 'share') {
     return createEmergencyVideoAsset({
@@ -4224,4 +4238,5 @@ module.exports = {
   isVivyMcpNeo4jQuestion,
   isVivyToolCapabilityQuestion,
   getSunoMusicJob,
+  buildEmergencyMediaForProduction,
 };
