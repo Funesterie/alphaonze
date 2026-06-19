@@ -8,8 +8,11 @@ const {
   normalizeElevenLabsRvcRequest,
   wantsElevenLabsRvcPipeline,
   shouldDefaultOfficialToElevenLabsRvc,
+  shouldRouteOfficialToElevenLabsRvc,
   hasSpecialLocalVoiceStyle,
 } = ttsRouter;
+
+const PAID_USER = { user: { isAdmin: true } };
 
 function withElevenLabsEnv(overrides, run) {
   const keys = [
@@ -109,6 +112,35 @@ test('official elevenlabs default respects neutral voice, special styles and the
         { A11_TTS_OFFICIAL_ELEVENLABS_RVC_DEFAULT: 'false' },
         () => assert.equal(shouldDefaultOfficialToElevenLabsRvc({ persona: 'vivy', voiceReferenceRequired: true }), false)
       );
+    }
+  );
+});
+
+test('explicit elevenlabs-rvc gracefully falls back to XTTS when ElevenLabs is not configured', () => {
+  const explicit = { persona: 'vivy', voiceMode: 'elevenlabs-rvc', text: 'Bonjour' };
+
+  // ElevenLabs configured -> route to the ElevenLabs+RVC pipeline.
+  withElevenLabsEnv(
+    { A11_ELEVENLABS_API_KEY: 'test-key', A11_ELEVENLABS_VIVY_VOICE_ID: 'voice-vivy' },
+    () => assert.equal(shouldRouteOfficialToElevenLabsRvc(PAID_USER, explicit), true)
+  );
+
+  // No ElevenLabs -> do NOT force ElevenLabs (caller keeps the XTTS official route).
+  withElevenLabsEnv(
+    { A11_ELEVENLABS_API_KEY: '', A11_ELEVENLABS_VIVY_VOICE_ID: '', A11_ELEVENLABS_TTS_DISABLED: 'true' },
+    () => assert.equal(shouldRouteOfficialToElevenLabsRvc(PAID_USER, explicit), false)
+  );
+});
+
+test('official voice routing requires a paid tier', () => {
+  withElevenLabsEnv(
+    { A11_ELEVENLABS_API_KEY: 'test-key', A11_ELEVENLABS_VIVY_VOICE_ID: 'voice-vivy' },
+    () => {
+      const officialRequest = { persona: 'vivy', voiceReferenceRequired: true, text: 'Bonjour' };
+      assert.equal(shouldRouteOfficialToElevenLabsRvc(PAID_USER, officialRequest), true);
+      // a basic, non-subscribed account never reaches the paid ElevenLabs path
+      const basic = { user: { account_tier: 'basic', subscription_active: false } };
+      assert.equal(shouldRouteOfficialToElevenLabsRvc(basic, officialRequest), false);
     }
   );
 });

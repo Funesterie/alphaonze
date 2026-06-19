@@ -86,7 +86,7 @@ const VOICE_PERSONA_DIRECTIONS = Object.freeze({
   }),
   kaen44: Object.freeze({
     persona: 'kaen44',
-    label: 'Kaen44 official French desk operator',
+    label: 'K44 official French desk operator',
     referenceMoodboard: [
       'Elegant French desk-operator voice, based on the owned family WAV reference when available.',
       'If ElevenLabs is configured, use a crisp French operator voice: feminine, quick, elegant, confident, never cartoonish.',
@@ -135,9 +135,9 @@ const OFFICIAL_READY_VOICE_PROFILES = Object.freeze({
   }),
   kaen44: Object.freeze({
     styleId: 'kaen44-official-french-narrator',
-    displayName: 'Kaen44 - French Narrator Lady',
+    displayName: 'K44 - French Narrator Lady',
     providerLabels: Object.freeze({
-      [PROVIDERS.ELEVENLABS]: 'ElevenLabs Kaen44 family default',
+      [PROVIDERS.ELEVENLABS]: 'ElevenLabs K44 family default',
       [PROVIDERS.AZURE]: 'fr-FR-Vivienne:DragonHDLatestNeural',
       [PROVIDERS.OPENAI]: 'sage',
       [PROVIDERS.XTTS_RVC]: 'Family WAV - Kaen44 official reference',
