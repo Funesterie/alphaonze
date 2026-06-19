@@ -5,6 +5,9 @@ import {
   deleteRemoteProviderProfile,
   downloadAccountInventoryZip,
   downloadConversationResource,
+  downloadResourceById,
+  parseA11ResourceDownloadId,
+  buildAuthenticatedResourceDownloadPath,
   downloadStoredAccountFile,
   fetchTechnicalMemoSummary,
   fetchA11HistoryList,
@@ -3173,7 +3176,20 @@ function writeVivyVoiceReferenceLabel(label: string) {
 }
 
 function isVivyVoiceChangeRequest(text: string) {
-  return /\b(voix|voice|timbre|changer|change|modifier|modifie|calibr|reference|ref audio|imiter|clone)\b/i.test(foldForLookup(text));
+  const folded = foldForLookup(text);
+  if (!folded) return false;
+  // Only treat this as a voice request when the user explicitly talks about
+  // voice / TTS / vocal timbre. Generic verbs like "changer" or "modifier" on
+  // their own must NOT surface voice/TTS status in free chat.
+  if (/\b(voix|voice|tts|timbre|vocal|vocale|synthese vocale)\b/.test(folded)) return true;
+  // Explicit audio reference for the voice (e.g. "ref audio", "reference vocale").
+  if (/\bref(?:erence)?\s+(?:audio|vocale|voix)\b/.test(folded)) return true;
+  // A change / clone verb only counts when it explicitly targets voice or audio.
+  if (
+    /\b(changer|change|remplacer|remplace|modifier|modifie|calibr\w*|cloner|clone|imiter)\b/.test(folded)
+    && /\b(voix|voice|timbre|vocal|vocale|tts|audio)\b/.test(folded)
+  ) return true;
+  return false;
 }
 
 function normalizeVivyStudioMode(value: unknown): VivyStudioMode | null {
@@ -14770,13 +14786,48 @@ export function App() {
                       ? (
                         <ReactMarkdown
                           components={{
-                            a: ({ node: _node, ref: _ref, ...props }: any) => (
-                              <a
-                                {...props}
-                                target="_blank"
-                                rel="noreferrer"
-                              />
-                            ),
+                            a: ({ node: _node, ref: _ref, href, children, ...props }: any) => {
+                              const resourceDownloadId = parseA11ResourceDownloadId(href);
+                              if (resourceDownloadId) {
+                                // Never expose or navigate to a public `?token=` URL: render a
+                                // clean authenticated href and route the click through the
+                                // credentialed blob download so we never fetch a 401 error JSON.
+                                const cleanHref = buildAuthenticatedResourceDownloadPath(resourceDownloadId);
+                                const labelText = String(
+                                  Array.isArray(children) ? children.join(" ") : (children ?? "")
+                                ).replace(/^[⬇\s]*(?:télécharger|telecharger|download|ouvrir)\s*/i, "").trim();
+                                return (
+                                  <a
+                                    {...props}
+                                    href={cleanHref}
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      setUploadFeedback("Préparation du téléchargement...");
+                                      void downloadResourceById(resourceDownloadId, labelText || undefined)
+                                        .then((result) => {
+                                          setUploadFeedback(`Téléchargement lancé: ${result.filename}`);
+                                        })
+                                        .catch((error_) => {
+                                          const message = (error_ as Error)?.message || String(error_);
+                                          setUploadFeedback(`Échec du téléchargement: ${message}`);
+                                        });
+                                    }}
+                                  >
+                                    {children}
+                                  </a>
+                                );
+                              }
+                              return (
+                                <a
+                                  {...props}
+                                  href={href}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  {children}
+                                </a>
+                              );
+                            },
                             img: ({ node: _node, ref: _ref, src, alt, ...props }: any) => {
                               const safeSrc = resolveRenderableAssetUrl(src);
                               if (!safeSrc) return null;

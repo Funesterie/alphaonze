@@ -1,5 +1,5 @@
-import React from "react";
-import { resolveApiAssetUrl, type A11ConversationResource } from "../lib/api";
+import React, { useEffect, useState } from "react";
+import { loadProtectedResourceObjectUrl, type A11ConversationResource } from "../lib/api";
 
 type ConversationResourcesPanelProps = {
   conversationId?: string | null;
@@ -47,13 +47,63 @@ function getResourceMetaLine(resource: A11ConversationResource) {
   return parts.join(" · ");
 }
 
-function getResourceImagePreviewUrl(resource: A11ConversationResource) {
+function resourceLooksLikeImage(resource: A11ConversationResource) {
   const contentType = String(resource.contentType || "").toLowerCase();
   const filename = String(resource.filename || "").toLowerCase();
-  const looksLikeImage = contentType.startsWith("image/")
+  return contentType.startsWith("image/")
     || /\.(png|jpe?g|gif|webp|bmp|svg)$/.test(filename);
-  if (!looksLikeImage) return null;
-  return resolveApiAssetUrl(resource.downloadUrl || resource.url) || null;
+}
+
+// Loads the image through the authenticated `/api/resources/:id/download`
+// endpoint as a blob object URL, so previews never rely on a public
+// `?token=secret://...` link (which 401s) and no token is exposed in the DOM.
+function ResourceImagePreview({ resource }: { resource: A11ConversationResource }) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const resourceId = typeof resource.id === "number" ? resource.id : null;
+
+  useEffect(() => {
+    if (!resourceId || !resourceLooksLikeImage(resource)) {
+      setObjectUrl(null);
+      return;
+    }
+    let active = true;
+    let createdUrl: string | null = null;
+    void loadProtectedResourceObjectUrl(resourceId).then((url) => {
+      if (!active) {
+        if (url) URL.revokeObjectURL(url);
+        return;
+      }
+      createdUrl = url;
+      setObjectUrl(url);
+    });
+    return () => {
+      active = false;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [resourceId, resource.contentType, resource.filename]);
+
+  if (!objectUrl) return null;
+  return (
+    <div
+      style={{
+        borderRadius: 10,
+        overflow: "hidden",
+        border: "1px solid #1e293b",
+        background: "#020617",
+      }}
+    >
+      <img
+        src={objectUrl}
+        alt={resource.filename}
+        style={{
+          display: "block",
+          width: "100%",
+          maxHeight: 200,
+          objectFit: "cover",
+        }}
+      />
+    </div>
+  );
 }
 
 function getLastEmailInfo(resource: A11ConversationResource) {
@@ -171,7 +221,6 @@ export function ConversationResourcesPanel({
             const preview = getResourcePreview(resource);
             const metaLine = getResourceMetaLine(resource);
             const lastEmail = getLastEmailInfo(resource);
-            const imagePreviewUrl = getResourceImagePreviewUrl(resource);
 
             return (
               <div
@@ -217,27 +266,7 @@ export function ConversationResourcesPanel({
                   </div>
                 )}
 
-                {imagePreviewUrl ? (
-                  <div
-                    style={{
-                      borderRadius: 10,
-                      overflow: "hidden",
-                      border: "1px solid #1e293b",
-                      background: "#020617",
-                    }}
-                  >
-                    <img
-                      src={imagePreviewUrl}
-                      alt={resource.filename}
-                      style={{
-                        display: "block",
-                        width: "100%",
-                        maxHeight: 200,
-                        objectFit: "cover",
-                      }}
-                    />
-                  </div>
-                ) : null}
+                <ResourceImagePreview resource={resource} />
 
                 {preview && (
                   <pre
@@ -307,16 +336,6 @@ export function ConversationResourcesPanel({
                       >
                         {emailingResourceId === resource.id ? "Envoi..." : "Mail"}
                       </button>
-                    ) : null}
-                    {(resource.downloadUrl || resource.url) ? (
-                      <a
-                        href={resolveApiAssetUrl(resource.downloadUrl || resource.url) || resource.downloadUrl || resource.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ color: "#93c5fd", fontSize: 12, fontWeight: 600 }}
-                      >
-                        Ouvrir
-                      </a>
                     ) : null}
                   </div>
                 </div>

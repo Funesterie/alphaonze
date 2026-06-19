@@ -6184,6 +6184,16 @@ function attachPublicDownloadUrl(resource, req = null) {
   };
 }
 
+// Authenticated, token-free download path for the resource owner. The A11 chat
+// client sends credentials/JWT with this route, so it must be used for links
+// shown back to the owner instead of the public `?token=...` URL (which would
+// expose a secret link in the browser and 401 on click).
+function buildOwnerResourceDownloadPath(resource) {
+  const resourceId = Number(resource?.id || 0);
+  if (!Number.isFinite(resourceId) || resourceId <= 0) return '';
+  return `/api/resources/${resourceId}/download`;
+}
+
 app.get('/api/a11host/status', verifyJWT, async (_req, res) => {
   try {
     const status = await getA11HostStatus();
@@ -12327,10 +12337,10 @@ function buildDirectSafeUserReply(cerbere, latestUserMessage = '', imagePath = n
   if (results.some((entry) => entry.action === 'get_latest_resource')) {
     const latest = results.find((entry) => entry.action === 'get_latest_resource');
     const resource = latest?.result?.resource || null;
-    const downloadUrl = String(resource?.downloadUrl || resource?.url || '').trim();
+    const ownerDownloadPath = buildOwnerResourceDownloadPath(resource);
     const filename = String(resource?.filename || '').trim() || 'fichier';
-    if (downloadUrl) {
-      return `Voici le lien de téléchargement de ${filename} : [télécharger ${filename}](${downloadUrl})`;
+    if (ownerDownloadPath) {
+      return `Voici le lien de téléchargement de ${filename} : [télécharger ${filename}](${ownerDownloadPath})`;
     }
     return "J'ai retrouvé la dernière ressource, mais aucun lien de téléchargement valide n'est disponible.";
   }
@@ -12483,7 +12493,8 @@ async function tryRecoverAndShareLatestArtifact({ userId, conversationId, execut
   const sharedResult = Array.isArray(cerbere?.results)
     ? cerbere.results.find((entry) => entry?.ok && entry?.action === 'share_file')
     : null;
-  const link = String(
+  const ownerDownloadPath = buildOwnerResourceDownloadPath(sharedResult?.conversationResource);
+  const link = ownerDownloadPath || String(
     sharedResult?.url
     || sharedResult?.file?.downloadUrl
     || sharedResult?.conversationResource?.downloadUrl

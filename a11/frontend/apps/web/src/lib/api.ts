@@ -4639,6 +4639,71 @@ async function downloadProtectedBlob(pathname: string, fallbackName: string) {
   };
 }
 
+const A11_RESOURCE_DOWNLOAD_PATTERN = /\/api\/(?:public\/)?resources\/(\d+)\/download(?:[?#/].*)?$/i;
+
+/**
+ * Detect an A11 resource download URL — either the authenticated
+ * `/api/resources/:id/download` form or the legacy public
+ * `/api/public/resources/:id/download?token=...` form — and return the numeric
+ * resource id. Used to route any such link through the authenticated blob
+ * download instead of navigating to (and leaking) a public token URL.
+ */
+export function parseA11ResourceDownloadId(url: string | null | undefined): number | null {
+  const raw = String(url || '').trim();
+  if (!raw) return null;
+  let pathAndQuery = raw;
+  try {
+    const parsed = new URL(raw, globalThis.location?.origin || 'http://localhost');
+    pathAndQuery = `${parsed.pathname}${parsed.search}`;
+  } catch {
+    // relative or non-parseable URL: match against the raw value directly
+  }
+  const match = A11_RESOURCE_DOWNLOAD_PATTERN.exec(pathAndQuery);
+  if (!match) return null;
+  const id = Number(match[1]);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
+/** Build the authenticated (token-free) download path for a resource id. */
+export function buildAuthenticatedResourceDownloadPath(resourceId: number): string {
+  return `/api/resources/${Number(resourceId)}/download`;
+}
+
+/**
+ * Download a resource by id through the authenticated endpoint. Streams the
+ * response into a blob, derives the filename from content-disposition, and
+ * triggers the download via a temporary object URL. Throws on non-OK so callers
+ * never download an error JSON.
+ */
+export async function downloadResourceById(resourceId: number, fallbackName?: string) {
+  const id = Number(resourceId);
+  if (!Number.isFinite(id) || id <= 0) {
+    throw new Error('invalid_resource_id');
+  }
+  return downloadProtectedBlob(`/api/resources/${id}/download`, String(fallbackName || `resource-${id}.bin`));
+}
+
+/**
+ * Load a protected resource as a blob object URL (for in-app previews such as
+ * images). The caller is responsible for revoking the returned URL. Returns
+ * null on any auth/HTTP error so callers never render a broken/401 asset.
+ */
+export async function loadProtectedResourceObjectUrl(resourceId: number): Promise<string | null> {
+  const id = Number(resourceId);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  try {
+    const res = await authFetch(getApiUrl(`/api/resources/${id}/download`), {
+      method: 'GET',
+      headers: buildAuthHeaders(),
+    });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  } catch {
+    return null;
+  }
+}
+
 export async function downloadConversationResource(resource: A11ConversationResource) {
   const resourceId = Number(resource?.id || 0);
   if (!Number.isFinite(resourceId) || resourceId <= 0) {

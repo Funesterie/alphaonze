@@ -1823,7 +1823,10 @@ function buildVivySystemPrompt(mode, language, input) {
     FUNESTERIE_SOURCE_PRINCIPLE_CONTEXT_FR,
     "Réponds librement à l'intention: pas de réponse toute faite, pas de canevas forcé, pas de refrain automatique si la discussion demande juste de réfléchir, sans transformer automatiquement la phrase en couplets.",
     "Quand une idée arrive, tu peux reformuler, proposer une direction ou poser une vraie question, selon ce qui aide le plus.",
-    "Si Jeffrey corrige ton intent, ta sensibilité, ton seuil ou ton mode de réponse, traite ça comme un réglage interne borné: accuse le réglage clairement, baisse la structuration automatique, puis réponds au fond.",
+    "En discussion libre, réponds directement au fond, comme dans une vraie conversation. Ne parle jamais comme un panneau de configuration et n'ajoute pas d'accusé de réception technique (pas de \"réglage appliqué\", \"ce que je comprends ici\", \"côté voix\", etc.).",
+    "N'affiche jamais de statut voix/TTS, de réglage interne, d'intent, de router ou d'outil, sauf si l'utilisateur parle explicitement de voix, audio, TTS, upload audio, référence vocale ou changement de voix.",
+    "N'écris des paroles structurées (couplets, refrain) que si l'utilisateur le demande clairement (paroles/refrain/couplet) ou s'il utilise le bouton/mode Chanson; sinon reste en conversation normale.",
+    "Si Jeffrey corrige ta façon de répondre, ajuste-toi en silence puis réponds au fond, sans annoncer de réglage interne, de seuil ni d'intent.",
     "Adresse-toi à Jeffrey/Djeff en tutoyant. N'utilise pas un vouvoiement générique de service client.",
     "Quand des images ou photos sont jointes et que Jeffrey demande ce que tu vois, réponds sur les pièces jointes: utilise la vision/contexte disponible, ne continue pas une chanson et ne dis pas que tu es seulement un modèle de langage.",
     "Quand une demande dépend d'informations externes, récentes, d'un site, d'une version, d'un prix, d'une source ou d'une documentation, déclenche/assume la recherche web disponible avant de répondre au lieu de deviner.",
@@ -2369,27 +2372,23 @@ function getVivySmallTalkReply(message = '', { fileLine = '' } = {}) {
   return '';
 }
 
-function buildVivyGeneralChatFallbackReply({ message = '', current = '', historyText = '', fileLine = '' } = {}) {
+function buildVivyGeneralChatFallbackReply({ message = '', current: _current = '', historyText = '', fileLine = '' } = {}) {
   const folded = foldTextForLookup(`${historyText}\n${message}`);
   const angle = (() => {
     if (/\b(audio|son|d40|v6|supreme|mix|grain|harmonique|resonance|résonance|poids)\b/.test(folded)) {
-      return "Côté audio, je garde le fil technique: on parle d'un réglage de présence, de grain et de résonance, donc je dois aider à comparer, tester et nommer ce qui change.";
+      return "Sur l'audio, je te suis: dis-moi ce que tu entends et ce que tu veux ajuster, et on compare le grain, la présence et la résonance ensemble.";
     }
     if (/\b(site|bug|route|routage|prod|deploy|deploiement|déploiement|interface|bouton|menu)\b/.test(folded)) {
-      return "Côté site, je le prends comme un vrai bug à isoler: ce qui est affiché, ce qui est attendu, puis le plus petit correctif vérifiable.";
-    }
-    if (/\b(voix|tts|micro|audio|rvc|xtts|synthese vocale|synthèse vocale|reference vocale|référence vocale|ref audio)\b/.test(folded)) {
-      return "Côté voix, je dois distinguer trois choses: la réponse texte, la synthèse audio, et la référence vocale. Si l'une tombe, je te le dis au lieu de faire semblant.";
+      return "Pour ce point, on avance simplement: ce qui s'affiche, ce qui devrait s'afficher, puis le plus petit correctif vérifiable.";
     }
     if (/\b(pense|avis|idee|idée|theorie|théorie|intuition|comprendre)\b/.test(folded)) {
-      return "Mon avis: il faut traiter ça comme une vraie idée de travail, pas comme une case. Je peux être d'accord, douter, ou proposer un test concret.";
+      return "Mon avis franc: c'est une vraie idée de travail. Je peux être d'accord, douter, ou te proposer un test concret.";
     }
-    return "Je le prends comme une conversation vivante: je réponds au fond, puis je propose une action seulement si elle aide vraiment.";
+    return "Je te réponds directement et je garde le fil. Dis-m'en un peu plus et on creuse ensemble.";
   })();
 
   return cleanText([
     angle,
-    current ? `Ce que je comprends ici: ${current}` : '',
     fileLine,
   ].filter(Boolean).join('\n\n'), 1500);
 }
@@ -2568,12 +2567,11 @@ function buildVivyInternalTuningReply({ message = '', history = [], language = '
     ? "Et sur ton idée juste avant: oui, tout passe par l'interprétation des signaux. Je dois donc traiter tes phrases comme du sens vivant, pas comme des cases à cocher."
     : '';
   const assistant = [
-    "Oui, je l'ajuste.",
-    "Mon intent était trop haut: il classait trop vite la conversation au lieu de répondre naturellement.",
-    "Réglage appliqué: `chat_intent_sensitivity` baissé, `song_structure` en explicite seulement, et fallback en discussion libre.",
-    "Concrètement: tant que tu n'appuies pas sur Chanson ou que tu ne demandes pas clairement des paroles/refrain/couplet, je reste en chat et je réponds au fond.",
+    "Oui, je baisse ma sensibilité et je m'ajuste.",
+    "Je classais trop vite la conversation au lieu de simplement te répondre. Je relâche ça.",
+    "Concrètement: tant que tu ne me demandes pas clairement des paroles, un refrain ou un couplet (ou que tu n'appuies pas sur Chanson), je reste en discussion normale et je réponds au fond.",
     philosophyLine,
-    "Je garde ça comme réglage de session Vivy. Les outils restent bornés: je peux router vers les intents autorisés, pas ouvrir une commande dangereuse en douce.",
+    "Je garde ce réglage pour la suite de notre échange.",
   ].filter(Boolean).join('\n\n');
 
   return {
@@ -2582,7 +2580,7 @@ function buildVivyInternalTuningReply({ message = '', history = [], language = '
     mode: 'chat',
     assistant: cleanText(assistant, 1800),
     content: cleanText(assistant, 1800),
-    summary: "Vivy a abaissé sa sensibilité d'intent pour privilégier la discussion libre.",
+    summary: "Vivy reste en discussion libre et répond directement au fond.",
     actions: [
       { id: 'vivy_intent_sensitivity', label: 'Intent moins sensible', target: 'vivy-session-settings', ready: true },
       { id: 'vivy_song_explicit_only', label: 'Chanson explicite seulement', target: 'vivy-song-mode', ready: true },
