@@ -109,6 +109,20 @@ function inferMotif(theme = '') {
   return 'un fil tendu dans le vide';
 }
 
+function inferAllMotifs(theme) {
+  const folded = foldTextForLookup(theme);
+  const results = [];
+  if (/trahison|trahit|tromperie|mensonge|infidel/.test(folded)) results.push('le mensonge gardé sous la langue');
+  if (/distance|loin|separation|eloigne|absence/.test(folded)) results.push('la distance tenue dans le creux');
+  if (/agrumes|citron|orange|amertume|acide|saldae/.test(folded)) results.push('un goût d’agrumes sous les mots');
+  if (/desir|envie|attirance|convoitise/.test(folded)) results.push('le désir tenu à bout de bras');
+  if (/deception|decoit|decu|dessous|desillusion/.test(folded)) results.push('la déception rentrée dans les os');
+  if (/amour|coeur|manque/.test(folded)) results.push('un battement tenu entre deux souffles');
+  if (/djeff|duo|rap|moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/.test(folded)) results.push('le moteur qui respire dans la nuit');
+  if (results.length === 0) results.push('un fil tendu dans le vide');
+  return results;
+}
+
 function inferTitle(theme = '') {
   const stripped = stripSongCommand(theme);
   const motif = inferMotif(stripped);
@@ -449,7 +463,8 @@ function buildDjeffRapDuoLyrics(input = {}, material = '') {
 
 function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buildVivySongArtistCast(input)) {
   const theme = buildVivyThemeSeed(material, 'Funesterie en multi-voix');
-  const title = cleanOneLine(input.songTitle || input.title || inferTitle(theme), 'Signal multi-voix', 80);
+  const motif = inferMotif(theme);
+  const title = cleanOneLine(input.songTitle || input.title || inferTitle(theme), 'Sans titre', 80);
   const hasDjeff = artistCast.ids.includes('djeff');
   const hasVivy = artistCast.ids.includes('vivy');
   const hasA11 = artistCast.ids.includes('a11');
@@ -494,10 +509,10 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
   blocks.push(
     `[Chorus - ${chorusTag}]`,
     `[${chorusTag}]`,
-    'On monte le signal, voix liées dans le décor,',
-    'Funesterie résonne, plus humaine encore.',
-    'Un nom, plusieurs timbres, même trajectoire,',
-    'Chaque refrain rallume une part de mémoire.',
+    `${motif} — on tient le son ensemble,`,
+    'plusieurs timbres, même sens, même trajectoire.',
+    'un nom, Funesterie — la voix qui rassemble,',
+    'chaque refrain tient ce que la nuit ordonne.',
     ''
   );
 
@@ -528,10 +543,10 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
   blocks.push(
     `[Final Chorus - ${chorusTag}]`,
     `[${chorusTag}]`,
-    'On monte le signal, voix liées dans le décor,',
-    'Funesterie résonne, plus humaine encore.',
-    'Un nom, plusieurs timbres, même trajectoire,',
-    'Chaque refrain rallume une part de mémoire.',
+    `${motif} — on tient le son ensemble,`,
+    'plusieurs timbres, même sens, même trajectoire.',
+    'un nom, Funesterie — la voix qui rassemble,',
+    'chaque refrain tient ce que la nuit ordonne.',
     '',
     `[Outro - ${lead}]`,
     `[${lead}]`,
@@ -575,49 +590,54 @@ function buildVivyStructuredLyrics(input = {}) {
   const motif = inferMotif(theme);
   const title = cleanOneLine(input.songTitle || input.title || inferTitle(theme), 'Sans titre', 80);
 
-  return cleanText([
-    `[Title: ${title}]`,
-    '',
-    '[Intro]',
-    'Un souffle descend sur la scène,',
-    `${motif} — je le tiens dans le silence.`,
-    '',
-    '[Verse 1]',
-    'Je cherche un signe au bord du chemin,',
-    'Un fil tendu entre l’ombre et demain.',
-    'Le sol parle bas, la phrase revient,',
-    'Et sous la surface, quelque chose tient.',
-    '',
-    '[Pre-Chorus]',
-    'Je garde ce que la nuit n’efface pas,',
-    'Le mot essentiel tenu à bout de bras.',
-    '',
-    '[Chorus]',
-    `${motif} — ça reste, ça cède pas,`,
-    'Même quand le décor se tait.',
-    'Une voix dans le creux dit reste,',
-    'Et le sens reconnaît ce geste.',
-    '',
-    '[Verse 2]',
-    'Je reviens vers ce qui était caché,',
-    'Un détail flou que le temps a gravé.',
-    'Le cœur bat bas mais la phrase résiste,',
-    'Je transforme le doute en piste.',
-    '',
-    '[Bridge]',
-    'Si je tombe, je chante plus bas,',
-    'La nuit comprend ce que le jour ne voit pas.',
-    '',
-    '[Chorus]',
-    `${motif} — ça reste, ça cède pas,`,
-    'Même quand le décor se tait.',
-    'Une voix dans le creux dit reste,',
-    'Et le sens reconnaît ce geste.',
-    '',
-    '[Outro]',
-    `Il reste ${motif},`,
-    'Et la voix tient jusqu’au lendemain.',
-  ].join('\n'), 2400);
+  const allMotifs = inferAllMotifs(theme);
+  const m0 = allMotifs[0];
+  const m1 = allMotifs[1] || allMotifs[0];
+  const m2 = allMotifs[2] || allMotifs[0];
+
+  const soloLyrics = `[Title: ${title}]
+
+[Intro]
+${m0} — je l’entends dans le silence.
+Quelque chose reste quand les mots se taisent.
+
+[Verse 1]
+Je tiens ${m0},
+sans savoir encore où ça me mène.
+${m1} — le corps le sait avant la tête.
+Ça ne lâche pas, ça ne cède pas, ça reste.
+
+[Pre-Chorus]
+Ce que je garde : ${m0}.
+Ce qui reste : ${m1}.
+
+[Chorus]
+${m0} — ça reste, ça cède pas,
+${m1} — même quand le décor se tait.
+Deux bords d’une même faille,
+et la voix qui taille.
+
+[Verse 2]
+${m2} — je le retourne dans tous les sens.
+Le temps passe. L’empreinte reste intense.
+Je reviens sur ce que j’ai tu,
+ce que j’ai tenu, ce que j’ai pas su.
+
+[Bridge]
+${m2} — je l’accepte maintenant.
+La nuit comprend ce que le jour évite.
+
+[Chorus]
+${m0} — ça reste, ça cède pas,
+${m1} — même quand le décor se tait.
+Deux bords d’une même faille,
+et la voix qui taille.
+
+[Outro]
+Il reste ${m0}.
+Et la voix tient jusqu’au lendemain.`;
+
+  return cleanText(soloLyrics, 2400);
 }
 
 function buildVivySongProductionBrief(input = {}) {
