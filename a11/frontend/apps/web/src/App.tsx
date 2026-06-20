@@ -2146,17 +2146,20 @@ function MsgImageCarousel({ images, onExpand }: { images: string[]; onExpand: (u
           type="button"
           style={{ fontSize: 12, color: '#86efac', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}
           onClick={async () => {
+            const imgUrl = resolveApiAssetUrl(current) || current;
             try {
-              let res = await fetch(current, { credentials: 'include' }).catch(() => fetch(current, { credentials: 'omit' }));
+              const res = await fetch(imgUrl, { credentials: 'omit' });
               if (!res.ok) throw new Error('fetch_failed');
               const blob = await res.blob();
               const ext = blob.type.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
               const a = document.createElement('a');
               a.href = URL.createObjectURL(blob);
               a.download = `image.${ext}`;
+              document.body.appendChild(a);
               a.click();
+              document.body.removeChild(a);
               setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-            } catch { window.open(current, '_blank', 'noopener,noreferrer'); }
+            } catch { window.open(imgUrl, '_blank', 'noopener,noreferrer'); }
           }}
         >
           ⬇ Télécharger
@@ -14949,17 +14952,20 @@ export function App() {
                                     type="button"
                                     style={{ fontSize: 12, color: '#86efac', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}
                                     onClick={async () => {
+                                      const imgUrl = resolveApiAssetUrl(imgs[0]) || imgs[0];
                                       try {
-                                        let res = await fetch(imgs[0], { credentials: 'include' }).catch(() => fetch(imgs[0], { credentials: 'omit' }));
+                                        const res = await fetch(imgUrl, { credentials: 'omit' });
                                         if (!res.ok) throw new Error('fetch_failed');
                                         const blob = await res.blob();
                                         const ext = blob.type.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
                                         const a = document.createElement('a');
                                         a.href = URL.createObjectURL(blob);
                                         a.download = `image.${ext}`;
+                                        document.body.appendChild(a);
                                         a.click();
+                                        document.body.removeChild(a);
                                         setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-                                      } catch { window.open(imgs[0], '_blank', 'noopener,noreferrer'); }
+                                      } catch { window.open(imgUrl, '_blank', 'noopener,noreferrer'); }
                                     }}
                                   >
                                     ⬇ Télécharger
@@ -15049,17 +15055,20 @@ export function App() {
                                       type="button"
                                       style={{ fontSize: 12, color: "#86efac", background: "none", border: "none", padding: 0, cursor: "pointer", fontWeight: 600 }}
                                       onClick={async () => {
+                                        const vidUrl = resolveApiAssetUrl(videoRef) || videoRef;
                                         try {
-                                          let res = await fetch(videoRef, { credentials: 'include' }).catch(() => fetch(videoRef, { credentials: 'omit' }));
+                                          const res = await fetch(vidUrl, { credentials: 'omit' });
                                           if (!res.ok) throw new Error('fetch_failed');
                                           const blob = await res.blob();
                                           const ext = blob.type.split('/')[1] || 'mp4';
                                           const a = document.createElement('a');
                                           a.href = URL.createObjectURL(blob);
                                           a.download = `video-${videoIndex + 1}.${ext}`;
+                                          document.body.appendChild(a);
                                           a.click();
+                                          document.body.removeChild(a);
                                           setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-                                        } catch { window.open(videoRef, '_blank', 'noopener,noreferrer'); }
+                                        } catch { window.open(vidUrl, '_blank', 'noopener,noreferrer'); }
                                       }}
                                     >
                                       ⬇ Télécharger
