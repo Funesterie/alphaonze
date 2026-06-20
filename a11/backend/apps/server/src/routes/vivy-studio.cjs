@@ -1878,10 +1878,11 @@ function getVivyStudioVoiceProfile(input = {}) {
   const hasPrivateReference = Boolean(referenceName || referenceId);
   const wantsCatalogVoice = Boolean(catalogVoiceName)
     || /catalogue|catalog|premium|voix autorisee|voix autorisée/.test(folded);
-  const wantsDuo = /\bduo\b|djeff.*vivy|vivy.*djeff/.test(folded);
+  const wantsDjeffDuo = /djeff.*vivy|vivy.*djeff/.test(folded);
+  const wantsDuo = /\bduo\b/.test(folded);
   const wantsK44 = /\bk44\b|\bkaen44\b|\bkaen\b/.test(folded);
   const wantsA11 = /\ba11\b|\balpha\s*onze\b|\balphaonze\b/.test(folded);
-  const wantsDjeff = wantsDuo || /\bdjeff\b|\brap\b|\bfraiyeur\b|\bmoto\b|\bmoteur\b|\bpignon\b|\bcouronne\b|\bchaine\b|\bradiateur\b/.test(folded);
+  const wantsDjeff = wantsDjeffDuo || /\bdjeff\b|\brap\b|\bfraiyeur\b|\bmoto\b|\bmoteur\b|\bpignon\b|\bcouronne\b|\bchaine\b|\bradiateur\b/.test(folded);
   const wantsSing = /\bchant\b|\bsing\b|\bvocal\b/.test(folded);
 
   if (wantsCatalogVoice) {
@@ -1908,7 +1909,7 @@ function getVivyStudioVoiceProfile(input = {}) {
     };
   }
 
-  if (wantsDuo) {
+  if (wantsDjeffDuo) {
     return {
       id: 'duo-djeff-vivy',
       tool: requestedTool || 'Duo Djeff + Vivy',
@@ -1931,6 +1932,32 @@ function getVivyStudioVoiceProfile(input = {}) {
       sunoStyle: 'French technical rap duet, male rap verses for Djeff, clear female melodic hook for Vivy, motorcycle mechanics imagery, cinematic bass, structured rhymed lyrics, no spoken narration',
       musicLead: 'Original Funesterie rap duet for Djeff and Vivy, in French.',
       musicMood: 'Djeff delivers technical rap verses; Vivy answers with a clean melodic hook. Original voices only, no celebrity imitation.',
+    };
+  }
+
+  if (wantsDuo) {
+    return {
+      id: 'duo-a11-vivy',
+      tool: requestedTool || 'Duo A11 + Vivy',
+      label: 'Duo A11 + Vivy',
+      summaryLabel: 'duo A11 + Vivy',
+      ttsPersona: 'a11',
+      voiceStyle: 'a11-official-stern-french',
+      vocalMode: 'adaptive',
+      lead: 'A11 porte les segments graves synthétiques; Vivy porte les refrains et réponses mélodiques.',
+      referenceLabel: hasPrivateReference
+        ? (referenceName || 'référence privée A11 active')
+        : 'A11 officielle + Vivy officielle',
+      defaultReferenceStep: 'A11 officielle pour les segments graves, Vivy officielle pour les refrains; référence privée optionnelle pour affiner le grain A11.',
+      testPhrase: 'A11 tient la ligne grave, voix basse et nette; Vivy répond en clair, refrain chantable.',
+      songCastLines: [
+        'A11: pont grave synthétique, tension machine humaine, réponse courte et précise.',
+        'Vivy: refrain clair, réponses mélodiques, lift lumineux sans imiter une artiste protégée.',
+        'Duo: tags [A11], [Vivy] et [Duo] dans les paroles.',
+      ],
+      sunoStyle: 'French electronic duet, deep synthetic voice for A11, clear female melodic hook for Vivy, structured rhymed lyrics, no spoken narration',
+      musicLead: 'Original Funesterie duet for A11 and Vivy, in French.',
+      musicMood: 'A11 delivers low synthetic segments; Vivy answers with a clean melodic hook. Original voices only, no celebrity imitation.',
     };
   }
 

@@ -282,8 +282,9 @@ function normalizeVivySongArtistIds(input = {}) {
     input.message,
   ].filter(Boolean).join('\n'), 1400);
   const folded = foldTextForLookup(fallbackText);
-  if (/\bduo\b|djeff.*vivy|vivy.*djeff/.test(folded)) return ['djeff', 'vivy'];
+  if (/djeff.*vivy|vivy.*djeff/.test(folded)) return ['djeff', 'vivy'];
   if (/\bdjeff\b|\brap\b|\bfraiyeur\b|\bmoto\b|\bmoteur\b|\bpignon\b|\bcouronne\b|\bradiateur\b/.test(folded)) return ['djeff'];
+  if (/\bduo\b/.test(folded)) return ['a11', 'vivy'];
   if (/\bk44\b|\bkaen44\b|\bkaen\b/.test(folded)) return ['k44'];
   if (/\ba11\b|\balpha\s*onze\b|\balphaonze\b/.test(folded)) return ['a11'];
   return ['vivy'];

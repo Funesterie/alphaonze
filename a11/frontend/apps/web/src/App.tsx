@@ -2142,9 +2142,25 @@ function MsgImageCarousel({ images, onExpand }: { images: string[]; onExpand: (u
         >
           <span style={{ fontSize: 12, color: "#93c5fd" }}>Agrandir l'image</span>
         </button>
-        <a href={current} download rel="noreferrer" style={{ fontSize: 12, color: '#86efac', textDecoration: 'none', fontWeight: 600 }}>
+        <button
+          type="button"
+          style={{ fontSize: 12, color: '#86efac', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}
+          onClick={async () => {
+            try {
+              let res = await fetch(current, { credentials: 'include' }).catch(() => fetch(current, { credentials: 'omit' }));
+              if (!res.ok) throw new Error('fetch_failed');
+              const blob = await res.blob();
+              const ext = blob.type.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(blob);
+              a.download = `image.${ext}`;
+              a.click();
+              setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+            } catch { window.open(current, '_blank', 'noopener,noreferrer'); }
+          }}
+        >
           ⬇ Télécharger
-        </a>
+        </button>
       </div>
     </div>
   );
@@ -5979,13 +5995,10 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         || (mode === "song"
           ? "Je suis là, mais je n'ai pas encore assez de matière pour structurer la chanson."
           : "Je suis là, je garde le fil.");
-      const voiceInstruction = voiceChangeRequested
-        ? `\n\nLa voix Vivy par défaut est déjà active. Envoie un audio seulement si tu veux la remplacer.`
-        : "";
       const assistantMessage: VivyPublicChatMessage = {
         id: `vivy-assistant-${Date.now()}`,
         role: "assistant",
-        content: `${assistantText}${voiceInstruction}`,
+        content: assistantText,
         ts: new Date().toISOString(),
       };
       setMessages((current) => [...current, assistantMessage].slice(-24));
@@ -5996,13 +6009,10 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         ? `${memoryText} - IA active`
         : memoryText);
     } catch (error: any) {
-      const voiceFailureInstruction = voiceChangeRequested
-        ? "\n\nLa voix Vivy par défaut est déjà prête côté serveur."
-        : "";
       const assistantMessage: VivyPublicChatMessage = {
         id: `vivy-error-${Date.now()}`,
         role: "assistant",
-        content: `Je n'arrive pas à joindre le studio Vivy pour l'instant: ${error?.message || error}${voiceFailureInstruction}`,
+        content: `Je n'arrive pas à joindre le studio Vivy pour l'instant: ${error?.message || error}`,
         ts: new Date().toISOString(),
       };
       setMessages((current) => [...current, assistantMessage].slice(-24));
@@ -6214,20 +6224,18 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
                 ))}
               </div>
             ) : null}
-            {message.role === "assistant" && (
-              <button
-                type="button"
-                className="vivy-chat-copy-btn"
-                onClick={() => {
-                  void navigator.clipboard.writeText(message.content).then(() => {
-                    setCopiedMsgId(message.id);
-                    setTimeout(() => setCopiedMsgId((current) => current === message.id ? "" : current), 2000);
-                  });
-                }}
-              >
-                {copiedMsgId === message.id ? "Copié" : "Copier"}
-              </button>
-            )}
+            <button
+              type="button"
+              className="vivy-chat-copy-btn"
+              onClick={() => {
+                void navigator.clipboard.writeText(message.content).then(() => {
+                  setCopiedMsgId(message.id);
+                  setTimeout(() => setCopiedMsgId((current) => current === message.id ? "" : current), 2000);
+                });
+              }}
+            >
+              {copiedMsgId === message.id ? "Copié" : "Copier"}
+            </button>
           </article>
         ))}
         {isSending && (
@@ -14937,9 +14945,25 @@ export function App() {
                                   <button type="button" className="image-preview-trigger" onClick={() => setPreviewImageUrl(imgs[0])} style={{ background: 'none', border: 'none', padding: 0, fontSize: 12, color: '#93c5fd', cursor: 'pointer' }}>
                                     Agrandir l'image
                                   </button>
-                                  <a href={imgs[0]} download rel="noreferrer" style={{ fontSize: 12, color: '#86efac', textDecoration: 'none', fontWeight: 600 }}>
+                                  <button
+                                    type="button"
+                                    style={{ fontSize: 12, color: '#86efac', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}
+                                    onClick={async () => {
+                                      try {
+                                        let res = await fetch(imgs[0], { credentials: 'include' }).catch(() => fetch(imgs[0], { credentials: 'omit' }));
+                                        if (!res.ok) throw new Error('fetch_failed');
+                                        const blob = await res.blob();
+                                        const ext = blob.type.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
+                                        const a = document.createElement('a');
+                                        a.href = URL.createObjectURL(blob);
+                                        a.download = `image.${ext}`;
+                                        a.click();
+                                        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+                                      } catch { window.open(imgs[0], '_blank', 'noopener,noreferrer'); }
+                                    }}
+                                  >
                                     ⬇ Télécharger
-                                  </a>
+                                  </button>
                                 </div>
                               </div>
                             );
@@ -15021,14 +15045,25 @@ export function App() {
                                     >
                                       Ouvrir la vidéo
                                     </a>
-                                    <a
-                                      href={videoRef}
-                                      download
-                                      rel="noreferrer"
-                                      style={{ fontSize: 12, color: "#86efac", textDecoration: "none", fontWeight: 600 }}
+                                    <button
+                                      type="button"
+                                      style={{ fontSize: 12, color: "#86efac", background: "none", border: "none", padding: 0, cursor: "pointer", fontWeight: 600 }}
+                                      onClick={async () => {
+                                        try {
+                                          let res = await fetch(videoRef, { credentials: 'include' }).catch(() => fetch(videoRef, { credentials: 'omit' }));
+                                          if (!res.ok) throw new Error('fetch_failed');
+                                          const blob = await res.blob();
+                                          const ext = blob.type.split('/')[1] || 'mp4';
+                                          const a = document.createElement('a');
+                                          a.href = URL.createObjectURL(blob);
+                                          a.download = `video-${videoIndex + 1}.${ext}`;
+                                          a.click();
+                                          setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+                                        } catch { window.open(videoRef, '_blank', 'noopener,noreferrer'); }
+                                      }}
                                     >
                                       ⬇ Télécharger
-                                    </a>
+                                    </button>
                                   </div>
                                 </div>
                               ))}
