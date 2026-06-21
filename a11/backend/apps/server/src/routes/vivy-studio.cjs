@@ -32,6 +32,7 @@ const {
   resolveUserLanguage,
 } = require('../../lib/language-text.cjs');
 const {
+  VIVY_SONG_MAX_CHARS,
   buildVivySongcraftSystemPrompt,
   buildVivySongProductionBrief,
   buildVivyStructuredLyrics,
@@ -270,8 +271,8 @@ function sanitizeVivyPublicText(value = '', max = 1800) {
   return cleanText(kept.join('\n').replace(/\n{3,}/g, '\n\n'), max);
 }
 
-function stripVivyAscii4SoundTokens(value = '') {
-  return cleanText(stripLegacySignalTokens(value), 2600);
+function stripVivyAscii4SoundTokens(value = '', max = 2600) {
+  return cleanText(stripLegacySignalTokens(value), max);
 }
 
 function hashShort(value, max = 24) {
@@ -2140,25 +2141,28 @@ function buildSongProduction(input) {
   const artistCast = buildVivySongArtistCast(input);
   const source = cleanOneLine(input.songSource || input.source, 'Thème', 80);
   const mood = cleanOneLine(stripVivyAscii4SoundTokens(input.songMood || input.mood || input.style), 'Electro pop sombre cinématographique', 160);
-  const material = compactUniqueLines([
+  const primaryMaterial = compactUniqueLines([
     input.songText,
     input.lyrics,
     input.text,
     input.theme,
     input.instruction,
-    input.prompt,
-  ], 2400);
-  const materialForLyrics = sanitizeVivySongMaterial(stripVivyAscii4SoundTokens(material), 2400);
+  ], VIVY_SONG_MAX_CHARS);
+  const material = primaryMaterial || cleanText(input.prompt, VIVY_SONG_MAX_CHARS);
+  const materialForLyrics = sanitizeVivySongMaterial(
+    stripVivyAscii4SoundTokens(material, VIVY_SONG_MAX_CHARS),
+    VIVY_SONG_MAX_CHARS
+  );
   const hasMaterial = Boolean(materialForLyrics || material);
   const prosodyPlan = buildVivyProsodyPlan({
     ...input,
     mode: 'song',
-    songText: materialForLyrics || sanitizeVivySongMaterial(material, 2400) || input.songText,
+    songText: materialForLyrics || sanitizeVivySongMaterial(material, VIVY_SONG_MAX_CHARS) || input.songText,
   });
   const prosodyBrief = formatVivyProsodyPlanForBrief(prosodyPlan);
   const songcraft = buildVivySongProductionBrief({
     ...input,
-    songText: materialForLyrics || sanitizeVivySongMaterial(material, 2400) || input.songText,
+    songText: materialForLyrics || sanitizeVivySongMaterial(material, VIVY_SONG_MAX_CHARS) || input.songText,
     songTitle: input.songTitle || input.title,
   });
 
@@ -2676,8 +2680,8 @@ function isVivyPublicLyricsNoiseLine(line = '') {
   return false;
 }
 
-function sanitizeVivyPublicLyrics(value = '', max = 3200) {
-  const text = cleanText(value, Math.max(max, 4200));
+function sanitizeVivyPublicLyrics(value = '', max = VIVY_SONG_MAX_CHARS) {
+  const text = cleanText(value, Math.max(max, VIVY_SONG_MAX_CHARS));
   if (!text) return '';
   const kept = [];
   for (const line of text.split(/\r?\n/)) {
@@ -3594,7 +3598,13 @@ function buildVivyMusicPrompt(input = {}) {
   const catalogVoiceName = cleanOneLine(input.voiceCatalogName || input.catalogVoiceName, '', 80);
   const prosodyPlan = buildVivyProsodyPlan(input);
   const prosodyPrompt = formatVivyProsodyPlanForPrompt(prosodyPlan);
-  const songMaterial = sanitizeVivySongMaterial(stripVivyAscii4SoundTokens(input.songText || input.lyrics || input.text || input.theme || input.prompt), 2400);
+  const songMaterial = sanitizeVivySongMaterial(
+    stripVivyAscii4SoundTokens(
+      input.songText || input.lyrics || input.text || input.theme || input.prompt,
+      VIVY_SONG_MAX_CHARS
+    ),
+    VIVY_SONG_MAX_CHARS
+  );
   const lyrics = buildVivyStructuredLyrics({
     ...input,
     songText: songMaterial,
@@ -3615,16 +3625,19 @@ function buildVivyMusicPrompt(input = {}) {
 }
 
 function buildVivySunoLyrics(input = {}) {
-  const material = sanitizeVivySongMaterial(stripVivyAscii4SoundTokens(compactUniqueLines([
+  const primaryMaterial = compactUniqueLines([
     input.lyrics,
     input.songText,
     input.text,
     input.theme,
     input.instruction,
-    input.prompt,
-  ], 2200)), 2200);
+  ], VIVY_SONG_MAX_CHARS);
+  const material = sanitizeVivySongMaterial(
+    stripVivyAscii4SoundTokens(primaryMaterial || input.prompt, VIVY_SONG_MAX_CHARS),
+    VIVY_SONG_MAX_CHARS
+  );
   if (looksLikeCompleteLyrics(material)) {
-    return cleanText(material, 2200);
+    return cleanText(material, VIVY_SONG_MAX_CHARS);
   }
 
   return buildVivyStructuredLyrics({ ...input, songText: stripSongCommand(material) || material });

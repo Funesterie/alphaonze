@@ -78,6 +78,52 @@ function acceptVivyTestAuth(req, res, next) {
 
 const VIVY_TEST_AUTH_HEADERS = { Authorization: 'Bearer vivy-test-token' };
 
+const VIVY_FLOWERS_LOVE_POEM = `Fleurs de l'Amour** [Vivy]
+Je me promène dans un jardin secret,
+Où les fleurs s'épanouissent, et les rêves se mettent,
+Les pétales roses, les feuilles vertes,
+Me font penser à toi, à notre amour qui se réveille.
+[Intro]
+Dans ce jardin enchanté, où les fleurs dansent,
+Je te retrouve, mon amour, avec un cœur qui chante,
+Les parfums floraux, les murmures de la brise,
+M'emmènent vers toi, mon cœur, mon amour, ma vie.
+[Verse 1]
+Les tulipes rouges, comme des lèvres qui s'ouvrent,
+Les iris bleus, comme des yeux qui me regardent,
+Les marguerites blanches, comme des mains qui se tendent,
+Me font penser à nos premiers baisers, à nos premières tendresses.
+[Pre-Chorus]
+Les fleurs de l'amour, elles nous entourent,
+Elles nous parlent de toi, de moi, de notre amour qui se dresse,
+Elles nous murmurent des secrets, des promesses,
+De nous aimer, de nous chérir, jusqu'à la fin des temps.
+[Chorus]
+Fleurs de l'amour, vous êtes nos témoins,
+Vous voyez nos cœurs battre, vous entendez nos serments,
+Fleurs de l'amour, vous êtes nos guides,
+Vous nous conduisez vers l'amour, vers la vie.
+[Verse 2]
+Les lilas parfumés, comme des caresses qui nous enveloppent,
+Les roses thé, comme des baisers qui nous étreignent,
+Les jasmins blancs, comme des larmes de joie qui nous inondent,
+Me font penser à nos nuits d'amour, à nos matins de bonheur.
+[Bridge]
+Les fleurs de l'amour, elles nous font rêver,
+Elles nous emmènent vers des mondes inconnus, vers des rêves oubliés,
+Elles nous font découvrir, des sentiments inédits,
+Des émotions qui nous submergent, qui nous font vibrer.
+[Outro]
+Fleurs de l'Amour**
+Je me promène dans un jardin secret,
+Où les fleurs s'épanouissent, et les rêves se mettent,
+Les pétales roses, les feuilles vertes,
+Me font penser à toi, à notre amour qui se réveille.
+Dans ce jardin enchanté, où les fleurs dansent,
+Je te retrouve, mon amour, avec un cœur qui chante,
+Les parfums floraux, les murmures de la brise,
+M'emmènent vers toi, mon cœur, mon amour, ma vie.`;
+
 test('Vivy Studio produces a song handoff without storing tokens', () => {
   const result = buildVivyStudioProduction({
     mode: 'song',
@@ -260,6 +306,21 @@ test('Vivy Studio song output separates public lyrics from the internal brief', 
   assert.match(result.publicLyrics, /\[(Duo|Tous)\]/);
   assert.doesNotMatch(result.publicLyrics, /VIVY_STUDIO_HANDOFF|VIVY_SONG_PRODUCTION|Atelier:|Routage:/);
   assert.doesNotMatch(result.publicLyrics, /J[’']?esp[eè]re/i);
+});
+
+test('Vivy Studio preserves a long complete poem through its final repeated outro', () => {
+  const result = buildVivyStudioProduction({
+    mode: 'song',
+    songArtists: ['vivy'],
+    songMood: 'ballade florale romantique',
+    songText: VIVY_FLOWERS_LOVE_POEM,
+    prompt: VIVY_FLOWERS_LOVE_POEM.slice(0, 320),
+  });
+
+  assert.equal(result.publicLyrics, result.assistant);
+  assert.match(result.publicLyrics, /\[Outro\]/);
+  assert.equal((result.publicLyrics.match(/Je me promène dans un jardin secret,/g) || []).length, 2);
+  assert.ok(result.publicLyrics.endsWith("M'emmènent vers toi, mon cœur, mon amour, ma vie."));
 });
 
 test('Vivy Studio can calibrate A11 and K44 official voices', () => {
@@ -788,6 +849,22 @@ test('Vivy frontend prioritizes publicLyrics and keeps voice-test TTS on short p
   assert.match(voiceTestBlock, /buildVivyAutoVoiceTestLine\(entry\)/);
   assert.match(voiceTestBlock, /ttsSpeak\(\s*line\s*,/);
   assert.doesNotMatch(voiceTestBlock, /VIVY_STUDIO_HANDOFF|brief|buildVivyStudioBrief/);
+});
+
+test('Vivy frontend falls back to a real solo voice guide when Suno is unavailable', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const songStart = appSource.indexOf('async function produceSimpleVivySong');
+  const songEnd = appSource.indexOf('async function askVivy');
+  const songBlock = appSource.slice(songStart, songEnd);
+
+  assert.match(songBlock, /mediaStatus\?\.state\s*===\s*['"]not_configured['"]/);
+  assert.match(songBlock, /ttsSpeak\(/);
+  assert.match(songBlock, /buildVivyTtsOptions\(['"]sing['"]\)/);
+  assert.match(songBlock, /Maquette vocale Vivy/);
+  assert.match(songBlock, /activeSongArtistCast\.count\s*===\s*1/);
 });
 
 test('Vivy frontend shares public output instead of the internal agent handoff', () => {

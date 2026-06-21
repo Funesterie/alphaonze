@@ -4857,7 +4857,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       setStatus("Connexion requise pour générer une chanson Vivy.");
       return;
     }
-    const prompt = toUnicodeText(songText || voiceInstruction || songMood, 1200).trim();
+    const prompt = toUnicodeText(songText || voiceInstruction || songMood, 5000).trim();
     if (!prompt) {
       setStatus("Écris un prompt, un thème ou quelques paroles pour générer la chanson.");
       return;
@@ -4895,6 +4895,8 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       const payloadAny = payload as any;
       let finalPayload: any = payloadAny;
       setVivyDiagnostics(payload.prosody || null);
+      const publicLyrics = toUnicodeText(payloadAny?.publicLyrics || prompt, 5000).trim();
+      setVivyLyrics(publicLyrics);
       let mediaUrl = getVivySongMediaUrl(finalPayload);
       const taskId = String(payloadAny?.mediaStatus?.taskId || payloadAny?.musicJob?.taskId || payloadAny?.media?.taskId || "").trim();
       if (!mediaUrl && taskId) {
@@ -4904,11 +4906,37 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         mediaUrl = getVivySongMediaUrl(finalPayload);
       }
       if (!mediaUrl) {
-        // No audio generated. Check if it's a "not configured" case and surface it clearly
-        // rather than showing a generic error.
         const mediaStatus = payloadAny?.mediaStatus;
         const notConfigured = mediaStatus?.state === 'not_configured';
         const sunoPromptReady = Boolean(mediaStatus?.sunoPromptAvailable || mediaStatus?.lyricsPack);
+        if (notConfigured && publicLyrics && activeSongArtistCast.count === 1) {
+          setStatus("Suno indisponible. Vivy crée une vraie maquette vocale avec la voix active...");
+          const ttsOptions = buildVivyTtsOptions("sing");
+          const voiceGuide = await ttsSpeak(
+            publicLyrics,
+            activeVoiceProfile.ttsPersona,
+            String(ttsOptions.provider || "auto"),
+            ttsOptions
+          );
+          const voiceGuideUrl = String(voiceGuide?.audioUrl || voiceGuide?.audio_url || voiceGuide?.url || "").trim();
+          if (!voiceGuideUrl) throw new Error("voice_guide_audio_url_missing");
+          setVivyMedia({
+            kind: "audio",
+            url: resolveApiAssetUrl(voiceGuideUrl) || voiceGuideUrl,
+            downloadUrl: resolveApiAssetUrl(voiceGuideUrl) || voiceGuideUrl,
+            provider: String(voiceGuide?.provider || voiceGuide?.via || "elevenlabs-tts"),
+            contentType: String(voiceGuide?.contentType || voiceGuide?.content_type || "audio/mpeg"),
+            filename: String(voiceGuide?.filename || "vivy-maquette-vocale.mp3"),
+          });
+          setVivyOutput(normalizeVivyStudioOutputForState([
+            "Maquette vocale Vivy prête.",
+            "Suno n'est pas connecté: cet audio est une voix guide Vivy, sans instrumental.",
+            `Direction: ${songMood || "electro pop dark cinematographique"}`,
+            `Casting: ${activeSongArtistCast.label}`,
+          ].join("\n")));
+          setStatus("Maquette vocale Vivy prête. Suno reste disponible dès qu'une clé est connectée.");
+          return;
+        }
         if (notConfigured && sunoPromptReady) {
           setVivyOutput(normalizeVivyStudioOutputForState([
             payload?.summary || "Pack Suno prêt.",
