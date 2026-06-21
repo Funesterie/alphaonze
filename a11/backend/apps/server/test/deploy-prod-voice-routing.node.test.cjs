@@ -68,6 +68,6 @@ test('prod deploy preserves remote secrets when the secret file is not directly 
 
   assert.match(script, /bluegreen\/active-color/);
   assert.match(script, /docker inspect "\$container" --format/);
-  assert.match(script, /Read-RemoteEnvValue "DATABASE_URL"/);
+  assert.match(script, /\$existingPgPass = \$null[\s\S]+?Read-RemoteEnvValue "DATABASE_URL"[\s\S]+?Read-RemoteEnvValue "POSTGRES_PASSWORD"/);
   assert.match(script, /\[Uri\]::UnescapeDataString/);
 });

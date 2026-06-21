@@ -281,13 +281,6 @@ function Read-RemoteEnvValue([string]$Key) {
   $remoteRead = @'
 key='__KEY__'
 secret_file='__REMOTE_ROOT__/secrets/a11.env'
-if [ -r "$secret_file" ]; then
-  value="$(grep -m1 "^${key}=" "$secret_file" 2>/dev/null | sed 's/^[^=]*=//' || true)"
-  if [ -n "$value" ]; then
-    printf '%s\n' "$value"
-    exit 0
-  fi
-fi
 active_color="$(cat '__REMOTE_ROOT__/bluegreen/active-color' 2>/dev/null || true)"
 case "$active_color" in
   blue|green)
@@ -307,6 +300,13 @@ for container in $containers; do
     exit 0
   fi
 done
+if [ -r "$secret_file" ]; then
+  value="$(grep -m1 "^${key}=" "$secret_file" 2>/dev/null | sed 's/^[^=]*=//' || true)"
+  if [ -n "$value" ]; then
+    printf '%s\n' "$value"
+    exit 0
+  fi
+fi
 exit 44
 '@
   $remoteRead = $remoteRead.Replace('__KEY__', $Key).Replace('__REMOTE_ROOT__', $RemoteRoot)
@@ -940,21 +940,22 @@ foreach ($key in $removeKeys) {
   if ($envMap.Contains($key)) { $envMap.Remove($key) }
 }
 
-$existingPgPass = Read-RemoteEnvValue "POSTGRES_PASSWORD"
-if ([string]::IsNullOrWhiteSpace($existingPgPass)) {
-  $existingDatabaseUrl = Read-RemoteEnvValue "DATABASE_URL"
-  if (-not [string]::IsNullOrWhiteSpace($existingDatabaseUrl)) {
-    try {
-      $databaseUri = [Uri]$existingDatabaseUrl
-      $userInfo = [string]$databaseUri.UserInfo
-      $separatorIndex = $userInfo.IndexOf(':')
-      if ($separatorIndex -ge 0 -and $separatorIndex -lt ($userInfo.Length - 1)) {
-        $existingPgPass = [Uri]::UnescapeDataString($userInfo.Substring($separatorIndex + 1))
-      }
-    } catch {
-      $existingPgPass = $null
+$existingPgPass = $null
+$existingDatabaseUrl = Read-RemoteEnvValue "DATABASE_URL"
+if (-not [string]::IsNullOrWhiteSpace($existingDatabaseUrl)) {
+  try {
+    $databaseUri = [Uri]$existingDatabaseUrl
+    $userInfo = [string]$databaseUri.UserInfo
+    $separatorIndex = $userInfo.IndexOf(':')
+    if ($separatorIndex -ge 0 -and $separatorIndex -lt ($userInfo.Length - 1)) {
+      $existingPgPass = [Uri]::UnescapeDataString($userInfo.Substring($separatorIndex + 1))
     }
+  } catch {
+    $existingPgPass = $null
   }
+}
+if ([string]::IsNullOrWhiteSpace($existingPgPass)) {
+  $existingPgPass = Read-RemoteEnvValue "POSTGRES_PASSWORD"
 }
 $existingAdminPass = Read-RemoteEnvValue "DEFAULT_ADMIN_PASSWORD"
 $existingMcpToken = Read-RemoteEnvValue "A11_MCP_TOKEN"
