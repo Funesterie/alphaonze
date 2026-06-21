@@ -1214,11 +1214,14 @@ async function buildVivyWebResearchReply(input = {}) {
   };
 }
 
-function buildVivyMemoryContext(userId) {
+function buildVivyMemoryContext(userId, conversationId = '') {
   const result = getEpisodes(userId, { limit: 8, days: 45 });
   if (!result?.ok || !Array.isArray(result.episodes) || !result.episodes.length) return '';
+  const normalizedConversationId = cleanOneLine(conversationId, '', 120);
   return result.episodes
     .filter((episode) => String(episode?.type || '').startsWith('vivy_'))
+    .filter((episode) => !normalizedConversationId
+      || cleanOneLine(episode?.metadata?.conversationId, '', 120) === normalizedConversationId)
     .slice(-6)
     .map((episode) => `- ${cleanText(episode.content, 420)}`)
     .filter(Boolean)
@@ -3302,7 +3305,7 @@ async function buildVivyAiChat(input, req) {
   }
 
   try {
-    const memoryContext = buildVivyMemoryContext(userId);
+    const memoryContext = buildVivyMemoryContext(userId, input.conversationId);
     const history = normalizeVivyChatHistory(input.history);
     const userContent = compactUniqueLines([
       intentMessage || message,
@@ -4178,11 +4181,14 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
         payload.summary = `${payload.summary} Génération musicale Suno lancée.`;
         return res.json(payload);
       }
-      if (!media?.url) {
+      // Skip emergency placeholder when user explicitly requested real music.
+      // Without this guard, a missing Suno key silently returns a placeholder WAV.
+      const wantedRealMusic = Boolean(input.forceRealMusic || input.generateMusic || input.makeSong || input.song);
+      if (!media?.url && !wantedRealMusic) {
         media = await buildEmergencyMediaForProduction(payload.mode, input, req);
       }
       if (media?.url) {
-        payload.media = media;
+        payload.media = { ...media, isEmergency: Boolean(media.emergencyFallback) };
         if (media.kind === 'audio') {
           payload.audio_url = media.audio_url;
           payload.audioUrl = media.audioUrl;
@@ -4196,12 +4202,29 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
         payload.summary = media.emergencyFallback
           ? `${payload.summary} Média de secours prêt.`
           : `${payload.summary} Chanson audio générée.`;
+      } else if (wantedRealMusic) {
+        const notConfigured = !mediaError;
+        payload.mediaStatus = {
+          state: notConfigured ? 'not_configured' : 'error',
+          isEmergency: false,
+          reason: mediaError?.code || mediaError?.message || 'real_music_provider_not_connected',
+          provider: getConfiguredMusicProviders()[0] || 'suno',
+          message: notConfigured
+            ? 'Suno/ElevenLabs non configuré sur ce serveur. Copie le prompt Suno ci-dessous et colle-le sur suno.com.'
+            : `La génération musicale a échoué : ${mediaError?.message || 'erreur inconnue'}. Aucun audio de secours ajouté.`,
+          sunoPromptAvailable: Boolean(payload.sunoPrompt || payload.musicPrompt || payload.publicLyrics),
+          lyricsPack: true,
+        };
+        payload.summary = notConfigured
+          ? 'Pack Suno prêt. Clé Suno non configurée côté serveur — utilise le prompt directement sur suno.com.'
+          : `Paroles prêtes. Génération audio échouée : ${mediaError?.message || 'provider non connecté'}.`;
       } else {
         payload.mediaStatus = {
           state: 'not_configured',
+          isEmergency: false,
           reason: mediaError?.code || mediaError?.message || 'real_music_provider_not_connected',
           message: mediaError
-            ? 'Brief prêt. La génération musicale réelle n’a pas abouti; aucun faux WAV ajouté automatiquement.'
+            ? `Brief prêt. La génération musicale réelle n’a pas abouti; aucun faux WAV ajouté automatiquement.`
             : 'Brief prêt. Aucun faux WAV ajouté; utilise le bouton musique admin ou prompt + voix active selon le besoin.',
         };
       }
@@ -4236,7 +4259,11 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
     try {
       const userId = resolveVivyMemoryUser(req, req.body || {});
       if (!userId) return res.status(401).json({ ok: false, error: 'vivy_auth_required' });
-      const result = clearUserEpisodes(userId);
+      const conversationId = cleanOneLine(req.query?.conversationId || req.body?.conversationId, '', 120);
+      const result = clearUserEpisodes(userId, {
+        conversationId,
+        typePrefix: 'vivy_',
+      });
       res.json({ ok: true, cleared: result?.removed ?? 0 });
     } catch (error) {
       res.status(500).json({ ok: false, error: 'vivy_memory_clear_failed', message: String(error?.message || error) });

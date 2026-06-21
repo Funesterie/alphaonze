@@ -9254,6 +9254,33 @@ body {
   white-space: nowrap;
 }
 
+.fun-provider-health-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.fun-provider-health-table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+  color: #e5eef7;
+}
+
+.fun-provider-health-table th,
+.fun-provider-health-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  text-align: left;
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+.fun-provider-health-table th {
+  color: #9fb3c8;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
 .fun-account-mini-list a {
   min-height: 0;
   display: block;

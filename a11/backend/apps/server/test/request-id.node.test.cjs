@@ -59,7 +59,7 @@ function buildImageStructuredLlmStub() {
     const prompt = String(systemPrompt || '');
     const sourceText = String(text || '');
 
-    if (/canonical request normalizer for A11 image\.generate/i.test(prompt)) {
+    if (/image prompt canonicalizer|canonical request normalizer for A11 image\.generate/i.test(prompt)) {
       if (/lapin|rabbit/i.test(sourceText)) {
         return {
           canonicalEnglishInput: 'a rabbit with a carrot in the mouth',
@@ -477,7 +477,7 @@ test('protected chat proxy returns a diagnostic when the image canonicalizer is 
           throw new Error('should_not_hit_openai_proxy');
         },
         specialCompilerCallStructuredLlmJson: async ({ systemPrompt }) => {
-          if (/canonical request normalizer for A11 image\.generate/i.test(String(systemPrompt || ''))) {
+          if (/image prompt canonicalizer|canonical request normalizer for A11 image\.generate/i.test(String(systemPrompt || ''))) {
             const error = new Error('Structured LLM is not configured for this environment.');
             error.code = 'structured_llm_unconfigured';
             error.statusCode = 503;
@@ -524,7 +524,7 @@ test('protected chat proxy returns a visible diagnostic payload when image canon
           throw new Error('should_not_hit_openai_proxy');
         },
         specialCompilerCallStructuredLlmJson: async ({ systemPrompt }) => {
-          if (/canonical request normalizer for A11 image\.generate/i.test(String(systemPrompt || ''))) {
+          if (/image prompt canonicalizer|canonical request normalizer for A11 image\.generate/i.test(String(systemPrompt || ''))) {
             return {
               canonicalEnglishInput: 'femme en tenue theatrale avec une couronne, decor simple',
               structuredFields: {

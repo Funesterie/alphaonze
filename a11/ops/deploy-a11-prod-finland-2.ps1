@@ -506,7 +506,7 @@ services:
     restart: unless-stopped
     command: ["npm", "run", "start:a11"]
     env_file:
-      - /srv/a11/secrets/a11.env
+      - /srv/a11/secrets/compose.env
     environment:
       A11_WEB_DIST_DIR: /web/dist
       TTS_URL: ${TTS_URL:-http://a11-voice:5002}
@@ -604,7 +604,7 @@ services:
     restart: unless-stopped
     command: ["npm", "run", "start:kaen44"]
     env_file:
-      - /srv/a11/secrets/a11.env
+      - /srv/a11/secrets/compose.env
     environment:
       PORT: "3001"
       A11_WEB_DIST_DIR: /web/dist
@@ -811,6 +811,13 @@ $mcpEnvMap = if (Test-Path -LiteralPath $McpEnvSource) { Read-EnvMap $McpEnvSour
 $localEnvSource = Join-Path $ServerRoot ".env.local"
 $localEnvMap = if (Test-Path -LiteralPath $localEnvSource) { Read-EnvMap $localEnvSource } else { [ordered]@{} }
 $localSecretRoot = Join-Path $env:USERPROFILE ".funesterie\secrets"
+Import-OptionalSecretFile $envMap "A11_ELEVENLABS_API_KEY" @(
+  $env:A11_ELEVENLABS_API_KEY_FILE,
+  $localEnvMap["A11_ELEVENLABS_API_KEY_FILE"],
+  $localEnvMap["VIVY_ELEVENLABS_API_KEY_FILE"],
+  (Join-Path $env:USERPROFILE "Desktop\key\keyelevenlabs.txt"),
+  (Join-Path $localSecretRoot "elevenlabs-api-key.txt")
+)
 $optionalFinanceEnvKeys = @(
   "QONTO_API_BASE_URL",
   "QONTO_API_LOGIN",
@@ -849,7 +856,9 @@ $localOnlySecretFileKeys = @(
   "QONTO_API_SECRET_KEY_FILE",
   "QONTO_API_KEY_FILE",
   "MOLLIE_API_KEY_FILE",
-  "MOLLIE_SECRET_KEY_FILE"
+  "MOLLIE_SECRET_KEY_FILE",
+  "A11_ELEVENLABS_API_KEY_FILE",
+  "VIVY_ELEVENLABS_API_KEY_FILE"
 )
 foreach ($key in $localOnlySecretFileKeys) {
   if ($envMap.Contains($key)) { $envMap.Remove($key) }

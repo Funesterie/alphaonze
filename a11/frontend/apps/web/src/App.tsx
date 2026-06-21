@@ -25,6 +25,7 @@ import {
   fetchMatchArenaStatus,
   fetchMyConversationResources,
   fetchMyStoredFiles,
+  fetchProviderHealth,
   fetchRemoteProviderProfiles,
   fetchA11PortraitFramebook,
   fetchTtsVoiceCatalog,
@@ -104,6 +105,12 @@ import {
   pinResourceToLibrary,
   unpinResourceFromLibrary,
   clearVivyMemory,
+  chatCompletionDetailed,
+  downloadMediaUrl,
+  extractAssistantDisplayContent,
+  resolveApiAssetUrl,
+  type Provider,
+  type ProviderHealthResponse,
 } from "./lib/api";
 import { A11HistoryPanel } from "./components/A11HistoryPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
@@ -144,7 +151,6 @@ import {
   setSpeechRecognitionLanguage,
 } from "./lib/speech";
 import handleImportFiles, { type ImportedConversationAttachment } from "./lib/importer";
-import { chatCompletionDetailed, extractAssistantDisplayContent, resolveApiAssetUrl, type Provider } from "./lib/api";
 import { foldForLookup, toUnicodeLine, toUnicodeText } from "./lib/language";
 import { sanitizeMediaDisplayName, sanitizeMediaDisplayNameFromUrl } from "./lib/safe-media-name";
 import {
@@ -2145,21 +2151,9 @@ function MsgImageCarousel({ images, onExpand }: { images: string[]; onExpand: (u
         <button
           type="button"
           style={{ fontSize: 12, color: '#86efac', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}
-          onClick={async () => {
+          onClick={() => {
             const imgUrl = resolveApiAssetUrl(current) || current;
-            try {
-              const res = await fetch(imgUrl, { credentials: 'omit' });
-              if (!res.ok) throw new Error('fetch_failed');
-              const blob = await res.blob();
-              const ext = blob.type.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
-              const a = document.createElement('a');
-              a.href = URL.createObjectURL(blob);
-              a.download = `image.${ext}`;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-            } catch { window.open(imgUrl, '_blank', 'noopener,noreferrer'); }
+            void downloadMediaUrl(imgUrl).catch(() => undefined);
           }}
         >
           ⬇ Télécharger
@@ -3012,6 +3006,7 @@ function deleteVivyChatSession(sessionId: string) {
   try {
     const key = getVivyChatStorageKeyForSession(sessionId);
     globalThis.localStorage?.removeItem(key);
+    globalThis.localStorage?.removeItem(getVivyConversationStorageKey(sessionId));
   } catch { }
   const sessions = listVivyChatSessions().filter((s) => s.id !== sessionId);
   saveVivyChatSessions(sessions);
@@ -3094,18 +3089,18 @@ function writeVivyPublicChat(messages: VivyPublicChatMessage[]) {
   }
 }
 
-function getVivyConversationStorageKey() {
+function getVivyConversationStorageKey(sessionId = "default") {
   try {
-    return `${VIVY_PUBLIC_CONVERSATION_ID_KEY}:${getAuthStorageScope() || "public"}`;
+    return `${VIVY_PUBLIC_CONVERSATION_ID_KEY}:${getAuthStorageScope() || "public"}:${sessionId}`;
   } catch {
-    return `${VIVY_PUBLIC_CONVERSATION_ID_KEY}:public`;
+    return `${VIVY_PUBLIC_CONVERSATION_ID_KEY}:public:${sessionId}`;
   }
 }
 
-function readOrCreateVivyConversationId() {
+function readOrCreateVivyConversationId(sessionId = "default") {
   if (!hasVivyAuthenticatedSession()) return "";
   try {
-    const key = getVivyConversationStorageKey();
+    const key = getVivyConversationStorageKey(sessionId);
     const existing = String(globalThis.localStorage?.getItem(key) || "").trim();
     if (existing) return existing;
     const next = `vivy-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -4894,6 +4889,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         forceRealMusic: true,
         generateMusic: true,
         makeSong: true,
+        disableEmergencyMedia: true,
         durationSeconds: 45,
       });
       const payloadAny = payload as any;
@@ -4907,7 +4903,25 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         if (!payload.prosody && finalPayload?.prosody) setVivyDiagnostics(finalPayload.prosody);
         mediaUrl = getVivySongMediaUrl(finalPayload);
       }
-      if (!mediaUrl) throw new Error("audio_url_missing");
+      if (!mediaUrl) {
+        // No audio generated. Check if it's a "not configured" case and surface it clearly
+        // rather than showing a generic error.
+        const mediaStatus = payloadAny?.mediaStatus;
+        const notConfigured = mediaStatus?.state === 'not_configured';
+        const sunoPromptReady = Boolean(mediaStatus?.sunoPromptAvailable || mediaStatus?.lyricsPack);
+        if (notConfigured && sunoPromptReady) {
+          setVivyOutput(normalizeVivyStudioOutputForState([
+            payload?.summary || "Pack Suno prêt.",
+            "Suno non configuré côté serveur — copie le prompt dans l'onglet Paroles et colle-le sur suno.com.",
+            `Direction: ${songMood || "electro pop dark cinematographique"}`,
+            `Casting: ${activeSongArtistCast.label}`,
+            payloadAny?.publicLyrics ? "Paroles disponibles dans l'onglet Paroles." : "",
+          ].filter(Boolean).join("\n")));
+          setStatus("Prompt Suno prêt. Clé Suno absente — paroles disponibles.");
+          return;
+        }
+        throw new Error(mediaStatus?.message || mediaStatus?.reason || "audio_url_missing");
+      }
       setVivyMedia({
         kind: "audio",
         url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
@@ -4972,8 +4986,8 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
           ? buildVivyPlayableText(songText || songMood || voiceInstruction, songMood || "Vivy garde la lumière dans l'obscurité.", 320)
           : undefined,
         durationSeconds: wantsSongPreview ? 12 : undefined,
-        allowPlaceholderMedia: wantsSongPreview,
-        disableEmergencyMedia: !wantsSongPreview,
+        allowPlaceholderMedia: false,
+        disableEmergencyMedia: true,
       });
       const text = String(payload?.assistant || payload?.message || payload?.content || "").trim();
       if (!text) throw new Error("reponse_vide");
@@ -5785,7 +5799,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
 
 function VivyPublicChat({ hasSession }: VivySessionProps) {
   const [messages, setMessages] = useState<VivyPublicChatMessage[]>(() => hasSession ? readVivyPublicChat() : [buildVivyLockedMessage()]);
-  const [conversationId] = useState(() => readOrCreateVivyConversationId());
+  const [conversationId, setConversationId] = useState(() => readOrCreateVivyConversationId("default"));
   const [draft, setDraft] = useState("");
   const [attachedFiles, setAttachedFiles] = useState<VivyPublicChatFile[]>([]);
   const [isSending, setIsSending] = useState(false);
@@ -5806,6 +5820,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     const msgs = id === "default" ? readVivyPublicChat() : readVivyChatSession(id);
     setMessages(msgs);
     setActiveChatSessionId(id);
+    setConversationId(readOrCreateVivyConversationId(id));
     setAttachedFiles([]);
     setStatus("");
   }
@@ -5827,7 +5842,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
 
   useEffect(() => {
     if (activeChatSessionId === "default") { writeVivyPublicChat(messages); } else { writeVivyChatSession(activeChatSessionId, messages); }
-  }, [messages]);
+  }, [messages, activeChatSessionId]);
 
   useEffect(() => {
     if (!hasSession) {
@@ -6172,17 +6187,19 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       return;
     }
     // Vider le localStorage pour cette session
-    try { globalThis.localStorage?.removeItem(getVivyChatStorageKey()); } catch { }
+    try { globalThis.localStorage?.removeItem(getVivyChatStorageKeyForSession(activeChatSessionId)); } catch { }
     const next = [buildVivyGreeting()];
     setMessages(next);
     setAttachedFiles([]);
     // Effacer aussi la memoire episodique backend
     try {
-      const result = await clearVivyMemory();
+      const result = await clearVivyMemory(conversationId);
       setStatus(`Conversation et mémoire remises à zéro (${result.cleared} épisode(s) effacé(s)).`);
     } catch {
       setStatus("Conversation locale remise à zéro. Mémoire backend inchangée.");
     }
+    try { globalThis.localStorage?.removeItem(getVivyConversationStorageKey(activeChatSessionId)); } catch { }
+    setConversationId(readOrCreateVivyConversationId(activeChatSessionId));
   }
 
   return (
@@ -6231,11 +6248,12 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
               type="button"
               className="vivy-chat-copy-btn"
               onClick={() => {
-                void navigator.clipboard.writeText(message.content).then(() => {
+                void writeClipboardText(message.content).then(() => {
                   setCopiedMsgId(message.id);
                   setTimeout(() => setCopiedMsgId((current) => current === message.id ? "" : current), 2000);
-                });
+                }).catch(() => setStatus("Copie impossible dans ce navigateur."));
               }}
+              title="Copier ce message"
             >
               {copiedMsgId === message.id ? "Copié" : "Copier"}
             </button>
@@ -8609,6 +8627,22 @@ function FunesterieAccountPage({
   const [inventoryDownloadBusy, setInventoryDownloadBusy] = useState("");
   const [sessionAppTokens, setSessionAppTokens] = useState<FunesterieSessionAppTokenMap>(() => readSessionAppTokens());
   const [sessionAppTokenDrafts, setSessionAppTokenDrafts] = useState<FunesterieSessionAppTokenMap>(() => readSessionAppTokens());
+  const [providerHealth, setProviderHealth] = useState<ProviderHealthResponse | null>(null);
+  const [providerHealthBusy, setProviderHealthBusy] = useState(false);
+  const [providerHealthError, setProviderHealthError] = useState("");
+
+  async function testProviderHealth() {
+    if (!authenticated || providerHealthBusy) return;
+    setProviderHealthBusy(true);
+    setProviderHealthError("");
+    try {
+      setProviderHealth(await fetchProviderHealth(true));
+    } catch (error) {
+      setProviderHealthError((error as Error)?.message || "Test des fournisseurs impossible");
+    } finally {
+      setProviderHealthBusy(false);
+    }
+  }
 
   async function loadAccountInventory() {
     if (!authenticated) {
@@ -9055,6 +9089,60 @@ function FunesterieAccountPage({
               </div>
             </footer>
           </article>
+        </div>
+      </section>
+
+      <section className="fun-token-panel fun-provider-health-panel" aria-label="État des fournisseurs IA">
+        <header className="fun-token-head">
+          <div>
+            <span>Clés serveur</span>
+            <h2>Fournisseurs IA</h2>
+            <p>État réel sans afficher les clés. Les crédits sont montrés seulement quand le fournisseur les communique.</p>
+          </div>
+          <aside>
+            <button type="button" onClick={() => void testProviderHealth()} disabled={!authenticated || providerHealthBusy}>
+              {providerHealthBusy ? "Test en cours" : "Tester les fournisseurs"}
+            </button>
+            <small>{providerHealth?.checkedAt ? `maj ${formatAccountDate(providerHealth.checkedAt)}` : "sur demande"}</small>
+          </aside>
+        </header>
+        {providerHealthError ? <p className="fun-account-alert">{providerHealthError}</p> : null}
+        <div className="fun-provider-health-table-wrap">
+          <table className="fun-provider-health-table">
+            <thead>
+              <tr>
+                <th>Fournisseur</th>
+                <th>Clé</th>
+                <th>Test</th>
+                <th>Modèle</th>
+                <th>Crédits restants</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(providerHealth?.providers || [
+                { id: "groq", label: "Groq", configured: false, available: null, model: "Llama 3.3 70B", credits: { remaining: null, unit: "not_reported" } },
+                { id: "elevenlabs", label: "ElevenLabs", configured: false, available: null, model: "Text to Speech", credits: { remaining: null, unit: "characters" } },
+              ]).map((provider) => {
+                const remaining = provider.credits?.remaining;
+                const creditsText = typeof remaining === "number"
+                  ? `${new Intl.NumberFormat("fr-FR").format(remaining)} ${provider.credits?.unit === "characters" ? "caractères" : "crédits"}`
+                  : "Non communiqué";
+                const testText = provider.available === true ? "Disponible" : provider.available === false ? "Échec" : "Non testé";
+                const modelText = provider.model
+                  ? `${provider.model}${provider.modelAvailable === false ? " indisponible" : ""}`
+                  : "-";
+                return (
+                  <tr key={provider.id}>
+                    <td><strong>{provider.label}</strong></td>
+                    <td>{providerHealth ? (provider.configured ? "Présente" : "Absente") : "À vérifier"}</td>
+                    <td>{testText}</td>
+                    <td>{modelText}</td>
+                    <td>{creditsText}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -14951,21 +15039,11 @@ export function App() {
                                   <button
                                     type="button"
                                     style={{ fontSize: 12, color: '#86efac', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}
-                                    onClick={async () => {
+                                    onClick={() => {
                                       const imgUrl = resolveApiAssetUrl(imgs[0]) || imgs[0];
-                                      try {
-                                        const res = await fetch(imgUrl, { credentials: 'omit' });
-                                        if (!res.ok) throw new Error('fetch_failed');
-                                        const blob = await res.blob();
-                                        const ext = blob.type.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
-                                        const a = document.createElement('a');
-                                        a.href = URL.createObjectURL(blob);
-                                        a.download = `image.${ext}`;
-                                        document.body.appendChild(a);
-                                        a.click();
-                                        document.body.removeChild(a);
-                                        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-                                      } catch { window.open(imgUrl, '_blank', 'noopener,noreferrer'); }
+                                      void downloadMediaUrl(imgUrl)
+                                        .then(() => setUploadFeedback("Téléchargement lancé."))
+                                        .catch((error_) => setUploadFeedback(`Échec du téléchargement: ${(error_ as Error)?.message || error_}`));
                                     }}
                                   >
                                     ⬇ Télécharger
@@ -15054,21 +15132,11 @@ export function App() {
                                     <button
                                       type="button"
                                       style={{ fontSize: 12, color: "#86efac", background: "none", border: "none", padding: 0, cursor: "pointer", fontWeight: 600 }}
-                                      onClick={async () => {
+                                      onClick={() => {
                                         const vidUrl = resolveApiAssetUrl(videoRef) || videoRef;
-                                        try {
-                                          const res = await fetch(vidUrl, { credentials: 'omit' });
-                                          if (!res.ok) throw new Error('fetch_failed');
-                                          const blob = await res.blob();
-                                          const ext = blob.type.split('/')[1] || 'mp4';
-                                          const a = document.createElement('a');
-                                          a.href = URL.createObjectURL(blob);
-                                          a.download = `video-${videoIndex + 1}.${ext}`;
-                                          document.body.appendChild(a);
-                                          a.click();
-                                          document.body.removeChild(a);
-                                          setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-                                        } catch { window.open(vidUrl, '_blank', 'noopener,noreferrer'); }
+                                        void downloadMediaUrl(vidUrl, `video-${videoIndex + 1}.mp4`)
+                                          .then(() => setUploadFeedback("Téléchargement lancé."))
+                                          .catch((error_) => setUploadFeedback(`Échec du téléchargement: ${(error_ as Error)?.message || error_}`));
                                       }}
                                     >
                                       ⬇ Télécharger

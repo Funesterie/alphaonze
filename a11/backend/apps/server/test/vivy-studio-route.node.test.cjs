@@ -29,6 +29,12 @@ const {
   sanitizeVivyPublicText,
   shouldVivyAutoWebSearch,
 } = require('../src/routes/vivy-studio.cjs');
+const {
+  buildVivyStructuredLyrics,
+} = require('../src/music/vivy-songcraft.cjs');
+const {
+  getEpisodes,
+} = require('../lib/episodic-memory.cjs');
 
 after(() => {
   fs.rmSync(vivyMemoryDir, { recursive: true, force: true });
@@ -806,6 +812,77 @@ test('Vivy frontend shares public output instead of the internal agent handoff',
   assert.match(saveBlock, /vivy_studio_public_output/);
   assert.match(saveBlock, /publicStudioOutput/);
   assert.doesNotMatch(saveBlock, /VIVY_STUDIO_HANDOFF/);
+});
+
+test('Vivy frontend keeps download distinct from open and exposes copy on every chat message', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const apiSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/lib/api.ts'),
+    'utf8'
+  );
+
+  const downloadStart = apiSource.indexOf('export async function downloadMediaUrl');
+  const downloadBlock = apiSource.slice(downloadStart, downloadStart + 1200);
+  assert.match(downloadBlock, /downloadProtectedBlob|downloadResourceById/);
+  assert.doesNotMatch(downloadBlock, /window\.open/);
+
+  const publicChatStart = appSource.indexOf('function VivyPublicChat');
+  const publicChatBlock = appSource.slice(publicChatStart, publicChatStart + 26000);
+  assert.match(publicChatBlock, /messages\.map\(\(message\)/);
+  assert.match(publicChatBlock, /vivy-chat-copy-btn/);
+  assert.match(publicChatBlock, /writeClipboardText\(message\.content\)/);
+  assert.doesNotMatch(appSource, /La voix Vivy par défaut est déjà active/);
+  assert.doesNotMatch(appSource, /La voix Vivy par défaut est déjà prête côté serveur/);
+});
+
+test('A11 and Vivy explicit duo uses only A11, VIVY and DUO tags', () => {
+  const lyrics = buildVivyStructuredLyrics({
+    vocalCast: 'A11, Vivy',
+    theme: 'duo rap sur une promesse tenue dans la lumière',
+    songText: 'On garde la promesse même quand la lumière baisse.',
+  });
+
+  assert.match(lyrics, /\[A11\]/);
+  assert.match(lyrics, /\[VIVY\]/);
+  assert.match(lyrics, /\[DUO\]/);
+  assert.doesNotMatch(lyrics, /\[DJEFF\]|\bDjeff\b/i);
+  assert.doesNotMatch(lyrics, /le moteur qui respire dans la nuit|Deux voix, m[eê]me [ée]lan/i);
+});
+
+test('Vivy memory reset only clears the requested detached conversation', async () => {
+  const userId = `vivy-memory-scope-${Date.now()}`;
+  const verifyJWT = (req, _res, next) => {
+    req.user = { id: userId, username: 'VivyMemoryScope' };
+    next();
+  };
+
+  await buildVivyAiChat({
+    conversationId: 'vivy-session-a',
+    message: 'Garde ce souvenir uniquement dans la session A.',
+  }, { user: { id: userId, username: 'VivyMemoryScope' } });
+  await buildVivyAiChat({
+    conversationId: 'vivy-session-b',
+    message: 'Garde ce souvenir uniquement dans la session B.',
+  }, { user: { id: userId, username: 'VivyMemoryScope' } });
+
+  await withServer((app) => {
+    app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT }));
+  }, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/vivy/studio/memory?conversationId=vivy-session-a`, {
+      method: 'DELETE',
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.ok(payload.cleared >= 1);
+  });
+
+  const remaining = getEpisodes(`user:${userId}`, { limit: 100 }).episodes
+    .filter((episode) => String(episode.type || '').startsWith('vivy_'));
+  assert.equal(remaining.some((episode) => episode.metadata?.conversationId === 'vivy-session-a'), false);
+  assert.equal(remaining.some((episode) => episode.metadata?.conversationId === 'vivy-session-b'), true);
 });
 
 test('Vivy uses the account language instead of guessing from draft text', async () => {

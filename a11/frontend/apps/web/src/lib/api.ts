@@ -665,6 +665,14 @@ export function resolveApiAssetUrl(rawValue: string | null | undefined) {
         const origin = getApiOrigin() || globalThis.location?.origin || 'http://178.105.86.89';
         return `${origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
       }
+      // Rewrite internal container URLs (127.0.0.1 / localhost) to the public API origin
+      if (
+        /^(127\.0\.0\.1|localhost|::1)$/.test(assetHost)
+        && /^\/files\//i.test(parsed.pathname)
+      ) {
+        const origin = getApiOrigin() || globalThis.location?.origin || '';
+        if (origin) return `${origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      }
     } catch {
       // keep the original absolute URL when it is not parseable by URL.
     }
@@ -4728,6 +4736,62 @@ export async function downloadAccountInventoryZip() {
   return downloadProtectedBlob('/api/account/inventory.zip', 'funesterie-inventaire-medias.zip');
 }
 
+export type ProviderHealthStatus = {
+  id: 'groq' | 'elevenlabs' | string;
+  label: string;
+  configured: boolean;
+  available: boolean | null;
+  model?: string;
+  modelAvailable?: boolean | null;
+  tier?: string;
+  credits?: {
+    used?: number | null;
+    limit?: number | null;
+    remaining?: number | null;
+    unit?: string;
+  };
+};
+
+export type ProviderHealthResponse = {
+  ok: boolean;
+  probed: boolean;
+  checkedAt: string;
+  providers: ProviderHealthStatus[];
+};
+
+export async function fetchProviderHealth(probe = true): Promise<ProviderHealthResponse> {
+  const res = await authFetch(getApiUrl(`/api/account/provider-status${probe ? '?probe=1' : ''}`), {
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `État fournisseurs indisponible (${res.status})`);
+  }
+  return data as ProviderHealthResponse;
+}
+
+/**
+ * Download a Cloudflare R2 public media file (files.funesterie.me) via the
+ * backend proxy route. The browser cannot fetch these directly because R2
+ * returns no CORS headers. The proxy validates the URL (whitelist) and re-serves
+ * the file with Content-Disposition: attachment.
+ *
+ * Throws on failure so the UI can report the problem without behaving like Open.
+ */
+export async function downloadMediaUrl(rawUrl: string, fallbackFilename?: string): Promise<void> {
+  const url = String(rawUrl || '').trim();
+  if (!url) return;
+  const filename = fallbackFilename || url.split('/').at(-1) || 'media-download';
+  const resourceId = parseA11ResourceDownloadId(url);
+  if (resourceId) {
+    await downloadResourceById(resourceId, filename);
+    return;
+  }
+  const proxyPath = `/api/media/download?url=${encodeURIComponent(url)}`;
+  await downloadProtectedBlob(proxyPath, filename);
+}
+
 type MemoryCounts = {
   facts: number;
   tasks: number;
@@ -6058,8 +6122,11 @@ export async function fetchEkkoStatus(): Promise<EkkoStatusResponse> {
   return data as EkkoStatusResponse;
 }
 
-export async function clearVivyMemory(): Promise<{ ok: boolean; cleared: number }> {
-  const res = await authFetch(getApiUrl('/api/vivy/studio/memory'), {
+export async function clearVivyMemory(conversationId?: string): Promise<{ ok: boolean; cleared: number }> {
+  const query = String(conversationId || '').trim()
+    ? `?conversationId=${encodeURIComponent(String(conversationId).trim())}`
+    : '';
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/memory${query}`), {
     method: 'DELETE',
     headers: buildAuthHeaders(),
     credentials: 'include',

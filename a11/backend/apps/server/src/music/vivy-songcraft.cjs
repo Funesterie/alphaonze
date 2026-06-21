@@ -92,7 +92,7 @@ function looksLikeCompleteLyrics(value = '') {
 
 function inferMotif(theme = '') {
   const folded = foldTextForLookup(theme);
-  if (/djeff|duo|rap|moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/.test(folded)) return 'le moteur qui respire dans la nuit';
+  if (/moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/.test(folded)) return 'le moteur qui respire dans la nuit';
   if (/planete|astre|zodiaque|saint seiya|chevalier|cosmos|galaxie|constellation/.test(folded)) return 'un cosmos qui brûle sous l’armure';
   if (/soleil|sable|plage|estival|summer/.test(folded)) return 'un soleil qui colle à la peau';
   if (/neige|flocon|hiver/.test(folded)) return 'un flocon dans le bol du matin';
@@ -118,7 +118,7 @@ function inferAllMotifs(theme) {
   if (/desir|envie|attirance|convoitise/.test(folded)) results.push('le désir tenu à bout de bras');
   if (/deception|decoit|decu|dessous|desillusion/.test(folded)) results.push('la déception rentrée dans les os');
   if (/amour|coeur|manque/.test(folded)) results.push('un battement tenu entre deux souffles');
-  if (/djeff|duo|rap|moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/.test(folded)) results.push('le moteur qui respire dans la nuit');
+  if (/moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/.test(folded)) results.push('le moteur qui respire dans la nuit');
   if (results.length === 0) results.push('un fil tendu dans le vide');
   return results;
 }
@@ -126,7 +126,7 @@ function inferAllMotifs(theme) {
 function inferTitle(theme = '') {
   const stripped = stripSongCommand(theme);
   const motif = inferMotif(stripped);
-  if (/djeff|duo|rap|moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/i.test(stripped)) return 'Pignon dans la nuit';
+  if (/moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/i.test(stripped)) return 'Pignon dans la nuit';
   if (/planete|planète|astre|voie lact[ée]e|zodiaque|saint seiya|chevalier|cosmos|galaxie|[ée]toile|constellation/i.test(stripped)) return 'Cosmos du matin';
   if (/flocon|neige|bol/i.test(stripped)) return 'Flocon d’émerveillement';
   if (/lapin/i.test(stripped)) return 'Course sous les néons';
@@ -291,7 +291,7 @@ function normalizeVivySongArtistIds(input = {}) {
 }
 
 function hasExplicitVivySongArtists(input = {}) {
-  const source = input.songArtists ?? input.artists ?? input.singers ?? input.vocalists;
+  const source = input.songArtists ?? input.artists ?? input.singers ?? input.vocalists ?? input.vocalCast;
   return Array.isArray(source) ? source.length > 0 : Boolean(String(source || '').trim());
 }
 
@@ -399,27 +399,52 @@ function buildDjeffRapDuoLyrics(input = {}, material = '') {
   const fallbackVerseOne = [
     'Je dose au millimetre, pas de hasard dans le style,',
     'Visserie serree, tension propre — le geste decide.',
-    `${motif}, je l’aligne dans le tour,`,
+    `${motif}, je l'aligne dans le tour,`,
     'Le detail fait la frappe, la mesure connait son jour.',
   ];
   const fallbackPre = [
     'Quand la pression monte et que le flow se precise,',
-    `La cadence s’aligne, chaque mot se mobilise.`,
+    `La cadence s'aligne, chaque mot se mobilise.`,
   ];
   const preChorusLines = mergeDistinctRapLines(preSeedLines, fallbackPre, 4);
+
+  // Only use the hardcoded motif phrases when the user provided no seed content.
+  // With user content, keep the structure but avoid injecting cliché lines.
+  const hasUserContent = verseOneLines.length >= 2;
+  const introLineDjeff1 = hasUserContent
+    ? `${title} — j'entre en premiere,`
+    : `${motif} — j'entre dans le tour,`;
+  const introLineDjeff2 = hasUserContent
+    ? 'Chaque ligne compte, le grain reste brut.'
+    : 'Chaque cran dans la mesure, chaque mot sur son jour.';
+  const introLineVivy2 = hasUserContent
+    ? `Je prends ta note, on tient depuis la.`
+    : `Deux voix, meme elan — on decoupe l'horizon.`;
+  const chorusLine1 = hasUserContent
+    ? `${title} — on coupe le silence,`
+    : `${motif} — la nuit repond,`;
+  const chorusLine2 = hasUserContent
+    ? 'Deux voix, un son — ce qui compte reste.'
+    : 'Deux voix, meme elan, le sens serre le fond.';
+  const bridgeLine1 = hasUserContent
+    ? `${title} — on le garde intact,`
+    : `${motif} — je le garde intact,`;
+  const outroLine1 = hasUserContent
+    ? `Il reste ${title},`
+    : `Il reste ${motif},`;
 
   return cleanText([
     `[Title: ${title}]`,
     '',
     '[Intro - Djeff]',
     '[Djeff]',
-    `${motif} — j’entre dans le tour,`,
-    'Chaque cran dans la mesure, chaque mot sur son jour.',
+    introLineDjeff1,
+    introLineDjeff2,
     '',
     '[Intro - Vivy]',
     '[Vivy]',
     'Je tiens la note claire pendant que le flow repond,',
-    `Deux voix, meme elan — on decoupe l’horizon.`,
+    introLineVivy2,
     '',
     '[Verse 1 - Djeff]',
     '[Djeff]',
@@ -431,10 +456,10 @@ function buildDjeffRapDuoLyrics(input = {}, material = '') {
     '',
     '[Chorus - Duo]',
     '[Duo]',
-    `${motif} — la nuit repond,`,
-    'Deux voix, meme elan, le sens serre le fond.',
+    chorusLine1,
+    chorusLine2,
     'Vivy tient le fil, Djeff porte le ton,',
-    `On signe l’instant, on trace l’horizon.`,
+    `On signe l'instant, on trace l'horizon.`,
     '',
     '[Verse 2 - Vivy]',
     '[Vivy]',
@@ -445,20 +470,20 @@ function buildDjeffRapDuoLyrics(input = {}, material = '') {
     '',
     '[Bridge - Vivy]',
     '[Vivy]',
-    `${motif} — je le garde intact,`,
-    `Deux voix dans le meme souffle, rien qui ne s’efface.`,
+    bridgeLine1,
+    `Deux voix dans le meme souffle, rien qui ne s'efface.`,
     '',
     '[Chorus - Duo]',
     '[Duo]',
-    `${motif} — la nuit repond,`,
-    'Deux voix, meme elan, le sens serre le fond.',
+    chorusLine1,
+    chorusLine2,
     'Vivy tient le fil, Djeff porte le ton,',
-    `On signe l’instant, on trace l’horizon.`,
+    `On signe l'instant, on trace l'horizon.`,
     '',
     '[Outro - Duo]',
     '[Duo]',
-    `Il reste ${motif},`,
-    `Et nos deux voix tiennent jusqu’au lendemain.`,
+    outroLine1,
+    `Et nos deux voix tiennent jusqu'au lendemain.`,
   ].join('\n'), 2400);
 }
 
@@ -471,13 +496,16 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
   const hasA11 = artistCast.ids.includes('a11');
   const hasK44 = artistCast.ids.includes('k44');
   const lead = artistCast.artists[0]?.label || 'Vivy';
-  const chorusTag = artistCast.count > 1 ? 'Tous' : lead;
+  const isA11VivyDuo = artistCast.count === 2 && artistCast.ids.includes('a11') && artistCast.ids.includes('vivy');
+  const leadTag = isA11VivyDuo ? `[${lead.toUpperCase()}]` : `[${lead}]`;
+  const chorusLabel = isA11VivyDuo ? 'DUO' : (artistCast.count > 1 ? 'Tous' : lead);
+  const chorusTag = `[${chorusLabel}]`;
 
   const blocks = [
     `[Title: ${title}]`,
     '',
     `[Intro - ${lead}]`,
-    `[${lead}]`,
+    leadTag,
     `On entre dans ${theme}, sans copier personne,`,
     'Chaque voix prend sa place, le signal se façonne.',
     '',
@@ -498,7 +526,7 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
   if (hasVivy) {
     blocks.push(
       '[Pre-Chorus - Vivy]',
-      '[Vivy]',
+      isA11VivyDuo ? '[VIVY]' : '[Vivy]',
       'Je garde une note claire au bord de la vitesse,',
       'Une lumière qui répond quand la nuit se compresse.',
       'Si la route se dédouble, je tiens le fil vivant,',
@@ -508,8 +536,8 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
   }
 
   blocks.push(
-    `[Chorus - ${chorusTag}]`,
-    `[${chorusTag}]`,
+    `[Chorus - ${chorusLabel}]`,
+    chorusTag,
     `${motif} — on tient le son ensemble,`,
     'plusieurs timbres, même sens, même trajectoire.',
     'un nom, Funesterie — la voix qui rassemble,',
@@ -542,15 +570,15 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
   }
 
   blocks.push(
-    `[Final Chorus - ${chorusTag}]`,
-    `[${chorusTag}]`,
+    `[Final Chorus - ${chorusLabel}]`,
+    chorusTag,
     `${motif} — on tient le son ensemble,`,
     'plusieurs timbres, même sens, même trajectoire.',
     'un nom, Funesterie — la voix qui rassemble,',
     'chaque refrain tient ce que la nuit ordonne.',
     '',
     `[Outro - ${lead}]`,
-    `[${lead}]`,
+    leadTag,
     'Le son se coupe doucement, mais le lien reste en mémoire.'
   );
 
@@ -592,9 +620,10 @@ function buildVivyStructuredLyrics(input = {}) {
   const title = cleanOneLine(input.songTitle || input.title || inferTitle(theme), 'Sans titre', 80);
 
   const allMotifs = inferAllMotifs(theme);
-  const m0 = allMotifs[0];
-  const m1 = allMotifs[1] || allMotifs[0];
-  const m2 = allMotifs[2] || allMotifs[0];
+  const inferredMotif = inferMotif(theme);
+  const m0 = theme || allMotifs[0];
+  const m1 = inferredMotif !== 'un fil tendu dans le vide' ? inferredMotif : m0;
+  const m2 = allMotifs.find((motif) => motif !== m1 && motif !== 'un fil tendu dans le vide') || m0;
 
   const soloLyrics = `[Title: ${title}]
 

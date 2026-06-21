@@ -51,3 +51,14 @@ test('prod deploy injects voice module and XTTS/RVC env into both backend servic
     assert.ok(countNeedle(script, line) >= 2, `${line} must be present in both backend services`);
   }
 });
+
+test('prod deploy loads the merged secret env in both backend services', () => {
+  const script = readDeployScript();
+
+  assert.ok(
+    countNeedle(script, '- /srv/a11/secrets/compose.env') >= 2,
+    'both backend services must load the merged compose.env secret store'
+  );
+  assert.match(script, /Import-OptionalSecretFile\s+\$envMap\s+"A11_ELEVENLABS_API_KEY"/);
+  assert.match(script, /keyelevenlabs\.txt/);
+});

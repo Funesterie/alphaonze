@@ -25,6 +25,7 @@ const {
 const {
   getResolvedRemoteModelForRequest,
 } = require('./src/llm/remote-model.cjs');
+const { getProviderHealth } = require('./src/providers/provider-health.cjs');
 
 // Load local env before early feature gates and client wiring read process.env.
 (() => {
@@ -7703,6 +7704,70 @@ app.get('/api/public/r2/*key', async (req, res) => {
       route: `/api/public/r2/${rawStorageKey}`,
     });
     return res.status(500).json({ ok: false, error: 'public_r2_download_failed', message });
+  }
+});
+
+app.get('/api/account/provider-status', verifyJWT, async (req, res) => {
+  const userId = String(req.user?.id || '').trim();
+  if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json(await getProviderHealth({ probe: String(req.query?.probe || '') === '1' }));
+  } catch {
+    return res.status(502).json({ ok: false, error: 'provider_health_failed' });
+  }
+});
+
+// Proxy download for Cloudflare R2 public media (files.funesterie.me).
+// The browser cannot fetch these directly (no CORS headers on R2).
+// Validates URL against a strict whitelist before proxying server-side.
+app.get('/api/media/download', verifyJWT, async (req, res) => {
+  try {
+    const userId = String(req.user?.id || '').trim();
+    if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
+
+    const rawUrl = String(req.query?.url || '').trim();
+    if (!rawUrl) return res.status(400).json({ ok: false, error: 'missing_url' });
+
+    if (!/^https:\/\/files\.funesterie\.me\/users\/\d+\//i.test(rawUrl)) {
+      return res.status(403).json({ ok: false, error: 'url_not_allowed' });
+    }
+
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(rawUrl);
+    } catch {
+      return res.status(400).json({ ok: false, error: 'invalid_url' });
+    }
+
+    const rawFilename = path.basename(parsedUrl.pathname) || 'media-download';
+    const filename = sanitizeFileName(rawFilename);
+    const encodedFilename = encodeURIComponent(filename);
+
+    const upstream = await fetch(rawUrl, {
+      signal: AbortSignal.timeout(30000),
+      headers: { 'User-Agent': 'funesterie-media-proxy/1.0' },
+    });
+
+    if (!upstream.ok) {
+      return res.status(upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502).json({
+        ok: false, error: 'upstream_fetch_failed', status: upstream.status,
+      });
+    }
+
+    const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
+    const contentLength = upstream.headers.get('content-length');
+
+    res.setHeader('Content-Type', contentType);
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"; filename*=UTF-8''${encodedFilename}`);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    return res.status(200).send(buffer);
+  } catch (e) {
+    console.error('[MEDIA] download proxy failed:', e?.message);
+    return res.status(500).json({ ok: false, error: 'media_download_failed', message: String(e?.message) });
   }
 });
 
