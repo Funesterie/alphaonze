@@ -492,6 +492,18 @@ test('Suno payload can prepare a Djeff and Vivy duet instead of the old Vivy tem
   assert.doesNotMatch(payload.prompt, /Garde la lumière/);
 });
 
+test('an unrelated Djeff theme never reuses the old mechanical song template', () => {
+  const lyrics = buildVivyStructuredLyrics({
+    songArtists: ['djeff'],
+    vocalCast: 'Djeff',
+    songText: "theme l'ambidextrie du pilote a travers les obstacles de la vie",
+  });
+
+  assert.match(lyrics, /ambidextrie/i);
+  assert.match(lyrics, /obstacles de la vie/i);
+  assert.doesNotMatch(lyrics, /Poignée dans le son|Pignon dans la mesure|Le moteur parle sec/i);
+});
+
 test('Suno payload carries explicit multi-singer cast tags', () => {
   const payload = buildVivySunoPayload({
     songArtists: ['djeff', 'a11', 'k44', 'vivy'],
@@ -851,7 +863,7 @@ test('Vivy frontend prioritizes publicLyrics and keeps voice-test TTS on short p
   assert.doesNotMatch(voiceTestBlock, /VIVY_STUDIO_HANDOFF|brief|buildVivyStudioBrief/);
 });
 
-test('Vivy frontend falls back to a real solo voice guide when Suno is unavailable', () => {
+test('Vivy frontend prepares a fresh solo voice preview without using it as a Suno fallback', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
     'utf8'
@@ -859,12 +871,27 @@ test('Vivy frontend falls back to a real solo voice guide when Suno is unavailab
   const songStart = appSource.indexOf('async function produceSimpleVivySong');
   const songEnd = appSource.indexOf('async function askVivy');
   const songBlock = appSource.slice(songStart, songEnd);
+  const prepareStart = appSource.indexOf('async function askVivy');
+  const prepareEnd = appSource.indexOf('async function openAgent');
+  const prepareBlock = appSource.slice(prepareStart, prepareEnd);
+  const previewStart = appSource.indexOf('async function createVivySongVoicePreview');
+  const previewEnd = appSource.indexOf('async function produceSimpleVivySong');
+  const previewBlock = appSource.slice(previewStart, previewEnd);
 
-  assert.match(songBlock, /mediaStatus\?\.state\s*===\s*['"]not_configured['"]/);
-  assert.match(songBlock, /ttsSpeak\(/);
-  assert.match(songBlock, /buildVivyTtsOptions\(['"]sing['"]\)/);
-  assert.match(songBlock, /Maquette vocale Vivy/);
-  assert.match(songBlock, /activeSongArtistCast\.count\s*===\s*1/);
+  assert.match(songBlock, /setVivyMedia\(null\)/);
+  assert.doesNotMatch(songBlock, /ttsSpeak\(/);
+  assert.doesNotMatch(songBlock, /Maquette vocale Vivy/);
+  assert.match(prepareBlock, /setVivyMedia\(null\)/);
+  assert.match(prepareBlock, /createVivySongVoicePreview\(/);
+  assert.match(prepareBlock, /activeSongArtistCast\.count\s*===\s*1/);
+  assert.match(previewBlock, /ttsSpeak\(/);
+  assert.match(previewBlock, /buildVivyTtsOptions\(['"]sing['"]\)/);
+  const ttsOptionsStart = appSource.indexOf('function buildVivyTtsOptions');
+  const ttsOptionsEnd = appSource.indexOf('async function saveBriefArtifact');
+  const ttsOptionsBlock = appSource.slice(ttsOptionsStart, ttsOptionsEnd);
+  assert.match(ttsOptionsBlock, /activeVoiceProfile\.id\s*===\s*['"]vivy-sing['"]/);
+  assert.match(appSource, /Créer chanson Suno \(voix Suno\)/);
+  assert.match(appSource, /Suno reçoit les paroles et le style, pas le timbre de la voix sélectionnée/);
 });
 
 test('Vivy frontend shares public output instead of the internal agent handoff', () => {

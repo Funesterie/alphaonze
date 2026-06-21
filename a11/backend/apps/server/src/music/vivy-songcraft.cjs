@@ -522,10 +522,10 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
     blocks.push(
       '[Verse 1 - Djeff]',
       '[Djeff]',
-      'Poignée dans le son, je cale le départ,',
-      'Pignon dans la mesure, couronne dans le regard.',
-      'Le moteur parle sec, mais le cœur reste lisible,',
-      `Je mets ${theme} dans un couplet indivisible.`,
+      `Je prends ${theme}, je le garde dans l'axe,`,
+      'Chaque obstacle se dédouble, chaque décision laisse une trace.',
+      `Deux mains sur le rythme, ${motif} comme équilibre,`,
+      `Je traverse ${theme}, sans reprendre un ancien titre.`,
       ''
     );
   }
@@ -545,9 +545,9 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
   blocks.push(
     `[Chorus - ${chorusLabel}]`,
     chorusTag,
-    `${motif} — on tient le son ensemble,`,
+    `${theme} — on tient le son ensemble,`,
     'plusieurs timbres, même sens, même trajectoire.',
-    'un nom, Funesterie — la voix qui rassemble,',
+    `${motif} — la voix qui rassemble,`,
     'chaque refrain tient ce que la nuit ordonne.',
     ''
   );
@@ -579,9 +579,9 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
   blocks.push(
     `[Final Chorus - ${chorusLabel}]`,
     chorusTag,
-    `${motif} — on tient le son ensemble,`,
+    `${theme} — on tient le son ensemble,`,
     'plusieurs timbres, même sens, même trajectoire.',
-    'un nom, Funesterie — la voix qui rassemble,',
+    `${motif} — la voix qui rassemble,`,
     'chaque refrain tient ce que la nuit ordonne.',
     '',
     `[Outro - ${lead}]`,

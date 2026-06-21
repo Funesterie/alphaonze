@@ -4399,6 +4399,13 @@ html.a11-auth-page-root body {
   gap: 8px;
 }
 
+.vivy-studio-provider-note {
+  margin: 0;
+  color: #c9b9d0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .vivy-studio-actions button:first-child,
 .vivy-studio-head > button {
   background: linear-gradient(135deg, #f079d8, #8f3eff);
