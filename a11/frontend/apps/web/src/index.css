@@ -4406,6 +4406,37 @@ html.a11-auth-page-root body {
   line-height: 1.45;
 }
 
+.vivy-studio-inline-option {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+  min-height: 36px;
+  color: #ead9e8;
+  font-size: 12px;
+}
+
+.vivy-studio-inline-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 16px;
+}
+
+.vivy-studio-arrangement {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin: 8px 0 0;
+  color: #d9bfd2;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.vivy-studio-arrangement strong {
+  color: #f4c8eb;
+}
+
 .vivy-studio-actions button:first-child,
 .vivy-studio-head > button {
   background: linear-gradient(135deg, #f079d8, #8f3eff);

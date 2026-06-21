@@ -56,6 +56,7 @@ import {
   forgotPassword,
   resetPassword,
   getVivyStudioMusicJob,
+  mixVivyStudioPreview,
   runVivyStudioProduction,
   sendMatchArenaInput,
   startGoogleOAuth,
@@ -3943,6 +3944,8 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [shareInstruction, setShareInstruction] = useState(String(initialDraft.shareInstruction || ""));
   const [vivyOutput, setVivyOutput] = useState(normalizeVivyStudioOutputForState(String(initialDraft.vivyOutput || "")));
   const [vivyLyrics, setVivyLyrics] = useState<string>("");
+  const [vivyArrangementCues, setVivyArrangementCues] = useState<string[]>([]);
+  const [includeInstrumentalPreview, setIncludeInstrumentalPreview] = useState(true);
   const [vivyMedia, setVivyMedia] = useState<VivyStudioMediaPreview | null>(null);
   const [vivyDiagnostics, setVivyDiagnostics] = useState<VivyStudioProductionResult["prosody"] | null>(null);
   const [status, setStatus] = useState("");
@@ -4873,7 +4876,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     const previewText = buildVivyPlayableText(
       publicLyrics,
       songText || songMood || "Vivy prépare un aperçu de la chanson.",
-      900
+      4000
     );
     if (!previewText) throw new Error("voice_preview_text_missing");
     const ttsOptions = buildVivyTtsOptions("sing");
@@ -4895,6 +4898,36 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     };
   }
 
+  async function createVivySongInstrumentalPreview(publicLyrics: string, arrangementCues: string[]) {
+    const direction = [songMood, ...arrangementCues].filter(Boolean).join(", ");
+    const payload = await runVivyStudioProduction({
+      mode: "song",
+      voiceTool,
+      songSource,
+      songArtists,
+      vocalCast: activeSongArtistCast.label,
+      artistCount: activeSongArtistCast.count,
+      singerCount: activeSongArtistCast.count,
+      songMood: direction,
+      songText: publicLyrics,
+      forceRealMusic: true,
+      generateMusic: true,
+      instrumental: true,
+      forceInstrumental: true,
+      previewInstrumental: true,
+      musicProvider: "elevenlabs",
+      disableEmergencyMedia: true,
+      durationSeconds: Math.max(45, Math.min(180, Math.ceil(publicLyrics.length / 14))),
+    });
+    const instrumentalUrl = String(
+      payload?.audioUrl || payload?.audio_url || payload?.media?.audioUrl || payload?.media?.audio_url || payload?.media?.url || ""
+    ).trim();
+    if (!instrumentalUrl) {
+      throw new Error(payload?.mediaStatus?.message || "instrumental_preview_missing");
+    }
+    return resolveApiAssetUrl(instrumentalUrl) || instrumentalUrl;
+  }
+
   async function produceSimpleVivySong() {
     if (!hasSession) {
       setStatus("Connexion requise pour générer une chanson Vivy.");
@@ -4907,6 +4940,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     }
     setIsBusy(true);
     setVivyMedia(null);
+    setVivyArrangementCues([]);
     setStatus(sunoSessionKey.trim()
       ? `${activeVoiceProfile.label} lance Suno avec ta clé personnelle de session...`
       : `${activeVoiceProfile.label} lance Suno si ton compte a les droits fondateur/admin.`);
@@ -5038,8 +5072,14 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       const text = String(payload?.assistant || payload?.message || payload?.content || "").trim();
       if (!text) throw new Error("reponse_vide");
       setVivyDiagnostics(payload.prosody || null);
-      const publicLyrics = String((payload as any)?.publicLyrics || "").trim();
+      const payloadAny = payload as any;
+      const publicLyrics = String(payloadAny?.publicLyrics || "").trim();
+      const vocalLyrics = String(payloadAny?.vocalLyrics || publicLyrics).trim();
+      const arrangementCues = Array.isArray(payloadAny?.arrangementCues)
+        ? payloadAny.arrangementCues.map((cue: unknown) => String(cue || "").trim()).filter(Boolean)
+        : [];
       setVivyLyrics(publicLyrics);
+      setVivyArrangementCues(arrangementCues);
       const audioUrl = String(payload?.audioUrl || payload?.audio_url || payload?.media?.audioUrl || payload?.media?.audio_url || "").trim();
       const videoUrl = String(payload?.videoUrl || payload?.video_url || payload?.media?.videoUrl || payload?.media?.video_url || "").trim();
       const mediaUrl = audioUrl || videoUrl;
@@ -5058,16 +5098,43 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
           filename: String(payload?.media?.filename || (audioUrl ? "vivy-audio.mp3" : "vivy-video.mp4")),
         }
         : null;
+      let instrumentalPreviewError = "";
       if (!preparedMedia && wantsSongPreview && publicLyrics && activeSongArtistCast.count === 1) {
         setStatus(`Création de l'aperçu avec ${activeVoiceProfile.label}...`);
-        preparedMedia = await createVivySongVoicePreview(publicLyrics);
+        const voicePreview = await createVivySongVoicePreview(vocalLyrics);
+        preparedMedia = voicePreview;
+        if (includeInstrumentalPreview && arrangementCues.length) {
+          try {
+            setStatus(`Création de l'instrumental: ${arrangementCues.join(", ")}...`);
+            const instrumentalUrl = await createVivySongInstrumentalPreview(publicLyrics, arrangementCues);
+            setStatus(`Mix de ${activeVoiceProfile.label} avec l'instrumental...`);
+            const mixed = await mixVivyStudioPreview(voicePreview.url, instrumentalUrl);
+            const mixedUrl = String(mixed?.audioUrl || mixed?.audio_url || mixed?.url || "").trim();
+            if (!mixedUrl) throw new Error("mixed_preview_audio_url_missing");
+            preparedMedia = {
+              kind: "audio",
+              url: resolveApiAssetUrl(mixedUrl) || mixedUrl,
+              downloadUrl: resolveApiAssetUrl(mixedUrl) || mixedUrl,
+              provider: String(mixed?.provider || "vivy-voice-instrumental-mix"),
+              contentType: String(mixed?.content_type || "audio/mpeg"),
+              filename: String(mixed?.filename || "vivy-apercu-voix-instrumental.mp3"),
+            };
+          } catch (instrumentalError: any) {
+            instrumentalPreviewError = String(instrumentalError?.message || instrumentalError || "instrumental_indisponible");
+          }
+        }
       }
       setVivyMedia(preparedMedia);
+      const isMixedPreview = preparedMedia?.provider === "vivy-voice-instrumental-mix";
       setStatus(preparedMedia
         ? (wantsSongPreview && audioUrl
           ? (payload.summary || "Préécoute chanson prête avant Suno.")
           : (wantsSongPreview
-            ? `Aperçu ${activeVoiceProfile.label} prêt. Suno n'a pas encore été lancé.`
+            ? (isMixedPreview
+              ? `Aperçu ${activeVoiceProfile.label} + instrumental prêt.`
+              : (instrumentalPreviewError
+                ? `Aperçu ${activeVoiceProfile.label} prêt sans instrumental: ${instrumentalPreviewError}`
+                : `Aperçu ${activeVoiceProfile.label} prêt. Les indications instrumentales ne sont pas récitées.`))
             : (payload.summary || "Production Vivy ajoutée au brief.")))
         : (wantsSongPreview && activeSongArtistCast.count > 1
           ? "Paroles prêtes. L'aperçu multi-voix n'est pas supporté; aucun ancien audio n'est réutilisé."
@@ -5534,9 +5601,21 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                   rows={8}
                   value={songText}
                   disabled={!hasSession}
-                  onChange={(event) => setSongText(event.target.value)}
+                  onChange={(event) => {
+                    setSongText(event.target.value);
+                    setVivyArrangementCues([]);
+                  }}
                   placeholder="Thème, paroles, ambiance, intention, histoire ou simple idée."
                 />
+              </label>
+              <label className="vivy-studio-inline-option">
+                <input
+                  type="checkbox"
+                  checked={includeInstrumentalPreview}
+                  disabled={!hasSession || isBusy}
+                  onChange={(event) => setIncludeInstrumentalPreview(event.target.checked)}
+                />
+                <span>Créer le fond instrumental des indications entre parenthèses</span>
               </label>
               <label>
                 Clé Suno personnelle
@@ -5824,6 +5903,12 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
             </div>
           )}
           {status && <p className="vivy-studio-status-msg">{status}</p>}
+          {activeMode === "song" && vivyArrangementCues.length > 0 ? (
+            <p className="vivy-studio-arrangement">
+              <strong>Arrangement instrumental</strong>
+              <span>{vivyArrangementCues.join(" · ")}</span>
+            </p>
+          ) : null}
           {diagnosticsAllowed ? <VivyD9DiagnosticsPanel prosody={vivyDiagnostics} /> : null}
           {activeMode === "song" && vivyLyrics && (
             <div className="vivy-studio-lyrics" style={{ marginTop: 12 }}>

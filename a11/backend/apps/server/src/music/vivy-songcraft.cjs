@@ -67,7 +67,7 @@ function sanitizeVivySongMaterial(value = '', max = VIVY_SONG_MAX_CHARS) {
   const text = cleanText(value, Math.max(max, VIVY_SONG_MAX_CHARS));
   if (!text) return '';
 
-  const sectionCount = (text.match(/\[(verse|chorus|bridge|intro|outro|couplet|refrain|pont|pré-refrain|pre-chorus)\]/ig) || []).length;
+  const sectionCount = (text.match(/\[(verse|chorus|bridge|intro|outro|couplet|refrain|pont|pré-refrain|pre-chorus)(?:\s+\d+)?(?:\s*-\s*[^\]]+)?\]/ig) || []).length;
   const preserveRepeatedLines = sectionCount >= 2;
 
   const kept = [];
@@ -88,10 +88,39 @@ function sanitizeVivySongMaterial(value = '', max = VIVY_SONG_MAX_CHARS) {
   return cleanText(kept.join('\n'), max);
 }
 
+function looksLikeVivyArrangementCue(value = '') {
+  const folded = foldTextForLookup(value);
+  if (!folded || folded.length > 180) return false;
+  return /\b(?:instrumental|arrangement|production|tempo|bpm|crescendo|decrescendo|fade|reverb|delay|piano|tambour|batterie|drums?|beat|battement|percussions?|guitares?|violons?|violoncelle|basses?|synth(?:e|es|s)?|pads?|cordes|strings?|flute|sax(?:ophone)?|trompette|choeur|choir|orchestr(?:e|al|ation)|arpege|a cappella)\b/.test(folded);
+}
+
+function splitVivyArrangementCues(value = '') {
+  const cues = [];
+  const seen = new Set();
+  const lyrics = cleanText(String(value || '').replace(/\(([^()\r\n]{2,180})\)/g, (match, inner) => {
+    if (!looksLikeVivyArrangementCue(inner)) return match;
+    const cue = cleanOneLine(inner, '', 180);
+    const key = foldTextForLookup(cue);
+    if (cue && key && !seen.has(key)) {
+      seen.add(key);
+      cues.push(cue);
+    }
+    return '';
+  })
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n'), VIVY_SONG_MAX_CHARS);
+
+  return {
+    lyrics,
+    cues,
+    arrangement: cues.join(', '),
+  };
+}
+
 function looksLikeCompleteLyrics(value = '') {
   const text = sanitizeVivySongMaterial(value, VIVY_SONG_MAX_CHARS);
   if (!text) return false;
-  const sectionCount = (text.match(/\[(verse|chorus|bridge|intro|outro|couplet|refrain|pont|pré-refrain|pre-chorus)\]/ig) || []).length;
+  const sectionCount = (text.match(/\[(verse|chorus|bridge|intro|outro|couplet|refrain|pont|pré-refrain|pre-chorus)(?:\s+\d+)?(?:\s*-\s*[^\]]+)?\]/ig) || []).length;
   const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
   if (sectionCount >= 3 && lines.length >= 10) return true;
   return sectionCount >= 2 && lines.length >= 14;
@@ -601,12 +630,13 @@ function buildVivyStructuredLyrics(input = {}) {
     input.instruction,
   ].filter(Boolean);
   const completeLyricsSource = lyricSources.find((source) => looksLikeCompleteLyrics(source));
-  const material = sanitizeVivySongMaterial(
+  const publicMaterial = sanitizeVivySongMaterial(
     completeLyricsSource || lyricSources.join('\n\n') || input.prompt,
     VIVY_SONG_MAX_CHARS
   );
 
-  if (looksLikeCompleteLyrics(material)) return cleanText(material, VIVY_SONG_MAX_CHARS);
+  if (looksLikeCompleteLyrics(publicMaterial)) return cleanText(publicMaterial, VIVY_SONG_MAX_CHARS);
+  const material = splitVivyArrangementCues(publicMaterial).lyrics;
 
   const artistCast = buildVivySongArtistCast(input);
   if (hasExplicitVivySongArtists(input) && (artistCast.count > 1 || artistCast.ids[0] !== 'vivy')) {
@@ -713,6 +743,7 @@ module.exports = {
   buildVivySongProductionBrief,
   buildVivyStructuredLyrics,
   buildVivySongArtistCast,
+  splitVivyArrangementCues,
   extractDjeffRapSeedLines,
   sanitizeVivySongMaterial,
   inferTitle,

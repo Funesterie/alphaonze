@@ -2725,6 +2725,10 @@ export type VivyStudioProductionInput = {
   forceRealMusic?: boolean;
   generateMusic?: boolean;
   makeSong?: boolean;
+  instrumental?: boolean;
+  forceInstrumental?: boolean;
+  previewInstrumental?: boolean;
+  musicProvider?: 'suno' | 'elevenlabs' | 'elevenlabs-music' | string;
   durationSeconds?: number;
 };
 
@@ -2738,6 +2742,8 @@ export type VivyStudioProductionResult = {
   content?: string;
   publicText?: string;
   publicLyrics?: string;
+  vocalLyrics?: string;
+  arrangementCues?: string[];
   internalBrief?: string;
   brief?: string;
   productionPlan?: Record<string, unknown>;
@@ -2832,6 +2838,23 @@ export async function runVivyStudioProduction(
     throw new Error(payload?.message || payload?.error || `Vivy Studio indisponible (${res.status})`);
   }
   return payload as VivyStudioProductionResult;
+}
+
+export async function mixVivyStudioPreview(
+  voiceUrl: string,
+  instrumentalUrl: string
+): Promise<VivyStudioMedia> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/mix-preview'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({ voiceUrl, instrumentalUrl }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Mix Vivy indisponible (${res.status})`);
+  }
+  return (payload?.media || payload) as VivyStudioMedia;
 }
 
 export async function getVivyStudioMusicJob(taskId: string, sessionSunoApiKey?: string): Promise<VivyStudioProductionResult> {

@@ -17,6 +17,7 @@ const {
   buildVivyDirectSongReply,
   buildVivyPublicLyrics,
   buildVivyStudioProduction,
+  buildVivyPreviewMixArgs,
   buildVivySystemPrompt,
   buildVivySunoPayload,
   buildVivyWebSearchQuery,
@@ -31,6 +32,7 @@ const {
 } = require('../src/routes/vivy-studio.cjs');
 const {
   buildVivyStructuredLyrics,
+  splitVivyArrangementCues,
 } = require('../src/music/vivy-songcraft.cjs');
 const {
   getEpisodes,
@@ -139,6 +141,68 @@ test('Vivy Studio produces a song handoff without storing tokens', () => {
   assert.match(result.brief, /VIVY_SONG_PRODUCTION/);
     assert.match(result.brief, /Entre lumière et ombre/);
   assert.doesNotMatch(result.brief, /must-not-leak/);
+});
+
+test('Vivy separates instrumental directions from lyrics that must be sung', () => {
+  const source = `[Intro - Vivy]
+(Soft piano + léger battement de tambour)
+Dans les ténèbres, je cherche la lumière,
+(oh oh)
+Un chemin sinueux, pour atteindre la liberté.`;
+  const result = splitVivyArrangementCues(source);
+
+  assert.deepEqual(result.cues, ['Soft piano + léger battement de tambour']);
+  assert.doesNotMatch(result.lyrics, /Soft piano|battement de tambour/i);
+  assert.match(result.lyrics, /\(oh oh\)/i);
+  assert.match(result.lyrics, /Dans les ténèbres/i);
+});
+
+test('Vivy Studio exposes cue-free vocal lyrics while preserving the public score', () => {
+  const result = buildVivyStudioProduction({
+    mode: 'song',
+    songArtists: ['vivy'],
+    songText: `[Intro - Vivy]
+(Soft piano + léger battement de tambour)
+Dans les ténèbres, je cherche la lumière.
+[Verse 1 - Vivy]
+Je marche contre le vent, contre les tempêtes.
+Je lutte contre les chaînes qui veulent m'asservir.
+Je cherche à briser les murailles devant moi.
+Le monde reprend enfin toutes ses couleurs.
+[Chorus - Vivy]
+Liberté, liberté, c'est mon cri de guerre.
+Je veux être libre, je veux être moi.
+Sans chaînes, sans murailles, sans peur.
+Je veux voler, je veux être libre.`,
+  });
+
+  assert.match(result.publicLyrics, /Soft piano \+ léger battement de tambour/i);
+  assert.doesNotMatch(result.vocalLyrics, /Soft piano|battement de tambour/i);
+  assert.deepEqual(result.arrangementCues, ['Soft piano + léger battement de tambour']);
+});
+
+test('Vivy sends arrangement cues to Suno style instead of the sung prompt', () => {
+  const payload = buildVivySunoPayload({
+    mode: 'song',
+    songArtists: ['vivy'],
+    songMood: 'pop cinématique',
+    songText: `[Intro - Vivy]
+(Soft piano + léger battement de tambour)
+Dans les ténèbres, je cherche la lumière.`,
+  });
+
+  assert.doesNotMatch(payload.prompt, /Soft piano|battement de tambour/i);
+  assert.match(payload.style, /soft piano/i);
+  assert.match(payload.style, /battement de tambour/i);
+});
+
+test('Vivy preview mix keeps the voice clear over a quieter instrumental', () => {
+  const args = buildVivyPreviewMixArgs('instrumental.mp3', 'voice.mp3', 'mix.mp3');
+  assert.deepEqual(args.slice(0, 5), ['-y', '-i', 'instrumental.mp3', '-i', 'voice.mp3']);
+  assert.match(args.join(' '), /volume=0\.30\[music\]/);
+  assert.match(args.join(' '), /volume=1\.0\[voice\]/);
+  assert.match(args.join(' '), /amix=inputs=2:duration=longest/);
+  assert.equal(args.at(-1), 'mix.mp3');
 });
 
 test('Vivy Studio keeps internal briefs out of public voice output', () => {
@@ -425,9 +489,10 @@ test('POST /api/vivy/studio/produce can generate ElevenLabs music only with lega
     }, async (baseUrl) => {
       const { response, json } = await postJson(baseUrl, '/api/vivy/studio/produce', {
         mode: 'song',
-        songText: 'Vivy allume la scène et garde la lumière.',
+        songText: '(Soft piano + léger battement de tambour)\nVivy allume la scène et garde la lumière.',
         songMood: 'electro pop cinématique',
         forceRealMusic: true,
+        forceInstrumental: true,
       }, { Authorization: 'Bearer vivy-founder-token' });
 
       assert.equal(response.status, 200);
@@ -438,7 +503,59 @@ test('POST /api/vivy/studio/produce can generate ElevenLabs music only with lega
       assert.match(json.audioUrl, /^\/api\/vivy\/studio\/assets\/vivy-music-.+\.mp3$/);
       assert.equal(musicBodies.length, 1);
       assert.match(musicBodies[0].prompt, /Original Funesterie song for Vivy/i);
+      assert.match(musicBodies[0].prompt, /Instrumental arrangement cues: Soft piano \+ léger battement de tambour/i);
+      assert.equal(musicBodies[0].force_instrumental, true);
       assert.equal(musicBodies[0].model_id, 'music_v1');
+    });
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('POST /api/vivy/studio/produce allows an explicit founder instrumental preview without global auto mode', async () => {
+  const previousEnv = {
+    VIVY_ELEVENLABS_API_KEY: process.env.VIVY_ELEVENLABS_API_KEY,
+    VIVY_ELEVENLABS_MUSIC_ENABLED: process.env.VIVY_ELEVENLABS_MUSIC_ENABLED,
+    VIVY_ELEVENLABS_BASE_URL: process.env.VIVY_ELEVENLABS_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  let called = false;
+  process.env.VIVY_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
+  delete process.env.VIVY_ELEVENLABS_MUSIC_ENABLED;
+  process.env.VIVY_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
+  global.fetch = async (url, options = {}) => {
+    if (String(url).startsWith('https://api.elevenlabs.test/v1/music?')) {
+      called = true;
+      return { ok: true, status: 200, async arrayBuffer() { return Buffer.from('preview-mp3'); } };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer((app) => {
+      app.use('/api/vivy/studio', createVivyStudioRouter({
+        verifyJWT(req, _res, next) {
+          req.user = { id: 'djeff', username: 'Djeff', roles: ['founder'] };
+          next();
+        },
+      }));
+    }, async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/vivy/studio/produce', {
+        mode: 'song',
+        songText: '(Soft piano)\nJe cherche la lumière.',
+        forceRealMusic: true,
+        forceInstrumental: true,
+        previewInstrumental: true,
+        musicProvider: 'elevenlabs',
+      }, VIVY_TEST_AUTH_HEADERS);
+
+      assert.equal(response.status, 200);
+      assert.equal(called, true);
+      assert.equal(json.media.provider, 'elevenlabs-music');
     });
   } finally {
     global.fetch = previousFetch;
@@ -883,9 +1000,13 @@ test('Vivy frontend prepares a fresh solo voice preview without using it as a Su
   assert.doesNotMatch(songBlock, /Maquette vocale Vivy/);
   assert.match(prepareBlock, /setVivyMedia\(null\)/);
   assert.match(prepareBlock, /createVivySongVoicePreview\(/);
+  assert.match(prepareBlock, /payloadAny\?\.vocalLyrics/);
+  assert.match(prepareBlock, /mixVivyStudioPreview\(/);
+  assert.match(appSource, /previewInstrumental:\s*true/);
   assert.match(prepareBlock, /activeSongArtistCast\.count\s*===\s*1/);
   assert.match(previewBlock, /ttsSpeak\(/);
   assert.match(previewBlock, /buildVivyTtsOptions\(['"]sing['"]\)/);
+  assert.match(previewBlock, /4000/);
   const ttsOptionsStart = appSource.indexOf('function buildVivyTtsOptions');
   const ttsOptionsEnd = appSource.indexOf('async function saveBriefArtifact');
   const ttsOptionsBlock = appSource.slice(ttsOptionsStart, ttsOptionsEnd);
