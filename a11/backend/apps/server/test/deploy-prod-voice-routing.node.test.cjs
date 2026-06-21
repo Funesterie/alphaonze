@@ -62,3 +62,12 @@ test('prod deploy loads the merged secret env in both backend services', () => {
   assert.match(script, /Import-OptionalSecretFile\s+\$envMap\s+"A11_ELEVENLABS_API_KEY"/);
   assert.match(script, /keyelevenlabs\.txt/);
 });
+
+test('prod deploy preserves remote secrets when the secret file is not directly readable', () => {
+  const script = readDeployScript();
+
+  assert.match(script, /bluegreen\/active-color/);
+  assert.match(script, /docker inspect "\$container" --format/);
+  assert.match(script, /Read-RemoteEnvValue "DATABASE_URL"/);
+  assert.match(script, /\[Uri\]::UnescapeDataString/);
+});
