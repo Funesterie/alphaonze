@@ -71,3 +71,10 @@ test('prod deploy preserves remote secrets when the secret file is not directly 
   assert.match(script, /\$existingPgPass = \$null[\s\S]+?Read-RemoteEnvValue "DATABASE_URL"[\s\S]+?Read-RemoteEnvValue "POSTGRES_PASSWORD"/);
   assert.match(script, /\[Uri\]::UnescapeDataString/);
 });
+
+test('prod deploy refreshes the explicit Vivy music preview flag when remote secrets are reused', () => {
+  const script = readDeployScript();
+
+  assert.match(script, /managed_keys=.*VIVY_ELEVENLABS_MUSIC_DISABLED/);
+  assert.match(script, /printf 'VIVY_ELEVENLABS_MUSIC_DISABLED=false\\n'/);
+});
