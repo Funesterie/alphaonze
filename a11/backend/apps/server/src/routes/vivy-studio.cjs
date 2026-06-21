@@ -39,6 +39,7 @@ const {
   buildVivySongProductionBrief,
   buildVivyStructuredLyrics,
   buildVivySongArtistCast,
+  buildVivyVocalSegments,
   sanitizeVivySongMaterial,
   splitVivyArrangementCues,
   inferTitle,
@@ -1843,7 +1844,10 @@ function buildVivySystemPrompt(mode, language, input) {
     buildVivyToolCapabilityPrompt(),
     "Si l'utilisateur veut changer ta voix, demande un court fichier audio autorisé/licencié/consenti et rappelle qu'il reste privé pour son compte.",
     'Si des fichiers sont joints, intègre-les comme contexte, cite leur nom seulement si utile, et demande le contenu manquant si tu ne peux pas le lire.',
-    buildVivySongcraftSystemPrompt(mode, input || {}),
+    buildVivySongcraftSystemPrompt(mode, {
+      ...(input || {}),
+      artists: buildVivySongArtistCast(input || {}).artists,
+    }),
     'Ne révèle jamais de secret, token, chemin privé sensible ou configuration interne.',
   ].filter(Boolean).join('\n');
 }
@@ -2176,6 +2180,10 @@ function buildSongProduction(input) {
     .replace(/^["'“”]+|["'“”]+$/g, '');
 
   const publicLyrics = sanitizeVivyPublicLyrics(songcraft.lyrics);
+  const vocalSegments = buildVivyVocalSegments({
+    ...input,
+    lyrics: publicLyrics,
+  });
   const chorus = hasMaterial
     ? publicLyrics.split(/\n+/).filter((line) => !/^\[/.test(line)).slice(0, 4).join(' / ')
     : 'Donne-moi un thème, quelques paroles ou une intention pour produire une chanson complète.';
@@ -2229,6 +2237,7 @@ function buildSongProduction(input) {
       { id: 'clip_video', label: 'Créer clip A11', target: '/api/video/generate', ready: hasMaterial },
     ],
     publicLyrics,
+    vocalSegments,
     prosodyPlan,
   };
 }
@@ -2717,7 +2726,16 @@ function ensureVivyPublicLyricsArtistTags(input = {}, lyrics = '') {
 
   const missingArtistTag = artistCast.artists.some((artist) => !hasVivyLyricsTag(publicLyrics, artist.tag));
   const missingSharedTag = !/(^|\n)\s*\[(Duo|Tous)\]\s*(\n|$)/i.test(publicLyrics);
-  if (!missingArtistTag && !missingSharedTag) return publicLyrics;
+  const unexpectedArtistTag = [
+    ['djeff', 'Djeff'],
+    ['vivy', 'Vivy'],
+    ['a11', 'A11'],
+    ['k44', 'K44'],
+  ].some(([id, label]) => (
+    !artistCast.ids.includes(id)
+    && new RegExp(`\\[[^\\]\\n]*\\b${label}\\b[^\\]\\n]*\\]`, 'i').test(publicLyrics)
+  ));
+  if (!missingArtistTag && !missingSharedTag && !unexpectedArtistTag) return publicLyrics;
 
   const fallback = sanitizeVivyPublicLyrics(buildVivySongProductionBrief({
     ...input,
@@ -2769,7 +2787,7 @@ function buildVivyDirectSongReply(input = {}) {
     songText: cleanMaterial || material || input.songText || input.message,
     rhymeScheme: input.rhymeScheme || 'Fins de lignes rimées par paires, images mécaniques et sémantiques, refrain stable et chantable.',
   });
-  const lyrics = cleanText(songcraft.lyrics.replace(/^\[Title:\s*[^\]]+\]\s*/i, '').trim(), 2600);
+  const lyrics = cleanText(songcraft.lyrics.replace(/^\[Title:\s*[^\]]+\]\s*/i, '').trim(), 4200);
   const intention = voiceProfile.id === 'duo-djeff-vivy'
     ? 'duo rap Djeff + Vivy, mécanique moto concrète, couplets techniques et refrain chantable.'
     : voiceProfile.id === 'djeff-rap'
@@ -2782,7 +2800,7 @@ function buildVivyDirectSongReply(input = {}) {
     lyrics,
     '',
     `**Rimes / débit :** ${songcraft.rhymeScheme}`,
-  ].join('\n'), 3200);
+  ].join('\n'), VIVY_SONG_MAX_CHARS);
 }
 
 function normalizeVivyCapabilityText(value = '') {
@@ -3022,7 +3040,7 @@ function buildVivyChat(input) {
   };
 }
 
-function postProcessVivyAssistantText({ text = '', userMessage = '', systemPrompt = '' } = {}) {
+function postProcessVivyAssistantText({ text = '', userMessage = '', systemPrompt = '', maxChars = 3200 } = {}) {
   const processed = postProcessA11AssistantResponse({
     text,
     userMessage,
@@ -3030,7 +3048,7 @@ function postProcessVivyAssistantText({ text = '', userMessage = '', systemPromp
   });
   return {
     ...processed,
-    content: cleanText(processed.content, 3200),
+    content: cleanText(processed.content, maxChars),
   };
 }
 
@@ -3329,18 +3347,22 @@ async function buildVivyAiChat(input, req) {
     ].filter(Boolean);
     const _vivyLlmStart = Date.now();
 
+    const songResponseMaxChars = VIVY_SONG_MAX_CHARS;
     const completion = await llmBundle.client.chat.completions.create({
       model: llmBundle.model,
       messages,
-      temperature: Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74),
-      max_tokens: mode === 'song' ? Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || 1600) : Number(process.env.VIVY_CHAT_MAX_TOKENS || 900),
+      temperature: mode === 'song'
+        ? Number(process.env.VIVY_CHAT_TEMPERATURE_SONG || process.env.VIVY_CHAT_TEMPERATURE || 0.88)
+        : Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74),
+      max_tokens: mode === 'song' ? Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || 2200) : Number(process.env.VIVY_CHAT_MAX_TOKENS || 900),
     });
-    const rawAssistant = cleanText(completion?.choices?.[0]?.message?.content, 3200);
+    const rawAssistant = cleanText(completion?.choices?.[0]?.message?.content, mode === 'song' ? songResponseMaxChars : 3200);
     let _vivyLlmLatency = Date.now() - _vivyLlmStart;
     const processed = postProcessVivyAssistantText({
       text: rawAssistant,
       userMessage: message,
       systemPrompt,
+      maxChars: mode === 'song' ? songResponseMaxChars : 3200,
     });
     let usedSongcraftFallback = false;
     let llmRetried = false;
@@ -3359,11 +3381,11 @@ async function buildVivyAiChat(input, req) {
             { role: 'assistant', content: processed.content },
             { role: 'user', content: 'Écris uniquement les paroles complètes. Pas d’explication, pas de commentaire. Format: [Intro], [Verse 1], [Chorus], [Bridge], [Outro].' },
           ].filter(Boolean),
-          temperature: Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74),
-          max_tokens: Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || 1600),
+          temperature: Number(process.env.VIVY_CHAT_TEMPERATURE_SONG || process.env.VIVY_CHAT_TEMPERATURE || 0.88),
+          max_tokens: Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || 2200),
         });
-        const retryRaw = cleanText(retryCompletion?.choices?.[0]?.message?.content, 3200);
-        const retryProcessed = postProcessVivyAssistantText({ text: retryRaw, userMessage: message, systemPrompt });
+        const retryRaw = cleanText(retryCompletion?.choices?.[0]?.message?.content, songResponseMaxChars);
+        const retryProcessed = postProcessVivyAssistantText({ text: retryRaw, userMessage: message, systemPrompt, maxChars: songResponseMaxChars });
         if (retryProcessed.content && !looksLikeWeakSongwritingReply(retryProcessed.content)) {
           llmRetried = true;
           assistantCandidate = retryProcessed.content;
@@ -3530,6 +3552,7 @@ function buildVivyStudioProduction(input) {
     },
     publicLyrics,
     vocalLyrics: mode === 'song' ? arrangement.lyrics : undefined,
+    vocalSegments: mode === 'song' ? (production.vocalSegments || []) : undefined,
     arrangementCues: mode === 'song' ? arrangement.cues : undefined,
     tokenStored: false,
   };
@@ -4089,6 +4112,46 @@ function buildVivyPreviewMixArgs(instrumentalPath, voicePath, outputPath) {
   ];
 }
 
+function buildVivyMultiVoiceAssemblyArgs(segmentPaths = [], outputPath) {
+  const normalizedSegments = segmentPaths
+    .filter((segment) => Array.isArray(segment) && segment.length)
+    .map((segment) => segment.slice(0, 4));
+  const inputs = normalizedSegments.flat();
+  const args = ['-y'];
+  inputs.forEach((inputPath) => args.push('-i', inputPath));
+
+  const filters = [];
+  const segmentLabels = [];
+  let inputIndex = 0;
+  normalizedSegments.forEach((segment, segmentIndex) => {
+    const voiceLabels = segment.map(() => {
+      const label = `voice${inputIndex}`;
+      filters.push(`[${inputIndex}:a]aresample=44100,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[${label}]`);
+      inputIndex += 1;
+      return `[${label}]`;
+    });
+    const segmentLabel = `segment${segmentIndex}`;
+    if (voiceLabels.length === 1) {
+      filters.push(`${voiceLabels[0]}anull[${segmentLabel}]`);
+    } else {
+      filters.push(`${voiceLabels.join('')}amix=inputs=${voiceLabels.length}:duration=longest:normalize=0,volume=0.72,alimiter=limit=0.95[${segmentLabel}]`);
+    }
+    segmentLabels.push(`[${segmentLabel}]`);
+  });
+
+  if (segmentLabels.length === 1) filters.push(`${segmentLabels[0]}anull[out]`);
+  else filters.push(`${segmentLabels.join('')}concat=n=${segmentLabels.length}:v=0:a=1[out]`);
+
+  return [
+    ...args,
+    '-filter_complex', filters.join(';'),
+    '-map', '[out]',
+    '-c:a', 'libmp3lame',
+    '-b:a', '192k',
+    outputPath,
+  ];
+}
+
 function getVivyPreviewAssetFilename(value = '') {
   try {
     const parsed = new URL(String(value || '').trim(), 'https://vivy.local');
@@ -4159,6 +4222,72 @@ function runVivyPreviewMix(voiceUrl, instrumentalUrl) {
         ok: true,
         kind: 'audio',
         provider: 'vivy-voice-instrumental-mix',
+        filename,
+        url,
+        audioUrl: url,
+        audio_url: url,
+        content_type: 'audio/mpeg',
+      });
+    });
+  });
+}
+
+function runVivyMultiVoiceAssembly(rawSegments = []) {
+  if (!Array.isArray(rawSegments) || rawSegments.length < 1 || rawSegments.length > 20) {
+    const error = new Error('vivy_multi_voice_segments_invalid');
+    error.status = 400;
+    throw error;
+  }
+  const segmentPaths = rawSegments.map((segment) => {
+    const audioUrls = Array.isArray(segment?.audioUrls) ? segment.audioUrls : [];
+    if (audioUrls.length < 1 || audioUrls.length > 4) {
+      const error = new Error('vivy_multi_voice_segment_sources_invalid');
+      error.status = 400;
+      throw error;
+    }
+    const paths = audioUrls.map((audioUrl) => resolveVivyPreviewVoicePath(audioUrl));
+    if (paths.some((voicePath) => !voicePath)) {
+      const error = new Error('vivy_multi_voice_source_invalid');
+      error.status = 400;
+      throw error;
+    }
+    return paths;
+  });
+  const digest = crypto.createHash('sha1')
+    .update(`${segmentPaths.flat().join('\n')}\n${Date.now()}`)
+    .digest('hex')
+    .slice(0, 10);
+  const filename = `vivy-multi-voice-${Date.now()}-${digest}.mp3`;
+  const outputPath = getEmergencyMediaAssetPath(filename);
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  const ffmpeg = String(process.env.FFMPEG_BIN || 'ffmpeg').trim() || 'ffmpeg';
+  const args = buildVivyMultiVoiceAssemblyArgs(segmentPaths, outputPath);
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(ffmpeg, args, { windowsHide: true });
+    let stderr = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error('vivy_multi_voice_assembly_timeout'));
+    }, 240000);
+    child.stderr.on('data', (chunk) => {
+      stderr = `${stderr}${String(chunk || '')}`.slice(-2400);
+    });
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0 || !fs.existsSync(outputPath)) {
+        reject(new Error(stderr.trim() || `vivy_multi_voice_assembly_exit_${code}`));
+        return;
+      }
+      const url = `/api/vivy/studio/assets/${encodeURIComponent(filename)}`;
+      resolve({
+        ok: true,
+        kind: 'audio',
+        provider: 'vivy-multi-voice-preview',
         filename,
         url,
         audioUrl: url,
@@ -4275,6 +4404,19 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
       return res.status(error?.status || 500).json({
         ok: false,
         error: 'vivy_preview_mix_failed',
+        message: error?.message || String(error),
+      });
+    }
+  });
+
+  router.post('/assemble-voice-preview', requireAuth, express.json({ limit: '64kb' }), async (req, res) => {
+    try {
+      const media = await runVivyMultiVoiceAssembly(req.body?.segments);
+      return res.json({ ok: true, media, ...media });
+    } catch (error) {
+      return res.status(error?.status || 500).json({
+        ok: false,
+        error: 'vivy_multi_voice_assembly_failed',
         message: error?.message || String(error),
       });
     }
@@ -4431,6 +4573,7 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
 module.exports = {
   createVivyStudioRouter,
   buildVivyStudioProduction,
+  buildVivyMultiVoiceAssemblyArgs,
   buildVivyPreviewMixArgs,
   buildVivyMusicPrompt,
   buildVivyChat,

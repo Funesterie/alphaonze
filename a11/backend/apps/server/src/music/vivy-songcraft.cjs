@@ -117,6 +117,60 @@ function splitVivyArrangementCues(value = '') {
   };
 }
 
+function buildVivyVocalSegments(input = {}) {
+  const cast = buildVivySongArtistCast(input);
+  const rawRequestedIds = Array.isArray(input.songArtists)
+    ? input.songArtists.map((value) => foldTextForLookup(value)).filter((id) => cast.ids.includes(id))
+    : [];
+  const sharedArtistIds = rawRequestedIds.length === cast.ids.length ? rawRequestedIds : cast.ids;
+  const source = splitVivyArrangementCues(input.lyrics || input.songText || input.text || '').lyrics
+    .replace(/\s*(\[[^\]\r\n]{1,100}\])\s*/g, '\n$1\n');
+  const segments = [];
+  let activeArtistIds = [sharedArtistIds[0] || 'vivy'];
+  let lines = [];
+
+  const flush = () => {
+    const text = cleanText(lines.join('\n').replace(/\n{3,}/g, '\n\n'), 1400).trim();
+    lines = [];
+    if (!text || !activeArtistIds.length) return;
+    const previous = segments[segments.length - 1];
+    if (previous && previous.artistIds.join('|') === activeArtistIds.join('|')) {
+      previous.text = cleanText(`${previous.text}\n${text}`, 1800);
+      return;
+    }
+    segments.push({ artistIds: [...activeArtistIds], text });
+  };
+
+  for (const rawLine of source.split(/\r?\n/)) {
+    const line = String(rawLine || '').trim();
+    if (!line) continue;
+    const tagMatch = line.match(/^\[([^\]]+)\]$/);
+    if (tagMatch) {
+      flush();
+      const foldedTag = foldTextForLookup(tagMatch[1]);
+      if (/^title\b|^titre\b/.test(foldedTag)) continue;
+      if (/\bduo\b|\btous\b|\btoutes\b|\bensemble\b/.test(foldedTag)) {
+        activeArtistIds = [...sharedArtistIds];
+        continue;
+      }
+      const taggedArtists = cast.artists
+        .filter((artist) => new RegExp(`(^|\\s)${escapeRegExpForSongcraft(foldTextForLookup(artist.label))}(\\s|$)`).test(foldedTag))
+        .map((artist) => artist.id);
+      if (taggedArtists.length) activeArtistIds = taggedArtists;
+      continue;
+    }
+    if (/^\*{0,2}\s*(?:titre|title|intention|rimes?\s*\/\s*d[ée]bit)\s*:?/i.test(line)) continue;
+    const sungLine = line.replace(/^[-*>\s]+/, '').replace(/\*\*/g, '').trim();
+    if (sungLine) lines.push(sungLine);
+  }
+  flush();
+  return segments.slice(0, 20);
+}
+
+function escapeRegExpForSongcraft(value = '') {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function looksLikeCompleteLyrics(value = '') {
   const text = sanitizeVivySongMaterial(value, VIVY_SONG_MAX_CHARS);
   if (!text) return false;
@@ -232,7 +286,7 @@ function buildVivySongcraftSystemPrompt(mode, context) {
   var hasDuo = artists.length > 1;
   var artistInstruction = artists.length
     ? [
-        'Artistes de cette chanson: ' + artists.map(function(a) { return a.label + ' (' + a.role + ')'; }).join('; ') + '.',
+        'Artistes de cette chanson: ' + artists.map(function(a) { return a.label + ' (' + a.role + '; grammaire: ' + a.grammar + ')'; }).join('; ') + '.',
         'Tags obligatoires en debut de section: ' + tags + (hasDuo ? ', et [Duo] ou [Tous] pour les passages communs' : '') + '.',
         'Chaque section doit commencer par le tag de l\u2019artiste entre crochets sur sa propre ligne.',
       ].join('\n')
@@ -244,11 +298,16 @@ function buildVivySongcraftSystemPrompt(mode, context) {
     'Module Vivy Songcraft actif.',
     'Application Songcraft: preserver le grain, les accidents utiles et l\u2019intention emotionnelle avant de lisser.',
     'Si l\u2019utilisateur demande une chanson, reponds comme une artiste-auteure, pas comme un assistant qui explique.',
-    'Format: **Titre**, intention courte, puis paroles avec [Intro], [Verse 1], [Pre-Chorus], [Chorus], [Verse 2], [Bridge], [Outro].',
+    'Liberté créative: tu peux réécrire, déplacer, condenser ou enrichir la matière pour produire une vraie chanson; ne te limite pas à paraphraser les phrases reçues.',
+    'Structure: choisis une forme musicale complète adaptée au morceau. Les balises [Intro], [Verse], [Pre-Chorus], [Chorus], [Bridge] et [Outro] sont disponibles, sans canevas rigide si une autre forme sert mieux la chanson.',
     artistInstruction,
     moodInstruction,
-    'Chaque couplet: minimum 4 vers. Refrain memorable, minimum 3 sections de paroles avec contenu reel.',
-    'Rimes audibles en fin de ligne, images concretes recurrentes, sens cache (tension ou metaphore).',
+    'Livre une seule chanson complète par réponse. Si plusieurs partenaires sont proposés avec « ou », choisis le casting sélectionné; sinon choisis une option et termine-la au lieu de commencer plusieurs versions.',
+    'Chaque couplet: minimum 4 vers. Refrain mémorable, minimum 3 sections de paroles avec contenu réel.',
+    'Construis des rimes audibles selon un schéma cohérent par section (AABB, ABAB ou rimes embrassées), avec assonances et rimes internes quand elles sonnent naturellement.',
+    'Une rime doit naître du sens et de la syntaxe: jamais de mot ajouté artificiellement après une virgule en fin de ligne ou en fin de vers (par exemple « mon cœur », « mon âme », « mon feu », « pensées ») uniquement pour faire rimer.',
+    'Évite les synonymes plaqués, les répétitions de remplissage et les déclarations génériques. Utilise des images concrètes récurrentes, des verbes précis et une progression émotionnelle.',
+    'Vise des vers chantables de longueur voisine dans une même section, avec variations rythmiques intentionnelles plutôt qu’une métrique mécanique.',
     'Ne JAMAIS terminer par: j\u2019espere que cette chanson te plaira, n\u2019hesite pas a me dire, j\u2019espere que ca correspond, ou toute formule de politesse d\u2019assistant.',
     'Pas d\u2019explication scolaire de la structure sauf demande explicite.',
     "Si l\u2019utilisateur donne deja la matiere: ecris directement, n'ouvre pas un questionnaire.",
@@ -263,6 +322,7 @@ const VIVY_SONG_ARTISTS = [
     label: 'Djeff',
     tag: '[Djeff]',
     role: 'couplets rap techniques, grain proche micro, images mécaniques concrètes',
+    grammar: 'masculin singulier; accords et pronoms il/lui',
     style: 'Djeff technical rap lead',
   },
   {
@@ -270,6 +330,7 @@ const VIVY_SONG_ARTISTS = [
     label: 'Vivy',
     tag: '[Vivy]',
     role: 'refrain clair, réponses mélodiques, voix claire, émotion lumineuse',
+    grammar: 'féminin singulier; accords et pronoms elle',
     style: 'Vivy clear melodic hook',
   },
   {
@@ -277,6 +338,7 @@ const VIVY_SONG_ARTISTS = [
     label: 'A11',
     tag: '[A11]',
     role: 'pont grave synthétique, tension machine humaine, réponse courte',
+    grammar: 'masculin singulier; accords et pronoms il/lui',
     style: 'A11 low synthetic spoken-sung bridge',
   },
   {
@@ -284,6 +346,7 @@ const VIVY_SONG_ARTISTS = [
     label: 'K44',
     tag: '[K44]',
     role: 'contre-chant posé, punchlines calmes, second lead propre',
+    grammar: 'masculin singulier; accords et pronoms il/lui',
     style: 'K44 calm counter-vocal',
   },
 ];
@@ -318,9 +381,17 @@ function normalizeVivySongArtistIds(input = {}) {
     input.message,
   ].filter(Boolean).join('\n'), 1400);
   const folded = foldTextForLookup(fallbackText);
+  if (/\bduo\b/.test(folded)) {
+    if (/a11\s+ou\s+djeff/.test(folded)) return ['a11', 'vivy'];
+    if (/djeff\s+ou\s+a11/.test(folded)) return ['djeff', 'vivy'];
+    if (/a11.*vivy|vivy.*a11/.test(folded)) return ['a11', 'vivy'];
+    if (/djeff.*vivy|vivy.*djeff/.test(folded)) return ['djeff', 'vivy'];
+    if (/\ba11\b/.test(folded)) return ['a11', 'vivy'];
+    if (/\bdjeff\b/.test(folded)) return ['djeff', 'vivy'];
+    return ['a11', 'vivy'];
+  }
   if (/djeff.*vivy|vivy.*djeff/.test(folded)) return ['djeff', 'vivy'];
   if (/\bdjeff\b|\brap\b|\bfraiyeur\b|\bmoto\b|\bmoteur\b|\bpignon\b|\bcouronne\b|\bradiateur\b/.test(folded)) return ['djeff'];
-  if (/\bduo\b/.test(folded)) return ['a11', 'vivy'];
   if (/\bk44\b|\bkaen44\b|\bkaen\b/.test(folded)) return ['k44'];
   if (/\ba11\b|\balpha\s*onze\b|\balphaonze\b/.test(folded)) return ['a11'];
   return ['vivy'];
@@ -743,6 +814,7 @@ module.exports = {
   buildVivySongProductionBrief,
   buildVivyStructuredLyrics,
   buildVivySongArtistCast,
+  buildVivyVocalSegments,
   splitVivyArrangementCues,
   extractDjeffRapSeedLines,
   sanitizeVivySongMaterial,

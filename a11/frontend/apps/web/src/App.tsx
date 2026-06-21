@@ -56,6 +56,7 @@ import {
   forgotPassword,
   resetPassword,
   getVivyStudioMusicJob,
+  assembleVivyStudioVoicePreview,
   mixVivyStudioPreview,
   runVivyStudioProduction,
   sendMatchArenaInput,
@@ -2873,6 +2874,11 @@ type VivyStudioMediaPreview = {
   filename?: string;
 };
 
+type VivyStudioVocalSegment = {
+  artistIds: VivyStudioArtistId[];
+  text: string;
+};
+
 const VIVY_STUDIO_DRAFT_KEY = "vivy:studio:draft:v2";
 const VIVY_STUDIO_SUNO_SESSION_KEY = "vivy:suno:session-key";
 const VIVY_PUBLIC_CHAT_KEY = "vivy:public-chat:v2";
@@ -4898,6 +4904,69 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     };
   }
 
+  async function createVivyMultiVoicePreview(rawSegments: VivyStudioVocalSegment[]) {
+    const allowedArtistIds = new Set(activeSongArtistCast.ids);
+    const segments = (Array.isArray(rawSegments) ? rawSegments : [])
+      .map((segment) => ({
+        artistIds: normalizeVivyStudioArtists(segment?.artistIds || [], [])
+          .filter((artistId) => allowedArtistIds.has(artistId)),
+        text: toUnicodeText(segment?.text || "", 1800).trim(),
+      }))
+      .filter((segment) => segment.artistIds.length && segment.text)
+      .slice(0, 20);
+    if (!segments.length) throw new Error("multi_voice_segments_missing");
+
+    const singMode = VIVY_STUDIO_VOICE_TEST_MODES.find((mode) => mode.id === "sing")
+      || VIVY_STUDIO_VOICE_TEST_MODES[0];
+    const synthesisCache = new Map<string, Promise<string>>();
+    const synthesizeArtistSegment = (artistId: VivyStudioArtistId, text: string) => {
+      const cacheKey = `${artistId}\n${text}`;
+      const cached = synthesisCache.get(cacheKey);
+      if (cached) return cached;
+      const task = (async () => {
+        const entry = VIVY_STUDIO_VOICE_DIRECTORY.find((voice) => voice.artistId === artistId);
+        if (!entry) throw new Error(`official_voice_missing_${artistId}`);
+        const options = buildVivyAutoTtsOptions(entry, singMode);
+        const preview = await ttsSpeak(
+          text,
+          entry.ttsPersona,
+          String(options.provider || "auto"),
+          options
+        );
+        const audioUrl = String(preview?.audioUrl || preview?.audio_url || preview?.url || "").trim();
+        if (!audioUrl) throw new Error(`voice_preview_audio_url_missing_${artistId}`);
+        return resolveApiAssetUrl(audioUrl) || audioUrl;
+      })();
+      synthesisCache.set(cacheKey, task);
+      return task;
+    };
+
+    const assembledSegments: Array<{ audioUrls: string[] }> = [];
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = segments[index];
+      const labels = segment.artistIds
+        .map((artistId) => VIVY_STUDIO_ARTISTS.find((artist) => artist.id === artistId)?.label || artistId)
+        .join(" + ");
+      setStatus(`Voix ${index + 1}/${segments.length}: ${labels}...`);
+      assembledSegments.push({
+        audioUrls: await Promise.all(segment.artistIds.map((artistId) => synthesizeArtistSegment(artistId, segment.text))),
+      });
+    }
+
+    setStatus(`Assemblage du duo ${activeSongArtistCast.label}...`);
+    const assembled = await assembleVivyStudioVoicePreview(assembledSegments);
+    const assembledUrl = String(assembled?.audioUrl || assembled?.audio_url || assembled?.url || "").trim();
+    if (!assembledUrl) throw new Error("multi_voice_preview_audio_url_missing");
+    return {
+      kind: "audio" as const,
+      url: resolveApiAssetUrl(assembledUrl) || assembledUrl,
+      downloadUrl: resolveApiAssetUrl(assembledUrl) || assembledUrl,
+      provider: String(assembled?.provider || "vivy-multi-voice-preview"),
+      contentType: String(assembled?.content_type || "audio/mpeg"),
+      filename: String(assembled?.filename || "vivy-apercu-multi-voix.mp3"),
+    };
+  }
+
   async function createVivySongInstrumentalPreview(publicLyrics: string, arrangementCues: string[]) {
     const direction = [songMood, ...arrangementCues].filter(Boolean).join(", ");
     const payload = await runVivyStudioProduction({
@@ -5075,6 +5144,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       const payloadAny = payload as any;
       const publicLyrics = String(payloadAny?.publicLyrics || "").trim();
       const vocalLyrics = String(payloadAny?.vocalLyrics || publicLyrics).trim();
+      const vocalSegments = Array.isArray(payloadAny?.vocalSegments)
+        ? payloadAny.vocalSegments as VivyStudioVocalSegment[]
+        : [];
       const arrangementCues = Array.isArray(payloadAny?.arrangementCues)
         ? payloadAny.arrangementCues.map((cue: unknown) => String(cue || "").trim()).filter(Boolean)
         : [];
@@ -5099,15 +5171,17 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         }
         : null;
       let instrumentalPreviewError = "";
-      if (!preparedMedia && wantsSongPreview && publicLyrics && activeSongArtistCast.count === 1) {
-        setStatus(`Création de l'aperçu avec ${activeVoiceProfile.label}...`);
-        const voicePreview = await createVivySongVoicePreview(vocalLyrics);
+      if (!preparedMedia && wantsSongPreview && publicLyrics) {
+        setStatus(`Création de l'aperçu avec ${activeSongArtistCast.label}...`);
+        const voicePreview = activeSongArtistCast.count > 1
+          ? await createVivyMultiVoicePreview(vocalSegments)
+          : await createVivySongVoicePreview(vocalLyrics);
         preparedMedia = voicePreview;
         if (includeInstrumentalPreview && arrangementCues.length) {
           try {
             setStatus(`Création de l'instrumental: ${arrangementCues.join(", ")}...`);
             const instrumentalUrl = await createVivySongInstrumentalPreview(publicLyrics, arrangementCues);
-            setStatus(`Mix de ${activeVoiceProfile.label} avec l'instrumental...`);
+            setStatus(`Mix de ${activeSongArtistCast.label} avec l'instrumental...`);
             const mixed = await mixVivyStudioPreview(voicePreview.url, instrumentalUrl);
             const mixedUrl = String(mixed?.audioUrl || mixed?.audio_url || mixed?.url || "").trim();
             if (!mixedUrl) throw new Error("mixed_preview_audio_url_missing");
@@ -5131,14 +5205,12 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
           ? (payload.summary || "Préécoute chanson prête avant Suno.")
           : (wantsSongPreview
             ? (isMixedPreview
-              ? `Aperçu ${activeVoiceProfile.label} + instrumental prêt.`
+              ? `Aperçu ${activeSongArtistCast.label} + instrumental prêt.`
               : (instrumentalPreviewError
-                ? `Aperçu ${activeVoiceProfile.label} prêt sans instrumental: ${instrumentalPreviewError}`
-                : `Aperçu ${activeVoiceProfile.label} prêt. Les indications instrumentales ne sont pas récitées.`))
+                ? `Aperçu ${activeSongArtistCast.label} prêt sans instrumental: ${instrumentalPreviewError}`
+                : `Aperçu ${activeSongArtistCast.label} prêt. Les indications instrumentales ne sont pas récitées.`))
             : (payload.summary || "Production Vivy ajoutée au brief.")))
-        : (wantsSongPreview && activeSongArtistCast.count > 1
-          ? "Paroles prêtes. L'aperçu multi-voix n'est pas supporté; aucun ancien audio n'est réutilisé."
-          : (payload.mediaStatus?.message || payload.summary || "Brief Vivy prêt.")));
+        : (payload.mediaStatus?.message || payload.summary || "Brief Vivy prêt."));
     } catch (error: any) {
       setStatus(`Production Vivy indisponible: ${error?.message || error}`);
     } finally {

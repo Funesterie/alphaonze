@@ -2743,6 +2743,7 @@ export type VivyStudioProductionResult = {
   publicText?: string;
   publicLyrics?: string;
   vocalLyrics?: string;
+  vocalSegments?: Array<{ artistIds: string[]; text: string }>;
   arrangementCues?: string[];
   internalBrief?: string;
   brief?: string;
@@ -2853,6 +2854,22 @@ export async function mixVivyStudioPreview(
   const payload = await res.json().catch(() => ({}));
   if (!res.ok || payload?.ok === false) {
     throw new Error(payload?.message || payload?.error || `Mix Vivy indisponible (${res.status})`);
+  }
+  return (payload?.media || payload) as VivyStudioMedia;
+}
+
+export async function assembleVivyStudioVoicePreview(
+  segments: Array<{ audioUrls: string[] }>
+): Promise<VivyStudioMedia> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/assemble-voice-preview'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({ segments }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Assemblage vocal Vivy indisponible (${res.status})`);
   }
   return (payload?.media || payload) as VivyStudioMedia;
 }

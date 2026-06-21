@@ -18,6 +18,7 @@ const {
   buildVivyPublicLyrics,
   buildVivyStudioProduction,
   buildVivyMusicPrompt,
+  buildVivyMultiVoiceAssemblyArgs,
   buildVivyPreviewMixArgs,
   buildVivySystemPrompt,
   buildVivySunoPayload,
@@ -33,6 +34,7 @@ const {
 } = require('../src/routes/vivy-studio.cjs');
 const {
   buildVivyStructuredLyrics,
+  buildVivyVocalSegments,
   splitVivyArrangementCues,
 } = require('../src/music/vivy-songcraft.cjs');
 const {
@@ -949,7 +951,7 @@ test('song mode accepts natural aliases from client prompts', () => {
 });
 
 test('Vivy chat prompt keeps original musical direction and avoids canned replies', () => {
-  const prompt = buildVivySystemPrompt('song', 'fr');
+  const prompt = buildVivySystemPrompt('song', 'fr', { songArtists: ['a11', 'vivy'] });
 
   assert.match(prompt, /IA musicale/i);
   assert.match(prompt, /originale Funesterie/i);
@@ -959,6 +961,12 @@ test('Vivy chat prompt keeps original musical direction and avoids canned replie
   assert.match(prompt, /pas de réponse toute faite/i);
   assert.match(prompt, /Module Vivy Songcraft actif/i);
   assert.match(prompt, /rimes audibles/i);
+  assert.match(prompt, /libert[eé] cr[eé]ative/i);
+  assert.match(prompt, /mot.*ajout[eé].*fin de vers|fin de vers.*mot.*ajout[eé]/i);
+  assert.match(prompt, /A11.*masculin/i);
+  assert.match(prompt, /Vivy.*f[eé]minin/i);
+  assert.match(prompt, /Artistes de cette chanson: (?:A11.*Vivy|Vivy.*A11)/i);
+  assert.match(prompt, /une seule chanson compl[eè]te/i);
   assert.match(prompt, /n'ouvre pas un questionnaire/i);
   assert.match(prompt, /Carte outils Vivy autorisée/i);
   assert.match(prompt, /vision\.images/i);
@@ -997,7 +1005,7 @@ test('Vivy frontend prioritizes publicLyrics and keeps voice-test TTS on short p
   assert.doesNotMatch(voiceTestBlock, /VIVY_STUDIO_HANDOFF|brief|buildVivyStudioBrief/);
 });
 
-test('Vivy frontend prepares a fresh solo voice preview without using it as a Suno fallback', () => {
+test('Vivy frontend prepares fresh solo and multi-voice previews without using them as a Suno fallback', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
     'utf8'
@@ -1017,11 +1025,15 @@ test('Vivy frontend prepares a fresh solo voice preview without using it as a Su
   assert.doesNotMatch(songBlock, /Maquette vocale Vivy/);
   assert.match(prepareBlock, /setVivyMedia\(null\)/);
   assert.match(prepareBlock, /createVivySongVoicePreview\(/);
+  assert.match(prepareBlock, /createVivyMultiVoicePreview\(/);
   assert.match(prepareBlock, /payloadAny\?\.vocalLyrics/);
+  assert.match(prepareBlock, /payloadAny\?\.vocalSegments/);
   assert.match(prepareBlock, /mixVivyStudioPreview\(/);
   assert.match(appSource, /previewInstrumental:\s*true/);
-  assert.match(prepareBlock, /activeSongArtistCast\.count\s*===\s*1/);
+  assert.doesNotMatch(prepareBlock, /activeSongArtistCast\.count\s*===\s*1/);
+  assert.doesNotMatch(prepareBlock, /L'aperçu multi-voix n'est pas supporté/);
   assert.match(previewBlock, /ttsSpeak\(/);
+  assert.match(previewBlock, /assembleVivyStudioVoicePreview\(/);
   assert.match(previewBlock, /buildVivyTtsOptions\(['"]sing['"]\)/);
   assert.match(previewBlock, /4000/);
   const ttsOptionsStart = appSource.indexOf('function buildVivyTtsOptions');
@@ -1030,6 +1042,60 @@ test('Vivy frontend prepares a fresh solo voice preview without using it as a Su
   assert.match(ttsOptionsBlock, /activeVoiceProfile\.id\s*===\s*['"]vivy-sing['"]/);
   assert.match(appSource, /Créer chanson Suno \(voix Suno\)/);
   assert.match(appSource, /Suno reçoit les paroles et le style, pas le timbre de la voix sélectionnée/);
+});
+
+test('Vivy vocal plan routes solo and shared sections to the selected official singers', () => {
+  const segments = buildVivyVocalSegments({
+    songArtists: ['a11', 'vivy'],
+    lyrics: [
+      '[Title: Liberté]',
+      '[Intro - Vivy]',
+      '[VIVY]',
+      '(Piano doux et tambour léger)',
+      'Je cherche une éclaircie dans la nuit.',
+      '[Verse 1 - A11]',
+      '[A11]',
+      'Je tiens debout quand le métal plie.',
+      '[Chorus - Duo]',
+      '[DUO]',
+      'Nos voix se lèvent et la peur s’enfuit.',
+    ].join('\n'),
+  });
+
+  assert.deepEqual(segments.map((segment) => segment.artistIds), [
+    ['vivy'],
+    ['a11'],
+    ['a11', 'vivy'],
+  ]);
+  assert.doesNotMatch(segments.map((segment) => segment.text).join('\n'), /Piano doux|Title:/i);
+});
+
+test('Vivy multi-voice assembly mixes shared lines then concatenates song sections', () => {
+  const args = buildVivyMultiVoiceAssemblyArgs([
+    ['vivy-intro.mp3'],
+    ['a11-verse.mp3'],
+    ['a11-chorus.mp3', 'vivy-chorus.mp3'],
+  ], 'vivy-duo.mp3');
+  const filter = args[args.indexOf('-filter_complex') + 1];
+
+  assert.match(filter, /amix=inputs=2/);
+  assert.match(filter, /concat=n=3:v=0:a=1/);
+  assert.equal(args.at(-1), 'vivy-duo.mp3');
+});
+
+test('Vivy song post-processing preserves a complete response beyond the old 3200 character cut', () => {
+  const longLyrics = `[VIVY]\n${Array.from({ length: 90 }, (_, index) => `Ligne ${index + 1}: lumière, matière, rivière et poussière.`).join('\n')}`;
+  assert.ok(longLyrics.length > 3200);
+
+  const processed = postProcessVivyAssistantText({
+    text: longLyrics,
+    userMessage: 'Écris une chanson complète.',
+    systemPrompt: 'Paroles uniquement.',
+    maxChars: 5000,
+  });
+
+  assert.ok(processed.content.length > 3200);
+  assert.match(processed.content, /Ligne 90:/);
 });
 
 test('Vivy frontend shares public output instead of the internal agent handoff', () => {
@@ -1092,6 +1158,30 @@ test('A11 and Vivy explicit duo uses only A11, VIVY and DUO tags', () => {
   assert.match(lyrics, /\[DUO\]/);
   assert.doesNotMatch(lyrics, /\[DJEFF\]|\bDjeff\b/i);
   assert.doesNotMatch(lyrics, /le moteur qui respire dans la nuit|Deux voix, m[eê]me [ée]lan/i);
+});
+
+test('Vivy removes an unselected singer from a provider duo draft', () => {
+  const lyrics = buildVivyPublicLyrics({
+    songArtists: ['a11', 'vivy'],
+    songText: 'Une promesse de liberté tenue à deux.',
+  }, [
+    '[Verse 1 - A11]',
+    '[A11]',
+    'Je garde le cap quand la nuit se replie.',
+    '[Verse 2 - Djeff]',
+    '[Djeff]',
+    'Cette voix ne fait pas partie du casting choisi.',
+    '[Chorus - Duo]',
+    '[Vivy]',
+    'Je change les barreaux en chemins infinis.',
+    '[Duo]',
+    'À deux nous traversons la peur et ses débris.',
+  ].join('\n'));
+
+  assert.match(lyrics, /\[A11\]/);
+  assert.match(lyrics, /\[(?:VIVY|Vivy)\]/);
+  assert.match(lyrics, /\[(?:DUO|Duo)\]/);
+  assert.doesNotMatch(lyrics, /\[Djeff\]|Verse 2 - Djeff/i);
 });
 
 test('Vivy memory reset only clears the requested detached conversation', async () => {
