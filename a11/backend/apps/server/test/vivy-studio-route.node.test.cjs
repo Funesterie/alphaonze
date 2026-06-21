@@ -1099,6 +1099,36 @@ test('Vivy song post-processing preserves a complete response beyond the old 320
   assert.match(processed.content, /Ligne 90:/);
 });
 
+test('Vivy song post-processing preserves performer tags on separate lines', () => {
+  const rawLyrics = [
+    '[Vivy]',
+    'Dans le mur de pierre une fente s’élargit,',
+    'Le ciment se fissure sous les doigts de lumière.',
+    'J’efface le mortier qui scellait mon esprit,',
+    'Et l’air du dehors me rappelle ma manière.',
+    '[A11]',
+    'Le verrou grinçait quand je le croyais muet,',
+    'Chaque tour de clé faisait vibrer ma cage.',
+    'J’ai vu la charnière céder à pas secrets,',
+    'Et le battant céder sans que rien ne s’engage.',
+    '[Duo]',
+    'La fenêtre condamnée s’ouvre peu à peu,',
+    'Un souffle plus large que tout ce qu’on a cru.',
+    'La liberté n’est pas un cri, c’est un seuil,',
+    'Qui s’écarte quand on cesse de le vouloir fermé.',
+  ].join('\n');
+
+  const processed = postProcessVivyAssistantText({
+    text: rawLyrics,
+    userMessage: 'Écris une chanson complète en duo Vivy et A11 sur la liberté, avec une structure et des rimes ABAB.',
+    systemPrompt: buildVivySystemPrompt('song', 'fr', { songArtists: ['a11', 'vivy'] }),
+    mode: 'song',
+    maxChars: 5000,
+  });
+
+  assert.match(processed.content, /^\[Vivy\]\n[\s\S]*^\[A11\]\n[\s\S]*^\[Duo\]\n/m);
+});
+
 test('Vivy frontend shares public output instead of the internal agent handoff', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),

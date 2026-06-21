@@ -3077,7 +3077,14 @@ function buildVivyChat(input) {
   };
 }
 
-function postProcessVivyAssistantText({ text = '', userMessage = '', systemPrompt = '', maxChars = 3200 } = {}) {
+function postProcessVivyAssistantText({ text = '', userMessage = '', systemPrompt = '', mode = '', maxChars = 3200 } = {}) {
+  if (mode === 'song') {
+    return {
+      content: cleanText(text, maxChars),
+      draft: null,
+      rewritten: false,
+    };
+  }
   const processed = postProcessA11AssistantResponse({
     text,
     userMessage,
@@ -3399,6 +3406,7 @@ async function buildVivyAiChat(input, req) {
       text: rawAssistant,
       userMessage: message,
       systemPrompt,
+      mode,
       maxChars: mode === 'song' ? songResponseMaxChars : 3200,
     });
     let usedSongcraftFallback = false;
@@ -3422,7 +3430,7 @@ async function buildVivyAiChat(input, req) {
           max_tokens: Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || 2200),
         });
         const retryRaw = cleanText(retryCompletion?.choices?.[0]?.message?.content, songResponseMaxChars);
-        const retryProcessed = postProcessVivyAssistantText({ text: retryRaw, userMessage: message, systemPrompt, maxChars: songResponseMaxChars });
+        const retryProcessed = postProcessVivyAssistantText({ text: retryRaw, userMessage: message, systemPrompt, mode, maxChars: songResponseMaxChars });
         if (retryProcessed.content && !looksLikeWeakSongwritingReply(retryProcessed.content)) {
           llmRetried = true;
           assistantCandidate = retryProcessed.content;
