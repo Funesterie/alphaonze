@@ -3614,11 +3614,12 @@ function buildVivyMusicPrompt(input = {}) {
     VIVY_SONG_MAX_CHARS
   );
   const arrangement = splitVivyArrangementCues(songMaterial);
-  const lyrics = buildVivyStructuredLyrics({
+  const forceInstrumental = input.instrumental === true || input.forceInstrumental === true;
+  const lyrics = forceInstrumental ? '' : buildVivyStructuredLyrics({
     ...input,
     songText: arrangement.lyrics,
   });
-  return [
+  const prompt = [
     artistCast.musicLead,
     `Source: ${source}.`,
     `Style and production: ${mood}.`,
@@ -3630,10 +3631,13 @@ function buildVivyMusicPrompt(input = {}) {
     arrangement.cues.length
       ? `Instrumental arrangement cues: ${arrangement.arrangement}. Use these only for the backing music; never sing or speak these directions.`
       : '',
-    'Lyrics must be sung, not spoken. Use the provided sections as real lyrics.',
-    `Lyrics:\n${lyrics}`,
+    forceInstrumental
+      ? 'Instrumental only. No vocals, spoken words, narration, or sung directions.'
+      : 'Lyrics must be sung, not spoken. Use the provided sections as real lyrics.',
+    forceInstrumental ? '' : `Lyrics:\n${lyrics}`,
     'Arrangement: intro, verse, pre-chorus, memorable chorus, second verse, bridge, chorus, clean ending. Web-ready, no copyrighted melody.',
   ].filter(Boolean).join('\n');
+  return cleanText(prompt, 4000);
 }
 
 function buildVivySunoLyrics(input = {}) {
@@ -3902,8 +3906,9 @@ async function requestElevenLabsMusic(input = {}, req = null) {
     signal: AbortSignal.timeout(Number(process.env.VIVY_ELEVENLABS_MUSIC_TIMEOUT_MS || 90000) || 90000),
   });
   if (!response.ok) {
-    await response.arrayBuffer().catch(() => null);
-    throw new Error(`elevenlabs_music_http_${response.status}`);
+    const errorText = await response.text().catch(() => '');
+    const safeDetail = cleanOneLine(errorText, '', 240);
+    throw new Error(`elevenlabs_music_http_${response.status}${safeDetail ? `:${safeDetail}` : ''}`);
   }
   const audioBuffer = Buffer.from(await response.arrayBuffer());
   if (!audioBuffer.length) throw new Error('elevenlabs_music_empty_audio');
@@ -4427,6 +4432,7 @@ module.exports = {
   createVivyStudioRouter,
   buildVivyStudioProduction,
   buildVivyPreviewMixArgs,
+  buildVivyMusicPrompt,
   buildVivyChat,
   buildVivyAiChat,
   getVivyOpenAIConfig,

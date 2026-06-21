@@ -17,6 +17,7 @@ const {
   buildVivyDirectSongReply,
   buildVivyPublicLyrics,
   buildVivyStudioProduction,
+  buildVivyMusicPrompt,
   buildVivyPreviewMixArgs,
   buildVivySystemPrompt,
   buildVivySunoPayload,
@@ -194,6 +195,22 @@ Dans les ténèbres, je cherche la lumière.`,
   assert.doesNotMatch(payload.prompt, /Soft piano|battement de tambour/i);
   assert.match(payload.style, /soft piano/i);
   assert.match(payload.style, /battement de tambour/i);
+});
+
+test('Vivy ElevenLabs instrumental prompt stays within the provider contract and omits lyrics', () => {
+  const longLyrics = `[Intro - Vivy]\n(Soft piano + léger battement de tambour)\n${'Dans les ténèbres, je cherche la lumière.\n'.repeat(140)}`;
+  const prompt = buildVivyMusicPrompt({
+    mode: 'song',
+    songArtists: ['vivy'],
+    songMood: 'pop cinématique',
+    songText: longLyrics,
+    forceInstrumental: true,
+  });
+
+  assert.ok(prompt.length <= 4000);
+  assert.match(prompt, /Soft piano \+ léger battement de tambour/i);
+  assert.match(prompt, /instrumental only/i);
+  assert.doesNotMatch(prompt, /Lyrics:/i);
 });
 
 test('Vivy preview mix keeps the voice clear over a quieter instrumental', () => {
