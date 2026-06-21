@@ -1131,7 +1131,9 @@ $overrides = [ordered]@{
   A11_ELEVENLABS_TTS_DISABLED = $(if ($env:A11_ELEVENLABS_TTS_DISABLED) { $env:A11_ELEVENLABS_TTS_DISABLED } else { "false" })
   ELEVENLABS_TTS_DISABLED = $(if ($env:ELEVENLABS_TTS_DISABLED) { $env:ELEVENLABS_TTS_DISABLED } else { "false" })
   A11_ELEVENLABS_TTS_ENABLED = $(if ($env:A11_ELEVENLABS_TTS_ENABLED) { $env:A11_ELEVENLABS_TTS_ENABLED } else { "true" })
-  VIVY_ELEVENLABS_MUSIC_DISABLED = "true"
+  # Music stays opt-in in application code; this only permits the explicit
+  # founder preview requested from the checked Studio control.
+  VIVY_ELEVENLABS_MUSIC_DISABLED = "false"
   A11_CARTESIA_API_KEY_FILE = $(if ($env:A11_CARTESIA_API_KEY_FILE) { $env:A11_CARTESIA_API_KEY_FILE } else { "/app/runtime/secrets/cartesia_api_key" })
   A11_ELEVENLABS_API_KEY_FILE = $(if ($env:A11_ELEVENLABS_API_KEY_FILE) { $env:A11_ELEVENLABS_API_KEY_FILE } else { "/app/runtime/secrets/elevenlabs_api_key" })
   VIVY_ELEVENLABS_API_KEY_FILE = $(if ($env:VIVY_ELEVENLABS_API_KEY_FILE) { $env:VIVY_ELEVENLABS_API_KEY_FILE } else { "/app/runtime/secrets/elevenlabs_api_key" })
