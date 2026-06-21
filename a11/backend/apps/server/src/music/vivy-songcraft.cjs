@@ -305,6 +305,7 @@ function buildVivySongcraftSystemPrompt(mode, context) {
     'Livre une seule chanson complète par réponse. Si plusieurs partenaires sont proposés avec « ou », choisis le casting sélectionné; sinon choisis une option et termine-la au lieu de commencer plusieurs versions.',
     'Chaque couplet: minimum 4 vers. Refrain mémorable, minimum 3 sections de paroles avec contenu réel.',
     'Construis des rimes audibles selon un schéma cohérent par section (AABB, ABAB ou rimes embrassées), avec assonances et rimes internes quand elles sonnent naturellement.',
+    'Deux mots identiques ne constituent jamais une rime: varie les mots finaux et fais correspondre leurs sonorités, pas leur répétition exacte.',
     'Une rime doit naître du sens et de la syntaxe: jamais de mot ajouté artificiellement après une virgule en fin de ligne ou en fin de vers (par exemple « mon cœur », « mon âme », « mon feu », « pensées ») uniquement pour faire rimer.',
     'Évite les synonymes plaqués, les répétitions de remplissage et les déclarations génériques. Utilise des images concrètes récurrentes, des verbes précis et une progression émotionnelle.',
     'Vise des vers chantables de longueur voisine dans une même section, avec variations rythmiques intentionnelles plutôt qu’une métrique mécanique.',

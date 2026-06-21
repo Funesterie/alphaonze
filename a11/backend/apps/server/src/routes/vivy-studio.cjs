@@ -451,11 +451,18 @@ function getVivyOpenAIConfig(options = {}) {
   const songGroqApiKey = process.env.VIVY_SONG_GROQ_API_KEY || groqApiKey;
   const xaiApiKey = process.env.VIVY_XAI_API_KEY || process.env.XAI_API_KEY || process.env.X_AI_API_KEY || '';
   const providerHint = cleanOneLine(process.env.VIVY_CHAT_PROVIDER || process.env.VIVY_LLM_PROVIDER || '', '', 40).toLowerCase();
-  const wantsSongGroq = mode === 'song' && Boolean(songGroqApiKey);
+  const songProviderHint = cleanOneLine(process.env.VIVY_SONG_PROVIDER || '', '', 40).toLowerCase();
+  const effectiveProviderHint = mode === 'song' ? (songProviderHint || providerHint) : providerHint;
   const explicitVivyBaseURL = cleanOneLine(process.env.VIVY_OPENAI_BASE_URL, '', 300);
   const explicitSongBaseURL = cleanOneLine(process.env.VIVY_SONG_OPENAI_BASE_URL || process.env.VIVY_SONG_BASE_URL, '', 300);
   const explicitBaseURL = (mode === 'song' && explicitSongBaseURL) || explicitVivyBaseURL;
-  const wantsXai = /^(xai|x-ai|grok)$/.test(providerHint) || /x\.ai|grok/i.test(explicitBaseURL);
+  const wantsXai = /^(xai|x-ai|grok)$/.test(effectiveProviderHint)
+    || /x\.ai|grok/i.test(explicitBaseURL)
+    || (mode === 'song'
+      && Boolean(xaiApiKey)
+      && !explicitSongBaseURL
+      && !/^(groq|openrouter|openai)$/.test(songProviderHint));
+  const wantsSongGroq = mode === 'song' && Boolean(songGroqApiKey) && !wantsXai;
   const baseURL = (mode === 'song' && explicitSongBaseURL)
     || explicitVivyBaseURL
     || (wantsXai && xaiApiKey ? 'https://api.x.ai/v1' : '')
@@ -2717,12 +2724,42 @@ function hasVivyLyricsTag(text = '', tag = '') {
   return new RegExp(`(^|\\n)\\s*${escapeRegExp(tag)}\\s*(\\n|$)`, 'i').test(String(text || ''));
 }
 
+function injectVivySectionArtistTags(lyrics = '', artistCast = null) {
+  if (!lyrics || !artistCast?.artists?.length) return lyrics;
+  const lines = String(lyrics).split(/\r?\n/);
+  const output = [];
+  const performerTagPattern = /^\s*\[(?:Djeff|Vivy|A11|K44|Duo|Tous)\]\s*$/i;
+
+  lines.forEach((line, index) => {
+    output.push(line);
+    const match = String(line || '').trim().match(/^\[([^\]]+)\]$/);
+    if (!match) return;
+    const foldedTag = foldTextForLookup(match[1]);
+    if (!/\b(intro|verse|couplet|pre chorus|pre refrain|refrain|chorus|bridge|pont|outro)\b/.test(foldedTag)) return;
+    const nextLine = String(lines[index + 1] || '');
+    if (performerTagPattern.test(nextLine)) return;
+
+    const taggedArtists = artistCast.artists.filter((artist) => (
+      new RegExp(`(^|\\s)${escapeRegExp(foldTextForLookup(artist.label))}(\\s|$)`).test(foldedTag)
+    ));
+    const isShared = /\b(duo|tous|toutes|ensemble)\b/.test(foldedTag) || taggedArtists.length > 1;
+    if (isShared && artistCast.count > 1) {
+      output.push('[Duo]');
+    } else if (taggedArtists.length === 1) {
+      output.push(taggedArtists[0].tag);
+    }
+  });
+
+  return output.join('\n');
+}
+
 function ensureVivyPublicLyricsArtistTags(input = {}, lyrics = '') {
   let publicLyrics = sanitizeVivyPublicLyrics(lyrics);
   if (!publicLyrics) return '';
 
   const artistCast = buildVivySongArtistCast(input);
   if (!artistCast || artistCast.count <= 1) return publicLyrics;
+  publicLyrics = sanitizeVivyPublicLyrics(injectVivySectionArtistTags(publicLyrics, artistCast));
 
   const missingArtistTag = artistCast.artists.some((artist) => !hasVivyLyricsTag(publicLyrics, artist.tag));
   const missingSharedTag = !/(^|\n)\s*\[(Duo|Tous)\]\s*(\n|$)/i.test(publicLyrics);

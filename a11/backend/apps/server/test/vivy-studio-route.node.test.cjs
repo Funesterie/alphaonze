@@ -963,6 +963,7 @@ test('Vivy chat prompt keeps original musical direction and avoids canned replie
   assert.match(prompt, /rimes audibles/i);
   assert.match(prompt, /libert[eé] cr[eé]ative/i);
   assert.match(prompt, /mot.*ajout[eé].*fin de vers|fin de vers.*mot.*ajout[eé]/i);
+  assert.match(prompt, /mots? identiques?.*rime|rime.*mots? identiques?/i);
   assert.match(prompt, /A11.*masculin/i);
   assert.match(prompt, /Vivy.*f[eé]minin/i);
   assert.match(prompt, /Artistes de cette chanson: (?:A11.*Vivy|Vivy.*A11)/i);
@@ -1182,6 +1183,35 @@ test('Vivy removes an unselected singer from a provider duo draft', () => {
   assert.match(lyrics, /\[(?:VIVY|Vivy)\]/);
   assert.match(lyrics, /\[(?:DUO|Duo)\]/);
   assert.doesNotMatch(lyrics, /\[Djeff\]|Verse 2 - Djeff/i);
+});
+
+test('Vivy preserves a provider song and injects standalone cast tags from section headings', () => {
+  const lyrics = buildVivyPublicLyrics({
+    songArtists: ['a11', 'vivy'],
+    songText: 'Une fenêtre condamnée que deux voix ouvrent ensemble.',
+  }, [
+    '[Verse 1 - Vivy]',
+    'La rouille cède enfin sous mes doigts de lumière,',
+    'Le matin prend appui sur le bord du volet,',
+    'Je suis prête à pousser la dernière barrière,',
+    'Et le vent neuf répond dans le verre fêlé.',
+    '[Verse 2 - A11]',
+    'Je suis debout, précis, devant la serrure,',
+    'Mes circuits font vibrer les gonds de la maison,',
+    'Je dévisse un à un les clous de la clôture,',
+    'Puis je rends au dehors toute sa déraison.',
+    '[Chorus - Vivy & A11]',
+    'À deux nous ouvrons la fenêtre captive,',
+    'Deux timbres dans le jour déplacent les frontières,',
+    'La poussière retombe et la rue devient vive,',
+    'Nos voix changent les murs en passages de lumière.',
+  ].join('\n'));
+
+  assert.match(lyrics, /La rouille cède enfin/);
+  assert.match(lyrics, /\[(?:VIVY|Vivy)\]/);
+  assert.match(lyrics, /\[A11\]/);
+  assert.match(lyrics, /\[(?:DUO|Duo)\]/);
+  assert.doesNotMatch(lyrics, /On entre dans|le signal se façonne/i);
 });
 
 test('Vivy memory reset only clears the requested detached conversation', async () => {
@@ -1640,6 +1670,34 @@ test('Vivy LLM config can use xAI credentials when requested', () => {
     assert.equal(config.baseURL, 'https://api.x.ai/v1');
     assert.equal(config.apiKey, 'test-xai-key');
     assert.equal(config.model, 'grok-test-model');
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('Vivy song writing prefers xAI when xAI and Groq are both available', () => {
+  const previous = {
+    VIVY_CHAT_PROVIDER: process.env.VIVY_CHAT_PROVIDER,
+    VIVY_SONG_PROVIDER: process.env.VIVY_SONG_PROVIDER,
+    VIVY_OPENAI_BASE_URL: process.env.VIVY_OPENAI_BASE_URL,
+    VIVY_SONG_OPENAI_BASE_URL: process.env.VIVY_SONG_OPENAI_BASE_URL,
+    VIVY_XAI_API_KEY: process.env.VIVY_XAI_API_KEY,
+    GROQ_API_KEY: process.env.GROQ_API_KEY,
+  };
+  try {
+    delete process.env.VIVY_CHAT_PROVIDER;
+    delete process.env.VIVY_SONG_PROVIDER;
+    delete process.env.VIVY_OPENAI_BASE_URL;
+    delete process.env.VIVY_SONG_OPENAI_BASE_URL;
+    process.env.VIVY_XAI_API_KEY = 'test-xai-song-key';
+    process.env.GROQ_API_KEY = 'test-groq-fallback-key';
+
+    const config = getVivyOpenAIConfig({ mode: 'song' });
+    assert.equal(config.provider, 'xai');
+    assert.equal(config.model, 'grok-3-fast');
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];
