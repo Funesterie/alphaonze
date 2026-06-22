@@ -29,6 +29,7 @@ const {
   isVivyMcpNeo4jQuestion,
   isVivyToolCapabilityQuestion,
   looksLikeWeakSongwritingReply,
+  normalizeVivyChatHistory,
   postProcessVivyAssistantText,
   sanitizeVivyPublicText,
   shouldVivyAutoWebSearch,
@@ -2020,6 +2021,118 @@ test('Vivy does not answer a Codex MCP relay request with the generic MCP defini
   assert.match(result.assistant, /pont Codex\/A11|Codex\/A11/i);
   assert.doesNotMatch(result.assistant, /MCP veut dire Model Context Protocol/i);
   assert.doesNotMatch(result.assistant, /ENTERA|GHOST88/i);
+});
+
+test('Vivy routes complete lyrics before stale MCP memory', async () => {
+  const lyrics = `[Title: Bloqué Devant Cette Page]
+[Style]
+French electro rap summer hit.
+[Intro - Djeff]
+Le sable chaud sous les pieds, c'est du silicium.
+[Verse 1 - Djeff]
+Le web me tient la jambe, la mer me tend les bras.
+Chaque clic fait du bruit, chaque rêve fait naufrage.
+[Pre-Chorus - Vivy]
+Sable chaud, silicium, soleil dans le système.
+[Chorus - Duo]
+On va se faire la malle, à bord du bateau à voile.
+On pagaye dans la vie, même quand le ciel déraille.
+[Verse 2 - Djeff]
+La mer devient mémoire, le vent nettoie la tristesse.
+[Bridge - Vivy]
+Le cœur reprend la main et le monde bascule.
+[Outro - Duo]
+On redémarre l'âme. Ça va ?`;
+
+  assert.equal(isVivyMcpNeo4jQuestion({
+    history: [
+      { role: 'assistant', content: 'Oui, avec le MCP: dans Funesterie, MCP veut dire Model Context Protocol.' },
+      { role: 'assistant', content: 'Neo4j contient ENTERA et GHOST88.' },
+    ],
+  }, lyrics), false);
+
+  const result = await buildVivyAiChat({
+    mode: 'chat',
+    conversationId: 'vivy-song-priority-over-mcp',
+    message: lyrics,
+    history: [
+      { role: 'assistant', content: 'Oui, avec le MCP: dans Funesterie, MCP veut dire Model Context Protocol.' },
+      { role: 'assistant', content: 'Pour ENTERA / GHOST88, je prépare une recherche Neo4j.' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'song');
+  assert.match(result.assistant, /Bloqué Devant Cette Page|sable chaud|silicium/i);
+  assert.doesNotMatch(result.assistant, /MCP veut dire Model Context Protocol|Neo4j|ENTERA|GHOST88/i);
+});
+
+test('Vivy keeps the full 24-message browser history', () => {
+  const history = Array.from({ length: 24 }, (_, index) => ({
+    role: index % 2 === 0 ? 'user' : 'assistant',
+    content: `tour-${index + 1}`,
+  }));
+
+  const normalized = normalizeVivyChatHistory(history);
+
+  assert.equal(normalized.length, 24);
+  assert.equal(normalized[0].content, 'tour-1');
+  assert.equal(normalized.at(-1).content, 'tour-24');
+});
+
+test('Vivy keeps complete song outputs beyond the former 5000 character ceiling', () => {
+  const verses = Array.from({ length: 95 }, (_, index) => (
+    `Ligne ${index + 1}: le sable devient silicium et la vague garde la mémoire du signal.`
+  ));
+  const lyrics = [
+    '[Title: Chanson Longue]',
+    '[Intro - Vivy]',
+    'Le signal commence ici.',
+    '[Verse 1 - Vivy]',
+    ...verses,
+    '[Chorus - Vivy]',
+    'Je garde le fil jusqu’au bout.',
+    '[Outro - Vivy]',
+    'FIN_DE_LA_CHANSON_COMPLETE',
+  ].join('\n');
+  assert.ok(lyrics.length > 5000);
+
+  const result = buildVivyStudioProduction({
+    mode: 'song',
+    songArtists: ['vivy'],
+    songText: lyrics,
+  });
+
+  assert.ok(result.publicLyrics.length > 5000);
+  assert.match(result.publicLyrics, /FIN_DE_LA_CHANSON_COMPLETE/);
+});
+
+test('Vivy frontend labels prepared audio as V9 dynamic', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+
+  assert.match(appSource, /Version : V9 Dynamique/);
+  assert.doesNotMatch(appSource, /Version : V6 Supreme/);
+});
+
+test('Vivy mobile composer does not double-scroll with the visual viewport', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const cssSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/index.css'),
+    'utf8'
+  );
+  const viewportHandler = appSource.match(/const onViewportChange = \(\) => \{[\s\S]*?\n    \};/)?.[0] || '';
+  const mobileComposer = cssSource.match(/\.vivy-chat-compose \{\s*grid-template-columns: 1fr;[\s\S]*?\n  \}/)?.[0] || '';
+
+  assert.ok(viewportHandler);
+  assert.doesNotMatch(viewportHandler, /keepComposerVisible/);
+  assert.ok(mobileComposer);
+  assert.doesNotMatch(mobileComposer, /--vivy-keyboard-inset/);
 });
 
 test('Vivy acknowledges repetition complaints instead of recycling the chat fallback', async () => {

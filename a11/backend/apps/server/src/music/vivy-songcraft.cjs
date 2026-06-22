@@ -8,7 +8,7 @@ const {
   normalizeLanguageCode,
 } = require('../../lib/language-text.cjs');
 
-const VIVY_SONG_MAX_CHARS = 5000;
+const VIVY_SONG_MAX_CHARS = 12000;
 
 function cleanText(value, max = 2400) {
   return normalizeTextNfc(value, max);

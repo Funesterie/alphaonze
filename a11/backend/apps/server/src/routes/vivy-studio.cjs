@@ -196,7 +196,9 @@ function parseVivyChatMode(value) {
 
 function resolveVivyChatMode(input = {}, message = '') {
   const rawMode = cleanOneLine(input.mode, '', 24);
-  if (rawMode) return parseVivyChatMode(rawMode);
+  if (rawMode && parseVivyChatMode(rawMode) !== 'chat') return parseVivyChatMode(rawMode);
+  if (looksLikeCompleteLyrics(message)) return 'song';
+  if (rawMode) return 'chat';
   if (isDirectSongwritingRequest(message)) return 'song';
   return inferVivyChatMode(cleanVivyMessageForIntent(message));
 }
@@ -238,13 +240,13 @@ function cleanVivyAgentBrief(value = '', max = 6000) {
 }
 
 function cleanVivyMessageForIntent(value = '') {
-  const raw = cleanText(value, 2600);
+  const raw = cleanText(value, VIVY_SONG_MAX_CHARS);
   if (!raw) return '';
   if (!/\bVIVY_|VIVY\s+PRODUCTION|Mix D40|double-harmonic|Même format prêt|Meme format pret|token=/i.test(raw)) {
     return raw;
   }
-  const songMaterial = sanitizeVivySongMaterial(raw, 2400);
-  return cleanText(songMaterial || redactVivyAgentBriefSecrets(raw), 2400);
+  const songMaterial = sanitizeVivySongMaterial(raw, VIVY_SONG_MAX_CHARS);
+  return cleanText(songMaterial || redactVivyAgentBriefSecrets(raw), VIVY_SONG_MAX_CHARS);
 }
 
 function isVivyInternalPublicLeakLine(line = '') {
@@ -276,7 +278,7 @@ function sanitizeVivyPublicText(value = '', max = 1800) {
 }
 
 function stripVivyAscii4SoundTokens(value = '', max = 2600) {
-  return cleanText(stripLegacySignalTokens(value), max);
+  return cleanText(stripLegacySignalTokens(value, max), max);
 }
 
 function hashShort(value, max = 24) {
@@ -1010,6 +1012,7 @@ function stripVivyOperatorTranscript(value = '') {
 
 function shouldVivyAutoWebSearch(message = '', mode = 'chat') {
   if (looksLikeVivyRenderedWebResearch(message)) return false;
+  if (mode === 'song' && looksLikeCompleteLyrics(message)) return false;
   const searchableMessage = stripVivyOperatorTranscript(message);
   const normalized = foldTextForLookup(searchableMessage);
   if (!normalized) return false;
@@ -1876,10 +1879,10 @@ function buildVivySystemPrompt(mode, language, input) {
 function normalizeVivyChatHistory(history) {
   if (!Array.isArray(history)) return [];
   return history
-    .slice(-10)
+    .slice(-24)
     .map((entry) => {
       const role = String(entry?.role || '').toLowerCase() === 'assistant' ? 'assistant' : 'user';
-      const content = cleanText(entry?.content, 900);
+      const content = cleanText(entry?.content, 1200);
       return content ? { role, content } : null;
     })
     .filter(Boolean);
@@ -2959,6 +2962,11 @@ function logVivySongcraftTrace({ provider = 'deterministic', model = 'vivy-songc
 }
 
 function buildVivyDirectSongReply(input = {}) {
+  const completeLyrics = [input.message, input.songText, input.lyrics, input.text]
+    .find((value) => looksLikeCompleteLyrics(value));
+  if (completeLyrics) {
+    return buildVivyStructuredLyrics({ ...input, songText: completeLyrics });
+  }
   const historyText = sanitizeVivySongMaterial(getVivyUserHistoryText(input.history), 1600);
   const material = stripVivyAscii4SoundTokens(compactUniqueLines([
     historyText,
@@ -2968,8 +2976,8 @@ function buildVivyDirectSongReply(input = {}) {
     input.text,
     input.theme,
     input.instruction,
-  ], 2600));
-  const cleanMaterial = sanitizeVivySongMaterial(material, 2600);
+  ], VIVY_SONG_MAX_CHARS));
+  const cleanMaterial = sanitizeVivySongMaterial(material, VIVY_SONG_MAX_CHARS);
   const voiceProfile = getVivyStudioVoiceProfile({ ...input, songText: cleanMaterial || material || input.songText || input.message });
   const songcraft = buildVivySongProductionBrief({
     ...input,
@@ -3019,14 +3027,15 @@ function getVivyUserHistoryText(history = []) {
 }
 
 function isVivyMcpNeo4jQuestion(input = {}, message = '') {
+  if (looksLikeCompleteLyrics(message)) return false;
   const current = normalizeVivyCapabilityText(message);
   const recent = normalizeVivyCapabilityText(getVivyHistoryText(input.history));
   if (!current) return false;
   if (isVivyMcpCodexRelayRequest(message)) return false;
 
   const mentionsMcp = /\bmcp\b|model context protocol/.test(current);
-  const mentionsNeo4j = /\bneo4j\b|\bcypher\b|\bgraphe\b|\bgraph\b|\bmemoire\b|\bmemory\b/.test(current);
-  const recentMentionsNeo4j = /\bneo4j\b|\bcypher\b|\bgraphe\b|\bgraph\b|\bmemoire\b|\bmemory\b/.test(recent);
+  const mentionsNeo4j = /\bneo4j\b|\bcypher\b|\bgraphe\b|\bgraph\b/.test(current);
+  const recentMentionsNeo4j = /\bneo4j\b|\bcypher\b|\bgraphe\b|\bgraph\b/.test(recent);
   if (!mentionsMcp && !mentionsNeo4j) return false;
 
   if (/^avec\s+le\s+mcp\b/.test(current) && recentMentionsNeo4j) return true;
@@ -3183,7 +3192,7 @@ function buildVivyToolCapabilityReply({ localContext = null, language = 'fr' } =
 }
 
 function buildVivyChat(input) {
-  const message = cleanText(input.message || input.prompt || input.songText || input.text, 1800);
+  const message = cleanText(input.message || input.prompt || input.songText || input.text, VIVY_SONG_MAX_CHARS);
   const intentMessage = cleanVivyMessageForIntent(message);
   const mode = resolveVivyChatMode(input, message);
   const files = normalizeVivyFiles(input);
@@ -3218,7 +3227,7 @@ function buildVivyChat(input) {
     ...input,
     mode: MODES.has(mode) ? mode : 'song',
     songSource: input.songSource || 'Conversation',
-    songText: mode === 'song' ? compactUniqueLines([history.join('\n'), intentMessage || message], 2200) : input.songText,
+    songText: mode === 'song' ? compactUniqueLines([history.join('\n'), intentMessage || message], VIVY_SONG_MAX_CHARS) : input.songText,
     voiceInstruction: mode === 'voice' ? compactUniqueLines([history.join('\n'), intentMessage || message], 1200) : input.voiceInstruction,
     shareInstruction: mode === 'share' ? compactUniqueLines([history.join('\n'), intentMessage || message], 1200) : input.shareInstruction,
     shareToken: undefined,
@@ -3293,7 +3302,7 @@ function postProcessVivyAssistantText({ text = '', userMessage = '', systemPromp
 }
 
 async function buildVivyAiChat(input, req) {
-  const message = cleanText(input.message || input.prompt || input.songText || input.text, 2600);
+  const message = cleanText(input.message || input.prompt || input.songText || input.text, VIVY_SONG_MAX_CHARS);
   const intentMessage = cleanVivyMessageForIntent(message);
   const mode = resolveVivyChatMode(input, message);
   const files = normalizeVivyFiles(input);
@@ -3379,7 +3388,7 @@ async function buildVivyAiChat(input, req) {
     };
   }
 
-  if (isVivyMcpNeo4jQuestion(input, intentMessage || message)) {
+  if (mode !== 'song' && isVivyMcpNeo4jQuestion(input, intentMessage || message)) {
     const mcpReply = buildVivyMcpNeo4jReply({ language });
     rememberVivyEpisode(userId, 'vivy_reply', mcpReply.assistant, {
       mode: 'chat',
@@ -3586,13 +3595,14 @@ async function buildVivyAiChat(input, req) {
   }
 
   try {
-    const memoryContext = buildVivyMemoryContext(userId, input.conversationId);
-    const history = normalizeVivyChatHistory(input.history);
+    const detachedCompleteSong = mode === 'song' && looksLikeCompleteLyrics(intentMessage || message);
+    const memoryContext = detachedCompleteSong ? '' : buildVivyMemoryContext(userId, input.conversationId);
+    const history = detachedCompleteSong ? [] : normalizeVivyChatHistory(input.history);
     const userContent = compactUniqueLines([
       intentMessage || message,
       localContext ? `Contexte local Funesterie/A11 en lecture seule:\n${localContext.prompt}` : '',
       fileContext ? `Pièces jointes et contexte fichier:\n${fileContext}` : '',
-    ], 4200) || 'Continue la conversation Vivy avec douceur et précision.';
+    ], VIVY_SONG_MAX_CHARS) || 'Continue la conversation Vivy avec douceur et précision.';
 
     const systemPrompt = buildVivySystemPrompt(mode, language, input);
     const messages = [
@@ -3610,7 +3620,7 @@ async function buildVivyAiChat(input, req) {
       temperature: mode === 'song'
         ? Number(process.env.VIVY_CHAT_TEMPERATURE_SONG || process.env.VIVY_CHAT_TEMPERATURE || 0.88)
         : Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74),
-      max_tokens: mode === 'song' ? Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || 2200) : Number(process.env.VIVY_CHAT_MAX_TOKENS || 900),
+      max_tokens: mode === 'song' ? Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || 3200) : Number(process.env.VIVY_CHAT_MAX_TOKENS || 900),
     });
     const rawAssistant = cleanText(completion?.choices?.[0]?.message?.content, mode === 'song' ? songResponseMaxChars : 3200);
     let _vivyLlmLatency = Date.now() - _vivyLlmStart;
@@ -3639,7 +3649,7 @@ async function buildVivyAiChat(input, req) {
             { role: 'user', content: 'Écris uniquement les paroles complètes. Pas d’explication, pas de commentaire. Format: [Intro], [Verse 1], [Chorus], [Bridge], [Outro].' },
           ].filter(Boolean),
           temperature: Number(process.env.VIVY_CHAT_TEMPERATURE_SONG || process.env.VIVY_CHAT_TEMPERATURE || 0.88),
-          max_tokens: Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || 2200),
+          max_tokens: Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || 3200),
         });
         const retryRaw = cleanText(retryCompletion?.choices?.[0]?.message?.content, songResponseMaxChars);
         const retryProcessed = postProcessVivyAssistantText({ text: retryRaw, userMessage: message, systemPrompt, mode, maxChars: songResponseMaxChars });
@@ -4835,6 +4845,7 @@ module.exports = {
   buildVivyMusicPrompt,
   buildVivyChat,
   buildVivyAiChat,
+  normalizeVivyChatHistory,
   getVivyOpenAIConfig,
   buildVivyMemoryContext,
   buildVivySystemPrompt,

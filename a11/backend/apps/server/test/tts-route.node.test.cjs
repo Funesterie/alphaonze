@@ -3852,8 +3852,14 @@ test('tts out local generated assets survive repeated browser reads', async () =
   const publicTtsDir = path.resolve(__dirname, '..', '..', '..', 'public', 'tts');
   const filename = `tts-out-test-${process.pid}-${Date.now()}.mp3`;
   const filePath = path.join(publicTtsDir, filename);
+  const previousFetch = global.fetch;
+  const remoteCalls = [];
   fs.mkdirSync(publicTtsDir, { recursive: true });
   fs.writeFileSync(filePath, Buffer.from('ID3fake-mp3'));
+  global.fetch = async (url, options) => {
+    remoteCalls.push(String(url));
+    return previousFetch(url, options);
+  };
 
   try {
     await withServer(
@@ -3861,18 +3867,20 @@ test('tts out local generated assets survive repeated browser reads', async () =
         app.use('/api', ttsRouter);
       },
       async (baseUrl) => {
-        const first = await fetch(`${baseUrl}/api/tts/out/${filename}`);
+        const first = await previousFetch(`${baseUrl}/api/tts/out/${filename}`);
         assert.equal(first.status, 200);
         assert.match(String(first.headers.get('content-type') || ''), /audio\/mpeg/i);
         assert.equal(Buffer.from(await first.arrayBuffer()).toString(), 'ID3fake-mp3');
         assert.equal(fs.existsSync(filePath), true);
 
-        const second = await fetch(`${baseUrl}/api/tts/out/${filename}`);
+        const second = await previousFetch(`${baseUrl}/api/tts/out/${filename}`);
         assert.equal(second.status, 200);
         assert.equal(Buffer.from(await second.arrayBuffer()).toString(), 'ID3fake-mp3');
+        assert.deepEqual(remoteCalls, []);
       }
     );
   } finally {
+    global.fetch = previousFetch;
     fs.rmSync(filePath, { force: true });
   }
 });

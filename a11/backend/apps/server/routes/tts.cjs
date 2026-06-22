@@ -5256,6 +5256,16 @@ router.get('/tts/out/:filename', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'invalid_tts_asset' });
   }
 
+  const localPath = [
+    path.join(getPublicTtsDir(), filename),
+    path.join(getCanonicalTtsDir(), 'out', filename),
+  ].find((candidate) => fs.existsSync(candidate));
+  if (localPath) {
+    res.setHeader('Content-Type', contentTypeForTtsAsset(filename));
+    res.setHeader('Cache-Control', 'no-store');
+    return res.sendFile(localPath);
+  }
+
   const ttsConfig = getLocalTtsConfig();
   const remoteBaseUrls = uniqueBaseUrls([
     ...getDirectXttsRvcBaseUrls(),
@@ -5282,17 +5292,7 @@ router.get('/tts/out/:filename', async (req, res) => {
     }
   }
 
-  const localPath = [
-    path.join(getPublicTtsDir(), filename),
-    path.join(getCanonicalTtsDir(), 'out', filename),
-  ].find((candidate) => fs.existsSync(candidate));
-  if (!localPath) {
-    return res.status(404).json({ ok: false, error: 'tts_asset_not_found' });
-  }
-
-  res.setHeader('Content-Type', contentTypeForTtsAsset(filename));
-  res.setHeader('Cache-Control', 'no-store');
-  return res.sendFile(localPath);
+  return res.status(404).json({ ok: false, error: 'tts_asset_not_found' });
 });
 
 router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {

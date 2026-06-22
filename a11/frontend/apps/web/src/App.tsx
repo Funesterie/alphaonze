@@ -2207,7 +2207,7 @@ const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v8: "V8 Fermeture",
   v8plus: "V8 Plus e2",
   v8pivot: "V8 Pivot",
-  v9turbo: "V9 Turbo",
+  v9turbo: "V9 Dynamique",
 };
 const D40_OUTPUT_FORMAT_LABELS: Record<DoubleHarmonicOutputFormat, string> = {
   flac: "FLAC master",
@@ -2886,6 +2886,7 @@ const VIVY_PUBLIC_CONVERSATION_ID_KEY = "vivy:conversation-id";
 const VIVY_PUBLIC_VOICE_REFERENCE_KEY = "vivy:voice-reference";
 const VIVY_PRIVATE_REFERENCE_UPLOAD_LIMIT_BYTES = 20 * 1024 * 1024;
 const VIVY_VOICE_CATALOG_CONSENT = "voice-catalog-song-v1";
+const VIVY_STUDIO_SONG_MAX_CHARS = 12000;
 
 function getVivyVoiceTuning(vocalMode?: string | null): Record<string, number> {
   return String(vocalMode || "").toLowerCase() === "sing"
@@ -3889,12 +3890,12 @@ function VivyD9DiagnosticsPanel({ prosody }: { prosody: VivyStudioProductionResu
   return (
     <section className="vivy-studio-diagnostics vivy-studio-diagnostics--supreme" aria-label="Version audio Vivy">
       <header>
-        <span>Version : V6 Supreme</span>
-        <small>Même format par défaut · k 3x · M/K · D40</small>
+        <span>Version : V9 Dynamique</span>
+        <small>Même format par défaut · k 3x · dynamique 99 ms · pivot 0.292 · 1024</small>
       </header>
       <p>
         Préparation Vivy prête: {segments.length || 1} segment{(segments.length || 1) > 1 ? "s" : ""} calé{(segments.length || 1) > 1 ? "s" : ""}.
-        Le traitement audio final se fait avec Mix D40 V6 Supreme.
+        Le traitement audio final se fait avec Mix D40 V9 Dynamique.
       </p>
     </section>
   );
@@ -3987,7 +3988,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const doubleHarmonicWeightLabel = doubleHarmonicMode === "v3"
     ? "Auto"
     : doubleHarmonicMode === "v9turbo"
-      ? `k ${doubleHarmonicIntensityLabel} · turbo 99 ms · pivot 0.292 · 1024`
+      ? `k ${doubleHarmonicIntensityLabel} · dynamique 99 ms · pivot 0.292 · 1024`
     : doubleHarmonicMode === "v8pivot"
       ? `k ${doubleHarmonicIntensityLabel} · pivot 0.292 · 1024`
     : doubleHarmonicMode === "v8plus"
@@ -4006,7 +4007,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
           ? `${doubleHarmonicIntensityLabel} · grain bas x${D40_V4_LOW_GRAIN_MULTIPLIER} · haut ^${D40_V4_HIGH_GRAIN_POWER}`
           : doubleHarmonicIntensityLabel;
   const doubleHarmonicIntensityTitle = doubleHarmonicMode === "v9turbo"
-    ? "V9 Turbo"
+    ? "V9 Dynamique"
     : doubleHarmonicMode === "v8pivot"
     ? "V8 Pivot"
     : doubleHarmonicMode === "v8plus"
@@ -5002,7 +5003,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       setStatus("Connexion requise pour générer une chanson Vivy.");
       return;
     }
-    const prompt = toUnicodeText(songText || voiceInstruction || songMood, 5000).trim();
+    const prompt = toUnicodeText(songText || voiceInstruction || songMood, VIVY_STUDIO_SONG_MAX_CHARS).trim();
     if (!prompt) {
       setStatus("Écris un prompt, un thème ou quelques paroles pour générer la chanson.");
       return;
@@ -5042,7 +5043,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       const payloadAny = payload as any;
       let finalPayload: any = payloadAny;
       setVivyDiagnostics(payload.prosody || null);
-      const publicLyrics = toUnicodeText(payloadAny?.publicLyrics || prompt, 5000).trim();
+      const publicLyrics = toUnicodeText(payloadAny?.publicLyrics || prompt, VIVY_STUDIO_SONG_MAX_CHARS).trim();
       setVivyLyrics(publicLyrics);
       let mediaUrl = getVivySongMediaUrl(finalPayload);
       const taskId = String(payloadAny?.mediaStatus?.taskId || payloadAny?.musicJob?.taskId || payloadAny?.media?.taskId || "").trim();
@@ -5828,7 +5829,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                   setDoubleHarmonicResult(null);
                 }}
               >
-                <option value="v9turbo">V9 Turbo</option>
+                <option value="v9turbo">V9 Dynamique</option>
                 <option value="v8pivot">V8 Pivot</option>
                 <option value="v8plus">V8 Plus e2</option>
                 <option value="v8">V8 Fermeture</option>
@@ -6087,7 +6088,6 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
 
     const viewport = window.visualViewport;
     let settleTimer = 0;
-    let viewportFrame = 0;
 
     const setKeyboardInset = () => {
       const inset = viewport
@@ -6126,8 +6126,6 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     const onViewportChange = () => {
       if (!document.body.classList.contains("vivy-keyboard-open")) return;
       setKeyboardInset();
-      window.cancelAnimationFrame(viewportFrame);
-      viewportFrame = window.requestAnimationFrame(() => keepComposerVisible("auto"));
     };
 
     root.addEventListener("focusin", onFocusIn);
@@ -6143,7 +6141,6 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       viewport?.removeEventListener("scroll", onViewportChange);
       window.removeEventListener("orientationchange", onViewportChange);
       window.clearTimeout(settleTimer);
-      window.cancelAnimationFrame(viewportFrame);
       document.body.classList.remove("vivy-keyboard-open");
       document.documentElement.style.setProperty("--vivy-keyboard-inset", "0px");
     };
