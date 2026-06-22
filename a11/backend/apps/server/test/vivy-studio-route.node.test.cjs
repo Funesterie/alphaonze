@@ -201,6 +201,28 @@ Dans les ténèbres, je cherche la lumière.`,
   assert.match(payload.style, /battement de tambour/i);
 });
 
+test('Vivy chat returns a Suno prompt instead of stale opinion fallback', async () => {
+  const result = await buildVivyAiChat({
+    mode: 'chat',
+    message: 'bah donne juste le prompt pour faire la musique suno',
+    history: [
+      { role: 'user', content: 'écrite une chason sur le film "torque"' },
+      { role: 'assistant', content: 'Ford, Shane et des bikers lancés dans une course.' },
+      { role: 'user', content: "je pense qu'en une demi seconde t'a pu voir l'univers de torque et faire la musique ca me parait un peu trop rapide" },
+    ],
+  }, {
+    user: { id: 'vivy-suno-prompt-test' },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.match(result.assistant, /Prompt Suno:/i);
+  assert.match(result.assistant, /torque/i);
+  assert.match(result.assistant, /motorcycle|biker|engines/i);
+  assert.doesNotMatch(result.assistant, /Mon avis franc/i);
+  assert.doesNotMatch(result.assistant, /Ford|Shane/i);
+});
+
 test('Vivy ElevenLabs instrumental prompt stays within the provider contract and omits lyrics', () => {
   const longLyrics = `[Intro - Vivy]\n(Soft piano + léger battement de tambour)\n${'Dans les ténèbres, je cherche la lumière.\n'.repeat(140)}`;
   const prompt = buildVivyMusicPrompt({

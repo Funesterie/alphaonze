@@ -2392,6 +2392,87 @@ function isVivyNormalSpeechRequest(message = '') {
     || /\bpas\s+de\s+(diagnostic|formulaire|mode voix|technique)\b/.test(normalized);
 }
 
+function isVivySunoPromptRequest(message = '', historyText = '') {
+  const current = foldTextForLookup(message);
+  const context = foldTextForLookup(`${historyText}\n${message}`);
+  if (!current) return false;
+
+  const asksPrompt = /\b(prompt|consigne|style|copie|colle)\b/.test(current);
+  const musicTarget = /\b(suno|musique|music|chanson|son|lyrics|paroles)\b/.test(context);
+  const directSuno = /\bsuno\b/.test(current)
+    && /\b(donne|donnes|prepare|prépare|fais|fait|sort|juste|prompt|musique|chanson|copie|colle)\b/.test(current);
+  const promptForMusic = asksPrompt
+    && /\b(pour|faire|generer|générer|creer|créer|lancer|musique|music|suno|chanson|son)\b/.test(current);
+
+  return (asksPrompt && musicTarget) || directSuno || promptForMusic;
+}
+
+function isVivyPromptConfusionPing(message = '') {
+  const normalized = foldTextForLookup(message)
+    .replace(/[.!?]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return /^(quoi|hein|pourquoi|\?|bah|euh|allo|alo)$/.test(normalized);
+}
+
+function inferVivySunoPromptArtists(value = '') {
+  const folded = foldTextForLookup(value);
+  const artists = [];
+  if (/\bdjeff\b/.test(folded)) artists.push('djeff');
+  if (/\ba11\b|\balpha\s*onze\b|\balphaonze\b/.test(folded)) artists.push('a11');
+  if (/\bk44\b|\bkaen44\b|\bkaen\b/.test(folded)) artists.push('k44');
+  if (/\bvivy\b/.test(folded) || artists.length === 0) artists.push('vivy');
+  return [...new Set(artists)];
+}
+
+function extractVivySunoPromptTheme(message = '', historyText = '') {
+  const combined = compactUniqueLines([historyText, message], 1800);
+  const filmMatch = combined.match(/\bfilm\s+["'“”]?([^"'“”\r\n?.!,;:]{2,80})/i);
+  if (filmMatch) {
+    return cleanOneLine(`le film ${filmMatch[1]}`, 'une course nocturne', 120);
+  }
+
+  const quoted = combined.match(/["'“”]([^"'“”\r\n]{2,90})["'“”]/);
+  if (quoted && /\b(prompt|suno|musique|chanson|film|sur)\b/i.test(combined)) {
+    return cleanOneLine(quoted[1], 'une course nocturne', 120);
+  }
+
+  const candidates = sanitizeVivySongMaterial(combined, 1200)
+    .split(/\n+/)
+    .map((line) => cleanOneLine(line, '', 180))
+    .filter(Boolean)
+    .filter((line) => {
+      const folded = foldTextForLookup(line);
+      return !/^(je pense|bah donne|donne|donnes|juste|prompt|qu en penses|ca me parait|ça me parait|trop rapide|vous|copier)\b/.test(folded)
+        && !/\b(prompt|suno)\b/.test(folded);
+    });
+  return cleanOneLine(candidates[0], 'une course nocturne', 120);
+}
+
+function buildVivySunoPromptChatReply({ message = '', historyText = '', fileLine = '' } = {}) {
+  const source = compactUniqueLines([historyText, message], 1800);
+  const theme = extractVivySunoPromptTheme(message, historyText);
+  const foldedTheme = foldTextForLookup(`${theme}\n${source}`);
+  const artists = inferVivySunoPromptArtists(source);
+  const artistCast = buildVivySongArtistCast({
+    songArtists: artists,
+    songText: source,
+  });
+  const bikerStyle = /\b(torque|moto|motard|biker|bike|moteur|vitesse|course|route|asphalte|pneu|poursuite)\b/.test(foldedTheme);
+  const style = bikerStyle
+    ? `French original cinematic biker electro-rock, industrial rap edge, high-speed motorcycle chase energy, neon asphalt, roaring engines, aggressive synth bass, distorted guitars, tight drums, adrenaline chorus, ${artistCast.label} vocal lead, structured rhymed lyrics, sung vocals, no spoken narration, no copyrighted melody, no celebrity voice imitation`
+    : `${artistCast.sunoStyle}, cinematic production, strong hook, clean modern mix, no copyrighted melody, no celebrity voice imitation`;
+  const themeLine = bikerStyle
+    ? `Theme: original song inspired by ${theme}; speed, rival crews, pressure, neon road, engine heat, freedom and danger.`
+    : `Theme: original song inspired by ${theme}.`;
+
+  return cleanText([
+    'Prompt Suno:',
+    `${style}. ${themeLine}`,
+    fileLine,
+  ].filter(Boolean).join('\n'), 1400);
+}
+
 function getVivySmallTalkReply(message = '', { fileLine = '' } = {}) {
   const normalized = foldTextForLookup(message)
     .replace(/[.!?]+$/g, '')
@@ -2451,13 +2532,14 @@ function buildVivyGeneralChatFallbackReply({ message = '', current = '', history
         "Les ajustements internes doivent rester invisibles côté utilisateur; Vivy doit parler du fond, puis proposer une action seulement si elle aide.",
       ].join('\n');
     }
-    if (/\b(audio|son|d40|v6|supreme|mix|grain|harmonique|resonance|résonance|poids)\b/.test(folded)) {
+    if (/\b(audio|son|d40|v6|supreme|mix|grain|harmonique|resonance|résonance|poids)\b/.test(currentFolded)) {
       return "Sur l'audio, je te suis: dis-moi ce que tu entends et ce que tu veux ajuster, et on compare le grain, la présence et la résonance ensemble.";
     }
-    if (/\b(site|bug|route|routage|prod|deploy|deploiement|déploiement|interface|bouton|menu)\b/.test(folded)) {
+    if (/\b(site|bug|route|routage|prod|deploy|deploiement|déploiement|interface|bouton|menu)\b/.test(currentFolded)) {
       return "Pour ce point, on avance simplement: ce qui s'affiche, ce qui devrait s'afficher, puis le plus petit correctif vérifiable.";
     }
-    if (/\b(pense|avis|idee|idée|theorie|théorie|intuition|comprendre)\b/.test(folded)) {
+    if (!isVivySunoPromptRequest(message, historyText)
+      && /\b(pense|avis|idee|idée|theorie|théorie|intuition|comprendre)\b/.test(currentFolded)) {
       return "Mon avis franc: c'est une vraie idée de travail. Je peux être d'accord, douter, ou te proposer un test concret.";
     }
     const subject = cleanOneLine(current || summarizeChatMessage(message), 'ton dernier message', 180);
@@ -2574,6 +2656,17 @@ function buildVivyFreeformChatReply({ message = '', files = [], history = [] } =
   const djeffRapSource = hasVivyDjeffRapMaterial(message)
     ? message
     : (isAcknowledgement && hasVivyDjeffRapMaterial(lastUserMessage) ? lastUserMessage : '');
+  const sunoPromptSource = isVivySunoPromptRequest(message, historyText)
+    ? message
+    : (isVivyPromptConfusionPing(message) && isVivySunoPromptRequest(lastUserMessage, historyText) ? lastUserMessage : '');
+
+  if (sunoPromptSource) {
+    return buildVivySunoPromptChatReply({
+      message: sunoPromptSource,
+      historyText,
+      fileLine,
+    });
+  }
 
   if (isVivyDjeffRapSetupRequest(message, historyText)) {
     return buildVivyDjeffRapSetupReply({ fileLine });
