@@ -2127,10 +2127,15 @@ test('Vivy mobile composer does not double-scroll with the visual viewport', () 
     'utf8'
   );
   const viewportHandler = appSource.match(/const onViewportChange = \(\) => \{[\s\S]*?\n    \};/)?.[0] || '';
+  const viewportResizeHandler = appSource.match(/const onViewportResize = \(\) => \{[\s\S]*?\n    \};/)?.[0] || '';
   const mobileComposer = cssSource.match(/\.vivy-chat-compose \{\s*grid-template-columns: 1fr;[\s\S]*?\n  \}/)?.[0] || '';
 
   assert.ok(viewportHandler);
   assert.doesNotMatch(viewportHandler, /keepComposerVisible/);
+  assert.doesNotMatch(viewportHandler, /scrollIntoView/);
+  assert.ok(viewportResizeHandler);
+  assert.match(viewportResizeHandler, /getBoundingClientRect/);
+  assert.match(viewportResizeHandler, /block:\s*"nearest"/);
   assert.ok(mobileComposer);
   assert.doesNotMatch(mobileComposer, /--vivy-keyboard-inset/);
 });

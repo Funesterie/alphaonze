@@ -6088,6 +6088,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
 
     const viewport = window.visualViewport;
     let settleTimer = 0;
+    let viewportSettleTimer = 0;
 
     const setKeyboardInset = () => {
       const inset = viewport
@@ -6128,19 +6129,36 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       setKeyboardInset();
     };
 
+    const onViewportResize = () => {
+      if (!document.body.classList.contains("vivy-keyboard-open")) return;
+      setKeyboardInset();
+      window.clearTimeout(viewportSettleTimer);
+      viewportSettleTimer = window.setTimeout(() => {
+        const target = draftInputRef.current;
+        if (!target) return;
+        const bounds = target.getBoundingClientRect();
+        const visibleTop = viewport?.offsetTop || 0;
+        const visibleBottom = visibleTop + (viewport?.height || window.innerHeight);
+        if (bounds.top < visibleTop + 8 || bounds.bottom > visibleBottom - 8) {
+          target.scrollIntoView({ behavior: "auto", block: "nearest", inline: "nearest" });
+        }
+      }, 80);
+    };
+
     root.addEventListener("focusin", onFocusIn);
     root.addEventListener("focusout", onFocusOut);
-    viewport?.addEventListener("resize", onViewportChange);
+    viewport?.addEventListener("resize", onViewportResize);
     viewport?.addEventListener("scroll", onViewportChange);
-    window.addEventListener("orientationchange", onViewportChange);
+    window.addEventListener("orientationchange", onViewportResize);
 
     return () => {
       root.removeEventListener("focusin", onFocusIn);
       root.removeEventListener("focusout", onFocusOut);
-      viewport?.removeEventListener("resize", onViewportChange);
+      viewport?.removeEventListener("resize", onViewportResize);
       viewport?.removeEventListener("scroll", onViewportChange);
-      window.removeEventListener("orientationchange", onViewportChange);
+      window.removeEventListener("orientationchange", onViewportResize);
       window.clearTimeout(settleTimer);
+      window.clearTimeout(viewportSettleTimer);
       document.body.classList.remove("vivy-keyboard-open");
       document.documentElement.style.setProperty("--vivy-keyboard-inset", "0px");
     };
