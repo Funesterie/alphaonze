@@ -1,0 +1,42 @@
+{
+  "name": "@funeste/mcp-tool-manifest-nossen",
+  "version": "0.1.2",
+  "description": "Private Funeste/NOSSEN wrapper for @nossen/mcp-tool-manifest.",
+  "type": "commonjs",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "funeste",
+    "nossen",
+    "mcp",
+    "mcp-tool-manifest-nossen"
+  ],
+  "license": "UNLICENSED",
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "dependencies": {
+    "@nossen/mcp-tool-manifest": "0.1.2"
+  },
+  "funding": {
+    "type": "custom",
+    "url": "https://paypal.me/funeste38"
+  },
+  "donations": {
+    "email": "funeste38@gmail.com",
+    "wero": "+33 7 83 46 37 61",
+    "paypal": "https://paypal.me/funeste38",
+    "stripe": "https://funesterie.me/subscription",
+    "contact": "https://funesterie.me/contact/"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

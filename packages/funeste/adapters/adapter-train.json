@@ -1,0 +1,366 @@
+{
+  "schema": "funeste.adapter-train.v1",
+  "id": "2026-06-22",
+  "adapters": [
+    {
+      "privatePackage": "@funeste/allmight-nossen",
+      "publicPackage": "@nossen/allmight",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.1",
+      "targetPublicVersion": "2.0.1",
+      "publish": true,
+      "directory": "packages/funeste/adapters/allmight-nossen"
+    },
+    {
+      "privatePackage": "@funeste/bat-nossen",
+      "publicPackage": "@nossen/bat",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.2",
+      "targetPublicVersion": "2.0.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/bat-nossen"
+    },
+    {
+      "privatePackage": "@funeste/bat-system-nossen",
+      "publicPackage": "@nossen/bat-system",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.2",
+      "targetPublicVersion": "2.0.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/bat-system-nossen"
+    },
+    {
+      "privatePackage": "@funeste/beam-nossen",
+      "publicPackage": "@nossen/beam",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.1",
+      "targetPublicVersion": "2.0.1",
+      "publish": true,
+      "directory": "packages/funeste/adapters/beam-nossen"
+    },
+    {
+      "privatePackage": "@funeste/dragon-contracts-nossen",
+      "publicPackage": "@nossen/dragon-contracts",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.1",
+      "targetPublicVersion": "2.0.1",
+      "publish": true,
+      "directory": "packages/funeste/adapters/dragon-contracts-nossen"
+    },
+    {
+      "privatePackage": "@funeste/dragon-nossen",
+      "publicPackage": "@nossen/dragon",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.2",
+      "targetPublicVersion": "2.0.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/dragon-nossen"
+    },
+    {
+      "privatePackage": "@funeste/dragon-upstream-nossen",
+      "publicPackage": "@nossen/dragon-upstream",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.2",
+      "targetPublicVersion": "2.0.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/dragon-upstream-nossen"
+    },
+    {
+      "privatePackage": "@funeste/envapt-superimg-nossen",
+      "publicPackage": "@nossen/envapt-superimg",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.2",
+      "targetPublicVersion": "2.0.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/envapt-superimg-nossen"
+    },
+    {
+      "privatePackage": "@funeste/envaptex-nossen",
+      "publicPackage": "@nossen/envaptex",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.1",
+      "targetPublicVersion": "2.0.1",
+      "publish": true,
+      "directory": "packages/funeste/adapters/envaptex-nossen"
+    },
+    {
+      "privatePackage": "@funeste/freeland-bros-nossen",
+      "publicPackage": "@nossen/freeland-bros",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.4",
+      "targetPublicVersion": "2.0.4",
+      "publish": true,
+      "directory": "packages/funeste/adapters/freeland-bros-nossen"
+    },
+    {
+      "privatePackage": "@funeste/freeland-nossen",
+      "publicPackage": "@nossen/freeland",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.2",
+      "targetPublicVersion": "2.0.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/freeland-nossen"
+    },
+    {
+      "privatePackage": "@funeste/graph-router-nossen",
+      "publicPackage": "@nossen/spyder",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.2",
+      "targetPublicVersion": "2.0.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/graph-router-nossen"
+    },
+    {
+      "privatePackage": "@funeste/katana-nossen",
+      "publicPackage": "@nossen/katana",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.0",
+      "targetPublicVersion": "2.0.0",
+      "publish": false,
+      "directory": "packages/funeste/adapters/katana-nossen"
+    },
+    {
+      "privatePackage": "@funeste/mcp-agent-bus-nossen",
+      "publicPackage": "@nossen/mcp-agent-bus",
+      "sourcePrivateVersion": "0.1.1",
+      "sourcePublicVersion": "0.1.1",
+      "targetPrivateVersion": "0.1.2",
+      "targetPublicVersion": "0.1.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/mcp-agent-bus-nossen"
+    },
+    {
+      "privatePackage": "@funeste/mcp-chopper-mixer-nossen",
+      "publicPackage": "@nossen/mcp-chopper-mixer",
+      "sourcePrivateVersion": "0.1.1",
+      "sourcePublicVersion": "0.1.1",
+      "targetPrivateVersion": "0.1.2",
+      "targetPublicVersion": "0.1.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/mcp-chopper-mixer-nossen"
+    },
+    {
+      "privatePackage": "@funeste/mcp-cloud-assets-nossen",
+      "publicPackage": "@nossen/mcp-cloud-assets",
+      "sourcePrivateVersion": "0.1.1",
+      "sourcePublicVersion": "0.1.1",
+      "targetPrivateVersion": "0.1.2",
+      "targetPublicVersion": "0.1.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/mcp-cloud-assets-nossen"
+    },
+    {
+      "privatePackage": "@funeste/mcp-job-queue-nossen",
+      "publicPackage": "@nossen/mcp-job-queue",
+      "sourcePrivateVersion": "0.1.1",
+      "sourcePublicVersion": "0.1.1",
+      "targetPrivateVersion": "0.1.2",
+      "targetPublicVersion": "0.1.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/mcp-job-queue-nossen"
+    },
+    {
+      "privatePackage": "@funeste/mcp-media-bridge-nossen",
+      "publicPackage": "@nossen/mcp-media-bridge",
+      "sourcePrivateVersion": "0.1.1",
+      "sourcePublicVersion": "0.1.1",
+      "targetPrivateVersion": "0.1.2",
+      "targetPublicVersion": "0.1.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/mcp-media-bridge-nossen"
+    },
+    {
+      "privatePackage": "@funeste/mcp-memory-graph-nossen",
+      "publicPackage": "@nossen/mcp-memory-graph",
+      "sourcePrivateVersion": "0.1.1",
+      "sourcePublicVersion": "0.1.1",
+      "targetPrivateVersion": "0.1.2",
+      "targetPublicVersion": "0.1.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/mcp-memory-graph-nossen"
+    },
+    {
+      "privatePackage": "@funeste/mcp-public-endpoints-nossen",
+      "publicPackage": "@nossen/mcp-public-endpoints",
+      "sourcePrivateVersion": "0.1.1",
+      "sourcePublicVersion": "0.1.1",
+      "targetPrivateVersion": "0.1.2",
+      "targetPublicVersion": "0.1.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/mcp-public-endpoints-nossen"
+    },
+    {
+      "privatePackage": "@funeste/mcp-qflush-control-nossen",
+      "publicPackage": "@nossen/mcp-qflush-control",
+      "sourcePrivateVersion": "0.1.1",
+      "sourcePublicVersion": "0.1.1",
+      "targetPrivateVersion": "0.1.2",
+      "targetPublicVersion": "0.1.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/mcp-qflush-control-nossen"
+    },
+    {
+      "privatePackage": "@funeste/mcp-retro-session-nossen",
+      "publicPackage": "@nossen/mcp-retro-session",
+      "sourcePrivateVersion": "0.1.1",
+      "sourcePublicVersion": "0.1.1",
+      "targetPrivateVersion": "0.1.2",
+      "targetPublicVersion": "0.1.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/mcp-retro-session-nossen"
+    },
+    {
+      "privatePackage": "@funeste/mcp-security-preflight-nossen",
+      "publicPackage": "@nossen/mcp-security-preflight",
+      "sourcePrivateVersion": "0.1.1",
+      "sourcePublicVersion": "0.1.1",
+      "targetPrivateVersion": "0.1.2",
+      "targetPublicVersion": "0.1.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/mcp-security-preflight-nossen"
+    },
+    {
+      "privatePackage": "@funeste/mcp-tool-manifest-nossen",
+      "publicPackage": "@nossen/mcp-tool-manifest",
+      "sourcePrivateVersion": "0.1.1",
+      "sourcePublicVersion": "0.1.1",
+      "targetPrivateVersion": "0.1.2",
+      "targetPublicVersion": "0.1.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/mcp-tool-manifest-nossen"
+    },
+    {
+      "privatePackage": "@funeste/mcp-toolkit-nossen",
+      "publicPackage": "@nossen/mcp-toolkit",
+      "sourcePrivateVersion": "0.1.1",
+      "sourcePublicVersion": "0.1.1",
+      "targetPrivateVersion": "0.1.2",
+      "targetPublicVersion": "0.1.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/mcp-toolkit-nossen"
+    },
+    {
+      "privatePackage": "@funeste/mcp-web-drafts-nossen",
+      "publicPackage": "@nossen/mcp-web-drafts",
+      "sourcePrivateVersion": "0.1.1",
+      "sourcePublicVersion": "0.1.1",
+      "targetPrivateVersion": "0.1.2",
+      "targetPublicVersion": "0.1.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/mcp-web-drafts-nossen"
+    },
+    {
+      "privatePackage": "@funeste/mcp-worker-supervisor-nossen",
+      "publicPackage": "@nossen/mcp-worker-supervisor",
+      "sourcePrivateVersion": "0.1.1",
+      "sourcePublicVersion": "0.1.1",
+      "targetPrivateVersion": "0.1.2",
+      "targetPublicVersion": "0.1.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/mcp-worker-supervisor-nossen"
+    },
+    {
+      "privatePackage": "@funeste/morphing-nossen",
+      "publicPackage": "@nossen/morphing",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.1.0",
+      "targetPublicVersion": "2.1.0",
+      "publish": true,
+      "directory": "packages/funeste/morphing-nossen"
+    },
+    {
+      "privatePackage": "@funeste/nezlephant-nossen",
+      "publicPackage": "@nossen/nezlephant",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.2",
+      "targetPublicVersion": "2.0.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/nezlephant-nossen"
+    },
+    {
+      "privatePackage": "@funeste/qflush-nossen",
+      "publicPackage": "@nossen/qflush",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.2",
+      "targetPublicVersion": "2.0.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/qflush-nossen"
+    },
+    {
+      "privatePackage": "@funeste/qflush-runner-nossen",
+      "publicPackage": "@nossen/qflush-runner",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.2",
+      "targetPublicVersion": "2.0.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/qflush-runner-nossen"
+    },
+    {
+      "privatePackage": "@funeste/rome-nossen",
+      "publicPackage": "@nossen/rome",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.3",
+      "targetPublicVersion": "2.0.3",
+      "publish": true,
+      "directory": "packages/funeste/adapters/rome-nossen"
+    },
+    {
+      "privatePackage": "@funeste/scentgate-nossen",
+      "publicPackage": "@nossen/scentgate",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.1",
+      "targetPublicVersion": "2.0.1",
+      "publish": true,
+      "directory": "packages/funeste/adapters/scentgate-nossen"
+    },
+    {
+      "privatePackage": "@funeste/scream-nossen",
+      "publicPackage": "@nossen/scream",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.2",
+      "targetPublicVersion": "2.0.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/scream-nossen"
+    },
+    {
+      "privatePackage": "@funeste/spyder-graph-nossen",
+      "publicPackage": "@nossen/spyder",
+      "sourcePrivateVersion": "2.0.0",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.2",
+      "targetPublicVersion": "2.0.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/spyder-graph-nossen"
+    },
+    {
+      "privatePackage": "@funeste/spyder-nossen",
+      "publicPackage": "@nossen/spyder",
+      "sourcePrivateVersion": "2.0.1",
+      "sourcePublicVersion": "2.0.0",
+      "targetPrivateVersion": "2.0.2",
+      "targetPublicVersion": "2.0.2",
+      "publish": true,
+      "directory": "packages/funeste/adapters/spyder-nossen"
+    }
+  ]
+}

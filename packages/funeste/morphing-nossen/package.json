@@ -1,0 +1,29 @@
+{
+  "name": "@funeste/morphing-nossen",
+  "version": "2.1.0",
+  "description": "Private NOSSEN adapter for Morphing value-shape primitives.",
+  "type": "commonjs",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "README.md"
+  ],
+  "license": "UNLICENSED",
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "dependencies": {
+    "@nossen/morphing": "2.1.0"
+  },
+  "funding": {
+    "type": "custom",
+    "url": "https://paypal.me/funeste38"
+  },
+  "donations": {
+    "wero": "+33 7 83 46 37 61",
+    "paypal": "https://paypal.me/funeste38",
+    "stripe": "https://funesterie.me/subscription",
+    "contact": "https://funesterie.me/contact/"
+  }
+}

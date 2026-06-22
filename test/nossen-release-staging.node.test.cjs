@@ -6,6 +6,7 @@ const path = require('node:path');
 const test = require('node:test');
 const {
   assertExactInternalDependencies,
+  normalizeViewResponse,
   safeSlug,
   updateAdapterSource
 } = require('../scripts/npm/stage-nossen-release.cjs');
@@ -49,4 +50,13 @@ test('adapter source updates version literals without changing loader code', () 
   const updated = updateAdapterSource(source, '2.1.0');
   assert.match(updated, /version: '2\.1\.0'/);
   assert.match(updated, /require\('@nossen\/x'\)/);
+  assert.equal(updateAdapterSource(source, '2.0.0'), source);
+});
+
+test('registry metadata accepts npm string responses for dependency-free packages', () => {
+  assert.deepEqual(normalizeViewResponse('2.0.1'), { version: '2.0.1', dependencies: {} });
+  assert.deepEqual(normalizeViewResponse({ version: '2.0.2', dependencies: { '@nossen/x': '1.0.0' } }), {
+    version: '2.0.2',
+    dependencies: { '@nossen/x': '1.0.0' }
+  });
 });

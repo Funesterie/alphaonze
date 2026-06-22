@@ -157,7 +157,13 @@ function viewPackage(packageSpec) {
     errorMessage: `Unable to read registry metadata for ${packageSpec}`
   });
   const value = JSON.parse(stdout);
+  return normalizeViewResponse(value);
+}
+
+function normalizeViewResponse(value) {
+  if (typeof value === 'string') return { version: value, dependencies: {} };
   const version = Array.isArray(value.version) ? value.version.at(-1) : value.version;
+  if (!version) throw new Error('Registry metadata has no version');
   return { version: String(version), dependencies: value.dependencies || {} };
 }
 
@@ -213,20 +219,19 @@ function stagePublic(config, stageRoot) {
   return records;
 }
 
+const publicTargetCache = new Map();
+
 function publicTarget(config, packageName) {
   if (config.publicTargets[packageName]) return config.publicTargets[packageName];
-  return viewPackage(packageName).version;
+  if (!publicTargetCache.has(packageName)) publicTargetCache.set(packageName, viewPackage(packageName).version);
+  return publicTargetCache.get(packageName);
 }
 
 function updateAdapterSource(source, targetVersion) {
-  const updated = source.replace(
+  return source.replace(
     /(\b(?:version|publicVersion)\s*:\s*['"])[^'"]+(['"])/g,
     `$1${targetVersion}$2`
   );
-  if (updated === source && /\b(?:version|publicVersion)\s*:/.test(source)) {
-    throw new Error('Unable to update adapter version literal');
-  }
-  return updated;
 }
 
 function assertSafeAdapter(root, packageName) {
@@ -364,6 +369,7 @@ if (require.main === module) {
 
 module.exports = {
   assertExactInternalDependencies,
+  normalizeViewResponse,
   readConfig,
   safeSlug,
   updateAdapterSource
