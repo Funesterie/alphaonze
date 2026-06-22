@@ -97,3 +97,23 @@ test('encodeZenContainer encrypts manifest, canon and data together', () => {
   assert.deepEqual(decoded.container.data.value, { shard: 1 });
   assert.equal(parseZen(archive).header.fileCount, undefined);
 });
+
+test('parseZen enforces container and header limits with stable codes', () => {
+  const archive = encodeZen('bounded', { key: 'limit-key' });
+  assert.throws(
+    () => parseZen(archive, { maxContainerBytes: archive.length - 1 }),
+    (error) => error.code === 'ZEN_ERR_LIMIT' && error.limit === 'maxContainerBytes'
+  );
+  assert.throws(
+    () => parseZen(archive, { maxHeaderBytes: 8 }),
+    (error) => error.code === 'ZEN_ERR_LIMIT' && error.limit === 'maxHeaderBytes'
+  );
+});
+
+test('decodeZen bounds decompressed output', () => {
+  const archive = encodeZen('x'.repeat(1024 * 1024), { key: 'raw-limit-key' });
+  assert.throws(
+    () => decodeZen(archive, { key: 'raw-limit-key', maxRawBytes: 1024 }),
+    (error) => error.code === 'ZEN_ERR_LIMIT' && error.limit === 'maxRawBytes'
+  );
+});

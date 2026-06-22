@@ -5,6 +5,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
 const { ZEN_CANON, cloneCanon } = require('./canon.cjs');
+const { ZenError, zenError } = require('./errors.cjs');
+const { DEFAULT_ZEN_LIMITS, resolveZenLimits } = require('./limits.cjs');
 
 const MAGIC = Buffer.from('NOSSENZ1');
 const FIXED_HEADER_BYTES = 12;
@@ -72,7 +74,7 @@ function asKeyBuffer(key) {
 function deriveKey(key, salt, kdf = {}) {
   const secret = asKeyBuffer(key);
   if (!secret || secret.length === 0) {
-    throw new Error('ZEN key is required for encrypted containers');
+    throw zenError('ZEN_ERR_AUTH', 'ZEN key is required for encrypted containers');
   }
 
   return crypto.scryptSync(secret, salt, 32, {
@@ -164,60 +166,114 @@ function encodeZen(input, options = {}) {
   return Buffer.concat([prefix, headerBytes, body]);
 }
 
-function parseZen(input) {
-  const buf = Buffer.isBuffer(input) ? input : fs.readFileSync(input);
+function throwLimit(limit, actual, maximum) {
+  throw zenError('ZEN_ERR_LIMIT', `ZEN exceeded ${limit}`, { limit, actual, maximum });
+}
+
+function parseZen(input, options = {}) {
+  const limits = resolveZenLimits(options);
+  let buf;
+  if (Buffer.isBuffer(input) || input instanceof Uint8Array) {
+    buf = Buffer.from(input);
+  } else {
+    const size = fs.statSync(input).size;
+    if (size > limits.maxContainerBytes) {
+      throwLimit('maxContainerBytes', size, limits.maxContainerBytes);
+    }
+    buf = fs.readFileSync(input);
+  }
+
+  if (buf.length > limits.maxContainerBytes) {
+    throwLimit('maxContainerBytes', buf.length, limits.maxContainerBytes);
+  }
   if (buf.length < FIXED_HEADER_BYTES) {
-    throw new Error('Invalid ZEN container: too short');
+    throw zenError('ZEN_ERR_FORMAT', 'Invalid ZEN container: too short');
   }
   if (!buf.subarray(0, MAGIC.length).equals(MAGIC)) {
-    throw new Error('Invalid ZEN container: bad magic');
+    throw zenError('ZEN_ERR_FORMAT', 'Invalid ZEN container: bad magic');
   }
 
   const headerLength = buf.readUInt32BE(8);
   const headerStart = FIXED_HEADER_BYTES;
   const headerEnd = headerStart + headerLength;
+  if (headerLength > limits.maxHeaderBytes) {
+    throwLimit('maxHeaderBytes', headerLength, limits.maxHeaderBytes);
+  }
   if (headerLength <= 0 || headerEnd > buf.length) {
-    throw new Error('Invalid ZEN container: bad header length');
+    throw zenError('ZEN_ERR_FORMAT', 'Invalid ZEN container: bad header length');
+  }
+  const payloadLength = buf.length - headerEnd;
+  if (payloadLength > limits.maxPayloadBytes) {
+    throwLimit('maxPayloadBytes', payloadLength, limits.maxPayloadBytes);
   }
 
-  const header = JSON.parse(buf.subarray(headerStart, headerEnd).toString('utf8'));
+  let header;
+  try {
+    header = JSON.parse(buf.subarray(headerStart, headerEnd).toString('utf8'));
+  } catch (error) {
+    throw zenError('ZEN_ERR_FORMAT', 'Invalid ZEN container: malformed header', { cause: error });
+  }
   return {
     header,
-    body: buf.subarray(headerEnd)
+    body: buf.subarray(headerEnd),
+    limits
   };
 }
 
 function decryptBody(body, header, key) {
   if (header.cipher === 'none') return body;
   if (header.cipher !== 'aes-256-gcm') {
-    throw new Error(`Unsupported ZEN cipher: ${header.cipher}`);
+    throw zenError('ZEN_ERR_FORMAT', `Unsupported ZEN cipher: ${header.cipher}`);
   }
 
-  const salt = Buffer.from(header.salt || '', 'base64');
-  const iv = Buffer.from(header.iv || '', 'base64');
-  const tag = Buffer.from(header.tag || '', 'base64');
-  const cipherKey = deriveKey(key || process.env.ZEN_KEY, salt, header.kdf || {});
-  const decipher = crypto.createDecipheriv('aes-256-gcm', cipherKey, iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(body), decipher.final()]);
+  try {
+    const salt = Buffer.from(header.salt || '', 'base64');
+    const iv = Buffer.from(header.iv || '', 'base64');
+    const tag = Buffer.from(header.tag || '', 'base64');
+    const cipherKey = deriveKey(key || process.env.ZEN_KEY, salt, header.kdf || {});
+    const decipher = crypto.createDecipheriv('aes-256-gcm', cipherKey, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(body), decipher.final()]);
+  } catch (error) {
+    if (error instanceof ZenError) throw error;
+    throw zenError('ZEN_ERR_AUTH', 'ZEN authentication failed', { cause: error });
+  }
 }
 
 function decodeZen(input, options = {}) {
-  const { header, body } = parseZen(input);
-  if (header.format !== 'zen' || header.version !== ZEN_VERSION) {
-    throw new Error('Unsupported ZEN container version');
+  const { header, body, limits } = parseZen(input, options);
+  if (header.format !== 'zen') {
+    throw zenError('ZEN_ERR_FORMAT', 'Unsupported ZEN container format');
+  }
+  if (header.version !== ZEN_VERSION) {
+    throw zenError('ZEN_ERR_VERSION', 'Unsupported ZEN container version', { version: header.version });
   }
 
   const compressed = decryptBody(body, header, options.key);
   const payloadSha256 = crypto.createHash('sha256').update(compressed).digest('hex');
   if (header.payloadSha256 && payloadSha256 !== header.payloadSha256) {
-    throw new Error('ZEN payload checksum mismatch');
+    throw zenError('ZEN_ERR_CHECKSUM', 'ZEN payload checksum mismatch', { checksum: 'payloadSha256' });
   }
 
-  const raw = zlib.brotliDecompressSync(compressed);
+  let raw;
+  try {
+    raw = zlib.brotliDecompressSync(compressed, { maxOutputLength: limits.maxRawBytes });
+  } catch (error) {
+    if (error && (error.code === 'ERR_BUFFER_TOO_LARGE' || error.code === 'ERR_OUT_OF_RANGE')) {
+      throwLimit('maxRawBytes', limits.maxRawBytes + 1, limits.maxRawBytes);
+    }
+    throw zenError('ZEN_ERR_FORMAT', 'Invalid ZEN Brotli payload', { cause: error });
+  }
+  if (raw.length > limits.maxRawBytes) {
+    throwLimit('maxRawBytes', raw.length, limits.maxRawBytes);
+  }
   const rawSha256 = crypto.createHash('sha256').update(raw).digest('hex');
   if (header.rawSha256 && rawSha256 !== header.rawSha256) {
-    throw new Error('ZEN raw checksum mismatch');
+    throw zenError('ZEN_ERR_CHECKSUM', 'ZEN raw checksum mismatch', { checksum: 'rawSha256' });
+  }
+
+  if (options.materialize === false) {
+    return { header };
   }
 
   const text = raw.toString(options.encoding || 'utf8');
@@ -248,7 +304,7 @@ function encodeZenContainer(input, options = {}) {
 function decodeZenContainer(input, options = {}) {
   const decoded = decodeZen(input, options);
   if (!decoded.container) {
-    throw new Error('ZEN payload is not a nossen.zen.container-payload.v1 envelope');
+    throw zenError('ZEN_ERR_FORMAT', 'ZEN payload is not a nossen.zen.container-payload.v1 envelope');
   }
   return decoded;
 }
@@ -272,7 +328,9 @@ function decodeZenFile(inputPath, outputPath, options = {}) {
 
 module.exports = {
   DEFAULT_BROTLI_QUALITY,
+  DEFAULT_ZEN_LIMITS,
   MAGIC,
+  ZenError,
   ZEN_CANON,
   ZEN_VERSION,
   buildZenContainerPayload,
@@ -286,5 +344,6 @@ module.exports = {
   encodeZenFile,
   isZenContainerPayload,
   parseZen,
+  resolveZenLimits,
   stableStringify
 };
