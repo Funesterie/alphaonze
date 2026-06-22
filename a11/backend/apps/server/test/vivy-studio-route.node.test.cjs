@@ -1215,6 +1215,27 @@ test('A11 and Vivy explicit duo uses only A11, VIVY and DUO tags', () => {
   assert.doesNotMatch(lyrics, /le moteur qui respire dans la nuit|Deux voix, m[eê]me [ée]lan/i);
 });
 
+test('Djeff and Vivy duo keeps French accents for TTS-readable lyrics', () => {
+  const lyrics = buildVivyStructuredLyrics({
+    songArtists: ['djeff', 'vivy'],
+    songTitle: 'Quand Nuit Veille Que',
+    songText: [
+      "Quand la nuit veille et que la route s'enflamme, la lueur du destin apparait et le monde pivote.",
+      'Seul sous la lune, le rider cabre et sa meule hurle.',
+    ].join('\n'),
+  });
+
+  assert.match(lyrics, /j'entre en première/i);
+  assert.match(lyrics, /flow répond/i);
+  assert.match(lyrics, /destin apparaît/i);
+  assert.match(lyrics, /flow se précise/i);
+  assert.match(lyrics, /mets en lumière/i);
+  assert.match(lyrics, /cabrée, accrochée à sa matière/i);
+  assert.match(lyrics, /La mélodie fait place au sens qui se précise/i);
+  assert.match(lyrics, /Deux voix dans le même souffle/i);
+  assert.doesNotMatch(lyrics, /\b(?:premiere|repond|apparait|precise|lumiere|cabree|accrochee|matiere|melodie|meme|elan|decoupe)\b/i);
+});
+
 test('Vivy removes an unselected singer from a provider duo draft', () => {
   const lyrics = buildVivyPublicLyrics({
     songArtists: ['a11', 'vivy'],
