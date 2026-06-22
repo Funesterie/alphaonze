@@ -1,0 +1,65 @@
+{
+  "schema": "nossen.release-train.v1",
+  "id": "2026-06-22",
+  "stageRoot": ".codex-tmp/npm-release-train-20260622",
+  "publicTargets": {
+    "@nossen/zen": "0.1.2",
+    "@nossen/morphing": "2.1.0",
+    "@nossen/dragon-contracts": "2.0.1",
+    "@nossen/dragon-upstream": "2.0.2",
+    "@nossen/dragon": "2.0.2",
+    "@nossen/freeland": "2.0.2",
+    "@nossen/freeland-bros": "2.0.4",
+    "@nossen/qflush": "2.0.2",
+    "@nossen/qflush-runner": "2.0.2"
+  },
+  "publicRebases": {
+    "@nossen/dragon-upstream": {
+      "source": "2.0.1",
+      "target": "2.0.2",
+      "dependencies": {
+        "@nossen/dragon-contracts": "2.0.1"
+      }
+    },
+    "@nossen/dragon": {
+      "source": "2.0.1",
+      "target": "2.0.2",
+      "dependencies": {
+        "@nossen/dragon-contracts": "2.0.1",
+        "@nossen/dragon-upstream": "2.0.2"
+      }
+    },
+    "@nossen/freeland-bros": {
+      "source": "2.0.3",
+      "target": "2.0.4",
+      "dependencies": {
+        "@nossen/freeland": "2.0.2",
+        "@nossen/morphing": "2.1.0"
+      }
+    },
+    "@nossen/qflush": {
+      "source": "2.0.1",
+      "target": "2.0.2",
+      "dependencies": {
+        "@nossen/allmight": "2.0.1",
+        "@nossen/bat": "2.0.2",
+        "@nossen/envaptex": "2.0.1",
+        "@nossen/freeland": "2.0.2",
+        "@nossen/nezlephant": "2.0.2",
+        "@nossen/rome": "2.0.3",
+        "@nossen/spyder": "2.0.2"
+      }
+    },
+    "@nossen/qflush-runner": {
+      "source": "2.0.1",
+      "target": "2.0.2",
+      "dependencies": {
+        "@nossen/qflush": "2.0.2"
+      }
+    }
+  },
+  "metaTargets": {
+    "@nossen/all-in-one": "0.1.6",
+    "@funeste/all-in-one-nossen": "0.1.5"
+  }
+}

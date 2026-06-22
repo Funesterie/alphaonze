@@ -54,6 +54,7 @@ node_modules
 
 # Secrets & credentials — jamais committer
 secrets/
+.codex-tmp/npm-release-train-*
 .codex-tmp/
 credentials.routes.js
 credentials.store.js
