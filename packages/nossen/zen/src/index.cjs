@@ -384,6 +384,18 @@ function decodeZenFile(inputPath, outputPath, options = {}) {
   return decoded;
 }
 
+function encodeZenFileAsync(...args) {
+  return require('./file-streams.cjs').encodeZenFileAsync(...args);
+}
+
+function decodeZenFileAsync(...args) {
+  return require('./file-streams.cjs').decodeZenFileAsync(...args);
+}
+
+function verifyZenFileAsync(...args) {
+  return require('./file-streams.cjs').verifyZenFileAsync(...args);
+}
+
 module.exports = {
   DEFAULT_BROTLI_QUALITY,
   DEFAULT_ZEN_LIMITS,
@@ -397,14 +409,17 @@ module.exports = {
   decodeZen,
   decodeZenContainer,
   decodeZenFile,
+  decodeZenFileAsync,
   encodeZen,
   encodeZenContainer,
   encodeZenFile,
+  encodeZenFileAsync,
   inspectZen,
   isZenContainerPayload,
   parseZen,
   resolveZenLimits,
   stableStringify,
   validatePublicHeader,
-  verifyZen
+  verifyZen,
+  verifyZenFileAsync
 };
