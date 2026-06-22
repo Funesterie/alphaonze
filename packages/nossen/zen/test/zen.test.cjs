@@ -12,9 +12,11 @@ const {
   encodeZen,
   encodeZenContainer,
   encodeZenFile,
+  inspectZen,
   ZEN_CANON,
   parseZen,
-  stableStringify
+  stableStringify,
+  verifyZen
 } = require('../src/index.cjs');
 
 test('stableStringify makes object key order deterministic', () => {
@@ -116,4 +118,26 @@ test('decodeZen bounds decompressed output', () => {
     () => decodeZen(archive, { key: 'raw-limit-key', maxRawBytes: 1024 }),
     (error) => error.code === 'ZEN_ERR_LIMIT' && error.limit === 'maxRawBytes'
   );
+});
+
+test('inspectZen returns public structure only', () => {
+  const archive = encodeZenContainer({ privateValue: 'hidden' }, {
+    key: 'inspect-key',
+    manifest: { corpus: 'private-corpus' }
+  });
+  const inspection = inspectZen(archive);
+  assert.equal(inspection.valid, true);
+  assert.equal(inspection.header.format, 'zen');
+  assert.equal(inspection.bodyBytes > 0, true);
+  assert.equal(JSON.stringify(inspection).includes('private-corpus'), false);
+});
+
+test('verifyZen authenticates and checksums without returning private payload', () => {
+  const archive = encodeZen('verified', { key: 'verify-key' });
+  assert.deepEqual(verifyZen(archive, { key: 'verify-key' }), {
+    valid: true,
+    format: 'zen',
+    version: 1,
+    mode: 'encrypted_multiload'
+  });
 });
