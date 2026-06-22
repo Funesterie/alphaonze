@@ -55,8 +55,13 @@ function run(command, args, options = {}) {
   return result.stdout;
 }
 
-function npmCommand() {
-  return process.platform === 'win32' ? 'npm.cmd' : 'npm';
+function runNpm(args, options = {}) {
+  if (process.platform === 'win32') {
+    const npmCli = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+    if (!fs.existsSync(npmCli)) throw new Error('Unable to locate the npm CLI');
+    return run(process.execPath, [npmCli, ...args], options);
+  }
+  return run('npm', args, options);
 }
 
 function safeSlug(packageName) {
@@ -89,7 +94,7 @@ function listFiles(root) {
 function packAndExtract(packageName, version) {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'nossen-npm-artifact-'));
   try {
-    const stdout = run(npmCommand(), [
+    const stdout = runNpm([
       'pack', `${packageName}@${version}`, '--json', '--pack-destination', temporary
     ], { cwd: temporary, errorMessage: `Unable to fetch npm artifact ${packageName}@${version}` });
     const parsed = JSON.parse(stdout);
@@ -148,7 +153,7 @@ function assertExactInternalDependencies(manifest) {
 }
 
 function viewPackage(packageSpec) {
-  const stdout = run(npmCommand(), ['view', packageSpec, 'version', 'dependencies', '--json'], {
+  const stdout = runNpm(['view', packageSpec, 'version', 'dependencies', '--json'], {
     errorMessage: `Unable to read registry metadata for ${packageSpec}`
   });
   const value = JSON.parse(stdout);

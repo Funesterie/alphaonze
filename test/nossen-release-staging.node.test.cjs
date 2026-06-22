@@ -4,6 +4,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const {
+  assertExactInternalDependencies,
+  safeSlug,
+  updateAdapterSource
+} = require('../scripts/npm/stage-nossen-release.cjs');
 
 const configPath = path.join(__dirname, '..', 'packages', 'npm-release-train', '2026-06-22.json');
 
@@ -25,4 +30,23 @@ test('release config locks every public rebase and coordinated meta target', () 
     '@nossen/all-in-one': '0.1.6',
     '@funeste/all-in-one-nossen': '0.1.5'
   });
+});
+
+test('staging helpers preserve package identity and reject floating internal ranges', () => {
+  assert.equal(safeSlug('@nossen/qflush-runner'), 'nossen-qflush-runner');
+  assert.doesNotThrow(() => assertExactInternalDependencies({
+    name: '@nossen/example',
+    dependencies: { '@nossen/zen': '0.1.2', express: '^5.2.1' }
+  }));
+  assert.throws(() => assertExactInternalDependencies({
+    name: '@nossen/example',
+    dependencies: { '@nossen/zen': '^0.1.2' }
+  }), /Non-exact internal dependency/);
+});
+
+test('adapter source updates version literals without changing loader code', () => {
+  const source = "module.exports = { version: '2.0.0', loadPublicPackage() { return require('@nossen/x'); } };";
+  const updated = updateAdapterSource(source, '2.1.0');
+  assert.match(updated, /version: '2\.1\.0'/);
+  assert.match(updated, /require\('@nossen\/x'\)/);
 });
