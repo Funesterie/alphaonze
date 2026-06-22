@@ -1,6 +1,6 @@
 {
   "name": "@funeste/zen",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Private Funesterie presets and routing helpers for @nossen/zen corpus containers.",
   "type": "commonjs",
   "main": "src/index.cjs",
@@ -43,7 +43,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@nossen/zen": "0.1.1"
+    "@nossen/zen": "0.1.2"
   },
   "funding": [
     {
