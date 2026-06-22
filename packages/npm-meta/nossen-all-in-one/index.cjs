@@ -36,13 +36,14 @@ const packages = Object.freeze([
   '@nossen/scentgate',
   '@nossen/scream',
   '@nossen/spyder',
+  '@nossen/zen',
   'a11-coder'
 ]);
 
 module.exports = Object.freeze({
   name: '@nossen/all-in-one',
   scope: 'public',
-  generatedAt: '2026-06-01',
+  generatedAt: '2026-06-22',
   packageCount: packages.length,
   packages
 });
