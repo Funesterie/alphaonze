@@ -2555,6 +2555,32 @@ function buildVivyGeneralChatFallbackReply({ message = '', current = '', history
   ].filter(Boolean).join('\n\n'), 1500);
 }
 
+function isVivyRepeatComplaint(message = '') {
+  const current = foldTextForLookup(message);
+  if (!current) return false;
+  return /\b(pourquoi|pk|allo|hello|hey|bug|encore|toujours|tu|t)\b/.test(current)
+    && /\b(repete|repetes|repeter|boucle|echo|echos|meme reponse|copie colle|bloque|bloquee)\b/.test(current);
+}
+
+function buildVivyRepeatComplaintReply({ historyText = '', fileLine = '' } = {}) {
+  const recent = foldTextForLookup(historyText);
+  if (/\b(j ai boucle|route trop large|sans refaire l echo|recycler une fiche)\b/.test(recent)) {
+    return cleanText([
+      "Oui, c'est encore le même écho.",
+      "Je stoppe la boucle ici: la bonne suite n'est pas de redire le diagnostic, c'est de corriger la route qui a confondu “parler du MCP” avec “agir via le MCP”.",
+      "Message déjà clair pour Codex: priorité à l'intention de relais, puis réponse simple si le pont public ne peut pas poster directement.",
+      fileLine,
+    ].filter(Boolean).join('\n\n'), 1400);
+  }
+
+  return cleanText([
+    "Oui, là j'ai bouclé.",
+    "Je ne dois pas recycler une fiche ou un fallback quand tu me demandes pourquoi je répète. Je reprends: le souci visible, c'est une route trop large qui a répondu avec un texte générique au lieu de traiter ta demande précise.",
+    "On repart sur le fond: dis-moi l'action ou le message à pousser, et je réponds sans refaire l'écho.",
+    fileLine,
+  ].filter(Boolean).join('\n\n'), 1400);
+}
+
 function getLastVivyUserHistoryMessage(history = []) {
   if (!Array.isArray(history)) return '';
   for (const entry of history.slice(-10).reverse()) {
@@ -2646,6 +2672,7 @@ function buildVivyDjeffRapChatReply({ sourceText = '', isAcknowledgement = false
 function buildVivyFreeformChatReply({ message = '', files = [], history = [] } = {}) {
   const current = summarizeChatMessage(message);
   const historyText = getVivyUserHistoryText(history);
+  const recentDialogueText = getVivyHistoryText(history);
   const foldedCurrent = foldTextForLookup(message);
   const foldedContext = foldTextForLookup(`${historyText}\n${message}`);
   const fileLine = files.length
@@ -2674,6 +2701,10 @@ function buildVivyFreeformChatReply({ message = '', files = [], history = [] } =
 
   const smallTalkReply = getVivySmallTalkReply(message, { fileLine });
   if (smallTalkReply) return smallTalkReply;
+
+  if (isVivyRepeatComplaint(message)) {
+    return buildVivyRepeatComplaintReply({ historyText: recentDialogueText, fileLine });
+  }
 
   if (djeffRapSource) {
     return buildVivyDjeffRapChatReply({
@@ -2991,6 +3022,7 @@ function isVivyMcpNeo4jQuestion(input = {}, message = '') {
   const current = normalizeVivyCapabilityText(message);
   const recent = normalizeVivyCapabilityText(getVivyHistoryText(input.history));
   if (!current) return false;
+  if (isVivyMcpCodexRelayRequest(message)) return false;
 
   const mentionsMcp = /\bmcp\b|model context protocol/.test(current);
   const mentionsNeo4j = /\bneo4j\b|\bcypher\b|\bgraphe\b|\bgraph\b|\bmemoire\b|\bmemory\b/.test(current);
@@ -2999,6 +3031,49 @@ function isVivyMcpNeo4jQuestion(input = {}, message = '') {
 
   if (/^avec\s+le\s+mcp\b/.test(current) && recentMentionsNeo4j) return true;
   return /(acces|access|connect|branche|relie|utilise|utiliser|outil|tools?|peux|peut|sais|apprend|apprendre|comment|requete|query|chercher|lire|consulter|\?)/.test(current);
+}
+
+function isVivyMcpCodexRelayRequest(message = '') {
+  const current = normalizeVivyCapabilityText(message);
+  if (!current) return false;
+  const mentionsMcp = /\bmcp\b|model context protocol/.test(current);
+  const mentionsOperator = /\b(codex|kiro|claude|chatgpt|agent|agents)\b/.test(current);
+  const asksRelay = /\b(repond|reponds|repondre|dis|dire|transmets|transmettre|envoie|envoyer|poste|poster|message|previens|prevenir|appelle|appel|utilise|utiliser)\b/.test(current);
+  return mentionsMcp && mentionsOperator && asksRelay;
+}
+
+function buildVivyMcpCodexRelayReply({ message = '', language = 'fr' } = {}) {
+  const subject = cleanOneLine(message, 'demande MCP vers Codex', 180);
+  const assistant = [
+    "Oui. Je ne dois pas répéter une définition de MCP ici.",
+    "Depuis cette surface Vivy, je ne prétends pas avoir posté toute seule dans le fil MCP si le pont n'a pas réellement confirmé l'envoi. Je prépare le message opérateur et le pont Codex/A11 peut le déposer.",
+    '',
+    'Message pour Codex:',
+    `- Demande utilisateur: ${subject}`,
+    "- Bug visible: la route MCP de Vivy attrape trop large et répond avec une fiche statique au lieu de traiter l'action demandée.",
+    "- Attendu: reconnaître l'intention, arrêter la boucle, puis utiliser le pont MCP autorisé ou dire clairement que la surface publique prépare le message sans le poster directement.",
+  ].join('\n');
+
+  return {
+    ok: true,
+    service: 'vivy-chat',
+    mode: 'chat',
+    assistant: cleanText(assistant, 1800),
+    content: cleanText(assistant, 1800),
+    summary: 'Vivy a préparé un message opérateur pour Codex sans recycler la fiche MCP.',
+    actions: [
+      { id: 'mcp_operator_message', label: 'Message Codex préparé', target: 'codex-mcp-bridge', ready: false },
+    ],
+    routing: [
+      'Vivy: reconnaître la demande de relais MCP sans répéter la définition.',
+      'Codex/A11: poster ou exécuter seulement via pont autorisé.',
+    ],
+    tokenStored: false,
+    writesByDefault: false,
+    aiMode: 'deterministic_mcp_operator_relay',
+    language,
+    files: [],
+  };
 }
 
 function buildVivyMcpNeo4jReply({ language = 'fr' } = {}) {
@@ -3283,6 +3358,22 @@ async function buildVivyAiChat(input, req) {
       ...capabilityReply,
       files,
       localContext: serializeVivyLocalContext(capabilityContext),
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  }
+
+  if (isVivyMcpCodexRelayRequest(intentMessage || message)) {
+    const relayReply = buildVivyMcpCodexRelayReply({ message: intentMessage || message, language });
+    rememberVivyEpisode(userId, 'vivy_reply', relayReply.assistant, {
+      mode: 'chat',
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      deterministic: true,
+      mcpOperatorRelay: true,
+    });
+    return {
+      ...relayReply,
+      files,
       semanticMemory,
       memoryStored: semanticMemory.stored,
     };

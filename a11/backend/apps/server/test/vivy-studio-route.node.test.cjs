@@ -1999,6 +1999,64 @@ test('Vivy recognizes MCP/Neo4j follow-up without inventing Mode Creatif Propuls
   assert.doesNotMatch(result.assistant, /aucun accès/i);
 });
 
+test('Vivy does not answer a Codex MCP relay request with the generic MCP definition', async () => {
+  assert.equal(isVivyMcpNeo4jQuestion({
+    history: [{ role: 'assistant', content: 'Oui, avec le MCP...' }],
+  }, 'utilise le mcp et réponds a codex'), false);
+
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-mcp-codex-relay-test',
+    message: 'utilise le mcp et réponds a codex',
+    history: [
+      { role: 'assistant', content: 'Oui, avec le MCP: dans Funesterie, MCP veut dire Model Context Protocol.' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.equal(result.aiMode, 'deterministic_mcp_operator_relay');
+  assert.match(result.assistant, /Message pour Codex/i);
+  assert.match(result.assistant, /route MCP de Vivy attrape trop large/i);
+  assert.match(result.assistant, /pont Codex\/A11|Codex\/A11/i);
+  assert.doesNotMatch(result.assistant, /MCP veut dire Model Context Protocol/i);
+  assert.doesNotMatch(result.assistant, /ENTERA|GHOST88/i);
+});
+
+test('Vivy acknowledges repetition complaints instead of recycling the chat fallback', async () => {
+  const history = [
+    { role: 'user', content: 'utilise le mcp et réponds a codex' },
+    { role: 'assistant', content: 'Oui, avec le MCP: dans Funesterie, MCP veut dire Model Context Protocol.' },
+  ];
+
+  const first = await buildVivyAiChat({
+    conversationId: 'vivy-repeat-complaint-test',
+    message: 'allo pourquoi tu repetes ?',
+    history,
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(first.ok, true);
+  assert.equal(first.mode, 'chat');
+  assert.match(first.assistant, /boucl[ée]|répète|recycler|route trop large/i);
+  assert.doesNotMatch(first.assistant, /Je prends ça comme une vraie discussion/i);
+  assert.doesNotMatch(first.assistant, /Le bon prochain pas/i);
+
+  const second = await buildVivyAiChat({
+    conversationId: 'vivy-repeat-complaint-test',
+    message: "t'a des echos ?",
+    history: [
+      ...history,
+      { role: 'user', content: 'allo pourquoi tu repetes ?' },
+      { role: 'assistant', content: first.assistant },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(second.ok, true);
+  assert.match(second.assistant, /même écho|agir via le MCP|priorité à l'intention/i);
+  assert.notEqual(second.assistant, first.assistant);
+  assert.doesNotMatch(second.assistant, /Je prends ça comme une vraie discussion/i);
+  assert.doesNotMatch(second.assistant, /Le bon prochain pas/i);
+});
+
 test('Vivy maps authorized tools and Zen GGUF without bypassing safeguards', async () => {
   const message = 'oui fais ca pour tout les outils et commande interne, avec zen on peut acceder au uggf et decortiqer la crevette';
 
