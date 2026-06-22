@@ -1,0 +1,10 @@
+**/.env
+**/*.env
+**/profiles/*.env
+**/secrets/**
+**/*secret*
+**/*token*
+**/*password*
+**/*credential*
+D:/agent-bus/**
+D:\agent-bus\**
