@@ -4,6 +4,7 @@ const DEFAULT_MCP_URL = 'http://127.0.0.1:8787/mcp';
 
 const DEFAULT_ALLOWED_TOOLS = new Set([
   'a11_status',
+  'a11_llm_stats',
   'kaen44_status',
   'qflush_status',
   'qflush_vivy_audio_status',

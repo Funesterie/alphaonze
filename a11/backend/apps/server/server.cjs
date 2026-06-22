@@ -6853,6 +6853,7 @@ const createKnowledgeConflictRouter = require('./src/routes/knowledge-conflict.c
 const createGitHubRouter = require('./src/routes/github.cjs');
 const createPublicMcpRouter = require('./src/routes/public-mcp.cjs');
 const createMcpClientRouter = require('./src/routes/mcp-client.cjs');
+const createMcpIntentRouter = require('./src/routes/mcp-intent.cjs');
 const createMcpCockpitRouter = require('./src/routes/mcp-cockpit.cjs');
 const { createOAuthRouter } = require('./src/mcp-oauth/oauth-server.cjs');
 
@@ -6918,6 +6919,8 @@ const mcpCockpitRouter = createMcpCockpitRouter({ verifyJWT, db, env: process.en
 app.use('/api/cockpit/mcp', mcpCockpitRouter);
 app.use('/cockpit/mcp', mcpCockpitRouter);
 console.log('[Server] Private MCP cockpit routes mounted under /api/cockpit/mcp and /cockpit/mcp');
+app.use('/api/mcp/intent', verifyJWT, createMcpIntentRouter({ env: process.env }));
+console.log('[Server] MCP intent bridge mounted under /api/mcp/intent');
 app.use('/api/mcp', verifyJWT, createMcpClientRouter({ db, env: process.env }));
 console.log('[Server] MCP client routes mounted under /api/mcp');
 app.use('/api', createSelfRewriteRouter({ verifyJWT }));
