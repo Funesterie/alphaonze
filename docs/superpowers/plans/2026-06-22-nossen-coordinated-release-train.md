@@ -924,7 +924,7 @@ git commit -m "feat(funeste): align private NOSSEN adapter train"
 
 - [ ] **Step 1: Add failing snapshot assertions**
 
-Assert public package count is 38 (`37 @nossen/*` plus `a11-coder`), `@nossen/zen@0.1.2` is present in manifest and index, Morphing is `2.1.0`, the five public patch versions match the config, and manifest/index sets are identical.
+Assert the public dependency count is 37 (`36 @nossen/*` plus `a11-coder`), `@nossen/zen@0.1.2` is present in manifest and index, Morphing is `2.1.0`, the five public patch versions match the config, and manifest/index sets are identical. Counting `@nossen/all-in-one` itself gives the 38 visible public packages from the scope audit.
 
 Assert private manifest/index sets are identical, private ZEN is `0.1.2`, each generated adapter uses the target version from `adapter-train.json`, and the public meta dependency is `@nossen/all-in-one@0.1.6`.
 
@@ -938,7 +938,7 @@ Expected: failures for current meta versions, omitted public ZEN index entry, ol
 
 - [ ] **Step 3: Update public meta-package**
 
-Set version `0.1.6`; pin all 38 modules exactly; add `@nossen/zen` to `index.cjs`; set `generatedAt` to `2026-06-22`; document that the snapshot is registry-audited and contains ZEN.
+Set version `0.1.6`; pin all 37 dependencies exactly; add `@nossen/zen` to `index.cjs`; set `generatedAt` to `2026-06-22`; document that the snapshot is registry-audited and contains ZEN.
 
 - [ ] **Step 4: Update private meta-package**
 
@@ -1042,7 +1042,7 @@ foreach ($dir in $adapterDirs) {
 
 - [ ] **Step 5: Publish the public meta-package**
 
-Publish `@nossen/all-in-one@0.1.6 --access public`, verify the registry dependency count is 38, and anonymously install it.
+Publish `@nossen/all-in-one@0.1.6 --access public`, verify the registry dependency count is 37, and anonymously install it.
 
 - [ ] **Step 6: Publish the private meta-package**
 
@@ -1105,7 +1105,7 @@ Append a concise release note to current and dated state files with versions, br
 ## Final Acceptance Criteria
 
 - ZEN format v1 compatibility tests pass and new bounded/streaming APIs are published as `0.1.2`.
-- Public all-in-one contains exactly 38 modules, including ZEN, with Morphing `2.1.0`.
+- Public all-in-one contains exactly 37 dependencies, including ZEN, with Morphing `2.1.0`; counting the meta-package itself gives 38 visible public packages.
 - The five formerly floating public packages publish exact internal NOSSEN pins.
 - Every stale private adapter depends exactly on the planned public target.
 - Both all-in-one packages install cleanly from the registry.
