@@ -31,6 +31,7 @@ test('release config locks every public rebase and coordinated meta target', () 
     '@nossen/all-in-one': '0.1.6',
     '@funeste/all-in-one-nossen': '0.1.5'
   });
+  assert.deepEqual(config.privateTargets, { '@funeste/zen': '0.1.2' });
 });
 
 test('staging helpers preserve package identity and reject floating internal ranges', () => {

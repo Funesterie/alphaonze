@@ -61,5 +61,8 @@
   "metaTargets": {
     "@nossen/all-in-one": "0.1.6",
     "@funeste/all-in-one-nossen": "0.1.5"
+  },
+  "privateTargets": {
+    "@funeste/zen": "0.1.2"
   }
 }

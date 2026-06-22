@@ -56,3 +56,39 @@ test('buildAdapterTargets aligns wrappers with planned public targets', () => {
     targetPublicVersion: '2.1.0'
   }]);
 });
+
+test('public all-in-one is the complete exact 0.1.6 snapshot', () => {
+  const manifest = require('../packages/npm-meta/nossen-all-in-one/package.json');
+  const index = require('../packages/npm-meta/nossen-all-in-one/index.cjs');
+  const config = require('../packages/npm-release-train/2026-06-22.json');
+  const dependencies = manifest.dependencies;
+
+  assert.equal(manifest.version, '0.1.6');
+  assert.equal(Object.keys(dependencies).length, 37);
+  assert.equal(Object.keys(dependencies).filter((name) => name.startsWith('@nossen/')).length, 36);
+  assert.equal(dependencies['@nossen/zen'], '0.1.2');
+  assert.equal(dependencies['@nossen/morphing'], '2.1.0');
+  for (const [name, rebase] of Object.entries(config.publicRebases)) {
+    assert.equal(dependencies[name], rebase.target);
+  }
+  assert.deepEqual([...index.packages].sort(), Object.keys(dependencies).sort());
+  assert.equal(index.packageCount, 37);
+  assert.equal(index.generatedAt, '2026-06-22');
+});
+
+test('private all-in-one consumes every generated adapter target and public meta 0.1.6', () => {
+  const manifest = require('../packages/npm-meta/funeste-all-in-one-nossen/package.json');
+  const index = require('../packages/npm-meta/funeste-all-in-one-nossen/index.cjs');
+  const train = require('../packages/funeste/adapters/adapter-train.json');
+
+  assert.equal(manifest.version, '0.1.5');
+  assert.equal(manifest.dependencies['@funeste/zen'], '0.1.2');
+  assert.equal(manifest.dependencies['@funeste/logic-reduce-nossen'], '2.0.2');
+  assert.equal(manifest.dependencies['@nossen/all-in-one'], '0.1.6');
+  for (const adapter of train.adapters) {
+    assert.equal(manifest.dependencies[adapter.privatePackage], adapter.targetPrivateVersion);
+  }
+  const indexed = [...index.privatePackages, index.publicMetaPackage].sort();
+  assert.deepEqual(indexed, Object.keys(manifest.dependencies).sort());
+  assert.equal(index.generatedAt, '2026-06-22');
+});

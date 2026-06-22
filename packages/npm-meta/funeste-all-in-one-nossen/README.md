@@ -18,6 +18,10 @@ You need an npm token that can read the private `@funeste` scope. Do not paste t
 - Private `@funeste/*-nossen` operator adapters.
 - Private graph, MCP, worker, runtime bridge and ZEN route packages.
 
+The 0.1.5 snapshot is aligned with the registry-audited public 0.1.6 train:
+Morphing is 2.1.0, ZEN is 0.1.2, and every generated private adapter pins its
+public counterpart exactly.
+
 ## Package Manifest
 
 ```js

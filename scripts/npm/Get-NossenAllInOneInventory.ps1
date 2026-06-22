@@ -48,13 +48,14 @@ function Get-InternalRanges {
 }
 
 $plannedTargets = @{}
+$plannedRebases = @{}
 if ($Plan) {
   $planPath = if ([System.IO.Path]::IsPathRooted($Plan)) { $Plan } else { Join-Path $RepoRoot $Plan }
   if (-not (Test-Path -LiteralPath $planPath)) {
     throw "Missing release plan: $planPath"
   }
   $releasePlan = Get-Content -Raw -LiteralPath $planPath | ConvertFrom-Json
-  foreach ($sectionName in @('publicTargets', 'metaTargets')) {
+  foreach ($sectionName in @('publicTargets', 'privateTargets', 'metaTargets')) {
     $section = $releasePlan.$sectionName
     if ($section) {
       $section.PSObject.Properties | ForEach-Object { $plannedTargets[$_.Name] = [string]$_.Value }
@@ -63,6 +64,14 @@ if ($Plan) {
   if ($releasePlan.publicRebases) {
     $releasePlan.publicRebases.PSObject.Properties | ForEach-Object {
       $plannedTargets[$_.Name] = [string]$_.Value.target
+      $plannedRebases[$_.Name] = $true
+    }
+  }
+  $adapterTrainPath = Join-Path $RepoRoot 'packages\funeste\adapters\adapter-train.json'
+  if (Test-Path -LiteralPath $adapterTrainPath) {
+    $adapterTrain = Get-Content -Raw -LiteralPath $adapterTrainPath | ConvertFrom-Json
+    foreach ($adapter in @($adapterTrain.adapters)) {
+      $plannedTargets[[string]$adapter.privatePackage] = [string]$adapter.targetPrivateVersion
     }
   }
 }
@@ -163,7 +172,9 @@ $result = foreach ($definition in $packageDefinitions) {
         $registryOk = $false
         $errors += $lookupError
       }
-      $nonExactInternalDependencies += @(Get-InternalRanges -PackageName $dependencyName -Dependencies $registryDependencies)
+      if (-not $plannedRebases.ContainsKey($dependencyName)) {
+        $nonExactInternalDependencies += @(Get-InternalRanges -PackageName $dependencyName -Dependencies $registryDependencies)
+      }
     }
 
     $latest[$dependencyName] = $registryVersion
