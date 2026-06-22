@@ -20,6 +20,7 @@ const {
   buildVivyMusicPrompt,
   buildVivyMultiVoiceAssemblyArgs,
   buildVivyPreviewMixArgs,
+  buildVivyMemoryContext,
   buildVivySystemPrompt,
   buildVivySunoPayload,
   buildVivyWebSearchQuery,
@@ -38,6 +39,7 @@ const {
   splitVivyArrangementCues,
 } = require('../src/music/vivy-songcraft.cjs');
 const {
+  addEpisode,
   getEpisodes,
 } = require('../lib/episodic-memory.cjs');
 
@@ -1277,6 +1279,26 @@ test('Vivy memory reset only clears the requested detached conversation', async 
   assert.equal(remaining.some((episode) => episode.metadata?.conversationId === 'vivy-session-b'), true);
 });
 
+test('Vivy memory context ignores old internal tuning chatter', () => {
+  const userId = `user:vivy-memory-clean-${Date.now()}`;
+  const conversationId = 'vivy-memory-clean-thread';
+
+  addEpisode(userId, 'vivy_reply', 'Oui, je baisse ma sensibilité et mon intent est trop haut.', {
+    conversationId,
+    internalTuning: true,
+  });
+  addEpisode(userId, 'vivy_settings', '{"chatIntentSensitivity":"lowered"}', {
+    conversationId,
+  });
+  addEpisode(userId, 'vivy_idea', 'On parle de liberté, de fleurs et de voix vivante.', {
+    conversationId,
+  });
+
+  const context = buildVivyMemoryContext(userId, conversationId);
+  assert.match(context, /liberté|fleurs|voix vivante/i);
+  assert.doesNotMatch(context, /sensibilit[ée]|intent|chatIntentSensitivity|seuil|d[ée]tecteur/i);
+});
+
 test('Vivy uses the account language instead of guessing from draft text', async () => {
   const result = await buildVivyAiChat({
     conversationId: 'vivy-account-language',
@@ -1751,10 +1773,28 @@ test('Vivy can lower internal intent sensitivity from user feedback', async () =
   assert.equal(result.aiMode, 'deterministic_internal_tuning');
   assert.equal(result.settings?.chatIntentSensitivity, 'lowered');
   assert.equal(result.settings?.songStructureMode, 'explicit_only');
-  assert.match(result.assistant, /intent|r[ée]glage|sensibilit[ée]/i);
-  assert.match(result.assistant, /chanson|structure/i);
+  assert.match(result.assistant, /recentre|discussion normale|fond/i);
+  assert.doesNotMatch(result.assistant, /intent|r[ée]glage|sensibilit[ée]|seuil|d[ée]tecteur/i);
+  assert.match(result.assistant, /chanson|paroles|refrain|couplet/i);
   assert.doesNotMatch(result.assistant, /^Je te suis\./);
   assert.doesNotMatch(result.assistant, /clique sur Chanson/i);
+});
+
+test('Vivy tells Codex the actionable bug instead of returning generic filler', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-chat-message-to-codex',
+    message: 'que veux tu dire a codex ?',
+    history: [
+      { role: 'user', content: 'tu te brides et tu parles trop de detecteurs' },
+      { role: 'assistant', content: 'Oui. Je me recentre.' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.match(result.assistant, /Codex|Vivy|chat vivant|Envoyer/i);
+  assert.doesNotMatch(result.assistant, /Je te r[ée]ponds directement et je garde le fil/i);
+  assert.doesNotMatch(result.assistant, /baisse|sensibilit[ée]|seuil|d[ée]tecteur/i);
 });
 
 test('Vivy song mode structures the same rap draft when Chanson is explicit', async () => {

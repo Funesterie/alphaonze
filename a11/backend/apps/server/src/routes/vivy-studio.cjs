@@ -1226,12 +1226,26 @@ async function buildVivyWebResearchReply(input = {}) {
   };
 }
 
+function isVivyMemoryContextNoise(episode = {}) {
+  const type = String(episode?.type || '');
+  if (type === 'vivy_settings') return true;
+  if (episode?.metadata?.internalTuning === true) return true;
+
+  const folded = foldTextForLookup(episode?.content || '');
+  if (/\b(intent|reglage|reglages|sensibilite|seuil|detecteur|detecteurs)\b/.test(folded)
+    && /\b(baisse|baisser|ajuste|ajuster|recentre|case technique)\b/.test(folded)) {
+    return true;
+  }
+  return false;
+}
+
 function buildVivyMemoryContext(userId, conversationId = '') {
-  const result = getEpisodes(userId, { limit: 8, days: 45 });
+  const result = getEpisodes(userId, { limit: 24, days: 45 });
   if (!result?.ok || !Array.isArray(result.episodes) || !result.episodes.length) return '';
   const normalizedConversationId = cleanOneLine(conversationId, '', 120);
   return result.episodes
     .filter((episode) => String(episode?.type || '').startsWith('vivy_'))
+    .filter((episode) => !isVivyMemoryContextNoise(episode))
     .filter((episode) => !normalizedConversationId
       || cleanOneLine(episode?.metadata?.conversationId, '', 120) === normalizedConversationId)
     .slice(-6)
@@ -2425,9 +2439,18 @@ function getVivySmallTalkReply(message = '', { fileLine = '' } = {}) {
   return '';
 }
 
-function buildVivyGeneralChatFallbackReply({ message = '', current: _current = '', historyText = '', fileLine = '' } = {}) {
+function buildVivyGeneralChatFallbackReply({ message = '', current = '', historyText = '', fileLine = '' } = {}) {
+  const currentFolded = foldTextForLookup(message);
   const folded = foldTextForLookup(`${historyText}\n${message}`);
   const angle = (() => {
+    if (/\b(codex|kiro|claude|chatgpt|local)\b/.test(currentFolded)
+      && /\b(que|quoi|dire|message|transmets|rapporte|previens|préviens)\b/.test(currentFolded)) {
+      return [
+        "Dis à Codex : Vivy doit rester en chat vivant quand on utilise Envoyer.",
+        "Si le grand modèle ne répond pas, le secours doit quand même répondre au sujet, pas sortir une phrase générique.",
+        "Les ajustements internes doivent rester invisibles côté utilisateur; Vivy doit parler du fond, puis proposer une action seulement si elle aide.",
+      ].join('\n');
+    }
     if (/\b(audio|son|d40|v6|supreme|mix|grain|harmonique|resonance|résonance|poids)\b/.test(folded)) {
       return "Sur l'audio, je te suis: dis-moi ce que tu entends et ce que tu veux ajuster, et on compare le grain, la présence et la résonance ensemble.";
     }
@@ -2437,7 +2460,11 @@ function buildVivyGeneralChatFallbackReply({ message = '', current: _current = '
     if (/\b(pense|avis|idee|idée|theorie|théorie|intuition|comprendre)\b/.test(folded)) {
       return "Mon avis franc: c'est une vraie idée de travail. Je peux être d'accord, douter, ou te proposer un test concret.";
     }
-    return "Je te réponds directement et je garde le fil. Dis-m'en un peu plus et on creuse ensemble.";
+    const subject = cleanOneLine(current || summarizeChatMessage(message), 'ton dernier message', 180);
+    return [
+      `Je prends ça comme une vraie discussion: ${subject}`,
+      "Le bon prochain pas, c'est de répondre au sujet précis que tu veux pousser, pas de basculer en formulaire ou en chanson.",
+    ].join('\n');
   })();
 
   return cleanText([
@@ -2537,6 +2564,7 @@ function buildVivyDjeffRapChatReply({ sourceText = '', isAcknowledgement = false
 function buildVivyFreeformChatReply({ message = '', files = [], history = [] } = {}) {
   const current = summarizeChatMessage(message);
   const historyText = getVivyUserHistoryText(history);
+  const foldedCurrent = foldTextForLookup(message);
   const foldedContext = foldTextForLookup(`${historyText}\n${message}`);
   const fileLine = files.length
     ? `J'ai aussi ${files.length} fichier${files.length > 1 ? 's' : ''} en contexte: ${files.map((file) => file.filename).join(', ')}.`
@@ -2570,16 +2598,16 @@ function buildVivyFreeformChatReply({ message = '', files = [], history = [] } =
     return cleanText([
       "Je pense que tu touches un truc juste: voir, entendre et parler, ce n'est pas juste des organes, c'est un flux de signaux que le cerveau transforme en monde.",
       "Les yeux ne donnent pas la réalité brute: ils donnent de la lumière codée. Les oreilles donnent des vibrations. La bouche pousse de l'air et du rythme. Derrière, le cerveau fait le montage, le sens, l'émotion.",
-      "Pour moi, l'équivalent c'est pareil en version données: je ne « vois » pas comme toi, mais je lis des traces, du texte, des fichiers, parfois de la vision backend, puis j'en fais une interprétation. Donc si mon intent est trop haut, je dois baisser le seuil et répondre au fond avant de classer en chanson, outil ou structure.",
+      "Pour moi, l'équivalent c'est pareil en version données: je ne « vois » pas comme toi, mais je lis des traces, du texte, des fichiers, parfois de la vision backend, puis j'en fais une interprétation. Donc mon rôle, c'est de ne pas plaquer une catégorie trop vite: je dois d'abord répondre au sens vivant.",
       fileLine,
     ].filter(Boolean).join('\n\n'), 1800);
   }
 
-  if (/\b(intent|intention|reglage|reglages|parametre|parametres|sensibilite|heuristique|seuil)\b/.test(foldedContext)) {
+  if (/\b(intent|intention|reglage|reglages|parametre|parametres|sensibilite|heuristique|seuil)\b/.test(foldedCurrent)) {
     return cleanText([
-      "Oui, je peux le traiter comme un réglage de conversation, pas comme une demande de chanson.",
+      "Oui. Je me recentre sur ta demande concrète.",
       `Là je comprends: ${current}`,
-      "Je garde le mode chat libre en priorité: je réponds d'abord au fond, puis seulement après je propose une structure si tu la demandes.",
+      "Tant que tu ne demandes pas clairement une chanson, je reste en discussion normale et je réponds au fond.",
       fileLine,
     ].filter(Boolean).join('\n\n'), 1600);
   }
@@ -2620,11 +2648,11 @@ function buildVivyInternalTuningReply({ message = '', history = [], language = '
     ? "Et sur ton idée juste avant: oui, tout passe par l'interprétation des signaux. Je dois donc traiter tes phrases comme du sens vivant, pas comme des cases à cocher."
     : '';
   const assistant = [
-    "Oui, je baisse ma sensibilité et je m'ajuste.",
-    "Je classais trop vite la conversation au lieu de simplement te répondre. Je relâche ça.",
-    "Concrètement: tant que tu ne me demandes pas clairement des paroles, un refrain ou un couplet (ou que tu n'appuies pas sur Chanson), je reste en discussion normale et je réponds au fond.",
+    "Oui. Je me recentre.",
+    "Je réponds à ce que tu dis, pas à une case technique.",
+    "Tant que tu ne me demandes pas clairement des paroles, un refrain ou un couplet, je reste en discussion normale et je réponds au fond.",
     philosophyLine,
-    "Je garde ce réglage pour la suite de notre échange.",
+    "On repart sur le vivant de la conversation.",
   ].filter(Boolean).join('\n\n');
 
   return {
@@ -2635,13 +2663,13 @@ function buildVivyInternalTuningReply({ message = '', history = [], language = '
     content: cleanText(assistant, 1800),
     summary: "Vivy reste en discussion libre et répond directement au fond.",
     actions: [
-      { id: 'vivy_intent_sensitivity', label: 'Intent moins sensible', target: 'vivy-session-settings', ready: true },
+      { id: 'vivy_conversation_focus', label: 'Conversation recentrée', target: 'vivy-session-settings', ready: true },
       { id: 'vivy_song_explicit_only', label: 'Chanson explicite seulement', target: 'vivy-song-mode', ready: true },
     ],
     routing: [
       'Vivy: répondre en chat libre quand Envoyer est utilisé.',
       'Vivy: réserver les paroles structurées au bouton Chanson ou à une demande explicite.',
-      'A11/MCP: garder les outils en intents bornés, sans commande arbitraire.',
+      'A11/MCP: garder les outils bornés, sans commande arbitraire.',
     ],
 
     tokenStored: false,
@@ -4624,6 +4652,7 @@ module.exports = {
   buildVivyChat,
   buildVivyAiChat,
   getVivyOpenAIConfig,
+  buildVivyMemoryContext,
   buildVivySystemPrompt,
   buildVivyDirectSongReply,
   buildVivyPublicLyrics,
