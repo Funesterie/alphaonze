@@ -24,6 +24,7 @@ const {
   buildVivyMemoryContext,
   buildVivySystemPrompt,
   buildVivySunoPayload,
+  getVivySunoRuntimeStatus,
   buildVivyWebSearchQuery,
   getVivyOpenAIConfig,
   isDirectSongwritingRequest,
@@ -273,12 +274,13 @@ test('Vivy ElevenLabs instrumental prompt stays within the provider contract and
   assert.doesNotMatch(prompt, /Lyrics:/i);
 });
 
-test('Vivy preview mix keeps the voice clear over a quieter instrumental', () => {
+test('Vivy preview mix keeps the voice clear and masters the final song', () => {
   const args = buildVivyPreviewMixArgs('instrumental.mp3', 'voice.mp3', 'mix.mp3');
   assert.deepEqual(args.slice(0, 5), ['-y', '-i', 'instrumental.mp3', '-i', 'voice.mp3']);
-  assert.match(args.join(' '), /volume=0\.24\[music\]/);
+  assert.match(args.join(' '), /volume=0\.55\[music\]/);
   assert.match(args.join(' '), /highpass=f=90,loudnorm=I=-19:TP=-6:LRA=7\[voice\]/);
   assert.match(args.join(' '), /amix=inputs=2:duration=longest/);
+  assert.match(args.join(' '), /loudnorm=I=-14:TP=-1\.5:LRA=11/);
   assert.equal(args.at(-1), 'mix.mp3');
 });
 
@@ -1100,7 +1102,7 @@ test('Vivy frontend prioritizes publicLyrics and keeps voice-test TTS on short p
   assert.doesNotMatch(voiceTestBlock, /VIVY_STUDIO_HANDOFF|brief|buildVivyStudioBrief/);
 });
 
-test('Vivy frontend preserves selected voices when producing with Suno', () => {
+test('Vivy frontend requests complete Suno songs and only uses the legacy mix explicitly', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
     'utf8'
@@ -1139,7 +1141,9 @@ test('Vivy frontend preserves selected voices when producing with Suno', () => {
   const ttsOptionsEnd = appSource.indexOf('async function saveBriefArtifact');
   const ttsOptionsBlock = appSource.slice(ttsOptionsStart, ttsOptionsEnd);
   assert.match(ttsOptionsBlock, /activeVoiceProfile\.id\s*===\s*['"]vivy-sing['"]/);
-  assert.match(appSource, /Créer chanson Suno \+ voix sélectionnée/);
+  assert.match(appSource, /Créer la chanson complète avec Suno/);
+  assert.match(appSource, /voiceMode === ['"]external_mix['"]/);
+  assert.match(appSource, /Voix chantée générée par Suno/);
   assert.doesNotMatch(appSource, /Suno reçoit les paroles et le style, pas le timbre de la voix sélectionnée/);
 });
 
@@ -1159,7 +1163,29 @@ test('Suno payload applies a verified Vivy voice on supported models', () => {
   assert.equal(payload.personaModel, 'voice_persona');
 });
 
-test('Suno payload requests an instrumental for external Vivy voice mixing', () => {
+test('Vivy Suno status exposes the production model without leaking the voice id', () => {
+  const previousModel = process.env.VIVY_SUNO_MODEL;
+  const previousVoiceId = process.env.VIVY_SUNO_VOICE_ID;
+  process.env.VIVY_SUNO_MODEL = 'V5_5';
+  process.env.VIVY_SUNO_VOICE_ID = 'secret-vivy-voice-id';
+  try {
+    const status = getVivySunoRuntimeStatus();
+    assert.deepEqual(status, {
+      model: 'V5_5',
+      mode: 'production',
+      voiceEnrolled: true,
+      completeSongByDefault: true,
+    });
+    assert.doesNotMatch(JSON.stringify(status), /secret-vivy-voice-id/);
+  } finally {
+    if (previousModel === undefined) delete process.env.VIVY_SUNO_MODEL;
+    else process.env.VIVY_SUNO_MODEL = previousModel;
+    if (previousVoiceId === undefined) delete process.env.VIVY_SUNO_VOICE_ID;
+    else process.env.VIVY_SUNO_VOICE_ID = previousVoiceId;
+  }
+});
+
+test('Suno payload generates a complete V5.5 song when Vivy Suno Voice is not enrolled', () => {
   const previousVoiceId = process.env.VIVY_SUNO_VOICE_ID;
   delete process.env.VIVY_SUNO_VOICE_ID;
   try {
@@ -1170,9 +1196,32 @@ test('Suno payload requests an instrumental for external Vivy voice mixing', () 
       preserveSelectedVoice: true,
     });
 
-    assert.equal(payload.instrumental, true);
+    assert.equal(payload.instrumental, false);
+    assert.equal(payload.model, 'V5_5');
     assert.equal(payload.personaId, undefined);
     assert.equal(payload.personaModel, undefined);
+    assert.match(payload.style, /sung vocals/i);
+    assert.doesNotMatch(payload.style, /instrumental backing track only/i);
+    assert.doesNotMatch(payload.negativeTags, /vocals, singing/i);
+  } finally {
+    if (previousVoiceId === undefined) delete process.env.VIVY_SUNO_VOICE_ID;
+    else process.env.VIVY_SUNO_VOICE_ID = previousVoiceId;
+  }
+});
+
+test('Suno payload keeps the legacy external voice mix behind an explicit opt-in', () => {
+  const previousVoiceId = process.env.VIVY_SUNO_VOICE_ID;
+  delete process.env.VIVY_SUNO_VOICE_ID;
+  try {
+    const payload = buildVivySunoPayload({
+      mode: 'song',
+      songArtists: ['vivy'],
+      songText: '[Refrain - Vivy]\n[Vivy]\nOn garde la lumière.',
+      preserveSelectedVoice: true,
+      allowExternalVoiceMix: true,
+    });
+
+    assert.equal(payload.instrumental, true);
     assert.match(payload.style, /instrumental backing track only/i);
     assert.match(payload.negativeTags, /vocals/i);
   } finally {

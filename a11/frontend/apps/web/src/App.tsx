@@ -5105,7 +5105,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         contentType: String(finalPayload?.media?.content_type || finalPayload?.contentType || finalPayload?.content_type || "audio/mpeg"),
         filename: String(finalPayload?.media?.filename || finalPayload?.filename || "vivy-chanson.mp3"),
       };
-      if (voiceMode !== "suno_voice") {
+      if (voiceMode === "external_mix") {
         setStatus(`Suno a terminé l'instrumental. J'ajoute maintenant ${activeSongArtistCast.label}...`);
         const voicePreview = activeSongArtistCast.count > 1
           ? await createVivyMultiVoicePreview(vocalSegments)
@@ -5126,7 +5126,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       setVivyMedia(preparedMedia);
       const voiceRoute = voiceMode === "suno_voice"
         ? "Voix Vivy vérifiée utilisée directement par Suno."
-        : `Instrumental Suno mixé avec la vraie piste ${activeSongArtistCast.label}.`;
+        : voiceMode === "external_mix"
+          ? `Instrumental Suno mixé avec la piste ${activeSongArtistCast.label}.`
+          : "Voix chantée générée par Suno. La voix Suno Vivy doit encore être enregistrée pour conserver exactement son timbre.";
       setVivyOutput(normalizeVivyStudioOutputForState([
         "Production musicale Suno prête.",
         `Direction: ${songMood || "electro pop dark cinematographique"}`,
@@ -5137,7 +5139,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       ].filter(Boolean).join("\n")));
       setStatus(voiceMode === "suno_voice"
         ? "Chanson Suno prête avec la voix Vivy vérifiée."
-        : `Chanson prête: instrumental Suno + voix ${activeSongArtistCast.label}.`);
+        : voiceMode === "external_mix"
+          ? `Chanson prête: instrumental Suno + voix ${activeSongArtistCast.label}.`
+          : "Chanson complète Suno prête. Le timbre Vivy sera disponible après l’enregistrement Suno Voice.");
     } catch (error: any) {
       setStatus(`Chanson Vivy indisponible: ${error?.message || error}`);
     } finally {
@@ -5763,7 +5767,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
               </label>
               <div className="vivy-studio-actions vivy-studio-actions--song">
                 <button type="button" onClick={produceSimpleVivySong} disabled={!hasSession || isBusy || !songText.trim()}>
-                  Créer chanson Suno + voix sélectionnée
+                  Créer la chanson complète avec Suno
                 </button>
                 <button type="button" onClick={forgetSunoSessionKey} disabled={!hasSession || isBusy || !sunoSessionKey.trim()}>
                   Oublier clé Suno

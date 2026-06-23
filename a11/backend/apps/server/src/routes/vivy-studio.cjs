@@ -415,6 +415,16 @@ function isSunoMusicConfigured() {
   return Boolean(getSunoApiKey());
 }
 
+function getVivySunoRuntimeStatus() {
+  const model = cleanOneLine(process.env.VIVY_SUNO_MODEL || 'V5_5', 'V5_5', 40).toUpperCase();
+  return {
+    model,
+    mode: /^V(?:4|5)(?:_|$)/.test(model) ? 'production' : 'custom',
+    voiceEnrolled: Boolean(cleanOneLine(process.env.VIVY_SUNO_VOICE_ID || process.env.SUNO_VOICE_ID, '', 180)),
+    completeSongByDefault: true,
+  };
+}
+
 function getConfiguredMusicProviders() {
   const preferred = cleanOneLine(process.env.VIVY_MUSIC_PROVIDER || process.env.VIVY_MUSIC_PROVIDERS, '', 160)
     .toLowerCase()
@@ -4007,7 +4017,9 @@ function buildVivySunoPayload(input = {}, req = null) {
     && Boolean(verifiedVoiceId)
     && input.instrumental !== true
     && input.forceInstrumental !== true;
-  const useExternalVoiceMix = preserveSelectedVoice && !useVerifiedVivyVoice;
+  const useExternalVoiceMix = preserveSelectedVoice
+    && !useVerifiedVivyVoice
+    && input.allowExternalVoiceMix === true;
   const prosodyPlan = buildVivyProsodyPlan(input);
   const prosodyStyle = buildVivyProsodyStyleHint(prosodyPlan);
   const rawTitleMaterial = sanitizeVivySongMaterial(stripVivyAscii4SoundTokens(input.songText || input.theme || input.prompt), 1200);
@@ -4055,7 +4067,7 @@ function buildVivySunoPayload(input = {}, req = null) {
       || 'spoken word, narration, reading prompt, robotic speech, muddy mix, out of tune vocals, copyrighted melody, celebrity voice imitation',
     useExternalVoiceMix ? 'vocals, singing, spoken voice' : '',
   ].filter(Boolean).join(', '), 'spoken word, narration', 320);
-  const requestedModel = cleanOneLine(input.musicModel || process.env.VIVY_SUNO_MODEL || 'V4_5', 'V4_5', 40);
+  const requestedModel = cleanOneLine(input.musicModel || process.env.VIVY_SUNO_MODEL || 'V5_5', 'V5_5', 40);
   const payload = {
     model: useVerifiedVivyVoice && !/^V5(?:_5)?$/i.test(requestedModel) ? 'V5_5' : requestedModel,
     customMode: true,
@@ -4293,7 +4305,7 @@ async function requestSunoMusic(input = {}, req = null) {
   const body = buildVivySunoPayload(input, req);
   const voiceMode = body.personaModel === 'voice_persona'
     ? 'suno_voice'
-    : input.preserveSelectedVoice === true
+    : body.instrumental === true && input.allowExternalVoiceMix === true
       ? 'external_mix'
       : 'suno_generated';
   const response = await fetch(`${getSunoBaseUrl()}/generate`, {
@@ -4447,7 +4459,7 @@ function buildVivyPreviewMixArgs(instrumentalPath, voicePath, outputPath) {
     '-i', instrumentalPath,
     '-i', voicePath,
     '-filter_complex',
-    '[0:a]volume=0.24[music];[1:a]highpass=f=90,loudnorm=I=-19:TP=-6:LRA=7[voice];[music][voice]amix=inputs=2:duration=longest:dropout_transition=2,alimiter=limit=0.90[out]',
+    '[0:a]volume=0.55[music];[1:a]highpass=f=90,loudnorm=I=-19:TP=-6:LRA=7[voice];[music][voice]amix=inputs=2:duration=longest:dropout_transition=2,loudnorm=I=-14:TP=-1.5:LRA=11,alimiter=limit=0.95[out]',
     '-map', '[out]',
     '-c:a', 'libmp3lame',
     '-b:a', '192k',
@@ -4823,6 +4835,7 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
         configured: isSunoMusicConfigured() || isElevenLabsMusicConfigured(),
         adminOnly: !envFlag('VIVY_MUSIC_ALLOW_NON_ADMIN'),
         sessionSunoKeySupported: true,
+        suno: getVivySunoRuntimeStatus(),
       },
     });
   });
@@ -5040,6 +5053,7 @@ module.exports = {
   buildVivyDirectSongReply,
   buildVivyPublicLyrics,
   buildVivySunoPayload,
+  getVivySunoRuntimeStatus,
   buildVivyWebSearchQuery,
   postProcessVivyAssistantText,
   sanitizeVivyPublicText,
