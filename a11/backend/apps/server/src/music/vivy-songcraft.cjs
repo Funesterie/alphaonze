@@ -30,6 +30,7 @@ function applyCasePattern(source = '', replacement = '') {
 
 function restoreVivyFrenchSongAccents(value = '') {
   const replacements = [
+    [/\brefren\b/gi, (match) => applyCasePattern(match, 'refrain')],
     [/\bmillimetres?\b/gi, (match) => applyCasePattern(match, match.endsWith('s') ? 'millimètres' : 'millimètre')],
     [/\bserrees?\b/gi, (match) => applyCasePattern(match, match.endsWith('s') ? 'serrées' : 'serrée')],
     [/\bdecides?\b/gi, (match) => applyCasePattern(match, match.endsWith('s') ? 'décides' : 'décide')],
@@ -67,7 +68,6 @@ function restoreVivyFrenchSongAccents(value = '') {
   return String(value || '')
     .split(/\r?\n/)
     .map((line) => {
-      if (/^\s*\[[^\]]+\]\s*$/.test(line)) return line;
       return replacements.reduce((current, [pattern, replacement]) => current.replace(pattern, replacement), line);
     })
     .join('\n')
@@ -147,7 +147,14 @@ function sanitizeVivySongMaterial(value = '', max = VIVY_SONG_MAX_CHARS) {
 function looksLikeVivyArrangementCue(value = '') {
   const folded = foldTextForLookup(value);
   if (!folded || folded.length > 180) return false;
-  return /\b(?:instrumental|arrangement|production|tempo|bpm|crescendo|decrescendo|fade|reverb|delay|piano|tambour|batterie|drums?|beat|battement|percussions?|guitares?|violons?|violoncelle|basses?|synth(?:e|es|s)?|pads?|cordes|strings?|flute|sax(?:ophone)?|trompette|choeur|choir|orchestr(?:e|al|ation)|arpege|a cappella)\b/.test(folded);
+  const vocalization = folded
+    .replace(/[,.!?;:'"-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (/^(?:(?:ah+|oh+|ooh+|ouh+|eh+|hey+|mm+h*|hum+|hmm+|yeah+|woah+|la+|na+|ha+)\s*){1,8}$/.test(vocalization)) {
+    return false;
+  }
+  return /\b(?:instrumental|arrangement|production|tempo|bpm|crescendo|decrescendo|fade|reverb|delay|piano|tambour|batterie|drums?|beat|battement|percussions?|guitares?|violons?|violoncelle|basses?|synth(?:e|es|s)?|pads?|cordes|strings?|flute|sax(?:ophone)?|trompette|choeur|choir|orchestr(?:e|al|ation)|arpege|a cappella|voix|vocal|chante|chantee|chuchote|chuchotee|murmure|murmuree|parle|parlee|ensemble|duo|solo|harmoni(?:e|es|que)|backing|lead|doucement|lentement|plus fort|refrain|couplet)\b/.test(folded);
 }
 
 function splitVivyArrangementCues(value = '') {
@@ -869,6 +876,7 @@ function buildVivySongProductionBrief(input = {}) {
 
 module.exports = {
   VIVY_SONG_MAX_CHARS,
+  restoreVivyFrenchSongAccents,
   buildVivySongcraftSystemPrompt,
   buildVivySongProductionBrief,
   buildVivyStructuredLyrics,

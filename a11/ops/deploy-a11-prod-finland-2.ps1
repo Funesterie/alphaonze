@@ -1147,6 +1147,7 @@ $overrides = [ordered]@{
   VIVY_SUNO_API_KEY_FILE = $(if ($env:VIVY_SUNO_API_KEY_FILE) { $env:VIVY_SUNO_API_KEY_FILE } else { "/app/runtime/secrets/suno_api_key" })
   VIVY_SUNO_BASE_URL = $(if ($env:VIVY_SUNO_BASE_URL) { $env:VIVY_SUNO_BASE_URL } else { "https://api.sunoapi.org/api/v1" })
   VIVY_SUNO_MODEL = $(if ($env:VIVY_SUNO_MODEL) { $env:VIVY_SUNO_MODEL } else { "V4_5" })
+  VIVY_SUNO_VOICE_ID = $(if ($env:VIVY_SUNO_VOICE_ID) { $env:VIVY_SUNO_VOICE_ID } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_SUNO_VOICE_ID"])) { [string]$envMap["VIVY_SUNO_VOICE_ID"] } else { "" })
   VIVY_SUNO_CALLBACK_URL = $(if ($env:VIVY_SUNO_CALLBACK_URL) { $env:VIVY_SUNO_CALLBACK_URL } else { "https://vivy.funesterie.me/api/vivy/studio/suno/callback" })
   VIVY_SUNO_CALLBACK_TOKEN = $(if ($env:VIVY_SUNO_CALLBACK_TOKEN) { $env:VIVY_SUNO_CALLBACK_TOKEN } else { "" })
   ENABLE_PIPER_HTTP = $(if ($env:ENABLE_PIPER_HTTP) { $env:ENABLE_PIPER_HTTP } else { "true" })

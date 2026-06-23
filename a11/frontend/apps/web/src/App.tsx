@@ -3903,9 +3903,12 @@ function VivyD9DiagnosticsPanel({ prosody }: { prosody: VivyStudioProductionResu
 
 function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionProps) {
   const initialDraft = readVivyStudioDraft() || {};
-  const hasLegacyVivySunoSource = String(initialDraft.songSource || "") === "Prompt + Suno Vivy";
+  const hasLegacyVivySunoSource = [
+    "Prompt + Suno Vivy",
+    "Prompt + Suno (voix Suno)",
+  ].includes(String(initialDraft.songSource || ""));
   const initialSongSource = hasLegacyVivySunoSource
-    ? "Prompt + Suno (voix Suno)"
+    ? "Prompt + Suno + voix sélectionnée"
     : String(initialDraft.songSource || "Prompt +");
   const [activeMode, setActiveMode] = useState<VivyStudioMode>(normalizeVivyStudioMode(initialDraft.mode) || "voice");
   const savedVoiceTool = hasLegacyVivySunoSource ? "Voix Vivy chant" : String(initialDraft.voiceTool || "");
@@ -5037,6 +5040,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         forceRealMusic: true,
         generateMusic: true,
         makeSong: true,
+        preserveSelectedVoice: true,
         disableEmergencyMedia: true,
         durationSeconds: 45,
       });
@@ -5044,7 +5048,10 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       let finalPayload: any = payloadAny;
       setVivyDiagnostics(payload.prosody || null);
       const publicLyrics = toUnicodeText(payloadAny?.publicLyrics || prompt, VIVY_STUDIO_SONG_MAX_CHARS).trim();
+      const vocalLyrics = toUnicodeText(payloadAny?.vocalLyrics || publicLyrics, VIVY_STUDIO_SONG_MAX_CHARS).trim();
+      const vocalSegments = Array.isArray(payloadAny?.vocalSegments) ? payloadAny.vocalSegments : [];
       setVivyLyrics(publicLyrics);
+      setVivyArrangementCues(Array.isArray(payloadAny?.arrangementCues) ? payloadAny.arrangementCues : []);
       let mediaUrl = getVivySongMediaUrl(finalPayload);
       const taskId = String(payloadAny?.mediaStatus?.taskId || payloadAny?.musicJob?.taskId || payloadAny?.media?.taskId || "").trim();
       if (!mediaUrl && taskId) {
@@ -5070,23 +5077,52 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         }
         throw new Error(mediaStatus?.message || mediaStatus?.reason || "audio_url_missing");
       }
-      setVivyMedia({
-        kind: "audio",
+      const voiceMode = String(
+        payloadAny?.mediaStatus?.voiceMode
+        || payloadAny?.musicJob?.voiceMode
+        || payloadAny?.media?.voiceMode
+        || "external_mix"
+      );
+      let preparedMedia = {
+        kind: "audio" as const,
         url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
         downloadUrl: resolveApiAssetUrl(mediaUrl) || mediaUrl,
         provider: String(finalPayload?.media?.provider || payloadAny?.mediaStatus?.provider || "vivy-music"),
         contentType: String(finalPayload?.media?.content_type || finalPayload?.contentType || finalPayload?.content_type || "audio/mpeg"),
         filename: String(finalPayload?.media?.filename || finalPayload?.filename || "vivy-chanson.mp3"),
-      });
+      };
+      if (voiceMode !== "suno_voice") {
+        setStatus(`Suno a terminé l'instrumental. J'ajoute maintenant ${activeSongArtistCast.label}...`);
+        const voicePreview = activeSongArtistCast.count > 1
+          ? await createVivyMultiVoicePreview(vocalSegments)
+          : await createVivySongVoicePreview(vocalLyrics);
+        const mixed = await mixVivyStudioPreview(voicePreview.url, preparedMedia.url);
+        const mixedUrl = String(mixed?.audioUrl || mixed?.audio_url || mixed?.url || "").trim();
+        if (!mixedUrl) throw new Error("mix_suno_vivy_audio_url_missing");
+        preparedMedia = {
+          kind: "audio",
+          url: resolveApiAssetUrl(mixedUrl) || mixedUrl,
+          downloadUrl: resolveApiAssetUrl(mixedUrl) || mixedUrl,
+          provider: String(mixed?.provider || "vivy-suno-voice-mix"),
+          contentType: String(mixed?.content_type || "audio/mpeg"),
+          filename: String(mixed?.filename || "vivy-suno-voix-selectionnee.mp3"),
+        };
+      }
+      setVivyMedia(preparedMedia);
+      const voiceRoute = voiceMode === "suno_voice"
+        ? "Voix Vivy vérifiée utilisée directement par Suno."
+        : `Instrumental Suno mixé avec la vraie piste ${activeSongArtistCast.label}.`;
       setVivyOutput(normalizeVivyStudioOutputForState([
         "Production musicale Suno prête.",
         `Direction: ${songMood || "electro pop dark cinematographique"}`,
         `Casting vocal: ${activeSongArtistCast.countLabel} - ${activeSongArtistCast.label}`,
-        "Suno reçoit les paroles et le style, pas le timbre de la voix sélectionnée.",
+        voiceRoute,
         taskId ? "Job Suno: lancé (identifiant masqué du brief)" : "",
         finalPayload?.summary || payload?.summary || "Sortie: chanson audio Suno générée.",
       ].filter(Boolean).join("\n")));
-      setStatus("Chanson Suno prête. Le timbre Vivy n'est pas transféré par cette API.");
+      setStatus(voiceMode === "suno_voice"
+        ? "Chanson Suno prête avec la voix Vivy vérifiée."
+        : `Chanson prête: instrumental Suno + voix ${activeSongArtistCast.label}.`);
     } catch (error: any) {
       setStatus(`Chanson Vivy indisponible: ${error?.message || error}`);
     } finally {
@@ -5586,7 +5622,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                   onChange={(event) => setSongSource(event.target.value)}
                 >
                   <option>Prompt +</option>
-                  <option>Prompt + Suno (voix Suno)</option>
+                  <option>Prompt + Suno + voix sélectionnée</option>
                   <option>Thème</option>
                   <option>Texte brut</option>
                   <option>Paroles</option>
@@ -5705,14 +5741,14 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
               </label>
               <div className="vivy-studio-actions vivy-studio-actions--song">
                 <button type="button" onClick={produceSimpleVivySong} disabled={!hasSession || isBusy || !songText.trim()}>
-                  Créer chanson Suno (voix Suno)
+                  Créer chanson Suno + voix sélectionnée
                 </button>
                 <button type="button" onClick={forgetSunoSessionKey} disabled={!hasSession || isBusy || !sunoSessionKey.trim()}>
                   Oublier clé Suno
                 </button>
               </div>
               <p className="vivy-studio-provider-note">
-                Suno reçoit les paroles et le style, pas le timbre de la voix sélectionnée. Préparer chanson crée l'aperçu avec la vraie voix choisie.
+                Vivy utilise une voix Suno vérifiée si elle est configurée; sinon elle mixe la vraie voix sélectionnée sur l'instrumental Suno.
               </p>
             </>
           )}

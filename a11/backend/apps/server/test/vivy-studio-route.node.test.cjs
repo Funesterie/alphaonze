@@ -152,15 +152,45 @@ test('Vivy Studio produces a song handoff without storing tokens', () => {
 test('Vivy separates instrumental directions from lyrics that must be sung', () => {
   const source = `[Intro - Vivy]
 (Soft piano + léger battement de tambour)
+(voix douce et chuchotée)
 Dans les ténèbres, je cherche la lumière,
 (oh oh)
+(mmh)
 Un chemin sinueux, pour atteindre la liberté.`;
   const result = splitVivyArrangementCues(source);
 
-  assert.deepEqual(result.cues, ['Soft piano + léger battement de tambour']);
+  assert.deepEqual(result.cues, [
+    'Soft piano + léger battement de tambour',
+    'voix douce et chuchotée',
+  ]);
   assert.doesNotMatch(result.lyrics, /Soft piano|battement de tambour/i);
+  assert.doesNotMatch(result.lyrics, /voix douce|chuchotée/i);
   assert.match(result.lyrics, /\(oh oh\)/i);
+  assert.match(result.lyrics, /\(mmh\)/i);
   assert.match(result.lyrics, /Dans les ténèbres/i);
+});
+
+test('Vivy public lyrics normalize refren before chat and TTS output', () => {
+  const result = buildVivyPublicLyrics({
+    mode: 'song',
+    songArtists: ['vivy'],
+  }, `[Refren - Vivy]
+[Vivy]
+Le refren revient quand la nuit nous entraîne.`, '');
+
+  assert.match(result, /\[Refrain - Vivy\]/);
+  assert.match(result, /Le refrain revient/);
+  assert.doesNotMatch(result, /\brefren\b/i);
+});
+
+test('Vivy public chat keeps long creative replies intact by default', () => {
+  const response = Array.from(
+    { length: 80 },
+    (_, index) => `Ligne ${index + 1}: les mains dans l'air, on danse jusqu'au matin sans perdre la lumière.`
+  ).join('\n');
+
+  assert.ok(response.length > 5000);
+  assert.equal(sanitizeVivyPublicText(response), response);
 });
 
 test('Vivy Studio exposes cue-free vocal lyrics while preserving the public score', () => {
@@ -1019,6 +1049,7 @@ test('Vivy frontend prioritizes publicLyrics and keeps voice-test TTS on short p
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
     'utf8'
   );
+  assert.match(appSource, /Prompt \+ Suno \(voix Suno\)[\s\S]{0,160}Prompt \+ Suno \+ voix sélectionnée/);
   const chatBlockStart = appSource.indexOf('const payload = await chatWithVivy');
   const chatBlock = appSource.slice(chatBlockStart, chatBlockStart + 1400);
   assert.match(chatBlock, /payload\.publicLyrics[\s\S]{0,120}\|\|[\s\S]{0,120}payload\.assistant/);
@@ -1031,7 +1062,7 @@ test('Vivy frontend prioritizes publicLyrics and keeps voice-test TTS on short p
   assert.doesNotMatch(voiceTestBlock, /VIVY_STUDIO_HANDOFF|brief|buildVivyStudioBrief/);
 });
 
-test('Vivy frontend prepares fresh solo and multi-voice previews without using them as a Suno fallback', () => {
+test('Vivy frontend preserves selected voices when producing with Suno', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
     'utf8'
@@ -1048,7 +1079,11 @@ test('Vivy frontend prepares fresh solo and multi-voice previews without using t
 
   assert.match(songBlock, /setVivyMedia\(null\)/);
   assert.doesNotMatch(songBlock, /ttsSpeak\(/);
-  assert.doesNotMatch(songBlock, /Maquette vocale Vivy/);
+  assert.match(songBlock, /preserveSelectedVoice:\s*true/);
+  assert.match(songBlock, /createVivySongVoicePreview\(/);
+  assert.match(songBlock, /createVivyMultiVoicePreview\(/);
+  assert.match(songBlock, /mixVivyStudioPreview\(/);
+  assert.match(songBlock, /voiceMode/);
   assert.match(prepareBlock, /setVivyMedia\(null\)/);
   assert.match(prepareBlock, /createVivySongVoicePreview\(/);
   assert.match(prepareBlock, /createVivyMultiVoicePreview\(/);
@@ -1066,8 +1101,46 @@ test('Vivy frontend prepares fresh solo and multi-voice previews without using t
   const ttsOptionsEnd = appSource.indexOf('async function saveBriefArtifact');
   const ttsOptionsBlock = appSource.slice(ttsOptionsStart, ttsOptionsEnd);
   assert.match(ttsOptionsBlock, /activeVoiceProfile\.id\s*===\s*['"]vivy-sing['"]/);
-  assert.match(appSource, /Créer chanson Suno \(voix Suno\)/);
-  assert.match(appSource, /Suno reçoit les paroles et le style, pas le timbre de la voix sélectionnée/);
+  assert.match(appSource, /Créer chanson Suno \+ voix sélectionnée/);
+  assert.doesNotMatch(appSource, /Suno reçoit les paroles et le style, pas le timbre de la voix sélectionnée/);
+});
+
+test('Suno payload applies a verified Vivy voice on supported models', () => {
+  const payload = buildVivySunoPayload({
+    mode: 'song',
+    songArtists: ['vivy'],
+    songText: '[Refrain - Vivy]\n[Vivy]\nOn garde la lumière.',
+    preserveSelectedVoice: true,
+    sunoVoiceId: 'vivy-verified-voice-test',
+    musicModel: 'V4_5',
+  });
+
+  assert.equal(payload.instrumental, false);
+  assert.equal(payload.model, 'V5_5');
+  assert.equal(payload.personaId, 'vivy-verified-voice-test');
+  assert.equal(payload.personaModel, 'voice_persona');
+});
+
+test('Suno payload requests an instrumental for external Vivy voice mixing', () => {
+  const previousVoiceId = process.env.VIVY_SUNO_VOICE_ID;
+  delete process.env.VIVY_SUNO_VOICE_ID;
+  try {
+    const payload = buildVivySunoPayload({
+      mode: 'song',
+      songArtists: ['vivy'],
+      songText: '[Refrain - Vivy]\n[Vivy]\nOn garde la lumière.',
+      preserveSelectedVoice: true,
+    });
+
+    assert.equal(payload.instrumental, true);
+    assert.equal(payload.personaId, undefined);
+    assert.equal(payload.personaModel, undefined);
+    assert.match(payload.style, /instrumental backing track only/i);
+    assert.match(payload.negativeTags, /vocals/i);
+  } finally {
+    if (previousVoiceId === undefined) delete process.env.VIVY_SUNO_VOICE_ID;
+    else process.env.VIVY_SUNO_VOICE_ID = previousVoiceId;
+  }
 });
 
 test('Vivy vocal plan routes solo and shared sections to the selected official singers', () => {

@@ -2725,6 +2725,8 @@ export type VivyStudioProductionInput = {
   forceRealMusic?: boolean;
   generateMusic?: boolean;
   makeSong?: boolean;
+  preserveSelectedVoice?: boolean;
+  sunoVoiceId?: string;
   instrumental?: boolean;
   forceInstrumental?: boolean;
   previewInstrumental?: boolean;
@@ -2784,6 +2786,8 @@ export type VivyStudioProductionResult = {
     status?: string;
     reason?: string;
     message?: string;
+    voiceMode?: 'suno_voice' | 'external_mix' | 'suno_generated' | string;
+    selectedVoicePreserved?: boolean;
   };
   musicJob?: {
     provider?: string;
@@ -2791,6 +2795,8 @@ export type VivyStudioProductionResult = {
     jobId?: string;
     state?: string;
     status?: string;
+    voiceMode?: 'suno_voice' | 'external_mix' | 'suno_generated' | string;
+    selectedVoicePreserved?: boolean;
   };
   tokenStored?: boolean;
   aiMode?: 'llm' | 'fallback' | string;

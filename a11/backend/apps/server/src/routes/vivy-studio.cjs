@@ -42,6 +42,7 @@ const {
   buildVivyVocalSegments,
   sanitizeVivySongMaterial,
   splitVivyArrangementCues,
+  restoreVivyFrenchSongAccents,
   inferTitle,
   stripSongCommand,
   looksLikeCompleteLyrics,
@@ -83,6 +84,7 @@ try {
 
 const MODES = new Set(['voice', 'song', 'share']);
 const CHAT_MODES = new Set(['chat', 'voice', 'song', 'share']);
+const VIVY_CHAT_MAX_CHARS = 12000;
 const VIVY_LOCAL_CONTEXT_SKIP_DIRS = new Set([
   '.git',
   '.codex-tmp',
@@ -260,7 +262,7 @@ function isVivyInternalPublicLeakLine(line = '') {
   return false;
 }
 
-function sanitizeVivyPublicText(value = '', max = 1800) {
+function sanitizeVivyPublicText(value = '', max = VIVY_CHAT_MAX_CHARS) {
   const text = cleanText(redactVivyAgentBriefSecrets(value), Math.max(max, 2200));
   if (!text) return '';
   const kept = [];
@@ -2855,7 +2857,7 @@ function isVivyPublicLyricsNoiseLine(line = '') {
 }
 
 function sanitizeVivyPublicLyrics(value = '', max = VIVY_SONG_MAX_CHARS) {
-  const text = cleanText(value, Math.max(max, VIVY_SONG_MAX_CHARS));
+  const text = cleanText(restoreVivyFrenchSongAccents(value), Math.max(max, VIVY_SONG_MAX_CHARS));
   if (!text) return '';
   const kept = [];
   for (const line of text.split(/\r?\n/)) {
@@ -3259,7 +3261,7 @@ function buildVivyChat(input) {
     ].join('\n\n');
   const assistant = mode === 'song'
     ? assistantDraft
-    : sanitizeVivyPublicText(assistantDraft, 1800);
+    : sanitizeVivyPublicText(assistantDraft, VIVY_CHAT_MAX_CHARS);
 
   return {
     ok: true,
@@ -3282,7 +3284,7 @@ function buildVivyChat(input) {
   };
 }
 
-function postProcessVivyAssistantText({ text = '', userMessage = '', systemPrompt = '', mode = '', maxChars = 3200 } = {}) {
+function postProcessVivyAssistantText({ text = '', userMessage = '', systemPrompt = '', mode = '', maxChars = VIVY_CHAT_MAX_CHARS } = {}) {
   if (mode === 'song') {
     return {
       content: cleanText(text, maxChars),
@@ -3620,16 +3622,16 @@ async function buildVivyAiChat(input, req) {
       temperature: mode === 'song'
         ? Number(process.env.VIVY_CHAT_TEMPERATURE_SONG || process.env.VIVY_CHAT_TEMPERATURE || 0.88)
         : Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74),
-      max_tokens: mode === 'song' ? Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || 3200) : Number(process.env.VIVY_CHAT_MAX_TOKENS || 900),
+      max_tokens: mode === 'song' ? Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || 3200) : Number(process.env.VIVY_CHAT_MAX_TOKENS || 3200),
     });
-    const rawAssistant = cleanText(completion?.choices?.[0]?.message?.content, mode === 'song' ? songResponseMaxChars : 3200);
+    const rawAssistant = cleanText(completion?.choices?.[0]?.message?.content, mode === 'song' ? songResponseMaxChars : VIVY_CHAT_MAX_CHARS);
     let _vivyLlmLatency = Date.now() - _vivyLlmStart;
     const processed = postProcessVivyAssistantText({
       text: rawAssistant,
       userMessage: message,
       systemPrompt,
       mode,
-      maxChars: mode === 'song' ? songResponseMaxChars : 3200,
+      maxChars: mode === 'song' ? songResponseMaxChars : VIVY_CHAT_MAX_CHARS,
     });
     let usedSongcraftFallback = false;
     let llmRetried = false;
@@ -3669,7 +3671,7 @@ async function buildVivyAiChat(input, req) {
 
     const assistant = mode === 'song'
       ? buildVivyPublicLyrics({ ...input, message, files, history }, assistantCandidate, fallback.publicLyrics)
-      : sanitizeVivyPublicText(assistantCandidate, 1800);
+      : sanitizeVivyPublicText(assistantCandidate, VIVY_CHAT_MAX_CHARS);
     if (mode === 'song') {
       logVivySongcraftTrace({
         provider: llmBundle.provider || getVivyProviderFromBaseUrl(llmBundle.baseURL || ''),
@@ -3955,6 +3957,19 @@ function buildVivySunoLyrics(input = {}) {
 
 function buildVivySunoPayload(input = {}, req = null) {
   const artistCast = buildVivySongArtistCast(input);
+  const preserveSelectedVoice = input.preserveSelectedVoice === true;
+  const explicitVoiceId = cleanOneLine(input.sunoVoiceId, '', 180);
+  const serverVoiceId = getRequestSessionSunoApiKey(input, req)
+    ? ''
+    : cleanOneLine(process.env.VIVY_SUNO_VOICE_ID || process.env.SUNO_VOICE_ID, '', 180);
+  const verifiedVoiceId = explicitVoiceId || serverVoiceId;
+  const useVerifiedVivyVoice = preserveSelectedVoice
+    && artistCast.count === 1
+    && artistCast.ids[0] === 'vivy'
+    && Boolean(verifiedVoiceId)
+    && input.instrumental !== true
+    && input.forceInstrumental !== true;
+  const useExternalVoiceMix = preserveSelectedVoice && !useVerifiedVivyVoice;
   const prosodyPlan = buildVivyProsodyPlan(input);
   const prosodyStyle = buildVivyProsodyStyleHint(prosodyPlan);
   const rawTitleMaterial = sanitizeVivySongMaterial(stripVivyAscii4SoundTokens(input.songText || input.theme || input.prompt), 1200);
@@ -3982,27 +3997,41 @@ function buildVivySunoPayload(input = {}, req = null) {
   const arrangementStyle = arrangement.cues.length
     ? `instrumental arrangement: ${arrangement.arrangement}; never sing or speak arrangement directions`
     : '';
-  const style = /structured rhymed lyrics|rimes|paroles structur/i.test(styleBase)
+  let style = /structured rhymed lyrics|rimes|paroles structur/i.test(styleBase)
     ? cleanOneLine([styleBase, arrangementStyle, castStyle, prosodyStyle].filter((item, index, list) => item && list.indexOf(item) === index).join(', '), styleBase, 520)
     : cleanOneLine(
       `${styleBase}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration${arrangementStyle ? `, ${arrangementStyle}` : ''}${castStyle ? `, ${castStyle}` : ''}${prosodyStyle ? `, ${prosodyStyle}` : ''}`,
       styleBase,
       520
     );
+  if (useExternalVoiceMix) {
+    style = cleanOneLine([
+      styleBase,
+      arrangementStyle,
+      'instrumental backing track only, no vocals, no singing, leave clear space for the external lead vocal',
+      prosodyStyle,
+    ].filter(Boolean).join(', '), 'instrumental backing track only, no vocals', 520);
+  }
+  const negativeTags = cleanOneLine([
+    input.negativeTags || process.env.VIVY_SUNO_NEGATIVE_TAGS
+      || 'spoken word, narration, reading prompt, robotic speech, muddy mix, out of tune vocals, copyrighted melody, celebrity voice imitation',
+    useExternalVoiceMix ? 'vocals, singing, spoken voice' : '',
+  ].filter(Boolean).join(', '), 'spoken word, narration', 320);
+  const requestedModel = cleanOneLine(input.musicModel || process.env.VIVY_SUNO_MODEL || 'V4_5', 'V4_5', 40);
   const payload = {
-    model: cleanOneLine(input.musicModel || process.env.VIVY_SUNO_MODEL || 'V4_5', 'V4_5', 40),
+    model: useVerifiedVivyVoice && !/^V5(?:_5)?$/i.test(requestedModel) ? 'V5_5' : requestedModel,
     customMode: true,
-    instrumental: input.instrumental === true || input.forceInstrumental === true,
+    instrumental: input.instrumental === true || input.forceInstrumental === true || useExternalVoiceMix,
     title,
     style,
     prompt: buildVivySunoLyrics(input),
-    negativeTags: cleanOneLine(
-      input.negativeTags || process.env.VIVY_SUNO_NEGATIVE_TAGS,
-      'spoken word, narration, reading prompt, robotic speech, muddy mix, out of tune vocals, copyrighted melody, celebrity voice imitation',
-      260
-    ),
+    negativeTags,
     callBackUrl: buildSunoCallbackUrl(req),
   };
+  if (useVerifiedVivyVoice) {
+    payload.personaId = verifiedVoiceId;
+    payload.personaModel = 'voice_persona';
+  }
   return payload;
 }
 
@@ -4224,6 +4253,11 @@ async function requestSunoMusic(input = {}, req = null) {
   }
 
   const body = buildVivySunoPayload(input, req);
+  const voiceMode = body.personaModel === 'voice_persona'
+    ? 'suno_voice'
+    : input.preserveSelectedVoice === true
+      ? 'external_mix'
+      : 'suno_generated';
   const response = await fetch(`${getSunoBaseUrl()}/generate`, {
     method: 'POST',
     headers: {
@@ -4249,6 +4283,8 @@ async function requestSunoMusic(input = {}, req = null) {
       prompt: body.prompt,
       style: body.style,
       model: body.model,
+      voiceMode,
+      selectedVoicePreserved: voiceMode === 'suno_voice',
     };
   }
   if (!taskId) throw new Error('suno_music_task_missing');
@@ -4266,6 +4302,8 @@ async function requestSunoMusic(input = {}, req = null) {
     prompt: body.prompt,
     style: body.style,
     model: body.model,
+    voiceMode,
+    selectedVoicePreserved: voiceMode === 'suno_voice',
     content_type: 'audio/mpeg',
     generatedAt: new Date().toISOString(),
   };
@@ -4733,6 +4771,8 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
           taskId: media.taskId,
           jobId: media.jobId || media.taskId,
           status: media.status || 'submitted',
+          voiceMode: media.voiceMode,
+          selectedVoicePreserved: media.selectedVoicePreserved === true,
           message: 'Vivy a lancé une vraie génération Suno. La chanson arrive en MP3 dès que le job est terminé.',
         };
         payload.musicJob = {
@@ -4741,6 +4781,8 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
           jobId: media.jobId || media.taskId,
           state: 'processing',
           status: media.status || 'submitted',
+          voiceMode: media.voiceMode,
+          selectedVoicePreserved: media.selectedVoicePreserved === true,
         };
         payload.summary = `${payload.summary} Génération musicale Suno lancée.`;
         return res.json(payload);
