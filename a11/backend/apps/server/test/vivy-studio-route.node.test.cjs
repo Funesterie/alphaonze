@@ -20,6 +20,7 @@ const {
   buildVivyMusicPrompt,
   buildVivyMultiVoiceAssemblyArgs,
   buildVivyPreviewMixArgs,
+  materializeVivyPreviewInstrumentalPath,
   buildVivyMemoryContext,
   buildVivySystemPrompt,
   buildVivySunoPayload,
@@ -279,6 +280,41 @@ test('Vivy preview mix keeps the voice clear over a quieter instrumental', () =>
   assert.match(args.join(' '), /highpass=f=90,loudnorm=I=-19:TP=-6:LRA=7\[voice\]/);
   assert.match(args.join(' '), /amix=inputs=2:duration=longest/);
   assert.equal(args.at(-1), 'mix.mp3');
+});
+
+test('Vivy preview mix materializes a remote Suno instrumental before ffmpeg', async () => {
+  const audio = Buffer.from('ID3-suno-test-audio');
+  const filePath = await materializeVivyPreviewInstrumentalPath(
+    'https://tempfile.aiquickdraw.com/r/song-test.mp3',
+    {
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        headers: new Headers({
+          'content-type': 'audio/mpeg',
+          'content-length': String(audio.length),
+        }),
+        arrayBuffer: async () => audio,
+      }),
+    }
+  );
+
+  assert.match(path.basename(filePath), /^vivy-music-suno-[a-f0-9]{16}\.mp3$/);
+  assert.deepEqual(fs.readFileSync(filePath), audio);
+});
+
+test('Vivy preview mix refuses non-Suno remote instrumental hosts', async () => {
+  let fetched = false;
+  await assert.rejects(
+    materializeVivyPreviewInstrumentalPath('http://127.0.0.1/private.mp3', {
+      fetchImpl: async () => {
+        fetched = true;
+        throw new Error('should_not_fetch');
+      },
+    }),
+    /vivy_preview_remote_source_denied/
+  );
+  assert.equal(fetched, false);
 });
 
 test('Vivy Studio keeps internal briefs out of public voice output', () => {
@@ -1416,8 +1452,21 @@ test('Vivy Studio exposes the real voice route instead of hiding XTTS fallback',
 
   assert.match(appSource, /voiceManifest\?:\s*\{/);
   assert.match(appSource, /voiceManifest:\s*preview\?\.voiceManifest/);
+  assert.match(appSource, /provider:\s*String\(mixed\?\.provider \|\| "vivy-suno-voice-mix"\)[\s\S]{0,500}voiceManifest:\s*voicePreview\.voiceManifest/);
   assert.match(appSource, /Fallback voix:/);
   assert.match(appSource, /Voix demandée:/);
+});
+
+test('Vivy frontend keeps polling long Suno generations until the callback arrives', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const start = appSource.indexOf('async function waitForVivySongJob');
+  const block = appSource.slice(start, start + 1400);
+
+  assert.match(block, /attempt <= 60/);
+  assert.match(block, /generation_suno_trop_longue/);
 });
 
 test('Vivy removes an unselected singer from a provider duo draft', () => {

@@ -4522,9 +4522,115 @@ function resolveVivyPreviewInstrumentalPath(value = '') {
   return candidate && fs.existsSync(candidate) && fs.statSync(candidate).isFile() ? candidate : '';
 }
 
-function runVivyPreviewMix(voiceUrl, instrumentalUrl) {
+function isAllowedVivyRemoteInstrumentalUrl(value = '') {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port) return false;
+    const hostname = parsed.hostname.toLowerCase();
+    const configuredHosts = String(process.env.VIVY_SUNO_AUDIO_HOSTS || '')
+      .split(',')
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean);
+    return hostname === 'tempfile.aiquickdraw.com'
+      || hostname === 'musicfile.removeai.ai'
+      || hostname === 'suno.ai'
+      || hostname.endsWith('.suno.ai')
+      || configuredHosts.includes(hostname);
+  } catch {
+    return false;
+  }
+}
+
+async function readVivyRemoteAudioBuffer(response, maxBytes) {
+  const contentLength = Number(response?.headers?.get?.('content-length') || 0);
+  if (contentLength > maxBytes) throw new Error('vivy_preview_remote_source_too_large');
+  if (response?.body?.getReader) {
+    const reader = response.body.getReader();
+    const chunks = [];
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value);
+      total += chunk.length;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {});
+        throw new Error('vivy_preview_remote_source_too_large');
+      }
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks, total);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length > maxBytes) throw new Error('vivy_preview_remote_source_too_large');
+  return buffer;
+}
+
+async function materializeVivyPreviewInstrumentalPath(value = '', options = {}) {
+  const localPath = resolveVivyPreviewInstrumentalPath(value);
+  if (localPath) return localPath;
+  if (!isAllowedVivyRemoteInstrumentalUrl(value)) {
+    const error = new Error('vivy_preview_remote_source_denied');
+    error.status = 400;
+    throw error;
+  }
+
+  const fetchImpl = options.fetchImpl || fetch;
+  const maxBytes = Math.max(1024, Number(options.maxBytes || process.env.VIVY_PREVIEW_REMOTE_MAX_BYTES || 64 * 1024 * 1024));
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs || process.env.VIVY_PREVIEW_REMOTE_TIMEOUT_MS || 45000));
+  let currentUrl = String(value || '').trim();
+  let response = null;
+  for (let redirectCount = 0; redirectCount <= 2; redirectCount += 1) {
+    response = await fetchImpl(currentUrl, {
+      method: 'GET',
+      redirect: 'manual',
+      signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(timeoutMs) : undefined,
+    });
+    if (![301, 302, 303, 307, 308].includes(Number(response?.status))) break;
+    const location = response?.headers?.get?.('location');
+    const nextUrl = location ? new URL(location, currentUrl).toString() : '';
+    if (!nextUrl || !isAllowedVivyRemoteInstrumentalUrl(nextUrl)) {
+      const error = new Error('vivy_preview_remote_redirect_denied');
+      error.status = 400;
+      throw error;
+    }
+    currentUrl = nextUrl;
+  }
+  if (!response?.ok) {
+    const error = new Error(`vivy_preview_remote_fetch_${response?.status || 'failed'}`);
+    error.status = 502;
+    throw error;
+  }
+
+  const contentType = String(response.headers?.get?.('content-type') || '').split(';')[0].trim().toLowerCase();
+  if (contentType && !contentType.startsWith('audio/') && contentType !== 'application/octet-stream' && contentType !== 'binary/octet-stream') {
+    const error = new Error('vivy_preview_remote_source_not_audio');
+    error.status = 415;
+    throw error;
+  }
+  const buffer = await readVivyRemoteAudioBuffer(response, maxBytes);
+  if (!buffer.length) throw new Error('vivy_preview_remote_source_empty');
+  const looksLikeMp3 = buffer.subarray(0, 3).toString('ascii') === 'ID3'
+    || (buffer.length >= 2 && buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0);
+  if (!looksLikeMp3 && contentType !== 'audio/mpeg' && contentType !== 'audio/mp3') {
+    const error = new Error('vivy_preview_remote_source_invalid_audio');
+    error.status = 415;
+    throw error;
+  }
+
+  const digest = crypto.createHash('sha256').update(currentUrl).digest('hex').slice(0, 16);
+  const filename = `vivy-music-suno-${digest}.mp3`;
+  const filePath = getEmergencyMediaAssetPath(filename);
+  if (!filePath) throw new Error('vivy_preview_remote_target_invalid');
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, buffer);
+  console.info(`[Vivy Studio] Suno instrumental materialized host=${new URL(currentUrl).hostname} bytes=${buffer.length} file=${filename}`);
+  return filePath;
+}
+
+async function runVivyPreviewMix(voiceUrl, instrumentalUrl) {
   const voicePath = resolveVivyPreviewVoicePath(voiceUrl);
-  const instrumentalPath = resolveVivyPreviewInstrumentalPath(instrumentalUrl);
+  const instrumentalPath = await materializeVivyPreviewInstrumentalPath(instrumentalUrl);
   if (!voicePath || !instrumentalPath) {
     const error = new Error('vivy_preview_source_invalid');
     error.status = 400;
@@ -4571,6 +4677,7 @@ function runVivyPreviewMix(voiceUrl, instrumentalUrl) {
         audio_url: url,
         content_type: 'audio/mpeg',
       });
+      console.info(`[Vivy Studio] Preview mix ready file=${filename}`);
     });
   });
 }
@@ -4922,6 +5029,7 @@ module.exports = {
   buildVivyStudioProduction,
   buildVivyMultiVoiceAssemblyArgs,
   buildVivyPreviewMixArgs,
+  materializeVivyPreviewInstrumentalPath,
   buildVivyMusicPrompt,
   buildVivyChat,
   buildVivyAiChat,

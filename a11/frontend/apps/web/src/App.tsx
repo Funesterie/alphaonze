@@ -4881,7 +4881,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     const safeTaskId = String(taskId || "").trim();
     if (!safeTaskId) throw new Error("job_vivy_manquant");
     const pause = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
-    for (let attempt = 1; attempt <= 24; attempt += 1) {
+    for (let attempt = 1; attempt <= 60; attempt += 1) {
       await pause(attempt <= 3 ? 6000 : 10000);
       const job = await getVivyStudioMusicJob(safeTaskId, sunoSessionKey);
       const statusText = String(job?.mediaStatus?.status || job?.musicJob?.status || (job as any)?.status || "").trim();
@@ -5097,7 +5097,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         || payloadAny?.media?.voiceMode
         || "external_mix"
       );
-      let preparedMedia = {
+      let preparedMedia: VivyStudioMediaPreview = {
         kind: "audio" as const,
         url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
         downloadUrl: resolveApiAssetUrl(mediaUrl) || mediaUrl,
@@ -5120,6 +5120,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
           provider: String(mixed?.provider || "vivy-suno-voice-mix"),
           contentType: String(mixed?.content_type || "audio/mpeg"),
           filename: String(mixed?.filename || "vivy-suno-voix-selectionnee.mp3"),
+          voiceManifest: voicePreview.voiceManifest,
         };
       }
       setVivyMedia(preparedMedia);
