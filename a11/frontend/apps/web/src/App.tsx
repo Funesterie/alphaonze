@@ -2984,7 +2984,7 @@ function getVivyChatStorageKey() {
 
 // --- Sessions multiples Vivy Chat ---
 const VIVY_CHAT_SESSIONS_KEY = "vivy:chat-sessions:v1";
-const VIVY_CHAT_MAX_SESSIONS = 5;
+const VIVY_CHAT_MAX_SESSIONS = 20;
 
 type VivyChatSessionMeta = { id: string; name: string; createdAt: string; updatedAt: string; };
 
@@ -3003,12 +3003,12 @@ function listVivyChatSessions(): VivyChatSessionMeta[] {
     const raw = globalThis.localStorage?.getItem(getVivySessionsStorageKey());
     const parsed: unknown = raw ? JSON.parse(raw) : null;
     if (!Array.isArray(parsed)) return [];
-    return (parsed as VivyChatSessionMeta[]).filter((s) => s?.id && s?.name).slice(0, VIVY_CHAT_MAX_SESSIONS);
+    return (parsed as VivyChatSessionMeta[]).filter((s) => s?.id && s?.name).slice(-VIVY_CHAT_MAX_SESSIONS);
   } catch { return []; }
 }
 
 function saveVivyChatSessions(sessions: VivyChatSessionMeta[]) {
-  try { globalThis.localStorage?.setItem(getVivySessionsStorageKey(), JSON.stringify(sessions.slice(0, VIVY_CHAT_MAX_SESSIONS))); }
+  try { globalThis.localStorage?.setItem(getVivySessionsStorageKey(), JSON.stringify(sessions.slice(-VIVY_CHAT_MAX_SESSIONS))); }
   catch { }
 }
 
@@ -5055,6 +5055,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         generateMusic: true,
         makeSong: true,
         preserveSelectedVoice: true,
+        allowExternalVoiceMix: true,
         disableEmergencyMedia: true,
         durationSeconds: 45,
       });
@@ -5774,7 +5775,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                 </button>
               </div>
               <p className="vivy-studio-provider-note">
-                Vivy utilise une voix Suno vérifiée si elle est configurée; sinon Suno génère une voix chantée complète sans prétendre conserver exactement le timbre sélectionné.
+                Vivy utilise une voix Suno vérifiée si elle est configurée; sinon elle génère Suno en instrumental et mixe la voix sélectionnée.
               </p>
             </>
           )}
@@ -6511,23 +6512,37 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           <p>Voix, chanson, ambiance ou scène: Vivy transforme l'idée en direction exploitable.</p>
         </div>
         <div className="vivy-chat-sessions">
-          <select
-            value={activeChatSessionId}
-            onChange={(e) => switchSession(e.target.value)}
-            disabled={!hasSession}
-            aria-label="Session de conversation"
-            style={{ fontSize: 12, maxWidth: 140 }}
-          >
-            <option value="default">Session principale</option>
+          <div className="vivy-chat-session-list" role="tablist" aria-label="Sessions Vivy">
+            <button
+              type="button"
+              className={`vivy-chat-session-tab${activeChatSessionId === "default" ? " is-active" : ""}`}
+              onClick={() => switchSession("default")}
+              disabled={!hasSession}
+              aria-selected={activeChatSessionId === "default"}
+            >
+              Principale
+            </button>
             {chatSessions.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
+              <button
+                key={s.id}
+                type="button"
+                className={`vivy-chat-session-tab${activeChatSessionId === s.id ? " is-active" : ""}`}
+                onClick={() => switchSession(s.id)}
+                disabled={!hasSession}
+                aria-selected={activeChatSessionId === s.id}
+                title={s.name}
+              >
+                {s.name}
+              </button>
             ))}
-          </select>
-          <button type="button" onClick={addSession} disabled={!hasSession} title="Nouvelle session" style={{ fontSize: 12 }}>+</button>
-          {activeChatSessionId !== "default" && (
-            <button type="button" onClick={deleteCurrentSession} disabled={!hasSession} title="Supprimer cette session" style={{ fontSize: 12 }}>✕</button>
-          )}
-          <button type="button" onClick={resetChat} disabled={!hasSession} style={{ fontSize: 12 }}>Réinit.</button>
+          </div>
+          <div className="vivy-chat-session-actions">
+            <button type="button" onClick={addSession} disabled={!hasSession} title="Nouvelle session">+</button>
+            {activeChatSessionId !== "default" && (
+              <button type="button" onClick={deleteCurrentSession} disabled={!hasSession} title="Supprimer cette session">x</button>
+            )}
+            <button type="button" onClick={resetChat} disabled={!hasSession}>Réinit.</button>
+          </div>
         </div>
       </div>
 

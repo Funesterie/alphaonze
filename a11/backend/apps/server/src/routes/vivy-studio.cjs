@@ -46,6 +46,7 @@ const {
   inferTitle,
   stripSongCommand,
   looksLikeCompleteLyrics,
+  hasVivyChorusSection,
 } = require('../music/vivy-songcraft.cjs');
 const {
   buildVivyProsodyPlan,
@@ -2941,7 +2942,7 @@ function injectVivySectionArtistTags(lyrics = '', artistCast = null) {
     ));
     const isShared = /\b(duo|tous|toutes|ensemble)\b/.test(foldedTag) || taggedArtists.length > 1;
     if (isShared && artistCast.count > 1) {
-      output.push('[Duo]');
+      output.push(artistCast.count > 2 ? '[Tous]' : '[Duo]');
     } else if (taggedArtists.length === 1) {
       output.push(taggedArtists[0].tag);
     }
@@ -2959,7 +2960,8 @@ function ensureVivyPublicLyricsArtistTags(input = {}, lyrics = '') {
   publicLyrics = sanitizeVivyPublicLyrics(injectVivySectionArtistTags(publicLyrics, artistCast));
 
   const missingArtistTag = artistCast.artists.some((artist) => !hasVivyLyricsTag(publicLyrics, artist.tag));
-  const missingSharedTag = !/(^|\n)\s*\[(Duo|Tous)\]\s*(\n|$)/i.test(publicLyrics);
+  const sharedTag = artistCast.count > 2 ? 'Tous' : 'Duo';
+  const missingSharedTag = !new RegExp(`(^|\\n)\\s*\\[${sharedTag}\\]\\s*(\\n|$)`, 'i').test(publicLyrics);
   const unexpectedArtistTag = [
     ['djeff', 'Djeff'],
     ['vivy', 'Vivy'],
@@ -2982,10 +2984,10 @@ function ensureVivyPublicLyricsArtistTags(input = {}, lyrics = '') {
 
 function buildVivyPublicLyrics(input = {}, rawAssistant = '', fallbackLyrics = '') {
   let publicLyrics = sanitizeVivyPublicLyrics(rawAssistant);
-  if (!publicLyrics || looksLikeWeakSongwritingReply(publicLyrics)) {
+  if (!publicLyrics || looksLikeWeakSongwritingReply(publicLyrics) || !hasVivyChorusSection(publicLyrics)) {
     publicLyrics = sanitizeVivyPublicLyrics(fallbackLyrics);
   }
-  if (!publicLyrics || looksLikeWeakSongwritingReply(publicLyrics)) {
+  if (!publicLyrics || looksLikeWeakSongwritingReply(publicLyrics) || !hasVivyChorusSection(publicLyrics)) {
     publicLyrics = sanitizeVivyPublicLyrics(buildVivySongProductionBrief({
       ...input,
       songText: input.songText || input.message || input.prompt || input.text || input.theme,
@@ -4034,7 +4036,9 @@ function buildVivySunoPayload(input = {}, req = null) {
     && input.forceInstrumental !== true;
   const useExternalVoiceMix = preserveSelectedVoice
     && !useVerifiedVivyVoice
-    && input.allowExternalVoiceMix === true;
+    && input.allowExternalVoiceMix !== false
+    && input.instrumental !== true
+    && input.forceInstrumental !== true;
   const prosodyPlan = buildVivyProsodyPlan(input);
   const prosodyStyle = buildVivyProsodyStyleHint(prosodyPlan);
   const rawTitleMaterial = sanitizeVivySongMaterial(stripVivyAscii4SoundTokens(input.songText || input.theme || input.prompt), 1200);
@@ -4320,7 +4324,11 @@ async function requestSunoMusic(input = {}, req = null) {
   const body = buildVivySunoPayload(input, req);
   const voiceMode = body.personaModel === 'voice_persona'
     ? 'suno_voice'
-    : body.instrumental === true && input.allowExternalVoiceMix === true
+    : body.instrumental === true
+      && input.preserveSelectedVoice === true
+      && input.allowExternalVoiceMix !== false
+      && input.instrumental !== true
+      && input.forceInstrumental !== true
       ? 'external_mix'
       : 'suno_generated';
   const response = await fetch(`${getSunoBaseUrl()}/generate`, {

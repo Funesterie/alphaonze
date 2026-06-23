@@ -281,6 +281,7 @@ function escapeRegExpForSongcraft(value = '') {
 function looksLikeCompleteLyrics(value = '') {
   const text = sanitizeVivySongMaterial(value, VIVY_SONG_MAX_CHARS);
   if (!text) return false;
+  if (!hasVivyChorusSection(text)) return false;
   const sectionCount = (text.match(/\[(verse|chorus|bridge|intro|outro|couplet|refrain|pont|pré-refrain|pre-chorus|vivy|djeff|a11|k44|kaen44|duo|tous|toutes|ensemble)(?:\s+\d+)?(?:\s*-\s*[^\]]+)?\]/ig) || []).length;
   const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
   if (sectionCount >= 3 && lines.length >= 10) return true;
@@ -591,6 +592,24 @@ function hasExplicitVivySongArtists(input = {}) {
   return Array.isArray(source) ? source.length > 0 : Boolean(String(source || '').trim());
 }
 
+function getVivySharedArtistTag(count = 2) {
+  return Number(count) > 2 ? 'Tous' : 'Duo';
+}
+
+function hasVivyChorusSection(value = '') {
+  const text = normalizeVivySongSectionMarkup(value);
+  return text
+    .split(/\r?\n+/)
+    .some((line) => {
+      const tag = String(line || '').trim().match(/^\[([^\]]+)\]$/);
+      if (!tag) return false;
+      const folded = foldTextForLookup(tag[1]);
+      if (/^(title|titre)\b/.test(folded)) return false;
+      if (/\b(pre chorus|pre refrain|pre-refrain|pre-chorus)\b/.test(folded)) return false;
+      return /\b(chorus|refrain|refren)\b/.test(folded);
+    });
+}
+
 function buildVivySongArtistCast(input = {}) {
   const ids = normalizeVivySongArtistIds(input);
   const language = normalizeLanguageCode(input.language || input.locale || 'fr', 'fr');
@@ -604,14 +623,16 @@ function buildVivySongArtistCast(input = {}) {
     : rawLabel;
   const countLabel = `${count} chanteur${count > 1 ? 's' : ''}`;
   const tags = artists.map((artist) => artist.tag).join(', ');
+  const sharedTag = getVivySharedArtistTag(count);
   const songCastLines = [
     `Nombre de chanteurs: ${count}.`,
     ...artists.map((artist) => `${artist.label}: ${artist.role}.`),
     count > 1
-      ? `Tags obligatoires: ${tags}, puis [Duo] ou [Tous] pour les passages communs.`
+      ? `Tags obligatoires: ${tags}, puis [${sharedTag}] pour les passages communs.`
       : `Tag conseillé: ${tags}.`,
   ];
   const styleFragment = artists.map((artist) => artist.style).join(', ');
+  const ensembleStyle = count > 1 ? `${count} distinct original vocalists, ${label}, ` : '';
   return {
     ids,
     artists,
@@ -622,7 +643,7 @@ function buildVivySongArtistCast(input = {}) {
     songCastLines,
     musicLead: `Original Funesterie song for ${label}, in ${languageName}.`,
     musicMood: `${countLabel}: ${label}. Original voices only, no celebrity imitation. ${styleFragment}.`,
-    sunoStyle: `${languageStyle} original vocal production, ${styleFragment}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration`,
+    sunoStyle: `${languageStyle} original vocal production, ${ensembleStyle}${styleFragment}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration`,
   };
 }
 
@@ -794,7 +815,7 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
   const lead = artistCast.artists[0]?.label || 'Vivy';
   const isA11VivyDuo = artistCast.count === 2 && artistCast.ids.includes('a11') && artistCast.ids.includes('vivy');
   const leadTag = isA11VivyDuo ? `[${lead.toUpperCase()}]` : `[${lead}]`;
-  const chorusLabel = isA11VivyDuo ? 'DUO' : (artistCast.count > 1 ? 'Tous' : lead);
+  const chorusLabel = isA11VivyDuo ? 'DUO' : (artistCast.count > 1 ? getVivySharedArtistTag(artistCast.count) : lead);
   const chorusTag = `[${chorusLabel}]`;
 
   const blocks = [
@@ -1051,6 +1072,7 @@ module.exports = {
   buildVivyVocalSegments,
   splitVivyArrangementCues,
   normalizeVivySongSectionMarkup,
+  hasVivyChorusSection,
   extractDjeffRapSeedLines,
   sanitizeVivySongMaterial,
   inferTitle,

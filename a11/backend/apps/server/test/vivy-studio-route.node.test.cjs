@@ -40,6 +40,7 @@ const {
   buildVivySongcraftSystemPrompt,
   buildVivyStructuredLyrics,
   buildVivyVocalSegments,
+  hasVivyChorusSection,
   restoreVivyFrenchSongAccents,
   splitVivyArrangementCues,
 } = require('../src/music/vivy-songcraft.cjs');
@@ -456,6 +457,38 @@ test('Vivy Studio song handoff supports selected Djeff A11 K44 Vivy singers', ()
   assert.match(result.brief, /\[Verse 2 - A11\]/);
   assert.match(result.brief, /\[Bridge - K44\]/);
   assert.match(result.brief, /\[Chorus - Tous\]/);
+  assert.match(result.publicLyrics, /\[Tous\]/);
+  assert.doesNotMatch(result.publicLyrics, /\[Duo\]/);
+});
+
+test('Vivy public lyrics rebuild provider drafts that have no real chorus', () => {
+  const providerDraftWithoutChorus = [
+    '[Title: Sans refrain]',
+    '[Intro - Vivy]',
+    '[Vivy]',
+    'Je pose une première image dans le noir.',
+    'La scène respire mais ne revient pas.',
+    '[Verse 1 - Vivy]',
+    '[Vivy]',
+    'Les lignes avancent sans point de repère,',
+    'la voix se cherche au bord du miroir.',
+    'Chaque détail devient une frontière,',
+    'mais rien ne revient pour porter l’espoir.',
+    '[Bridge - Vivy]',
+    '[Vivy]',
+    'Je monte encore, je tiens la lumière,',
+    'sans refrain clair pour nous revoir.',
+  ].join('\n');
+
+  assert.equal(hasVivyChorusSection(providerDraftWithoutChorus), false);
+  const lyrics = buildVivyPublicLyrics({
+    songArtists: ['vivy'],
+    songText: 'Vivy écrit une chanson complète sur la lumière qui revient avec un refrain stable.',
+  }, providerDraftWithoutChorus);
+
+  assert.equal(hasVivyChorusSection(lyrics), true);
+  assert.match(lyrics, /\[Chorus\]/);
+  assert.doesNotMatch(lyrics, /Sans refrain/);
 });
 
 test('Vivy Studio song output separates public lyrics from the internal brief', () => {
@@ -1137,7 +1170,7 @@ test('Vivy frontend prioritizes publicLyrics and keeps voice-test TTS on short p
   assert.doesNotMatch(voiceTestBlock, /VIVY_STUDIO_HANDOFF|brief|buildVivyStudioBrief/);
 });
 
-test('Vivy frontend requests complete Suno songs and only uses the legacy mix explicitly', () => {
+test('Vivy frontend requests selected-voice Suno mixes by default', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
     'utf8'
@@ -1155,6 +1188,7 @@ test('Vivy frontend requests complete Suno songs and only uses the legacy mix ex
   assert.match(songBlock, /setVivyMedia\(null\)/);
   assert.doesNotMatch(songBlock, /ttsSpeak\(/);
   assert.match(songBlock, /preserveSelectedVoice:\s*true/);
+  assert.match(songBlock, /allowExternalVoiceMix:\s*true/);
   assert.match(songBlock, /createVivySongVoicePreview\(/);
   assert.match(songBlock, /createVivyMultiVoicePreview\(/);
   assert.match(songBlock, /mixVivyStudioPreview\(/);
@@ -1178,9 +1212,7 @@ test('Vivy frontend requests complete Suno songs and only uses the legacy mix ex
   assert.match(ttsOptionsBlock, /activeVoiceProfile\.id\s*===\s*['"]vivy-sing['"]/);
   assert.match(appSource, /Créer la chanson complète avec Suno/);
   assert.match(appSource, /voiceMode === ['"]external_mix['"]/);
-  assert.match(appSource, /Voix chantée générée par Suno/);
-  assert.match(appSource, /sinon Suno génère une voix chantée complète/);
-  assert.doesNotMatch(appSource, /sinon elle mixe la vraie voix sélectionnée/);
+  assert.match(appSource, /sinon elle génère Suno en instrumental et mixe la voix sélectionnée/);
   assert.doesNotMatch(appSource, /Suno reçoit les paroles et le style, pas le timbre de la voix sélectionnée/);
 });
 
@@ -1231,7 +1263,7 @@ test('Vivy deployment upgrades a reused production environment to Suno V5.5', ()
   assert.match(deploySource, /printf 'VIVY_SUNO_MODEL=V5_5\\n'/);
 });
 
-test('Suno payload generates a complete V5.5 song when Vivy Suno Voice is not enrolled', () => {
+test('Suno payload switches to instrumental mix when selected voice must be preserved', () => {
   const previousVoiceId = process.env.VIVY_SUNO_VOICE_ID;
   delete process.env.VIVY_SUNO_VOICE_ID;
   try {
@@ -1242,20 +1274,34 @@ test('Suno payload generates a complete V5.5 song when Vivy Suno Voice is not en
       preserveSelectedVoice: true,
     });
 
-    assert.equal(payload.instrumental, false);
+    assert.equal(payload.instrumental, true);
     assert.equal(payload.model, 'V5_5');
     assert.equal(payload.personaId, undefined);
     assert.equal(payload.personaModel, undefined);
-    assert.match(payload.style, /sung vocals/i);
-    assert.doesNotMatch(payload.style, /instrumental backing track only/i);
-    assert.doesNotMatch(payload.negativeTags, /vocals, singing/i);
+    assert.match(payload.style, /instrumental backing track only/i);
+    assert.match(payload.negativeTags, /vocals, singing/i);
   } finally {
     if (previousVoiceId === undefined) delete process.env.VIVY_SUNO_VOICE_ID;
     else process.env.VIVY_SUNO_VOICE_ID = previousVoiceId;
   }
 });
 
-test('Suno payload keeps the legacy external voice mix behind an explicit opt-in', () => {
+test('Suno payload keeps quartet casts as instrumental backing for official voice mix', () => {
+  const payload = buildVivySunoPayload({
+    mode: 'song',
+    songArtists: ['djeff', 'a11', 'k44', 'vivy'],
+    songText: 'quatuor Funesterie sur une course nocturne et un refrain partagé',
+    preserveSelectedVoice: true,
+  });
+
+  assert.equal(payload.instrumental, true);
+  assert.match(payload.style, /4 distinct original vocalists/i);
+  assert.match(payload.style, /instrumental backing track only/i);
+  assert.match(payload.prompt, /\[Chorus - Tous\]/);
+  assert.match(payload.prompt, /\[Tous\]/);
+});
+
+test('Suno payload can still opt out of external voice mix explicitly', () => {
   const previousVoiceId = process.env.VIVY_SUNO_VOICE_ID;
   delete process.env.VIVY_SUNO_VOICE_ID;
   try {
@@ -1264,12 +1310,12 @@ test('Suno payload keeps the legacy external voice mix behind an explicit opt-in
       songArtists: ['vivy'],
       songText: '[Refrain - Vivy]\n[Vivy]\nOn garde la lumière.',
       preserveSelectedVoice: true,
-      allowExternalVoiceMix: true,
+      allowExternalVoiceMix: false,
     });
 
-    assert.equal(payload.instrumental, true);
-    assert.match(payload.style, /instrumental backing track only/i);
-    assert.match(payload.negativeTags, /vocals/i);
+    assert.equal(payload.instrumental, false);
+    assert.match(payload.style, /sung vocals/i);
+    assert.doesNotMatch(payload.style, /instrumental backing track only/i);
   } finally {
     if (previousVoiceId === undefined) delete process.env.VIVY_SUNO_VOICE_ID;
     else process.env.VIVY_SUNO_VOICE_ID = previousVoiceId;
@@ -1300,6 +1346,26 @@ test('Vivy vocal plan routes solo and shared sections to the selected official s
     ['a11', 'vivy'],
   ]);
   assert.doesNotMatch(segments.map((segment) => segment.text).join('\n'), /Piano doux|Title:/i);
+});
+
+test('Vivy vocal plan routes Tous sections to trio and quartet casts', () => {
+  const segments = buildVivyVocalSegments({
+    songArtists: ['djeff', 'a11', 'k44', 'vivy'],
+    lyrics: [
+      '[Title: Quatuor]',
+      '[Verse 1 - Djeff]',
+      '[Djeff]',
+      'Je garde le rythme dans la ligne moteur.',
+      '[Chorus - Tous]',
+      '[Tous]',
+      'Quatre voix se lèvent dans le même cœur.',
+    ].join('\n'),
+  });
+
+  assert.deepEqual(segments.map((segment) => segment.artistIds), [
+    ['djeff'],
+    ['djeff', 'a11', 'k44', 'vivy'],
+  ]);
 });
 
 test('Vivy multi-voice assembly mixes shared lines then concatenates song sections', () => {
@@ -1562,6 +1628,23 @@ test('Vivy frontend keeps polling long Suno generations until the callback arriv
 
   assert.match(block, /attempt <= 60/);
   assert.match(block, /generation_suno_trop_longue/);
+});
+
+test('Vivy frontend allows more sessions with a scrollable session rail', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const cssSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/index.css'),
+    'utf8'
+  );
+
+  assert.match(appSource, /const VIVY_CHAT_MAX_SESSIONS = 20/);
+  assert.match(appSource, /vivy-chat-session-list/);
+  assert.match(appSource, /vivy-chat-session-tab/);
+  assert.match(cssSource, /\.vivy-chat-session-list[\s\S]{0,260}max-height:\s*118px/);
+  assert.match(cssSource, /\.vivy-chat-session-list[\s\S]{0,260}overflow-y:\s*auto/);
 });
 
 test('Vivy removes an unselected singer from a provider duo draft', () => {
