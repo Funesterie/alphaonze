@@ -1144,6 +1144,8 @@ test('Vivy frontend requests complete Suno songs and only uses the legacy mix ex
   assert.match(appSource, /Créer la chanson complète avec Suno/);
   assert.match(appSource, /voiceMode === ['"]external_mix['"]/);
   assert.match(appSource, /Voix chantée générée par Suno/);
+  assert.match(appSource, /sinon Suno génère une voix chantée complète/);
+  assert.doesNotMatch(appSource, /sinon elle mixe la vraie voix sélectionnée/);
   assert.doesNotMatch(appSource, /Suno reçoit les paroles et le style, pas le timbre de la voix sélectionnée/);
 });
 

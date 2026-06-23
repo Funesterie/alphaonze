@@ -5774,7 +5774,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                 </button>
               </div>
               <p className="vivy-studio-provider-note">
-                Vivy utilise une voix Suno vérifiée si elle est configurée; sinon elle mixe la vraie voix sélectionnée sur l'instrumental Suno.
+                Vivy utilise une voix Suno vérifiée si elle est configurée; sinon Suno génère une voix chantée complète sans prétendre conserver exactement le timbre sélectionné.
               </p>
             </>
           )}
