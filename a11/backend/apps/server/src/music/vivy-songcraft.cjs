@@ -87,6 +87,10 @@ function looksLikeVivySongUiNoiseLine(line = '') {
   const folded = foldTextForLookup(raw);
   if (!folded) return true;
 
+  // A standalone bracketed tag ([Vivy], [Djeff], [Verse 1], [Chorus - Duo]...) is a
+  // section/voice marker, never UI noise. Keep it so complete songs are detected.
+  if (/^\[[\p{L}\p{N} &,\/'’-]{1,40}\]$/u.test(raw)) return false;
+
   if (/^je suis vivy(?:\b|$)/.test(folded)) return true;
   if (/^parle moi d une (?:voix|chanson|ambiance|scene)\b/.test(folded)) return true;
   if (/^(vivy|vous|accueil|discussion|menu|voix|chanson|scene|scène|fichier|envoyer|copier|partager|defaut|défaut|audio perso|importer|ptt)$/.test(folded)) return true;
@@ -161,7 +165,7 @@ function sanitizeVivySongMaterial(value = '', max = VIVY_SONG_MAX_CHARS) {
   const text = cleanText(normalizeVivySongSectionMarkup(value), Math.max(max, VIVY_SONG_MAX_CHARS));
   if (!text) return '';
 
-  const sectionCount = (text.match(/\[(verse|chorus|bridge|intro|outro|couplet|refrain|pont|pré-refrain|pre-chorus)(?:\s+\d+)?(?:\s*-\s*[^\]]+)?\]/ig) || []).length;
+  const sectionCount = (text.match(/\[(verse|chorus|bridge|intro|outro|couplet|refrain|pont|pré-refrain|pre-chorus|vivy|djeff|a11|k44|kaen44|duo|tous|toutes|ensemble)(?:\s+\d+)?(?:\s*-\s*[^\]]+)?\]/ig) || []).length;
   const preserveRepeatedLines = sectionCount >= 2;
 
   const kept = [];
@@ -275,7 +279,7 @@ function escapeRegExpForSongcraft(value = '') {
 function looksLikeCompleteLyrics(value = '') {
   const text = sanitizeVivySongMaterial(value, VIVY_SONG_MAX_CHARS);
   if (!text) return false;
-  const sectionCount = (text.match(/\[(verse|chorus|bridge|intro|outro|couplet|refrain|pont|pré-refrain|pre-chorus)(?:\s+\d+)?(?:\s*-\s*[^\]]+)?\]/ig) || []).length;
+  const sectionCount = (text.match(/\[(verse|chorus|bridge|intro|outro|couplet|refrain|pont|pré-refrain|pre-chorus|vivy|djeff|a11|k44|kaen44|duo|tous|toutes|ensemble)(?:\s+\d+)?(?:\s*-\s*[^\]]+)?\]/ig) || []).length;
   const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
   if (sectionCount >= 3 && lines.length >= 10) return true;
   return sectionCount >= 2 && lines.length >= 14;
