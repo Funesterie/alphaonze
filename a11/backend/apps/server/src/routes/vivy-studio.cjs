@@ -85,6 +85,7 @@ try {
 const MODES = new Set(['voice', 'song', 'share']);
 const CHAT_MODES = new Set(['chat', 'voice', 'song', 'share']);
 const VIVY_CHAT_MAX_CHARS = 12000;
+const VIVY_CHAT_SONG_MAX_TOKENS_DEFAULT = 6000;
 const VIVY_LOCAL_CONTEXT_SKIP_DIRS = new Set([
   '.git',
   '.codex-tmp',
@@ -2845,8 +2846,22 @@ function isDirectSongwritingRequest(message = '') {
     || /\b(vivy_intent|instruction)\b.{0,180}\b(chanson|paroles|refrain|couplet|composition)\b/.test(normalized);
 }
 
+function looksLikeTruncatedSongEnding(text = '') {
+  const content = cleanText(text, VIVY_SONG_MAX_CHARS);
+  if (!content) return false;
+  const sectionCount = (content.match(/\[(intro|verse|couplet|pre-chorus|pre-refrain|pré-refrain|chorus|refrain|bridge|pont|outro|final)(?:\s*[-\wÀ-ÿ ]*)?\]/ig) || []).length;
+  if (sectionCount < 3) return false;
+  const lines = content.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const lastLine = lines.at(-1) || '';
+  const foldedLast = foldTextForLookup(lastLine);
+  const hasOutro = /\[(outro|final)\b/i.test(content);
+  const endsWithPunctuation = /[.!?…:;"')\]]$/.test(lastLine);
+  const looksCutStem = /\b(?:appell|m appell|j appell|devor|dévor|savour|mirag|otag|silenc|labyrinth|labyrint|refr|coupl|chans|parol)$/.test(foldedLast);
+  return !hasOutro && (looksCutStem || (!endsWithPunctuation && lastLine.length <= 24));
+}
+
 function looksLikeWeakSongwritingReply(text = '') {
-  const content = cleanText(text, 3200);
+  const content = cleanText(text, VIVY_SONG_MAX_CHARS);
   if (!content) return true;
   const normalized = foldTextForLookup(content);
   // Compter sections: brackets [Chorus] OU bold **Refrain** OU **Couplet**
@@ -2855,7 +2870,7 @@ function looksLikeWeakSongwritingReply(text = '') {
   const sectionCount = bracketSections + boldSections;
   const lineCount = content.split(/\n+/).filter((line) => line.trim()).length;
   // Si la reponse a suffisamment de sections ET de lignes, c'est une vraie chanson
-  if (sectionCount >= 3 && lineCount >= 12) return false;
+  if (sectionCount >= 3 && lineCount >= 12 && !looksLikeTruncatedSongEnding(content)) return false;
   const asksInsteadOfWriting = /(quel est le message|quel est le ton|quels sont les elements|qu en dis tu|je vais essayer|je comprends mieux|poser quelques questions)/.test(normalized);
   const serviceWrapper = /(je vais continuer|j espere que cela correspond|j espere que cette chanson|j espere que ca te|n hesite pas a me|feedbacks?|modifications si necessaire|vous attendiez|vous avez deja commence)/.test(normalized);
   // genericRapFiller: seulement si PAS assez de sections (eviter les faux positifs sur vraies chansons)
@@ -2864,7 +2879,7 @@ function looksLikeWeakSongwritingReply(text = '') {
     && sectionCount < 3
     && lineCount < 10;
   const brokenRhymeExercise = /(je suis en trousse|avec une rescousse|je trousse|liberte libre|detstresse)/.test(normalized);
-  return asksInsteadOfWriting || serviceWrapper || genericRapFiller || metaInsteadOfLyrics || brokenRhymeExercise;
+  return asksInsteadOfWriting || serviceWrapper || genericRapFiller || metaInsteadOfLyrics || brokenRhymeExercise || looksLikeTruncatedSongEnding(content);
 }
 
 function isVivyPublicLyricsNoiseLine(line = '') {
@@ -3657,7 +3672,7 @@ async function buildVivyAiChat(input, req) {
       temperature: mode === 'song'
         ? Number(process.env.VIVY_CHAT_TEMPERATURE_SONG || process.env.VIVY_CHAT_TEMPERATURE || 0.88)
         : Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74),
-      max_tokens: mode === 'song' ? Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || 3200) : Number(process.env.VIVY_CHAT_MAX_TOKENS || 3200),
+      max_tokens: mode === 'song' ? Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || VIVY_CHAT_SONG_MAX_TOKENS_DEFAULT) : Number(process.env.VIVY_CHAT_MAX_TOKENS || 3200),
     });
     const rawAssistant = cleanText(completion?.choices?.[0]?.message?.content, mode === 'song' ? songResponseMaxChars : VIVY_CHAT_MAX_CHARS);
     let _vivyLlmLatency = Date.now() - _vivyLlmStart;
@@ -3686,7 +3701,7 @@ async function buildVivyAiChat(input, req) {
             { role: 'user', content: 'Écris uniquement les paroles complètes. Pas d’explication, pas de commentaire. Format: [Intro], [Verse 1], [Chorus], [Bridge], [Outro].' },
           ].filter(Boolean),
           temperature: Number(process.env.VIVY_CHAT_TEMPERATURE_SONG || process.env.VIVY_CHAT_TEMPERATURE || 0.88),
-          max_tokens: Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || 3200),
+          max_tokens: Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || VIVY_CHAT_SONG_MAX_TOKENS_DEFAULT),
         });
         const retryRaw = cleanText(retryCompletion?.choices?.[0]?.message?.content, songResponseMaxChars);
         const retryProcessed = postProcessVivyAssistantText({ text: retryRaw, userMessage: message, systemPrompt, mode, maxChars: songResponseMaxChars });

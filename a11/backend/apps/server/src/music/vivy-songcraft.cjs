@@ -76,6 +76,8 @@ function restoreVivyFrenchSongAccents(value = '') {
 
 function stripSongCommand(value = '') {
   return cleanOneLine(value, '', 360)
+    .replace(/^(?:salut|bonjour|coucou|hey)\b[\s,;:.!?-]*/i, '')
+    .replace(/^(?:tu\s+as\s+|t['’]\s*as\s+)?(?:une?\s+)?id[ée]e\s+de\s+chanson\s+(?:sur|pour|avec)\s+/i, '')
     .replace(/^(fais|fait|cr[ée]e?|g[ée]n[èe]re?|compose|chante|transforme|écris|ecris|continue|continuer|reprends|poursuis|compl[èe]te)\s+(moi\s+)?(une?\s+)?(chanson|musique|son|paroles|lyrics|rap|couplet|refrain)(?:\s+d['''][a-zÀ-ſ]+(?:\s+[a-zÀ-ſ]+)?)?\s*(sur|avec|pour|à propos de)?\s*/i, '')
     .replace(/\b(prompt|instruction|consigne)\b\s*:?\s*/ig, '')
     .replace(/\s+/g, ' ')
@@ -337,6 +339,85 @@ function inferTitle(theme = '') {
     .join(' ');
 }
 
+function punctuateVivySongLine(value = '', punctuation = ',') {
+  const line = cleanOneLine(value, '', 180);
+  if (!line) return '';
+  return /[,.!?…:;]$/.test(line) ? line : `${line}${punctuation}`;
+}
+
+function splitVivyLongPoeticFragment(value = '', maxLength = 110) {
+  const fragment = cleanOneLine(value, '', 260)
+    .replace(/\s+\p{L}$/u, '')
+    .trim();
+  if (!fragment) return [];
+  if (fragment.length <= maxLength) return [fragment];
+
+  const phraseParts = fragment
+    .replace(/\s+(?=[A-ZÀ-Ÿ][\p{L}’'-]{1,}\b)/gu, '\n')
+    .split(/\n+/)
+    .map((part) => cleanOneLine(part, '', 180))
+    .filter(Boolean);
+  if (phraseParts.length > 1) {
+    return phraseParts.flatMap((part) => splitVivyLongPoeticFragment(part, maxLength));
+  }
+
+  const subjectParts = fragment
+    .split(/\s+(?=(?:je|j[’']|tu|il|elle|on|nous|vous|ils|elles|le|la|les|un|une|des|dans|sur|sous|quand|si|mais|et|or|car|ce|ça|ca|quelque)\b)/i)
+    .map((part) => cleanOneLine(part, '', 180))
+    .filter(Boolean);
+  if (subjectParts.length > 1) {
+    return subjectParts.flatMap((part) => splitVivyLongPoeticFragment(part, maxLength));
+  }
+
+  const words = fragment.split(/\s+/).filter(Boolean);
+  const chunks = [];
+  let current = [];
+  for (const word of words) {
+    const candidate = [...current, word].join(' ');
+    if (current.length && candidate.length > maxLength) {
+      chunks.push(cleanOneLine(current.join(' '), '', maxLength));
+      current = [word];
+    } else {
+      current.push(word);
+    }
+  }
+  if (current.length) chunks.push(cleanOneLine(current.join(' '), '', maxLength));
+  return chunks.filter(Boolean);
+}
+
+function extractVivySoloSeedLines(value = '', maxLines = 8) {
+  const material = sanitizeVivySongMaterial(value, VIVY_SONG_MAX_CHARS);
+  if (!material) return [];
+
+  const lines = [];
+  const seen = new Set();
+  for (const raw of splitVivySongMaterialCandidates(material)) {
+    const cleaned = cleanOneLine(stripSongCommand(String(raw || '').replace(/^[\s>*-]+/g, '')), '', 300);
+    if (!cleaned || /^\[[^\]]+\]$/.test(cleaned) || looksLikeVivySongUiNoiseLine(cleaned)) continue;
+    const roughParts = cleaned
+      .replace(/,\s+/g, '\n')
+      .replace(/\s+(?=[A-ZÀ-Ÿ][\p{L}’'-]{1,}\b)/gu, '\n')
+      .split(/\n+/)
+      .map((part) => cleanOneLine(part, '', 220))
+      .filter(Boolean);
+
+    for (const part of roughParts.flatMap((fragment) => splitVivyLongPoeticFragment(fragment))) {
+      const line = cleanOneLine(part.replace(/\s+\p{L}$/u, ''), '', 140);
+      const folded = foldTextForLookup(line);
+      if (!folded || folded.length < 8 || /^(je|tu|il|elle|on|nous|vous|ils|elles)\s+\p{L}{1,2}$/u.test(folded)) continue;
+      if (/^(salut|bonjour|coucou|hey|tu as|t as|est ce que|peux tu|peut tu|j aimerais|je voudrais|un son d ambiance|son d ambiance)\b/.test(folded)) continue;
+      if (/\bidee de chanson\b/.test(folded)) continue;
+      const key = folded.replace(/\s+/g, ' ');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      lines.push(line);
+      if (lines.length >= maxLines) return lines;
+    }
+  }
+
+  return lines;
+}
+
 function buildVivyThemeSeed(value = '', fallback = '') {
   const material = sanitizeVivySongMaterial(value, 900);
   let seed = stripSongCommand(material)
@@ -360,9 +441,8 @@ function buildVivyThemeSeed(value = '', fallback = '') {
     }
   );
 
-  const usefulParts = seed
-    .split(/[.!?;\n]+/)
-    .map((part) => cleanOneLine(part, '', 180))
+  const usefulParts = extractVivySoloSeedLines(seed, 3)
+    .map((part) => cleanOneLine(part, '', 120))
     .filter((part) => {
       const folded = foldTextForLookup(part);
       return folded
@@ -841,14 +921,56 @@ function buildVivyStructuredLyrics(input = {}) {
   const theme = buildVivyThemeSeed(material, '');
   const motif = inferMotif(theme);
   const title = cleanOneLine(input.songTitle || input.title || inferTitle(theme), 'Sans titre', 80);
+  const seedLines = extractVivySoloSeedLines(material, 8);
+  const hasSeedLines = seedLines.length >= 2;
 
   const allMotifs = inferAllMotifs(theme);
   const inferredMotif = inferMotif(theme);
-  const m0 = theme || allMotifs[0];
+  const m0 = seedLines[0] || theme || allMotifs[0];
   const m1 = inferredMotif !== 'un fil tendu dans le vide' ? inferredMotif : m0;
   const m2 = allMotifs.find((motif) => motif !== m1 && motif !== 'un fil tendu dans le vide') || m0;
 
-  const soloLyrics = `[Title: ${title}]
+  const soloLyrics = hasSeedLines ? `[Title: ${title}]
+
+[Intro]
+${punctuateVivySongLine(seedLines[0], ',')}
+${punctuateVivySongLine(seedLines[1] || `${title} cherche sa lumière`, '.')}
+
+[Verse 1]
+${punctuateVivySongLine(seedLines[2] || `Je tiens ${title.toLocaleLowerCase('fr-FR')} dans la paume`, ',')}
+${punctuateVivySongLine(seedLines[3] || 'je marche entre les murs sans baisser le regard', '.')}
+${punctuateVivySongLine(seedLines[4] || `${m1} me traverse et me garde debout`, ',')}
+je transforme la cage en mesure qui respire.
+
+[Pre-Chorus]
+Je pèse le bruit, je garde l’image,
+je cherche la faille au bord du mirage.
+
+[Chorus]
+${title} — je ne tombe pas,
+dans le noir je trouve ma voix.
+${punctuateVivySongLine(seedLines[5] || m1, ',')}
+et la nuit recule quand le refrain se déploie.
+
+[Verse 2]
+${punctuateVivySongLine(seedLines[6] || m2, ',')}
+${punctuateVivySongLine(seedLines[7] || 'je retourne le silence jusqu’à voir son envers', '.')}
+Ce que le monde enferme devient passage,
+ce que je croyais perdu rallume le paysage.
+
+[Bridge]
+Je n’efface pas la trace, je la rends claire,
+chaque mur devient rythme quand mon souffle accélère.
+
+[Chorus]
+${title} — je ne tombe pas,
+dans le noir je trouve ma voix.
+${punctuateVivySongLine(seedLines[5] || m1, ',')}
+et la nuit recule quand le refrain se déploie.
+
+[Outro]
+Il reste ${title.toLocaleLowerCase('fr-FR')}.
+Et la voix tient jusqu’au lendemain.` : `[Title: ${title}]
 
 [Intro]
 ${m0} — je l’entends dans le silence.
@@ -890,7 +1012,7 @@ et la voix qui taille.
 Il reste ${m0}.
 Et la voix tient jusqu’au lendemain.`;
 
-  return cleanText(restoreVivyFrenchSongAccents(soloLyrics), 2400);
+  return cleanText(restoreVivyFrenchSongAccents(soloLyrics), VIVY_SONG_MAX_CHARS);
 }
 
 function buildVivySongProductionBrief(input = {}) {

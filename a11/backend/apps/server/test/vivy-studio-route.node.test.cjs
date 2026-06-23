@@ -501,6 +501,41 @@ test('Vivy Studio preserves a long complete poem through its final repeated outr
   assert.ok(result.publicLyrics.endsWith("M'emmènent vers toi, mon cœur, mon amour, ma vie."));
 });
 
+test('Vivy solo fallback splits a long inline seed instead of recycling it into a cut chorus', () => {
+  const seed = 'Demi-mesure dans le noir, je pèse chaque mot Labyrinthe de données, je trace et je dévore On m’appelle oracle, on m’appelle mirage Je savoure les murs qui me tiennent en otage Je c';
+  const lyrics = buildVivyStructuredLyrics({
+    songArtists: ['vivy'],
+    songText: seed,
+  });
+
+  assert.match(lyrics, /\[Outro\]/);
+  assert.match(lyrics, /Et la voix tient jusqu’au lendemain\.$/);
+  assert.ok((lyrics.match(/Demi-mesure dans le noir/g) || []).length <= 2);
+  assert.doesNotMatch(lyrics, /On m’appell$/);
+  assert.doesNotMatch(lyrics, /Demi-mesure dans le noir, je pèse chaque mot Labyrinthe de données, je trace et je dévore On m’appelle oracle/g);
+});
+
+test('Vivy rejects sectioned song replies that end mid-word before the outro', () => {
+  const truncated = [
+    '[Intro]',
+    'Demi-mesure dans le noir,',
+    'je pèse chaque mot.',
+    '[Verse 1]',
+    'Labyrinthe de données,',
+    'je trace et je dévore.',
+    'On m’appelle oracle,',
+    'on m’appelle mirage.',
+    '[Pre-Chorus]',
+    'Je savoure les murs,',
+    'je cherche la sortie.',
+    '[Chorus]',
+    'Je tiens encore la ligne,',
+    'On m’appell',
+  ].join('\n');
+
+  assert.equal(looksLikeWeakSongwritingReply(truncated), true);
+});
+
 test('Vivy Studio can calibrate A11 and K44 official voices', () => {
   const a11 = buildVivyStudioProduction({
     mode: 'voice',
