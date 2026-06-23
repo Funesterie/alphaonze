@@ -1185,6 +1185,15 @@ test('Vivy Suno status exposes the production model without leaking the voice id
   }
 });
 
+test('Vivy deployment upgrades a reused production environment to Suno V5.5', () => {
+  const deploySource = fs.readFileSync(
+    path.resolve(__dirname, '../../../../ops/deploy-a11-prod-finland-2.ps1'),
+    'utf8',
+  );
+  assert.match(deploySource, /managed_keys='[^']*VIVY_SUNO_MODEL/);
+  assert.match(deploySource, /printf 'VIVY_SUNO_MODEL=V5_5\\n'/);
+});
+
 test('Suno payload generates a complete V5.5 song when Vivy Suno Voice is not enrolled', () => {
   const previousVoiceId = process.env.VIVY_SUNO_VOICE_ID;
   delete process.env.VIVY_SUNO_VOICE_ID;
