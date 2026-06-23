@@ -4447,7 +4447,7 @@ function buildVivyPreviewMixArgs(instrumentalPath, voicePath, outputPath) {
     '-i', instrumentalPath,
     '-i', voicePath,
     '-filter_complex',
-    '[0:a]volume=0.30[music];[1:a]volume=1.0[voice];[music][voice]amix=inputs=2:duration=longest:dropout_transition=2,alimiter=limit=0.95[out]',
+    '[0:a]volume=0.24[music];[1:a]highpass=f=90,loudnorm=I=-19:TP=-6:LRA=7[voice];[music][voice]amix=inputs=2:duration=longest:dropout_transition=2,alimiter=limit=0.90[out]',
     '-map', '[out]',
     '-c:a', 'libmp3lame',
     '-b:a', '192k',

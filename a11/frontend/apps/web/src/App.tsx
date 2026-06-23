@@ -2872,6 +2872,17 @@ type VivyStudioMediaPreview = {
   provider?: string;
   contentType?: string;
   filename?: string;
+  voiceManifest?: {
+    providerRequested?: string;
+    providerUsed?: string;
+    rvcApplied?: boolean;
+    personaApplied?: boolean;
+    fallbackUsed?: boolean;
+    fallbackReason?: string | null;
+    segments?: number;
+    mixEngine?: string | null;
+    output?: string | null;
+  };
 };
 
 type VivyStudioVocalSegment = {
@@ -4311,6 +4322,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       vocalCast: entry.label,
       provider,
       ttsProvider: provider,
+      voiceProviderRequested: usesCleanCloudVoice ? "elevenlabs" : provider,
       engine: provider,
       voiceEngine: provider,
       vocalMode: usesOfficialReference ? mode.vocalMode : "speech",
@@ -4389,6 +4401,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       vocalCast: activeVoiceProfile.label,
       provider,
       ttsProvider: provider,
+      voiceProviderRequested: usesCleanCloudVoice ? "elevenlabs" : provider,
       engine: provider,
       voiceEngine: provider,
       voiceConversionEngine: provider === "xtts-rvc" ? "xtts-rvc" : undefined,
@@ -4882,7 +4895,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     throw new Error("generation_suno_trop_longue");
   }
 
-  async function createVivySongVoicePreview(publicLyrics: string) {
+  async function createVivySongVoicePreview(publicLyrics: string): Promise<VivyStudioMediaPreview> {
     const previewText = buildVivyPlayableText(
       publicLyrics,
       songText || songMood || "Vivy prépare un aperçu de la chanson.",
@@ -4905,10 +4918,11 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       provider: String(preview?.provider || preview?.via || "elevenlabs-tts"),
       contentType: String(preview?.contentType || preview?.content_type || "audio/mpeg"),
       filename: String(preview?.filename || `vivy-apercu-${activeVoiceProfile.id}.mp3`),
+      voiceManifest: preview?.voiceManifest,
     };
   }
 
-  async function createVivyMultiVoicePreview(rawSegments: VivyStudioVocalSegment[]) {
+  async function createVivyMultiVoicePreview(rawSegments: VivyStudioVocalSegment[]): Promise<VivyStudioMediaPreview> {
     const allowedArtistIds = new Set(activeSongArtistCast.ids);
     const segments = (Array.isArray(rawSegments) ? rawSegments : [])
       .map((segment) => ({
@@ -5229,6 +5243,13 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
               provider: String(mixed?.provider || "vivy-voice-instrumental-mix"),
               contentType: String(mixed?.content_type || "audio/mpeg"),
               filename: String(mixed?.filename || "vivy-apercu-voix-instrumental.mp3"),
+              voiceManifest: voicePreview.voiceManifest
+                ? {
+                  ...voicePreview.voiceManifest,
+                  mixEngine: "preview-mix",
+                  output: String(mixed?.filename || "vivy-apercu-voix-instrumental.mp3"),
+                }
+                : undefined,
             };
           } catch (instrumentalError: any) {
             instrumentalPreviewError = String(instrumentalError?.message || instrumentalError || "instrumental_indisponible");
@@ -6009,6 +6030,14 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
               {(vivyMedia.provider || vivyMedia.contentType) && (
                 <small>{[vivyMedia.provider, vivyMedia.contentType].filter(Boolean).join(" - ")}</small>
               )}
+              {vivyMedia.voiceManifest ? (
+                <small>
+                  {`Voix demandée: ${vivyMedia.voiceManifest.providerRequested || "auto"} · utilisée: ${vivyMedia.voiceManifest.providerUsed || "inconnue"} · RVC: ${vivyMedia.voiceManifest.rvcApplied ? "oui" : "non"} · persona: ${vivyMedia.voiceManifest.personaApplied ? "oui" : "non"}`}
+                  {vivyMedia.voiceManifest.fallbackUsed
+                    ? ` · Fallback voix: ${vivyMedia.voiceManifest.fallbackReason || "raison inconnue"}`
+                    : ""}
+                </small>
+              ) : null}
             </div>
           )}
           {status && <p className="vivy-studio-status-msg">{status}</p>}

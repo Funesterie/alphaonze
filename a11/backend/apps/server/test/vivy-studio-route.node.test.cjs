@@ -275,8 +275,8 @@ test('Vivy ElevenLabs instrumental prompt stays within the provider contract and
 test('Vivy preview mix keeps the voice clear over a quieter instrumental', () => {
   const args = buildVivyPreviewMixArgs('instrumental.mp3', 'voice.mp3', 'mix.mp3');
   assert.deepEqual(args.slice(0, 5), ['-y', '-i', 'instrumental.mp3', '-i', 'voice.mp3']);
-  assert.match(args.join(' '), /volume=0\.30\[music\]/);
-  assert.match(args.join(' '), /volume=1\.0\[voice\]/);
+  assert.match(args.join(' '), /volume=0\.24\[music\]/);
+  assert.match(args.join(' '), /highpass=f=90,loudnorm=I=-19:TP=-6:LRA=7\[voice\]/);
   assert.match(args.join(' '), /amix=inputs=2:duration=longest/);
   assert.equal(args.at(-1), 'mix.mp3');
 });
@@ -1404,7 +1404,20 @@ test('Vivy song preview asks for automatic official voice routing', () => {
   const block = appSource.slice(start, end);
 
   assert.match(block, /const provider = usesCleanCloudVoice \? "auto" : "xtts-rvc"/);
-  assert.doesNotMatch(block, /usesCleanCloudVoice \? "elevenlabs"/);
+  assert.match(block, /voiceProviderRequested:\s*usesCleanCloudVoice \? "elevenlabs" : provider/);
+  assert.doesNotMatch(block, /const provider = usesCleanCloudVoice \? "elevenlabs"/);
+});
+
+test('Vivy Studio exposes the real voice route instead of hiding XTTS fallback', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+
+  assert.match(appSource, /voiceManifest\?:\s*\{/);
+  assert.match(appSource, /voiceManifest:\s*preview\?\.voiceManifest/);
+  assert.match(appSource, /Fallback voix:/);
+  assert.match(appSource, /Voix demandée:/);
 });
 
 test('Vivy removes an unselected singer from a provider duo draft', () => {

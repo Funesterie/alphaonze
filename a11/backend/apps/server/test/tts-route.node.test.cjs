@@ -2023,15 +2023,22 @@ test('tts speak route defaults official auto voices to ElevenLabs before any RVC
 
           assert.equal(result.response.status, 200);
           assert.match(result.json.via, /^elevenlabs-tts(?:\+xtts-rvc)?$/);
+          assert.equal(result.json.voiceManifest.providerRequested, 'elevenlabs');
+          assert.equal(result.json.voiceManifest.providerUsed, 'elevenlabs');
+          assert.equal(result.json.voiceManifest.personaApplied, true);
+          assert.equal(result.json.voiceManifest.fallbackUsed, false);
+          assert.equal(result.json.voiceManifest.fallbackReason, null);
           assert.notEqual(result.json.via, 'xtts-rvc-direct');
           assert.notEqual(result.json.via, 'funesterie-xtts-rvc-bridge');
           if (result.json.via === 'elevenlabs-tts+xtts-rvc') {
             assert.equal(result.json.provider, 'xtts-rvc');
+            assert.equal(result.json.voiceManifest.rvcApplied, true);
             assert.match(result.json.originalAudioUrl, /^\/api\/tts\/out\/tts-out-\d+-elevenlabs\.mp3$/);
             assert.equal(result.json.voiceConversion.engine, 'xtts-rvc');
             assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
           } else {
             assert.equal(result.json.provider, 'elevenlabs');
+            assert.equal(result.json.voiceManifest.rvcApplied, false);
             assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-elevenlabs\.mp3$/);
           }
           assert.equal(result.json.providerCapabilities.referenceVoice, true);
@@ -2161,6 +2168,7 @@ test('tts async official auto voice falls back to the local Vivy identity when E
           surface: 'vivy',
           provider: 'auto',
           ttsProvider: 'auto',
+          voiceProviderRequested: 'elevenlabs',
           vocalMode: 'sing',
           ttsAsync: true,
           useDefaultVoiceReference: true,
@@ -2179,6 +2187,12 @@ test('tts async official auto voice falls back to the local Vivy identity when E
 
         assert.equal(polled.state, 'done');
         assert.equal(polled.provider, 'xtts-rvc');
+        assert.equal(polled.result.voiceManifest.providerRequested, 'elevenlabs');
+        assert.equal(polled.result.voiceManifest.providerUsed, 'xtts');
+        assert.equal(polled.result.voiceManifest.rvcApplied, true);
+        assert.equal(polled.result.voiceManifest.personaApplied, true);
+        assert.equal(polled.result.voiceManifest.fallbackUsed, true);
+        assert.match(polled.result.voiceManifest.fallbackReason, /elevenlabs_/);
         assert.match(polled.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
         assert.equal(bridgeCalls.length, 1);
       }
