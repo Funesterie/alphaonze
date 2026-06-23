@@ -38,6 +38,7 @@ const {
   buildVivySongcraftSystemPrompt,
   buildVivyStructuredLyrics,
   buildVivyVocalSegments,
+  restoreVivyFrenchSongAccents,
   splitVivyArrangementCues,
 } = require('../src/music/vivy-songcraft.cjs');
 const {
@@ -1376,6 +1377,13 @@ test('Vivy Studio normalizes parenthesized song sections without sending them to
   assert.match(lyrics, /\[Chorus\]/);
   assert.match(lyrics, /\[Verse 2\]/);
   assert.doesNotMatch(lyrics, /\((?:Verse|Chorus)/i);
+});
+
+test('Vivy French accent repair never corrupts an already accented word', () => {
+  const text = restoreVivyFrenchSongAccents('Les fenêtres restent ouvertes, et la lumière est très claire.');
+
+  assert.equal(text, 'Les fenêtres restent ouvertes, et la lumière est très claire.');
+  assert.doesNotMatch(text, /fenêtrès/i);
 });
 
 test('Vivy Songcraft treats references as inspiration without reusing distinctive lyrics', () => {
