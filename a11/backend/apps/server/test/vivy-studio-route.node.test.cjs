@@ -35,6 +35,7 @@ const {
   shouldVivyAutoWebSearch,
 } = require('../src/routes/vivy-studio.cjs');
 const {
+  buildVivySongcraftSystemPrompt,
   buildVivyStructuredLyrics,
   buildVivyVocalSegments,
   splitVivyArrangementCues,
@@ -1310,6 +1311,94 @@ test('Djeff and Vivy duo keeps French accents for TTS-readable lyrics', () => {
   assert.doesNotMatch(lyrics, /\b(?:premiere|repond|apparait|precise|lumiere|cabree|accrochee|matiere|melodie|meme|elan|decoupe)\b/i);
 });
 
+test('Vivy Studio preserves a complete inline Markdown song instead of rebuilding a fallback', () => {
+  const lyrics = buildVivyStructuredLyrics({
+    songArtists: ['vivy'],
+    songText: [
+      '**Titre :** "Soleil de nuit" **Couplet 1 :**',
+      'Je me souviens de la nuit où nous nous sommes rencontrés',
+      'Sous les étoiles, le soleil de nuit nous a embrasés',
+      "Les palmiers faisaient de l'ombre au bord de l'eau",
+      'Et nous dansions sans regarder les heures',
+      '**Refrain :**',
+      'Soleil de nuit, tu dessines le jour',
+      'Soleil de nuit, tu prolonges le détour',
+      'Je veux rester sous les étoiles avec toi',
+      'Tant que la mer se souvient de nos pas',
+      '**Couplet 2 :**',
+      'Nous avons couru le long de la plage',
+      'Les vagues ont effacé notre passage',
+      'Nous avons ri dans le vent de juillet',
+      'Et gardé ce feu que personne ne voyait',
+      '**Pont :**',
+      'Maintenant la ville dort derrière nous',
+      'Le ciel se renverse et le matin devient doux',
+      '**Refrain :**',
+      'Soleil de nuit, tu dessines le jour',
+      'Soleil de nuit, tu prolonges le détour',
+      "J'espère que tu aimes cette chanson, ma belle !",
+    ].join('\n'),
+  });
+
+  assert.match(lyrics, /^\[Title: Soleil de nuit\]/);
+  assert.match(lyrics, /\[Verse 1\]/);
+  assert.match(lyrics, /\[Chorus\]/);
+  assert.match(lyrics, /\[Verse 2\]/);
+  assert.match(lyrics, /\[Bridge\]/);
+  assert.match(lyrics, /Le ciel se renverse et le matin devient doux/);
+  assert.doesNotMatch(lyrics, /Cosmos du matin|Deux bords d’une même faille|Quelque chose reste quand les mots se taisent/);
+  assert.doesNotMatch(lyrics, /J'espère que tu aimes/i);
+});
+
+test('Vivy Studio normalizes parenthesized song sections without sending them to the singer', () => {
+  const lyrics = buildVivyStructuredLyrics({
+    songArtists: ['vivy'],
+    songText: [
+      '(Verse 1)',
+      'Je traverse la ville au rythme des néons',
+      'Je laisse derrière moi le bruit des maisons',
+      'La route se déplie comme une partition',
+      'Et chaque feu dessine une nouvelle direction',
+      '(Chorus)',
+      'Je roule encore quand la nuit nous appelle',
+      'Je roule encore sous la pluie étincelle',
+      'Je roule encore sans perdre la lumière',
+      'Je roule encore avec le vent derrière',
+      '(Verse 2)',
+      'Le matin monte au-dessus des faubourgs',
+      'Le moteur tient la note au fond du jour',
+      'Mes mains gardent le cap dans le détour',
+      'Et mon regard revient vers le grand jour',
+    ].join('\n'),
+  });
+
+  assert.match(lyrics, /\[Verse 1\]/);
+  assert.match(lyrics, /\[Chorus\]/);
+  assert.match(lyrics, /\[Verse 2\]/);
+  assert.doesNotMatch(lyrics, /\((?:Verse|Chorus)/i);
+});
+
+test('Vivy Songcraft treats references as inspiration without reusing distinctive lyrics', () => {
+  const prompt = buildVivySongcraftSystemPrompt('song', {});
+
+  assert.match(prompt, /référence.*ambiance.*structure/i);
+  assert.match(prompt, /ne (?:reprends|réutilise|recopie).*formulations?.*distinctives?/i);
+  assert.match(prompt, /page blanche/i);
+});
+
+test('Vivy song preview asks for automatic official voice routing', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const start = appSource.indexOf('function buildVivyTtsOptions');
+  const end = appSource.indexOf('async function copyStudioPublicOutput', start);
+  const block = appSource.slice(start, end);
+
+  assert.match(block, /const provider = usesCleanCloudVoice \? "auto" : "xtts-rvc"/);
+  assert.doesNotMatch(block, /usesCleanCloudVoice \? "elevenlabs"/);
+});
+
 test('Vivy removes an unselected singer from a provider duo draft', () => {
   const lyrics = buildVivyPublicLyrics({
     songArtists: ['a11', 'vivy'],
@@ -2561,6 +2650,99 @@ test('Vivy triggers web research for current external information instead of gue
       delete process.env.VIVY_CHAT_WEB_SEARCH_FIXTURE;
     } else {
       process.env.VIVY_CHAT_WEB_SEARCH_FIXTURE = previousFixture;
+    }
+  }
+});
+
+test('Vivy uses web research as songwriting context instead of returning a raw result list', async () => {
+  const previousEnv = {
+    VIVY_CHAT_DISABLE_LLM: process.env.VIVY_CHAT_DISABLE_LLM,
+    VIVY_CHAT_WEB_SEARCH_FIXTURE: process.env.VIVY_CHAT_WEB_SEARCH_FIXTURE,
+    VIVY_OPENAI_API_KEY: process.env.VIVY_OPENAI_API_KEY,
+    VIVY_OPENAI_BASE_URL: process.env.VIVY_OPENAI_BASE_URL,
+    VIVY_SONG_PROVIDER: process.env.VIVY_SONG_PROVIDER,
+    VIVY_SONG_MODEL: process.env.VIVY_SONG_MODEL,
+  };
+  const llmRequests = [];
+  const llmApp = express();
+  llmApp.use(express.json());
+  llmApp.post('/chat/completions', (req, res) => {
+    llmRequests.push(req.body);
+    res.json({
+      id: 'vivy-web-song-test',
+      object: 'chat.completion',
+      created: Math.floor(Date.now() / 1000),
+      model: 'vivy-test-model',
+      choices: [{
+        index: 0,
+        finish_reason: 'stop',
+        message: {
+          role: 'assistant',
+          content: [
+            '[Title: Chrome sous tension]',
+            '[Verse 1]',
+            '[Vivy]',
+            'Le désert plie sous les éclats du moteur',
+            'La ligne blanche avale le bruit et la peur',
+            'Le métal prend la fièvre au milieu du décor',
+            'Je garde le guidon quand tout accélère encore',
+            '[Chorus]',
+            '[Vivy]',
+            'Chrome sous tension, la nuit devient claire',
+            'Chrome sous tension, je traverse la poussière',
+            'Je ne cours pas pour fuir, je choisis mon chemin',
+            'Le tonnerre sous mes mains répond jusqu’au matin',
+            '[Verse 2]',
+            '[Vivy]',
+            'Les néons de la ville ont la couleur des flammes',
+            'Je coupe dans le vent sans marchander mon âme',
+            'Chaque virage écrit sa vérité sur l’asphalte',
+            'Et mon cœur tient le cap quand la lumière exalte',
+          ].join('\n'),
+        },
+      }],
+    });
+  });
+  const llmServer = http.createServer(llmApp);
+  await new Promise((resolve) => llmServer.listen(0, '127.0.0.1', resolve));
+  const llmPort = llmServer.address().port;
+
+  process.env.VIVY_CHAT_DISABLE_LLM = 'false';
+  process.env.VIVY_OPENAI_API_KEY = 'test-vivy-key';
+  process.env.VIVY_OPENAI_BASE_URL = `http://127.0.0.1:${llmPort}`;
+  process.env.VIVY_SONG_PROVIDER = 'openai';
+  process.env.VIVY_SONG_MODEL = 'vivy-test-model';
+  process.env.VIVY_CHAT_WEB_SEARCH_FIXTURE = JSON.stringify({
+    ok: true,
+    results: [{
+      title: 'Torque film overview',
+      url: 'https://example.test/torque-film',
+      snippet: 'Motorcycle action film with desert roads, rival crews and stylized high-speed chases.',
+    }],
+  });
+
+  try {
+    const result = await buildVivyAiChat({
+      conversationId: 'vivy-web-song-context-test',
+      mode: 'song',
+      songArtists: ['vivy'],
+      message: "Cherche sur internet l'univers du film Torque puis écris une chanson originale, sans reprendre de paroles existantes.",
+    }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+    assert.equal(result.aiMode, 'llm_web_research');
+    assert.equal(result.webSearch.ok, true);
+    assert.match(result.assistant, /\[Title: Chrome sous tension\]/);
+    assert.match(result.assistant, /\[Chorus\]/);
+    assert.doesNotMatch(result.assistant, /Recherche:|Résultats utiles:|example\.test/);
+    assert.equal(llmRequests.length, 1);
+    const prompt = llmRequests[0].messages.map((entry) => entry.content).join('\n');
+    assert.match(prompt, /Torque film overview/);
+    assert.match(prompt, /desert roads, rival crews/i);
+  } finally {
+    await new Promise((resolve, reject) => llmServer.close((error) => (error ? reject(error) : resolve())));
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
     }
   }
 });

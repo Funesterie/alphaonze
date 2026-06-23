@@ -2346,6 +2346,55 @@ function getRequestedTtsProvider(body = {}) {
   return raw;
 }
 
+function getOriginalRequestedTtsProvider(body = {}) {
+  return String(body?.a11OriginalRequestedTtsProvider || getRequestedTtsProvider(body) || 'auto')
+    .trim()
+    .toLowerCase();
+}
+
+function wasTtsProviderExplicitlyRequested(body = {}, provider = '') {
+  const original = getOriginalRequestedTtsProvider(body);
+  return original !== 'auto' && original === String(provider || '').trim().toLowerCase();
+}
+
+function shouldTryOfficialLocalIdentityFallback(body = {}, resolvedProvider = {}) {
+  const persona = getExplicitTtsPersonaFromBody(body);
+  return getOriginalRequestedTtsProvider(body) === 'auto'
+    && OFFICIAL_PERSONAS.has(persona)
+    && wantsOfficialIdentityVoice(body)
+    && isCloudTtsProvider(resolvedProvider?.provider);
+}
+
+function buildOfficialLocalIdentityFallbackBody(body = {}) {
+  return normalizeA11OfficialReferenceRequest({
+    ...(body || {}),
+    provider: PROVIDERS.XTTS_RVC,
+    ttsProvider: PROVIDERS.XTTS_RVC,
+    engine: PROVIDERS.XTTS_RVC,
+    voiceEngine: PROVIDERS.XTTS_RVC,
+    voiceMode: 'xtts-rvc',
+    voiceConversionEngine: PROVIDERS.XTTS_RVC,
+    conversionEngine: PROVIDERS.XTTS_RVC,
+    voiceConversion: true,
+    convertVoice: true,
+    morphVoice: true,
+    rvc: true,
+    useRvc: true,
+    allowRvc: true,
+    allowXttsRvc: true,
+    allowLegacyVoiceBridge: true,
+    xttsRvcOptIn: true,
+    useDefaultVoiceReference: true,
+    defaultVoiceReference: true,
+    usePersonaVoiceReference: true,
+    voiceReferenceRequired: true,
+    requireVoiceReference: true,
+    referenceVoiceRequired: true,
+    forceCloudTts: false,
+    useReadyMadeCloudVoice: false,
+  });
+}
+
 function isNeutralTtsProvider(provider = '') {
   return ['piper', 'local', 'spawn', 'espeak', 'espeak-ng'].includes(String(provider || '').trim().toLowerCase());
 }
@@ -4445,6 +4494,10 @@ async function requestElevenLabsTts(text, body = {}, options = {}) {
     true
   );
 
+  const explicitTimeoutMs = Number(process.env.ELEVENLABS_TTS_TIMEOUT_MS || 0);
+  const timeoutMs = explicitTimeoutMs > 0
+    ? explicitTimeoutMs
+    : Math.max(22000, Math.min(120000, 22000 + (String(text || '').length * 15)));
   const response = await fetch(`${getElevenLabsTtsBaseUrl()}/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${encodeURIComponent(outputFormat)}`, {
     method: 'POST',
     headers: {
@@ -4462,7 +4515,7 @@ async function requestElevenLabsTts(text, body = {}, options = {}) {
         use_speaker_boost: useSpeakerBoost !== false,
       },
     }),
-    signal: AbortSignal.timeout(Number(process.env.ELEVENLABS_TTS_TIMEOUT_MS || 22000) || 22000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   if (!response.ok) {
@@ -4608,7 +4661,13 @@ router.options(['/tts/piper', '/tts/speak', '/tts/jobs/:jobId', '/vivy/jobs', '/
 
 async function handleTtsSpeakRequest(req, res) {
   try {
-    const baseBody = enforceBasicTtsCostPolicy(req, req.body || {});
+    const enforcedBody = enforceBasicTtsCostPolicy(req, req.body || {});
+    const baseBody = {
+      ...enforcedBody,
+      a11OriginalRequestedTtsProvider: String(
+        enforcedBody?.a11OriginalRequestedTtsProvider || getRequestedTtsProvider(enforcedBody) || 'auto'
+      ).trim().toLowerCase(),
+    };
     // The "ElevenLabs + RVC" official voice is a paid cloud path. It runs when
     // the client asks for it explicitly (voiceMode) OR, for an official persona
     // identity request, by default once ElevenLabs is configured — so the "voix
@@ -4723,7 +4782,9 @@ async function handleTtsSpeakRequest(req, res) {
         const message = String(cloudTtsError?.message || cloudTtsError);
         if (provider === PROVIDERS.OPENAI) openAiTtsErrorMessage = message;
         console.warn(`[TTS][${provider}] ready-made voice failed:`, message);
-        if (strictOfficialVoice && getRequestedTtsProvider(preparedBody) === provider) {
+        if (strictOfficialVoice
+          && getRequestedTtsProvider(preparedBody) === provider
+          && wasTtsProviderExplicitlyRequested(preparedBody, provider)) {
           return res.status(424).json({
             ok: false,
             error: 'voice_reference_tts_unavailable',
@@ -4734,6 +4795,22 @@ async function handleTtsSpeakRequest(req, res) {
         }
       }
     };
+
+    if (cloudProviderOrder.length && shouldTryOfficialLocalIdentityFallback(preparedBody, resolvedProvider)) {
+      const localFallbackBody = buildOfficialLocalIdentityFallbackBody(preparedBody);
+      req.body = localFallbackBody;
+      try {
+        const directVoice = await requestDirectXttsRvcWithRetry(readableText, localFallbackBody, {
+          vocalMode,
+          persona: localFallbackBody.voicePersona || localFallbackBody.persona || localFallbackBody.surface || null,
+          user: req.user || null,
+        });
+        return sendFinalizedPayload(directVoice);
+      } catch (xttsRvcError) {
+        console.warn('[TTS][XTTS/RVC] cloud identity fallback failed:', String(xttsRvcError?.message || xttsRvcError));
+        req.body = preparedBody;
+      }
+    }
 
     if (preferOpenAiBeforeDirectBridge) {
       try {
@@ -5297,7 +5374,11 @@ router.get('/tts/out/:filename', async (req, res) => {
 
 router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
   setTtsCorsHeaders(req, res);
-  const baseBody = enforceBasicTtsCostPolicy(req, req.body || {});
+  const enforcedBody = enforceBasicTtsCostPolicy(req, req.body || {});
+  const baseBody = {
+    ...enforcedBody,
+    a11OriginalRequestedTtsProvider: getRequestedTtsProvider(enforcedBody) || 'auto',
+  };
   const useElevenLabsRvc = shouldRouteOfficialToElevenLabsRvc(req, baseBody);
   const requestBody = useElevenLabsRvc
     ? normalizeElevenLabsRvcRequest({ ...baseBody, voiceMode: 'elevenlabs-rvc' })
@@ -5410,7 +5491,9 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
         const message = String(cloudTtsError?.message || cloudTtsError);
         if (provider === PROVIDERS.OPENAI) openAiTtsErrorMessage = message;
         console.warn(`[TTS][${provider}] ready-made voice failed:`, message);
-        if (strictOfficialVoice && getRequestedTtsProvider(preparedBody) === provider) {
+        if (strictOfficialVoice
+          && getRequestedTtsProvider(preparedBody) === provider
+          && wasTtsProviderExplicitlyRequested(preparedBody, provider)) {
           return res.status(424).json({
             ok: false,
             error: 'voice_reference_tts_unavailable',
@@ -5419,6 +5502,22 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
             diagnostic: `${provider}_tts_failed`,
           });
         }
+      }
+    }
+
+    if (cloudProviderOrder.length && shouldTryOfficialLocalIdentityFallback(preparedBody, resolvedProvider)) {
+      const localFallbackBody = buildOfficialLocalIdentityFallbackBody(preparedBody);
+      req.body = localFallbackBody;
+      try {
+        const directVoice = await requestDirectXttsRvcWithRetry(readableText, localFallbackBody, {
+          vocalMode,
+          persona: localFallbackBody.voicePersona || localFallbackBody.persona || localFallbackBody.surface || null,
+          user: req.user || null,
+        });
+        return sendFinalizedPayload(directVoice);
+      } catch (xttsRvcError) {
+        console.warn('[TTS][XTTS/RVC] cloud identity fallback failed:', String(xttsRvcError?.message || xttsRvcError));
+        req.body = preparedBody;
       }
     }
 

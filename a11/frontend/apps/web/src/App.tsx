@@ -4371,7 +4371,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         || activeVoiceProfile.id === "vivy-official"
         || activeVoiceProfile.id === "vivy-sing"
       );
-    const provider = usesCleanCloudVoice ? "elevenlabs" : "xtts-rvc";
+    const provider = usesCleanCloudVoice ? "auto" : "xtts-rvc";
     const voiceConversion = !usesCleanCloudVoice;
     const resolvedUseRvc = voiceConversion ? useRvc : false;
     return {

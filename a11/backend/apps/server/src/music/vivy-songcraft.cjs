@@ -94,7 +94,7 @@ function looksLikeVivySongUiNoiseLine(line = '') {
   if (/^vivy_(?:music_generation|production_status)\b/.test(folded)) return true;
   if (/^(oui je reste en discussion libre|je capte|je ne transforme pas|je vois l idee|ce que je prends surtout|je reponds au fond|la voix vivy par defaut|idee rangee dans la memoire vivy)\b/.test(folded)) return true;
   if (/^(c est un bon debut|je vois que tu as deja commence|voici une proposition|voici un exemple|les saint seiya|pour ecrire une chanson|pour écrire une chanson|tu pourrais|pour les paroles|en termes de melodie|qu en penses tu|est ce que cela te donne|est ce que tu veux)\b/.test(folded)) return true;
-  if (/\b(j espere que cette chanson|j espere que cela|j espere que ca|n hesite pas a|n hesitez pas|feedbacks?|modifications? si necessaire)\b/.test(folded)) return true;
+  if (/\b(j espere que (?:tu|vous|cette chanson|cela|ca)|n hesite pas a|n hesitez pas|feedbacks?|modifications? si necessaire)\b/.test(folded)) return true;
   if (/^(?:\*\s*)?(les armures|les combats epiques|les themes de|l amitie|la recherche de|la lutte pour|la quete de|les chevaliers du zodiaque|les heros|ils sont les symboles)\b/.test(folded)) return true;
   if (/\b(quel est le ton que tu veux donner|veux tu qu elle soit|je suis la pour t aider|cela te donne des idees)\b/.test(folded)) return true;
   if (/^(source|direction sonore|titre de travail|structure proposee|assets a produire|paroles guide|routage|flux chanson|atelier|objectif|brief agents|composition production|creation voix|scene partage|sortie attendue|routage recommande|media pret|média prêt|multimodal runtime|janus vision|janus pro|provider|modele|modèle|device|worker|gpu|vram|recommendation|recommandation|dernier scan|safety lane|nerve routing|a11host|bridge vsix|headless|qflush flow|process supervises|clé suno personnelle|cle suno personnelle)\b/.test(folded)) return true;
@@ -119,8 +119,46 @@ function splitVivySongMaterialCandidates(value = '') {
     .filter(Boolean);
 }
 
+function normalizeVivySongSectionMarkup(value = '') {
+  const sectionName = (raw = '', number = '', artist = '') => {
+    const folded = foldTextForLookup(raw);
+    const canonical = /^(couplet|verse)$/.test(folded)
+      ? 'Verse'
+      : /^(refrain|refren|chorus)$/.test(folded)
+        ? 'Chorus'
+        : /^(pont|bridge)$/.test(folded)
+          ? 'Bridge'
+          : /^(pre refrain|pre chorus)$/.test(folded)
+            ? 'Pre-Chorus'
+            : folded === 'intro'
+              ? 'Intro'
+              : 'Outro';
+    const suffix = number ? ` ${number}` : '';
+    const artistSuffix = cleanOneLine(artist, '', 40);
+    return `[${canonical}${suffix}${artistSuffix ? ` - ${artistSuffix}` : ''}]`;
+  };
+
+  return String(value || '')
+    .replace(
+      /\*{1,2}\s*(?:titre|title)\s*:\s*\*{1,2}\s*["“]?([^"”\r\n*]{1,100})["”]?/giu,
+      (_match, title) => `\n[Title: ${cleanOneLine(title, 'Sans titre', 80)}]\n`
+    )
+    .replace(
+      /\*{1,2}\s*(intro|couplet|verse|pré[- ]?refrain|pre[- ]?chorus|refrain|refren|chorus|pont|bridge|outro)(?:\s+(\d+))?(?:\s*-\s*([^*\r\n:]{1,40}))?\s*:\s*\*{1,2}/giu,
+      (_match, section, number, artist) => `\n${sectionName(section, number, artist)}\n`
+    )
+    .replace(
+      /\((intro|couplet|verse|pré[- ]?refrain|pre[- ]?chorus|refrain|refren|chorus|pont|bridge|outro)(?:\s+(\d+))?(?:\s*-\s*([^()\r\n]{1,40}))?\)/giu,
+      (_match, section, number, artist) => `\n${sectionName(section, number, artist)}\n`
+    )
+    .replace(/\s+(J['’]espère que (?:tu|vous) (?:aimes?|aimerez)[^\r\n]*)/giu, '\n$1')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function sanitizeVivySongMaterial(value = '', max = VIVY_SONG_MAX_CHARS) {
-  const text = cleanText(value, Math.max(max, VIVY_SONG_MAX_CHARS));
+  const text = cleanText(normalizeVivySongSectionMarkup(value), Math.max(max, VIVY_SONG_MAX_CHARS));
   if (!text) return '';
 
   const sectionCount = (text.match(/\[(verse|chorus|bridge|intro|outro|couplet|refrain|pont|pré-refrain|pre-chorus)(?:\s+\d+)?(?:\s*-\s*[^\]]+)?\]/ig) || []).length;
@@ -362,6 +400,9 @@ function buildVivySongcraftSystemPrompt(mode, context) {
     'Application Songcraft: preserver le grain, les accidents utiles et l\u2019intention emotionnelle avant de lisser.',
     'Si l\u2019utilisateur demande une chanson, reponds comme une artiste-auteure, pas comme un assistant qui explique.',
     'Liberté créative: tu peux réécrire, déplacer, condenser ou enrichir la matière pour produire une vraie chanson; ne te limite pas à paraphraser les phrases reçues.',
+    'Une référence sert uniquement à comprendre une ambiance, une structure ou un mécanisme d’écriture; elle ne fournit jamais des paroles à recycler.',
+    'Ne reprends, ne réutilise et ne recopie aucune formulation distinctive de la référence, même légèrement modifiée.',
+    'Si l’utilisateur demande de s’en inspirer sans copier, repars d’une page blanche avec de nouvelles images, de nouvelles rimes et un nouveau refrain.',
     'Structure: choisis une forme musicale complète adaptée au morceau. Les balises [Intro], [Verse], [Pre-Chorus], [Chorus], [Bridge] et [Outro] sont disponibles, sans canevas rigide si une autre forme sert mieux la chanson.',
     artistInstruction,
     moodInstruction,
@@ -883,6 +924,7 @@ module.exports = {
   buildVivySongArtistCast,
   buildVivyVocalSegments,
   splitVivyArrangementCues,
+  normalizeVivySongSectionMarkup,
   extractDjeffRapSeedLines,
   sanitizeVivySongMaterial,
   inferTitle,

@@ -1231,6 +1231,21 @@ async function buildVivyWebResearchReply(input = {}) {
   };
 }
 
+function formatVivyWebResearchForPrompt(webSearch = {}) {
+  const results = sanitizeVivyWebResults(webSearch.results);
+  if (!results.length) return '';
+  return cleanText([
+    'Recherche web vérifiée à utiliser comme contexte, sans afficher une liste brute de résultats:',
+    webSearch.query ? `Sujet recherché: ${webSearch.query}` : '',
+    ...results.map((entry, index) => [
+      `${index + 1}. ${entry.title}`,
+      entry.snippet,
+      entry.url ? `Source: ${entry.url}` : '',
+    ].filter(Boolean).join(' - ')),
+    'Réponds à la demande créative avec ces faits. Ne recopie ni les sources ni des paroles existantes dans la sortie.',
+  ].filter(Boolean).join('\n'), 2600);
+}
+
 function isVivyMemoryContextNoise(episode = {}) {
   const type = String(episode?.type || '');
   if (type === 'vivy_settings') return true;
@@ -3333,6 +3348,9 @@ async function buildVivyAiChat(input, req) {
     ? buildVivyLocalContextSnapshot(intentMessage || message)
     : null;
   const localContextForResponse = serializeVivyLocalContext(localContext);
+  const llmDisabled = String(process.env.VIVY_CHAT_DISABLE_LLM || '').toLowerCase() === 'true';
+  const llmBundle = createVivyOpenAIClient({ mode });
+  let webResearch = null;
 
   if (isVivyInternalTuningRequest(input, intentMessage || message)) {
     const tuningReply = buildVivyInternalTuningReply({ message: intentMessage || message, history: input.history, language });
@@ -3434,36 +3452,45 @@ async function buildVivyAiChat(input, req) {
 
   if (shouldVivyAutoWebSearch(intentMessage || message, mode)) {
     const research = await buildVivyWebResearchReply({ ...input, message: intentMessage || message, files });
-    rememberVivyEpisode(userId, 'vivy_reply', research.assistant, {
-      mode: 'chat',
-      conversationId: cleanOneLine(input.conversationId, '', 120),
-      deterministic: true,
-      webSearch: true,
-      webSearchOk: research.webSearch.ok === true,
-    });
-    return {
-      ...fallback,
-      mode: 'chat',
-      assistant: research.assistant,
-      content: research.assistant,
-      summary: research.webSearch.ok
-        ? 'Vivy a lancé une recherche web avant de répondre.'
-        : "Vivy a détecté le besoin de recherche web mais n'a pas obtenu de résultat exploitable.",
-      actions: [
-        { id: 'web_search', label: 'Recherche web', target: 'a11-web-search', ready: research.webSearch.ok === true, query: research.webSearch.query },
-      ],
-      routing: [
-        'Vivy: détecter le besoin de source externe ou récente.',
-        'A11: lancer web_search borné via le backend autorisé.',
-        'Vivy: restituer les résultats sans inventer ce qui manque.',
-      ],
-      aiMode: research.webSearch.ok ? 'deterministic_web_research' : 'deterministic_web_research_unavailable',
-      language,
-      files,
-      webSearch: research.webSearch,
-      semanticMemory,
-      memoryStored: semanticMemory.stored,
-    };
+    const canUseResearchForSong = mode === 'song'
+      && research.webSearch.ok === true
+      && research.webSearch.results.length > 0
+      && Boolean(llmBundle)
+      && !llmDisabled;
+    if (canUseResearchForSong) {
+      webResearch = research;
+    } else {
+      rememberVivyEpisode(userId, 'vivy_reply', research.assistant, {
+        mode: 'chat',
+        conversationId: cleanOneLine(input.conversationId, '', 120),
+        deterministic: true,
+        webSearch: true,
+        webSearchOk: research.webSearch.ok === true,
+      });
+      return {
+        ...fallback,
+        mode: 'chat',
+        assistant: research.assistant,
+        content: research.assistant,
+        summary: research.webSearch.ok
+          ? 'Vivy a lancé une recherche web avant de répondre.'
+          : "Vivy a détecté le besoin de recherche web mais n'a pas obtenu de résultat exploitable.",
+        actions: [
+          { id: 'web_search', label: 'Recherche web', target: 'a11-web-search', ready: research.webSearch.ok === true, query: research.webSearch.query },
+        ],
+        routing: [
+          'Vivy: détecter le besoin de source externe ou récente.',
+          'A11: lancer web_search borné via le backend autorisé.',
+          'Vivy: restituer les résultats sans inventer ce qui manque.',
+        ],
+        aiMode: research.webSearch.ok ? 'deterministic_web_research' : 'deterministic_web_research_unavailable',
+        language,
+        files,
+        webSearch: research.webSearch,
+        semanticMemory,
+        memoryStored: semanticMemory.stored,
+      };
+    }
   }
 
   if (isVivyFileInspectionRequest(intentMessage || message, files)) {
@@ -3496,9 +3523,6 @@ async function buildVivyAiChat(input, req) {
       memoryStored: semanticMemory.stored,
     };
   }
-
-  const llmDisabled = String(process.env.VIVY_CHAT_DISABLE_LLM || '').toLowerCase() === 'true';
-  const llmBundle = createVivyOpenAIClient({ mode });
 
   if (localContext && llmDisabled && mode !== 'song') {
     const assistant = buildVivyLocalContextReply(localContext);
@@ -3602,6 +3626,7 @@ async function buildVivyAiChat(input, req) {
     const history = detachedCompleteSong ? [] : normalizeVivyChatHistory(input.history);
     const userContent = compactUniqueLines([
       intentMessage || message,
+      webResearch ? formatVivyWebResearchForPrompt(webResearch.webSearch) : '',
       localContext ? `Contexte local Funesterie/A11 en lecture seule:\n${localContext.prompt}` : '',
       fileContext ? `Pièces jointes et contexte fichier:\n${fileContext}` : '',
     ], VIVY_SONG_MAX_CHARS) || 'Continue la conversation Vivy avec douceur et précision.';
@@ -3704,9 +3729,22 @@ async function buildVivyAiChat(input, req) {
       content: assistant,
       publicText: assistant,
       publicLyrics: mode === 'song' ? assistant : undefined,
-      aiMode: usedSongcraftFallback ? 'deterministic_fallback' : llmRetried ? 'llm_retry' : 'llm',
+      aiMode: usedSongcraftFallback
+        ? 'deterministic_fallback'
+        : llmRetried
+          ? 'llm_retry'
+          : webResearch
+            ? 'llm_web_research'
+            : 'llm',
       model: llmBundle.model,
       provider: llmBundle.provider || getVivyProviderFromBaseUrl(llmBundle.baseURL || ''),
+      ...(webResearch ? {
+        webSearch: webResearch.webSearch,
+        actions: [
+          ...(Array.isArray(fallback.actions) ? fallback.actions : []),
+          { id: 'web_search', label: 'Recherche web', target: 'a11-web-search', ready: true, query: webResearch.webSearch.query },
+        ],
+      } : {}),
       semanticMemory,
       memoryStored: semanticMemory.stored,
     };

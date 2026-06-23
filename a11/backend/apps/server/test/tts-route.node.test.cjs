@@ -2051,6 +2051,222 @@ test('tts speak route defaults official auto voices to ElevenLabs before any RVC
   }
 });
 
+test('tts async official auto voice falls back to the local Vivy identity when ElevenLabs fails', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-vivy-elevenlabs-fallback-'));
+  const previousEnv = {
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_RUNTIME_DISABLE_IMPLICIT_LEGACY: process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY,
+    A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
+    A11_TTS_LOCAL_GPU_WORKER_ENABLED: process.env.A11_TTS_LOCAL_GPU_WORKER_ENABLED,
+    A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+    A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
+    A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
+    A11_ELEVENLABS_VIVY_VOICE_ID: process.env.A11_ELEVENLABS_VIVY_VOICE_ID,
+    A11_TTS_OFFICIAL_ELEVENLABS_RVC_DEFAULT: process.env.A11_TTS_OFFICIAL_ELEVENLABS_RVC_DEFAULT,
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_VOICE_XTTS_RVC_RETRIES: process.env.A11_VOICE_XTTS_RVC_RETRIES,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    A11_CARTESIA_TTS_DISABLED: process.env.A11_CARTESIA_TTS_DISABLED,
+    A11_AZURE_TTS_DISABLED: process.env.A11_AZURE_TTS_DISABLED,
+    A11_OPENAI_TTS_DISABLED: process.env.A11_OPENAI_TTS_DISABLED,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+  };
+  const previousFetch = global.fetch;
+  const bridgeCalls = [];
+  const wav = createPcm16Wav({ frequency: 360 });
+
+  fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'vivy.wav'), createPcm16Wav({ frequency: 260 }));
+  process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_RUNTIME_DISABLE_IMPLICIT_LEGACY = '1';
+  process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
+  process.env.A11_TTS_LOCAL_GPU_WORKER_ENABLED = '0';
+  process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
+  process.env.A11_ELEVENLABS_TTS_ENABLED = 'true';
+  process.env.A11_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
+  process.env.A11_ELEVENLABS_VIVY_VOICE_ID = 'vivy-official-test';
+  process.env.A11_TTS_OFFICIAL_ELEVENLABS_RVC_DEFAULT = 'true';
+  process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
+  process.env.A11_VOICE_XTTS_RVC_RETRIES = '1';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.A11_CARTESIA_TTS_DISABLED = '1';
+  process.env.A11_AZURE_TTS_DISABLED = '1';
+  process.env.A11_OPENAI_TTS_DISABLED = '1';
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'https://api.elevenlabs.test/v1/text-to-speech/vivy-official-test?output_format=mp3_44100_128') {
+      return {
+        ok: false,
+        status: 503,
+        async arrayBuffer() {
+          return Buffer.from('temporary provider failure');
+        },
+      };
+    }
+    if (value === 'http://voice-bridge.test/api/voice/synthesize') {
+      bridgeCalls.push({ url: value, body: options.body });
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            ok: true,
+            provider: 'xtts-rvc',
+            via: 'funesterie-xtts-rvc-bridge',
+            engine: 'xtts-reference',
+            voiceStyle: 'vivy-official-french-conversational',
+            audio_url: '/out/vivy-fallback.wav',
+            providerCapabilities: { referenceVoice: true, styleVoice: true },
+            voiceConversion: {
+              ok: true,
+              provider: 'xtts-rvc',
+              engine: 'xtts-reference',
+              voiceStyle: 'vivy-official-french-conversational',
+            },
+          });
+        },
+      };
+    }
+    if (value === 'http://voice-bridge.test/out/vivy-fallback.wav') {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'audio/wav' },
+        async arrayBuffer() {
+          return wav;
+        },
+      };
+    }
+    if (value === 'http://a11-voice:5002/api/tts') {
+      throw new Error('piper_http_should_not_run_for_vivy_identity_fallback');
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const started = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'Je garde ma voix même si le nuage ralentit.',
+          persona: 'vivy',
+          voicePersona: 'vivy',
+          surface: 'vivy',
+          provider: 'auto',
+          ttsProvider: 'auto',
+          vocalMode: 'sing',
+          ttsAsync: true,
+          useDefaultVoiceReference: true,
+          voiceReferenceRequired: true,
+          audioFormat: 'mp3',
+        });
+
+        assert.equal(started.response.status, 202);
+        let polled = null;
+        for (let attempt = 0; attempt < 100; attempt += 1) {
+          const response = await fetch(baseUrl + started.json.statusUrl);
+          polled = await response.json();
+          if (polled.state === 'done' || polled.state === 'failed') break;
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+
+        assert.equal(polled.state, 'done');
+        assert.equal(polled.provider, 'xtts-rvc');
+        assert.match(polled.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
+        assert.equal(bridgeCalls.length, 1);
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('tts gives a long ElevenLabs song preview enough provider time to finish', async () => {
+  const previousEnv = {
+    A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+    A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
+    A11_ELEVENLABS_TTS_DISABLED: process.env.A11_ELEVENLABS_TTS_DISABLED,
+    ELEVENLABS_TTS_DISABLED: process.env.ELEVENLABS_TTS_DISABLED,
+    A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
+    A11_ELEVENLABS_VIVY_VOICE_ID: process.env.A11_ELEVENLABS_VIVY_VOICE_ID,
+    ELEVENLABS_TTS_TIMEOUT_MS: process.env.ELEVENLABS_TTS_TIMEOUT_MS,
+  };
+  const previousFetch = global.fetch;
+  const previousAbortTimeout = AbortSignal.timeout;
+  const timeoutCalls = [];
+
+  process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
+  process.env.A11_ELEVENLABS_TTS_ENABLED = 'true';
+  delete process.env.A11_ELEVENLABS_TTS_DISABLED;
+  delete process.env.ELEVENLABS_TTS_DISABLED;
+  process.env.A11_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
+  process.env.A11_ELEVENLABS_VIVY_VOICE_ID = 'vivy-official-test';
+  delete process.env.ELEVENLABS_TTS_TIMEOUT_MS;
+  AbortSignal.timeout = (milliseconds) => {
+    timeoutCalls.push(milliseconds);
+    return previousAbortTimeout.call(AbortSignal, milliseconds);
+  };
+  global.fetch = async (url, options) => {
+    if (String(url) === 'https://api.elevenlabs.test/v1/text-to-speech/vivy-official-test?output_format=mp3_44100_128') {
+      return {
+        ok: true,
+        status: 200,
+        async arrayBuffer() {
+          return Buffer.from('long-elevenlabs-song-preview');
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'Une longue chanson française. '.repeat(110),
+          persona: 'vivy',
+          voicePersona: 'vivy',
+          surface: 'vivy',
+          provider: 'elevenlabs',
+          ttsProvider: 'elevenlabs',
+          vocalMode: 'sing',
+          allowOfficialCloudVoice: true,
+          forceCloudTts: true,
+          identityVoice: true,
+          voiceConversion: false,
+          audioFormat: 'mp3',
+        });
+
+        assert.equal(result.response.status, 200);
+        assert.ok(timeoutCalls.some((milliseconds) => milliseconds >= 60000));
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    AbortSignal.timeout = previousAbortTimeout;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('tts speak route treats official persona alone as identity voice request', async () => {
   const previousEnv = {
     A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
