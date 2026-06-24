@@ -1850,6 +1850,43 @@ test('Vivy NOSSEN Banger launches Suno, applies D40 V9 dynamic, and posts a chat
   assert.match(appSource, /Télécharger la musique/);
 });
 
+test('Vivy NOSSEN Banger sends real sung lyrics instead of production notes to Suno', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const builderStart = appSource.indexOf('function buildVivyNossenBangerSongText');
+  const builderEnd = appSource.indexOf('function getVivyProductionMediaPreview', builderStart);
+  const builderBlock = appSource.slice(builderStart, builderEnd);
+  const launchStart = appSource.indexOf('async function launchNossenBanger');
+  const launchEnd = appSource.indexOf('async function onVivyVoiceReferenceChange', launchStart);
+  const launchBlock = appSource.slice(launchStart, launchEnd);
+
+  assert.match(builderBlock, /\[Verse 1\]/);
+  assert.match(builderBlock, /\[Chorus\]/);
+  assert.match(builderBlock, /\[Verse 2\]/);
+  assert.match(builderBlock, /\[Bridge\]/);
+  assert.doesNotMatch(builderBlock, /Vivy pilote automatiquement|Production:\s*Suno|D40 V9/i);
+  assert.match(launchBlock, /const songLyrics = buildVivyNossenBangerSongText/);
+  assert.match(launchBlock, /lyrics:\s*songLyrics/);
+  assert.match(launchBlock, /songText:\s*songLyrics/);
+});
+
+test('Vivy NOSSEN Banger plays an audible Baaanger call when clicked', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const launchStart = appSource.indexOf('async function launchNossenBanger');
+  const launchEnd = appSource.indexOf('async function onVivyVoiceReferenceChange', launchStart);
+  const launchBlock = appSource.slice(launchStart, launchEnd);
+
+  assert.match(appSource, /function playVivyNossenBangerCall/);
+  assert.match(appSource, /speechSynthesis/);
+  assert.match(appSource, /Baaanger/);
+  assert.match(launchBlock, /playVivyNossenBangerCall\(\)/);
+});
+
 test('Vivy removes an unselected singer from a provider duo draft', () => {
   const lyrics = buildVivyPublicLyrics({
     songArtists: ['a11', 'vivy'],
@@ -2494,6 +2531,25 @@ test('Vivy chat fallback answers music and voice generation bugs on topic', asyn
   assert.doesNotMatch(result.assistant, /Pour ce point, on avance simplement/i);
   assert.doesNotMatch(result.assistant, /Le bon prochain pas/i);
   assert.doesNotMatch(result.assistant, /intent|r[ée]glage|sensibilit[ée]|seuil|case technique/i);
+});
+
+test('Vivy chat fallback answers the NOSSEN lyrics-in-music bug on topic', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-chat-nossen-lyrics-missing-in-music',
+    message: 'les paroles passent pas dans la musique ca fait un truc générique quand on compile avec le bouton NOSSEN',
+    history: [
+      { role: 'assistant', content: 'Je prends ça comme une vraie discussion: les paroles passent pas dans la musique' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.match(result.assistant, /NOSSEN|Banger|Suno|paroles|musique|prompt/i);
+  assert.match(result.assistant, /chant|chant[ée]es|texte|section|refrain/i);
+  assert.doesNotMatch(result.assistant, /Je prends ça comme une vraie discussion/i);
+  assert.doesNotMatch(result.assistant, /Pour ce point, on avance simplement/i);
+  assert.doesNotMatch(result.assistant, /Le bon prochain pas/i);
+  assert.doesNotMatch(result.assistant, /formulaire|case technique|sensibilit[ée]|seuil/i);
 });
 
 test('Vivy song mode structures the same rap draft when Chanson is explicit', async () => {

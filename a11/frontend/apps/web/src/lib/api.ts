@@ -2714,6 +2714,7 @@ export type VivyStudioProductionInput = {
   artistCount?: number;
   singerCount?: number;
   songMood?: string;
+  lyrics?: string;
   songText?: string;
   sessionSunoApiKey?: string;
   shareTarget?: string;

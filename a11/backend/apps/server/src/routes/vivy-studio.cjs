@@ -2447,9 +2447,27 @@ function isVivySunoPromptRequest(message = '', historyText = '') {
 function isVivyMusicGenerationRepairMessage(message = '') {
   const current = foldTextForLookup(message);
   if (!current) return false;
-  const musicSignal = /\b(suno|musique|music|chanson|son|mp3|audio|voix|generation|generer|génération|générer)\b/.test(current);
-  const repairSignal = /\b(bug|bugs|marche pas|sort pas|sorti pas|sortie|sorties|fallback|secours|nul|nulle|casse|cassé|cassee|cassée|fix|corrige|corriger|repare|répare|proche|aleatoire|aléatoire|remplace|remplacer)\b/.test(current);
+  const musicSignal = /\b(suno|musique|music|chanson|son|mp3|audio|voix|generation|generer|génération|générer|paroles?|refrain|nossen|banger)\b/.test(current);
+  const repairSignal = /\b(bug|bugs|marche pas|sort pas|sorti pas|sortie|sorties|passent? pas|passe pas|fallback|secours|nul|nulle|casse|cassé|cassee|cassée|fix|corrige|corriger|repare|répare|proche|aleatoire|aléatoire|remplace|remplacer|generique|générique|compile|compil|bouton)\b/.test(current);
   return musicSignal && repairSignal;
+}
+
+function isVivyNossenLyricsMusicBugMessage(message = '') {
+  const current = foldTextForLookup(message);
+  if (!current) return false;
+  return /\b(nossen|banger|bouton|compile|compil)\b/.test(current)
+    && /\b(paroles?|refrain|texte)\b/.test(current)
+    && /\b(musique|music|son|suno|mp3|audio)\b/.test(current)
+    && /\b(passent? pas|passe pas|generique|générique|bug|sort pas|sorti pas)\b/.test(current);
+}
+
+function buildVivyNossenLyricsMusicBugReply({ fileLine = '' } = {}) {
+  return cleanText([
+    "Oui, je vois le bug NOSSEN: le bouton doit envoyer des paroles chantables à Suno, pas une note interne sur le mode automatique, le mix ou la production.",
+    "Le bon flux: Vivy prépare d'abord un vrai bloc de paroles avec couplets, refrain et pont; ensuite seulement elle garde le brief de production à part pour le style, les voix et le mix.",
+    "Donc si le morceau sort générique, le correctif est de séparer le texte chanté du pilotage Banger, puis de vérifier que le MP3 récupéré correspond bien à ces paroles.",
+    fileLine,
+  ].filter(Boolean).join('\n\n'), 1600);
 }
 
 function buildVivyMusicGenerationRepairReply({ fileLine = '' } = {}) {
@@ -2607,6 +2625,9 @@ function buildVivyGeneralChatFallbackReply({ message = '', current = '', history
   const currentFolded = foldTextForLookup(message);
   const folded = foldTextForLookup(`${historyText}\n${message}`);
   const angle = (() => {
+    if (isVivyNossenLyricsMusicBugMessage(message)) {
+      return buildVivyNossenLyricsMusicBugReply();
+    }
     if (isVivyMusicGenerationRepairMessage(message)) {
       return buildVivyMusicGenerationRepairReply();
     }
@@ -2772,6 +2793,10 @@ function buildVivyFreeformChatReply({ message = '', files = [], history = [] } =
   const sunoPromptSource = isVivySunoPromptRequest(message, historyText)
     ? message
     : (isVivyPromptConfusionPing(message) && isVivySunoPromptRequest(lastUserMessage, historyText) ? lastUserMessage : '');
+
+  if (isVivyNossenLyricsMusicBugMessage(message)) {
+    return buildVivyNossenLyricsMusicBugReply({ fileLine });
+  }
 
   if (isVivyMusicGenerationRepairMessage(message)) {
     return buildVivyMusicGenerationRepairReply({ fileLine });
