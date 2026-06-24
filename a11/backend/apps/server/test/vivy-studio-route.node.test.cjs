@@ -914,6 +914,30 @@ test('Suno payload carries explicit multi-singer cast tags', () => {
   assert.match(payload.prompt, /\[Chorus - Tous\]/);
 });
 
+test('Suno payload turns a NOSSEN Banger seed into lyrics without singing UI bug reports', () => {
+  const payload = buildVivySunoPayload({
+    songSource: 'NOSSEN Banger - conversation Vivy',
+    songArtists: ['djeff', 'vivy', 'a11'],
+    vocalCast: 'Trio Djeff + Vivy + A11',
+    songMood: 'rap pop américain, hook lumineux, basse nette, vrai refrain',
+    prompt: 'NOSSEN Banger production brief. Production chantée via Suno; mix final D40 V9 Dynamique.',
+    songText: [
+      'Matière chanson NOSSEN.',
+      'Thème: la nouvelle génération veut tout créer plus vite, mais elle cherche encore un vrai lien humain.',
+      'Images: écran fissuré, voix dans la nuit, feu dans la poitrine, route qui revient au réel.',
+      'À transformer en paroles, pas à recopier.',
+      'les paroles passent pas dans la musique ca fait un truc générique quand on compile avec le bouton NOSSEN',
+    ].join('\n'),
+  });
+
+  assert.match(payload.prompt, /\[Verse 1/);
+  assert.match(payload.prompt, /\[Chorus/);
+  assert.match(payload.prompt, /nouvelle génération|génération/i);
+  assert.match(payload.prompt, /lien humain|humain/i);
+  assert.doesNotMatch(payload.prompt, /les paroles passent pas/i);
+  assert.doesNotMatch(payload.prompt, /bouton NOSSEN|compile|truc générique|mode automatique|D40|Suno|production brief|recopier/i);
+});
+
 test('Suno session key lets a non-founder launch a personal music job without leaking the key', async () => {
   const previousEnv = {
     VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
@@ -1850,7 +1874,7 @@ test('Vivy NOSSEN Banger launches Suno, applies D40 V9 dynamic, and posts a chat
   assert.match(appSource, /Télécharger la musique/);
 });
 
-test('Vivy NOSSEN Banger sends real sung lyrics instead of production notes to Suno', () => {
+test('Vivy NOSSEN Banger sends a clean song seed and lets backend songcraft structure it', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
     'utf8'
@@ -1862,17 +1886,17 @@ test('Vivy NOSSEN Banger sends real sung lyrics instead of production notes to S
   const launchEnd = appSource.indexOf('async function onVivyVoiceReferenceChange', launchStart);
   const launchBlock = appSource.slice(launchStart, launchEnd);
 
-  assert.match(builderBlock, /\[Verse 1\]/);
-  assert.match(builderBlock, /\[Chorus\]/);
-  assert.match(builderBlock, /\[Verse 2\]/);
-  assert.match(builderBlock, /\[Bridge\]/);
-  assert.doesNotMatch(builderBlock, /Vivy pilote automatiquement|Production:\s*Suno|D40 V9/i);
-  assert.match(launchBlock, /const songLyrics = buildVivyNossenBangerSongText/);
-  assert.match(launchBlock, /lyrics:\s*songLyrics/);
-  assert.match(launchBlock, /songText:\s*songLyrics/);
+  assert.match(builderBlock, /Matière chanson NOSSEN/);
+  assert.match(builderBlock, /Thème:/);
+  assert.match(builderBlock, /Images:/);
+  assert.match(builderBlock, /À transformer en paroles, pas à recopier/);
+  assert.doesNotMatch(builderBlock, /Je pars de \$\{a\}|Baaanger, le refrain prend feu|Production:\s*Suno|D40 V9/i);
+  assert.match(launchBlock, /const songSeed = buildVivyNossenBangerSongText/);
+  assert.match(launchBlock, /songText:\s*songSeed/);
+  assert.doesNotMatch(launchBlock, /lyrics:\s*songLyrics/);
 });
 
-test('Vivy NOSSEN Banger plays an audible Baaanger call when clicked', () => {
+test('Vivy NOSSEN Banger plays a clean WAV call with American pronunciation asset', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
     'utf8'
@@ -1880,11 +1904,37 @@ test('Vivy NOSSEN Banger plays an audible Baaanger call when clicked', () => {
   const launchStart = appSource.indexOf('async function launchNossenBanger');
   const launchEnd = appSource.indexOf('async function onVivyVoiceReferenceChange', launchStart);
   const launchBlock = appSource.slice(launchStart, launchEnd);
+  const callStart = appSource.indexOf('function playVivyNossenBangerCall');
+  const callEnd = appSource.indexOf('function getVivyProductionMediaPreview', callStart);
+  const callBlock = appSource.slice(callStart, callEnd);
+  const wavPath = path.join(__dirname, '../../../../frontend/apps/web/public/assets/vivy-banger-call.wav');
+  const wavHeader = fs.existsSync(wavPath) ? fs.readFileSync(wavPath).subarray(0, 12).toString('ascii') : '';
 
+  assert.match(appSource, /VIVY_NOSSEN_BANGER_CALL_SRC/);
   assert.match(appSource, /function playVivyNossenBangerCall/);
-  assert.match(appSource, /speechSynthesis/);
-  assert.match(appSource, /Baaanger/);
+  assert.match(callBlock, /new Audio\(VIVY_NOSSEN_BANGER_CALL_SRC\)/);
+  assert.doesNotMatch(callBlock, /speechSynthesis|SpeechSynthesisUtterance/);
   assert.match(launchBlock, /playVivyNossenBangerCall\(\)/);
+  assert.equal(wavHeader.slice(0, 4), 'RIFF');
+  assert.equal(wavHeader.slice(8, 12), 'WAVE');
+});
+
+test('Vivy NOSSEN Banger ready button renders real flame tongues', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const cssSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/index.css'),
+    'utf8'
+  );
+
+  assert.match(appSource, /vivy-nossen-flames/);
+  assert.match(appSource, /vivy-nossen-flame-tongue/);
+  assert.match(cssSource, /\.vivy-nossen-flames/);
+  assert.match(cssSource, /\.vivy-nossen-flame-tongue/);
+  assert.match(cssSource, /@keyframes vivy-nossen-tongue/);
+  assert.match(cssSource, /clip-path:\s*polygon/);
 });
 
 test('Vivy removes an unselected singer from a provider duo draft', () => {

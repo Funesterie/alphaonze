@@ -3957,10 +3957,11 @@ html.a11-auth-page-root body {
 .vivy-nossen-banger-button {
   position: relative;
   isolation: isolate;
-  overflow: hidden;
+  overflow: visible;
   border-color: rgba(91, 217, 255, 0.28) !important;
   background: linear-gradient(135deg, rgba(16, 42, 50, 0.86), rgba(30, 16, 38, 0.86)) !important;
   color: #c7f5ff !important;
+  min-width: 88px;
 }
 
 .vivy-nossen-banger-button::before {
@@ -3992,6 +3993,64 @@ html.a11-auth-page-root body {
   filter: saturate(1.2) brightness(1.08);
 }
 
+.vivy-nossen-button-label {
+  position: relative;
+  z-index: 2;
+}
+
+.vivy-nossen-flames {
+  position: absolute;
+  pointer-events: none;
+  inset: -24px 8px auto 8px;
+  height: 38px;
+  opacity: 0;
+  transform: translateY(8px) scale(0.78);
+  transform-origin: 50% 100%;
+  transition: opacity 180ms ease, transform 180ms ease;
+  z-index: 1;
+}
+
+.vivy-nossen-banger-button.is-ready .vivy-nossen-flames {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.vivy-nossen-flame-tongue {
+  position: absolute;
+  bottom: 0;
+  width: 22px;
+  height: 34px;
+  border-radius: 16px 16px 18px 18px;
+  clip-path: polygon(50% 0%, 70% 24%, 90% 52%, 78% 82%, 51% 100%, 23% 84%, 10% 56%, 29% 25%);
+  background:
+    radial-gradient(circle at 50% 70%, rgba(255, 253, 188, 0.96) 0 24%, rgba(255, 192, 68, 0.96) 25% 46%, rgba(255, 86, 35, 0.9) 47% 72%, rgba(255, 56, 23, 0) 74%),
+    linear-gradient(180deg, rgba(255, 239, 154, 0.95), rgba(255, 92, 31, 0.86));
+  filter: drop-shadow(0 0 8px rgba(255, 111, 32, 0.72));
+  mix-blend-mode: screen;
+  animation: vivy-nossen-tongue 0.78s ease-in-out infinite alternate;
+}
+
+.vivy-nossen-flame-tongue.is-left {
+  left: 7px;
+  height: 26px;
+  transform: rotate(-12deg);
+  animation-delay: -180ms;
+}
+
+.vivy-nossen-flame-tongue.is-center {
+  left: calc(50% - 13px);
+  width: 26px;
+  height: 38px;
+  animation-duration: 0.64s;
+}
+
+.vivy-nossen-flame-tongue.is-right {
+  right: 6px;
+  height: 29px;
+  transform: rotate(11deg);
+  animation-delay: -360ms;
+}
+
 @keyframes vivy-nossen-flame {
   from { transform: translateY(0); text-shadow: 0 0 8px rgba(255, 246, 190, 0.72); }
   to { transform: translateY(-1px); text-shadow: 0 0 16px rgba(255, 126, 45, 0.82); }
@@ -4000,6 +4059,20 @@ html.a11-auth-page-root body {
 @keyframes vivy-nossen-flame-core {
   from { transform: translateY(2px) scaleX(0.8) scaleY(0.66); }
   to { transform: translateY(-2px) scaleX(1.06) scaleY(1); }
+}
+
+@keyframes vivy-nossen-tongue {
+  0% {
+    transform: translateY(3px) scaleX(0.82) scaleY(0.84) rotate(-4deg);
+    filter: drop-shadow(0 0 5px rgba(255, 107, 31, 0.58));
+  }
+  46% {
+    transform: translateY(-3px) scaleX(1.04) scaleY(1.1) rotate(4deg);
+  }
+  100% {
+    transform: translateY(-7px) scaleX(0.94) scaleY(1.18) rotate(-2deg);
+    filter: drop-shadow(0 0 14px rgba(255, 177, 52, 0.82));
+  }
 }
 
 .vivy-chat-file-list,
