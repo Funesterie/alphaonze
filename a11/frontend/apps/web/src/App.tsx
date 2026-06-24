@@ -3271,8 +3271,8 @@ function normalizeVivyNossenContextSource(
   files: VivyPublicChatFile[] = []
 ) {
   const messageLines = messages
-    .filter((entry) => entry.role === "user" || /paroles|refrain|couplet|direction|ambiance|voix/i.test(entry.content))
-    .map((entry) => `${entry.role === "user" ? "Utilisateur" : "Vivy"}: ${entry.content}`)
+    .filter((entry) => entry.role === "user")
+    .map((entry) => `Utilisateur: ${entry.content}`)
     .filter(Boolean);
   const fileLines = files
     .map((file) => [
@@ -3293,20 +3293,28 @@ function buildVivyNossenBangerReadiness(
 ): VivyNossenBangerReadiness {
   const source = normalizeVivyNossenContextSource(messages, draft, files);
   const folded = foldForLookup(source);
-  const userTurns = messages.filter((entry) => entry.role === "user" && entry.content.trim().length >= 14).length
-    + (draft.trim().length >= 14 ? 1 : 0)
-    + (files.length ? 1 : 0);
+  const actualUserTurns = messages.filter((entry) => entry.role === "user" && entry.content.trim().length >= 14).length;
+  const draftTurn = draft.trim().length >= 80 ? 1 : 0;
+  const fileTurn = files.length ? 1 : 0;
+  const userTurns = actualUserTurns + draftTurn + fileTurn;
   const hasSongSignal = /\b(chanson|musique|paroles|refrain|couplet|bridge|outro|intro|suno|banger|son|melodie|mélodie|prod|composition)\b/.test(folded);
   const hasVoiceSignal = /\b(voix|vocal|vocale|chanteur|chanteuse|solo|duo|trio|quatuor|djeff|vivy|a11|k44|kaen44|ref)\b/.test(folded);
   const hasColorSignal = /\b(ambiance|couleur|sonor|mood|dark|sombre|doux|douce|electro|rap|pop|metal|rock|cinematique|cinématique|epique|épique|triste|lumineux|guitare|piano|basse|drums|batterie)\b/.test(folded);
+  const lyricLineCount = source.split(/\r?\n+/).map((line) => cleanVivyNossenLyricSourceLine(line)).filter((line) => line.length >= 12).length;
+  const hasStrongSongDraft = /\[(?:verse|chorus|refrain|couplet|bridge|pont|intro|outro)(?:\s+\d+)?\]/i.test(source)
+    || (lyricLineCount >= 7 && hasSongSignal && source.length >= 420);
   let score = Math.min(42, Math.floor(source.length / 70)) + Math.min(24, userTurns * 6);
   if (hasSongSignal) score += 18;
   if (hasVoiceSignal) score += 14;
   if (hasColorSignal) score += 12;
   if (/\b(nossen|funesterie|djeff|vivy)\b/.test(folded)) score += 8;
   if (files.length) score += 8;
-  const longEnough = source.length >= 360 || (source.length >= 180 && files.length > 0) || source.length >= 900;
-  const ready = Boolean(source && longEnough && (userTurns >= 2 || source.length >= 900) && score >= 58);
+  const hasEnoughTurns = actualUserTurns >= 2
+    || (actualUserTurns >= 1 && draftTurn > 0)
+    || (actualUserTurns >= 1 && fileTurn > 0)
+    || hasStrongSongDraft;
+  const longEnough = source.length >= 360 || (source.length >= 180 && files.length > 0) || hasStrongSongDraft;
+  const ready = Boolean(source && longEnough && hasEnoughTurns && hasSongSignal && score >= 62);
   return {
     ready,
     score,
@@ -3421,28 +3429,24 @@ function buildVivyNossenBangerProductionBrief(readiness: VivyNossenBangerReadine
 function buildVivyNossenBangerSongText(readiness: VivyNossenBangerReadiness, artists: VivyStudioArtistId[]) {
   const fragments = extractVivyNossenLyricFragments(readiness.source);
   const title = buildVivyNossenBangerTitle(fragments);
-  const theme = [
+  const themeParts = [
     vivyNossenLyricFragment(fragments, 0, "une génération qui cherche sa voix"),
     vivyNossenLyricFragment(fragments, 1, "le lien entre le réel et le monde Funesterie"),
     vivyNossenLyricFragment(fragments, 2, "la vitesse de créer sans perdre le coeur"),
-  ].join(" / ");
-  const images = [
+  ];
+  const imageParts = [
     vivyNossenLyricFragment(fragments, 3, "écran fissuré"),
     vivyNossenLyricFragment(fragments, 4, "voix dans la nuit"),
     vivyNossenLyricFragment(fragments, 5, "feu dans la poitrine"),
     vivyNossenLyricFragment(fragments, 6, "route qui revient au réel"),
-  ].join(", ");
+  ];
 
   return toUnicodeText([
-    "Matière chanson NOSSEN.",
-    `Titre possible: ${title}.`,
-    `Thème: ${theme}.`,
-    `Images: ${images}.`,
-    `Voix: ${describeVivyNossenBangerCast(artists)}; sections séparées si plusieurs chanteurs.`,
-    "À transformer en paroles, pas à recopier.",
-    "Écris une chanson originale avec [Verse 1], [Pre-Chorus], [Chorus], [Verse 2], [Bridge], [Final Chorus], [Outro].",
-    "Le refrain doit être chantable et mémorable; ne chante jamais les consignes, le bouton, les bugs, Suno, D40, les liens ou le mot prompt.",
-    "Si le mot anglais Banger apparaît, garde sa prononciation américaine naturelle dans l'intention vocale.",
+    title,
+    ...themeParts,
+    ...imageParts,
+    "un refrain Banger net, humain, chantable, qui revient sans réciter les consignes",
+    artists.length > 1 ? "des voix qui se répondent sans se remplacer" : "une voix principale claire qui porte le refrain",
   ].filter(Boolean).join("\n\n"), VIVY_STUDIO_SONG_MAX_CHARS);
 }
 
@@ -6724,7 +6728,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         artistCount: artists.length,
         singerCount: artists.length,
         vocalCast: castLabel,
-        songMood: "Vivy choisit la couleur sonore depuis le contexte; refrain mémorable, énergie Banger, mot anglais Banger prononcé à l'américaine, production Suno, mix D40 V9 Dynamique.",
+        songMood: "refrain mémorable, énergie Banger, mot anglais Banger prononcé à l'américaine, voix claires, couleur sonore choisie depuis le contexte",
         songText: songSeed,
         sessionSunoApiKey: sunoSessionKey || undefined,
         forceRealMusic: true,

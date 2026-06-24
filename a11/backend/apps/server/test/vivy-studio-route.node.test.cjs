@@ -938,6 +938,34 @@ test('Suno payload turns a NOSSEN Banger seed into lyrics without singing UI bug
   assert.doesNotMatch(payload.prompt, /bouton NOSSEN|compile|truc générique|mode automatique|D40|Suno|production brief|recopier/i);
 });
 
+test('Suno payload does not sing NOSSEN seed labels as lyrics', () => {
+  const payload = buildVivySunoPayload({
+    songSource: 'NOSSEN Banger - conversation Vivy',
+    songArtists: ['vivy'],
+    vocalCast: 'Solo Vivy',
+    songMood: "refrain mémorable, énergie Banger, mot anglais Banger prononcé à l'américaine",
+    songText: [
+      'Matière chanson NOSSEN.',
+      'Titre possible: nouvelle génération écrans.',
+      'Thème: la nouvelle génération et ses écrans / le lien humain derrière le monde numérique / la vitesse de créer sans perdre le coeur.',
+      'Images: écran fissuré, voix dans la nuit, feu dans la poitrine, route qui revient au réel.',
+      'Voix: Solo Vivy; sections séparées si plusieurs chanteurs.',
+      'À transformer en paroles, pas à recopier.',
+      'Écris une chanson originale avec [Verse 1], [Pre-Chorus], [Chorus], [Verse 2], [Bridge], [Final Chorus], [Outro].',
+      'Le refrain doit être chantable et mémorable; ne chante jamais les consignes, le bouton, les bugs, Suno, D40, les liens ou le mot prompt.',
+    ].join('\n\n'),
+  });
+
+  assert.match(payload.prompt, /\[Verse 1\]/);
+  assert.match(payload.prompt, /\[Chorus\]/);
+  assert.match(payload.prompt, /nouvelle génération/i);
+  assert.equal(payload.title, 'Nouvelle Génération Écrans');
+  assert.match(payload.prompt, /\[Title: Nouvelle Génération Écrans\]/i);
+  assert.match(payload.prompt, /écran fissuré|ecran fissure/i);
+  assert.doesNotMatch(payload.title, /Matière|Titre possible|NOSSEN/i);
+  assert.doesNotMatch(payload.prompt, /Matière chanson|Titre possible|Thème:|Images:|Voix:|sections séparées|sections separees|plusieurs chanteurs|écrans le lien humain|ecrans le lien humain|génération et ses\.|À transformer|recopier|Écris une chanson|ne chante jamais|Suno|D40|prompt/i);
+});
+
 test('Suno session key lets a non-founder launch a personal music job without leaking the key', async () => {
   const previousEnv = {
     VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
@@ -1886,11 +1914,10 @@ test('Vivy NOSSEN Banger sends a clean song seed and lets backend songcraft stru
   const launchEnd = appSource.indexOf('async function onVivyVoiceReferenceChange', launchStart);
   const launchBlock = appSource.slice(launchStart, launchEnd);
 
-  assert.match(builderBlock, /Matière chanson NOSSEN/);
-  assert.match(builderBlock, /Thème:/);
-  assert.match(builderBlock, /Images:/);
-  assert.match(builderBlock, /À transformer en paroles, pas à recopier/);
-  assert.doesNotMatch(builderBlock, /Je pars de \$\{a\}|Baaanger, le refrain prend feu|Production:\s*Suno|D40 V9/i);
+  assert.match(builderBlock, /themeParts/);
+  assert.match(builderBlock, /imageParts/);
+  assert.match(builderBlock, /un refrain Banger net/);
+  assert.doesNotMatch(builderBlock, /Matière chanson NOSSEN|Thème:|Images:|À transformer en paroles|Je pars de \$\{a\}|Baaanger, le refrain prend feu|Production:\s*Suno|D40 V9/i);
   assert.match(launchBlock, /const songSeed = buildVivyNossenBangerSongText/);
   assert.match(launchBlock, /songText:\s*songSeed/);
   assert.doesNotMatch(launchBlock, /lyrics:\s*songLyrics/);
@@ -1935,6 +1962,24 @@ test('Vivy NOSSEN Banger ready button renders real flame tongues', () => {
   assert.match(cssSource, /\.vivy-nossen-flame-tongue/);
   assert.match(cssSource, /@keyframes vivy-nossen-tongue/);
   assert.match(cssSource, /clip-path:\s*polygon/);
+});
+
+test('Vivy NOSSEN Banger readiness ignores greeting and blocks first-turn auto-ready', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const normalizeStart = appSource.indexOf('function normalizeVivyNossenContextSource');
+  const normalizeEnd = appSource.indexOf('function buildVivyNossenBangerReadiness', normalizeStart);
+  const readinessStart = appSource.indexOf('function buildVivyNossenBangerReadiness');
+  const readinessEnd = appSource.indexOf('function inferVivyNossenBangerArtists', readinessStart);
+  const normalizeBlock = appSource.slice(normalizeStart, normalizeEnd);
+  const readinessBlock = appSource.slice(readinessStart, readinessEnd);
+
+  assert.doesNotMatch(normalizeBlock, /entry\.role\s*===\s*"user"\s*\|\|/);
+  assert.match(readinessBlock, /actualUserTurns/);
+  assert.match(readinessBlock, /hasStrongSongDraft/);
+  assert.doesNotMatch(readinessBlock, /userTurns\s*>=\s*2\s*\|\|\s*source\.length\s*>=\s*900/);
 });
 
 test('Vivy removes an unselected singer from a provider duo draft', () => {

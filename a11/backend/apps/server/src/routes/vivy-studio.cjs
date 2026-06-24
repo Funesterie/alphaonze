@@ -4099,9 +4099,14 @@ function buildVivySunoLyrics(input = {}) {
     return cleanText(arrangement.lyrics, VIVY_SONG_MAX_CHARS);
   }
 
+  const structuredMaterial = cleanText(String(arrangement.lyrics || '')
+    .split(/\r?\n/)
+    .map((line) => stripSongCommand(line))
+    .filter(Boolean)
+    .join('\n'), VIVY_SONG_MAX_CHARS);
   return buildVivyStructuredLyrics({
     ...input,
-    songText: stripSongCommand(arrangement.lyrics) || arrangement.lyrics,
+    songText: structuredMaterial || arrangement.lyrics,
   });
 }
 
@@ -4185,7 +4190,7 @@ function buildVivySunoPayload(input = {}, req = null) {
     instrumental: input.instrumental === true || input.forceInstrumental === true || useExternalVoiceMix,
     title,
     style,
-    prompt: buildVivySunoLyrics(input),
+    prompt: buildVivySunoLyrics({ ...input, songTitle: input.songTitle || input.title || title }),
     negativeTags,
     callBackUrl: buildSunoCallbackUrl(req),
   };

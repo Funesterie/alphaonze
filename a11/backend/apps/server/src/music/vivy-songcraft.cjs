@@ -128,6 +128,33 @@ function splitVivySongMaterialCandidates(value = '') {
     .filter(Boolean);
 }
 
+function expandVivySongMaterialCandidate(value = '') {
+  let line = cleanOneLine(value, '', 320);
+  if (!line) return [];
+
+  const folded = foldTextForLookup(line);
+  if (!folded) return [];
+
+  if (/^(matiere chanson nossen|matiere chanson|nossen banger production brief|nossen banger)\.?$/.test(folded)) return [];
+  if (/^(?:voix|vocal cast|casting choisi|contexte utile)\s*:/i.test(line)) return [];
+  if (/\bsections?\s+s[ée]par[ée]es?\b/i.test(line)) return [];
+  if (/^(a transformer|à transformer|ecris une chanson|écris une chanson|le refrain doit|si le mot anglais|composer une chanson|production chantee|production chantée|appliquer ensuite)\b/.test(folded)) return [];
+  if (/\b(?:ne chante jamais|pas a recopier|pas à recopier|jamais les consignes|bouton|bugs?|mot prompt|production suno|mix final d40|d40 v9|suno)\b/.test(folded)) return [];
+
+  const labelMatch = line.match(/^(?:titre possible|titre|theme|thème|images?|matiere utile|matière utile)\s*:?\s*(.+)$/i);
+  if (labelMatch) line = cleanOneLine(labelMatch[1], '', 300);
+  line = line.replace(/^NOSSEN\s+Banger\s*[:.-]?\s*/i, '').trim();
+  if (!line) return [];
+
+  return line
+    .split(/\s+\/\s+|,\s+(?=(?:écran|ecran|voix|feu|route|lien|vitesse|monde|nouvelle|réel|reel)\b)/i)
+    .map((part) => cleanOneLine(part, '', 180))
+    .filter((part) => {
+      const partFolded = foldTextForLookup(part);
+      return partFolded && !looksLikeVivySongUiNoiseLine(part);
+    });
+}
+
 function normalizeVivySongSectionMarkup(value = '') {
   const sectionName = (raw = '', number = '', artist = '') => {
     const folded = foldTextForLookup(raw);
@@ -179,13 +206,15 @@ function sanitizeVivySongMaterial(value = '', max = VIVY_SONG_MAX_CHARS) {
     const cleaned = cleanOneLine(String(line || '').replace(/^[\s>*]+/g, ''), '', 320);
     if (!cleaned || looksLikeVivySongUiNoiseLine(cleaned)) continue;
 
-    const folded = foldTextForLookup(cleaned);
-    const key = folded.replace(/\s+/g, ' ');
-    if (!preserveRepeatedLines) {
-      if (seen.has(key)) continue;
-      seen.add(key);
+    for (const candidate of expandVivySongMaterialCandidate(cleaned)) {
+      const folded = foldTextForLookup(candidate);
+      const key = folded.replace(/\s+/g, ' ');
+      if (!preserveRepeatedLines) {
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      kept.push(candidate);
     }
-    kept.push(cleaned);
   }
 
   return cleanText(kept.join('\n'), max);
@@ -325,6 +354,7 @@ function inferAllMotifs(theme) {
 }
 
 function inferTitle(theme = '') {
+  const rawText = cleanText(theme, 1200);
   const stripped = stripSongCommand(theme);
   const motif = inferMotif(stripped);
   if (/moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/i.test(stripped)) return 'Pignon dans la nuit';
@@ -332,7 +362,11 @@ function inferTitle(theme = '') {
   if (/flocon|neige|bol/i.test(stripped)) return 'Flocon d’émerveillement';
   if (/lapin/i.test(stripped)) return 'Course sous les néons';
   if (/nossen|funesterie/i.test(stripped)) return 'Signal Funesterie';
-  const words = (stripped || motif)
+  const titleLine = rawText
+    .split(/\r?\n+|,\s+/)
+    .map((line) => cleanOneLine(stripSongCommand(line).replace(/^\[[^\]]+\]\s*/, ''), '', 90))
+    .find((line) => line && line.length <= 90 && !looksLikeVivySongUiNoiseLine(line));
+  const words = (titleLine || stripped || motif)
     .replace(/[^\p{L}\p{N}\s'-]/gu, ' ')
     .split(/\s+/)
     .filter((word) => word.length > 2)
@@ -387,6 +421,36 @@ function splitVivyLongPoeticFragment(value = '', maxLength = 110) {
   }
   if (current.length) chunks.push(cleanOneLine(current.join(' '), '', maxLength));
   return chunks.filter(Boolean);
+}
+
+function completeVivyDanglingSeedLine(line = '', context = '') {
+  const cleaned = cleanOneLine(line, '', 180);
+  if (!cleaned) return '';
+  const folded = foldTextForLookup(cleaned);
+  if (!folded) return '';
+  if (!/\b(?:et|de|du|des|le|la|les|un|une|ses|nos|vos|leur|leurs|avec|sans|dans|sur|sous|entre|derriere|devant|vers|pour|quand|qui|que|dont|ou)$/.test(folded)) {
+    return cleaned;
+  }
+
+  const foldedContext = foldTextForLookup(context);
+  if (/\bses$/.test(folded) && /\becrans?\b/.test(foldedContext)) return `${cleaned} écrans`;
+  if (/\ble$/.test(folded) && /\bmonde numerique\b/.test(foldedContext)) return `${cleaned} monde numérique`;
+  return '';
+}
+
+function normalizeVivySoloSeedLines(lines = [], context = '') {
+  const normalized = [];
+  const seen = new Set();
+  for (const rawLine of lines) {
+    const line = completeVivyDanglingSeedLine(rawLine, context);
+    const folded = foldTextForLookup(line);
+    if (!folded || folded.length < 8) continue;
+    const key = folded.replace(/\s+/g, ' ');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(line);
+  }
+  return normalized;
 }
 
 function extractVivySoloSeedLines(value = '', maxLines = 8) {
@@ -445,7 +509,7 @@ function buildVivyThemeSeed(value = '', fallback = '') {
     }
   );
 
-  const usefulParts = extractVivySoloSeedLines(seed, 3)
+  const usefulParts = normalizeVivySoloSeedLines(extractVivySoloSeedLines(seed, 6), seed)
     .map((part) => cleanOneLine(part, '', 120))
     .filter((part) => {
       const folded = foldTextForLookup(part);
@@ -945,7 +1009,7 @@ function buildVivyStructuredLyrics(input = {}) {
   const theme = buildVivyThemeSeed(material, '');
   const motif = inferMotif(theme);
   const title = cleanOneLine(input.songTitle || input.title || inferTitle(theme), 'Sans titre', 80);
-  const seedLines = extractVivySoloSeedLines(material, 8);
+  const seedLines = normalizeVivySoloSeedLines(extractVivySoloSeedLines(material, 12), material).slice(0, 8);
   const hasSeedLines = seedLines.length >= 2;
 
   const allMotifs = inferAllMotifs(theme);
