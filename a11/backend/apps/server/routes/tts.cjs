@@ -836,9 +836,9 @@ function normalizeElevenLabsRvcRequest(body = {}) {
   };
 }
 
-// Local-only RVC styles (voix-de-lait, djeff-rap, terminator, donna) keep their
-// dedicated XTTS/RVC reference route and must not be hijacked by the ElevenLabs
-// default — only the plain official persona voice defaults to ElevenLabs+RVC.
+// Local-only RVC styles and official family references keep their dedicated
+// XTTS/RVC route and must not be hijacked by the ElevenLabs default — only the
+// plain official persona voice defaults to ElevenLabs+RVC.
 function hasSpecialLocalVoiceStyle(body = {}) {
   const raw = String(
     body?.voiceStyle
@@ -849,7 +849,7 @@ function hasSpecialLocalVoiceStyle(body = {}) {
     || ''
   ).trim().toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[_\s]+/g, '-');
   if (!raw) return false;
-  return /voix-de-lait|lait|milk|djeff|pignon|rap|terminator|robot|donna/.test(raw);
+  return /voix-de-lait|lait|milk|djeff|pignon|rap|a11-official-stern-french|kaen44-official-french-narrator|vivy-official-french-conversational|official-french|official/.test(raw);
 }
 
 // Should an official identity voice request default to the ElevenLabs+RVC
