@@ -20,7 +20,10 @@ const {
   buildVivyMusicPrompt,
   buildVivyMultiVoiceAssemblyArgs,
   buildVivyPreviewMixArgs,
+  buildVivyMp3RepairArgs,
+  repairVivyMp3File,
   materializeVivyPreviewInstrumentalPath,
+  materializeVivySunoMedia,
   buildVivyMemoryContext,
   buildVivySystemPrompt,
   buildVivySunoPayload,
@@ -282,7 +285,29 @@ test('Vivy preview mix keeps the voice clear and masters the final song', () => 
   assert.match(args.join(' '), /highpass=f=90,loudnorm=I=-19:TP=-6:LRA=7\[voice\]/);
   assert.match(args.join(' '), /amix=inputs=2:duration=longest/);
   assert.match(args.join(' '), /loudnorm=I=-14:TP=-1\.5:LRA=11/);
+  assert.match(args.join(' '), /-write_xing 1/);
+  assert.match(args.join(' '), /-id3v2_version 3/);
   assert.equal(args.at(-1), 'mix.mp3');
+});
+
+test('Vivy MP3 repair rewrites Clipchamp-compatible duration metadata', async () => {
+  const brokenPath = path.join(os.tmpdir(), `vivy-broken-${process.pid}-${Date.now()}.mp3`);
+  fs.writeFileSync(brokenPath, Buffer.from('ID3-broken-duration'));
+  const args = buildVivyMp3RepairArgs(brokenPath, 'fixed.mp3');
+  assert.match(args.join(' '), /-fflags \+genpts/);
+  assert.match(args.join(' '), /-b:a 192k/);
+  assert.match(args.join(' '), /-write_xing 1/);
+  assert.match(args.join(' '), /-id3v2_version 3/);
+
+  const repair = await repairVivyMp3File(brokenPath, {
+    runFfmpeg: async (ffmpegArgs) => {
+      fs.writeFileSync(ffmpegArgs.at(-1), Buffer.from('ID3-repaired-clipchamp-mp3'));
+    },
+  });
+
+  assert.equal(repair.ok, true);
+  assert.equal(fs.readFileSync(brokenPath).toString(), 'ID3-repaired-clipchamp-mp3');
+  fs.rmSync(brokenPath, { force: true });
 });
 
 test('Vivy preview mix materializes a remote Suno instrumental before ffmpeg', async () => {
@@ -296,14 +321,54 @@ test('Vivy preview mix materializes a remote Suno instrumental before ffmpeg', a
         headers: new Headers({
           'content-type': 'audio/mpeg',
           'content-length': String(audio.length),
-        }),
-        arrayBuffer: async () => audio,
       }),
-    }
-  );
+      arrayBuffer: async () => audio,
+    }),
+    repairMp3: false,
+  });
 
   assert.match(path.basename(filePath), /^vivy-music-suno-[a-f0-9]{16}\.mp3$/);
   assert.deepEqual(fs.readFileSync(filePath), audio);
+});
+
+test('Vivy materializes completed Suno media as a repaired local MP3 asset', async () => {
+  const previousHosts = process.env.VIVY_SUNO_AUDIO_HOSTS;
+  process.env.VIVY_SUNO_AUDIO_HOSTS = 'cdn.suno.test';
+  const sourceUrl = `https://cdn.suno.test/vivy-test-${process.pid}-${Date.now()}.mp3`;
+  const audio = Buffer.from('ID3-suno-bad-duration');
+  const ffmpegCalls = [];
+  try {
+    const media = await materializeVivySunoMedia({
+      provider: 'suno',
+      title: 'Vivy Test',
+      audioUrl: sourceUrl,
+      url: sourceUrl,
+    }, {
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        headers: new Headers({
+          'content-type': 'audio/mpeg',
+          'content-length': String(audio.length),
+        }),
+        arrayBuffer: async () => audio,
+      }),
+      runFfmpeg: async (args) => {
+        ffmpegCalls.push(args);
+        fs.writeFileSync(args.at(-1), Buffer.from('ID3-suno-repaired-192k'));
+      },
+    });
+
+    assert.equal(media.containerNormalized, true);
+    assert.equal(media.originalAudioUrl, sourceUrl);
+    assert.match(media.audioUrl, /^\/api\/vivy\/studio\/assets\/vivy-music-suno-[a-f0-9]{16}\.mp3$/);
+    assert.equal(fs.readFileSync(media.path).toString(), 'ID3-suno-repaired-192k');
+    assert.equal(ffmpegCalls.length, 1);
+    assert.match(ffmpegCalls[0].join(' '), /-write_xing 1/);
+  } finally {
+    if (previousHosts === undefined) delete process.env.VIVY_SUNO_AUDIO_HOSTS;
+    else process.env.VIVY_SUNO_AUDIO_HOSTS = previousHosts;
+  }
 });
 
 test('Vivy preview mix refuses non-Suno remote instrumental hosts', async () => {

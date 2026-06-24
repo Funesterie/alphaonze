@@ -4230,7 +4230,101 @@ function writeCachedSunoCallback(taskId, payload) {
   }
 }
 
-function saveVivyMusicBuffer(buffer, input = {}, req = null) {
+function getVivyFfmpegBinary() {
+  return String(process.env.VIVY_FFMPEG_BIN || process.env.A11_AUDIO_FFMPEG_BIN || process.env.FFMPEG_BIN || 'ffmpeg').trim() || 'ffmpeg';
+}
+
+function buildVivyMp3RepairArgs(inputPath, outputPath) {
+  return [
+    '-y',
+    '-hide_banner',
+    '-loglevel', 'error',
+    '-fflags', '+genpts',
+    '-i', inputPath,
+    '-map', '0:a:0',
+    '-vn',
+    '-sn',
+    '-dn',
+    '-map_metadata', '-1',
+    '-ac', '2',
+    '-ar', '44100',
+    '-c:a', 'libmp3lame',
+    '-b:a', '192k',
+    '-write_xing', '1',
+    '-id3v2_version', '3',
+    outputPath,
+  ];
+}
+
+function runVivyFfmpeg(args = [], options = {}) {
+  const ffmpeg = String(options.ffmpegBin || getVivyFfmpegBinary()).trim() || 'ffmpeg';
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs || process.env.VIVY_FFMPEG_TIMEOUT_MS || 180000));
+  const errorCode = cleanOneLine(options.errorCode, 'vivy_ffmpeg_failed', 80);
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(ffmpeg, args, { windowsHide: true });
+    let stderr = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error(`${errorCode}:timeout`));
+    }, timeoutMs);
+    child.stderr.on('data', (chunk) => {
+      stderr = `${stderr}${String(chunk || '')}`.slice(-2400);
+    });
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        reject(new Error(`${errorCode}:${code}:${stderr.trim().slice(0, 400)}`));
+        return;
+      }
+      resolve({ ok: true, stderr: stderr.trim() });
+    });
+  });
+}
+
+async function repairVivyMp3File(filePath, options = {}) {
+  if (options.repairMp3 === false || envFlag('VIVY_MP3_REPAIR_DISABLED')) {
+    return { ok: false, skipped: true, reason: 'disabled' };
+  }
+  const targetPath = String(filePath || '').trim();
+  if (!targetPath || path.extname(targetPath).toLowerCase() !== '.mp3') {
+    return { ok: false, skipped: true, reason: 'not_mp3' };
+  }
+  if (!fs.existsSync(targetPath) || !fs.statSync(targetPath).isFile()) {
+    return { ok: false, skipped: true, reason: 'missing' };
+  }
+
+  const tempPath = path.join(
+    path.dirname(targetPath),
+    `${path.basename(targetPath, '.mp3')}.clipchamp-${process.pid}-${Date.now()}.mp3`
+  );
+  const runFfmpeg = options.runFfmpeg || runVivyFfmpeg;
+  try {
+    const originalSize = fs.statSync(targetPath).size;
+    await runFfmpeg(buildVivyMp3RepairArgs(targetPath, tempPath), {
+      timeoutMs: options.timeoutMs || process.env.VIVY_MP3_REPAIR_TIMEOUT_MS || 180000,
+      errorCode: 'vivy_mp3_repair_failed',
+      ffmpegBin: options.ffmpegBin,
+    });
+    if (!fs.existsSync(tempPath) || fs.statSync(tempPath).size <= 0) {
+      throw new Error('vivy_mp3_repair_empty_output');
+    }
+    fs.copyFileSync(tempPath, targetPath);
+    fs.rmSync(tempPath, { force: true });
+    const repairedSize = fs.statSync(targetPath).size;
+    return { ok: true, originalSize, repairedSize, bitrate: '192k', sampleRate: 44100 };
+  } catch (error) {
+    try { fs.rmSync(tempPath, { force: true }); } catch (_) {}
+    console.warn('[Vivy Studio] MP3 repair skipped:', cleanOneLine(error?.message || error, 'unknown', 240));
+    return { ok: false, skipped: true, reason: 'repair_failed', message: cleanOneLine(error?.message || error, 'unknown', 240) };
+  }
+}
+
+async function saveVivyMusicBuffer(buffer, input = {}, req = null) {
   if (!Buffer.isBuffer(buffer) || buffer.length <= 0) return null;
   const material = cleanText([
     input.title,
@@ -4246,6 +4340,7 @@ function saveVivyMusicBuffer(buffer, input = {}, req = null) {
   if (!filePath) return null;
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, buffer);
+  const repair = await repairVivyMp3File(filePath);
   const url = `/api/vivy/studio/assets/${encodeURIComponent(filename)}`;
   return {
     ok: true,
@@ -4259,6 +4354,8 @@ function saveVivyMusicBuffer(buffer, input = {}, req = null) {
     audio_url: url,
     audioUrl: url,
     content_type: 'audio/mpeg',
+    containerRepaired: repair.ok === true,
+    repair,
     emergencyFallback: false,
     generatedAt: new Date().toISOString(),
   };
@@ -4300,7 +4397,7 @@ async function requestElevenLabsMusic(input = {}, req = null) {
   }
   const audioBuffer = Buffer.from(await response.arrayBuffer());
   if (!audioBuffer.length) throw new Error('elevenlabs_music_empty_audio');
-  const media = saveVivyMusicBuffer(audioBuffer, input, req);
+  const media = await saveVivyMusicBuffer(audioBuffer, input, req);
   if (!media?.url) throw new Error('elevenlabs_music_save_failed');
   return {
     ...media,
@@ -4348,9 +4445,10 @@ async function requestSunoMusic(input = {}, req = null) {
   const taskId = findSunoTaskId(payload);
   const readyMedia = extractSunoMedia(payload);
   if (readyMedia?.url) {
+    const preparedMedia = await materializeVivySunoMedia(readyMedia, { taskId });
     return {
-      ...readyMedia,
-      title: readyMedia.title || body.title,
+      ...preparedMedia,
+      title: preparedMedia.title || readyMedia.title || body.title,
       taskId: taskId || undefined,
       jobId: taskId || undefined,
       prompt: body.prompt,
@@ -4392,13 +4490,14 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
   const cached = readCachedSunoCallback(safeTaskId);
   const cachedMedia = extractSunoMedia(cached?.payload || {});
   if (cachedMedia?.url) {
+    const preparedMedia = await materializeVivySunoMedia(cachedMedia, { taskId: safeTaskId });
     return {
       ok: true,
       provider: 'suno',
       taskId: safeTaskId,
       state: 'done',
       status: findSunoStatus(cached?.payload || {}) || 'callback_ready',
-      media: { ...cachedMedia, taskId: safeTaskId, jobId: safeTaskId },
+      media: { ...preparedMedia, taskId: safeTaskId, jobId: safeTaskId },
     };
   }
 
@@ -4424,13 +4523,14 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
   const status = findSunoStatus(payload) || 'processing';
   if (media?.url) {
     writeCachedSunoCallback(safeTaskId, payload);
+    const preparedMedia = await materializeVivySunoMedia(media, { taskId: safeTaskId });
     return {
       ok: true,
       provider: 'suno',
       taskId: safeTaskId,
       state: 'done',
       status,
-      media: { ...media, taskId: safeTaskId, jobId: safeTaskId },
+      media: { ...preparedMedia, taskId: safeTaskId, jobId: safeTaskId },
     };
   }
   return {
@@ -4484,8 +4584,13 @@ function buildVivyPreviewMixArgs(instrumentalPath, voicePath, outputPath) {
     '-filter_complex',
     '[0:a]volume=0.55[music];[1:a]highpass=f=90,loudnorm=I=-19:TP=-6:LRA=7[voice];[music][voice]amix=inputs=2:duration=longest:dropout_transition=2,loudnorm=I=-14:TP=-1.5:LRA=11,alimiter=limit=0.95[out]',
     '-map', '[out]',
+    '-vn',
+    '-map_metadata', '-1',
+    '-ar', '44100',
     '-c:a', 'libmp3lame',
     '-b:a', '192k',
+    '-write_xing', '1',
+    '-id3v2_version', '3',
     outputPath,
   ];
 }
@@ -4524,8 +4629,13 @@ function buildVivyMultiVoiceAssemblyArgs(segmentPaths = [], outputPath) {
     ...args,
     '-filter_complex', filters.join(';'),
     '-map', '[out]',
+    '-vn',
+    '-map_metadata', '-1',
+    '-ar', '44100',
     '-c:a', 'libmp3lame',
     '-b:a', '192k',
+    '-write_xing', '1',
+    '-id3v2_version', '3',
     outputPath,
   ];
 }
@@ -4659,8 +4769,39 @@ async function materializeVivyPreviewInstrumentalPath(value = '', options = {}) 
   if (!filePath) throw new Error('vivy_preview_remote_target_invalid');
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, buffer);
-  console.info(`[Vivy Studio] Suno instrumental materialized host=${new URL(currentUrl).hostname} bytes=${buffer.length} file=${filename}`);
+  const repair = await repairVivyMp3File(filePath, options);
+  console.info(`[Vivy Studio] Suno instrumental materialized host=${new URL(currentUrl).hostname} bytes=${buffer.length} file=${filename} repaired=${repair.ok === true}`);
   return filePath;
+}
+
+async function materializeVivySunoMedia(media = {}, options = {}) {
+  const sourceUrl = cleanOneLine(media.audioUrl || media.audio_url || media.url, '', 1000);
+  if (!sourceUrl || !/^https?:\/\//i.test(sourceUrl)) return media;
+  if (envFlag('VIVY_SUNO_LOCAL_MP3_DISABLED')) return media;
+  if (!isAllowedVivyRemoteInstrumentalUrl(sourceUrl)) return media;
+
+  try {
+    const filePath = await materializeVivyPreviewInstrumentalPath(sourceUrl, options);
+    const filename = path.basename(filePath);
+    const url = `/api/vivy/studio/assets/${encodeURIComponent(filename)}`;
+    return {
+      ...media,
+      filename,
+      path: filePath,
+      url,
+      audioUrl: url,
+      audio_url: url,
+      originalAudioUrl: sourceUrl,
+      original_audio_url: sourceUrl,
+      sourceAudioUrl: sourceUrl,
+      source_audio_url: sourceUrl,
+      content_type: 'audio/mpeg',
+      containerNormalized: true,
+    };
+  } catch (error) {
+    console.warn('[Vivy Studio] Suno MP3 local repair failed, keeping provider URL:', cleanOneLine(error?.message || error, 'unknown', 240));
+    return media;
+  }
 }
 
 async function runVivyPreviewMix(voiceUrl, instrumentalUrl) {
@@ -5065,7 +5206,10 @@ module.exports = {
   buildVivyStudioProduction,
   buildVivyMultiVoiceAssemblyArgs,
   buildVivyPreviewMixArgs,
+  buildVivyMp3RepairArgs,
+  repairVivyMp3File,
   materializeVivyPreviewInstrumentalPath,
+  materializeVivySunoMedia,
   buildVivyMusicPrompt,
   buildVivyChat,
   buildVivyAiChat,
