@@ -51,3 +51,30 @@ test('prod deploy injects voice module and XTTS/RVC env into both backend servic
     assert.ok(countNeedle(script, line) >= 2, `${line} must be present in both backend services`);
   }
 });
+
+test('prod deploy loads the merged secret env in both backend services', () => {
+  const script = readDeployScript();
+
+  assert.ok(
+    countNeedle(script, '- /srv/a11/secrets/compose.env') >= 2,
+    'both backend services must load the merged compose.env secret store'
+  );
+  assert.match(script, /Import-OptionalSecretFile\s+\$envMap\s+"A11_ELEVENLABS_API_KEY"/);
+  assert.match(script, /keyelevenlabs\.txt/);
+});
+
+test('prod deploy preserves remote secrets when the secret file is not directly readable', () => {
+  const script = readDeployScript();
+
+  assert.match(script, /bluegreen\/active-color/);
+  assert.match(script, /docker inspect "\$container" --format/);
+  assert.match(script, /\$existingPgPass = \$null[\s\S]+?Read-RemoteEnvValue "DATABASE_URL"[\s\S]+?Read-RemoteEnvValue "POSTGRES_PASSWORD"/);
+  assert.match(script, /\[Uri\]::UnescapeDataString/);
+});
+
+test('prod deploy refreshes the explicit Vivy music preview flag when remote secrets are reused', () => {
+  const script = readDeployScript();
+
+  assert.match(script, /managed_keys=.*VIVY_ELEVENLABS_MUSIC_DISABLED/);
+  assert.match(script, /printf 'VIVY_ELEVENLABS_MUSIC_DISABLED=false\\n'/);
+});

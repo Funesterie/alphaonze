@@ -665,6 +665,14 @@ export function resolveApiAssetUrl(rawValue: string | null | undefined) {
         const origin = getApiOrigin() || globalThis.location?.origin || 'http://178.105.86.89';
         return `${origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
       }
+      // Rewrite internal container URLs (127.0.0.1 / localhost) to the public API origin
+      if (
+        /^(127\.0\.0\.1|localhost|::1)$/.test(assetHost)
+        && /^\/files\//i.test(parsed.pathname)
+      ) {
+        const origin = getApiOrigin() || globalThis.location?.origin || '';
+        if (origin) return `${origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      }
     } catch {
       // keep the original absolute URL when it is not parseable by URL.
     }
@@ -2706,6 +2714,7 @@ export type VivyStudioProductionInput = {
   artistCount?: number;
   singerCount?: number;
   songMood?: string;
+  lyrics?: string;
   songText?: string;
   sessionSunoApiKey?: string;
   shareTarget?: string;
@@ -2717,6 +2726,13 @@ export type VivyStudioProductionInput = {
   forceRealMusic?: boolean;
   generateMusic?: boolean;
   makeSong?: boolean;
+  preserveSelectedVoice?: boolean;
+  allowExternalVoiceMix?: boolean;
+  sunoVoiceId?: string;
+  instrumental?: boolean;
+  forceInstrumental?: boolean;
+  previewInstrumental?: boolean;
+  musicProvider?: 'suno' | 'elevenlabs' | 'elevenlabs-music' | string;
   durationSeconds?: number;
 };
 
@@ -2730,6 +2746,9 @@ export type VivyStudioProductionResult = {
   content?: string;
   publicText?: string;
   publicLyrics?: string;
+  vocalLyrics?: string;
+  vocalSegments?: Array<{ artistIds: string[]; text: string }>;
+  arrangementCues?: string[];
   internalBrief?: string;
   brief?: string;
   productionPlan?: Record<string, unknown>;
@@ -2769,6 +2788,8 @@ export type VivyStudioProductionResult = {
     status?: string;
     reason?: string;
     message?: string;
+    voiceMode?: 'suno_voice' | 'external_mix' | 'suno_generated' | string;
+    selectedVoicePreserved?: boolean;
   };
   musicJob?: {
     provider?: string;
@@ -2776,6 +2797,8 @@ export type VivyStudioProductionResult = {
     jobId?: string;
     state?: string;
     status?: string;
+    voiceMode?: 'suno_voice' | 'external_mix' | 'suno_generated' | string;
+    selectedVoicePreserved?: boolean;
   };
   tokenStored?: boolean;
   aiMode?: 'llm' | 'fallback' | string;
@@ -2824,6 +2847,39 @@ export async function runVivyStudioProduction(
     throw new Error(payload?.message || payload?.error || `Vivy Studio indisponible (${res.status})`);
   }
   return payload as VivyStudioProductionResult;
+}
+
+export async function mixVivyStudioPreview(
+  voiceUrl: string,
+  instrumentalUrl: string
+): Promise<VivyStudioMedia> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/mix-preview'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({ voiceUrl, instrumentalUrl }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Mix Vivy indisponible (${res.status})`);
+  }
+  return (payload?.media || payload) as VivyStudioMedia;
+}
+
+export async function assembleVivyStudioVoicePreview(
+  segments: Array<{ audioUrls: string[] }>
+): Promise<VivyStudioMedia> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/assemble-voice-preview'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({ segments }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Assemblage vocal Vivy indisponible (${res.status})`);
+  }
+  return (payload?.media || payload) as VivyStudioMedia;
 }
 
 export async function getVivyStudioMusicJob(taskId: string, sessionSunoApiKey?: string): Promise<VivyStudioProductionResult> {
@@ -4639,6 +4695,71 @@ async function downloadProtectedBlob(pathname: string, fallbackName: string) {
   };
 }
 
+const A11_RESOURCE_DOWNLOAD_PATTERN = /\/api\/(?:public\/)?resources\/(\d+)\/download(?:[?#/].*)?$/i;
+
+/**
+ * Detect an A11 resource download URL — either the authenticated
+ * `/api/resources/:id/download` form or the legacy public
+ * `/api/public/resources/:id/download?token=...` form — and return the numeric
+ * resource id. Used to route any such link through the authenticated blob
+ * download instead of navigating to (and leaking) a public token URL.
+ */
+export function parseA11ResourceDownloadId(url: string | null | undefined): number | null {
+  const raw = String(url || '').trim();
+  if (!raw) return null;
+  let pathAndQuery = raw;
+  try {
+    const parsed = new URL(raw, globalThis.location?.origin || 'http://localhost');
+    pathAndQuery = `${parsed.pathname}${parsed.search}`;
+  } catch {
+    // relative or non-parseable URL: match against the raw value directly
+  }
+  const match = A11_RESOURCE_DOWNLOAD_PATTERN.exec(pathAndQuery);
+  if (!match) return null;
+  const id = Number(match[1]);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
+/** Build the authenticated (token-free) download path for a resource id. */
+export function buildAuthenticatedResourceDownloadPath(resourceId: number): string {
+  return `/api/resources/${Number(resourceId)}/download`;
+}
+
+/**
+ * Download a resource by id through the authenticated endpoint. Streams the
+ * response into a blob, derives the filename from content-disposition, and
+ * triggers the download via a temporary object URL. Throws on non-OK so callers
+ * never download an error JSON.
+ */
+export async function downloadResourceById(resourceId: number, fallbackName?: string) {
+  const id = Number(resourceId);
+  if (!Number.isFinite(id) || id <= 0) {
+    throw new Error('invalid_resource_id');
+  }
+  return downloadProtectedBlob(`/api/resources/${id}/download`, String(fallbackName || `resource-${id}.bin`));
+}
+
+/**
+ * Load a protected resource as a blob object URL (for in-app previews such as
+ * images). The caller is responsible for revoking the returned URL. Returns
+ * null on any auth/HTTP error so callers never render a broken/401 asset.
+ */
+export async function loadProtectedResourceObjectUrl(resourceId: number): Promise<string | null> {
+  const id = Number(resourceId);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  try {
+    const res = await authFetch(getApiUrl(`/api/resources/${id}/download`), {
+      method: 'GET',
+      headers: buildAuthHeaders(),
+    });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  } catch {
+    return null;
+  }
+}
+
 export async function downloadConversationResource(resource: A11ConversationResource) {
   const resourceId = Number(resource?.id || 0);
   if (!Number.isFinite(resourceId) || resourceId <= 0) {
@@ -4661,6 +4782,62 @@ export async function downloadStoredAccountFile(file: A11UserStoredFile) {
 
 export async function downloadAccountInventoryZip() {
   return downloadProtectedBlob('/api/account/inventory.zip', 'funesterie-inventaire-medias.zip');
+}
+
+export type ProviderHealthStatus = {
+  id: 'groq' | 'elevenlabs' | string;
+  label: string;
+  configured: boolean;
+  available: boolean | null;
+  model?: string;
+  modelAvailable?: boolean | null;
+  tier?: string;
+  credits?: {
+    used?: number | null;
+    limit?: number | null;
+    remaining?: number | null;
+    unit?: string;
+  };
+};
+
+export type ProviderHealthResponse = {
+  ok: boolean;
+  probed: boolean;
+  checkedAt: string;
+  providers: ProviderHealthStatus[];
+};
+
+export async function fetchProviderHealth(probe = true): Promise<ProviderHealthResponse> {
+  const res = await authFetch(getApiUrl(`/api/account/provider-status${probe ? '?probe=1' : ''}`), {
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `État fournisseurs indisponible (${res.status})`);
+  }
+  return data as ProviderHealthResponse;
+}
+
+/**
+ * Download a Cloudflare R2 public media file (files.funesterie.me) via the
+ * backend proxy route. The browser cannot fetch these directly because R2
+ * returns no CORS headers. The proxy validates the URL (whitelist) and re-serves
+ * the file with Content-Disposition: attachment.
+ *
+ * Throws on failure so the UI can report the problem without behaving like Open.
+ */
+export async function downloadMediaUrl(rawUrl: string, fallbackFilename?: string): Promise<void> {
+  const url = String(rawUrl || '').trim();
+  if (!url) return;
+  const filename = fallbackFilename || url.split('/').at(-1) || 'media-download';
+  const resourceId = parseA11ResourceDownloadId(url);
+  if (resourceId) {
+    await downloadResourceById(resourceId, filename);
+    return;
+  }
+  const proxyPath = `/api/media/download?url=${encodeURIComponent(url)}`;
+  await downloadProtectedBlob(proxyPath, filename);
 }
 
 type MemoryCounts = {
@@ -5993,8 +6170,11 @@ export async function fetchEkkoStatus(): Promise<EkkoStatusResponse> {
   return data as EkkoStatusResponse;
 }
 
-export async function clearVivyMemory(): Promise<{ ok: boolean; cleared: number }> {
-  const res = await authFetch(getApiUrl('/api/vivy/studio/memory'), {
+export async function clearVivyMemory(conversationId?: string): Promise<{ ok: boolean; cleared: number }> {
+  const query = String(conversationId || '').trim()
+    ? `?conversationId=${encodeURIComponent(String(conversationId).trim())}`
+    : '';
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/memory${query}`), {
     method: 'DELETE',
     headers: buildAuthHeaders(),
     credentials: 'include',

@@ -25,6 +25,7 @@ const {
 const {
   getResolvedRemoteModelForRequest,
 } = require('./src/llm/remote-model.cjs');
+const { getProviderHealth } = require('./src/providers/provider-health.cjs');
 
 // Load local env before early feature gates and client wiring read process.env.
 (() => {
@@ -6184,6 +6185,16 @@ function attachPublicDownloadUrl(resource, req = null) {
   };
 }
 
+// Authenticated, token-free download path for the resource owner. The A11 chat
+// client sends credentials/JWT with this route, so it must be used for links
+// shown back to the owner instead of the public `?token=...` URL (which would
+// expose a secret link in the browser and 401 on click).
+function buildOwnerResourceDownloadPath(resource) {
+  const resourceId = Number(resource?.id || 0);
+  if (!Number.isFinite(resourceId) || resourceId <= 0) return '';
+  return `/api/resources/${resourceId}/download`;
+}
+
 app.get('/api/a11host/status', verifyJWT, async (_req, res) => {
   try {
     const status = await getA11HostStatus();
@@ -6842,6 +6853,7 @@ const createKnowledgeConflictRouter = require('./src/routes/knowledge-conflict.c
 const createGitHubRouter = require('./src/routes/github.cjs');
 const createPublicMcpRouter = require('./src/routes/public-mcp.cjs');
 const createMcpClientRouter = require('./src/routes/mcp-client.cjs');
+const createMcpIntentRouter = require('./src/routes/mcp-intent.cjs');
 const createMcpCockpitRouter = require('./src/routes/mcp-cockpit.cjs');
 const { createOAuthRouter } = require('./src/mcp-oauth/oauth-server.cjs');
 
@@ -6907,6 +6919,8 @@ const mcpCockpitRouter = createMcpCockpitRouter({ verifyJWT, db, env: process.en
 app.use('/api/cockpit/mcp', mcpCockpitRouter);
 app.use('/cockpit/mcp', mcpCockpitRouter);
 console.log('[Server] Private MCP cockpit routes mounted under /api/cockpit/mcp and /cockpit/mcp');
+app.use('/api/mcp/intent', verifyJWT, createMcpIntentRouter({ env: process.env }));
+console.log('[Server] MCP intent bridge mounted under /api/mcp/intent');
 app.use('/api/mcp', verifyJWT, createMcpClientRouter({ db, env: process.env }));
 console.log('[Server] MCP client routes mounted under /api/mcp');
 app.use('/api', createSelfRewriteRouter({ verifyJWT }));
@@ -7693,6 +7707,70 @@ app.get('/api/public/r2/*key', async (req, res) => {
       route: `/api/public/r2/${rawStorageKey}`,
     });
     return res.status(500).json({ ok: false, error: 'public_r2_download_failed', message });
+  }
+});
+
+app.get('/api/account/provider-status', verifyJWT, async (req, res) => {
+  const userId = String(req.user?.id || '').trim();
+  if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json(await getProviderHealth({ probe: String(req.query?.probe || '') === '1' }));
+  } catch {
+    return res.status(502).json({ ok: false, error: 'provider_health_failed' });
+  }
+});
+
+// Proxy download for Cloudflare R2 public media (files.funesterie.me).
+// The browser cannot fetch these directly (no CORS headers on R2).
+// Validates URL against a strict whitelist before proxying server-side.
+app.get('/api/media/download', verifyJWT, async (req, res) => {
+  try {
+    const userId = String(req.user?.id || '').trim();
+    if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
+
+    const rawUrl = String(req.query?.url || '').trim();
+    if (!rawUrl) return res.status(400).json({ ok: false, error: 'missing_url' });
+
+    if (!/^https:\/\/files\.funesterie\.me\/users\/\d+\//i.test(rawUrl)) {
+      return res.status(403).json({ ok: false, error: 'url_not_allowed' });
+    }
+
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(rawUrl);
+    } catch {
+      return res.status(400).json({ ok: false, error: 'invalid_url' });
+    }
+
+    const rawFilename = path.basename(parsedUrl.pathname) || 'media-download';
+    const filename = sanitizeFileName(rawFilename);
+    const encodedFilename = encodeURIComponent(filename);
+
+    const upstream = await fetch(rawUrl, {
+      signal: AbortSignal.timeout(30000),
+      headers: { 'User-Agent': 'funesterie-media-proxy/1.0' },
+    });
+
+    if (!upstream.ok) {
+      return res.status(upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502).json({
+        ok: false, error: 'upstream_fetch_failed', status: upstream.status,
+      });
+    }
+
+    const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
+    const contentLength = upstream.headers.get('content-length');
+
+    res.setHeader('Content-Type', contentType);
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"; filename*=UTF-8''${encodedFilename}`);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    return res.status(200).send(buffer);
+  } catch (e) {
+    console.error('[MEDIA] download proxy failed:', e?.message);
+    return res.status(500).json({ ok: false, error: 'media_download_failed', message: String(e?.message) });
   }
 });
 
@@ -12327,10 +12405,10 @@ function buildDirectSafeUserReply(cerbere, latestUserMessage = '', imagePath = n
   if (results.some((entry) => entry.action === 'get_latest_resource')) {
     const latest = results.find((entry) => entry.action === 'get_latest_resource');
     const resource = latest?.result?.resource || null;
-    const downloadUrl = String(resource?.downloadUrl || resource?.url || '').trim();
+    const ownerDownloadPath = buildOwnerResourceDownloadPath(resource);
     const filename = String(resource?.filename || '').trim() || 'fichier';
-    if (downloadUrl) {
-      return `Voici le lien de téléchargement de ${filename} : [télécharger ${filename}](${downloadUrl})`;
+    if (ownerDownloadPath) {
+      return `Voici le lien de téléchargement de ${filename} : [télécharger ${filename}](${ownerDownloadPath})`;
     }
     return "J'ai retrouvé la dernière ressource, mais aucun lien de téléchargement valide n'est disponible.";
   }
@@ -12483,7 +12561,8 @@ async function tryRecoverAndShareLatestArtifact({ userId, conversationId, execut
   const sharedResult = Array.isArray(cerbere?.results)
     ? cerbere.results.find((entry) => entry?.ok && entry?.action === 'share_file')
     : null;
-  const link = String(
+  const ownerDownloadPath = buildOwnerResourceDownloadPath(sharedResult?.conversationResource);
+  const link = ownerDownloadPath || String(
     sharedResult?.url
     || sharedResult?.file?.downloadUrl
     || sharedResult?.conversationResource?.downloadUrl

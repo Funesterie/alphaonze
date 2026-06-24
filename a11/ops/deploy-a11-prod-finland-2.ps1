@@ -275,8 +275,43 @@ fi
 }
 
 function Read-RemoteEnvValue([string]$Key) {
-  $remoteCmd = "if [ ! -f $RemoteRoot/secrets/a11.env ]; then exit 44; fi; grep -m1 '^$Key=' $RemoteRoot/secrets/a11.env | sed 's/^[^=]*=//' || true"
-  $value = & ssh @sshBase $Remote $remoteCmd 2>$null
+  if ($Key -notmatch '^[A-Z0-9_]+$') {
+    throw "Nom de variable env distant invalide"
+  }
+  $remoteRead = @'
+key='__KEY__'
+secret_file='__REMOTE_ROOT__/secrets/a11.env'
+active_color="$(cat '__REMOTE_ROOT__/bluegreen/active-color' 2>/dev/null || true)"
+case "$active_color" in
+  blue|green)
+    containers="a11-backend-${active_color} kaen44-backend-${active_color}"
+    ;;
+  *)
+    containers="a11-backend kaen44-backend"
+    ;;
+esac
+for container in $containers; do
+  if ! docker inspect "$container" >/dev/null 2>&1; then
+    continue
+  fi
+  value="$(docker inspect "$container" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep -m1 "^${key}=" | sed 's/^[^=]*=//' || true)"
+  if [ -n "$value" ]; then
+    printf '%s\n' "$value"
+    exit 0
+  fi
+done
+if [ -r "$secret_file" ]; then
+  value="$(grep -m1 "^${key}=" "$secret_file" 2>/dev/null | sed 's/^[^=]*=//' || true)"
+  if [ -n "$value" ]; then
+    printf '%s\n' "$value"
+    exit 0
+  fi
+fi
+exit 44
+'@
+  $remoteRead = $remoteRead.Replace('__KEY__', $Key).Replace('__REMOTE_ROOT__', $RemoteRoot)
+  $remoteReadEncoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remoteRead.Replace("`r`n", "`n").Replace("`r", "`n")))
+  $value = & ssh @sshBase $Remote "printf '%s' '$remoteReadEncoded' | base64 -d | bash" 2>$null
   $code = $LASTEXITCODE
   $global:LASTEXITCODE = 0
   if ($code -eq 44) { return $null }
@@ -506,7 +541,7 @@ services:
     restart: unless-stopped
     command: ["npm", "run", "start:a11"]
     env_file:
-      - /srv/a11/secrets/a11.env
+      - /srv/a11/secrets/compose.env
     environment:
       A11_WEB_DIST_DIR: /web/dist
       TTS_URL: ${TTS_URL:-http://a11-voice:5002}
@@ -604,7 +639,7 @@ services:
     restart: unless-stopped
     command: ["npm", "run", "start:kaen44"]
     env_file:
-      - /srv/a11/secrets/a11.env
+      - /srv/a11/secrets/compose.env
     environment:
       PORT: "3001"
       A11_WEB_DIST_DIR: /web/dist
@@ -811,6 +846,13 @@ $mcpEnvMap = if (Test-Path -LiteralPath $McpEnvSource) { Read-EnvMap $McpEnvSour
 $localEnvSource = Join-Path $ServerRoot ".env.local"
 $localEnvMap = if (Test-Path -LiteralPath $localEnvSource) { Read-EnvMap $localEnvSource } else { [ordered]@{} }
 $localSecretRoot = Join-Path $env:USERPROFILE ".funesterie\secrets"
+Import-OptionalSecretFile $envMap "A11_ELEVENLABS_API_KEY" @(
+  $env:A11_ELEVENLABS_API_KEY_FILE,
+  $localEnvMap["A11_ELEVENLABS_API_KEY_FILE"],
+  $localEnvMap["VIVY_ELEVENLABS_API_KEY_FILE"],
+  (Join-Path $env:USERPROFILE "Desktop\key\keyelevenlabs.txt"),
+  (Join-Path $localSecretRoot "elevenlabs-api-key.txt")
+)
 $optionalFinanceEnvKeys = @(
   "QONTO_API_BASE_URL",
   "QONTO_API_LOGIN",
@@ -849,7 +891,9 @@ $localOnlySecretFileKeys = @(
   "QONTO_API_SECRET_KEY_FILE",
   "QONTO_API_KEY_FILE",
   "MOLLIE_API_KEY_FILE",
-  "MOLLIE_SECRET_KEY_FILE"
+  "MOLLIE_SECRET_KEY_FILE",
+  "A11_ELEVENLABS_API_KEY_FILE",
+  "VIVY_ELEVENLABS_API_KEY_FILE"
 )
 foreach ($key in $localOnlySecretFileKeys) {
   if ($envMap.Contains($key)) { $envMap.Remove($key) }
@@ -896,7 +940,23 @@ foreach ($key in $removeKeys) {
   if ($envMap.Contains($key)) { $envMap.Remove($key) }
 }
 
-$existingPgPass = Read-RemoteEnvValue "POSTGRES_PASSWORD"
+$existingPgPass = $null
+$existingDatabaseUrl = Read-RemoteEnvValue "DATABASE_URL"
+if (-not [string]::IsNullOrWhiteSpace($existingDatabaseUrl)) {
+  try {
+    $databaseUri = [Uri]$existingDatabaseUrl
+    $userInfo = [string]$databaseUri.UserInfo
+    $separatorIndex = $userInfo.IndexOf(':')
+    if ($separatorIndex -ge 0 -and $separatorIndex -lt ($userInfo.Length - 1)) {
+      $existingPgPass = [Uri]::UnescapeDataString($userInfo.Substring($separatorIndex + 1))
+    }
+  } catch {
+    $existingPgPass = $null
+  }
+}
+if ([string]::IsNullOrWhiteSpace($existingPgPass)) {
+  $existingPgPass = Read-RemoteEnvValue "POSTGRES_PASSWORD"
+}
 $existingAdminPass = Read-RemoteEnvValue "DEFAULT_ADMIN_PASSWORD"
 $existingMcpToken = Read-RemoteEnvValue "A11_MCP_TOKEN"
 $existingEkkoToken = Read-RemoteEnvValue "EKKO_TOKEN"
@@ -1071,7 +1131,9 @@ $overrides = [ordered]@{
   A11_ELEVENLABS_TTS_DISABLED = $(if ($env:A11_ELEVENLABS_TTS_DISABLED) { $env:A11_ELEVENLABS_TTS_DISABLED } else { "false" })
   ELEVENLABS_TTS_DISABLED = $(if ($env:ELEVENLABS_TTS_DISABLED) { $env:ELEVENLABS_TTS_DISABLED } else { "false" })
   A11_ELEVENLABS_TTS_ENABLED = $(if ($env:A11_ELEVENLABS_TTS_ENABLED) { $env:A11_ELEVENLABS_TTS_ENABLED } else { "true" })
-  VIVY_ELEVENLABS_MUSIC_DISABLED = "true"
+  # Music stays opt-in in application code; this only permits the explicit
+  # founder preview requested from the checked Studio control.
+  VIVY_ELEVENLABS_MUSIC_DISABLED = "false"
   A11_CARTESIA_API_KEY_FILE = $(if ($env:A11_CARTESIA_API_KEY_FILE) { $env:A11_CARTESIA_API_KEY_FILE } else { "/app/runtime/secrets/cartesia_api_key" })
   A11_ELEVENLABS_API_KEY_FILE = $(if ($env:A11_ELEVENLABS_API_KEY_FILE) { $env:A11_ELEVENLABS_API_KEY_FILE } else { "/app/runtime/secrets/elevenlabs_api_key" })
   VIVY_ELEVENLABS_API_KEY_FILE = $(if ($env:VIVY_ELEVENLABS_API_KEY_FILE) { $env:VIVY_ELEVENLABS_API_KEY_FILE } else { "/app/runtime/secrets/elevenlabs_api_key" })
@@ -1084,7 +1146,8 @@ $overrides = [ordered]@{
   VIVY_MUSIC_PROVIDER = $(if ($env:VIVY_MUSIC_PROVIDER) { $env:VIVY_MUSIC_PROVIDER } else { "suno" })
   VIVY_SUNO_API_KEY_FILE = $(if ($env:VIVY_SUNO_API_KEY_FILE) { $env:VIVY_SUNO_API_KEY_FILE } else { "/app/runtime/secrets/suno_api_key" })
   VIVY_SUNO_BASE_URL = $(if ($env:VIVY_SUNO_BASE_URL) { $env:VIVY_SUNO_BASE_URL } else { "https://api.sunoapi.org/api/v1" })
-  VIVY_SUNO_MODEL = $(if ($env:VIVY_SUNO_MODEL) { $env:VIVY_SUNO_MODEL } else { "V4_5" })
+  VIVY_SUNO_MODEL = $(if ($env:VIVY_SUNO_MODEL) { $env:VIVY_SUNO_MODEL } else { "V5_5" })
+  VIVY_SUNO_VOICE_ID = $(if ($env:VIVY_SUNO_VOICE_ID) { $env:VIVY_SUNO_VOICE_ID } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_SUNO_VOICE_ID"])) { [string]$envMap["VIVY_SUNO_VOICE_ID"] } else { "" })
   VIVY_SUNO_CALLBACK_URL = $(if ($env:VIVY_SUNO_CALLBACK_URL) { $env:VIVY_SUNO_CALLBACK_URL } else { "https://vivy.funesterie.me/api/vivy/studio/suno/callback" })
   VIVY_SUNO_CALLBACK_TOKEN = $(if ($env:VIVY_SUNO_CALLBACK_TOKEN) { $env:VIVY_SUNO_CALLBACK_TOKEN } else { "" })
   ENABLE_PIPER_HTTP = $(if ($env:ENABLE_PIPER_HTTP) { $env:ENABLE_PIPER_HTTP } else { "true" })
@@ -1284,7 +1347,7 @@ build_env="__REMOTE_ROOT__/secrets/build.env"
 a11_env="__REMOTE_ROOT__/secrets/a11.env"
 compose_env="__REMOTE_ROOT__/secrets/compose.env"
 tmp_build="$(mktemp)"
-managed_keys='^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK|A11_LLM_PROVIDER|A11_OLLAMA_PRIMARY_MODEL|A11_OLLAMA_FALLBACK_MODEL|A11_TRANSLATION_MODEL|LOCAL_DEFAULT_MODEL|A11_LLM_FALLBACK_PROVIDER|A11_LLM_RUNTIME_FALLBACK_ORDER|A11_CERBERE_LOCAL_ONLY|A11_LOCAL_CHAT_TIMEOUT_MS|A11_OLLAMA_KEEP_ALIVE|A11_MEMORY_LOCAL_TIMEOUT_MS|A11_MEMORY_REMOTE_TIMEOUT_MS|A11_EMBEDDING_TIMEOUT_MS|A11_RUNTIME_ROOT)='
+managed_keys='^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK|A11_LLM_PROVIDER|A11_OLLAMA_PRIMARY_MODEL|A11_OLLAMA_FALLBACK_MODEL|A11_TRANSLATION_MODEL|LOCAL_DEFAULT_MODEL|A11_LLM_FALLBACK_PROVIDER|A11_LLM_RUNTIME_FALLBACK_ORDER|A11_CERBERE_LOCAL_ONLY|A11_LOCAL_CHAT_TIMEOUT_MS|A11_OLLAMA_KEEP_ALIVE|A11_MEMORY_LOCAL_TIMEOUT_MS|A11_MEMORY_REMOTE_TIMEOUT_MS|A11_EMBEDDING_TIMEOUT_MS|A11_RUNTIME_ROOT|VIVY_ELEVENLABS_MUSIC_DISABLED|VIVY_SUNO_MODEL)='
 if [ -s "$build_env" ]; then
   grep -v -E "$managed_keys" "$build_env" > "$tmp_build" || true
 fi
@@ -1306,6 +1369,8 @@ printf 'A11_MEMORY_LOCAL_TIMEOUT_MS=3500\n' >> "$tmp_build"
 printf 'A11_MEMORY_REMOTE_TIMEOUT_MS=5000\n' >> "$tmp_build"
 printf 'A11_EMBEDDING_TIMEOUT_MS=2500\n' >> "$tmp_build"
 printf 'A11_RUNTIME_ROOT=/app/runtime\n' >> "$tmp_build"
+printf 'VIVY_ELEVENLABS_MUSIC_DISABLED=false\n' >> "$tmp_build"
+printf 'VIVY_SUNO_MODEL=V5_5\n' >> "$tmp_build"
 mv "$tmp_build" "$build_env"
 chmod 600 "$build_env"
 if [ -s "$a11_env" ]; then

@@ -72,7 +72,7 @@ function buildImageStructuredLlmStub() {
     const prompt = String(systemPrompt || '');
     const sourceText = String(text || '');
 
-    if (/canonical request normalizer for A11 image\.generate/i.test(prompt)) {
+    if (/image prompt canonicalizer|canonical request normalizer for A11 image\.generate/i.test(prompt)) {
       if (/girafe|giraffe/i.test(sourceText)) {
         return {
           canonicalEnglishInput: 'a giraffe',
@@ -2429,7 +2429,7 @@ test('POST /api/llm/chat does not expose empty assistant internals to users', as
 
       assert.equal(response.status, 200);
       const content = String(json.choices?.[0]?.message?.content || '');
-      assert.match(content, /J[’']ai bien reçu/i);
+      assert.match(content, /(?:J[’']ai|A11 t[’']a) bien reçu/i);
       assert.doesNotMatch(content, /mod[eè]le|r[ée]ponse vide/i);
     }
   );
@@ -2757,37 +2757,56 @@ test('compileMaskToSD returns a raw payload and adaptMaskToFreelandValue wraps i
 });
 
 test('POST /api/video/generate returns a dedicated video payload', async () => {
-  await withServer(
-    (app) => {
-      app.use('/api', createVideoGenerateRouter({
-        generateVideo: async ({ prompt, body }) => ({
-          ok: true,
-          tool: 'generate_video',
-          artifact_type: 'video',
-          prompt,
-          format: body.format,
-          durationSeconds: body.durationSeconds,
-          fps: body.fps,
-          frameCount: 6,
-          video_url: 'https://files.example.com/demo-video.mp4',
-          filename: 'demo-video.mp4',
-        }),
-      }).router);
-    },
-    async (baseUrl) => {
-      const { response, json } = await postJson(baseUrl, '/api/video/generate', {
-        prompt: 'dragon bleu',
-        durationSeconds: 3,
-        fps: 6,
-        format: 'mp4',
-      });
-
-      assert.equal(response.status, 200);
-      assert.equal(json.artifact_type, 'video');
-      assert.equal(json.video_url, 'https://files.example.com/demo-video.mp4');
-      assert.equal(json.format, 'mp4');
-    }
+  const routingEnvKeys = [
+    'A11_VIDEO_LOCAL_RUNNER_URL',
+    'A11_MOCHI_RUNNER_URL',
+    'A11_VIDEO_PROXY_URL',
+    'VIDEO_PROXY_URL',
+  ];
+  const previousRoutingEnv = Object.fromEntries(
+    routingEnvKeys.map((key) => [key, process.env[key]])
   );
+  routingEnvKeys.forEach((key) => delete process.env[key]);
+
+  try {
+    await withServer(
+      (app) => {
+        app.use('/api', createVideoGenerateRouter({
+          generateVideo: async ({ prompt, body }) => ({
+            ok: true,
+            tool: 'generate_video',
+            artifact_type: 'video',
+            prompt,
+            format: body.format,
+            durationSeconds: body.durationSeconds,
+            fps: body.fps,
+            frameCount: 6,
+            video_url: 'https://files.example.com/demo-video.mp4',
+            filename: 'demo-video.mp4',
+          }),
+        }).router);
+      },
+      async (baseUrl) => {
+        const { response, json } = await postJson(baseUrl, '/api/video/generate', {
+          prompt: 'dragon bleu',
+          durationSeconds: 3,
+          fps: 6,
+          format: 'mp4',
+        });
+
+        assert.equal(response.status, 200);
+        assert.equal(json.artifact_type, 'video');
+        assert.equal(json.video_url, 'https://files.example.com/demo-video.mp4');
+        assert.equal(json.format, 'mp4');
+      }
+    );
+  } finally {
+    for (const key of routingEnvKeys) {
+      const previous = previousRoutingEnv[key];
+      if (previous === undefined) delete process.env[key];
+      else process.env[key] = previous;
+    }
+  }
 });
 
 test('POST /api/chat returns a video completion payload for explicit video requests', async () => {

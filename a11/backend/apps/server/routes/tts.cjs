@@ -2346,6 +2346,137 @@ function getRequestedTtsProvider(body = {}) {
   return raw;
 }
 
+function getOriginalRequestedTtsProvider(body = {}) {
+  return String(body?.a11OriginalRequestedTtsProvider || getRequestedTtsProvider(body) || 'auto')
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeVoiceFallbackReason(error, provider = '') {
+  const prefix = String(provider || 'voice').trim().toLowerCase() || 'voice';
+  const message = String(error?.message || error || '').trim().toLowerCase();
+  if (!message) return `${prefix}_unavailable`;
+  if (/timeout|timed out|abort/.test(message)) return `${prefix}_timeout`;
+  if (/quota|credit|payment|402|429/.test(message)) return `${prefix}_quota`;
+  if (/key_missing|api[_ -]?key|unauthori[sz]ed|401|403/.test(message)) return `${prefix}_missing_key`;
+  if (/rvc|voice_conversion|convert/.test(message)) return 'rvc_error';
+  return `${prefix}_error`;
+}
+
+function resolveVoiceManifestProviderUsed(payload = {}) {
+  const via = String(payload?.via || '').trim().toLowerCase();
+  if (via.includes('elevenlabs')) return PROVIDERS.ELEVENLABS;
+  if (via.includes('cartesia')) return PROVIDERS.CARTESIA;
+  if (via.includes('azure')) return PROVIDERS.AZURE;
+  if (via.includes('openai')) return PROVIDERS.OPENAI;
+  const provider = String(payload?.provider || payload?.engine || '').trim().toLowerCase();
+  if (provider === PROVIDERS.XTTS_RVC || via.includes('xtts-rvc')) return 'xtts';
+  return provider || 'unknown';
+}
+
+function buildVoiceRouteManifest(payload = {}, body = {}) {
+  const rawProviderRequested = String(
+    body?.a11VoiceProviderRequested
+    || body?.voiceProviderRequested
+    || body?.preferredVoiceProvider
+    || getOriginalRequestedTtsProvider(body)
+    || 'auto'
+  ).trim().toLowerCase() || 'auto';
+  const providerRequested = rawProviderRequested !== 'auto'
+    ? rawProviderRequested
+    : (
+      wantsElevenLabsRvcPipeline(body) || shouldDefaultOfficialToElevenLabsRvc(body)
+        ? PROVIDERS.ELEVENLABS
+        : 'auto'
+    );
+  const providerUsed = resolveVoiceManifestProviderUsed(payload);
+  const rvcApplied = payload?.voiceConversion?.ok === true
+    || /\+(?:xtts-rvc|voice-convert)\b/i.test(String(payload?.via || ''));
+  const personaApplied = wantsOfficialIdentityVoice(body)
+    && (
+      rvcApplied
+      || payload?.providerCapabilities?.referenceVoice === true
+      || [PROVIDERS.ELEVENLABS, PROVIDERS.CARTESIA, PROVIDERS.AZURE, PROVIDERS.OPENAI].includes(providerUsed)
+    );
+  const providerMismatch = providerRequested !== 'auto'
+    && providerUsed !== 'unknown'
+    && providerUsed !== providerRequested;
+  const fallbackReason = String(body?.a11VoiceFallbackReason || '').trim()
+    || (providerMismatch ? `${providerRequested}_unavailable` : null);
+  const fallbackUsed = Boolean(
+    fallbackReason
+    || providerMismatch
+  );
+  const outputUrl = String(payload?.audioUrl || payload?.audio_url || payload?.url || '').trim();
+  let output = null;
+  try {
+    output = outputUrl ? path.basename(new URL(outputUrl, 'http://a11.local').pathname) : null;
+  } catch {
+    output = outputUrl ? path.basename(outputUrl) : null;
+  }
+  return {
+    providerRequested,
+    providerUsed,
+    rvcApplied,
+    personaApplied,
+    fallbackUsed,
+    fallbackReason,
+    segments: 1,
+    mixEngine: null,
+    output,
+  };
+}
+
+function attachVoiceRouteManifest(payload = {}, body = {}) {
+  return {
+    ...(payload || {}),
+    voiceManifest: buildVoiceRouteManifest(payload, body),
+  };
+}
+
+function wasTtsProviderExplicitlyRequested(body = {}, provider = '') {
+  const original = getOriginalRequestedTtsProvider(body);
+  return original !== 'auto' && original === String(provider || '').trim().toLowerCase();
+}
+
+function shouldTryOfficialLocalIdentityFallback(body = {}, resolvedProvider = {}) {
+  const persona = getExplicitTtsPersonaFromBody(body);
+  return getOriginalRequestedTtsProvider(body) === 'auto'
+    && OFFICIAL_PERSONAS.has(persona)
+    && wantsOfficialIdentityVoice(body)
+    && isCloudTtsProvider(resolvedProvider?.provider);
+}
+
+function buildOfficialLocalIdentityFallbackBody(body = {}) {
+  return normalizeA11OfficialReferenceRequest({
+    ...(body || {}),
+    provider: PROVIDERS.XTTS_RVC,
+    ttsProvider: PROVIDERS.XTTS_RVC,
+    engine: PROVIDERS.XTTS_RVC,
+    voiceEngine: PROVIDERS.XTTS_RVC,
+    voiceMode: 'xtts-rvc',
+    voiceConversionEngine: PROVIDERS.XTTS_RVC,
+    conversionEngine: PROVIDERS.XTTS_RVC,
+    voiceConversion: true,
+    convertVoice: true,
+    morphVoice: true,
+    rvc: true,
+    useRvc: true,
+    allowRvc: true,
+    allowXttsRvc: true,
+    allowLegacyVoiceBridge: true,
+    xttsRvcOptIn: true,
+    useDefaultVoiceReference: true,
+    defaultVoiceReference: true,
+    usePersonaVoiceReference: true,
+    voiceReferenceRequired: true,
+    requireVoiceReference: true,
+    referenceVoiceRequired: true,
+    forceCloudTts: false,
+    useReadyMadeCloudVoice: false,
+  });
+}
+
 function isNeutralTtsProvider(provider = '') {
   return ['piper', 'local', 'spawn', 'espeak', 'espeak-ng'].includes(String(provider || '').trim().toLowerCase());
 }
@@ -4445,6 +4576,10 @@ async function requestElevenLabsTts(text, body = {}, options = {}) {
     true
   );
 
+  const explicitTimeoutMs = Number(process.env.ELEVENLABS_TTS_TIMEOUT_MS || 0);
+  const timeoutMs = explicitTimeoutMs > 0
+    ? explicitTimeoutMs
+    : Math.max(22000, Math.min(120000, 22000 + (String(text || '').length * 15)));
   const response = await fetch(`${getElevenLabsTtsBaseUrl()}/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${encodeURIComponent(outputFormat)}`, {
     method: 'POST',
     headers: {
@@ -4462,7 +4597,7 @@ async function requestElevenLabsTts(text, body = {}, options = {}) {
         use_speaker_boost: useSpeakerBoost !== false,
       },
     }),
-    signal: AbortSignal.timeout(Number(process.env.ELEVENLABS_TTS_TIMEOUT_MS || 22000) || 22000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   if (!response.ok) {
@@ -4608,7 +4743,13 @@ router.options(['/tts/piper', '/tts/speak', '/tts/jobs/:jobId', '/vivy/jobs', '/
 
 async function handleTtsSpeakRequest(req, res) {
   try {
-    const baseBody = enforceBasicTtsCostPolicy(req, req.body || {});
+    const enforcedBody = enforceBasicTtsCostPolicy(req, req.body || {});
+    const baseBody = {
+      ...enforcedBody,
+      a11OriginalRequestedTtsProvider: String(
+        enforcedBody?.a11OriginalRequestedTtsProvider || getRequestedTtsProvider(enforcedBody) || 'auto'
+      ).trim().toLowerCase(),
+    };
     // The "ElevenLabs + RVC" official voice is a paid cloud path. It runs when
     // the client asks for it explicitly (voiceMode) OR, for an official persona
     // identity request, by default once ElevenLabs is configured — so the "voix
@@ -4617,7 +4758,11 @@ async function handleTtsSpeakRequest(req, res) {
     // the XTTS/RVC official route.
     const useElevenLabsRvc = shouldRouteOfficialToElevenLabsRvc(req, baseBody);
     let requestBody = useElevenLabsRvc
-      ? normalizeElevenLabsRvcRequest({ ...baseBody, voiceMode: 'elevenlabs-rvc' })
+      ? normalizeElevenLabsRvcRequest({
+        ...baseBody,
+        voiceMode: 'elevenlabs-rvc',
+        a11VoiceProviderRequested: PROVIDERS.ELEVENLABS,
+      })
       : normalizeA11OfficialReferenceRequest(baseBody);
     req.body = requestBody;
     if (shouldRejectBlockedOfficialIdentityRequest(requestBody)) {
@@ -4687,7 +4832,10 @@ async function handleTtsSpeakRequest(req, res) {
     const preferOpenAiBeforeDirectBridge = preferOpenAiTtsFirst
       && (!hasDirectIdentityBridge || interactiveTts || !hasExplicitDirectIdentityBridge);
     const sendFinalizedPayload = async (basePayload) => {
-      const payload = await finalizeTtsPayload(basePayload, req, vocalMode);
+      const payload = attachVoiceRouteManifest(
+        await finalizeTtsPayload(basePayload, req, vocalMode),
+        req.body || preparedBody
+      );
       if (strictOfficialVoice && isFfmpegMorphVoicePayload(payload)) {
         return res.status(424).json({
           ok: false,
@@ -4704,6 +4852,19 @@ async function handleTtsSpeakRequest(req, res) {
       return sendTtsPayloadResponse(req, res, payload);
     };
     const cloudProviderOrder = getCloudTtsProviderOrder(preparedBody, resolvedProvider);
+    if (!preparedBody.a11VoiceProviderRequested && cloudProviderOrder.length) {
+      const requestedCloudProvider = String(preparedBody.voiceProviderRequested || '').trim().toLowerCase();
+      preparedBody = {
+        ...preparedBody,
+        a11VoiceProviderRequested: String(
+          (isCloudTtsProvider(requestedCloudProvider) ? requestedCloudProvider : '')
+          || cloudProviderOrder[0]
+          || getOriginalRequestedTtsProvider(preparedBody)
+        ).trim().toLowerCase(),
+      };
+      req.body = preparedBody;
+    }
+    const cloudFailureReasons = {};
     for (const provider of cloudProviderOrder) {
       try {
         const cloudTts = await requestCloudTtsProvider(provider, readableText, preparedBody, {
@@ -4721,9 +4882,12 @@ async function handleTtsSpeakRequest(req, res) {
         });
       } catch (cloudTtsError) {
         const message = String(cloudTtsError?.message || cloudTtsError);
+        cloudFailureReasons[provider] = normalizeVoiceFallbackReason(cloudTtsError, provider);
         if (provider === PROVIDERS.OPENAI) openAiTtsErrorMessage = message;
         console.warn(`[TTS][${provider}] ready-made voice failed:`, message);
-        if (strictOfficialVoice && getRequestedTtsProvider(preparedBody) === provider) {
+        if (strictOfficialVoice
+          && getRequestedTtsProvider(preparedBody) === provider
+          && wasTtsProviderExplicitlyRequested(preparedBody, provider)) {
           return res.status(424).json({
             ok: false,
             error: 'voice_reference_tts_unavailable',
@@ -4734,6 +4898,28 @@ async function handleTtsSpeakRequest(req, res) {
         }
       }
     };
+
+    if (cloudProviderOrder.length && shouldTryOfficialLocalIdentityFallback(preparedBody, resolvedProvider)) {
+      const requestedCloudProvider = String(preparedBody.a11VoiceProviderRequested || cloudProviderOrder[0] || '').trim().toLowerCase();
+      const localFallbackBody = buildOfficialLocalIdentityFallbackBody({
+        ...preparedBody,
+        a11VoiceProviderRequested: requestedCloudProvider || getOriginalRequestedTtsProvider(preparedBody),
+        a11VoiceFallbackReason: cloudFailureReasons[requestedCloudProvider]
+          || normalizeVoiceFallbackReason(null, requestedCloudProvider || 'voice'),
+      });
+      req.body = localFallbackBody;
+      try {
+        const directVoice = await requestDirectXttsRvcWithRetry(readableText, localFallbackBody, {
+          vocalMode,
+          persona: localFallbackBody.voicePersona || localFallbackBody.persona || localFallbackBody.surface || null,
+          user: req.user || null,
+        });
+        return sendFinalizedPayload(directVoice);
+      } catch (xttsRvcError) {
+        console.warn('[TTS][XTTS/RVC] cloud identity fallback failed:', String(xttsRvcError?.message || xttsRvcError));
+        req.body = preparedBody;
+      }
+    }
 
     if (preferOpenAiBeforeDirectBridge) {
       try {
@@ -5256,6 +5442,16 @@ router.get('/tts/out/:filename', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'invalid_tts_asset' });
   }
 
+  const localPath = [
+    path.join(getPublicTtsDir(), filename),
+    path.join(getCanonicalTtsDir(), 'out', filename),
+  ].find((candidate) => fs.existsSync(candidate));
+  if (localPath) {
+    res.setHeader('Content-Type', contentTypeForTtsAsset(filename));
+    res.setHeader('Cache-Control', 'no-store');
+    return res.sendFile(localPath);
+  }
+
   const ttsConfig = getLocalTtsConfig();
   const remoteBaseUrls = uniqueBaseUrls([
     ...getDirectXttsRvcBaseUrls(),
@@ -5282,25 +5478,23 @@ router.get('/tts/out/:filename', async (req, res) => {
     }
   }
 
-  const localPath = [
-    path.join(getPublicTtsDir(), filename),
-    path.join(getCanonicalTtsDir(), 'out', filename),
-  ].find((candidate) => fs.existsSync(candidate));
-  if (!localPath) {
-    return res.status(404).json({ ok: false, error: 'tts_asset_not_found' });
-  }
-
-  res.setHeader('Content-Type', contentTypeForTtsAsset(filename));
-  res.setHeader('Cache-Control', 'no-store');
-  return res.sendFile(localPath);
+  return res.status(404).json({ ok: false, error: 'tts_asset_not_found' });
 });
 
 router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
   setTtsCorsHeaders(req, res);
-  const baseBody = enforceBasicTtsCostPolicy(req, req.body || {});
+  const enforcedBody = enforceBasicTtsCostPolicy(req, req.body || {});
+  const baseBody = {
+    ...enforcedBody,
+    a11OriginalRequestedTtsProvider: getRequestedTtsProvider(enforcedBody) || 'auto',
+  };
   const useElevenLabsRvc = shouldRouteOfficialToElevenLabsRvc(req, baseBody);
   const requestBody = useElevenLabsRvc
-    ? normalizeElevenLabsRvcRequest({ ...baseBody, voiceMode: 'elevenlabs-rvc' })
+    ? normalizeElevenLabsRvcRequest({
+      ...baseBody,
+      voiceMode: 'elevenlabs-rvc',
+      a11VoiceProviderRequested: PROVIDERS.ELEVENLABS,
+    })
     : normalizeA11OfficialReferenceRequest(baseBody);
   req.body = requestBody;
   if (shouldRejectBlockedOfficialIdentityRequest(requestBody)) {
@@ -5374,7 +5568,10 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
     const preferOpenAiBeforeDirectBridge = preferOpenAiTtsFirst
       && (!hasDirectIdentityBridge || interactiveTts || !hasExplicitDirectIdentityBridge);
     const sendFinalizedPayload = async (basePayload) => {
-      const payload = await finalizeTtsPayload(basePayload, req, vocalMode);
+      const payload = attachVoiceRouteManifest(
+        await finalizeTtsPayload(basePayload, req, vocalMode),
+        req.body || preparedBody
+      );
       if (strictOfficialVoice && isFfmpegMorphVoicePayload(payload)) {
         return res.status(424).json({
           ok: false,
@@ -5391,6 +5588,19 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
       return sendTtsPayloadResponse(req, res, payload);
     };
     const cloudProviderOrder = getCloudTtsProviderOrder(preparedBody, resolvedProvider);
+    if (!preparedBody.a11VoiceProviderRequested && cloudProviderOrder.length) {
+      const requestedCloudProvider = String(preparedBody.voiceProviderRequested || '').trim().toLowerCase();
+      preparedBody = {
+        ...preparedBody,
+        a11VoiceProviderRequested: String(
+          (isCloudTtsProvider(requestedCloudProvider) ? requestedCloudProvider : '')
+          || cloudProviderOrder[0]
+          || getOriginalRequestedTtsProvider(preparedBody)
+        ).trim().toLowerCase(),
+      };
+      req.body = preparedBody;
+    }
+    const cloudFailureReasons = {};
     for (const provider of cloudProviderOrder) {
       try {
         const cloudTts = await requestCloudTtsProvider(provider, readableText, preparedBody, {
@@ -5408,9 +5618,12 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
         });
       } catch (cloudTtsError) {
         const message = String(cloudTtsError?.message || cloudTtsError);
+        cloudFailureReasons[provider] = normalizeVoiceFallbackReason(message, provider);
         if (provider === PROVIDERS.OPENAI) openAiTtsErrorMessage = message;
         console.warn(`[TTS][${provider}] ready-made voice failed:`, message);
-        if (strictOfficialVoice && getRequestedTtsProvider(preparedBody) === provider) {
+        if (strictOfficialVoice
+          && getRequestedTtsProvider(preparedBody) === provider
+          && wasTtsProviderExplicitlyRequested(preparedBody, provider)) {
           return res.status(424).json({
             ok: false,
             error: 'voice_reference_tts_unavailable',
@@ -5419,6 +5632,28 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
             diagnostic: `${provider}_tts_failed`,
           });
         }
+      }
+    }
+
+    if (cloudProviderOrder.length && shouldTryOfficialLocalIdentityFallback(preparedBody, resolvedProvider)) {
+      const requestedCloudProvider = String(preparedBody.a11VoiceProviderRequested || cloudProviderOrder[0] || '').trim().toLowerCase();
+      const localFallbackBody = buildOfficialLocalIdentityFallbackBody({
+        ...preparedBody,
+        a11VoiceProviderRequested: requestedCloudProvider || getOriginalRequestedTtsProvider(preparedBody),
+        a11VoiceFallbackReason: cloudFailureReasons[requestedCloudProvider]
+          || normalizeVoiceFallbackReason(null, requestedCloudProvider || 'voice'),
+      });
+      req.body = localFallbackBody;
+      try {
+        const directVoice = await requestDirectXttsRvcWithRetry(readableText, localFallbackBody, {
+          vocalMode,
+          persona: localFallbackBody.voicePersona || localFallbackBody.persona || localFallbackBody.surface || null,
+          user: req.user || null,
+        });
+        return sendFinalizedPayload(directVoice);
+      } catch (xttsRvcError) {
+        console.warn('[TTS][XTTS/RVC] cloud identity fallback failed:', String(xttsRvcError?.message || xttsRvcError));
+        req.body = preparedBody;
       }
     }
 

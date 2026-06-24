@@ -245,14 +245,27 @@ function deleteEpisode(userId, episodeId) {
 /**
  * Supprime tous les épisodes d'un utilisateur
  */
-function clearUserEpisodes(userId) {
+function clearUserEpisodes(userId, options = {}) {
   const normalizedUserId = String(userId || '').trim();
   
   if (!normalizedUserId) {
     return { ok: false, error: 'missing_user_id' };
   }
   
-  const saved = saveUserEpisodes(normalizedUserId, []);
+  const conversationId = String(options.conversationId || '').trim();
+  const typePrefix = String(options.typePrefix || '').trim();
+  const episodes = loadUserEpisodes(normalizedUserId);
+  const hasFilter = Boolean(conversationId || typePrefix);
+  const remaining = hasFilter
+    ? episodes.filter((episode) => {
+      const matchesConversation = !conversationId
+        || String(episode?.metadata?.conversationId || '').trim() === conversationId;
+      const matchesType = !typePrefix || String(episode?.type || '').startsWith(typePrefix);
+      return !(matchesConversation && matchesType);
+    })
+    : [];
+  const removed = episodes.length - remaining.length;
+  const saved = saveUserEpisodes(normalizedUserId, remaining);
   
   if (!saved) {
     return { ok: false, error: 'save_failed' };
@@ -263,6 +276,7 @@ function clearUserEpisodes(userId) {
   return {
     ok: true,
     cleared: true,
+    removed,
   };
 }
 

@@ -505,9 +505,9 @@ test('mini cerbere cools down a 429 target and falls back', async () => {
   const status = runtime.getStatus();
   assert.equal(status.cooldownCount, 1);
   assert.equal(status.cooldowns[0].status, 429);
-  assert.equal(status.cooldowns[0].retryInMs, 618_624);
+  assert.equal(status.cooldowns[0].retryInMs, 180_000);
 
-  nowMs += 618_625;
+  nowMs += 180_001;
   assert.equal(runtime.getStatus().cooldownCount, 0);
 });
 

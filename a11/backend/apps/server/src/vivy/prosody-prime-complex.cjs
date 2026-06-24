@@ -77,10 +77,10 @@ function fold(value = '') {
   return foldTextForLookup(cleanText(value, 2600));
 }
 
-function stripLegacySignalTokens(value = '') {
+function stripLegacySignalTokens(value = '', max = 2600) {
   return cleanText(String(value || '')
     .replace(/\[a4:[^\]]+\]/gi, ' ')
-    .replace(/\[numa8:[^\]]+\]/gi, ' '), 2600);
+    .replace(/\[numa8:[^\]]+\]/gi, ' '), max);
 }
 
 function normalizeProsodyMaterial(input = {}) {
