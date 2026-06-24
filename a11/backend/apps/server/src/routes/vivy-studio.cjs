@@ -4833,7 +4833,7 @@ async function materializeVivyPreviewInstrumentalPath(value = '', options = {}) 
 
   const fetchImpl = options.fetchImpl || fetch;
   const maxBytes = Math.max(1024, Number(options.maxBytes || process.env.VIVY_PREVIEW_REMOTE_MAX_BYTES || 64 * 1024 * 1024));
-  const timeoutMs = Math.max(1000, Number(options.timeoutMs || process.env.VIVY_PREVIEW_REMOTE_TIMEOUT_MS || 45000));
+  const timeoutMs = Math.max(1000, Number(options.fetchTimeoutMs || options.timeoutMs || process.env.VIVY_PREVIEW_REMOTE_TIMEOUT_MS || 45000));
   let currentUrl = String(value || '').trim();
   let response = null;
   for (let redirectCount = 0; redirectCount <= 2; redirectCount += 1) {
@@ -4880,7 +4880,10 @@ async function materializeVivyPreviewInstrumentalPath(value = '', options = {}) 
   if (!filePath) throw new Error('vivy_preview_remote_target_invalid');
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, buffer);
-  const repair = await repairVivyMp3File(filePath, options);
+  const repair = await repairVivyMp3File(filePath, {
+    ...options,
+    timeoutMs: options.repairTimeoutMs || options.mp3RepairTimeoutMs || options.timeoutMs,
+  });
   console.info(`[Vivy Studio] Suno instrumental materialized host=${new URL(currentUrl).hostname} bytes=${buffer.length} file=${filename} repaired=${repair.ok === true}`);
   return filePath;
 }
@@ -4891,28 +4894,46 @@ async function materializeVivySunoMedia(media = {}, options = {}) {
   if (envFlag('VIVY_SUNO_LOCAL_MP3_DISABLED')) return media;
   if (!isAllowedVivyRemoteInstrumentalUrl(sourceUrl)) return media;
 
-  try {
-    const filePath = await materializeVivyPreviewInstrumentalPath(sourceUrl, options);
-    const filename = path.basename(filePath);
-    const url = `/api/vivy/studio/assets/${encodeURIComponent(filename)}`;
-    return {
-      ...media,
-      filename,
-      path: filePath,
-      url,
-      audioUrl: url,
-      audio_url: url,
-      originalAudioUrl: sourceUrl,
-      original_audio_url: sourceUrl,
-      sourceAudioUrl: sourceUrl,
-      source_audio_url: sourceUrl,
-      content_type: 'audio/mpeg',
-      containerNormalized: true,
-    };
-  } catch (error) {
-    console.warn('[Vivy Studio] Suno MP3 local repair failed, keeping provider URL:', cleanOneLine(error?.message || error, 'unknown', 240));
-    return media;
+  const attempts = Math.max(1, Math.min(5, Number(options.attempts || process.env.VIVY_SUNO_AUDIO_FETCH_ATTEMPTS || 3) || 3));
+  const retryDelayMs = Math.max(0, Number(options.retryDelayMs ?? process.env.VIVY_SUNO_AUDIO_RETRY_DELAY_MS ?? 1200) || 0);
+  const sunoOptions = {
+    ...options,
+    fetchTimeoutMs: options.fetchTimeoutMs || process.env.VIVY_SUNO_AUDIO_FETCH_TIMEOUT_MS || 120000,
+    repairTimeoutMs: options.repairTimeoutMs || process.env.VIVY_SUNO_MP3_REPAIR_TIMEOUT_MS || process.env.VIVY_MP3_REPAIR_TIMEOUT_MS || 240000,
+    maxBytes: options.maxBytes || process.env.VIVY_SUNO_AUDIO_MAX_BYTES || (128 * 1024 * 1024),
+  };
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const filePath = await materializeVivyPreviewInstrumentalPath(sourceUrl, sunoOptions);
+      const filename = path.basename(filePath);
+      const url = `/api/vivy/studio/assets/${encodeURIComponent(filename)}`;
+      return {
+        ...media,
+        filename,
+        path: filePath,
+        url,
+        audioUrl: url,
+        audio_url: url,
+        originalAudioUrl: sourceUrl,
+        original_audio_url: sourceUrl,
+        sourceAudioUrl: sourceUrl,
+        source_audio_url: sourceUrl,
+        content_type: 'audio/mpeg',
+        containerNormalized: true,
+      };
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts) break;
+      if (retryDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs * attempt));
+      }
+    }
   }
+  try {
+    console.warn('[Vivy Studio] Suno MP3 local materialization failed, keeping provider URL:', cleanOneLine(lastError?.message || lastError, 'unknown', 240));
+  } catch (_) {}
+  return media;
 }
 
 async function runVivyPreviewMix(voiceUrl, instrumentalUrl) {

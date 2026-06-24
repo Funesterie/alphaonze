@@ -3272,7 +3272,9 @@ function normalizeVivyNossenContextSource(
 ) {
   const messageLines = messages
     .filter((entry) => entry.role === "user")
-    .map((entry) => `Utilisateur: ${entry.content}`)
+    .map((entry) => normalizeVivyNossenUserContent(entry.content))
+    .filter(Boolean)
+    .map((content) => `Utilisateur: ${content}`)
     .filter(Boolean);
   const fileLines = files
     .map((file) => [
@@ -3283,7 +3285,8 @@ function normalizeVivyNossenContextSource(
       file.analysisSummary,
     ].filter(Boolean).join(" - "))
     .filter(Boolean);
-  return toUnicodeText([...messageLines.slice(-24), draft, ...fileLines].filter(Boolean).join("\n"), 7200).trim();
+  const cleanedDraft = normalizeVivyNossenUserContent(draft);
+  return toUnicodeText([...messageLines.slice(-24), cleanedDraft, ...fileLines].filter(Boolean).join("\n"), 7200).trim();
 }
 
 function buildVivyNossenBangerReadiness(
@@ -3293,10 +3296,13 @@ function buildVivyNossenBangerReadiness(
 ): VivyNossenBangerReadiness {
   const source = normalizeVivyNossenContextSource(messages, draft, files);
   const folded = foldForLookup(source);
-  const actualUserTurns = messages.filter((entry) => entry.role === "user" && entry.content.trim().length >= 14).length;
-  const draftTurn = draft.trim().length >= 80 ? 1 : 0;
+  const actualCreativeUserTurns = messages
+    .filter((entry) => entry.role === "user")
+    .map((entry) => normalizeVivyNossenUserContent(entry.content))
+    .filter((content) => content.trim().length >= 32).length;
+  const draftTurn = normalizeVivyNossenUserContent(draft).trim().length >= 80 ? 1 : 0;
   const fileTurn = files.length ? 1 : 0;
-  const userTurns = actualUserTurns + draftTurn + fileTurn;
+  const userTurns = actualCreativeUserTurns + draftTurn + fileTurn;
   const hasSongSignal = /\b(chanson|musique|paroles|refrain|couplet|bridge|outro|intro|suno|banger|son|melodie|mélodie|prod|composition)\b/.test(folded);
   const hasVoiceSignal = /\b(voix|vocal|vocale|chanteur|chanteuse|solo|duo|trio|quatuor|djeff|vivy|a11|k44|kaen44|ref)\b/.test(folded);
   const hasColorSignal = /\b(ambiance|couleur|sonor|mood|dark|sombre|doux|douce|electro|rap|pop|metal|rock|cinematique|cinématique|epique|épique|triste|lumineux|guitare|piano|basse|drums|batterie)\b/.test(folded);
@@ -3309,9 +3315,9 @@ function buildVivyNossenBangerReadiness(
   if (hasColorSignal) score += 12;
   if (/\b(nossen|funesterie|djeff|vivy)\b/.test(folded)) score += 8;
   if (files.length) score += 8;
-  const hasEnoughTurns = actualUserTurns >= 2
-    || (actualUserTurns >= 1 && draftTurn > 0)
-    || (actualUserTurns >= 1 && fileTurn > 0)
+  const hasEnoughTurns = actualCreativeUserTurns >= 2
+    || (actualCreativeUserTurns >= 1 && draftTurn > 0)
+    || (actualCreativeUserTurns >= 1 && fileTurn > 0)
     || hasStrongSongDraft;
   const longEnough = source.length >= 360 || (source.length >= 180 && files.length > 0) || hasStrongSongDraft;
   const ready = Boolean(source && longEnough && hasEnoughTurns && hasSongSignal && score >= 62);
@@ -3373,12 +3379,32 @@ function cleanVivyNossenLyricSourceLine(value = "") {
   if (!line) return "";
   const folded = foldForLookup(line);
   if (/^(?:copier|vous|vivy|codex)\b/.test(folded)) return "";
-  if (/\b(?:d40|suno|fallback|secours|codex|prompt|telechargement|téléchargement|telecharger|télécharger|bouton|compile|compil|formulaire|detecteur|détecteur|ajustements internes|grand modele|grand modèle|mode automatique|generation d40|génération d40)\b/.test(folded)) return "";
-  if (/\b(?:paroles?\s+passent?\s+pas|musique\s+bug|generation\s+musique\s+bug|génération\s+musique\s+bug|phrase générique|truc générique|réecrit|réécrit|recopie|recopier)\b/.test(folded)) return "";
+  if (looksLikeVivyNossenOperatorNoiseLine(folded)) return "";
   return line
     .replace(/[<>[\]{}]/g, "")
     .replace(/\s+/g, " ")
     .replace(/[.;:]+$/g, "")
+    .trim();
+}
+
+function looksLikeVivyNossenOperatorNoiseLine(folded = "") {
+  if (!folded) return true;
+  if (/\b(?:d40|suno|fallback|secours|codex|prompt|telechargement|téléchargement|telecharger|télécharger|bouton|compile|compil|compiler|compilateur|formulaire|detecteur|détecteur|ajustements internes|grand modele|grand modèle|mode automatique|generation d40|génération d40)\b/.test(folded)) return true;
+  if (/\b(?:paroles?\s+passent?\s+pas|musique\s+bug|generation\s+musique\s+bug|génération\s+musique\s+bug|phrase générique|truc générique|generique|réecrit|réécrit|reecrit|recopie|recopier)\b/.test(folded)) return true;
+  if (/\b(?:bug|bugs?|marche\s+pas|sort\s+pas|sorti\s+pas|corrige|corriger|fix|logs?|credits?|crédits?|cles?|clés?|key|llm|quota|token|secret)\b/.test(folded)) return true;
+  if (/\b(?:repete|répète|repetes|répètes|reponse|réponse|reponses|réponses|perroquet|singeur|singe|confond|confondu|sortie\s+compilateur|user\s+avec|compiler\s+output)\b/.test(folded)) return true;
+  if (/\b(?:affichage|telephone|téléphone|mobile|dezoom|dézoom|clavier|viewport|scroll|impossible\s+d[' ]?ecrire|impossible\s+d[' ]?écrire|ca\s+bouge|ça\s+bouge)\b/.test(folded)) return true;
+  return false;
+}
+
+function normalizeVivyNossenUserContent(value = "") {
+  return toUnicodeText(value, 2400)
+    .replace(/([.!?])\s+/g, "$1\n")
+    .split(/\r?\n+/)
+    .map(cleanVivyNossenLyricSourceLine)
+    .filter((line) => line.length >= 12)
+    .slice(0, 12)
+    .join("\n")
     .trim();
 }
 
@@ -6472,8 +6498,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       window.clearTimeout(settleTimer);
       settleTimer = window.setTimeout(() => {
         const target = draftInputRef.current || composeRef.current || root;
-        target.scrollIntoView({ behavior, block: "center", inline: "nearest" });
-        endRef.current?.scrollIntoView({ behavior: "auto", block: "nearest" });
+        target.scrollIntoView({ behavior, block: "nearest", inline: "nearest" });
       }, 80);
     };
 

@@ -4988,6 +4988,7 @@ html.a11-auth-page-root body {
     grid-template-columns: 1fr;
     position: sticky;
     bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    touch-action: manipulation;
     z-index: 30;
     margin: 12px -6px 0;
     padding: 10px;
@@ -5004,6 +5005,7 @@ html.a11-auth-page-root body {
     min-height: 108px;
     max-height: 30svh;
     resize: none;
+    overscroll-behavior: contain;
   }
 
   .vivy-chat-compose div {
@@ -5013,6 +5015,7 @@ html.a11-auth-page-root body {
 
   body.vivy-keyboard-open .vivy-chat {
     padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    overscroll-behavior: contain;
   }
 
   body.vivy-keyboard-open .vivy-chat-head p {
@@ -5020,7 +5023,7 @@ html.a11-auth-page-root body {
   }
 
   body.vivy-keyboard-open .vivy-chat-log {
-    max-height: min(34svh, 260px);
+    max-height: min(30svh, 230px);
   }
 
   body.vivy-keyboard-open .vivy-chat-compose div {

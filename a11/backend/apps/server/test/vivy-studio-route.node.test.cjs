@@ -399,6 +399,49 @@ test('Vivy materializes completed Suno media as a repaired local MP3 asset', asy
   }
 });
 
+test('Vivy retries Suno MP3 materialization after a transient timeout', async () => {
+  const previousHosts = process.env.VIVY_SUNO_AUDIO_HOSTS;
+  process.env.VIVY_SUNO_AUDIO_HOSTS = 'cdn.suno.test';
+  const sourceUrl = `https://cdn.suno.test/vivy-timeout-${process.pid}-${Date.now()}.mp3`;
+  const audio = Buffer.from('ID3-suno-timeout-then-ok');
+  let fetchCalls = 0;
+  try {
+    const media = await materializeVivySunoMedia({
+      provider: 'suno',
+      title: 'Vivy Timeout Test',
+      audioUrl: sourceUrl,
+      url: sourceUrl,
+    }, {
+      retryDelayMs: 0,
+      fetchImpl: async () => {
+        fetchCalls += 1;
+        if (fetchCalls === 1) {
+          throw new Error('The operation was aborted due to timeout');
+        }
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({
+            'content-type': 'audio/mpeg',
+            'content-length': String(audio.length),
+          }),
+          arrayBuffer: async () => audio,
+        };
+      },
+      runFfmpeg: async (args) => {
+        fs.writeFileSync(args.at(-1), Buffer.from('ID3-suno-retried-repaired'));
+      },
+    });
+
+    assert.equal(fetchCalls, 2);
+    assert.equal(media.containerNormalized, true);
+    assert.equal(fs.readFileSync(media.path).toString(), 'ID3-suno-retried-repaired');
+  } finally {
+    if (previousHosts === undefined) delete process.env.VIVY_SUNO_AUDIO_HOSTS;
+    else process.env.VIVY_SUNO_AUDIO_HOSTS = previousHosts;
+  }
+});
+
 test('Vivy preview mix refuses non-Suno remote instrumental hosts', async () => {
   let fetched = false;
   await assert.rejects(
@@ -964,6 +1007,22 @@ test('Suno payload does not sing NOSSEN seed labels as lyrics', () => {
   assert.match(payload.prompt, /écran fissuré|ecran fissure/i);
   assert.doesNotMatch(payload.title, /Matière|Titre possible|NOSSEN/i);
   assert.doesNotMatch(payload.prompt, /Matière chanson|Titre possible|Thème:|Images:|Voix:|sections séparées|sections separees|plusieurs chanteurs|écrans le lien humain|ecrans le lien humain|génération et ses\.|À transformer|recopier|Écris une chanson|ne chante jamais|Suno|D40|prompt/i);
+});
+
+test('Vivy songcraft drops operator diagnostics about parroting, compiler output, and mobile typing', () => {
+  const lyrics = buildVivyStructuredLyrics({
+    songText: [
+      'la nouvelle génération cherche un vrai lien humain dans les écrans',
+      'des voix se répondent dans la nuit avec un refrain lumineux',
+      'vivy elle bug et répète toutes mes réponses en chanson comme un perroquet singeur',
+      "ma théorie c'est que tu as confondu user avec sortie compilateur",
+      "l'affichage téléphone est horrible impossible d'écrire ça bouge trop",
+    ].join('\n'),
+  });
+
+  assert.match(lyrics, /\[Chorus\]/);
+  assert.match(lyrics, /nouvelle génération|génération|lien humain|voix/i);
+  assert.doesNotMatch(lyrics, /perroquet|singeur|sortie compilateur|user|affichage téléphone|impossible d'écrire|ça bouge|vivy elle bug/i);
 });
 
 test('Suno session key lets a non-founder launch a personal music job without leaking the key', async () => {
@@ -1923,6 +1982,27 @@ test('Vivy NOSSEN Banger sends a clean song seed and lets backend songcraft stru
   assert.doesNotMatch(launchBlock, /lyrics:\s*songLyrics/);
 });
 
+test('Vivy NOSSEN Banger ignores operator bug reports before deciding readiness', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const normalizeStart = appSource.indexOf('function normalizeVivyNossenContextSource');
+  const normalizeEnd = appSource.indexOf('function extractVivyNossenLyricFragments', normalizeStart);
+  const normalizeBlock = appSource.slice(normalizeStart, normalizeEnd);
+  const readinessStart = appSource.indexOf('function buildVivyNossenBangerReadiness');
+  const readinessEnd = appSource.indexOf('function inferVivyNossenBangerArtists', readinessStart);
+  const readinessBlock = appSource.slice(readinessStart, readinessEnd);
+
+  assert.match(normalizeBlock, /normalizeVivyNossenUserContent/);
+  assert.match(normalizeBlock, /looksLikeVivyNossenOperatorNoiseLine/);
+  assert.match(normalizeBlock, /perroquet|singeur/);
+  assert.match(normalizeBlock, /compilateur/);
+  assert.match(normalizeBlock, /affichage|telephone|téléphone|dezoom|dézoom|clavier/);
+  assert.match(readinessBlock, /actualCreativeUserTurns/);
+  assert.doesNotMatch(readinessBlock, /actualUserTurns/);
+});
+
 test('Vivy NOSSEN Banger plays a clean WAV call with American pronunciation asset', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
@@ -1977,7 +2057,7 @@ test('Vivy NOSSEN Banger readiness ignores greeting and blocks first-turn auto-r
   const readinessBlock = appSource.slice(readinessStart, readinessEnd);
 
   assert.doesNotMatch(normalizeBlock, /entry\.role\s*===\s*"user"\s*\|\|/);
-  assert.match(readinessBlock, /actualUserTurns/);
+  assert.match(readinessBlock, /actualCreativeUserTurns/);
   assert.match(readinessBlock, /hasStrongSongDraft/);
   assert.doesNotMatch(readinessBlock, /userTurns\s*>=\s*2\s*\|\|\s*source\.length\s*>=\s*900/);
 });

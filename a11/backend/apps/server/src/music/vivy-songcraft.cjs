@@ -106,6 +106,9 @@ function looksLikeVivySongUiNoiseLine(line = '') {
   if (/^(?:\*\s*)?(les armures|les combats epiques|les themes de|l amitie|la recherche de|la lutte pour|la quete de|les chevaliers du zodiaque|les heros|ils sont les symboles)\b/.test(folded)) return true;
   if (/\b(quel est le ton que tu veux donner|veux tu qu elle soit|je suis la pour t aider|cela te donne des idees)\b/.test(folded)) return true;
   if (/^(source|direction sonore|titre de travail|structure proposee|assets a produire|paroles guide|routage|flux chanson|atelier|objectif|brief agents|composition production|creation voix|scene partage|sortie attendue|routage recommande|media pret|média prêt|multimodal runtime|janus vision|janus pro|provider|modele|modèle|device|worker|gpu|vram|recommendation|recommandation|dernier scan|safety lane|nerve routing|a11host|bridge vsix|headless|qflush flow|process supervises|clé suno personnelle|cle suno personnelle)\b/.test(folded)) return true;
+  if (/\b(vivy|nossen|bouton|codex|llm|suno|d40|prompt|compil|compile|compiler|compilateur|generation musique)\b/.test(folded)
+    && /\b(bug|bugs|repete|repetes|perroquet|singeur|generique|marche pas|passent pas|passe pas|corrige|fix|logs|credit|credits|cle|cles|key|quota|sortie compilateur|user)\b/.test(folded)) return true;
+  if (/\b(affichage telephone|telephone.*impossible|mobile.*impossible|dezoom|clavier|viewport|scroll|ca bouge|ecrire ca bouge|impossible d ecrire)\b/.test(folded)) return true;
   if (/^mix d40\b/.test(folded)) return true;
   if (/\b(?:meme|même)\s+format\s+pret\b|\bformat\s+pret\b/.test(folded)) return true;
   if (/https?:\/\/\S*(?:token=|\/api\/double-harmonic\/out\/)/i.test(raw)) return true;
@@ -139,7 +142,7 @@ function expandVivySongMaterialCandidate(value = '') {
   if (/^(?:voix|vocal cast|casting choisi|contexte utile)\s*:/i.test(line)) return [];
   if (/\bsections?\s+s[ée]par[ée]es?\b/i.test(line)) return [];
   if (/^(a transformer|à transformer|ecris une chanson|écris une chanson|le refrain doit|si le mot anglais|composer une chanson|production chantee|production chantée|appliquer ensuite)\b/.test(folded)) return [];
-  if (/\b(?:ne chante jamais|pas a recopier|pas à recopier|jamais les consignes|bouton|bugs?|mot prompt|production suno|mix final d40|d40 v9|suno)\b/.test(folded)) return [];
+  if (/\b(?:ne chante jamais|pas a recopier|pas à recopier|jamais les consignes|bouton|bugs?|repete|perroquet|singeur|sortie compilateur|user|affichage|telephone|dezoom|clavier|credit|credits|cles?|key|llm|logs?|mot prompt|production suno|mix final d40|d40 v9|suno)\b/.test(folded)) return [];
 
   const labelMatch = line.match(/^(?:titre possible|titre|theme|thème|images?|matiere utile|matière utile)\s*:?\s*(.+)$/i);
   if (labelMatch) line = cleanOneLine(labelMatch[1], '', 300);
