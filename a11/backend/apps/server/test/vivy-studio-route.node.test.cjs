@@ -262,6 +262,34 @@ test('Vivy chat returns a Suno prompt instead of stale opinion fallback', async 
   assert.doesNotMatch(result.assistant, /Ford|Shane/i);
 });
 
+test('Vivy Suno prompt keeps the new generation songwriting context instead of truncating it', async () => {
+  const result = await buildVivyAiChat({
+    mode: 'chat',
+    conversationId: 'vivy-new-generation-context',
+    message: 'tu peux faire le prompt chanson/musique ?',
+    history: [
+      { role: 'user', content: 'parfait quand tu sens prête fais une chanson sur la nouvelle génération et ses comportements' },
+      { role: 'assistant', content: 'Je déclenche une recherche web et je te donne des résultats utiles.' },
+      { role: 'user', content: 'une chanson qui colle a la peau de ces jeunes qui ont grandient différemment' },
+      { role: 'assistant', content: 'Je sens que tu veux quelque chose de profond.' },
+      { role: 'user', content: "ils ont grandit dans une diode électronique, privé de l'aventure de sortir sans savoir où aller, de l'impossibilité de ne pas être jugés sur les réseaux sociaux, de devoir s'affirmer avec leurs idéaux" },
+      { role: 'assistant', content: 'Je commence à voir les contours.' },
+      { role: 'user', content: 'oui tu es sur le bon fil, peut être on pourrait parler de leurs intelligence hors norme incomparable' },
+      { role: 'assistant', content: 'Je prends ça comme une vraie discussion.' },
+    ],
+  }, {
+    user: { id: 'vivy-new-generation-context-test' },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.match(result.assistant, /Prompt Suno:/i);
+  assert.match(result.assistant, /nouvelle g[ée]n[ée]ration|jeunes/i);
+  assert.match(result.assistant, /diode|r[ée]seaux|intelligence|id[ée]aux/i);
+  assert.doesNotMatch(result.assistant, /, de l\./i);
+  assert.doesNotMatch(result.assistant, /R[ée]sultats utiles|Google Traduction|Musely/i);
+});
+
 test('Vivy ElevenLabs instrumental prompt stays within the provider contract and omits lyrics', () => {
   const longLyrics = `[Intro - Vivy]\n(Soft piano + léger battement de tambour)\n${'Dans les ténèbres, je cherche la lumière.\n'.repeat(140)}`;
   const prompt = buildVivyMusicPrompt({
@@ -2155,6 +2183,28 @@ test('Vivy chat song mode exposes clean publicLyrics instead of an agent handoff
   assert.doesNotMatch(result.publicLyrics, /\*\*Titre\s*:\*\*|\*\*Intention\s*:\*\*|\*\*Rimes/i);
 });
 
+test('Vivy song fallback does not sing provider prompt fragments', async () => {
+  const result = await buildVivyAiChat({
+    mode: 'chat',
+    conversationId: 'vivy-prompt-fragment-not-lyrics',
+    message: "j'ai pas toute la réponse, tu peux envoyer le reste avec les paroles ?",
+    history: [
+      { role: 'user', content: 'parfait quand tu sens prête fais une chanson sur la nouvelle génération et ses comportements' },
+      { role: 'user', content: "ils ont grandit dans une diode électronique, privé de l'aventure de sortir sans savoir où aller, de l'impossibilité de ne pas être jugés sur les réseaux sociaux, de devoir s'affirmer avec leurs idéaux" },
+      { role: 'user', content: 'oui tu es sur le bon fil, peut être on pourrait parler de leurs intelligence hors norme incomparable' },
+      { role: 'assistant', content: 'Prompt Suno:\nFrench original vocal production, structured rhymed lyrics, sung vocals. Theme: original song inspired by aventure de sortir sans savoir où aller, de l.' },
+    ],
+  }, {
+    user: { id: 'vivy-prompt-fragment-not-lyrics-test' },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'song');
+  assert.match(result.assistant, /\[(Chorus|Refrain|Verse|Couplet)/i);
+  assert.doesNotMatch(result.assistant, /original song inspired|French original vocal production|structured rhymed lyrics/i);
+  assert.doesNotMatch(result.assistant, /aventure de sortir sans savoir où aller, de l\./i);
+});
+
 test('Vivy public lyrics enforce requested singer tags when provider output forgets them', () => {
   const result = buildVivyPublicLyrics({
     mode: 'song',
@@ -2629,17 +2679,26 @@ On redémarre l'âme. Ça va ?`;
   assert.doesNotMatch(result.assistant, /MCP veut dire Model Context Protocol|Neo4j|ENTERA|GHOST88/i);
 });
 
-test('Vivy keeps the full 24-message browser history', () => {
-  const history = Array.from({ length: 24 }, (_, index) => ({
+test('Vivy keeps the full 36-message browser history', () => {
+  const history = Array.from({ length: 36 }, (_, index) => ({
     role: index % 2 === 0 ? 'user' : 'assistant',
     content: `tour-${index + 1}`,
   }));
 
   const normalized = normalizeVivyChatHistory(history);
 
-  assert.equal(normalized.length, 24);
+  assert.equal(normalized.length, 36);
   assert.equal(normalized[0].content, 'tour-1');
-  assert.equal(normalized.at(-1).content, 'tour-24');
+  assert.equal(normalized.at(-1).content, 'tour-36');
+});
+
+test('Vivy frontend sends a wider songwriting history window', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+
+  assert.match(appSource, /const A11_MAX_HISTORY_MESSAGES = 36/);
 });
 
 test('Vivy keeps complete song outputs beyond the former 5000 character ceiling', () => {

@@ -98,6 +98,8 @@ function looksLikeVivySongUiNoiseLine(line = '') {
   if (/^(vivy|vous|accueil|discussion|menu|voix|chanson|scene|scène|fichier|envoyer|copier|partager|defaut|défaut|audio perso|importer|ptt)$/.test(folded)) return true;
   if (/^(vivy_song_production|vivy_studio_handoff|vivy_production|vivy_voice_calibration|vivy_scene_share|vivy song production|vivy studio handoff|vivy production|vivy voice calibration|vivy scene share)\b/.test(folded)) return true;
   if (/^vivy_(?:music_generation|production_status)\b/.test(folded)) return true;
+  if (/\b(prompt suno|original song inspired by|french original vocal production|structured rhymed lyrics|sung vocals|no spoken narration|no copyrighted melody|no celebrity voice imitation)\b/.test(folded)) return true;
+  if (/^(theme|style)\s*:/.test(folded) && /\b(original song|suno|lyrics|vocals|production)\b/.test(folded)) return true;
   if (/^(oui je reste en discussion libre|je capte|je ne transforme pas|je vois l idee|ce que je prends surtout|je reponds au fond|la voix vivy par defaut|idee rangee dans la memoire vivy)\b/.test(folded)) return true;
   if (/^(c est un bon debut|je vois que tu as deja commence|voici une proposition|voici un exemple|les saint seiya|pour ecrire une chanson|pour écrire une chanson|tu pourrais|pour les paroles|en termes de melodie|qu en penses tu|est ce que cela te donne|est ce que tu veux)\b/.test(folded)) return true;
   if (/\b(j espere que (?:tu|vous|cette chanson|cela|ca)|n hesite pas a|n hesitez pas|feedbacks?|modifications? si necessaire)\b/.test(folded)) return true;
@@ -111,6 +113,7 @@ function looksLikeVivySongUiNoiseLine(line = '') {
   if (/^-\s*(kaen44|vivy|a11|ekko|pink-ward)\s*:/.test(folded)) return true;
   if (/^-\s*(source|direction sonore|titre|rimes|motif|structure|intention|artistes coches|artistes cochés|distribution vocale|outil voix actif|prosodie interne|nombre de chanteurs|tags obligatoires|intro|couplet|pre-refrain|pré-refrain|refrain guide|pont|final|role|rôle|sortie simple possible)\b/.test(folded)) return true;
   if (/^(continue|continuer|reprends|poursuis|compl[èe]te)\s+(les\s+)?(paroles|lyrics|couplets?|refrain|rap)\b/.test(folded)) return true;
+  if (/\b(envoie|envois|envoyer|donne|donnes|sort|termine|fais)\b.{0,100}\b(reste|suite|paroles|lyrics)\b/.test(folded)) return true;
   if (/^(ex\s*:|exemple\s*:|créer vraie chanson suno|creer vraie chanson suno|oublier cle suno|oublier clé suno|preparer chanson|préparer chanson|demander a vivy|demander à vivy|ouvrir a11|sauver dans a11|kaen44)$/.test(folded)) return true;
 
   return false;

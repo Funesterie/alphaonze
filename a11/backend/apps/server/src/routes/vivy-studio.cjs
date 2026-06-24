@@ -87,6 +87,11 @@ const MODES = new Set(['voice', 'song', 'share']);
 const CHAT_MODES = new Set(['chat', 'voice', 'song', 'share']);
 const VIVY_CHAT_MAX_CHARS = 12000;
 const VIVY_CHAT_SONG_MAX_TOKENS_DEFAULT = 6000;
+const VIVY_CHAT_HISTORY_MAX_MESSAGES = 36;
+const VIVY_CHAT_HISTORY_ENTRY_MAX_CHARS = 1200;
+const VIVY_USER_HISTORY_MAX_MESSAGES = 18;
+const VIVY_USER_HISTORY_ENTRY_MAX_CHARS = 900;
+const VIVY_SONG_HISTORY_MAX_CHARS = 4800;
 const VIVY_LOCAL_CONTEXT_SKIP_DIRS = new Set([
   '.git',
   '.codex-tmp',
@@ -202,8 +207,8 @@ function resolveVivyChatMode(input = {}, message = '') {
   const rawMode = cleanOneLine(input.mode, '', 24);
   if (rawMode && parseVivyChatMode(rawMode) !== 'chat') return parseVivyChatMode(rawMode);
   if (looksLikeCompleteLyrics(message)) return 'song';
-  if (rawMode) return 'chat';
   if (isDirectSongwritingRequest(message)) return 'song';
+  if (rawMode) return 'chat';
   return inferVivyChatMode(cleanVivyMessageForIntent(message));
 }
 
@@ -1908,10 +1913,10 @@ function buildVivySystemPrompt(mode, language, input) {
 function normalizeVivyChatHistory(history) {
   if (!Array.isArray(history)) return [];
   return history
-    .slice(-24)
+    .slice(-VIVY_CHAT_HISTORY_MAX_MESSAGES)
     .map((entry) => {
       const role = String(entry?.role || '').toLowerCase() === 'assistant' ? 'assistant' : 'user';
-      const content = cleanText(entry?.content, 1200);
+      const content = cleanText(entry?.content, VIVY_CHAT_HISTORY_ENTRY_MAX_CHARS);
       return content ? { role, content } : null;
     })
     .filter(Boolean);
@@ -2474,32 +2479,61 @@ function inferVivySunoPromptArtists(value = '') {
   return [...new Set(artists)];
 }
 
+function isVivySunoPromptMetaLine(line = '') {
+  const folded = foldTextForLookup(line);
+  if (!folded) return true;
+  if (/^(prompt|prompt suno|style|theme)\s*:/.test(folded)) return true;
+  if (/\b(original song inspired by|french original vocal production|structured rhymed lyrics|sung vocals|no spoken narration|no copyrighted melody|no celebrity voice imitation)\b/.test(folded)) return true;
+  if (/\b(resultats utiles|recherche web|google traduction|musely|source officielle|sources officielles)\b/.test(folded)) return true;
+  if (/^(je pense|bah donne|donne|donnes|juste|prompt|qu en penses|ca me parait|ça me parait|trop rapide|vous|copier)\b/.test(folded)) return true;
+  return /\b(prompt|suno)\b/.test(folded) && !/\b(chanson|musique|paroles|theme|thème)\b/.test(folded);
+}
+
+function scoreVivySunoPromptThemeCandidate(line = '', currentMessage = '') {
+  const folded = foldTextForLookup(line);
+  if (!folded) return -999;
+  let score = Math.min(70, Math.floor(String(line).length / 4));
+  if (/\b(nouvelle generation|jeunes|grandit|grandi|generation|comportements)\b/.test(folded)) score += 90;
+  if (/\b(diode|electronique|reseaux|juges|jugement|ideaux|intelligence|hors norme|incomparable|aventure|sortir|savoir ou aller|liberte|affirm|peau)\b/.test(folded)) score += 40;
+  if (/\b(film|torque|moto|motard|biker|route|moteur|vitesse|asphalte)\b/.test(folded)) score += 25;
+  if (/\b(fais|fait|ecris|ecrit|compose|genere|cree|crée|donne|donnes|prompt|suno|copie|colle|tu peux)\b/.test(folded)) score -= 55;
+  if (folded === foldTextForLookup(currentMessage)) score -= 35;
+  if (/[.!?…]$/.test(String(line).trim())) score += 8;
+  return score;
+}
+
 function extractVivySunoPromptTheme(message = '', historyText = '') {
-  const combined = compactUniqueLines([historyText, message], 1800);
+  const combined = compactUniqueLines([historyText, message], VIVY_SONG_HISTORY_MAX_CHARS);
   const filmMatch = combined.match(/\bfilm\s+["'“”]?([^"'“”\r\n?.!,;:]{2,80})/i);
   if (filmMatch) {
     return cleanOneLine(`le film ${filmMatch[1]}`, 'une course nocturne', 120);
   }
 
-  const quoted = combined.match(/["'“”]([^"'“”\r\n]{2,90})["'“”]/);
+  const quoted = combined.match(/["“”]([^"“”\r\n]{2,90})["“”]/);
   if (quoted && /\b(prompt|suno|musique|chanson|film|sur)\b/i.test(combined)) {
     return cleanOneLine(quoted[1], 'une course nocturne', 120);
   }
 
-  const candidates = sanitizeVivySongMaterial(combined, 1200)
+  const candidates = sanitizeVivySongMaterial(combined, VIVY_SONG_HISTORY_MAX_CHARS)
     .split(/\n+/)
-    .map((line) => cleanOneLine(line, '', 180))
+    .map((line) => cleanOneLine(line, '', 260))
     .filter(Boolean)
-    .filter((line) => {
-      const folded = foldTextForLookup(line);
-      return !/^(je pense|bah donne|donne|donnes|juste|prompt|qu en penses|ca me parait|ça me parait|trop rapide|vous|copier)\b/.test(folded)
-        && !/\b(prompt|suno)\b/.test(folded);
-    });
-  return cleanOneLine(candidates[0], 'une course nocturne', 120);
+    .filter((line) => !isVivySunoPromptMetaLine(line))
+    .map((line, index) => ({
+      line,
+      index,
+      score: scoreVivySunoPromptThemeCandidate(line, message),
+    }))
+    .filter((candidate) => candidate.score > -30)
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, 3)
+    .sort((a, b) => a.index - b.index)
+    .map((candidate) => candidate.line);
+  return cleanOneLine(candidates.join('; '), 'une course nocturne', 360);
 }
 
 function buildVivySunoPromptChatReply({ message = '', historyText = '', fileLine = '' } = {}) {
-  const source = compactUniqueLines([historyText, message], 1800);
+  const source = compactUniqueLines([historyText, message], VIVY_SONG_HISTORY_MAX_CHARS);
   const theme = extractVivySunoPromptTheme(message, historyText);
   const foldedTheme = foldTextForLookup(`${theme}\n${source}`);
   const artists = inferVivySunoPromptArtists(source);
@@ -2863,6 +2897,8 @@ function isDirectSongwritingRequest(message = '') {
     || /\b(transforme|structure|arrange|mets|met)\b.{0,100}\b(chanson|musique|son|paroles|lyrics|refrain|couplet)\b/.test(normalized)
     || /\b(continue|continuer|reprends|reprendre|poursuis|poursuivre|complete|complète|termine|enchaîne|enchaine)\b.{0,90}\b(paroles|lyrics|couplet|couplets|refrain|rap)\b/.test(normalized)
     || /\b(paroles|lyrics|couplet|couplets|refrain|rap)\b.{0,90}\b(continue|continuer|reprends|reprendre|poursuis|poursuivre|complete|complète|termine|enchaîne|enchaine)\b/.test(normalized)
+    || /\b(envoie|envois|envoyer|donne|donnes|sort|termine|fais)\b.{0,100}\b(reste|suite|paroles|lyrics)\b/.test(normalized)
+    || /\b(reste|suite|paroles|lyrics)\b.{0,100}\b(envoie|envois|envoyer|donne|donnes|sort|termine|fais)\b/.test(normalized)
     || /\b(chanson|paroles|lyrics)\b.{0,80}\b(structure|refrain|couplet|rime|rimes)\b/.test(normalized)
     || /\b(vivy_intent|instruction)\b.{0,180}\b(chanson|paroles|refrain|couplet|composition)\b/.test(normalized);
 }
@@ -3031,7 +3067,7 @@ function buildVivyDirectSongReply(input = {}) {
   if (completeLyrics) {
     return buildVivyStructuredLyrics({ ...input, songText: completeLyrics });
   }
-  const historyText = sanitizeVivySongMaterial(getVivyUserHistoryText(input.history), 1600);
+  const historyText = sanitizeVivySongMaterial(getVivyUserHistoryText(input.history), VIVY_SONG_HISTORY_MAX_CHARS);
   const material = stripVivyAscii4SoundTokens(compactUniqueLines([
     historyText,
     input.message,
@@ -3074,8 +3110,8 @@ function normalizeVivyCapabilityText(value = '') {
 function getVivyHistoryText(history = []) {
   if (!Array.isArray(history)) return '';
   return history
-    .slice(-6)
-    .map((entry) => cleanText(entry?.content, 420))
+    .slice(-12)
+    .map((entry) => cleanText(entry?.content, 620))
     .filter(Boolean)
     .join('\n');
 }
@@ -3083,9 +3119,9 @@ function getVivyHistoryText(history = []) {
 function getVivyUserHistoryText(history = []) {
   if (!Array.isArray(history)) return '';
   return history
-    .slice(-8)
     .filter((entry) => String(entry?.role || '').toLowerCase() !== 'assistant')
-    .map((entry) => cleanText(entry?.content, 420))
+    .slice(-VIVY_USER_HISTORY_MAX_MESSAGES)
+    .map((entry) => cleanText(entry?.content, VIVY_USER_HISTORY_ENTRY_MAX_CHARS))
     .filter(Boolean)
     .join('\n');
 }
@@ -3261,15 +3297,19 @@ function buildVivyChat(input) {
   const mode = resolveVivyChatMode(input, message);
   const files = normalizeVivyFiles(input);
   const language = resolveVivyResponseLanguage(input);
-  const history = Array.isArray(input.history)
-    ? input.history
-      .slice(-6)
-      .map((entry) => `${cleanOneLine(entry?.role, 'user', 24)}: ${cleanText(entry?.content, 260)}`)
+  const normalizedHistory = normalizeVivyChatHistory(input.history);
+  const historyLines = mode === 'song'
+    ? getVivyUserHistoryText(normalizedHistory)
+      .split(/\n+/)
+      .map((line) => cleanText(line, VIVY_USER_HISTORY_ENTRY_MAX_CHARS))
       .filter(Boolean)
-    : [];
+    : normalizedHistory
+      .slice(-8)
+      .map((entry) => `${cleanOneLine(entry?.role, 'user', 24)}: ${cleanText(entry?.content, 420)}`)
+      .filter(Boolean);
 
   if (mode === 'chat') {
-    const assistant = buildVivyFreeformChatReply({ message, files, history: input.history });
+    const assistant = buildVivyFreeformChatReply({ message, files, history: normalizedHistory });
     return {
       ok: true,
       service: 'vivy-chat',
@@ -3291,9 +3331,9 @@ function buildVivyChat(input) {
     ...input,
     mode: MODES.has(mode) ? mode : 'song',
     songSource: input.songSource || 'Conversation',
-    songText: mode === 'song' ? compactUniqueLines([history.join('\n'), intentMessage || message], VIVY_SONG_MAX_CHARS) : input.songText,
-    voiceInstruction: mode === 'voice' ? compactUniqueLines([history.join('\n'), intentMessage || message], 1200) : input.voiceInstruction,
-    shareInstruction: mode === 'share' ? compactUniqueLines([history.join('\n'), intentMessage || message], 1200) : input.shareInstruction,
+    songText: mode === 'song' ? compactUniqueLines([historyLines.join('\n'), intentMessage || message], VIVY_SONG_MAX_CHARS) : input.songText,
+    voiceInstruction: mode === 'voice' ? compactUniqueLines([historyLines.join('\n'), intentMessage || message], 1200) : input.voiceInstruction,
+    shareInstruction: mode === 'share' ? compactUniqueLines([historyLines.join('\n'), intentMessage || message], 1200) : input.shareInstruction,
     shareToken: undefined,
     shareTokenPresent: false,
   });
@@ -3307,8 +3347,8 @@ function buildVivyChat(input) {
     : '';
   const assistantDraft = mode === 'song'
     ? buildVivyPublicLyrics(
-      { ...input, message, files, history },
-      buildVivyDirectSongReply({ ...input, message, files, history }),
+      { ...input, message, files, history: normalizedHistory },
+      buildVivyDirectSongReply({ ...input, message, files, history: normalizedHistory }),
       production.publicLyrics
     )
     : [

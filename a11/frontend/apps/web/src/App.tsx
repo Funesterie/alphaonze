@@ -1553,7 +1553,7 @@ function buildClientAssistantFallback(userText = "", surface: FunesterieSurface 
 
 const A11_MAX_CONTEXT_CHARS = 48_000;
 const A11_MAX_MESSAGE_CHARS = 12_000;
-const A11_MAX_HISTORY_MESSAGES = 18;
+const A11_MAX_HISTORY_MESSAGES = 36;
 
 function trimChatContentForContext(content: string, maxChars: number) {
   const text = String(content || "").trim();
