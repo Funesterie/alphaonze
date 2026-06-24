@@ -2439,6 +2439,23 @@ function isVivySunoPromptRequest(message = '', historyText = '') {
   return (asksPrompt && musicTarget) || directSuno || promptForMusic;
 }
 
+function isVivyMusicGenerationRepairMessage(message = '') {
+  const current = foldTextForLookup(message);
+  if (!current) return false;
+  const musicSignal = /\b(suno|musique|music|chanson|son|mp3|audio|voix|generation|generer|génération|générer)\b/.test(current);
+  const repairSignal = /\b(bug|bugs|marche pas|sort pas|sorti pas|sortie|sorties|fallback|secours|nul|nulle|casse|cassé|cassee|cassée|fix|corrige|corriger|repare|répare|proche|aleatoire|aléatoire|remplace|remplacer)\b/.test(current);
+  return musicSignal && repairSignal;
+}
+
+function buildVivyMusicGenerationRepairReply({ fileLine = '' } = {}) {
+  return cleanText([
+    "Oui, là je vois le vrai souci: quand Suno n'a pas encore une voix vérifiée, Vivy doit garder une chanson chantée cohérente au lieu de tomber automatiquement sur une voix de secours qui sonne faux.",
+    "Le bon comportement: Suno chante la piste complète avec une direction vocale proche de Djeff, A11, K44 ou Vivy; si une voix Suno vérifiée existe, elle est utilisée directement.",
+    "Et pour les générations qui semblent vides, Vivy doit récupérer le MP3 même quand Suno renvoie le lien audio sous un autre nom, afin que la sortie apparaisse dès qu'elle est prête.",
+    fileLine,
+  ].filter(Boolean).join('\n\n'), 1600);
+}
+
 function isVivyPromptConfusionPing(message = '') {
   const normalized = foldTextForLookup(message)
     .replace(/[.!?]+$/g, '')
@@ -2556,6 +2573,9 @@ function buildVivyGeneralChatFallbackReply({ message = '', current = '', history
   const currentFolded = foldTextForLookup(message);
   const folded = foldTextForLookup(`${historyText}\n${message}`);
   const angle = (() => {
+    if (isVivyMusicGenerationRepairMessage(message)) {
+      return buildVivyMusicGenerationRepairReply();
+    }
     if (/\b(codex|kiro|claude|chatgpt|local)\b/.test(currentFolded)
       && /\b(que|quoi|dire|message|transmets|rapporte|previens|préviens)\b/.test(currentFolded)) {
       return [
@@ -2719,6 +2739,10 @@ function buildVivyFreeformChatReply({ message = '', files = [], history = [] } =
     ? message
     : (isVivyPromptConfusionPing(message) && isVivySunoPromptRequest(lastUserMessage, historyText) ? lastUserMessage : '');
 
+  if (isVivyMusicGenerationRepairMessage(message)) {
+    return buildVivyMusicGenerationRepairReply({ fileLine });
+  }
+
   if (sunoPromptSource) {
     return buildVivySunoPromptChatReply({
       message: sunoPromptSource,
@@ -2801,15 +2825,18 @@ function buildVivyInternalTuningReply({ message = '', history = [], language = '
     webSearchMode: 'only_when_needed_or_explicit',
   };
   const philosophyLine = /\b(cerveau|interpretation|donnee|donnees|yeux|oreilles|bouche|signaux)\b/.test(context)
-    ? "Et sur ton idée juste avant: oui, tout passe par l'interprétation des signaux. Je dois donc traiter tes phrases comme du sens vivant, pas comme des cases à cocher."
+    ? "Oui, je vois ce que tu veux dire: les yeux, les oreilles et la bouche ne suffisent pas; c'est le cerveau qui transforme les signaux en sens."
     : '';
-  const assistant = [
-    "Oui. Je me recentre.",
-    "Je réponds à ce que tu dis, pas à une case technique.",
-    "Tant que tu ne me demandes pas clairement des paroles, un refrain ou un couplet, je reste en discussion normale et je réponds au fond.",
-    philosophyLine,
-    "On repart sur le vivant de la conversation.",
-  ].filter(Boolean).join('\n\n');
+  const assistant = philosophyLine
+    ? [
+      philosophyLine,
+      "Donc dans notre échange, le plus important est de répondre à l'idée vivante que tu poses: l'interprétation, la sensation, le rapport au réel.",
+      "Si ça aide, on peut repartir de là: qu'est-ce qui change quand le cerveau reconstruit le monde au lieu de le recevoir brut ?",
+    ].join('\n\n')
+    : [
+      "Oui, je te suis.",
+      "Sur le fond, je dois répondre à ce que tu poses maintenant, avec le contexte, puis proposer une suite seulement si elle apporte quelque chose.",
+    ].join('\n\n');
 
   return {
     ok: true,
@@ -2818,15 +2845,8 @@ function buildVivyInternalTuningReply({ message = '', history = [], language = '
     assistant: cleanText(assistant, 1800),
     content: cleanText(assistant, 1800),
     summary: "Vivy reste en discussion libre et répond directement au fond.",
-    actions: [
-      { id: 'vivy_conversation_focus', label: 'Conversation recentrée', target: 'vivy-session-settings', ready: true },
-      { id: 'vivy_song_explicit_only', label: 'Chanson explicite seulement', target: 'vivy-song-mode', ready: true },
-    ],
-    routing: [
-      'Vivy: répondre en chat libre quand Envoyer est utilisé.',
-      'Vivy: réserver les paroles structurées au bouton Chanson ou à une demande explicite.',
-      'A11/MCP: garder les outils bornés, sans commande arbitraire.',
-    ],
+    actions: [],
+    routing: [],
 
     tokenStored: false,
     writesByDefault: false,
@@ -4020,6 +4040,15 @@ function buildVivySunoLyrics(input = {}) {
   });
 }
 
+function wantsVivyExternalVoiceMix(input = {}) {
+  return (input.forceExternalVoiceMix === true
+    || input.externalVoiceMix === true
+    || envFlag('VIVY_FORCE_EXTERNAL_VOICE_MIX'))
+    && input.allowExternalVoiceMix !== false
+    && input.instrumental !== true
+    && input.forceInstrumental !== true;
+}
+
 function buildVivySunoPayload(input = {}, req = null) {
   const artistCast = buildVivySongArtistCast(input);
   const preserveSelectedVoice = input.preserveSelectedVoice === true;
@@ -4036,9 +4065,7 @@ function buildVivySunoPayload(input = {}, req = null) {
     && input.forceInstrumental !== true;
   const useExternalVoiceMix = preserveSelectedVoice
     && !useVerifiedVivyVoice
-    && input.allowExternalVoiceMix !== false
-    && input.instrumental !== true
-    && input.forceInstrumental !== true;
+    && wantsVivyExternalVoiceMix(input);
   const prosodyPlan = buildVivyProsodyPlan(input);
   const prosodyStyle = buildVivyProsodyStyleHint(prosodyPlan);
   const rawTitleMaterial = sanitizeVivySongMaterial(stripVivyAscii4SoundTokens(input.songText || input.theme || input.prompt), 1200);
@@ -4171,7 +4198,23 @@ function collectSunoTracks(value, tracks = []) {
     return tracks;
   }
   const audioUrl = cleanOneLine(
-    value.audioUrl || value.audio_url || value.streamAudioUrl || value.stream_audio_url || value.sourceAudioUrl || value.source_audio_url,
+    value.audioUrl
+      || value.audio_url
+      || value.streamAudioUrl
+      || value.stream_audio_url
+      || value.sourceAudioUrl
+      || value.source_audio_url
+      || value.sourceStreamAudioUrl
+      || value.source_stream_audio_url
+      || value.downloadUrl
+      || value.download_url
+      || value.musicUrl
+      || value.music_url
+      || value.songUrl
+      || value.song_url
+      || value.playUrl
+      || value.play_url
+      || value.url,
     '',
     1000
   );
@@ -4421,11 +4464,9 @@ async function requestSunoMusic(input = {}, req = null) {
   const body = buildVivySunoPayload(input, req);
   const voiceMode = body.personaModel === 'voice_persona'
     ? 'suno_voice'
-    : body.instrumental === true
-      && input.preserveSelectedVoice === true
-      && input.allowExternalVoiceMix !== false
-      && input.instrumental !== true
-      && input.forceInstrumental !== true
+    : input.preserveSelectedVoice === true
+      && wantsVivyExternalVoiceMix(input)
+      && body.instrumental === true
       ? 'external_mix'
       : 'suno_generated';
   const response = await fetch(`${getSunoBaseUrl()}/generate`, {

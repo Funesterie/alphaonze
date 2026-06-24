@@ -1162,6 +1162,70 @@ test('GET /api/vivy/studio/jobs/:taskId accepts personal Suno session key for no
   }
 });
 
+test('GET /api/vivy/studio/jobs/:taskId recognizes Suno media returned as url field', async () => {
+  const previousEnv = {
+    VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
+    VIVY_SUNO_BASE_URL: process.env.VIVY_SUNO_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const founderAuth = (req, res, next) => {
+    if (req.headers.authorization === 'Bearer vivy-founder-token') {
+      req.user = { id: 'djeff', username: 'Djeff', roles: ['founder'] };
+      return next();
+    }
+    return res.status(401).json({ ok: false, error: 'A11_JWT_Missing', message: 'Connexion requise' });
+  };
+
+  process.env.VIVY_SUNO_API_KEY = 'test-suno-key';
+  process.env.VIVY_SUNO_BASE_URL = 'https://api.suno.test/api/v1';
+  global.fetch = async (url, options = {}) => {
+    if (String(url) === 'https://api.suno.test/api/v1/generate/record-info?taskId=sunourlfieldtask') {
+      assert.equal(options.headers.Authorization, 'Bearer test-suno-key');
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            code: 200,
+            data: {
+              taskId: 'sunourlfieldtask',
+              status: 'SUCCESS',
+              response: {
+                sunoData: [{
+                  title: 'Vivy URL Field',
+                  url: 'https://cdn.suno.test/vivy-url-field.mp3',
+                }],
+              },
+            },
+          };
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer((app) => {
+      app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT: founderAuth }));
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/vivy/studio/jobs/sunourlfieldtask`, {
+        headers: { Authorization: 'Bearer vivy-founder-token' },
+      });
+      const json = await response.json();
+      assert.equal(response.status, 200);
+      assert.equal(json.ok, true);
+      assert.equal(json.state, 'done');
+      assert.equal(json.media.audioUrl, 'https://cdn.suno.test/vivy-url-field.mp3');
+    });
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('song mode accepts natural aliases from client prompts', () => {
   const result = buildVivyStudioProduction({
     mode: 'song',
@@ -1235,7 +1299,7 @@ test('Vivy frontend prioritizes publicLyrics and keeps voice-test TTS on short p
   assert.doesNotMatch(voiceTestBlock, /VIVY_STUDIO_HANDOFF|brief|buildVivyStudioBrief/);
 });
 
-test('Vivy frontend requests selected-voice Suno mixes by default', () => {
+test('Vivy frontend requests Suno-sung selected voice direction by default', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
     'utf8'
@@ -1253,11 +1317,12 @@ test('Vivy frontend requests selected-voice Suno mixes by default', () => {
   assert.match(songBlock, /setVivyMedia\(null\)/);
   assert.doesNotMatch(songBlock, /ttsSpeak\(/);
   assert.match(songBlock, /preserveSelectedVoice:\s*true/);
-  assert.match(songBlock, /allowExternalVoiceMix:\s*true/);
+  assert.match(songBlock, /allowExternalVoiceMix:\s*false/);
   assert.match(songBlock, /createVivySongVoicePreview\(/);
   assert.match(songBlock, /createVivyMultiVoicePreview\(/);
   assert.match(songBlock, /mixVivyStudioPreview\(/);
   assert.match(songBlock, /voiceMode/);
+  assert.match(songBlock, /\|\| "suno_generated"/);
   assert.match(prepareBlock, /setVivyMedia\(null\)/);
   assert.match(prepareBlock, /createVivySongVoicePreview\(/);
   assert.match(prepareBlock, /createVivyMultiVoicePreview\(/);
@@ -1277,7 +1342,7 @@ test('Vivy frontend requests selected-voice Suno mixes by default', () => {
   assert.match(ttsOptionsBlock, /activeVoiceProfile\.id\s*===\s*['"]vivy-sing['"]/);
   assert.match(appSource, /Créer la chanson complète avec Suno/);
   assert.match(appSource, /voiceMode === ['"]external_mix['"]/);
-  assert.match(appSource, /sinon elle génère Suno en instrumental et mixe la voix sélectionnée/);
+  assert.match(appSource, /sinon Suno chante avec la direction vocale demandée/);
   assert.doesNotMatch(appSource, /Suno reçoit les paroles et le style, pas le timbre de la voix sélectionnée/);
 });
 
@@ -1328,7 +1393,7 @@ test('Vivy deployment upgrades a reused production environment to Suno V5.5', ()
   assert.match(deploySource, /printf 'VIVY_SUNO_MODEL=V5_5\\n'/);
 });
 
-test('Suno payload switches to instrumental mix when selected voice must be preserved', () => {
+test('Suno payload keeps sung Suno vocals by default when selected voice has no persona id', () => {
   const previousVoiceId = process.env.VIVY_SUNO_VOICE_ID;
   delete process.env.VIVY_SUNO_VOICE_ID;
   try {
@@ -1339,19 +1404,21 @@ test('Suno payload switches to instrumental mix when selected voice must be pres
       preserveSelectedVoice: true,
     });
 
-    assert.equal(payload.instrumental, true);
+    assert.equal(payload.instrumental, false);
     assert.equal(payload.model, 'V5_5');
     assert.equal(payload.personaId, undefined);
     assert.equal(payload.personaModel, undefined);
-    assert.match(payload.style, /instrumental backing track only/i);
-    assert.match(payload.negativeTags, /vocals, singing/i);
+    assert.match(payload.style, /sung vocals/i);
+    assert.match(payload.style, /Vivy vocal lead/i);
+    assert.doesNotMatch(payload.style, /instrumental backing track only/i);
+    assert.doesNotMatch(payload.negativeTags, /vocals, singing/i);
   } finally {
     if (previousVoiceId === undefined) delete process.env.VIVY_SUNO_VOICE_ID;
     else process.env.VIVY_SUNO_VOICE_ID = previousVoiceId;
   }
 });
 
-test('Suno payload keeps quartet casts as instrumental backing for official voice mix', () => {
+test('Suno payload keeps quartet casts as Suno-sung vocal directions by default', () => {
   const payload = buildVivySunoPayload({
     mode: 'song',
     songArtists: ['djeff', 'a11', 'k44', 'vivy'],
@@ -1359,14 +1426,14 @@ test('Suno payload keeps quartet casts as instrumental backing for official voic
     preserveSelectedVoice: true,
   });
 
-  assert.equal(payload.instrumental, true);
+  assert.equal(payload.instrumental, false);
   assert.match(payload.style, /4 distinct original vocalists/i);
-  assert.match(payload.style, /instrumental backing track only/i);
+  assert.doesNotMatch(payload.style, /instrumental backing track only/i);
   assert.match(payload.prompt, /\[Chorus - Tous\]/);
   assert.match(payload.prompt, /\[Tous\]/);
 });
 
-test('Suno payload can still opt out of external voice mix explicitly', () => {
+test('Suno payload can still opt into external voice mix explicitly', () => {
   const previousVoiceId = process.env.VIVY_SUNO_VOICE_ID;
   delete process.env.VIVY_SUNO_VOICE_ID;
   try {
@@ -1375,12 +1442,12 @@ test('Suno payload can still opt out of external voice mix explicitly', () => {
       songArtists: ['vivy'],
       songText: '[Refrain - Vivy]\n[Vivy]\nOn garde la lumière.',
       preserveSelectedVoice: true,
-      allowExternalVoiceMix: false,
+      forceExternalVoiceMix: true,
     });
 
-    assert.equal(payload.instrumental, false);
-    assert.match(payload.style, /sung vocals/i);
-    assert.doesNotMatch(payload.style, /instrumental backing track only/i);
+    assert.equal(payload.instrumental, true);
+    assert.match(payload.style, /instrumental backing track only/i);
+    assert.match(payload.negativeTags, /vocals, singing/i);
   } finally {
     if (previousVoiceId === undefined) delete process.env.VIVY_SUNO_VOICE_ID;
     else process.env.VIVY_SUNO_VOICE_ID = previousVoiceId;
@@ -2292,9 +2359,10 @@ test('Vivy can lower internal intent sensitivity from user feedback', async () =
   assert.equal(result.aiMode, 'deterministic_internal_tuning');
   assert.equal(result.settings?.chatIntentSensitivity, 'lowered');
   assert.equal(result.settings?.songStructureMode, 'explicit_only');
-  assert.match(result.assistant, /recentre|discussion normale|fond/i);
+  assert.match(result.assistant, /cerveau|interpr[ée]tation|signaux|donn[ée]es/i);
   assert.doesNotMatch(result.assistant, /intent|r[ée]glage|sensibilit[ée]|seuil|d[ée]tecteur/i);
-  assert.match(result.assistant, /chanson|paroles|refrain|couplet/i);
+  assert.doesNotMatch(result.assistant, /chanson|paroles|refrain|couplet/i);
+  assert.doesNotMatch(result.assistant, /recentre|discussion normale|case technique/i);
   assert.doesNotMatch(result.assistant, /^Je te suis\./);
   assert.doesNotMatch(result.assistant, /clique sur Chanson/i);
 });
@@ -2314,6 +2382,25 @@ test('Vivy tells Codex the actionable bug instead of returning generic filler', 
   assert.match(result.assistant, /Codex|Vivy|chat vivant|Envoyer/i);
   assert.doesNotMatch(result.assistant, /Je te r[ée]ponds directement et je garde le fil/i);
   assert.doesNotMatch(result.assistant, /baisse|sensibilit[ée]|seuil|d[ée]tecteur/i);
+});
+
+test('Vivy chat fallback answers music and voice generation bugs on topic', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-chat-music-voice-fallback-topic',
+    message: "le fallback voix sans suno c'est nul, fix pour que suno refasse avec ma voix ou laisse une voix proche, et la generation musique bug des fois ca sort pas",
+    history: [
+      { role: 'assistant', content: 'Je prends ça comme une vraie discussion: ton dernier message.' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.match(result.assistant, /Suno|voix|musique|g[ée]n[ée]ration|MP3/i);
+  assert.match(result.assistant, /proche|chant[ée]e|sortie|audio/i);
+  assert.doesNotMatch(result.assistant, /Je prends ça comme une vraie discussion/i);
+  assert.doesNotMatch(result.assistant, /Pour ce point, on avance simplement/i);
+  assert.doesNotMatch(result.assistant, /Le bon prochain pas/i);
+  assert.doesNotMatch(result.assistant, /intent|r[ée]glage|sensibilit[ée]|seuil|case technique/i);
 });
 
 test('Vivy song mode structures the same rap draft when Chanson is explicit', async () => {

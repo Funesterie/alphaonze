@@ -4870,9 +4870,19 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     return String(
       payload?.audioUrl
       || payload?.audio_url
+      || payload?.downloadUrl
+      || payload?.download_url
+      || payload?.url
       || payload?.media?.audioUrl
       || payload?.media?.audio_url
+      || payload?.media?.downloadUrl
+      || payload?.media?.download_url
       || payload?.media?.url
+      || payload?.musicJob?.media?.audioUrl
+      || payload?.musicJob?.media?.audio_url
+      || payload?.musicJob?.media?.downloadUrl
+      || payload?.musicJob?.media?.download_url
+      || payload?.musicJob?.media?.url
       || ""
     ).trim();
   }
@@ -5055,7 +5065,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         generateMusic: true,
         makeSong: true,
         preserveSelectedVoice: true,
-        allowExternalVoiceMix: true,
+        allowExternalVoiceMix: false,
         disableEmergencyMedia: true,
         durationSeconds: 45,
       });
@@ -5096,7 +5106,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         payloadAny?.mediaStatus?.voiceMode
         || payloadAny?.musicJob?.voiceMode
         || payloadAny?.media?.voiceMode
-        || "external_mix"
+        || "suno_generated"
       );
       let preparedMedia: VivyStudioMediaPreview = {
         kind: "audio" as const,
@@ -5775,7 +5785,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                 </button>
               </div>
               <p className="vivy-studio-provider-note">
-                Vivy utilise une voix Suno vérifiée si elle est configurée; sinon elle génère Suno en instrumental et mixe la voix sélectionnée.
+                Vivy utilise une voix Suno vérifiée si elle est configurée; sinon Suno chante avec la direction vocale demandée.
               </p>
             </>
           )}
