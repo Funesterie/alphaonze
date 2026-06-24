@@ -14,6 +14,7 @@ process.env.VIVY_CHAT_DISABLE_LLM = 'true';
 const {
   createVivyStudioRouter,
   buildVivyAiChat,
+  buildVivyConversationIdForSession,
   buildVivyDirectSongReply,
   buildVivyPublicLyrics,
   buildVivyStudioProduction,
@@ -28,6 +29,7 @@ const {
   buildVivySystemPrompt,
   buildVivySunoPayload,
   getVivySunoRuntimeStatus,
+  listVivyChatSessionsForUser,
   buildVivyWebSearchQuery,
   getVivyOpenAIConfig,
   isDirectSongwritingRequest,
@@ -2166,6 +2168,65 @@ test('Vivy memory context ignores old internal tuning chatter', () => {
   const context = buildVivyMemoryContext(userId, conversationId);
   assert.match(context, /liberté|fleurs|voix vivante/i);
   assert.doesNotMatch(context, /sensibilit[ée]|intent|chatIntentSensitivity|seuil|d[ée]tecteur/i);
+});
+
+test('Vivy memory context requires an explicit conversation id to avoid cross-session bleed', () => {
+  const userId = `user:vivy-memory-no-cross-${Date.now()}`;
+
+  addEpisode(userId, 'vivy_idea', 'Message: Session A parle de pluie et de scooter.', {
+    conversationId: 'vivy-session-a',
+  });
+  addEpisode(userId, 'vivy_idea', 'Message: Session B parle de fusée et de lune.', {
+    conversationId: 'vivy-session-b',
+  });
+
+  assert.equal(buildVivyMemoryContext(userId, ''), '');
+  assert.match(buildVivyMemoryContext(userId, 'vivy-session-a'), /pluie|scooter/i);
+  assert.doesNotMatch(buildVivyMemoryContext(userId, 'vivy-session-a'), /fusée|lune/i);
+});
+
+test('Vivy sessions API exposes account sessions separately for cross-device restore', async () => {
+  const userId = `vivy-session-sync-${Date.now()}`;
+  const verifyJWT = (req, _res, next) => {
+    req.user = { id: userId, username: 'VivySessionSync' };
+    next();
+  };
+
+  await buildVivyAiChat({
+    sessionId: 'pc-rock',
+    sessionName: 'Rock PC',
+    conversationId: buildVivyConversationIdForSession('pc-rock'),
+    message: 'Session PC: une chanson rock sur une route mouillée.',
+  }, { user: { id: userId, username: 'VivySessionSync' } });
+  await buildVivyAiChat({
+    sessionId: 'tel-lune',
+    sessionName: 'Téléphone lune',
+    conversationId: buildVivyConversationIdForSession('tel-lune'),
+    message: 'Session téléphone: une berceuse lunaire très douce.',
+  }, { user: { id: userId, username: 'VivySessionSync' } });
+
+  const stored = listVivyChatSessionsForUser(`user:${userId}`);
+  const pcSession = stored.find((session) => session.id === 'pc-rock');
+  const phoneSession = stored.find((session) => session.id === 'tel-lune');
+  assert.ok(pcSession);
+  assert.ok(phoneSession);
+  assert.match(JSON.stringify(pcSession.messages), /route mouillée/i);
+  assert.doesNotMatch(JSON.stringify(pcSession.messages), /lunaire/i);
+  assert.match(JSON.stringify(phoneSession.messages), /lunaire/i);
+  assert.doesNotMatch(JSON.stringify(phoneSession.messages), /route mouillée/i);
+
+  await withServer((app) => {
+    app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT }));
+  }, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/vivy/studio/sessions`, {
+      headers: VIVY_TEST_AUTH_HEADERS,
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.ok(payload.sessions.some((session) => session.id === 'pc-rock'));
+    assert.ok(payload.sessions.some((session) => session.id === 'tel-lune'));
+  });
 });
 
 test('Vivy uses the account language instead of guessing from draft text', async () => {

@@ -2700,6 +2700,8 @@ export type VivyStudioProductionInput = {
   text?: string;
   history?: Array<{ role: 'user' | 'assistant' | 'system'; content: string; ts?: string }>;
   conversationId?: string;
+  sessionId?: string;
+  sessionName?: string;
   files?: VivyChatFileAttachment[];
   voiceTool?: string;
   voiceInstruction?: string;
@@ -2827,6 +2829,28 @@ export type VivyStudioProductionResult = {
   message?: string;
 };
 
+export type VivyChatSessionMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  ts: string;
+};
+
+export type VivyChatSessionRecord = {
+  id: string;
+  name: string;
+  conversationId: string;
+  createdAt?: string;
+  updatedAt?: string;
+  messageCount?: number;
+  messages?: VivyChatSessionMessage[];
+};
+
+export type VivyChatSessionsResponse = {
+  ok: boolean;
+  sessions: VivyChatSessionRecord[];
+};
+
 export async function runVivyStudioProduction(
   input: VivyStudioProductionInput
 ): Promise<VivyStudioProductionResult> {
@@ -2907,6 +2931,8 @@ export async function chatWithVivy(
     mode?: VivyChatMode;
     language?: string;
     conversationId?: string;
+    sessionId?: string;
+    sessionName?: string;
     files?: VivyChatFileAttachment[];
   }
 ): Promise<VivyStudioProductionResult> {
@@ -2927,6 +2953,65 @@ export async function chatWithVivy(
     throw new Error(payload?.message || payload?.error || `Chat Vivy indisponible (${res.status})`);
   }
   return payload as VivyStudioProductionResult;
+}
+
+export async function fetchVivyChatSessions(): Promise<VivyChatSessionsResponse> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/sessions'), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Sessions Vivy indisponibles (${res.status})`);
+  }
+  return {
+    ok: true,
+    sessions: Array.isArray(payload?.sessions) ? payload.sessions : [],
+  };
+}
+
+export async function fetchVivyChatSession(sessionId: string): Promise<VivyChatSessionRecord> {
+  const safeSessionId = String(sessionId || 'default').trim() || 'default';
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/sessions/${encodeURIComponent(safeSessionId)}`), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Session Vivy indisponible (${res.status})`);
+  }
+  return payload.session as VivyChatSessionRecord;
+}
+
+export async function createVivyChatSessionOnServer(name: string): Promise<VivyChatSessionRecord> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/sessions'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({ name }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Création session Vivy impossible (${res.status})`);
+  }
+  return payload.session as VivyChatSessionRecord;
+}
+
+export async function deleteVivyChatSessionOnServer(sessionId: string): Promise<{ ok: boolean; cleared: number }> {
+  const safeSessionId = String(sessionId || '').trim();
+  if (!safeSessionId) return { ok: false, cleared: 0 };
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/sessions/${encodeURIComponent(safeSessionId)}`), {
+    method: 'DELETE',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Suppression session Vivy impossible (${res.status})`);
+  }
+  return { ok: true, cleared: Number(payload?.cleared ?? 0) };
 }
 
 export type Provider = "local" | "ollama" | "openai" | "groq";

@@ -1266,6 +1266,8 @@ function formatVivyWebResearchForPrompt(webSearch = {}) {
 function isVivyMemoryContextNoise(episode = {}) {
   const type = String(episode?.type || '');
   if (type === 'vivy_settings') return true;
+  if (type === 'vivy_chat_session') return true;
+  if (type === 'vivy_chat_message') return true;
   if (episode?.metadata?.internalTuning === true) return true;
 
   const folded = foldTextForLookup(episode?.content || '');
@@ -1280,6 +1282,7 @@ function buildVivyMemoryContext(userId, conversationId = '') {
   const result = getEpisodes(userId, { limit: 24, days: 45 });
   if (!result?.ok || !Array.isArray(result.episodes) || !result.episodes.length) return '';
   const normalizedConversationId = cleanOneLine(conversationId, '', 120);
+  if (!normalizedConversationId) return '';
   return result.episodes
     .filter((episode) => String(episode?.type || '').startsWith('vivy_'))
     .filter((episode) => !isVivyMemoryContextNoise(episode))
@@ -1305,6 +1308,152 @@ function rememberVivyEpisode(userId, type, content, metadata = {}) {
     // Memory must never break the chat.
   }
   return { stored: false };
+}
+
+function normalizeVivyChatSessionId(value = '') {
+  const normalized = cleanOneLine(value, '', 80)
+    .replace(/[^a-zA-Z0-9_-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  return normalized || 'default';
+}
+
+function buildVivyConversationIdForSession(sessionId = 'default') {
+  const normalizedSessionId = normalizeVivyChatSessionId(sessionId);
+  return normalizedSessionId === 'default'
+    ? 'vivy-default'
+    : `vivy-session-${normalizedSessionId}`;
+}
+
+function inferVivySessionIdFromConversationId(conversationId = '') {
+  const normalizedConversationId = cleanOneLine(conversationId, '', 120);
+  if (!normalizedConversationId || normalizedConversationId === 'vivy-default' || normalizedConversationId === 'default') {
+    return 'default';
+  }
+  const match = normalizedConversationId.match(/^vivy-session-(.+)$/i);
+  return normalizeVivyChatSessionId(match?.[1] || normalizedConversationId.replace(/^vivy:/i, ''));
+}
+
+function normalizeVivySessionName(value = '', fallback = '') {
+  const normalized = cleanOneLine(value, '', 80);
+  if (normalized) return normalized;
+  return cleanOneLine(fallback, '', 80) || 'Session Vivy';
+}
+
+function resolveVivyInputSession(input = {}) {
+  const sessionId = normalizeVivyChatSessionId(input.sessionId || input.chatSessionId || input.session_id || 'default');
+  const conversationId = cleanOneLine(input.conversationId || input.conversation_id, '', 120)
+    || buildVivyConversationIdForSession(sessionId);
+  const sessionName = normalizeVivySessionName(
+    input.sessionName || input.chatSessionName || input.session_name,
+    sessionId === 'default' ? 'Session principale' : `Session ${sessionId}`
+  );
+  return { sessionId, conversationId, sessionName };
+}
+
+function extractVivyIdeaMessage(content = '') {
+  const text = cleanText(content, 1800);
+  if (!text) return '';
+  const messageMatch = text.match(/^Message:\s*([\s\S]*?)(?:\n+Fichiers:\s*[\s\S]*)?$/i);
+  return cleanText(messageMatch?.[1] || text, 1200);
+}
+
+function ensureVivySessionEntry(sessionMap, { sessionId = 'default', conversationId = '', name = '', timestamp = '', createdAt = 0 } = {}) {
+  const safeSessionId = normalizeVivyChatSessionId(sessionId);
+  const safeConversationId = cleanOneLine(conversationId, '', 120) || buildVivyConversationIdForSession(safeSessionId);
+  const now = new Date().toISOString();
+  const existing = sessionMap.get(safeSessionId);
+  if (existing) {
+    if (name && (existing.name === 'Session Vivy' || existing.name === `Session ${safeSessionId}`)) existing.name = name;
+    existing.conversationId = existing.conversationId || safeConversationId;
+    if (timestamp && String(timestamp) > String(existing.updatedAt || '')) existing.updatedAt = timestamp;
+    return existing;
+  }
+  const entry = {
+    id: safeSessionId,
+    name: normalizeVivySessionName(name, safeSessionId === 'default' ? 'Session principale' : `Session ${safeSessionId}`),
+    conversationId: safeConversationId,
+    createdAt: timestamp || (createdAt ? new Date(createdAt).toISOString() : now),
+    updatedAt: timestamp || (createdAt ? new Date(createdAt).toISOString() : now),
+    messages: [],
+  };
+  sessionMap.set(safeSessionId, entry);
+  return entry;
+}
+
+function listVivyChatSessionsForUser(userId) {
+  const result = getEpisodes(userId, { limit: 1000, days: 90 });
+  const sessionMap = new Map();
+  ensureVivySessionEntry(sessionMap, {
+    sessionId: 'default',
+    conversationId: buildVivyConversationIdForSession('default'),
+    name: 'Session principale',
+  });
+  if (!result?.ok || !Array.isArray(result.episodes)) return Array.from(sessionMap.values());
+
+  const episodes = result.episodes
+    .filter((episode) => String(episode?.type || '').startsWith('vivy_'))
+    .sort((a, b) => Number(a?.createdAt || 0) - Number(b?.createdAt || 0));
+
+  for (const episode of episodes) {
+    const type = String(episode?.type || '');
+    if (isVivyMemoryContextNoise(episode) && type !== 'vivy_chat_session') continue;
+    const metadata = episode?.metadata && typeof episode.metadata === 'object' ? episode.metadata : {};
+    const conversationId = cleanOneLine(metadata.conversationId, '', 120);
+    if (!conversationId) continue;
+    const sessionId = normalizeVivyChatSessionId(metadata.sessionId || inferVivySessionIdFromConversationId(conversationId));
+    const timestamp = cleanOneLine(episode.timestamp, '', 64) || new Date(Number(episode.createdAt || Date.now())).toISOString();
+    const session = ensureVivySessionEntry(sessionMap, {
+      sessionId,
+      conversationId,
+      name: metadata.sessionName || (type === 'vivy_chat_session' ? episode.content : ''),
+      timestamp,
+      createdAt: Number(episode.createdAt || 0),
+    });
+
+    if (type === 'vivy_chat_session') continue;
+    const role = type === 'vivy_reply'
+      ? 'assistant'
+      : type === 'vivy_idea'
+        ? 'user'
+        : cleanOneLine(metadata.role, '', 24);
+    if (role !== 'user' && role !== 'assistant') continue;
+    const content = type === 'vivy_idea'
+      ? extractVivyIdeaMessage(episode.content)
+      : cleanText(episode.content, 1800);
+    if (!content) continue;
+    if (role === 'user' && session.name === `Session ${sessionId}`) {
+      session.name = normalizeVivySessionName(content, session.name);
+    }
+    session.messages.push({
+      id: cleanOneLine(episode.id, '', 120) || `vivy-${session.messages.length + 1}`,
+      role,
+      content,
+      ts: timestamp,
+    });
+    session.updatedAt = timestamp;
+  }
+
+  return Array.from(sessionMap.values())
+    .map((session) => ({
+      ...session,
+      messages: session.messages.slice(-36),
+      messageCount: session.messages.length,
+    }))
+    .sort((a, b) => {
+      if (a.id === 'default') return -1;
+      if (b.id === 'default') return 1;
+      return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
+    });
+}
+
+function rememberVivyChatSession(userId, session = {}) {
+  const context = resolveVivyInputSession(session);
+  return rememberVivyEpisode(userId, 'vivy_chat_session', context.sessionName, {
+    sessionId: context.sessionId,
+    sessionName: context.sessionName,
+    conversationId: context.conversationId,
+  });
 }
 
 function detectVivyInputLanguage(input = {}, fallback = 'fr') {
@@ -3431,6 +3580,14 @@ function postProcessVivyAssistantText({ text = '', userMessage = '', systemPromp
 }
 
 async function buildVivyAiChat(input, req) {
+  input = input && typeof input === 'object' ? input : {};
+  const sessionContext = resolveVivyInputSession(input);
+  input = {
+    ...input,
+    sessionId: sessionContext.sessionId,
+    sessionName: sessionContext.sessionName,
+    conversationId: sessionContext.conversationId,
+  };
   const message = cleanText(input.message || input.prompt || input.songText || input.text, VIVY_SONG_MAX_CHARS);
   const intentMessage = cleanVivyMessageForIntent(message);
   const mode = resolveVivyChatMode(input, message);
@@ -3444,6 +3601,7 @@ async function buildVivyAiChat(input, req) {
     error.status = 401;
     throw error;
   }
+  rememberVivyChatSession(userId, sessionContext);
   const fileContext = formatVivyFilesForPrompt(files);
   const memoryText = compactUniqueLines([
     (intentMessage || message) ? `Message: ${intentMessage || message}` : '',
@@ -5136,6 +5294,96 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
     });
   });
 
+  router.get('/sessions', requireAuth, async (req, res) => {
+    try {
+      const userId = resolveVivyMemoryUser(req, {});
+      if (!userId) return res.status(401).json({ ok: false, error: 'vivy_auth_required' });
+      const sessions = listVivyChatSessionsForUser(userId);
+      res.json({ ok: true, sessions });
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        error: 'vivy_sessions_failed',
+        message: error?.message || String(error),
+      });
+    }
+  });
+
+  router.get('/sessions/:sessionId', requireAuth, async (req, res) => {
+    try {
+      const userId = resolveVivyMemoryUser(req, {});
+      if (!userId) return res.status(401).json({ ok: false, error: 'vivy_auth_required' });
+      const sessionId = normalizeVivyChatSessionId(req.params.sessionId);
+      const sessions = listVivyChatSessionsForUser(userId);
+      const session = sessions.find((entry) => entry.id === sessionId)
+        || ensureVivySessionEntry(new Map(), {
+          sessionId,
+          conversationId: buildVivyConversationIdForSession(sessionId),
+          name: sessionId === 'default' ? 'Session principale' : `Session ${sessionId}`,
+        });
+      res.json({ ok: true, session });
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        error: 'vivy_session_failed',
+        message: error?.message || String(error),
+      });
+    }
+  });
+
+  router.post('/sessions', requireAuth, express.json({ limit: '16kb' }), async (req, res) => {
+    try {
+      const userId = resolveVivyMemoryUser(req, req.body || {});
+      if (!userId) return res.status(401).json({ ok: false, error: 'vivy_auth_required' });
+      const context = resolveVivyInputSession({
+        sessionId: req.body?.sessionId || `s${Date.now().toString(36)}`,
+        sessionName: req.body?.name || req.body?.sessionName,
+        conversationId: req.body?.conversationId,
+      });
+      rememberVivyChatSession(userId, context);
+      const sessions = listVivyChatSessionsForUser(userId);
+      const session = sessions.find((entry) => entry.id === context.sessionId) || {
+        ...context,
+        id: context.sessionId,
+        name: context.sessionName,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        messages: [],
+        messageCount: 0,
+      };
+      res.json({ ok: true, session });
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        error: 'vivy_session_create_failed',
+        message: error?.message || String(error),
+      });
+    }
+  });
+
+  router.delete('/sessions/:sessionId', requireAuth, async (req, res) => {
+    try {
+      const userId = resolveVivyMemoryUser(req, {});
+      if (!userId) return res.status(401).json({ ok: false, error: 'vivy_auth_required' });
+      const sessionId = normalizeVivyChatSessionId(req.params.sessionId);
+      const conversationId = buildVivyConversationIdForSession(sessionId);
+      const sessions = listVivyChatSessionsForUser(userId);
+      const existing = sessions.find((entry) => entry.id === sessionId);
+      const targetConversationId = existing?.conversationId || conversationId;
+      const result = clearUserEpisodes(userId, {
+        conversationId: targetConversationId,
+        typePrefix: 'vivy_',
+      });
+      res.json({ ok: true, sessionId, conversationId: targetConversationId, cleared: result?.removed ?? 0 });
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        error: 'vivy_session_delete_failed',
+        message: error?.message || String(error),
+      });
+    }
+  });
+
   router.get('/jobs/:taskId', requireAuth, async (req, res) => {
     try {
       if (!canUseServerSuno(req) && !getRequestSessionSunoApiKey({}, req)) {
@@ -5345,6 +5593,8 @@ module.exports = {
   buildVivyMusicPrompt,
   buildVivyChat,
   buildVivyAiChat,
+  buildVivyConversationIdForSession,
+  listVivyChatSessionsForUser,
   normalizeVivyChatHistory,
   getVivyOpenAIConfig,
   buildVivyMemoryContext,
