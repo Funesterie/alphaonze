@@ -30,6 +30,7 @@ test('XTTS/RVC runtime keeps Coqui TTS on the patched transformers stack', () =>
   assert.equal(pins.get('tokenizers'), '0.21.4');
   assert.equal(pins.get('huggingface-hub'), '0.36.2');
   const dockerfile = fs.readFileSync(path.resolve(__dirname, '../../../../ops/voice/Dockerfile.xtts-rvc'), 'utf8');
+  assert.match(dockerfile, /--index-url https:\/\/download\.pytorch\.org\/whl\/cpu --extra-index-url https:\/\/pypi\.org\/simple/);
   assert.match(dockerfile, /BeamSearchScorer/);
   assert.match(dockerfile, /GenerationMixin/);
   assert.match(dockerfile, /GPT2InferenceModel/);
