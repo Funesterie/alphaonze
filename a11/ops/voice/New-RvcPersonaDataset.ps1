@@ -18,8 +18,8 @@ $audioExtensions = @(".wav", ".wave", ".mp3", ".flac", ".m4a", ".ogg", ".aac", "
 $minimumSeconds = 180
 $recommendedSeconds = 600
 $artifactNames = @{
-  a11 = @{ model = "a11-terminator.pth"; index = "a11-terminator.index" }
-  kaen44 = @{ model = "kaen44-donna.pth"; index = "kaen44-donna.index" }
+  a11 = @{ model = "a11-official-stern-french.pth"; index = "a11-official-stern-french.index" }
+  kaen44 = @{ model = "kaen44-official-french-narrator.pth"; index = "kaen44-official-french-narrator.index" }
   vivy = @{ model = "vivy.pth"; index = "vivy.index" }
   djeff = @{ model = "djeff-rap.pth"; index = "djeff-rap.index" }
 }

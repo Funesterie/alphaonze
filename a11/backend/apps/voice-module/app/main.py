@@ -101,16 +101,11 @@ def preferred_reference_names(persona: str, mode: str) -> list[str]:
             "a11-official-stern-french.wav",
             "A11 ref.wav",
             "a11-official-stern-french-context.wav",
-            "a11-terminator.wav",
-            "a11-terminator-context.wav",
         ]
     if persona == "kaen44":
         return [
             "kaen44-official-french-narrator.wav",
             "K44 Ref.wav",
-            "kaen44-donna.wav",
-            "kaen44-donna-extra.wav",
-            "kaen44-donna-context.wav",
         ]
     if persona == "vivy":
         if mode == "sing":
@@ -435,11 +430,9 @@ def infer_reference_style(reference_file: Optional[Path]) -> str:
         return "a11-official-stern-french"
     if "kaen44-official-french-narrator" in key or (("kaen44" in key or "k44" in key) and "official" in key):
         return "kaen44-official-french-narrator"
-    if "terminator" in key or "robot" in key:
-        return "terminator"
     if "a11" in key:
         return "a11-official-stern-french"
-    if "donna" in key or "kaen44" in key or "k44" in key:
+    if "kaen44" in key or "k44" in key:
         return "kaen44-official-french-narrator"
     if "vivy" in key:
         return "vivy"
@@ -470,10 +463,8 @@ def normalize_voice_style(value: Optional[str]) -> str:
         return "a11-official-stern-french"
     if compact in {"a11", "alpha11", "alphaonze", "aonze"}:
         return "a11-official-stern-french"
-    if "terminator" in compact or "robot" in compact:
-        return "terminator"
-    if "donna" in compact:
-        return "donna"
+    if "robot" in compact or "cyber" in compact:
+        return "a11-official-stern-french"
     if "djeff" in compact or "pignon" in compact:
         return "djeff-rap"
     return ""
@@ -538,14 +529,10 @@ def xtts_rvc_env_name(reference_style: str, kind: Literal["voice", "rvc"]) -> st
         "k44": "K44 Ref.wav",
         "vivy-official-french-conversational": "Vivy ref.wav",
         "kaen44-official-french-narrator": "K44 Ref.wav",
-        "terminator": "a11-terminator.wav",
-        "donna": "kaen44-donna.wav",
         "vivy": "Vivy ref.wav",
     }
     default_rvc = {
         "kaen44-official-french-narrator": "",
-        "terminator": "a11-terminator.pth",
-        "donna": "kaen44-donna.pth",
         "vivy": "vivy.pth",
     }
     return (default_voice if kind == "voice" else default_rvc).get(reference_style or "", "")
@@ -749,10 +736,7 @@ def ffmpeg_morph_filter(mode: str, strength: float, f0_shift: Optional[float], g
     mode_shift = -0.6 if mode == "adaptive" else 0.0
     if mode == "sing":
         mode_shift = 0.8
-    if reference_style == "terminator":
-        strength = max(strength, 0.84)
-        default_shift = -5.8 if mode != "sing" else -3.2
-    elif reference_style == "vivy":
+    if reference_style == "vivy":
         strength = min(strength, 0.38)
         default_shift = VIVY_DEFAULT_F0_SHIFT + (0.15 if mode == "sing" else 0.0)
     else:
@@ -770,16 +754,6 @@ def ffmpeg_morph_filter(mode: str, strength: float, f0_shift: Optional[float], g
     if generated_rms > 0 and reference_rms > 0:
         volume = max(0.55, min(1.8, (reference_rms / generated_rms) ** min(1.0, strength)))
         filters.append(f"volume={volume:.4f}")
-
-    if reference_style == "terminator":
-        filters.extend([
-            "highpass=f=90",
-            "lowpass=f=4200",
-            "acrusher=bits=10:mode=log:aa=1",
-            "aecho=0.72:0.82:42|86:0.16|0.08",
-            "chorus=0.55:0.8:45|58:0.20|0.16:0.25|0.18:2|2.6",
-            "aphaser=in_gain=0.65:out_gain=0.74:delay=2:decay=0.35:speed=0.35:type=t",
-        ])
 
     filters.extend([
         "acompressor=threshold=-18dB:ratio=2.4:attack=8:release=140",

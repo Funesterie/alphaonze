@@ -5,18 +5,14 @@ Public references below are for artistic direction only. Do not download, train,
 ## A11
 
 - Target direction: original cybernetic guardian voice. Low, stable, mission-focused, protective, concise.
-- Moodboard: Terminator / T-800 cinematic cyborg archetype.
-- Public reference page: https://www.101soundboards.com/boards/27208-terminator-the-terminator-soundboard
-- Guardrail: do not clone Arnold Schwarzenegger, do not impersonate the T-800, and do not reuse film lines as prompts.
+- Approved runtime reference: `a11-official-stern-french.wav`.
+- Guardrail: do not clone actors, protected characters, or public film dialogue. Use owned, licensed, or explicitly consented audio only.
 
 ## Kaen44
 
 - Target direction: original executive desk operator voice. Fast, elegant, confident, warm, organized, with sharp timing.
-- Moodboard: Donna Paulsen / Suits executive assistant archetype.
-- Public reference pages:
-  - https://www.101soundboards.com/boards/1386684-suits-2011
-  - https://www.voicy.network/official-soundboards/series/donna-paulsen
-- Guardrail: do not clone Sarah Rafferty, do not impersonate Donna Paulsen, and do not reuse TV dialogue as prompts.
+- Approved runtime reference: `kaen44-official-french-narrator.wav`.
+- Guardrail: do not clone actors, protected characters, or public TV dialogue. Use owned, licensed, or explicitly consented audio only.
 
 ## Vivy
 
