@@ -2898,6 +2898,7 @@ const VIVY_PUBLIC_VOICE_REFERENCE_KEY = "vivy:voice-reference";
 const VIVY_PRIVATE_REFERENCE_UPLOAD_LIMIT_BYTES = 20 * 1024 * 1024;
 const VIVY_VOICE_CATALOG_CONSENT = "voice-catalog-song-v1";
 const VIVY_STUDIO_SONG_MAX_CHARS = 12000;
+const VIVY_PUBLIC_CHAT_MAX_MESSAGES = A11_MAX_HISTORY_MESSAGES;
 
 function getVivyVoiceTuning(vocalMode?: string | null): Record<string, number> {
   return String(vocalMode || "").toLowerCase() === "sing"
@@ -2917,8 +2918,15 @@ type VivyPublicChatMessage = {
   content: string;
   ts: string;
   files?: VivyPublicChatFile[];
+  media?: VivyStudioMediaPreview | null;
 };
 type VivyPublicChatMode = "chat" | VivyStudioProductionMode;
+type VivyNossenBangerReadiness = {
+  ready: boolean;
+  score: number;
+  reason: string;
+  source: string;
+};
 
 const VIVY_STUDIO_MODES: Array<{
   id: VivyStudioMode;
@@ -3031,6 +3039,55 @@ function deleteVivyChatSession(sessionId: string) {
   saveVivyChatSessions(sessions);
 }
 
+function readVivyPublicChatFiles(files: any): VivyPublicChatFile[] | undefined {
+  if (!Array.isArray(files)) return undefined;
+  const normalized = files
+    .map((file: any) => ({
+      id: String(file?.id || file?.storageKey || file?.filename || file?.name || ""),
+      filename: toUnicodeLine(file?.filename || file?.name, "", 180),
+      contentType: toUnicodeLine(file?.contentType || file?.type, "", 120),
+      sizeBytes: Number(file?.sizeBytes || file?.size || 0) || 0,
+      url: toUnicodeLine(file?.url || file?.downloadUrl, "", 800),
+      downloadUrl: toUnicodeLine(file?.downloadUrl || file?.url, "", 800),
+      description: toUnicodeText(file?.description, 900),
+      textPreview: toUnicodeText(file?.textPreview, 6000),
+      visualDescription: toUnicodeText(file?.visualDescription, 900),
+      analysisSummary: toUnicodeText(file?.analysisSummary, 900),
+      analysis: file?.analysis && typeof file.analysis === "object" ? file.analysis : null,
+      uploaded: file?.uploaded === true,
+      uploadState: file?.uploadState === "stored" ? "stored" as const : "local" as const,
+      uploadError: toUnicodeLine(file?.uploadError, "", 120),
+      storageBackend: toUnicodeLine(file?.storageBackend, "", 80),
+    }))
+    .filter((file: VivyPublicChatFile) => file.filename)
+    .slice(0, 6);
+  return normalized.length ? normalized : undefined;
+}
+
+function readVivyPublicChatMedia(media: any): VivyStudioMediaPreview | null {
+  if (!media || typeof media !== "object") return null;
+  const url = toUnicodeLine(
+    media?.url || media?.audioUrl || media?.audio_url || media?.videoUrl || media?.video_url,
+    "",
+    1200
+  );
+  if (!url) return null;
+  const downloadUrl = toUnicodeLine(
+    media?.downloadUrl || media?.download_url || media?.audioUrl || media?.audio_url || media?.url || url,
+    "",
+    1200
+  );
+  return {
+    kind: String(media?.kind || (media?.videoUrl || media?.video_url ? "video" : "audio")).toLowerCase() === "video" ? "video" : "audio",
+    url,
+    downloadUrl: downloadUrl || url,
+    provider: toUnicodeLine(media?.provider, "", 120) || undefined,
+    contentType: toUnicodeLine(media?.contentType || media?.content_type, "", 120) || undefined,
+    filename: toUnicodeLine(media?.filename || media?.title, "", 180) || undefined,
+    voiceManifest: media?.voiceManifest && typeof media.voiceManifest === "object" ? media.voiceManifest : undefined,
+  };
+}
+
 function readVivyChatSession(sessionId: string): VivyPublicChatMessage[] {
   if (!hasVivyAuthenticatedSession()) return [buildVivyLockedMessage()];
   const key = getVivyChatStorageKeyForSession(sessionId);
@@ -3041,7 +3098,9 @@ function readVivyChatSession(sessionId: string): VivyPublicChatMessage[] {
     return parsed.map((e: any) => ({
       id: String(e?.id || `vivy-${Date.now()}`), role: (e?.role === "user" ? "user" : "assistant") as "user" | "assistant",
       content: toUnicodeText(e?.content), ts: String(e?.ts || new Date().toISOString()),
-    })).filter((m) => m.content).slice(-24);
+      files: readVivyPublicChatFiles(e?.files),
+      media: readVivyPublicChatMedia(e?.media),
+    })).filter((m) => m.content).slice(-VIVY_PUBLIC_CHAT_MAX_MESSAGES);
   } catch { return [buildVivyGreeting()]; }
 }
 
@@ -3049,7 +3108,7 @@ function writeVivyChatSession(sessionId: string, messages: VivyPublicChatMessage
   if (!hasVivyAuthenticatedSession()) return;
   const key = getVivyChatStorageKeyForSession(sessionId);
   try {
-    globalThis.localStorage?.setItem(key, JSON.stringify(messages.slice(-24)));
+    globalThis.localStorage?.setItem(key, JSON.stringify(messages.slice(-VIVY_PUBLIC_CHAT_MAX_MESSAGES)));
     const sessions = listVivyChatSessions();
     const idx = sessions.findIndex((s) => s.id === sessionId);
     if (idx >= 0) { sessions[idx].updatedAt = new Date().toISOString(); saveVivyChatSessions(sessions); }
@@ -3069,31 +3128,11 @@ function readVivyPublicChat(): VivyPublicChatMessage[] {
         role: entry?.role === "user" ? "user" as const : "assistant" as const,
         content: toUnicodeText(entry?.content),
         ts: String(entry?.ts || new Date().toISOString()),
-        files: Array.isArray(entry?.files)
-          ? entry.files
-            .map((file: any) => ({
-              id: String(file?.id || file?.storageKey || file?.filename || file?.name || ""),
-              filename: toUnicodeLine(file?.filename || file?.name, "", 180),
-              contentType: toUnicodeLine(file?.contentType || file?.type, "", 120),
-              sizeBytes: Number(file?.sizeBytes || file?.size || 0) || 0,
-              url: toUnicodeLine(file?.url || file?.downloadUrl, "", 800),
-              downloadUrl: toUnicodeLine(file?.downloadUrl || file?.url, "", 800),
-              description: toUnicodeText(file?.description, 900),
-              textPreview: toUnicodeText(file?.textPreview, 6000),
-              visualDescription: toUnicodeText(file?.visualDescription, 900),
-              analysisSummary: toUnicodeText(file?.analysisSummary, 900),
-              analysis: file?.analysis && typeof file.analysis === "object" ? file.analysis : null,
-              uploaded: file?.uploaded === true,
-              uploadState: file?.uploadState === "stored" ? "stored" as const : "local" as const,
-              uploadError: toUnicodeLine(file?.uploadError, "", 120),
-              storageBackend: toUnicodeLine(file?.storageBackend, "", 80),
-            }))
-            .filter((file: VivyPublicChatFile) => file.filename)
-            .slice(0, 6)
-          : undefined,
+        files: readVivyPublicChatFiles(entry?.files),
+        media: readVivyPublicChatMedia(entry?.media),
       }))
       .filter((entry) => entry.content);
-    return messages.length ? messages.slice(-24) : [buildVivyGreeting()];
+    return messages.length ? messages.slice(-VIVY_PUBLIC_CHAT_MAX_MESSAGES) : [buildVivyGreeting()];
   } catch {
     return [buildVivyGreeting()];
   }
@@ -3102,7 +3141,7 @@ function readVivyPublicChat(): VivyPublicChatMessage[] {
 function writeVivyPublicChat(messages: VivyPublicChatMessage[]) {
   if (!hasVivyAuthenticatedSession()) return;
   try {
-    globalThis.localStorage?.setItem(getVivyChatStorageKey(), JSON.stringify(messages.slice(-24)));
+    globalThis.localStorage?.setItem(getVivyChatStorageKey(), JSON.stringify(messages.slice(-VIVY_PUBLIC_CHAT_MAX_MESSAGES)));
   } catch {
     // Local history is best effort only.
   }
@@ -3223,6 +3262,149 @@ function isVivyVoiceChangeRequest(text: string) {
     && /\b(voix|voice|timbre|vocal|vocale|tts|audio)\b/.test(folded)
   ) return true;
   return false;
+}
+
+function normalizeVivyNossenContextSource(
+  messages: VivyPublicChatMessage[] = [],
+  draft = "",
+  files: VivyPublicChatFile[] = []
+) {
+  const messageLines = messages
+    .filter((entry) => entry.role === "user" || /paroles|refrain|couplet|direction|ambiance|voix/i.test(entry.content))
+    .map((entry) => `${entry.role === "user" ? "Utilisateur" : "Vivy"}: ${entry.content}`)
+    .filter(Boolean);
+  const fileLines = files
+    .map((file) => [
+      file.filename,
+      file.description,
+      file.textPreview,
+      file.visualDescription,
+      file.analysisSummary,
+    ].filter(Boolean).join(" - "))
+    .filter(Boolean);
+  return toUnicodeText([...messageLines.slice(-24), draft, ...fileLines].filter(Boolean).join("\n"), 7200).trim();
+}
+
+function buildVivyNossenBangerReadiness(
+  messages: VivyPublicChatMessage[] = [],
+  draft = "",
+  files: VivyPublicChatFile[] = []
+): VivyNossenBangerReadiness {
+  const source = normalizeVivyNossenContextSource(messages, draft, files);
+  const folded = foldForLookup(source);
+  const userTurns = messages.filter((entry) => entry.role === "user" && entry.content.trim().length >= 14).length
+    + (draft.trim().length >= 14 ? 1 : 0)
+    + (files.length ? 1 : 0);
+  const hasSongSignal = /\b(chanson|musique|paroles|refrain|couplet|bridge|outro|intro|suno|banger|son|melodie|mélodie|prod|composition)\b/.test(folded);
+  const hasVoiceSignal = /\b(voix|vocal|vocale|chanteur|chanteuse|solo|duo|trio|quatuor|djeff|vivy|a11|k44|kaen44|ref)\b/.test(folded);
+  const hasColorSignal = /\b(ambiance|couleur|sonor|mood|dark|sombre|doux|douce|electro|rap|pop|metal|rock|cinematique|cinématique|epique|épique|triste|lumineux|guitare|piano|basse|drums|batterie)\b/.test(folded);
+  let score = Math.min(42, Math.floor(source.length / 70)) + Math.min(24, userTurns * 6);
+  if (hasSongSignal) score += 18;
+  if (hasVoiceSignal) score += 14;
+  if (hasColorSignal) score += 12;
+  if (/\b(nossen|funesterie|djeff|vivy)\b/.test(folded)) score += 8;
+  if (files.length) score += 8;
+  const longEnough = source.length >= 360 || (source.length >= 180 && files.length > 0) || source.length >= 900;
+  const ready = Boolean(source && longEnough && (userTurns >= 2 || source.length >= 900) && score >= 58);
+  return {
+    ready,
+    score,
+    source,
+    reason: ready
+      ? "Vivy sent assez de matière pour tenter un Banger NOSSEN."
+      : "Vivy attend encore un peu de matière avant d'enflammer NOSSEN.",
+  };
+}
+
+function inferVivyNossenBangerArtists(source = ""): VivyStudioArtistId[] {
+  const folded = foldForLookup(source);
+  const artists: VivyStudioArtistId[] = [];
+  const add = (artistId: VivyStudioArtistId) => {
+    if (!artists.includes(artistId)) artists.push(artistId);
+  };
+  if (/\bquatuor|quatre\s+voix|4\s+voix\b/.test(folded)) return ["djeff", "vivy", "a11", "k44"];
+  if (/\btrio|trois\s+voix|3\s+voix\b/.test(folded)) {
+    add("djeff");
+    add("vivy");
+    add(/\bk44|kaen44|kaen\b/.test(folded) ? "k44" : "a11");
+  }
+  if (/\bduo|deux\s+voix|2\s+voix\b/.test(folded)) {
+    add("vivy");
+    add(/\bk44|kaen44|kaen\b/.test(folded) ? "k44" : "djeff");
+  }
+  if (/\bdjeff\b/.test(folded)) add("djeff");
+  if (/\bvivy\b|refrain|melodie|mélodie|chant/.test(folded)) add("vivy");
+  if (/\ba11\b|alpha/.test(folded)) add("a11");
+  if (/\bk44\b|kaen44|kaen\b/.test(folded)) add("k44");
+  if (!artists.length) add("vivy");
+  return artists.slice(0, 4);
+}
+
+function describeVivyNossenBangerCast(artists: VivyStudioArtistId[]) {
+  const labels = artists.map((artistId) => VIVY_STUDIO_ARTISTS.find((artist) => artist.id === artistId)?.label || artistId);
+  const prefix = artists.length >= 4 ? "Quatuor"
+    : artists.length === 3 ? "Trio"
+      : artists.length === 2 ? "Duo"
+        : "Solo";
+  return `${prefix} ${labels.join(" + ")}`;
+}
+
+function buildVivyNossenBangerSongText(readiness: VivyNossenBangerReadiness, artists: VivyStudioArtistId[]) {
+  return toUnicodeText([
+    "NOSSEN BANGER - Vivy pilote automatiquement la chanson complete.",
+    `Casting choisi: ${describeVivyNossenBangerCast(artists)}.`,
+    "Objectif: refrain clair et répétable, couplets propres, pont si utile, structure lisible avec balises [Verse], [Chorus], [Bridge] et [Outro].",
+    "Production: Suno chanté, voix sélectionnées préservées, mix final D40 V9 Dynamique après récupération du MP3.",
+    "Matière de conversation:",
+    readiness.source,
+  ].filter(Boolean).join("\n\n"), VIVY_STUDIO_SONG_MAX_CHARS);
+}
+
+function getVivyProductionMediaPreview(payload: any, fallbackFilename = "vivy-banger-nossen.mp3"): VivyStudioMediaPreview | null {
+  const media = payload?.media || payload?.musicJob?.media || {};
+  const audioUrl = String(
+    payload?.audioUrl
+    || payload?.audio_url
+    || media?.audioUrl
+    || media?.audio_url
+    || media?.downloadUrl
+    || media?.download_url
+    || media?.url
+    || ""
+  ).trim();
+  const videoUrl = String(payload?.videoUrl || payload?.video_url || media?.videoUrl || media?.video_url || "").trim();
+  const url = audioUrl || videoUrl;
+  if (!url) return null;
+  const downloadUrl = String(media?.downloadUrl || media?.download_url || audioUrl || url).trim();
+  return {
+    kind: audioUrl ? "audio" : "video",
+    url: resolveApiAssetUrl(url) || url,
+    downloadUrl: resolveApiAssetUrl(downloadUrl) || downloadUrl || resolveApiAssetUrl(url) || url,
+    provider: String(media?.provider || payload?.mediaStatus?.provider || payload?.musicJob?.provider || "vivy-music").trim(),
+    contentType: String(media?.contentType || media?.content_type || payload?.contentType || payload?.content_type || (audioUrl ? "audio/mpeg" : "video/mp4")).trim(),
+    filename: String(media?.filename || payload?.filename || fallbackFilename).trim(),
+  };
+}
+
+function buildVivyNossenBangerAssistantText(
+  payload: any,
+  media: VivyStudioMediaPreview | null,
+  artists: VivyStudioArtistId[],
+  d40Applied: boolean
+) {
+  const title = toUnicodeLine(payload?.title, "", 120);
+  const summary = toUnicodeText(payload?.summary || payload?.publicText || payload?.assistant || payload?.content, 900);
+  const lyrics = toUnicodeText(payload?.publicLyrics || payload?.vocalLyrics || "", 4200);
+  const downloadLine = media?.downloadUrl || media?.url ? `Téléchargement: ${media.downloadUrl || media.url}` : "";
+  return toUnicodeText([
+    "Banger.",
+    title ? `Titre: ${title}` : "",
+    `Casting: ${describeVivyNossenBangerCast(artists)}.`,
+    d40Applied ? "Mix D40 V9 Dynamique prêt." : "Production Suno prête.",
+    summary,
+    downloadLine,
+    lyrics,
+  ].filter(Boolean).join("\n\n"), 6200);
 }
 
 function normalizeVivyStudioMode(value: unknown): VivyStudioMode | null {
@@ -6113,6 +6295,10 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   const [copiedMsgId, setCopiedMsgId] = useState("");
   const [chatSessions, setChatSessions] = useState<VivyChatSessionMeta[]>(() => hasSession ? listVivyChatSessions() : []);
   const [activeChatSessionId, setActiveChatSessionId] = useState("default");
+  const nossenBangerReadiness = useMemo(
+    () => buildVivyNossenBangerReadiness(messages, draft, attachedFiles),
+    [messages, draft, attachedFiles]
+  );
 
   function switchSession(id: string) {
     const msgs = id === "default" ? readVivyPublicChat() : readVivyChatSession(id);
@@ -6279,7 +6465,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       ts: now,
       files: filesForMessage,
     };
-    const nextMessages = [...messages, userMessage].slice(-24);
+    const nextMessages = [...messages, userMessage].slice(-36);
     const voiceChangeRequested = isVivyVoiceChangeRequest(text);
     const activeVivyVoiceReferenceName = voiceReferenceName || "Vivy par défaut";
     setMessages(nextMessages);
@@ -6331,7 +6517,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         content: assistantText,
         ts: new Date().toISOString(),
       };
-      setMessages((current) => [...current, assistantMessage].slice(-24));
+      setMessages((current) => [...current, assistantMessage].slice(-36));
       const memoryText = payload.semanticMemory?.stored || payload.memoryStored
         ? "Idée rangée dans la mémoire Vivy"
         : "Vivy prête";
@@ -6345,7 +6531,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         content: `Je n'arrive pas à joindre le studio Vivy pour l'instant: ${error?.message || error}`,
         ts: new Date().toISOString(),
       };
-      setMessages((current) => [...current, assistantMessage].slice(-24));
+      setMessages((current) => [...current, assistantMessage].slice(-36));
       setStatus("Connexion Vivy à vérifier");
     } finally {
       setIsSending(false);
@@ -6363,7 +6549,179 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       content: "Voix Vivy par défaut activée. Tu peux envoyer un extrait audio seulement si tu veux la remplacer.",
       ts: new Date().toISOString(),
     };
-    setMessages((current) => [...current, assistantMessage].slice(-24));
+    setMessages((current) => [...current, assistantMessage].slice(-36));
+  }
+
+  async function launchNossenBanger() {
+    if (!hasSession) {
+      setMessages([buildVivyLockedMessage()]);
+      setStatus("Connecte-toi à Funesterie avant de lancer NOSSEN.");
+      return;
+    }
+    if (isSending) return;
+    const readiness = buildVivyNossenBangerReadiness(messages, draft, attachedFiles);
+    if (!readiness.ready) {
+      setStatus(readiness.reason);
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const filesForMessage = attachedFiles.slice(0, 6);
+    const artists = inferVivyNossenBangerArtists(readiness.source);
+    const castLabel = describeVivyNossenBangerCast(artists);
+    const triggerMessage: VivyPublicChatMessage = {
+      id: `vivy-nossen-user-${Date.now()}`,
+      role: "user",
+      content: `Banger. NOSSEN s'enflamme pour ${castLabel}.`,
+      ts: now,
+      files: filesForMessage,
+    };
+    const nextMessages = [...messages, triggerMessage].slice(-36);
+    const apiFiles = filesForMessage.map((file) => ({
+      id: file.id,
+      filename: file.filename,
+      contentType: file.contentType,
+      sizeBytes: file.sizeBytes,
+      url: file.url || file.downloadUrl,
+      downloadUrl: file.downloadUrl,
+      description: file.description,
+      textPreview: file.textPreview,
+      visualDescription: file.visualDescription,
+      analysisSummary: file.analysisSummary,
+      analysis: file.analysis,
+      uploaded: file.uploaded,
+    }));
+    const apiHistory = nextMessages.map((entry) => ({
+      role: entry.role,
+      content: entry.content,
+      ts: entry.ts,
+    }));
+
+    setMessages(nextMessages);
+    setDraft("");
+    setAttachedFiles([]);
+    setIsSending(true);
+    setStatus("Banger.");
+
+    try {
+      const sunoSessionKey = readVivySessionSunoKey();
+      const songText = buildVivyNossenBangerSongText(readiness, artists);
+      const vivyLanguage = normalizeA11LanguageCode(getAuthAccountLanguage(localStorage.getItem("a11:language") || "fr"));
+      const payload = await runVivyStudioProduction({
+        mode: "song",
+        language: vivyLanguage,
+        conversationId,
+        files: apiFiles,
+        history: apiHistory,
+        message: "NOSSEN Banger: Vivy gère composition, production, casting vocal et lien de téléchargement.",
+        prompt: toUnicodeText(readiness.source || songText, 360),
+        voiceTool: voiceReferenceName
+          ? `NOSSEN Banger - voix de référence privée: ${voiceReferenceName}`
+          : `NOSSEN Banger - casting officiel ${castLabel}`,
+        voiceReferenceName: voiceReferenceName || undefined,
+        songSource: "NOSSEN Banger - conversation Vivy",
+        songArtists: artists,
+        artistCount: artists.length,
+        singerCount: artists.length,
+        vocalCast: castLabel,
+        songMood: "Vivy choisit la couleur sonore depuis le contexte; refrain mémorable, énergie Banger, production Suno, mix D40 V9 Dynamique.",
+        songText,
+        sessionSunoApiKey: sunoSessionKey || undefined,
+        forceRealMusic: true,
+        generateMusic: true,
+        makeSong: true,
+        preserveSelectedVoice: true,
+        allowExternalVoiceMix: false,
+        previewInstrumental: true,
+        disableEmergencyMedia: true,
+        musicProvider: "suno",
+        durationSeconds: 180,
+      });
+
+      let finalPayload: any = payload;
+      let preparedMedia = getVivyProductionMediaPreview(finalPayload);
+      const taskId = String(payload?.mediaStatus?.taskId || payload?.musicJob?.taskId || payload?.media?.taskId || "").trim();
+      if (!preparedMedia && taskId) {
+        const pause = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+        for (let attempt = 1; attempt <= 60; attempt += 1) {
+          await pause(attempt <= 3 ? 6000 : 10000);
+          const job = await getVivyStudioMusicJob(taskId, sunoSessionKey || undefined);
+          finalPayload = job;
+          preparedMedia = getVivyProductionMediaPreview(job);
+          if (preparedMedia) break;
+          const state = String(job?.mediaStatus?.state || job?.musicJob?.state || (job as any)?.state || "").toLowerCase();
+          if (state === "error" || state === "failed") {
+            throw new Error(job?.mediaStatus?.message || job?.message || "generation_suno_echouee");
+          }
+          setStatus(`NOSSEN attend Suno... ${attempt}/60`);
+        }
+      }
+      if (!preparedMedia) {
+        throw new Error(finalPayload?.mediaStatus?.message || finalPayload?.mediaStatus?.reason || "audio_url_missing");
+      }
+
+      let d40Applied = false;
+      if (preparedMedia.kind === "audio") {
+        try {
+          setStatus("Mix D40 V9 Dynamique...");
+          const sourceUrl = preparedMedia.downloadUrl || preparedMedia.url;
+          let response: Response;
+          try {
+            response = await fetch(sourceUrl, { credentials: "include" });
+            if (!response.ok) throw new Error(`status_${response.status}`);
+          } catch {
+            response = await fetch(sourceUrl, { credentials: "omit" });
+            if (!response.ok) throw new Error(`status_${response.status}`);
+          }
+          const blob = await response.blob();
+          const sourceName = sanitizeMediaDisplayName(preparedMedia.filename || "vivy-banger-nossen.mp3") || "vivy-banger-nossen.mp3";
+          const sourceFile = new File([blob], sourceName, { type: blob.type || preparedMedia.contentType || "audio/mpeg" });
+          const d40 = await processDoubleHarmonicAudio(sourceFile, {
+            profile: "blend",
+            intensity: D40_V8_DEFAULT_INTENSITY,
+            format: "mp3",
+            name: sourceName,
+            mode: "v9turbo",
+          });
+          const d40Url = String(d40.shareUrl || d40.audioUrl || "").trim();
+          if (d40Url) {
+            const d40DownloadUrl = String(d40.audioUrl || d40.shareUrl || "").trim();
+            preparedMedia = {
+              kind: "audio",
+              url: resolveApiAssetUrl(d40Url) || d40Url,
+              downloadUrl: resolveApiAssetUrl(d40DownloadUrl) || d40DownloadUrl || resolveApiAssetUrl(d40Url) || d40Url,
+              provider: "funesterie-d40-v9turbo",
+              contentType: String(d40.contentType || "audio/mpeg"),
+              filename: String(d40.filename || sourceName.replace(/\.[^.]+$/, "-d40-v9.mp3")),
+            };
+            d40Applied = true;
+          }
+        } catch (error: any) {
+          setStatus(`Banger prêt; D40 à relancer dans le Studio: ${error?.message || error}`);
+        }
+      }
+
+      const assistantMessage: VivyPublicChatMessage = {
+        id: `vivy-nossen-assistant-${Date.now()}`,
+        role: "assistant",
+        content: buildVivyNossenBangerAssistantText(finalPayload, preparedMedia, artists, d40Applied),
+        ts: new Date().toISOString(),
+        media: preparedMedia,
+      };
+      setMessages((current) => [...current, assistantMessage].slice(-36));
+      setStatus(d40Applied ? "NOSSEN Banger prêt en D40 V9 Dynamique." : "NOSSEN Banger prêt.");
+    } catch (error: any) {
+      const assistantMessage: VivyPublicChatMessage = {
+        id: `vivy-nossen-error-${Date.now()}`,
+        role: "assistant",
+        content: `Banger stoppé: ${error?.message || error}`,
+        ts: new Date().toISOString(),
+      };
+      setMessages((current) => [...current, assistantMessage].slice(-36));
+      setStatus("NOSSEN Banger à relancer");
+    } finally {
+      setIsSending(false);
+    }
   }
 
   async function onVivyVoiceReferenceChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -6396,7 +6754,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         content: `Référence reçue. Quand tu me demandes cette voix, je m'en sers comme base privée.`,
         ts: new Date().toISOString(),
       };
-      setMessages((current) => [...current, assistantMessage].slice(-24));
+      setMessages((current) => [...current, assistantMessage].slice(-36));
     } catch (error: any) {
       setStatus(`Audio non ajouté: ${error?.message || error}`);
       setAwaitingVoiceReference(true);
@@ -6570,6 +6928,24 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
                 ))}
               </div>
             ) : null}
+            {message.media ? (
+              <div className="vivy-chat-media-link">
+                {message.media.kind === "audio" ? (
+                  <audio controls preload="metadata" src={message.media.url} />
+                ) : null}
+                {message.media.kind === "video" ? (
+                  <video controls preload="metadata" src={message.media.url} />
+                ) : null}
+                <a
+                  href={message.media.downloadUrl || message.media.url}
+                  download={message.media.filename || undefined}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Télécharger la musique
+                </a>
+              </div>
+            ) : null}
             <button
               type="button"
               className="vivy-chat-copy-btn"
@@ -6609,6 +6985,17 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           <button type="button" disabled={!hasSession} onClick={() => sendModeFromComposer("voice")}>Voix</button>
           <button type="button" disabled={!hasSession} onClick={() => sendModeFromComposer("song")}>Chanson</button>
           <button type="button" disabled={!hasSession} onClick={() => sendModeFromComposer("share")}>Scène</button>
+          <button
+            type="button"
+            className={`vivy-nossen-banger-button${nossenBangerReadiness.ready ? " is-ready" : ""}${isSending ? " is-running" : ""}`}
+            disabled={!hasSession || isSending || !nossenBangerReadiness.ready}
+            onClick={() => void launchNossenBanger()}
+            aria-label="NOSSEN Banger"
+            aria-pressed={nossenBangerReadiness.ready}
+            title={nossenBangerReadiness.reason}
+          >
+            NOSSEN
+          </button>
           <button type="button" disabled={!hasSession} onClick={() => fileInputRef.current?.click()}>Fichier</button>
           <button type="submit" disabled={!hasSession || isSending || (!draft.trim() && !attachedFiles.length)}>Envoyer</button>
         </div>

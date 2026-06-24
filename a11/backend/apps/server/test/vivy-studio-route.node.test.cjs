@@ -1626,7 +1626,8 @@ test('Vivy frontend keeps download distinct from open and exposes copy on every 
   assert.doesNotMatch(downloadBlock, /window\.open/);
 
   const publicChatStart = appSource.indexOf('function VivyPublicChat');
-  const publicChatBlock = appSource.slice(publicChatStart, publicChatStart + 26000);
+  const publicChatEnd = appSource.indexOf('function VivyStudio', publicChatStart + 1);
+  const publicChatBlock = appSource.slice(publicChatStart, publicChatEnd > publicChatStart ? publicChatEnd : publicChatStart + 52000);
   assert.match(publicChatBlock, /messages\.map\(\(message\)/);
   assert.match(publicChatBlock, /vivy-chat-copy-btn/);
   assert.match(publicChatBlock, /writeClipboardText\(message\.content\)/);
@@ -1805,6 +1806,48 @@ test('Vivy frontend allows more sessions with a scrollable session rail', () => 
   assert.match(appSource, /vivy-chat-session-tab/);
   assert.match(cssSource, /\.vivy-chat-session-list[\s\S]{0,260}max-height:\s*118px/);
   assert.match(cssSource, /\.vivy-chat-session-list[\s\S]{0,260}overflow-y:\s*auto/);
+});
+
+test('Vivy frontend lets Vivy decide when NOSSEN Banger is ready', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const cssSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/index.css'),
+    'utf8'
+  );
+
+  assert.match(appSource, /function buildVivyNossenBangerReadiness/);
+  assert.match(appSource, /nossenBangerReadiness\.ready/);
+  assert.match(appSource, /className=\{`vivy-nossen-banger-button/);
+  assert.match(appSource, /is-ready/);
+  assert.match(appSource, /aria-label="NOSSEN Banger"/);
+  assert.match(cssSource, /\.vivy-nossen-banger-button\.is-ready[\s\S]{0,380}animation:\s*vivy-nossen-flame/);
+  assert.match(cssSource, /@keyframes vivy-nossen-flame/);
+});
+
+test('Vivy NOSSEN Banger launches Suno, applies D40 V9 dynamic, and posts a chat download', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const launchStart = appSource.indexOf('async function launchNossenBanger');
+  const launchEnd = appSource.indexOf('async function onVivyVoiceReferenceChange', launchStart);
+  const launchBlock = appSource.slice(launchStart, launchEnd);
+
+  assert.match(launchBlock, /runVivyStudioProduction\(/);
+  assert.match(launchBlock, /forceRealMusic:\s*true/);
+  assert.match(launchBlock, /generateMusic:\s*true/);
+  assert.match(launchBlock, /makeSong:\s*true/);
+  assert.match(launchBlock, /preserveSelectedVoice:\s*true/);
+  assert.match(launchBlock, /allowExternalVoiceMix:\s*false/);
+  assert.match(launchBlock, /getVivyStudioMusicJob/);
+  assert.match(launchBlock, /processDoubleHarmonicAudio/);
+  assert.match(launchBlock, /mode:\s*"v9turbo"/);
+  assert.match(launchBlock, /setMessages\(\(current\)\s*=>\s*\[\.\.\.current,\s*assistantMessage\]\.slice\(-36\)\)/);
+  assert.match(appSource, /vivy-chat-media-link/);
+  assert.match(appSource, /Télécharger la musique/);
 });
 
 test('Vivy removes an unselected singer from a provider duo draft', () => {
