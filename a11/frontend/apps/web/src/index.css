@@ -5027,11 +5027,28 @@ html.a11-auth-page-root body {
   }
 
   body.vivy-keyboard-open .vivy-chat-compose div {
-    grid-template-columns: 1fr;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(74px, 1fr);
+    grid-template-columns: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    padding-bottom: 2px;
   }
 
-  body.vivy-keyboard-open .vivy-chat-compose div button:not([type="submit"]) {
+  body.vivy-keyboard-open .vivy-chat-compose div::-webkit-scrollbar {
     display: none;
+  }
+
+  body.vivy-keyboard-open .vivy-chat-compose div button {
+    min-width: 74px;
+    padding-inline: 8px;
+    white-space: nowrap;
+  }
+
+  body.vivy-keyboard-open .vivy-chat-compose button[type="submit"] {
+    min-width: 92px;
   }
 
   .vivy-studio-head {

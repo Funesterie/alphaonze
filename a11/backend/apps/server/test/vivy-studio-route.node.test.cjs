@@ -2129,11 +2129,45 @@ test('Vivy NOSSEN Banger sends a clean song seed and lets backend songcraft stru
 
   assert.match(builderBlock, /themeParts/);
   assert.match(builderBlock, /imageParts/);
-  assert.match(builderBlock, /un refrain Banger net/);
+  assert.match(builderBlock, /Banger, on rallume la nuit/);
+  assert.match(builderBlock, /\[Couplet 1 -/);
+  assert.match(builderBlock, /\[Refrain -/);
+  assert.match(builderBlock, /\[Pont\]/);
   assert.doesNotMatch(builderBlock, /Matière chanson NOSSEN|Thème:|Images:|À transformer en paroles|Je pars de \$\{a\}|Baaanger, le refrain prend feu|Production:\s*Suno|D40 V9/i);
   assert.match(launchBlock, /const songSeed = buildVivyNossenBangerSongText/);
+  assert.match(launchBlock, /lyrics:\s*songSeed/);
   assert.match(launchBlock, /songText:\s*songSeed/);
   assert.doesNotMatch(launchBlock, /lyrics:\s*songLyrics/);
+});
+
+test('Vivy NOSSEN Banger isolates the production request from the visible trigger chat line', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const launchStart = appSource.indexOf('async function launchNossenBanger');
+  const launchEnd = appSource.indexOf('async function onVivyVoiceReferenceChange', launchStart);
+  const launchBlock = appSource.slice(launchStart, launchEnd);
+
+  assert.match(launchBlock, /const productionHistory(?:\s*:\s*[^=]+)?\s*=\s*\[\]/);
+  assert.match(launchBlock, /history:\s*productionHistory/);
+  assert.doesNotMatch(launchBlock, /history:\s*apiHistory/);
+  assert.doesNotMatch(launchBlock, /\[\.\.\.messages,\s*triggerMessage\]/);
+  assert.doesNotMatch(launchBlock, /content:\s*`NOSSEN lancé pour/);
+});
+
+test('Vivy NOSSEN Banger production brief stays orchestration-only and never carries raw context', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const builderStart = appSource.indexOf('function buildVivyNossenBangerProductionBrief');
+  const builderEnd = appSource.indexOf('function buildVivyNossenBangerSongText', builderStart);
+  const builderBlock = appSource.slice(builderStart, builderEnd);
+
+  assert.match(builderBlock, /Étapes invisibles|Etapes invisibles|production stepwise|chaine/);
+  assert.doesNotMatch(builderBlock, /Contexte utile/);
+  assert.doesNotMatch(builderBlock, /readiness\.source/);
 });
 
 test('Vivy NOSSEN Banger ignores operator bug reports before deciding readiness', () => {
@@ -3246,6 +3280,32 @@ test('Vivy mobile composer does not double-scroll with the visual viewport', () 
   assert.match(viewportResizeHandler, /block:\s*"nearest"/);
   assert.ok(mobileComposer);
   assert.doesNotMatch(mobileComposer, /--vivy-keyboard-inset/);
+});
+
+test('Vivy mobile composer keeps the focused textarea stable instead of force-scrolling on every focus', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const focusHelper = appSource.match(/const keepComposerVisible = \(behavior: ScrollBehavior = "auto"\) => \{[\s\S]*?\n    \};/)?.[0] || '';
+
+  assert.ok(focusHelper);
+  assert.match(focusHelper, /getBoundingClientRect/);
+  assert.match(focusHelper, /visibleBottom/);
+  assert.doesNotMatch(focusHelper, /target\.scrollIntoView\(\{ behavior, block: "nearest"/);
+});
+
+test('Vivy mobile keyboard mode keeps composer controls compact instead of hiding all non-send buttons', () => {
+  const cssSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/index.css'),
+    'utf8'
+  );
+  const keyboardComposeBlock = cssSource.match(/body\.vivy-keyboard-open \.vivy-chat-compose div \{[\s\S]*?\n  \}/)?.[0] || '';
+
+  assert.ok(keyboardComposeBlock);
+  assert.match(keyboardComposeBlock, /overflow-x:\s*auto/);
+  assert.match(keyboardComposeBlock, /grid-auto-flow:\s*column/);
+  assert.doesNotMatch(cssSource, /body\.vivy-keyboard-open \.vivy-chat-compose div button:not\(\[type="submit"\]\) \{[\s\S]*?display:\s*none/);
 });
 
 test('Vivy acknowledges repetition complaints instead of recycling the chat fallback', async () => {
