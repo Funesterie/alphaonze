@@ -3142,6 +3142,8 @@ function buildVivyInternalTuningReply({ message = '', history = [], language = '
 function isDirectSongwritingRequest(message = '') {
   const normalized = foldTextForLookup(message);
   return /\b(fais|fait|ecris|ecrit|compose|genere|genere|cree|crée)\b.{0,80}\b(chanson|musique|son|paroles|lyrics|refrain|couplet)\b/.test(normalized)
+    || /\b(raconte|raconter|narre|narrer)\b.{0,110}\b(en\s+chanson|chanson|musique|son|paroles|lyrics|refrain|couplet)\b/.test(normalized)
+    || /\b(?:en|version)\s+chanson\b/.test(normalized)
     || /\b(transforme|structure|arrange|mets|met)\b.{0,100}\b(chanson|musique|son|paroles|lyrics|refrain|couplet)\b/.test(normalized)
     || /\b(continue|continuer|reprends|reprendre|poursuis|poursuivre|complete|complète|termine|enchaîne|enchaine)\b.{0,90}\b(paroles|lyrics|couplet|couplets|refrain|rap)\b/.test(normalized)
     || /\b(paroles|lyrics|couplet|couplets|refrain|rap)\b.{0,90}\b(continue|continuer|reprends|reprendre|poursuis|poursuivre|complete|complète|termine|enchaîne|enchaine)\b/.test(normalized)
@@ -3677,6 +3679,15 @@ async function buildVivyAiChat(input, req) {
   }
   rememberVivyChatSession(userId, sessionContext);
   const fileContext = formatVivyFilesForPrompt(files);
+  const songFileContext = mode === 'song'
+    && /\b(?:utilise|reprends|reprendre|mets|mettre|integre|intègre|copie|prends|prendre)\b.{0,90}\b(?:texte|ocr|image|photo|fichier|piece jointe|pièce jointe|document)\b/.test(foldTextForLookup(intentMessage || message))
+    ? sanitizeVivySongMaterial(files.map((file) => [
+      file.description,
+      file.visualDescription,
+      file.textPreview,
+    ].filter(Boolean).join('\n')).filter(Boolean).join('\n\n'), 1200)
+    : '';
+  const promptFileContext = mode === 'song' ? songFileContext : fileContext;
   const memoryText = compactUniqueLines([
     (intentMessage || message) ? `Message: ${intentMessage || message}` : '',
     fileContext ? `Fichiers:\n${fileContext}` : '',
@@ -3972,7 +3983,7 @@ async function buildVivyAiChat(input, req) {
       intentMessage || message,
       webResearch ? formatVivyWebResearchForPrompt(webResearch.webSearch) : '',
       localContext ? `Contexte local Funesterie/A11 en lecture seule:\n${localContext.prompt}` : '',
-      fileContext ? `Pièces jointes et contexte fichier:\n${fileContext}` : '',
+      promptFileContext ? `Pièces jointes et contexte fichier:\n${promptFileContext}` : '',
     ], VIVY_SONG_MAX_CHARS) || 'Continue la conversation Vivy avec douceur et précision.';
 
     const systemPrompt = buildVivySystemPrompt(mode, language, input);

@@ -1040,6 +1040,30 @@ test('Suno payload isolates a clean lyric block from NOSSEN chat planning contex
   assert.doesNotMatch(payload.prompt, /Conversation Vivy|recherche web|que dirais-tu|couleur sonore/i);
 });
 
+test('Suno payload removes OCR filenames and prompt labels from NOSSEN lyrics', () => {
+  const payload = buildVivySunoPayload({
+    songSource: 'NOSSEN Banger - conversation Vivy',
+    songArtists: ['vivy'],
+    vocalCast: 'Solo Vivy',
+    songMood: 'Epic motorbike rock anthem, cinematic racing energy, powerful female vocal',
+    songText: [
+      'Titre : The Doctor 46',
+      'Concept : raconter Valentino Rossi, alias The Doctor, numéro 46, Mugello, Laguna Seca et les tribunes jaunes VR46.',
+      'Style sonore.',
+      'Epic motorbike rock anthem, cinematic racing energy, powerful female vocal, electric guitars, live drums, roaring engines.',
+      'Instruction : Écrire une vraie chanson complète avec intro, couplets, pré-refrain, refrain, pont et outro.',
+      'Valentino-rossi-stefan-bradl-motobike-the-doctor-sport-hd-wallpaper-preview-3096587626.jpg',
+      'Jpg - Analyse A11/OCR: % pu Le Va ROS SI',
+      'Maxresdefault-3369635775',
+    ].join('\n'),
+  });
+
+  assert.equal(payload.title, 'The Doctor 46');
+  assert.match(payload.prompt, /Valentino Rossi|Doctor|Mugello|Laguna Seca|VR46/i);
+  assert.doesNotMatch(payload.prompt, /Style sonore|Instruction|Écrire une vraie chanson|Epic motorbike rock anthem/i);
+  assert.doesNotMatch(payload.prompt, /Valentino-rossi-stefan-bradl|\.jpg|Jpg|OCR|Analyse A11|maxresdefault|wallpaper|ROS SI/i);
+});
+
 test('Vivy songcraft drops operator diagnostics about parroting, compiler output, and mobile typing', () => {
   const lyrics = buildVivyStructuredLyrics({
     songText: [
@@ -2174,7 +2198,8 @@ test('Vivy NOSSEN Banger sends a polished song seed before Suno sees it', () => 
   assert.doesNotMatch(builderBlock, /`Banger, \$\{[^}]+\} nous suit/);
   assert.doesNotMatch(builderBlock, /\[Refrain de retour -/);
   assert.doesNotMatch(builderBlock, /Matière chanson NOSSEN|Thème:|Images:|À transformer en paroles|Je pars de \$\{a\}|Baaanger, le refrain prend feu|Production:\s*Suno|D40 V9/i);
-  assert.match(launchBlock, /const songSeed = buildVivyNossenBangerSongText/);
+  assert.match(launchBlock, /const songSeedRaw = buildVivyNossenBangerSongText/);
+  assert.match(launchBlock, /const songSeed = sanitizeVivyNossenSongSeed\(songSeedRaw\)/);
   assert.match(launchBlock, /const productionLabel = useBangerWord \? "NOSSEN Banger" : "NOSSEN"/);
   assert.match(launchBlock, /lyrics:\s*songSeed/);
   assert.match(launchBlock, /songText:\s*songSeed/);
@@ -2260,6 +2285,41 @@ test('Vivy NOSSEN Banger production brief stays orchestration-only and never car
   assert.match(builderBlock, /wantsVivyNossenBangerWord\(readiness\.source\)/);
   assert.doesNotMatch(builderBlock, /Contexte utile/);
   assert.doesNotMatch(builderBlock, /\$\{readiness\.source\}/);
+});
+
+test('Vivy NOSSEN Banger builds a semantic canvas instead of singing media OCR', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const canvasStart = appSource.indexOf('function buildVivyNossenSemanticCanvas');
+  const canvasEnd = appSource.indexOf('function normalizeVivyNossenContextSource', canvasStart);
+  const normalizeStart = appSource.indexOf('function normalizeVivyNossenContextSource');
+  const normalizeEnd = appSource.indexOf('function buildVivyNossenBangerReadiness', normalizeStart);
+  const briefStart = appSource.indexOf('function buildVivyNossenBangerProductionBrief');
+  const briefEnd = appSource.indexOf('function buildVivyNossenBangerSongText', briefStart);
+  const launchStart = appSource.indexOf('async function launchNossenBanger');
+  const launchEnd = appSource.indexOf('async function onVivyVoiceReferenceChange', launchStart);
+  const canvasBlock = appSource.slice(canvasStart, canvasEnd);
+  const normalizeBlock = appSource.slice(normalizeStart, normalizeEnd);
+  const briefBlock = appSource.slice(briefStart, briefEnd);
+  const launchBlock = appSource.slice(launchStart, launchEnd);
+
+  assert.ok(canvasStart > 0, 'semantic canvas builder exists');
+  assert.match(appSource, /type VivyNossenSemanticCanvas/);
+  assert.match(appSource, /looksLikeVivyNossenTechnicalMediaLine/);
+  assert.match(appSource, /isVivyNossenSonicStyleLine/);
+  assert.match(appSource, /isVivyNossenStructureInstructionLine/);
+  assert.match(canvasBlock, /lyricLines/);
+  assert.match(canvasBlock, /styleHints/);
+  assert.match(canvasBlock, /structureHints/);
+  assert.match(canvasBlock, /technicalNoise/);
+  assert.match(canvasBlock, /useAttachmentText/);
+  assert.match(briefBlock, /styleHints/);
+  assert.match(briefBlock, /structureHints/);
+  assert.match(launchBlock, /sanitizeVivyNossenSongSeed/);
+  assert.doesNotMatch(normalizeBlock, /file\.filename[\s\S]{0,140}file\.textPreview[\s\S]{0,140}file\.analysisSummary/);
+  assert.match(appSource, /(?:jpg|jpeg|png|ocr|maxresdefault|wallpaper)/i);
 });
 
 test('Vivy NOSSEN Banger ignores operator bug reports before deciding readiness', () => {
@@ -2796,6 +2856,37 @@ test('Vivy routes continue les paroles to songcraft and cleans UI/brief contamin
   assert.doesNotMatch(result.assistant, /Je suis Vivy|Je capte:/i);
   assert.doesNotMatch(result.assistant, /\[Verse 1 - Djeff\]\s*VIVY_SONG_PRODUCTION/i);
   assert.doesNotMatch(result.assistant, /Mix D40|double-harmonic|must-not-leak|token=/i);
+});
+
+test('Vivy routes raconte en chanson to songcraft and ignores OCR attachment noise', async () => {
+  const message = 'oui raconte ses plus belles courses en chanson';
+  assert.equal(isDirectSongwritingRequest(message), true);
+
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-rossi-raconte-en-chanson',
+    message,
+    history: [
+      { role: 'user', content: 'salut vivy je voudrais raconter du pilote de moto Rossi alias The Doctor 46' },
+      { role: 'assistant', content: 'Je prends ça comme une vraie discussion: ancien fallback à ignorer.' },
+    ],
+    files: [
+      {
+        filename: 'Valentino-rossi-stefan-bradl-motobike-the-doctor-sport-hd-wallpaper-preview-3096587626.jpg',
+        contentType: 'image/jpeg',
+        textPreview: '% pu Le Va ROS SI',
+        analysisSummary: 'Jpg - Analyse A11/OCR: % pu Le Va ROS SI',
+        visualDescription: 'Maxresdefault-3369635775',
+      },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'song');
+  assert.equal(result.aiMode, 'deterministic_songcraft');
+  assert.match(result.assistant, /Rossi|Doctor|quarante-six|46|course|moteur/i);
+  assert.match(result.assistant, /\[(Chorus|Refrain|Verse|Couplet)/i);
+  assert.doesNotMatch(result.assistant, /Je prends ça comme une vraie discussion|Le bon prochain pas/i);
+  assert.doesNotMatch(result.assistant, /Valentino-rossi-stefan-bradl|wallpaper|\.jpg|Jpg|OCR|Analyse A11|maxresdefault|ROS SI/i);
 });
 
 test('Vivy chat song mode exposes clean publicLyrics instead of an agent handoff', async () => {

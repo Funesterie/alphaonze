@@ -84,6 +84,27 @@ function stripSongCommand(value = '') {
     .trim();
 }
 
+function looksLikeVivySongTechnicalMediaNoiseLine(line = '') {
+  const raw = String(line || '').trim();
+  const folded = foldTextForLookup(raw);
+  if (!folded) return false;
+  if (/\.(?:jpe?g|png|webp|gif|bmp|svg|heic|avif)\b/i.test(raw)) return true;
+  if (/https?:\/\/\S+/i.test(raw) || /\b(?:downloadurl|storagekey|contenttype|textpreview|visualdescription|analysissummary)\b/i.test(raw)) return true;
+  if (/\b(?:ocr|analyse\s+a11|jpg|jpeg|png|webp|gif|maxresdefault|wallpaper|preview|filename|nom\s+de\s+fichier|fichier\s+image|metadata|metadonnees|métadonnées|lecture\s+locale|vision\s+avancee|vision\s+avancée|format\s+jpeg|format\s+png|image\s+recue|image\s+reçue|px|ko)\b/.test(folded)) return true;
+  if (/\b[a-f0-9]{14,}\b/i.test(raw) || /\b\d{8,}\b/.test(raw)) return true;
+  return false;
+}
+
+function looksLikeVivySongStyleOrStructureLine(line = '') {
+  const raw = String(line || '').trim();
+  const folded = foldTextForLookup(raw);
+  if (!folded) return false;
+  if (/^(?:style\s+sonore|direction\s+sonore|couleur\s+sonore|ambiance\s+sonore|mood|genre|style|instruction|consigne|structure|format\s+attendu|ecrire|écrire|ecris|écris)\b/.test(folded)) return true;
+  if (/\b(?:vraie\s+chanson\s+complete|vraie\s+chanson\s+complète|ecrire.{0,50}chanson\s+complete|écrire.{0,50}chanson\s+complète|ecris.{0,50}chanson\s+complete|écris.{0,50}chanson\s+complète|intro.*couplet.*refrain|couplet.*refrain.*pont|ne\s+pas\s+recopier|ne\s+chante\s+pas|paroles\s+chantables)\b/.test(folded)) return true;
+  const styleMatches = folded.match(/\b(?:epic|cinematic|cinematique|cinématique|dark|pop|rock|metal|electro|rap|anthem|motorbike|racing|powerful|female|male|vocal|voice|guitars?|guitares?|drums?|batterie|synths?|orchestr(?:e|al|ation)?|strings?|bpm|stadium|crowd|choir|reverb|bass|basse)\b/g) || [];
+  return styleMatches.length >= 3 && (raw.includes(',') || /\b(?:vocal|bpm|drums?|guitars?|synths?|orchestr|anthem)\b/.test(folded));
+}
+
 function looksLikeVivySongUiNoiseLine(line = '') {
   const raw = String(line || '').trim();
   const folded = foldTextForLookup(raw);
@@ -93,6 +114,8 @@ function looksLikeVivySongUiNoiseLine(line = '') {
   // section/voice marker, never UI noise. Keep it so complete songs are detected.
   if (/^\[[\p{L}\p{N} &,\/'’-]{1,40}\]$/u.test(raw)) return false;
 
+  if (looksLikeVivySongTechnicalMediaNoiseLine(raw)) return true;
+  if (looksLikeVivySongStyleOrStructureLine(raw)) return true;
   if (/^je suis vivy(?:\b|$)/.test(folded)) return true;
   if (/^parle moi d une (?:voix|chanson|ambiance|scene)\b/.test(folded)) return true;
   if (/^(vivy|vous|accueil|discussion|menu|voix|chanson|scene|scène|fichier|envoyer|copier|partager|defaut|défaut|audio perso|importer|ptt)$/.test(folded)) return true;
@@ -168,7 +191,7 @@ function expandVivySongMaterialCandidate(value = '') {
   if (/^(a transformer|à transformer|ecris une chanson|écris une chanson|le refrain doit|si le mot anglais|composer une chanson|production chantee|production chantée|appliquer ensuite)\b/.test(folded)) return [];
   if (/\b(?:ne chante jamais|pas a recopier|pas à recopier|jamais les consignes|bouton|bugs?|repete|perroquet|singeur|sortie compilateur|user|affichage|telephone|dezoom|clavier|credit|credits|cles?|key|llm|logs?|mot prompt|production suno|mix final d40|d40 v9|suno)\b/.test(folded)) return [];
 
-  const labelMatch = line.match(/^(?:titre possible|titre|theme|thème|images?|matiere utile|matière utile)\s*:?\s*(.+)$/i);
+  const labelMatch = line.match(/^(?:titre possible|titre|theme|thème|concept|images?|matiere utile|matière utile)\s*:?\s*(.+)$/i);
   if (labelMatch) line = cleanOneLine(labelMatch[1], '', 300);
   line = line.replace(/^NOSSEN\s+Banger\s*[:.-]?\s*/i, '').trim();
   if (!line) return [];
@@ -396,6 +419,9 @@ function inferTitle(theme = '') {
   const rawText = cleanText(theme, 1200);
   const stripped = stripSongCommand(theme);
   const motif = inferMotif(stripped);
+  const explicitTitle = rawText.match(/^\s*(?:titre|title)\s*:?\s*([^\r\n]{2,90})/im);
+  if (explicitTitle) return cleanOneLine(stripSongCommand(explicitTitle[1]), 'Sans titre', 80);
+  if (/\b(?:valentino|rossi|the doctor|vr46|mugello|laguna seca|motogp|moto gp)\b/i.test(stripped)) return 'The Doctor 46';
   if (/moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/i.test(stripped)) return 'Pignon dans la nuit';
   if (/planete|planète|astre|voie lact[ée]e|zodiaque|saint seiya|chevalier|cosmos|galaxie|[ée]toile|constellation/i.test(stripped)) return 'Cosmos du matin';
   if (/flocon|neige|bol/i.test(stripped)) return 'Flocon d’émerveillement';
@@ -1041,7 +1067,7 @@ function buildVivyStructuredLyrics(input = {}) {
     input.voicePersona,
     input.vocalCast,
   ].filter(Boolean).join('\n'), VIVY_SONG_MAX_CHARS);
-  if (isDjeffRapTheme(themeHint)) {
+  if ((!hasExplicitVivySongArtists(input) || artistCast.ids.includes('djeff')) && isDjeffRapTheme(themeHint)) {
     return buildDjeffRapDuoLyrics(input, material);
   }
 

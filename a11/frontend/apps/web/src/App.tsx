@@ -2934,6 +2934,17 @@ type VivyNossenBangerReadiness = {
   score: number;
   reason: string;
   source: string;
+  styleHints: string[];
+  structureHints: string[];
+  technicalNoise: string[];
+  mediaHints: string[];
+};
+type VivyNossenSemanticCanvas = {
+  lyricSource: string;
+  styleHints: string[];
+  structureHints: string[];
+  technicalNoise: string[];
+  mediaHints: string[];
 };
 
 const VIVY_STUDIO_MODES: Array<{
@@ -3318,28 +3329,145 @@ function isVivyVoiceChangeRequest(text: string) {
   return false;
 }
 
+function uniqueVivyNossenLines(lines: string[], max = 32) {
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  lines.forEach((line) => {
+    const cleaned = toUnicodeLine(line, "", 260).trim();
+    const key = foldForLookup(cleaned);
+    if (!cleaned || !key || seen.has(key)) return;
+    seen.add(key);
+    unique.push(cleaned);
+  });
+  return unique.slice(-max);
+}
+
+function isVivyNossenUseAttachmentTextRequest(value = "") {
+  const folded = foldForLookup(value);
+  return /\b(?:utilise|reprends|reprendre|mets|mettre|integre|intègre|copie|prends|prendre)\b.{0,90}\b(?:texte|ocr|image|photo|fichier|piece jointe|pièce jointe|document)\b/.test(folded);
+}
+
+function looksLikeVivyNossenTechnicalMediaLine(value = "") {
+  const raw = String(value || "").trim();
+  const folded = foldForLookup(raw);
+  if (!folded) return false;
+  if (/\.(?:jpe?g|png|webp|gif|bmp|svg|heic|avif)\b/i.test(raw)) return true;
+  if (/https?:\/\/\S+/i.test(raw) || /\b(?:downloadurl|storagekey|contenttype|textpreview|visualdescription|analysissummary)\b/i.test(raw)) return true;
+  if (/\b(?:ocr|analyse\s+a11|jpg|jpeg|png|webp|gif|maxresdefault|wallpaper|preview|filename|nom\s+de\s+fichier|fichier\s+image|metadata|metadonnees|métadonnées|lecture\s+locale|vision\s+avancee|vision\s+avancée|format\s+jpeg|format\s+png|image\s+recue|image\s+reçue|px|ko)\b/.test(folded)) return true;
+  if (/\b[a-f0-9]{14,}\b/i.test(raw) || /\b\d{8,}\b/.test(raw)) return true;
+  return false;
+}
+
+function stripVivyNossenControlLabel(value = "") {
+  return toUnicodeLine(value, "", 260)
+    .replace(/^(?:style\s+sonore|direction\s+sonore|couleur\s+sonore|ambiance\s+sonore|mood|genre|style|instruction|consigne|structure|format\s+attendu|concept|th[eè]me|theme|titre)\s*[:.-]?\s*/i, "")
+    .trim();
+}
+
+function isVivyNossenSonicStyleLine(value = "") {
+  const raw = String(value || "").trim();
+  const folded = foldForLookup(raw);
+  if (!folded) return false;
+  if (/^(?:style\s+sonore|direction\s+sonore|couleur\s+sonore|ambiance\s+sonore|mood|genre|style)\b/.test(folded)) return true;
+  const styleMatches = folded.match(/\b(?:epic|cinematic|cinematique|cinématique|dark|pop|rock|metal|electro|rap|anthem|motorbike|racing|powerful|female|male|vocal|voice|guitars?|guitares?|drums?|batterie|synths?|orchestr(?:e|al|ation)?|strings?|bpm|stadium|crowd|choir|reverb|bass|basse)\b/g) || [];
+  return styleMatches.length >= 3 && (raw.includes(",") || /\b(?:vocal|bpm|drums?|guitars?|synths?|orchestr|anthem)\b/.test(folded));
+}
+
+function isVivyNossenStructureInstructionLine(value = "") {
+  const folded = foldForLookup(value);
+  if (!folded) return false;
+  if (/^(?:instruction|consigne|structure|format\s+attendu|ecrire|écrire|ecris|écris)\b/.test(folded)) return true;
+  if (/\b(?:vraie\s+chanson\s+complete|vraie\s+chanson\s+complète|ecrire.{0,50}chanson\s+complete|écrire.{0,50}chanson\s+complète|ecris.{0,50}chanson\s+complete|écris.{0,50}chanson\s+complète|intro.*couplet.*refrain|couplet.*refrain.*pont|ne\s+pas\s+recopier|ne\s+chante\s+pas|paroles\s+chantables)\b/.test(folded)) return true;
+  return false;
+}
+
+function collectVivyNossenSemanticLine(canvas: VivyNossenSemanticCanvas & { lyricLines: string[] }, value = "") {
+  const raw = toUnicodeLine(value, "", 320)
+    .replace(/^(?:Utilisateur|Vivy)\s*:\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!raw) return;
+  if (looksLikeVivyNossenTechnicalMediaLine(raw)) {
+    canvas.technicalNoise.push(raw);
+    return;
+  }
+  if (isVivyNossenSonicStyleLine(raw)) {
+    const hint = stripVivyNossenControlLabel(raw);
+    if (hint) canvas.styleHints.push(hint);
+    return;
+  }
+  if (isVivyNossenStructureInstructionLine(raw)) {
+    const hint = stripVivyNossenControlLabel(raw);
+    if (hint) canvas.structureHints.push(hint);
+    return;
+  }
+  const cleaned = cleanVivyNossenLyricSourceLine(raw);
+  if (cleaned) canvas.lyricLines.push(cleaned);
+}
+
+function buildVivyNossenSemanticCanvas(
+  messages: VivyPublicChatMessage[] = [],
+  draft = "",
+  files: VivyPublicChatFile[] = []
+): VivyNossenSemanticCanvas {
+  const rawUserContext = [
+    ...messages.filter((entry) => entry.role === "user").map((entry) => entry.content),
+    draft,
+  ].filter(Boolean).join("\n");
+  const useAttachmentText = isVivyNossenUseAttachmentTextRequest(rawUserContext);
+  const canvas: VivyNossenSemanticCanvas & { lyricLines: string[] } = {
+    lyricSource: "",
+    lyricLines: [],
+    styleHints: [],
+    structureHints: [],
+    technicalNoise: [],
+    mediaHints: [],
+  };
+  const splitSemanticLines = (value = "") => toUnicodeText(value, 2600)
+    .replace(/([.!?])\s+/g, "$1\n")
+    .split(/\r?\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  messages
+    .filter((entry) => entry.role === "user")
+    .slice(-24)
+    .forEach((entry) => splitSemanticLines(entry.content).forEach((line) => collectVivyNossenSemanticLine(canvas, line)));
+  splitSemanticLines(draft).forEach((line) => collectVivyNossenSemanticLine(canvas, line));
+
+  files.slice(0, 6).forEach((file) => {
+    const safeVisualHint = toUnicodeLine(file.visualDescription || file.description, "", 220);
+    if (safeVisualHint && !looksLikeVivyNossenTechnicalMediaLine(safeVisualHint)) canvas.mediaHints.push(safeVisualHint);
+    if (!useAttachmentText) {
+      [
+        file.filename,
+        file.textPreview,
+        file.analysisSummary,
+      ].filter(Boolean).forEach((line) => canvas.technicalNoise.push(toUnicodeLine(line, "", 220)));
+      return;
+    }
+    [
+      file.description,
+      file.visualDescription,
+      file.textPreview,
+      file.analysisSummary,
+    ].filter(Boolean).forEach((line) => splitSemanticLines(line).forEach((part) => collectVivyNossenSemanticLine(canvas, part)));
+  });
+
+  canvas.lyricSource = toUnicodeText(uniqueVivyNossenLines(canvas.lyricLines, 32).join("\n"), 7200).trim();
+  canvas.styleHints = uniqueVivyNossenLines(canvas.styleHints, 8);
+  canvas.structureHints = uniqueVivyNossenLines(canvas.structureHints, 8);
+  canvas.technicalNoise = uniqueVivyNossenLines(canvas.technicalNoise, 12);
+  canvas.mediaHints = uniqueVivyNossenLines(canvas.mediaHints, 8);
+  return canvas;
+}
+
 function normalizeVivyNossenContextSource(
   messages: VivyPublicChatMessage[] = [],
   draft = "",
   files: VivyPublicChatFile[] = []
 ) {
-  const messageLines = messages
-    .filter((entry) => entry.role === "user")
-    .map((entry) => normalizeVivyNossenUserContent(entry.content))
-    .filter(Boolean)
-    .map((content) => `Utilisateur: ${content}`)
-    .filter(Boolean);
-  const fileLines = files
-    .map((file) => [
-      file.filename,
-      file.description,
-      file.textPreview,
-      file.visualDescription,
-      file.analysisSummary,
-    ].filter(Boolean).join(" - "))
-    .filter(Boolean);
-  const cleanedDraft = normalizeVivyNossenUserContent(draft);
-  return toUnicodeText([...messageLines.slice(-24), cleanedDraft, ...fileLines].filter(Boolean).join("\n"), 7200).trim();
+  return buildVivyNossenSemanticCanvas(messages, draft, files).lyricSource;
 }
 
 function buildVivyNossenBangerReadiness(
@@ -3347,18 +3475,25 @@ function buildVivyNossenBangerReadiness(
   draft = "",
   files: VivyPublicChatFile[] = []
 ): VivyNossenBangerReadiness {
-  const source = normalizeVivyNossenContextSource(messages, draft, files);
+  const canvas = buildVivyNossenSemanticCanvas(messages, draft, files);
+  const source = canvas.lyricSource;
   const folded = foldForLookup(source);
+  const foldedSemantic = foldForLookup([
+    source,
+    ...canvas.styleHints,
+    ...canvas.structureHints,
+    ...canvas.mediaHints,
+  ].join("\n"));
   const actualCreativeUserTurns = messages
     .filter((entry) => entry.role === "user")
     .map((entry) => normalizeVivyNossenUserContent(entry.content))
     .filter((content) => content.trim().length >= 32).length;
   const draftTurn = normalizeVivyNossenUserContent(draft).trim().length >= 80 ? 1 : 0;
-  const fileTurn = files.length ? 1 : 0;
+  const fileTurn = canvas.mediaHints.length && source.length >= 120 ? 1 : 0;
   const userTurns = actualCreativeUserTurns + draftTurn + fileTurn;
-  const hasSongSignal = /\b(chanson|musique|paroles|refrain|couplet|bridge|outro|intro|suno|banger|son|melodie|mélodie|prod|composition)\b/.test(folded);
-  const hasVoiceSignal = /\b(voix|vocal|vocale|chanteur|chanteuse|solo|duo|trio|quatuor|djeff|vivy|a11|k44|kaen44|ref)\b/.test(folded);
-  const hasColorSignal = /\b(ambiance|couleur|sonor|mood|dark|sombre|doux|douce|electro|rap|pop|metal|rock|cinematique|cinématique|epique|épique|triste|lumineux|guitare|piano|basse|drums|batterie)\b/.test(folded);
+  const hasSongSignal = /\b(chanson|musique|paroles|refrain|couplet|bridge|outro|intro|suno|banger|son|melodie|mélodie|prod|composition)\b/.test(foldedSemantic);
+  const hasVoiceSignal = /\b(voix|vocal|vocale|chanteur|chanteuse|solo|duo|trio|quatuor|djeff|vivy|a11|k44|kaen44|ref)\b/.test(foldedSemantic);
+  const hasColorSignal = /\b(ambiance|couleur|sonor|mood|dark|sombre|doux|douce|electro|rap|pop|metal|rock|cinematique|cinématique|epique|épique|triste|lumineux|guitare|piano|basse|drums|batterie)\b/.test(foldedSemantic);
   const lyricLineCount = source.split(/\r?\n+/).map((line) => cleanVivyNossenLyricSourceLine(line)).filter((line) => line.length >= 12).length;
   const hasStrongSongDraft = /\[(?:verse|chorus|refrain|couplet|bridge|pont|intro|outro)(?:\s+\d+)?\]/i.test(source)
     || (lyricLineCount >= 7 && hasSongSignal && source.length >= 420);
@@ -3366,18 +3501,23 @@ function buildVivyNossenBangerReadiness(
   if (hasSongSignal) score += 18;
   if (hasVoiceSignal) score += 14;
   if (hasColorSignal) score += 12;
+  if (canvas.styleHints.length) score += 6;
   if (/\b(nossen|funesterie|djeff|vivy)\b/.test(folded)) score += 8;
-  if (files.length) score += 8;
+  if (fileTurn) score += 8;
   const hasEnoughTurns = actualCreativeUserTurns >= 2
     || (actualCreativeUserTurns >= 1 && draftTurn > 0)
     || (actualCreativeUserTurns >= 1 && fileTurn > 0)
     || hasStrongSongDraft;
-  const longEnough = source.length >= 360 || (source.length >= 180 && files.length > 0) || hasStrongSongDraft;
+  const longEnough = source.length >= 360 || (source.length >= 180 && fileTurn > 0) || hasStrongSongDraft;
   const ready = Boolean(source && longEnough && hasEnoughTurns && hasSongSignal && score >= 62);
   return {
     ready,
     score,
     source,
+    styleHints: canvas.styleHints,
+    structureHints: canvas.structureHints,
+    technicalNoise: canvas.technicalNoise,
+    mediaHints: canvas.mediaHints,
     reason: ready
       ? "Vivy sent assez de matière pour enflammer NOSSEN."
       : "Vivy attend encore un peu de matière avant d'enflammer NOSSEN.",
@@ -3427,6 +3567,7 @@ function getVivyNossenArtistTag(artistId: VivyStudioArtistId) {
 function cleanVivyNossenLyricSourceLine(value = "") {
   const line = toUnicodeLine(value, "", 190)
     .replace(/^(?:Utilisateur|Vivy)\s*:\s*/i, "")
+    .replace(/^(?:concept|th[eè]me|theme|titre)\s*[:.-]?\s*/i, "")
     .replace(/\s+/g, " ")
     .trim();
   if (!line) return "";
@@ -3442,6 +3583,9 @@ function cleanVivyNossenLyricSourceLine(value = "") {
 
 function looksLikeVivyNossenOperatorNoiseLine(folded = "") {
   if (!folded) return true;
+  if (looksLikeVivyNossenTechnicalMediaLine(folded)) return true;
+  if (isVivyNossenSonicStyleLine(folded)) return true;
+  if (isVivyNossenStructureInstructionLine(folded)) return true;
   if (/\b(?:d40|suno|fallback|secours|codex|prompt|telechargement|téléchargement|telecharger|télécharger|bouton|compile|compil|compiler|compilateur|formulaire|detecteur|détecteur|ajustements internes|grand modele|grand modèle|mode automatique|generation d40|génération d40)\b/.test(folded)) return true;
   if (/\b(?:nossen\s+mode|mode\s+nossen|tu\s+peux\s+faire\s+le\s+nossen|que\s+tu\s+fasses\s+un\s+son|fais\s+le\s+banger|lance\s+le\s+banger|demander\s+a\s+vivy|demander\s+à\s+vivy)\b/.test(folded)) return true;
   if (/\b(?:paroles?\s+passent?\s+pas|musique\s+bug|generation\s+musique\s+bug|génération\s+musique\s+bug|phrase générique|truc générique|generique|réecrit|réécrit|reecrit|recopie|recopier)\b/.test(folded)) return true;
@@ -3519,6 +3663,18 @@ function shapeVivyNossenCreativeFragment(value = "") {
   if (/\bopenai\b|\bgrecs?\b/.test(folded)) {
     return "OpenAI frappe comme un ancien empire";
   }
+  if (/\bmugello\b/.test(folded)) {
+    return "Mugello brûle comme un volcan de drapeaux jaunes";
+  }
+  if (/\blaguna\s+seca\b|\blaguna\b/.test(folded)) {
+    return "Laguna Seca garde un duel au bord du vide";
+  }
+  if (/\bvr46\b|\bquarante[-\s]?six\b|\b46\b/.test(folded)) {
+    return "les tribunes jaunes portent le numéro 46";
+  }
+  if (/\bvalentino\b|\brossi\b|\bthe\s+doctor\b|\bdoctor\b|\bmotogp\b|\bmoto\s*gp\b/.test(folded)) {
+    return "Valentino Rossi trace The Doctor 46 dans la lumière";
+  }
   return line
     .replace(/^(?:je veux|j'aimerais|j aimerais|je voudrais|fais|fait|crée|cree|écris|ecris|peux-tu|tu peux)\s+/i, "")
     .replace(/^(?:une?\s+)?(?:chanson|musique|son|paroles?|texte)\s+(?:qui|que|sur|pour|de|d'|à|a)?\s*/i, "")
@@ -3555,6 +3711,7 @@ function makeVivyNossenLyricLine(value = "", fallback = "", punctuation = ",") {
 
 function buildVivyNossenBangerTitle(source: string, fragments: string[]) {
   const folded = foldForLookup([source, ...fragments].join("\n"));
+  if (/\bvalentino\b|\brossi\b|\bthe\s+doctor\b|\bdoctor\b|\bvr46\b|\bmugello\b|\blaguna\s+seca\b|\bmotogp\b|\bmoto\s*gp\b/.test(folded)) return "The Doctor 46";
   if (/\bhelene\b|\btroie\b|\btroy\b/.test(folded)) return "Hélène de Funesterie";
   if (/\bjessy\b/.test(folded) && /\bdemons?\b/.test(folded)) return "Jessy tient debout";
   if (/\bnouvelle\s+generation\b|\bnouvelle\s+génération\b/.test(folded)) return "Nouvelle génération";
@@ -3566,7 +3723,7 @@ function buildVivyNossenBangerTitle(source: string, fragments: string[]) {
   return toUnicodeLine(words.slice(0, 5).join(" ") || "NOSSEN", "NOSSEN", 64);
 }
 
-function buildVivyNossenChorus(kind: "helene" | "jessy" | "default", useBangerWord: boolean): [string, string, string, string] {
+function buildVivyNossenChorus(kind: "helene" | "jessy" | "rossi" | "default", useBangerWord: boolean): [string, string, string, string] {
   if (kind === "helene") {
     return useBangerWord ? [
       "Banger, Hélène garde son ciel,",
@@ -3593,6 +3750,19 @@ function buildVivyNossenChorus(kind: "helene" | "jessy" | "default", useBangerWo
       "Et ses héros répondent: tu existes.",
     ];
   }
+  if (kind === "rossi") {
+    return useBangerWord ? [
+      "Banger, Doctor, quarante-six dans la lumière,",
+      "Banger, la piste s'ouvre comme un éclair.",
+      "Banger, le coeur jaune dans les tribunes,",
+      "Et la légende roule encore sous la lune.",
+    ] : [
+      "Doctor, quarante-six dans la lumière,",
+      "La piste s'ouvre comme un éclair.",
+      "Le coeur jaune dans les tribunes,",
+      "Et la légende roule encore sous la lune.",
+    ];
+  }
   return useBangerWord ? [
     "Banger, le refrain prend feu,",
     "Banger, le coeur reprend la piste.",
@@ -3606,7 +3776,7 @@ function buildVivyNossenChorus(kind: "helene" | "jessy" | "default", useBangerWo
   ];
 }
 
-function buildVivyNossenOutro(kind: "helene" | "jessy" | "default", useBangerWord: boolean): [string, string] {
+function buildVivyNossenOutro(kind: "helene" | "jessy" | "rossi" | "default", useBangerWord: boolean): [string, string] {
   if (kind === "helene") {
     return useBangerWord ? [
       "Banger, Hélène choisit son ciel,",
@@ -3623,6 +3793,15 @@ function buildVivyNossenOutro(kind: "helene" | "jessy" | "default", useBangerWor
     ] : [
       "Encore une étincelle,",
       "Jessy tient debout jusqu'au dernier écho.",
+    ];
+  }
+  if (kind === "rossi") {
+    return useBangerWord ? [
+      "Banger, le silence descend sur le circuit,",
+      "On entend encore son moteur dans la nuit.",
+    ] : [
+      "Le silence descend sur le circuit,",
+      "On entend encore son moteur dans la nuit.",
     ];
   }
   return useBangerWord ? [
@@ -3649,6 +3828,42 @@ function buildVivyNossenHeroicLyricPlan(source: string, fragments: string[]): Vi
   const hasSpider = /\bspider-?man\b|\bspiderman\b/.test(folded);
   const hasMarkedSmile = /\bchauve\b|\bdent\b|\bsourire\b/.test(folded);
   const hasHelene = /\bhelene\b|\btroie\b|\btroy\b/.test(folded);
+  const hasRossi = /\bvalentino\b|\brossi\b|\bthe\s+doctor\b|\bdoctor\b|\bvr46\b|\bmugello\b|\blaguna\s+seca\b|\bmotogp\b|\bmoto\s*gp\b/.test(folded);
+  if (hasRossi) {
+    return {
+      title: "The Doctor 46",
+      intro: [
+        "Le moteur crie sous le ciel d'Italie,",
+        "Le jaune des tribunes soulève la nuit.",
+      ],
+      verse1: [
+        "Mugello brûle comme un volcan vivant,",
+        "Les drapeaux VR46 se lèvent dans le vent.",
+        "Il plonge au freinage, il frôle la ligne,",
+        "Un sourire sous le casque, la trajectoire signe.",
+      ],
+      preChorus: [
+        "Dans chaque virage, il écrit son nom,",
+        "Sur l'asphalte noir, dans les vibrations.",
+        "La foule le porte, le chrono s'efface,",
+        "Quand Rossi attaque, le doute se casse.",
+      ],
+      chorus: buildVivyNossenChorus("rossi", useBangerWord),
+      verse2: [
+        "Laguna Seca résonne au bord du vide,",
+        "La roue danse, la peur devient fluide.",
+        "Il passe où personne n'ose passer,",
+        "Dans la poussière, l'histoire vient parler.",
+      ],
+      bridge: [
+        "Ce n'est pas seulement gagner,",
+        "C'est faire trembler l'instant.",
+        "Ce n'est pas seulement piloter,",
+        "C'est rendre le monde vivant.",
+      ],
+      outro: buildVivyNossenOutro("rossi", useBangerWord),
+    };
+  }
   if (hasHelene) {
     return {
       title: "Hélène de Funesterie",
@@ -3761,9 +3976,17 @@ function buildVivyNossenHeroicLyricPlan(source: string, fragments: string[]): Vi
 
 function buildVivyNossenBangerProductionBrief(readiness: VivyNossenBangerReadiness, artists: VivyStudioArtistId[]) {
   const useBangerWord = wantsVivyNossenBangerWord(readiness.source);
+  const styleLine = readiness.styleHints.length
+    ? `Style sonore utilisateur (direction uniquement, jamais paroles): ${readiness.styleHints.slice(0, 3).join(", ")}.`
+    : "";
+  const structureLine = readiness.structureHints.length
+    ? `Contraintes de structure utilisateur: ${readiness.structureHints.slice(0, 3).join(" / ")}.`
+    : "";
   return toUnicodeText([
     "NOSSEN production stepwise chain.",
     `Casting choisi: ${describeVivyNossenBangerCast(artists)}.`,
+    styleLine,
+    structureLine,
     "Etapes invisibles: préparer les paroles propres, laisser Suno chanter la piste complète, suivre le job, récupérer le MP3, appliquer ensuite le mix final D40 V9 Dynamique.",
     "Format attendu: chanson complète de 2m30 à 5m00, structure libre selon la matière: Vivy choisit le nombre de couplets, refrains, ponts et reprises. Garder au moins un refrain clair, pas une démo courte.",
     useBangerWord
@@ -3839,6 +4062,22 @@ function buildVivyNossenBangerSongText(readiness: VivyNossenBangerReadiness, art
     sharedTag,
     ...lyricPlan.outro,
   ].filter(Boolean).join("\n\n"), VIVY_STUDIO_SONG_MAX_CHARS);
+}
+
+function sanitizeVivyNossenSongSeed(value = "") {
+  const lines = toUnicodeText(value, VIVY_STUDIO_SONG_MAX_CHARS)
+    .split(/\r?\n/)
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return true;
+      if (/^\[[^\]]+\]$/.test(trimmed)) return true;
+      if (looksLikeVivyNossenTechnicalMediaLine(trimmed)) return false;
+      if (isVivyNossenSonicStyleLine(trimmed)) return false;
+      if (isVivyNossenStructureInstructionLine(trimmed)) return false;
+      if (looksLikeVivyNossenOperatorNoiseLine(foldForLookup(trimmed))) return false;
+      return true;
+    });
+  return toUnicodeText(lines.join("\n").replace(/\n{3,}/g, "\n\n"), VIVY_STUDIO_SONG_MAX_CHARS).trim();
 }
 
 function playVivyNossenBangerCall() {
@@ -7195,8 +7434,16 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
 
     try {
       const sunoSessionKey = readVivySessionSunoKey();
-      const songSeed = buildVivyNossenBangerSongText(readiness, artists);
+      const songSeedRaw = buildVivyNossenBangerSongText(readiness, artists);
+      const songSeed = sanitizeVivyNossenSongSeed(songSeedRaw);
       const productionBrief = buildVivyNossenBangerProductionBrief(readiness, artists);
+      const requestedSonicMood = readiness.styleHints.slice(0, 3).join(", ");
+      const songMood = [
+        useBangerWord
+          ? "chanson complète 2m30 à 5m00, structure libre selon la matière, refrain mémorable, hook Banger prononcé à l'américaine si utile, voix claires, couleur sonore choisie depuis le contexte"
+          : "chanson complète 2m30 à 5m00, structure libre selon la matière, refrain mémorable, voix claires, couleur sonore choisie depuis le contexte",
+        requestedSonicMood,
+      ].filter(Boolean).join(", ");
       const activeSessionName = getActiveSessionName(activeChatSessionId);
       const vivyLanguage = normalizeA11LanguageCode(getAuthAccountLanguage(localStorage.getItem("a11:language") || "fr"));
       const payload = await runVivyStudioProduction({
@@ -7218,9 +7465,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         artistCount: artists.length,
         singerCount: artists.length,
         vocalCast: castLabel,
-        songMood: useBangerWord
-          ? "chanson complète 2m30 à 5m00, structure libre selon la matière, refrain mémorable, hook Banger prononcé à l'américaine si utile, voix claires, couleur sonore choisie depuis le contexte"
-          : "chanson complète 2m30 à 5m00, structure libre selon la matière, refrain mémorable, voix claires, couleur sonore choisie depuis le contexte",
+        songMood,
         lyrics: songSeed,
         songText: songSeed,
         sessionSunoApiKey: sunoSessionKey || undefined,
