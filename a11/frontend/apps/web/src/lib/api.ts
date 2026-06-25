@@ -2620,10 +2620,13 @@ export type VivyStudioMedia = {
   jobId?: string;
   title?: string;
   url?: string;
+  downloadUrl?: string;
+  download_url?: string;
   audioUrl?: string;
   audio_url?: string;
   videoUrl?: string;
   video_url?: string;
+  contentType?: string;
   content_type?: string;
   filename?: string;
 };
@@ -2834,6 +2837,7 @@ export type VivyChatSessionMessage = {
   role: 'user' | 'assistant';
   content: string;
   ts: string;
+  media?: VivyStudioMedia | null;
 };
 
 export type VivyChatSessionRecord = {
@@ -2983,6 +2987,40 @@ export async function fetchVivyChatSession(sessionId: string): Promise<VivyChatS
     throw new Error(payload?.message || payload?.error || `Session Vivy indisponible (${res.status})`);
   }
   return payload.session as VivyChatSessionRecord;
+}
+
+export async function appendVivyChatSessionMessageOnServer(
+  input: {
+    sessionId?: string;
+    sessionName?: string;
+    conversationId?: string;
+    role: 'user' | 'assistant';
+    content: string;
+    media?: VivyStudioMedia | null;
+    mode?: VivyChatMode;
+    id?: string;
+  }
+): Promise<{ ok: boolean; message?: VivyChatSessionMessage; session?: VivyChatSessionRecord }> {
+  const safeSessionId = String(input.sessionId || 'default').trim() || 'default';
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/sessions/${encodeURIComponent(safeSessionId)}/messages`), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({
+      ...input,
+      shareToken: undefined,
+      shareTokenPresent: false,
+    }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Synchronisation session Vivy impossible (${res.status})`);
+  }
+  return {
+    ok: true,
+    message: payload.message as VivyChatSessionMessage | undefined,
+    session: payload.session as VivyChatSessionRecord | undefined,
+  };
 }
 
 export async function createVivyChatSessionOnServer(name: string): Promise<VivyChatSessionRecord> {

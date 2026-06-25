@@ -33,6 +33,7 @@ import {
   fetchAuthSession,
   fetchVivyChatSession,
   fetchVivyChatSessions,
+  appendVivyChatSessionMessageOnServer,
   getSubscriptionStatus,
   hasAdminApiAccess,
   hasAuthenticatedAdminApiAccess,
@@ -3037,6 +3038,7 @@ function mapVivyRemoteMessages(messages: VivyChatSessionRecord["messages"]): Viv
       role: entry?.role === "user" ? "user" as const : "assistant" as const,
       content: toUnicodeText(entry?.content),
       ts: String(entry?.ts || new Date().toISOString()),
+      media: readVivyPublicChatMedia(entry?.media),
     }))
     .filter((entry) => entry.content)
     .slice(-VIVY_PUBLIC_CHAT_MAX_MESSAGES);
@@ -3474,7 +3476,7 @@ function extractVivyNossenLyricFragments(source = "") {
 }
 
 function vivyNossenLyricFragment(fragments: string[], index: number, fallback: string) {
-  const value = fragments[index % Math.max(1, fragments.length)] || fallback;
+  const value = shapeVivyNossenCreativeFragment(fragments[index % Math.max(1, fragments.length)] || fallback);
   const cleaned = toUnicodeLine(value, fallback, 96)
     .replace(/^["'“”]+|["'“”]+$/g, "")
     .replace(/[.;:]+$/g, "")
@@ -3483,8 +3485,32 @@ function vivyNossenLyricFragment(fragments: string[], index: number, fallback: s
   return cleaned.charAt(0).toLowerCase() + cleaned.slice(1);
 }
 
+function shapeVivyNossenCreativeFragment(value = "") {
+  const line = toUnicodeLine(value, "", 190).trim();
+  if (!line) return "";
+  const folded = foldForLookup(line);
+  if (/\bjessy\b/.test(folded) || /\bhopital psy\b/.test(folded) || /\bdemons?\b/.test(folded)) {
+    return "Jessy tient debout face à ses démons";
+  }
+  if (/\bheros?\b|\bdbz\b|\bavengers?\b|\bspider-?man\b|\bmarvel\b|\bdc comics?\b/.test(folded)) {
+    return "ses héros veillent en cercle de lumière";
+  }
+  if (/\bboost|frisson|heroic|heroique|héroïque|anime\b/.test(folded)) {
+    return "un élan héroïque lui soulève le coeur";
+  }
+  return line
+    .replace(/^(?:je veux|j'aimerais|j aimerais|je voudrais|fais|fait|crée|cree|écris|ecris|peux-tu|tu peux)\s+/i, "")
+    .replace(/^(?:une?\s+)?(?:chanson|musique|son|paroles?|texte)\s+(?:qui|que|sur|pour|de|d'|à|a)?\s*/i, "")
+    .replace(/\b(?:je veux|j'aimerais|j aimerais|fais|écris|ecris)\b/gi, "")
+    .replace(/\b(?:raconter|raconte)\s+son\s+histoire\b/gi, "son histoire se relève")
+    .replace(/\b(?:à|a)\s+travers\b/gi, "avec")
+    .replace(/\s+/g, " ")
+    .replace(/^[,;:\-\s]+|[,;:\-\s]+$/g, "")
+    .trim();
+}
+
 function buildVivyNossenBangerTitle(fragments: string[]) {
-  const first = cleanVivyNossenLyricSourceLine(fragments[0] || "");
+  const first = shapeVivyNossenCreativeFragment(cleanVivyNossenLyricSourceLine(fragments[0] || ""));
   const words = first
     .split(/\s+/)
     .map((word) => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
@@ -3503,7 +3529,7 @@ function buildVivyNossenBangerProductionBrief(_readiness: VivyNossenBangerReadin
 }
 
 function buildVivyNossenBangerSongText(readiness: VivyNossenBangerReadiness, artists: VivyStudioArtistId[]) {
-  const fragments = extractVivyNossenLyricFragments(readiness.source);
+  const fragments = extractVivyNossenLyricFragments(readiness.source).map(shapeVivyNossenCreativeFragment).filter(Boolean);
   const title = buildVivyNossenBangerTitle(fragments);
   const leadArtist = artists[0] || "vivy";
   const hookArtist = artists.includes("vivy") ? "vivy" : leadArtist;
@@ -3525,7 +3551,7 @@ function buildVivyNossenBangerSongText(readiness: VivyNossenBangerReadiness, art
     `[Titre] ${title}`,
     `[Intro - ${VIVY_STUDIO_ARTISTS.find((artist) => artist.id === leadArtist)?.label || "Vivy"}]`,
     getVivyNossenArtistTag(leadArtist),
-    `Je marche avec ${themeParts[0]},`,
+    `Je porte ${themeParts[0]},`,
     `Je garde ${themeParts[1]} dans la poitrine.`,
     "",
     `[Couplet 1 - ${VIVY_STUDIO_ARTISTS.find((artist) => artist.id === leadArtist)?.label || "Vivy"}]`,
@@ -3612,20 +3638,22 @@ function buildVivyNossenBangerAssistantText(
   payload: any,
   media: VivyStudioMediaPreview | null,
   artists: VivyStudioArtistId[],
-  d40Applied: boolean
+  d40Applied: boolean,
+  fallbackLyrics = ""
 ) {
   const title = toUnicodeLine(payload?.title, "", 120);
   const summary = toUnicodeText(payload?.summary || payload?.publicText || payload?.assistant || payload?.content, 900);
-  const lyrics = toUnicodeText(payload?.publicLyrics || payload?.vocalLyrics || "", 4200);
+  const lyrics = toUnicodeText(payload?.publicLyrics || payload?.vocalLyrics || fallbackLyrics || "", 4200);
   const downloadLine = media?.downloadUrl || media?.url ? `Téléchargement: ${media.downloadUrl || media.url}` : "";
   return toUnicodeText([
     "Banger.",
     title ? `Titre: ${title}` : "",
     `Casting: ${describeVivyNossenBangerCast(artists)}.`,
     d40Applied ? "Mix D40 V9 Dynamique prêt." : "Production Suno prête.",
-    summary,
     downloadLine,
-    lyrics,
+    lyrics ? "Paroles envoyées à Suno:" : "",
+    lyrics || summary,
+    lyrics && summary ? `Note: ${summary}` : "",
   ].filter(Boolean).join("\n\n"), 6200);
 }
 
@@ -7023,11 +7051,21 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       const assistantMessage: VivyPublicChatMessage = {
         id: `vivy-nossen-assistant-${Date.now()}`,
         role: "assistant",
-        content: buildVivyNossenBangerAssistantText(finalPayload, preparedMedia, artists, d40Applied),
+        content: buildVivyNossenBangerAssistantText(finalPayload, preparedMedia, artists, d40Applied, songSeed),
         ts: new Date().toISOString(),
         media: preparedMedia,
       };
       setMessages((current) => [...current, assistantMessage].slice(-36));
+      void appendVivyChatSessionMessageOnServer({
+        id: assistantMessage.id,
+        sessionId: activeChatSessionId,
+        sessionName: activeSessionName,
+        conversationId,
+        role: "assistant",
+        content: assistantMessage.content,
+        media: preparedMedia,
+        mode: "song",
+      }).catch(() => {});
       setStatus(d40Applied ? "NOSSEN Banger prêt en D40 V9 Dynamique." : "NOSSEN Banger prêt.");
     } catch (error: any) {
       const assistantMessage: VivyPublicChatMessage = {

@@ -2115,6 +2115,34 @@ test('Vivy NOSSEN Banger launches Suno, applies D40 V9 dynamic, and posts a chat
   assert.match(appSource, /Télécharger la musique/);
 });
 
+test('Vivy NOSSEN Banger keeps lyrics first and syncs the final media reply', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const apiSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/lib/api.ts'),
+    'utf8'
+  );
+  const assistantStart = appSource.indexOf('function buildVivyNossenBangerAssistantText');
+  const assistantEnd = appSource.indexOf('function normalizeVivyStudioMode', assistantStart);
+  const assistantBlock = appSource.slice(assistantStart, assistantEnd);
+  const launchStart = appSource.indexOf('async function launchNossenBanger');
+  const launchEnd = appSource.indexOf('async function onVivyVoiceReferenceChange', launchStart);
+  const launchBlock = appSource.slice(launchStart, launchEnd);
+
+  assert.match(apiSource, /appendVivyChatSessionMessageOnServer/);
+  assert.match(assistantBlock, /fallbackLyrics/);
+  assert.match(assistantBlock, /payload\?\.publicLyrics\s*\|\|\s*payload\?\.vocalLyrics\s*\|\|\s*fallbackLyrics/);
+  assert.match(assistantBlock, /Paroles envoyées à Suno/);
+  assert.doesNotMatch(assistantBlock, /summary,\s*downloadLine,\s*lyrics/);
+  assert.match(launchBlock, /buildVivyNossenBangerAssistantText\(finalPayload,\s*preparedMedia,\s*artists,\s*d40Applied,\s*songSeed\)/);
+  assert.match(launchBlock, /appendVivyChatSessionMessageOnServer\(\{/);
+  assert.match(launchBlock, /role:\s*"assistant"/);
+  assert.match(launchBlock, /content:\s*assistantMessage\.content/);
+  assert.match(launchBlock, /media:\s*preparedMedia/);
+});
+
 test('Vivy NOSSEN Banger sends a clean song seed and lets backend songcraft structure it', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
@@ -2138,6 +2166,22 @@ test('Vivy NOSSEN Banger sends a clean song seed and lets backend songcraft stru
   assert.match(launchBlock, /lyrics:\s*songSeed/);
   assert.match(launchBlock, /songText:\s*songSeed/);
   assert.doesNotMatch(launchBlock, /lyrics:\s*songLyrics/);
+});
+
+test('Vivy NOSSEN Banger reshapes request wording into lyric images', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const builderStart = appSource.indexOf('function buildVivyNossenBangerSongText');
+  const builderEnd = appSource.indexOf('function playVivyNossenBangerCall', builderStart);
+  const builderBlock = appSource.slice(builderStart, builderEnd);
+
+  assert.match(appSource, /function shapeVivyNossenCreativeFragment/);
+  assert.match(appSource, /je veux|j'aimerais|fais|écris|ecris/);
+  assert.match(appSource, /h[oô]pital psy|d[ée]mons|héros|heros|frisson/);
+  assert.match(builderBlock, /shapeVivyNossenCreativeFragment/);
+  assert.doesNotMatch(builderBlock, /Je marche avec \$\{themeParts\[0\]\}/);
 });
 
 test('Vivy NOSSEN Banger isolates the production request from the visible trigger chat line', () => {
@@ -2412,6 +2456,57 @@ test('Vivy sessions API exposes account sessions separately for cross-device res
     assert.equal(payload.ok, true);
     assert.ok(payload.sessions.some((session) => session.id === 'pc-rock'));
     assert.ok(payload.sessions.some((session) => session.id === 'tel-lune'));
+  });
+});
+
+test('Vivy sessions API stores client-synced NOSSEN replies with media for cross-device restore', async () => {
+  const userId = `vivy-nossen-sync-${Date.now()}`;
+  const verifyJWT = (req, _res, next) => {
+    req.user = { id: userId, username: 'VivyNossenSync' };
+    next();
+  };
+
+  await withServer((app) => {
+    app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT }));
+  }, async (baseUrl) => {
+    const lyrics = [
+      '[Titre] Jessy tient la lumière',
+      '[Couplet 1 - Vivy]',
+      'Jessy serre les poings face à ses démons,',
+      '[Refrain - Tous]',
+      'Ses héros veillent quand la nuit veut crier.',
+    ].join('\n');
+    const response = await fetch(`${baseUrl}/api/vivy/studio/sessions/jessy-hero/messages`, {
+      method: 'POST',
+      headers: { ...VIVY_TEST_AUTH_HEADERS, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        role: 'assistant',
+        sessionName: 'Jessy hero',
+        conversationId: buildVivyConversationIdForSession('jessy-hero'),
+        content: lyrics,
+        media: {
+          kind: 'audio',
+          provider: 'funesterie-d40-v9turbo',
+          url: '/api/vivy/studio/assets/vivy-jessy-d40.mp3',
+          downloadUrl: '/api/vivy/studio/assets/vivy-jessy-d40.mp3',
+          filename: 'vivy-jessy-d40.mp3',
+        },
+      }),
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+
+    const sessionResponse = await fetch(`${baseUrl}/api/vivy/studio/sessions/jessy-hero`, {
+      headers: VIVY_TEST_AUTH_HEADERS,
+    });
+    const sessionPayload = await sessionResponse.json();
+    assert.equal(sessionResponse.status, 200);
+    assert.match(JSON.stringify(sessionPayload.session.messages), /Jessy serre les poings/i);
+    assert.match(JSON.stringify(sessionPayload.session.messages), /\[Refrain - Tous\]/i);
+    const syncedReply = sessionPayload.session.messages.find((message) => message.role === 'assistant');
+    assert.equal(syncedReply.media.url, '/api/vivy/studio/assets/vivy-jessy-d40.mp3');
+    assert.equal(syncedReply.media.provider, 'funesterie-d40-v9turbo');
   });
 });
 

@@ -87,6 +87,7 @@ try {
 const MODES = new Set(['voice', 'song', 'share']);
 const CHAT_MODES = new Set(['chat', 'voice', 'song', 'share']);
 const VIVY_CHAT_MAX_CHARS = 12000;
+const VIVY_SESSION_MESSAGE_MAX_CHARS = VIVY_SONG_MAX_CHARS;
 const VIVY_CHAT_SONG_MAX_TOKENS_DEFAULT = 6000;
 const VIVY_CHAT_HISTORY_MAX_MESSAGES = 36;
 const VIVY_CHAT_HISTORY_ENTRY_MAX_CHARS = 1200;
@@ -1297,7 +1298,10 @@ function buildVivyMemoryContext(userId, conversationId = '') {
 
 function rememberVivyEpisode(userId, type, content, metadata = {}) {
   try {
-    const result = addEpisode(userId, type, cleanText(content, 1800), {
+    const contentMax = type === 'vivy_reply' || type === 'vivy_idea'
+      ? VIVY_SESSION_MESSAGE_MAX_CHARS
+      : 1800;
+    const result = addEpisode(userId, type, cleanText(content, contentMax), {
       ...metadata,
       private: true,
       source: 'vivy-studio-chat',
@@ -1421,16 +1425,18 @@ function listVivyChatSessionsForUser(userId) {
     if (role !== 'user' && role !== 'assistant') continue;
     const content = type === 'vivy_idea'
       ? extractVivyIdeaMessage(episode.content)
-      : cleanText(episode.content, 1800);
+      : cleanText(episode.content, VIVY_SESSION_MESSAGE_MAX_CHARS);
     if (!content) continue;
     if (role === 'user' && session.name === `Session ${sessionId}`) {
       session.name = normalizeVivySessionName(content, session.name);
     }
+    const media = normalizeVivySessionMessageMedia(metadata.media);
     session.messages.push({
       id: cleanOneLine(episode.id, '', 120) || `vivy-${session.messages.length + 1}`,
       role,
       content,
       ts: timestamp,
+      ...(media ? { media } : {}),
     });
     session.updatedAt = timestamp;
   }
@@ -1455,6 +1461,73 @@ function rememberVivyChatSession(userId, session = {}) {
     sessionName: context.sessionName,
     conversationId: context.conversationId,
   });
+}
+
+function sanitizeVivySessionMediaUrl(value = '') {
+  const raw = cleanOneLine(value, '', 1000);
+  if (!raw) return '';
+  return raw
+    .replace(/([?&])(?:token|key|signature|sig|access_token)=[^&#\s]+/gi, '$1redacted=1')
+    .replace(/[?&]$/g, '');
+}
+
+function normalizeVivySessionMessageMedia(media = {}) {
+  if (!media || typeof media !== 'object') return null;
+  const url = sanitizeVivySessionMediaUrl(
+    media.url || media.audioUrl || media.audio_url || media.videoUrl || media.video_url
+  );
+  if (!url) return null;
+  const downloadUrl = sanitizeVivySessionMediaUrl(
+    media.downloadUrl || media.download_url || media.audioUrl || media.audio_url || media.url || url
+  ) || url;
+  const kind = cleanOneLine(media.kind || (media.videoUrl || media.video_url ? 'video' : 'audio'), 'audio', 24)
+    .toLowerCase() === 'video'
+    ? 'video'
+    : 'audio';
+  return {
+    kind,
+    url,
+    downloadUrl,
+    provider: cleanOneLine(media.provider, '', 120),
+    contentType: cleanOneLine(media.contentType || media.content_type, '', 120),
+    filename: cleanOneLine(media.filename || media.title, '', 180),
+  };
+}
+
+function rememberVivyChatSessionMessage(userId, input = {}) {
+  const context = resolveVivyInputSession(input);
+  const role = cleanOneLine(input.role, 'assistant', 24).toLowerCase() === 'user'
+    ? 'user'
+    : 'assistant';
+  const content = cleanText(input.content || input.message || input.text, VIVY_SESSION_MESSAGE_MAX_CHARS);
+  if (!content) return { ok: false, error: 'vivy_message_empty' };
+  rememberVivyChatSession(userId, context);
+  const media = normalizeVivySessionMessageMedia(input.media);
+  const result = rememberVivyEpisode(
+    userId,
+    role === 'user' ? 'vivy_idea' : 'vivy_reply',
+    role === 'user' ? `Message: ${content}` : content,
+    {
+      mode: cleanOneLine(input.mode, 'chat', 24),
+      role,
+      sessionId: context.sessionId,
+      sessionName: context.sessionName,
+      conversationId: context.conversationId,
+      clientSynced: true,
+      clientMessageId: cleanOneLine(input.id || input.messageId, '', 120),
+      ...(media ? { media } : {}),
+    }
+  );
+  return {
+    ok: result.stored === true,
+    message: {
+      id: result.episodeId || cleanOneLine(input.id || input.messageId, '', 120) || `vivy-client-${Date.now()}`,
+      role,
+      content,
+      ts: new Date().toISOString(),
+      ...(media ? { media } : {}),
+    },
+  };
 }
 
 function detectVivyInputLanguage(input = {}, fallback = 'fr') {
@@ -5457,6 +5530,30 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
       res.status(500).json({
         ok: false,
         error: 'vivy_session_create_failed',
+        message: error?.message || String(error),
+      });
+    }
+  });
+
+  router.post('/sessions/:sessionId/messages', requireAuth, express.json({ limit: '128kb' }), async (req, res) => {
+    try {
+      const userId = resolveVivyMemoryUser(req, req.body || {});
+      if (!userId) return res.status(401).json({ ok: false, error: 'vivy_auth_required' });
+      const result = rememberVivyChatSessionMessage(userId, {
+        ...(req.body || {}),
+        sessionId: req.params.sessionId,
+      });
+      if (!result.ok) {
+        return res.status(400).json({ ok: false, error: result.error || 'vivy_message_sync_failed' });
+      }
+      const sessions = listVivyChatSessionsForUser(userId);
+      const sessionId = normalizeVivyChatSessionId(req.params.sessionId);
+      const session = sessions.find((entry) => entry.id === sessionId) || null;
+      return res.json({ ok: true, message: result.message, session });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        error: 'vivy_message_sync_failed',
         message: error?.message || String(error),
       });
     }
