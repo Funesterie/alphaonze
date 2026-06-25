@@ -1408,6 +1408,85 @@ test('GET /api/vivy/studio/jobs/:taskId returns completed Suno audio when ready'
   }
 });
 
+test('GET /api/vivy/studio/jobs/:taskId falls back to provider URL when Suno MP3 materialization is slow', async () => {
+  const previousEnv = {
+    VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
+    VIVY_SUNO_BASE_URL: process.env.VIVY_SUNO_BASE_URL,
+    VIVY_SUNO_AUDIO_HOSTS: process.env.VIVY_SUNO_AUDIO_HOSTS,
+    VIVY_SUNO_STATUS_AUDIO_FETCH_TIMEOUT_MS: process.env.VIVY_SUNO_STATUS_AUDIO_FETCH_TIMEOUT_MS,
+    VIVY_SUNO_STATUS_AUDIO_FETCH_ATTEMPTS: process.env.VIVY_SUNO_STATUS_AUDIO_FETCH_ATTEMPTS,
+  };
+  const previousFetch = global.fetch;
+  const founderAuth = (req, res, next) => {
+    if (req.headers.authorization === 'Bearer vivy-founder-token') {
+      req.user = { id: 'djeff', username: 'Djeff', roles: ['founder'] };
+      return next();
+    }
+    return res.status(401).json({ ok: false, error: 'A11_JWT_Missing', message: 'Connexion requise' });
+  };
+
+  process.env.VIVY_SUNO_API_KEY = 'test-suno-key';
+  process.env.VIVY_SUNO_BASE_URL = 'https://api.suno.test/api/v1';
+  process.env.VIVY_SUNO_AUDIO_HOSTS = 'cdn.suno.test';
+  process.env.VIVY_SUNO_STATUS_AUDIO_FETCH_TIMEOUT_MS = '1';
+  process.env.VIVY_SUNO_STATUS_AUDIO_FETCH_ATTEMPTS = '1';
+  const sourceUrl = 'https://cdn.suno.test/vivy-slow-status.mp3';
+  let mediaFetches = 0;
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'https://api.suno.test/api/v1/generate/record-info?taskId=suno-slow-status') {
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            code: 200,
+            data: {
+              taskId: 'suno-slow-status',
+              status: 'SUCCESS',
+              response: { sunoData: [{ title: 'Slow Vivy', audioUrl: sourceUrl }] },
+            },
+          };
+        },
+      };
+    }
+    if (value === sourceUrl) {
+      mediaFetches += 1;
+      return new Promise((resolve, reject) => {
+        if (options.signal?.aborted) {
+          reject(new Error('status_media_fetch_aborted'));
+          return;
+        }
+        options.signal?.addEventListener('abort', () => reject(new Error('status_media_fetch_aborted')), { once: true });
+      });
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer((app) => {
+      app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT: founderAuth }));
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/vivy/studio/jobs/suno-slow-status`, {
+        headers: { Authorization: 'Bearer vivy-founder-token' },
+      });
+      const json = await response.json();
+      assert.equal(response.status, 200);
+      assert.equal(json.ok, true);
+      assert.equal(json.state, 'done');
+      assert.equal(json.media.audioUrl, sourceUrl);
+      assert.equal(json.media.containerNormalized, undefined);
+      assert.equal(mediaFetches, 1);
+    });
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('GET /api/vivy/studio/jobs/:taskId accepts personal Suno session key for non-founder status polling', async () => {
   const previousEnv = {
     VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
@@ -2074,10 +2153,30 @@ test('Vivy frontend keeps polling long Suno generations until the callback arriv
     'utf8'
   );
   const start = appSource.indexOf('async function waitForVivySongJob');
-  const block = appSource.slice(start, start + 1400);
+  const block = appSource.slice(start, start + 2200);
 
   assert.match(block, /attempt <= 60/);
+  assert.match(block, /isRetryableVivyMusicJobError/);
+  assert.match(block, /continue/);
   assert.match(block, /generation_suno_trop_longue/);
+});
+
+test('Vivy frontend treats transient 524 job polling errors as still-processing', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const helperStart = appSource.indexOf('function isRetryableVivyMusicJobError');
+  const helperBlock = appSource.slice(helperStart, helperStart + 520);
+  const launchStart = appSource.indexOf('async function launchNossenBanger');
+  const launchEnd = appSource.indexOf('async function onVivyVoiceReferenceChange', launchStart);
+  const launchBlock = appSource.slice(launchStart, launchEnd);
+
+  assert.match(helperBlock, /524/);
+  assert.match(helperBlock, /Job Vivy indisponible/);
+  assert.match(launchBlock, /isRetryableVivyMusicJobError/);
+  assert.match(launchBlock, /réponse lente/);
+  assert.match(launchBlock, /continue/);
 });
 
 test('Vivy frontend allows more sessions with a scrollable session rail', () => {

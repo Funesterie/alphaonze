@@ -1739,6 +1739,12 @@ function formatChatErrorForUser(error: unknown, surface: FunesterieSurface | str
   return message || "Une erreur s'est produite lors de la requête.";
 }
 
+function isRetryableVivyMusicJobError(error: unknown) {
+  const message = String((error as any)?.message || error || "").trim();
+  return /\b(?:429|502|503|504|524)\b/.test(message)
+    || /timeout|temporair|temporaire|surcharge|upstream|coup[eé].*r[eé]ponse|Job Vivy indisponible/i.test(message);
+}
+
 function findLastVisibleMedia(messages: ChatMessage[]) {
   const list = Array.isArray(messages) ? [...messages].reverse() : [];
   for (const message of list) {
@@ -5810,7 +5816,16 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     const pause = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
     for (let attempt = 1; attempt <= 60; attempt += 1) {
       await pause(attempt <= 3 ? 6000 : 10000);
-      const job = await getVivyStudioMusicJob(safeTaskId, sunoSessionKey);
+      let job: any;
+      try {
+        job = await getVivyStudioMusicJob(safeTaskId, sunoSessionKey);
+      } catch (error: any) {
+        if (attempt < 60 && isRetryableVivyMusicJobError(error)) {
+          setStatus(`Suno répond lentement... Vivy continue d'attendre le MP3 (${attempt}/60).`);
+          continue;
+        }
+        throw error;
+      }
       const statusText = String(job?.mediaStatus?.status || job?.musicJob?.status || (job as any)?.status || "").trim();
       const mediaUrl = getVivySongMediaUrl(job);
       if (mediaUrl) return job;
@@ -7487,7 +7502,16 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         const pause = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
         for (let attempt = 1; attempt <= 60; attempt += 1) {
           await pause(attempt <= 3 ? 6000 : 10000);
-          const job = await getVivyStudioMusicJob(taskId, sunoSessionKey || undefined);
+          let job: any;
+          try {
+            job = await getVivyStudioMusicJob(taskId, sunoSessionKey || undefined);
+          } catch (error: any) {
+            if (attempt < 60 && isRetryableVivyMusicJobError(error)) {
+              setStatus(`NOSSEN attend Suno... réponse lente ${attempt}/60`);
+              continue;
+            }
+            throw error;
+          }
           finalPayload = job;
           preparedMedia = getVivyProductionMediaPreview(job);
           if (preparedMedia) break;

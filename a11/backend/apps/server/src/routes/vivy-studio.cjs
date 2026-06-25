@@ -4944,7 +4944,10 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
   const cached = readCachedSunoCallback(safeTaskId);
   const cachedMedia = extractSunoMedia(cached?.payload || {});
   if (cachedMedia?.url) {
-    const preparedMedia = await materializeVivySunoMedia(cachedMedia, { taskId: safeTaskId });
+    const preparedMedia = await materializeVivySunoMedia(
+      cachedMedia,
+      buildVivySunoStatusMaterializeOptions({ taskId: safeTaskId })
+    );
     return {
       ok: true,
       provider: 'suno',
@@ -4977,7 +4980,10 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
   const status = findSunoStatus(payload) || 'processing';
   if (media?.url) {
     writeCachedSunoCallback(safeTaskId, payload);
-    const preparedMedia = await materializeVivySunoMedia(media, { taskId: safeTaskId });
+    const preparedMedia = await materializeVivySunoMedia(
+      media,
+      buildVivySunoStatusMaterializeOptions({ taskId: safeTaskId })
+    );
     return {
       ok: true,
       provider: 'suno',
@@ -5277,6 +5283,32 @@ async function materializeVivySunoMedia(media = {}, options = {}) {
     console.warn('[Vivy Studio] Suno MP3 local materialization failed, keeping provider URL:', cleanOneLine(lastError?.message || lastError, 'unknown', 240));
   } catch (_) {}
   return media;
+}
+
+function buildVivySunoStatusMaterializeOptions(options = {}) {
+  return {
+    ...options,
+    attempts: Math.max(1, Math.min(2, Number(
+      options.attempts
+      || process.env.VIVY_SUNO_STATUS_AUDIO_FETCH_ATTEMPTS
+      || 1
+    ) || 1)),
+    retryDelayMs: Math.max(0, Number(
+      options.retryDelayMs
+      ?? process.env.VIVY_SUNO_STATUS_AUDIO_RETRY_DELAY_MS
+      ?? 0
+    ) || 0),
+    fetchTimeoutMs: Math.max(1000, Math.min(25000, Number(
+      options.fetchTimeoutMs
+      || process.env.VIVY_SUNO_STATUS_AUDIO_FETCH_TIMEOUT_MS
+      || 8000
+    ) || 8000)),
+    repairTimeoutMs: Math.max(1000, Math.min(30000, Number(
+      options.repairTimeoutMs
+      || process.env.VIVY_SUNO_STATUS_MP3_REPAIR_TIMEOUT_MS
+      || 12000
+    ) || 12000)),
+  };
 }
 
 async function runVivyPreviewMix(voiceUrl, instrumentalUrl) {
