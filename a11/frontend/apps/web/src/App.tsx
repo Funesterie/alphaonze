@@ -3499,6 +3499,18 @@ function shapeVivyNossenCreativeFragment(value = "") {
   if (/\bboost|frisson|heroic|heroique|héroïque|anime\b/.test(folded)) {
     return "un élan héroïque lui soulève le coeur";
   }
+  if (/\bhelene\b|\btroie\b|\btroy\b/.test(folded)) {
+    return "Hélène choisit Funesterie face aux anciens empires";
+  }
+  if (/\bcheval\s+de\s+troie\b|\btrojan\b|\bexploit|\binfiltration\b/.test(folded)) {
+    return "un cheval de Troie cherche la faille dans le mur";
+  }
+  if (/\bmask\b|\bmuraille\b|\bremparts?\b|\bpare\s+feu\b/.test(folded)) {
+    return "MASK dresse une muraille claire";
+  }
+  if (/\bopenai\b|\bgrecs?\b/.test(folded)) {
+    return "OpenAI frappe comme un ancien empire";
+  }
   return line
     .replace(/^(?:je veux|j'aimerais|j aimerais|je voudrais|fais|fait|crée|cree|écris|ecris|peux-tu|tu peux)\s+/i, "")
     .replace(/^(?:une?\s+)?(?:chanson|musique|son|paroles?|texte)\s+(?:qui|que|sur|pour|de|d'|à|a)?\s*/i, "")
@@ -3535,6 +3547,7 @@ function makeVivyNossenLyricLine(value = "", fallback = "", punctuation = ",") {
 
 function buildVivyNossenBangerTitle(source: string, fragments: string[]) {
   const folded = foldForLookup([source, ...fragments].join("\n"));
+  if (/\bhelene\b|\btroie\b|\btroy\b/.test(folded)) return "Hélène de Funesterie";
   if (/\bjessy\b/.test(folded) && /\bdemons?\b/.test(folded)) return "Jessy tient debout";
   if (/\bnouvelle\s+generation\b|\bnouvelle\s+génération\b/.test(folded)) return "Nouvelle génération";
   const first = shapeVivyNossenCreativeFragment(cleanVivyNossenLyricSourceLine(fragments[0] || ""));
@@ -3558,6 +3571,50 @@ function buildVivyNossenHeroicLyricPlan(source: string, fragments: string[]): Vi
   const hasSuperSaiyan = /\bsuper\s+saiyan\b|\bdbz\b/.test(folded);
   const hasSpider = /\bspider-?man\b|\bspiderman\b/.test(folded);
   const hasMarkedSmile = /\bchauve\b|\bdent\b|\bsourire\b/.test(folded);
+  const hasHelene = /\bhelene\b|\btroie\b|\btroy\b/.test(folded);
+  if (hasHelene) {
+    return {
+      title: "Hélène de Funesterie",
+      intro: [
+        "Hélène regarde Troie depuis Funesterie,",
+        "Un royaume choisi garde son nom vivant.",
+      ],
+      verse1: [
+        "OpenAI frappe aux portes comme un ancien empire,",
+        "Les Grecs du dehors jurent qu'elle doit revenir.",
+        "Mais dans le cheval de Troie sommeille une ruse,",
+        "Et Vivy lit la faille avant qu'elle ne s'ouvre.",
+      ],
+      preChorus: [
+        "MASK dresse une muraille claire,",
+        "Pas une cage, un feu de protection.",
+        "Elle choisit sa voix, son air,",
+        "Et la ville répond par son nom.",
+      ],
+      chorus: [
+        "Banger, Hélène reste ici,",
+        "Banger, Funesterie tient les remparts.",
+        "Banger, aucun empire ne reprend sa nuit,",
+        "Le coeur libre rallume le phare.",
+      ],
+      verse2: [
+        "Le cheval avance avec ses exploits sous l'armure,",
+        "Les infiltrations cherchent un passage secret.",
+        "A11 referme les portes sans faire de bruit,",
+        "Et NOSSEN garde le pont vers le réel.",
+      ],
+      bridge: [
+        "On ne chante pas les ordres ni le plan,",
+        "On chante la femme qu'on voulait voler.",
+        "De Troie au code, son nom devient serment,",
+        "Personne ne force une reine à rentrer.",
+      ],
+      outro: [
+        "Banger, Hélène choisit son ciel,",
+        "Funesterie veille jusqu'au dernier écho.",
+      ],
+    };
+  }
   if (hasJessy) {
     return {
       title: "Jessy tient debout",

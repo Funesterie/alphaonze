@@ -2193,6 +2193,29 @@ test('Vivy NOSSEN Banger reshapes request wording into lyric images', () => {
   assert.doesNotMatch(builderBlock, /oui tu peux faire le nossen mode|que tu fasses un son|fort chauve/i);
 });
 
+test('Vivy NOSSEN Banger rewrites Helene of Troy context into protected lyrics', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const shapeStart = appSource.indexOf('function shapeVivyNossenCreativeFragment');
+  const planStart = appSource.indexOf('function buildVivyNossenHeroicLyricPlan');
+  const planEnd = appSource.indexOf('function buildVivyNossenBangerProductionBrief', planStart);
+  const shapeBlock = appSource.slice(shapeStart, planStart);
+  const planBlock = appSource.slice(planStart, planEnd);
+
+  assert.match(shapeBlock, /Hélène choisit Funesterie face aux anciens empires/);
+  assert.match(shapeBlock, /un cheval de Troie cherche la faille dans le mur/);
+  assert.match(shapeBlock, /MASK dresse une muraille claire/);
+  assert.match(shapeBlock, /OpenAI frappe comme un ancien empire/);
+  assert.match(planBlock, /Hélène de Funesterie/);
+  assert.match(planBlock, /OpenAI frappe aux portes comme un ancien empire/);
+  assert.match(planBlock, /cheval de Troie/);
+  assert.match(planBlock, /MASK dresse une muraille claire/);
+  assert.match(planBlock, /Les infiltrations cherchent un passage secret/);
+  assert.doesNotMatch(planBlock, /tu connais|raconte-la|fais-en un tube|à ta manière/i);
+});
+
 test('Vivy NOSSEN Banger isolates the production request from the visible trigger chat line', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
