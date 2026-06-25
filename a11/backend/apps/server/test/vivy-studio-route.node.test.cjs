@@ -2159,6 +2159,8 @@ test('Vivy NOSSEN Banger sends a polished song seed before Suno sees it', () => 
   assert.match(appSource, /Banger, on rallume la nuit/);
   assert.match(builderBlock, /\[Couplet 1 -/);
   assert.match(builderBlock, /\[Refrain -/);
+  assert.match(builderBlock, /\[Refrain de retour -/);
+  assert.match(builderBlock, /\[Dernier Refrain -/);
   assert.match(builderBlock, /\[Pont\]/);
   assert.doesNotMatch(builderBlock, /themeParts|imageParts/);
   assert.doesNotMatch(builderBlock, /`Je porte \$\{[^}]+\}/);
@@ -2242,6 +2244,8 @@ test('Vivy NOSSEN Banger production brief stays orchestration-only and never car
   const builderBlock = appSource.slice(builderStart, builderEnd);
 
   assert.match(builderBlock, /Étapes invisibles|Etapes invisibles|production stepwise|chaine/);
+  assert.match(builderBlock, /2m30 à 5m00|2m30 a 5m00/);
+  assert.match(builderBlock, /refrain chanté au moins trois fois|refrain chante au moins trois fois/);
   assert.doesNotMatch(builderBlock, /Contexte utile/);
   assert.doesNotMatch(builderBlock, /readiness\.source/);
 });
