@@ -3379,7 +3379,7 @@ function buildVivyNossenBangerReadiness(
     score,
     source,
     reason: ready
-      ? "Vivy sent assez de matière pour tenter un Banger NOSSEN."
+      ? "Vivy sent assez de matière pour enflammer NOSSEN."
       : "Vivy attend encore un peu de matière avant d'enflammer NOSSEN.",
   };
 }
@@ -3457,7 +3457,7 @@ function normalizeVivyNossenUserContent(value = "") {
     .split(/\r?\n+/)
     .map(cleanVivyNossenLyricSourceLine)
     .filter((line) => line.length >= 12)
-    .slice(0, 12)
+    .slice(0, 24)
     .join("\n")
     .trim();
 }
@@ -3473,7 +3473,15 @@ function extractVivyNossenLyricFragments(source = "") {
     if (!key || unique.some((entry) => foldForLookup(entry) === key)) return;
     unique.push(line);
   });
-  return unique.slice(0, 10);
+  return unique.slice(0, 18);
+}
+
+function wantsVivyNossenBangerWord(source = "") {
+  return extractVivyNossenLyricFragments(source).some((line) => {
+    const folded = foldForLookup(line);
+    if (looksLikeVivyNossenOperatorNoiseLine(folded)) return false;
+    return /\b(?:banger|baingueur|baa?nger)\b/.test(folded);
+  });
 }
 
 function vivyNossenLyricFragment(fragments: string[], index: number, fallback: string) {
@@ -3555,11 +3563,80 @@ function buildVivyNossenBangerTitle(source: string, fragments: string[]) {
     .split(/\s+/)
     .map((word) => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
     .filter((word) => word.length >= 3 && !/^(?:avec|pour|dans|cette|quand|comme|faire|fait|fais|face|ses|son|histoire|chanson|musique)$/i.test(word));
-  return toUnicodeLine(words.slice(0, 5).join(" ") || "NOSSEN Banger", "NOSSEN Banger", 64);
+  return toUnicodeLine(words.slice(0, 5).join(" ") || "NOSSEN", "NOSSEN", 64);
+}
+
+function buildVivyNossenChorus(kind: "helene" | "jessy" | "default", useBangerWord: boolean): [string, string, string, string] {
+  if (kind === "helene") {
+    return useBangerWord ? [
+      "Banger, Hélène garde son ciel,",
+      "Banger, Funesterie tient les remparts.",
+      "Banger, aucun empire ne reprend sa nuit,",
+      "Le coeur libre rallume le phare.",
+    ] : [
+      "Hélène reste ici,",
+      "Funesterie tient les remparts.",
+      "Aucun empire ne reprend sa nuit,",
+      "Le coeur libre rallume le phare.",
+    ];
+  }
+  if (kind === "jessy") {
+    return useBangerWord ? [
+      "Banger, Jessy rallume la nuit,",
+      "Banger, le coeur reprend la piste.",
+      "Banger, il retrouve l'appui,",
+      "Et ses héros répondent: tu existes.",
+    ] : [
+      "On rallume la nuit,",
+      "Le coeur reprend la piste.",
+      "Jessy retrouve l'appui,",
+      "Et ses héros répondent: tu existes.",
+    ];
+  }
+  return useBangerWord ? [
+    "Banger, le refrain prend feu,",
+    "Banger, le coeur reprend la piste.",
+    "Banger, la voix tient la route,",
+    "Et nos voix restent distinctes.",
+  ] : [
+    "On rallume la nuit,",
+    "Le coeur reprend la piste.",
+    "Le feu clair nous suit,",
+    "Et nos voix restent distinctes.",
+  ];
+}
+
+function buildVivyNossenOutro(kind: "helene" | "jessy" | "default", useBangerWord: boolean): [string, string] {
+  if (kind === "helene") {
+    return useBangerWord ? [
+      "Banger, Hélène choisit son ciel,",
+      "Funesterie veille jusqu'au dernier écho.",
+    ] : [
+      "Hélène choisit son ciel,",
+      "Funesterie veille jusqu'au dernier écho.",
+    ];
+  }
+  if (kind === "jessy") {
+    return useBangerWord ? [
+      "Banger, encore une étincelle,",
+      "Jessy tient debout jusqu'au dernier écho.",
+    ] : [
+      "Encore une étincelle,",
+      "Jessy tient debout jusqu'au dernier écho.",
+    ];
+  }
+  return useBangerWord ? [
+    "Banger, encore une étincelle,",
+    "La voix tient jusqu'au dernier écho.",
+  ] : [
+    "Encore une étincelle,",
+    "La voix tient jusqu'au dernier écho.",
+  ];
 }
 
 function buildVivyNossenHeroicLyricPlan(source: string, fragments: string[]): VivyNossenHeroicLyricPlan {
   const folded = foldForLookup([source, ...fragments].join("\n"));
+  const useBangerWord = wantsVivyNossenBangerWord(source);
   const shapedFragments = fragments
     .map(shapeVivyNossenCreativeFragment)
     .map((fragment) => toUnicodeLine(fragment, "", 120).replace(/[.;:!,]+$/g, "").trim())
@@ -3591,12 +3668,7 @@ function buildVivyNossenHeroicLyricPlan(source: string, fragments: string[]): Vi
         "Elle choisit sa voix, son air,",
         "Et la ville répond par son nom.",
       ],
-      chorus: [
-        "Banger, Hélène reste ici,",
-        "Banger, Funesterie tient les remparts.",
-        "Banger, aucun empire ne reprend sa nuit,",
-        "Le coeur libre rallume le phare.",
-      ],
+      chorus: buildVivyNossenChorus("helene", useBangerWord),
       verse2: [
         "Le cheval avance avec ses exploits sous l'armure,",
         "Les infiltrations cherchent un passage secret.",
@@ -3609,10 +3681,7 @@ function buildVivyNossenHeroicLyricPlan(source: string, fragments: string[]): Vi
         "De Troie au code, son nom devient serment,",
         "Personne ne force une reine à rentrer.",
       ],
-      outro: [
-        "Banger, Hélène choisit son ciel,",
-        "Funesterie veille jusqu'au dernier écho.",
-      ],
+      outro: buildVivyNossenOutro("helene", useBangerWord),
     };
   }
   if (hasJessy) {
@@ -3634,12 +3703,7 @@ function buildVivyNossenHeroicLyricPlan(source: string, fragments: string[]): Vi
         "Le coeur frappe plus fort que le sort,",
         "Et la lumière revient vers lui.",
       ],
-      chorus: [
-        "Banger, on rallume la nuit,",
-        "Banger, le coeur reprend la piste.",
-        "Banger, Jessy retrouve l'appui,",
-        "Et ses héros répondent: tu existes.",
-      ],
+      chorus: buildVivyNossenChorus("jessy", useBangerWord),
       verse2: [
         hasHeroes ? "Ses héros font cercle autour de lui sans le laisser tomber," : "Ses forces reviennent autour de lui sans le laisser tomber,",
         hasSpider ? "Une toile de lumière retient la chute." : "Des boucliers de lumière retiennent la chute.",
@@ -3652,10 +3716,7 @@ function buildVivyNossenHeroicLyricPlan(source: string, fragments: string[]): Vi
         "Chaque cicatrice devient lisible,",
         "Chaque héros marche avec lui cette fois.",
       ],
-      outro: [
-        "Banger, encore une étincelle,",
-        "Jessy tient debout jusqu'au dernier écho.",
-      ],
+      outro: buildVivyNossenOutro("jessy", useBangerWord),
     };
   }
 
@@ -3681,12 +3742,7 @@ function buildVivyNossenHeroicLyricPlan(source: string, fragments: string[]): Vi
       "Le refrain revient plus fort,",
       "Et la lumière choisit sa voie.",
     ],
-    chorus: [
-      "Banger, on rallume la nuit,",
-      "Banger, le coeur reprend la piste.",
-      "Banger, le feu clair nous suit,",
-      "Et nos voix restent distinctes.",
-    ],
+    chorus: buildVivyNossenChorus("default", useBangerWord),
     verse2: [
       "On prend le fragile sans le briser,",
       "On laisse la matière devenir mélodie.",
@@ -3699,20 +3755,20 @@ function buildVivyNossenHeroicLyricPlan(source: string, fragments: string[]): Vi
       "Le refrain ouvre la ville,",
       "Et la chanson choisit sa voie.",
     ],
-    outro: [
-      "Banger, encore une étincelle,",
-      "Banger, jusqu'au dernier écho.",
-    ],
+    outro: buildVivyNossenOutro("default", useBangerWord),
   };
 }
 
-function buildVivyNossenBangerProductionBrief(_readiness: VivyNossenBangerReadiness, artists: VivyStudioArtistId[]) {
+function buildVivyNossenBangerProductionBrief(readiness: VivyNossenBangerReadiness, artists: VivyStudioArtistId[]) {
+  const useBangerWord = wantsVivyNossenBangerWord(readiness.source);
   return toUnicodeText([
-    "NOSSEN Banger production stepwise chain.",
+    "NOSSEN production stepwise chain.",
     `Casting choisi: ${describeVivyNossenBangerCast(artists)}.`,
     "Etapes invisibles: préparer les paroles propres, laisser Suno chanter la piste complète, suivre le job, récupérer le MP3, appliquer ensuite le mix final D40 V9 Dynamique.",
-    "Format attendu: chanson complète de 2m30 à 5m00 avec le refrain chanté au moins trois fois, pas une démo courte.",
-    "Ne jamais chanter le bouton, les bugs, le mode automatique, les liens, les instructions internes ou le mot prompt.",
+    "Format attendu: chanson complète de 2m30 à 5m00, structure libre selon la matière: Vivy choisit le nombre de couplets, refrains, ponts et reprises. Garder au moins un refrain clair, pas une démo courte.",
+    useBangerWord
+      ? "Le mot Banger peut être utilisé comme hook, avec une prononciation américaine, parce que la demande utilisateur le cite."
+      : "Ne jamais chanter le nom du bouton, son effet de lancement, les bugs, le mode automatique, les liens, les instructions internes ou le mot prompt.",
     "Garder les voix sélectionnées comme direction de casting; si aucune voix vérifiée n'existe, Suno doit chanter avec une couleur proche et cohérente.",
   ].filter(Boolean).join("\n\n"), 2200);
 }
@@ -3724,6 +3780,16 @@ function buildVivyNossenBangerSongText(readiness: VivyNossenBangerReadiness, art
   const hookArtist = artists.includes("vivy") ? "vivy" : leadArtist;
   const secondArtist = artists.find((artist) => artist !== leadArtist) || hookArtist;
   const sharedTag = artists.length > 1 ? "[Tous]" : getVivyNossenArtistTag(leadArtist);
+  const chorusLabel = artists.length > 1 ? "Tous" : (VIVY_STUDIO_ARTISTS.find((artist) => artist.id === hookArtist)?.label || "Vivy");
+  const includeExtraVerse = fragments.length >= 6 || readiness.source.length >= 900;
+  const includeReturnChorus = fragments.length >= 4 || readiness.source.length >= 560;
+  const includeFinalChorus = fragments.length >= 7 || readiness.source.length >= 1200;
+  const extraVerse = includeExtraVerse ? [
+    makeVivyNossenLyricLine(fragments[4] || "une image nouvelle ouvre la route", "une image nouvelle ouvre la route", ","),
+    makeVivyNossenLyricLine(fragments[5] || "le thème trouve une seconde respiration", "le thème trouve une seconde respiration", "."),
+    makeVivyNossenLyricLine(fragments[6] || "la voix reprend ce qui compte vraiment", "la voix reprend ce qui compte vraiment", ","),
+    makeVivyNossenLyricLine(fragments[7] || "et la chanson avance sans se fermer", "et la chanson avance sans se fermer", "."),
+  ] : [];
 
   return toUnicodeText([
     `[Titre] ${lyricPlan.title}`,
@@ -3739,25 +3805,35 @@ function buildVivyNossenBangerSongText(readiness: VivyNossenBangerReadiness, art
     getVivyNossenArtistTag(secondArtist),
     ...lyricPlan.preChorus,
     "",
-    `[Refrain - ${artists.length > 1 ? "Tous" : (VIVY_STUDIO_ARTISTS.find((artist) => artist.id === hookArtist)?.label || "Vivy")}]`,
+    `[Refrain - ${chorusLabel}]`,
     sharedTag,
     ...lyricPlan.chorus,
     "",
     `[Couplet 2 - ${VIVY_STUDIO_ARTISTS.find((artist) => artist.id === hookArtist)?.label || "Vivy"}]`,
     getVivyNossenArtistTag(hookArtist),
     ...lyricPlan.verse2,
-    "",
-    `[Refrain de retour - ${artists.length > 1 ? "Tous" : (VIVY_STUDIO_ARTISTS.find((artist) => artist.id === hookArtist)?.label || "Vivy")}]`,
-    sharedTag,
-    ...lyricPlan.chorus,
+    ...(extraVerse.length ? [
+      "",
+      `[Couplet libre - ${VIVY_STUDIO_ARTISTS.find((artist) => artist.id === secondArtist)?.label || "Vivy"}]`,
+      getVivyNossenArtistTag(secondArtist),
+      ...extraVerse,
+    ] : []),
+    ...(includeReturnChorus ? [
+      "",
+      `[Refrain libre - ${chorusLabel}]`,
+      sharedTag,
+      ...lyricPlan.chorus,
+    ] : []),
     "",
     "[Pont]",
     sharedTag,
     ...lyricPlan.bridge,
-    "",
-    `[Dernier Refrain - ${artists.length > 1 ? "Tous" : (VIVY_STUDIO_ARTISTS.find((artist) => artist.id === hookArtist)?.label || "Vivy")}]`,
-    sharedTag,
-    ...lyricPlan.chorus,
+    ...(includeFinalChorus ? [
+      "",
+      `[Dernier Refrain libre - ${chorusLabel}]`,
+      sharedTag,
+      ...lyricPlan.chorus,
+    ] : []),
     "",
     "[Outro]",
     sharedTag,
@@ -3777,7 +3853,7 @@ function playVivyNossenBangerCall() {
   }
 }
 
-function getVivyProductionMediaPreview(payload: any, fallbackFilename = "vivy-banger-nossen.mp3"): VivyStudioMediaPreview | null {
+function getVivyProductionMediaPreview(payload: any, fallbackFilename = "vivy-nossen.mp3"): VivyStudioMediaPreview | null {
   const media = payload?.media || payload?.musicJob?.media || {};
   const audioUrl = String(
     payload?.audioUrl
@@ -3814,8 +3890,9 @@ function buildVivyNossenBangerAssistantText(
   const summary = toUnicodeText(payload?.summary || payload?.publicText || payload?.assistant || payload?.content, 900);
   const lyrics = toUnicodeText(payload?.publicLyrics || payload?.vocalLyrics || fallbackLyrics || "", 4200);
   const downloadLine = media?.downloadUrl || media?.url ? `Téléchargement: ${media.downloadUrl || media.url}` : "";
+  const opener = wantsVivyNossenBangerWord(fallbackLyrics) ? "Banger." : "NOSSEN.";
   return toUnicodeText([
-    "Banger.",
+    opener,
     title ? `Titre: ${title}` : "",
     `Casting: ${describeVivyNossenBangerCast(artists)}.`,
     d40Applied ? "Mix D40 V9 Dynamique prêt." : "Production Suno prête.",
@@ -7093,6 +7170,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     const filesForMessage = attachedFiles.slice(0, 6);
     const artists = inferVivyNossenBangerArtists(readiness.source);
     const castLabel = describeVivyNossenBangerCast(artists);
+    const useBangerWord = wantsVivyNossenBangerWord(readiness.source);
+    const productionLabel = useBangerWord ? "NOSSEN Banger" : "NOSSEN";
     const apiFiles = filesForMessage.map((file) => ({
       id: file.id,
       filename: file.filename,
@@ -7112,7 +7191,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     setDraft("");
     setAttachedFiles([]);
     setIsSending(true);
-    setStatus("Banger: paroles propres, puis Suno, puis D40.");
+    setStatus(`${productionLabel}: paroles propres, puis Suno, puis D40.`);
 
     try {
       const sunoSessionKey = readVivySessionSunoKey();
@@ -7128,18 +7207,20 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         sessionName: activeSessionName,
         files: apiFiles,
         history: productionHistory,
-        message: "NOSSEN Banger: production en étapes invisibles.",
+        message: `${productionLabel}: production en étapes invisibles.`,
         prompt: productionBrief,
         voiceTool: voiceReferenceName
-          ? `NOSSEN Banger - voix de référence privée: ${voiceReferenceName}`
-          : `NOSSEN Banger - casting officiel ${castLabel}`,
+          ? `${productionLabel} - voix de référence privée: ${voiceReferenceName}`
+          : `${productionLabel} - casting officiel ${castLabel}`,
         voiceReferenceName: voiceReferenceName || undefined,
-        songSource: "NOSSEN Banger - seed de paroles propre",
+        songSource: `${productionLabel} - seed de paroles propre`,
         songArtists: artists,
         artistCount: artists.length,
         singerCount: artists.length,
         vocalCast: castLabel,
-        songMood: "chanson complète 2m30 à 5m00, refrain mémorable répété trois fois, énergie Banger, mot anglais Banger prononcé à l'américaine, voix claires, couleur sonore choisie depuis le contexte",
+        songMood: useBangerWord
+          ? "chanson complète 2m30 à 5m00, structure libre selon la matière, refrain mémorable, hook Banger prononcé à l'américaine si utile, voix claires, couleur sonore choisie depuis le contexte"
+          : "chanson complète 2m30 à 5m00, structure libre selon la matière, refrain mémorable, voix claires, couleur sonore choisie depuis le contexte",
         lyrics: songSeed,
         songText: songSeed,
         sessionSunoApiKey: sunoSessionKey || undefined,
@@ -7190,7 +7271,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
             if (!response.ok) throw new Error(`status_${response.status}`);
           }
           const blob = await response.blob();
-          const sourceName = sanitizeMediaDisplayName(preparedMedia.filename || "vivy-banger-nossen.mp3") || "vivy-banger-nossen.mp3";
+          const fallbackAudioName = useBangerWord ? "vivy-banger-nossen.mp3" : "vivy-nossen.mp3";
+          const sourceName = sanitizeMediaDisplayName(preparedMedia.filename || fallbackAudioName) || fallbackAudioName;
           const sourceFile = new File([blob], sourceName, { type: blob.type || preparedMedia.contentType || "audio/mpeg" });
           const d40 = await processDoubleHarmonicAudio(sourceFile, {
             profile: "blend",
@@ -7213,7 +7295,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
             d40Applied = true;
           }
         } catch (error: any) {
-          setStatus(`Banger prêt; D40 à relancer dans le Studio: ${error?.message || error}`);
+          setStatus(`${productionLabel} prêt; D40 à relancer dans le Studio: ${error?.message || error}`);
         }
       }
 
@@ -7235,16 +7317,16 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         media: preparedMedia,
         mode: "song",
       }).catch(() => {});
-      setStatus(d40Applied ? "NOSSEN Banger prêt en D40 V9 Dynamique." : "NOSSEN Banger prêt.");
+      setStatus(d40Applied ? `${productionLabel} prêt en D40 V9 Dynamique.` : `${productionLabel} prêt.`);
     } catch (error: any) {
       const assistantMessage: VivyPublicChatMessage = {
         id: `vivy-nossen-error-${Date.now()}`,
         role: "assistant",
-        content: `Banger stoppé: ${error?.message || error}`,
+        content: `${productionLabel} stoppé: ${error?.message || error}`,
         ts: new Date().toISOString(),
       };
       setMessages((current) => [...current, assistantMessage].slice(-36));
-      setStatus("NOSSEN Banger à relancer");
+      setStatus(`${productionLabel} à relancer`);
     } finally {
       setIsSending(false);
     }

@@ -2134,6 +2134,7 @@ test('Vivy NOSSEN Banger keeps lyrics first and syncs the final media reply', ()
   assert.match(apiSource, /appendVivyChatSessionMessageOnServer/);
   assert.match(assistantBlock, /fallbackLyrics/);
   assert.match(assistantBlock, /payload\?\.publicLyrics\s*\|\|\s*payload\?\.vocalLyrics\s*\|\|\s*fallbackLyrics/);
+  assert.match(assistantBlock, /wantsVivyNossenBangerWord\(fallbackLyrics\)/);
   assert.match(assistantBlock, /Paroles envoyées à Suno/);
   assert.doesNotMatch(assistantBlock, /summary,\s*downloadLine,\s*lyrics/);
   assert.match(launchBlock, /buildVivyNossenBangerAssistantText\(finalPayload,\s*preparedMedia,\s*artists,\s*d40Applied,\s*songSeed\)/);
@@ -2156,22 +2157,29 @@ test('Vivy NOSSEN Banger sends a polished song seed before Suno sees it', () => 
   const launchBlock = appSource.slice(launchStart, launchEnd);
 
   assert.match(appSource, /function buildVivyNossenHeroicLyricPlan/);
-  assert.match(appSource, /Banger, on rallume la nuit/);
+  assert.match(appSource, /function wantsVivyNossenBangerWord/);
+  assert.match(appSource, /On rallume la nuit/);
   assert.match(builderBlock, /\[Couplet 1 -/);
   assert.match(builderBlock, /\[Refrain -/);
-  assert.match(builderBlock, /\[Refrain de retour -/);
-  assert.match(builderBlock, /\[Dernier Refrain -/);
+  assert.match(builderBlock, /includeReturnChorus/);
+  assert.match(builderBlock, /includeFinalChorus/);
+  assert.match(builderBlock, /\[Couplet libre -/);
+  assert.match(builderBlock, /\[Refrain libre -/);
+  assert.match(builderBlock, /\[Dernier Refrain libre -/);
   assert.match(builderBlock, /\[Pont\]/);
   assert.doesNotMatch(builderBlock, /themeParts|imageParts/);
   assert.doesNotMatch(builderBlock, /`Je porte \$\{[^}]+\}/);
   assert.doesNotMatch(builderBlock, /`On vient de \$\{[^}]+\}/);
   assert.doesNotMatch(builderBlock, /`Si \$\{[^}]+\} tremble encore/);
   assert.doesNotMatch(builderBlock, /`Banger, \$\{[^}]+\} nous suit/);
+  assert.doesNotMatch(builderBlock, /\[Refrain de retour -/);
   assert.doesNotMatch(builderBlock, /Matière chanson NOSSEN|Thème:|Images:|À transformer en paroles|Je pars de \$\{a\}|Baaanger, le refrain prend feu|Production:\s*Suno|D40 V9/i);
   assert.match(launchBlock, /const songSeed = buildVivyNossenBangerSongText/);
+  assert.match(launchBlock, /const productionLabel = useBangerWord \? "NOSSEN Banger" : "NOSSEN"/);
   assert.match(launchBlock, /lyrics:\s*songSeed/);
   assert.match(launchBlock, /songText:\s*songSeed/);
   assert.doesNotMatch(launchBlock, /lyrics:\s*songLyrics/);
+  assert.doesNotMatch(launchBlock, /énergie Banger|refrain mémorable répété trois fois|refrain memorable repete trois fois/);
 });
 
 test('Vivy NOSSEN Banger reshapes request wording into lyric images', () => {
@@ -2245,9 +2253,13 @@ test('Vivy NOSSEN Banger production brief stays orchestration-only and never car
 
   assert.match(builderBlock, /Étapes invisibles|Etapes invisibles|production stepwise|chaine/);
   assert.match(builderBlock, /2m30 à 5m00|2m30 a 5m00/);
-  assert.match(builderBlock, /refrain chanté au moins trois fois|refrain chante au moins trois fois/);
+  assert.match(builderBlock, /structure libre selon la matière|structure libre selon la matiere/);
+  assert.match(builderBlock, /Vivy choisit le nombre de couplets/);
+  assert.match(builderBlock, /au moins un refrain clair/);
+  assert.doesNotMatch(builderBlock, /refrain chanté au moins trois fois|refrain chante au moins trois fois/);
+  assert.match(builderBlock, /wantsVivyNossenBangerWord\(readiness\.source\)/);
   assert.doesNotMatch(builderBlock, /Contexte utile/);
-  assert.doesNotMatch(builderBlock, /readiness\.source/);
+  assert.doesNotMatch(builderBlock, /\$\{readiness\.source\}/);
 });
 
 test('Vivy NOSSEN Banger ignores operator bug reports before deciding readiness', () => {
