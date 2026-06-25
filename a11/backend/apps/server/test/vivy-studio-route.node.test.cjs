@@ -1194,6 +1194,129 @@ test('POST /api/vivy/studio/produce starts an async Suno music job for premium a
   }
 });
 
+test('POST /api/vivy/studio/produce accepts Suno task id from nested result payload', async () => {
+  const previousEnv = {
+    VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
+    VIVY_SUNO_BASE_URL: process.env.VIVY_SUNO_BASE_URL,
+    VIVY_MUSIC_PROVIDER: process.env.VIVY_MUSIC_PROVIDER,
+    VIVY_ELEVENLABS_API_KEY: process.env.VIVY_ELEVENLABS_API_KEY,
+    VIVY_ELEVENLABS_API_KEY_FILE: process.env.VIVY_ELEVENLABS_API_KEY_FILE,
+  };
+  const previousFetch = global.fetch;
+  const premiumAuth = (req, res, next) => {
+    if (req.headers.authorization === 'Bearer vivy-premium-token') {
+      req.user = { id: 'premium-user', username: 'Premium', tier: 'premium', roles: ['premium'] };
+      return next();
+    }
+    return res.status(401).json({ ok: false, error: 'A11_JWT_Missing', message: 'Connexion requise' });
+  };
+
+  process.env.VIVY_SUNO_API_KEY = 'test-suno-key';
+  process.env.VIVY_SUNO_BASE_URL = 'https://api.suno.test/api/v1';
+  process.env.VIVY_MUSIC_PROVIDER = 'suno';
+  delete process.env.VIVY_ELEVENLABS_API_KEY;
+  delete process.env.VIVY_ELEVENLABS_API_KEY_FILE;
+  global.fetch = async (url, options = {}) => {
+    if (String(url) === 'https://api.suno.test/api/v1/generate') {
+      assert.equal(options.headers.Authorization, 'Bearer test-suno-key');
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return { code: 200, msg: 'success', result: { task_id: 'suno-result-task' } };
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer((app) => {
+      app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT: premiumAuth }));
+    }, async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/vivy/studio/produce', {
+        mode: 'song',
+        songText: 'Vivy lance un refrain clair.',
+        forceRealMusic: true,
+      }, { Authorization: 'Bearer vivy-premium-token' });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.ok, true);
+      assert.equal(json.mediaStatus.state, 'processing');
+      assert.equal(json.mediaStatus.taskId, 'suno-result-task');
+      assert.doesNotMatch(JSON.stringify(json), /suno_music_task_missing/);
+    });
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('POST /api/vivy/studio/produce reports Suno API rejection instead of task missing', async () => {
+  const previousEnv = {
+    VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
+    VIVY_SUNO_BASE_URL: process.env.VIVY_SUNO_BASE_URL,
+    VIVY_MUSIC_PROVIDER: process.env.VIVY_MUSIC_PROVIDER,
+    VIVY_ELEVENLABS_API_KEY: process.env.VIVY_ELEVENLABS_API_KEY,
+    VIVY_ELEVENLABS_API_KEY_FILE: process.env.VIVY_ELEVENLABS_API_KEY_FILE,
+  };
+  const previousFetch = global.fetch;
+  const premiumAuth = (req, res, next) => {
+    if (req.headers.authorization === 'Bearer vivy-premium-token') {
+      req.user = { id: 'premium-user', username: 'Premium', tier: 'premium', roles: ['premium'] };
+      return next();
+    }
+    return res.status(401).json({ ok: false, error: 'A11_JWT_Missing', message: 'Connexion requise' });
+  };
+
+  process.env.VIVY_SUNO_API_KEY = 'test-suno-key';
+  process.env.VIVY_SUNO_BASE_URL = 'https://api.suno.test/api/v1';
+  process.env.VIVY_MUSIC_PROVIDER = 'suno';
+  delete process.env.VIVY_ELEVENLABS_API_KEY;
+  delete process.env.VIVY_ELEVENLABS_API_KEY_FILE;
+  global.fetch = async (url, options = {}) => {
+    if (String(url) === 'https://api.suno.test/api/v1/generate') {
+      assert.equal(options.headers.Authorization, 'Bearer test-suno-key');
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return { code: 402, msg: 'insufficient credits', data: null };
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer((app) => {
+      app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT: premiumAuth }));
+    }, async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/vivy/studio/produce', {
+        mode: 'song',
+        songText: 'Vivy lance un refrain clair.',
+        forceRealMusic: true,
+      }, { Authorization: 'Bearer vivy-premium-token' });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.ok, true);
+      assert.equal(json.mediaStatus.state, 'error');
+      assert.match(json.mediaStatus.reason, /suno_music_api_402/i);
+      assert.match(json.mediaStatus.message, /insufficient credits/i);
+      assert.doesNotMatch(JSON.stringify(json), /suno_music_task_missing/);
+    });
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('GET /api/vivy/studio/jobs/:taskId returns completed Suno audio when ready', async () => {
   const previousEnv = {
     VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,

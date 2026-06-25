@@ -4393,6 +4393,45 @@ function sanitizeSunoTaskId(value = '') {
   return cleanOneLine(value, '', 120).replace(/[^a-zA-Z0-9_.:-]/g, '').slice(0, 120);
 }
 
+function findSunoTaskIdDeep(value, depth = 0) {
+  if (!value || depth > 5) return '';
+  if (typeof value === 'string' || typeof value === 'number') {
+    return depth === 0 ? sanitizeSunoTaskId(value) : '';
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findSunoTaskIdDeep(item, depth + 1);
+      if (found) return found;
+    }
+    return '';
+  }
+  if (typeof value !== 'object') return '';
+
+  for (const [key, child] of Object.entries(value)) {
+    if (/^task[-_]?id$/i.test(key) || /^taskID$/.test(key)) {
+      const found = sanitizeSunoTaskId(child);
+      if (found) return found;
+    }
+  }
+
+  for (const key of ['data', 'result', 'response', 'body', 'record']) {
+    if (value[key] !== undefined) {
+      const found = typeof value[key] === 'string' || typeof value[key] === 'number'
+        ? sanitizeSunoTaskId(value[key])
+        : findSunoTaskIdDeep(value[key], depth + 1);
+      if (found) return found;
+    }
+  }
+
+  for (const child of Object.values(value)) {
+    if (child && typeof child === 'object') {
+      const found = findSunoTaskIdDeep(child, depth + 1);
+      if (found) return found;
+    }
+  }
+  return '';
+}
+
 function findSunoTaskId(payload) {
   const candidates = [
     payload?.taskId,
@@ -4403,8 +4442,14 @@ function findSunoTaskId(payload) {
     payload?.data?.id,
     payload?.response?.taskId,
     payload?.response?.task_id,
+    payload?.result?.taskId,
+    payload?.result?.task_id,
+    payload?.data?.result?.taskId,
+    payload?.data?.result?.task_id,
+    payload?.data?.response?.taskId,
+    payload?.data?.response?.task_id,
   ];
-  return sanitizeSunoTaskId(candidates.find(Boolean) || '');
+  return sanitizeSunoTaskId(candidates.find(Boolean) || '') || findSunoTaskIdDeep(payload);
 }
 
 function findSunoStatus(payload) {
@@ -4418,6 +4463,50 @@ function findSunoStatus(payload) {
     payload?.response?.state,
   ].map((value) => cleanOneLine(value, '', 80)).filter(Boolean);
   return candidates[0] || '';
+}
+
+function findSunoApiCode(payload = {}) {
+  const raw = [
+    payload?.code,
+    payload?.statusCode,
+    payload?.status_code,
+    payload?.data?.code,
+    payload?.data?.statusCode,
+    payload?.data?.status_code,
+    payload?.result?.code,
+    payload?.response?.code,
+  ].find((value) => value !== undefined && value !== null && value !== '');
+  const code = Number(raw);
+  return Number.isFinite(code) ? code : null;
+}
+
+function findSunoProviderMessage(payload = {}) {
+  const candidates = [
+    payload?.msg,
+    payload?.message,
+    payload?.error,
+    payload?.errorMessage,
+    payload?.error_message,
+    payload?.detail,
+    payload?.data?.msg,
+    payload?.data?.message,
+    payload?.data?.error,
+    payload?.data?.errorMessage,
+    payload?.result?.msg,
+    payload?.result?.message,
+    payload?.response?.msg,
+    payload?.response?.message,
+  ].map((value) => cleanOneLine(value, '', 240)).filter(Boolean);
+  return candidates[0] || '';
+}
+
+function buildSunoProviderError(code, payload = {}, fallback = 'error') {
+  const safeCode = Number.isFinite(Number(code)) ? Number(code) : cleanOneLine(code, fallback, 40);
+  const detail = findSunoProviderMessage(payload);
+  const error = new Error(`suno_music_api_${safeCode}${detail ? `:${detail}` : ''}`);
+  error.code = `suno_music_api_${safeCode}`;
+  error.providerDetail = detail;
+  return error;
 }
 
 function collectSunoTracks(value, tracks = []) {
@@ -4708,8 +4797,16 @@ async function requestSunoMusic(input = {}, req = null) {
     signal: AbortSignal.timeout(Number(process.env.VIVY_SUNO_TIMEOUT_MS || 30000) || 30000),
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok || payload?.code === 401 || payload?.code === 403) {
-    throw new Error(`suno_music_http_${response.status || payload?.code || 'error'}`);
+  const apiCode = findSunoApiCode(payload);
+  if (!response.ok) {
+    const error = buildSunoProviderError(response.status || apiCode || 'http_error', payload, 'http_error');
+    error.status = response.status;
+    throw error;
+  }
+  if (apiCode !== null && apiCode !== 200) {
+    const error = buildSunoProviderError(apiCode, payload, 'api_error');
+    error.status = apiCode;
+    throw error;
   }
 
   const taskId = findSunoTaskId(payload);
@@ -4728,7 +4825,10 @@ async function requestSunoMusic(input = {}, req = null) {
       selectedVoicePreserved: voiceMode === 'suno_voice',
     };
   }
-  if (!taskId) throw new Error('suno_music_task_missing');
+  if (!taskId) {
+    const detail = findSunoProviderMessage(payload) || findSunoStatus(payload);
+    throw new Error(`suno_music_task_missing${detail ? `:${detail}` : ''}`);
+  }
 
   return {
     ok: true,
