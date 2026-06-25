@@ -3142,14 +3142,22 @@ function buildVivyInternalTuningReply({ message = '', history = [], language = '
 function isDirectSongwritingRequest(message = '') {
   const normalized = foldTextForLookup(message);
   return /\b(fais|fait|ecris|ecrit|compose|genere|genere|cree|crée)\b.{0,80}\b(chanson|musique|son|paroles|lyrics|refrain|couplet)\b/.test(normalized)
+    || /\b(make|write|compose|generate|create)\b.{0,90}\b(song|music|lyrics|chorus|verse|track)\b/.test(normalized)
     || /\b(raconte|raconter|narre|narrer)\b.{0,110}\b(en\s+chanson|chanson|musique|son|paroles|lyrics|refrain|couplet)\b/.test(normalized)
+    || /\b(tell|turn|make)\b.{0,110}\b(as\s+(?:a\s+)?song|into\s+(?:a\s+)?song|song|music|lyrics|chorus|verse)\b/.test(normalized)
     || /\b(?:en|version)\s+chanson\b/.test(normalized)
-    || /\b(transforme|structure|arrange|mets|met)\b.{0,100}\b(chanson|musique|son|paroles|lyrics|refrain|couplet)\b/.test(normalized)
+    || /\b(?:as|into|version)\s+(?:a\s+)?song\b/.test(normalized)
+    || /\b(mets|met|mettre)\b.{0,100}\b(action|theme|th[eè]me|ambiance|titre|epic|[ée]pique|fantas|fantesque)\b/.test(normalized)
+    || /\b(put|turn|make)\b.{0,100}\b(action|theme|mood|ambience|ambiance|title|epic|fantasy)\b/.test(normalized)
+    || /\b(quand\s+tu\s+es\s+prete|quand\s+tu\s+es\s+prête|envoie|envois|envoies|lance|sort)\b.{0,90}\b(son|ton|chanson|musique|voix\s+feminine|voix\s+féminine|bien\s+aimee|bien\s+aimée)\b/.test(normalized)
+    || /\b(when\s+you(?:\s+re|\s+are)\s+ready|send|launch|release|drop)\b.{0,90}\b(song|track|music|lyrics|female\s+voice|beloved)\b/.test(normalized)
+    || /\b(transforme|structure|arrange|mets|met|turn|arrange|structure)\b.{0,100}\b(chanson|musique|son|paroles|lyrics|song|music|chorus|verse|refrain|couplet)\b/.test(normalized)
     || /\b(continue|continuer|reprends|reprendre|poursuis|poursuivre|complete|complète|termine|enchaîne|enchaine)\b.{0,90}\b(paroles|lyrics|couplet|couplets|refrain|rap)\b/.test(normalized)
-    || /\b(paroles|lyrics|couplet|couplets|refrain|rap)\b.{0,90}\b(continue|continuer|reprends|reprendre|poursuis|poursuivre|complete|complète|termine|enchaîne|enchaine)\b/.test(normalized)
-    || /\b(envoie|envois|envoyer|donne|donnes|sort|termine|fais)\b.{0,100}\b(reste|suite|paroles|lyrics)\b/.test(normalized)
-    || /\b(reste|suite|paroles|lyrics)\b.{0,100}\b(envoie|envois|envoyer|donne|donnes|sort|termine|fais)\b/.test(normalized)
-    || /\b(chanson|paroles|lyrics)\b.{0,80}\b(structure|refrain|couplet|rime|rimes)\b/.test(normalized)
+    || /\b(continue|finish|complete|extend)\b.{0,90}\b(lyrics|chorus|verse|verses|rap|song)\b/.test(normalized)
+    || /\b(paroles|lyrics|couplet|couplets|refrain|chorus|verse|verses|rap)\b.{0,90}\b(continue|continuer|reprends|reprendre|poursuis|poursuivre|complete|complète|termine|enchaîne|enchaine|finish|extend)\b/.test(normalized)
+    || /\b(envoie|envois|envoyer|donne|donnes|sort|termine|fais|send|give|drop|finish)\b.{0,100}\b(reste|suite|paroles|lyrics|rest|next\s+part|song)\b/.test(normalized)
+    || /\b(reste|suite|paroles|lyrics|rest|next\s+part|song)\b.{0,100}\b(envoie|envois|envoyer|donne|donnes|sort|termine|fais|send|give|drop|finish)\b/.test(normalized)
+    || /\b(chanson|paroles|lyrics|song)\b.{0,80}\b(structure|refrain|couplet|chorus|verse|rime|rimes|rhyme|rhymes)\b/.test(normalized)
     || /\b(vivy_intent|instruction)\b.{0,180}\b(chanson|paroles|refrain|couplet|composition)\b/.test(normalized);
 }
 
@@ -4975,7 +4983,21 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
     signal: AbortSignal.timeout(Number(process.env.VIVY_SUNO_STATUS_TIMEOUT_MS || 15000) || 15000),
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`suno_status_http_${response.status}`);
+  if (!response.ok) {
+    const statusCode = Number(response.status) || 0;
+    if ([408, 429, 502, 503, 504, 524].includes(statusCode)) {
+      return {
+        ok: true,
+        provider: 'suno',
+        taskId: safeTaskId,
+        state: 'processing',
+        status: `suno_status_retryable_${statusCode}`,
+        retryable: true,
+        message: 'Suno répond lentement; Vivy continue de surveiller la chanson.',
+      };
+    }
+    throw new Error(`suno_status_http_${response.status}`);
+  }
   const media = extractSunoMedia(payload);
   const status = findSunoStatus(payload) || 'processing';
   if (media?.url) {

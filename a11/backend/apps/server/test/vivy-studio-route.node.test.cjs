@@ -1487,6 +1487,60 @@ test('GET /api/vivy/studio/jobs/:taskId falls back to provider URL when Suno MP3
   }
 });
 
+test('GET /api/vivy/studio/jobs/:taskId keeps polling when Suno status is temporarily slow', async () => {
+  const previousEnv = {
+    VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
+    VIVY_SUNO_BASE_URL: process.env.VIVY_SUNO_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const founderAuth = (req, res, next) => {
+    if (req.headers.authorization === 'Bearer vivy-founder-token') {
+      req.user = { id: 'djeff', username: 'Djeff', roles: ['founder'] };
+      return next();
+    }
+    return res.status(401).json({ ok: false, error: 'A11_JWT_Missing', message: 'Connexion requise' });
+  };
+
+  process.env.VIVY_SUNO_API_KEY = 'test-suno-key';
+  process.env.VIVY_SUNO_BASE_URL = 'https://api.suno.test/api/v1';
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'https://api.suno.test/api/v1/generate/record-info?taskId=suno-english-long-song') {
+      return {
+        ok: false,
+        status: 524,
+        async json() {
+          return { error: 'upstream timeout' };
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer((app) => {
+      app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT: founderAuth }));
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/vivy/studio/jobs/suno-english-long-song`, {
+        headers: { Authorization: 'Bearer vivy-founder-token' },
+      });
+      const json = await response.json();
+      assert.equal(response.status, 200);
+      assert.equal(json.ok, true);
+      assert.equal(json.state, 'processing');
+      assert.equal(json.retryable, true);
+      assert.match(json.status, /524/);
+      assert.doesNotMatch(json.message, /indisponible/i);
+    });
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('GET /api/vivy/studio/jobs/:taskId accepts personal Suno session key for non-founder status polling', async () => {
   const previousEnv = {
     VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
@@ -2986,6 +3040,34 @@ test('Vivy routes raconte en chanson to songcraft and ignores OCR attachment noi
   assert.match(result.assistant, /\[(Chorus|Refrain|Verse|Couplet)/i);
   assert.doesNotMatch(result.assistant, /Je prends ça comme une vraie discussion|Le bon prochain pas/i);
   assert.doesNotMatch(result.assistant, /Valentino-rossi-stefan-bradl|wallpaper|\.jpg|Jpg|OCR|Analyse A11|maxresdefault|ROS SI/i);
+});
+
+test('Vivy routes action and send-the-song followups to songcraft instead of generic chat', async () => {
+  const actionMessage = 'mets ca en action avec un theme epic et le titre le Z de Zorro dans une ambiance fantesque';
+  const sendMessage = 'quand tu es prete envois le ton, voix feminine comme si tu es sa bien aimé';
+  const englishSongMessage = 'make a song in English about a masked hero with a cinematic chorus';
+  const englishSendMessage = "when you're ready send the song with a female voice";
+  assert.equal(isDirectSongwritingRequest(actionMessage), true);
+  assert.equal(isDirectSongwritingRequest(sendMessage), true);
+  assert.equal(isDirectSongwritingRequest(englishSongMessage), true);
+  assert.equal(isDirectSongwritingRequest(englishSendMessage), true);
+
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-zorro-action-followup',
+    message: actionMessage,
+    history: [
+      { role: 'user', content: 'fais un son sur la légende de zorro' },
+      { role: 'assistant', content: '[Vivy]\n[Intro]\nDans la nuit de Californie\nZorro revient, la légende s’allume\n\n[Vivy]\n[Chorus]\nZorro, Zorro, la nuit te ressemble' },
+      { role: 'user', content: 'parle aussi de Tornado son fidèle destrier et de sa signature en Z sur les fesses des méchants' },
+      { role: 'user', content: sendMessage },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'song');
+  assert.equal(result.aiMode, 'deterministic_songcraft');
+  assert.match(result.assistant, /Zorro|Tornado|Californie|Z/i);
+  assert.doesNotMatch(result.assistant, /Je prends ça comme une vraie discussion|Le bon prochain pas/i);
 });
 
 test('Vivy chat song mode exposes clean publicLyrics instead of an agent handoff', async () => {

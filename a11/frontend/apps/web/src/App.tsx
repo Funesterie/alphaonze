@@ -3383,8 +3383,20 @@ function isVivyNossenStructureInstructionLine(value = "") {
   const folded = foldForLookup(value);
   if (!folded) return false;
   if (/^(?:instruction|consigne|structure|format\s+attendu|ecrire|écrire|ecris|écris)\b/.test(folded)) return true;
+  if (/\b(?:mets|met|mettre)\b.{0,80}\b(?:action|theme|th[eè]me|ambiance|titre)\b/.test(folded)) return true;
+  if (/\b(?:put|turn|make)\b.{0,80}\b(?:action|theme|mood|ambience|ambiance|title|epic|fantasy)\b/.test(folded)) return true;
+  if (/\b(?:quand\s+tu\s+es\s+prete|quand\s+tu\s+es\s+prête|envoie|envois|envoies|lance|sort)\b.{0,80}\b(?:son|ton|chanson|musique|voix\s+feminine|voix\s+féminine|bien\s+aimee|bien\s+aimée)\b/.test(folded)) return true;
+  if (/\b(?:when\s+you(?:\s+re|\s+are)\s+ready|send|launch|release|drop)\b.{0,80}\b(?:song|track|music|lyrics|female\s+voice|beloved)\b/.test(folded)) return true;
   if (/\b(?:vraie\s+chanson\s+complete|vraie\s+chanson\s+complète|ecrire.{0,50}chanson\s+complete|écrire.{0,50}chanson\s+complète|ecris.{0,50}chanson\s+complete|écris.{0,50}chanson\s+complète|intro.*couplet.*refrain|couplet.*refrain.*pont|ne\s+pas\s+recopier|ne\s+chante\s+pas|paroles\s+chantables)\b/.test(folded)) return true;
   return false;
+}
+
+function looksLikeVivyNossenAssistantLyricsBlock(value = "") {
+  const text = toUnicodeText(value, 6000);
+  const folded = foldForLookup(text);
+  if (!folded || /je prends ca comme une vraie discussion|je prends ça comme une vraie discussion/.test(folded)) return false;
+  return /\[(?:intro|verse|couplet|chorus|refrain|bridge|pont|outro)(?:\s*[-\d][^\]]*)?\]/i.test(text)
+    && /(?:^|\n)\s*\[(?:Vivy|Djeff|A11|K44|Tous|Duo)\]\s*(?:\n|$)/.test(text);
 }
 
 function collectVivyNossenSemanticLine(canvas: VivyNossenSemanticCanvas & { lyricLines: string[] }, value = "") {
@@ -3438,6 +3450,10 @@ function buildVivyNossenSemanticCanvas(
   messages
     .filter((entry) => entry.role === "user")
     .slice(-24)
+    .forEach((entry) => splitSemanticLines(entry.content).forEach((line) => collectVivyNossenSemanticLine(canvas, line)));
+  messages
+    .filter((entry) => entry.role === "assistant" && looksLikeVivyNossenAssistantLyricsBlock(entry.content))
+    .slice(-3)
     .forEach((entry) => splitSemanticLines(entry.content).forEach((line) => collectVivyNossenSemanticLine(canvas, line)));
   splitSemanticLines(draft).forEach((line) => collectVivyNossenSemanticLine(canvas, line));
 
@@ -3598,6 +3614,10 @@ function looksLikeVivyNossenOperatorNoiseLine(folded = "") {
   if (/\b(?:bug|bugs?|marche\s+pas|sort\s+pas|sorti\s+pas|corrige|corriger|fix|logs?|credits?|crédits?|cles?|clés?|key|llm|quota|token|secret)\b/.test(folded)) return true;
   if (/\b(?:repete|répète|repetes|répètes|reponse|réponse|reponses|réponses|perroquet|singeur|singe|confond|confondu|sortie\s+compilateur|user\s+avec|compiler\s+output)\b/.test(folded)) return true;
   if (/\b(?:affichage|telephone|téléphone|mobile|dezoom|dézoom|clavier|viewport|scroll|impossible\s+d[' ]?ecrire|impossible\s+d[' ]?écrire|ca\s+bouge|ça\s+bouge)\b/.test(folded)) return true;
+  if (/\b(?:mets|met|mettre)\b.{0,80}\b(?:action|theme|th[eè]me|ambiance|titre)\b/.test(folded)) return true;
+  if (/\b(?:put|turn|make)\b.{0,80}\b(?:action|theme|mood|ambience|ambiance|title|epic|fantasy)\b/.test(folded)) return true;
+  if (/\b(?:quand\s+tu\s+es\s+prete|quand\s+tu\s+es\s+prête|envoie|envois|envoies|lance|sort)\b.{0,80}\b(?:son|ton|chanson|musique|voix\s+feminine|voix\s+féminine|bien\s+aimee|bien\s+aimée)\b/.test(folded)) return true;
+  if (/\b(?:when\s+you(?:\s+re|\s+are)\s+ready|send|launch|release|drop)\b.{0,80}\b(?:song|track|music|lyrics|female\s+voice|beloved)\b/.test(folded)) return true;
   return false;
 }
 
@@ -3717,6 +3737,7 @@ function makeVivyNossenLyricLine(value = "", fallback = "", punctuation = ",") {
 
 function buildVivyNossenBangerTitle(source: string, fragments: string[]) {
   const folded = foldForLookup([source, ...fragments].join("\n"));
+  if (/\bzorro\b|\btornado\b|\bdestrier\b|\brenard\b/.test(folded)) return "Le Z de Zorro";
   if (/\bvalentino\b|\brossi\b|\bthe\s+doctor\b|\bdoctor\b|\bvr46\b|\bmugello\b|\blaguna\s+seca\b|\bmotogp\b|\bmoto\s*gp\b/.test(folded)) return "The Doctor 46";
   if (/\bhelene\b|\btroie\b|\btroy\b/.test(folded)) return "Hélène de Funesterie";
   if (/\bjessy\b/.test(folded) && /\bdemons?\b/.test(folded)) return "Jessy tient debout";
@@ -3729,7 +3750,7 @@ function buildVivyNossenBangerTitle(source: string, fragments: string[]) {
   return toUnicodeLine(words.slice(0, 5).join(" ") || "NOSSEN", "NOSSEN", 64);
 }
 
-function buildVivyNossenChorus(kind: "helene" | "jessy" | "rossi" | "default", useBangerWord: boolean): [string, string, string, string] {
+function buildVivyNossenChorus(kind: "helene" | "jessy" | "rossi" | "zorro" | "default", useBangerWord: boolean): [string, string, string, string] {
   if (kind === "helene") {
     return useBangerWord ? [
       "Banger, Hélène garde son ciel,",
@@ -3769,6 +3790,19 @@ function buildVivyNossenChorus(kind: "helene" | "jessy" | "rossi" | "default", u
       "Et la légende roule encore sous la lune.",
     ];
   }
+  if (kind === "zorro") {
+    return useBangerWord ? [
+      "Banger, Zorro fend la nuit,",
+      "Banger, Tornado soulève la plaine.",
+      "Banger, le Z rit sur les puissants,",
+      "Et l'amour veille sous la lune ancienne.",
+    ] : [
+      "Zorro fend la nuit,",
+      "Tornado soulève la plaine.",
+      "Le Z rit sur les puissants,",
+      "Et l'amour veille sous la lune ancienne.",
+    ];
+  }
   return useBangerWord ? [
     "Banger, le refrain prend feu,",
     "Banger, le coeur reprend la piste.",
@@ -3782,7 +3816,7 @@ function buildVivyNossenChorus(kind: "helene" | "jessy" | "rossi" | "default", u
   ];
 }
 
-function buildVivyNossenOutro(kind: "helene" | "jessy" | "rossi" | "default", useBangerWord: boolean): [string, string] {
+function buildVivyNossenOutro(kind: "helene" | "jessy" | "rossi" | "zorro" | "default", useBangerWord: boolean): [string, string] {
   if (kind === "helene") {
     return useBangerWord ? [
       "Banger, Hélène choisit son ciel,",
@@ -3810,6 +3844,15 @@ function buildVivyNossenOutro(kind: "helene" | "jessy" | "rossi" | "default", us
       "On entend encore son moteur dans la nuit.",
     ];
   }
+  if (kind === "zorro") {
+    return useBangerWord ? [
+      "Banger, son Z brille encore dans la nuit,",
+      "Et Tornado disparaît quand mon coeur le suit.",
+    ] : [
+      "Son Z brille encore dans la nuit,",
+      "Et Tornado disparaît quand mon coeur le suit.",
+    ];
+  }
   return useBangerWord ? [
     "Banger, encore une étincelle,",
     "La voix tient jusqu'au dernier écho.",
@@ -3835,6 +3878,42 @@ function buildVivyNossenHeroicLyricPlan(source: string, fragments: string[]): Vi
   const hasMarkedSmile = /\bchauve\b|\bdent\b|\bsourire\b/.test(folded);
   const hasHelene = /\bhelene\b|\btroie\b|\btroy\b/.test(folded);
   const hasRossi = /\bvalentino\b|\brossi\b|\bthe\s+doctor\b|\bdoctor\b|\bvr46\b|\bmugello\b|\blaguna\s+seca\b|\bmotogp\b|\bmoto\s*gp\b/.test(folded);
+  const hasZorro = /\bzorro\b|\btornado\b|\bdestrier\b|\brenard\b/.test(folded);
+  if (hasZorro) {
+    return {
+      title: "Le Z de Zorro",
+      intro: [
+        "Dans la nuit de Californie, je guette son pas,",
+        "Une cape fend la lune et mon coeur reconnaît sa voix.",
+      ],
+      verse1: [
+        "Tornado bat la poussière comme un tambour de guerre,",
+        "Son sabot noir réveille les collines et la mer.",
+        "Sous le masque, un sourire garde le feu discret,",
+        "Et l'épée trace un éclair quand la justice apparaît.",
+      ],
+      preChorus: [
+        "Les soldats crient son nom dans les rues de la ville,",
+        "Mais son ombre glisse et les lanternes vacillent.",
+        "Moi je prie dans le vent pour qu'il revienne vivant,",
+        "Pendant que son Z fait trembler les tyrans.",
+      ],
+      chorus: buildVivyNossenChorus("zorro", useBangerWord),
+      verse2: [
+        "Quand les méchants bombent le torse et jouent les rois,",
+        "Il leur laisse une leçon que personne n'oubliera.",
+        "Un Z sur le fond du pantalon, l'orgueil en déroute,",
+        "Et le peuple rit plus fort quand Tornado reprend la route.",
+      ],
+      bridge: [
+        "Je l'aime comme on aime une étoile indomptable,",
+        "Trop libre pour rester, trop vrai pour disparaître.",
+        "S'il revient au matin, je cacherai son secret,",
+        "S'il repart dans la nuit, mon chant le reconnaît.",
+      ],
+      outro: buildVivyNossenOutro("zorro", useBangerWord),
+    };
+  }
   if (hasRossi) {
     return {
       title: "The Doctor 46",
