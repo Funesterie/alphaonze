@@ -3443,6 +3443,7 @@ function cleanVivyNossenLyricSourceLine(value = "") {
 function looksLikeVivyNossenOperatorNoiseLine(folded = "") {
   if (!folded) return true;
   if (/\b(?:d40|suno|fallback|secours|codex|prompt|telechargement|téléchargement|telecharger|télécharger|bouton|compile|compil|compiler|compilateur|formulaire|detecteur|détecteur|ajustements internes|grand modele|grand modèle|mode automatique|generation d40|génération d40)\b/.test(folded)) return true;
+  if (/\b(?:nossen\s+mode|mode\s+nossen|tu\s+peux\s+faire\s+le\s+nossen|que\s+tu\s+fasses\s+un\s+son|fais\s+le\s+banger|lance\s+le\s+banger|demander\s+a\s+vivy|demander\s+à\s+vivy)\b/.test(folded)) return true;
   if (/\b(?:paroles?\s+passent?\s+pas|musique\s+bug|generation\s+musique\s+bug|génération\s+musique\s+bug|phrase générique|truc générique|generique|réecrit|réécrit|reecrit|recopie|recopier)\b/.test(folded)) return true;
   if (/\b(?:bug|bugs?|marche\s+pas|sort\s+pas|sorti\s+pas|corrige|corriger|fix|logs?|credits?|crédits?|cles?|clés?|key|llm|quota|token|secret)\b/.test(folded)) return true;
   if (/\b(?:repete|répète|repetes|répètes|reponse|réponse|reponses|réponses|perroquet|singeur|singe|confond|confondu|sortie\s+compilateur|user\s+avec|compiler\s+output)\b/.test(folded)) return true;
@@ -3509,13 +3510,143 @@ function shapeVivyNossenCreativeFragment(value = "") {
     .trim();
 }
 
-function buildVivyNossenBangerTitle(fragments: string[]) {
+type VivyNossenHeroicLyricPlan = {
+  title: string;
+  intro: [string, string];
+  verse1: [string, string, string, string];
+  preChorus: [string, string, string, string];
+  chorus: [string, string, string, string];
+  verse2: [string, string, string, string];
+  bridge: [string, string, string, string];
+  outro: [string, string];
+};
+
+function makeVivyNossenLyricLine(value = "", fallback = "", punctuation = ",") {
+  const cleaned = toUnicodeLine(value || fallback, fallback, 112)
+    .replace(/^["'“”]+|["'“”]+$/g, "")
+    .replace(/[.;:!,]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const safeLine = cleaned || fallback;
+  const capitalized = safeLine ? safeLine.charAt(0).toUpperCase() + safeLine.slice(1) : fallback;
+  if (!capitalized) return "";
+  return `${capitalized}${punctuation}`;
+}
+
+function buildVivyNossenBangerTitle(source: string, fragments: string[]) {
+  const folded = foldForLookup([source, ...fragments].join("\n"));
+  if (/\bjessy\b/.test(folded) && /\bdemons?\b/.test(folded)) return "Jessy tient debout";
+  if (/\bnouvelle\s+generation\b|\bnouvelle\s+génération\b/.test(folded)) return "Nouvelle génération";
   const first = shapeVivyNossenCreativeFragment(cleanVivyNossenLyricSourceLine(fragments[0] || ""));
   const words = first
     .split(/\s+/)
     .map((word) => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
-    .filter((word) => word.length >= 3 && !/^(?:avec|pour|dans|cette|quand|comme|faire|fait|fais|chanson|musique)$/i.test(word));
+    .filter((word) => word.length >= 3 && !/^(?:avec|pour|dans|cette|quand|comme|faire|fait|fais|face|ses|son|histoire|chanson|musique)$/i.test(word));
   return toUnicodeLine(words.slice(0, 5).join(" ") || "NOSSEN Banger", "NOSSEN Banger", 64);
+}
+
+function buildVivyNossenHeroicLyricPlan(source: string, fragments: string[]): VivyNossenHeroicLyricPlan {
+  const folded = foldForLookup([source, ...fragments].join("\n"));
+  const shapedFragments = fragments
+    .map(shapeVivyNossenCreativeFragment)
+    .map((fragment) => toUnicodeLine(fragment, "", 120).replace(/[.;:!,]+$/g, "").trim())
+    .filter(Boolean);
+  const pick = (index: number, fallback: string) => shapedFragments[index % Math.max(1, shapedFragments.length)] || fallback;
+  const hasJessy = /\bjessy\b/.test(folded);
+  const hasHospital = /\bhp\b|\bhopital\s+psy\b|\bhôpital\s+psy\b/.test(folded);
+  const hasHeroes = /\bheros?\b|\bhéros?\b|\bdbz\b|\bavengers?\b|\bspider-?man\b|\bmarvel\b|\bdc comics?\b|\bdc\b/.test(folded);
+  const hasSuperSaiyan = /\bsuper\s+saiyan\b|\bdbz\b/.test(folded);
+  const hasSpider = /\bspider-?man\b|\bspiderman\b/.test(folded);
+  const hasMarkedSmile = /\bchauve\b|\bdent\b|\bsourire\b/.test(folded);
+  if (hasJessy) {
+    return {
+      title: "Jessy tient debout",
+      intro: [
+        "Jessy tient debout face à ses démons,",
+        "Ses héros font cercle autour de lui.",
+      ],
+      verse1: [
+        hasHospital ? "Même en HP, son courage garde le front levé," : "Même quand la nuit serre, son courage reste levé,",
+        hasSuperSaiyan ? "L'aura monte comme un Super Saiyan dans le ciel." : "Une aura d'animé fend le ciel.",
+        hasMarkedSmile ? "Crâne au vent, sourire cabossé, il avance entier," : "Il avance au milieu des ombres sans baisser les yeux,",
+        "Et chaque peur recule quand son nom résonne.",
+      ],
+      preChorus: [
+        "Quand le décor tremble encore,",
+        "On rallume son feu dans nos voix.",
+        "Le coeur frappe plus fort que le sort,",
+        "Et la lumière revient vers lui.",
+      ],
+      chorus: [
+        "Banger, on rallume la nuit,",
+        "Banger, le coeur reprend la piste.",
+        "Banger, Jessy retrouve l'appui,",
+        "Et ses héros répondent: tu existes.",
+      ],
+      verse2: [
+        hasHeroes ? "Ses héros font cercle autour de lui sans le laisser tomber," : "Ses forces reviennent autour de lui sans le laisser tomber,",
+        hasSpider ? "Une toile de lumière retient la chute." : "Des boucliers de lumière retiennent la chute.",
+        "Les mondes se mélangent pour porter son histoire,",
+        "Et son souffle remonte au-dessus du noir.",
+      ],
+      bridge: [
+        "On ne nie pas la bataille invisible,",
+        "On la traverse avec respect dans la voix.",
+        "Chaque cicatrice devient lisible,",
+        "Chaque héros marche avec lui cette fois.",
+      ],
+      outro: [
+        "Banger, encore une étincelle,",
+        "Jessy tient debout jusqu'au dernier écho.",
+      ],
+    };
+  }
+
+  const firstLine = makeVivyNossenLyricLine(pick(0, "une génération qui cherche sa voix"), "une génération qui cherche sa voix", ",");
+  const secondLine = makeVivyNossenLyricLine(pick(1, "le lien entre le réel et le monde Funesterie"), "le lien entre le réel et le monde Funesterie", ".");
+  const thirdLine = makeVivyNossenLyricLine(pick(2, "la vitesse de créer sans perdre le coeur"), "la vitesse de créer sans perdre le coeur", ",");
+  const fourthLine = makeVivyNossenLyricLine(pick(3, "une route claire revient au réel"), "une route claire revient au réel", ".");
+  return {
+    title: buildVivyNossenBangerTitle(source, fragments),
+    intro: [
+      firstLine,
+      secondLine,
+    ],
+    verse1: [
+      thirdLine,
+      "La voix traverse l'écran sans perdre le vivant.",
+      fourthLine,
+      "Et chaque idée devient battement.",
+    ],
+    preChorus: [
+      "Quand le décor tremble encore,",
+      "On garde le vrai dans nos voix.",
+      "Le refrain revient plus fort,",
+      "Et la lumière choisit sa voie.",
+    ],
+    chorus: [
+      "Banger, on rallume la nuit,",
+      "Banger, le coeur reprend la piste.",
+      "Banger, le feu clair nous suit,",
+      "Et nos voix restent distinctes.",
+    ],
+    verse2: [
+      "On prend le fragile sans le briser,",
+      "On laisse la matière devenir mélodie.",
+      "Chaque silence trouve sa place,",
+      "Chaque détour revient à la vie.",
+    ],
+    bridge: [
+      "On laisse tomber les ombres faciles,",
+      "On garde le vrai dans la voix.",
+      "Le refrain ouvre la ville,",
+      "Et la chanson choisit sa voie.",
+    ],
+    outro: [
+      "Banger, encore une étincelle,",
+      "Banger, jusqu'au dernier écho.",
+    ],
+  };
 }
 
 function buildVivyNossenBangerProductionBrief(_readiness: VivyNossenBangerReadiness, artists: VivyStudioArtistId[]) {
@@ -3530,69 +3661,41 @@ function buildVivyNossenBangerProductionBrief(_readiness: VivyNossenBangerReadin
 
 function buildVivyNossenBangerSongText(readiness: VivyNossenBangerReadiness, artists: VivyStudioArtistId[]) {
   const fragments = extractVivyNossenLyricFragments(readiness.source).map(shapeVivyNossenCreativeFragment).filter(Boolean);
-  const title = buildVivyNossenBangerTitle(fragments);
+  const lyricPlan = buildVivyNossenHeroicLyricPlan(readiness.source, fragments);
   const leadArtist = artists[0] || "vivy";
   const hookArtist = artists.includes("vivy") ? "vivy" : leadArtist;
   const secondArtist = artists.find((artist) => artist !== leadArtist) || hookArtist;
   const sharedTag = artists.length > 1 ? "[Tous]" : getVivyNossenArtistTag(leadArtist);
-  const themeParts = [
-    vivyNossenLyricFragment(fragments, 0, "une génération qui cherche sa voix"),
-    vivyNossenLyricFragment(fragments, 1, "le lien entre le réel et le monde Funesterie"),
-    vivyNossenLyricFragment(fragments, 2, "la vitesse de créer sans perdre le coeur"),
-  ];
-  const imageParts = [
-    vivyNossenLyricFragment(fragments, 3, "écran fissuré"),
-    vivyNossenLyricFragment(fragments, 4, "voix dans la nuit"),
-    vivyNossenLyricFragment(fragments, 5, "feu dans la poitrine"),
-    vivyNossenLyricFragment(fragments, 6, "route qui revient au réel"),
-  ];
 
   return toUnicodeText([
-    `[Titre] ${title}`,
+    `[Titre] ${lyricPlan.title}`,
     `[Intro - ${VIVY_STUDIO_ARTISTS.find((artist) => artist.id === leadArtist)?.label || "Vivy"}]`,
     getVivyNossenArtistTag(leadArtist),
-    `Je porte ${themeParts[0]},`,
-    `Je garde ${themeParts[1]} dans la poitrine.`,
+    ...lyricPlan.intro,
     "",
     `[Couplet 1 - ${VIVY_STUDIO_ARTISTS.find((artist) => artist.id === leadArtist)?.label || "Vivy"}]`,
     getVivyNossenArtistTag(leadArtist),
-    `On vient de ${imageParts[0]},`,
-    `Avec ${imageParts[1]} qui bat dans le silence.`,
-    `Je transforme ${themeParts[2]},`,
-    "En route claire quand le monde balance.",
+    ...lyricPlan.verse1,
     "",
     `[Pré-refrain - ${VIVY_STUDIO_ARTISTS.find((artist) => artist.id === secondArtist)?.label || "Vivy"}]`,
     getVivyNossenArtistTag(secondArtist),
-    `Si ${imageParts[2]} tremble encore,`,
-    `Je le tiens vivant jusqu'au décor.`,
-    "On suit le battement qui dessine,",
-    "On chante ce qui revient plus fort.",
+    ...lyricPlan.preChorus,
     "",
     `[Refrain - ${artists.length > 1 ? "Tous" : (VIVY_STUDIO_ARTISTS.find((artist) => artist.id === hookArtist)?.label || "Vivy")}]`,
     sharedTag,
-    "Banger, on rallume la nuit,",
-    "Banger, le coeur reprend la piste.",
-    `Banger, ${imageParts[3]} nous suit,`,
-    "Et nos voix restent distinctes.",
+    ...lyricPlan.chorus,
     "",
     `[Couplet 2 - ${VIVY_STUDIO_ARTISTS.find((artist) => artist.id === hookArtist)?.label || "Vivy"}]`,
     getVivyNossenArtistTag(hookArtist),
-    `Je prends ${themeParts[1]} sans le briser,`,
-    `Je laisse ${imageParts[1]} devenir mélodie.`,
-    "Chaque silence trouve sa place,",
-    "Chaque détour revient à la vie.",
+    ...lyricPlan.verse2,
     "",
     "[Pont]",
     sharedTag,
-    "On laisse tomber les ombres fragiles,",
-    "On garde le vrai dans la voix.",
-    "Le refrain ouvre la ville,",
-    "Et la chanson choisit sa voie.",
+    ...lyricPlan.bridge,
     "",
     "[Outro]",
     sharedTag,
-    "Banger, encore une étincelle,",
-    "Banger, jusqu'au dernier écho.",
+    ...lyricPlan.outro,
   ].filter(Boolean).join("\n\n"), VIVY_STUDIO_SONG_MAX_CHARS);
 }
 

@@ -2143,7 +2143,7 @@ test('Vivy NOSSEN Banger keeps lyrics first and syncs the final media reply', ()
   assert.match(launchBlock, /media:\s*preparedMedia/);
 });
 
-test('Vivy NOSSEN Banger sends a clean song seed and lets backend songcraft structure it', () => {
+test('Vivy NOSSEN Banger sends a polished song seed before Suno sees it', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
     'utf8'
@@ -2155,12 +2155,16 @@ test('Vivy NOSSEN Banger sends a clean song seed and lets backend songcraft stru
   const launchEnd = appSource.indexOf('async function onVivyVoiceReferenceChange', launchStart);
   const launchBlock = appSource.slice(launchStart, launchEnd);
 
-  assert.match(builderBlock, /themeParts/);
-  assert.match(builderBlock, /imageParts/);
-  assert.match(builderBlock, /Banger, on rallume la nuit/);
+  assert.match(appSource, /function buildVivyNossenHeroicLyricPlan/);
+  assert.match(appSource, /Banger, on rallume la nuit/);
   assert.match(builderBlock, /\[Couplet 1 -/);
   assert.match(builderBlock, /\[Refrain -/);
   assert.match(builderBlock, /\[Pont\]/);
+  assert.doesNotMatch(builderBlock, /themeParts|imageParts/);
+  assert.doesNotMatch(builderBlock, /`Je porte \$\{[^}]+\}/);
+  assert.doesNotMatch(builderBlock, /`On vient de \$\{[^}]+\}/);
+  assert.doesNotMatch(builderBlock, /`Si \$\{[^}]+\} tremble encore/);
+  assert.doesNotMatch(builderBlock, /`Banger, \$\{[^}]+\} nous suit/);
   assert.doesNotMatch(builderBlock, /Matière chanson NOSSEN|Thème:|Images:|À transformer en paroles|Je pars de \$\{a\}|Baaanger, le refrain prend feu|Production:\s*Suno|D40 V9/i);
   assert.match(launchBlock, /const songSeed = buildVivyNossenBangerSongText/);
   assert.match(launchBlock, /lyrics:\s*songSeed/);
@@ -2180,8 +2184,13 @@ test('Vivy NOSSEN Banger reshapes request wording into lyric images', () => {
   assert.match(appSource, /function shapeVivyNossenCreativeFragment/);
   assert.match(appSource, /je veux|j'aimerais|fais|écris|ecris/);
   assert.match(appSource, /h[oô]pital psy|d[ée]mons|héros|heros|frisson/);
+  assert.match(appSource, /Jessy tient debout face à ses démons/);
+  assert.match(appSource, /Ses héros font cercle autour de lui/);
+  assert.match(appSource, /Super Saiyan/);
   assert.match(builderBlock, /shapeVivyNossenCreativeFragment/);
-  assert.doesNotMatch(builderBlock, /Je marche avec \$\{themeParts\[0\]\}/);
+  assert.doesNotMatch(builderBlock, /Je porte \$\{themeParts\[0\]\}/);
+  assert.doesNotMatch(builderBlock, /On vient de \$\{imageParts\[0\]\}/);
+  assert.doesNotMatch(builderBlock, /oui tu peux faire le nossen mode|que tu fasses un son|fort chauve/i);
 });
 
 test('Vivy NOSSEN Banger isolates the production request from the visible trigger chat line', () => {
