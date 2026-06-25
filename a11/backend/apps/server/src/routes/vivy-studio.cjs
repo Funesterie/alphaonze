@@ -46,6 +46,7 @@ const {
   inferTitle,
   stripSongCommand,
   looksLikeCompleteLyrics,
+  looksLikeExplicitSunoLyricsBlock,
   hasVivyChorusSection,
 } = require('../music/vivy-songcraft.cjs');
 const {
@@ -4253,7 +4254,7 @@ function buildVivySunoLyrics(input = {}) {
     VIVY_SONG_MAX_CHARS
   );
   const arrangement = splitVivyArrangementCues(material);
-  if (looksLikeCompleteLyrics(arrangement.lyrics)) {
+  if (looksLikeExplicitSunoLyricsBlock(arrangement.lyrics) || looksLikeCompleteLyrics(arrangement.lyrics)) {
     return cleanText(arrangement.lyrics, VIVY_SONG_MAX_CHARS);
   }
 

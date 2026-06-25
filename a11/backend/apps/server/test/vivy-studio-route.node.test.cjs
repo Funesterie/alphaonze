@@ -1011,6 +1011,35 @@ test('Suno payload does not sing NOSSEN seed labels as lyrics', () => {
   assert.doesNotMatch(payload.prompt, /Matière chanson|Titre possible|Thème:|Images:|Voix:|sections séparées|sections separees|plusieurs chanteurs|écrans le lien humain|ecrans le lien humain|génération et ses\.|À transformer|recopier|Écris une chanson|ne chante jamais|Suno|D40|prompt/i);
 });
 
+test('Suno payload isolates a clean lyric block from NOSSEN chat planning context', () => {
+  const payload = buildVivySunoPayload({
+    songSource: 'NOSSEN Banger - conversation Vivy',
+    songArtists: ['djeff', 'vivy'],
+    vocalCast: 'Duo Djeff + Vivy',
+    songMood: "refrain mémorable, énergie Banger, mot anglais Banger prononcé à l'américaine",
+    prompt: [
+      'Conversation Vivy',
+      'recherche web sur la nouvelle génération',
+      'que dirais-tu d’en faire un son ?',
+      'je mets quoi en couleur sonore ?',
+      'paroles',
+      '[Verse 1 - Djeff]',
+      'On grandit dans le bleu des écrans tard le soir',
+      'Nos pouces font des détours pour retrouver l’espoir',
+      '[Chorus - Vivy]',
+      'Nouvelle génération, garde le cœur allumé',
+      'Même dans les réseaux, viens respirer le vrai',
+    ].join('\n'),
+  });
+
+  assert.notEqual(payload.title, 'Conversation Vivy');
+  assert.match(payload.prompt, /\[Verse 1 - Djeff\]/);
+  assert.match(payload.prompt, /\[Chorus - Vivy\]/);
+  assert.match(payload.prompt, /On grandit dans le bleu des écrans tard le soir/);
+  assert.match(payload.prompt, /Nouvelle génération, garde le cœur allumé/);
+  assert.doesNotMatch(payload.prompt, /Conversation Vivy|recherche web|que dirais-tu|couleur sonore/i);
+});
+
 test('Vivy songcraft drops operator diagnostics about parroting, compiler output, and mobile typing', () => {
   const lyrics = buildVivyStructuredLyrics({
     songText: [

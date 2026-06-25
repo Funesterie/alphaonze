@@ -96,6 +96,7 @@ function looksLikeVivySongUiNoiseLine(line = '') {
   if (/^je suis vivy(?:\b|$)/.test(folded)) return true;
   if (/^parle moi d une (?:voix|chanson|ambiance|scene)\b/.test(folded)) return true;
   if (/^(vivy|vous|accueil|discussion|menu|voix|chanson|scene|scène|fichier|envoyer|copier|partager|defaut|défaut|audio perso|importer|ptt)$/.test(folded)) return true;
+  if (/^(conversation vivy|conversation|historique vivy|recherche web|web search|web research|que dirais tu|que dirais tu d en faire un son|je mets quoi en couleur sonore|couleur sonore|paroles?)\b/.test(folded)) return true;
   if (/^(vivy_song_production|vivy_studio_handoff|vivy_production|vivy_voice_calibration|vivy_scene_share|vivy song production|vivy studio handoff|vivy production|vivy voice calibration|vivy scene share)\b/.test(folded)) return true;
   if (/^vivy_(?:music_generation|production_status)\b/.test(folded)) return true;
   if (/\b(prompt suno|original song inspired by|french original vocal production|structured rhymed lyrics|sung vocals|no spoken narration|no copyrighted melody|no celebrity voice imitation)\b/.test(folded)) return true;
@@ -129,6 +130,29 @@ function splitVivySongMaterialCandidates(value = '') {
     .split(/\r?\n+/)
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+function isVivyLyricSectionTagLine(value = '') {
+  return /^\[(verse|chorus|bridge|intro|outro|couplet|refrain|pont|pré-refrain|pre-chorus|vivy|djeff|a11|k44|kaen44|duo|tous|toutes|ensemble)(?:\s+\d+)?(?:\s*-\s*[^\]]+)?\]$/i.test(String(value || '').trim());
+}
+
+function isVivyTitleTagLine(value = '') {
+  return /^\[Title:\s*[^\]]+\]$/i.test(String(value || '').trim());
+}
+
+function trimVivyPlanningPrefixBeforeLyricBlock(value = '') {
+  const lines = String(value || '').split(/\r?\n/);
+  const firstSectionIndex = lines.findIndex((line) => isVivyLyricSectionTagLine(line));
+  if (firstSectionIndex <= 0) return value;
+
+  const prefixLines = lines.slice(0, firstSectionIndex)
+    .map((line) => cleanOneLine(line, '', 220))
+    .filter(Boolean);
+  const hasPlanningPrefix = prefixLines.some((line) => looksLikeVivySongUiNoiseLine(line));
+  if (!hasPlanningPrefix) return value;
+
+  const titleLines = prefixLines.filter((line) => isVivyTitleTagLine(line));
+  return [...titleLines, ...lines.slice(firstSectionIndex)].join('\n');
 }
 
 function expandVivySongMaterialCandidate(value = '') {
@@ -197,7 +221,7 @@ function normalizeVivySongSectionMarkup(value = '') {
 }
 
 function sanitizeVivySongMaterial(value = '', max = VIVY_SONG_MAX_CHARS) {
-  const text = cleanText(normalizeVivySongSectionMarkup(value), Math.max(max, VIVY_SONG_MAX_CHARS));
+  const text = cleanText(trimVivyPlanningPrefixBeforeLyricBlock(normalizeVivySongSectionMarkup(value)), Math.max(max, VIVY_SONG_MAX_CHARS));
   if (!text) return '';
 
   const sectionCount = (text.match(/\[(verse|chorus|bridge|intro|outro|couplet|refrain|pont|pré-refrain|pre-chorus|vivy|djeff|a11|k44|kaen44|duo|tous|toutes|ensemble)(?:\s+\d+)?(?:\s*-\s*[^\]]+)?\]/ig) || []).length;
@@ -321,6 +345,18 @@ function looksLikeCompleteLyrics(value = '') {
   const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
   if (sectionCount >= 3 && lines.length >= 10) return true;
   return sectionCount >= 2 && lines.length >= 14;
+}
+
+function looksLikeExplicitSunoLyricsBlock(value = '') {
+  const text = sanitizeVivySongMaterial(value, VIVY_SONG_MAX_CHARS);
+  if (!text || !hasVivyChorusSection(text)) return false;
+  const sectionCount = (text.match(/\[(verse|chorus|bridge|intro|outro|couplet|refrain|pont|pré-refrain|pre-chorus|vivy|djeff|a11|k44|kaen44|duo|tous|toutes|ensemble)(?:\s+\d+)?(?:\s*-\s*[^\]]+)?\]/ig) || []).length;
+  const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const lyricLines = lines.filter((line) => !/^\[[^\]]+\]$/.test(line)).length;
+  return sectionCount >= 2
+    && /\[(verse|couplet)\b/i.test(text)
+    && /\[(chorus|refrain)\b/i.test(text)
+    && lyricLines >= 3;
 }
 
 function inferMotif(theme = '') {
@@ -1148,4 +1184,5 @@ module.exports = {
   inferTitle,
   stripSongCommand,
   looksLikeCompleteLyrics,
+  looksLikeExplicitSunoLyricsBlock,
 };
