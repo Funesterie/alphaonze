@@ -2739,6 +2739,7 @@ export type VivyStudioProductionInput = {
   previewInstrumental?: boolean;
   musicProvider?: 'suno' | 'elevenlabs' | 'elevenlabs-music' | string;
   durationSeconds?: number;
+  workspace?: VivyWorkspaceStateInput;
 };
 
 export type VivyStudioProductionResult = {
@@ -2855,6 +2856,59 @@ export type VivyChatSessionsResponse = {
   sessions: VivyChatSessionRecord[];
 };
 
+export type VivyWorkspaceStateInput = {
+  sessionId?: string;
+  sessionName?: string;
+  conversationId?: string;
+  notes?: string;
+  notepad?: string;
+  canvas?: string;
+  canevas?: string;
+  nossenCanvas?: string;
+  chromeContext?: string | {
+    title?: string;
+    url?: string;
+    selection?: string;
+    note?: string;
+  };
+  updatedAt?: string;
+};
+
+export type VivyWorkspaceTool = {
+  id: string;
+  label: string;
+  target?: string;
+  minimumTier?: string;
+  ready?: boolean;
+  public?: boolean;
+};
+
+export type VivyWorkspaceState = {
+  version?: number;
+  sessionId: string;
+  sessionName: string;
+  conversationId: string;
+  notes: string;
+  canvas: string;
+  chromeContext: string;
+  updatedAt?: string;
+};
+
+export type VivyWorkspaceResponse = {
+  ok: boolean;
+  workspace: VivyWorkspaceState;
+  access?: {
+    account?: {
+      tier?: string;
+      label?: string;
+      authenticated?: boolean;
+      permissions?: Record<string, boolean>;
+    };
+    tools?: VivyWorkspaceTool[];
+  };
+  memoryStored?: boolean;
+};
+
 export async function runVivyStudioProduction(
   input: VivyStudioProductionInput
 ): Promise<VivyStudioProductionResult> {
@@ -2938,6 +2992,7 @@ export async function chatWithVivy(
     sessionId?: string;
     sessionName?: string;
     files?: VivyChatFileAttachment[];
+    workspace?: VivyWorkspaceStateInput;
   }
 ): Promise<VivyStudioProductionResult> {
   const res = await authFetch(getApiUrl('/api/vivy/studio/chat'), {
@@ -2987,6 +3042,41 @@ export async function fetchVivyChatSession(sessionId: string): Promise<VivyChatS
     throw new Error(payload?.message || payload?.error || `Session Vivy indisponible (${res.status})`);
   }
   return payload.session as VivyChatSessionRecord;
+}
+
+export async function fetchVivyWorkspace(
+  input: { sessionId?: string; sessionName?: string; conversationId?: string } = {}
+): Promise<VivyWorkspaceResponse> {
+  const params = new URLSearchParams();
+  if (input.sessionId) params.set('sessionId', input.sessionId);
+  if (input.sessionName) params.set('sessionName', input.sessionName);
+  if (input.conversationId) params.set('conversationId', input.conversationId);
+  const query = params.toString();
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/workspace${query ? `?${query}` : ''}`), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Atelier Vivy indisponible (${res.status})`);
+  }
+  return payload as VivyWorkspaceResponse;
+}
+
+export async function saveVivyWorkspace(input: VivyWorkspaceStateInput): Promise<VivyWorkspaceResponse> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/workspace'), {
+    method: 'PUT',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Sauvegarde atelier Vivy impossible (${res.status})`);
+  }
+  return payload as VivyWorkspaceResponse;
 }
 
 export async function appendVivyChatSessionMessageOnServer(

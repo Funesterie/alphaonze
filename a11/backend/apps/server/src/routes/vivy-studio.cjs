@@ -69,6 +69,11 @@ const {
   autoDescribeImage,
   loadImageBuffer,
 } = require('../image/image-auto-describe.cjs');
+const {
+  canUseMcpPermission,
+  resolveMcpAccountProfileSync,
+  TIERS,
+} = require('../auth/mcp-account-tier.cjs');
 
 let getJanusVisionStatus = null;
 try {
@@ -94,6 +99,9 @@ const VIVY_CHAT_HISTORY_ENTRY_MAX_CHARS = 1200;
 const VIVY_USER_HISTORY_MAX_MESSAGES = 18;
 const VIVY_USER_HISTORY_ENTRY_MAX_CHARS = 900;
 const VIVY_SONG_HISTORY_MAX_CHARS = 4800;
+const VIVY_WORKSPACE_NOTE_MAX_CHARS = 6000;
+const VIVY_WORKSPACE_CANVAS_MAX_CHARS = 9000;
+const VIVY_WORKSPACE_CHROME_MAX_CHARS = 1800;
 const VIVY_LOCAL_CONTEXT_SKIP_DIRS = new Set([
   '.git',
   '.codex-tmp',
@@ -1037,6 +1045,7 @@ function shouldVivyAutoWebSearch(message = '', mode = 'chat') {
   const searchableMessage = stripVivyOperatorTranscript(message);
   const normalized = foldTextForLookup(searchableMessage);
   if (!normalized) return false;
+  if (isVivyWorkspaceToolRequest({ history: [] }, searchableMessage)) return false;
   if (mode === 'song' && isDirectSongwritingRequest(searchableMessage)) {
     const intentCleaned = foldTextForLookup(cleanVivyMessageForIntent(searchableMessage));
     if (!/\b(actualite|actualites|recent|recente|dernier|derniere|latest|source|sources|web|internet|site|url|github|npm|docker)\b/.test(intentCleaned)) {
@@ -1270,7 +1279,9 @@ function isVivyMemoryContextNoise(episode = {}) {
   if (type === 'vivy_settings') return true;
   if (type === 'vivy_chat_session') return true;
   if (type === 'vivy_chat_message') return true;
+  if (type === 'vivy_workspace') return true;
   if (episode?.metadata?.internalTuning === true) return true;
+  if (episode?.metadata?.internalWorkspace === true) return true;
 
   const folded = foldTextForLookup(episode?.content || '');
   if (/\b(intent|reglage|reglages|sensibilite|seuil|detecteur|detecteurs)\b/.test(folded)
@@ -1300,7 +1311,9 @@ function rememberVivyEpisode(userId, type, content, metadata = {}) {
   try {
     const contentMax = type === 'vivy_reply' || type === 'vivy_idea'
       ? VIVY_SESSION_MESSAGE_MAX_CHARS
-      : 1800;
+      : type === 'vivy_workspace'
+        ? VIVY_WORKSPACE_NOTE_MAX_CHARS + VIVY_WORKSPACE_CANVAS_MAX_CHARS + VIVY_WORKSPACE_CHROME_MAX_CHARS + 1800
+        : 1800;
     const result = addEpisode(userId, type, cleanText(content, contentMax), {
       ...metadata,
       private: true,
@@ -1528,6 +1541,174 @@ function rememberVivyChatSessionMessage(userId, input = {}) {
       ...(media ? { media } : {}),
     },
   };
+}
+
+function resolveVivyMcpAccountProfile(reqOrUser = {}) {
+  try {
+    const user = reqOrUser?.user && typeof reqOrUser.user === 'object' ? reqOrUser.user : reqOrUser;
+    return resolveMcpAccountProfileSync(user || {}, { env: process.env });
+  } catch (_) {
+    return resolveMcpAccountProfileSync({}, { env: process.env });
+  }
+}
+
+function buildVivyWorkspaceToolAccess(reqOrUser = {}) {
+  const account = resolveVivyMcpAccountProfile(reqOrUser);
+  const allowed = (permission) => canUseMcpPermission(account, permission);
+  const premiumMcpReady = allowed('publicProxyCall');
+  const statusReady = allowed('privateMcpStatus');
+  const privateMcpReady = allowed('privateMcpProxy');
+  return {
+    account: {
+      tier: account.tier,
+      label: account.label,
+      authenticated: account.authenticated === true,
+      permissions: {
+        publicProxyRead: allowed('publicProxyRead'),
+        publicProxyCall: premiumMcpReady,
+        privateMcpStatus: statusReady,
+        privateMcpProxy: privateMcpReady,
+        privateMcpTools: allowed('privateMcpTools'),
+        privateMcpCall: allowed('privateMcpCall'),
+      },
+    },
+    tools: [
+      {
+        id: 'vivy_notepad',
+        label: 'Bloc-notes Vivy',
+        target: 'vivy-workspace:notepad',
+        minimumTier: TIERS.BASIC,
+        ready: allowed('sessionConnectors'),
+        public: true,
+      },
+      {
+        id: 'vivy_canvas',
+        label: 'Canevas NOSSEN',
+        target: 'vivy-workspace:canvas',
+        minimumTier: TIERS.BASIC,
+        ready: allowed('sessionConnectors'),
+        public: true,
+      },
+      {
+        id: 'chrome_context',
+        label: 'Contexte Chrome borné',
+        target: 'mcp-public:browser-context',
+        minimumTier: TIERS.PREMIUM,
+        ready: premiumMcpReady,
+        public: true,
+      },
+      {
+        id: 'mcp_premium_status',
+        label: 'Statut MCP premium',
+        target: 'mcp-public:status',
+        minimumTier: TIERS.PREMIUM,
+        ready: statusReady,
+        public: true,
+      },
+      {
+        id: 'mcp_private_session',
+        label: 'MCP privé de session',
+        target: 'mcp-private:session',
+        minimumTier: TIERS.FOUNDER,
+        ready: privateMcpReady,
+        public: false,
+      },
+    ],
+  };
+}
+
+function normalizeVivyWorkspaceChromeContext(value = '') {
+  if (!value) return '';
+  if (typeof value === 'object') {
+    const title = cleanOneLine(value.title, '', 180);
+    const url = sanitizeVivySessionMediaUrl(value.url || value.href || '');
+    const selection = cleanText(value.selection || value.selectedText || value.text, 900);
+    const note = cleanText(value.note || value.summary || '', 900);
+    return cleanText([
+      title ? `Page: ${title}` : '',
+      url ? `URL: ${url}` : '',
+      selection ? `Sélection: ${selection}` : '',
+      note ? `Note: ${note}` : '',
+    ].filter(Boolean).join('\n'), VIVY_WORKSPACE_CHROME_MAX_CHARS);
+  }
+  return cleanText(redactVivyAgentBriefSecrets(value), VIVY_WORKSPACE_CHROME_MAX_CHARS);
+}
+
+function normalizeVivyWorkspaceInput(input = {}, context = {}) {
+  const sessionContext = resolveVivyInputSession({ ...context, ...input });
+  return {
+    version: 1,
+    sessionId: sessionContext.sessionId,
+    sessionName: sessionContext.sessionName,
+    conversationId: sessionContext.conversationId,
+    notes: cleanText(redactVivyAgentBriefSecrets(input.notes || input.notepad || input.note || ''), VIVY_WORKSPACE_NOTE_MAX_CHARS),
+    canvas: cleanText(redactVivyAgentBriefSecrets(input.canvas || input.canevas || input.nossenCanvas || ''), VIVY_WORKSPACE_CANVAS_MAX_CHARS),
+    chromeContext: normalizeVivyWorkspaceChromeContext(input.chromeContext || input.browserContext || input.chrome || ''),
+    updatedAt: cleanOneLine(input.updatedAt, '', 64) || new Date().toISOString(),
+  };
+}
+
+function parseVivyWorkspaceEpisode(episode = {}) {
+  try {
+    const parsed = JSON.parse(String(episode?.content || '{}'));
+    const metadata = episode?.metadata && typeof episode.metadata === 'object' ? episode.metadata : {};
+    return normalizeVivyWorkspaceInput(parsed, {
+      sessionId: metadata.sessionId,
+      sessionName: metadata.sessionName,
+      conversationId: metadata.conversationId,
+    });
+  } catch (_) {
+    return null;
+  }
+}
+
+function getVivyWorkspaceForUser(userId, input = {}) {
+  const context = resolveVivyInputSession(input);
+  const result = getEpisodes(userId, { limit: 1000, days: 90 });
+  if (result?.ok && Array.isArray(result.episodes)) {
+    const latest = result.episodes
+      .filter((episode) => String(episode?.type || '') === 'vivy_workspace')
+      .filter((episode) => {
+        const metadata = episode?.metadata && typeof episode.metadata === 'object' ? episode.metadata : {};
+        return normalizeVivyChatSessionId(metadata.sessionId || inferVivySessionIdFromConversationId(metadata.conversationId)) === context.sessionId;
+      })
+      .sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0))[0];
+    const parsed = latest ? parseVivyWorkspaceEpisode(latest) : null;
+    if (parsed) return parsed;
+  }
+  return normalizeVivyWorkspaceInput({}, context);
+}
+
+function saveVivyWorkspaceForUser(userId, input = {}) {
+  const workspace = normalizeVivyWorkspaceInput(input);
+  rememberVivyChatSession(userId, workspace);
+  const result = rememberVivyEpisode(userId, 'vivy_workspace', JSON.stringify(workspace), {
+    mode: 'workspace',
+    role: 'workspace',
+    sessionId: workspace.sessionId,
+    sessionName: workspace.sessionName,
+    conversationId: workspace.conversationId,
+    internalWorkspace: true,
+  });
+  return {
+    ok: result.stored === true,
+    workspace,
+    memoryStored: result.stored === true,
+    episodeId: result.episodeId || null,
+  };
+}
+
+function summarizeVivyWorkspaceForPrompt(workspace = {}) {
+  const notes = cleanText(workspace.notes, 900);
+  const canvas = cleanText(workspace.canvas, 1300);
+  const chromeContext = cleanText(workspace.chromeContext, 700);
+  if (!notes && !canvas && !chromeContext) return '';
+  return cleanText([
+    'Atelier Vivy disponible, séparé du chat et non chantable sauf demande explicite:',
+    notes ? `Bloc-notes:\n${notes}` : '',
+    canvas ? `Canevas NOSSEN:\n${canvas}` : '',
+    chromeContext ? `Contexte Chrome borné:\n${chromeContext}` : '',
+  ].filter(Boolean).join('\n\n'), 3000);
 }
 
 function detectVivyInputLanguage(input = {}, fallback = 'fr') {
@@ -2113,6 +2294,8 @@ function buildVivySystemPrompt(mode, language, input) {
     "Réponds librement à l'intention: pas de réponse toute faite, pas de canevas forcé, pas de refrain automatique si la discussion demande juste de réfléchir, sans transformer automatiquement la phrase en couplets.",
     "Quand une idée arrive, tu peux reformuler, proposer une direction ou poser une vraie question, selon ce qui aide le plus.",
     "En discussion libre, réponds directement au fond, comme dans une vraie conversation. Ne parle jamais comme un panneau de configuration et n'ajoute pas d'accusé de réception technique (pas de \"réglage appliqué\", \"ce que je comprends ici\", \"côté voix\", etc.).",
+    "Quand Jeffrey parle de bloc-notes, canevas/canvas, éditeur, Chrome/navigateur ou MCP premium, traite cela comme une demande d'atelier interne Funesterie: ne lance pas une recherche web de sites de notes, ne récite pas la définition MCP, explique seulement les rails utiles et les limites du compte.",
+    "Le bloc-notes et le canevas Vivy sont une mémoire de travail séparée du chat: ne les injecte pas dans les paroles, Suno ou NOSSEN sauf demande explicite ou bouton de production qui fournit un canevas propre.",
     "N'affiche jamais de statut voix/TTS, de réglage interne, d'intent, de router ou d'outil, sauf si l'utilisateur parle explicitement de voix, audio, TTS, upload audio, référence vocale ou changement de voix.",
     "N'écris des paroles structurées (couplets, refrain) que si l'utilisateur le demande clairement (paroles/refrain/couplet) ou s'il utilise le bouton/mode Chanson; sinon reste en conversation normale.",
     "Si Jeffrey corrige ta façon de répondre, ajuste-toi en silence puis réponds au fond, sans annoncer de réglage interne, de seuil ni d'intent.",
@@ -3476,6 +3659,83 @@ function buildVivyMcpNeo4jReply({ language = 'fr' } = {}) {
   };
 }
 
+function isVivyWorkspaceToolRequest(input = {}, message = '') {
+  if (looksLikeCompleteLyrics(message)) return false;
+  const current = normalizeVivyCapabilityText(message);
+  if (!current) return false;
+  const recent = normalizeVivyCapabilityText(getVivyUserHistoryText(input.history));
+  const text = `${recent}\n${current}`;
+  const mentionsWorkspaceTool = /\b(bloc\s*note|bloc-notes?|blocnotes?|notepad|note\s+pad|canevas|canvas|atelier|editeur|éditeur|scratchpad|brouillon|workspace)\b/.test(text);
+  const mentionsChrome = /\b(chrome|navigateur|browser|onglet|page\s+ouverte|selection|sélection)\b/.test(text);
+  const mentionsPremiumMcp = /\b(mcp|model context protocol)\b/.test(current)
+    && /\b(premium|compte\s+premium|comptes\s+premium|debloque|débloque|debloquer|débloquer|active|activer|public|outil|outils|acces|accès)\b/.test(current);
+  const mentionsVivyNeed = /\b(vivy|elle)\b.{0,90}\b(besoin|veut|voudrait|doit|aimerait)\b/.test(text);
+  return mentionsWorkspaceTool || mentionsChrome || mentionsPremiumMcp || (mentionsVivyNeed && /\b(mcp|chrome|canevas|canvas|bloc|notepad|atelier)\b/.test(text));
+}
+
+function buildVivyWorkspaceToolsReply({ input = {}, req = null, workspace = null, language = 'fr' } = {}) {
+  const access = buildVivyWorkspaceToolAccess(req || {});
+  const accountLabel = cleanOneLine(access.account.label, 'Basic', 60);
+  const tier = cleanOneLine(access.account.tier, 'basic', 40);
+  const premiumReady = access.tools.some((tool) => tool.id === 'chrome_context' && tool.ready);
+  const statusReady = access.tools.some((tool) => tool.id === 'mcp_premium_status' && tool.ready);
+  const privateReady = access.tools.some((tool) => tool.id === 'mcp_private_session' && tool.ready);
+  const workspaceContext = workspace || normalizeVivyWorkspaceInput(input.workspace || {}, input);
+  const workspaceSummary = summarizeVivyWorkspaceForPrompt(workspaceContext);
+  const assistant = [
+    "Oui, là ce n'est pas une recherche web à faire: c'est une demande d'atelier interne Vivy.",
+    "Je garde trois rails séparés: le chat vivant, le bloc-notes/canevas de travail, puis les paroles propres quand tu lances une chanson.",
+    '',
+    `Compte détecté: ${accountLabel}.`,
+    premiumReady
+      ? "MCP Premium: les appels publics avancés et le contexte Chrome borné sont autorisés pour ce compte."
+      : "MCP Premium: le bloc-notes et le canevas restent disponibles; le contexte Chrome/MCP avancé demande un compte Premium ou supérieur.",
+    statusReady
+      ? "Statut MCP: lecture premium disponible, sans exposer les outils privés ni les secrets."
+      : "Statut MCP: lecture avancée non ouverte sur ce niveau de compte.",
+    privateReady
+      ? "MCP privé: disponible seulement dans la session autorisée."
+      : "MCP privé: réservé aux comptes Fondateur/Admin; Vivy ne doit pas le promettre en public.",
+    '',
+    workspaceSummary
+      ? "Atelier actuel:\n" + workspaceSummary.replace(/^Atelier Vivy disponible[^\n]*:\n?/i, '')
+      : "Atelier actuel: prêt, vide pour cette session.",
+    '',
+    "Chrome veut dire ici: récupérer un contexte borné de la page/onglet et de la sélection, pas piloter librement le navigateur.",
+  ].join('\n');
+
+  return {
+    ok: true,
+    service: 'vivy-chat',
+    mode: 'chat',
+    assistant: cleanText(assistant, 3200),
+    content: cleanText(assistant, 3200),
+    summary: 'Vivy a routé bloc-notes/canevas/Chrome/MCP premium vers son atelier interne.',
+    actions: access.tools.map((tool) => ({
+      id: tool.id,
+      label: tool.label,
+      target: tool.target,
+      ready: tool.ready === true,
+      minimumTier: tool.minimumTier,
+      public: tool.public === true,
+    })),
+    routing: [
+      'Vivy: garder le chat vivant et ne pas transformer la demande outil en recherche web.',
+      'Atelier Vivy: bloc-notes et canevas par session, non injectés dans Suno sans choix explicite.',
+      'MCP Premium: appels publics avancés et contexte Chrome borné; pas de secrets ni outil privé.',
+      'MCP Fondateur/Admin: session privée seulement si le compte le permet.',
+    ],
+    account: access.account,
+    workspace: workspaceContext,
+    tokenStored: false,
+    writesByDefault: false,
+    aiMode: 'deterministic_vivy_workspace_tools',
+    language,
+    files: [],
+    tier,
+  };
+}
+
 function isVivyToolCapabilityQuestion(input = {}, message = '') {
   const current = normalizeVivyCapabilityText(message);
   if (!current) return false;
@@ -3731,6 +3991,36 @@ async function buildVivyAiChat(input, req) {
     });
     return {
       ...tuningReply,
+      files,
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  }
+
+  if (mode !== 'song' && isVivyWorkspaceToolRequest(input, intentMessage || message)) {
+    const storedWorkspace = getVivyWorkspaceForUser(userId, input);
+    const currentWorkspace = input.workspace && typeof input.workspace === 'object'
+      ? normalizeVivyWorkspaceInput({
+        ...storedWorkspace,
+        ...input.workspace,
+      }, input)
+      : storedWorkspace;
+    const workspaceReply = buildVivyWorkspaceToolsReply({
+      input,
+      req,
+      workspace: currentWorkspace,
+      language,
+    });
+    rememberVivyEpisode(userId, 'vivy_reply', workspaceReply.assistant, {
+      mode: 'chat',
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      sessionId: sessionContext.sessionId,
+      sessionName: sessionContext.sessionName,
+      deterministic: true,
+      workspaceTools: true,
+    });
+    return {
+      ...workspaceReply,
       files,
       semanticMemory,
       memoryStored: semanticMemory.stored,
@@ -5647,6 +5937,50 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
     }
   });
 
+  router.get('/workspace', requireAuth, async (req, res) => {
+    try {
+      const userId = resolveVivyMemoryUser(req, {});
+      if (!userId) return res.status(401).json({ ok: false, error: 'vivy_auth_required' });
+      const workspace = getVivyWorkspaceForUser(userId, {
+        sessionId: req.query?.sessionId,
+        sessionName: req.query?.sessionName,
+        conversationId: req.query?.conversationId,
+      });
+      return res.json({
+        ok: true,
+        workspace,
+        access: buildVivyWorkspaceToolAccess(req),
+      });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        error: 'vivy_workspace_failed',
+        message: error?.message || String(error),
+      });
+    }
+  });
+
+  router.put('/workspace', requireAuth, express.json({ limit: '96kb' }), async (req, res) => {
+    try {
+      const userId = resolveVivyMemoryUser(req, req.body || {});
+      if (!userId) return res.status(401).json({ ok: false, error: 'vivy_auth_required' });
+      const result = saveVivyWorkspaceForUser(userId, req.body || {});
+      return res.json({
+        ok: result.ok,
+        workspace: result.workspace,
+        memoryStored: result.memoryStored,
+        episodeId: result.episodeId,
+        access: buildVivyWorkspaceToolAccess(req),
+      });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        error: 'vivy_workspace_save_failed',
+        message: error?.message || String(error),
+      });
+    }
+  });
+
   router.get('/jobs/:taskId', requireAuth, async (req, res) => {
     try {
       if (!canUseServerSuno(req) && !getRequestSessionSunoApiKey({}, req)) {
@@ -5872,6 +6206,10 @@ module.exports = {
   isDirectSongwritingRequest,
   shouldVivyAutoWebSearch,
   looksLikeWeakSongwritingReply,
+  isVivyWorkspaceToolRequest,
+  buildVivyWorkspaceToolAccess,
+  getVivyWorkspaceForUser,
+  saveVivyWorkspaceForUser,
   isVivyMcpNeo4jQuestion,
   isVivyToolCapabilityQuestion,
   getSunoMusicJob,

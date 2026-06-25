@@ -33,6 +33,7 @@ import {
   fetchAuthSession,
   fetchVivyChatSession,
   fetchVivyChatSessions,
+  fetchVivyWorkspace,
   appendVivyChatSessionMessageOnServer,
   getSubscriptionStatus,
   hasAdminApiAccess,
@@ -64,6 +65,7 @@ import {
   assembleVivyStudioVoicePreview,
   mixVivyStudioPreview,
   runVivyStudioProduction,
+  saveVivyWorkspace,
   sendMatchArenaInput,
   startGoogleOAuth,
   setAuthToken,
@@ -110,6 +112,8 @@ import {
   type SubscriptionStatus,
   type VivyStudioProductionInput,
   type VivyStudioProductionResult,
+  type VivyWorkspaceResponse,
+  type VivyWorkspaceState,
   fetchUserLibrary,
   pinResourceToLibrary,
   unpinResourceFromLibrary,
@@ -7113,6 +7117,12 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   const [attachedFiles, setAttachedFiles] = useState<VivyPublicChatFile[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [status, setStatus] = useState("");
+  const [workspace, setWorkspace] = useState<VivyWorkspaceState | null>(null);
+  const [workspaceNotes, setWorkspaceNotes] = useState("");
+  const [workspaceCanvas, setWorkspaceCanvas] = useState("");
+  const [workspaceChromeContext, setWorkspaceChromeContext] = useState("");
+  const [workspaceAccess, setWorkspaceAccess] = useState<VivyWorkspaceResponse["access"] | null>(null);
+  const [workspaceSaving, setWorkspaceSaving] = useState(false);
   const [voiceReferenceName, setVoiceReferenceName] = useState(() => readVivyVoiceReferenceLabel());
   const [awaitingVoiceReference, setAwaitingVoiceReference] = useState(false);
   const chatRootRef = useRef<HTMLElement | null>(null);
@@ -7122,12 +7132,17 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   const voiceReferenceInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activeChatSessionRef = useRef("default");
+  const workspaceSaveTimerRef = useRef<number | null>(null);
   const [copiedMsgId, setCopiedMsgId] = useState("");
   const [chatSessions, setChatSessions] = useState<VivyChatSessionMeta[]>(() => hasSession ? listVivyChatSessions() : []);
   const [activeChatSessionId, setActiveChatSessionId] = useState("default");
   const nossenBangerReadiness = useMemo(
-    () => buildVivyNossenBangerReadiness(messages, draft, attachedFiles),
-    [messages, draft, attachedFiles]
+    () => buildVivyNossenBangerReadiness(
+      messages,
+      [workspaceCanvas, draft].filter((entry) => entry.trim()).join("\n\n"),
+      attachedFiles
+    ),
+    [messages, workspaceCanvas, draft, attachedFiles]
   );
 
   function getActiveSessionName(id = activeChatSessionId) {
@@ -7141,6 +7156,94 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     try {
       globalThis.localStorage?.setItem(getVivyConversationStorageKey(sessionId), safeConversationId);
     } catch { }
+  }
+
+  function applyVivyWorkspacePayload(payload: VivyWorkspaceResponse | null) {
+    const nextWorkspace = payload?.workspace || null;
+    setWorkspace(nextWorkspace);
+    setWorkspaceAccess(payload?.access || null);
+    setWorkspaceNotes(toUnicodeText(nextWorkspace?.notes || ""));
+    setWorkspaceCanvas(toUnicodeText(nextWorkspace?.canvas || ""));
+    setWorkspaceChromeContext(toUnicodeText(nextWorkspace?.chromeContext || ""));
+  }
+
+  async function loadVivyWorkspaceForSession(sessionId: string, nextConversationId = conversationId) {
+    if (!hasSession) return;
+    try {
+      const payload = await fetchVivyWorkspace({
+        sessionId,
+        sessionName: getActiveSessionName(sessionId),
+        conversationId: nextConversationId || readOrCreateVivyConversationId(sessionId),
+      });
+      if (activeChatSessionRef.current === normalizeVivyChatSessionId(sessionId)) {
+        applyVivyWorkspacePayload(payload);
+      }
+    } catch {
+      setWorkspace(null);
+      setWorkspaceAccess(null);
+    }
+  }
+
+  function buildCurrentVivyWorkspacePayload(extra: Partial<VivyWorkspaceState> = {}) {
+    return {
+      sessionId: activeChatSessionId,
+      sessionName: getActiveSessionName(activeChatSessionId),
+      conversationId,
+      notes: workspaceNotes,
+      canvas: workspaceCanvas,
+      chromeContext: workspaceChromeContext,
+      ...extra,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  async function saveVivyWorkspaceNow(extra: Partial<VivyWorkspaceState> = {}, quiet = false) {
+    if (!hasSession || workspaceSaving) return null;
+    setWorkspaceSaving(true);
+    try {
+      const payload = await saveVivyWorkspace(buildCurrentVivyWorkspacePayload(extra));
+      applyVivyWorkspacePayload(payload);
+      if (!quiet) setStatus("Atelier Vivy enregistré.");
+      return payload;
+    } catch (error: any) {
+      if (!quiet) setStatus(`Atelier Vivy non enregistré: ${error?.message || error}`);
+      return null;
+    } finally {
+      setWorkspaceSaving(false);
+    }
+  }
+
+  function scheduleVivyWorkspaceSave() {
+    if (!hasSession) return;
+    if (workspaceSaveTimerRef.current) window.clearTimeout(workspaceSaveTimerRef.current);
+    workspaceSaveTimerRef.current = window.setTimeout(() => {
+      workspaceSaveTimerRef.current = null;
+      void saveVivyWorkspaceNow({}, true);
+    }, 1800);
+  }
+
+  function captureVivyChromeContext() {
+    const selection = toUnicodeText(globalThis.getSelection?.()?.toString() || "", 900);
+    const title = toUnicodeLine(globalThis.document?.title || "Vivy", "Vivy", 180);
+    const url = String(globalThis.location?.href || "").replace(/([?&])(?:token|key|signature|sig|access_token)=[^&#\s]+/gi, "$1redacted=1");
+    const nextContext = [
+      `Page: ${title}`,
+      url ? `URL: ${url}` : "",
+      selection ? `Sélection: ${selection}` : "",
+    ].filter(Boolean).join("\n");
+    setWorkspaceChromeContext(nextContext);
+    void saveVivyWorkspaceNow({ chromeContext: nextContext }, true);
+    setStatus("Contexte Chrome borné ajouté à l'atelier Vivy.");
+  }
+
+  function sendVivyCanvasToComposer() {
+    const canvasText = workspaceCanvas.trim();
+    if (!canvasText) {
+      setStatus("Canevas Vivy vide.");
+      return;
+    }
+    setDraft((current) => [current.trim(), canvasText].filter(Boolean).join("\n\n"));
+    draftInputRef.current?.focus();
   }
 
   function applyRemoteVivySession(session: VivyChatSessionRecord, options: { replaceOnlyPlaceholder?: boolean } = {}) {
@@ -7169,13 +7272,16 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   function switchSession(id: string) {
     const safeId = normalizeVivyChatSessionId(id);
     const msgs = safeId === "default" ? readVivyPublicChat() : readVivyChatSession(safeId);
+    const nextConversationId = readOrCreateVivyConversationId(safeId);
     setMessages(msgs);
     setActiveChatSessionId(safeId);
     activeChatSessionRef.current = safeId;
-    setConversationId(readOrCreateVivyConversationId(safeId));
+    setConversationId(nextConversationId);
     setAttachedFiles([]);
     setStatus("");
+    applyVivyWorkspacePayload(null);
     void hydrateVivySessionFromServer(safeId);
+    void loadVivyWorkspaceForSession(safeId, nextConversationId);
   }
 
   async function addSession() {
@@ -7216,6 +7322,17 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   useEffect(() => {
     activeChatSessionRef.current = activeChatSessionId;
   }, [activeChatSessionId]);
+
+  useEffect(() => {
+    if (!hasSession) return;
+    void loadVivyWorkspaceForSession(activeChatSessionId, conversationId);
+  }, [hasSession, activeChatSessionId]);
+
+  useEffect(() => {
+    return () => {
+      if (workspaceSaveTimerRef.current) window.clearTimeout(workspaceSaveTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!hasSession) return;
@@ -7440,6 +7557,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           sessionName: activeSessionName,
           files: apiFiles,
           history: apiHistory,
+          workspace: buildCurrentVivyWorkspacePayload(),
         });
       const assistantText = toUnicodeText(payload.publicLyrics || payload.publicText || payload.assistant || payload.content || payload.summary)
         || (mode === "song"
@@ -7493,7 +7611,11 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       return;
     }
     if (isSending) return;
-    const readiness = buildVivyNossenBangerReadiness(messages, draft, attachedFiles);
+    const readiness = buildVivyNossenBangerReadiness(
+      messages,
+      [workspaceCanvas, draft].filter((entry) => entry.trim()).join("\n\n"),
+      attachedFiles
+    );
     if (!readiness.ready) {
       setStatus(readiness.reason);
       return;
@@ -7828,6 +7950,13 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     setConversationId(readOrCreateVivyConversationId(activeChatSessionId));
   }
 
+  const workspaceTierLabel = workspaceAccess?.account?.label || workspaceAccess?.account?.tier || "Compte";
+  const chromeToolReady = workspaceAccess?.tools?.some((tool) => tool.id === "chrome_context" && tool.ready) ?? false;
+  const premiumStatusReady = workspaceAccess?.tools?.some((tool) => tool.id === "mcp_premium_status" && tool.ready) ?? false;
+  const workspaceUpdatedLabel = workspace?.updatedAt
+    ? new Date(workspace.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : "";
+
   return (
     <section ref={chatRootRef} className="vivy-chat" id="vivy-chat" aria-label="Chat Vivy">
       <div className="vivy-chat-head">
@@ -7925,6 +8054,59 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         )}
         <div ref={endRef} aria-hidden="true" />
       </div>
+
+      <section className="vivy-workbench" aria-label="Atelier Vivy">
+        <div className="vivy-workbench-head">
+          <div>
+            <h3>Atelier Vivy</h3>
+            <p>{`${workspaceTierLabel} - MCP ${premiumStatusReady ? "premium actif" : "public borné"}${workspaceUpdatedLabel ? ` - ${workspaceUpdatedLabel}` : ""}`}</p>
+          </div>
+          <div className="vivy-workbench-actions">
+            <button type="button" disabled={!hasSession || workspaceSaving} onClick={() => void saveVivyWorkspaceNow()}>
+              {workspaceSaving ? "..." : "Enregistrer"}
+            </button>
+            <button type="button" disabled={!hasSession || !chromeToolReady} onClick={captureVivyChromeContext} title={chromeToolReady ? "Ajouter page et sélection" : "Compte Premium requis"}>
+              Chrome
+            </button>
+            <button type="button" disabled={!hasSession || !workspaceCanvas.trim()} onClick={sendVivyCanvasToComposer}>
+              Vers chat
+            </button>
+          </div>
+        </div>
+        <div className="vivy-workbench-grid">
+          <label>
+            <span>Bloc-notes</span>
+            <textarea
+              value={workspaceNotes}
+              onChange={(event) => {
+                setWorkspaceNotes(event.target.value);
+                scheduleVivyWorkspaceSave();
+              }}
+              onBlur={() => void saveVivyWorkspaceNow({}, true)}
+              placeholder="Notes privées de session"
+              disabled={!hasSession}
+              rows={4}
+            />
+          </label>
+          <label>
+            <span>Canevas NOSSEN</span>
+            <textarea
+              value={workspaceCanvas}
+              onChange={(event) => {
+                setWorkspaceCanvas(event.target.value);
+                scheduleVivyWorkspaceSave();
+              }}
+              onBlur={() => void saveVivyWorkspaceNow({}, true)}
+              placeholder="Titre, thème, couleur sonore, images fortes, refrain voulu"
+              disabled={!hasSession}
+              rows={4}
+            />
+          </label>
+        </div>
+        {workspaceChromeContext ? (
+          <p className="vivy-workbench-chrome">{workspaceChromeContext}</p>
+        ) : null}
+      </section>
 
       <form ref={composeRef} className="vivy-chat-compose" onSubmit={(event) => { event.preventDefault(); void sendMessage({ mode: "chat" }); }}>
         <textarea

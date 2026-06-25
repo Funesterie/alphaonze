@@ -34,10 +34,12 @@ const {
   getVivyOpenAIConfig,
   isDirectSongwritingRequest,
   isVivyMcpNeo4jQuestion,
+  isVivyWorkspaceToolRequest,
   isVivyToolCapabilityQuestion,
   looksLikeWeakSongwritingReply,
   normalizeVivyChatHistory,
   postProcessVivyAssistantText,
+  saveVivyWorkspaceForUser,
   sanitizeVivyPublicText,
   shouldVivyAutoWebSearch,
 } = require('../src/routes/vivy-studio.cjs');
@@ -2720,6 +2722,54 @@ test('Vivy sessions API exposes account sessions separately for cross-device res
   });
 });
 
+test('Vivy workspace API stores notepad and canvas per account session', async () => {
+  const userId = `vivy-workspace-sync-${Date.now()}`;
+  const verifyJWT = (req, _res, next) => {
+    req.user = { id: userId, username: 'VivyWorkspaceSync', tier: 'premium' };
+    next();
+  };
+
+  await withServer((app) => {
+    app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT }));
+  }, async (baseUrl) => {
+    const saveResponse = await fetch(`${baseUrl}/api/vivy/studio/workspace`, {
+      method: 'PUT',
+      headers: { ...VIVY_TEST_AUTH_HEADERS, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: 'atelier-jessy',
+        sessionName: 'Atelier Jessy',
+        conversationId: buildVivyConversationIdForSession('atelier-jessy'),
+        notes: 'Note privée: ne pas chanter cette phrase brute.',
+        canvas: 'Titre: Jessy tient debout. Refrain: les héros veillent.',
+        chromeContext: { title: 'Vivy', url: 'https://vivy.funesterie.me/?token=secret', selection: 'héros' },
+      }),
+    });
+    const saved = await saveResponse.json();
+    assert.equal(saveResponse.status, 200);
+    assert.equal(saved.ok, true);
+    assert.match(saved.workspace.canvas, /Jessy tient debout/i);
+    assert.doesNotMatch(saved.workspace.chromeContext, /secret/i);
+    assert.equal(saved.access.account.tier, 'premium');
+    assert.equal(saved.access.tools.find((tool) => tool.id === 'chrome_context').ready, true);
+
+    const readResponse = await fetch(`${baseUrl}/api/vivy/studio/workspace?sessionId=atelier-jessy`, {
+      headers: VIVY_TEST_AUTH_HEADERS,
+    });
+    const read = await readResponse.json();
+    assert.equal(readResponse.status, 200);
+    assert.match(read.workspace.notes, /Note privée/i);
+    assert.match(read.workspace.canvas, /Refrain/i);
+
+    const otherResponse = await fetch(`${baseUrl}/api/vivy/studio/workspace?sessionId=atelier-vide`, {
+      headers: VIVY_TEST_AUTH_HEADERS,
+    });
+    const other = await otherResponse.json();
+    assert.equal(otherResponse.status, 200);
+    assert.equal(other.workspace.notes, '');
+    assert.equal(other.workspace.canvas, '');
+  });
+});
+
 test('Vivy sessions API stores client-synced NOSSEN replies with media for cross-device restore', async () => {
   const userId = `vivy-nossen-sync-${Date.now()}`;
   const verifyJWT = (req, _res, next) => {
@@ -3571,6 +3621,59 @@ test('Vivy does not answer a Codex MCP relay request with the generic MCP defini
   assert.doesNotMatch(result.assistant, /ENTERA|GHOST88/i);
 });
 
+test('Vivy routes notepad canvas Chrome and MCP premium to the internal workspace', async () => {
+  const message = 'vivy a besoin de bloc note canevas et accès chrome, et de debloquer le mcp pour les compte premium';
+
+  assert.equal(isVivyWorkspaceToolRequest({}, message), true);
+  assert.equal(shouldVivyAutoWebSearch(message, 'chat'), false);
+
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-workspace-tools-test',
+    sessionId: 'atelier',
+    sessionName: 'Atelier test',
+    message,
+    workspace: {
+      notes: 'Jessy: angle héroïque, garder ça en note.',
+      canvas: 'Titre: Jessy tient debout. Thème: héros, courage, lumière.',
+      chromeContext: 'Page: Vivy publique',
+    },
+  }, {
+    user: {
+      id: 'premium-user',
+      username: 'PremiumUser',
+      tier: 'premium',
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.equal(result.aiMode, 'deterministic_vivy_workspace_tools');
+  assert.equal(result.account.tier, 'premium');
+  assert.match(result.assistant, /atelier interne Vivy/i);
+  assert.match(result.assistant, /MCP Premium/i);
+  assert.match(result.assistant, /Contexte Chrome borné/i);
+  assert.match(result.assistant, /Canevas NOSSEN/i);
+  assert.doesNotMatch(result.assistant, /Je déclenche une recherche web|Résultats utiles|notepad-online|MCP veut dire Model Context Protocol/i);
+  assert.equal(result.actions.find((action) => action.id === 'chrome_context')?.ready, true);
+  assert.equal(result.actions.find((action) => action.id === 'mcp_private_session')?.ready, false);
+});
+
+test('Vivy workspace survives as session state without entering song memory', async () => {
+  const userId = 'user:workspace-memory-test';
+  const saved = saveVivyWorkspaceForUser(userId, {
+    sessionId: 'canvas-song',
+    sessionName: 'Canvas Song',
+    conversationId: 'vivy-session-canvas-song',
+    notes: 'Ne pas chanter cette note brute.',
+    canvas: 'Titre: Lumière claire. Refrain: tu tiens debout.',
+  });
+
+  assert.equal(saved.ok, true);
+
+  const memory = buildVivyMemoryContext(userId, 'vivy-session-canvas-song');
+  assert.doesNotMatch(memory, /Ne pas chanter cette note brute|Lumière claire/i);
+});
+
 test('Vivy routes complete lyrics before stale MCP memory', async () => {
   const lyrics = `[Title: Bloqué Devant Cette Page]
 [Style]
@@ -3635,6 +3738,25 @@ test('Vivy frontend sends a wider songwriting history window', () => {
   );
 
   assert.match(appSource, /const A11_MAX_HISTORY_MESSAGES = 36/);
+});
+
+test('Vivy frontend exposes a connected workspace without disrupting mobile composer', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const cssSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/index.css'),
+    'utf8'
+  );
+
+  assert.match(appSource, /fetchVivyWorkspace/);
+  assert.match(appSource, /saveVivyWorkspace/);
+  assert.match(appSource, /className="vivy-workbench"/);
+  assert.match(appSource, /Canevas NOSSEN/);
+  assert.match(appSource, /captureVivyChromeContext/);
+  assert.match(cssSource, /body\.vivy-keyboard-open \.vivy-workbench/);
+  assert.match(cssSource, /display: none/);
 });
 
 test('Vivy keeps complete song outputs beyond the former 5000 character ceiling', () => {

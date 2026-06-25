@@ -3954,6 +3954,89 @@ html.a11-auth-page-root body {
   color: #ffe6b0;
 }
 
+.vivy-workbench {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  border: 1px solid rgba(91, 217, 255, 0.22);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(2, 12, 18, 0.58);
+}
+
+.vivy-workbench-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.vivy-workbench-head h3 {
+  margin: 0;
+  color: #c7f5ff;
+  font-size: 15px;
+  line-height: 1.15;
+}
+
+.vivy-workbench-head p,
+.vivy-workbench-chrome {
+  margin: 4px 0 0;
+  color: #aacfd8;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.vivy-workbench-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.vivy-workbench-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.vivy-workbench label {
+  display: grid;
+  gap: 6px;
+}
+
+.vivy-workbench label span {
+  color: #c7f5ff;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.vivy-workbench textarea {
+  width: 100%;
+  min-height: 92px;
+  max-height: 200px;
+  border: 1px solid rgba(91, 217, 255, 0.24);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(1, 5, 9, 0.82);
+  color: #f1fcff;
+  font-size: 13px;
+  line-height: 1.42;
+  resize: vertical;
+  outline: none;
+}
+
+.vivy-workbench textarea:focus {
+  border-color: rgba(91, 217, 255, 0.76);
+  box-shadow: 0 0 0 3px rgba(91, 217, 255, 0.11);
+}
+
+.vivy-workbench-chrome {
+  max-height: 88px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .vivy-nossen-banger-button {
   position: relative;
   isolation: isolate;
@@ -4984,6 +5067,32 @@ html.a11-auth-page-root body {
     width: 100%;
   }
 
+  .vivy-workbench {
+    margin-top: 10px;
+    padding: 10px;
+  }
+
+  .vivy-workbench-head {
+    display: grid;
+    align-items: start;
+  }
+
+  .vivy-workbench-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    justify-content: stretch;
+  }
+
+  .vivy-workbench-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .vivy-workbench textarea {
+    min-height: 78px;
+    max-height: 18svh;
+    resize: none;
+  }
+
   .vivy-chat-compose {
     grid-template-columns: 1fr;
     position: sticky;
@@ -5019,6 +5128,12 @@ html.a11-auth-page-root body {
   }
 
   body.vivy-keyboard-open .vivy-chat-head p {
+    display: none;
+  }
+
+  body.vivy-keyboard-open .vivy-workbench,
+  body.vivy-keyboard-open .vivy-chat-reference,
+  body.vivy-keyboard-open .vivy-chat-attachments {
     display: none;
   }
 
