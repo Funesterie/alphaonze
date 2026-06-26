@@ -3071,6 +3071,26 @@ function buildVivyGeneralChatFallbackReply({ message = '', current = '', history
   ].filter(Boolean).join('\n\n'), 1500);
 }
 
+function isVivyMalformedNossenOutputQuestion(message = '', dialogueText = '') {
+  const current = foldTextForLookup(message);
+  const context = foldTextForLookup(`${dialogueText}\n${message}`);
+  if (!current || !context) return false;
+  const asksWhy = /\b(?:qu est ce qui|quest ce qui|pourquoi|pk|allo|marche pas|va pas|bloque|bloquee|bloqu[ée]|dis a codex|dit a codex|dire a codex|message a codex)\b/.test(current);
+  if (!asksWhy) return false;
+  const malformedSong = /\b(?:paroles envoyees a suno|distribution vocale choisie|banger dans les paroles|matiere a transformer|ne mets pas le mot)\b/.test(context);
+  const musicContext = /\b(?:nossen|suno|banger|paroles|chanson|musique|refrain)\b/.test(context);
+  return malformedSong && musicContext;
+}
+
+function buildVivyMalformedNossenOutputReply({ fileLine = '' } = {}) {
+  return cleanText([
+    "Dis à Codex : ce qui me bloque ici, ce n'est pas l'idée de chanson. C'est le chemin de secours.",
+    "Quand le grand modèle ne répond pas ou que NOSSEN prend trop de contexte, des consignes internes partent dans Suno comme si c'était des paroles. On le voit avec “Distribution vocale choisie”, “Ne mets pas le mot”, “Banger dans les paroles” et “Matière à transformer”.",
+    "Il faut isoler le bloc paroles propre avant Suno, filtrer ces lignes internes, et garder un fallback chat qui répond au dernier contexte au lieu de ressortir une phrase générique.",
+    fileLine,
+  ].filter(Boolean).join('\n\n'), 1600);
+}
+
 function isVivySoftSongIdeaMessage(message = '') {
   const normalized = foldTextForLookup(message);
   if (!normalized || normalized.length > 420) return false;
@@ -3240,6 +3260,10 @@ function buildVivyFreeformChatReply({ message = '', files = [], history = [] } =
   const sunoPromptSource = isVivySunoPromptRequest(message, historyText)
     ? message
     : (isVivyPromptConfusionPing(message) && isVivySunoPromptRequest(lastUserMessage, historyText) ? lastUserMessage : '');
+
+  if (isVivyMalformedNossenOutputQuestion(message, recentDialogueText)) {
+    return buildVivyMalformedNossenOutputReply({ fileLine });
+  }
 
   if (isVivyNossenLyricsMusicBugMessage(message)) {
     return buildVivyNossenLyricsMusicBugReply({ fileLine });
@@ -3997,6 +4021,34 @@ async function buildVivyAiChat(input, req) {
   const llmDisabled = String(process.env.VIVY_CHAT_DISABLE_LLM || '').toLowerCase() === 'true';
   const llmBundle = createVivyOpenAIClient({ mode });
   let webResearch = null;
+
+  if (mode === 'chat' && isVivyMalformedNossenOutputQuestion(intentMessage || message, getVivyHistoryText(input.history))) {
+    const assistant = buildVivyMalformedNossenOutputReply();
+    rememberVivyEpisode(userId, 'vivy_reply', assistant, {
+      mode: 'chat',
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      deterministic: true,
+      malformedNossenOutput: true,
+    });
+    return {
+      ...fallback,
+      mode: 'chat',
+      assistant,
+      content: assistant,
+      summary: 'Vivy a diagnostiqué une sortie NOSSEN contaminée avant le LLM.',
+      actions: [],
+      routing: [
+        'Vivy: reconnaître les consignes internes chantées dans la sortie précédente.',
+        'A11: isoler les paroles propres avant Suno.',
+        'Codex: corriger le filtre de payload et le fallback chat.',
+      ],
+      aiMode: 'deterministic_nossen_malformed_output',
+      language,
+      files,
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  }
 
   if (isVivyInternalTuningRequest(input, intentMessage || message)) {
     const tuningReply = buildVivyInternalTuningReply({ message: intentMessage || message, history: input.history, language });

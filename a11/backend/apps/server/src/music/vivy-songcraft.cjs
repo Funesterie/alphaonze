@@ -79,6 +79,7 @@ function stripSongCommand(value = '') {
     .replace(/^(?:salut|bonjour|coucou|hey)\b[\s,;:.!?-]*/i, '')
     .replace(/^(?:tu\s+as\s+|t['’]\s*as\s+)?(?:une?\s+)?id[ée]e\s+de\s+chanson\s+(?:sur|pour|avec)\s+/i, '')
     .replace(/^(fais|fait|cr[ée]e?|g[ée]n[èe]re?|compose|chante|transforme|écris|ecris|continue|continuer|reprends|poursuis|compl[èe]te)\s+(moi\s+)?(une?\s+)?(chanson|musique|son|paroles|lyrics|rap|couplet|refrain)(?:\s+d['''][a-zÀ-ſ]+(?:\s+[a-zÀ-ſ]+)?)?\s*(sur|avec|pour|à propos de)?\s*/i, '')
+    .replace(/^(?:on\s+va|je\s+veux|j['’]\s*aimerais|j['’]\s+voudrais)\s+(?:faire|cr[ée]er|[ée]crire|composer)\s+(?:une?\s+)?(?:chanson|musique|son|g[ée]n[ée]rique|paroles|lyrics)\s*(?:sur|avec|pour|à propos de)?\s*/i, '')
     .replace(/\b(prompt|instruction|consigne)\b\s*:?\s*/ig, '')
     .replace(/\s+/g, ' ')
     .trim();
@@ -185,15 +186,17 @@ function expandVivySongMaterialCandidate(value = '') {
   const folded = foldTextForLookup(line);
   if (!folded) return [];
 
-  if (/^(matiere chanson nossen|matiere chanson|nossen banger production brief|nossen banger)\.?$/.test(folded)) return [];
-  if (/^(?:voix|vocal cast|casting choisi|contexte utile)\s*:/i.test(line)) return [];
+  if (/^(matiere chanson nossen|matiere chanson|matiere a transformer en chanson|matiere a transformer|nossen banger production brief|nossen banger)\.?$/.test(folded)) return [];
+  if (/^(?:distribution vocale(?: choisie)?|voix|vocal cast|casting(?: choisi)?|contexte utile)\s*:/i.test(line)) return [];
+  if (/^(?:solo|duo|trio|quatuor)\s+(?:vivy|djeff|a11|k44|kaen44)(?:\s*(?:[+&,]|et|avec)\s*(?:vivy|djeff|a11|k44|kaen44))*\.?$/i.test(line)) return [];
+  if (/^(?:ne mets? pas le mot|pas le mot|banger dans les paroles)\b/.test(folded)) return [];
   if (/\bsections?\s+s[ée]par[ée]es?\b/i.test(line)) return [];
   if (/^(a transformer|à transformer|ecris une chanson|écris une chanson|le refrain doit|si le mot anglais|composer une chanson|production chantee|production chantée|appliquer ensuite)\b/.test(folded)) return [];
   if (/\b(?:ne chante jamais|pas a recopier|pas à recopier|jamais les consignes|bouton|bugs?|repete|perroquet|singeur|sortie compilateur|user|affichage|telephone|dezoom|clavier|credit|credits|cles?|key|llm|logs?|mot prompt|production suno|mix final d40|d40 v9|suno)\b/.test(folded)) return [];
 
   const labelMatch = line.match(/^(?:titre possible|titre|theme|thème|concept|images?|matiere utile|matière utile)\s*:?\s*(.+)$/i);
   if (labelMatch) line = cleanOneLine(labelMatch[1], '', 300);
-  line = line.replace(/^NOSSEN\s+Banger\s*[:.-]?\s*/i, '').trim();
+  line = stripSongCommand(line.replace(/^NOSSEN\s+Banger\s*[:.-]?\s*/i, '')).trim();
   if (!line) return [];
 
   return line
@@ -1093,47 +1096,47 @@ function buildVivyStructuredLyrics(input = {}) {
 
 [Intro]
 ${punctuateVivySongLine(seedLines[0], ',')}
-${punctuateVivySongLine(seedLines[1] || `${title} cherche sa lumière`, '.')}
+${punctuateVivySongLine(seedLines[1] || `${title} pose son premier signe`, '.')}
 
 [Verse 1]
 ${punctuateVivySongLine(seedLines[2] || `Je tiens ${title.toLocaleLowerCase('fr-FR')} dans la paume`, ',')}
 ${punctuateVivySongLine(seedLines[3] || 'je marche entre les murs sans baisser le regard', '.')}
 ${punctuateVivySongLine(seedLines[4] || `${m1} me traverse et me garde debout`, ',')}
-je transforme la cage en mesure qui respire.
+le refrain prend forme autour du vrai sujet.
 
 [Pre-Chorus]
-Je pèse le bruit, je garde l’image,
-je cherche la faille au bord du mirage.
+${punctuateVivySongLine(seedLines[1] || m1, ',')}
+chaque détail revient frapper le tempo.
 
 [Chorus]
-${title} — je ne tombe pas,
-dans le noir je trouve ma voix.
+${title} — le refrain tient le cap,
+chaque nom revient au bon endroit.
 ${punctuateVivySongLine(seedLines[5] || m1, ',')}
-et la nuit recule quand le refrain se déploie.
+et le thème repart plus fort à chaque fois.
 
 [Verse 2]
 ${punctuateVivySongLine(seedLines[6] || m2, ',')}
-${punctuateVivySongLine(seedLines[7] || 'je retourne le silence jusqu’à voir son envers', '.')}
-Ce que le monde enferme devient passage,
-ce que je croyais perdu rallume le paysage.
+${punctuateVivySongLine(seedLines[7] || 'je reprends le fil jusqu’à voir son envers', '.')}
+les images se répondent sans quitter le sujet,
+les rimes serrent l'histoire au plus près.
 
 [Bridge]
-Je n’efface pas la trace, je la rends claire,
-chaque mur devient rythme quand mon souffle accélère.
+${punctuateVivySongLine(seedLines[0] || title, ',')}
+le dernier détour remet le sens devant.
 
 [Chorus]
-${title} — je ne tombe pas,
-dans le noir je trouve ma voix.
+${title} — le refrain tient le cap,
+chaque nom revient au bon endroit.
 ${punctuateVivySongLine(seedLines[5] || m1, ',')}
-et la nuit recule quand le refrain se déploie.
+et le thème repart plus fort à chaque fois.
 
 [Outro]
 Il reste ${title.toLocaleLowerCase('fr-FR')}.
-Et la voix tient jusqu’au lendemain.` : `[Title: ${title}]
+Le dernier mot garde le sujet vivant.` : `[Title: ${title}]
 
 [Intro]
-${m0} — je l’entends dans le silence.
-Quelque chose reste quand les mots se taisent.
+${m0} — le sujet arrive sans détour.
+Une image tient, puis une autre répond.
 
 [Verse 1]
 Je tiens ${m0},
@@ -1147,9 +1150,9 @@ Ce qui reste : ${m1}.
 
 [Chorus]
 ${m0} — ça reste, ça cède pas,
-${m1} — même quand le décor se tait.
-Deux bords d’une même faille,
-et la voix qui taille.
+${m1} — même quand la mesure se serre.
+Deux bords d’une même idée,
+et le refrain reste clair.
 
 [Verse 2]
 ${m2} — je le retourne dans tous les sens.
@@ -1159,17 +1162,17 @@ ce que j’ai tenu, ce que j’ai pas su.
 
 [Bridge]
 ${m2} — je l’accepte maintenant.
-La nuit comprend ce que le jour évite.
+Le sens revient quand le détour s'efface.
 
 [Chorus]
 ${m0} — ça reste, ça cède pas,
-${m1} — même quand le décor se tait.
-Deux bords d’une même faille,
-et la voix qui taille.
+${m1} — même quand la mesure se serre.
+Deux bords d’une même idée,
+et le refrain reste clair.
 
 [Outro]
 Il reste ${m0}.
-Et la voix tient jusqu’au lendemain.`;
+Le dernier mot garde le sujet vivant.`;
 
   return cleanText(restoreVivyFrenchSongAccents(soloLyrics), VIVY_SONG_MAX_CHARS);
 }

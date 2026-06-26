@@ -682,7 +682,9 @@ test('Vivy solo fallback splits a long inline seed instead of recycling it into 
   });
 
   assert.match(lyrics, /\[Outro\]/);
-  assert.match(lyrics, /Et la voix tient jusqu’au lendemain\.$/);
+  assert.match(lyrics, /Le dernier mot garde le sujet vivant\.$/);
+  assert.doesNotMatch(lyrics, /Et la voix tient jusqu’au lendemain/);
+  assert.doesNotMatch(lyrics, /cherche sa lumière|je retourne le silence|décor se tait|voix qui taille/i);
   assert.ok((lyrics.match(/Demi-mesure dans le noir/g) || []).length <= 2);
   assert.doesNotMatch(lyrics, /On m’appell$/);
   assert.doesNotMatch(lyrics, /Demi-mesure dans le noir, je pèse chaque mot Labyrinthe de données, je trace et je dévore On m’appelle oracle/g);
@@ -997,6 +999,32 @@ test('Suno payload turns a NOSSEN Banger seed into lyrics without singing UI bug
   assert.match(payload.prompt, /lien humain|humain/i);
   assert.doesNotMatch(payload.prompt, /les paroles passent pas/i);
   assert.doesNotMatch(payload.prompt, /bouton NOSSEN|compile|truc générique|mode automatique|D40|Suno|production brief|recopier/i);
+});
+
+test('Suno payload does not sing NOSSEN casting instructions in a Peter Pan song', () => {
+  const payload = buildVivySunoPayload({
+    songSource: 'NOSSEN Banger - conversation Vivy',
+    songArtists: ['vivy'],
+    vocalCast: 'Solo Vivy',
+    songMood: 'générique animé aventure, pop orchestral héroïque, female vocal',
+    songText: [
+      'Distribution vocale choisie:',
+      'Solo Vivy.',
+      'Ne mets pas le mot.',
+      'Banger dans les paroles.',
+      'Matière à transformer en chanson:',
+      'on va faire une chanson sur peter pan',
+      'raconte son histoire avec la fée clochette son ennemie le capitaine crochet',
+      'la mer et le crocodile fais des jeux de mot avec le temps, le tic tac et garde le thème sur le syndrome',
+    ].join('\n'),
+  });
+
+  assert.match(payload.prompt, /\[Verse 1\]/);
+  assert.match(payload.prompt, /\[Chorus\]/);
+  assert.match(payload.prompt, /Peter Pan|Clochette|Crochet|crocodile|tic tac|temps/i);
+  assert.doesNotMatch(payload.title, /Distribution|Banger|Matière/i);
+  assert.doesNotMatch(payload.prompt, /Distribution vocale|Solo Vivy|Ne mets pas le mot|Banger dans les paroles|Matière à transformer/i);
+  assert.doesNotMatch(payload.prompt, /je transforme la cage|Je pèse le bruit|bord du mirage|dans le noir je trouve ma voix|Et la voix tient/i);
 });
 
 test('Suno payload does not sing NOSSEN seed labels as lyrics', () => {
@@ -3430,6 +3458,43 @@ test('Vivy chat fallback answers the NOSSEN lyrics-in-music bug on topic', async
   assert.doesNotMatch(result.assistant, /Pour ce point, on avance simplement/i);
   assert.doesNotMatch(result.assistant, /Le bon prochain pas/i);
   assert.doesNotMatch(result.assistant, /formulaire|case technique|sensibilit[ée]|seuil/i);
+});
+
+test('Vivy chat fallback diagnoses malformed NOSSEN output when asked what blocks', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-chat-nossen-diagnostic-to-codex',
+    message: 'dis a codex qui ce bloque',
+    history: [
+      { role: 'user', content: 'bah fais des recherches sur le web on va en faire un générique peter pan facon animé' },
+      {
+        role: 'assistant',
+        content: [
+          'Banger.',
+          'Paroles envoyées à Suno:',
+          '[Intro]',
+          'Distribution vocale choisie:',
+          'Ne mets pas le mot.',
+          '[Verse 1]',
+          'Banger dans les paroles.',
+          'Matière à transformer en chanson:',
+          'on va faire une chanson sur peter pan',
+          '[Chorus]',
+          'Distribution Vocale Choisie — je ne tombe pas,',
+        ].join('\n'),
+      },
+      { role: 'user', content: "qu'est ce qui va pas ?" },
+      { role: 'assistant', content: 'Je te suis sur ça: qu est ce qui va pas ?\nJe reste avec le fond avant de transformer en sortie.' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.equal(result.aiMode, 'deterministic_nossen_malformed_output');
+  assert.match(result.assistant, /Codex|NOSSEN|Suno|paroles|consignes|fallback|routage|LLM/i);
+  assert.match(result.assistant, /Distribution vocale|Banger dans les paroles|Matière à transformer|interne/i);
+  assert.doesNotMatch(result.assistant, /Je te suis sur ça/i);
+  assert.doesNotMatch(result.assistant, /Je reste avec le fond/i);
+  assert.doesNotMatch(result.assistant, /Dis-moi ce qui compte le plus/i);
 });
 
 test('Vivy keeps soft song ideas in chat until Chanson or NOSSEN is explicit', async () => {
