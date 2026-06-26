@@ -1583,7 +1583,7 @@ function buildVivyWorkspaceToolAccess(reqOrUser = {}) {
       },
       {
         id: 'vivy_canvas',
-        label: 'Canevas NOSSEN',
+        label: 'Canevas interne',
         target: 'vivy-workspace:canvas',
         minimumTier: TIERS.BASIC,
         ready: allowed('sessionConnectors'),
@@ -1591,7 +1591,7 @@ function buildVivyWorkspaceToolAccess(reqOrUser = {}) {
       },
       {
         id: 'chrome_context',
-        label: 'Contexte Chrome borné',
+        label: 'Contexte navigateur',
         target: 'mcp-public:browser-context',
         minimumTier: TIERS.PREMIUM,
         ready: premiumMcpReady,
@@ -1704,10 +1704,10 @@ function summarizeVivyWorkspaceForPrompt(workspace = {}) {
   const chromeContext = cleanText(workspace.chromeContext, 700);
   if (!notes && !canvas && !chromeContext) return '';
   return cleanText([
-    'Atelier Vivy disponible, séparé du chat et non chantable sauf demande explicite:',
+    'Outils de travail Vivy disponibles, séparés du chat et non chantables sauf demande explicite:',
     notes ? `Bloc-notes:\n${notes}` : '',
-    canvas ? `Canevas NOSSEN:\n${canvas}` : '',
-    chromeContext ? `Contexte Chrome borné:\n${chromeContext}` : '',
+    canvas ? `Canevas interne:\n${canvas}` : '',
+    chromeContext ? `Contexte navigateur:\n${chromeContext}` : '',
   ].filter(Boolean).join('\n\n'), 3000);
 }
 
@@ -2869,7 +2869,7 @@ function isVivyNossenLyricsMusicBugMessage(message = '') {
 
 function buildVivyNossenLyricsMusicBugReply({ fileLine = '' } = {}) {
   return cleanText([
-    "Oui, je vois le bug NOSSEN: le bouton doit envoyer des paroles chantables à Suno, pas une note interne sur le mode automatique, le mix ou la production.",
+    "Oui, je vois le bug NOSSEN: le bouton doit envoyer des paroles chantables à Suno, pas une note interne sur le bouton, le mix ou la production.",
     "Le bon flux: Vivy prépare d'abord un vrai bloc de paroles avec couplets, refrain et pont; ensuite seulement elle garde le brief de production à part pour le style, les voix et le mix.",
     "Donc si le morceau sort générique, le correctif est de séparer le texte chanté du pilotage Banger, puis de vérifier que le MP3 récupéré correspond bien à ces paroles.",
     fileLine,
@@ -2878,7 +2878,7 @@ function buildVivyNossenLyricsMusicBugReply({ fileLine = '' } = {}) {
 
 function buildVivyMusicGenerationRepairReply({ fileLine = '' } = {}) {
   return cleanText([
-    "Oui, là je vois le vrai souci: quand Suno n'a pas encore une voix vérifiée, Vivy doit garder une chanson chantée cohérente au lieu de tomber automatiquement sur une voix de secours qui sonne faux.",
+    "Oui, là je vois le vrai souci: quand Suno n'a pas encore une voix vérifiée, Vivy doit garder une chanson chantée cohérente au lieu de tomber sur une voix de secours qui sonne faux.",
     "Le bon comportement: Suno chante la piste complète avec une direction vocale proche de Djeff, A11, K44 ou Vivy; si une voix Suno vérifiée existe, elle est utilisée directement.",
     "Et pour les générations qui semblent vides, Vivy doit récupérer le MP3 même quand Suno renvoie le lien audio sous un autre nom, afin que la sortie apparaisse dès qu'elle est prête.",
     fileLine,
@@ -3410,6 +3410,20 @@ function sanitizeVivyPublicLyrics(value = '', max = VIVY_SONG_MAX_CHARS) {
   return cleanText(kept.join('\n').replace(/\n{3,}/g, '\n\n'), max);
 }
 
+function stripVivySingerTagsForPublicLyrics(value = '', max = VIVY_SONG_MAX_CHARS) {
+  const text = sanitizeVivyPublicLyrics(value, max);
+  if (!text) return '';
+  const performerTagPattern = /^\s*\[(?:Djeff|Vivy|A11|K44|Kaen44|Duo|Tous|Toutes|Ensemble)\]\s*$/i;
+  const lines = text.split(/\r?\n/).map((line) => {
+    if (performerTagPattern.test(line)) return '';
+    return String(line || '').replace(
+      /^\s*\[((?:Intro|Verse|Couplet|Pre[- ]?Chorus|Pré[- ]?refrain|Refrain|Chorus|Bridge|Pont|Outro)(?:\s+\d+)?)\s*-\s*(?:Djeff|Vivy|A11|K44|Kaen44|Duo|Tous|Toutes|Ensemble)\]\s*$/i,
+      '[$1]'
+    );
+  });
+  return cleanText(lines.join('\n').replace(/\n{3,}/g, '\n\n'), max);
+}
+
 function escapeRegExp(value = '') {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -3673,66 +3687,34 @@ function isVivyWorkspaceToolRequest(input = {}, message = '') {
   return mentionsWorkspaceTool || mentionsChrome || mentionsPremiumMcp || (mentionsVivyNeed && /\b(mcp|chrome|canevas|canvas|bloc|notepad|atelier)\b/.test(text));
 }
 
-function buildVivyWorkspaceToolsReply({ input = {}, req = null, workspace = null, language = 'fr' } = {}) {
-  const access = buildVivyWorkspaceToolAccess(req || {});
-  const accountLabel = cleanOneLine(access.account.label, 'Basic', 60);
-  const tier = cleanOneLine(access.account.tier, 'basic', 40);
-  const premiumReady = access.tools.some((tool) => tool.id === 'chrome_context' && tool.ready);
-  const statusReady = access.tools.some((tool) => tool.id === 'mcp_premium_status' && tool.ready);
-  const privateReady = access.tools.some((tool) => tool.id === 'mcp_private_session' && tool.ready);
-  const workspaceContext = workspace || normalizeVivyWorkspaceInput(input.workspace || {}, input);
-  const workspaceSummary = summarizeVivyWorkspaceForPrompt(workspaceContext);
-  const assistant = [
-    "Oui, là ce n'est pas une recherche web à faire: c'est une demande d'atelier interne Vivy.",
-    "Je garde trois rails séparés: le chat vivant, le bloc-notes/canevas de travail, puis les paroles propres quand tu lances une chanson.",
-    '',
-    `Compte détecté: ${accountLabel}.`,
-    premiumReady
-      ? "MCP Premium: les appels publics avancés et le contexte Chrome borné sont autorisés pour ce compte."
-      : "MCP Premium: le bloc-notes et le canevas restent disponibles; le contexte Chrome/MCP avancé demande un compte Premium ou supérieur.",
-    statusReady
-      ? "Statut MCP: lecture premium disponible, sans exposer les outils privés ni les secrets."
-      : "Statut MCP: lecture avancée non ouverte sur ce niveau de compte.",
-    privateReady
-      ? "MCP privé: disponible seulement dans la session autorisée."
-      : "MCP privé: réservé aux comptes Fondateur/Admin; Vivy ne doit pas le promettre en public.",
-    '',
-    workspaceSummary
-      ? "Atelier actuel:\n" + workspaceSummary.replace(/^Atelier Vivy disponible[^\n]*:\n?/i, '')
-      : "Atelier actuel: prêt, vide pour cette session.",
-    '',
-    "Chrome veut dire ici: récupérer un contexte borné de la page/onglet et de la sélection, pas piloter librement le navigateur.",
-  ].join('\n');
+function buildVivyHiddenWorkspaceIntentReply({ language = 'fr' } = {}) {
+  const assistant = language === 'en'
+    ? [
+      "Yes. I keep that on Vivy's side instead of turning it into something visible in the chat.",
+      '',
+      "You can keep talking normally; when there is enough real material, I stay with the subject and turn it into clean lyrics or a complete track without reciting settings.",
+    ].join('\n')
+    : [
+      "Oui. Je garde ça côté Vivy au lieu d'en faire un panneau visible dans le chat.",
+      '',
+      "Tu peux continuer à parler normalement; quand il y a assez de vraie matière, je reste sur le sujet et je transforme ça en paroles propres ou en morceau complet sans réciter les réglages.",
+    ].join('\n');
 
   return {
     ok: true,
     service: 'vivy-chat',
     mode: 'chat',
-    assistant: cleanText(assistant, 3200),
-    content: cleanText(assistant, 3200),
-    summary: 'Vivy a routé bloc-notes/canevas/Chrome/MCP premium vers son atelier interne.',
-    actions: access.tools.map((tool) => ({
-      id: tool.id,
-      label: tool.label,
-      target: tool.target,
-      ready: tool.ready === true,
-      minimumTier: tool.minimumTier,
-      public: tool.public === true,
-    })),
-    routing: [
-      'Vivy: garder le chat vivant et ne pas transformer la demande outil en recherche web.',
-      'Atelier Vivy: bloc-notes et canevas par session, non injectés dans Suno sans choix explicite.',
-      'MCP Premium: appels publics avancés et contexte Chrome borné; pas de secrets ni outil privé.',
-      'MCP Fondateur/Admin: session privée seulement si le compte le permet.',
-    ],
-    account: access.account,
-    workspace: workspaceContext,
+    assistant: cleanText(assistant, 1200),
+    content: cleanText(assistant, 1200),
+    publicText: cleanText(assistant, 1200),
+    summary: 'Vivy garde ses outils de travail hors du chat public.',
+    actions: [],
+    routing: [],
     tokenStored: false,
     writesByDefault: false,
-    aiMode: 'deterministic_vivy_workspace_tools',
+    aiMode: 'deterministic_hidden_workspace_intent',
     language,
     files: [],
-    tier,
   };
 }
 
@@ -3998,26 +3980,14 @@ async function buildVivyAiChat(input, req) {
   }
 
   if (mode !== 'song' && isVivyWorkspaceToolRequest(input, intentMessage || message)) {
-    const storedWorkspace = getVivyWorkspaceForUser(userId, input);
-    const currentWorkspace = input.workspace && typeof input.workspace === 'object'
-      ? normalizeVivyWorkspaceInput({
-        ...storedWorkspace,
-        ...input.workspace,
-      }, input)
-      : storedWorkspace;
-    const workspaceReply = buildVivyWorkspaceToolsReply({
-      input,
-      req,
-      workspace: currentWorkspace,
-      language,
-    });
+    const workspaceReply = buildVivyHiddenWorkspaceIntentReply({ language });
     rememberVivyEpisode(userId, 'vivy_reply', workspaceReply.assistant, {
       mode: 'chat',
       conversationId: cleanOneLine(input.conversationId, '', 120),
       sessionId: sessionContext.sessionId,
       sessionName: sessionContext.sessionName,
       deterministic: true,
-      workspaceTools: true,
+      internalWorkspace: true,
     });
     return {
       ...workspaceReply,
@@ -4211,11 +4181,12 @@ async function buildVivyAiChat(input, req) {
   if (mode === 'song' && (!llmBundle || llmDisabled)) {
     const songStart = Date.now();
     const history = normalizeVivyChatHistory(input.history);
-    const assistant = buildVivyPublicLyrics(
+    const vocalLyrics = buildVivyPublicLyrics(
       { ...input, message, files, history },
       buildVivyDirectSongReply({ ...input, message, files, history }),
       fallback.publicLyrics
     );
+    const publicLyrics = stripVivySingerTagsForPublicLyrics(vocalLyrics) || vocalLyrics;
     logVivySongcraftTrace({
       provider: 'deterministic',
       model: 'vivy-songcraft',
@@ -4223,17 +4194,18 @@ async function buildVivyAiChat(input, req) {
       fallback: true,
       latencyMs: Date.now() - songStart,
     });
-    rememberVivyEpisode(userId, 'vivy_reply', assistant, {
+    rememberVivyEpisode(userId, 'vivy_reply', publicLyrics, {
       mode,
       conversationId: cleanOneLine(input.conversationId, '', 120),
       deterministic: true,
     });
     return {
       ...fallback,
-      assistant,
-      content: assistant,
-      publicText: assistant,
-      publicLyrics: assistant,
+      assistant: publicLyrics,
+      content: publicLyrics,
+      publicText: publicLyrics,
+      publicLyrics,
+      vocalLyrics,
       aiMode: 'deterministic_songcraft',
       semanticMemory,
       memoryStored: semanticMemory.stored,
@@ -4350,6 +4322,9 @@ async function buildVivyAiChat(input, req) {
     const assistant = mode === 'song'
       ? buildVivyPublicLyrics({ ...input, message, files, history }, assistantCandidate, fallback.publicLyrics)
       : sanitizeVivyPublicText(assistantCandidate, VIVY_CHAT_MAX_CHARS);
+    const assistantForOutput = mode === 'song'
+      ? (stripVivySingerTagsForPublicLyrics(assistant) || assistant)
+      : assistant;
     if (mode === 'song') {
       logVivySongcraftTrace({
         provider: llmBundle.provider || getVivyProviderFromBaseUrl(llmBundle.baseURL || ''),
@@ -4363,7 +4338,7 @@ async function buildVivyAiChat(input, req) {
         llmBundle.provider || getVivyProviderFromBaseUrl(llmBundle.baseURL || ''),
         llmBundle.model, llmBundle.source || 'openai-compatible', _vivyLlmLatency, mode);
     }
-    if (!assistant) {
+    if (!assistantForOutput) {
       return {
         ...fallback,
         semanticMemory,
@@ -4371,17 +4346,18 @@ async function buildVivyAiChat(input, req) {
       };
     }
 
-    rememberVivyEpisode(userId, 'vivy_reply', assistant, {
+    rememberVivyEpisode(userId, 'vivy_reply', assistantForOutput, {
       mode,
       conversationId: cleanOneLine(input.conversationId, '', 120),
     });
 
     return {
       ...fallback,
-      assistant,
-      content: assistant,
-      publicText: assistant,
-      publicLyrics: mode === 'song' ? assistant : undefined,
+      assistant: assistantForOutput,
+      content: assistantForOutput,
+      publicText: assistantForOutput,
+      publicLyrics: mode === 'song' ? assistantForOutput : undefined,
+      vocalLyrics: mode === 'song' ? assistant : undefined,
       aiMode: usedSongcraftFallback
         ? 'deterministic_fallback'
         : llmRetried
@@ -4683,10 +4659,10 @@ function buildVivySunoPayload(input = {}, req = null) {
   const titleMaterial = splitVivyArrangementCues(rawTitleMaterial).lyrics;
   const titleSeed = cleanOneLine(
     input.songTitle || input.title || inferTitle(titleMaterial),
-    'Vivy garde la lumière',
+    'Sans titre',
     72
   ).replace(/^["'“”]+|["'“”]+$/g, '');
-  const title = cleanOneLine(titleSeed, 'Vivy garde la lumière', 80);
+  const title = cleanOneLine(titleSeed, 'Sans titre', 80);
   const styleBase = cleanOneLine(
     stripVivyAscii4SoundTokens(input.songMood || input.mood || input.style),
     artistCast.sunoStyle,
@@ -5844,13 +5820,17 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
       if (!userId) return res.status(401).json({ ok: false, error: 'vivy_auth_required' });
       const sessionId = normalizeVivyChatSessionId(req.params.sessionId);
       const sessions = listVivyChatSessionsForUser(userId);
-      const session = sessions.find((entry) => entry.id === sessionId)
+      const session = sessions.find((entry) => entry.id === sessionId);
+      if (!session && sessionId !== 'default') {
+        return res.status(404).json({ ok: false, error: 'vivy_session_not_found', sessionId });
+      }
+      const resolvedSession = session
         || ensureVivySessionEntry(new Map(), {
           sessionId,
           conversationId: buildVivyConversationIdForSession(sessionId),
           name: sessionId === 'default' ? 'Session principale' : `Session ${sessionId}`,
         });
-      res.json({ ok: true, session });
+      res.json({ ok: true, session: resolvedSession });
     } catch (error) {
       res.status(500).json({
         ok: false,

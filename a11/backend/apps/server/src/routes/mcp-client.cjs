@@ -92,18 +92,6 @@ function buildConnectorCatalog(account) {
         category: 'Vision',
         description: 'Analyse d’images jointes avec routage vision quand le module est disponible.',
       }),
-      capability('vivy-workbench', 'Atelier Vivy', 'sessionConnectors', TIERS.BASIC, account, {
-        category: 'Vivy',
-        description: 'Bloc-notes et canevas de session séparés du chat et des paroles envoyées à Suno.',
-      }),
-      capability('vivy-notepad', 'Bloc-notes Vivy', 'sessionConnectors', TIERS.BASIC, account, {
-        category: 'Vivy',
-        description: 'Notes de travail privées au compte connecté, non injectées automatiquement dans NOSSEN.',
-      }),
-      capability('vivy-canvas', 'Canevas NOSSEN', 'sessionConnectors', TIERS.BASIC, account, {
-        category: 'Vivy',
-        description: 'Matière structurée pour le bouton NOSSEN, gardée hors du chat brut.',
-      }),
       capability('mcp-public-call', 'MCP public avancé', 'publicProxyCall', TIERS.PREMIUM, account, {
         category: 'MCP',
         description: 'Appels publics autorisés, sans routes privées ni secrets.',

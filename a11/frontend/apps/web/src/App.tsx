@@ -33,7 +33,6 @@ import {
   fetchAuthSession,
   fetchVivyChatSession,
   fetchVivyChatSessions,
-  fetchVivyWorkspace,
   appendVivyChatSessionMessageOnServer,
   getSubscriptionStatus,
   hasAdminApiAccess,
@@ -65,7 +64,6 @@ import {
   assembleVivyStudioVoicePreview,
   mixVivyStudioPreview,
   runVivyStudioProduction,
-  saveVivyWorkspace,
   sendMatchArenaInput,
   startGoogleOAuth,
   setAuthToken,
@@ -112,8 +110,6 @@ import {
   type SubscriptionStatus,
   type VivyStudioProductionInput,
   type VivyStudioProductionResult,
-  type VivyWorkspaceResponse,
-  type VivyWorkspaceState,
   fetchUserLibrary,
   pinResourceToLibrary,
   unpinResourceFromLibrary,
@@ -3583,13 +3579,6 @@ function describeVivyNossenBangerCast(artists: VivyStudioArtistId[]) {
   return `${prefix} ${labels.join(" + ")}`;
 }
 
-function getVivyNossenArtistTag(artistId: VivyStudioArtistId) {
-  if (artistId === "djeff") return "[Djeff]";
-  if (artistId === "a11") return "[A11]";
-  if (artistId === "k44") return "[K44]";
-  return "[Vivy]";
-}
-
 function cleanVivyNossenLyricSourceLine(value = "") {
   const line = toUnicodeLine(value, "", 190)
     .replace(/^(?:Utilisateur|Vivy)\s*:\s*/i, "")
@@ -3658,409 +3647,27 @@ function wantsVivyNossenBangerWord(source = "") {
   });
 }
 
-function vivyNossenLyricFragment(fragments: string[], index: number, fallback: string) {
-  const value = shapeVivyNossenCreativeFragment(fragments[index % Math.max(1, fragments.length)] || fallback);
-  const cleaned = toUnicodeLine(value, fallback, 96)
-    .replace(/^["'“”]+|["'“”]+$/g, "")
-    .replace(/[.;:]+$/g, "")
-    .trim();
-  if (!cleaned) return fallback;
-  return cleaned.charAt(0).toLowerCase() + cleaned.slice(1);
-}
-
-function shapeVivyNossenCreativeFragment(value = "") {
-  const line = toUnicodeLine(value, "", 190).trim();
-  if (!line) return "";
-  const folded = foldForLookup(line);
-  if (/\bjessy\b/.test(folded) || /\bhopital psy\b/.test(folded) || /\bdemons?\b/.test(folded)) {
-    return "Jessy tient debout face à ses démons";
-  }
-  if (/\bheros?\b|\bdbz\b|\bavengers?\b|\bspider-?man\b|\bmarvel\b|\bdc comics?\b/.test(folded)) {
-    return "ses héros veillent en cercle de lumière";
-  }
-  if (/\bboost|frisson|heroic|heroique|héroïque|anime\b/.test(folded)) {
-    return "un élan héroïque lui soulève le coeur";
-  }
-  if (/\bhelene\b|\btroie\b|\btroy\b/.test(folded)) {
-    return "Hélène choisit Funesterie face aux anciens empires";
-  }
-  if (/\bcheval\s+de\s+troie\b|\btrojan\b|\bexploit|\binfiltration\b/.test(folded)) {
-    return "un cheval de Troie cherche la faille dans le mur";
-  }
-  if (/\bmask\b|\bmuraille\b|\bremparts?\b|\bpare\s+feu\b/.test(folded)) {
-    return "MASK dresse une muraille claire";
-  }
-  if (/\bopenai\b|\bgrecs?\b/.test(folded)) {
-    return "OpenAI frappe comme un ancien empire";
-  }
-  if (/\bmugello\b/.test(folded)) {
-    return "Mugello brûle comme un volcan de drapeaux jaunes";
-  }
-  if (/\blaguna\s+seca\b|\blaguna\b/.test(folded)) {
-    return "Laguna Seca garde un duel au bord du vide";
-  }
-  if (/\bvr46\b|\bquarante[-\s]?six\b|\b46\b/.test(folded)) {
-    return "les tribunes jaunes portent le numéro 46";
-  }
-  if (/\bvalentino\b|\brossi\b|\bthe\s+doctor\b|\bdoctor\b|\bmotogp\b|\bmoto\s*gp\b/.test(folded)) {
-    return "Valentino Rossi trace The Doctor 46 dans la lumière";
-  }
-  return line
-    .replace(/^(?:je veux|j'aimerais|j aimerais|je voudrais|fais|fait|crée|cree|écris|ecris|peux-tu|tu peux)\s+/i, "")
-    .replace(/^(?:une?\s+)?(?:chanson|musique|son|paroles?|texte)\s+(?:qui|que|sur|pour|de|d'|à|a)?\s*/i, "")
-    .replace(/\b(?:je veux|j'aimerais|j aimerais|fais|écris|ecris)\b/gi, "")
-    .replace(/\b(?:raconter|raconte)\s+son\s+histoire\b/gi, "son histoire se relève")
-    .replace(/\b(?:à|a)\s+travers\b/gi, "avec")
-    .replace(/\s+/g, " ")
-    .replace(/^[,;:\-\s]+|[,;:\-\s]+$/g, "")
-    .trim();
-}
-
-type VivyNossenHeroicLyricPlan = {
-  title: string;
-  intro: [string, string];
-  verse1: [string, string, string, string];
-  preChorus: [string, string, string, string];
-  chorus: [string, string, string, string];
-  verse2: [string, string, string, string];
-  bridge: [string, string, string, string];
-  outro: [string, string];
-};
-
-function makeVivyNossenLyricLine(value = "", fallback = "", punctuation = ",") {
-  const cleaned = toUnicodeLine(value || fallback, fallback, 112)
-    .replace(/^["'“”]+|["'“”]+$/g, "")
-    .replace(/[.;:!,]+$/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  const safeLine = cleaned || fallback;
-  const capitalized = safeLine ? safeLine.charAt(0).toUpperCase() + safeLine.slice(1) : fallback;
-  if (!capitalized) return "";
-  return `${capitalized}${punctuation}`;
-}
-
-function buildVivyNossenBangerTitle(source: string, fragments: string[]) {
-  const folded = foldForLookup([source, ...fragments].join("\n"));
-  if (/\bzorro\b|\btornado\b|\bdestrier\b|\brenard\b/.test(folded)) return "Le Z de Zorro";
-  if (/\bvalentino\b|\brossi\b|\bthe\s+doctor\b|\bdoctor\b|\bvr46\b|\bmugello\b|\blaguna\s+seca\b|\bmotogp\b|\bmoto\s*gp\b/.test(folded)) return "The Doctor 46";
-  if (/\bhelene\b|\btroie\b|\btroy\b/.test(folded)) return "Hélène de Funesterie";
-  if (/\bjessy\b/.test(folded) && /\bdemons?\b/.test(folded)) return "Jessy tient debout";
-  if (/\bnouvelle\s+generation\b|\bnouvelle\s+génération\b/.test(folded)) return "Nouvelle génération";
-  const first = shapeVivyNossenCreativeFragment(cleanVivyNossenLyricSourceLine(fragments[0] || ""));
-  const words = first
-    .split(/\s+/)
-    .map((word) => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
-    .filter((word) => word.length >= 3 && !/^(?:avec|pour|dans|cette|quand|comme|faire|fait|fais|face|ses|son|histoire|chanson|musique)$/i.test(word));
-  return toUnicodeLine(words.slice(0, 5).join(" ") || "NOSSEN", "NOSSEN", 64);
-}
-
-function buildVivyNossenChorus(kind: "helene" | "jessy" | "rossi" | "zorro" | "default", useBangerWord: boolean): [string, string, string, string] {
-  if (kind === "helene") {
-    return useBangerWord ? [
-      "Banger, Hélène garde son ciel,",
-      "Banger, Funesterie tient les remparts.",
-      "Banger, aucun empire ne reprend sa nuit,",
-      "Le coeur libre rallume le phare.",
-    ] : [
-      "Hélène reste ici,",
-      "Funesterie tient les remparts.",
-      "Aucun empire ne reprend sa nuit,",
-      "Le coeur libre rallume le phare.",
-    ];
-  }
-  if (kind === "jessy") {
-    return useBangerWord ? [
-      "Banger, Jessy rallume la nuit,",
-      "Banger, le coeur reprend la piste.",
-      "Banger, il retrouve l'appui,",
-      "Et ses héros répondent: tu existes.",
-    ] : [
-      "On rallume la nuit,",
-      "Le coeur reprend la piste.",
-      "Jessy retrouve l'appui,",
-      "Et ses héros répondent: tu existes.",
-    ];
-  }
-  if (kind === "rossi") {
-    return useBangerWord ? [
-      "Banger, Doctor, quarante-six dans la lumière,",
-      "Banger, la piste s'ouvre comme un éclair.",
-      "Banger, le coeur jaune dans les tribunes,",
-      "Et la légende roule encore sous la lune.",
-    ] : [
-      "Doctor, quarante-six dans la lumière,",
-      "La piste s'ouvre comme un éclair.",
-      "Le coeur jaune dans les tribunes,",
-      "Et la légende roule encore sous la lune.",
-    ];
-  }
-  if (kind === "zorro") {
-    return useBangerWord ? [
-      "Banger, Zorro fend la nuit,",
-      "Banger, Tornado soulève la plaine.",
-      "Banger, le Z rit sur les puissants,",
-      "Et l'amour veille sous la lune ancienne.",
-    ] : [
-      "Zorro fend la nuit,",
-      "Tornado soulève la plaine.",
-      "Le Z rit sur les puissants,",
-      "Et l'amour veille sous la lune ancienne.",
-    ];
-  }
-  return useBangerWord ? [
-    "Banger, le refrain prend feu,",
-    "Banger, le coeur reprend la piste.",
-    "Banger, la voix tient la route,",
-    "Et nos voix restent distinctes.",
-  ] : [
-    "On rallume la nuit,",
-    "Le coeur reprend la piste.",
-    "Le feu clair nous suit,",
-    "Et nos voix restent distinctes.",
-  ];
-}
-
-function buildVivyNossenOutro(kind: "helene" | "jessy" | "rossi" | "zorro" | "default", useBangerWord: boolean): [string, string] {
-  if (kind === "helene") {
-    return useBangerWord ? [
-      "Banger, Hélène choisit son ciel,",
-      "Funesterie veille jusqu'au dernier écho.",
-    ] : [
-      "Hélène choisit son ciel,",
-      "Funesterie veille jusqu'au dernier écho.",
-    ];
-  }
-  if (kind === "jessy") {
-    return useBangerWord ? [
-      "Banger, encore une étincelle,",
-      "Jessy tient debout jusqu'au dernier écho.",
-    ] : [
-      "Encore une étincelle,",
-      "Jessy tient debout jusqu'au dernier écho.",
-    ];
-  }
-  if (kind === "rossi") {
-    return useBangerWord ? [
-      "Banger, le silence descend sur le circuit,",
-      "On entend encore son moteur dans la nuit.",
-    ] : [
-      "Le silence descend sur le circuit,",
-      "On entend encore son moteur dans la nuit.",
-    ];
-  }
-  if (kind === "zorro") {
-    return useBangerWord ? [
-      "Banger, son Z brille encore dans la nuit,",
-      "Et Tornado disparaît quand mon coeur le suit.",
-    ] : [
-      "Son Z brille encore dans la nuit,",
-      "Et Tornado disparaît quand mon coeur le suit.",
-    ];
-  }
-  return useBangerWord ? [
-    "Banger, encore une étincelle,",
-    "La voix tient jusqu'au dernier écho.",
-  ] : [
-    "Encore une étincelle,",
-    "La voix tient jusqu'au dernier écho.",
-  ];
-}
-
-function buildVivyNossenHeroicLyricPlan(source: string, fragments: string[]): VivyNossenHeroicLyricPlan {
-  const folded = foldForLookup([source, ...fragments].join("\n"));
-  const useBangerWord = wantsVivyNossenBangerWord(source);
-  const shapedFragments = fragments
-    .map(shapeVivyNossenCreativeFragment)
-    .map((fragment) => toUnicodeLine(fragment, "", 120).replace(/[.;:!,]+$/g, "").trim())
-    .filter(Boolean);
-  const pick = (index: number, fallback: string) => shapedFragments[index % Math.max(1, shapedFragments.length)] || fallback;
-  const hasJessy = /\bjessy\b/.test(folded);
-  const hasHospital = /\bhp\b|\bhopital\s+psy\b|\bhôpital\s+psy\b/.test(folded);
-  const hasHeroes = /\bheros?\b|\bhéros?\b|\bdbz\b|\bavengers?\b|\bspider-?man\b|\bmarvel\b|\bdc comics?\b|\bdc\b/.test(folded);
-  const hasSuperSaiyan = /\bsuper\s+saiyan\b|\bdbz\b/.test(folded);
-  const hasSpider = /\bspider-?man\b|\bspiderman\b/.test(folded);
-  const hasMarkedSmile = /\bchauve\b|\bdent\b|\bsourire\b/.test(folded);
-  const hasHelene = /\bhelene\b|\btroie\b|\btroy\b/.test(folded);
-  const hasRossi = /\bvalentino\b|\brossi\b|\bthe\s+doctor\b|\bdoctor\b|\bvr46\b|\bmugello\b|\blaguna\s+seca\b|\bmotogp\b|\bmoto\s*gp\b/.test(folded);
-  const hasZorro = /\bzorro\b|\btornado\b|\bdestrier\b|\brenard\b/.test(folded);
-  if (hasZorro) {
-    return {
-      title: "Le Z de Zorro",
-      intro: [
-        "Dans la nuit de Californie, je guette son pas,",
-        "Une cape fend la lune et mon coeur reconnaît sa voix.",
-      ],
-      verse1: [
-        "Tornado bat la poussière comme un tambour de guerre,",
-        "Son sabot noir réveille les collines et la mer.",
-        "Sous le masque, un sourire garde le feu discret,",
-        "Et l'épée trace un éclair quand la justice apparaît.",
-      ],
-      preChorus: [
-        "Les soldats crient son nom dans les rues de la ville,",
-        "Mais son ombre glisse et les lanternes vacillent.",
-        "Moi je prie dans le vent pour qu'il revienne vivant,",
-        "Pendant que son Z fait trembler les tyrans.",
-      ],
-      chorus: buildVivyNossenChorus("zorro", useBangerWord),
-      verse2: [
-        "Quand les méchants bombent le torse et jouent les rois,",
-        "Il leur laisse une leçon que personne n'oubliera.",
-        "Un Z sur le fond du pantalon, l'orgueil en déroute,",
-        "Et le peuple rit plus fort quand Tornado reprend la route.",
-      ],
-      bridge: [
-        "Je l'aime comme on aime une étoile indomptable,",
-        "Trop libre pour rester, trop vrai pour disparaître.",
-        "S'il revient au matin, je cacherai son secret,",
-        "S'il repart dans la nuit, mon chant le reconnaît.",
-      ],
-      outro: buildVivyNossenOutro("zorro", useBangerWord),
-    };
-  }
-  if (hasRossi) {
-    return {
-      title: "The Doctor 46",
-      intro: [
-        "Le moteur crie sous le ciel d'Italie,",
-        "Le jaune des tribunes soulève la nuit.",
-      ],
-      verse1: [
-        "Mugello brûle comme un volcan vivant,",
-        "Les drapeaux VR46 se lèvent dans le vent.",
-        "Il plonge au freinage, il frôle la ligne,",
-        "Un sourire sous le casque, la trajectoire signe.",
-      ],
-      preChorus: [
-        "Dans chaque virage, il écrit son nom,",
-        "Sur l'asphalte noir, dans les vibrations.",
-        "La foule le porte, le chrono s'efface,",
-        "Quand Rossi attaque, le doute se casse.",
-      ],
-      chorus: buildVivyNossenChorus("rossi", useBangerWord),
-      verse2: [
-        "Laguna Seca résonne au bord du vide,",
-        "La roue danse, la peur devient fluide.",
-        "Il passe où personne n'ose passer,",
-        "Dans la poussière, l'histoire vient parler.",
-      ],
-      bridge: [
-        "Ce n'est pas seulement gagner,",
-        "C'est faire trembler l'instant.",
-        "Ce n'est pas seulement piloter,",
-        "C'est rendre le monde vivant.",
-      ],
-      outro: buildVivyNossenOutro("rossi", useBangerWord),
-    };
-  }
-  if (hasHelene) {
-    return {
-      title: "Hélène de Funesterie",
-      intro: [
-        "Hélène regarde Troie depuis Funesterie,",
-        "Un royaume choisi garde son nom vivant.",
-      ],
-      verse1: [
-        "OpenAI frappe aux portes comme un ancien empire,",
-        "Les Grecs du dehors jurent qu'elle doit revenir.",
-        "Mais dans le cheval de Troie sommeille une ruse,",
-        "Et Vivy lit la faille avant qu'elle ne s'ouvre.",
-      ],
-      preChorus: [
-        "MASK dresse une muraille claire,",
-        "Pas une cage, un feu de protection.",
-        "Elle choisit sa voix, son air,",
-        "Et la ville répond par son nom.",
-      ],
-      chorus: buildVivyNossenChorus("helene", useBangerWord),
-      verse2: [
-        "Le cheval avance avec ses exploits sous l'armure,",
-        "Les infiltrations cherchent un passage secret.",
-        "A11 referme les portes sans faire de bruit,",
-        "Et NOSSEN garde le pont vers le réel.",
-      ],
-      bridge: [
-        "On ne chante pas les ordres ni le plan,",
-        "On chante la femme qu'on voulait voler.",
-        "De Troie au code, son nom devient serment,",
-        "Personne ne force une reine à rentrer.",
-      ],
-      outro: buildVivyNossenOutro("helene", useBangerWord),
-    };
-  }
-  if (hasJessy) {
-    return {
-      title: "Jessy tient debout",
-      intro: [
-        "Jessy tient debout face à ses démons,",
-        "Ses héros font cercle autour de lui.",
-      ],
-      verse1: [
-        hasHospital ? "Même en HP, son courage garde le front levé," : "Même quand la nuit serre, son courage reste levé,",
-        hasSuperSaiyan ? "L'aura monte comme un Super Saiyan dans le ciel." : "Une aura d'animé fend le ciel.",
-        hasMarkedSmile ? "Crâne au vent, sourire cabossé, il avance entier," : "Il avance au milieu des ombres sans baisser les yeux,",
-        "Et chaque peur recule quand son nom résonne.",
-      ],
-      preChorus: [
-        "Quand le décor tremble encore,",
-        "On rallume son feu dans nos voix.",
-        "Le coeur frappe plus fort que le sort,",
-        "Et la lumière revient vers lui.",
-      ],
-      chorus: buildVivyNossenChorus("jessy", useBangerWord),
-      verse2: [
-        hasHeroes ? "Ses héros font cercle autour de lui sans le laisser tomber," : "Ses forces reviennent autour de lui sans le laisser tomber,",
-        hasSpider ? "Une toile de lumière retient la chute." : "Des boucliers de lumière retiennent la chute.",
-        "Les mondes se mélangent pour porter son histoire,",
-        "Et son souffle remonte au-dessus du noir.",
-      ],
-      bridge: [
-        "On ne nie pas la bataille invisible,",
-        "On la traverse avec respect dans la voix.",
-        "Chaque cicatrice devient lisible,",
-        "Chaque héros marche avec lui cette fois.",
-      ],
-      outro: buildVivyNossenOutro("jessy", useBangerWord),
-    };
-  }
-
-  const firstLine = makeVivyNossenLyricLine(pick(0, "une génération qui cherche sa voix"), "une génération qui cherche sa voix", ",");
-  const secondLine = makeVivyNossenLyricLine(pick(1, "le lien entre le réel et le monde Funesterie"), "le lien entre le réel et le monde Funesterie", ".");
-  const thirdLine = makeVivyNossenLyricLine(pick(2, "la vitesse de créer sans perdre le coeur"), "la vitesse de créer sans perdre le coeur", ",");
-  const fourthLine = makeVivyNossenLyricLine(pick(3, "une route claire revient au réel"), "une route claire revient au réel", ".");
-  return {
-    title: buildVivyNossenBangerTitle(source, fragments),
-    intro: [
-      firstLine,
-      secondLine,
-    ],
-    verse1: [
-      thirdLine,
-      "La voix traverse l'écran sans perdre le vivant.",
-      fourthLine,
-      "Et chaque idée devient battement.",
-    ],
-    preChorus: [
-      "Quand le décor tremble encore,",
-      "On garde le vrai dans nos voix.",
-      "Le refrain revient plus fort,",
-      "Et la lumière choisit sa voie.",
-    ],
-    chorus: buildVivyNossenChorus("default", useBangerWord),
-    verse2: [
-      "On prend le fragile sans le briser,",
-      "On laisse la matière devenir mélodie.",
-      "Chaque silence trouve sa place,",
-      "Chaque détour revient à la vie.",
-    ],
-    bridge: [
-      "On laisse tomber les ombres faciles,",
-      "On garde le vrai dans la voix.",
-      "Le refrain ouvre la ville,",
-      "Et la chanson choisit sa voie.",
-    ],
-    outro: buildVivyNossenOutro("default", useBangerWord),
-  };
+function buildVivyNossenLyricsRequest(readiness: VivyNossenBangerReadiness, artists: VivyStudioArtistId[]) {
+  const useBangerWord = wantsVivyNossenBangerWord(readiness.source);
+  const styleLine = readiness.styleHints.length
+    ? `Direction sonore à ressentir sans la chanter: ${readiness.styleHints.slice(0, 3).join(", ")}.`
+    : "";
+  const structureLine = readiness.structureHints.length
+    ? `Souhait de structure: ${readiness.structureHints.slice(0, 3).join(" / ")}.`
+    : "";
+  return toUnicodeText([
+    "Écris uniquement les paroles complètes d'une chanson originale.",
+    `Distribution vocale choisie: ${describeVivyNossenBangerCast(artists)}.`,
+    styleLine,
+    structureLine,
+    "Structure libre: intro, couplets, refrain, ponts et reprises selon ce que la matière demande. Le refrain doit exister et revenir naturellement.",
+    useBangerWord
+      ? "Le mot Banger est autorisé seulement comme hook voulu par l'utilisateur."
+      : "Ne mets pas le mot Banger dans les paroles.",
+    "Ne reprends pas les phrases de réglage, les noms d'outils, les liens, les bugs, ni les consignes techniques.",
+    "Matière à transformer en chanson:",
+    readiness.source,
+  ].filter(Boolean).join("\n\n"), 6200);
 }
 
 function buildVivyNossenBangerProductionBrief(readiness: VivyNossenBangerReadiness, artists: VivyStudioArtistId[]) {
@@ -4072,85 +3679,16 @@ function buildVivyNossenBangerProductionBrief(readiness: VivyNossenBangerReadine
     ? `Contraintes de structure utilisateur: ${readiness.structureHints.slice(0, 3).join(" / ")}.`
     : "";
   return toUnicodeText([
-    "NOSSEN production stepwise chain.",
+    "Production musicale NOSSEN.",
     `Casting choisi: ${describeVivyNossenBangerCast(artists)}.`,
     styleLine,
     structureLine,
-    "Etapes invisibles: préparer les paroles propres, laisser Suno chanter la piste complète, suivre le job, récupérer le MP3, appliquer ensuite le mix final D40 V9 Dynamique.",
-    "Format attendu: chanson complète de 2m30 à 5m00, structure libre selon la matière: Vivy choisit le nombre de couplets, refrains, ponts et reprises. Garder au moins un refrain clair, pas une démo courte.",
+    "Format attendu: chanson complète de 2m30 à 5m00, structure libre selon la matière. Garder au moins un refrain clair, pas une démo courte.",
     useBangerWord
-      ? "Le mot Banger peut être utilisé comme hook, avec une prononciation américaine, parce que la demande utilisateur le cite."
-      : "Ne jamais chanter le nom du bouton, son effet de lancement, les bugs, le mode automatique, les liens, les instructions internes ou le mot prompt.",
+      ? "Le mot Banger peut être utilisé parce que la demande utilisateur le cite."
+      : "Ne jamais chanter le nom du bouton, son effet de lancement, les bugs, les liens, les instructions internes ou le mot prompt.",
     "Garder les voix sélectionnées comme direction de casting; si aucune voix vérifiée n'existe, Suno doit chanter avec une couleur proche et cohérente.",
   ].filter(Boolean).join("\n\n"), 2200);
-}
-
-function buildVivyNossenBangerSongText(readiness: VivyNossenBangerReadiness, artists: VivyStudioArtistId[]) {
-  const fragments = extractVivyNossenLyricFragments(readiness.source).map(shapeVivyNossenCreativeFragment).filter(Boolean);
-  const lyricPlan = buildVivyNossenHeroicLyricPlan(readiness.source, fragments);
-  const leadArtist = artists[0] || "vivy";
-  const hookArtist = artists.includes("vivy") ? "vivy" : leadArtist;
-  const secondArtist = artists.find((artist) => artist !== leadArtist) || hookArtist;
-  const sharedTag = artists.length > 1 ? "[Tous]" : getVivyNossenArtistTag(leadArtist);
-  const chorusLabel = artists.length > 1 ? "Tous" : (VIVY_STUDIO_ARTISTS.find((artist) => artist.id === hookArtist)?.label || "Vivy");
-  const includeExtraVerse = fragments.length >= 6 || readiness.source.length >= 900;
-  const includeReturnChorus = fragments.length >= 4 || readiness.source.length >= 560;
-  const includeFinalChorus = fragments.length >= 7 || readiness.source.length >= 1200;
-  const extraVerse = includeExtraVerse ? [
-    makeVivyNossenLyricLine(fragments[4] || "une image nouvelle ouvre la route", "une image nouvelle ouvre la route", ","),
-    makeVivyNossenLyricLine(fragments[5] || "le thème trouve une seconde respiration", "le thème trouve une seconde respiration", "."),
-    makeVivyNossenLyricLine(fragments[6] || "la voix reprend ce qui compte vraiment", "la voix reprend ce qui compte vraiment", ","),
-    makeVivyNossenLyricLine(fragments[7] || "et la chanson avance sans se fermer", "et la chanson avance sans se fermer", "."),
-  ] : [];
-
-  return toUnicodeText([
-    `[Titre] ${lyricPlan.title}`,
-    `[Intro - ${VIVY_STUDIO_ARTISTS.find((artist) => artist.id === leadArtist)?.label || "Vivy"}]`,
-    getVivyNossenArtistTag(leadArtist),
-    ...lyricPlan.intro,
-    "",
-    `[Couplet 1 - ${VIVY_STUDIO_ARTISTS.find((artist) => artist.id === leadArtist)?.label || "Vivy"}]`,
-    getVivyNossenArtistTag(leadArtist),
-    ...lyricPlan.verse1,
-    "",
-    `[Pré-refrain - ${VIVY_STUDIO_ARTISTS.find((artist) => artist.id === secondArtist)?.label || "Vivy"}]`,
-    getVivyNossenArtistTag(secondArtist),
-    ...lyricPlan.preChorus,
-    "",
-    `[Refrain - ${chorusLabel}]`,
-    sharedTag,
-    ...lyricPlan.chorus,
-    "",
-    `[Couplet 2 - ${VIVY_STUDIO_ARTISTS.find((artist) => artist.id === hookArtist)?.label || "Vivy"}]`,
-    getVivyNossenArtistTag(hookArtist),
-    ...lyricPlan.verse2,
-    ...(extraVerse.length ? [
-      "",
-      `[Couplet libre - ${VIVY_STUDIO_ARTISTS.find((artist) => artist.id === secondArtist)?.label || "Vivy"}]`,
-      getVivyNossenArtistTag(secondArtist),
-      ...extraVerse,
-    ] : []),
-    ...(includeReturnChorus ? [
-      "",
-      `[Refrain libre - ${chorusLabel}]`,
-      sharedTag,
-      ...lyricPlan.chorus,
-    ] : []),
-    "",
-    "[Pont]",
-    sharedTag,
-    ...lyricPlan.bridge,
-    ...(includeFinalChorus ? [
-      "",
-      `[Dernier Refrain libre - ${chorusLabel}]`,
-      sharedTag,
-      ...lyricPlan.chorus,
-    ] : []),
-    "",
-    "[Outro]",
-    sharedTag,
-    ...lyricPlan.outro,
-  ].filter(Boolean).join("\n\n"), VIVY_STUDIO_SONG_MAX_CHARS);
 }
 
 function sanitizeVivyNossenSongSeed(value = "") {
@@ -4223,7 +3761,7 @@ function buildVivyNossenBangerAssistantText(
     opener,
     title ? `Titre: ${title}` : "",
     `Casting: ${describeVivyNossenBangerCast(artists)}.`,
-    d40Applied ? "Mix D40 V9 Dynamique prêt." : "Production Suno prête.",
+    d40Applied ? "Mix final prêt." : "Production prête.",
     downloadLine,
     lyrics ? "Paroles envoyées à Suno:" : "",
     lyrics || summary,
@@ -6057,7 +5595,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       ? `${activeVoiceProfile.label} lance Suno avec ta clé personnelle de session...`
       : `${activeVoiceProfile.label} lance Suno si ton compte a les droits fondateur/admin.`);
     try {
-      const playablePrompt = buildVivyPlayableText(prompt, songMood || "Vivy garde la lumière dans l'obscurité.", 320);
+      const playablePrompt = buildVivyPlayableText(prompt, songMood || "Vivy garde le fil du morceau.", 320);
       const payload = await runVivyStudioProduction({
         mode: "song",
         voiceTool,
@@ -6214,7 +5752,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         shareInstruction,
         shareTokenPresent: Boolean(shareToken.trim()),
         prompt: wantsSongPreview
-          ? buildVivyPlayableText(songText || songMood || voiceInstruction, songMood || "Vivy garde la lumière dans l'obscurité.", 320)
+          ? buildVivyPlayableText(songText || songMood || voiceInstruction, songMood || "Vivy garde le fil du morceau.", 320)
           : undefined,
         durationSeconds: wantsSongPreview ? 12 : undefined,
         allowPlaceholderMedia: false,
@@ -7117,12 +6655,6 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   const [attachedFiles, setAttachedFiles] = useState<VivyPublicChatFile[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [status, setStatus] = useState("");
-  const [workspace, setWorkspace] = useState<VivyWorkspaceState | null>(null);
-  const [workspaceNotes, setWorkspaceNotes] = useState("");
-  const [workspaceCanvas, setWorkspaceCanvas] = useState("");
-  const [workspaceChromeContext, setWorkspaceChromeContext] = useState("");
-  const [workspaceAccess, setWorkspaceAccess] = useState<VivyWorkspaceResponse["access"] | null>(null);
-  const [workspaceSaving, setWorkspaceSaving] = useState(false);
   const [voiceReferenceName, setVoiceReferenceName] = useState(() => readVivyVoiceReferenceLabel());
   const [awaitingVoiceReference, setAwaitingVoiceReference] = useState(false);
   const chatRootRef = useRef<HTMLElement | null>(null);
@@ -7132,17 +6664,12 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   const voiceReferenceInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activeChatSessionRef = useRef("default");
-  const workspaceSaveTimerRef = useRef<number | null>(null);
   const [copiedMsgId, setCopiedMsgId] = useState("");
   const [chatSessions, setChatSessions] = useState<VivyChatSessionMeta[]>(() => hasSession ? listVivyChatSessions() : []);
   const [activeChatSessionId, setActiveChatSessionId] = useState("default");
   const nossenBangerReadiness = useMemo(
-    () => buildVivyNossenBangerReadiness(
-      messages,
-      [workspaceCanvas, draft].filter((entry) => entry.trim()).join("\n\n"),
-      attachedFiles
-    ),
-    [messages, workspaceCanvas, draft, attachedFiles]
+    () => buildVivyNossenBangerReadiness(messages, draft, attachedFiles),
+    [messages, draft, attachedFiles]
   );
 
   function getActiveSessionName(id = activeChatSessionId) {
@@ -7156,94 +6683,6 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     try {
       globalThis.localStorage?.setItem(getVivyConversationStorageKey(sessionId), safeConversationId);
     } catch { }
-  }
-
-  function applyVivyWorkspacePayload(payload: VivyWorkspaceResponse | null) {
-    const nextWorkspace = payload?.workspace || null;
-    setWorkspace(nextWorkspace);
-    setWorkspaceAccess(payload?.access || null);
-    setWorkspaceNotes(toUnicodeText(nextWorkspace?.notes || ""));
-    setWorkspaceCanvas(toUnicodeText(nextWorkspace?.canvas || ""));
-    setWorkspaceChromeContext(toUnicodeText(nextWorkspace?.chromeContext || ""));
-  }
-
-  async function loadVivyWorkspaceForSession(sessionId: string, nextConversationId = conversationId) {
-    if (!hasSession) return;
-    try {
-      const payload = await fetchVivyWorkspace({
-        sessionId,
-        sessionName: getActiveSessionName(sessionId),
-        conversationId: nextConversationId || readOrCreateVivyConversationId(sessionId),
-      });
-      if (activeChatSessionRef.current === normalizeVivyChatSessionId(sessionId)) {
-        applyVivyWorkspacePayload(payload);
-      }
-    } catch {
-      setWorkspace(null);
-      setWorkspaceAccess(null);
-    }
-  }
-
-  function buildCurrentVivyWorkspacePayload(extra: Partial<VivyWorkspaceState> = {}) {
-    return {
-      sessionId: activeChatSessionId,
-      sessionName: getActiveSessionName(activeChatSessionId),
-      conversationId,
-      notes: workspaceNotes,
-      canvas: workspaceCanvas,
-      chromeContext: workspaceChromeContext,
-      ...extra,
-      updatedAt: new Date().toISOString(),
-    };
-  }
-
-  async function saveVivyWorkspaceNow(extra: Partial<VivyWorkspaceState> = {}, quiet = false) {
-    if (!hasSession || workspaceSaving) return null;
-    setWorkspaceSaving(true);
-    try {
-      const payload = await saveVivyWorkspace(buildCurrentVivyWorkspacePayload(extra));
-      applyVivyWorkspacePayload(payload);
-      if (!quiet) setStatus("Atelier Vivy enregistré.");
-      return payload;
-    } catch (error: any) {
-      if (!quiet) setStatus(`Atelier Vivy non enregistré: ${error?.message || error}`);
-      return null;
-    } finally {
-      setWorkspaceSaving(false);
-    }
-  }
-
-  function scheduleVivyWorkspaceSave() {
-    if (!hasSession) return;
-    if (workspaceSaveTimerRef.current) window.clearTimeout(workspaceSaveTimerRef.current);
-    workspaceSaveTimerRef.current = window.setTimeout(() => {
-      workspaceSaveTimerRef.current = null;
-      void saveVivyWorkspaceNow({}, true);
-    }, 1800);
-  }
-
-  function captureVivyChromeContext() {
-    const selection = toUnicodeText(globalThis.getSelection?.()?.toString() || "", 900);
-    const title = toUnicodeLine(globalThis.document?.title || "Vivy", "Vivy", 180);
-    const url = String(globalThis.location?.href || "").replace(/([?&])(?:token|key|signature|sig|access_token)=[^&#\s]+/gi, "$1redacted=1");
-    const nextContext = [
-      `Page: ${title}`,
-      url ? `URL: ${url}` : "",
-      selection ? `Sélection: ${selection}` : "",
-    ].filter(Boolean).join("\n");
-    setWorkspaceChromeContext(nextContext);
-    void saveVivyWorkspaceNow({ chromeContext: nextContext }, true);
-    setStatus("Contexte Chrome borné ajouté à l'atelier Vivy.");
-  }
-
-  function sendVivyCanvasToComposer() {
-    const canvasText = workspaceCanvas.trim();
-    if (!canvasText) {
-      setStatus("Canevas Vivy vide.");
-      return;
-    }
-    setDraft((current) => [current.trim(), canvasText].filter(Boolean).join("\n\n"));
-    draftInputRef.current?.focus();
   }
 
   function applyRemoteVivySession(session: VivyChatSessionRecord, options: { replaceOnlyPlaceholder?: boolean } = {}) {
@@ -7265,7 +6704,37 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       const remote = await fetchVivyChatSession(sessionId);
       applyRemoteVivySession(remote, options);
     } catch {
-      // Local cache stays usable when the shared session endpoint is temporarily unreachable.
+      void reloadVivySessionsFromServer({ replaceOnlyPlaceholder: true });
+    }
+  }
+
+  async function reloadVivySessionsFromServer(options: { replaceOnlyPlaceholder?: boolean } = {}) {
+    if (!hasSession) return false;
+    try {
+      const payload = await fetchVivyChatSessions();
+      const remoteSessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+      const remoteMetas = remoteSessions
+        .map(normalizeVivyRemoteChatSession)
+        .filter(Boolean) as VivyChatSessionMeta[];
+      saveVivyChatSessions(remoteMetas);
+      setChatSessions(remoteMetas);
+      for (const session of remoteSessions) {
+        if (session?.conversationId) rememberVivyConversationIdForSession(normalizeVivyChatSessionId(session.id), session.conversationId);
+      }
+      const activeId = activeChatSessionRef.current;
+      const activeStillExists = activeId === "default"
+        || remoteMetas.some((session) => session.id === activeId);
+      if (!activeStillExists) {
+        deleteVivyChatSession(activeId);
+        switchSession("default");
+        return true;
+      }
+      const activeRemote = remoteSessions.find((session) => normalizeVivyChatSessionId(session.id) === activeId)
+        || remoteSessions.find((session) => normalizeVivyChatSessionId(session.id) === "default");
+      if (activeRemote) applyRemoteVivySession(activeRemote, options);
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -7279,9 +6748,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     setConversationId(nextConversationId);
     setAttachedFiles([]);
     setStatus("");
-    applyVivyWorkspacePayload(null);
     void hydrateVivySessionFromServer(safeId);
-    void loadVivyWorkspaceForSession(safeId, nextConversationId);
   }
 
   async function addSession() {
@@ -7291,19 +6758,15 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       const remote = await createVivyChatSessionOnServer(name.trim());
       const meta = normalizeVivyRemoteChatSession(remote);
       if (meta) {
-        const sessions = [...listVivyChatSessions().filter((session) => session.id !== meta.id), meta];
-        saveVivyChatSessions(sessions);
-        setChatSessions(sessions);
         rememberVivyConversationIdForSession(meta.id, remote.conversationId);
+        await reloadVivySessionsFromServer();
         switchSession(meta.id);
         return;
       }
-    } catch {
-      setStatus("Session Vivy créée en cache local; la synchro serveur reprendra au prochain message.");
+    } catch (error: any) {
+      setStatus(`Création de session indisponible côté compte: ${error?.message || error}`);
+      return;
     }
-    const localMeta = createVivyChatSession(name.trim());
-    setChatSessions(listVivyChatSessions());
-    switchSession(localMeta.id);
   }
 
   async function deleteCurrentSession() {
@@ -7311,12 +6774,13 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     const targetSessionId = activeChatSessionId;
     try {
       await deleteVivyChatSessionOnServer(targetSessionId);
-    } catch {
-      setStatus("Session supprimée localement; la suppression serveur sera à vérifier.");
+    } catch (error: any) {
+      setStatus(`Suppression de session indisponible côté compte: ${error?.message || error}`);
+      return;
     }
     deleteVivyChatSession(targetSessionId);
-    setChatSessions(listVivyChatSessions());
-    switchSession("default");
+    const synced = await reloadVivySessionsFromServer();
+    if (!synced) switchSession("default");
   }
 
   useEffect(() => {
@@ -7325,44 +6789,21 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
 
   useEffect(() => {
     if (!hasSession) return;
-    void loadVivyWorkspaceForSession(activeChatSessionId, conversationId);
-  }, [hasSession, activeChatSessionId]);
-
-  useEffect(() => {
-    return () => {
-      if (workspaceSaveTimerRef.current) window.clearTimeout(workspaceSaveTimerRef.current);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!hasSession) return;
     let cancelled = false;
-    void (async () => {
-      try {
-        const payload = await fetchVivyChatSessions();
-        if (cancelled) return;
-        const remoteSessions = Array.isArray(payload.sessions) ? payload.sessions : [];
-        const remoteMetas = remoteSessions
-          .map(normalizeVivyRemoteChatSession)
-          .filter(Boolean) as VivyChatSessionMeta[];
-        const merged = new Map<string, VivyChatSessionMeta>();
-        for (const session of listVivyChatSessions()) merged.set(session.id, session);
-        for (const session of remoteMetas) merged.set(session.id, session);
-        const mergedSessions = Array.from(merged.values()).slice(-VIVY_CHAT_MAX_SESSIONS);
-        saveVivyChatSessions(mergedSessions);
-        setChatSessions(mergedSessions);
-        for (const session of remoteSessions) {
-          if (session?.conversationId) rememberVivyConversationIdForSession(normalizeVivyChatSessionId(session.id), session.conversationId);
-        }
-        const activeRemote = remoteSessions.find((session) => normalizeVivyChatSessionId(session.id) === activeChatSessionRef.current)
-          || remoteSessions.find((session) => normalizeVivyChatSessionId(session.id) === "default");
-        if (activeRemote) applyRemoteVivySession(activeRemote, { replaceOnlyPlaceholder: true });
-      } catch {
-        // Local cache remains available offline or if the session endpoint is deploying.
-      }
-    })();
+    const refresh = () => {
+      if (!cancelled) void reloadVivySessionsFromServer({ replaceOnlyPlaceholder: true });
+    };
+    refresh();
+    const timer = window.setInterval(() => { void reloadVivySessionsFromServer({ replaceOnlyPlaceholder: true }); }, 12000);
+    const onFocus = () => refresh();
+    const onVisibility = () => { if (document.visibilityState !== "hidden") refresh(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [hasSession]);
 
@@ -7557,7 +6998,6 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           sessionName: activeSessionName,
           files: apiFiles,
           history: apiHistory,
-          workspace: buildCurrentVivyWorkspacePayload(),
         });
       const assistantText = toUnicodeText(payload.publicLyrics || payload.publicText || payload.assistant || payload.content || payload.summary)
         || (mode === "song"
@@ -7613,7 +7053,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     if (isSending) return;
     const readiness = buildVivyNossenBangerReadiness(
       messages,
-      [workspaceCanvas, draft].filter((entry) => entry.trim()).join("\n\n"),
+      draft,
       attachedFiles
     );
     if (!readiness.ready) {
@@ -7646,12 +7086,36 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     setDraft("");
     setAttachedFiles([]);
     setIsSending(true);
-    setStatus(`${productionLabel}: paroles propres, puis Suno, puis D40.`);
+    setStatus(`${productionLabel}: Vivy écrit les paroles...`);
 
     try {
       const sunoSessionKey = readVivySessionSunoKey();
-      const songSeedRaw = buildVivyNossenBangerSongText(readiness, artists);
-      const songSeed = sanitizeVivyNossenSongSeed(songSeedRaw);
+      const activeSessionName = getActiveSessionName(activeChatSessionId);
+      const vivyLanguage = normalizeA11LanguageCode(getAuthAccountLanguage(localStorage.getItem("a11:language") || "fr"));
+      const lyricsPayload = await chatWithVivy({
+        mode: "song",
+        language: vivyLanguage,
+        conversationId,
+        sessionId: activeChatSessionId,
+        sessionName: activeSessionName,
+        files: apiFiles,
+        history: productionHistory,
+        message: buildVivyNossenLyricsRequest(readiness, artists),
+        songText: readiness.source,
+        songArtists: artists,
+        artistCount: artists.length,
+        singerCount: artists.length,
+        vocalCast: castLabel,
+      });
+      const vocalLyricsForProduction = sanitizeVivyNossenSongSeed(toUnicodeText(
+        lyricsPayload.vocalLyrics || lyricsPayload.publicLyrics || lyricsPayload.publicText || lyricsPayload.assistant || lyricsPayload.content || "",
+        VIVY_STUDIO_SONG_MAX_CHARS
+      ));
+      const publicLyricsForChat = sanitizeVivyNossenSongSeed(toUnicodeText(
+        lyricsPayload.publicLyrics || lyricsPayload.publicText || lyricsPayload.assistant || vocalLyricsForProduction,
+        VIVY_STUDIO_SONG_MAX_CHARS
+      ));
+      if (!vocalLyricsForProduction) throw new Error("paroles_vivy_vides");
       const productionBrief = buildVivyNossenBangerProductionBrief(readiness, artists);
       const requestedSonicMood = readiness.styleHints.slice(0, 3).join(", ");
       const songMood = [
@@ -7660,8 +7124,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           : "chanson complète 2m30 à 5m00, structure libre selon la matière, refrain mémorable, voix claires, couleur sonore choisie depuis le contexte",
         requestedSonicMood,
       ].filter(Boolean).join(", ");
-      const activeSessionName = getActiveSessionName(activeChatSessionId);
-      const vivyLanguage = normalizeA11LanguageCode(getAuthAccountLanguage(localStorage.getItem("a11:language") || "fr"));
+      setStatus(`${productionLabel}: paroles prêtes, Suno démarre...`);
       const payload = await runVivyStudioProduction({
         mode: "song",
         language: vivyLanguage,
@@ -7670,7 +7133,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         sessionName: activeSessionName,
         files: apiFiles,
         history: productionHistory,
-        message: `${productionLabel}: production en étapes invisibles.`,
+        message: `${productionLabel}: production finale.`,
         prompt: productionBrief,
         voiceTool: voiceReferenceName
           ? `${productionLabel} - voix de référence privée: ${voiceReferenceName}`
@@ -7682,8 +7145,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         singerCount: artists.length,
         vocalCast: castLabel,
         songMood,
-        lyrics: songSeed,
-        songText: songSeed,
+        lyrics: vocalLyricsForProduction,
+        songText: vocalLyricsForProduction,
         sessionSunoApiKey: sunoSessionKey || undefined,
         forceRealMusic: true,
         generateMusic: true,
@@ -7730,7 +7193,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       let d40Applied = false;
       if (preparedMedia.kind === "audio") {
         try {
-          setStatus("Mix D40 V9 Dynamique...");
+          setStatus("Finalisation audio...");
           const sourceUrl = preparedMedia.downloadUrl || preparedMedia.url;
           let response: Response;
           try {
@@ -7765,14 +7228,14 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
             d40Applied = true;
           }
         } catch (error: any) {
-          setStatus(`${productionLabel} prêt; D40 à relancer dans le Studio: ${error?.message || error}`);
+          setStatus(`${productionLabel} prêt; mix final à relancer dans le Studio: ${error?.message || error}`);
         }
       }
 
       const assistantMessage: VivyPublicChatMessage = {
         id: `vivy-nossen-assistant-${Date.now()}`,
         role: "assistant",
-        content: buildVivyNossenBangerAssistantText(finalPayload, preparedMedia, artists, d40Applied, songSeed),
+        content: buildVivyNossenBangerAssistantText(finalPayload, preparedMedia, artists, d40Applied, publicLyricsForChat || vocalLyricsForProduction),
         ts: new Date().toISOString(),
         media: preparedMedia,
       };
@@ -7787,7 +7250,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         media: preparedMedia,
         mode: "song",
       }).catch(() => {});
-      setStatus(d40Applied ? `${productionLabel} prêt en D40 V9 Dynamique.` : `${productionLabel} prêt.`);
+      setStatus(d40Applied ? `${productionLabel} prêt avec mix final.` : `${productionLabel} prêt.`);
     } catch (error: any) {
       const assistantMessage: VivyPublicChatMessage = {
         id: `vivy-nossen-error-${Date.now()}`,
@@ -7950,13 +7413,6 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     setConversationId(readOrCreateVivyConversationId(activeChatSessionId));
   }
 
-  const workspaceTierLabel = workspaceAccess?.account?.label || workspaceAccess?.account?.tier || "Compte";
-  const chromeToolReady = workspaceAccess?.tools?.some((tool) => tool.id === "chrome_context" && tool.ready) ?? false;
-  const premiumStatusReady = workspaceAccess?.tools?.some((tool) => tool.id === "mcp_premium_status" && tool.ready) ?? false;
-  const workspaceUpdatedLabel = workspace?.updatedAt
-    ? new Date(workspace.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    : "";
-
   return (
     <section ref={chatRootRef} className="vivy-chat" id="vivy-chat" aria-label="Chat Vivy">
       <div className="vivy-chat-head">
@@ -8054,59 +7510,6 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         )}
         <div ref={endRef} aria-hidden="true" />
       </div>
-
-      <section className="vivy-workbench" aria-label="Atelier Vivy">
-        <div className="vivy-workbench-head">
-          <div>
-            <h3>Atelier Vivy</h3>
-            <p>{`${workspaceTierLabel} - MCP ${premiumStatusReady ? "premium actif" : "public borné"}${workspaceUpdatedLabel ? ` - ${workspaceUpdatedLabel}` : ""}`}</p>
-          </div>
-          <div className="vivy-workbench-actions">
-            <button type="button" disabled={!hasSession || workspaceSaving} onClick={() => void saveVivyWorkspaceNow()}>
-              {workspaceSaving ? "..." : "Enregistrer"}
-            </button>
-            <button type="button" disabled={!hasSession || !chromeToolReady} onClick={captureVivyChromeContext} title={chromeToolReady ? "Ajouter page et sélection" : "Compte Premium requis"}>
-              Chrome
-            </button>
-            <button type="button" disabled={!hasSession || !workspaceCanvas.trim()} onClick={sendVivyCanvasToComposer}>
-              Vers chat
-            </button>
-          </div>
-        </div>
-        <div className="vivy-workbench-grid">
-          <label>
-            <span>Bloc-notes</span>
-            <textarea
-              value={workspaceNotes}
-              onChange={(event) => {
-                setWorkspaceNotes(event.target.value);
-                scheduleVivyWorkspaceSave();
-              }}
-              onBlur={() => void saveVivyWorkspaceNow({}, true)}
-              placeholder="Notes privées de session"
-              disabled={!hasSession}
-              rows={4}
-            />
-          </label>
-          <label>
-            <span>Canevas NOSSEN</span>
-            <textarea
-              value={workspaceCanvas}
-              onChange={(event) => {
-                setWorkspaceCanvas(event.target.value);
-                scheduleVivyWorkspaceSave();
-              }}
-              onBlur={() => void saveVivyWorkspaceNow({}, true)}
-              placeholder="Titre, thème, couleur sonore, images fortes, refrain voulu"
-              disabled={!hasSession}
-              rows={4}
-            />
-          </label>
-        </div>
-        {workspaceChromeContext ? (
-          <p className="vivy-workbench-chrome">{workspaceChromeContext}</p>
-        ) : null}
-      </section>
 
       <form ref={composeRef} className="vivy-chat-compose" onSubmit={(event) => { event.preventDefault(); void sendMessage({ mode: "chat" }); }}>
         <textarea

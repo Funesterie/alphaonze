@@ -113,7 +113,9 @@ test('/api/mcp exposes account tier for authenticated basic users', async () => 
     assert.equal(json.account.pricing.monthlyEur, 0);
     assert.equal(json.account.permissions.publicEndpoints, true);
     assert.equal(json.account.permissions.privateMcpCall, false);
-    assert.equal(json.catalog.capabilities.find((capability) => capability.id === 'vivy-workbench').allowed, true);
+    assert.equal(json.catalog.capabilities.some((capability) => capability.id === 'vivy-workbench'), false);
+    assert.equal(json.catalog.capabilities.some((capability) => capability.id === 'vivy-notepad'), false);
+    assert.equal(json.catalog.capabilities.some((capability) => capability.id === 'vivy-canvas'), false);
     assert.equal(json.catalog.capabilities.find((capability) => capability.id === 'chrome-context').allowed, false);
     assert.equal(json.catalog.connectors.find((connector) => connector.id === 'github').minimumTier, 'founder');
   });
