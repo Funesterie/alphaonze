@@ -931,6 +931,20 @@ test('Suno payload can prepare a Djeff and Vivy duet instead of the old Vivy tem
   assert.doesNotMatch(payload.prompt, /Garde la lumière/);
 });
 
+test('Suno multi-artist fallback does not recycle stale generic couplets', () => {
+  const payload = buildVivySunoPayload({
+    songArtists: ['vivy', 'a11', 'k44'],
+    vocalCast: 'Trio Vivy + A11 + K44',
+    songMood: 'héroïque animé, pop rock cinématique, montée frisson',
+    songText: 'Jessy tient debout face à ses démons avec DBZ, Spider-Man, les Avengers et ses héros comme armure morale.',
+  });
+
+  assert.match(payload.prompt, /Jessy|DBZ|Spider-Man|Avengers|héros/i);
+  assert.match(payload.prompt, /\[Chorus - (?:Trio|Tous|Ensemble)\]/i);
+  assert.doesNotMatch(payload.prompt, /On entre dans|Chaque voix prend sa place|signal se façonne/i);
+  assert.doesNotMatch(payload.prompt, /Je garde une note claire|lumière qui répond|Voix machine/i);
+});
+
 test('an unrelated Djeff theme never reuses the old mechanical song template', () => {
   const lyrics = buildVivyStructuredLyrics({
     songArtists: ['djeff'],
@@ -3416,6 +3430,28 @@ test('Vivy chat fallback answers the NOSSEN lyrics-in-music bug on topic', async
   assert.doesNotMatch(result.assistant, /Pour ce point, on avance simplement/i);
   assert.doesNotMatch(result.assistant, /Le bon prochain pas/i);
   assert.doesNotMatch(result.assistant, /formulaire|case technique|sensibilit[ée]|seuil/i);
+});
+
+test('Vivy keeps soft song ideas in chat until Chanson or NOSSEN is explicit', async () => {
+  const message = "j'aimerais faire une chanson sur mon pote Jessy et ses héros";
+
+  assert.equal(isDirectSongwritingRequest(message), false);
+
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-soft-song-idea',
+    message,
+    history: [
+      { role: 'user', content: 'Mon pote Jessy est en hopital psy face à ses démons' },
+      { role: 'user', content: 'Je veux raconter son histoire à travers DBZ, Spider-Man et les Avengers' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.notEqual(result.aiMode, 'deterministic_songcraft');
+  assert.match(result.assistant, /Jessy|héros|DBZ|Spider-Man|Avengers|angle|histoire/i);
+  assert.doesNotMatch(result.assistant, /\[(?:Intro|Verse|Couplet|Pre-Chorus|Pré-refrain|Chorus|Refrain|Bridge|Pont|Outro)/i);
+  assert.doesNotMatch(result.assistant, /Je prends ça comme une vraie discussion|Le bon prochain pas/i);
 });
 
 test('Vivy song mode structures the same rap draft when Chanson is explicit', async () => {

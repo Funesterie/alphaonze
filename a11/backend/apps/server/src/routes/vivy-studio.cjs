@@ -3055,10 +3055,13 @@ function buildVivyGeneralChatFallbackReply({ message = '', current = '', history
       && /\b(pense|avis|idee|idée|theorie|théorie|intuition|comprendre)\b/.test(currentFolded)) {
       return "Mon avis franc: c'est une vraie idée de travail. Je peux être d'accord, douter, ou te proposer un test concret.";
     }
+    if (isVivySoftSongIdeaMessage(message)) {
+      return buildVivySoftSongIdeaChatReply({ message, historyText });
+    }
     const subject = cleanOneLine(current || summarizeChatMessage(message), 'ton dernier message', 180);
     return [
-      `Je prends ça comme une vraie discussion: ${subject}`,
-      "Le bon prochain pas, c'est de répondre au sujet précis que tu veux pousser, pas de basculer en formulaire ou en chanson.",
+      `Je te suis sur ça: ${subject}`,
+      "Je reste avec le fond avant de transformer en sortie. Dis-moi ce qui compte le plus dans l'idée, et je garde ce centre-là.",
     ].join('\n');
   })();
 
@@ -3066,6 +3069,44 @@ function buildVivyGeneralChatFallbackReply({ message = '', current = '', history
     angle,
     fileLine,
   ].filter(Boolean).join('\n\n'), 1500);
+}
+
+function isVivySoftSongIdeaMessage(message = '') {
+  const normalized = foldTextForLookup(message);
+  if (!normalized || normalized.length > 420) return false;
+  const mentionsSong = /\b(chanson|musique|son|morceau|track|paroles)\b/.test(normalized);
+  if (!mentionsSong) return false;
+  return /\b(j aimerais|je voudrais|j ai envie|je veux|j ai une idee|j ai une idée|on pourrait|ca serait cool|ça serait cool)\b/.test(normalized)
+    || /\b(idee|idée)\s+de\s+chanson\b/.test(normalized);
+}
+
+function extractVivySoftSongAnchors(text = '') {
+  const source = cleanText(text, 1800);
+  const anchors = [];
+  const add = (label, pattern) => {
+    if (anchors.length < 5 && pattern.test(source) && !anchors.includes(label)) anchors.push(label);
+  };
+  add('Jessy', /\bjessy\b/i);
+  add('DBZ', /\b(?:dbz|dragon\s*ball|super\s*saiyan)\b/i);
+  add('Spider-Man', /\bspider[-\s]?man\b/i);
+  add('Avengers', /\bavengers?\b/i);
+  add('ses héros', /\b(?:h[ée]ros|hero)\b/i);
+  add('son histoire', /\bhistoire\b/i);
+  return anchors;
+}
+
+function buildVivySoftSongIdeaChatReply({ message = '', historyText = '' } = {}) {
+  const anchors = extractVivySoftSongAnchors(`${historyText}\n${message}`);
+  const subject = cleanOneLine(summarizeChatMessage(message), "l'idée de chanson", 180);
+  const firstLine = anchors.length
+    ? `Oui, je vois l'angle: ${anchors.join(', ')}.`
+    : `Oui, on peut partir de cette idée: ${subject}.`;
+
+  return cleanText([
+    firstLine,
+    "Je n'écris pas les paroles tout de suite: je veux d'abord sentir ce qui doit rester au centre de l'histoire.",
+    "Là, le noyau serait une personne réelle qui tient debout, avec les héros comme armure morale plutôt que comme décor. Deux détails concrets de plus, et je pourrai en faire une chanson qui vise juste.",
+  ].join('\n\n'), 1400);
 }
 
 function isVivyRepeatComplaint(message = '') {

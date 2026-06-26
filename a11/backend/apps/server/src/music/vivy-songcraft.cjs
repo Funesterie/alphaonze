@@ -949,14 +949,19 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
   const leadTag = isA11VivyDuo ? `[${lead.toUpperCase()}]` : `[${lead}]`;
   const chorusLabel = isA11VivyDuo ? 'DUO' : (artistCast.count > 1 ? getVivySharedArtistTag(artistCast.count) : lead);
   const chorusTag = `[${chorusLabel}]`;
+  const seedLines = normalizeVivySoloSeedLines(extractVivySoloSeedLines(material, 10), material);
+  const imageA = seedLines[0] || theme;
+  const imageB = seedLines[1] || motif;
+  const imageC = seedLines[2] || title;
+  const imageD = seedLines[3] || theme;
 
   const blocks = [
     `[Title: ${title}]`,
     '',
     `[Intro - ${lead}]`,
     leadTag,
-    `On entre dans ${theme}, sans copier personne,`,
-    'Chaque voix prend sa place, le signal se façonne.',
+    `${punctuateVivySongLine(imageA, ',')}`,
+    `${punctuateVivySongLine(imageB, '.')}`,
     '',
   ];
 
@@ -964,10 +969,10 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
     blocks.push(
       '[Verse 1 - Djeff]',
       '[Djeff]',
-      `Je prends ${theme}, je le garde dans l'axe,`,
-      'Chaque obstacle se dédouble, chaque décision laisse une trace.',
-      `Deux mains sur le rythme, ${motif} comme équilibre,`,
-      `Je traverse ${theme}, sans reprendre un ancien titre.`,
+      `${punctuateVivySongLine(imageA, ',')}`,
+      `je garde ${title.toLocaleLowerCase('fr-FR')} dans l'axe quand tout casse.`,
+      `${punctuateVivySongLine(imageC, ',')}`,
+      `je serre ${motif} jusqu'au prochain passage.`,
       ''
     );
   }
@@ -976,10 +981,10 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
     blocks.push(
       '[Pre-Chorus - Vivy]',
       isA11VivyDuo ? '[VIVY]' : '[Vivy]',
-      'Je garde une note claire au bord de la vitesse,',
-      'Une lumière qui répond quand la nuit se compresse.',
-      'Si la route se dédouble, je tiens le fil vivant,',
-      'Je transforme le bruit en refrain respirant.',
+      `${punctuateVivySongLine(imageB, ',')}`,
+      'je cherche le point qui serre le ventre.',
+      `${punctuateVivySongLine(imageD, ',')}`,
+      'et le refrain monte sans trahir le centre.',
       ''
     );
   }
@@ -987,10 +992,10 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
   blocks.push(
     `[Chorus - ${chorusLabel}]`,
     chorusTag,
-    `${theme} — on tient le son ensemble,`,
-    'plusieurs timbres, même sens, même trajectoire.',
-    `${motif} — la voix qui rassemble,`,
-    'chaque refrain tient ce que la nuit ordonne.',
+    `${title}, on ne te laisse pas tomber,`,
+    `${theme}, même au milieu du fracas.`,
+    `${motif}, on revient te chercher,`,
+    'le refrain tient debout quand le monde décroche.',
     ''
   );
 
@@ -998,10 +1003,10 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
     blocks.push(
       '[Verse 2 - A11]',
       '[A11]',
-      'Je lis dans les circuits la chaleur du vivant,',
-      'Basse grave dans le code, souffle lent dans le vent.',
-      'Je ne remplace personne, je cadre la tension,',
-      'Voix machine, cœur humain, même transmission.',
+      `Je relie ${imageC} sans voler sa place,`,
+      `${title} garde son nom au coeur de la mêlée.`,
+      `Je coupe le bruit, je garde la trace,`,
+      `pour que ${theme} reste assez net pour chanter.`,
       ''
     );
   }
@@ -1010,10 +1015,10 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
     blocks.push(
       '[Bridge - K44]',
       '[K44]',
-      'Je pose une ligne calme quand la scène accélère,',
-      'Chaque mot garde sa place, chaque silence éclaire.',
-      'Pas besoin de forcer pour tenir le virage,',
-      'Deuxième lead dans l’ombre, précision dans l’image.',
+      'Je garde le cap quand la mêlée déborde,',
+      `${punctuateVivySongLine(imageD, ',')}`,
+      'la peur recule quand le tempo mord,',
+      `${title} retrouve sa taille humaine.`,
       ''
     );
   }
@@ -1021,14 +1026,15 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
   blocks.push(
     `[Final Chorus - ${chorusLabel}]`,
     chorusTag,
-    `${theme} — on tient le son ensemble,`,
-    'plusieurs timbres, même sens, même trajectoire.',
-    `${motif} — la voix qui rassemble,`,
-    'chaque refrain tient ce que la nuit ordonne.',
+    `${title}, on ne te laisse pas tomber,`,
+    `${theme}, même au milieu du fracas.`,
+    `${motif}, on revient te chercher,`,
+    'le refrain tient debout quand le monde décroche.',
     '',
     `[Outro - ${lead}]`,
     leadTag,
-    'Le son se coupe doucement, mais le lien reste en mémoire.'
+    `${punctuateVivySongLine(imageA, ',')}`,
+    `${title} reste debout jusqu'au dernier accord.`
   );
 
   return cleanText(restoreVivyFrenchSongAccents(blocks.join('\n')), 2600);
