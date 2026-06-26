@@ -2992,6 +2992,12 @@ export async function chatWithVivy(
     sessionId?: string;
     sessionName?: string;
     files?: VivyChatFileAttachment[];
+    songText?: string;
+    songMood?: string;
+    songArtists?: string[];
+    vocalCast?: string;
+    artistCount?: number;
+    singerCount?: number;
     workspace?: VivyWorkspaceStateInput;
   }
 ): Promise<VivyStudioProductionResult> {

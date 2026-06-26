@@ -3546,6 +3546,38 @@ function buildVivyNossenBangerReadiness(
   };
 }
 
+function inferVivyNossenSonicMood(readiness: Pick<VivyNossenBangerReadiness, "source" | "styleHints" | "mediaHints">, artists: VivyStudioArtistId[] = []) {
+  const explicit = readiness.styleHints.slice(0, 3).join(", ").trim();
+  if (explicit) return explicit;
+  const folded = foldForLookup([readiness.source, ...readiness.mediaHints].join("\n"));
+  if (/\bzorro\b|\bjusticier\b|\bmasque\b|\bepee\b|\bépée\b|\bcheval\s+noir\b/.test(folded)) {
+    return "latin cinematic pop-rock, guitare espagnole, palmas, castagnettes, trompettes western, batterie héroïque";
+  }
+  if (/\bpeter\s+pan\b|\bclochette\b|\bcrochet\b|\bneverland\b|\bpays\s+imaginaire\b|\bcrocodile\b|\btic\s*tac\b|\bpirate\b/.test(folded)) {
+    return "anime opening aventure, orchestral pop aérien, cloches féeriques, chœurs légers, batterie vive";
+  }
+  if (/\btoupie\b|\bbeyblade\b|\blanceurs?\b|\bspin\b|\bspinning\b/.test(folded)) {
+    return "electro pop tournoi, percussion tournoyante, basse ronde, claps rapides, synthés spirale, hook énergique";
+  }
+  if (/\bcycliste\b|\bcyclisme\b|\bvelo\b|\bvélo\b|\bpodium\b|\bpeloton\b|\balgerie\b|\balgérie\b/.test(folded)) {
+    return "road movie pop-rock, batterie roulante, basse motrice, guitares ouvertes, cuivres de podium, souffle de peloton";
+  }
+  if (/\bdbz\b|\bdragon\s*ball\b|\bsuper\s*saiyan\b|\bspider[-\s]?man\b|\bavengers?\b|\bmarvel\b|\bdc\s+comics?\b|\bheros\b|\bhéros\b|\banime\b/.test(folded)) {
+    return "anime opening héroïque, pop-rock cinématique, batterie massive, guitares lumineuses, chœurs larges, montée frisson";
+  }
+  if (/\btroie\b|\bhelene\b|\bhélène\b|\bcheval\s+de\s+troie\b|\bmythe\b|\bmytholog/.test(folded)) {
+    return "mythological electro-rock, tambours solennels, cordes dramatiques, synthés profonds, vocal héroïque";
+  }
+  if (/\bmoto\b|\bscooter\b|\bpignon\b|\bcouronne\b|\bradiateur\b|\bchaine\b|\bchaîne\b|\bmoteur\b|\bessence\b|\bhuile\b|\bstunt\b/.test(folded)) {
+    return "technical rap moto, basse lourde, drums secs, guitares garage, engine pulse, hook proche micro";
+  }
+  if (/\becrans?\b|\bécrans?\b|\bnouvelle\s+generation\b|\bnouvelle\s+génération\b|\breseaux\b|\bréseaux\b|\bnumerique\b|\bnumérique\b/.test(folded)) {
+    return "modern alt-pop numérique, basses rondes, pads granuleux, percussion glitch, hook humain";
+  }
+  const cast = describeVivyNossenBangerCast(artists);
+  return `${artists.length > 1 ? "production multi-voix" : "production vocale"} Funesterie, couleur sonore tirée du sujet, motifs concrets, refrain fort, mix moderne pour ${cast}`;
+}
+
 function inferVivyNossenBangerArtists(source = ""): VivyStudioArtistId[] {
   const folded = foldForLookup(source);
   const artists: VivyStudioArtistId[] = [];
@@ -3649,8 +3681,9 @@ function wantsVivyNossenBangerWord(source = "") {
 
 function buildVivyNossenLyricsRequest(readiness: VivyNossenBangerReadiness, artists: VivyStudioArtistId[]) {
   const useBangerWord = wantsVivyNossenBangerWord(readiness.source);
-  const styleLine = readiness.styleHints.length
-    ? `Direction sonore à ressentir sans la chanter: ${readiness.styleHints.slice(0, 3).join(", ")}.`
+  const sonicMood = inferVivyNossenSonicMood(readiness, artists);
+  const styleLine = sonicMood
+    ? `Direction sonore à ressentir sans la chanter: ${sonicMood}.`
     : "";
   const structureLine = readiness.structureHints.length
     ? `Souhait de structure: ${readiness.structureHints.slice(0, 3).join(" / ")}.`
@@ -3672,8 +3705,10 @@ function buildVivyNossenLyricsRequest(readiness: VivyNossenBangerReadiness, arti
 
 function buildVivyNossenBangerProductionBrief(readiness: VivyNossenBangerReadiness, artists: VivyStudioArtistId[]) {
   const useBangerWord = wantsVivyNossenBangerWord(readiness.source);
-  const styleLine = readiness.styleHints.length
-    ? `Style sonore utilisateur (direction uniquement, jamais paroles): ${readiness.styleHints.slice(0, 3).join(", ")}.`
+  const hasUserStyleHints = readiness.styleHints.length > 0;
+  const sonicMood = inferVivyNossenSonicMood(readiness, artists);
+  const styleLine = sonicMood
+    ? `${hasUserStyleHints ? "Style sonore utilisateur" : "Style sonore choisi par Vivy depuis la matière"} (direction uniquement, jamais paroles): ${sonicMood}.`
     : "";
   const structureLine = readiness.structureHints.length
     ? `Contraintes de structure utilisateur: ${readiness.structureHints.slice(0, 3).join(" / ")}.`
@@ -4500,7 +4535,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [songArtists, setSongArtists] = useState<VivyStudioArtistId[]>(() => (
     hasLegacyVivySunoSource ? ["vivy"] : normalizeVivyStudioArtists(initialDraft.songArtists)
   ));
-  const [songMood, setSongMood] = useState(String(initialDraft.songMood || "Electro pop dark cinematographique"));
+  const [songMood, setSongMood] = useState(String(initialDraft.songMood || ""));
   const [songText, setSongText] = useState(String(initialDraft.songText || ""));
   const [sunoSessionKey, setSunoSessionKey] = useState(() => readVivySessionSunoKey());
   const [shareTarget, setShareTarget] = useState(String(initialDraft.shareTarget || "YouTube"));
@@ -5646,7 +5681,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
           setVivyOutput(normalizeVivyStudioOutputForState([
             payload?.summary || "Pack Suno prêt.",
             "Suno non configuré côté serveur. Aucun ancien audio et aucune voix de secours ne sont utilisés.",
-            `Direction: ${songMood || "electro pop dark cinematographique"}`,
+            `Direction: ${songMood || "couleur sonore automatique depuis la matière"}`,
             `Casting: ${activeSongArtistCast.label}`,
             payloadAny?.publicLyrics ? "Paroles disponibles dans l'onglet Paroles." : "",
           ].filter(Boolean).join("\n")));
@@ -5695,7 +5730,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
           : "Voix chantée générée par Suno. La voix Suno Vivy doit encore être enregistrée pour conserver exactement son timbre.";
       setVivyOutput(normalizeVivyStudioOutputForState([
         "Production musicale Suno prête.",
-        `Direction: ${songMood || "electro pop dark cinematographique"}`,
+        `Direction: ${songMood || "couleur sonore automatique depuis la matière"}`,
         `Casting vocal: ${activeSongArtistCast.countLabel} - ${activeSongArtistCast.label}`,
         voiceRoute,
         taskId ? "Job Suno: lancé (identifiant masqué du brief)" : "",
@@ -6290,6 +6325,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                   value={songMood}
                   disabled={!hasSession}
                   onChange={(event) => setSongMood(event.target.value)}
+                  placeholder="Laisse vide pour que Vivy choisisse depuis la matière."
                 />
               </label>
               <label>
@@ -7117,12 +7153,12 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       ));
       if (!vocalLyricsForProduction) throw new Error("paroles_vivy_vides");
       const productionBrief = buildVivyNossenBangerProductionBrief(readiness, artists);
-      const requestedSonicMood = readiness.styleHints.slice(0, 3).join(", ");
+      const requestedSonicMood = inferVivyNossenSonicMood(readiness, artists);
       const songMood = [
-        useBangerWord
-          ? "chanson complète 2m30 à 5m00, structure libre selon la matière, refrain mémorable, hook Banger prononcé à l'américaine si utile, voix claires, couleur sonore choisie depuis le contexte"
-          : "chanson complète 2m30 à 5m00, structure libre selon la matière, refrain mémorable, voix claires, couleur sonore choisie depuis le contexte",
         requestedSonicMood,
+        useBangerWord
+          ? "chanson complète 2m30 à 5m00, structure libre selon la matière, refrain mémorable, hook Banger prononcé à l'américaine si utile, voix claires"
+          : "chanson complète 2m30 à 5m00, structure libre selon la matière, refrain mémorable, voix claires",
       ].filter(Boolean).join(", ");
       setStatus(`${productionLabel}: paroles prêtes, Suno démarre...`);
       const payload = await runVivyStudioProduction({

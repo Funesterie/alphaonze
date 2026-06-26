@@ -2611,7 +2611,10 @@ function buildSongProduction(input) {
   const voiceProfile = getVivyStudioVoiceProfile(input);
   const artistCast = buildVivySongArtistCast(input);
   const source = cleanOneLine(input.songSource || input.source, 'Thème', 80);
-  const mood = cleanOneLine(stripVivyAscii4SoundTokens(input.songMood || input.mood || input.style), 'Electro pop sombre cinématographique', 160);
+  const requestedMood = cleanOneLine(stripVivyAscii4SoundTokens(input.songMood || input.mood || input.style), '', 160);
+  const mood = looksLikeVivySunoStylePlaceholder(requestedMood)
+    ? inferVivySunoStyleBase(input, artistCast)
+    : requestedMood;
   const primaryMaterial = compactUniqueLines([
     input.songText,
     input.lyrics,
@@ -4652,8 +4655,11 @@ async function buildEmergencyMediaForProduction(mode, input, req) {
 
 function buildVivyMusicPrompt(input = {}) {
   const source = cleanOneLine(input.songSource || input.source, 'Theme', 80);
-  const mood = cleanOneLine(stripVivyAscii4SoundTokens(input.songMood || input.mood || input.style), 'electro pop dark cinematic', 180);
   const artistCast = buildVivySongArtistCast(input);
+  const requestedMood = cleanOneLine(stripVivyAscii4SoundTokens(input.songMood || input.mood || input.style), '', 180);
+  const mood = looksLikeVivySunoStylePlaceholder(requestedMood)
+    ? inferVivySunoStyleBase(input, artistCast)
+    : requestedMood;
   const voiceProfile = getVivyStudioVoiceProfile(input);
   const catalogVoiceName = cleanOneLine(input.voiceCatalogName || input.catalogVoiceName, '', 80);
   const prosodyPlan = buildVivyProsodyPlan(input);
@@ -4690,6 +4696,80 @@ function buildVivyMusicPrompt(input = {}) {
     'Arrangement: intro, verse, pre-chorus, memorable chorus, second verse, bridge, chorus, clean ending. Web-ready, no copyrighted melody.',
   ].filter(Boolean).join('\n');
   return cleanText(prompt, 4000);
+}
+
+function countVivySonicWords(value = '') {
+  const folded = foldTextForLookup(value);
+  if (!folded) return 0;
+  return (folded.match(/\b(?:anime|opening|generique|générique|aventure|latin|flamenco|western|orchestral|orchestral pop|cinematic|cinematique|cinématique|pop|rock|rap|metal|electro|synth|synthes?|basse|bass|guitare|guitar|drums?|batterie|percussion|piano|cordes|strings?|choeurs?|chœurs?|trompettes?|cuivres?|cloches?|palmas|castagnettes?|glitch|ballade|anthem|heroique|héroïque|tournoi|spirale|tournoyante|racing|peloton)\b/g) || []).length;
+}
+
+function looksLikeVivySunoStylePlaceholder(value = '') {
+  const folded = foldTextForLookup(value);
+  if (!folded) return true;
+  if (/\bcouleur\s+sonore\s+choisie\s+depuis\s+le\s+contexte\b/.test(folded)) return true;
+  if (/\b(?:electro|électro)\s+pop\s+(?:dark|sombre)\s+cinematographique\b/.test(folded)
+    && countVivySonicWords(folded) <= 4) return true;
+  if (/\bchanson\s+complete\s+2m30\s+a\s+5m00\b/.test(folded)
+    && countVivySonicWords(folded) < 3) return true;
+  return false;
+}
+
+function buildVivySunoStyleMaterial(input = {}) {
+  return cleanText([
+    input.songTitle,
+    input.title,
+    input.songText,
+    input.lyrics,
+    input.text,
+    input.theme,
+    input.instruction,
+    input.message,
+    input.prompt,
+  ].filter(Boolean).join('\n'), 2600);
+}
+
+function inferVivySunoStyleBase(input = {}, artistCast = buildVivySongArtistCast(input)) {
+  const material = buildVivySunoStyleMaterial(input);
+  const folded = foldTextForLookup(material);
+  const fallbackTopic = cleanOneLine(inferTitle(material), '', 72);
+  const withCastStyle = (style) => cleanOneLine([
+    style,
+    artistCast.sunoStyle,
+  ].filter(Boolean).join(', '), style || artistCast.sunoStyle, 420);
+
+  if (/\bzorro\b|\bjusticier\b|\bmasque\b|\bepee\b|\bépée\b|\bcheval\s+noir\b|\bcalifornie\b/.test(folded)) {
+    return withCastStyle('latin cinematic pop-rock, guitare espagnole, palmas, castagnettes, trompettes western, batterie héroïque');
+  }
+  if (/\bpeter\s+pan\b|\bclochette\b|\bcrochet\b|\bneverland\b|\bpays\s+imaginaire\b|\bcrocodile\b|\btic\s*tac\b|\bpirate\b/.test(folded)) {
+    return withCastStyle('anime opening aventure, orchestral pop aérien, cloches féeriques, choeurs légers, batterie vive');
+  }
+  if (/\btoupie\b|\bbeyblade\b|\blanceurs?\b|\bduel\b.{0,40}\btourne\b|\bspin\b|\bspinning\b/.test(folded)) {
+    return withCastStyle('electro pop tournoi, percussion tournoyante, basse ronde, claps rapides, synthés spirale, hook énergique');
+  }
+  if (/\bcycliste\b|\bcyclisme\b|\bvelo\b|\bvélo\b|\bpodium\b|\bpeloton\b|\balgerie\b|\balgérie\b|\betape\b|\bétape\b/.test(folded)) {
+    return withCastStyle('road movie pop-rock, batterie roulante, basse motrice, guitares ouvertes, cuivres de podium, souffle de peloton');
+  }
+  if (/\bdbz\b|\bdragon\s*ball\b|\bsuper\s*saiyan\b|\bspider[-\s]?man\b|\bavengers?\b|\bmarvel\b|\bdc\s+comics?\b|\bheros\b|\bhéros\b|\banime\b/.test(folded)) {
+    return withCastStyle('anime opening héroïque, pop-rock cinématique, batterie massive, guitares lumineuses, choeurs larges, montée frisson');
+  }
+  if (/\btroie\b|\bhelene\b|\bhélène\b|\bcheval\s+de\s+troie\b|\bmythe\b|\bmytholog/.test(folded)) {
+    return withCastStyle('mythological electro-rock, tambours solennels, cordes dramatiques, synthés profonds, vocal héroïque');
+  }
+  if (/\bmoto\b|\bscooter\b|\bpignon\b|\bcouronne\b|\bradiateur\b|\bchaine\b|\bchaîne\b|\bmoteur\b|\bessence\b|\bhuile\b|\bstunt\b/.test(folded)) {
+    return withCastStyle('technical rap moto, basse lourde, drums secs, guitares garage, engine pulse, hook proche micro');
+  }
+  if (/\becrans?\b|\bécrans?\b|\bnouvelle\s+generation\b|\bnouvelle\s+génération\b|\breseaux\b|\bréseaux\b|\bnumerique\b|\bnumérique\b/.test(folded)) {
+    return withCastStyle('modern alt-pop numérique, basses rondes, pads granuleux, percussion glitch, hook humain');
+  }
+  if (/\bamour\b|\bjardin\b|\bfleurs?\b|\bfloral\b|\bromantique\b|\bcoeur\b|\bcœur\b/.test(folded)) {
+    return withCastStyle('ballade pop romantique, piano doux, cordes chaudes, batterie légère, voix proche');
+  }
+
+  if (fallbackTopic && fallbackTopic !== 'Sans titre') {
+    return withCastStyle(`French adaptive original production shaped around ${fallbackTopic}, concrete sonic motifs from the story, dynamic chorus, modern mix`);
+  }
+  return artistCast.sunoStyle;
 }
 
 function buildVivySunoLyrics(input = {}) {
@@ -4756,11 +4836,14 @@ function buildVivySunoPayload(input = {}, req = null) {
     72
   ).replace(/^["'“”]+|["'“”]+$/g, '');
   const title = cleanOneLine(titleSeed, 'Sans titre', 80);
-  const styleBase = cleanOneLine(
+  const requestedStyleBase = cleanOneLine(
     stripVivyAscii4SoundTokens(input.songMood || input.mood || input.style),
-    artistCast.sunoStyle,
+    '',
     220
   );
+  const styleBase = looksLikeVivySunoStylePlaceholder(requestedStyleBase)
+    ? inferVivySunoStyleBase(input, artistCast)
+    : requestedStyleBase;
   const castStyle = artistCast.ids.includes('djeff') && artistCast.ids.includes('vivy') && artistCast.count === 2
     ? 'alternating Djeff rap verses and Vivy melodic hook'
     : artistCast.count > 1

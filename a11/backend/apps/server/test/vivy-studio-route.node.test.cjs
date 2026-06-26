@@ -1055,6 +1055,33 @@ test('Suno payload does not sing NOSSEN seed labels as lyrics', () => {
   assert.doesNotMatch(payload.prompt, /Matière chanson|Titre possible|Thème:|Images:|Voix:|sections séparées|sections separees|plusieurs chanteurs|écrans le lien humain|ecrans le lien humain|génération et ses\.|À transformer|recopier|Écris une chanson|ne chante jamais|Suno|D40|prompt/i);
 });
 
+test('Suno payload infers sonic color when NOSSEN sends only a context placeholder', () => {
+  const payload = buildVivySunoPayload({
+    songSource: 'NOSSEN - seed de paroles propre',
+    songArtists: ['vivy'],
+    vocalCast: 'Solo Vivy',
+    songMood: 'chanson complète 2m30 à 5m00, couleur sonore choisie depuis le contexte',
+    songText: 'Une chanson sur une toupie qui tourne dans la cour, duel de lanceurs, cercle de métal, trajectoire qui vacille puis reprend la piste.',
+  });
+
+  assert.match(payload.style, /tournoyante|spinning|tournoi|basse ronde|spirale/i);
+  assert.doesNotMatch(payload.style, /couleur sonore choisie depuis le contexte/i);
+  assert.doesNotMatch(payload.style, /cyber pop|cinematic synthwave/i);
+});
+
+test('Suno payload gives distinct inferred styles to different adventure subjects', () => {
+  const peter = buildVivySunoPayload({
+    songText: "On va faire un générique animé sur Peter Pan avec Clochette, Crochet, la mer, le crocodile et le tic-tac du temps.",
+  });
+  const zorro = buildVivySunoPayload({
+    songText: "Fais un son sur la légende de Zorro, le masque, l'épée, le cheval noir et la justice qui traverse la ville.",
+  });
+
+  assert.match(peter.style, /anime opening|aventure|orchestral pop|cloches|pirate/i);
+  assert.match(zorro.style, /latin|guitare espagnole|palmas|western|trompettes/i);
+  assert.notEqual(peter.style, zorro.style);
+});
+
 test('Suno payload isolates a clean lyric block from NOSSEN chat planning context', () => {
   const payload = buildVivySunoPayload({
     songSource: 'NOSSEN Banger - conversation Vivy',
