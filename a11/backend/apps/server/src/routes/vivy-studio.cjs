@@ -5379,7 +5379,9 @@ function collectSunoTracks(value, tracks = []) {
       audio_url: audioUrl,
       content_type: 'audio/mpeg',
       imageUrl: cleanOneLine(value.imageUrl || value.image_url || value.sourceImageUrl, '', 1000),
-      model: cleanOneLine(value.model || value.modelName, '', 80),
+      model: cleanOneLine(value.model || value.modelName || value.model_name, '', 80),
+      tags: cleanOneLine(value.tags || value.style || value.metadata?.tags, '', 500),
+      prompt: sanitizeVivySongMaterial(value.prompt || value.lyrics || value.gpt_description_prompt, 1200),
       duration: durationSeconds,
       durationSeconds,
       generatedAt: new Date().toISOString(),
@@ -5391,15 +5393,79 @@ function collectSunoTracks(value, tracks = []) {
   return tracks;
 }
 
-function extractSunoMedia(payload = {}) {
-  const tracks = collectSunoTracks(payload, []);
+function clampVivyScore(value, min = 0, max = 1) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return min;
+  return Math.max(min, Math.min(max, number));
+}
+
+function scoreVivySunoDuration(durationSeconds) {
+  const duration = Number(durationSeconds || 0);
+  if (!Number.isFinite(duration) || duration <= 0) return 0.45;
+  if (duration >= 240 && duration <= 390) return 1;
+  if (duration >= 180 && duration < 240) return 0.72 + ((duration - 180) / 60) * 0.18;
+  if (duration > 390 && duration <= 480) return 0.82;
+  if (duration >= 120) return 0.58;
+  return 0.28;
+}
+
+function scoreVivySunoDirectorTrack(track = {}) {
+  const durationSeconds = Number(track.durationSeconds || track.duration || 0) || 0;
+  const model = track.model || track.modelName || track.model_name;
+  const text = foldTextForLookup([
+    track.title,
+    track.tags,
+    track.prompt,
+    track.style,
+    model,
+  ].filter(Boolean).join(' '));
+  const prompt = String(track.prompt || '').trim();
+  const positive = /\b(?:powerful|puissant|emotion|emotional|clean|propre|articulation|memorable|hook|refrain|chorus|dynamic|dynamique|build|rise|montee|vocal|voix|anthem|energetic|coherent|cohesion)\b/.test(text);
+  const negative = /\b(?:robotic|robotique|muddy|boueux|spoken|narration|prompt|out of tune|faux|incomprehensible|illisible|noise|bruit|monotone|overloaded|sature|distorted|distordu)\b/.test(text);
+  const hasChorus = /\[(?:chorus|refrain|final chorus|pre-chorus|hook)[^\]]*\]/i.test(prompt) || /\b(?:chorus|refrain|hook)\b/.test(text);
+  const hasSections = /\[(?:intro|verse|couplet|bridge|pont|outro|chorus|refrain)[^\]]*\]/i.test(prompt);
+  const hasVoiceSignal = /\b(?:vocal|voix|singer|chant|duo|trio|quartet|vivy|djeff|k44|a11)\b/.test(text);
+  const modelBonus = /^v5(?:_?5)?$/i.test(String(model || '')) ? 0.08 : 0;
+  const qualityMusicale = clampVivyScore(0.54 + modelBonus + (positive ? 0.22 : 0) - (negative ? 0.34 : 0));
+  const respectParoles = clampVivyScore(0.52 + (prompt.length > 80 ? 0.14 : 0) + (hasSections ? 0.16 : 0) + (hasChorus ? 0.10 : 0) - (/\b(?:prompt|instruction|technical|debug)\b/.test(text) ? 0.22 : 0));
+  const voix = clampVivyScore(0.50 + modelBonus + (hasVoiceSignal ? 0.18 : 0) + (positive ? 0.08 : 0) - (negative ? 0.22 : 0));
+  const structure = clampVivyScore(0.48 + (hasSections ? 0.18 : 0) + (hasChorus ? 0.18 : 0) + (durationSeconds >= 180 ? 0.08 : 0) - (negative ? 0.14 : 0));
+  const duree = scoreVivySunoDuration(durationSeconds);
+  const score = (qualityMusicale * 0.40)
+    + (respectParoles * 0.25)
+    + (voix * 0.15)
+    + (structure * 0.10)
+    + (duree * 0.10);
+  return {
+    score: Math.round(score * 1000) / 100,
+    breakdown: {
+      qualiteMusicale: Math.round(qualityMusicale * 100),
+      respectParoles: Math.round(respectParoles * 100),
+      voix: Math.round(voix * 100),
+      structure: Math.round(structure * 100),
+      duree: Math.round(duree * 100),
+    },
+  };
+}
+
+function selectVivySunoDirectorTrack(tracks = []) {
   return tracks
-    .slice()
+    .map((track, index) => {
+      const directorScore = scoreVivySunoDirectorTrack(track);
+      return { ...track, directorScore, directorRank: index + 1 };
+    })
     .sort((left, right) => {
+      const scoreDelta = Number(right.directorScore?.score || 0) - Number(left.directorScore?.score || 0);
+      if (Math.abs(scoreDelta) > 0.5) return scoreDelta;
       const rightDuration = Number(right?.durationSeconds || right?.duration || 0) || 0;
       const leftDuration = Number(left?.durationSeconds || left?.duration || 0) || 0;
       return rightDuration - leftDuration;
     })[0] || null;
+}
+
+function extractSunoMedia(payload = {}) {
+  const tracks = collectSunoTracks(payload, []);
+  return selectVivySunoDirectorTrack(tracks);
 }
 
 function readCachedSunoCallback(taskId) {
@@ -6824,6 +6890,8 @@ module.exports = {
   parseVivyNossenRoutingPlan,
   buildVivySunoPayload,
   extractSunoMedia,
+  scoreVivySunoDirectorTrack,
+  selectVivySunoDirectorTrack,
   getVivySunoRuntimeStatus,
   requestSunoMusicExtension,
   buildVivyWebSearchQuery,

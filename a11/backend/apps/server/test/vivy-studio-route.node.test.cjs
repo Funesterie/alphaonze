@@ -29,6 +29,7 @@ const {
   buildVivySystemPrompt,
   buildVivySunoPayload,
   extractSunoMedia,
+  scoreVivySunoDirectorTrack,
   getVivySunoRuntimeStatus,
   requestSunoMusicExtension,
   listVivyChatSessionsForUser,
@@ -2075,19 +2076,67 @@ test('Suno payload treats NOSSEN long songs as V5.5 long-form generations', () =
   }
 });
 
-test('Suno media extraction prefers the longest generated track', () => {
+test('Suno director scoring keeps duration as a small bonus, not the main criterion', () => {
+  const weakLongTrack = {
+    id: 'long-but-weak',
+    audio_url: 'https://cdn.example/long.mp3',
+    duration: 318.4,
+    model_name: 'V5_5',
+    tags: 'robotic spoken narration, muddy mix, overloaded instrumental, weak chorus',
+    prompt: '[Verse]\nMegaZord arrives late.\n[Outro]\nThe end.',
+  };
+  const strongShorterTrack = {
+    id: 'shorter-but-better',
+    audio_url: 'https://cdn.example/better.mp3',
+    duration: 226.2,
+    model_name: 'V5_5',
+    tags: 'powerful vocals, memorable chorus, clean articulation, dynamic emotional build',
+    prompt: '[Intro]\nSignal in the sky.\n[Verse 1]\nThe team gathers.\n[Chorus]\nMegaZord, we rise together.\n[Bridge]\nFinal transformation.\n[Final Chorus]\nMegaZord, we rise together.',
+  };
   const media = extractSunoMedia({
     data: {
       data: [
-        { id: 'short-take', audio_url: 'https://cdn.example/short.mp3', duration: 147.2, model_name: 'V5_5' },
-        { id: 'long-take', audio_url: 'https://cdn.example/long.mp3', duration: 291.8, model_name: 'V5_5' },
+        weakLongTrack,
+        strongShorterTrack,
+      ],
+    },
+  });
+  const weakScore = scoreVivySunoDirectorTrack(weakLongTrack);
+  const strongScore = scoreVivySunoDirectorTrack(strongShorterTrack);
+
+  assert.ok(strongScore.score > weakScore.score);
+  assert.equal(media.audioId, 'shorter-but-better');
+  assert.equal(media.durationSeconds, 226.2);
+  assert.ok(media.directorScore.score > weakScore.score);
+  assert.ok(media.directorScore.breakdown.duree < 100);
+});
+
+test('Suno director scoring uses duration only to break otherwise close candidates', () => {
+  const media = extractSunoMedia({
+    data: {
+      data: [
+        {
+          id: 'short-equal-take',
+          audio_url: 'https://cdn.example/short.mp3',
+          duration: 147.2,
+          model_name: 'V5_5',
+          tags: 'powerful vocals, memorable chorus, clean articulation',
+          prompt: '[Verse]\nA clean verse.\n[Chorus]\nA clean hook.',
+        },
+        {
+          id: 'long-equal-take',
+          audio_url: 'https://cdn.example/long.mp3',
+          duration: 291.8,
+          model_name: 'V5_5',
+          tags: 'powerful vocals, memorable chorus, clean articulation',
+          prompt: '[Verse]\nA clean verse.\n[Chorus]\nA clean hook.',
+        },
       ],
     },
   });
 
-  assert.equal(media.audioId, 'long-take');
+  assert.equal(media.audioId, 'long-equal-take');
   assert.equal(media.durationSeconds, 291.8);
-  assert.equal(media.url, 'https://cdn.example/long.mp3');
 });
 
 test('Suno payload can still opt into external voice mix explicitly', () => {
