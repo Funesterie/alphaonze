@@ -3716,7 +3716,7 @@ function buildVivyNossenLyricsRequest(readiness: VivyNossenBangerReadiness, arti
     `Distribution vocale choisie: ${describeVivyNossenBangerCast(artists)}.`,
     styleLine,
     structureLine,
-    "Structure libre: intro, couplets, refrain, ponts et reprises selon ce que la matière demande. Le refrain doit exister et revenir naturellement.",
+    "Structure libre: intro, couplets, refrain, ponts et reprises selon ce que la matière demande. Le refrain doit apparaître au moins deux fois, dont une fois après le dernier pont. Aucun objectif de durée ni limite artificielle.",
     useBangerWord
       ? "Le mot Banger est autorisé seulement comme hook voulu par l'utilisateur."
       : "Ne mets pas le mot Banger dans les paroles.",
@@ -3740,7 +3740,7 @@ function buildVivyNossenBangerProductionBrief(readiness: VivyNossenBangerReadine
     `Casting choisi: ${describeVivyNossenBangerCast(artists)}.`,
     styleLine,
     structureLine,
-    "Format attendu: chanson complète de 2m30 à 5m00, structure libre selon la matière. Garder au moins un refrain clair, pas une démo courte.",
+    "Format attendu: chanson complète sans durée imposée, développée autant que la matière le demande. Le refrain doit revenir après le dernier pont, pas disparaître avant la fin.",
     useBangerWord
       ? "Le mot Banger peut être utilisé parce que la demande utilisateur le cite."
       : "Ne jamais chanter le nom du bouton, son effet de lancement, les bugs, les liens, les instructions internes ou le mot prompt.",
@@ -7214,8 +7214,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       const songMood = [
         requestedSonicMood,
         useBangerWord
-          ? "chanson complète 2m30 à 5m00, structure libre selon la matière, refrain mémorable, hook Banger prononcé à l'américaine si utile, voix claires"
-          : "chanson complète 2m30 à 5m00, structure libre selon la matière, refrain mémorable, voix claires",
+          ? "chanson complète sans durée imposée, structure libre selon la matière, refrain mémorable repris après le dernier pont, hook Banger prononcé à l'américaine si utile, voix claires"
+          : "chanson complète sans durée imposée, structure libre selon la matière, refrain mémorable repris après le dernier pont, voix claires",
       ].filter(Boolean).join(", ");
       setStatus(`${productionLabel}: paroles prêtes, Suno démarre...`);
       const payload = await runVivyStudioProduction({
@@ -7249,7 +7249,6 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         previewInstrumental: true,
         disableEmergencyMedia: true,
         musicProvider: "suno",
-        durationSeconds: 180,
       });
 
       let finalPayload: any = payload;

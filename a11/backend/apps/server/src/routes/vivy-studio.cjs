@@ -3657,7 +3657,10 @@ function buildVivyPublicLyrics(input = {}, rawAssistant = '', fallbackLyrics = '
   const allowDeterministicFallback = options.allowDeterministicFallback !== false;
   let publicLyrics = sanitizeVivyPublicLyrics(rawAssistant);
   if (!allowDeterministicFallback) {
-    if (!publicLyrics || looksLikeWeakSongwritingReply(publicLyrics) || !hasVivyChorusSection(publicLyrics)) {
+    if (!publicLyrics
+      || looksLikeWeakSongwritingReply(publicLyrics)
+      || !hasVivyChorusSection(publicLyrics)
+      || (options.requireRepeatedChorus === true && countVivyChorusSections(publicLyrics) < 2)) {
       return '';
     }
     return ensureVivyPublicLyricsArtistTags(input, publicLyrics, { allowDeterministicFallback: false });
@@ -3672,6 +3675,18 @@ function buildVivyPublicLyrics(input = {}, rawAssistant = '', fallbackLyrics = '
     }).lyrics);
   }
   return ensureVivyPublicLyricsArtistTags(input, publicLyrics);
+}
+
+function countVivyChorusSections(value = '') {
+  return String(value || '')
+    .split(/\r?\n+/)
+    .filter((line) => {
+      const tag = String(line || '').trim().match(/^\[([^\]]+)\]$/);
+      if (!tag) return false;
+      const folded = foldTextForLookup(tag[1]);
+      if (/\b(pre chorus|pre refrain|pre-chorus|pre-refrain)\b/.test(folded)) return false;
+      return /\b(chorus|refrain|refren)\b/.test(folded);
+    }).length;
 }
 
 function isVivyNossenSongGenerationRequest(input = {}, message = '') {
@@ -4516,7 +4531,12 @@ async function buildVivyAiChat(input, req) {
     let llmRetried = false;
     let assistantCandidate = processed.content;
 
-    if (mode === 'song' && (looksLikeWeakSongwritingReply(processed.content) || !hasVivyChorusSection(processed.content))) {
+    const songNeedsRetry = mode === 'song' && (
+      looksLikeWeakSongwritingReply(processed.content)
+      || !hasVivyChorusSection(processed.content)
+      || (requiresStrongSongModel && countVivyChorusSections(processed.content) < 2)
+    );
+    if (songNeedsRetry) {
       const _retryStart = Date.now();
       try {
         const retryCompletion = await llmBundle.client.chat.completions.create({
@@ -4527,7 +4547,7 @@ async function buildVivyAiChat(input, req) {
             ...history,
             { role: 'user', content: userContent },
             { role: 'assistant', content: processed.content },
-            { role: 'user', content: 'Écris uniquement les paroles complètes. Pas d’explication, pas de commentaire. Format: [Intro], [Verse 1], [Chorus], [Bridge], [Outro].' },
+            { role: 'user', content: 'Écris uniquement les paroles complètes, sans explication. Utilise des balises de sections musicales. Le refrain doit apparaître au moins deux fois, dont une fois après le dernier pont, avant la fin.' },
           ].filter(Boolean),
           temperature: Number(process.env.VIVY_CHAT_TEMPERATURE_SONG || process.env.VIVY_CHAT_TEMPERATURE || 0.88),
           max_tokens: Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || VIVY_CHAT_SONG_MAX_TOKENS_DEFAULT),
@@ -4536,7 +4556,8 @@ async function buildVivyAiChat(input, req) {
         const retryProcessed = postProcessVivyAssistantText({ text: retryRaw, userMessage: message, systemPrompt, mode, maxChars: songResponseMaxChars });
         if (retryProcessed.content
           && !looksLikeWeakSongwritingReply(retryProcessed.content)
-          && hasVivyChorusSection(retryProcessed.content)) {
+          && hasVivyChorusSection(retryProcessed.content)
+          && (!requiresStrongSongModel || countVivyChorusSections(retryProcessed.content) >= 2)) {
           llmRetried = true;
           assistantCandidate = retryProcessed.content;
         } else {
@@ -4557,7 +4578,10 @@ async function buildVivyAiChat(input, req) {
         { ...input, message, files, history },
         assistantCandidate,
         requiresStrongSongModel ? '' : fallback.publicLyrics,
-        { allowDeterministicFallback: !requiresStrongSongModel }
+        {
+          allowDeterministicFallback: !requiresStrongSongModel,
+          requireRepeatedChorus: requiresStrongSongModel,
+        }
       )
       : sanitizeVivyPublicText(assistantCandidate, VIVY_CHAT_MAX_CHARS);
     const assistantForOutput = mode === 'song'

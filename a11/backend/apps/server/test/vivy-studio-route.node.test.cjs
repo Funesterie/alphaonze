@@ -2564,6 +2564,29 @@ test('Vivy strict NOSSEN finalizer never substitutes deterministic template lyri
   assert.equal(result, '');
 });
 
+test('Vivy strict NOSSEN finalizer requires the chorus to return after the bridge', () => {
+  const oneChorus = [
+    '[Verse 1]',
+    'Les aiguilles perdent le nord au fond du cadran.',
+    '[Chorus]',
+    'On rit du temps qui passe en lui volant ses dents.',
+    '[Bridge]',
+    'Minuit fait un jeu de mots, midi lui répond.',
+    '[Outro]',
+    'Le rire reste en suspens.',
+  ].join('\n');
+
+  const result = buildVivyPublicLyrics({
+    songText: "plein de blagues, d'humour et de calembours",
+    songArtists: ['vivy'],
+  }, oneChorus, '', {
+    allowDeterministicFallback: false,
+    requireRepeatedChorus: true,
+  });
+
+  assert.equal(result, '');
+});
+
 test('Vivy NOSSEN launch path no longer rewrites user requests into canned lyric images', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
@@ -2602,13 +2625,27 @@ test('Vivy NOSSEN Banger production brief stays orchestration-only and never car
   const builderBlock = appSource.slice(builderStart, builderEnd);
 
   assert.match(builderBlock, /Production musicale NOSSEN/);
-  assert.match(builderBlock, /2m30 à 5m00|2m30 a 5m00/);
-  assert.match(builderBlock, /structure libre selon la matière|structure libre selon la matiere/);
-  assert.match(builderBlock, /au moins un refrain clair/);
+  assert.doesNotMatch(builderBlock, /2m30 à 5m00|2m30 a 5m00/);
+  assert.match(builderBlock, /sans durée imposée|sans duree imposee/);
+  assert.match(builderBlock, /refrain doit revenir après le dernier pont|refrain doit revenir apres le dernier pont/);
   assert.doesNotMatch(builderBlock, /refrain chanté au moins trois fois|refrain chante au moins trois fois/);
   assert.match(builderBlock, /wantsVivyNossenBangerWord\(readiness\.source\)/);
   assert.doesNotMatch(builderBlock, /Contexte utile/);
   assert.doesNotMatch(builderBlock, /\$\{readiness\.source\}/);
+});
+
+test('Vivy NOSSEN production removes the hard duration cap', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const launchStart = appSource.indexOf('async function launchNossenBanger');
+  const launchEnd = appSource.indexOf('async function onVivyVoiceReferenceChange', launchStart);
+  const launchBlock = appSource.slice(launchStart, launchEnd);
+
+  assert.doesNotMatch(launchBlock, /durationSeconds:\s*180/);
+  assert.doesNotMatch(launchBlock, /2m30 à 5m00|2m30 a 5m00/);
+  assert.match(launchBlock, /refrain mémorable repris après le dernier pont|refrain memorable repris apres le dernier pont/);
 });
 
 test('Vivy NOSSEN Banger builds a semantic canvas instead of singing media OCR', () => {
