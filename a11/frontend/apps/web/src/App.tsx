@@ -59,6 +59,7 @@ import {
   forgotPassword,
   resetPassword,
   getVivyStudioMusicJob,
+  extendVivyStudioSunoMusic,
   createVivyChatSessionOnServer,
   deleteVivyChatSessionOnServer,
   assembleVivyStudioVoicePreview,
@@ -478,6 +479,7 @@ const NOSSEN_K44_TZR_SRC = buildPublicAssetPath("assets/nossen-k44-tzr.png");
 const NOSSEN_DJEFF_BETA_SRC = buildPublicAssetPath("assets/nossen-djeff-beta.png");
 const NOSSEN_CREW_SRC = buildPublicAssetPath("assets/nossen-crew.webp");
 const VIVY_NOSSEN_BANGER_CALL_SRC = buildPublicAssetPath("assets/vivy-banger-call.wav");
+const VIVY_NOSSEN_SUNO_EXTEND_MIN_SECONDS = 210;
 
 type FunesterieSurface = "a11" | "kaen44" | "vivy";
 
@@ -2887,6 +2889,11 @@ type VivyStudioMediaPreview = {
   provider?: string;
   contentType?: string;
   filename?: string;
+  id?: string;
+  audioId?: string;
+  durationSeconds?: number;
+  model?: string;
+  taskId?: string;
   voiceManifest?: {
     providerRequested?: string;
     providerUsed?: string;
@@ -3799,7 +3806,52 @@ function getVivyProductionMediaPreview(payload: any, fallbackFilename = "vivy-no
     provider: String(media?.provider || payload?.mediaStatus?.provider || payload?.musicJob?.provider || "vivy-music").trim(),
     contentType: String(media?.contentType || media?.content_type || payload?.contentType || payload?.content_type || (audioUrl ? "audio/mpeg" : "video/mp4")).trim(),
     filename: String(media?.filename || payload?.filename || fallbackFilename).trim(),
+    id: String(media?.id || media?.audioId || media?.audio_id || "").trim() || undefined,
+    audioId: String(media?.audioId || media?.audio_id || media?.id || "").trim() || undefined,
+    durationSeconds: Number.isFinite(Number(media?.durationSeconds ?? media?.duration))
+      ? Number(media?.durationSeconds ?? media?.duration)
+      : undefined,
+    model: String(media?.model || payload?.musicJob?.model || payload?.mediaStatus?.model || payload?.model || "").trim() || undefined,
+    taskId: String(media?.taskId || media?.jobId || payload?.musicJob?.taskId || payload?.mediaStatus?.taskId || "").trim() || undefined,
   };
+}
+
+function getVivyProductionSunoAudioId(payload: any, media?: VivyStudioMediaPreview | null) {
+  const raw = media?.audioId
+    || media?.id
+    || payload?.media?.audioId
+    || payload?.media?.audio_id
+    || payload?.media?.id
+    || payload?.musicJob?.media?.audioId
+    || payload?.musicJob?.media?.audio_id
+    || payload?.musicJob?.media?.id
+    || payload?.audioId
+    || payload?.audio_id
+    || "";
+  return String(raw || "").trim();
+}
+
+function getVivyProductionDurationSeconds(payload: any, media?: VivyStudioMediaPreview | null) {
+  const raw = media?.durationSeconds
+    ?? payload?.media?.durationSeconds
+    ?? payload?.media?.duration
+    ?? payload?.musicJob?.media?.durationSeconds
+    ?? payload?.musicJob?.media?.duration
+    ?? payload?.durationSeconds
+    ?? payload?.duration;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function getVivyProductionSunoModel(payload: any, media?: VivyStudioMediaPreview | null) {
+  return String(
+    media?.model
+    || payload?.media?.model
+    || payload?.musicJob?.model
+    || payload?.mediaStatus?.model
+    || payload?.model
+    || ""
+  ).trim();
 }
 
 function buildVivyNossenBangerAssistantText(
@@ -7248,6 +7300,32 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       const requestedSonicMood = routedMood || inferVivyNossenSonicMood(routedReadiness, artists);
       const songMood = requestedSonicMood || undefined;
       setStatus(`${productionLabel}: paroles prêtes, Suno démarre...`);
+      const waitForNossenSunoJob = async (safeTaskId: string, label = "Suno") => {
+        const pause = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+        let lastJob: any = null;
+        for (let attempt = 1; attempt <= 60; attempt += 1) {
+          await pause(attempt <= 3 ? 6000 : 10000);
+          let job: any;
+          try {
+            job = await getVivyStudioMusicJob(safeTaskId, sunoSessionKey || undefined);
+          } catch (error: any) {
+            if (attempt < 60 && isRetryableVivyMusicJobError(error)) {
+              setStatus(`${productionLabel} attend ${label}... réponse lente ${attempt}/60`);
+              continue;
+            }
+            throw error;
+          }
+          lastJob = job;
+          const media = getVivyProductionMediaPreview(job);
+          if (media) return job;
+          const state = String(job?.mediaStatus?.state || job?.musicJob?.state || (job as any)?.state || "").toLowerCase();
+          if (state === "error" || state === "failed") {
+            throw new Error(job?.mediaStatus?.message || job?.message || "generation_suno_echouee");
+          }
+          setStatus(`${productionLabel} attend ${label}... ${attempt}/60`);
+        }
+        throw new Error(lastJob?.mediaStatus?.message || "generation_suno_trop_longue");
+      };
       const payload = await runVivyStudioProduction({
         mode: "song",
         language: vivyLanguage,
@@ -7285,37 +7363,58 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       let preparedMedia = getVivyProductionMediaPreview(finalPayload);
       const taskId = String(payload?.mediaStatus?.taskId || payload?.musicJob?.taskId || payload?.media?.taskId || "").trim();
       if (!preparedMedia && taskId) {
-        const pause = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
-        for (let attempt = 1; attempt <= 60; attempt += 1) {
-          await pause(attempt <= 3 ? 6000 : 10000);
-          let job: any;
-          try {
-            job = await getVivyStudioMusicJob(taskId, sunoSessionKey || undefined);
-          } catch (error: any) {
-            if (attempt < 60 && isRetryableVivyMusicJobError(error)) {
-              setStatus(`NOSSEN attend Suno... réponse lente ${attempt}/60`);
-              continue;
-            }
-            throw error;
-          }
-          finalPayload = job;
-          preparedMedia = getVivyProductionMediaPreview(job);
-          if (preparedMedia) break;
-          const state = String(job?.mediaStatus?.state || job?.musicJob?.state || (job as any)?.state || "").toLowerCase();
-          if (state === "error" || state === "failed") {
-            throw new Error(job?.mediaStatus?.message || job?.message || "generation_suno_echouee");
-          }
-          setStatus(`NOSSEN attend Suno... ${attempt}/60`);
-        }
+        finalPayload = await waitForNossenSunoJob(taskId, "Suno");
+        preparedMedia = getVivyProductionMediaPreview(finalPayload);
       }
       if (!preparedMedia) {
         throw new Error(finalPayload?.mediaStatus?.message || finalPayload?.mediaStatus?.reason || "audio_url_missing");
       }
 
+      let sunoExtended = false;
+      if (preparedMedia.kind === "audio") {
+        const durationSeconds = getVivyProductionDurationSeconds(finalPayload, preparedMedia);
+        const sunoAudioId = getVivyProductionSunoAudioId(finalPayload, preparedMedia);
+        if (durationSeconds > 0 && durationSeconds < VIVY_NOSSEN_SUNO_EXTEND_MIN_SECONDS && sunoAudioId) {
+          try {
+            setStatus(`${productionLabel}: morceau court (${Math.round(durationSeconds)}s), extension Suno...`);
+            const extensionStart = await extendVivyStudioSunoMusic({
+              audioId: sunoAudioId,
+              model: getVivyProductionSunoModel(finalPayload, preparedMedia) || undefined,
+              sourceTaskId: taskId || preparedMedia.taskId || undefined,
+              sessionSunoApiKey: sunoSessionKey || undefined,
+            });
+            let extendedPayload: any = extensionStart;
+            let extendedMedia = getVivyProductionMediaPreview(extendedPayload, preparedMedia.filename || "vivy-nossen-extended.mp3");
+            const extensionTaskId = String(
+              extensionStart?.mediaStatus?.taskId
+              || extensionStart?.musicJob?.taskId
+              || extensionStart?.media?.taskId
+              || ""
+            ).trim();
+            if (!extendedMedia && extensionTaskId) {
+              extendedPayload = await waitForNossenSunoJob(extensionTaskId, "l'extension Suno");
+              extendedMedia = getVivyProductionMediaPreview(extendedPayload, preparedMedia.filename || "vivy-nossen-extended.mp3");
+            }
+            if (extendedMedia?.url) {
+              finalPayload = {
+                ...extendedPayload,
+                publicLyrics: finalPayload?.publicLyrics,
+                vocalLyrics: finalPayload?.vocalLyrics,
+                summary: finalPayload?.summary,
+              };
+              preparedMedia = extendedMedia;
+              sunoExtended = true;
+            }
+          } catch {
+            setStatus(`${productionLabel}: extension indisponible, je garde la prise Suno originale.`);
+          }
+        }
+      }
+
       let d40Applied = false;
       if (preparedMedia.kind === "audio") {
         try {
-          setStatus("Finalisation audio...");
+          setStatus(sunoExtended ? "Finalisation audio après extension..." : "Finalisation audio...");
           const sourceUrl = preparedMedia.downloadUrl || preparedMedia.url;
           let response: Response;
           try {

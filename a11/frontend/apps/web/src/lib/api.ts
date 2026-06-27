@@ -2629,6 +2629,13 @@ export type VivyStudioMedia = {
   contentType?: string;
   content_type?: string;
   filename?: string;
+  id?: string;
+  audioId?: string;
+  audio_id?: string;
+  duration?: number;
+  durationSeconds?: number;
+  model?: string;
+  sourceAudioId?: string;
 };
 
 export type VivyDoubleHarmonicNavigation = {
@@ -2738,6 +2745,7 @@ export type VivyStudioProductionInput = {
   forceInstrumental?: boolean;
   previewInstrumental?: boolean;
   musicProvider?: 'suno' | 'elevenlabs' | 'elevenlabs-music' | string;
+  musicModel?: string;
   durationSeconds?: number;
   workspace?: VivyWorkspaceStateInput;
 };
@@ -2794,6 +2802,9 @@ export type VivyStudioProductionResult = {
     status?: string;
     reason?: string;
     message?: string;
+    extension?: boolean;
+    sourceAudioId?: string;
+    model?: string;
     voiceMode?: 'suno_voice' | 'external_mix' | 'suno_generated' | string;
     selectedVoicePreserved?: boolean;
   };
@@ -2803,6 +2814,9 @@ export type VivyStudioProductionResult = {
     jobId?: string;
     state?: string;
     status?: string;
+    extension?: boolean;
+    sourceAudioId?: string;
+    model?: string;
     voiceMode?: 'suno_voice' | 'external_mix' | 'suno_generated' | string;
     selectedVoicePreserved?: boolean;
   };
@@ -2978,6 +2992,35 @@ export async function getVivyStudioMusicJob(taskId: string, sessionSunoApiKey?: 
   const payload = await res.json().catch(() => ({}));
   if (!res.ok || payload?.ok === false) {
     throw new Error(payload?.message || payload?.error || `Job Vivy indisponible (${res.status})`);
+  }
+  return payload as VivyStudioProductionResult;
+}
+
+export async function extendVivyStudioSunoMusic(input: {
+  audioId: string;
+  model?: string;
+  musicModel?: string;
+  sessionSunoApiKey?: string;
+  sourceTaskId?: string;
+}): Promise<VivyStudioProductionResult> {
+  const headers = buildAuthHeaders('application/json');
+  const safeSessionKey = String(input.sessionSunoApiKey || '').trim();
+  if (safeSessionKey) headers['X-Vivy-Suno-Key'] = safeSessionKey;
+  const res = await authFetch(getApiUrl('/api/vivy/studio/suno/extend'), {
+    method: 'POST',
+    headers,
+    credentials: 'include',
+    body: JSON.stringify({
+      audioId: input.audioId,
+      model: input.model || input.musicModel,
+      musicModel: input.musicModel || input.model,
+      sourceTaskId: input.sourceTaskId,
+      sessionSunoApiKey: safeSessionKey || undefined,
+    }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Extension Suno indisponible (${res.status})`);
   }
   return payload as VivyStudioProductionResult;
 }

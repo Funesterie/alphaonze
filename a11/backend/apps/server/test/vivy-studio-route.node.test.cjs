@@ -29,6 +29,7 @@ const {
   buildVivySystemPrompt,
   buildVivySunoPayload,
   getVivySunoRuntimeStatus,
+  requestSunoMusicExtension,
   listVivyChatSessionsForUser,
   buildVivyWebSearchQuery,
   getVivyOpenAIConfig,
@@ -1782,6 +1783,63 @@ test('GET /api/vivy/studio/jobs/:taskId recognizes Suno media returned as url fi
   }
 });
 
+test('Vivy requests a Suno extension from the original audio id without leaking keys', async () => {
+  const previousEnv = {
+    VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
+    VIVY_SUNO_BASE_URL: process.env.VIVY_SUNO_BASE_URL,
+    VIVY_PUBLIC_BASE_URL: process.env.VIVY_PUBLIC_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  let postedBody = null;
+
+  process.env.VIVY_SUNO_API_KEY = 'test-suno-key';
+  process.env.VIVY_SUNO_BASE_URL = 'https://api.suno.test/api/v1';
+  process.env.VIVY_PUBLIC_BASE_URL = 'https://vivy.test';
+  global.fetch = async (url, options = {}) => {
+    if (String(url) === 'https://api.suno.test/api/v1/generate/extend') {
+      assert.equal(options.headers.Authorization, 'Bearer must-not-leak');
+      postedBody = JSON.parse(String(options.body || '{}'));
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return { code: 200, data: { taskId: 'suno-extension-task', status: 'PENDING' } };
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    const media = await requestSunoMusicExtension({
+      audioId: 'suno-audio-123',
+      model: 'V5_5',
+      sessionSunoApiKey: 'must-not-leak',
+    }, {
+      user: { id: 'djeff', roles: ['founder'] },
+      get(name) {
+        if (name === 'host') return 'vivy.test';
+        return '';
+      },
+    });
+
+    assert.equal(media.state, 'processing');
+    assert.equal(media.taskId, 'suno-extension-task');
+    assert.equal(media.sourceAudioId, 'suno-audio-123');
+    assert.equal(postedBody.audioId, 'suno-audio-123');
+    assert.equal(postedBody.defaultParamFlag, false);
+    assert.equal(postedBody.model, 'V5_5');
+    assert.match(postedBody.callBackUrl, /^https:\/\/vivy\.test\/api\/vivy\/studio\/suno\/callback/);
+    assert.doesNotMatch(JSON.stringify(media), /must-not-leak/);
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('song mode accepts natural aliases from client prompts', () => {
   const result = buildVivyStudioProduction({
     mode: 'song',
@@ -2647,6 +2705,32 @@ test('Vivy NOSSEN production removes the hard duration cap', () => {
   assert.doesNotMatch(launchBlock, /durationSeconds:\s*180/);
   assert.doesNotMatch(launchBlock, /2m30 à 5m00|2m30 a 5m00/);
   assert.match(appSource, /refrain doit apparaître au moins deux fois|refrain doit apparaitre au moins deux fois/);
+});
+
+test('Vivy NOSSEN automatically extends short Suno songs before D40', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const apiSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/lib/api.ts'),
+    'utf8'
+  );
+  const launchStart = appSource.indexOf('async function launchNossenBanger');
+  const launchEnd = appSource.indexOf('async function onVivyVoiceReferenceChange', launchStart);
+  const launchBlock = appSource.slice(launchStart, launchEnd);
+
+  assert.match(apiSource, /\/api\/vivy\/studio\/suno\/extend/);
+  assert.match(appSource, /const VIVY_NOSSEN_SUNO_EXTEND_MIN_SECONDS = 210/);
+  assert.match(appSource, /function getVivyProductionSunoAudioId/);
+  assert.match(appSource, /function getVivyProductionDurationSeconds/);
+  assert.match(launchBlock, /durationSeconds < VIVY_NOSSEN_SUNO_EXTEND_MIN_SECONDS/);
+  assert.match(launchBlock, /await extendVivyStudioSunoMusic\(/);
+  assert.ok(
+    launchBlock.indexOf('await extendVivyStudioSunoMusic(') > -1
+      && launchBlock.indexOf('await extendVivyStudioSunoMusic(') < launchBlock.indexOf('processDoubleHarmonicAudio'),
+    'NOSSEN must extend before applying D40'
+  );
 });
 
 test('Vivy NOSSEN routes casting and sonic color from Composition before lyrics', () => {

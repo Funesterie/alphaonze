@@ -5305,6 +5305,26 @@ function collectSunoTracks(value, tracks = []) {
     value.forEach((item) => collectSunoTracks(item, tracks));
     return tracks;
   }
+  const audioId = cleanOneLine(
+    value.audioId
+      || value.audio_id
+      || value.id
+      || value.songId
+      || value.song_id
+      || value.clipId
+      || value.clip_id,
+    '',
+    160
+  );
+  const rawDuration = Number(
+    value.duration
+      ?? value.durationSeconds
+      ?? value.duration_seconds
+      ?? value.audioDuration
+      ?? value.audio_duration
+      ?? 0
+  );
+  const durationSeconds = Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : undefined;
   const audioUrl = cleanOneLine(
     value.audioUrl
       || value.audio_url
@@ -5331,6 +5351,9 @@ function collectSunoTracks(value, tracks = []) {
       kind: 'audio',
       provider: 'suno',
       mode: 'async_music_generation',
+      id: audioId || undefined,
+      audioId: audioId || undefined,
+      audio_id: audioId || undefined,
       title: cleanOneLine(value.title || value.name, 'Chanson Vivy', 120),
       url: audioUrl,
       audioUrl,
@@ -5338,6 +5361,8 @@ function collectSunoTracks(value, tracks = []) {
       content_type: 'audio/mpeg',
       imageUrl: cleanOneLine(value.imageUrl || value.image_url || value.sourceImageUrl, '', 1000),
       model: cleanOneLine(value.model || value.modelName, '', 80),
+      duration: durationSeconds,
+      durationSeconds,
       generatedAt: new Date().toISOString(),
     });
   }
@@ -5635,6 +5660,91 @@ async function requestSunoMusic(input = {}, req = null) {
     model: body.model,
     voiceMode,
     selectedVoicePreserved: voiceMode === 'suno_voice',
+    content_type: 'audio/mpeg',
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+async function requestSunoMusicExtension(input = {}, req = null) {
+  const sunoAccess = getSunoAccess(input, req);
+  const apiKey = sunoAccess.apiKey;
+  if (!apiKey) throw new Error('suno_music_key_missing');
+  if (sunoAccess.adminOnly && !canUseServerSuno(req)) {
+    const error = new Error('vivy_music_admin_only');
+    error.code = 'vivy_music_admin_only';
+    error.status = 403;
+    throw error;
+  }
+
+  const audioId = cleanOneLine(
+    input.audioId || input.audio_id || input.id || input.sunoAudioId || input.sourceAudioId,
+    '',
+    160
+  );
+  if (!audioId) {
+    const error = new Error('suno_audio_id_missing');
+    error.code = 'suno_audio_id_missing';
+    error.status = 400;
+    throw error;
+  }
+  const model = cleanOneLine(input.musicModel || input.model || input.sourceModel || process.env.VIVY_SUNO_MODEL || 'V5_5', 'V5_5', 40);
+  const body = {
+    defaultParamFlag: false,
+    audioId,
+    model,
+    callBackUrl: buildSunoCallbackUrl(req),
+  };
+  const response = await fetch(`${getSunoBaseUrl()}/generate/extend`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(Number(process.env.VIVY_SUNO_TIMEOUT_MS || 30000) || 30000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  const apiCode = findSunoApiCode(payload);
+  if (!response.ok) {
+    const error = buildSunoProviderError(response.status || apiCode || 'http_error', payload, 'http_error');
+    error.status = response.status;
+    throw error;
+  }
+  if (apiCode !== null && apiCode !== 200) {
+    const error = buildSunoProviderError(apiCode, payload, 'api_error');
+    error.status = apiCode;
+    throw error;
+  }
+
+  const taskId = findSunoTaskId(payload);
+  const readyMedia = extractSunoMedia(payload);
+  if (readyMedia?.url) {
+    const preparedMedia = await materializeVivySunoMedia(readyMedia, { taskId });
+    return {
+      ...preparedMedia,
+      taskId: taskId || undefined,
+      jobId: taskId || undefined,
+      sourceAudioId: audioId,
+      extension: true,
+      model,
+    };
+  }
+  if (!taskId) {
+    const detail = findSunoProviderMessage(payload) || findSunoStatus(payload);
+    throw new Error(`suno_music_extension_task_missing${detail ? `:${detail}` : ''}`);
+  }
+  return {
+    ok: true,
+    kind: 'audio',
+    provider: 'suno',
+    mode: 'async_music_extension',
+    state: 'processing',
+    status: findSunoStatus(payload) || 'submitted',
+    taskId,
+    jobId: taskId,
+    sourceAudioId: audioId,
+    extension: true,
+    model,
     content_type: 'audio/mpeg',
     generatedAt: new Date().toISOString(),
   };
@@ -6412,6 +6522,68 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
     }
   });
 
+  router.post('/suno/extend', requireAuth, express.json({ limit: '32kb' }), async (req, res) => {
+    try {
+      if (!canUseServerSuno(req) && !getRequestSessionSunoApiKey(req.body || {}, req)) {
+        return res.status(403).json({
+          ok: false,
+          error: 'vivy_music_admin_only',
+          message: 'Génération musicale réservée aux comptes Famille/Premium/Fondateur, sauf clé Suno personnelle de session.',
+        });
+      }
+      const media = await requestSunoMusicExtension(req.body || {}, req);
+      if (media?.state === 'processing' && media?.taskId) {
+        return res.json({
+          ok: true,
+          provider: 'suno',
+          mediaStatus: {
+            state: 'processing',
+            provider: 'suno',
+            taskId: media.taskId,
+            jobId: media.jobId || media.taskId,
+            status: media.status || 'submitted',
+            extension: true,
+            sourceAudioId: media.sourceAudioId,
+            model: media.model,
+            message: 'Vivy a lancé une extension Suno pour laisser respirer le morceau.',
+          },
+          musicJob: {
+            provider: 'suno',
+            taskId: media.taskId,
+            jobId: media.jobId || media.taskId,
+            state: 'processing',
+            status: media.status || 'submitted',
+            extension: true,
+            sourceAudioId: media.sourceAudioId,
+            model: media.model,
+          },
+        });
+      }
+      return res.json({
+        ok: true,
+        provider: 'suno',
+        media,
+        audioUrl: media?.audioUrl,
+        audio_url: media?.audio_url,
+        musicJob: {
+          provider: 'suno',
+          taskId: media?.taskId,
+          jobId: media?.jobId || media?.taskId,
+          state: 'done',
+          extension: true,
+          sourceAudioId: media?.sourceAudioId,
+          model: media?.model,
+        },
+      });
+    } catch (error) {
+      res.status(error?.status || 500).json({
+        ok: false,
+        error: error?.code || 'vivy_suno_extension_failed',
+        message: error?.message || String(error),
+      });
+    }
+  });
+
   router.post('/mix-preview', requireAuth, express.json({ limit: '16kb' }), async (req, res) => {
     try {
       const media = await runVivyPreviewMix(req.body?.voiceUrl, req.body?.instrumentalUrl);
@@ -6627,6 +6799,7 @@ module.exports = {
   parseVivyNossenRoutingPlan,
   buildVivySunoPayload,
   getVivySunoRuntimeStatus,
+  requestSunoMusicExtension,
   buildVivyWebSearchQuery,
   postProcessVivyAssistantText,
   sanitizeVivyPublicText,

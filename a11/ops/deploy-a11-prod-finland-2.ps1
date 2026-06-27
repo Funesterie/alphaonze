@@ -1472,10 +1472,16 @@ docker update --restart unless-stopped a11-ollama >/dev/null
 docker exec a11-ollama sh -lc 'mkdir -p /root/.ollama; if [ ! -s /root/.ollama/id_ed25519.pub ]; then ollama signin >/dev/null 2>&1 || true; fi'
 docker exec a11-ollama sh -lc 'ollama show nomic-embed-text >/dev/null 2>&1 || ollama pull nomic-embed-text >/dev/null 2>&1 || true'
 docker exec a11-ollama sh -lc 'ollama show llama3.2:3b >/dev/null 2>&1 || ollama pull llama3.2:3b >/dev/null 2>&1 || true'
-strong_song_model="$(awk -F= '/^VIVY_SONG_LOCAL_MODEL=/{print $2; exit}' /srv/a11/secrets/compose.env 2>/dev/null | tr -d '\r' | sed 's/^"//; s/"$//')"
+compose_env="${compose_env:-__REMOTE_ROOT__/secrets/compose.env}"
+if [ -s "$compose_env" ]; then
+  strong_song_model="$(awk -F= '/^VIVY_SONG_LOCAL_MODEL=/{print $2; exit}' "$compose_env" 2>/dev/null | tr -d '\r' | sed 's/^"//; s/"$//' || true)"
+else
+  strong_song_model=""
+fi
 strong_song_model="${strong_song_model:-qwen2.5:32b}"
 docker exec a11-ollama sh -lc 'ollama show "$0" >/dev/null 2>&1 || ollama pull "$0"' "$strong_song_model"
 '@
+$remoteOllamaStep = $remoteOllamaStep.Replace('__REMOTE_ROOT__', $RemoteRoot)
 
 $remoteComposeOwnershipStep = @'
 compose_file="${compose_file:-__REMOTE_ROOT__/current/server/docker-compose.prod.yml}"
@@ -1507,7 +1513,7 @@ if ($BlueGreen) {
   $cleanOldFlag = if ($CleanOldBlueGreen) { "1" } else { "0" }
   $remoteDeploy = @"
 set -euo pipefail
-trap 'echo "__A11_DEPLOY_FAILED__ line=$LINENO command=$BASH_COMMAND" >&2' ERR
+trap 'echo "__A11_DEPLOY_FAILED__ line=`$LINENO command=`$BASH_COMMAND" >&2' ERR
 release=$RemoteRoot/releases/$Stamp
 compose_file=$RemoteRoot/current/server/docker-compose.prod.yml
 a11_service=$A11BackendService
@@ -1555,7 +1561,7 @@ done
 } else {
   $remoteDeploy = @"
 set -euo pipefail
-trap 'echo "__A11_DEPLOY_FAILED__ line=$LINENO command=$BASH_COMMAND" >&2' ERR
+trap 'echo "__A11_DEPLOY_FAILED__ line=`$LINENO command=`$BASH_COMMAND" >&2' ERR
 release=$RemoteRoot/releases/$Stamp
 mkdir -p "`$release"
 tar -xzf $RemoteArchive -C "`$release"
