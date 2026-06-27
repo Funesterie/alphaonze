@@ -3765,7 +3765,10 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
     'Analyse la matière sans écrire de paroles.',
     'Choisis un ou plusieurs chanteurs parmi djeff, vivy, a11, k44.',
     'Djeff porte le rap rugueux et rythmique; Vivy le chant mélodique expressif; A11 les couleurs électroniques précises; K44 les lignes graves cinématiques et narratives.',
-    'Choisis une direction sonore spécifique au sujet: genre, tempo ressenti, instruments, texture, dynamique et type de voix. Évite une couleur Funesterie générique.',
+    'Un refrain mélodique ou un format générique chanté doit garder Vivy; A11 peut fournir le contraste électronique. Ne choisis K44 que si la matière demande réellement une narration grave ou un contre-chant posé.',
+    'Ne remplace jamais une voix mélodique par deux voix graves ou synthétiques.',
+    'Choisis une direction sonore spécifique au sujet et à son médium: genre contemporain, tempo ressenti, instruments concrets, groove, texture, dynamique et arrangement vocal.',
+    'Sans demande explicite, évite les réflexes orchestral, cinématique, épique, symphonique ou classique. Cherche une identité moderne, rythmique et immédiatement reconnaissable.',
     'Réponds uniquement en JSON avec les clés artists (tableau) et songMood (chaîne).',
   ].join('\n');
   const completionResult = await createVivyChatCompletion(llmBundles, {
@@ -3784,6 +3787,15 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
     error.status = 502;
     throw error;
   }
+  const sessionContext = resolveVivyInputSession(input);
+  console.info(
+    '[vivy-nossen-route] session=%s provider=%s model=%s artists=%s mood=%s',
+    sessionContext.sessionId,
+    completionResult.bundle.provider || getVivyProviderFromBaseUrl(completionResult.bundle.baseURL || ''),
+    completionResult.bundle.model,
+    plan.artists.join('+'),
+    plan.songMood
+  );
   return {
     ok: true,
     ...plan,
@@ -5129,10 +5141,10 @@ function buildVivySunoPayload(input = {}, req = null) {
     ? inferVivySunoStyleBase(input, artistCast)
     : requestedStyleBase;
   const castStyle = artistCast.ids.includes('djeff') && artistCast.ids.includes('vivy') && artistCast.count === 2
-    ? 'alternating Djeff rap verses and Vivy melodic hook'
+    ? 'alternating Djeff rap verses and Vivy melodic hook; vocal contrast: rough rhythmic male rap, then a clearly different bright female melodic voice'
     : artistCast.count > 1
-      ? `${artistCast.count} distinct vocalists: ${artistCast.label}; keep tagged sections separate`
-      : `${artistCast.label} vocal lead`;
+      ? `${artistCast.count} distinct vocalists; vocal contrast: ${artistCast.artists.map((artist) => artist.style).join(' versus ')}; keep tagged sections separate; never merge them into one voice`
+      : `${artistCast.label} vocal lead: ${artistCast.artists[0]?.style || artistCast.label}`;
   const arrangement = splitVivyArrangementCues(sanitizeVivySongMaterial(
     stripVivyAscii4SoundTokens(input.songText || input.lyrics || input.text || input.theme || input.prompt),
     VIVY_SONG_MAX_CHARS
@@ -5161,6 +5173,7 @@ function buildVivySunoPayload(input = {}, req = null) {
   const negativeTags = cleanOneLine([
     input.negativeTags || process.env.VIVY_SUNO_NEGATIVE_TAGS
       || 'spoken word, narration, reading prompt, robotic speech, muddy mix, out of tune vocals, copyrighted melody, celebrity voice imitation',
+    artistCast.count > 1 ? 'single vocalist, identical vocal timbre for every singer' : '',
     useExternalVoiceMix ? 'vocals, singing, spoken voice' : '',
   ].filter(Boolean).join(', '), 'spoken word, narration', 320);
   const requestedModel = resolveVivySunoRequestedModel(input);

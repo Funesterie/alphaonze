@@ -3072,6 +3072,8 @@ export async function routeVivyNossenComposition(input: {
   notes?: string;
   songText?: string;
   message?: string;
+  sessionId?: string;
+  conversationId?: string;
 }): Promise<{ ok: boolean; artists: string[]; songMood: string; model?: string; provider?: string }> {
   const res = await authFetch(getApiUrl('/api/vivy/studio/nossen-route'), {
     method: 'POST',

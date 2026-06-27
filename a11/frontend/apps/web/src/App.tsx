@@ -7325,10 +7325,14 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           canvas: launchReadiness.source,
           notes: useCompositionWorkspace ? songWorkspace.notes || undefined : undefined,
           songText: useCompositionWorkspace ? songWorkspace.canvas || undefined : undefined,
+          sessionId: activeChatSessionId,
+          conversationId,
         });
         artists = normalizeVivyStudioArtists(routingPlan.artists, inferredArtists);
         castLabel = describeVivyNossenBangerCast(artists);
-        routedMood = songWorkspace.notes.trim() || routingPlan.songMood;
+        routedMood = useCompositionWorkspace
+          ? songWorkspace.notes.trim() || routingPlan.songMood
+          : routingPlan.songMood;
         routedReadiness = {
           ...launchReadiness,
           styleHints: routedMood ? [routedMood] : launchReadiness.styleHints,

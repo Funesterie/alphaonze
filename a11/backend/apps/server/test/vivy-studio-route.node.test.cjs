@@ -1016,6 +1016,28 @@ test('Suno payload carries explicit multi-singer cast tags', () => {
   assert.match(payload.prompt, /\[Chorus - Tous\]/);
 });
 
+test('Suno payload describes duet timbres acoustically instead of relying on internal names', () => {
+  const payload = buildVivySunoPayload({
+    songArtists: ['vivy', 'a11'],
+    songMood: 'modern electronic rock, fast breakbeat drums, distorted guitars, bright synth hook',
+    songText: [
+      '[Vivy]',
+      'Le refrain fend le code et remonte vers le ciel.',
+      '[A11]',
+      'La basse répond plus bas dans le signal.',
+      '[Duo]',
+      'Deux voix ouvrent le passage.',
+    ].join('\n'),
+    longSong: true,
+  });
+
+  assert.match(payload.style, /Vivy clear melodic hook/i);
+  assert.match(payload.style, /A11 low synthetic spoken-sung bridge/i);
+  assert.match(payload.style, /never merge them into one voice/i);
+  assert.match(payload.negativeTags, /single vocalist/i);
+  assert.match(payload.negativeTags, /identical vocal timbre/i);
+});
+
 test('Suno payload turns a NOSSEN Banger seed into lyrics without singing UI bug reports', () => {
   const payload = buildVivySunoPayload({
     songSource: 'NOSSEN Banger - conversation Vivy',
@@ -2952,9 +2974,24 @@ test('Vivy NOSSEN routes casting and sonic color from Composition before lyrics'
   assert.match(apiSource, /\/api\/vivy\/studio\/nossen-route/);
   assert.match(launchBlock, /await routeVivyNossenComposition\(/);
   assert.match(launchBlock, /artists = normalizeVivyStudioArtists\(routingPlan\.artists/);
-  assert.match(launchBlock, /routedMood = songWorkspace\.notes\.trim\(\) \|\| routingPlan\.songMood/);
+  assert.match(launchBlock, /routedMood = useCompositionWorkspace[\s\S]{0,120}routingPlan\.songMood/);
   assert.match(launchBlock, /songArtists:\s*artists/);
   assert.match(launchBlock, /songMood,/);
+});
+
+test('Vivy NOSSEN router avoids classical defaults and keeps a melodic lead in sung hooks', () => {
+  const routeSource = fs.readFileSync(
+    path.join(__dirname, '../src/routes/vivy-studio.cjs'),
+    'utf8'
+  );
+  const routeStart = routeSource.indexOf('async function buildVivyNossenRoutingPlan');
+  const routeEnd = routeSource.indexOf('function buildVivyDirectSongReply', routeStart);
+  const routeBlock = routeSource.slice(routeStart, routeEnd);
+
+  assert.match(routeBlock, /Un refrain mélodique ou un format générique chanté doit garder Vivy/);
+  assert.match(routeBlock, /Ne remplace jamais une voix mélodique par deux voix graves ou synthétiques/);
+  assert.match(routeBlock, /évite les réflexes orchestral, cinématique, épique, symphonique ou classique/);
+  assert.match(routeBlock, /\[vivy-nossen-route\]/);
 });
 
 test('Vivy parses a strict NOSSEN routing plan without leaking prose', () => {
