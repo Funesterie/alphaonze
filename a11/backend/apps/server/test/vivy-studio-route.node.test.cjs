@@ -1504,9 +1504,11 @@ test('GET /api/vivy/studio/jobs/:taskId returns completed Suno audio when ready'
               status: 'SUCCESS',
               response: {
                 sunoData: [{
+                  id: 'vivy-audio-123',
                   title: 'Vivy Test',
                   audioUrl: 'https://cdn.suno.test/vivy-test.mp3',
                   imageUrl: 'https://cdn.suno.test/vivy-test.jpg',
+                  duration: 287.4,
                 }],
               },
             },
@@ -1528,8 +1530,11 @@ test('GET /api/vivy/studio/jobs/:taskId returns completed Suno audio when ready'
       assert.equal(response.status, 200);
       assert.equal(json.ok, true);
       assert.equal(json.state, 'done');
+      assert.equal(json.audioId, 'vivy-audio-123');
+      assert.equal(json.durationSeconds, 287.4);
       assert.equal(json.media.provider, 'suno');
       assert.equal(json.media.audioUrl, 'https://cdn.suno.test/vivy-test.mp3');
+      assert.equal(json.media.durationSeconds, 287.4);
     });
   } finally {
     global.fetch = previousFetch;
@@ -2623,8 +2628,8 @@ test('Vivy NOSSEN Banger keeps lyrics first and syncs the final media reply', ()
   assert.match(assistantBlock, /wantsVivyNossenBangerWord\(fallbackLyrics\)/);
   assert.match(assistantBlock, /Paroles envoyées à Suno/);
   assert.doesNotMatch(assistantBlock, /summary,\s*downloadLine,\s*lyrics/);
-  assert.match(launchBlock, /const vocalLyricsForProduction/);
-  assert.match(launchBlock, /const publicLyricsForChat/);
+  assert.match(launchBlock, /let vocalLyricsForProduction/);
+  assert.match(launchBlock, /let publicLyricsForChat/);
   assert.match(launchBlock, /lyrics:\s*vocalLyricsForProduction/);
   assert.match(launchBlock, /songText:\s*vocalLyricsForProduction/);
   assert.match(launchBlock, /buildVivyNossenBangerAssistantText\(finalPayload,\s*preparedMedia,\s*artists,\s*d40Applied,\s*publicLyricsForChat\s*\|\|\s*vocalLyricsForProduction\)/);
@@ -2651,8 +2656,8 @@ test('Vivy NOSSEN asks Vivy for lyrics before Suno sees production', () => {
   assert.doesNotMatch(launchBlock, /if \(!readiness\.ready\)[\s\S]{0,120}return;/);
   assert.match(launchBlock, /chatWithVivy\(\{/);
   assert.ok(launchBlock.indexOf('chatWithVivy({') > -1 && launchBlock.indexOf('chatWithVivy({') < launchBlock.indexOf('runVivyStudioProduction({'));
-  assert.match(launchBlock, /const vocalLyricsForProduction/);
-  assert.match(launchBlock, /const publicLyricsForChat/);
+  assert.match(launchBlock, /let vocalLyricsForProduction/);
+  assert.match(launchBlock, /let publicLyricsForChat/);
   assert.match(appSource, /function isValidVivyNossenSongSeed/);
   assert.match(launchBlock, /paroles_vivy_invalides/);
   assert.doesNotMatch(launchBlock, /lyricsPayload\.assistant/);
@@ -2709,7 +2714,14 @@ test('Vivy NOSSEN isolates the current song exchange from stale account and work
   assert.doesNotMatch(appSource, /getItem\(VIVY_STUDIO_DRAFT_KEY\)/);
   assert.match(canvasBlock, /const latestSongExchange = getLatestVivyNossenSongExchange\(messages\)/);
   assert.match(appSource, /const latestUserIndex = messages\.findLastIndex/);
-  assert.match(appSource, /if \(index < latestUserIndex\) break/);
+  assert.match(appSource, /for \(let index = latestUserIndex \+ 1; index < messages\.length/);
+  assert.match(appSource, /isVivyNossenRenderedProductionMessage/);
+  assert.match(appSource, /isVivyNossenInternalDraftMessage/);
+  assert.match(appSource, /function hasVivyNossenThemeContinuity/);
+  assert.match(appSource, /function hasVivyNossenCastCoverage/);
+  assert.match(launchBlock, /lyricsAttempt <= 2/);
+  assert.match(launchBlock, /paroles_vivy_hors_theme/);
+  assert.match(launchBlock, /paroles_vivy_casting_incomplet/);
   assert.ok(
     canvasBlock.indexOf('latestSongExchange.length') < canvasBlock.indexOf('compositionCanvas.trim()'),
     'the latest structured chat song must win over an older Composition canvas'
@@ -2912,7 +2924,7 @@ test('Vivy NOSSEN automatically extends short Suno songs before D40', () => {
   assert.match(appSource, /const VIVY_NOSSEN_SUNO_TARGET_SECONDS = 300/);
   assert.match(appSource, /const VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS = 240/);
   assert.match(appSource, /const VIVY_NOSSEN_SUNO_MAX_EXTENSIONS = 3/);
-  assert.match(appSource, /const VIVY_NOSSEN_SUNO_LONG_MODEL = ["']V5_5["']/);
+  assert.match(appSource, /const VIVY_NOSSEN_SUNO_LONG_MODEL = ["']V4_5ALL["']/);
   assert.match(appSource, /function getVivyProductionSunoAudioId/);
   assert.match(appSource, /function getVivyProductionDurationSeconds/);
   assert.match(appSource, /payload\?\.id\s*\|\|\s*payload\?\.audioId\s*\|\|\s*payload\?\.audio_id/);
@@ -2924,6 +2936,8 @@ test('Vivy NOSSEN automatically extends short Suno songs before D40', () => {
   assert.match(launchBlock, /durationSeconds < VIVY_NOSSEN_SUNO_TARGET_SECONDS/);
   assert.match(launchBlock, /vers 5 min/);
   assert.match(launchBlock, /await extendVivyStudioSunoMusic\(/);
+  assert.match(launchBlock, /await probeVivyProductionAudioDurationSeconds/);
+  assert.match(launchBlock, /generation_suno_duree_inconnue/);
   assert.match(launchBlock, /generation_suno_trop_courte_\$\{Math\.round\(finalDurationSeconds\)\}s/);
   assert.ok(
     launchBlock.indexOf('await extendVivyStudioSunoMusic(') > -1
@@ -3292,6 +3306,33 @@ test('Vivy sessions API exposes account sessions separately for cross-device res
     assert.ok(payload.sessions.some((session) => session.id === 'pc-rock'));
     assert.ok(payload.sessions.some((session) => session.id === 'tel-lune'));
   });
+});
+
+test('Vivy session restore hides internal NOSSEN prompts and lyric drafts', () => {
+  const userId = `user:vivy-nossen-internal-${Date.now()}`;
+  const conversationId = buildVivyConversationIdForSession('sao');
+  addEpisode(userId, 'vivy_idea', 'Message: fais une chanson sur SAO et Kirito', {
+    sessionId: 'sao',
+    sessionName: 'SAO',
+    conversationId,
+  });
+  addEpisode(userId, 'vivy_idea', 'Message: Distribution vocale choisie: Trio. Matière créative du canevas Composition.', {
+    sessionId: 'sao',
+    sessionName: 'SAO',
+    conversationId,
+    internalNossenDraft: true,
+  });
+  addEpisode(userId, 'vivy_reply', '[Verse]\nBrouillon interne qui ne doit pas revenir dans le chat.', {
+    sessionId: 'sao',
+    sessionName: 'SAO',
+    conversationId,
+    internalNossenDraft: true,
+  });
+
+  const session = listVivyChatSessionsForUser(userId).find((entry) => entry.id === 'sao');
+  assert.ok(session);
+  assert.match(JSON.stringify(session.messages), /SAO et Kirito/);
+  assert.doesNotMatch(JSON.stringify(session.messages), /Distribution vocale choisie|Brouillon interne/);
 });
 
 test('Vivy frontend merges server sessions without deleting local tabs after a backend restart', () => {

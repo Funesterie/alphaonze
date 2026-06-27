@@ -482,7 +482,7 @@ const VIVY_NOSSEN_BANGER_CALL_SRC = buildPublicAssetPath("assets/vivy-banger-cal
 const VIVY_NOSSEN_SUNO_TARGET_SECONDS = 300;
 const VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS = 240;
 const VIVY_NOSSEN_SUNO_MAX_EXTENSIONS = 3;
-const VIVY_NOSSEN_SUNO_LONG_MODEL = "V5_5";
+const VIVY_NOSSEN_SUNO_LONG_MODEL = "V4_5ALL";
 
 type FunesterieSurface = "a11" | "kaen44" | "vivy";
 
@@ -2951,6 +2951,7 @@ type VivyNossenBangerReadiness = {
   score: number;
   reason: string;
   source: string;
+  themeAnchor: string;
   sourceKind: "draft" | "chat" | "composition" | "empty";
   styleHints: string[];
   structureHints: string[];
@@ -2959,6 +2960,7 @@ type VivyNossenBangerReadiness = {
 };
 type VivyNossenSemanticCanvas = {
   lyricSource: string;
+  themeAnchor: string;
   sourceKind: "draft" | "chat" | "composition" | "empty";
   styleHints: string[];
   structureHints: string[];
@@ -3415,16 +3417,29 @@ function looksLikeVivyNossenAssistantLyricsBlock(value = "") {
     && /\[(?:chorus|refrain)(?:\s*[-\d][^\]]*)?\]/i.test(text);
 }
 
+function isVivyNossenInternalDraftMessage(value = "") {
+  const folded = foldForLookup(value);
+  return /\bdistribution vocale choisie\b/.test(folded)
+    && /\bmatiere creative du canevas composition\b/.test(folded)
+    && /\becris uniquement les paroles completes\b/.test(folded);
+}
+
+function isVivyNossenRenderedProductionMessage(entry?: VivyPublicChatMessage | null) {
+  if (!entry) return false;
+  return /^vivy-nossen-/i.test(String(entry.id || ""))
+    || Boolean(entry.media)
+    || /\bparoles envoyees a suno\b/.test(foldForLookup(entry.content));
+}
+
 function getLatestVivyNossenSongExchange(messages: VivyPublicChatMessage[] = []) {
-  const latestUserIndex = messages.findLastIndex((entry) => entry.role === "user");
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (index < latestUserIndex) break;
+  const latestUserIndex = messages.findLastIndex((entry) => (
+    entry.role === "user" && !isVivyNossenInternalDraftMessage(entry.content)
+  ));
+  for (let index = latestUserIndex + 1; index < messages.length; index += 1) {
     const entry = messages[index];
+    if (isVivyNossenRenderedProductionMessage(entry)) continue;
     if (entry?.role !== "assistant" || !looksLikeVivyNossenAssistantLyricsBlock(entry.content)) continue;
-    const precedingUser = messages
-      .slice(0, index)
-      .reverse()
-      .find((candidate) => candidate.role === "user" && normalizeVivyNossenUserContent(candidate.content).trim());
+    const precedingUser = latestUserIndex >= 0 ? messages[latestUserIndex] : null;
     return [precedingUser?.content || "", entry.content].filter(Boolean);
   }
   return [];
@@ -3467,6 +3482,7 @@ function buildVivyNossenSemanticCanvas(
   const useAttachmentText = isVivyNossenUseAttachmentTextRequest(rawUserContext);
   const canvas: VivyNossenSemanticCanvas & { lyricLines: string[] } = {
     lyricSource: "",
+    themeAnchor: "",
     sourceKind: "empty",
     lyricLines: [],
     styleHints: [],
@@ -3483,7 +3499,9 @@ function buildVivyNossenSemanticCanvas(
   const latestSongExchange = getLatestVivyNossenSongExchange(messages);
   const latestUserMessage = [...messages]
     .reverse()
-    .find((entry) => entry.role === "user" && normalizeVivyNossenUserContent(entry.content).trim());
+    .find((entry) => entry.role === "user"
+      && !isVivyNossenInternalDraftMessage(entry.content)
+      && normalizeVivyNossenUserContent(entry.content).trim());
   const explicitDraft = normalizeVivyNossenUserContent(draft).trim();
   const sourceEntries = explicitDraft
     ? [explicitDraft]
@@ -3503,6 +3521,9 @@ function buildVivyNossenSemanticCanvas(
         : latestUserMessage
           ? "chat"
           : "empty";
+  canvas.themeAnchor = canvas.sourceKind === "chat"
+    ? normalizeVivyNossenUserContent(latestUserMessage?.content || "").trim()
+    : "";
   sourceEntries.forEach((entry) => {
     splitSemanticLines(entry)
       .forEach((line) => collectVivyNossenSemanticLine(canvas, line));
@@ -3588,6 +3609,7 @@ function buildVivyNossenBangerReadiness(
     ready,
     score,
     source,
+    themeAnchor: canvas.themeAnchor,
     sourceKind: canvas.sourceKind,
     styleHints: canvas.styleHints,
     structureHints: canvas.structureHints,
@@ -3606,6 +3628,7 @@ function buildVivyNossenLaunchReadiness(readiness: VivyNossenBangerReadiness, dr
     ...readiness,
     ready: true,
     source,
+    themeAnchor: readiness.themeAnchor,
     sourceKind: source ? readiness.sourceKind : "empty",
     reason: readiness.ready
       ? readiness.reason
@@ -3761,11 +3784,20 @@ function buildVivyNossenLyricsRequest(readiness: VivyNossenBangerReadiness, arti
   const materialBlock = readiness.source.trim()
     ? `Matière créative du canevas Composition à transformer:\n\n${readiness.source}`
     : "Aucune matière n'est imposée. Choisis toi-même un sujet précis, une situation concrète et un angle narratif singulier avant d'écrire.";
+  const themeAnchorLine = readiness.themeAnchor
+    ? `Sujet original obligatoire à conserver explicitement:\n${readiness.themeAnchor}\nLe titre, l'acronyme ou les noms propres distinctifs du sujet doivent apparaître dans les paroles; ne remplace jamais cet univers par une évocation générique.`
+    : "";
+  const artistTags = artists.map((artistId) => `[${VIVY_STUDIO_ARTISTS.find((artist) => artist.id === artistId)?.label || artistId}]`);
+  const castingLine = artists.length > 1
+    ? `Chaque voix doit avoir au moins une section solo complète de quatre vers, introduite par son tag exact sur une ligne séparée: ${artistTags.join(", ")}. Les passages communs utilisent seulement [${artists.length > 2 ? "Tous" : "Duo"}].`
+    : `Utilise le tag exact ${artistTags[0] || "[Vivy]"} au début des sections chantées.`;
   return toUnicodeText([
     "Écris uniquement les paroles complètes d'une chanson originale.",
     `Distribution vocale choisie: ${describeVivyNossenBangerCast(artists)}.`,
     styleLine,
     structureLine,
+    themeAnchorLine,
+    castingLine,
     "Écris une version longue, dense et chantable: intro, trois ou quatre couplets, pré-refrains, refrain mémorable répété au moins trois fois, pont, montée finale et outro. Le refrain doit revenir après le dernier pont.",
     "Chaque section doit apporter une image nouvelle, une progression émotionnelle et des rimes travaillées; évite les formules génériques et ne décris jamais la fabrication du morceau.",
     useBangerWord
@@ -3828,6 +3860,53 @@ function isValidVivyNossenSongSeed(value = "") {
     .filter((line) => line && !/^\[[^\]]+\]$/.test(line))
     .length;
   return sectionCount >= 4 && chorusCount >= 2 && lyricLineCount >= 16;
+}
+
+function getVivyNossenThemeTerms(value = "") {
+  const ignored = new Set([
+    "avec", "chanson", "dans", "fais", "faire", "musique", "originale", "pour", "type", "une",
+  ]);
+  return foldForLookup(value)
+    .split(/[^a-z0-9]+/g)
+    .filter((word) => word.length >= 3 && !ignored.has(word))
+    .filter((word, index, list) => list.indexOf(word) === index)
+    .slice(0, 8);
+}
+
+function hasVivyNossenThemeContinuity(value = "", themeAnchor = "") {
+  const terms = getVivyNossenThemeTerms(themeAnchor);
+  if (!terms.length) return true;
+  const foldedLyrics = foldForLookup(value);
+  return terms.some((term) => new RegExp(`\\b${term}\\b`).test(foldedLyrics));
+}
+
+function hasVivyNossenCastCoverage(value = "", artists: VivyStudioArtistId[] = []) {
+  if (artists.length <= 1) return true;
+  const labels = new Map(artists.map((artistId) => [
+    foldForLookup(VIVY_STUDIO_ARTISTS.find((artist) => artist.id === artistId)?.label || artistId),
+    artistId,
+  ]));
+  const soloLineCounts = new Map(artists.map((artistId) => [artistId, 0]));
+  let activeArtist: VivyStudioArtistId | null = null;
+  for (const rawLine of String(value || "").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const tag = line.match(/^\[([^\]]+)\]$/);
+    if (tag) {
+      const foldedTag = foldForLookup(tag[1]);
+      activeArtist = null;
+      for (const [label, artistId] of labels) {
+        if (foldedTag === label) {
+          activeArtist = artistId;
+          break;
+        }
+      }
+      continue;
+    }
+    if (activeArtist && line) {
+      soloLineCounts.set(activeArtist, Number(soloLineCounts.get(activeArtist) || 0) + 1);
+    }
+  }
+  return artists.every((artistId) => Number(soloLineCounts.get(artistId) || 0) >= 4);
 }
 
 function playVivyNossenBangerCall() {
@@ -3902,6 +3981,50 @@ function getVivyProductionDurationSeconds(payload: any, media?: VivyStudioMediaP
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
+async function probeVivyProductionAudioDurationSeconds(payload: any, media?: VivyStudioMediaPreview | null) {
+  const knownDuration = getVivyProductionDurationSeconds(payload, media);
+  if (knownDuration > 0) return knownDuration;
+  const sourceUrl = String(media?.downloadUrl || media?.url || "").trim();
+  if (!sourceUrl || typeof Audio === "undefined") return 0;
+  let objectUrl = "";
+  try {
+    let response: Response;
+    try {
+      response = await fetch(sourceUrl, { credentials: "include" });
+      if (!response.ok) throw new Error(`status_${response.status}`);
+    } catch {
+      response = await fetch(sourceUrl, { credentials: "omit" });
+      if (!response.ok) throw new Error(`status_${response.status}`);
+    }
+    objectUrl = URL.createObjectURL(await response.blob());
+    const duration = await new Promise<number>((resolve) => {
+      const audio = new Audio();
+      const finish = (value: number) => {
+        audio.removeAttribute("src");
+        audio.load();
+        resolve(value);
+      };
+      const timer = window.setTimeout(() => finish(0), 12000);
+      audio.preload = "metadata";
+      audio.onloadedmetadata = () => {
+        window.clearTimeout(timer);
+        const value = Number(audio.duration);
+        finish(Number.isFinite(value) && value > 0 ? value : 0);
+      };
+      audio.onerror = () => {
+        window.clearTimeout(timer);
+        finish(0);
+      };
+      audio.src = objectUrl;
+    });
+    return duration;
+  } catch {
+    return 0;
+  } finally {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  }
+}
+
 function getVivyProductionSunoModel(payload: any, media?: VivyStudioMediaPreview | null) {
   return String(
     media?.model
@@ -3928,7 +4051,7 @@ function buildVivyNossenBangerAssistantText(
   return toUnicodeText([
     opener,
     title ? `Titre: ${title}` : "",
-    `Casting: ${describeVivyNossenBangerCast(artists)}.`,
+    `Casting demandé: ${describeVivyNossenBangerCast(artists)}.`,
     d40Applied ? "Mix final prêt." : "Production prête.",
     downloadLine,
     lyrics ? "Paroles envoyées à Suno:" : "",
@@ -7339,40 +7462,62 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         };
         setStatus(`${productionLabel}: ${castLabel}, paroles en cours...`);
       }
-      const lyricsPayload = await chatWithVivy({
-        mode: "song",
-        language: vivyLanguage,
-        conversationId,
-        sessionId: activeChatSessionId,
-        sessionName: activeSessionName,
-        files: apiFiles,
-        history: productionHistory,
-        message: buildVivyNossenLyricsRequest(routedReadiness, artists),
-        songText: launchReadiness.source,
-        songMood: routedMood || undefined,
-        songArtists: artists,
-        artistCount: artists.length,
-        singerCount: artists.length,
-        vocalCast: castLabel,
-        workspace: useCompositionWorkspace ? {
-          canvas: songWorkspace.canvas,
-          notes: songWorkspace.notes,
+      let lyricsPayload: any = null;
+      let vocalLyricsForProduction = "";
+      let publicLyricsForChat = "";
+      for (let lyricsAttempt = 1; lyricsAttempt <= 2; lyricsAttempt += 1) {
+        const repairInstruction = lyricsAttempt === 1
+          ? ""
+          : [
+            "Réécris depuis le sujet original, pas depuis une précédente sortie NOSSEN.",
+            "La version précédente a été refusée car elle perdait le thème ou fusionnait le casting.",
+            "Respecte les noms distinctifs du sujet et donne à chaque chanteur sa propre section solo de quatre vers minimum.",
+          ].join(" ");
+        lyricsPayload = await chatWithVivy({
+          mode: "song",
+          language: vivyLanguage,
+          conversationId,
           sessionId: activeChatSessionId,
           sessionName: activeSessionName,
-          conversationId,
-        } : undefined,
-        useWorkspaceForSong: useCompositionWorkspace,
-        disableSongcraftFallback: true,
-      });
-      const vocalLyricsForProduction = sanitizeVivyNossenSongSeed(toUnicodeText(
-        lyricsPayload.vocalLyrics || lyricsPayload.publicLyrics || "",
-        VIVY_STUDIO_SONG_MAX_CHARS
-      ));
-      const publicLyricsForChat = sanitizeVivyNossenSongSeed(toUnicodeText(
-        lyricsPayload.publicLyrics || vocalLyricsForProduction,
-        VIVY_STUDIO_SONG_MAX_CHARS
-      ));
-      if (!isValidVivyNossenSongSeed(vocalLyricsForProduction)) throw new Error("paroles_vivy_invalides");
+          files: apiFiles,
+          history: productionHistory,
+          message: [buildVivyNossenLyricsRequest(routedReadiness, artists), repairInstruction].filter(Boolean).join("\n\n"),
+          songText: launchReadiness.source,
+          songMood: routedMood || undefined,
+          songArtists: artists,
+          artistCount: artists.length,
+          singerCount: artists.length,
+          vocalCast: castLabel,
+          workspace: useCompositionWorkspace ? {
+            canvas: songWorkspace.canvas,
+            notes: songWorkspace.notes,
+            sessionId: activeChatSessionId,
+            sessionName: activeSessionName,
+            conversationId,
+          } : undefined,
+          useWorkspaceForSong: useCompositionWorkspace,
+          disableSongcraftFallback: true,
+        });
+        vocalLyricsForProduction = sanitizeVivyNossenSongSeed(toUnicodeText(
+          lyricsPayload.vocalLyrics || lyricsPayload.publicLyrics || "",
+          VIVY_STUDIO_SONG_MAX_CHARS
+        ));
+        publicLyricsForChat = sanitizeVivyNossenSongSeed(toUnicodeText(
+          lyricsPayload.publicLyrics || vocalLyricsForProduction,
+          VIVY_STUDIO_SONG_MAX_CHARS
+        ));
+        const validStructure = isValidVivyNossenSongSeed(vocalLyricsForProduction);
+        const validTheme = hasVivyNossenThemeContinuity(vocalLyricsForProduction, routedReadiness.themeAnchor);
+        const validCast = hasVivyNossenCastCoverage(vocalLyricsForProduction, artists);
+        if (validStructure && validTheme && validCast) break;
+        if (lyricsAttempt < 2) {
+          setStatus(`${productionLabel}: Vivy recentre le thème et sépare les ${artists.length} voix...`);
+          continue;
+        }
+        if (!validTheme) throw new Error("paroles_vivy_hors_theme");
+        if (!validCast) throw new Error("paroles_vivy_casting_incomplet");
+        throw new Error("paroles_vivy_invalides");
+      }
       const productionBrief = buildVivyNossenBangerProductionBrief(routedReadiness, artists);
       const requestedSonicMood = routedMood || inferVivyNossenSonicMood(routedReadiness, artists);
       const songMood = requestedSonicMood || undefined;
@@ -7452,7 +7597,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
 
       let sunoExtended = false;
       if (preparedMedia.kind === "audio") {
-        let durationSeconds = getVivyProductionDurationSeconds(finalPayload, preparedMedia);
+        let durationSeconds = await probeVivyProductionAudioDurationSeconds(finalPayload, preparedMedia);
         for (let extensionIndex = 1; extensionIndex <= VIVY_NOSSEN_SUNO_MAX_EXTENSIONS; extensionIndex += 1) {
           const sunoAudioId = getVivyProductionSunoAudioId(finalPayload, preparedMedia);
           if (!(durationSeconds > 0 && durationSeconds < VIVY_NOSSEN_SUNO_TARGET_SECONDS && sunoAudioId)) break;
@@ -7485,7 +7630,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
               };
               preparedMedia = extendedMedia;
               sunoExtended = true;
-              durationSeconds = getVivyProductionDurationSeconds(finalPayload, preparedMedia);
+              durationSeconds = await probeVivyProductionAudioDurationSeconds(finalPayload, preparedMedia);
               if (!(durationSeconds > 0)) break;
             }
           } catch {
@@ -7493,8 +7638,11 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
             break;
           }
         }
-        const finalDurationSeconds = getVivyProductionDurationSeconds(finalPayload, preparedMedia);
-        if (finalDurationSeconds > 0 && finalDurationSeconds < VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS) {
+        const finalDurationSeconds = await probeVivyProductionAudioDurationSeconds(finalPayload, preparedMedia);
+        if (!(finalDurationSeconds > 0)) {
+          throw new Error("generation_suno_duree_inconnue");
+        }
+        if (finalDurationSeconds < VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS) {
           throw new Error(`generation_suno_trop_courte_${Math.round(finalDurationSeconds)}s`);
         }
       }
@@ -7564,8 +7712,14 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       const rawErrorMessage = String(error?.message || error || "").trim();
       const shortSunoMatch = rawErrorMessage.match(/^generation_suno_trop_courte_(\d+)s$/);
       const publicErrorMessage = shortSunoMatch
-        ? `Suno a rendu ${shortSunoMatch[1]}s après les essais d'extension; je refuse de sortir un mix final NOSSEN trop court. Relance avec la même matière ou ajoute une consigne de style plus précise.`
-        : rawErrorMessage || "erreur inconnue";
+        ? `Suno a rendu ${shortSunoMatch[1]}s après les essais d'extension; je refuse de sortir un mix final NOSSEN trop court.`
+        : rawErrorMessage === "generation_suno_duree_inconnue"
+          ? "La durée réelle du morceau est inconnue; je refuse de livrer un mix sans pouvoir vérifier sa longueur."
+          : rawErrorMessage === "paroles_vivy_hors_theme"
+            ? "Les paroles ont perdu le sujet original après deux écritures; aucun crédit Suno n'a été dépensé."
+            : rawErrorMessage === "paroles_vivy_casting_incomplet"
+              ? "Les paroles ne donnent pas une vraie section solo à chaque voix du casting; aucun crédit Suno n'a été dépensé."
+              : rawErrorMessage || "erreur inconnue";
       const assistantMessage: VivyPublicChatMessage = {
         id: `vivy-nossen-error-${Date.now()}`,
         role: "assistant",

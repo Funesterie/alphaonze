@@ -1372,8 +1372,15 @@ function isVivyMemoryContextNoise(episode = {}) {
   if (type === 'vivy_workspace') return true;
   if (episode?.metadata?.internalTuning === true) return true;
   if (episode?.metadata?.internalWorkspace === true) return true;
+  if (episode?.metadata?.internalNossenDraft === true) return true;
 
   const folded = foldTextForLookup(episode?.content || '');
+  if (String(episode?.type || '') === 'vivy_idea'
+    && /\bdistribution vocale choisie\b/.test(folded)
+    && /\bmatiere creative du canevas composition\b/.test(folded)
+    && /\becris uniquement les paroles completes\b/.test(folded)) {
+    return true;
+  }
   if (/\b(intent|reglage|reglages|sensibilite|seuil|detecteur|detecteurs)\b/.test(folded)
     && /\b(baisse|baisser|ajuste|ajuster|recentre|case technique)\b/.test(folded)) {
     return true;
@@ -4255,6 +4262,7 @@ async function buildVivyAiChat(input, req) {
       mode,
       conversationId: cleanOneLine(input.conversationId, '', 120),
       fileCount: files.length,
+      internalNossenDraft: requiresStrongSongModel,
     })
     : { stored: false };
   const localContext = shouldVivyUseLocalContext(intentMessage || message)
@@ -4720,6 +4728,7 @@ async function buildVivyAiChat(input, req) {
     rememberVivyEpisode(userId, 'vivy_reply', assistantForOutput, {
       mode,
       conversationId: cleanOneLine(input.conversationId, '', 120),
+      internalNossenDraft: requiresStrongSongModel,
     });
 
     return {
@@ -5886,6 +5895,8 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
       taskId: safeTaskId,
       state: 'done',
       status: findSunoStatus(cached?.payload || {}) || 'callback_ready',
+      audioId: preparedMedia.audioId || preparedMedia.id || cachedMedia.audioId || cachedMedia.id,
+      durationSeconds: preparedMedia.durationSeconds || preparedMedia.duration || cachedMedia.durationSeconds || cachedMedia.duration,
       media: { ...preparedMedia, taskId: safeTaskId, jobId: safeTaskId },
     };
   }
@@ -5936,6 +5947,8 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
       taskId: safeTaskId,
       state: 'done',
       status,
+      audioId: preparedMedia.audioId || preparedMedia.id || media.audioId || media.id,
+      durationSeconds: preparedMedia.durationSeconds || preparedMedia.duration || media.durationSeconds || media.duration,
       media: { ...preparedMedia, taskId: safeTaskId, jobId: safeTaskId },
     };
   }
