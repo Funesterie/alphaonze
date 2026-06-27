@@ -3705,6 +3705,85 @@ function logVivySongcraftTrace({ provider = 'deterministic', model = 'vivy-songc
     Number.isFinite(latencyMs) ? latencyMs : 0);
 }
 
+function parseVivyNossenRoutingPlan(value = '') {
+  const source = cleanText(value, 2400);
+  const jsonMatch = source.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return null;
+  try {
+    const parsed = JSON.parse(jsonMatch[0]);
+    const allowedArtists = new Set(['djeff', 'vivy', 'a11', 'k44']);
+    const artists = (Array.isArray(parsed.artists) ? parsed.artists : [])
+      .map((artist) => foldTextForLookup(artist))
+      .map((artist) => artist === 'kaen44' ? 'k44' : artist)
+      .filter((artist, index, list) => allowedArtists.has(artist) && list.indexOf(artist) === index)
+      .slice(0, 4);
+    const songMood = cleanOneLine(parsed.songMood || parsed.style || parsed.sonicDirection, '', 320);
+    if (!artists.length || songMood.length < 12) return null;
+    return { artists, songMood };
+  } catch (_) {
+    return null;
+  }
+}
+
+async function buildVivyNossenRoutingPlan(input = {}, req = null) {
+  const userId = resolveVivyMemoryUser(req, input);
+  if (!userId) {
+    const error = new Error('vivy_auth_required');
+    error.code = 'vivy_auth_required';
+    error.status = 401;
+    throw error;
+  }
+  const material = cleanText([
+    input.canvas,
+    input.songText,
+    input.message,
+    input.notes ? `Direction demandée: ${input.notes}` : '',
+  ].filter(Boolean).join('\n\n'), VIVY_SONG_MAX_CHARS);
+  if (!material) {
+    const error = new Error('vivy_nossen_canvas_required');
+    error.code = 'vivy_nossen_canvas_required';
+    error.status = 400;
+    throw error;
+  }
+  const llmBundles = createVivyOpenAIClients({ mode: 'song' });
+  if (!llmBundles.length || String(process.env.VIVY_CHAT_DISABLE_LLM || '').toLowerCase() === 'true') {
+    const error = new Error('vivy_song_llm_unavailable');
+    error.code = 'vivy_song_llm_unavailable';
+    error.status = 503;
+    throw error;
+  }
+  const systemPrompt = [
+    'Tu es le routeur musical NOSSEN.',
+    'Analyse la matière sans écrire de paroles.',
+    'Choisis un ou plusieurs chanteurs parmi djeff, vivy, a11, k44.',
+    'Djeff porte le rap rugueux et rythmique; Vivy le chant mélodique expressif; A11 les couleurs électroniques précises; K44 les lignes graves cinématiques et narratives.',
+    'Choisis une direction sonore spécifique au sujet: genre, tempo ressenti, instruments, texture, dynamique et type de voix. Évite une couleur Funesterie générique.',
+    'Réponds uniquement en JSON avec les clés artists (tableau) et songMood (chaîne).',
+  ].join('\n');
+  const completionResult = await createVivyChatCompletion(llmBundles, {
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: material },
+    ],
+    temperature: 0.72,
+    max_tokens: 500,
+  });
+  const raw = cleanText(completionResult.completion?.choices?.[0]?.message?.content, 2400);
+  const plan = parseVivyNossenRoutingPlan(raw);
+  if (!plan) {
+    const error = new Error('vivy_nossen_routing_invalid');
+    error.code = 'vivy_nossen_routing_invalid';
+    error.status = 502;
+    throw error;
+  }
+  return {
+    ok: true,
+    ...plan,
+    model: completionResult.bundle.model,
+    provider: completionResult.bundle.provider || getVivyProviderFromBaseUrl(completionResult.bundle.baseURL || ''),
+  };
+}
+
 function buildVivyDirectSongReply(input = {}) {
   const completeLyrics = [input.message, input.songText, input.lyrics, input.text]
     .find((value) => looksLikeCompleteLyrics(value));
@@ -6491,6 +6570,18 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
     }
   });
 
+  router.post('/nossen-route', requireAuth, express.json({ limit: '128kb' }), async (req, res) => {
+    try {
+      res.json(await buildVivyNossenRoutingPlan(req.body || {}, req));
+    } catch (error) {
+      res.status(error?.status || 500).json({
+        ok: false,
+        error: error?.code || 'vivy_nossen_routing_failed',
+        message: error?.message || String(error),
+      });
+    }
+  });
+
 
   // DELETE /memory - efface les episodes memoire de l'utilisateur (reset chat backend)
   router.delete('/memory', requireAuth, async (req, res) => {
@@ -6532,6 +6623,8 @@ module.exports = {
   buildVivySystemPrompt,
   buildVivyDirectSongReply,
   buildVivyPublicLyrics,
+  buildVivyNossenRoutingPlan,
+  parseVivyNossenRoutingPlan,
   buildVivySunoPayload,
   getVivySunoRuntimeStatus,
   buildVivyWebSearchQuery,

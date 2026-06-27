@@ -40,6 +40,7 @@ const {
   looksLikeWeakSongwritingReply,
   normalizeVivyChatHistory,
   postProcessVivyAssistantText,
+  parseVivyNossenRoutingPlan,
   saveVivyWorkspaceForUser,
   sanitizeVivyPublicText,
   shouldVivyAutoWebSearch,
@@ -2480,7 +2481,7 @@ test('Vivy NOSSEN asks Vivy for lyrics before Suno sees production', () => {
   assert.match(launchBlock, /const vocalLyricsForProduction/);
   assert.match(launchBlock, /const publicLyricsForChat/);
   assert.match(launchBlock, /const productionLabel = useBangerWord \? "NOSSEN Banger" : "NOSSEN"/);
-  assert.match(launchBlock, /buildVivyNossenLyricsRequest\(launchReadiness,\s*artists\)/);
+  assert.match(launchBlock, /buildVivyNossenLyricsRequest\(routedReadiness,\s*artists\)/);
   assert.match(launchBlock, /songText:\s*launchReadiness\.source/);
   assert.match(launchBlock, /useWorkspaceForSong:\s*true/);
   assert.match(launchBlock, /disableSongcraftFallback:\s*true/);
@@ -2645,7 +2646,44 @@ test('Vivy NOSSEN production removes the hard duration cap', () => {
 
   assert.doesNotMatch(launchBlock, /durationSeconds:\s*180/);
   assert.doesNotMatch(launchBlock, /2m30 à 5m00|2m30 a 5m00/);
-  assert.match(launchBlock, /refrain mémorable repris après le dernier pont|refrain memorable repris apres le dernier pont/);
+  assert.match(appSource, /refrain doit apparaître au moins deux fois|refrain doit apparaitre au moins deux fois/);
+});
+
+test('Vivy NOSSEN routes casting and sonic color from Composition before lyrics', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const apiSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/lib/api.ts'),
+    'utf8'
+  );
+  const launchStart = appSource.indexOf('async function launchNossenBanger');
+  const launchEnd = appSource.indexOf('async function onVivyVoiceReferenceChange', launchStart);
+  const launchBlock = appSource.slice(launchStart, launchEnd);
+
+  assert.match(appSource, /songCastingAuto/);
+  assert.match(appSource, /Routage automatique du casting et de la couleur depuis le canevas/);
+  assert.match(apiSource, /\/api\/vivy\/studio\/nossen-route/);
+  assert.match(launchBlock, /await routeVivyNossenComposition\(/);
+  assert.match(launchBlock, /artists = normalizeVivyStudioArtists\(routingPlan\.artists/);
+  assert.match(launchBlock, /routedMood = songWorkspace\.notes\.trim\(\) \|\| routingPlan\.songMood/);
+  assert.match(launchBlock, /songArtists:\s*artists/);
+  assert.match(launchBlock, /songMood,/);
+});
+
+test('Vivy parses a strict NOSSEN routing plan without leaking prose', () => {
+  const plan = parseVivyNossenRoutingPlan([
+    '```json',
+    '{"artists":["djeff","k44"],"songMood":"rap cinématique lent, basse sèche, piano désaccordé, voix grave en réponse"}',
+    '```',
+  ].join('\n'));
+
+  assert.deepEqual(plan, {
+    artists: ['djeff', 'k44'],
+    songMood: 'rap cinématique lent, basse sèche, piano désaccordé, voix grave en réponse',
+  });
+  assert.equal(parseVivyNossenRoutingPlan('Je choisirais peut-être Vivy.'), null);
 });
 
 test('Vivy NOSSEN Banger builds a semantic canvas instead of singing media OCR', () => {

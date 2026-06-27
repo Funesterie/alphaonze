@@ -3022,6 +3022,31 @@ export async function chatWithVivy(
   return payload as VivyStudioProductionResult;
 }
 
+export async function routeVivyNossenComposition(input: {
+  canvas: string;
+  notes?: string;
+  songText?: string;
+  message?: string;
+}): Promise<{ ok: boolean; artists: string[]; songMood: string; model?: string; provider?: string }> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/nossen-route'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Routage NOSSEN indisponible (${res.status})`);
+  }
+  return {
+    ok: true,
+    artists: Array.isArray(payload?.artists) ? payload.artists : [],
+    songMood: String(payload?.songMood || '').trim(),
+    model: payload?.model,
+    provider: payload?.provider,
+  };
+}
+
 export async function fetchVivyChatSessions(): Promise<VivyChatSessionsResponse> {
   const res = await authFetch(getApiUrl('/api/vivy/studio/sessions'), {
     method: 'GET',

@@ -63,6 +63,7 @@ import {
   deleteVivyChatSessionOnServer,
   assembleVivyStudioVoicePreview,
   mixVivyStudioPreview,
+  routeVivyNossenComposition,
   runVivyStudioProduction,
   sendMatchArenaInput,
   startGoogleOAuth,
@@ -3594,8 +3595,7 @@ function inferVivyNossenSonicMood(readiness: Pick<VivyNossenBangerReadiness, "so
   if (/\becrans?\b|\bécrans?\b|\bnouvelle\s+generation\b|\bnouvelle\s+génération\b|\breseaux\b|\bréseaux\b|\bnumerique\b|\bnumérique\b/.test(folded)) {
     return "modern alt-pop numérique, basses rondes, pads granuleux, percussion glitch, hook humain";
   }
-  const cast = describeVivyNossenBangerCast(artists);
-  return `${artists.length > 1 ? "production multi-voix" : "production vocale"} Funesterie, couleur sonore tirée du sujet, motifs concrets, refrain fort, mix moderne pour ${cast}`;
+  return "";
 }
 
 function inferVivyNossenBangerArtists(source = ""): VivyStudioArtistId[] {
@@ -3957,12 +3957,13 @@ function writeVivyStudioDraft(value: Record<string, unknown>) {
 function readVivyStudioCompositionWorkspace() {
   const draft = readVivyStudioDraft();
   if (!draft || typeof draft !== "object") {
-    return { canvas: "", notes: "", songArtists: [] as VivyStudioArtistId[] };
+    return { canvas: "", notes: "", songArtists: [] as VivyStudioArtistId[], castingAuto: true };
   }
   return {
     canvas: toUnicodeText(String(draft.songText || ""), VIVY_STUDIO_SONG_MAX_CHARS).trim(),
     notes: toUnicodeText(String(draft.songMood || ""), 800).trim(),
     songArtists: normalizeVivyStudioArtists(draft.songArtists),
+    castingAuto: draft.songCastingAuto !== false,
   };
 }
 
@@ -4569,6 +4570,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [songArtists, setSongArtists] = useState<VivyStudioArtistId[]>(() => (
     hasLegacyVivySunoSource ? ["vivy"] : normalizeVivyStudioArtists(initialDraft.songArtists)
   ));
+  const [songCastingAuto, setSongCastingAuto] = useState(initialDraft.songCastingAuto !== false);
   const [songMood, setSongMood] = useState(String(initialDraft.songMood || ""));
   const [songText, setSongText] = useState(String(initialDraft.songText || ""));
   const [sunoSessionKey, setSunoSessionKey] = useState(() => readVivySessionSunoKey());
@@ -4758,6 +4760,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       voiceLearningTranscript,
       songSource,
       songArtists,
+      songCastingAuto,
       songMood,
       songText,
       shareTarget,
@@ -4766,7 +4769,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       tokenPresent: Boolean(shareToken.trim()),
       vivyOutput: normalizeVivyStudioOutputForState(vivyOutput),
     });
-  }, [activeMode, voiceTool, voiceInstruction, voiceFileName, voiceReferenceId, selectedCatalogVoiceId, catalogVoiceName, publishVoiceToCatalog, catalogConsentAccepted, voiceLearningPersona, voiceLearningFileName, voiceLearningTranscript, songSource, songArtists, songMood, songText, shareTarget, shareUrl, shareInstruction, shareToken, vivyOutput]);
+  }, [activeMode, voiceTool, voiceInstruction, voiceFileName, voiceReferenceId, selectedCatalogVoiceId, catalogVoiceName, publishVoiceToCatalog, catalogConsentAccepted, voiceLearningPersona, voiceLearningFileName, voiceLearningTranscript, songSource, songArtists, songCastingAuto, songMood, songText, shareTarget, shareUrl, shareInstruction, shareToken, vivyOutput]);
 
   useEffect(() => {
     writeVivySessionSunoKey(sunoSessionKey);
@@ -6288,6 +6291,15 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                   <option>Instruction complète</option>
                 </select>
               </label>
+              <label className="vivy-studio-inline-option">
+                <input
+                  type="checkbox"
+                  checked={songCastingAuto}
+                  disabled={!hasSession}
+                  onChange={(event) => setSongCastingAuto(event.target.checked)}
+                />
+                <span>Routage automatique du casting et de la couleur depuis le canevas</span>
+              </label>
               <fieldset className="vivy-studio-artist-fieldset">
                 <legend>Casting vocal</legend>
                 <div className="vivy-studio-artist-grid">
@@ -6301,7 +6313,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                         <input
                           type="checkbox"
                           checked={checked}
-                          disabled={!hasSession}
+                          disabled={!hasSession || songCastingAuto}
                           onChange={() => toggleSongArtist(artist.id)}
                         />
                         <span>
@@ -7146,8 +7158,15 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     playVivyNossenBangerCall();
 
     const filesForMessage = attachedFiles.slice(0, 6);
-    const artists = inferVivyNossenBangerArtists(launchReadiness.source);
-    const castLabel = describeVivyNossenBangerCast(artists);
+    const inferredArtists = inferVivyNossenBangerArtists(launchReadiness.source);
+    const manualArtists = songWorkspace.songArtists.length ? songWorkspace.songArtists : inferredArtists;
+    let artists = songWorkspace.castingAuto ? inferredArtists : manualArtists;
+    let castLabel = describeVivyNossenBangerCast(artists);
+    let routedMood = songWorkspace.notes.trim();
+    let routedReadiness: VivyNossenBangerReadiness = {
+      ...launchReadiness,
+      styleHints: routedMood ? [routedMood] : launchReadiness.styleHints,
+    };
     const useBangerWord = wantsVivyNossenBangerWord(launchReadiness.source);
     const productionLabel = useBangerWord ? "NOSSEN Banger" : "NOSSEN";
     const apiFiles = filesForMessage.map((file) => ({
@@ -7175,6 +7194,22 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       const sunoSessionKey = readVivySessionSunoKey();
       const activeSessionName = getActiveSessionName(activeChatSessionId);
       const vivyLanguage = normalizeA11LanguageCode(getAuthAccountLanguage(localStorage.getItem("a11:language") || "fr"));
+      if (songWorkspace.castingAuto && launchReadiness.source.trim()) {
+        setStatus(`${productionLabel}: routage du canevas...`);
+        const routingPlan = await routeVivyNossenComposition({
+          canvas: launchReadiness.source,
+          notes: songWorkspace.notes || undefined,
+          songText: songWorkspace.canvas || undefined,
+        });
+        artists = normalizeVivyStudioArtists(routingPlan.artists, inferredArtists);
+        castLabel = describeVivyNossenBangerCast(artists);
+        routedMood = songWorkspace.notes.trim() || routingPlan.songMood;
+        routedReadiness = {
+          ...launchReadiness,
+          styleHints: routedMood ? [routedMood] : launchReadiness.styleHints,
+        };
+        setStatus(`${productionLabel}: ${castLabel}, paroles en cours...`);
+      }
       const lyricsPayload = await chatWithVivy({
         mode: "song",
         language: vivyLanguage,
@@ -7183,7 +7218,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         sessionName: activeSessionName,
         files: apiFiles,
         history: productionHistory,
-        message: buildVivyNossenLyricsRequest(launchReadiness, artists),
+        message: buildVivyNossenLyricsRequest(routedReadiness, artists),
         songText: launchReadiness.source,
         songMood: songWorkspace.notes || undefined,
         songArtists: artists,
@@ -7209,14 +7244,9 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         VIVY_STUDIO_SONG_MAX_CHARS
       ));
       if (!vocalLyricsForProduction) throw new Error("paroles_vivy_vides");
-      const productionBrief = buildVivyNossenBangerProductionBrief(launchReadiness, artists);
-      const requestedSonicMood = inferVivyNossenSonicMood(launchReadiness, artists);
-      const songMood = [
-        requestedSonicMood,
-        useBangerWord
-          ? "chanson complète sans durée imposée, structure libre selon la matière, refrain mémorable repris après le dernier pont, hook Banger prononcé à l'américaine si utile, voix claires"
-          : "chanson complète sans durée imposée, structure libre selon la matière, refrain mémorable repris après le dernier pont, voix claires",
-      ].filter(Boolean).join(", ");
+      const productionBrief = buildVivyNossenBangerProductionBrief(routedReadiness, artists);
+      const requestedSonicMood = routedMood || inferVivyNossenSonicMood(routedReadiness, artists);
+      const songMood = requestedSonicMood || undefined;
       setStatus(`${productionLabel}: paroles prêtes, Suno démarre...`);
       const payload = await runVivyStudioProduction({
         mode: "song",
