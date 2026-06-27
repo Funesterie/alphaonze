@@ -2747,6 +2747,8 @@ export type VivyStudioProductionInput = {
   musicProvider?: 'suno' | 'elevenlabs' | 'elevenlabs-music' | string;
   musicModel?: string;
   durationSeconds?: number;
+  targetDurationSeconds?: number;
+  longSong?: boolean;
   workspace?: VivyWorkspaceStateInput;
 };
 

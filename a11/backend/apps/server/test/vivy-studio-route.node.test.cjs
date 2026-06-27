@@ -28,6 +28,7 @@ const {
   buildVivyMemoryContext,
   buildVivySystemPrompt,
   buildVivySunoPayload,
+  extractSunoMedia,
   getVivySunoRuntimeStatus,
   requestSunoMusicExtension,
   listVivyChatSessionsForUser,
@@ -2047,6 +2048,48 @@ test('Suno payload keeps quartet casts as Suno-sung vocal directions by default'
   assert.match(payload.prompt, /\[Tous\]/);
 });
 
+test('Suno payload treats NOSSEN long songs as V5.5 long-form generations', () => {
+  const previousModel = process.env.VIVY_SUNO_MODEL;
+  const previousLongModel = process.env.VIVY_SUNO_LONG_MODEL;
+  process.env.VIVY_SUNO_MODEL = 'V4';
+  delete process.env.VIVY_SUNO_LONG_MODEL;
+  try {
+    const payload = buildVivySunoPayload({
+      mode: 'song',
+      songArtists: ['djeff', 'vivy', 'k44'],
+      songText: '[Chorus]\nMegaZord !\nOn reste debout.',
+      songMood: 'heavy heroic electro rock',
+      longSong: true,
+      targetDurationSeconds: 300,
+    });
+
+    assert.equal(payload.model, 'V5_5');
+    assert.match(payload.style, /long-form full song arrangement/i);
+    assert.match(payload.style, /complete final chorus/i);
+    assert.doesNotMatch(payload.prompt, /long-form full song arrangement|300|5 minutes/i);
+  } finally {
+    if (previousModel === undefined) delete process.env.VIVY_SUNO_MODEL;
+    else process.env.VIVY_SUNO_MODEL = previousModel;
+    if (previousLongModel === undefined) delete process.env.VIVY_SUNO_LONG_MODEL;
+    else process.env.VIVY_SUNO_LONG_MODEL = previousLongModel;
+  }
+});
+
+test('Suno media extraction prefers the longest generated track', () => {
+  const media = extractSunoMedia({
+    data: {
+      data: [
+        { id: 'short-take', audio_url: 'https://cdn.example/short.mp3', duration: 147.2, model_name: 'V5_5' },
+        { id: 'long-take', audio_url: 'https://cdn.example/long.mp3', duration: 291.8, model_name: 'V5_5' },
+      ],
+    },
+  });
+
+  assert.equal(media.audioId, 'long-take');
+  assert.equal(media.durationSeconds, 291.8);
+  assert.equal(media.url, 'https://cdn.example/long.mp3');
+});
+
 test('Suno payload can still opt into external voice mix explicitly', () => {
   const previousVoiceId = process.env.VIVY_SUNO_VOICE_ID;
   delete process.env.VIVY_SUNO_VOICE_ID;
@@ -2723,8 +2766,12 @@ test('Vivy NOSSEN automatically extends short Suno songs before D40', () => {
   assert.match(apiSource, /\/api\/vivy\/studio\/suno\/extend/);
   assert.match(appSource, /const VIVY_NOSSEN_SUNO_TARGET_SECONDS = 300/);
   assert.match(appSource, /const VIVY_NOSSEN_SUNO_MAX_EXTENSIONS = 3/);
+  assert.match(appSource, /const VIVY_NOSSEN_SUNO_LONG_MODEL = ["']V5_5["']/);
   assert.match(appSource, /function getVivyProductionSunoAudioId/);
   assert.match(appSource, /function getVivyProductionDurationSeconds/);
+  assert.match(launchBlock, /musicModel:\s*VIVY_NOSSEN_SUNO_LONG_MODEL/);
+  assert.match(launchBlock, /longSong:\s*true/);
+  assert.match(launchBlock, /targetDurationSeconds:\s*VIVY_NOSSEN_SUNO_TARGET_SECONDS/);
   assert.match(launchBlock, /extensionIndex <= VIVY_NOSSEN_SUNO_MAX_EXTENSIONS/);
   assert.match(launchBlock, /durationSeconds < VIVY_NOSSEN_SUNO_TARGET_SECONDS/);
   assert.match(launchBlock, /vers 5 min/);

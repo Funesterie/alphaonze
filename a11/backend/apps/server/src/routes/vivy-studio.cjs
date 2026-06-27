@@ -5065,6 +5065,22 @@ function wantsVivyExternalVoiceMix(input = {}) {
     && input.forceInstrumental !== true;
 }
 
+function wantsVivySunoLongForm(input = {}) {
+  const target = Number(input.targetDurationSeconds || input.target_duration_seconds || input.durationTargetSeconds || 0);
+  return input.longSong === true
+    || input.long_song === true
+    || input.fullLengthSong === true
+    || input.full_length_song === true
+    || (Number.isFinite(target) && target >= 240);
+}
+
+function resolveVivySunoRequestedModel(input = {}) {
+  const longModel = wantsVivySunoLongForm(input)
+    ? cleanOneLine(process.env.VIVY_SUNO_LONG_MODEL || 'V5_5', 'V5_5', 40)
+    : '';
+  return cleanOneLine(input.musicModel || longModel || process.env.VIVY_SUNO_MODEL || 'V5_5', 'V5_5', 40);
+}
+
 function buildVivySunoPayload(input = {}, req = null) {
   const artistCast = buildVivySongArtistCast(input);
   const preserveSelectedVoice = input.preserveSelectedVoice === true;
@@ -5112,10 +5128,13 @@ function buildVivySunoPayload(input = {}, req = null) {
   const arrangementStyle = arrangement.cues.length
     ? `instrumental arrangement: ${arrangement.arrangement}; never sing or speak arrangement directions`
     : '';
+  const longFormStyle = wantsVivySunoLongForm(input)
+    ? 'long-form full song arrangement, expanded sections, recurring hook after the bridge, complete final chorus'
+    : '';
   let style = /structured rhymed lyrics|rimes|paroles structur/i.test(styleBase)
-    ? cleanOneLine([styleBase, arrangementStyle, castStyle, prosodyStyle].filter((item, index, list) => item && list.indexOf(item) === index).join(', '), styleBase, 520)
+    ? cleanOneLine([styleBase, arrangementStyle, longFormStyle, castStyle, prosodyStyle].filter((item, index, list) => item && list.indexOf(item) === index).join(', '), styleBase, 520)
     : cleanOneLine(
-      `${styleBase}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration${arrangementStyle ? `, ${arrangementStyle}` : ''}${castStyle ? `, ${castStyle}` : ''}${prosodyStyle ? `, ${prosodyStyle}` : ''}`,
+      `${styleBase}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration${arrangementStyle ? `, ${arrangementStyle}` : ''}${longFormStyle ? `, ${longFormStyle}` : ''}${castStyle ? `, ${castStyle}` : ''}${prosodyStyle ? `, ${prosodyStyle}` : ''}`,
       styleBase,
       520
     );
@@ -5132,7 +5151,7 @@ function buildVivySunoPayload(input = {}, req = null) {
       || 'spoken word, narration, reading prompt, robotic speech, muddy mix, out of tune vocals, copyrighted melody, celebrity voice imitation',
     useExternalVoiceMix ? 'vocals, singing, spoken voice' : '',
   ].filter(Boolean).join(', '), 'spoken word, narration', 320);
-  const requestedModel = cleanOneLine(input.musicModel || process.env.VIVY_SUNO_MODEL || 'V5_5', 'V5_5', 40);
+  const requestedModel = resolveVivySunoRequestedModel(input);
   const payload = {
     model: useVerifiedVivyVoice && !/^V5(?:_5)?$/i.test(requestedModel) ? 'V5_5' : requestedModel,
     customMode: true,
@@ -5374,7 +5393,13 @@ function collectSunoTracks(value, tracks = []) {
 
 function extractSunoMedia(payload = {}) {
   const tracks = collectSunoTracks(payload, []);
-  return tracks[0] || null;
+  return tracks
+    .slice()
+    .sort((left, right) => {
+      const rightDuration = Number(right?.durationSeconds || right?.duration || 0) || 0;
+      const leftDuration = Number(left?.durationSeconds || left?.duration || 0) || 0;
+      return rightDuration - leftDuration;
+    })[0] || null;
 }
 
 function readCachedSunoCallback(taskId) {
@@ -6798,6 +6823,7 @@ module.exports = {
   buildVivyNossenRoutingPlan,
   parseVivyNossenRoutingPlan,
   buildVivySunoPayload,
+  extractSunoMedia,
   getVivySunoRuntimeStatus,
   requestSunoMusicExtension,
   buildVivyWebSearchQuery,
