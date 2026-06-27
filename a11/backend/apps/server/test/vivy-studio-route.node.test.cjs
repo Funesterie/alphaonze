@@ -2638,7 +2638,7 @@ test('Vivy NOSSEN asks Vivy for lyrics before Suno sees production', () => {
   assert.match(launchBlock, /lyrics:\s*vocalLyricsForProduction/);
   assert.match(launchBlock, /songText:\s*vocalLyricsForProduction/);
   assert.doesNotMatch(launchBlock, /buildVivyNossenBangerSongText|On rallume la nuit|Le coeur reprend la piste|Le feu clair nous suit|MASK dresse une muraille claire/);
-  assert.doesNotMatch(launchBlock, /énergie Banger|refrain mémorable répété trois fois|refrain memorable repete trois fois/);
+  assert.doesNotMatch(launchBlock, /énergie Banger/);
 });
 
 test('Vivy song buttons keep Composition canvas available outside the active tab', () => {
@@ -2796,7 +2796,7 @@ test('Vivy NOSSEN production removes the hard duration cap', () => {
 
   assert.doesNotMatch(launchBlock, /durationSeconds:\s*180/);
   assert.doesNotMatch(launchBlock, /2m30 à 5m00|2m30 a 5m00/);
-  assert.match(appSource, /refrain doit apparaître au moins deux fois|refrain doit apparaitre au moins deux fois/);
+  assert.match(appSource, /refrain mémorable répété au moins trois fois|refrain memorable repete au moins trois fois/);
 });
 
 test('Vivy NOSSEN automatically extends short Suno songs before D40', () => {
@@ -2814,10 +2814,13 @@ test('Vivy NOSSEN automatically extends short Suno songs before D40', () => {
 
   assert.match(apiSource, /\/api\/vivy\/studio\/suno\/extend/);
   assert.match(appSource, /const VIVY_NOSSEN_SUNO_TARGET_SECONDS = 300/);
+  assert.match(appSource, /const VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS = 240/);
   assert.match(appSource, /const VIVY_NOSSEN_SUNO_MAX_EXTENSIONS = 3/);
   assert.match(appSource, /const VIVY_NOSSEN_SUNO_LONG_MODEL = ["']V5_5["']/);
   assert.match(appSource, /function getVivyProductionSunoAudioId/);
   assert.match(appSource, /function getVivyProductionDurationSeconds/);
+  assert.match(appSource, /payload\?\.id\s*\|\|\s*payload\?\.audioId\s*\|\|\s*payload\?\.audio_id/);
+  assert.match(appSource, /payload\?\.durationSeconds\s*\?\?\s*payload\?\.duration/);
   assert.match(launchBlock, /musicModel:\s*VIVY_NOSSEN_SUNO_LONG_MODEL/);
   assert.match(launchBlock, /longSong:\s*true/);
   assert.match(launchBlock, /targetDurationSeconds:\s*VIVY_NOSSEN_SUNO_TARGET_SECONDS/);
@@ -2825,10 +2828,35 @@ test('Vivy NOSSEN automatically extends short Suno songs before D40', () => {
   assert.match(launchBlock, /durationSeconds < VIVY_NOSSEN_SUNO_TARGET_SECONDS/);
   assert.match(launchBlock, /vers 5 min/);
   assert.match(launchBlock, /await extendVivyStudioSunoMusic\(/);
+  assert.match(launchBlock, /generation_suno_trop_courte_\$\{Math\.round\(finalDurationSeconds\)\}s/);
   assert.ok(
     launchBlock.indexOf('await extendVivyStudioSunoMusic(') > -1
       && launchBlock.indexOf('await extendVivyStudioSunoMusic(') < launchBlock.indexOf('processDoubleHarmonicAudio'),
     'NOSSEN must extend before applying D40'
+  );
+  assert.ok(
+    launchBlock.indexOf('generation_suno_trop_courte_${Math.round(finalDurationSeconds)}s') > -1
+      && launchBlock.indexOf('generation_suno_trop_courte_${Math.round(finalDurationSeconds)}s') < launchBlock.indexOf('processDoubleHarmonicAudio'),
+    'NOSSEN must reject too-short Suno audio before applying D40'
+  );
+});
+
+test('Vivy NOSSEN maps Kirito and anime seeds to an opening color before generic vehicle styles', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const moodStart = appSource.indexOf('function inferVivyNossenSonicMood');
+  const moodEnd = appSource.indexOf('function inferVivyNossenBangerArtists', moodStart);
+  const moodBlock = appSource.slice(moodStart, moodEnd);
+
+  assert.match(moodBlock, /kirito/);
+  assert.match(moodBlock, /sword\\s\+art\\s\+online/);
+  assert.match(moodBlock, /opening animé J-rock|opening anime J-rock/);
+  assert.ok(
+    moodBlock.indexOf('kirito') > -1
+      && moodBlock.indexOf('kirito') < moodBlock.indexOf('\\bmoto\\b'),
+    'anime character routing must win before the moto/technical style'
   );
 });
 

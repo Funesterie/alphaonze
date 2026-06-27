@@ -480,6 +480,7 @@ const NOSSEN_DJEFF_BETA_SRC = buildPublicAssetPath("assets/nossen-djeff-beta.png
 const NOSSEN_CREW_SRC = buildPublicAssetPath("assets/nossen-crew.webp");
 const VIVY_NOSSEN_BANGER_CALL_SRC = buildPublicAssetPath("assets/vivy-banger-call.wav");
 const VIVY_NOSSEN_SUNO_TARGET_SECONDS = 300;
+const VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS = 240;
 const VIVY_NOSSEN_SUNO_MAX_EXTENSIONS = 3;
 const VIVY_NOSSEN_SUNO_LONG_MODEL = "V5_5";
 
@@ -3580,6 +3581,9 @@ function inferVivyNossenSonicMood(readiness: Pick<VivyNossenBangerReadiness, "so
   const explicit = readiness.styleHints.slice(0, 3).join(", ").trim();
   if (explicit) return explicit;
   const folded = foldForLookup([readiness.source, ...readiness.mediaHints].join("\n"));
+  if (/\bkirito\b|\bsword\s+art\s+online\b|\bsao\b|\baincrad\b|\basuna\b|\balfheim\b|\banime\b|\bmanga\b|\bshonen\b|\bshônen\b|\bisekai\b|\bopening\b|\bgenerique\b|\bgénérique\b/.test(folded)) {
+    return "opening animé J-rock / J-pop rock, batterie rapide, guitares lumineuses, synthés héroïques, couplets nerveux, refrain massif et mémorisable";
+  }
   if (/\bzorro\b|\bjusticier\b|\bmasque\b|\bepee\b|\bépée\b|\bcheval\s+noir\b/.test(folded)) {
     return "latin cinematic pop-rock, guitare espagnole, palmas, castagnettes, trompettes western, batterie héroïque";
   }
@@ -3725,7 +3729,8 @@ function buildVivyNossenLyricsRequest(readiness: VivyNossenBangerReadiness, arti
     `Distribution vocale choisie: ${describeVivyNossenBangerCast(artists)}.`,
     styleLine,
     structureLine,
-    "Structure libre: intro, couplets, refrain, ponts et reprises selon ce que la matière demande. Le refrain doit apparaître au moins deux fois, dont une fois après le dernier pont. Aucun objectif de durée ni limite artificielle.",
+    "Écris une version longue, dense et chantable: intro, trois ou quatre couplets, pré-refrains, refrain mémorable répété au moins trois fois, pont, montée finale et outro. Le refrain doit revenir après le dernier pont.",
+    "Chaque section doit apporter une image nouvelle, une progression émotionnelle et des rimes travaillées; évite les formules génériques et ne décris jamais la fabrication du morceau.",
     useBangerWord
       ? "Le mot Banger est autorisé seulement comme hook voulu par l'utilisateur."
       : "Ne mets pas le mot Banger dans les paroles.",
@@ -3808,13 +3813,13 @@ function getVivyProductionMediaPreview(payload: any, fallbackFilename = "vivy-no
     provider: String(media?.provider || payload?.mediaStatus?.provider || payload?.musicJob?.provider || "vivy-music").trim(),
     contentType: String(media?.contentType || media?.content_type || payload?.contentType || payload?.content_type || (audioUrl ? "audio/mpeg" : "video/mp4")).trim(),
     filename: String(media?.filename || payload?.filename || fallbackFilename).trim(),
-    id: String(media?.id || media?.audioId || media?.audio_id || "").trim() || undefined,
-    audioId: String(media?.audioId || media?.audio_id || media?.id || "").trim() || undefined,
-    durationSeconds: Number.isFinite(Number(media?.durationSeconds ?? media?.duration))
-      ? Number(media?.durationSeconds ?? media?.duration)
+    id: String(media?.id || media?.audioId || media?.audio_id || payload?.id || payload?.audioId || payload?.audio_id || "").trim() || undefined,
+    audioId: String(media?.audioId || media?.audio_id || media?.id || payload?.audioId || payload?.audio_id || payload?.id || "").trim() || undefined,
+    durationSeconds: Number.isFinite(Number(media?.durationSeconds ?? media?.duration ?? payload?.durationSeconds ?? payload?.duration))
+      ? Number(media?.durationSeconds ?? media?.duration ?? payload?.durationSeconds ?? payload?.duration)
       : undefined,
-    model: String(media?.model || payload?.musicJob?.model || payload?.mediaStatus?.model || payload?.model || "").trim() || undefined,
-    taskId: String(media?.taskId || media?.jobId || payload?.musicJob?.taskId || payload?.mediaStatus?.taskId || "").trim() || undefined,
+    model: String(media?.model || payload?.musicJob?.model || payload?.mediaStatus?.model || payload?.model || payload?.modelName || payload?.model_name || "").trim() || undefined,
+    taskId: String(media?.taskId || media?.jobId || payload?.taskId || payload?.jobId || payload?.musicJob?.taskId || payload?.mediaStatus?.taskId || "").trim() || undefined,
   };
 }
 
@@ -7418,6 +7423,10 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
             break;
           }
         }
+        const finalDurationSeconds = getVivyProductionDurationSeconds(finalPayload, preparedMedia);
+        if (finalDurationSeconds > 0 && finalDurationSeconds < VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS) {
+          throw new Error(`generation_suno_trop_courte_${Math.round(finalDurationSeconds)}s`);
+        }
       }
 
       let d40Applied = false;
@@ -7482,10 +7491,15 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       }).catch(() => {});
       setStatus(d40Applied ? `${productionLabel} prêt avec mix final.` : `${productionLabel} prêt.`);
     } catch (error: any) {
+      const rawErrorMessage = String(error?.message || error || "").trim();
+      const shortSunoMatch = rawErrorMessage.match(/^generation_suno_trop_courte_(\d+)s$/);
+      const publicErrorMessage = shortSunoMatch
+        ? `Suno a rendu ${shortSunoMatch[1]}s après les essais d'extension; je refuse de sortir un mix final NOSSEN trop court. Relance avec la même matière ou ajoute une consigne de style plus précise.`
+        : rawErrorMessage || "erreur inconnue";
       const assistantMessage: VivyPublicChatMessage = {
         id: `vivy-nossen-error-${Date.now()}`,
         role: "assistant",
-        content: `${productionLabel} stoppé: ${error?.message || error}`,
+        content: `${productionLabel} stoppé: ${publicErrorMessage}`,
         ts: new Date().toISOString(),
       };
       setMessages((current) => [...current, assistantMessage].slice(-36));
