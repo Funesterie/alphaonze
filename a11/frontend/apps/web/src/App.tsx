@@ -479,7 +479,8 @@ const NOSSEN_K44_TZR_SRC = buildPublicAssetPath("assets/nossen-k44-tzr.png");
 const NOSSEN_DJEFF_BETA_SRC = buildPublicAssetPath("assets/nossen-djeff-beta.png");
 const NOSSEN_CREW_SRC = buildPublicAssetPath("assets/nossen-crew.webp");
 const VIVY_NOSSEN_BANGER_CALL_SRC = buildPublicAssetPath("assets/vivy-banger-call.wav");
-const VIVY_NOSSEN_SUNO_EXTEND_MIN_SECONDS = 210;
+const VIVY_NOSSEN_SUNO_TARGET_SECONDS = 300;
+const VIVY_NOSSEN_SUNO_MAX_EXTENSIONS = 3;
 
 type FunesterieSurface = "a11" | "kaen44" | "vivy";
 
@@ -7372,11 +7373,12 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
 
       let sunoExtended = false;
       if (preparedMedia.kind === "audio") {
-        const durationSeconds = getVivyProductionDurationSeconds(finalPayload, preparedMedia);
-        const sunoAudioId = getVivyProductionSunoAudioId(finalPayload, preparedMedia);
-        if (durationSeconds > 0 && durationSeconds < VIVY_NOSSEN_SUNO_EXTEND_MIN_SECONDS && sunoAudioId) {
+        let durationSeconds = getVivyProductionDurationSeconds(finalPayload, preparedMedia);
+        for (let extensionIndex = 1; extensionIndex <= VIVY_NOSSEN_SUNO_MAX_EXTENSIONS; extensionIndex += 1) {
+          const sunoAudioId = getVivyProductionSunoAudioId(finalPayload, preparedMedia);
+          if (!(durationSeconds > 0 && durationSeconds < VIVY_NOSSEN_SUNO_TARGET_SECONDS && sunoAudioId)) break;
           try {
-            setStatus(`${productionLabel}: morceau court (${Math.round(durationSeconds)}s), extension Suno...`);
+            setStatus(`${productionLabel}: ${Math.round(durationSeconds)}s, extension Suno ${extensionIndex}/${VIVY_NOSSEN_SUNO_MAX_EXTENSIONS} vers 5 min...`);
             const extensionStart = await extendVivyStudioSunoMusic({
               audioId: sunoAudioId,
               model: getVivyProductionSunoModel(finalPayload, preparedMedia) || undefined,
@@ -7404,9 +7406,12 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
               };
               preparedMedia = extendedMedia;
               sunoExtended = true;
+              durationSeconds = getVivyProductionDurationSeconds(finalPayload, preparedMedia);
+              if (!(durationSeconds > 0)) break;
             }
           } catch {
             setStatus(`${productionLabel}: extension indisponible, je garde la prise Suno originale.`);
+            break;
           }
         }
       }
