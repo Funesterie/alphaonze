@@ -559,6 +559,7 @@ services:
       A11_VOICE_XTTS_RVC_URL: ${A11_VOICE_XTTS_RVC_URL:-http://a11-xtts-rvc:5000}
       A11_PROFILE_ENV: /app/profiles/a11.prod.env.disabled
       A11_RUNTIME_ROOT: /app/runtime
+      A11_EPISODIC_MEMORY_DIR: /app/runtime/episodic-memory
       A11_LLM_PROVIDER: groq
       A11_OLLAMA_PRIMARY_MODEL: llama3.2:3b
       A11_OLLAMA_FALLBACK_MODEL: llama3.2:3b
@@ -1139,6 +1140,7 @@ $overrides = [ordered]@{
   A11_MEMORY_REMOTE_TIMEOUT_MS = "5000"
   A11_EMBEDDING_TIMEOUT_MS = "2500"
   A11_RUNTIME_ROOT = "/app/runtime"
+  A11_EPISODIC_MEMORY_DIR = "/app/runtime/episodic-memory"
   A11_RUNTIME_PROFILE = "prod"
   A11_PRODUCT = "a11"
   A11_INSTANCE_NAME = "Alpha Onze"
@@ -1398,6 +1400,7 @@ printf 'A11_MEMORY_LOCAL_TIMEOUT_MS=3500\n' >> "$tmp_build"
 printf 'A11_MEMORY_REMOTE_TIMEOUT_MS=5000\n' >> "$tmp_build"
 printf 'A11_EMBEDDING_TIMEOUT_MS=2500\n' >> "$tmp_build"
 printf 'A11_RUNTIME_ROOT=/app/runtime\n' >> "$tmp_build"
+printf 'A11_EPISODIC_MEMORY_DIR=/app/runtime/episodic-memory\n' >> "$tmp_build"
 printf 'VIVY_ELEVENLABS_MUSIC_DISABLED=false\n' >> "$tmp_build"
 printf 'VIVY_SUNO_MODEL=V5_5\n' >> "$tmp_build"
 mv "$tmp_build" "$build_env"

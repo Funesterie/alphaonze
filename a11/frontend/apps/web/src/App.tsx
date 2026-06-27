@@ -2951,6 +2951,7 @@ type VivyNossenBangerReadiness = {
   score: number;
   reason: string;
   source: string;
+  sourceKind: "draft" | "chat" | "composition" | "empty";
   styleHints: string[];
   structureHints: string[];
   technicalNoise: string[];
@@ -2958,6 +2959,7 @@ type VivyNossenBangerReadiness = {
 };
 type VivyNossenSemanticCanvas = {
   lyricSource: string;
+  sourceKind: "draft" | "chat" | "composition" | "empty";
   styleHints: string[];
   structureHints: string[];
   technicalNoise: string[];
@@ -3405,9 +3407,27 @@ function isVivyNossenStructureInstructionLine(value = "") {
 function looksLikeVivyNossenAssistantLyricsBlock(value = "") {
   const text = toUnicodeText(value, 6000);
   const folded = foldForLookup(text);
-  if (!folded || /je prends ca comme une vraie discussion|je prends ça comme une vraie discussion/.test(folded)) return false;
-  return /\[(?:intro|verse|couplet|chorus|refrain|bridge|pont|outro)(?:\s*[-\d][^\]]*)?\]/i.test(text)
-    && /(?:^|\n)\s*\[(?:Vivy|Djeff|A11|K44|Tous|Duo)\]\s*(?:\n|$)/.test(text);
+  if (!folded
+    || /je prends ca comme une vraie discussion|je prends ça comme une vraie discussion/.test(folded)
+    || /\bparoles envoyees a suno\b/.test(folded)) return false;
+  const sectionCount = (text.match(/\[(?:intro|verse|couplet|pre-chorus|pre-refrain|chorus|refrain|bridge|pont|outro)(?:\s*[-\d][^\]]*)?\]/gi) || []).length;
+  return sectionCount >= 3
+    && /\[(?:chorus|refrain)(?:\s*[-\d][^\]]*)?\]/i.test(text);
+}
+
+function getLatestVivyNossenSongExchange(messages: VivyPublicChatMessage[] = []) {
+  const latestUserIndex = messages.findLastIndex((entry) => entry.role === "user");
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (index < latestUserIndex) break;
+    const entry = messages[index];
+    if (entry?.role !== "assistant" || !looksLikeVivyNossenAssistantLyricsBlock(entry.content)) continue;
+    const precedingUser = messages
+      .slice(0, index)
+      .reverse()
+      .find((candidate) => candidate.role === "user" && normalizeVivyNossenUserContent(candidate.content).trim());
+    return [precedingUser?.content || "", entry.content].filter(Boolean);
+  }
+  return [];
 }
 
 function collectVivyNossenSemanticLine(canvas: VivyNossenSemanticCanvas & { lyricLines: string[] }, value = "") {
@@ -3447,6 +3467,7 @@ function buildVivyNossenSemanticCanvas(
   const useAttachmentText = isVivyNossenUseAttachmentTextRequest(rawUserContext);
   const canvas: VivyNossenSemanticCanvas & { lyricLines: string[] } = {
     lyricSource: "",
+    sourceKind: "empty",
     lyricLines: [],
     styleHints: [],
     structureHints: [],
@@ -3459,20 +3480,33 @@ function buildVivyNossenSemanticCanvas(
     .map((line) => line.trim())
     .filter(Boolean);
 
-  const hasCompositionCanvas = Boolean(compositionCanvas.trim());
-  splitSemanticLines(compositionCanvas)
-    .forEach((line) => collectVivyNossenSemanticLine(canvas, line));
-  if (!hasCompositionCanvas) {
-    messages
-      .filter((entry) => entry.role === "user")
-      .slice(-24)
-      .forEach((entry) => splitSemanticLines(entry.content).forEach((line) => collectVivyNossenSemanticLine(canvas, line)));
-    messages
-      .filter((entry) => entry.role === "assistant" && looksLikeVivyNossenAssistantLyricsBlock(entry.content))
-      .slice(-3)
-      .forEach((entry) => splitSemanticLines(entry.content).forEach((line) => collectVivyNossenSemanticLine(canvas, line)));
-  }
-  splitSemanticLines(draft).forEach((line) => collectVivyNossenSemanticLine(canvas, line));
+  const latestSongExchange = getLatestVivyNossenSongExchange(messages);
+  const latestUserMessage = [...messages]
+    .reverse()
+    .find((entry) => entry.role === "user" && normalizeVivyNossenUserContent(entry.content).trim());
+  const explicitDraft = normalizeVivyNossenUserContent(draft).trim();
+  const sourceEntries = explicitDraft
+    ? [explicitDraft]
+    : latestSongExchange.length
+      ? latestSongExchange
+      : compositionCanvas.trim()
+        ? [compositionCanvas]
+        : latestUserMessage
+          ? [latestUserMessage.content]
+          : [];
+  canvas.sourceKind = explicitDraft
+    ? "draft"
+    : latestSongExchange.length
+      ? "chat"
+      : compositionCanvas.trim()
+        ? "composition"
+        : latestUserMessage
+          ? "chat"
+          : "empty";
+  sourceEntries.forEach((entry) => {
+    splitSemanticLines(entry)
+      .forEach((line) => collectVivyNossenSemanticLine(canvas, line));
+  });
 
   files.slice(0, 6).forEach((file) => {
     const safeVisualHint = toUnicodeLine(file.visualDescription || file.description, "", 220);
@@ -3554,6 +3588,7 @@ function buildVivyNossenBangerReadiness(
     ready,
     score,
     source,
+    sourceKind: canvas.sourceKind,
     styleHints: canvas.styleHints,
     structureHints: canvas.structureHints,
     technicalNoise: canvas.technicalNoise,
@@ -3571,6 +3606,7 @@ function buildVivyNossenLaunchReadiness(readiness: VivyNossenBangerReadiness, dr
     ...readiness,
     ready: true,
     source,
+    sourceKind: source ? readiness.sourceKind : "empty",
     reason: readiness.ready
       ? readiness.reason
       : "NOSSEN peut partir maintenant: Vivy écrit les paroles avec le contexte disponible.",
@@ -4001,9 +4037,17 @@ function buildVivyStudioProductionStatus(output: string) {
   ].join("\n");
 }
 
+function getVivyStudioDraftStorageKey() {
+  try {
+    return `${VIVY_STUDIO_DRAFT_KEY}:${getAuthStorageScope() || "locked"}`;
+  } catch {
+    return `${VIVY_STUDIO_DRAFT_KEY}:locked`;
+  }
+}
+
 function readVivyStudioDraft() {
   try {
-    const raw = globalThis.localStorage?.getItem(VIVY_STUDIO_DRAFT_KEY);
+    const raw = globalThis.localStorage?.getItem(getVivyStudioDraftStorageKey());
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object") {
@@ -4020,7 +4064,7 @@ function readVivyStudioDraft() {
 
 function writeVivyStudioDraft(value: Record<string, unknown>) {
   try {
-    globalThis.localStorage?.setItem(VIVY_STUDIO_DRAFT_KEY, JSON.stringify({
+    globalThis.localStorage?.setItem(getVivyStudioDraftStorageKey(), JSON.stringify({
       ...value,
       vivyOutput: normalizeVivyStudioOutputForState(String(value.vivyOutput || "")),
     }));
@@ -6875,16 +6919,21 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       const remoteMetas = remoteSessions
         .map(normalizeVivyRemoteChatSession)
         .filter(Boolean) as VivyChatSessionMeta[];
-      saveVivyChatSessions(remoteMetas);
-      setChatSessions(remoteMetas);
+      const localMetas = listVivyChatSessions();
+      const mergedById = new Map(localMetas.map((session) => [session.id, session]));
+      remoteMetas.forEach((session) => mergedById.set(session.id, session));
+      const mergedMetas = Array.from(mergedById.values())
+        .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
+        .slice(0, VIVY_CHAT_MAX_SESSIONS);
+      saveVivyChatSessions(mergedMetas);
+      setChatSessions(mergedMetas);
       for (const session of remoteSessions) {
         if (session?.conversationId) rememberVivyConversationIdForSession(normalizeVivyChatSessionId(session.id), session.conversationId);
       }
       const activeId = activeChatSessionRef.current;
       const activeStillExists = activeId === "default"
-        || remoteMetas.some((session) => session.id === activeId);
+        || mergedMetas.some((session) => session.id === activeId);
       if (!activeStillExists) {
-        deleteVivyChatSession(activeId);
         switchSession("default");
         return true;
       }
@@ -7237,7 +7286,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     const manualArtists = songWorkspace.songArtists.length ? songWorkspace.songArtists : inferredArtists;
     let artists = songWorkspace.castingAuto ? inferredArtists : manualArtists;
     let castLabel = describeVivyNossenBangerCast(artists);
-    let routedMood = songWorkspace.notes.trim();
+    const useCompositionWorkspace = launchReadiness.sourceKind === "composition";
+    let routedMood = useCompositionWorkspace ? songWorkspace.notes.trim() : "";
     let routedReadiness: VivyNossenBangerReadiness = {
       ...launchReadiness,
       styleHints: routedMood ? [routedMood] : launchReadiness.styleHints,
@@ -7273,8 +7323,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         setStatus(`${productionLabel}: routage du canevas...`);
         const routingPlan = await routeVivyNossenComposition({
           canvas: launchReadiness.source,
-          notes: songWorkspace.notes || undefined,
-          songText: songWorkspace.canvas || undefined,
+          notes: useCompositionWorkspace ? songWorkspace.notes || undefined : undefined,
+          songText: useCompositionWorkspace ? songWorkspace.canvas || undefined : undefined,
         });
         artists = normalizeVivyStudioArtists(routingPlan.artists, inferredArtists);
         castLabel = describeVivyNossenBangerCast(artists);
@@ -7295,19 +7345,19 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         history: productionHistory,
         message: buildVivyNossenLyricsRequest(routedReadiness, artists),
         songText: launchReadiness.source,
-        songMood: songWorkspace.notes || undefined,
+        songMood: routedMood || undefined,
         songArtists: artists,
         artistCount: artists.length,
         singerCount: artists.length,
         vocalCast: castLabel,
-        workspace: {
+        workspace: useCompositionWorkspace ? {
           canvas: songWorkspace.canvas,
           notes: songWorkspace.notes,
           sessionId: activeChatSessionId,
           sessionName: activeSessionName,
           conversationId,
-        },
-        useWorkspaceForSong: true,
+        } : undefined,
+        useWorkspaceForSong: useCompositionWorkspace,
         disableSongcraftFallback: true,
       });
       const vocalLyricsForProduction = sanitizeVivyNossenSongSeed(toUnicodeText(

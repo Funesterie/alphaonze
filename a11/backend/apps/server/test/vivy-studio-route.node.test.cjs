@@ -15,6 +15,7 @@ const {
   createVivyStudioRouter,
   buildVivyAiChat,
   buildVivyConversationIdForSession,
+  resolveVivyInputSession,
   buildVivyDirectSongReply,
   buildVivyPublicLyrics,
   buildVivyStudioProduction,
@@ -2637,7 +2638,7 @@ test('Vivy NOSSEN asks Vivy for lyrics before Suno sees production', () => {
   assert.match(launchBlock, /const productionLabel = useBangerWord \? "NOSSEN Banger" : "NOSSEN"/);
   assert.match(launchBlock, /buildVivyNossenLyricsRequest\(routedReadiness,\s*artists\)/);
   assert.match(launchBlock, /songText:\s*launchReadiness\.source/);
-  assert.match(launchBlock, /useWorkspaceForSong:\s*true/);
+  assert.match(launchBlock, /useWorkspaceForSong:\s*useCompositionWorkspace/);
   assert.match(launchBlock, /disableSongcraftFallback:\s*true/);
   assert.match(launchBlock, /lyrics:\s*vocalLyricsForProduction/);
   assert.match(launchBlock, /songText:\s*vocalLyricsForProduction/);
@@ -2645,7 +2646,7 @@ test('Vivy NOSSEN asks Vivy for lyrics before Suno sees production', () => {
   assert.doesNotMatch(launchBlock, /énergie Banger/);
 });
 
-test('Vivy song buttons keep Composition canvas available outside the active tab', () => {
+test('Vivy song buttons keep Composition available without overriding the latest chat song', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
     'utf8'
@@ -2656,11 +2657,80 @@ test('Vivy song buttons keep Composition canvas available outside the active tab
 
   assert.match(appSource, /compositionWorkspace\.canvas/);
   assert.match(appSource, /buildVivyNossenBangerReadiness\(messages,\s*draft,\s*attachedFiles,\s*compositionWorkspace\.canvas\)/);
-  assert.match(appSource, /if \(!hasCompositionCanvas\)\s*\{/);
+  assert.match(appSource, /function getLatestVivyNossenSongExchange/);
+  assert.match(appSource, /latestSongExchange\.length[\s\S]{0,180}compositionCanvas\.trim\(\)/);
+  assert.match(appSource, /sourceKind:\s*"draft"\s*\|\s*"chat"\s*\|\s*"composition"\s*\|\s*"empty"/);
   assert.match(chatBlock, /const songWorkspace = mode === "song" \? readVivyStudioCompositionWorkspace\(\) : null/);
   assert.match(chatBlock, /history:\s*mode === "song" && songWorkspace\?\.canvas \? \[\] : apiHistory/);
   assert.match(chatBlock, /workspace:\s*songWorkspace \?/);
   assert.match(chatBlock, /useWorkspaceForSong:\s*Boolean\(songWorkspace\)/);
+});
+
+test('Vivy NOSSEN isolates the current song exchange from stale account and workspace state', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const routeSource = fs.readFileSync(
+    path.join(__dirname, '../src/routes/vivy-studio.cjs'),
+    'utf8'
+  );
+  const canvasStart = appSource.indexOf('function buildVivyNossenSemanticCanvas');
+  const canvasEnd = appSource.indexOf('function normalizeVivyNossenContextSource', canvasStart);
+  const canvasBlock = appSource.slice(canvasStart, canvasEnd);
+  const launchStart = appSource.indexOf('async function launchNossenBanger');
+  const launchEnd = appSource.indexOf('async function onVivyVoiceReferenceChange', launchStart);
+  const launchBlock = appSource.slice(launchStart, launchEnd);
+
+  assert.match(appSource, /function getVivyStudioDraftStorageKey/);
+  assert.match(appSource, /`\$\{VIVY_STUDIO_DRAFT_KEY\}:\$\{getAuthStorageScope\(\) \|\| "locked"\}`/);
+  assert.doesNotMatch(appSource, /getItem\(VIVY_STUDIO_DRAFT_KEY\)/);
+  assert.match(canvasBlock, /const latestSongExchange = getLatestVivyNossenSongExchange\(messages\)/);
+  assert.match(appSource, /const latestUserIndex = messages\.findLastIndex/);
+  assert.match(appSource, /if \(index < latestUserIndex\) break/);
+  assert.ok(
+    canvasBlock.indexOf('latestSongExchange.length') < canvasBlock.indexOf('compositionCanvas.trim()'),
+    'the latest structured chat song must win over an older Composition canvas'
+  );
+  assert.doesNotMatch(canvasBlock, /\.slice\(-24\)/);
+  assert.doesNotMatch(canvasBlock, /\.slice\(-3\)/);
+  assert.match(launchBlock, /const useCompositionWorkspace = launchReadiness\.sourceKind === "composition"/);
+  assert.match(launchBlock, /workspace:\s*useCompositionWorkspace \?/);
+  assert.match(launchBlock, /songMood:\s*routedMood \|\| undefined/);
+  assert.match(routeSource, /const hasExplicitWorkspace = Boolean\(input\.workspace/);
+  assert.match(routeSource, /const effectiveWorkspace = hasExplicitWorkspace\s*\?\s*requestWorkspace/);
+});
+
+test('Vivy canonicalizes a mismatched conversation id when the client sends a session id', () => {
+  const isolated = resolveVivyInputSession({
+    sessionId: 'sao-opening',
+    conversationId: 'vivy-session-metro-romance',
+    sessionName: 'SAO',
+  });
+  assert.equal(isolated.sessionId, 'sao-opening');
+  assert.equal(isolated.conversationId, 'vivy-session-sao-opening');
+
+  const matching = resolveVivyInputSession({
+    sessionId: 'sao-opening',
+    conversationId: 'vivy-session-sao-opening',
+  });
+  assert.equal(matching.conversationId, 'vivy-session-sao-opening');
+});
+
+test('Vivy episodic sessions use the persistent runtime volume in production', () => {
+  const memorySource = fs.readFileSync(
+    path.join(__dirname, '../lib/episodic-memory.cjs'),
+    'utf8'
+  );
+  const deploySource = fs.readFileSync(
+    path.join(__dirname, '../../../../ops/deploy-a11-prod-finland-2.ps1'),
+    'utf8'
+  );
+
+  assert.match(memorySource, /getCanonicalRuntimeRoot/);
+  assert.match(memorySource, /path\.join\(getCanonicalRuntimeRoot\(process\.env\), 'episodic-memory'\)/);
+  assert.match(deploySource, /A11_EPISODIC_MEMORY_DIR:\s*\/app\/runtime\/episodic-memory/);
+  assert.match(deploySource, /printf 'A11_EPISODIC_MEMORY_DIR=\/app\/runtime\/episodic-memory\\n'/);
 });
 
 test('Vivy NOSSEN refuses deterministic lyrics when every strong LLM is unavailable', async () => {
@@ -3187,7 +3257,7 @@ test('Vivy sessions API exposes account sessions separately for cross-device res
   });
 });
 
-test('Vivy frontend treats server sessions as authoritative across devices', () => {
+test('Vivy frontend merges server sessions without deleting local tabs after a backend restart', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
     'utf8'
@@ -3202,8 +3272,10 @@ test('Vivy frontend treats server sessions as authoritative across devices', () 
   assert.ok(syncStart > 0, 'server session reload helper exists');
   assert.match(syncBlock, /fetchVivyChatSessions/);
   assert.match(syncBlock, /remoteMetas/);
-  assert.match(syncBlock, /saveVivyChatSessions\(remoteMetas\)/);
-  assert.doesNotMatch(syncBlock, /for \(const session of listVivyChatSessions\(\)\) merged\.set/);
+  assert.match(syncBlock, /const localMetas = listVivyChatSessions\(\)/);
+  assert.match(syncBlock, /remoteMetas\.forEach\(\(session\) => mergedById\.set/);
+  assert.match(syncBlock, /saveVivyChatSessions\(mergedMetas\)/);
+  assert.doesNotMatch(syncBlock, /deleteVivyChatSession\(activeId\)/);
   assert.match(syncBlock, /switchSession\("default"/);
   assert.match(appSource, /setInterval\(\(\)\s*=>\s*\{\s*void reloadVivySessionsFromServer/);
   assert.match(deleteBlock, /await deleteVivyChatSessionOnServer/);

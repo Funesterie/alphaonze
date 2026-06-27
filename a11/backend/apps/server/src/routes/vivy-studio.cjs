@@ -1450,8 +1450,13 @@ function normalizeVivySessionName(value = '', fallback = '') {
 
 function resolveVivyInputSession(input = {}) {
   const sessionId = normalizeVivyChatSessionId(input.sessionId || input.chatSessionId || input.session_id || 'default');
-  const conversationId = cleanOneLine(input.conversationId || input.conversation_id, '', 120)
-    || buildVivyConversationIdForSession(sessionId);
+  const requestedConversationId = cleanOneLine(input.conversationId || input.conversation_id, '', 120);
+  const hasExplicitSessionId = Boolean(input.sessionId || input.chatSessionId || input.session_id);
+  const conversationMatchesSession = !requestedConversationId
+    || inferVivySessionIdFromConversationId(requestedConversationId) === sessionId;
+  const conversationId = hasExplicitSessionId && !conversationMatchesSession
+    ? buildVivyConversationIdForSession(sessionId)
+    : requestedConversationId || buildVivyConversationIdForSession(sessionId);
   const sessionName = normalizeVivySessionName(
     input.sessionName || input.chatSessionName || input.session_name,
     sessionId === 'default' ? 'Session principale' : `Session ${sessionId}`
@@ -4200,13 +4205,16 @@ async function buildVivyAiChat(input, req) {
   }
   const requestWorkspace = normalizeVivyWorkspaceInput(input.workspace || {}, input);
   const storedWorkspace = getVivyWorkspaceForUser(userId, input);
-  const effectiveWorkspace = {
-    ...storedWorkspace,
-    ...requestWorkspace,
-    notes: requestWorkspace.notes || storedWorkspace.notes,
-    canvas: requestWorkspace.canvas || storedWorkspace.canvas,
-    chromeContext: requestWorkspace.chromeContext || storedWorkspace.chromeContext,
-  };
+  const hasExplicitWorkspace = Boolean(input.workspace && typeof input.workspace === 'object');
+  const effectiveWorkspace = hasExplicitWorkspace
+    ? requestWorkspace
+    : {
+      ...storedWorkspace,
+      ...requestWorkspace,
+      notes: requestWorkspace.notes || storedWorkspace.notes,
+      canvas: requestWorkspace.canvas || storedWorkspace.canvas,
+      chromeContext: requestWorkspace.chromeContext || storedWorkspace.chromeContext,
+    };
   const songWorkspaceContext = mode === 'song' && input.useWorkspaceForSong === true
     ? cleanText([
       effectiveWorkspace.canvas ? `Canevas Composition:\n${effectiveWorkspace.canvas}` : '',
@@ -6882,6 +6890,7 @@ module.exports = {
   buildVivyChat,
   buildVivyAiChat,
   buildVivyConversationIdForSession,
+  resolveVivyInputSession,
   listVivyChatSessionsForUser,
   normalizeVivyChatHistory,
   getVivyOpenAIConfig,
