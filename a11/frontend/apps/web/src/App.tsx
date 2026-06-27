@@ -3426,7 +3426,8 @@ function collectVivyNossenSemanticLine(canvas: VivyNossenSemanticCanvas & { lyri
 function buildVivyNossenSemanticCanvas(
   messages: VivyPublicChatMessage[] = [],
   draft = "",
-  files: VivyPublicChatFile[] = []
+  files: VivyPublicChatFile[] = [],
+  compositionCanvas = ""
 ): VivyNossenSemanticCanvas {
   const rawUserContext = [
     ...messages.filter((entry) => entry.role === "user").map((entry) => entry.content),
@@ -3447,14 +3448,19 @@ function buildVivyNossenSemanticCanvas(
     .map((line) => line.trim())
     .filter(Boolean);
 
-  messages
-    .filter((entry) => entry.role === "user")
-    .slice(-24)
-    .forEach((entry) => splitSemanticLines(entry.content).forEach((line) => collectVivyNossenSemanticLine(canvas, line)));
-  messages
-    .filter((entry) => entry.role === "assistant" && looksLikeVivyNossenAssistantLyricsBlock(entry.content))
-    .slice(-3)
-    .forEach((entry) => splitSemanticLines(entry.content).forEach((line) => collectVivyNossenSemanticLine(canvas, line)));
+  const hasCompositionCanvas = Boolean(compositionCanvas.trim());
+  splitSemanticLines(compositionCanvas)
+    .forEach((line) => collectVivyNossenSemanticLine(canvas, line));
+  if (!hasCompositionCanvas) {
+    messages
+      .filter((entry) => entry.role === "user")
+      .slice(-24)
+      .forEach((entry) => splitSemanticLines(entry.content).forEach((line) => collectVivyNossenSemanticLine(canvas, line)));
+    messages
+      .filter((entry) => entry.role === "assistant" && looksLikeVivyNossenAssistantLyricsBlock(entry.content))
+      .slice(-3)
+      .forEach((entry) => splitSemanticLines(entry.content).forEach((line) => collectVivyNossenSemanticLine(canvas, line)));
+  }
   splitSemanticLines(draft).forEach((line) => collectVivyNossenSemanticLine(canvas, line));
 
   files.slice(0, 6).forEach((file) => {
@@ -3495,9 +3501,10 @@ function normalizeVivyNossenContextSource(
 function buildVivyNossenBangerReadiness(
   messages: VivyPublicChatMessage[] = [],
   draft = "",
-  files: VivyPublicChatFile[] = []
+  files: VivyPublicChatFile[] = [],
+  compositionCanvas = ""
 ): VivyNossenBangerReadiness {
-  const canvas = buildVivyNossenSemanticCanvas(messages, draft, files);
+  const canvas = buildVivyNossenSemanticCanvas(messages, draft, files, compositionCanvas);
   const source = canvas.lyricSource;
   const folded = foldForLookup(source);
   const foldedSemantic = foldForLookup([
@@ -3543,6 +3550,19 @@ function buildVivyNossenBangerReadiness(
     reason: ready
       ? "Vivy sent assez de matière pour enflammer NOSSEN."
       : "Vivy attend encore un peu de matière avant d'enflammer NOSSEN.",
+  };
+}
+
+function buildVivyNossenLaunchReadiness(readiness: VivyNossenBangerReadiness, draft = ""): VivyNossenBangerReadiness {
+  const source = readiness.source.trim()
+    || normalizeVivyNossenUserContent(draft).trim();
+  return {
+    ...readiness,
+    ready: true,
+    source,
+    reason: readiness.ready
+      ? readiness.reason
+      : "NOSSEN peut partir maintenant: Vivy écrit les paroles avec le contexte disponible.",
   };
 }
 
@@ -3688,6 +3708,9 @@ function buildVivyNossenLyricsRequest(readiness: VivyNossenBangerReadiness, arti
   const structureLine = readiness.structureHints.length
     ? `Souhait de structure: ${readiness.structureHints.slice(0, 3).join(" / ")}.`
     : "";
+  const materialBlock = readiness.source.trim()
+    ? `Matière créative du canevas Composition à transformer:\n\n${readiness.source}`
+    : "Aucune matière n'est imposée. Choisis toi-même un sujet précis, une situation concrète et un angle narratif singulier avant d'écrire.";
   return toUnicodeText([
     "Écris uniquement les paroles complètes d'une chanson originale.",
     `Distribution vocale choisie: ${describeVivyNossenBangerCast(artists)}.`,
@@ -3698,8 +3721,7 @@ function buildVivyNossenLyricsRequest(readiness: VivyNossenBangerReadiness, arti
       ? "Le mot Banger est autorisé seulement comme hook voulu par l'utilisateur."
       : "Ne mets pas le mot Banger dans les paroles.",
     "Ne reprends pas les phrases de réglage, les noms d'outils, les liens, les bugs, ni les consignes techniques.",
-    "Matière à transformer en chanson:",
-    readiness.source,
+    materialBlock,
   ].filter(Boolean).join("\n\n"), 6200);
 }
 
@@ -3930,6 +3952,18 @@ function writeVivyStudioDraft(value: Record<string, unknown>) {
   } catch {
     // Storage is optional for the public page.
   }
+}
+
+function readVivyStudioCompositionWorkspace() {
+  const draft = readVivyStudioDraft();
+  if (!draft || typeof draft !== "object") {
+    return { canvas: "", notes: "", songArtists: [] as VivyStudioArtistId[] };
+  }
+  return {
+    canvas: toUnicodeText(String(draft.songText || ""), VIVY_STUDIO_SONG_MAX_CHARS).trim(),
+    notes: toUnicodeText(String(draft.songMood || ""), 800).trim(),
+    songArtists: normalizeVivyStudioArtists(draft.songArtists),
+  };
 }
 
 function readVivySessionSunoKey() {
@@ -6703,10 +6737,12 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   const [copiedMsgId, setCopiedMsgId] = useState("");
   const [chatSessions, setChatSessions] = useState<VivyChatSessionMeta[]>(() => hasSession ? listVivyChatSessions() : []);
   const [activeChatSessionId, setActiveChatSessionId] = useState("default");
+  const compositionWorkspace = readVivyStudioCompositionWorkspace();
   const nossenBangerReadiness = useMemo(
-    () => buildVivyNossenBangerReadiness(messages, draft, attachedFiles),
-    [messages, draft, attachedFiles]
+    () => buildVivyNossenBangerReadiness(messages, draft, attachedFiles, compositionWorkspace.canvas),
+    [messages, draft, attachedFiles, compositionWorkspace.canvas]
   );
+  const nossenBangerCanLaunch = hasSession && !isSending;
 
   function getActiveSessionName(id = activeChatSessionId) {
     if (id === "default") return "Session principale";
@@ -7025,6 +7061,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         }));
       const activeSessionName = getActiveSessionName(activeChatSessionId);
       const vivyLanguage = normalizeA11LanguageCode(getAuthAccountLanguage(localStorage.getItem("a11:language") || "fr"));
+      const songWorkspace = mode === "song" ? readVivyStudioCompositionWorkspace() : null;
       const payload = await chatWithVivy({
           mode,
           language: vivyLanguage,
@@ -7033,7 +7070,18 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           sessionId: activeChatSessionId,
           sessionName: activeSessionName,
           files: apiFiles,
-          history: apiHistory,
+          history: mode === "song" && songWorkspace?.canvas ? [] : apiHistory,
+          songText: songWorkspace?.canvas || undefined,
+          songMood: songWorkspace?.notes || undefined,
+          songArtists: songWorkspace?.songArtists.length ? songWorkspace.songArtists : undefined,
+          workspace: songWorkspace ? {
+            canvas: songWorkspace.canvas,
+            notes: songWorkspace.notes,
+            sessionId: activeChatSessionId,
+            sessionName: activeSessionName,
+            conversationId,
+          } : undefined,
+          useWorkspaceForSong: Boolean(songWorkspace),
         });
       const assistantText = toUnicodeText(payload.publicLyrics || payload.publicText || payload.assistant || payload.content || payload.summary)
         || (mode === "song"
@@ -7087,21 +7135,20 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       return;
     }
     if (isSending) return;
+    const songWorkspace = readVivyStudioCompositionWorkspace();
     const readiness = buildVivyNossenBangerReadiness(
       messages,
       draft,
-      attachedFiles
+      attachedFiles,
+      songWorkspace.canvas
     );
-    if (!readiness.ready) {
-      setStatus(readiness.reason);
-      return;
-    }
+    const launchReadiness = buildVivyNossenLaunchReadiness(readiness, draft);
     playVivyNossenBangerCall();
 
     const filesForMessage = attachedFiles.slice(0, 6);
-    const artists = inferVivyNossenBangerArtists(readiness.source);
+    const artists = inferVivyNossenBangerArtists(launchReadiness.source);
     const castLabel = describeVivyNossenBangerCast(artists);
-    const useBangerWord = wantsVivyNossenBangerWord(readiness.source);
+    const useBangerWord = wantsVivyNossenBangerWord(launchReadiness.source);
     const productionLabel = useBangerWord ? "NOSSEN Banger" : "NOSSEN";
     const apiFiles = filesForMessage.map((file) => ({
       id: file.id,
@@ -7136,12 +7183,22 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         sessionName: activeSessionName,
         files: apiFiles,
         history: productionHistory,
-        message: buildVivyNossenLyricsRequest(readiness, artists),
-        songText: readiness.source,
+        message: buildVivyNossenLyricsRequest(launchReadiness, artists),
+        songText: launchReadiness.source,
+        songMood: songWorkspace.notes || undefined,
         songArtists: artists,
         artistCount: artists.length,
         singerCount: artists.length,
         vocalCast: castLabel,
+        workspace: {
+          canvas: songWorkspace.canvas,
+          notes: songWorkspace.notes,
+          sessionId: activeChatSessionId,
+          sessionName: activeSessionName,
+          conversationId,
+        },
+        useWorkspaceForSong: true,
+        disableSongcraftFallback: true,
       });
       const vocalLyricsForProduction = sanitizeVivyNossenSongSeed(toUnicodeText(
         lyricsPayload.vocalLyrics || lyricsPayload.publicLyrics || lyricsPayload.publicText || lyricsPayload.assistant || lyricsPayload.content || "",
@@ -7152,8 +7209,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         VIVY_STUDIO_SONG_MAX_CHARS
       ));
       if (!vocalLyricsForProduction) throw new Error("paroles_vivy_vides");
-      const productionBrief = buildVivyNossenBangerProductionBrief(readiness, artists);
-      const requestedSonicMood = inferVivyNossenSonicMood(readiness, artists);
+      const productionBrief = buildVivyNossenBangerProductionBrief(launchReadiness, artists);
+      const requestedSonicMood = inferVivyNossenSonicMood(launchReadiness, artists);
       const songMood = [
         requestedSonicMood,
         useBangerWord
@@ -7564,12 +7621,12 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           <button type="button" disabled={!hasSession} onClick={() => sendModeFromComposer("share")}>Scène</button>
           <button
             type="button"
-            className={`vivy-nossen-banger-button${nossenBangerReadiness.ready ? " is-ready" : ""}${isSending ? " is-running" : ""}`}
-            disabled={!hasSession || isSending || !nossenBangerReadiness.ready}
+            className={`vivy-nossen-banger-button${nossenBangerCanLaunch ? " is-ready" : ""}${isSending ? " is-running" : ""}`}
+            disabled={!hasSession || isSending}
             onClick={() => void launchNossenBanger()}
             aria-label="NOSSEN Banger"
-            aria-pressed={nossenBangerReadiness.ready}
-            title={nossenBangerReadiness.reason}
+            aria-pressed={nossenBangerCanLaunch}
+            title={nossenBangerReadiness.ready ? nossenBangerReadiness.reason : "NOSSEN peut partir maintenant; Vivy écrira d'abord les paroles avec le contexte disponible."}
           >
             <span className="vivy-nossen-flames" aria-hidden="true">
               <span className="vivy-nossen-flame-tongue is-left" />

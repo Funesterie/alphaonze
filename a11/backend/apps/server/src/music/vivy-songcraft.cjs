@@ -121,6 +121,9 @@ function looksLikeVivySongUiNoiseLine(line = '') {
   if (/^parle moi d une (?:voix|chanson|ambiance|scene)\b/.test(folded)) return true;
   if (/^(vivy|vous|accueil|discussion|menu|voix|chanson|scene|scène|fichier|envoyer|copier|partager|defaut|défaut|audio perso|importer|ptt)$/.test(folded)) return true;
   if (/^(conversation vivy|conversation|historique vivy|recherche web|web search|web research|que dirais tu|que dirais tu d en faire un son|je mets quoi en couleur sonore|couleur sonore|paroles?)\b/.test(folded)) return true;
+  if (/^(vous|copier|you might also like|testo di|ritornello|strofa)\b/.test(folded)) return true;
+  if (/\b(je te donne un ex(?:e|a)?mple|quelqu un qui a fais une chanson|tu as juste traduis|c est pas ca que je voulais|il faut un theme principal|sous theme|en manque de flow|tu comprends|musique c est de l art|pas de des calculs)\b/.test(folded)) return true;
+  if (/\b(io guido|io scopo|io mangio|io cago|figa|fighe|sborro|tette|cuscino|non pulisco|maschi bianchi|ammazzarmi|torna nel tuo paese)\b/.test(folded)) return true;
   if (/^(vivy_song_production|vivy_studio_handoff|vivy_production|vivy_voice_calibration|vivy_scene_share|vivy song production|vivy studio handoff|vivy production|vivy voice calibration|vivy scene share)\b/.test(folded)) return true;
   if (/^vivy_(?:music_generation|production_status)\b/.test(folded)) return true;
   if (/\b(prompt suno|original song inspired by|french original vocal production|structured rhymed lyrics|sung vocals|no spoken narration|no copyrighted melody|no celebrity voice imitation)\b/.test(folded)) return true;
@@ -200,7 +203,7 @@ function expandVivySongMaterialCandidate(value = '') {
   if (!line) return [];
 
   return line
-    .split(/\s+\/\s+|,\s+(?=(?:écran|ecran|voix|feu|route|lien|vitesse|monde|nouvelle|réel|reel)\b)/i)
+    .split(/\s+\/\s+|,\s+(?=(?:écran|ecran|voix|route|lien|vitesse|monde|nouvelle|réel|reel)\b)/i)
     .map((part) => cleanOneLine(part, '', 180))
     .filter((part) => {
       const partFolded = foldTextForLookup(part);
@@ -385,36 +388,46 @@ function looksLikeExplicitSunoLyricsBlock(value = '') {
     && lyricLines >= 3;
 }
 
+function looksLikeVivyReferenceConversation(value = '') {
+  const raw = String(value || '');
+  const folded = foldTextForLookup(value);
+  if (!folded) return false;
+  const chatMarkers = (raw.match(/(?:^|\n)\s*(?:Vous|Copier|Vivy)\s*(?:\n|$)/g) || []).length;
+  return chatMarkers >= 3
+    || /\b(je te donne un exemple|tu as juste traduis|il faut un theme principal|sous theme|paraboles?|metaphore|allegorie)\b/.test(folded)
+    || /\b(io guido|io scopo|figa|sborro|testo di|ritornello)\b/.test(folded);
+}
+
 function inferMotif(theme = '') {
   const folded = foldTextForLookup(theme);
-  if (/moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/.test(folded)) return 'le moteur qui respire dans la nuit';
-  if (/planete|astre|zodiaque|saint seiya|chevalier|cosmos|galaxie|constellation/.test(folded)) return 'un cosmos qui brûle sous l’armure';
-  if (/soleil|sable|plage|estival|summer/.test(folded)) return 'un soleil qui colle à la peau';
-  if (/neige|flocon|hiver/.test(folded)) return 'un flocon dans le bol du matin';
-  if (/lapin|court|course/.test(folded)) return 'une ombre vive qui traverse les néons';
-  if (/pluie|orage|averse/.test(folded)) return 'la pluie qui écrit sur les vitres';
-  if (/nossen|funesterie|agent|machine/.test(folded)) return 'un signal humain dans les circuits';
-  if (/trahison|trahit|tromperie|mensonge|infidel/.test(folded)) return 'le mensonge gardé sous la langue';
-  if (/distance|loin|separation|eloigne|absence/.test(folded)) return 'la distance tenue dans le creux';
-  if (/agrumes|citron|orange|amertume|acide|saldae/.test(folded)) return `un goût d’agrumes sous les mots`;
-  if (/desir|envie|attirance|convoitise/.test(folded)) return 'le désir tenu à bout de bras';
-  if (/deception|decoit|decu|dessous|desillusion/.test(folded)) return 'la déception rentrée dans les os';
-  if (/nuit|ombre|dark|sombre/.test(folded)) return 'une veilleuse cachée dans la nuit';
-  if (/amour|coeur|manque/.test(folded)) return 'un battement tenu entre deux souffles';
-  return 'un fil tendu dans le vide';
+  if (/moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/.test(folded)) return 'le sujet mécanique';
+  if (/planete|astre|zodiaque|saint seiya|chevalier|cosmos|galaxie|constellation/.test(folded)) return 'le sujet astral';
+  if (/soleil|sable|plage|estival|summer/.test(folded)) return 'le décor estival';
+  if (/neige|flocon|hiver/.test(folded)) return 'le décor hivernal';
+  if (/lapin|court|course/.test(folded)) return 'la course';
+  if (/pluie|orage|averse/.test(folded)) return 'le temps d’orage';
+  if (/nossen|funesterie|agent|machine/.test(folded)) return 'le lien Funesterie';
+  if (/trahison|trahit|tromperie|mensonge|infidel/.test(folded)) return 'la trahison';
+  if (/distance|loin|separation|eloigne|absence/.test(folded)) return 'la distance';
+  if (/agrumes|citron|orange|amertume|acide|saldae/.test(folded)) return 'l’amertume';
+  if (/desir|envie|attirance|convoitise/.test(folded)) return 'le désir';
+  if (/deception|decoit|decu|dessous|desillusion/.test(folded)) return 'la déception';
+  if (/nuit|ombre|dark|sombre/.test(folded)) return 'la part sombre';
+  if (/amour|coeur|manque/.test(folded)) return 'le manque';
+  return 'le motif central';
 }
 
 function inferAllMotifs(theme) {
   const folded = foldTextForLookup(theme);
   const results = [];
-  if (/trahison|trahit|tromperie|mensonge|infidel/.test(folded)) results.push('le mensonge gardé sous la langue');
-  if (/distance|loin|separation|eloigne|absence/.test(folded)) results.push('la distance tenue dans le creux');
-  if (/agrumes|citron|orange|amertume|acide|saldae/.test(folded)) results.push('un goût d’agrumes sous les mots');
-  if (/desir|envie|attirance|convoitise/.test(folded)) results.push('le désir tenu à bout de bras');
-  if (/deception|decoit|decu|dessous|desillusion/.test(folded)) results.push('la déception rentrée dans les os');
-  if (/amour|coeur|manque/.test(folded)) results.push('un battement tenu entre deux souffles');
-  if (/moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/.test(folded)) results.push('le moteur qui respire dans la nuit');
-  if (results.length === 0) results.push('un fil tendu dans le vide');
+  if (/trahison|trahit|tromperie|mensonge|infidel/.test(folded)) results.push('la trahison');
+  if (/distance|loin|separation|eloigne|absence/.test(folded)) results.push('la distance');
+  if (/agrumes|citron|orange|amertume|acide|saldae/.test(folded)) results.push('l’amertume');
+  if (/desir|envie|attirance|convoitise/.test(folded)) results.push('le désir');
+  if (/deception|decoit|decu|dessous|desillusion/.test(folded)) results.push('la déception');
+  if (/amour|coeur|manque/.test(folded)) results.push('le manque');
+  if (/moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/.test(folded)) results.push('le sujet mécanique');
+  if (results.length === 0) results.push('le motif central');
   return results;
 }
 
@@ -425,7 +438,7 @@ function inferTitle(theme = '') {
   const explicitTitle = rawText.match(/^\s*(?:titre|title)\s*:?\s*([^\r\n]{2,90})/im);
   if (explicitTitle) return cleanOneLine(stripSongCommand(explicitTitle[1]), 'Sans titre', 80);
   if (/\b(?:valentino|rossi|the doctor|vr46|mugello|laguna seca|motogp|moto gp)\b/i.test(stripped)) return 'The Doctor 46';
-  if (/moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/i.test(stripped)) return 'Pignon dans la nuit';
+  if (/moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/i.test(stripped)) return 'Pignon précis';
   if (/planete|planète|astre|voie lact[ée]e|zodiaque|saint seiya|chevalier|cosmos|galaxie|[ée]toile|constellation/i.test(stripped)) return 'Cosmos du matin';
   if (/flocon|neige|bol/i.test(stripped)) return 'Flocon d’émerveillement';
   if (/lapin/i.test(stripped)) return 'Course sous les néons';
@@ -443,6 +456,96 @@ function inferTitle(theme = '') {
   return words
     .map((word) => word.charAt(0).toLocaleUpperCase('fr-FR') + word.slice(1).toLocaleLowerCase('fr-FR'))
     .join(' ');
+}
+
+function isValentinoRossiTheme(value = '') {
+  const folded = foldTextForLookup(value);
+  return /\b(valentino\s+rossi|rossi\b|the\s+doctor|docteur|doctor\s*46|\b46\b|motogp|moto\s*gp)\b/.test(folded);
+}
+
+function wantsRossiPizzaSubtheme(value = '') {
+  const folded = foldTextForLookup(value);
+  return /\b(pizza|pizzaiol|mozzarella|tomate|parmeggiano|parmigiano|jambon|march[ée]|sauce|ap[eé]ro|champagne|rafraichissement|rafraîchissement|ingr[eé]dients?)\b/.test(folded);
+}
+
+function buildVivyRossiMotogpLyrics(input = {}, material = '') {
+  const source = cleanText([material, input.prompt, input.message, input.theme, input.instruction].filter(Boolean).join('\n'), VIVY_SONG_MAX_CHARS);
+  const withPizza = wantsRossiPizzaSubtheme(source);
+  const title = cleanOneLine(input.songTitle || input.title, '', 80) || (withPizza ? 'Doctor Al Forno' : 'The Doctor 46');
+  const culinaryVerse = withPizza
+    ? [
+        "La grille devient marché, chacun vend sa pression,",
+        "Vale choisit ses gommes comme une pâte en tension.",
+        "Il coupe les lignes, copeaux de parmigiano,",
+        "double entre deux jambons de carénage: piano, puis plein pot.",
+      ]
+    : [
+        "Il lit les trajectoires comme des nerfs sous la peau,",
+        "pose le genou au millimètre et referme le tableau.",
+        "Rival dans le rétro, il décale l’ordonnance,",
+        "un dépassement chirurgical, puis silence dans la stance.",
+      ];
+  const culinaryBridge = withPizza
+    ? [
+        "Le pot rougit sauce tomate, rouge de saison,",
+        "la mozzarella des pneus colle encore au goudron.",
+        "Fin de circuit: apéro doré sur le podium,",
+        "il sert la victoire fraîche, mousse fine, aluminium.",
+      ]
+    : [
+        "Au dernier tour, le paddock retient son souffle,",
+        "le cuir parle bas, la machine se redouble.",
+        "La ligne d’arrivée tranche comme une lame claire,",
+        "et le numéro quarante-six signe dans la poussière.",
+      ];
+
+  return cleanText(restoreVivyFrenchSongAccents([
+    `[Title: ${title}]`,
+    '',
+    '[Intro]',
+    "The Doctor entre en piste, pas en légende de carton,",
+    "scalpel dans la chicane, le poignet fait l’incision.",
+    "Quarante-six sur le cuir, sourire jaune en coin,",
+    "il ausculte le circuit et recoud chaque frein.",
+    '',
+    '[Verse 1]',
+    "Dans le bloc opératoire, les stands sentent l’essence,",
+    "la visière baisse le ciel, le départ prend naissance.",
+    "Il pique à la corde, précis, presque insolent,",
+    "un rival perd son latin dans le virage suivant.",
+    ...culinaryVerse,
+    '',
+    '[Pre-Chorus]',
+    "Ça fait tac dans la boîte, ça fait tique dans les nerfs,",
+    "tic-tac, Doctor attaque, diagnostic: ouvert.",
+    '',
+    '[Chorus]',
+    "Vale, Vale, coupe court dans le chaos,",
+    "Valentino va vite, les voyelles font le galop.",
+    "Quarante-six, l’asphalte avale son écho,",
+    "Doctor sur la trajectoire, le virage dit bravo.",
+    '',
+    '[Verse 2]',
+    "Les rivaux font barrage, il leur répond par l’angle,",
+    "un souffle sous le casque, puis la courbe les étrangle.",
+    "Yamaha dans la mémoire, Ducati dans le dossier,",
+    "il garde chaque saison comme un pneu à négocier.",
+    "Pas besoin de grands démons ni de sang sur la visière,",
+    "son mythe tient dans le geste, le frein tardif, la manière.",
+    '',
+    '[Bridge]',
+    ...culinaryBridge,
+    '',
+    '[Chorus]',
+    "Vale, Vale, coupe court dans le chaos,",
+    "Valentino va vite, les voyelles font le galop.",
+    "Quarante-six, l’asphalte avale son écho,",
+    "Doctor sur la trajectoire, le virage dit bravo.",
+    '',
+    '[Outro]',
+    "Quand le moteur redescend, la foule garde le tempo,",
+    "Rossi laisse une ordonnance écrite au chaud sur le chrono.",
+  ].join('\n')), VIVY_SONG_MAX_CHARS);
 }
 
 function punctuateVivySongLine(value = '', punctuation = ',') {
@@ -620,6 +723,10 @@ function buildVivySongcraftSystemPrompt(mode, context) {
     'Application Songcraft: preserver le grain, les accidents utiles et l\u2019intention emotionnelle avant de lisser.',
     'Si l\u2019utilisateur demande une chanson, reponds comme une artiste-auteure, pas comme un assistant qui explique.',
     'Liberté créative: tu peux réécrire, déplacer, condenser ou enrichir la matière pour produire une vraie chanson; ne te limite pas à paraphraser les phrases reçues.',
+    'Méthode silencieuse avant écriture: identifie le thème principal, un sous-thème métaphorique utile, les faits ou allusions fiables, les familles sonores, les doubles sens et les rimes cachées; écris ensuite seulement les paroles.',
+    'Le thème principal doit rester dominant. Le sous-thème sert de réserve d’images quand le flow manque, jamais de remplacement du sujet.',
+    'Travaille la phonétique: assonances, allitérations, rimes internes, pivots de sons et mots à plusieurs tranchants. La technique doit sonner naturelle, pas scolaire.',
+    'Si le sujet est une personne, une œuvre, une course, un modèle, une marque ou une actualité et qu’une recherche est disponible, utilise-la avant d’écrire; sinon n’invente pas de faux détails.',
     'Une référence sert uniquement à comprendre une ambiance, une structure ou un mécanisme d’écriture; elle ne fournit jamais des paroles à recycler.',
     'Ne reprends, ne réutilise et ne recopie aucune formulation distinctive de la référence, même légèrement modifiée.',
     'Si l’utilisateur demande de s’en inspirer sans copier, repars d’une page blanche avec de nouvelles images, de nouvelles rimes et un nouveau refrain.',
@@ -630,8 +737,8 @@ function buildVivySongcraftSystemPrompt(mode, context) {
     'Chaque couplet: minimum 4 vers. Refrain mémorable, minimum 3 sections de paroles avec contenu réel.',
     'Construis des rimes audibles selon un schéma cohérent par section (AABB, ABAB ou rimes embrassées), avec assonances et rimes internes quand elles sonnent naturellement.',
     'Deux mots identiques ne constituent jamais une rime: varie les mots finaux et fais correspondre leurs sonorités, pas leur répétition exacte.',
-    'Une rime doit naître du sens et de la syntaxe: jamais de mot ajouté artificiellement après une virgule en fin de ligne ou en fin de vers (par exemple « mon cœur », « mon âme », « mon feu », « pensées ») uniquement pour faire rimer.',
-    'Évite les synonymes plaqués, les répétitions de remplissage et les déclarations génériques. Utilise des images concrètes récurrentes, des verbes précis et une progression émotionnelle.',
+    'Une rime doit naître du sens et de la syntaxe: jamais de mot ajouté artificiellement après une virgule en fin de ligne ou en fin de vers uniquement pour faire rimer.',
+    'Évite les synonymes plaqués, les répétitions de remplissage, les déclarations génériques et les automatismes de vocabulaire. Utilise des détails venus de la demande, des allégories tenues, des verbes précis et une progression émotionnelle.',
     'Vise des vers chantables de longueur voisine dans une même section, avec variations rythmiques intentionnelles plutôt qu’une métrique mécanique.',
     'Ne JAMAIS terminer par: j\u2019espere que cette chanson te plaira, n\u2019hesite pas a me dire, j\u2019espere que ca correspond, ou toute formule de politesse d\u2019assistant.',
     'Pas d\u2019explication scolaire de la structure sauf demande explicite.',
@@ -654,7 +761,7 @@ const VIVY_SONG_ARTISTS = [
     id: 'vivy',
     label: 'Vivy',
     tag: '[Vivy]',
-    role: 'refrain clair, réponses mélodiques, voix claire, émotion lumineuse',
+    role: 'refrain clair, réponses mélodiques, voix nette, émotion précise',
     grammar: 'féminin singulier; accords et pronoms elle',
     style: 'Vivy clear melodic hook',
   },
@@ -787,6 +894,26 @@ function isDjeffRapTheme(value = '') {
   return /\bdjeff\b|\bduo\b|\brap\b|\bfraiyeur\b|\bmoto\b|\bmoteur\b|\bradiateur\b|\bpignon\b|\bcouronne\b|\bchaine\b|\bchaîne\b|\bhuile\b|\bessence\b|\bpot\b|\bstunt\b|\bstoppie\b|\bstuppie\b|\bmur du son\b|\bpendule\b/.test(folded);
 }
 
+function isDjeffTechnicalMotoDraft(value = '') {
+  const folded = foldTextForLookup(value);
+  const terms = [
+    'radiateur',
+    'pignon',
+    'couronne',
+    'cruxi',
+    'ipone',
+    'bombonne',
+    'mur du son',
+    'pendule',
+    'casque',
+    'pneus',
+    'moteur',
+    'fraiyeur',
+  ];
+  const score = terms.reduce((sum, term) => sum + (folded.includes(term) ? 1 : 0), 0);
+  return score >= 3 || (score >= 2 && /\b(style|wesh|freshh|rap|couplet|refrain)\b/.test(folded));
+}
+
 function extractDjeffRapSeedLines(material = '') {
   const text = cleanText(material, 2400);
   if (!text) return [];
@@ -849,14 +976,14 @@ function buildDjeffRapDuoLyrics(input = {}, material = '') {
   const verseOneLines = seedLines.slice(0, 7);
   const preSeedLines = seedLines.slice(7, 11);
   const fallbackVerseOne = [
-    'Je dose au millimètre, pas de hasard dans le style,',
-    'Visserie serrée, tension propre — le geste décide.',
-    `${motif}, je l'aligne dans le tour,`,
-    'Le détail fait la frappe, la mesure connaît son jour.',
+    'Je dose au millimètre, chaque geste reste lisible,',
+    'Visserie serrée, tension propre, le choix reste visible.',
+    `${motif}, je le place dans le cadre,`,
+    'Le détail fait la frappe, la mesure garde sa part.',
   ];
   const fallbackPre = [
-    'Quand la pression monte et que le flow se précise,',
-    `La cadence s'aligne, chaque mot se mobilise.`,
+    'Quand la pression monte, je garde le débit net,',
+    'La cadence se pose, chaque mot trouve sa place.',
   ];
   const preChorusLines = mergeDistinctRapLines(preSeedLines, fallbackPre, 4);
 
@@ -868,16 +995,16 @@ function buildDjeffRapDuoLyrics(input = {}, material = '') {
     : `${motif} — j'entre dans le tour,`;
   const introLineDjeff2 = hasUserContent
     ? 'Chaque ligne compte, le grain reste brut.'
-    : 'Chaque cran dans la mesure, chaque mot sur son jour.';
+    : 'Chaque cran dans la mesure, chaque mot reste droit.';
   const introLineVivy2 = hasUserContent
     ? `Je prends ta note, on tient depuis là.`
-    : `Deux voix, même élan — on découpe l'horizon.`;
+    : 'Deux voix, même axe, on garde le sujet.';
   const chorusLine1 = hasUserContent
     ? `${title} — on coupe le silence,`
-    : `${motif} — la nuit répond,`;
+    : `${motif} — le refrain répond,`;
   const chorusLine2 = hasUserContent
     ? 'Deux voix, un son — ce qui compte reste.'
-    : 'Deux voix, même élan, le sens serre le fond.';
+    : 'Deux voix, même axe, le sens garde le fond.';
   const bridgeLine1 = hasUserContent
     ? `${title} — on le garde intact,`
     : `${motif} — je le garde intact,`;
@@ -895,7 +1022,7 @@ function buildDjeffRapDuoLyrics(input = {}, material = '') {
     '',
     '[Intro - Vivy]',
     '[Vivy]',
-    'Je tiens la note claire pendant que le flow répond,',
+    'Je tiens la note pendant que le flow répond,',
     introLineVivy2,
     '',
     '[Verse 1 - Djeff]',
@@ -915,15 +1042,15 @@ function buildDjeffRapDuoLyrics(input = {}, material = '') {
     '',
     '[Verse 2 - Vivy]',
     '[Vivy]',
-    'Je ne lisse pas ton grain, je le mets en lumière,',
-    `La phrase reste cabrée, accrochée à sa matière.`,
-    'Ton mot parle brut, je réponds sans artifice,',
-    'La mélodie fait place au sens qui se précise.',
+    'Je ne lisse pas ton grain, je le garde au premier plan,',
+    'La phrase reste brute, posée sur son angle.',
+    'Ton mot parle droit, je réponds sans artifice,',
+    'La ligne chantée laisse passer le sens.',
     '',
     '[Bridge - Vivy]',
     '[Vivy]',
     bridgeLine1,
-    `Deux voix dans le même souffle, rien qui ne s'efface.`,
+    'Deux voix dans la même prise, rien ne se confond.',
     '',
     '[Chorus - Duo]',
     '[Duo]',
@@ -935,7 +1062,7 @@ function buildDjeffRapDuoLyrics(input = {}, material = '') {
     '[Outro - Duo]',
     '[Duo]',
     outroLine1,
-    `Et nos deux voix tiennent jusqu'au lendemain.`,
+    'Et nos deux voix ferment le morceau sans détour.',
   ].join('\n')), 2400);
 }
 
@@ -973,7 +1100,7 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
       '[Verse 1 - Djeff]',
       '[Djeff]',
       `${punctuateVivySongLine(imageA, ',')}`,
-      `je garde ${title.toLocaleLowerCase('fr-FR')} dans l'axe quand tout casse.`,
+      `je garde ${title.toLocaleLowerCase('fr-FR')} dans l'axe du morceau.`,
       `${punctuateVivySongLine(imageC, ',')}`,
       `je serre ${motif} jusqu'au prochain passage.`,
       ''
@@ -985,9 +1112,9 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
       '[Pre-Chorus - Vivy]',
       isA11VivyDuo ? '[VIVY]' : '[Vivy]',
       `${punctuateVivySongLine(imageB, ',')}`,
-      'je cherche le point qui serre le ventre.',
+      'je cherche le point qui tient la scène.',
       `${punctuateVivySongLine(imageD, ',')}`,
-      'et le refrain monte sans trahir le centre.',
+      'et le refrain avance sans trahir le centre.',
       ''
     );
   }
@@ -996,9 +1123,9 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
     `[Chorus - ${chorusLabel}]`,
     chorusTag,
     `${title}, on ne te laisse pas tomber,`,
-    `${theme}, même au milieu du fracas.`,
+    `${theme}, même quand la section change.`,
     `${motif}, on revient te chercher,`,
-    'le refrain tient debout quand le monde décroche.',
+    'le refrain garde sa place dans le morceau.',
     ''
   );
 
@@ -1007,8 +1134,8 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
       '[Verse 2 - A11]',
       '[A11]',
       `Je relie ${imageC} sans voler sa place,`,
-      `${title} garde son nom au coeur de la mêlée.`,
-      `Je coupe le bruit, je garde la trace,`,
+      `${title} garde son nom au cœur de la phrase.`,
+      'Je coupe le bruit, je garde la ligne,',
       `pour que ${theme} reste assez net pour chanter.`,
       ''
     );
@@ -1018,9 +1145,9 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
     blocks.push(
       '[Bridge - K44]',
       '[K44]',
-      'Je garde le cap quand la mêlée déborde,',
+      'Je garde le cap quand la section déborde,',
       `${punctuateVivySongLine(imageD, ',')}`,
-      'la peur recule quand le tempo mord,',
+      'la tension recule quand le tempo mord,',
       `${title} retrouve sa taille humaine.`,
       ''
     );
@@ -1030,9 +1157,9 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
     `[Final Chorus - ${chorusLabel}]`,
     chorusTag,
     `${title}, on ne te laisse pas tomber,`,
-    `${theme}, même au milieu du fracas.`,
+    `${theme}, même quand la section change.`,
     `${motif}, on revient te chercher,`,
-    'le refrain tient debout quand le monde décroche.',
+    'le refrain garde sa place dans le morceau.',
     '',
     `[Outro - ${lead}]`,
     leadTag,
@@ -1051,16 +1178,24 @@ function buildVivyStructuredLyrics(input = {}) {
     input.theme,
     input.instruction,
   ].filter(Boolean);
-  const completeLyricsSource = lyricSources.find((source) => looksLikeCompleteLyrics(source));
+  const completeLyricsSource = lyricSources.find((source) => (
+    looksLikeCompleteLyrics(source)
+    && !looksLikeVivyReferenceConversation(source)
+  ));
   const publicMaterial = sanitizeVivySongMaterial(
     completeLyricsSource || lyricSources.join('\n\n') || input.prompt,
     VIVY_SONG_MAX_CHARS
   );
 
-  if (looksLikeCompleteLyrics(publicMaterial)) {
+  if (looksLikeCompleteLyrics(publicMaterial) && !looksLikeVivyReferenceConversation(publicMaterial)) {
     return cleanText(restoreVivyFrenchSongAccents(publicMaterial), VIVY_SONG_MAX_CHARS);
   }
   const material = splitVivyArrangementCues(publicMaterial).lyrics;
+  const fullSource = cleanText([material, input.prompt, input.message, input.theme, input.instruction].filter(Boolean).join('\n'), VIVY_SONG_MAX_CHARS);
+
+  if (isValentinoRossiTheme(fullSource)) {
+    return buildVivyRossiMotogpLyrics(input, material);
+  }
 
   const artistCast = buildVivySongArtistCast(input);
   if (hasExplicitVivySongArtists(input) && (artistCast.count > 1 || artistCast.ids[0] !== 'vivy')) {
@@ -1076,7 +1211,10 @@ function buildVivyStructuredLyrics(input = {}) {
     input.voicePersona,
     input.vocalCast,
   ].filter(Boolean).join('\n'), VIVY_SONG_MAX_CHARS);
-  if ((!hasExplicitVivySongArtists(input) || artistCast.ids.includes('djeff')) && isDjeffRapTheme(themeHint)) {
+  const shouldUseDjeffSongcraft = hasExplicitVivySongArtists(input)
+    ? artistCast.ids.includes('djeff')
+    : (/\bdjeff\b|\bfraiyeur\b|\brap\b|\braper\b|\brapper\b/.test(foldTextForLookup(themeHint)) || isDjeffTechnicalMotoDraft(themeHint));
+  if (shouldUseDjeffSongcraft && isDjeffRapTheme(themeHint) && !isValentinoRossiTheme(fullSource)) {
     return buildDjeffRapDuoLyrics(input, material);
   }
 
@@ -1089,8 +1227,8 @@ function buildVivyStructuredLyrics(input = {}) {
   const allMotifs = inferAllMotifs(theme);
   const inferredMotif = inferMotif(theme);
   const m0 = seedLines[0] || theme || allMotifs[0];
-  const m1 = inferredMotif !== 'un fil tendu dans le vide' ? inferredMotif : m0;
-  const m2 = allMotifs.find((motif) => motif !== m1 && motif !== 'un fil tendu dans le vide') || m0;
+  const m1 = inferredMotif !== 'le motif central' ? inferredMotif : m0;
+  const m2 = allMotifs.find((motif) => motif !== m1 && motif !== 'le motif central') || m0;
 
   const soloLyrics = hasSeedLines ? `[Title: ${title}]
 
@@ -1099,80 +1237,80 @@ ${punctuateVivySongLine(seedLines[0], ',')}
 ${punctuateVivySongLine(seedLines[1] || `${title} pose son premier signe`, '.')}
 
 [Verse 1]
-${punctuateVivySongLine(seedLines[2] || `Je tiens ${title.toLocaleLowerCase('fr-FR')} dans la paume`, ',')}
-${punctuateVivySongLine(seedLines[3] || 'je marche entre les murs sans baisser le regard', '.')}
-${punctuateVivySongLine(seedLines[4] || `${m1} me traverse et me garde debout`, ',')}
-le refrain prend forme autour du vrai sujet.
+${punctuateVivySongLine(seedLines[2] || `Je place ${title.toLocaleLowerCase('fr-FR')} au centre`, ',')}
+${punctuateVivySongLine(seedLines[3] || 'je garde la phrase proche de son sujet', '.')}
+${punctuateVivySongLine(seedLines[4] || `${m1} donne la direction`, ',')}
+le refrain prend forme sans changer le propos.
 
 [Pre-Chorus]
 ${punctuateVivySongLine(seedLines[1] || m1, ',')}
-chaque détail revient frapper le tempo.
+chaque détail revient poser le tempo.
 
 [Chorus]
-${title} — le refrain tient le cap,
-chaque nom revient au bon endroit.
+${title} — le refrain tient sa ligne,
+chaque nom garde son endroit.
 ${punctuateVivySongLine(seedLines[5] || m1, ',')}
-et le thème repart plus fort à chaque fois.
+et le thème revient sans décor inutile.
 
 [Verse 2]
 ${punctuateVivySongLine(seedLines[6] || m2, ',')}
-${punctuateVivySongLine(seedLines[7] || 'je reprends le fil jusqu’à voir son envers', '.')}
+${punctuateVivySongLine(seedLines[7] || 'je reprends l’idée jusqu’à voir son envers', '.')}
 les images se répondent sans quitter le sujet,
-les rimes serrent l'histoire au plus près.
+les rimes suivent l'histoire au plus près.
 
 [Bridge]
 ${punctuateVivySongLine(seedLines[0] || title, ',')}
-le dernier détour remet le sens devant.
+le dernier détour remet le sujet devant.
 
 [Chorus]
-${title} — le refrain tient le cap,
-chaque nom revient au bon endroit.
+${title} — le refrain tient sa ligne,
+chaque nom garde son endroit.
 ${punctuateVivySongLine(seedLines[5] || m1, ',')}
-et le thème repart plus fort à chaque fois.
+et le thème revient sans décor inutile.
 
 [Outro]
-Il reste ${title.toLocaleLowerCase('fr-FR')}.
-Le dernier mot garde le sujet vivant.` : `[Title: ${title}]
+On garde ${title.toLocaleLowerCase('fr-FR')}.
+Le dernier mot reste près du sujet.` : `[Title: ${title}]
 
 [Intro]
 ${m0} — le sujet arrive sans détour.
-Une image tient, puis une autre répond.
+Une idée se pose, puis une autre répond.
 
 [Verse 1]
-Je tiens ${m0},
-sans savoir encore où ça me mène.
-${m1} — le corps le sait avant la tête.
-Ça ne lâche pas, ça ne cède pas, ça reste.
+Je pars de ${m0},
+sans ajouter de décor forcé.
+${m1} — la phrase avance par étapes.
+Ce qui compte prend sa place.
 
 [Pre-Chorus]
-Ce que je garde : ${m0}.
-Ce qui reste : ${m1}.
+Premier repère : ${m0}.
+Deuxième repère : ${m1}.
 
 [Chorus]
-${m0} — ça reste, ça cède pas,
-${m1} — même quand la mesure se serre.
-Deux bords d’une même idée,
-et le refrain reste clair.
+${m0} — le refrain revient,
+${m1} — la ligne se tient.
+Deux repères dans la même idée,
+et le morceau trouve son chemin.
 
 [Verse 2]
-${m2} — je le retourne dans tous les sens.
-Le temps passe. L’empreinte reste intense.
-Je reviens sur ce que j’ai tu,
-ce que j’ai tenu, ce que j’ai pas su.
+${m2} — je le regarde autrement.
+Le temps passe, le détail devient plus net.
+Je reviens sur ce que j’ai dit,
+ce que j’ai compris, ce que j’ai laissé.
 
 [Bridge]
 ${m2} — je l’accepte maintenant.
-Le sens revient quand le détour s'efface.
+Le sens revient quand le détour se calme.
 
 [Chorus]
-${m0} — ça reste, ça cède pas,
-${m1} — même quand la mesure se serre.
-Deux bords d’une même idée,
-et le refrain reste clair.
+${m0} — le refrain revient,
+${m1} — la ligne se tient.
+Deux repères dans la même idée,
+et le morceau trouve son chemin.
 
 [Outro]
-Il reste ${m0}.
-Le dernier mot garde le sujet vivant.`;
+On garde ${m0}.
+Le dernier mot reste près du sujet.`;
 
   return cleanText(restoreVivyFrenchSongAccents(soloLyrics), VIVY_SONG_MAX_CHARS);
 }
@@ -1184,8 +1322,8 @@ function buildVivySongProductionBrief(input = {}) {
   const rhymeScheme = cleanOneLine(
     input.rhymeScheme
       || (isDjeffRapTheme(lyrics)
-        ? 'Couplets rap à rimes internes et fins de lignes mécaniques, refrain duo Djeff/Vivy stable et scandable.'
-        : 'Couplets AABB souples, refrain ABAB, images concrètes et récurrentes, sens caché.'),
+        ? 'Couplets rap à rimes internes, refrain duo Djeff/Vivy stable et scandable.'
+        : 'Couplets souples, refrain stable, détails venus de la demande.'),
     '',
     180
   );
@@ -1198,7 +1336,7 @@ function buildVivySongProductionBrief(input = {}) {
       `Rimes: ${rhymeScheme}`,
       `Motif: ${inferMotif(lyrics)}`,
       'Structure: intro, couplet 1, pré-refrain, refrain, couplet 2, pont, refrain, outro.',
-      'Intention: paroles chantables, images concrètes, refrain stable, sens caché lisible.',
+      'Intention: paroles chantables, détails précis, refrain stable, sujet lisible.',
     ],
   };
 }

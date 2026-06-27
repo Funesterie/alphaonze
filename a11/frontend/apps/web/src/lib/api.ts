@@ -2999,6 +2999,8 @@ export async function chatWithVivy(
     artistCount?: number;
     singerCount?: number;
     workspace?: VivyWorkspaceStateInput;
+    useWorkspaceForSong?: boolean;
+    disableSongcraftFallback?: boolean;
   }
 ): Promise<VivyStudioProductionResult> {
   const res = await authFetch(getApiUrl('/api/vivy/studio/chat'), {

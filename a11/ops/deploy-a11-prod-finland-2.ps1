@@ -1,10 +1,11 @@
 param(
   [string]$RepoRoot = "D:\projets\funesterie",
   [string]$Remote = $(if ($env:A11_HETZNER_REMOTE) { $env:A11_HETZNER_REMOTE } else { "deploy@37.27.63.109" }),
-  [string]$SshKey = $(if ($env:A11_HETZNER_SSH_KEY) { $env:A11_HETZNER_SSH_KEY } else { "C:\Users\Djeff\.ssh\codex-a11-hetzner-20260602_ed25519" }),
+  [string]$SshKey = $(if ($env:A11_HETZNER_SSH_KEY) { $env:A11_HETZNER_SSH_KEY } else { "C:\Users\cella\.ssh\codex-a11-hetzner-20260627_ed25519" }),
   [switch]$ReuseRemoteSecrets,
   [switch]$BlueGreen,
-  [switch]$CleanOldBlueGreen
+  [switch]$CleanOldBlueGreen,
+  [switch]$SkipSourceUpdate
 )
 
 Set-StrictMode -Version Latest
@@ -50,6 +51,7 @@ $RemoteRoot = "/home/deploy/a11-prod"
 $RemoteDataRoot = "/home/deploy/a11-data"
 $RemoteArchive = "$RemoteRoot/releases/$Stamp.tar.gz"
 $JfrogEnv = Join-Path $RepoRoot "scripts\jfrog\jfrog.env.ps1"
+$StrongSongOllamaModel = if ($env:A11_OLLAMA_STRONG_SONG_MODEL) { $env:A11_OLLAMA_STRONG_SONG_MODEL } else { "qwen2.5:32b" }
 
 function Require-Path([string]$Path, [string]$Label) {
   if (-not (Test-Path -LiteralPath $Path)) {
@@ -214,7 +216,11 @@ function Assert-FunesterieWebBundle([string]$DistRoot, [string]$Label) {
 }
 
 Require-Path $RepoRoot "Repo"
-Invoke-SourceUpdate $RepoRoot
+if ($SkipSourceUpdate) {
+  Write-Host "Mise a jour source sautee a la demande; packaging depuis le workspace local." -ForegroundColor Yellow
+} else {
+  Invoke-SourceUpdate $RepoRoot
+}
 $BuildCommit = (& git -C $RepoRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($BuildCommit)) {
   throw "Lecture du commit Git impossible"
@@ -559,12 +565,15 @@ services:
       VIVY_CHAT_LOCAL_FIRST: "true"
       VIVY_OLLAMA_BASE_URL: http://a11-ollama:11434
       VIVY_CHAT_LOCAL_MODEL: llama3.2:3b
+      VIVY_SONG_ALLOW_LOCAL_FALLBACK: ${VIVY_SONG_ALLOW_LOCAL_FALLBACK:-true}
+      VIVY_SONG_LOCAL_MODEL: ${VIVY_SONG_LOCAL_MODEL:-qwen2.5:32b}
       A11_TRANSLATION_MODEL: llama3.2:3b
       LOCAL_DEFAULT_MODEL: llama3.2:3b
       A11_LLM_FALLBACK_PROVIDER: ollama
       A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,openai,gemini,xai,huggingface,deepseek,together
       A11_CERBERE_LOCAL_ONLY: "false"
       A11_LOCAL_CHAT_TIMEOUT_MS: "45000"
+      A11_LOCAL_SONG_TIMEOUT_MS: "180000"
       A11_VIDEO_PROMPT_GROQ_ENABLED: ${A11_VIDEO_PROMPT_GROQ_ENABLED:-1}
       A11_VIDEO_PROMPT_BUILDER_LLM: ${A11_VIDEO_PROMPT_BUILDER_LLM:-1}
       A11_OLLAMA_KEEP_ALIVE: "30m"
@@ -661,10 +670,13 @@ services:
       A11_OLLAMA_FALLBACK_MODEL: llama3.2:3b
       A11_TRANSLATION_MODEL: llama3.2:3b
       LOCAL_DEFAULT_MODEL: llama3.2:3b
+      VIVY_SONG_ALLOW_LOCAL_FALLBACK: ${VIVY_SONG_ALLOW_LOCAL_FALLBACK:-true}
+      VIVY_SONG_LOCAL_MODEL: ${VIVY_SONG_LOCAL_MODEL:-qwen2.5:32b}
       A11_LLM_FALLBACK_PROVIDER: ollama
       A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,openai,gemini,xai,huggingface,deepseek,together
       A11_CERBERE_LOCAL_ONLY: "false"
       A11_LOCAL_CHAT_TIMEOUT_MS: "45000"
+      A11_LOCAL_SONG_TIMEOUT_MS: "180000"
       A11_VIDEO_PROMPT_GROQ_ENABLED: ${A11_VIDEO_PROMPT_GROQ_ENABLED:-1}
       A11_VIDEO_PROMPT_BUILDER_LLM: ${A11_VIDEO_PROMPT_BUILDER_LLM:-1}
       A11_OLLAMA_KEEP_ALIVE: "30m"
@@ -1093,6 +1105,9 @@ $overrides = [ordered]@{
   VIVY_CHAT_LOCAL_FIRST = "true"
   VIVY_OLLAMA_BASE_URL = "http://a11-ollama:11434"
   VIVY_CHAT_LOCAL_MODEL = "llama3.2:3b"
+  A11_OLLAMA_STRONG_SONG_MODEL = $StrongSongOllamaModel
+  VIVY_SONG_ALLOW_LOCAL_FALLBACK = "true"
+  VIVY_SONG_LOCAL_MODEL = $StrongSongOllamaModel
   A11_ENABLE_EMBEDDINGS = "true"
   A11_EMBEDDING_BASE_URL = "http://a11-ollama:11434"
   A11_EMBEDDING_MODEL = "nomic-embed-text"
@@ -1118,6 +1133,7 @@ $overrides = [ordered]@{
   A11_LLM_RUNTIME_FALLBACK_ORDER = "ollama,openai,gemini,xai,huggingface,deepseek,together"
   A11_CERBERE_LOCAL_ONLY = "false"
   A11_LOCAL_CHAT_TIMEOUT_MS = "45000"
+  A11_LOCAL_SONG_TIMEOUT_MS = "180000"
   A11_OLLAMA_KEEP_ALIVE = "30m"
   A11_MEMORY_LOCAL_TIMEOUT_MS = "3500"
   A11_MEMORY_REMOTE_TIMEOUT_MS = "5000"
@@ -1353,7 +1369,7 @@ build_env="__REMOTE_ROOT__/secrets/build.env"
 a11_env="__REMOTE_ROOT__/secrets/a11.env"
 compose_env="__REMOTE_ROOT__/secrets/compose.env"
 tmp_build="$(mktemp)"
-managed_keys='^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK|A11_LLM_PROVIDER|A11_OLLAMA_PRIMARY_MODEL|A11_OLLAMA_FALLBACK_MODEL|VIVY_CHAT_LOCAL_FIRST|VIVY_OLLAMA_BASE_URL|VIVY_CHAT_LOCAL_MODEL|A11_TRANSLATION_MODEL|LOCAL_DEFAULT_MODEL|A11_LLM_FALLBACK_PROVIDER|A11_LLM_RUNTIME_FALLBACK_ORDER|A11_CERBERE_LOCAL_ONLY|A11_LOCAL_CHAT_TIMEOUT_MS|A11_OLLAMA_KEEP_ALIVE|A11_MEMORY_LOCAL_TIMEOUT_MS|A11_MEMORY_REMOTE_TIMEOUT_MS|A11_EMBEDDING_TIMEOUT_MS|A11_RUNTIME_ROOT|VIVY_ELEVENLABS_MUSIC_DISABLED|VIVY_SUNO_MODEL)='
+managed_keys='^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK|A11_LLM_PROVIDER|A11_OLLAMA_PRIMARY_MODEL|A11_OLLAMA_FALLBACK_MODEL|A11_OLLAMA_STRONG_SONG_MODEL|VIVY_CHAT_LOCAL_FIRST|VIVY_OLLAMA_BASE_URL|VIVY_CHAT_LOCAL_MODEL|VIVY_SONG_ALLOW_LOCAL_FALLBACK|VIVY_SONG_LOCAL_MODEL|A11_TRANSLATION_MODEL|LOCAL_DEFAULT_MODEL|A11_LLM_FALLBACK_PROVIDER|A11_LLM_RUNTIME_FALLBACK_ORDER|A11_CERBERE_LOCAL_ONLY|A11_LOCAL_CHAT_TIMEOUT_MS|A11_LOCAL_SONG_TIMEOUT_MS|A11_OLLAMA_KEEP_ALIVE|A11_MEMORY_LOCAL_TIMEOUT_MS|A11_MEMORY_REMOTE_TIMEOUT_MS|A11_EMBEDDING_TIMEOUT_MS|A11_RUNTIME_ROOT|VIVY_ELEVENLABS_MUSIC_DISABLED|VIVY_SUNO_MODEL)='
 if [ -s "$build_env" ]; then
   grep -v -E "$managed_keys" "$build_env" > "$tmp_build" || true
 fi
@@ -1367,12 +1383,16 @@ printf 'A11_OLLAMA_FALLBACK_MODEL=llama3.2:3b\n' >> "$tmp_build"
 printf 'VIVY_CHAT_LOCAL_FIRST=true\n' >> "$tmp_build"
 printf 'VIVY_OLLAMA_BASE_URL=http://a11-ollama:11434\n' >> "$tmp_build"
 printf 'VIVY_CHAT_LOCAL_MODEL=llama3.2:3b\n' >> "$tmp_build"
+printf 'A11_OLLAMA_STRONG_SONG_MODEL=__STRONG_SONG_MODEL__\n' >> "$tmp_build"
+printf 'VIVY_SONG_ALLOW_LOCAL_FALLBACK=true\n' >> "$tmp_build"
+printf 'VIVY_SONG_LOCAL_MODEL=__STRONG_SONG_MODEL__\n' >> "$tmp_build"
 printf 'A11_TRANSLATION_MODEL=llama3.2:3b\n' >> "$tmp_build"
 printf 'LOCAL_DEFAULT_MODEL=llama3.2:3b\n' >> "$tmp_build"
 printf 'A11_LLM_FALLBACK_PROVIDER=ollama\n' >> "$tmp_build"
 printf 'A11_LLM_RUNTIME_FALLBACK_ORDER=ollama,openai,gemini,xai,huggingface,deepseek,together\n' >> "$tmp_build"
 printf 'A11_CERBERE_LOCAL_ONLY=false\n' >> "$tmp_build"
 printf 'A11_LOCAL_CHAT_TIMEOUT_MS=45000\n' >> "$tmp_build"
+printf 'A11_LOCAL_SONG_TIMEOUT_MS=180000\n' >> "$tmp_build"
 printf 'A11_OLLAMA_KEEP_ALIVE=30m\n' >> "$tmp_build"
 printf 'A11_MEMORY_LOCAL_TIMEOUT_MS=3500\n' >> "$tmp_build"
 printf 'A11_MEMORY_REMOTE_TIMEOUT_MS=5000\n' >> "$tmp_build"
@@ -1399,7 +1419,8 @@ $remoteBuildEnvRefresh = $remoteBuildEnvRefresh.
   Replace('__REMOTE_ROOT__', $RemoteRoot).
   Replace('__BUILD_COMMIT__', $BuildCommit).
   Replace('__BUILD_BRANCH__', $BuildBranch).
-  Replace('__BUILD_DATE__', $BuildDateIso)
+  Replace('__BUILD_DATE__', $BuildDateIso).
+  Replace('__STRONG_SONG_MODEL__', $StrongSongOllamaModel)
 
 $remoteSecretStep = if ($ReuseRemoteSecrets) {
   $remoteBuildEnvRefresh
@@ -1449,8 +1470,11 @@ if ! docker inspect a11-ollama --format '{{json .NetworkSettings.Networks}}' | g
 fi
 docker update --restart unless-stopped a11-ollama >/dev/null
 docker exec a11-ollama sh -lc 'mkdir -p /root/.ollama; if [ ! -s /root/.ollama/id_ed25519.pub ]; then ollama signin >/dev/null 2>&1 || true; fi'
-docker exec a11-ollama sh -lc 'ollama list | awk "NR>1 {print \$1}" | grep -qx nomic-embed-text || ollama pull nomic-embed-text >/dev/null 2>&1 || true'
-docker exec a11-ollama sh -lc 'ollama list | awk "NR>1 {print \$1}" | grep -qx llama3.2:3b || ollama pull llama3.2:3b >/dev/null 2>&1 || true'
+docker exec a11-ollama sh -lc 'ollama show nomic-embed-text >/dev/null 2>&1 || ollama pull nomic-embed-text >/dev/null 2>&1 || true'
+docker exec a11-ollama sh -lc 'ollama show llama3.2:3b >/dev/null 2>&1 || ollama pull llama3.2:3b >/dev/null 2>&1 || true'
+strong_song_model="$(awk -F= '/^VIVY_SONG_LOCAL_MODEL=/{print $2; exit}' /srv/a11/secrets/compose.env 2>/dev/null | tr -d '\r' | sed 's/^"//; s/"$//')"
+strong_song_model="${strong_song_model:-qwen2.5:32b}"
+docker exec a11-ollama sh -lc 'ollama show "$0" >/dev/null 2>&1 || ollama pull "$0"' "$strong_song_model"
 '@
 
 $remoteComposeOwnershipStep = @'
@@ -1483,6 +1507,7 @@ if ($BlueGreen) {
   $cleanOldFlag = if ($CleanOldBlueGreen) { "1" } else { "0" }
   $remoteDeploy = @"
 set -euo pipefail
+trap 'echo "__A11_DEPLOY_FAILED__ line=$LINENO command=$BASH_COMMAND" >&2' ERR
 release=$RemoteRoot/releases/$Stamp
 compose_file=$RemoteRoot/current/server/docker-compose.prod.yml
 a11_service=$A11BackendService
@@ -1530,6 +1555,7 @@ done
 } else {
   $remoteDeploy = @"
 set -euo pipefail
+trap 'echo "__A11_DEPLOY_FAILED__ line=$LINENO command=$BASH_COMMAND" >&2' ERR
 release=$RemoteRoot/releases/$Stamp
 mkdir -p "`$release"
 tar -xzf $RemoteArchive -C "`$release"
