@@ -2627,7 +2627,7 @@ test('Vivy frontend lets NOSSEN Banger launch immediately while keeping readines
   assert.match(cssSource, /@keyframes vivy-nossen-flame/);
 });
 
-test('Vivy NOSSEN Banger launches Suno, applies D40 V9 dynamic, and posts a chat download', () => {
+test('Vivy NOSSEN Banger launches instrumental Suno, mixes separate voices, applies D40, and posts a chat download', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
     'utf8'
@@ -2641,10 +2641,19 @@ test('Vivy NOSSEN Banger launches Suno, applies D40 V9 dynamic, and posts a chat
   assert.match(launchBlock, /generateMusic:\s*true/);
   assert.match(launchBlock, /makeSong:\s*true/);
   assert.match(launchBlock, /preserveSelectedVoice:\s*true/);
-  assert.match(launchBlock, /allowExternalVoiceMix:\s*false/);
+  assert.match(launchBlock, /allowExternalVoiceMix:\s*true/);
+  assert.match(launchBlock, /externalVoiceMix:\s*true/);
+  assert.match(launchBlock, /forceExternalVoiceMix:\s*true/);
   assert.match(launchBlock, /getVivyStudioMusicJob/);
+  assert.match(launchBlock, /createVivyMultiVoicePreview\(vocalSegments,\s*\{\s*artistIds:\s*artists,\s*castLabel\s*\}\)/);
+  assert.match(launchBlock, /mixVivyStudioPreview\(voicePreview\.url,\s*preparedMedia\.url\)/);
   assert.match(launchBlock, /processDoubleHarmonicAudio/);
   assert.match(launchBlock, /mode:\s*"v9turbo"/);
+  assert.ok(
+    launchBlock.indexOf('mixVivyStudioPreview(voicePreview.url, preparedMedia.url)') > -1
+      && launchBlock.indexOf('mixVivyStudioPreview(voicePreview.url, preparedMedia.url)') < launchBlock.indexOf('processDoubleHarmonicAudio'),
+    'NOSSEN must mix the separate Funesterie voices before D40'
+  );
   assert.match(launchBlock, /setMessages\(\(current\)\s*=>\s*\[\.\.\.current,\s*assistantMessage\]\.slice\(-36\)\)/);
   assert.match(appSource, /vivy-chat-media-link/);
   assert.match(appSource, /Télécharger la musique/);
@@ -2670,13 +2679,14 @@ test('Vivy NOSSEN Banger keeps lyrics first and syncs the final media reply', ()
   assert.match(assistantBlock, /fallbackLyrics/);
   assert.match(assistantBlock, /payload\?\.publicLyrics\s*\|\|\s*payload\?\.vocalLyrics\s*\|\|\s*fallbackLyrics/);
   assert.match(assistantBlock, /wantsVivyNossenBangerWord\(fallbackLyrics\)/);
+  assert.match(assistantBlock, /Paroles chantées par les voix Funesterie/);
   assert.match(assistantBlock, /Paroles envoyées à Suno/);
   assert.doesNotMatch(assistantBlock, /summary,\s*downloadLine,\s*lyrics/);
   assert.match(launchBlock, /let vocalLyricsForProduction/);
   assert.match(launchBlock, /let publicLyricsForChat/);
   assert.match(launchBlock, /lyrics:\s*vocalLyricsForProduction/);
   assert.match(launchBlock, /songText:\s*vocalLyricsForProduction/);
-  assert.match(launchBlock, /buildVivyNossenBangerAssistantText\(finalPayload,\s*preparedMedia,\s*artists,\s*d40Applied,\s*publicLyricsForChat\s*\|\|\s*vocalLyricsForProduction\)/);
+  assert.match(launchBlock, /buildVivyNossenBangerAssistantText\([\s\S]{0,260}nossenExternalVoiceMix/);
   assert.match(launchBlock, /appendVivyChatSessionMessageOnServer\(\{/);
   assert.match(launchBlock, /role:\s*"assistant"/);
   assert.match(launchBlock, /content:\s*assistantMessage\.content/);
@@ -2715,6 +2725,27 @@ test('Vivy NOSSEN asks Vivy for lyrics before Suno sees production', () => {
   assert.match(launchBlock, /songText:\s*vocalLyricsForProduction/);
   assert.doesNotMatch(launchBlock, /buildVivyNossenBangerSongText|On rallume la nuit|Le coeur reprend la piste|Le feu clair nous suit|MASK dresse une muraille claire/);
   assert.doesNotMatch(launchBlock, /énergie Banger/);
+});
+
+test('Vivy multi-voice preview accepts the routed NOSSEN cast instead of only the UI cast', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const helperStart = appSource.indexOf('async function createVivyMultiVoicePreview');
+  const helperEnd = appSource.indexOf('async function createVivySongInstrumentalPreview', helperStart);
+  const helperBlock = appSource.slice(helperStart, helperEnd);
+  const launchStart = appSource.indexOf('async function launchNossenBanger');
+  const launchEnd = appSource.indexOf('async function onVivyVoiceReferenceChange', launchStart);
+  const launchBlock = appSource.slice(launchStart, launchEnd);
+
+  assert.match(appSource, /type VivyMultiVoicePreviewOptions/);
+  assert.match(helperBlock, /options:\s*VivyMultiVoicePreviewOptions\s*=\s*\{\}/);
+  assert.match(helperBlock, /options\.artistIds\?\.length/);
+  assert.match(helperBlock, /normalizeVivyStudioArtists\(requestedArtistIds,\s*activeSongArtistCast\.ids\)/);
+  assert.match(helperBlock, /new Set\(effectiveArtistIds\)/);
+  assert.match(helperBlock, /options\.castLabel/);
+  assert.match(launchBlock, /createVivyMultiVoicePreview\(vocalSegments,\s*\{\s*artistIds:\s*artists,\s*castLabel\s*\}\)/);
 });
 
 test('Vivy song buttons keep Composition available without overriding the latest chat song', () => {
@@ -2988,13 +3019,18 @@ test('Vivy NOSSEN automatically extends short Suno songs before D40', () => {
   assert.match(launchBlock, /generation_suno_trop_courte_\$\{Math\.round\(finalDurationSeconds\)\}s/);
   assert.ok(
     launchBlock.indexOf('await extendVivyStudioSunoMusic(') > -1
-      && launchBlock.indexOf('await extendVivyStudioSunoMusic(') < launchBlock.indexOf('processDoubleHarmonicAudio'),
-    'NOSSEN must extend before applying D40'
+      && launchBlock.indexOf('await extendVivyStudioSunoMusic(') < launchBlock.indexOf('mixVivyStudioPreview'),
+    'NOSSEN must extend before mixing separate voices'
+  );
+  assert.ok(
+    launchBlock.indexOf('mixVivyStudioPreview') > -1
+      && launchBlock.indexOf('mixVivyStudioPreview') < launchBlock.indexOf('processDoubleHarmonicAudio'),
+    'NOSSEN must mix separate voices before applying D40'
   );
   assert.ok(
     launchBlock.indexOf('generation_suno_trop_courte_${Math.round(finalDurationSeconds)}s') > -1
-      && launchBlock.indexOf('generation_suno_trop_courte_${Math.round(finalDurationSeconds)}s') < launchBlock.indexOf('processDoubleHarmonicAudio'),
-    'NOSSEN must reject too-short Suno audio before applying D40'
+      && launchBlock.indexOf('generation_suno_trop_courte_${Math.round(finalDurationSeconds)}s') < launchBlock.indexOf('mixVivyStudioPreview'),
+    'NOSSEN must reject too-short Suno audio before mixing voices'
   );
 });
 

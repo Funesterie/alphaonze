@@ -2915,6 +2915,11 @@ type VivyStudioVocalSegment = {
   text: string;
 };
 
+type VivyMultiVoicePreviewOptions = {
+  artistIds?: VivyStudioArtistId[];
+  castLabel?: string;
+};
+
 const VIVY_STUDIO_DRAFT_KEY = "vivy:studio:draft:v2";
 const VIVY_STUDIO_SUNO_SESSION_KEY = "vivy:suno:session-key";
 const VIVY_PUBLIC_CHAT_KEY = "vivy:public-chat:v2";
@@ -4113,20 +4118,23 @@ function buildVivyNossenBangerAssistantText(
   media: VivyStudioMediaPreview | null,
   artists: VivyStudioArtistId[],
   d40Applied: boolean,
-  fallbackLyrics = ""
+  fallbackLyrics = "",
+  externalVoiceMix = false
 ) {
   const title = toUnicodeLine(payload?.title, "", 120);
   const summary = toUnicodeText(payload?.summary || payload?.publicText || payload?.assistant || payload?.content, 900);
   const lyrics = toUnicodeText(payload?.publicLyrics || payload?.vocalLyrics || fallbackLyrics || "", 4200);
   const downloadLine = media?.downloadUrl || media?.url ? `Téléchargement: ${media.downloadUrl || media.url}` : "";
   const opener = wantsVivyNossenBangerWord(fallbackLyrics) ? "Banger." : "NOSSEN.";
+  const lyricsLabel = externalVoiceMix ? "Paroles chantées par les voix Funesterie:" : "Paroles envoyées à Suno:";
   return toUnicodeText([
     opener,
     title ? `Titre: ${title}` : "",
     `Casting demandé: ${describeVivyNossenBangerCast(artists)}.`,
+    externalVoiceMix ? "Voix séparées: fond instrumental Suno, voix Funesterie mixées avant D40." : "",
     d40Applied ? "Mix final prêt." : "Production prête.",
     downloadLine,
-    lyrics ? "Paroles envoyées à Suno:" : "",
+    lyrics ? lyricsLabel : "",
     lyrics || summary,
     lyrics && summary ? `Note: ${summary}` : "",
   ].filter(Boolean).join("\n\n"), 6200);
@@ -5871,8 +5879,14 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     };
   }
 
-  async function createVivyMultiVoicePreview(rawSegments: VivyStudioVocalSegment[]): Promise<VivyStudioMediaPreview> {
-    const allowedArtistIds = new Set(activeSongArtistCast.ids);
+  async function createVivyMultiVoicePreview(
+    rawSegments: VivyStudioVocalSegment[],
+    options: VivyMultiVoicePreviewOptions = {}
+  ): Promise<VivyStudioMediaPreview> {
+    const requestedArtistIds = options.artistIds?.length ? options.artistIds : activeSongArtistCast.ids;
+    const effectiveArtistIds = normalizeVivyStudioArtists(requestedArtistIds, activeSongArtistCast.ids);
+    const effectiveCastLabel = options.castLabel || activeSongArtistCast.label || describeVivyNossenBangerCast(effectiveArtistIds);
+    const allowedArtistIds = new Set(effectiveArtistIds);
     const segments = (Array.isArray(rawSegments) ? rawSegments : [])
       .map((segment) => ({
         artistIds: normalizeVivyStudioArtists(segment?.artistIds || [], [])
@@ -5920,7 +5934,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       });
     }
 
-    setStatus(`Assemblage du duo ${activeSongArtistCast.label}...`);
+    setStatus(`Assemblage des voix ${effectiveCastLabel}...`);
     const assembled = await assembleVivyStudioVoicePreview(assembledSegments);
     const assembledUrl = String(assembled?.audioUrl || assembled?.audio_url || assembled?.url || "").trim();
     if (!assembledUrl) throw new Error("multi_voice_preview_audio_url_missing");
@@ -7647,7 +7661,9 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         generateMusic: true,
         makeSong: true,
         preserveSelectedVoice: true,
-        allowExternalVoiceMix: false,
+        allowExternalVoiceMix: true,
+        externalVoiceMix: true,
+        forceExternalVoiceMix: true,
         previewInstrumental: true,
         disableEmergencyMedia: true,
         musicProvider: "suno",
@@ -7719,6 +7735,51 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         }
       }
 
+      let nossenExternalVoiceMix = false;
+      if (preparedMedia.kind === "audio") {
+        const routedSegments = Array.isArray(finalPayload?.vocalSegments)
+          ? finalPayload.vocalSegments
+          : Array.isArray(lyricsPayload?.vocalSegments)
+            ? lyricsPayload.vocalSegments
+            : [];
+        const vocalSegments = routedSegments.length
+          ? routedSegments
+          : [{ artistIds: artists, text: vocalLyricsForProduction }];
+        setStatus(`${productionLabel}: fond Suno prêt, enregistrement des voix séparées ${castLabel}...`);
+        const voicePreview = await createVivyMultiVoicePreview(vocalSegments, { artistIds: artists, castLabel });
+        setStatus(`${productionLabel}: mix du fond Suno avec les voix Funesterie...`);
+        const mixed = await mixVivyStudioPreview(voicePreview.url, preparedMedia.url);
+        const mixedUrl = String(mixed?.audioUrl || mixed?.audio_url || mixed?.url || "").trim();
+        if (!mixedUrl) throw new Error("mix_nossen_voix_audio_url_missing");
+        const resolvedMixedUrl = resolveApiAssetUrl(mixedUrl) || mixedUrl;
+        const mixedDownloadUrl = String(mixed?.downloadUrl || mixed?.download_url || mixedUrl).trim();
+        preparedMedia = {
+          kind: "audio",
+          url: resolvedMixedUrl,
+          downloadUrl: resolveApiAssetUrl(mixedDownloadUrl) || mixedDownloadUrl || resolvedMixedUrl,
+          provider: String(mixed?.provider || "vivy-nossen-external-voice-mix"),
+          contentType: String(mixed?.contentType || mixed?.content_type || "audio/mpeg"),
+          filename: String(mixed?.filename || "vivy-nossen-voix-separees.mp3"),
+          voiceManifest: {
+            ...(voicePreview.voiceManifest || {}),
+            segments: vocalSegments.length,
+            mixEngine: "nossen-external-voice-mix",
+            output: resolvedMixedUrl,
+          },
+        };
+        finalPayload = {
+          ...finalPayload,
+          media: {
+            ...(finalPayload?.media || {}),
+            ...preparedMedia,
+          },
+          audioUrl: preparedMedia.url,
+          audio_url: preparedMedia.url,
+          externalVoiceMix: true,
+        };
+        nossenExternalVoiceMix = true;
+      }
+
       let d40Applied = false;
       if (preparedMedia.kind === "audio") {
         try {
@@ -7753,6 +7814,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
               provider: "funesterie-d40-v9turbo",
               contentType: String(d40.contentType || "audio/mpeg"),
               filename: String(d40.filename || sourceName.replace(/\.[^.]+$/, "-d40-v9.mp3")),
+              voiceManifest: finalPayload?.media?.voiceManifest,
             };
             d40Applied = true;
           }
@@ -7764,7 +7826,14 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       const assistantMessage: VivyPublicChatMessage = {
         id: `vivy-nossen-assistant-${Date.now()}`,
         role: "assistant",
-        content: buildVivyNossenBangerAssistantText(finalPayload, preparedMedia, artists, d40Applied, publicLyricsForChat || vocalLyricsForProduction),
+        content: buildVivyNossenBangerAssistantText(
+          finalPayload,
+          preparedMedia,
+          artists,
+          d40Applied,
+          publicLyricsForChat || vocalLyricsForProduction,
+          nossenExternalVoiceMix
+        ),
         ts: new Date().toISOString(),
         media: preparedMedia,
       };

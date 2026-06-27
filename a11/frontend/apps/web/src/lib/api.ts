@@ -2740,6 +2740,8 @@ export type VivyStudioProductionInput = {
   makeSong?: boolean;
   preserveSelectedVoice?: boolean;
   allowExternalVoiceMix?: boolean;
+  externalVoiceMix?: boolean;
+  forceExternalVoiceMix?: boolean;
   sunoVoiceId?: string;
   instrumental?: boolean;
   forceInstrumental?: boolean;
