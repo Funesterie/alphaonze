@@ -88,6 +88,39 @@ async function postJson(baseUrl, path, body, headers = {}) {
   return { response, json };
 }
 
+async function startOpenAiCompletionServer({ status = 200, content = 'Réponse de test.' } = {}) {
+  const requests = [];
+  const app = express();
+  app.use(express.json());
+  app.post(['/chat/completions', '/v1/chat/completions'], (req, res) => {
+    requests.push(req.body);
+    if (status !== 200) {
+      return res.status(status).json({ error: { message: `test_http_${status}` } });
+    }
+    return res.json({
+      id: 'vivy-llm-routing-test',
+      object: 'chat.completion',
+      created: Math.floor(Date.now() / 1000),
+      model: 'test-model',
+      choices: [{
+        index: 0,
+        finish_reason: 'stop',
+        message: { role: 'assistant', content },
+      }],
+    });
+  });
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  return {
+    baseUrl: `http://127.0.0.1:${port}`,
+    requests,
+    close: () => new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    }),
+  };
+}
+
 function acceptVivyTestAuth(req, res, next) {
   if (req.headers.authorization === 'Bearer vivy-test-token') {
     req.user = { id: 'vivy-auth-user', username: 'VivyUser' };
@@ -3402,6 +3435,110 @@ test('Vivy song writing prefers xAI when xAI and Groq are both available', () =>
     assert.equal(config.provider, 'xai');
     assert.equal(config.model, 'grok-3-fast');
   } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('Vivy chat uses the server-local Ollama model before a configured cloud provider', async () => {
+  const keys = [
+    'VIVY_CHAT_DISABLE_LLM',
+    'VIVY_CHAT_LOCAL_FIRST',
+    'VIVY_CHAT_PROVIDER',
+    'VIVY_OPENAI_BASE_URL',
+    'VIVY_OPENAI_API_KEY',
+    'VIVY_CHAT_MODEL',
+    'OLLAMA_BASE',
+    'A11_OLLAMA_PRIMARY_MODEL',
+    'GROQ_API_KEY',
+  ];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  const local = await startOpenAiCompletionServer({
+    content: 'Je partirais du sujet, puis je laisserais le refrain trouver sa propre pulsation.',
+  });
+  const cloud = await startOpenAiCompletionServer({
+    content: 'Cette réponse cloud ne doit pas être appelée.',
+  });
+
+  try {
+    process.env.VIVY_CHAT_DISABLE_LLM = 'false';
+    process.env.VIVY_CHAT_LOCAL_FIRST = 'true';
+    delete process.env.VIVY_CHAT_PROVIDER;
+    process.env.OLLAMA_BASE = local.baseUrl;
+    process.env.A11_OLLAMA_PRIMARY_MODEL = 'llama3.2:3b';
+    process.env.VIVY_OPENAI_BASE_URL = cloud.baseUrl;
+    process.env.VIVY_OPENAI_API_KEY = 'test-cloud-key';
+    process.env.VIVY_CHAT_MODEL = 'test-cloud-model';
+    delete process.env.GROQ_API_KEY;
+
+    const result = await buildVivyAiChat({
+      conversationId: 'vivy-local-first-success',
+      mode: 'chat',
+      message: 'Comment donner plus de relief au prochain refrain ?',
+      history: [],
+    }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+    assert.equal(result.provider, 'ollama');
+    assert.equal(result.model, 'llama3.2:3b');
+    assert.match(result.assistant, /propre pulsation/i);
+    assert.equal(local.requests.length, 1);
+    assert.equal(cloud.requests.length, 0);
+  } finally {
+    await local.close();
+    await cloud.close();
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('Vivy chat falls back to the configured cloud provider when local Ollama fails', async () => {
+  const keys = [
+    'VIVY_CHAT_DISABLE_LLM',
+    'VIVY_CHAT_LOCAL_FIRST',
+    'VIVY_CHAT_PROVIDER',
+    'VIVY_OPENAI_BASE_URL',
+    'VIVY_OPENAI_API_KEY',
+    'VIVY_CHAT_MODEL',
+    'OLLAMA_BASE',
+    'A11_OLLAMA_PRIMARY_MODEL',
+    'GROQ_API_KEY',
+  ];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  const local = await startOpenAiCompletionServer({ status: 503 });
+  const cloud = await startOpenAiCompletionServer({
+    content: 'Le local est indisponible, je reprends ici sans perdre le sujet.',
+  });
+
+  try {
+    process.env.VIVY_CHAT_DISABLE_LLM = 'false';
+    process.env.VIVY_CHAT_LOCAL_FIRST = 'true';
+    delete process.env.VIVY_CHAT_PROVIDER;
+    process.env.OLLAMA_BASE = local.baseUrl;
+    process.env.A11_OLLAMA_PRIMARY_MODEL = 'llama3.2:3b';
+    process.env.VIVY_OPENAI_BASE_URL = cloud.baseUrl;
+    process.env.VIVY_OPENAI_API_KEY = 'test-cloud-key';
+    process.env.VIVY_CHAT_MODEL = 'test-cloud-model';
+    delete process.env.GROQ_API_KEY;
+
+    const result = await buildVivyAiChat({
+      conversationId: 'vivy-local-first-fallback',
+      mode: 'chat',
+      message: 'Tu peux continuer notre discussion normalement ?',
+      history: [],
+    }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+    assert.equal(result.provider, 'openai');
+    assert.equal(result.model, 'test-cloud-model');
+    assert.match(result.assistant, /sans perdre le sujet/i);
+    assert.equal(local.requests.length, 1);
+    assert.equal(cloud.requests.length, 1);
+  } finally {
+    await local.close();
+    await cloud.close();
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;

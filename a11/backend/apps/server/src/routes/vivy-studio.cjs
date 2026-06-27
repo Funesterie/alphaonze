@@ -470,10 +470,45 @@ function isVivyFounderUser(user = {}) {
 }
 
 function getVivyProviderFromBaseUrl(baseURL = '') {
+  if (/ollama|(?:127\.0\.0\.1|localhost):11434/i.test(baseURL)) return 'ollama';
   if (/groq/i.test(baseURL)) return 'groq';
   if (/openrouter\.ai/i.test(baseURL)) return 'openrouter';
   if (/x\.ai|grok/i.test(baseURL)) return 'xai';
   return 'openai';
+}
+
+function getVivyLocalOllamaConfig(options = {}) {
+  const mode = cleanOneLine(options.mode || options.chatMode, '', 24).toLowerCase();
+  const rawBaseURL = cleanOneLine(
+    process.env.VIVY_OLLAMA_BASE_URL
+      || process.env.A11_OLLAMA_BASE
+      || process.env.OLLAMA_BASE,
+    '',
+    300
+  ).replace(/\/+$/, '');
+  if (!rawBaseURL) return null;
+
+  const baseURL = /\/v1$/i.test(rawBaseURL) ? rawBaseURL : `${rawBaseURL}/v1`;
+  const model = cleanOneLine(
+    mode === 'song'
+      ? (process.env.VIVY_SONG_LOCAL_MODEL
+        || process.env.VIVY_CHAT_LOCAL_MODEL
+        || process.env.A11_OLLAMA_PRIMARY_MODEL
+        || process.env.LOCAL_DEFAULT_MODEL)
+      : (process.env.VIVY_CHAT_LOCAL_MODEL
+        || process.env.A11_OLLAMA_PRIMARY_MODEL
+        || process.env.LOCAL_DEFAULT_MODEL),
+    'llama3.2:3b',
+    120
+  );
+
+  return {
+    baseURL,
+    apiKey: String(process.env.OLLAMA_API_KEY || 'ollama-local').trim(),
+    model,
+    provider: 'ollama',
+    source: 'ollama-openai-compatible',
+  };
 }
 
 function getVivyOpenAIConfig(options = {}) {
@@ -538,14 +573,32 @@ function getVivyOpenAIConfig(options = {}) {
   };
 }
 
-function createVivyOpenAIClient(options = {}) {
-  if (!OpenAI) return null;
-  const config = getVivyOpenAIConfig(options);
-  if (!config.apiKey) return null;
+function getVivyLlmConfigs(options = {}) {
+  const mode = cleanOneLine(options.mode || options.chatMode, '', 24).toLowerCase();
+  const cloud = getVivyOpenAIConfig(options);
+  const local = getVivyLocalOllamaConfig(options);
+  const localFirst = mode !== 'song'
+    && !['0', 'false', 'off', 'no'].includes(
+      String(process.env.VIVY_CHAT_LOCAL_FIRST || 'true').trim().toLowerCase()
+    );
+  const ordered = localFirst ? [local, cloud] : [cloud, local];
+  const seen = new Set();
+  return ordered.filter((config) => {
+    if (!config?.apiKey || !config?.baseURL || !config?.model) return false;
+    const key = `${config.provider}|${config.baseURL}|${config.model}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function createVivyOpenAIClientFromConfig(config) {
+  if (!OpenAI || !config?.apiKey) return null;
   return {
     client: new OpenAI({
       baseURL: config.baseURL,
       apiKey: config.apiKey,
+      maxRetries: config.provider === 'ollama' ? 0 : 2,
       defaultHeaders: {
         'X-NEZ-TOKEN': process.env.NEZ_ALLOWED_TOKEN || process.env.NEZ_TOKENS || 'nez:a11-client-funesterie-pro',
       },
@@ -555,6 +608,38 @@ function createVivyOpenAIClient(options = {}) {
     provider: config.provider,
     source: config.source,
   };
+}
+
+function createVivyOpenAIClients(options = {}) {
+  return getVivyLlmConfigs(options)
+    .map(createVivyOpenAIClientFromConfig)
+    .filter(Boolean);
+}
+
+function createVivyOpenAIClient(options = {}) {
+  return createVivyOpenAIClients(options)[0] || null;
+}
+
+async function createVivyChatCompletion(llmBundles, request) {
+  let lastError = null;
+  for (const bundle of llmBundles) {
+    try {
+      const completion = await bundle.client.chat.completions.create({
+        ...request,
+        model: bundle.model,
+      });
+      return { bundle, completion };
+    } catch (error) {
+      lastError = error;
+      console.warn(
+        '[vivy-chat] provider=%s model=%s failed status=%s; trying next provider',
+        bundle.provider,
+        bundle.model,
+        Number(error?.status || error?.response?.status || 0) || 'exception'
+      );
+    }
+  }
+  throw lastError || new Error('vivy_llm_unavailable');
 }
 
 function getVivyVisionModel(baseURL = '') {
@@ -4022,7 +4107,8 @@ async function buildVivyAiChat(input, req) {
     : null;
   const localContextForResponse = serializeVivyLocalContext(localContext);
   const llmDisabled = String(process.env.VIVY_CHAT_DISABLE_LLM || '').toLowerCase() === 'true';
-  const llmBundle = createVivyOpenAIClient({ mode });
+  const llmBundles = createVivyOpenAIClients({ mode });
+  let llmBundle = llmBundles[0] || null;
   let webResearch = null;
 
   if (mode === 'chat' && isVivyMalformedNossenOutputQuestion(intentMessage || message, getVivyHistoryText(input.history))) {
@@ -4362,14 +4448,15 @@ async function buildVivyAiChat(input, req) {
     const _vivyLlmStart = Date.now();
 
     const songResponseMaxChars = VIVY_SONG_MAX_CHARS;
-    const completion = await llmBundle.client.chat.completions.create({
-      model: llmBundle.model,
+    const completionResult = await createVivyChatCompletion(llmBundles, {
       messages,
       temperature: mode === 'song'
         ? Number(process.env.VIVY_CHAT_TEMPERATURE_SONG || process.env.VIVY_CHAT_TEMPERATURE || 0.88)
         : Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74),
       max_tokens: mode === 'song' ? Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || VIVY_CHAT_SONG_MAX_TOKENS_DEFAULT) : Number(process.env.VIVY_CHAT_MAX_TOKENS || 3200),
     });
+    llmBundle = completionResult.bundle;
+    const completion = completionResult.completion;
     const rawAssistant = cleanText(completion?.choices?.[0]?.message?.content, mode === 'song' ? songResponseMaxChars : VIVY_CHAT_MAX_CHARS);
     let _vivyLlmLatency = Date.now() - _vivyLlmStart;
     const processed = postProcessVivyAssistantText({
