@@ -2524,6 +2524,46 @@ test('Vivy NOSSEN refuses deterministic lyrics when every strong LLM is unavaila
   );
 });
 
+test('Vivy NOSSEN server guard also blocks deterministic lyrics from an older browser bundle', async () => {
+  await assert.rejects(
+    buildVivyAiChat({
+      conversationId: 'vivy-nossen-old-browser-strong-model-required',
+      mode: 'song',
+      message: [
+        "Écris uniquement les paroles complètes d'une chanson originale.",
+        'Distribution vocale choisie: Solo Vivy.',
+        'Matière à transformer en chanson:',
+        "plein de blagues, d'humour et de calembours",
+      ].join('\n\n'),
+      songText: "plein de blagues, d'humour et de calembours",
+      songArtists: ['vivy'],
+      artistCount: 1,
+      vocalCast: 'Solo Vivy',
+    }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } }),
+    (error) => error?.code === 'vivy_song_llm_unavailable' && error?.status === 503
+  );
+});
+
+test('Vivy strict NOSSEN finalizer never substitutes deterministic template lyrics', () => {
+  const deterministicTemplate = [
+    '[Intro]',
+    'plein de blagues,',
+    "d'humour.",
+    '[Chorus]',
+    'Plein Blagues — le refrain tient sa ligne,',
+    'chaque nom garde son endroit.',
+  ].join('\n');
+
+  const result = buildVivyPublicLyrics({
+    songText: "plein de blagues, d'humour et de calembours",
+    songArtists: ['vivy'],
+  }, 'Je vais préparer une chanson drôle.', deterministicTemplate, {
+    allowDeterministicFallback: false,
+  });
+
+  assert.equal(result, '');
+});
+
 test('Vivy NOSSEN launch path no longer rewrites user requests into canned lyric images', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),

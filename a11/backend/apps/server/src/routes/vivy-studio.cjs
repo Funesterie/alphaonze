@@ -3620,7 +3620,7 @@ function injectVivySectionArtistTags(lyrics = '', artistCast = null) {
   return output.join('\n');
 }
 
-function ensureVivyPublicLyricsArtistTags(input = {}, lyrics = '') {
+function ensureVivyPublicLyricsArtistTags(input = {}, lyrics = '', options = {}) {
   let publicLyrics = sanitizeVivyPublicLyrics(lyrics);
   if (!publicLyrics) return '';
 
@@ -3642,17 +3642,26 @@ function ensureVivyPublicLyricsArtistTags(input = {}, lyrics = '') {
   ));
   if (!missingArtistTag && !missingSharedTag && !unexpectedArtistTag) return publicLyrics;
 
-  const fallback = sanitizeVivyPublicLyrics(buildVivySongProductionBrief({
-    ...input,
-    songText: input.songText || input.message || input.prompt || input.text || input.theme,
-  }).lyrics);
-  if (fallback) return fallback;
+  if (options.allowDeterministicFallback !== false) {
+    const fallback = sanitizeVivyPublicLyrics(buildVivySongProductionBrief({
+      ...input,
+      songText: input.songText || input.message || input.prompt || input.text || input.theme,
+    }).lyrics);
+    if (fallback) return fallback;
+  }
 
   return publicLyrics;
 }
 
-function buildVivyPublicLyrics(input = {}, rawAssistant = '', fallbackLyrics = '') {
+function buildVivyPublicLyrics(input = {}, rawAssistant = '', fallbackLyrics = '', options = {}) {
+  const allowDeterministicFallback = options.allowDeterministicFallback !== false;
   let publicLyrics = sanitizeVivyPublicLyrics(rawAssistant);
+  if (!allowDeterministicFallback) {
+    if (!publicLyrics || looksLikeWeakSongwritingReply(publicLyrics) || !hasVivyChorusSection(publicLyrics)) {
+      return '';
+    }
+    return ensureVivyPublicLyricsArtistTags(input, publicLyrics, { allowDeterministicFallback: false });
+  }
   if (!publicLyrics || looksLikeWeakSongwritingReply(publicLyrics) || !hasVivyChorusSection(publicLyrics)) {
     publicLyrics = sanitizeVivyPublicLyrics(fallbackLyrics);
   }
@@ -3663,6 +3672,13 @@ function buildVivyPublicLyrics(input = {}, rawAssistant = '', fallbackLyrics = '
     }).lyrics);
   }
   return ensureVivyPublicLyricsArtistTags(input, publicLyrics);
+}
+
+function isVivyNossenSongGenerationRequest(input = {}, message = '') {
+  if (!input.vocalCast && !input.songArtists && !input.artistCount) return false;
+  const folded = foldTextForLookup(message);
+  return /\b(?:distribution vocale choisie|matiere creative du canevas composition|matiere a transformer en chanson|aucune matiere n est imposee)\b/.test(folded)
+    && /\b(?:ecris uniquement les paroles|paroles completes|chanson originale)\b/.test(folded);
 }
 
 function logVivySongcraftTrace({ provider = 'deterministic', model = 'vivy-songcraft', source = 'local', fallback = false, latencyMs = 0 } = {}) {
@@ -4100,7 +4116,8 @@ async function buildVivyAiChat(input, req) {
       effectiveWorkspace.notes ? `Direction sonore:\n${effectiveWorkspace.notes}` : '',
     ].filter(Boolean).join('\n\n'), 3200)
     : '';
-  const requiresStrongSongModel = mode === 'song' && input.disableSongcraftFallback === true;
+  const requiresStrongSongModel = mode === 'song'
+    && (input.disableSongcraftFallback === true || isVivyNossenSongGenerationRequest(input, message));
   rememberVivyChatSession(userId, sessionContext);
   const fileContext = formatVivyFilesForPrompt(files);
   const songFileContext = mode === 'song'
@@ -4499,7 +4516,7 @@ async function buildVivyAiChat(input, req) {
     let llmRetried = false;
     let assistantCandidate = processed.content;
 
-    if (mode === 'song' && looksLikeWeakSongwritingReply(processed.content)) {
+    if (mode === 'song' && (looksLikeWeakSongwritingReply(processed.content) || !hasVivyChorusSection(processed.content))) {
       const _retryStart = Date.now();
       try {
         const retryCompletion = await llmBundle.client.chat.completions.create({
@@ -4517,7 +4534,9 @@ async function buildVivyAiChat(input, req) {
         });
         const retryRaw = cleanText(retryCompletion?.choices?.[0]?.message?.content, songResponseMaxChars);
         const retryProcessed = postProcessVivyAssistantText({ text: retryRaw, userMessage: message, systemPrompt, mode, maxChars: songResponseMaxChars });
-        if (retryProcessed.content && !looksLikeWeakSongwritingReply(retryProcessed.content)) {
+        if (retryProcessed.content
+          && !looksLikeWeakSongwritingReply(retryProcessed.content)
+          && hasVivyChorusSection(retryProcessed.content)) {
           llmRetried = true;
           assistantCandidate = retryProcessed.content;
         } else {
@@ -4534,7 +4553,12 @@ async function buildVivyAiChat(input, req) {
     }
 
     const assistant = mode === 'song'
-      ? buildVivyPublicLyrics({ ...input, message, files, history }, assistantCandidate, fallback.publicLyrics)
+      ? buildVivyPublicLyrics(
+        { ...input, message, files, history },
+        assistantCandidate,
+        requiresStrongSongModel ? '' : fallback.publicLyrics,
+        { allowDeterministicFallback: !requiresStrongSongModel }
+      )
       : sanitizeVivyPublicText(assistantCandidate, VIVY_CHAT_MAX_CHARS);
     const assistantForOutput = mode === 'song'
       ? (stripVivySingerTagsForPublicLyrics(assistant) || assistant)
