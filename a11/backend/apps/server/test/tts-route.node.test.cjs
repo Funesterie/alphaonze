@@ -77,6 +77,20 @@ function createPcm16Wav({ frequency = 440, durationSec = 0.12, sampleRate = 1600
   return buffer;
 }
 
+test('tts payload metadata follows the final MP3 asset instead of stale source WAV headers', () => {
+  const normalized = ttsRouter.normalizeTtsPayloadMediaMeta({
+    audio_url: '/api/tts/out/tts-out-1782602984698-xtts-rvc.mp3',
+    audioUrl: '/api/tts/out/tts-out-1782602984698-xtts-rvc.mp3',
+    audioFormat: 'wav',
+    contentType: 'audio/wav',
+    content_type: 'audio/wav',
+  }, { audioFormat: 'mp3' });
+
+  assert.equal(normalized.audioFormat, 'mp3');
+  assert.equal(normalized.contentType, 'audio/mpeg');
+  assert.equal(normalized.content_type, 'audio/mpeg');
+});
+
 test('tts piper route rewrites loopback TTS asset URLs to backend proxy paths', async () => {
   const previousEnv = {
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,

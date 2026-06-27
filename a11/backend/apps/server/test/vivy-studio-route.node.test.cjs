@@ -2541,6 +2541,26 @@ test('Vivy song preview asks for automatic official voice routing', () => {
   assert.doesNotMatch(block, /const provider = usesCleanCloudVoice \? "elevenlabs"/);
 });
 
+test('Vivy official Studio voices avoid broken XTTS for A11 and K44 by default', () => {
+  const appSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
+    'utf8'
+  );
+  const autoStart = appSource.indexOf('function buildVivyAutoTtsOptions');
+  const autoEnd = appSource.indexOf('function buildVivyVoiceReferenceOptions', autoStart);
+  const autoBlock = appSource.slice(autoStart, autoEnd);
+  const studioStart = appSource.indexOf('function buildVivyTtsOptions');
+  const studioEnd = appSource.indexOf('async function copyStudioPublicOutput', studioStart);
+  const studioBlock = appSource.slice(studioStart, studioEnd);
+
+  assert.match(autoBlock, /entryId === "a11"/);
+  assert.match(autoBlock, /entryId === "kaen44"/);
+  assert.match(autoBlock, /provider = usesCleanCloudVoice \? "elevenlabs" : \(usesOfficialReference \? "xtts-rvc" : "auto"\)/);
+  assert.match(studioBlock, /activeVoiceProfile\.id === "a11-official"/);
+  assert.match(studioBlock, /activeVoiceProfile\.id === "k44-official"/);
+  assert.match(studioBlock, /forceCloudTts:\s*usesCleanCloudVoice \? true : undefined/);
+});
+
 test('Vivy Studio exposes the real voice route instead of hiding XTTS fallback', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),

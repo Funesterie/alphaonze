@@ -5242,7 +5242,8 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     const entryId = String(entry.id || "").trim().toLowerCase();
     const usesOfficialReference = officialVoiceIds.has(entryId)
       || /\b(?:djeff|kaen44|a11|vivy|official|officiel|rap)\b/i.test(`${entry.voiceStyle} ${entry.voiceTool}`);
-    const usesCleanCloudVoice = usesOfficialReference && (entryId === "djeff" || entryId === "vivy");
+    const usesCleanCloudVoice = usesOfficialReference
+      && (entryId === "djeff" || entryId === "vivy" || entryId === "a11" || entryId === "kaen44");
     const provider = usesCleanCloudVoice ? "elevenlabs" : (usesOfficialReference ? "xtts-rvc" : "auto");
     const voiceConversion = usesOfficialReference && !usesCleanCloudVoice;
     const referenceLabel = String(entry.referenceLabel || entry.voiceStyle || entry.label).trim();
@@ -5320,6 +5321,8 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         activeVoiceProfile.id === "djeff-rap"
         || activeVoiceProfile.id === "vivy-official"
         || activeVoiceProfile.id === "vivy-sing"
+        || activeVoiceProfile.id === "a11-official"
+        || activeVoiceProfile.id === "k44-official"
       );
     const provider = usesCleanCloudVoice ? "auto" : "xtts-rvc";
     const voiceConversion = !usesCleanCloudVoice;

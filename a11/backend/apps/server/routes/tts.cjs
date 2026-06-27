@@ -2428,9 +2428,48 @@ function buildVoiceRouteManifest(payload = {}, body = {}) {
 }
 
 function attachVoiceRouteManifest(payload = {}, body = {}) {
+  const normalizedPayload = normalizeTtsPayloadMediaMeta(payload, body);
+  return {
+    ...normalizedPayload,
+    voiceManifest: buildVoiceRouteManifest(normalizedPayload, body),
+  };
+}
+
+function inferTtsPayloadAudioFormat(payload = {}, body = {}) {
+  const audioUrl = String(payload?.audioUrl || payload?.audio_url || payload?.url || '').trim();
+  try {
+    const ext = path.extname(new URL(audioUrl, 'http://a11.local').pathname).slice(1).toLowerCase();
+    if (['mp3', 'wav', 'ogg'].includes(ext)) return ext;
+  } catch {
+    const ext = path.extname(audioUrl).slice(1).toLowerCase();
+    if (['mp3', 'wav', 'ogg'].includes(ext)) return ext;
+  }
+  const rawFormat = String(
+    payload?.audioFormat
+    || payload?.audio_format
+    || body?.audioFormat
+    || body?.responseFormat
+    || ''
+  ).trim().toLowerCase();
+  if (rawFormat === 'ogg') return 'ogg';
+  return normalizeTtsAudioFormat({ audioFormat: rawFormat }, 'mp3');
+}
+
+function contentTypeForTtsAudioFormat(format = 'mp3') {
+  const normalized = String(format || '').trim().toLowerCase();
+  if (normalized === 'wav') return 'audio/wav';
+  if (normalized === 'ogg') return 'audio/ogg';
+  return 'audio/mpeg';
+}
+
+function normalizeTtsPayloadMediaMeta(payload = {}, body = {}) {
+  const audioFormat = inferTtsPayloadAudioFormat(payload, body);
+  const contentType = contentTypeForTtsAudioFormat(audioFormat);
   return {
     ...(payload || {}),
-    voiceManifest: buildVoiceRouteManifest(payload, body),
+    audioFormat,
+    contentType,
+    content_type: contentType,
   };
 }
 
@@ -5863,3 +5902,4 @@ module.exports.wantsElevenLabsRvcPipeline = wantsElevenLabsRvcPipeline;
 module.exports.shouldDefaultOfficialToElevenLabsRvc = shouldDefaultOfficialToElevenLabsRvc;
 module.exports.shouldRouteOfficialToElevenLabsRvc = shouldRouteOfficialToElevenLabsRvc;
 module.exports.hasSpecialLocalVoiceStyle = hasSpecialLocalVoiceStyle;
+module.exports.normalizeTtsPayloadMediaMeta = normalizeTtsPayloadMediaMeta;
