@@ -3520,6 +3520,8 @@ function looksLikeWeakSongwritingReply(text = '') {
   const content = cleanText(text, VIVY_SONG_MAX_CHARS);
   if (!content) return true;
   const normalized = foldTextForLookup(content);
+  const contaminatedChatAck = /\b(?:oui\s+je\s+te\s+suis|je\s+suis\s+la\s+et\s+je\s+te\s+suis|je\s+dois\s+repondre\s+a\s+ce\s+que\s+tu\s+poses|sur\s+le\s+fond|avec\s+le\s+contexte)\b/.test(normalized);
+  if (contaminatedChatAck) return true;
   // Compter sections: brackets [Chorus] OU bold **Refrain** OU **Couplet**
   const bracketSections = (content.match(/\[(intro|verse|couplet|pre-chorus|pre-refrain|pré-refrain|chorus|refrain|bridge|pont|outro)\]/ig) || []).length;
   const boldSections = (content.match(/\*\*(intro|verse|couplet|pre-chorus|refrain|chorus|bridge|pont|outro|couplet\s*\d+|refrain\s*\()/ig) || []).length;
@@ -3546,6 +3548,7 @@ function isVivyPublicLyricsNoiseLine(line = '') {
   if (/^\[title\s*:/.test(folded)) return true;
   if (/^(?:\*\*)?\s*(titre|intention|rimes?|rimes\s*\/\s*debit|source|direction sonore|titre de travail|structure proposee|assets a produire|paroles guide|routage|routage recommande|atelier|objectif|flux chanson|sortie attendue|role|rôle|media pret|média prêt|production plan)\b/.test(folded)) return true;
   if (/^(voici une chanson|voici les paroles|je vais continuer|je comprends mieux|quel est le message|quel est le ton|poser quelques questions)\b/.test(folded)) return true;
+  if (/\b(?:oui\s+je\s+te\s+suis|je\s+suis\s+la\s+et\s+je\s+te\s+suis|je\s+dois\s+repondre\s+a\s+ce\s+que\s+tu\s+poses|sur\s+le\s+fond|avec\s+le\s+contexte)\b/.test(folded)) return true;
   if (/\b(j espere que cette chanson|j espere que cela|j espere que ca|n hesite pas a|n hesitez pas|feedbacks?|modifications? si necessaire|vous attendiez)\b/.test(folded)) return true;
   if (/https?:\/\/\S*(?:token=|\/api\/double-harmonic\/out\/)/i.test(raw)) return true;
   if (/\b(?:token|access_token|signature|sig|key)=\S+/i.test(raw)) return true;
@@ -4567,8 +4570,9 @@ async function buildVivyAiChat(input, req) {
 
   try {
     const detachedCompleteSong = mode === 'song' && looksLikeCompleteLyrics(intentMessage || message);
-    const memoryContext = detachedCompleteSong ? '' : buildVivyMemoryContext(userId, input.conversationId);
-    const history = detachedCompleteSong ? [] : normalizeVivyChatHistory(input.history);
+    const strictSongNoMemory = requiresStrongSongModel;
+    const memoryContext = (detachedCompleteSong || strictSongNoMemory) ? '' : buildVivyMemoryContext(userId, input.conversationId);
+    const history = (detachedCompleteSong || strictSongNoMemory) ? [] : normalizeVivyChatHistory(input.history);
     const userContent = compactUniqueLines([
       intentMessage || message,
       mode === 'song' && input.songText ? `Matière Composition:\n${sanitizeVivySongMaterial(input.songText, VIVY_SONG_MAX_CHARS)}` : '',

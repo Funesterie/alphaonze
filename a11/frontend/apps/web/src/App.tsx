@@ -3671,6 +3671,7 @@ function looksLikeVivyNossenOperatorNoiseLine(folded = "") {
   if (/\b(?:paroles?\s+passent?\s+pas|musique\s+bug|generation\s+musique\s+bug|génération\s+musique\s+bug|phrase générique|truc générique|generique|réecrit|réécrit|reecrit|recopie|recopier)\b/.test(folded)) return true;
   if (/\b(?:bug|bugs?|marche\s+pas|sort\s+pas|sorti\s+pas|corrige|corriger|fix|logs?|credits?|crédits?|cles?|clés?|key|llm|quota|token|secret)\b/.test(folded)) return true;
   if (/\b(?:repete|répète|repetes|répètes|reponse|réponse|reponses|réponses|perroquet|singeur|singe|confond|confondu|sortie\s+compilateur|user\s+avec|compiler\s+output)\b/.test(folded)) return true;
+  if (/\b(?:oui\s+je\s+te\s+suis|je\s+suis\s+la\s+et\s+je\s+te\s+suis|je\s+dois\s+repondre\s+a\s+ce\s+que\s+tu\s+poses|je\s+dois\s+répondre\s+à\s+ce\s+que\s+tu\s+poses|sur\s+le\s+fond|avec\s+le\s+contexte)\b/.test(folded)) return true;
   if (/\b(?:affichage|telephone|téléphone|mobile|dezoom|dézoom|clavier|viewport|scroll|impossible\s+d[' ]?ecrire|impossible\s+d[' ]?écrire|ca\s+bouge|ça\s+bouge)\b/.test(folded)) return true;
   if (/\b(?:mets|met|mettre)\b.{0,80}\b(?:action|theme|th[eè]me|ambiance|titre)\b/.test(folded)) return true;
   if (/\b(?:put|turn|make)\b.{0,80}\b(?:action|theme|mood|ambience|ambiance|title|epic|fantasy)\b/.test(folded)) return true;
@@ -3776,6 +3777,21 @@ function sanitizeVivyNossenSongSeed(value = "") {
       return true;
     });
   return toUnicodeText(lines.join("\n").replace(/\n{3,}/g, "\n\n"), VIVY_STUDIO_SONG_MAX_CHARS).trim();
+}
+
+function isValidVivyNossenSongSeed(value = "") {
+  const text = sanitizeVivyNossenSongSeed(value);
+  if (!text) return false;
+  const folded = foldForLookup(text);
+  if (/\b(?:oui\s+je\s+te\s+suis|je\s+dois\s+repondre\s+a\s+ce\s+que\s+tu\s+poses|sur\s+le\s+fond|avec\s+le\s+contexte)\b/.test(folded)) return false;
+  const sectionCount = (text.match(/^\s*\[(?:Intro|Verse|Couplet|Pre[- ]?Chorus|Pré[- ]?refrain|Refrain|Chorus|Bridge|Pont|Outro|Final(?:\s+Chorus)?)\b[^\]]*\]\s*$/gim) || []).length;
+  const chorusCount = (text.match(/^\s*\[(?:Refrain|Chorus|Final\s+Chorus)\b[^\]]*\]\s*$/gim) || []).length;
+  const lyricLineCount = text
+    .split(/\r?\n+/)
+    .map((line) => line.trim())
+    .filter((line) => line && !/^\[[^\]]+\]$/.test(line))
+    .length;
+  return sectionCount >= 4 && chorusCount >= 2 && lyricLineCount >= 16;
 }
 
 function playVivyNossenBangerCall() {
@@ -7295,14 +7311,14 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         disableSongcraftFallback: true,
       });
       const vocalLyricsForProduction = sanitizeVivyNossenSongSeed(toUnicodeText(
-        lyricsPayload.vocalLyrics || lyricsPayload.publicLyrics || lyricsPayload.publicText || lyricsPayload.assistant || lyricsPayload.content || "",
+        lyricsPayload.vocalLyrics || lyricsPayload.publicLyrics || "",
         VIVY_STUDIO_SONG_MAX_CHARS
       ));
       const publicLyricsForChat = sanitizeVivyNossenSongSeed(toUnicodeText(
-        lyricsPayload.publicLyrics || lyricsPayload.publicText || lyricsPayload.assistant || vocalLyricsForProduction,
+        lyricsPayload.publicLyrics || vocalLyricsForProduction,
         VIVY_STUDIO_SONG_MAX_CHARS
       ));
-      if (!vocalLyricsForProduction) throw new Error("paroles_vivy_vides");
+      if (!isValidVivyNossenSongSeed(vocalLyricsForProduction)) throw new Error("paroles_vivy_invalides");
       const productionBrief = buildVivyNossenBangerProductionBrief(routedReadiness, artists);
       const requestedSonicMood = routedMood || inferVivyNossenSonicMood(routedReadiness, artists);
       const songMood = requestedSonicMood || undefined;

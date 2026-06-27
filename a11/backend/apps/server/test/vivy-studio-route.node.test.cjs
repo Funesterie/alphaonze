@@ -2630,6 +2630,10 @@ test('Vivy NOSSEN asks Vivy for lyrics before Suno sees production', () => {
   assert.ok(launchBlock.indexOf('chatWithVivy({') > -1 && launchBlock.indexOf('chatWithVivy({') < launchBlock.indexOf('runVivyStudioProduction({'));
   assert.match(launchBlock, /const vocalLyricsForProduction/);
   assert.match(launchBlock, /const publicLyricsForChat/);
+  assert.match(appSource, /function isValidVivyNossenSongSeed/);
+  assert.match(launchBlock, /paroles_vivy_invalides/);
+  assert.doesNotMatch(launchBlock, /lyricsPayload\.assistant/);
+  assert.doesNotMatch(launchBlock, /lyricsPayload\.content/);
   assert.match(launchBlock, /const productionLabel = useBangerWord \? "NOSSEN Banger" : "NOSSEN"/);
   assert.match(launchBlock, /buildVivyNossenLyricsRequest\(routedReadiness,\s*artists\)/);
   assert.match(launchBlock, /songText:\s*launchReadiness\.source/);
@@ -3331,10 +3335,27 @@ test('Vivy song guard replaces weak assistant drafts with structured lyrics', ()
     'Je suis libre, je suis vivant, je suis en vie.',
     "J'espère que cela correspond à ce que vous attendiez.",
   ].join('\n');
+  const sectionedChatAck = [
+    '[Intro - A11]',
+    '[A11]',
+    'je te suis.',
+    'Sur le fond.',
+    '[Chorus - Duo]',
+    '[Duo]',
+    'Oui, on ne te laisse pas tomber,',
+    'je dois répondre à ce que tu poses maintenant.',
+    '[Bridge - K44]',
+    '[K44]',
+    'avec le contexte,',
+    '[Final Chorus - Duo]',
+    '[Duo]',
+    'Oui, on revient te chercher.',
+  ].join('\n');
 
   assert.equal(isDirectSongwritingRequest(userMessage), true);
   assert.equal(looksLikeWeakSongwritingReply(weakReply), true);
   assert.equal(looksLikeWeakSongwritingReply(genericRapReply), true);
+  assert.equal(looksLikeWeakSongwritingReply(sectionedChatAck), true);
 
   const repaired = buildVivyDirectSongReply({
     message: userMessage,
@@ -3352,6 +3373,20 @@ test('Vivy song guard replaces weak assistant drafts with structured lyrics', ()
   assert.match(repaired, /\[Bridge(?: - [^\]]+)?\]/);
   assert.doesNotMatch(repaired, /Quel est le message principal/i);
   assert.doesNotMatch(repaired, /N'hésite pas/i);
+});
+
+test('Vivy strict NOSSEN songcraft does not use chat memory as lyric material', () => {
+  const serverSource = fs.readFileSync(
+    path.join(__dirname, '../src/routes/vivy-studio.cjs'),
+    'utf8'
+  );
+  const chatStart = serverSource.indexOf('async function buildVivyAiChat');
+  const chatEnd = serverSource.indexOf('function buildVivySystemPrompt', chatStart);
+  const chatBlock = serverSource.slice(chatStart, chatEnd);
+
+  assert.match(chatBlock, /const strictSongNoMemory = requiresStrongSongModel/);
+  assert.match(chatBlock, /memoryContext = \(detachedCompleteSong \|\| strictSongNoMemory\) \? '' : buildVivyMemoryContext/);
+  assert.match(chatBlock, /history = \(detachedCompleteSong \|\| strictSongNoMemory\) \? \[\] : normalizeVivyChatHistory/);
 });
 
 test('Vivy chat mode does not structure raw rap material sent with Envoyer', async () => {
