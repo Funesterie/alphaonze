@@ -870,11 +870,13 @@ function buildVivySongArtistCast(input = {}) {
     `Nombre de chanteurs: ${count}.`,
     ...artists.map((artist) => `${artist.label}: ${artist.role}.`),
     count > 1
-      ? `Tags obligatoires: ${tags}, puis [${sharedTag}] pour les passages communs.`
+      ? `Tags obligatoires: ${tags}. Relais solo d'abord; [${sharedTag}] seulement pour un hook commun court, jamais pour remplacer les sections solo.`
       : `Tag conseillé: ${tags}.`,
   ];
   const styleFragment = artists.map((artist) => artist.style).join(', ');
-  const ensembleStyle = count > 1 ? `${count} distinct original vocalists, ${label}, ` : '';
+  const ensembleStyle = count > 1
+    ? `${count} distinct original vocalists, solo handoff arrangement, one vocalist at a time, brief shared hook only, ${label}, `
+    : '';
   return {
     ids,
     artists,
@@ -884,7 +886,7 @@ function buildVivySongArtistCast(input = {}) {
     tags,
     songCastLines,
     musicLead: `Original Funesterie song for ${label}, in ${languageName}.`,
-    musicMood: `${countLabel}: ${label}. Original voices only, no celebrity imitation. ${styleFragment}.`,
+    musicMood: `${countLabel}: ${label}. Original voices only, no celebrity imitation. Solo handoff before shared hooks. ${styleFragment}.`,
     sunoStyle: `${languageStyle} original vocal production, ${ensembleStyle}${styleFragment}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration`,
   };
 }

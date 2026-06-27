@@ -2077,6 +2077,50 @@ test('Suno payload keeps quartet casts as Suno-sung vocal directions by default'
   assert.match(payload.prompt, /\[Tous\]/);
 });
 
+test('Suno payload pushes NOSSEN trios toward solo handoffs instead of one blended voice', () => {
+  const lyrics = [
+    '[Intro]',
+    '[Djeff]',
+    'Je rentre dans Aincrad, deux lames dans le noir,',
+    'Kirito serre le code, les murs gardent nos espoirs.',
+    'Le premier boss respire au fond du palier,',
+    'Je taille la peur nette pour ouvrir le sentier.',
+    '',
+    '[Chorus]',
+    '[Vivy]',
+    'SAO nous appelle, la lumière fend les chaînes,',
+    'Asuna dans le vent garde le cœur hors peine.',
+    'On monte étage après étage sans lâcher,',
+    'Le ciel d’Aincrad tremble quand le refrain renaît.',
+    '',
+    '[Bridge]',
+    '[A11]',
+    'Signal verrouillé, la mort n’est plus abstraite,',
+    'Le casque tient les nerfs, la mémoire reste nette.',
+    'Je compte les points de vie comme des promesses,',
+    'Et je rends la sortie à ceux que le jeu blesse.',
+  ].join('\n');
+
+  const payload = buildVivySunoPayload({
+    mode: 'song',
+    songArtists: ['djeff', 'vivy', 'a11'],
+    songText: lyrics,
+    lyrics,
+    songMood: 'anime opening héroïque, guitares claires, batterie massive',
+    longSong: true,
+  });
+
+  assert.match(payload.style, /solo handoff/i);
+  assert.match(payload.style, /one vocalist at a time/i);
+  assert.match(payload.style, /brief shared hook only/i);
+  assert.match(payload.negativeTags, /single vocalist/i);
+  assert.match(payload.negativeTags, /blended ensemble lead/i);
+  assert.match(payload.negativeTags, /unison lead vocals/i);
+  assert.match(payload.prompt, /\[Intro - Djeff solo\]\n\[Djeff\]/);
+  assert.match(payload.prompt, /\[Chorus - Vivy solo\]\n\[Vivy\]/);
+  assert.match(payload.prompt, /\[Bridge - A11 solo\]\n\[A11\]/);
+});
+
 test('Suno payload treats NOSSEN long songs as V5.5 long-form generations', () => {
   const previousModel = process.env.VIVY_SUNO_MODEL;
   const previousLongModel = process.env.VIVY_SUNO_LONG_MODEL;
@@ -2719,9 +2763,12 @@ test('Vivy NOSSEN isolates the current song exchange from stale account and work
   assert.match(appSource, /isVivyNossenInternalDraftMessage/);
   assert.match(appSource, /function hasVivyNossenThemeContinuity/);
   assert.match(appSource, /function hasVivyNossenCastCoverage/);
+  assert.match(appSource, /function strengthenVivyNossenSoloSectionLabels/);
+  assert.match(appSource, /buildVivyNossenSoloHandoffPlan/);
   assert.match(launchBlock, /lyricsAttempt <= 2/);
   assert.match(launchBlock, /paroles_vivy_hors_theme/);
   assert.match(launchBlock, /paroles_vivy_casting_incomplet/);
+  assert.match(launchBlock, /strengthenVivyNossenSoloSectionLabels/);
   assert.ok(
     canvasBlock.indexOf('latestSongExchange.length') < canvasBlock.indexOf('compositionCanvas.trim()'),
     'the latest structured chat song must win over an older Composition canvas'

@@ -3635,6 +3635,36 @@ function injectVivySectionArtistTags(lyrics = '', artistCast = null) {
   return output.join('\n');
 }
 
+function strengthenVivySunoSoloSectionHeaders(lyrics = '', artistCast = null) {
+  if (!lyrics || !artistCast?.artists?.length || Number(artistCast.count || 0) <= 1) return lyrics;
+  const labels = new Map(artistCast.artists.map((artist) => [foldTextForLookup(artist.label), artist.label]));
+  const performerTagPattern = /^\s*\[(?:Djeff|Vivy|A11|K44|Duo|Tous)\]\s*$/i;
+  const lines = String(lyrics || '').split(/\r?\n/);
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const tag = String(lines[index] || '').trim().match(/^\[([^\]]+)\]$/);
+    if (!tag) continue;
+    const artistLabel = labels.get(foldTextForLookup(tag[1]));
+    if (!artistLabel) continue;
+
+    let previousIndex = index - 1;
+    while (previousIndex >= 0 && !String(lines[previousIndex] || '').trim()) previousIndex -= 1;
+    if (previousIndex < 0) continue;
+
+    const previousLine = String(lines[previousIndex] || '').trim();
+    const previousTag = previousLine.match(/^\[([^\]]+)\]$/);
+    if (!previousTag || performerTagPattern.test(previousLine)) continue;
+
+    const previousFolded = foldTextForLookup(previousTag[1]);
+    const artistFolded = foldTextForLookup(artistLabel);
+    if (new RegExp(`\\b${escapeRegExp(artistFolded)}\\b`).test(previousFolded)) continue;
+    if (/\b(?:duo|tous|ensemble|choeur|chœur)\b/.test(previousFolded)) continue;
+    lines[previousIndex] = `[${previousTag[1].trim()} - ${artistLabel} solo]`;
+  }
+
+  return cleanText(lines.join('\n').replace(/\n{3,}/g, '\n\n'), VIVY_SONG_MAX_CHARS);
+}
+
 function ensureVivyPublicLyricsArtistTags(input = {}, lyrics = '', options = {}) {
   let publicLyrics = sanitizeVivyPublicLyrics(lyrics);
   if (!publicLyrics) return '';
@@ -5150,9 +5180,9 @@ function buildVivySunoPayload(input = {}, req = null) {
     ? inferVivySunoStyleBase(input, artistCast)
     : requestedStyleBase;
   const castStyle = artistCast.ids.includes('djeff') && artistCast.ids.includes('vivy') && artistCast.count === 2
-    ? 'alternating Djeff rap verses and Vivy melodic hook; vocal contrast: rough rhythmic male rap, then a clearly different bright female melodic voice'
+    ? 'never merge them into one voice; solo handoff duet, one vocalist at a time, alternating Djeff rap verses and Vivy melodic hook; vocal contrast: rough rhythmic male rap, then a clearly different bright female melodic voice; brief shared hook only'
     : artistCast.count > 1
-      ? `${artistCast.count} distinct vocalists; vocal contrast: ${artistCast.artists.map((artist) => artist.style).join(' versus ')}; keep tagged sections separate; never merge them into one voice`
+      ? `never merge them into one voice; solo handoff multi-vocal arrangement, one vocalist at a time, ${artistCast.count} distinct vocalists; vocal contrast: ${artistCast.artists.map((artist) => artist.style).join(' versus ')}; keep tagged solo sections separate; brief shared hook only`
       : `${artistCast.label} vocal lead: ${artistCast.artists[0]?.style || artistCast.label}`;
   const arrangement = splitVivyArrangementCues(sanitizeVivySongMaterial(
     stripVivyAscii4SoundTokens(input.songText || input.lyrics || input.text || input.theme || input.prompt),
@@ -5165,9 +5195,9 @@ function buildVivySunoPayload(input = {}, req = null) {
     ? 'long-form full song arrangement, expanded sections, recurring hook after the bridge, complete final chorus'
     : '';
   let style = /structured rhymed lyrics|rimes|paroles structur/i.test(styleBase)
-    ? cleanOneLine([styleBase, arrangementStyle, longFormStyle, castStyle, prosodyStyle].filter((item, index, list) => item && list.indexOf(item) === index).join(', '), styleBase, 520)
+    ? cleanOneLine([styleBase, castStyle, arrangementStyle, longFormStyle, prosodyStyle].filter((item, index, list) => item && list.indexOf(item) === index).join(', '), styleBase, 520)
     : cleanOneLine(
-      `${styleBase}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration${arrangementStyle ? `, ${arrangementStyle}` : ''}${longFormStyle ? `, ${longFormStyle}` : ''}${castStyle ? `, ${castStyle}` : ''}${prosodyStyle ? `, ${prosodyStyle}` : ''}`,
+      `${styleBase}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration${castStyle ? `, ${castStyle}` : ''}${arrangementStyle ? `, ${arrangementStyle}` : ''}${longFormStyle ? `, ${longFormStyle}` : ''}${prosodyStyle ? `, ${prosodyStyle}` : ''}`,
       styleBase,
       520
     );
@@ -5182,7 +5212,7 @@ function buildVivySunoPayload(input = {}, req = null) {
   const negativeTags = cleanOneLine([
     input.negativeTags || process.env.VIVY_SUNO_NEGATIVE_TAGS
       || 'spoken word, narration, reading prompt, robotic speech, muddy mix, out of tune vocals, copyrighted melody, celebrity voice imitation',
-    artistCast.count > 1 ? 'single vocalist, identical vocal timbre for every singer' : '',
+    artistCast.count > 1 ? 'single vocalist, identical vocal timbre for every singer, blended ensemble lead, unison lead vocals, choir lead, group chant replacing solos, same singer across all tags' : '',
     useExternalVoiceMix ? 'vocals, singing, spoken voice' : '',
   ].filter(Boolean).join(', '), 'spoken word, narration', 320);
   const requestedModel = resolveVivySunoRequestedModel(input);
@@ -5192,7 +5222,10 @@ function buildVivySunoPayload(input = {}, req = null) {
     instrumental: input.instrumental === true || input.forceInstrumental === true || useExternalVoiceMix,
     title,
     style,
-    prompt: buildVivySunoLyrics({ ...input, songTitle: input.songTitle || input.title || title }),
+    prompt: strengthenVivySunoSoloSectionHeaders(
+      buildVivySunoLyrics({ ...input, songTitle: input.songTitle || input.title || title }),
+      artistCast
+    ),
     negativeTags,
     callBackUrl: buildSunoCallbackUrl(req),
   };

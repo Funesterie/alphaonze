@@ -3703,6 +3703,26 @@ function describeVivyNossenBangerCast(artists: VivyStudioArtistId[]) {
   return `${prefix} ${labels.join(" + ")}`;
 }
 
+function getVivyStudioArtistLabel(artistId: VivyStudioArtistId) {
+  return VIVY_STUDIO_ARTISTS.find((artist) => artist.id === artistId)?.label || artistId;
+}
+
+function escapeVivyNossenRegExp(value = "") {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildVivyNossenSoloHandoffPlan(artists: VivyStudioArtistId[]) {
+  if (artists.length <= 1) return "";
+  const labels = artists.map(getVivyStudioArtistLabel);
+  const sharedTag = artists.length > 2 ? "[Tous]" : "[Duo]";
+  return [
+    `Relais vocal obligatoire: ${labels.map((label) => `${label} seul sur un bloc complet`).join(" -> ")}.`,
+    `Les refrains répétés doivent être portés par une seule voix nommée à chaque reprise, en alternance si possible; ${sharedTag} sert seulement à un hook final très court de deux lignes maximum.`,
+    `Écris les en-têtes comme [Verse 1 - ${labels[0]} solo] puis ${artists.map((artistId) => `[${getVivyStudioArtistLabel(artistId)}]`).join(" / ")} sur une ligne séparée selon la voix active.`,
+    "N'écris jamais tout un couplet ou tout un refrain en trio/duo/tous: le casting doit s'entendre comme des relais de timbres, pas comme une seule voix empilée.",
+  ].join(" ");
+}
+
 function cleanVivyNossenLyricSourceLine(value = "") {
   const line = toUnicodeLine(value, "", 190)
     .replace(/^(?:Utilisateur|Vivy)\s*:\s*/i, "")
@@ -3789,8 +3809,9 @@ function buildVivyNossenLyricsRequest(readiness: VivyNossenBangerReadiness, arti
     : "";
   const artistTags = artists.map((artistId) => `[${VIVY_STUDIO_ARTISTS.find((artist) => artist.id === artistId)?.label || artistId}]`);
   const castingLine = artists.length > 1
-    ? `Chaque voix doit avoir au moins une section solo complète de quatre vers, introduite par son tag exact sur une ligne séparée: ${artistTags.join(", ")}. Les passages communs utilisent seulement [${artists.length > 2 ? "Tous" : "Duo"}].`
+    ? `Chaque voix doit avoir au moins une section solo complète de quatre vers, introduite par son tag exact sur une ligne séparée: ${artistTags.join(", ")}. Les courts passages communs utilisent seulement [${artists.length > 2 ? "Tous" : "Duo"}].`
     : `Utilise le tag exact ${artistTags[0] || "[Vivy]"} au début des sections chantées.`;
+  const handoffLine = buildVivyNossenSoloHandoffPlan(artists);
   return toUnicodeText([
     "Écris uniquement les paroles complètes d'une chanson originale.",
     `Distribution vocale choisie: ${describeVivyNossenBangerCast(artists)}.`,
@@ -3798,6 +3819,7 @@ function buildVivyNossenLyricsRequest(readiness: VivyNossenBangerReadiness, arti
     structureLine,
     themeAnchorLine,
     castingLine,
+    handoffLine,
     "Écris une version longue, dense et chantable: intro, trois ou quatre couplets, pré-refrains, refrain mémorable répété au moins trois fois, pont, montée finale et outro. Le refrain doit revenir après le dernier pont.",
     "Chaque section doit apporter une image nouvelle, une progression émotionnelle et des rimes travaillées; évite les formules génériques et ne décris jamais la fabrication du morceau.",
     useBangerWord
@@ -3818,11 +3840,13 @@ function buildVivyNossenBangerProductionBrief(readiness: VivyNossenBangerReadine
   const structureLine = readiness.structureHints.length
     ? `Contraintes de structure utilisateur: ${readiness.structureHints.slice(0, 3).join(" / ")}.`
     : "";
+  const handoffLine = buildVivyNossenSoloHandoffPlan(artists);
   return toUnicodeText([
     "Production musicale NOSSEN.",
     `Casting choisi: ${describeVivyNossenBangerCast(artists)}.`,
     styleLine,
     structureLine,
+    handoffLine,
     "Format attendu: chanson complète sans durée imposée, développée autant que la matière le demande. Le refrain doit revenir après le dernier pont, pas disparaître avant la fin.",
     useBangerWord
       ? "Le mot Banger peut être utilisé parce que la demande utilisateur le cite."
@@ -3844,6 +3868,33 @@ function sanitizeVivyNossenSongSeed(value = "") {
       if (looksLikeVivyNossenOperatorNoiseLine(foldForLookup(trimmed))) return false;
       return true;
     });
+  return toUnicodeText(lines.join("\n").replace(/\n{3,}/g, "\n\n"), VIVY_STUDIO_SONG_MAX_CHARS).trim();
+}
+
+function strengthenVivyNossenSoloSectionLabels(value = "", artists: VivyStudioArtistId[] = []) {
+  if (!value || artists.length <= 1) return value;
+  const labels = new Map(artists.map((artistId) => [
+    foldForLookup(getVivyStudioArtistLabel(artistId)),
+    getVivyStudioArtistLabel(artistId),
+  ]));
+  const performerTagPattern = /^\s*\[(?:Djeff|Vivy|A11|K44|Duo|Tous)\]\s*$/i;
+  const lines = String(value || "").split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const tag = lines[index].trim().match(/^\[([^\]]+)\]$/);
+    if (!tag) continue;
+    const artistLabel = labels.get(foldForLookup(tag[1]));
+    if (!artistLabel) continue;
+    let previousIndex = index - 1;
+    while (previousIndex >= 0 && !lines[previousIndex].trim()) previousIndex -= 1;
+    if (previousIndex < 0) continue;
+    const previousTag = lines[previousIndex].trim().match(/^\[([^\]]+)\]$/);
+    if (!previousTag || performerTagPattern.test(lines[previousIndex])) continue;
+    const previousFolded = foldForLookup(previousTag[1]);
+    const artistFolded = foldForLookup(artistLabel);
+    if (new RegExp(`\\b${escapeVivyNossenRegExp(artistFolded)}\\b`).test(previousFolded)) continue;
+    if (/\b(?:duo|tous|ensemble|choeur|chœur)\b/.test(previousFolded)) continue;
+    lines[previousIndex] = `[${previousTag[1].trim()} - ${artistLabel} solo]`;
+  }
   return toUnicodeText(lines.join("\n").replace(/\n{3,}/g, "\n\n"), VIVY_STUDIO_SONG_MAX_CHARS).trim();
 }
 
@@ -3887,6 +3938,7 @@ function hasVivyNossenCastCoverage(value = "", artists: VivyStudioArtistId[] = [
     artistId,
   ]));
   const soloLineCounts = new Map(artists.map((artistId) => [artistId, 0]));
+  const soloSectionCounts = new Map(artists.map((artistId) => [artistId, 0]));
   let activeArtist: VivyStudioArtistId | null = null;
   for (const rawLine of String(value || "").split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -3897,16 +3949,36 @@ function hasVivyNossenCastCoverage(value = "", artists: VivyStudioArtistId[] = [
       for (const [label, artistId] of labels) {
         if (foldedTag === label) {
           activeArtist = artistId;
+          soloSectionCounts.set(artistId, Number(soloSectionCounts.get(artistId) || 0) + 1);
           break;
         }
       }
+      if (/\b(?:duo|tous|ensemble)\b/.test(foldedTag)) activeArtist = null;
       continue;
     }
     if (activeArtist && line) {
       soloLineCounts.set(activeArtist, Number(soloLineCounts.get(activeArtist) || 0) + 1);
     }
   }
-  return artists.every((artistId) => Number(soloLineCounts.get(artistId) || 0) >= 4);
+  const soloOk = artists.every((artistId) => (
+    Number(soloLineCounts.get(artistId) || 0) >= 4
+    && Number(soloSectionCounts.get(artistId) || 0) >= 1
+  ));
+  const sharedTagLineCount = String(value || "")
+    .split(/\r?\n/)
+    .reduce((count, rawLine, index, lines) => {
+      const line = rawLine.trim();
+      if (!/^\[(?:Duo|Tous)\]$/i.test(line)) return count;
+      let localCount = 0;
+      for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+        const next = String(lines[cursor] || "").trim();
+        if (/^\[[^\]]+\]$/.test(next)) break;
+        if (next) localCount += 1;
+      }
+      return count + localCount;
+    }, 0);
+  const sharedLimit = artists.length > 2 ? 6 : 8;
+  return soloOk && sharedTagLineCount <= sharedLimit;
 }
 
 function playVivyNossenBangerCall() {
@@ -7498,14 +7570,14 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           useWorkspaceForSong: useCompositionWorkspace,
           disableSongcraftFallback: true,
         });
-        vocalLyricsForProduction = sanitizeVivyNossenSongSeed(toUnicodeText(
+        vocalLyricsForProduction = strengthenVivyNossenSoloSectionLabels(sanitizeVivyNossenSongSeed(toUnicodeText(
           lyricsPayload.vocalLyrics || lyricsPayload.publicLyrics || "",
           VIVY_STUDIO_SONG_MAX_CHARS
-        ));
-        publicLyricsForChat = sanitizeVivyNossenSongSeed(toUnicodeText(
+        )), artists);
+        publicLyricsForChat = strengthenVivyNossenSoloSectionLabels(sanitizeVivyNossenSongSeed(toUnicodeText(
           lyricsPayload.publicLyrics || vocalLyricsForProduction,
           VIVY_STUDIO_SONG_MAX_CHARS
-        ));
+        )), artists);
         const validStructure = isValidVivyNossenSongSeed(vocalLyricsForProduction);
         const validTheme = hasVivyNossenThemeContinuity(vocalLyricsForProduction, routedReadiness.themeAnchor);
         const validCast = hasVivyNossenCastCoverage(vocalLyricsForProduction, artists);
