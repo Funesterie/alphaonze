@@ -7745,10 +7745,10 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         generateMusic: true,
         makeSong: true,
         preserveSelectedVoice: true,
-        allowExternalVoiceMix: true,
-        externalVoiceMix: true,
-        forceExternalVoiceMix: true,
-        previewInstrumental: true,
+        allowExternalVoiceMix: false,
+        externalVoiceMix: false,
+        forceExternalVoiceMix: false,
+        previewInstrumental: false,
         disableEmergencyMedia: true,
         musicProvider: "suno",
         musicModel: VIVY_NOSSEN_SUNO_LONG_MODEL,
@@ -7785,13 +7785,13 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
               title: routedReadiness.themeAnchor || activeSessionName || "Vivy NOSSEN",
               style: [
                 songMood || requestedSonicMood,
-                "long-form full song arrangement around five minutes",
-                "instrumental backing track only, no vocals, no singing, leave clear space for the external lead vocal",
+                "long-form full song arrangement around five minutes with sung lead vocals",
+                "continue the same vocal performance, keep the selected casting handoffs and recurring hook",
                 "complete final chorus, no short radio edit",
               ].filter(Boolean).join(", "),
               prompt: vocalLyricsForProduction,
-              instrumental: true,
-              previewInstrumental: true,
+              instrumental: false,
+              previewInstrumental: false,
               sessionSunoApiKey: sunoSessionKey || undefined,
             });
             let extendedPayload: any = extensionStart;
@@ -7839,55 +7839,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         }
       }
 
-      let nossenExternalVoiceMix = false;
-      if (preparedMedia.kind === "audio") {
-        const routedSegments = Array.isArray(finalPayload?.vocalSegments)
-          ? finalPayload.vocalSegments
-          : Array.isArray(lyricsPayload?.vocalSegments)
-            ? lyricsPayload.vocalSegments
-            : [];
-        const vocalSegments = routedSegments.length
-          ? routedSegments
-          : [{ artistIds: artists, text: vocalLyricsForProduction }];
-        setStatus(`${productionLabel}: fond Suno prêt, enregistrement des voix séparées ${castLabel}...`);
-        const voicePreview = await createVivyMultiVoicePreview(vocalSegments, {
-          artistIds: artists,
-          castLabel,
-          fallbackArtistIds: artists,
-          onStatus: (nextStatus) => setStatus(`${productionLabel}: ${nextStatus}`),
-        });
-        setStatus(`${productionLabel}: mix du fond Suno avec les voix Funesterie...`);
-        const mixed = await mixVivyStudioPreview(voicePreview.url, preparedMedia.url);
-        const mixedUrl = String(mixed?.audioUrl || mixed?.audio_url || mixed?.url || "").trim();
-        if (!mixedUrl) throw new Error("mix_nossen_voix_audio_url_missing");
-        const resolvedMixedUrl = resolveApiAssetUrl(mixedUrl) || mixedUrl;
-        const mixedDownloadUrl = String(mixed?.downloadUrl || mixed?.download_url || mixedUrl).trim();
-        preparedMedia = {
-          kind: "audio",
-          url: resolvedMixedUrl,
-          downloadUrl: resolveApiAssetUrl(mixedDownloadUrl) || mixedDownloadUrl || resolvedMixedUrl,
-          provider: String(mixed?.provider || "vivy-nossen-external-voice-mix"),
-          contentType: String(mixed?.contentType || mixed?.content_type || "audio/mpeg"),
-          filename: String(mixed?.filename || "vivy-nossen-voix-separees.mp3"),
-          voiceManifest: {
-            ...(voicePreview.voiceManifest || {}),
-            segments: vocalSegments.length,
-            mixEngine: "nossen-external-voice-mix",
-            output: resolvedMixedUrl,
-          },
-        };
-        finalPayload = {
-          ...finalPayload,
-          media: {
-            ...(finalPayload?.media || {}),
-            ...preparedMedia,
-          },
-          audioUrl: preparedMedia.url,
-          audio_url: preparedMedia.url,
-          externalVoiceMix: true,
-        };
-        nossenExternalVoiceMix = true;
-      }
+      const nossenExternalVoiceMix = false;
 
       let d40Applied = false;
       if (preparedMedia.kind === "audio") {
