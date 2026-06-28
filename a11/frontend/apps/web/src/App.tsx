@@ -3645,8 +3645,11 @@ function buildVivyNossenLaunchReadiness(readiness: VivyNossenBangerReadiness, dr
 
 function inferVivyNossenSonicMood(readiness: Pick<VivyNossenBangerReadiness, "source" | "styleHints" | "mediaHints">, artists: VivyStudioArtistId[] = []) {
   const explicit = readiness.styleHints.slice(0, 3).join(", ").trim();
-  if (explicit) return explicit;
   const folded = foldForLookup([readiness.source, ...readiness.mediaHints].join("\n"));
+  const animeMood = inferVivyNossenAnimeOpeningMood(folded);
+  if (animeMood && (!explicit || looksLikeWeakVivyNossenAnimeMood(explicit))) return animeMood;
+  if (animeMood && explicit) return `${explicit}, ${animeMood}`;
+  if (explicit) return explicit;
   if (/\bkirito\b|\bsword\s+art\s+online\b|\bsao\b|\baincrad\b|\basuna\b|\balfheim\b|\banime\b|\bmanga\b|\bshonen\b|\bshônen\b|\bisekai\b|\bopening\b|\bgenerique\b|\bgénérique\b/.test(folded)) {
     return "opening animé J-rock / J-pop rock, batterie rapide, guitares lumineuses, synthés héroïques, couplets nerveux, refrain massif et mémorisable";
   }
@@ -3677,17 +3680,60 @@ function inferVivyNossenSonicMood(readiness: Pick<VivyNossenBangerReadiness, "so
   return "";
 }
 
+function inferVivyNossenAnimeOpeningMood(folded = "") {
+  if (/\bbleach\b|\bichigo\b|\brukia\b|\borihime\b|\bishida\b|\barrancar\b|\baizen\b|\bzanpakuto\b|\bshinigami\b|\bsoul\s+society\b|\bhollow\b|\bgetsuga\b/.test(folded)) {
+    return "opening animé shonen sombre façon Bleach, J-rock nerveux, guitares tranchantes, batterie rapide, basse tendue, synthés nocturnes, refrain héroïque explosif, aucune variété française";
+  }
+  if (/\bkirito\b|\bsword\s+art\s+online\b|\bsao\b|\baincrad\b|\basuna\b|\balfheim\b/.test(folded)) {
+    return "opening animé J-rock / J-pop rock, batterie rapide, guitares lumineuses, synthés héroïques, couplets nerveux, refrain massif et mémorisable";
+  }
+  if (/\banime\b|\bmanga\b|\bshonen\b|\bshônen\b|\bisekai\b|\bopening\b|\bgenerique\b|\bgénérique\b/.test(folded)) {
+    return "opening animé moderne, J-rock énergique, guitares nettes, batterie vive, basse motrice, synthés brillants, refrain large et mémorisable";
+  }
+  return "";
+}
+
+function looksLikeWeakVivyNossenAnimeMood(value = "") {
+  const folded = foldForLookup(value);
+  if (!folded) return true;
+  if (/\b(?:patrick\s+bruel|bruel|variete|variété|chanson\s+francaise|chanson\s+française|ballade|piano\s+doux|acoustique|classique|symphonique|crooner|slow|romantique|folk\s+doux)\b/.test(folded)) return true;
+  return !/\b(?:anime|j[-\s]?rock|j[-\s]?pop|rock|metal|guitare|guitar|drums?|batterie|basse|synth|shonen|shônen|opening|generique|générique)\b/.test(folded);
+}
+
+function limitVivyNossenPublicArtists(artists: VivyStudioArtistId[] = [], source = ""): VivyStudioArtistId[] {
+  const selected = normalizeVivyStudioArtists(artists.length ? artists : ["vivy"]);
+  const unique = selected.filter((artistId, index, list) => list.indexOf(artistId) === index);
+  if (!unique.length) return ["vivy"];
+  const folded = foldForLookup(source);
+  const wantsAnime = Boolean(inferVivyNossenAnimeOpeningMood(folded));
+  if (unique.length === 1) return unique;
+  if (unique.includes("djeff") && unique.includes("a11") && !unique.includes("vivy")) {
+    return ["djeff", "vivy"];
+  }
+  if (unique.length <= 2) return unique;
+  if (unique.includes("vivy")) {
+    if (unique.includes("djeff")) return ["djeff", "vivy"];
+    const partnerPreference: VivyStudioArtistId[] = wantsAnime ? ["djeff", "a11", "k44"] : ["djeff", "k44", "a11"];
+    const partner = partnerPreference.find((artistId) => unique.includes(artistId));
+    return partner ? ["vivy", partner] : ["vivy"];
+  }
+  if (unique.includes("djeff")) return ["djeff", "vivy"];
+  return unique.slice(0, 2);
+}
+
 function inferVivyNossenBangerArtists(source = ""): VivyStudioArtistId[] {
   const folded = foldForLookup(source);
   const artists: VivyStudioArtistId[] = [];
   const add = (artistId: VivyStudioArtistId) => {
     if (!artists.includes(artistId)) artists.push(artistId);
   };
-  if (/\bquatuor|quatre\s+voix|4\s+voix\b/.test(folded)) return ["djeff", "vivy", "a11", "k44"];
+  if (/\bquatuor|quatre\s+voix|4\s+voix\b/.test(folded)) {
+    add("djeff");
+    add("vivy");
+  }
   if (/\btrio|trois\s+voix|3\s+voix\b/.test(folded)) {
     add("djeff");
     add("vivy");
-    add(/\bk44|kaen44|kaen\b/.test(folded) ? "k44" : "a11");
   }
   if (/\bduo|deux\s+voix|2\s+voix\b/.test(folded)) {
     add("vivy");
@@ -3698,7 +3744,7 @@ function inferVivyNossenBangerArtists(source = ""): VivyStudioArtistId[] {
   if (/\ba11\b|alpha/.test(folded)) add("a11");
   if (/\bk44\b|kaen44|kaen\b/.test(folded)) add("k44");
   if (!artists.length) add("vivy");
-  return artists.slice(0, 4);
+  return limitVivyNossenPublicArtists(artists, source);
 }
 
 function describeVivyNossenBangerCast(artists: VivyStudioArtistId[]) {
@@ -7573,8 +7619,13 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
 
     const filesForMessage = attachedFiles.slice(0, 6);
     const inferredArtists = inferVivyNossenBangerArtists(launchReadiness.source);
-    const manualArtists = songWorkspace.songArtists.length ? songWorkspace.songArtists : inferredArtists;
-    let artists = songWorkspace.castingAuto ? inferredArtists : manualArtists;
+    const manualArtists = songWorkspace.songArtists.length
+      ? limitVivyNossenPublicArtists(songWorkspace.songArtists, launchReadiness.source)
+      : inferredArtists;
+    let artists = limitVivyNossenPublicArtists(
+      songWorkspace.castingAuto ? inferredArtists : manualArtists,
+      launchReadiness.source
+    );
     let castLabel = describeVivyNossenBangerCast(artists);
     const useCompositionWorkspace = launchReadiness.sourceKind === "composition";
     let routedMood = useCompositionWorkspace ? songWorkspace.notes.trim() : "";
@@ -7618,7 +7669,10 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           sessionId: activeChatSessionId,
           conversationId,
         });
-        artists = normalizeVivyStudioArtists(routingPlan.artists, inferredArtists);
+        artists = limitVivyNossenPublicArtists(
+          normalizeVivyStudioArtists(routingPlan.artists, inferredArtists),
+          launchReadiness.source
+        );
         castLabel = describeVivyNossenBangerCast(artists);
         routedMood = useCompositionWorkspace
           ? songWorkspace.notes.trim() || routingPlan.songMood
@@ -7686,7 +7740,10 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         throw new Error("paroles_vivy_invalides");
       }
       const productionBrief = buildVivyNossenBangerProductionBrief(routedReadiness, artists);
-      const requestedSonicMood = routedMood || inferVivyNossenSonicMood(routedReadiness, artists);
+      const requestedSonicMood = inferVivyNossenSonicMood({
+        ...routedReadiness,
+        styleHints: routedMood ? [routedMood] : routedReadiness.styleHints,
+      }, artists);
       const songMood = requestedSonicMood || undefined;
       setStatus(`${productionLabel}: paroles prêtes, Suno démarre...`);
       const waitForNossenSunoJob = async (safeTaskId: string, label = "Suno") => {

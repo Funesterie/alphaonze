@@ -3821,11 +3821,30 @@ function parseVivyNossenRoutingPlan(value = '') {
       .filter((artist, index, list) => allowedArtists.has(artist) && list.indexOf(artist) === index)
       .slice(0, 4);
     const songMood = cleanOneLine(parsed.songMood || parsed.style || parsed.sonicDirection, '', 320);
-    if (!artists.length || songMood.length < 12) return null;
-    return { artists, songMood };
+    const limitedArtists = limitVivyNossenRoutingArtists(artists);
+    if (!limitedArtists.length || songMood.length < 12) return null;
+    return { artists: limitedArtists, songMood };
   } catch (_) {
     return null;
   }
+}
+
+function limitVivyNossenRoutingArtists(artists = []) {
+  const selected = (Array.isArray(artists) ? artists : [])
+    .map((artist) => foldTextForLookup(artist))
+    .map((artist) => artist === 'kaen44' ? 'k44' : artist)
+    .filter((artist, index, list) => ['djeff', 'vivy', 'a11', 'k44'].includes(artist) && list.indexOf(artist) === index);
+  if (!selected.length) return [];
+  if (selected.length === 1) return selected;
+  if (selected.includes('djeff') && selected.includes('a11') && !selected.includes('vivy')) return ['djeff', 'vivy'];
+  if (selected.length <= 2) return selected;
+  if (selected.includes('vivy')) {
+    if (selected.includes('djeff')) return ['djeff', 'vivy'];
+    const partner = ['djeff', 'a11', 'k44'].find((artist) => selected.includes(artist));
+    return partner ? ['vivy', partner] : ['vivy'];
+  }
+  if (selected.includes('djeff')) return ['djeff', 'vivy'];
+  return selected.slice(0, 2);
 }
 
 async function buildVivyNossenRoutingPlan(input = {}, req = null) {
@@ -3858,11 +3877,13 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
   const systemPrompt = [
     'Tu es le routeur musical NOSSEN.',
     'Analyse la matière sans écrire de paroles.',
-    'Choisis un ou plusieurs chanteurs parmi djeff, vivy, a11, k44.',
+    'Choisis un ou deux chanteurs maximum parmi djeff, vivy, a11, k44. Ne propose jamais de trio ou quatuor pour NOSSEN.',
     'Djeff porte le rap rugueux et rythmique; Vivy le chant mélodique expressif; A11 les couleurs électroniques précises; K44 les lignes graves cinématiques et narratives.',
+    'Évite le duo Djeff + A11: leurs timbres sont trop proches pour Suno; si tu hésites, garde Vivy comme contraste mélodique.',
     'Un refrain mélodique ou un format générique chanté doit garder Vivy; A11 peut fournir le contraste électronique. Ne choisis K44 que si la matière demande réellement une narration grave ou un contre-chant posé.',
     'Ne remplace jamais une voix mélodique par deux voix graves ou synthétiques.',
     'Choisis une direction sonore spécifique au sujet et à son médium: genre contemporain, tempo ressenti, instruments concrets, groove, texture, dynamique et arrangement vocal.',
+    'Pour Bleach, anime, manga ou shonen: choisis un opening J-rock/J-pop rock nerveux, guitares et batterie rapide; jamais variété française, chanson acoustique ou ballade type Patrick Bruel.',
     'Sans demande explicite, évite les réflexes orchestral, cinématique, épique, symphonique ou classique. Cherche une identité moderne, rythmique et immédiatement reconnaissable.',
     'Réponds uniquement en JSON avec les clés artists (tableau) et songMood (chaîne).',
   ].join('\n');
@@ -5106,6 +5127,26 @@ function buildVivySunoStyleMaterial(input = {}) {
   ].filter(Boolean).join('\n'), 2600);
 }
 
+function inferVivyAnimeSunoStyle(folded = '') {
+  if (/\bbleach\b|\bichigo\b|\brukia\b|\borihime\b|\bishida\b|\baizen\b|\bzanpakuto\b|\bshinigami\b|\bsoul\s+society\b|\bhollow\b|\bgetsuga\b|\barrancar\b/.test(folded)) {
+    return 'dark shonen anime opening in the spirit of Bleach, energetic J-rock, sharp electric guitars, fast drums, tense bass, nocturnal synths, explosive heroic chorus, no French chanson, no acoustic ballad';
+  }
+  if (/\bkirito\b|\bsword\s+art\s+online\b|\bsao\b|\baincrad\b|\basuna\b|\balfheim\b/.test(folded)) {
+    return 'anime opening J-rock and J-pop rock, fast drums, bright guitars, heroic synths, tense verses, massive memorable chorus';
+  }
+  if (/\banime\b|\bmanga\b|\bshonen\b|\bshônen\b|\bisekai\b|\bopening\b|\bgenerique\b|\bgénérique\b/.test(folded)) {
+    return 'modern anime opening, energetic J-rock, clear guitars, driving drums, bright synths, wide memorable chorus';
+  }
+  return '';
+}
+
+function looksLikeWeakVivyAnimeSunoStyle(value = '') {
+  const folded = foldTextForLookup(value);
+  if (!folded) return true;
+  if (/\b(?:patrick\s+bruel|bruel|variete|variété|chanson\s+francaise|chanson\s+française|ballade|piano\s+doux|acoustique|classique|symphonique|crooner|slow|romantique|folk\s+doux)\b/.test(folded)) return true;
+  return !/\b(?:anime|j\s*rock|j\s*pop|rock|metal|guitare|guitar|drums?|batterie|basse|synth|shonen|shônen|opening|generique|générique)\b/.test(folded);
+}
+
 function inferVivySunoStyleBase(input = {}, artistCast = buildVivySongArtistCast(input)) {
   const material = buildVivySunoStyleMaterial(input);
   const folded = foldTextForLookup(material);
@@ -5121,6 +5162,8 @@ function inferVivySunoStyleBase(input = {}, artistCast = buildVivySongArtistCast
   if (/\bpeter\s+pan\b|\bclochette\b|\bcrochet\b|\bneverland\b|\bpays\s+imaginaire\b|\bcrocodile\b|\btic\s*tac\b|\bpirate\b/.test(folded)) {
     return withCastStyle('anime opening aventure, orchestral pop aérien, cloches féeriques, choeurs légers, batterie vive');
   }
+  const animeStyle = inferVivyAnimeSunoStyle(folded);
+  if (animeStyle) return withCastStyle(animeStyle);
   if (/\btoupie\b|\bbeyblade\b|\blanceurs?\b|\bduel\b.{0,40}\btourne\b|\bspin\b|\bspinning\b/.test(folded)) {
     return withCastStyle('electro pop tournoi, percussion tournoyante, basse ronde, claps rapides, synthés spirale, hook énergique');
   }
@@ -5234,8 +5277,12 @@ function buildVivySunoPayload(input = {}, req = null) {
     '',
     220
   );
+  const sunoStyleMaterialFolded = foldTextForLookup(buildVivySunoStyleMaterial(input));
+  const animeStyleBase = inferVivyAnimeSunoStyle(sunoStyleMaterialFolded);
   const styleBase = looksLikeVivySunoStylePlaceholder(requestedStyleBase)
     ? inferVivySunoStyleBase(input, artistCast)
+    : animeStyleBase && looksLikeWeakVivyAnimeSunoStyle(requestedStyleBase)
+      ? cleanOneLine([artistCast.sunoStyle, animeStyleBase].filter(Boolean).join(', '), animeStyleBase, 520)
     : requestedStyleBase;
   const castRoles = artistCast.artists
     .map((artist) => cleanOneLine(artist.sunoRole || artist.style, '', 80)
@@ -5280,6 +5327,7 @@ function buildVivySunoPayload(input = {}, req = null) {
     input.negativeTags || process.env.VIVY_SUNO_NEGATIVE_TAGS
       || 'spoken word, narration, reading prompt, robotic speech, muddy mix, out of tune vocals, copyrighted melody, celebrity voice imitation',
     artistCast.count > 1 ? 'single vocalist, identical vocal timbre for every singer, blended ensemble lead, unison lead vocals, choir lead, group chant replacing solos, same singer across all tags' : '',
+    animeStyleBase ? 'French chanson, chanson française, acoustic ballad, Patrick Bruel style, crooner ballad' : '',
     useExternalVoiceMix ? 'vocals, singing, spoken voice' : '',
   ].filter(Boolean).join(', '), 'spoken word, narration', 320);
   const requestedModel = resolveVivySunoRequestedModel(input);

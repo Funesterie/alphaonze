@@ -799,7 +799,6 @@ $caddy = @"
 (a11_backend) {
   reverse_proxy ${caddyA11BackendService}:3000 {
     header_up Host {host}
-    header_up X-Forwarded-Host {host}
     header_up X-Forwarded-Proto https
     lb_try_duration 45s
     lb_try_interval 250ms
@@ -809,7 +808,6 @@ $caddy = @"
 (kaen44_backend) {
   reverse_proxy ${caddyKaen44BackendService}:3001 {
     header_up Host {host}
-    header_up X-Forwarded-Host {host}
     header_up X-Forwarded-Proto https
     lb_try_duration 45s
     lb_try_interval 250ms
@@ -848,7 +846,11 @@ http://a11.funesterie.me, http://api.funesterie.me, http://cp.funesterie.me {
 
 :80 {
   import microsoft_identity_association
-  import a11_backend
+  @localHealth path /health
+  handle @localHealth {
+    import a11_backend
+  }
+  respond 404
 }
 "@
 Set-Content -LiteralPath (Join-Path $StageRoot "Caddyfile") -Value $caddy -Encoding UTF8
@@ -1527,6 +1529,7 @@ clean_old=$cleanOldFlag
 mkdir -p "`$release" $RemoteRoot/bluegreen
 tar -xzf $RemoteArchive -C "`$release"
 ln -sfn "`$release" $RemoteRoot/current
+docker run --rm -v $RemoteRoot/current:/srv/a11/current caddy:2-alpine caddy fmt --overwrite /srv/a11/current/Caddyfile
 $remoteSecretStep
 $remoteOllamaStep
 $remoteComposeOwnershipStep
@@ -1569,6 +1572,7 @@ release=$RemoteRoot/releases/$Stamp
 mkdir -p "`$release"
 tar -xzf $RemoteArchive -C "`$release"
 ln -sfn "`$release" $RemoteRoot/current
+docker run --rm -v $RemoteRoot/current:/srv/a11/current caddy:2-alpine caddy fmt --overwrite /srv/a11/current/Caddyfile
 $remoteSecretStep
 $remoteOllamaStep
 $remoteComposeOwnershipStep

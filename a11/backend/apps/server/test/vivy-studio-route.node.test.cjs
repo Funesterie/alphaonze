@@ -1150,6 +1150,20 @@ test('Suno payload gives distinct inferred styles to different adventure subject
   assert.notEqual(peter.style, zorro.style);
 });
 
+test('Suno payload routes Bleach away from French chanson defaults', () => {
+  const payload = buildVivySunoPayload({
+    mode: 'song',
+    songArtists: ['djeff', 'vivy'],
+    songMood: 'chanson française à la Patrick Bruel, ballade acoustique',
+    songText: 'Fais un opening animé sur Bleach avec Ichigo, Rukia, les Shinigami, Soul Society et Getsuga Tensho.',
+    longSong: true,
+  });
+
+  assert.match(payload.style, /Bleach|shonen anime opening|J-rock|electric guitars|fast drums/i);
+  assert.doesNotMatch(payload.style, /Patrick Bruel|ballade acoustique|chanson française/i);
+  assert.match(payload.negativeTags, /Patrick Bruel|French chanson|acoustic ballad/i);
+});
+
 test('Suno payload isolates a clean lyric block from NOSSEN chat planning context', () => {
   const payload = buildVivySunoPayload({
     songSource: 'NOSSEN Banger - conversation Vivy',
@@ -3207,8 +3221,10 @@ test('Vivy NOSSEN maps Kirito and anime seeds to an opening color before generic
   const moodBlock = appSource.slice(moodStart, moodEnd);
 
   assert.match(moodBlock, /kirito/);
+  assert.match(moodBlock, /bleach/);
   assert.match(moodBlock, /sword\\s\+art\\s\+online/);
   assert.match(moodBlock, /opening animé J-rock|opening anime J-rock/);
+  assert.match(moodBlock, /aucune variété française|aucune variete francaise/);
   assert.ok(
     moodBlock.indexOf('kirito') > -1
       && moodBlock.indexOf('kirito') < moodBlock.indexOf('\\bmoto\\b'),
@@ -3233,10 +3249,11 @@ test('Vivy NOSSEN routes casting and sonic color from Composition before lyrics'
   assert.match(appSource, /Routage automatique du casting et de la couleur depuis le canevas/);
   assert.match(apiSource, /\/api\/vivy\/studio\/nossen-route/);
   assert.match(launchBlock, /await routeVivyNossenComposition\(/);
-  assert.match(launchBlock, /artists = normalizeVivyStudioArtists\(routingPlan\.artists/);
+  assert.match(launchBlock, /artists = limitVivyNossenPublicArtists\(\s*normalizeVivyStudioArtists\(routingPlan\.artists/);
   assert.match(launchBlock, /routedMood = useCompositionWorkspace[\s\S]{0,120}routingPlan\.songMood/);
   assert.match(launchBlock, /songArtists:\s*artists/);
   assert.match(launchBlock, /songMood,/);
+  assert.match(launchBlock, /limitVivyNossenPublicArtists/);
 });
 
 test('Vivy NOSSEN router avoids classical defaults and keeps a melodic lead in sung hooks', () => {
@@ -3250,6 +3267,9 @@ test('Vivy NOSSEN router avoids classical defaults and keeps a melodic lead in s
 
   assert.match(routeBlock, /Un refrain mélodique ou un format générique chanté doit garder Vivy/);
   assert.match(routeBlock, /Ne remplace jamais une voix mélodique par deux voix graves ou synthétiques/);
+  assert.match(routeBlock, /Ne propose jamais de trio ou quatuor pour NOSSEN/);
+  assert.match(routeBlock, /Évite le duo Djeff \+ A11|Evite le duo Djeff \+ A11/);
+  assert.match(routeBlock, /Bleach/);
   assert.match(routeBlock, /évite les réflexes orchestral, cinématique, épique, symphonique ou classique/);
   assert.match(routeBlock, /\[vivy-nossen-route\]/);
 });
@@ -3265,6 +3285,11 @@ test('Vivy parses a strict NOSSEN routing plan without leaking prose', () => {
     artists: ['djeff', 'k44'],
     songMood: 'rap cinématique lent, basse sèche, piano désaccordé, voix grave en réponse',
   });
+  assert.deepEqual(parseVivyNossenRoutingPlan([
+    '```json',
+    '{"artists":["djeff","vivy","a11"],"songMood":"opening anime rock nerveux, guitares rapides, refrain massif"}',
+    '```',
+  ].join('\n'))?.artists, ['djeff', 'vivy']);
   assert.equal(parseVivyNossenRoutingPlan('Je choisirais peut-être Vivy.'), null);
 });
 
