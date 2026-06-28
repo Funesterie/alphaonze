@@ -65,6 +65,12 @@ $env:VIVY_STREAM_COMMANDS_ONLY="1"
 
 Dans ce mode, seuls les messages de commande, votes et etoiles sont envoyes. C'est le mode conseille en production.
 
+Le vote d'une proposition dure 90 secondes par defaut. La duree peut etre ajustee sans redeployer:
+
+```powershell
+$env:VIVY_STREAM_VOTE_MS="90000"
+```
+
 Le bot rappelle les commandes toutes les cinq minutes avec deux messages courts en rotation. L'annonce n'est envoyee que lorsque la connexion Twitch est active.
 
 ```powershell
@@ -73,6 +79,17 @@ $env:VIVY_STREAM_ANNOUNCE_DISABLED="0"
 ```
 
 Mettre `VIVY_STREAM_ANNOUNCE_DISABLED=1` coupe completement les annonces.
+
+Quand une chanson est prete, le worker Twitch peut partager une seule ligne avec le titre, le demandeur et le lien public du MP3. Il observe l'etat live et ne renvoie pas deux fois la meme piste.
+
+```powershell
+$env:VIVY_STREAM_STATE_URL="https://vivy.funesterie.me/api/vivy/stream/state"
+$env:VIVY_PUBLIC_BASE_URL="https://vivy.funesterie.me"
+$env:VIVY_STREAM_TRACK_NOTICE_POLL_INTERVAL_MS="10000"
+$env:VIVY_STREAM_TRACK_NOTICE_DISABLED="0"
+```
+
+Mettre `VIVY_STREAM_TRACK_NOTICE_DISABLED=1` coupe uniquement le partage automatique de lien de chanson.
 
 La generation automatique Twitch est active en production:
 

@@ -15,15 +15,19 @@ const {
   createVivyStreamRouter,
   createVivyStreamStore,
   parseVivyStreamChatMessage,
+  resolveRoundMs,
 } = require('../src/routes/vivy-stream.cjs');
 const {
   createVivyStreamNossenRunner,
 } = require('../src/vivy/twitch-nossen-runner.cjs');
 const {
   ANNOUNCE_MESSAGES,
+  buildTrackNoticeMessage,
   createAnnouncementRotator,
+  createTrackNoticeWatcher,
   parsePrivmsg,
   resolveAnnounceInterval,
+  resolveTrackNoticePollInterval,
   shouldForwardMessage,
 } = require('../scripts/vivy-twitch-chat-worker.cjs');
 
@@ -88,7 +92,7 @@ test('Vivy stream route stores Twitch ideas, votes, stars and builds a NOSSEN se
     assert.equal(result.json.action, 'suggestion');
     assert.equal(result.json.suggestion.id, 'S1');
     assert.equal(result.json.state.current.phase, 'voting');
-    assert.ok(Date.parse(result.json.state.round.endsAt) - Date.parse(result.json.state.round.startedAt) >= 44_000);
+    assert.ok(Date.parse(result.json.state.round.endsAt) - Date.parse(result.json.state.round.startedAt) >= 89_000);
 
     result = await postJson(baseUrl, '/api/vivy/stream/chat', {
       username: 'aizenfan',
@@ -122,6 +126,24 @@ test('Vivy stream route stores Twitch ideas, votes, stars and builds a NOSSEN se
     assert.equal(result.json.state.round.status, 'locked');
     assert.equal(result.json.state.round.winningSuggestionId, 'S1');
   });
+});
+
+test('Vivy stream vote duration defaults to 90 seconds and remains configurable', () => {
+  const previousVoteMs = process.env.VIVY_STREAM_VOTE_MS;
+  const previousRoundMs = process.env.VIVY_STREAM_ROUND_MS;
+  delete process.env.VIVY_STREAM_VOTE_MS;
+  delete process.env.VIVY_STREAM_ROUND_MS;
+  try {
+    assert.equal(resolveRoundMs(), 90_000);
+    assert.equal(resolveRoundMs('45000'), 45_000);
+    assert.equal(resolveRoundMs('500'), 10_000);
+    assert.equal(resolveRoundMs('999999999'), 600_000);
+  } finally {
+    if (previousVoteMs === undefined) delete process.env.VIVY_STREAM_VOTE_MS;
+    else process.env.VIVY_STREAM_VOTE_MS = previousVoteMs;
+    if (previousRoundMs === undefined) delete process.env.VIVY_STREAM_ROUND_MS;
+    else process.env.VIVY_STREAM_ROUND_MS = previousRoundMs;
+  }
 });
 
 test('Vivy stream lock starts automatic NOSSEN only once per round', async () => {
@@ -433,4 +455,74 @@ test('Twitch announcements rotate only while the worker is connected', () => {
   const disabled = createAnnouncementRotator({ disabled: true, sendMessage: (message) => sent.push(message) });
   assert.equal(disabled.start(), false);
   assert.equal(disabled.tick(), false);
+});
+
+test('Twitch track notices share new songs once with an absolute public link', async () => {
+  const message = buildTrackNoticeMessage({
+    current: {
+      phase: 'presenting',
+      trackTitle: 'Les lumières de la ville',
+      requestedBy: 'funeste38',
+      trackUrl: '/api/vivy/studio/assets/song.mp3',
+    },
+  }, { publicBaseUrl: 'https://vivy.funesterie.me' });
+  assert.match(message, /Nouvelle création Vivy/);
+  assert.match(message, /Les lumières de la ville/);
+  assert.match(message, /https:\/\/vivy\.funesterie\.me\/api\/vivy\/studio\/assets\/song\.mp3/);
+  assert.doesNotMatch(message, /[\r\n]/);
+
+  const sent = [];
+  let connected = false;
+  let cleared = null;
+  let fetchIndex = 0;
+  const states = [
+    { current: { phase: 'listening' } },
+    {
+      current: {
+        phase: 'playing',
+        trackTitle: 'Course sous néons',
+        requestedBy: 'chat',
+        trackUrl: '/api/vivy/studio/assets/neons.mp3',
+      },
+    },
+    {
+      current: {
+        phase: 'playing',
+        trackTitle: 'Course sous néons',
+        requestedBy: 'chat',
+        trackUrl: '/api/vivy/studio/assets/neons.mp3',
+      },
+    },
+  ];
+  const watcher = createTrackNoticeWatcher({
+    stateUrl: 'https://vivy.funesterie.me/api/vivy/stream/state',
+    publicBaseUrl: 'https://vivy.funesterie.me',
+    pollIntervalMs: 1234,
+    isConnected: () => connected,
+    sendMessage: (entry) => sent.push(entry),
+    fetchFn: async () => ({
+      ok: true,
+      json: async () => states[Math.min(fetchIndex++, states.length - 1)],
+    }),
+    setIntervalFn: (_callback, intervalMs) => ({ intervalMs, unref() {} }),
+    clearIntervalFn: (timer) => {
+      cleared = timer;
+    },
+  });
+
+  assert.equal(resolveTrackNoticePollInterval('invalid'), 10_000);
+  assert.equal(resolveTrackNoticePollInterval('500'), 3000);
+  assert.equal(watcher.pollIntervalMs, 3000);
+  assert.equal(watcher.start(), true);
+  assert.equal(await watcher.tick(), false);
+  assert.deepEqual(sent, []);
+
+  connected = true;
+  assert.equal(await watcher.tick(), false);
+  assert.equal(await watcher.tick(), true);
+  assert.equal(await watcher.tick(), false);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /https:\/\/vivy\.funesterie\.me\/api\/vivy\/studio\/assets\/neons\.mp3/);
+  assert.equal(watcher.stop(), true);
+  assert.ok(cleared);
 });

@@ -10,7 +10,7 @@ const MAX_RECENT_MESSAGES = 48;
 const MAX_SUGGESTIONS = 24;
 const MAX_PENDING_SUGGESTIONS = 24;
 const MAX_STARS = 120;
-const DEFAULT_ROUND_MS = 45 * 1000;
+const DEFAULT_ROUND_MS = 90 * 1000;
 const WINNER_REVEAL_MS = 4 * 1000;
 const PRESENTATION_MS = 4 * 1000;
 const DEFAULT_TRACK_SECONDS = 4 * 60;
@@ -39,6 +39,12 @@ function cleanText(value = '', max = 2000) {
 function cleanOneLine(value = '', fallback = '', max = 200) {
   const cleaned = cleanText(value, max);
   return cleaned || fallback;
+}
+
+function resolveRoundMs(value = process.env.VIVY_STREAM_VOTE_MS || process.env.VIVY_STREAM_ROUND_MS) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_ROUND_MS;
+  return Math.max(10_000, Math.min(10 * 60 * 1000, Math.floor(parsed)));
 }
 
 function foldForLookup(value = '') {
@@ -319,7 +325,7 @@ function createVivyStreamStore(options = {}) {
     if (!round?.suggestions?.length || round.endsAt) return;
     const startedAt = Date.now();
     round.startedAt = new Date(startedAt).toISOString();
-    round.endsAt = new Date(startedAt + DEFAULT_ROUND_MS).toISOString();
+    round.endsAt = new Date(startedAt + resolveRoundMs()).toISOString();
   }
 
   function beginProduction() {
@@ -959,4 +965,5 @@ module.exports = {
   createVivyStreamStore,
   extractStarRating,
   parseVivyStreamChatMessage,
+  resolveRoundMs,
 };

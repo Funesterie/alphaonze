@@ -4,6 +4,8 @@ const WebSocket = require('ws');
 
 const TWITCH_IRC_URL = 'wss://irc-ws.chat.twitch.tv:443';
 const DEFAULT_ANNOUNCE_INTERVAL_MS = 5 * 60 * 1000;
+const DEFAULT_TRACK_NOTICE_POLL_INTERVAL_MS = 10 * 1000;
+const DEFAULT_PUBLIC_BASE_URL = 'https://vivy.funesterie.me';
 const ANNOUNCE_MESSAGES = Object.freeze([
   '🎤 Vivy Live — propose une chanson avec !vivy ton idée | vote avec !vote S1 | note avec !etoiles 5 S1 ou ⭐⭐⭐⭐⭐',
   '🎵 Commandes : !vivy thème chanson | !nossen style plus épique | !chanson sujet + ambiance | !vote S1 | !etoiles 5 S1',
@@ -23,8 +25,43 @@ function resolveAnnounceInterval(value) {
   return Math.max(1000, Math.floor(parsed));
 }
 
+function resolveTrackNoticePollInterval(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_TRACK_NOTICE_POLL_INTERVAL_MS;
+  return Math.max(3000, Math.floor(parsed));
+}
+
 function normalizeAnnouncement(value = '') {
-  return String(value || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 360);
+  return String(value || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 460);
+}
+
+function clipInline(value = '', max = 90) {
+  const text = normalizeAnnouncement(value);
+  if (text.length <= max) return text;
+  return `${text.slice(0, Math.max(0, max - 1)).trim()}…`;
+}
+
+function absolutizePublicUrl(value = '', baseUrl = DEFAULT_PUBLIC_BASE_URL) {
+  const raw = cleanEnv(value);
+  if (!raw) return '';
+  try {
+    return new URL(raw, cleanEnv(baseUrl) || DEFAULT_PUBLIC_BASE_URL).toString();
+  } catch {
+    return raw;
+  }
+}
+
+function buildTrackNoticeMessage(state = {}, options = {}) {
+  const current = state.current || {};
+  const phase = cleanEnv(current.phase).toLowerCase();
+  if (phase !== 'presenting' && phase !== 'playing') return '';
+  const trackUrl = cleanEnv(current.trackUrl);
+  if (!trackUrl) return '';
+  const title = clipInline(current.trackTitle || current.title || 'Nouvelle création Vivy', 100);
+  const requestedBy = clipInline(current.requestedBy || '', 40);
+  const publicUrl = absolutizePublicUrl(trackUrl, options.publicBaseUrl || DEFAULT_PUBLIC_BASE_URL);
+  const authorPart = requestedBy ? ` demandée par ${requestedBy}` : '';
+  return normalizeAnnouncement(`🎵 Nouvelle création Vivy: "${title}"${authorPart} ▶ ${publicUrl} ⭐ Note avec !etoiles 5`);
 }
 
 function createAnnouncementRotator(options = {}) {
@@ -67,6 +104,68 @@ function createAnnouncementRotator(options = {}) {
   }
 
   return { intervalMs, start, stop, tick };
+}
+
+function createTrackNoticeWatcher(options = {}) {
+  const stateUrl = cleanEnv(options.stateUrl);
+  const publicBaseUrl = cleanEnv(options.publicBaseUrl || DEFAULT_PUBLIC_BASE_URL);
+  const pollIntervalMs = resolveTrackNoticePollInterval(options.pollIntervalMs);
+  const disabled = options.disabled === true || !stateUrl;
+  const isConnected = options.isConnected || (() => false);
+  const sendMessage = options.sendMessage || (() => {});
+  const fetchFn = options.fetchFn || fetch;
+  const setIntervalFn = options.setIntervalFn || setInterval;
+  const clearIntervalFn = options.clearIntervalFn || clearInterval;
+  const logger = options.logger || console;
+  let timer = null;
+  let inFlight = false;
+  let observedOnce = false;
+  let lastTrackKey = cleanEnv(options.lastTrackKey);
+
+  async function tick() {
+    if (disabled || !stateUrl || !isConnected() || inFlight) return false;
+    inFlight = true;
+    try {
+      const response = await fetchFn(stateUrl, { headers: { Accept: 'application/json' } });
+      if (!response?.ok) throw new Error(`state_http_${response?.status || 'unknown'}`);
+      const state = await response.json();
+      const current = state?.current || {};
+      const trackKey = cleanEnv(current.trackUrl || current.trackTitle || current.title);
+      const message = buildTrackNoticeMessage(state, { publicBaseUrl });
+      if (!observedOnce) {
+        observedOnce = true;
+        if (trackKey) lastTrackKey = trackKey;
+        return false;
+      }
+      if (!message || !trackKey || trackKey === lastTrackKey) return false;
+      sendMessage(message);
+      lastTrackKey = trackKey;
+      return true;
+    } catch (error) {
+      logger.warn?.('[vivy-twitch] track notice failed:', error?.message || String(error));
+      return false;
+    } finally {
+      inFlight = false;
+    }
+  }
+
+  function start() {
+    if (disabled || timer || !stateUrl) return false;
+    timer = setIntervalFn(() => {
+      tick().catch((error) => logger.warn?.('[vivy-twitch] track notice failed:', error?.message || String(error)));
+    }, pollIntervalMs);
+    timer?.unref?.();
+    return true;
+  }
+
+  function stop() {
+    if (!timer) return false;
+    clearIntervalFn(timer);
+    timer = null;
+    return true;
+  }
+
+  return { pollIntervalMs, start, stop, tick };
 }
 
 function parseTags(raw = '') {
@@ -140,10 +239,19 @@ async function runOnce(config) {
       isConnected: () => joined && ws.readyState === WebSocket.OPEN,
       sendMessage: (message) => send(ws, `PRIVMSG #${config.channel} :${message}`),
     });
+    const trackNotifier = createTrackNoticeWatcher({
+      disabled: config.trackNoticeDisabled,
+      stateUrl: config.stateUrl,
+      publicBaseUrl: config.publicBaseUrl,
+      pollIntervalMs: config.trackNoticePollIntervalMs,
+      isConnected: () => joined && ws.readyState === WebSocket.OPEN,
+      sendMessage: (message) => send(ws, `PRIVMSG #${config.channel} :${message}`),
+    });
 
     const close = () => {
       closedBySignal = true;
       announcer.stop();
+      trackNotifier.stop();
       try {
         ws.close();
       } catch {}
@@ -158,6 +266,7 @@ async function runOnce(config) {
       send(ws, `NICK ${config.username}`);
       send(ws, `JOIN #${config.channel}`);
       announcer.start();
+      trackNotifier.start();
     });
 
     ws.on('message', async (data) => {
@@ -168,7 +277,12 @@ async function runOnce(config) {
           send(ws, line.replace(/^PING/i, 'PONG'));
           continue;
         }
-        if (line.includes(' 001 ')) joined = true;
+        if (line.includes(' 001 ')) {
+          joined = true;
+          trackNotifier.tick().catch((error) => {
+            console.warn('[vivy-twitch] track notice failed:', error?.message || String(error));
+          });
+        }
         const parsed = parsePrivmsg(line);
         if (!parsed || !shouldForwardMessage(parsed.message)) continue;
         try {
@@ -194,11 +308,13 @@ async function runOnce(config) {
 
     ws.on('error', (error) => {
       announcer.stop();
+      trackNotifier.stop();
       reject(error);
     });
 
     ws.on('close', (code, reason) => {
       announcer.stop();
+      trackNotifier.stop();
       process.removeListener('SIGINT', close);
       process.removeListener('SIGTERM', close);
       if (closedBySignal) {
@@ -223,6 +339,10 @@ async function main() {
     secret: cleanEnv(process.env.VIVY_STREAM_SECRET),
     announceIntervalMs: resolveAnnounceInterval(process.env.VIVY_STREAM_ANNOUNCE_INTERVAL_MS),
     announceDisabled: process.env.VIVY_STREAM_ANNOUNCE_DISABLED === '1',
+    stateUrl: cleanEnv(process.env.VIVY_STREAM_STATE_URL) || 'https://vivy.funesterie.me/api/vivy/stream/state',
+    publicBaseUrl: cleanEnv(process.env.VIVY_PUBLIC_BASE_URL) || DEFAULT_PUBLIC_BASE_URL,
+    trackNoticePollIntervalMs: resolveTrackNoticePollInterval(process.env.VIVY_STREAM_TRACK_NOTICE_POLL_INTERVAL_MS),
+    trackNoticeDisabled: process.env.VIVY_STREAM_TRACK_NOTICE_DISABLED === '1',
   };
 
   if (!config.channel || !config.username || !config.oauthToken) {
@@ -256,9 +376,12 @@ if (require.main === module) {
 
 module.exports = {
   ANNOUNCE_MESSAGES,
+  buildTrackNoticeMessage,
   createAnnouncementRotator,
+  createTrackNoticeWatcher,
   parsePrivmsg,
   parseTags,
   resolveAnnounceInterval,
+  resolveTrackNoticePollInterval,
   shouldForwardMessage,
 };
