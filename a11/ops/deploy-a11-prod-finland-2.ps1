@@ -1146,6 +1146,7 @@ $overrides = [ordered]@{
   A11_RUNTIME_PROFILE = "prod"
   A11_PRODUCT = "a11"
   A11_INSTANCE_NAME = "Alpha Onze"
+  VIVY_STREAM_SECRET = $(if ($env:VIVY_STREAM_SECRET) { $env:VIVY_STREAM_SECRET } elseif ($envMap.Contains("VIVY_STREAM_SECRET") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_SECRET"])) { [string]$envMap["VIVY_STREAM_SECRET"] } else { New-HexSecret 32 })
   SERVE_STATIC = "true"
   A11_WEB_DIST_DIR = "/web/dist"
   TTS_URL = "http://a11-voice:5002"
@@ -1374,6 +1375,7 @@ a11_env="__REMOTE_ROOT__/secrets/a11.env"
 compose_env="__REMOTE_ROOT__/secrets/compose.env"
 tmp_build="$(mktemp)"
 managed_keys='^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK|A11_LLM_PROVIDER|A11_OLLAMA_PRIMARY_MODEL|A11_OLLAMA_FALLBACK_MODEL|A11_OLLAMA_STRONG_SONG_MODEL|VIVY_CHAT_LOCAL_FIRST|VIVY_OLLAMA_BASE_URL|VIVY_CHAT_LOCAL_MODEL|VIVY_SONG_ALLOW_LOCAL_FALLBACK|VIVY_SONG_LOCAL_MODEL|A11_TRANSLATION_MODEL|LOCAL_DEFAULT_MODEL|A11_LLM_FALLBACK_PROVIDER|A11_LLM_RUNTIME_FALLBACK_ORDER|A11_CERBERE_LOCAL_ONLY|A11_LOCAL_CHAT_TIMEOUT_MS|A11_LOCAL_SONG_TIMEOUT_MS|A11_OLLAMA_KEEP_ALIVE|A11_MEMORY_LOCAL_TIMEOUT_MS|A11_MEMORY_REMOTE_TIMEOUT_MS|A11_EMBEDDING_TIMEOUT_MS|A11_RUNTIME_ROOT|VIVY_ELEVENLABS_MUSIC_DISABLED|VIVY_SUNO_MODEL)='
+vivy_stream_secret="$(awk -F= '/^VIVY_STREAM_SECRET=/{sub(/^[^=]*=/,""); print; exit}' "$compose_env" "$a11_env" "$build_env" 2>/dev/null || true)"
 if [ -s "$build_env" ]; then
   grep -v -E "$managed_keys" "$build_env" > "$tmp_build" || true
 fi
@@ -1417,6 +1419,12 @@ else
   grep -v -E "$managed_keys" "$compose_env" > "$tmp_compose" || true
   cat "$build_env" >> "$tmp_compose"
   mv "$tmp_compose" "$compose_env"
+fi
+if ! grep -q '^VIVY_STREAM_SECRET=' "$compose_env"; then
+  if [ -z "$vivy_stream_secret" ]; then
+    vivy_stream_secret="$(openssl rand -hex 32)"
+  fi
+  printf 'VIVY_STREAM_SECRET=%s\n' "$vivy_stream_secret" >> "$compose_env"
 fi
 chmod 600 "$compose_env"
 '@

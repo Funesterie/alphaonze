@@ -6898,6 +6898,10 @@ const { createVivyStudioRouter } = require('./src/routes/vivy-studio.cjs');
 app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT }));
 console.log('[Server] Vivy Studio routes mounted under /api/vivy/studio');
 
+const { createVivyStreamRouter } = require('./src/routes/vivy-stream.cjs');
+app.use('/api/vivy/stream', createVivyStreamRouter({ verifyJWT }));
+console.log('[Server] Vivy Stream routes mounted under /api/vivy/stream');
+
 const createDoubleHarmonicRouter = require('./src/routes/double-harmonic.cjs');
 app.use('/api/double-harmonic', createDoubleHarmonicRouter({ verifyJWT, runtimeRoot: PUBLIC_RUNTIME_ROOT }));
 console.log('[Server] Double Harmonic D40 routes mounted under /api/double-harmonic');

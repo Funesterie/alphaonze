@@ -98,6 +98,7 @@
     "worker:archivist:dry-run": "node scripts/identity-archivist-worker.cjs --dry-run",
     "worker:orchestrator": "node scripts/orchestrator-worker.cjs --once",
     "worker:orchestrator:loop": "node scripts/orchestrator-worker.cjs --loop",
+    "worker:vivy:twitch": "node scripts/vivy-twitch-chat-worker.cjs",
     "worker:orchestrator:status": "node scripts/orchestrator-worker.cjs --status",
     "dispatch": "node scripts/task-dispatcher.cjs",
     "dispatch:agents": "node scripts/task-dispatcher.cjs --agents",
