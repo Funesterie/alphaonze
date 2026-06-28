@@ -8,7 +8,15 @@ const STREAM_SCHEMA = 'funesterie.vivy.stream.v1';
 const MAX_RECENT_MESSAGES = 48;
 const MAX_SUGGESTIONS = 24;
 const MAX_STARS = 120;
-const DEFAULT_ROUND_MS = 2 * 60 * 1000;
+const DEFAULT_ROUND_MS = 45 * 1000;
+const WINNER_REVEAL_MS = 4 * 1000;
+const PRESENTATION_MS = 4 * 1000;
+const DEFAULT_TRACK_SECONDS = 4 * 60;
+const RATING_MS = 30 * 1000;
+const LIVE_PHASES = new Set([
+  'idle', 'listening', 'voting', 'winner', 'composing', 'presenting', 'playing', 'rating', 'error',
+]);
+const PRODUCTION_STAGES = ['analysis', 'lyrics', 'composition', 'mix'];
 
 const STOP_WORDS = new Set([
   'avec', 'alors', 'avoir', 'cette', 'dans', 'des', 'donc', 'elle', 'faire', 'fais',
@@ -48,10 +56,23 @@ function createRound(id = createShortId('round')) {
     id,
     status: 'open',
     startedAt: new Date(startedAt).toISOString(),
-    endsAt: new Date(startedAt + DEFAULT_ROUND_MS).toISOString(),
+    endsAt: null,
     suggestions: [],
     voters: {},
     winningSuggestionId: null,
+  };
+}
+
+function createProductionState() {
+  return {
+    startedAt: null,
+    updatedAt: null,
+    stages: {
+      analysis: { status: 'pending', progress: 0 },
+      lyrics: { status: 'pending', progress: 0 },
+      composition: { status: 'pending', progress: 0 },
+      mix: { status: 'pending', progress: 0 },
+    },
   };
 }
 
@@ -64,9 +85,15 @@ function createInitialState() {
       phase: 'idle',
       trackUrl: '',
       trackTitle: '',
+      requestedBy: '',
+      phaseStartedAt: null,
+      phaseEndsAt: null,
+      playbackStartedAt: null,
+      durationSeconds: 0,
       message: 'En attente du chat Twitch.',
     },
     round: createRound(),
+    production: createProductionState(),
     recentMessages: [],
     stars: [],
     learning: {
@@ -192,6 +219,7 @@ function buildNossenSeedFromRound(state) {
 function publicState(state) {
   const cloned = JSON.parse(JSON.stringify(state || createInitialState()));
   if (cloned.round?.voters) delete cloned.round.voters;
+  cloned.serverNow = nowIso();
   cloned.nossenSeed = buildNossenSeedFromRound(cloned);
   return cloned;
 }
@@ -201,6 +229,7 @@ function createVivyStreamStore(options = {}) {
   const statePath = options.statePath || path.join(runtimeRoot, 'vivy-stream', 'state.json');
   const clients = new Set();
   let state = createInitialState();
+  let lifecycleTimer = null;
 
   function load() {
     try {
@@ -213,6 +242,14 @@ function createVivyStreamStore(options = {}) {
             ...parsed,
             current: { ...initial.current, ...(parsed.current || {}) },
             round: { ...initial.round, ...(parsed.round || {}) },
+            production: {
+              ...initial.production,
+              ...(parsed.production || {}),
+              stages: {
+                ...initial.production.stages,
+                ...(parsed.production?.stages || {}),
+              },
+            },
             learning: { ...initial.learning, ...(parsed.learning || {}) },
             stats: { ...initial.stats, ...(parsed.stats || {}) },
             recentMessages: Array.isArray(parsed.recentMessages) ? parsed.recentMessages : [],
@@ -223,6 +260,7 @@ function createVivyStreamStore(options = {}) {
     } catch (error) {
       console.warn('[vivy-stream] state load failed:', error?.message || String(error));
     }
+    scheduleLifecycle();
     return state;
   }
 
@@ -235,6 +273,7 @@ function createVivyStreamStore(options = {}) {
       console.warn('[vivy-stream] state save failed:', error?.message || String(error));
     }
     broadcast();
+    scheduleLifecycle();
   }
 
   function broadcast(eventName = 'state') {
@@ -255,6 +294,105 @@ function createVivyStreamStore(options = {}) {
     return state.round;
   }
 
+  function winnerFromState() {
+    return state.round?.suggestions?.find((entry) => entry.id === state.round.winningSuggestionId)
+      || state.round?.suggestions?.[0]
+      || null;
+  }
+
+  function setCurrentPhase(phase, fields = {}) {
+    const normalized = LIVE_PHASES.has(phase) ? phase : 'idle';
+    state.current = {
+      ...state.current,
+      ...fields,
+      phase: normalized,
+      phaseStartedAt: nowIso(),
+    };
+  }
+
+  function startVotingCountdown(round) {
+    if (!round?.suggestions?.length || round.endsAt) return;
+    const startedAt = Date.now();
+    round.startedAt = new Date(startedAt).toISOString();
+    round.endsAt = new Date(startedAt + DEFAULT_ROUND_MS).toISOString();
+  }
+
+  function beginProduction() {
+    const winner = winnerFromState();
+    if (!winner) return startRound();
+    const startedAt = nowIso();
+    state.production = createProductionState();
+    state.production.startedAt = startedAt;
+    state.production.updatedAt = startedAt;
+    state.production.stages.analysis = { status: 'active', progress: 4 };
+    setCurrentPhase('composing', {
+      title: winner.text,
+      requestedBy: winner.author,
+      phaseEndsAt: null,
+      message: 'Vivy commence à composer.',
+    });
+    save();
+    return publicState(state);
+  }
+
+  function beginPlayback() {
+    if (!state.current.trackUrl) {
+      setCurrentPhase('error', {
+        phaseEndsAt: null,
+        message: 'La piste audio du live est introuvable.',
+      });
+      save();
+      return publicState(state);
+    }
+    const durationSeconds = Math.max(1, Number(state.current.durationSeconds || DEFAULT_TRACK_SECONDS));
+    const startedAt = Date.now();
+    setCurrentPhase('playing', {
+      playbackStartedAt: new Date(startedAt).toISOString(),
+      phaseEndsAt: new Date(startedAt + (durationSeconds * 1000)).toISOString(),
+      message: 'Lecture en cours',
+    });
+    save();
+    return publicState(state);
+  }
+
+  function beginRating() {
+    const endsAt = Date.now() + RATING_MS;
+    setCurrentPhase('rating', {
+      phaseEndsAt: new Date(endsAt).toISOString(),
+      message: 'Votez avec !etoiles 1 à 5',
+    });
+    save();
+    return publicState(state);
+  }
+
+  function scheduleLifecycle() {
+    if (lifecycleTimer) clearTimeout(lifecycleTimer);
+    lifecycleTimer = null;
+    const phase = state.current?.phase;
+    let deadline = null;
+    let transition = null;
+    if (state.round?.status === 'open' && state.round?.suggestions?.length && state.round.endsAt) {
+      deadline = Date.parse(state.round.endsAt);
+      transition = () => lockRound();
+    } else if (phase === 'winner' && state.current.phaseEndsAt) {
+      deadline = Date.parse(state.current.phaseEndsAt);
+      transition = beginProduction;
+    } else if (phase === 'presenting' && state.current.phaseEndsAt) {
+      deadline = Date.parse(state.current.phaseEndsAt);
+      transition = beginPlayback;
+    } else if (phase === 'playing' && state.current.phaseEndsAt) {
+      deadline = Date.parse(state.current.phaseEndsAt);
+      transition = beginRating;
+    } else if (phase === 'rating' && state.current.phaseEndsAt) {
+      deadline = Date.parse(state.current.phaseEndsAt);
+      transition = () => startRound();
+    }
+    if (!Number.isFinite(deadline) || !transition) return;
+    const timerDelay = Math.max(10, Math.min(2_147_000_000, deadline - Date.now()));
+    lifecycleTimer = setTimeout(transition, timerDelay);
+    lifecycleTimer.unref?.();
+  }
+
   function addSuggestion(parsed) {
     const round = ensureOpenRound();
     const text = cleanText(parsed.suggestion, 420);
@@ -264,6 +402,7 @@ function createVivyStreamStore(options = {}) {
     if (existing) {
       existing.votes = Number(existing.votes || 0) + 1;
       existing.updatedAt = parsed.receivedAt;
+      startVotingCountdown(round);
       return existing;
     }
     const suggestionNumber = Number(state.stats.suggestions || 0) + 1;
@@ -282,6 +421,7 @@ function createVivyStreamStore(options = {}) {
     round.suggestions.unshift(suggestion);
     round.suggestions = round.suggestions.slice(0, MAX_SUGGESTIONS);
     state.stats.suggestions = suggestionNumber;
+    startVotingCountdown(round);
     return suggestion;
   }
 
@@ -309,11 +449,11 @@ function createVivyStreamStore(options = {}) {
   function addStar(parsed) {
     const star = parsed.star;
     if (!star?.rating) return null;
-    const round = ensureOpenRound();
+    const round = state.round || createRound();
     const targetId = normalizeSuggestionId(star.targetId);
     const suggestion = targetId
       ? round.suggestions.find((entry) => entry.id === targetId)
-      : round.suggestions[0] || null;
+      : winnerFromState() || round.suggestions[0] || null;
     const entry = {
       id: createShortId('star'),
       rating: Number(star.rating),
@@ -352,7 +492,6 @@ function createVivyStreamStore(options = {}) {
     if (!parsed.message) {
       return { ok: false, error: 'empty_message', state: publicState(state) };
     }
-    ensureOpenRound();
     state.stats.messages = Number(state.stats.messages || 0) + 1;
     state.recentMessages.unshift({
       id: parsed.messageId,
@@ -367,23 +506,36 @@ function createVivyStreamStore(options = {}) {
     let suggestion = null;
     let vote = null;
     let star = null;
-    if (parsed.suggestion) {
+    const acceptsRoundInput = ['idle', 'listening', 'voting'].includes(state.current.phase)
+      && (!state.round || state.round.status === 'open');
+    if (parsed.suggestion && acceptsRoundInput) {
       suggestion = addSuggestion(parsed);
       action = 'suggestion';
+    } else if (parsed.suggestion) {
+      action = 'suggestion_ignored';
     }
-    if (parsed.voteTargetId) {
+    if (parsed.voteTargetId && acceptsRoundInput) {
       vote = addVote(parsed);
       if (vote) action = 'vote';
+    } else if (parsed.voteTargetId) {
+      action = 'vote_ignored';
     }
     if (parsed.star) {
       star = addStar(parsed);
       if (star) action = action === 'message' ? 'star' : `${action}+star`;
     }
     refreshSuggestionScores(state.round);
-    state.current.phase = state.round.suggestions.length ? 'voting' : 'listening';
-    state.current.message = state.round.suggestions.length
-      ? 'Le chat propose et vote pour le prochain NOSSEN.'
-      : 'En attente d’une idée !vivy, !nossen ou !chanson.';
+    if ((suggestion || vote) && ['idle', 'listening', 'voting'].includes(state.current.phase)) {
+      const latest = suggestion || vote;
+      setCurrentPhase('voting', {
+        title: latest?.text || state.current.title || 'Vivy Live',
+        requestedBy: latest?.author || state.current.requestedBy || '',
+        phaseEndsAt: state.round.endsAt,
+        message: 'Le chat propose et vote pour le prochain NOSSEN.',
+      });
+    } else if (star && state.current.phase === 'rating') {
+      state.current.message = `${state.stats.stars} note${state.stats.stars > 1 ? 's' : ''} reçue${state.stats.stars > 1 ? 's' : ''}.`;
+    }
     save();
     return { ok: true, action, parsed, suggestion, vote, star, state: publicState(state) };
   }
@@ -391,10 +543,17 @@ function createVivyStreamStore(options = {}) {
   function startRound(input = {}) {
     const title = cleanOneLine(input.title || input.topic, 'Vivy Live', 120);
     state.round = createRound(createShortId('round'));
+    state.production = createProductionState();
     state.current = {
-      ...state.current,
       title,
       phase: 'listening',
+      trackUrl: '',
+      trackTitle: '',
+      requestedBy: '',
+      phaseStartedAt: nowIso(),
+      phaseEndsAt: null,
+      playbackStartedAt: null,
+      durationSeconds: 0,
       message: 'Nouveau round Twitch ouvert.',
     };
     save();
@@ -410,10 +569,90 @@ function createVivyStreamStore(options = {}) {
     if (!winner) return { ok: false, error: 'no_suggestion', state: publicState(state) };
     state.round.status = 'locked';
     state.round.winningSuggestionId = winner.id;
-    state.current.phase = 'locked';
-    state.current.message = `Idée gagnante ${winner.id}: ${winner.text}`;
+    const revealEndsAt = Date.now() + WINNER_REVEAL_MS;
+    setCurrentPhase('winner', {
+      title: winner.text,
+      requestedBy: winner.author,
+      phaseEndsAt: new Date(revealEndsAt).toISOString(),
+      message: `Idée gagnante ${winner.id}`,
+    });
     save();
     return { ok: true, winner, nossenSeed: buildNossenSeedFromRound(state), state: publicState(state) };
+  }
+
+  function updateLive(input = {}) {
+    const action = cleanOneLine(input.action || input.phase, '', 40).toLowerCase();
+    const winner = winnerFromState();
+    if (action === 'progress' || action === 'composing') {
+      if (!state.production?.stages) state.production = createProductionState();
+      const stage = cleanOneLine(input.stage, 'analysis', 40).toLowerCase();
+      if (!PRODUCTION_STAGES.includes(stage)) {
+        return { ok: false, error: 'invalid_production_stage', state: publicState(state) };
+      }
+      const progress = Math.max(0, Math.min(100, Number(input.progress ?? 0) || 0));
+      const stageIndex = PRODUCTION_STAGES.indexOf(stage);
+      PRODUCTION_STAGES.forEach((name, index) => {
+        if (index < stageIndex) state.production.stages[name] = { status: 'done', progress: 100 };
+        else if (index === stageIndex) {
+          state.production.stages[name] = {
+            status: progress >= 100 ? 'done' : 'active',
+            progress,
+          };
+        }
+      });
+      state.production.startedAt ||= nowIso();
+      state.production.updatedAt = nowIso();
+      setCurrentPhase('composing', {
+        title: cleanOneLine(input.title, winner?.text || state.current.title || 'Vivy Live', 160),
+        requestedBy: cleanOneLine(input.requestedBy || input.author, winner?.author || state.current.requestedBy, 80),
+        phaseEndsAt: null,
+        message: cleanOneLine(input.message, 'Vivy compose la chanson gagnante.', 200),
+      });
+      save();
+      return { ok: true, state: publicState(state) };
+    }
+    if (action === 'ready' || action === 'presenting') {
+      const trackUrl = cleanOneLine(input.trackUrl || input.audioUrl || input.url, '', 1200);
+      if (!trackUrl) return { ok: false, error: 'track_url_missing', state: publicState(state) };
+      const durationSeconds = Math.max(1, Math.min(3600, Number(input.durationSeconds || input.duration || DEFAULT_TRACK_SECONDS)));
+      PRODUCTION_STAGES.forEach((name) => {
+        state.production.stages[name] = { status: 'done', progress: 100 };
+      });
+      state.production.updatedAt = nowIso();
+      const presentationEndsAt = Date.now() + PRESENTATION_MS;
+      setCurrentPhase('presenting', {
+        title: cleanOneLine(input.title || input.trackTitle, winner?.text || state.current.title || 'Nouvelle composition', 160),
+        trackTitle: cleanOneLine(input.trackTitle || input.title, winner?.text || 'Nouvelle composition', 160),
+        trackUrl,
+        requestedBy: cleanOneLine(input.requestedBy || input.author, winner?.author || state.current.requestedBy, 80),
+        durationSeconds,
+        playbackStartedAt: null,
+        phaseEndsAt: new Date(presentationEndsAt).toISOString(),
+        message: 'Vivy présente sa nouvelle composition.',
+      });
+      save();
+      return { ok: true, state: publicState(state) };
+    }
+    if (action === 'play' || action === 'playing') {
+      if (input.trackUrl || input.audioUrl || input.url) {
+        state.current.trackUrl = cleanOneLine(input.trackUrl || input.audioUrl || input.url, '', 1200);
+      }
+      if (input.durationSeconds || input.duration) {
+        state.current.durationSeconds = Math.max(1, Math.min(3600, Number(input.durationSeconds || input.duration)));
+      }
+      return { ok: Boolean(state.current.trackUrl), state: beginPlayback() };
+    }
+    if (action === 'rating') return { ok: true, state: beginRating() };
+    if (action === 'next' || action === 'start') return { ok: true, state: startRound(input) };
+    if (action === 'error') {
+      setCurrentPhase('error', {
+        phaseEndsAt: null,
+        message: cleanOneLine(input.message, 'La composition a rencontré un problème.', 240),
+      });
+      save();
+      return { ok: true, state: publicState(state) };
+    }
+    return { ok: false, error: 'invalid_live_action', state: publicState(state) };
   }
 
   function connectSse(req, res) {
@@ -435,6 +674,7 @@ function createVivyStreamStore(options = {}) {
     addChatMessage,
     startRound,
     lockRound,
+    updateLive,
     connectSse,
   };
 }
@@ -471,7 +711,7 @@ function createWriteGuard() {
   };
 }
 
-function buildOverlayHtml() {
+function buildLegacyOverlayHtml() {
   return `<!doctype html>
 <html lang="fr">
 <head>
@@ -545,6 +785,15 @@ function buildOverlayHtml() {
 </html>`;
 }
 
+function buildOverlayHtml() {
+  const overlayPath = path.join(__dirname, '../../public/vivy-live-overlay.html');
+  try {
+    return fs.readFileSync(overlayPath, 'utf8');
+  } catch {
+    return buildLegacyOverlayHtml();
+  }
+}
+
 function createVivyStreamRouter(options = {}) {
   const router = express.Router();
   const store = options.store || createVivyStreamStore(options);
@@ -570,6 +819,12 @@ function createVivyStreamRouter(options = {}) {
     res.type('html').send(buildOverlayHtml());
   });
 
+  router.get('/overlay/background', (_req, res) => {
+    const backgroundPath = path.join(__dirname, '../../public/assets/vivy-presence-musicale.png');
+    res.set('Cache-Control', 'public, max-age=86400, immutable');
+    res.sendFile(backgroundPath);
+  });
+
   router.post('/chat', express.json({ limit: '32kb' }), writeGuard, (req, res) => {
     res.json(store.addChatMessage(req.body || {}));
   });
@@ -587,11 +842,17 @@ function createVivyStreamRouter(options = {}) {
     res.status(result.ok ? 200 : 409).json(result);
   });
 
+  router.post('/control', express.json({ limit: '32kb' }), writeGuard, (req, res) => {
+    const result = store.updateLive(req.body || {});
+    res.status(result.ok ? 200 : 400).json(result);
+  });
+
   return router;
 }
 
 module.exports = {
   STREAM_SCHEMA,
+  buildOverlayHtml,
   buildNossenSeedFromRound,
   createVivyStreamRouter,
   createVivyStreamStore,

@@ -11,6 +11,7 @@ process.env.A11_RUNTIME_ROOT = path.join(tmpRoot, 'runtime');
 process.env.VIVY_STREAM_ALLOW_UNSIGNED = '1';
 
 const {
+  buildOverlayHtml,
   createVivyStreamRouter,
   parseVivyStreamChatMessage,
 } = require('../src/routes/vivy-stream.cjs');
@@ -79,6 +80,8 @@ test('Vivy stream route stores Twitch ideas, votes, stars and builds a NOSSEN se
     assert.equal(result.json.ok, true);
     assert.equal(result.json.action, 'suggestion');
     assert.equal(result.json.suggestion.id, 'S1');
+    assert.equal(result.json.state.current.phase, 'voting');
+    assert.ok(Date.parse(result.json.state.round.endsAt) - Date.parse(result.json.state.round.startedAt) >= 44_000);
 
     result = await postJson(baseUrl, '/api/vivy/stream/chat', {
       username: 'aizenfan',
@@ -99,9 +102,67 @@ test('Vivy stream route stores Twitch ideas, votes, stars and builds a NOSSEN se
     assert.equal(result.response.status, 200);
     assert.equal(result.json.ok, true);
     assert.equal(result.json.winner.id, 'S1');
+    assert.equal(result.json.state.current.phase, 'winner');
+    assert.equal(result.json.state.round.status, 'locked');
     assert.match(result.json.nossenSeed.canvas, /Bleach opening sombre/);
     assert.match(result.json.nossenSeed.canvas, /ichigo|bleach/i);
+
+    result = await postJson(baseUrl, '/api/vivy/stream/chat', {
+      username: 'late-listener',
+      message: '!etoiles 4',
+    });
+    assert.equal(result.json.action, 'star');
+    assert.equal(result.json.state.round.status, 'locked');
+    assert.equal(result.json.state.round.winningSuggestionId, 'S1');
   });
+});
+
+test('Vivy stream control drives production, presentation and playback metadata', async () => {
+  await withServer({ stateName: 'control.json' }, async (baseUrl) => {
+    await postJson(baseUrl, '/api/vivy/stream/chat', {
+      username: 'funeste38',
+      message: '!nossen Les lumières de la ville, électro nocturne',
+    });
+    await postJson(baseUrl, '/api/vivy/stream/round/lock', {});
+
+    let result = await postJson(baseUrl, '/api/vivy/stream/control', {
+      action: 'progress',
+      stage: 'lyrics',
+      progress: 62,
+    });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.json.state.current.phase, 'composing');
+    assert.equal(result.json.state.production.stages.analysis.progress, 100);
+    assert.equal(result.json.state.production.stages.lyrics.progress, 62);
+
+    result = await postJson(baseUrl, '/api/vivy/stream/chat', {
+      username: 'late-topic',
+      message: '!nossen Cette idée doit attendre le prochain round',
+    });
+    assert.equal(result.json.action, 'suggestion_ignored');
+    assert.equal(result.json.state.round.status, 'locked');
+    assert.equal(result.json.state.round.suggestions.length, 1);
+
+    result = await postJson(baseUrl, '/api/vivy/stream/control', {
+      action: 'ready',
+      title: 'Les lumières de la ville',
+      trackUrl: '/api/double-harmonic/out/live.mp3',
+      durationSeconds: 222,
+    });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.json.state.current.phase, 'presenting');
+    assert.equal(result.json.state.current.durationSeconds, 222);
+    assert.equal(result.json.state.current.requestedBy, 'funeste38');
+  });
+});
+
+test('Vivy live overlay contains the production show and bundled background', () => {
+  const html = buildOverlayHtml();
+  assert.match(html, /vivy-presence-musicale|overlay\/background/);
+  assert.match(html, /VIVY LIVE/);
+  assert.match(html, /Analyse du thème/);
+  assert.match(html, /!etoiles 5/);
+  assert.match(html, /Lecture en cours/);
 });
 
 test('Vivy stream write guard requires the shared secret when configured', async () => {

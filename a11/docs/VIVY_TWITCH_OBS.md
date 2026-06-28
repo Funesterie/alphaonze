@@ -8,7 +8,9 @@ Vivy Live passe par un flux direct Twitch -> Hetzner, avec le site web comme ove
 - Le worker poste les messages sur `POST /api/vivy/stream/chat`.
 - Le backend garde un etat persistant dans `A11_RUNTIME_ROOT/vivy-stream/state.json`.
 - OBS affiche `GET /api/vivy/stream/overlay`.
-- Le round verrouille une graine NOSSEN via `POST /api/vivy/stream/round/lock`.
+- Le premier sujet lance un vote de 45 secondes, puis le round verrouille automatiquement la graine NOSSEN.
+- La production publie son avancement via `POST /api/vivy/stream/control`.
+- Quand l'audio est prêt, l'overlay présente le titre pendant 4 secondes, lance la lecture, ouvre les étoiles pendant 30 secondes, puis repart sur un nouveau round.
 - En production Hetzner, le service Compose `vivy-twitch-worker` lance le worker apres le basculement blue/green.
 
 Ce choix evite de dependre d'un onglet ouvert. Le frontend pourra ensuite lire `/api/vivy/stream/nossen-seed` pour lancer le bouton NOSSEN avec la matiere votee.
@@ -39,6 +41,7 @@ Dimensions conseillees:
 ```
 
 Fond transparent active. L'overlay se met a jour par Server-Sent Events.
+Le fond `vivy-presence-musicale.png` est embarque dans l'image backend: OBS ne depend d'aucun fichier local.
 
 ## Worker Twitch
 
@@ -94,6 +97,30 @@ Invoke-RestMethod https://vivy.funesterie.me/api/vivy/stream/round/lock `
   -Headers @{ "X-Vivy-Stream-Secret" = $env:VIVY_STREAM_SECRET } `
   -Body '{}'
 ```
+
+Publier l'avancement de la production:
+
+```powershell
+Invoke-RestMethod https://vivy.funesterie.me/api/vivy/stream/control `
+  -Method Post `
+  -ContentType application/json `
+  -Headers @{ "X-Vivy-Stream-Secret" = $env:VIVY_STREAM_SECRET } `
+  -Body '{"action":"progress","stage":"lyrics","progress":65}'
+```
+
+Les etapes reconnues sont `analysis`, `lyrics`, `composition` et `mix`. Sans information exacte de Suno, l'overlay anime une estimation basee sur les temps habituels; une progression publiee par le pipeline reste prioritaire.
+
+Publier le morceau termine:
+
+```powershell
+Invoke-RestMethod https://vivy.funesterie.me/api/vivy/stream/control `
+  -Method Post `
+  -ContentType application/json `
+  -Headers @{ "X-Vivy-Stream-Secret" = $env:VIVY_STREAM_SECRET } `
+  -Body '{"action":"ready","title":"Les lumieres de la ville","trackUrl":"https://vivy.funesterie.me/api/double-harmonic/out/morceau.mp3","durationSeconds":222}'
+```
+
+Actions supplementaires: `playing`, `rating`, `next` et `error`.
 
 ## Securite
 
