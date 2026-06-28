@@ -840,8 +840,15 @@ function createVivyStreamStore(options = {}) {
         .map(([term]) => term)
         .slice(0, 18);
     }
-    if (state.current?.trackId && state.current?.phase === 'rating') {
-      updateTrackStars(state.current.trackId, entry.rating);
+    const currentTrackPhases = new Set(['presenting', 'playing', 'rating', 'interlude']);
+    const currentTrackId = state.current?.trackId || '';
+    const targetMatchesCurrentSong = currentTrackId
+      && currentTrackPhases.has(state.current?.phase)
+      && (!targetId || targetId === currentTrackId || suggestion?.id === round.winningSuggestionId);
+    if (targetMatchesCurrentSong) {
+      updateTrackStars(currentTrackId, entry.rating);
+    } else if (targetId && /^track-[a-z0-9_-]+$/i.test(targetId)) {
+      updateTrackStars(targetId, entry.rating);
     }
     return entry;
   }
@@ -1024,6 +1031,8 @@ function createVivyStreamStore(options = {}) {
         requestedBy: input.requestedBy || input.author || winner?.author || state.current.requestedBy,
         durationSeconds,
         source: 'twitch-live',
+        starCount: winner?.starCount || 0,
+        starAverage: winner?.starAverage || 0,
       });
       addLiveSong({
         ...track,
@@ -1031,6 +1040,8 @@ function createVivyStreamStore(options = {}) {
         trackTitle: input.trackTitle || input.title || winner?.text || state.current.trackTitle,
         requestedBy: input.requestedBy || input.author || winner?.author || state.current.requestedBy,
         createdAt: nowIso(),
+        starCount: winner?.starCount || track?.starCount || 0,
+        starAverage: winner?.starAverage || track?.starAverage || 0,
       });
       PRODUCTION_STAGES.forEach((name) => {
         state.production.stages[name] = { status: 'done', progress: 100 };

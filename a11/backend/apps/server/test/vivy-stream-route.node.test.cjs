@@ -353,6 +353,10 @@ test('Vivy stream control drives production, presentation and playback metadata'
       message: '!nossen Les lumières de la ville, électro nocturne',
     });
     await postJson(baseUrl, '/api/vivy/stream/round/lock', {});
+    await postJson(baseUrl, '/api/vivy/stream/chat', {
+      username: 'pre-release-rating-viewer',
+      message: '!etoiles 5 S1',
+    });
 
     let result = await postJson(baseUrl, '/api/vivy/stream/control', {
       action: 'progress',
@@ -384,6 +388,8 @@ test('Vivy stream control drives production, presentation and playback metadata'
     assert.equal(result.json.state.current.durationSeconds, 222);
     assert.equal(result.json.state.current.requestedBy, 'funeste38');
     assert.equal(result.json.state.songs.length, 1);
+    assert.equal(result.json.state.songs[0].starCount, 1);
+    assert.equal(result.json.state.songs[0].starAverage, 5);
     assert.match(result.json.state.songs[0].sharePath, /\/api\/vivy\/stream\/s\/les-lumieres-de-la-ville-/);
 
     const redirect = await fetch(baseUrl + result.json.state.songs[0].sharePath, { redirect: 'manual' });
@@ -392,14 +398,20 @@ test('Vivy stream control drives production, presentation and playback metadata'
 
     result = await postJson(baseUrl, '/api/vivy/stream/control', { action: 'play' });
     assert.equal(result.json.state.current.phase, 'playing');
+    result = await postJson(baseUrl, '/api/vivy/stream/chat', {
+      username: 'early-rating-viewer',
+      message: '!etoiles 4 S1',
+    });
+    assert.equal(result.json.state.songs[0].starCount, 2);
+    assert.equal(result.json.state.songs[0].starAverage, 4.5);
     result = await postJson(baseUrl, '/api/vivy/stream/control', { action: 'rating' });
     assert.equal(result.json.state.current.phase, 'rating');
     result = await postJson(baseUrl, '/api/vivy/stream/chat', {
       username: 'rating-viewer',
       message: '!etoiles 5',
     });
-    assert.equal(result.json.state.songs[0].starCount, 1);
-    assert.equal(result.json.state.songs[0].starAverage, 5);
+    assert.equal(result.json.state.songs[0].starCount, 3);
+    assert.equal(result.json.state.songs[0].starAverage, 4.67);
 
     await postJson(baseUrl, '/api/vivy/stream/control', { action: 'next' });
     result = await postJson(baseUrl, '/api/vivy/stream/chat', {
