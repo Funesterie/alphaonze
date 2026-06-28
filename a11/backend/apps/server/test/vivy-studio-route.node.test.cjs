@@ -22,6 +22,7 @@ const {
   buildVivyMusicPrompt,
   buildVivyMultiVoiceAssemblyArgs,
   buildVivyPreviewMixArgs,
+  resolveVivyPreviewVoicePath,
   buildVivyMp3RepairArgs,
   repairVivyMp3File,
   materializeVivyPreviewInstrumentalPath,
@@ -49,6 +50,9 @@ const {
   sanitizeVivyPublicText,
   shouldVivyAutoWebSearch,
 } = require('../src/routes/vivy-studio.cjs');
+const {
+  getEmergencyMediaAssetPath,
+} = require('../src/media/emergency-media.cjs');
 const {
   buildVivySongcraftSystemPrompt,
   buildVivyStructuredLyrics,
@@ -2390,6 +2394,26 @@ test('Vivy multi-voice assembly mixes shared lines then concatenates song sectio
   assert.match(filter, /amix=inputs=2/);
   assert.match(filter, /concat=n=3:v=0:a=1/);
   assert.equal(args.at(-1), 'vivy-duo.mp3');
+});
+
+test('Vivy preview mix accepts assembled multi-voice assets as the voice source', () => {
+  const filename = 'vivy-multi-voice-1782600000000-testmix.mp3';
+  const filePath = getEmergencyMediaAssetPath(filename);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, Buffer.from('ID3test'));
+
+  try {
+    assert.equal(
+      resolveVivyPreviewVoicePath(`/api/vivy/studio/assets/${filename}`),
+      filePath
+    );
+    assert.equal(
+      resolveVivyPreviewVoicePath(`https://vivy.funesterie.me/api/vivy/studio/assets/${filename}`),
+      filePath
+    );
+  } finally {
+    fs.rmSync(filePath, { force: true });
+  }
 });
 
 test('Vivy song post-processing preserves a complete response beyond the old 3200 character cut', () => {

@@ -6178,6 +6178,10 @@ function getVivyPreviewAssetFilename(value = '') {
 
 function resolveVivyPreviewVoicePath(value = '') {
   const filename = getVivyPreviewAssetFilename(value);
+  if (/^vivy-multi-voice-.+\.mp3$/i.test(filename)) {
+    const candidate = getEmergencyMediaAssetPath(filename);
+    return candidate && fs.existsSync(candidate) && fs.statSync(candidate).isFile() ? candidate : '';
+  }
   if (!/^(?:tts-out-|a11-voice-|a11-converted-).+\.(?:wav|mp3|ogg)$/i.test(filename)) return '';
   const candidates = [
     path.join(getPublicTtsDir(), filename),
@@ -7016,6 +7020,7 @@ module.exports = {
   buildVivyStudioProduction,
   buildVivyMultiVoiceAssemblyArgs,
   buildVivyPreviewMixArgs,
+  resolveVivyPreviewVoicePath,
   buildVivyMp3RepairArgs,
   repairVivyMp3File,
   materializeVivyPreviewInstrumentalPath,
