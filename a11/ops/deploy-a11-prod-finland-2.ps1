@@ -639,6 +639,21 @@ services:
       start_period: 60s
       retries: 5
 
+  vivy-twitch-worker:
+    image: server-a11-backend:latest
+    container_name: vivy-twitch-worker
+    restart: unless-stopped
+    command: ["npm", "run", "worker:vivy:twitch"]
+    env_file:
+      - /srv/a11/secrets/compose.env
+    environment:
+      TWITCH_CHANNEL: ${TWITCH_CHANNEL:-}
+      TWITCH_BOT_USERNAME: ${TWITCH_BOT_USERNAME:-}
+      TWITCH_OAUTH_TOKEN: ${TWITCH_OAUTH_TOKEN:-}
+      VIVY_STREAM_SECRET: ${VIVY_STREAM_SECRET:?VIVY_STREAM_SECRET is required}
+      VIVY_STREAM_INGEST_URL: ${VIVY_STREAM_INGEST_URL:-https://vivy.funesterie.me/api/vivy/stream/chat}
+      VIVY_STREAM_COMMANDS_ONLY: ${VIVY_STREAM_COMMANDS_ONLY:-1}
+
   kaen44-backend:
     build:
       context: .
@@ -784,6 +799,7 @@ if ($BlueGreen) {
   $compose = $compose.Replace("  kaen44-backend:`n", "  ${Kaen44BackendService}:`n")
   $compose = $compose.Replace("container_name: a11-backend", "container_name: $A11BackendService")
   $compose = $compose.Replace("container_name: kaen44-backend", "container_name: $Kaen44BackendService")
+  $compose = $compose.Replace("image: server-a11-backend:latest", "image: server-${A11BackendService}:latest")
   $compose = $compose.Replace("http://a11-backend:3000", "http://${A11BackendService}:3000")
   $compose = $compose.Replace("http://kaen44-backend:3001", "http://${Kaen44BackendService}:3001")
   $compose = $compose.Replace("      - a11-backend", "      - $A11BackendService")
@@ -1147,6 +1163,13 @@ $overrides = [ordered]@{
   A11_PRODUCT = "a11"
   A11_INSTANCE_NAME = "Alpha Onze"
   VIVY_STREAM_SECRET = $(if ($env:VIVY_STREAM_SECRET) { $env:VIVY_STREAM_SECRET } elseif ($envMap.Contains("VIVY_STREAM_SECRET") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_SECRET"])) { [string]$envMap["VIVY_STREAM_SECRET"] } else { New-HexSecret 32 })
+  VIVY_STREAM_INGEST_URL = $(if ($env:VIVY_STREAM_INGEST_URL) { $env:VIVY_STREAM_INGEST_URL } elseif ($envMap.Contains("VIVY_STREAM_INGEST_URL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_INGEST_URL"])) { [string]$envMap["VIVY_STREAM_INGEST_URL"] } else { "https://vivy.funesterie.me/api/vivy/stream/chat" })
+  VIVY_STREAM_COMMANDS_ONLY = $(if ($env:VIVY_STREAM_COMMANDS_ONLY) { $env:VIVY_STREAM_COMMANDS_ONLY } elseif ($envMap.Contains("VIVY_STREAM_COMMANDS_ONLY") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_COMMANDS_ONLY"])) { [string]$envMap["VIVY_STREAM_COMMANDS_ONLY"] } else { "1" })
+  TWITCH_CHANNEL = $(if ($env:TWITCH_CHANNEL) { $env:TWITCH_CHANNEL } elseif ($envMap.Contains("TWITCH_CHANNEL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_CHANNEL"])) { [string]$envMap["TWITCH_CHANNEL"] } else { "" })
+  TWITCH_BOT_USERNAME = $(if ($env:TWITCH_BOT_USERNAME) { $env:TWITCH_BOT_USERNAME } elseif ($envMap.Contains("TWITCH_BOT_USERNAME") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_BOT_USERNAME"])) { [string]$envMap["TWITCH_BOT_USERNAME"] } else { "" })
+  TWITCH_OAUTH_TOKEN = $(if ($env:TWITCH_OAUTH_TOKEN) { $env:TWITCH_OAUTH_TOKEN } elseif ($envMap.Contains("TWITCH_OAUTH_TOKEN") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_OAUTH_TOKEN"])) { [string]$envMap["TWITCH_OAUTH_TOKEN"] } else { "" })
+  TWITCH_CLIENT_ID = $(if ($env:TWITCH_CLIENT_ID) { $env:TWITCH_CLIENT_ID } elseif ($envMap.Contains("TWITCH_CLIENT_ID") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_CLIENT_ID"])) { [string]$envMap["TWITCH_CLIENT_ID"] } else { "" })
+  TWITCH_REFRESH_TOKEN = $(if ($env:TWITCH_REFRESH_TOKEN) { $env:TWITCH_REFRESH_TOKEN } elseif ($envMap.Contains("TWITCH_REFRESH_TOKEN") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_REFRESH_TOKEN"])) { [string]$envMap["TWITCH_REFRESH_TOKEN"] } else { "" })
   SERVE_STATIC = "true"
   A11_WEB_DIST_DIR = "/web/dist"
   TTS_URL = "http://a11-voice:5002"
@@ -1376,6 +1399,13 @@ compose_env="__REMOTE_ROOT__/secrets/compose.env"
 tmp_build="$(mktemp)"
 managed_keys='^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK|A11_LLM_PROVIDER|A11_OLLAMA_PRIMARY_MODEL|A11_OLLAMA_FALLBACK_MODEL|A11_OLLAMA_STRONG_SONG_MODEL|VIVY_CHAT_LOCAL_FIRST|VIVY_OLLAMA_BASE_URL|VIVY_CHAT_LOCAL_MODEL|VIVY_SONG_ALLOW_LOCAL_FALLBACK|VIVY_SONG_LOCAL_MODEL|A11_TRANSLATION_MODEL|LOCAL_DEFAULT_MODEL|A11_LLM_FALLBACK_PROVIDER|A11_LLM_RUNTIME_FALLBACK_ORDER|A11_CERBERE_LOCAL_ONLY|A11_LOCAL_CHAT_TIMEOUT_MS|A11_LOCAL_SONG_TIMEOUT_MS|A11_OLLAMA_KEEP_ALIVE|A11_MEMORY_LOCAL_TIMEOUT_MS|A11_MEMORY_REMOTE_TIMEOUT_MS|A11_EMBEDDING_TIMEOUT_MS|A11_RUNTIME_ROOT|VIVY_ELEVENLABS_MUSIC_DISABLED|VIVY_SUNO_MODEL)='
 vivy_stream_secret="$(awk -F= '/^VIVY_STREAM_SECRET=/{sub(/^[^=]*=/,""); print; exit}' "$compose_env" "$a11_env" "$build_env" 2>/dev/null || true)"
+preserved_env="$(mktemp)"
+for key in TWITCH_CHANNEL TWITCH_BOT_USERNAME TWITCH_OAUTH_TOKEN TWITCH_CLIENT_ID TWITCH_REFRESH_TOKEN VIVY_STREAM_INGEST_URL VIVY_STREAM_COMMANDS_ONLY; do
+  value="$(awk -v k="$key" -F= '$1 == k { sub(/^[^=]*=/, ""); print; exit }' "$compose_env" "$a11_env" "$build_env" 2>/dev/null || true)"
+  if [ -n "$value" ]; then
+    printf '%s=%s\n' "$key" "$value" >> "$preserved_env"
+  fi
+done
 if [ -s "$build_env" ]; then
   grep -v -E "$managed_keys" "$build_env" > "$tmp_build" || true
 fi
@@ -1426,6 +1456,15 @@ if ! grep -q '^VIVY_STREAM_SECRET=' "$compose_env"; then
   fi
   printf 'VIVY_STREAM_SECRET=%s\n' "$vivy_stream_secret" >> "$compose_env"
 fi
+if [ -s "$preserved_env" ]; then
+  while IFS= read -r line; do
+    key="${line%%=*}"
+    if [ -n "$key" ] && ! grep -q "^$key=" "$compose_env"; then
+      printf '%s\n' "$line" >> "$compose_env"
+    fi
+  done < "$preserved_env"
+fi
+rm -f "$preserved_env"
 chmod 600 "$compose_env"
 '@
 $remoteBuildEnvRefresh = $remoteBuildEnvRefresh.
@@ -1559,6 +1598,7 @@ for i in `$(seq 1 45); do
   sleep 2
 done
 docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --no-deps --force-recreate a11-caddy
+docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --no-deps --force-recreate vivy-twitch-worker
 echo "`$next_color" > $RemoteRoot/bluegreen/active-color
 docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env ps
 if [ "`$clean_old" = "1" ] && [ "`$old_color" != "none" ] && [ "`$old_color" != "`$next_color" ]; then

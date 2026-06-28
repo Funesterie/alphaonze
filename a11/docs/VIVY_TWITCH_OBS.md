@@ -9,6 +9,7 @@ Vivy Live passe par un flux direct Twitch -> Hetzner, avec le site web comme ove
 - Le backend garde un etat persistant dans `A11_RUNTIME_ROOT/vivy-stream/state.json`.
 - OBS affiche `GET /api/vivy/stream/overlay`.
 - Le round verrouille une graine NOSSEN via `POST /api/vivy/stream/round/lock`.
+- En production Hetzner, le service Compose `vivy-twitch-worker` lance le worker apres le basculement blue/green.
 
 Ce choix evite de dependre d'un onglet ouvert. Le frontend pourra ensuite lire `/api/vivy/stream/nossen-seed` pour lancer le bouton NOSSEN avec la matiere votee.
 
@@ -58,7 +59,7 @@ Option utile si le chat devient trop bruyant:
 $env:VIVY_STREAM_COMMANDS_ONLY="1"
 ```
 
-Dans ce mode, seuls les messages de commande, votes et etoiles sont envoyes.
+Dans ce mode, seuls les messages de commande, votes et etoiles sont envoyes. C'est le mode conseille en production.
 
 ## API utile
 
