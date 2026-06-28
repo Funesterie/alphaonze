@@ -3177,7 +3177,7 @@ test('Vivy NOSSEN automatically extends short Suno songs before D40', () => {
 
   assert.match(apiSource, /\/api\/vivy\/studio\/suno\/extend/);
   assert.match(appSource, /const VIVY_NOSSEN_SUNO_TARGET_SECONDS = 300/);
-  assert.match(appSource, /const VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS = 240/);
+  assert.match(appSource, /const VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS = 150/);
   assert.match(appSource, /const VIVY_NOSSEN_SUNO_MAX_EXTENSIONS = 3/);
   assert.match(appSource, /const VIVY_NOSSEN_SUNO_LONG_MODEL = ["']V4_5ALL["']/);
   assert.match(appSource, /function getVivyProductionSunoAudioId/);
