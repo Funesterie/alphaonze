@@ -5,6 +5,7 @@ const WebSocket = require('ws');
 const TWITCH_IRC_URL = 'wss://irc-ws.chat.twitch.tv:443';
 const DEFAULT_ANNOUNCE_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_TRACK_NOTICE_POLL_INTERVAL_MS = 10 * 1000;
+const DEFAULT_RECAP_INTERVAL_MS = 28 * 60 * 1000;
 const DEFAULT_PUBLIC_BASE_URL = 'https://vivy.funesterie.me';
 const ANNOUNCE_MESSAGES = Object.freeze([
   '🎤 Vivy Live — propose une chanson avec !vivy ton idée | vote avec !vote S1 | note avec !etoiles 5 S1 ou ⭐⭐⭐⭐⭐',
@@ -29,6 +30,12 @@ function resolveTrackNoticePollInterval(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_TRACK_NOTICE_POLL_INTERVAL_MS;
   return Math.max(3000, Math.floor(parsed));
+}
+
+function resolveRecapInterval(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_RECAP_INTERVAL_MS;
+  return Math.max(25 * 60 * 1000, Math.min(30 * 60 * 1000, Math.floor(parsed)));
 }
 
 function normalizeAnnouncement(value = '') {
@@ -59,9 +66,45 @@ function buildTrackNoticeMessage(state = {}, options = {}) {
   if (!trackUrl) return '';
   const title = clipInline(current.trackTitle || current.title || 'Nouvelle création Vivy', 100);
   const requestedBy = clipInline(current.requestedBy || '', 40);
-  const publicUrl = absolutizePublicUrl(trackUrl, options.publicBaseUrl || DEFAULT_PUBLIC_BASE_URL);
+  const publicUrl = absolutizePublicUrl(current.sharePath || trackUrl, options.publicBaseUrl || DEFAULT_PUBLIC_BASE_URL);
   const authorPart = requestedBy ? ` demandée par ${requestedBy}` : '';
   return normalizeAnnouncement(`🎵 Nouvelle création Vivy: "${title}"${authorPart} ▶ ${publicUrl} ⭐ Note avec !etoiles 5`);
+}
+
+function formatStars(value = {}) {
+  const count = Number(value.starCount || 0);
+  const average = Number(value.starAverage || 0);
+  if (!count || !average) return '⭐--';
+  return `⭐${average.toFixed(average % 1 ? 1 : 0)}/5(${count})`;
+}
+
+function buildSongRecapMessages(state = {}, options = {}) {
+  const publicBaseUrl = options.publicBaseUrl || DEFAULT_PUBLIC_BASE_URL;
+  const songs = Array.isArray(state.songs) ? state.songs : [];
+  const entries = songs
+    .filter((song) => song?.trackUrl)
+    .map((song, index) => {
+      const title = clipInline(song.trackTitle || song.title || `Morceau ${index + 1}`, 42);
+      const link = absolutizePublicUrl(song.sharePath || song.trackUrl, publicBaseUrl);
+      return `${index + 1}. ${title} ${formatStars(song)} ⬇ ${link}`;
+    });
+  if (!entries.length) return [];
+  const messages = [];
+  let current = '🎶 Morceaux Vivy passés dans le live:';
+  entries.forEach((entry) => {
+    const candidate = `${current} ${entry}`;
+    if (candidate.length > 430 && current !== '🎶 Morceaux Vivy passés dans le live:') {
+      messages.push(normalizeAnnouncement(current));
+      current = `🎶 Suite: ${entry}`;
+    } else if (candidate.length > 430) {
+      messages.push(normalizeAnnouncement(`${current} ${entry}`));
+      current = '🎶 Suite:';
+    } else {
+      current = candidate;
+    }
+  });
+  if (current && current !== '🎶 Suite:') messages.push(normalizeAnnouncement(current));
+  return messages.filter(Boolean);
 }
 
 function createAnnouncementRotator(options = {}) {
@@ -168,6 +211,72 @@ function createTrackNoticeWatcher(options = {}) {
   return { pollIntervalMs, start, stop, tick };
 }
 
+function createSongRecapRotator(options = {}) {
+  const stateUrl = cleanEnv(options.stateUrl);
+  const publicBaseUrl = cleanEnv(options.publicBaseUrl || DEFAULT_PUBLIC_BASE_URL);
+  const intervalMs = resolveRecapInterval(options.intervalMs);
+  const disabled = options.disabled === true || !stateUrl;
+  const isConnected = options.isConnected || (() => false);
+  const sendMessage = options.sendMessage || (() => {});
+  const fetchFn = options.fetchFn || fetch;
+  const sleepFn = options.sleep || sleep;
+  const setIntervalFn = options.setIntervalFn || setInterval;
+  const clearIntervalFn = options.clearIntervalFn || clearInterval;
+  const logger = options.logger || console;
+  let timer = null;
+  let inFlight = false;
+  let lastSignature = '';
+
+  async function tick() {
+    if (disabled || !stateUrl || !isConnected() || inFlight) return false;
+    inFlight = true;
+    try {
+      const response = await fetchFn(stateUrl, { headers: { Accept: 'application/json' } });
+      if (!response?.ok) throw new Error(`state_http_${response?.status || 'unknown'}`);
+      const state = await response.json();
+      const signature = JSON.stringify((state.songs || []).map((song) => [
+        song.id,
+        song.trackUrl,
+        song.starCount,
+        song.starAverage,
+      ]));
+      if (!signature || signature === '[]') return false;
+      if (options.skipDuplicate === true && signature === lastSignature) return false;
+      const messages = buildSongRecapMessages(state, { publicBaseUrl });
+      if (!messages.length) return false;
+      for (let index = 0; index < messages.length; index += 1) {
+        sendMessage(messages[index]);
+        if (index < messages.length - 1) await sleepFn(1200);
+      }
+      lastSignature = signature;
+      return true;
+    } catch (error) {
+      logger.warn?.('[vivy-twitch] song recap failed:', error?.message || String(error));
+      return false;
+    } finally {
+      inFlight = false;
+    }
+  }
+
+  function start() {
+    if (disabled || timer || !stateUrl) return false;
+    timer = setIntervalFn(() => {
+      tick().catch((error) => logger.warn?.('[vivy-twitch] song recap failed:', error?.message || String(error)));
+    }, intervalMs);
+    timer?.unref?.();
+    return true;
+  }
+
+  function stop() {
+    if (!timer) return false;
+    clearIntervalFn(timer);
+    timer = null;
+    return true;
+  }
+
+  return { intervalMs, start, stop, tick };
+}
+
 function parseTags(raw = '') {
   const tags = {};
   if (!raw.startsWith('@')) return tags;
@@ -247,11 +356,20 @@ async function runOnce(config) {
       isConnected: () => joined && ws.readyState === WebSocket.OPEN,
       sendMessage: (message) => send(ws, `PRIVMSG #${config.channel} :${message}`),
     });
+    const recapRotator = createSongRecapRotator({
+      disabled: config.recapDisabled,
+      stateUrl: config.stateUrl,
+      publicBaseUrl: config.publicBaseUrl,
+      intervalMs: config.recapIntervalMs,
+      isConnected: () => joined && ws.readyState === WebSocket.OPEN,
+      sendMessage: (message) => send(ws, `PRIVMSG #${config.channel} :${message}`),
+    });
 
     const close = () => {
       closedBySignal = true;
       announcer.stop();
       trackNotifier.stop();
+      recapRotator.stop();
       try {
         ws.close();
       } catch {}
@@ -267,6 +385,7 @@ async function runOnce(config) {
       send(ws, `JOIN #${config.channel}`);
       announcer.start();
       trackNotifier.start();
+      recapRotator.start();
     });
 
     ws.on('message', async (data) => {
@@ -309,12 +428,14 @@ async function runOnce(config) {
     ws.on('error', (error) => {
       announcer.stop();
       trackNotifier.stop();
+      recapRotator.stop();
       reject(error);
     });
 
     ws.on('close', (code, reason) => {
       announcer.stop();
       trackNotifier.stop();
+      recapRotator.stop();
       process.removeListener('SIGINT', close);
       process.removeListener('SIGTERM', close);
       if (closedBySignal) {
@@ -343,6 +464,8 @@ async function main() {
     publicBaseUrl: cleanEnv(process.env.VIVY_PUBLIC_BASE_URL) || DEFAULT_PUBLIC_BASE_URL,
     trackNoticePollIntervalMs: resolveTrackNoticePollInterval(process.env.VIVY_STREAM_TRACK_NOTICE_POLL_INTERVAL_MS),
     trackNoticeDisabled: process.env.VIVY_STREAM_TRACK_NOTICE_DISABLED === '1',
+    recapIntervalMs: resolveRecapInterval(process.env.VIVY_STREAM_RECAP_INTERVAL_MS),
+    recapDisabled: process.env.VIVY_STREAM_RECAP_DISABLED === '1',
   };
 
   if (!config.channel || !config.username || !config.oauthToken) {
@@ -376,12 +499,15 @@ if (require.main === module) {
 
 module.exports = {
   ANNOUNCE_MESSAGES,
+  buildSongRecapMessages,
   buildTrackNoticeMessage,
   createAnnouncementRotator,
+  createSongRecapRotator,
   createTrackNoticeWatcher,
   parsePrivmsg,
   parseTags,
   resolveAnnounceInterval,
+  resolveRecapInterval,
   resolveTrackNoticePollInterval,
   shouldForwardMessage,
 };

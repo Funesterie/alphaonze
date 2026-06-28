@@ -540,6 +540,7 @@
     const phaseLabels = {
       idle: 'En coulisses',
       listening: 'Propositions ouvertes',
+      interlude: 'Fond musical',
       voting: 'Vote en cours',
       winner: 'Résultat du vote',
       composing: 'Création en cours',
@@ -670,7 +671,7 @@
         elements.player.src = current.trackUrl;
         elements.player.load();
       }
-      if (current.phase !== 'playing' || !current.trackUrl) {
+      if ((current.phase !== 'playing' && current.phase !== 'interlude') || !current.trackUrl) {
         if (!elements.player.paused) elements.player.pause();
         return;
       }
@@ -710,7 +711,7 @@
       show(elements.suggestions, showList && Boolean(round.suggestions?.length));
       show(elements.voteProgress, phase === 'voting');
       show(elements.pipeline, phase === 'composing');
-      show(elements.nowPlaying, phase === 'playing');
+      show(elements.nowPlaying, phase === 'playing' || phase === 'interlude');
       show(elements.rating, phase === 'rating');
 
       if (phase === 'listening') {
@@ -728,6 +729,10 @@
       if (phase === 'playing') {
         setText(elements.stageKicker, 'Lecture en cours');
         setText(elements.leadMessage, '');
+      }
+      if (phase === 'interlude') {
+        setText(elements.stageKicker, 'Fond musical d’attente');
+        setText(elements.leadMessage, 'Le chat peut lancer le prochain vote avec !nossen votre idée.');
       }
       if (phase === 'rating') {
         setText(elements.stageKicker, 'Votez pour cette création');
@@ -757,9 +762,9 @@
         elements.voteProgressFill.style.width = progress + '%';
       } else if (phase === 'winner' || phase === 'presenting' || phase === 'rating') {
         setText(elements.clock, remainingSeconds(current.phaseEndsAt) + ' s');
-      } else if (phase === 'playing') {
+      } else if (phase === 'playing' || phase === 'interlude') {
         const position = playbackPosition(liveState);
-        setText(elements.clock, 'ON AIR');
+        setText(elements.clock, phase === 'playing' ? 'ON AIR' : 'ATTENTE');
         setText(elements.playElapsed, formatTime(position.elapsed));
         setText(elements.playDuration, formatTime(position.duration));
         elements.playProgressFill.style.width = (position.duration

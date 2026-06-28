@@ -2,21 +2,26 @@ const express = require('express');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { execFileSync } = require('node:child_process');
 const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
 const { createVivyStreamNossenRunner } = require('../vivy/twitch-nossen-runner.cjs');
+const { getEmergencyMediaAssetPath } = require('../media/emergency-media.cjs');
 
 const STREAM_SCHEMA = 'funesterie.vivy.stream.v1';
 const MAX_RECENT_MESSAGES = 48;
 const MAX_SUGGESTIONS = 24;
 const MAX_PENDING_SUGGESTIONS = 24;
 const MAX_STARS = 120;
+const MAX_JUKEBOX_TRACKS = 80;
+const MAX_LIVE_SONGS = 120;
 const DEFAULT_ROUND_MS = 90 * 1000;
+const DEFAULT_IDLE_JUKEBOX_DELAY_MS = 12 * 1000;
 const WINNER_REVEAL_MS = 4 * 1000;
 const PRESENTATION_MS = 4 * 1000;
 const DEFAULT_TRACK_SECONDS = 4 * 60;
 const RATING_MS = 30 * 1000;
 const LIVE_PHASES = new Set([
-  'idle', 'listening', 'voting', 'winner', 'composing', 'presenting', 'playing', 'rating', 'error',
+  'idle', 'listening', 'interlude', 'voting', 'winner', 'composing', 'presenting', 'playing', 'rating', 'error',
 ]);
 const PRODUCTION_STAGES = ['analysis', 'lyrics', 'composition', 'mix'];
 
@@ -45,6 +50,12 @@ function resolveRoundMs(value = process.env.VIVY_STREAM_VOTE_MS || process.env.V
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_ROUND_MS;
   return Math.max(10_000, Math.min(10 * 60 * 1000, Math.floor(parsed)));
+}
+
+function resolveIdleJukeboxDelayMs(value = process.env.VIVY_STREAM_IDLE_JUKEBOX_DELAY_MS) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_IDLE_JUKEBOX_DELAY_MS;
+  return Math.max(0, Math.min(10 * 60 * 1000, Math.floor(parsed)));
 }
 
 function foldForLookup(value = '') {
@@ -98,10 +109,18 @@ function createInitialState() {
       phaseEndsAt: null,
       playbackStartedAt: null,
       durationSeconds: 0,
+      trackId: '',
+      sharePath: '',
       message: 'En attente du chat Twitch.',
     },
     round: createRound(),
     production: createProductionState(),
+    jukebox: {
+      tracks: [],
+      lastTrackId: '',
+      lastScanAt: null,
+    },
+    songs: [],
     pendingSuggestions: [],
     recentMessages: [],
     stars: [],
@@ -122,6 +141,113 @@ function createInitialState() {
 
 function createShortId(prefix = 'id') {
   return `${prefix}-${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}`;
+}
+
+function createTrackId(trackUrl = '') {
+  return `track-${crypto.createHash('sha1').update(String(trackUrl || '')).digest('hex').slice(0, 12)}`;
+}
+
+function slugifyTitle(value = '', fallback = 'vivy-live') {
+  const slug = String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 56);
+  return slug || fallback;
+}
+
+function cleanTrackTitle(value = '', fallback = 'Vivy Live') {
+  return cleanOneLine(value, fallback, 160);
+}
+
+function buildSongSharePath(track = {}) {
+  const title = track.trackTitle || track.title || 'vivy-live';
+  const id = cleanOneLine(track.id || createTrackId(track.trackUrl), createTrackId(track.trackUrl), 80);
+  const suffix = String(id).replace(/^track-/, '').slice(0, 8) || crypto.randomBytes(4).toString('hex');
+  return `/api/vivy/stream/s/${slugifyTitle(title)}-${suffix}`;
+}
+
+function normalizeJukeboxTrack(input = {}) {
+  const trackUrl = cleanOneLine(input.trackUrl || input.audioUrl || input.url, '', 1200);
+  if (!trackUrl) return null;
+  const rawDuration = Number(input.durationSeconds || input.duration || 0) || 0;
+  const durationSeconds = rawDuration > 0 ? Math.max(1, Math.min(3600, rawDuration)) : 0;
+  const track = {
+    id: cleanOneLine(input.id, createTrackId(trackUrl), 80),
+    title: cleanTrackTitle(input.title || input.trackTitle, 'Archive Vivy Live'),
+    trackTitle: cleanTrackTitle(input.trackTitle || input.title, 'Archive Vivy Live'),
+    trackUrl,
+    requestedBy: cleanOneLine(input.requestedBy || input.author, '', 80),
+    durationSeconds,
+    source: cleanOneLine(input.source, 'twitch-live', 80),
+    createdAt: input.createdAt || nowIso(),
+    starCount: Math.max(0, Number(input.starCount || 0) || 0),
+    starAverage: Math.max(0, Math.min(5, Number(input.starAverage || 0) || 0)),
+  };
+  track.sharePath = cleanOneLine(input.sharePath, buildSongSharePath(track), 240);
+  return track;
+}
+
+function inferJukeboxTitleFromFilename(filename = '') {
+  const base = path.basename(String(filename || ''), path.extname(String(filename || '')));
+  const slug = base
+    .replace(/^vivy-music-suno-[a-f0-9]{8,}$/i, '')
+    .replace(/^vivy-music-/i, '')
+    .replace(/-[a-f0-9]{8,}$/i, '')
+    .replace(/[-_]+/g, ' ')
+    .trim();
+  if (!slug) return 'Archive Vivy Live';
+  return slug.replace(/\b\w/g, (letter) => letter.toUpperCase()).slice(0, 120);
+}
+
+function probeLocalAudioDurationSeconds(filePath = '') {
+  if (!filePath || !fs.existsSync(filePath)) return 0;
+  try {
+    const stdout = execFileSync(
+      String(process.env.FFPROBE_BIN || 'ffprobe').trim() || 'ffprobe',
+      ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', filePath],
+      { timeout: 15000, windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+    );
+    const duration = Number(String(stdout || '').trim());
+    return Number.isFinite(duration) && duration > 0 ? duration : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function discoverVivyJukeboxTracksFromAssets() {
+  const probePath = getEmergencyMediaAssetPath('vivy-music-probe.mp3');
+  const dir = probePath ? path.dirname(probePath) : '';
+  if (!dir || !fs.existsSync(dir)) return [];
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /^vivy-music-.+\.mp3$/i.test(entry.name))
+      .map((entry) => {
+        const filePath = path.join(dir, entry.name);
+        let stats = null;
+        try { stats = fs.statSync(filePath); } catch { return null; }
+        if (!stats || stats.size < 1024) return null;
+        const trackUrl = `/api/vivy/studio/assets/${encodeURIComponent(entry.name)}`;
+        return normalizeJukeboxTrack({
+          id: createTrackId(trackUrl),
+          title: inferJukeboxTitleFromFilename(entry.name),
+          trackTitle: inferJukeboxTitleFromFilename(entry.name),
+          trackUrl,
+          durationSeconds: 0,
+          requestedBy: 'Vivy Live',
+          source: 'vivy-asset-archive',
+          createdAt: stats.mtime.toISOString(),
+          filePath,
+        });
+      })
+      .filter(Boolean)
+      .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)))
+      .slice(0, MAX_JUKEBOX_TRACKS);
+  } catch {
+    return [];
+  }
 }
 
 function normalizeSuggestionId(value = '') {
@@ -238,6 +364,9 @@ function createVivyStreamStore(options = {}) {
   const statePath = options.statePath || path.join(runtimeRoot, 'vivy-stream', 'state.json');
   const clients = new Set();
   const onRoundLocked = typeof options.onRoundLocked === 'function' ? options.onRoundLocked : null;
+  const idleJukeboxEnabled = options.idleJukeboxEnabled !== false
+    && String(process.env.VIVY_STREAM_IDLE_JUKEBOX_DISABLED || '').trim() !== '1';
+  const randomInt = typeof options.randomInt === 'function' ? options.randomInt : (max) => crypto.randomInt(max);
   let state = createInitialState();
   let lifecycleTimer = null;
 
@@ -260,6 +389,16 @@ function createVivyStreamStore(options = {}) {
                 ...(parsed.production?.stages || {}),
               },
             },
+            jukebox: {
+              ...initial.jukebox,
+              ...(parsed.jukebox || {}),
+              tracks: Array.isArray(parsed.jukebox?.tracks)
+                ? parsed.jukebox.tracks.map(normalizeJukeboxTrack).filter(Boolean)
+                : [],
+            },
+            songs: Array.isArray(parsed.songs)
+              ? parsed.songs.map(normalizeJukeboxTrack).filter(Boolean).slice(-MAX_LIVE_SONGS)
+              : [],
             learning: { ...initial.learning, ...(parsed.learning || {}) },
             stats: { ...initial.stats, ...(parsed.stats || {}) },
             pendingSuggestions: Array.isArray(parsed.pendingSuggestions) ? parsed.pendingSuggestions : [],
@@ -319,6 +458,179 @@ function createVivyStreamStore(options = {}) {
       phase: normalized,
       phaseStartedAt: nowIso(),
     };
+  }
+
+  function ensureJukebox() {
+    state.jukebox = state.jukebox && typeof state.jukebox === 'object'
+      ? state.jukebox
+      : { tracks: [], lastTrackId: '', lastScanAt: null };
+    state.jukebox.tracks = Array.isArray(state.jukebox.tracks) ? state.jukebox.tracks : [];
+    return state.jukebox;
+  }
+
+  function addJukeboxTrack(input = {}) {
+    const track = normalizeJukeboxTrack(input);
+    if (!track) return null;
+    const jukebox = ensureJukebox();
+    const existingIndex = jukebox.tracks.findIndex((entry) => entry.id === track.id || entry.trackUrl === track.trackUrl);
+    if (existingIndex >= 0) {
+      jukebox.tracks[existingIndex] = {
+        ...jukebox.tracks[existingIndex],
+        ...track,
+        createdAt: jukebox.tracks[existingIndex].createdAt || track.createdAt,
+      };
+    } else {
+      jukebox.tracks.unshift(track);
+    }
+    jukebox.tracks = jukebox.tracks
+      .filter((entry, index, list) => entry?.trackUrl && list.findIndex((candidate) => candidate.trackUrl === entry.trackUrl) === index)
+      .slice(0, MAX_JUKEBOX_TRACKS);
+    return track;
+  }
+
+  function ensureSongs() {
+    state.songs = Array.isArray(state.songs) ? state.songs : [];
+    return state.songs;
+  }
+
+  function addLiveSong(input = {}) {
+    const song = normalizeJukeboxTrack(input);
+    if (!song) return null;
+    const songs = ensureSongs();
+    const existingIndex = songs.findIndex((entry) => entry.id === song.id || entry.trackUrl === song.trackUrl);
+    if (existingIndex >= 0) {
+      songs[existingIndex] = {
+        ...songs[existingIndex],
+        ...song,
+        createdAt: songs[existingIndex].createdAt || song.createdAt,
+      };
+    } else {
+      songs.push(song);
+    }
+    state.songs = songs
+      .filter((entry, index, list) => entry?.trackUrl && list.findIndex((candidate) => candidate.trackUrl === entry.trackUrl) === index)
+      .slice(-MAX_LIVE_SONGS);
+    return song;
+  }
+
+  function updateTrackStars(trackId = '', rating = 0) {
+    const id = cleanOneLine(trackId, '', 80);
+    const value = Math.max(1, Math.min(5, Number(rating || 0) || 0));
+    if (!id || !value) return null;
+    let updated = null;
+    const apply = (track) => {
+      if (!track || track.id !== id) return;
+      const previousCount = Number(track.starCount || 0);
+      const previousAverage = Number(track.starAverage || 0);
+      track.starCount = previousCount + 1;
+      track.starAverage = Number((((previousAverage * previousCount) + value) / track.starCount).toFixed(2));
+      updated = track;
+    };
+    ensureJukebox().tracks.forEach(apply);
+    ensureSongs().forEach(apply);
+    return updated;
+  }
+
+  function findSongByShareSlug(slug = '') {
+    const needle = cleanOneLine(slug, '', 180);
+    if (!needle) return null;
+    const allTracks = [
+      ...ensureSongs(),
+      ...ensureJukebox().tracks,
+    ];
+    return allTracks.find((track) => {
+      const shareSlug = String(track.sharePath || '').split('/').pop();
+      return shareSlug === needle || track.id === needle;
+    }) || null;
+  }
+
+  function refreshJukeboxFromAssets() {
+    const jukebox = ensureJukebox();
+    const discovered = discoverVivyJukeboxTracksFromAssets();
+    discovered.forEach((track) => addJukeboxTrack(track));
+    jukebox.lastScanAt = nowIso();
+    return jukebox.tracks;
+  }
+
+  function getJukeboxTracks() {
+    const jukebox = ensureJukebox();
+    if (!jukebox.tracks.length) refreshJukeboxFromAssets();
+    return jukebox.tracks.filter((track) => track?.trackUrl);
+  }
+
+  function getLocalJukeboxTrackPath(track = {}) {
+    const rawUrl = String(track.trackUrl || '').trim();
+    let filename = '';
+    try {
+      const parsed = new URL(rawUrl, 'https://vivy.local');
+      filename = path.basename(decodeURIComponent(parsed.pathname));
+    } catch {
+      filename = path.basename(rawUrl);
+    }
+    if (!/^vivy-music-.+\.mp3$/i.test(filename)) return '';
+    return getEmergencyMediaAssetPath(filename);
+  }
+
+  function resolveJukeboxTrackDuration(track = {}) {
+    const reported = Number(track.durationSeconds || track.duration || 0);
+    if (Number.isFinite(reported) && reported > 1) return reported;
+    const localPath = getLocalJukeboxTrackPath(track);
+    const measured = probeLocalAudioDurationSeconds(localPath);
+    if (measured > 0) {
+      track.durationSeconds = measured;
+      return measured;
+    }
+    return DEFAULT_TRACK_SECONDS;
+  }
+
+  function selectJukeboxTrack() {
+    const tracks = getJukeboxTracks();
+    if (!tracks.length) return null;
+    const jukebox = ensureJukebox();
+    const candidates = tracks.length > 1
+      ? tracks.filter((track) => track.id !== jukebox.lastTrackId)
+      : tracks;
+    const pool = candidates.length ? candidates : tracks;
+    return pool[randomInt(pool.length)];
+  }
+
+  function shouldStartIdleJukebox({ allowInterlude = false } = {}) {
+    if (!idleJukeboxEnabled) return false;
+    const phase = state.current?.phase || 'idle';
+    if (phase !== 'idle' && phase !== 'listening' && !(allowInterlude && phase === 'interlude')) return false;
+    if (state.round?.status !== 'open') return false;
+    if (state.round?.suggestions?.length) return false;
+    if (Array.isArray(state.pendingSuggestions) && state.pendingSuggestions.length) return false;
+    return true;
+  }
+
+  function beginIdleJukebox(options = {}) {
+    if (!shouldStartIdleJukebox({ allowInterlude: Boolean(options.rotate) })) return publicState(state);
+    const track = selectJukeboxTrack();
+    if (!track) return publicState(state);
+    const startedAt = Date.now();
+    const durationSeconds = Math.max(1, Math.min(3600, Number(resolveJukeboxTrackDuration(track) || DEFAULT_TRACK_SECONDS)));
+    const jukebox = ensureJukebox();
+    jukebox.lastTrackId = track.id;
+    addLiveSong({
+      ...track,
+      source: track.source || 'vivy-interlude',
+      createdAt: nowIso(),
+    });
+    setCurrentPhase('interlude', {
+      title: track.title || 'Vivy Live',
+      trackTitle: track.trackTitle || track.title || 'Archive Vivy Live',
+      trackUrl: track.trackUrl,
+      trackId: track.id,
+      sharePath: track.sharePath,
+      requestedBy: track.requestedBy || 'Vivy Live',
+      durationSeconds,
+      playbackStartedAt: new Date(startedAt).toISOString(),
+      phaseEndsAt: new Date(startedAt + (durationSeconds * 1000)).toISOString(),
+      message: 'Fond musical d’attente pendant que le chat prépare la prochaine demande.',
+    });
+    save();
+    return publicState(state);
   }
 
   function startVotingCountdown(round) {
@@ -391,12 +703,18 @@ function createVivyStreamStore(options = {}) {
     } else if (phase === 'presenting' && state.current.phaseEndsAt) {
       deadline = Date.parse(state.current.phaseEndsAt);
       transition = beginPlayback;
+    } else if (phase === 'interlude' && state.current.phaseEndsAt) {
+      deadline = Date.parse(state.current.phaseEndsAt);
+      transition = () => beginIdleJukebox({ rotate: true });
     } else if (phase === 'playing' && state.current.phaseEndsAt) {
       deadline = Date.parse(state.current.phaseEndsAt);
       transition = beginRating;
     } else if (phase === 'rating' && state.current.phaseEndsAt) {
       deadline = Date.parse(state.current.phaseEndsAt);
       transition = () => startRound();
+    } else if (shouldStartIdleJukebox()) {
+      deadline = Date.now() + resolveIdleJukeboxDelayMs();
+      transition = beginIdleJukebox;
     }
     if (!Number.isFinite(deadline) || !transition) return;
     const timerDelay = Math.max(10, Math.min(2_147_000_000, deadline - Date.now()));
@@ -522,6 +840,9 @@ function createVivyStreamStore(options = {}) {
         .map(([term]) => term)
         .slice(0, 18);
     }
+    if (state.current?.trackId && state.current?.phase === 'rating') {
+      updateTrackStars(state.current.trackId, entry.rating);
+    }
     return entry;
   }
 
@@ -544,7 +865,7 @@ function createVivyStreamStore(options = {}) {
     let suggestion = null;
     let vote = null;
     let star = null;
-    const acceptsRoundInput = ['idle', 'listening', 'voting'].includes(state.current.phase)
+    const acceptsRoundInput = ['idle', 'listening', 'interlude', 'voting'].includes(state.current.phase)
       && (!state.round || state.round.status === 'open');
     if (parsed.suggestion && acceptsRoundInput) {
       suggestion = addSuggestion(parsed);
@@ -564,12 +885,18 @@ function createVivyStreamStore(options = {}) {
       if (star) action = action === 'message' ? 'star' : `${action}+star`;
     }
     refreshSuggestionScores(state.round);
-    if ((suggestion || vote) && ['idle', 'listening', 'voting'].includes(state.current.phase)) {
+    if ((suggestion || vote) && ['idle', 'listening', 'interlude', 'voting'].includes(state.current.phase)) {
       const latest = suggestion || vote;
       setCurrentPhase('voting', {
         title: latest?.text || state.current.title || 'Vivy Live',
+        trackUrl: '',
+        trackTitle: '',
+        trackId: '',
+        sharePath: '',
         requestedBy: latest?.author || state.current.requestedBy || '',
         phaseEndsAt: state.round.endsAt,
+        playbackStartedAt: null,
+        durationSeconds: 0,
         message: 'Le chat propose et vote pour le prochain NOSSEN.',
       });
     } else if (star && state.current.phase === 'rating') {
@@ -597,6 +924,8 @@ function createVivyStreamStore(options = {}) {
       phaseEndsAt: null,
       playbackStartedAt: null,
       durationSeconds: 0,
+      trackId: '',
+      sharePath: '',
       message: 'Nouveau round Twitch ouvert.',
     };
     queuedSuggestions.forEach((entry) => addSuggestion(entry));
@@ -688,6 +1017,21 @@ function createVivyStreamStore(options = {}) {
       const trackUrl = cleanOneLine(input.trackUrl || input.audioUrl || input.url, '', 1200);
       if (!trackUrl) return { ok: false, error: 'track_url_missing', state: publicState(state) };
       const durationSeconds = Math.max(1, Math.min(3600, Number(input.durationSeconds || input.duration || DEFAULT_TRACK_SECONDS)));
+      const track = addJukeboxTrack({
+        title: input.title || input.trackTitle || winner?.text || state.current.title,
+        trackTitle: input.trackTitle || input.title || winner?.text || state.current.trackTitle,
+        trackUrl,
+        requestedBy: input.requestedBy || input.author || winner?.author || state.current.requestedBy,
+        durationSeconds,
+        source: 'twitch-live',
+      });
+      addLiveSong({
+        ...track,
+        title: input.title || input.trackTitle || winner?.text || state.current.title,
+        trackTitle: input.trackTitle || input.title || winner?.text || state.current.trackTitle,
+        requestedBy: input.requestedBy || input.author || winner?.author || state.current.requestedBy,
+        createdAt: nowIso(),
+      });
       PRODUCTION_STAGES.forEach((name) => {
         state.production.stages[name] = { status: 'done', progress: 100 };
       });
@@ -697,6 +1041,8 @@ function createVivyStreamStore(options = {}) {
         title: cleanOneLine(input.title || input.trackTitle, winner?.text || state.current.title || 'Nouvelle composition', 160),
         trackTitle: cleanOneLine(input.trackTitle || input.title, winner?.text || 'Nouvelle composition', 160),
         trackUrl,
+        trackId: track?.id || createTrackId(trackUrl),
+        sharePath: track?.sharePath || buildSongSharePath({ id: createTrackId(trackUrl), trackUrl, trackTitle: input.trackTitle || input.title }),
         requestedBy: cleanOneLine(input.requestedBy || input.author, winner?.author || state.current.requestedBy, 80),
         durationSeconds,
         playbackStartedAt: null,
@@ -716,6 +1062,7 @@ function createVivyStreamStore(options = {}) {
       return { ok: Boolean(state.current.trackUrl), state: beginPlayback() };
     }
     if (action === 'rating') return { ok: true, state: beginRating() };
+    if (action === 'interlude' || action === 'jukebox') return { ok: true, state: beginIdleJukebox({ rotate: true }) };
     if (action === 'next' || action === 'start') return { ok: true, state: startRound(input) };
     if (action === 'error') {
       setCurrentPhase('error', {
@@ -748,6 +1095,9 @@ function createVivyStreamStore(options = {}) {
     startRound,
     lockRound,
     updateLive,
+    startIdleJukebox: beginIdleJukebox,
+    addJukeboxTrack,
+    findSongByShareSlug,
     connectSse,
   };
 }
@@ -889,6 +1239,15 @@ function createVivyStreamRouter(options = {}) {
 
   router.get('/state', (_req, res) => {
     res.json(store.getState());
+  });
+
+  router.get('/s/:slug', (req, res) => {
+    const song = store.findSongByShareSlug(req.params.slug || '');
+    if (!song?.trackUrl) {
+      return res.status(404).send('Vivy song not found');
+    }
+    res.set('Cache-Control', 'public, max-age=300');
+    return res.redirect(302, song.trackUrl);
   });
 
   router.get('/nossen-seed', (_req, res) => {

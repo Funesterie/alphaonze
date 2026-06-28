@@ -71,6 +71,15 @@ Le vote d'une proposition dure 90 secondes par defaut. La duree peut etre ajuste
 $env:VIVY_STREAM_VOTE_MS="90000"
 ```
 
+Quand aucune demande n'est en cours, Vivy peut lancer automatiquement un fond musical depuis les chansons Twitch deja generees. Une nouvelle commande `!nossen`, `!vivy` ou `!chanson` interrompt ce fond et demarre le vote.
+
+```powershell
+$env:VIVY_STREAM_IDLE_JUKEBOX_DELAY_MS="12000"
+$env:VIVY_STREAM_IDLE_JUKEBOX_DISABLED="0"
+```
+
+Mettre `VIVY_STREAM_IDLE_JUKEBOX_DISABLED=1` coupe le fond musical d'attente.
+
 Le bot rappelle les commandes toutes les cinq minutes avec deux messages courts en rotation. L'annonce n'est envoyee que lorsque la connexion Twitch est active.
 
 ```powershell
@@ -90,6 +99,15 @@ $env:VIVY_STREAM_TRACK_NOTICE_DISABLED="0"
 ```
 
 Mettre `VIVY_STREAM_TRACK_NOTICE_DISABLED=1` coupe uniquement le partage automatique de lien de chanson.
+
+Toutes les 25 a 30 minutes, le bot peut poster le recap des morceaux passes dans le live, dans l'ordre, avec note moyenne et lien court de telechargement.
+
+```powershell
+$env:VIVY_STREAM_RECAP_INTERVAL_MS="1680000"
+$env:VIVY_STREAM_RECAP_DISABLED="0"
+```
+
+Mettre `VIVY_STREAM_RECAP_DISABLED=1` coupe uniquement ce recap periodique.
 
 La generation automatique Twitch est active en production:
 

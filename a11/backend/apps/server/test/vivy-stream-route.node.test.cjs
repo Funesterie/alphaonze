@@ -22,11 +22,14 @@ const {
 } = require('../src/vivy/twitch-nossen-runner.cjs');
 const {
   ANNOUNCE_MESSAGES,
+  buildSongRecapMessages,
   buildTrackNoticeMessage,
   createAnnouncementRotator,
+  createSongRecapRotator,
   createTrackNoticeWatcher,
   parsePrivmsg,
   resolveAnnounceInterval,
+  resolveRecapInterval,
   resolveTrackNoticePollInterval,
   shouldForwardMessage,
 } = require('../scripts/vivy-twitch-chat-worker.cjs');
@@ -199,6 +202,52 @@ test('Twitch suggestions received during playback enter the next round', () => {
   assert.equal(next.pendingSuggestions.length, 0);
 });
 
+test('Vivy idle jukebox replays known live songs and yields to chat requests', () => {
+  const store = createVivyStreamStore({
+    statePath: path.join(tmpRoot, 'idle-jukebox.json'),
+    idleJukeboxEnabled: true,
+    randomInt: () => 0,
+  });
+  store.addJukeboxTrack({
+    title: 'Les lumières de la ville',
+    trackUrl: '/api/vivy/studio/assets/vivy-music-suno-known.mp3',
+    requestedBy: 'funeste38',
+    durationSeconds: 151,
+  });
+
+  const interlude = store.startIdleJukebox();
+  assert.equal(interlude.current.phase, 'interlude');
+  assert.equal(interlude.current.trackTitle, 'Les lumières de la ville');
+  assert.equal(interlude.current.durationSeconds, 151);
+  assert.equal(interlude.round.status, 'open');
+  assert.equal(interlude.round.suggestions.length, 0);
+
+  const interrupted = store.addChatMessage({
+    username: 'viewer',
+    message: '!nossen opening Bleach sombre avec guitare nerveuse',
+  });
+  assert.equal(interrupted.action, 'suggestion');
+  assert.equal(interrupted.state.current.phase, 'voting');
+  assert.equal(interrupted.state.current.trackUrl, '');
+  assert.equal(interrupted.state.round.suggestions[0].text, 'opening Bleach sombre avec guitare nerveuse');
+});
+
+test('Vivy idle jukebox can seed itself from generated Vivy MP3 assets', () => {
+  const assetDir = path.join(process.env.A11_RUNTIME_ROOT, 'files', 'generated', 'vivy');
+  fs.mkdirSync(assetDir, { recursive: true });
+  fs.writeFileSync(path.join(assetDir, 'vivy-music-suno-testarchive.mp3'), Buffer.alloc(2048, 1));
+
+  const store = createVivyStreamStore({
+    statePath: path.join(tmpRoot, 'idle-jukebox-assets.json'),
+    idleJukeboxEnabled: true,
+    randomInt: () => 0,
+  });
+  const interlude = store.startIdleJukebox();
+  assert.equal(interlude.current.phase, 'interlude');
+  assert.match(interlude.current.trackUrl, /\/api\/vivy\/studio\/assets\/vivy-music-suno-testarchive\.mp3/);
+  assert.equal(interlude.current.requestedBy, 'Vivy Live');
+});
+
 test('Twitch NOSSEN runner writes lyrics, follows Suno and publishes the track', async () => {
   const updates = [];
   let pollCount = 0;
@@ -334,6 +383,23 @@ test('Vivy stream control drives production, presentation and playback metadata'
     assert.equal(result.json.state.current.phase, 'presenting');
     assert.equal(result.json.state.current.durationSeconds, 222);
     assert.equal(result.json.state.current.requestedBy, 'funeste38');
+    assert.equal(result.json.state.songs.length, 1);
+    assert.match(result.json.state.songs[0].sharePath, /\/api\/vivy\/stream\/s\/les-lumieres-de-la-ville-/);
+
+    const redirect = await fetch(baseUrl + result.json.state.songs[0].sharePath, { redirect: 'manual' });
+    assert.equal(redirect.status, 302);
+    assert.equal(redirect.headers.get('location'), '/api/double-harmonic/out/live.mp3');
+
+    result = await postJson(baseUrl, '/api/vivy/stream/control', { action: 'play' });
+    assert.equal(result.json.state.current.phase, 'playing');
+    result = await postJson(baseUrl, '/api/vivy/stream/control', { action: 'rating' });
+    assert.equal(result.json.state.current.phase, 'rating');
+    result = await postJson(baseUrl, '/api/vivy/stream/chat', {
+      username: 'rating-viewer',
+      message: '!etoiles 5',
+    });
+    assert.equal(result.json.state.songs[0].starCount, 1);
+    assert.equal(result.json.state.songs[0].starAverage, 5);
 
     await postJson(baseUrl, '/api/vivy/stream/control', { action: 'next' });
     result = await postJson(baseUrl, '/api/vivy/stream/chat', {
@@ -525,4 +591,57 @@ test('Twitch track notices share new songs once with an absolute public link', a
   assert.match(sent[0], /https:\/\/vivy\.funesterie\.me\/api\/vivy\/studio\/assets\/neons\.mp3/);
   assert.equal(watcher.stop(), true);
   assert.ok(cleared);
+});
+
+test('Twitch song recaps list live songs in order with stars and short links', async () => {
+  const state = {
+    songs: [
+      {
+        id: 'track-a',
+        trackTitle: 'Les lumières de la ville',
+        trackUrl: '/api/vivy/studio/assets/a.mp3',
+        sharePath: '/api/vivy/stream/s/les-lumieres-de-la-ville-aaaa1111',
+        starAverage: 4.8,
+        starCount: 5,
+      },
+      {
+        id: 'track-b',
+        trackTitle: 'Bleach Hollow Memories',
+        trackUrl: '/api/vivy/studio/assets/b.mp3',
+        sharePath: '/api/vivy/stream/s/bleach-hollow-memories-bbbb2222',
+      },
+    ],
+  };
+  const messages = buildSongRecapMessages(state, { publicBaseUrl: 'https://vivy.funesterie.me' });
+  assert.equal(messages.length, 1);
+  assert.match(messages[0], /1\. Les lumières de la ville ⭐4\.8\/5\(5\)/);
+  assert.match(messages[0], /2\. Bleach Hollow Memories ⭐--/);
+  assert.match(messages[0], /https:\/\/vivy\.funesterie\.me\/api\/vivy\/stream\/s\/les-lumieres-de-la-ville-aaaa1111/);
+  assert.doesNotMatch(messages[0], /[\r\n]/);
+
+  const sent = [];
+  let connected = true;
+  let scheduled = null;
+  const rotator = createSongRecapRotator({
+    stateUrl: 'https://vivy.funesterie.me/api/vivy/stream/state',
+    publicBaseUrl: 'https://vivy.funesterie.me',
+    intervalMs: 26 * 60 * 1000,
+    isConnected: () => connected,
+    sendMessage: (message) => sent.push(message),
+    fetchFn: async () => ({ ok: true, json: async () => state }),
+    sleep: async () => {},
+    setIntervalFn: (callback, intervalMs) => {
+      scheduled = { callback, intervalMs, unref() {} };
+      return scheduled;
+    },
+  });
+  assert.equal(resolveRecapInterval('120000'), 25 * 60 * 1000);
+  assert.equal(resolveRecapInterval('999999999'), 30 * 60 * 1000);
+  assert.equal(rotator.intervalMs, 26 * 60 * 1000);
+  assert.equal(rotator.start(), true);
+  assert.equal(scheduled.intervalMs, 26 * 60 * 1000);
+  assert.equal(await rotator.tick(), true);
+  assert.equal(sent.length, 1);
+  connected = false;
+  assert.equal(await rotator.tick(), false);
 });
