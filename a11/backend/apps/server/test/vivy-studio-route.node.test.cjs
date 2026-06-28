@@ -1870,6 +1870,70 @@ test('Vivy requests a Suno extension from the original audio id without leaking 
   }
 });
 
+test('Vivy sends custom long-form Suno extension parameters when continuing NOSSEN', async () => {
+  const previousEnv = {
+    VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
+    VIVY_SUNO_BASE_URL: process.env.VIVY_SUNO_BASE_URL,
+    VIVY_PUBLIC_BASE_URL: process.env.VIVY_PUBLIC_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  let postedBody = null;
+
+  process.env.VIVY_SUNO_API_KEY = 'test-suno-key';
+  process.env.VIVY_SUNO_BASE_URL = 'https://api.suno.test/api/v1';
+  process.env.VIVY_PUBLIC_BASE_URL = 'https://vivy.test';
+  global.fetch = async (url, options = {}) => {
+    if (String(url) === 'https://api.suno.test/api/v1/generate/extend') {
+      postedBody = JSON.parse(String(options.body || '{}'));
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return { code: 200, data: { taskId: 'suno-long-extension-task', status: 'PENDING' } };
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    const media = await requestSunoMusicExtension({
+      audioId: 'suno-audio-short',
+      model: 'V4_5ALL',
+      sourceDurationSeconds: 134.2,
+      targetDurationSeconds: 300,
+      title: 'MegaZord',
+      style: 'long-form full song arrangement around five minutes, instrumental backing track only',
+      prompt: '[Chorus]\nMegaZord revient plus fort.',
+      instrumental: true,
+      sessionSunoApiKey: 'must-not-leak',
+    }, {
+      user: { id: 'djeff', roles: ['founder'] },
+      get(name) {
+        if (name === 'host') return 'vivy.test';
+        return '';
+      },
+    });
+
+    assert.equal(media.state, 'processing');
+    assert.equal(media.taskId, 'suno-long-extension-task');
+    assert.equal(postedBody.audioId, 'suno-audio-short');
+    assert.equal(postedBody.defaultParamFlag, true);
+    assert.equal(postedBody.model, 'V4_5ALL');
+    assert.equal(postedBody.continueAt, 126);
+    assert.equal(postedBody.instrumental, true);
+    assert.match(postedBody.style, /long-form full song arrangement/i);
+    assert.match(postedBody.prompt, /MegaZord revient/);
+    assert.doesNotMatch(JSON.stringify(postedBody), /must-not-leak/);
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('song mode accepts natural aliases from client prompts', () => {
   const result = buildVivyStudioProduction({
     mode: 'song',
@@ -2209,6 +2273,38 @@ test('Suno director scoring uses duration only to break otherwise close candidat
 
   assert.equal(media.audioId, 'long-equal-take');
   assert.equal(media.durationSeconds, 291.8);
+});
+
+test('Suno director can prefer long-form takes for NOSSEN without changing normal scoring', () => {
+  const payload = {
+    data: {
+      data: [
+        {
+          id: 'short-polished-take',
+          audio_url: 'https://cdn.example/short.mp3',
+          duration: 134.2,
+          model_name: 'V4_5ALL',
+          tags: 'powerful clean dynamic instrumental, memorable chorus',
+          prompt: '[Verse]\nShort but polished.\n[Chorus]\nShort hook.',
+        },
+        {
+          id: 'long-nossen-take',
+          audio_url: 'https://cdn.example/long.mp3',
+          duration: 286.4,
+          model_name: 'V4_5ALL',
+          tags: 'long-form instrumental backing, complete final chorus, muddy rough demo, less polished mix',
+          prompt: '[Intro]\nLong opening.\n[Verse 1]\nBuild.\n[Chorus]\nHook.\n[Bridge]\nRise.\n[Final Chorus]\nHook returns.',
+        },
+      ],
+    },
+  };
+
+  const normalMedia = extractSunoMedia(payload);
+  const longMedia = extractSunoMedia(payload, { preferLongForm: true, targetDurationSeconds: 300 });
+
+  assert.equal(normalMedia.audioId, 'short-polished-take');
+  assert.equal(longMedia.audioId, 'long-nossen-take');
+  assert.equal(longMedia.durationSeconds, 286.4);
 });
 
 test('Suno payload can still opt into external voice mix explicitly', () => {
@@ -4134,6 +4230,25 @@ test('Vivy song writing prefers xAI when xAI and Groq are both available', () =>
       else process.env[key] = value;
     }
   }
+});
+
+test('Suno payload keeps long-form arrangement when NOSSEN uses external voice mix', () => {
+  const payload = buildVivySunoPayload({
+    mode: 'song',
+    songArtists: ['djeff', 'vivy', 'a11'],
+    songText: '[Verse - Djeff]\nOn ouvre.\n[Chorus - Vivy]\nOn revient.\n[Bridge - A11]\nOn tient.',
+    preserveSelectedVoice: true,
+    allowExternalVoiceMix: true,
+    forceExternalVoiceMix: true,
+    songMood: 'anime trap rock, heavy drums',
+    longSong: true,
+    targetDurationSeconds: 300,
+  });
+
+  assert.equal(payload.instrumental, true);
+  assert.match(payload.style, /instrumental backing track only/i);
+  assert.match(payload.style, /long-form full song arrangement around five minutes/i);
+  assert.match(payload.style, /no short radio edit/i);
 });
 
 test('Vivy song writing does not fall back to small local Ollama by default', () => {

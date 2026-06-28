@@ -5192,7 +5192,7 @@ function buildVivySunoPayload(input = {}, req = null) {
     ? `instrumental arrangement: ${arrangement.arrangement}; never sing or speak arrangement directions`
     : '';
   const longFormStyle = wantsVivySunoLongForm(input)
-    ? 'long-form full song arrangement, expanded sections, recurring hook after the bridge, complete final chorus'
+    ? 'long-form full song arrangement around five minutes, expanded sections, recurring hook after the bridge, complete final chorus, no short radio edit'
     : '';
   let style = /structured rhymed lyrics|rimes|paroles structur/i.test(styleBase)
     ? cleanOneLine([styleBase, castStyle, arrangementStyle, longFormStyle, prosodyStyle].filter((item, index, list) => item && list.indexOf(item) === index).join(', '), styleBase, 520)
@@ -5205,6 +5205,7 @@ function buildVivySunoPayload(input = {}, req = null) {
     style = cleanOneLine([
       styleBase,
       arrangementStyle,
+      longFormStyle,
       'instrumental backing track only, no vocals, no singing, leave clear space for the external lead vocal',
       prosodyStyle,
     ].filter(Boolean).join(', '), 'instrumental backing track only, no vocals', 520);
@@ -5476,6 +5477,19 @@ function scoreVivySunoDuration(durationSeconds) {
   return 0.28;
 }
 
+function normalizeVivySunoTargetDuration(input = {}) {
+  const raw = Number(
+    input.targetDurationSeconds
+    ?? input.target_duration_seconds
+    ?? input.durationTargetSeconds
+    ?? input.duration_target_seconds
+    ?? input.minDurationSeconds
+    ?? input.min_duration_seconds
+    ?? 0
+  );
+  return Number.isFinite(raw) && raw > 0 ? Math.max(30, Math.min(480, raw)) : 0;
+}
+
 function scoreVivySunoDirectorTrack(track = {}) {
   const durationSeconds = Number(track.durationSeconds || track.duration || 0) || 0;
   const model = track.model || track.modelName || track.model_name;
@@ -5515,13 +5529,23 @@ function scoreVivySunoDirectorTrack(track = {}) {
   };
 }
 
-function selectVivySunoDirectorTrack(tracks = []) {
+function selectVivySunoDirectorTrack(tracks = [], options = {}) {
+  const targetDurationSeconds = normalizeVivySunoTargetDuration(options);
+  const preferLongForm = options.preferLongForm === true || targetDurationSeconds >= 240;
   return tracks
     .map((track, index) => {
       const directorScore = scoreVivySunoDirectorTrack(track);
       return { ...track, directorScore, directorRank: index + 1 };
     })
     .sort((left, right) => {
+      if (preferLongForm) {
+        const rightDuration = Number(right?.durationSeconds || right?.duration || 0) || 0;
+        const leftDuration = Number(left?.durationSeconds || left?.duration || 0) || 0;
+        const rightLongEnough = targetDurationSeconds > 0 ? rightDuration >= Math.min(240, targetDurationSeconds * 0.8) : rightDuration >= 240;
+        const leftLongEnough = targetDurationSeconds > 0 ? leftDuration >= Math.min(240, targetDurationSeconds * 0.8) : leftDuration >= 240;
+        if (rightLongEnough !== leftLongEnough) return rightLongEnough ? 1 : -1;
+        if (Math.abs(rightDuration - leftDuration) >= 20) return rightDuration - leftDuration;
+      }
       const scoreDelta = Number(right.directorScore?.score || 0) - Number(left.directorScore?.score || 0);
       if (Math.abs(scoreDelta) > 0.5) return scoreDelta;
       const rightDuration = Number(right?.durationSeconds || right?.duration || 0) || 0;
@@ -5530,9 +5554,9 @@ function selectVivySunoDirectorTrack(tracks = []) {
     })[0] || null;
 }
 
-function extractSunoMedia(payload = {}) {
+function extractSunoMedia(payload = {}, options = {}) {
   const tracks = collectSunoTracks(payload, []);
-  return selectVivySunoDirectorTrack(tracks);
+  return selectVivySunoDirectorTrack(tracks, options);
 }
 
 function readCachedSunoCallback(taskId) {
@@ -5783,7 +5807,10 @@ async function requestSunoMusic(input = {}, req = null) {
   }
 
   const taskId = findSunoTaskId(payload);
-  const readyMedia = extractSunoMedia(payload);
+  const readyMedia = extractSunoMedia(payload, {
+    preferLongForm: wantsVivySunoLongForm(input),
+    targetDurationSeconds: normalizeVivySunoTargetDuration(input),
+  });
   if (readyMedia?.url) {
     const preparedMedia = await materializeVivySunoMedia(readyMedia, { taskId });
     return {
@@ -5846,12 +5873,42 @@ async function requestSunoMusicExtension(input = {}, req = null) {
     throw error;
   }
   const model = cleanOneLine(input.musicModel || input.model || input.sourceModel || process.env.VIVY_SUNO_MODEL || 'V5_5', 'V5_5', 40);
+  const sourceDurationSeconds = Number(
+    input.sourceDurationSeconds
+    ?? input.source_duration_seconds
+    ?? input.currentDurationSeconds
+    ?? input.current_duration_seconds
+    ?? input.durationSeconds
+    ?? input.duration
+    ?? 0
+  );
+  const explicitContinueAt = Number(input.continueAtSeconds ?? input.continue_at_seconds ?? input.continueAt ?? input.continue_at ?? 0);
+  const continueAtSeconds = Number.isFinite(explicitContinueAt) && explicitContinueAt > 0
+    ? explicitContinueAt
+    : Number.isFinite(sourceDurationSeconds) && sourceDurationSeconds > 12
+      ? Math.max(1, Math.floor(sourceDurationSeconds - 8))
+      : 0;
+  const title = cleanOneLine(input.title || input.songTitle || input.song_title, '', 80);
+  const style = cleanOneLine(input.style || input.songMood || input.song_mood || input.tags, '', 520);
+  const prompt = sanitizeVivySongMaterial(input.prompt || input.lyrics || input.songText || input.song_text || input.extensionPrompt, VIVY_SONG_MAX_CHARS);
+  const useCustomExtension = (input.defaultParamFlag === true || input.customMode === true || continueAtSeconds > 0)
+    && Boolean(title || style || prompt);
   const body = {
     defaultParamFlag: false,
     audioId,
     model,
     callBackUrl: buildSunoCallbackUrl(req),
   };
+  if (useCustomExtension) {
+    body.defaultParamFlag = true;
+    body.title = title || 'Vivy NOSSEN extension';
+    body.style = style || 'long-form full song arrangement around five minutes, instrumental backing track only, no vocals';
+    body.prompt = prompt || 'Continue the same original song structure with a longer instrumental arrangement and a complete final chorus.';
+    if (continueAtSeconds > 0) body.continueAt = continueAtSeconds;
+    if (input.instrumental === true || input.forceInstrumental === true || input.previewInstrumental === true) {
+      body.instrumental = true;
+    }
+  }
   const response = await fetch(`${getSunoBaseUrl()}/generate/extend`, {
     method: 'POST',
     headers: {
@@ -5875,7 +5932,10 @@ async function requestSunoMusicExtension(input = {}, req = null) {
   }
 
   const taskId = findSunoTaskId(payload);
-  const readyMedia = extractSunoMedia(payload);
+  const readyMedia = extractSunoMedia(payload, {
+    preferLongForm: wantsVivySunoLongForm(input),
+    targetDurationSeconds: normalizeVivySunoTargetDuration(input),
+  });
   if (readyMedia?.url) {
     const preparedMedia = await materializeVivySunoMedia(readyMedia, { taskId });
     return {
@@ -5916,11 +5976,18 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
     throw error;
   }
   const cached = readCachedSunoCallback(safeTaskId);
-  const cachedMedia = extractSunoMedia(cached?.payload || {});
+  const cachedMedia = extractSunoMedia(cached?.payload || {}, {
+    preferLongForm: wantsVivySunoLongForm(input),
+    targetDurationSeconds: normalizeVivySunoTargetDuration(input),
+  });
   if (cachedMedia?.url) {
     const preparedMedia = await materializeVivySunoMedia(
       cachedMedia,
-      buildVivySunoStatusMaterializeOptions({ taskId: safeTaskId })
+      buildVivySunoStatusMaterializeOptions({
+        taskId: safeTaskId,
+        preferLongForm: wantsVivySunoLongForm(input),
+        targetDurationSeconds: normalizeVivySunoTargetDuration(input),
+      })
     );
     return {
       ok: true,
@@ -5966,13 +6033,20 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
     }
     throw new Error(`suno_status_http_${response.status}`);
   }
-  const media = extractSunoMedia(payload);
+  const media = extractSunoMedia(payload, {
+    preferLongForm: wantsVivySunoLongForm(input),
+    targetDurationSeconds: normalizeVivySunoTargetDuration(input),
+  });
   const status = findSunoStatus(payload) || 'processing';
   if (media?.url) {
     writeCachedSunoCallback(safeTaskId, payload);
     const preparedMedia = await materializeVivySunoMedia(
       media,
-      buildVivySunoStatusMaterializeOptions({ taskId: safeTaskId })
+      buildVivySunoStatusMaterializeOptions({
+        taskId: safeTaskId,
+        preferLongForm: wantsVivySunoLongForm(input),
+        targetDurationSeconds: normalizeVivySunoTargetDuration(input),
+      })
     );
     return {
       ok: true,
@@ -6278,28 +6352,29 @@ async function materializeVivySunoMedia(media = {}, options = {}) {
 }
 
 function buildVivySunoStatusMaterializeOptions(options = {}) {
+  const longForm = options.preferLongForm === true || normalizeVivySunoTargetDuration(options) >= 240;
   return {
     ...options,
     attempts: Math.max(1, Math.min(2, Number(
       options.attempts
       || process.env.VIVY_SUNO_STATUS_AUDIO_FETCH_ATTEMPTS
-      || 1
+      || (longForm ? 2 : 1)
     ) || 1)),
     retryDelayMs: Math.max(0, Number(
       options.retryDelayMs
       ?? process.env.VIVY_SUNO_STATUS_AUDIO_RETRY_DELAY_MS
-      ?? 0
+      ?? (longForm ? 1500 : 0)
     ) || 0),
-    fetchTimeoutMs: Math.max(1000, Math.min(25000, Number(
+    fetchTimeoutMs: Math.max(1000, Math.min(longForm ? 90000 : 25000, Number(
       options.fetchTimeoutMs
       || process.env.VIVY_SUNO_STATUS_AUDIO_FETCH_TIMEOUT_MS
-      || 8000
-    ) || 8000)),
-    repairTimeoutMs: Math.max(1000, Math.min(30000, Number(
+      || (longForm ? 60000 : 8000)
+    ) || (longForm ? 60000 : 8000))),
+    repairTimeoutMs: Math.max(1000, Math.min(longForm ? 120000 : 30000, Number(
       options.repairTimeoutMs
       || process.env.VIVY_SUNO_STATUS_MP3_REPAIR_TIMEOUT_MS
-      || 12000
-    ) || 12000)),
+      || (longForm ? 90000 : 12000)
+    ) || (longForm ? 90000 : 12000))),
   };
 }
 
@@ -6674,7 +6749,7 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
           message: 'Génération musicale réservée aux comptes Famille/Premium/Fondateur, sauf clé Suno personnelle de session.',
         });
       }
-      res.json(await getSunoMusicJob(req.params.taskId, {}, req));
+      res.json(await getSunoMusicJob(req.params.taskId, req.query || {}, req));
     } catch (error) {
       res.status(error?.status || 500).json({
         ok: false,

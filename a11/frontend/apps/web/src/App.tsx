@@ -7618,7 +7618,10 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           await pause(attempt <= 3 ? 6000 : 10000);
           let job: any;
           try {
-            job = await getVivyStudioMusicJob(safeTaskId, sunoSessionKey || undefined);
+            job = await getVivyStudioMusicJob(safeTaskId, sunoSessionKey || undefined, {
+              targetDurationSeconds: VIVY_NOSSEN_SUNO_TARGET_SECONDS,
+              preferLongForm: true,
+            });
           } catch (error: any) {
             if (attempt < 60 && isRetryableVivyMusicJobError(error)) {
               setStatus(`${productionLabel} attend ${label}... réponse lente ${attempt}/60`);
@@ -7698,6 +7701,19 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
               audioId: sunoAudioId,
               model: getVivyProductionSunoModel(finalPayload, preparedMedia) || undefined,
               sourceTaskId: taskId || preparedMedia.taskId || undefined,
+              sourceDurationSeconds: durationSeconds,
+              continueAtSeconds: Math.max(1, Math.floor(durationSeconds - 8)),
+              targetDurationSeconds: VIVY_NOSSEN_SUNO_TARGET_SECONDS,
+              title: routedReadiness.themeAnchor || activeSessionName || "Vivy NOSSEN",
+              style: [
+                songMood || requestedSonicMood,
+                "long-form full song arrangement around five minutes",
+                "instrumental backing track only, no vocals, no singing, leave clear space for the external lead vocal",
+                "complete final chorus, no short radio edit",
+              ].filter(Boolean).join(", "),
+              prompt: vocalLyricsForProduction,
+              instrumental: true,
+              previewInstrumental: true,
               sessionSunoApiKey: sunoSessionKey || undefined,
             });
             let extendedPayload: any = extensionStart;
@@ -7713,16 +7729,23 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
               extendedMedia = getVivyProductionMediaPreview(extendedPayload, preparedMedia.filename || "vivy-nossen-extended.mp3");
             }
             if (extendedMedia?.url) {
-              finalPayload = {
+              const previousDurationSeconds = durationSeconds;
+              const candidatePayload = {
                 ...extendedPayload,
                 publicLyrics: finalPayload?.publicLyrics,
                 vocalLyrics: finalPayload?.vocalLyrics,
                 summary: finalPayload?.summary,
               };
+              const candidateDurationSeconds = await probeVivyProductionAudioDurationSeconds(candidatePayload, extendedMedia);
+              if (!(candidateDurationSeconds > 0)) break;
+              if (candidateDurationSeconds < VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS && candidateDurationSeconds <= previousDurationSeconds + 8) {
+                setStatus(`${productionLabel}: extension Suno sans progression réelle (${Math.round(candidateDurationSeconds)}s), j'arrête les crédits sur cette prise.`);
+                break;
+              }
+              finalPayload = candidatePayload;
               preparedMedia = extendedMedia;
               sunoExtended = true;
-              durationSeconds = await probeVivyProductionAudioDurationSeconds(finalPayload, preparedMedia);
-              if (!(durationSeconds > 0)) break;
+              durationSeconds = candidateDurationSeconds;
             }
           } catch {
             setStatus(`${productionLabel}: extension indisponible, je garde la prise Suno originale.`);

@@ -2982,13 +2982,23 @@ export async function assembleVivyStudioVoicePreview(
   return (payload?.media || payload) as VivyStudioMedia;
 }
 
-export async function getVivyStudioMusicJob(taskId: string, sessionSunoApiKey?: string): Promise<VivyStudioProductionResult> {
+export async function getVivyStudioMusicJob(
+  taskId: string,
+  sessionSunoApiKey?: string,
+  options: { targetDurationSeconds?: number; preferLongForm?: boolean } = {}
+): Promise<VivyStudioProductionResult> {
   const safeTaskId = String(taskId || '').trim();
   if (!safeTaskId) throw new Error('job_vivy_manquant');
   const headers = buildAuthHeaders();
   const safeSessionKey = String(sessionSunoApiKey || '').trim();
   if (safeSessionKey) headers['X-Vivy-Suno-Key'] = safeSessionKey;
-  const res = await authFetch(getApiUrl(`/api/vivy/studio/jobs/${encodeURIComponent(safeTaskId)}`), {
+  const query = new URLSearchParams();
+  if (Number.isFinite(Number(options.targetDurationSeconds)) && Number(options.targetDurationSeconds) > 0) {
+    query.set('targetDurationSeconds', String(Math.round(Number(options.targetDurationSeconds))));
+  }
+  if (options.preferLongForm === true) query.set('preferLongForm', '1');
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/jobs/${encodeURIComponent(safeTaskId)}${suffix}`), {
     method: 'GET',
     headers,
     credentials: 'include',
@@ -3006,6 +3016,14 @@ export async function extendVivyStudioSunoMusic(input: {
   musicModel?: string;
   sessionSunoApiKey?: string;
   sourceTaskId?: string;
+  sourceDurationSeconds?: number;
+  continueAtSeconds?: number;
+  targetDurationSeconds?: number;
+  title?: string;
+  style?: string;
+  prompt?: string;
+  instrumental?: boolean;
+  previewInstrumental?: boolean;
 }): Promise<VivyStudioProductionResult> {
   const headers = buildAuthHeaders('application/json');
   const safeSessionKey = String(input.sessionSunoApiKey || '').trim();
@@ -3019,6 +3037,16 @@ export async function extendVivyStudioSunoMusic(input: {
       model: input.model || input.musicModel,
       musicModel: input.musicModel || input.model,
       sourceTaskId: input.sourceTaskId,
+      sourceDurationSeconds: input.sourceDurationSeconds,
+      continueAtSeconds: input.continueAtSeconds,
+      targetDurationSeconds: input.targetDurationSeconds,
+      title: input.title,
+      style: input.style,
+      prompt: input.prompt,
+      instrumental: input.instrumental,
+      previewInstrumental: input.previewInstrumental,
+      defaultParamFlag: true,
+      customMode: true,
       sessionSunoApiKey: safeSessionKey || undefined,
     }),
   });
