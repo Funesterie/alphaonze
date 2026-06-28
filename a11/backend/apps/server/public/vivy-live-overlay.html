@@ -42,10 +42,10 @@
     }
 
     .backdrop {
-      width: 100%;
+      width: 64vw;
       height: 100%;
       object-fit: cover;
-      object-position: 47% 44%;
+      object-position: 50% 0;
       filter: saturate(.88) contrast(1.05);
     }
 
@@ -443,7 +443,7 @@
     }
 
     @media (max-width: 720px) {
-      .backdrop { object-position: 53% 42%; }
+      .backdrop { width: 100%; object-position: 53% 42%; }
       .identity { display: none; }
       .live-shell { display: block; }
       .broadcast {
@@ -461,7 +461,7 @@
   </style>
 </head>
 <body>
-  <img class="backdrop" src="/api/vivy/stream/overlay/background" alt="">
+  <img class="backdrop" src="/api/vivy/stream/overlay/background?v=vivy-layer-20260628" alt="">
   <div class="scrim"></div>
 
   <main class="live-shell">
