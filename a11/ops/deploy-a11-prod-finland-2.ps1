@@ -644,6 +644,8 @@ services:
     container_name: vivy-twitch-worker
     restart: unless-stopped
     command: ["npm", "run", "worker:vivy:twitch"]
+    healthcheck:
+      disable: true
     env_file:
       - /srv/a11/secrets/compose.env
     environment:
