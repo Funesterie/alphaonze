@@ -2021,6 +2021,9 @@ test('Vivy frontend requests Suno-sung selected voice direction by default', () 
   const previewStart = appSource.indexOf('async function createVivySongVoicePreview');
   const previewEnd = appSource.indexOf('async function produceSimpleVivySong');
   const previewBlock = appSource.slice(previewStart, previewEnd);
+  const multiVoiceStart = appSource.indexOf('async function createVivyMultiVoicePreview');
+  const multiVoiceEnd = appSource.indexOf('function normalizeVivyStudioVoicePersona', multiVoiceStart);
+  const multiVoiceBlock = appSource.slice(multiVoiceStart, multiVoiceEnd);
 
   assert.match(songBlock, /setVivyMedia\(null\)/);
   assert.doesNotMatch(songBlock, /ttsSpeak\(/);
@@ -2041,9 +2044,11 @@ test('Vivy frontend requests Suno-sung selected voice direction by default', () 
   assert.doesNotMatch(prepareBlock, /activeSongArtistCast\.count\s*===\s*1/);
   assert.doesNotMatch(prepareBlock, /L'aperçu multi-voix n'est pas supporté/);
   assert.match(previewBlock, /ttsSpeak\(/);
-  assert.match(previewBlock, /assembleVivyStudioVoicePreview\(/);
   assert.match(previewBlock, /buildVivyTtsOptions\(['"]sing['"]\)/);
   assert.match(previewBlock, /4000/);
+  assert.match(multiVoiceBlock, /ttsSpeak\(/);
+  assert.match(multiVoiceBlock, /assembleVivyStudioVoicePreview\(/);
+  assert.match(multiVoiceBlock, /buildVivyOfficialAutoTtsOptions\(/);
   const ttsOptionsStart = appSource.indexOf('function buildVivyTtsOptions');
   const ttsOptionsEnd = appSource.indexOf('async function saveBriefArtifact');
   const ttsOptionsBlock = appSource.slice(ttsOptionsStart, ttsOptionsEnd);
@@ -2761,7 +2766,11 @@ test('Vivy NOSSEN Banger launches instrumental Suno, mixes separate voices, appl
   assert.match(launchBlock, /externalVoiceMix:\s*true/);
   assert.match(launchBlock, /forceExternalVoiceMix:\s*true/);
   assert.match(launchBlock, /getVivyStudioMusicJob/);
-  assert.match(launchBlock, /createVivyMultiVoicePreview\(vocalSegments,\s*\{\s*artistIds:\s*artists,\s*castLabel\s*\}\)/);
+  assert.match(launchBlock, /createVivyMultiVoicePreview\(vocalSegments,\s*\{/);
+  assert.match(launchBlock, /artistIds:\s*artists/);
+  assert.match(launchBlock, /castLabel/);
+  assert.match(launchBlock, /fallbackArtistIds:\s*artists/);
+  assert.match(launchBlock, /onStatus:\s*\(nextStatus\)/);
   assert.match(launchBlock, /mixVivyStudioPreview\(voicePreview\.url,\s*preparedMedia\.url\)/);
   assert.match(launchBlock, /processDoubleHarmonicAudio/);
   assert.match(launchBlock, /mode:\s*"v9turbo"/);
@@ -2858,10 +2867,19 @@ test('Vivy multi-voice preview accepts the routed NOSSEN cast instead of only th
   assert.match(appSource, /type VivyMultiVoicePreviewOptions/);
   assert.match(helperBlock, /options:\s*VivyMultiVoicePreviewOptions\s*=\s*\{\}/);
   assert.match(helperBlock, /options\.artistIds\?\.length/);
-  assert.match(helperBlock, /normalizeVivyStudioArtists\(requestedArtistIds,\s*activeSongArtistCast\.ids\)/);
+  assert.match(helperBlock, /fallbackArtistIds/);
+  assert.match(helperBlock, /options\.fallbackArtistIds/);
+  assert.match(helperBlock, /normalizeVivyStudioArtists\(requestedArtistIds,\s*fallbackArtistIds\)/);
   assert.match(helperBlock, /new Set\(effectiveArtistIds\)/);
   assert.match(helperBlock, /options\.castLabel/);
-  assert.match(launchBlock, /createVivyMultiVoicePreview\(vocalSegments,\s*\{\s*artistIds:\s*artists,\s*castLabel\s*\}\)/);
+  assert.match(helperBlock, /options\.onStatus/);
+  assert.match(helperBlock, /buildVivyOfficialAutoTtsOptions/);
+  assert.match(helperBlock, /assembleVivyStudioVoicePreview/);
+  assert.match(launchBlock, /createVivyMultiVoicePreview\(vocalSegments,\s*\{/);
+  assert.match(launchBlock, /artistIds:\s*artists/);
+  assert.match(launchBlock, /castLabel/);
+  assert.match(launchBlock, /fallbackArtistIds:\s*artists/);
+  assert.match(launchBlock, /onStatus:\s*\(nextStatus\)/);
 });
 
 test('Vivy song buttons keep Composition available without overriding the latest chat song', () => {
