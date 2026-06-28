@@ -480,7 +480,7 @@ const NOSSEN_DJEFF_BETA_SRC = buildPublicAssetPath("assets/nossen-djeff-beta.png
 const NOSSEN_CREW_SRC = buildPublicAssetPath("assets/nossen-crew.webp");
 const VIVY_NOSSEN_BANGER_CALL_SRC = buildPublicAssetPath("assets/vivy-banger-call.wav");
 const VIVY_NOSSEN_SUNO_TARGET_SECONDS = 300;
-const VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS = 240;
+const VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS = 150;
 const VIVY_NOSSEN_SUNO_MAX_EXTENSIONS = 3;
 const VIVY_NOSSEN_SUNO_LONG_MODEL = "V4_5ALL";
 
