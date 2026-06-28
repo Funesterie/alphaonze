@@ -7152,6 +7152,7 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
 module.exports = {
   createVivyStudioRouter,
   buildVivyStudioProduction,
+  buildRealMusicForProduction,
   buildVivyMultiVoiceAssemblyArgs,
   buildVivyPreviewMixArgs,
   resolveVivyPreviewVoicePath,

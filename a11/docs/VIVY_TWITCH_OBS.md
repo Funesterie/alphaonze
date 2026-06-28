@@ -9,6 +9,7 @@ Vivy Live passe par un flux direct Twitch -> Hetzner, avec le site web comme ove
 - Le backend garde un etat persistant dans `A11_RUNTIME_ROOT/vivy-stream/state.json`.
 - OBS affiche `GET /api/vivy/stream/overlay`.
 - Le premier sujet lance un vote de 45 secondes, puis le round verrouille automatiquement la graine NOSSEN.
+- Si `VIVY_STREAM_AUTOGENERATE_ENABLED=1`, le verrouillage lance le routage musical, l'ecriture des paroles et la generation Suno sans navigateur ni session frontend.
 - La production publie son avancement via `POST /api/vivy/stream/control`.
 - Quand l'audio est prêt, l'overlay présente le titre pendant 4 secondes, lance la lecture, ouvre les étoiles pendant 30 secondes, puis repart sur un nouveau round.
 - En production Hetzner, le service Compose `vivy-twitch-worker` lance le worker apres le basculement blue/green.
@@ -72,6 +73,20 @@ $env:VIVY_STREAM_ANNOUNCE_DISABLED="0"
 ```
 
 Mettre `VIVY_STREAM_ANNOUNCE_DISABLED=1` coupe completement les annonces.
+
+La generation automatique Twitch est active en production:
+
+```powershell
+$env:VIVY_STREAM_AUTOGENERATE_ENABLED="1"
+```
+
+Un round verrouille ne peut lancer qu'un craft a la fois. Pour relancer manuellement un round reste bloque apres une ancienne version:
+
+```text
+POST /api/vivy/stream/round/generate
+```
+
+Cette route exige le secret live Vivy.
 
 ## API utile
 

@@ -13,8 +13,12 @@ process.env.VIVY_STREAM_ALLOW_UNSIGNED = '1';
 const {
   buildOverlayHtml,
   createVivyStreamRouter,
+  createVivyStreamStore,
   parseVivyStreamChatMessage,
 } = require('../src/routes/vivy-stream.cjs');
+const {
+  createVivyStreamNossenRunner,
+} = require('../src/vivy/twitch-nossen-runner.cjs');
 const {
   ANNOUNCE_MESSAGES,
   createAnnouncementRotator,
@@ -118,6 +122,121 @@ test('Vivy stream route stores Twitch ideas, votes, stars and builds a NOSSEN se
     assert.equal(result.json.state.round.status, 'locked');
     assert.equal(result.json.state.round.winningSuggestionId, 'S1');
   });
+});
+
+test('Vivy stream lock starts automatic NOSSEN only once per round', async () => {
+  const starts = [];
+  const store = createVivyStreamStore({
+    statePath: path.join(tmpRoot, 'automatic-lock.json'),
+    onRoundLocked: (payload) => starts.push(payload),
+  });
+  store.addChatMessage({
+    username: 'funeste38',
+    message: '!nossen Course urbaine, visière fumée et synthés agressifs',
+  });
+  const first = store.lockRound({});
+  const second = store.lockRound({});
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(first.ok, true);
+  assert.equal(second.alreadyLocked, true);
+  assert.equal(starts.length, 1);
+  assert.equal(starts[0].winner.id, 'S1');
+  assert.match(starts[0].nossenSeed.canvas, /visière fumée/i);
+});
+
+test('Twitch NOSSEN runner writes lyrics, follows Suno and publishes the track', async () => {
+  const updates = [];
+  let pollCount = 0;
+  const lyrics = [
+    '[Intro]',
+    'Sous la visière fumée les néons griffent le bitume',
+    '[Verse 1]',
+    'Le casque coupe la ville et le moteur prend la rue',
+    'Les feux passent au rouge dans le reflet de la bulle',
+    'Chaque virage est un pari que la nuit continue',
+    '[Chorus]',
+    'Visière fumée, la course avale nos ombres',
+    'Visière fumée, les synthés cognent dans le nombre',
+  ].join('\n');
+  const runner = createVivyStreamNossenRunner({
+    routeComposition: async () => ({
+      artists: ['vivy', 'a11'],
+      songMood: 'electro-rock urbain, batterie nerveuse, synthés métalliques',
+    }),
+    writeLyrics: async () => ({ publicLyrics: lyrics }),
+    startMusic: async () => ({ state: 'processing', taskId: 'task-live-1' }),
+    pollMusic: async () => {
+      pollCount += 1;
+      return pollCount === 1
+        ? { state: 'processing', taskId: 'task-live-1' }
+        : {
+          state: 'done',
+          taskId: 'task-live-1',
+          media: {
+            url: '/api/vivy/studio/assets/twitch-live.mp3',
+            durationSeconds: 218,
+          },
+        };
+    },
+    updateLive: (input) => updates.push(input),
+    sleep: async () => {},
+    pollAttempts: 4,
+    pollIntervalMs: 10,
+  });
+
+  const result = await runner.run({
+    roundId: 'round-live-1',
+    winner: {
+      id: 'S1',
+      text: 'visière fumée casque intégral style course urbaine agressive',
+      author: 'funeste38',
+    },
+    nossenSeed: {
+      canvas: 'Matière Twitch gagnante: course urbaine',
+      notes: 'Éviter les images génériques.',
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.taskId, 'task-live-1');
+  assert.equal(pollCount, 2);
+  assert.deepEqual(updates.at(-1), {
+    action: 'ready',
+    title: 'visière fumée casque intégral style course urbaine agressive',
+    trackTitle: 'visière fumée casque intégral style course urbaine agressive',
+    trackUrl: '/api/vivy/studio/assets/twitch-live.mp3',
+    durationSeconds: 218,
+    requestedBy: 'funeste38',
+  });
+});
+
+test('Twitch NOSSEN runner rejects a duplicate active round', async () => {
+  let releaseRouting;
+  const routingGate = new Promise((resolve) => {
+    releaseRouting = resolve;
+  });
+  const runner = createVivyStreamNossenRunner({
+    routeComposition: () => routingGate,
+    writeLyrics: async () => ({ publicLyrics: '[Verse]\n' + 'paroles concrètes '.repeat(12) }),
+    startMusic: async () => ({
+      url: '/api/vivy/studio/assets/ready.mp3',
+      durationSeconds: 180,
+    }),
+    updateLive: () => {},
+    revealDelayMs: 0,
+  });
+  const payload = {
+    roundId: 'round-duplicate',
+    winner: { id: 'S1', text: 'thème distinct suffisamment précis', author: 'chat' },
+  };
+  const first = runner.start(payload);
+  const second = runner.start(payload);
+  assert.equal(first.started, true);
+  assert.equal(second.started, false);
+  assert.equal(second.error, 'round_already_running');
+  releaseRouting({ artists: ['vivy'], songMood: 'electro pop nocturne' });
+  await first.promise;
 });
 
 test('Vivy stream control drives production, presentation and playback metadata', async () => {

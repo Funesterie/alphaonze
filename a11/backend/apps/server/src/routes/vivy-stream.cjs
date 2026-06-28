@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
+const { createVivyStreamNossenRunner } = require('../vivy/twitch-nossen-runner.cjs');
 
 const STREAM_SCHEMA = 'funesterie.vivy.stream.v1';
 const MAX_RECENT_MESSAGES = 48;
@@ -228,6 +229,7 @@ function createVivyStreamStore(options = {}) {
   const runtimeRoot = options.runtimeRoot || getCanonicalRuntimeRoot(process.env);
   const statePath = options.statePath || path.join(runtimeRoot, 'vivy-stream', 'state.json');
   const clients = new Set();
+  const onRoundLocked = typeof options.onRoundLocked === 'function' ? options.onRoundLocked : null;
   let state = createInitialState();
   let lifecycleTimer = null;
 
@@ -566,6 +568,16 @@ function createVivyStreamStore(options = {}) {
   function lockRound(input = {}) {
     const targetId = normalizeSuggestionId(input.suggestionId || input.id || '');
     refreshSuggestionScores(state.round);
+    const existingWinner = winnerFromState();
+    if (state.round?.status === 'locked' && existingWinner) {
+      return {
+        ok: true,
+        alreadyLocked: true,
+        winner: existingWinner,
+        nossenSeed: buildNossenSeedFromRound(state),
+        state: publicState(state),
+      };
+    }
     const winner = targetId
       ? state.round.suggestions.find((entry) => entry.id === targetId)
       : state.round.suggestions[0];
@@ -580,7 +592,17 @@ function createVivyStreamStore(options = {}) {
       message: `Idée gagnante ${winner.id}`,
     });
     save();
-    return { ok: true, winner, nossenSeed: buildNossenSeedFromRound(state), state: publicState(state) };
+    const nossenSeed = buildNossenSeedFromRound(state);
+    if (onRoundLocked) {
+      Promise.resolve(onRoundLocked({
+        roundId: state.round.id,
+        winner: JSON.parse(JSON.stringify(winner)),
+        nossenSeed,
+      })).catch((error) => {
+        console.error('[vivy-stream] automatic NOSSEN start failed:', error?.message || String(error));
+      });
+    }
+    return { ok: true, winner, nossenSeed, state: publicState(state) };
   }
 
   function updateLive(input = {}) {
@@ -799,7 +821,18 @@ function buildOverlayHtml() {
 
 function createVivyStreamRouter(options = {}) {
   const router = express.Router();
-  const store = options.store || createVivyStreamStore(options);
+  let store = options.store || null;
+  const autoGenerateEnabled = options.autoGenerateEnabled === true
+    || (options.autoGenerateEnabled !== false && process.env.VIVY_STREAM_AUTOGENERATE_ENABLED === '1');
+  const runner = options.runner || (autoGenerateEnabled
+    ? createVivyStreamNossenRunner({
+      updateLive: (input) => store.updateLive(input),
+    })
+    : null);
+  const onRoundLocked = options.onRoundLocked || (runner
+    ? (payload) => runner.start(payload)
+    : null);
+  if (!store) store = createVivyStreamStore({ ...options, onRoundLocked });
   const writeGuard = options.writeGuard || createWriteGuard();
 
   router.get('/health', (_req, res) => {
@@ -843,6 +876,29 @@ function createVivyStreamRouter(options = {}) {
   router.post('/round/lock', express.json({ limit: '16kb' }), writeGuard, (req, res) => {
     const result = store.lockRound(req.body || {});
     res.status(result.ok ? 200 : 409).json(result);
+  });
+
+  router.post('/round/generate', express.json({ limit: '16kb' }), writeGuard, (req, res) => {
+    if (!runner) {
+      return res.status(503).json({ ok: false, error: 'vivy_stream_autogenerate_disabled' });
+    }
+    const state = store.getState();
+    const winner = state.round?.suggestions?.find((entry) => entry.id === state.round.winningSuggestionId)
+      || state.round?.suggestions?.[0];
+    if (!winner || state.round?.status !== 'locked') {
+      return res.status(409).json({ ok: false, error: 'vivy_stream_round_not_locked' });
+    }
+    const started = runner.start({
+      roundId: state.round.id,
+      winner,
+      nossenSeed: buildNossenSeedFromRound(state),
+    });
+    return res.status(started.started ? 202 : 409).json({
+      ok: started.started,
+      started: started.started,
+      error: started.error,
+      roundId: state.round.id,
+    });
   });
 
   router.post('/control', express.json({ limit: '32kb' }), writeGuard, (req, res) => {
