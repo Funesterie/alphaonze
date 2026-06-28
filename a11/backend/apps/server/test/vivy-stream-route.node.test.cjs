@@ -175,9 +175,13 @@ test('Twitch NOSSEN runner writes lyrics, follows Suno and publishes the track',
           taskId: 'task-live-1',
           media: {
             url: '/api/vivy/studio/assets/twitch-live.mp3',
-            durationSeconds: 218,
+            path: '/runtime/twitch-live.mp3',
           },
         };
+    },
+    probeDuration: async (media) => {
+      assert.equal(media.path, '/runtime/twitch-live.mp3');
+      return 218;
     },
     updateLive: (input) => updates.push(input),
     sleep: async () => {},

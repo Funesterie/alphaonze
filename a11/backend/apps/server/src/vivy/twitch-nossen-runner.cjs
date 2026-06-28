@@ -1,3 +1,6 @@
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+
 const {
   buildRealMusicForProduction,
   buildVivyAiChat,
@@ -5,6 +8,7 @@ const {
   getSunoMusicJob,
 } = require('../routes/vivy-studio.cjs');
 
+const execFileAsync = promisify(execFile);
 const DEFAULT_TARGET_DURATION_SECONDS = 300;
 const DEFAULT_POLL_ATTEMPTS = 60;
 const DEFAULT_POLL_INTERVAL_MS = 10000;
@@ -87,6 +91,24 @@ function getReadyMedia(value = {}) {
   };
 }
 
+async function probeMediaDurationSeconds(media = {}) {
+  const reported = Number(media.durationSeconds || media.duration || 0);
+  if (Number.isFinite(reported) && reported > 0) return reported;
+  const filePath = String(media.path || '').trim();
+  if (!filePath) return 0;
+  try {
+    const { stdout } = await execFileAsync(
+      String(process.env.FFPROBE_BIN || 'ffprobe').trim() || 'ffprobe',
+      ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', filePath],
+      { timeout: 15000, windowsHide: true }
+    );
+    const duration = Number(String(stdout || '').trim());
+    return Number.isFinite(duration) && duration > 0 ? duration : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function buildTwitchLyricsRequest({ winner, routing, seed }) {
   const artists = Array.isArray(routing?.artists) && routing.artists.length
     ? routing.artists.join(' + ')
@@ -110,6 +132,7 @@ function createVivyStreamNossenRunner(options = {}) {
   const writeLyrics = options.writeLyrics || buildVivyAiChat;
   const startMusic = options.startMusic || buildRealMusicForProduction;
   const pollMusic = options.pollMusic || getSunoMusicJob;
+  const probeDuration = options.probeDuration || probeMediaDurationSeconds;
   const updateLive = options.updateLive || (() => {});
   const sleepFn = options.sleep || sleep;
   const logger = options.logger || console;
@@ -253,7 +276,8 @@ function createVivyStreamNossenRunner(options = {}) {
         progress: 100,
         message: 'Composition terminée, préparation de la lecture.',
       });
-      const durationSeconds = Math.max(1, Number(media.durationSeconds || targetDurationSeconds));
+      const measuredDuration = await probeDuration(media);
+      const durationSeconds = Math.max(1, Number(measuredDuration || targetDurationSeconds));
       await update({
         action: 'ready',
         title: winner.text,
@@ -305,4 +329,5 @@ module.exports = {
   createVivyStreamNossenRunner,
   getMusicTaskId,
   getReadyMedia,
+  probeMediaDurationSeconds,
 };
