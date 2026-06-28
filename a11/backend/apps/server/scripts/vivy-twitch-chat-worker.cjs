@@ -3,6 +3,11 @@
 const WebSocket = require('ws');
 
 const TWITCH_IRC_URL = 'wss://irc-ws.chat.twitch.tv:443';
+const DEFAULT_ANNOUNCE_INTERVAL_MS = 5 * 60 * 1000;
+const ANNOUNCE_MESSAGES = Object.freeze([
+  '🎤 Vivy Live — propose une chanson avec !vivy ton idée | vote avec !vote S1 | note avec !etoiles 5 S1 ou ⭐⭐⭐⭐⭐',
+  '🎵 Commandes : !vivy thème chanson | !nossen style plus épique | !chanson sujet + ambiance | !vote S1 | !etoiles 5 S1',
+]);
 
 function cleanEnv(value = '') {
   return String(value || '').trim();
@@ -10,6 +15,58 @@ function cleanEnv(value = '') {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function resolveAnnounceInterval(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_ANNOUNCE_INTERVAL_MS;
+  return Math.max(1000, Math.floor(parsed));
+}
+
+function normalizeAnnouncement(value = '') {
+  return String(value || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 360);
+}
+
+function createAnnouncementRotator(options = {}) {
+  const messages = (options.messages || ANNOUNCE_MESSAGES).map(normalizeAnnouncement).filter(Boolean);
+  const intervalMs = resolveAnnounceInterval(options.intervalMs);
+  const disabled = options.disabled === true;
+  const isConnected = options.isConnected || (() => false);
+  const sendMessage = options.sendMessage || (() => {});
+  const setIntervalFn = options.setIntervalFn || setInterval;
+  const clearIntervalFn = options.clearIntervalFn || clearInterval;
+  const logger = options.logger || console;
+  let messageIndex = 0;
+  let timer = null;
+
+  function tick() {
+    if (disabled || !messages.length || !isConnected()) return false;
+    const message = messages[messageIndex % messages.length];
+    try {
+      sendMessage(message);
+      messageIndex += 1;
+      return true;
+    } catch (error) {
+      logger.warn?.('[vivy-twitch] announce failed:', error?.message || String(error));
+      return false;
+    }
+  }
+
+  function start() {
+    if (disabled || timer || !messages.length) return false;
+    timer = setIntervalFn(tick, intervalMs);
+    timer?.unref?.();
+    return true;
+  }
+
+  function stop() {
+    if (!timer) return false;
+    clearIntervalFn(timer);
+    timer = null;
+    return true;
+  }
+
+  return { intervalMs, start, stop, tick };
 }
 
 function parseTags(raw = '') {
@@ -77,9 +134,16 @@ async function runOnce(config) {
     const ws = new WebSocket(TWITCH_IRC_URL);
     let joined = false;
     let closedBySignal = false;
+    const announcer = createAnnouncementRotator({
+      disabled: config.announceDisabled,
+      intervalMs: config.announceIntervalMs,
+      isConnected: () => joined && ws.readyState === WebSocket.OPEN,
+      sendMessage: (message) => send(ws, `PRIVMSG #${config.channel} :${message}`),
+    });
 
     const close = () => {
       closedBySignal = true;
+      announcer.stop();
       try {
         ws.close();
       } catch {}
@@ -93,6 +157,7 @@ async function runOnce(config) {
       send(ws, `PASS ${config.oauthToken}`);
       send(ws, `NICK ${config.username}`);
       send(ws, `JOIN #${config.channel}`);
+      announcer.start();
     });
 
     ws.on('message', async (data) => {
@@ -128,10 +193,12 @@ async function runOnce(config) {
     });
 
     ws.on('error', (error) => {
+      announcer.stop();
       reject(error);
     });
 
     ws.on('close', (code, reason) => {
+      announcer.stop();
       process.removeListener('SIGINT', close);
       process.removeListener('SIGTERM', close);
       if (closedBySignal) {
@@ -154,6 +221,8 @@ async function main() {
     oauthToken: cleanEnv(process.env.TWITCH_OAUTH_TOKEN || process.env.TWITCH_IRC_OAUTH),
     ingestUrl: cleanEnv(process.env.VIVY_STREAM_INGEST_URL) || 'https://vivy.funesterie.me/api/vivy/stream/chat',
     secret: cleanEnv(process.env.VIVY_STREAM_SECRET),
+    announceIntervalMs: resolveAnnounceInterval(process.env.VIVY_STREAM_ANNOUNCE_INTERVAL_MS),
+    announceDisabled: process.env.VIVY_STREAM_ANNOUNCE_DISABLED === '1',
   };
 
   if (!config.channel || !config.username || !config.oauthToken) {
@@ -186,7 +255,10 @@ if (require.main === module) {
 }
 
 module.exports = {
+  ANNOUNCE_MESSAGES,
+  createAnnouncementRotator,
   parsePrivmsg,
   parseTags,
+  resolveAnnounceInterval,
   shouldForwardMessage,
 };

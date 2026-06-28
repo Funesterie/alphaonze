@@ -16,7 +16,10 @@ const {
   parseVivyStreamChatMessage,
 } = require('../src/routes/vivy-stream.cjs');
 const {
+  ANNOUNCE_MESSAGES,
+  createAnnouncementRotator,
   parsePrivmsg,
+  resolveAnnounceInterval,
   shouldForwardMessage,
 } = require('../scripts/vivy-twitch-chat-worker.cjs');
 
@@ -230,4 +233,48 @@ test('Twitch worker parses IRC PRIVMSG lines and command filtering', () => {
     if (previous === undefined) delete process.env.VIVY_STREAM_COMMANDS_ONLY;
     else process.env.VIVY_STREAM_COMMANDS_ONLY = previous;
   }
+});
+
+test('Twitch announcements rotate only while the worker is connected', () => {
+  const sent = [];
+  let connected = false;
+  let scheduled = null;
+  let cleared = null;
+  const rotator = createAnnouncementRotator({
+    intervalMs: 1234,
+    isConnected: () => connected,
+    sendMessage: (message) => sent.push(message),
+    setIntervalFn: (callback, intervalMs) => {
+      scheduled = { callback, intervalMs, unref() {} };
+      return scheduled;
+    },
+    clearIntervalFn: (timer) => {
+      cleared = timer;
+    },
+  });
+
+  assert.equal(rotator.intervalMs, 1234);
+  assert.equal(rotator.start(), true);
+  assert.equal(scheduled.intervalMs, 1234);
+  assert.equal(scheduled.callback(), false);
+  assert.deepEqual(sent, []);
+
+  connected = true;
+  assert.equal(scheduled.callback(), true);
+  assert.equal(scheduled.callback(), true);
+  assert.equal(scheduled.callback(), true);
+  assert.deepEqual(sent, [ANNOUNCE_MESSAGES[0], ANNOUNCE_MESSAGES[1], ANNOUNCE_MESSAGES[0]]);
+  assert.ok(sent.every((message) => !/[\r\n]/.test(message)));
+
+  connected = false;
+  assert.equal(scheduled.callback(), false);
+  assert.equal(sent.length, 3);
+  assert.equal(rotator.stop(), true);
+  assert.equal(cleared, scheduled);
+
+  assert.equal(resolveAnnounceInterval('invalid'), 300000);
+  assert.equal(resolveAnnounceInterval('500'), 1000);
+  const disabled = createAnnouncementRotator({ disabled: true, sendMessage: (message) => sent.push(message) });
+  assert.equal(disabled.start(), false);
+  assert.equal(disabled.tick(), false);
 });

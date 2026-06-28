@@ -655,6 +655,8 @@ services:
       VIVY_STREAM_SECRET: ${VIVY_STREAM_SECRET:?VIVY_STREAM_SECRET is required}
       VIVY_STREAM_INGEST_URL: ${VIVY_STREAM_INGEST_URL:-https://vivy.funesterie.me/api/vivy/stream/chat}
       VIVY_STREAM_COMMANDS_ONLY: ${VIVY_STREAM_COMMANDS_ONLY:-1}
+      VIVY_STREAM_ANNOUNCE_INTERVAL_MS: ${VIVY_STREAM_ANNOUNCE_INTERVAL_MS:-300000}
+      VIVY_STREAM_ANNOUNCE_DISABLED: ${VIVY_STREAM_ANNOUNCE_DISABLED:-0}
 
   kaen44-backend:
     build:
@@ -1167,6 +1169,8 @@ $overrides = [ordered]@{
   VIVY_STREAM_SECRET = $(if ($env:VIVY_STREAM_SECRET) { $env:VIVY_STREAM_SECRET } elseif ($envMap.Contains("VIVY_STREAM_SECRET") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_SECRET"])) { [string]$envMap["VIVY_STREAM_SECRET"] } else { New-HexSecret 32 })
   VIVY_STREAM_INGEST_URL = $(if ($env:VIVY_STREAM_INGEST_URL) { $env:VIVY_STREAM_INGEST_URL } elseif ($envMap.Contains("VIVY_STREAM_INGEST_URL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_INGEST_URL"])) { [string]$envMap["VIVY_STREAM_INGEST_URL"] } else { "https://vivy.funesterie.me/api/vivy/stream/chat" })
   VIVY_STREAM_COMMANDS_ONLY = $(if ($env:VIVY_STREAM_COMMANDS_ONLY) { $env:VIVY_STREAM_COMMANDS_ONLY } elseif ($envMap.Contains("VIVY_STREAM_COMMANDS_ONLY") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_COMMANDS_ONLY"])) { [string]$envMap["VIVY_STREAM_COMMANDS_ONLY"] } else { "1" })
+  VIVY_STREAM_ANNOUNCE_INTERVAL_MS = $(if ($env:VIVY_STREAM_ANNOUNCE_INTERVAL_MS) { $env:VIVY_STREAM_ANNOUNCE_INTERVAL_MS } elseif ($envMap.Contains("VIVY_STREAM_ANNOUNCE_INTERVAL_MS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_ANNOUNCE_INTERVAL_MS"])) { [string]$envMap["VIVY_STREAM_ANNOUNCE_INTERVAL_MS"] } else { "300000" })
+  VIVY_STREAM_ANNOUNCE_DISABLED = $(if ($env:VIVY_STREAM_ANNOUNCE_DISABLED) { $env:VIVY_STREAM_ANNOUNCE_DISABLED } elseif ($envMap.Contains("VIVY_STREAM_ANNOUNCE_DISABLED") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_ANNOUNCE_DISABLED"])) { [string]$envMap["VIVY_STREAM_ANNOUNCE_DISABLED"] } else { "0" })
   TWITCH_CHANNEL = $(if ($env:TWITCH_CHANNEL) { $env:TWITCH_CHANNEL } elseif ($envMap.Contains("TWITCH_CHANNEL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_CHANNEL"])) { [string]$envMap["TWITCH_CHANNEL"] } else { "" })
   TWITCH_BOT_USERNAME = $(if ($env:TWITCH_BOT_USERNAME) { $env:TWITCH_BOT_USERNAME } elseif ($envMap.Contains("TWITCH_BOT_USERNAME") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_BOT_USERNAME"])) { [string]$envMap["TWITCH_BOT_USERNAME"] } else { "" })
   TWITCH_OAUTH_TOKEN = $(if ($env:TWITCH_OAUTH_TOKEN) { $env:TWITCH_OAUTH_TOKEN } elseif ($envMap.Contains("TWITCH_OAUTH_TOKEN") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_OAUTH_TOKEN"])) { [string]$envMap["TWITCH_OAUTH_TOKEN"] } else { "" })
@@ -1402,7 +1406,7 @@ tmp_build="$(mktemp)"
 managed_keys='^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK|A11_LLM_PROVIDER|A11_OLLAMA_PRIMARY_MODEL|A11_OLLAMA_FALLBACK_MODEL|A11_OLLAMA_STRONG_SONG_MODEL|VIVY_CHAT_LOCAL_FIRST|VIVY_OLLAMA_BASE_URL|VIVY_CHAT_LOCAL_MODEL|VIVY_SONG_ALLOW_LOCAL_FALLBACK|VIVY_SONG_LOCAL_MODEL|A11_TRANSLATION_MODEL|LOCAL_DEFAULT_MODEL|A11_LLM_FALLBACK_PROVIDER|A11_LLM_RUNTIME_FALLBACK_ORDER|A11_CERBERE_LOCAL_ONLY|A11_LOCAL_CHAT_TIMEOUT_MS|A11_LOCAL_SONG_TIMEOUT_MS|A11_OLLAMA_KEEP_ALIVE|A11_MEMORY_LOCAL_TIMEOUT_MS|A11_MEMORY_REMOTE_TIMEOUT_MS|A11_EMBEDDING_TIMEOUT_MS|A11_RUNTIME_ROOT|VIVY_ELEVENLABS_MUSIC_DISABLED|VIVY_SUNO_MODEL)='
 vivy_stream_secret="$(awk -F= '/^VIVY_STREAM_SECRET=/{sub(/^[^=]*=/,""); print; exit}' "$compose_env" "$a11_env" "$build_env" 2>/dev/null || true)"
 preserved_env="$(mktemp)"
-for key in TWITCH_CHANNEL TWITCH_BOT_USERNAME TWITCH_OAUTH_TOKEN TWITCH_CLIENT_ID TWITCH_REFRESH_TOKEN VIVY_STREAM_INGEST_URL VIVY_STREAM_COMMANDS_ONLY; do
+for key in TWITCH_CHANNEL TWITCH_BOT_USERNAME TWITCH_OAUTH_TOKEN TWITCH_CLIENT_ID TWITCH_REFRESH_TOKEN VIVY_STREAM_INGEST_URL VIVY_STREAM_COMMANDS_ONLY VIVY_STREAM_ANNOUNCE_INTERVAL_MS VIVY_STREAM_ANNOUNCE_DISABLED; do
   value="$(awk -v k="$key" -F= '$1 == k { sub(/^[^=]*=/, ""); print; exit }' "$compose_env" "$a11_env" "$build_env" 2>/dev/null || true)"
   if [ -n "$value" ]; then
     printf '%s=%s\n' "$key" "$value" >> "$preserved_env"

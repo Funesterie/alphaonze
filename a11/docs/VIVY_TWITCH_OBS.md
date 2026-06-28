@@ -64,6 +64,15 @@ $env:VIVY_STREAM_COMMANDS_ONLY="1"
 
 Dans ce mode, seuls les messages de commande, votes et etoiles sont envoyes. C'est le mode conseille en production.
 
+Le bot rappelle les commandes toutes les cinq minutes avec deux messages courts en rotation. L'annonce n'est envoyee que lorsque la connexion Twitch est active.
+
+```powershell
+$env:VIVY_STREAM_ANNOUNCE_INTERVAL_MS="300000"
+$env:VIVY_STREAM_ANNOUNCE_DISABLED="0"
+```
+
+Mettre `VIVY_STREAM_ANNOUNCE_DISABLED=1` coupe completement les annonces.
+
 ## API utile
 
 Etat public:
