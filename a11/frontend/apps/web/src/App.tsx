@@ -3845,7 +3845,49 @@ function wantsVivyNossenBangerWord(source = "") {
   });
 }
 
-function buildVivyNossenLyricsRequest(readiness: VivyNossenBangerReadiness, artists: VivyStudioArtistId[]) {
+function buildVivyNossenCompositionContract(
+  readiness: VivyNossenBangerReadiness,
+  artists: VivyStudioArtistId[],
+  options: {
+    routedMood?: string;
+    compositionCanvas?: string;
+    workspaceNotes?: string;
+  } = {}
+) {
+  const castLabel = describeVivyNossenBangerCast(artists);
+  const mood = toUnicodeLine(options.routedMood || inferVivyNossenSonicMood(readiness, artists), "", 420);
+  const structure = readiness.structureHints.length
+    ? readiness.structureHints.slice(0, 4).join(" / ")
+    : "structure chanson longue: intro, couplets, refrains répétés, pont, montée finale, outro";
+  const source = readiness.source.trim();
+  const compositionCanvas = toUnicodeText(options.compositionCanvas || "", 1600).trim();
+  const workspaceNotes = toUnicodeText(options.workspaceNotes || "", 700).trim();
+  const distinctCompositionCanvas = compositionCanvas && foldForLookup(compositionCanvas) !== foldForLookup(source)
+    ? compositionCanvas
+    : "";
+
+  return toUnicodeText([
+    "CONTRAT_COMPOSITION_NOSSEN",
+    "Ce bloc est l'autorité commune du LLM paroles et du brief production/Suno. Le LLM paroles et le LLM production ne doivent pas réinterpréter séparément le sujet, le casting ou la couleur sonore.",
+    `Origine de matière: ${readiness.sourceKind}.`,
+    readiness.themeAnchor ? `Sujet original verrouillé: ${readiness.themeAnchor}` : "",
+    `Casting verrouillé: ${castLabel}.`,
+    mood ? `Couleur sonore verrouillée: ${mood}.` : "Couleur sonore: choisir depuis la matière, puis garder exactement la même direction jusqu'à Suno.",
+    `Structure verrouillée: ${structure}.`,
+    workspaceNotes ? `Notes Composition verrouillées: ${workspaceNotes}` : "",
+    source
+      ? `Matière créative canonique:\n${source}`
+      : "Matière créative canonique: aucune matière imposée; choisir un sujet concret et le garder jusqu'au mix final.",
+    distinctCompositionCanvas ? `Canevas Composition brut à respecter si un détail manque:\n${distinctCompositionCanvas}` : "",
+    "Règles communes: garder les noms propres et acronymes distinctifs; ne jamais remplacer l'univers par une scène générique; ne jamais changer le casting après ce contrat; ne jamais chanter les consignes techniques.",
+  ].filter(Boolean).join("\n\n"), 4200);
+}
+
+function buildVivyNossenLyricsRequest(
+  readiness: VivyNossenBangerReadiness,
+  artists: VivyStudioArtistId[],
+  compositionContract = buildVivyNossenCompositionContract(readiness, artists)
+) {
   const useBangerWord = wantsVivyNossenBangerWord(readiness.source);
   const sonicMood = inferVivyNossenSonicMood(readiness, artists);
   const styleLine = sonicMood
@@ -3879,11 +3921,16 @@ function buildVivyNossenLyricsRequest(readiness: VivyNossenBangerReadiness, arti
       ? "Le mot Banger est autorisé seulement comme hook voulu par l'utilisateur."
       : "Ne mets pas le mot Banger dans les paroles.",
     "Ne reprends pas les phrases de réglage, les noms d'outils, les liens, les bugs, ni les consignes techniques.",
+    compositionContract,
     materialBlock,
   ].filter(Boolean).join("\n\n"), 6200);
 }
 
-function buildVivyNossenBangerProductionBrief(readiness: VivyNossenBangerReadiness, artists: VivyStudioArtistId[]) {
+function buildVivyNossenBangerProductionBrief(
+  readiness: VivyNossenBangerReadiness,
+  artists: VivyStudioArtistId[],
+  compositionContract = buildVivyNossenCompositionContract(readiness, artists)
+) {
   const useBangerWord = wantsVivyNossenBangerWord(readiness.source);
   const hasUserStyleHints = readiness.styleHints.length > 0;
   const sonicMood = inferVivyNossenSonicMood(readiness, artists);
@@ -3900,6 +3947,7 @@ function buildVivyNossenBangerProductionBrief(readiness: VivyNossenBangerReadine
     styleLine,
     structureLine,
     handoffLine,
+    compositionContract,
     "Format attendu: chanson complète sans durée imposée, développée autant que la matière le demande. Le refrain doit revenir après le dernier pont, pas disparaître avant la fin.",
     useBangerWord
       ? "Le mot Banger peut être utilisé parce que la demande utilisateur le cite."
@@ -4753,12 +4801,13 @@ function getVivyStudioVoiceProfileForTool(
 ): VivyStudioVoiceProfile {
   const folded = foldForLookup(voiceTool);
   const privateLabel = voiceFileName.trim() || "référence privée";
-  const wantsDuo = /\bduo\b|djeff.*vivy|vivy.*djeff/.test(folded);
+  const wantsDjeffVivyDuo = /djeff.*vivy|vivy.*djeff/.test(folded);
+  const wantsGenericDuo = /\bduo\b/.test(folded);
   const wantsK44 = /\bk44\b|\bkaen44\b|\bkaen\b/.test(folded);
   const wantsA11 = /\ba11\b|\balpha\s*onze\b|\balphaonze\b/.test(folded);
-  const wantsDjeff = wantsDuo || /\bdjeff\b|\brap\b|\bfraiyeur\b/.test(folded);
+  const wantsDjeff = wantsDjeffVivyDuo || /\bdjeff\b|\brap\b|\bfraiyeur\b/.test(folded);
 
-  if (wantsDuo) {
+  if (wantsDjeffVivyDuo) {
     return {
       id: "duo-djeff-vivy",
       label: "Duo Djeff + Vivy",
@@ -4824,6 +4873,25 @@ function getVivyStudioVoiceProfileForTool(
       briefVoicePersona: "voicePersona=a11, voiceStyle=djeff-officielle",
       testLine: "Djeff cale le kick, chaîne sur couronne, pignon précis, radiateur froid et moteur lucide.",
       songCast: "Djeff prend le lead rap avec diction serrée, rimes internes et image mécanique concrète.",
+      uploadLabel: `Djeff - ${voiceFileName || "référence rap"}`,
+    };
+  }
+
+  if (wantsGenericDuo) {
+    return {
+      id: "duo-djeff-vivy",
+      label: "Duo Djeff + Vivy",
+      ttsPersona: "a11",
+      surface: "vivy",
+      voiceStyle: "djeff-officielle",
+      vocalMode: "adaptive",
+      referenceLabel: hasPrivateReference
+        ? `${privateLabel} + Vivy ref.wav`
+        : "Djeff ref.wav + Vivy ref.wav",
+      referenceFileName: hasPrivateReference ? undefined : "Djeff ref.wav",
+      briefVoicePersona: "voicePersona=a11, voiceStyle=djeff-officielle pour Djeff; voicePersona=vivy pour Vivy",
+      testLine: "Djeff cale le kick, chaîne sur couronne, pignon précis; Vivy répond dans la nuit, radiateur froid, moteur lucide.",
+      songCast: "Djeff prend les couplets rap; Vivy tient les refrains et réponses mélodiques; les paroles doivent garder les tags [Djeff], [Vivy] et [Duo].",
       uploadLabel: `Djeff - ${voiceFileName || "référence rap"}`,
     };
   }
@@ -5347,12 +5415,8 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   function applyVoiceToolSelection(nextTool: string) {
     setVoiceTool(nextTool);
     const folded = foldForLookup(nextTool);
-    if (/\bduo\b|djeff.*vivy|vivy.*djeff/.test(folded)) {
+    if (/djeff.*vivy|vivy.*djeff/.test(folded)) {
       setSongArtists(["djeff", "vivy"]);
-      return;
-    }
-    if (/\bdjeff\b|\brap\b|\bfraiyeur\b/.test(folded)) {
-      setSongArtists(["djeff"]);
       return;
     }
     if (/\bk44\b|\bkaen44\b|\bkaen\b/.test(folded)) {
@@ -5361,6 +5425,14 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     }
     if (/\ba11\b|\balpha\s*onze\b|\balphaonze\b/.test(folded)) {
       setSongArtists(["a11"]);
+      return;
+    }
+    if (/\bdjeff\b|\brap\b|\bfraiyeur\b/.test(folded)) {
+      setSongArtists(["djeff"]);
+      return;
+    }
+    if (/\bduo\b/.test(folded)) {
+      setSongArtists(["djeff", "vivy"]);
       return;
     }
     if (/catalogue|catalog|premium|voix autorisee|voix autorisée/.test(folded)) {
@@ -7631,7 +7703,9 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     let routedMood = useCompositionWorkspace ? songWorkspace.notes.trim() : "";
     let routedReadiness: VivyNossenBangerReadiness = {
       ...launchReadiness,
-      styleHints: routedMood ? [routedMood] : launchReadiness.styleHints,
+      styleHints: routedMood
+        ? uniqueVivyNossenLines([routedMood, ...launchReadiness.styleHints], 8)
+        : launchReadiness.styleHints,
     };
     const useBangerWord = wantsVivyNossenBangerWord(launchReadiness.source);
     const productionLabel = useBangerWord ? "NOSSEN Banger" : "NOSSEN";
@@ -7679,10 +7753,17 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           : routingPlan.songMood;
         routedReadiness = {
           ...launchReadiness,
-          styleHints: routedMood ? [routedMood] : launchReadiness.styleHints,
+          styleHints: routedMood
+            ? uniqueVivyNossenLines([routedMood, ...launchReadiness.styleHints], 8)
+            : launchReadiness.styleHints,
         };
         setStatus(`${productionLabel}: ${castLabel}, paroles en cours...`);
       }
+      const sharedCompositionContract = buildVivyNossenCompositionContract(routedReadiness, artists, {
+        routedMood,
+        compositionCanvas: useCompositionWorkspace ? songWorkspace.canvas : "",
+        workspaceNotes: useCompositionWorkspace ? songWorkspace.notes : "",
+      });
       let lyricsPayload: any = null;
       let vocalLyricsForProduction = "";
       let publicLyricsForChat = "";
@@ -7702,7 +7783,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           sessionName: activeSessionName,
           files: apiFiles,
           history: productionHistory,
-          message: [buildVivyNossenLyricsRequest(routedReadiness, artists), repairInstruction].filter(Boolean).join("\n\n"),
+          message: [buildVivyNossenLyricsRequest(routedReadiness, artists, sharedCompositionContract), repairInstruction].filter(Boolean).join("\n\n"),
           songText: launchReadiness.source,
           songMood: routedMood || undefined,
           songArtists: artists,
@@ -7739,7 +7820,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         if (!validCast) throw new Error("paroles_vivy_casting_incomplet");
         throw new Error("paroles_vivy_invalides");
       }
-      const productionBrief = buildVivyNossenBangerProductionBrief(routedReadiness, artists);
+      const productionBrief = buildVivyNossenBangerProductionBrief(routedReadiness, artists, sharedCompositionContract);
       const requestedSonicMood = inferVivyNossenSonicMood({
         ...routedReadiness,
         styleHints: routedMood ? [routedMood] : routedReadiness.styleHints,

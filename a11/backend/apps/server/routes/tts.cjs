@@ -115,6 +115,30 @@ function envBool(name, fallback = false) {
   return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
 }
 
+function cleanTtsLogValue(value = '', fallback = '-', maxLength = 120) {
+  const text = String(value || '').replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return (text || fallback).slice(0, maxLength);
+}
+
+function logTtsVoiceRoute(req = {}, body = {}, resolvedProvider = {}, vocalMode = 'speech') {
+  if (envBool('A11_TTS_ROUTE_LOG_DISABLED', false)) return;
+  const pathLabel = Array.isArray(req?.route?.path) ? req.route.path.join('|') : String(req?.route?.path || req?.path || '-');
+  console.info(
+    '[tts-route] path=%s persona=%s surface=%s providerRequested=%s providerResolved=%s configured=%s vocalMode=%s voiceStyle=%s reference=%s identity=%s neutral=%s',
+    cleanTtsLogValue(pathLabel, '-'),
+    cleanTtsLogValue(body?.voicePersona || body?.ttsPersona || body?.persona || body?.voice || '-'),
+    cleanTtsLogValue(body?.surface || '-'),
+    cleanTtsLogValue(body?.a11VoiceProviderRequested || body?.voiceProviderRequested || body?.provider || body?.ttsProvider || 'auto'),
+    cleanTtsLogValue(resolvedProvider?.provider || 'unknown'),
+    resolvedProvider?.configured === false ? 'false' : 'true',
+    cleanTtsLogValue(vocalMode || 'speech'),
+    cleanTtsLogValue(body?.voiceStyle || body?.referenceVoiceStyle || '-'),
+    cleanTtsLogValue(body?.voiceReferenceLabel || body?.voiceReferenceName || '-'),
+    body?.identityVoice === false || body?.useIdentityVoice === false ? 'false' : 'true',
+    body?.neutralVoice === true ? 'true' : 'false'
+  );
+}
+
 function shouldPreferHttpTts() {
   const explicit = String(process.env.ENABLE_PIPER_HTTP || '').trim();
   if (explicit) return envBool('ENABLE_PIPER_HTTP', false);
@@ -4831,6 +4855,7 @@ async function handleTtsSpeakRequest(req, res) {
     req.body = preparedBody;
     let openAiTtsErrorMessage = null;
     const resolvedProvider = resolveTtsProviderForRequest(preparedBody);
+    logTtsVoiceRoute(req, preparedBody, resolvedProvider, vocalMode);
     const isResolvedNeutralVoice = isExplicitNeutralVoiceRequest(preparedBody)
       && isNeutralTtsProvider(resolvedProvider.provider);
     if (isResolvedNeutralVoice) {
@@ -5567,6 +5592,7 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
     req.body = preparedBody;
     let openAiTtsErrorMessage = null;
     const resolvedProvider = resolveTtsProviderForRequest(preparedBody);
+    logTtsVoiceRoute(req, preparedBody, resolvedProvider, vocalMode);
     const isResolvedNeutralVoice = isExplicitNeutralVoiceRequest(preparedBody)
       && isNeutralTtsProvider(resolvedProvider.provider);
     if (isResolvedNeutralVoice) {

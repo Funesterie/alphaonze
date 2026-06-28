@@ -536,6 +536,36 @@ test('Vivy Studio calibrates Djeff official voice through the owned A11 persona'
   assert.match(JSON.stringify(result.actions), /Tester Voix Djeff officielle/);
 });
 
+test('Vivy Studio respects explicit K44 voice even when the instruction says duo', () => {
+  const result = buildVivyStudioProduction({
+    mode: 'voice',
+    voiceTool: 'Voix K44 officielle',
+    voiceInstruction: 'duo doux, contre-chant posé',
+    songText: 'rap moto, pignon, couronne, radiateur et moteur dans le thème',
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'voice');
+  assert.match(result.title, /K44 officielle/);
+  assert.match(result.brief, /voicePersona: kaen44/);
+  assert.match(result.brief, /K44 officielle locale/);
+  assert.doesNotMatch(result.brief, /Djeff officielle locale|voicePersona: a11/);
+});
+
+test('Vivy Studio keeps a soft Vivy request female instead of inferring Djeff from lyric material', () => {
+  const result = buildVivyStudioProduction({
+    mode: 'voice',
+    voiceInstruction: 'voix douce et claire, proche micro',
+    songText: 'couplet rap moto avec pignon, couronne, radiateur, moteur et essence',
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'voice');
+  assert.match(result.title, /Vivy officielle/);
+  assert.match(result.brief, /voicePersona: vivy/);
+  assert.doesNotMatch(result.brief, /Djeff officielle locale|voicePersona: a11/);
+});
+
 test('Vivy Studio hides legacy sound tokens and builds prime-complex prosody', () => {
   const result = buildVivyStudioProduction({
     mode: 'voice',
@@ -2886,7 +2916,7 @@ test('Vivy NOSSEN asks Vivy for lyrics before Suno sees production', () => {
   assert.doesNotMatch(launchBlock, /lyricsPayload\.assistant/);
   assert.doesNotMatch(launchBlock, /lyricsPayload\.content/);
   assert.match(launchBlock, /const productionLabel = useBangerWord \? "NOSSEN Banger" : "NOSSEN"/);
-  assert.match(launchBlock, /buildVivyNossenLyricsRequest\(routedReadiness,\s*artists\)/);
+  assert.match(launchBlock, /buildVivyNossenLyricsRequest\(routedReadiness,\s*artists,\s*sharedCompositionContract\)/);
   assert.match(launchBlock, /songText:\s*launchReadiness\.source/);
   assert.match(launchBlock, /useWorkspaceForSong:\s*useCompositionWorkspace/);
   assert.match(launchBlock, /disableSongcraftFallback:\s*true/);
@@ -3139,6 +3169,7 @@ test('Vivy NOSSEN Banger production brief stays orchestration-only and never car
   const builderBlock = appSource.slice(builderStart, builderEnd);
 
   assert.match(builderBlock, /Production musicale NOSSEN/);
+  assert.match(builderBlock, /compositionContract/);
   assert.doesNotMatch(builderBlock, /2m30 à 5m00|2m30 a 5m00/);
   assert.match(builderBlock, /sans durée imposée|sans duree imposee/);
   assert.match(builderBlock, /refrain doit revenir après le dernier pont|refrain doit revenir apres le dernier pont/);
@@ -3248,12 +3279,24 @@ test('Vivy NOSSEN routes casting and sonic color from Composition before lyrics'
   assert.match(appSource, /songCastingAuto/);
   assert.match(appSource, /Routage automatique du casting et de la couleur depuis le canevas/);
   assert.match(apiSource, /\/api\/vivy\/studio\/nossen-route/);
+  assert.match(appSource, /function buildVivyNossenCompositionContract/);
+  assert.match(appSource, /CONTRAT_COMPOSITION_NOSSEN/);
+  assert.match(appSource, /autorité commune du LLM paroles et du brief production\/Suno|autorite commune du LLM paroles et du brief production\/Suno/);
   assert.match(launchBlock, /await routeVivyNossenComposition\(/);
   assert.match(launchBlock, /artists = limitVivyNossenPublicArtists\(\s*normalizeVivyStudioArtists\(routingPlan\.artists/);
   assert.match(launchBlock, /routedMood = useCompositionWorkspace[\s\S]{0,120}routingPlan\.songMood/);
+  assert.match(launchBlock, /uniqueVivyNossenLines\(\[routedMood,\s*\.\.\.launchReadiness\.styleHints\]/);
+  assert.match(launchBlock, /const sharedCompositionContract = buildVivyNossenCompositionContract\(routedReadiness,\s*artists/);
+  assert.match(launchBlock, /buildVivyNossenLyricsRequest\(routedReadiness,\s*artists,\s*sharedCompositionContract\)/);
+  assert.match(launchBlock, /buildVivyNossenBangerProductionBrief\(routedReadiness,\s*artists,\s*sharedCompositionContract\)/);
   assert.match(launchBlock, /songArtists:\s*artists/);
   assert.match(launchBlock, /songMood,/);
   assert.match(launchBlock, /limitVivyNossenPublicArtists/);
+  assert.ok(
+    launchBlock.indexOf('const sharedCompositionContract = buildVivyNossenCompositionContract') > -1
+      && launchBlock.indexOf('const sharedCompositionContract = buildVivyNossenCompositionContract') < launchBlock.indexOf('chatWithVivy({'),
+    'the shared composition contract must exist before the lyrics LLM call'
+  );
 });
 
 test('Vivy NOSSEN router avoids classical defaults and keeps a melodic lead in sung hooks', () => {
