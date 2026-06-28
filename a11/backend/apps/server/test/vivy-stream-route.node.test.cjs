@@ -153,6 +153,14 @@ test('Vivy stream control drives production, presentation and playback metadata'
     assert.equal(result.json.state.current.phase, 'presenting');
     assert.equal(result.json.state.current.durationSeconds, 222);
     assert.equal(result.json.state.current.requestedBy, 'funeste38');
+
+    await postJson(baseUrl, '/api/vivy/stream/control', { action: 'next' });
+    result = await postJson(baseUrl, '/api/vivy/stream/chat', {
+      username: 'next-round',
+      message: '!nossen Nouveau thème du prochain round',
+    });
+    assert.equal(result.json.suggestion.id, 'S1');
+    assert.equal(result.json.state.stats.suggestions, 2);
   });
 });
 

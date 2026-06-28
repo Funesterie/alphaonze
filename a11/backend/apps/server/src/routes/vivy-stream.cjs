@@ -324,7 +324,7 @@ function createVivyStreamStore(options = {}) {
     state.production = createProductionState();
     state.production.startedAt = startedAt;
     state.production.updatedAt = startedAt;
-    state.production.stages.analysis = { status: 'active', progress: 4 };
+    state.production.stages.analysis = { status: 'active', progress: 0 };
     setCurrentPhase('composing', {
       title: winner.text,
       requestedBy: winner.author,
@@ -405,7 +405,10 @@ function createVivyStreamStore(options = {}) {
       startVotingCountdown(round);
       return existing;
     }
-    const suggestionNumber = Number(state.stats.suggestions || 0) + 1;
+    const suggestionNumber = round.suggestions.reduce((highest, entry) => {
+      const number = Number(String(entry.id || '').replace(/^S/i, ''));
+      return Number.isFinite(number) ? Math.max(highest, number) : highest;
+    }, 0) + 1;
     const suggestion = {
       id: `S${suggestionNumber}`,
       text,
@@ -420,7 +423,7 @@ function createVivyStreamStore(options = {}) {
     };
     round.suggestions.unshift(suggestion);
     round.suggestions = round.suggestions.slice(0, MAX_SUGGESTIONS);
-    state.stats.suggestions = suggestionNumber;
+    state.stats.suggestions = Number(state.stats.suggestions || 0) + 1;
     startVotingCountdown(round);
     return suggestion;
   }
