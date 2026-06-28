@@ -3637,15 +3637,74 @@ function injectVivySectionArtistTags(lyrics = '', artistCast = null) {
 
 function strengthenVivySunoSoloSectionHeaders(lyrics = '', artistCast = null) {
   if (!lyrics || !artistCast?.artists?.length || Number(artistCast.count || 0) <= 1) return lyrics;
-  const labels = new Map(artistCast.artists.map((artist) => [foldTextForLookup(artist.label), artist.label]));
-  const performerTagPattern = /^\s*\[(?:Djeff|Vivy|A11|K44|Duo|Tous)\]\s*$/i;
+  const sharedRoleLabel = 'Call and Response Hook';
+  const artistByLabel = new Map();
+  const getSunoRoleLabel = (artist) => {
+    const raw = cleanOneLine(artist?.sunoTag || artist?.tag || artist?.label, '', 80)
+      .replace(/^\s*\[|\]\s*$/g, '')
+      .trim();
+    return raw || artist?.label || 'Lead Vocal';
+  };
+  for (const artist of artistCast.artists) {
+    [
+      artist.id,
+      artist.label,
+      artist.tag,
+      artist.sunoTag,
+      getSunoRoleLabel(artist),
+    ].filter(Boolean).forEach((value) => {
+      const folded = foldTextForLookup(String(value).replace(/^\s*\[|\]\s*$/g, ''));
+      if (folded) artistByLabel.set(folded, artist);
+    });
+  }
+  const performerTagPattern = /^\s*\[(?:Djeff|Vivy|A11|K44|Duo|Tous|Toutes|Ensemble|Male Rap Lead|Female Melodic Lead|Low Robotic Vocal|Calm Male Counter Vocal|Call and Response Hook)\]\s*$/i;
   const lines = String(lyrics || '').split(/\r?\n/);
+  const isSharedTag = (value = '') => /\b(?:duo|tous|toutes|ensemble|choeur|chœur|call and response hook)\b/.test(foldTextForLookup(value));
+  const isSectionTag = (value = '') => /\b(intro|verse|couplet|pre chorus|pre refrain|refrain|chorus|bridge|pont|outro|build|montee finale|montée finale|final)\b/.test(foldTextForLookup(value));
+  const findArtistsInTag = (value = '') => {
+    const folded = foldTextForLookup(value);
+    return artistCast.artists.filter((artist) => {
+      const aliases = [
+        artist.id,
+        artist.label,
+        artist.tag,
+        artist.sunoTag,
+        getSunoRoleLabel(artist),
+      ].filter(Boolean);
+      return aliases.some((alias) => {
+        const foldedAlias = foldTextForLookup(String(alias).replace(/^\s*\[|\]\s*$/g, ''));
+        return foldedAlias && new RegExp(`\\b${escapeRegExp(foldedAlias)}\\b`).test(folded);
+      });
+    });
+  };
+  const rewriteSectionHeader = (header = '', artist = null) => {
+    const rawHeader = String(header || '').trim();
+    if (!isSectionTag(rawHeader)) return '';
+    const baseSection = rawHeader.split(/\s+-\s+/)[0].trim() || rawHeader;
+    const headerArtists = artist ? [artist] : findArtistsInTag(rawHeader);
+    if (isSharedTag(rawHeader) || headerArtists.length > 1) {
+      return `[${baseSection} - ${sharedRoleLabel}]`;
+    }
+    if (headerArtists.length === 1) {
+      return `[${baseSection} - ${getSunoRoleLabel(headerArtists[0])} solo]`;
+    }
+    return '';
+  };
 
   for (let index = 0; index < lines.length; index += 1) {
     const tag = String(lines[index] || '').trim().match(/^\[([^\]]+)\]$/);
     if (!tag) continue;
-    const artistLabel = labels.get(foldTextForLookup(tag[1]));
-    if (!artistLabel) continue;
+    const tagBody = tag[1].trim();
+    if (isSectionTag(tagBody)) {
+      const rewrittenSection = rewriteSectionHeader(tagBody);
+      if (rewrittenSection) lines[index] = rewrittenSection;
+      continue;
+    }
+    const artist = artistByLabel.get(foldTextForLookup(tagBody));
+    const sharedTag = isSharedTag(tagBody);
+    if (!artist && !sharedTag) continue;
+
+    lines[index] = artist ? `[${getSunoRoleLabel(artist)}]` : `[${sharedRoleLabel}]`;
 
     let previousIndex = index - 1;
     while (previousIndex >= 0 && !String(lines[previousIndex] || '').trim()) previousIndex -= 1;
@@ -3655,11 +3714,10 @@ function strengthenVivySunoSoloSectionHeaders(lyrics = '', artistCast = null) {
     const previousTag = previousLine.match(/^\[([^\]]+)\]$/);
     if (!previousTag || performerTagPattern.test(previousLine)) continue;
 
-    const previousFolded = foldTextForLookup(previousTag[1]);
-    const artistFolded = foldTextForLookup(artistLabel);
-    if (new RegExp(`\\b${escapeRegExp(artistFolded)}\\b`).test(previousFolded)) continue;
-    if (/\b(?:duo|tous|ensemble|choeur|chœur)\b/.test(previousFolded)) continue;
-    lines[previousIndex] = `[${previousTag[1].trim()} - ${artistLabel} solo]`;
+    const rewrittenPrevious = sharedTag
+      ? rewriteSectionHeader(`${previousTag[1].trim()} - ${sharedRoleLabel}`)
+      : rewriteSectionHeader(previousTag[1], artist);
+    if (rewrittenPrevious) lines[previousIndex] = rewrittenPrevious;
   }
 
   return cleanText(lines.join('\n').replace(/\n{3,}/g, '\n\n'), VIVY_SONG_MAX_CHARS);
@@ -5053,9 +5111,9 @@ function inferVivySunoStyleBase(input = {}, artistCast = buildVivySongArtistCast
   const folded = foldTextForLookup(material);
   const fallbackTopic = cleanOneLine(inferTitle(material), '', 72);
   const withCastStyle = (style) => cleanOneLine([
-    style,
     artistCast.sunoStyle,
-  ].filter(Boolean).join(', '), style || artistCast.sunoStyle, 420);
+    style,
+  ].filter(Boolean).join(', '), style || artistCast.sunoStyle, 520);
 
   if (/\bzorro\b|\bjusticier\b|\bmasque\b|\bepee\b|\bépée\b|\bcheval\s+noir\b|\bcalifornie\b/.test(folded)) {
     return withCastStyle('latin cinematic pop-rock, guitare espagnole, palmas, castagnettes, trompettes western, batterie héroïque');
@@ -5179,11 +5237,19 @@ function buildVivySunoPayload(input = {}, req = null) {
   const styleBase = looksLikeVivySunoStylePlaceholder(requestedStyleBase)
     ? inferVivySunoStyleBase(input, artistCast)
     : requestedStyleBase;
-  const castStyle = artistCast.ids.includes('djeff') && artistCast.ids.includes('vivy') && artistCast.count === 2
-    ? 'never merge them into one voice; solo handoff duet, one vocalist at a time, alternating Djeff rap verses and Vivy melodic hook; vocal contrast: rough rhythmic male rap, then a clearly different bright female melodic voice; brief shared hook only'
-    : artistCast.count > 1
-      ? `never merge them into one voice; solo handoff multi-vocal arrangement, one vocalist at a time, ${artistCast.count} distinct vocalists; vocal contrast: ${artistCast.artists.map((artist) => artist.style).join(' versus ')}; keep tagged solo sections separate; brief shared hook only`
-      : `${artistCast.label} vocal lead: ${artistCast.artists[0]?.style || artistCast.label}`;
+  const castRoles = artistCast.artists
+    .map((artist) => cleanOneLine(artist.sunoRole || artist.style, '', 80)
+      .replace(/\s+with\b.*$/i, '')
+      .replace(/,\s*.*$/g, '')
+      .trim())
+    .filter(Boolean)
+    .join(' versus ');
+  const castRoleSummary = artistCast.count > 1
+    ? `vocal roles: ${castRoles}; never merge them into one voice; ${artistCast.count} clearly different vocal timbres; solo handoff; one vocalist at a time; switch singer timbre at every role tag; brief call-and-response hook only`
+    : '';
+  const castStyle = artistCast.count > 1
+    ? ''
+    : `${artistCast.label} vocal lead: ${artistCast.artists[0]?.style || artistCast.label}`;
   const arrangement = splitVivyArrangementCues(sanitizeVivySongMaterial(
     stripVivyAscii4SoundTokens(input.songText || input.lyrics || input.text || input.theme || input.prompt),
     VIVY_SONG_MAX_CHARS
@@ -5195,9 +5261,9 @@ function buildVivySunoPayload(input = {}, req = null) {
     ? 'long-form full song arrangement around five minutes, expanded sections, recurring hook after the bridge, complete final chorus, no short radio edit'
     : '';
   let style = /structured rhymed lyrics|rimes|paroles structur/i.test(styleBase)
-    ? cleanOneLine([styleBase, castStyle, arrangementStyle, longFormStyle, prosodyStyle].filter((item, index, list) => item && list.indexOf(item) === index).join(', '), styleBase, 520)
+    ? cleanOneLine([styleBase, castRoleSummary, longFormStyle, castStyle, arrangementStyle, prosodyStyle].filter((item, index, list) => item && list.indexOf(item) === index).join(', '), styleBase, 520)
     : cleanOneLine(
-      `${styleBase}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration${castStyle ? `, ${castStyle}` : ''}${arrangementStyle ? `, ${arrangementStyle}` : ''}${longFormStyle ? `, ${longFormStyle}` : ''}${prosodyStyle ? `, ${prosodyStyle}` : ''}`,
+      `${styleBase}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration${castRoleSummary ? `, ${castRoleSummary}` : ''}${longFormStyle ? `, ${longFormStyle}` : ''}${castStyle ? `, ${castStyle}` : ''}${arrangementStyle ? `, ${arrangementStyle}` : ''}${prosodyStyle ? `, ${prosodyStyle}` : ''}`,
       styleBase,
       520
     );

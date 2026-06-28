@@ -595,8 +595,9 @@ test('Vivy Suno lyrics strip legacy signal tokens before music generation', () =
   assert.doesNotMatch(payload.style, /numa8:/);
   assert.match(payload.style, /prime-pulsed phrasing/i);
   assert.match(payload.style, /double-harmonic synchronized flow/i);
-  assert.match(payload.prompt, /\[Verse 1 - Djeff\]/);
-  assert.match(payload.style, /Djeff rap verses and Vivy melodic hook/i);
+  assert.match(payload.prompt, /\[Verse 1 - Male Rap Lead solo\]/);
+  assert.match(payload.style, /rough male rap lead/i);
+  assert.match(payload.style, /bright female melodic lead/i);
 });
 
 test('Vivy Studio song handoff keeps Djeff and Vivy separated for duet rap', () => {
@@ -966,11 +967,11 @@ test('Suno payload can prepare a Djeff and Vivy duet instead of the old Vivy tem
     songText: 'fais un duo rap moto avec radiateur, pignon, couronne, essence et huile',
   });
 
-  assert.match(payload.style, /Djeff rap verses/i);
-  assert.match(payload.style, /Vivy melodic hook/i);
-  assert.match(payload.prompt, /\[Intro - Djeff\]/);
-  assert.match(payload.prompt, /\[Verse 1 - Djeff\]/);
-  assert.match(payload.prompt, /\[Chorus - Duo\]/);
+  assert.match(payload.style, /rough male rap lead/i);
+  assert.match(payload.style, /bright female melodic lead/i);
+  assert.match(payload.prompt, /\[Intro - Male Rap Lead solo\]/);
+  assert.match(payload.prompt, /\[Verse 1 - Male Rap Lead solo\]/);
+  assert.match(payload.prompt, /\[Chorus - Call and Response Hook\]/);
   assert.match(payload.prompt, /radiateur/i);
   assert.match(payload.prompt, /pignon/i);
   assert.doesNotMatch(payload.prompt, /Garde la lumière/);
@@ -985,7 +986,7 @@ test('Suno multi-artist fallback does not recycle stale generic couplets', () =>
   });
 
   assert.match(payload.prompt, /Jessy|DBZ|Spider-Man|Avengers|héros/i);
-  assert.match(payload.prompt, /\[Chorus - (?:Trio|Tous|Ensemble)\]/i);
+  assert.match(payload.prompt, /\[Chorus - Call and Response Hook\]/i);
   assert.doesNotMatch(payload.prompt, /On entre dans|Chaque voix prend sa place|signal se façonne/i);
   assert.doesNotMatch(payload.prompt, /Je garde une note claire|lumière qui répond|Voix machine/i);
 });
@@ -1009,15 +1010,15 @@ test('Suno payload carries explicit multi-singer cast tags', () => {
     songText: 'course poursuite et mémoire Funesterie',
   });
 
-  assert.match(payload.style, /4 distinct vocalists/i);
-  assert.match(payload.style, /Djeff/i);
-  assert.match(payload.style, /A11/i);
-  assert.match(payload.style, /K44/i);
-  assert.match(payload.style, /Vivy/i);
-  assert.match(payload.prompt, /\[Verse 1 - Djeff\]/);
-  assert.match(payload.prompt, /\[Verse 2 - A11\]/);
-  assert.match(payload.prompt, /\[Bridge - K44\]/);
-  assert.match(payload.prompt, /\[Chorus - Tous\]/);
+  assert.match(payload.style, /4 clearly different vocal timbres/i);
+  assert.match(payload.style, /rough male rap lead/i);
+  assert.match(payload.style, /bright female melodic lead/i);
+  assert.match(payload.style, /low robotic baritone/i);
+  assert.match(payload.style, /calm male counter-vocal/i);
+  assert.match(payload.prompt, /\[Verse 1 - Male Rap Lead solo\]/);
+  assert.match(payload.prompt, /\[Verse 2 - Low Robotic Vocal solo\]/);
+  assert.match(payload.prompt, /\[Bridge - Calm Male Counter Vocal solo\]/);
+  assert.match(payload.prompt, /\[Chorus - Call and Response Hook\]/);
 });
 
 test('Suno payload describes duet timbres acoustically instead of relying on internal names', () => {
@@ -1035,11 +1036,13 @@ test('Suno payload describes duet timbres acoustically instead of relying on int
     longSong: true,
   });
 
-  assert.match(payload.style, /Vivy clear melodic hook/i);
-  assert.match(payload.style, /A11 low synthetic spoken-sung bridge/i);
+  assert.match(payload.style, /bright female melodic lead/i);
+  assert.match(payload.style, /low robotic baritone/i);
   assert.match(payload.style, /never merge them into one voice/i);
   assert.match(payload.negativeTags, /single vocalist/i);
   assert.match(payload.negativeTags, /identical vocal timbre/i);
+  assert.match(payload.prompt, /\[Female Melodic Lead\]/);
+  assert.match(payload.prompt, /\[Low Robotic Vocal\]/);
 });
 
 test('Suno payload turns a NOSSEN Banger seed into lyrics without singing UI bug reports', () => {
@@ -1169,8 +1172,8 @@ test('Suno payload isolates a clean lyric block from NOSSEN chat planning contex
   });
 
   assert.notEqual(payload.title, 'Conversation Vivy');
-  assert.match(payload.prompt, /\[Verse 1 - Djeff\]/);
-  assert.match(payload.prompt, /\[Chorus - Vivy\]/);
+  assert.match(payload.prompt, /\[Verse 1 - Male Rap Lead solo\]/);
+  assert.match(payload.prompt, /\[Chorus - Female Melodic Lead solo\]/);
   assert.match(payload.prompt, /On grandit dans le bleu des écrans tard le soir/);
   assert.match(payload.prompt, /Nouvelle génération, garde le cœur allumé/);
   assert.doesNotMatch(payload.prompt, /Conversation Vivy|recherche web|que dirais-tu|couleur sonore/i);
@@ -2144,10 +2147,11 @@ test('Suno payload keeps quartet casts as Suno-sung vocal directions by default'
   });
 
   assert.equal(payload.instrumental, false);
-  assert.match(payload.style, /4 distinct original vocalists/i);
+  assert.match(payload.style, /4 clearly different vocal timbres/i);
+  assert.match(payload.style, /switch singer timbre at every role tag/i);
   assert.doesNotMatch(payload.style, /instrumental backing track only/i);
-  assert.match(payload.prompt, /\[Chorus - Tous\]/);
-  assert.match(payload.prompt, /\[Tous\]/);
+  assert.match(payload.prompt, /\[Chorus - Call and Response Hook\]/);
+  assert.match(payload.prompt, /\[Call and Response Hook\]/);
 });
 
 test('Suno payload pushes NOSSEN trios toward solo handoffs instead of one blended voice', () => {
@@ -2184,14 +2188,19 @@ test('Suno payload pushes NOSSEN trios toward solo handoffs instead of one blend
   });
 
   assert.match(payload.style, /solo handoff/i);
+  assert.match(payload.style, /clearly different vocal timbres/i);
+  assert.match(payload.style, /switch singer timbre at every role tag/i);
+  assert.match(payload.style, /rough male rap lead/i);
+  assert.match(payload.style, /bright female melodic lead/i);
+  assert.match(payload.style, /low robotic baritone/i);
   assert.match(payload.style, /one vocalist at a time/i);
-  assert.match(payload.style, /brief shared hook only/i);
+  assert.match(payload.style, /brief call-and-response hook only/i);
   assert.match(payload.negativeTags, /single vocalist/i);
   assert.match(payload.negativeTags, /blended ensemble lead/i);
   assert.match(payload.negativeTags, /unison lead vocals/i);
-  assert.match(payload.prompt, /\[Intro - Djeff solo\]\n\[Djeff\]/);
-  assert.match(payload.prompt, /\[Chorus - Vivy solo\]\n\[Vivy\]/);
-  assert.match(payload.prompt, /\[Bridge - A11 solo\]\n\[A11\]/);
+  assert.match(payload.prompt, /\[Intro - Male Rap Lead solo\]\n\[Male Rap Lead\]/);
+  assert.match(payload.prompt, /\[Chorus - Female Melodic Lead solo\]\n\[Female Melodic Lead\]/);
+  assert.match(payload.prompt, /\[Bridge - Low Robotic Vocal solo\]\n\[Low Robotic Vocal\]/);
 });
 
 test('Suno payload treats NOSSEN long songs as V5.5 long-form generations', () => {

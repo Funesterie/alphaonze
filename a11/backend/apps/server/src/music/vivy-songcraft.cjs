@@ -755,7 +755,9 @@ const VIVY_SONG_ARTISTS = [
     tag: '[Djeff]',
     role: 'couplets rap techniques, grain proche micro, images mécaniques concrètes',
     grammar: 'masculin singulier; accords et pronoms il/lui',
-    style: 'Djeff technical rap lead',
+    style: 'rough French male rap lead, dry close-mic delivery',
+    sunoTag: '[Male Rap Lead]',
+    sunoRole: 'rough male rap lead with dry close-mic tone',
   },
   {
     id: 'vivy',
@@ -763,7 +765,9 @@ const VIVY_SONG_ARTISTS = [
     tag: '[Vivy]',
     role: 'refrain clair, réponses mélodiques, voix nette, émotion précise',
     grammar: 'féminin singulier; accords et pronoms elle',
-    style: 'Vivy clear melodic hook',
+    style: 'bright female melodic lead, clear emotional hook',
+    sunoTag: '[Female Melodic Lead]',
+    sunoRole: 'bright female melodic lead with clear emotional hook',
   },
   {
     id: 'a11',
@@ -771,7 +775,9 @@ const VIVY_SONG_ARTISTS = [
     tag: '[A11]',
     role: 'pont grave synthétique, tension machine humaine, réponse courte',
     grammar: 'masculin singulier; accords et pronoms il/lui',
-    style: 'A11 low synthetic spoken-sung bridge',
+    style: 'low robotic baritone vocal, synthetic spoken-sung bridge',
+    sunoTag: '[Low Robotic Vocal]',
+    sunoRole: 'low robotic baritone vocal with synthetic edge',
   },
   {
     id: 'k44',
@@ -779,7 +785,9 @@ const VIVY_SONG_ARTISTS = [
     tag: '[K44]',
     role: 'contre-chant posé, punchlines calmes, second lead propre',
     grammar: 'masculin singulier; accords et pronoms il/lui',
-    style: 'K44 calm counter-vocal',
+    style: 'calm male counter-vocal, steady warm second lead',
+    sunoTag: '[Calm Male Counter Vocal]',
+    sunoRole: 'calm male counter-vocal with steady warm tone',
   },
 ];
 
@@ -874,8 +882,9 @@ function buildVivySongArtistCast(input = {}) {
       : `Tag conseillé: ${tags}.`,
   ];
   const styleFragment = artists.map((artist) => artist.style).join(', ');
+  const sunoRoleFragment = artists.map((artist) => artist.sunoRole || artist.style).join(' versus ');
   const ensembleStyle = count > 1
-    ? `${count} distinct original vocalists, solo handoff arrangement, one vocalist at a time, brief shared hook only, ${label}, `
+    ? `${count} clearly different vocal timbres: ${sunoRoleFragment}; switch singer timbre at every role tag, solo handoff arrangement, one vocalist at a time, brief call-and-response hook only, ${label}, `
     : '';
   return {
     ids,
