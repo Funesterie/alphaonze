@@ -145,6 +145,38 @@ test('Vivy stream lock starts automatic NOSSEN only once per round', async () =>
   assert.match(starts[0].nossenSeed.canvas, /visière fumée/i);
 });
 
+test('Twitch suggestions received during playback enter the next round', () => {
+  const store = createVivyStreamStore({
+    statePath: path.join(tmpRoot, 'queued-suggestions.json'),
+  });
+  store.addChatMessage({
+    username: 'first',
+    message: '!nossen Course urbaine sous les néons',
+  });
+  store.lockRound({});
+  store.updateLive({
+    action: 'ready',
+    trackUrl: '/api/vivy/studio/assets/current.mp3',
+    durationSeconds: 180,
+  });
+  store.updateLive({ action: 'play' });
+
+  const queued = store.addChatMessage({
+    username: 'funeste38',
+    message: '!nossen remballe tous ces twitcher en carton',
+  });
+  assert.equal(queued.action, 'suggestion_queued');
+  assert.equal(queued.state.current.phase, 'playing');
+  assert.equal(queued.state.pendingSuggestions.length, 1);
+
+  const next = store.startRound();
+  assert.equal(next.current.phase, 'voting');
+  assert.equal(next.round.suggestions.length, 1);
+  assert.equal(next.round.suggestions[0].text, 'remballe tous ces twitcher en carton');
+  assert.equal(next.round.suggestions[0].author, 'funeste38');
+  assert.equal(next.pendingSuggestions.length, 0);
+});
+
 test('Twitch NOSSEN runner writes lyrics, follows Suno and publishes the track', async () => {
   const updates = [];
   let pollCount = 0;
@@ -265,9 +297,10 @@ test('Vivy stream control drives production, presentation and playback metadata'
       username: 'late-topic',
       message: '!nossen Cette idée doit attendre le prochain round',
     });
-    assert.equal(result.json.action, 'suggestion_ignored');
+    assert.equal(result.json.action, 'suggestion_queued');
     assert.equal(result.json.state.round.status, 'locked');
     assert.equal(result.json.state.round.suggestions.length, 1);
+    assert.equal(result.json.state.pendingSuggestions.length, 1);
 
     result = await postJson(baseUrl, '/api/vivy/stream/control', {
       action: 'ready',
@@ -285,8 +318,8 @@ test('Vivy stream control drives production, presentation and playback metadata'
       username: 'next-round',
       message: '!nossen Nouveau thème du prochain round',
     });
-    assert.equal(result.json.suggestion.id, 'S1');
-    assert.equal(result.json.state.stats.suggestions, 2);
+    assert.equal(result.json.suggestion.id, 'S2');
+    assert.equal(result.json.state.stats.suggestions, 3);
   });
 });
 

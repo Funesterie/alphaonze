@@ -8,6 +8,7 @@ const { createVivyStreamNossenRunner } = require('../vivy/twitch-nossen-runner.c
 const STREAM_SCHEMA = 'funesterie.vivy.stream.v1';
 const MAX_RECENT_MESSAGES = 48;
 const MAX_SUGGESTIONS = 24;
+const MAX_PENDING_SUGGESTIONS = 24;
 const MAX_STARS = 120;
 const DEFAULT_ROUND_MS = 45 * 1000;
 const WINNER_REVEAL_MS = 4 * 1000;
@@ -95,6 +96,7 @@ function createInitialState() {
     },
     round: createRound(),
     production: createProductionState(),
+    pendingSuggestions: [],
     recentMessages: [],
     stars: [],
     learning: {
@@ -254,6 +256,7 @@ function createVivyStreamStore(options = {}) {
             },
             learning: { ...initial.learning, ...(parsed.learning || {}) },
             stats: { ...initial.stats, ...(parsed.stats || {}) },
+            pendingSuggestions: Array.isArray(parsed.pendingSuggestions) ? parsed.pendingSuggestions : [],
             recentMessages: Array.isArray(parsed.recentMessages) ? parsed.recentMessages : [],
             stars: Array.isArray(parsed.stars) ? parsed.stars : [],
           };
@@ -430,6 +433,30 @@ function createVivyStreamStore(options = {}) {
     return suggestion;
   }
 
+  function queueSuggestion(parsed) {
+    const text = cleanText(parsed.suggestion, 420);
+    if (!text) return null;
+    state.pendingSuggestions = Array.isArray(state.pendingSuggestions) ? state.pendingSuggestions : [];
+    const folded = foldForLookup(text);
+    const existing = state.pendingSuggestions.find((entry) => foldForLookup(entry.suggestion) === folded);
+    if (existing) {
+      existing.receivedAt = parsed.receivedAt;
+      existing.author = parsed.author;
+      return existing;
+    }
+    const queued = {
+      suggestion: text,
+      author: parsed.author,
+      source: parsed.source,
+      message: parsed.message,
+      messageId: parsed.messageId,
+      receivedAt: parsed.receivedAt,
+    };
+    state.pendingSuggestions.push(queued);
+    state.pendingSuggestions = state.pendingSuggestions.slice(-MAX_PENDING_SUGGESTIONS);
+    return queued;
+  }
+
   function addVote(parsed) {
     const round = ensureOpenRound();
     const targetId = normalizeSuggestionId(parsed.voteTargetId);
@@ -517,7 +544,8 @@ function createVivyStreamStore(options = {}) {
       suggestion = addSuggestion(parsed);
       action = 'suggestion';
     } else if (parsed.suggestion) {
-      action = 'suggestion_ignored';
+      suggestion = queueSuggestion(parsed);
+      action = suggestion ? 'suggestion_queued' : 'suggestion_ignored';
     }
     if (parsed.voteTargetId && acceptsRoundInput) {
       vote = addVote(parsed);
@@ -547,6 +575,10 @@ function createVivyStreamStore(options = {}) {
 
   function startRound(input = {}) {
     const title = cleanOneLine(input.title || input.topic, 'Vivy Live', 120);
+    const queuedSuggestions = Array.isArray(state.pendingSuggestions)
+      ? state.pendingSuggestions.slice(0, MAX_PENDING_SUGGESTIONS)
+      : [];
+    state.pendingSuggestions = [];
     state.round = createRound(createShortId('round'));
     state.production = createProductionState();
     state.current = {
@@ -561,6 +593,16 @@ function createVivyStreamStore(options = {}) {
       durationSeconds: 0,
       message: 'Nouveau round Twitch ouvert.',
     };
+    queuedSuggestions.forEach((entry) => addSuggestion(entry));
+    if (state.round.suggestions.length) {
+      const latest = state.round.suggestions[0];
+      setCurrentPhase('voting', {
+        title: latest.text,
+        requestedBy: latest.author,
+        phaseEndsAt: state.round.endsAt,
+        message: 'Les propositions reçues pendant le morceau passent au vote.',
+      });
+    }
     save();
     return publicState(state);
   }
