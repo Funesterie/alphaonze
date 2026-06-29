@@ -178,9 +178,35 @@ function buildSongSharePath(track = {}) {
   return `/api/vivy/stream/s/${slugifyTitle(title)}-${suffix}`;
 }
 
+function isProviderOnlyTrackUrl(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  try {
+    const parsed = new URL(raw, 'https://vivy.local');
+    return parsed.protocol === 'https:' && parsed.hostname.toLowerCase() === 'musicfile.removeai.ai';
+  } catch {
+    return /^https:\/\/musicfile\.removeai\.ai\//i.test(raw);
+  }
+}
+
+function cleanProviderOnlyCurrentTrack(current = {}) {
+  const cleaned = { ...current };
+  if (!isProviderOnlyTrackUrl(cleaned.trackUrl)) return cleaned;
+  cleaned.trackUrl = '';
+  cleaned.trackId = '';
+  cleaned.sharePath = '';
+  cleaned.durationSeconds = 0;
+  cleaned.playbackStartedAt = null;
+  if (['interlude', 'presenting', 'playing', 'rating'].includes(cleaned.phase)) {
+    cleaned.phase = 'idle';
+    cleaned.message = 'Piste provider brute ignorée: Vivy attend une copie locale.';
+  }
+  return cleaned;
+}
+
 function normalizeJukeboxTrack(input = {}) {
   const trackUrl = cleanOneLine(input.trackUrl || input.audioUrl || input.url, '', 1200);
-  if (!trackUrl) return null;
+  if (!trackUrl || isProviderOnlyTrackUrl(trackUrl)) return null;
   const rawDuration = Number(input.durationSeconds || input.duration || 0) || 0;
   const durationSeconds = rawDuration > 0 ? Math.max(1, Math.min(3600, rawDuration)) : 0;
   const track = {
@@ -368,6 +394,13 @@ function buildNossenSeedFromRound(state) {
 
 function publicState(state) {
   const cloned = JSON.parse(JSON.stringify(state || createInitialState()));
+  cloned.current = cleanProviderOnlyCurrentTrack(cloned.current || {});
+  if (Array.isArray(cloned.jukebox?.tracks)) {
+    cloned.jukebox.tracks = cloned.jukebox.tracks.filter((track) => !isProviderOnlyTrackUrl(track?.trackUrl));
+  }
+  if (Array.isArray(cloned.songs)) {
+    cloned.songs = cloned.songs.filter((track) => !isProviderOnlyTrackUrl(track?.trackUrl));
+  }
   if (cloned.round?.voters) delete cloned.round.voters;
   cloned.serverNow = nowIso();
   cloned.nossenSeed = buildNossenSeedFromRound(cloned);
@@ -394,7 +427,7 @@ function createVivyStreamStore(options = {}) {
           state = {
             ...initial,
             ...parsed,
-            current: { ...initial.current, ...(parsed.current || {}) },
+            current: cleanProviderOnlyCurrentTrack({ ...initial.current, ...(parsed.current || {}) }),
             round: { ...initial.round, ...(parsed.round || {}) },
             production: {
               ...initial.production,
@@ -553,7 +586,7 @@ function createVivyStreamStore(options = {}) {
     const allTracks = [
       ...ensureSongs(),
       ...ensureJukebox().tracks,
-    ];
+    ].filter((track) => !isProviderOnlyTrackUrl(track?.trackUrl));
     return allTracks.find((track) => {
       const shareSlug = String(track.sharePath || '').split('/').pop();
       return shareSlug === needle || track.id === needle;
@@ -571,7 +604,8 @@ function createVivyStreamStore(options = {}) {
   function getJukeboxTracks() {
     const jukebox = ensureJukebox();
     if (!jukebox.tracks.length) refreshJukeboxFromAssets();
-    return jukebox.tracks.filter((track) => track?.trackUrl);
+    jukebox.tracks = jukebox.tracks.filter((track) => track?.trackUrl && !isProviderOnlyTrackUrl(track.trackUrl));
+    return jukebox.tracks;
   }
 
   function getLocalJukeboxTrackPath(track = {}) {

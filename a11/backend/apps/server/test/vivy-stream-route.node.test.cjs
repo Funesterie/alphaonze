@@ -11,6 +11,7 @@ process.env.A11_RUNTIME_ROOT = path.join(tmpRoot, 'runtime');
 process.env.VIVY_STREAM_ALLOW_UNSIGNED = '1';
 
 const {
+  STREAM_SCHEMA,
   buildOverlayHtml,
   createVivyStreamRouter,
   createVivyStreamStore,
@@ -208,6 +209,61 @@ test('Vivy stream reset clears the Twitch live session without deleting song his
     assert.match(result.json.state.round.suggestions[0].text, /Bleach opening/);
     assert.doesNotMatch(result.json.state.nossenSeed.canvas, /Tortues|égouts/i);
   });
+});
+
+test('Vivy stream ignores stored raw Suno provider URLs', () => {
+  const statePath = path.join(tmpRoot, 'provider-urls.json');
+  fs.mkdirSync(path.dirname(statePath), { recursive: true });
+  fs.writeFileSync(statePath, JSON.stringify({
+    schema: STREAM_SCHEMA,
+    current: {
+      title: 'Lien provider brut',
+      phase: 'interlude',
+      trackUrl: 'https://musicfile.removeai.ai/raw-provider-song',
+      trackTitle: 'Lien provider brut',
+      trackId: 'track-raw',
+      sharePath: '/api/vivy/stream/s/provider-brut-track-raw',
+      durationSeconds: 300,
+    },
+    jukebox: {
+      tracks: [
+        {
+          id: 'track-raw',
+          title: 'Lien provider brut',
+          trackUrl: 'https://musicfile.removeai.ai/raw-provider-song',
+          sharePath: '/api/vivy/stream/s/provider-brut-track-raw',
+        },
+        {
+          id: 'track-local',
+          title: 'Copie locale',
+          trackUrl: '/api/vivy/studio/assets/vivy-music-suno-local.mp3',
+          sharePath: '/api/vivy/stream/s/copie-locale-track-local',
+        },
+      ],
+    },
+    songs: [
+      {
+        id: 'track-raw',
+        title: 'Lien provider brut',
+        trackUrl: 'https://musicfile.removeai.ai/raw-provider-song',
+        sharePath: '/api/vivy/stream/s/provider-brut-track-raw',
+      },
+    ],
+  }), 'utf8');
+
+  const store = createVivyStreamStore({ statePath, idleJukeboxEnabled: false });
+  const state = store.getState();
+  assert.equal(state.current.trackUrl, '');
+  assert.equal(state.current.phase, 'idle');
+  assert.deepEqual(state.jukebox.tracks.map((track) => track.trackUrl), [
+    '/api/vivy/studio/assets/vivy-music-suno-local.mp3',
+  ]);
+  assert.equal(state.songs.length, 0);
+  assert.equal(store.findSongByShareSlug('provider-brut-track-raw'), null);
+  assert.equal(store.addJukeboxTrack({
+    title: 'Nouveau provider brut',
+    trackUrl: 'https://musicfile.removeai.ai/another-provider-song',
+  }), null);
 });
 
 test('Vivy stream vote duration defaults to 90 seconds and remains configurable', () => {
