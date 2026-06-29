@@ -6476,6 +6476,19 @@ async function requestSunoMusic(input = {}, req = null) {
   }
 
   const body = buildVivySunoPayload(input, req);
+  console.info(
+    '[VivySunoPayload] generate model=%s instrumental=%s long=%s target=%s titleChars=%s styleChars=%s promptChars=%s negativeChars=%s songTextChars=%s lyricsChars=%s',
+    cleanOneLine(body.model, 'unknown', 40),
+    body.instrumental === true ? 'true' : 'false',
+    wantsVivySunoLongForm(input) ? 'true' : 'false',
+    normalizeVivySunoTargetDuration(input) || 0,
+    String(body.title || '').length,
+    String(body.style || '').length,
+    String(body.prompt || '').length,
+    String(body.negativeTags || '').length,
+    String(input.songText || '').length,
+    String(input.lyrics || '').length
+  );
   const voiceMode = body.personaModel === 'voice_persona'
     ? 'suno_voice'
     : input.preserveSelectedVoice === true
@@ -6608,6 +6621,18 @@ async function requestSunoMusicExtension(input = {}, req = null) {
       body.instrumental = true;
     }
   }
+  console.info(
+    '[VivySunoPayload] extend model=%s custom=%s instrumental=%s sourceDuration=%s continueAt=%s target=%s titleChars=%s styleChars=%s promptChars=%s',
+    cleanOneLine(body.model, 'unknown', 40),
+    body.defaultParamFlag === true ? 'true' : 'false',
+    body.instrumental === true ? 'true' : 'false',
+    Number.isFinite(sourceDurationSeconds) ? Math.round(sourceDurationSeconds) : 0,
+    body.continueAt || 0,
+    normalizeVivySunoTargetDuration(input) || 0,
+    String(body.title || '').length,
+    String(body.style || '').length,
+    String(body.prompt || '').length
+  );
   const response = await fetch(`${getSunoBaseUrl()}/generate/extend`, {
     method: 'POST',
     headers: {

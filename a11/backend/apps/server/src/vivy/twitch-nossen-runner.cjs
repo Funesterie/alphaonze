@@ -7,10 +7,13 @@ const {
   buildVivyNossenIntentPlan,
   buildVivyNossenRoutingPlan,
   getSunoMusicJob,
+  requestSunoMusicExtension,
 } = require('../routes/vivy-studio.cjs');
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_TARGET_DURATION_SECONDS = 300;
+const DEFAULT_MIN_ACCEPTABLE_SECONDS = 150;
+const DEFAULT_MAX_EXTENSIONS = 3;
 const DEFAULT_POLL_ATTEMPTS = 60;
 const DEFAULT_POLL_INTERVAL_MS = 10000;
 
@@ -67,6 +70,34 @@ function getMusicTaskId(value = {}) {
     || value?.musicJob?.taskId
     || value?.media?.taskId,
     160
+  );
+}
+
+function getSunoAudioId(value = {}) {
+  return cleanText(
+    value?.audioId
+    || value?.audio_id
+    || value?.id
+    || value?.media?.audioId
+    || value?.media?.audio_id
+    || value?.media?.id
+    || value?.musicJob?.audioId
+    || value?.musicJob?.audio_id
+    || value?.musicJob?.media?.audioId
+    || value?.musicJob?.media?.audio_id
+    || value?.musicJob?.media?.id,
+    180
+  );
+}
+
+function getSunoModel(value = {}, fallback = '') {
+  return cleanText(
+    value?.model
+    || value?.media?.model
+    || value?.musicJob?.model
+    || value?.musicJob?.media?.model
+    || fallback,
+    80
   );
 }
 
@@ -278,6 +309,7 @@ function createVivyStreamNossenRunner(options = {}) {
   const writeLyrics = options.writeLyrics || buildVivyAiChat;
   const startMusic = options.startMusic || buildRealMusicForProduction;
   const pollMusic = options.pollMusic || getSunoMusicJob;
+  const extendMusic = options.extendMusic || requestSunoMusicExtension;
   const probeDuration = options.probeDuration || probeMediaDurationSeconds;
   const updateLive = options.updateLive || (() => {});
   const sleepFn = options.sleep || sleep;
@@ -288,6 +320,14 @@ function createVivyStreamNossenRunner(options = {}) {
   const targetDurationSeconds = Math.max(
     150,
     Number(options.targetDurationSeconds || process.env.VIVY_STREAM_TARGET_DURATION_SECONDS || DEFAULT_TARGET_DURATION_SECONDS)
+  );
+  const minAcceptableSeconds = Math.max(
+    60,
+    Number(options.minAcceptableSeconds || process.env.VIVY_STREAM_MIN_ACCEPTABLE_SECONDS || DEFAULT_MIN_ACCEPTABLE_SECONDS)
+  );
+  const maxExtensions = Math.max(
+    0,
+    Math.min(5, Number(options.maxExtensions ?? process.env.VIVY_STREAM_SUNO_MAX_EXTENSIONS ?? DEFAULT_MAX_EXTENSIONS))
   );
   const activeRuns = new Map();
 
@@ -477,6 +517,7 @@ function createVivyStreamNossenRunner(options = {}) {
       let result = await startMusic('song', productionInput, req);
       let media = getReadyLocalMedia(result, logger, { roundId });
       const taskId = getMusicTaskId(result);
+      let latestTaskId = taskId;
       logger.info?.(
         '[vivy-twitch-nossen] round=%s suno submitted task=%s status=%s model=%s',
         roundId,
@@ -509,14 +550,120 @@ function createVivyStreamNossenRunner(options = {}) {
       }
       if (!media) throw new Error('vivy_stream_suno_timeout');
 
+      let durationSeconds = Math.max(1, Number(await probeDuration(media) || media.durationSeconds || targetDurationSeconds));
+      for (let extensionIndex = 1; extensionIndex <= maxExtensions && durationSeconds < targetDurationSeconds; extensionIndex += 1) {
+        const audioId = getSunoAudioId(media) || getSunoAudioId(result);
+        if (!audioId) {
+          logger.warn?.(
+            '[vivy-twitch-nossen] round=%s short duration=%ss but no Suno audioId for extension',
+            roundId,
+            Math.round(durationSeconds)
+          );
+          break;
+        }
+        await update({
+          action: 'progress',
+          stage: 'composition',
+          progress: Math.min(96, 72 + extensionIndex * 6),
+          message: `Suno a rendu ${Math.round(durationSeconds)}s, extension ${extensionIndex}/${maxExtensions} vers ${Math.round(targetDurationSeconds)}s.`,
+        });
+        logger.info?.(
+          '[vivy-twitch-nossen] round=%s extending short suno audioId=%s duration=%ss target=%ss attempt=%s/%s promptChars=%s styleChars=%s',
+          roundId,
+          cleanText(audioId, '', 80),
+          Math.round(durationSeconds),
+          Math.round(targetDurationSeconds),
+          extensionIndex,
+          maxExtensions,
+          String(productionInput.songText || '').length,
+          String(productionInput.songMood || productionInput.prompt || '').length
+        );
+        let extensionStart;
+        try {
+          extensionStart = await extendMusic({
+            audioId,
+            model: getSunoModel(result, productionInput.musicModel),
+            sourceTaskId: latestTaskId || undefined,
+            sourceDurationSeconds: durationSeconds,
+            continueAtSeconds: Math.max(1, Math.floor(durationSeconds - 8)),
+            targetDurationSeconds,
+            title: winner.text,
+            style: [
+              productionInput.songMood || productionInput.prompt,
+              instrumentalMode
+                ? 'long-form full instrumental arrangement around five minutes, keep sound design motifs, complete clean ending'
+                : 'long-form full song arrangement around five minutes with sung lead vocals',
+              instrumentalMode
+                ? 'continue the same instrumental scene, no vocals, no sung words, no spoken narration'
+                : 'continue the same vocal performance, keep the selected casting handoffs and recurring hook',
+              'complete final chorus, no short radio edit',
+            ].filter(Boolean).join(', '),
+            prompt: instrumentalMode ? productionInput.songText : lyrics,
+            instrumental: instrumentalMode,
+            forceInstrumental: instrumentalMode,
+            previewInstrumental: false,
+            sessionSunoApiKey: productionInput.sessionSunoApiKey,
+          }, req);
+        } catch (error) {
+          logger.warn?.(
+            '[vivy-twitch-nossen] round=%s extension unavailable after %ss: %s',
+            roundId,
+            Math.round(durationSeconds),
+            cleanText(error?.message || error, 'unknown', 220)
+          );
+          break;
+        }
+        let extendedMedia = getReadyLocalMedia(extensionStart, logger, { roundId });
+        const extensionTaskId = getMusicTaskId(extensionStart);
+        latestTaskId = extensionTaskId || latestTaskId;
+        for (let attempt = 1; !extendedMedia && extensionTaskId && attempt <= pollAttempts; attempt += 1) {
+          await sleepFn(attempt <= 2 ? Math.min(5000, pollIntervalMs) : pollIntervalMs);
+          const extensionResult = await pollMusic(extensionTaskId, productionInput, req);
+          if (String(extensionResult?.state || '').toLowerCase() === 'error') {
+            logger.warn?.(
+              '[vivy-twitch-nossen] round=%s extension rejected task=%s status=%s message=%s',
+              roundId,
+              extensionTaskId,
+              cleanText(extensionResult?.status || 'error', '', 80),
+              cleanText(extensionResult?.message || extensionResult?.providerDetail || 'unknown', '', 220)
+            );
+            break;
+          }
+          extendedMedia = getReadyLocalMedia(extensionResult, logger, { roundId });
+          await update({
+            action: 'progress',
+            stage: 'composition',
+            progress: Math.min(98, 78 + Math.round((attempt / pollAttempts) * 16)),
+            message: `Suno étend le morceau (${attempt}/${pollAttempts}).`,
+          });
+        }
+        if (!extendedMedia) break;
+        const previousDurationSeconds = durationSeconds;
+        const candidateDurationSeconds = Math.max(1, Number(await probeDuration(extendedMedia) || extendedMedia.durationSeconds || 0));
+        if (!(candidateDurationSeconds > 0)) break;
+        if (candidateDurationSeconds <= previousDurationSeconds + 8) {
+          logger.warn?.(
+            '[vivy-twitch-nossen] round=%s extension made no real progress previous=%ss candidate=%ss',
+            roundId,
+            Math.round(previousDurationSeconds),
+            Math.round(candidateDurationSeconds)
+          );
+          break;
+        }
+        media = extendedMedia;
+        result = extensionStart;
+        durationSeconds = candidateDurationSeconds;
+      }
+      if (durationSeconds < minAcceptableSeconds) {
+        throw new Error(`vivy_stream_suno_too_short_${Math.round(durationSeconds)}s`);
+      }
+
       await update({
         action: 'progress',
         stage: 'mix',
         progress: 100,
         message: 'Composition terminée, préparation de la lecture.',
       });
-      const measuredDuration = await probeDuration(media);
-      const durationSeconds = Math.max(1, Number(measuredDuration || targetDurationSeconds));
       await update({
         action: 'ready',
         title: winner.text,
@@ -528,7 +675,7 @@ function createVivyStreamNossenRunner(options = {}) {
       logger.info?.(
         '[vivy-twitch-nossen] round=%s ready task=%s duration=%ss',
         roundId,
-        taskId || 'immediate',
+        latestTaskId || taskId || 'immediate',
         Math.round(durationSeconds)
       );
       return { ok: true, roundId, taskId, media, routing, lyrics };

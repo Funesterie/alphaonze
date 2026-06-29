@@ -753,6 +753,71 @@ test('Twitch NOSSEN runner waits for a local asset instead of publishing a provi
   assert.ok(!updates.some((entry) => entry.action === 'ready' && /^https:\/\/musicfile\.removeai\.ai/i.test(entry.trackUrl || '')));
 });
 
+test('Twitch NOSSEN runner extends short Suno songs before publishing', async () => {
+  const updates = [];
+  let extensionInput = null;
+  const runner = createVivyStreamNossenRunner({
+    routeIntent: async () => createTestVocalIntentPlan(),
+    routeComposition: async () => ({
+      artists: ['vivy'],
+      songMood: 'générique TV jeunesse aventure nature, flûte légère, galop, refrain enfantin',
+    }),
+    writeLyrics: async () => ({
+      publicLyrics: '[Intro]\nLe petit cavalier part dans la plaine.\n[Verse]\nSon cheval suit la rivière claire.\n[Chorus]\nGrand ciel, grand coeur, on chante la lumière.\n'.repeat(2),
+    }),
+    startMusic: async () => ({
+      media: {
+        url: '/api/vivy/studio/assets/short-youth.mp3',
+        durationSeconds: 152,
+        audioId: 'suno-audio-short-youth',
+        model: 'V5_5',
+      },
+    }),
+    extendMusic: async (input) => {
+      extensionInput = input;
+      return { state: 'processing', taskId: 'task-youth-extended' };
+    },
+    pollMusic: async (taskId) => {
+      assert.equal(taskId, 'task-youth-extended');
+      return {
+        state: 'done',
+        taskId,
+        media: {
+          url: '/api/vivy/studio/assets/long-youth.mp3',
+          durationSeconds: 245,
+          audioId: 'suno-audio-long-youth',
+          model: 'V5_5',
+        },
+      };
+    },
+    probeDuration: async (media) => Number(media.durationSeconds || 0),
+    updateLive: (input) => updates.push(input),
+    sleep: async () => {},
+    targetDurationSeconds: 240,
+    maxExtensions: 1,
+    revealDelayMs: 0,
+  });
+
+  const result = await runner.run({
+    roundId: 'round-youth-extend',
+    winner: {
+      id: 'S1',
+      text: 'Le petit cavalier des plaines, cheval fidèle, rivière, refrain joyeux',
+      author: 'chat',
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(extensionInput.audioId, 'suno-audio-short-youth');
+  assert.equal(extensionInput.continueAtSeconds, 144);
+  assert.equal(extensionInput.targetDurationSeconds, 240);
+  assert.match(extensionInput.style, /long-form full song arrangement/i);
+  assert.match(extensionInput.prompt, /petit cavalier/i);
+  assert.equal(updates.at(-1).trackUrl, '/api/vivy/studio/assets/long-youth.mp3');
+  assert.equal(updates.at(-1).durationSeconds, 245);
+  assert.match(updates.map((entry) => entry.message || '').join('\n'), /extension 1\/1/);
+});
+
 test('Twitch NOSSEN runner strips live and stale vehicle filler before Suno', async () => {
   let productionInput = null;
   const leakedLyrics = [
