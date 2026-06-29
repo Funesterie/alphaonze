@@ -43,6 +43,24 @@ Pour un duo, donner un role a chaque voix:
 
 Vivy traite maintenant chaque demande comme une progression: decor, probleme, tension, refrain, bascule, image finale. Une demande courte fonctionne toujours, mais plus le scenario donne de personnages, d'enjeu et de scene finale, plus le morceau garde une ligne claire.
 
+## Troisieme intention
+
+Vivy peut aussi cacher une morale sous l'histoire. La lecture conseillee devient:
+
+```text
+sujet visible + sous-theme humain + morale cachee + style musical
+```
+
+La morale ne doit pas etre expliquee comme une lecon. Elle doit passer par les choix du personnage, les consequences, la bascule du pont et l'image finale.
+
+Exemple:
+
+```text
+!nossen Une grenouille qui voulait fumer, chanson-fable cartoon. Sujet visible: une petite grenouille du marais veut avoir l'air cool. Sous-theme: vouloir etre remarque par les autres. Morale cachee: pas besoin d'imiter une mauvaise habitude pour avoir du style. Couplet 1: marais et grenouille curieuse. Couplet 2: elle imite les humains et tousse en faisant des bulles. Pre-refrain: panique drole. Refrain: elle brille mieux sans fumee. Pont: le brouillard naturel du marais lui revele sa propre voix. Refrain final: elle devient cool par son energie. Electro-funk cartoon, basse rebondissante, voix expressive, refrain catchy.
+```
+
+Validation attendue avant Suno: debut clair, probleme clair, bascule claire, fin memorable, comportement risque non glorifie, message cache perceptible sans etre scolaire.
+
 ## OBS
 
 Ajouter une Browser Source:

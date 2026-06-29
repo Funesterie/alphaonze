@@ -109,8 +109,33 @@ test('Twitch lyrics prompt keeps live plumbing out of the sung material', () => 
   assert.match(prompt, /vacances -> départ, valises, route, plage/i);
   assert.match(prompt, /mini-histoire complète/i);
   assert.match(prompt, /sujet \+ personnages \+ problème \+ évolution \+ scène finale \+ style musical/i);
+  assert.match(prompt, /trois intentions/i);
+  assert.match(prompt, /sujet visible.*sous-thème.*morale cachée/s);
+  assert.match(prompt, /morale cachée perceptible sans phrase scolaire/i);
   assert.match(prompt, /\[Verse 1\].*\[Verse 2\].*\[Pre-Chorus\].*\[Chorus\].*\[Bridge\].*\[Final Chorus\]/s);
   assert.match(prompt, /duo ou plusieurs voix/i);
+});
+
+test('Twitch lyrics prompt supports hidden morals for fable songs', () => {
+  const prompt = buildTwitchLyricsRequest({
+    winner: {
+      text: 'une grenouille qui voulait fumer, fable cartoon drôle',
+    },
+    routing: {
+      artists: ['vivy'],
+      songMood: 'électro-funk cartoon, basse rebondissante, refrain catchy',
+    },
+    seed: {
+      notes: 'Sous-thème: vouloir paraître cool. Morale cachée: anti-tabac sans leçon scolaire.',
+    },
+  });
+
+  assert.match(prompt, /une grenouille qui voulait fumer/i);
+  assert.match(prompt, /morale cachée/i);
+  assert.match(prompt, /sans glorifier le risque/i);
+  assert.match(prompt, /conséquences, images et retournement final/i);
+  assert.match(prompt, /aucun comportement dangereux présenté comme désirable/i);
+  assert.doesNotMatch(prompt, /Suno chante/i);
 });
 
 test('Twitch lyrics prompt preserves a scenario and assigns roles for a duo', () => {
@@ -171,7 +196,11 @@ test('Vivy stream route stores Twitch ideas, votes, stars and builds a NOSSEN se
     assert.match(result.json.nossenSeed.canvas, /ichigo|bleach/i);
     assert.match(result.json.nossenSeed.canvas, /mini-histoire chantée/i);
     assert.match(result.json.nossenSeed.canvas, /Architecture narrative attendue/i);
+    assert.match(result.json.nossenSeed.canvas, /Lecture à trois intentions/i);
+    assert.match(result.json.nossenSeed.canvas, /morale cachée/i);
+    assert.match(result.json.nossenSeed.canvas, /Validation avant Suno/i);
     assert.match(result.json.nossenSeed.notes, /progression dramatique/i);
+    assert.match(result.json.nossenSeed.notes, /troisième intention cachée/i);
     assert.doesNotMatch(result.json.nossenSeed.canvas, /Autres idées du chat|chanson NOSSEN/i);
     assert.doesNotMatch(result.json.nossenSeed.notes, /depuis le chat/i);
 

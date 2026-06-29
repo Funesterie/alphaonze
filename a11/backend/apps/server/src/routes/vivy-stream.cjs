@@ -386,10 +386,12 @@ function buildNossenSeedFromRound(state) {
       likedTerms.length ? `Vocabulaire validé dans ce round: ${likedTerms.join(', ')}` : '',
       'Objectif: transformer la demande gagnante en mini-histoire chantée, précise, pas générique, avec vocabulaire vécu.',
       'Architecture narrative attendue: sujet + personnages + problème + évolution + scène finale + style musical. Chaque couplet doit avoir une fonction.',
+      'Lecture à trois intentions: sujet visible, sous-thème humain ou émotionnel, puis morale cachée / message de troisième intention. La morale doit rester incarnée dans les scènes, jamais expliquée comme une leçon.',
+      'Validation avant Suno: début clair, problème clair, bascule claire, fin mémorable, comportement risqué non glorifié, message caché perceptible sans être scolaire.',
     ].filter(Boolean).join('\n\n'),
     notes: likedTerms.length
-      ? `Construire une vraie progression dramatique. Éviter les images passe-partout; privilégier les détails concrets aimés: ${likedTerms.join(', ')}.`
-      : 'Construire une vraie progression dramatique. Éviter les images passe-partout; chercher des détails concrets dans le sujet demandé.',
+      ? `Construire une vraie progression dramatique avec une troisième intention cachée. Éviter les images passe-partout; privilégier les détails concrets aimés: ${likedTerms.join(', ')}.`
+      : 'Construire une vraie progression dramatique avec une troisième intention cachée. Éviter les images passe-partout; chercher des détails concrets dans le sujet demandé.',
   };
 }
 
