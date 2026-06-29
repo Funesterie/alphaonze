@@ -23,6 +23,7 @@ const {
   createVivyStreamNossenRunner,
 } = require('../src/vivy/twitch-nossen-runner.cjs');
 const {
+  buildVivyNossenIntentPlan,
   buildVivyMusicPrompt,
 } = require('../src/routes/vivy-studio.cjs');
 const {
@@ -43,6 +44,23 @@ const {
   resolveTrackNoticePollInterval,
   shouldForwardMessage,
 } = require('../scripts/vivy-twitch-chat-worker.cjs');
+
+function createTestVocalIntentPlan(overrides = {}) {
+  return {
+    ok: true,
+    intent: 'vocal_song',
+    confidence: 0.9,
+    shouldGenerateLyrics: true,
+    shouldUseVocals: true,
+    shouldPrioritizeSfx: false,
+    sfxPriority: 'none',
+    musicPriority: 'high',
+    vocalPolicy: 'allow',
+    reason: 'test vocal song',
+    generationBrief: 'Écrire une chanson vocale structurée.',
+    ...overrides,
+  };
+}
 
 after(() => {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
@@ -159,6 +177,40 @@ test('Twitch lyrics prompt preserves a scenario and assigns roles for a duo', ()
   assert.match(prompt, /respecte-les comme des contraintes prioritaires/i);
   assert.match(prompt, /\[Verse 1 - voix masculine\].*\[Verse 2 - voix féminine\]/s);
   assert.match(prompt, /alternance question-réponse/i);
+});
+
+test('Vivy Intent Router classifies instrumental fantasy murmurs as sound design', async () => {
+  const message = '!nossen Les murmures de l’écuyer et le chevalier étincelant, sound design fantasy instrumental uniquement, aucune voix chantée, bruitages de cheval, armure, pluie, torches';
+  const plan = await buildVivyNossenIntentPlan({
+    rawUserIdea: 'Les murmures de l’écuyer et le chevalier étincelant, sound design fantasy instrumental uniquement, aucune voix chantée, bruitages de cheval, armure, pluie, torches',
+    commandName: 'nossen',
+    twitchMessage: message,
+    optionalContext: '',
+    skipLlm: true,
+  });
+
+  assert.equal(plan.intent, 'sound_design_scene');
+  assert.equal(plan.shouldGenerateLyrics, false);
+  assert.equal(plan.shouldUseVocals, false);
+  assert.equal(plan.shouldPrioritizeSfx, true);
+  assert.equal(plan.sfxPriority, 'high');
+  assert.ok(['forbid', 'distant_indistinct_only'].includes(plan.vocalPolicy));
+  assert.equal(plan.vocalPolicy, 'distant_indistinct_only');
+  assert.match(plan.reason, /instrumental|bruitages|sound design/i);
+});
+
+test('Vivy Intent Router keeps absurd animal morals as narrative fables', async () => {
+  const plan = await buildVivyNossenIntentPlan({
+    rawUserIdea: 'La grenouille qui voulait fumer, fable absurde avec morale cachée',
+    commandName: 'nossen',
+    twitchMessage: '!nossen La grenouille qui voulait fumer, fable absurde avec morale cachée',
+    skipLlm: true,
+  });
+
+  assert.equal(plan.intent, 'narrative_fable');
+  assert.equal(plan.shouldGenerateLyrics, true);
+  assert.equal(plan.shouldUseVocals, true);
+  assert.equal(plan.vocalPolicy, 'allow');
 });
 
 test('Vivy stream route stores Twitch ideas, votes, stars and builds a NOSSEN seed', async () => {
@@ -500,6 +552,7 @@ test('Twitch NOSSEN runner writes lyrics, follows Suno and publishes the track',
     'Visière fumée, les synthés cognent dans le nombre',
   ].join('\n');
   const runner = createVivyStreamNossenRunner({
+    routeIntent: async () => createTestVocalIntentPlan(),
     routeComposition: async () => ({
       artists: ['vivy', 'a11'],
       songMood: 'electro-rock urbain, batterie nerveuse, synthés métalliques',
@@ -569,6 +622,18 @@ test('Twitch NOSSEN runner sends instrumental sound design requests without lyri
   let productionInput = null;
   let writeLyricsCalled = false;
   const runner = createVivyStreamNossenRunner({
+    routeIntent: async () => createTestVocalIntentPlan({
+      intent: 'sound_design_scene',
+      confidence: 0.98,
+      shouldGenerateLyrics: false,
+      shouldUseVocals: false,
+      shouldPrioritizeSfx: true,
+      sfxPriority: 'high',
+      musicPriority: 'medium',
+      vocalPolicy: 'forbid',
+      reason: 'test sound design instrumental',
+      generationBrief: 'Scène western instrumentale avec bruitages concrets.',
+    }),
     routeComposition: async (input) => {
       routedInput = input;
       return {
@@ -631,6 +696,7 @@ test('Twitch NOSSEN runner waits for a local asset instead of publishing a provi
   const updates = [];
   let pollCount = 0;
   const runner = createVivyStreamNossenRunner({
+    routeIntent: async () => createTestVocalIntentPlan(),
     routeComposition: async () => ({
       artists: ['vivy'],
       songMood: 'anime rock héroïque, batterie vive, guitares claires',
@@ -712,6 +778,7 @@ test('Twitch NOSSEN runner strips live and stale vehicle filler before Suno', as
     'On est déjà loin',
   ].join('\n');
   const runner = createVivyStreamNossenRunner({
+    routeIntent: async () => createTestVocalIntentPlan(),
     routeComposition: async () => ({
       artists: ['vivy'],
       songMood: 'rock hit summer, guitares accrocheuses, refrain solaire',
@@ -750,6 +817,7 @@ test('Twitch NOSSEN runner rejects a duplicate active round', async () => {
     releaseRouting = resolve;
   });
   const runner = createVivyStreamNossenRunner({
+    routeIntent: async () => createTestVocalIntentPlan(),
     routeComposition: () => routingGate,
     writeLyrics: async () => ({ publicLyrics: '[Verse]\n' + 'paroles concrètes '.repeat(12) }),
     startMusic: async () => ({

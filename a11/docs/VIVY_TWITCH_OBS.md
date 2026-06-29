@@ -10,6 +10,7 @@ Vivy Live passe par un flux direct Twitch -> Hetzner, avec le site web comme ove
 - OBS affiche `GET /api/vivy/stream/overlay`.
 - Le premier sujet lance un vote de 45 secondes, puis le round verrouille automatiquement la graine NOSSEN.
 - Si `VIVY_STREAM_AUTOGENERATE_ENABLED=1`, le verrouillage lance le routage musical, l'ecriture des paroles et la generation Suno sans navigateur ni session frontend.
+- Avant EX44/Suno, `VivyIntentRouter` decide le type de production: chanson vocale, musique instrumentale, scene sound design, hybride cinematographique ou chanson-fable.
 - La production publie son avancement via `POST /api/vivy/stream/control`.
 - Quand l'audio est prêt, l'overlay présente le titre pendant 4 secondes, lance la lecture, ouvre les étoiles pendant 30 secondes, puis repart sur un nouveau round.
 - En production Hetzner, le service Compose `vivy-twitch-worker` lance le worker apres le basculement blue/green.
@@ -60,6 +61,16 @@ Exemple:
 ```
 
 Validation attendue avant Suno: debut clair, probleme clair, bascule claire, fin memorable, comportement risque non glorifie, message cache perceptible sans etre scolaire.
+
+## Intent Router
+
+Vivy ne route plus seulement par mots-cles. Elle lit d'abord l'intention:
+
+```text
+veut-on une chanson, une musique instrumentale, une scene sonore, un hybride cinema, ou une fable chantee ?
+```
+
+Le routeur produit un JSON strict avec `intent`, `shouldGenerateLyrics`, `shouldUseVocals`, `sfxPriority`, `vocalPolicy`, `reason` et `generationBrief`. Les regles fortes restent appliquees apres le LLM: `instrumental`, `sans paroles`, `sans chant`, `no vocals` ou `no lyrics` coupent l'ecriture de paroles; `bruitages`, `SFX`, `foley`, `sound design`, `scene sonore` ou `ambiance sonore` priorisent les SFX. Les `murmures` ne deviennent pas automatiquement du chant: dans un contexte instrumental ou sound design, ils restent une texture distante et indistincte.
 
 ## OBS
 

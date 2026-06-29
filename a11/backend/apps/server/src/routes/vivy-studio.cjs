@@ -3889,6 +3889,319 @@ function logVivySongcraftTrace({ provider = 'deterministic', model = 'vivy-songc
     Number.isFinite(latencyMs) ? latencyMs : 0);
 }
 
+const VIVY_NOSSEN_INTENTS = new Set([
+  'vocal_song',
+  'instrumental_music',
+  'sound_design_scene',
+  'cinematic_hybrid',
+  'narrative_fable',
+]);
+const VIVY_NOSSEN_SFX_PRIORITIES = new Set(['none', 'low', 'medium', 'high']);
+const VIVY_NOSSEN_MUSIC_PRIORITIES = new Set(['low', 'medium', 'high']);
+const VIVY_NOSSEN_VOCAL_POLICIES = new Set(['allow', 'forbid', 'distant_indistinct_only']);
+
+function buildVivyNossenIntentMaterial(input = {}) {
+  return cleanText([
+    input.rawUserIdea ? `rawUserIdea: ${input.rawUserIdea}` : '',
+    input.commandName ? `commandName: ${input.commandName}` : '',
+    input.twitchMessage ? `twitchMessage: ${input.twitchMessage}` : '',
+    input.optionalContext ? `optionalContext: ${input.optionalContext}` : '',
+    input.canvas ? `canvas: ${input.canvas}` : '',
+    input.songText ? `songText: ${input.songText}` : '',
+    input.message ? `message: ${input.message}` : '',
+    input.notes ? `notes: ${input.notes}` : '',
+  ].filter(Boolean).join('\n'), VIVY_SONG_MAX_CHARS);
+}
+
+function hasVivyNossenNoVocalSignal(folded = '') {
+  return /\b(?:instrumental|instrumentale|instrumentaux|sans\s+paroles?|pas\s+de\s+paroles?|aucune?\s+paroles?|sans\s+chant|sans\s+voix|aucune?\s+voix|no\s+vocals?|no\s+lyrics?|no\s+singing)\b/.test(folded);
+}
+
+function hasVivyNossenSfxSignal(folded = '') {
+  return /\b(?:bruitage|bruitages|bruits?\s+sonores?|sfx|sound\s+effects?|foley|sound\s+design|scene\s+sonore|scène\s+sonore|ambiance\s+sonore|field\s+recording|diegetic|diegetique|diégétique)\b/.test(folded);
+}
+
+function hasVivyNossenVocalSongSignal(folded = '') {
+  return /\b(?:chanson|paroles?|lyrics?|refrain|couplets?|verse|chorus|duo|trio|voix\s+masculine|voix\s+feminine|voix\s+féminine|chant|chante|chantée|chanté|rappe|rap|lead\s+vocal)\b/.test(folded);
+}
+
+function hasVivyNossenCinematicSignal(folded = '') {
+  return /\b(?:scene|scène|cinematique|cinématique|film|trailer|bande\s+annonce|ambiance|duel|poursuite|combat|pluie|torches?|armure|chevalier|fantasy|western)\b/.test(folded);
+}
+
+function hasVivyNossenMurmurSignal(folded = '') {
+  return /\b(?:murmure|murmures|chuchotements?|whispers?)\b/.test(folded);
+}
+
+function hasVivyNossenStrictNoVoiceSignal(folded = '') {
+  return /\b(?:sans\s+voix(?!\s+chante)|aucune?\s+voix(?!\s+chante)|no\s+voice|no\s+voices)\b/.test(folded);
+}
+
+function hasVivyNossenAnimalAbsurdFableSignal(folded = '') {
+  const animal = /\b(?:grenouille|crapaud|lapin|chat|chien|cheval|tortue|souris|canard|poule|cochon|renard|loup|ours|singe|poisson|escargot|mouton|vache|abeille|fourmi|hamster)\b/.test(folded);
+  const humanAction = /\b(?:voulait|veut|rêve|reve|fumer|conduire|voler|rapper|chanter|tricher|mentir|devenir|acheter|vendre|boire|draguer|faire\s+la\s+fete|faire\s+la\s+fête|porter|parler)\b/.test(folded);
+  const fableSignal = /\b(?:fable|morale|cachee|cachée|lecon|leçon|absurde|conte|histoire|cartoon|drôle|drole)\b/.test(folded);
+  return animal && humanAction && fableSignal;
+}
+
+function inferVivyNossenIntentPlan(input = {}) {
+  const material = buildVivyNossenIntentMaterial(input);
+  const folded = foldTextForLookup(material);
+  const noVocal = hasVivyNossenNoVocalSignal(folded);
+  const sfx = hasVivyNossenSfxSignal(folded);
+  const vocalSong = hasVivyNossenVocalSongSignal(folded);
+  const cinematic = hasVivyNossenCinematicSignal(folded);
+  const murmurs = hasVivyNossenMurmurSignal(folded);
+  const strictNoVoice = hasVivyNossenStrictNoVoiceSignal(folded);
+  const fable = hasVivyNossenAnimalAbsurdFableSignal(folded);
+
+  if (noVocal && sfx) {
+    return {
+      intent: 'sound_design_scene',
+      confidence: 0.96,
+      shouldGenerateLyrics: false,
+      shouldUseVocals: false,
+      shouldPrioritizeSfx: true,
+      sfxPriority: 'high',
+      musicPriority: 'medium',
+      vocalPolicy: murmurs && !strictNoVoice ? 'distant_indistinct_only' : 'forbid',
+      reason: 'La demande impose un rendu instrumental/sans chant avec bruitages ou sound design.',
+      generationBrief: 'Créer une scène sonore instrumentale: motifs musicaux, ambiance, bruitages concrets, aucune voix chantée.',
+    };
+  }
+  if (noVocal) {
+    return {
+      intent: 'instrumental_music',
+      confidence: 0.94,
+      shouldGenerateLyrics: false,
+      shouldUseVocals: false,
+      shouldPrioritizeSfx: sfx,
+      sfxPriority: sfx ? 'high' : 'low',
+      musicPriority: 'high',
+      vocalPolicy: murmurs && !strictNoVoice ? 'distant_indistinct_only' : 'forbid',
+      reason: 'La demande demande une production instrumentale ou sans paroles.',
+      generationBrief: 'Composer une musique instrumentale structurée autour de l’idée, sans paroles ni chant.',
+    };
+  }
+  if (sfx && !vocalSong) {
+    return {
+      intent: cinematic ? 'cinematic_hybrid' : 'sound_design_scene',
+      confidence: 0.86,
+      shouldGenerateLyrics: false,
+      shouldUseVocals: false,
+      shouldPrioritizeSfx: true,
+      sfxPriority: 'high',
+      musicPriority: cinematic ? 'medium' : 'low',
+      vocalPolicy: murmurs ? 'distant_indistinct_only' : 'forbid',
+      reason: 'La demande vise surtout une scène sonore et des bruitages, pas une chanson.',
+      generationBrief: 'Construire une scène musicale avec sound design prioritaire, voix absentes ou indistinctes seulement.',
+    };
+  }
+  if (fable) {
+    return {
+      intent: 'narrative_fable',
+      confidence: 0.9,
+      shouldGenerateLyrics: true,
+      shouldUseVocals: true,
+      shouldPrioritizeSfx: false,
+      sfxPriority: 'low',
+      musicPriority: 'high',
+      vocalPolicy: 'allow',
+      reason: 'Animal et action humaine absurde indiquent une chanson-fable narrative.',
+      generationBrief: 'Écrire une chanson-fable simple avec début, problème, bascule, morale cachée et refrain mémorable.',
+    };
+  }
+  if (vocalSong) {
+    return {
+      intent: 'vocal_song',
+      confidence: 0.82,
+      shouldGenerateLyrics: true,
+      shouldUseVocals: true,
+      shouldPrioritizeSfx: sfx,
+      sfxPriority: sfx ? 'medium' : 'none',
+      musicPriority: 'high',
+      vocalPolicy: 'allow',
+      reason: 'La demande contient des marqueurs de chanson vocale.',
+      generationBrief: 'Écrire une chanson vocale structurée et chantable, puis composer autour des paroles.',
+    };
+  }
+  return {
+    intent: cinematic ? 'cinematic_hybrid' : 'vocal_song',
+    confidence: cinematic ? 0.66 : 0.58,
+    shouldGenerateLyrics: !cinematic,
+    shouldUseVocals: !cinematic,
+    shouldPrioritizeSfx: sfx,
+    sfxPriority: sfx ? 'medium' : 'none',
+    musicPriority: cinematic ? 'high' : 'medium',
+    vocalPolicy: cinematic ? 'forbid' : 'allow',
+    reason: cinematic
+      ? 'La demande ressemble à une scène cinématique plus qu’à une chanson explicite.'
+      : 'Aucun signal instrumental ou bruitage fort; chanson vocale par défaut NOSSEN.',
+    generationBrief: cinematic
+      ? 'Créer une scène cinématique instrumentale hybride, musicale et texturée.'
+      : 'Transformer l’idée en chanson vocale originale avec structure claire.',
+  };
+}
+
+function parseVivyNossenIntentPlan(value = '') {
+  const source = cleanText(value, 3000);
+  const jsonMatch = source.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return null;
+  try {
+    const parsed = JSON.parse(jsonMatch[0]);
+    return {
+      intent: VIVY_NOSSEN_INTENTS.has(String(parsed.intent || '').trim()) ? String(parsed.intent).trim() : '',
+      confidence: Math.max(0, Math.min(1, Number(parsed.confidence || 0))),
+      shouldGenerateLyrics: typeof parsed.shouldGenerateLyrics === 'boolean' ? parsed.shouldGenerateLyrics : undefined,
+      shouldUseVocals: typeof parsed.shouldUseVocals === 'boolean' ? parsed.shouldUseVocals : undefined,
+      shouldPrioritizeSfx: typeof parsed.shouldPrioritizeSfx === 'boolean' ? parsed.shouldPrioritizeSfx : undefined,
+      sfxPriority: VIVY_NOSSEN_SFX_PRIORITIES.has(String(parsed.sfxPriority || '').trim()) ? String(parsed.sfxPriority).trim() : '',
+      musicPriority: VIVY_NOSSEN_MUSIC_PRIORITIES.has(String(parsed.musicPriority || '').trim()) ? String(parsed.musicPriority).trim() : '',
+      vocalPolicy: VIVY_NOSSEN_VOCAL_POLICIES.has(String(parsed.vocalPolicy || '').trim()) ? String(parsed.vocalPolicy).trim() : '',
+      reason: cleanOneLine(parsed.reason, '', 220),
+      generationBrief: cleanOneLine(parsed.generationBrief, '', 500),
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+function normalizeVivyNossenIntentPlan(plan = {}, fallback = inferVivyNossenIntentPlan({}), input = {}) {
+  const normalized = {
+    intent: VIVY_NOSSEN_INTENTS.has(String(plan.intent || '').trim()) ? String(plan.intent).trim() : fallback.intent,
+    confidence: Math.max(0, Math.min(1, Number(plan.confidence || fallback.confidence || 0.5))),
+    shouldGenerateLyrics: typeof plan.shouldGenerateLyrics === 'boolean' ? plan.shouldGenerateLyrics : fallback.shouldGenerateLyrics,
+    shouldUseVocals: typeof plan.shouldUseVocals === 'boolean' ? plan.shouldUseVocals : fallback.shouldUseVocals,
+    shouldPrioritizeSfx: typeof plan.shouldPrioritizeSfx === 'boolean' ? plan.shouldPrioritizeSfx : fallback.shouldPrioritizeSfx,
+    sfxPriority: VIVY_NOSSEN_SFX_PRIORITIES.has(String(plan.sfxPriority || '').trim()) ? String(plan.sfxPriority).trim() : fallback.sfxPriority,
+    musicPriority: VIVY_NOSSEN_MUSIC_PRIORITIES.has(String(plan.musicPriority || '').trim()) ? String(plan.musicPriority).trim() : fallback.musicPriority,
+    vocalPolicy: VIVY_NOSSEN_VOCAL_POLICIES.has(String(plan.vocalPolicy || '').trim()) ? String(plan.vocalPolicy).trim() : fallback.vocalPolicy,
+    reason: cleanOneLine(plan.reason || fallback.reason, fallback.reason || 'Intention Vivy/NOSSEN déduite.', 220),
+    generationBrief: cleanOneLine(plan.generationBrief || fallback.generationBrief, fallback.generationBrief || 'Production NOSSEN adaptée à la demande.', 500),
+  };
+
+  const material = buildVivyNossenIntentMaterial(input);
+  const folded = foldTextForLookup(material);
+  const noVocal = hasVivyNossenNoVocalSignal(folded);
+  const sfx = hasVivyNossenSfxSignal(folded);
+  const murmurs = hasVivyNossenMurmurSignal(folded);
+  const strictNoVoice = hasVivyNossenStrictNoVoiceSignal(folded);
+  const vocalSong = hasVivyNossenVocalSongSignal(folded);
+  const fable = hasVivyNossenAnimalAbsurdFableSignal(folded);
+
+  if (noVocal) {
+    normalized.intent = sfx ? 'sound_design_scene' : 'instrumental_music';
+    normalized.shouldGenerateLyrics = false;
+    normalized.shouldUseVocals = false;
+    normalized.vocalPolicy = murmurs && !strictNoVoice ? 'distant_indistinct_only' : 'forbid';
+    normalized.sfxPriority = sfx ? 'high' : normalized.sfxPriority === 'none' ? 'low' : normalized.sfxPriority;
+    normalized.shouldPrioritizeSfx = sfx || normalized.shouldPrioritizeSfx;
+    normalized.musicPriority = normalized.musicPriority === 'low' ? 'medium' : normalized.musicPriority;
+    normalized.confidence = Math.max(normalized.confidence, sfx ? 0.96 : 0.94);
+  } else if (sfx && !vocalSong) {
+    normalized.intent = normalized.intent === 'instrumental_music' ? 'cinematic_hybrid' : normalized.intent;
+    if (!['sound_design_scene', 'cinematic_hybrid'].includes(normalized.intent)) normalized.intent = 'sound_design_scene';
+    normalized.shouldGenerateLyrics = false;
+    normalized.shouldUseVocals = false;
+    normalized.shouldPrioritizeSfx = true;
+    normalized.sfxPriority = 'high';
+    normalized.vocalPolicy = murmurs ? 'distant_indistinct_only' : 'forbid';
+    normalized.confidence = Math.max(normalized.confidence, 0.86);
+  } else if (fable) {
+    normalized.intent = 'narrative_fable';
+    normalized.shouldGenerateLyrics = true;
+    normalized.shouldUseVocals = true;
+    normalized.vocalPolicy = 'allow';
+    normalized.confidence = Math.max(normalized.confidence, 0.9);
+  } else if (vocalSong && !noVocal) {
+    normalized.shouldGenerateLyrics = true;
+    normalized.shouldUseVocals = true;
+    normalized.vocalPolicy = 'allow';
+    if (!['narrative_fable', 'vocal_song'].includes(normalized.intent)) normalized.intent = 'vocal_song';
+  }
+
+  if (normalized.shouldGenerateLyrics === false) normalized.shouldUseVocals = false;
+  if (normalized.shouldUseVocals === false && normalized.vocalPolicy === 'allow') normalized.vocalPolicy = 'forbid';
+  return normalized;
+}
+
+async function buildVivyNossenIntentPlan(input = {}, req = null) {
+  const material = buildVivyNossenIntentMaterial(input);
+  if (!material) {
+    const error = new Error('vivy_nossen_intent_material_required');
+    error.code = 'vivy_nossen_intent_material_required';
+    error.status = 400;
+    throw error;
+  }
+  const fallback = inferVivyNossenIntentPlan(input);
+  if (input.skipLlm === true || String(process.env.VIVY_CHAT_DISABLE_LLM || '').toLowerCase() === 'true') {
+    return {
+      ok: true,
+      ...normalizeVivyNossenIntentPlan(fallback, fallback, input),
+      provider: 'deterministic',
+      model: 'vivy-intent-rules',
+    };
+  }
+  const userId = resolveVivyMemoryUser(req, input);
+  if (!userId) {
+    const error = new Error('vivy_auth_required');
+    error.code = 'vivy_auth_required';
+    error.status = 401;
+    throw error;
+  }
+  const llmBundles = createVivyOpenAIClients({ mode: 'song' });
+  if (!llmBundles.length) {
+    return {
+      ok: true,
+      ...normalizeVivyNossenIntentPlan(fallback, fallback, input),
+      provider: 'deterministic',
+      model: 'vivy-intent-rules',
+    };
+  }
+  const systemPrompt = [
+    'Tu es Vivy Intent Router, l’étape avant EX44 et Suno.',
+    'Ta tâche: décider si la demande veut une chanson vocale, une musique instrumentale, une scène sonore, un hybride cinématique, ou une chanson-fable.',
+    'Ne te base pas seulement sur des mots comme refrain puissant ou ambiance: décide d’abord si l’utilisateur veut des paroles/voix, de la musique instrumentale, ou une scène sonore.',
+    'Règles fortes:',
+    '1. Si instrumental, sans paroles, sans chant, no vocals ou no lyrics sont présents: shouldGenerateLyrics=false, shouldUseVocals=false, vocalPolicy=forbid, intent instrumental_music ou sound_design_scene.',
+    '2. Si bruitages, SFX, foley, sound design, scène sonore ou ambiance sonore sont présents: shouldPrioritizeSfx=true, sfxPriority=high, shouldGenerateLyrics=false, intent sound_design_scene ou cinematic_hybrid.',
+    '3. Si murmures est présent dans une demande instrumentale/sound design: ne le transforme pas en chant; utilise vocalPolicy=distant_indistinct_only sauf interdiction totale de voix.',
+    '4. Si chanson, refrain, couplet, duo, voix masculine/féminine ou paroles sont présents sans interdiction vocale: chanson vocale ou fable, paroles nécessaires.',
+    '5. Si animal + action humaine absurde + morale implicite: narrative_fable, paroles nécessaires.',
+    'Réponds uniquement en JSON strict avec les clés: intent, confidence, shouldGenerateLyrics, shouldUseVocals, shouldPrioritizeSfx, sfxPriority, musicPriority, vocalPolicy, reason, generationBrief.',
+    'Valeurs intent: vocal_song | instrumental_music | sound_design_scene | cinematic_hybrid | narrative_fable.',
+    'Valeurs sfxPriority: none | low | medium | high. Valeurs musicPriority: low | medium | high. Valeurs vocalPolicy: allow | forbid | distant_indistinct_only.',
+  ].join('\n');
+  try {
+    const completionResult = await createVivyChatCompletion(llmBundles, {
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: material },
+      ],
+      temperature: 0.16,
+      max_tokens: 520,
+    });
+    const raw = cleanText(completionResult.completion?.choices?.[0]?.message?.content, 3000);
+    const parsed = parseVivyNossenIntentPlan(raw);
+    const plan = normalizeVivyNossenIntentPlan(parsed || fallback, fallback, input);
+    return {
+      ok: true,
+      ...plan,
+      provider: completionResult.bundle.provider || getVivyProviderFromBaseUrl(completionResult.bundle.baseURL || ''),
+      model: completionResult.bundle.model,
+    };
+  } catch (error) {
+    const plan = normalizeVivyNossenIntentPlan(fallback, fallback, input);
+    return {
+      ok: true,
+      ...plan,
+      provider: 'deterministic',
+      model: 'vivy-intent-rules',
+      warning: cleanOneLine(error?.message || error, '', 180),
+    };
+  }
+}
+
 function parseVivyNossenRoutingPlan(value = '') {
   const source = cleanText(value, 2400);
   const jsonMatch = source.match(/\{[\s\S]*\}/);
@@ -7437,6 +7750,18 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
     }
   });
 
+  router.post('/nossen-intent', requireAuth, express.json({ limit: '128kb' }), async (req, res) => {
+    try {
+      res.json(await buildVivyNossenIntentPlan(req.body || {}, req));
+    } catch (error) {
+      res.status(error?.status || 500).json({
+        ok: false,
+        error: error?.code || 'vivy_nossen_intent_failed',
+        message: error?.message || String(error),
+      });
+    }
+  });
+
   router.post('/nossen-route', requireAuth, express.json({ limit: '128kb' }), async (req, res) => {
     try {
       res.json(await buildVivyNossenRoutingPlan(req.body || {}, req));
@@ -7493,6 +7818,9 @@ module.exports = {
   buildVivySystemPrompt,
   buildVivyDirectSongReply,
   buildVivyPublicLyrics,
+  buildVivyNossenIntentPlan,
+  inferVivyNossenIntentPlan,
+  parseVivyNossenIntentPlan,
   buildVivyNossenRoutingPlan,
   parseVivyNossenRoutingPlan,
   buildVivySunoPayload,

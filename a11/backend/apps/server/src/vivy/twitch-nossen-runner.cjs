@@ -4,6 +4,7 @@ const { promisify } = require('node:util');
 const {
   buildRealMusicForProduction,
   buildVivyAiChat,
+  buildVivyNossenIntentPlan,
   buildVivyNossenRoutingPlan,
   getSunoMusicJob,
 } = require('../routes/vivy-studio.cjs');
@@ -204,8 +205,10 @@ function isTwitchInstrumentalSoundDesignRequest(...values) {
   return /\b(?:instrumental|instrumentale|instrumentaux|sans\s+paroles?|pas\s+de\s+paroles?|aucune?\s+paroles?|no\s+vocals?|no\s+lyrics?|no\s+singing|bruitages?|bruits?\s+sonores?|sfx|sound\s+effects?|foley|sound\s+design|ambiance\s+sonore)\b/.test(folded);
 }
 
-function buildTwitchInstrumentalDirection({ winner = {}, seed = {}, routing = {} } = {}) {
+function buildTwitchInstrumentalDirection({ winner = {}, seed = {}, routing = {}, intentPlan = {} } = {}) {
   return cleanText([
+    intentPlan?.generationBrief ? `Brief intention: ${intentPlan.generationBrief}` : '',
+    intentPlan?.intent ? `Type de production: ${intentPlan.intent}. SFX=${intentPlan.sfxPriority || 'none'}. Voix=${intentPlan.vocalPolicy || 'forbid'}.` : '',
     'Mode demandé: instrumental pur / sound design. Ne pas écrire ni chanter de paroles.',
     'Suno doit recevoir une piste instrumentale: no vocals, no singing, no spoken words, no narration, no rap lead.',
     'Transformer l’histoire en motifs musicaux, silences, impacts, bruitages et textures diégétiques.',
@@ -214,6 +217,14 @@ function buildTwitchInstrumentalDirection({ winner = {}, seed = {}, routing = {}
       ? 'Palette western utile: vent de poussière, pas de cheval, éperons, porte de saloon, cuir, revolver armé, sifflement, guitare sèche, cloche lointaine.'
       : '',
   ].filter(Boolean).join('\n'), '', 1400);
+}
+
+function logVivyIntentPlan(logger = console, plan = {}) {
+  logger.info?.('[VivyIntentRouter] intent=%s', cleanText(plan.intent, 'unknown', 80));
+  logger.info?.('[VivyIntentRouter] shouldGenerateLyrics=%s', plan.shouldGenerateLyrics === true ? 'true' : 'false');
+  logger.info?.('[VivyIntentRouter] shouldUseVocals=%s', plan.shouldUseVocals === true ? 'true' : 'false');
+  logger.info?.('[VivyIntentRouter] sfxPriority=%s', cleanText(plan.sfxPriority, 'none', 40));
+  logger.info?.('[VivyIntentRouter] reason=%s', cleanText(plan.reason, 'not provided', 240));
 }
 
 async function probeMediaDurationSeconds(media = {}) {
@@ -262,6 +273,7 @@ function buildTwitchLyricsRequest({ winner, routing, seed }) {
 }
 
 function createVivyStreamNossenRunner(options = {}) {
+  const routeIntent = options.routeIntent || buildVivyNossenIntentPlan;
   const routeComposition = options.routeComposition || buildVivyNossenRoutingPlan;
   const writeLyrics = options.writeLyrics || buildVivyAiChat;
   const startMusic = options.startMusic || buildRealMusicForProduction;
@@ -295,10 +307,7 @@ function createVivyStreamNossenRunner(options = {}) {
     const sessionId = `twitch-${roundId}`;
     const conversationId = `vivy-twitch-${roundId}`;
     const seed = payload.nossenSeed || {};
-    const instrumentalMode = isTwitchInstrumentalSoundDesignRequest(winner.text, seed);
-    const instrumentalDirection = instrumentalMode
-      ? buildTwitchInstrumentalDirection({ winner, seed })
-      : '';
+    const fallbackInstrumentalMode = isTwitchInstrumentalSoundDesignRequest(winner.text, seed);
 
     try {
       if (revealDelayMs) await sleepFn(revealDelayMs);
@@ -311,11 +320,41 @@ function createVivyStreamNossenRunner(options = {}) {
         requestedBy: winner.author,
         message: 'Vivy analyse le thème gagnant.',
       });
-      const routing = await routeComposition({
-        canvas: cleanText([seed.canvas || winner.text, instrumentalDirection].filter(Boolean).join('\n\n'), '', 6000),
+      const intentPlan = await routeIntent({
+        rawUserIdea: winner.text,
+        commandName: cleanText(payload.commandName || winner.commandName || winner.command || 'nossen', 'nossen', 80),
+        twitchMessage: cleanText(winner.message || winner.text, '', 2000),
+        optionalContext: cleanText([
+          seed.canvas,
+          seed.notes,
+          payload.optionalContext,
+        ].filter(Boolean).join('\n\n'), '', 4000),
+        canvas: seed.canvas,
         songText: winner.text,
         message: winner.text,
-        notes: cleanText([seed.notes, instrumentalDirection].filter(Boolean).join('\n\n'), '', 2200),
+        notes: seed.notes,
+        sessionId,
+        conversationId,
+      }, req);
+      logVivyIntentPlan(logger, intentPlan);
+      const instrumentalMode = intentPlan?.shouldGenerateLyrics === false
+        || intentPlan?.shouldUseVocals === false
+        || fallbackInstrumentalMode;
+      const soundDesignMode = intentPlan?.shouldPrioritizeSfx === true
+        || intentPlan?.intent === 'sound_design_scene'
+        || intentPlan?.sfxPriority === 'high';
+      const instrumentalDirection = instrumentalMode
+        ? buildTwitchInstrumentalDirection({ winner, seed, intentPlan })
+        : '';
+      const intentContext = cleanText([
+        `VivyIntentRouter: intent=${intentPlan?.intent || 'unknown'}; shouldGenerateLyrics=${intentPlan?.shouldGenerateLyrics === true}; shouldUseVocals=${intentPlan?.shouldUseVocals === true}; shouldPrioritizeSfx=${intentPlan?.shouldPrioritizeSfx === true}; sfxPriority=${intentPlan?.sfxPriority || 'none'}; vocalPolicy=${intentPlan?.vocalPolicy || 'forbid'}.`,
+        intentPlan?.generationBrief ? `Brief production: ${intentPlan.generationBrief}` : '',
+      ].filter(Boolean).join('\n'), '', 1400);
+      const routing = await routeComposition({
+        canvas: cleanText([seed.canvas || winner.text, intentContext, instrumentalDirection].filter(Boolean).join('\n\n'), '', 6000),
+        songText: winner.text,
+        message: winner.text,
+        notes: cleanText([seed.notes, intentContext, instrumentalDirection].filter(Boolean).join('\n\n'), '', 2200),
         sessionId,
         conversationId,
       }, req);
@@ -374,6 +413,7 @@ function createVivyStreamNossenRunner(options = {}) {
         ? cleanText([
           winner.text,
           seed.canvas,
+          intentContext,
           routing?.songMood ? `Direction sonore: ${routing.songMood}` : '',
           instrumentalDirection,
         ].filter(Boolean).join('\n\n'), '', 6000)
@@ -382,7 +422,10 @@ function createVivyStreamNossenRunner(options = {}) {
         ? cleanText([
           routing?.songMood || winner.text,
           instrumentalDirection,
-          'Instrumental score only, sound effects and foley allowed, no vocals, no singing, no lyrics, no spoken narration.',
+          soundDesignMode ? 'Prioritize sound design, concrete SFX and foley in the arrangement.' : '',
+          intentPlan?.vocalPolicy === 'distant_indistinct_only'
+            ? 'Distant indistinct whispers are allowed only as non-lyrical background texture; no sung words, no lead voice.'
+            : 'Instrumental score only, sound effects and foley allowed, no vocals, no singing, no lyrics, no spoken narration.',
         ].filter(Boolean).join(', '), '', 1200)
         : routing?.songMood;
       const productionInput = {
@@ -403,6 +446,11 @@ function createVivyStreamNossenRunner(options = {}) {
         singerCount: artists.length,
         vocalCast: artists.join(' + '),
         songMood: productionMood,
+        vivyIntent: intentPlan?.intent || '',
+        vivyIntentReason: intentPlan?.reason || '',
+        shouldPrioritizeSfx: intentPlan?.shouldPrioritizeSfx === true,
+        sfxPriority: intentPlan?.sfxPriority || 'none',
+        vocalPolicy: intentPlan?.vocalPolicy || (instrumentalMode ? 'forbid' : 'allow'),
         lyrics,
         songText: instrumentalMode ? instrumentalMaterial : lyrics,
         instrumental: instrumentalMode,
