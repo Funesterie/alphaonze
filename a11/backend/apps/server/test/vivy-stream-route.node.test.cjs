@@ -29,6 +29,7 @@ const {
   createAnnouncementRotator,
   createSongRecapRotator,
   createTrackNoticeWatcher,
+  createTwitchLiveStatusMonitor,
   fetchTwitchStreamStatus,
   parsePrivmsg,
   postStreamReset,
@@ -877,6 +878,48 @@ test('Twitch worker live gate checks Helix before opening IRC and can reset stre
   });
   assert.equal(reset.ok, true);
   assert.equal(reset.memoryCleared, 3);
+});
+
+test('Twitch live monitor resets the session when OBS cuts the stream after IRC joined', async () => {
+  const offlineEvents = [];
+  let connected = false;
+  let scheduled = null;
+  let cleared = null;
+  let fetchCount = 0;
+  const monitor = createTwitchLiveStatusMonitor({
+    intervalMs: 15000,
+    isConnected: () => connected,
+    fetchStatus: async () => {
+      fetchCount += 1;
+      return fetchCount === 1
+        ? { ok: true, live: true, streamId: 'stream-1' }
+        : { ok: true, live: false, reason: 'offline' };
+    },
+    onOffline: async (status) => offlineEvents.push(status),
+    setIntervalFn: (callback, intervalMs) => {
+      scheduled = { callback, intervalMs, unref() {} };
+      return scheduled;
+    },
+    clearIntervalFn: (timer) => {
+      cleared = timer;
+    },
+  });
+
+  assert.equal(monitor.intervalMs, 15000);
+  assert.equal(monitor.start(), true);
+  assert.equal(scheduled.intervalMs, 15000);
+  assert.equal(await monitor.tick(), false);
+  assert.equal(fetchCount, 0);
+
+  connected = true;
+  assert.equal(await monitor.tick(), false);
+  assert.equal(await monitor.tick(), true);
+  assert.equal(await monitor.tick(), false);
+  assert.equal(fetchCount, 2);
+  assert.equal(offlineEvents.length, 1);
+  assert.deepEqual(offlineEvents[0], { ok: true, live: false, reason: 'offline' });
+  assert.equal(monitor.stop(), true);
+  assert.equal(cleared, scheduled);
 });
 
 test('Twitch announcements rotate only while the worker is connected', () => {

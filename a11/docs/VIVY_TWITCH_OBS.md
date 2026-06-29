@@ -58,7 +58,7 @@ $env:VIVY_STREAM_INGEST_URL="https://vivy.funesterie.me/api/vivy/stream/chat"
 npm run worker:vivy:twitch
 ```
 
-Par défaut, le worker vérifie l'API officielle Twitch Helix avant d'ouvrir IRC. Si la chaîne n'est pas live, il reste en veille et ne poll pas l'état Vivy, n'envoie aucune annonce, et ne lit aucun message chat.
+Par défaut, le worker vérifie l'API officielle Twitch Helix avant d'ouvrir IRC, puis continue de vérifier pendant la connexion. Si la chaîne n'est pas live, il reste en veille et ne poll pas l'état Vivy, n'envoie aucune annonce, et ne lit aucun message chat. Si OBS coupe le stream après que le bot a rejoint IRC, le prochain poll Helix ferme IRC, stoppe annonces/recaps/notices, puis réinitialise la session Vivy.
 
 ```powershell
 $env:VIVY_TWITCH_LIVE_POLL_INTERVAL_MS="60000"
@@ -66,7 +66,7 @@ $env:VIVY_TWITCH_RESET_ON_OFFLINE="1"
 $env:VIVY_STREAM_RESET_URL="https://vivy.funesterie.me/api/vivy/stream/reset"
 ```
 
-`TWITCH_CLIENT_ID` est requis pour ce garde live; le token Helix utilise `TWITCH_ACCESS_TOKEN` si fourni, sinon `TWITCH_OAUTH_TOKEN` sans le préfixe `oauth:`. Mettre `VIVY_TWITCH_LIVE_GATE_DISABLED=1` force l'ancien comportement, utile seulement pour debug. Le reset offline vide le round, les messages récents, les votes/étoiles de session, les mots appris du chat, la file jukebox et la mémoire épisodique Twitch. L'historique des morceaux reste conservé pour les liens/archives, mais il ne nourrit plus le prochain craft.
+`TWITCH_CLIENT_ID` est requis pour ce garde live; le token Helix utilise `TWITCH_ACCESS_TOKEN` si fourni, sinon `TWITCH_OAUTH_TOKEN` sans le préfixe `oauth:`. Le délai réel après l'arrêt OBS dépend du temps de propagation Twitch plus `VIVY_TWITCH_LIVE_POLL_INTERVAL_MS`. Mettre `VIVY_TWITCH_LIVE_GATE_DISABLED=1` force l'ancien comportement, utile seulement pour debug. Le reset offline vide le round, les messages récents, les votes/étoiles de session, les mots appris du chat, la file jukebox et la mémoire épisodique Twitch. L'historique des morceaux reste conservé pour les liens/archives, mais il ne nourrit plus le prochain craft.
 
 Option utile si le chat devient trop bruyant:
 

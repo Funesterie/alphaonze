@@ -306,6 +306,55 @@ function createSongRecapRotator(options = {}) {
   return { intervalMs, start, stop, tick };
 }
 
+function createTwitchLiveStatusMonitor(options = {}) {
+  const intervalMs = resolveLivePollInterval(options.intervalMs);
+  const disabled = options.disabled === true;
+  const isConnected = options.isConnected || (() => false);
+  const fetchStatus = options.fetchStatus || (() => fetchTwitchStreamStatus(options));
+  const onOffline = options.onOffline || (() => {});
+  const setIntervalFn = options.setIntervalFn || setInterval;
+  const clearIntervalFn = options.clearIntervalFn || clearInterval;
+  const logger = options.logger || console;
+  let timer = null;
+  let inFlight = false;
+  let offlineHandled = false;
+
+  async function tick() {
+    if (disabled || !isConnected() || inFlight || offlineHandled) return false;
+    inFlight = true;
+    try {
+      const status = await fetchStatus();
+      if (status?.live) return false;
+      offlineHandled = true;
+      await onOffline(status || { ok: false, live: false, reason: 'unknown' });
+      return true;
+    } catch (error) {
+      logger.warn?.('[vivy-twitch] live monitor failed:', error?.message || String(error));
+      return false;
+    } finally {
+      inFlight = false;
+    }
+  }
+
+  function start() {
+    if (disabled || timer) return false;
+    timer = setIntervalFn(() => {
+      tick().catch((error) => logger.warn?.('[vivy-twitch] live monitor failed:', error?.message || String(error)));
+    }, intervalMs);
+    timer?.unref?.();
+    return true;
+  }
+
+  function stop() {
+    if (!timer) return false;
+    clearIntervalFn(timer);
+    timer = null;
+    return true;
+  }
+
+  return { intervalMs, start, stop, tick };
+}
+
 function parseTags(raw = '') {
   const tags = {};
   if (!raw.startsWith('@')) return tags;
@@ -438,6 +487,7 @@ async function runOnce(config) {
     const ws = new WebSocket(TWITCH_IRC_URL);
     let joined = false;
     let closedBySignal = false;
+    let closedByOffline = false;
     const announcer = createAnnouncementRotator({
       disabled: config.announceDisabled,
       intervalMs: config.announceIntervalMs,
@@ -460,12 +510,35 @@ async function runOnce(config) {
       isConnected: () => joined && ws.readyState === WebSocket.OPEN,
       sendMessage: (message) => send(ws, `PRIVMSG #${config.channel} :${message}`),
     });
+    const liveMonitor = createTwitchLiveStatusMonitor({
+      disabled: config.liveGateDisabled,
+      intervalMs: config.livePollIntervalMs,
+      channel: config.channel,
+      clientId: config.clientId,
+      accessToken: config.accessToken,
+      streamsUrl: config.helixStreamsUrl,
+      isConnected: () => joined && ws.readyState === WebSocket.OPEN,
+      onOffline: async (status) => {
+        closedByOffline = true;
+        const reason = status?.ok ? 'twitch_stream_offline' : `twitch_live_check_${status?.reason || 'failed'}`;
+        console.log(`[vivy-twitch] stream offline while IRC connected; closing chat and resetting session`);
+        if (typeof config.onOfflineDetected === 'function') await config.onOfflineDetected(reason, status);
+        announcer.stop();
+        trackNotifier.stop();
+        recapRotator.stop();
+        liveMonitor.stop();
+        try {
+          ws.close(1000, 'twitch stream offline');
+        } catch {}
+      },
+    });
 
     const close = () => {
       closedBySignal = true;
       announcer.stop();
       trackNotifier.stop();
       recapRotator.stop();
+      liveMonitor.stop();
       try {
         ws.close();
       } catch {}
@@ -494,6 +567,7 @@ async function runOnce(config) {
         }
         if (line.includes(' 001 ')) {
           joined = true;
+          liveMonitor.start();
           trackNotifier.tick().catch((error) => {
             console.warn('[vivy-twitch] track notice failed:', error?.message || String(error));
           });
@@ -525,6 +599,7 @@ async function runOnce(config) {
       announcer.stop();
       trackNotifier.stop();
       recapRotator.stop();
+      liveMonitor.stop();
       reject(error);
     });
 
@@ -532,6 +607,7 @@ async function runOnce(config) {
       announcer.stop();
       trackNotifier.stop();
       recapRotator.stop();
+      liveMonitor.stop();
       process.removeListener('SIGINT', close);
       process.removeListener('SIGTERM', close);
       if (closedBySignal) {
@@ -540,7 +616,7 @@ async function runOnce(config) {
       }
       const suffix = reason ? `: ${String(reason)}` : '';
       const message = joined
-        ? `connection closed ${code}${suffix}`
+        ? (closedByOffline ? `connection closed after stream offline ${code}${suffix}` : `connection closed ${code}${suffix}`)
         : `connection closed before join ${code}${suffix}`;
       resolve(new Error(message));
     });
@@ -606,6 +682,14 @@ async function main() {
       return false;
     }
   }
+  config.onOfflineDetected = async (reason, liveStatus = {}) => {
+    if (!offlineResetSent) {
+      await resetOfflineSession(reason, liveStatus);
+      offlineResetSent = true;
+    }
+    lastLive = false;
+    reconnectAttempt = 1;
+  };
 
   while (true) {
     if (!config.liveGateDisabled) {
@@ -686,6 +770,7 @@ module.exports = {
   createAnnouncementRotator,
   createSongRecapRotator,
   createTrackNoticeWatcher,
+  createTwitchLiveStatusMonitor,
   fetchTwitchStreamStatus,
   parsePrivmsg,
   parseTags,
