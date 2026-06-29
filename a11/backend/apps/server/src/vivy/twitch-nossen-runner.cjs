@@ -582,7 +582,7 @@ function createVivyStreamNossenRunner(options = {}) {
         try {
           extensionStart = await extendMusic({
             audioId,
-            model: getSunoModel(result, productionInput.musicModel),
+            model: productionInput.musicModel || getSunoModel(result, 'V5_5'),
             sourceTaskId: latestTaskId || undefined,
             sourceDurationSeconds: durationSeconds,
             continueAtSeconds: Math.max(1, Math.floor(durationSeconds - 8)),

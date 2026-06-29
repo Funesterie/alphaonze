@@ -803,7 +803,7 @@ test('Twitch NOSSEN runner extends short Suno songs before publishing', async ()
         url: '/api/vivy/studio/assets/short-youth.mp3',
         durationSeconds: 152,
         audioId: 'suno-audio-short-youth',
-        model: 'V5_5',
+        model: 'chirp-fenix',
       },
     }),
     extendMusic: async (input) => {
@@ -842,6 +842,7 @@ test('Twitch NOSSEN runner extends short Suno songs before publishing', async ()
 
   assert.equal(result.ok, true);
   assert.equal(extensionInput.audioId, 'suno-audio-short-youth');
+  assert.equal(extensionInput.model, 'V5_5');
   assert.equal(extensionInput.continueAtSeconds, 144);
   assert.equal(extensionInput.targetDurationSeconds, 240);
   assert.match(extensionInput.style, /long-form full song arrangement/i);
