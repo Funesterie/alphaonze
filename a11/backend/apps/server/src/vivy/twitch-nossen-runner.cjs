@@ -504,7 +504,7 @@ function createVivyStreamNossenRunner(options = {}) {
           action: 'progress',
           stage: 'composition',
           progress: Math.min(94, 8 + Math.round((attempt / pollAttempts) * 86)),
-          message: `Suno compose le morceau (${attempt}/${pollAttempts}).`,
+          message: `Suno compose le morceau (${attempt}/${pollAttempts}, souvent 2 à 5 min).`,
         });
       }
       if (!media) throw new Error('vivy_stream_suno_timeout');

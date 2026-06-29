@@ -4214,7 +4214,7 @@ function parseVivyNossenRoutingPlan(value = '') {
       .map((artist) => artist === 'kaen44' ? 'k44' : artist)
       .filter((artist, index, list) => allowedArtists.has(artist) && list.indexOf(artist) === index)
       .slice(0, 4);
-    const songMood = cleanOneLine(parsed.songMood || parsed.style || parsed.sonicDirection, '', 320);
+    const songMood = cleanOneLine(parsed.songMood || parsed.style || parsed.sonicDirection, '', 520);
     const limitedArtists = limitVivyNossenRoutingArtists(artists);
     if (!limitedArtists.length || songMood.length < 12) return null;
     return { artists: limitedArtists, songMood };
@@ -4239,6 +4239,49 @@ function limitVivyNossenRoutingArtists(artists = []) {
   }
   if (selected.includes('djeff')) return ['djeff', 'vivy'];
   return selected.slice(0, 2);
+}
+
+function joinVivyNossenRoutingMoodParts(parts = [], max = 520) {
+  const kept = [];
+  const seen = new Set();
+  for (const part of parts) {
+    for (const rawChunk of String(part || '').split(/\s*,\s*/)) {
+      const chunk = cleanOneLine(rawChunk, '', 120);
+      const key = foldTextForLookup(chunk);
+      if (!chunk || seen.has(key)) continue;
+      kept.push(chunk);
+      seen.add(key);
+    }
+  }
+  return cleanOneLine(kept.join(', '), '', max);
+}
+
+function hasVivyNossenYouthNatureAdventure(material = '') {
+  const folded = foldTextForLookup(material);
+  if (!folded) return false;
+  const youthSignal = /\b(?:yakari|dessin\s+anime|dessin\s+animee|generique\s+tv|jeunesse|enfant|enfants|cartoon\s+familial|petit\s+cavalier|cavalier)\b/.test(folded);
+  const horseSignal = /\b(?:cheval|chevaux|poney|cavalier|galop|plaines?|prairies?)\b/.test(folded);
+  const natureSignal = /\b(?:nature|riviere|rivière|plaines?|prairies?|grand\s+ciel|aigle|animaux|foret|forêt|vent|herbe)\b/.test(folded);
+  return youthSignal && horseSignal && natureSignal;
+}
+
+function strengthenVivyNossenRoutingPlan(plan = {}, material = '') {
+  if (!plan || !plan.songMood) return plan;
+  const mood = cleanOneLine(plan.songMood, '', 520);
+  const anchors = [];
+  if (hasVivyNossenYouthNatureAdventure(material)) {
+    anchors.push(
+      'générique TV jeunesse aventure nature, flûte légère lead, percussions tribales douces, guitare acoustique, galop léger, textures rivière vent grand ciel, refrain enfantin très chantable'
+    );
+  }
+  if (!anchors.length) return { ...plan, songMood: mood };
+  const lessGenericMood = mood
+    .replace(/\b(?:pop\s+cartoon\s+familial\s+joyeux|cartoon\s+familial\s+joyeux|pop\s+familial\s+joyeux)\b,?\s*/gi, '')
+    .trim();
+  return {
+    ...plan,
+    songMood: joinVivyNossenRoutingMoodParts([...anchors, lessGenericMood || mood], 520),
+  };
 }
 
 async function buildVivyNossenRoutingPlan(input = {}, req = null) {
@@ -4278,6 +4321,7 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
     'Ne remplace jamais une voix mélodique par deux voix graves ou synthétiques.',
     'Choisis une direction sonore spécifique au sujet et à son médium: genre contemporain, tempo ressenti, instruments concrets, groove, texture, dynamique et arrangement vocal.',
     'Si la matière demande explicitement instrumental, sans paroles, bruitages, SFX, foley ou sound design: garde artists avec une seule valeur de compatibilité mais songMood doit être instrumental pur, sans refrain chanté, sans voix, avec bruitages/ambiances concrets.',
+    'Pour dessin animé jeunesse avec cheval, plaines, rivière, aigle, animaux ou nature: ne réponds pas “pop cartoon familial” seul; impose flûte légère, percussions tribales douces, guitare acoustique, galop léger, textures de rivière/vent/grand ciel et refrain enfantin très chantable.',
     'Pour Bleach, anime, manga ou shonen: choisis un opening J-rock/J-pop rock nerveux, guitares et batterie rapide; jamais variété française, chanson acoustique ou ballade type Patrick Bruel.',
     'Pour moto, visière, casque, guidon, fuite, 5 étoiles, gyros ou hélicos: choisis rap français trap sombre, 808 lourdes, sirènes, adlibs, refrain court, énergie poursuite nocturne NOSSEN; jamais “au volant” si la matière dit moto.',
     'Sans demande explicite, évite les réflexes orchestral, cinématique, épique, symphonique ou classique. Cherche une identité moderne, rythmique et immédiatement reconnaissable.',
@@ -4299,18 +4343,19 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
     error.status = 502;
     throw error;
   }
+  const strengthenedPlan = strengthenVivyNossenRoutingPlan(plan, material);
   const sessionContext = resolveVivyInputSession(input);
   console.info(
     '[vivy-nossen-route] session=%s provider=%s model=%s artists=%s mood=%s',
     sessionContext.sessionId,
     completionResult.bundle.provider || getVivyProviderFromBaseUrl(completionResult.bundle.baseURL || ''),
     completionResult.bundle.model,
-    plan.artists.join('+'),
-    plan.songMood
+    strengthenedPlan.artists.join('+'),
+    strengthenedPlan.songMood
   );
   return {
     ok: true,
-    ...plan,
+    ...strengthenedPlan,
     model: completionResult.bundle.model,
     provider: completionResult.bundle.provider || getVivyProviderFromBaseUrl(completionResult.bundle.baseURL || ''),
   };
@@ -5801,7 +5846,7 @@ function buildVivySunoPayload(input = {}, req = null) {
   const requestedStyleBase = sanitizeVivySunoProviderTags(
     stripVivyAscii4SoundTokens(input.songMood || input.mood || input.style),
     '',
-    220
+    420
   );
   const sunoStyleMaterialFolded = foldTextForLookup(buildVivySunoStyleMaterial(input));
   const animeStyleBase = inferVivyAnimeSunoStyle(sunoStyleMaterialFolded);
@@ -7823,6 +7868,7 @@ module.exports = {
   parseVivyNossenIntentPlan,
   buildVivyNossenRoutingPlan,
   parseVivyNossenRoutingPlan,
+  strengthenVivyNossenRoutingPlan,
   buildVivySunoPayload,
   extractSunoMedia,
   scoreVivySunoDirectorTrack,

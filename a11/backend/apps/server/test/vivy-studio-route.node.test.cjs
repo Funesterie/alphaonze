@@ -46,6 +46,7 @@ const {
   normalizeVivyChatHistory,
   postProcessVivyAssistantText,
   parseVivyNossenRoutingPlan,
+  strengthenVivyNossenRoutingPlan,
   saveVivyWorkspaceForUser,
   sanitizeVivyPublicText,
   shouldVivyAutoWebSearch,
@@ -902,7 +903,8 @@ test('POST /api/vivy/studio/produce can generate ElevenLabs music only with lega
       assert.equal(json.media.content_type, 'audio/mpeg');
       assert.match(json.audioUrl, /^\/api\/vivy\/studio\/assets\/vivy-music-.+\.mp3$/);
       assert.equal(musicBodies.length, 1);
-      assert.match(musicBodies[0].prompt, /Original Funesterie song for Vivy/i);
+      assert.match(musicBodies[0].prompt, /Original instrumental Funesterie score/i);
+      assert.match(musicBodies[0].prompt, /Instrumental only\. No vocals/i);
       assert.match(musicBodies[0].prompt, /Instrumental arrangement cues: Soft piano \+ léger battement de tambour/i);
       assert.equal(musicBodies[0].force_instrumental, true);
       assert.equal(musicBodies[0].model_id, 'music_v1');
@@ -3475,6 +3477,24 @@ test('Vivy parses a strict NOSSEN routing plan without leaking prose', () => {
     '```',
   ].join('\n'))?.artists, ['djeff', 'vivy']);
   assert.equal(parseVivyNossenRoutingPlan('Je choisirais peut-être Vivy.'), null);
+});
+
+test('Vivy NOSSEN router strengthens youth nature cartoon songs with concrete sonic anchors', () => {
+  const plan = strengthenVivyNossenRoutingPlan({
+    artists: ['vivy'],
+    songMood: 'pop cartoon familial joyeux, guitare acoustique claire, percussions légères, refrain mélodique expressif',
+  }, [
+    'Yakari, version dessin animé chanté, aventure douce dans les grandes plaines, enfant courageux, cheval fidèle.',
+    'Animaux qui parlent, nature, rivière, aigle dans le ciel, refrain joyeux et mémorable.',
+  ].join('\n'));
+
+  assert.deepEqual(plan.artists, ['vivy']);
+  assert.match(plan.songMood, /générique TV jeunesse aventure nature/i);
+  assert.match(plan.songMood, /flûte légère/i);
+  assert.match(plan.songMood, /galop léger/i);
+  assert.match(plan.songMood, /rivière vent grand ciel/i);
+  assert.match(plan.songMood, /refrain enfantin très chantable/i);
+  assert.doesNotMatch(plan.songMood, /^pop cartoon familial/i);
 });
 
 test('Vivy NOSSEN Banger builds a semantic canvas instead of singing media OCR', () => {
