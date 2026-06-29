@@ -171,7 +171,10 @@ test('Vivy stream reset clears the Twitch live session without deleting song his
     assert.equal(result.json.state.recentMessages.length, 0);
     assert.equal(result.json.state.stars.length, 0);
     assert.equal(result.json.state.songs.length, 1);
-    assert.equal(result.json.state.learning.totalStars, 1);
+    assert.equal(result.json.state.jukebox.tracks.length, 0);
+    assert.equal(result.json.state.learning.totalStars, 0);
+    assert.equal(result.json.state.learning.likedTerms.length, 0);
+    assert.doesNotMatch(result.json.state.nossenSeed.canvas, /Tortues|égouts/i);
     assert.equal(result.json.state.current.trackUrl, '');
 
     result = await postJson(baseUrl, '/api/vivy/stream/chat', {
@@ -182,6 +185,7 @@ test('Vivy stream reset clears the Twitch live session without deleting song his
     assert.equal(result.json.state.twitch.online, true);
     assert.equal(result.json.state.round.suggestions.length, 1);
     assert.match(result.json.state.round.suggestions[0].text, /Bleach opening/);
+    assert.doesNotMatch(result.json.state.nossenSeed.canvas, /Tortues|égouts/i);
   });
 });
 
@@ -222,6 +226,30 @@ test('Vivy stream lock starts automatic NOSSEN only once per round', async () =>
   assert.equal(starts.length, 1);
   assert.equal(starts[0].winner.id, 'S1');
   assert.match(starts[0].nossenSeed.canvas, /visière fumée/i);
+});
+
+test('Vivy stream NOSSEN seed does not recycle liked words from a previous topic', () => {
+  const store = createVivyStreamStore({
+    statePath: path.join(tmpRoot, 'no-recycled-liked-terms.json'),
+  });
+  store.addChatMessage({
+    username: 'first',
+    message: '!nossen Course urbaine, visière fumée et casque intégral',
+  });
+  store.addChatMessage({
+    username: 'first',
+    message: '!etoiles 5 S1',
+  });
+  assert.deepEqual(store.getState().learning.likedTerms.slice(0, 3), ['casque', 'course', 'fumee']);
+
+  store.startRound();
+  const next = store.addChatMessage({
+    username: 'second',
+    message: '!nossen Bleach opening nerveux à Soul Society',
+  });
+
+  assert.match(next.state.nossenSeed.canvas, /Bleach opening nerveux/);
+  assert.doesNotMatch(next.state.nossenSeed.canvas, /visière|visiere|casque|integral|fumee/i);
 });
 
 test('Twitch suggestions received during playback enter the next round', () => {

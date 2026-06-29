@@ -594,6 +594,9 @@ async function main() {
         reason,
         channel: config.channel,
         clearMemory: true,
+        preserveSongs: true,
+        preserveJukebox: false,
+        preserveLearning: false,
         liveStatus,
       });
       console.log(`[vivy-twitch] reset live session: ${reason} cleared=${result?.memoryCleared ?? 0}`);

@@ -30,7 +30,8 @@ const STOP_WORDS = new Set([
   'avec', 'alors', 'avoir', 'cette', 'dans', 'des', 'donc', 'elle', 'faire', 'fais',
   'fait', 'pour', 'que', 'qui', 'sur', 'une', 'les', 'pas', 'plus', 'mais', 'comme',
   'chanson', 'musique', 'nossen', 'vivy', 'theme', 'thème', 'song', 'vote', 'etoile',
-  'étoile', 'stars', 'star',
+  'étoile', 'stars', 'star', 'style', 'magique', 'classique', 'generique', 'générique',
+  'ambiance', 'titre', 'titres', 'voix',
 ]);
 
 function cleanText(value = '', max = 2000) {
@@ -339,7 +340,13 @@ function buildNossenSeedFromRound(state) {
   const winner = round.suggestions?.find((entry) => entry.id === round.winningSuggestionId)
     || round.suggestions?.[0]
     || null;
-  const likedTerms = Array.isArray(state?.learning?.likedTerms) ? state.learning.likedTerms.slice(0, 10) : [];
+  const hasCurrentRoundMaterial = Boolean(winner || (round.suggestions || []).length);
+  const currentRoundTerms = hasCurrentRoundMaterial
+    ? new Set(collectLearningTerms((round.suggestions || []).map((entry) => entry.text).join(' ')))
+    : new Set();
+  const likedTerms = hasCurrentRoundMaterial && Array.isArray(state?.learning?.likedTerms)
+    ? state.learning.likedTerms.filter((term) => currentRoundTerms.has(term)).slice(0, 10)
+    : [];
   const topIdeas = (round.suggestions || []).slice(0, 5).map((entry) => (
     `${entry.id}: ${entry.text} (${entry.votes || 0} votes, ${entry.starAverage || 0}/5)`
   ));
@@ -1111,13 +1118,20 @@ function createVivyStreamStore(options = {}) {
     const previous = state || createInitialState();
     const reason = cleanOneLine(input.reason, 'twitch_offline', 120);
     const resetAt = nowIso();
+    const preserveSongs = input.preserveSongs !== false;
+    const preserveJukebox = input.preserveJukebox === true;
+    const preserveLearning = input.preserveLearning === true;
     const removed = {
       suggestions: Array.isArray(previous.round?.suggestions) ? previous.round.suggestions.length : 0,
       pendingSuggestions: Array.isArray(previous.pendingSuggestions) ? previous.pendingSuggestions.length : 0,
       recentMessages: Array.isArray(previous.recentMessages) ? previous.recentMessages.length : 0,
       stars: Array.isArray(previous.stars) ? previous.stars.length : 0,
+      jukeboxTracks: preserveJukebox ? 0 : (Array.isArray(previous.jukebox?.tracks) ? previous.jukebox.tracks.length : 0),
+      likedTerms: preserveLearning ? 0 : (Array.isArray(previous.learning?.likedTerms) ? previous.learning.likedTerms.length : 0),
     };
     const initial = createInitialState();
+    const previousJukebox = previous.jukebox || {};
+    const previousLearning = previous.learning || {};
     state = {
       ...initial,
       updatedAt: resetAt,
@@ -1132,13 +1146,13 @@ function createVivyStreamStore(options = {}) {
       production: createProductionState(),
       jukebox: {
         ...initial.jukebox,
-        ...(previous.jukebox || {}),
-        tracks: Array.isArray(previous.jukebox?.tracks) ? previous.jukebox.tracks : [],
+        ...(preserveJukebox ? previousJukebox : {}),
+        tracks: preserveJukebox && Array.isArray(previousJukebox.tracks) ? previousJukebox.tracks : [],
       },
-      songs: Array.isArray(previous.songs) ? previous.songs : [],
+      songs: preserveSongs && Array.isArray(previous.songs) ? previous.songs : [],
       learning: {
         ...initial.learning,
-        ...(previous.learning || {}),
+        ...(preserveLearning ? previousLearning : {}),
       },
       stats: { ...initial.stats },
       pendingSuggestions: [],

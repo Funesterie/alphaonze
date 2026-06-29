@@ -66,7 +66,7 @@ $env:VIVY_TWITCH_RESET_ON_OFFLINE="1"
 $env:VIVY_STREAM_RESET_URL="https://vivy.funesterie.me/api/vivy/stream/reset"
 ```
 
-`TWITCH_CLIENT_ID` est requis pour ce garde live; le token Helix utilise `TWITCH_ACCESS_TOKEN` si fourni, sinon `TWITCH_OAUTH_TOKEN` sans le préfixe `oauth:`. Mettre `VIVY_TWITCH_LIVE_GATE_DISABLED=1` force l'ancien comportement, utile seulement pour debug. Le reset offline vide le round, les messages récents, les votes/étoiles de session et la mémoire épisodique Twitch, mais conserve l'historique des morceaux et l'apprentissage global.
+`TWITCH_CLIENT_ID` est requis pour ce garde live; le token Helix utilise `TWITCH_ACCESS_TOKEN` si fourni, sinon `TWITCH_OAUTH_TOKEN` sans le préfixe `oauth:`. Mettre `VIVY_TWITCH_LIVE_GATE_DISABLED=1` force l'ancien comportement, utile seulement pour debug. Le reset offline vide le round, les messages récents, les votes/étoiles de session, les mots appris du chat, la file jukebox et la mémoire épisodique Twitch. L'historique des morceaux reste conservé pour les liens/archives, mais il ne nourrit plus le prochain craft.
 
 Option utile si le chat devient trop bruyant:
 
