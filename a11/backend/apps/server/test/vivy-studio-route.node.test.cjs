@@ -1736,6 +1736,86 @@ test('GET /api/vivy/studio/jobs/:taskId falls back to provider URL when Suno MP3
   }
 });
 
+test('GET /api/vivy/studio/jobs/:taskId keeps polling when local Suno MP3 is required', async () => {
+  const previousEnv = {
+    VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
+    VIVY_SUNO_BASE_URL: process.env.VIVY_SUNO_BASE_URL,
+    VIVY_SUNO_AUDIO_HOSTS: process.env.VIVY_SUNO_AUDIO_HOSTS,
+    VIVY_SUNO_STATUS_AUDIO_FETCH_TIMEOUT_MS: process.env.VIVY_SUNO_STATUS_AUDIO_FETCH_TIMEOUT_MS,
+    VIVY_SUNO_STATUS_AUDIO_FETCH_ATTEMPTS: process.env.VIVY_SUNO_STATUS_AUDIO_FETCH_ATTEMPTS,
+  };
+  const previousFetch = global.fetch;
+  const founderAuth = (req, res, next) => {
+    if (req.headers.authorization === 'Bearer vivy-founder-token') {
+      req.user = { id: 'djeff', username: 'Djeff', roles: ['founder'] };
+      return next();
+    }
+    return res.status(401).json({ ok: false, error: 'A11_JWT_Missing', message: 'Connexion requise' });
+  };
+
+  process.env.VIVY_SUNO_API_KEY = 'test-suno-key';
+  process.env.VIVY_SUNO_BASE_URL = 'https://api.suno.test/api/v1';
+  process.env.VIVY_SUNO_AUDIO_HOSTS = 'cdn.suno.test';
+  process.env.VIVY_SUNO_STATUS_AUDIO_FETCH_TIMEOUT_MS = '1';
+  process.env.VIVY_SUNO_STATUS_AUDIO_FETCH_ATTEMPTS = '1';
+  const sourceUrl = 'https://cdn.suno.test/vivy-required-local-status.mp3';
+  let mediaFetches = 0;
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'https://api.suno.test/api/v1/generate/record-info?taskId=suno-required-local-status') {
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            code: 200,
+            data: {
+              taskId: 'suno-required-local-status',
+              status: 'SUCCESS',
+              response: { sunoData: [{ title: 'Required Local Vivy', audioUrl: sourceUrl }] },
+            },
+          };
+        },
+      };
+    }
+    if (value === sourceUrl) {
+      mediaFetches += 1;
+      return new Promise((resolve, reject) => {
+        if (options.signal?.aborted) {
+          reject(new Error('required_local_media_fetch_aborted'));
+          return;
+        }
+        options.signal?.addEventListener('abort', () => reject(new Error('required_local_media_fetch_aborted')), { once: true });
+      });
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer((app) => {
+      app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT: founderAuth }));
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/vivy/studio/jobs/suno-required-local-status?requireLocalSunoAudio=1`, {
+        headers: { Authorization: 'Bearer vivy-founder-token' },
+      });
+      const json = await response.json();
+      assert.equal(response.status, 200);
+      assert.equal(json.ok, true);
+      assert.equal(json.state, 'processing');
+      assert.equal(json.status, 'suno_audio_localizing');
+      assert.equal(json.retryable, true);
+      assert.equal(json.media, undefined);
+      assert.equal(mediaFetches, 1);
+    });
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('GET /api/vivy/studio/jobs/:taskId keeps polling when Suno status is temporarily slow', async () => {
   const previousEnv = {
     VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,

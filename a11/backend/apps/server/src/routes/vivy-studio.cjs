@@ -6237,6 +6237,56 @@ async function requestSunoMusicExtension(input = {}, req = null) {
   };
 }
 
+function vivyInputFlag(value) {
+  if (value === true) return true;
+  if (value === false || value === null || value === undefined) return false;
+  return /^(1|true|yes|on)$/i.test(String(value || '').trim());
+}
+
+function requiresLocalVivySunoAudio(input = {}) {
+  return vivyInputFlag(input.requireLocalSunoAudio)
+    || vivyInputFlag(input.sunoLocalAudioRequired)
+    || vivyInputFlag(input.requireLocalAudio)
+    || vivyInputFlag(input.localAudioRequired)
+    || vivyInputFlag(input.throwOnSunoMaterializationFailure);
+}
+
+function buildVivySunoLocalizingJob(taskId, error = null, upstreamStatus = '') {
+  const detail = cleanOneLine(error?.message || error, '', 180);
+  return {
+    ok: true,
+    provider: 'suno',
+    taskId,
+    state: 'processing',
+    status: 'suno_audio_localizing',
+    upstreamStatus: cleanOneLine(upstreamStatus || 'callback_ready', 'callback_ready', 80),
+    retryable: true,
+    message: 'Suno a rendu l’audio; Vivy rapatrie le MP3 local avant publication.',
+    localMaterializationError: detail || undefined,
+  };
+}
+
+async function materializeVivySunoStatusMedia(media = {}, input = {}, options = {}) {
+  const requireLocal = requiresLocalVivySunoAudio(input);
+  try {
+    const preparedMedia = await materializeVivySunoMedia(
+      media,
+      buildVivySunoStatusMaterializeOptions({
+        ...input,
+        ...options,
+        requireLocalSunoAudio: requireLocal,
+        throwOnFailure: requireLocal,
+      })
+    );
+    return { pending: false, media: preparedMedia };
+  } catch (error) {
+    if (requireLocal && error?.code === 'vivy_suno_local_materialization_failed') {
+      return { pending: true, error };
+    }
+    throw error;
+  }
+}
+
 async function getSunoMusicJob(taskId, input = {}, req = null) {
   const safeTaskId = sanitizeSunoTaskId(taskId);
   if (!safeTaskId) {
@@ -6263,14 +6313,13 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
     targetDurationSeconds: normalizeVivySunoTargetDuration(input),
   });
   if (cachedMedia?.url) {
-    const preparedMedia = await materializeVivySunoMedia(
-      cachedMedia,
-      buildVivySunoStatusMaterializeOptions({
-        taskId: safeTaskId,
-        preferLongForm: wantsVivySunoLongForm(input),
-        targetDurationSeconds: normalizeVivySunoTargetDuration(input),
-      })
-    );
+    const materialized = await materializeVivySunoStatusMedia(cachedMedia, input, {
+      taskId: safeTaskId,
+      preferLongForm: wantsVivySunoLongForm(input),
+      targetDurationSeconds: normalizeVivySunoTargetDuration(input),
+    });
+    if (materialized.pending) return buildVivySunoLocalizingJob(safeTaskId, materialized.error);
+    const preparedMedia = materialized.media;
     return {
       ok: true,
       provider: 'suno',
@@ -6336,14 +6385,13 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
   const status = findSunoStatus(payload) || 'processing';
   if (media?.url) {
     writeCachedSunoCallback(safeTaskId, payload);
-    const preparedMedia = await materializeVivySunoMedia(
-      media,
-      buildVivySunoStatusMaterializeOptions({
-        taskId: safeTaskId,
-        preferLongForm: wantsVivySunoLongForm(input),
-        targetDurationSeconds: normalizeVivySunoTargetDuration(input),
-      })
-    );
+    const materialized = await materializeVivySunoStatusMedia(media, input, {
+      taskId: safeTaskId,
+      preferLongForm: wantsVivySunoLongForm(input),
+      targetDurationSeconds: normalizeVivySunoTargetDuration(input),
+    });
+    if (materialized.pending) return buildVivySunoLocalizingJob(safeTaskId, materialized.error, status);
+    const preparedMedia = materialized.media;
     return {
       ok: true,
       provider: 'suno',
@@ -6609,7 +6657,7 @@ async function materializeVivySunoMedia(media = {}, options = {}) {
   if (envFlag('VIVY_SUNO_LOCAL_MP3_DISABLED')) return media;
   if (!isAllowedVivyRemoteInstrumentalUrl(sourceUrl)) return media;
 
-  const attempts = Math.max(1, Math.min(5, Number(options.attempts || process.env.VIVY_SUNO_AUDIO_FETCH_ATTEMPTS || 3) || 3));
+  const attempts = Math.max(1, Math.min(6, Number(options.attempts || process.env.VIVY_SUNO_AUDIO_FETCH_ATTEMPTS || 3) || 3));
   const retryDelayMs = Math.max(0, Number(options.retryDelayMs ?? process.env.VIVY_SUNO_AUDIO_RETRY_DELAY_MS ?? 1200) || 0);
   const sunoOptions = {
     ...options,
@@ -6645,36 +6693,74 @@ async function materializeVivySunoMedia(media = {}, options = {}) {
       }
     }
   }
+  const detail = cleanOneLine(lastError?.message || lastError, 'unknown', 240);
+  if (options.throwOnFailure === true || options.requireLocalSunoAudio === true || options.sunoLocalAudioRequired === true) {
+    const error = new Error(`vivy_suno_local_materialization_failed:${detail}`);
+    error.code = 'vivy_suno_local_materialization_failed';
+    error.sourceUrl = sourceUrl;
+    error.cause = lastError;
+    throw error;
+  }
   try {
-    console.warn('[Vivy Studio] Suno MP3 local materialization failed, keeping provider URL:', cleanOneLine(lastError?.message || lastError, 'unknown', 240));
+    console.warn('[Vivy Studio] Suno MP3 local materialization failed, keeping provider URL:', detail);
   } catch (_) {}
   return media;
 }
 
 function buildVivySunoStatusMaterializeOptions(options = {}) {
   const longForm = options.preferLongForm === true || normalizeVivySunoTargetDuration(options) >= 240;
+  const requireLocal = requiresLocalVivySunoAudio(options) || options.throwOnFailure === true;
+  const defaultAttempts = requireLocal ? (longForm ? 4 : 3) : (longForm ? 2 : 1);
+  const maxAttempts = requireLocal ? 6 : 2;
+  const defaultRetryDelayMs = requireLocal ? 3000 : (longForm ? 1500 : 0);
+  const defaultFetchTimeoutMs = requireLocal
+    ? (longForm ? 180000 : 60000)
+    : (longForm ? 60000 : 8000);
+  const fetchTimeoutCap = requireLocal
+    ? (longForm ? 240000 : 120000)
+    : (longForm ? 90000 : 25000);
+  const defaultRepairTimeoutMs = requireLocal
+    ? (longForm ? 180000 : 90000)
+    : (longForm ? 90000 : 12000);
+  const repairTimeoutCap = requireLocal
+    ? (longForm ? 300000 : 180000)
+    : (longForm ? 120000 : 30000);
   return {
     ...options,
-    attempts: Math.max(1, Math.min(2, Number(
-      options.attempts
+    attempts: Math.max(1, Math.min(maxAttempts, Number(
+      options.sunoStatusAudioFetchAttempts
+      || options.statusAudioFetchAttempts
+      || options.audioFetchAttempts
+      || options.attempts
       || process.env.VIVY_SUNO_STATUS_AUDIO_FETCH_ATTEMPTS
-      || (longForm ? 2 : 1)
-    ) || 1)),
+      || defaultAttempts
+    ) || defaultAttempts)),
     retryDelayMs: Math.max(0, Number(
-      options.retryDelayMs
+      options.sunoStatusAudioRetryDelayMs
+      ?? options.statusAudioRetryDelayMs
+      ?? options.audioRetryDelayMs
+      ?? options.retryDelayMs
       ?? process.env.VIVY_SUNO_STATUS_AUDIO_RETRY_DELAY_MS
-      ?? (longForm ? 1500 : 0)
+      ?? defaultRetryDelayMs
     ) || 0),
-    fetchTimeoutMs: Math.max(1000, Math.min(longForm ? 90000 : 25000, Number(
-      options.fetchTimeoutMs
+    fetchTimeoutMs: Math.max(1000, Math.min(fetchTimeoutCap, Number(
+      options.sunoStatusAudioFetchTimeoutMs
+      || options.statusAudioFetchTimeoutMs
+      || options.audioFetchTimeoutMs
+      || options.fetchTimeoutMs
       || process.env.VIVY_SUNO_STATUS_AUDIO_FETCH_TIMEOUT_MS
-      || (longForm ? 60000 : 8000)
-    ) || (longForm ? 60000 : 8000))),
-    repairTimeoutMs: Math.max(1000, Math.min(longForm ? 120000 : 30000, Number(
-      options.repairTimeoutMs
+      || defaultFetchTimeoutMs
+    ) || defaultFetchTimeoutMs)),
+    repairTimeoutMs: Math.max(1000, Math.min(repairTimeoutCap, Number(
+      options.sunoStatusMp3RepairTimeoutMs
+      || options.statusMp3RepairTimeoutMs
+      || options.mp3RepairTimeoutMs
+      || options.repairTimeoutMs
       || process.env.VIVY_SUNO_STATUS_MP3_REPAIR_TIMEOUT_MS
-      || (longForm ? 90000 : 12000)
-    ) || (longForm ? 90000 : 12000))),
+      || defaultRepairTimeoutMs
+    ) || defaultRepairTimeoutMs)),
+    requireLocalSunoAudio: requireLocal,
+    throwOnFailure: requireLocal || options.throwOnFailure === true,
   };
 }
 

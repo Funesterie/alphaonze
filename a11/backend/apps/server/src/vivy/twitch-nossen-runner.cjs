@@ -91,6 +91,32 @@ function getReadyMedia(value = {}) {
   };
 }
 
+function isExternalMediaUrl(url = '') {
+  return /^https?:\/\//i.test(cleanText(url, '', 1200));
+}
+
+function isLocalVivyMediaUrl(url = '') {
+  const value = cleanText(url, '', 1200);
+  return /^\/api\/vivy\/studio\/assets\//i.test(value)
+    || /^\/api\/double-harmonic\/out\//i.test(value)
+    || /^https?:\/\/vivy\.funesterie\.me\/api\/vivy\/studio\/assets\//i.test(value)
+    || /^https?:\/\/vivy\.funesterie\.me\/api\/double-harmonic\/out\//i.test(value);
+}
+
+function getReadyLocalMedia(value = {}, logger = console, context = {}) {
+  const media = getReadyMedia(value);
+  if (!media) return null;
+  if (isExternalMediaUrl(media.url) && !isLocalVivyMediaUrl(media.url)) {
+    logger.warn?.(
+      '[vivy-twitch-nossen] round=%s provider media ready but local asset missing url=%s',
+      cleanText(context.roundId || '', 'unknown', 120),
+      cleanText(media.url, '', 180)
+    );
+    return null;
+  }
+  return media;
+}
+
 async function probeMediaDurationSeconds(media = {}) {
   const reported = Number(media.durationSeconds || media.duration || 0);
   if (Number.isFinite(reported) && reported > 0) return reported;
@@ -252,9 +278,14 @@ function createVivyStreamNossenRunner(options = {}) {
         musicModel: process.env.VIVY_SUNO_LONG_MODEL || process.env.VIVY_SUNO_MODEL || 'V5_5',
         longSong: true,
         targetDurationSeconds,
+        requireLocalSunoAudio: true,
+        sunoLocalAudioRequired: true,
+        sunoStatusAudioFetchAttempts: Number(process.env.VIVY_STREAM_SUNO_AUDIO_FETCH_ATTEMPTS || 4),
+        sunoStatusAudioFetchTimeoutMs: Number(process.env.VIVY_STREAM_SUNO_AUDIO_FETCH_TIMEOUT_MS || 180000),
+        sunoStatusAudioRetryDelayMs: Number(process.env.VIVY_STREAM_SUNO_AUDIO_RETRY_DELAY_MS || 3000),
       };
       let result = await startMusic('song', productionInput, req);
-      let media = getReadyMedia(result);
+      let media = getReadyLocalMedia(result, logger, { roundId });
       const taskId = getMusicTaskId(result);
       logger.info?.(
         '[vivy-twitch-nossen] round=%s suno submitted task=%s status=%s model=%s',
@@ -278,7 +309,7 @@ function createVivyStreamNossenRunner(options = {}) {
           );
           throw new Error(result?.message || 'vivy_stream_suno_failed');
         }
-        media = getReadyMedia(result);
+        media = getReadyLocalMedia(result, logger, { roundId });
         await update({
           action: 'progress',
           stage: 'composition',

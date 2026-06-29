@@ -332,6 +332,7 @@ test('Vivy idle jukebox can seed itself from generated Vivy MP3 assets', () => {
 
 test('Twitch NOSSEN runner writes lyrics, follows Suno and publishes the track', async () => {
   const updates = [];
+  let productionInput = null;
   let pollCount = 0;
   const lyrics = [
     '[Intro]',
@@ -350,8 +351,13 @@ test('Twitch NOSSEN runner writes lyrics, follows Suno and publishes the track',
       songMood: 'electro-rock urbain, batterie nerveuse, synthés métalliques',
     }),
     writeLyrics: async () => ({ publicLyrics: lyrics }),
-    startMusic: async () => ({ state: 'processing', taskId: 'task-live-1' }),
-    pollMusic: async () => {
+    startMusic: async (_mode, input) => {
+      productionInput = input;
+      return { state: 'processing', taskId: 'task-live-1' };
+    },
+    pollMusic: async (_taskId, input) => {
+      assert.equal(input.requireLocalSunoAudio, true);
+      assert.equal(input.sunoLocalAudioRequired, true);
       pollCount += 1;
       return pollCount === 1
         ? { state: 'processing', taskId: 'task-live-1' }
@@ -389,6 +395,8 @@ test('Twitch NOSSEN runner writes lyrics, follows Suno and publishes the track',
 
   assert.equal(result.ok, true);
   assert.equal(result.taskId, 'task-live-1');
+  assert.equal(productionInput.requireLocalSunoAudio, true);
+  assert.equal(productionInput.sunoLocalAudioRequired, true);
   assert.equal(pollCount, 2);
   assert.deepEqual(updates.at(-1), {
     source: 'twitch-live',
@@ -399,6 +407,66 @@ test('Twitch NOSSEN runner writes lyrics, follows Suno and publishes the track',
     durationSeconds: 218,
     requestedBy: 'funeste38',
   });
+});
+
+test('Twitch NOSSEN runner waits for a local asset instead of publishing a provider URL', async () => {
+  const updates = [];
+  let pollCount = 0;
+  const runner = createVivyStreamNossenRunner({
+    routeComposition: async () => ({
+      artists: ['vivy'],
+      songMood: 'anime rock héroïque, batterie vive, guitares claires',
+    }),
+    writeLyrics: async () => ({
+      publicLyrics: '[Intro]\nAincrad fend le ciel.\n[Verse]\nKirito court dans le code avec Asuna.\n[Chorus]\nSAO nous tient mais la lame ouvre la sortie.\n'.repeat(2),
+    }),
+    startMusic: async () => ({ state: 'processing', taskId: 'task-live-local' }),
+    pollMusic: async () => {
+      pollCount += 1;
+      if (pollCount === 1) {
+        return {
+          state: 'done',
+          taskId: 'task-live-local',
+          media: { url: 'https://musicfile.removeai.ai/raw-provider-song', durationSeconds: 300 },
+        };
+      }
+      if (pollCount === 2) {
+        return {
+          state: 'processing',
+          taskId: 'task-live-local',
+          status: 'suno_audio_localizing',
+        };
+      }
+      return {
+        state: 'done',
+        taskId: 'task-live-local',
+        media: {
+          url: '/api/vivy/studio/assets/vivy-music-suno-local.mp3',
+          durationSeconds: 300,
+        },
+      };
+    },
+    probeDuration: async () => 300,
+    updateLive: (input) => updates.push(input),
+    sleep: async () => {},
+    pollAttempts: 4,
+    pollIntervalMs: 10,
+  });
+
+  const result = await runner.run({
+    roundId: 'round-live-local',
+    winner: {
+      id: 'S1',
+      text: 'SAO opening Kirito Asuna dans Aincrad',
+      author: 'chat',
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(pollCount, 3);
+  assert.equal(updates.at(-1).action, 'ready');
+  assert.equal(updates.at(-1).trackUrl, '/api/vivy/studio/assets/vivy-music-suno-local.mp3');
+  assert.ok(!updates.some((entry) => entry.action === 'ready' && /^https:\/\/musicfile\.removeai\.ai/i.test(entry.trackUrl || '')));
 });
 
 test('Twitch NOSSEN runner rejects a duplicate active round', async () => {
