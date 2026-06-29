@@ -2520,13 +2520,13 @@ function getVivyStudioVoiceProfile(input = {}) {
         ? (referenceName || 'référence privée Djeff active')
         : 'Djeff officielle + Vivy officielle',
       defaultReferenceStep: 'Base Djeff officielle locale pour les couplets, Vivy officielle pour les refrains; référence privée optionnelle pour affiner le grain Djeff.',
-      testPhrase: 'Djeff cale le kick, chaîne sur couronne, pignon précis; Vivy répond dans la nuit, radiateur froid, moteur lucide.',
+      testPhrase: 'Djeff cale le kick, diction serrée, rimes nettes; Vivy répond dans la nuit avec un refrain clair.',
       songCastLines: [
         'Djeff: couplets rap techniques, diction serrée, grain grave A11/Djeff ou référence privée.',
         'Vivy: refrain clair, réponses mélodiques, lift vocal sans imiter une artiste protégée.',
         'Duo: tags [Djeff], [Vivy] et [Duo] dans les paroles pour éviter que le moteur mélange tout.',
       ],
-      sunoStyle: 'French technical rap duet, male rap verses for Djeff, clear female melodic hook for Vivy, motorcycle mechanics imagery, cinematic bass, structured rhymed lyrics, no spoken narration',
+      sunoStyle: 'French technical rap duet, male rap verses for Djeff, clear female melodic hook for Vivy, concrete imagery from the current subject, cinematic bass, structured rhymed lyrics, no spoken narration',
       musicLead: 'Original Funesterie rap duet for Djeff and Vivy, in French.',
       musicMood: 'Djeff delivers technical rap verses; Vivy answers with a clean melodic hook. Original voices only, no celebrity imitation.',
     };
@@ -2590,7 +2590,7 @@ function getVivyStudioVoiceProfile(input = {}) {
         ? (referenceName || 'référence privée Djeff active')
         : 'Djeff officielle + Vivy officielle',
       defaultReferenceStep: 'Base Djeff officielle locale pour les couplets, Vivy officielle pour les refrains; référence privée optionnelle pour affiner le grain Djeff.',
-      testPhrase: 'Djeff cale le kick, chaîne sur couronne, pignon précis; Vivy répond dans la nuit, radiateur froid, moteur lucide.',
+      testPhrase: 'Djeff cale le kick, diction serrée, rimes nettes; Vivy répond dans la nuit avec un refrain clair.',
       songCastLines: [
         'Djeff: couplets rap techniques, diction serrée, grain grave A11/Djeff ou référence privée.',
         'Vivy: refrain clair, réponses mélodiques, lift vocal sans imiter une artiste protégée.',
@@ -2611,17 +2611,17 @@ function getVivyStudioVoiceProfile(input = {}) {
       ttsPersona: 'a11',
       voiceStyle: 'djeff-rap',
       vocalMode: 'adaptive',
-      lead: 'Djeff prend les couplets rap avec base Pignon locale ou référence privée.',
+      lead: 'Djeff prend les couplets rap avec diction serrée, rimes internes et images tirées du sujet.',
       referenceLabel: hasPrivateReference
         ? (referenceName || 'référence privée Djeff active')
         : 'Djeff officielle locale',
       defaultReferenceStep: 'Voix Djeff officielle locale active; référence privée courte possible pour un grain plus proche.',
-      testPhrase: 'Djeff cale le kick, chaîne sur couronne, pignon précis, radiateur froid et moteur lucide.',
+      testPhrase: 'Djeff cale le kick, diction serrée, rimes nettes et images concrètes du sujet.',
       songCastLines: [
         'Djeff: lead rap technique, diction nette, rimes internes et fins de lignes percussives.',
         'Vivy: adlibs ou refrain possible si le mode duo est demandé.',
       ],
-      sunoStyle: 'French technical rap, male lead rap vocal, motorcycle mechanics imagery, cinematic bass, structured rhymed lyrics, no spoken narration',
+      sunoStyle: 'French technical rap, male lead rap vocal, concrete imagery from the current subject, cinematic bass, structured rhymed lyrics, no spoken narration',
       musicLead: 'Original Funesterie rap song for Djeff, in French.',
       musicMood: 'Djeff lead rap energy with owned A11/Djeff identity direction when the local voice bridge is used. No celebrity imitation.',
     };
@@ -3306,7 +3306,44 @@ function countVivyDjeffRapSignals(value = '') {
     'cruxi',
     'moteur',
     'guidon',
-    'visiere',
+    'wheeling',
+    'giro',
+    'giros',
+    'shmit',
+    'shmite',
+    'motard',
+    'motards',
+    'pneu',
+    'pneus',
+    'gomme',
+    'rossi',
+    'course poursuite',
+    'metrakit',
+    'metra kit',
+    'cale pied',
+    'cales pieds',
+    'bolide',
+    'mur du son',
+  ];
+
+  return terms.reduce((score, term) => score + (normalized.includes(term) ? 1 : 0), 0);
+}
+
+function countVivyDjeffMechanicalSignals(value = '') {
+  const normalized = foldTextForLookup(value);
+  if (!normalized) return 0;
+
+  const terms = [
+    'pignon',
+    'couronne',
+    'radiateur',
+    'essence',
+    'ipone',
+    'bombonne',
+    'cruxi',
+    'moteur',
+    'guidon',
+    'casque',
     'wheeling',
     'giro',
     'giros',
@@ -3346,24 +3383,33 @@ function inferVivyDraftTitle(value = '') {
 function buildVivyDjeffRapChatReply({ sourceText = '', isAcknowledgement = false, fileLine = '' } = {}) {
   const title = inferVivyDraftTitle(sourceText);
   const titleLabel = /^cette\b/i.test(title) ? title : `"${title}"`;
-  const signalCount = countVivyDjeffRapSignals(sourceText);
-  const detailLine = signalCount >= 5
+  const mechanicalSignalCount = countVivyDjeffMechanicalSignals(sourceText);
+  const detailLine = mechanicalSignalCount >= 3
     ? "Ce qui tient fort: la mécanique précise, la fuite qui pulse, le pignon-couronne et le double radiateur."
-    : "Ce qui tient fort: le grain mécanique, la vitesse et le vocabulaire très concret.";
+    : "Ce qui tient fort: le débit serré, les images concrètes et la direction du sujet.";
+  const memoryLine = mechanicalSignalCount >= 3
+    ? `Je retiens surtout ${titleLabel}: essence/Ipone, double radiateur, Cruxi, pignon-couronne, mur du son. On sent le moteur et le stress de la poursuite.`
+    : `Je retiens surtout ${titleLabel}: le sujet, le débit Djeff et les images concrètes sans plaquer un décor moto si tu ne l'as pas demandé.`;
+  const editLine = mechanicalSignalCount >= 3
+    ? "Le bon réglage, c'est de garder le vocabulaire mécanique tel quel et de nettoyer seulement ce qui gêne le débit."
+    : "Le bon réglage, c'est de garder le vocabulaire du thème et de nettoyer seulement ce qui gêne le débit.";
+  const grainLine = mechanicalSignalCount >= 3
+    ? "Je garde ce grain Djeff pour la suite: nerveux, technique, proche du bitume."
+    : "Je garde ce grain Djeff pour la suite: nerveux, technique, proche du sujet.";
 
   if (isAcknowledgement) {
     return cleanText([
       `Parfait, on garde ${titleLabel} comme base brute.`,
       `${detailLine} Ça parle mieux quand on garde tes images concrètes au lieu de lisser en texte générique.`,
-      "Je garde ce grain Djeff pour la suite: nerveux, technique, proche du bitume.",
+      grainLine,
       fileLine,
     ].filter(Boolean).join('\n\n'), 1600);
   }
 
   return cleanText([
     "Là oui, il y a une vraie base Djeff.",
-    `Je retiens surtout ${titleLabel}: essence/Ipone, double radiateur, Cruxi, pignon-couronne, mur du son. On sent le moteur et le stress de la poursuite.`,
-    "Le bon réglage, c'est de garder le vocabulaire mécanique tel quel et de nettoyer seulement ce qui gêne le débit.",
+    memoryLine,
+    editLine,
     fileLine,
   ].filter(Boolean).join('\n\n'), 1600);
 }
@@ -3964,10 +4010,16 @@ function buildVivyDirectSongReply(input = {}) {
     rhymeScheme: input.rhymeScheme || 'Fins de lignes rimées par paires, détails tirés de la demande, refrain stable et chantable.',
   });
   const lyrics = cleanText(songcraft.lyrics.replace(/^\[Title:\s*[^\]]+\]\s*/i, '').trim(), 4200);
+  const foldedSongSubject = foldTextForLookup(cleanMaterial || material || input.songText || input.message || '');
+  const hasMechanicalSubject = /\b(moto|scooter|booster|moteur|radiateur|pignon|couronne|chaine|chaîne|huile|essence|pot|guidon|casque|pneu|pneus|gomme|wheeling|stunt|rossi|motogp|moto\s*gp)\b/.test(foldedSongSubject);
   const intention = voiceProfile.id === 'duo-djeff-vivy'
-    ? 'duo rap Djeff + Vivy, mécanique moto concrète, couplets techniques et refrain chantable.'
+    ? (hasMechanicalSubject
+      ? 'duo rap Djeff + Vivy, mécanique moto concrète, couplets techniques et refrain chantable.'
+      : 'duo rap Djeff + Vivy, couplets techniques, images du sujet fourni et refrain chantable.')
     : voiceProfile.id === 'djeff-rap'
-      ? 'voix Djeff officielle, mécanique précise, débit serré et refrain prêt à répondre avec Vivy.'
+      ? (hasMechanicalSubject
+        ? 'voix Djeff officielle, mécanique précise, débit serré et refrain prêt à répondre avec Vivy.'
+        : 'voix Djeff officielle, débit serré, rimes internes et images du sujet fourni.')
       : 'écriture centrée sur le sujet fourni, progression claire et refrain chantable.';
   return cleanText([
     `**Titre :** ${songcraft.title}`,

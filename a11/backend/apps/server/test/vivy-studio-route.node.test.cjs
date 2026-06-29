@@ -531,7 +531,8 @@ test('Vivy Studio calibrates Djeff official voice through the owned A11 persona'
   assert.match(result.title, /Djeff officielle/);
   assert.match(result.brief, /voicePersona: a11/);
   assert.match(result.brief, /Djeff officielle locale/);
-  assert.match(result.brief, /chaîne sur couronne|chaine sur couronne/i);
+  assert.match(result.brief, /diction serrée|rimes nettes|images concrètes du sujet/i);
+  assert.doesNotMatch(result.brief, /visière|visiere|chaîne sur couronne|chaine sur couronne|pignon|radiateur/i);
   assert.match(result.brief, /Ne pas publier la référence brute/);
   assert.match(JSON.stringify(result.actions), /Tester Voix Djeff officielle/);
 });
@@ -4796,6 +4797,19 @@ test('Vivy song guard writes a fresh Djeff rap duet when the context asks for mo
   assert.match(repaired, /pignon/i);
   assert.doesNotMatch(repaired, /Garde la lumière/);
   assert.doesNotMatch(repaired, /Vois Raison Fraiyeur Son/i);
+});
+
+test('Vivy keeps Djeff rap voice imagery scoped to non-motorcycle subjects', () => {
+  const repaired = buildVivyDirectSongReply({
+    mode: 'song',
+    songArtists: ['djeff'],
+    message: 'fais un rap Djeff sur les Tortues Ninja, égouts de New York, pizza, Shredder et Splinter',
+    history: [],
+  });
+
+  assert.match(repaired, /Tortues Ninja|égouts de New York|egouts de New York|pizza|Shredder|Splinter/i);
+  assert.match(repaired, /débit serré|rimes internes|images du sujet/i);
+  assert.doesNotMatch(repaired, /visière|visiere|casque|radiateur|pignon|couronne|moteur|guidon|mécanique précise|mecanique precise/i);
 });
 
 test('Vivy chat post-process removes leaked draft placeholders without over-restricting', () => {

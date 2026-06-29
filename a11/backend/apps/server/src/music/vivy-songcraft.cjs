@@ -79,6 +79,7 @@ function stripSongCommand(value = '') {
     .replace(/^(?:salut|bonjour|coucou|hey)\b[\s,;:.!?-]*/i, '')
     .replace(/^(?:tu\s+as\s+|t['’]\s*as\s+)?(?:une?\s+)?id[ée]e\s+de\s+chanson\s+(?:sur|pour|avec)\s+/i, '')
     .replace(/^(fais|fait|cr[ée]e?|g[ée]n[èe]re?|compose|chante|transforme|écris|ecris|continue|continuer|reprends|poursuis|compl[èe]te)\s+(moi\s+)?(une?\s+)?(chanson|musique|son|paroles|lyrics|rap|couplet|refrain)(?:\s+d['''][a-zÀ-ſ]+(?:\s+[a-zÀ-ſ]+)?)?\s*(sur|avec|pour|à propos de)?\s*/i, '')
+    .replace(/^(?:djeff|vivy|a11|k44|kaen44)\s+(?:sur|avec|pour|à propos de)\s+/i, '')
     .replace(/^(?:on\s+va|je\s+veux|j['’]\s*aimerais|j['’]\s+voudrais)\s+(?:faire|cr[ée]er|[ée]crire|composer)\s+(?:une?\s+)?(?:chanson|musique|son|g[ée]n[ée]rique|paroles|lyrics)\s*(?:sur|avec|pour|à propos de)?\s*/i, '')
     .replace(/\b(prompt|instruction|consigne)\b\s*:?\s*/ig, '')
     .replace(/\s+/g, ' ')
@@ -404,6 +405,7 @@ function inferMotif(theme = '') {
   if (/planete|astre|zodiaque|saint seiya|chevalier|cosmos|galaxie|constellation/.test(folded)) return 'le sujet astral';
   if (/soleil|sable|plage|estival|summer/.test(folded)) return 'le décor estival';
   if (/neige|flocon|hiver/.test(folded)) return 'le décor hivernal';
+  if (/tortues?\s+ninja|shredder|splinter|egouts?|égouts?|new\s+york|pizza/.test(folded)) return 'les égouts de New York';
   if (/lapin|court|course/.test(folded)) return 'la course';
   if (/pluie|orage|averse/.test(folded)) return 'le temps d’orage';
   if (/nossen|funesterie|agent|machine/.test(folded)) return 'le lien Funesterie';
@@ -427,6 +429,7 @@ function inferAllMotifs(theme) {
   if (/deception|decoit|decu|dessous|desillusion/.test(folded)) results.push('la déception');
   if (/amour|coeur|manque/.test(folded)) results.push('le manque');
   if (/moto|moteur|radiateur|pignon|couronne|chaine|huile|essence|fraiyeur/.test(folded)) results.push('le sujet mécanique');
+  if (/tortues?\s+ninja|shredder|splinter|egouts?|égouts?|new\s+york|pizza/.test(folded)) results.push('les égouts de New York');
   if (results.length === 0) results.push('le motif central');
   return results;
 }
@@ -703,6 +706,12 @@ function buildVivyThemeSeed(value = '', fallback = '') {
       return color ? `${subject}, couleur ${color}` : subject;
     }
   );
+  if (!preferredSubject && seed.length <= 220 && seed.includes(',') && !looksLikeVivySongUiNoiseLine(seed)) {
+    preferredSubject = cleanOneLine(seed, '', 220)
+      .replace(/\s+(?:avec|et)\s+/ig, ', ')
+      .replace(/[,\s.;:!?-]+$/g, '')
+      .trim();
+  }
 
   const usefulParts = normalizeVivySoloSeedLines(extractVivySoloSeedLines(seed, 6), seed)
     .map((part) => cleanOneLine(part, '', 120))
@@ -793,7 +802,7 @@ const VIVY_SONG_ARTISTS = [
     id: 'djeff',
     label: 'Djeff',
     tag: '[Djeff]',
-    role: 'couplets rap techniques, grain proche micro, images mécaniques concrètes',
+    role: 'couplets rap techniques, grain proche micro, images concrètes du thème courant',
     grammar: 'masculin singulier; accords et pronoms il/lui',
     style: 'rough French male rap lead, dry close-mic delivery',
     sunoTag: '[Male Rap Lead]',
@@ -1131,10 +1140,12 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
   const chorusLabel = isA11VivyDuo ? 'DUO' : (artistCast.count > 1 ? getVivySharedArtistTag(artistCast.count) : lead);
   const chorusTag = `[${chorusLabel}]`;
   const seedLines = normalizeVivySoloSeedLines(extractVivySoloSeedLines(material, 10), material);
-  const imageA = seedLines[0] || theme;
-  const imageB = seedLines[1] || motif;
-  const imageC = seedLines[2] || title;
-  const imageD = seedLines[3] || theme;
+  const themeParts = theme.split(/\s*,\s*/).map((part) => cleanOneLine(part, '', 120)).filter(Boolean);
+  const preferThemeParts = themeParts.length >= 2 && seedLines.length < 2;
+  const imageA = (preferThemeParts ? themeParts[0] : seedLines[0]) || themeParts[0] || theme;
+  const imageB = (preferThemeParts ? (themeParts[1] || motif) : seedLines[1]) || themeParts[1] || motif;
+  const imageC = (preferThemeParts ? (themeParts[2] || title) : seedLines[2]) || themeParts[2] || title;
+  const imageD = (preferThemeParts ? (themeParts[3] || theme) : seedLines[3]) || themeParts[3] || theme;
 
   const blocks = [
     `[Title: ${title}]`,
