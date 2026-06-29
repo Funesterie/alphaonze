@@ -384,11 +384,12 @@ function buildNossenSeedFromRound(state) {
       winner ? `Matière Twitch gagnante: ${winner.text}` : '',
       topIdeas.length ? `Autres idées du round:\n${topIdeas.join('\n')}` : '',
       likedTerms.length ? `Vocabulaire validé dans ce round: ${likedTerms.join(', ')}` : '',
-      'Objectif: transformer la demande gagnante en chanson chantable, précise, pas générique, avec vocabulaire vécu.',
+      'Objectif: transformer la demande gagnante en mini-histoire chantée, précise, pas générique, avec vocabulaire vécu.',
+      'Architecture narrative attendue: sujet + personnages + problème + évolution + scène finale + style musical. Chaque couplet doit avoir une fonction.',
     ].filter(Boolean).join('\n\n'),
     notes: likedTerms.length
-      ? `Éviter les images passe-partout; privilégier les détails concrets aimés: ${likedTerms.join(', ')}.`
-      : 'Éviter les images passe-partout; chercher des détails concrets dans le sujet demandé.',
+      ? `Construire une vraie progression dramatique. Éviter les images passe-partout; privilégier les détails concrets aimés: ${likedTerms.join(', ')}.`
+      : 'Construire une vraie progression dramatique. Éviter les images passe-partout; chercher des détails concrets dans le sujet demandé.',
   };
 }
 

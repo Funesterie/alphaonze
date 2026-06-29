@@ -27,6 +27,22 @@ Ce choix evite de dependre d'un onglet ouvert. Le frontend pourra ensuite lire `
 
 Les suggestions deviennent `S1`, `S2`, etc. Les votes changent le classement. Les etoiles nourrissent le vocabulaire prefere du chat.
 
+## Template histoire
+
+La forme conseillee pour les chansons longues est une mini-histoire:
+
+```text
+!nossen [TITRE], chanson avec une vraie histoire du debut a la fin. Personnage principal: [qui]. Situation de depart: [ou / quand]. Probleme: [ce qui bloque]. Evolution: [ce qu'il comprend ou traverse]. Moment fort: [scene dramatique]. Fin: [image finale memorable]. Structure claire: couplet 1 exposition, couplet 2 conflit, pre-refrain tension, refrain conclusion emotionnelle, pont retournement, refrain final plus epique. Style: [style musical], voix: [solo/duo], refrain tres memorable.
+```
+
+Pour un duo, donner un role a chaque voix:
+
+```text
+!nossen Duo homme femme, histoire complete racontee en chanson. La voix masculine represente [role A]. La voix feminine represente [role B]. Couplet 1 voix masculine: [decor/probleme]. Couplet 2 voix feminine: [reponse/evolution]. Pre-refrain en alternance question-reponse. Refrain chante ensemble: [phrase centrale]. Pont dramatique: [bascule]. Refrain final epique: [resolution].
+```
+
+Vivy traite maintenant chaque demande comme une progression: decor, probleme, tension, refrain, bascule, image finale. Une demande courte fonctionne toujours, mais plus le scenario donne de personnages, d'enjeu et de scene finale, plus le morceau garde une ligne claire.
+
 ## OBS
 
 Ajouter une Browser Source:

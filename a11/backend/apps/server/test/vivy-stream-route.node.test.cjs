@@ -107,6 +107,30 @@ test('Twitch lyrics prompt keeps live plumbing out of the sung material', () => 
   assert.doesNotMatch(prompt, /depuis le chat/i);
   assert.match(prompt, /contexte de diffusion.*strictement interne/i);
   assert.match(prompt, /vacances -> départ, valises, route, plage/i);
+  assert.match(prompt, /mini-histoire complète/i);
+  assert.match(prompt, /sujet \+ personnages \+ problème \+ évolution \+ scène finale \+ style musical/i);
+  assert.match(prompt, /\[Verse 1\].*\[Verse 2\].*\[Pre-Chorus\].*\[Chorus\].*\[Bridge\].*\[Final Chorus\]/s);
+  assert.match(prompt, /duo ou plusieurs voix/i);
+});
+
+test('Twitch lyrics prompt preserves a scenario and assigns roles for a duo', () => {
+  const prompt = buildTwitchLyricsRequest({
+    winner: {
+      text: 'Duo homme femme, histoire complète. Un créateur travaille seul la nuit sur Vivy. Voix masculine: doute et bugs. Voix féminine: Vivy répond. Pont dramatique: tout plante. Refrain final: le système redémarre.',
+    },
+    routing: {
+      artists: ['djeff', 'vivy'],
+      songMood: 'électro-rock anime, guitares, synthés lumineux',
+    },
+    seed: {},
+  });
+
+  assert.match(prompt, /Voix masculine: doute et bugs/);
+  assert.match(prompt, /Voix féminine: Vivy répond/);
+  assert.match(prompt, /Pont dramatique: tout plante/);
+  assert.match(prompt, /respecte-les comme des contraintes prioritaires/i);
+  assert.match(prompt, /\[Verse 1 - voix masculine\].*\[Verse 2 - voix féminine\]/s);
+  assert.match(prompt, /alternance question-réponse/i);
 });
 
 test('Vivy stream route stores Twitch ideas, votes, stars and builds a NOSSEN seed', async () => {
@@ -145,6 +169,9 @@ test('Vivy stream route stores Twitch ideas, votes, stars and builds a NOSSEN se
     assert.equal(result.json.state.round.status, 'locked');
     assert.match(result.json.nossenSeed.canvas, /Bleach opening sombre/);
     assert.match(result.json.nossenSeed.canvas, /ichigo|bleach/i);
+    assert.match(result.json.nossenSeed.canvas, /mini-histoire chantée/i);
+    assert.match(result.json.nossenSeed.canvas, /Architecture narrative attendue/i);
+    assert.match(result.json.nossenSeed.notes, /progression dramatique/i);
     assert.doesNotMatch(result.json.nossenSeed.canvas, /Autres idées du chat|chanson NOSSEN/i);
     assert.doesNotMatch(result.json.nossenSeed.notes, /depuis le chat/i);
 
