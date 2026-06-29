@@ -4761,7 +4761,7 @@ async function createVivyMultiVoicePreview(
     provider: String(assembled?.provider || "vivy-multi-voice-preview"),
     contentType: String(assembled?.contentType || assembled?.content_type || "audio/mpeg"),
     filename: String(assembled?.filename || "vivy-apercu-multi-voix.mp3"),
-    voiceManifest: assembled?.voiceManifest,
+    voiceManifest: (assembled as any)?.voiceManifest,
   };
 }
 
@@ -5923,23 +5923,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     setStatus("Téléchargement...");
     const safeName = String(filename || "funesterie-media").replace(/[\\/:*?"<>|]+/g, "-");
     try {
-      let response: Response;
-      try {
-        response = await fetch(resolvedUrl, { credentials: "include" });
-        if (!response.ok) throw new Error(`status_${response.status}`);
-      } catch {
-        response = await fetch(resolvedUrl, { credentials: "omit" });
-        if (!response.ok) throw new Error(`download_failed_${response.status}`);
-      }
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = safeName;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      await downloadMediaUrl(resolvedUrl, safeName);
       setStatus("Téléchargement lancé.");
     } catch (error: any) {
       setStatus(`Téléchargement impossible: ${error?.message || error}`);
@@ -7542,6 +7526,22 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     setStatus(`${label}: écris ton idée dans la bulle, ou remplis le bloc Studio.`);
   }
 
+  async function downloadVivyChatMediaFile(url: string | null | undefined, filename: string | null | undefined) {
+    const resolvedUrl = resolveApiAssetUrl(url || "") || String(url || "").trim();
+    if (!resolvedUrl) {
+      setStatus("Aucun média à télécharger.");
+      return;
+    }
+    const safeName = String(filename || "vivy-musique.mp3").replace(/[\\/:*?"<>|]+/g, "-");
+    setStatus("Téléchargement...");
+    try {
+      await downloadMediaUrl(resolvedUrl, safeName);
+      setStatus("Téléchargement lancé.");
+    } catch (error: any) {
+      setStatus(`Téléchargement impossible: ${error?.message || error}`);
+    }
+  }
+
   function sendModeFromComposer(mode: VivyStudioProductionMode) {
     const hasDraft = Boolean(draft.trim() || attachedFiles.length);
     if (!hasDraft) {
@@ -8287,9 +8287,14 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
                 ) : null}
                 <a
                   href={message.media.downloadUrl || message.media.url}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    void downloadVivyChatMediaFile(
+                      message.media?.downloadUrl || message.media?.url,
+                      message.media?.filename || "vivy-musique.mp3"
+                    );
+                  }}
                   download={message.media.filename || undefined}
-                  target="_blank"
-                  rel="noreferrer"
                 >
                   Télécharger la musique
                 </a>

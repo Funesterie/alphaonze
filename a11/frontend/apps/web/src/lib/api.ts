@@ -4983,6 +4983,108 @@ function parseDownloadFilename(contentDisposition: string, fallback: string) {
   return fallback;
 }
 
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const blobUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = blobUrl;
+  anchor.download = filename;
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  globalThis.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+}
+
+function triggerDirectDownload(url: string, filename: string) {
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = 'none';
+  anchor.rel = 'noreferrer';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
+function getDownloadBaseOrigin() {
+  return globalThis.location?.origin || getApiOrigin() || 'https://vivy.funesterie.me';
+}
+
+function parseDownloadUrl(rawValue: string) {
+  try {
+    return new URL(rawValue, getDownloadBaseOrigin());
+  } catch {
+    return null;
+  }
+}
+
+function extractMediaDownloadProxyTarget(rawValue: string) {
+  const parsed = parseDownloadUrl(rawValue);
+  if (!parsed || !/^\/api\/media\/download$/i.test(parsed.pathname)) return '';
+  return String(parsed.searchParams.get('url') || '').trim();
+}
+
+function isKnownPublicVivyGeneratedFilename(filename: string) {
+  return /^(?:vivy-music-|vivy-preview-mix-|vivy-multi-voice-).+\.mp3$/i.test(filename);
+}
+
+export function resolvePublicVivyMediaDownloadUrl(rawValue: string | null | undefined): string | null {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return null;
+
+  const proxyTarget = extractMediaDownloadProxyTarget(raw);
+  if (proxyTarget && proxyTarget !== raw) {
+    return resolvePublicVivyMediaDownloadUrl(proxyTarget);
+  }
+
+  const resolved = resolveApiAssetUrl(raw) || raw;
+  const parsed = parseDownloadUrl(resolved);
+  if (!parsed) return null;
+
+  if (
+    /^\/api\/vivy\/studio\/assets\/[^/]+$/i.test(parsed.pathname)
+    || /^\/api\/vivy\/stream\/s\/[^/]+$/i.test(parsed.pathname)
+    || /^\/api\/double-harmonic\/out\/[^/]+$/i.test(parsed.pathname)
+  ) {
+    return resolved;
+  }
+
+  let filename = '';
+  try {
+    filename = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).at(-1) || '');
+  } catch {
+    filename = parsed.pathname.split('/').filter(Boolean).at(-1) || '';
+  }
+  if (!isKnownPublicVivyGeneratedFilename(filename)) return null;
+
+  if (
+    /\/files\/(?:runtime|uploads|a11_runtime)\//i.test(parsed.pathname)
+    || /\/runtime\/files\//i.test(parsed.pathname)
+    || /\/vivy-generated\//i.test(parsed.pathname)
+  ) {
+    return resolveApiAssetUrl(`/api/vivy/studio/assets/${encodeURIComponent(filename)}`);
+  }
+
+  return null;
+}
+
+async function downloadPublicMediaUrl(rawUrl: string, fallbackName: string) {
+  const directUrl = resolvePublicVivyMediaDownloadUrl(rawUrl);
+  if (!directUrl) return false;
+
+  try {
+    const res = await fetch(directUrl, { method: 'GET', credentials: 'omit' });
+    if (!res.ok) throw new Error(`public_media_download_failed_${res.status}`);
+    const blob = await res.blob();
+    const filename = parseDownloadFilename(res.headers.get('content-disposition') || '', fallbackName);
+    triggerBlobDownload(blob, filename);
+  } catch {
+    triggerDirectDownload(directUrl, fallbackName);
+  }
+
+  return true;
+}
+
 async function downloadProtectedBlob(pathname: string, fallbackName: string) {
   const res = await authFetch(getApiUrl(pathname), {
     method: 'GET',
@@ -5001,15 +5103,7 @@ async function downloadProtectedBlob(pathname: string, fallbackName: string) {
 
   const blob = await res.blob();
   const filename = parseDownloadFilename(res.headers.get('content-disposition') || '', fallbackName);
-  const blobUrl = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = blobUrl;
-  anchor.download = filename;
-  anchor.style.display = 'none';
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  globalThis.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+  triggerBlobDownload(blob, filename);
 
   return {
     ok: true,
@@ -5159,6 +5253,7 @@ export async function downloadMediaUrl(rawUrl: string, fallbackFilename?: string
     await downloadResourceById(resourceId, filename);
     return;
   }
+  if (await downloadPublicMediaUrl(url, filename)) return;
   const proxyPath = `/api/media/download?url=${encodeURIComponent(url)}`;
   await downloadProtectedBlob(proxyPath, filename);
 }
