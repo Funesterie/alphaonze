@@ -112,6 +112,39 @@ test('Vivy stream parser detects suggestions, votes and star ratings', () => {
   assert.deepEqual(emojiStars.star, { rating: 4, targetId: '' });
 });
 
+test('Vivy stream preserves long Twitch production constraints for NOSSEN routing', async () => {
+  await withServer({ stateName: 'long-twitch-constraints.json' }, async (baseUrl) => {
+    const longScene = [
+      'Les murmures de l’écuyer et le chevalier étincelant, scène fantasy dans une cour de château détrempée.',
+      'On doit sentir la boue, les sabots nerveux, les plaques d’armure qui grincent, les torches sous la pluie, les pas dans la pierre.',
+      'La production doit rester immersive, cinématique, avec espace, plans sonores, tension lente, respiration du décor et aucun gimmick pop.',
+      'Développer une vraie progression sonore du portail au duel sans transformer ça en chanson.',
+      'Détail supplémentaire: cloches au loin, cuir mouillé, bois des lances, métal froid, vent dans les bannières.',
+      'Contrainte finale critique: sound design fantasy instrumental uniquement, aucune voix chantée, no lyrics, bruitages de cheval, armure, pluie, torches.',
+    ].join(' ');
+    assert.ok(longScene.length > 700);
+
+    const { json } = await postJson(baseUrl, '/api/vivy/stream/chat', {
+      source: 'twitch',
+      username: 'chat',
+      message: `!nossen ${longScene}`,
+    });
+    assert.equal(json.ok, true);
+    const stored = json.state.round.suggestions[0]?.text || '';
+    assert.ok(stored.length > 700);
+    assert.match(stored, /instrumental uniquement/i);
+    assert.match(stored, /aucune voix chantée/i);
+    assert.match(stored, /bruitages de cheval/i);
+
+    const seedResponse = await fetch(`${baseUrl}/api/vivy/stream/nossen-seed`);
+    const seed = await seedResponse.json();
+    assert.equal(seed.ok, true);
+    assert.match(seed.winner.text, /instrumental uniquement/i);
+    assert.match(seed.winner.text, /aucune voix chantée/i);
+    assert.match(seed.canvas, /sound design fantasy instrumental uniquement/i);
+  });
+});
+
 test('Twitch lyrics prompt keeps live plumbing out of the sung material', () => {
   const prompt = buildTwitchLyricsRequest({
     winner: { text: "l'appel des vacances, ambiance rock hit summer" },

@@ -15,6 +15,8 @@ const MAX_PENDING_SUGGESTIONS = 24;
 const MAX_STARS = 120;
 const MAX_JUKEBOX_TRACKS = 80;
 const MAX_LIVE_SONGS = 120;
+const MAX_STREAM_MESSAGE_CHARS = 2200;
+const MAX_STREAM_SUGGESTION_CHARS = 2000;
 const DEFAULT_ROUND_MS = 90 * 1000;
 const DEFAULT_IDLE_JUKEBOX_DELAY_MS = 12 * 1000;
 const WINNER_REVEAL_MS = 4 * 1000;
@@ -293,10 +295,10 @@ function normalizeSuggestionId(value = '') {
 }
 
 function extractSuggestion(message = '') {
-  const raw = cleanText(message, 600);
+  const raw = cleanText(message, MAX_STREAM_MESSAGE_CHARS);
   const match = raw.match(/^!(?:vivy|nossen|song|chanson|theme|th[eè]me|idee|idée)\s+(.{4,})$/i);
   if (!match) return '';
-  return cleanText(match[1], 420);
+  return cleanText(match[1], MAX_STREAM_SUGGESTION_CHARS);
 }
 
 function extractVote(message = '') {
@@ -325,7 +327,7 @@ function extractStarRating(message = '') {
 }
 
 function parseVivyStreamChatMessage(input = {}) {
-  const message = cleanText(input.message || input.text || input.content, 700);
+  const message = cleanText(input.message || input.text || input.content, MAX_STREAM_MESSAGE_CHARS);
   const author = cleanOneLine(input.username || input.user || input.displayName || input.author, 'anonymous', 80);
   const source = cleanOneLine(input.source || 'twitch', 'twitch', 40);
   return {
@@ -778,7 +780,7 @@ function createVivyStreamStore(options = {}) {
 
   function addSuggestion(parsed) {
     const round = ensureOpenRound();
-    const text = cleanText(parsed.suggestion, 420);
+    const text = cleanText(parsed.suggestion, MAX_STREAM_SUGGESTION_CHARS);
     if (!text) return null;
     const folded = foldForLookup(text);
     const existing = round.suggestions.find((entry) => foldForLookup(entry.text) === folded);
@@ -812,7 +814,7 @@ function createVivyStreamStore(options = {}) {
   }
 
   function queueSuggestion(parsed) {
-    const text = cleanText(parsed.suggestion, 420);
+    const text = cleanText(parsed.suggestion, MAX_STREAM_SUGGESTION_CHARS);
     if (!text) return null;
     state.pendingSuggestions = Array.isArray(state.pendingSuggestions) ? state.pendingSuggestions : [];
     const folded = foldForLookup(text);
