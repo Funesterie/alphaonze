@@ -58,6 +58,7 @@ const {
   buildVivyStructuredLyrics,
   buildVivyVocalSegments,
   hasVivyChorusSection,
+  repairVivySemanticImageCoherence,
   restoreVivyFrenchSongAccents,
   splitVivyArrangementCues,
 } = require('../src/music/vivy-songcraft.cjs');
@@ -4810,6 +4811,53 @@ test('Vivy keeps Djeff rap voice imagery scoped to non-motorcycle subjects', () 
   assert.match(repaired, /Tortues Ninja|égouts de New York|egouts de New York|pizza|Shredder|Splinter/i);
   assert.match(repaired, /débit serré|rimes internes|images du sujet/i);
   assert.doesNotMatch(repaired, /visière|visiere|casque|radiateur|pignon|couronne|moteur|guidon|mécanique précise|mecanique precise/i);
+});
+
+test('Vivy repairs impossible pursuit images for motorcycle NOSSEN lyrics', () => {
+  const source = '!nossen 5 étoiles, hélico qui dérape, gyros dans le rétro, visière fumée casque intégrale, moto noire sous les néons, au volant pas le temps de finir au comico, rap français trap sombre';
+  const direct = buildVivyStructuredLyrics({
+    mode: 'song',
+    songArtists: ['djeff', 'vivy'],
+    songText: source,
+  });
+
+  assert.match(direct, /hélico dans le faisceau|hélicos dans le ciel/i);
+  assert.match(direct, /au guidon/i);
+  assert.match(direct, /casque intégral/i);
+  assert.doesNotMatch(direct, /hélico qui dérape|au volant|casque intégrale/i);
+
+  const llmLyrics = `[Intro]
+Hélico qui dérape au-dessus des néons
+Je serre le casque intégrale au volant
+
+[Chorus]
+Cinq étoiles dans la nuit, je fuis les gyrophares
+La moto noire répond, le refrain fend le brouillard`;
+  const publicLyrics = buildVivyPublicLyrics({
+    mode: 'song',
+    songArtists: ['djeff', 'vivy'],
+    songText: source,
+  }, llmLyrics, '', { allowDeterministicFallback: false });
+
+  assert.match(publicLyrics, /hélico dans le faisceau|hélicos dans le ciel/i);
+  assert.match(publicLyrics, /au guidon/i);
+  assert.match(publicLyrics, /casque intégral/i);
+  assert.doesNotMatch(publicLyrics, /hélico qui dérape|au volant|casque intégrale/i);
+
+  const sunoPayload = buildVivySunoPayload({
+    mode: 'song',
+    songArtists: ['djeff', 'vivy'],
+    songText: source,
+  });
+  assert.match(sunoPayload.style, /808 lourdes/i);
+  assert.match(sunoPayload.style, /sirènes|sirenes/i);
+  assert.match(sunoPayload.style, /adlibs/i);
+  assert.match(sunoPayload.style, /poursuite moto/i);
+
+  assert.equal(
+    repairVivySemanticImageCoherence('je reste au volant de la voiture', 'course voiture'),
+    'je reste au volant de la voiture'
+  );
 });
 
 test('Vivy chat post-process removes leaked draft placeholders without over-restricting', () => {

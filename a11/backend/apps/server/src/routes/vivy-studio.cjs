@@ -43,6 +43,7 @@ const {
   sanitizeVivySongMaterial,
   splitVivyArrangementCues,
   restoreVivyFrenchSongAccents,
+  repairVivySemanticImageCoherence,
   inferTitle,
   stripSongCommand,
   looksLikeCompleteLyrics,
@@ -2768,7 +2769,10 @@ function buildSongProduction(input) {
   const title = cleanOneLine(titleSeed, 'Echoes of Vivy', 46)
     .replace(/^["'“”]+|["'“”]+$/g, '');
 
-  const publicLyrics = sanitizeVivyPublicLyrics(songcraft.lyrics);
+  const publicLyrics = repairVivySemanticImageCoherence(
+    sanitizeVivyPublicLyrics(songcraft.lyrics),
+    materialForLyrics || material
+  );
   const vocalSegments = buildVivyVocalSegments({
     ...input,
     lyrics: publicLyrics,
@@ -3824,7 +3828,15 @@ function ensureVivyPublicLyricsArtistTags(input = {}, lyrics = '', options = {})
 
 function buildVivyPublicLyrics(input = {}, rawAssistant = '', fallbackLyrics = '', options = {}) {
   const allowDeterministicFallback = options.allowDeterministicFallback !== false;
-  let publicLyrics = sanitizeVivyPublicLyrics(rawAssistant);
+  const coherenceContext = cleanText([
+    input.songText,
+    input.message,
+    input.prompt,
+    input.text,
+    input.theme,
+    input.instruction,
+  ].filter(Boolean).join('\n'), VIVY_SONG_MAX_CHARS);
+  let publicLyrics = repairVivySemanticImageCoherence(sanitizeVivyPublicLyrics(rawAssistant), coherenceContext);
   if (!allowDeterministicFallback) {
     if (!publicLyrics
       || looksLikeWeakSongwritingReply(publicLyrics)
@@ -3832,18 +3844,21 @@ function buildVivyPublicLyrics(input = {}, rawAssistant = '', fallbackLyrics = '
       || (options.requireRepeatedChorus === true && countVivyChorusSections(publicLyrics) < 2)) {
       return '';
     }
-    return ensureVivyPublicLyricsArtistTags(input, publicLyrics, { allowDeterministicFallback: false });
+    return repairVivySemanticImageCoherence(
+      ensureVivyPublicLyricsArtistTags(input, publicLyrics, { allowDeterministicFallback: false }),
+      coherenceContext
+    );
   }
   if (!publicLyrics || looksLikeWeakSongwritingReply(publicLyrics) || !hasVivyChorusSection(publicLyrics)) {
-    publicLyrics = sanitizeVivyPublicLyrics(fallbackLyrics);
+    publicLyrics = repairVivySemanticImageCoherence(sanitizeVivyPublicLyrics(fallbackLyrics), coherenceContext);
   }
   if (!publicLyrics || looksLikeWeakSongwritingReply(publicLyrics) || !hasVivyChorusSection(publicLyrics)) {
-    publicLyrics = sanitizeVivyPublicLyrics(buildVivySongProductionBrief({
+    publicLyrics = repairVivySemanticImageCoherence(sanitizeVivyPublicLyrics(buildVivySongProductionBrief({
       ...input,
       songText: input.songText || input.message || input.prompt || input.text || input.theme,
-    }).lyrics);
+    }).lyrics), coherenceContext);
   }
-  return ensureVivyPublicLyricsArtistTags(input, publicLyrics);
+  return repairVivySemanticImageCoherence(ensureVivyPublicLyricsArtistTags(input, publicLyrics), coherenceContext);
 }
 
 function countVivyChorusSections(value = '') {
@@ -3950,6 +3965,7 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
     'Ne remplace jamais une voix mélodique par deux voix graves ou synthétiques.',
     'Choisis une direction sonore spécifique au sujet et à son médium: genre contemporain, tempo ressenti, instruments concrets, groove, texture, dynamique et arrangement vocal.',
     'Pour Bleach, anime, manga ou shonen: choisis un opening J-rock/J-pop rock nerveux, guitares et batterie rapide; jamais variété française, chanson acoustique ou ballade type Patrick Bruel.',
+    'Pour moto, visière, casque, guidon, fuite, 5 étoiles, gyros ou hélicos: choisis rap français trap sombre, 808 lourdes, sirènes, adlibs, refrain court, énergie poursuite nocturne NOSSEN; jamais “au volant” si la matière dit moto.',
     'Sans demande explicite, évite les réflexes orchestral, cinématique, épique, symphonique ou classique. Cherche une identité moderne, rythmique et immédiatement reconnaissable.',
     'Réponds uniquement en JSON avec les clés artists (tableau) et songMood (chaîne).',
   ].join('\n');
@@ -5276,7 +5292,7 @@ function inferVivySunoStyleBase(input = {}, artistCast = buildVivySongArtistCast
   const withCastStyle = (style) => cleanOneLine([
     artistCast.sunoStyle,
     style,
-  ].filter(Boolean).join(', '), style || artistCast.sunoStyle, 520);
+  ].filter(Boolean).join(', '), style || artistCast.sunoStyle, 720);
 
   if (/\bzorro\b|\bjusticier\b|\bmasque\b|\bepee\b|\bépée\b|\bcheval\s+noir\b|\bcalifornie\b/.test(folded)) {
     return withCastStyle('latin cinematic pop-rock, guitare espagnole, palmas, castagnettes, trompettes western, batterie héroïque');
@@ -5298,7 +5314,11 @@ function inferVivySunoStyleBase(input = {}, artistCast = buildVivySongArtistCast
   if (/\btroie\b|\bhelene\b|\bhélène\b|\bcheval\s+de\s+troie\b|\bmythe\b|\bmytholog/.test(folded)) {
     return withCastStyle('mythological electro-rock, tambours solennels, cordes dramatiques, synthés profonds, vocal héroïque');
   }
-  if (/\bmoto\b|\bscooter\b|\bpignon\b|\bcouronne\b|\bradiateur\b|\bchaine\b|\bchaîne\b|\bmoteur\b|\bessence\b|\bhuile\b|\bstunt\b/.test(folded)) {
+  if (/\b(?:moto|scooter|booster|guidon|casque|visiere|visière)\b/.test(folded)
+    && /\b(?:5\s*etoiles|5\s*étoiles|etoiles|étoiles|helico|hélico|helicos|hélicos|gyros?|sirene|sirène|sirenes|sirènes|comico|poursuite|fuite|neons|néons)\b/.test(folded)) {
+    return withCastStyle('rap français trap sombre NOSSEN, 808 lourdes, drums secs, sirènes et gyros en texture, synthés nocturnes, adlibs courts, refrain brutal et mémorable, énergie poursuite moto');
+  }
+  if (/\bmoto\b|\bscooter\b|\bpignon\b|\bcouronne\b|\bradiateur\b|\bchaine\b|\bchaîne\b|\bmoteur\b|\bessence\b|\bhuile\b|\bstunt\b|\bguidon\b|\bcasque\b|\bvisiere\b|\bvisière\b/.test(folded)) {
     return withCastStyle('technical rap moto, basse lourde, drums secs, guitares garage, engine pulse, hook proche micro');
   }
   if (/\becrans?\b|\bécrans?\b|\bnouvelle\s+generation\b|\bnouvelle\s+génération\b|\breseaux\b|\bréseaux\b|\bnumerique\b|\bnumérique\b/.test(folded)) {
@@ -5328,7 +5348,7 @@ function buildVivySunoLyrics(input = {}) {
   );
   const arrangement = splitVivyArrangementCues(material);
   if (looksLikeExplicitSunoLyricsBlock(arrangement.lyrics) || looksLikeCompleteLyrics(arrangement.lyrics)) {
-    return cleanText(arrangement.lyrics, VIVY_SONG_MAX_CHARS);
+    return cleanText(repairVivySemanticImageCoherence(arrangement.lyrics, material), VIVY_SONG_MAX_CHARS);
   }
 
   const structuredMaterial = cleanText(String(arrangement.lyrics || '')
@@ -5338,7 +5358,7 @@ function buildVivySunoLyrics(input = {}) {
     .join('\n'), VIVY_SONG_MAX_CHARS);
   return buildVivyStructuredLyrics({
     ...input,
-    songText: structuredMaterial || arrangement.lyrics,
+    songText: repairVivySemanticImageCoherence(structuredMaterial || arrangement.lyrics, material),
   });
 }
 
@@ -5430,11 +5450,11 @@ function buildVivySunoPayload(input = {}, req = null) {
     ? 'long-form full song arrangement around five minutes, expanded sections, recurring hook after the bridge, complete final chorus, no short radio edit'
     : '';
   let style = /structured rhymed lyrics|rimes|paroles structur/i.test(styleBase)
-    ? cleanOneLine([styleBase, castRoleSummary, longFormStyle, castStyle, arrangementStyle, prosodyStyle].filter((item, index, list) => item && list.indexOf(item) === index).join(', '), styleBase, 520)
+    ? cleanOneLine([styleBase, castRoleSummary, longFormStyle, castStyle, arrangementStyle, prosodyStyle].filter((item, index, list) => item && list.indexOf(item) === index).join(', '), styleBase, 720)
     : cleanOneLine(
       `${styleBase}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration${castRoleSummary ? `, ${castRoleSummary}` : ''}${longFormStyle ? `, ${longFormStyle}` : ''}${castStyle ? `, ${castStyle}` : ''}${arrangementStyle ? `, ${arrangementStyle}` : ''}${prosodyStyle ? `, ${prosodyStyle}` : ''}`,
       styleBase,
-      520
+      720
     );
   if (useExternalVoiceMix) {
     style = cleanOneLine([
@@ -5443,7 +5463,7 @@ function buildVivySunoPayload(input = {}, req = null) {
       longFormStyle,
       'instrumental backing track only, no vocals, no singing, leave clear space for the external lead vocal',
       prosodyStyle,
-    ].filter(Boolean).join(', '), 'instrumental backing track only, no vocals', 520);
+    ].filter(Boolean).join(', '), 'instrumental backing track only, no vocals', 720);
   }
   const negativeTags = cleanOneLine([
     input.negativeTags || process.env.VIVY_SUNO_NEGATIVE_TAGS
