@@ -3849,8 +3849,9 @@ test('Vivy strict NOSSEN songcraft does not use chat memory as lyric material', 
   const chatBlock = serverSource.slice(chatStart, chatEnd);
 
   assert.match(chatBlock, /const strictSongNoMemory = requiresStrongSongModel/);
-  assert.match(chatBlock, /memoryContext = \(detachedCompleteSong \|\| strictSongNoMemory\) \? '' : buildVivyMemoryContext/);
-  assert.match(chatBlock, /history = \(detachedCompleteSong \|\| strictSongNoMemory\) \? \[\] : normalizeVivyChatHistory/);
+  assert.match(chatBlock, /memoryContext = \(mode === 'song' \|\| detachedCompleteSong \|\| strictSongNoMemory\) \? '' : buildVivyMemoryContext/);
+  assert.match(chatBlock, /normalizeVivySongHistoryForPrompt\(input\.history, intentMessage \|\| message\)/);
+  assert.match(chatBlock, /history = mode === 'song'\s*\?\s*\[\]/);
 });
 
 test('Vivy chat mode does not structure raw rap material sent with Envoyer', async () => {
@@ -4694,6 +4695,24 @@ test('Vivy song fallback extracts a clean summer theme instead of pasting the wh
   assert.doesNotMatch(result.assistant, /Tout semble petit:/i);
   assert.doesNotMatch(result.assistant, /salut tu as une idée de chanson/i);
   assert.doesNotMatch(result.assistant, /tu as une idée/i);
+});
+
+test('Vivy song mode does not drag stale history into a fresh autonomous theme', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-song-fresh-theme-no-stale-history',
+    mode: 'song',
+    message: 'fais une musique type générique animé sur Bleach avec Ichigo et la Soul Society',
+    history: [
+      { role: 'user', content: 'fais une chanson sur SAO, Kirito, Asuna et Aincrad' },
+      { role: 'assistant', content: '[Chorus]\nKirito, Kirito, les lames jumelles percent Aincrad' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'song');
+  assert.equal(result.aiMode, 'deterministic_songcraft');
+  assert.match(result.assistant, /Bleach|Ichigo|Soul Society/i);
+  assert.doesNotMatch(result.assistant, /Kirito|Asuna|Aincrad|SAO/i);
 });
 
 test('Vivy song fallback cleans command phrasing for Djeff and K44 duet themes', async () => {

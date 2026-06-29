@@ -670,6 +670,7 @@ function buildVivyThemeSeed(value = '', fallback = '') {
     .replace(/\b(?:continue|continuer|reprends|poursuis)\s+(?:ce\s+)?(?:texte|couplet|refrain|rap)\b/ig, '')
     .replace(/\s+/g, ' ')
     .trim();
+  let preferredSubject = '';
 
   seed = seed.replace(
     /^(sombre|dark|douce?|doux|cin[ée]matographique|cinematic)(?:\s+mais\s+(sombre|dark|douce?|doux|cin[ée]matographique|cinematic))?\s+sur\s+(.+)$/i,
@@ -677,6 +678,29 @@ function buildVivyThemeSeed(value = '', fallback = '') {
       const qualities = [first, second].filter(Boolean).join(' et ');
       const subject = cleanOneLine(topic, '', 140).replace(/[,\s.;:!?-]+$/g, '').trim();
       return `${subject}, ambiance ${qualities}`;
+    }
+  );
+  seed = seed.replace(
+    /^(?:type\s+)?(?:g[ée]n[ée]rique\s+(?:anim[ée]|anime)|opening|ending|op)\s+(?:sur|pour|avec)\s+(.+)$/i,
+    (_match, topic) => {
+      const subject = cleanOneLine(topic, '', 160)
+        .replace(/\s+(?:avec|et)\s+/ig, ', ')
+        .replace(/[,\s.;:!?-]+$/g, '')
+        .trim();
+      preferredSubject = subject;
+      return `${subject}, énergie générique animé`;
+    }
+  );
+  seed = seed.replace(
+    /^type\s+([^,.;:!?]{3,80})\s+(?:sur|pour|avec)\s+(.+)$/i,
+    (_match, style, topic) => {
+      const subject = cleanOneLine(topic, '', 160)
+        .replace(/\s+(?:avec|et)\s+/ig, ', ')
+        .replace(/[,\s.;:!?-]+$/g, '')
+        .trim();
+      const color = cleanOneLine(style, '', 80).replace(/[,\s.;:!?-]+$/g, '').trim();
+      preferredSubject = preferredSubject || subject;
+      return color ? `${subject}, couleur ${color}` : subject;
     }
   );
 
@@ -696,6 +720,22 @@ function buildVivyThemeSeed(value = '', fallback = '') {
     .replace(/\s{2,}/g, ' ')
     .replace(/^[,.;:\s-]+|[,.;:\s-]+$/g, '')
     .trim();
+  if (preferredSubject) {
+    const preferredParts = preferredSubject
+      .split(/\s*,\s*/)
+      .map((part) => cleanOneLine(part, '', 80))
+      .filter(Boolean);
+    const merged = cleanOneLine([...preferredParts, ...usefulParts]
+      .filter((part, index, list) => foldTextForLookup(part) && list.findIndex((other) => foldTextForLookup(other) === foldTextForLookup(part)) === index)
+      .slice(0, 4)
+      .join(', '), '', 220)
+      .replace(/,\s*,+/g, ',')
+      .replace(/\s+,/g, ',')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/^[,.;:\s-]+|[,.;:\s-]+$/g, '')
+      .trim();
+    if (merged) return merged;
+  }
   return cleaned || fallback;
 }
 
