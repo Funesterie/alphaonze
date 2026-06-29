@@ -506,6 +506,46 @@ test('Vivy stream control drives production, presentation and playback metadata'
   });
 });
 
+test('Vivy stream recovers from production error when a new Twitch suggestion arrives', async () => {
+  await withServer({ stateName: 'error-recovery.json' }, async (baseUrl) => {
+    await postJson(baseUrl, '/api/vivy/stream/chat', {
+      username: 'funeste38',
+      message: '!nossen Bleach avec Ichigo, opening anime sombre',
+    });
+    await postJson(baseUrl, '/api/vivy/stream/round/lock', {});
+    let result = await postJson(baseUrl, '/api/vivy/stream/control', {
+      action: 'error',
+      message: 'NOSSEN Twitch arrêté: Suno a rejeté la génération.',
+    });
+    assert.equal(result.json.state.current.phase, 'error');
+    assert.equal(result.json.state.round.status, 'locked');
+
+    result = await postJson(baseUrl, '/api/vivy/stream/chat', {
+      username: 'funeste38',
+      message: '!nossen Handicap invisible, pop-rock émotionnel, refrain mémorable',
+    });
+    assert.equal(result.json.action, 'suggestion_recovered');
+    assert.equal(result.json.recovered, true);
+    assert.equal(result.json.state.round.status, 'open');
+    assert.equal(result.json.state.current.phase, 'voting');
+    assert.equal(result.json.state.round.suggestions.length, 1);
+    assert.match(result.json.state.round.suggestions[0].text, /Handicap invisible/);
+    assert.equal(result.json.state.pendingSuggestions.length, 0);
+  });
+});
+
+test('A11 production Caddy routes Vivy and TTS APIs to the A11 backend', () => {
+  const deployScript = fs.readFileSync(
+    path.join(__dirname, '../../../../ops/deploy-a11-prod-finland-2.ps1'),
+    'utf8'
+  );
+  const a11PathLine = deployScript.split(/\r?\n/).find((line) => line.includes('@a11Path path')) || '';
+  assert.match(a11PathLine, /\/api\/vivy(?:\s|$)/);
+  assert.match(a11PathLine, /\/api\/vivy\/\*/);
+  assert.match(a11PathLine, /\/api\/tts(?:\s|$)/);
+  assert.match(a11PathLine, /\/api\/tts\/\*/);
+});
+
 test('Vivy live overlay contains the production show and bundled background', () => {
   const html = buildOverlayHtml();
   assert.match(html, /vivy-presence-musicale|overlay\/background/);

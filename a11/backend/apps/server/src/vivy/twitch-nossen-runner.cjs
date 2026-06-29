@@ -256,12 +256,26 @@ function createVivyStreamNossenRunner(options = {}) {
       let result = await startMusic('song', productionInput, req);
       let media = getReadyMedia(result);
       const taskId = getMusicTaskId(result);
+      logger.info?.(
+        '[vivy-twitch-nossen] round=%s suno submitted task=%s status=%s model=%s',
+        roundId,
+        taskId || 'immediate',
+        cleanText(result?.status || result?.state || 'unknown', '', 80),
+        cleanText(result?.model || productionInput.musicModel || 'unknown', '', 80)
+      );
 
       if (!media && !taskId) throw new Error('vivy_stream_suno_task_missing');
       for (let attempt = 1; !media && attempt <= pollAttempts; attempt += 1) {
         await sleepFn(attempt <= 2 ? Math.min(5000, pollIntervalMs) : pollIntervalMs);
         result = await pollMusic(taskId, productionInput, req);
         if (String(result?.state || '').toLowerCase() === 'error') {
+          logger.warn?.(
+            '[vivy-twitch-nossen] round=%s suno rejected task=%s status=%s message=%s',
+            roundId,
+            taskId,
+            cleanText(result?.status || 'error', '', 80),
+            cleanText(result?.message || result?.providerDetail || 'unknown', '', 220)
+          );
           throw new Error(result?.message || 'vivy_stream_suno_failed');
         }
         media = getReadyMedia(result);

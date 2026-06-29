@@ -5285,11 +5285,24 @@ function looksLikeWeakVivyAnimeSunoStyle(value = '') {
   return !/\b(?:anime|j\s*rock|j\s*pop|rock|metal|guitare|guitar|drums?|batterie|basse|synth|shonen|shônen|opening|generique|générique)\b/.test(folded);
 }
 
+function sanitizeVivySunoProviderTags(value = '', fallback = '', max = 720) {
+  return cleanOneLine(String(value || '')
+    .replace(/\bpatrick\s+bruel\b/gi, 'French chanson crooner')
+    .replace(/\bbruel\b/gi, 'French chanson crooner')
+    .replace(/\bjohnny\s+hallyday\b/gi, 'French rock anthem')
+    .replace(/\bhallyday\b/gi, 'French rock anthem')
+    .replace(/\b(?:booba|pnl|stromae|damso|orelsan|nekfeu|jul|gims|soprano|aya\s+nakamura)\b/gi, 'contemporary French urban vocal')
+    .replace(/\b(?:myl[eè]ne\s+farmer|farmer|indochine|renaud|aznavour|brel|piaf)\b/gi, 'classic French pop texture'),
+    fallback,
+    max
+  );
+}
+
 function inferVivySunoStyleBase(input = {}, artistCast = buildVivySongArtistCast(input)) {
   const material = buildVivySunoStyleMaterial(input);
   const folded = foldTextForLookup(material);
   const fallbackTopic = cleanOneLine(inferTitle(material), '', 72);
-  const withCastStyle = (style) => cleanOneLine([
+  const withCastStyle = (style) => sanitizeVivySunoProviderTags([
     artistCast.sunoStyle,
     style,
   ].filter(Boolean).join(', '), style || artistCast.sunoStyle, 720);
@@ -5414,7 +5427,7 @@ function buildVivySunoPayload(input = {}, req = null) {
     72
   ).replace(/^["'“”]+|["'“”]+$/g, '');
   const title = cleanOneLine(titleSeed, 'Sans titre', 80);
-  const requestedStyleBase = cleanOneLine(
+  const requestedStyleBase = sanitizeVivySunoProviderTags(
     stripVivyAscii4SoundTokens(input.songMood || input.mood || input.style),
     '',
     220
@@ -5424,7 +5437,7 @@ function buildVivySunoPayload(input = {}, req = null) {
   const styleBase = looksLikeVivySunoStylePlaceholder(requestedStyleBase)
     ? inferVivySunoStyleBase(input, artistCast)
     : animeStyleBase && looksLikeWeakVivyAnimeSunoStyle(requestedStyleBase)
-      ? cleanOneLine([artistCast.sunoStyle, animeStyleBase].filter(Boolean).join(', '), animeStyleBase, 520)
+      ? sanitizeVivySunoProviderTags([artistCast.sunoStyle, animeStyleBase].filter(Boolean).join(', '), animeStyleBase, 520)
     : requestedStyleBase;
   const castRoles = artistCast.artists
     .map((artist) => cleanOneLine(artist.sunoRole || artist.style, '', 80)
@@ -5450,14 +5463,14 @@ function buildVivySunoPayload(input = {}, req = null) {
     ? 'long-form full song arrangement around five minutes, expanded sections, recurring hook after the bridge, complete final chorus, no short radio edit'
     : '';
   let style = /structured rhymed lyrics|rimes|paroles structur/i.test(styleBase)
-    ? cleanOneLine([styleBase, castRoleSummary, longFormStyle, castStyle, arrangementStyle, prosodyStyle].filter((item, index, list) => item && list.indexOf(item) === index).join(', '), styleBase, 720)
-    : cleanOneLine(
+    ? sanitizeVivySunoProviderTags([styleBase, castRoleSummary, longFormStyle, castStyle, arrangementStyle, prosodyStyle].filter((item, index, list) => item && list.indexOf(item) === index).join(', '), styleBase, 720)
+    : sanitizeVivySunoProviderTags(
       `${styleBase}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration${castRoleSummary ? `, ${castRoleSummary}` : ''}${longFormStyle ? `, ${longFormStyle}` : ''}${castStyle ? `, ${castStyle}` : ''}${arrangementStyle ? `, ${arrangementStyle}` : ''}${prosodyStyle ? `, ${prosodyStyle}` : ''}`,
       styleBase,
       720
     );
   if (useExternalVoiceMix) {
-    style = cleanOneLine([
+    style = sanitizeVivySunoProviderTags([
       styleBase,
       arrangementStyle,
       longFormStyle,
@@ -5465,11 +5478,11 @@ function buildVivySunoPayload(input = {}, req = null) {
       prosodyStyle,
     ].filter(Boolean).join(', '), 'instrumental backing track only, no vocals', 720);
   }
-  const negativeTags = cleanOneLine([
+  const negativeTags = sanitizeVivySunoProviderTags([
     input.negativeTags || process.env.VIVY_SUNO_NEGATIVE_TAGS
       || 'spoken word, narration, reading prompt, robotic speech, muddy mix, out of tune vocals, copyrighted melody, celebrity voice imitation',
     artistCast.count > 1 ? 'single vocalist, identical vocal timbre for every singer, blended ensemble lead, unison lead vocals, choir lead, group chant replacing solos, same singer across all tags' : '',
-    animeStyleBase ? 'French chanson, chanson française, acoustic ballad, Patrick Bruel style, crooner ballad' : '',
+    animeStyleBase ? 'French chanson, chanson française, acoustic ballad, crooner ballad, soft piano variety' : '',
     useExternalVoiceMix ? 'vocals, singing, spoken voice' : '',
   ].filter(Boolean).join(', '), 'spoken word, narration', 320);
   const requestedModel = resolveVivySunoRequestedModel(input);
@@ -6232,6 +6245,19 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
     throw error;
   }
   const cached = readCachedSunoCallback(safeTaskId);
+  const cachedApiCode = findSunoApiCode(cached?.payload || {});
+  if (cachedApiCode !== null && cachedApiCode !== 200) {
+    const detail = findSunoProviderMessage(cached?.payload || {});
+    return {
+      ok: true,
+      provider: 'suno',
+      taskId: safeTaskId,
+      state: 'error',
+      status: `suno_api_${cachedApiCode}`,
+      message: detail || `Suno a rejeté la génération avec le code ${cachedApiCode}.`,
+      providerDetail: detail,
+    };
+  }
   const cachedMedia = extractSunoMedia(cached?.payload || {}, {
     preferLongForm: wantsVivySunoLongForm(input),
     targetDurationSeconds: normalizeVivySunoTargetDuration(input),
@@ -6288,6 +6314,20 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
       };
     }
     throw new Error(`suno_status_http_${response.status}`);
+  }
+  const apiCode = findSunoApiCode(payload);
+  if (apiCode !== null && apiCode !== 200) {
+    const detail = findSunoProviderMessage(payload);
+    writeCachedSunoCallback(safeTaskId, payload);
+    return {
+      ok: true,
+      provider: 'suno',
+      taskId: safeTaskId,
+      state: 'error',
+      status: `suno_api_${apiCode}`,
+      message: detail || `Suno a rejeté la génération avec le code ${apiCode}.`,
+      providerDetail: detail,
+    };
   }
   const media = extractSunoMedia(payload, {
     preferLongForm: wantsVivySunoLongForm(input),

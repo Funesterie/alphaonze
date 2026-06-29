@@ -1193,7 +1193,8 @@ test('Suno payload routes Bleach away from French chanson defaults', () => {
 
   assert.match(payload.style, /Bleach|shonen anime opening|J-rock|electric guitars|fast drums/i);
   assert.doesNotMatch(payload.style, /Patrick Bruel|ballade acoustique|chanson française/i);
-  assert.match(payload.negativeTags, /Patrick Bruel|French chanson|acoustic ballad/i);
+  assert.match(payload.negativeTags, /French chanson|acoustic ballad/i);
+  assert.doesNotMatch(payload.negativeTags, /Patrick Bruel|Johnny Hallyday/i);
 });
 
 test('Suno payload isolates a clean lyric block from NOSSEN chat planning context', () => {
@@ -1588,6 +1589,64 @@ test('GET /api/vivy/studio/jobs/:taskId returns completed Suno audio when ready'
       assert.equal(json.media.provider, 'suno');
       assert.equal(json.media.audioUrl, 'https://cdn.suno.test/vivy-test.mp3');
       assert.equal(json.media.durationSeconds, 287.4);
+    });
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('GET /api/vivy/studio/jobs/:taskId reports Suno callback API rejection', async () => {
+  const previousEnv = {
+    VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
+    VIVY_SUNO_BASE_URL: process.env.VIVY_SUNO_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const founderAuth = (req, res, next) => {
+    if (req.headers.authorization === 'Bearer vivy-founder-token') {
+      req.user = { id: 'djeff', username: 'Djeff', roles: ['founder'] };
+      return next();
+    }
+    return res.status(401).json({ ok: false, error: 'A11_JWT_Missing', message: 'Connexion requise' });
+  };
+
+  process.env.VIVY_SUNO_API_KEY = 'test-suno-key';
+  process.env.VIVY_SUNO_BASE_URL = 'https://api.suno.test/api/v1';
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'https://api.suno.test/api/v1/generate/record-info?taskId=suno-rejected-tags') {
+      assert.equal(options.headers.Authorization, 'Bearer test-suno-key');
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            code: 400,
+            task_id: 'suno-rejected-tags',
+            msg: 'Your excluded styles contain artist name patrick bruel',
+          };
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer((app) => {
+      app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT: founderAuth }));
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/vivy/studio/jobs/suno-rejected-tags`, {
+        headers: { Authorization: 'Bearer vivy-founder-token' },
+      });
+      const json = await response.json();
+      assert.equal(response.status, 200);
+      assert.equal(json.ok, true);
+      assert.equal(json.state, 'error');
+      assert.equal(json.status, 'suno_api_400');
+      assert.match(json.message, /excluded styles contain artist name/i);
     });
   } finally {
     global.fetch = previousFetch;

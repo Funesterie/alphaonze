@@ -892,6 +892,25 @@ function createVivyStreamStore(options = {}) {
     });
     state.recentMessages = state.recentMessages.slice(0, MAX_RECENT_MESSAGES);
 
+    if (parsed.suggestion && state.current?.phase === 'error') {
+      queueSuggestion(parsed);
+      const recoveredState = startRound({
+        title: 'Vivy Live',
+        message: 'Erreur précédente absorbée: nouveau round ouvert.',
+      });
+      const suggestion = recoveredState.round?.suggestions?.[0] || null;
+      return {
+        ok: true,
+        action: 'suggestion_recovered',
+        parsed,
+        suggestion,
+        vote: null,
+        star: null,
+        recovered: true,
+        state: recoveredState,
+      };
+    }
+
     let action = 'message';
     let suggestion = null;
     let vote = null;
@@ -1104,10 +1123,18 @@ function createVivyStreamStore(options = {}) {
     if (action === 'interlude' || action === 'jukebox') return { ok: true, state: beginIdleJukebox({ rotate: true }) };
     if (action === 'next' || action === 'start') return { ok: true, state: startRound(input) };
     if (action === 'error') {
+      const hasQueuedSuggestions = Array.isArray(state.pendingSuggestions) && state.pendingSuggestions.length > 0;
       setCurrentPhase('error', {
         phaseEndsAt: null,
         message: cleanOneLine(input.message, 'La composition a rencontré un problème.', 240),
       });
+      if (hasQueuedSuggestions) {
+        const recoveredState = startRound({
+          title: 'Vivy Live',
+          message: 'Erreur précédente absorbée: les idées en attente passent au vote.',
+        });
+        return { ok: true, recovered: true, state: recoveredState };
+      }
       save();
       return { ok: true, state: publicState(state) };
     }
