@@ -2691,6 +2691,11 @@ test('Vivy frontend keeps download distinct from open and exposes copy on every 
     'utf8'
   );
 
+  const serverSource = fs.readFileSync(
+    path.join(__dirname, '../server.cjs'),
+    'utf8'
+  );
+
   const downloadStart = apiSource.indexOf('export async function downloadMediaUrl');
   const downloadBlock = apiSource.slice(downloadStart, downloadStart + 1200);
   assert.match(downloadBlock, /downloadProtectedBlob|downloadResourceById/);
@@ -2699,6 +2704,10 @@ test('Vivy frontend keeps download distinct from open and exposes copy on every 
   assert.match(apiSource, /double-harmonic/);
   assert.match(apiSource, /extractMediaDownloadProxyTarget/);
   assert.doesNotMatch(downloadBlock, /window\.open/);
+
+  assert.match(serverSource, /resolvePublicMediaDownloadRedirect/);
+  assert.match(serverSource, /app\.get\('\/api\/media\/download', \(req, res, next\)/);
+  assert.match(serverSource, /app\.get\('\/api\/media\/download', verifyJWT/);
 
   const publicChatStart = appSource.indexOf('function VivyPublicChat');
   const publicChatEnd = appSource.indexOf('function VivyStudio', publicChatStart + 1);

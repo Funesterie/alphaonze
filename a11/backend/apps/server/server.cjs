@@ -7725,6 +7725,52 @@ app.get('/api/account/provider-status', verifyJWT, async (req, res) => {
   }
 });
 
+function resolvePublicMediaDownloadRedirect(req, rawUrl = '') {
+  const raw = String(rawUrl || '').trim();
+  if (!raw) return '';
+  let parsed;
+  try {
+    parsed = new URL(raw, `${req.protocol || 'https'}://${req.get('host') || 'funesterie.me'}`);
+  } catch {
+    return '';
+  }
+  const pathname = String(parsed.pathname || '');
+  if (
+    /^\/api\/vivy\/studio\/assets\/[^/]+$/i.test(pathname)
+    || /^\/api\/vivy\/stream\/s\/[^/]+$/i.test(pathname)
+    || /^\/api\/double-harmonic\/out\/[^/]+$/i.test(pathname)
+  ) {
+    return `${pathname}${parsed.search || ''}`;
+  }
+
+  let filename = '';
+  try {
+    filename = decodeURIComponent(path.basename(pathname));
+  } catch {
+    filename = path.basename(pathname);
+  }
+  if (
+    /^(?:vivy-music-|vivy-preview-mix-|vivy-multi-voice-).+\.mp3$/i.test(filename)
+    && (
+      /\/files\/(?:runtime|uploads|a11_runtime)\//i.test(pathname)
+      || /\/runtime\/files\//i.test(pathname)
+      || /\/vivy-generated\//i.test(pathname)
+    )
+  ) {
+    return `/api/vivy/studio/assets/${encodeURIComponent(filename)}`;
+  }
+  return '';
+}
+
+// Public Vivy/D40 media do not need account auth. This keeps old frontend bundles
+// and copied /api/media/download links from failing with an expired JWT.
+app.get('/api/media/download', (req, res, next) => {
+  const redirectTo = resolvePublicMediaDownloadRedirect(req, req.query?.url);
+  if (!redirectTo) return next();
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  return res.redirect(302, redirectTo);
+});
+
 // Proxy download for Cloudflare R2 public media (files.funesterie.me).
 // The browser cannot fetch these directly (no CORS headers on R2).
 // Validates URL against a strict whitelist before proxying server-side.
