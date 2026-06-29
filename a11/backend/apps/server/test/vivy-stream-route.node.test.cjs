@@ -23,6 +23,9 @@ const {
   createVivyStreamNossenRunner,
 } = require('../src/vivy/twitch-nossen-runner.cjs');
 const {
+  buildVivyMusicPrompt,
+} = require('../src/routes/vivy-studio.cjs');
+const {
   ANNOUNCE_MESSAGES,
   buildSongRecapMessages,
   buildTrackNoticeMessage,
@@ -464,6 +467,23 @@ test('Vivy idle jukebox can seed itself from generated Vivy MP3 assets', () => {
   assert.equal(interlude.current.requestedBy, 'Vivy Live');
 });
 
+test('Vivy music prompt keeps instrumental sound design free of lyrics and vocals', () => {
+  const prompt = buildVivyMusicPrompt({
+    instrumental: true,
+    forceInstrumental: true,
+    songSource: 'Twitch Live',
+    songText: 'Le cowboy et le shérif, duel au soleil couchant, instrumental avec bruitages sonores: cheval, éperons, revolver, vent.',
+    songMood: 'western sombre trap cinématique, guitare sèche, sifflement, sound design poussiéreux',
+    songArtists: [],
+  });
+
+  assert.match(prompt, /Original instrumental Funesterie score/i);
+  assert.match(prompt, /Vocal cast: none/i);
+  assert.match(prompt, /Instrumental only\. No vocals/i);
+  assert.doesNotMatch(prompt, /Lyrics:/i);
+  assert.doesNotMatch(prompt, /sung vocals/i);
+});
+
 test('Twitch NOSSEN runner writes lyrics, follows Suno and publishes the track', async () => {
   const updates = [];
   let productionInput = null;
@@ -541,6 +561,70 @@ test('Twitch NOSSEN runner writes lyrics, follows Suno and publishes the track',
     durationSeconds: 218,
     requestedBy: 'funeste38',
   });
+});
+
+test('Twitch NOSSEN runner sends instrumental sound design requests without lyrics', async () => {
+  const updates = [];
+  let routedInput = null;
+  let productionInput = null;
+  let writeLyricsCalled = false;
+  const runner = createVivyStreamNossenRunner({
+    routeComposition: async (input) => {
+      routedInput = input;
+      return {
+        artists: ['vivy'],
+        songMood: 'instrumental western sombre, trap cinématique, guitare sèche, sifflement, bruitages de cheval, éperons, revolver et vent',
+      };
+    },
+    writeLyrics: async () => {
+      writeLyricsCalled = true;
+      return { publicLyrics: 'should not be used' };
+    },
+    startMusic: async (_mode, input) => {
+      productionInput = input;
+      return {
+        media: {
+          url: '/api/vivy/studio/assets/western-instrumental.mp3',
+          durationSeconds: 162,
+        },
+      };
+    },
+    pollMusic: async () => {
+      throw new Error('poll should not be needed');
+    },
+    probeDuration: async () => 162,
+    updateLive: (input) => updates.push(input),
+    sleep: async () => {},
+  });
+
+  const result = await runner.run({
+    roundId: 'round-western-instrumental',
+    winner: {
+      id: 'S1',
+      text: 'Le cowboy et le shérif, western sombre, duel au soleil couchant, instrumental avec bruitages sonores: cheval, éperons, revolver, vent',
+      author: 'funeste38',
+    },
+    nossenSeed: {
+      canvas: 'Matière Twitch gagnante: duel western instrumental',
+      notes: 'Garder les bruitages comme éléments de scène.',
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.lyrics, '');
+  assert.equal(writeLyricsCalled, false);
+  assert.match(routedInput.notes, /instrumental pur/i);
+  assert.match(routedInput.notes, /bruitages/i);
+  assert.equal(productionInput.instrumental, true);
+  assert.equal(productionInput.forceInstrumental, true);
+  assert.equal(productionInput.preserveSelectedVoice, false);
+  assert.equal(productionInput.lyrics, '');
+  assert.deepEqual(productionInput.songArtists, []);
+  assert.match(productionInput.songText, /cowboy et le shérif/i);
+  assert.match(productionInput.songText, /Palette western/i);
+  assert.match(productionInput.songMood, /no vocals/i);
+  assert.match(productionInput.songMood, /foley/i);
+  assert.match(updates.map((entry) => entry.message || '').join('\n'), /scène instrumentale/i);
 });
 
 test('Twitch NOSSEN runner waits for a local asset instead of publishing a provider URL', async () => {

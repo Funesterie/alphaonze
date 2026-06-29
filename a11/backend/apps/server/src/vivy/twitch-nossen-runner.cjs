@@ -195,6 +195,27 @@ function sanitizeTwitchLyricsForSubject(lyrics = '', subject = '') {
   );
 }
 
+function isTwitchInstrumentalSoundDesignRequest(...values) {
+  const folded = foldTwitchLyricText(values.map((value) => {
+    if (!value) return '';
+    if (typeof value === 'string') return value;
+    return [value.canvas, value.notes, value.text, value.message, value.prompt].filter(Boolean).join(' ');
+  }).join(' '));
+  return /\b(?:instrumental|instrumentale|instrumentaux|sans\s+paroles?|pas\s+de\s+paroles?|aucune?\s+paroles?|no\s+vocals?|no\s+lyrics?|no\s+singing|bruitages?|bruits?\s+sonores?|sfx|sound\s+effects?|foley|sound\s+design|ambiance\s+sonore)\b/.test(folded);
+}
+
+function buildTwitchInstrumentalDirection({ winner = {}, seed = {}, routing = {} } = {}) {
+  return cleanText([
+    'Mode demandé: instrumental pur / sound design. Ne pas écrire ni chanter de paroles.',
+    'Suno doit recevoir une piste instrumentale: no vocals, no singing, no spoken words, no narration, no rap lead.',
+    'Transformer l’histoire en motifs musicaux, silences, impacts, bruitages et textures diégétiques.',
+    'Si le sujet contient des bruitages précis, les garder comme éléments sonores réels dans le style.',
+    /cowboy|cow\s*boy|sherif|shérif|western|duel|saloon|cheval|revolver|soleil\s+couchant/i.test(`${winner.text || ''}\n${seed.canvas || ''}\n${routing.songMood || ''}`)
+      ? 'Palette western utile: vent de poussière, pas de cheval, éperons, porte de saloon, cuir, revolver armé, sifflement, guitare sèche, cloche lointaine.'
+      : '',
+  ].filter(Boolean).join('\n'), '', 1400);
+}
+
 async function probeMediaDurationSeconds(media = {}) {
   const reported = Number(media.durationSeconds || media.duration || 0);
   if (Number.isFinite(reported) && reported > 0) return reported;
@@ -274,6 +295,10 @@ function createVivyStreamNossenRunner(options = {}) {
     const sessionId = `twitch-${roundId}`;
     const conversationId = `vivy-twitch-${roundId}`;
     const seed = payload.nossenSeed || {};
+    const instrumentalMode = isTwitchInstrumentalSoundDesignRequest(winner.text, seed);
+    const instrumentalDirection = instrumentalMode
+      ? buildTwitchInstrumentalDirection({ winner, seed })
+      : '';
 
     try {
       if (revealDelayMs) await sleepFn(revealDelayMs);
@@ -287,65 +312,89 @@ function createVivyStreamNossenRunner(options = {}) {
         message: 'Vivy analyse le thème gagnant.',
       });
       const routing = await routeComposition({
-        canvas: seed.canvas || winner.text,
+        canvas: cleanText([seed.canvas || winner.text, instrumentalDirection].filter(Boolean).join('\n\n'), '', 6000),
         songText: winner.text,
         message: winner.text,
-        notes: seed.notes,
+        notes: cleanText([seed.notes, instrumentalDirection].filter(Boolean).join('\n\n'), '', 2200),
         sessionId,
         conversationId,
       }, req);
-      const artists = Array.isArray(routing?.artists) && routing.artists.length
+      const artists = !instrumentalMode && Array.isArray(routing?.artists) && routing.artists.length
         ? routing.artists.slice(0, 2)
-        : ['vivy'];
+        : instrumentalMode ? [] : ['vivy'];
 
       await update({
         action: 'progress',
         stage: 'lyrics',
-        progress: 8,
-        message: `Vivy écrit pour ${artists.join(' + ')}.`,
+        progress: instrumentalMode ? 100 : 8,
+        message: instrumentalMode
+          ? 'Vivy prépare une scène instrumentale avec bruitages.'
+          : `Vivy écrit pour ${artists.join(' + ')}.`,
       });
-      const lyricsPayload = await writeLyrics({
-        mode: 'song',
-        language: 'fr',
-        conversationId,
-        sessionId,
-        sessionName: `Twitch Live - ${winner.text}`,
-        history: [],
-        message: buildTwitchLyricsRequest({ winner, routing, seed }),
-        songText: winner.text,
-        songMood: routing?.songMood,
-        songArtists: artists,
-        artistCount: artists.length,
-        singerCount: artists.length,
-        vocalCast: artists.join(' + '),
-        disableSongcraftFallback: true,
-      }, req);
-      const rawLyrics = cleanLyrics(
-        lyricsPayload?.vocalLyrics
-        || lyricsPayload?.publicLyrics
-        || lyricsPayload?.assistant
-        || lyricsPayload?.content
-      );
-      const lyrics = sanitizeTwitchLyricsForSubject(rawLyrics, winner.text);
-      if (lyrics !== rawLyrics) {
-        logger.warn?.('[vivy-twitch-nossen] round=%s stripped operational lyric leakage before Suno', roundId);
+      let lyrics = '';
+      if (!instrumentalMode) {
+        const lyricsPayload = await writeLyrics({
+          mode: 'song',
+          language: 'fr',
+          conversationId,
+          sessionId,
+          sessionName: `Twitch Live - ${winner.text}`,
+          history: [],
+          message: buildTwitchLyricsRequest({ winner, routing, seed }),
+          songText: winner.text,
+          songMood: routing?.songMood,
+          songArtists: artists,
+          artistCount: artists.length,
+          singerCount: artists.length,
+          vocalCast: artists.join(' + '),
+          disableSongcraftFallback: true,
+        }, req);
+        const rawLyrics = cleanLyrics(
+          lyricsPayload?.vocalLyrics
+          || lyricsPayload?.publicLyrics
+          || lyricsPayload?.assistant
+          || lyricsPayload?.content
+        );
+        lyrics = sanitizeTwitchLyricsForSubject(rawLyrics, winner.text);
+        if (lyrics !== rawLyrics) {
+          logger.warn?.('[vivy-twitch-nossen] round=%s stripped operational lyric leakage before Suno', roundId);
+        }
+        if (lyrics.length < 120) throw new Error('vivy_stream_lyrics_too_short');
       }
-      if (lyrics.length < 120) throw new Error('vivy_stream_lyrics_too_short');
 
       await update({
         action: 'progress',
         stage: 'composition',
         progress: 5,
-        message: 'Paroles prêtes, Suno lance la composition.',
+        message: instrumentalMode
+          ? 'Scène instrumentale prête, Suno lance la composition.'
+          : 'Paroles prêtes, Suno lance la composition.',
       });
+      const instrumentalMaterial = instrumentalMode
+        ? cleanText([
+          winner.text,
+          seed.canvas,
+          routing?.songMood ? `Direction sonore: ${routing.songMood}` : '',
+          instrumentalDirection,
+        ].filter(Boolean).join('\n\n'), '', 6000)
+        : '';
+      const productionMood = instrumentalMode
+        ? cleanText([
+          routing?.songMood || winner.text,
+          instrumentalDirection,
+          'Instrumental score only, sound effects and foley allowed, no vocals, no singing, no lyrics, no spoken narration.',
+        ].filter(Boolean).join(', '), '', 1200)
+        : routing?.songMood;
       const productionInput = {
         mode: 'song',
         language: 'fr',
         conversationId,
         sessionId,
         sessionName: `Twitch Live - ${winner.text}`,
-        message: 'NOSSEN Twitch Live: production finale.',
-        prompt: routing?.songMood || winner.text,
+        message: instrumentalMode
+          ? 'NOSSEN Twitch Live: production instrumentale finale.'
+          : 'NOSSEN Twitch Live: production finale.',
+        prompt: productionMood || winner.text,
         title: winner.text,
         songTitle: winner.text,
         songSource: 'Twitch Live',
@@ -353,13 +402,15 @@ function createVivyStreamNossenRunner(options = {}) {
         artistCount: artists.length,
         singerCount: artists.length,
         vocalCast: artists.join(' + '),
-        songMood: routing?.songMood,
+        songMood: productionMood,
         lyrics,
-        songText: lyrics,
+        songText: instrumentalMode ? instrumentalMaterial : lyrics,
+        instrumental: instrumentalMode,
+        forceInstrumental: instrumentalMode,
         forceRealMusic: true,
         generateMusic: true,
         makeSong: true,
-        preserveSelectedVoice: true,
+        preserveSelectedVoice: !instrumentalMode,
         allowExternalVoiceMix: false,
         externalVoiceMix: false,
         forceExternalVoiceMix: false,

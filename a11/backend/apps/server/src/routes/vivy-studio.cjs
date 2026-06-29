@@ -3964,6 +3964,7 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
     'Un refrain mélodique ou un format générique chanté doit garder Vivy; A11 peut fournir le contraste électronique. Ne choisis K44 que si la matière demande réellement une narration grave ou un contre-chant posé.',
     'Ne remplace jamais une voix mélodique par deux voix graves ou synthétiques.',
     'Choisis une direction sonore spécifique au sujet et à son médium: genre contemporain, tempo ressenti, instruments concrets, groove, texture, dynamique et arrangement vocal.',
+    'Si la matière demande explicitement instrumental, sans paroles, bruitages, SFX, foley ou sound design: garde artists avec une seule valeur de compatibilité mais songMood doit être instrumental pur, sans refrain chanté, sans voix, avec bruitages/ambiances concrets.',
     'Pour Bleach, anime, manga ou shonen: choisis un opening J-rock/J-pop rock nerveux, guitares et batterie rapide; jamais variété française, chanson acoustique ou ballade type Patrick Bruel.',
     'Pour moto, visière, casque, guidon, fuite, 5 étoiles, gyros ou hélicos: choisis rap français trap sombre, 808 lourdes, sirènes, adlibs, refrain court, énergie poursuite nocturne NOSSEN; jamais “au volant” si la matière dit moto.',
     'Sans demande explicite, évite les réflexes orchestral, cinématique, épique, symphonique ou classique. Cherche une identité moderne, rythmique et immédiatement reconnaissable.',
@@ -5214,14 +5215,20 @@ function buildVivyMusicPrompt(input = {}) {
     songText: arrangement.lyrics,
   });
   const prompt = [
-    artistCast.musicLead,
+    forceInstrumental
+      ? 'Original instrumental Funesterie score, French production context.'
+      : artistCast.musicLead,
     `Source: ${source}.`,
     `Style and production: ${mood}.`,
-    `Vocal cast: ${artistCast.countLabel}: ${artistCast.label}. ${artistCast.musicMood}`,
-    catalogVoiceName
+    forceInstrumental
+      ? 'Vocal cast: none. Instrumental only, no vocals, no singing, no spoken narration.'
+      : `Vocal cast: ${artistCast.countLabel}: ${artistCast.label}. ${artistCast.musicMood}`,
+    !forceInstrumental && catalogVoiceName
       ? `Authorized voice catalog: ${catalogVoiceName}. Use it only as a consented original voice direction; never imitate a celebrity or expose raw reference audio.`
-      : `Voice direction: ${voiceProfile.referenceLabel}. Original voice only; no celebrity imitation.`,
-    prosodyPrompt,
+      : !forceInstrumental
+        ? `Voice direction: ${voiceProfile.referenceLabel}. Original voice only; no celebrity imitation.`
+        : '',
+    forceInstrumental ? '' : prosodyPrompt,
     arrangement.cues.length
       ? `Instrumental arrangement cues: ${arrangement.arrangement}. Use these only for the backing music; never sing or speak these directions.`
       : '',
@@ -5400,8 +5407,59 @@ function resolveVivySunoRequestedModel(input = {}) {
   return cleanOneLine(input.musicModel || longModel || process.env.VIVY_SUNO_MODEL || 'V5_5', 'V5_5', 40);
 }
 
+function wantsVivyInstrumentalSoundDesign(input = {}) {
+  const folded = foldTextForLookup([
+    input.songMood,
+    input.mood,
+    input.style,
+    input.songText,
+    input.lyrics,
+    input.text,
+    input.theme,
+    input.prompt,
+    input.message,
+    input.instruction,
+  ].filter(Boolean).join('\n'));
+  return /\b(?:bruitage|bruitages|bruits?\s+sonores?|sfx|sound\s+effects?|foley|sound\s+design|ambiance\s+sonore|field\s+recording|diegetic|diegetique|diégétique)\b/.test(folded);
+}
+
+function buildVivyInstrumentalSoundDesignHint(input = {}) {
+  const folded = foldTextForLookup(buildVivySunoStyleMaterial(input));
+  const requested = wantsVivyInstrumentalSoundDesign(input);
+  const hints = [];
+  if (requested) {
+    hints.push('requested sound design: concrete foley, diegetic ambience, impacts and transitions integrated rhythmically');
+  }
+  if (/\bcowboy\b|\bcow\s*boy\b|\bsherif\b|\bshérif\b|\bwestern\b|\bduel\b|\bsaloon\b|\bcheval\b|\brevolver\b|\bdesert\b|\bdésert\b|\bpoussiere\b|\bpoussière\b/.test(folded)) {
+    hints.push('western foley palette: desert wind, horse steps, spurs, leather creaks, saloon door, revolver cock, distant bell, dry whistle, acoustic guitar motif');
+  }
+  return cleanOneLine(hints.join(', '), '', 420);
+}
+
+function buildVivyInstrumentalSunoPrompt(input = {}, title = '') {
+  const material = sanitizeVivySongMaterial(
+    stripVivyAscii4SoundTokens([
+      input.songText,
+      input.text,
+      input.theme,
+      input.prompt,
+      input.message,
+      input.instruction,
+    ].filter(Boolean).join('\n\n'), VIVY_SONG_MAX_CHARS),
+    VIVY_SONG_MAX_CHARS
+  );
+  return cleanText([
+    `Instrumental scenario: ${material || title || 'original scene'}.`,
+    'No lyrics. No sung words. No spoken words. No rap lead. No narration.',
+    'Tell the story through arrangement, motifs, dynamics, silence, impacts, texture and sound effects only.',
+    buildVivyInstrumentalSoundDesignHint(input),
+    'Keep it musical and structured: intro, development, tension rise, dramatic peak, clean ending.',
+  ].filter(Boolean).join('\n'), 3000);
+}
+
 function buildVivySunoPayload(input = {}, req = null) {
   const artistCast = buildVivySongArtistCast(input);
+  const forceInstrumental = input.instrumental === true || input.forceInstrumental === true || input.previewInstrumental === true;
   const preserveSelectedVoice = input.preserveSelectedVoice === true;
   const explicitVoiceId = cleanOneLine(input.sunoVoiceId, '', 180);
   const serverVoiceId = getRequestSessionSunoApiKey(input, req)
@@ -5412,10 +5470,10 @@ function buildVivySunoPayload(input = {}, req = null) {
     && artistCast.count === 1
     && artistCast.ids[0] === 'vivy'
     && Boolean(verifiedVoiceId)
-    && input.instrumental !== true
-    && input.forceInstrumental !== true;
+    && !forceInstrumental;
   const useExternalVoiceMix = preserveSelectedVoice
     && !useVerifiedVivyVoice
+    && !forceInstrumental
     && wantsVivyExternalVoiceMix(input);
   const prosodyPlan = buildVivyProsodyPlan(input);
   const prosodyStyle = buildVivyProsodyStyleHint(prosodyPlan);
@@ -5459,6 +5517,7 @@ function buildVivySunoPayload(input = {}, req = null) {
   const arrangementStyle = arrangement.cues.length
     ? `instrumental arrangement: ${arrangement.arrangement}; never sing or speak arrangement directions`
     : '';
+  const soundDesignStyle = forceInstrumental ? buildVivyInstrumentalSoundDesignHint(input) : '';
   const longFormStyle = wantsVivySunoLongForm(input)
     ? 'long-form full song arrangement around five minutes, expanded sections, recurring hook after the bridge, complete final chorus, no short radio edit'
     : '';
@@ -5469,7 +5528,16 @@ function buildVivySunoPayload(input = {}, req = null) {
       styleBase,
       720
     );
-  if (useExternalVoiceMix) {
+  if (forceInstrumental) {
+    style = sanitizeVivySunoProviderTags([
+      styleBase,
+      arrangementStyle,
+      soundDesignStyle,
+      longFormStyle,
+      'instrumental score only, no vocals, no singing, no lyrics, no spoken narration, no rap lead',
+      'musical sound design and foley allowed when requested',
+    ].filter(Boolean).join(', '), 'instrumental score only, no vocals', 720);
+  } else if (useExternalVoiceMix) {
     style = sanitizeVivySunoProviderTags([
       styleBase,
       arrangementStyle,
@@ -5484,18 +5552,22 @@ function buildVivySunoPayload(input = {}, req = null) {
     artistCast.count > 1 ? 'single vocalist, identical vocal timbre for every singer, blended ensemble lead, unison lead vocals, choir lead, group chant replacing solos, same singer across all tags' : '',
     animeStyleBase ? 'French chanson, chanson française, acoustic ballad, crooner ballad, soft piano variety' : '',
     useExternalVoiceMix ? 'vocals, singing, spoken voice' : '',
+    forceInstrumental ? 'vocals, singing, lyrics, sung words, spoken words, rap lead, narration, choir lead, group chant' : '',
   ].filter(Boolean).join(', '), 'spoken word, narration', 320);
   const requestedModel = resolveVivySunoRequestedModel(input);
+  const prompt = forceInstrumental
+    ? buildVivyInstrumentalSunoPrompt({ ...input, songTitle: input.songTitle || input.title || title }, title)
+    : strengthenVivySunoSoloSectionHeaders(
+      buildVivySunoLyrics({ ...input, songTitle: input.songTitle || input.title || title }),
+      artistCast
+    );
   const payload = {
     model: useVerifiedVivyVoice && !/^V5(?:_5)?$/i.test(requestedModel) ? 'V5_5' : requestedModel,
     customMode: true,
-    instrumental: input.instrumental === true || input.forceInstrumental === true || useExternalVoiceMix,
+    instrumental: forceInstrumental || useExternalVoiceMix,
     title,
     style,
-    prompt: strengthenVivySunoSoloSectionHeaders(
-      buildVivySunoLyrics({ ...input, songTitle: input.songTitle || input.title || title }),
-      artistCast
-    ),
+    prompt,
     negativeTags,
     callBackUrl: buildSunoCallbackUrl(req),
   };
