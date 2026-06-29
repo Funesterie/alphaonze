@@ -52,10 +52,21 @@ Variables requises:
 $env:TWITCH_CHANNEL="ta_chaine"
 $env:TWITCH_BOT_USERNAME="nom_du_bot"
 $env:TWITCH_OAUTH_TOKEN="oauth:xxxxxxxx"
+$env:TWITCH_CLIENT_ID="client_id_twitch"
 $env:VIVY_STREAM_SECRET="secret_partage_long"
 $env:VIVY_STREAM_INGEST_URL="https://vivy.funesterie.me/api/vivy/stream/chat"
 npm run worker:vivy:twitch
 ```
+
+Par défaut, le worker vérifie l'API officielle Twitch Helix avant d'ouvrir IRC. Si la chaîne n'est pas live, il reste en veille et ne poll pas l'état Vivy, n'envoie aucune annonce, et ne lit aucun message chat.
+
+```powershell
+$env:VIVY_TWITCH_LIVE_POLL_INTERVAL_MS="60000"
+$env:VIVY_TWITCH_RESET_ON_OFFLINE="1"
+$env:VIVY_STREAM_RESET_URL="https://vivy.funesterie.me/api/vivy/stream/reset"
+```
+
+`TWITCH_CLIENT_ID` est requis pour ce garde live; le token Helix utilise `TWITCH_ACCESS_TOKEN` si fourni, sinon `TWITCH_OAUTH_TOKEN` sans le préfixe `oauth:`. Mettre `VIVY_TWITCH_LIVE_GATE_DISABLED=1` force l'ancien comportement, utile seulement pour debug. Le reset offline vide le round, les messages récents, les votes/étoiles de session et la mémoire épisodique Twitch, mais conserve l'historique des morceaux et l'apprentissage global.
 
 Option utile si le chat devient trop bruyant:
 

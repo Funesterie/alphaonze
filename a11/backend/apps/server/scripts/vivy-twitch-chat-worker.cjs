@@ -3,9 +3,11 @@
 const WebSocket = require('ws');
 
 const TWITCH_IRC_URL = 'wss://irc-ws.chat.twitch.tv:443';
+const TWITCH_HELIX_STREAMS_URL = 'https://api.twitch.tv/helix/streams';
 const DEFAULT_ANNOUNCE_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_TRACK_NOTICE_POLL_INTERVAL_MS = 10 * 1000;
 const DEFAULT_RECAP_INTERVAL_MS = 28 * 60 * 1000;
+const DEFAULT_TWITCH_LIVE_POLL_INTERVAL_MS = 60 * 1000;
 const DEFAULT_PUBLIC_BASE_URL = 'https://vivy.funesterie.me';
 const ANNOUNCE_MESSAGES = Object.freeze([
   '🎤 Vivy Live — propose une chanson avec !vivy ton idée | vote avec !vote S1 | note avec !etoiles 5 S1 ou ⭐⭐⭐⭐⭐',
@@ -36,6 +38,33 @@ function resolveRecapInterval(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_RECAP_INTERVAL_MS;
   return Math.max(25 * 60 * 1000, Math.min(30 * 60 * 1000, Math.floor(parsed)));
+}
+
+function resolveLivePollInterval(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_TWITCH_LIVE_POLL_INTERVAL_MS;
+  return Math.max(15 * 1000, Math.min(10 * 60 * 1000, Math.floor(parsed)));
+}
+
+function normalizeTwitchBearerToken(value = '') {
+  return cleanEnv(value).replace(/^oauth:/i, '');
+}
+
+function resolveStreamResetUrl(ingestUrl = '') {
+  const fallback = 'https://vivy.funesterie.me/api/vivy/stream/reset';
+  const raw = cleanEnv(ingestUrl);
+  if (!raw) return fallback;
+  try {
+    const url = new URL(raw);
+    url.pathname = url.pathname.replace(/\/(?:chat|event)$/i, '/reset');
+    if (!/\/reset$/i.test(url.pathname)) {
+      url.pathname = `${url.pathname.replace(/\/+$/g, '')}/reset`;
+    }
+    url.search = '';
+    return url.toString();
+  } catch {
+    return fallback;
+  }
 }
 
 function normalizeAnnouncement(value = '') {
@@ -330,6 +359,73 @@ async function postChatMessage(endpoint, secret, payload) {
   return body ? JSON.parse(body) : {};
 }
 
+async function postStreamReset(endpoint, secret, payload = {}, options = {}) {
+  const url = cleanEnv(endpoint);
+  if (!url) return { ok: false, skipped: true, error: 'reset_url_missing' };
+  const fetchFn = options.fetchFn || fetch;
+  const headers = { 'Content-Type': 'application/json' };
+  if (secret) headers['X-Vivy-Stream-Secret'] = secret;
+  const response = await fetchFn(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+  const body = await response.text();
+  if (!response.ok) {
+    throw new Error(`vivy_stream_reset_http_${response.status}: ${body.slice(0, 240)}`);
+  }
+  return body ? JSON.parse(body) : { ok: true };
+}
+
+async function fetchTwitchStreamStatus(options = {}) {
+  const disabled = options.disabled === true;
+  const channel = cleanEnv(options.channel).replace(/^#/, '').toLowerCase();
+  if (disabled) {
+    return { ok: true, live: true, disabled: true, reason: 'live_gate_disabled' };
+  }
+  if (!channel) return { ok: false, live: false, reason: 'missing_channel' };
+  const clientId = cleanEnv(options.clientId);
+  const accessToken = normalizeTwitchBearerToken(options.accessToken);
+  if (!clientId || !accessToken) {
+    return { ok: false, live: false, reason: 'missing_helix_credentials' };
+  }
+  const fetchFn = options.fetchFn || fetch;
+  const streamsUrl = cleanEnv(options.streamsUrl) || TWITCH_HELIX_STREAMS_URL;
+  const url = new URL(streamsUrl);
+  url.searchParams.set('user_login', channel);
+  const response = await fetchFn(url, {
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+      'Client-ID': clientId,
+    },
+  });
+  const body = await response.text();
+  let json = null;
+  try {
+    json = body ? JSON.parse(body) : null;
+  } catch {}
+  if (!response.ok) {
+    return {
+      ok: false,
+      live: false,
+      reason: `helix_http_${response.status}`,
+      message: cleanEnv(json?.message || body).slice(0, 240),
+    };
+  }
+  const entries = Array.isArray(json?.data) ? json.data : [];
+  const stream = entries.find((entry) => cleanEnv(entry?.user_login).toLowerCase() === channel) || entries[0] || null;
+  return {
+    ok: true,
+    live: Boolean(stream),
+    checkedAt: new Date().toISOString(),
+    streamId: cleanEnv(stream?.id),
+    title: cleanEnv(stream?.title).slice(0, 160),
+    gameName: cleanEnv(stream?.game_name).slice(0, 120),
+    startedAt: cleanEnv(stream?.started_at),
+  };
+}
+
 function send(ws, line) {
   ws.send(line);
   if (process.env.VIVY_STREAM_DEBUG_IRC === '1') {
@@ -452,12 +548,21 @@ async function runOnce(config) {
 }
 
 async function main() {
+  const ingestUrl = cleanEnv(process.env.VIVY_STREAM_INGEST_URL) || 'https://vivy.funesterie.me/api/vivy/stream/chat';
   const config = {
     channel: cleanEnv(process.env.TWITCH_CHANNEL || process.env.VIVY_TWITCH_CHANNEL).replace(/^#/, '').toLowerCase(),
     username: cleanEnv(process.env.TWITCH_BOT_USERNAME || process.env.TWITCH_USERNAME).toLowerCase(),
     oauthToken: cleanEnv(process.env.TWITCH_OAUTH_TOKEN || process.env.TWITCH_IRC_OAUTH),
-    ingestUrl: cleanEnv(process.env.VIVY_STREAM_INGEST_URL) || 'https://vivy.funesterie.me/api/vivy/stream/chat',
+    clientId: cleanEnv(process.env.TWITCH_CLIENT_ID || process.env.TWITCH_BOT_CLIENT_ID || process.env.TWITCH_APP_CLIENT_ID),
+    accessToken: normalizeTwitchBearerToken(process.env.TWITCH_ACCESS_TOKEN || process.env.TWITCH_BOT_ACCESS_TOKEN || process.env.TWITCH_OAUTH_TOKEN || process.env.TWITCH_IRC_OAUTH),
+    helixStreamsUrl: cleanEnv(process.env.TWITCH_HELIX_STREAMS_URL) || TWITCH_HELIX_STREAMS_URL,
+    ingestUrl,
+    resetUrl: cleanEnv(process.env.VIVY_STREAM_RESET_URL) || resolveStreamResetUrl(ingestUrl),
     secret: cleanEnv(process.env.VIVY_STREAM_SECRET),
+    liveGateDisabled: process.env.VIVY_TWITCH_LIVE_GATE_DISABLED === '1',
+    livePollIntervalMs: resolveLivePollInterval(process.env.VIVY_TWITCH_LIVE_POLL_INTERVAL_MS || process.env.TWITCH_LIVE_POLL_INTERVAL_MS),
+    resetOnOffline: process.env.VIVY_TWITCH_RESET_ON_OFFLINE !== '0',
+    resetOnIrcClose: process.env.VIVY_TWITCH_RESET_ON_IRC_CLOSE === '1',
     announceIntervalMs: resolveAnnounceInterval(process.env.VIVY_STREAM_ANNOUNCE_INTERVAL_MS),
     announceDisabled: process.env.VIVY_STREAM_ANNOUNCE_DISABLED === '1',
     stateUrl: cleanEnv(process.env.VIVY_STREAM_STATE_URL) || 'https://vivy.funesterie.me/api/vivy/stream/state',
@@ -477,14 +582,88 @@ async function main() {
     process.exit(1);
   }
 
-  for (let attempt = 1; ; attempt += 1) {
+  let reconnectAttempt = 1;
+  let offlineResetSent = false;
+  let lastLive = false;
+
+  async function resetOfflineSession(reason, liveStatus = {}) {
+    if (!config.resetOnOffline) return false;
+    try {
+      const result = await postStreamReset(config.resetUrl, config.secret, {
+        source: 'twitch-worker',
+        reason,
+        channel: config.channel,
+        clearMemory: true,
+        liveStatus,
+      });
+      console.log(`[vivy-twitch] reset live session: ${reason} cleared=${result?.memoryCleared ?? 0}`);
+      return true;
+    } catch (error) {
+      console.warn('[vivy-twitch] reset failed:', error?.message || String(error));
+      return false;
+    }
+  }
+
+  while (true) {
+    if (!config.liveGateDisabled) {
+      const liveStatus = await fetchTwitchStreamStatus({
+        channel: config.channel,
+        clientId: config.clientId,
+        accessToken: config.accessToken,
+        streamsUrl: config.helixStreamsUrl,
+      }).catch((error) => ({ ok: false, live: false, reason: error?.message || String(error) }));
+      if (!liveStatus.live) {
+        if (!offlineResetSent) {
+          await resetOfflineSession(liveStatus.ok ? 'twitch_stream_offline' : `twitch_live_check_${liveStatus.reason || 'failed'}`, liveStatus);
+          offlineResetSent = true;
+        }
+        const reason = liveStatus.ok ? 'offline' : (liveStatus.reason || 'live_check_failed');
+        console.log(`[vivy-twitch] stream ${reason}; standby ${Math.round(config.livePollIntervalMs / 1000)}s`);
+        lastLive = false;
+        reconnectAttempt = 1;
+        await sleep(config.livePollIntervalMs);
+        continue;
+      }
+      if (!lastLive) {
+        console.log(`[vivy-twitch] stream online, opening IRC for #${config.channel}`);
+      }
+      lastLive = true;
+      offlineResetSent = false;
+    }
+
     try {
       const closeReason = await runOnce(config);
       console.warn(`[vivy-twitch] ${closeReason.message}`);
     } catch (error) {
       console.warn('[vivy-twitch] connection failed:', error?.message || String(error));
     }
-    const backoffMs = Math.min(60000, 3000 * attempt);
+
+    if (config.resetOnIrcClose) {
+      await resetOfflineSession('twitch_irc_disconnected', { live: lastLive });
+      offlineResetSent = true;
+    }
+
+    if (!config.liveGateDisabled) {
+      const afterCloseStatus = await fetchTwitchStreamStatus({
+        channel: config.channel,
+        clientId: config.clientId,
+        accessToken: config.accessToken,
+        streamsUrl: config.helixStreamsUrl,
+      }).catch((error) => ({ ok: false, live: false, reason: error?.message || String(error) }));
+      if (!afterCloseStatus.live) {
+        if (!offlineResetSent) {
+          await resetOfflineSession(afterCloseStatus.ok ? 'twitch_stream_offline' : `twitch_live_check_${afterCloseStatus.reason || 'failed'}`, afterCloseStatus);
+          offlineResetSent = true;
+        }
+        lastLive = false;
+        reconnectAttempt = 1;
+        await sleep(config.livePollIntervalMs);
+        continue;
+      }
+    }
+
+    const backoffMs = Math.min(60000, 3000 * reconnectAttempt);
+    reconnectAttempt += 1;
     console.log(`[vivy-twitch] reconnect in ${Math.round(backoffMs / 1000)}s`);
     await sleep(backoffMs);
   }
@@ -504,10 +683,14 @@ module.exports = {
   createAnnouncementRotator,
   createSongRecapRotator,
   createTrackNoticeWatcher,
+  fetchTwitchStreamStatus,
   parsePrivmsg,
   parseTags,
   resolveAnnounceInterval,
+  resolveLivePollInterval,
   resolveRecapInterval,
+  resolveStreamResetUrl,
   resolveTrackNoticePollInterval,
+  postStreamReset,
   shouldForwardMessage,
 };

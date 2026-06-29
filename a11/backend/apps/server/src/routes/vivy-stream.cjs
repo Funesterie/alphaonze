@@ -4,6 +4,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
+const { clearUserEpisodes } = require('../../lib/episodic-memory.cjs');
 const { createVivyStreamNossenRunner } = require('../vivy/twitch-nossen-runner.cjs');
 const { getEmergencyMediaAssetPath } = require('../media/emergency-media.cjs');
 
@@ -124,6 +125,13 @@ function createInitialState() {
     pendingSuggestions: [],
     recentMessages: [],
     stars: [],
+    twitch: {
+      online: null,
+      lastOnlineAt: null,
+      lastOfflineAt: null,
+      lastResetAt: null,
+      lastResetReason: '',
+    },
     learning: {
       totalStars: 0,
       averageStars: 0,
@@ -404,6 +412,7 @@ function createVivyStreamStore(options = {}) {
             pendingSuggestions: Array.isArray(parsed.pendingSuggestions) ? parsed.pendingSuggestions : [],
             recentMessages: Array.isArray(parsed.recentMessages) ? parsed.recentMessages : [],
             stars: Array.isArray(parsed.stars) ? parsed.stars : [],
+            twitch: { ...initial.twitch, ...(parsed.twitch || {}) },
           };
         }
       }
@@ -596,6 +605,7 @@ function createVivyStreamStore(options = {}) {
 
   function shouldStartIdleJukebox({ allowInterlude = false } = {}) {
     if (!idleJukeboxEnabled) return false;
+    if (state.twitch?.online === false) return false;
     const phase = state.current?.phase || 'idle';
     if (phase !== 'idle' && phase !== 'listening' && !(allowInterlude && phase === 'interlude')) return false;
     if (state.round?.status !== 'open') return false;
@@ -858,6 +868,13 @@ function createVivyStreamStore(options = {}) {
     if (!parsed.message) {
       return { ok: false, error: 'empty_message', state: publicState(state) };
     }
+    if (parsed.source === 'twitch') {
+      state.twitch = {
+        ...(state.twitch || {}),
+        online: true,
+        lastOnlineAt: nowIso(),
+      };
+    }
     state.stats.messages = Number(state.stats.messages || 0) + 1;
     state.recentMessages.unshift({
       id: parsed.messageId,
@@ -991,6 +1008,10 @@ function createVivyStreamStore(options = {}) {
 
   function updateLive(input = {}) {
     const action = cleanOneLine(input.action || input.phase, '', 40).toLowerCase();
+    const source = cleanOneLine(input.source, '', 80);
+    if (source === 'twitch-live' && state.twitch?.online === false && action !== 'next' && action !== 'start') {
+      return { ok: false, error: 'twitch_stream_offline', state: publicState(state) };
+    }
     const winner = winnerFromState();
     if (action === 'progress' || action === 'composing') {
       if (!state.production?.stages) state.production = createProductionState();
@@ -1086,6 +1107,71 @@ function createVivyStreamStore(options = {}) {
     return { ok: false, error: 'invalid_live_action', state: publicState(state) };
   }
 
+  function resetLiveSession(input = {}) {
+    const previous = state || createInitialState();
+    const reason = cleanOneLine(input.reason, 'twitch_offline', 120);
+    const resetAt = nowIso();
+    const removed = {
+      suggestions: Array.isArray(previous.round?.suggestions) ? previous.round.suggestions.length : 0,
+      pendingSuggestions: Array.isArray(previous.pendingSuggestions) ? previous.pendingSuggestions.length : 0,
+      recentMessages: Array.isArray(previous.recentMessages) ? previous.recentMessages.length : 0,
+      stars: Array.isArray(previous.stars) ? previous.stars.length : 0,
+    };
+    const initial = createInitialState();
+    state = {
+      ...initial,
+      updatedAt: resetAt,
+      current: {
+        ...initial.current,
+        title: cleanOneLine(input.title, 'Vivy Live', 120),
+        phase: 'idle',
+        phaseStartedAt: resetAt,
+        message: cleanOneLine(input.message, 'Twitch offline: session live remise à zéro.', 240),
+      },
+      round: createRound(createShortId('round')),
+      production: createProductionState(),
+      jukebox: {
+        ...initial.jukebox,
+        ...(previous.jukebox || {}),
+        tracks: Array.isArray(previous.jukebox?.tracks) ? previous.jukebox.tracks : [],
+      },
+      songs: Array.isArray(previous.songs) ? previous.songs : [],
+      learning: {
+        ...initial.learning,
+        ...(previous.learning || {}),
+      },
+      stats: { ...initial.stats },
+      pendingSuggestions: [],
+      recentMessages: [],
+      stars: [],
+      twitch: {
+        ...(previous.twitch || {}),
+        online: false,
+        lastOfflineAt: resetAt,
+        lastResetAt: resetAt,
+        lastResetReason: reason,
+      },
+    };
+    let memory = { ok: true, removed: 0, skipped: true };
+    if (input.clearMemory !== false) {
+      try {
+        memory = clearUserEpisodes('user:vivy-twitch-live', { typePrefix: 'vivy_' });
+      } catch (error) {
+        memory = { ok: false, error: String(error?.message || error), removed: 0 };
+      }
+    }
+    save();
+    return {
+      ok: true,
+      reset: true,
+      reason,
+      removed,
+      memoryCleared: memory?.removed || 0,
+      memoryOk: memory?.ok !== false,
+      state: publicState(state),
+    };
+  }
+
   function connectSse(req, res) {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -1106,6 +1192,7 @@ function createVivyStreamStore(options = {}) {
     startRound,
     lockRound,
     updateLive,
+    resetLiveSession,
     startIdleJukebox: beginIdleJukebox,
     addJukeboxTrack,
     findSongByShareSlug,
@@ -1322,6 +1409,11 @@ function createVivyStreamRouter(options = {}) {
   router.post('/control', express.json({ limit: '32kb' }), writeGuard, (req, res) => {
     const result = store.updateLive(req.body || {});
     res.status(result.ok ? 200 : 400).json(result);
+  });
+
+  router.post('/reset', express.json({ limit: '16kb' }), writeGuard, (req, res) => {
+    const result = store.resetLiveSession(req.body || {});
+    res.status(result.ok ? 200 : 500).json(result);
   });
 
   return router;

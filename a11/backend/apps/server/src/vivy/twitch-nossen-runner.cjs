@@ -146,7 +146,11 @@ function createVivyStreamNossenRunner(options = {}) {
   const activeRuns = new Map();
 
   async function update(input) {
-    return Promise.resolve(updateLive(input));
+    const result = await Promise.resolve(updateLive({ source: 'twitch-live', ...input }));
+    if (result?.error === 'twitch_stream_offline') {
+      throw new Error('twitch_stream_offline');
+    }
+    return result;
   }
 
   async function run(payload = {}) {

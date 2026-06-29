@@ -652,11 +652,19 @@ services:
       TWITCH_CHANNEL: ${TWITCH_CHANNEL:-}
       TWITCH_BOT_USERNAME: ${TWITCH_BOT_USERNAME:-}
       TWITCH_OAUTH_TOKEN: ${TWITCH_OAUTH_TOKEN:-}
+      TWITCH_ACCESS_TOKEN: ${TWITCH_ACCESS_TOKEN:-}
+      TWITCH_CLIENT_ID: ${TWITCH_CLIENT_ID:-}
+      TWITCH_REFRESH_TOKEN: ${TWITCH_REFRESH_TOKEN:-}
       VIVY_STREAM_SECRET: ${VIVY_STREAM_SECRET:?VIVY_STREAM_SECRET is required}
       VIVY_STREAM_INGEST_URL: ${VIVY_STREAM_INGEST_URL:-https://vivy.funesterie.me/api/vivy/stream/chat}
+      VIVY_STREAM_RESET_URL: ${VIVY_STREAM_RESET_URL:-https://vivy.funesterie.me/api/vivy/stream/reset}
       VIVY_STREAM_COMMANDS_ONLY: ${VIVY_STREAM_COMMANDS_ONLY:-1}
       VIVY_STREAM_ANNOUNCE_INTERVAL_MS: ${VIVY_STREAM_ANNOUNCE_INTERVAL_MS:-300000}
       VIVY_STREAM_ANNOUNCE_DISABLED: ${VIVY_STREAM_ANNOUNCE_DISABLED:-0}
+      VIVY_TWITCH_LIVE_POLL_INTERVAL_MS: ${VIVY_TWITCH_LIVE_POLL_INTERVAL_MS:-60000}
+      VIVY_TWITCH_RESET_ON_OFFLINE: ${VIVY_TWITCH_RESET_ON_OFFLINE:-1}
+      VIVY_TWITCH_RESET_ON_IRC_CLOSE: ${VIVY_TWITCH_RESET_ON_IRC_CLOSE:-0}
+      VIVY_TWITCH_LIVE_GATE_DISABLED: ${VIVY_TWITCH_LIVE_GATE_DISABLED:-0}
 
   kaen44-backend:
     build:
@@ -1175,6 +1183,7 @@ $overrides = [ordered]@{
   TWITCH_CHANNEL = $(if ($env:TWITCH_CHANNEL) { $env:TWITCH_CHANNEL } elseif ($envMap.Contains("TWITCH_CHANNEL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_CHANNEL"])) { [string]$envMap["TWITCH_CHANNEL"] } else { "" })
   TWITCH_BOT_USERNAME = $(if ($env:TWITCH_BOT_USERNAME) { $env:TWITCH_BOT_USERNAME } elseif ($envMap.Contains("TWITCH_BOT_USERNAME") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_BOT_USERNAME"])) { [string]$envMap["TWITCH_BOT_USERNAME"] } else { "" })
   TWITCH_OAUTH_TOKEN = $(if ($env:TWITCH_OAUTH_TOKEN) { $env:TWITCH_OAUTH_TOKEN } elseif ($envMap.Contains("TWITCH_OAUTH_TOKEN") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_OAUTH_TOKEN"])) { [string]$envMap["TWITCH_OAUTH_TOKEN"] } else { "" })
+  TWITCH_ACCESS_TOKEN = $(if ($env:TWITCH_ACCESS_TOKEN) { $env:TWITCH_ACCESS_TOKEN } elseif ($envMap.Contains("TWITCH_ACCESS_TOKEN") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_ACCESS_TOKEN"])) { [string]$envMap["TWITCH_ACCESS_TOKEN"] } else { "" })
   TWITCH_CLIENT_ID = $(if ($env:TWITCH_CLIENT_ID) { $env:TWITCH_CLIENT_ID } elseif ($envMap.Contains("TWITCH_CLIENT_ID") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_CLIENT_ID"])) { [string]$envMap["TWITCH_CLIENT_ID"] } else { "" })
   TWITCH_REFRESH_TOKEN = $(if ($env:TWITCH_REFRESH_TOKEN) { $env:TWITCH_REFRESH_TOKEN } elseif ($envMap.Contains("TWITCH_REFRESH_TOKEN") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_REFRESH_TOKEN"])) { [string]$envMap["TWITCH_REFRESH_TOKEN"] } else { "" })
   SERVE_STATIC = "true"
@@ -1411,7 +1420,7 @@ if [ -z "$vivy_stream_autogenerate" ]; then
   vivy_stream_autogenerate="1"
 fi
 preserved_env="$(mktemp)"
-for key in TWITCH_CHANNEL TWITCH_BOT_USERNAME TWITCH_OAUTH_TOKEN TWITCH_CLIENT_ID TWITCH_REFRESH_TOKEN VIVY_STREAM_INGEST_URL VIVY_STREAM_COMMANDS_ONLY VIVY_STREAM_ANNOUNCE_INTERVAL_MS VIVY_STREAM_ANNOUNCE_DISABLED VIVY_STREAM_AUTOGENERATE_ENABLED; do
+for key in TWITCH_CHANNEL TWITCH_BOT_USERNAME TWITCH_OAUTH_TOKEN TWITCH_ACCESS_TOKEN TWITCH_CLIENT_ID TWITCH_REFRESH_TOKEN VIVY_STREAM_INGEST_URL VIVY_STREAM_RESET_URL VIVY_STREAM_COMMANDS_ONLY VIVY_STREAM_ANNOUNCE_INTERVAL_MS VIVY_STREAM_ANNOUNCE_DISABLED VIVY_STREAM_AUTOGENERATE_ENABLED VIVY_TWITCH_LIVE_POLL_INTERVAL_MS VIVY_TWITCH_RESET_ON_OFFLINE VIVY_TWITCH_RESET_ON_IRC_CLOSE VIVY_TWITCH_LIVE_GATE_DISABLED; do
   value="$(awk -v k="$key" -F= '$1 == k { sub(/^[^=]*=/, ""); print; exit }' "$compose_env" "$a11_env" "$build_env" 2>/dev/null || true)"
   if [ -n "$value" ]; then
     printf '%s=%s\n' "$key" "$value" >> "$preserved_env"

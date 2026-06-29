@@ -27,9 +27,13 @@ const {
   createAnnouncementRotator,
   createSongRecapRotator,
   createTrackNoticeWatcher,
+  fetchTwitchStreamStatus,
   parsePrivmsg,
+  postStreamReset,
   resolveAnnounceInterval,
+  resolveLivePollInterval,
   resolveRecapInterval,
+  resolveStreamResetUrl,
   resolveTrackNoticePollInterval,
   shouldForwardMessage,
 } = require('../scripts/vivy-twitch-chat-worker.cjs');
@@ -128,6 +132,56 @@ test('Vivy stream route stores Twitch ideas, votes, stars and builds a NOSSEN se
     assert.equal(result.json.action, 'star');
     assert.equal(result.json.state.round.status, 'locked');
     assert.equal(result.json.state.round.winningSuggestionId, 'S1');
+  });
+});
+
+test('Vivy stream reset clears the Twitch live session without deleting song history', async () => {
+  await withServer({ stateName: 'reset.json' }, async (baseUrl) => {
+    let result = await postJson(baseUrl, '/api/vivy/stream/chat', {
+      username: 'leo',
+      message: '!nossen Tortues Ninja dans les égouts',
+    });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.json.state.twitch.online, true);
+
+    result = await postJson(baseUrl, '/api/vivy/stream/chat', {
+      username: 'leo',
+      message: '!etoiles 5 S1',
+    });
+    assert.equal(result.json.action, 'star');
+
+    result = await postJson(baseUrl, '/api/vivy/stream/control', {
+      action: 'ready',
+      title: 'Tortues Ninja',
+      trackUrl: '/api/vivy/studio/assets/twitch-turtles.mp3',
+      durationSeconds: 180,
+    });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.json.state.songs.length, 1);
+
+    result = await postJson(baseUrl, '/api/vivy/stream/reset', {
+      reason: 'twitch_stream_offline',
+      clearMemory: true,
+    });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.json.ok, true);
+    assert.equal(result.json.state.twitch.online, false);
+    assert.equal(result.json.state.round.suggestions.length, 0);
+    assert.equal(result.json.state.pendingSuggestions.length, 0);
+    assert.equal(result.json.state.recentMessages.length, 0);
+    assert.equal(result.json.state.stars.length, 0);
+    assert.equal(result.json.state.songs.length, 1);
+    assert.equal(result.json.state.learning.totalStars, 1);
+    assert.equal(result.json.state.current.trackUrl, '');
+
+    result = await postJson(baseUrl, '/api/vivy/stream/chat', {
+      username: 'leo',
+      message: '!nossen Bleach opening nerveux',
+    });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.json.state.twitch.online, true);
+    assert.equal(result.json.state.round.suggestions.length, 1);
+    assert.match(result.json.state.round.suggestions[0].text, /Bleach opening/);
   });
 });
 
@@ -309,6 +363,7 @@ test('Twitch NOSSEN runner writes lyrics, follows Suno and publishes the track',
   assert.equal(result.taskId, 'task-live-1');
   assert.equal(pollCount, 2);
   assert.deepEqual(updates.at(-1), {
+    source: 'twitch-live',
     action: 'ready',
     title: 'visière fumée casque intégral style course urbaine agressive',
     trackTitle: 'visière fumée casque intégral style course urbaine agressive',
@@ -489,6 +544,69 @@ test('Twitch worker parses IRC PRIVMSG lines and command filtering', () => {
     if (previous === undefined) delete process.env.VIVY_STREAM_COMMANDS_ONLY;
     else process.env.VIVY_STREAM_COMMANDS_ONLY = previous;
   }
+});
+
+test('Twitch worker live gate checks Helix before opening IRC and can reset stream state', async () => {
+  const calls = [];
+  const online = await fetchTwitchStreamStatus({
+    channel: 'Funesterie',
+    clientId: 'client-id',
+    accessToken: 'oauth:user-token',
+    fetchFn: async (url, options) => {
+      calls.push({ url: String(url), options });
+      return {
+        ok: true,
+        text: async () => JSON.stringify({
+          data: [{
+            id: 'stream-1',
+            user_login: 'funesterie',
+            title: 'Live Vivy',
+            game_name: 'Music',
+            started_at: '2026-06-29T00:00:00Z',
+          }],
+        }),
+      };
+    },
+  });
+  assert.equal(online.ok, true);
+  assert.equal(online.live, true);
+  assert.equal(online.streamId, 'stream-1');
+  assert.match(calls[0].url, /user_login=funesterie/i);
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer user-token');
+  assert.equal(calls[0].options.headers['Client-ID'], 'client-id');
+
+  const offline = await fetchTwitchStreamStatus({
+    channel: 'Funesterie',
+    clientId: 'client-id',
+    accessToken: 'user-token',
+    fetchFn: async () => ({ ok: true, text: async () => JSON.stringify({ data: [] }) }),
+  });
+  assert.equal(offline.ok, true);
+  assert.equal(offline.live, false);
+
+  const missing = await fetchTwitchStreamStatus({ channel: 'Funesterie' });
+  assert.equal(missing.ok, false);
+  assert.equal(missing.live, false);
+  assert.equal(missing.reason, 'missing_helix_credentials');
+  assert.equal(resolveLivePollInterval('1000'), 15_000);
+  assert.equal(resolveLivePollInterval('999999999'), 10 * 60 * 1000);
+  assert.equal(
+    resolveStreamResetUrl('https://vivy.funesterie.me/api/vivy/stream/chat'),
+    'https://vivy.funesterie.me/api/vivy/stream/reset'
+  );
+
+  const reset = await postStreamReset('https://vivy.funesterie.me/api/vivy/stream/reset', 'stream-secret', {
+    reason: 'twitch_stream_offline',
+  }, {
+    fetchFn: async (url, options) => {
+      assert.equal(String(url), 'https://vivy.funesterie.me/api/vivy/stream/reset');
+      assert.equal(options.headers['X-Vivy-Stream-Secret'], 'stream-secret');
+      assert.deepEqual(JSON.parse(options.body), { reason: 'twitch_stream_offline' });
+      return { ok: true, text: async () => JSON.stringify({ ok: true, memoryCleared: 3 }) };
+    },
+  });
+  assert.equal(reset.ok, true);
+  assert.equal(reset.memoryCleared, 3);
 });
 
 test('Twitch announcements rotate only while the worker is connected', () => {
