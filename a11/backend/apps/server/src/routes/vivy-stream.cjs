@@ -356,13 +356,13 @@ function buildNossenSeedFromRound(state) {
     winner,
     canvas: [
       winner ? `Matière Twitch gagnante: ${winner.text}` : '',
-      topIdeas.length ? `Autres idées du chat:\n${topIdeas.join('\n')}` : '',
-      likedTerms.length ? `Vocabulaire aimé par le chat: ${likedTerms.join(', ')}` : '',
-      'Objectif: transformer la demande gagnante en chanson NOSSEN chantable, précise, pas générique, avec vocabulaire vécu.',
+      topIdeas.length ? `Autres idées du round:\n${topIdeas.join('\n')}` : '',
+      likedTerms.length ? `Vocabulaire validé dans ce round: ${likedTerms.join(', ')}` : '',
+      'Objectif: transformer la demande gagnante en chanson chantable, précise, pas générique, avec vocabulaire vécu.',
     ].filter(Boolean).join('\n\n'),
     notes: likedTerms.length
       ? `Éviter les images passe-partout; privilégier les détails concrets aimés: ${likedTerms.join(', ')}.`
-      : 'Éviter les images passe-partout; chercher des détails concrets depuis le chat.',
+      : 'Éviter les images passe-partout; chercher des détails concrets dans le sujet demandé.',
   };
 }
 

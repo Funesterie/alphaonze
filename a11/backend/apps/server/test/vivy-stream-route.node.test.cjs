@@ -18,6 +18,7 @@ const {
   resolveRoundMs,
 } = require('../src/routes/vivy-stream.cjs');
 const {
+  buildTwitchLyricsRequest,
   createVivyStreamNossenRunner,
 } = require('../src/vivy/twitch-nossen-runner.cjs');
 const {
@@ -88,6 +89,24 @@ test('Vivy stream parser detects suggestions, votes and star ratings', () => {
   assert.deepEqual(emojiStars.star, { rating: 4, targetId: '' });
 });
 
+test('Twitch lyrics prompt keeps live plumbing out of the sung material', () => {
+  const prompt = buildTwitchLyricsRequest({
+    winner: { text: "l'appel des vacances, ambiance rock hit summer" },
+    routing: {
+      artists: ['vivy'],
+      songMood: 'rock hit summer, guitares accrocheuses, refrain solaire',
+    },
+    seed: {
+      notes: 'Éviter les images passe-partout; chercher des détails concrets dans le sujet demandé.',
+    },
+  });
+
+  assert.doesNotMatch(prompt, /^NOSSEN Twitch Live\./m);
+  assert.doesNotMatch(prompt, /depuis le chat/i);
+  assert.match(prompt, /contexte de diffusion.*strictement interne/i);
+  assert.match(prompt, /vacances -> départ, valises, route, plage/i);
+});
+
 test('Vivy stream route stores Twitch ideas, votes, stars and builds a NOSSEN seed', async () => {
   await withServer({ stateName: 'round.json' }, async (baseUrl) => {
     let result = await postJson(baseUrl, '/api/vivy/stream/chat', {
@@ -124,6 +143,8 @@ test('Vivy stream route stores Twitch ideas, votes, stars and builds a NOSSEN se
     assert.equal(result.json.state.round.status, 'locked');
     assert.match(result.json.nossenSeed.canvas, /Bleach opening sombre/);
     assert.match(result.json.nossenSeed.canvas, /ichigo|bleach/i);
+    assert.doesNotMatch(result.json.nossenSeed.canvas, /Autres idées du chat|chanson NOSSEN/i);
+    assert.doesNotMatch(result.json.nossenSeed.notes, /depuis le chat/i);
 
     result = await postJson(baseUrl, '/api/vivy/stream/chat', {
       username: 'late-listener',
@@ -467,6 +488,63 @@ test('Twitch NOSSEN runner waits for a local asset instead of publishing a provi
   assert.equal(updates.at(-1).action, 'ready');
   assert.equal(updates.at(-1).trackUrl, '/api/vivy/studio/assets/vivy-music-suno-local.mp3');
   assert.ok(!updates.some((entry) => entry.action === 'ready' && /^https:\/\/musicfile\.removeai\.ai/i.test(entry.trackUrl || '')));
+});
+
+test('Twitch NOSSEN runner strips live and stale vehicle filler before Suno', async () => {
+  let productionInput = null;
+  const leakedLyrics = [
+    '[Intro]',
+    'Le chat qui clignote, le live qui pulse',
+    'Le soleil tape déjà derrière les stores',
+    '[Verse]',
+    'Notifications qui grésillent, mod qui relance',
+    'La valise attend près de la porte ouverte',
+    'Le casque encore chaud, les yeux qui brûlent',
+    'Le guidon attend, la visière est prête',
+    '[Chorus]',
+    'NOSSEN Twitch Live, on coupe le fil',
+    'L’appel des vacances hurle dans la rue',
+    'Guitare qui crie, batterie qui tape',
+    '[Bridge]',
+    'Plus de ban, plus de sub, plus de raid qui attend',
+    'Juste le ciel qui s’ouvre grand',
+    '[Final Chorus]',
+    'L’appel des vacances revient dans nos voix',
+    'On file vers le départ sous le soleil',
+    '[Outro]',
+    'On est déjà loin',
+  ].join('\n');
+  const runner = createVivyStreamNossenRunner({
+    routeComposition: async () => ({
+      artists: ['vivy'],
+      songMood: 'rock hit summer, guitares accrocheuses, refrain solaire',
+    }),
+    writeLyrics: async () => ({ publicLyrics: leakedLyrics }),
+    startMusic: async (_mode, input) => {
+      productionInput = input;
+      return {
+        url: '/api/vivy/studio/assets/vacances.mp3',
+        durationSeconds: 190,
+      };
+    },
+    probeDuration: async () => 190,
+    updateLive: () => {},
+    sleep: async () => {},
+    revealDelayMs: 0,
+  });
+
+  await runner.run({
+    roundId: 'round-vacances-clean',
+    winner: {
+      id: 'S1',
+      text: "l'appel des vacances, ambiance rock hit summer",
+      author: 'chat',
+    },
+  });
+
+  assert.match(productionInput.lyrics, /L’appel des vacances/i);
+  assert.match(productionInput.lyrics, /valise/i);
+  assert.doesNotMatch(productionInput.lyrics, /\b(NOSSEN|Twitch|chat|live|raid|sub|mod|notification|notifications|casque|guidon|visière)\b/i);
 });
 
 test('Twitch NOSSEN runner rejects a duplicate active round', async () => {

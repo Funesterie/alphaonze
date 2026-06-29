@@ -117,6 +117,84 @@ function getReadyLocalMedia(value = {}, logger = console, context = {}) {
   return media;
 }
 
+function foldTwitchLyricText(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+const TWITCH_OPERATIONAL_LEAK_TERMS = [
+  'nossen',
+  'twitch',
+  'live',
+  'stream',
+  'chat',
+  'raid',
+  'sub',
+  'viewer',
+  'viewers',
+  'modo',
+  'mod',
+  'moderation',
+  'obs',
+  'overlay',
+  'suno',
+  'prompt',
+  'canevas',
+  'production',
+  'serveur',
+  'server',
+  'notification',
+  'notifications',
+  'notif',
+  'notifs',
+  'commande',
+  'camera',
+  'micro',
+  'donjon',
+  'skin',
+];
+
+const TWITCH_VEHICLE_LEAK_TERMS = [
+  'casque',
+  'visiere',
+  'guidon',
+  'gyros',
+  'gyrophare',
+  'gyrophares',
+];
+
+function hasFoldedWord(text = '', term = '') {
+  return new RegExp(`(^|[^a-z0-9])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`, 'i').test(text);
+}
+
+function sanitizeTwitchLyricsForSubject(lyrics = '', subject = '') {
+  const foldedSubject = foldTwitchLyricText(subject);
+  const vehicleSubject = /\b(moto|motard|scooter|booster|tzr|derbi|casque|visiere|guidon|poursuite|course|rallye|voiture|volant|autoroute)\b/i
+    .test(foldedSubject);
+  const blockedTerms = TWITCH_OPERATIONAL_LEAK_TERMS
+    .filter((term) => !hasFoldedWord(foldedSubject, term));
+  const blockedVehicleTerms = vehicleSubject
+    ? []
+    : TWITCH_VEHICLE_LEAK_TERMS.filter((term) => !hasFoldedWord(foldedSubject, term));
+  if (!blockedTerms.length && !blockedVehicleTerms.length) return cleanLyrics(lyrics);
+
+  const kept = [];
+  for (const line of String(lyrics || '').split(/\n/)) {
+    const folded = foldTwitchLyricText(line);
+    const isSectionTag = /^\s*\[[^\]]+\]\s*$/.test(line);
+    const leaksOperational = !isSectionTag && blockedTerms.some((term) => hasFoldedWord(folded, term));
+    const leaksVehicle = !isSectionTag && blockedVehicleTerms.some((term) => hasFoldedWord(folded, term));
+    if (leaksOperational || leaksVehicle) continue;
+    kept.push(line);
+  }
+  return cleanLyrics(kept.join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\[\s*(Verse|Couplet)\s*\]/gi, '[Verse]')
+  );
+}
+
 async function probeMediaDurationSeconds(media = {}) {
   const reported = Number(media.durationSeconds || media.duration || 0);
   if (Number.isFinite(reported) && reported > 0) return reported;
@@ -140,15 +218,16 @@ function buildTwitchLyricsRequest({ winner, routing, seed }) {
     ? routing.artists.join(' + ')
     : 'Vivy';
   return [
-    'NOSSEN Twitch Live.',
     `Écris les paroles complètes et directement chantables d'une chanson originale sur ce sujet exact: ${winner.text}`,
     `Direction sonore partagée avec la composition: ${routing?.songMood || 'moderne, précise et liée au sujet'}.`,
     `Casting vocal: ${artists}.`,
     seed?.notes || '',
     'Conserve tous les noms, objets et détails distinctifs du sujet. Ne remplace pas la demande par une histoire générique.',
+    'Le contexte de diffusion, de vote, de live, de chat, de stream, de Twitch, de NOSSEN, de raid, de sub, de modération ou d’OBS est strictement interne: ne l’écris jamais dans les paroles sauf si ces mots sont explicitement dans le sujet exact.',
+    'Si le sujet est court, amplifie son champ naturel au lieu de remplir avec le contexte technique. Exemple: vacances -> départ, valises, route, plage, fatigue qui tombe, soleil, amis, liberté, refrain d’été.',
     'Utilise des sections balisées [Intro], [Verse], [Pre-Chorus], [Chorus], [Bridge], [Final Chorus], [Outro].',
     'Écris un refrain mémorable, des images concrètes, des rimes naturelles et des allusions liées au sujet.',
-    'Ne parle jamais de prompt, de durée, de Suno, de NOSSEN, de production, de canevas ou de consignes.',
+    'Ne parle jamais de prompt, de durée, de Suno, de production, de canevas ou de consignes.',
     'Réponds uniquement avec les paroles.',
   ].filter(Boolean).join('\n');
 }
@@ -233,12 +312,16 @@ function createVivyStreamNossenRunner(options = {}) {
         vocalCast: artists.join(' + '),
         disableSongcraftFallback: true,
       }, req);
-      const lyrics = cleanLyrics(
+      const rawLyrics = cleanLyrics(
         lyricsPayload?.vocalLyrics
         || lyricsPayload?.publicLyrics
         || lyricsPayload?.assistant
         || lyricsPayload?.content
       );
+      const lyrics = sanitizeTwitchLyricsForSubject(rawLyrics, winner.text);
+      if (lyrics !== rawLyrics) {
+        logger.warn?.('[vivy-twitch-nossen] round=%s stripped operational lyric leakage before Suno', roundId);
+      }
       if (lyrics.length < 120) throw new Error('vivy_stream_lyrics_too_short');
 
       await update({
