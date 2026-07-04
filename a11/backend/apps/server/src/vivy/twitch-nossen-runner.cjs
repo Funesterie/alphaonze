@@ -2978,6 +2978,7 @@ function createVivyStreamNossenRunner(options = {}) {
             );
           }
           if (rewritePayload) {
+            const preRewriteLyrics = lyrics;
             rawLyrics = extractCleanTwitchLyricsBlock(
               rewritePayload?.vocalLyrics
               || rewritePayload?.publicLyrics
@@ -3011,6 +3012,20 @@ function createVivyStreamNossenRunner(options = {}) {
             if (dedupedRewrite !== lyrics) {
               logger.warn?.('[vivy-twitch-nossen] round=%s removed mechanical lyric repetitions from rewrite before Suno', roundId);
               lyrics = dedupedRewrite;
+            }
+            if (
+              !invalidLyricsNeedRewrite
+              && lyrics.length < (lyricScope.minLyricsChars || 0)
+              && preRewriteLyrics.length > lyrics.length
+            ) {
+              logger.warn?.(
+                '[vivy-twitch-nossen] round=%s rewrite regressed length (%s chars vs draft %s, min %s); keeping original draft',
+                roundId,
+                lyrics.length,
+                preRewriteLyrics.length,
+                lyricScope.minLyricsChars || 0
+              );
+              lyrics = preRewriteLyrics;
             }
           }
           lyricAssessment = assessTwitchSongLyrics(lyrics);
@@ -3393,7 +3408,13 @@ function createVivyStreamNossenRunner(options = {}) {
       const extensionGoalSeconds = mustChaseRequestedDuration ? targetDurationSeconds : minAcceptableSeconds;
       const canExtendWithSuno = musicProvider === 'suno';
       const paidMusicRetryConfirmed = isPaidMusicRetryConfirmed(payload);
-      if (canExtendWithSuno && durationSeconds < extensionGoalSeconds && !paidMusicRetryConfirmed) {
+      const rescueFloorSeconds = resolveTwitchDurationAcceptance({
+        durationSeconds,
+        minAcceptableSeconds,
+      }).hardMinimumSeconds;
+      const rescueExtensionNeeded = durationSeconds < rescueFloorSeconds;
+      const extensionAllowed = paidMusicRetryConfirmed || rescueExtensionNeeded;
+      if (canExtendWithSuno && durationSeconds < extensionGoalSeconds && !extensionAllowed) {
         logger.info?.(
           '[vivy-twitch-nossen] round=%s short duration=%ss target=%ss extension skipped: paid_retry_not_confirmed',
           roundId,
@@ -3401,7 +3422,16 @@ function createVivyStreamNossenRunner(options = {}) {
           Math.round(extensionGoalSeconds)
         );
       }
-      for (let extensionIndex = 1; canExtendWithSuno && paidMusicRetryConfirmed && extensionIndex <= maxExtensions && durationSeconds < extensionGoalSeconds; extensionIndex += 1) {
+      if (canExtendWithSuno && rescueExtensionNeeded && !paidMusicRetryConfirmed) {
+        logger.warn?.(
+          '[vivy-twitch-nossen] round=%s duration=%ss below hard floor %ss: rescue extension allowed to avoid losing the round',
+          roundId,
+          Math.round(durationSeconds),
+          Math.round(rescueFloorSeconds)
+        );
+      }
+      const extensionStopSeconds = paidMusicRetryConfirmed ? extensionGoalSeconds : rescueFloorSeconds;
+      for (let extensionIndex = 1; canExtendWithSuno && extensionAllowed && extensionIndex <= maxExtensions && durationSeconds < extensionStopSeconds; extensionIndex += 1) {
         const audioId = getSunoAudioId(media) || getSunoAudioId(result);
         if (!audioId) {
           logger.warn?.(
