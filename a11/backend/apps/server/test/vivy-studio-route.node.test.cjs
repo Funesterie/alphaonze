@@ -5019,7 +5019,7 @@ test('Vivy Ollama Cloud adapter uses /api/chat and allows one call per lyrics ro
 
     assert.equal(cloud.requests.length, 1);
     assert.equal(cloud.requests[0].model, 'gpt-oss:120b');
-    assert.equal(cloud.requests[0].think, 'low');
+    assert.equal(cloud.requests[0].think, 'high');
     assert.equal(cloud.requests[0].options.num_predict, 10000);
     assert.equal(cloud.authorizations[0], 'Bearer ollama-secret-test');
     assert.match(completion.choices[0].message.content, /Vivy cloud prête/);
