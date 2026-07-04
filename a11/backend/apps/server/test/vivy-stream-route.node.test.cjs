@@ -3595,38 +3595,51 @@ test('Vivy tolerates a controlled dose of vehicle imagery outside vehicle subjec
 });
 
 test('Vivy intense subjects get a long free-structure scope by default', () => {
-  const scope = resolveTwitchVivyLyricScope({
-    winner: { text: 'Mega Freestyle, rap egotrip sombre, clash violent contre les faux rois' },
-    intentPlan: createTestVocalIntentPlan(),
-    routing: { songMood: 'rap sombre' },
-  });
-  assert.equal(scope.label, 'intense longue');
-  assert.equal(scope.freeStructure, true);
-  assert.ok(scope.targetDurationSeconds >= 300);
+  const previousMaxChars = process.env.VIVY_STREAM_FREESTYLE_MAX_CHARS;
+  const previousMaxTokens = process.env.VIVY_STREAM_FREESTYLE_MAX_TOKENS;
+  try {
+    delete process.env.VIVY_STREAM_FREESTYLE_MAX_CHARS;
+    delete process.env.VIVY_STREAM_FREESTYLE_MAX_TOKENS;
+    const scope = resolveTwitchVivyLyricScope({
+      winner: { text: 'Mega Freestyle, rap egotrip sombre, clash violent contre les faux rois' },
+      intentPlan: createTestVocalIntentPlan(),
+      routing: { songMood: 'rap sombre' },
+    });
+    assert.equal(scope.label, 'intense longue');
+    assert.equal(scope.freeStructure, true);
+    assert.ok(scope.targetDurationSeconds >= 300);
+    assert.ok(scope.maxChars >= 12000);
+    assert.ok(scope.maxTokens >= 10000);
 
-  const message = buildTwitchLyricsRequest({
-    winner: { text: 'Mega Freestyle, rap egotrip sombre, clash violent' },
-    routing: { songMood: 'rap sombre', artists: ['Djeff'] },
-    seed: {},
-    lyricScope: scope,
-    subjectFrame: {},
-  });
-  assert.match(message, /Structure libre: plusieurs longs couplets continus/i);
+    const message = buildTwitchLyricsRequest({
+      winner: { text: 'Mega Freestyle, rap egotrip sombre, clash violent' },
+      routing: { songMood: 'rap sombre', artists: ['Djeff'] },
+      seed: {},
+      lyricScope: scope,
+      subjectFrame: {},
+    });
+    assert.match(message, /Structure libre: plusieurs longs couplets continus/i);
 
-  const soft = resolveTwitchVivyLyricScope({
-    winner: { text: 'Ballade douce sur la pluie d ete' },
-    intentPlan: createTestVocalIntentPlan(),
-    routing: { songMood: 'ballade acoustique' },
-  });
-  assert.notEqual(soft.label, 'intense longue');
-  assert.equal(soft.freeStructure, false);
+    const soft = resolveTwitchVivyLyricScope({
+      winner: { text: 'Ballade douce sur la pluie d ete' },
+      intentPlan: createTestVocalIntentPlan(),
+      routing: { songMood: 'ballade acoustique' },
+    });
+    assert.notEqual(soft.label, 'intense longue');
+    assert.equal(soft.freeStructure, false);
 
-  const shortIntense = resolveTwitchVivyLyricScope({
-    winner: { text: 'Jingle court egotrip sombre format court' },
-    intentPlan: createTestVocalIntentPlan(),
-    routing: {},
-  });
-  assert.notEqual(shortIntense.label, 'intense longue');
+    const shortIntense = resolveTwitchVivyLyricScope({
+      winner: { text: 'Jingle court egotrip sombre format court' },
+      intentPlan: createTestVocalIntentPlan(),
+      routing: {},
+    });
+    assert.notEqual(shortIntense.label, 'intense longue');
+  } finally {
+    if (previousMaxChars === undefined) delete process.env.VIVY_STREAM_FREESTYLE_MAX_CHARS;
+    else process.env.VIVY_STREAM_FREESTYLE_MAX_CHARS = previousMaxChars;
+    if (previousMaxTokens === undefined) delete process.env.VIVY_STREAM_FREESTYLE_MAX_TOKENS;
+    else process.env.VIVY_STREAM_FREESTYLE_MAX_TOKENS = previousMaxTokens;
+  }
 });
 
 test('Vivy freestyle gets total creative liberation from context filters', () => {
@@ -3651,4 +3664,33 @@ test('Vivy freestyle gets total creative liberation from context filters', () =>
     routing: { songMood: 'rap posé' },
   });
   assert.equal(scope.freeStructure, true);
+});
+
+test('Vivy freestyle scope can be raised by env without leaking fallback vehicle memory', () => {
+  const previousMaxChars = process.env.VIVY_STREAM_FREESTYLE_MAX_CHARS;
+  const previousMaxTokens = process.env.VIVY_STREAM_FREESTYLE_MAX_TOKENS;
+  try {
+    process.env.VIVY_STREAM_FREESTYLE_MAX_CHARS = '14000';
+    process.env.VIVY_STREAM_FREESTYLE_MAX_TOKENS = '12000';
+    const scope = resolveTwitchVivyLyricScope({
+      winner: { text: 'Le diadème Freestyle, rap egotrip sombre, punchlines en rafale' },
+      intentPlan: createTestVocalIntentPlan(),
+      routing: { songMood: 'freestyle sombre, couplets continus' },
+    });
+    assert.ok(scope.maxChars >= 14000);
+    assert.ok(scope.maxTokens >= 12000);
+
+    const fallback = buildTwitchEmergencyLyrics({
+      winner: { text: 'Le diadème Freestyle, rap egotrip sombre, punchlines en rafale' },
+      routing: { songMood: 'freestyle sombre, couplets continus' },
+      lyricScope: scope,
+    });
+    assert.doesNotMatch(fallback, /Porsche|Boxster|poulets|police|Djeff|Carmelo/i);
+    assert.match(fallback, /diad[èe]me|Freestyle/i);
+  } finally {
+    if (previousMaxChars === undefined) delete process.env.VIVY_STREAM_FREESTYLE_MAX_CHARS;
+    else process.env.VIVY_STREAM_FREESTYLE_MAX_CHARS = previousMaxChars;
+    if (previousMaxTokens === undefined) delete process.env.VIVY_STREAM_FREESTYLE_MAX_TOKENS;
+    else process.env.VIVY_STREAM_FREESTYLE_MAX_TOKENS = previousMaxTokens;
+  }
 });

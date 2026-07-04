@@ -220,7 +220,7 @@ function buildTwitchEmergencyLyrics({
   const folded = foldTwitchLyricText(context);
   const max = Math.max(1800, Math.min(12000, Number(lyricScope?.maxChars || 5200) || 5200));
 
-  if (/\b(?:jean|carmelo|porsche|boxster|djeff|poulets?|police)\b/.test(folded)) {
+  if (/\b(?:carmelo|boxster)\b/.test(folded)) {
     return cleanLyrics(`
 [Intro]
 Gyros bleus dans le rétro, Porsche grise sous les néons
@@ -2166,6 +2166,8 @@ function resolveTwitchVivyLyricScope({
 } = {}) {
   const minTarget = clampNumber(process.env.VIVY_STREAM_MIN_TARGET_DURATION_SECONDS, 90, 300, DEFAULT_DYNAMIC_MIN_TARGET_SECONDS);
   const maxTarget = clampNumber(process.env.VIVY_STREAM_MAX_TARGET_DURATION_SECONDS, minTarget, 900, DEFAULT_DYNAMIC_MAX_TARGET_SECONDS);
+  const freestyleMaxChars = clampNumber(process.env.VIVY_STREAM_FREESTYLE_MAX_CHARS, 8800, 16000, 12000);
+  const freestyleMaxTokens = clampNumber(process.env.VIVY_STREAM_FREESTYLE_MAX_TOKENS, 8000, 16000, 10000);
   const creativeText = [
     winner.text,
     intentPlan.intent,
@@ -2266,6 +2268,11 @@ function resolveTwitchVivyLyricScope({
     minLyricsChars = Math.max(minLyricsChars, target <= 210 ? 1400 : 1700);
     maxChars = Math.max(maxChars, target <= 210 ? 4200 : 6800);
     maxTokens = Math.max(maxTokens, target <= 210 ? 5200 : 6800);
+  }
+
+  if ((intenseSubject || freestyleSubject) && !instrumentalMode) {
+    maxChars = Math.max(maxChars, freestyleMaxChars);
+    maxTokens = Math.max(maxTokens, freestyleMaxTokens);
   }
 
   if (chaseDuration) {
@@ -2703,6 +2710,7 @@ function createVivyStreamNossenRunner(options = {}) {
         let usedEmergencyLyricsFallback = false;
         let lyricsPayload = null;
         try {
+          const lyricWriteStartedAt = Date.now();
           lyricsPayload = await withTimeout(() => writeLyrics({
             mode: 'song',
             language: 'fr',
@@ -2724,6 +2732,14 @@ function createVivyStreamNossenRunner(options = {}) {
             disableSongcraftFallback: true,
             allowEmergencySongcraftFallback: true,
           }, req), lyricWriteTimeoutMs, 'vivy_lyrics_write');
+          logger.info?.(
+            '[vivy-twitch-nossen] round=%s lyrics write completed latencyMs=%s provider=%s model=%s chars=%s',
+            roundId,
+            Date.now() - lyricWriteStartedAt,
+            cleanText(lyricsPayload?.provider || lyricsPayload?.source || '', '', 80),
+            cleanText(lyricsPayload?.model || '', '', 120),
+            cleanText(lyricsPayload?.vocalLyrics || lyricsPayload?.publicLyrics || lyricsPayload?.assistant || lyricsPayload?.content, '', lyricScope.maxChars).length
+          );
         } catch (error) {
           logger.warn?.(
             '[vivy-twitch-nossen] round=%s lyrics write fallback error=%s; using last-context emergency lyrics',
@@ -2889,6 +2905,7 @@ function createVivyStreamNossenRunner(options = {}) {
           const rewriteConversationId = `${conversationId}-lyrics-rewrite`;
           let rewritePayload = null;
           try {
+            const lyricRewriteStartedAt = Date.now();
             rewritePayload = await withTimeout(() => writeLyrics({
               mode: 'song',
               language: 'fr',
@@ -2945,6 +2962,14 @@ function createVivyStreamNossenRunner(options = {}) {
               disableSongcraftFallback: true,
               allowEmergencySongcraftFallback: true,
             }, req), lyricRewriteTimeoutMs, 'vivy_lyrics_rewrite');
+            logger.info?.(
+              '[vivy-twitch-nossen] round=%s lyrics rewrite completed latencyMs=%s provider=%s model=%s chars=%s',
+              roundId,
+              Date.now() - lyricRewriteStartedAt,
+              cleanText(rewritePayload?.provider || rewritePayload?.source || '', '', 80),
+              cleanText(rewritePayload?.model || '', '', 120),
+              cleanText(rewritePayload?.vocalLyrics || rewritePayload?.publicLyrics || rewritePayload?.assistant || rewritePayload?.content, '', lyricScope.maxChars).length
+            );
           } catch (error) {
             logger.warn?.(
               '[vivy-twitch-nossen] round=%s lyrics rewrite skipped error=%s; keeping cleaned first draft',
