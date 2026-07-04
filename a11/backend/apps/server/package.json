@@ -131,6 +131,7 @@
     "@nossen/rome": "^2.0.3",
     "@nossen/scream": "^2.0.2",
     "@nossen/spyder": "^2.0.2",
+    "@nossen/zen": "0.1.2",
     "adm-zip": "^0.5.17",
     "axios": "^1.17.0",
     "bcrypt": "^6.0.0",

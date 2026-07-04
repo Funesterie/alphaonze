@@ -2158,6 +2158,122 @@ function describeVivyArtifactHeader(kind = '', header = {}) {
   return '';
 }
 
+function loadVivyNossenZenRuntime() {
+  try {
+    const mod = require('@nossen/zen');
+    let version = '';
+    try {
+      const packageJsonPath = require.resolve('@nossen/zen/package.json');
+      version = cleanOneLine(JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'))?.version, '', 40);
+    } catch (_) {
+      version = '';
+    }
+    return {
+      available: true,
+      source: '@nossen/zen',
+      version,
+      inspect: typeof mod.inspectZen === 'function',
+      encode: typeof mod.encodeZenContainer === 'function' || typeof mod.encodeZen === 'function',
+      decode: typeof mod.decodeZenContainer === 'function' || typeof mod.decodeZen === 'function',
+      verify: typeof mod.verifyZen === 'function',
+    };
+  } catch (error) {
+    if (!error || error.code !== 'MODULE_NOT_FOUND') {
+      return {
+        available: false,
+        source: '@nossen/zen',
+        version: '',
+        inspect: false,
+        encode: false,
+        decode: false,
+        verify: false,
+        reason: cleanOneLine(error?.message || error, 'nossen_zen_runtime_error', 140),
+      };
+    }
+  }
+
+  const localPackageRoot = path.resolve(__dirname, '..', '..', '..', '..', '..', '..', 'packages', 'nossen', 'zen');
+  try {
+    const mod = require(path.join(localPackageRoot, 'src', 'index.cjs'));
+    let version = '';
+    try {
+      version = cleanOneLine(JSON.parse(fs.readFileSync(path.join(localPackageRoot, 'package.json'), 'utf8'))?.version, '', 40);
+    } catch (_) {
+      version = '';
+    }
+    return {
+      available: true,
+      source: 'repo-local @nossen/zen',
+      version,
+      inspect: typeof mod.inspectZen === 'function',
+      encode: typeof mod.encodeZenContainer === 'function' || typeof mod.encodeZen === 'function',
+      decode: typeof mod.decodeZenContainer === 'function' || typeof mod.decodeZen === 'function',
+      verify: typeof mod.verifyZen === 'function',
+    };
+  } catch (error) {
+    return {
+      available: false,
+      source: '@nossen/zen',
+      version: '',
+      inspect: false,
+      encode: false,
+      decode: false,
+      verify: false,
+      reason: cleanOneLine(error?.message || error, 'nossen_zen_unavailable', 140),
+    };
+  }
+}
+
+function getVivyFunesteZenRuntimeStatus() {
+  try {
+    const mod = require('@funeste/zen');
+    let version = '';
+    try {
+      const packageJsonPath = require.resolve('@funeste/zen/package.json');
+      version = cleanOneLine(JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'))?.version, '', 40);
+    } catch (_) {
+      version = '';
+    }
+    return {
+      available: true,
+      source: '@funeste/zen',
+      version,
+      encode: typeof mod.encodeFunesteZenContainer === 'function' || typeof mod.encodeFunesteZenFile === 'function',
+      decode: typeof mod.decodeFunesteZenContainer === 'function' || typeof mod.decodeFunesteZenFile === 'function',
+      verify: typeof mod.verifyFunesteZenFileAsync === 'function',
+    };
+  } catch (error) {
+    return {
+      available: false,
+      source: '@funeste/zen',
+      version: '',
+      encode: false,
+      decode: false,
+      verify: false,
+      reason: error?.code === 'MODULE_NOT_FOUND'
+        ? 'funeste_zen_not_installed_in_this_runtime'
+        : cleanOneLine(error?.message || error, 'funeste_zen_runtime_error', 140),
+    };
+  }
+}
+
+function getVivyZenRuntimeStatus() {
+  const publicZen = loadVivyNossenZenRuntime();
+  const privateZen = getVivyFunesteZenRuntimeStatus();
+  const keyConfigured = Boolean(process.env.FUNESTE_ZEN_KEY || process.env.ZEN_KEY);
+  return {
+    publicPackage: publicZen,
+    privatePackage: privateZen,
+    keyConfigured,
+    canInspectHeaders: true,
+    canPrepareManifest: true,
+    canEncodeEncrypted: Boolean(keyConfigured && (privateZen.encode || publicZen.encode)),
+    canDecodeEncrypted: Boolean(keyConfigured && (privateZen.decode || publicZen.decode)),
+    writesRequireOperator: true,
+    secretsVisibleInChat: false,
+  };
+}
+
 function collectVivyLocalArtifacts(root, roots, output, options = {}) {
   const rootPath = safeExistingPath(root);
   if (!rootPath || output.length >= Number(options.limit || 14)) return;
@@ -4860,6 +4976,80 @@ function isVivyToolCapabilityQuestion(input = {}, message = '') {
   return !onlyMcpFollowUp && asksEnable && broadToolRequest;
 }
 
+function isVivyZenSelfManagementQuestion(input = {}, message = '') {
+  const current = normalizeVivyCapabilityText(message);
+  if (!current || !/\bzen\b|\.zen\b/.test(current)) return false;
+  const recent = normalizeVivyCapabilityText(getVivyHistoryText(input.history));
+  const text = `${recent}\n${current}`;
+  const asksCapability = /\b(peux|peut|outil|outils|faire|mettre|mets|branche|brancher|active|activer|preparer|prepare|préparer|prépare|gerer|gérer|gere|gère|auto|autonome|self|archive|archives|corpus|pack|encode|decode|decoder|encoder|inspecte|inspecter|verifie|vérifie)\b/.test(text);
+  const selfManagement = /\b(auto|autonome|self|gerer|gérer|gestion|memoire|mémoire|contexte|corpus|archive|archives|pack|container|conteneur|encode|decode|decoder|encoder|inspecte|inspecter|verifie|vérifie)\b/.test(current);
+  return asksCapability && selfManagement;
+}
+
+function buildVivyZenSelfManagementReply({ localContext = null, language = 'fr' } = {}) {
+  const status = getVivyZenRuntimeStatus();
+  const artifacts = Array.isArray(localContext?.artifacts) ? localContext.artifacts : [];
+  const artifactLines = artifacts.length
+    ? artifacts.slice(0, 6).map((artifact) => {
+      const header = artifact.headerSummary ? `, ${artifact.headerSummary}` : '';
+      return `- ${artifact.path} (${artifact.kind}, ${artifact.size || 'taille inconnue'}${header})`;
+    })
+    : ["- Aucun .zen/.gguf repéré dans cette passe; l'inventaire reste disponible quand un corpus arrive."];
+  const publicVersion = status.publicPackage.version ? ` ${status.publicPackage.version}` : '';
+  const privateVersion = status.privatePackage.version ? ` ${status.privatePackage.version}` : '';
+  const assistant = [
+    "Oui — Vivy a maintenant une route Zen claire, mais bornée proprement.",
+    '',
+    `Runtime public: ${status.publicPackage.available ? `@nossen/zen${publicVersion} prêt` : `@nossen/zen indisponible (${status.publicPackage.reason || 'module absent'})`}.`,
+    `Runtime privé: ${status.privatePackage.available ? `@funeste/zen${privateVersion} prêt` : "@funeste/zen réservé à l'opérateur / non chargé dans ce runtime"}.`,
+    `Clé Zen configurée ici: ${status.keyConfigured ? 'oui (masquée)' : 'non'}.`,
+    '',
+    "Ce que Vivy peut faire seule depuis le chat:",
+    "- inventorier les .zen/.gguf visibles dans le contexte local sûr;",
+    "- inspecter le header public d'un .zen sans décoder le contenu chiffré;",
+    "- préparer un manifeste de corpus Zen pour mémoire, médias, prompts, notes et routes NOSSEN;",
+    "- compacter son contexte en note propre avant archivage, pour éviter les boucles et répétitions.",
+    '',
+    "Ce qui reste verrouillé opérateur:",
+    "- encoder/décoder un corpus chiffré avec clé;",
+    "- écrire, supprimer, publier, déployer ou lancer une action coûteuse;",
+    "- afficher une clé, un token, un .env ou un secret dans le chat.",
+    '',
+    "Artefacts vus maintenant:",
+    ...artifactLines,
+    '',
+    "Donc si quelqu'un demande l'impossible ou un secret, Vivy doit répondre net: je peux préparer/inspecter la partie sûre, mais pas exposer ni forcer le verrou.",
+  ].join('\n');
+
+  return {
+    ok: true,
+    service: 'vivy-chat',
+    mode: 'chat',
+    assistant: cleanText(assistant, 3600),
+    content: cleanText(assistant, 3600),
+    publicText: cleanText(assistant, 3600),
+    summary: 'Vivy a une route Zen auto-gestion bornée: inventaire, header public, manifeste, compactage; encode/decode chiffrés sous verrou opérateur.',
+    actions: [
+      { id: 'zen_runtime_status', label: 'Statut Zen runtime', target: status.publicPackage.source, ready: status.publicPackage.available || status.canInspectHeaders },
+      { id: 'zen_header_inspect', label: 'Inspecter header .zen', target: '@nossen/zen inspectZen + fallback header A11', ready: status.canInspectHeaders },
+      { id: 'zen_manifest_prepare', label: 'Préparer manifeste Zen', target: 'vivy-zen-manifest', ready: status.canPrepareManifest },
+      { id: 'zen_context_compact', label: 'Compacter contexte Vivy', target: 'vivy-memory-summary', ready: true },
+      { id: 'zen_encode_encrypted', label: 'Encoder corpus chiffré', target: status.privatePackage.available ? '@funeste/zen encode' : '@nossen/zen encode', ready: status.canEncodeEncrypted, requiresOperator: true },
+    ],
+    routing: [
+      'Vivy: préparer manifeste, inventaire et résumé sans secret.',
+      'A11: inspecter headers .zen/.gguf et fournir contexte local filtré.',
+      'Opérateur/Codex: encoder, décoder, écrire ou déployer seulement sous verrou explicite.',
+    ],
+    zenStatus: status,
+    tokenStored: false,
+    writesByDefault: false,
+    aiMode: 'deterministic_zen_self_management',
+    language,
+    files: [],
+  };
+}
+
 function buildVivyToolCapabilityReply({ localContext = null, language = 'fr' } = {}) {
   const artifacts = Array.isArray(localContext?.artifacts) ? localContext.artifacts : [];
   const artifactLines = artifacts.length
@@ -5240,6 +5430,26 @@ async function buildVivyAiChat(input, req) {
     return {
       ...workspaceReply,
       files,
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  }
+
+  if (mode !== 'song' && isVivyZenSelfManagementQuestion(input, intentMessage || message)) {
+    const zenContext = localContext || buildVivyLocalContextSnapshot(intentMessage || message);
+    const zenReply = buildVivyZenSelfManagementReply({ localContext: zenContext, language });
+    rememberVivyEpisode(userId, 'vivy_reply', zenReply.assistant, {
+      mode: 'chat',
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      sessionId: sessionContext.sessionId,
+      sessionName: sessionContext.sessionName,
+      deterministic: true,
+      zenSelfManagement: true,
+    });
+    return {
+      ...zenReply,
+      files,
+      localContext: serializeVivyLocalContext(zenContext),
       semanticMemory,
       memoryStored: semanticMemory.stored,
     };
@@ -8753,6 +8963,9 @@ module.exports = {
   saveVivyWorkspaceForUser,
   isVivyMcpNeo4jQuestion,
   isVivyToolCapabilityQuestion,
+  isVivyZenSelfManagementQuestion,
+  buildVivyZenSelfManagementReply,
+  getVivyZenRuntimeStatus,
   getSunoMusicJob,
   buildEmergencyMediaForProduction,
 };

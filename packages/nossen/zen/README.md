@@ -38,11 +38,22 @@ console.log(decoded.container.manifest);
 ## CLI
 
 ```powershell
-$env:ZEN_KEY = 'local secret passphrase'
 nossen-zen encode --in .\shard.json --out .\shard.zen --key-env ZEN_KEY
-nossen-zen inspect --in .\shard.zen
+nossen-zen inspect --in .\shard.zen --json
+nossen-zen verify --in .\shard.zen --key-env ZEN_KEY --json
 nossen-zen decode --in .\shard.zen --out .\shard.out.json --key-env ZEN_KEY
 ```
+
+`--key-env` names an environment variable; the CLI never prints its value.
+All commands accept positive byte limits through `--max-container-bytes`,
+`--max-header-bytes`, `--max-payload-bytes`, and `--max-raw-bytes`.
+
+The synchronous buffer APIs are intended for bounded payloads. For large files,
+use `encodeZenFileAsync()`, `decodeZenFileAsync()`, and
+`verifyZenFileAsync()`: they stream data, enforce limits, clean temporary files,
+and replace destinations only after authentication and checksum verification.
+`inspectZen()` reads public structure only; `verifyZen()` and
+`verifyZenFileAsync()` never return decoded content or private manifests.
 
 For test fixtures only:
 
@@ -88,7 +99,8 @@ after decode.
 Keys are never written into the `.zen` file. Encrypted containers use
 AES-256-GCM with a key derived by scrypt, and payloads are verified after decode.
 Plaintext mode is rejected by default and exists only for deterministic dev
-fixtures.
+fixtures. Format version remains V1, so existing `0.1.1` encrypted archives stay
+compatible.
 
 ## Support NOSSEN
 

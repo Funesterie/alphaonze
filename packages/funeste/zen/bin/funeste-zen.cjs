@@ -2,9 +2,10 @@
 'use strict';
 
 const {
-  decodeFunesteZenFile,
-  encodeFunesteZenFile,
-  parseZen
+  decodeFunesteZenFileAsync,
+  encodeFunesteZenFileAsync,
+  inspectZen,
+  verifyFunesteZenFileAsync
 } = require('../src/index.cjs');
 
 function valueAfter(args, flag) {
@@ -18,7 +19,8 @@ function usage() {
     'Usage:',
     '  funeste-zen encode --in input.json --out archive.zen --key-env FUNESTE_ZEN_KEY',
     '  funeste-zen decode --in archive.zen --out output.json --key-env FUNESTE_ZEN_KEY',
-    '  funeste-zen inspect --in archive.zen',
+    '  funeste-zen inspect --in archive.zen [--json]',
+    '  funeste-zen verify --in archive.zen --key-env FUNESTE_ZEN_KEY [--json]',
     '',
     'Dev fixtures only:',
     '  funeste-zen encode --in input.txt --out sample.zen --allow-plaintext'
@@ -31,53 +33,77 @@ function resolveKey(args) {
   return process.env.FUNESTE_ZEN_KEY || process.env.ZEN_KEY || '';
 }
 
-function main() {
+function limitOptions(args) {
+  const result = {};
+  const flags = {
+    '--max-container-bytes': 'maxContainerBytes',
+    '--max-header-bytes': 'maxHeaderBytes',
+    '--max-payload-bytes': 'maxPayloadBytes',
+    '--max-raw-bytes': 'maxRawBytes'
+  };
+  for (const [flag, property] of Object.entries(flags)) {
+    const raw = valueAfter(args, flag);
+    if (!raw) continue;
+    const value = Number(raw);
+    if (!Number.isSafeInteger(value) || value <= 0) throw new TypeError(`${flag} must be a positive integer`);
+    result[property] = value;
+  }
+  return result;
+}
+
+function writeResult(value, json, text) {
+  process.stdout.write(json ? `${JSON.stringify(value)}\n` : `${text}\n`);
+}
+
+async function main() {
   const args = process.argv.slice(2);
   const command = args[0];
   const input = valueAfter(args, '--in');
   const output = valueAfter(args, '--out');
-  const manifest = {};
-  const intent = valueAfter(args, '--intent');
-  const corpus = valueAfter(args, '--corpus');
-
-  if (intent) manifest.intent = intent;
-  if (corpus) manifest.corpus = corpus;
+  const json = args.includes('--json');
+  const limits = limitOptions(args);
 
   if (!command || !input) {
-    console.error(usage());
+    process.stderr.write(`${usage()}\n`);
     process.exitCode = 2;
     return;
   }
 
-  try {
-    if (command === 'encode') {
-      const out = encodeFunesteZenFile(input, output, {
-        key: resolveKey(args),
-        allowPlaintext: args.includes('--allow-plaintext'),
-        manifest
-      });
-      process.stdout.write(`${out}\n`);
-      return;
-    }
-
-    if (command === 'decode') {
-      decodeFunesteZenFile(input, output, { key: resolveKey(args) });
-      process.stdout.write(`${output || 'decoded'}\n`);
-      return;
-    }
-
-    if (command === 'inspect') {
-      const parsed = parseZen(input);
-      process.stdout.write(`${JSON.stringify(parsed.header, null, 2)}\n`);
-      return;
-    }
-
-    console.error(usage());
-    process.exitCode = 2;
-  } catch (error) {
-    process.stderr.write(`${error.message}\n`);
-    process.exitCode = 1;
+  if (command === 'encode') {
+    const outputPath = output || `${input}.zen`;
+    const written = await encodeFunesteZenFileAsync(input, outputPath, {
+      ...limits,
+      key: resolveKey(args),
+      allowPlaintext: args.includes('--allow-plaintext')
+    });
+    writeResult({ outputPath: written }, json, written);
+    return;
   }
+
+  if (command === 'decode') {
+    const outputPath = output || `${input}.decoded`;
+    const decoded = await decodeFunesteZenFileAsync(input, outputPath, { ...limits, key: resolveKey(args) });
+    writeResult({ outputPath: decoded.outputPath, rawBytes: decoded.rawBytes }, json, decoded.outputPath);
+    return;
+  }
+
+  if (command === 'inspect') {
+    const inspection = inspectZen(input, limits);
+    writeResult(inspection, json, `${inspection.header.format} v${inspection.header.version} ${inspection.header.mode}`);
+    return;
+  }
+
+  if (command === 'verify') {
+    const verification = await verifyFunesteZenFileAsync(input, { ...limits, key: resolveKey(args) });
+    writeResult(verification, json, `${verification.format} v${verification.version} valid`);
+    return;
+  }
+
+  process.stderr.write(`${usage()}\n`);
+  process.exitCode = 2;
 }
 
-main();
+main().catch((error) => {
+  process.stderr.write(`${error.code || 'ZEN_ERR'}: ${error.message}\n`);
+  process.exitCode = 1;
+});

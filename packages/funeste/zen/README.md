@@ -17,14 +17,17 @@ You need npm access to the private `@funeste` scope.
 ## CLI
 
 ```powershell
-$env:FUNESTE_ZEN_KEY = 'local passphrase'
 funeste-zen encode --in .\corpus.json --out .\corpus.zen --key-env FUNESTE_ZEN_KEY
-funeste-zen inspect --in .\corpus.zen
+funeste-zen inspect --in .\corpus.zen --json
+funeste-zen verify --in .\corpus.zen --key-env FUNESTE_ZEN_KEY --json
 funeste-zen decode --in .\corpus.zen --out .\corpus.out.json --key-env FUNESTE_ZEN_KEY
 ```
 
 The key is never written into the `.zen` file. `FUNESTE_ZEN_KEY` is preferred,
-and `ZEN_KEY` is accepted for compatibility.
+and `ZEN_KEY` is accepted for compatibility. `--key-env` names a variable only;
+its value is never printed. Positive limits are available through
+`--max-container-bytes`, `--max-header-bytes`, `--max-payload-bytes`, and
+`--max-raw-bytes`.
 
 ## API
 
@@ -47,6 +50,12 @@ const decoded = decodeFunesteZenContainer(archive, {
 
 console.log(decoded.container.manifest.routes);
 ```
+
+The synchronous container APIs above are intended for bounded structured
+payloads. `encodeFunesteZenFileAsync()` and `decodeFunesteZenFileAsync()` forward
+the public streaming file implementation for large byte-preserving files, with
+the same limits and atomic destination replacement. `verifyFunesteZenFileAsync()`
+authenticates and checksums without exposing content or private routes.
 
 ## Defaults
 

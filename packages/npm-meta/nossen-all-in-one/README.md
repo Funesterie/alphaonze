@@ -18,9 +18,7 @@ npm install @nossen/all-in-one
 - ZEN 0.1.2 with bounded parsing, authenticated verification and large-file streaming.
 - The public `a11-coder` package.
 
-The 0.1.6 snapshot was audited against the npm registry on 2026-06-22. Its
-internal NOSSEN versions are exact, including Morphing 2.1.0 and the coordinated
-Dragon, Freeland Bros and QFlush patch train.
+The 0.1.7 snapshot was checked against the npm registry on 2026-07-04. Its internal NOSSEN versions are exact, including ZEN 0.1.2, Morphing 2.1.0 and the coordinated Dragon, Freeland Bros and QFlush patch train.
 
 ## Package Manifest
 

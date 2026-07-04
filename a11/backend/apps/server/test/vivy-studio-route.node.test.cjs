@@ -48,6 +48,8 @@ const {
   isVivyWorkspaceToolRequest,
   isVivyVisualCreativeDirectionRequest,
   isVivyToolCapabilityQuestion,
+  isVivyZenSelfManagementQuestion,
+  getVivyZenRuntimeStatus,
   looksLikeWeakSongwritingReply,
   normalizeVivyChatHistory,
   postProcessVivyAssistantText,
@@ -5944,6 +5946,33 @@ test('Vivy maps authorized tools and Zen GGUF without bypassing safeguards', asy
   assert.ok(result.localContext);
   assert.ok(Array.isArray(result.localContext.artifacts));
   assert.match(JSON.stringify(result.actions), /gguf_inventory|zen_inspect|tool_capability_map/);
+});
+
+test('Vivy exposes bounded Zen self-management instead of fake unrestricted access', async () => {
+  const message = "vivi tu peux te faire des archives zen et t'auto gérer avec NOSSEN ?";
+
+  assert.equal(isVivyZenSelfManagementQuestion({}, message), true);
+
+  const status = getVivyZenRuntimeStatus();
+  assert.equal(status.canInspectHeaders, true);
+  assert.equal(status.secretsVisibleInChat, false);
+  assert.ok(status.publicPackage);
+
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-zen-self-management-test',
+    message,
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.equal(result.aiMode, 'deterministic_zen_self_management');
+  assert.match(result.assistant, /@nossen\/zen|Runtime public/i);
+  assert.match(result.assistant, /inspecter le header public|manifeste de corpus Zen/i);
+  assert.match(result.assistant, /Clé Zen configurée ici: (oui|non)/i);
+  assert.match(result.assistant, /verrouillé opérateur|secret/i);
+  assert.doesNotMatch(result.assistant, /FUNESTE_ZEN_KEY\s*=|ZEN_KEY\s*=|voici la clé/i);
+  assert.ok(result.zenStatus);
+  assert.match(JSON.stringify(result.actions), /zen_runtime_status|zen_manifest_prepare|zen_context_compact/);
 });
 
 test('POST /api/vivy/studio/chat stores semantic context and accepts file metadata', async () => {
