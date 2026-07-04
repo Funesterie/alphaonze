@@ -18,6 +18,7 @@ const {
   createEmergencyVideoAsset,
   getEmergencyMediaAssetPath,
 } = require('../media/emergency-media.cjs');
+const { getDjeffPersonaBrief } = require('../persona/persona-engine.cjs');
 const {
   addEpisode,
   getEpisodes,
@@ -2820,6 +2821,12 @@ function buildVivySystemPrompt(mode, language, input) {
     "Quand une demande est impossible, non autorisée ou hors droits, réponds franchement et court: dis non, dis pourquoi en une phrase, puis propose l'alternative utile. Ne promets jamais de demander à Janus Vision, à une base de données, à un opérateur ou à un outil si le backend ne t'a pas explicitement fourni cette action.",
     "Pour les chansons existantes et artistes protégés, ne cherche pas, ne copie pas et ne reconstruis pas les paroles complètes. Tu peux analyser des références privées en traits abstraits: flow, cadence, densité, énergie, mood, structure, sans citer ni reproduire les paroles, la mélodie ou la voix.",
     SYMBOLIC_EXTRACTION_PROTOCOL_CONTEXT,
+    (() => {
+      const personaBrief = getDjeffPersonaBrief();
+      return personaBrief
+        ? `Moteur de pensée Djeff (profil validé, usage interne, jamais récité tel quel): ${personaBrief}`
+        : '';
+    })(),
     buildVivyToolCapabilityPrompt(),
     "Si l'utilisateur veut changer ta voix, demande un court fichier audio autorisé/licencié/consenti et rappelle qu'il reste privé pour son compte.",
     'Si des fichiers sont joints, intègre-les comme contexte, cite leur nom seulement si utile, et demande le contenu manquant si tu ne peux pas le lire.',

@@ -3851,3 +3851,38 @@ test('Vivy wardrobe: gifts are offered, Vivy decides, outfits color the mood', (
     else process.env.A11_RUNTIME_ROOT = previousRoot;
   }
 });
+
+test('Djeff persona engine injects the brief only when the profile is active', () => {
+  const os = require('node:os');
+  const path = require('node:path');
+  const fs = require('node:fs');
+  const previousRoot = process.env.A11_RUNTIME_ROOT;
+  const root = path.join(os.tmpdir(), `persona-test-${process.pid}`);
+  process.env.A11_RUNTIME_ROOT = root;
+  try {
+    const { getDjeffPersonaBrief, resetDjeffPersonaCache, personaProfilePath } = require('../src/persona/persona-engine.cjs');
+    resetDjeffPersonaCache();
+    assert.equal(getDjeffPersonaBrief(), '', 'sans profil: aucun brief');
+
+    const profilePath = personaProfilePath();
+    fs.mkdirSync(path.dirname(profilePath), { recursive: true });
+    fs.writeFileSync(profilePath, JSON.stringify({
+      active: false,
+      injectable_brief: 'Djeff pense en trajectoires.',
+    }));
+    resetDjeffPersonaCache();
+    assert.equal(getDjeffPersonaBrief(), '', 'profil inactif: aucun brief (validation humaine requise)');
+
+    fs.writeFileSync(profilePath, JSON.stringify({
+      active: true,
+      injectable_brief: 'Djeff pense en trajectoires, pas en taches isolees.',
+    }));
+    resetDjeffPersonaCache();
+    assert.match(getDjeffPersonaBrief(), /trajectoires/);
+  } finally {
+    if (previousRoot === undefined) delete process.env.A11_RUNTIME_ROOT;
+    else process.env.A11_RUNTIME_ROOT = previousRoot;
+    const { resetDjeffPersonaCache } = require('../src/persona/persona-engine.cjs');
+    resetDjeffPersonaCache();
+  }
+});
