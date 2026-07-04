@@ -4982,8 +4982,8 @@ test('Vivy lyrics chain adds Ollama Cloud and Cerbere only for the lyrics writer
     assert.equal(configs[1].model, 'gpt-oss:120b');
     assert.equal(configs[1].maxCalls, 1);
     assert.equal(configs[2].model, 'openai/gpt-oss-120b');
-    assert.equal(configs[2].maxCalls, 1);
-    assert.equal(configs[2].maxRetries, 0);
+    assert.equal(configs[2].maxCalls, 2);
+    assert.equal(configs[2].maxRetries, 1);
     assert.equal(configs[3].model, 'qwen2.5:7b');
 
     const routingConfigs = getVivyLlmConfigs({ mode: 'song', purpose: 'routing' });

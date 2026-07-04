@@ -605,8 +605,8 @@ function getVivyCerbereSongConfig(options = {}) {
     provider: 'cerbere',
     source: 'cerbere-openai-compatible',
     timeoutMs: Math.max(30000, Number(process.env.VIVY_SONG_CERBERE_TIMEOUT_MS || 240000) || 240000),
-    maxCalls: 1,
-    maxRetries: 0,
+    maxCalls: Math.max(1, Math.min(4, Number(process.env.VIVY_SONG_CERBERE_MAX_CALLS || 2) || 2)),
+    maxRetries: Math.max(0, Math.min(2, Number(process.env.VIVY_SONG_CERBERE_MAX_RETRIES || 1) || 1)),
   };
 }
 
