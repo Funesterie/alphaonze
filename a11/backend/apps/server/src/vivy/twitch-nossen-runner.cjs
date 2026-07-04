@@ -24,6 +24,8 @@ const {
 const execFileAsync = promisify(execFile);
 const DEFAULT_TARGET_DURATION_SECONDS = 210;
 const DEFAULT_MIN_ACCEPTABLE_SECONDS = 150;
+const DEFAULT_SHORT_MIX_ACCEPT_SECONDS = 120;
+const DEFAULT_HARD_MIN_ACCEPTABLE_SECONDS = 60;
 const DEFAULT_DYNAMIC_MIN_TARGET_SECONDS = 150;
 const DEFAULT_DYNAMIC_MAX_TARGET_SECONDS = 360;
 const DEFAULT_LONG_TARGET_SECONDS = 300;
@@ -59,6 +61,13 @@ function cleanLyrics(value = '', max = 12000) {
     .replace(/\r\n?/g, '\n')
     .trim()
     .slice(0, max);
+}
+
+function countMeaningfulTwitchWords(value = '') {
+  return cleanText(value, '', 800)
+    .split(/\s+/)
+    .map((word) => word.replace(/[^\p{L}\p{N}'’-]+/gu, '').trim())
+    .filter((word) => word.length >= 2).length;
 }
 
 function resolveFullClipReadyWaitMs(env = process.env) {
@@ -1514,6 +1523,26 @@ function reinforceTwitchHardcoreRouting(routing = {}, { winner = {}, seed = {}, 
   };
 }
 
+function buildShortTwitchIdeaExpansionGuidance({ winner = {}, routing = {}, seed = {} } = {}) {
+  const text = cleanText(winner.text, '', 600);
+  const folded = foldTwitchLyricText(text);
+  if (!text) return '';
+  const wordCount = countMeaningfulTwitchWords(text);
+  const hasStructuredRequest = /\b(?:personnage|situation|probl[eè]me|histoire\s+compl[eè]te|sc[eé]nario|couplet|refrain|pont|morale|duo|voix)\b/.test(folded);
+  if (hasStructuredRequest || (wordCount > 8 && text.length > 90)) return '';
+
+  const parts = text.split(/\s*,\s*/).map((part) => cleanText(part, '', 120)).filter(Boolean);
+  const title = parts[0] || text;
+  const styleCue = parts.slice(1).join(', ');
+  const styleText = styleCue || routing?.songMood || seed?.notes || '';
+  return [
+    `Brief Twitch court détecté: le viewer a donné surtout un titre/axe ("${title}")${styleText ? ` et une couleur ("${cleanText(styleText, '', 180)}")` : ''}.`,
+    'Vivy doit enrichir elle-même: choisir une scène forte, un conflit, une progression et un refrain mémorable sans attendre un long brief utilisateur.',
+    'L’enrichissement reste strictement dans le titre et le style demandés: ne pas importer d’ancien thème, de contexte Twitch, de moto, de gamin, de visière ou de vocabulaire recyclé si ce n’est pas dans la demande.',
+    'Si un style précis est nommé, il devient une contrainte sonore prioritaire et doit guider les images, le débit, l’énergie et le vocabulaire de la chanson.',
+  ].join('\n');
+}
+
 function sanitizeTwitchLyricsForPromptLeakage(lyrics = '') {
   const kept = [];
   let removed = 0;
@@ -1965,6 +1994,46 @@ function clampNumber(value, min, max, fallback) {
   return Math.max(min, Math.min(max, number));
 }
 
+function resolveTwitchDurationAcceptance({
+  durationSeconds = 0,
+  minAcceptableSeconds = DEFAULT_MIN_ACCEPTABLE_SECONDS,
+  env = process.env,
+} = {}) {
+  const duration = Math.max(0, Number(durationSeconds) || 0);
+  const desiredMinimum = Math.max(1, Number(minAcceptableSeconds) || DEFAULT_MIN_ACCEPTABLE_SECONDS);
+  const hardMinimum = clampNumber(
+    env.VIVY_STREAM_HARD_MIN_ACCEPTABLE_SECONDS,
+    60,
+    120,
+    DEFAULT_HARD_MIN_ACCEPTABLE_SECONDS
+  );
+  const shortMixThreshold = clampNumber(
+    env.VIVY_STREAM_SHORT_MIX_ACCEPT_SECONDS,
+    hardMinimum,
+    desiredMinimum,
+    DEFAULT_SHORT_MIX_ACCEPT_SECONDS
+  );
+  const blocking = duration < hardMinimum;
+  const shortMix = !blocking && duration < desiredMinimum;
+  return {
+    ok: !blocking,
+    blocking,
+    shortMix,
+    note: shortMix ? 'version courte générée' : '',
+    durationSeconds: Math.round(duration),
+    hardMinimumSeconds: Math.round(hardMinimum),
+    shortMixAcceptSeconds: Math.round(shortMixThreshold),
+    desiredMinimumSeconds: Math.round(desiredMinimum),
+  };
+}
+
+function isPaidMusicRetryConfirmed(payload = {}) {
+  return payload.confirmPaidRetries === true
+    || payload.adminConfirmPaidRetries === true
+    || payload.paidRetryConfirmed === true
+    || String(process.env.VIVY_STREAM_ALLOW_PAID_AUTO_EXTENSIONS || '').trim() === '1';
+}
+
 function parseRequestedDurationSeconds(text = '') {
   const raw = String(text || '');
   const minuteMatch = raw.match(/\b(\d+(?:[,.]\d+)?)\s*(?:min|minutes?)\b/i);
@@ -2184,6 +2253,7 @@ function buildTwitchLyricsRequest({
     lyricScope?.targetDurationSeconds
       ? `Vivy décide la longueur: vise une forme adaptée à environ ${Math.round(lyricScope.targetDurationSeconds)} secondes de chanson, sans remplir artificiellement.`
       : 'Vivy décide librement la longueur selon l’histoire et l’énergie du sujet.',
+    buildShortTwitchIdeaExpansionGuidance({ winner, routing, seed }),
     lyricScope?.minLyricsChars
       ? `Écris assez de matière pour que la chanson respire; vise au moins ${lyricScope.minLyricsChars} caractères utiles seulement si les scènes l’exigent, avec des sections qui avancent.`
       : '',
@@ -3134,7 +3204,16 @@ function createVivyStreamNossenRunner(options = {}) {
       const mustChaseRequestedDuration = fixedTargetDurationSeconds > 0 || lyricScope.chaseDuration === true;
       const extensionGoalSeconds = mustChaseRequestedDuration ? targetDurationSeconds : minAcceptableSeconds;
       const canExtendWithSuno = musicProvider === 'suno';
-      for (let extensionIndex = 1; canExtendWithSuno && extensionIndex <= maxExtensions && durationSeconds < extensionGoalSeconds; extensionIndex += 1) {
+      const paidMusicRetryConfirmed = isPaidMusicRetryConfirmed(payload);
+      if (canExtendWithSuno && durationSeconds < extensionGoalSeconds && !paidMusicRetryConfirmed) {
+        logger.info?.(
+          '[vivy-twitch-nossen] round=%s short duration=%ss target=%ss extension skipped: paid_retry_not_confirmed',
+          roundId,
+          Math.round(durationSeconds),
+          Math.round(extensionGoalSeconds)
+        );
+      }
+      for (let extensionIndex = 1; canExtendWithSuno && paidMusicRetryConfirmed && extensionIndex <= maxExtensions && durationSeconds < extensionGoalSeconds; extensionIndex += 1) {
         const audioId = getSunoAudioId(media) || getSunoAudioId(result);
         if (!audioId) {
           logger.warn?.(
@@ -3282,15 +3361,36 @@ function createVivyStreamNossenRunner(options = {}) {
         result = extensionStart;
         durationSeconds = candidateDurationSeconds;
       }
-      if (durationSeconds < minAcceptableSeconds) {
+      const durationAcceptance = resolveTwitchDurationAcceptance({
+        durationSeconds,
+        minAcceptableSeconds,
+      });
+      if (!durationAcceptance.ok) {
         throw new Error(`vivy_stream_suno_too_short_${Math.round(durationSeconds)}s`);
+      }
+      if (durationAcceptance.shortMix) {
+        logger.warn?.(
+          '[vivy-twitch-nossen] round=%s accepted short mix duration=%ss desiredMin=%ss hardMin=%ss',
+          roundId,
+          durationAcceptance.durationSeconds,
+          durationAcceptance.desiredMinimumSeconds,
+          durationAcceptance.hardMinimumSeconds
+        );
+        await update({
+          action: 'progress',
+          stage: 'composition',
+          progress: 97,
+          message: `Version courte générée (${durationAcceptance.durationSeconds}s); Vivy archive et lance le vote sans retry payant.`,
+        });
       }
 
       await update({
         action: 'progress',
         stage: 'mix',
         progress: 88,
-        message: 'Audio prêt, Vivy attend le pack vidéo avant de lancer la lecture.',
+        message: durationAcceptance.shortMix
+          ? 'Audio prêt en version courte générée, Vivy attend le pack vidéo avant de lancer la lecture.'
+          : 'Audio prêt, Vivy attend le pack vidéo avant de lancer la lecture.',
       });
       const fullClipReadyWaitMs = resolveFullClipReadyWaitMs(process.env);
       let shareVideoUrl = '';
@@ -3424,9 +3524,13 @@ function createVivyStreamNossenRunner(options = {}) {
         action: 'progress',
         stage: 'mix',
         progress: 100,
-        message: coverVideoUrl
-          ? 'Pack audio + vidéo prêt, lancement de la lecture.'
-          : 'Audio prêt, lancement avec visuel de secours.',
+        message: durationAcceptance.shortMix
+          ? (coverVideoUrl
+            ? 'Version courte générée, pack audio + vidéo prêt, lancement de la lecture.'
+            : 'Version courte générée, lancement avec visuel de secours.')
+          : (coverVideoUrl
+            ? 'Pack audio + vidéo prêt, lancement de la lecture.'
+            : 'Audio prêt, lancement avec visuel de secours.'),
       });
       await update({
         action: 'ready',
@@ -3434,6 +3538,9 @@ function createVivyStreamNossenRunner(options = {}) {
         trackTitle: publicTitle,
         trackUrl: media.url,
         durationSeconds,
+        ...(durationAcceptance.shortMix
+          ? { qualityNote: durationAcceptance.note, shortMix: true }
+          : {}),
         requestedBy: winner.author,
         coverImageUrl,
         coverPrompt,
@@ -3497,6 +3604,7 @@ module.exports = {
   probeMediaDurationSeconds,
   reduceMechanicalLyricRepeats,
   resolveTwitchCreativePlaceholders,
+  resolveTwitchDurationAcceptance,
   resolveTwitchSubjectFrame,
   resolveTwitchVivyLyricScope,
   isConceptualHookRequest,

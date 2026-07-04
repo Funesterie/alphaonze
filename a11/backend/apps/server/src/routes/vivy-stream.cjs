@@ -343,6 +343,8 @@ function normalizeJukeboxTrack(input = {}) {
     ),
     coverVideoPrompt: cleanOneLine(input.coverVideoPrompt || input.videoPrompt || input.video_prompt, '', 2600),
     shareVideoUrl: cleanOneLine(input.shareVideoUrl || input.share_video_url, '', 1200),
+    qualityNote: cleanOneLine(input.qualityNote || input.quality_note || '', '', 140),
+    shortMix: input.shortMix === true || input.short_mix === true,
   };
   track.sharePath = cleanOneLine(input.sharePath, buildSongSharePath(track), 240);
   return track;
@@ -1457,6 +1459,8 @@ function createVivyStreamStore(options = {}) {
         coverVideoUrl,
         coverVideoPrompt,
         shareVideoUrl: cleanOneLine(input.shareVideoUrl || input.share_video_url, '', 1200),
+        qualityNote: cleanOneLine(input.qualityNote || input.quality_note || '', '', 140),
+        shortMix: input.shortMix === true || input.short_mix === true,
       });
       addLiveSong({
         ...track,
@@ -1480,13 +1484,17 @@ function createVivyStreamStore(options = {}) {
         sharePath: track?.sharePath || buildSongSharePath({ id: createTrackId(trackUrl), trackUrl, trackTitle: input.trackTitle || input.title }),
         requestedBy: cleanOneLine(input.requestedBy || input.author, winner?.author || state.current.requestedBy, 80),
         durationSeconds,
+        qualityNote: track?.qualityNote || cleanOneLine(input.qualityNote || input.quality_note || '', '', 140),
+        shortMix: track?.shortMix === true || input.shortMix === true || input.short_mix === true,
         playbackStartedAt: null,
         phaseEndsAt: new Date(presentationEndsAt).toISOString(),
         coverImageUrl: track?.coverImageUrl || coverImageUrl,
         coverPrompt: track?.coverPrompt || coverPrompt,
         coverVideoUrl: track?.coverVideoUrl || coverVideoUrl,
         coverVideoPrompt: track?.coverVideoPrompt || coverVideoPrompt,
-        message: 'Vivy présente sa nouvelle composition.',
+        message: track?.shortMix === true || input.shortMix === true || input.short_mix === true
+          ? 'Vivy présente sa nouvelle composition, version courte générée.'
+          : 'Vivy présente sa nouvelle composition.',
       });
       save();
       return { ok: true, state: publicState(state) };

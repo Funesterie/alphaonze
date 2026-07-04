@@ -37,6 +37,7 @@ const {
   generateTwitchCoverVideo,
   reduceMechanicalLyricRepeats,
   resolveTwitchCreativePlaceholders,
+  resolveTwitchDurationAcceptance,
   resolveTwitchSubjectFrame,
   resolveTwitchVivyLyricScope,
   isConceptualHookRequest,
@@ -639,6 +640,65 @@ test('Twitch lyric scope gives Mureka enough sung material for V9', () => {
   assert.ok(scope.targetDurationSeconds <= 210);
   assert.ok(scope.minLyricsChars >= 1400);
   assert.ok(scope.maxChars >= 4200);
+});
+
+test('Twitch short prompt is enriched from title and requested style', () => {
+  const routing = reinforceTwitchHardcoreRouting({
+    artists: ['vivy'],
+    songMood: 'hardcore années 90',
+  }, {
+    winner: { text: 'abnégation, hardcore années 90' },
+  });
+  const prompt = buildTwitchLyricsRequest({
+    winner: {
+      text: 'abnégation, hardcore années 90',
+    },
+    routing,
+    seed: {},
+  });
+
+  assert.match(prompt, /Brief Twitch court détecté/i);
+  assert.match(prompt, /Vivy doit enrichir elle-même/i);
+  assert.match(prompt, /abnégation/i);
+  assert.match(prompt, /gabber façon Thunderdome/i);
+  assert.match(prompt, /style demandé/i);
+});
+
+test('Twitch duration acceptance treats 123s Suno output as non-blocking short mix', () => {
+  const acceptance = resolveTwitchDurationAcceptance({
+    durationSeconds: 123,
+    minAcceptableSeconds: 150,
+    env: {},
+  });
+
+  assert.equal(acceptance.ok, true);
+  assert.equal(acceptance.blocking, false);
+  assert.equal(acceptance.shortMix, true);
+  assert.equal(acceptance.note, 'version courte générée');
+});
+
+test('Twitch duration acceptance treats 82s Suno output as non-blocking short mix', () => {
+  const acceptance = resolveTwitchDurationAcceptance({
+    durationSeconds: 82,
+    minAcceptableSeconds: 150,
+    env: {},
+  });
+
+  assert.equal(acceptance.ok, true);
+  assert.equal(acceptance.blocking, false);
+  assert.equal(acceptance.shortMix, true);
+  assert.equal(acceptance.note, 'version courte générée');
+});
+
+test('Twitch duration acceptance still blocks truly invalid short audio', () => {
+  const acceptance = resolveTwitchDurationAcceptance({
+    durationSeconds: 58,
+    minAcceptableSeconds: 150,
+    env: {},
+  });
+
+  assert.equal(acceptance.ok, false);
+  assert.equal(acceptance.blocking, true);
 });
 
 test('Twitch lyric scope ignores internal seed wording for duration decisions', () => {
@@ -1977,7 +2037,7 @@ test('Twitch NOSSEN runner waits for a local asset instead of publishing a provi
   assert.ok(!updates.some((entry) => entry.action === 'ready' && /^https:\/\/musicfile\.removeai\.ai/i.test(entry.trackUrl || '')));
 });
 
-test('Twitch NOSSEN runner extends short Suno songs before publishing', async () => {
+test('Twitch NOSSEN runner extends short Suno songs only with paid retry confirmation', async () => {
   const updates = [];
   let extensionInput = null;
   const runner = createVivyStreamNossenRunner({
@@ -2024,6 +2084,7 @@ test('Twitch NOSSEN runner extends short Suno songs before publishing', async ()
 
   const result = await runner.run({
     roundId: 'round-youth-extend',
+    confirmPaidRetries: true,
     winner: {
       id: 'S1',
       text: 'Le petit cavalier des plaines, cheval fidèle, rivière, refrain joyeux',
