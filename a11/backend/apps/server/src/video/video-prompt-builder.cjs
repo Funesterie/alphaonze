@@ -11,6 +11,35 @@ const {
 
 // llama-3.3-70b-versatile doesn't support json_schema — use json_object which all Groq models support
 const VIDEO_PROMPT_RESPONSE_FORMAT = Object.freeze({ type: 'json_object' });
+const VIDEO_NO_TEXT_NEGATIVE_TERMS = [
+  'text',
+  'letters',
+  'words',
+  'caption',
+  'subtitles',
+  'title card',
+  'logo',
+  'watermark',
+  'signature',
+  'typography',
+  'signage',
+  'UI text',
+  'gibberish text',
+  'pseudo text',
+  'scribbles',
+  'fake writing'
+].join(', ');
+const VIDEO_STRUCTURAL_NEGATIVE_TERMS = [
+  'floating limbs',
+  'disconnected body parts',
+  'disembodied legs',
+  'missing torso',
+  'incomplete anatomy',
+  'cut off body',
+  'severed limbs'
+].join(', ');
+const VIDEO_FACE_NEGATIVE_TERMS = 'face covered by glow, overexposed face, glow replacing face';
+const VIDEO_SINGING_NEGATIVE_TERMS = 'closed mouth, sealed lips, frozen lips, expressionless face, mouth hidden, microphone covering mouth';
 
 const VIDEO_PROMPT_SYSTEM_PROMPT = `I am A11's video prompt engineer. I receive a user request in any language and descriptions of the user's reference media (images, audio, video). I produce an optimized English prompt for WAN 2.2 video generation.
 
@@ -65,6 +94,17 @@ ENERGY ATTACK RULE:
 STRUCTURAL INTEGRITY RULE (always):
 - negative_prompt MUST always include: "floating limbs, disconnected body parts, disembodied legs, missing torso, incomplete anatomy, cut off body, severed limbs"
 - Never omit structural terms from negative_prompt
+
+NO TEXT / NO TYPOGRAPHY RULE (critical):
+- The generated video must contain no readable text, no fake text, no gibberish text, no subtitles, no captions, no UI labels, no logos, no signatures, no watermark and no title cards.
+- If the scene contains screens, signs, posters, labels, album art or clothing prints, make those surfaces blank, abstract, glowing, blurred or purely decorative with no letters.
+- negative_prompt MUST include: "text, letters, words, caption, subtitles, title card, logo, watermark, signature, typography, signage, UI text, gibberish text, pseudo text, scribbles, fake writing"
+
+VOCAL PERFORMANCE RULE:
+- If vocal_performance_requested=true, or if the user request/audio plan implies a song, singer, lyrics, vocals, microphone, stage performance, clip musical, refrain or couplet, show a visible singing performance.
+- The lead performer must visibly sing: lips open and close naturally, mouth articulation changes, expressive face, breathing and phrasing, microphone not covering the mouth.
+- Do not render a closed-mouth portrait for a singing clip.
+- negative_prompt should add: "closed mouth, sealed lips, frozen lips, expressionless face, mouth hidden, microphone covering mouth"
 
 DURATION RULE:
 - If requested_duration_seconds is provided in input: MUST use it exactly (hard constraint, no override)
@@ -171,6 +211,54 @@ function sanitizeVideoNegativePrompt(value = '') {
     .join(', ');
 }
 
+function appendCommaTerms(base = '', ...termGroups) {
+  const output = [];
+  const seen = new Set();
+  for (const group of [base, ...termGroups]) {
+    for (const part of String(group || '').split(',')) {
+      const text = normalizeText(part);
+      if (!text) continue;
+      const key = text.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      output.push(text);
+    }
+  }
+  return output.join(', ');
+}
+
+function hasVocalPerformanceIntent(userMessage = '', audioMotionPlan = null) {
+  const text = normalizeText([
+    userMessage,
+    audioMotionPlan ? JSON.stringify(audioMotionPlan).slice(0, 5000) : '',
+  ].join(' '))
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  return /\b(?:song|singer|singing|lyrics|lyric|vocal|vocals|voice|mouth|lip|lips|microphone|mic|chorus|refrain|verse|couplet|clip musical|music video|chanson|chant|chante|chanter|paroles|voix|micro|scene|concert)\b/.test(text);
+}
+
+function hardenVideoPromptText(prompt = '', { vocalPerformance = false } = {}) {
+  let next = normalizeText(prompt);
+  if (!/\b(?:no text|without text|no readable text|no captions|no subtitles|no logos|no watermark)\b/i.test(next)) {
+    next = `${next}. No readable text, no fake letters, no subtitles, no captions, no logos, no watermarks; all screens, signs, labels and clothing prints stay blank or abstract.`;
+  }
+  if (vocalPerformance && !/\b(?:singing|sings|mouth articulation|lips open|lip movement|visible vocal performance)\b/i.test(next)) {
+    next = `${next}. Visible vocal performance: the lead performer sings on camera with natural mouth articulation, lips opening and closing, expressive phrasing and the microphone never hiding the mouth.`;
+  }
+  return normalizeText(next).replace(/\.{2,}/g, '.');
+}
+
+function hardenVideoNegativePrompt(value = '', { vocalPerformance = false } = {}) {
+  return appendCommaTerms(
+    sanitizeVideoNegativePrompt(value),
+    VIDEO_STRUCTURAL_NEGATIVE_TERMS,
+    VIDEO_FACE_NEGATIVE_TERMS,
+    VIDEO_NO_TEXT_NEGATIVE_TERMS,
+    vocalPerformance ? VIDEO_SINGING_NEGATIVE_TERMS : ''
+  );
+}
+
 function buildReferenceVisualContextClause(value = '') {
   const context = normalizeText(value);
   if (!context) return '';
@@ -186,6 +274,7 @@ function buildHeuristicVideoPrompt({
   referenceImageUrls = [],
   referenceVideoUrls = [],
   referenceVisualContext = '',
+  audioMotionPlan = null,
 } = {}) {
   const message = normalizeText(userMessage);
   const folded = message
@@ -218,10 +307,12 @@ function buildHeuristicVideoPrompt({
   if (hasVideoReference) {
     prompt = `${prompt}, following the motion rhythm, camera movement and edit structure of the reference video`;
   }
+  const vocalPerformance = hasVocalPerformanceIntent(message, audioMotionPlan);
+  prompt = hardenVideoPromptText(prompt, { vocalPerformance });
 
   return {
     prompt: normalizeText(prompt),
-    negativePrompt: 'floating limbs, disconnected body parts, disembodied legs, missing torso, incomplete anatomy, cut off body, severed limbs, face covered by glow, overexposed face, glow replacing face',
+    negativePrompt: hardenVideoNegativePrompt('', { vocalPerformance }),
     durationSeconds: /hadouken|kamehameha|rasengan|energie|energy/.test(folded) ? 5 : 4,
     hasReferenceSubject: hasReference,
     motionType,
@@ -285,16 +376,24 @@ function resolveDurSource(parsedDuration, audioMotionPlan) {
 
 function resolveVideoPromptResult({ response, userMessage, hasReference, referenceVisualContext = '', audioMotionPlan, parsedDuration, groqUsed }) {
   const prompt = normalizeText(response?.prompt || '');
+  const vocalPerformance = hasVocalPerformanceIntent(userMessage, audioMotionPlan);
   if (!prompt) {
     console.warn('[A11][video-prompt] LLM returned no prompt, using raw message as fallback');
-    return { prompt: normalizeText(userMessage + ', cinematic motion, natural atmosphere, realistic light'), negativePrompt: '', hasReferenceSubject: hasReference, motionType: 'other', source: 'fallback' };
+    return {
+      prompt: hardenVideoPromptText(normalizeText(userMessage + ', cinematic motion, natural atmosphere, realistic light'), { vocalPerformance }),
+      negativePrompt: hardenVideoNegativePrompt('', { vocalPerformance }),
+      hasReferenceSubject: hasReference,
+      motionType: 'other',
+      source: 'fallback'
+    };
   }
   const referenceContextClause = hasReference ? buildReferenceVisualContextClause(referenceVisualContext) : '';
   const anchoredPrompt = referenceContextClause
     && !prompt.toLowerCase().includes(referenceContextClause.slice(0, 48).toLowerCase())
     ? normalizeText(`${prompt}. Reference identity and setting anchor to preserve/recreate: ${referenceContextClause}`)
     : prompt;
-  const negativePrompt = sanitizeVideoNegativePrompt(response?.negative_prompt || '');
+  const safePrompt = hardenVideoPromptText(anchoredPrompt, { vocalPerformance });
+  const negativePrompt = hardenVideoNegativePrompt(response?.negative_prompt || '', { vocalPerformance });
   const rawDuration = Number(response?.duration_seconds);
   const audioDurationSec = audioMotionPlan?.durationMs
     ? Math.min(10, Math.max(2, Math.round(audioMotionPlan.durationMs / 1000)))
@@ -303,8 +402,8 @@ function resolveVideoPromptResult({ response, userMessage, hasReference, referen
     ? Math.round(rawDuration) : audioDurationSec;
   const durationSeconds = (parsedDuration && parsedDuration >= 1) ? Math.min(parsedDuration, 60) : llmDuration;
   const negSuffix = negativePrompt ? ' (neg: "' + negativePrompt.slice(0, 60) + '")' : '';
-  console.log('[A11][video-prompt] "' + anchoredPrompt.slice(0, 100) + '"' + negSuffix + ' dur=' + durationSeconds + 's src=' + resolveDurSource(parsedDuration, audioMotionPlan));
-  return { prompt: anchoredPrompt, negativePrompt, durationSeconds, hasReferenceSubject: hasReference || response?.has_reference_subject === true, motionType: normalizeText(response?.motion_type || 'other'), source: groqUsed ? 'groq' : 'llm' };
+  console.log('[A11][video-prompt] "' + safePrompt.slice(0, 100) + '"' + negSuffix + ' dur=' + durationSeconds + 's src=' + resolveDurSource(parsedDuration, audioMotionPlan));
+  return { prompt: safePrompt, negativePrompt, durationSeconds, hasReferenceSubject: hasReference || response?.has_reference_subject === true, motionType: normalizeText(response?.motion_type || 'other'), source: groqUsed ? 'groq' : 'llm' };
 }
 
 function resolveParsedDuration(requestedDuration, userMessage) {
@@ -341,6 +440,7 @@ async function buildVideoPrompt({
       referenceImageUrls: normalizedReferenceImageUrls,
       referenceVideoUrls: normalizedReferenceVideoUrls,
       referenceVisualContext,
+      audioMotionPlan,
     });
     if (parsedDuration) heuristic.durationSeconds = parsedDuration;
     return heuristic;
@@ -354,6 +454,7 @@ async function buildVideoPrompt({
     reference_audio_urls: normalizedReferenceAudioUrls,
     reference_video_urls: normalizedReferenceVideoUrls,
     reference_visual_context: referenceVisualContext || null,
+    vocal_performance_requested: hasVocalPerformanceIntent(userMessage, audioMotionPlan),
     ...(parsedDuration ? { requested_duration_seconds: parsedDuration } : {}),
     audio_motion_plan: audioMotionPlan
       ? {

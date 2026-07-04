@@ -4015,6 +4015,29 @@ html.a11-auth-page-root body {
   transform: translateY(0) scale(1);
 }
 
+.vivy-nossen-provider-toggle {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px !important;
+  min-width: 0 !important;
+}
+
+.vivy-chat-compose .vivy-nossen-provider-toggle button {
+  min-height: 30px;
+  padding: 0 8px;
+  border-color: rgba(91, 217, 255, 0.22);
+  background: rgba(91, 217, 255, 0.08);
+  color: #dff8ff;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.vivy-chat-compose .vivy-nossen-provider-toggle button.is-active {
+  border-color: rgba(255, 193, 84, 0.86);
+  background: linear-gradient(135deg, rgba(255, 215, 111, 0.9), rgba(240, 121, 216, 0.76));
+  color: #160a05;
+}
+
 .vivy-nossen-flame-tongue {
   position: absolute;
   bottom: 0;
@@ -4153,6 +4176,12 @@ html.a11-auth-page-root body {
   background: linear-gradient(135deg, #f079d8, #8f3eff);
   color: #120516;
   border-color: transparent;
+}
+
+.vivy-chat-compose .vivy-clip-generator-button {
+  border-color: rgba(91, 217, 255, 0.42);
+  background: linear-gradient(135deg, rgba(91, 217, 255, 0.22), rgba(240, 121, 216, 0.16));
+  color: #e9fbff;
 }
 
 .vivy-chat-reference {
@@ -8542,6 +8571,13 @@ body {
 
 .fun-status-public-foot a {
   color: #eafffb;
+}
+
+.fun-status-public-links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
 }
 
 .fun-mcp-console {

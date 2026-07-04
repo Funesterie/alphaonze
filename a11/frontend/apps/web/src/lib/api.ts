@@ -49,6 +49,7 @@ function normalizeVideoProviderName(value = "") {
   const normalized = String(value || "").trim().toLowerCase().replace(/[\s_]+/g, "-");
   if (["grok", "grok-imagine", "xai", "x-ai"].includes(normalized)) return "xai";
   if (["hf", "hugging-face", "huggingface"].includes(normalized)) return "huggingface";
+  if (["comfy-cloud", "comfycloud", "comfy-org", "comfy-api"].includes(normalized)) return "comfy-cloud";
   if (["run-comfy", "runcomfy", "comfy", "comfyui", "comfy-ui"].includes(normalized)) return "runcomfy";
   return normalized;
 }
@@ -70,12 +71,12 @@ function resolveSessionVideoProvider(tokens: Record<string, string>, requestedPr
   if (options?.hasVisualReference) {
     if (tokens.replicate) return "replicate";
     if (tokens.huggingface || tokens.hf) return "huggingface";
-    if (tokens.runcomfy || tokens.comfy) return "runcomfy";
+    if (tokens.runcomfy || tokens.comfy) return "comfy-cloud";
     return "";
   }
   if (resolveSessionXaiToken(tokens)) return "xai";
   if (tokens.huggingface || tokens.hf) return "huggingface";
-  if (tokens.runcomfy || tokens.comfy) return "runcomfy";
+  // Comfy Cloud direct est image-to-video: sans image, laisser le backend choisir xAI/local/fallback.
   if (tokens.replicate) return "replicate";
   return "";
 }
@@ -260,7 +261,7 @@ export async function generateVideoWithPrompt(
   const mobileAsync = options.mobileAsync ?? isMobileLongTaskClient();
   const maxWaitMs = Math.max(
     60000,
-    Math.min(3600000, Math.round(Number(options.maxWaitMs || (mobileAsync ? 900000 : 600000)) || 600000))
+    Math.min(3600000, Math.round(Number(options.maxWaitMs || 2700000) || 2700000))
   );
   const pollIntervalMs = Math.max(
     1000,
@@ -298,9 +299,10 @@ export async function generateVideoWithPrompt(
   }
 
   return withMobileLongTaskGuard(maxWaitMs, async () => {
-    const res = await fetch(getApiUrl('/api/video/generate'), {
+    const res = await authFetch(getApiUrl('/api/video/generate'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...sessionVideoAuth.headers },
+      credentials: 'include',
       body: JSON.stringify(body)
     });
     let data: any = {};
@@ -323,6 +325,48 @@ export async function generateVideoWithPrompt(
       raw: data
     };
   });
+}
+
+export async function resumeLastVideoGenerationJob(
+  options: { maxWaitMs?: number } = {}
+): Promise<{ ok?: boolean; url?: string; videoUrl?: string; video_url?: string; filename?: string; prompt?: string; raw?: any } | null> {
+  let saved: any = null;
+  try {
+    const raw = globalThis.localStorage?.getItem("a11:video-job:last");
+    saved = raw ? JSON.parse(raw) : null;
+  } catch {
+    globalThis.localStorage?.removeItem("a11:video-job:last");
+    return null;
+  }
+  if (!saved) return null;
+
+  const startedAt = Number(saved.startedAt || saved.createdAt || 0);
+  if (startedAt > 0 && Date.now() - startedAt > 7_200_000) {
+    globalThis.localStorage?.removeItem("a11:video-job:last");
+    return null;
+  }
+
+  const maxWaitMs = Math.max(
+    60_000,
+    Math.min(3_600_000, Math.round(Number(options.maxWaitMs || 2_700_000) || 2_700_000))
+  );
+  try {
+    const data = await withMobileLongTaskGuard(maxWaitMs, () => resolveAsyncMediaJobPayload(saved, {
+      eventPrefix: "video-job",
+      fallbackPollUrl: "/api/video/jobs",
+      maxWaitMs,
+    }));
+    return {
+      ...data,
+      videoUrl: data?.videoUrl || data?.video_url || data?.url || data?.result?.videoUrl || data?.result?.video_url || data?.result?.url || null,
+      raw: data,
+    };
+  } catch (error: any) {
+    if (/(?:not[_ ]found|introuvable|404|expired|expir)/i.test(String(error?.message || error))) {
+      globalThis.localStorage?.removeItem("a11:video-job:last");
+    }
+    throw error;
+  }
 }
 // @ts-nocheck
 
@@ -1231,6 +1275,9 @@ export type AuthConnectorProviderState = {
   account?: string | null;
   filesAccess?: string;
   missing?: string[];
+  minimumTier?: string;
+  note?: string;
+  connectUrl?: string;
 };
 
 export type AuthConnectorsResponse = {
@@ -1241,6 +1288,9 @@ export type AuthConnectorsResponse = {
   connectors?: {
     google?: AuthConnectorProviderState;
     microsoft?: AuthConnectorProviderState;
+    youtube?: AuthConnectorProviderState;
+    meta?: AuthConnectorProviderState;
+    instagram?: AuthConnectorProviderState;
     accountFiles?: {
       configured?: boolean;
       linked?: boolean;
@@ -1250,6 +1300,8 @@ export type AuthConnectorsResponse = {
   serverConfig?: {
     google?: { configured?: boolean; missing?: string[] };
     microsoft?: { configured?: boolean; missing?: string[] };
+    youtube?: { configured?: boolean; missing?: string[] };
+    meta?: { configured?: boolean; missing?: string[] };
   };
   error?: string;
   message?: string;
@@ -3846,18 +3898,30 @@ function extractAsyncMediaJobDescriptor(
       Math.floor(Number(asyncJob?.pollIntervalMs || payload?.pollIntervalMs || 5000) || 5000)
     )
   );
-  const maxPollAttempts = Math.max(
+  const reportedMaxPollAttempts = Math.max(
     1,
-    Math.min(
-      720,
-      Math.floor(Number(asyncJob?.maxPollAttempts || payload?.maxPollAttempts || 72) || 72)
-    )
+    Math.floor(Number(asyncJob?.maxPollAttempts || payload?.maxPollAttempts || 72) || 72)
   );
+  const reportedMaxWaitMs = Math.floor(
+    Number(asyncJob?.maxWaitMs || payload?.maxWaitMs || 0) || 0
+  );
+  const requestedMaxWaitMs = Math.floor(Number(options.maxWaitMs || 0) || 0);
   const maxWaitMs = Math.max(
     pollIntervalMs,
     Math.min(
       3600000,
-      Math.floor(Number(asyncJob?.maxWaitMs || payload?.maxWaitMs || options.maxWaitMs || maxPollAttempts * pollIntervalMs) || maxPollAttempts * pollIntervalMs)
+      Math.max(
+        reportedMaxWaitMs,
+        requestedMaxWaitMs,
+        reportedMaxPollAttempts * pollIntervalMs
+      )
+    )
+  );
+  const maxPollAttempts = Math.max(
+    1,
+    Math.min(
+      720,
+      Math.max(reportedMaxPollAttempts, Math.ceil(maxWaitMs / pollIntervalMs))
     )
   );
 
@@ -3963,7 +4027,7 @@ async function resolveAsyncMediaJobPayload(
   }
 
   const timeoutMessage = `Timeout async apres ${Math.round(descriptor.maxWaitMs / 1000)}s`;
-  dispatchBrowserEvent(new CustomEvent(`a11:${eventPrefix}.failed`, {
+  dispatchBrowserEvent(new CustomEvent(`a11:${eventPrefix}.pending`, {
     detail: {
       jobId: descriptor.jobId,
       message: timeoutMessage,

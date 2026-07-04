@@ -11,6 +11,10 @@ const { verifyOAuthAccessToken } = require('../mcp-oauth/oauth-server.cjs');
 const {
   buildSemanticMediaRoulette,
 } = require('../../lib/semantic-media-roulette.cjs');
+const {
+  buildAndStoreSocialPromptContext,
+  buildSocialAutopromptRedactedStatus,
+} = require('../social/social-autoprompt.cjs');
 
 const DEFAULT_PUBLIC_MCP_UPSTREAM_URL = 'https://mcp.funesterie.me/mcp';
 const SERVER_ROOT = path.resolve(__dirname, '..', '..');
@@ -92,6 +96,26 @@ const LOCAL_TOOLS = [
     },
     annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
   },
+  {
+    name: 'a11_social_prompt_context',
+    description: 'Retourne un résumé créatif redacted issu des comptes sociaux connectés pour enrichir une chanson, un clip, un post, une description ou des hashtags.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topic: { type: 'string' },
+        kind: { type: 'string', enum: ['chanson', 'clip', 'post', 'description', 'hashtag'] },
+        limit: { type: 'number' },
+      },
+      required: ['topic'],
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+  },
+  {
+    name: 'a11_social_autoprompt_status',
+    description: 'Retourne le diagnostic redacted Social Autoprompt: YouTube, Meta/Facebook/Instagram, ingest et contexte créatif disponible, sans secret ni donnée brute.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+  },
 ];
 
 const PUBLIC_SAFE_RELAY_ALLOWLIST = new Set([
@@ -136,6 +160,15 @@ function envBool(name, fallback = false, env = process.env) {
   const raw = String(env[name] ?? '').trim().toLowerCase();
   if (!raw) return fallback;
   return ['1', 'true', 'yes', 'on'].includes(raw);
+}
+
+function resolveSocialContextUserId(env = process.env) {
+  return String(
+    env.A11_SOCIAL_CONTEXT_USER_ID
+    || env.SOCIAL_CONTEXT_USER_ID
+    || env.VIVY_STREAM_SOCIAL_CONTEXT_USER_ID
+    || ''
+  ).trim();
 }
 
 function envInt(name, fallback, min, max, env = process.env) {
@@ -321,6 +354,8 @@ function inferPublicMcpAnnotations(name = '') {
     'a11_mcp_relay_status',
     'a11_runtime_hooks_status',
     'a11_media_roulette',
+    'a11_social_prompt_context',
+    'a11_social_autoprompt_status',
     'a11_status',
     'kaen44_status',
     'qflush_status',
@@ -625,6 +660,67 @@ async function callLocalTool(req, toolName, args = {}) {
     };
   }
 
+  if (toolName === 'a11_social_prompt_context') {
+    const auth = req.publicMcpAuth || {};
+    const allowAnonymous = envBool('A11_SOCIAL_MCP_ALLOW_ANONYMOUS', false);
+    if ((auth.mode || 'anonymous') === 'anonymous' && !allowAnonymous) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            ok: false,
+            authRequired: true,
+            error: 'social_context_requires_mcp_auth',
+          }, null, 2),
+        }],
+        isError: true,
+      };
+    }
+    const db = req.publicMcpContext?.db;
+    if (!db || typeof db.query !== 'function') {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({ ok: false, error: 'social_context_db_missing' }, null, 2),
+        }],
+        isError: true,
+      };
+    }
+    const safeArgs = args && typeof args === 'object' ? args : {};
+    const context = await buildAndStoreSocialPromptContext(db, {
+      userId: resolveSocialContextUserId(process.env),
+      topic: String(safeArgs.topic || '').trim().slice(0, 240),
+      kind: String(safeArgs.kind || 'chanson').trim().slice(0, 40),
+      limit: Math.max(1, Math.min(12, Number(safeArgs.limit || 6) || 6)),
+    });
+    const redacted = {
+      topic: context.topic || String(safeArgs.topic || '').trim().slice(0, 240),
+      dominantTone: context.dominantTone || '',
+      strongPhrases: Array.isArray(context.strongPhrases) ? context.strongPhrases.slice(0, 8) : [],
+      creativeAngles: Array.isArray(context.creativeAngles) ? context.creativeAngles.slice(0, 8) : [],
+      clipIdeas: Array.isArray(context.clipIdeas) ? context.clipIdeas.slice(0, 8) : [],
+      songPromptSeeds: Array.isArray(context.songPromptSeeds) ? context.songPromptSeeds.slice(0, 8) : [],
+      hashtags: Array.isArray(context.hashtags) ? context.hashtags.slice(0, 12) : [],
+      avoid: Array.isArray(context.avoid) ? context.avoid.slice(0, 8) : [],
+    };
+    return {
+      content: [{ type: 'text', text: JSON.stringify(redacted, null, 2) }],
+    };
+  }
+
+  if (toolName === 'a11_social_autoprompt_status') {
+    const db = req.publicMcpContext?.db;
+    const status = await buildSocialAutopromptRedactedStatus(db, {
+      userId: resolveSocialContextUserId(process.env),
+      env: process.env,
+      req,
+    });
+    return {
+      content: [{ type: 'text', text: JSON.stringify(status, null, 2) }],
+      isError: status.ok === false,
+    };
+  }
+
   return null;
 }
 
@@ -718,8 +814,13 @@ async function handleJsonRpc(req, res) {
   }
 }
 
-function createPublicMcpRouter() {
+function createPublicMcpRouter(options = {}) {
   const router = express.Router();
+
+  router.use((req, _res, next) => {
+    req.publicMcpContext = options;
+    next();
+  });
 
   router.get('/.well-known/mcp', (req, res) => {
     res.json(buildManifest(req));

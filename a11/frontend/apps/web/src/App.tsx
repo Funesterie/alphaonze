@@ -42,6 +42,8 @@ import {
   createCheckoutSession,
   createCustomerPortal,
   cancelSubscription,
+  generateVideoWithPrompt,
+  resumeLastVideoGenerationJob,
   createMatchArenaSession,
   emailConversationResource,
   clearAuthToken,
@@ -2924,6 +2926,7 @@ type VivyMultiVoicePreviewOptions = {
 
 const VIVY_STUDIO_DRAFT_KEY = "vivy:studio:draft:v2";
 const VIVY_STUDIO_SUNO_SESSION_KEY = "vivy:suno:session-key";
+const VIVY_NOSSEN_MUSIC_PROVIDER_KEY = "vivy:nossen:music-provider";
 const VIVY_PUBLIC_CHAT_KEY = "vivy:public-chat:v2";
 const VIVY_PUBLIC_CONVERSATION_ID_KEY = "vivy:conversation-id";
 const VIVY_PUBLIC_VOICE_REFERENCE_KEY = "vivy:voice-reference";
@@ -2953,6 +2956,49 @@ type VivyPublicChatMessage = {
   media?: VivyStudioMediaPreview | null;
 };
 type VivyPublicChatMode = "chat" | VivyStudioProductionMode;
+type VivyNossenMusicProvider = "suno" | "mureka";
+const VIVY_NOSSEN_MUSIC_PROVIDER_OPTIONS: Array<{
+  id: VivyNossenMusicProvider;
+  label: string;
+  title: string;
+}> = [
+  {
+    id: "suno",
+    label: "Suno",
+    title: "Composer avec Suno, extensions possibles si le morceau est trop court.",
+  },
+  {
+    id: "mureka",
+    label: "Mureka",
+    title: "Composer avec Mureka, utile pour tester une autre couleur sonore.",
+  },
+];
+
+function normalizeVivyNossenMusicProvider(value: unknown): VivyNossenMusicProvider {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "mureka" ? "mureka" : "suno";
+}
+
+function readVivyNossenMusicProvider(): VivyNossenMusicProvider {
+  try {
+    return normalizeVivyNossenMusicProvider(globalThis.localStorage?.getItem(VIVY_NOSSEN_MUSIC_PROVIDER_KEY));
+  } catch {
+    return "suno";
+  }
+}
+
+function writeVivyNossenMusicProvider(value: VivyNossenMusicProvider) {
+  try {
+    globalThis.localStorage?.setItem(VIVY_NOSSEN_MUSIC_PROVIDER_KEY, normalizeVivyNossenMusicProvider(value));
+  } catch {
+    // Storage is optional for the public page.
+  }
+}
+
+function getVivyNossenMusicProviderLabel(provider: VivyNossenMusicProvider) {
+  return provider === "mureka" ? "Mureka" : "Suno";
+}
+
 type VivyNossenBangerReadiness = {
   ready: boolean;
   score: number;
@@ -7241,14 +7287,43 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   );
 }
 
+function normalizeVivyClipGenerationResult(result: any): VivyStudioMediaPreview | null {
+  const raw = result?.raw || result || {};
+  const rawVideoUrl = String(
+    result?.videoUrl
+    || result?.video_url
+    || result?.url
+    || raw?.videoUrl
+    || raw?.video_url
+    || raw?.url
+    || raw?.result?.videoUrl
+    || raw?.result?.video_url
+    || raw?.result?.url
+    || ""
+  ).trim();
+  const videoUrl = resolveApiAssetUrl(rawVideoUrl) || rawVideoUrl;
+  if (!videoUrl) return null;
+  return {
+    kind: "video",
+    url: videoUrl,
+    downloadUrl: videoUrl,
+    provider: String(raw?.provider || raw?.providerUsed || raw?.provider_used || "a11-video").trim(),
+    contentType: String(raw?.contentType || raw?.content_type || "video/mp4").trim(),
+    filename: String(raw?.filename || raw?.result?.filename || "vivy-clip.mp4").trim(),
+    taskId: String(raw?.jobId || raw?.taskId || raw?.id || raw?.result?.jobId || "").trim() || undefined,
+  };
+}
+
 function VivyPublicChat({ hasSession }: VivySessionProps) {
   const [messages, setMessages] = useState<VivyPublicChatMessage[]>(() => hasSession ? readVivyPublicChat() : [buildVivyLockedMessage()]);
   const [conversationId, setConversationId] = useState(() => readOrCreateVivyConversationId("default"));
   const [draft, setDraft] = useState("");
   const [attachedFiles, setAttachedFiles] = useState<VivyPublicChatFile[]>([]);
   const [isSending, setIsSending] = useState(false);
+  const [isVideoGenerating, setIsVideoGenerating] = useState(false);
   const [status, setStatus] = useState("");
   const [voiceReferenceName, setVoiceReferenceName] = useState(() => readVivyVoiceReferenceLabel());
+  const [nossenMusicProvider, setNossenMusicProvider] = useState<VivyNossenMusicProvider>(() => readVivyNossenMusicProvider());
   const [awaitingVoiceReference, setAwaitingVoiceReference] = useState(false);
   const chatRootRef = useRef<HTMLElement | null>(null);
   const composeRef = useRef<HTMLFormElement | null>(null);
@@ -7257,15 +7332,21 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   const voiceReferenceInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activeChatSessionRef = useRef("default");
+  const videoResumeAttemptRef = useRef(false);
   const [copiedMsgId, setCopiedMsgId] = useState("");
   const [chatSessions, setChatSessions] = useState<VivyChatSessionMeta[]>(() => hasSession ? listVivyChatSessions() : []);
   const [activeChatSessionId, setActiveChatSessionId] = useState("default");
   const compositionWorkspace = readVivyStudioCompositionWorkspace();
+  const nossenMusicProviderLabel = getVivyNossenMusicProviderLabel(nossenMusicProvider);
   const nossenBangerReadiness = useMemo(
     () => buildVivyNossenBangerReadiness(messages, draft, attachedFiles, compositionWorkspace.canvas),
     [messages, draft, attachedFiles, compositionWorkspace.canvas]
   );
-  const nossenBangerCanLaunch = hasSession && !isSending;
+  const nossenBangerCanLaunch = hasSession && !isSending && !isVideoGenerating;
+  const vivyClipCanLaunch = hasSession
+    && !isSending
+    && !isVideoGenerating
+    && Boolean(draft.trim() || attachedFiles.length || compositionWorkspace.canvas || compositionWorkspace.notes);
 
   function getActiveSessionName(id = activeChatSessionId) {
     if (id === "default") return "Session principale";
@@ -7278,6 +7359,13 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     try {
       globalThis.localStorage?.setItem(getVivyConversationStorageKey(sessionId), safeConversationId);
     } catch { }
+  }
+
+  function selectNossenMusicProvider(provider: VivyNossenMusicProvider) {
+    const safeProvider = normalizeVivyNossenMusicProvider(provider);
+    setNossenMusicProvider(safeProvider);
+    writeVivyNossenMusicProvider(safeProvider);
+    setStatus(`NOSSEN utilisera ${getVivyNossenMusicProviderLabel(safeProvider)} pour la prochaine génération.`);
   }
 
   function applyRemoteVivySession(session: VivyChatSessionRecord, options: { replaceOnlyPlaceholder?: boolean } = {}) {
@@ -7408,6 +7496,66 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   }, [hasSession]);
 
   useEffect(() => {
+    if (!hasSession || videoResumeAttemptRef.current) return;
+    videoResumeAttemptRef.current = true;
+    let cancelled = false;
+
+    const resumePendingClip = async () => {
+      try {
+        const hasSavedJob = Boolean(globalThis.localStorage?.getItem("a11:video-job:last"));
+        if (!hasSavedJob || cancelled) return;
+        setIsVideoGenerating(true);
+        setStatus("Vivy reprend le suivi du clip en arrière-plan...");
+        const result = await resumeLastVideoGenerationJob({ maxWaitMs: 2_700_000 });
+        if (!result || cancelled) return;
+        const media = normalizeVivyClipGenerationResult(result);
+        if (!media) throw new Error("video_url_missing");
+        const resumedMessage: VivyPublicChatMessage = {
+          id: `vivy-clip-resumed-${Date.now()}`,
+          role: "assistant",
+          content: "Clip vidéo terminé et récupéré après l’attente.",
+          ts: new Date().toISOString(),
+          media,
+        };
+        let shouldPersist = true;
+        setMessages((current) => {
+          if (current.some((entry) => entry.media?.kind === "video" && entry.media?.url === media.url)) {
+            shouldPersist = false;
+            return current;
+          }
+          return [...current, resumedMessage].slice(-36);
+        });
+        if (shouldPersist) {
+          void appendVivyChatSessionMessageOnServer({
+            id: resumedMessage.id,
+            sessionId: activeChatSessionRef.current,
+            sessionName: getActiveSessionName(activeChatSessionRef.current),
+            conversationId,
+            role: "assistant",
+            content: resumedMessage.content,
+            media,
+            mode: "share",
+          }).catch(() => {});
+        }
+        setStatus("Clip Vivy récupéré.");
+      } catch (error: any) {
+        if (cancelled) return;
+        const message = String(error?.message || error);
+        setStatus(/Timeout async/i.test(message)
+          ? "Le clip travaille encore. Vivy reprendra son suivi à la prochaine ouverture."
+          : `Reprise du clip impossible: ${message}`);
+      } finally {
+        if (!cancelled) setIsVideoGenerating(false);
+      }
+    };
+
+    void resumePendingClip();
+    return () => {
+      cancelled = true;
+    };
+  }, [hasSession]);
+
+  useEffect(() => {
     if (activeChatSessionId === "default") { writeVivyPublicChat(messages); } else { writeVivyChatSession(activeChatSessionId, messages); }
   }, [messages, activeChatSessionId]);
 
@@ -7416,6 +7564,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       setMessages([buildVivyLockedMessage()]);
       setAttachedFiles([]);
       setIsSending(false);
+      setIsVideoGenerating(false);
       setAwaitingVoiceReference(false);
       return;
     }
@@ -7430,7 +7579,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length, isSending]);
+  }, [messages.length, isSending, isVideoGenerating]);
 
   useEffect(() => {
     const root = chatRootRef.current;
@@ -7658,6 +7807,135 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     }
   }
 
+  function resolveVivyClipReferenceImageUrls(files: VivyPublicChatFile[] = attachedFiles) {
+    return Array.from(new Set(
+      files
+        .filter((file) => isVivyImageFile(file))
+        .map((file) => resolveApiAssetUrl(file.url || file.downloadUrl || "") || file.url || file.downloadUrl || "")
+        .map((url) => String(url || "").trim())
+        .filter(Boolean)
+    )).slice(0, 4);
+  }
+
+  function buildVivyClipGeneratorPrompt(options: {
+    idea: string;
+    notes: string;
+    referenceImageUrls: string[];
+    files: VivyPublicChatFile[];
+  }) {
+    const visualHints = options.files
+      .map((file) => toUnicodeText(file.visualDescription || file.analysisSummary || file.description, 420).trim())
+      .filter(Boolean)
+      .slice(0, 3);
+    const idea = toUnicodeText(options.idea, 2400).trim() || "clip musical Vivy Funesterie";
+    const notes = toUnicodeText(options.notes, 900).trim();
+    return [
+      "Clip vidéo musical Funesterie, 8 secondes, format 16:9, plan lisible plein cadre.",
+      options.referenceImageUrls.length
+        ? "Utilise l'image de référence comme identité visuelle: préserver visage, silhouette, tenue, coiffure, palette et ambiance."
+        : "Crée une identité visuelle originale cohérente avec le thème, sans remplacer Vivy par défaut si elle est mentionnée.",
+      "Performance caméra de clip: mouvement fluide, micro ou scène si pertinent, bouche articulée si personnage chante, regard vivant.",
+      "Interdits visuels: aucun texte incrusté, aucune fausse lettre, aucun logo inventé, aucun filigrane, aucune grille 2x2 ou 3x3, aucun split-screen.",
+      "Garder un seul plan principal ou un montage doux, pas de découpage en cases.",
+      notes ? `Couleur sonore/visuelle: ${notes}` : "",
+      visualHints.length ? `Indices images jointes: ${visualHints.join(" | ")}` : "",
+      `Sujet du clip: ${idea}`,
+    ].filter(Boolean).join("\n");
+  }
+
+  async function launchVivyVideoClip() {
+    if (!hasSession) {
+      setMessages([buildVivyLockedMessage()]);
+      setStatus("Connecte-toi à Funesterie avant de générer un clip.");
+      return;
+    }
+    if (isSending || isVideoGenerating) return;
+    const workspace = readVivyStudioCompositionWorkspace();
+    const idea = toUnicodeText([draft.trim(), workspace.canvas].filter(Boolean).join("\n\n"), 3200).trim();
+    const filesForMessage = attachedFiles.slice(0, 6);
+    const referenceImageUrls = resolveVivyClipReferenceImageUrls(filesForMessage);
+    if (!idea && !filesForMessage.length) {
+      setStatus("Ajoute un thème, un canevas ou une image avant de lancer le clip.");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const userMessage: VivyPublicChatMessage = {
+      id: `vivy-clip-user-${Date.now()}`,
+      role: "user",
+      content: idea
+        ? `Générer un clip vidéo: ${toUnicodeText(idea, 900)}`
+        : "Générer un clip vidéo depuis l'image de référence jointe.",
+      ts: now,
+      files: filesForMessage.length ? filesForMessage : undefined,
+    };
+    const nextMessages = [...messages, userMessage].slice(-36);
+    setMessages(nextMessages);
+    setDraft("");
+    setAttachedFiles([]);
+    setIsVideoGenerating(true);
+    setStatus(referenceImageUrls.length ? "Clip Vivy: génération avec image référence..." : "Clip Vivy: génération sans image référence...");
+
+    try {
+      const prompt = buildVivyClipGeneratorPrompt({
+        idea: idea || userMessage.content,
+        notes: workspace.notes,
+        referenceImageUrls,
+        files: filesForMessage,
+      });
+      const result = await generateVideoWithPrompt(prompt, {
+        sourceImageUrl: referenceImageUrls[0] || undefined,
+        referenceImageUrls,
+        referenceVisualContext: referenceImageUrls.length
+          ? "Référence utilisateur prioritaire: garder l'identité de l'image et éviter toute mutation de visage."
+          : "Clip Vivy sans image ref: identité originale cohérente, aucun texte visible.",
+        videoProvider: referenceImageUrls.length ? "comfy-cloud" : undefined,
+        durationSeconds: 8,
+        fps: 16,
+        acceptAsyncVideoJob: true,
+        mobileAsync: true,
+        maxWaitMs: 2_700_000,
+      });
+      const media = normalizeVivyClipGenerationResult(result);
+      if (!media) throw new Error("video_url_missing");
+      const assistantMessage: VivyPublicChatMessage = {
+        id: `vivy-clip-assistant-${Date.now()}`,
+        role: "assistant",
+        content: referenceImageUrls.length
+          ? "Clip vidéo prêt avec image référence."
+          : "Clip vidéo prêt.",
+        ts: new Date().toISOString(),
+        media,
+      };
+      setMessages((current) => [...current, assistantMessage].slice(-36));
+      void appendVivyChatSessionMessageOnServer({
+        id: assistantMessage.id,
+        sessionId: activeChatSessionId,
+        sessionName: getActiveSessionName(activeChatSessionId),
+        conversationId,
+        role: "assistant",
+        content: assistantMessage.content,
+        media,
+        mode: "share",
+      }).catch(() => {});
+      setStatus("Clip Vivy prêt.");
+    } catch (error: any) {
+      const timeoutPending = /Timeout async/i.test(String(error?.message || error));
+      const assistantMessage: VivyPublicChatMessage = {
+        id: `vivy-clip-error-${Date.now()}`,
+        role: "assistant",
+        content: timeoutPending
+          ? "Le clip vidéo travaille encore en arrière-plan. Vivy reprendra automatiquement son suivi à la prochaine ouverture."
+          : `Clip vidéo stoppé: ${error?.message || error}`,
+        ts: new Date().toISOString(),
+      };
+      setMessages((current) => [...current, assistantMessage].slice(-36));
+      setStatus(timeoutPending ? "Clip Vivy toujours en cours." : "Clip Vivy à relancer.");
+    } finally {
+      setIsVideoGenerating(false);
+    }
+  }
+
   function useDefaultVivyChatVoice() {
     writeVivyVoiceReferenceLabel("");
     setVoiceReferenceName("");
@@ -7709,6 +7987,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     };
     const useBangerWord = wantsVivyNossenBangerWord(launchReadiness.source);
     const productionLabel = useBangerWord ? "NOSSEN Banger" : "NOSSEN";
+    const selectedMusicProvider = normalizeVivyNossenMusicProvider(nossenMusicProvider);
+    const selectedMusicProviderLabel = getVivyNossenMusicProviderLabel(selectedMusicProvider);
     const apiFiles = filesForMessage.map((file) => ({
       id: file.id,
       filename: file.filename,
@@ -7826,8 +8106,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         styleHints: routedMood ? [routedMood] : routedReadiness.styleHints,
       }, artists);
       const songMood = requestedSonicMood || undefined;
-      setStatus(`${productionLabel}: paroles prêtes, Suno démarre...`);
-      const waitForNossenSunoJob = async (safeTaskId: string, label = "Suno") => {
+      setStatus(`${productionLabel}: paroles prêtes, ${selectedMusicProviderLabel} démarre...`);
+      const waitForNossenMusicJob = async (safeTaskId: string, label = selectedMusicProviderLabel) => {
         const pause = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
         let lastJob: any = null;
         for (let attempt = 1; attempt <= 60; attempt += 1) {
@@ -7850,7 +8130,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           if (media) return job;
           const state = String(job?.mediaStatus?.state || job?.musicJob?.state || (job as any)?.state || "").toLowerCase();
           if (state === "error" || state === "failed") {
-            throw new Error(job?.mediaStatus?.message || job?.message || "generation_suno_echouee");
+            throw new Error(job?.mediaStatus?.message || job?.message || `generation_${selectedMusicProvider}_echouee`);
           }
           setStatus(`${productionLabel} attend ${label}... ${attempt}/60`);
         }
@@ -7888,8 +8168,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         forceExternalVoiceMix: false,
         previewInstrumental: false,
         disableEmergencyMedia: true,
-        musicProvider: "suno",
-        musicModel: VIVY_NOSSEN_SUNO_LONG_MODEL,
+        musicProvider: selectedMusicProvider,
+        musicModel: selectedMusicProvider === "mureka" ? "mureka-9" : VIVY_NOSSEN_SUNO_LONG_MODEL,
         longSong: true,
         targetDurationSeconds: VIVY_NOSSEN_SUNO_TARGET_SECONDS,
       });
@@ -7898,7 +8178,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       let preparedMedia = getVivyProductionMediaPreview(finalPayload);
       const taskId = String(payload?.mediaStatus?.taskId || payload?.musicJob?.taskId || payload?.media?.taskId || "").trim();
       if (!preparedMedia && taskId) {
-        finalPayload = await waitForNossenSunoJob(taskId, "Suno");
+        finalPayload = await waitForNossenMusicJob(taskId, selectedMusicProviderLabel);
         preparedMedia = getVivyProductionMediaPreview(finalPayload);
       }
       if (!preparedMedia) {
@@ -7908,7 +8188,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       let sunoExtended = false;
       if (preparedMedia.kind === "audio") {
         let durationSeconds = await probeVivyProductionAudioDurationSeconds(finalPayload, preparedMedia);
-        for (let extensionIndex = 1; extensionIndex <= VIVY_NOSSEN_SUNO_MAX_EXTENSIONS; extensionIndex += 1) {
+        for (let extensionIndex = 1; selectedMusicProvider === "suno" && extensionIndex <= VIVY_NOSSEN_SUNO_MAX_EXTENSIONS; extensionIndex += 1) {
           const sunoAudioId = getVivyProductionSunoAudioId(finalPayload, preparedMedia);
           if (!(durationSeconds > 0 && durationSeconds < VIVY_NOSSEN_SUNO_TARGET_SECONDS && sunoAudioId)) break;
           try {
@@ -7941,7 +8221,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
               || ""
             ).trim();
             if (!extendedMedia && extensionTaskId) {
-              extendedPayload = await waitForNossenSunoJob(extensionTaskId, "l'extension Suno");
+              extendedPayload = await waitForNossenMusicJob(extensionTaskId, "l'extension Suno");
               extendedMedia = getVivyProductionMediaPreview(extendedPayload, preparedMedia.filename || "vivy-nossen-extended.mp3");
             }
             if (extendedMedia?.url) {
@@ -7970,10 +8250,10 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         }
         const finalDurationSeconds = await probeVivyProductionAudioDurationSeconds(finalPayload, preparedMedia);
         if (!(finalDurationSeconds > 0)) {
-          throw new Error("generation_suno_duree_inconnue");
+          throw new Error(`generation_${selectedMusicProvider}_duree_inconnue`);
         }
         if (finalDurationSeconds < VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS) {
-          throw new Error(`generation_suno_trop_courte_${Math.round(finalDurationSeconds)}s`);
+          throw new Error(`generation_${selectedMusicProvider}_trop_courte_${Math.round(finalDurationSeconds)}s`);
         }
       }
 
@@ -8050,10 +8330,10 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       setStatus(d40Applied ? `${productionLabel} prêt avec mix final.` : `${productionLabel} prêt.`);
     } catch (error: any) {
       const rawErrorMessage = String(error?.message || error || "").trim();
-      const shortSunoMatch = rawErrorMessage.match(/^generation_suno_trop_courte_(\d+)s$/);
+      const shortSunoMatch = rawErrorMessage.match(/^generation_(suno|mureka)_trop_courte_(\d+)s$/);
       const publicErrorMessage = shortSunoMatch
-        ? `Suno a rendu ${shortSunoMatch[1]}s après les essais d'extension; je refuse de sortir un mix final NOSSEN trop court.`
-        : rawErrorMessage === "generation_suno_duree_inconnue"
+        ? `${getVivyNossenMusicProviderLabel(normalizeVivyNossenMusicProvider(shortSunoMatch[1]))} a rendu ${shortSunoMatch[2]}s${shortSunoMatch[1] === "suno" ? " après les essais d'extension" : ""}; je refuse de sortir un mix final NOSSEN trop court.`
+        : rawErrorMessage === "generation_suno_duree_inconnue" || rawErrorMessage === "generation_mureka_duree_inconnue"
           ? "La durée réelle du morceau est inconnue; je refuse de livrer un mix sans pouvoir vérifier sa longueur."
           : rawErrorMessage === "paroles_vivy_hors_theme"
             ? "Les paroles ont perdu le sujet original après deux écritures; aucun crédit Suno n'a été dépensé."
@@ -8291,12 +8571,12 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
                     event.preventDefault();
                     void downloadVivyChatMediaFile(
                       message.media?.downloadUrl || message.media?.url,
-                      message.media?.filename || "vivy-musique.mp3"
+                      message.media?.filename || (message.media?.kind === "video" ? "vivy-clip.mp4" : "vivy-musique.mp3")
                     );
                   }}
                   download={message.media.filename || undefined}
                 >
-                  Télécharger la musique
+                  {message.media.kind === "video" ? "Télécharger la vidéo" : "Télécharger la musique"}
                 </a>
               </div>
             ) : null}
@@ -8321,6 +8601,12 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
             <p>Je compose la réponse...</p>
           </article>
         )}
+        {isVideoGenerating && (
+          <article className="vivy-chat-message vivy-chat-message--assistant">
+            <span>Vivy</span>
+            <p>Je prépare le clip...</p>
+          </article>
+        )}
         <div ref={endRef} aria-hidden="true" />
       </div>
 
@@ -8341,8 +8627,17 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           <button type="button" disabled={!hasSession} onClick={() => sendModeFromComposer("share")}>Scène</button>
           <button
             type="button"
+            className="vivy-clip-generator-button"
+            disabled={!vivyClipCanLaunch}
+            onClick={() => void launchVivyVideoClip()}
+            title="Ajoute une image avec Fichier pour verrouiller l'identité visuelle du clip."
+          >
+            Clip
+          </button>
+          <button
+            type="button"
             className={`vivy-nossen-banger-button${nossenBangerCanLaunch ? " is-ready" : ""}${isSending ? " is-running" : ""}`}
-            disabled={!hasSession || isSending}
+            disabled={!hasSession || isSending || isVideoGenerating}
             onClick={() => void launchNossenBanger()}
             aria-label="NOSSEN Banger"
             aria-pressed={nossenBangerCanLaunch}
@@ -8355,8 +8650,23 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
             </span>
             <span className="vivy-nossen-button-label">NOSSEN</span>
           </button>
-          <button type="button" disabled={!hasSession} onClick={() => fileInputRef.current?.click()}>Fichier</button>
-          <button type="submit" disabled={!hasSession || isSending || (!draft.trim() && !attachedFiles.length)}>Envoyer</button>
+          <div className="vivy-nossen-provider-toggle" role="group" aria-label="Fournisseur musique NOSSEN">
+            {VIVY_NOSSEN_MUSIC_PROVIDER_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                className={nossenMusicProvider === option.id ? "is-active" : ""}
+                disabled={!hasSession || isSending || isVideoGenerating}
+                onClick={() => selectNossenMusicProvider(option.id)}
+                title={option.title}
+                aria-pressed={nossenMusicProvider === option.id}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <button type="button" disabled={!hasSession || isVideoGenerating} onClick={() => fileInputRef.current?.click()}>Fichier</button>
+          <button type="submit" disabled={!hasSession || isSending || isVideoGenerating || (!draft.trim() && !attachedFiles.length)}>Envoyer</button>
         </div>
       </form>
       {attachedFiles.length ? (
@@ -8376,7 +8686,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         </div>
       ) : null}
       <div className={`vivy-chat-reference ${awaitingVoiceReference ? "is-needed" : ""}`}>
-        <span>{`Voix: ${voiceReferenceName || "Vivy par défaut"}`}</span>
+        <span>{`Voix: ${voiceReferenceName || "Vivy par défaut"} · NOSSEN: ${nossenMusicProviderLabel}`}</span>
         <div>
           <button type="button" disabled={!hasSession} onClick={useDefaultVivyChatVoice}>
             Défaut
@@ -9522,7 +9832,10 @@ function FunesteriePublicStatusPage({
         </div>
         <footer className="fun-status-public-foot">
           <span>{checkedAt ? `Dernier contrôle ${checkedAt}` : "Contrôle initial"}</span>
-          <a href={surfaceLinks.account}>Compte</a>
+          <div className="fun-status-public-links">
+            <a href={surfaceLinks.account}>Compte</a>
+            <a href="/admin/social-connect">Social Autoprompt</a>
+          </div>
         </footer>
       </section>
       <FunesterieMcpAdminPanel surfaceLinks={surfaceLinks} authenticated={authenticated} displayName={displayName} />
@@ -9536,7 +9849,7 @@ function FunesteriePublicStatusPage({
   );
 }
 
-type ConnectorProvider = "google" | "microsoft";
+type ConnectorProvider = "google" | "microsoft" | "youtube" | "meta" | "instagram";
 
 function readConnectorProvider(
   connectors: AuthConnectorsResponse | null,
@@ -10161,9 +10474,32 @@ function FunesterieIntegrationPanel({
   authenticated: boolean;
   displayName: string;
 }) {
-  const [busy, setBusy] = useState<"" | "google" | "microsoft">("");
+  const [busy, setBusy] = useState<"" | "google" | "microsoft" | "youtube" | "meta">("");
+  const [connectors, setConnectors] = useState<AuthConnectorsResponse | null>(null);
   const accountReturnTo = surfaceLinks.account || "/compte/";
   const accountLabel = String(displayName || "Compte connecté").trim();
+  const googleState = readConnectorProvider(connectors, "google");
+  const microsoftState = readConnectorProvider(connectors, "microsoft");
+  const youtubeState = readConnectorProvider(connectors, "youtube");
+  const metaState = readConnectorProvider(connectors, "meta");
+
+  useEffect(() => {
+    if (!authenticated) {
+      setConnectors(null);
+      return;
+    }
+    let cancelled = false;
+    fetchAuthConnectors()
+      .then((next) => {
+        if (!cancelled) setConnectors(next);
+      })
+      .catch(() => {
+        if (!cancelled) setConnectors(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated]);
 
   function connectGoogle() {
     setBusy("google");
@@ -10173,6 +10509,13 @@ function FunesterieIntegrationPanel({
   function connectMicrosoft() {
     setBusy("microsoft");
     startMicrosoftOAuth(buildAuthSuccessReturnToForTarget(accountReturnTo), "funesterie-account", { scopeProfile: "drive" });
+  }
+
+  function openSocialConnect(provider: "youtube" | "meta") {
+    setBusy(provider);
+    const target = new URL("/admin/social-connect", window.location.origin);
+    target.searchParams.set("provider", provider);
+    window.location.assign(target.toString());
   }
 
   if (!authenticated) {
@@ -10213,28 +10556,54 @@ function FunesterieIntegrationPanel({
       </header>
 
       <div className="fun-integration-grid">
-        <article className="fun-token-card">
+        <article className={connectorCardClass(googleState)}>
           <header>
             <h3>Google</h3>
-            <span>OAuth</span>
+            <span>{connectorBadge(googleState, "OAuth")}</span>
           </header>
-          <p>Compte, Drive, fichiers et validations Google rattachés à ta session.</p>
+          <p>{connectorDescription(googleState, "Google lié à", "Compte, Drive, fichiers et validations Google rattachés à ta session.")}</p>
           <footer>
-            <button type="button" onClick={connectGoogle} disabled={busy === "google"}>
-              {busy === "google" ? "Connexion..." : "Connecter Google"}
+            <button type="button" onClick={connectGoogle} disabled={busy === "google" || googleState.configured === false}>
+              {connectorActionLabel(googleState, busy === "google", "Google")}
             </button>
           </footer>
         </article>
 
-        <article className="fun-token-card">
+        <article className={connectorCardClass(microsoftState)}>
           <header>
             <h3>Microsoft</h3>
-            <span>OAuth</span>
+            <span>{connectorBadge(microsoftState, "OAuth")}</span>
           </header>
-          <p>Compte Microsoft, OneDrive et outils de travail liés au profil connecté.</p>
+          <p>{connectorDescription(microsoftState, "Microsoft lié à", "Compte Microsoft, OneDrive et outils de travail liés au profil connecté.")}</p>
           <footer>
-            <button type="button" onClick={connectMicrosoft} disabled={busy === "microsoft"}>
-              {busy === "microsoft" ? "Connexion..." : "Connecter Microsoft"}
+            <button type="button" onClick={connectMicrosoft} disabled={busy === "microsoft" || microsoftState.configured === false}>
+              {connectorActionLabel(microsoftState, busy === "microsoft", "Microsoft")}
+            </button>
+          </footer>
+        </article>
+
+        <article className={connectorCardClass(youtubeState)}>
+          <header>
+            <h3>YouTube</h3>
+            <span>{connectorBadge(youtubeState, "Social")}</span>
+          </header>
+          <p>{youtubeState.configured === false ? "Configuration serveur incomplète pour YouTube Social." : "Contexte vidéos, titres, descriptions et commentaires pour nourrir Vivy."}</p>
+          <footer>
+            <button type="button" onClick={() => openSocialConnect("youtube")} disabled={busy === "youtube" || youtubeState.configured === false}>
+              {busy === "youtube" ? "Ouverture..." : "Connecter YouTube"}
+            </button>
+          </footer>
+        </article>
+
+        <article className={connectorCardClass(metaState)}>
+          <header>
+            <h3>Facebook / Instagram</h3>
+            <span>{connectorBadge(metaState, "Social")}</span>
+          </header>
+          <p>{metaState.configured === false ? "Configuration serveur incomplète pour Meta." : "Posts, pages et contexte Instagram/Facebook autorisé pour les prompts Vivy."}</p>
+          <footer>
+            <button type="button" onClick={() => openSocialConnect("meta")} disabled={busy === "meta" || metaState.configured === false}>
+              {busy === "meta" ? "Ouverture..." : "Connecter Meta"}
             </button>
           </footer>
         </article>

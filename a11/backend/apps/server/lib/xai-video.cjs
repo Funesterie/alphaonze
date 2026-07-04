@@ -85,6 +85,34 @@ function normalizePrompt(value = '') {
   return prompt.length > 1000 ? prompt.slice(0, 997).trimEnd() + '...' : prompt;
 }
 
+function hasVocalPerformanceIntent(request = {}, prompt = '') {
+  const text = String([
+    prompt,
+    request.userMessage,
+    request.message,
+    request.title,
+    request.audioMotionPlan ? JSON.stringify(request.audioMotionPlan).slice(0, 4000) : '',
+  ].join(' '))
+    .replace(/\s+/g, ' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  return request.vocalPerformance === true
+    || request.vocal_performance === true
+    || /\b(?:song|singer|singing|lyrics|lyric|vocal|vocals|voice|mouth|lip|lips|microphone|mic|chorus|refrain|verse|couplet|clip musical|music video|chanson|chant|chante|chanter|paroles|voix|micro|concert)\b/.test(text);
+}
+
+function hardenXaiVideoPrompt(prompt = '', request = {}) {
+  const vocalPerformance = hasVocalPerformanceIntent(request, prompt);
+  const additions = [
+    'No readable text, no fake letters, no subtitles, no captions, no logos, no watermarks; all screens, signs, labels and clothing prints stay blank or abstract.',
+    vocalPerformance
+      ? 'Visible vocal performance: the lead performer sings on camera with natural mouth articulation, lips opening and closing, expressive phrasing, microphone never hiding the mouth; avoid closed mouth or frozen lips.'
+      : '',
+  ].filter(Boolean);
+  return normalizePrompt([prompt, ...additions].filter(Boolean).join('. ').replace(/\.{2,}/g, '.'));
+}
+
 function resolveReferenceImageUrl(request = {}) {
   return firstNonEmptyString(
     request.sourceImageUrl,
@@ -99,18 +127,15 @@ function resolveReferenceImageUrl(request = {}) {
 }
 
 function buildXaiVideoPayload(config, request = {}) {
-  const prompt = normalizePrompt(request.prompt || request.message || '');
+  const prompt = hardenXaiVideoPrompt(request.prompt || request.message || '', request);
   const duration = normalizeXaiDuration(request.durationSeconds || request.durationSec || request.duration || config.defaultDuration);
   const payload = {
     model: config.model,
     duration,
   };
   const referenceImageUrl = resolveReferenceImageUrl(request);
-  if (referenceImageUrl && !prompt) {
-    payload.image_url = referenceImageUrl;
-  } else {
-    payload.prompt = prompt;
-  }
+  if (prompt) payload.prompt = prompt;
+  if (referenceImageUrl) payload.image = { url: referenceImageUrl };
   return payload;
 }
 

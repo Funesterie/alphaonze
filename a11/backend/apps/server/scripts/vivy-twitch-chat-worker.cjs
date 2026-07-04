@@ -4,14 +4,15 @@ const WebSocket = require('ws');
 
 const TWITCH_IRC_URL = 'wss://irc-ws.chat.twitch.tv:443';
 const TWITCH_HELIX_STREAMS_URL = 'https://api.twitch.tv/helix/streams';
-const DEFAULT_ANNOUNCE_INTERVAL_MS = 5 * 60 * 1000;
+const DEFAULT_ANNOUNCE_INTERVAL_MS = 12 * 60 * 1000;
 const DEFAULT_TRACK_NOTICE_POLL_INTERVAL_MS = 10 * 1000;
 const DEFAULT_RECAP_INTERVAL_MS = 28 * 60 * 1000;
 const DEFAULT_TWITCH_LIVE_POLL_INTERVAL_MS = 60 * 1000;
+const DEFAULT_BOT_MESSAGE_GAP_MS = 15 * 1000;
 const DEFAULT_PUBLIC_BASE_URL = 'https://vivy.funesterie.me';
 const ANNOUNCE_MESSAGES = Object.freeze([
-  '🎤 Vivy Live — propose une chanson avec !vivy ton idée | vote avec !vote S1 | note avec !etoiles 5 S1 ou ⭐⭐⭐⭐⭐',
-  '🎵 Commandes : !vivy thème chanson | !nossen style plus épique | !chanson sujet + ambiance | !vote S1 | !etoiles 5 S1',
+  '🎤 Vivy Live — !vivy ton idée | !nossen plus épique | !chanson sujet + ambiance',
+  '🎵 Vote avec !vote S1 | note avec !etoiles 5 S1',
 ]);
 
 function cleanEnv(value = '') {
@@ -44,6 +45,12 @@ function resolveLivePollInterval(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_TWITCH_LIVE_POLL_INTERVAL_MS;
   return Math.max(15 * 1000, Math.min(10 * 60 * 1000, Math.floor(parsed)));
+}
+
+function resolveBotMessageGap(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_BOT_MESSAGE_GAP_MS;
+  return Math.max(0, Math.min(2 * 60 * 1000, Math.floor(parsed)));
 }
 
 function normalizeTwitchBearerToken(value = '') {
@@ -87,17 +94,58 @@ function absolutizePublicUrl(value = '', baseUrl = DEFAULT_PUBLIC_BASE_URL) {
   }
 }
 
-function buildTrackNoticeMessage(state = {}, options = {}) {
+function isProviderOnlyTrackUrl(value = '') {
+  const raw = cleanEnv(value);
+  if (!raw) return false;
+  try {
+    const parsed = new URL(raw, DEFAULT_PUBLIC_BASE_URL);
+    return parsed.protocol === 'https:' && parsed.hostname.toLowerCase() === 'musicfile.removeai.ai';
+  } catch {
+    return /^https:\/\/musicfile\.removeai\.ai\//i.test(raw);
+  }
+}
+
+function selectTrackNoticeTrack(state = {}) {
   const current = state.current || {};
   const phase = cleanEnv(current.phase).toLowerCase();
-  if (phase !== 'presenting' && phase !== 'playing') return '';
-  const trackUrl = cleanEnv(current.trackUrl);
+  const currentTrackUrl = cleanEnv(current.trackUrl);
+  if ((phase === 'presenting' || phase === 'playing') && currentTrackUrl && !isProviderOnlyTrackUrl(currentTrackUrl)) {
+    return current;
+  }
+  const songs = Array.isArray(state.songs) ? state.songs : [];
+  for (let index = songs.length - 1; index >= 0; index -= 1) {
+    const song = songs[index] || {};
+    const trackUrl = cleanEnv(song.trackUrl);
+    if (!trackUrl || isProviderOnlyTrackUrl(trackUrl)) continue;
+    if (cleanEnv(song.source).toLowerCase() === 'vivy-interlude') continue;
+    return song;
+  }
+  return null;
+}
+
+function buildTrackNoticeMessage(state = {}, options = {}) {
+  const track = selectTrackNoticeTrack(state);
+  if (!track) return '';
+  const trackUrl = cleanEnv(track.trackUrl);
   if (!trackUrl) return '';
-  const title = clipInline(current.trackTitle || current.title || 'Nouvelle création Vivy', 100);
-  const requestedBy = clipInline(current.requestedBy || '', 40);
-  const publicUrl = absolutizePublicUrl(current.sharePath || trackUrl, options.publicBaseUrl || DEFAULT_PUBLIC_BASE_URL);
-  const authorPart = requestedBy ? ` demandée par ${requestedBy}` : '';
-  return normalizeAnnouncement(`🎵 Nouvelle création Vivy: "${title}"${authorPart} ▶ ${publicUrl} ⭐ Note avec !etoiles 5`);
+  const title = clipInline(track.trackTitle || track.title || 'Nouvelle création Vivy', 100);
+  const publicUrl = absolutizePublicUrl(track.sharePath || trackUrl, options.publicBaseUrl || DEFAULT_PUBLIC_BASE_URL);
+  const coverUrl = absolutizePublicUrl(track.coverImageUrl || track.coverUrl || track.imageUrl || '', options.publicBaseUrl || DEFAULT_PUBLIC_BASE_URL);
+  const clipUrl = absolutizePublicUrl(track.coverVideoUrl || track.videoUrl || track.video_url || track.clipUrl || '', options.publicBaseUrl || DEFAULT_PUBLIC_BASE_URL);
+  const visualLink = clipUrl ? ` 🎬 ${clipUrl}` : (coverUrl ? ` 🖼️ ${coverUrl}` : '');
+  return normalizeAnnouncement(`🎵 ${title} ▶ ${publicUrl}${visualLink}`);
+}
+
+function buildTrackClipNoticeMessage(state = {}, options = {}) {
+  const track = selectTrackNoticeTrack(state);
+  if (!track) return '';
+  const clipUrl = absolutizePublicUrl(
+    track.coverVideoUrl || track.videoUrl || track.video_url || track.clipUrl || '',
+    options.publicBaseUrl || DEFAULT_PUBLIC_BASE_URL
+  );
+  if (!clipUrl) return '';
+  const title = clipInline(track.trackTitle || track.title || 'Nouvelle création Vivy', 90);
+  return normalizeAnnouncement(`🎬 Clip Vivy: ${title} ▶ ${clipUrl}`);
 }
 
 function formatStars(value = {}) {
@@ -110,30 +158,36 @@ function formatStars(value = {}) {
 function buildSongRecapMessages(state = {}, options = {}) {
   const publicBaseUrl = options.publicBaseUrl || DEFAULT_PUBLIC_BASE_URL;
   const songs = Array.isArray(state.songs) ? state.songs : [];
-  const entries = songs
-    .filter((song) => song?.trackUrl)
-    .map((song, index) => {
-      const title = clipInline(song.trackTitle || song.title || `Morceau ${index + 1}`, 42);
-      const link = absolutizePublicUrl(song.sharePath || song.trackUrl, publicBaseUrl);
-      return `${index + 1}. ${title} ${formatStars(song)} ⬇ ${link}`;
+  const count = songs.filter((song) => song?.trackUrl).length;
+  if (!count) return [];
+  const playlistUrl = absolutizePublicUrl('/api/vivy/stream/songs', publicBaseUrl);
+  return [normalizeAnnouncement(`🎶 Playlist Vivy Live (${count} titre${count > 1 ? 's' : ''}) ▶ ${playlistUrl}`)];
+}
+
+function createSpacedSender(options = {}) {
+  const sendMessage = options.sendMessage || (() => {});
+  const sleepFn = options.sleep || sleep;
+  const logger = options.logger || console;
+  const gapMs = resolveBotMessageGap(options.gapMs);
+  let lastSentAt = 0;
+  let chain = Promise.resolve();
+
+  function enqueue(message) {
+    const cleanMessage = normalizeAnnouncement(message);
+    if (!cleanMessage) return chain;
+    chain = chain.then(async () => {
+      const now = Date.now();
+      const waitMs = lastSentAt > 0 ? Math.max(0, gapMs - (now - lastSentAt)) : 0;
+      if (waitMs > 0) await sleepFn(waitMs);
+      sendMessage(cleanMessage);
+      lastSentAt = Date.now();
+    }).catch((error) => {
+      logger.warn?.('[vivy-twitch] bot message failed:', error?.message || String(error));
     });
-  if (!entries.length) return [];
-  const messages = [];
-  let current = '🎶 Morceaux Vivy passés dans le live:';
-  entries.forEach((entry) => {
-    const candidate = `${current} ${entry}`;
-    if (candidate.length > 430 && current !== '🎶 Morceaux Vivy passés dans le live:') {
-      messages.push(normalizeAnnouncement(current));
-      current = `🎶 Suite: ${entry}`;
-    } else if (candidate.length > 430) {
-      messages.push(normalizeAnnouncement(`${current} ${entry}`));
-      current = '🎶 Suite:';
-    } else {
-      current = candidate;
-    }
-  });
-  if (current && current !== '🎶 Suite:') messages.push(normalizeAnnouncement(current));
-  return messages.filter(Boolean);
+    return chain;
+  }
+
+  return { enqueue, gapMs };
 }
 
 function createAnnouncementRotator(options = {}) {
@@ -193,6 +247,7 @@ function createTrackNoticeWatcher(options = {}) {
   let inFlight = false;
   let observedOnce = false;
   let lastTrackKey = cleanEnv(options.lastTrackKey);
+  let lastClipKey = cleanEnv(options.lastClipKey);
 
   async function tick() {
     if (disabled || !stateUrl || !isConnected() || inFlight) return false;
@@ -201,18 +256,32 @@ function createTrackNoticeWatcher(options = {}) {
       const response = await fetchFn(stateUrl, { headers: { Accept: 'application/json' } });
       if (!response?.ok) throw new Error(`state_http_${response?.status || 'unknown'}`);
       const state = await response.json();
-      const current = state?.current || {};
-      const trackKey = cleanEnv(current.trackUrl || current.trackTitle || current.title);
+      const noticeTrack = selectTrackNoticeTrack(state);
+      const trackKey = cleanEnv(noticeTrack?.trackUrl || noticeTrack?.sharePath || noticeTrack?.id || noticeTrack?.trackTitle || noticeTrack?.title);
+      const clipKey = cleanEnv(noticeTrack?.coverVideoUrl || noticeTrack?.videoUrl || noticeTrack?.video_url || noticeTrack?.clipUrl);
       const message = buildTrackNoticeMessage(state, { publicBaseUrl });
       if (!observedOnce) {
         observedOnce = true;
         if (trackKey) lastTrackKey = trackKey;
+        if (clipKey) lastClipKey = clipKey;
         return false;
       }
-      if (!message || !trackKey || trackKey === lastTrackKey) return false;
-      sendMessage(message);
-      lastTrackKey = trackKey;
-      return true;
+      if (message && trackKey && trackKey !== lastTrackKey) {
+        sendMessage(message);
+        lastTrackKey = trackKey;
+        lastClipKey = clipKey;
+        logger.info?.('[vivy-twitch] shared track link key=%s', trackKey);
+        return true;
+      }
+      if (trackKey && trackKey === lastTrackKey && clipKey && clipKey !== lastClipKey) {
+        const clipMessage = buildTrackClipNoticeMessage(state, { publicBaseUrl });
+        if (!clipMessage) return false;
+        sendMessage(clipMessage);
+        lastClipKey = clipKey;
+        logger.info?.('[vivy-twitch] shared clip link key=%s', trackKey);
+        return true;
+      }
+      return false;
     } catch (error) {
       logger.warn?.('[vivy-twitch] track notice failed:', error?.message || String(error));
       return false;
@@ -387,10 +456,24 @@ function parsePrivmsg(line = '') {
 }
 
 function shouldForwardMessage(message = '') {
+  if (isVivyAutomatedChatMessage(message)) return false;
   if (process.env.VIVY_STREAM_COMMANDS_ONLY !== '1') return true;
   return /^!(?:vivy|nossen|song|chanson|theme|th[eè]me|idee|idée|vote|choix|etoiles?|étoiles?|stars?|note)\b/i.test(message)
     || /[⭐★🌟]/u.test(message)
     || /\b[1-5]\s*\/\s*5\b/.test(message);
+}
+
+function isVivyAutomatedChatMessage(message = '') {
+  const text = normalizeAnnouncement(message);
+  return /^🎤\s*Vivy\s+Live\s+—\s+propose\b/i.test(text)
+    || /^🎤\s*Vivy\s+Live\s+—\s*!vivy\b/i.test(text)
+    || /^🎵\s*Commandes\s*:/i.test(text)
+    || /^🎵\s*Vote\s+avec\s+!vote\b/i.test(text)
+    || /^🎵\s*Nouvelle\s+création\s+Vivy\s*:/i.test(text)
+    || /^🎵\s*.+\s+▶\s+https?:\/\//i.test(text)
+    || /^🎶\s*Morceaux\s+Vivy\s+passés\s+dans\s+le\s+live\s*:/i.test(text)
+    || /^🎶\s*Playlist\s+Vivy\s+Live\b/i.test(text)
+    || /^🎶\s*Suite\s*:/i.test(text);
 }
 
 async function postChatMessage(endpoint, secret, payload) {
@@ -488,11 +571,20 @@ async function runOnce(config) {
     let joined = false;
     let closedBySignal = false;
     let closedByOffline = false;
+    const spacedSender = createSpacedSender({
+      gapMs: config.botMessageGapMs,
+      logger: console,
+      sendMessage: (message) => send(ws, `PRIVMSG #${config.channel} :${message}`),
+    });
+    const sendBotMessage = (message) => {
+      spacedSender.enqueue(message);
+      return true;
+    };
     const announcer = createAnnouncementRotator({
       disabled: config.announceDisabled,
       intervalMs: config.announceIntervalMs,
       isConnected: () => joined && ws.readyState === WebSocket.OPEN,
-      sendMessage: (message) => send(ws, `PRIVMSG #${config.channel} :${message}`),
+      sendMessage: sendBotMessage,
     });
     const trackNotifier = createTrackNoticeWatcher({
       disabled: config.trackNoticeDisabled,
@@ -500,7 +592,7 @@ async function runOnce(config) {
       publicBaseUrl: config.publicBaseUrl,
       pollIntervalMs: config.trackNoticePollIntervalMs,
       isConnected: () => joined && ws.readyState === WebSocket.OPEN,
-      sendMessage: (message) => send(ws, `PRIVMSG #${config.channel} :${message}`),
+      sendMessage: sendBotMessage,
     });
     const recapRotator = createSongRecapRotator({
       disabled: config.recapDisabled,
@@ -508,7 +600,7 @@ async function runOnce(config) {
       publicBaseUrl: config.publicBaseUrl,
       intervalMs: config.recapIntervalMs,
       isConnected: () => joined && ws.readyState === WebSocket.OPEN,
-      sendMessage: (message) => send(ws, `PRIVMSG #${config.channel} :${message}`),
+      sendMessage: sendBotMessage,
     });
     const liveMonitor = createTwitchLiveStatusMonitor({
       disabled: config.liveGateDisabled,
@@ -641,6 +733,7 @@ async function main() {
     resetOnIrcClose: process.env.VIVY_TWITCH_RESET_ON_IRC_CLOSE === '1',
     announceIntervalMs: resolveAnnounceInterval(process.env.VIVY_STREAM_ANNOUNCE_INTERVAL_MS),
     announceDisabled: process.env.VIVY_STREAM_ANNOUNCE_DISABLED === '1',
+    botMessageGapMs: resolveBotMessageGap(process.env.VIVY_STREAM_BOT_MESSAGE_GAP_MS),
     stateUrl: cleanEnv(process.env.VIVY_STREAM_STATE_URL) || 'https://vivy.funesterie.me/api/vivy/stream/state',
     publicBaseUrl: cleanEnv(process.env.VIVY_PUBLIC_BASE_URL) || DEFAULT_PUBLIC_BASE_URL,
     trackNoticePollIntervalMs: resolveTrackNoticePollInterval(process.env.VIVY_STREAM_TRACK_NOTICE_POLL_INTERVAL_MS),
@@ -766,8 +859,10 @@ if (require.main === module) {
 module.exports = {
   ANNOUNCE_MESSAGES,
   buildSongRecapMessages,
+  buildTrackClipNoticeMessage,
   buildTrackNoticeMessage,
   createAnnouncementRotator,
+  createSpacedSender,
   createSongRecapRotator,
   createTrackNoticeWatcher,
   createTwitchLiveStatusMonitor,
@@ -775,6 +870,7 @@ module.exports = {
   parsePrivmsg,
   parseTags,
   resolveAnnounceInterval,
+  resolveBotMessageGap,
   resolveLivePollInterval,
   resolveRecapInterval,
   resolveStreamResetUrl,

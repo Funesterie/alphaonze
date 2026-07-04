@@ -1,6 +1,6 @@
 {
   "name": "@nossen/all-in-one",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Public all-in-one NOSSEN package that installs every public NOSSEN module.",
   "type": "commonjs",
   "main": "index.cjs",
@@ -57,7 +57,7 @@
     "@nossen/mcp-worker-supervisor": "0.1.2",
     "@nossen/morphing": "2.1.0",
     "@nossen/nezlephant": "2.0.2",
-    "@nossen/qflush": "2.0.2",
+    "@nossen/qflush": "2.0.4",
     "@nossen/qflush-runner": "2.0.2",
     "@nossen/rome": "2.0.3",
     "@nossen/scentgate": "2.0.1",

@@ -36,17 +36,34 @@
     select { font: inherit; }
 
     .backdrop,
+    .cover-backdrop,
+    .cover-video-backdrop,
     .scrim {
       position: fixed;
       inset: 0;
     }
 
-    .backdrop {
+    .backdrop,
+    .cover-backdrop,
+    .cover-video-backdrop {
       width: 64vw;
       height: 100%;
       object-fit: cover;
       object-position: 50% 0;
       filter: saturate(.88) contrast(1.05);
+    }
+
+    .cover-backdrop,
+    .cover-video-backdrop {
+      opacity: 0;
+      transform: scale(1.012);
+      transition: opacity 1.2s ease, transform 6s ease;
+    }
+
+    .cover-backdrop.visible,
+    .cover-video-backdrop.visible {
+      opacity: 1;
+      transform: scale(1);
     }
 
     .scrim {
@@ -217,6 +234,51 @@
       line-height: 1.45;
     }
 
+    .track-cover {
+      position: relative;
+      width: 100%;
+      max-height: min(30vh, 270px);
+      aspect-ratio: 16 / 9;
+      margin: 22px 0 0;
+      overflow: hidden;
+      border: 1px solid rgba(240, 122, 217, .46);
+      background: rgba(255, 255, 255, .06);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, .34);
+    }
+
+    .track-cover::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border: 1px solid rgba(255, 255, 255, .12);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, .08), transparent 38%),
+        linear-gradient(0deg, rgba(6, 4, 9, .24), transparent 50%);
+      pointer-events: none;
+    }
+
+    .track-cover img,
+    .track-cover video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+      filter: saturate(1.08) contrast(1.04);
+    }
+
+    .track-cover video {
+      z-index: 1;
+      opacity: 0;
+      transition: opacity .45s ease;
+      background: transparent;
+    }
+
+    .track-cover.video-ready video {
+      opacity: 1;
+    }
+
     .suggestions {
       min-height: 0;
       margin: 26px 0 0;
@@ -246,13 +308,18 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: 16px;
+      font-size: 20px;
+      font-weight: 850;
     }
 
     .suggestion-votes {
       color: var(--cyan);
+      padding: 5px 8px;
+      border: 1px solid rgba(115, 217, 230, .38);
+      background: rgba(115, 217, 230, .08);
       font-size: 13px;
       font-weight: 800;
+      white-space: nowrap;
     }
 
     .progress-track {
@@ -417,6 +484,33 @@
       font-size: 22px;
     }
 
+    body.clip-video-fullscreen .backdrop,
+    body.clip-video-fullscreen .cover-backdrop {
+      opacity: 0;
+    }
+
+    body.clip-video-fullscreen .cover-video-backdrop {
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      object-position: 50% 50%;
+      filter: saturate(1.05) contrast(1.04);
+      opacity: 1;
+      transform: none;
+    }
+
+    body.clip-video-fullscreen .scrim {
+      background:
+        linear-gradient(180deg, rgba(0, 0, 0, .2), transparent 24%, transparent 72%, rgba(0, 0, 0, .28)),
+        rgba(0, 0, 0, .04);
+    }
+
+    body.clip-video-fullscreen .live-shell,
+    body.clip-video-fullscreen .cinema {
+      opacity: 0;
+      pointer-events: none;
+    }
+
     audio { display: none; }
 
     @keyframes pulse {
@@ -443,7 +537,9 @@
     }
 
     @media (max-width: 720px) {
-      .backdrop { width: 100%; object-position: 53% 42%; }
+      .backdrop,
+      .cover-backdrop,
+      .cover-video-backdrop { width: 100%; object-position: 53% 42%; }
       .identity { display: none; }
       .live-shell { display: block; }
       .broadcast {
@@ -462,6 +558,8 @@
 </head>
 <body>
   <img class="backdrop" src="/api/vivy/stream/overlay/background?v=vivy-layer-20260628" alt="">
+  <img class="cover-backdrop" id="coverBackdrop" alt="">
+  <video class="cover-video-backdrop" id="coverVideoBackdrop" muted loop playsinline preload="auto"></video>
   <div class="scrim"></div>
 
   <main class="live-shell">
@@ -487,6 +585,10 @@
         <h2 class="stage-title" id="stageTitle">Vivy arrive...</h2>
         <p class="stage-author" id="stageAuthor"></p>
         <p class="lead-message" id="leadMessage">Connexion au studio Funesterie.</p>
+        <div class="track-cover" id="trackCover" hidden>
+          <img id="trackCoverImage" alt="">
+          <video id="trackCoverVideo" muted loop playsinline preload="auto"></video>
+        </div>
 
         <ol class="suggestions" id="suggestions"></ol>
 
@@ -555,7 +657,8 @@
       'suggestions', 'voteProgress', 'voteProgressFill', 'pipeline', 'nowPlaying',
       'playProgressFill', 'playElapsed', 'playDuration', 'rating', 'stars',
       'footerStatus', 'messageCount', 'cinema', 'cinemaLabel', 'cinemaTitle',
-      'cinemaAuthor', 'equalizer', 'player',
+      'cinemaAuthor', 'equalizer', 'player', 'coverBackdrop', 'trackCover', 'trackCoverImage',
+      'trackCoverVideo', 'coverVideoBackdrop',
     ].map((id) => [id, document.getElementById(id)]));
 
     for (let index = 1; index <= 24; index += 1) {
@@ -567,6 +670,12 @@
     let liveState = null;
     let serverOffsetMs = 0;
     let lastTrackUrl = '';
+    let lastCoverUrl = '';
+    let lastCoverVideoUrl = '';
+    let coverBackdropReady = false;
+    let coverVideoBackdropReady = false;
+    const COVER_SLIDE_MS = 10000;
+    const STATE_POLL_MS = 6000;
 
     function safeDate(value) {
       const parsed = Date.parse(value || '');
@@ -592,9 +701,160 @@
       element.textContent = String(value ?? '');
     }
 
+    function cleanDisplayText(value, max = 120) {
+      return String(value || '')
+        .replace(/^!(?:vivy|nossen|chanson)\s+/i, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, max);
+    }
+
+    function titleFromPrompt(value = '') {
+      const cleaned = cleanDisplayText(value, 500);
+      if (!cleaned) return '';
+      const pieces = cleaned
+        .split(/\s*(?:,|;|:|\.|\n|\(|\[)\s*/)
+        .map((part) => cleanDisplayText(part, 90))
+        .filter(Boolean);
+      const ignored = /^(?:duo|solo|trio|format court|version longue|no limite|sans limite|histoire complete|histoire complète|chanson|musique|theme chanson|thème chanson|banger|style plus epique|style plus épique)$/i;
+      const picked = pieces.find((part) => part.length >= 4 && !ignored.test(part)) || pieces[0] || cleaned;
+      return picked.length > 72 ? picked.slice(0, 69).trimEnd() + '...' : picked;
+    }
+
+    function titleForSuggestion(entry = {}) {
+      return titleFromPrompt(entry.title || entry.trackTitle || entry.text || '');
+    }
+
+    function voteLabel(entry = {}) {
+      const count = Number(entry.votes || 0);
+      return count + ' vote' + (count > 1 ? 's' : '');
+    }
+
     function show(element, visible) {
       element.hidden = !visible;
     }
+
+    function publicUrl(value = '') {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+      try { return new URL(raw, window.location.origin).toString(); } catch { return raw; }
+    }
+
+    function cacheBustedMediaUrl(value = '', state = {}) {
+      const url = publicUrl(value);
+      if (!url) return '';
+      try {
+        const parsed = new URL(url, window.location.origin);
+        const current = state?.current || {};
+        const version = safeDate(state.updatedAt || current.updatedAt || current.phaseStartedAt || state.serverNow)
+          || safeDate(current.playbackStartedAt)
+          || Date.now();
+        parsed.searchParams.set('vivyObs', String(version));
+        return parsed.toString();
+      } catch {
+        return url;
+      }
+    }
+
+    function renderBackdropSlideshow(state) {
+      const current = state?.current || {};
+      const phase = current.phase || 'idle';
+      const coverUrl = publicUrl(current.coverImageUrl || current.coverUrl || current.imageUrl || '');
+      const coverVideoUrl = publicUrl(current.coverVideoUrl || current.videoUrl || current.video_url || current.clipUrl || '');
+      if (coverUrl !== lastCoverUrl) {
+        lastCoverUrl = coverUrl;
+        coverBackdropReady = false;
+        elements.coverBackdrop.classList.remove('visible');
+        if (coverUrl) {
+          const coverSrc = cacheBustedMediaUrl(coverUrl, state);
+          elements.trackCoverImage.src = coverSrc;
+          elements.trackCoverVideo.poster = coverSrc;
+          elements.coverBackdrop.src = coverSrc;
+          coverBackdropReady = elements.coverBackdrop.complete && elements.coverBackdrop.naturalWidth > 0;
+        } else {
+          elements.trackCoverImage.removeAttribute('src');
+          elements.trackCoverVideo.removeAttribute('poster');
+          elements.coverBackdrop.removeAttribute('src');
+        }
+      }
+      if (coverVideoUrl !== lastCoverVideoUrl) {
+        lastCoverVideoUrl = coverVideoUrl;
+        coverVideoBackdropReady = false;
+        elements.trackCover.classList.remove('video-ready');
+        elements.coverVideoBackdrop.classList.remove('visible');
+        elements.trackCoverVideo.pause();
+        elements.coverVideoBackdrop.pause();
+        if (coverVideoUrl) {
+          const coverVideoSrc = cacheBustedMediaUrl(coverVideoUrl, state);
+          elements.trackCoverVideo.src = coverVideoSrc;
+          elements.coverVideoBackdrop.src = coverVideoSrc;
+          elements.trackCoverVideo.load();
+          elements.coverVideoBackdrop.load();
+        } else {
+          elements.trackCoverVideo.removeAttribute('src');
+          elements.coverVideoBackdrop.removeAttribute('src');
+          elements.trackCoverVideo.load();
+          elements.coverVideoBackdrop.load();
+        }
+      }
+      const fullScreenClip = phase === 'playing' && Boolean(coverVideoUrl);
+      document.body.classList.toggle('clip-video-fullscreen', fullScreenClip);
+      const canShowCover = Boolean((coverUrl || coverVideoUrl) && ['presenting', 'playing', 'interlude', 'rating'].includes(phase));
+      show(elements.trackCover, canShowCover && !fullScreenClip);
+      const slideStartedAt = safeDate(current.playbackStartedAt || current.phaseStartedAt) || now();
+      const slideIndex = Math.floor(Math.max(0, now() - slideStartedAt) / COVER_SLIDE_MS);
+      const showMediaBackdrop = canShowCover
+        && (fullScreenClip || phase === 'presenting' || phase === 'rating' || slideIndex % 2 === 0);
+      const showVideoBackdrop = Boolean(coverVideoUrl) && (fullScreenClip || (coverVideoBackdropReady && showMediaBackdrop));
+      const showBackdrop = coverBackdropReady && Boolean(coverUrl) && showMediaBackdrop && !showVideoBackdrop && !fullScreenClip;
+      elements.coverBackdrop.classList.toggle('visible', showBackdrop);
+      elements.coverVideoBackdrop.classList.toggle('visible', showVideoBackdrop);
+      if (canShowCover && coverVideoUrl) {
+        elements.trackCoverVideo.play().catch(() => {
+          elements.trackCover.classList.remove('video-ready');
+        });
+        elements.coverVideoBackdrop.play().catch(() => {
+          coverVideoBackdropReady = false;
+          elements.coverVideoBackdrop.classList.remove('visible');
+        });
+      } else {
+        elements.trackCoverVideo.pause();
+        elements.coverVideoBackdrop.pause();
+      }
+    }
+
+    elements.coverBackdrop.addEventListener('load', () => {
+      coverBackdropReady = true;
+      if (liveState) renderBackdropSlideshow(liveState);
+    });
+    elements.coverBackdrop.addEventListener('error', () => {
+      coverBackdropReady = false;
+      elements.coverBackdrop.classList.remove('visible');
+    });
+    elements.trackCoverVideo.addEventListener('playing', () => {
+      elements.trackCover.classList.add('video-ready');
+    });
+    elements.trackCoverVideo.addEventListener('error', () => {
+      elements.trackCover.classList.remove('video-ready');
+    });
+    elements.coverVideoBackdrop.addEventListener('playing', () => {
+      coverVideoBackdropReady = true;
+      if (liveState) renderBackdropSlideshow(liveState);
+    });
+    elements.coverVideoBackdrop.addEventListener('canplay', () => {
+      coverVideoBackdropReady = true;
+      if (liveState) renderBackdropSlideshow(liveState);
+    });
+    elements.coverVideoBackdrop.addEventListener('error', () => {
+      coverVideoBackdropReady = false;
+      elements.coverVideoBackdrop.classList.remove('visible');
+    });
+    elements.coverVideoBackdrop.addEventListener('stalled', () => {
+      if (!lastCoverVideoUrl || !liveState) return;
+      const src = cacheBustedMediaUrl(lastCoverVideoUrl, liveState);
+      elements.coverVideoBackdrop.src = src;
+      elements.coverVideoBackdrop.load();
+    });
 
     function simulatedProduction(state) {
       const actual = state.production?.stages || {};
@@ -624,10 +884,11 @@
         id.textContent = entry.id || '';
         const text = document.createElement('span');
         text.className = 'suggestion-text';
-        text.textContent = entry.text || '';
+        text.textContent = titleForSuggestion(entry) || entry.id || 'Proposition';
+        text.title = entry.text || '';
         const votes = document.createElement('span');
         votes.className = 'suggestion-votes';
-        votes.textContent = String(entry.votes || 0) + ' vote' + (Number(entry.votes || 0) > 1 ? 's' : '');
+        votes.textContent = voteLabel(entry);
         item.append(id, text, votes);
         elements.suggestions.appendChild(item);
       });
@@ -693,7 +954,8 @@
       const winner = (round.suggestions || []).find((entry) => entry.id === round.winningSuggestionId)
         || (round.suggestions || [])[0]
         || null;
-      const visibleTitle = current.trackTitle || current.title || winner?.text || 'Vivy Live';
+      const rawTitle = current.trackTitle || current.title || winner?.text || 'Vivy Live';
+      const visibleTitle = titleFromPrompt(rawTitle) || 'Vivy Live';
       const author = current.requestedBy || winner?.author || '';
 
       setText(elements.eyebrow, phaseLabels[phase] || 'Vivy Live');
@@ -718,9 +980,14 @@
         setText(elements.stageTitle, 'Proposez la prochaine chanson');
         setText(elements.leadMessage, '!nossen votre thème, votre univers et votre couleur musicale');
       }
+      if (phase === 'voting') {
+        const voteTarget = winner?.id ? '!vote ' + winner.id : '!vote S1';
+        setText(elements.stageTitle, titleForSuggestion(winner) || visibleTitle);
+        setText(elements.leadMessage, (winner?.id || 'S1') + ' · ' + voteLabel(winner || {}) + ' · ' + voteTarget);
+      }
       if (phase === 'winner') {
         setText(elements.stageKicker, 'Gagnant ' + (winner?.id || ''));
-        setText(elements.leadMessage, 'Vivy ouvre le studio et prépare la composition.');
+        setText(elements.leadMessage, winner ? voteLabel(winner) + ' · Vivy ouvre le studio et prépare la composition.' : 'Vivy ouvre le studio et prépare la composition.');
       }
       if (phase === 'composing') {
         setText(elements.stageKicker, 'Vivy commence à composer');
@@ -745,6 +1012,7 @@
       setText(elements.cinemaTitle, visibleTitle);
       setText(elements.cinemaAuthor, author ? 'Demandé par ' + author : '');
       syncPlayer(state);
+      renderBackdropSlideshow(state);
       tick();
     }
 
@@ -775,18 +1043,27 @@
       }
 
       if (phase === 'composing') renderPipeline(liveState);
+      renderBackdropSlideshow(liveState);
+    }
+
+    async function fetchFreshState() {
+      try {
+        const response = await fetch('/api/vivy/stream/state?overlayPoll=' + Date.now(), { cache: 'no-store' });
+        if (!response.ok) throw new Error('state_http_' + response.status);
+        render(await response.json());
+      } catch {
+        setText(elements.footerStatus, 'Reconnexion au studio...');
+      }
     }
 
     setInterval(tick, 500);
+    setInterval(fetchFreshState, STATE_POLL_MS);
     const events = new EventSource('/api/vivy/stream/events');
     events.addEventListener('state', (event) => {
       try { render(JSON.parse(event.data)); } catch {}
     });
     events.onerror = () => setText(elements.footerStatus, 'Reconnexion au studio...');
-    fetch('/api/vivy/stream/state')
-      .then((response) => response.json())
-      .then(render)
-      .catch(() => setText(elements.footerStatus, 'Studio momentanément indisponible'));
+    fetchFreshState();
   </script>
 </body>
 </html>

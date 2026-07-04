@@ -3,9 +3,18 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
+const { Readable } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
 const { clearUserEpisodes } = require('../../lib/episodic-memory.cjs');
-const { createVivyStreamNossenRunner } = require('../vivy/twitch-nossen-runner.cjs');
+const {
+  createVivyStreamNossenRunner,
+  extractTwitchMusicProviderDirective,
+} = require('../vivy/twitch-nossen-runner.cjs');
+const {
+  buildAndStoreSocialPromptContext,
+  formatSocialContextForPrompt,
+} = require('../social/social-autoprompt.cjs');
 const { getEmergencyMediaAssetPath } = require('../media/emergency-media.cjs');
 
 const STREAM_SCHEMA = 'funesterie.vivy.stream.v1';
@@ -45,9 +54,103 @@ function cleanText(value = '', max = 2000) {
     .slice(0, max);
 }
 
+function resolveVivySocialContextUserId(env = process.env) {
+  return cleanText(
+    env.VIVY_STREAM_SOCIAL_CONTEXT_USER_ID
+    || env.SOCIAL_CONTEXT_USER_ID
+    || '',
+    160
+  );
+}
+
 function cleanOneLine(value = '', fallback = '', max = 200) {
   const cleaned = cleanText(value, max);
   return cleaned || fallback;
+}
+
+function escapeHtml(value = '') {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function absolutizePublicUrl(value = '', baseUrl = 'https://vivy.funesterie.me') {
+  const raw = cleanOneLine(value, '', 1200);
+  if (!raw) return '';
+  try {
+    return new URL(raw, cleanOneLine(baseUrl, 'https://vivy.funesterie.me', 240)).toString();
+  } catch {
+    return raw;
+  }
+}
+
+function inferMediaContentType(url = '', fallback = 'application/octet-stream') {
+  const pathname = (() => {
+    try {
+      return new URL(url, 'https://vivy.local').pathname;
+    } catch {
+      return String(url || '');
+    }
+  })().toLowerCase();
+  if (pathname.endsWith('.mp3')) return 'audio/mpeg';
+  if (pathname.endsWith('.wav')) return 'audio/wav';
+  if (pathname.endsWith('.mp4')) return 'video/mp4';
+  if (pathname.endsWith('.webp')) return 'image/webp';
+  if (pathname.endsWith('.png')) return 'image/png';
+  if (pathname.endsWith('.jpg') || pathname.endsWith('.jpeg')) return 'image/jpeg';
+  return fallback;
+}
+
+function safeDownloadFilename(url = '', kind = 'media') {
+  let base = `${cleanOneLine(kind, 'media', 40)}.bin`;
+  try {
+    const parsed = new URL(url, 'https://vivy.local');
+    base = path.basename(decodeURIComponent(parsed.pathname)) || base;
+  } catch {}
+  return base
+    .replace(/[^\p{L}\p{N}._-]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 160)
+    || `${cleanOneLine(kind, 'media', 40)}.bin`;
+}
+
+function buildStreamDownloadPath(url = '', kind = 'media') {
+  const raw = cleanOneLine(url, '', 1600);
+  if (!raw) return '';
+  const params = new URLSearchParams({ url: raw, kind: cleanOneLine(kind, 'media', 40) });
+  return `/api/vivy/stream/download?${params.toString()}`;
+}
+
+function isAllowedVivyStreamDownloadUrl(rawUrl = '', req = null, publicBaseUrl = process.env.VIVY_PUBLIC_BASE_URL || 'https://vivy.funesterie.me') {
+  const raw = cleanOneLine(rawUrl, '', 1600);
+  if (!raw) return false;
+  const origin = req
+    ? `${req.protocol || 'http'}://${req.get?.('host') || '127.0.0.1:3000'}`
+    : cleanOneLine(publicBaseUrl, 'https://vivy.funesterie.me', 240);
+  let parsed;
+  try {
+    parsed = new URL(raw, origin);
+  } catch {
+    return false;
+  }
+  const sameHost = req && parsed.host === req.get?.('host');
+  const publicHost = (() => {
+    try {
+      return parsed.host === new URL(publicBaseUrl).host;
+    } catch {
+      return false;
+    }
+  })();
+  if ((sameHost || publicHost) && /^\/api\/vivy\/studio\/assets\/[^/?#]+$/i.test(parsed.pathname)) return true;
+  if ((sameHost || publicHost) && /^\/api\/double-harmonic\/out\/[^/?#]+$/i.test(parsed.pathname)) return true;
+  if (parsed.hostname === 'files.funesterie.me') {
+    return /^\/users\/(?:vivy-twitch-live|image-tool)\//i.test(parsed.pathname)
+      || /^\/public\/vivy\//i.test(parsed.pathname);
+  }
+  return false;
 }
 
 function resolveRoundMs(value = process.env.VIVY_STREAM_VOTE_MS || process.env.VIVY_STREAM_ROUND_MS) {
@@ -115,6 +218,10 @@ function createInitialState() {
       durationSeconds: 0,
       trackId: '',
       sharePath: '',
+      coverImageUrl: '',
+      coverPrompt: '',
+      coverVideoUrl: '',
+      coverVideoPrompt: '',
       message: 'En attente du chat Twitch.',
     },
     round: createRound(),
@@ -222,6 +329,18 @@ function normalizeJukeboxTrack(input = {}) {
     createdAt: input.createdAt || nowIso(),
     starCount: Math.max(0, Number(input.starCount || 0) || 0),
     starAverage: Math.max(0, Math.min(5, Number(input.starAverage || 0) || 0)),
+    coverImageUrl: cleanOneLine(
+      input.coverImageUrl || input.coverUrl || input.imageUrl || input.image_url,
+      '',
+      1200
+    ),
+    coverPrompt: cleanOneLine(input.coverPrompt || input.imagePrompt || input.image_prompt, '', 2000),
+    coverVideoUrl: cleanOneLine(
+      input.coverVideoUrl || input.videoUrl || input.video_url || input.clipUrl || input.clip_url,
+      '',
+      1200
+    ),
+    coverVideoPrompt: cleanOneLine(input.coverVideoPrompt || input.videoPrompt || input.video_prompt, '', 2600),
   };
   track.sharePath = cleanOneLine(input.sharePath, buildSongSharePath(track), 240);
   return track;
@@ -301,6 +420,16 @@ function extractSuggestion(message = '') {
   return cleanText(match[1], MAX_STREAM_SUGGESTION_CHARS);
 }
 
+function extractSuggestionPayload(message = '') {
+  const suggestion = extractSuggestion(message);
+  if (!suggestion) return { suggestion: '', musicProvider: '' };
+  const directive = extractTwitchMusicProviderDirective(suggestion);
+  return {
+    suggestion: directive.text || suggestion,
+    musicProvider: cleanOneLine(directive.provider, '', 40),
+  };
+}
+
 function extractVote(message = '') {
   const raw = cleanText(message, 120);
   const match = raw.match(/^!(?:vote|choix)\s+#?([a-z0-9_-]{1,16})\b/i);
@@ -330,12 +459,14 @@ function parseVivyStreamChatMessage(input = {}) {
   const message = cleanText(input.message || input.text || input.content, MAX_STREAM_MESSAGE_CHARS);
   const author = cleanOneLine(input.username || input.user || input.displayName || input.author, 'anonymous', 80);
   const source = cleanOneLine(input.source || 'twitch', 'twitch', 40);
+  const suggestionPayload = extractSuggestionPayload(message);
   return {
     source,
     author,
     message,
     messageId: cleanOneLine(input.messageId || input.id, createShortId('chat'), 120),
-    suggestion: extractSuggestion(message),
+    suggestion: suggestionPayload.suggestion,
+    musicProvider: suggestionPayload.musicProvider,
     voteTargetId: extractVote(message),
     star: extractStarRating(message),
     receivedAt: nowIso(),
@@ -410,6 +541,131 @@ function publicState(state) {
   cloned.serverNow = nowIso();
   cloned.nossenSeed = buildNossenSeedFromRound(cloned);
   return cloned;
+}
+
+function buildSongsArchiveHtml(state = {}, options = {}) {
+  const publicBaseUrl = options.publicBaseUrl || process.env.VIVY_PUBLIC_BASE_URL || 'https://vivy.funesterie.me';
+  const songs = (Array.isArray(state.songs) ? state.songs : [])
+    .filter((song) => song?.trackUrl)
+    .slice()
+    .reverse();
+  const rows = songs.map((song, index) => {
+    const title = cleanTrackTitle(song.trackTitle || song.title, `Morceau ${songs.length - index}`);
+    const audioUrl = absolutizePublicUrl(song.sharePath || song.trackUrl, publicBaseUrl);
+    const directUrl = absolutizePublicUrl(song.trackUrl, publicBaseUrl);
+    const coverUrl = absolutizePublicUrl(song.coverImageUrl || '', publicBaseUrl);
+    const clipUrl = absolutizePublicUrl(song.coverVideoUrl || '', publicBaseUrl);
+    const downloadAudioUrl = buildStreamDownloadPath(directUrl, 'audio');
+    const downloadCoverUrl = coverUrl ? buildStreamDownloadPath(coverUrl, 'image') : '';
+    const downloadClipUrl = clipUrl ? buildStreamDownloadPath(clipUrl, 'clip') : '';
+    const requestedBy = cleanOneLine(song.requestedBy, '', 80);
+    const rating = Number(song.starCount || 0) && Number(song.starAverage || 0)
+      ? `${Number(song.starAverage).toFixed(Number(song.starAverage) % 1 ? 1 : 0)}/5 (${Number(song.starCount || 0)})`
+      : 'pas encore noté';
+    return `
+      <article class="song">
+        ${coverUrl ? `<img class="cover" src="${escapeHtml(coverUrl)}" alt="">` : '<div class="cover empty">Vivy</div>'}
+        <div class="body">
+          <p class="rank">#${songs.length - index}</p>
+          <h2>${escapeHtml(title)}</h2>
+          <p class="meta">${requestedBy ? `Demandé par ${escapeHtml(requestedBy)} · ` : ''}${escapeHtml(rating)}</p>
+          <p class="links"><a href="${escapeHtml(audioUrl)}">Ouvrir</a><a href="${escapeHtml(downloadAudioUrl)}" download>Télécharger MP3</a>${coverUrl ? `<a href="${escapeHtml(downloadCoverUrl)}" download>Télécharger image</a>` : ''}${clipUrl ? `<a href="${escapeHtml(downloadClipUrl)}" download>Télécharger clip</a>` : ''}</p>
+        </div>
+      </article>`;
+  }).join('\n');
+  return `<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Playlist Vivy Live</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #060409; color: #fff8ff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 18% 8%, rgba(240,122,217,.2), transparent 34%), #060409; }
+    main { width: min(1040px, calc(100% - 32px)); margin: 0 auto; padding: 42px 0 64px; }
+    header { margin-bottom: 30px; }
+    .eyebrow { margin: 0 0 8px; color: #73d9e6; font-size: 13px; font-weight: 900; text-transform: uppercase; }
+    h1 { margin: 0; font-size: clamp(34px, 7vw, 78px); line-height: .95; letter-spacing: 0; }
+    .count { margin: 14px 0 0; color: #d9c8dc; font-size: 17px; }
+    .list { display: grid; gap: 14px; }
+    .song { display: grid; grid-template-columns: 148px minmax(0, 1fr); gap: 18px; align-items: stretch; padding: 14px; border: 1px solid rgba(240,122,217,.35); background: rgba(8,5,13,.78); }
+    .cover { width: 148px; height: 84px; object-fit: cover; background: #13091c; border: 1px solid rgba(255,255,255,.14); }
+    .cover.empty { display: grid; place-items: center; color: #f07ad9; font-weight: 900; }
+    .rank { margin: 0 0 4px; color: #f07ad9; font-size: 12px; font-weight: 900; }
+    h2 { margin: 0; overflow-wrap: anywhere; font-size: 24px; line-height: 1.08; }
+    .meta { margin: 8px 0 0; color: #d9c8dc; }
+    .links { margin: 12px 0 0; display: flex; flex-wrap: wrap; gap: 10px; }
+    a { color: #73d9e6; text-decoration: none; font-weight: 850; }
+    a:hover { text-decoration: underline; }
+    .empty-state { padding: 28px; border: 1px solid rgba(255,255,255,.14); color: #d9c8dc; background: rgba(8,5,13,.72); }
+    @media (max-width: 620px) { .song { grid-template-columns: 1fr; } .cover { width: 100%; height: auto; aspect-ratio: 16 / 9; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">Vivy Live</p>
+      <h1>Playlist du live</h1>
+      <p class="count">${songs.length} morceau${songs.length > 1 ? 'x' : ''} passé${songs.length > 1 ? 's' : ''}</p>
+    </header>
+    <section class="list">
+      ${rows || '<div class="empty-state">Aucun morceau archivé pour ce live.</div>'}
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+function buildSongShareHtml(song = {}, options = {}) {
+  const publicBaseUrl = options.publicBaseUrl || process.env.VIVY_PUBLIC_BASE_URL || 'https://vivy.funesterie.me';
+  const title = cleanTrackTitle(song.trackTitle || song.title, 'Morceau Vivy');
+  const audioUrl = absolutizePublicUrl(song.trackUrl, publicBaseUrl);
+  const coverUrl = absolutizePublicUrl(song.coverImageUrl || '', publicBaseUrl);
+  const clipUrl = absolutizePublicUrl(song.coverVideoUrl || '', publicBaseUrl);
+  const downloadAudioUrl = buildStreamDownloadPath(audioUrl, 'audio');
+  const downloadCoverUrl = coverUrl ? buildStreamDownloadPath(coverUrl, 'image') : '';
+  const downloadClipUrl = clipUrl ? buildStreamDownloadPath(clipUrl, 'clip') : '';
+  const requestedBy = cleanOneLine(song.requestedBy, '', 80);
+  const rating = Number(song.starCount || 0) && Number(song.starAverage || 0)
+    ? `${Number(song.starAverage).toFixed(Number(song.starAverage) % 1 ? 1 : 0)}/5 (${Number(song.starCount || 0)})`
+    : 'pas encore noté';
+  return `<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(title)} · Vivy Live</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #060409; color: #fff8ff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 22px; background: radial-gradient(circle at 22% 10%, rgba(240,122,217,.22), transparent 36%), #060409; }
+    main { width: min(760px, 100%); display: grid; gap: 18px; }
+    .media { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #12081a; border: 1px solid rgba(240,122,217,.35); }
+    h1 { margin: 0; font-size: clamp(34px, 9vw, 72px); line-height: .95; letter-spacing: 0; }
+    .meta { margin: 0; color: #d9c8dc; font-size: 16px; }
+    audio { width: 100%; }
+    .links { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; }
+    a { display: inline-flex; align-items: center; min-height: 42px; padding: 0 14px; border: 1px solid rgba(115,217,230,.42); color: #73d9e6; text-decoration: none; font-weight: 900; background: rgba(6,4,9,.72); }
+    a:hover { text-decoration: underline; }
+    .back { color: #f07ad9; border-color: rgba(240,122,217,.42); }
+  </style>
+</head>
+<body>
+  <main>
+    ${clipUrl ? `<video class="media" src="${escapeHtml(clipUrl)}" poster="${escapeHtml(coverUrl)}" autoplay muted loop playsinline controls></video>` : (coverUrl ? `<img class="media" src="${escapeHtml(coverUrl)}" alt="">` : '')}
+    <h1>${escapeHtml(title)}</h1>
+    <p class="meta">${requestedBy ? `Demandé par ${escapeHtml(requestedBy)} · ` : ''}${escapeHtml(rating)}</p>
+    <audio src="${escapeHtml(audioUrl)}" controls preload="metadata"></audio>
+    <p class="links">
+      <a href="${escapeHtml(downloadAudioUrl)}" download>Télécharger MP3</a>
+      ${coverUrl ? `<a href="${escapeHtml(downloadCoverUrl)}" download>Télécharger image</a>` : ''}
+      ${clipUrl ? `<a href="${escapeHtml(downloadClipUrl)}" download>Télécharger clip</a>` : ''}
+      <a class="back" href="/api/vivy/stream/songs">Playlist</a>
+    </p>
+  </main>
+</body>
+</html>`;
 }
 
 function createVivyStreamStore(options = {}) {
@@ -512,6 +768,24 @@ function createVivyStreamStore(options = {}) {
       phase: normalized,
       phaseStartedAt: nowIso(),
     };
+  }
+
+  function stopDisabledIdleJukeboxInterlude() {
+    if (idleJukeboxEnabled || state.current?.phase !== 'interlude') return false;
+    setCurrentPhase('idle', {
+      title: 'Vivy Live',
+      trackUrl: '',
+      trackTitle: '',
+      trackId: '',
+      sharePath: '',
+      requestedBy: '',
+      playbackStartedAt: null,
+      phaseEndsAt: null,
+      durationSeconds: 0,
+      message: 'Fond musical d’attente désactivé.',
+    });
+    save();
+    return true;
   }
 
   function ensureJukebox() {
@@ -661,6 +935,10 @@ function createVivyStreamStore(options = {}) {
   }
 
   function beginIdleJukebox(options = {}) {
+    if (!idleJukeboxEnabled) {
+      stopDisabledIdleJukeboxInterlude();
+      return publicState(state);
+    }
     if (!shouldStartIdleJukebox({ allowInterlude: Boolean(options.rotate) })) return publicState(state);
     const track = selectJukeboxTrack();
     if (!track) return publicState(state);
@@ -679,6 +957,10 @@ function createVivyStreamStore(options = {}) {
       trackUrl: track.trackUrl,
       trackId: track.id,
       sharePath: track.sharePath,
+      coverImageUrl: track.coverImageUrl || '',
+      coverPrompt: track.coverPrompt || '',
+      coverVideoUrl: track.coverVideoUrl || '',
+      coverVideoPrompt: track.coverVideoPrompt || '',
       requestedBy: track.requestedBy || 'Vivy Live',
       durationSeconds,
       playbackStartedAt: new Date(startedAt).toISOString(),
@@ -747,6 +1029,7 @@ function createVivyStreamStore(options = {}) {
   function scheduleLifecycle() {
     if (lifecycleTimer) clearTimeout(lifecycleTimer);
     lifecycleTimer = null;
+    if (stopDisabledIdleJukeboxInterlude()) return;
     const phase = state.current?.phase;
     let deadline = null;
     let transition = null;
@@ -787,6 +1070,7 @@ function createVivyStreamStore(options = {}) {
     if (existing) {
       existing.votes = Number(existing.votes || 0) + 1;
       existing.updatedAt = parsed.receivedAt;
+      if (!existing.musicProvider && parsed.musicProvider) existing.musicProvider = parsed.musicProvider;
       startVotingCountdown(round);
       return existing;
     }
@@ -799,6 +1083,7 @@ function createVivyStreamStore(options = {}) {
       text,
       author: parsed.author,
       source: parsed.source,
+      musicProvider: cleanOneLine(parsed.musicProvider, '', 40),
       createdAt: parsed.receivedAt,
       updatedAt: parsed.receivedAt,
       votes: 1,
@@ -822,12 +1107,14 @@ function createVivyStreamStore(options = {}) {
     if (existing) {
       existing.receivedAt = parsed.receivedAt;
       existing.author = parsed.author;
+      if (!existing.musicProvider && parsed.musicProvider) existing.musicProvider = parsed.musicProvider;
       return existing;
     }
     const queued = {
       suggestion: text,
       author: parsed.author,
       source: parsed.source,
+      musicProvider: cleanOneLine(parsed.musicProvider, '', 40),
       message: parsed.message,
       messageId: parsed.messageId,
       receivedAt: parsed.receivedAt,
@@ -982,6 +1269,10 @@ function createVivyStreamStore(options = {}) {
         trackTitle: '',
         trackId: '',
         sharePath: '',
+        coverImageUrl: '',
+        coverPrompt: '',
+        coverVideoUrl: '',
+        coverVideoPrompt: '',
         requestedBy: latest?.author || state.current.requestedBy || '',
         phaseEndsAt: state.round.endsAt,
         playbackStartedAt: null,
@@ -1015,6 +1306,10 @@ function createVivyStreamStore(options = {}) {
       durationSeconds: 0,
       trackId: '',
       sharePath: '',
+      coverImageUrl: '',
+      coverPrompt: '',
+      coverVideoUrl: '',
+      coverVideoPrompt: '',
       message: 'Nouveau round Twitch ouvert.',
     };
     queuedSuggestions.forEach((entry) => addSuggestion(entry));
@@ -1110,6 +1405,22 @@ function createVivyStreamStore(options = {}) {
       const trackUrl = cleanOneLine(input.trackUrl || input.audioUrl || input.url, '', 1200);
       if (!trackUrl) return { ok: false, error: 'track_url_missing', state: publicState(state) };
       const durationSeconds = Math.max(1, Math.min(3600, Number(input.durationSeconds || input.duration || DEFAULT_TRACK_SECONDS)));
+      const coverImageUrl = cleanOneLine(
+        input.coverImageUrl || input.coverUrl || input.imageUrl || input.image_url || state.current.coverImageUrl,
+        '',
+        1200
+      );
+      const coverPrompt = cleanOneLine(input.coverPrompt || input.imagePrompt || input.image_prompt || state.current.coverPrompt, '', 2000);
+      const coverVideoUrl = cleanOneLine(
+        input.coverVideoUrl || input.videoUrl || input.video_url || input.clipUrl || input.clip_url || state.current.coverVideoUrl,
+        '',
+        1200
+      );
+      const coverVideoPrompt = cleanOneLine(
+        input.coverVideoPrompt || input.videoPrompt || input.video_prompt || state.current.coverVideoPrompt,
+        '',
+        2600
+      );
       const track = addJukeboxTrack({
         title: input.title || input.trackTitle || winner?.text || state.current.title,
         trackTitle: input.trackTitle || input.title || winner?.text || state.current.trackTitle,
@@ -1119,6 +1430,10 @@ function createVivyStreamStore(options = {}) {
         source: 'twitch-live',
         starCount: winner?.starCount || 0,
         starAverage: winner?.starAverage || 0,
+        coverImageUrl,
+        coverPrompt,
+        coverVideoUrl,
+        coverVideoPrompt,
       });
       addLiveSong({
         ...track,
@@ -1144,8 +1459,82 @@ function createVivyStreamStore(options = {}) {
         durationSeconds,
         playbackStartedAt: null,
         phaseEndsAt: new Date(presentationEndsAt).toISOString(),
+        coverImageUrl: track?.coverImageUrl || coverImageUrl,
+        coverPrompt: track?.coverPrompt || coverPrompt,
+        coverVideoUrl: track?.coverVideoUrl || coverVideoUrl,
+        coverVideoPrompt: track?.coverVideoPrompt || coverVideoPrompt,
         message: 'Vivy présente sa nouvelle composition.',
       });
+      save();
+      return { ok: true, state: publicState(state) };
+    }
+    if (action === 'cover' || action === 'artwork' || action === 'image') {
+      const mediaRoundId = cleanOneLine(input.roundId, '', 120);
+      if (mediaRoundId && state.round?.id && mediaRoundId !== state.round.id) {
+        return { ok: false, error: 'stale_round_media', state: publicState(state) };
+      }
+      const coverImageUrl = cleanOneLine(input.coverImageUrl || input.coverUrl || input.imageUrl || input.image_url || input.url, '', 1200);
+      if (!coverImageUrl) return { ok: false, error: 'cover_image_url_missing', state: publicState(state) };
+      const coverPrompt = cleanOneLine(input.coverPrompt || input.imagePrompt || input.image_prompt || input.prompt, '', 2000);
+      const trackId = cleanOneLine(input.trackId || state.current.trackId, '', 80);
+      const trackUrl = cleanOneLine(input.trackUrl || state.current.trackUrl, '', 1200);
+      state.current.coverImageUrl = coverImageUrl;
+      if (coverPrompt) state.current.coverPrompt = coverPrompt;
+      const applyCover = (track) => {
+        if (!track) return;
+        const matchesTrackId = trackId && track.id === trackId;
+        const matchesTrackUrl = trackUrl && track.trackUrl === trackUrl;
+        if (!matchesTrackId && !matchesTrackUrl) return;
+        track.coverImageUrl = coverImageUrl;
+        if (coverPrompt) track.coverPrompt = coverPrompt;
+      };
+      ensureJukebox().tracks.forEach(applyCover);
+      ensureSongs().forEach(applyCover);
+      save();
+      return { ok: true, state: publicState(state) };
+    }
+    if (action === 'clip' || action === 'video' || action === 'animation') {
+      const mediaRoundId = cleanOneLine(input.roundId, '', 120);
+      if (mediaRoundId && state.round?.id && mediaRoundId !== state.round.id) {
+        return { ok: false, error: 'stale_round_media', state: publicState(state) };
+      }
+      const coverVideoUrl = cleanOneLine(
+        input.coverVideoUrl || input.videoUrl || input.video_url || input.clipUrl || input.clip_url || input.url,
+        '',
+        1200
+      );
+      if (!coverVideoUrl) return { ok: false, error: 'cover_video_url_missing', state: publicState(state) };
+      const coverVideoPrompt = cleanOneLine(
+        input.coverVideoPrompt || input.videoPrompt || input.video_prompt || input.prompt,
+        '',
+        2600
+      );
+      const coverImageUrl = cleanOneLine(
+        input.coverImageUrl || input.coverUrl || input.imageUrl || input.image_url,
+        '',
+        1200
+      );
+      const trackId = cleanOneLine(input.trackId || state.current.trackId, '', 80);
+      const trackUrl = cleanOneLine(input.trackUrl || state.current.trackUrl, '', 1200);
+      const currentMatches = (!trackId && !trackUrl)
+        || (trackId && state.current.trackId === trackId)
+        || (trackUrl && state.current.trackUrl === trackUrl);
+      if (currentMatches) {
+        state.current.coverVideoUrl = coverVideoUrl;
+        if (coverVideoPrompt) state.current.coverVideoPrompt = coverVideoPrompt;
+        if (coverImageUrl) state.current.coverImageUrl = coverImageUrl;
+      }
+      const applyClip = (track) => {
+        if (!track) return;
+        const matchesTrackId = trackId && track.id === trackId;
+        const matchesTrackUrl = trackUrl && track.trackUrl === trackUrl;
+        if (!matchesTrackId && !matchesTrackUrl) return;
+        track.coverVideoUrl = coverVideoUrl;
+        if (coverVideoPrompt) track.coverVideoPrompt = coverVideoPrompt;
+        if (coverImageUrl) track.coverImageUrl = coverImageUrl;
+      };
+      ensureJukebox().tracks.forEach(applyClip);
+      ensureSongs().forEach(applyClip);
       save();
       return { ok: true, state: publicState(state) };
     }
@@ -1155,6 +1544,16 @@ function createVivyStreamStore(options = {}) {
       }
       if (input.durationSeconds || input.duration) {
         state.current.durationSeconds = Math.max(1, Math.min(3600, Number(input.durationSeconds || input.duration)));
+      }
+      if (input.coverImageUrl || input.coverUrl || input.imageUrl || input.image_url) {
+        state.current.coverImageUrl = cleanOneLine(input.coverImageUrl || input.coverUrl || input.imageUrl || input.image_url, '', 1200);
+      }
+      if (input.coverVideoUrl || input.videoUrl || input.video_url || input.clipUrl || input.clip_url) {
+        state.current.coverVideoUrl = cleanOneLine(
+          input.coverVideoUrl || input.videoUrl || input.video_url || input.clipUrl || input.clip_url,
+          '',
+          1200
+        );
       }
       return { ok: Boolean(state.current.trackUrl), state: beginPlayback() };
     }
@@ -1395,6 +1794,23 @@ function buildOverlayHtml() {
   }
 }
 
+const VIVY_STREAM_IDENTITY_ASSETS = {
+  'a11-agent-media-avatar': 'a11-agent-media-avatar.png',
+  'a11-agent-media-card': 'a11-agent-media-card.png',
+  'djeff-reference-01': 'djeff-reference-01.jpg',
+  'djeff-reference-02': 'djeff-reference-02.jpg',
+  'djeff-reference-03': 'djeff-reference-03.jpg',
+  'djeff-reference-04': 'djeff-reference-04.jpg',
+  'djeff-reference-05': 'djeff-reference-05.jpg',
+  'k44-copilot-reference': 'k44-copilot-reference.png',
+  'marvin-reference-brothers-01': 'marvin-reference-brothers-01.jpg',
+  'marvin-reference-brothers-02': 'marvin-reference-brothers-02.jpg',
+  'marvin-reference-brothers-03': 'marvin-reference-brothers-03.jpg',
+  'marvin-reference-brothers-04': 'marvin-reference-brothers-04.jpg',
+  'marvin-reference-family': 'marvin-reference-family.jpeg',
+  'vivy-presence-musicale': 'vivy-presence-musicale.png',
+};
+
 function createVivyStreamRouter(options = {}) {
   const router = express.Router();
   let store = options.store || null;
@@ -1403,6 +1819,20 @@ function createVivyStreamRouter(options = {}) {
   const runner = options.runner || (autoGenerateEnabled
     ? createVivyStreamNossenRunner({
       updateLive: (input) => store.updateLive(input),
+      buildSocialPromptContext: options.db && typeof options.db.query === 'function'
+        ? async ({ topic, kind, limit }) => {
+          const context = await buildAndStoreSocialPromptContext(options.db, {
+            userId: resolveVivySocialContextUserId(process.env),
+            topic,
+            kind,
+            limit,
+          });
+          return {
+            context,
+            promptText: formatSocialContextForPrompt(context),
+          };
+        }
+        : null,
     })
     : null);
   const onRoundLocked = options.onRoundLocked || (runner
@@ -1416,7 +1846,66 @@ function createVivyStreamRouter(options = {}) {
   });
 
   router.get('/state', (_req, res) => {
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.json(store.getState());
+  });
+
+  router.get('/songs', (_req, res) => {
+    res.set('Cache-Control', 'public, max-age=30');
+    res.type('html').send(buildSongsArchiveHtml(store.getState()));
+  });
+
+  router.get('/songs.json', (_req, res) => {
+    const state = store.getState();
+    res.set('Cache-Control', 'public, max-age=15');
+    res.json({
+      ok: true,
+      songs: Array.isArray(state.songs) ? state.songs : [],
+      current: state.current || {},
+      serverNow: state.serverNow || nowIso(),
+    });
+  });
+
+  router.get('/download', async (req, res) => {
+    const publicBaseUrl = process.env.VIVY_PUBLIC_BASE_URL || 'https://vivy.funesterie.me';
+    const rawUrl = cleanOneLine(req.query.url, '', 1600);
+    const kind = cleanOneLine(req.query.kind, 'media', 40);
+    if (!isAllowedVivyStreamDownloadUrl(rawUrl, req, publicBaseUrl)) {
+      return res.status(400).json({ ok: false, error: 'download_url_not_allowed' });
+    }
+
+    const origin = `${req.protocol || 'http'}://${req.get?.('host') || req.get('host') || '127.0.0.1'}`;
+    const targetUrl = new URL(rawUrl, origin).toString();
+    try {
+      const upstream = await fetch(targetUrl, {
+        headers: { 'User-Agent': 'VivyStreamDownloader/1.0' },
+      });
+      if (!upstream.ok) {
+        return res.status(upstream.status).json({
+          ok: false,
+          error: 'download_upstream_failed',
+          status: upstream.status,
+        });
+      }
+
+      const filename = safeDownloadFilename(targetUrl, kind);
+      const contentType = upstream.headers.get('content-type') || inferMediaContentType(targetUrl);
+      const contentLength = upstream.headers.get('content-length');
+      res.set('Cache-Control', 'public, max-age=300');
+      res.set('Content-Type', contentType);
+      res.set('Content-Disposition', `attachment; filename="${filename.replace(/"/g, '')}"`);
+      if (contentLength) res.set('Content-Length', contentLength);
+
+      if (upstream.body && typeof Readable.fromWeb === 'function') {
+        await pipeline(Readable.fromWeb(upstream.body), res);
+        return undefined;
+      }
+      const buffer = Buffer.from(await upstream.arrayBuffer());
+      return res.end(buffer);
+    } catch (error) {
+      console.warn('[VivyStreamDownload] failed', error?.message || error);
+      return res.status(502).json({ ok: false, error: 'download_failed' });
+    }
   });
 
   router.get('/s/:slug', (req, res) => {
@@ -1425,7 +1914,8 @@ function createVivyStreamRouter(options = {}) {
       return res.status(404).send('Vivy song not found');
     }
     res.set('Cache-Control', 'public, max-age=300');
-    return res.redirect(302, song.trackUrl);
+    if (String(req.query.raw || '') === '1') return res.redirect(302, song.trackUrl);
+    return res.type('html').send(buildSongShareHtml(song));
   });
 
   router.get('/nossen-seed', (_req, res) => {
@@ -1437,6 +1927,9 @@ function createVivyStreamRouter(options = {}) {
   });
 
   router.get('/overlay', (_req, res) => {
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
     res.type('html').send(buildOverlayHtml());
   });
 
@@ -1444,6 +1937,14 @@ function createVivyStreamRouter(options = {}) {
     const backgroundPath = path.join(__dirname, '../../public/assets/vivy-presence-musicale.png');
     res.set('Cache-Control', 'public, max-age=86400, immutable');
     res.sendFile(backgroundPath);
+  });
+
+  router.get('/identity/:asset', (req, res) => {
+    const filename = VIVY_STREAM_IDENTITY_ASSETS[cleanOneLine(req.params.asset, '', 120)];
+    if (!filename) return res.status(404).send('Vivy identity asset not found');
+    const assetPath = path.join(__dirname, '../../public/assets', filename);
+    res.set('Cache-Control', 'public, max-age=86400, immutable');
+    return res.sendFile(assetPath);
   });
 
   router.post('/chat', express.json({ limit: '32kb' }), writeGuard, (req, res) => {
@@ -1501,11 +2002,15 @@ function createVivyStreamRouter(options = {}) {
 
 module.exports = {
   STREAM_SCHEMA,
+  buildSongShareHtml,
+  buildSongsArchiveHtml,
+  buildStreamDownloadPath,
   buildOverlayHtml,
   buildNossenSeedFromRound,
   createVivyStreamRouter,
   createVivyStreamStore,
   extractStarRating,
+  isAllowedVivyStreamDownloadUrl,
   parseVivyStreamChatMessage,
   resolveRoundMs,
 };

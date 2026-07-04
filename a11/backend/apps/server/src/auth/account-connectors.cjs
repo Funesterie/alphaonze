@@ -54,6 +54,40 @@ const MICROSOFT_CALLBACK_NAMES = [
   'A11_MICROSOFT_CALLBACK_URL',
 ];
 
+const SOCIAL_YOUTUBE_CLIENT_ID_NAMES = [
+  'SOCIAL_YOUTUBE_CLIENT_ID',
+  'YOUTUBE_CLIENT_ID',
+  'GOOGLE_CLIENT_ID',
+  'A11_GOOGLE_CLIENT_ID',
+];
+const SOCIAL_YOUTUBE_CLIENT_SECRET_NAMES = [
+  'SOCIAL_YOUTUBE_CLIENT_SECRET',
+  'YOUTUBE_CLIENT_SECRET',
+  'GOOGLE_CLIENT_SECRET',
+  'A11_GOOGLE_CLIENT_SECRET',
+];
+const SOCIAL_YOUTUBE_CALLBACK_NAMES = [
+  'SOCIAL_YOUTUBE_REDIRECT_URI',
+  'SOCIAL_YOUTUBE_CALLBACK_URL',
+  'YOUTUBE_REDIRECT_URI',
+];
+
+const SOCIAL_META_CLIENT_ID_NAMES = [
+  'SOCIAL_META_APP_ID',
+  'META_APP_ID',
+  'FACEBOOK_APP_ID',
+];
+const SOCIAL_META_CLIENT_SECRET_NAMES = [
+  'SOCIAL_META_APP_SECRET',
+  'META_APP_SECRET',
+  'FACEBOOK_APP_SECRET',
+];
+const SOCIAL_META_CALLBACK_NAMES = [
+  'SOCIAL_META_REDIRECT_URI',
+  'SOCIAL_META_CALLBACK_URL',
+  'META_REDIRECT_URI',
+];
+
 function cleanText(value) {
   return String(value || '').trim();
 }
@@ -187,6 +221,39 @@ function resolveOAuthProviderConfig(provider = '', options = {}) {
 
   return {
     provider: normalizedProvider,
+    configured: missing.length === 0,
+    hasClientId,
+    hasClientSecret,
+    hasCallbackUrl,
+    source: {
+      clientId: firstEnvName(env, clientIdNames) || null,
+      clientSecret: firstEnvName(env, clientSecretNames) || null,
+      callbackUrl: cleanText(options.callbackUrl) ? 'derived' : (firstEnvName(env, callbackNames) || null),
+    },
+    missing,
+  };
+}
+
+function resolveSocialProviderConfig(provider = '', options = {}) {
+  const env = options.env || process.env;
+  const normalizedProvider = cleanText(provider).toLowerCase();
+  const isMeta = ['meta', 'facebook', 'instagram'].includes(normalizedProvider);
+  const clientIdNames = isMeta ? SOCIAL_META_CLIENT_ID_NAMES : SOCIAL_YOUTUBE_CLIENT_ID_NAMES;
+  const clientSecretNames = isMeta ? SOCIAL_META_CLIENT_SECRET_NAMES : SOCIAL_YOUTUBE_CLIENT_SECRET_NAMES;
+  const callbackNames = isMeta ? SOCIAL_META_CALLBACK_NAMES : SOCIAL_YOUTUBE_CALLBACK_NAMES;
+  const callbackUrl = cleanText(options.callbackUrl) || firstEnv(env, callbackNames);
+  const clientId = firstEnv(env, clientIdNames);
+  const clientSecret = firstEnv(env, clientSecretNames);
+  const hasClientId = Boolean(clientId);
+  const hasClientSecret = Boolean(clientSecret);
+  const hasCallbackUrl = Boolean(callbackUrl || options.derivedCallbackAvailable);
+  const missing = [];
+  if (!hasClientId) missing.push(isMeta ? 'SOCIAL_META_APP_ID' : 'SOCIAL_YOUTUBE_CLIENT_ID');
+  if (!hasClientSecret) missing.push(isMeta ? 'SOCIAL_META_APP_SECRET' : 'SOCIAL_YOUTUBE_CLIENT_SECRET');
+  if (!hasCallbackUrl) missing.push(isMeta ? 'SOCIAL_META_REDIRECT_URI' : 'SOCIAL_YOUTUBE_REDIRECT_URI');
+
+  return {
+    provider: isMeta ? 'meta' : 'youtube',
     configured: missing.length === 0,
     hasClientId,
     hasClientSecret,
@@ -337,6 +404,16 @@ function buildAccountConnectorState(options = {}) {
     callbackUrl: options.microsoftCallbackUrl,
     derivedCallbackAvailable,
   });
+  const youtubeConfig = resolveSocialProviderConfig('youtube', {
+    env,
+    callbackUrl: options.youtubeCallbackUrl,
+    derivedCallbackAvailable,
+  });
+  const metaConfig = resolveSocialProviderConfig('meta', {
+    env,
+    callbackUrl: options.metaCallbackUrl,
+    derivedCallbackAvailable,
+  });
 
   const oauthConnectors = getUserOAuthConnectors(user);
   const googleConnector = oauthConnectors.google || {};
@@ -367,6 +444,7 @@ function buildAccountConnectorState(options = {}) {
       premium: [
         'MCP public avance',
         'statut cockpit',
+        'Social Autoprompt YouTube/Meta',
         'RomStation lecture',
         'Discord communaute',
       ],
@@ -411,10 +489,28 @@ function buildAccountConnectorState(options = {}) {
         note: 'prevu pour les sessions Fondateur sans acces global',
       },
       youtube: {
-        configured: false,
+        configured: youtubeConfig.configured,
         linked: false,
-        minimumTier: 'founder',
-        note: 'prevu pour les sessions Fondateur avec OAuth propre au compte',
+        minimumTier: 'premium',
+        connectUrl: '/admin/social-connect',
+        note: 'contexte social YouTube pour Vivy via Social Autoprompt',
+        missing: youtubeConfig.missing,
+      },
+      meta: {
+        configured: metaConfig.configured,
+        linked: false,
+        minimumTier: 'premium',
+        connectUrl: '/admin/social-connect',
+        note: 'connexion Facebook / Instagram pour contexte social Vivy',
+        missing: metaConfig.missing,
+      },
+      instagram: {
+        configured: metaConfig.configured,
+        linked: false,
+        minimumTier: 'premium',
+        connectUrl: '/admin/social-connect',
+        note: 'passe par le connecteur Meta/Facebook',
+        missing: metaConfig.missing,
       },
       discord321gaming: {
         configured: true,
@@ -426,6 +522,8 @@ function buildAccountConnectorState(options = {}) {
     serverConfig: {
       google: googleConfig,
       microsoft: microsoftConfig,
+      youtube: youtubeConfig,
+      meta: metaConfig,
     },
   };
 }
@@ -454,6 +552,8 @@ function buildConnectorStateContext(state = {}) {
   const isPrivileged = tier === 'family' || tier === 'founder' || tier === 'admin';
   const google = state.connectors?.google || {};
   const microsoft = state.connectors?.microsoft || {};
+  const youtube = state.connectors?.youtube || {};
+  const meta = state.connectors?.meta || {};
   const quota = state.quota?.label || resolveQuotaLabel(tier);
   const publicTools = Array.isArray(state.publicBoundary?.basic)
     ? state.publicBoundary.basic.join(', ')
@@ -475,6 +575,8 @@ function buildConnectorStateContext(state = {}) {
     `Reserve famille/admin: ${privateTools}.`,
     `Google: ${google.linked ? 'lie a la session' : 'non lie dans cette session'}; ${humanFilesState(google.filesAccess)}; ${humanConfigStatus(state.serverConfig?.google || {})}.`,
     `Microsoft: ${microsoft.linked ? 'lie a la session' : 'non lie dans cette session'}; ${humanFilesState(microsoft.filesAccess)}; ${humanConfigStatus(state.serverConfig?.microsoft || {})}.`,
+    `YouTube social: ${youtube.configured ? 'pret cote serveur' : 'a configurer'}; contexte creatif via Social Autoprompt admin.`,
+    `Facebook/Instagram: ${meta.configured ? 'pret cote serveur' : 'a configurer'}; contexte creatif via Social Autoprompt admin.`,
     'Fichiers: toujours rattaches au compte connecte; ne pas promettre un acces global hors session.',
   ];
 
@@ -507,7 +609,7 @@ function buildConnectorAwareSystemPrompt(systemPrompt = '', state = {}) {
 function isConnectorCapabilitiesQuestion(text = '') {
   const normalized = normalizeText(text);
   if (!normalized) return false;
-  const mentions = /\b(outils?|tools?|capacites?|capabilities|connecteurs?|connectors?|oauth|google|drive|microsoft|onedrive|github|youtube|discord|romstation|local|installation|fichiers?|files?|permissions?|droits?|plan|basic|premium|fondateur|founder|famille|admin)\b/.test(normalized);
+  const mentions = /\b(outils?|tools?|capacites?|capabilities|connecteurs?|connectors?|oauth|google|drive|microsoft|onedrive|github|youtube|facebook|meta|instagram|discord|romstation|local|installation|fichiers?|files?|permissions?|droits?|plan|basic|premium|fondateur|founder|famille|admin)\b/.test(normalized);
   const asks = /\b(quels?|quoi|liste|dispo|disponibles?|etat|statut|status|connecte|connectes|lie|lies|autorise|autorises|tu as|as tu|t as|peux tu|peux-tu|acces|access|montre|affiche|donne)\b/.test(normalized)
     || /\?/.test(normalized);
   return mentions && asks;
@@ -531,6 +633,8 @@ module.exports = {
   mergeOAuthConnectorState,
   normalizeOAuthScopeList,
   normalizeOAuthConnectors,
+  resolveAccountTier,
   resolveOAuthProviderConfig,
+  resolveSocialProviderConfig,
   scopeListIncludes,
 };

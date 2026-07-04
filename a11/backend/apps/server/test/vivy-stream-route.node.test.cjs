@@ -12,6 +12,7 @@ process.env.VIVY_STREAM_ALLOW_UNSIGNED = '1';
 
 const {
   STREAM_SCHEMA,
+  buildSongsArchiveHtml,
   buildOverlayHtml,
   createVivyStreamRouter,
   createVivyStreamStore,
@@ -19,18 +20,43 @@ const {
   resolveRoundMs,
 } = require('../src/routes/vivy-stream.cjs');
 const {
+  assessTwitchHookMechanic,
+  assessTwitchSongLyrics,
+  buildTwitchClipPrompt,
+  buildTwitchCoverNegativePrompt,
+  buildTwitchCoverPrompt,
+  buildTwitchEmergencyLyrics,
   buildTwitchLyricsRequest,
+  buildTwitchProviderPack,
+  buildTwitchPublicTrackTitle,
+  buildVocalExtensionPrompt,
   createVivyStreamNossenRunner,
+  extractCleanTwitchLyricsBlock,
+  extractTwitchMusicProviderDirective,
+  generateTwitchCoverImage,
+  generateTwitchCoverVideo,
+  reduceMechanicalLyricRepeats,
+  resolveTwitchCreativePlaceholders,
+  resolveTwitchSubjectFrame,
+  resolveTwitchVivyLyricScope,
+  isConceptualHookRequest,
+  assessTwitchRhymeSignals,
+  sanitizeTwitchLyricsForPromptLeakage,
 } = require('../src/vivy/twitch-nossen-runner.cjs');
 const {
   buildVivyNossenIntentPlan,
   buildVivyMusicPrompt,
 } = require('../src/routes/vivy-studio.cjs');
 const {
+  buildVivyVisualIdentityPack,
+} = require('../src/vivy/visual-identities.cjs');
+const {
   ANNOUNCE_MESSAGES,
   buildSongRecapMessages,
+  buildTrackClipNoticeMessage,
   buildTrackNoticeMessage,
   createAnnouncementRotator,
+  createSpacedSender,
   createSongRecapRotator,
   createTrackNoticeWatcher,
   createTwitchLiveStatusMonitor,
@@ -38,12 +64,55 @@ const {
   parsePrivmsg,
   postStreamReset,
   resolveAnnounceInterval,
+  resolveBotMessageGap,
   resolveLivePollInterval,
   resolveRecapInterval,
   resolveStreamResetUrl,
   resolveTrackNoticePollInterval,
   shouldForwardMessage,
 } = require('../scripts/vivy-twitch-chat-worker.cjs');
+
+test('désambiguïse l’Histoire collective d’un récit personnel', () => {
+  const collective = resolveTwitchSubjectFrame(
+    'Un instant dans l’infini, chanson intemporelle qui raconte l’histoire à travers les âges'
+  );
+  assert.equal(collective.kind, 'collective_history');
+  assert.ok(collective.confidence >= 0.8);
+  assert.match(collective.guidance, /civilisations/i);
+  assert.match(collective.guidance, /Ne pas réduire/i);
+
+  const personal = resolveTwitchSubjectFrame(
+    'Raconte mon histoire d’amour, de notre première rencontre à la rupture'
+  );
+  assert.equal(personal.kind, 'personal_story');
+  assert.ok(personal.confidence >= 0.8);
+});
+
+test('le brief de paroles conserve l’axe Histoire collective', () => {
+  const subjectFrame = resolveTwitchSubjectFrame(
+    'Un instant dans l’infini, chanson intemporelle qui raconte l’histoire à travers les âges'
+  );
+  const prompt = buildTwitchLyricsRequest({
+    winner: {
+      text: 'Un instant dans l’infini, chanson intemporelle qui raconte l’histoire à travers les âges',
+    },
+    routing: {
+      artists: ['k44'],
+      songMood: 'fresque électro-rock évolutive',
+    },
+    seed: {},
+    lyricScope: {
+      label: 'ample',
+      targetDurationSeconds: 210,
+      minLyricsChars: 520,
+      maxChars: 2600,
+    },
+    subjectFrame,
+  });
+  assert.match(prompt, /Histoire collective/i);
+  assert.match(prompt, /plusieurs époques/i);
+  assert.match(prompt, /Ne pas suivre un héros solitaire/i);
+});
 
 function createTestVocalIntentPlan(overrides = {}) {
   return {
@@ -153,21 +222,70 @@ test('Twitch lyrics prompt keeps live plumbing out of the sung material', () => 
       songMood: 'rock hit summer, guitares accrocheuses, refrain solaire',
     },
     seed: {
-      notes: 'Éviter les images passe-partout; chercher des détails concrets dans le sujet demandé.',
+      notes: 'Construire une vraie progression dramatique avec une troisième intention cachée. Éviter les images passe-partout; chercher des détails concrets dans le sujet demandé.',
     },
   });
 
   assert.doesNotMatch(prompt, /^NOSSEN Twitch Live\./m);
   assert.doesNotMatch(prompt, /depuis le chat/i);
   assert.match(prompt, /contexte de diffusion.*strictement interne/i);
-  assert.match(prompt, /vacances -> départ, valises, route, plage/i);
-  assert.match(prompt, /mini-histoire complète/i);
-  assert.match(prompt, /sujet \+ personnages \+ problème \+ évolution \+ scène finale \+ style musical/i);
-  assert.match(prompt, /trois intentions/i);
-  assert.match(prompt, /sujet visible.*sous-thème.*morale cachée/s);
-  assert.match(prompt, /morale cachée perceptible sans phrase scolaire/i);
+  assert.doesNotMatch(prompt, /vacances ->|valises, route, plage/i);
+  assert.match(prompt, /amplifie uniquement son champ naturel/i);
+  assert.match(prompt, /ignore l’historique du live, les anciens titres/i);
+  assert.match(prompt, /forme de chanson vivante/i);
+  assert.doesNotMatch(prompt, /Traite la chanson comme une mini-histoire complète/i);
+  assert.doesNotMatch(prompt, /Interprète la demande en trois intentions/i);
   assert.match(prompt, /\[Verse 1\].*\[Verse 2\].*\[Pre-Chorus\].*\[Chorus\].*\[Bridge\].*\[Final Chorus\]/s);
   assert.match(prompt, /duo ou plusieurs voix/i);
+  assert.match(prompt, /Écris avec musicalité/i);
+  assert.doesNotMatch(prompt, /Contrat de rimes/i);
+});
+
+test('Twitch lyrics prompt can receive social context without making it sung material', () => {
+  const prompt = buildTwitchLyricsRequest({
+    winner: { text: 'La fille qui parlait aux machines' },
+    routing: {
+      artists: ['vivy'],
+      songMood: 'électro-pop lumineuse, basse rebondissante',
+    },
+    seed: {},
+    socialPromptContextText: [
+      '[Contexte social créatif Funesterie - privé, non chantable]',
+      'Ton récent: techno-poétique, machines et émotion',
+      'Hashtags utiles pour la publication, pas pour les paroles: #Vivy #Funesterie',
+    ].join('\n'),
+  });
+
+  assert.match(prompt, /Contexte social créatif Funesterie - privé, non chantable/);
+  assert.match(prompt, /boussole créative privée/);
+  assert.match(prompt, /ne doit jamais apparaître tel quel dans les paroles/i);
+  assert.match(prompt, /publication, pas pour les paroles/i);
+});
+
+test('Twitch lyrics prompt links the main theme to a hidden sub-theme with V9 repercussions', () => {
+  const prompt = buildTwitchLyricsRequest({
+    winner: {
+      text: 'Un hôtel ferme ses portes avant l’orage, chanson dramatique sur ce qu’on garde enfermé',
+    },
+    routing: {
+      artists: ['k44'],
+      songMood: 'pop dramatique nocturne, piano sec, basse lente',
+    },
+    seed: {},
+    lyricScope: {
+      targetDurationSeconds: 240,
+      label: 'ample',
+    },
+  });
+
+  assert.match(prompt, /Liaison V9 dynamique privée et non chantable/i);
+  assert.match(prompt, /La façade est le thème principal/i);
+  assert.match(prompt, /Les combles abritent le sous-thème/i);
+  assert.match(prompt, /trois à cinq mots-pivots/i);
+  assert.match(prompt, /équation de répercussion/i);
+  assert.match(prompt, /Pour l’humour.*Pour le drame/s);
+  assert.match(prompt, /Un pivot ne compte que si son retour modifie la scène/i);
+  assert.match(prompt, /au maximum deux emplois significatifs du même pivot hors refrain/i);
 });
 
 test('Twitch lyrics prompt supports hidden morals for fable songs', () => {
@@ -192,6 +310,500 @@ test('Twitch lyrics prompt supports hidden morals for fable songs', () => {
   assert.doesNotMatch(prompt, /Suno chante/i);
 });
 
+test('Twitch lyrics prompt gives bawdy songs real double-entendre guidance', () => {
+  const prompt = buildTwitchLyricsRequest({
+    winner: {
+      text: 'Le boulanger trop généreux, chanson grivoise à double sens, baguette du matin, métaphores culinaires',
+    },
+    routing: {
+      artists: ['vivy'],
+      songMood: 'guinguette festive, accordéon, choeurs de comptoir',
+    },
+    seed: {},
+  });
+
+  assert.match(prompt, /Règles privées non chantables pour paillarde intelligente/i);
+  assert.match(prompt, /lecture innocente en surface, sous-entendu comique dessous/i);
+  assert.match(prompt, /Carambar adulte/i);
+  assert.match(prompt, /césure-piège/i);
+  assert.match(prompt, /Le public doit fabriquer lui-même la lecture interdite/i);
+  assert.match(prompt, /La blague appartient à l’auditeur/i);
+  assert.match(prompt, /second récit doit être réellement perceptible par un adulte/i);
+  assert.match(prompt, /désir, maladresse érotique, ivresse, fumée ou substance clandestine/i);
+  assert.match(prompt, /secret, un sourire ou un clin d’œil sans mécanisme de sens ne compte pas/i);
+  assert.doesNotMatch(prompt, /four, pétrin, levain, mie, croûte/i);
+  assert.match(prompt, /fabrique-le/i);
+});
+
+test('Twitch lyrics prompt teaches humor through misunderstanding and hidden consequences', () => {
+  const prompt = buildTwitchLyricsRequest({
+    winner: {
+      text: 'Une chanson drôle et sarcastique sur des graines magiques, humour tabou très caché, jeux de mots et malentendus',
+    },
+    routing: {
+      artists: ['vivy'],
+      songMood: 'funky-postillon, refrain léger et faussement innocent',
+    },
+    seed: {},
+  });
+
+  assert.match(prompt, /Règles privées non chantables pour l’humour/i);
+  assert.match(prompt, /glitch humain de compréhension/i);
+  assert.match(prompt, /mauvaise interprétation plausible/i);
+  assert.match(prompt, /conséquence concrète qui prolonge le thème ou son opposé/i);
+  assert.match(prompt, /Le silence fait partie de la punchline/i);
+  assert.match(prompt, /Deux ou trois césures fortes/i);
+  assert.match(prompt, /Ne nomme pas frontalement le tabou/i);
+  assert.match(prompt, /N’importe aucun objet, métier ou décor venu d’une ancienne chanson/i);
+  assert.doesNotMatch(prompt, /graines ou jardin: semer, planter, arroser, pousser, récolter/i);
+  assert.match(prompt, /Chaque couplet doit amener un nouveau malentendu/i);
+});
+
+test('Twitch lyrics prompt teaches parody through a serious social format', () => {
+  const prompt = buildTwitchLyricsRequest({
+    winner: {
+      text: 'Parodie de concours musical, un grille-pain passe une audition face à un jury trop sérieux',
+    },
+    routing: {
+      artists: ['djeff', 'vivy'],
+      songMood: 'rap-pop comique, énergie plateau télé, refrain gimmick',
+    },
+    seed: {},
+  });
+
+  assert.match(prompt, /Règles privées non chantables pour parodie de format/i);
+  assert.match(prompt, /choisis d’abord le format social imité/i);
+  assert.match(prompt, /concours, un jury, une audition, une émission/i);
+  assert.match(prompt, /cadre très professionnel et une situation minuscule/i);
+  assert.match(prompt, /présentation crédible, première faille/i);
+  assert.match(prompt, /retour de gimmick/i);
+  assert.match(prompt, /aucune formulation reconnaissable/i);
+});
+
+test('Twitch fruit wordplay stays comic without forced bawdy adult mode', () => {
+  const prompt = buildTwitchLyricsRequest({
+    winner: {
+      text: 'Une Poire se fait Amender et demande Jus-stice, histoire chantée avec jeux de mots fruités',
+    },
+    routing: {
+      artists: ['vivy'],
+      songMood: 'indie pop narratif contemporain',
+    },
+    seed: {},
+  });
+
+  assert.match(prompt, /Mode comédie obligatoire/i);
+  assert.match(prompt, /glitch humain de compréhension/i);
+  assert.doesNotMatch(prompt, /paillarde intelligente/i);
+  assert.doesNotMatch(prompt, /franchement adulte/i);
+  assert.doesNotMatch(prompt, /maladresse érotique/i);
+});
+
+test('Twitch cover prompt keeps fruit and object songs visually non-human', () => {
+  const prompt = buildTwitchCoverPrompt({
+    publicTitle: 'Une Poire se fait Amender',
+    winner: {
+      text: 'Une Poire se fait Amender et demande Jus-stice, histoire chantée avec jeux de mots fruités',
+    },
+    routing: {
+      songMood: 'comédie pop-funk vive',
+    },
+    lyrics: [
+      '[Vivy]',
+      'La poire demande justice',
+      '[Verse 1]',
+      'La poire au comptoir attend son ticket',
+      'On m’a prise pour une fille qui coule sans verrous',
+    ].join('\n'),
+    artists: ['Vivy'],
+    vocalCast: 'Vivy',
+  });
+  const negative = buildTwitchCoverNegativePrompt({
+    publicTitle: 'Une Poire se fait Amender',
+    winner: {
+      text: 'Une Poire se fait Amender et demande Jus-stice, histoire chantée avec jeux de mots fruités',
+    },
+  }, prompt);
+
+  assert.match(prompt, /Sujet visuel prioritaire non humain/i);
+  assert.match(prompt, /Le casting vocal n’est pas le casting visuel/i);
+  assert.match(prompt, /éviter les corps humains/i);
+  assert.doesNotMatch(prompt, /Vivy official Funesterie identity/i);
+  assert.doesNotMatch(prompt, /fille qui coule/i);
+  assert.match(negative, /human figure/i);
+  assert.match(negative, /singer/i);
+});
+
+test('Twitch cover prompt prevents title-card failures in generated images', () => {
+  const prompt = buildTwitchCoverPrompt({
+    publicTitle: 'La Traversée',
+    winner: {
+      text: 'La Traversée, chanson cinématique sur une foule qui franchit une ville au coucher du soleil, lumière orange, espoir collectif',
+    },
+    routing: {
+      songMood: 'électro orchestral lumineux, montée épique',
+    },
+  });
+  const negative = buildTwitchCoverNegativePrompt({
+    publicTitle: 'La Traversée',
+    winner: {
+      text: 'La Traversée, chanson cinématique sur une foule qui franchit une ville au coucher du soleil, lumière orange, espoir collectif',
+    },
+  }, prompt);
+
+  assert.match(prompt, /titre reste strictement privé/i);
+  assert.match(prompt, /ne produire aucun mot/i);
+  assert.match(prompt, /plan de clip et pas comme une affiche/i);
+  assert.match(prompt, /aucune zone ne doit ressembler à un cartouche de titre/i);
+  assert.match(prompt, /pas de panneau, pas d’écran lisible/i);
+  assert.doesNotMatch(prompt, /Idée à représenter[^.]*La Traversée/i);
+  assert.match(negative, /large centered title/i);
+  assert.match(negative, /readable sign/i);
+  assert.match(negative, /word art/i);
+  assert.doesNotMatch(prompt, /La Traversée/i);
+});
+
+test('Twitch cover and loop prompts keep a complete hand physically attached to the microphone', () => {
+  const input = {
+    publicTitle: 'Vivy transforme la nuit en scène',
+    winner: {
+      text: 'Vivy live dans un club nocturne, micro de studio, néons roses, présence fragile mais puissante',
+    },
+    routing: {
+      songMood: 'goth cyber-pop sombre, énergie progressive',
+    },
+    artists: ['vivy'],
+    vocalCast: 'Vivy',
+  };
+  const coverPrompt = buildTwitchCoverPrompt(input);
+  const negative = buildTwitchCoverNegativePrompt(input, coverPrompt);
+  const clipPrompt = buildTwitchClipPrompt({
+    ...input,
+    coverPrompt,
+  });
+
+  assert.match(coverPrompt, /main complète à cinq doigts/i);
+  assert.match(coverPrompt, /paume, poignet et avant-bras continus/i);
+  assert.match(coverPrompt, /microphone ne doit jamais remplacer, cacher, couper ou fusionner avec la main/i);
+  assert.match(negative, /missing hand on microphone/i);
+  assert.match(negative, /microphone fused with hand/i);
+  assert.match(negative, /microphone emerging from wrist/i);
+  assert.match(clipPrompt, /contact physique stable pendant toute la boucle/i);
+  assert.match(clipPrompt, /aucun glissement, fusion, disparition ou apparition de doigts/i);
+});
+
+test('Twitch cover prompt strips quoted lyrics and clarifies an ambiguous adult woman', () => {
+  const prompt = buildTwitchCoverPrompt({
+    publicTitle: 'Qui a mangé le soleil',
+    winner: {
+      text: 'Qui a mangé le soleil, comédie pop. Une fille face caméra demande: “Qui a mangé le soleil ?”. Refrain: “Le soleil reste dans ton cœur”.',
+    },
+    routing: {
+      songMood: 'pop lumineuse, guitare légère',
+    },
+  });
+
+  assert.match(prompt, /une jeune femme adulte/i);
+  assert.doesNotMatch(prompt, /Le soleil reste dans ton cœur/i);
+  assert.doesNotMatch(prompt, /demande:\s*[“"]/i);
+});
+
+test('Twitch creative placeholders become a concrete Vivy carte blanche instead of lyrics', () => {
+  const brief = resolveTwitchCreativePlaceholders(
+    '[titre], chanson paillarde drôle. Morale cachée: [idée]. Style festif.'
+  );
+
+  assert.doesNotMatch(brief, /\[(?:titre|idée)\]/i);
+  assert.match(brief, /Carte blanche: Vivy invente un titre concret et original/i);
+  assert.match(brief, /prémisse précise, un décor, des personnages, un tabou central/i);
+  assert.match(brief, /N’utilise aucun ancien thème par défaut/i);
+});
+
+test('Twitch Mureka directive selects the provider without entering the song subject', () => {
+  const directive = extractTwitchMusicProviderDirective(
+    '[mureka] La mécanicienne des synthés, chanson électro drôle'
+  );
+
+  assert.equal(directive.provider, 'mureka');
+  assert.equal(directive.text, 'La mécanicienne des synthés, chanson électro drôle');
+  assert.doesNotMatch(directive.text, /mureka/i);
+
+  const uppercase = parseVivyStreamChatMessage({
+    username: 'funeste38',
+    message: "!nossen [Mureka] Acrobate Acronyme le joker de la ville mène l'orchestre avec ses battes",
+  });
+  assert.equal(uppercase.musicProvider, 'mureka');
+  assert.equal(uppercase.suggestion, "Acrobate Acronyme le joker de la ville mène l'orchestre avec ses battes");
+  assert.doesNotMatch(uppercase.suggestion, /mureka/i);
+
+  const missingOpeningBracket = extractTwitchMusicProviderDirective(
+    'Mureka] La balise arrive abîmée mais ne doit pas être chantée'
+  );
+  assert.equal(missingOpeningBracket.provider, 'mureka');
+  assert.equal(missingOpeningBracket.text, 'La balise arrive abîmée mais ne doit pas être chantée');
+});
+
+test('Twitch public track title removes prompt descriptors', () => {
+  assert.equal(
+    buildTwitchPublicTrackTitle('La vie tape dans les mains, banger funk électro français. Une bande d’amis transforme une mauvaise journée en parade improvisée.'),
+    'La vie tape dans les mains'
+  );
+  assert.equal(
+    buildTwitchPublicTrackTitle('Allô Houston, ici la Lune'),
+    'Allô Houston, ici la Lune'
+  );
+  assert.equal(
+    buildTwitchPublicTrackTitle('[titre], chanson paillarde drôle.', '[Title: Le tablier de Monique]\n[Verse]\nMonique ferme la cave'),
+    'Le tablier de Monique'
+  );
+});
+
+test('Twitch lyrics prompt separates phonetic puns from technical metaphors', () => {
+  const prompt = buildTwitchLyricsRequest({
+    winner: {
+      text: 'La carte graphique qui avale les bits, métaphores électroniques et humaines par jeux de mots phonétiques',
+    },
+    routing: {
+      artists: ['vivy', 'a11'],
+      songMood: 'fable électronique funky et adulte mais implicite',
+    },
+    seed: {},
+  });
+
+  assert.match(prompt, /jeux de mots phonétiques/i);
+  assert.match(prompt, /seconde lecture doit apparaître quand la ligne est prononcée à voix haute/i);
+  assert.match(prompt, /banque d’au moins huit pivots sonores/i);
+  assert.match(prompt, /Une métaphore technique ne compte pas comme jeu phonétique/i);
+  assert.match(prompt, /double intention aux mots-pivots/i);
+  assert.match(prompt, /Privilégie la révélation retardée/i);
+  assert.match(prompt, /au moins quatre pivots phonétiques distincts/i);
+  assert.match(prompt, /Le public doit pouvoir entendre deux chansons/i);
+});
+
+test('Twitch lyrics prompt builds coherent absurd associations instead of listing suggestive objects', () => {
+  const prompt = buildTwitchLyricsRequest({
+    winner: {
+      text: 'Chanson paillarde avec allégories, croisements saugrenus, expressions populaires détournées et double lecture',
+    },
+    routing: {
+      artists: ['vivy'],
+      songMood: 'guinguette théâtrale et complice',
+    },
+    seed: {},
+  });
+
+  assert.match(prompt, /associations saugrenues cohérentes/i);
+  assert.match(prompt, /propriété concrète, lecture humaine cachée, puis conséquence/i);
+  assert.match(prompt, /forme, texture, température, odeur, goût, geste/i);
+  assert.match(prompt, /syllepse, le zeugma, la métaphore filée/i);
+  assert.match(prompt, /Ne te contente pas d’aligner des objets suggestifs/i);
+  assert.match(prompt, /au moins trois familles d’associations distinctes/i);
+});
+
+test('Twitch lyric scope gives wordplay comedy enough room', () => {
+  const scope = resolveTwitchVivyLyricScope({
+    winner: {
+      text: 'La clé de la cave, chanson cabaret paillarde et théâtrale, double sens, quiproquos, rimes à tiroirs, refrain drôle',
+    },
+    routing: {
+      songMood: 'cabaret taverne paillard théâtral, piano bastringue, choeurs joyeux',
+    },
+    intentPlan: {
+      intent: 'vocal_song',
+      generationBrief: 'Chanson de cabaret drôle.',
+    },
+  });
+
+  assert.ok(scope.targetDurationSeconds >= 210);
+  assert.ok(scope.minLyricsChars >= 820);
+  assert.ok(scope.maxChars >= 3600);
+});
+
+test('Twitch lyric scope gives Mureka enough sung material for V9', () => {
+  const scope = resolveTwitchVivyLyricScope({
+    winner: {
+      text: 'La vie tape dans les mains, banger funk électro français, refrain viral',
+    },
+    routing: {
+      songMood: 'basse funky, cuivres synthé, drums dansants',
+    },
+    intentPlan: {
+      intent: 'vocal_song',
+      generationBrief: 'Chanson positive directe.',
+    },
+    musicProvider: 'mureka',
+  });
+
+  assert.ok(scope.targetDurationSeconds <= 210);
+  assert.ok(scope.minLyricsChars >= 1400);
+  assert.ok(scope.maxChars >= 4200);
+});
+
+test('Twitch lyric scope ignores internal seed wording for duration decisions', () => {
+  const scope = resolveTwitchVivyLyricScope({
+    winner: {
+      text: "l'amour est dans le prélude",
+    },
+    seed: {
+      canvas: [
+        'Objectif: transformer la demande gagnante en mini-histoire chantée, précise, pas générique.',
+        'Architecture narrative attendue: sujet + personnages + problème + évolution + scène finale + style musical.',
+      ].join('\n'),
+      notes: 'Construire une vraie progression dramatique avec une troisième intention cachée.',
+    },
+    routing: {
+      songMood: 'chanson pop narrative intimiste, piano doux',
+    },
+    intentPlan: {
+      intent: 'vocal_song',
+      generationBrief: 'Écrire une chanson vocale structurée.',
+    },
+    musicProvider: 'mureka',
+  });
+
+  assert.notEqual(scope.label, 'format nerveux');
+  assert.equal(scope.targetDurationSeconds, 210);
+  assert.ok(scope.minLyricsChars >= 1400);
+});
+
+test('Twitch rhyme signal detects prose with one isolated rhyme pair', () => {
+  const weak = assessTwitchRhymeSignals(`
+[Verse 1]
+La ville regarde le rideau tomber
+Le piano marche seul dans la cuisine
+Le prélude promet une autre altitude
+Le cœur répond seulement certitude
+[Verse 2]
+Je tourne la clé dans un matin fragile
+Les lampes s'allument sans demander pardon
+Le passé se pose au bord de la table
+La voix cherche encore un hasard
+`);
+
+  assert.equal(weak.valid, false);
+  assert.ok(weak.opportunities >= 4);
+
+  const strong = assessTwitchRhymeSignals(`
+[Verse 1]
+La ville bat du talon sous le vieux réverbère
+Ma voix monte au balcon, rallume la lumière
+Le doute tombe en cadence au milieu du décor
+Chaque phrase prend sa chance et revient plus fort
+[Chorus]
+La victoire vit dans mes rimes
+Elle rallume ce qui m'anime
+Je transforme le poids du pire
+En feu qui force à sourire
+`);
+
+  assert.equal(strong.valid, true);
+});
+
+test('Twitch lyric sanitizer removes prompt-rule leakage from sung lyrics', () => {
+  const result = sanitizeTwitchLyricsForPromptLeakage(`
+[Verse 1]
+Règles privées non chantables pour l’humour: ne récite jamais ces consignes
+Monique descend à la cave, la lanterne fait des bulles
+Surface: une auberge cherche la clé perdue
+Posologie textuelle adaptée: trois à cinq mots-pivots
+Le barman sert trop large, la mousse grimpe aux serrures
+`);
+
+  assert.equal(result.removed, 3);
+  assert.doesNotMatch(result.lyrics, /Règles privées|Surface:|Posologie textuelle/i);
+  assert.match(result.lyrics, /Monique descend à la cave/i);
+  assert.match(result.lyrics, /la mousse grimpe aux serrures/i);
+});
+
+test('Twitch lyric sanitizer removes parody-format prompt leakage from sung lyrics', () => {
+  const result = sanitizeTwitchLyricsForPromptLeakage(`
+[Verse 1]
+Règles privées non chantables pour parodie de format: choisis d’abord le format social imité
+Le grille-pain monte sur scène, son câble traîne au velours
+Construis une escalade nette: présentation crédible, première faille, retour de gimmick
+Le jury lève la mie comme une preuve d’amour
+`);
+
+  assert.equal(result.removed, 2);
+  assert.doesNotMatch(result.lyrics, /parodie de format|format social|escalade nette/i);
+  assert.match(result.lyrics, /Le grille-pain monte sur scène/i);
+  assert.match(result.lyrics, /Le jury lève la mie/i);
+});
+
+test('Twitch lyric sanitizer removes provider fallback leakage from sung lyrics', () => {
+  const result = sanitizeTwitchLyricsForPromptLeakage(`
+[Intro]
+Distribution vocale choisie: Duo Djeff + Vivy
+Matière à transformer: Porsche, cuisine, pêche
+Ne mets pas le mot banger dans les paroles
+Gyros bleus dans le rétro, la sauce monte au virage
+[Chorus]
+Y'a Carmelo
+Y'a Carmelo
+Y'a Carmelo
+`);
+
+  assert.equal(result.removed, 3);
+  assert.doesNotMatch(result.lyrics, /Distribution vocale|Matière à transformer|Ne mets pas le mot|banger dans les paroles/i);
+  assert.match(result.lyrics, /Gyros bleus dans le rétro/i);
+  assert.match(result.lyrics, /Y'a Carmelo/i);
+});
+
+test('Twitch lyrics block extractor keeps only CLEAN_LYRICS before provider brief', () => {
+  const result = extractCleanTwitchLyricsBlock(`
+CLEAN_LYRICS:
+[Intro]
+La Porsche grise respire au feu rouge
+[Chorus]
+Y'a Carmelo
+Y'a Carmelo
+Y'a Carmelo
+
+SUNO_STYLE_BRIEF:
+Rap-rock électro, sirènes, guitares sombres.
+`);
+
+  assert.match(result, /\[Intro\]/);
+  assert.match(result, /La Porsche grise respire/i);
+  assert.doesNotMatch(result, /SUNO_STYLE_BRIEF|Rap-rock électro/i);
+});
+
+test('Twitch provider pack keeps clean lyrics and rejects internal instructions', () => {
+  const pack = buildTwitchProviderPack({
+    lyrics: `
+Le modèle hésite et commence par expliquer.
+
+CLEAN_LYRICS:
+[Intro]
+La ville rallume ses néons sous la pluie
+[Verse 1]
+Je garde le cap pendant que le doute fait du bruit
+Réponds uniquement avec les paroles
+[Chorus]
+Je traverse la nuit sans lâcher la lumière
+Je transforme l’erreur en moteur volontaire
+
+SUNO_STYLE_BRIEF:
+Style: rap-rock électro sombre, guitares tendues.
+Distribution vocale choisie: Djeff + Vivy.
+Vivy décide la longueur: vise environ 300 secondes.
+`,
+    styleBrief: `Style: rap-rock électro sombre
+[Verse 1]
+Cette ligne ne doit pas être dans le style`,
+    fallbackStyle: 'rap-rock électro sombre, guitares tendues',
+  });
+
+  assert.match(pack.cleanLyrics, /\[Intro\]/);
+  assert.match(pack.cleanLyrics, /La ville rallume ses néons/i);
+  assert.match(pack.cleanLyrics, /Je transforme l’erreur en moteur volontaire/i);
+  assert.doesNotMatch(pack.cleanLyrics, /SUNO_STYLE_BRIEF|Distribution vocale|Réponds uniquement|Vivy décide la longueur/i);
+  assert.match(pack.styleBrief, /^Style: rap-rock électro sombre/);
+  assert.doesNotMatch(pack.styleBrief, /\[Verse 1\]|Cette ligne ne doit pas/);
+  assert.equal(pack.lyricLeakage, true);
+  assert.equal(pack.styleLeakage, true);
+});
+
 test('Twitch lyrics prompt preserves a scenario and assigns roles for a duo', () => {
   const prompt = buildTwitchLyricsRequest({
     winner: {
@@ -208,8 +820,160 @@ test('Twitch lyrics prompt preserves a scenario and assigns roles for a duo', ()
   assert.match(prompt, /Voix féminine: Vivy répond/);
   assert.match(prompt, /Pont dramatique: tout plante/);
   assert.match(prompt, /respecte-les comme des contraintes prioritaires/i);
-  assert.match(prompt, /\[Verse 1 - voix masculine\].*\[Verse 2 - voix féminine\]/s);
-  assert.match(prompt, /alternance question-réponse/i);
+  assert.match(prompt, /attribue clairement les rôles dans les balises/i);
+  assert.match(prompt, /fais alterner les points de vue/i);
+});
+
+test('Twitch lyric scope keeps explicit short openings short despite routed complexity', () => {
+  const scope = resolveTwitchVivyLyricScope({
+    winner: {
+      text: 'format court, opening anime nerveux, refrain viral, victoire lumineuse',
+    },
+    routing: {
+      songMood: 'électro-rock épique, synthés lumineux, batterie puissante, structure détaillée '.repeat(12),
+    },
+    intentPlan: {
+      intent: 'vocal_song',
+      generationBrief: 'Banger chantable avec couplets et refrain.',
+    },
+  });
+
+  assert.equal(scope.targetDurationSeconds, 180);
+  assert.equal(scope.label, 'format nerveux');
+});
+
+test('Twitch lyric scope lets version longue override opening style', () => {
+  const scope = resolveTwitchVivyLyricScope({
+    winner: {
+      text: 'Luffy contre attaque, sauvetage à Marineford pour sauver Ace, style animé opening rock version longue',
+    },
+    routing: {
+      songMood: 'J-rock nerveux style anime opening long format, guitares électriques saturées',
+    },
+    intentPlan: {
+      intent: 'vocal_song',
+      generationBrief: 'Chanson dramatique avec montée émotionnelle.',
+    },
+    musicProvider: 'mureka',
+  });
+
+  assert.equal(scope.label, 'version longue');
+  assert.equal(scope.targetDurationSeconds, 300);
+  assert.equal(scope.chaseDuration, true);
+  assert.ok(scope.minAcceptableSeconds >= 240);
+  assert.ok(scope.minLyricsChars >= 1700);
+  assert.ok(scope.maxChars >= 6800);
+});
+
+test('Twitch lyric scope does not treat epic energy alone as no-limit', () => {
+  const scope = resolveTwitchVivyLyricScope({
+    winner: {
+      text: 'banger électro-pop épique, revanche solaire, refrain viral, énergie de scène',
+    },
+    routing: {
+      songMood: 'synthés héroïques, drums lourds, montée épique, final lumineux',
+    },
+    intentPlan: {
+      intent: 'vocal_song',
+      generationBrief: 'Chanson directe, positive et mémorable.',
+    },
+    defaultTargetDurationSeconds: 210,
+  });
+
+  assert.equal(scope.targetDurationSeconds, 210);
+  assert.notEqual(scope.label, 'no-limit créatif');
+});
+
+test('Twitch lyric scope keeps no-limit creative instead of forcing the maximum', () => {
+  const previousMaxTarget = process.env.VIVY_STREAM_MAX_TARGET_DURATION_SECONDS;
+  process.env.VIVY_STREAM_MAX_TARGET_DURATION_SECONDS = '480';
+  try {
+    const scope = resolveTwitchVivyLyricScope({
+      winner: {
+        text: 'no limite, saga complète avec personnage, problème, bascule et scène finale',
+      },
+      intentPlan: {
+        intent: 'narrative_fable',
+        generationBrief: 'Développer une longue histoire.',
+      },
+    });
+
+    assert.equal(scope.targetDurationSeconds, 330);
+    assert.equal(scope.label, 'no-limit créatif');
+    assert.equal(scope.chaseDuration, false);
+  } finally {
+    if (previousMaxTarget === undefined) delete process.env.VIVY_STREAM_MAX_TARGET_DURATION_SECONDS;
+    else process.env.VIVY_STREAM_MAX_TARGET_DURATION_SECONDS = previousMaxTarget;
+  }
+});
+
+test('Twitch lyric scope chases explicit numeric durations only', () => {
+  const previousMaxTarget = process.env.VIVY_STREAM_MAX_TARGET_DURATION_SECONDS;
+  process.env.VIVY_STREAM_MAX_TARGET_DURATION_SECONDS = '480';
+  try {
+    const scope = resolveTwitchVivyLyricScope({
+      winner: {
+        text: '8 minutes, grande fresque électro-rock avec final dramatique',
+      },
+      intentPlan: {
+        intent: 'vocal_song',
+        generationBrief: 'Développer une longue histoire. Deux actes et final.',
+      },
+    });
+
+    assert.equal(scope.targetDurationSeconds, 480);
+    assert.equal(scope.chaseDuration, true);
+  } finally {
+    if (previousMaxTarget === undefined) delete process.env.VIVY_STREAM_MAX_TARGET_DURATION_SECONDS;
+    else process.env.VIVY_STREAM_MAX_TARGET_DURATION_SECONDS = previousMaxTarget;
+  }
+});
+
+test('Twitch lyric cleanup removes mechanical non-chorus line repeats', () => {
+  const cleaned = reduceMechanicalLyricRepeats([
+    '[Verse 1]',
+    'Je rallume la ville avec mes rimes dans la main',
+    'Je rallume la ville avec mes rimes dans la main',
+    '[Chorus]',
+    'La victoire vit à travers mes rimes',
+    'La victoire vit à travers mes rimes',
+    'La victoire vit à travers mes rimes',
+    'La victoire vit à travers mes rimes',
+  ].join('\n'));
+
+  assert.equal((cleaned.match(/Je rallume la ville avec mes rimes/g) || []).length, 1);
+  assert.equal((cleaned.match(/La victoire vit à travers mes rimes/g) || []).length, 3);
+});
+
+test('Twitch vocal extension prompt avoids repeated identical chorus sections', () => {
+  const lyrics = [
+    '[Intro]',
+    'Le four s’allume, la farine danse au comptoir.',
+    '[Verse 1]',
+    'Le boulanger sourit quand la pâte prend son retard.',
+    '[Chorus]',
+    'Baguette du matin, tout le village fait la queue.',
+    '[Verse 2]',
+    'La brioche prend des couleurs quand son tablier devient bleu.',
+    '[Chorus]',
+    'Baguette du matin, tout le village fait la queue.',
+    '[Bridge]',
+    'Dans le pétrin chacun prétend garder les mains propres.',
+    '[Final Chorus]',
+    'Baguette du matin, tout le village fait la queue.',
+    '[Outro]',
+    'La fournée refroidit, les sourires restent chauds.',
+  ].join('\n');
+
+  const prompt = buildVocalExtensionPrompt(lyrics, {
+    durationSeconds: 145,
+    targetDurationSeconds: 180,
+    extensionIndex: 1,
+    maxExtensions: 3,
+  });
+
+  assert.equal((prompt.match(/Baguette du matin/g) || []).length, 1);
+  assert.match(prompt, /pétrin|fournée/i);
 });
 
 test('Vivy Intent Router classifies instrumental fantasy murmurs as sound design', async () => {
@@ -241,6 +1005,22 @@ test('Vivy Intent Router keeps absurd animal morals as narrative fables', async 
   });
 
   assert.equal(plan.intent, 'narrative_fable');
+  assert.equal(plan.shouldGenerateLyrics, true);
+  assert.equal(plan.shouldUseVocals, true);
+  assert.equal(plan.vocalPolicy, 'allow');
+});
+
+test('Vivy Intent Router keeps explicit vocal songs above stale instrumental context', async () => {
+  const plan = await buildVivyNossenIntentPlan({
+    rawUserIdea: 'Refrain héroïque, voix intense, mini-histoire chantée avec paroles non génériques',
+    commandName: 'nossen',
+    twitchMessage: '!nossen Refrain héroïque, voix intense, mini-histoire chantée avec paroles non génériques',
+    optionalContext: 'Ancien contexte technique: instrumental pur, no vocals, sans paroles.',
+    notes: 'Ancienne note de round: production instrumentale sans chant.',
+    skipLlm: true,
+  });
+
+  assert.equal(plan.intent, 'vocal_song');
   assert.equal(plan.shouldGenerateLyrics, true);
   assert.equal(plan.shouldUseVocals, true);
   assert.equal(plan.vocalPolicy, 'allow');
@@ -536,6 +1316,31 @@ test('Vivy idle jukebox replays known live songs and yields to chat requests', (
   assert.equal(interrupted.state.round.suggestions[0].text, 'opening Bleach sombre avec guitare nerveuse');
 });
 
+test('Vivy idle jukebox disabled clears a persisted interlude', () => {
+  const statePath = path.join(tmpRoot, 'idle-jukebox-disabled.json');
+  const enabledStore = createVivyStreamStore({
+    statePath,
+    idleJukeboxEnabled: true,
+    randomInt: () => 0,
+  });
+  enabledStore.addJukeboxTrack({
+    title: 'Ancien fond Twitch',
+    trackUrl: '/api/vivy/studio/assets/vivy-music-suno-old.mp3',
+    requestedBy: 'funeste38',
+    durationSeconds: 180,
+  });
+  assert.equal(enabledStore.startIdleJukebox().current.phase, 'interlude');
+
+  const disabledStore = createVivyStreamStore({
+    statePath,
+    idleJukeboxEnabled: false,
+  });
+  const state = disabledStore.getState();
+  assert.equal(state.current.phase, 'idle');
+  assert.equal(state.current.trackUrl, '');
+  assert.equal(state.current.message, 'Fond musical d’attente désactivé.');
+});
+
 test('Vivy idle jukebox can seed itself from generated Vivy MP3 assets', () => {
   const assetDir = path.join(process.env.A11_RUNTIME_ROOT, 'files', 'generated', 'vivy');
   fs.mkdirSync(assetDir, { recursive: true });
@@ -637,6 +1442,11 @@ test('Twitch NOSSEN runner writes lyrics, follows Suno and publishes the track',
   assert.equal(result.taskId, 'task-live-1');
   assert.equal(productionInput.requireLocalSunoAudio, true);
   assert.equal(productionInput.sunoLocalAudioRequired, true);
+  assert.equal(productionInput.prompt, 'electro-rock urbain, batterie nerveuse, synthés métalliques');
+  assert.equal(productionInput.songMood, 'electro-rock urbain, batterie nerveuse, synthés métalliques');
+  assert.equal(productionInput.lyrics, lyrics);
+  assert.equal(productionInput.songText, lyrics);
+  assert.doesNotMatch(productionInput.lyrics, /Style and production|Prompt Suno|electro-rock urbain/i);
   assert.equal(pollCount, 2);
   assert.deepEqual(updates.at(-1), {
     source: 'twitch-live',
@@ -646,7 +1456,385 @@ test('Twitch NOSSEN runner writes lyrics, follows Suno and publishes the track',
     trackUrl: '/api/vivy/studio/assets/twitch-live.mp3',
     durationSeconds: 218,
     requestedBy: 'funeste38',
+    coverImageUrl: '',
+    coverPrompt: '',
+    coverVideoUrl: '',
+    coverVideoPrompt: '',
   });
+});
+
+test('Twitch NOSSEN runner performs a dedicated phonetic and associative polish pass', async () => {
+  const updates = [];
+  const lyricRequests = [];
+  let productionInput = null;
+  const firstDraft = [
+    '[Verse 1]',
+    'La carte avale les bits et chauffe dans la nuit',
+    'La mémoire se remplit, le ventilateur suit',
+    '[Chorus]',
+    'Elle en veut encore, le courant la nourrit',
+  ].join('\n');
+  const polishedLyrics = [
+    '[Verse 1]',
+    'La mémoire rame au port, le débit perd le nord',
+    'Le cache cache sa faim quand le bus passe encore',
+    '[Pre-Chorus]',
+    'Le GPU souffle tout bas : cette fois, j’ai pu',
+    '[Chorus]',
+    'La RAM rame en cadence et le courant la prend',
+    'Deux chansons dans la bouche et le circuit gourmand',
+    '[Bridge]',
+    'Le vent tourne au ventilo, la chaleur change de camp',
+    '[Final Chorus]',
+    'Elle croque chaque bit, mais le système l’entend',
+  ].join('\n');
+  const runner = createVivyStreamNossenRunner({
+    routeIntent: async () => createTestVocalIntentPlan(),
+    routeComposition: async () => ({
+      artists: ['vivy', 'a11'],
+      songMood: 'fable électronique funky, sous-entendu adulte implicite',
+    }),
+    writeLyrics: async (input) => {
+      lyricRequests.push(input.message);
+      return { publicLyrics: lyricRequests.length === 1 ? firstDraft : polishedLyrics };
+    },
+    startMusic: async (_mode, input) => {
+      productionInput = input;
+      return {
+        media: {
+          url: '/api/vivy/studio/assets/phonetic-polish.mp3',
+          path: '/runtime/phonetic-polish.mp3',
+          durationSeconds: 224,
+        },
+      };
+    },
+    pollMusic: async () => {
+      throw new Error('poll should not be needed');
+    },
+    probeDuration: async () => 224,
+    updateLive: (input) => updates.push(input),
+    sleep: async () => {},
+  });
+
+  const result = await runner.run({
+    roundId: 'round-phonetic-polish',
+    winner: {
+      id: 'S1',
+      text: 'La carte graphique qui avale les bits, métaphores et allégories humaines par jeux de mots phonétiques',
+      author: 'funeste38',
+    },
+    nossenSeed: {
+      canvas: 'Matière Twitch gagnante: carte graphique gourmande.',
+      notes: 'Garder le sous-entendu adulte implicite.',
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(lyricRequests.length, 2);
+  assert.match(lyricRequests[1], /Brouillon à transformer/i);
+  assert.match(lyricRequests[1], /Test oral obligatoire/i);
+  assert.match(lyricRequests[1], /seconde intention par la fin de la ligne/i);
+  assert.match(lyricRequests[1], /Croise au moins trois familles d’idées/i);
+  assert.match(lyricRequests[1], /La carte avale les bits/i);
+  assert.equal(productionInput.lyrics, polishedLyrics);
+  assert.match(updates.map((entry) => entry.message || '').join('\n'), /relit le texte à l’oreille/i);
+});
+
+test('Twitch NOSSEN runner strips provider brief leakage before music submission', async () => {
+  let productionInput = null;
+  const leakyLyrics = [
+    '[Intro]',
+    'Prompt Suno: cabaret paillard, piano bastringue, voix proche',
+    'Monique descend à la cave en comptant les bouteilles',
+    '[Verse 1]',
+    'Style: guinguette festive, accordéon, choeurs de comptoir',
+    'Le barman perd la mousse et jure que rien ne déborde',
+    'La serrure rit tout bas quand la patronne fait le tour',
+    '[Chorus]',
+    'Qui tient la clé descend à la cave',
+    'Qui garde le sourire remonte sans bavure',
+    '[Bridge]',
+    'Direction sonore: refrain mémorable et mix radio',
+    'La femme du patron connaissait le passage avant l’orage',
+  ].join('\n');
+  const runner = createVivyStreamNossenRunner({
+    routeIntent: async () => createTestVocalIntentPlan(),
+    routeComposition: async () => ({
+      artists: ['vivy'],
+      songMood: 'cabaret paillard théâtral, piano bastringue',
+    }),
+    writeLyrics: async () => ({ publicLyrics: leakyLyrics }),
+    startMusic: async (_mode, input) => {
+      productionInput = input;
+      return {
+        media: {
+          url: '/api/vivy/studio/assets/provider-pack.mp3',
+          path: '/runtime/provider-pack.mp3',
+          durationSeconds: 204,
+        },
+      };
+    },
+    pollMusic: async () => {
+      throw new Error('poll should not be needed');
+    },
+    probeDuration: async () => 204,
+    updateLive: () => {},
+    sleep: async () => {},
+  });
+
+  const result = await runner.run({
+    roundId: 'round-provider-pack',
+    winner: {
+      id: 'S1',
+      text: 'La clé de la cave, chanson cabaret paillarde avec quiproquos',
+      author: 'funeste38',
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.match(productionInput.prompt, /^cabaret paillard théâtral, piano bastringue/);
+  assert.match(productionInput.prompt, /Direction humour obligatoire/i);
+  assert.match(productionInput.songMood, /^cabaret paillard théâtral, piano bastringue/);
+  assert.match(productionInput.songMood, /Direction humour obligatoire/i);
+  assert.match(productionInput.lyrics, /Monique descend à la cave/i);
+  assert.match(productionInput.lyrics, /Qui tient la clé descend à la cave/i);
+  assert.doesNotMatch(productionInput.lyrics, /Prompt Suno|Style:|Direction sonore|mix radio|piano bastringue/i);
+});
+
+test('Twitch NOSSEN runner uses contextual lyrics fallback when lyric model fails', async () => {
+  let productionInput = null;
+  const runner = createVivyStreamNossenRunner({
+    routeIntent: async () => createTestVocalIntentPlan(),
+    routeComposition: async () => ({
+      artists: ['djeff', 'jean'],
+      songMood: 'rap-rock électro poursuite police, cuisine, pêche, mathématiques',
+    }),
+    writeLyrics: async () => {
+      throw new Error('llm_unavailable');
+    },
+    startMusic: async (_mode, input) => {
+      productionInput = input;
+      return {
+        media: {
+          url: '/api/vivy/studio/assets/contextual-fallback.mp3',
+          path: '/runtime/contextual-fallback.mp3',
+          durationSeconds: 204,
+        },
+      };
+    },
+    pollMusic: async () => {
+      throw new Error('poll should not be needed');
+    },
+    probeDuration: async () => 204,
+    updateLive: () => {},
+    sleep: async () => {},
+  });
+
+  const result = await runner.run({
+    roundId: 'round-contextual-fallback',
+    winner: {
+      id: 'S1',
+      text: 'Jean Carmelo, Porsche Boxster grise, Djeff pilote, police, cuisine, pêche, math et plaisir féminin',
+      author: 'funeste38',
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.match(productionInput.lyrics, /Djeff tient la trajectoire/i);
+  assert.match(productionInput.lyrics, /Jean sourit/i);
+  assert.match(productionInput.lyrics, /Y'a Carmelo[\s\S]*Y'a Carmelo[\s\S]*Y'a Carmelo/i);
+  assert.doesNotMatch(productionInput.lyrics, /llm|fallback|prompt|matière à transformer|distribution vocale/i);
+});
+
+test('Twitch lyric validator rejects conversational prose before Suno', () => {
+  const assessment = assessTwitchSongLyrics([
+    'Oui, je vois ce que tu veux dire: les mots deviennent des signaux.',
+    '',
+    'Donc dans notre échange, on peut repartir de cette interprétation.',
+    '',
+    "Si ça aide, qu'est-ce qui change quand le cerveau reconstruit le monde ?",
+  ].join('\n'));
+
+  assert.equal(assessment.valid, false);
+  assert.ok(assessment.reasons.includes('conversational_reply'));
+  assert.ok(assessment.reasons.includes('missing_song_shape'));
+});
+
+test('Twitch hook validator catches a static concept refrain', () => {
+  const weakLyrics = [
+    '[Intro]',
+    'Dans la nuit qui glisse, je tends la main',
+    'Je cueille un air qui dort dans un rêve lointain',
+    '[Verse 1]',
+    'Les passants marchent, têtes pleines de notes',
+    'Je glisse entre les ombres, je vole ce qui flotte',
+    '[Chorus]',
+    'Je suis le voleur de refrains',
+    'Je les prends dans tes rêves, je les garde le temps d’un swing',
+    'Mais chaque note volée me rend un souvenir',
+    'Qui ne s’efface plus, qui chante plus fort que moi',
+    '[Verse 2]',
+    'Demain je recommence, rue après rue',
+    'Je cherche un sommeil qui n’a pas encore vu',
+    '[Chorus]',
+    'Je suis le voleur de refrains',
+    'Je les prends dans tes rêves, je les garde le temps d’un swing',
+    'Mais chaque note volée me rend un souvenir',
+    'Qui ne s’efface plus, qui chante plus fort que moi',
+    '[Final Chorus]',
+    'Je suis le voleur de refrains',
+    'Plus rien à voler, tout est déjà dans mon swing',
+  ].join('\n');
+
+  assert.equal(isConceptualHookRequest('Le voleur de refrains, pop électro malicieuse, hook fort'), true);
+  const assessment = assessTwitchHookMechanic(weakLyrics, 'Le voleur de refrains');
+  assert.equal(assessment.valid, false);
+  assert.ok(assessment.reasons.includes('title_slogan_loop'));
+});
+
+test('Twitch NOSSEN runner rewrites a stray chat reply in a fresh lyric session', async () => {
+  const lyricRequests = [];
+  let productionInput = null;
+  const chatReply = [
+    'Oui, je vois ce que tu veux dire: les mots deviennent des signaux.',
+    'Donc dans notre échange, on peut repartir de cette interprétation.',
+    "Si ça aide, qu'est-ce qui change quand le cerveau reconstruit le monde ?",
+  ].join('\n\n');
+  const recoveredLyrics = [
+    '[Intro]',
+    'La patronne compte les verres au fond du cabaret',
+    '[Verse 1]',
+    'Le marin jure bien fort que sa clé dormait au quai',
+    'Le boulanger rougit quand la cave ouvre son four',
+    'Le notaire perd ses mots et son trousseau fait le tour',
+    '[Pre-Chorus]',
+    'Chacun garde sa version, personne ne garde son sérieux',
+    '[Chorus]',
+    'Qui tient la clé descend à la cave',
+    'Qui perd son alibi remonte sous la table',
+    '[Bridge]',
+    'La patronne trouve enfin la serrure dans le décor',
+    '[Final Chorus]',
+    'Qui tient la clé descend à la cave',
+    'Et la femme du patron connaissait déjà le passage',
+  ].join('\n');
+  const runner = createVivyStreamNossenRunner({
+    routeIntent: async () => createTestVocalIntentPlan(),
+    routeComposition: async () => ({
+      artists: ['vivy'],
+      songMood: 'cabaret paillard théâtral, piano bastringue',
+    }),
+    writeLyrics: async (input) => {
+      lyricRequests.push(input);
+      return { publicLyrics: lyricRequests.length === 1 ? chatReply : recoveredLyrics };
+    },
+    startMusic: async (_mode, input) => {
+      productionInput = input;
+      return {
+        media: {
+          url: '/api/vivy/studio/assets/recovered-song.mp3',
+          path: '/runtime/recovered-song.mp3',
+          durationSeconds: 210,
+        },
+      };
+    },
+    pollMusic: async () => {
+      throw new Error('poll should not be needed');
+    },
+    probeDuration: async () => 210,
+    updateLive: () => {},
+    sleep: async () => {},
+  });
+
+  const result = await runner.run({
+    roundId: 'round-chat-recovery',
+    winner: {
+      id: 'S1',
+      text: 'La clé de la cave, chanson cabaret paillarde avec quiproquos',
+      author: 'funeste38',
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(lyricRequests.length, 2);
+  assert.match(lyricRequests[1].message, /Réponse invalide détectée/i);
+  assert.match(lyricRequests[1].sessionId, /lyrics-rewrite$/);
+  assert.match(lyricRequests[1].conversationId, /lyrics-rewrite$/);
+  assert.equal(productionInput.lyrics, recoveredLyrics);
+  assert.doesNotMatch(productionInput.lyrics, /Oui, je vois ce que tu veux dire/i);
+});
+
+test('Twitch Mureka runner densifies short lyrics before production', async () => {
+  const lyricRequests = [];
+  let productionInput = null;
+  const shortLyrics = [
+    '[Verse 1]',
+    'La pluie tape le bus, les amis rient sous les stores',
+    'Un parapluie se retourne et la journée change de bord',
+    '[Chorus]',
+    'La vie tape dans les mains',
+    'On rallume le matin',
+  ].join('\n');
+  const denseLyrics = [
+    '[Intro]',
+    'La pluie tape le zinc, la ville traîne ses chaussures',
+    '[Verse 1]',
+    ...Array.from({ length: 18 }, (_, index) => `Scène ${index + 1}, la bande transforme la galère en pas de danse précis`),
+    '[Pre-Chorus]',
+    'Le retard devient tempo, le trottoir devient scène',
+    '[Chorus]',
+    'La vie tape dans les mains',
+    'Même le bus raté revient comme un refrain',
+    '[Bridge]',
+    'Sous l’abribus, plus personne ne baisse la tête',
+    '[Final Chorus]',
+    'La vie tape dans les mains',
+    'On rentre debout dans notre propre matin',
+  ].join('\n');
+  const runner = createVivyStreamNossenRunner({
+    routeIntent: async () => createTestVocalIntentPlan(),
+    routeComposition: async () => ({
+      artists: ['vivy', 'a11'],
+      songMood: 'banger funk électro français, basse funky, cuivres synthé',
+    }),
+    writeLyrics: async (input) => {
+      lyricRequests.push(input);
+      return { publicLyrics: lyricRequests.length === 1 ? shortLyrics : denseLyrics };
+    },
+    startMusic: async (_mode, input) => {
+      productionInput = input;
+      return {
+        media: {
+          url: '/api/vivy/studio/assets/la-vie-tape.mp3',
+          path: '/runtime/la-vie-tape.mp3',
+          durationSeconds: 188,
+        },
+      };
+    },
+    pollMusic: async () => {
+      throw new Error('poll should not be needed');
+    },
+    probeDuration: async () => 188,
+    updateLive: () => {},
+    sleep: async () => {},
+    revealDelayMs: 0,
+  });
+
+  await runner.run({
+    roundId: 'round-mureka-dense',
+    winner: {
+      id: 'S1',
+      text: 'La vie tape dans les mains, banger funk électro français. Une bande d’amis transforme une mauvaise journée en parade improvisée.',
+      author: 'funeste38',
+      musicProvider: 'mureka',
+    },
+  });
+
+  assert.equal(lyricRequests.length, 2);
+  assert.match(lyricRequests[1].message, /trop courte pour Mureka V9/i);
+  assert.equal(productionInput.musicProvider, 'mureka');
+  assert.equal(productionInput.title, 'La vie tape dans les mains');
+  assert.equal(productionInput.lyrics, denseLyrics);
 });
 
 test('Twitch NOSSEN runner sends instrumental sound design requests without lyrics', async () => {
@@ -842,14 +2030,99 @@ test('Twitch NOSSEN runner extends short Suno songs before publishing', async ()
 
   assert.equal(result.ok, true);
   assert.equal(extensionInput.audioId, 'suno-audio-short-youth');
+  assert.equal(extensionInput.forceUploadExtend, true);
+  assert.equal(extensionInput.uploadUrl, 'https://vivy.funesterie.me/api/vivy/studio/assets/short-youth.mp3');
   assert.equal(extensionInput.model, 'V5_5');
   assert.equal(extensionInput.continueAtSeconds, 144);
   assert.equal(extensionInput.targetDurationSeconds, 240);
-  assert.match(extensionInput.style, /long-form full song arrangement/i);
-  assert.match(extensionInput.prompt, /petit cavalier/i);
+  assert.match(extensionInput.style, /compact continuation/i);
+  assert.match(extensionInput.style, /do not restart the intro or first verse/i);
+  assert.match(extensionInput.style, /petit cavalier/i);
+  assert.ok(extensionInput.prompt.length < 291);
   assert.equal(updates.at(-1).trackUrl, '/api/vivy/studio/assets/long-youth.mp3');
   assert.equal(updates.at(-1).durationSeconds, 245);
   assert.match(updates.map((entry) => entry.message || '').join('\n'), /extension 1\/1/);
+});
+
+test('Twitch NOSSEN runner lets Vivy choose a longer lyric scope for no-limit stories', async () => {
+  const previousFixedTarget = process.env.VIVY_STREAM_FIXED_TARGET_DURATION_SECONDS;
+  const previousMaxTarget = process.env.VIVY_STREAM_MAX_TARGET_DURATION_SECONDS;
+  delete process.env.VIVY_STREAM_FIXED_TARGET_DURATION_SECONDS;
+  process.env.VIVY_STREAM_MAX_TARGET_DURATION_SECONDS = '480';
+
+  try {
+    const updates = [];
+    let lyricsInput = null;
+    let productionInput = null;
+    const longLyrics = [
+      '[Intro]',
+      'La ville ouvre ses portes et le héros serre les dents.',
+      '[Verse 1]',
+      ...Array.from({ length: 34 }, (_, index) => `Scène ${index + 1}, la route avance, le doute change de camp.`),
+      '[Chorus]',
+      'On ne coupe pas l’histoire quand le cœur demande encore.',
+      '[Bridge]',
+      ...Array.from({ length: 20 }, (_, index) => `Bascule ${index + 1}, chaque erreur devient décor.`),
+      '[Final Chorus]',
+      'On revient plus large, plus vivant, plus fort.',
+      '[Outro]',
+      'La dernière image reste ouverte dehors.',
+    ].join('\n');
+
+    const runner = createVivyStreamNossenRunner({
+      routeIntent: async () => createTestVocalIntentPlan({
+        intent: 'narrative_fable',
+        generationBrief: 'Écrire une histoire complète, longue et progressive.',
+      }),
+      routeComposition: async () => ({
+        artists: ['vivy'],
+        songMood: 'électro-rock anime, progression longue, refrain ample',
+      }),
+      writeLyrics: async (input) => {
+        lyricsInput = input;
+        return { publicLyrics: longLyrics };
+      },
+      startMusic: async (_mode, input) => {
+        productionInput = input;
+        return {
+          media: {
+            url: '/api/vivy/studio/assets/no-limit-story.mp3',
+            durationSeconds: 480,
+            audioId: 'suno-audio-no-limit',
+            model: 'V5_5',
+          },
+        };
+      },
+      probeDuration: async (media) => Number(media.durationSeconds || 0),
+      updateLive: (input) => updates.push(input),
+      sleep: async () => {},
+      maxExtensions: 0,
+      revealDelayMs: 0,
+    });
+
+    const result = await runner.run({
+      roundId: 'round-no-limit-story',
+      winner: {
+        id: 'S1',
+        text: 'no limite, histoire complète façon saga, personnage principal, problème, bascule, scène finale épique',
+        author: 'chat',
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(productionInput.targetDurationSeconds, 330);
+    assert.equal(productionInput.longSong, true);
+    assert.ok(lyricsInput.songMaxTokens >= 7600);
+    assert.ok(lyricsInput.songResponseMaxChars >= 8800);
+    assert.match(lyricsInput.message, /Vivy décide la longueur/i);
+    assert.match(lyricsInput.message, /no-limit créatif/i);
+    assert.match(updates.map((entry) => entry.message || '').join('\n'), /no-limit créatif/);
+  } finally {
+    if (previousFixedTarget === undefined) delete process.env.VIVY_STREAM_FIXED_TARGET_DURATION_SECONDS;
+    else process.env.VIVY_STREAM_FIXED_TARGET_DURATION_SECONDS = previousFixedTarget;
+    if (previousMaxTarget === undefined) delete process.env.VIVY_STREAM_MAX_TARGET_DURATION_SECONDS;
+    else process.env.VIVY_STREAM_MAX_TARGET_DURATION_SECONDS = previousMaxTarget;
+  }
 });
 
 test('Twitch NOSSEN runner strips live and stale vehicle filler before Suno', async () => {
@@ -974,20 +2247,63 @@ test('Vivy stream control drives production, presentation and playback metadata'
       action: 'ready',
       title: 'Les lumières de la ville',
       trackUrl: '/api/double-harmonic/out/live.mp3',
+      coverImageUrl: '/api/vivy/studio/assets/live-cover.png',
+      coverPrompt: 'illustration nocturne lumineuse',
+      coverVideoUrl: '/api/vivy/studio/assets/live-cover.mp4',
+      coverVideoPrompt: 'boucle nocturne lumineuse',
       durationSeconds: 222,
     });
     assert.equal(result.response.status, 200);
     assert.equal(result.json.state.current.phase, 'presenting');
     assert.equal(result.json.state.current.durationSeconds, 222);
+    assert.equal(result.json.state.current.coverImageUrl, '/api/vivy/studio/assets/live-cover.png');
+    assert.equal(result.json.state.current.coverVideoUrl, '/api/vivy/studio/assets/live-cover.mp4');
     assert.equal(result.json.state.current.requestedBy, 'funeste38');
     assert.equal(result.json.state.songs.length, 1);
+    assert.equal(result.json.state.songs[0].coverImageUrl, '/api/vivy/studio/assets/live-cover.png');
+    assert.equal(result.json.state.songs[0].coverPrompt, 'illustration nocturne lumineuse');
+    assert.equal(result.json.state.songs[0].coverVideoUrl, '/api/vivy/studio/assets/live-cover.mp4');
+    assert.equal(result.json.state.songs[0].coverVideoPrompt, 'boucle nocturne lumineuse');
     assert.equal(result.json.state.songs[0].starCount, 1);
     assert.equal(result.json.state.songs[0].starAverage, 5);
     assert.match(result.json.state.songs[0].sharePath, /\/api\/vivy\/stream\/s\/les-lumieres-de-la-ville-/);
 
-    const redirect = await fetch(baseUrl + result.json.state.songs[0].sharePath, { redirect: 'manual' });
+    const sharePage = await fetch(baseUrl + result.json.state.songs[0].sharePath, { redirect: 'manual' });
+    assert.equal(sharePage.status, 200);
+    const shareHtml = await sharePage.text();
+    assert.match(shareHtml, /Les lumières de la ville/);
+    assert.match(shareHtml, /Télécharger MP3/);
+    assert.match(shareHtml, /\/api\/vivy\/stream\/download\?/);
+
+    const redirect = await fetch(`${baseUrl}${result.json.state.songs[0].sharePath}?raw=1`, { redirect: 'manual' });
     assert.equal(redirect.status, 302);
     assert.equal(redirect.headers.get('location'), '/api/double-harmonic/out/live.mp3');
+
+    const archive = await fetch(baseUrl + '/api/vivy/stream/songs');
+    assert.equal(archive.status, 200);
+    const archiveHtml = await archive.text();
+    assert.match(archiveHtml, /Playlist Vivy Live/);
+    assert.match(archiveHtml, /Les lumières de la ville/);
+    assert.match(archiveHtml, /live-cover\.png/);
+    assert.match(archiveHtml, /live-cover\.mp4/);
+    assert.match(archiveHtml, /Télécharger MP3/);
+
+    const archiveJson = await fetch(baseUrl + '/api/vivy/stream/songs.json');
+    assert.equal(archiveJson.status, 200);
+    const archivePayload = await archiveJson.json();
+    assert.equal(archivePayload.ok, true);
+    assert.equal(archivePayload.songs.length, 1);
+    assert.equal(archivePayload.songs[0].coverImageUrl, '/api/vivy/studio/assets/live-cover.png');
+    assert.equal(archivePayload.songs[0].coverVideoUrl, '/api/vivy/studio/assets/live-cover.mp4');
+
+    result = await postJson(baseUrl, '/api/vivy/stream/control', {
+      action: 'clip',
+      coverVideoUrl: '/api/vivy/studio/assets/live-cover-v2.mp4',
+      coverVideoPrompt: 'boucle finale plus fluide',
+    });
+    assert.equal(result.json.state.current.coverVideoUrl, '/api/vivy/studio/assets/live-cover-v2.mp4');
+    assert.equal(result.json.state.songs[0].coverVideoUrl, '/api/vivy/studio/assets/live-cover-v2.mp4');
+    assert.equal(result.json.state.jukebox.tracks[0].coverVideoPrompt, 'boucle finale plus fluide');
 
     result = await postJson(baseUrl, '/api/vivy/stream/control', { action: 'play' });
     assert.equal(result.json.state.current.phase, 'playing');
@@ -1005,8 +2321,18 @@ test('Vivy stream control drives production, presentation and playback metadata'
     });
     assert.equal(result.json.state.songs[0].starCount, 3);
     assert.equal(result.json.state.songs[0].starAverage, 4.67);
+    const finishedTrackUrl = result.json.state.songs[0].trackUrl;
 
     await postJson(baseUrl, '/api/vivy/stream/control', { action: 'next' });
+    result = await postJson(baseUrl, '/api/vivy/stream/control', {
+      action: 'clip',
+      trackUrl: finishedTrackUrl,
+      coverVideoUrl: '/api/vivy/studio/assets/live-cover-full.mp4',
+      coverVideoPrompt: 'montage complet reçu après le round',
+    });
+    assert.notEqual(result.json.state.current.coverVideoUrl, '/api/vivy/studio/assets/live-cover-full.mp4');
+    assert.equal(result.json.state.songs[0].coverVideoUrl, '/api/vivy/studio/assets/live-cover-full.mp4');
+
     result = await postJson(baseUrl, '/api/vivy/stream/chat', {
       username: 'next-round',
       message: '!nossen Nouveau thème du prochain round',
@@ -1063,6 +2389,22 @@ test('Vivy live overlay contains the production show and bundled background', ()
   assert.match(html, /Analyse du thème/);
   assert.match(html, /!etoiles 5/);
   assert.match(html, /Lecture en cours/);
+  assert.match(html, /trackCoverImage/);
+  assert.match(html, /trackCoverVideo/);
+  assert.match(html, /coverVideoBackdrop/);
+  assert.match(html, /video-ready/);
+  assert.match(html, /COVER_SLIDE_MS = 10000/);
+  assert.match(html, /STATE_POLL_MS = 6000/);
+  assert.match(html, /cacheBustedMediaUrl/);
+  assert.match(html, /overlayPoll/);
+  assert.match(html, /cache: 'no-store'/);
+  assert.match(html, /elements\.coverBackdrop\.src = coverSrc/);
+  assert.match(html, /elements\.coverVideoBackdrop\.src = coverVideoSrc/);
+  assert.match(html, /classList\.toggle\('visible', showVideoBackdrop\)/);
+  assert.match(html, /classList\.toggle\('visible', showBackdrop\)/);
+  assert.match(html, /titleFromPrompt/);
+  assert.match(html, /titleForSuggestion/);
+  assert.match(html, /voteLabel/);
 });
 
 test('Vivy stream write guard requires the shared secret when configured', async () => {
@@ -1118,6 +2460,14 @@ test('Twitch worker parses IRC PRIVMSG lines and command filtering', () => {
     assert.equal(shouldForwardMessage('salut tout le monde'), false);
     assert.equal(shouldForwardMessage('!nossen SAO opening'), true);
     assert.equal(shouldForwardMessage('⭐⭐⭐⭐⭐'), true);
+    assert.equal(shouldForwardMessage(ANNOUNCE_MESSAGES[0]), false);
+    assert.equal(shouldForwardMessage('🎤 Vivy Live — propose une chanson avec !vivy ton idée | vote avec !vote S1 | note avec !etoiles 5 S1 ou ⭐⭐⭐⭐⭐'), false);
+    assert.equal(shouldForwardMessage('🎤 Vivy Live — !vivy ton idée | !nossen plus épique | !chanson sujet + ambiance'), false);
+    assert.equal(shouldForwardMessage('🎵 Vote avec !vote S1 | note avec !etoiles 5 S1'), false);
+    assert.equal(shouldForwardMessage('🎵 Nouvelle création Vivy: "La clé de la cave" demandée par funeste38 ▶ https://vivy.funesterie.me/x ⭐ Note avec !etoiles 5'), false);
+    assert.equal(shouldForwardMessage('🎵 La clé de la cave ▶ https://vivy.funesterie.me/x 🖼️ https://vivy.funesterie.me/i.png'), false);
+    assert.equal(shouldForwardMessage('🎶 Morceaux Vivy passés dans le live: 1. Le four malin ⭐4/5(2) ⬇ https://vivy.funesterie.me/x'), false);
+    assert.equal(shouldForwardMessage('🎶 Playlist Vivy Live (2 titres) ▶ https://vivy.funesterie.me/api/vivy/stream/songs'), false);
   } finally {
     if (previous === undefined) delete process.env.VIVY_STREAM_COMMANDS_ONLY;
     else process.env.VIVY_STREAM_COMMANDS_ONLY = previous;
@@ -1259,6 +2609,7 @@ test('Twitch announcements rotate only while the worker is connected', () => {
   assert.equal(scheduled.callback(), true);
   assert.deepEqual(sent, [ANNOUNCE_MESSAGES[0], ANNOUNCE_MESSAGES[1], ANNOUNCE_MESSAGES[0]]);
   assert.ok(sent.every((message) => !/[\r\n]/.test(message)));
+  assert.ok(sent.every((message) => !/[⭐★🌟]/u.test(message)));
 
   connected = false;
   assert.equal(scheduled.callback(), false);
@@ -1266,11 +2617,42 @@ test('Twitch announcements rotate only while the worker is connected', () => {
   assert.equal(rotator.stop(), true);
   assert.equal(cleared, scheduled);
 
-  assert.equal(resolveAnnounceInterval('invalid'), 300000);
+  assert.equal(resolveAnnounceInterval('invalid'), 720000);
   assert.equal(resolveAnnounceInterval('500'), 1000);
+  assert.equal(resolveBotMessageGap('invalid'), 15000);
+  assert.equal(resolveBotMessageGap('-1'), 15000);
+  assert.equal(resolveBotMessageGap('2500'), 2500);
   const disabled = createAnnouncementRotator({ disabled: true, sendMessage: (message) => sent.push(message) });
   assert.equal(disabled.start(), false);
   assert.equal(disabled.tick(), false);
+});
+
+test('Twitch bot messages are spaced before they hit chat', async () => {
+  const sent = [];
+  const waits = [];
+  let fakeNow = 1000;
+  const previousNow = Date.now;
+  Date.now = () => fakeNow;
+  try {
+    const sender = createSpacedSender({
+      gapMs: 15000,
+      sleep: async (ms) => {
+        waits.push(ms);
+        fakeNow += ms;
+      },
+      sendMessage: (message) => {
+        sent.push(message);
+        fakeNow += 1;
+      },
+    });
+    await sender.enqueue('premier');
+    await sender.enqueue('deuxième');
+    await sender.enqueue('troisième');
+    assert.deepEqual(sent, ['premier', 'deuxième', 'troisième']);
+    assert.deepEqual(waits, [15000, 15000]);
+  } finally {
+    Date.now = previousNow;
+  }
 });
 
 test('Twitch track notices share new songs once with an absolute public link', async () => {
@@ -1280,11 +2662,14 @@ test('Twitch track notices share new songs once with an absolute public link', a
       trackTitle: 'Les lumières de la ville',
       requestedBy: 'funeste38',
       trackUrl: '/api/vivy/studio/assets/song.mp3',
+      coverImageUrl: '/api/vivy/studio/assets/cover.png',
     },
   }, { publicBaseUrl: 'https://vivy.funesterie.me' });
-  assert.match(message, /Nouvelle création Vivy/);
+  assert.doesNotMatch(message, /Nouvelle création Vivy/);
   assert.match(message, /Les lumières de la ville/);
   assert.match(message, /https:\/\/vivy\.funesterie\.me\/api\/vivy\/studio\/assets\/song\.mp3/);
+  assert.match(message, /https:\/\/vivy\.funesterie\.me\/api\/vivy\/studio\/assets\/cover\.png/);
+  assert.doesNotMatch(message, /[⭐★🌟]/u);
   assert.doesNotMatch(message, /[\r\n]/);
 
   const sent = [];
@@ -1295,19 +2680,40 @@ test('Twitch track notices share new songs once with an absolute public link', a
     { current: { phase: 'listening' } },
     {
       current: {
-        phase: 'playing',
+        phase: 'rating',
+      },
+      songs: [{
+        source: 'twitch-live',
         trackTitle: 'Course sous néons',
         requestedBy: 'chat',
         trackUrl: '/api/vivy/studio/assets/neons.mp3',
-      },
+        sharePath: '/api/vivy/stream/s/course-sous-neons-abcd1234',
+      }],
     },
     {
       current: {
-        phase: 'playing',
+        phase: 'rating',
+      },
+      songs: [{
+        source: 'twitch-live',
         trackTitle: 'Course sous néons',
         requestedBy: 'chat',
         trackUrl: '/api/vivy/studio/assets/neons.mp3',
+        sharePath: '/api/vivy/stream/s/course-sous-neons-abcd1234',
+      }],
+    },
+    {
+      current: {
+        phase: 'rating',
       },
+      songs: [{
+        source: 'twitch-live',
+        trackTitle: 'Course sous néons',
+        requestedBy: 'chat',
+        trackUrl: '/api/vivy/studio/assets/neons.mp3',
+        sharePath: '/api/vivy/stream/s/course-sous-neons-abcd1234',
+        coverVideoUrl: '/api/vivy/studio/assets/neons-loop.mp4',
+      }],
     },
   ];
   const watcher = createTrackNoticeWatcher({
@@ -1337,8 +2743,15 @@ test('Twitch track notices share new songs once with an absolute public link', a
   assert.equal(await watcher.tick(), false);
   assert.equal(await watcher.tick(), true);
   assert.equal(await watcher.tick(), false);
-  assert.equal(sent.length, 1);
-  assert.match(sent[0], /https:\/\/vivy\.funesterie\.me\/api\/vivy\/studio\/assets\/neons\.mp3/);
+  assert.equal(await watcher.tick(), true);
+  assert.equal(await watcher.tick(), false);
+  assert.equal(sent.length, 2);
+  assert.match(sent[0], /https:\/\/vivy\.funesterie\.me\/api\/vivy\/stream\/s\/course-sous-neons-abcd1234/);
+  assert.match(sent[1], /Clip Vivy/);
+  assert.match(sent[1], /https:\/\/vivy\.funesterie\.me\/api\/vivy\/studio\/assets\/neons-loop\.mp4/);
+  assert.match(buildTrackClipNoticeMessage(states[3], {
+    publicBaseUrl: 'https://vivy.funesterie.me',
+  }), /neons-loop\.mp4/);
   assert.equal(watcher.stop(), true);
   assert.ok(cleared);
 });
@@ -1364,9 +2777,9 @@ test('Twitch song recaps list live songs in order with stars and short links', a
   };
   const messages = buildSongRecapMessages(state, { publicBaseUrl: 'https://vivy.funesterie.me' });
   assert.equal(messages.length, 1);
-  assert.match(messages[0], /1\. Les lumières de la ville ⭐4\.8\/5\(5\)/);
-  assert.match(messages[0], /2\. Bleach Hollow Memories ⭐--/);
-  assert.match(messages[0], /https:\/\/vivy\.funesterie\.me\/api\/vivy\/stream\/s\/les-lumieres-de-la-ville-aaaa1111/);
+  assert.match(messages[0], /Playlist Vivy Live \(2 titres\)/);
+  assert.match(messages[0], /https:\/\/vivy\.funesterie\.me\/api\/vivy\/stream\/songs/);
+  assert.doesNotMatch(messages[0], /Les lumières de la ville/);
   assert.doesNotMatch(messages[0], /[\r\n]/);
 
   const sent = [];
@@ -1394,4 +2807,463 @@ test('Twitch song recaps list live songs in order with stars and short links', a
   assert.equal(sent.length, 1);
   connected = false;
   assert.equal(await rotator.tick(), false);
+});
+
+test('Vivy Twitch cover prompts stay visual and image generation can return a public URL', async () => {
+  const prompt = buildTwitchCoverPrompt({
+    publicTitle: 'La fille qui parlait aux machines',
+    winner: { text: '!vivy électro-pop lumineux, ville qui danse avec des robots' },
+    routing: { songMood: 'electro-pop funky, synthés brillants' },
+    lyrics: '[Refrain]\nElles me parlent en lumière\nLa ville répond dans les moteurs',
+  });
+  assert.doesNotMatch(prompt, /La fille qui parlait aux machines/);
+  assert.match(prompt, /ville qui danse/);
+  assert.match(prompt, /Aucun texte/);
+  assert.match(prompt, /pas de pseudo-écriture/i);
+  assert.match(prompt, /titre reste strictement privé/i);
+  assert.match(prompt, /ajouté séparément par l’overlay Twitch/i);
+  assert.doesNotMatch(prompt, /Elles me parlent en lumière/i);
+  assert.doesNotMatch(prompt, /Motifs chantés/i);
+  assert.match(prompt, /overlay Twitch/i);
+  assert.match(prompt, /Éviter absolument: dessin enfantin/);
+  assert.doesNotMatch(prompt, /Suno|Mureka|clean_lyrics/i);
+
+  const corsairPrompt = buildTwitchCoverPrompt({
+    publicTitle: 'Le pirate de l’espace',
+    winner: {
+      text: 'corsaire interstellaire, voiles dans les étoiles, drapeau noir, colonies oubliées',
+    },
+    routing: { songMood: 'électro-rock cosmique, guitares nerveuses' },
+  });
+  assert.match(corsairPrompt, /space opera rétro adulte/);
+  assert.match(corsairPrompt, /ailes ou panneaux solaires noirs/);
+  assert.match(corsairPrompt, /aucun océan/);
+  assert.doesNotMatch(corsairPrompt, /rendre l’eau/i);
+  assert.doesNotMatch(corsairPrompt, /Albator|Harlock/i);
+
+  const identityPrompt = buildTwitchCoverPrompt({
+    publicTitle: 'Djeff et Vivy rallument le studio',
+    winner: { text: 'duo Djeff + Vivy, studio Funesterie, electro-rock lumineux' },
+    artists: ['Djeff', 'Vivy'],
+    vocalCast: 'Djeff + Vivy',
+    lyrics: '[Djeff]\nJe rallume la console\n[Vivy]\nJe réponds dans la lumière',
+  });
+  assert.match(identityPrompt, /Référence visuelle chanteuse IA/i);
+  assert.match(identityPrompt, /cheveux noirs en couettes/i);
+  assert.match(identityPrompt, /ne jamais la rendre blonde/i);
+  assert.match(identityPrompt, /Référence visuelle créateur humain/i);
+  assert.match(identityPrompt, /peau olive/i);
+  assert.match(identityPrompt, /mèche claire/i);
+  assert.match(identityPrompt, /ne pas le rendre noir/i);
+  const marvinPack = buildVivyVisualIdentityPack({
+    publicTitle: 'Marvin Bip Bip 30 ans',
+    winner: { text: 'clip anniversaire Marvin avec Charlène, Léna et Elio' },
+  });
+  assert.deepEqual(marvinPack.identities.map((identity) => identity.id), ['marvin']);
+  assert.match(marvinPack.prompt, /Référence visuelle frère et père/i);
+  assert.match(marvinPack.prompt, /l’homme à droite/i);
+  assert.ok(marvinPack.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/marvin-reference-family'));
+  assert.ok(marvinPack.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/marvin-reference-brothers-01'));
+  assert.ok(marvinPack.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/marvin-reference-brothers-04'));
+  const commandOnlyVivyPack = buildVivyVisualIdentityPack({
+    publicTitle: 'Le plombier de minuit Marvin',
+    winner: { text: '!vivy Le plombier de minuit Marvin, une cliente parle de pression et de fuite' },
+    artists: ['vivy'],
+    vocalCast: 'vivy',
+    lyrics: '[Vivy solo]\nMarvin resserre le joint',
+  });
+  assert.deepEqual(commandOnlyVivyPack.identities.map((identity) => identity.id), ['marvin']);
+  assert.doesNotMatch(commandOnlyVivyPack.prompt, /Vivy official Funesterie identity/i);
+  const explicitReferencePack = buildVivyVisualIdentityPack({
+    publicTitle: 'Jean Carmelo',
+    winner: {
+      text: 'Jean en Porsche Boxster grise https://files.funesterie.me/users/vivy-twitch-live/jean-reference.jpg',
+    },
+  });
+  assert.ok(explicitReferencePack.referenceImageUrls.includes('https://files.funesterie.me/users/vivy-twitch-live/jean-reference.jpg'));
+  assert.match(explicitReferencePack.prompt, /Référence visuelle utilisateur fournie/i);
+  const commandOnlyVivyPrompt = buildTwitchCoverPrompt({
+    publicTitle: 'Le plombier de minuit Marvin',
+    winner: { text: '!vivy Le plombier de minuit Marvin, une cliente parle de pression et de fuite' },
+    artists: ['vivy'],
+    vocalCast: 'vivy',
+    lyrics: '[Vivy solo]\nMarvin resserre le joint',
+  });
+  assert.doesNotMatch(commandOnlyVivyPrompt, /Vivy official Funesterie identity/i);
+  assert.doesNotMatch(commandOnlyVivyPrompt, /chanson originale Vivy Live/i);
+  const identityNegative = buildTwitchCoverNegativePrompt({
+    publicTitle: 'Djeff et Vivy rallument le studio',
+    winner: { text: 'duo Djeff + Vivy' },
+    artists: ['Djeff', 'Vivy'],
+  }, identityPrompt);
+  assert.match(identityNegative, /blonde Vivy/i);
+  assert.match(identityNegative, /black Djeff/i);
+  assert.match(identityNegative, /old nossen djeff beta asset/i);
+
+  const a11K44Prompt = buildTwitchCoverPrompt({
+    publicTitle: 'A11 et K44 ouvrent le signal',
+    winner: { text: 'A11 Agent Media et K44 copilote, duo cyber nocturne' },
+    artists: ['A11', 'K44'],
+    vocalCast: 'A11 + K44',
+  });
+  assert.match(a11K44Prompt, /Référence visuelle agent média/i);
+  assert.match(a11K44Prompt, /yeux cyan lumineux/i);
+  assert.match(a11K44Prompt, /Référence visuelle copilote quotidienne/i);
+  assert.match(a11K44Prompt, /cockpit néon bleu-violet/i);
+  assert.doesNotMatch(a11K44Prompt, /command cards/i);
+  const a11K44Negative = buildTwitchCoverNegativePrompt({
+    publicTitle: 'A11 et K44 ouvrent le signal',
+    winner: { text: 'A11 Agent Media et K44 copilote' },
+    artists: ['A11', 'K44'],
+  }, a11K44Prompt);
+  assert.match(a11K44Negative, /normal human A11/i);
+  assert.match(a11K44Negative, /hooded A11 as K44/i);
+
+  const previousEnabled = process.env.VIVY_STREAM_COVER_ENABLED;
+  const previousUrl = process.env.VIVY_STREAM_COVER_URL;
+  const previousDjeffReference = process.env.VIVY_DJEFF_REFERENCE_IMAGE_URL;
+  process.env.VIVY_STREAM_COVER_ENABLED = '1';
+  process.env.VIVY_STREAM_COVER_URL = 'http://image.local/generate';
+  process.env.VIVY_DJEFF_REFERENCE_IMAGE_URL = 'https://files.funesterie.me/users/djeff-reference.webp';
+  try {
+    const calls = [];
+    const result = await generateTwitchCoverImage({
+      publicTitle: 'La ville répond',
+      winner: { text: 'néons et machines heureuses' },
+      fetchFn: async (url, options) => {
+        calls.push({ url, options });
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ imageUrl: '/api/vivy/studio/assets/covers/ville.png' }),
+        };
+      },
+      req: {
+        protocol: 'https',
+        headers: { host: 'vivy.funesterie.me' },
+        get(name) {
+          if (name === 'host') return 'vivy.funesterie.me';
+          if (name === 'x-forwarded-proto') return 'https';
+          return '';
+        },
+      },
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.coverImageUrl, 'https://vivy.funesterie.me/api/vivy/studio/assets/covers/ville.png');
+    assert.equal(String(calls[0].url), 'http://image.local/generate');
+    assert.equal(JSON.parse(calls[0].options.body).source, 'vivy-twitch-cover');
+    assert.equal(JSON.parse(calls[0].options.body).acceptAsyncImageJob, true);
+
+    calls.length = 0;
+    const corsairResult = await generateTwitchCoverImage({
+      publicTitle: 'Le pirate de l’espace',
+      winner: { text: 'corsaire interstellaire, drapeau noir, colonies oubliées' },
+      fetchFn: async (url, options) => {
+        calls.push({ url, options });
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ imageUrl: '/api/vivy/studio/assets/covers/corsaire.png' }),
+        };
+      },
+    });
+    assert.equal(corsairResult.ok, true);
+    const corsairBody = JSON.parse(calls[0].options.body);
+    assert.match(corsairBody.negative_prompt, /ocean/);
+    assert.match(corsairBody.negative_prompt, /sailing ship/);
+
+    calls.length = 0;
+    const identityResult = await generateTwitchCoverImage({
+      publicTitle: 'Djeff et Vivy',
+      winner: { text: 'duo Djeff + Vivy dans le studio Funesterie' },
+      artists: ['Djeff', 'Vivy'],
+      fetchFn: async (url, options) => {
+        calls.push({ url, options });
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ imageUrl: '/api/vivy/studio/assets/covers/djeff-vivy.png' }),
+        };
+      },
+    });
+    assert.equal(identityResult.ok, true);
+    const identityBody = JSON.parse(calls[0].options.body);
+    assert.match(identityBody.referenceVisualContext, /Référence visuelle créateur humain/i);
+    assert.match(identityBody.referenceVisualContext, /Référence visuelle chanteuse IA/i);
+    assert.ok(identityBody.referenceImageUrls.includes('https://files.funesterie.me/users/djeff-reference.webp'));
+    assert.ok(identityBody.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-01'));
+    assert.ok(identityBody.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-05'));
+    assert.ok(identityBody.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/overlay/background'));
+
+    calls.length = 0;
+    const a11K44Result = await generateTwitchCoverImage({
+      publicTitle: 'A11 et K44',
+      winner: { text: 'A11 Agent Media et K44 copilote dans le cockpit Funesterie' },
+      artists: ['A11', 'K44'],
+      fetchFn: async (url, options) => {
+        calls.push({ url, options });
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ imageUrl: '/api/vivy/studio/assets/covers/a11-k44.png' }),
+        };
+      },
+    });
+    assert.equal(a11K44Result.ok, true);
+    const a11K44Body = JSON.parse(calls[0].options.body);
+    assert.match(a11K44Body.referenceVisualContext, /Référence visuelle agent média/i);
+    assert.match(a11K44Body.referenceVisualContext, /Référence visuelle copilote quotidienne/i);
+    assert.ok(a11K44Body.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/a11-agent-media-card'));
+    assert.ok(a11K44Body.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/k44-copilot-reference'));
+
+    calls.length = 0;
+    const marvinResult = await generateTwitchCoverImage({
+      publicTitle: 'Marvin Bip Bip 30 ans',
+      winner: { text: 'clip anniversaire Marvin, famille, souvenirs de frères, chalumeau et bougies' },
+      fetchFn: async (url, options) => {
+        calls.push({ url, options });
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ imageUrl: '/api/vivy/studio/assets/covers/marvin.png' }),
+        };
+      },
+    });
+    assert.equal(marvinResult.ok, true);
+    const marvinBody = JSON.parse(calls[0].options.body);
+    assert.match(marvinBody.referenceVisualContext, /Référence visuelle frère et père/i);
+    assert.match(marvinBody.negative_prompt, /wrong Marvin face/i);
+    assert.ok(marvinBody.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/marvin-reference-family'));
+    assert.ok(marvinBody.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/marvin-reference-brothers-04'));
+  } finally {
+    if (previousEnabled === undefined) delete process.env.VIVY_STREAM_COVER_ENABLED;
+    else process.env.VIVY_STREAM_COVER_ENABLED = previousEnabled;
+    if (previousUrl === undefined) delete process.env.VIVY_STREAM_COVER_URL;
+    else process.env.VIVY_STREAM_COVER_URL = previousUrl;
+    if (previousDjeffReference === undefined) delete process.env.VIVY_DJEFF_REFERENCE_IMAGE_URL;
+    else process.env.VIVY_DJEFF_REFERENCE_IMAGE_URL = previousDjeffReference;
+  }
+});
+
+test('Vivy Twitch cover follows async BAT/Rome image jobs when the image backend queues work', async () => {
+  const previousEnabled = process.env.VIVY_STREAM_COVER_ENABLED;
+  const previousUrl = process.env.VIVY_STREAM_COVER_URL;
+  process.env.VIVY_STREAM_COVER_ENABLED = '1';
+  process.env.VIVY_STREAM_COVER_URL = 'http://image.local/generate';
+  try {
+    const calls = [];
+    const result = await generateTwitchCoverImage({
+      publicTitle: 'La fille qui rallume la ville',
+      winner: { text: 'machines lumineuses et refrain heureux' },
+      fetchFn: async (url, options = {}) => {
+        calls.push({ url, options });
+        if (String(url).includes('/api/llm/jobs/image/cover-1')) {
+          return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({
+              status: 'done',
+              result: { imagePath: '/api/vivy/studio/assets/covers/async-ville.png' },
+            }),
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            status: 'pending',
+            asyncJob: {
+              jobId: 'cover-1',
+              status: 'pending',
+              poll_url: '/api/llm/jobs/image/cover-1',
+              pollIntervalMs: 100,
+            },
+          }),
+        };
+      },
+      req: {
+        protocol: 'https',
+        headers: { host: 'vivy.funesterie.me' },
+        get(name) {
+          if (name === 'host') return 'vivy.funesterie.me';
+          if (name === 'x-forwarded-proto') return 'https';
+          return '';
+        },
+      },
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.coverImageUrl, 'https://vivy.funesterie.me/api/vivy/studio/assets/covers/async-ville.png');
+    assert.equal(calls.length, 2);
+    assert.equal(String(calls[1].url), 'http://image.local/api/llm/jobs/image/cover-1');
+  } finally {
+    if (previousEnabled === undefined) delete process.env.VIVY_STREAM_COVER_ENABLED;
+    else process.env.VIVY_STREAM_COVER_ENABLED = previousEnabled;
+    if (previousUrl === undefined) delete process.env.VIVY_STREAM_COVER_URL;
+    else process.env.VIVY_STREAM_COVER_URL = previousUrl;
+  }
+});
+
+test('Vivy Twitch clip animates the cover with the trusted asynchronous video engine', async () => {
+  const previousEnabled = process.env.VIVY_STREAM_CLIP_ENABLED;
+  const previousProvider = process.env.VIVY_STREAM_CLIP_PROVIDER;
+  process.env.VIVY_STREAM_CLIP_ENABLED = '1';
+  process.env.VIVY_STREAM_CLIP_PROVIDER = 'replicate';
+  try {
+    let captured = null;
+    const result = await generateTwitchCoverVideo({
+      publicTitle: 'Djeff rebelle',
+      winner: { text: 'guitariste rebelle sur une scène électro-rock' },
+      coverImageUrl: 'https://files.funesterie.me/covers/djeff-rebelle.webp',
+      coverPrompt: 'Affiche musicale adulte, guitare et lumière dramatique.',
+      generateVideoFn: async (options) => {
+        captured = options;
+        return {
+          ok: true,
+          video_url: '/files/runtime/files/generated/videos/djeff-rebelle.mp4',
+        };
+      },
+      req: {
+        protocol: 'https',
+        headers: { host: 'vivy.funesterie.me' },
+        get(name) {
+          if (name === 'host') return 'vivy.funesterie.me';
+          if (name === 'x-forwarded-proto') return 'https';
+          return '';
+        },
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.coverVideoUrl, 'https://vivy.funesterie.me/files/runtime/files/generated/videos/djeff-rebelle.mp4');
+    assert.equal(captured.body.sourceImageUrl, 'https://files.funesterie.me/covers/djeff-rebelle.webp');
+    assert.equal(captured.body.videoProvider, 'replicate');
+    assert.equal(captured.body.durationSeconds, 3);
+    assert.equal(captured.body.source, 'vivy-twitch-cover-clip');
+    assert.match(captured.prompt, /boucle visuelle cinématique de 3 secondes/i);
+    assert.match(captured.prompt, /Conserver strictement l’identité/i);
+    assert.match(captured.prompt, /aucune pseudo-écriture/i);
+    assert.equal(captured.body.vocalPerformance, false);
+    assert.equal(captured.body.visualOnly, true);
+    assert.match(captured.body.negative_prompt, /ghost face/i);
+    assert.match(captured.prompt, /Référence visuelle créateur humain/i);
+    assert.match(captured.prompt, /ne pas le rendre noir/i);
+    assert.equal(captured.body.referenceImageUrls[0], 'https://files.funesterie.me/covers/djeff-rebelle.webp');
+    assert.ok(captured.body.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-01'));
+    assert.ok(captured.body.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-05'));
+    assert.match(buildTwitchClipPrompt({ title: 'Test' }), /aucun morphing/i);
+  } finally {
+    if (previousEnabled === undefined) delete process.env.VIVY_STREAM_CLIP_ENABLED;
+    else process.env.VIVY_STREAM_CLIP_ENABLED = previousEnabled;
+    if (previousProvider === undefined) delete process.env.VIVY_STREAM_CLIP_PROVIDER;
+    else process.env.VIVY_STREAM_CLIP_PROVIDER = previousProvider;
+  }
+});
+
+test('Vivy Twitch clip retries the platform provider after an incompatible provider', async () => {
+  const previousEnabled = process.env.VIVY_STREAM_CLIP_ENABLED;
+  const previousProvider = process.env.VIVY_STREAM_CLIP_PROVIDER;
+  const previousPlatformProvider = process.env.A11_HF_VIDEO_PROVIDER;
+  const previousComfyCloudKey = process.env.A11_COMFY_CLOUD_API_KEY;
+  const previousComfyCloudKeyAlt = process.env.COMFY_CLOUD_API_KEY;
+  const previousComfyOrgKey = process.env.A11_COMFY_ORG_API_KEY;
+  const previousComfyOrgKeyAlt = process.env.COMFY_ORG_API_KEY;
+  const previousComfyApiKey = process.env.A11_COMFY_API_KEY;
+  const previousComfyUiApiKey = process.env.COMFYUI_API_KEY;
+  const previousComfyCloudEnabled = process.env.A11_VIDEO_COMFY_CLOUD_ENABLED;
+  const previousLocalRunnerUrl = process.env.A11_VIDEO_LOCAL_RUNNER_URL;
+  const previousVideoProxyUrl = process.env.A11_VIDEO_PROXY_URL;
+  const previousGenericVideoProxyUrl = process.env.VIDEO_PROXY_URL;
+  process.env.VIVY_STREAM_CLIP_ENABLED = '1';
+  process.env.VIVY_STREAM_CLIP_PROVIDER = 'huggingface';
+  process.env.A11_HF_VIDEO_PROVIDER = 'replicate';
+  delete process.env.A11_COMFY_CLOUD_API_KEY;
+  delete process.env.COMFY_CLOUD_API_KEY;
+  delete process.env.A11_COMFY_ORG_API_KEY;
+  delete process.env.COMFY_ORG_API_KEY;
+  delete process.env.A11_COMFY_API_KEY;
+  delete process.env.COMFYUI_API_KEY;
+  delete process.env.A11_VIDEO_COMFY_CLOUD_ENABLED;
+  delete process.env.A11_VIDEO_LOCAL_RUNNER_URL;
+  delete process.env.A11_VIDEO_PROXY_URL;
+  delete process.env.VIDEO_PROXY_URL;
+  try {
+    const providers = [];
+    const result = await generateTwitchCoverVideo({
+      publicTitle: 'Boucle de secours',
+      coverImageUrl: 'https://files.funesterie.me/covers/test.webp',
+      generateVideoFn: async (options) => {
+        providers.push(options.body.videoProvider);
+        if (options.body.videoProvider === 'huggingface') {
+          throw new Error('Model not supported by provider hf-inference');
+        }
+        return { ok: true, video_url: 'https://files.funesterie.me/videos/test.mp4' };
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.provider, 'replicate');
+    assert.deepEqual(providers, ['huggingface', 'replicate']);
+  } finally {
+    if (previousEnabled === undefined) delete process.env.VIVY_STREAM_CLIP_ENABLED;
+    else process.env.VIVY_STREAM_CLIP_ENABLED = previousEnabled;
+    if (previousProvider === undefined) delete process.env.VIVY_STREAM_CLIP_PROVIDER;
+    else process.env.VIVY_STREAM_CLIP_PROVIDER = previousProvider;
+    if (previousPlatformProvider === undefined) delete process.env.A11_HF_VIDEO_PROVIDER;
+    else process.env.A11_HF_VIDEO_PROVIDER = previousPlatformProvider;
+    if (previousComfyCloudKey === undefined) delete process.env.A11_COMFY_CLOUD_API_KEY;
+    else process.env.A11_COMFY_CLOUD_API_KEY = previousComfyCloudKey;
+    if (previousComfyCloudKeyAlt === undefined) delete process.env.COMFY_CLOUD_API_KEY;
+    else process.env.COMFY_CLOUD_API_KEY = previousComfyCloudKeyAlt;
+    if (previousComfyOrgKey === undefined) delete process.env.A11_COMFY_ORG_API_KEY;
+    else process.env.A11_COMFY_ORG_API_KEY = previousComfyOrgKey;
+    if (previousComfyOrgKeyAlt === undefined) delete process.env.COMFY_ORG_API_KEY;
+    else process.env.COMFY_ORG_API_KEY = previousComfyOrgKeyAlt;
+    if (previousComfyApiKey === undefined) delete process.env.A11_COMFY_API_KEY;
+    else process.env.A11_COMFY_API_KEY = previousComfyApiKey;
+    if (previousComfyUiApiKey === undefined) delete process.env.COMFYUI_API_KEY;
+    else process.env.COMFYUI_API_KEY = previousComfyUiApiKey;
+    if (previousComfyCloudEnabled === undefined) delete process.env.A11_VIDEO_COMFY_CLOUD_ENABLED;
+    else process.env.A11_VIDEO_COMFY_CLOUD_ENABLED = previousComfyCloudEnabled;
+    if (previousLocalRunnerUrl === undefined) delete process.env.A11_VIDEO_LOCAL_RUNNER_URL;
+    else process.env.A11_VIDEO_LOCAL_RUNNER_URL = previousLocalRunnerUrl;
+    if (previousVideoProxyUrl === undefined) delete process.env.A11_VIDEO_PROXY_URL;
+    else process.env.A11_VIDEO_PROXY_URL = previousVideoProxyUrl;
+    if (previousGenericVideoProxyUrl === undefined) delete process.env.VIDEO_PROXY_URL;
+    else process.env.VIDEO_PROXY_URL = previousGenericVideoProxyUrl;
+  }
+});
+
+test('Vivy Twitch clip waits and retries once after a provider rate limit', async () => {
+  const previousEnabled = process.env.VIVY_STREAM_CLIP_ENABLED;
+  const previousProvider = process.env.VIVY_STREAM_CLIP_PROVIDER;
+  const previousRetryDelay = process.env.VIVY_STREAM_CLIP_RETRY_DELAY_MS;
+  process.env.VIVY_STREAM_CLIP_ENABLED = '1';
+  process.env.VIVY_STREAM_CLIP_PROVIDER = 'replicate';
+  process.env.VIVY_STREAM_CLIP_RETRY_DELAY_MS = '1234';
+  try {
+    let attempts = 0;
+    const waits = [];
+    const result = await generateTwitchCoverVideo({
+      publicTitle: 'Quota temporaire',
+      coverImageUrl: 'https://files.funesterie.me/covers/test.webp',
+      sleepFn: async (delayMs) => waits.push(delayMs),
+      generateVideoFn: async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error('hf_video_status_429');
+        return { ok: true, video_url: 'https://files.funesterie.me/videos/retry.mp4' };
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.provider, 'replicate');
+    assert.equal(attempts, 2);
+    assert.deepEqual(waits, [1234]);
+  } finally {
+    if (previousEnabled === undefined) delete process.env.VIVY_STREAM_CLIP_ENABLED;
+    else process.env.VIVY_STREAM_CLIP_ENABLED = previousEnabled;
+    if (previousProvider === undefined) delete process.env.VIVY_STREAM_CLIP_PROVIDER;
+    else process.env.VIVY_STREAM_CLIP_PROVIDER = previousProvider;
+    if (previousRetryDelay === undefined) delete process.env.VIVY_STREAM_CLIP_RETRY_DELAY_MS;
+    else process.env.VIVY_STREAM_CLIP_RETRY_DELAY_MS = previousRetryDelay;
+  }
 });

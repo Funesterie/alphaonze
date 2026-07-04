@@ -202,6 +202,10 @@ app.get('/.well-known/microsoft-identity-association.json', (_req, res) => {
 });
 
 const createAdminRouter = require('./src/routes/admin.cjs');
+const {
+  createSocialAutopromptApiRouter,
+  createSocialAutopromptPageRouter,
+} = require('./src/routes/social-autoprompt.cjs');
 const createVideoGenerateRouter = require('./src/routes/video-generate.cjs');
 // ...existing code...
 // --- .env first ---
@@ -5765,7 +5769,25 @@ const verifyJWT = createVerifyJWT({
   authSessionRegistry,
 });
 
+function getOptionalJwtPathname(req) {
+  return String(req?.originalUrl || req?.url || req?.path || '/')
+    .split('?')[0]
+    .trim() || '/';
+}
+
+function isPublicOptionalJwtBypassRequest(req) {
+  const method = String(req?.method || 'GET').trim().toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD') return false;
+  const pathname = getOptionalJwtPathname(req).replace(/\/+$/, '') || '/';
+  return /^\/api\/vivy\/studio\/assets\/[^/]+$/i.test(pathname)
+    || /^\/api\/vivy\/stream\/s\/[^/]+$/i.test(pathname)
+    || /^\/api\/vivy\/stream\/(?:health|state|events|overlay|overlay\/background|nossen-seed)$/i.test(pathname)
+    || /^\/api\/double-harmonic\/out\/[^/]+$/i.test(pathname)
+    || pathname === '/api/media/download';
+}
+
 async function optionalVerifyJWT(req, res, next) {
+  if (isPublicOptionalJwtBypassRequest(req)) return next();
   if (!extractRequestAuthToken(req)) return next();
   return verifyJWT(req, res, next);
 }
@@ -6369,6 +6391,17 @@ app.use('/api/admin', createAdminRouter({
   isAdminRequest,
 }));
 
+app.use('/api/admin/social-connect', createSocialAutopromptApiRouter({
+  verifyJWT,
+  isAdminRequest,
+  db,
+}));
+
+app.use('/admin/social-connect', createSocialAutopromptPageRouter({
+  verifyJWT,
+  isAdminRequest,
+}));
+
 app.use('/api/admin', createImageCardinalityDebugRouter({
   verifyJWT,
   isAdminRequest,
@@ -6899,7 +6932,7 @@ app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT }));
 console.log('[Server] Vivy Studio routes mounted under /api/vivy/studio');
 
 const { createVivyStreamRouter } = require('./src/routes/vivy-stream.cjs');
-app.use('/api/vivy/stream', createVivyStreamRouter({ verifyJWT }));
+app.use('/api/vivy/stream', createVivyStreamRouter({ verifyJWT, db }));
 console.log('[Server] Vivy Stream routes mounted under /api/vivy/stream');
 
 const createDoubleHarmonicRouter = require('./src/routes/double-harmonic.cjs');
@@ -6917,7 +6950,7 @@ app.use('/api/qflush', createQflushFlowRouter({ workspaceRoot: QFLUSH_WORKSPACE_
 console.log('[Server] Qflush flow routes mounted under /api/qflush');
 app.use('/oauth', createOAuthRouter(express));
 console.log('[Server] MCP OAuth routes mounted under /oauth');
-app.use(createPublicMcpRouter());
+app.use(createPublicMcpRouter({ db }));
 console.log('[Server] Public MCP routes mounted at /mcp, /.well-known/mcp and /api/mcp/status');
 const mcpCockpitRouter = createMcpCockpitRouter({ verifyJWT, db, env: process.env });
 app.use('/api/cockpit/mcp', mcpCockpitRouter);

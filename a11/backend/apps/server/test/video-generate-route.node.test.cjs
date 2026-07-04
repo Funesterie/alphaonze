@@ -8,6 +8,7 @@ const fsp = require('node:fs/promises');
 const express = require('express');
 
 const videoGenerateModule = require('../src/routes/video-generate.cjs');
+const { resolveComfyCloudVideoConfig, tryGenerateVideoWithComfyCloud } = require('../lib/comfy-cloud-video.cjs');
 const { resolveXaiVideoConfig } = require('../lib/xai-video.cjs');
 
 test('xAI video config ignores Groq gsk server keys', () => {
@@ -17,6 +18,15 @@ test('xAI video config ignores Groq gsk server keys', () => {
 
   assert.equal(config.token, '');
   assert.equal(config.enabled, false);
+});
+
+test('Comfy Cloud video config keeps enough time for long async renders', () => {
+  const config = resolveComfyCloudVideoConfig({
+    A11_COMFY_CLOUD_API_KEY: 'comfy_test_token',
+  });
+
+  assert.equal(config.enabled, true);
+  assert.equal(config.timeoutMs, 2_700_000);
 });
 
 test('video generate router proxies requests when A11_VIDEO_LOCAL_RUNNER_URL is configured', async () => {
@@ -200,6 +210,333 @@ test('video generate router forwards personal session provider tokens to the pro
   }
 });
 
+test('video generate router forwards server RunComfy token to the proxy without leaking it', async () => {
+  const previousEnv = {
+    A11_VIDEO_LOCAL_RUNNER_URL: process.env.A11_VIDEO_LOCAL_RUNNER_URL,
+    A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
+    A11_VIDEO_PROXY_TIMEOUT_MS: process.env.A11_VIDEO_PROXY_TIMEOUT_MS,
+    A11_RUNCOMFY_API_KEY: process.env.A11_RUNCOMFY_API_KEY,
+    RUNCOMFY_API_KEY: process.env.RUNCOMFY_API_KEY,
+    A11_COMFY_ORG_API_KEY: process.env.A11_COMFY_ORG_API_KEY,
+    COMFY_ORG_API_KEY: process.env.COMFY_ORG_API_KEY,
+  };
+
+  let receivedHeaders = null;
+  const proxyServer = http.createServer((req, res) => {
+    receivedHeaders = req.headers || {};
+    req.resume();
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        ok: true,
+        tool: 'generate_video',
+        video_url: 'https://video.example.com/server-runcomfy.mp4',
+      }));
+    });
+  });
+
+  await new Promise((resolve) => proxyServer.listen(0, '127.0.0.1', resolve));
+  const address = proxyServer.address();
+  delete process.env.A11_VIDEO_LOCAL_RUNNER_URL;
+  process.env.A11_VIDEO_PROXY_URL = `http://127.0.0.1:${address.port}/api/tools/generate_video`;
+  process.env.A11_VIDEO_PROXY_TIMEOUT_MS = '30000';
+  process.env.A11_RUNCOMFY_API_KEY = 'server-runcomfy-secret';
+  delete process.env.RUNCOMFY_API_KEY;
+  delete process.env.A11_COMFY_ORG_API_KEY;
+  delete process.env.COMFY_ORG_API_KEY;
+
+  const app = express();
+  app.use((req, res, next) => {
+    req.user = { id: 'founder-video-test', email: 'founder-video@example.com', tier: 'founder', roles: ['founder'] };
+    next();
+  });
+  app.use(express.json({ limit: '4mb' }));
+  app.use('/api', videoGenerateModule.createVideoGenerateRouter({
+    generateVideo: async () => {
+      throw new Error('local generator should not be called when proxy is configured');
+    },
+  }).router);
+
+  const appServer = http.createServer(app);
+  await new Promise((resolve) => appServer.listen(0, '127.0.0.1', resolve));
+  const appAddress = appServer.address();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${appAddress.port}/api/video/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-A11-Video-Provider': 'runcomfy',
+      },
+      body: JSON.stringify({
+        prompt: 'vivy pousse un cri de scene dans une ville rose',
+        durationSeconds: 6,
+      }),
+    });
+    const payload = await response.json();
+    const serializedPayload = JSON.stringify(payload);
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(receivedHeaders?.['x-a11-runcomfy-key'], 'server-runcomfy-secret');
+    assert.equal(receivedHeaders?.['x-runcomfy-api-key'], 'server-runcomfy-secret');
+    assert.equal(receivedHeaders?.['x-a11-comfy-key'], 'server-runcomfy-secret');
+    assert.equal(receivedHeaders?.['x-comfy-api-key'], 'server-runcomfy-secret');
+    assert.doesNotMatch(serializedPayload, /server-runcomfy-secret/);
+  } finally {
+    await new Promise((resolve) => appServer.close(resolve));
+    await new Promise((resolve) => proxyServer.close(resolve));
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('video generate router can call Comfy Cloud directly with workflow polling', async () => {
+  const previousEnv = {
+    A11_VIDEO_LOCAL_RUNNER_URL: process.env.A11_VIDEO_LOCAL_RUNNER_URL,
+    A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
+    VIDEO_PROXY_URL: process.env.VIDEO_PROXY_URL,
+    A11_COMFY_CLOUD_API_KEY: process.env.A11_COMFY_CLOUD_API_KEY,
+    COMFY_CLOUD_API_KEY: process.env.COMFY_CLOUD_API_KEY,
+    A11_COMFY_ORG_API_KEY: process.env.A11_COMFY_ORG_API_KEY,
+    COMFY_ORG_API_KEY: process.env.COMFY_ORG_API_KEY,
+    A11_VIDEO_COMFY_CLOUD_ENABLED: process.env.A11_VIDEO_COMFY_CLOUD_ENABLED,
+    A11_COMFY_CLOUD_TIMEOUT_MS: process.env.A11_COMFY_CLOUD_TIMEOUT_MS,
+    A11_COMFY_CLOUD_POLL_INTERVAL_MS: process.env.A11_COMFY_CLOUD_POLL_INTERVAL_MS,
+  };
+  delete process.env.A11_VIDEO_LOCAL_RUNNER_URL;
+  delete process.env.A11_VIDEO_PROXY_URL;
+  delete process.env.VIDEO_PROXY_URL;
+  process.env.A11_COMFY_CLOUD_API_KEY = 'server-comfy-secret';
+  delete process.env.COMFY_CLOUD_API_KEY;
+  delete process.env.A11_COMFY_ORG_API_KEY;
+  delete process.env.COMFY_ORG_API_KEY;
+  process.env.A11_VIDEO_COMFY_CLOUD_ENABLED = '1';
+  process.env.A11_COMFY_CLOUD_TIMEOUT_MS = '30000';
+  process.env.A11_COMFY_CLOUD_POLL_INTERVAL_MS = '1';
+
+  const calls = [];
+  const fakeFetch = async (url, options = {}) => {
+    const target = String(url || '');
+    calls.push({ url: target, options });
+    if (target === 'https://files.example.com/cover.png') {
+      return new Response(Buffer.from('fake-png'), {
+        status: 200,
+        headers: { 'content-type': 'image/png' },
+      });
+    }
+    if (target.endsWith('/api/upload/image')) {
+      assert.equal(options.headers?.['X-API-Key'], 'server-comfy-secret');
+      return new Response(JSON.stringify({ name: 'uploaded-cover.png', type: 'input' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (target.endsWith('/api/prompt')) {
+      assert.equal(options.headers?.['X-API-Key'], 'server-comfy-secret');
+      const body = JSON.parse(options.body);
+      assert.equal(body.prompt['1'].inputs.image, 'uploaded-cover.png');
+      assert.match(body.prompt['2'].inputs.prompt, /^Vivy fait danser les machines\b/);
+      assert.match(body.prompt['2'].inputs.prompt, /No readable text/i);
+      assert.match(body.prompt['2'].inputs.negative_prompt, /gibberish text/i);
+      assert.equal(body.extra_data.api_key_comfy_org, 'server-comfy-secret');
+      return new Response(JSON.stringify({ prompt_id: 'prompt-123' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (target.endsWith('/api/job/prompt-123/status')) {
+      assert.equal(options.headers?.['X-API-Key'], 'server-comfy-secret');
+      return new Response(JSON.stringify({ status: 'completed' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (target.endsWith('/api/jobs/prompt-123')) {
+      assert.equal(options.headers?.['X-API-Key'], 'server-comfy-secret');
+      return new Response(JSON.stringify({
+        outputs: {
+          3: { video: [{ filename: 'clip.mp4', subfolder: '', type: 'output' }] },
+        },
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (target.endsWith('/api/view?filename=clip.mp4&subfolder=&type=output')) {
+      assert.equal(options.headers?.['X-API-Key'], 'server-comfy-secret');
+      return new Response(null, {
+        status: 302,
+        headers: { location: 'https://signed.example.com/clip.mp4' },
+      });
+    }
+    if (target === 'https://signed.example.com/clip.mp4') {
+      assert.equal(options.headers?.['X-API-Key'], undefined);
+      return new Response(Buffer.from('fake-mp4'), {
+        status: 200,
+        headers: { 'content-type': 'video/mp4' },
+      });
+    }
+    throw new Error(`unexpected fetch ${target}`);
+  };
+
+  const app = express();
+  app.use((req, res, next) => {
+    req.user = { id: 'founder-video-test', email: 'founder-video@example.com', tier: 'founder', roles: ['founder'] };
+    next();
+  });
+  app.use(express.json({ limit: '4mb' }));
+  app.use('/api', videoGenerateModule.createVideoGenerateRouter({
+    fetch: fakeFetch,
+    uploadBufferToR2: async ({ filename, buffer, contentType }) => ({
+      url: `https://files.funesterie.me/users/generated/${filename}`,
+      filename,
+      size: buffer.length,
+      contentType,
+    }),
+    generateVideo: async () => {
+      throw new Error('local generator should not be called for comfy_cloud');
+    },
+  }).router);
+
+  const appServer = http.createServer(app);
+  await new Promise((resolve) => appServer.listen(0, '127.0.0.1', resolve));
+  const appAddress = appServer.address();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${appAddress.port}/api/video/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-A11-Video-Provider': 'comfy_cloud',
+      },
+      body: JSON.stringify({
+        prompt: 'Vivy fait danser les machines',
+        sourceImageUrl: 'https://files.example.com/cover.png',
+        durationSeconds: 5,
+      }),
+    });
+    const payload = await response.json();
+    const serializedPayload = JSON.stringify(payload);
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.provider, 'comfy_cloud');
+    assert.match(payload.video_url, /^https:\/\/files\.funesterie\.me\/users\/generated\//);
+    assert.doesNotMatch(serializedPayload, /server-comfy-secret/);
+    assert.ok(calls.some((call) => call.url.endsWith('/api/prompt')));
+  } finally {
+    await new Promise((resolve) => appServer.close(resolve));
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('Comfy Cloud video generation recovers preview-only mp4 outputs', async () => {
+  const previousEnv = {
+    A11_COMFY_CLOUD_API_KEY: process.env.A11_COMFY_CLOUD_API_KEY,
+    A11_VIDEO_COMFY_CLOUD_ENABLED: process.env.A11_VIDEO_COMFY_CLOUD_ENABLED,
+    A11_COMFY_CLOUD_TIMEOUT_MS: process.env.A11_COMFY_CLOUD_TIMEOUT_MS,
+    A11_COMFY_CLOUD_POLL_INTERVAL_MS: process.env.A11_COMFY_CLOUD_POLL_INTERVAL_MS,
+  };
+  process.env.A11_COMFY_CLOUD_API_KEY = 'server-comfy-secret';
+  process.env.A11_VIDEO_COMFY_CLOUD_ENABLED = '1';
+  process.env.A11_COMFY_CLOUD_TIMEOUT_MS = '30000';
+  process.env.A11_COMFY_CLOUD_POLL_INTERVAL_MS = '1';
+
+  const calls = [];
+  const fakeFetch = async (url, options = {}) => {
+    const target = String(url || '');
+    calls.push({ url: target, options });
+    if (target === 'https://files.example.com/cover.png') {
+      return new Response(Buffer.from('fake-png'), {
+        status: 200,
+        headers: { 'content-type': 'image/png' },
+      });
+    }
+    if (target.endsWith('/api/upload/image')) {
+      return new Response(JSON.stringify({ name: 'uploaded-cover.png', type: 'input' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (target.endsWith('/api/prompt')) {
+      return new Response(JSON.stringify({ prompt_id: 'prompt-preview-only' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (target.endsWith('/api/job/prompt-preview-only/status')) {
+      return new Response(JSON.stringify({ status: 'completed' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (target.endsWith('/api/jobs/prompt-preview-only')) {
+      return new Response(JSON.stringify({
+        id: 'prompt-preview-only',
+        status: 'completed',
+        outputs_count: 1,
+        preview_output: {
+          filename: 'hash-output.mp4',
+          subfolder: 'a11-comfy-cloud',
+          type: 'output',
+          mediaType: 'images',
+        },
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (target.endsWith('/api/view?filename=hash-output.mp4&subfolder=a11-comfy-cloud&type=output')) {
+      return new Response(null, {
+        status: 302,
+        headers: { location: 'https://signed.example.com/hash-output.mp4' },
+      });
+    }
+    if (target === 'https://signed.example.com/hash-output.mp4') {
+      assert.equal(options.headers?.['X-API-Key'], undefined);
+      return new Response(Buffer.from('fake-mp4-preview-only'), {
+        status: 200,
+        headers: { 'content-type': 'video/mp4' },
+      });
+    }
+    throw new Error(`unexpected fetch ${target}`);
+  };
+
+  try {
+    const result = await tryGenerateVideoWithComfyCloud({
+      body: {
+        prompt: 'Vivy chante sous les néons',
+        sourceImageUrl: 'https://files.example.com/cover.png',
+      },
+      prompt: 'Vivy chante sous les néons',
+      fetchImpl: fakeFetch,
+      uploadBufferToR2Impl: async ({ filename, buffer, contentType }) => ({
+        url: `https://files.funesterie.me/users/generated/${filename}`,
+        filename,
+        size: buffer.length,
+        contentType,
+      }),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.provider, 'comfy_cloud');
+    assert.match(result.videoUrl, /^https:\/\/files\.funesterie\.me\/users\/generated\//);
+    assert.ok(calls.some((call) => call.url.endsWith('/api/jobs/prompt-preview-only')));
+    assert.ok(calls.some((call) => call.url.includes('/api/view?filename=hash-output.mp4')));
+  } finally {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('video generate router can use Grok Imagine xAI with a personal session key', async () => {
   const previousEnv = {
     A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
@@ -280,6 +617,7 @@ test('video generate router can use Grok Imagine xAI with a personal session key
       },
       body: JSON.stringify({
         prompt: 'Vivy passe en hypervitesse dans une cite cyberpunk magenta.',
+        sourceImageUrl: 'https://files.example.com/vivy-cover.webp',
         durationSeconds: 6,
       }),
     });
@@ -296,6 +634,9 @@ test('video generate router can use Grok Imagine xAI with a personal session key
     assert.equal(generationCall?.init?.headers?.Authorization, 'Bearer session-xai-secret');
     assert.equal(postedBody.model, 'grok-imagine-video');
     assert.equal(postedBody.duration, 6);
+    assert.match(postedBody.prompt, /^Vivy passe en hypervitesse dans une cite cyberpunk magenta\./);
+    assert.match(postedBody.prompt, /No readable text/i);
+    assert.deepEqual(postedBody.image, { url: 'https://files.example.com/vivy-cover.webp' });
     assert.doesNotMatch(serializedPayload, /session-xai-secret/);
   } finally {
     await new Promise((resolve) => appServer.close(resolve));
@@ -1604,19 +1945,35 @@ test('video generate router builds a first-person cloud prompt before Replicate 
 test('video generate router does not use emergency color bars by default in production', async () => {
   const previousEnv = {
     NODE_ENV: process.env.NODE_ENV,
+    A11_VIDEO_LOCAL_RUNNER_URL: process.env.A11_VIDEO_LOCAL_RUNNER_URL,
     A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
     VIDEO_PROXY_URL: process.env.VIDEO_PROXY_URL,
     A11_VIDEO_EMERGENCY_MODE: process.env.A11_VIDEO_EMERGENCY_MODE,
     A11_EMERGENCY_MEDIA_MODE: process.env.A11_EMERGENCY_MEDIA_MODE,
     A11_VIDEO_EMERGENCY_FALLBACK: process.env.A11_VIDEO_EMERGENCY_FALLBACK,
+    A11_VIDEO_COMFY_CLOUD_ENABLED: process.env.A11_VIDEO_COMFY_CLOUD_ENABLED,
+    A11_COMFY_CLOUD_API_KEY: process.env.A11_COMFY_CLOUD_API_KEY,
+    COMFY_CLOUD_API_KEY: process.env.COMFY_CLOUD_API_KEY,
+    A11_COMFY_ORG_API_KEY: process.env.A11_COMFY_ORG_API_KEY,
+    A11_COMFY_API_KEY: process.env.A11_COMFY_API_KEY,
+    COMFY_ORG_API_KEY: process.env.COMFY_ORG_API_KEY,
+    COMFYUI_API_KEY: process.env.COMFYUI_API_KEY,
   };
 
   process.env.NODE_ENV = 'production';
+  delete process.env.A11_VIDEO_LOCAL_RUNNER_URL;
   delete process.env.A11_VIDEO_PROXY_URL;
   delete process.env.VIDEO_PROXY_URL;
   delete process.env.A11_VIDEO_EMERGENCY_MODE;
   delete process.env.A11_EMERGENCY_MEDIA_MODE;
   delete process.env.A11_VIDEO_EMERGENCY_FALLBACK;
+  delete process.env.A11_VIDEO_COMFY_CLOUD_ENABLED;
+  delete process.env.A11_COMFY_CLOUD_API_KEY;
+  delete process.env.COMFY_CLOUD_API_KEY;
+  delete process.env.A11_COMFY_ORG_API_KEY;
+  delete process.env.A11_COMFY_API_KEY;
+  delete process.env.COMFY_ORG_API_KEY;
+  delete process.env.COMFYUI_API_KEY;
 
   const app = express();
   app.use(express.json({ limit: '4mb' }));
