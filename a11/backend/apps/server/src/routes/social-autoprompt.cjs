@@ -22,6 +22,7 @@ const {
   purgeSocialContext,
   resolveProviderConfig,
   setSocialAccountPaused,
+  disconnectSocialAccount,
   splitScopes,
   upsertSocialAccount,
 } = require('../social/social-autoprompt.cjs');
@@ -414,6 +415,7 @@ function buildSocialConnectHtml() {
           '<button data-action="ingest" data-provider="' + escapeHtml(a.provider) + '">Ingest maintenant</button>' +
           '<button data-action="pause" data-provider="' + escapeHtml(a.provider) + '">' + (a.paused ? 'Reprendre' : 'Pause ingest') + '</button>' +
           '<button class="warn" data-action="purge" data-provider="' + escapeHtml(a.provider) + '">Purger contexte</button>' +
+          '<button class="warn" data-action="disconnect" data-provider="' + escapeHtml(a.provider) + '">Se déconnecter</button>' +
           '</div></div>';
       }).join('');
     }
@@ -434,6 +436,7 @@ function buildSocialConnectHtml() {
         if (action === 'ingest') $('output').textContent = JSON.stringify(await api('/' + provider + '/ingest-now', { method:'POST', body:'{}' }), null, 2);
         if (action === 'pause') $('output').textContent = JSON.stringify(await api('/' + provider + '/pause', { method:'POST', body: JSON.stringify({ paused: target.textContent.includes('Pause') }) }), null, 2);
         if (action === 'purge' && confirm('Purger le contexte social local ?')) $('output').textContent = JSON.stringify(await api('/' + provider + '/purge-context', { method:'POST', body:'{}' }), null, 2);
+        if (action === 'disconnect' && confirm('Déconnecter ce compte ? Le token sera supprimé; les items déjà ingérés restent en cache.')) $('output').textContent = JSON.stringify(await api('/' + provider + '/disconnect', { method:'POST', body:'{}' }), null, 2);
       } catch (e) { $('output').textContent = String(e.message || e); }
       finally { await load().catch(() => {}); target.disabled = false; }
     });
@@ -615,6 +618,20 @@ function createSocialAutopromptApiRouter({ verifyJWT, isAdminRequest, db, env = 
         paused: req.body?.paused !== false,
       });
       return res.json({ ok: Boolean(account), account });
+    } catch (error) {
+      return res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  router.post('/:provider/disconnect', async (req, res) => {
+    const provider = normalizeProvider(req.params.provider);
+    try {
+      const account = await disconnectSocialAccount(db, {
+        provider,
+        userId: getAdminUserId(req),
+      });
+      if (!account) return res.status(404).json({ ok: false, error: 'social_account_not_found' });
+      return res.json({ ok: true, account });
     } catch (error) {
       return res.status(500).json({ ok: false, error: String(error?.message || error) });
     }

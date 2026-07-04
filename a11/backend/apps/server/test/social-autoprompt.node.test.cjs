@@ -293,3 +293,47 @@ test('redacted status separates cached context from live OAuth when reconnect is
   assert.ok(status.limitations.includes('youtube_reconnect_required_cached_context_only'));
   assert.ok(status.limitations.includes('youtube_context_served_from_cache_no_live_ingest'));
 });
+
+test('disconnectSocialAccount clears sealed tokens and marks the account disconnected', async () => {
+  const { disconnectSocialAccount } = require('../src/social/social-autoprompt.cjs');
+  const queries = [];
+  const fakeDb = {
+    async query(sql, params) {
+      queries.push({ sql, params });
+      if (/UPDATE social_accounts/i.test(sql)) {
+        return {
+          rows: [{
+            id: 7,
+            user_id: 'admin',
+            provider: 'youtube',
+            account_label: 'chaine',
+            account_external_id: 'yt-id',
+            scopes: [],
+            token_hash: null,
+            expires_at: null,
+            last_refresh_at: null,
+            last_ingest_at: '2026-07-04T10:34:00.000Z',
+            status: 'disconnected',
+            reconnect_required: false,
+            paused: false,
+            metadata_json: {},
+          }],
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    },
+  };
+
+  const account = await disconnectSocialAccount(fakeDb, { provider: 'youtube', userId: 'admin' });
+  const updateQuery = queries.find((entry) => /UPDATE social_accounts/i.test(entry.sql));
+  assert.ok(updateQuery, 'update query missing');
+  assert.match(updateQuery.sql, /token_sealed = NULL/i);
+  assert.match(updateQuery.sql, /token_hash = NULL/i);
+  assert.match(updateQuery.sql, /status = 'disconnected'/i);
+  assert.deepEqual(updateQuery.params, ['youtube', 'admin']);
+  assert.equal(account.status, 'disconnected');
+  assert.equal(account.hasToken, false);
+
+  const missing = await disconnectSocialAccount({ async query() { return { rows: [] }; } }, { provider: 'meta' });
+  assert.equal(missing, null);
+});

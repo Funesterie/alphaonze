@@ -1174,6 +1174,19 @@ async function setSocialAccountPaused(db, { provider, userId = 'admin', paused =
   return result.rows[0] ? redactAccount(result.rows[0]) : null;
 }
 
+async function disconnectSocialAccount(db, { provider, userId = 'admin' } = {}) {
+  await ensureSocialSchema(db);
+  const result = await db.query(`
+    UPDATE social_accounts
+    SET status = 'disconnected', token_sealed = NULL, token_hash = NULL,
+        reconnect_required = FALSE, paused = FALSE, updated_at = NOW()
+    WHERE provider = $1 AND user_id = $2
+    RETURNING id, user_id, provider, account_label, account_external_id, scopes, token_hash, expires_at,
+      last_refresh_at, last_ingest_at, status, reconnect_required, paused, metadata_json, created_at, updated_at
+  `, [normalizeProvider(provider), cleanOneLine(userId, 'admin', 160)]);
+  return result.rows[0] ? redactAccount(result.rows[0]) : null;
+}
+
 async function purgeSocialContext(db, { provider = '', userId = 'admin' } = {}) {
   await ensureSocialSchema(db);
   const normalizedProvider = normalizeProvider(provider);
@@ -1216,6 +1229,7 @@ module.exports = {
   refreshYoutubeAccount,
   resolveProviderConfig,
   setSocialAccountPaused,
+  disconnectSocialAccount,
   splitScopes,
   upsertSocialAccount,
 };
