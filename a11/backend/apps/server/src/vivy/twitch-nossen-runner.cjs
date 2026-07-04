@@ -1523,6 +1523,86 @@ function reinforceTwitchHardcoreRouting(routing = {}, { winner = {}, seed = {}, 
   };
 }
 
+function isRapFreestyleRequest(...values) {
+  const folded = foldTwitchLyricText(values.filter(Boolean).join(' '));
+  if (!folded) return false;
+  if (/\b(?:freestyle|cypher|egotrip|ego\s+trip|punchlines?|kickage|multisyllabiques?)\b/.test(folded)) return true;
+  return /\brap\b/.test(folded)
+    && /\b(?:sans\s+refrain|pas\s+de\s+refrain|couplets?\s+continus?)\b/.test(folded);
+}
+
+function reinforceTwitchRapFreestyleRouting(routing = {}, { winner = {}, seed = {}, intentPlan = {} } = {}) {
+  const requested = isRapFreestyleRequest(
+    winner.text,
+    routing?.songMood,
+    seed?.notes,
+    seed?.canvas,
+    intentPlan?.generationBrief,
+    intentPlan?.reason
+  );
+  if (!requested) return routing;
+  const currentMood = cleanText(routing?.songMood, '', 1200);
+  const foldedMood = foldTwitchLyricText(currentMood);
+  if (/\bcouplets?\s+continus?\b/.test(foldedMood) && /\bpunchlines?\b/.test(foldedMood)) return routing;
+  const freestyleMood = 'Direction freestyle rap obligatoire: couplets continus en phases, punchlines concrètes et fréquentes, rimes techniques multisyllabiques, variations de flow et de débit; refrain seulement si le sujet le demande explicitement; aucun objet central récurrent ni image répétée type vinyle, platine, disque ou boucle; jamais de traitement narratif de chanson à refrain.';
+  return {
+    ...routing,
+    songMood: cleanText([currentMood, freestyleMood].filter(Boolean).join('. '), '', 1600),
+  };
+}
+
+function buildRapFreestyleGuidance({ winner = {}, routing = {}, seed = {} } = {}) {
+  if (!isRapFreestyleRequest(winner.text, routing?.songMood, seed?.notes, seed?.canvas)) return '';
+  return [
+    'Règles privées non chantables pour freestyle rap: écris en couplets continus par phases, pas en chanson narrative à objet central.',
+    'Chaque phase enchaîne des punchlines concrètes: comparaisons inattendues, retournements, attaques précises; vise au moins une vraie punchline toutes les quatre lignes.',
+    'Rimes techniques exigées: multisyllabiques, internes et enchaînées; varie le flow et le débit entre les phases.',
+    'Un refrain est optionnel: ajoute-le seulement si le sujet exact le demande, sinon aucune section refrain, pré-refrain ni pont.',
+    'Aucune image ne revient plus d’une fois hors refrain: si vinyle, platine, disque, boucle ou machine est déjà apparu, trouve une image neuve. Le contexte social est une couleur de fond, jamais une banque d’images à recycler ni une consigne de refrain.',
+  ].join('\n');
+}
+
+function assessTwitchLyricLoopiness(lyrics = '') {
+  const lines = String(lyrics || '').split(/\r?\n/);
+  const verseLines = [];
+  let inChorus = false;
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    const tag = trimmed.match(/^\[([^\]]+)\]$/);
+    if (tag) {
+      inChorus = /chorus|refrain|hook/i.test(tag[1]);
+      continue;
+    }
+    if (inChorus) continue;
+    const folded = foldTwitchLyricText(trimmed).replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (folded.split(' ').length < 4) continue;
+    verseLines.push(folded);
+  }
+  if (verseLines.length < 6) {
+    return { valid: true, reasons: [], duplicateRatio: 0, topLineCount: 0, verseLineCount: verseLines.length };
+  }
+  const counts = new Map();
+  for (const line of verseLines) counts.set(line, (counts.get(line) || 0) + 1);
+  let duplicates = 0;
+  let topLineCount = 0;
+  for (const count of counts.values()) {
+    if (count > 1) duplicates += count - 1;
+    if (count > topLineCount) topLineCount = count;
+  }
+  const duplicateRatio = duplicates / verseLines.length;
+  const reasons = [];
+  if (topLineCount >= 3) reasons.push('same_line_looped');
+  if (duplicateRatio >= 0.25) reasons.push('verse_duplicate_ratio');
+  return {
+    valid: reasons.length === 0,
+    reasons,
+    duplicateRatio: Number(duplicateRatio.toFixed(3)),
+    topLineCount,
+    verseLineCount: verseLines.length,
+  };
+}
+
 function buildShortTwitchIdeaExpansionGuidance({ winner = {}, routing = {}, seed = {} } = {}) {
   const text = cleanText(winner.text, '', 600);
   const folded = foldTwitchLyricText(text);
@@ -2268,6 +2348,7 @@ function buildTwitchLyricsRequest({
     buildHookMechanicGuidance({ winner, routing, seed }),
     buildHumorWordplayGuidance({ winner, routing, seed }),
     buildParodyFormatGuidance({ winner, routing, seed }),
+    buildRapFreestyleGuidance({ winner, routing, seed }),
     buildPhoneticWordplayGuidance({ winner, routing, seed }),
     buildAssociativeWordplayGuidance({ winner, routing, seed }),
     buildBawdyWordplayGuidance({ winner, routing, seed }),
@@ -2481,6 +2562,15 @@ function createVivyStreamNossenRunner(options = {}) {
         );
       }
       routing = hardcoreRouting;
+      const freestyleRouting = reinforceTwitchRapFreestyleRouting(routing, { winner, seed, intentPlan });
+      if (freestyleRouting !== routing) {
+        logger.info?.(
+          '[VivyGenreRouter] round=%s freestyleApplied=true mood=%s',
+          roundId,
+          cleanText(freestyleRouting.songMood, '', 220)
+        );
+      }
+      routing = freestyleRouting;
       if (
         musicProvider === 'mureka'
         && !instrumentalMode
@@ -2675,6 +2765,12 @@ function createVivyStreamNossenRunner(options = {}) {
           routing?.songMood,
           seed?.notes
         );
+        const freestyleRequested = isRapFreestyleRequest(
+          winner.text,
+          routing?.songMood,
+          seed?.notes,
+          seed?.canvas
+        );
         let lyricAssessment = assessTwitchSongLyrics(lyrics);
         if (!lyricAssessment.valid) {
           logger.warn?.(
@@ -2687,6 +2783,17 @@ function createVivyStreamNossenRunner(options = {}) {
           );
         }
         let rhymeAssessment = assessTwitchRhymeSignals(lyrics);
+        let loopAssessment = assessTwitchLyricLoopiness(lyrics);
+        if (!loopAssessment.valid) {
+          logger.warn?.(
+            '[VivyLoopCheck] round=%s loopy verses reasons=%s topLine=%s duplicateRatio=%s verseLines=%s',
+            roundId,
+            loopAssessment.reasons.join(','),
+            loopAssessment.topLineCount,
+            loopAssessment.duplicateRatio,
+            loopAssessment.verseLineCount
+          );
+        }
         let hookAssessment = hookMechanicRequested
           ? assessTwitchHookMechanic(lyrics, winner.text)
           : { valid: true, reasons: [] };
@@ -2719,7 +2826,8 @@ function createVivyStreamNossenRunner(options = {}) {
         const lyricsTooShortForScope = lyricScope.minLyricsChars > 0 && lyrics.length < lyricScope.minLyricsChars;
         const rhymeNeedsRewrite = strictRhymeRequested && !rhymeAssessment.valid && lyrics.length >= 600;
         const hookNeedsRewrite = hookMechanicRequested && !hookAssessment.valid && lyrics.length >= 600;
-        if (humorNeedsRewrite || wordplayNeedsPolish || invalidLyricsNeedRewrite || lyricsTooShortForScope || rhymeNeedsRewrite || hookNeedsRewrite) {
+        const loopNeedsRewrite = !loopAssessment.valid && lyrics.length >= 400;
+        if (humorNeedsRewrite || wordplayNeedsPolish || invalidLyricsNeedRewrite || lyricsTooShortForScope || rhymeNeedsRewrite || hookNeedsRewrite || loopNeedsRewrite) {
           await update({
             action: 'progress',
             stage: 'lyrics',
@@ -2734,6 +2842,8 @@ function createVivyStreamNossenRunner(options = {}) {
               ? 'Vivy densifie les paroles avant composition pour éviter un morceau qui tourne en rond.'
               : rhymeNeedsRewrite
               ? 'Vivy renforce les rimes avant composition.'
+              : loopNeedsRewrite
+              ? 'Vivy casse une boucle d’images et réécrit les couplets avant Suno.'
               : 'Vivy resserre les malentendus et réécrit les paroles avant Suno.',
           });
           const rewriteSessionId = `${sessionId}-lyrics-rewrite`;
@@ -2763,6 +2873,8 @@ function createVivyStreamNossenRunner(options = {}) {
                   ? `Réécriture obligatoire: les rimes sont trop faibles (${rhymeAssessment.matches}/${rhymeAssessment.opportunities} paires détectées). Reprends chaque couplet avec un vrai schéma AABB ou ABAB, des fins de vers qui se répondent et des rimes internes naturelles.`
                   : hookNeedsRewrite
                   ? `Réécriture obligatoire: le hook est trop statique (${hookAssessment.reasons.join(',')}). Le refrain ne doit pas seulement nommer le concept; il doit voler, rendre, déformer, retourner ou transformer une matière du couplet. Change le dernier refrain pour révéler un second sens.`
+                  : loopNeedsRewrite
+                  ? `Réécriture obligatoire: les couplets bouclent sur les mêmes lignes ou la même image (${loopAssessment.reasons.join(',')}, ligne dominante x${loopAssessment.topLineCount}). Garde l’énergie, mais remplace chaque répétition hors refrain par une scène, une image ou une punchline neuve.`
                   : 'Réécriture obligatoire: la version précédente était trop courte ou récitait les consignes.',
                 hookMechanicRequested
                   ? 'Test hook obligatoire: chaque couplet doit fournir une image ou une phrase que le refrain récupère ensuite. Le refrain doit varier à chaque retour; évite “je suis le/la [titre]” comme simple slogan répété. Le dernier refrain doit payer le prix du concept ou retourner son sens.'
@@ -2776,7 +2888,9 @@ function createVivyStreamNossenRunner(options = {}) {
                 bawdyWordplayRequested
                   ? 'Le brouillon échoue s’il se contente de secrets, sourires, clins d’œil ou personnages qui “ont compris”. Rends le second récit adulte nettement perceptible sans anatomie graphique: plusieurs allusions concrètes, plusieurs chutes, au moins deux tensions entre désir, ivresse, fumée clandestine, interdit et lendemain embarrassant. Ajoute deux ou trois césures-pièges: la phrase appelle un mot tabou pendant une pause, puis un complément innocent la termine sans jamais écrire le mot imaginé. Ne reprends aucune ligne faible du brouillon.'
                   : '',
-                'Écris maintenant uniquement les paroles finales, avec au moins deux couplets, un pré-refrain, un refrain, un pont et un dernier refrain.',
+                freestyleRequested
+                  ? 'Écris maintenant uniquement les paroles finales: couplets continus en phases avec punchlines, sans pré-refrain ni pont obligatoires; ajoute un refrain seulement si le sujet exact le demande.'
+                  : 'Écris maintenant uniquement les paroles finales, avec au moins deux couplets, un pré-refrain, un refrain, un pont et un dernier refrain.',
                 'Chaque couplet doit contenir une scène concrète, un malentendu nouveau et une conséquence comique. Hors refrain, interdiction de reprendre la même idée ou le même moule de phrase. Les rimes doivent exister à l’oreille, pas seulement par hasard sur deux mots. Ne cite jamais les mots: surface, sous-texte, double lecture, consigne, prompt, règle privée, pivot phonétique, association d’idées.',
               ].filter(Boolean).join('\n'),
               songText: winner.text,
@@ -2837,6 +2951,16 @@ function createVivyStreamNossenRunner(options = {}) {
           }
           lyricAssessment = assessTwitchSongLyrics(lyrics);
           rhymeAssessment = assessTwitchRhymeSignals(lyrics);
+          loopAssessment = assessTwitchLyricLoopiness(lyrics);
+          if (!loopAssessment.valid) {
+            logger.warn?.(
+              '[VivyLoopCheck] round=%s rewritten verses still loopy reasons=%s topLine=%s duplicateRatio=%s',
+              roundId,
+              loopAssessment.reasons.join(','),
+              loopAssessment.topLineCount,
+              loopAssessment.duplicateRatio
+            );
+          }
           hookAssessment = hookMechanicRequested
             ? assessTwitchHookMechanic(lyrics, winner.text)
             : { valid: true, reasons: [] };
@@ -3609,7 +3733,11 @@ module.exports = {
   resolveTwitchVivyLyricScope,
   isConceptualHookRequest,
   isHardcoreRaveRequest,
+  isRapFreestyleRequest,
   reinforceTwitchHardcoreRouting,
+  reinforceTwitchRapFreestyleRouting,
+  buildRapFreestyleGuidance,
+  assessTwitchLyricLoopiness,
   assessTwitchHookMechanic,
   assessTwitchRhymeSignals,
   assessTwitchSongLyrics,

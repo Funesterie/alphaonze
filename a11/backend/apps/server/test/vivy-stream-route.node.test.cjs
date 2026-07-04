@@ -42,7 +42,11 @@ const {
   resolveTwitchVivyLyricScope,
   isConceptualHookRequest,
   isHardcoreRaveRequest,
+  isRapFreestyleRequest,
   reinforceTwitchHardcoreRouting,
+  reinforceTwitchRapFreestyleRouting,
+  buildRapFreestyleGuidance,
+  assessTwitchLyricLoopiness,
   assessTwitchRhymeSignals,
   sanitizeTwitchLyricsForPromptLeakage,
 } = require('../src/vivy/twitch-nossen-runner.cjs');
@@ -3450,4 +3454,97 @@ test('Vivy hardcore 90s requests get a mandatory gabber thunderdome direction', 
     { winner: { text: 'hardcore 90s rave' } }
   );
   assert.equal(alreadyDirected.songMood, 'gabber thunderdome kicks distordus 180 BPM');
+});
+
+test('Vivy freestyle rap requests get continuous verses and punchline direction', () => {
+  assert.equal(isRapFreestyleRequest('Mega Freestyle, rap egotrip sombre'), true);
+  assert.equal(isRapFreestyleRequest('cypher nocturne avec punchlines crues'), true);
+  assert.equal(isRapFreestyleRequest('rap sans refrain, couplet continu'), true);
+  assert.equal(isRapFreestyleRequest('chanson pop avec gros refrain'), false);
+  assert.equal(isRapFreestyleRequest('ballade rap romantique avec refrain'), false);
+
+  const routing = reinforceTwitchRapFreestyleRouting(
+    { songMood: 'hardcore rap 90s brut, couplets tendus vers refrain explosif' },
+    { winner: { text: 'Mega Freestyle, rap egotrip sombre, pas de refrain' } }
+  );
+  assert.match(routing.songMood, /couplets continus/i);
+  assert.match(routing.songMood, /punchlines concrètes/i);
+  assert.match(routing.songMood, /multisyllabiques/i);
+  assert.match(routing.songMood, /refrain seulement si le sujet le demande/i);
+  assert.match(routing.songMood, /jamais de traitement narratif/i);
+
+  const untouched = reinforceTwitchRapFreestyleRouting(
+    { songMood: 'pop lumineuse' },
+    { winner: { text: 'chanson pop avec gros refrain' } }
+  );
+  assert.equal(untouched.songMood, 'pop lumineuse');
+
+  const guidance = buildRapFreestyleGuidance({
+    winner: { text: 'Mega Freestyle, rap egotrip sombre' },
+    routing: {},
+    seed: {},
+  });
+  assert.match(guidance, /Règles privées non chantables pour freestyle rap/i);
+  assert.match(guidance, /vinyle, platine, disque, boucle/i);
+  assert.match(guidance, /couleur de fond/i);
+  assert.equal(buildRapFreestyleGuidance({ winner: { text: 'valse musette' } }), '');
+});
+
+test('Vivy loop check flags repeated verse images but tolerates chorus repetition', () => {
+  const loopy = [
+    '[Verse 1]',
+    'Le vinyle tourne encore dans la pièce sombre',
+    'Je pose mes rimes sur le beat qui gronde',
+    'Le vinyle tourne encore dans la pièce sombre',
+    'Les enceintes tremblent sous la basse profonde',
+    '[Verse 2]',
+    'Le vinyle tourne encore dans la pièce sombre',
+    'Un autre couplet qui repart sur la même onde',
+    'Le vinyle tourne encore dans la pièce sombre',
+    'Rien de neuf, la boucle est trop féconde',
+  ].join('\n');
+  const flagged = assessTwitchLyricLoopiness(loopy);
+  assert.equal(flagged.valid, false);
+  assert.ok(flagged.topLineCount >= 3);
+  assert.ok(flagged.reasons.includes('same_line_looped'));
+
+  const healthyChorus = [
+    '[Verse 1]',
+    'Première scène concrète dans la nuit électrique',
+    'Deuxième ligne qui avance avec une image unique',
+    'Troisième punchline qui frappe sans se répéter',
+    'Quatrième détour, personne ne peut l’arrêter',
+    '[Chorus]',
+    'Le refrain revient et c’est normal ici',
+    'Le refrain revient et c’est normal ici',
+    '[Verse 2]',
+    'Cinquième tableau, nouvelle métaphore affûtée',
+    'Sixième attaque, les faux rois vont plier',
+    'Septième mesure, le flow change de vitesse',
+    'Huitième sortie, la chute tient sa promesse',
+  ].join('\n');
+  const clean = assessTwitchLyricLoopiness(healthyChorus);
+  assert.equal(clean.valid, true);
+});
+
+test('Vivy freestyle lyric request carries the freestyle rules into the LLM prompt', () => {
+  const message = buildTwitchLyricsRequest({
+    winner: { text: 'Mega Freestyle, rap egotrip sombre. Pas de refrain, couplet continu.' },
+    routing: { songMood: 'rap sombre', artists: ['Djeff'] },
+    seed: {},
+    lyricScope: { label: 'format nerveux', targetDurationSeconds: 150, minLyricsChars: 520, maxChars: 2600 },
+    subjectFrame: {},
+  });
+  assert.match(message, /freestyle rap/i);
+  assert.match(message, /punchline/i);
+  assert.match(message, /couleur de fond/i);
+
+  const normal = buildTwitchLyricsRequest({
+    winner: { text: 'Ballade douce sur la pluie d’été' },
+    routing: { songMood: 'ballade acoustique', artists: ['Vivy'] },
+    seed: {},
+    lyricScope: { label: 'ample', targetDurationSeconds: 210, minLyricsChars: 520, maxChars: 2600 },
+    subjectFrame: {},
+  });
+  assert.doesNotMatch(normal, /freestyle rap/i);
 });
