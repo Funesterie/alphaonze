@@ -1460,6 +1460,7 @@ test('Twitch NOSSEN runner writes lyrics, follows Suno and publishes the track',
     coverPrompt: '',
     coverVideoUrl: '',
     coverVideoPrompt: '',
+    shareVideoUrl: '',
   });
 });
 
@@ -3266,4 +3267,93 @@ test('Vivy Twitch clip waits and retries once after a provider rate limit', asyn
     if (previousRetryDelay === undefined) delete process.env.VIVY_STREAM_CLIP_RETRY_DELAY_MS;
     else process.env.VIVY_STREAM_CLIP_RETRY_DELAY_MS = previousRetryDelay;
   }
+});
+
+test('Vivy stream clip-mode arming estimates cost, requires confirmation and stays one-shot', async () => {
+  const app = express();
+  const statePath = path.join(tmpRoot, 'clip-mode-one-shot.json');
+  const started = [];
+  const fakeRunner = {
+    start: (payload) => {
+      started.push(payload);
+      return { started: true, promise: Promise.resolve({ ok: true }) };
+    },
+    isRunning: () => false,
+    run: async () => ({ ok: true }),
+  };
+  app.use('/api/vivy/stream', createVivyStreamRouter({ statePath, runner: fakeRunner }));
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const preview = await postJson(baseUrl, '/api/vivy/stream/round/clip-mode', { mode: 'dream' });
+    assert.equal(preview.json.ok, true);
+    assert.equal(preview.json.armed, false);
+    assert.equal(preview.json.requiresConfirmation, true);
+    assert.equal(preview.json.estimate.dream, true);
+    assert.ok(preview.json.estimate.uniqueLoops >= 2);
+    assert.ok(preview.json.estimate.estimatedCostEur.typical > 0);
+
+    const armed = await postJson(baseUrl, '/api/vivy/stream/round/clip-mode', { mode: 'dream', confirm: true });
+    assert.equal(armed.json.ok, true);
+    assert.equal(armed.json.armed, true);
+    assert.equal(armed.json.nextClipMode, 'dream');
+
+    await postJson(baseUrl, '/api/vivy/stream/chat', {
+      source: 'twitch',
+      username: 'funeste38',
+      message: '!chanson Vivy Live dans la nuit néon, électro-pop sombre, club violet',
+    });
+    await postJson(baseUrl, '/api/vivy/stream/round/lock', {});
+    assert.equal(started.length, 1);
+    assert.equal(started[0].clipMode, 'dream');
+
+    await postJson(baseUrl, '/api/vivy/stream/control', { action: 'next' });
+    await postJson(baseUrl, '/api/vivy/stream/chat', {
+      source: 'twitch',
+      username: 'funeste38',
+      message: '!chanson Deuxième round sans mode rêve',
+    });
+    await postJson(baseUrl, '/api/vivy/stream/round/lock', {});
+    assert.equal(started.length, 2);
+    assert.equal(started[1].clipMode, '');
+  } finally {
+    await new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+});
+
+test('Vivy stream late clip attach stores the shareable video url on archived songs', async () => {
+  await withServer({ stateName: 'late-clip-share.json' }, async (baseUrl) => {
+    const ready = await postJson(baseUrl, '/api/vivy/stream/control', {
+      action: 'ready',
+      title: 'Nuit néon',
+      trackTitle: 'Nuit néon',
+      trackUrl: '/api/vivy/studio/assets/vivy-music-suno-lateclip.mp3',
+      durationSeconds: 180,
+      coverImageUrl: 'https://files.example.com/cover.jpg',
+    });
+    assert.equal(ready.json.ok, true);
+
+    const clip = await postJson(baseUrl, '/api/vivy/stream/control', {
+      action: 'clip',
+      source: 'vivy-full-clip-late',
+      trackUrl: '/api/vivy/studio/assets/vivy-music-suno-lateclip.mp3',
+      coverVideoUrl: 'https://files.example.com/clip.mp4',
+      coverVideoPrompt: 'scene-01 montage final',
+      shareVideoUrl: 'https://files.example.com/clip-share.mp4',
+    });
+    assert.equal(clip.json.ok, true);
+
+    const stateResponse = await fetch(`${baseUrl}/api/vivy/stream/state`);
+    const state = await stateResponse.json();
+    const song = (state.songs || []).find((entry) => String(entry.trackUrl || '').includes('vivy-music-suno-lateclip'));
+    assert.ok(song, 'archived song not found');
+    assert.equal(song.coverVideoUrl, 'https://files.example.com/clip.mp4');
+    assert.equal(song.shareVideoUrl, 'https://files.example.com/clip-share.mp4');
+    assert.equal(state.current.coverVideoUrl, 'https://files.example.com/clip.mp4');
+  });
 });

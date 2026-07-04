@@ -508,6 +508,35 @@ function shouldReuseFullClipLoops(env = process.env) {
   return explicit ? toBoolean(explicit) : true;
 }
 
+function estimateTwitchFullClipCost(env = process.env, overrides = {}) {
+  const modeToken = cleanText(overrides.mode, '', 40);
+  const clipEnv = modeToken ? { ...env, VIVY_STREAM_FULL_CLIP_MODE: modeToken } : env;
+  const mode = resolveTwitchFullClipMode(clipEnv);
+  const loopSeconds = clampNumber(clipEnv.VIVY_STREAM_FULL_CLIP_LOOP_SECONDS, 2, 8, FULL_THROTTLE_LOOP_SECONDS);
+  const uniqueLoops = mode.dream
+    ? mode.sceneCount
+    : clampNumber(clipEnv.VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS, 1, 8, DEFAULT_UNIQUE_LOOP_COUNT);
+  const videoSecondsGenerated = uniqueLoops * loopSeconds;
+  const costPerVideoSecondEur = clampNumber(clipEnv.VIVY_STREAM_CLIP_COST_PER_VIDEO_SECOND_EUR, 0.001, 10, 0.06);
+  const typical = Number((videoSecondsGenerated * costPerVideoSecondEur).toFixed(2));
+  return {
+    mode: mode.mode,
+    label: mode.label,
+    dream: mode.dream,
+    sceneCount: mode.sceneCount,
+    uniqueLoops,
+    loopSeconds,
+    videoSecondsGenerated,
+    costPerVideoSecondEur,
+    estimatedCostEur: {
+      low: Number((typical * 0.5).toFixed(2)),
+      typical,
+      high: Number((typical * 2).toFixed(2)),
+    },
+    note: 'Estimation vidéo seule (hors chanson et jaquette), basée sur VIVY_STREAM_CLIP_COST_PER_VIDEO_SECOND_EUR; les retries provider peuvent doubler le coût réel.',
+  };
+}
+
 function resolveReusableLoopKey(scene = {}, counters = {}) {
   const kind = cleanText(scene.kind, 'verse', 40);
   if (kind === 'intro') return 'loop-intro';
@@ -1347,6 +1376,52 @@ async function composeLoopMontage({
   };
 }
 
+function buildClipAudioMuxArgs({ videoPath = '', audioPath = '', outputPath = '' } = {}) {
+  return [
+    '-y',
+    '-i', videoPath,
+    '-i', audioPath,
+    '-map', '0:v:0',
+    '-map', '1:a:0',
+    '-c:v', 'copy',
+    '-c:a', 'aac',
+    '-b:a', '192k',
+    '-shortest',
+    '-movflags', '+faststart',
+    outputPath,
+  ];
+}
+
+async function muxAudioIntoClip({
+  videoPath = '',
+  audioPath = '',
+  audioUrl = '',
+  outputPath = '',
+  ffmpegBin = resolveFfmpegBinary(),
+  fetchFn = globalThis.fetch,
+  workDir = '',
+} = {}) {
+  if (!videoPath || !outputPath) throw new Error('clip_audio_mux_paths_missing');
+  let localAudio = cleanText(audioPath, '', 1200);
+  if (localAudio) {
+    const exists = await fsp.access(localAudio).then(() => true).catch(() => false);
+    if (!exists) localAudio = '';
+  }
+  if (!localAudio && /^https?:\/\//i.test(String(audioUrl || '').trim())) {
+    const downloaded = path.join(
+      workDir || path.dirname(outputPath),
+      `clip-audio-${crypto.randomBytes(4).toString('hex')}.mp3`
+    );
+    await downloadToFile(String(audioUrl).trim(), downloaded, fetchFn);
+    localAudio = downloaded;
+  }
+  if (!localAudio) throw new Error('clip_audio_source_missing');
+  await runProcess(ffmpegBin, buildClipAudioMuxArgs({ videoPath, audioPath: localAudio, outputPath }));
+  const stats = await fsp.stat(outputPath);
+  if (!stats.size) throw new Error('clip_audio_mux_empty');
+  return { outputPath, audioPath: localAudio, sizeBytes: stats.size };
+}
+
 async function generateSceneLoop({
   scene = {},
   coverImageUrl = '',
@@ -1831,9 +1906,38 @@ async function finalizeTwitchFullSongClip(prepared = {}, input = {}) {
       buffer,
       contentType: 'video/mp4',
     });
+    let shareVideoUrl = '';
+    const audioPath = cleanText(input.audioPath, '', 1200);
+    const rawTrackUrl = cleanText(input.audioUrl || input.trackUrl, '', 1200);
+    const audioUrl = /^https?:\/\//i.test(rawTrackUrl) ? rawTrackUrl : '';
+    if (audioPath || audioUrl) {
+      try {
+        const sharePath = `${outputPath.replace(/\.mp4$/i, '')}-share.mp4`;
+        await muxAudioIntoClip({
+          videoPath: outputPath,
+          audioPath,
+          audioUrl,
+          outputPath: sharePath,
+          ffmpegBin: resolveFfmpegBinary(input.env || process.env),
+          fetchFn: input.fetchFn || globalThis.fetch,
+          workDir,
+        });
+        const shareBuffer = await fsp.readFile(sharePath);
+        const uploadedShare = await uploadBufferToR2({
+          userId: 'vivy-twitch-live',
+          filename: path.basename(sharePath),
+          buffer: shareBuffer,
+          contentType: 'video/mp4',
+        });
+        shareVideoUrl = uploadedShare.url;
+      } catch (error) {
+        logger.warn?.('[vivy-full-clip] share mux skipped: %s', cleanText(error?.message || error, '', 180));
+      }
+    }
     return {
       ok: true,
       coverVideoUrl: uploaded.url,
+      shareVideoUrl,
       prompt: storyboard.map((scene) => `${scene.sceneId} ${scene.header}: ${scene.prompt}`).join('\n'),
       storyboard,
       montage,
@@ -1864,6 +1968,7 @@ async function finalizeTwitchFullSongClip(prepared = {}, input = {}) {
 module.exports = {
   allocateSceneTimings,
   assessVideoOcrSamples,
+  buildClipAudioMuxArgs,
   buildProfessionalEditPlan,
   buildSceneVisualPrompt,
   buildReusableLoopPlan,
@@ -1871,11 +1976,13 @@ module.exports = {
   composeLoopMontage,
   createSafeImageMotionLoop,
   demosaicGridVideo,
+  estimateTwitchFullClipCost,
   finalizeTwitchFullSongClip,
   generateTwitchFullSongClip,
   hasConfiguredVideoProxy,
   inspectVideoLoopQuality,
   isTwitchFullClipEnabled,
+  muxAudioIntoClip,
   probeVideoInfo,
   parseLyricSectionsForClip,
   pickStoryboardSections,

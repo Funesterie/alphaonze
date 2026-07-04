@@ -2265,6 +2265,13 @@ function createVivyStreamNossenRunner(options = {}) {
     const rawWinner = payload.winner || payload.nossenSeed?.winner;
     const roundId = cleanText(payload.roundId || payload.id, '', 120);
     if (!rawWinner?.text || !roundId) throw new Error('vivy_stream_winner_missing');
+    const requestedClipMode = cleanText(payload.clipMode || payload.clipModeOverride, '', 40).toLowerCase();
+    const clipEnv = requestedClipMode
+      ? { ...process.env, VIVY_STREAM_FULL_CLIP_MODE: requestedClipMode }
+      : process.env;
+    if (requestedClipMode) {
+      logger.info?.('[vivy-full-clip] round=%s one-shot clip mode override=%s', roundId, requestedClipMode);
+    }
     const providerDirective = extractTwitchMusicProviderDirective(rawWinner.text);
     const winner = {
       ...rawWinner,
@@ -2895,7 +2902,7 @@ function createVivyStreamNossenRunner(options = {}) {
         }).catch((error) => {
           logger.warn?.('[vivy-twitch-cover] round=%s cover state update failed: %s', roundId, cleanText(error?.message || error, '', 180));
         });
-        if (isTwitchFullClipEnabled(process.env)) {
+        if (isTwitchFullClipEnabled(clipEnv)) {
           logger.info?.('[vivy-twitch-clip] round=%s short cover clip skipped because full clip pack is enabled', roundId);
           return cover;
         }
@@ -2953,6 +2960,7 @@ function createVivyStreamNossenRunner(options = {}) {
           coverVideoUrl ? 'true' : 'false'
         );
         const prepared = await prepareTwitchFullSongClip({
+          env: clipEnv,
           publicTitle,
           winner,
           lyrics: providerPack.cleanLyrics || lyrics,
@@ -3247,6 +3255,25 @@ function createVivyStreamNossenRunner(options = {}) {
         message: 'Audio prêt, Vivy attend le pack vidéo avant de lancer la lecture.',
       });
       const fullClipReadyWaitMs = resolveFullClipReadyWaitMs(process.env);
+      let shareVideoUrl = '';
+      const buildFullClipFinalizeInput = () => ({
+        env: clipEnv,
+        publicTitle,
+        winner,
+        durationSeconds,
+        trackUrl: media.url,
+        audioPath: media.path || '',
+        coverImageUrl,
+        coverPrompt,
+        coverVideoUrl,
+        coverVideoPrompt,
+        styleBrief: providerPack.styleBrief,
+        artists,
+        vocalCast: artists.join(' + '),
+        conversationId,
+        req,
+        logger,
+      });
       const preparedFullClip = await withTimeout(
         () => fullClipPreparePromise,
         fullClipReadyWaitMs,
@@ -3272,22 +3299,7 @@ function createVivyStreamNossenRunner(options = {}) {
           progress: 94,
           message: 'Boucles vidéo prêtes, montage final synchronisé avec le morceau.',
         });
-        const fullClip = await finalizeTwitchFullSongClip(preparedFullClip, {
-          publicTitle,
-          winner,
-          durationSeconds,
-          trackUrl: media.url,
-          coverImageUrl,
-          coverPrompt,
-          coverVideoUrl,
-          coverVideoPrompt,
-          styleBrief: providerPack.styleBrief,
-          artists,
-          vocalCast: artists.join(' + '),
-          conversationId,
-          req,
-          logger,
-        });
+        const fullClip = await finalizeTwitchFullSongClip(preparedFullClip, buildFullClipFinalizeInput());
         if (!fullClip?.ok || !fullClip.coverVideoUrl) {
           if (fullClip && !fullClip.skipped) {
             logger.warn?.(
@@ -3300,6 +3312,7 @@ function createVivyStreamNossenRunner(options = {}) {
         } else {
           coverVideoUrl = fullClip.coverVideoUrl;
           coverVideoPrompt = fullClip.prompt || coverVideoPrompt;
+          shareVideoUrl = fullClip.shareVideoUrl || '';
           logger.info?.(
             '[vivy-full-clip] round=%s ready url=%s scenes=%s generatedSceneLoops=%s repairedLoops=%s',
             roundId,
@@ -3309,6 +3322,57 @@ function createVivyStreamNossenRunner(options = {}) {
             Math.max(0, Number(fullClip.repairedLoopCount || 0))
           );
         }
+      } else if (preparedFullClip?.reason === 'full_clip_ready_timeout') {
+        const lateFinalizeInput = buildFullClipFinalizeInput();
+        const lateAttachPromise = fullClipPreparePromise
+          .then(async (prepared) => {
+            if (!prepared?.ok || prepared.skipped) {
+              if (prepared && !prepared.skipped) {
+                logger.warn?.(
+                  '[vivy-full-clip] round=%s late prepare failed error=%s message=%s',
+                  roundId,
+                  cleanText(prepared.error || prepared.reason || 'unknown', '', 120),
+                  cleanText(prepared.message || '', '', 180)
+                );
+              }
+              return null;
+            }
+            logger.info?.('[vivy-full-clip] round=%s scene loops ready after playback, late montage started', roundId);
+            const fullClip = await finalizeTwitchFullSongClip(prepared, lateFinalizeInput);
+            if (!fullClip?.ok || !fullClip.coverVideoUrl) {
+              logger.warn?.(
+                '[vivy-full-clip] round=%s late montage failed error=%s message=%s',
+                roundId,
+                cleanText(fullClip?.error || fullClip?.reason || 'unknown', '', 120),
+                cleanText(fullClip?.message || '', '', 180)
+              );
+              return null;
+            }
+            await update({
+              action: 'clip',
+              source: 'vivy-full-clip-late',
+              trackUrl: media.url,
+              coverVideoUrl: fullClip.coverVideoUrl,
+              coverVideoPrompt: fullClip.prompt || '',
+              shareVideoUrl: fullClip.shareVideoUrl || '',
+            });
+            logger.info?.(
+              '[vivy-full-clip] round=%s late clip attached url=%s share=%s',
+              roundId,
+              cleanText(fullClip.coverVideoUrl, '', 180),
+              cleanText(fullClip.shareVideoUrl || 'none', '', 180)
+            );
+            return fullClip;
+          })
+          .catch((error) => {
+            logger.warn?.(
+              '[vivy-full-clip] round=%s late attach failed: %s',
+              roundId,
+              cleanText(error?.message || error, '', 180)
+            );
+            return null;
+          });
+        void lateAttachPromise;
       } else if (preparedFullClip && !preparedFullClip.skipped) {
         logger.warn?.(
           '[vivy-full-clip] round=%s unavailable before ready error=%s message=%s',
@@ -3337,6 +3401,7 @@ function createVivyStreamNossenRunner(options = {}) {
         coverPrompt,
         coverVideoUrl,
         coverVideoPrompt,
+        shareVideoUrl,
       });
       logger.info?.(
         '[vivy-twitch-nossen] round=%s ready task=%s duration=%ss',

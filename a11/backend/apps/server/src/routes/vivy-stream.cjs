@@ -11,6 +11,7 @@ const {
   createVivyStreamNossenRunner,
   extractTwitchMusicProviderDirective,
 } = require('../vivy/twitch-nossen-runner.cjs');
+const { estimateTwitchFullClipCost } = require('../vivy/twitch-clip-director.cjs');
 const {
   buildAndStoreSocialPromptContext,
   formatSocialContextForPrompt,
@@ -341,6 +342,7 @@ function normalizeJukeboxTrack(input = {}) {
       1200
     ),
     coverVideoPrompt: cleanOneLine(input.coverVideoPrompt || input.videoPrompt || input.video_prompt, '', 2600),
+    shareVideoUrl: cleanOneLine(input.shareVideoUrl || input.share_video_url, '', 1200),
   };
   track.sharePath = cleanOneLine(input.sharePath, buildSongSharePath(track), 240);
   return track;
@@ -1326,6 +1328,25 @@ function createVivyStreamStore(options = {}) {
     return publicState(state);
   }
 
+  function peekNextClipMode() {
+    return cleanOneLine(state.nextClipMode, '', 40).toLowerCase();
+  }
+
+  function armNextClipMode(mode = '') {
+    state.nextClipMode = cleanOneLine(mode, '', 40).toLowerCase();
+    save();
+    return state.nextClipMode;
+  }
+
+  function consumeNextClipMode() {
+    const mode = peekNextClipMode();
+    if (mode) {
+      state.nextClipMode = '';
+      save();
+    }
+    return mode;
+  }
+
   function lockRound(input = {}) {
     const targetId = normalizeSuggestionId(input.suggestionId || input.id || '');
     refreshSuggestionScores(state.round);
@@ -1359,6 +1380,7 @@ function createVivyStreamStore(options = {}) {
         roundId: state.round.id,
         winner: JSON.parse(JSON.stringify(winner)),
         nossenSeed,
+        clipMode: consumeNextClipMode(),
       })).catch((error) => {
         console.error('[vivy-stream] automatic NOSSEN start failed:', error?.message || String(error));
       });
@@ -1434,6 +1456,7 @@ function createVivyStreamStore(options = {}) {
         coverPrompt,
         coverVideoUrl,
         coverVideoPrompt,
+        shareVideoUrl: cleanOneLine(input.shareVideoUrl || input.share_video_url, '', 1200),
       });
       addLiveSong({
         ...track,
@@ -1514,6 +1537,7 @@ function createVivyStreamStore(options = {}) {
         '',
         1200
       );
+      const shareVideoUrl = cleanOneLine(input.shareVideoUrl || input.share_video_url, '', 1200);
       const trackId = cleanOneLine(input.trackId || state.current.trackId, '', 80);
       const trackUrl = cleanOneLine(input.trackUrl || state.current.trackUrl, '', 1200);
       const currentMatches = (!trackId && !trackUrl)
@@ -1532,6 +1556,7 @@ function createVivyStreamStore(options = {}) {
         track.coverVideoUrl = coverVideoUrl;
         if (coverVideoPrompt) track.coverVideoPrompt = coverVideoPrompt;
         if (coverImageUrl) track.coverImageUrl = coverImageUrl;
+        if (shareVideoUrl) track.shareVideoUrl = shareVideoUrl;
       };
       ensureJukebox().tracks.forEach(applyClip);
       ensureSongs().forEach(applyClip);
@@ -1676,6 +1701,9 @@ function createVivyStreamStore(options = {}) {
     addJukeboxTrack,
     findSongByShareSlug,
     connectSse,
+    peekNextClipMode,
+    armNextClipMode,
+    consumeNextClipMode,
   };
 }
 
@@ -1964,6 +1992,35 @@ function createVivyStreamRouter(options = {}) {
     res.status(result.ok ? 200 : 409).json(result);
   });
 
+  router.post('/round/clip-mode', express.json({ limit: '16kb' }), writeGuard, (req, res) => {
+    const body = req.body || {};
+    const mode = cleanOneLine(body.mode || body.clipMode, '', 40).toLowerCase();
+    const disarm = !mode || mode === 'off' || mode === 'none' || mode === 'default';
+    const estimate = disarm ? null : estimateTwitchFullClipCost(process.env, { mode });
+    if (body.confirm !== true) {
+      return res.json({
+        ok: true,
+        armed: false,
+        requiresConfirmation: !disarm,
+        nextClipMode: store.peekNextClipMode(),
+        estimate,
+        message: disarm
+          ? 'Envoyer confirm=true pour désarmer le mode clip one-shot.'
+          : 'Estimation seulement: renvoyer confirm=true pour armer ce mode sur le prochain round.',
+      });
+    }
+    const armed = store.armNextClipMode(disarm ? '' : mode);
+    return res.json({
+      ok: true,
+      armed: Boolean(armed),
+      nextClipMode: armed,
+      estimate,
+      message: armed
+        ? `Mode clip ${armed} armé pour le prochain round uniquement.`
+        : 'Mode clip one-shot désarmé; retour au mode configuré par env.',
+    });
+  });
+
   router.post('/round/generate', express.json({ limit: '16kb' }), writeGuard, (req, res) => {
     if (!runner) {
       return res.status(503).json({ ok: false, error: 'vivy_stream_autogenerate_disabled' });
@@ -1978,6 +2035,7 @@ function createVivyStreamRouter(options = {}) {
       roundId: state.round.id,
       winner,
       nossenSeed: buildNossenSeedFromRound(state),
+      clipMode: store.consumeNextClipMode(),
     });
     return res.status(started.started ? 202 : 409).json({
       ok: started.started,

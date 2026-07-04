@@ -404,6 +404,10 @@ Si `VIVY_STREAM_FULL_CLIP_GENERATE_SCENE_LOOPS=1`, Vivy construit une timeline c
 
 Si une scène rate mais qu’au moins une boucle existe, FFmpeg réutilise une boucle disponible pour garder une vidéo à la durée du morceau. Si tout le pack vidéo échoue, Vivy publie quand même l’audio avec la jaquette fixe.
 
+Si les scènes ne sont pas prêtes dans la fenêtre `VIVY_STREAM_FULL_CLIP_READY_WAIT_MS`, le live démarre sans attendre et le montage continue en arrière-plan : dès que les boucles arrivent, le clip final est rattaché au morceau archivé et à la page de partage (action `clip`, appariement par `trackUrl`). Le montage final produit aussi une version vitrine `shareVideoUrl` : le même clip avec la chanson muxée en H.264 + AAC, directement partageable hors overlay. Le rattachement tardif vit dans le process backend : un redémarrage pendant le rendu abandonne le montage en cours.
+
+Pour lancer un seul round en mode rêve sans changer la config globale : `POST /api/vivy/stream/round/clip-mode` avec `{"mode":"dream"}` renvoie l’estimation de coût (scènes, secondes générées, fourchette EUR selon `VIVY_STREAM_CLIP_COST_PER_VIDEO_SECOND_EUR`) sans rien armer ; renvoyer `{"mode":"dream","confirm":true}` arme le mode pour le prochain round uniquement, puis retour automatique au mode env.
+
 `VIVY_STREAM_FULL_CLIP_CROP_SOURCE_IMAGE=1` crée une source vidéo recadrée depuis la jaquette avant Wan/Comfy. Le recadrage est volontairement resserré vers le personnage ou le sujet central pour éviter que le modèle vidéo recopie les fiches, logos, paragraphes ou faux textes de la jaquette. La jaquette complète peut rester une référence d’identité, mais elle ne doit pas devenir l’image animée directe.
 
 Le découpage 3x3 est un mode de secours uniquement. Il ne faut pas l’activer en production normale : si le générateur renvoie déjà un vrai plan plein écran, ce mode recadre un neuvième de l’image et casse le clip. L’ancien booléen `1` est volontairement ignoré. Utiliser uniquement `repair` pour retraiter une vraie planche vidéo 3x3 identifiée.

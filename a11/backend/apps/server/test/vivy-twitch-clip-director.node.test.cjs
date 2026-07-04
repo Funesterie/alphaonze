@@ -8,12 +8,15 @@ const { spawnSync } = require('node:child_process');
 
 const {
   assessVideoOcrSamples,
+  buildClipAudioMuxArgs,
   buildProfessionalEditPlan,
   buildReusableLoopPlan,
   buildSceneVisualPrompt,
   buildTwitchFullClipStoryboard,
   composeLoopMontage,
   demosaicGridVideo,
+  estimateTwitchFullClipCost,
+  finalizeTwitchFullSongClip,
   generateTwitchFullSongClip,
   isTwitchFullClipEnabled,
   parseLyricSectionsForClip,
@@ -372,6 +375,89 @@ test('Vivy DreamClip omits rejected text-glitch scenes instead of publishing sta
 
   assert.equal(result.ok, false);
   assert.match(result.error, /full_clip_no_scene_loops|dreamclip_insufficient_generated_scenes/i);
+});
+
+test('Vivy clip audio mux args produce a shareable H.264 + AAC output', () => {
+  const args = buildClipAudioMuxArgs({
+    videoPath: '/tmp/clip.mp4',
+    audioPath: '/tmp/song.mp3',
+    outputPath: '/tmp/clip-share.mp4',
+  });
+  assert.equal(args[args.length - 1], '/tmp/clip-share.mp4');
+  const joined = args.join(' ');
+  assert.match(joined, /-i \/tmp\/clip\.mp4/);
+  assert.match(joined, /-i \/tmp\/song\.mp3/);
+  assert.match(joined, /-map 0:v:0 -map 1:a:0/);
+  assert.match(joined, /-c:v copy/);
+  assert.match(joined, /-c:a aac/);
+  assert.match(joined, /-shortest/);
+  assert.match(joined, /\+faststart/);
+});
+
+test('Vivy full clip cost estimate scales with dream mode and configured rate', () => {
+  const eco = estimateTwitchFullClipCost({
+    VIVY_STREAM_FULL_CLIP_LOOP_SECONDS: '8',
+    VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS: '5',
+    VIVY_STREAM_CLIP_COST_PER_VIDEO_SECOND_EUR: '0.05',
+  });
+  assert.equal(eco.dream, false);
+  assert.equal(eco.uniqueLoops, 5);
+  assert.equal(eco.videoSecondsGenerated, 40);
+  assert.equal(eco.estimatedCostEur.typical, 2);
+
+  const dream = estimateTwitchFullClipCost({
+    VIVY_STREAM_FULL_CLIP_LOOP_SECONDS: '8',
+    VIVY_STREAM_CLIP_COST_PER_VIDEO_SECOND_EUR: '0.05',
+  }, { mode: 'dream' });
+  assert.equal(dream.dream, true);
+  assert.equal(dream.mode, 'dreamclip');
+  assert.equal(dream.uniqueLoops, 8);
+  assert.equal(dream.videoSecondsGenerated, 64);
+  assert.equal(dream.estimatedCostEur.typical, 3.2);
+  assert.ok(dream.estimatedCostEur.high > dream.estimatedCostEur.typical);
+  assert.ok(dream.estimatedCostEur.low < dream.estimatedCostEur.typical);
+});
+
+test('Vivy full clip finalize reuses prepared loops without new paid generations', async () => {
+  const generated = [];
+  const prepared = await prepareTwitchFullSongClip({
+    env: {
+      A11_COMFY_CLOUD_API_KEY: 'comfy-secret',
+      VIVY_STREAM_FULL_CLIP_MODE: 'dreamclip',
+      VIVY_STREAM_FULL_CLIP_SCENES: '2',
+      VIVY_STREAM_FULL_CLIP_LOOP_SECONDS: '2',
+      VIVY_STREAM_FULL_CLIP_WIDTH: '160',
+      VIVY_STREAM_FULL_CLIP_HEIGHT: '90',
+      VIVY_STREAM_FULL_CLIP_FPS: '8',
+      A11_VIDEO_FFMPEG_BIN: 'ffmpeg-absent-binary-for-test',
+    },
+    publicTitle: 'Montage sans double génération',
+    winner: { text: 'Deux scènes de rêve néon' },
+    lyrics: '[Intro]\nLa lumière entre\n[Chorus]\nLe rêve répond',
+    durationSeconds: 60,
+    coverImageUrl: 'https://files.example.com/cover.png',
+    generateVideoFn: async ({ body }) => {
+      generated.push(body.prompt);
+      return { ok: true, video_url: 'data-video-placeholder' };
+    },
+    fetchFn: async () => new Response(Buffer.from('fake-video-bytes')),
+    videoQualityInspector: async () => ({ rejected: false }),
+    logger: { warn() {} },
+  });
+  assert.equal(prepared.ok, true);
+  assert.equal(generated.length, 2);
+  assert.ok(Array.isArray(prepared.loopVideos) && prepared.loopVideos.length >= 2);
+
+  const finalized = await finalizeTwitchFullSongClip(prepared, {
+    env: { A11_VIDEO_FFMPEG_BIN: 'ffmpeg-absent-binary-for-test' },
+    publicTitle: 'Montage sans double génération',
+    winner: { text: 'Deux scènes de rêve néon' },
+    durationSeconds: 60,
+    trackUrl: '/api/vivy/studio/assets/fake.mp3',
+    logger: { warn() {} },
+  });
+  assert.equal(generated.length, 2);
+  assert.equal(finalized.ok, false);
 });
 
 test('Vivy video prompts never carry quoted lyrics or enable lip sync implicitly', async () => {
