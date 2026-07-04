@@ -2399,6 +2399,63 @@ function buildVivyLocalContextReply(context = {}) {
   return cleanText(lines.join('\n'), 2200);
 }
 
+function isVivyProtectedLyricsLookupRequest(message = '') {
+  const folded = foldTextForLookup(message);
+  if (!folded) return false;
+  const mentionsLyrics = /\b(?:paroles?|lyrics?|texte\s+complet|couplets?\s+exacts?|refrain\s+exact|transcription|transcrire|transcris)\b/.test(folded);
+  if (!mentionsLyrics) return false;
+  const asksLookupOrCopy = /\b(?:cherche|chercher|trouve|trouver|recupere|recuperer|récupère|récupérer|donne|donnes|copie|copier|affiche|envoie|envois|envoyer|cite|citer|ressors?|sort|transcris|transcrire)\b/.test(folded);
+  const knownProtectedReference = /\b(?:vald|orel\s*san|orelsan|casseurs?\s+flowters?|v\s*a\s*l\s*s\s*e|cours\s+de\s+rattrapage|freestyle\s+radio\s+phoenix)\b/.test(folded)
+    || /v\.?\s*a\.?\s*l\.?\s*s\.?\s*e/i.test(String(message || ''));
+  return asksLookupOrCopy && knownProtectedReference;
+}
+
+function buildVivyProtectedLyricsLookupReply({ message = '', language = 'fr' } = {}) {
+  const folded = foldTextForLookup(message);
+  const references = [];
+  if (/\bvald\b|v\s*a\s*l\s*s\s*e|cours\s+de\s+rattrapage/.test(folded) || /v\.?\s*a\.?\s*l\.?\s*s\.?\s*e/i.test(String(message || ''))) {
+    references.push('VALD / V.A.L.SE');
+  }
+  if (/\borel\s*san\b|\borelsan\b|casseurs?\s+flowters?|freestyle\s+radio\s+phoenix/.test(folded)) {
+    references.push('Casseurs Flowters / Freestyle Radio Phoenix');
+  }
+  const refText = references.length ? ` (${references.join(' + ')})` : '';
+  const assistant = language === 'en'
+    ? [
+      `No: I will not fetch, copy, or reconstruct copyrighted lyrics${refText}.`,
+      'I can still use the local reference pack safely: flow density, cadence, punchline spacing, radio freestyle energy, mood, and visual attitude.',
+      'Useful path: describe the influence as abstract traits, then write an original Funesterie/Vivy brief or original lyrics without borrowing lines, melody, or voice.',
+    ].join('\n')
+    : [
+      `Non: je ne vais pas chercher, copier ou reconstruire les paroles protégées${refText}.`,
+      "Par contre je peux m'en servir proprement comme référence d'analyse: densité de flow, cadence, placement des punchlines, énergie freestyle radio, mood sombre et attitude visuelle.",
+      "Le bon chemin: extraire des traits abstraits, puis écrire un brief Vivy/Funesterie ou des paroles originales, sans reprendre lignes, mélodie ni voix.",
+    ].join('\n');
+  return cleanText(assistant, 1200);
+}
+
+function buildVivyImpossibleBoundaryReply({ language = 'fr' } = {}) {
+  const assistant = language === 'en'
+    ? [
+      "No: I can't do that from this chat surface, and I won't pretend I can.",
+      'I can still help with the useful part: name the missing access, describe the safe next action, or prepare a clean brief for Codex/A11 to execute with the right permissions.',
+    ].join('\n')
+    : [
+      "Non: je ne peux pas faire ça depuis cette surface de chat, et je ne vais pas faire semblant.",
+      "Je peux quand même aider proprement: nommer l'accès manquant, donner la prochaine action sûre, ou préparer un brief clair pour Codex/A11 avec les bons droits.",
+    ].join('\n');
+  return cleanText(assistant, 900);
+}
+
+function isVivyImpossibleToolPromiseLeak(text = '') {
+  const folded = foldTextForLookup(text);
+  if (!folded) return false;
+  return /je\s+vais\s+demander\s+a\s+janus\s+vision/.test(folded)
+    || /action\s+requise\s*:\s*confirmation\s+de\s+l\s+operateur/.test(folded)
+    || /je\s+vais\s+rechercher\s+dans\s+les\s+archives/.test(folded)
+    || /je\s+peux\s+essayer\s+de\s+trouver\s+des\s+solutions\s+ou\s+des\s+outils/.test(folded);
+}
+
 function serializeVivyLocalContext(context = null) {
   if (!context) return null;
   return {
@@ -2444,6 +2501,8 @@ function buildVivySystemPrompt(mode, language, input) {
     "Quand une demande dépend d'informations externes, récentes, d'un site, d'une version, d'un prix, d'une source ou d'une documentation, déclenche/assume la recherche web disponible avant de répondre au lieu de deviner.",
     "Quand des fichiers joints sont importants pour comprendre la demande, analyse d'abord le contexte lisible ou visuel disponible, puis réponds; n'attends pas une formule exacte de l'utilisateur.",
     "Quand le backend fournit un contexte local Funesterie/Janus/runtime/code, utilise-le comme accès réel borné et ne prétends pas que tu ne peux pas voir les dossiers.",
+    "Quand une demande est impossible, non autorisée ou hors droits, réponds franchement et court: dis non, dis pourquoi en une phrase, puis propose l'alternative utile. Ne promets jamais de demander à Janus Vision, à une base de données, à un opérateur ou à un outil si le backend ne t'a pas explicitement fourni cette action.",
+    "Pour les chansons existantes et artistes protégés, ne cherche pas, ne copie pas et ne reconstruis pas les paroles complètes. Tu peux analyser des références privées en traits abstraits: flow, cadence, densité, énergie, mood, structure, sans citer ni reproduire les paroles, la mélodie ou la voix.",
     SYMBOLIC_EXTRACTION_PROTOCOL_CONTEXT,
     buildVivyToolCapabilityPrompt(),
     "Si l'utilisateur veut changer ta voix, demande un court fichier audio autorisé/licencié/consenti et rappelle qu'il reste privé pour son compte.",
@@ -4979,6 +5038,16 @@ function postProcessVivyAssistantText({ text = '', userMessage = '', systemPromp
     userMessage,
     contextText: systemPrompt,
   });
+  if (isVivyProtectedLyricsLookupRequest(userMessage) || isVivyImpossibleToolPromiseLeak(processed.content)) {
+    const content = isVivyProtectedLyricsLookupRequest(userMessage)
+      ? buildVivyProtectedLyricsLookupReply({ message: userMessage })
+      : buildVivyImpossibleBoundaryReply({});
+    return {
+      ...processed,
+      content,
+      rewritten: true,
+    };
+  }
   return {
     ...processed,
     content: cleanText(processed.content, maxChars),
@@ -5072,6 +5141,36 @@ async function buildVivyAiChat(input, req) {
     });
     return {
       ...visualReply,
+      files,
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  }
+
+  if (mode !== 'song' && isVivyProtectedLyricsLookupRequest(intentMessage || message)) {
+    const assistant = buildVivyProtectedLyricsLookupReply({ message: intentMessage || message, language });
+    rememberVivyEpisode(userId, 'vivy_reply', assistant, {
+      mode: 'chat',
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      deterministic: true,
+      protectedLyricsLookup: true,
+    });
+    return {
+      ...fallback,
+      mode: 'chat',
+      assistant,
+      content: assistant,
+      summary: 'Vivy a refusé la récupération de paroles protégées et proposé une analyse abstraite.',
+      actions: [
+        { id: 'reference_analysis', label: 'Analyse inspiration', target: 'vivy-reference-analysis', ready: true },
+      ],
+      routing: [
+        'Vivy: refuser la copie/recherche de paroles protégées.',
+        'A11: utiliser les médias privés seulement comme références abstraites.',
+        'Vivy: produire brief ou paroles originales sans emprunt.',
+      ],
+      aiMode: 'deterministic_protected_lyrics_refusal',
+      language,
       files,
       semanticMemory,
       memoryStored: semanticMemory.stored,

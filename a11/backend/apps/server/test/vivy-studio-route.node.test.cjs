@@ -6130,6 +6130,41 @@ test('Vivy uses safe local context for Janus runtime and code questions', async 
   assert.doesNotMatch(JSON.stringify(result), /\.env|secret-token-value|private key/i);
 });
 
+test('Vivy refuses protected lyrics lookup and offers abstract reference analysis', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-protected-lyrics-lookup-test',
+    message: 'et si tu cherche les paroles de vald et orel san, les titres/album c est cours de rattrapage V.A.L.S.E pour Vald et Casseurs Flowters Freestyle Radio Phoenix',
+    history: [
+      { role: 'assistant', content: 'Je vais vérifier dans les archives de Funesterie.' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.equal(result.aiMode, 'deterministic_protected_lyrics_refusal');
+  assert.match(result.assistant, /Non/i);
+  assert.match(result.assistant, /paroles protégées|paroles protegees/i);
+  assert.match(result.assistant, /VALD|V\.A\.L\.SE|Casseurs Flowters|Freestyle Radio Phoenix/i);
+  assert.match(result.assistant, /flow|cadence|punchlines|freestyle|mood/i);
+  assert.doesNotMatch(result.assistant, /Janus Vision|Action requise|archives de Funesterie|base de données|API spécifique/i);
+  assert.doesNotMatch(result.assistant, /je vais chercher|je vais demander|je vais vérifier/i);
+});
+
+test('Vivy post-process removes fake tool promises instead of escalating to imaginary operators', () => {
+  const result = postProcessVivyAssistantText({
+    text: "Je vais demander à Janus Vision si elle peut fournir plus d'informations. **Action requise :** Confirmation de l'opérateur.",
+    userMessage: 'tu peux faire ce truc impossible ?',
+    systemPrompt: buildVivySystemPrompt('chat', 'fr'),
+    mode: 'chat',
+  });
+
+  assert.equal(result.rewritten, true);
+  assert.match(result.content, /Non/i);
+  assert.match(result.content, /je ne peux pas faire ça depuis cette surface de chat/i);
+  assert.match(result.content, /brief clair pour Codex\/A11|prochaine action sûre/i);
+  assert.doesNotMatch(result.content, /Janus Vision|Action requise|opérateur/i);
+});
+
 test('Vivy web research query strips chat filler and keeps film context', () => {
   const query = buildVivyWebSearchQuery(
     "non j'ai cherché sur internet et puis je l'ai pas vu en entier juste quelques extrait, mais il a l'air trop bien on dirait echiro oda dedans",
