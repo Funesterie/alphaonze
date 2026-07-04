@@ -1559,6 +1559,7 @@ function buildRapFreestyleGuidance({ winner = {}, routing = {}, seed = {} } = {}
     'Rimes techniques exigées: multisyllabiques, internes et enchaînées; varie le flow et le débit entre les phases.',
     'Un refrain est optionnel: ajoute-le seulement si le sujet exact le demande, sinon aucune section refrain, pré-refrain ni pont.',
     'Aucune image ne revient plus d’une fois hors refrain: si vinyle, platine, disque, boucle ou machine est déjà apparu, trouve une image neuve. Le contexte social est une couleur de fond, jamais une banque d’images à recycler ni une consigne de refrain.',
+    'Si le sujet demande un clash contre des artistes réels nommés, garde leurs noms et attaque frontalement leurs styles, carrières et personnages publics avec des punchlines crues et précises; n’imite pas leurs voix et n’invente pas de faits diffamatoires.',
   ].join('\n');
 }
 
@@ -2663,6 +2664,7 @@ function createVivyStreamNossenRunner(options = {}) {
           socialPromptContextText,
           subjectFrame,
         });
+        let usedEmergencyLyricsFallback = false;
         let lyricsPayload = null;
         try {
           lyricsPayload = await withTimeout(() => writeLyrics({
@@ -2692,6 +2694,7 @@ function createVivyStreamNossenRunner(options = {}) {
             roundId,
             cleanText(error?.message || String(error), '', 160)
           );
+          usedEmergencyLyricsFallback = true;
           lyricsPayload = {
             publicLyrics: buildTwitchEmergencyLyrics({ winner, routing, seed, intentPlan, lyricScope, artists }),
           };
@@ -2822,7 +2825,7 @@ function createVivyStreamNossenRunner(options = {}) {
         const humorNeedsRewrite = isHumorWordplayRequest(winner.text, routing?.songMood, seed?.notes, seed?.canvas)
           && (lyrics.length < Math.min(lyricScope.minLyricsChars || 0, 1100) || promptLeakage.removed > 0);
         const wordplayNeedsPolish = phoneticWordplayRequested || associativeWordplayRequested;
-        const invalidLyricsNeedRewrite = !lyricAssessment.valid;
+        const invalidLyricsNeedRewrite = !lyricAssessment.valid || usedEmergencyLyricsFallback;
         const lyricsTooShortForScope = lyricScope.minLyricsChars > 0 && lyrics.length < lyricScope.minLyricsChars;
         const rhymeNeedsRewrite = strictRhymeRequested && !rhymeAssessment.valid && lyrics.length >= 600;
         const hookNeedsRewrite = hookMechanicRequested && !hookAssessment.valid && lyrics.length >= 600;
