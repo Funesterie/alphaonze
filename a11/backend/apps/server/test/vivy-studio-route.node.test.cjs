@@ -5081,6 +5081,8 @@ test('Hetzner deploy wires a strong local Ollama model for Vivy song fallback', 
   assert.match(deploySource, /StrongSongOllamaModel[\s\S]{0,160}qwen2\.5:32b/);
   assert.match(deploySource, /VIVY_SONG_PROVIDER:\s*\$\{VIVY_SONG_PROVIDER:-groq\}/);
   assert.match(deploySource, /VIVY_SONG_PROVIDER\s*=\s*\$\(if \(\$env:VIVY_SONG_PROVIDER\)/);
+  assert.match(deploySource, /VIVY_SONG_GROQ_MODEL\s*=\s*\$\(if \(\$env:VIVY_SONG_GROQ_MODEL\)/);
+  assert.match(deploySource, /llama-3\.3-70b-versatile/);
   assert.match(deploySource, /VIVY_STREAM_FREESTYLE_MAX_TOKENS:\s*\$\{VIVY_STREAM_FREESTYLE_MAX_TOKENS:-10000\}/);
   assert.match(deploySource, /VIVY_STREAM_FREESTYLE_MAX_CHARS\s*=\s*\$\(if \(\$env:VIVY_STREAM_FREESTYLE_MAX_CHARS\)/);
   assert.match(deploySource, /VIVY_SONG_ALLOW_LOCAL_FALLBACK\s*=\s*"true"/);

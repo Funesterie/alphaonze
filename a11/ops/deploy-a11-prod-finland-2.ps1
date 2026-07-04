@@ -1268,6 +1268,7 @@ $overrides = [ordered]@{
   VIVY_OLLAMA_BASE_URL = "http://a11-ollama:11434"
   VIVY_CHAT_LOCAL_MODEL = "llama3.2:3b"
   VIVY_SONG_PROVIDER = $(if ($env:VIVY_SONG_PROVIDER) { $env:VIVY_SONG_PROVIDER } elseif ($envMap.Contains("VIVY_SONG_PROVIDER") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_SONG_PROVIDER"])) { [string]$envMap["VIVY_SONG_PROVIDER"] } else { "groq" })
+  VIVY_SONG_GROQ_MODEL = $(if ($env:VIVY_SONG_GROQ_MODEL) { $env:VIVY_SONG_GROQ_MODEL } elseif ($envMap.Contains("VIVY_SONG_GROQ_MODEL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_SONG_GROQ_MODEL"])) { [string]$envMap["VIVY_SONG_GROQ_MODEL"] } else { "llama-3.3-70b-versatile" })
   VIVY_XAI_MODEL = $(if ($env:VIVY_XAI_MODEL) { $env:VIVY_XAI_MODEL } elseif ($envMap.Contains("VIVY_XAI_MODEL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_XAI_MODEL"])) { [string]$envMap["VIVY_XAI_MODEL"] } else { "grok-4.3" })
   A11_OLLAMA_STRONG_SONG_MODEL = $StrongSongOllamaModel
   VIVY_SONG_ALLOW_LOCAL_FALLBACK = "true"
