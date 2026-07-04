@@ -3735,6 +3735,7 @@ function createVivyStreamNossenRunner(options = {}) {
         coverVideoUrl,
         coverVideoPrompt,
         shareVideoUrl,
+        lyrics: instrumentalMode ? '' : (providerPack?.cleanLyrics || lyrics || ''),
       });
       logger.info?.(
         '[vivy-twitch-nossen] round=%s ready task=%s duration=%ss',

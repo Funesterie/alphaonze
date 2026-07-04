@@ -345,6 +345,7 @@ function normalizeJukeboxTrack(input = {}) {
     shareVideoUrl: cleanOneLine(input.shareVideoUrl || input.share_video_url, '', 1200),
     qualityNote: cleanOneLine(input.qualityNote || input.quality_note || '', '', 140),
     shortMix: input.shortMix === true || input.short_mix === true,
+    lyrics: String(input.lyrics || '').replace(/\r\n/g, '\n').trim().slice(0, 16000),
   };
   track.sharePath = cleanOneLine(input.sharePath, buildSongSharePath(track), 240);
   return track;
@@ -535,11 +536,20 @@ function buildNossenSeedFromRound(state) {
 function publicState(state) {
   const cloned = JSON.parse(JSON.stringify(state || createInitialState()));
   cloned.current = cleanProviderOnlyCurrentTrack(cloned.current || {});
+  const stripLyricsForPublicState = (track) => {
+    if (!track || typeof track !== 'object') return;
+    if (track.lyrics) {
+      track.hasLyrics = true;
+      delete track.lyrics;
+    }
+  };
   if (Array.isArray(cloned.jukebox?.tracks)) {
     cloned.jukebox.tracks = cloned.jukebox.tracks.filter((track) => !isProviderOnlyTrackUrl(track?.trackUrl));
+    cloned.jukebox.tracks.forEach(stripLyricsForPublicState);
   }
   if (Array.isArray(cloned.songs)) {
     cloned.songs = cloned.songs.filter((track) => !isProviderOnlyTrackUrl(track?.trackUrl));
+    cloned.songs.forEach(stripLyricsForPublicState);
   }
   if (cloned.round?.voters) delete cloned.round.voters;
   cloned.serverNow = nowIso();
@@ -562,6 +572,9 @@ function buildSongsArchiveHtml(state = {}, options = {}) {
     const downloadAudioUrl = buildStreamDownloadPath(directUrl, 'audio');
     const downloadCoverUrl = coverUrl ? buildStreamDownloadPath(coverUrl, 'image') : '';
     const downloadClipUrl = clipUrl ? buildStreamDownloadPath(clipUrl, 'clip') : '';
+    const lyricsUrl = (song.lyrics || song.hasLyrics) && song.sharePath
+      ? absolutizePublicUrl(`${song.sharePath}/paroles.txt`, publicBaseUrl)
+      : '';
     const requestedBy = cleanOneLine(song.requestedBy, '', 80);
     const rating = Number(song.starCount || 0) && Number(song.starAverage || 0)
       ? `${Number(song.starAverage).toFixed(Number(song.starAverage) % 1 ? 1 : 0)}/5 (${Number(song.starCount || 0)})`
@@ -573,7 +586,7 @@ function buildSongsArchiveHtml(state = {}, options = {}) {
           <p class="rank">#${songs.length - index}</p>
           <h2>${escapeHtml(title)}</h2>
           <p class="meta">${requestedBy ? `Demandé par ${escapeHtml(requestedBy)} · ` : ''}${escapeHtml(rating)}</p>
-          <p class="links"><a href="${escapeHtml(audioUrl)}">Ouvrir</a><a href="${escapeHtml(downloadAudioUrl)}" download>Télécharger MP3</a>${coverUrl ? `<a href="${escapeHtml(downloadCoverUrl)}" download>Télécharger image</a>` : ''}${clipUrl ? `<a href="${escapeHtml(downloadClipUrl)}" download>Télécharger clip</a>` : ''}</p>
+          <p class="links"><a href="${escapeHtml(audioUrl)}">Ouvrir</a><a href="${escapeHtml(downloadAudioUrl)}" download>Télécharger MP3</a>${lyricsUrl ? `<a href="${escapeHtml(lyricsUrl)}" download>Paroles</a>` : ''}${coverUrl ? `<a href="${escapeHtml(downloadCoverUrl)}" download>Télécharger image</a>` : ''}${clipUrl ? `<a href="${escapeHtml(downloadClipUrl)}" download>Télécharger clip</a>` : ''}</p>
         </div>
       </article>`;
   }).join('\n');
@@ -630,6 +643,9 @@ function buildSongShareHtml(song = {}, options = {}) {
   const downloadAudioUrl = buildStreamDownloadPath(audioUrl, 'audio');
   const downloadCoverUrl = coverUrl ? buildStreamDownloadPath(coverUrl, 'image') : '';
   const downloadClipUrl = clipUrl ? buildStreamDownloadPath(clipUrl, 'clip') : '';
+  const lyricsUrl = (song.lyrics || song.hasLyrics) && song.sharePath
+    ? absolutizePublicUrl(`${song.sharePath}/paroles.txt`, publicBaseUrl)
+    : '';
   const requestedBy = cleanOneLine(song.requestedBy, '', 80);
   const rating = Number(song.starCount || 0) && Number(song.starAverage || 0)
     ? `${Number(song.starAverage).toFixed(Number(song.starAverage) % 1 ? 1 : 0)}/5 (${Number(song.starCount || 0)})`
@@ -663,6 +679,7 @@ function buildSongShareHtml(song = {}, options = {}) {
     <audio src="${escapeHtml(audioUrl)}" controls preload="metadata"></audio>
     <p class="links">
       <a href="${escapeHtml(downloadAudioUrl)}" download>Télécharger MP3</a>
+      ${lyricsUrl ? `<a href="${escapeHtml(lyricsUrl)}" download>Télécharger paroles</a>` : ''}
       ${coverUrl ? `<a href="${escapeHtml(downloadCoverUrl)}" download>Télécharger image</a>` : ''}
       ${clipUrl ? `<a href="${escapeHtml(downloadClipUrl)}" download>Télécharger clip</a>` : ''}
       <a class="back" href="/api/vivy/stream/songs">Playlist</a>
@@ -1461,6 +1478,7 @@ function createVivyStreamStore(options = {}) {
         shareVideoUrl: cleanOneLine(input.shareVideoUrl || input.share_video_url, '', 1200),
         qualityNote: cleanOneLine(input.qualityNote || input.quality_note || '', '', 140),
         shortMix: input.shortMix === true || input.short_mix === true,
+        lyrics: input.lyrics,
       });
       addLiveSong({
         ...track,
@@ -1952,6 +1970,23 @@ function createVivyStreamRouter(options = {}) {
     res.set('Cache-Control', 'public, max-age=300');
     if (String(req.query.raw || '') === '1') return res.redirect(302, song.trackUrl);
     return res.type('html').send(buildSongShareHtml(song));
+  });
+
+  router.get('/s/:slug/paroles.txt', (req, res) => {
+    const song = store.findSongByShareSlug(req.params.slug || '');
+    if (!song?.trackUrl) {
+      return res.status(404).send('Vivy song not found');
+    }
+    const lyrics = String(song.lyrics || '').trim();
+    if (!lyrics) {
+      return res.status(404).send('Paroles indisponibles pour ce morceau.');
+    }
+    const title = cleanTrackTitle(song.trackTitle || song.title, 'Morceau Vivy');
+    const slug = cleanOneLine(req.params.slug, 'vivy', 180).replace(/[^a-z0-9-]/gi, '-');
+    res.set('Cache-Control', 'public, max-age=300');
+    res.set('Content-Type', 'text/plain; charset=utf-8');
+    res.set('Content-Disposition', `attachment; filename="paroles-${slug}.txt"`);
+    return res.send(`${title}\n${'='.repeat(Math.max(4, Math.min(60, title.length)))}\n\n${lyrics}\n`);
   });
 
   router.get('/nossen-seed', (_req, res) => {

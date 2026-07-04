@@ -1527,6 +1527,7 @@ test('Twitch NOSSEN runner writes lyrics, follows Suno and publishes the track',
     coverVideoUrl: '',
     coverVideoPrompt: '',
     shareVideoUrl: '',
+    lyrics,
   });
 });
 
@@ -3693,4 +3694,40 @@ test('Vivy freestyle scope can be raised by env without leaking fallback vehicle
     if (previousMaxTokens === undefined) delete process.env.VIVY_STREAM_FREESTYLE_MAX_TOKENS;
     else process.env.VIVY_STREAM_FREESTYLE_MAX_TOKENS = previousMaxTokens;
   }
+});
+
+test('Vivy songs expose downloadable lyrics without inflating the public state', async () => {
+  await withServer({ stateName: 'lyrics-download.json' }, async (baseUrl) => {
+    const lyricsText = '[Intro]\nLa nuit tombe sur le neon\n[Verse 1]\nChaque ligne frappe et repart\nLe flow avance sans regarder en arriere';
+    const ready = await postJson(baseUrl, '/api/vivy/stream/control', {
+      action: 'ready',
+      title: 'Nuit lyrique',
+      trackTitle: 'Nuit lyrique',
+      trackUrl: '/api/vivy/studio/assets/vivy-music-suno-lyricstest.mp3',
+      durationSeconds: 180,
+      lyrics: lyricsText,
+    });
+    assert.equal(ready.json.ok, true);
+    const song = (ready.json.state.songs || []).find((entry) => String(entry.trackUrl || '').includes('lyricstest'));
+    assert.ok(song, 'song missing from state');
+    assert.equal(song.lyrics, undefined, 'public state must not carry lyrics text');
+    assert.equal(song.hasLyrics, true);
+    assert.ok(song.sharePath, 'share path missing');
+
+    const lyricsResponse = await fetch(`${baseUrl}${song.sharePath}/paroles.txt`);
+    assert.equal(lyricsResponse.status, 200);
+    assert.match(lyricsResponse.headers.get('content-type') || '', /text\/plain/);
+    assert.match(lyricsResponse.headers.get('content-disposition') || '', /attachment/);
+    const body = await lyricsResponse.text();
+    assert.match(body, /Nuit lyrique/);
+    assert.match(body, /Le flow avance sans regarder en arriere/);
+
+    const sharePage = await fetch(`${baseUrl}${song.sharePath}`);
+    const html = await sharePage.text();
+    assert.match(html, /Télécharger paroles/);
+
+    const archive = await fetch(`${baseUrl}/api/vivy/stream/songs`);
+    const archiveHtml = await archive.text();
+    assert.match(archiveHtml, /paroles\.txt/);
+  });
 });
