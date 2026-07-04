@@ -2561,7 +2561,7 @@ function createVivyStreamNossenRunner(options = {}) {
         title: publicTitle,
         message: instrumentalMode
           ? 'Vivy prépare une scène instrumentale avec bruitages.'
-          : `Vivy écrit pour ${artists.join(' + ')} (${lyricScope.label}).`,
+          : `Vivy écrit pour ${artists.join(' + ')} (${lyricScope.label === 'ample' ? 'format ample' : lyricScope.label}).`,
       });
       let lyrics = '';
       if (!instrumentalMode) {
