@@ -6719,6 +6719,27 @@ function buildVivyInstrumentalSunoPrompt(input = {}, title = '') {
   ].filter(Boolean).join('\n'), 3000);
 }
 
+const SUNO_CUSTOM_MODE_MAX_LYRICS_CHARS = 4900;
+
+function clampVivySunoLyricsLength(lyrics = '', maxChars = SUNO_CUSTOM_MODE_MAX_LYRICS_CHARS) {
+  const text = String(lyrics || '');
+  if (text.length <= maxChars) return text;
+  const head = text.slice(0, maxChars);
+  const lastSection = head.lastIndexOf('\n[');
+  const lastBreak = head.lastIndexOf('\n\n');
+  const boundary = Math.max(lastSection, lastBreak);
+  const fallbackNewline = head.lastIndexOf('\n');
+  const kept = boundary > maxChars * 0.5
+    ? head.slice(0, boundary)
+    : head.slice(0, fallbackNewline > 0 ? fallbackNewline : maxChars);
+  console.warn(
+    '[VivySunoPayload] lyrics clamped for custom mode: %s -> %s chars',
+    text.length,
+    kept.trim().length
+  );
+  return kept.trim();
+}
+
 function buildVivySunoPayload(input = {}, req = null) {
   const artistCast = buildVivySongArtistCast(input);
   const forceInstrumental = input.instrumental === true || input.forceInstrumental === true || input.previewInstrumental === true;
@@ -6819,10 +6840,10 @@ function buildVivySunoPayload(input = {}, req = null) {
   const requestedModel = resolveVivySunoRequestedModel(input);
   const prompt = forceInstrumental
     ? buildVivyInstrumentalSunoPrompt({ ...input, songTitle: input.songTitle || input.title || title }, title)
-    : strengthenVivySunoSoloSectionHeaders(
+    : clampVivySunoLyricsLength(strengthenVivySunoSoloSectionHeaders(
       buildVivySunoLyrics({ ...input, songTitle: input.songTitle || input.title || title }),
       artistCast
-    );
+    ));
   const payload = {
     model: useVerifiedVivyVoice && !/^V5(?:_5)?$/i.test(requestedModel) ? 'V5_5' : requestedModel,
     customMode: true,
@@ -9263,6 +9284,7 @@ module.exports = {
   strengthenVivyNossenRoutingPlan,
   enforceVivyNossenVoiceSemantics,
   buildVivySunoPayload,
+  clampVivySunoLyricsLength,
   buildVivyMurekaPayload,
   extractSunoMedia,
   scoreVivySunoDirectorTrack,

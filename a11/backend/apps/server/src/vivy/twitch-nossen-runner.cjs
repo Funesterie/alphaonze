@@ -2275,6 +2275,11 @@ function resolveTwitchVivyLyricScope({
     maxTokens = Math.max(maxTokens, freestyleMaxTokens);
   }
 
+  if (cleanText(musicProvider, '', 40).toLowerCase() === 'suno' && !instrumentalMode) {
+    // Suno custom mode rejette les paroles au-dela de 5000 caracteres (API 400).
+    maxChars = Math.min(maxChars, 4800);
+  }
+
   if (chaseDuration) {
     minAcceptable = Math.max(minAcceptable, Math.round(target * 0.8));
   }

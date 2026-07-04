@@ -5286,9 +5286,9 @@ test('Hetzner deploy wires Ollama Cloud, Cerbere and a compact local Vivy song f
   assert.match(deploySource, /VIVY_STREAM_FREESTYLE_MAX_CHARS\s*=\s*\$\(if \(\$env:VIVY_STREAM_FREESTYLE_MAX_CHARS\)/);
   assert.match(deploySource, /OLLAMA_CLOUD_ENABLED:\s*\$\{OLLAMA_CLOUD_ENABLED:-1\}/);
   assert.match(deploySource, /OLLAMA_CLOUD_LYRICS_MODEL:\s*\$\{OLLAMA_CLOUD_LYRICS_MODEL:-gpt-oss:120b\}/);
-  assert.match(deploySource, /OLLAMA_CLOUD_THINK_LEVEL:\s*\$\{OLLAMA_CLOUD_THINK_LEVEL:-low\}/);
+  assert.match(deploySource, /OLLAMA_CLOUD_THINK_LEVEL:\s*\$\{OLLAMA_CLOUD_THINK_LEVEL:-high\}/);
   assert.match(deploySource, /VIVY_SONG_CERBERE_FALLBACK_ENABLED:\s*\$\{VIVY_SONG_CERBERE_FALLBACK_ENABLED:-1\}/);
-  assert.match(deploySource, /VIVY_SONG_CERBERE_MODEL:\s*\$\{VIVY_SONG_CERBERE_MODEL:-openai\/gpt-oss-120b\}/);
+  assert.match(deploySource, /VIVY_SONG_CERBERE_MODEL:\s*\$\{VIVY_SONG_CERBERE_MODEL:-anthropic\/claude-sonnet-4\.5\}/);
   assert.match(deploySource, /VIVY_CHAT_MAX_TOKENS_SONG_CEILING:\s*\$\{VIVY_CHAT_MAX_TOKENS_SONG_CEILING:-12000\}/);
   assert.match(deploySource, /VIVY_SONG_ALLOW_LOCAL_FALLBACK\s*=\s*"true"/);
   assert.match(deploySource, /VIVY_SONG_LOCAL_MODEL\s*=\s*\$StrongSongOllamaModel/);
@@ -6652,4 +6652,18 @@ test('POST /api/vivy/studio/produce requires a logged-in user when auth is confi
     assert.equal(authenticated.json.ok, true);
     assert.equal(authenticated.json.mode, 'song');
   });
+});
+
+test('Vivy Suno lyrics are clamped under the 5000-char custom mode limit at a section boundary', () => {
+  const { clampVivySunoLyricsLength } = require('../src/routes/vivy-studio.cjs');
+  const section = `[Verse]\n${'Une ligne de rap dense qui avance sans jamais reculer\n'.repeat(20)}\n`;
+  const longLyrics = section.repeat(8);
+  assert.ok(longLyrics.length > 5000);
+  const clamped = clampVivySunoLyricsLength(longLyrics);
+  assert.ok(clamped.length <= 4900, `clamped length ${clamped.length} still above limit`);
+  assert.ok(clamped.length > 2400, 'clamp cut far too much');
+  assert.doesNotMatch(clamped.slice(-80), /Une ligne de rap dense qui avance sans jamais recul$/);
+
+  const shortLyrics = '[Verse]\nCourt et propre';
+  assert.equal(clampVivySunoLyricsLength(shortLyrics), shortLyrics);
 });

@@ -2182,7 +2182,7 @@ test('Twitch NOSSEN runner lets Vivy choose a longer lyric scope for no-limit st
     assert.equal(productionInput.targetDurationSeconds, 330);
     assert.equal(productionInput.longSong, true);
     assert.ok(lyricsInput.songMaxTokens >= 7600);
-    assert.ok(lyricsInput.songResponseMaxChars >= 8800);
+    assert.equal(lyricsInput.songResponseMaxChars, 4800); // plafond Suno custom mode (API 400 au-dela de 5000 caracteres)
     assert.match(lyricsInput.message, /Vivy décide la longueur/i);
     assert.match(lyricsInput.message, /no-limit créatif/i);
     assert.match(updates.map((entry) => entry.message || '').join('\n'), /no-limit créatif/);
@@ -3730,4 +3730,22 @@ test('Vivy songs expose downloadable lyrics without inflating the public state',
     const archiveHtml = await archive.text();
     assert.match(archiveHtml, /paroles\.txt/);
   });
+});
+
+test('Vivy lyric scope caps the writer budget under the Suno custom mode limit', () => {
+  const intense = resolveTwitchVivyLyricScope({
+    winner: { text: 'Mega Freestyle, rap egotrip sombre, clash violent version longue' },
+    intentPlan: createTestVocalIntentPlan(),
+    routing: { songMood: 'rap sombre' },
+    musicProvider: 'suno',
+  });
+  assert.ok(intense.maxChars <= 4800, `suno maxChars ${intense.maxChars} above safe limit`);
+
+  const mureka = resolveTwitchVivyLyricScope({
+    winner: { text: 'Mega Freestyle, rap egotrip sombre version longue' },
+    intentPlan: createTestVocalIntentPlan(),
+    routing: { songMood: 'rap sombre' },
+    musicProvider: 'mureka',
+  });
+  assert.ok(mureka.maxChars > 4800, 'mureka budget should stay unrestricted');
 });
