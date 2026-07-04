@@ -572,10 +572,10 @@ services:
       OLLAMA_CLOUD_BASE_URL: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
       OLLAMA_CLOUD_LYRICS_MODEL: ${OLLAMA_CLOUD_LYRICS_MODEL:-gpt-oss:120b}
       OLLAMA_CLOUD_FAST_MODEL: ${OLLAMA_CLOUD_FAST_MODEL:-gpt-oss:20b}
-      OLLAMA_CLOUD_THINK_LEVEL: ${OLLAMA_CLOUD_THINK_LEVEL:-low}
+      OLLAMA_CLOUD_THINK_LEVEL: ${OLLAMA_CLOUD_THINK_LEVEL:-high}
       OLLAMA_CLOUD_LYRICS_TIMEOUT_MS: ${OLLAMA_CLOUD_LYRICS_TIMEOUT_MS:-360000}
       VIVY_SONG_CERBERE_FALLBACK_ENABLED: ${VIVY_SONG_CERBERE_FALLBACK_ENABLED:-1}
-      VIVY_SONG_CERBERE_MODEL: ${VIVY_SONG_CERBERE_MODEL:-openai/gpt-oss-120b}
+      VIVY_SONG_CERBERE_MODEL: ${VIVY_SONG_CERBERE_MODEL:-anthropic/claude-sonnet-4.5}
       VIVY_SONG_CERBERE_TIMEOUT_MS: ${VIVY_SONG_CERBERE_TIMEOUT_MS:-240000}
       VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS: ${VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS:-300000}
       VIVY_CHAT_MAX_TOKENS_SONG: ${VIVY_CHAT_MAX_TOKENS_SONG:-10000}
@@ -822,10 +822,10 @@ services:
       OLLAMA_CLOUD_BASE_URL: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
       OLLAMA_CLOUD_LYRICS_MODEL: ${OLLAMA_CLOUD_LYRICS_MODEL:-gpt-oss:120b}
       OLLAMA_CLOUD_FAST_MODEL: ${OLLAMA_CLOUD_FAST_MODEL:-gpt-oss:20b}
-      OLLAMA_CLOUD_THINK_LEVEL: ${OLLAMA_CLOUD_THINK_LEVEL:-low}
+      OLLAMA_CLOUD_THINK_LEVEL: ${OLLAMA_CLOUD_THINK_LEVEL:-high}
       OLLAMA_CLOUD_LYRICS_TIMEOUT_MS: ${OLLAMA_CLOUD_LYRICS_TIMEOUT_MS:-360000}
       VIVY_SONG_CERBERE_FALLBACK_ENABLED: ${VIVY_SONG_CERBERE_FALLBACK_ENABLED:-1}
-      VIVY_SONG_CERBERE_MODEL: ${VIVY_SONG_CERBERE_MODEL:-openai/gpt-oss-120b}
+      VIVY_SONG_CERBERE_MODEL: ${VIVY_SONG_CERBERE_MODEL:-anthropic/claude-sonnet-4.5}
       VIVY_SONG_CERBERE_TIMEOUT_MS: ${VIVY_SONG_CERBERE_TIMEOUT_MS:-240000}
       VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS: ${VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS:-300000}
       VIVY_CHAT_MAX_TOKENS_SONG: ${VIVY_CHAT_MAX_TOKENS_SONG:-10000}
@@ -1298,10 +1298,10 @@ $overrides = [ordered]@{
   OLLAMA_CLOUD_BASE_URL = "https://ollama.com"
   OLLAMA_CLOUD_LYRICS_MODEL = "gpt-oss:120b"
   OLLAMA_CLOUD_FAST_MODEL = "gpt-oss:20b"
-  OLLAMA_CLOUD_THINK_LEVEL = "low"
+  OLLAMA_CLOUD_THINK_LEVEL = "high"
   OLLAMA_CLOUD_LYRICS_TIMEOUT_MS = "360000"
   VIVY_SONG_CERBERE_FALLBACK_ENABLED = "1"
-  VIVY_SONG_CERBERE_MODEL = "openai/gpt-oss-120b"
+  VIVY_SONG_CERBERE_MODEL = "anthropic/claude-sonnet-4.5"
   VIVY_SONG_CERBERE_TIMEOUT_MS = "240000"
   VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS = "300000"
   VIVY_CHAT_MAX_TOKENS_SONG = "10000"
@@ -1747,10 +1747,14 @@ printf 'OLLAMA_CLOUD_ENABLED=1\n' >> "$tmp_build"
 printf 'OLLAMA_CLOUD_BASE_URL=https://ollama.com\n' >> "$tmp_build"
 printf 'OLLAMA_CLOUD_LYRICS_MODEL=gpt-oss:120b\n' >> "$tmp_build"
 printf 'OLLAMA_CLOUD_FAST_MODEL=gpt-oss:20b\n' >> "$tmp_build"
-printf 'OLLAMA_CLOUD_THINK_LEVEL=low\n' >> "$tmp_build"
+ollama_cloud_think_level="$(awk -F= '$1 == "OLLAMA_CLOUD_THINK_LEVEL" { sub(/^[^=]*=/, ""); print; exit }' "$a11_env" 2>/dev/null || true)"
+if [ -z "$ollama_cloud_think_level" ]; then ollama_cloud_think_level="high"; fi
+printf 'OLLAMA_CLOUD_THINK_LEVEL=%s\n' "$ollama_cloud_think_level" >> "$tmp_build"
 printf 'OLLAMA_CLOUD_LYRICS_TIMEOUT_MS=360000\n' >> "$tmp_build"
 printf 'VIVY_SONG_CERBERE_FALLBACK_ENABLED=1\n' >> "$tmp_build"
-printf 'VIVY_SONG_CERBERE_MODEL=openai/gpt-oss-120b\n' >> "$tmp_build"
+vivy_song_cerbere_model="$(awk -F= '$1 == "VIVY_SONG_CERBERE_MODEL" { sub(/^[^=]*=/, ""); print; exit }' "$a11_env" 2>/dev/null || true)"
+if [ -z "$vivy_song_cerbere_model" ]; then vivy_song_cerbere_model="anthropic/claude-sonnet-4.5"; fi
+printf 'VIVY_SONG_CERBERE_MODEL=%s\n' "$vivy_song_cerbere_model" >> "$tmp_build"
 printf 'VIVY_SONG_CERBERE_TIMEOUT_MS=240000\n' >> "$tmp_build"
 printf 'VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS=300000\n' >> "$tmp_build"
 printf 'VIVY_CHAT_MAX_TOKENS_SONG=10000\n' >> "$tmp_build"
