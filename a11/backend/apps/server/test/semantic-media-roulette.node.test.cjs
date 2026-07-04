@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {
   buildSemanticMediaRoulette,
+  collectMediaCandidates,
   redactSensitiveText,
 } = require('../lib/semantic-media-roulette.cjs');
 
@@ -93,4 +94,23 @@ test('redactSensitiveText masks common token forms', () => {
   assert.doesNotMatch(redacted, /password=def/);
   assert.doesNotMatch(redacted, /api_key=ghi/);
   assert.doesNotMatch(redacted, /sk-test-abcdefghijkl/);
+});
+
+test('collectMediaCandidates scans mounted runtime Corpus in containers', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-media-runtime-corpus-'));
+  const workspaceRoot = path.join(root, 'app');
+  const runtimeRoot = path.join(workspaceRoot, 'runtime');
+  touchFile(path.join(runtimeRoot, 'Corpus', 'vivy-deep-reference-20260704', 'jeff joker.jpg'));
+
+  const candidates = collectMediaCandidates({
+    workspaceRoot,
+    runtimeRoot,
+    includeLocalPath: true,
+    maxPerDirectory: 20,
+  });
+
+  const candidate = candidates.find((item) => item.title === 'jeff joker');
+  assert.ok(candidate, 'expected runtime Corpus reference image to be discovered');
+  assert.equal(candidate.source, 'runtime:corpus');
+  assert.match(candidate.localPath, /vivy-deep-reference-20260704/);
 });
