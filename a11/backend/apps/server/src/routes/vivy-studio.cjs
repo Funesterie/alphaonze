@@ -550,6 +550,63 @@ function getVivyLocalOllamaConfig(options = {}) {
     model,
     provider: 'ollama',
     source: 'ollama-openai-compatible',
+    timeoutMs: Math.max(1000, Number(process.env.A11_LOCAL_SONG_TIMEOUT_MS || 180000) || 180000),
+  };
+}
+
+function getVivyOllamaCloudConfig(options = {}) {
+  const mode = cleanOneLine(options.mode || options.chatMode, '', 24).toLowerCase();
+  const purpose = cleanOneLine(options.purpose, '', 40).toLowerCase();
+  if (mode !== 'song' || purpose !== 'lyrics' || !envFlag('OLLAMA_CLOUD_ENABLED')) return null;
+
+  const apiKey = String(process.env.OLLAMA_API_KEY || '').trim();
+  if (!apiKey) return null;
+
+  return {
+    baseURL: cleanOneLine(process.env.OLLAMA_CLOUD_BASE_URL, 'https://ollama.com', 300).replace(/\/+$/, ''),
+    apiKey,
+    model: cleanOneLine(process.env.OLLAMA_CLOUD_LYRICS_MODEL, 'gpt-oss:120b', 120),
+    provider: 'ollama_cloud',
+    source: 'ollama-cloud-api',
+    thinkLevel: cleanOneLine(process.env.OLLAMA_CLOUD_THINK_LEVEL, 'low', 12).toLowerCase(),
+    timeoutMs: Math.max(240000, Math.min(
+      480000,
+      Number(process.env.OLLAMA_CLOUD_LYRICS_TIMEOUT_MS || 360000) || 360000
+    )),
+    maxCalls: 1,
+  };
+}
+
+function getVivyCerbereSongConfig(options = {}) {
+  const mode = cleanOneLine(options.mode || options.chatMode, '', 24).toLowerCase();
+  const purpose = cleanOneLine(options.purpose, '', 40).toLowerCase();
+  if (mode !== 'song' || purpose !== 'lyrics' || !envFlag('VIVY_SONG_CERBERE_FALLBACK_ENABLED')) return null;
+
+  const baseURL = cleanOneLine(
+    process.env.A11_CERBERE_OPENAI_BASE_URL || process.env.OPENROUTER_BASE_URL,
+    'https://openrouter.ai/api/v1',
+    300
+  ).replace(/\/+$/, '');
+  const apiKey = String(
+    process.env.A11_CERBERE_OPENAI_API_KEY
+      || process.env.OPENROUTER_API_KEY
+      || ''
+  ).trim();
+  if (!baseURL || !apiKey) return null;
+
+  return {
+    baseURL,
+    apiKey,
+    model: cleanOneLine(
+      process.env.VIVY_SONG_CERBERE_MODEL || process.env.A11_CERBERE_OPENAI_MODEL,
+      'openai/gpt-oss-120b',
+      120
+    ),
+    provider: 'cerbere',
+    source: 'cerbere-openai-compatible',
+    timeoutMs: Math.max(30000, Number(process.env.VIVY_SONG_CERBERE_TIMEOUT_MS || 240000) || 240000),
+    maxCalls: 1,
+    maxRetries: 0,
   };
 }
 
@@ -608,12 +665,15 @@ function getVivyOpenAIConfig(options = {}) {
         : getVivyProviderFromBaseUrl(normalizedBaseUrl) === 'xai'
           ? 'xai-openai-compatible'
           : 'openai-compatible',
+    maxRetries: mode === 'song' && getVivyProviderFromBaseUrl(normalizedBaseUrl) === 'groq' ? 0 : 2,
   };
 }
 
 function getVivyLlmConfigs(options = {}) {
   const mode = cleanOneLine(options.mode || options.chatMode, '', 24).toLowerCase();
   const cloud = getVivyOpenAIConfig(options);
+  const ollamaCloud = getVivyOllamaCloudConfig(options);
+  const cerbere = getVivyCerbereSongConfig(options);
   const local = getVivyLocalOllamaConfig(options);
   const allowSongLocalFallback = ['1', 'true', 'yes', 'on'].includes(
     String(process.env.VIVY_SONG_ALLOW_LOCAL_FALLBACK || '').trim().toLowerCase()
@@ -623,7 +683,9 @@ function getVivyLlmConfigs(options = {}) {
       String(process.env.VIVY_CHAT_LOCAL_FIRST || 'false').trim().toLowerCase()
     );
   const ordered = mode === 'song'
-    ? (allowSongLocalFallback ? [cloud, local] : [cloud])
+    ? (allowSongLocalFallback
+      ? [cloud, ollamaCloud, cerbere, local]
+      : [cloud, ollamaCloud, cerbere])
     : (localFirst ? [local, cloud] : [cloud, local]);
   const seen = new Set();
   return ordered.filter((config) => {
@@ -635,17 +697,124 @@ function getVivyLlmConfigs(options = {}) {
   });
 }
 
-function createVivyOpenAIClientFromConfig(config) {
-  if (!OpenAI || !config?.apiKey) return null;
+function createVivyOllamaCloudClientFromConfig(config) {
+  let calls = 0;
+  const maxCalls = Math.max(1, Number(config.maxCalls || 1) || 1);
   return {
-    client: new OpenAI({
-      baseURL: config.baseURL,
-      apiKey: config.apiKey,
-      maxRetries: config.provider === 'ollama' ? 0 : 2,
-      defaultHeaders: {
-        'X-NEZ-TOKEN': process.env.NEZ_ALLOWED_TOKEN || process.env.NEZ_TOKENS || 'nez:a11-client-funesterie-pro',
+    client: {
+      chat: {
+        completions: {
+          create: async (request = {}) => {
+            if (calls >= maxCalls) {
+              const error = new Error('ollama_cloud_round_call_limit');
+              error.code = 'ollama_cloud_round_call_limit';
+              error.status = 429;
+              throw error;
+            }
+            calls += 1;
+
+            const responseFormat = request.response_format;
+            const format = responseFormat?.type === 'json_object'
+              ? 'json'
+              : responseFormat?.json_schema?.schema;
+            const body = {
+              model: request.model || config.model,
+              messages: Array.isArray(request.messages) ? request.messages : [],
+              stream: false,
+              think: cleanOneLine(config.thinkLevel, 'low', 12).toLowerCase(),
+              options: {
+                temperature: Number.isFinite(Number(request.temperature)) ? Number(request.temperature) : 0.8,
+                num_predict: Math.max(1, Number(request.max_tokens || request.max_completion_tokens || 6000) || 6000),
+              },
+              ...(format ? { format } : {}),
+            };
+            const response = await fetch(`${config.baseURL}/api/chat`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${config.apiKey}`,
+              },
+              body: JSON.stringify(body),
+              signal: AbortSignal.timeout(config.timeoutMs),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              const error = new Error(cleanOneLine(
+                data?.error?.message || data?.error || `ollama_cloud_http_${response.status}`,
+                `ollama_cloud_http_${response.status}`,
+                220
+              ));
+              error.code = response.status === 429 ? 'ollama_cloud_rate_limited' : 'ollama_cloud_failed';
+              error.status = response.status;
+              throw error;
+            }
+            const content = cleanText(data?.message?.content, VIVY_SONG_MAX_CHARS);
+            if (!content) {
+              const error = new Error('ollama_cloud_empty_output');
+              error.code = 'ollama_cloud_empty_output';
+              error.status = 502;
+              throw error;
+            }
+            return {
+              id: `ollama-cloud-${Date.now()}`,
+              object: 'chat.completion',
+              created: Math.floor(Date.now() / 1000),
+              model: data?.model || config.model,
+              choices: [{
+                index: 0,
+                finish_reason: data?.done_reason || 'stop',
+                message: { role: 'assistant', content },
+              }],
+              usage: {
+                prompt_tokens: Number(data?.prompt_eval_count || 0),
+                completion_tokens: Number(data?.eval_count || 0),
+                total_tokens: Number(data?.prompt_eval_count || 0) + Number(data?.eval_count || 0),
+              },
+            };
+          },
+        },
       },
-    }),
+    },
+    model: config.model,
+    baseURL: config.baseURL,
+    provider: config.provider,
+    source: config.source,
+  };
+}
+
+function createVivyOpenAIClientFromConfig(config) {
+  if (config?.provider === 'ollama_cloud') {
+    return createVivyOllamaCloudClientFromConfig(config);
+  }
+  if (!OpenAI || !config?.apiKey) return null;
+  let calls = 0;
+  const maxCalls = Math.max(0, Number(config.maxCalls || 0) || 0);
+  const client = new OpenAI({
+    baseURL: config.baseURL,
+    apiKey: config.apiKey,
+    maxRetries: Number.isFinite(Number(config.maxRetries))
+      ? Number(config.maxRetries)
+      : (config.provider === 'ollama' ? 0 : 2),
+    ...(config.timeoutMs ? { timeout: config.timeoutMs } : {}),
+    defaultHeaders: {
+      'X-NEZ-TOKEN': process.env.NEZ_ALLOWED_TOKEN || process.env.NEZ_TOKENS || 'nez:a11-client-funesterie-pro',
+    },
+  });
+  if (maxCalls > 0) {
+    const create = client.chat.completions.create.bind(client.chat.completions);
+    client.chat.completions.create = async (...args) => {
+      if (calls >= maxCalls) {
+        const error = new Error(`${config.provider}_round_call_limit`);
+        error.code = `${config.provider}_round_call_limit`;
+        error.status = 429;
+        throw error;
+      }
+      calls += 1;
+      return create(...args);
+    };
+  }
+  return {
+    client,
     model: config.model,
     baseURL: config.baseURL,
     provider: config.provider,
@@ -663,22 +832,53 @@ function createVivyOpenAIClient(options = {}) {
   return createVivyOpenAIClients(options)[0] || null;
 }
 
+const vivyLlmProviderCooldowns = new Map();
+
+function getVivyProviderCooldownKey(bundle = {}) {
+  return `${cleanOneLine(bundle.provider, 'unknown', 40)}|${cleanOneLine(bundle.baseURL, '', 240)}`;
+}
+
+function resolveVivyRateLimitCooldownMs(error) {
+  const configured = Math.max(1000, Number(process.env.VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS || 300000) || 300000);
+  const retryAfter = Number(error?.headers?.get?.('retry-after') || error?.response?.headers?.get?.('retry-after') || 0);
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return Math.max(1000, retryAfter * 1000);
+  const message = String(error?.message || '');
+  const seconds = Number(message.match(/(?:try again in|retry after)\s*([\d.]+)\s*s/i)?.[1] || 0);
+  return Number.isFinite(seconds) && seconds > 0 ? Math.max(1000, seconds * 1000) : configured;
+}
+
 async function createVivyChatCompletion(llmBundles, request) {
   let lastError = null;
   for (const bundle of llmBundles) {
+    const cooldownKey = getVivyProviderCooldownKey(bundle);
+    const cooldownUntil = Number(vivyLlmProviderCooldowns.get(cooldownKey) || 0);
+    if (cooldownUntil > Date.now()) {
+      console.warn(
+        '[vivy-chat] provider=%s model=%s cooldownMs=%d; trying next provider',
+        bundle.provider,
+        bundle.model,
+        cooldownUntil - Date.now()
+      );
+      continue;
+    }
     try {
       const completion = await bundle.client.chat.completions.create({
         ...request,
         model: bundle.model,
       });
+      vivyLlmProviderCooldowns.delete(cooldownKey);
       return { bundle, completion };
     } catch (error) {
       lastError = error;
+      const status = Number(error?.status || error?.response?.status || 0) || 0;
+      if (bundle.provider === 'groq' && status === 429) {
+        vivyLlmProviderCooldowns.set(cooldownKey, Date.now() + resolveVivyRateLimitCooldownMs(error));
+      }
       console.warn(
         '[vivy-chat] provider=%s model=%s failed status=%s; trying next provider',
         bundle.provider,
         bundle.model,
-        Number(error?.status || error?.response?.status || 0) || 'exception'
+        status || 'exception'
       );
     }
   }
@@ -4486,7 +4686,7 @@ async function buildVivyNossenIntentPlan(input = {}, req = null) {
     error.status = 401;
     throw error;
   }
-  const llmBundles = createVivyOpenAIClients({ mode: 'song' });
+  const llmBundles = createVivyOpenAIClients({ mode: 'song', purpose: 'intent' });
   if (!llmBundles.length) {
     return {
       ok: true,
@@ -4724,7 +4924,7 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
     material
   );
   const sessionContext = resolveVivyInputSession(input);
-  const llmBundles = createVivyOpenAIClients({ mode: 'song' });
+  const llmBundles = createVivyOpenAIClients({ mode: 'song', purpose: 'routing' });
   if (!llmBundles.length || String(process.env.VIVY_CHAT_DISABLE_LLM || '').toLowerCase() === 'true') {
     console.info(
       '[vivy-nossen-route] session=%s provider=deterministic model=vivy-routing-rules artists=%s mood=%s warning=llm_unavailable',
@@ -5435,7 +5635,7 @@ async function buildVivyAiChat(input, req) {
     : null;
   const localContextForResponse = serializeVivyLocalContext(localContext);
   const llmDisabled = String(process.env.VIVY_CHAT_DISABLE_LLM || '').toLowerCase() === 'true';
-  const llmBundles = createVivyOpenAIClients({ mode });
+  const llmBundles = createVivyOpenAIClients({ mode, purpose: mode === 'song' ? 'lyrics' : 'chat' });
   let llmBundle = llmBundles[0] || null;
   let webResearch = null;
 
@@ -9045,7 +9245,10 @@ module.exports = {
   listVivyChatSessionsForUser,
   normalizeVivyChatHistory,
   getVivyOpenAIConfig,
+  getVivyOllamaCloudConfig,
+  getVivyCerbereSongConfig,
   getVivyLlmConfigs,
+  createVivyOpenAIClientFromConfig,
   buildVivyMemoryContext,
   buildVivySystemPrompt,
   buildVivyDirectSongReply,

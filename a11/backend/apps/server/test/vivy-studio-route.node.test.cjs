@@ -42,7 +42,10 @@ const {
   listVivyChatSessionsForUser,
   buildVivyWebSearchQuery,
   getVivyOpenAIConfig,
+  getVivyOllamaCloudConfig,
+  getVivyCerbereSongConfig,
   getVivyLlmConfigs,
+  createVivyOpenAIClientFromConfig,
   isDirectSongwritingRequest,
   isVivyMcpNeo4jQuestion,
   isVivyWorkspaceToolRequest,
@@ -139,6 +142,39 @@ async function startOpenAiCompletionServer({ status = 200, content = 'Réponse d
   return {
     baseUrl: `http://127.0.0.1:${port}`,
     requests,
+    close: () => new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    }),
+  };
+}
+
+async function startOllamaCloudTestServer({ status = 200, content = 'Vivy cloud prête.' } = {}) {
+  const requests = [];
+  const authorizations = [];
+  const app = express();
+  app.use(express.json());
+  app.post('/api/chat', (req, res) => {
+    requests.push(req.body);
+    authorizations.push(req.headers.authorization || '');
+    if (status !== 200) {
+      return res.status(status).json({ error: `test_http_${status}` });
+    }
+    return res.json({
+      model: req.body?.model || 'gpt-oss:120b',
+      message: { role: 'assistant', content },
+      done: true,
+      done_reason: 'stop',
+      prompt_eval_count: 12,
+      eval_count: 8,
+    });
+  });
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  return {
+    baseUrl: `http://127.0.0.1:${port}`,
+    requests,
+    authorizations,
     close: () => new Promise((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     }),
@@ -4903,6 +4939,131 @@ test('Suno payload keeps long-form arrangement when NOSSEN uses external voice m
   assert.match(payload.style, /no short radio edit/i);
 });
 
+test('Vivy lyrics chain adds Ollama Cloud and Cerbere only for the lyrics writer', () => {
+  const keys = [
+    'OLLAMA_CLOUD_ENABLED',
+    'OLLAMA_API_KEY',
+    'OLLAMA_CLOUD_BASE_URL',
+    'OLLAMA_CLOUD_LYRICS_MODEL',
+    'VIVY_SONG_CERBERE_FALLBACK_ENABLED',
+    'A11_CERBERE_OPENAI_BASE_URL',
+    'A11_CERBERE_OPENAI_API_KEY',
+    'VIVY_SONG_CERBERE_MODEL',
+    'VIVY_SONG_ALLOW_LOCAL_FALLBACK',
+    'VIVY_SONG_LOCAL_MODEL',
+    'OLLAMA_BASE',
+    'GROQ_API_KEY',
+  ];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  try {
+    process.env.OLLAMA_CLOUD_ENABLED = '1';
+    process.env.OLLAMA_API_KEY = 'ollama-test-key';
+    process.env.OLLAMA_CLOUD_BASE_URL = 'https://ollama.example.test';
+    process.env.OLLAMA_CLOUD_LYRICS_MODEL = 'gpt-oss:120b';
+    process.env.VIVY_SONG_CERBERE_FALLBACK_ENABLED = '1';
+    process.env.A11_CERBERE_OPENAI_BASE_URL = 'https://openrouter.example.test/api/v1';
+    process.env.A11_CERBERE_OPENAI_API_KEY = 'cerbere-test-key';
+    process.env.VIVY_SONG_CERBERE_MODEL = 'openai/gpt-oss-120b';
+    process.env.VIVY_SONG_ALLOW_LOCAL_FALLBACK = 'true';
+    process.env.VIVY_SONG_LOCAL_MODEL = 'qwen2.5:7b';
+    process.env.OLLAMA_BASE = 'http://127.0.0.1:11434';
+    process.env.GROQ_API_KEY = 'groq-test-key';
+
+    assert.equal(getVivyOllamaCloudConfig({ mode: 'song', purpose: 'routing' }), null);
+    assert.equal(getVivyCerbereSongConfig({ mode: 'song', purpose: 'intent' }), null);
+
+    const configs = getVivyLlmConfigs({ mode: 'song', purpose: 'lyrics' });
+    assert.deepEqual(configs.map((config) => config.provider), [
+      'groq',
+      'ollama_cloud',
+      'cerbere',
+      'ollama',
+    ]);
+    assert.equal(configs[1].model, 'gpt-oss:120b');
+    assert.equal(configs[1].maxCalls, 1);
+    assert.equal(configs[2].model, 'openai/gpt-oss-120b');
+    assert.equal(configs[2].maxCalls, 1);
+    assert.equal(configs[2].maxRetries, 0);
+    assert.equal(configs[3].model, 'qwen2.5:7b');
+
+    const routingConfigs = getVivyLlmConfigs({ mode: 'song', purpose: 'routing' });
+    assert.equal(routingConfigs.some((config) => config.provider === 'ollama_cloud'), false);
+    assert.equal(routingConfigs.some((config) => config.provider === 'cerbere'), false);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('Vivy Ollama Cloud adapter uses /api/chat and allows one call per lyrics round', async () => {
+  const cloud = await startOllamaCloudTestServer({
+    content: '[Chorus]\nVivy cloud prête\n\n[Chorus]\nVivy cloud prête',
+  });
+  try {
+    const bundle = createVivyOpenAIClientFromConfig({
+      baseURL: cloud.baseUrl,
+      apiKey: 'ollama-secret-test',
+      model: 'gpt-oss:120b',
+      provider: 'ollama_cloud',
+      source: 'ollama-cloud-api',
+      timeoutMs: 240000,
+      maxCalls: 1,
+    });
+    const completion = await bundle.client.chat.completions.create({
+      messages: [{ role: 'user', content: 'Écris un refrain.' }],
+      temperature: 0.7,
+      max_tokens: 10000,
+    });
+
+    assert.equal(cloud.requests.length, 1);
+    assert.equal(cloud.requests[0].model, 'gpt-oss:120b');
+    assert.equal(cloud.requests[0].think, 'low');
+    assert.equal(cloud.requests[0].options.num_predict, 10000);
+    assert.equal(cloud.authorizations[0], 'Bearer ollama-secret-test');
+    assert.match(completion.choices[0].message.content, /Vivy cloud prête/);
+    await assert.rejects(
+      () => bundle.client.chat.completions.create({ messages: [] }),
+      /ollama_cloud_round_call_limit/
+    );
+    assert.equal(cloud.requests.length, 1);
+  } finally {
+    await cloud.close();
+  }
+});
+
+test('Vivy Cerbere lyrics fallback is also capped to one call per round', async () => {
+  const cerbere = await startOpenAiCompletionServer({
+    content: '[Chorus]\nCerbère garde la porte\n\n[Chorus]\nCerbère garde la porte',
+  });
+  try {
+    const bundle = createVivyOpenAIClientFromConfig({
+      baseURL: cerbere.baseUrl,
+      apiKey: 'cerbere-secret-test',
+      model: 'openai/gpt-oss-120b',
+      provider: 'cerbere',
+      source: 'cerbere-openai-compatible',
+      timeoutMs: 240000,
+      maxCalls: 1,
+    });
+    const completion = await bundle.client.chat.completions.create({
+      messages: [{ role: 'user', content: 'Écris un refrain.' }],
+      max_tokens: 10000,
+    });
+
+    assert.equal(cerbere.requests.length, 1);
+    assert.match(completion.choices[0].message.content, /Cerbère garde la porte/);
+    await assert.rejects(
+      () => bundle.client.chat.completions.create({ messages: [] }),
+      /cerbere_round_call_limit/
+    );
+    assert.equal(cerbere.requests.length, 1);
+  } finally {
+    await cerbere.close();
+  }
+});
+
 test('Vivy song writing does not fall back to small local Ollama by default', () => {
   const keys = [
     'VIVY_OPENAI_BASE_URL',
@@ -5110,22 +5271,28 @@ test('Vivy Twitch strong song writing uses emergency songcraft when every lyrics
   }
 });
 
-test('Hetzner deploy wires a strong local Ollama model for Vivy song fallback', () => {
+test('Hetzner deploy wires Ollama Cloud, Cerbere and a compact local Vivy song fallback', () => {
   const deploySource = fs.readFileSync(
     path.join(__dirname, '../../../../ops/deploy-a11-prod-finland-2.ps1'),
     'utf8'
   );
 
-  assert.match(deploySource, /StrongSongOllamaModel[\s\S]{0,160}qwen2\.5:32b/);
+  assert.match(deploySource, /StrongSongOllamaModel[\s\S]{0,160}qwen2\.5:7b/);
   assert.match(deploySource, /VIVY_SONG_PROVIDER:\s*\$\{VIVY_SONG_PROVIDER:-groq\}/);
   assert.match(deploySource, /VIVY_SONG_PROVIDER\s*=\s*\$\(if \(\$env:VIVY_SONG_PROVIDER\)/);
   assert.match(deploySource, /VIVY_SONG_GROQ_MODEL\s*=\s*\$\(if \(\$env:VIVY_SONG_GROQ_MODEL\)/);
   assert.match(deploySource, /llama-3\.3-70b-versatile/);
   assert.match(deploySource, /VIVY_STREAM_FREESTYLE_MAX_TOKENS:\s*\$\{VIVY_STREAM_FREESTYLE_MAX_TOKENS:-10000\}/);
   assert.match(deploySource, /VIVY_STREAM_FREESTYLE_MAX_CHARS\s*=\s*\$\(if \(\$env:VIVY_STREAM_FREESTYLE_MAX_CHARS\)/);
+  assert.match(deploySource, /OLLAMA_CLOUD_ENABLED:\s*\$\{OLLAMA_CLOUD_ENABLED:-1\}/);
+  assert.match(deploySource, /OLLAMA_CLOUD_LYRICS_MODEL:\s*\$\{OLLAMA_CLOUD_LYRICS_MODEL:-gpt-oss:120b\}/);
+  assert.match(deploySource, /OLLAMA_CLOUD_THINK_LEVEL:\s*\$\{OLLAMA_CLOUD_THINK_LEVEL:-low\}/);
+  assert.match(deploySource, /VIVY_SONG_CERBERE_FALLBACK_ENABLED:\s*\$\{VIVY_SONG_CERBERE_FALLBACK_ENABLED:-1\}/);
+  assert.match(deploySource, /VIVY_SONG_CERBERE_MODEL:\s*\$\{VIVY_SONG_CERBERE_MODEL:-openai\/gpt-oss-120b\}/);
+  assert.match(deploySource, /VIVY_CHAT_MAX_TOKENS_SONG_CEILING:\s*\$\{VIVY_CHAT_MAX_TOKENS_SONG_CEILING:-12000\}/);
   assert.match(deploySource, /VIVY_SONG_ALLOW_LOCAL_FALLBACK\s*=\s*"true"/);
   assert.match(deploySource, /VIVY_SONG_LOCAL_MODEL\s*=\s*\$StrongSongOllamaModel/);
-  assert.match(deploySource, /VIVY_SONG_LOCAL_MODEL:\s*\$\{VIVY_SONG_LOCAL_MODEL:-qwen2\.5:32b\}/);
+  assert.match(deploySource, /VIVY_SONG_LOCAL_MODEL:\s*\$\{VIVY_SONG_LOCAL_MODEL:-qwen2\.5:7b\}/);
   assert.match(deploySource, /ollama pull "\$0"' "\$strong_song_model"/);
 });
 
