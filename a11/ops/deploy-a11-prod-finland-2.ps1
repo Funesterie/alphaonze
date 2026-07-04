@@ -1005,6 +1005,18 @@ $mcpEnvMap = if (Test-Path -LiteralPath $McpEnvSource) { Read-EnvMap $McpEnvSour
 $localEnvSource = Join-Path $ServerRoot ".env.local"
 $localEnvMap = if (Test-Path -LiteralPath $localEnvSource) { Read-EnvMap $localEnvSource } else { [ordered]@{} }
 $localSecretRoot = Join-Path $env:USERPROFILE ".funesterie\secrets"
+Import-OptionalSecretFile $envMap "SOCIAL_TOKEN_ENC_KEY" @(
+  $localEnvMap["SOCIAL_TOKEN_ENC_KEY_FILE"],
+  (Join-Path $localSecretRoot "social-token-enc-key.txt")
+)
+Import-OptionalSecretFile $envMap "SOCIAL_META_APP_ID" @(
+  $localEnvMap["SOCIAL_META_APP_ID_FILE"],
+  (Join-Path $localSecretRoot "social-meta-app-id.txt")
+)
+Import-OptionalSecretFile $envMap "SOCIAL_META_APP_SECRET" @(
+  $localEnvMap["SOCIAL_META_APP_SECRET_FILE"],
+  (Join-Path $localSecretRoot "social-meta-app-secret.txt")
+)
 Import-OptionalSecretFile $envMap "A11_ELEVENLABS_API_KEY" @(
   $env:A11_ELEVENLABS_API_KEY_FILE,
   $localEnvMap["A11_ELEVENLABS_API_KEY_FILE"],
