@@ -2426,11 +2426,11 @@ function createVivyStreamNossenRunner(options = {}) {
   );
   const lyricWriteTimeoutMs = Math.max(
     30_000,
-    Math.min(4 * 60 * 1000, Number(options.lyricWriteTimeoutMs || process.env.VIVY_STREAM_LYRICS_TIMEOUT_MS || 120_000) || 120_000)
+    Math.min(10 * 60 * 1000, Number(options.lyricWriteTimeoutMs || process.env.VIVY_STREAM_LYRICS_TIMEOUT_MS || 300_000) || 300_000)
   );
   const lyricRewriteTimeoutMs = Math.max(
     20_000,
-    Math.min(4 * 60 * 1000, Number(options.lyricRewriteTimeoutMs || process.env.VIVY_STREAM_LYRICS_REWRITE_TIMEOUT_MS || lyricWriteTimeoutMs) || lyricWriteTimeoutMs)
+    Math.min(10 * 60 * 1000, Number(options.lyricRewriteTimeoutMs || process.env.VIVY_STREAM_LYRICS_REWRITE_TIMEOUT_MS || lyricWriteTimeoutMs) || lyricWriteTimeoutMs)
   );
   const activeRuns = new Map();
 
