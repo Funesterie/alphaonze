@@ -454,6 +454,9 @@ async function buildSocialAutopromptRedactedStatus(db, { userId = '', env = proc
       ok: false,
       schema: 'funesterie.social-autoprompt.status.v1',
       youtubeConnected: false,
+      youtubeOAuthConnected: false,
+      youtubeReconnectRequired: false,
+      youtubeCachedContextAvailable: false,
       youtubeIngestOk: false,
       youtubeItemsCount: 0,
       metaConfigured: metaConfig.configured === true,
@@ -510,6 +513,9 @@ async function buildSocialAutopromptRedactedStatus(db, { userId = '', env = proc
     : 'unknown';
 
   const youtubeIngestOk = youtubeConnected && youtubeItemsCount > 0 && Boolean(youtubeAccount?.lastIngestAt);
+  const youtubeOAuthConnected = youtubeConnected;
+  const youtubeReconnectRequired = youtubeAccount?.reconnectRequired === true;
+  const youtubeCachedContextAvailable = youtubeItemsCount > 0;
   const socialPromptContextAvailable = socialPromptContextCount > 0 || youtubeItemsCount > 0;
   const primaryCreativeSource = youtubeItemsCount > 0
     ? 'youtube'
@@ -522,6 +528,8 @@ async function buildSocialAutopromptRedactedStatus(db, { userId = '', env = proc
   const limitations = [];
   if (!youtubeConfig.configured) limitations.push('youtube_oauth_not_configured');
   if (!youtubeConnected) limitations.push('youtube_not_connected');
+  if (youtubeReconnectRequired) limitations.push('youtube_reconnect_required_cached_context_only');
+  if (!youtubeOAuthConnected && youtubeCachedContextAvailable) limitations.push('youtube_context_served_from_cache_no_live_ingest');
   if (youtubeConnected && youtubeItemsCount <= 0) limitations.push('youtube_connected_but_no_ingested_items');
   if (youtubeConnected && !youtubeIngestOk) limitations.push('youtube_ingest_not_ready');
   if (!metaConfig.configured) limitations.push('meta_oauth_not_configured');
@@ -535,6 +543,9 @@ async function buildSocialAutopromptRedactedStatus(db, { userId = '', env = proc
     ok: true,
     schema: 'funesterie.social-autoprompt.status.v1',
     youtubeConnected,
+    youtubeOAuthConnected,
+    youtubeReconnectRequired,
+    youtubeCachedContextAvailable,
     youtubeIngestOk,
     youtubeItemsCount,
     metaConfigured: metaConfig.configured === true,

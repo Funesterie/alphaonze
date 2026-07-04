@@ -225,6 +225,9 @@ test('redacted Social Autoprompt status reports routing without leaking private 
 
   assert.equal(status.ok, true);
   assert.equal(status.youtubeConnected, true);
+  assert.equal(status.youtubeOAuthConnected, true);
+  assert.equal(status.youtubeReconnectRequired, false);
+  assert.equal(status.youtubeCachedContextAvailable, true);
   assert.equal(status.youtubeIngestOk, true);
   assert.equal(status.youtubeItemsCount, 7);
   assert.equal(status.metaConfigured, true);
@@ -235,4 +238,58 @@ test('redacted Social Autoprompt status reports routing without leaking private 
   assert.equal(serialized.includes('private@example.test'), false);
   assert.equal(serialized.includes('secret-token-hash'), false);
   assert.equal(serialized.includes('yt-private-id'), false);
+});
+
+test('redacted status separates cached context from live OAuth when reconnect is required', async () => {
+  const fakeDb = {
+    async query(sql) {
+      if (/SELECT id, user_id, provider, account_label/i.test(sql)) {
+        return {
+          rows: [
+            {
+              id: 1,
+              user_id: 'admin',
+              provider: 'youtube',
+              account_label: 'channel',
+              account_external_id: 'yt-id',
+              scopes: [],
+              token_hash: 'hash',
+              expires_at: '2026-08-01T00:00:00.000Z',
+              last_refresh_at: '2026-07-03T10:00:00.000Z',
+              last_ingest_at: '2026-07-04T09:18:00.000Z',
+              status: 'reconnect_required',
+              reconnect_required: true,
+              paused: false,
+              metadata_json: {},
+            },
+          ],
+        };
+      }
+      if (/FROM social_items/i.test(sql) && /GROUP BY provider/i.test(sql)) {
+        return { rows: [{ provider: 'youtube', count: 14 }] };
+      }
+      if (/FROM social_prompt_context/i.test(sql)) {
+        return { rows: [{ count: 3 }] };
+      }
+      return { rows: [], rowCount: 0 };
+    },
+  };
+
+  const status = await buildSocialAutopromptRedactedStatus(fakeDb, {
+    userId: 'admin',
+    env: {
+      SOCIAL_YOUTUBE_CLIENT_ID: 'youtube-client',
+      SOCIAL_YOUTUBE_CLIENT_SECRET: 'youtube-secret',
+    },
+  });
+
+  assert.equal(status.youtubeOAuthConnected, false);
+  assert.equal(status.youtubeConnected, false);
+  assert.equal(status.youtubeReconnectRequired, true);
+  assert.equal(status.youtubeCachedContextAvailable, true);
+  assert.equal(status.youtubeIngestOk, false);
+  assert.equal(status.youtubeItemsCount, 14);
+  assert.equal(status.socialPromptContextAvailable, true);
+  assert.ok(status.limitations.includes('youtube_reconnect_required_cached_context_only'));
+  assert.ok(status.limitations.includes('youtube_context_served_from_cache_no_live_ingest'));
 });
