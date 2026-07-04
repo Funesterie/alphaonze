@@ -565,11 +565,7 @@ function getVivyOpenAIConfig(options = {}) {
   const explicitSongBaseURL = cleanOneLine(process.env.VIVY_SONG_OPENAI_BASE_URL || process.env.VIVY_SONG_BASE_URL, '', 300);
   const explicitBaseURL = (mode === 'song' && explicitSongBaseURL) || explicitVivyBaseURL;
   const wantsXai = /^(xai|x-ai|grok)$/.test(effectiveProviderHint)
-    || /x\.ai|grok/i.test(explicitBaseURL)
-    || (mode === 'song'
-      && Boolean(xaiApiKey)
-      && !explicitSongBaseURL
-      && !/^(groq|openrouter|openai)$/.test(songProviderHint));
+    || /x\.ai|grok/i.test(explicitBaseURL);
   const wantsSongGroq = mode === 'song' && Boolean(songGroqApiKey) && !wantsXai;
   const baseURL = (mode === 'song' && explicitSongBaseURL)
     || explicitVivyBaseURL

@@ -566,6 +566,7 @@ services:
       VIVY_CHAT_LOCAL_FIRST: "false"
       VIVY_OLLAMA_BASE_URL: http://a11-ollama:11434
       VIVY_CHAT_LOCAL_MODEL: llama3.2:3b
+      VIVY_SONG_PROVIDER: ${VIVY_SONG_PROVIDER:-groq}
       VIVY_XAI_MODEL: ${VIVY_XAI_MODEL:-grok-4.3}
       VIVY_SONG_ALLOW_LOCAL_FALLBACK: ${VIVY_SONG_ALLOW_LOCAL_FALLBACK:-true}
       VIVY_SONG_LOCAL_MODEL: ${VIVY_SONG_LOCAL_MODEL:-qwen2.5:32b}
@@ -802,6 +803,7 @@ services:
       A11_OLLAMA_FALLBACK_MODEL: llama3.2:3b
       A11_TRANSLATION_MODEL: llama3.2:3b
       LOCAL_DEFAULT_MODEL: llama3.2:3b
+      VIVY_SONG_PROVIDER: ${VIVY_SONG_PROVIDER:-groq}
       VIVY_SONG_ALLOW_LOCAL_FALLBACK: ${VIVY_SONG_ALLOW_LOCAL_FALLBACK:-true}
       VIVY_SONG_LOCAL_MODEL: ${VIVY_SONG_LOCAL_MODEL:-qwen2.5:32b}
       A11_LLM_FALLBACK_PROVIDER: ollama
@@ -1261,6 +1263,7 @@ $overrides = [ordered]@{
   VIVY_CHAT_LOCAL_FIRST = "false"
   VIVY_OLLAMA_BASE_URL = "http://a11-ollama:11434"
   VIVY_CHAT_LOCAL_MODEL = "llama3.2:3b"
+  VIVY_SONG_PROVIDER = $(if ($env:VIVY_SONG_PROVIDER) { $env:VIVY_SONG_PROVIDER } elseif ($envMap.Contains("VIVY_SONG_PROVIDER") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_SONG_PROVIDER"])) { [string]$envMap["VIVY_SONG_PROVIDER"] } else { "groq" })
   VIVY_XAI_MODEL = $(if ($env:VIVY_XAI_MODEL) { $env:VIVY_XAI_MODEL } elseif ($envMap.Contains("VIVY_XAI_MODEL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_XAI_MODEL"])) { [string]$envMap["VIVY_XAI_MODEL"] } else { "grok-4.3" })
   A11_OLLAMA_STRONG_SONG_MODEL = $StrongSongOllamaModel
   VIVY_SONG_ALLOW_LOCAL_FALLBACK = "true"

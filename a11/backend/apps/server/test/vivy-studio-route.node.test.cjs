@@ -4784,7 +4784,7 @@ test('Vivy LLM config can use xAI credentials when requested', () => {
   }
 });
 
-test('Vivy song writing prefers xAI when xAI and Groq are both available', () => {
+test('Vivy song writing prefers Groq OSS when xAI and Groq are both available', () => {
   const previous = {
     VIVY_CHAT_PROVIDER: process.env.VIVY_CHAT_PROVIDER,
     VIVY_SONG_PROVIDER: process.env.VIVY_SONG_PROVIDER,
@@ -4802,8 +4802,42 @@ test('Vivy song writing prefers xAI when xAI and Groq are both available', () =>
     process.env.GROQ_API_KEY = 'test-groq-fallback-key';
 
     const config = getVivyOpenAIConfig({ mode: 'song' });
+    assert.equal(config.provider, 'groq');
+    assert.equal(config.source, 'groq-openai-compatible');
+    assert.equal(config.baseURL, 'https://api.groq.com/openai/v1');
+    assert.equal(config.model, 'llama-3.3-70b-versatile');
+    assert.equal(config.apiKey, 'test-groq-fallback-key');
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('Vivy song writing uses xAI only when explicitly requested', () => {
+  const previous = {
+    VIVY_CHAT_PROVIDER: process.env.VIVY_CHAT_PROVIDER,
+    VIVY_SONG_PROVIDER: process.env.VIVY_SONG_PROVIDER,
+    VIVY_OPENAI_BASE_URL: process.env.VIVY_OPENAI_BASE_URL,
+    VIVY_SONG_OPENAI_BASE_URL: process.env.VIVY_SONG_OPENAI_BASE_URL,
+    VIVY_XAI_API_KEY: process.env.VIVY_XAI_API_KEY,
+    GROQ_API_KEY: process.env.GROQ_API_KEY,
+  };
+  try {
+    delete process.env.VIVY_CHAT_PROVIDER;
+    process.env.VIVY_SONG_PROVIDER = 'xai';
+    delete process.env.VIVY_OPENAI_BASE_URL;
+    delete process.env.VIVY_SONG_OPENAI_BASE_URL;
+    process.env.VIVY_XAI_API_KEY = 'test-xai-song-key';
+    process.env.GROQ_API_KEY = 'test-groq-fallback-key';
+
+    const config = getVivyOpenAIConfig({ mode: 'song' });
     assert.equal(config.provider, 'xai');
+    assert.equal(config.source, 'xai-openai-compatible');
+    assert.equal(config.baseURL, 'https://api.x.ai/v1');
     assert.equal(config.model, 'grok-4.3');
+    assert.equal(config.apiKey, 'test-xai-song-key');
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];
@@ -5045,6 +5079,8 @@ test('Hetzner deploy wires a strong local Ollama model for Vivy song fallback', 
   );
 
   assert.match(deploySource, /StrongSongOllamaModel[\s\S]{0,160}qwen2\.5:32b/);
+  assert.match(deploySource, /VIVY_SONG_PROVIDER:\s*\$\{VIVY_SONG_PROVIDER:-groq\}/);
+  assert.match(deploySource, /VIVY_SONG_PROVIDER\s*=\s*\$\(if \(\$env:VIVY_SONG_PROVIDER\)/);
   assert.match(deploySource, /VIVY_SONG_ALLOW_LOCAL_FALLBACK\s*=\s*"true"/);
   assert.match(deploySource, /VIVY_SONG_LOCAL_MODEL\s*=\s*\$StrongSongOllamaModel/);
   assert.match(deploySource, /VIVY_SONG_LOCAL_MODEL:\s*\$\{VIVY_SONG_LOCAL_MODEL:-qwen2\.5:32b\}/);
