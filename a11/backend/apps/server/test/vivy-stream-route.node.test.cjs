@@ -3584,7 +3584,7 @@ test('Vivy tolerates a controlled dose of vehicle imagery outside vehicle subjec
     'Le gyrophare eclaire mon ego destructeur',
     'Une derniere ligne saine pour finir le couplet',
   ].join('\n');
-  const result = sanitizeTwitchLyricsForSubjectDetailed(lyrics, 'Egotrip sombre contre les faux rois du rap', '');
+  const result = sanitizeTwitchLyricsForSubjectDetailed(lyrics, 'Chanson street sombre sur la rue et le bitume', '');
   assert.equal(result.tolerated, 2);
   assert.ok(result.removed >= 1, 'excess vehicle lines should still be removed');
   assert.match(result.lyrics, /sirenes|moteur|volant|gyrophare/i);
@@ -3627,4 +3627,28 @@ test('Vivy intense subjects get a long free-structure scope by default', () => {
     routing: {},
   });
   assert.notEqual(shortIntense.label, 'intense longue');
+});
+
+test('Vivy freestyle gets total creative liberation from context filters', () => {
+  const { sanitizeTwitchLyricsForSubjectDetailed } = require('../src/vivy/twitch-nossen-runner.cjs');
+  const lyrics = [
+    '[Verse 1]',
+    'Je trace ma route sous les sirenes de la ville',
+    'Le moteur hurle et le gyrophare me suit',
+    'Le volant tremble sous mes mains de voyou',
+    'Le casque garde mes secrets et ma rage',
+    'Encore une ligne de guidon dans le brouillard',
+  ].join('\n');
+  const freestyle = sanitizeTwitchLyricsForSubjectDetailed(lyrics, 'Mega Freestyle egotrip sombre, liberation totale', '');
+  assert.equal(freestyle.removed, 0);
+  assert.match(freestyle.lyrics, /sirenes/i);
+  assert.match(freestyle.lyrics, /gyrophare/i);
+  assert.match(freestyle.lyrics, /guidon/i);
+
+  const scope = resolveTwitchVivyLyricScope({
+    winner: { text: 'Freestyle tranquille sur la ville qui dort' },
+    intentPlan: createTestVocalIntentPlan(),
+    routing: { songMood: 'rap posé' },
+  });
+  assert.equal(scope.freeStructure, true);
 });

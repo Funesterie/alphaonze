@@ -1854,21 +1854,25 @@ function assessTwitchHookMechanic(lyrics = '', subject = '') {
 
 function sanitizeTwitchLyricsForSubjectDetailed(lyrics = '', subject = '', context = '') {
   const foldedSubject = foldTwitchLyricText([subject, context].filter(Boolean).join('\n'));
-  const vehicleSubject = /\b(moto|motard|scooter|booster|tzr|derbi|casque|visiere|guidon|poursuite|course|rallye|voiture|volant|autoroute)\b/i
-    .test(foldedSubject);
+  const freestyleSubject = isRapFreestyleRequest(subject, context);
+  const vehicleSubject = freestyleSubject
+    || /\b(moto|motard|scooter|booster|tzr|derbi|casque|visiere|guidon|poursuite|course|rallye|voiture|volant|autoroute)\b/i
+      .test(foldedSubject);
   const blockedTerms = TWITCH_OPERATIONAL_LEAK_TERMS
     .filter((term) => !hasFoldedWord(foldedSubject, term));
   const blockedVehicleTerms = vehicleSubject
     ? []
     : TWITCH_VEHICLE_LEAK_TERMS.filter((term) => !hasFoldedWord(foldedSubject, term));
   const allowedGroups = allowedTwitchContextLeakGroups(subject, context);
-  const blockedGroups = TWITCH_CONTEXT_LEAK_GROUPS
-    .filter((group) => !allowedGroups.has(group.name))
-    .map((group) => ({
-      ...group,
-      terms: group.terms.filter((term) => !hasFoldedWord(foldedSubject, term)),
-    }))
-    .filter((group) => group.terms.length);
+  const blockedGroups = freestyleSubject
+    ? []
+    : TWITCH_CONTEXT_LEAK_GROUPS
+      .filter((group) => !allowedGroups.has(group.name))
+      .map((group) => ({
+        ...group,
+        terms: group.terms.filter((term) => !hasFoldedWord(foldedSubject, term)),
+      }))
+      .filter((group) => group.terms.length);
   if (!blockedTerms.length && !blockedVehicleTerms.length && !blockedGroups.length) {
     return { lyrics: cleanLyrics(lyrics), removed: 0, groups: [] };
   }
@@ -2181,6 +2185,7 @@ function resolveTwitchVivyLyricScope({
   const subjectComplexity = userMaterialLength + scenarioSignals * 90;
   const humorWordplay = isHumorWordplayRequest(creativeText, seed.notes);
   const intenseSubject = /\b(?:intense|sombre|egotrip|ego\s+trip|clash|rage|rageu(?:x|se)s?|violent[es]?|violence|brutal[es]?|haine|vengeance|guerre|sanglant[es]?|nocturne|d[ée]mons?|enfer|apocalypse)\b/.test(folded);
+  const freestyleSubject = isRapFreestyleRequest(creativeText, seed.notes);
   const murekaProvider = cleanText(musicProvider, '', 40).toLowerCase() === 'mureka';
   const structuredStory = explicitDevelopedStory
     || scenarioSignals >= 4
@@ -2282,7 +2287,7 @@ function resolveTwitchVivyLyricScope({
     maxChars,
     maxTokens,
     chaseDuration,
-    freeStructure: intenseSubject,
+    freeStructure: intenseSubject || freestyleSubject,
     reason: label === 'intense longue'
       ? 'Sujet intense: version longue d’office, structure libre en plusieurs longs couplets.'
       : explicitLong
