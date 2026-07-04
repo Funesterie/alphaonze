@@ -4217,7 +4217,7 @@ function hasVivyNossenSfxSignal(folded = '') {
 }
 
 function hasVivyNossenVocalSongSignal(folded = '') {
-  return /\b(?:chanson|paroles?|lyrics?|refrain|couplets?|verse|chorus|duo|trio|voix\s+masculine|voix\s+feminine|voix\s+féminine|chant|chante|chantée|chanté|rappe|rap|lead\s+vocal)\b/.test(folded);
+  return /\b(?:chanson|paroles?|lyrics?|refrain|couplets?|verse|chorus|duo|trio|voix\s+masculine|voix\s+feminine|voix\s+féminine|chant|chante|chantée|chanté|rappe|rap|freestyle|punchlines?|rimes?|mc|micro|flow|egotrip|lead\s+vocal)\b/.test(folded);
 }
 
 function hasVivyNossenCinematicSignal(folded = '') {
@@ -4249,6 +4249,8 @@ function inferVivyNossenIntentPlan(input = {}) {
   const murmurs = hasVivyNossenMurmurSignal(folded);
   const strictNoVoice = hasVivyNossenStrictNoVoiceSignal(folded);
   const fable = hasVivyNossenAnimalAbsurdFableSignal(folded);
+  const instrumentalBackingWithVocals = noVocal && vocalSong && !strictNoVoice
+    && !/\b(?:sans\s+paroles?|pas\s+de\s+paroles?|aucune?\s+paroles?|sans\s+chant|sans\s+voix|aucune?\s+voix|no\s+vocals?|no\s+lyrics?|no\s+singing)\b/.test(folded);
 
   if (noVocal && sfx) {
     return {
@@ -4262,6 +4264,20 @@ function inferVivyNossenIntentPlan(input = {}) {
       vocalPolicy: murmurs && !strictNoVoice ? 'distant_indistinct_only' : 'forbid',
       reason: 'La demande impose un rendu instrumental/sans chant avec bruitages ou sound design.',
       generationBrief: 'Créer une scène sonore instrumentale: motifs musicaux, ambiance, bruitages concrets, aucune voix chantée.',
+    };
+  }
+  if (instrumentalBackingWithVocals) {
+    return {
+      intent: 'vocal_song',
+      confidence: 0.88,
+      shouldGenerateLyrics: true,
+      shouldUseVocals: true,
+      shouldPrioritizeSfx: sfx,
+      sfxPriority: sfx ? 'medium' : 'none',
+      musicPriority: 'high',
+      vocalPolicy: 'allow',
+      reason: 'La demande parle d’instrumentale comme backing track, mais réclame un freestyle/rap vocal.',
+      generationBrief: 'Écrire un freestyle vocal sur une instru marquée, avec paroles, flow et punchlines.',
     };
   }
   if (noVocal) {
@@ -4391,9 +4407,11 @@ function normalizeVivyNossenIntentPlan(plan = {}, fallback = inferVivyNossenInte
     plan.reason,
     plan.generationBrief,
   ].filter(Boolean).join('\n')));
-  const strongVocalIntent = !primaryNoVocal && (primaryVocalSong || fable || planVocalEvidence);
+  const explicitNoLyrics = /\b(?:sans\s+paroles?|pas\s+de\s+paroles?|aucune?\s+paroles?|sans\s+chant|sans\s+voix|aucune?\s+voix|no\s+vocals?|no\s+lyrics?|no\s+singing)\b/.test(primaryFolded);
+  const instrumentalBackingWithVocals = primaryNoVocal && primaryVocalSong && !explicitNoLyrics && !strictNoVoice;
+  const strongVocalIntent = !explicitNoLyrics && !strictNoVoice && (primaryVocalSong || fable || planVocalEvidence || instrumentalBackingWithVocals);
 
-  if (primaryNoVocal || (noVocal && !strongVocalIntent)) {
+  if ((primaryNoVocal && !instrumentalBackingWithVocals) || (noVocal && !strongVocalIntent)) {
     normalized.intent = sfx ? 'sound_design_scene' : 'instrumental_music';
     normalized.shouldGenerateLyrics = false;
     normalized.shouldUseVocals = false;
@@ -4542,6 +4560,63 @@ function parseVivyNossenRoutingPlan(value = '') {
   }
 }
 
+function inferVivyNossenRoutingPlan(input = {}) {
+  const material = cleanText([
+    input.canvas,
+    input.songText,
+    input.message,
+    input.notes,
+  ].filter(Boolean).join('\n\n'), VIVY_SONG_MAX_CHARS);
+  const folded = foldTextForLookup(material);
+  const artists = [];
+  const pushArtist = (artist) => {
+    if (!artist || artists.includes(artist)) return;
+    artists.push(artist);
+  };
+
+  const explicitVivy = /\bvivy\b/.test(folded)
+    && /\b(?:chante|chant|voix|solo|refrain|melodique|mélodique|feminin|féminin)\b/.test(folded);
+  const explicitDjeff = /\bdjeff\b/.test(folded)
+    || /\b(?:rap|freestyle|punchlines?|egotrip|micro|flow|rimes?)\b/.test(folded);
+  const explicitK44 = /\bk44\b|\bkaen44\b|\bgrave\b|\bnarration\b|\bcinematique\b|\bcinématique\b/.test(folded);
+  const explicitA11 = /\ba11\b|\belectro\b|\bélectro\b|\bsynthwave\b|\btechno\b|\bglitch\b/.test(folded);
+
+  if (explicitDjeff) pushArtist('djeff');
+  if (explicitVivy) pushArtist('vivy');
+  if (!artists.length && explicitK44) pushArtist('k44');
+  if (!artists.length && explicitA11) pushArtist('a11');
+  if (!artists.length) pushArtist('vivy');
+
+  const moodParts = [];
+  if (/\b(?:freestyle|punchlines?|egotrip|micro|flow|rimes?)\b/.test(folded)) {
+    moodParts.push('rap freestyle français nerveux');
+    moodParts.push('flow technique, punchlines fréquentes, rimes internes');
+  } else if (/\brap\b/.test(folded)) {
+    moodParts.push('rap français moderne');
+    moodParts.push('kick sec, basse lourde, couplets rythmés');
+  }
+  if (/\b(?:geek|gaming|jeu\s+video|jeux\s+video|console|manette|manettes|pixel|cyber|ordinateur|clavier)\b/.test(folded)) {
+    moodParts.push('thème geek nocturne, textures arcade, synthés 8-bit discrets');
+  }
+  if (/\b(?:flute|flûte|percussions?|drums?|tambours?)\b/.test(folded)) {
+    moodParts.push('flûtes et percussions/drums en contrepoint');
+  }
+  if (/\b(?:hardcore|gabber|thunderdome|rave)\b/.test(folded)) {
+    moodParts.push('hardcore techno gabber oldschool 175 BPM, kicks distordus, warehouse sombre');
+  }
+  if (/\b(?:epique|épique|heroique|héroïque)\b/.test(folded)) {
+    moodParts.push('montée héroïque sans devenir orchestral générique');
+  }
+  if (!moodParts.length) {
+    moodParts.push('chanson NOSSEN moderne, identité sonore précise, groove clair, refrain mémorable');
+  }
+
+  return {
+    artists: limitVivyNossenRoutingArtists(artists),
+    songMood: joinVivyNossenRoutingMoodParts(moodParts, 520),
+  };
+}
+
 function limitVivyNossenRoutingArtists(artists = []) {
   const selected = (Array.isArray(artists) ? artists : [])
     .map((artist) => foldTextForLookup(artist))
@@ -4644,12 +4719,26 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
     error.status = 400;
     throw error;
   }
+  const fallbackPlan = enforceVivyNossenVoiceSemantics(
+    strengthenVivyNossenRoutingPlan(inferVivyNossenRoutingPlan(input), material),
+    material
+  );
+  const sessionContext = resolveVivyInputSession(input);
   const llmBundles = createVivyOpenAIClients({ mode: 'song' });
   if (!llmBundles.length || String(process.env.VIVY_CHAT_DISABLE_LLM || '').toLowerCase() === 'true') {
-    const error = new Error('vivy_song_llm_unavailable');
-    error.code = 'vivy_song_llm_unavailable';
-    error.status = 503;
-    throw error;
+    console.info(
+      '[vivy-nossen-route] session=%s provider=deterministic model=vivy-routing-rules artists=%s mood=%s warning=llm_unavailable',
+      sessionContext.sessionId,
+      fallbackPlan.artists.join('+'),
+      fallbackPlan.songMood
+    );
+    return {
+      ok: true,
+      ...fallbackPlan,
+      model: 'vivy-routing-rules',
+      provider: 'deterministic',
+      warning: 'vivy_song_llm_unavailable',
+    };
   }
   const systemPrompt = [
     'Tu es le routeur musical NOSSEN.',
@@ -4671,27 +4760,56 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
     'Sans demande explicite, évite les réflexes orchestral, cinématique, épique, symphonique ou classique. Cherche une identité moderne, rythmique et immédiatement reconnaissable.',
     'Réponds uniquement en JSON avec les clés artists (tableau) et songMood (chaîne).',
   ].join('\n');
-  const completionResult = await createVivyChatCompletion(llmBundles, {
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: material },
-    ],
-    temperature: 0.72,
-    max_tokens: 500,
-  });
-  const raw = cleanText(completionResult.completion?.choices?.[0]?.message?.content, 2400);
-  const plan = parseVivyNossenRoutingPlan(raw);
+  let completionResult = null;
+  let raw = '';
+  let plan = null;
+  try {
+    completionResult = await createVivyChatCompletion(llmBundles, {
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: material },
+      ],
+      temperature: 0.72,
+      max_tokens: 500,
+    });
+    raw = cleanText(completionResult.completion?.choices?.[0]?.message?.content, 2400);
+    plan = parseVivyNossenRoutingPlan(raw);
+  } catch (error) {
+    console.warn(
+      '[vivy-nossen-route] session=%s provider=deterministic model=vivy-routing-rules artists=%s mood=%s warning=%s',
+      sessionContext.sessionId,
+      fallbackPlan.artists.join('+'),
+      fallbackPlan.songMood,
+      cleanOneLine(error?.code || error?.message || error, 'llm_failed', 160)
+    );
+    return {
+      ok: true,
+      ...fallbackPlan,
+      model: 'vivy-routing-rules',
+      provider: 'deterministic',
+      warning: cleanOneLine(error?.code || error?.message || error, 'llm_failed', 160),
+    };
+  }
   if (!plan) {
-    const error = new Error('vivy_nossen_routing_invalid');
-    error.code = 'vivy_nossen_routing_invalid';
-    error.status = 502;
-    throw error;
+    console.warn(
+      '[vivy-nossen-route] session=%s provider=deterministic model=vivy-routing-rules artists=%s mood=%s warning=invalid_llm_json raw=%s',
+      sessionContext.sessionId,
+      fallbackPlan.artists.join('+'),
+      fallbackPlan.songMood,
+      cleanOneLine(raw, '', 220)
+    );
+    return {
+      ok: true,
+      ...fallbackPlan,
+      model: 'vivy-routing-rules',
+      provider: 'deterministic',
+      warning: 'vivy_nossen_routing_invalid',
+    };
   }
   const strengthenedPlan = enforceVivyNossenVoiceSemantics(
     strengthenVivyNossenRoutingPlan(plan, material),
     material
   );
-  const sessionContext = resolveVivyInputSession(input);
   console.info(
     '[vivy-nossen-route] session=%s provider=%s model=%s artists=%s mood=%s',
     sessionContext.sessionId,
@@ -8937,6 +9055,7 @@ module.exports = {
   inferVivyNossenIntentPlan,
   parseVivyNossenIntentPlan,
   buildVivyNossenRoutingPlan,
+  inferVivyNossenRoutingPlan,
   parseVivyNossenRoutingPlan,
   strengthenVivyNossenRoutingPlan,
   enforceVivyNossenVoiceSemantics,

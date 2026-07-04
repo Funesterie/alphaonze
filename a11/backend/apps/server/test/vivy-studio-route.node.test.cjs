@@ -53,6 +53,9 @@ const {
   looksLikeWeakSongwritingReply,
   normalizeVivyChatHistory,
   postProcessVivyAssistantText,
+  buildVivyNossenRoutingPlan,
+  inferVivyNossenIntentPlan,
+  inferVivyNossenRoutingPlan,
   parseVivyNossenRoutingPlan,
   strengthenVivyNossenRoutingPlan,
   enforceVivyNossenVoiceSemantics,
@@ -3762,6 +3765,39 @@ test('Vivy parses a strict NOSSEN routing plan without leaking prose', () => {
     '```',
   ].join('\n'))?.artists, ['djeff', 'vivy']);
   assert.equal(parseVivyNossenRoutingPlan('Je choisirais peut-être Vivy.'), null);
+});
+
+test('Vivy NOSSEN routing falls back locally for Djeff freestyle instead of stopping the round', async () => {
+  const text = 'Djeff aux manettes, Djeff lâche un Mega freestyle sur le thème Geek, instrumentale flûtes percussions et drums';
+
+  const intent = inferVivyNossenIntentPlan({ message: text });
+  assert.equal(intent.shouldGenerateLyrics, true);
+  assert.equal(intent.shouldUseVocals, true);
+  assert.match(intent.intent, /vocal_song|narrative_fable/);
+
+  const fallback = inferVivyNossenRoutingPlan({ message: text });
+  assert.deepEqual(fallback.artists, ['djeff']);
+  assert.match(fallback.songMood, /rap freestyle français nerveux/i);
+  assert.match(fallback.songMood, /geek|arcade|8-bit/i);
+  assert.match(fallback.songMood, /flûtes|flutes|percussions|drums/i);
+
+  const previousDisable = process.env.VIVY_CHAT_DISABLE_LLM;
+  process.env.VIVY_CHAT_DISABLE_LLM = 'true';
+  try {
+    const routed = await buildVivyNossenRoutingPlan({
+      message: text,
+      songText: text,
+      conversationId: 'vivy-routing-fallback-test',
+      sessionId: 'vivy-routing-fallback-test',
+    }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+    assert.equal(routed.ok, true);
+    assert.equal(routed.provider, 'deterministic');
+    assert.equal(routed.warning, 'vivy_song_llm_unavailable');
+    assert.deepEqual(routed.artists, ['djeff']);
+    assert.match(routed.songMood, /rap freestyle français nerveux/i);
+  } finally {
+    process.env.VIVY_CHAT_DISABLE_LLM = previousDisable;
+  }
 });
 
 test('Vivy does not treat the Twitch command as a Vivy casting request', () => {
