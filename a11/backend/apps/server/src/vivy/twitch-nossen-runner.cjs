@@ -20,6 +20,9 @@ const {
   buildVivyVisualNegativeIdentityPrompt,
   resolveVivyVisualFocus,
 } = require('./visual-identities.cjs');
+const { isCoverTextStampEnabled, stampCoverText } = require('./cover-text-stamp.cjs');
+const { uploadBufferToR2 } = require('../../lib/file-storage.cjs');
+const { pickVivyOutfitBrief } = require('./wardrobe.cjs');
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_TARGET_DURATION_SECONDS = 210;
@@ -685,6 +688,7 @@ function buildTwitchCoverPrompt(input = {}) {
   const subjectGuidance = cleanText(input.subjectFrame?.guidance, '', 700);
   const visualFocus = resolveVivyVisualFocus(input);
   const visualLookup = foldForVisualLookup(`${title} ${idea} ${mood} ${intent}`);
+  const winkRequested = /\bclin\s*d\s*['’]?\s*oeil\b|\bwink\b/.test(visualLookup);
   const wantsSpaceCorsair = /\b(pirate|corsaire|drapeau noir|voiles?)\b/.test(visualLookup)
     && /\b(espace|interstellaire|planete|planetes|etoile|etoiles|cosmique|galaxie|galactique)\b/.test(visualLookup);
   const visualIdea = wantsSpaceCorsair
@@ -697,6 +701,9 @@ function buildTwitchCoverPrompt(input = {}) {
     subjectGuidance ? `Lecture sémantique obligatoire: ${subjectGuidance}` : '',
     mood ? `Ambiance musicale: ${mood}.` : '',
     intent ? `Intention visuelle: ${intent}.` : '',
+    winkRequested
+      ? 'Expression du personnage: clin d’œil complice — un seul œil fermé, l’autre grand ouvert et expressif, sourire malicieux; visage net et naturel, aucune déformation, aucun strabisme.'
+      : '',
     visualFocus.prompt,
   ].filter(Boolean);
   appendVivyVisualIdentityBrief(promptParts, input);
@@ -2620,6 +2627,19 @@ function createVivyStreamNossenRunner(options = {}) {
         );
       }
       routing = freestyleRouting;
+      const outfitPick = pickVivyOutfitBrief({ subjectText: winner.text, mood: routing?.songMood });
+      if (outfitPick.brief) {
+        routing = {
+          ...routing,
+          songMood: cleanText([routing?.songMood, outfitPick.brief].filter(Boolean).join('. '), '', 1800),
+        };
+        logger.info?.(
+          '[VivyWardrobe] round=%s outfit=%s accessories=%s',
+          roundId,
+          cleanText(outfitPick.selection?.main?.name || '', '', 80),
+          outfitPick.selection?.accessories?.map((entry) => entry.name).join('+') || 'aucun'
+        );
+      }
       if (
         musicProvider === 'mureka'
         && !instrumentalMode
@@ -3207,6 +3227,33 @@ function createVivyStreamNossenRunner(options = {}) {
         }
         coverImageUrl = cover.coverImageUrl;
         coverPrompt = cover.prompt || '';
+        if (isCoverTextStampEnabled(process.env)) {
+          try {
+            const coverResponse = await fetch(coverImageUrl, { signal: AbortSignal.timeout?.(20000) });
+            if (coverResponse.ok) {
+              const stamped = await stampCoverText(Buffer.from(await coverResponse.arrayBuffer()), {
+                title: publicTitle,
+                signature: 'Vivy ★',
+              });
+              const uploaded = await uploadBufferToR2({
+                userId: 'vivy-twitch-live',
+                filename: `vivy-cover-titled-${roundId}.jpg`,
+                buffer: stamped,
+                contentType: 'image/jpeg',
+              });
+              if (uploaded?.url) {
+                coverImageUrl = uploaded.url;
+                logger.info?.('[vivy-twitch-cover] round=%s title stamped onto cover', roundId);
+              }
+            }
+          } catch (error) {
+            logger.warn?.(
+              '[vivy-twitch-cover] round=%s text stamp skipped: %s',
+              roundId,
+              cleanText(error?.message || error, '', 160)
+            );
+          }
+        }
         logger.info?.('[vivy-twitch-cover] round=%s ready url=%s', roundId, cleanText(coverImageUrl, '', 180));
         await update({
           action: 'cover',

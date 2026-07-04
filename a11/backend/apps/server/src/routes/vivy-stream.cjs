@@ -13,6 +13,11 @@ const {
 } = require('../vivy/twitch-nossen-runner.cjs');
 const { estimateTwitchFullClipCost } = require('../vivy/twitch-clip-director.cjs');
 const {
+  loadWardrobe,
+  offerWardrobeGift,
+  recordWardrobeDecision,
+} = require('../vivy/wardrobe.cjs');
+const {
   buildAndStoreSocialPromptContext,
   formatSocialContextForPrompt,
 } = require('../social/social-autoprompt.cjs');
@@ -2033,6 +2038,21 @@ function createVivyStreamRouter(options = {}) {
   router.post('/round/lock', express.json({ limit: '16kb' }), writeGuard, (req, res) => {
     const result = store.lockRound(req.body || {});
     res.status(result.ok ? 200 : 409).json(result);
+  });
+
+  router.get('/wardrobe', (_req, res) => {
+    res.set('Cache-Control', 'no-cache');
+    res.json({ ok: true, wardrobe: loadWardrobe() });
+  });
+
+  router.post('/wardrobe/offer', express.json({ limit: '32kb' }), writeGuard, (req, res) => {
+    const result = offerWardrobeGift(req.body?.gift || req.body || {});
+    res.status(result.ok ? 200 : 400).json(result);
+  });
+
+  router.post('/wardrobe/decision', express.json({ limit: '32kb' }), writeGuard, (req, res) => {
+    const result = recordWardrobeDecision(req.body || {});
+    res.status(result.ok ? 200 : 400).json(result);
   });
 
   router.post('/round/clip-mode', express.json({ limit: '16kb' }), writeGuard, (req, res) => {

@@ -3749,3 +3749,105 @@ test('Vivy lyric scope caps the writer budget under the Suno custom mode limit',
   });
   assert.ok(mureka.maxChars > 4800, 'mureka budget should stay unrestricted');
 });
+
+test('Vivy cover text stamp builds clean SVG text and respects the env kill switch', () => {
+  const { buildCoverTextSvg, isCoverTextStampEnabled } = require('../src/vivy/cover-text-stamp.cjs');
+  const svg = buildCoverTextSvg({
+    width: 1280,
+    height: 720,
+    title: 'Nuit néon <& clash>',
+    signature: 'Vivy ★',
+  });
+  assert.match(svg, /DejaVu Sans/);
+  assert.match(svg, /Nuit néon &lt;&amp; clash&gt;/);
+  assert.match(svg, /Vivy ★/);
+  assert.doesNotMatch(svg, /<script/i);
+
+  assert.equal(isCoverTextStampEnabled({}), true);
+  assert.equal(isCoverTextStampEnabled({ VIVY_STREAM_COVER_TEXT_STAMP: '0' }), false);
+  assert.equal(isCoverTextStampEnabled({ VIVY_STREAM_COVER_TEXT_STAMP: '1' }), true);
+});
+
+test('Vivy cover prompt asks for a wink when the subject requests one', () => {
+  const winkPrompt = buildTwitchCoverPrompt({
+    publicTitle: 'Sourire complice',
+    winner: { text: 'Vivy fait un clin d’oeil au chat pendant le refrain' },
+  });
+  assert.match(winkPrompt, /clin d.œil complice/i);
+  assert.match(winkPrompt, /un seul œil fermé/i);
+
+  const normalPrompt = buildTwitchCoverPrompt({
+    publicTitle: 'Ballade pluvieuse',
+    winner: { text: 'Une ballade douce sous la pluie' },
+  });
+  assert.doesNotMatch(normalPrompt, /clin d.œil/i);
+});
+
+test('Vivy wardrobe: gifts are offered, Vivy decides, outfits color the mood', () => {
+  const os = require('node:os');
+  const path = require('node:path');
+  const previousRoot = process.env.A11_RUNTIME_ROOT;
+  process.env.A11_RUNTIME_ROOT = path.join(os.tmpdir(), `vivy-wardrobe-test-${process.pid}`);
+  try {
+    const {
+      loadWardrobe,
+      offerWardrobeGift,
+      recordWardrobeDecision,
+      pickVivyOutfitBrief,
+    } = require('../src/vivy/wardrobe.cjs');
+
+    const offered = offerWardrobeGift({
+      id: 'poison_fire',
+      name: 'Poison → Feu',
+      offeredBy: 'Djeff',
+      emotion: 'rage maîtrisée',
+      energy: 92,
+      voice: 'arrogante, vivante, tranchante',
+      sound: ['drums lourds', 'basse noire', 'synthés laser'],
+      visual: ['violet', 'noir', 'néons'],
+      numa: ['35', '45', '47'],
+      rule: 'le poison doit finir en feu, jamais en plainte',
+      avoid: ['victimisation'],
+      tags: ['rage', 'egotrip', 'clash', 'sombre'],
+    });
+    assert.equal(offered.ok, true);
+    assert.equal(offered.gift.status, 'offered');
+    assert.equal(offered.gift.acceptance.vivyCanRefuse, true);
+
+    const doubleOffer = offerWardrobeGift({ id: 'poison_fire', name: 'Doublon' });
+    assert.equal(doubleOffer.ok, false);
+
+    const before = pickVivyOutfitBrief({ subjectText: 'rap egotrip sombre plein de rage' });
+    assert.equal(before.brief, '', 'une tenue offerte mais non adoptée ne doit jamais être portée');
+
+    const badDecision = recordWardrobeDecision({ giftId: 'poison_fire', decision: 'burn' });
+    assert.equal(badDecision.ok, false);
+
+    const decided = recordWardrobeDecision({
+      giftId: 'poison_fire',
+      decision: 'modify',
+      reason: 'Je prends la rage mais je garde ma voix claire.',
+      adoptedAs: 'Feu maîtrisé',
+      changes: { energy: 74, voice: 'fière mais pas agressive', added: ['refrain lumineux'] },
+    });
+    assert.equal(decided.ok, true);
+    assert.equal(decided.outfit.name, 'Feu maîtrisé');
+    assert.equal(decided.outfit.energy, 74);
+
+    const picked = pickVivyOutfitBrief({ subjectText: 'rap egotrip sombre plein de rage contre les faux rois' });
+    assert.match(picked.brief, /Feu maîtrisé/);
+    assert.match(picked.brief, /fière mais pas agressive/);
+    assert.match(picked.brief, /le poison doit finir en feu/);
+
+    const unrelated = pickVivyOutfitBrief({ subjectText: 'valse douce pour un mariage champetre' });
+    assert.equal(unrelated.brief, '');
+
+    const state = loadWardrobe();
+    assert.equal(state.gifts.find((g) => g.id === 'poison_fire').status, 'adopted');
+    assert.equal(state.decisions.length, 1);
+    assert.match(state.canon, /jamais imposée/);
+  } finally {
+    if (previousRoot === undefined) delete process.env.A11_RUNTIME_ROOT;
+    else process.env.A11_RUNTIME_ROOT = previousRoot;
+  }
+});
