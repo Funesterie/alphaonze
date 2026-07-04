@@ -1257,6 +1257,8 @@ const TWITCH_VEHICLE_LEAK_TERMS = [
   'volant',
 ];
 
+const TWITCH_VEHICLE_LEAK_ALLOWANCE = 2;
+
 const TWITCH_CONTEXT_LEAK_GROUPS = [
   {
     name: 'vehicle_chase',
@@ -1873,6 +1875,8 @@ function sanitizeTwitchLyricsForSubjectDetailed(lyrics = '', subject = '', conte
 
   const kept = [];
   let removed = 0;
+  let vehicleLinesTolerated = 0;
+  const vehicleToleranceAllowed = /\b(?:rap|freestyle|cypher|egotrip|ego\s+trip|clash|punchlines?|sombre|street|rue|bitume|urbain|urbaine)\b/.test(foldedSubject);
   const groups = new Set();
   for (const line of String(lyrics || '').split(/\n/)) {
     const folded = foldTwitchLyricText(line);
@@ -1883,6 +1887,14 @@ function sanitizeTwitchLyricsForSubjectDetailed(lyrics = '', subject = '', conte
       ? blockedGroups.find((group) => group.terms.some((term) => hasFoldedWord(folded, term)))
       : null;
     if (leaksOperational || leaksVehicle || leakedGroup) {
+      const vehicleOnlyLeak = !leaksOperational
+        && (leaksVehicle || leakedGroup?.name === 'vehicle_chase')
+        && (!leakedGroup || leakedGroup.name === 'vehicle_chase');
+      if (vehicleOnlyLeak && vehicleToleranceAllowed && vehicleLinesTolerated < TWITCH_VEHICLE_LEAK_ALLOWANCE) {
+        vehicleLinesTolerated += 1;
+        kept.push(line);
+        continue;
+      }
       removed += 1;
       if (leaksOperational) groups.add('operational');
       if (leaksVehicle) groups.add('vehicle_chase');
@@ -1897,6 +1909,7 @@ function sanitizeTwitchLyricsForSubjectDetailed(lyrics = '', subject = '', conte
       .replace(/\[\s*(Verse|Couplet)\s*\]/gi, '[Verse]')
     ),
     removed,
+    tolerated: vehicleLinesTolerated,
     groups: Array.from(groups),
   };
 }
@@ -2167,6 +2180,7 @@ function resolveTwitchVivyLyricScope({
     + String(intentPlan.generationBrief || '').length;
   const subjectComplexity = userMaterialLength + scenarioSignals * 90;
   const humorWordplay = isHumorWordplayRequest(creativeText, seed.notes);
+  const intenseSubject = /\b(?:intense|sombre|egotrip|ego\s+trip|clash|rage|rageu(?:x|se)s?|violent[es]?|violence|brutal[es]?|haine|vengeance|guerre|sanglant[es]?|nocturne|d[ée]mons?|enfer|apocalypse)\b/.test(folded);
   const murekaProvider = cleanText(musicProvider, '', 40).toLowerCase() === 'mureka';
   const structuredStory = explicitDevelopedStory
     || scenarioSignals >= 4
@@ -2208,6 +2222,11 @@ function resolveTwitchVivyLyricScope({
   if (humorWordplay && requestedDuration <= 0 && !explicitLong && target < 210) {
     target = 210;
     label = 'comédie à mécanisme';
+  }
+
+  if (intenseSubject && configuredTargetDurationSeconds <= 0 && requestedDuration <= 0 && !explicitShort && target < DEFAULT_LONG_TARGET_SECONDS) {
+    target = clampNumber(DEFAULT_LONG_TARGET_SECONDS, minTarget, maxTarget, DEFAULT_LONG_TARGET_SECONDS);
+    label = 'intense longue';
   }
 
   if (target <= 210) {
@@ -2263,7 +2282,10 @@ function resolveTwitchVivyLyricScope({
     maxChars,
     maxTokens,
     chaseDuration,
-    reason: explicitLong
+    freeStructure: intenseSubject,
+    reason: label === 'intense longue'
+      ? 'Sujet intense: version longue d’office, structure libre en plusieurs longs couplets.'
+      : explicitLong
       ? (explicitNoLimit ? 'La demande donne une carte blanche longue, sans obligation de remplir le maximum.' : 'La demande appelle une version longue sans étirer artificiellement.')
       : explicitShort
         ? 'La demande ressemble à un format court ou opening.'
@@ -2337,6 +2359,9 @@ function buildTwitchLyricsRequest({
     `Direction sonore partagée avec la composition: ${routing?.songMood || 'moderne, précise et liée au sujet'}.`,
     `Casting vocal: ${artists}.`,
     lyricScope?.label ? `Ampleur choisie par Vivy: ${lyricScope.label}. ${lyricScope.reason || ''}` : '',
+    lyricScope?.freeStructure
+      ? 'Structure libre: plusieurs longs couplets continus qui montent en intensité; refrain, pré-refrain et pont facultatifs, seulement si le sujet les appelle.'
+      : '',
     lyricScope?.targetDurationSeconds
       ? `Vivy décide la longueur: vise une forme adaptée à environ ${Math.round(lyricScope.targetDurationSeconds)} secondes de chanson, sans remplir artificiellement.`
       : 'Vivy décide librement la longueur selon l’histoire et l’énergie du sujet.',
@@ -2897,8 +2922,8 @@ function createVivyStreamNossenRunner(options = {}) {
                 bawdyWordplayRequested
                   ? 'Le brouillon échoue s’il se contente de secrets, sourires, clins d’œil ou personnages qui “ont compris”. Rends le second récit adulte nettement perceptible sans anatomie graphique: plusieurs allusions concrètes, plusieurs chutes, au moins deux tensions entre désir, ivresse, fumée clandestine, interdit et lendemain embarrassant. Ajoute deux ou trois césures-pièges: la phrase appelle un mot tabou pendant une pause, puis un complément innocent la termine sans jamais écrire le mot imaginé. Ne reprends aucune ligne faible du brouillon.'
                   : '',
-                freestyleRequested
-                  ? 'Écris maintenant uniquement les paroles finales: couplets continus en phases avec punchlines, sans pré-refrain ni pont obligatoires; ajoute un refrain seulement si le sujet exact le demande.'
+                (freestyleRequested || lyricScope.freeStructure)
+                  ? 'Écris maintenant uniquement les paroles finales: plusieurs longs couplets continus, sans pré-refrain ni pont obligatoires; ajoute un refrain seulement si le sujet exact le demande.'
                   : 'Écris maintenant uniquement les paroles finales, avec au moins deux couplets, un pré-refrain, un refrain, un pont et un dernier refrain.',
                 'Chaque couplet doit contenir une scène concrète, un malentendu nouveau et une conséquence comique. Hors refrain, interdiction de reprendre la même idée ou le même moule de phrase. Les rimes doivent exister à l’oreille, pas seulement par hasard sur deux mots. Ne cite jamais les mots: surface, sous-texte, double lecture, consigne, prompt, règle privée, pivot phonétique, association d’idées.',
               ].filter(Boolean).join('\n'),
@@ -3753,4 +3778,5 @@ module.exports = {
   assessTwitchSongLyrics,
   buildTwitchProviderPack,
   sanitizeTwitchLyricsForPromptLeakage,
+  sanitizeTwitchLyricsForSubjectDetailed,
 };

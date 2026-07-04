@@ -3571,3 +3571,60 @@ test('Vivy dark freestyle is not polluted by leaked comedy mood directions', () 
   );
   assert.match(funny.songMood || '', /Direction humour obligatoire/i);
 });
+
+test('Vivy tolerates a controlled dose of vehicle imagery outside vehicle subjects', () => {
+  const { sanitizeTwitchLyricsForSubjectDetailed } = require('../src/vivy/twitch-nossen-runner.cjs');
+  const lyrics = [
+    '[Verse 1]',
+    'Je trace ma route sous les sirenes de la ville',
+    'Mon flow demarre au quart de tour comme un moteur',
+    'Une punchline propre sans vehicule du tout',
+    '[Verse 2]',
+    'Encore une image de volant qui traine ici',
+    'Le gyrophare eclaire mon ego destructeur',
+    'Une derniere ligne saine pour finir le couplet',
+  ].join('\n');
+  const result = sanitizeTwitchLyricsForSubjectDetailed(lyrics, 'Egotrip sombre contre les faux rois du rap', '');
+  assert.equal(result.tolerated, 2);
+  assert.ok(result.removed >= 1, 'excess vehicle lines should still be removed');
+  assert.match(result.lyrics, /sirenes|moteur|volant|gyrophare/i);
+  assert.match(result.lyrics, /punchline propre sans vehicule/i);
+
+  const vehicleSubject = sanitizeTwitchLyricsForSubjectDetailed(lyrics, 'Course poursuite en moto sur l autoroute', '');
+  assert.equal(vehicleSubject.removed, 0);
+});
+
+test('Vivy intense subjects get a long free-structure scope by default', () => {
+  const scope = resolveTwitchVivyLyricScope({
+    winner: { text: 'Mega Freestyle, rap egotrip sombre, clash violent contre les faux rois' },
+    intentPlan: createTestVocalIntentPlan(),
+    routing: { songMood: 'rap sombre' },
+  });
+  assert.equal(scope.label, 'intense longue');
+  assert.equal(scope.freeStructure, true);
+  assert.ok(scope.targetDurationSeconds >= 300);
+
+  const message = buildTwitchLyricsRequest({
+    winner: { text: 'Mega Freestyle, rap egotrip sombre, clash violent' },
+    routing: { songMood: 'rap sombre', artists: ['Djeff'] },
+    seed: {},
+    lyricScope: scope,
+    subjectFrame: {},
+  });
+  assert.match(message, /Structure libre: plusieurs longs couplets continus/i);
+
+  const soft = resolveTwitchVivyLyricScope({
+    winner: { text: 'Ballade douce sur la pluie d ete' },
+    intentPlan: createTestVocalIntentPlan(),
+    routing: { songMood: 'ballade acoustique' },
+  });
+  assert.notEqual(soft.label, 'intense longue');
+  assert.equal(soft.freeStructure, false);
+
+  const shortIntense = resolveTwitchVivyLyricScope({
+    winner: { text: 'Jingle court egotrip sombre format court' },
+    intentPlan: createTestVocalIntentPlan(),
+    routing: {},
+  });
+  assert.notEqual(shortIntense.label, 'intense longue');
+});
