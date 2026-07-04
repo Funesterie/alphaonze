@@ -1470,6 +1470,12 @@ function reinforceTwitchHumorRouting(routing = {}, { winner = {}, seed = {}, int
     intentPlan?.reason
   );
   if (!humorRequested) return routing;
+  if (
+    isRapFreestyleRequest(winner.text, routing?.songMood, seed?.notes, seed?.canvas)
+    && !isHumorWordplayRequest(winner.text)
+  ) {
+    return routing;
+  }
 
   const bawdyRequested = isBawdyWordplayRequest(
     winner.text,
@@ -3738,6 +3744,7 @@ module.exports = {
   isHardcoreRaveRequest,
   isRapFreestyleRequest,
   reinforceTwitchHardcoreRouting,
+  reinforceTwitchHumorRouting,
   reinforceTwitchRapFreestyleRouting,
   buildRapFreestyleGuidance,
   assessTwitchLyricLoopiness,

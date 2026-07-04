@@ -3548,3 +3548,26 @@ test('Vivy freestyle lyric request carries the freestyle rules into the LLM prom
   });
   assert.doesNotMatch(normal, /freestyle rap/i);
 });
+
+test('Vivy dark freestyle is not polluted by leaked comedy mood directions', () => {
+  const { reinforceTwitchHumorRouting } = require('../src/vivy/twitch-nossen-runner.cjs');
+  const dark = reinforceTwitchHumorRouting(
+    { songMood: 'Rap égotrip sombre, cypher nocturne, punchlines sales, sarcasme froid' },
+    {
+      winner: { text: 'Mega Freestyle, rap egotrip sombre, clash des faux rois' },
+      seed: {},
+      intentPlan: { reason: 'ton humoristique detecte dans le live' },
+    }
+  );
+  assert.doesNotMatch(dark.songMood || '', /comédie pop-funk|groove rebondissant|cartoon/i);
+
+  const funny = reinforceTwitchHumorRouting(
+    { songMood: 'rap léger' },
+    {
+      winner: { text: 'Freestyle drôle plein de blagues et jeux de mots sur les fromages' },
+      seed: {},
+      intentPlan: {},
+    }
+  );
+  assert.match(funny.songMood || '', /Direction humour obligatoire/i);
+});
