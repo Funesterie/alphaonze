@@ -1485,6 +1485,35 @@ function reinforceTwitchHumorRouting(routing = {}, { winner = {}, seed = {}, int
   };
 }
 
+function isHardcoreRaveRequest(...values) {
+  const folded = foldTwitchLyricText(values.filter(Boolean).join(' '));
+  if (!folded) return false;
+  if (/\b(?:gabber|thunderdome|frenchcore|uptempo\s+hardcore|happy\s+hardcore)\b/.test(folded)) return true;
+  if (!/\bhard[-\s]?core\b/.test(folded)) return false;
+  if (/\b(?:rap|hip[-\s]?hop|punk|metal)\s+hard[-\s]?core\b|\bhard[-\s]?core\s+(?:rap|hip[-\s]?hop|punk|metal)\b/.test(folded)) return false;
+  return /\b(?:rave|techno|90s?|1990|annees\s+90|oldschool|old\s+school|warehouse|rotterdam|hollandaise?)\b/.test(folded);
+}
+
+function reinforceTwitchHardcoreRouting(routing = {}, { winner = {}, seed = {}, intentPlan = {} } = {}) {
+  const requested = isHardcoreRaveRequest(
+    winner.text,
+    routing?.songMood,
+    seed?.notes,
+    seed?.canvas,
+    intentPlan?.generationBrief,
+    intentPlan?.reason
+  );
+  if (!requested) return routing;
+  const currentMood = cleanText(routing?.songMood, '', 1200);
+  const foldedMood = foldTwitchLyricText(currentMood);
+  if (/\b(?:gabber|thunderdome|kicks?\s+distordus)\b/.test(foldedMood)) return routing;
+  const hardcoreMood = 'Direction hardcore 90s obligatoire: gabber façon Thunderdome et rave hollandaise oldschool, kicks distordus saturés au premier plan, 170-190 BPM, stabs hoover et sirènes rave, nappes sombres de warehouse industriel, énergie brute et martelée; jamais orchestral épique, jamais pop douce, jamais ballade.';
+  return {
+    ...routing,
+    songMood: cleanText([currentMood, hardcoreMood].filter(Boolean).join('. '), '', 1600),
+  };
+}
+
 function sanitizeTwitchLyricsForPromptLeakage(lyrics = '') {
   const kept = [];
   let removed = 0;
@@ -2373,6 +2402,15 @@ function createVivyStreamNossenRunner(options = {}) {
         );
       }
       routing = reinforcedRouting;
+      const hardcoreRouting = reinforceTwitchHardcoreRouting(routing, { winner, seed, intentPlan });
+      if (hardcoreRouting !== routing) {
+        logger.info?.(
+          '[VivyGenreRouter] round=%s hardcore90sApplied=true mood=%s',
+          roundId,
+          cleanText(hardcoreRouting.songMood, '', 220)
+        );
+      }
+      routing = hardcoreRouting;
       if (
         musicProvider === 'mureka'
         && !instrumentalMode
@@ -3462,6 +3500,8 @@ module.exports = {
   resolveTwitchSubjectFrame,
   resolveTwitchVivyLyricScope,
   isConceptualHookRequest,
+  isHardcoreRaveRequest,
+  reinforceTwitchHardcoreRouting,
   assessTwitchHookMechanic,
   assessTwitchRhymeSignals,
   assessTwitchSongLyrics,

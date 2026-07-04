@@ -40,6 +40,8 @@ const {
   resolveTwitchSubjectFrame,
   resolveTwitchVivyLyricScope,
   isConceptualHookRequest,
+  isHardcoreRaveRequest,
+  reinforceTwitchHardcoreRouting,
   assessTwitchRhymeSignals,
   sanitizeTwitchLyricsForPromptLeakage,
 } = require('../src/vivy/twitch-nossen-runner.cjs');
@@ -3356,4 +3358,35 @@ test('Vivy stream late clip attach stores the shareable video url on archived so
     assert.equal(song.shareVideoUrl, 'https://files.example.com/clip-share.mp4');
     assert.equal(state.current.coverVideoUrl, 'https://files.example.com/clip.mp4');
   });
+});
+
+test('Vivy hardcore 90s requests get a mandatory gabber thunderdome direction', () => {
+  assert.equal(isHardcoreRaveRequest('hardcore années 90, ambiance rave'), true);
+  assert.equal(isHardcoreRaveRequest('un vrai son thunderdome'), true);
+  assert.equal(isHardcoreRaveRequest('gabber hollandais qui tape'), true);
+  assert.equal(isHardcoreRaveRequest('rap hardcore old school'), false);
+  assert.equal(isHardcoreRaveRequest('punk hardcore années 90'), false);
+  assert.equal(isHardcoreRaveRequest('ballade douce pour dormir'), false);
+
+  const routing = reinforceTwitchHardcoreRouting(
+    { songMood: 'électro sombre dramatique' },
+    { winner: { text: 'hardcore années 90, esprit rave' } }
+  );
+  assert.match(routing.songMood, /gabber/i);
+  assert.match(routing.songMood, /Thunderdome/i);
+  assert.match(routing.songMood, /170-190 BPM/);
+  assert.match(routing.songMood, /kicks distordus/i);
+  assert.match(routing.songMood, /jamais orchestral épique/i);
+
+  const untouched = reinforceTwitchHardcoreRouting(
+    { songMood: 'rap boom bap' },
+    { winner: { text: 'rap hardcore old school' } }
+  );
+  assert.equal(untouched.songMood, 'rap boom bap');
+
+  const alreadyDirected = reinforceTwitchHardcoreRouting(
+    { songMood: 'gabber thunderdome kicks distordus 180 BPM' },
+    { winner: { text: 'hardcore 90s rave' } }
+  );
+  assert.equal(alreadyDirected.songMood, 'gabber thunderdome kicks distordus 180 BPM');
 });
