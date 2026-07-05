@@ -4037,3 +4037,21 @@ test('Vivy relic route applies a V9 dynamic master by default', () => {
   assert.match(src, /loudnorm=I=\$\{i\}:TP=\$\{tp\}:LRA=\$\{lra\}/);
   assert.match(src, /pcm_s24le/);
 });
+
+test('Vivy leak filter laisse passer les vers créatifs crus, ne strippe que les directives', () => {
+  const { sanitizeTwitchLyricsForPromptLeakage } = require('../src/vivy/twitch-nossen-runner.cjs');
+  const creative = [
+    'Le motif central de ma vie c est la rue et le beton',
+    'Le decor de la scene s effondre quand j entre en son',
+    'Sur la scene je crache mon venin sans filtre ni pardon',
+    'Ils veulent me censurer mais je garde mon poison',
+  ].join('\n');
+  assert.equal(sanitizeTwitchLyricsForPromptLeakage(creative).removed, 0, 'aucun vers creatif ne doit etre retire');
+
+  const directives = [
+    'Lecture semantique du sujet: conserver les indices du sujet exact.',
+    'Decor de la scene (l image ouvre la scene): neons violets.',
+    'je serre le motif central jusqu au prochain passage.',
+  ].join('\n');
+  assert.equal(sanitizeTwitchLyricsForPromptLeakage(directives).removed, 3, 'les 3 directives doivent etre retirees');
+});
