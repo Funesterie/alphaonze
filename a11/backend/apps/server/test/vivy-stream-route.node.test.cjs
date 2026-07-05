@@ -4011,3 +4011,29 @@ test('Vivy public state expose moodTheme sur current', () => {
   assert.ok(state.current.moodTheme, 'moodTheme doit exister sur current');
   assert.match(state.current.moodTheme.accent, /^#[0-9a-fA-F]{3,8}$/);
 });
+
+test('Vivy leak filter strips subjectFrame guidance recited as lyrics', () => {
+  const { sanitizeTwitchLyricsForPromptLeakage } = require('../src/vivy/twitch-nossen-runner.cjs');
+  const garbage = [
+    'Le mot « histoire » est ambigu: conserver les indices du sujet exact.',
+    'je garde lecture sémantique sujet dans l axe du morceau.',
+    'Ne pas inventer un héros intime si la demande,',
+    'je serre le motif central jusqu au prochain passage.',
+    'Décor de la scène: néons violets, l image ouvre la scène.',
+    'Une vraie ligne qui frappe et reste dans le morceau',
+  ].join('\n');
+  const r = sanitizeTwitchLyricsForPromptLeakage(garbage);
+  assert.ok(r.removed >= 5, `au moins 5 lignes de directive retirees, vu ${r.removed}`);
+  assert.doesNotMatch(r.lyrics, /lecture\s+sémantique/i);
+  assert.doesNotMatch(r.lyrics, /motif\s+central/i);
+  assert.doesNotMatch(r.lyrics, /décor\s+de\s+la\s+scène/i);
+  assert.match(r.lyrics, /vraie ligne qui frappe/i);
+});
+
+test('Vivy relic route applies a V9 dynamic master by default', () => {
+  const fs = require('node:fs');
+  const src = fs.readFileSync(require('node:path').join(__dirname, '../src/routes/vivy-stream.cjs'), 'utf8');
+  assert.match(src, /buildV9DynamicMasterFilter/);
+  assert.match(src, /loudnorm=I=\$\{i\}:TP=\$\{tp\}:LRA=\$\{lra\}/);
+  assert.match(src, /pcm_s24le/);
+});

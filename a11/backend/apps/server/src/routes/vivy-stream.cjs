@@ -2028,9 +2028,20 @@ function createVivyStreamRouter(options = {}) {
     return res.send(`${title}\n${'='.repeat(Math.max(4, Math.min(60, title.length)))}\n\n${lyrics}\n`);
   });
 
-  // Relique WAV/FLAC: transcodage à la demande depuis le MP3 (ffmpeg en
-  // streaming, aucun stockage). MP3 = partage rapide; WAV/FLAC = coffre,
-  // mastering, reprise future. Zéro appel payant.
+  // Relique WAV/FLAC = master V9 dynamique à la demande. Règle canon:
+  // MP3 live = preview rapide (Suno brut); WAV/FLAC = relique masterisée,
+  // coffre, reprise future. Chaîne V9: highpass + loudnorm (hotter que le
+  // preview, LRA préservé = dynamique) + limiter. Local, aucun appel payant.
+  const buildV9DynamicMasterFilter = () => {
+    if (['0', 'false', 'off', 'no'].includes(String(process.env.VIVY_RELIC_MASTER_DISABLED || '').trim().toLowerCase())
+      || String(process.env.VIVY_RELIC_MASTER_DISABLED || '').trim() === '1') {
+      return '';
+    }
+    const i = cleanOneLine(process.env.VIVY_RELIC_MASTER_LUFS, '-11', 12);
+    const tp = cleanOneLine(process.env.VIVY_RELIC_MASTER_TP, '-1.0', 12);
+    const lra = cleanOneLine(process.env.VIVY_RELIC_MASTER_LRA, '11', 12);
+    return `highpass=f=30,loudnorm=I=${i}:TP=${tp}:LRA=${lra},alimiter=limit=0.97`;
+  };
   router.get('/s/:slug/relic.:format', async (req, res) => {
     const format = String(req.params.format || '').toLowerCase();
     if (format !== 'wav' && format !== 'flac') {
@@ -2049,9 +2060,11 @@ function createVivyStreamRouter(options = {}) {
       if (!upstream.ok || !upstream.body) {
         return res.status(502).json({ ok: false, error: 'relic_source_unavailable' });
       }
+      const masterFilter = buildV9DynamicMasterFilter();
+      const masterArgs = masterFilter ? ['-af', masterFilter] : [];
       const args = format === 'flac'
-        ? ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', '-c:a', 'flac', '-compression_level', '5', '-f', 'flac', 'pipe:1']
-        : ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', '-c:a', 'pcm_s16le', '-f', 'wav', 'pipe:1'];
+        ? ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', ...masterArgs, '-ac', '2', '-ar', '44100', '-c:a', 'flac', '-compression_level', '5', '-f', 'flac', 'pipe:1']
+        : ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', ...masterArgs, '-ac', '2', '-ar', '44100', '-c:a', 'pcm_s24le', '-f', 'wav', 'pipe:1'];
       const ff = spawn(ffmpegBin, args, { stdio: ['pipe', 'pipe', 'inherit'] });
       let failed = false;
       ff.on('error', (error) => {
