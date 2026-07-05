@@ -2,7 +2,7 @@ const express = require('express');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawn } = require('node:child_process');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
@@ -651,6 +651,8 @@ function buildSongShareHtml(song = {}, options = {}) {
   const lyricsUrl = (song.lyrics || song.hasLyrics) && song.sharePath
     ? absolutizePublicUrl(`${song.sharePath}/paroles.txt`, publicBaseUrl)
     : '';
+  const relicWavUrl = song.sharePath ? absolutizePublicUrl(`${song.sharePath}/relic.wav`, publicBaseUrl) : '';
+  const relicFlacUrl = song.sharePath ? absolutizePublicUrl(`${song.sharePath}/relic.flac`, publicBaseUrl) : '';
   const requestedBy = cleanOneLine(song.requestedBy, '', 80);
   const rating = Number(song.starCount || 0) && Number(song.starAverage || 0)
     ? `${Number(song.starAverage).toFixed(Number(song.starAverage) % 1 ? 1 : 0)}/5 (${Number(song.starCount || 0)})`
@@ -684,6 +686,8 @@ function buildSongShareHtml(song = {}, options = {}) {
     <audio src="${escapeHtml(audioUrl)}" controls preload="metadata"></audio>
     <p class="links">
       <a href="${escapeHtml(downloadAudioUrl)}" download>Télécharger MP3</a>
+      ${relicWavUrl ? `<a href="${escapeHtml(relicWavUrl)}" download>Relique WAV</a>` : ''}
+      ${relicFlacUrl ? `<a href="${escapeHtml(relicFlacUrl)}" download>Relique FLAC</a>` : ''}
       ${lyricsUrl ? `<a href="${escapeHtml(lyricsUrl)}" download>Télécharger paroles</a>` : ''}
       ${coverUrl ? `<a href="${escapeHtml(downloadCoverUrl)}" download>Télécharger image</a>` : ''}
       ${clipUrl ? `<a href="${escapeHtml(downloadClipUrl)}" download>Télécharger clip</a>` : ''}
@@ -1992,6 +1996,51 @@ function createVivyStreamRouter(options = {}) {
     res.set('Content-Type', 'text/plain; charset=utf-8');
     res.set('Content-Disposition', `attachment; filename="paroles-${slug}.txt"`);
     return res.send(`${title}\n${'='.repeat(Math.max(4, Math.min(60, title.length)))}\n\n${lyrics}\n`);
+  });
+
+  // Relique WAV/FLAC: transcodage à la demande depuis le MP3 (ffmpeg en
+  // streaming, aucun stockage). MP3 = partage rapide; WAV/FLAC = coffre,
+  // mastering, reprise future. Zéro appel payant.
+  router.get('/s/:slug/relic.:format', async (req, res) => {
+    const format = String(req.params.format || '').toLowerCase();
+    if (format !== 'wav' && format !== 'flac') {
+      return res.status(404).json({ ok: false, error: 'relic_format_unsupported' });
+    }
+    const song = store.findSongByShareSlug(req.params.slug || '');
+    if (!song?.trackUrl) {
+      return res.status(404).send('Vivy song not found');
+    }
+    const publicBaseUrl = process.env.VIVY_PUBLIC_BASE_URL || 'https://vivy.funesterie.me';
+    const sourceUrl = absolutizePublicUrl(song.trackUrl, publicBaseUrl);
+    const slug = cleanOneLine(req.params.slug, 'vivy', 180).replace(/[^a-z0-9-]/gi, '-');
+    const ffmpegBin = cleanOneLine(process.env.A11_VIDEO_FFMPEG_BIN || process.env.FFMPEG_BIN, 'ffmpeg', 400);
+    try {
+      const upstream = await fetch(sourceUrl, { signal: AbortSignal.timeout?.(30000) });
+      if (!upstream.ok || !upstream.body) {
+        return res.status(502).json({ ok: false, error: 'relic_source_unavailable' });
+      }
+      const args = format === 'flac'
+        ? ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', '-c:a', 'flac', '-compression_level', '5', '-f', 'flac', 'pipe:1']
+        : ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', '-c:a', 'pcm_s16le', '-f', 'wav', 'pipe:1'];
+      const ff = spawn(ffmpegBin, args, { stdio: ['pipe', 'pipe', 'inherit'] });
+      let failed = false;
+      ff.on('error', (error) => {
+        failed = true;
+        console.warn('[VivyRelic] ffmpeg spawn failed', error?.message || error);
+        if (!res.headersSent) res.status(500).json({ ok: false, error: 'relic_transcode_failed' });
+      });
+      res.set('Cache-Control', 'public, max-age=600');
+      res.set('Content-Type', format === 'flac' ? 'audio/flac' : 'audio/wav');
+      res.set('Content-Disposition', `attachment; filename="relique-${slug}.${format}"`);
+      ff.stdout.pipe(res);
+      await pipeline(Readable.fromWeb(upstream.body), ff.stdin).catch(() => {});
+      ff.on('close', () => { if (failed && !res.headersSent) res.status(500).end(); });
+    } catch (error) {
+      console.warn('[VivyRelic] failed', error?.message || error);
+      if (!res.headersSent) return res.status(502).json({ ok: false, error: 'relic_failed' });
+      return undefined;
+    }
+    return undefined;
   });
 
   router.get('/nossen-seed', (_req, res) => {

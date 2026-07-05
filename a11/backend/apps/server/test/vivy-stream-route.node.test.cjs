@@ -3966,3 +3966,24 @@ test('Djeff token budget: medium par défaut, full sur mode profond ou GO explic
   assert.equal(resolveDjeffTokenBudget({ maxTokens: 99999 }).maxTokens, 2000);
   assert.equal(resolveDjeffTokenBudget({ fullToken: true, maxTokens: 99999 }).maxTokens, 8000);
 });
+
+test('Vivy relic WAV/FLAC route rejects unknown formats and unknown songs', async () => {
+  await withServer({ stateName: 'relic-route.json' }, async (baseUrl) => {
+    const bad = await fetch(`${baseUrl}/api/vivy/stream/s/whatever/relic.mp3`);
+    assert.equal(bad.status, 404, 'mp3 relic format must be rejected');
+    const missing = await fetch(`${baseUrl}/api/vivy/stream/s/inexistant/relic.wav`);
+    assert.equal(missing.status, 404, 'unknown song must 404');
+  });
+});
+
+test('Vivy lyrics prompt anchors the theme scene décor', () => {
+  const message = buildTwitchLyricsRequest({
+    winner: { text: 'Corsaire spatial qui libère les colonies sous un drapeau noir' },
+    routing: { songMood: 'space opera électro', artists: ['Vivy'] },
+    seed: {},
+    lyricScope: { label: 'ample', targetDurationSeconds: 210, minLyricsChars: 520, maxChars: 2600 },
+    subjectFrame: {},
+  });
+  assert.match(message, /Décor de la scène/i);
+  assert.match(message, /l'image ouvre la scène/i);
+});

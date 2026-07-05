@@ -2377,9 +2377,13 @@ function buildTwitchLyricsRequest({
   const activeNotes = seed?.notes && !isDefaultTwitchNossenNote(seed.notes) ? seed.notes : '';
   const rhymeRequested = /\b(?:rimes?|rap|flow|phon[ée]tique|calembours?|jeux?\s+de\s+mots|paillard|paillarde|grivois|grivoise)\b/i
     .test([winner.text, routing?.songMood, activeNotes].filter(Boolean).join('\n'));
+  const sceneDecor = cleanText(sanitizeCoverVisualIdea(winner.text, winner.text), '', 300);
   return [
     `Écris les paroles complètes et directement chantables d'une chanson originale sur ce sujet exact: ${winner.text}`,
     subjectFrame?.guidance ? `Lecture sémantique du sujet: ${subjectFrame.guidance}` : '',
+    sceneDecor
+      ? `Décor de la scène (l'image ouvre la scène, tu chantes dedans): ${sceneDecor}. Ancre au moins une image concrète de ce décor sans jamais le décrire comme une consigne.`
+      : '',
     `Direction sonore partagée avec la composition: ${routing?.songMood || 'moderne, précise et liée au sujet'}.`,
     `Casting vocal: ${artists}.`,
     lyricScope?.label ? `Ampleur choisie par Vivy: ${lyricScope.label}. ${lyricScope.reason || ''}` : '',
