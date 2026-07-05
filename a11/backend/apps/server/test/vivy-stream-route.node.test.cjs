@@ -3987,3 +3987,27 @@ test('Vivy lyrics prompt anchors the theme scene décor', () => {
   assert.match(message, /Décor de la scène/i);
   assert.match(message, /l'image ouvre la scène/i);
 });
+
+test('Vivy mood theme: l accent suit le thème, fallback Vivy par défaut', () => {
+  const { resolveVivyMoodTheme } = require('../src/routes/vivy-stream.cjs');
+  assert.equal(resolveVivyMoodTheme('Mega Freestyle rap egotrip sombre, poison feu').accent, '#ff3b3b');
+  assert.equal(resolveVivyMoodTheme('Club violet néons scène live').accent, '#b06cff');
+  assert.equal(resolveVivyMoodTheme('Rune claire code ascii machine').accent, '#5fe0e6');
+  assert.equal(resolveVivyMoodTheme('Soleil avalé lumière et cœur').accent, '#ffb84d');
+  assert.equal(resolveVivyMoodTheme('Aile noire, pluie et deuil').accent, '#9fb8d6');
+  // Sujet neutre: accent Vivy par défaut.
+  assert.equal(resolveVivyMoodTheme('une chanson sur les pommes').accent, '#f07ad9');
+  assert.equal(resolveVivyMoodTheme('').name, 'Vivy');
+  // Toujours un glow défini.
+  assert.match(resolveVivyMoodTheme('poison feu').glow, /rgba/);
+});
+
+test('Vivy public state expose moodTheme sur current', () => {
+  const { createVivyStreamStore } = require('../src/routes/vivy-stream.cjs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const store = createVivyStreamStore({ statePath: path.join(os.tmpdir(), `mood-state-${process.pid}.json`), idleJukeboxEnabled: false });
+  const state = store.getState();
+  assert.ok(state.current.moodTheme, 'moodTheme doit exister sur current');
+  assert.match(state.current.moodTheme.accent, /^#[0-9a-fA-F]{3,8}$/);
+});

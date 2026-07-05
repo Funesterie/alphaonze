@@ -538,9 +538,39 @@ function buildNossenSeedFromRound(state) {
   };
 }
 
+// Noyau réel de la direction Djeff Engine: l'overlay réagit au mood.
+// L'accent visuel de la scène est dérivé du thème/tenue du morceau.
+// Additif: si rien ne matche, on garde l'accent Vivy par défaut.
+const VIVY_MOOD_THEMES = [
+  { name: 'Poison Feu', accent: '#ff3b3b', glow: 'rgba(255,59,59,.32)', re: /\b(poison|feu|rage|rageu|clash|egotrip|ego\s*trip|sombre|violent|colère|colere|guerre|enfer|démon|demon|hardcore|gabber)\b/i },
+  { name: 'Rune Claire', accent: '#5fe0e6', glow: 'rgba(95,224,230,.30)', re: /\b(rune|code|ascii|machine|cyber|tech|glitch|numérique|numerique|robot|electro)\b/i },
+  { name: 'Soleil Avalé', accent: '#ffb84d', glow: 'rgba(255,184,77,.30)', re: /\b(soleil|or\b|lumière|lumiere|chaleur|été|ete\b|tendre|cœur|coeur|fable|conte)\b/i },
+  { name: 'Aile Noire', accent: '#9fb8d6', glow: 'rgba(159,184,214,.28)', re: /\b(aile|nuit|noir|argent|douleur|larme|deuil|mélancolie|melancolie|pluie|hiver)\b/i },
+  { name: 'Club Violet', accent: '#b06cff', glow: 'rgba(176,108,255,.32)', re: /\b(club|violet|néon|neon|rave|scène|scene|danse|fête|fete|live|party)\b/i },
+];
+const VIVY_MOOD_DEFAULT = { name: 'Vivy', accent: '#f07ad9', glow: 'rgba(240,122,217,.30)' };
+
+function resolveVivyMoodTheme(text = '') {
+  const folded = String(text || '');
+  for (const theme of VIVY_MOOD_THEMES) {
+    if (theme.re.test(folded)) {
+      return { name: theme.name, accent: theme.accent, glow: theme.glow };
+    }
+  }
+  return { ...VIVY_MOOD_DEFAULT };
+}
+
 function publicState(state) {
   const cloned = JSON.parse(JSON.stringify(state || createInitialState()));
   cloned.current = cleanProviderOnlyCurrentTrack(cloned.current || {});
+  if (cloned.current && typeof cloned.current === 'object') {
+    const moodSource = [
+      cloned.current.title,
+      cloned.current.trackTitle,
+      cloned.current.coverPrompt,
+    ].filter(Boolean).join(' ');
+    cloned.current.moodTheme = resolveVivyMoodTheme(moodSource);
+  }
   const stripLyricsForPublicState = (track) => {
     if (!track || typeof track !== 'object') return;
     if (track.lyrics) {
@@ -2183,4 +2213,5 @@ module.exports = {
   isAllowedVivyStreamDownloadUrl,
   parseVivyStreamChatMessage,
   resolveRoundMs,
+  resolveVivyMoodTheme,
 };

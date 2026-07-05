@@ -949,6 +949,15 @@
       const serverNow = safeDate(state.serverNow);
       if (serverNow) serverOffsetMs = serverNow - Date.now();
       const current = state.current || {};
+      // Overlay réactif au mood: l'accent de la scène suit la tenue/thème du
+      // morceau. Fallback sûr sur l'accent Vivy par défaut si absent.
+      try {
+        const mood = current.moodTheme || {};
+        const accent = /^#[0-9a-fA-F]{3,8}$/.test(mood.accent || '') ? mood.accent : '#f07ad9';
+        const glow = typeof mood.glow === 'string' && mood.glow.length < 40 ? mood.glow : 'rgba(240,122,217,.30)';
+        document.documentElement.style.setProperty('--pink', accent);
+        document.documentElement.style.setProperty('--line', glow);
+      } catch {}
       const round = state.round || {};
       const phase = current.phase || 'idle';
       const winner = (round.suggestions || []).find((entry) => entry.id === round.winningSuggestionId)
