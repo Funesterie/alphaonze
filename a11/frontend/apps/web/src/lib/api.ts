@@ -3149,6 +3149,26 @@ export async function chatWithVivy(
   return payload as VivyStudioProductionResult;
 }
 
+export async function chatWithDjeff(
+  input: {
+    message: string;
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    maxTokens?: number;
+  }
+): Promise<{ ok: boolean; persona: string; reply: string; provider?: string; model?: string }> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/djeff/chat'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Djeff Engine indisponible (${res.status})`);
+  }
+  return payload as { ok: boolean; persona: string; reply: string; provider?: string; model?: string };
+}
+
 export async function routeVivyNossenComposition(input: {
   canvas: string;
   notes?: string;
