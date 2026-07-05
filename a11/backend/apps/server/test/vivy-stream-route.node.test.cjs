@@ -3886,3 +3886,51 @@ test('Djeff persona engine injects the brief only when the profile is active', (
     resetDjeffPersonaCache();
   }
 });
+
+test('Djeff persona builds a full first-person system prompt only when active', () => {
+  const os = require('node:os');
+  const path = require('node:path');
+  const fs = require('node:fs');
+  const previousRoot = process.env.A11_RUNTIME_ROOT;
+  process.env.A11_RUNTIME_ROOT = path.join(os.tmpdir(), `djeff-prompt-test-${process.pid}`);
+  try {
+    const { buildDjeffSystemPrompt, resetDjeffPersonaCache, personaProfilePath } = require('../src/persona/persona-engine.cjs');
+    resetDjeffPersonaCache();
+    assert.equal(buildDjeffSystemPrompt(), '', 'sans profil: pas de prompt Djeff');
+
+    const p = personaProfilePath();
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    const profile = {
+      active: false,
+      identity_core: { publicNames: ['Djeff', 'funeste'], role: 'createur de Funesterie', tone: 'direct, image' },
+      reasoning_style: { core: 'pense en trajectoires', signals: ['lire les logs avant de theoriser'] },
+      creative_engine: { pipeline: 'image forte vers systeme vers preuve' },
+      problem_solving: { method: ['observer', 'reduire au noyau'] },
+      vivy_protocol: { rules: ['offrir des matieres, elle choisit'] },
+      cost_guard: { core: 'reflechir gratuit, simuler avant payer' },
+      language_style: { canon_phrases: ['ne coupe pas le feu, donne-lui un chemin'], register: 'tutoiement oral' },
+      truth_mode: { principle: 'passe entierement deverrouille en art' },
+      do: ['observer avant proposer'],
+      dont: ['faire le ministre'],
+      boundaries: { vault: 'le brut technique reste au coffre' },
+    };
+    fs.writeFileSync(p, JSON.stringify(profile));
+    resetDjeffPersonaCache();
+    assert.equal(buildDjeffSystemPrompt(), '', 'profil inactif: pas de prompt (validation requise)');
+
+    profile.active = true;
+    fs.writeFileSync(p, JSON.stringify(profile));
+    resetDjeffPersonaCache();
+    const prompt = buildDjeffSystemPrompt();
+    assert.match(prompt, /Tu es Djeff/);
+    assert.match(prompt, /premiere personne|premi.re personne/i);
+    assert.match(prompt, /pense en trajectoires/);
+    assert.match(prompt, /ne coupe pas le feu/);
+    assert.match(prompt, /jamais.*secret|secret.*jamais/i);
+  } finally {
+    if (previousRoot === undefined) delete process.env.A11_RUNTIME_ROOT;
+    else process.env.A11_RUNTIME_ROOT = previousRoot;
+    const { resetDjeffPersonaCache } = require('../src/persona/persona-engine.cjs');
+    resetDjeffPersonaCache();
+  }
+});

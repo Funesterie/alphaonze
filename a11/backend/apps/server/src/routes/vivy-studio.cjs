@@ -18,7 +18,7 @@ const {
   createEmergencyVideoAsset,
   getEmergencyMediaAssetPath,
 } = require('../media/emergency-media.cjs');
-const { getDjeffPersonaBrief } = require('../persona/persona-engine.cjs');
+const { getDjeffPersonaBrief, buildDjeffSystemPrompt } = require('../persona/persona-engine.cjs');
 const {
   addEpisode,
   getEpisodes,
@@ -5569,6 +5569,55 @@ function postProcessVivyAssistantText({ text = '', userMessage = '', systemPromp
   };
 }
 
+async function buildDjeffAiChat(input, req) {
+  input = input && typeof input === 'object' ? input : {};
+  const message = cleanText(input.message || input.prompt || input.text, VIVY_SONG_MAX_CHARS);
+  if (!message) {
+    const error = new Error('djeff_message_required');
+    error.code = 'djeff_message_required';
+    error.status = 400;
+    throw error;
+  }
+  const systemPrompt = buildDjeffSystemPrompt();
+  if (!systemPrompt) {
+    const error = new Error('djeff_persona_inactive');
+    error.code = 'djeff_persona_inactive';
+    error.status = 503;
+    throw error;
+  }
+  const history = Array.isArray(input.history)
+    ? input.history
+      .filter((entry) => entry && (entry.role === 'user' || entry.role === 'assistant') && entry.content)
+      .slice(-8)
+      .map((entry) => ({ role: entry.role, content: cleanText(entry.content, 4000) }))
+    : [];
+  const llmBundles = createVivyOpenAIClients({ mode: 'chat' });
+  if (!llmBundles.length) {
+    const error = new Error('djeff_llm_unavailable');
+    error.code = 'djeff_llm_unavailable';
+    error.status = 503;
+    throw error;
+  }
+  const completionResult = await createVivyChatCompletion(llmBundles, {
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...history,
+      { role: 'user', content: message },
+    ],
+    temperature: 0.7,
+    max_tokens: Math.max(256, Math.min(2000, Number(input.maxTokens) || 900)),
+  });
+  const reply = cleanText(completionResult.completion?.choices?.[0]?.message?.content, 8000);
+  return {
+    ok: true,
+    persona: 'djeff',
+    reply,
+    assistant: reply,
+    provider: completionResult.bundle.provider || getVivyProviderFromBaseUrl(completionResult.bundle.baseURL || ''),
+    model: completionResult.bundle.model,
+  };
+}
+
 async function buildVivyAiChat(input, req) {
   input = input && typeof input === 'object' ? input : {};
   const sessionContext = resolveVivyInputSession(input);
@@ -9210,6 +9259,18 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
     }
   });
 
+  router.post('/djeff/chat', requireAuth, express.json({ limit: '256kb' }), async (req, res) => {
+    try {
+      res.json(await buildDjeffAiChat(req.body || {}, req));
+    } catch (error) {
+      res.status(error?.status || 500).json({
+        ok: false,
+        error: error?.code || 'djeff_chat_failed',
+        message: error?.message || String(error),
+      });
+    }
+  });
+
   router.post('/nossen-intent', requireAuth, express.json({ limit: '128kb' }), async (req, res) => {
     try {
       res.json(await buildVivyNossenIntentPlan(req.body || {}, req));
@@ -9268,6 +9329,7 @@ module.exports = {
   buildVivyMusicPrompt,
   buildVivyChat,
   buildVivyAiChat,
+  buildDjeffAiChat,
   buildVivyConversationIdForSession,
   resolveVivyInputSession,
   listVivyChatSessionsForUser,
