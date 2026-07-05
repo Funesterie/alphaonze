@@ -572,7 +572,7 @@ services:
       OLLAMA_CLOUD_BASE_URL: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
       OLLAMA_CLOUD_LYRICS_MODEL: ${OLLAMA_CLOUD_LYRICS_MODEL:-gpt-oss:120b}
       OLLAMA_CLOUD_FAST_MODEL: ${OLLAMA_CLOUD_FAST_MODEL:-gpt-oss:20b}
-      OLLAMA_CLOUD_THINK_LEVEL: ${OLLAMA_CLOUD_THINK_LEVEL:-high}
+      OLLAMA_CLOUD_THINK_LEVEL: ${OLLAMA_CLOUD_THINK_LEVEL:-medium}
       OLLAMA_CLOUD_LYRICS_TIMEOUT_MS: ${OLLAMA_CLOUD_LYRICS_TIMEOUT_MS:-360000}
       VIVY_SONG_CERBERE_FALLBACK_ENABLED: ${VIVY_SONG_CERBERE_FALLBACK_ENABLED:-1}
       VIVY_SONG_CERBERE_MODEL: ${VIVY_SONG_CERBERE_MODEL:-anthropic/claude-sonnet-4.5}
@@ -822,7 +822,7 @@ services:
       OLLAMA_CLOUD_BASE_URL: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
       OLLAMA_CLOUD_LYRICS_MODEL: ${OLLAMA_CLOUD_LYRICS_MODEL:-gpt-oss:120b}
       OLLAMA_CLOUD_FAST_MODEL: ${OLLAMA_CLOUD_FAST_MODEL:-gpt-oss:20b}
-      OLLAMA_CLOUD_THINK_LEVEL: ${OLLAMA_CLOUD_THINK_LEVEL:-high}
+      OLLAMA_CLOUD_THINK_LEVEL: ${OLLAMA_CLOUD_THINK_LEVEL:-medium}
       OLLAMA_CLOUD_LYRICS_TIMEOUT_MS: ${OLLAMA_CLOUD_LYRICS_TIMEOUT_MS:-360000}
       VIVY_SONG_CERBERE_FALLBACK_ENABLED: ${VIVY_SONG_CERBERE_FALLBACK_ENABLED:-1}
       VIVY_SONG_CERBERE_MODEL: ${VIVY_SONG_CERBERE_MODEL:-anthropic/claude-sonnet-4.5}
@@ -1298,7 +1298,7 @@ $overrides = [ordered]@{
   OLLAMA_CLOUD_BASE_URL = "https://ollama.com"
   OLLAMA_CLOUD_LYRICS_MODEL = "gpt-oss:120b"
   OLLAMA_CLOUD_FAST_MODEL = "gpt-oss:20b"
-  OLLAMA_CLOUD_THINK_LEVEL = "high"
+  OLLAMA_CLOUD_THINK_LEVEL = "medium"
   OLLAMA_CLOUD_LYRICS_TIMEOUT_MS = "360000"
   VIVY_SONG_CERBERE_FALLBACK_ENABLED = "1"
   VIVY_SONG_CERBERE_MODEL = "anthropic/claude-sonnet-4.5"
@@ -1748,7 +1748,7 @@ printf 'OLLAMA_CLOUD_BASE_URL=https://ollama.com\n' >> "$tmp_build"
 printf 'OLLAMA_CLOUD_LYRICS_MODEL=gpt-oss:120b\n' >> "$tmp_build"
 printf 'OLLAMA_CLOUD_FAST_MODEL=gpt-oss:20b\n' >> "$tmp_build"
 ollama_cloud_think_level="$(awk -F= '$1 == "OLLAMA_CLOUD_THINK_LEVEL" { sub(/^[^=]*=/, ""); print; exit }' "$a11_env" 2>/dev/null || true)"
-if [ -z "$ollama_cloud_think_level" ]; then ollama_cloud_think_level="high"; fi
+if [ -z "$ollama_cloud_think_level" ]; then ollama_cloud_think_level="medium"; fi
 printf 'OLLAMA_CLOUD_THINK_LEVEL=%s\n' "$ollama_cloud_think_level" >> "$tmp_build"
 printf 'OLLAMA_CLOUD_LYRICS_TIMEOUT_MS=360000\n' >> "$tmp_build"
 printf 'VIVY_SONG_CERBERE_FALLBACK_ENABLED=1\n' >> "$tmp_build"

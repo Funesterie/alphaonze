@@ -5019,7 +5019,7 @@ test('Vivy Ollama Cloud adapter uses /api/chat and allows one call per lyrics ro
 
     assert.equal(cloud.requests.length, 1);
     assert.equal(cloud.requests[0].model, 'gpt-oss:120b');
-    assert.equal(cloud.requests[0].think, 'high');
+    assert.equal(cloud.requests[0].think, 'medium');
     assert.equal(cloud.requests[0].options.num_predict, 10000);
     assert.equal(cloud.authorizations[0], 'Bearer ollama-secret-test');
     assert.match(completion.choices[0].message.content, /Vivy cloud prête/);
@@ -5286,7 +5286,7 @@ test('Hetzner deploy wires Ollama Cloud, Cerbere and a compact local Vivy song f
   assert.match(deploySource, /VIVY_STREAM_FREESTYLE_MAX_CHARS\s*=\s*\$\(if \(\$env:VIVY_STREAM_FREESTYLE_MAX_CHARS\)/);
   assert.match(deploySource, /OLLAMA_CLOUD_ENABLED:\s*\$\{OLLAMA_CLOUD_ENABLED:-1\}/);
   assert.match(deploySource, /OLLAMA_CLOUD_LYRICS_MODEL:\s*\$\{OLLAMA_CLOUD_LYRICS_MODEL:-gpt-oss:120b\}/);
-  assert.match(deploySource, /OLLAMA_CLOUD_THINK_LEVEL:\s*\$\{OLLAMA_CLOUD_THINK_LEVEL:-high\}/);
+  assert.match(deploySource, /OLLAMA_CLOUD_THINK_LEVEL:\s*\$\{OLLAMA_CLOUD_THINK_LEVEL:-medium\}/);
   assert.match(deploySource, /VIVY_SONG_CERBERE_FALLBACK_ENABLED:\s*\$\{VIVY_SONG_CERBERE_FALLBACK_ENABLED:-1\}/);
   assert.match(deploySource, /VIVY_SONG_CERBERE_MODEL:\s*\$\{VIVY_SONG_CERBERE_MODEL:-anthropic\/claude-sonnet-4\.5\}/);
   assert.match(deploySource, /VIVY_CHAT_MAX_TOKENS_SONG_CEILING:\s*\$\{VIVY_CHAT_MAX_TOKENS_SONG_CEILING:-12000\}/);

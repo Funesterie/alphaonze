@@ -569,7 +569,7 @@ function getVivyOllamaCloudConfig(options = {}) {
     model: cleanOneLine(process.env.OLLAMA_CLOUD_LYRICS_MODEL, 'gpt-oss:120b', 120),
     provider: 'ollama_cloud',
     source: 'ollama-cloud-api',
-    thinkLevel: cleanOneLine(process.env.OLLAMA_CLOUD_THINK_LEVEL, 'high', 12).toLowerCase(),
+    thinkLevel: cleanOneLine(process.env.OLLAMA_CLOUD_THINK_LEVEL, 'medium', 12).toLowerCase(),
     timeoutMs: Math.max(240000, Math.min(
       480000,
       Number(process.env.OLLAMA_CLOUD_LYRICS_TIMEOUT_MS || 360000) || 360000
@@ -722,7 +722,7 @@ function createVivyOllamaCloudClientFromConfig(config) {
               model: request.model || config.model,
               messages: Array.isArray(request.messages) ? request.messages : [],
               stream: false,
-              think: cleanOneLine(config.thinkLevel, 'high', 12).toLowerCase(),
+              think: cleanOneLine(config.thinkLevel, 'medium', 12).toLowerCase(),
               options: {
                 temperature: Number.isFinite(Number(request.temperature)) ? Number(request.temperature) : 0.8,
                 num_predict: Math.max(1, Number(request.max_tokens || request.max_completion_tokens || 6000) || 6000),
