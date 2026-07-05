@@ -9271,6 +9271,31 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
     }
   });
 
+  // Chemin interne pour le worker MCP (dialogue-only). Auth par token de
+  // service dédié, jamais l'auth publique. Si le token n'est pas configuré,
+  // la route est fermée (503) — pas de bypass silencieux.
+  router.post('/djeff/engine-reply', express.json({ limit: '128kb' }), async (req, res) => {
+    const expected = String(process.env.A11_DJEFF_ENGINE_INTERNAL_TOKEN || '').trim();
+    const provided = String(req.get('x-djeff-engine-token') || '').trim();
+    if (!expected || !provided || provided !== expected) {
+      return res.status(expected ? 401 : 503).json({ ok: false, error: 'djeff_engine_token_invalid' });
+    }
+    try {
+      const result = await buildDjeffAiChat({
+        message: req.body?.message,
+        history: req.body?.history,
+        maxTokens: 700,
+      }, req);
+      return res.json({ ok: true, reply: result.reply, provider: result.provider, model: result.model });
+    } catch (error) {
+      return res.status(error?.status || 500).json({
+        ok: false,
+        error: error?.code || 'djeff_engine_failed',
+        message: error?.message || String(error),
+      });
+    }
+  });
+
   router.post('/nossen-intent', requireAuth, express.json({ limit: '128kb' }), async (req, res) => {
     try {
       res.json(await buildVivyNossenIntentPlan(req.body || {}, req));
