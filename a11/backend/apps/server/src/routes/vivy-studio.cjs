@@ -9387,6 +9387,7 @@ module.exports = {
   buildVivyAiChat,
   buildDjeffAiChat,
   resolveDjeffTokenBudget,
+  masterVivyMusicFile,
   buildVivyConversationIdForSession,
   resolveVivyInputSession,
   listVivyChatSessionsForUser,

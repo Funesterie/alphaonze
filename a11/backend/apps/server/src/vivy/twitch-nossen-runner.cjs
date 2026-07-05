@@ -8,6 +8,7 @@ const {
   buildVivyNossenRoutingPlan,
   getVivyMusicJob,
   requestSunoMusicExtension,
+  masterVivyMusicFile,
 } = require('../routes/vivy-studio.cjs');
 const {
   finalizeTwitchFullSongClip,
@@ -3799,6 +3800,26 @@ function createVivyStreamNossenRunner(options = {}) {
           cleanText(preparedFullClip.error || preparedFullClip.reason || 'unknown', '', 120),
           cleanText(preparedFullClip.message || '', '', 180)
         );
+      }
+
+      // V9 dynamique sur le MP3 live: Djeff entend la différence direct, on
+      // masterise chaque round (local ffmpeg, quelques secondes). Le MP3 servi
+      // devient la version masterisée; la relique WAV/FLAC garde son profil.
+      try {
+        const masterPath = cleanText(media?.path, '', 1200);
+        if (masterPath && /\.mp3$/i.test(masterPath)) {
+          const mastered = await masterVivyMusicFile(masterPath);
+          if (mastered?.ok) {
+            logger.info?.(
+              '[vivy-twitch-nossen] round=%s master V9 applique %s->%s octets I=%s TP=%s LRA=%s',
+              roundId, mastered.originalSize, mastered.masteredSize, mastered.targetLufs, mastered.truePeak, mastered.lra
+            );
+          } else if (mastered && !mastered.skipped) {
+            logger.warn?.('[vivy-twitch-nossen] round=%s master non applique: %s', roundId, cleanText(mastered.reason || mastered.message || '', '', 120));
+          }
+        }
+      } catch (error) {
+        logger.warn?.('[vivy-twitch-nossen] round=%s master erreur (audio brut conserve): %s', roundId, cleanText(error?.message || error, '', 120));
       }
 
       await update({
