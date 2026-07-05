@@ -3934,3 +3934,35 @@ test('Djeff persona builds a full first-person system prompt only when active', 
     resetDjeffPersonaCache();
   }
 });
+
+test('Djeff token budget: medium par défaut, full sur mode profond ou GO explicite', () => {
+  const { resolveDjeffTokenBudget } = require('../src/routes/vivy-studio.cjs');
+
+  // Dialogue normal: medium, fluide.
+  const dialogue = resolveDjeffTokenBudget({ message: 'x' });
+  assert.equal(dialogue.label, 'medium');
+  assert.equal(dialogue.maxTokens, 900);
+  assert.equal(dialogue.historyDepth, 8);
+
+  // Freestyle sans GO: reste medium (full seulement cas par cas).
+  const freestyle = resolveDjeffTokenBudget({ mode: 'freestyle' });
+  assert.equal(freestyle.label, 'medium');
+
+  // Freestyle AVEC GO: full.
+  const freestyleGo = resolveDjeffTokenBudget({ mode: 'freestyle', fullToken: true });
+  assert.equal(freestyleGo.label, 'full');
+  assert.equal(freestyleGo.maxTokens, 6000);
+  assert.equal(freestyleGo.historyDepth, 16);
+
+  // Archive chaude: full recommandé par le mode.
+  assert.equal(resolveDjeffTokenBudget({ mode: 'archive' }).label, 'full');
+  // Debug critique: full recommandé par le mode.
+  assert.equal(resolveDjeffTokenBudget({ mode: 'debug' }).label, 'full');
+
+  // GO explicite ouvre le coffre quel que soit le mode.
+  assert.equal(resolveDjeffTokenBudget({ fullToken: true }).label, 'full');
+
+  // Plafonds respectés: medium cappe à 2000, full à 8000.
+  assert.equal(resolveDjeffTokenBudget({ maxTokens: 99999 }).maxTokens, 2000);
+  assert.equal(resolveDjeffTokenBudget({ fullToken: true, maxTokens: 99999 }).maxTokens, 8000);
+});

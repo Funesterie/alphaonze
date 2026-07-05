@@ -5569,6 +5569,30 @@ function postProcessVivyAssistantText({ text = '', userMessage = '', systemPromp
   };
 }
 
+// Budget de tokens du miroir Djeff. Règle: persona pour penser, full token
+// pour descendre, GO clair pour ouvrir. Dialogue normal reste medium (fluide);
+// full seulement sur mode délibéré (archive/debug) ou GO explicite (fullToken).
+// freestyle reste medium sauf GO cas par cas.
+function resolveDjeffTokenBudget(input = {}) {
+  const MEDIUM_TOKENS = 900;
+  const FULL_TOKENS = 6000;
+  const mode = cleanOneLine(input.mode || input.depth, 'dialogue', 24).toLowerCase();
+  const fullTokenGo = input.fullToken === true || input.full === true;
+  const modeWantsFull = mode === 'archive' || mode === 'archive-hot' || mode === 'debug' || mode === 'debug-critical';
+  const useFullToken = fullTokenGo || modeWantsFull;
+  const requestedTokens = Number(input.maxTokens) > 0
+    ? Math.min(Number(input.maxTokens), useFullToken ? 8000 : 2000)
+    : (useFullToken ? FULL_TOKENS : MEDIUM_TOKENS);
+  return {
+    mode,
+    useFullToken,
+    label: useFullToken ? 'full' : 'medium',
+    maxTokens: Math.max(256, requestedTokens),
+    historyDepth: useFullToken ? 16 : 8,
+    historyCharCap: useFullToken ? 8000 : 4000,
+  };
+}
+
 async function buildDjeffAiChat(input, req) {
   input = input && typeof input === 'object' ? input : {};
   const message = cleanText(input.message || input.prompt || input.text, VIVY_SONG_MAX_CHARS);
@@ -5585,11 +5609,12 @@ async function buildDjeffAiChat(input, req) {
     error.status = 503;
     throw error;
   }
+  const budget = resolveDjeffTokenBudget(input);
   const history = Array.isArray(input.history)
     ? input.history
       .filter((entry) => entry && (entry.role === 'user' || entry.role === 'assistant') && entry.content)
-      .slice(-8)
-      .map((entry) => ({ role: entry.role, content: cleanText(entry.content, 4000) }))
+      .slice(-budget.historyDepth)
+      .map((entry) => ({ role: entry.role, content: cleanText(entry.content, budget.historyCharCap) }))
     : [];
   const llmBundles = createVivyOpenAIClients({ mode: 'chat' });
   if (!llmBundles.length) {
@@ -5605,14 +5630,16 @@ async function buildDjeffAiChat(input, req) {
       { role: 'user', content: message },
     ],
     temperature: 0.7,
-    max_tokens: Math.max(256, Math.min(2000, Number(input.maxTokens) || 900)),
+    max_tokens: budget.maxTokens,
   });
-  const reply = cleanText(completionResult.completion?.choices?.[0]?.message?.content, 8000);
+  const reply = cleanText(completionResult.completion?.choices?.[0]?.message?.content, 12000);
   return {
     ok: true,
     persona: 'djeff',
     reply,
     assistant: reply,
+    mode: budget.mode,
+    tokenBudget: budget.label,
     provider: completionResult.bundle.provider || getVivyProviderFromBaseUrl(completionResult.bundle.baseURL || ''),
     model: completionResult.bundle.model,
   };
@@ -9355,6 +9382,7 @@ module.exports = {
   buildVivyChat,
   buildVivyAiChat,
   buildDjeffAiChat,
+  resolveDjeffTokenBudget,
   buildVivyConversationIdForSession,
   resolveVivyInputSession,
   listVivyChatSessionsForUser,

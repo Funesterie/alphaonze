@@ -3153,9 +3153,14 @@ export async function chatWithDjeff(
   input: {
     message: string;
     history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    // Budget: dialogue (medium, défaut) reste fluide. archive/debug ouvrent le
+    // coffre profond (full token). freestyle reste medium sauf GO explicite.
+    mode?: 'dialogue' | 'freestyle' | 'archive' | 'debug';
+    // GO explicite du patron pour descendre en full token, quel que soit le mode.
+    fullToken?: boolean;
     maxTokens?: number;
   }
-): Promise<{ ok: boolean; persona: string; reply: string; provider?: string; model?: string }> {
+): Promise<{ ok: boolean; persona: string; reply: string; mode?: string; tokenBudget?: 'medium' | 'full'; provider?: string; model?: string }> {
   const res = await authFetch(getApiUrl('/api/vivy/studio/djeff/chat'), {
     method: 'POST',
     headers: buildAuthHeaders('application/json'),
@@ -3166,7 +3171,7 @@ export async function chatWithDjeff(
   if (!res.ok || payload?.ok === false) {
     throw new Error(payload?.message || payload?.error || `Djeff Engine indisponible (${res.status})`);
   }
-  return payload as { ok: boolean; persona: string; reply: string; provider?: string; model?: string };
+  return payload as { ok: boolean; persona: string; reply: string; mode?: string; tokenBudget?: 'medium' | 'full'; provider?: string; model?: string };
 }
 
 export async function routeVivyNossenComposition(input: {
