@@ -5616,7 +5616,11 @@ async function buildDjeffAiChat(input, req) {
       .slice(-budget.historyDepth)
       .map((entry) => ({ role: entry.role, content: cleanText(entry.content, budget.historyCharCap) }))
     : [];
-  const llmBundles = createVivyOpenAIClients({ mode: 'chat' });
+  // Djeff Engine pense avec la chaîne forte (celle des paroles Vivy):
+  // Groq OSS 120b -> Ollama Cloud 120b -> OpenRouter Sonnet -> local. En mode
+  // chat simple il tombait sur llama3.2:3b au moindre 429 Groq. Le miroir
+  // mérite un vrai cerveau.
+  const llmBundles = createVivyOpenAIClients({ mode: 'song', purpose: 'lyrics' });
   if (!llmBundles.length) {
     const error = new Error('djeff_llm_unavailable');
     error.code = 'djeff_llm_unavailable';
