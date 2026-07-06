@@ -82,6 +82,18 @@ function resolveFullClipReadyWaitMs(env = process.env) {
   return DEFAULT_FULL_CLIP_READY_WAIT_MS;
 }
 
+function resolveTwitchFullClipSourceImageUrl(env = process.env) {
+  const raw = cleanText(
+    env.VIVY_STREAM_FULL_CLIP_SOURCE_IMAGE_URL
+    || env.VIVY_STREAM_DREAMCLIP_SOURCE_IMAGE_URL
+    || '',
+    '',
+    1200
+  );
+  if (!/^https?:\/\//i.test(raw)) return '';
+  return raw;
+}
+
 function extractCleanTwitchLyricsBlock(value = '', max = 12000) {
   const text = cleanLyrics(value, max);
   if (!text) return '';
@@ -2516,6 +2528,7 @@ function createVivyStreamNossenRunner(options = {}) {
     const clipEnv = requestedClipMode
       ? { ...process.env, VIVY_STREAM_FULL_CLIP_MODE: requestedClipMode }
       : process.env;
+    const configuredFullClipSourceImageUrl = resolveTwitchFullClipSourceImageUrl(clipEnv);
     if (requestedClipMode) {
       logger.info?.('[vivy-full-clip] round=%s one-shot clip mode override=%s', roundId, requestedClipMode);
     }
@@ -3227,6 +3240,27 @@ function createVivyStreamNossenRunner(options = {}) {
         req,
       }).then(async (cover) => {
         if (!cover?.ok || !cover.coverImageUrl) {
+          if (configuredFullClipSourceImageUrl && isTwitchFullClipEnabled(clipEnv)) {
+            coverImageUrl = configuredFullClipSourceImageUrl;
+            fullClipSourceImageUrl = configuredFullClipSourceImageUrl;
+            coverPrompt = 'operator-provided-full-clip-source-image';
+            logger.info?.(
+              '[vivy-full-clip] round=%s using configured source image after cover fallback url=%s',
+              roundId,
+              cleanText(configuredFullClipSourceImageUrl, '', 180)
+            );
+            await update({
+              action: 'cover',
+              roundId,
+              title: publicTitle,
+              coverImageUrl,
+              coverPrompt,
+              requestedBy: winner.author,
+            }).catch((error) => {
+              logger.warn?.('[vivy-twitch-cover] round=%s configured source state update failed: %s', roundId, cleanText(error?.message || error, '', 180));
+            });
+            return { ok: true, coverImageUrl, prompt: coverPrompt, configuredSource: true };
+          }
           if (cover && !cover.skipped) {
             logger.warn?.(
               '[vivy-twitch-cover] round=%s skipped error=%s message=%s',
@@ -3238,7 +3272,7 @@ function createVivyStreamNossenRunner(options = {}) {
           return cover;
         }
         coverImageUrl = cover.coverImageUrl;
-        fullClipSourceImageUrl = cover.coverImageUrl;
+        fullClipSourceImageUrl = configuredFullClipSourceImageUrl || cover.coverImageUrl;
         coverPrompt = cover.prompt || '';
         if (isCoverTextStampEnabled(process.env)) {
           try {
@@ -3280,6 +3314,13 @@ function createVivyStreamNossenRunner(options = {}) {
         });
         if (isTwitchFullClipEnabled(clipEnv)) {
           logger.info?.('[vivy-twitch-clip] round=%s short cover clip skipped because full clip pack is enabled', roundId);
+          if (configuredFullClipSourceImageUrl) {
+            logger.info?.(
+              '[vivy-full-clip] round=%s using configured source image for scene generation url=%s',
+              roundId,
+              cleanText(configuredFullClipSourceImageUrl, '', 180)
+            );
+          }
           if (fullClipSourceImageUrl && coverImageUrl && fullClipSourceImageUrl !== coverImageUrl) {
             logger.info?.('[vivy-full-clip] round=%s using unstamped cover source for scene generation', roundId);
           }
@@ -3912,6 +3953,7 @@ module.exports = {
   reduceMechanicalLyricRepeats,
   resolveTwitchCreativePlaceholders,
   resolveTwitchDurationAcceptance,
+  resolveTwitchFullClipSourceImageUrl,
   resolveTwitchSubjectFrame,
   resolveTwitchVivyLyricScope,
   isConceptualHookRequest,

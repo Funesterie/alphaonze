@@ -38,6 +38,7 @@ const {
   reduceMechanicalLyricRepeats,
   resolveTwitchCreativePlaceholders,
   resolveTwitchDurationAcceptance,
+  resolveTwitchFullClipSourceImageUrl,
   resolveTwitchSubjectFrame,
   resolveTwitchVivyLyricScope,
   isConceptualHookRequest,
@@ -3392,6 +3393,21 @@ test('Vivy stream clip-mode arming estimates cost, requires confirmation and sta
       server.close((error) => (error ? reject(error) : resolve()));
     });
   }
+});
+
+test('Vivy full clip source image accepts only remote HTTP URLs', () => {
+  assert.equal(resolveTwitchFullClipSourceImageUrl({
+    VIVY_STREAM_FULL_CLIP_SOURCE_IMAGE_URL: 'https://files.funesterie.me/users/image-tool/vivy-dream-base.jpg',
+  }), 'https://files.funesterie.me/users/image-tool/vivy-dream-base.jpg');
+  assert.equal(resolveTwitchFullClipSourceImageUrl({
+    VIVY_STREAM_DREAMCLIP_SOURCE_IMAGE_URL: 'http://example.test/vivy.jpg',
+  }), 'http://example.test/vivy.jpg');
+  assert.equal(resolveTwitchFullClipSourceImageUrl({
+    VIVY_STREAM_FULL_CLIP_SOURCE_IMAGE_URL: 'C:/Users/cella/Downloads/vivy.jpg',
+  }), '');
+  assert.equal(resolveTwitchFullClipSourceImageUrl({
+    VIVY_STREAM_FULL_CLIP_SOURCE_IMAGE_URL: '   ',
+  }), '');
 });
 
 test('Vivy stream late clip attach stores the shareable video url on archived songs', async () => {
