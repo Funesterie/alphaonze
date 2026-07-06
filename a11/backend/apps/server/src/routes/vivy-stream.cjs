@@ -479,8 +479,31 @@ function parseVivyStreamChatMessage(input = {}) {
     musicProvider: suggestionPayload.musicProvider,
     voteTargetId: extractVote(message),
     star: extractStarRating(message),
-    receivedAt: nowIso(),
+    receivedAt: cleanOneLine(input.receivedAt || input.timestamp || '', '', 80) || nowIso(),
   };
+}
+
+function toTimestampMs(value = '') {
+  const ms = Date.parse(String(value || ''));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function isDuplicateStreamChatMessage(recentMessages = [], parsed = {}) {
+  const messageId = cleanOneLine(parsed.messageId, '', 120);
+  if (messageId && recentMessages.some((entry) => cleanOneLine(entry?.id, '', 120) === messageId)) {
+    return true;
+  }
+  const author = foldForLookup(parsed.author);
+  const message = foldForLookup(parsed.message);
+  if (!author || !message) return false;
+  const receivedAtMs = toTimestampMs(parsed.receivedAt) || Date.now();
+  return recentMessages.some((entry) => {
+    if (foldForLookup(entry?.author) !== author) return false;
+    if (foldForLookup(entry?.message) !== message) return false;
+    const entryMs = toTimestampMs(entry?.receivedAt);
+    if (!entryMs) return false;
+    return Math.abs(receivedAtMs - entryMs) <= 3500;
+  });
 }
 
 function collectLearningTerms(value = '') {
@@ -1260,6 +1283,15 @@ function createVivyStreamStore(options = {}) {
     const parsed = parseVivyStreamChatMessage(input);
     if (!parsed.message) {
       return { ok: false, error: 'empty_message', state: publicState(state) };
+    }
+    if (isDuplicateStreamChatMessage(state.recentMessages || [], parsed)) {
+      return {
+        ok: true,
+        action: 'duplicate_ignored',
+        duplicate: true,
+        parsed,
+        state: publicState(state),
+      };
     }
     if (parsed.source === 'twitch') {
       state.twitch = {
@@ -2223,6 +2255,7 @@ module.exports = {
   createVivyStreamRouter,
   createVivyStreamStore,
   extractStarRating,
+  isDuplicateStreamChatMessage,
   isAllowedVivyStreamDownloadUrl,
   parseVivyStreamChatMessage,
   resolveRoundMs,

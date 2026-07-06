@@ -7332,6 +7332,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   const voiceReferenceInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activeChatSessionRef = useRef("default");
+  const vivySendLockRef = useRef(false);
+  const lastVivySubmitRef = useRef({ key: "", at: 0 });
   const videoResumeAttemptRef = useRef(false);
   const [copiedMsgId, setCopiedMsgId] = useState("");
   const [chatSessions, setChatSessions] = useState<VivyChatSessionMeta[]>(() => hasSession ? listVivyChatSessions() : []);
@@ -7709,7 +7711,21 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     const mode = options.mode || "chat";
     const text = toUnicodeText(draft.trim());
     const filesForMessage = attachedFiles.slice(0, 6);
-    if ((!text && !filesForMessage.length) || isSending) return;
+    const duplicateKey = JSON.stringify({
+      mode,
+      text,
+      files: filesForMessage.map((file) => `${file.id}:${file.filename}:${file.sizeBytes || 0}`).join('|'),
+      session: activeChatSessionId,
+    });
+    const nowMs = Date.now();
+    if (
+      (!text && !filesForMessage.length)
+      || isSending
+      || vivySendLockRef.current
+      || (lastVivySubmitRef.current.key === duplicateKey && nowMs - lastVivySubmitRef.current.at < 2500)
+    ) return;
+    vivySendLockRef.current = true;
+    lastVivySubmitRef.current = { key: duplicateKey, at: nowMs };
 
     const now = new Date().toISOString();
     const userMessage: VivyPublicChatMessage = {
@@ -7804,6 +7820,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       setStatus("Connexion Vivy à vérifier");
     } finally {
       setIsSending(false);
+      vivySendLockRef.current = false;
     }
   }
 

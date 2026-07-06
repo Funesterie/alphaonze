@@ -2071,9 +2071,19 @@ rm -f $RemoteRoot/releases/*.tar.gz $RemoteRoot/releases/*.tgz || true
 echo "__A11_PRUNE_DONE__"
 "@
 }
-$remoteDeployEncoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remoteDeploy.Replace("`r`n", "`n").Replace("`r", "`n")))
-& ssh @sshBase $Remote "printf '%s' '$remoteDeployEncoded' | base64 -d | bash"
+$localRemoteDeployScript = Join-Path $TmpRoot "a11-remote-deploy-$Stamp.sh"
+$remoteDeployScript = "/tmp/a11-remote-deploy-$Stamp.sh"
+[IO.File]::WriteAllText(
+  $localRemoteDeployScript,
+  $remoteDeploy.Replace("`r`n", "`n").Replace("`r", "`n"),
+  [Text.UTF8Encoding]::new($false)
+)
+& scp @sshBase $localRemoteDeployScript "${Remote}:$remoteDeployScript"
+if ($LASTEXITCODE -ne 0) { throw "Copie script de deploiement distant echouee" }
+$remoteDeployRunCommand = "chmod 700 '$remoteDeployScript' && bash '$remoteDeployScript'; rc=`$?; rm -f '$remoteDeployScript'; exit `$rc"
+& ssh @sshBase $Remote $remoteDeployRunCommand
 if ($LASTEXITCODE -ne 0) { throw "Deploiement distant echoue" }
+Remove-Item -LiteralPath $localRemoteDeployScript -Force -ErrorAction SilentlyContinue
 
 if ($BlueGreen) {
   Write-Host "Deploy A11 prod Finlande termine: $Remote / release $Stamp / blue-green=$DeployBlueGreenColor" -ForegroundColor Green

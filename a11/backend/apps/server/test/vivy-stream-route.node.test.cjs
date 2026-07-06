@@ -16,6 +16,7 @@ const {
   buildOverlayHtml,
   createVivyStreamRouter,
   createVivyStreamStore,
+  isDuplicateStreamChatMessage,
   parseVivyStreamChatMessage,
   resolveRoundMs,
 } = require('../src/routes/vivy-stream.cjs');
@@ -187,6 +188,39 @@ test('Vivy stream parser detects suggestions, votes and star ratings', () => {
 
   const emojiStars = parseVivyStreamChatMessage({ username: 'chat', message: '⭐⭐⭐⭐' });
   assert.deepEqual(emojiStars.star, { rating: 4, targetId: '' });
+});
+
+test('Vivy stream ignores duplicate OBS/Twitch chat events', () => {
+  const receivedAt = '2026-07-07T00:00:00.000Z';
+  const first = parseVivyStreamChatMessage({
+    source: 'twitch',
+    username: 'funeste38',
+    messageId: 'twitch-msg-1',
+    message: '!vivy test double OBS',
+    receivedAt,
+  });
+  assert.equal(first.receivedAt, receivedAt);
+  assert.equal(isDuplicateStreamChatMessage([], first), false);
+  assert.equal(isDuplicateStreamChatMessage([{
+    id: 'twitch-msg-1',
+    source: 'twitch',
+    author: 'funeste38',
+    message: '!vivy test double OBS',
+    receivedAt,
+  }], first), true);
+  const noStableId = parseVivyStreamChatMessage({
+    source: 'obs',
+    username: 'funeste38',
+    message: 'ah je sais c’est peut etre obs',
+    receivedAt: '2026-07-07T00:00:01.000Z',
+  });
+  assert.equal(isDuplicateStreamChatMessage([{
+    id: 'local-1',
+    source: 'obs',
+    author: 'funeste38',
+    message: 'ah je sais c’est peut etre obs',
+    receivedAt: '2026-07-07T00:00:00.000Z',
+  }], noStableId), true);
 });
 
 test('Vivy stream preserves long Twitch production constraints for NOSSEN routing', async () => {
