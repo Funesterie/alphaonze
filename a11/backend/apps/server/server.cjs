@@ -1,4 +1,14 @@
 ﻿
+// --- Telemetry: initialise before any other module so OpenTelemetry can
+// auto-instrument them. Inert unless APPLICATIONINSIGHTS_CONNECTION_STRING is set
+// (present from the container env in prod). Never throws into startup. ---
+try {
+  require('./src/telemetry/otel-bootstrap.cjs').startTelemetry();
+  require('./src/azure-startup-diagnostics.cjs').logAzureStartupDiagnostics();
+} catch (telemetryError) {
+  console.warn('[telemetry] bootstrap error:', (telemetryError && telemetryError.message) || telemetryError);
+}
+
 // --- Express setup: always at the very top ---
 const express = require('express');
 const app = express();

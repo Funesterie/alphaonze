@@ -6593,6 +6593,27 @@ export async function createCheckoutSession(plan: 'premium' | 'founder' = 'premi
 }
 
 /**
+ * Crée une session de don "Royalties" — contribution libre one-time, ouverte à tous
+ * (montant choisi par le supporter). La route backend collecte l'email au checkout.
+ */
+export async function createFunesterieContribution(
+  contribution: string = 'royalties',
+): Promise<{ ok: boolean; url?: string; error?: string }> {
+  try {
+    const res = await authFetch(getApiUrl('/api/subscription/create-contribution'), {
+      method: 'POST',
+      headers: buildAuthHeaders('application/json'),
+      body: JSON.stringify({ contribution }),
+    });
+    const data = await res.json().catch(() => ({} as { url?: string; error?: string }));
+    if (data?.url) return { ok: true, url: String(data.url) };
+    return { ok: false, error: String(data?.error || `contribution_failed_${res.status}`) };
+  } catch (err) {
+    return { ok: false, error: (err as Error)?.message || 'network_error' };
+  }
+}
+
+/**
  * Crée une session du portail client Stripe pour gérer l'abonnement
  */
 export async function createCustomerPortal(): Promise<CustomerPortalResponse> {

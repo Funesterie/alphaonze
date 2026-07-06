@@ -9,6 +9,11 @@ const {
 } = require('../mcp-client.cjs');
 const { verifyOAuthAccessToken } = require('../mcp-oauth/oauth-server.cjs');
 const {
+  verifyEntraAccessToken,
+  isEntraMcpConfigured,
+  getEntraMcpConfig,
+} = require('../mcp-oauth/entra-auth.cjs');
+const {
   buildSemanticMediaRoulette,
 } = require('../../lib/semantic-media-roulette.cjs');
 const {
@@ -222,8 +227,39 @@ function authenticatePublicMcpRequest(req, env = process.env) {
   return { ok: false, status: 401, error: 'invalid_mcp_token' };
 }
 
-function requirePublicMcpAuth(req, res, next) {
-  const auth = authenticatePublicMcpRequest(req);
+/**
+ * Async superset of {@link authenticatePublicMcpRequest} that also accepts a valid
+ * Microsoft Entra access token (server-to-server callers). Entra is only tried when
+ * the sync chain (anonymous / static token / OAuth) did not already succeed, a bearer
+ * token is present, and the Entra pack is configured — so it never changes existing
+ * behaviour until MCP_ISSUER/MCP_AUDIENCE are set.
+ */
+async function authenticatePublicMcpRequestAsync(req, env = process.env) {
+  const sync = authenticatePublicMcpRequest(req, env);
+  if (sync.ok) return sync;
+
+  // Local-dev escape hatch, explicit and non-production only.
+  if (getEntraMcpConfig(env).devBypass) return { ok: true, mode: 'dev-bypass' };
+
+  const token = extractBearerToken(req);
+  if (token && isEntraMcpConfigured(env)) {
+    try {
+      const payload = await verifyEntraAccessToken(token, env);
+      if (payload) return { ok: true, mode: 'entra', payload };
+    } catch {
+      // fall through to the sync failure below (fail closed)
+    }
+  }
+  return sync;
+}
+
+async function requirePublicMcpAuth(req, res, next) {
+  let auth;
+  try {
+    auth = await authenticatePublicMcpRequestAsync(req);
+  } catch {
+    auth = { ok: false, status: 401, error: 'auth_error' };
+  }
   if (!auth.ok) {
     return res.status(auth.status || 401).json({
       jsonrpc: '2.0',
@@ -841,3 +877,4 @@ function createPublicMcpRouter(options = {}) {
 
 module.exports = createPublicMcpRouter;
 module.exports.authenticatePublicMcpRequest = authenticatePublicMcpRequest;
+module.exports.authenticatePublicMcpRequestAsync = authenticatePublicMcpRequestAsync;
