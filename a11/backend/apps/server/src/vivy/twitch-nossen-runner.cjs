@@ -3209,6 +3209,7 @@ function createVivyStreamNossenRunner(options = {}) {
         providerPack.styleLeakage === true ? 'true' : 'false'
       );
       let coverImageUrl = '';
+      let fullClipSourceImageUrl = '';
       let coverPrompt = '';
       let coverVideoUrl = '';
       let coverVideoPrompt = '';
@@ -3237,6 +3238,7 @@ function createVivyStreamNossenRunner(options = {}) {
           return cover;
         }
         coverImageUrl = cover.coverImageUrl;
+        fullClipSourceImageUrl = cover.coverImageUrl;
         coverPrompt = cover.prompt || '';
         if (isCoverTextStampEnabled(process.env)) {
           try {
@@ -3278,6 +3280,9 @@ function createVivyStreamNossenRunner(options = {}) {
         });
         if (isTwitchFullClipEnabled(clipEnv)) {
           logger.info?.('[vivy-twitch-clip] round=%s short cover clip skipped because full clip pack is enabled', roundId);
+          if (fullClipSourceImageUrl && coverImageUrl && fullClipSourceImageUrl !== coverImageUrl) {
+            logger.info?.('[vivy-full-clip] round=%s using unstamped cover source for scene generation', roundId);
+          }
           return cover;
         }
         const clip = await generateTwitchCoverVideo({
@@ -3340,7 +3345,7 @@ function createVivyStreamNossenRunner(options = {}) {
           lyrics: providerPack.cleanLyrics || lyrics,
           durationSeconds: targetDurationSeconds,
           trackUrl: '',
-          coverImageUrl,
+          coverImageUrl: fullClipSourceImageUrl || coverImageUrl,
           coverPrompt,
           seedVideoUrl: coverVideoUrl,
           coverVideoUrl,
