@@ -5245,14 +5245,16 @@ function isVivyWorkspaceToolRequest(input = {}, message = '') {
   if (looksLikeCompleteLyrics(message)) return false;
   const current = normalizeVivyCapabilityText(message);
   if (!current) return false;
+  if (isVivyPromptConfusionPing(current) || isVivyRepeatComplaint(current)) return false;
   const recent = normalizeVivyCapabilityText(getVivyUserHistoryText(input.history));
   const text = `${recent}\n${current}`;
-  const mentionsWorkspaceTool = /\b(bloc\s*note|bloc-notes?|blocnotes?|notepad|note\s+pad|canevas|canvas|atelier|editeur|éditeur|scratchpad|brouillon|workspace)\b/.test(text);
-  const mentionsChrome = /\b(chrome|navigateur|browser|onglet|page\s+ouverte|selection|sélection)\b/.test(text);
+  const mentionsWorkspaceTool = /\b(bloc\s*note|bloc-notes?|blocnotes?|notepad|note\s+pad|canevas|canvas|atelier|editeur|éditeur|scratchpad|brouillon|workspace)\b/.test(current);
+  const mentionsChrome = /\b(chrome|navigateur|browser|onglet|page\s+ouverte|selection|sélection)\b/.test(current);
   const mentionsPremiumMcp = /\b(mcp|model context protocol)\b/.test(current)
     && /\b(premium|compte\s+premium|comptes\s+premium|debloque|débloque|debloquer|débloquer|active|activer|public|outil|outils|acces|accès)\b/.test(current);
   const mentionsVivyNeed = /\b(vivy|elle)\b.{0,90}\b(besoin|veut|voudrait|doit|aimerait)\b/.test(text);
-  return mentionsWorkspaceTool || mentionsChrome || mentionsPremiumMcp || (mentionsVivyNeed && /\b(mcp|chrome|canevas|canvas|bloc|notepad|atelier)\b/.test(text));
+  const currentToolAnchor = /\b(mcp|chrome|canevas|canvas|bloc|notepad|atelier|workspace|outils?)\b/.test(current);
+  return mentionsWorkspaceTool || mentionsChrome || mentionsPremiumMcp || (mentionsVivyNeed && currentToolAnchor);
 }
 
 function buildVivyHiddenWorkspaceIntentReply({ language = 'fr' } = {}) {

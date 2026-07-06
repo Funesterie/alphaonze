@@ -2993,8 +2993,8 @@ test('Vivy frontend keeps download distinct from open and exposes copy on every 
 
   const publicChatStart = appSource.indexOf('function VivyPublicChat');
   const publicChatEnd = appSource.indexOf('function VivyStudio', publicChatStart + 1);
-  const publicChatBlock = appSource.slice(publicChatStart, publicChatEnd > publicChatStart ? publicChatEnd : publicChatStart + 52000);
-  assert.match(publicChatBlock, /messages\.map\(\(message\)/);
+  const publicChatBlock = appSource.slice(publicChatStart, publicChatEnd > publicChatStart ? publicChatEnd : publicChatStart + 120000);
+  assert.match(publicChatBlock, /messages\.map\(\(\s*message\s*\)\s*=>/);
   assert.match(publicChatBlock, /downloadVivyChatMediaFile\(/);
   assert.match(publicChatBlock, /vivy-chat-copy-btn/);
   assert.match(publicChatBlock, /writeClipboardText\(message\.content\)/);
@@ -3277,11 +3277,11 @@ test('Vivy frontend lets NOSSEN Banger launch immediately while keeping readines
 
   assert.match(appSource, /function buildVivyNossenBangerReadiness/);
   assert.match(appSource, /function buildVivyNossenLaunchReadiness/);
-  assert.match(appSource, /const nossenBangerCanLaunch = hasSession && !isSending/);
+  assert.match(appSource, /const nossenBangerCanLaunch = hasSession && !isSending && !isVideoGenerating/);
   assert.match(appSource, /nossenBangerReadiness\.ready/);
   assert.match(appSource, /className=\{`vivy-nossen-banger-button/);
   assert.match(appSource, /nossenBangerCanLaunch \? " is-ready" : ""/);
-  assert.match(appSource, /disabled=\{!hasSession \|\| isSending\}/);
+  assert.match(appSource, /disabled=\{!hasSession \|\| isSending \|\| isVideoGenerating\}/);
   assert.doesNotMatch(appSource, /disabled=\{!hasSession \|\| isSending \|\| !nossenBangerReadiness\.ready\}/);
   assert.match(appSource, /is-ready/);
   assert.match(appSource, /aria-label="NOSSEN Banger"/);
@@ -6120,6 +6120,29 @@ test('Vivy acknowledges repetition complaints instead of recycling the chat fall
   assert.notEqual(second.assistant, first.assistant);
   assert.doesNotMatch(second.assistant, /Je prends ça comme une vraie discussion/i);
   assert.doesNotMatch(second.assistant, /Le bon prochain pas/i);
+});
+
+test('Vivy Shiryu smoke cutter does not recycle hidden workspace replies on check-ins', async () => {
+  const hiddenWorkspaceReply = "Oui. Je garde ça côté Vivy au lieu d'en faire un panneau visible dans le chat.\n\nTu peux continuer à parler normalement; quand il y a assez de vraie matière, je reste sur le sujet et je transforme ça en paroles propres ou en morceau complet sans réciter les réglages.";
+  const history = [
+    { role: 'user', content: 'donne lui des outils avec le canevas et chrome pour préparer le mode rêve' },
+    { role: 'assistant', content: hiddenWorkspaceReply },
+  ];
+
+  assert.equal(isVivyWorkspaceToolRequest({ history }, 'allo ?'), false);
+  assert.equal(isVivyWorkspaceToolRequest({ history }, 'allo pourquoi tu repetes ?'), false);
+
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-shiryu-smoke-cutter-test',
+    message: 'allo pourquoi tu repetes ?',
+    history,
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.notEqual(result.aiMode, 'deterministic_hidden_workspace_intent');
+  assert.doesNotMatch(result.assistant, /Je garde ça côté Vivy au lieu d'en faire un panneau visible/i);
+  assert.match(result.assistant, /boucl[ée]|répète|recycler|route trop large/i);
 });
 
 test('Vivy maps authorized tools and Zen GGUF without bypassing safeguards', async () => {

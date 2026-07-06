@@ -55,6 +55,7 @@ const PUBLIC_FLOWS = new Set([
   'a11.memory.summary.v1',
   'a11.memory.ephemeral.v1',
   'qflush.rgba.multiload.v1',
+  'qflush.shiryu.zen_rgba.v1',
   'web_fetch',
   'fs.search',
 ]);
@@ -419,6 +420,7 @@ function createQflushFlowRouter({ workspaceRoot, runtimeRoot } = {}) {
           'a11.memory.summary.v1': 'Résumé de mémoire conversationnelle',
           'a11.memory.ephemeral.v1': 'Mémoire clé-valeur éphémère (set/get/list/delete/clear)',
           'qflush.rgba.multiload.v1': 'Projection Qflush RGBA vers mémoire, outils, données et orchestration',
+          'qflush.shiryu.zen_rgba.v1': 'Shiryu lame de sang: JSON vers signal zen RGBA avec bruit contrôlé',
           'web_fetch': 'Fetch HTTP d\'une URL',
           'fs.search': 'Recherche de fichiers dans le workspace',
         },

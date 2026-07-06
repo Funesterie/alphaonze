@@ -19,7 +19,10 @@ const {
   getTtsBinaryPathCandidates,
   getTtsEspeakPathCandidates,
 } = require('../lib/tts-paths.cjs');
-const { buildQflushRgbaMultiload } = require('./qflush-rgba-cube.cjs');
+const {
+  buildQflushRgbaMultiload,
+  buildShiryuZenRgba,
+} = require('./qflush-rgba-cube.cjs');
 
 // Always available since we have our own implementation
 const qflushAvailable = true;
@@ -891,6 +894,18 @@ function runBuiltInLocalFlow(flow, payload = {}, options = {}) {
         dedupe: payload?.dedupe,
         maxItems: payload?.maxItems,
         includePreview: payload?.includePreview === true,
+      }),
+      flow: normalizedFlow,
+      provider: 'local-qflush-fallback',
+    };
+  }
+  if (normalizedFlow === 'qflush.shiryu.zen_rgba.v1') {
+    return {
+      ...buildShiryuZenRgba(payload || {}, {
+        sessionId: payload?.sessionId,
+        accountTier: payload?.accountTier || payload?.tier,
+        admin: options.admin === true || payload?.admin === true,
+        priority: payload?.priority,
       }),
       flow: normalizedFlow,
       provider: 'local-qflush-fallback',
