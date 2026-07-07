@@ -46,6 +46,7 @@ const {
 } = require('../shiryu-v2-runner.cjs');
 const {
   prepareCubeCuda,
+  resolveCudaRuntimeStatus,
 } = require('../cube-to-cuda.cjs');
 const {
   getGamepadStatus,
@@ -481,9 +482,23 @@ function createQflushFlowRouter({ workspaceRoot, runtimeRoot } = {}) {
       endpoints: {
         plan: 'POST /api/qflush/shiryu/v2/plan',
         dryRun: 'POST /api/qflush/shiryu/v2/dry-run',
+        v3Status: 'GET /api/qflush/shiryu/v3/cuda/status',
         v3Cuda: 'POST /api/qflush/shiryu/v3/cuda/prepare',
       },
       note: 'dry-run utilise un exécuteur mock: aucun appel LLM, aucun coût provider.',
+    });
+  });
+
+  router.get('/shiryu/v3/cuda/status', (_req, res) => {
+    return res.json({
+      ...resolveCudaRuntimeStatus(process.env, { autoDetect: true }),
+      safeMode: true,
+      connectedTelemetry: {
+        cerbere: 'x9',
+        flower: 'robin-mil-fleurs',
+        metrics: ['shiryu.jobs', 'shiryu.failovers', 'shiryu.atoms'],
+      },
+      note: 'Détection/planification seulement: aucun kernel GPU destructif ni appel provider.',
     });
   });
 
@@ -552,11 +567,12 @@ function createQflushFlowRouter({ workspaceRoot, runtimeRoot } = {}) {
         threshold: body.threshold,
         threadsPerBlock: body.threadsPerBlock,
         includeAtoms: body.includeAtoms === true,
+        autoDetectGpu: body.autoDetectGpu === true || body.gpu === true,
       });
       return res.json({
         ...out,
         safeMode: true,
-        gpuForced: false,
+        gpuForced: body.gpu === true,
       });
     } catch (err) {
       logger.error('Shiryu V3 CUDA prepare error', { error: err.message });

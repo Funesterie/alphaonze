@@ -111,3 +111,15 @@ test('Qflush publishes Shiryu V3 cube-to-CUDA prepare endpoint on CPU fallback',
     assert.ok(prepared.json.atomCount >= 1);
   });
 });
+
+test('Qflush publishes Shiryu V3 GPU status with Cerbère telemetry metadata', async () => {
+  await withServer(async (baseUrl) => {
+    const status = await getJson(baseUrl, '/api/qflush/shiryu/v3/cuda/status');
+    assert.equal(status.response.status, 200);
+    assert.equal(status.json.ok, true);
+    assert.equal(status.json.schema, 'nossen.shiryu.v3_gpu_status.v1');
+    assert.equal(status.json.safeMode, true);
+    assert.equal(status.json.connectedTelemetry.cerbere, 'x9');
+    assert.ok(Array.isArray(status.json.connectedTelemetry.metrics));
+  });
+});

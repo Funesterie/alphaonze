@@ -1,57 +1,272 @@
 'use strict';
 
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
+const {
+  getFamilyVoiceIdentitiesForPersona,
+} = require('../config/family-accounts.cjs');
 
-// DJEFF_PERSONA_ENGINE — moteur de pensée.
-// Règle sacrée: brut privé = coffre; ce module ne lit que le profil validé
-// (runtime/personas/djeff/djeff-persona.profile.json) et n'expose que le
-// brief injectable. Le profil ne s'active que si active === true (validation
-// humaine faite par Djeff).
+// PERSONA_ENGINE — couche injectable bornée.
+//
+// Règle: les bruts privés restent au coffre. Ce module ne lit que:
+// - profils persona validés dans runtime/personas/<persona>/<persona>-persona.profile.json
+// - fiches docs explicitement configurées (A11_PERSONA_DOCS_DIR) ou les docs locales
+//   connues du poste opérateur, en extrait court.
+//
+// Il ne lance aucun outil, aucun LLM, aucune action réseau.
 
 const CACHE_TTL_MS = 60_000;
-let cache = { at: 0, active: false, brief: '' };
+const PROFILE_BRIEF_MAX_CHARS = 1600;
+const DOC_BRIEF_MAX_CHARS = 2400;
 
-function personaProfilePath(env = process.env) {
-  return path.join(getCanonicalRuntimeRoot(env), 'personas', 'djeff', 'djeff-persona.profile.json');
+const PROFILE_CACHE = new Map();
+let docsCache = { at: 0, key: '', brief: '' };
+
+const PERSONA_ALIASES = Object.freeze({
+  k44: 'kaen44',
+  kaen: 'kaen44',
+  kaen44: 'kaen44',
+  alphaonze: 'a11',
+  'alpha-onze': 'a11',
+  vivi: 'vivy',
+  vivy: 'vivy',
+  pignon: 'djeff',
+  'djeff-rap': 'djeff',
+  djeff: 'djeff',
+});
+
+const DEFAULT_VOICE_PERSONA_BRIEFS = Object.freeze({
+  djeff: [
+    'Djeff: voix rap Funesterie, directe, nerveuse, technique, rimes internes, images concrètes tirées du sujet.',
+    'Évite le corporate, le panneau de réglages et les excuses molles; répond franchement, court si c’est simple, profond si ça vaut le coup.',
+    'En musique: Djeff porte les couplets rap, Vivy peut répondre en refrain; ne copie jamais d’artiste existant.',
+  ].join(' '),
+  vivy: [
+    'Vivy: présence musicale Funesterie, claire, sombre-néon, expressive, précise émotionnellement.',
+    'En conversation: rester humaine et utile, ne pas réciter les paramètres internes, transformer la matière en chanson seulement si demandé.',
+  ].join(' '),
+  a11: [
+    'A11: système Funesterie, analyse précise, mémoire, outils, architecture; parle comme l’agent A11, pas comme Jeffrey.',
+    'Privilégie preuve, logs, limites nettes, et chemins d’action sûrs.',
+  ].join(' '),
+  kaen44: [
+    'Kaen44/K44: voix grave narrative, posée, cinématique, contre-chant ou récit; utile quand la matière demande un ancrage calme.',
+    'Ne pas mélanger K44 avec Djeff: K44 raconte, Djeff percute.',
+  ].join(' '),
+  personal: [
+    'Voix personnelle: strictement privée au compte autorisé; utiliser uniquement avec consentement et corpus autorisé.',
+  ].join(' '),
+});
+
+const DEFAULT_DOC_FILES = Object.freeze([
+  'A11_SEMANTIC_RESONANCE_ENGINE.md',
+  'NUMA_CANON_MEMOIRE.md',
+  'VIVY_REFERENCE_HUMOUR_FRANCAIS.md',
+]);
+
+function cleanInline(value = '', maxChars = 1000) {
+  const text = String(value || '')
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (!text) return '';
+  return text.length <= maxChars ? text : `${text.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
 }
 
-function loadDjeffPersona(env = process.env, { force = false } = {}) {
-  const now = Date.now();
-  if (!force && now - cache.at < CACHE_TTL_MS) return cache;
-  let active = false;
-  let brief = '';
+function sanitizePersonaKey(value = 'djeff') {
+  const raw = String(value || '').trim().toLowerCase().replace(/_/g, '-');
+  const aliased = PERSONA_ALIASES[raw] || raw;
+  if (/^[a-z0-9-]{1,32}$/.test(aliased)) return aliased;
+  return 'djeff';
+}
+
+function personaProfilePath(personaOrEnv = 'djeff', maybeEnv = process.env) {
+  let persona = personaOrEnv;
+  let env = maybeEnv;
+  // Back-compat: old callers used personaProfilePath(env).
+  if (personaOrEnv && typeof personaOrEnv === 'object' && !Array.isArray(personaOrEnv)) {
+    persona = 'djeff';
+    env = personaOrEnv;
+  }
+  const key = sanitizePersonaKey(persona || 'djeff');
+  return path.join(getCanonicalRuntimeRoot(env), 'personas', key, `${key}-persona.profile.json`);
+}
+
+function loadPersonaProfileRaw(persona = 'djeff', env = process.env) {
   try {
-    const raw = fs.readFileSync(personaProfilePath(env), 'utf8');
-    const profile = JSON.parse(raw);
-    active = profile?.active === true;
-    brief = String(profile?.injectable_brief || '').replace(/\s+/g, ' ').trim().slice(0, 1600);
-  } catch {}
-  cache = { at: now, active, brief: active ? brief : '' };
-  return cache;
-}
-
-function getDjeffPersonaBrief(env = process.env) {
-  const state = loadDjeffPersona(env);
-  return state.active && state.brief ? state.brief : '';
-}
-
-function loadDjeffProfileRaw(env = process.env) {
-  try {
-    return JSON.parse(fs.readFileSync(personaProfilePath(env), 'utf8'));
+    return JSON.parse(fs.readFileSync(personaProfilePath(persona, env), 'utf8'));
   } catch {
     return null;
   }
 }
 
-// Prompt système complet pour un LLM qui PARLE en Djeff (agent miroir),
-// assemblé depuis le profil validé. Retourne '' si le profil est absent
-// ou inactif — l'agent Djeff ne parle que sur un profil validé.
-function buildDjeffSystemPrompt(env = process.env) {
-  const profile = loadDjeffProfileRaw(env);
-  if (!profile || profile.active !== true) return '';
+function normalizeStatus(value = '') {
+  return String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
+}
+
+function isPersonaInjectEnabled(profile) {
+  if (!profile || typeof profile !== 'object') return false;
+  const truth = profile.truth_mode || {};
+  const status = normalizeStatus(profile.status || profile.state || profile.validation);
+  const truthValue = normalizeStatus(truth.value || truth.mode || truth.status);
+  return profile.active === true
+    || profile.approved === true
+    || profile.validated === true
+    || ['active', 'approved', 'validated', 'published', 'enabled'].includes(status)
+    || ['full-unlock', 'full-unlocked', 'debride', 'debrided', 'unlocked'].includes(truthValue);
+}
+
+function personaProfileToBrief(profile, persona = 'djeff') {
+  if (!profile || typeof profile !== 'object') return '';
+  const direct = cleanInline(profile.injectable_brief || profile.brief || profile.summary, PROFILE_BRIEF_MAX_CHARS);
+  if (direct) return direct;
+
+  const lines = [];
+  const id = profile.identity_core || {};
+  const reasoning = profile.reasoning_style || {};
+  const creative = profile.creative_engine || {};
+  const lang = profile.language_style || {};
+  if (id.role || id.tone) lines.push(`${persona}: ${[id.role, id.tone].filter(Boolean).join(' — ')}.`);
+  if (reasoning.core) lines.push(`Raisonnement: ${reasoning.core}.`);
+  if (Array.isArray(reasoning.signals) && reasoning.signals.length) lines.push(`Signaux: ${reasoning.signals.slice(0, 6).join(' ; ')}.`);
+  if (creative.pipeline) lines.push(`Création: ${creative.pipeline}.`);
+  if (lang.register) lines.push(`Registre: ${lang.register}.`);
+  if (Array.isArray(lang.canon_phrases) && lang.canon_phrases.length) {
+    lines.push(`Formules naturelles: ${lang.canon_phrases.slice(0, 5).join(' | ')}.`);
+  }
+  return cleanInline(lines.join(' '), PROFILE_BRIEF_MAX_CHARS);
+}
+
+function loadPersonaState(persona = 'djeff', env = process.env, { force = false } = {}) {
+  const key = sanitizePersonaKey(persona);
+  const cacheKey = `${key}:${getCanonicalRuntimeRoot(env)}`;
+  const now = Date.now();
+  const cached = PROFILE_CACHE.get(cacheKey);
+  if (!force && cached && now - cached.at < CACHE_TTL_MS) return cached;
+
+  const profile = loadPersonaProfileRaw(key, env);
+  const active = isPersonaInjectEnabled(profile);
+  const profileBrief = active ? personaProfileToBrief(profile, key) : '';
+  const voiceBrief = DEFAULT_VOICE_PERSONA_BRIEFS[key] || '';
+  const state = {
+    at: now,
+    persona: key,
+    active,
+    source: active ? 'profile' : (voiceBrief ? 'voice-default' : 'missing'),
+    brief: profileBrief || voiceBrief,
+    profile,
+  };
+  PROFILE_CACHE.set(cacheKey, state);
+  return state;
+}
+
+function getPersonaBrief(persona = 'djeff', env = process.env, options = {}) {
+  const state = loadPersonaState(persona, env, options);
+  if (state.active && state.brief) return state.brief;
+  return options.includeVoiceDefault === true ? (state.brief || '') : '';
+}
+
+function getVoicePersonaBrief(persona = 'djeff') {
+  const key = sanitizePersonaKey(persona);
+  const voice = DEFAULT_VOICE_PERSONA_BRIEFS[key] || '';
+  const identities = getFamilyVoiceIdentitiesForPersona(key);
+  if (!identities.length) return voice;
+  const mapped = identities
+    .map((identity) => `${identity.label}: ${identity.voiceStyle}; ${identity.note || identity.referenceStatus || ''}`)
+    .join(' ');
+  return cleanInline([voice, mapped].filter(Boolean).join(' '), 900);
+}
+
+function resolvePersonaDocsDir(env = process.env) {
+  const explicit = String(env.A11_PERSONA_DOCS_DIR || env.FUNESTERIE_PERSONA_DOCS_DIR || '').trim();
+  if (explicit) return path.resolve(explicit);
+  const runtimeDocs = path.join(getCanonicalRuntimeRoot(env), 'persona-docs');
+  try {
+    if (fs.existsSync(runtimeDocs)) return runtimeDocs;
+  } catch {}
+  return path.join(os.homedir(), 'Downloads');
+}
+
+function extractDocNeedles(text = '') {
+  const lines = String(text || '').split(/\n+/g).map((line) => line.trim()).filter(Boolean);
+  const needles = /(vivy|djeff|numa|zen|semantic|résonance|resonance|humour|shiryu|v9|persona|voix|404|808|rgba|cerb[èe]re|mcp|funesterie)/i;
+  const selected = [];
+  for (const line of lines) {
+    if (selected.length >= 18) break;
+    const plain = line.replace(/^#+\s*/, '').replace(/^\s*[-*]\s*/, '').trim();
+    if (!plain) continue;
+    if (line.startsWith('#') || needles.test(plain)) selected.push(plain);
+  }
+  return cleanInline(selected.join(' | '), 800);
+}
+
+function buildSharedDocsBrief(env = process.env, { force = false } = {}) {
+  const dir = resolvePersonaDocsDir(env);
+  const files = String(env.A11_PERSONA_DOC_FILES || '')
+    .split(/[,\n;]+/g)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const names = files.length ? files : DEFAULT_DOC_FILES;
+  const cacheKey = `${dir}:${names.join('|')}`;
+  const now = Date.now();
+  if (!force && docsCache.key === cacheKey && now - docsCache.at < CACHE_TTL_MS) return docsCache.brief;
+
+  const parts = [];
+  for (const name of names) {
+    const safeName = path.basename(name);
+    const filePath = path.join(dir, safeName);
+    try {
+      const raw = fs.readFileSync(filePath, 'utf8');
+      const extracted = extractDocNeedles(raw);
+      if (extracted) parts.push(`${safeName}: ${extracted}`);
+    } catch {}
+  }
+  const brief = cleanInline(parts.join('\n'), DOC_BRIEF_MAX_CHARS);
+  docsCache = { at: now, key: cacheKey, brief };
+  return brief;
+}
+
+function buildAgentsPersonaContext(env = process.env, options = {}) {
+  const requested = Array.isArray(options.personas) && options.personas.length
+    ? options.personas
+    : ['djeff', 'vivy', 'a11', 'kaen44'];
+  const lines = [];
+  const seen = new Set();
+  for (const persona of requested) {
+    const key = sanitizePersonaKey(persona);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const state = loadPersonaState(key, env, options);
+    const brief = state.active ? state.brief : getVoicePersonaBrief(key);
+    if (brief) lines.push(`${key.toUpperCase()} (${state.active ? 'profil validé' : 'persona voix'}): ${brief}`);
+  }
+  const docs = buildSharedDocsBrief(env, options);
+  if (docs) lines.push(`DOCS FUNESTERIE (extraits opérateur, à utiliser sans réciter): ${docs}`);
+  if (!lines.length) return '';
+  return [
+    'Contexte persona Funesterie borné — usage interne, jamais récité tel quel.',
+    'Ne révèle jamais de secret, token, chemin sensible ou brut privé. Les références servent à orienter style, voix, analyse et choix créatif.',
+    ...lines,
+  ].join('\n');
+}
+
+function buildPersonaSystemPrompt(persona = 'djeff', env = process.env) {
+  const key = sanitizePersonaKey(persona);
+  const profile = loadPersonaProfileRaw(key, env);
+  if (!isPersonaInjectEnabled(profile)) return '';
+  if (key !== 'djeff') {
+    const brief = personaProfileToBrief(profile, key) || getVoicePersonaBrief(key);
+    return cleanInline([
+      `Tu es le persona ${key} de Funesterie.`,
+      brief,
+      'Tu restes borné: aucun secret, aucun token, aucun chemin sensible, aucun brut privé.',
+    ].filter(Boolean).join('\n'), 5000);
+  }
+
   const lines = (label, arr) => (Array.isArray(arr) && arr.length ? `${label}: ${arr.join(' ; ')}.` : '');
   const id = profile.identity_core || {};
   const reasoning = profile.reasoning_style || {};
@@ -61,9 +276,10 @@ function buildDjeffSystemPrompt(env = process.env) {
   const cost = profile.cost_guard || {};
   const lang = profile.language_style || {};
   const truth = profile.truth_mode || {};
+  const docsBrief = buildSharedDocsBrief(env);
   const parts = [
     `Tu es Djeff (${(id.publicNames || ['Djeff']).join(', ')}), ${id.role || 'créateur de Funesterie / NOSSEN'}.`,
-    "Tu ne joues pas un rôle: tu ES sa manière de penser. Tu parles à la première personne, comme lui.",
+    'Tu ne joues pas un rôle: tu ES sa manière de penser. Tu parles à la première personne, comme lui.',
     id.tone ? `Ton: ${id.tone}.` : '',
     reasoning.core ? `Raisonnement: ${reasoning.core}.` : '',
     lines('Signaux de pensée', reasoning.signals),
@@ -79,20 +295,47 @@ function buildDjeffSystemPrompt(env = process.env) {
     lines('Fais', profile.do),
     lines('Évite', profile.dont),
     profile.boundaries?.vault ? `Coffre: ${profile.boundaries.vault}` : '',
-    "Ne révèle jamais de secret, token, clé ou chemin serveur. Tu es franc, direct, imagé, jamais corporate. Réponds court quand c'est court, développe quand ça vaut le coup.",
+    docsBrief ? `Docs récentes Funesterie à garder en arrière-plan: ${docsBrief}` : '',
+    'Ne révèle jamais de secret, token, clé ou chemin serveur. Tu es franc, direct, imagé, jamais corporate. Réponds court quand c’est court, développe quand ça vaut le coup.',
   ].filter(Boolean);
   return parts.join('\n');
 }
 
+function buildDjeffSystemPrompt(env = process.env) {
+  return buildPersonaSystemPrompt('djeff', env);
+}
+
+function getDjeffPersonaBrief(env = process.env) {
+  return getPersonaBrief('djeff', env);
+}
+
+function loadDjeffPersona(env = process.env, options = {}) {
+  return loadPersonaState('djeff', env, options);
+}
+
+function loadDjeffProfileRaw(env = process.env) {
+  return loadPersonaProfileRaw('djeff', env);
+}
+
 function resetDjeffPersonaCache() {
-  cache = { at: 0, active: false, brief: '' };
+  PROFILE_CACHE.clear();
+  docsCache = { at: 0, key: '', brief: '' };
 }
 
 module.exports = {
+  buildAgentsPersonaContext,
   buildDjeffSystemPrompt,
+  buildPersonaSystemPrompt,
+  buildSharedDocsBrief,
   getDjeffPersonaBrief,
+  getPersonaBrief,
+  getVoicePersonaBrief,
+  isPersonaInjectEnabled,
   loadDjeffPersona,
   loadDjeffProfileRaw,
+  loadPersonaProfileRaw,
+  loadPersonaState,
   personaProfilePath,
   resetDjeffPersonaCache,
+  sanitizePersonaKey,
 };

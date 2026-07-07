@@ -5,6 +5,8 @@ const assert = require('node:assert');
 
 const {
   BYTES_PER_ATOM,
+  parseNvidiaSmiCsv,
+  resolveCudaRuntimeStatus,
   isCudaAvailable,
   encodeCubeToAtoms,
   planKernel,
@@ -39,6 +41,27 @@ test('isCudaAvailable is false unless explicitly enabled with a device', () => {
   assert.equal(isCudaAvailable({}), false);
   assert.equal(isCudaAvailable({ A11_CUDA_ENABLED: '1' }), false); // no device
   assert.equal(isCudaAvailable({ A11_CUDA_ENABLED: '1', A11_CUDA_DEVICE_COUNT: '1' }), true);
+});
+
+test('resolveCudaRuntimeStatus can detect an NVIDIA GPU without forcing execution', () => {
+  const status = resolveCudaRuntimeStatus({}, {
+    autoDetect: true,
+    execFileSync: () => 'NVIDIA GeForce RTX 4090, 560.94, 24564\n',
+  });
+  assert.equal(status.ok, true);
+  assert.equal(status.cudaAvailable, true);
+  assert.equal(status.executionMode, 'gpu-ready');
+  assert.equal(status.detectedGpu.name, 'NVIDIA GeForce RTX 4090');
+  assert.equal(status.detectedGpu.memoryTotalMiB, 24564);
+});
+
+test('parseNvidiaSmiCsv tolerates empty output', () => {
+  assert.equal(parseNvidiaSmiCsv(''), null);
+  assert.deepEqual(parseNvidiaSmiCsv('RTX 3060, 555.12, 12288'), {
+    name: 'RTX 3060',
+    driverVersion: '555.12',
+    memoryTotalMiB: 12288,
+  });
 });
 
 test('identity op returns atoms unchanged', () => {

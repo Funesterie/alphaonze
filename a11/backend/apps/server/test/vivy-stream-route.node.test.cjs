@@ -3979,6 +3979,14 @@ test('Djeff persona engine injects the brief only when the profile is active', (
     assert.equal(getDjeffPersonaBrief(), '', 'profil inactif: aucun brief (validation humaine requise)');
 
     fs.writeFileSync(profilePath, JSON.stringify({
+      active: false,
+      truth_mode: { value: 'full_unlock' },
+      injectable_brief: 'Djeff pense en trajectoires full unlock.',
+    }));
+    resetDjeffPersonaCache();
+    assert.match(getDjeffPersonaBrief(), /full unlock/);
+
+    fs.writeFileSync(profilePath, JSON.stringify({
       active: true,
       injectable_brief: 'Djeff pense en trajectoires, pas en taches isolees.',
     }));
@@ -4023,6 +4031,11 @@ test('Djeff persona builds a full first-person system prompt only when active', 
     resetDjeffPersonaCache();
     assert.equal(buildDjeffSystemPrompt(), '', 'profil inactif: pas de prompt (validation requise)');
 
+    profile.truth_mode.value = 'full_unlock';
+    fs.writeFileSync(p, JSON.stringify(profile));
+    resetDjeffPersonaCache();
+    assert.match(buildDjeffSystemPrompt(), /Tu es Djeff/);
+
     profile.active = true;
     fs.writeFileSync(p, JSON.stringify(profile));
     resetDjeffPersonaCache();
@@ -4035,6 +4048,40 @@ test('Djeff persona builds a full first-person system prompt only when active', 
   } finally {
     if (previousRoot === undefined) delete process.env.A11_RUNTIME_ROOT;
     else process.env.A11_RUNTIME_ROOT = previousRoot;
+    const { resetDjeffPersonaCache } = require('../src/persona/persona-engine.cjs');
+    resetDjeffPersonaCache();
+  }
+});
+
+test('Agents persona context includes voice personas and configured docs without requiring active profiles', () => {
+  const os = require('node:os');
+  const path = require('node:path');
+  const fs = require('node:fs');
+  const previousRoot = process.env.A11_RUNTIME_ROOT;
+  const previousDocs = process.env.A11_PERSONA_DOCS_DIR;
+  const root = path.join(os.tmpdir(), `persona-context-test-${process.pid}`);
+  const docs = path.join(root, 'docs');
+  process.env.A11_RUNTIME_ROOT = root;
+  process.env.A11_PERSONA_DOCS_DIR = docs;
+  try {
+    fs.mkdirSync(docs, { recursive: true });
+    fs.writeFileSync(path.join(docs, 'A11_SEMANTIC_RESONANCE_ENGINE.md'), '# Semantic resonance\nVivy transforme les demandes en matière sensorielle sans recycler les vieux mots.');
+    fs.writeFileSync(path.join(docs, 'NUMA_CANON_MEMOIRE.md'), '# NUMA\nZEN protects content, NUMA protects path. 67=chez, 83=famille.');
+    fs.writeFileSync(path.join(docs, 'VIVY_REFERENCE_HUMOUR_FRANCAIS.md'), '# Humour français\nRetardement de révélation et chute innocente.');
+
+    const { buildAgentsPersonaContext, resetDjeffPersonaCache } = require('../src/persona/persona-engine.cjs');
+    resetDjeffPersonaCache();
+    const context = buildAgentsPersonaContext(process.env, { force: true });
+    assert.match(context, /DJEFF/);
+    assert.match(context, /VIVY/);
+    assert.match(context, /NUMA/);
+    assert.match(context, /Semantic resonance/);
+    assert.match(context, /secret|token/i);
+  } finally {
+    if (previousRoot === undefined) delete process.env.A11_RUNTIME_ROOT;
+    else process.env.A11_RUNTIME_ROOT = previousRoot;
+    if (previousDocs === undefined) delete process.env.A11_PERSONA_DOCS_DIR;
+    else process.env.A11_PERSONA_DOCS_DIR = previousDocs;
     const { resetDjeffPersonaCache } = require('../src/persona/persona-engine.cjs');
     resetDjeffPersonaCache();
   }

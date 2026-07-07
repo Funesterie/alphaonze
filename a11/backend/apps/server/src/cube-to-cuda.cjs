@@ -18,6 +18,7 @@
  */
 
 const { buildShiryuZenRgba, buildControlledNoiseVector } = require('./qflush-rgba-cube.cjs');
+const { execFileSync } = require('node:child_process');
 
 const BYTES_PER_ATOM = 4; // r, g, b, a — the morphing quad
 const DEFAULT_THREADS_PER_BLOCK = 256;
@@ -27,12 +28,70 @@ function flagEnabled(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
 }
 
+function parseNvidiaSmiCsv(value = '') {
+  const line = String(value || '').split(/\r?\n/g).map((entry) => entry.trim()).filter(Boolean)[0] || '';
+  if (!line) return null;
+  const parts = line.split(',').map((entry) => entry.trim());
+  if (!parts[0]) return null;
+  return {
+    name: parts[0],
+    driverVersion: parts[1] || '',
+    memoryTotalMiB: Number.parseInt(parts[2] || '', 10) || null,
+  };
+}
+
+function detectNvidiaGpu(options = {}) {
+  const run = options.execFileSync || execFileSync;
+  try {
+    const output = run('nvidia-smi', [
+      '--query-gpu=name,driver_version,memory.total',
+      '--format=csv,noheader,nounits',
+    ], {
+      encoding: 'utf8',
+      timeout: Math.max(500, Math.min(8000, Number(options.timeoutMs || 1500) || 1500)),
+      windowsHide: true,
+    });
+    const parsed = parseNvidiaSmiCsv(output);
+    return parsed ? { ok: true, source: 'nvidia-smi', ...parsed } : { ok: false, source: 'nvidia-smi', error: 'empty_output' };
+  } catch (err) {
+    return { ok: false, source: 'nvidia-smi', error: err && err.code ? String(err.code) : 'unavailable' };
+  }
+}
+
 /** CUDA is only "available" when explicitly enabled AND a device is declared. */
 function isCudaAvailable(env = process.env) {
   if (!flagEnabled(env.A11_CUDA_ENABLED)) return false;
   const declared = String(env.CUDA_VISIBLE_DEVICES || '').trim();
   const count = Number(env.A11_CUDA_DEVICE_COUNT || 0) || 0;
   return count > 0 || (declared !== '' && declared !== '-1');
+}
+
+function resolveCudaRuntimeStatus(env = process.env, options = {}) {
+  const declared = isCudaAvailable(env);
+  const autoDetect = options.autoDetect === true
+    || flagEnabled(env.SHIRYU_V3_GPU_AUTODETECT)
+    || flagEnabled(env.A11_CUDA_AUTODETECT);
+  const detected = autoDetect ? detectNvidiaGpu(options) : { ok: false, source: 'disabled', error: 'autodetect_off' };
+  const configuredDevice = String(env.CUDA_VISIBLE_DEVICES || env.SHIRYU_V3_GPU_DEVICE || '').trim();
+  const enabled = declared || detected.ok || flagEnabled(env.SHIRYU_V3_GPU_ENABLED);
+  return {
+    ok: true,
+    schema: 'nossen.shiryu.v3_gpu_status.v1',
+    gpuEnabled: enabled,
+    cudaAvailable: declared || detected.ok,
+    executionMode: declared || detected.ok ? 'gpu-ready' : 'cpu-fallback',
+    configuredDevice: configuredDevice || null,
+    declaredCuda: declared,
+    autoDetect,
+    detectedGpu: detected.ok ? {
+      source: detected.source,
+      name: detected.name,
+      driverVersion: detected.driverVersion,
+      memoryTotalMiB: detected.memoryTotalMiB,
+    } : null,
+    detectionError: detected.ok ? null : detected.error,
+    backend: String(env.SHIRYU_V3_CUDA_BACKEND || env.A11_CUDA_BACKEND || 'planned-cuda-kernel').trim(),
+  };
 }
 
 function clampByte(value) {
@@ -145,7 +204,8 @@ function prepareCubeCuda(input = {}, options = {}) {
 
   const encoded = encodeCubeToAtoms(cube);
   const plan = planKernel(encoded.count, op, options);
-  const cudaAvailable = isCudaAvailable(env);
+  const gpuStatus = resolveCudaRuntimeStatus(env, { autoDetect: options.autoDetectGpu === true });
+  const cudaAvailable = gpuStatus.cudaAvailable;
   const result = runCpuKernel(encoded.atoms, op, options); // CPU stand-in; swap for device kernel when GPU exists
 
   return {
@@ -154,6 +214,7 @@ function prepareCubeCuda(input = {}, options = {}) {
     pipeline: 'zen -> cube -> atoms(morphing 4B) -> [cuda]',
     cudaAvailable,
     executedOn: cudaAvailable ? 'gpu' : 'cpu-fallback',
+    gpuStatus,
     op: plan.op,
     atomCount: encoded.count,
     kernel: plan,
@@ -169,7 +230,10 @@ function prepareCubeCuda(input = {}, options = {}) {
 module.exports = {
   BYTES_PER_ATOM,
   SUPPORTED_OPS,
+  detectNvidiaGpu,
   isCudaAvailable,
+  parseNvidiaSmiCsv,
+  resolveCudaRuntimeStatus,
   encodeCubeToAtoms,
   planKernel,
   runCpuKernel,

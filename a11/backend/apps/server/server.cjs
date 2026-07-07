@@ -14535,7 +14535,7 @@ app.post('/ai', async (req, res) => {
 });
 
 const { A11_AGENT_SYSTEM_PROMPT, A11_AGENT_DEV_PROMPT } = require('./lib/a11Agent.js');
-const { getDjeffPersonaBrief } = require('./src/persona/persona-engine.cjs');
+const { buildAgentsPersonaContext } = require('./src/persona/persona-engine.cjs');
 const { runAction, runActionsEnvelope, getAllowedActionNames } = require('./src/a11/tools-dispatcher.cjs');
 
 function buildA11AgentInjectedContext(messages, toolResults = [], options = {}) {
@@ -14659,11 +14659,11 @@ async function callA11LLMAttempt(messages, options = {}) {
     allowedActions: options.allowedActions,
     compact: options.compact,
   });
-  const djeffPersonaBrief = getDjeffPersonaBrief();
+  const personaContext = buildAgentsPersonaContext();
   const promptMessages = [
     { role: 'system', content: A11_AGENT_SYSTEM_PROMPT },
-    ...(djeffPersonaBrief
-      ? [{ role: 'system', content: `Moteur de pensée Djeff (profil validé, usage interne, jamais récité tel quel): ${djeffPersonaBrief}` }]
+    ...(personaContext
+      ? [{ role: 'system', content: personaContext }]
       : []),
     { role: 'system', content: A11_AGENT_DEV_PROMPT },
     { role: 'user', content: injectedContext }
