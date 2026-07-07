@@ -2525,8 +2525,16 @@ function createVivyStreamNossenRunner(options = {}) {
     const roundId = cleanText(payload.roundId || payload.id, '', 120);
     if (!rawWinner?.text || !roundId) throw new Error('vivy_stream_winner_missing');
     const requestedClipMode = cleanText(payload.clipMode || payload.clipModeOverride, '', 40).toLowerCase();
-    const clipEnv = requestedClipMode
-      ? { ...process.env, VIVY_STREAM_FULL_CLIP_MODE: requestedClipMode }
+    const imageOnlyMode = ['image', 'cover', 'artwork', 'jaquette'].includes(requestedClipMode);
+    const clipEnv = imageOnlyMode
+      ? {
+          ...process.env,
+          VIVY_STREAM_FULL_CLIP_ENABLED: '0',
+          VIVY_STREAM_CLIP_ENABLED: '0',
+          VIVY_STREAM_FULL_CLIP_MODE: 'image',
+        }
+      : requestedClipMode
+      ? { ...process.env, VIVY_STREAM_FULL_CLIP_ENABLED: '1', VIVY_STREAM_FULL_CLIP_MODE: requestedClipMode }
       : process.env;
     const configuredFullClipSourceImageUrl = resolveTwitchFullClipSourceImageUrl(clipEnv);
     if (requestedClipMode) {

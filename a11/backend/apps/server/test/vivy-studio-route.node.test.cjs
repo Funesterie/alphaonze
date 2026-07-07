@@ -2996,6 +2996,11 @@ test('Vivy frontend keeps download distinct from open and exposes copy on every 
   const publicChatBlock = appSource.slice(publicChatStart, publicChatEnd > publicChatStart ? publicChatEnd : publicChatStart + 120000);
   assert.match(publicChatBlock, /messages\.map\(\(\s*message\s*\)\s*=>/);
   assert.match(publicChatBlock, /downloadVivyChatMediaFile\(/);
+  assert.match(publicChatBlock, /launchVivyImageCover\(/);
+  assert.match(publicChatBlock, /generatePngWithPrompt\(/);
+  assert.match(publicChatBlock, /launchVivyVideoClip\(\{ dream: true \}\)/);
+  assert.match(publicChatBlock, /message\.media\.kind === "image"/);
+  assert.match(publicChatBlock, /Télécharger l'image/);
   assert.match(publicChatBlock, /vivy-chat-copy-btn/);
   assert.match(publicChatBlock, /writeClipboardText\(message\.content\)/);
   assert.doesNotMatch(appSource, /La voix Vivy par défaut est déjà active/);

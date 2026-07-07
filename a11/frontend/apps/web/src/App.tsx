@@ -42,6 +42,7 @@ import {
   createCheckoutSession,
   createCustomerPortal,
   cancelSubscription,
+  generatePngWithPrompt,
   generateVideoWithPrompt,
   resumeLastVideoGenerationJob,
   createMatchArenaSession,
@@ -2888,7 +2889,7 @@ function FunesteriePrivateGateLoading({ surface }: { surface: FunesterieSurface 
 type VivyStudioMode = "voice" | "test" | "song" | "share";
 type VivyStudioProductionMode = Exclude<VivyStudioMode, "test">;
 type VivyStudioMediaPreview = {
-  kind: "audio" | "video";
+  kind: "audio" | "video" | "image";
   url: string;
   downloadUrl?: string;
   provider?: string;
@@ -3205,7 +3206,7 @@ function readVivyPublicChatFiles(files: any): VivyPublicChatFile[] | undefined {
 function readVivyPublicChatMedia(media: any): VivyStudioMediaPreview | null {
   if (!media || typeof media !== "object") return null;
   const url = toUnicodeLine(
-    media?.url || media?.audioUrl || media?.audio_url || media?.videoUrl || media?.video_url,
+    media?.url || media?.audioUrl || media?.audio_url || media?.videoUrl || media?.video_url || media?.imageUrl || media?.image_url,
     "",
     1200
   );
@@ -3216,7 +3217,11 @@ function readVivyPublicChatMedia(media: any): VivyStudioMediaPreview | null {
     1200
   );
   return {
-    kind: String(media?.kind || (media?.videoUrl || media?.video_url ? "video" : "audio")).toLowerCase() === "video" ? "video" : "audio",
+    kind: String(media?.kind || (media?.videoUrl || media?.video_url ? "video" : media?.imageUrl || media?.image_url ? "image" : "audio")).toLowerCase() === "video"
+      ? "video"
+      : String(media?.kind || "").toLowerCase() === "image" || Boolean(media?.imageUrl || media?.image_url)
+        ? "image"
+        : "audio",
     url,
     downloadUrl: downloadUrl || url,
     provider: toUnicodeLine(media?.provider, "", 120) || undefined,
@@ -7314,6 +7319,28 @@ function normalizeVivyClipGenerationResult(result: any): VivyStudioMediaPreview 
   };
 }
 
+function normalizeVivyImageGenerationResult(result: any): VivyStudioMediaPreview | null {
+  const raw = result?.result || result || {};
+  const rawImageUrl = String(
+    raw?.imageUrl
+    || raw?.image_url
+    || raw?.url
+    || raw?.publicUrl
+    || raw?.public_url
+    || ""
+  ).trim();
+  const imageUrl = resolveApiAssetUrl(rawImageUrl) || rawImageUrl;
+  if (!imageUrl) return null;
+  return {
+    kind: "image",
+    url: imageUrl,
+    downloadUrl: imageUrl,
+    provider: String(raw?.provider || raw?.providerUsed || raw?.provider_used || "a11-image").trim(),
+    contentType: String(raw?.contentType || raw?.content_type || "image/png").trim(),
+    filename: String(raw?.filename || raw?.result?.filename || "vivy-image.png").trim(),
+  };
+}
+
 function VivyPublicChat({ hasSession }: VivySessionProps) {
   const [messages, setMessages] = useState<VivyPublicChatMessage[]>(() => hasSession ? readVivyPublicChat() : [buildVivyLockedMessage()]);
   const [conversationId, setConversationId] = useState(() => readOrCreateVivyConversationId("default"));
@@ -7839,6 +7866,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     notes: string;
     referenceImageUrls: string[];
     files: VivyPublicChatFile[];
+    dream?: boolean;
   }) {
     const visualHints = options.files
       .map((file) => toUnicodeText(file.visualDescription || file.analysisSummary || file.description, 420).trim())
@@ -7847,7 +7875,9 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     const idea = toUnicodeText(options.idea, 2400).trim() || "clip musical Vivy Funesterie";
     const notes = toUnicodeText(options.notes, 900).trim();
     return [
-      "Clip vidéo musical Funesterie, 8 secondes, format 16:9, plan lisible plein cadre.",
+      options.dream
+        ? "Clip rêve animé Funesterie, rendu anime/cinématique, format 16:9, plan lisible plein cadre, mouvement de caméra fluide et ambiance signature."
+        : "Clip vidéo musical Funesterie, 8 secondes, format 16:9, plan lisible plein cadre.",
       options.referenceImageUrls.length
         ? "Utilise l'image de référence comme identité visuelle: préserver visage, silhouette, tenue, coiffure, palette et ambiance."
         : "Crée une identité visuelle originale cohérente avec le thème, sans remplacer Vivy par défaut si elle est mentionnée.",
@@ -7860,7 +7890,112 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     ].filter(Boolean).join("\n");
   }
 
-  async function launchVivyVideoClip() {
+  function buildVivyImageGeneratorPrompt(options: {
+    idea: string;
+    notes: string;
+    referenceImageUrls: string[];
+    files: VivyPublicChatFile[];
+  }) {
+    const visualHints = options.files
+      .map((file) => toUnicodeText(file.visualDescription || file.analysisSummary || file.description, 360).trim())
+      .filter(Boolean)
+      .slice(0, 3);
+    const idea = toUnicodeText(options.idea, 2200).trim() || "image Vivy Funesterie";
+    const notes = toUnicodeText(options.notes, 900).trim();
+    return [
+      "Image de couverture Funesterie/Vivy, style anime cinématique propre, composition lisible, lumière violet néon, rendu premium.",
+      options.referenceImageUrls.length
+        ? "Utilise l'image de référence comme base identitaire: préserver visage, silhouette, tenue, coiffure, palette et ambiance."
+        : "Créer une scène originale cohérente, sans texte incrusté ni pseudo-écriture.",
+      "Aucun texte dans l'image, aucun faux logo, aucun watermark, aucune interface.",
+      notes ? `Couleur artistique: ${notes}` : "",
+      visualHints.length ? `Indices images jointes: ${visualHints.join(" | ")}` : "",
+      `Sujet: ${idea}`,
+    ].filter(Boolean).join("\n");
+  }
+
+  async function launchVivyImageCover() {
+    if (!hasSession) {
+      setMessages([buildVivyLockedMessage()]);
+      setStatus("Connecte-toi à Funesterie avant de générer une image.");
+      return;
+    }
+    if (isSending || isVideoGenerating) return;
+    const workspace = readVivyStudioCompositionWorkspace();
+    const idea = toUnicodeText([draft.trim(), workspace.canvas].filter(Boolean).join("\n\n"), 3200).trim();
+    const filesForMessage = attachedFiles.slice(0, 6);
+    const referenceImageUrls = resolveVivyClipReferenceImageUrls(filesForMessage);
+    if (!idea && !filesForMessage.length) {
+      setStatus("Ajoute un thème, un canevas ou une image avant de lancer l'image.");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const userMessage: VivyPublicChatMessage = {
+      id: `vivy-image-user-${Date.now()}`,
+      role: "user",
+      content: idea
+        ? `Générer une image Vivy: ${toUnicodeText(idea, 900)}`
+        : "Générer une image Vivy depuis l'image de référence jointe.",
+      ts: now,
+      files: filesForMessage.length ? filesForMessage : undefined,
+    };
+    setMessages((current) => [...current, userMessage].slice(-36));
+    setDraft("");
+    setAttachedFiles([]);
+    setIsVideoGenerating(true);
+    setStatus(referenceImageUrls.length ? "Image Vivy: génération avec image référence..." : "Image Vivy: génération...");
+
+    try {
+      const prompt = buildVivyImageGeneratorPrompt({
+        idea: idea || userMessage.content,
+        notes: workspace.notes,
+        referenceImageUrls,
+        files: filesForMessage,
+      });
+      const result = await generatePngWithPrompt(prompt, {
+        sourceImageUrl: referenceImageUrls[0] || undefined,
+        referenceImageUrls,
+        width: 1280,
+        height: 720,
+        steps: 6,
+      });
+      const media = normalizeVivyImageGenerationResult(result);
+      if (!media) throw new Error("image_url_missing");
+      const assistantMessage: VivyPublicChatMessage = {
+        id: `vivy-image-assistant-${Date.now()}`,
+        role: "assistant",
+        content: "Image Vivy prête.",
+        ts: new Date().toISOString(),
+        media,
+      };
+      setMessages((current) => [...current, assistantMessage].slice(-36));
+      void appendVivyChatSessionMessageOnServer({
+        id: assistantMessage.id,
+        sessionId: activeChatSessionId,
+        sessionName: getActiveSessionName(activeChatSessionId),
+        conversationId,
+        role: "assistant",
+        content: assistantMessage.content,
+        media,
+        mode: "share",
+      }).catch(() => {});
+      setStatus("Image Vivy prête.");
+    } catch (error: any) {
+      const assistantMessage: VivyPublicChatMessage = {
+        id: `vivy-image-error-${Date.now()}`,
+        role: "assistant",
+        content: `Image stoppée: ${error?.message || error}`,
+        ts: new Date().toISOString(),
+      };
+      setMessages((current) => [...current, assistantMessage].slice(-36));
+      setStatus("Image Vivy à relancer.");
+    } finally {
+      setIsVideoGenerating(false);
+    }
+  }
+
+  async function launchVivyVideoClip(options: { dream?: boolean } = {}) {
     if (!hasSession) {
       setMessages([buildVivyLockedMessage()]);
       setStatus("Connecte-toi à Funesterie avant de générer un clip.");
@@ -7876,13 +8011,21 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       return;
     }
 
+    if (options.dream === true) {
+      const ok = window.confirm("Mode rêve: clip plus ambitieux, potentiellement plus lent/coûteux selon le provider vidéo. Continuer ?");
+      if (!ok) {
+        setStatus("Mode rêve annulé avant génération.");
+        return;
+      }
+    }
+
     const now = new Date().toISOString();
     const userMessage: VivyPublicChatMessage = {
-      id: `vivy-clip-user-${Date.now()}`,
+      id: `${options.dream ? "vivy-dream-user" : "vivy-clip-user"}-${Date.now()}`,
       role: "user",
       content: idea
-        ? `Générer un clip vidéo: ${toUnicodeText(idea, 900)}`
-        : "Générer un clip vidéo depuis l'image de référence jointe.",
+        ? `${options.dream ? "Générer un clip rêve animé" : "Générer un clip vidéo"}: ${toUnicodeText(idea, 900)}`
+        : `${options.dream ? "Générer un clip rêve animé" : "Générer un clip vidéo"} depuis l'image de référence jointe.`,
       ts: now,
       files: filesForMessage.length ? filesForMessage : undefined,
     };
@@ -7891,7 +8034,9 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     setDraft("");
     setAttachedFiles([]);
     setIsVideoGenerating(true);
-    setStatus(referenceImageUrls.length ? "Clip Vivy: génération avec image référence..." : "Clip Vivy: génération sans image référence...");
+    setStatus(options.dream
+      ? "Clip rêve Vivy: génération animée en cours..."
+      : referenceImageUrls.length ? "Clip Vivy: génération avec image référence..." : "Clip Vivy: génération sans image référence...");
 
     try {
       const prompt = buildVivyClipGeneratorPrompt({
@@ -7899,6 +8044,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         notes: workspace.notes,
         referenceImageUrls,
         files: filesForMessage,
+        dream: options.dream === true,
       });
       const result = await generateVideoWithPrompt(prompt, {
         sourceImageUrl: referenceImageUrls[0] || undefined,
@@ -7907,8 +8053,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           ? "Référence utilisateur prioritaire: garder l'identité de l'image et éviter toute mutation de visage."
           : "Clip Vivy sans image ref: identité originale cohérente, aucun texte visible.",
         videoProvider: referenceImageUrls.length ? "comfy-cloud" : undefined,
-        durationSeconds: 8,
-        fps: 16,
+        durationSeconds: options.dream ? 16 : 8,
+        fps: options.dream ? 20 : 16,
         acceptAsyncVideoJob: true,
         mobileAsync: true,
         maxWaitMs: 2_700_000,
@@ -7916,11 +8062,11 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       const media = normalizeVivyClipGenerationResult(result);
       if (!media) throw new Error("video_url_missing");
       const assistantMessage: VivyPublicChatMessage = {
-        id: `vivy-clip-assistant-${Date.now()}`,
+        id: `${options.dream ? "vivy-dream-assistant" : "vivy-clip-assistant"}-${Date.now()}`,
         role: "assistant",
         content: referenceImageUrls.length
-          ? "Clip vidéo prêt avec image référence."
-          : "Clip vidéo prêt.",
+          ? `${options.dream ? "Clip rêve" : "Clip vidéo"} prêt avec image référence.`
+          : `${options.dream ? "Clip rêve" : "Clip vidéo"} prêt.`,
         ts: new Date().toISOString(),
         media,
       };
@@ -7935,7 +8081,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         media,
         mode: "share",
       }).catch(() => {});
-      setStatus("Clip Vivy prêt.");
+      setStatus(options.dream ? "Clip rêve Vivy prêt." : "Clip Vivy prêt.");
     } catch (error: any) {
       const timeoutPending = /Timeout async/i.test(String(error?.message || error));
       const assistantMessage: VivyPublicChatMessage = {
@@ -8582,18 +8728,21 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
                 {message.media.kind === "video" ? (
                   <video controls preload="metadata" src={message.media.url} />
                 ) : null}
+                {message.media.kind === "image" ? (
+                  <img src={message.media.url} alt="Image générée par Vivy" loading="lazy" />
+                ) : null}
                 <a
                   href={message.media.downloadUrl || message.media.url}
                   onClick={(event) => {
                     event.preventDefault();
                     void downloadVivyChatMediaFile(
                       message.media?.downloadUrl || message.media?.url,
-                      message.media?.filename || (message.media?.kind === "video" ? "vivy-clip.mp4" : "vivy-musique.mp3")
+                      message.media?.filename || (message.media?.kind === "video" ? "vivy-clip.mp4" : message.media?.kind === "image" ? "vivy-image.png" : "vivy-musique.mp3")
                     );
                   }}
                   download={message.media.filename || undefined}
                 >
-                  {message.media.kind === "video" ? "Télécharger la vidéo" : "Télécharger la musique"}
+                  {message.media.kind === "video" ? "Télécharger la vidéo" : message.media.kind === "image" ? "Télécharger l'image" : "Télécharger la musique"}
                 </a>
               </div>
             ) : null}
@@ -8644,12 +8793,30 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           <button type="button" disabled={!hasSession} onClick={() => sendModeFromComposer("share")}>Scène</button>
           <button
             type="button"
+            className="vivy-image-generator-button"
+            disabled={!vivyClipCanLaunch}
+            onClick={() => void launchVivyImageCover()}
+            title="Génère une image/jaquette depuis le texte, le canevas ou l'image jointe."
+          >
+            Image
+          </button>
+          <button
+            type="button"
             className="vivy-clip-generator-button"
             disabled={!vivyClipCanLaunch}
             onClick={() => void launchVivyVideoClip()}
             title="Ajoute une image avec Fichier pour verrouiller l'identité visuelle du clip."
           >
             Clip
+          </button>
+          <button
+            type="button"
+            className="vivy-dream-generator-button"
+            disabled={!vivyClipCanLaunch}
+            onClick={() => void launchVivyVideoClip({ dream: true })}
+            title="Mode rêve: clip animé plus ambitieux, confirmation demandée avant lancement."
+          >
+            Rêve
           </button>
           <button
             type="button"

@@ -425,18 +425,58 @@ function normalizeSuggestionId(value = '') {
 
 function extractSuggestion(message = '') {
   const raw = cleanText(message, MAX_STREAM_MESSAGE_CHARS);
-  const match = raw.match(/^!(?:vivy|nossen|song|chanson|theme|th[eè]me|idee|idée)\s+(.{4,})$/i);
+  const match = raw.match(/^!(?:vivy|nossen|song|chanson|theme|th[eè]me|idee|idée|image|cover|jaquette|clip|reve|r[eê]ve)\s+(.{4,})$/i);
   if (!match) return '';
   return cleanText(match[1], MAX_STREAM_SUGGESTION_CHARS);
 }
 
+function normalizeTwitchRequestedMediaMode(value = '') {
+  const folded = foldForLookup(value);
+  if (!folded) return '';
+  if (/^(?:image|cover|jaquette|artwork)$/.test(folded)) return 'image';
+  if (/^(?:reve|rêve|dream|dreamclip|dream clip|dream-clip|clip reve|clip rêve|clip de reve|clip de rêve|clip-reve|clip-de-reve)$/.test(folded)) return 'dream';
+  if (/^(?:clip|video|animation|anime|animee|animé|animée)$/.test(folded)) return 'clip';
+  return '';
+}
+
+function resolveRoundClipModeOverride(winner = {}, explicitMode = '') {
+  return normalizeTwitchRequestedMediaMode(explicitMode)
+    || normalizeTwitchRequestedMediaMode(winner?.requestedMediaMode || winner?.mediaMode || '')
+    || 'image';
+}
+
+function extractTwitchRequestedMediaMode(message = '', suggestion = '') {
+  const raw = cleanText(message, MAX_STREAM_MESSAGE_CHARS);
+  const command = raw.match(/^!(image|cover|jaquette|clip|reve|r[eê]ve)\b/i);
+  if (command) {
+    const commandMode = normalizeTwitchRequestedMediaMode(command[1]);
+    if (commandMode === 'clip' && /^\s*!(?:clip)\s+(?:reve|r[eê]ve|dream|dreamclip)\b/i.test(raw)) return 'dream';
+    return commandMode;
+  }
+  const prefix = cleanText(suggestion, 120).match(/^(clip\s+r[eê]ve|clip\s+dream|image|cover|jaquette|clip|reve|r[eê]ve|dream|dreamclip)\b/i);
+  if (!prefix) return '';
+  const token = cleanText(prefix[1], 40).replace(/\s+/g, '-');
+  return normalizeTwitchRequestedMediaMode(token);
+}
+
+function stripTwitchRequestedMediaModePrefix(suggestion = '') {
+  const raw = cleanText(suggestion, MAX_STREAM_SUGGESTION_CHARS);
+  return cleanText(
+    raw.replace(/^(?:image|cover|jaquette|clip\s+r[eê]ve|clip\s+dream|clip|reve|r[eê]ve|dream|dreamclip)\s*[:\-–—]?\s+/i, ''),
+    MAX_STREAM_SUGGESTION_CHARS
+  ) || raw;
+}
+
 function extractSuggestionPayload(message = '') {
   const suggestion = extractSuggestion(message);
-  if (!suggestion) return { suggestion: '', musicProvider: '' };
-  const directive = extractTwitchMusicProviderDirective(suggestion);
+  if (!suggestion) return { suggestion: '', musicProvider: '', mediaMode: '' };
+  const mediaMode = extractTwitchRequestedMediaMode(message, suggestion);
+  const mediaCleanSuggestion = mediaMode ? stripTwitchRequestedMediaModePrefix(suggestion) : suggestion;
+  const directive = extractTwitchMusicProviderDirective(mediaCleanSuggestion);
   return {
-    suggestion: directive.text || suggestion,
+    suggestion: directive.text || mediaCleanSuggestion,
     musicProvider: cleanOneLine(directive.provider, '', 40),
+    mediaMode,
   };
 }
 
@@ -477,6 +517,7 @@ function parseVivyStreamChatMessage(input = {}) {
     messageId: cleanOneLine(input.messageId || input.id, createShortId('chat'), 120),
     suggestion: suggestionPayload.suggestion,
     musicProvider: suggestionPayload.musicProvider,
+    mediaMode: suggestionPayload.mediaMode,
     voteTargetId: extractVote(message),
     star: extractStarRating(message),
     receivedAt: cleanOneLine(input.receivedAt || input.timestamp || '', '', 80) || nowIso(),
@@ -1154,6 +1195,7 @@ function createVivyStreamStore(options = {}) {
       existing.votes = Number(existing.votes || 0) + 1;
       existing.updatedAt = parsed.receivedAt;
       if (!existing.musicProvider && parsed.musicProvider) existing.musicProvider = parsed.musicProvider;
+      if (!existing.requestedMediaMode && parsed.mediaMode) existing.requestedMediaMode = parsed.mediaMode;
       startVotingCountdown(round);
       return existing;
     }
@@ -1167,6 +1209,7 @@ function createVivyStreamStore(options = {}) {
       author: parsed.author,
       source: parsed.source,
       musicProvider: cleanOneLine(parsed.musicProvider, '', 40),
+      requestedMediaMode: normalizeTwitchRequestedMediaMode(parsed.mediaMode) || 'image',
       createdAt: parsed.receivedAt,
       updatedAt: parsed.receivedAt,
       votes: 1,
@@ -1191,6 +1234,7 @@ function createVivyStreamStore(options = {}) {
       existing.receivedAt = parsed.receivedAt;
       existing.author = parsed.author;
       if (!existing.musicProvider && parsed.musicProvider) existing.musicProvider = parsed.musicProvider;
+      if (!existing.requestedMediaMode && parsed.mediaMode) existing.requestedMediaMode = parsed.mediaMode;
       return existing;
     }
     const queued = {
@@ -1198,6 +1242,8 @@ function createVivyStreamStore(options = {}) {
       author: parsed.author,
       source: parsed.source,
       musicProvider: cleanOneLine(parsed.musicProvider, '', 40),
+      requestedMediaMode: normalizeTwitchRequestedMediaMode(parsed.mediaMode) || 'image',
+      mediaMode: normalizeTwitchRequestedMediaMode(parsed.mediaMode) || 'image',
       message: parsed.message,
       messageId: parsed.messageId,
       receivedAt: parsed.receivedAt,
@@ -1470,7 +1516,7 @@ function createVivyStreamStore(options = {}) {
         roundId: state.round.id,
         winner: JSON.parse(JSON.stringify(winner)),
         nossenSeed,
-        clipMode: consumeNextClipMode(),
+        clipMode: resolveRoundClipModeOverride(winner, consumeNextClipMode()),
       })).catch((error) => {
         console.error('[vivy-stream] automatic NOSSEN start failed:', error?.message || String(error));
       });
@@ -2181,14 +2227,16 @@ function createVivyStreamRouter(options = {}) {
 
   router.post('/round/clip-mode', express.json({ limit: '16kb' }), writeGuard, (req, res) => {
     const body = req.body || {};
-    const mode = cleanOneLine(body.mode || body.clipMode, '', 40).toLowerCase();
+    const rawMode = cleanOneLine(body.mode || body.clipMode, '', 40).toLowerCase();
+    const mode = normalizeTwitchRequestedMediaMode(rawMode) || rawMode;
     const disarm = !mode || mode === 'off' || mode === 'none' || mode === 'default';
-    const estimate = disarm ? null : estimateTwitchFullClipCost(process.env, { mode });
-    if (body.confirm !== true) {
+    const imageOnly = mode === 'image';
+    const estimate = disarm || imageOnly ? null : estimateTwitchFullClipCost(process.env, { mode });
+    if (body.confirm !== true && !imageOnly) {
       return res.json({
         ok: true,
         armed: false,
-        requiresConfirmation: !disarm,
+        requiresConfirmation: !disarm && !imageOnly,
         nextClipMode: store.peekNextClipMode(),
         estimate,
         message: disarm
@@ -2222,7 +2270,7 @@ function createVivyStreamRouter(options = {}) {
       roundId: state.round.id,
       winner,
       nossenSeed: buildNossenSeedFromRound(state),
-      clipMode: store.consumeNextClipMode(),
+      clipMode: resolveRoundClipModeOverride(winner, store.consumeNextClipMode()),
     });
     return res.status(started.started ? 202 : 409).json({
       ok: started.started,
@@ -2257,7 +2305,9 @@ module.exports = {
   extractStarRating,
   isDuplicateStreamChatMessage,
   isAllowedVivyStreamDownloadUrl,
+  normalizeTwitchRequestedMediaMode,
   parseVivyStreamChatMessage,
+  resolveRoundClipModeOverride,
   resolveRoundMs,
   resolveVivyMoodTheme,
 };

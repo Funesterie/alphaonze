@@ -17,7 +17,9 @@ const {
   createVivyStreamRouter,
   createVivyStreamStore,
   isDuplicateStreamChatMessage,
+  normalizeTwitchRequestedMediaMode,
   parseVivyStreamChatMessage,
+  resolveRoundClipModeOverride,
   resolveRoundMs,
 } = require('../src/routes/vivy-stream.cjs');
 const {
@@ -179,6 +181,7 @@ test('Vivy stream parser detects suggestions, votes and star ratings', () => {
   });
   assert.equal(suggestion.author, 'René');
   assert.equal(suggestion.suggestion, 'Bleach opening nerveux avec Ichigo et Rukia');
+  assert.equal(resolveRoundClipModeOverride({}), 'image');
 
   const vote = parseVivyStreamChatMessage({ username: 'chat', message: '!vote S12' });
   assert.equal(vote.voteTargetId, 'S12');
@@ -188,6 +191,40 @@ test('Vivy stream parser detects suggestions, votes and star ratings', () => {
 
   const emojiStars = parseVivyStreamChatMessage({ username: 'chat', message: '⭐⭐⭐⭐' });
   assert.deepEqual(emojiStars.star, { rating: 4, targetId: '' });
+});
+
+test('Vivy stream parser routes image clip and dream clip commands without making video default', () => {
+  const image = parseVivyStreamChatMessage({
+    username: 'funeste38',
+    message: '!image Vivy aux platines sous la pluie néon',
+  });
+  assert.equal(image.suggestion, 'Vivy aux platines sous la pluie néon');
+  assert.equal(image.mediaMode, 'image');
+  assert.equal(resolveRoundClipModeOverride({ requestedMediaMode: image.mediaMode }), 'image');
+
+  const clip = parseVivyStreamChatMessage({
+    username: 'funeste38',
+    message: '!clip Vivy anime la scène Shiryu lame de sang',
+  });
+  assert.equal(clip.suggestion, 'Vivy anime la scène Shiryu lame de sang');
+  assert.equal(clip.mediaMode, 'clip');
+  assert.equal(resolveRoundClipModeOverride({ requestedMediaMode: clip.mediaMode }), 'clip');
+
+  const dream = parseVivyStreamChatMessage({
+    username: 'funeste38',
+    message: '!clip rêve Shiryu découpe la fumée en anime violet',
+  });
+  assert.equal(dream.suggestion, 'Shiryu découpe la fumée en anime violet');
+  assert.equal(dream.mediaMode, 'dream');
+  assert.equal(normalizeTwitchRequestedMediaMode('clip-reve'), 'dream');
+  assert.equal(resolveRoundClipModeOverride({ requestedMediaMode: dream.mediaMode }), 'dream');
+
+  const inline = parseVivyStreamChatMessage({
+    username: 'funeste38',
+    message: '!chanson clip rêve Vivy Live, anime dark rave',
+  });
+  assert.equal(inline.suggestion, 'Vivy Live, anime dark rave');
+  assert.equal(inline.mediaMode, 'dream');
 });
 
 test('Vivy stream ignores duplicate OBS/Twitch chat events', () => {
@@ -3404,6 +3441,11 @@ test('Vivy stream clip-mode arming estimates cost, requires confirmation and sta
     assert.equal(armed.json.armed, true);
     assert.equal(armed.json.nextClipMode, 'dream');
 
+    const imageOnly = await postJson(baseUrl, '/api/vivy/stream/round/clip-mode', { mode: 'image' });
+    assert.equal(imageOnly.json.ok, true);
+    assert.equal(imageOnly.json.armed, true);
+    assert.equal(imageOnly.json.nextClipMode, 'image');
+
     await postJson(baseUrl, '/api/vivy/stream/chat', {
       source: 'twitch',
       username: 'funeste38',
@@ -3411,7 +3453,18 @@ test('Vivy stream clip-mode arming estimates cost, requires confirmation and sta
     });
     await postJson(baseUrl, '/api/vivy/stream/round/lock', {});
     assert.equal(started.length, 1);
-    assert.equal(started[0].clipMode, 'dream');
+    assert.equal(started[0].clipMode, 'image');
+
+    await postJson(baseUrl, '/api/vivy/stream/control', { action: 'next' });
+    await postJson(baseUrl, '/api/vivy/stream/round/clip-mode', { mode: 'dream', confirm: true });
+    await postJson(baseUrl, '/api/vivy/stream/chat', {
+      source: 'twitch',
+      username: 'funeste38',
+      message: '!chanson Vivy Live rêve armé, électro-pop sombre',
+    });
+    await postJson(baseUrl, '/api/vivy/stream/round/lock', {});
+    assert.equal(started.length, 2);
+    assert.equal(started[1].clipMode, 'dream');
 
     await postJson(baseUrl, '/api/vivy/stream/control', { action: 'next' });
     await postJson(baseUrl, '/api/vivy/stream/chat', {
@@ -3420,8 +3473,8 @@ test('Vivy stream clip-mode arming estimates cost, requires confirmation and sta
       message: '!chanson Deuxième round sans mode rêve',
     });
     await postJson(baseUrl, '/api/vivy/stream/round/lock', {});
-    assert.equal(started.length, 2);
-    assert.equal(started[1].clipMode, '');
+    assert.equal(started.length, 3);
+    assert.equal(started[2].clipMode, 'image');
   } finally {
     await new Promise((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
