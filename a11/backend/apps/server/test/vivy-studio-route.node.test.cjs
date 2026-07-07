@@ -3935,6 +3935,30 @@ test('Vivy NOSSEN routing defaults to Djeff and Vivy instead of K44 solo when th
   assert.doesNotMatch(repaired.songMood, /cinématique grave|cordes sombres/i);
 });
 
+test('Vivy NOSSEN routing keeps French vocals unless English or instrumental is explicitly requested', () => {
+  const material = '!nossen Mega freestyle, rap egotrip sombre, Djeff arrive au micro sans remords, flow nerveux';
+  const routed = sanitizeVivyNossenRoutingPlanForRequest(
+    inferVivyNossenRoutingPlan({ message: material }),
+    material
+  );
+
+  assert.match(routed.songMood, /paroles françaises uniquement/i);
+  assert.match(routed.songMood, /voix en français/i);
+  assert.match(routed.songMood, /aucun refrain anglais/i);
+
+  const english = sanitizeVivyNossenRoutingPlanForRequest(
+    { artists: ['djeff'], songMood: 'UK rap drill, dark bounce' },
+    '!nossen freestyle en anglais, UK rap drill'
+  );
+  assert.doesNotMatch(english.songMood, /paroles françaises uniquement|aucun refrain anglais/i);
+
+  const instrumental = sanitizeVivyNossenRoutingPlanForRequest(
+    { artists: ['a11'], songMood: 'instrumental pur, sound design cyber' },
+    '!nossen instrumental sans paroles, sound design cyber'
+  );
+  assert.doesNotMatch(instrumental.songMood, /paroles françaises uniquement|voix en français/i);
+});
+
 test('Vivy does not treat the Twitch command as a Vivy casting request', () => {
   const duet = enforceVivyNossenVoiceSemantics({
     artists: ['vivy'],

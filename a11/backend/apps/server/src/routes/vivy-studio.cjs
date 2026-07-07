@@ -4844,6 +4844,18 @@ function hasVivyNossenExplicitK44Signal(material = '') {
     || /\b(?:grave|pose|posé|cinematique|cinématique|k44|kaen44)\b.{0,40}\b(?:voix|narration|narrateur|conteur|contrechant|timbre)\b/.test(folded);
 }
 
+function hasVivyNossenExplicitEnglishSignal(material = '') {
+  const folded = foldTextForLookup(material);
+  if (!folded) return false;
+  return /\b(?:anglais|anglaise|english|en anglais|lyrics english|english lyrics|bilingue|bilingual|us rap|uk rap)\b/.test(folded);
+}
+
+function hasVivyNossenInstrumentalSignal(material = '') {
+  const folded = foldTextForLookup(material);
+  if (!folded) return false;
+  return /\b(?:instrumental|sans paroles|sans chant|no vocals|no lyrics|bruitages?|sfx|foley|sound design)\b/.test(folded);
+}
+
 function sanitizeVivyNossenRoutingPlanForRequest(plan = {}, material = '', fallback = null) {
   const fallbackPlan = fallback && fallback.songMood
     ? fallback
@@ -4876,6 +4888,14 @@ function sanitizeVivyNossenRoutingPlanForRequest(plan = {}, material = '', fallb
 
   if (!artists.length) artists = ['djeff', 'vivy'];
   if (!songMood) songMood = 'rap français NOSSEN moderne, groove clair, refrain mémorable';
+  if (!hasVivyNossenInstrumentalSignal(material) && !hasVivyNossenExplicitEnglishSignal(material)) {
+    songMood = joinVivyNossenRoutingMoodParts([
+      songMood,
+      'paroles françaises uniquement',
+      'voix en français',
+      'aucun refrain anglais',
+    ], 520);
+  }
   return {
     ...plan,
     artists: limitVivyNossenRoutingArtists(artists),
