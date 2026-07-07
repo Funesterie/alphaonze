@@ -5696,7 +5696,8 @@ async function buildVivyAiChat(input, req) {
   const message = cleanText(input.message || input.prompt || input.songText || input.text, VIVY_SONG_MAX_CHARS);
   const intentMessage = cleanVivyMessageForIntent(message);
   const visualCreativeDirection = isVivyVisualCreativeDirectionRequest(intentMessage || message);
-  const mode = visualCreativeDirection ? 'chat' : resolveVivyChatMode(input, message);
+  const malformedNossenRelay = isVivyMalformedNossenOutputQuestion(intentMessage || message, getVivyHistoryText(input.history));
+  const mode = visualCreativeDirection || malformedNossenRelay ? 'chat' : resolveVivyChatMode(input, message);
   const files = normalizeVivyFiles(input);
   const language = resolveVivyResponseLanguage(input, req);
   const fallback = buildVivyChat({ ...input, files, mode, language });
@@ -5807,7 +5808,7 @@ async function buildVivyAiChat(input, req) {
     };
   }
 
-  if (mode === 'chat' && isVivyMalformedNossenOutputQuestion(intentMessage || message, getVivyHistoryText(input.history))) {
+  if (mode === 'chat' && malformedNossenRelay) {
     const assistant = buildVivyMalformedNossenOutputReply();
     rememberVivyEpisode(userId, 'vivy_reply', assistant, {
       mode: 'chat',
@@ -6752,7 +6753,8 @@ function buildVivySunoLyrics(input = {}) {
   );
   const arrangement = splitVivyArrangementCues(material);
   if (looksLikeExplicitSunoLyricsBlock(arrangement.lyrics) || looksLikeCompleteLyrics(arrangement.lyrics)) {
-    return cleanText(repairVivySemanticImageCoherence(arrangement.lyrics, material), VIVY_SONG_MAX_CHARS);
+    const repaired = cleanText(repairVivySemanticImageCoherence(arrangement.lyrics, material), VIVY_SONG_MAX_CHARS);
+    return sanitizeVivyProviderCleanLyrics(repaired, VIVY_SONG_MAX_CHARS) || repaired;
   }
 
   const structuredMaterial = cleanText(String(arrangement.lyrics || '')
@@ -6760,10 +6762,11 @@ function buildVivySunoLyrics(input = {}) {
     .map((line) => stripSongCommand(line))
     .filter(Boolean)
     .join('\n'), VIVY_SONG_MAX_CHARS);
-  return buildVivyStructuredLyrics({
+  const structuredLyrics = buildVivyStructuredLyrics({
     ...input,
     songText: repairVivySemanticImageCoherence(structuredMaterial || arrangement.lyrics, material),
   });
+  return sanitizeVivyProviderCleanLyrics(structuredLyrics, VIVY_SONG_MAX_CHARS) || structuredLyrics;
 }
 
 function wantsVivyExternalVoiceMix(input = {}) {
@@ -7643,9 +7646,15 @@ function isVivyProviderTechnicalLyricLine(line = '') {
   const value = String(line || '').trim();
   if (!value) return false;
   if (/^\[[^\]]+\]$/.test(value)) return false;
+  const folded = foldTextForLookup(value);
+  if (!folded) return false;
   return /\bstyle\s*:/i.test(value)
-    || /\b(?:prompt|brief|suno|mureka|provider|mod[èe]le|model|negative\s+prompt|distribution\s+vocale|direction\s+sonore|canevas|consignes?|r[èe]gles?\s+priv[ée]es?|non\s+chantables?|ne\s+(?:mets|chante|r[ée]cite|dis)\s+pas)\b/i
-    .test(value);
+    || /\b(?:prompt|brief|suno|mureka|provider|mod[èe]le|model|negative\s+prompt|distribution\s+vocale|direction\s+sonore|canevas|consignes?|r[èe]gles?\s+priv[ée]es?|non\s+chantables?|ne\s+(?:mets|met|chante|r[ée]cite|dis)\s+pas)\b/i.test(value)
+    || /\b(?:distribution vocale|casting vocal|vocal cast|voix selectionnees|voix choisies|direction sonore|canevas|consignes?|regles? privees?|non chantables?)\b/.test(folded)
+    || /\b(?:matiere (?:chanson )?nossen|matiere a transformer|matiere creative|matiere composition|a transformer en (?:chanson|paroles)|pas a recopier)\b/.test(folded)
+    || /\b(?:banger dans les paroles|ne mets? pas le mot|ne chante jamais|jamais les consignes)\b/.test(folded)
+    || /\b(?:fallback|grand modele|llm|provider pack|clean lyrics|paroles propres|paroles finales|paroles envoyees a suno)\b/.test(folded)
+    || /\b(?:songtext|songmood|songmaxtokens|artistcount|singercount|vocalcast|negative prompt|style brief|suno style|mureka prompt)\b/.test(folded);
 }
 
 function sanitizeVivyProviderCleanLyrics(value = '', maxChars = VIVY_SONG_MAX_CHARS) {

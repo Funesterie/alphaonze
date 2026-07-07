@@ -1227,6 +1227,49 @@ test('Suno payload does not sing NOSSEN casting instructions in a Peter Pan song
   assert.doesNotMatch(payload.prompt, /je transforme la cage|Je pèse le bruit|bord du mirage|dans le noir je trouve ma voix|Et la voix tient/i);
 });
 
+test('Provider payload strips fallback control lines before Suno and Mureka', () => {
+  const contaminatedLyrics = [
+    '[Verse 1 - Djeff]',
+    'Distribution vocale choisie:',
+    'Solo Djeff + K44.',
+    'Ne mets pas le mot.',
+    'Banger dans les paroles.',
+    'Matière à transformer en chanson:',
+    'Djeff découpe la nuit, le micro fait des étincelles,',
+    'K44 garde le cap quand la foule devient réelle.',
+    '',
+    '[Chorus - K44]',
+    'On reste en français, pas de refrain anglais,',
+    'La scène tient debout quand le fallback est nettoyé.',
+  ].join('\n');
+
+  const sunoPayload = buildVivySunoPayload({
+    songSource: 'NOSSEN fallback - clean provider gate',
+    songArtists: ['djeff', 'k44'],
+    vocalCast: 'Duo Djeff + K44',
+    songMood: 'rap français sombre, cypher nocturne, drums secs',
+    lyrics: contaminatedLyrics,
+  });
+  const murekaPayload = buildVivyMurekaPayload({
+    songSource: 'NOSSEN fallback - clean provider gate',
+    songArtists: ['djeff', 'k44'],
+    vocalCast: 'Duo Djeff + K44',
+    songMood: 'rap français sombre, cypher nocturne, drums secs',
+    cleanLyrics: contaminatedLyrics,
+  });
+
+  assert.match(sunoPayload.prompt, /Djeff découpe la nuit/i);
+  assert.match(sunoPayload.prompt, /K44 garde le cap/i);
+  assert.match(sunoPayload.prompt, /On reste en français/i);
+  assert.doesNotMatch(sunoPayload.prompt, /Distribution vocale|Solo Djeff|Ne mets pas le mot|Banger dans les paroles|Matière à transformer/i);
+
+  assert.match(murekaPayload.body.lyrics, /Djeff découpe la nuit/i);
+  assert.match(murekaPayload.body.lyrics, /K44 garde le cap/i);
+  assert.match(murekaPayload.body.prompt, /French full-song production/i);
+  assert.doesNotMatch(murekaPayload.body.lyrics, /Distribution vocale|Solo Djeff|Ne mets pas le mot|Banger dans les paroles|Matière à transformer/i);
+  assert.doesNotMatch(murekaPayload.body.lyrics, /fallback/i);
+});
+
 test('Suno payload does not sing NOSSEN seed labels as lyrics', () => {
   const payload = buildVivySunoPayload({
     songSource: 'NOSSEN Banger - conversation Vivy',
@@ -5622,6 +5665,34 @@ test('Vivy chat fallback diagnoses malformed NOSSEN output when asked what block
   assert.doesNotMatch(result.assistant, /Je te suis sur ça/i);
   assert.doesNotMatch(result.assistant, /Je reste avec le fond/i);
   assert.doesNotMatch(result.assistant, /Dis-moi ce qui compte le plus/i);
+});
+
+test('Vivy chat fallback ignores generic ethics filler and reports the NOSSEN fallback leak', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-chat-nossen-grok-filler-to-codex',
+    message: [
+      "Dis à Codex : ce qui me bloque ici, ce n'est pas l'idée de chanson. C'est le chemin de secours.",
+      'Quand le grand modèle ne répond pas ou que NOSSEN prend trop de contexte, des consignes internes partent dans Suno comme si c’était des paroles.',
+      'On le voit avec “Distribution vocale choisie”, “Ne mets pas le mot”, “Banger dans les paroles” et “Matière à transformer”.',
+    ].join('\n'),
+    history: [
+      {
+        role: 'assistant',
+        content: [
+          "Il semblerait que Grok ait été influencé par les valeurs de son créateur, Elon Musk.",
+          "Le pouvoir et l'argent peuvent être des motivations puissantes.",
+          'Il est important de prendre des mesures de sécurité et d’éthique.',
+        ].join('\n'),
+      },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.equal(result.aiMode, 'deterministic_nossen_malformed_output');
+  assert.match(result.assistant, /chemin de secours|NOSSEN|Suno|bloc paroles propre|fallback chat/i);
+  assert.doesNotMatch(result.assistant, /Elon Musk|pouvoir|argent|responsable et éthique|responsable et ethique/i);
+  assert.doesNotMatch(result.assistant, /Je te suis sur ça/i);
 });
 
 test('Vivy keeps soft song ideas in chat until Chanson or NOSSEN is explicit', async () => {
