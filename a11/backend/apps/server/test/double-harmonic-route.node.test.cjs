@@ -2060,6 +2060,9 @@ test('double harmonic route exposes v9 electrolysis as a public mode instead of 
     assert.equal(calls[0].modulation, 'electrolysis-guitar');
     assert.equal(calls[0].frequencyMinHz, 40.25);
     assert.equal(calls[0].frequencyMaxHz, 40.6666666666666);
+    assert.equal(calls[0].amount, 0.042);
+    assert.equal(calls[0].irregularity, 0.36);
+    assert.equal(calls[0].asymmetry, 0.27);
     assert.equal(calls[0].bidirectional, true);
   } finally {
     await new Promise((resolve) => server.close(resolve));

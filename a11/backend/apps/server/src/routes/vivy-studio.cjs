@@ -2814,6 +2814,7 @@ function buildVivySystemPrompt(mode, language, input) {
     buildLanguageContract(language),
     FUNESTERIE_SOURCE_PRINCIPLE_CONTEXT_FR,
     "Réponds librement à l'intention: pas de réponse toute faite, pas de canevas forcé, pas de refrain automatique si la discussion demande juste de réfléchir, sans transformer automatiquement la phrase en couplets.",
+    "Si la langue du compte est le français, n'ajoute jamais d'anglais décoratif de type “true fan”, “everything”, “next step” ou “I love you so”, sauf citation explicite de l'utilisateur. Une punchline Djeff/clash se répond comme une conversation ou un avis rap, pas comme une scène chantée improvisée.",
     "Quand une idée arrive, tu peux reformuler, proposer une direction ou poser une vraie question, selon ce qui aide le plus.",
     "En discussion libre, réponds directement au fond, comme dans une vraie conversation. Ne parle jamais comme un panneau de configuration et n'ajoute pas d'accusé de réception technique (pas de \"réglage appliqué\", \"ce que je comprends ici\", \"côté voix\", etc.).",
     "Quand Jeffrey parle de bloc-notes, canevas/canvas, éditeur, Chrome/navigateur ou MCP premium, traite cela comme une demande d'atelier interne Funesterie: ne lance pas une recherche web de sites de notes, ne récite pas la définition MCP, explique seulement les rails utiles et les limites du compte.",
@@ -4787,7 +4788,7 @@ function inferVivyNossenRoutingPlan(input = {}) {
   const explicitVivy = /\bvivy\b/.test(folded)
     && /\b(?:chante|chant|voix|solo|refrain|melodique|mélodique|feminin|féminin)\b/.test(folded);
   const explicitDjeff = /\bdjeff\b/.test(folded)
-    || /\b(?:rap|freestyle|punchlines?|egotrip|micro|flow|rimes?)\b/.test(folded);
+    || /\b(?:rap|freestyle|punchlines?|egotrip|micro|flow|rimes?|cypher|battle|clash|competition|compétition|concurrence|rival|rivaux|veulent ma peau|ma peau|encore en tuto)\b/.test(folded);
   const explicitK44 = /\bk44\b|\bkaen44\b|\bgrave\b|\bnarration\b|\bcinematique\b|\bcinématique\b/.test(folded);
   const explicitA11 = /\ba11\b|\belectro\b|\bélectro\b|\bsynthwave\b|\btechno\b|\bglitch\b/.test(folded);
 
@@ -4804,6 +4805,9 @@ function inferVivyNossenRoutingPlan(input = {}) {
   if (/\b(?:freestyle|punchlines?|egotrip|micro|flow|rimes?)\b/.test(folded)) {
     moodParts.push('rap freestyle français nerveux');
     moodParts.push('flow technique, punchlines fréquentes, rimes internes');
+  } else if (hasVivyNossenConflictRapSignal(material)) {
+    moodParts.push('rap français egotrip/cypher sombre');
+    moodParts.push('voix masculine sèche, punchlines de clash, drums secs, basse lourde');
   } else if (/\brap\b/.test(folded)) {
     moodParts.push('rap français moderne');
     moodParts.push('kick sec, basse lourde, couplets rythmés');
@@ -4842,6 +4846,18 @@ function hasVivyNossenExplicitK44Signal(material = '') {
   return /\b(?:k44|kaen44)\b/.test(folded)
     || /\b(?:voix|narration|narrateur|conteur|contrechant|timbre)\b.{0,40}\b(?:grave|pose|posé|cinematique|cinématique|k44|kaen44)\b/.test(folded)
     || /\b(?:grave|pose|posé|cinematique|cinématique|k44|kaen44)\b.{0,40}\b(?:voix|narration|narrateur|conteur|contrechant|timbre)\b/.test(folded);
+}
+
+function hasVivyNossenRomanceSignal(material = '') {
+  const folded = foldTextForLookup(material);
+  if (!folded) return false;
+  return /\b(?:amour|romance|romantique|coeur|cœur|je t aime|i love you|couple|rupture|baiser|fleurs?|jardin|sentiments?)\b/.test(folded);
+}
+
+function hasVivyNossenConflictRapSignal(material = '') {
+  const folded = foldTextForLookup(material);
+  if (!folded) return false;
+  return /\b(?:competition|compétition|concurrence|rival|rivaux|clash|battle|cypher|beef|tuto|tutoriel|veulent ma peau|ma peau|ils veulent|ils sont encore en tuto)\b/.test(folded);
 }
 
 function hasVivyNossenExplicitEnglishSignal(material = '') {
@@ -4884,6 +4900,13 @@ function sanitizeVivyNossenRoutingPlanForRequest(plan = {}, material = '', fallb
     && !/\b(?:orchestral|symphonique|classique|cinematique|cinématique|epique|épique|heroique|héroïque|film|bande annonce|trailer)\b/.test(request);
   if (genericEpicWithoutRequest) {
     songMood = fallbackPlan.songMood || 'rap français NOSSEN moderne, groove clair, refrain mémorable';
+  }
+
+  const bogusRomanticMood = /\b(?:pop romantic|pop romantique|ballade romantique|romance|love song|piano doux|cordes chaudes|voix proche)\b/.test(foldTextForLookup(songMood))
+    && (!hasVivyNossenRomanceSignal(material) || hasVivyNossenConflictRapSignal(material));
+  if (bogusRomanticMood) {
+    artists = fallbackPlan.artists?.length ? fallbackPlan.artists : artists;
+    songMood = fallbackPlan.songMood || 'rap français egotrip/cypher sombre, voix masculine sèche, punchlines de clash, drums secs, basse lourde';
   }
 
   if (!artists.length) artists = ['djeff', 'vivy'];
@@ -5651,10 +5674,42 @@ function postProcessVivyAssistantText({ text = '', userMessage = '', systemPromp
       rewritten: true,
     };
   }
+  if (mode !== 'song' && shouldRewriteVivyBrokenDjeffClashReply(processed.content, userMessage)) {
+    return {
+      ...processed,
+      content: buildVivyDjeffClashChatRepairReply(userMessage),
+      rewritten: true,
+    };
+  }
   return {
     ...processed,
     content: cleanText(processed.content, maxChars),
   };
+}
+
+function hasVivyDjeffClashSignal(value = '') {
+  const folded = foldTextForLookup(value);
+  if (!folded) return false;
+  return /\bdjeff\b/.test(folded)
+    && /\b(?:veulent ma peau|ma peau|competition|compétition|concurrence|rival|rivaux|clash|battle|cypher|tuto|tutoriel|ils veulent|encore en tuto)\b/.test(folded);
+}
+
+function shouldRewriteVivyBrokenDjeffClashReply(reply = '', userMessage = '') {
+  if (!hasVivyDjeffClashSignal(userMessage)) return false;
+  const folded = foldTextForLookup(reply);
+  return /\b(?:true fan|everything|next step|i love you|fond d ecran|serveurs? en danse|animation de serveurs|qu est ce que tu veux utiliser pour ajouter ce rythme)\b/.test(folded)
+    || /\(\s*chante\s*\)/i.test(reply);
+}
+
+function buildVivyDjeffClashChatRepairReply(userMessage = '') {
+  const line = cleanOneLine(String(userMessage || '')
+    .replace(/^\s*\(?\s*djeff\s*\)?\s*[:,-]?\s*/i, '')
+    .replace(/\s+/g, ' '), "Ils veulent ma peau, mais ils sont encore en tuto", 140);
+  return cleanText([
+    `Oui, là c'est du Djeff pur: “${line}”.`,
+    "Je le traiterais en cypher/clash français: voix masculine sèche, sourire de coin, couplets courts, pas de romance, pas de refrain anglais, et une prod sombre qui laisse les punchlines respirer.",
+    "Si tu veux en faire un morceau, NOSSEN doit partir rap/egotrip, pas pop romantique ni chansonnette serveur.",
+  ].join('\n'), 900);
 }
 
 // Budget de tokens du miroir Djeff. Règle: persona pour penser, full token
@@ -6808,6 +6863,9 @@ function inferVivySunoStyleBase(input = {}, artistCast = buildVivySongArtistCast
   }
   if (/\bmoto\b|\bscooter\b|\bpignon\b|\bcouronne\b|\bradiateur\b|\bchaine\b|\bchaîne\b|\bmoteur\b|\bessence\b|\bhuile\b|\bstunt\b|\bguidon\b|\bcasque\b|\bvisiere\b|\bvisière\b/.test(folded)) {
     return withCastStyle('technical rap moto, basse lourde, drums secs, guitares garage, engine pulse, hook proche micro');
+  }
+  if (hasVivyNossenConflictRapSignal(material)) {
+    return withCastStyle('rap français egotrip/cypher sombre, voix masculine sèche, punchlines de clash, drums secs, basse lourde, refrain court sans romance, aucun refrain anglais');
   }
   if (/\becrans?\b|\bécrans?\b|\bnouvelle\s+generation\b|\bnouvelle\s+génération\b|\breseaux\b|\bréseaux\b|\bnumerique\b|\bnumérique\b/.test(folded)) {
     return withCastStyle('modern alt-pop numérique, basses rondes, pads granuleux, percussion glitch, hook humain');

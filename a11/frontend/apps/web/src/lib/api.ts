@@ -2621,9 +2621,9 @@ export async function processDoubleHarmonicAudio(
   appendFinite('electrolysisHz', options?.electrolysisHz);
   appendFinite('electrolysisMinHz', options?.electrolysisMinHz);
   appendFinite('electrolysisMaxHz', options?.electrolysisMaxHz);
-  appendFinite('amount', options?.amount ?? (wantsV9Electrolysis ? 0.05 : undefined));
-  appendFinite('irregularity', options?.irregularity ?? (wantsV9Electrolysis ? 0.5 : undefined));
-  appendFinite('asymmetry', options?.asymmetry ?? (wantsV9Electrolysis ? 0.3 : undefined));
+  appendFinite('amount', options?.amount ?? (wantsV9Electrolysis ? 0.042 : undefined));
+  appendFinite('irregularity', options?.irregularity ?? (wantsV9Electrolysis ? 0.36 : undefined));
+  appendFinite('asymmetry', options?.asymmetry ?? (wantsV9Electrolysis ? 0.27 : undefined));
   if (typeof options?.bidirectional === 'boolean' || wantsV9Electrolysis) {
     form.append('bidirectional', options?.bidirectional === false ? '0' : '1');
   }

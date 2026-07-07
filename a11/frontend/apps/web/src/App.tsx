@@ -2221,6 +2221,9 @@ const D40_V8_DEFAULT_INTENSITY = 3;
 const D40_V9_ELECTROLYSIS_MIN_HZ = 40.25;
 const D40_V9_ELECTROLYSIS_MAX_HZ = 40.6666666666666;
 const D40_V9_ELECTROLYSIS_MID_HZ = 40.4583333333333;
+const D40_V9_ELECTROLYSIS_AMOUNT = 0.042;
+const D40_V9_ELECTROLYSIS_IRREGULARITY = 0.36;
+const D40_V9_ELECTROLYSIS_ASYMMETRY = 0.27;
 const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v1: "V1 stable",
   v2: "V2 Release",
@@ -5954,9 +5957,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         frequencyHz: doubleHarmonicMode === "v9electrolysis" ? D40_V9_ELECTROLYSIS_MID_HZ : undefined,
         frequencyMinHz: doubleHarmonicMode === "v9electrolysis" ? D40_V9_ELECTROLYSIS_MIN_HZ : undefined,
         frequencyMaxHz: doubleHarmonicMode === "v9electrolysis" ? D40_V9_ELECTROLYSIS_MAX_HZ : undefined,
-        amount: doubleHarmonicMode === "v9electrolysis" ? 0.05 : undefined,
-        irregularity: doubleHarmonicMode === "v9electrolysis" ? 0.5 : undefined,
-        asymmetry: doubleHarmonicMode === "v9electrolysis" ? 0.3 : undefined,
+        amount: doubleHarmonicMode === "v9electrolysis" ? D40_V9_ELECTROLYSIS_AMOUNT : undefined,
+        irregularity: doubleHarmonicMode === "v9electrolysis" ? D40_V9_ELECTROLYSIS_IRREGULARITY : undefined,
+        asymmetry: doubleHarmonicMode === "v9electrolysis" ? D40_V9_ELECTROLYSIS_ASYMMETRY : undefined,
         bidirectional: doubleHarmonicMode === "v9electrolysis" ? true : undefined,
       });
       const mediaUrl = String(result.shareUrl || result.audioUrl || "").trim();
@@ -8472,9 +8475,9 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
             frequencyHz: D40_V9_ELECTROLYSIS_MID_HZ,
             frequencyMinHz: D40_V9_ELECTROLYSIS_MIN_HZ,
             frequencyMaxHz: D40_V9_ELECTROLYSIS_MAX_HZ,
-            amount: 0.05,
-            irregularity: 0.5,
-            asymmetry: 0.3,
+            amount: D40_V9_ELECTROLYSIS_AMOUNT,
+            irregularity: D40_V9_ELECTROLYSIS_IRREGULARITY,
+            asymmetry: D40_V9_ELECTROLYSIS_ASYMMETRY,
             bidirectional: true,
           });
           const d40Url = String(d40.shareUrl || d40.audioUrl || "").trim();

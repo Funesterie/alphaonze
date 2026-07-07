@@ -3384,6 +3384,9 @@ test('Vivy NOSSEN Banger launches sung Suno, avoids raw TTS overlays, applies D4
   assert.match(launchBlock, /mode:\s*"v9electrolysis"/);
   assert.match(launchBlock, /frequencyMinHz:\s*D40_V9_ELECTROLYSIS_MIN_HZ/);
   assert.match(launchBlock, /frequencyMaxHz:\s*D40_V9_ELECTROLYSIS_MAX_HZ/);
+  assert.match(launchBlock, /amount:\s*D40_V9_ELECTROLYSIS_AMOUNT/);
+  assert.match(launchBlock, /irregularity:\s*D40_V9_ELECTROLYSIS_IRREGULARITY/);
+  assert.match(launchBlock, /asymmetry:\s*D40_V9_ELECTROLYSIS_ASYMMETRY/);
   assert.ok(
     launchBlock.indexOf('processDoubleHarmonicAudio') > launchBlock.indexOf('generation_suno_trop_courte_${Math.round(finalDurationSeconds)}s'),
     'NOSSEN must reject too-short Suno audio before applying D40'
@@ -3957,6 +3960,35 @@ test('Vivy NOSSEN routing keeps French vocals unless English or instrumental is 
     '!nossen instrumental sans paroles, sound design cyber'
   );
   assert.doesNotMatch(instrumental.songMood, /paroles françaises uniquement|voix en français/i);
+});
+
+test('Vivy NOSSEN routing rejects romantic drift for Djeff clash material', () => {
+  const material = '(Djeff) Ils veulent ma peau, mais ils sont encore en tuto';
+  const fallback = inferVivyNossenRoutingPlan({ message: material });
+  const repaired = sanitizeVivyNossenRoutingPlanForRequest({
+    artists: ['djeff'],
+    songMood: 'pop romantic, piano doux, cordes chaudes, voix proche',
+  }, material, fallback);
+
+  assert.deepEqual(fallback.artists, ['djeff']);
+  assert.match(fallback.songMood, /cypher|clash|basse lourde/i);
+  assert.match(repaired.songMood, /cypher|clash|basse lourde/i);
+  assert.doesNotMatch(repaired.songMood, /pop romantic|piano doux|cordes chaudes|romance/i);
+  assert.match(repaired.songMood, /paroles françaises uniquement/i);
+});
+
+test('Vivy chat post-process repairs broken mixed-language Djeff clash replies', () => {
+  const processed = postProcessVivyAssistantText({
+    mode: 'chat',
+    userMessage: '(Djeff) Ils veulent ma peau, mais ils sont encore en tuto',
+    text: '(Vivy) Ahah, true fan, everything sur toi. (chante) I love you so. Next step?',
+    systemPrompt: buildVivySystemPrompt('chat', 'fr', {}),
+  });
+
+  assert.equal(processed.rewritten, true);
+  assert.match(processed.content, /Djeff|cypher|clash/i);
+  assert.match(processed.content, /pas de refrain anglais/i);
+  assert.doesNotMatch(processed.content, /true fan|everything|I love you|Next step|\(chante\)/i);
 });
 
 test('Vivy does not treat the Twitch command as a Vivy casting request', () => {
