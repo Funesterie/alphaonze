@@ -255,11 +255,13 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(v2Payload.v2.frameMs, 20);
     assert.equal(v2Payload.v2.safety.keepV1RouteUntouched, true);
 
-    const v9Electro = await fetch(`${baseUrl}/api/double-harmonic/v9turbo/status?modulation=electrolysis-guitar&frequencyHz=40.0005&amount=0.05&bidirectional=1`);
+    const v9Electro = await fetch(`${baseUrl}/api/double-harmonic/v9turbo/status?modulation=electrolysis-guitar&frequencyMinHz=40.25&frequencyMaxHz=40.6666666666666&amount=0.05&bidirectional=1`);
     const v9ElectroPayload = await v9Electro.json();
     assert.equal(v9Electro.status, 200);
     assert.equal(v9ElectroPayload.v9turbo.defaults.modulation.enabled, true);
     assert.equal(v9ElectroPayload.v9turbo.defaults.modulation.mode, 'electrolysis-guitar');
+    assert.equal(v9ElectroPayload.v9turbo.defaults.modulation.frequencyMinHz, 40.25);
+    assert.equal(v9ElectroPayload.v9turbo.defaults.modulation.frequencyMaxHz, 40.6666666666666);
     assert.equal(v9ElectroPayload.v9turbo.safety.electrolysisGuitarModulation, true);
     assert.equal(v9ElectroPayload.v9turbo.safety.modulationAudioOnlyNoPhysicalElectrolysis, true);
   } finally {
@@ -725,7 +727,8 @@ test('turbo d40 v9 keeps pivot closure and splits high low dynamic envelopes at 
 test('turbo d40 v9 electrolysis guitar modulation is asymmetric and audio-only', () => {
   const modulation = resolveV9TurboModulationConfig({
     modulation: 'electrolysis-guitar',
-    frequencyHz: 40.0005,
+    frequencyMinHz: 40.25,
+    frequencyMaxHz: 40.6666666666666,
     amount: 0.05,
     irregularity: 0.5,
     asymmetry: 0.3,
@@ -747,6 +750,8 @@ test('turbo d40 v9 electrolysis guitar modulation is asymmetric and audio-only',
 
   assert.equal(modulation.enabled, true);
   assert.equal(modulation.mode, V9_ELECTROLYSIS_GUITAR_MODULATION.mode);
+  assert.equal(modulation.frequencyMinHz, 40.25);
+  assert.equal(modulation.frequencyMaxHz, 40.6666666666666);
   assert.equal(modulated.modulation.enabled, true);
   assert.equal(modulated.modulation.note.includes('not as a physical electrolysis instruction'), true);
   assert.ok(Math.abs(modulated.summary.modulation.min) > 0 || Math.abs(modulated.summary.modulation.max) > 0);

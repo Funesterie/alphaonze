@@ -77,6 +77,8 @@ const V9_ELECTROLYSIS_GUITAR_MODULATION = Object.freeze({
   mode: 'electrolysis-guitar',
   enabled: true,
   frequencyHz: D40_SOURCE_N,
+  frequencyMinHz: D40_SOURCE_N,
+  frequencyMaxHz: D40_SOURCE_N,
   amount: 0.042,
   irregularity: 0.36,
   asymmetry: 0.27,
@@ -760,19 +762,36 @@ function resolveV9TurboModulationConfig(options = {}) {
     || boolOption(options.electrolysisGuitar, false);
   const enabled = wantsElectrolysis && !['0', 'false', 'off', 'none', 'disabled'].includes(rawMode);
   const base = V9_ELECTROLYSIS_GUITAR_MODULATION;
+  const frequencyHz = clampNumber(
+    options.frequencyHz
+    ?? options.modulationFrequencyHz
+    ?? options.electrolysisHz
+    ?? options.waterFrequencyHz,
+    0.05,
+    120,
+    base.frequencyHz
+  );
+  const rawMin = options.frequencyMinHz
+    ?? options.minFrequencyHz
+    ?? options.frequencyLowHz
+    ?? options.electrolysisMinHz
+    ?? options.waterMinHz;
+  const rawMax = options.frequencyMaxHz
+    ?? options.maxFrequencyHz
+    ?? options.frequencyHighHz
+    ?? options.electrolysisMaxHz
+    ?? options.waterMaxHz;
+  const parsedMin = clampNumber(rawMin, 0.05, 120, frequencyHz);
+  const parsedMax = clampNumber(rawMax, 0.05, 120, frequencyHz);
+  const frequencyMinHz = Math.min(parsedMin, parsedMax);
+  const frequencyMaxHz = Math.max(parsedMin, parsedMax);
   return {
     ...base,
     enabled,
     mode: enabled ? base.mode : 'none',
-    frequencyHz: clampNumber(
-      options.frequencyHz
-      ?? options.modulationFrequencyHz
-      ?? options.electrolysisHz
-      ?? options.waterFrequencyHz,
-      0.05,
-      120,
-      base.frequencyHz
-    ),
+    frequencyHz,
+    frequencyMinHz,
+    frequencyMaxHz,
     amount: enabled ? clampNumber(options.amount ?? options.modulationAmount, 0, 0.18, base.amount) : 0,
     irregularity: clampNumber(options.irregularity, 0, 1, base.irregularity),
     asymmetry: clampNumber(options.asymmetry, 0, 1, base.asymmetry),
@@ -825,7 +844,13 @@ function sampleV9ElectrolysisGuitarModulation({
   if (!modulation?.enabled || !(modulation.amount > 0)) {
     return { raw: 0, high: 1, low: 1 };
   }
-  const hz = modulation.frequencyHz;
+  const minHz = Number.isFinite(Number(modulation.frequencyMinHz)) ? Number(modulation.frequencyMinHz) : modulation.frequencyHz;
+  const maxHz = Number.isFinite(Number(modulation.frequencyMaxHz)) ? Number(modulation.frequencyMaxHz) : modulation.frequencyHz;
+  const range = Math.max(0, maxHz - minHz);
+  const sweepSeed = (0.46 * (Math.sin((TWO_PI * 0.137) * time + PHI) + 1) / 2)
+    + (0.27 * (Math.sin((TWO_PI * 0.071) * time + C7 + (index * MG_PHASE)) + 1) / 2)
+    + (0.27 * clampNumber((force * modulation.followForce) + (phaseGate * (1 - modulation.followForce)), 0, 1, 0.5));
+  const hz = range > 0 ? minHz + (range * clampNumber(sweepSeed, 0, 1, 0.5)) : modulation.frequencyHz;
   const water = Math.sin(TWO_PI * hz * time);
   const sub = Math.sin((TWO_PI * (hz / 8)) * time + PHI);
   const cross = Math.sin((TWO_PI * (hz / PHI)) * time + Math.abs(JHI))
