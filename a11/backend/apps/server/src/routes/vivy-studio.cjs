@@ -672,13 +672,21 @@ function getVivyOpenAIConfig(options = {}) {
 
 function getVivyLlmConfigs(options = {}) {
   const mode = cleanOneLine(options.mode || options.chatMode, '', 24).toLowerCase();
+  const purpose = cleanOneLine(options.purpose, '', 40).toLowerCase();
   const cloud = getVivyOpenAIConfig(options);
   const ollamaCloud = getVivyOllamaCloudConfig(options);
   const cerbere = getVivyCerbereSongConfig(options);
   const local = getVivyLocalOllamaConfig(options);
-  const allowSongLocalFallback = ['1', 'true', 'yes', 'on'].includes(
+  const allowLegacySongLocalFallback = ['1', 'true', 'yes', 'on'].includes(
     String(process.env.VIVY_SONG_ALLOW_LOCAL_FALLBACK || '').trim().toLowerCase()
   );
+  const allowLyricsLocalFallback = options.allowLocalLyricsFallback === true
+    || ['1', 'true', 'yes', 'on'].includes(
+      String(process.env.VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK || '').trim().toLowerCase()
+    );
+  const allowSongLocalFallback = purpose === 'lyrics'
+    ? allowLyricsLocalFallback
+    : allowLegacySongLocalFallback;
   const localFirst = mode !== 'song'
     && !['0', 'false', 'off', 'no'].includes(
       String(process.env.VIVY_CHAT_LOCAL_FIRST || 'false').trim().toLowerCase()
@@ -6918,10 +6926,13 @@ function buildVivySunoPayload(input = {}, req = null) {
   const longFormStyle = wantsVivySunoLongForm(input)
     ? 'long-form full song arrangement around five minutes, expanded sections, recurring hook after the bridge, complete final chorus, no short radio edit'
     : '';
+  const frenchLanguageStyle = forceInstrumental || useExternalVoiceMix
+    ? ''
+    : 'French lyrics only, French language vocals, no English lyrics, no English chorus';
   let style = /structured rhymed lyrics|rimes|paroles structur/i.test(styleBase)
-    ? sanitizeVivySunoProviderTags([styleBase, castRoleSummary, longFormStyle, castStyle, arrangementStyle, prosodyStyle].filter((item, index, list) => item && list.indexOf(item) === index).join(', '), styleBase, 720)
+    ? sanitizeVivySunoProviderTags([styleBase, frenchLanguageStyle, castRoleSummary, longFormStyle, castStyle, arrangementStyle, prosodyStyle].filter((item, index, list) => item && list.indexOf(item) === index).join(', '), styleBase, 720)
     : sanitizeVivySunoProviderTags(
-      `${styleBase}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration${castRoleSummary ? `, ${castRoleSummary}` : ''}${longFormStyle ? `, ${longFormStyle}` : ''}${castStyle ? `, ${castStyle}` : ''}${arrangementStyle ? `, ${arrangementStyle}` : ''}${prosodyStyle ? `, ${prosodyStyle}` : ''}`,
+      `${styleBase}, ${frenchLanguageStyle}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration${castRoleSummary ? `, ${castRoleSummary}` : ''}${longFormStyle ? `, ${longFormStyle}` : ''}${castStyle ? `, ${castStyle}` : ''}${arrangementStyle ? `, ${arrangementStyle}` : ''}${prosodyStyle ? `, ${prosodyStyle}` : ''}`,
       styleBase,
       720
     );
@@ -6946,11 +6957,12 @@ function buildVivySunoPayload(input = {}, req = null) {
   const negativeTags = sanitizeVivySunoProviderTags([
     input.negativeTags || process.env.VIVY_SUNO_NEGATIVE_TAGS
       || 'spoken word, narration, reading prompt, robotic speech, muddy mix, out of tune vocals, copyrighted melody, celebrity voice imitation',
-    artistCast.count > 1 ? 'single vocalist, identical vocal timbre for every singer, blended ensemble lead, unison lead vocals, choir lead, group chant replacing solos, same singer across all tags' : '',
     animeStyleBase ? 'French chanson, chanson française, acoustic ballad, crooner ballad, soft piano variety' : '',
+    !forceInstrumental && !useExternalVoiceMix ? 'English lyrics, English vocals, English chorus, translated chorus, bilingual lyrics' : '',
+    artistCast.count > 1 ? 'single vocalist, identical vocal timbre for every singer, blended ensemble lead, unison lead vocals, choir lead, group chant replacing solos, same singer across all tags' : '',
     useExternalVoiceMix ? 'vocals, singing, spoken voice' : '',
     forceInstrumental ? 'vocals, singing, lyrics, sung words, spoken words, rap lead, narration, choir lead, group chant' : '',
-  ].filter(Boolean).join(', '), 'spoken word, narration', 320);
+  ].filter(Boolean).join(', '), 'spoken word, narration', 520);
   const requestedModel = resolveVivySunoRequestedModel(input);
   const prompt = forceInstrumental
     ? buildVivyInstrumentalSunoPrompt({ ...input, songTitle: input.songTitle || input.title || title }, title)

@@ -720,7 +720,7 @@ services:
       VIVY_STREAM_SECRET: ${VIVY_STREAM_SECRET:?VIVY_STREAM_SECRET is required}
       VIVY_STREAM_INGEST_URL: ${VIVY_STREAM_INGEST_URL:-https://vivy.funesterie.me/api/vivy/stream/chat}
       VIVY_STREAM_RESET_URL: ${VIVY_STREAM_RESET_URL:-https://vivy.funesterie.me/api/vivy/stream/reset}
-      VIVY_STREAM_STATE_URL: ${VIVY_STREAM_STATE_URL:-http://a11-backend:3000/api/vivy/stream/state}
+      VIVY_STREAM_STATE_URL: http://a11-backend:3000/api/vivy/stream/state
       VIVY_PUBLIC_BASE_URL: ${VIVY_PUBLIC_BASE_URL:-https://vivy.funesterie.me}
       VIVY_STREAM_COMMANDS_ONLY: ${VIVY_STREAM_COMMANDS_ONLY:-1}
       VIVY_STREAM_ANNOUNCE_INTERVAL_MS: ${VIVY_STREAM_ANNOUNCE_INTERVAL_MS:-720000}

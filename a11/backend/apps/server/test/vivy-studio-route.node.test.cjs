@@ -337,6 +337,26 @@ Dans les ténèbres, je cherche la lumière.`,
   assert.match(payload.style, /battement de tambour/i);
 });
 
+test('Vivy Suno vocal payload explicitly keeps French lyrics even with English style tags', () => {
+  const payload = buildVivySunoPayload({
+    mode: 'song',
+    songArtists: ['djeff', 'vivy'],
+    songMood: 'dark trap cypher, technical rap, cyber bass, melodic chorus',
+    songText: [
+      '[Verse - Djeff]',
+      'Je tiens les logs, je coupe la fumée.',
+      '[Chorus - Vivy]',
+      'La nuit répond quand la voix revient.',
+    ].join('\n'),
+  });
+
+  assert.equal(payload.instrumental, false);
+  assert.match(payload.style, /French lyrics only/i);
+  assert.match(payload.style, /no English lyrics/i);
+  assert.match(payload.negativeTags, /English lyrics/i);
+  assert.match(payload.negativeTags, /bilingual lyrics/i);
+});
+
 test('Vivy chat returns a Suno prompt instead of stale opinion fallback', async () => {
   const result = await buildVivyAiChat({
     mode: 'chat',
@@ -4955,6 +4975,7 @@ test('Vivy lyrics chain adds Ollama Cloud and Cerbere only for the lyrics writer
     'A11_CERBERE_OPENAI_API_KEY',
     'VIVY_SONG_CERBERE_MODEL',
     'VIVY_SONG_ALLOW_LOCAL_FALLBACK',
+    'VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK',
     'VIVY_SONG_LOCAL_MODEL',
     'OLLAMA_BASE',
     'GROQ_API_KEY',
@@ -4970,6 +4991,7 @@ test('Vivy lyrics chain adds Ollama Cloud and Cerbere only for the lyrics writer
     process.env.A11_CERBERE_OPENAI_API_KEY = 'cerbere-test-key';
     process.env.VIVY_SONG_CERBERE_MODEL = 'openai/gpt-oss-120b';
     process.env.VIVY_SONG_ALLOW_LOCAL_FALLBACK = 'true';
+    delete process.env.VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK;
     process.env.VIVY_SONG_LOCAL_MODEL = 'qwen2.5:7b';
     process.env.OLLAMA_BASE = 'http://127.0.0.1:11434';
     process.env.GROQ_API_KEY = 'groq-test-key';
@@ -4982,18 +5004,26 @@ test('Vivy lyrics chain adds Ollama Cloud and Cerbere only for the lyrics writer
       'groq',
       'ollama_cloud',
       'cerbere',
-      'ollama',
     ]);
     assert.equal(configs[1].model, 'gpt-oss:120b');
     assert.equal(configs[1].maxCalls, 1);
     assert.equal(configs[2].model, 'openai/gpt-oss-120b');
     assert.equal(configs[2].maxCalls, 2);
     assert.equal(configs[2].maxRetries, 1);
-    assert.equal(configs[3].model, 'qwen2.5:7b');
 
     const routingConfigs = getVivyLlmConfigs({ mode: 'song', purpose: 'routing' });
     assert.equal(routingConfigs.some((config) => config.provider === 'ollama_cloud'), false);
     assert.equal(routingConfigs.some((config) => config.provider === 'cerbere'), false);
+
+    process.env.VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK = '1';
+    const explicitLocalConfigs = getVivyLlmConfigs({ mode: 'song', purpose: 'lyrics' });
+    assert.deepEqual(explicitLocalConfigs.map((config) => config.provider), [
+      'groq',
+      'ollama_cloud',
+      'cerbere',
+      'ollama',
+    ]);
+    assert.equal(explicitLocalConfigs[3].model, 'qwen2.5:7b');
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];
@@ -5117,6 +5147,7 @@ test('Vivy strong song writing tries the next provider when the first provider r
     'VIVY_OPENAI_API_KEY',
     'VIVY_SONG_MODEL',
     'VIVY_SONG_ALLOW_LOCAL_FALLBACK',
+    'VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK',
     'VIVY_SONG_LOCAL_MODEL',
     'OLLAMA_BASE',
     'A11_OLLAMA_PRIMARY_MODEL',
@@ -5177,6 +5208,7 @@ test('Vivy strong song writing tries the next provider when the first provider r
     process.env.VIVY_OPENAI_API_KEY = 'test-cloud-key';
     process.env.VIVY_SONG_MODEL = 'weak-cloud-model';
     process.env.VIVY_SONG_ALLOW_LOCAL_FALLBACK = 'true';
+    process.env.VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK = 'true';
     process.env.VIVY_SONG_LOCAL_MODEL = 'qwen2.5:32b';
     process.env.OLLAMA_BASE = strongLocal.baseUrl;
     process.env.A11_OLLAMA_PRIMARY_MODEL = 'llama3.2:3b';
@@ -5219,6 +5251,7 @@ test('Vivy Twitch strong song writing uses emergency songcraft when every lyrics
     'VIVY_OPENAI_API_KEY',
     'VIVY_SONG_MODEL',
     'VIVY_SONG_ALLOW_LOCAL_FALLBACK',
+    'VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK',
     'VIVY_SONG_LOCAL_MODEL',
     'OLLAMA_BASE',
     'A11_OLLAMA_PRIMARY_MODEL',
@@ -5241,6 +5274,7 @@ test('Vivy Twitch strong song writing uses emergency songcraft when every lyrics
     process.env.VIVY_OPENAI_API_KEY = 'test-cloud-key';
     process.env.VIVY_SONG_MODEL = 'weak-cloud-model';
     process.env.VIVY_SONG_ALLOW_LOCAL_FALLBACK = 'true';
+    process.env.VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK = 'true';
     process.env.VIVY_SONG_LOCAL_MODEL = 'qwen2.5:32b';
     process.env.OLLAMA_BASE = failingLocal.baseUrl;
     process.env.A11_OLLAMA_PRIMARY_MODEL = 'llama3.2:3b';

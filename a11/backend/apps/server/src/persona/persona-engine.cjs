@@ -63,6 +63,7 @@ const DEFAULT_VOICE_PERSONA_BRIEFS = Object.freeze({
 
 const DEFAULT_DOC_FILES = Object.freeze([
   'A11_SEMANTIC_RESONANCE_ENGINE.md',
+  'TPB_REFLECTION_LORE_FUNESTERIE.md',
   'NUMA_CANON_MEMOIRE.md',
   'VIVY_REFERENCE_HUMOUR_FRANCAIS.md',
 ]);
@@ -193,7 +194,7 @@ function resolvePersonaDocsDir(env = process.env) {
 
 function extractDocNeedles(text = '') {
   const lines = String(text || '').split(/\n+/g).map((line) => line.trim()).filter(Boolean);
-  const needles = /(vivy|djeff|numa|zen|semantic|résonance|resonance|humour|shiryu|v9|persona|voix|404|808|rgba|cerb[èe]re|mcp|funesterie)/i;
+  const needles = /(vivy|djeff|numa|zen|semantic|résonance|resonance|humour|shiryu|v9|persona|voix|404|808|rgba|cerb[èe]re|mcp|funesterie|tpb|trailer|park|boys|caddy|bubbles|ricky|julian|lahey|lore)/i;
   const selected = [];
   for (const line of lines) {
     if (selected.length >= 18) break;
