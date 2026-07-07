@@ -1627,7 +1627,7 @@ function createDoubleHarmonicRouter(options = {}) {
     }
   });
 
-  router.post('/v9turbo/process', verifyJWT, upload.single('audio'), async (req, res) => {
+  router.post(['/v9turbo/process', '/v9electrolysis/process'], verifyJWT, upload.single('audio'), async (req, res) => {
     try {
       pruneIndex(indexPath, assetRoot, ttlMs);
       if (!req.file?.buffer?.length) {
@@ -1636,10 +1636,15 @@ function createDoubleHarmonicRouter(options = {}) {
 
       const id = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
       const base = safeBaseName(req.body?.name || req.file.originalname || 'audio');
+      const requestedElectrolysis = /\/v9electrolysis\/process$/i.test(req.path)
+        || reqBoolean(req.body?.electrolysis || req.query?.electrolysis)
+        || reqBoolean(req.body?.electrolysisGuitar || req.query?.electrolysisGuitar)
+        || String(req.body?.modulation || req.query?.modulation || req.body?.modulationMode || req.query?.modulationMode || '').toLowerCase() === 'electrolysis-guitar';
+      const publicVariant = requestedElectrolysis ? 'v9electrolysis' : 'v9turbo';
       const inputExt = extForUpload(req.file);
-      const inputFilename = `${id}-${base}-v9turbo-input.${inputExt}`;
+      const inputFilename = `${id}-${base}-${publicVariant}-input.${inputExt}`;
       const outputFormat = resolveOutputFormat(req.body?.format || req.query?.format, inputExt);
-      const outputFilename = `${id}-${base}-funesterie-d40-v9turbo.${outputFormat.ext}`;
+      const outputFilename = `${id}-${base}-funesterie-d40-${publicVariant}.${outputFormat.ext}`;
       const inputPath = path.join(assetRoot, inputFilename);
       const outputPath = path.join(assetRoot, outputFilename);
       fs.writeFileSync(inputPath, req.file.buffer);
@@ -1668,18 +1673,18 @@ function createDoubleHarmonicRouter(options = {}) {
           kCeiling: reqNumber(req.body?.kCeiling || req.query?.kCeiling),
           phaseSlots: reqNumber(req.body?.phaseSlots || req.query?.phaseSlots || req.body?.binaryGridSlots || req.query?.binaryGridSlots),
           c7PhaseScale: reqNumber(req.body?.c7PhaseScale || req.query?.c7PhaseScale),
-          modulation: req.body?.modulation || req.query?.modulation || req.body?.modulationMode || req.query?.modulationMode,
-          modulationMode: req.body?.modulationMode || req.query?.modulationMode,
-          electrolysis: reqBoolean(req.body?.electrolysis || req.query?.electrolysis),
-          electrolysisGuitar: reqBoolean(req.body?.electrolysisGuitar || req.query?.electrolysisGuitar),
-          frequencyHz: reqNumber(req.body?.frequencyHz || req.query?.frequencyHz || req.body?.modulationFrequencyHz || req.query?.modulationFrequencyHz || req.body?.electrolysisHz || req.query?.electrolysisHz || req.body?.waterFrequencyHz || req.query?.waterFrequencyHz),
-          frequencyMinHz: reqNumber(req.body?.frequencyMinHz || req.query?.frequencyMinHz || req.body?.minFrequencyHz || req.query?.minFrequencyHz || req.body?.frequencyLowHz || req.query?.frequencyLowHz || req.body?.electrolysisMinHz || req.query?.electrolysisMinHz || req.body?.waterMinHz || req.query?.waterMinHz),
-          frequencyMaxHz: reqNumber(req.body?.frequencyMaxHz || req.query?.frequencyMaxHz || req.body?.maxFrequencyHz || req.query?.maxFrequencyHz || req.body?.frequencyHighHz || req.query?.frequencyHighHz || req.body?.electrolysisMaxHz || req.query?.electrolysisMaxHz || req.body?.waterMaxHz || req.query?.waterMaxHz),
-          amount: reqNumber(req.body?.amount || req.query?.amount || req.body?.modulationAmount || req.query?.modulationAmount),
+          modulation: req.body?.modulation || req.query?.modulation || req.body?.modulationMode || req.query?.modulationMode || (requestedElectrolysis ? 'electrolysis-guitar' : undefined),
+          modulationMode: req.body?.modulationMode || req.query?.modulationMode || (requestedElectrolysis ? 'electrolysis-guitar' : undefined),
+          electrolysis: requestedElectrolysis || reqBoolean(req.body?.electrolysis || req.query?.electrolysis),
+          electrolysisGuitar: requestedElectrolysis || reqBoolean(req.body?.electrolysisGuitar || req.query?.electrolysisGuitar),
+          frequencyHz: reqNumber(req.body?.frequencyHz || req.query?.frequencyHz || req.body?.modulationFrequencyHz || req.query?.modulationFrequencyHz || req.body?.electrolysisHz || req.query?.electrolysisHz || req.body?.waterFrequencyHz || req.query?.waterFrequencyHz) ?? (requestedElectrolysis ? 40.4583333333333 : undefined),
+          frequencyMinHz: reqNumber(req.body?.frequencyMinHz || req.query?.frequencyMinHz || req.body?.minFrequencyHz || req.query?.minFrequencyHz || req.body?.frequencyLowHz || req.query?.frequencyLowHz || req.body?.electrolysisMinHz || req.query?.electrolysisMinHz || req.body?.waterMinHz || req.query?.waterMinHz) ?? (requestedElectrolysis ? 40.25 : undefined),
+          frequencyMaxHz: reqNumber(req.body?.frequencyMaxHz || req.query?.frequencyMaxHz || req.body?.maxFrequencyHz || req.query?.maxFrequencyHz || req.body?.frequencyHighHz || req.query?.frequencyHighHz || req.body?.electrolysisMaxHz || req.query?.electrolysisMaxHz || req.body?.waterMaxHz || req.query?.waterMaxHz) ?? (requestedElectrolysis ? 40.6666666666666 : undefined),
+          amount: reqNumber(req.body?.amount || req.query?.amount || req.body?.modulationAmount || req.query?.modulationAmount) ?? (requestedElectrolysis ? 0.05 : undefined),
           modulationAmount: reqNumber(req.body?.modulationAmount || req.query?.modulationAmount),
-          irregularity: reqNumber(req.body?.irregularity || req.query?.irregularity),
-          asymmetry: reqNumber(req.body?.asymmetry || req.query?.asymmetry),
-          bidirectional: reqBoolean(req.body?.bidirectional || req.query?.bidirectional),
+          irregularity: reqNumber(req.body?.irregularity || req.query?.irregularity) ?? (requestedElectrolysis ? 0.5 : undefined),
+          asymmetry: reqNumber(req.body?.asymmetry || req.query?.asymmetry) ?? (requestedElectrolysis ? 0.3 : undefined),
+          bidirectional: requestedElectrolysis ? true : reqBoolean(req.body?.bidirectional || req.query?.bidirectional),
           followForce: reqNumber(req.body?.followForce || req.query?.followForce),
           schemaMix: reqNumber(req.body?.schemaMix || req.query?.schemaMix),
         },
@@ -1700,7 +1705,7 @@ function createDoubleHarmonicRouter(options = {}) {
         profile: processing.profile,
         preset: processing.preset,
         intensity: processing.intensity || 'vocal-safe-99ms-turbo-1024',
-        variant: processing.variant || 'v9turbo',
+        variant: publicVariant,
         resonance: processing.resonance || null,
         operators: processing.operators || null,
         projection: processing.projection || null,
@@ -1724,7 +1729,7 @@ function createDoubleHarmonicRouter(options = {}) {
         id,
         method: processing.method,
         state: processing.state,
-        variant: processing.variant,
+        variant: publicVariant,
         profile: processing.profile,
         preset: processing.preset,
         intensity: processing.intensity || 'vocal-safe-99ms-turbo-1024',
@@ -1743,8 +1748,8 @@ function createDoubleHarmonicRouter(options = {}) {
         contentType: outputFormat.contentType,
         filename: outputFilename,
         bytes: asset.bytes,
-        publicSummary: processing.dynamic?.modulation?.enabled
-          ? 'V9 Turbo Electrolysis Guitar: V8 Pivot conserve, micro-modulation asymetrique/irreguliere audio-only sur les enveloppes haut/bas.'
+        publicSummary: requestedElectrolysis || processing.dynamic?.modulation?.enabled
+          ? 'V9 Électrolyse: V8 Pivot conserve, micro-modulation asymétrique/irrégulière audio-only 40.25-40.6666666666666 Hz sur les enveloppes haut/bas.'
           : 'V9 Turbo: V8 Pivot valide, poids haut/bas dynamiques vocal-safe a 99 ms, fermeture 1024 et mg_phase recentre conserves.',
       });
     } catch (error) {
@@ -1851,7 +1856,7 @@ function createDoubleHarmonicRouter(options = {}) {
     }
   });
 
-  router.use(['/process', '/v2/analyze', '/v2/process', '/v3/process', '/v4/process', '/v5/process', '/v6/process', '/v7/process', '/v71/process', '/v8/process', '/v8plus/process', '/v8pivot/process', '/v9turbo/process'], (err, _req, res, _next) => {
+  router.use(['/process', '/v2/analyze', '/v2/process', '/v3/process', '/v4/process', '/v5/process', '/v6/process', '/v7/process', '/v71/process', '/v8/process', '/v8plus/process', '/v8pivot/process', '/v9turbo/process', '/v9electrolysis/process'], (err, _req, res, _next) => {
     return res.status(400).json({
       ok: false,
       error: 'double_harmonic_upload_failed',

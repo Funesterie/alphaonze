@@ -62,6 +62,7 @@ const {
   parseVivyNossenRoutingPlan,
   strengthenVivyNossenRoutingPlan,
   enforceVivyNossenVoiceSemantics,
+  sanitizeVivyNossenRoutingPlanForRequest,
   saveVivyWorkspaceForUser,
   sanitizeVivyPublicText,
   shouldVivyAutoWebSearch,
@@ -3904,6 +3905,34 @@ test('Vivy NOSSEN routing falls back locally for Djeff freestyle instead of stop
   } finally {
     process.env.VIVY_CHAT_DISABLE_LLM = previousDisable;
   }
+});
+
+test('Vivy NOSSEN routing rejects accidental historical epic K44 drift', () => {
+  const material = '!nossen Mega freestyle, rap egotrip sombre, Djeff arrive au micro sans remords, flow nerveux, punchlines sales, énergie brute';
+  const fallback = inferVivyNossenRoutingPlan({ message: material });
+  const repaired = sanitizeVivyNossenRoutingPlanForRequest({
+    artists: ['k44'],
+    songMood: 'fresque historique collective, instrumentation évolutive, dynamique épique, narration grave',
+  }, material, fallback);
+
+  assert.deepEqual(fallback.artists, ['djeff']);
+  assert.deepEqual(repaired.artists, ['djeff']);
+  assert.match(repaired.songMood, /rap freestyle français nerveux|flow technique|punchlines/i);
+  assert.doesNotMatch(repaired.songMood, /fresque historique|instrumentation évolutive|dynamique épique|narration grave/i);
+});
+
+test('Vivy NOSSEN routing defaults to Djeff and Vivy instead of K44 solo when the subject has no voice cue', () => {
+  const fallback = inferVivyNossenRoutingPlan({
+    message: '!nossen un morceau Funesterie nocturne sur la route, néons, pression, refrain mémorable',
+  });
+  const repaired = sanitizeVivyNossenRoutingPlanForRequest({
+    artists: ['k44'],
+    songMood: 'cinématique grave, narration posée, cordes sombres',
+  }, '!nossen un morceau Funesterie nocturne sur la route, néons, pression, refrain mémorable', fallback);
+
+  assert.deepEqual(fallback.artists, ['djeff', 'vivy']);
+  assert.deepEqual(repaired.artists, ['djeff', 'vivy']);
+  assert.doesNotMatch(repaired.songMood, /cinématique grave|cordes sombres/i);
 });
 
 test('Vivy does not treat the Twitch command as a Vivy casting request', () => {

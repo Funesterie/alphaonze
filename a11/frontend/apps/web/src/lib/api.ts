@@ -2631,7 +2631,9 @@ export async function processDoubleHarmonicAudio(
   appendFinite('schemaMix', options?.schemaMix);
   if (options?.name) form.append('name', options.name);
 
-  const endpoint = options?.mode === 'v9turbo' || options?.mode === 'v9electrolysis'
+  const endpoint = options?.mode === 'v9electrolysis'
+    ? '/api/double-harmonic/v9electrolysis/process'
+    : options?.mode === 'v9turbo'
     ? '/api/double-harmonic/v9turbo/process'
     : options?.mode === 'v8pivot'
       ? '/api/double-harmonic/v8pivot/process'

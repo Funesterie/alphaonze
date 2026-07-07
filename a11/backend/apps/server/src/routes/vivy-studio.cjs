@@ -4795,7 +4795,10 @@ function inferVivyNossenRoutingPlan(input = {}) {
   if (explicitVivy) pushArtist('vivy');
   if (!artists.length && explicitK44) pushArtist('k44');
   if (!artists.length && explicitA11) pushArtist('a11');
-  if (!artists.length) pushArtist('vivy');
+  if (!artists.length) {
+    pushArtist('djeff');
+    pushArtist('vivy');
+  }
 
   const moodParts = [];
   if (/\b(?:freestyle|punchlines?|egotrip|micro|flow|rimes?)\b/.test(folded)) {
@@ -4824,6 +4827,59 @@ function inferVivyNossenRoutingPlan(input = {}) {
   return {
     artists: limitVivyNossenRoutingArtists(artists),
     songMood: joinVivyNossenRoutingMoodParts(moodParts, 520),
+  };
+}
+
+function hasVivyNossenHistoricalFrescoSignal(material = '') {
+  const folded = foldTextForLookup(material);
+  if (!folded) return false;
+  return /\b(?:fresque historique|histoire de l humanite|histoire collective|a travers les ages|à travers les âges|au fil des siecles|au fil des siècles|civilisations?|empires?|batailles?|revolutions?|révolutions?|decouvertes?|découvertes?|antiquite|antiquité|moyen age|renaissance|siecles|siècles)\b/.test(folded);
+}
+
+function hasVivyNossenExplicitK44Signal(material = '') {
+  const folded = foldTextForLookup(material);
+  if (!folded) return false;
+  return /\b(?:k44|kaen44)\b/.test(folded)
+    || /\b(?:voix|narration|narrateur|conteur|contrechant|timbre)\b.{0,40}\b(?:grave|pose|posé|cinematique|cinématique|k44|kaen44)\b/.test(folded)
+    || /\b(?:grave|pose|posé|cinematique|cinématique|k44|kaen44)\b.{0,40}\b(?:voix|narration|narrateur|conteur|contrechant|timbre)\b/.test(folded);
+}
+
+function sanitizeVivyNossenRoutingPlanForRequest(plan = {}, material = '', fallback = null) {
+  const fallbackPlan = fallback && fallback.songMood
+    ? fallback
+    : strengthenVivyNossenRoutingPlan(inferVivyNossenRoutingPlan({ message: material }), material);
+  const request = foldTextForLookup(material);
+  const mood = cleanOneLine(plan?.songMood, '', 520);
+  const moodFolded = foldTextForLookup(mood);
+  let artists = limitVivyNossenRoutingArtists(plan?.artists || []);
+  let songMood = mood || fallbackPlan.songMood;
+
+  const bogusHistoricalMood = /\b(?:fresque historique|historique collective?|instrumentation evolutive|instrumentation évolutive|dynamique epique|dynamique épique|narration grave|au fil des siecles|a travers les ages)\b/.test(moodFolded)
+    && !hasVivyNossenHistoricalFrescoSignal(material);
+  if (bogusHistoricalMood) {
+    artists = fallbackPlan.artists;
+    songMood = fallbackPlan.songMood;
+  }
+
+  const k44SoloWithoutSignal = artists.length === 1
+    && artists[0] === 'k44'
+    && !hasVivyNossenExplicitK44Signal(material);
+  if (k44SoloWithoutSignal) {
+    artists = fallbackPlan.artists?.length ? fallbackPlan.artists : ['djeff', 'vivy'];
+  }
+
+  const genericEpicWithoutRequest = /\b(?:orchestral|symphonique|classique|cinematique|cinématique|epique|épique|heroique|héroïque)\b/.test(foldTextForLookup(songMood))
+    && !/\b(?:orchestral|symphonique|classique|cinematique|cinématique|epique|épique|heroique|héroïque|film|bande annonce|trailer)\b/.test(request);
+  if (genericEpicWithoutRequest) {
+    songMood = fallbackPlan.songMood || 'rap français NOSSEN moderne, groove clair, refrain mémorable';
+  }
+
+  if (!artists.length) artists = ['djeff', 'vivy'];
+  if (!songMood) songMood = 'rap français NOSSEN moderne, groove clair, refrain mémorable';
+  return {
+    ...plan,
+    artists: limitVivyNossenRoutingArtists(artists),
+    songMood: joinVivyNossenRoutingMoodParts([songMood], 520),
   };
 }
 
@@ -4930,7 +4986,10 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
     throw error;
   }
   const fallbackPlan = enforceVivyNossenVoiceSemantics(
-    strengthenVivyNossenRoutingPlan(inferVivyNossenRoutingPlan(input), material),
+    sanitizeVivyNossenRoutingPlanForRequest(
+      strengthenVivyNossenRoutingPlan(inferVivyNossenRoutingPlan(input), material),
+      material
+    ),
     material
   );
   const sessionContext = resolveVivyInputSession(input);
@@ -5017,7 +5076,11 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
     };
   }
   const strengthenedPlan = enforceVivyNossenVoiceSemantics(
-    strengthenVivyNossenRoutingPlan(plan, material),
+    sanitizeVivyNossenRoutingPlanForRequest(
+      strengthenVivyNossenRoutingPlan(plan, material),
+      material,
+      fallbackPlan
+    ),
     material
   );
   console.info(
@@ -9460,6 +9523,7 @@ module.exports = {
   parseVivyNossenRoutingPlan,
   strengthenVivyNossenRoutingPlan,
   enforceVivyNossenVoiceSemantics,
+  sanitizeVivyNossenRoutingPlanForRequest,
   buildVivySunoPayload,
   clampVivySunoLyricsLength,
   buildVivyMurekaPayload,
