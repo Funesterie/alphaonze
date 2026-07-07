@@ -4044,6 +4044,9 @@ test('Djeff persona builds a full first-person system prompt only when active', 
     assert.match(prompt, /premiere personne|premi.re personne/i);
     assert.match(prompt, /pense en trajectoires/);
     assert.match(prompt, /ne coupe pas le feu/);
+    assert.match(prompt, /concret avant joli/);
+    assert.match(prompt, /assistant qui rappe/);
+    assert.match(prompt, /cypher|freestyle|punchlines/i);
     assert.match(prompt, /jamais.*secret|secret.*jamais/i);
   } finally {
     if (previousRoot === undefined) delete process.env.A11_RUNTIME_ROOT;
@@ -4051,6 +4054,28 @@ test('Djeff persona builds a full first-person system prompt only when active', 
     const { resetDjeffPersonaCache } = require('../src/persona/persona-engine.cjs');
     resetDjeffPersonaCache();
   }
+});
+
+test('Djeff mode prompt switches cypher requests into short bars, not soft prose', () => {
+  const {
+    buildDjeffModeSystemPrompt,
+    isDjeffCypherRequest,
+  } = require('../src/routes/vivy-studio.cjs');
+
+  assert.equal(isDjeffCypherRequest('allo tu es là ?'), false);
+  assert.equal(isDjeffCypherRequest('cypher nocturne Djeff aux manettes'), true);
+  assert.equal(isDjeffCypherRequest('balance un freestyle avec punchlines'), true);
+
+  const dialogue = buildDjeffModeSystemPrompt('allo tu es là ?', {});
+  assert.match(dialogue, /Mode Djeff dialogue/);
+  assert.doesNotMatch(dialogue, /DJEFF CYPHER/);
+
+  const cypher = buildDjeffModeSystemPrompt('cypher nocturne Djeff aux manettes', {});
+  assert.match(cypher, /Mode DJEFF CYPHER actif/);
+  assert.match(cypher, /vers\/lignes courtes/);
+  assert.match(cypher, /Aucune intro/);
+  assert.match(cypher, /Punchline > poésie vague/);
+  assert.match(cypher, /la mélodie s’élève/);
 });
 
 test('Agents persona context includes voice personas and configured docs without requiring active profiles', () => {

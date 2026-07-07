@@ -5590,6 +5590,35 @@ function resolveDjeffTokenBudget(input = {}) {
   };
 }
 
+function isDjeffCypherRequest(message = '', input = {}) {
+  const source = foldTextForLookup([
+    message,
+    input.mode,
+    input.depth,
+    input.style,
+    input.intent,
+  ].filter(Boolean).join(' '));
+  return /\b(cypher|freestyle|rap|punchline|egotrip|ego trip|kickage|kicke|kick|barres?|couplets?|flow|djeff aux manettes)\b/.test(source);
+}
+
+function buildDjeffModeSystemPrompt(message = '', input = {}) {
+  if (!isDjeffCypherRequest(message, input)) {
+    return [
+      'Mode Djeff dialogue: réponds comme Djeff, direct et humain. Pas de service client, pas de panneau interne, pas de secrets.',
+      'Si la demande est simple, réponse courte. Si elle touche création/système, donne une trajectoire concrète.',
+    ].join('\n');
+  }
+  return [
+    'Mode DJEFF CYPHER actif.',
+    'Réponds en vers/lignes courtes, pas en paragraphe. 8 à 16 lignes sauf consigne contraire.',
+    'Aucune intro, aucune explication, aucun titre technique, aucun “voici”. Tu poses directement les barres.',
+    'Nerf: débit sec, images concrètes, logs, coûts, fumée coupée, NUMA, Vivy, Funesterie — intégrés naturellement, jamais en checklist.',
+    'Évite les formules molles: “la mélodie s’élève”, “créons une expérience”, “je comprends”, “ensemble nous allons”.',
+    'Punchline > poésie vague. Djeff ne récite pas des réglages: il tranche, il transforme, il garde le feu sous contrôle.',
+    'Ne copie jamais de paroles, de flow identifiable ou de signature d’artiste existant.',
+  ].join('\n');
+}
+
 async function buildDjeffAiChat(input, req) {
   input = input && typeof input === 'object' ? input : {};
   const message = cleanText(input.message || input.prompt || input.text, VIVY_SONG_MAX_CHARS);
@@ -5627,6 +5656,7 @@ async function buildDjeffAiChat(input, req) {
   const completionResult = await createVivyChatCompletion(llmBundles, {
     messages: [
       { role: 'system', content: systemPrompt },
+      { role: 'system', content: buildDjeffModeSystemPrompt(message, input) },
       ...history,
       { role: 'user', content: message },
     ],
@@ -9383,6 +9413,8 @@ module.exports = {
   buildVivyChat,
   buildVivyAiChat,
   buildDjeffAiChat,
+  buildDjeffModeSystemPrompt,
+  isDjeffCypherRequest,
   resolveDjeffTokenBudget,
   masterVivyMusicFile,
   buildVivyConversationIdForSession,
