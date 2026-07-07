@@ -1226,6 +1226,104 @@ function buildDjeffRapDuoLyrics(input = {}, material = '') {
   );
 }
 
+function buildDjeffRapSoloLyrics(input = {}, material = '') {
+  const coherenceContext = cleanText([
+    input.songText,
+    input.message,
+    input.prompt,
+    input.theme,
+    input.instruction,
+    input.songMood,
+  ].filter(Boolean).join('\n'), VIVY_SONG_MAX_CHARS);
+  const coherentMaterial = repairVivySemanticImageCoherence(material, coherenceContext);
+  const theme = buildVivyThemeSeed(coherentMaterial, '') || stripSongCommand(coherentMaterial) || '';
+  const motif = inferMotif(theme);
+  const title = cleanOneLine(input.songTitle || input.title || inferTitle(theme), 'Djeff cypher', 80);
+  const seedLines = extractDjeffRapSeedLines(coherentMaterial)
+    .filter((line) => !/\b(?:test\s+voix|test\s+flow|micro\s+allum[ée]|j['’]?\s*teste\s+la\s+voix|la\s+voix\s+c['’]est|timbre\s+c['’]est|j['’]?\s*[ée]coute\s+le\s+retour)\b/i.test(line));
+  const hasConflict = /\b(?:clash|cypher|battle|comp[ée]tition|rival|rivaux|ma\s+peau|tuto|tutoriel|ils\s+veulent|veulent\s+ma\s+peau)\b/i.test(coherentMaterial);
+  const fallbackVerseOne = hasConflict
+    ? [
+        'Ils veulent ma peau, mais leur lame est en carton,',
+        'je lis leurs tutoriels, je corrige leur version.',
+        'Leur menace fait du bruit, ma réponse fait du poids,',
+        'j’avance sans lever la voix, le sol répond pour moi.',
+      ]
+    : [
+        'J’arrive proche du micro, diction sèche et regard droit,',
+        `${motif}, je le serre jusqu’à trouver la voie.`,
+        'Chaque fin de ligne claque, pas de décor en carton,',
+        'je garde le grain brut, la mesure et la pression.',
+      ];
+  const fallbackVerseTwo = hasConflict
+    ? [
+        'Ils confondent la course et la notice de montage,',
+        'j’ai déjà pris le virage pendant qu’ils lisent la page.',
+        'Leur ego fait des stories, mon silence fait le tri,',
+        'je pose une rime froide et tout leur plan rétrécit.',
+      ]
+    : [
+        'Je coupe les phrases molles, je garde le nerf vivant,',
+        'la basse fait le cadre, le kick garde le temps.',
+        'Pas de masque sur la prise, pas de refrain placebo,',
+        'le couplet prend la route et revient plus haut.',
+      ];
+  const verseOne = mergeDistinctRapLines(seedLines.slice(0, 6), fallbackVerseOne, 6);
+  const verseTwo = mergeDistinctRapLines(seedLines.slice(6, 12), fallbackVerseTwo, 6);
+  const hook = hasConflict
+    ? [
+        'Ils veulent ma peau, ils sont encore en tuto,',
+        'je garde le flow froid, le verdict tombe bientôt.',
+        'Solo Djeff dans la pièce, pas de voix de secours,',
+        'si le cypher prend feu, c’est que j’ai fermé le tour.',
+      ]
+    : [
+        `${title} — je garde le grain brut,`,
+        'la voix dans le kick, les mots dans la chute.',
+        'Solo Djeff dans la pièce, le couplet reste net,',
+        'chaque rime fait son trou, chaque silence complète.',
+      ];
+
+  const lyrics = [
+    `[Title: ${title}]`,
+    '',
+    '[Intro - Djeff]',
+    '[Djeff]',
+    hasConflict ? 'Micro proche, sourire de coin, je rentre sans demander.' : `${title} — je cale la voix au ras du beat.`,
+    hasConflict ? 'S’ils veulent ma peau, qu’ils apprennent déjà à viser.' : 'Pas de voix témoin, pas de masque, seulement le grain.',
+    '',
+    '[Verse 1 - Djeff]',
+    '[Djeff]',
+    ...verseOne,
+    '',
+    '[Chorus - Djeff]',
+    '[Djeff]',
+    ...hook,
+    '',
+    '[Verse 2 - Djeff]',
+    '[Djeff]',
+    ...verseTwo,
+    '',
+    '[Bridge - Djeff]',
+    '[Djeff]',
+    'Je laisse un blanc, le kick revient compter les preuves,',
+    'la salle comprend sans panneau, le regard fait l’épreuve.',
+    '',
+    '[Final Chorus - Djeff]',
+    '[Djeff]',
+    ...hook,
+    '',
+    '[Outro - Djeff]',
+    '[Djeff]',
+    'Le tuto se ferme, le cypher reste ouvert.',
+  ].join('\n');
+
+  return cleanText(
+    repairVivySemanticImageCoherence(restoreVivyFrenchSongAccents(lyrics), coherentMaterial),
+    3200
+  );
+}
+
 function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buildVivySongArtistCast(input)) {
   const theme = buildVivyThemeSeed(material, 'Funesterie en multi-voix');
   const motif = inferMotif(theme);
@@ -1371,6 +1469,9 @@ function buildVivyStructuredLyrics(input = {}) {
 
   const artistCast = buildVivySongArtistCast(input);
   if (hasExplicitVivySongArtists(input) && (artistCast.count > 1 || artistCast.ids[0] !== 'vivy')) {
+    if (artistCast.ids.length === 1 && artistCast.ids[0] === 'djeff') {
+      return buildDjeffRapSoloLyrics(input, material);
+    }
     if (artistCast.ids.length === 2 && artistCast.ids.includes('djeff') && artistCast.ids.includes('vivy')) {
       return buildDjeffRapDuoLyrics(input, material);
     }
@@ -1387,6 +1488,9 @@ function buildVivyStructuredLyrics(input = {}) {
     ? artistCast.ids.includes('djeff')
     : (/\bdjeff\b|\bfraiyeur\b|\brap\b|\braper\b|\brapper\b/.test(foldTextForLookup(themeHint)) || isDjeffTechnicalMotoDraft(themeHint));
   if (shouldUseDjeffSongcraft && isDjeffRapTheme(themeHint) && !isValentinoRossiTheme(fullSource)) {
+    if (artistCast.ids.length === 1 && artistCast.ids[0] === 'djeff') {
+      return buildDjeffRapSoloLyrics(input, material);
+    }
     return buildDjeffRapDuoLyrics(input, material);
   }
 
@@ -1522,6 +1626,7 @@ module.exports = {
   buildVivySongcraftSystemPrompt,
   buildVivySongProductionBrief,
   buildVivyStructuredLyrics,
+  buildDjeffRapSoloLyrics,
   buildVivySongArtistCast,
   buildVivyVocalSegments,
   splitVivyArrangementCues,

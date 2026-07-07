@@ -485,7 +485,7 @@ const VIVY_NOSSEN_BANGER_CALL_SRC = buildPublicAssetPath("assets/vivy-banger-cal
 const VIVY_NOSSEN_SUNO_TARGET_SECONDS = 300;
 const VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS = 150;
 const VIVY_NOSSEN_SUNO_MAX_EXTENSIONS = 3;
-const VIVY_NOSSEN_SUNO_LONG_MODEL = "V4_5ALL";
+const VIVY_NOSSEN_SUNO_LONG_MODEL = "V5_5";
 
 type FunesterieSurface = "a11" | "kaen44" | "vivy";
 

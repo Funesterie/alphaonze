@@ -237,6 +237,8 @@ function buildTwitchEmergencyLyrics({
   ].filter(Boolean).join('\n'), '', 2400);
   const folded = foldTwitchLyricText(context);
   const max = Math.max(1800, Math.min(12000, Number(lyricScope?.maxChars || 5200) || 5200));
+  const scene = cleanText(title || subject, 'La scène recommence', 110);
+  const firstImage = cleanText(subject.split(/[.!?\n]/)[0] || scene, scene, 150);
 
   if (/\b(?:carmelo|boxster)\b/.test(folded)) {
     return cleanLyrics(`
@@ -294,8 +296,59 @@ Jean rentre avec la pêche et le ciel sur la veste
 `, max);
   }
 
-  const scene = cleanText(title || subject, 'La scène recommence', 110);
-  const firstImage = cleanText(subject.split(/[.!?\n]/)[0] || scene, scene, 150);
+  if (Array.isArray(artists) && artists.map((artist) => String(artist || '').toLowerCase()).includes('djeff')) {
+    const conflict = /\b(?:clash|cypher|battle|comp[ée]tition|rival|rivaux|ma\s+peau|tuto|tutoriel|ils\s+veulent|veulent\s+ma\s+peau)\b/.test(folded);
+    const opening = conflict
+      ? 'Ils veulent ma peau, mais leur lame est en carton'
+      : `${scene}, j'entre proche du micro`;
+    const answer = conflict
+      ? 'je lis leurs tutoriels, je corrige leur version'
+      : 'je garde le grain brut, la mesure et la pression';
+    return cleanLyrics(`
+[Intro - Djeff]
+[Djeff]
+${opening}
+${answer}
+
+[Verse 1 - Djeff]
+[Djeff]
+Je pose le pied dans le cypher, regard fixe, phrase sèche
+Le beat garde la trace, la basse remonte en flèche
+Pas de voix de secours, pas de refrain en vitrine
+Solo Djeff dans la pièce, chaque rime fait discipline
+${firstImage}
+Je transforme le détail en angle d'attaque
+
+[Chorus - Djeff]
+[Djeff]
+Ils veulent ma peau, ils sont encore en tuto
+Je garde le flow froid, le verdict tombe bientôt
+Solo Djeff dans la pièce, pas de voix de secours
+Si le cypher prend feu, c'est que j'ai fermé le tour
+
+[Verse 2 - Djeff]
+[Djeff]
+Leur menace fait du bruit, ma réponse fait du poids
+Je baisse le ton, justement pour qu'on entende mieux la loi
+Le kick coupe la fumée, les mots restent dans l'axe
+J'écris sans décor mou, sans romance, sans syntaxe qui se casse
+Ils confondent la course avec la notice de montage
+J'ai déjà pris le virage pendant qu'ils lisent la page
+
+[Bridge - Djeff]
+[Djeff]
+Je laisse un blanc, le kick revient compter les preuves
+La salle comprend sans panneau, le regard fait l'épreuve
+
+[Final Chorus - Djeff]
+[Djeff]
+Ils veulent ma peau, ils sont encore en tuto
+Je garde le flow froid, le verdict tombe bientôt
+Solo Djeff dans la pièce, pas de voix de secours
+Le tuto se ferme, le cypher reste ouvert
+`, max);
+  }
+
   return cleanLyrics(`
 [Intro]
 ${scene}, la lumière revient dans le décor
@@ -336,6 +389,63 @@ La dernière image monte et traverse le ciel
 [Outro]
 La voix reste debout quand le noir se retire
 `, max);
+}
+
+function looksLikeTwitchDjeffVoiceCalibrationDrift(lyrics = '', context = '') {
+  const foldedLyrics = foldTwitchLyricText(lyrics);
+  if (!foldedLyrics) return false;
+  const foldedContext = foldTwitchLyricText(context);
+  const calibrationSignals = [
+    /\btest\s+voix\b/,
+    /\btest\s+flow\b/,
+    /\bmicro\s+allume\b/,
+    /\bj\s*teste\s+la\s+voix\b/,
+    /\bla\s+voix\s+c\s+est\b/,
+    /\btimbre\s+c\s+est\b/,
+    /\bj\s+ecoute\s+le\s+retour\b/,
+    /\bj\s+explore\s+les\s+aigus\b/,
+    /\bchaque\s+syllabe\s+compte\b/,
+    /\ble\s+micro\s+c\s+est\s+le\s+lien\b/,
+    /\bchaque\s+session\s+d\s+enregistrement\b/,
+  ];
+  const score = calibrationSignals.reduce((sum, pattern) => sum + (pattern.test(foldedLyrics) ? 1 : 0), 0);
+  const hasDjeffContext = /\bdjeff\b|\bcypher\b|\bclash\b|\bbattle\b|\bma\s+peau\b|\btuto\b|\brap\b|\begotrip\b/.test(foldedContext);
+  const hasSoloDjeffTag = /\[(?:intro|verse|couplet|chorus|refrain|bridge|pont|outro|final)[^\]]*djeff[^\]]*\]/i.test(lyrics)
+    || /^\s*\[Djeff\]\s*$/m.test(lyrics);
+  return score >= 3 && (hasDjeffContext || hasSoloDjeffTag);
+}
+
+function repairTwitchDjeffLyricsBeforeSuno({
+  lyrics = '',
+  winner = {},
+  routing = {},
+  seed = {},
+  intentPlan = {},
+  lyricScope = {},
+  artists = [],
+} = {}) {
+  const normalizedArtists = Array.isArray(artists)
+    ? artists.map((artist) => String(artist || '').toLowerCase())
+    : [];
+  if (!normalizedArtists.includes('djeff')) {
+    return { lyrics: cleanLyrics(lyrics, lyricScope?.maxChars || 12000), replaced: false, reason: '' };
+  }
+  const context = [
+    typeof winner === 'object' ? winner.text : winner,
+    routing?.songMood,
+    seed?.canvas,
+    seed?.notes,
+    intentPlan?.generationBrief,
+    Array.isArray(artists) && artists.length ? `Voix: ${artists.join(' + ')}` : '',
+  ].filter(Boolean).join('\n');
+  if (!looksLikeTwitchDjeffVoiceCalibrationDrift(lyrics, context)) {
+    return { lyrics: cleanLyrics(lyrics, lyricScope?.maxChars || 12000), replaced: false, reason: '' };
+  }
+  return {
+    lyrics: buildTwitchEmergencyLyrics({ winner, routing, seed, intentPlan, lyricScope, artists: ['djeff'] }),
+    replaced: true,
+    reason: 'djeff_voice_calibration_drift',
+  };
 }
 
 function normalizeLyricLineForRepeat(value = '') {
@@ -2866,6 +2976,23 @@ function createVivyStreamNossenRunner(options = {}) {
           logger.warn?.('[vivy-twitch-nossen] round=%s removed mechanical lyric repetitions before Suno', roundId);
           lyrics = dedupedLyrics;
         }
+        const djeffDriftRepair = repairTwitchDjeffLyricsBeforeSuno({
+          lyrics,
+          winner,
+          routing,
+          seed,
+          intentPlan,
+          lyricScope,
+          artists,
+        });
+        if (djeffDriftRepair.replaced) {
+          logger.warn?.(
+            '[VivyDjeffGuard] round=%s replaced generic voice-calibration lyrics before Suno reason=%s',
+            roundId,
+            djeffDriftRepair.reason
+          );
+          lyrics = djeffDriftRepair.lyrics;
+        }
         const phoneticWordplayRequested = isPhoneticWordplayRequest(
           winner.text,
           routing?.songMood,
@@ -4012,6 +4139,7 @@ module.exports = {
   getReadyMedia,
   probeMediaDurationSeconds,
   reduceMechanicalLyricRepeats,
+  repairTwitchDjeffLyricsBeforeSuno,
   resolveTwitchCreativePlaceholders,
   resolveTwitchDurationAcceptance,
   resolveTwitchFullClipSourceImageUrl,
@@ -4031,4 +4159,5 @@ module.exports = {
   buildTwitchProviderPack,
   sanitizeTwitchLyricsForPromptLeakage,
   sanitizeTwitchLyricsForSubjectDetailed,
+  looksLikeTwitchDjeffVoiceCalibrationDrift,
 };

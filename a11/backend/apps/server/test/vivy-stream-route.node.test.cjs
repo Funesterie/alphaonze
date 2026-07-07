@@ -39,6 +39,7 @@ const {
   generateTwitchCoverImage,
   generateTwitchCoverVideo,
   reduceMechanicalLyricRepeats,
+  repairTwitchDjeffLyricsBeforeSuno,
   resolveTwitchCreativePlaceholders,
   resolveTwitchDurationAcceptance,
   resolveTwitchFullClipSourceImageUrl,
@@ -53,6 +54,7 @@ const {
   assessTwitchLyricLoopiness,
   assessTwitchRhymeSignals,
   sanitizeTwitchLyricsForPromptLeakage,
+  looksLikeTwitchDjeffVoiceCalibrationDrift,
 } = require('../src/vivy/twitch-nossen-runner.cjs');
 const {
   buildVivyNossenIntentPlan,
@@ -3653,6 +3655,34 @@ test('Vivy freestyle lyric request carries the freestyle rules into the LLM prom
     subjectFrame: {},
   });
   assert.doesNotMatch(normal, /freestyle rap/i);
+});
+
+test('Vivy Djeff guard replaces generic voice-test lyrics before Suno', () => {
+  const badLyrics = [
+    '[Intro]',
+    "Micro allumé, silence dans la pièce",
+    "J'teste la voix, le souffle, la ligne qui se dresse",
+    '',
+    '[Chorus]',
+    'Test voix, test vie, test flow dans le vide',
+    'Chaque syllabe compte, chaque phrase est un guide',
+    'La voix c’est l’empreinte, le timbre c’est la trace',
+    "J'écoute le retour, j'ajuste la distance",
+  ].join('\n');
+  const context = '(Djeff) Ils veulent ma peau, mais ils sont encore en tuto';
+  assert.equal(looksLikeTwitchDjeffVoiceCalibrationDrift(badLyrics, context), true);
+  const repaired = repairTwitchDjeffLyricsBeforeSuno({
+    lyrics: badLyrics,
+    winner: { text: context },
+    routing: { songMood: 'rap français egotrip/cypher sombre, voix masculine sèche' },
+    lyricScope: { maxChars: 5200 },
+    artists: ['djeff'],
+  });
+  assert.equal(repaired.replaced, true);
+  assert.match(repaired.lyrics, /\[Djeff\]/);
+  assert.match(repaired.lyrics, /Ils veulent ma peau/i);
+  assert.match(repaired.lyrics, /tuto/i);
+  assert.doesNotMatch(repaired.lyrics, /Test voix|micro allumé|j['’]écoute le retour/i);
 });
 
 test('Vivy dark freestyle is not polluted by leaked comedy mood directions', () => {

@@ -1912,7 +1912,7 @@ test('double harmonic route publishes turbo d40 v9 at locked 99 ms', async () =>
   }
 });
 
-test('double harmonic route passes v9 electrolysis modulation into the turbo renderer', async () => {
+test('double harmonic route normalizes legacy hot v9 electrolysis modulation before the turbo renderer', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-v9-electrolysis-'));
   const calls = [];
   const app = express();
@@ -1993,10 +1993,41 @@ test('double harmonic route passes v9 electrolysis modulation into the turbo ren
       frequencyHz: 40.4583333333333,
       frequencyMinHz: 40.25,
       frequencyMaxHz: 40.6666666666666,
+      amount: 0.042,
+      irregularity: 0.36,
+      asymmetry: 0.27,
+      bidirectional: true,
+    }]);
+
+    calls.length = 0;
+    const legacyForm = new FormData();
+    legacyForm.append('audio', new Blob([Buffer.from('ID3demo')], { type: 'audio/mpeg' }), 'demo.mp3');
+    legacyForm.append('profile', 'blend');
+    legacyForm.append('format', 'mp3');
+    legacyForm.append('modulation', 'electrolysis-guitar');
+    legacyForm.append('electrolysis', '1');
+    legacyForm.append('electrolysisGuitar', '1');
+    legacyForm.append('frequencyHz', '40.4583333333333');
+    legacyForm.append('frequencyMinHz', '40.25');
+    legacyForm.append('frequencyMaxHz', '40.6666666666666');
+    legacyForm.append('amount', '0.05');
+    legacyForm.append('irregularity', '0.5');
+    legacyForm.append('asymmetry', '0.3');
+    legacyForm.append('bidirectional', '1');
+    legacyForm.append('allowLegacyElectrolysisHot', '1');
+    const legacyRes = await fetch(`${baseUrl}/api/double-harmonic/v9turbo/process`, {
+      method: 'POST',
+      body: legacyForm,
+    });
+    assert.equal(legacyRes.status, 200);
+    assert.deepEqual(calls.map((call) => ({
+      amount: call.amount,
+      irregularity: call.irregularity,
+      asymmetry: call.asymmetry,
+    })), [{
       amount: 0.05,
       irregularity: 0.5,
       asymmetry: 0.3,
-      bidirectional: true,
     }]);
   } finally {
     await new Promise((resolve) => server.close(resolve));

@@ -480,9 +480,49 @@ function getVivySunoRuntimeStatus() {
   return {
     model,
     mode: /^V(?:4|5)(?:_|$)/.test(model) ? 'production' : 'custom',
-    voiceEnrolled: Boolean(cleanOneLine(process.env.VIVY_SUNO_VOICE_ID || process.env.SUNO_VOICE_ID, '', 180)),
+    voiceEnrolled: Boolean(resolveConfiguredVivySunoPersonaVoiceId('vivy')),
+    voicesEnrolled: {
+      vivy: Boolean(resolveConfiguredVivySunoPersonaVoiceId('vivy')),
+      djeff: Boolean(resolveConfiguredVivySunoPersonaVoiceId('djeff')),
+      a11: Boolean(resolveConfiguredVivySunoPersonaVoiceId('a11')),
+      k44: Boolean(resolveConfiguredVivySunoPersonaVoiceId('k44')),
+    },
     completeSongByDefault: true,
   };
+}
+
+function resolveConfiguredVivySunoPersonaVoiceId(artistId = '') {
+  const id = cleanOneLine(artistId, '', 40).toLowerCase();
+  if (id === 'djeff') {
+    return cleanOneLine(
+      process.env.VIVY_SUNO_DJEFF_VOICE_ID
+      || process.env.SUNO_DJEFF_VOICE_ID
+      || process.env.A11_SUNO_DJEFF_VOICE_ID,
+      '',
+      180
+    );
+  }
+  if (id === 'a11') {
+    return cleanOneLine(
+      process.env.VIVY_SUNO_A11_VOICE_ID
+      || process.env.SUNO_A11_VOICE_ID
+      || process.env.A11_SUNO_A11_VOICE_ID,
+      '',
+      180
+    );
+  }
+  if (id === 'k44' || id === 'kaen44') {
+    return cleanOneLine(
+      process.env.VIVY_SUNO_K44_VOICE_ID
+      || process.env.VIVY_SUNO_KAEN44_VOICE_ID
+      || process.env.SUNO_K44_VOICE_ID
+      || process.env.SUNO_KAEN44_VOICE_ID
+      || process.env.A11_SUNO_K44_VOICE_ID,
+      '',
+      180
+    );
+  }
+  return cleanOneLine(process.env.VIVY_SUNO_VOICE_ID || process.env.SUNO_VOICE_ID, '', 180);
 }
 
 function getConfiguredMusicProviders() {
@@ -7010,18 +7050,19 @@ function buildVivySunoPayload(input = {}, req = null) {
   const artistCast = buildVivySongArtistCast(input);
   const forceInstrumental = input.instrumental === true || input.forceInstrumental === true || input.previewInstrumental === true;
   const preserveSelectedVoice = input.preserveSelectedVoice === true;
+  const singleArtistId = artistCast.count === 1 ? cleanOneLine(artistCast.ids[0], '', 40).toLowerCase() : '';
   const explicitVoiceId = cleanOneLine(input.sunoVoiceId, '', 180);
   const serverVoiceId = getRequestSessionSunoApiKey(input, req)
     ? ''
-    : cleanOneLine(process.env.VIVY_SUNO_VOICE_ID || process.env.SUNO_VOICE_ID, '', 180);
+    : resolveConfiguredVivySunoPersonaVoiceId(singleArtistId || 'vivy');
   const verifiedVoiceId = explicitVoiceId || serverVoiceId;
-  const useVerifiedVivyVoice = preserveSelectedVoice
+  const useVerifiedSunoVoice = preserveSelectedVoice
     && artistCast.count === 1
-    && artistCast.ids[0] === 'vivy'
+    && ['vivy', 'djeff', 'a11', 'k44'].includes(singleArtistId)
     && Boolean(verifiedVoiceId)
     && !forceInstrumental;
   const useExternalVoiceMix = preserveSelectedVoice
-    && !useVerifiedVivyVoice
+    && !useVerifiedSunoVoice
     && !forceInstrumental
     && wantsVivyExternalVoiceMix(input);
   const prosodyPlan = buildVivyProsodyPlan(input);
@@ -7059,6 +7100,9 @@ function buildVivySunoPayload(input = {}, req = null) {
   const castStyle = artistCast.count > 1
     ? ''
     : `${artistCast.label} vocal lead: ${artistCast.artists[0]?.style || artistCast.label}`;
+  const soloDjeffStyle = singleArtistId === 'djeff'
+    ? 'Solo Djeff only, dry French male rap lead, close-mic cypher delivery, punchline verses, short rap hook, no female vocal, no romantic pop singing, no soft ballad chorus'
+    : '';
   const arrangement = splitVivyArrangementCues(sanitizeVivySongMaterial(
     stripVivyAscii4SoundTokens(input.songText || input.lyrics || input.text || input.theme || input.prompt),
     VIVY_SONG_MAX_CHARS
@@ -7074,9 +7118,9 @@ function buildVivySunoPayload(input = {}, req = null) {
     ? ''
     : 'French lyrics only, French language vocals, no English lyrics, no English chorus';
   let style = /structured rhymed lyrics|rimes|paroles structur/i.test(styleBase)
-    ? sanitizeVivySunoProviderTags([styleBase, frenchLanguageStyle, castRoleSummary, longFormStyle, castStyle, arrangementStyle, prosodyStyle].filter((item, index, list) => item && list.indexOf(item) === index).join(', '), styleBase, 720)
+    ? sanitizeVivySunoProviderTags([styleBase, frenchLanguageStyle, castRoleSummary, soloDjeffStyle, longFormStyle, castStyle, arrangementStyle, prosodyStyle].filter((item, index, list) => item && list.indexOf(item) === index).join(', '), styleBase, 720)
     : sanitizeVivySunoProviderTags(
-      `${styleBase}, ${frenchLanguageStyle}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration${castRoleSummary ? `, ${castRoleSummary}` : ''}${longFormStyle ? `, ${longFormStyle}` : ''}${castStyle ? `, ${castStyle}` : ''}${arrangementStyle ? `, ${arrangementStyle}` : ''}${prosodyStyle ? `, ${prosodyStyle}` : ''}`,
+      `${styleBase}, ${frenchLanguageStyle}, structured rhymed lyrics, ${singleArtistId === 'djeff' ? 'rap hook' : 'melodic chorus'}, sung vocals, no spoken narration${castRoleSummary ? `, ${castRoleSummary}` : ''}${soloDjeffStyle ? `, ${soloDjeffStyle}` : ''}${longFormStyle ? `, ${longFormStyle}` : ''}${castStyle ? `, ${castStyle}` : ''}${arrangementStyle ? `, ${arrangementStyle}` : ''}${prosodyStyle ? `, ${prosodyStyle}` : ''}`,
       styleBase,
       720
     );
@@ -7102,6 +7146,7 @@ function buildVivySunoPayload(input = {}, req = null) {
     input.negativeTags || process.env.VIVY_SUNO_NEGATIVE_TAGS
       || 'spoken word, narration, reading prompt, robotic speech, muddy mix, out of tune vocals, copyrighted melody, celebrity voice imitation',
     animeStyleBase ? 'French chanson, chanson française, acoustic ballad, crooner ballad, soft piano variety' : '',
+    singleArtistId === 'djeff' ? 'female vocals, female lead, romantic pop vocal, soft ballad chorus, crooner voice, airy female hook' : '',
     !forceInstrumental && !useExternalVoiceMix ? 'English lyrics, English vocals, English chorus, translated chorus, bilingual lyrics' : '',
     artistCast.count > 1 ? 'single vocalist, identical vocal timbre for every singer, blended ensemble lead, unison lead vocals, choir lead, group chant replacing solos, same singer across all tags' : '',
     useExternalVoiceMix ? 'vocals, singing, spoken voice' : '',
@@ -7115,7 +7160,7 @@ function buildVivySunoPayload(input = {}, req = null) {
       artistCast
     ));
   const payload = {
-    model: useVerifiedVivyVoice && !/^V5(?:_5)?$/i.test(requestedModel) ? 'V5_5' : requestedModel,
+    model: useVerifiedSunoVoice && !/^V5(?:_5)?$/i.test(requestedModel) ? 'V5_5' : requestedModel,
     customMode: true,
     instrumental: forceInstrumental || useExternalVoiceMix,
     title,
@@ -7124,7 +7169,7 @@ function buildVivySunoPayload(input = {}, req = null) {
     negativeTags,
     callBackUrl: buildSunoCallbackUrl(req),
   };
-  if (useVerifiedVivyVoice) {
+  if (useVerifiedSunoVoice) {
     payload.personaId = verifiedVoiceId;
     payload.personaModel = 'voice_persona';
   }

@@ -1650,6 +1650,14 @@ function createDoubleHarmonicRouter(options = {}) {
       fs.writeFileSync(inputPath, req.file.buffer);
 
       const profile = String(req.body?.profile || req.query?.profile || 'blend').trim() || 'blend';
+      const requestedAmount = reqNumber(req.body?.amount || req.query?.amount || req.body?.modulationAmount || req.query?.modulationAmount);
+      const requestedIrregularity = reqNumber(req.body?.irregularity || req.query?.irregularity);
+      const requestedAsymmetry = reqNumber(req.body?.asymmetry || req.query?.asymmetry);
+      const requestedLegacyHotElectrolysis = requestedElectrolysis
+        && Math.abs((requestedAmount ?? 0) - 0.05) < 1e-9
+        && Math.abs((requestedIrregularity ?? 0) - 0.5) < 1e-9
+        && Math.abs((requestedAsymmetry ?? 0) - 0.3) < 1e-9
+        && !reqBoolean(req.body?.allowLegacyElectrolysisHot || req.query?.allowLegacyElectrolysisHot);
       const processing = await processAudioV9Turbo({
         inputPath,
         outputPath,
@@ -1680,10 +1688,10 @@ function createDoubleHarmonicRouter(options = {}) {
           frequencyHz: reqNumber(req.body?.frequencyHz || req.query?.frequencyHz || req.body?.modulationFrequencyHz || req.query?.modulationFrequencyHz || req.body?.electrolysisHz || req.query?.electrolysisHz || req.body?.waterFrequencyHz || req.query?.waterFrequencyHz) ?? (requestedElectrolysis ? 40.4583333333333 : undefined),
           frequencyMinHz: reqNumber(req.body?.frequencyMinHz || req.query?.frequencyMinHz || req.body?.minFrequencyHz || req.query?.minFrequencyHz || req.body?.frequencyLowHz || req.query?.frequencyLowHz || req.body?.electrolysisMinHz || req.query?.electrolysisMinHz || req.body?.waterMinHz || req.query?.waterMinHz) ?? (requestedElectrolysis ? 40.25 : undefined),
           frequencyMaxHz: reqNumber(req.body?.frequencyMaxHz || req.query?.frequencyMaxHz || req.body?.maxFrequencyHz || req.query?.maxFrequencyHz || req.body?.frequencyHighHz || req.query?.frequencyHighHz || req.body?.electrolysisMaxHz || req.query?.electrolysisMaxHz || req.body?.waterMaxHz || req.query?.waterMaxHz) ?? (requestedElectrolysis ? 40.6666666666666 : undefined),
-          amount: reqNumber(req.body?.amount || req.query?.amount || req.body?.modulationAmount || req.query?.modulationAmount) ?? (requestedElectrolysis ? 0.042 : undefined),
+          amount: requestedLegacyHotElectrolysis ? 0.042 : (requestedAmount ?? (requestedElectrolysis ? 0.042 : undefined)),
           modulationAmount: reqNumber(req.body?.modulationAmount || req.query?.modulationAmount),
-          irregularity: reqNumber(req.body?.irregularity || req.query?.irregularity) ?? (requestedElectrolysis ? 0.36 : undefined),
-          asymmetry: reqNumber(req.body?.asymmetry || req.query?.asymmetry) ?? (requestedElectrolysis ? 0.27 : undefined),
+          irregularity: requestedLegacyHotElectrolysis ? 0.36 : (requestedIrregularity ?? (requestedElectrolysis ? 0.36 : undefined)),
+          asymmetry: requestedLegacyHotElectrolysis ? 0.27 : (requestedAsymmetry ?? (requestedElectrolysis ? 0.27 : undefined)),
           bidirectional: requestedElectrolysis ? true : reqBoolean(req.body?.bidirectional || req.query?.bidirectional),
           followForce: reqNumber(req.body?.followForce || req.query?.followForce),
           schemaMix: reqNumber(req.body?.schemaMix || req.query?.schemaMix),

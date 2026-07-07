@@ -2626,6 +2626,12 @@ test('Vivy Suno status exposes the production model without leaking the voice id
       model: 'V5_5',
       mode: 'production',
       voiceEnrolled: true,
+      voicesEnrolled: {
+        vivy: true,
+        djeff: false,
+        a11: false,
+        k44: false,
+      },
       completeSongByDefault: true,
     });
     assert.doesNotMatch(JSON.stringify(status), /secret-vivy-voice-id/);
@@ -2643,7 +2649,9 @@ test('Vivy deployment upgrades a reused production environment to Suno V5.5', ()
     'utf8',
   );
   assert.match(deploySource, /managed_keys='[^']*VIVY_SUNO_MODEL/);
+  assert.match(deploySource, /managed_keys='[^']*VIVY_SUNO_LONG_MODEL/);
   assert.match(deploySource, /printf 'VIVY_SUNO_MODEL=V5_5\\n'/);
+  assert.match(deploySource, /printf 'VIVY_SUNO_LONG_MODEL=V5_5\\n'/);
 });
 
 test('Suno payload keeps sung Suno vocals by default when selected voice has no persona id', () => {
@@ -3748,7 +3756,7 @@ test('Vivy NOSSEN automatically extends short Suno songs before D40', () => {
   assert.match(appSource, /const VIVY_NOSSEN_SUNO_TARGET_SECONDS = 300/);
   assert.match(appSource, /const VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS = 150/);
   assert.match(appSource, /const VIVY_NOSSEN_SUNO_MAX_EXTENSIONS = 3/);
-  assert.match(appSource, /const VIVY_NOSSEN_SUNO_LONG_MODEL = ["']V4_5ALL["']/);
+  assert.match(appSource, /const VIVY_NOSSEN_SUNO_LONG_MODEL = ["']V5_5["']/);
   assert.match(appSource, /function getVivyProductionSunoAudioId/);
   assert.match(appSource, /function getVivyProductionDurationSeconds/);
   assert.match(appSource, /payload\?\.id\s*\|\|\s*payload\?\.audioId\s*\|\|\s*payload\?\.audio_id/);
@@ -3907,6 +3915,35 @@ test('Vivy NOSSEN routing falls back locally for Djeff freestyle instead of stop
     assert.match(routed.songMood, /rap freestyle français nerveux/i);
   } finally {
     process.env.VIVY_CHAT_DISABLE_LLM = previousDisable;
+  }
+});
+
+test('Suno payload applies a verified Djeff voice persona when configured', () => {
+  const previousDjeffVoiceId = process.env.VIVY_SUNO_DJEFF_VOICE_ID;
+  process.env.VIVY_SUNO_DJEFF_VOICE_ID = 'djeff-verified-voice-test';
+  try {
+    const payload = buildVivySunoPayload({
+      mode: 'song',
+      songArtists: ['djeff'],
+      songText: '(Djeff) Ils veulent ma peau, mais ils sont encore en tuto',
+      songMood: 'rap français egotrip/cypher sombre, voix masculine sèche, punchlines de clash',
+      preserveSelectedVoice: true,
+      musicModel: 'V4_5',
+    });
+
+    assert.equal(payload.instrumental, false);
+    assert.equal(payload.model, 'V5_5');
+    assert.equal(payload.personaId, 'djeff-verified-voice-test');
+    assert.equal(payload.personaModel, 'voice_persona');
+    assert.match(payload.style, /Solo Djeff only/i);
+    assert.match(payload.style, /dry French male rap lead/i);
+    assert.match(payload.negativeTags, /female vocals/i);
+    assert.doesNotMatch(payload.prompt, /\[Vivy\]/i);
+    assert.match(payload.prompt, /\[Djeff\]/);
+    assert.match(payload.prompt, /Ils veulent ma peau|tuto/i);
+  } finally {
+    if (previousDjeffVoiceId === undefined) delete process.env.VIVY_SUNO_DJEFF_VOICE_ID;
+    else process.env.VIVY_SUNO_DJEFF_VOICE_ID = previousDjeffVoiceId;
   }
 });
 
