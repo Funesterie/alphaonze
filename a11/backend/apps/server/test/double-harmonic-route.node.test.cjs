@@ -89,6 +89,7 @@ const {
   V9_TURBO_METHOD,
   V9_TURBO_STATE,
   DEFAULT_V9_TURBO_FRAME_MS,
+  V9_ELECTROLYSIS_GUITAR_MODULATION,
   buildClosedPhaseAutomationSamplesV8,
   buildClosedPhaseD40ArgsV8,
   buildClosedPhaseD40FilterV8,
@@ -100,6 +101,7 @@ const {
   buildTurboD40ArgsV9,
   buildTurboD40FilterV9,
   buildTurboD40PlanV9,
+  resolveV9TurboModulationConfig,
 } = require('../src/audio/double-harmonic-closed-phase-v8.cjs');
 
 function listen(app) {
@@ -240,6 +242,8 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(statusPayload.v9turbo.variant, 'v9turbo');
     assert.equal(statusPayload.v9turbo.frameMs, DEFAULT_V9_TURBO_FRAME_MS);
     assert.equal(statusPayload.v9turbo.defaults.transition.frameMs, DEFAULT_V9_TURBO_FRAME_MS);
+    assert.equal(statusPayload.v9turbo.defaults.modulation.enabled, false);
+    assert.equal(statusPayload.v9turbo.defaults.modulation.mode, 'none');
     assert.equal(statusPayload.v9turbo.safety.dynamicHighLowWeights, true);
     assert.equal(statusPayload.v9turbo.safety.vocalSafe99ms, true);
     assert.equal(statusPayload.v9turbo.safety.turbo99ListeningValidated, true);
@@ -250,6 +254,14 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(v2Payload.v2.controls.smoothing.mode, 'one-over-e');
     assert.equal(v2Payload.v2.frameMs, 20);
     assert.equal(v2Payload.v2.safety.keepV1RouteUntouched, true);
+
+    const v9Electro = await fetch(`${baseUrl}/api/double-harmonic/v9turbo/status?modulation=electrolysis-guitar&frequencyHz=40.0005&amount=0.05&bidirectional=1`);
+    const v9ElectroPayload = await v9Electro.json();
+    assert.equal(v9Electro.status, 200);
+    assert.equal(v9ElectroPayload.v9turbo.defaults.modulation.enabled, true);
+    assert.equal(v9ElectroPayload.v9turbo.defaults.modulation.mode, 'electrolysis-guitar');
+    assert.equal(v9ElectroPayload.v9turbo.safety.electrolysisGuitarModulation, true);
+    assert.equal(v9ElectroPayload.v9turbo.safety.modulationAudioOnlyNoPhysicalElectrolysis, true);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(runtimeRoot, { recursive: true, force: true });
@@ -708,6 +720,46 @@ test('turbo d40 v9 keeps pivot closure and splits high low dynamic envelopes at 
   assert.match(built.filter, /\[2:a\]aresample=44100,aformat=.*pan=stereo\|c0=c0\|c1=c0\[el\]/);
   assert.match(built.filter, /amix=inputs=3:weights='1 1 1':normalize=0\[out\]/);
   assert.doesNotMatch(built.filter, /alimiter/);
+});
+
+test('turbo d40 v9 electrolysis guitar modulation is asymmetric and audio-only', () => {
+  const modulation = resolveV9TurboModulationConfig({
+    modulation: 'electrolysis-guitar',
+    frequencyHz: 40.0005,
+    amount: 0.05,
+    irregularity: 0.5,
+    asymmetry: 0.3,
+    bidirectional: true,
+  });
+  const plain = buildTurboAutomationSamplesV9({
+    analysis: { frames: [{ endTime: 1, normalizedEnergy: 0.6, curvedEnergy: 0.6, weightScale: 1 }], summary: { durationSeconds: 1 } },
+    durationSeconds: 1,
+    sampleRate: 1024,
+    userK: 3,
+  });
+  const modulated = buildTurboAutomationSamplesV9({
+    analysis: { frames: [{ endTime: 1, normalizedEnergy: 0.6, curvedEnergy: 0.6, weightScale: 1 }], summary: { durationSeconds: 1 } },
+    durationSeconds: 1,
+    sampleRate: 1024,
+    userK: 3,
+    modulation,
+  });
+
+  assert.equal(modulation.enabled, true);
+  assert.equal(modulation.mode, V9_ELECTROLYSIS_GUITAR_MODULATION.mode);
+  assert.equal(modulated.modulation.enabled, true);
+  assert.equal(modulated.modulation.note.includes('not as a physical electrolysis instruction'), true);
+  assert.ok(Math.abs(modulated.summary.modulation.min) > 0 || Math.abs(modulated.summary.modulation.max) > 0);
+  assert.ok(modulated.summary.modulation.min < 0, 'bidirectional negative lobe exists');
+  assert.ok(modulated.summary.modulation.max > 0, 'bidirectional positive lobe exists');
+  assert.notEqual(
+    Number(modulated.summary.highMultiplier.mean.toFixed(8)),
+    Number(plain.summary.highMultiplier.mean.toFixed(8))
+  );
+  assert.notEqual(
+    Number(modulated.summary.lowMultiplier.mean.toFixed(8)),
+    Number(plain.summary.lowMultiplier.mean.toFixed(8))
+  );
 });
 
 test('d40 envelope renders do not leak the 1024 automation rate into wav output', () => {

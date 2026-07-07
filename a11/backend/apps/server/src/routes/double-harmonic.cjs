@@ -487,6 +487,7 @@ function createDoubleHarmonicRouter(options = {}) {
       ok: true,
       v9turbo: buildTurboD40PlanV9({
         maxSeconds: reqNumber(_req.query?.maxSeconds),
+        frameMs: reqNumber(_req.query?.frameMs),
         cycleSeconds: reqNumber(_req.query?.cycleSeconds),
         userK: reqNumber(
           _req.query?.userK
@@ -498,6 +499,15 @@ function createDoubleHarmonicRouter(options = {}) {
         kCeiling: reqNumber(_req.query?.kCeiling),
         phaseSlots: reqNumber(_req.query?.phaseSlots || _req.query?.binaryGridSlots),
         c7PhaseScale: reqNumber(_req.query?.c7PhaseScale),
+        modulation: _req.query?.modulation || _req.query?.modulationMode,
+        electrolysis: reqBoolean(_req.query?.electrolysis || _req.query?.electrolysisGuitar),
+        frequencyHz: reqNumber(_req.query?.frequencyHz || _req.query?.modulationFrequencyHz || _req.query?.electrolysisHz || _req.query?.waterFrequencyHz),
+        amount: reqNumber(_req.query?.amount || _req.query?.modulationAmount),
+        irregularity: reqNumber(_req.query?.irregularity),
+        asymmetry: reqNumber(_req.query?.asymmetry),
+        bidirectional: reqBoolean(_req.query?.bidirectional),
+        followForce: reqNumber(_req.query?.followForce),
+        schemaMix: reqNumber(_req.query?.schemaMix),
       }),
     });
   });
@@ -1292,6 +1302,15 @@ function createDoubleHarmonicRouter(options = {}) {
           kCeiling: reqNumber(req.body?.kCeiling || req.query?.kCeiling),
           phaseSlots: reqNumber(req.body?.phaseSlots || req.query?.phaseSlots || req.body?.binaryGridSlots || req.query?.binaryGridSlots),
           c7PhaseScale: reqNumber(req.body?.c7PhaseScale || req.query?.c7PhaseScale),
+          modulation: req.body?.modulation || req.query?.modulation || req.body?.modulationMode || req.query?.modulationMode,
+          electrolysis: reqBoolean(req.body?.electrolysis || req.query?.electrolysis || req.body?.electrolysisGuitar || req.query?.electrolysisGuitar),
+          frequencyHz: reqNumber(req.body?.frequencyHz || req.query?.frequencyHz || req.body?.modulationFrequencyHz || req.query?.modulationFrequencyHz || req.body?.electrolysisHz || req.query?.electrolysisHz || req.body?.waterFrequencyHz || req.query?.waterFrequencyHz),
+          amount: reqNumber(req.body?.amount || req.query?.amount || req.body?.modulationAmount || req.query?.modulationAmount),
+          irregularity: reqNumber(req.body?.irregularity || req.query?.irregularity),
+          asymmetry: reqNumber(req.body?.asymmetry || req.query?.asymmetry),
+          bidirectional: reqBoolean(req.body?.bidirectional || req.query?.bidirectional),
+          followForce: reqNumber(req.body?.followForce || req.query?.followForce),
+          schemaMix: reqNumber(req.body?.schemaMix || req.query?.schemaMix),
         },
       });
       const token = crypto.randomBytes(18).toString('base64url');
@@ -1319,6 +1338,7 @@ function createDoubleHarmonicRouter(options = {}) {
         phaseClosure: processing.phaseClosure || null,
         weights: processing.weights || null,
         dynamicSummary: processing.dynamic?.summary || null,
+        modulation: processing.dynamic?.modulation || null,
         safety: processing.safety || null,
         bytes: fs.statSync(outputPath).size,
       };
@@ -1704,7 +1724,9 @@ function createDoubleHarmonicRouter(options = {}) {
         contentType: outputFormat.contentType,
         filename: outputFilename,
         bytes: asset.bytes,
-        publicSummary: 'V9 Turbo: V8 Pivot valide, poids haut/bas dynamiques vocal-safe a 99 ms, fermeture 1024 et mg_phase recentre conserves.',
+        publicSummary: processing.dynamic?.modulation?.enabled
+          ? 'V9 Turbo Electrolysis Guitar: V8 Pivot conserve, micro-modulation asymetrique/irreguliere audio-only sur les enveloppes haut/bas.'
+          : 'V9 Turbo: V8 Pivot valide, poids haut/bas dynamiques vocal-safe a 99 ms, fermeture 1024 et mg_phase recentre conserves.',
       });
     } catch (error) {
       return res.status(500).json({
