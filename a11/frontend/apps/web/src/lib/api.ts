@@ -2458,7 +2458,7 @@ export async function uploadVoiceLearningSnippet(
   return payload as VoiceLearningStatus;
 }
 
-export type DoubleHarmonicProcessMode = 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7' | 'v71' | 'v8' | 'v8plus' | 'v8pivot' | 'v9turbo';
+export type DoubleHarmonicProcessMode = 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7' | 'v71' | 'v8' | 'v8plus' | 'v8pivot' | 'v9turbo' | 'v9electrolysis';
 export type DoubleHarmonicOutputFormat = 'source' | 'flac' | 'mp3' | 'm4a' | 'wav';
 
 export type DoubleHarmonicProcessResult = {
@@ -2557,6 +2557,21 @@ export async function processDoubleHarmonicAudio(
     maxBricks?: number;
     brickInfluence?: number;
     binaryGrid?: string;
+    modulation?: string;
+    electrolysis?: boolean;
+    electrolysisGuitar?: boolean;
+    frequencyHz?: number;
+    frequencyMinHz?: number;
+    frequencyMaxHz?: number;
+    electrolysisHz?: number;
+    electrolysisMinHz?: number;
+    electrolysisMaxHz?: number;
+    amount?: number;
+    irregularity?: number;
+    asymmetry?: number;
+    bidirectional?: boolean;
+    followForce?: number;
+    schemaMix?: number;
   }
 ): Promise<DoubleHarmonicProcessResult> {
   const form = new FormData();
@@ -2565,7 +2580,7 @@ export async function processDoubleHarmonicAudio(
   if (options?.format) {
     form.append('format', options.format);
   }
-  if ((options?.mode === 'v1' || options?.mode === 'v2' || options?.mode === 'v4' || options?.mode === 'v5' || options?.mode === 'v6' || options?.mode === 'v7' || options?.mode === 'v71' || options?.mode === 'v8' || options?.mode === 'v8plus' || options?.mode === 'v8pivot' || options?.mode === 'v9turbo' || !options?.mode) && Number.isFinite(Number(options?.intensity))) {
+  if ((options?.mode === 'v1' || options?.mode === 'v2' || options?.mode === 'v4' || options?.mode === 'v5' || options?.mode === 'v6' || options?.mode === 'v7' || options?.mode === 'v71' || options?.mode === 'v8' || options?.mode === 'v8plus' || options?.mode === 'v8pivot' || options?.mode === 'v9turbo' || options?.mode === 'v9electrolysis' || !options?.mode) && Number.isFinite(Number(options?.intensity))) {
     form.append('intensity', String(options?.intensity));
   }
   if (Number.isFinite(Number(options?.lowGrainMultiplier))) {
@@ -2586,9 +2601,37 @@ export async function processDoubleHarmonicAudio(
   if (options?.binaryGrid) {
     form.append('binaryGrid', options.binaryGrid);
   }
+  const wantsV9Electrolysis = options?.mode === 'v9electrolysis';
+  const modulation = options?.modulation || (wantsV9Electrolysis ? 'electrolysis-guitar' : '');
+  if (modulation) {
+    form.append('modulation', modulation);
+  }
+  if (options?.electrolysis === true || wantsV9Electrolysis) {
+    form.append('electrolysis', '1');
+  }
+  if (options?.electrolysisGuitar === true || wantsV9Electrolysis) {
+    form.append('electrolysisGuitar', '1');
+  }
+  const appendFinite = (key: string, value: unknown) => {
+    if (Number.isFinite(Number(value))) form.append(key, String(value));
+  };
+  appendFinite('frequencyHz', options?.frequencyHz ?? (wantsV9Electrolysis ? 40.4583333333333 : undefined));
+  appendFinite('frequencyMinHz', options?.frequencyMinHz ?? (wantsV9Electrolysis ? 40.25 : undefined));
+  appendFinite('frequencyMaxHz', options?.frequencyMaxHz ?? (wantsV9Electrolysis ? 40.6666666666666 : undefined));
+  appendFinite('electrolysisHz', options?.electrolysisHz);
+  appendFinite('electrolysisMinHz', options?.electrolysisMinHz);
+  appendFinite('electrolysisMaxHz', options?.electrolysisMaxHz);
+  appendFinite('amount', options?.amount ?? (wantsV9Electrolysis ? 0.05 : undefined));
+  appendFinite('irregularity', options?.irregularity ?? (wantsV9Electrolysis ? 0.5 : undefined));
+  appendFinite('asymmetry', options?.asymmetry ?? (wantsV9Electrolysis ? 0.3 : undefined));
+  if (typeof options?.bidirectional === 'boolean' || wantsV9Electrolysis) {
+    form.append('bidirectional', options?.bidirectional === false ? '0' : '1');
+  }
+  appendFinite('followForce', options?.followForce);
+  appendFinite('schemaMix', options?.schemaMix);
   if (options?.name) form.append('name', options.name);
 
-  const endpoint = options?.mode === 'v9turbo'
+  const endpoint = options?.mode === 'v9turbo' || options?.mode === 'v9electrolysis'
     ? '/api/double-harmonic/v9turbo/process'
     : options?.mode === 'v8pivot'
       ? '/api/double-harmonic/v8pivot/process'

@@ -1912,6 +1912,98 @@ test('double harmonic route publishes turbo d40 v9 at locked 99 ms', async () =>
   }
 });
 
+test('double harmonic route passes v9 electrolysis modulation into the turbo renderer', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-v9-electrolysis-'));
+  const calls = [];
+  const app = express();
+  app.use('/api/double-harmonic', createDoubleHarmonicRouter({
+    runtimeRoot,
+    processTurboD40V9: async ({ outputPath, profile, analysisOptions }) => {
+      calls.push({
+        profile,
+        modulation: analysisOptions.modulation,
+        electrolysis: analysisOptions.electrolysis,
+        electrolysisGuitar: analysisOptions.electrolysisGuitar,
+        frequencyHz: analysisOptions.frequencyHz,
+        frequencyMinHz: analysisOptions.frequencyMinHz,
+        frequencyMaxHz: analysisOptions.frequencyMaxHz,
+        amount: analysisOptions.amount,
+        irregularity: analysisOptions.irregularity,
+        asymmetry: analysisOptions.asymmetry,
+        bidirectional: analysisOptions.bidirectional,
+      });
+      fs.writeFileSync(outputPath, Buffer.from('processed v9 electrolysis mp3'));
+      return {
+        method: V9_TURBO_METHOD,
+        state: V9_TURBO_STATE,
+        variant: 'v9turbo',
+        profile,
+        preset: 'v9-turbo-electrolysis-guitar-audio-only',
+        intensity: 'vocal-safe-99ms-turbo-1024',
+        dynamic: {
+          frameMs: DEFAULT_V9_TURBO_FRAME_MS,
+          transition: { frameMs: DEFAULT_V9_TURBO_FRAME_MS },
+          modulation: { enabled: true, mode: 'electrolysis-guitar' },
+        },
+        weights: { transitionFrameMs: DEFAULT_V9_TURBO_FRAME_MS },
+        safety: {
+          dynamicHighLowWeights: true,
+          vocalSafe99ms: true,
+          electrolysisGuitarModulation: true,
+          modulationAudioOnlyNoPhysicalElectrolysis: true,
+        },
+      };
+    },
+    verifyJWT: (req, _res, next) => {
+      req.user = { email: 'djeff@example.test' };
+      next();
+    },
+  }));
+
+  const { server, baseUrl } = await listen(app);
+  try {
+    const form = new FormData();
+    form.append('audio', new Blob([Buffer.from('ID3demo')], { type: 'audio/mpeg' }), 'demo.mp3');
+    form.append('profile', 'blend');
+    form.append('format', 'mp3');
+    form.append('modulation', 'electrolysis-guitar');
+    form.append('electrolysis', '1');
+    form.append('electrolysisGuitar', '1');
+    form.append('frequencyHz', '40.4583333333333');
+    form.append('frequencyMinHz', '40.25');
+    form.append('frequencyMaxHz', '40.6666666666666');
+    form.append('amount', '0.05');
+    form.append('irregularity', '0.5');
+    form.append('asymmetry', '0.3');
+    form.append('bidirectional', '1');
+    const res = await fetch(`${baseUrl}/api/double-harmonic/v9turbo/process`, {
+      method: 'POST',
+      body: form,
+    });
+    const payload = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.publicSummary.includes('Electrolysis Guitar'), true);
+    assert.equal(payload.safety.electrolysisGuitarModulation, true);
+    assert.deepEqual(calls, [{
+      profile: 'blend',
+      modulation: 'electrolysis-guitar',
+      electrolysis: true,
+      electrolysisGuitar: true,
+      frequencyHz: 40.4583333333333,
+      frequencyMinHz: 40.25,
+      frequencyMaxHz: 40.6666666666666,
+      amount: 0.05,
+      irregularity: 0.5,
+      asymmetry: 0.3,
+      bidirectional: true,
+    }]);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
 test('double harmonic route keeps mp3 input as mp3 output when source format is requested', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-mp3-'));
   const app = express();

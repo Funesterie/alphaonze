@@ -1183,7 +1183,7 @@ test('Suno payload turns a NOSSEN Banger seed into lyrics without singing UI bug
     songArtists: ['djeff', 'vivy', 'a11'],
     vocalCast: 'Trio Djeff + Vivy + A11',
     songMood: 'rap pop américain, hook lumineux, basse nette, vrai refrain',
-    prompt: 'NOSSEN Banger production brief. Production chantée via Suno; mix final D40 V9 Dynamique.',
+    prompt: 'NOSSEN Banger production brief. Production chantée via Suno; mix final D40 V9 Électrolyse.',
     songText: [
       'Matière chanson NOSSEN.',
       'Thème: la nouvelle génération veut tout créer plus vite, mais elle cherche encore un vrai lien humain.',
@@ -3337,7 +3337,9 @@ test('Vivy NOSSEN Banger launches sung Suno, avoids raw TTS overlays, applies D4
   assert.doesNotMatch(launchBlock, /mixVivyStudioPreview\(voicePreview\.url,\s*preparedMedia\.url\)/);
   assert.match(launchBlock, /const nossenExternalVoiceMix = false/);
   assert.match(launchBlock, /processDoubleHarmonicAudio/);
-  assert.match(launchBlock, /mode:\s*"v9turbo"/);
+  assert.match(launchBlock, /mode:\s*"v9electrolysis"/);
+  assert.match(launchBlock, /frequencyMinHz:\s*D40_V9_ELECTROLYSIS_MIN_HZ/);
+  assert.match(launchBlock, /frequencyMaxHz:\s*D40_V9_ELECTROLYSIS_MAX_HZ/);
   assert.ok(
     launchBlock.indexOf('processDoubleHarmonicAudio') > launchBlock.indexOf('generation_suno_trop_courte_${Math.round(finalDurationSeconds)}s'),
     'NOSSEN must reject too-short Suno audio before applying D40'
@@ -4312,7 +4314,7 @@ test('Vivy sessions API stores client-synced NOSSEN replies with media for cross
         content: lyrics,
         media: {
           kind: 'audio',
-          provider: 'funesterie-d40-v9turbo',
+          provider: 'funesterie-d40-v9electrolysis',
           url: '/api/vivy/studio/assets/vivy-jessy-d40.mp3',
           downloadUrl: '/api/vivy/studio/assets/vivy-jessy-d40.mp3',
           filename: 'vivy-jessy-d40.mp3',
@@ -4332,7 +4334,7 @@ test('Vivy sessions API stores client-synced NOSSEN replies with media for cross
     assert.match(JSON.stringify(sessionPayload.session.messages), /\[Refrain - Tous\]/i);
     const syncedReply = sessionPayload.session.messages.find((message) => message.role === 'assistant');
     assert.equal(syncedReply.media.url, '/api/vivy/studio/assets/vivy-jessy-d40.mp3');
-    assert.equal(syncedReply.media.provider, 'funesterie-d40-v9turbo');
+    assert.equal(syncedReply.media.provider, 'funesterie-d40-v9electrolysis');
   });
 });
 
@@ -6067,13 +6069,14 @@ test('Vivy keeps complete song outputs beyond the former 5000 character ceiling'
   assert.match(result.publicLyrics, /FIN_DE_LA_CHANSON_COMPLETE/);
 });
 
-test('Vivy frontend labels prepared audio as V9 dynamic', () => {
+test('Vivy frontend labels prepared audio as V9 electrolysis', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
     'utf8'
   );
 
-  assert.match(appSource, /Version : V9 Dynamique/);
+  assert.match(appSource, /Version : V9 Électrolyse/);
+  assert.match(appSource, /40\.25-40\.6666666666666 Hz/);
   assert.doesNotMatch(appSource, /Version : V6 Supreme/);
 });
 

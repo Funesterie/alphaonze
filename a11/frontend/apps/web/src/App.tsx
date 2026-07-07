@@ -2218,6 +2218,9 @@ const D40_V7_DEFAULT_INTENSITY = 3;
 const D40_V8_INTENSITY_MIN = 0.1;
 const D40_V8_INTENSITY_MAX = 10;
 const D40_V8_DEFAULT_INTENSITY = 3;
+const D40_V9_ELECTROLYSIS_MIN_HZ = 40.25;
+const D40_V9_ELECTROLYSIS_MAX_HZ = 40.6666666666666;
+const D40_V9_ELECTROLYSIS_MID_HZ = 40.4583333333333;
 const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v1: "V1 stable",
   v2: "V2 Release",
@@ -2231,6 +2234,7 @@ const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v8plus: "V8 Plus e2",
   v8pivot: "V8 Pivot",
   v9turbo: "V9 Dynamique",
+  v9electrolysis: "V9 Électrolyse",
 };
 const D40_OUTPUT_FORMAT_LABELS: Record<DoubleHarmonicOutputFormat, string> = {
   flac: "FLAC master",
@@ -5139,12 +5143,12 @@ function VivyD9DiagnosticsPanel({ prosody }: { prosody: VivyStudioProductionResu
   return (
     <section className="vivy-studio-diagnostics vivy-studio-diagnostics--supreme" aria-label="Version audio Vivy">
       <header>
-        <span>Version : V9 Dynamique</span>
-        <small>Même format par défaut · k 3x · dynamique 99 ms · pivot 0.292 · 1024</small>
+        <span>Version : V9 Électrolyse</span>
+        <small>Même format par défaut · k 3x · 40.25-40.6666666666666 Hz · dynamique 99 ms · pivot 0.292 · 1024</small>
       </header>
       <p>
         Préparation Vivy prête: {segments.length || 1} segment{(segments.length || 1) > 1 ? "s" : ""} calé{(segments.length || 1) > 1 ? "s" : ""}.
-        Le traitement audio final se fait avec Mix D40 V9 Dynamique.
+        Le traitement audio final se fait avec Mix D40 V9 Électrolyse.
       </p>
     </section>
   );
@@ -5186,7 +5190,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [voiceLearningMessage, setVoiceLearningMessage] = useState("");
   const [doubleHarmonicFile, setDoubleHarmonicFile] = useState<File | null>(null);
   const [doubleHarmonicFileName, setDoubleHarmonicFileName] = useState("");
-  const [doubleHarmonicMode, setDoubleHarmonicMode] = useState<DoubleHarmonicProcessMode>("v9turbo");
+  const [doubleHarmonicMode, setDoubleHarmonicMode] = useState<DoubleHarmonicProcessMode>("v9electrolysis");
   const [doubleHarmonicOutputFormat, setDoubleHarmonicOutputFormat] = useState<DoubleHarmonicOutputFormat>("source");
   const [doubleHarmonicIntensity, setDoubleHarmonicIntensity] = useState(D40_V8_DEFAULT_INTENSITY);
   const [doubleHarmonicResult, setDoubleHarmonicResult] = useState<DoubleHarmonicProcessResult | null>(null);
@@ -5214,7 +5218,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const doubleHarmonicIntensityLabel = `${doubleHarmonicIntensity.toFixed(2).replace(/\.?0+$/, "")}x`;
   const doubleHarmonicModeLabel = D40_PROCESS_MODE_LABELS[doubleHarmonicMode];
   const doubleHarmonicOutputFormatLabel = D40_OUTPUT_FORMAT_LABELS[doubleHarmonicOutputFormat];
-  const doubleHarmonicIntensityMin = doubleHarmonicMode === "v8" || doubleHarmonicMode === "v8plus" || doubleHarmonicMode === "v8pivot" || doubleHarmonicMode === "v9turbo"
+  const doubleHarmonicIntensityMin = doubleHarmonicMode === "v8" || doubleHarmonicMode === "v8plus" || doubleHarmonicMode === "v8pivot" || doubleHarmonicMode === "v9turbo" || doubleHarmonicMode === "v9electrolysis"
     ? D40_V8_INTENSITY_MIN
     : doubleHarmonicMode === "v7" || doubleHarmonicMode === "v71"
     ? D40_V7_INTENSITY_MIN
@@ -5225,7 +5229,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     : doubleHarmonicMode === "v4"
       ? D40_V4_INTENSITY_MIN
       : D40_HARMONIC_INTENSITY_MIN;
-  const doubleHarmonicIntensityMax = doubleHarmonicMode === "v8" || doubleHarmonicMode === "v8plus" || doubleHarmonicMode === "v8pivot" || doubleHarmonicMode === "v9turbo"
+  const doubleHarmonicIntensityMax = doubleHarmonicMode === "v8" || doubleHarmonicMode === "v8plus" || doubleHarmonicMode === "v8pivot" || doubleHarmonicMode === "v9turbo" || doubleHarmonicMode === "v9electrolysis"
     ? D40_V8_INTENSITY_MAX
     : doubleHarmonicMode === "v7" || doubleHarmonicMode === "v71"
     ? D40_V7_INTENSITY_MAX
@@ -5236,10 +5240,12 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     : doubleHarmonicMode === "v4"
       ? D40_V4_INTENSITY_MAX
       : D40_HARMONIC_INTENSITY_MAX;
-  const doubleHarmonicIntensityStep = doubleHarmonicMode === "v6" || doubleHarmonicMode === "v7" || doubleHarmonicMode === "v71" || doubleHarmonicMode === "v8" || doubleHarmonicMode === "v8plus" || doubleHarmonicMode === "v8pivot" || doubleHarmonicMode === "v9turbo" ? "0.1" : doubleHarmonicMode === "v4" || doubleHarmonicMode === "v5" ? "0.05" : "0.005";
+  const doubleHarmonicIntensityStep = doubleHarmonicMode === "v6" || doubleHarmonicMode === "v7" || doubleHarmonicMode === "v71" || doubleHarmonicMode === "v8" || doubleHarmonicMode === "v8plus" || doubleHarmonicMode === "v8pivot" || doubleHarmonicMode === "v9turbo" || doubleHarmonicMode === "v9electrolysis" ? "0.1" : doubleHarmonicMode === "v4" || doubleHarmonicMode === "v5" ? "0.05" : "0.005";
   const doubleHarmonicUsesFixedWeight = doubleHarmonicMode === "v3";
   const doubleHarmonicWeightLabel = doubleHarmonicMode === "v3"
     ? "Auto"
+    : doubleHarmonicMode === "v9electrolysis"
+      ? `k ${doubleHarmonicIntensityLabel} · électrolyse ${D40_V9_ELECTROLYSIS_MIN_HZ}-${D40_V9_ELECTROLYSIS_MAX_HZ} Hz · bidir irrégulière · pivot 0.292 · 1024`
     : doubleHarmonicMode === "v9turbo"
       ? `k ${doubleHarmonicIntensityLabel} · dynamique 99 ms · pivot 0.292 · 1024`
     : doubleHarmonicMode === "v8pivot"
@@ -5259,7 +5265,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         : doubleHarmonicMode === "v4"
           ? `${doubleHarmonicIntensityLabel} · grain bas x${D40_V4_LOW_GRAIN_MULTIPLIER} · haut ^${D40_V4_HIGH_GRAIN_POWER}`
           : doubleHarmonicIntensityLabel;
-  const doubleHarmonicIntensityTitle = doubleHarmonicMode === "v9turbo"
+  const doubleHarmonicIntensityTitle = doubleHarmonicMode === "v9electrolysis"
+    ? "V9 Électrolyse"
+    : doubleHarmonicMode === "v9turbo"
     ? "V9 Dynamique"
     : doubleHarmonicMode === "v8pivot"
     ? "V8 Pivot"
@@ -5940,6 +5948,16 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         lowGrainMultiplier: doubleHarmonicMode === "v4" ? D40_V4_LOW_GRAIN_MULTIPLIER : undefined,
         highGrainPower: doubleHarmonicMode === "v4" ? D40_V4_HIGH_GRAIN_POWER : undefined,
         binaryGrid: doubleHarmonicMode === "v71" ? "exact1024" : undefined,
+        modulation: doubleHarmonicMode === "v9electrolysis" ? "electrolysis-guitar" : undefined,
+        electrolysis: doubleHarmonicMode === "v9electrolysis" ? true : undefined,
+        electrolysisGuitar: doubleHarmonicMode === "v9electrolysis" ? true : undefined,
+        frequencyHz: doubleHarmonicMode === "v9electrolysis" ? D40_V9_ELECTROLYSIS_MID_HZ : undefined,
+        frequencyMinHz: doubleHarmonicMode === "v9electrolysis" ? D40_V9_ELECTROLYSIS_MIN_HZ : undefined,
+        frequencyMaxHz: doubleHarmonicMode === "v9electrolysis" ? D40_V9_ELECTROLYSIS_MAX_HZ : undefined,
+        amount: doubleHarmonicMode === "v9electrolysis" ? 0.05 : undefined,
+        irregularity: doubleHarmonicMode === "v9electrolysis" ? 0.5 : undefined,
+        asymmetry: doubleHarmonicMode === "v9electrolysis" ? 0.3 : undefined,
+        bidirectional: doubleHarmonicMode === "v9electrolysis" ? true : undefined,
       });
       const mediaUrl = String(result.shareUrl || result.audioUrl || "").trim();
       if (!mediaUrl) throw new Error("audio_url_missing");
@@ -7071,7 +7089,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                 disabled={!hasSession || isBusy}
                 onChange={(event) => {
                   const rawMode = event.currentTarget.value;
-                  const nextMode: DoubleHarmonicProcessMode = rawMode === "v9turbo"
+                  const nextMode: DoubleHarmonicProcessMode = rawMode === "v9electrolysis"
+                    ? "v9electrolysis"
+                    : rawMode === "v9turbo"
                     ? "v9turbo"
                     : rawMode === "v8pivot"
                     ? "v8pivot"
@@ -7095,10 +7115,11 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                           ? "v2"
                           : "v1";
                   setDoubleHarmonicMode(nextMode);
-                  setDoubleHarmonicIntensity(nextMode === "v8" || nextMode === "v8plus" || nextMode === "v8pivot" || nextMode === "v9turbo" ? D40_V8_DEFAULT_INTENSITY : nextMode === "v71" ? D40_V7_DEFAULT_INTENSITY : nextMode === "v7" ? D40_V7_DEFAULT_INTENSITY : nextMode === "v6" ? D40_V6_DEFAULT_INTENSITY : nextMode === "v5" ? D40_V5_DEFAULT_INTENSITY : 1);
+                  setDoubleHarmonicIntensity(nextMode === "v8" || nextMode === "v8plus" || nextMode === "v8pivot" || nextMode === "v9turbo" || nextMode === "v9electrolysis" ? D40_V8_DEFAULT_INTENSITY : nextMode === "v71" ? D40_V7_DEFAULT_INTENSITY : nextMode === "v7" ? D40_V7_DEFAULT_INTENSITY : nextMode === "v6" ? D40_V6_DEFAULT_INTENSITY : nextMode === "v5" ? D40_V5_DEFAULT_INTENSITY : 1);
                   setDoubleHarmonicResult(null);
                 }}
               >
+                <option value="v9electrolysis">V9 Électrolyse</option>
                 <option value="v9turbo">V9 Dynamique</option>
                 <option value="v8pivot">V8 Pivot</option>
                 <option value="v8plus">V8 Plus e2</option>
@@ -8444,7 +8465,17 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
             intensity: D40_V8_DEFAULT_INTENSITY,
             format: "mp3",
             name: sourceName,
-            mode: "v9turbo",
+            mode: "v9electrolysis",
+            modulation: "electrolysis-guitar",
+            electrolysis: true,
+            electrolysisGuitar: true,
+            frequencyHz: D40_V9_ELECTROLYSIS_MID_HZ,
+            frequencyMinHz: D40_V9_ELECTROLYSIS_MIN_HZ,
+            frequencyMaxHz: D40_V9_ELECTROLYSIS_MAX_HZ,
+            amount: 0.05,
+            irregularity: 0.5,
+            asymmetry: 0.3,
+            bidirectional: true,
           });
           const d40Url = String(d40.shareUrl || d40.audioUrl || "").trim();
           if (d40Url) {
@@ -8453,7 +8484,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
               kind: "audio",
               url: resolveApiAssetUrl(d40Url) || d40Url,
               downloadUrl: resolveApiAssetUrl(d40DownloadUrl) || d40DownloadUrl || resolveApiAssetUrl(d40Url) || d40Url,
-              provider: "funesterie-d40-v9turbo",
+              provider: "funesterie-d40-v9electrolysis",
               contentType: String(d40.contentType || "audio/mpeg"),
               filename: String(d40.filename || sourceName.replace(/\.[^.]+$/, "-d40-v9.mp3")),
               voiceManifest: finalPayload?.media?.voiceManifest,
