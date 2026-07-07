@@ -537,6 +537,87 @@ function estimateTwitchFullClipCost(env = process.env, overrides = {}) {
   };
 }
 
+function normalizeTwitchStreamClipMode(value = '') {
+  const folded = String(value || '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .toLowerCase();
+  if (!folded) return 'image';
+  if (['image', 'cover', 'artwork', 'jaquette'].includes(folded)) return 'image';
+  if (['dream', 'dreamclip', 'clip-reve', 'clip-de-reve', 'reve', 'rêve'].includes(folded)) return 'dream';
+  if (folded === 'clip' || folded === 'video') return 'clip';
+  return 'image';
+}
+
+function buildTwitchStreamClipEnv(env = process.env, requestedMode = 'image') {
+  const mode = normalizeTwitchStreamClipMode(requestedMode);
+  if (mode === 'image') {
+    return {
+      ...env,
+      VIVY_STREAM_FULL_CLIP_ENABLED: '0',
+      VIVY_STREAM_CLIP_ENABLED: '0',
+      VIVY_STREAM_FULL_CLIP_MODE: 'image',
+    };
+  }
+  if (mode === 'clip') {
+    return {
+      ...env,
+      VIVY_STREAM_FULL_CLIP_ENABLED: '0',
+      VIVY_STREAM_CLIP_ENABLED: '1',
+      VIVY_STREAM_FULL_CLIP_MODE: 'clip',
+    };
+  }
+  return {
+    ...env,
+    VIVY_STREAM_FULL_CLIP_ENABLED: '1',
+    VIVY_STREAM_CLIP_ENABLED: '0',
+    VIVY_STREAM_FULL_CLIP_MODE: 'dream',
+  };
+}
+
+function hasConfiguredDreamClipInfrastructure(env = process.env) {
+  return Boolean(cleanText(
+    env.A11_COMFY_CLOUD_API_KEY
+      || env.COMFY_CLOUD_API_KEY
+      || env.REPLICATE_API_TOKEN
+      || env.A11_REPLICATE_API_TOKEN
+      || env.HF_TOKEN
+      || env.HUGGINGFACE_HUB_TOKEN,
+    '',
+    200
+  ));
+}
+
+function canAffordTwitchDreamClip(env = process.env, overrides = {}) {
+  const estimate = estimateTwitchFullClipCost(env, { mode: 'dream', ...overrides });
+  if (!hasConfiguredDreamClipInfrastructure(env)) {
+    return {
+      ok: false,
+      affordable: false,
+      reason: 'dream_clip_provider_missing',
+      estimate,
+    };
+  }
+  const budgetEur = Number(env.VIVY_STREAM_DREAMCLIP_BUDGET_EUR || env.VIVY_STREAM_CLIP_BUDGET_EUR || 0) || 0;
+  if (budgetEur > 0 && estimate.estimatedCostEur.high > budgetEur) {
+    return {
+      ok: false,
+      affordable: false,
+      reason: 'dream_clip_budget_exceeded',
+      budgetEur,
+      estimate,
+    };
+  }
+  return {
+    ok: true,
+    affordable: true,
+    reason: 'dream_clip_affordable',
+    budgetEur: budgetEur || null,
+    estimate,
+  };
+}
+
 function resolveReusableLoopKey(scene = {}, counters = {}) {
   const kind = cleanText(scene.kind, 'verse', 40);
   if (kind === 'intro') return 'loop-intro';
@@ -1973,6 +2054,8 @@ module.exports = {
   buildSceneVisualPrompt,
   buildReusableLoopPlan,
   buildTwitchFullClipStoryboard,
+  buildTwitchStreamClipEnv,
+  canAffordTwitchDreamClip,
   composeLoopMontage,
   createSafeImageMotionLoop,
   demosaicGridVideo,
@@ -1989,6 +2072,7 @@ module.exports = {
   prepareTwitchFullSongClip,
   resolveProfessionalEditConfig,
   resolveTwitchGridDemosaicConfig,
+  normalizeTwitchStreamClipMode,
   resolveTwitchFullClipMode,
   resolveTwitchFullClipProvider,
   resolveTwitchFullClipRenderDurationSeconds,

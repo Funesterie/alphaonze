@@ -11,8 +11,10 @@ const {
   masterVivyMusicFile,
 } = require('../routes/vivy-studio.cjs');
 const {
+  buildTwitchStreamClipEnv,
+  canAffordTwitchDreamClip,
   finalizeTwitchFullSongClip,
-  isTwitchFullClipEnabled,
+  normalizeTwitchStreamClipMode,
   prepareTwitchFullSongClip,
 } = require('./twitch-clip-director.cjs');
 const {
@@ -653,8 +655,10 @@ function isTwitchCoverEnabled() {
   return String(process.env.VIVY_STREAM_COVER_ENABLED ?? '1').trim() === '1';
 }
 
-function isTwitchClipEnabled() {
-  return String(process.env.VIVY_STREAM_CLIP_ENABLED ?? '1').trim() === '1';
+function isTwitchClipEnabled(env = process.env) {
+  const explicit = String(env.VIVY_STREAM_CLIP_ENABLED ?? '').trim();
+  if (explicit) return explicit === '1';
+  return false;
 }
 
 function stripCoverTitleFromVisualIdea(title = '', idea = '') {
@@ -1066,7 +1070,8 @@ function extractGeneratedVideoUrl(payload = {}, req = null) {
 }
 
 async function generateTwitchCoverVideo(input = {}) {
-  if (!isTwitchClipEnabled()) return { ok: false, skipped: true, reason: 'clip_disabled' };
+  const env = input.env || process.env;
+  if (!isTwitchClipEnabled(env)) return { ok: false, skipped: true, reason: 'clip_disabled' };
   const coverImageUrl = cleanText(input.coverImageUrl, '', 1200);
   if (!coverImageUrl) return { ok: false, skipped: true, reason: 'clip_cover_missing' };
   const prompt = buildTwitchClipPrompt(input);
@@ -2524,22 +2529,35 @@ function createVivyStreamNossenRunner(options = {}) {
     const rawWinner = payload.winner || payload.nossenSeed?.winner;
     const roundId = cleanText(payload.roundId || payload.id, '', 120);
     if (!rawWinner?.text || !roundId) throw new Error('vivy_stream_winner_missing');
-    const requestedClipMode = cleanText(payload.clipMode || payload.clipModeOverride, '', 40).toLowerCase();
-    const imageOnlyMode = ['image', 'cover', 'artwork', 'jaquette'].includes(requestedClipMode);
-    const clipEnv = imageOnlyMode
-      ? {
-          ...process.env,
-          VIVY_STREAM_FULL_CLIP_ENABLED: '0',
-          VIVY_STREAM_CLIP_ENABLED: '0',
-          VIVY_STREAM_FULL_CLIP_MODE: 'image',
-        }
-      : requestedClipMode
-      ? { ...process.env, VIVY_STREAM_FULL_CLIP_ENABLED: '1', VIVY_STREAM_FULL_CLIP_MODE: requestedClipMode }
-      : process.env;
-    const configuredFullClipSourceImageUrl = resolveTwitchFullClipSourceImageUrl(clipEnv);
-    if (requestedClipMode) {
-      logger.info?.('[vivy-full-clip] round=%s one-shot clip mode override=%s', roundId, requestedClipMode);
+    const requestedClipMode = normalizeTwitchStreamClipMode(
+      payload.clipMode || payload.clipModeOverride || rawWinner?.requestedMediaMode || rawWinner?.mediaMode || 'image'
+    );
+    let effectiveClipMode = requestedClipMode;
+    if (requestedClipMode === 'dream') {
+      const afford = canAffordTwitchDreamClip(process.env);
+      if (!afford.affordable) {
+        logger.warn?.(
+          '[vivy-full-clip] round=%s dream downgraded to image reason=%s budget=%s estimateHigh=%s',
+          roundId,
+          cleanText(afford.reason, '', 80),
+          afford.budgetEur ?? 'none',
+          afford.estimate?.estimatedCostEur?.high ?? 'unknown'
+        );
+        effectiveClipMode = 'image';
+      }
     }
+    const clipEnv = buildTwitchStreamClipEnv(process.env, effectiveClipMode);
+    const shortClipMode = effectiveClipMode === 'clip';
+    const dreamClipMode = effectiveClipMode === 'dream';
+    const configuredFullClipSourceImageUrl = resolveTwitchFullClipSourceImageUrl(clipEnv);
+    logger.info?.(
+      '[vivy-full-clip] round=%s media mode requested=%s effective=%s shortClip=%s dreamClip=%s',
+      roundId,
+      requestedClipMode,
+      effectiveClipMode,
+      shortClipMode ? 'true' : 'false',
+      dreamClipMode ? 'true' : 'false'
+    );
     const providerDirective = extractTwitchMusicProviderDirective(rawWinner.text);
     const winner = {
       ...rawWinner,
@@ -3248,7 +3266,7 @@ function createVivyStreamNossenRunner(options = {}) {
         req,
       }).then(async (cover) => {
         if (!cover?.ok || !cover.coverImageUrl) {
-          if (configuredFullClipSourceImageUrl && isTwitchFullClipEnabled(clipEnv)) {
+          if (configuredFullClipSourceImageUrl && dreamClipMode) {
             coverImageUrl = configuredFullClipSourceImageUrl;
             fullClipSourceImageUrl = configuredFullClipSourceImageUrl;
             coverPrompt = 'operator-provided-full-clip-source-image';
@@ -3320,21 +3338,26 @@ function createVivyStreamNossenRunner(options = {}) {
         }).catch((error) => {
           logger.warn?.('[vivy-twitch-cover] round=%s cover state update failed: %s', roundId, cleanText(error?.message || error, '', 180));
         });
-        if (isTwitchFullClipEnabled(clipEnv)) {
-          logger.info?.('[vivy-twitch-clip] round=%s short cover clip skipped because full clip pack is enabled', roundId);
-          if (configuredFullClipSourceImageUrl) {
-            logger.info?.(
-              '[vivy-full-clip] round=%s using configured source image for scene generation url=%s',
-              roundId,
-              cleanText(configuredFullClipSourceImageUrl, '', 180)
-            );
-          }
-          if (fullClipSourceImageUrl && coverImageUrl && fullClipSourceImageUrl !== coverImageUrl) {
-            logger.info?.('[vivy-full-clip] round=%s using unstamped cover source for scene generation', roundId);
+        if (!shortClipMode) {
+          if (dreamClipMode) {
+            logger.info?.('[vivy-twitch-clip] round=%s short cover clip skipped because dream full clip is requested', roundId);
+            if (configuredFullClipSourceImageUrl) {
+              logger.info?.(
+                '[vivy-full-clip] round=%s using configured source image for scene generation url=%s',
+                roundId,
+                cleanText(configuredFullClipSourceImageUrl, '', 180)
+              );
+            }
+            if (fullClipSourceImageUrl && coverImageUrl && fullClipSourceImageUrl !== coverImageUrl) {
+              logger.info?.('[vivy-full-clip] round=%s using unstamped cover source for scene generation', roundId);
+            }
+          } else {
+            logger.info?.('[vivy-twitch-clip] round=%s short cover clip skipped because image-only mode is active', roundId);
           }
           return cover;
         }
         const clip = await generateTwitchCoverVideo({
+          env: clipEnv,
           publicTitle,
           winner,
           coverImageUrl,
@@ -3375,7 +3398,8 @@ function createVivyStreamNossenRunner(options = {}) {
         return null;
       });
       void coverPromise;
-      const fullClipPreparePromise = coverPromise.then(async () => {
+      const fullClipPreparePromise = dreamClipMode
+        ? coverPromise.then(async () => {
         if (!coverImageUrl && !coverVideoUrl) {
           return { ok: false, skipped: true, reason: 'full_clip_media_missing' };
         }
@@ -3431,7 +3455,8 @@ function createVivyStreamNossenRunner(options = {}) {
       }).catch((error) => {
         logger.warn?.('[vivy-full-clip] round=%s prepare failed: %s', roundId, cleanText(error?.message || error, '', 180));
         return { ok: false, error: 'full_clip_prepare_failed', message: cleanText(error?.message || error, '', 180) };
-      });
+      })
+        : Promise.resolve({ ok: false, skipped: true, reason: 'full_clip_not_requested' });
       void fullClipPreparePromise;
       const productionInput = {
         mode: 'song',
@@ -3723,9 +3748,17 @@ function createVivyStreamNossenRunner(options = {}) {
         action: 'progress',
         stage: 'mix',
         progress: 88,
-        message: durationAcceptance.shortMix
-          ? 'Audio prêt en version courte générée, Vivy attend le pack vidéo avant de lancer la lecture.'
-          : 'Audio prêt, Vivy attend le pack vidéo avant de lancer la lecture.',
+        message: dreamClipMode
+          ? (durationAcceptance.shortMix
+            ? 'Audio prêt en version courte générée, Vivy attend le pack vidéo avant de lancer la lecture.'
+            : 'Audio prêt, Vivy attend le pack vidéo avant de lancer la lecture.')
+          : (shortClipMode
+            ? (durationAcceptance.shortMix
+              ? 'Audio prêt en version courte générée, Vivy finalise le clip court.'
+              : 'Audio prêt, Vivy finalise le clip court.')
+            : (durationAcceptance.shortMix
+              ? 'Audio prêt en version courte générée, Vivy lance la lecture avec la jaquette.'
+              : 'Audio prêt, Vivy lance la lecture avec la jaquette.')),
       });
       const fullClipReadyWaitMs = resolveFullClipReadyWaitMs(process.env);
       let shareVideoUrl = '';
@@ -3747,25 +3780,28 @@ function createVivyStreamNossenRunner(options = {}) {
         req,
         logger,
       });
-      const preparedFullClip = await withTimeout(
-        () => fullClipPreparePromise,
-        fullClipReadyWaitMs,
-        'vivy_full_clip_ready'
-      ).catch((error) => {
-        logger.warn?.(
-          '[vivy-full-clip] round=%s not ready after %sms, releasing audio playback: %s',
-          roundId,
+      let preparedFullClip = { ok: false, skipped: true, reason: 'full_clip_not_requested' };
+      if (dreamClipMode) {
+        preparedFullClip = await withTimeout(
+          () => fullClipPreparePromise,
           fullClipReadyWaitMs,
-          cleanText(error?.message || error, '', 180)
-        );
-        return {
-          ok: false,
-          skipped: true,
-          reason: 'full_clip_ready_timeout',
-          message: `Pack vidéo non prêt après ${Math.round(fullClipReadyWaitMs / 1000)}s; lecture audio libérée.`,
-        };
-      });
-      if (preparedFullClip?.ok) {
+          'vivy_full_clip_ready'
+        ).catch((error) => {
+          logger.warn?.(
+            '[vivy-full-clip] round=%s not ready after %sms, releasing audio playback: %s',
+            roundId,
+            fullClipReadyWaitMs,
+            cleanText(error?.message || error, '', 180)
+          );
+          return {
+            ok: false,
+            skipped: true,
+            reason: 'full_clip_ready_timeout',
+            message: `Pack vidéo non prêt après ${Math.round(fullClipReadyWaitMs / 1000)}s; lecture audio libérée.`,
+          };
+        });
+      }
+      if (dreamClipMode && preparedFullClip?.ok) {
         await update({
           action: 'progress',
           stage: 'mix',
@@ -3795,7 +3831,7 @@ function createVivyStreamNossenRunner(options = {}) {
             Math.max(0, Number(fullClip.repairedLoopCount || 0))
           );
         }
-      } else if (preparedFullClip?.reason === 'full_clip_ready_timeout') {
+      } else if (dreamClipMode && preparedFullClip?.reason === 'full_clip_ready_timeout') {
         const lateFinalizeInput = buildFullClipFinalizeInput();
         const lateAttachPromise = fullClipPreparePromise
           .then(async (prepared) => {
@@ -3846,13 +3882,28 @@ function createVivyStreamNossenRunner(options = {}) {
             return null;
           });
         void lateAttachPromise;
-      } else if (preparedFullClip && !preparedFullClip.skipped) {
+      } else if (dreamClipMode && preparedFullClip && !preparedFullClip.skipped) {
         logger.warn?.(
           '[vivy-full-clip] round=%s unavailable before ready error=%s message=%s',
           roundId,
           cleanText(preparedFullClip.error || preparedFullClip.reason || 'unknown', '', 120),
           cleanText(preparedFullClip.message || '', '', 180)
         );
+      }
+
+      if (shortClipMode) {
+        const shortClipReadyWaitMs = Math.max(
+          30_000,
+          Math.min(10 * 60 * 1000, Number(process.env.VIVY_STREAM_CLIP_READY_WAIT_MS || 90_000) || 90_000)
+        );
+        await withTimeout(() => coverPromise, shortClipReadyWaitMs, 'vivy_short_clip_ready').catch((error) => {
+          logger.warn?.(
+            '[vivy-twitch-clip] round=%s short clip not ready after %sms: %s',
+            roundId,
+            shortClipReadyWaitMs,
+            cleanText(error?.message || error, '', 180)
+          );
+        });
       }
 
       // V9 dynamique sur le MP3 live: Djeff entend la différence direct, on
@@ -3897,11 +3948,13 @@ function createVivyStreamNossenRunner(options = {}) {
           ? { qualityNote: durationAcceptance.note, shortMix: true }
           : {}),
         requestedBy: winner.author,
+        requestedMediaMode: effectiveClipMode,
+        mediaMode: effectiveClipMode,
         coverImageUrl,
         coverPrompt,
-        coverVideoUrl,
-        coverVideoPrompt,
-        shareVideoUrl,
+        coverVideoUrl: shortClipMode || dreamClipMode ? coverVideoUrl : '',
+        coverVideoPrompt: shortClipMode || dreamClipMode ? coverVideoPrompt : '',
+        shareVideoUrl: dreamClipMode ? shareVideoUrl : '',
         lyrics: instrumentalMode ? '' : (providerPack?.cleanLyrics || lyrics || ''),
       });
       logger.info?.(
