@@ -1866,6 +1866,29 @@ function sanitizeTwitchLyricsForPromptLeakage(lyrics = '') {
     /\bgrand\s+mod[èe]le\b/i,
     /\bllm\b/i,
     /\bnossen\b/i,
+    /\ble\s+titre\s+reste\s+strictement\s+priv[ée]\b/i,
+    /\bne\s+produire\s+aucun\s+mot\b/i,
+    /\baucun\s+mot\s+[ée]crit\b/i,
+    /\bsans\s+aucune\s+inscription\s+visible\b/i,
+    /\bsans\s+jamais\s+(?:le\s+)?d[ée]crire\s+comme\s+une\b/i,
+    /\bid[ée]e\s+[àa]\s+repr[ée]senter\s+uniquement\b/i,
+    /\blecture\s+s[ée]mantique\s+obligatoire\b/i,
+    /\bintention\s+visuelle\s*:/i,
+    /\br[ée]f[ée]rences?\s+visuelles?\s+de\s+personnages?\b/i,
+    /\bambiance\s+musicale\s*:/i,
+    /\bdirection\s+freestyle\s+rap\s+obligatoire\b/i,
+    /\bcouplets?\s+continus\s+en\s+phases\b/i,
+    /\bpunchlines?\s+concr[èe]tes?\s+et\s+fr[ée]quentes?\b/i,
+    /\brimes?\s+techniques?\s+multisyllabiques?\b/i,
+    /\bvariations?\s+de\s+flow\s+et\s+de\s+d[ée]bit\b/i,
+    /\brefrain\s+seulement\s+si\s+le\s+sujet\s+le\s+demande\b/i,
+    /\bsujet\s+intense\s*:/i,
+    /\bversion\s+longue\s+d['’]office\b/i,
+    /\bstructure\s+libre\s+en\s+plusieurs\s+longs?\s+couplets?\b/i,
+    /\bcr[ée]er\s+une\s+mini[-\s]?histoire\s+chant[ée]e\b/i,
+    /\binclure\s+des\s+d[ée]tails\s+concrets?\s+pour\s+[ée]viter\b/i,
+    /\bne\s+pas\s+inventer\s+un\s+h[ée]ros\s+intime\s+si\s+la\s+demande\b/i,
+    /^\s*(?:[âa]ges|si[èe]cles|[ée]poques|peuples?|batailles?|d[ée]couvertes?|civilisations?)(?:\s+ou\s+(?:[âa]ges|si[èe]cles|[ée]poques|peuples?|batailles?|d[ée]couvertes?|civilisations?))*\s*$/i,
     /\bvivy\s+(?:[ée]crit|relit|renforce|analyse|pr[ée]pare)\b/i,
     /\bsong(?:text|mood|max|response|maxchars|artists?)\b/i,
     /\b(?:artist|singer)count\b/i,
@@ -2066,7 +2089,7 @@ function sanitizeTwitchLyricsForSubject(lyrics = '', subject = '', context = '')
 function hasTwitchProviderLyricsLeakage(lyrics = '') {
   const text = cleanLyrics(lyrics, 12000);
   return /\bstyle\s*:/i.test(text)
-    || /\b(?:prompt|brief|suno|mureka|provider|mod[èe]le|model|negative\s+prompt|distribution\s+vocale|casting\s+vocal|direction\s+sonore|canevas|mati[èe]re\s+(?:[àa]\s+transformer|cr[ée]ative|composition)|banger\s+dans\s+les\s+paroles|clean[_\s-]?lyrics|paroles\s+propres|consignes?|r[èe]gles?\s+priv[ée]es?|non\s+chantables?|fallback|grand\s+mod[èe]le|llm|provider\s+pack|ne\s+(?:mets|chante|r[ée]cite|dis)\s+pas)\b/i
+    || /\b(?:prompt|brief|suno|mureka|provider|mod[èe]le|model|negative\s+prompt|distribution\s+vocale|casting\s+vocal|direction\s+sonore|direction\s+freestyle\s+rap\s+obligatoire|lecture\s+s[ée]mantique\s+obligatoire|intention\s+visuelle|r[ée]f[ée]rences?\s+visuelles?|ambiance\s+musicale|aucune\s+inscription\s+visible|aucun\s+mot\s+[ée]crit|id[ée]e\s+[àa]\s+repr[ée]senter|canevas|mati[èe]re\s+(?:[àa]\s+transformer|cr[ée]ative|composition)|banger\s+dans\s+les\s+paroles|clean[_\s-]?lyrics|paroles\s+propres|consignes?|r[èe]gles?\s+priv[ée]es?|non\s+chantables?|fallback|grand\s+mod[èe]le|llm|provider\s+pack|ne\s+(?:mets|chante|r[ée]cite|dis|produire)\s+pas)\b/i
     .test(text);
 }
 

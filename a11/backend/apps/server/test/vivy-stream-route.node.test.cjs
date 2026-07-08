@@ -944,6 +944,55 @@ Cette ligne ne doit pas être dans le style`,
   assert.equal(pack.styleLeakage, true);
 });
 
+test('Twitch provider pack strips cover and routing prompt fragments from archived lyrics', () => {
+  const pack = buildTwitchProviderPack({
+    lyrics: `
+Dans le penombre, Djeff freestyle dans la nuit à des heures pas possible, les étoiles se c
+============================================================
+
+[Intro - Djeff]
+[Djeff]
+Pas de voix témoin, pas de masque, seulement le grain.
+
+[Verse 1 - Djeff]
+[Djeff]
+découvertes ou civilisations
+sans aucune inscription visible
+Ancre au moins une image concrète de ce décor sans jamais le décrire comme une
+
+[Chorus - Djeff]
+[Djeff]
+la voix dans le kick, les mots dans la chute.
+Solo Djeff dans la pièce, le couplet reste net,
+chaque rime fait son trou, chaque silence complète.
+
+[Verse 2 - Djeff]
+[Djeff]
+Direction freestyle rap obligatoire: couplets continus en phases
+punchlines concrètes et fréquentes, rimes techniques multisyllabiques
+variations de flow et de débit; refrain seu
+Sujet intense: version longue d’office, structure libre en plusieurs longs couplets.
+
+[Bridge - Djeff]
+[Djeff]
+Je laisse un blanc, le kick revient compter les preuves,
+la salle comprend sans panneau, le regard fait l’épreuve.
+
+[Outro - Djeff]
+[Djeff]
+Le tuto se ferme, le cypher reste ouvert.
+`,
+    styleBrief: 'French male technical rap cypher, terminal noir, dark 808 trap drums',
+    fallbackStyle: 'French male technical rap cypher',
+  });
+
+  assert.equal(pack.lyricLeakage, true);
+  assert.match(pack.cleanLyrics, /Pas de voix témoin/i);
+  assert.match(pack.cleanLyrics, /la voix dans le kick/i);
+  assert.match(pack.cleanLyrics, /Le tuto se ferme/i);
+  assert.doesNotMatch(pack.cleanLyrics, /découvertes ou civilisations|aucune inscription visible|Ancre au moins|Direction freestyle|punchlines concrètes|variations de flow|Sujet intense|version longue d’office/i);
+});
+
 test('Twitch lyrics prompt preserves a scenario and assigns roles for a duo', () => {
   const prompt = buildTwitchLyricsRequest({
     winner: {
