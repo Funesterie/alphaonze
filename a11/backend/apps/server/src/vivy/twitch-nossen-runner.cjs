@@ -1866,6 +1866,7 @@ function sanitizeTwitchLyricsForPromptLeakage(lyrics = '') {
     /\bgrand\s+mod[èe]le\b/i,
     /\bllm\b/i,
     /\bnossen\b/i,
+    /\bla\s+demande\s+ressemble\s+[àa]\s+un\s+format\s+court\s+ou\s+opening\b/i,
     /\ble\s+titre\s+reste\s+strictement\s+priv[ée]\b/i,
     /\bne\s+produire\s+aucun\s+mot\b/i,
     /\baucun\s+mot\s+[ée]crit\b/i,
@@ -2340,7 +2341,7 @@ function resolveTwitchVivyLyricScope({
   ].filter(Boolean).join('\n');
   const folded = foldTwitchLyricText(creativeText);
   const requestedDuration = parseRequestedDurationSeconds(creativeText);
-  const explicitShort = /\b(?:court|courte|format\s+court|short|radio\s+edit|g[ée]n[ée]rique|opening|jingle|tiktok|shorts?|moins\s+de\s+3\s*min)\b/.test(folded);
+  const explicitShort = /\b(?:(?:format|morceau|chanson|version|titre|track|son)\s+courte?|courte?\s+(?:dur[ée]e|version|format)|short|radio\s+edit|g[ée]n[ée]rique|opening|jingle|tiktok|shorts?|moins\s+de\s+3\s*min)\b/.test(folded);
   const explicitNoLimit = /\b(?:saga|fresque|no\s+limit|no\s+limite|sans\s+limite|aucune\s+limite|6\s*minutes?|7\s*minutes?|8\s*minutes?)\b/.test(folded);
   const explicitLong = explicitNoLimit
     || /\b(?:version\s+longue|format\s+long|forme\s+longue|morceau\s+long|chanson\s+longue|5\s*minutes?)\b/.test(folded);
@@ -2435,6 +2436,7 @@ function resolveTwitchVivyLyricScope({
   }
 
   if ((intenseSubject || freestyleSubject) && !instrumentalMode) {
+    minLyricsChars = Math.max(minLyricsChars, target <= 210 ? 900 : 1400);
     maxChars = Math.max(maxChars, freestyleMaxChars);
     maxTokens = Math.max(maxTokens, freestyleMaxTokens);
   }
@@ -3347,6 +3349,26 @@ function createVivyStreamNossenRunner(options = {}) {
             lyricScope.minLyricsChars,
             cleanText(lyricScope.label, 'unknown', 80)
           );
+          const normalizedArtists = Array.isArray(artists)
+            ? artists.map((artist) => String(artist || '').toLowerCase())
+            : [];
+          if (normalizedArtists.includes('djeff') && lyrics.length < 900) {
+            const emergencyLyrics = buildTwitchEmergencyLyrics({ winner, routing, seed, intentPlan, lyricScope, artists });
+            const emergencyAssessment = assessTwitchSongLyrics(emergencyLyrics);
+            const canUseEmergency = emergencyAssessment.valid
+              && !hasTwitchProviderLyricsLeakage(emergencyLyrics)
+              && emergencyLyrics.length > lyrics.length + 240;
+            if (canUseEmergency) {
+              logger.warn?.(
+                '[VivyLyricScope] round=%s expanded short Djeff lyrics with contextual emergency length=%s min=%s',
+                roundId,
+                emergencyLyrics.length,
+                lyricScope.minLyricsChars
+              );
+              lyrics = emergencyLyrics;
+              lyricAssessment = emergencyAssessment;
+            }
+          }
         }
       }
 

@@ -720,6 +720,26 @@ test('Twitch lyric scope gives Mureka enough sung material for V9', () => {
   assert.ok(scope.maxChars >= 4200);
 });
 
+test('Twitch lyric scope does not treat short chorus as a short song', () => {
+  const scope = resolveTwitchVivyLyricScope({
+    winner: {
+      text: 'malade de prod, djeff casse la machine, cypher déjanté',
+    },
+    routing: {
+      songMood: 'rap français trap sombre, 808 lourdes, adlibs, refrain court, énergie poursuite nocturne, paroles françaises uniquement',
+    },
+    intentPlan: {
+      intent: 'vocal_song',
+      generationBrief: 'Créer une chanson vocale avec une histoire précise et des paroles françaises.',
+    },
+    musicProvider: 'suno',
+  });
+
+  assert.notEqual(scope.label, 'format nerveux');
+  assert.ok(scope.targetDurationSeconds >= 300);
+  assert.ok(scope.minLyricsChars >= 1400);
+});
+
 test('Twitch short prompt is enriched from title and requested style', () => {
   const routing = reinforceTwitchHardcoreRouting({
     artists: ['vivy'],
@@ -4307,7 +4327,8 @@ test('Vivy leak filter laisse passer les vers créatifs crus, ne strippe que les
   const directives = [
     'Lecture semantique du sujet: conserver les indices du sujet exact.',
     'Decor de la scene (l image ouvre la scene): neons violets.',
+    'La demande ressemble à un format court ou opening.',
     'je serre le motif central jusqu au prochain passage.',
   ].join('\n');
-  assert.equal(sanitizeTwitchLyricsForPromptLeakage(directives).removed, 3, 'les 3 directives doivent etre retirees');
+  assert.equal(sanitizeTwitchLyricsForPromptLeakage(directives).removed, 4, 'les 4 directives doivent etre retirees');
 });
