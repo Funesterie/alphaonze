@@ -3936,7 +3936,10 @@ test('Suno payload applies a verified Djeff voice persona when configured', () =
     assert.equal(payload.personaId, 'djeff-verified-voice-test');
     assert.equal(payload.personaModel, 'voice_persona');
     assert.match(payload.style, /Solo Djeff only/i);
-    assert.match(payload.style, /dry French male rap lead/i);
+    assert.match(payload.style, /Djeff Cypher voice persona/i);
+    assert.match(payload.style, /dry gritty French male rap lead/i);
+    assert.match(payload.style, /terminal noir neon/i);
+    assert.match(payload.style, /server-room tension/i);
     assert.match(payload.negativeTags, /female vocals/i);
     assert.doesNotMatch(payload.prompt, /\[Vivy\]/i);
     assert.match(payload.prompt, /\[Djeff\]/);

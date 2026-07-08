@@ -3075,19 +3075,19 @@ function getVivyStudioVoiceProfile(input = {}) {
       ttsPersona: 'a11',
       voiceStyle: 'djeff-rap',
       vocalMode: 'adaptive',
-      lead: 'Djeff prend les couplets rap avec diction serrée, rimes internes et images tirées du sujet.',
+      lead: 'Djeff prend les couplets rap avec diction serrée, rimes internes, grain close-mic sec et images tirées du sujet.',
       referenceLabel: hasPrivateReference
         ? (referenceName || 'référence privée Djeff active')
         : 'Djeff officielle locale',
       defaultReferenceStep: 'Voix Djeff officielle locale active; référence privée courte possible pour un grain plus proche.',
       testPhrase: 'Djeff cale le kick, diction serrée, rimes nettes et images concrètes du sujet.',
       songCastLines: [
-        'Djeff: lead rap technique, diction nette, rimes internes et fins de lignes percussives.',
+        'Djeff: lead rap technique, diction nette, rimes internes, fins de lignes percussives, grain sec proche micro.',
         'Vivy: adlibs ou refrain possible si le mode duo est demandé.',
       ],
-      sunoStyle: 'French technical rap, male lead rap vocal, concrete imagery from the current subject, cinematic bass, structured rhymed lyrics, no spoken narration',
+      sunoStyle: 'French male technical rap cypher, gritty close-mic Djeff lead, dark 808 trap drums, terminal noir neon energy, server-room tension, road and motor mechanics, punchline freestyle, concrete imagery from the current subject, structured rhymed lyrics, no spoken narration',
       musicLead: 'Original Funesterie rap song for Djeff, in French.',
-      musicMood: 'Djeff lead rap energy with owned A11/Djeff identity direction when the local voice bridge is used. No celebrity imitation.',
+      musicMood: 'Djeff lead rap energy: dry close-mic grain, nervous controlled flow, 808 cypher, terminal noir, briques/serveurs/moteur, no celebrity imitation.',
     };
   }
 
@@ -6905,7 +6905,7 @@ function inferVivySunoStyleBase(input = {}, artistCast = buildVivySongArtistCast
     return withCastStyle('technical rap moto, basse lourde, drums secs, guitares garage, engine pulse, hook proche micro');
   }
   if (hasVivyNossenConflictRapSignal(material)) {
-    return withCastStyle('rap français egotrip/cypher sombre, voix masculine sèche, punchlines de clash, drums secs, basse lourde, refrain court sans romance, aucun refrain anglais');
+    return withCastStyle('rap français egotrip/cypher sombre façon clips Djeff, voix masculine sèche proche micro, punchlines de clash, 808 lourdes, drums secs, terminal noir, énergie serveurs/briques/moteur, refrain court sans romance, aucun refrain anglais');
   }
   if (/\becrans?\b|\bécrans?\b|\bnouvelle\s+generation\b|\bnouvelle\s+génération\b|\breseaux\b|\bréseaux\b|\bnumerique\b|\bnumérique\b/.test(folded)) {
     return withCastStyle('modern alt-pop numérique, basses rondes, pads granuleux, percussion glitch, hook humain');
@@ -7101,7 +7101,7 @@ function buildVivySunoPayload(input = {}, req = null) {
     ? ''
     : `${artistCast.label} vocal lead: ${artistCast.artists[0]?.style || artistCast.label}`;
   const soloDjeffStyle = singleArtistId === 'djeff'
-    ? 'Solo Djeff only, dry French male rap lead, close-mic cypher delivery, punchline verses, short rap hook, no female vocal, no romantic pop singing, no soft ballad chorus'
+    ? 'Solo Djeff only, Djeff Cypher voice persona, dry gritty French male rap lead, close-mic punchline delivery, nervous controlled technical flow, dark 808 trap drums, terminal noir neon, server-room tension, road and motor mechanics, short brutal rap hook, no female vocal, no romantic pop singing, no soft ballad chorus'
     : '';
   const arrangement = splitVivyArrangementCues(sanitizeVivySongMaterial(
     stripVivyAscii4SoundTokens(input.songText || input.lyrics || input.text || input.theme || input.prompt),
