@@ -9867,6 +9867,7 @@ function FunesteriePublicFooter({
         <a href={surfaceLinks.privacy}>Confidentialité</a>
         <a href={surfaceLinks.terms}>Conditions</a>
         <a href={surfaceLinks.milleFleurs}>Mille Fleurs</a>
+        <a href="/sudoku-token/">Sudoku Cerbère</a>
         <a href={surfaceLinks.contact}>Contact</a>
       </div>
       <div className="fun-public-footer-session" aria-label="Session Funesterie">

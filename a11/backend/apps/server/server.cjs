@@ -588,6 +588,9 @@ const {
   buildCerbereMegaSnapshot,
 } = require('./src/security/cerbere-mega.cjs');
 const {
+  createSudokuCapabilityService,
+} = require('./src/security/sudoku-capability.cjs');
+const {
   assertAccountStorageQuota,
   buildStorageQuotaPayload,
   getDatabaseAccountStorageUsageBytes,
@@ -603,6 +606,7 @@ const {
 } = require('./src/storage/session-drive-writer.cjs');
 const { createIsAdminRequest } = require('./src/security/admin-access.cjs');
 const createCerbereMegaRouter = require('./src/routes/cerbere-mega.cjs');
+const { createSudokuCapabilityRouter } = require('./src/routes/sudoku-capability.cjs');
 const createA11HistoryRouter = require('./src/routes/a11-history.cjs');
 const createA11MemoryWriteRouter = require('./src/routes/a11-memory-write.cjs');
 const createVectorMemoryRouter = require('./src/routes/vector-memory.cjs');
@@ -6875,6 +6879,12 @@ app.use('/api/cerbere-mega', verifyJWT, createCerbereMegaRouter({
 }));
 console.log('[Server] Cerbere MEGA routes mounted under /api/cerbere-mega');
 
+const sudokuCapabilityService = createSudokuCapabilityService({ env: process.env });
+app.use('/api/security/sudoku-token', verifyJWT, createSudokuCapabilityRouter({
+  service: sudokuCapabilityService,
+}));
+console.log('[Server] Cerbere Sudoku routes mounted under /api/security/sudoku-token');
+
 // ✅ AUTH MIDDLEWARE - appliqué SEULEMENT sur /api/ai pour protéger chat
 // /api/auth/login reste public!
 app.use('/api/ai', verifyJWT);
@@ -6942,7 +6952,10 @@ app.use('/api/vivy/alexa', createVivyAlexaRouter({ runtimeRoot: PUBLIC_RUNTIME_R
 console.log('[Server] Vivy Alexa routes mounted under /api/vivy/alexa');
 
 const { createVivyStudioRouter } = require('./src/routes/vivy-studio.cjs');
-app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT }));
+app.use('/api/vivy/studio', createVivyStudioRouter({
+  verifyJWT,
+  creativeCapabilityService: sudokuCapabilityService,
+}));
 console.log('[Server] Vivy Studio routes mounted under /api/vivy/studio');
 
 const { createVivyStreamRouter } = require('./src/routes/vivy-stream.cjs');
@@ -8949,6 +8962,10 @@ function sendEmbeddedUiMilleFleursPage(req, res) {
   return sendEmbeddedUiStandalonePage(req, res, 'mille-fleurs/index.html');
 }
 
+function sendEmbeddedUiSudokuTokenPage(req, res) {
+  return sendEmbeddedUiStandalonePage(req, res, 'sudoku-token/index.html');
+}
+
 function sendEmbeddedUiArchitecturePage(req, res) {
   return sendEmbeddedUiStandalonePage(req, res, 'architecture/index.html');
 }
@@ -8983,6 +9000,7 @@ app.get(['/home', '/home/', '/accueil', '/accueil/'], redirectEmbeddedUiAliasToR
 app.get(['/privacy', '/privacy/', '/confidentialite', '/confidentialite/'], sendEmbeddedUiPrivacyPage);
 app.get(['/terms', '/terms/', '/conditions', '/conditions/', '/cgu', '/cgu/'], sendEmbeddedUiTermsPage);
 app.get(['/mille-fleurs', '/mille-fleurs/', '/millefleurs', '/millefleurs/', '/mille_fleurs', '/mille_fleurs/', '/charte-mille-fleurs', '/charte-mille-fleurs/'], sendEmbeddedUiMilleFleursPage);
+app.get(['/sudoku-token', '/sudoku-token/', '/token-sudoku', '/token-sudoku/', '/cerbere-sudoku', '/cerbere-sudoku/'], sendEmbeddedUiSudokuTokenPage);
 app.get(['/architecture', '/architecture/', '/carte', '/carte/', '/graph', '/graph/'], sendEmbeddedUiArchitecturePage);
 app.get(['/nossen/agent-memory', '/nossen/agent-memory/', '/nossen/prior-art', '/nossen/prior-art/'], sendEmbeddedUiNossenAgentMemoryPage);
 app.get(['/nossen/grok', '/nossen/grok/', '/nossen/world-brief', '/nossen/world-brief/', '/nossen/frontier-ai', '/nossen/frontier-ai/'], sendEmbeddedUiNossenGrokPage);
