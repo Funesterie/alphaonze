@@ -1,0 +1,26 @@
+# Adapter à ton ingress controller (nginx/traefik) + cert-manager pour le TLS.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: a11-backend
+  namespace: funesterie
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "16m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - a11.funesterie.me
+      secretName: a11-backend-tls
+  rules:
+    - host: a11.funesterie.me
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: a11-backend
+                port:
+                  number: 80

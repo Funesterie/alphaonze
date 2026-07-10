@@ -31,6 +31,9 @@ const FACE_DEFINITIONS = {
 const KIND_FACE = {
   memory: 'R',
   conversation: 'R',
+  conversation_current: 'R',
+  conversation_history: 'R',
+  shiryu_signal: 'R',
   summary: 'R',
   user_context: 'R',
   tool: 'G',
@@ -50,6 +53,7 @@ const KIND_FACE = {
   workflow: 'A',
   dispatch: 'A',
   plan: 'A',
+  zen_rgba: 'A',
 };
 
 function stableStringify(value) {
@@ -269,13 +273,134 @@ function buildQflushRgbaMultiload(items = [], options = {}) {
   };
 }
 
+function clampRgbaByte(value) {
+  return Math.max(0, Math.min(255, Math.round(Number(value) || 0)));
+}
+
+function buildControlledNoiseVector(hash = '') {
+  const clean = String(hash || '').replace(/[^a-f0-9]/gi, '').padEnd(8, '0');
+  const bytes = [0, 2, 4, 6].map((offset) => Number.parseInt(clean.slice(offset, offset + 2), 16) || 0);
+  return {
+    r: (bytes[0] % 17) - 8,
+    g: (bytes[1] % 17) - 8,
+    b: (bytes[2] % 17) - 8,
+    a: Math.max(-4, Math.min(4, (bytes[3] % 9) - 4)),
+  };
+}
+
+function buildShiryuZenRgba(input = {}, options = {}) {
+  const payload = Object.prototype.hasOwnProperty.call(input, 'payload') ? input.payload : input;
+  const currentMessage = String(input.currentMessage || input.current || input.message || '').trim();
+  const history = Array.isArray(input.history) ? input.history.slice(-8) : [];
+  const sessionId = String(input.sessionId || options.sessionId || '').trim() || null;
+  const items = [];
+
+  if (currentMessage) {
+    items.push({
+      payload: currentMessage,
+      kind: 'conversation_current',
+      face: 'R',
+      priority: input.priority || options.priority || 'high',
+      sessionId,
+      source: 'shiryu.current',
+    });
+  }
+
+  if (history.length) {
+    items.push({
+      payload: { messages: history },
+      kind: 'conversation_history',
+      face: 'R',
+      priority: 'medium',
+      sessionId,
+      source: 'shiryu.history',
+    });
+  }
+
+  items.push({
+    payload,
+    kind: input.kind || 'json',
+    face: 'B',
+    priority: input.priority || options.priority || input.accountTier || options.accountTier,
+    sessionId,
+    source: 'shiryu.json',
+  });
+
+  if (input.intent) {
+    items.push({
+      payload: { flow: 'shiryu.intent.cleanse', intent: input.intent },
+      kind: 'zen_rgba',
+      face: 'A',
+      priority: 'high',
+      sessionId,
+      source: 'shiryu.intent',
+    });
+  }
+
+  const plan = buildQflushRgbaMultiload(items, {
+    sessionId,
+    accountTier: input.accountTier || options.accountTier,
+    admin: options.admin === true || input.admin === true,
+    dedupe: input.dedupe,
+    includePreview: input.includePreview === true,
+    maxItems: Math.min(MAX_ITEMS, Math.max(1, Number(input.maxItems || options.maxItems || items.length))),
+  });
+  const seed = sha256Hex(stableStringify({
+    currentMessage,
+    history,
+    payload,
+    intent: input.intent || null,
+  }));
+  const noise = buildControlledNoiseVector(seed);
+  const base = plan.cube.averageRgba;
+  const sculptedRgba = {
+    r: clampRgbaByte(base.r + noise.r),
+    g: clampRgbaByte(base.g + noise.g),
+    b: clampRgbaByte(base.b + noise.b),
+    a: clampRgbaByte(base.a + noise.a),
+  };
+
+  return {
+    ok: true,
+    schema: 'nossen.shiryu.zen_rgba.v1',
+    mode: 'zen_rgba_smoke_cut',
+    blade: 'blood-rain',
+    principle: 'json-to-zen-signal, rgba-controlled-noise, current-message-first',
+    seed: seed.slice(0, 16),
+    controlledNoise: noise,
+    sculptedRgba,
+    layers: {
+      R: 'memory/current conversation signal',
+      G: 'tools and dispatch signal',
+      B: 'json/data material',
+      A: 'orchestration and priority',
+    },
+    zen: {
+      currentFirst: true,
+      historyIsContextOnly: true,
+      duplicateFamiliesCut: plan.droppedDuplicates,
+      signalBytes: plan.packets.reduce((sum, packet) => sum + packet.sizeBytes, 0),
+      rules: [
+        'slice the current message before reading old smoke',
+        'dedupe repeated families before composing',
+        'encode JSON as RGBA lanes, then add bounded deterministic noise',
+      ],
+    },
+    plan,
+    createdAt: new Date().toISOString(),
+  };
+}
+
 function getQflushRgbaCubeSpec() {
   return {
     ok: true,
     schema: SCHEMA,
     description: 'Qflush RGBA cube maps payloads to memory, tools, data and orchestration lanes.',
     faces: FACE_DEFINITIONS,
-    flows: ['qflush.rgba.multiload.v1'],
+    flows: ['qflush.rgba.multiload.v1', 'qflush.shiryu.zen_rgba.v1'],
+    modules: {
+      shiryu: 'Blood-rain blade: JSON to zen RGBA signal with bounded deterministic noise for conversation smoke cutting.',
+    },
     publicEndpoints: [
       'GET /api/qflush/cube/status',
       'POST /api/qflush/cube/plan',
@@ -288,6 +413,8 @@ module.exports = {
   FACE_DEFINITIONS,
   buildQflushRgbaPacket,
   buildQflushRgbaMultiload,
+  buildShiryuZenRgba,
+  buildControlledNoiseVector,
   getQflushRgbaCubeSpec,
   inferKind,
   inferFace,

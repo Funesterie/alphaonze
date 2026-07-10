@@ -594,7 +594,7 @@ function inferSfxTags(fileName) {
   if (/bankai|shikai|gear|domain|void/.test(lower)) tags.push('anime-energy', 'dramatic');
   if (/thinking/.test(lower)) tags.push('thinking', 'assistant');
   if (/ui/.test(lower)) tags.push('ui');
-  if (/terminator/.test(lower)) tags.push('cinema-reference');
+  if (/cinema|film/.test(lower)) tags.push('cinema-reference');
   if (/cri|echo/.test(lower)) tags.push('voice', 'texture');
   return unique(tags);
 }

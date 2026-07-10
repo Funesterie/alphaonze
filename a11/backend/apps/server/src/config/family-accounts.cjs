@@ -32,6 +32,16 @@ const FAMILY_VOICE_IDENTITIES = Object.freeze({
     referenceStatus: 'ready-local-reference',
     note: 'Voix rap Djeff/Pignon, distincte de la voix officielle A11.',
   }),
+  marvin: Object.freeze({
+    key: 'marvin',
+    accountEmail: 'marvincellauro@gmail.com',
+    persona: 'marvin',
+    label: 'Marvin',
+    voiceStyle: 'marvin-family-french-lead',
+    referencePath: '',
+    referenceStatus: 'ready-suno-persona',
+    note: 'Voix famille Marvin/frere, rattachee au voiceId Suno serveur quand il est configure.',
+  }),
   k44: Object.freeze({
     key: 'k44',
     accountEmail: 'giovannabrunetto@gmail.com',

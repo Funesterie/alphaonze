@@ -46,6 +46,7 @@ const KNOWN_CAPABILITIES = {
   qflush: ['orchestrateur', 'daemon', 'memoire', 'cortex encode/decode', 'supervision'],
   rome: ['fixPath', 'command runner', 'duo/trio async', 'workspaces', 'deploiement web'],
   scream: ['prototype semantique', 'WAZAA', 'MASK'],
+  shiryu: ['lame de sang', 'json vers zen RGBA', 'bruit contrôlé', 'découpe fumée conversation', 'anti-réponse recyclée'],
   spyder: ['graphe/protocole', 'memoire', 'miroir QFlush legacy'],
 };
 

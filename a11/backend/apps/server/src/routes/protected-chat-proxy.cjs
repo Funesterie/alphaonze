@@ -2543,6 +2543,7 @@ function createProtectedChatProxyRouter({
 
   function hydrateAsyncImageJobsFromStore() {
     const persistedJobs = loadAsyncImageJobsFromStore(asyncImageJobStorePath);
+    let repairedInterruptedJob = false;
     for (const persistedJob of persistedJobs) {
       const currentJob = asyncImageJobs.get(persistedJob.id);
       const currentUpdatedAt = Number(currentJob?.updatedAt || 0);
@@ -2553,11 +2554,23 @@ function createProtectedChatProxyRouter({
       if (currentJob && currentUpdatedAt > persistedUpdatedAt) {
         continue;
       }
-      asyncImageJobs.set(persistedJob.id, {
+      const restoredJob = {
         ...currentJob,
         ...persistedJob,
-      });
-      const isActiveJob = persistedJob.status === 'pending' || persistedJob.status === 'running';
+      };
+      const wasActiveBeforeRestart = (persistedJob.status === 'pending' || persistedJob.status === 'running')
+        && !currentJob?.promise;
+      if (wasActiveBeforeRestart) {
+        const now = Date.now();
+        restoredJob.status = 'error';
+        restoredJob.error = 'async_image_job_interrupted';
+        restoredJob.message = 'Le backend a redémarré avant la fin du rendu; relance la demande si nécessaire.';
+        restoredJob.updatedAt = now;
+        restoredJob.completedAt = now;
+        repairedInterruptedJob = true;
+      }
+      asyncImageJobs.set(persistedJob.id, restoredJob);
+      const isActiveJob = restoredJob.status === 'pending' || restoredJob.status === 'running';
       if (isActiveJob && Array.isArray(persistedJob.requestKeys)) {
         for (const key of persistedJob.requestKeys) {
           if (!key) continue;
@@ -2571,6 +2584,7 @@ function createProtectedChatProxyRouter({
         }
       }
     }
+    if (repairedInterruptedJob) persistAsyncImageJobsSnapshot();
   }
 
   hydrateAsyncImageJobsFromStore();

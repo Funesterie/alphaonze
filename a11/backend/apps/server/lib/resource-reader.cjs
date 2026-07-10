@@ -1,5 +1,9 @@
 const path = require('node:path');
 const zlib = require('node:zlib');
+const {
+  inspectZenPublicHeader,
+  isZenUploadCandidate,
+} = require('./zen-upload.cjs');
 
 const TEXT_EXTENSIONS = new Set([
   '.txt', '.md', '.markdown', '.json', '.csv', '.ts', '.tsx', '.js', '.jsx',
@@ -63,6 +67,7 @@ function inferResourceKind(contentType, filename) {
   const mime = normalizeMime(contentType);
   const extension = getExtension(filename);
 
+  if (isZenUploadCandidate({ filename, contentType: mime })) return 'zen';
   if (mime.startsWith('image/') || IMAGE_EXTENSIONS.has(extension)) return 'image';
   if (mime.startsWith('audio/') || AUDIO_EXTENSIONS.has(extension)) return 'audio';
   if (mime === 'application/pdf' || extension === '.pdf') return 'pdf';
@@ -551,6 +556,47 @@ function analyzeTextBuffer(buffer, fileKind) {
   };
 }
 
+function analyzeZenBuffer(buffer) {
+  try {
+    const publicHeader = inspectZenPublicHeader(buffer, {
+      allowPlaintext: true,
+    });
+    const preview = [
+      '[Header public ZEN]',
+      `format=${publicHeader.format || 'zen'}`,
+      publicHeader.version ? `version=${publicHeader.version}` : '',
+      publicHeader.mode ? `mode=${publicHeader.mode}` : '',
+      publicHeader.codec ? `codec=${publicHeader.codec}` : '',
+      publicHeader.cipher ? `cipher=${publicHeader.cipher}` : '',
+      publicHeader.kdf ? `kdf=${publicHeader.kdf}` : '',
+      'payload=opaque_non_decode',
+    ].filter(Boolean).join(' | ');
+
+    return {
+      readableInChatContext: true,
+      parser: 'zen_public_header',
+      preview,
+      truncated: false,
+      publicHeader,
+      encrypted: publicHeader.encrypted,
+      payloadOpaque: true,
+      payloadDecoded: false,
+      executable: false,
+      note: 'header_public_uniquement_payload_non_decode',
+    };
+  } catch (error) {
+    return {
+      readableInChatContext: false,
+      parser: 'zen_public_header_invalid',
+      preview: '',
+      payloadOpaque: true,
+      payloadDecoded: false,
+      executable: false,
+      note: String(error?.code || 'zen_header_invalid'),
+    };
+  }
+}
+
 function buildResourceActionInference({ filename, fileKind, analysis = {} }) {
   const safeName = String(filename || 'fichier').trim() || 'fichier';
   const preview = String(analysis.preview || '').trim();
@@ -575,6 +621,14 @@ function buildResourceActionInference({ filename, fileKind, analysis = {} }) {
       intent: hasVoiceSignal ? 'voice_or_music_source' : 'audio_context',
       suggestedAction: 'Ecouter/analyser les metadonnees et la transcription si disponible, puis decider si le fichier sert de reference voix, de chanson, de note vocale ou de contexte.',
       routeHints: ['audio_transcribe', 'voice_reference', 'song_brief'],
+    };
+  }
+
+  if (fileKind === 'zen') {
+    return {
+      intent: 'zen_container_reference',
+      suggestedAction: 'Inspecter uniquement le header public ZEN et garder le payload opaque; aucun decodage ni execution sans action operateur explicite et cle separee.',
+      routeHints: ['zen_header_inspect', 'file_reference'],
     };
   }
 
@@ -800,7 +854,12 @@ async function analyzeUploadedResource({ filename, contentType, buffer }) {
 
   let analysis = null;
 
-  if (fileKind === 'text' || fileKind === 'code' || fileKind === 'json' || fileKind === 'csv') {
+  if (fileKind === 'zen') {
+    analysis = {
+      ...base,
+      ...analyzeZenBuffer(buffer),
+    };
+  } else if (fileKind === 'text' || fileKind === 'code' || fileKind === 'json' || fileKind === 'csv') {
     analysis = {
       ...base,
       ...analyzeTextBuffer(buffer, fileKind),

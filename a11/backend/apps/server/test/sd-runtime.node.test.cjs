@@ -73,6 +73,34 @@ test('resolveSdPythonBin ignores a stale explicit path when a local adjacent ven
   }
 });
 
+test('resolveSdPythonBin ignores a copied venv whose base interpreter no longer exists', () => {
+  const previousExplicit = process.env.SD_PYTHON_PATH;
+  const previousFallbackFlag = process.env.A11_SD_ALLOW_LOCAL_FALLBACK;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-sd-stale-venv-'));
+  const pythonPath = path.join(
+    tempRoot,
+    'venv',
+    process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python')
+  );
+  const missingBase = path.join(tempRoot, 'missing-base', process.platform === 'win32' ? 'python.exe' : 'python3');
+
+  fs.mkdirSync(path.dirname(pythonPath), { recursive: true });
+  fs.writeFileSync(pythonPath, '', 'utf8');
+  fs.writeFileSync(path.join(tempRoot, 'venv', 'pyvenv.cfg'), `executable = ${missingBase}\n`, 'utf8');
+
+  try {
+    process.env.SD_PYTHON_PATH = pythonPath;
+    process.env.A11_SD_ALLOW_LOCAL_FALLBACK = '1';
+    assert.equal(resolveSdPythonBin(), process.platform === 'win32' ? 'python' : 'python3');
+  } finally {
+    if (previousExplicit === undefined) delete process.env.SD_PYTHON_PATH;
+    else process.env.SD_PYTHON_PATH = previousExplicit;
+    if (previousFallbackFlag === undefined) delete process.env.A11_SD_ALLOW_LOCAL_FALLBACK;
+    else process.env.A11_SD_ALLOW_LOCAL_FALLBACK = previousFallbackFlag;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test('isForeignAbsolutePath treats windows absolute paths as foreign on linux runtimes', () => {
   const previousPlatform = process.platform;
   try {

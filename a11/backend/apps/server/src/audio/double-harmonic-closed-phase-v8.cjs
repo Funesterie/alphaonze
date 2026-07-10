@@ -47,6 +47,9 @@ const V8_PRESET = 'v8-fermeture-1024-mg-phase-c7-k3';
 const V8_PLUS_PRESET = 'v8-plus-e2-grain-1024-mg-phase-c7-k3';
 const V8_PIVOT_PRESET = 'v8-pivot-1024-pivot-0292-mg-phase-c7-k3';
 const V9_TURBO_PRESET = 'v9-turbo-pivot-1024-vocal-safe-99ms-k3';
+const V9_ELECTROLYSIS_MIN_HZ = 40.26;
+const V9_ELECTROLYSIS_MAX_HZ = 40.62;
+const V9_ELECTROLYSIS_CENTER_HZ = (V9_ELECTROLYSIS_MIN_HZ + V9_ELECTROLYSIS_MAX_HZ) / 2;
 const DEFAULT_V8_FRAME_MS = 250;
 const DEFAULT_V8_MAX_SEGMENTS = 2400;
 const DEFAULT_V8_CURVE = 'grain-6d7d8d';
@@ -72,6 +75,19 @@ const V9_TURBO_TRANSITION = Object.freeze({
   openFloor: 0.0416,
   openRange: 0.6344,
   openMax: 0.8728,
+});
+const V9_ELECTROLYSIS_GUITAR_MODULATION = Object.freeze({
+  mode: 'electrolysis-guitar',
+  enabled: true,
+  frequencyHz: V9_ELECTROLYSIS_CENTER_HZ,
+  frequencyMinHz: V9_ELECTROLYSIS_MIN_HZ,
+  frequencyMaxHz: V9_ELECTROLYSIS_MAX_HZ,
+  amount: 0.042,
+  irregularity: 0.36,
+  asymmetry: 0.27,
+  bidirectional: true,
+  followForce: 0.72,
+  schemaMix: 0.58,
 });
 const MIN_V8_PHASE_SLOTS = 128;
 const MAX_V8_PHASE_SLOTS = 8192;
@@ -729,6 +745,68 @@ function resolveV9TurboTransitionConfig(options = {}) {
   };
 }
 
+function boolOption(value, fallback = false) {
+  if (typeof value === 'boolean') return value;
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw) return fallback;
+  if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'off'].includes(raw)) return false;
+  return fallback;
+}
+
+function resolveV9TurboModulationConfig(options = {}) {
+  const rawMode = String(options.modulation || options.modulationMode || options.mode || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
+  const wantsElectrolysis = rawMode === 'electrolysis'
+    || rawMode === 'electrolysis-guitar'
+    || rawMode === 'water-guitar'
+    || rawMode === 'guitar'
+    || rawMode === 'electric-guitar'
+    || boolOption(options.electrolysis, false)
+    || boolOption(options.electrolysisGuitar, false);
+  const enabled = wantsElectrolysis && !['0', 'false', 'off', 'none', 'disabled'].includes(rawMode);
+  const base = V9_ELECTROLYSIS_GUITAR_MODULATION;
+  const frequencyHz = clampNumber(
+    options.frequencyHz
+    ?? options.modulationFrequencyHz
+    ?? options.electrolysisHz
+    ?? options.waterFrequencyHz,
+    0.05,
+    120,
+    base.frequencyHz
+  );
+  const rawMin = options.frequencyMinHz
+    ?? options.minFrequencyHz
+    ?? options.frequencyLowHz
+    ?? options.electrolysisMinHz
+    ?? options.waterMinHz;
+  const rawMax = options.frequencyMaxHz
+    ?? options.maxFrequencyHz
+    ?? options.frequencyHighHz
+    ?? options.electrolysisMaxHz
+    ?? options.waterMaxHz;
+  const parsedMin = clampNumber(rawMin, 0.05, 120, base.frequencyMinHz);
+  const parsedMax = clampNumber(rawMax, 0.05, 120, base.frequencyMaxHz);
+  const frequencyMinHz = Math.min(parsedMin, parsedMax);
+  const frequencyMaxHz = Math.max(parsedMin, parsedMax);
+  return {
+    ...base,
+    enabled,
+    mode: enabled ? base.mode : 'none',
+    frequencyHz,
+    frequencyMinHz,
+    frequencyMaxHz,
+    amount: enabled ? clampNumber(options.amount ?? options.modulationAmount, 0, 0.18, base.amount) : 0,
+    irregularity: clampNumber(options.irregularity, 0, 1, base.irregularity),
+    asymmetry: clampNumber(options.asymmetry, 0, 1, base.asymmetry),
+    bidirectional: boolOption(options.bidirectional, base.bidirectional),
+    followForce: clampNumber(options.followForce, 0, 1, base.followForce),
+    schemaMix: clampNumber(options.schemaMix, 0, 1, base.schemaMix),
+    note: enabled
+      ? 'Audio-only modulation: electrolysis/water frequency is used as a texture seed, not as a physical electrolysis instruction.'
+      : 'disabled',
+  };
+}
+
 function lerpNumber(a, b, t) {
   return a + ((b - a) * clampNumber(t, 0, 1, 0));
 }
@@ -757,6 +835,57 @@ function sampleV9TurboOpenBlend({ force, tension, rise, forceDelta, transition }
   return clampNumber(transition.openFloor + (transition.openRange * shapedOpen) + edgeBoost, 0, transition.openMax, 0);
 }
 
+function sampleV9ElectrolysisGuitarModulation({
+  time,
+  force,
+  tension,
+  phaseGate,
+  rise,
+  index,
+  modulation,
+}) {
+  if (!modulation?.enabled || !(modulation.amount > 0)) {
+    return { raw: 0, high: 1, low: 1 };
+  }
+  const minHz = Number.isFinite(Number(modulation.frequencyMinHz)) ? Number(modulation.frequencyMinHz) : modulation.frequencyHz;
+  const maxHz = Number.isFinite(Number(modulation.frequencyMaxHz)) ? Number(modulation.frequencyMaxHz) : modulation.frequencyHz;
+  const range = Math.max(0, maxHz - minHz);
+  const sweepSeed = (0.46 * (Math.sin((TWO_PI * 0.137) * time + PHI) + 1) / 2)
+    + (0.27 * (Math.sin((TWO_PI * 0.071) * time + C7 + (index * MG_PHASE)) + 1) / 2)
+    + (0.27 * clampNumber((force * modulation.followForce) + (phaseGate * (1 - modulation.followForce)), 0, 1, 0.5));
+  const hz = range > 0 ? minHz + (range * clampNumber(sweepSeed, 0, 1, 0.5)) : modulation.frequencyHz;
+  const water = Math.sin(TWO_PI * hz * time);
+  const sub = Math.sin((TWO_PI * (hz / 8)) * time + PHI);
+  const cross = Math.sin((TWO_PI * (hz / PHI)) * time + Math.abs(JHI))
+    * Math.sin((TWO_PI * (hz / 3)) * time + C7 + (index * MG_PHASE));
+  const asymmetric = water >= 0
+    ? water * (1 + modulation.asymmetry)
+    : water * (1 - modulation.asymmetry);
+  const schemaCarrier = ((phaseGate * 2) - 1);
+  const schema = (modulation.schemaMix * schemaCarrier) + ((1 - modulation.schemaMix) * sub);
+  const raw = clampNumber(
+    (0.56 * asymmetric)
+      + (0.28 * modulation.irregularity * cross)
+      + (0.16 * schema),
+    -1,
+    1,
+    0
+  );
+  const bipolar = modulation.bidirectional ? raw : Math.max(0, raw);
+  const follow = clampNumber(
+    (modulation.followForce * force) + ((1 - modulation.followForce) * (1 - tension)) + (0.18 * rise),
+    0,
+    1,
+    0
+  );
+  const amount = modulation.amount * (0.44 + (0.56 * follow));
+  return {
+    raw: bipolar,
+    high: clampNumber(1 + (amount * bipolar), 0.82, 1.22, 1),
+    low: clampNumber(1 - (amount * bipolar * (0.72 + (0.28 * follow))), 0.82, 1.18, 1),
+  };
+}
+
 function buildTurboAutomationSamplesV9({
   analysis,
   profile = 'blend',
@@ -768,9 +897,11 @@ function buildTurboAutomationSamplesV9({
   phaseSlots,
   c7PhaseScale,
   transition: transitionOptions,
+  modulation: modulationOptions,
 } = {}) {
   const variant = resolveV8Variant('v9turbo');
   const transition = resolveV9TurboTransitionConfig(transitionOptions);
+  const modulation = resolveV9TurboModulationConfig(modulationOptions || transitionOptions || {});
   const resolvedPhaseSlots = resolveV8PhaseSlots(phaseSlots);
   const resolvedSampleRate = Math.round(clampNumber(sampleRate, MIN_V8_PHASE_SLOTS, MAX_V8_PHASE_SLOTS, resolvedPhaseSlots));
   const fallbackDuration = Number(analysis?.summary?.durationSeconds || 1) || 1;
@@ -797,6 +928,9 @@ function buildTurboAutomationSamplesV9({
   const lowMultiplierStats = makeStats();
   const highMultiplierStepStats = makeStats();
   const lowMultiplierStepStats = makeStats();
+  const modulationStats = makeStats();
+  const modulationHighStats = makeStats();
+  const modulationLowStats = makeStats();
   const blockGapStats = makeStats();
   const resolvedC7Scale = resolveV8C7PhaseScale(c7PhaseScale);
   const blockSize = Math.max(1, resolvedPhaseSlots);
@@ -847,8 +981,17 @@ function buildTurboAutomationSamplesV9({
       const openBlend = sampleV9TurboOpenBlend({ force, tension, rise, forceDelta, transition });
       const open = buildV9TurboOpenProfile(force, phaseGate, rise);
       const air = buildV9TurboAirProfile(force, phaseGate, rise);
-      const highMultiplier = lerpNumber(air.high, open.high, openBlend);
-      const lowMultiplier = lerpNumber(air.low, open.low, openBlend);
+      const modulationSample = sampleV9ElectrolysisGuitarModulation({
+        time: index / resolvedSampleRate,
+        force,
+        tension,
+        phaseGate,
+        rise,
+        index,
+        modulation,
+      });
+      const highMultiplier = lerpNumber(air.high, open.high, openBlend) * modulationSample.high;
+      const lowMultiplier = lerpNumber(air.low, open.low, openBlend) * modulationSample.low;
       const highValue = base * highMultiplier;
       const lowValue = base * lowMultiplier;
 
@@ -863,6 +1006,9 @@ function buildTurboAutomationSamplesV9({
       addStat(forceDeltaStats, forceDelta);
       addStat(highMultiplierStats, highMultiplier);
       addStat(lowMultiplierStats, lowMultiplier);
+      addStat(modulationStats, modulationSample.raw);
+      addStat(modulationHighStats, modulationSample.high);
+      addStat(modulationLowStats, modulationSample.low);
       if (previousHighMultiplier !== null) addStat(highMultiplierStepStats, Math.abs(highMultiplier - previousHighMultiplier));
       if (previousLowMultiplier !== null) addStat(lowMultiplierStepStats, Math.abs(lowMultiplier - previousLowMultiplier));
 
@@ -891,6 +1037,7 @@ function buildTurboAutomationSamplesV9({
     period: probe.period,
     density: probe.density,
     transition,
+    modulation,
     phaseClosure: {
       slots: resolvedPhaseSlots,
       sampleRate: resolvedSampleRate,
@@ -913,6 +1060,9 @@ function buildTurboAutomationSamplesV9({
       forceDelta: finishStats(forceDeltaStats),
       highMultiplier: finishStats(highMultiplierStats),
       lowMultiplier: finishStats(lowMultiplierStats),
+      modulation: finishStats(modulationStats),
+      modulationHigh: finishStats(modulationHighStats),
+      modulationLow: finishStats(modulationLowStats),
       highMultiplierStepDelta: finishStats(highMultiplierStepStats),
       lowMultiplierStepDelta: finishStats(lowMultiplierStepStats),
     },
@@ -1172,6 +1322,7 @@ async function processTurboD40V9({
     ...analysisOptions,
     frameMs: analysisOptions.frameMs || DEFAULT_V9_TURBO_FRAME_MS,
   });
+  const modulation = resolveV9TurboModulationConfig(analysisOptions);
   const userK = resolveV6UserK(
     analysisOptions.userK
     ?? analysisOptions.resonanceK
@@ -1217,6 +1368,7 @@ async function processTurboD40V9({
     phaseSlots,
     c7PhaseScale,
     transition,
+    modulation,
   });
   const envelopePaths = buildTurboEnvelopePathsV9(outputPath);
   writeFloat32MonoWav(envelopePaths.high, automation.highSamples, automation.sampleRate);
@@ -1278,6 +1430,7 @@ async function processTurboD40V9({
       controls: analysis.controls,
       summary: analysis.summary,
       transition: automation.transition,
+      modulation: automation.modulation,
       automation: {
         mode: automation.mode,
         sampleRate: automation.sampleRate,
@@ -1312,6 +1465,9 @@ async function processTurboD40V9({
       lowDynamicMean: automation.summary.low.mean,
       highMultiplierMean: automation.summary.highMultiplier.mean,
       lowMultiplierMean: automation.summary.lowMultiplier.mean,
+      modulationMean: automation.summary.modulation.mean,
+      modulationHighMean: automation.summary.modulationHigh.mean,
+      modulationLowMean: automation.summary.modulationLow.mean,
       highMultiplierStepMean: automation.summary.highMultiplierStepDelta.mean,
       lowMultiplierStepMean: automation.summary.lowMultiplierStepDelta.mean,
       openBlendMean: automation.summary.openBlend.mean,
@@ -1328,7 +1484,11 @@ async function processTurboD40V9({
       finalLimiter: false,
       filters: 'none',
     },
-    safety: built.safety,
+    safety: {
+      ...built.safety,
+      electrolysisGuitarModulation: automation.modulation.enabled,
+      modulationAudioOnlyNoPhysicalElectrolysis: true,
+    },
   };
 }
 
@@ -1338,6 +1498,7 @@ function buildClosedPhaseD40PlanV8(options = {}) {
   const transition = isTurbo
     ? resolveV9TurboTransitionConfig({ ...options, frameMs: options.frameMs || DEFAULT_V9_TURBO_FRAME_MS })
     : null;
+  const modulation = isTurbo ? resolveV9TurboModulationConfig(options) : null;
   const frameMs = clampNumber(options.frameMs, 50, 1000, isTurbo ? DEFAULT_V9_TURBO_FRAME_MS : DEFAULT_V8_FRAME_MS);
   const maxSeconds = clampNumber(options.maxSeconds, 1, 900, 480);
   const userK = resolveV6UserK(options.userK ?? options.resonanceK ?? options.intensity ?? options.harmonicIntensity);
@@ -1414,8 +1575,13 @@ function buildClosedPhaseD40PlanV8(options = {}) {
       release: isTurbo ? DEFAULT_V9_TURBO_RELEASE : DEFAULT_V8_RELEASE,
       minDbSpan: DEFAULT_V8_MIN_DB_SPAN,
       transition: transition || undefined,
+      modulation: modulation || undefined,
     },
-    safety: built.safety,
+    safety: isTurbo ? {
+      ...built.safety,
+      electrolysisGuitarModulation: Boolean(modulation?.enabled),
+      modulationAudioOnlyNoPhysicalElectrolysis: true,
+    } : built.safety,
   };
 }
 
@@ -1495,6 +1661,7 @@ module.exports = {
   V8_PRESET,
   V8_STATE,
   V9_TURBO_TRANSITION,
+  V9_ELECTROLYSIS_GUITAR_MODULATION,
   TURBO_D40_V9_SCHEMA,
   buildClosedPhaseD40PlanV8Pivot,
   buildClosedPhaseD40PlanV8Plus,
@@ -1515,7 +1682,9 @@ module.exports = {
   processClosedPhaseD40V8Pivot,
   processClosedPhaseD40V8Plus,
   processTurboD40V9,
+  resolveV9TurboModulationConfig,
   resolveV9TurboTransitionConfig,
+  sampleV9ElectrolysisGuitarModulation,
   resolveV8C7PhaseScale,
   resolveV8GrainPair,
   resolveV8PhaseSlots,

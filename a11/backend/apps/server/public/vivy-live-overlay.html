@@ -1,0 +1,1089 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vivy Live</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --ink: #fff8ff;
+      --muted: #d9c8dc;
+      --pink: #f07ad9;
+      --cyan: #73d9e6;
+      --gold: #ffd166;
+      --panel: rgba(8, 5, 13, .88);
+      --line: rgba(240, 122, 217, .38);
+    }
+
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #060409;
+      color: var(--ink);
+    }
+
+    button,
+    input,
+    textarea,
+    select { font: inherit; }
+
+    .backdrop,
+    .cover-backdrop,
+    .cover-video-backdrop,
+    .scrim {
+      position: fixed;
+      inset: 0;
+    }
+
+    .backdrop,
+    .cover-backdrop,
+    .cover-video-backdrop {
+      width: 64vw;
+      height: 100%;
+      object-fit: cover;
+      object-position: 50% 0;
+      filter: saturate(.88) contrast(1.05);
+    }
+
+    .cover-backdrop,
+    .cover-video-backdrop {
+      opacity: 0;
+      transform: scale(1.012);
+      transition: opacity 1.2s ease, transform 6s ease;
+    }
+
+    .cover-backdrop.visible,
+    .cover-video-backdrop.visible {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    .scrim {
+      background: rgba(3, 2, 7, .3);
+    }
+
+    .live-shell {
+      position: relative;
+      z-index: 1;
+      width: 100vw;
+      height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(460px, 36vw);
+    }
+
+    .identity {
+      min-width: 0;
+      padding: 42px 50px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      pointer-events: none;
+    }
+
+    .live-badge {
+      width: max-content;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 9px 13px;
+      border: 1px solid rgba(255, 255, 255, .35);
+      background: rgba(7, 4, 12, .68);
+      font-size: 15px;
+      font-weight: 850;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .live-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #ff365f;
+      box-shadow: 0 0 18px rgba(255, 54, 95, .85);
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    .signature {
+      width: max-content;
+      max-width: 520px;
+      padding: 14px 18px;
+      border-left: 3px solid var(--pink);
+      background: rgba(5, 3, 9, .7);
+    }
+
+    .signature strong {
+      display: block;
+      font-size: 25px;
+      line-height: 1;
+    }
+
+    .signature span {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .broadcast {
+      position: relative;
+      min-width: 0;
+      height: 100%;
+      padding: 38px 42px 34px;
+      display: flex;
+      flex-direction: column;
+      background: var(--panel);
+      border-left: 1px solid var(--line);
+      box-shadow: -30px 0 90px rgba(0, 0, 0, .44);
+      backdrop-filter: blur(14px);
+    }
+
+    .broadcast::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 5px;
+      height: 100%;
+      background: var(--pink);
+      opacity: .75;
+    }
+
+    .program-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      padding-bottom: 25px;
+      border-bottom: 1px solid rgba(255, 255, 255, .13);
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--pink);
+      font-size: 14px;
+      font-weight: 850;
+      text-transform: uppercase;
+    }
+
+    .program-name {
+      margin: 0;
+      font-size: 34px;
+      line-height: 1;
+      font-weight: 900;
+    }
+
+    .clock {
+      flex: 0 0 auto;
+      min-width: 86px;
+      padding: 8px 11px;
+      border: 1px solid rgba(115, 217, 230, .5);
+      color: var(--cyan);
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      font-size: 22px;
+      font-weight: 850;
+    }
+
+    .stage {
+      min-height: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 26px 0 18px;
+    }
+
+    .stage-kicker {
+      margin: 0 0 12px;
+      color: var(--cyan);
+      font-size: 16px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .stage-title {
+      max-width: 100%;
+      margin: 0;
+      overflow-wrap: anywhere;
+      font-size: 52px;
+      line-height: 1.02;
+      font-weight: 900;
+    }
+
+    .stage-author {
+      margin: 16px 0 0;
+      color: var(--muted);
+      font-size: 17px;
+    }
+
+    .stage-author strong { color: var(--ink); }
+
+    .lead-message {
+      max-width: 560px;
+      margin: 17px 0 0;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.45;
+    }
+
+    .track-cover {
+      position: relative;
+      width: 100%;
+      max-height: min(30vh, 270px);
+      aspect-ratio: 16 / 9;
+      margin: 22px 0 0;
+      overflow: hidden;
+      border: 1px solid rgba(240, 122, 217, .46);
+      background: rgba(255, 255, 255, .06);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, .34);
+    }
+
+    .track-cover::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border: 1px solid rgba(255, 255, 255, .12);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, .08), transparent 38%),
+        linear-gradient(0deg, rgba(6, 4, 9, .24), transparent 50%);
+      pointer-events: none;
+    }
+
+    .track-cover img,
+    .track-cover video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+      filter: saturate(1.08) contrast(1.04);
+    }
+
+    .track-cover video {
+      z-index: 1;
+      opacity: 0;
+      transition: opacity .45s ease;
+      background: transparent;
+    }
+
+    .track-cover.video-ready video {
+      opacity: 1;
+    }
+
+    .suggestions {
+      min-height: 0;
+      margin: 26px 0 0;
+      padding: 0;
+      display: grid;
+      gap: 10px;
+      list-style: none;
+    }
+
+    .suggestion {
+      min-width: 0;
+      padding: 12px 0;
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, .12);
+    }
+
+    .suggestion-id {
+      color: var(--pink);
+      font-weight: 900;
+    }
+
+    .suggestion-text {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 20px;
+      font-weight: 850;
+    }
+
+    .suggestion-votes {
+      color: var(--cyan);
+      padding: 5px 8px;
+      border: 1px solid rgba(115, 217, 230, .38);
+      background: rgba(115, 217, 230, .08);
+      font-size: 13px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 9px;
+      margin-top: 24px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, .2);
+      background: rgba(255, 255, 255, .08);
+    }
+
+    .progress-fill {
+      width: 0;
+      height: 100%;
+      background: var(--cyan);
+      transition: width .4s ease;
+    }
+
+    .pipeline {
+      margin-top: 29px;
+      display: grid;
+      gap: 17px;
+    }
+
+    .pipeline-row {
+      display: grid;
+      grid-template-columns: 156px minmax(0, 1fr) 42px;
+      gap: 13px;
+      align-items: center;
+    }
+
+    .pipeline-label {
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .pipeline-bar {
+      height: 8px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, .1);
+    }
+
+    .pipeline-bar span {
+      display: block;
+      width: 0;
+      height: 100%;
+      background: var(--pink);
+      transition: width .5s ease;
+    }
+
+    .pipeline-value {
+      color: var(--cyan);
+      font-size: 12px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .now-playing {
+      margin-top: 28px;
+    }
+
+    .time-row {
+      margin-top: 12px;
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 14px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .equalizer {
+      height: 88px;
+      margin-top: 24px;
+      display: flex;
+      align-items: end;
+      gap: 7px;
+    }
+
+    .equalizer span {
+      width: 8px;
+      height: 22%;
+      background: var(--pink);
+      animation: equalize .9s ease-in-out infinite alternate;
+      animation-delay: calc(var(--i) * -90ms);
+    }
+
+    .stars {
+      margin-top: 32px;
+      color: var(--gold);
+      font-size: 48px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .command {
+      width: max-content;
+      max-width: 100%;
+      margin-top: 24px;
+      padding: 12px 15px;
+      border: 1px solid rgba(255, 209, 102, .65);
+      color: var(--gold);
+      font-size: 20px;
+      font-weight: 850;
+    }
+
+    .footer {
+      min-height: 44px;
+      padding-top: 17px;
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      border-top: 1px solid rgba(255, 255, 255, .13);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .footer strong { color: var(--pink); }
+
+    .cinema {
+      position: fixed;
+      z-index: 3;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 60px;
+      text-align: center;
+      background: rgba(4, 2, 8, .78);
+      backdrop-filter: blur(7px);
+    }
+
+    .cinema.visible { display: flex; }
+
+    .cinema-inner {
+      width: min(1040px, 90vw);
+      padding: 54px 30px;
+      border-top: 1px solid rgba(240, 122, 217, .7);
+      border-bottom: 1px solid rgba(240, 122, 217, .7);
+      animation: reveal .7s ease both;
+    }
+
+    .cinema-label {
+      margin: 0 0 20px;
+      color: var(--pink);
+      font-size: 20px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .cinema-title {
+      margin: 0;
+      overflow-wrap: anywhere;
+      font-size: 86px;
+      line-height: .98;
+      font-weight: 950;
+    }
+
+    .cinema-author {
+      margin: 24px 0 0;
+      color: var(--muted);
+      font-size: 22px;
+    }
+
+    body.clip-video-fullscreen .backdrop,
+    body.clip-video-fullscreen .cover-backdrop {
+      opacity: 0;
+    }
+
+    body.clip-video-fullscreen .cover-video-backdrop {
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      object-position: 50% 50%;
+      filter: saturate(1.05) contrast(1.04);
+      opacity: 1;
+      transform: none;
+    }
+
+    body.clip-video-fullscreen .scrim {
+      background:
+        linear-gradient(180deg, rgba(0, 0, 0, .2), transparent 24%, transparent 72%, rgba(0, 0, 0, .28)),
+        rgba(0, 0, 0, .04);
+    }
+
+    body.clip-video-fullscreen .live-shell,
+    body.clip-video-fullscreen .cinema {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    audio { display: none; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: .48; transform: scale(.75); }
+    }
+
+    @keyframes equalize {
+      from { height: 15%; background: var(--pink); }
+      to { height: calc(35% + (var(--i) * 4%)); background: var(--cyan); }
+    }
+
+    @keyframes reveal {
+      from { opacity: 0; transform: translateY(18px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 1100px) {
+      .live-shell { grid-template-columns: minmax(0, 1fr) minmax(400px, 48vw); }
+      .identity { padding: 26px; }
+      .broadcast { padding: 28px; }
+      .stage-title { font-size: 38px; }
+      .pipeline-row { grid-template-columns: 120px minmax(0, 1fr) 36px; }
+    }
+
+    @media (max-width: 720px) {
+      .backdrop,
+      .cover-backdrop,
+      .cover-video-backdrop { width: 100%; object-position: 53% 42%; }
+      .identity { display: none; }
+      .live-shell { display: block; }
+      .broadcast {
+        width: 100%;
+        padding: 24px;
+        background: rgba(8, 5, 13, .9);
+      }
+      .program-name { font-size: 28px; }
+      .clock { min-width: 72px; font-size: 18px; }
+      .stage-title { font-size: 36px; }
+      .pipeline-row { grid-template-columns: 112px minmax(0, 1fr) 34px; }
+      .stars { font-size: 38px; }
+      .cinema { padding: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <img class="backdrop" src="/api/vivy/stream/overlay/background?v=vivy-layer-20260628" alt="">
+  <img class="cover-backdrop" id="coverBackdrop" alt="">
+  <video class="cover-video-backdrop" id="coverVideoBackdrop" muted loop playsinline preload="auto"></video>
+  <div class="scrim"></div>
+
+  <main class="live-shell">
+    <section class="identity" aria-hidden="true">
+      <div class="live-badge"><span class="live-dot"></span> Vivy en direct</div>
+      <div class="signature">
+        <strong>Présence musicale</strong>
+        <span>Le chat imagine. Vivy compose. Funesterie diffuse.</span>
+      </div>
+    </section>
+
+    <section class="broadcast" aria-live="polite">
+      <header class="program-head">
+        <div>
+          <p class="eyebrow" id="eyebrow">Vivy Live</p>
+          <h1 class="program-name">VIVY LIVE</h1>
+        </div>
+        <div class="clock" id="clock">LIVE</div>
+      </header>
+
+      <div class="stage">
+        <p class="stage-kicker" id="stageKicker">Connexion</p>
+        <h2 class="stage-title" id="stageTitle">Vivy arrive...</h2>
+        <p class="stage-author" id="stageAuthor"></p>
+        <p class="lead-message" id="leadMessage">Connexion au studio Funesterie.</p>
+        <div class="track-cover" id="trackCover" hidden>
+          <img id="trackCoverImage" alt="">
+          <video id="trackCoverVideo" muted loop playsinline preload="auto"></video>
+        </div>
+
+        <ol class="suggestions" id="suggestions"></ol>
+
+        <div class="progress-track" id="voteProgress" hidden>
+          <div class="progress-fill" id="voteProgressFill"></div>
+        </div>
+
+        <div class="pipeline" id="pipeline" hidden></div>
+
+        <div class="now-playing" id="nowPlaying" hidden>
+          <div class="progress-track">
+            <div class="progress-fill" id="playProgressFill"></div>
+          </div>
+          <div class="time-row">
+            <span id="playElapsed">00:00</span>
+            <span id="playDuration">00:00</span>
+          </div>
+          <div class="equalizer" id="equalizer" aria-hidden="true"></div>
+        </div>
+
+        <div id="rating" hidden>
+          <div class="stars" id="stars">★★★★★</div>
+          <div class="command">!etoiles 5</div>
+        </div>
+      </div>
+
+      <footer class="footer">
+        <span id="footerStatus">Connexion au backend...</span>
+        <span><strong id="messageCount">0</strong> messages</span>
+      </footer>
+    </section>
+  </main>
+
+  <section class="cinema" id="cinema">
+    <div class="cinema-inner">
+      <p class="cinema-label" id="cinemaLabel">Vivy présente</p>
+      <h2 class="cinema-title" id="cinemaTitle"></h2>
+      <p class="cinema-author" id="cinemaAuthor"></p>
+    </div>
+  </section>
+
+  <audio id="player" preload="auto"></audio>
+
+  <script>
+    const stageLabels = {
+      analysis: 'Analyse du thème',
+      lyrics: 'Écriture des paroles',
+      composition: 'Composition',
+      mix: 'Finalisation audio',
+    };
+    const phaseLabels = {
+      idle: 'En coulisses',
+      listening: 'Propositions ouvertes',
+      interlude: 'Fond musical',
+      voting: 'Vote en cours',
+      winner: 'Résultat du vote',
+      composing: 'Création en cours',
+      presenting: 'Avant-première',
+      playing: 'Lecture en cours',
+      rating: 'À vous de noter',
+      error: 'Incident de production',
+    };
+
+    const elements = Object.fromEntries([
+      'eyebrow', 'clock', 'stageKicker', 'stageTitle', 'stageAuthor', 'leadMessage',
+      'suggestions', 'voteProgress', 'voteProgressFill', 'pipeline', 'nowPlaying',
+      'playProgressFill', 'playElapsed', 'playDuration', 'rating', 'stars',
+      'footerStatus', 'messageCount', 'cinema', 'cinemaLabel', 'cinemaTitle',
+      'cinemaAuthor', 'equalizer', 'player', 'coverBackdrop', 'trackCover', 'trackCoverImage',
+      'trackCoverVideo', 'coverVideoBackdrop',
+    ].map((id) => [id, document.getElementById(id)]));
+
+    for (let index = 1; index <= 24; index += 1) {
+      const bar = document.createElement('span');
+      bar.style.setProperty('--i', String((index % 10) + 1));
+      elements.equalizer.appendChild(bar);
+    }
+
+    let liveState = null;
+    let serverOffsetMs = 0;
+    let lastTrackUrl = '';
+    let lastCoverUrl = '';
+    let lastCoverVideoUrl = '';
+    let coverBackdropReady = false;
+    let coverVideoBackdropReady = false;
+    const COVER_SLIDE_MS = 10000;
+    const STATE_POLL_MS = 6000;
+
+    function safeDate(value) {
+      const parsed = Date.parse(value || '');
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    function now() {
+      return Date.now() + serverOffsetMs;
+    }
+
+    function formatTime(seconds) {
+      const total = Math.max(0, Math.floor(Number(seconds) || 0));
+      const minutes = Math.floor(total / 60);
+      const remainder = total % 60;
+      return String(minutes).padStart(2, '0') + ':' + String(remainder).padStart(2, '0');
+    }
+
+    function remainingSeconds(isoDate) {
+      return Math.max(0, Math.ceil((safeDate(isoDate) - now()) / 1000));
+    }
+
+    function setText(element, value) {
+      element.textContent = String(value ?? '');
+    }
+
+    function cleanDisplayText(value, max = 120) {
+      return String(value || '')
+        .replace(/^!(?:vivy|nossen|chanson)\s+/i, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, max);
+    }
+
+    function titleFromPrompt(value = '') {
+      const cleaned = cleanDisplayText(value, 500);
+      if (!cleaned) return '';
+      const pieces = cleaned
+        .split(/\s*(?:,|;|:|\.|\n|\(|\[)\s*/)
+        .map((part) => cleanDisplayText(part, 90))
+        .filter(Boolean);
+      const ignored = /^(?:duo|solo|trio|format court|version longue|no limite|sans limite|histoire complete|histoire complète|chanson|musique|theme chanson|thème chanson|banger|style plus epique|style plus épique)$/i;
+      const picked = pieces.find((part) => part.length >= 4 && !ignored.test(part)) || pieces[0] || cleaned;
+      return picked.length > 72 ? picked.slice(0, 69).trimEnd() + '...' : picked;
+    }
+
+    function titleForSuggestion(entry = {}) {
+      return titleFromPrompt(entry.title || entry.trackTitle || entry.text || '');
+    }
+
+    function voteLabel(entry = {}) {
+      const count = Number(entry.votes || 0);
+      return count + ' vote' + (count > 1 ? 's' : '');
+    }
+
+    function show(element, visible) {
+      element.hidden = !visible;
+    }
+
+    function publicUrl(value = '') {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+      try { return new URL(raw, window.location.origin).toString(); } catch { return raw; }
+    }
+
+    function cacheBustedMediaUrl(value = '', state = {}) {
+      const url = publicUrl(value);
+      if (!url) return '';
+      try {
+        const parsed = new URL(url, window.location.origin);
+        const current = state?.current || {};
+        const version = safeDate(state.updatedAt || current.updatedAt || current.phaseStartedAt || state.serverNow)
+          || safeDate(current.playbackStartedAt)
+          || Date.now();
+        parsed.searchParams.set('vivyObs', String(version));
+        return parsed.toString();
+      } catch {
+        return url;
+      }
+    }
+
+    function renderBackdropSlideshow(state) {
+      const current = state?.current || {};
+      const phase = current.phase || 'idle';
+      const coverUrl = publicUrl(current.coverImageUrl || current.coverUrl || current.imageUrl || '');
+      const coverVideoUrl = publicUrl(current.coverVideoUrl || current.videoUrl || current.video_url || current.clipUrl || '');
+      if (coverUrl !== lastCoverUrl) {
+        lastCoverUrl = coverUrl;
+        coverBackdropReady = false;
+        elements.coverBackdrop.classList.remove('visible');
+        if (coverUrl) {
+          const coverSrc = cacheBustedMediaUrl(coverUrl, state);
+          elements.trackCoverImage.src = coverSrc;
+          elements.trackCoverVideo.poster = coverSrc;
+          elements.coverBackdrop.src = coverSrc;
+          coverBackdropReady = elements.coverBackdrop.complete && elements.coverBackdrop.naturalWidth > 0;
+        } else {
+          elements.trackCoverImage.removeAttribute('src');
+          elements.trackCoverVideo.removeAttribute('poster');
+          elements.coverBackdrop.removeAttribute('src');
+        }
+      }
+      if (coverVideoUrl !== lastCoverVideoUrl) {
+        lastCoverVideoUrl = coverVideoUrl;
+        coverVideoBackdropReady = false;
+        elements.trackCover.classList.remove('video-ready');
+        elements.coverVideoBackdrop.classList.remove('visible');
+        elements.trackCoverVideo.pause();
+        elements.coverVideoBackdrop.pause();
+        if (coverVideoUrl) {
+          const coverVideoSrc = cacheBustedMediaUrl(coverVideoUrl, state);
+          elements.trackCoverVideo.src = coverVideoSrc;
+          elements.coverVideoBackdrop.src = coverVideoSrc;
+          elements.trackCoverVideo.load();
+          elements.coverVideoBackdrop.load();
+        } else {
+          elements.trackCoverVideo.removeAttribute('src');
+          elements.coverVideoBackdrop.removeAttribute('src');
+          elements.trackCoverVideo.load();
+          elements.coverVideoBackdrop.load();
+        }
+      }
+      const fullScreenClip = phase === 'playing' && Boolean(coverVideoUrl);
+      document.body.classList.toggle('clip-video-fullscreen', fullScreenClip);
+      const canShowCover = Boolean((coverUrl || coverVideoUrl) && ['presenting', 'playing', 'interlude', 'rating'].includes(phase));
+      show(elements.trackCover, canShowCover && !fullScreenClip);
+      const slideStartedAt = safeDate(current.playbackStartedAt || current.phaseStartedAt) || now();
+      const slideIndex = Math.floor(Math.max(0, now() - slideStartedAt) / COVER_SLIDE_MS);
+      const showMediaBackdrop = canShowCover
+        && (fullScreenClip || phase === 'presenting' || phase === 'rating' || slideIndex % 2 === 0);
+      const showVideoBackdrop = Boolean(coverVideoUrl) && (fullScreenClip || (coverVideoBackdropReady && showMediaBackdrop));
+      const showBackdrop = coverBackdropReady && Boolean(coverUrl) && showMediaBackdrop && !showVideoBackdrop && !fullScreenClip;
+      elements.coverBackdrop.classList.toggle('visible', showBackdrop);
+      elements.coverVideoBackdrop.classList.toggle('visible', showVideoBackdrop);
+      if (canShowCover && coverVideoUrl) {
+        elements.trackCoverVideo.play().catch(() => {
+          elements.trackCover.classList.remove('video-ready');
+        });
+        elements.coverVideoBackdrop.play().catch(() => {
+          coverVideoBackdropReady = false;
+          elements.coverVideoBackdrop.classList.remove('visible');
+        });
+      } else {
+        elements.trackCoverVideo.pause();
+        elements.coverVideoBackdrop.pause();
+      }
+    }
+
+    elements.coverBackdrop.addEventListener('load', () => {
+      coverBackdropReady = true;
+      if (liveState) renderBackdropSlideshow(liveState);
+    });
+    elements.coverBackdrop.addEventListener('error', () => {
+      coverBackdropReady = false;
+      elements.coverBackdrop.classList.remove('visible');
+    });
+    elements.trackCoverVideo.addEventListener('playing', () => {
+      elements.trackCover.classList.add('video-ready');
+    });
+    elements.trackCoverVideo.addEventListener('error', () => {
+      elements.trackCover.classList.remove('video-ready');
+    });
+    elements.coverVideoBackdrop.addEventListener('playing', () => {
+      coverVideoBackdropReady = true;
+      if (liveState) renderBackdropSlideshow(liveState);
+    });
+    elements.coverVideoBackdrop.addEventListener('canplay', () => {
+      coverVideoBackdropReady = true;
+      if (liveState) renderBackdropSlideshow(liveState);
+    });
+    elements.coverVideoBackdrop.addEventListener('error', () => {
+      coverVideoBackdropReady = false;
+      elements.coverVideoBackdrop.classList.remove('visible');
+    });
+    elements.coverVideoBackdrop.addEventListener('stalled', () => {
+      if (!lastCoverVideoUrl || !liveState) return;
+      const src = cacheBustedMediaUrl(lastCoverVideoUrl, liveState);
+      elements.coverVideoBackdrop.src = src;
+      elements.coverVideoBackdrop.load();
+    });
+
+    function simulatedProduction(state) {
+      const actual = state.production?.stages || {};
+      const elapsed = Math.max(0, (now() - safeDate(state.production?.startedAt || state.current?.phaseStartedAt)) / 1000);
+      const windows = {
+        analysis: [0, 18],
+        lyrics: [14, 58],
+        composition: [48, 180],
+        mix: [165, 235],
+      };
+      return Object.fromEntries(Object.entries(windows).map(([name, range]) => {
+        const source = actual[name] || {};
+        if (source.status === 'done') return [name, 100];
+        if (source.status === 'active' && Number(source.progress) > 0) return [name, Number(source.progress)];
+        const raw = ((elapsed - range[0]) / (range[1] - range[0])) * 100;
+        return [name, Math.max(0, Math.min(name === 'mix' ? 94 : 98, raw))];
+      }));
+    }
+
+    function renderSuggestions(round) {
+      elements.suggestions.replaceChildren();
+      (round.suggestions || []).slice(0, 4).forEach((entry) => {
+        const item = document.createElement('li');
+        item.className = 'suggestion';
+        const id = document.createElement('span');
+        id.className = 'suggestion-id';
+        id.textContent = entry.id || '';
+        const text = document.createElement('span');
+        text.className = 'suggestion-text';
+        text.textContent = titleForSuggestion(entry) || entry.id || 'Proposition';
+        text.title = entry.text || '';
+        const votes = document.createElement('span');
+        votes.className = 'suggestion-votes';
+        votes.textContent = voteLabel(entry);
+        item.append(id, text, votes);
+        elements.suggestions.appendChild(item);
+      });
+    }
+
+    function renderPipeline(state) {
+      const progress = simulatedProduction(state);
+      elements.pipeline.replaceChildren();
+      Object.entries(stageLabels).forEach(([name, label]) => {
+        const row = document.createElement('div');
+        row.className = 'pipeline-row';
+        const nameElement = document.createElement('span');
+        nameElement.className = 'pipeline-label';
+        nameElement.textContent = label;
+        const bar = document.createElement('div');
+        bar.className = 'pipeline-bar';
+        const fill = document.createElement('span');
+        fill.style.width = Math.round(progress[name]) + '%';
+        bar.appendChild(fill);
+        const value = document.createElement('span');
+        value.className = 'pipeline-value';
+        value.textContent = Math.round(progress[name]) + '%';
+        row.append(nameElement, bar, value);
+        elements.pipeline.appendChild(row);
+      });
+    }
+
+    function playbackPosition(state) {
+      const playerDuration = Number.isFinite(elements.player.duration) ? elements.player.duration : 0;
+      const duration = playerDuration || Number(state.current?.durationSeconds || 0);
+      const localPosition = Number.isFinite(elements.player.currentTime) ? elements.player.currentTime : 0;
+      const syncedPosition = Math.max(0, (now() - safeDate(state.current?.playbackStartedAt)) / 1000);
+      const elapsed = Math.min(duration || syncedPosition, Math.max(localPosition, syncedPosition));
+      return { duration, elapsed };
+    }
+
+    function stopPlayer() {
+      if (!elements.player.paused) elements.player.pause();
+      try { elements.player.currentTime = 0; } catch {}
+      if (elements.player.getAttribute('src')) {
+        elements.player.removeAttribute('src');
+        try { elements.player.load(); } catch {}
+      }
+      lastTrackUrl = '';
+    }
+
+    function syncPlayer(state) {
+      const current = state.current || {};
+      const playable = Boolean(current.trackUrl && (current.phase === 'playing' || current.phase === 'interlude'));
+      if (!playable) {
+        stopPlayer();
+        return;
+      }
+      if (current.trackUrl !== lastTrackUrl) {
+        lastTrackUrl = current.trackUrl;
+        elements.player.src = current.trackUrl;
+        elements.player.load();
+      }
+      const expected = Math.max(0, (now() - safeDate(current.playbackStartedAt)) / 1000);
+      if (Math.abs((elements.player.currentTime || 0) - expected) > 3 && Number.isFinite(expected)) {
+        try { elements.player.currentTime = expected; } catch {}
+      }
+      const playAttempt = elements.player.play();
+      if (playAttempt?.catch) playAttempt.catch(() => {});
+    }
+
+    function render(state) {
+      liveState = state;
+      const serverNow = safeDate(state.serverNow);
+      if (serverNow) serverOffsetMs = serverNow - Date.now();
+      const current = state.current || {};
+      // Overlay réactif au mood: l'accent de la scène suit la tenue/thème du
+      // morceau. Fallback sûr sur l'accent Vivy par défaut si absent.
+      try {
+        const mood = current.moodTheme || {};
+        const accent = /^#[0-9a-fA-F]{3,8}$/.test(mood.accent || '') ? mood.accent : '#f07ad9';
+        const glow = typeof mood.glow === 'string' && mood.glow.length < 40 ? mood.glow : 'rgba(240,122,217,.30)';
+        document.documentElement.style.setProperty('--pink', accent);
+        document.documentElement.style.setProperty('--line', glow);
+      } catch {}
+      const round = state.round || {};
+      const phase = current.phase || 'idle';
+      const winner = (round.suggestions || []).find((entry) => entry.id === round.winningSuggestionId)
+        || (round.suggestions || [])[0]
+        || null;
+      const rawTitle = current.trackTitle || current.title || winner?.text || 'Vivy Live';
+      const visibleTitle = titleFromPrompt(rawTitle) || 'Vivy Live';
+      const author = current.requestedBy || winner?.author || '';
+
+      setText(elements.eyebrow, phaseLabels[phase] || 'Vivy Live');
+      setText(elements.stageKicker, phaseLabels[phase] || 'Vivy Live');
+      setText(elements.stageTitle, visibleTitle);
+      setText(elements.stageAuthor, author ? 'Demandé par : ' + author : '');
+      setText(elements.leadMessage, current.message || '');
+      setText(elements.messageCount, state.stats?.messages || 0);
+      setText(elements.footerStatus, state.learning?.averageStars
+        ? 'Note moyenne ' + state.learning.averageStars + '/5'
+        : 'Le chat pilote la prochaine création');
+
+      renderSuggestions(round);
+      const showList = phase === 'listening' || phase === 'voting';
+      show(elements.suggestions, showList && Boolean(round.suggestions?.length));
+      show(elements.voteProgress, phase === 'voting');
+      show(elements.pipeline, phase === 'composing');
+      show(elements.nowPlaying, phase === 'playing' || phase === 'interlude');
+      show(elements.rating, phase === 'rating');
+
+      if (phase === 'listening') {
+        setText(elements.stageTitle, 'Proposez la prochaine chanson');
+        setText(elements.leadMessage, '!nossen votre thème, votre univers et votre couleur musicale');
+      }
+      if (phase === 'voting') {
+        const voteTarget = winner?.id ? '!vote ' + winner.id : '!vote S1';
+        setText(elements.stageTitle, titleForSuggestion(winner) || visibleTitle);
+        setText(elements.leadMessage, (winner?.id || 'S1') + ' · ' + voteLabel(winner || {}) + ' · ' + voteTarget);
+      }
+      if (phase === 'winner') {
+        setText(elements.stageKicker, 'Gagnant ' + (winner?.id || ''));
+        setText(elements.leadMessage, winner ? voteLabel(winner) + ' · Vivy ouvre le studio et prépare la composition.' : 'Vivy ouvre le studio et prépare la composition.');
+      }
+      if (phase === 'composing') {
+        setText(elements.stageKicker, 'Vivy commence à composer');
+        renderPipeline(state);
+      }
+      if (phase === 'playing') {
+        setText(elements.stageKicker, 'Lecture en cours');
+        setText(elements.leadMessage, '');
+      }
+      if (phase === 'interlude') {
+        setText(elements.stageKicker, 'Fond musical d’attente');
+        setText(elements.leadMessage, 'Le chat peut lancer le prochain vote avec !nossen votre idée.');
+      }
+      if (phase === 'rating') {
+        setText(elements.stageKicker, 'Votez pour cette création');
+        setText(elements.leadMessage, 'Votre note nourrit les prochains choix artistiques de Vivy.');
+      }
+
+      const cinemaVisible = phase === 'presenting';
+      elements.cinema.classList.toggle('visible', cinemaVisible);
+      setText(elements.cinemaLabel, 'Vivy présente');
+      setText(elements.cinemaTitle, visibleTitle);
+      setText(elements.cinemaAuthor, author ? 'Demandé par ' + author : '');
+      syncPlayer(state);
+      renderBackdropSlideshow(state);
+      tick();
+    }
+
+    function tick() {
+      if (!liveState) return;
+      const current = liveState.current || {};
+      const round = liveState.round || {};
+      const phase = current.phase || 'idle';
+
+      if (phase === 'voting') {
+        const remaining = remainingSeconds(round.endsAt);
+        const total = Math.max(1, (safeDate(round.endsAt) - safeDate(round.startedAt)) / 1000);
+        const progress = Math.max(0, Math.min(100, ((total - remaining) / total) * 100));
+        setText(elements.clock, remaining + ' s');
+        elements.voteProgressFill.style.width = progress + '%';
+      } else if (phase === 'winner' || phase === 'presenting' || phase === 'rating') {
+        setText(elements.clock, remainingSeconds(current.phaseEndsAt) + ' s');
+      } else if (phase === 'playing' || phase === 'interlude') {
+        const position = playbackPosition(liveState);
+        setText(elements.clock, phase === 'playing' ? 'ON AIR' : 'ATTENTE');
+        setText(elements.playElapsed, formatTime(position.elapsed));
+        setText(elements.playDuration, formatTime(position.duration));
+        elements.playProgressFill.style.width = (position.duration
+          ? Math.min(100, (position.elapsed / position.duration) * 100)
+          : 0) + '%';
+      } else {
+        setText(elements.clock, phase === 'composing' ? 'REC' : 'LIVE');
+      }
+
+      if (phase === 'composing') renderPipeline(liveState);
+      renderBackdropSlideshow(liveState);
+    }
+
+    async function fetchFreshState() {
+      try {
+        const response = await fetch('/api/vivy/stream/state?overlayPoll=' + Date.now(), { cache: 'no-store' });
+        if (!response.ok) throw new Error('state_http_' + response.status);
+        render(await response.json());
+      } catch {
+        setText(elements.footerStatus, 'Reconnexion au studio...');
+      }
+    }
+
+    setInterval(tick, 500);
+    setInterval(fetchFreshState, STATE_POLL_MS);
+    const events = new EventSource('/api/vivy/stream/events');
+    events.addEventListener('state', (event) => {
+      try { render(JSON.parse(event.data)); } catch {}
+    });
+    events.onerror = () => setText(elements.footerStatus, 'Reconnexion au studio...');
+    fetchFreshState();
+  </script>
+</body>
+</html>

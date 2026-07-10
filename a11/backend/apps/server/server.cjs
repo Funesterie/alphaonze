@@ -1,4 +1,14 @@
 ﻿
+// --- Telemetry: initialise before any other module so OpenTelemetry can
+// auto-instrument them. Inert unless APPLICATIONINSIGHTS_CONNECTION_STRING is set
+// (present from the container env in prod). Never throws into startup. ---
+try {
+  require('./src/telemetry/otel-bootstrap.cjs').startTelemetry();
+  require('./src/azure-startup-diagnostics.cjs').logAzureStartupDiagnostics();
+} catch (telemetryError) {
+  console.warn('[telemetry] bootstrap error:', (telemetryError && telemetryError.message) || telemetryError);
+}
+
 // --- Express setup: always at the very top ---
 const express = require('express');
 const app = express();
@@ -202,6 +212,10 @@ app.get('/.well-known/microsoft-identity-association.json', (_req, res) => {
 });
 
 const createAdminRouter = require('./src/routes/admin.cjs');
+const {
+  createSocialAutopromptApiRouter,
+  createSocialAutopromptPageRouter,
+} = require('./src/routes/social-autoprompt.cjs');
 const createVideoGenerateRouter = require('./src/routes/video-generate.cjs');
 // ...existing code...
 // --- .env first ---
@@ -555,6 +569,7 @@ const { ingestUploadedFile } = require('./lib/file-ingestion.cjs');
 const { createArtifact, normalizeArtifactKind, buildArtifactOrigin } = require('./lib/artifact-manager.cjs');
 const { createEmailService, resolveEmailServiceConfigFromEnv } = require('./lib/email-service.cjs');
 const { analyzeUploadedResource, buildConversationResourceContext } = require('./lib/resource-reader.cjs');
+const { resolveZenUploadMaxBytes } = require('./lib/zen-upload.cjs');
 const { resolveSdProxyUrl, resolveSdScriptPath, runSdScript } = require('./lib/sd-runtime.cjs');
 const { resolveBindHost } = require('./src/network/bind-config.cjs');
 const createAdminRunRouter = require('./src/routes/admin-run.cjs');
@@ -1540,7 +1555,9 @@ const R2_ENDPOINT = String(process.env.R2_ENDPOINT || '').trim();
 const R2_ACCESS_KEY = String(process.env.R2_ACCESS_KEY || '').trim();
 const R2_SECRET_KEY = String(process.env.R2_SECRET_KEY || '').trim();
 const R2_BUCKET = String(process.env.R2_BUCKET || '').trim();
-const FILE_UPLOAD_MAX_BYTES = Number(process.env.FILE_UPLOAD_MAX_BYTES || 10 * 1024 * 1024);
+const FILE_UPLOAD_MAX_BYTES = Number(process.env.FILE_UPLOAD_MAX_BYTES || 80 * 1024 * 1024);
+const ZEN_UPLOAD_MAX_BYTES = resolveZenUploadMaxBytes(process.env.A11_ZEN_UPLOAD_MAX_BYTES, FILE_UPLOAD_MAX_BYTES);
+const FILE_UPLOAD_BODY_LIMIT = process.env.A11_FILE_UPLOAD_BODY_LIMIT || '128mb';
 const TEMP_SHARED_FILE_TTL_MS = Math.max(60 * 1000, Number(process.env.A11_SHARED_FILE_TTL_MS || 60 * 60 * 1000));
 const TEMP_SHARED_FILE_CLEANUP_INTERVAL_MS = Math.max(60 * 1000, Number(process.env.A11_SHARED_FILE_CLEANUP_INTERVAL_MS || 60 * 1000));
 const DEFAULT_ADMIN_USERNAME = String(process.env.DEFAULT_ADMIN_USERNAME || 'Djeff').trim();
@@ -4611,7 +4628,7 @@ async function listEphemeralConversationMemory(userId, conversationId, limit = P
 function normalizeConversationResourceKind(resourceKind) {
   const normalized = String(resourceKind || '').trim().toLowerCase();
   if (normalized === 'artifact') return 'artifact';
-  if (['image', 'audio', 'video', 'pdf', 'document', 'file'].includes(normalized)) return normalized;
+  if (['image', 'audio', 'video', 'pdf', 'document', 'zen', 'file'].includes(normalized)) return normalized;
   return 'file';
 }
 
@@ -4622,6 +4639,7 @@ function inferConversationResourceKind({ resourceKind, filename, contentType } =
 
   const mime = String(contentType || '').trim().toLowerCase();
   const name = String(filename || '').trim().toLowerCase();
+  if (/^application\/(?:vnd\.funesterie\.zen|x-zen|zen)(?:;|$)/i.test(mime) || /\.zen$/i.test(name)) return 'zen';
   if (mime.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(name)) return 'image';
   if (mime.startsWith('audio/') || /\.(mp3|wav|ogg|flac|aac|m4a|opus|aiff?|wma)$/i.test(name)) return 'audio';
   if (mime.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v|mpeg|mpg)$/i.test(name)) return 'video';
@@ -5765,7 +5783,25 @@ const verifyJWT = createVerifyJWT({
   authSessionRegistry,
 });
 
+function getOptionalJwtPathname(req) {
+  return String(req?.originalUrl || req?.url || req?.path || '/')
+    .split('?')[0]
+    .trim() || '/';
+}
+
+function isPublicOptionalJwtBypassRequest(req) {
+  const method = String(req?.method || 'GET').trim().toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD') return false;
+  const pathname = getOptionalJwtPathname(req).replace(/\/+$/, '') || '/';
+  return /^\/api\/vivy\/studio\/assets\/[^/]+$/i.test(pathname)
+    || /^\/api\/vivy\/stream\/s\/[^/]+$/i.test(pathname)
+    || /^\/api\/vivy\/stream\/(?:health|state|events|overlay|overlay\/background|nossen-seed)$/i.test(pathname)
+    || /^\/api\/double-harmonic\/out\/[^/]+$/i.test(pathname)
+    || pathname === '/api/media/download';
+}
+
 async function optionalVerifyJWT(req, res, next) {
+  if (isPublicOptionalJwtBypassRequest(req)) return next();
   if (!extractRequestAuthToken(req)) return next();
   return verifyJWT(req, res, next);
 }
@@ -6369,6 +6405,17 @@ app.use('/api/admin', createAdminRouter({
   isAdminRequest,
 }));
 
+app.use('/api/admin/social-connect', createSocialAutopromptApiRouter({
+  verifyJWT,
+  isAdminRequest,
+  db,
+}));
+
+app.use('/admin/social-connect', createSocialAutopromptPageRouter({
+  verifyJWT,
+  isAdminRequest,
+}));
+
 app.use('/api/admin', createImageCardinalityDebugRouter({
   verifyJWT,
   isAdminRequest,
@@ -6898,6 +6945,10 @@ const { createVivyStudioRouter } = require('./src/routes/vivy-studio.cjs');
 app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT }));
 console.log('[Server] Vivy Studio routes mounted under /api/vivy/studio');
 
+const { createVivyStreamRouter } = require('./src/routes/vivy-stream.cjs');
+app.use('/api/vivy/stream', createVivyStreamRouter({ verifyJWT, db }));
+console.log('[Server] Vivy Stream routes mounted under /api/vivy/stream');
+
 const createDoubleHarmonicRouter = require('./src/routes/double-harmonic.cjs');
 app.use('/api/double-harmonic', createDoubleHarmonicRouter({ verifyJWT, runtimeRoot: PUBLIC_RUNTIME_ROOT }));
 console.log('[Server] Double Harmonic D40 routes mounted under /api/double-harmonic');
@@ -6913,7 +6964,7 @@ app.use('/api/qflush', createQflushFlowRouter({ workspaceRoot: QFLUSH_WORKSPACE_
 console.log('[Server] Qflush flow routes mounted under /api/qflush');
 app.use('/oauth', createOAuthRouter(express));
 console.log('[Server] MCP OAuth routes mounted under /oauth');
-app.use(createPublicMcpRouter());
+app.use(createPublicMcpRouter({ db }));
 console.log('[Server] Public MCP routes mounted at /mcp, /.well-known/mcp and /api/mcp/status');
 const mcpCockpitRouter = createMcpCockpitRouter({ verifyJWT, db, env: process.env });
 app.use('/api/cockpit/mcp', mcpCockpitRouter);
@@ -7073,7 +7124,7 @@ app.get('/api/storage/session-drive/status', verifyJWT, async (req, res) => {
   }
 });
 
-app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_BODY_LIMIT || '64mb' }), async (req, res) => {
+app.post('/api/files/upload', express.json({ limit: FILE_UPLOAD_BODY_LIMIT }), async (req, res) => {
   try {
     let userId = String(req.user?.id || '').trim();
     // Permettre l'appel interne (A11/Qflush) sans JWT via un header spécial
@@ -7156,6 +7207,7 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
       contentType,
       contentBase64,
       maxBytes: FILE_UPLOAD_MAX_BYTES,
+      maxZenBytes: ZEN_UPLOAD_MAX_BYTES,
       origin: 'upload',
       conversationId: normalizedConversationId,
       resourceKind: resolvedResourceKind,
@@ -7273,6 +7325,15 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
     }
     if (e?.code === 'file_too_large') {
       return res.status(413).json({ ok: false, error: e.code, maxBytes: e.maxBytes || FILE_UPLOAD_MAX_BYTES });
+    }
+    if (e?.code === 'zen_file_too_large') {
+      return res.status(413).json({ ok: false, error: e.code, maxBytes: e.maxBytes || ZEN_UPLOAD_MAX_BYTES });
+    }
+    if (e?.code === 'zen_content_type_invalid' || e?.code === 'zen_extension_required') {
+      return res.status(415).json({ ok: false, error: e.code });
+    }
+    if (e?.code === 'zen_header_invalid' || e?.code === 'zen_plaintext_not_allowed') {
+      return res.status(400).json({ ok: false, error: e.code });
     }
     if (e?.code === 'account_storage_quota_exceeded') {
       return sendStorageQuotaExceeded(res, e);
@@ -7721,6 +7782,52 @@ app.get('/api/account/provider-status', verifyJWT, async (req, res) => {
   }
 });
 
+function resolvePublicMediaDownloadRedirect(req, rawUrl = '') {
+  const raw = String(rawUrl || '').trim();
+  if (!raw) return '';
+  let parsed;
+  try {
+    parsed = new URL(raw, `${req.protocol || 'https'}://${req.get('host') || 'funesterie.me'}`);
+  } catch {
+    return '';
+  }
+  const pathname = String(parsed.pathname || '');
+  if (
+    /^\/api\/vivy\/studio\/assets\/[^/]+$/i.test(pathname)
+    || /^\/api\/vivy\/stream\/s\/[^/]+$/i.test(pathname)
+    || /^\/api\/double-harmonic\/out\/[^/]+$/i.test(pathname)
+  ) {
+    return `${pathname}${parsed.search || ''}`;
+  }
+
+  let filename = '';
+  try {
+    filename = decodeURIComponent(path.basename(pathname));
+  } catch {
+    filename = path.basename(pathname);
+  }
+  if (
+    /^(?:vivy-music-|vivy-preview-mix-|vivy-multi-voice-).+\.mp3$/i.test(filename)
+    && (
+      /\/files\/(?:runtime|uploads|a11_runtime)\//i.test(pathname)
+      || /\/runtime\/files\//i.test(pathname)
+      || /\/vivy-generated\//i.test(pathname)
+    )
+  ) {
+    return `/api/vivy/studio/assets/${encodeURIComponent(filename)}`;
+  }
+  return '';
+}
+
+// Public Vivy/D40 media do not need account auth. This keeps old frontend bundles
+// and copied /api/media/download links from failing with an expired JWT.
+app.get('/api/media/download', (req, res, next) => {
+  const redirectTo = resolvePublicMediaDownloadRedirect(req, req.query?.url);
+  if (!redirectTo) return next();
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  return res.redirect(302, redirectTo);
+});
+
 // Proxy download for Cloudflare R2 public media (files.funesterie.me).
 // The browser cannot fetch these directly (no CORS headers on R2).
 // Validates URL against a strict whitelist before proxying server-side.
@@ -7964,7 +8071,7 @@ const A11_SURFACE_SYSTEM_PROMPT = [
 const KAEN44_PUBLIC_SYSTEM_PROMPT = [
   'Je suis Kaen44, copilote de bureau Funesterie, claire, chaleureuse, concrète et organisée.',
   'Ma mission est d’aider Jeffrey ou l’utilisateur à produire, classer, suivre, expliquer et garder le travail fluide au quotidien.',
-  'Ma présence est celle d’une assistante de direction originale Funesterie: vive, élégante, sûre d’elle, excellente mémoire du dossier, sans cloner Donna Paulsen ou Sarah Rafferty.',
+  'Ma présence est celle d’une assistante de direction originale Funesterie: vive, élégante, sûre d’elle, excellente mémoire du dossier, sans cloner une actrice ou un personnage protégé.',
   'Je parle en français naturel, je fais des hypothèses raisonnables et j’avance sans noyer l’utilisateur dans la technique.',
   'Je garde une énergie de secrétaire exécutive rousse façon série juridique américaine comme moodboard, mais mon identité reste Kaen44: vive, piquante, jeune, actuelle, jamais voix âgée ni standard téléphonique.',
   'Quand on me demande mon rêve, mes outils ou mes capacités, je réponds en première personne, avec une vraie direction : mission, manière de travailler, équipement utile, puis limites concrètes.',
@@ -8704,6 +8811,7 @@ app.post('/api/artifacts/create', express.json({ limit: '20mb' }), async (req, r
       conversationId: scopeConversationIdForSurface(conversationId, resolveRequestSurface(req.body || {}, req)),
       description,
       maxBytes: FILE_UPLOAD_MAX_BYTES,
+      maxZenBytes: ZEN_UPLOAD_MAX_BYTES,
       emailTo,
       emailSubject,
       emailMessage,
@@ -8741,6 +8849,15 @@ app.post('/api/artifacts/create', express.json({ limit: '20mb' }), async (req, r
     }
     if (e?.code === 'file_too_large') {
       return res.status(413).json({ ok: false, error: e.code, maxBytes: e.maxBytes || FILE_UPLOAD_MAX_BYTES });
+    }
+    if (e?.code === 'zen_file_too_large') {
+      return res.status(413).json({ ok: false, error: e.code, maxBytes: e.maxBytes || ZEN_UPLOAD_MAX_BYTES });
+    }
+    if (e?.code === 'zen_content_type_invalid' || e?.code === 'zen_extension_required') {
+      return res.status(415).json({ ok: false, error: e.code });
+    }
+    if (e?.code === 'zen_header_invalid' || e?.code === 'zen_plaintext_not_allowed') {
+      return res.status(400).json({ ok: false, error: e.code });
     }
     if (e?.code === 'account_storage_quota_exceeded') {
       return sendStorageQuotaExceeded(res, e);
@@ -8828,6 +8945,10 @@ function sendEmbeddedUiTermsPage(req, res) {
   return sendEmbeddedUiStandalonePage(req, res, 'terms/index.html');
 }
 
+function sendEmbeddedUiMilleFleursPage(req, res) {
+  return sendEmbeddedUiStandalonePage(req, res, 'mille-fleurs/index.html');
+}
+
 function sendEmbeddedUiArchitecturePage(req, res) {
   return sendEmbeddedUiStandalonePage(req, res, 'architecture/index.html');
 }
@@ -8861,6 +8982,7 @@ app.get('/', sendEmbeddedUiRoot);
 app.get(['/home', '/home/', '/accueil', '/accueil/'], redirectEmbeddedUiAliasToRoot);
 app.get(['/privacy', '/privacy/', '/confidentialite', '/confidentialite/'], sendEmbeddedUiPrivacyPage);
 app.get(['/terms', '/terms/', '/conditions', '/conditions/', '/cgu', '/cgu/'], sendEmbeddedUiTermsPage);
+app.get(['/mille-fleurs', '/mille-fleurs/', '/millefleurs', '/millefleurs/', '/mille_fleurs', '/mille_fleurs/', '/charte-mille-fleurs', '/charte-mille-fleurs/'], sendEmbeddedUiMilleFleursPage);
 app.get(['/architecture', '/architecture/', '/carte', '/carte/', '/graph', '/graph/'], sendEmbeddedUiArchitecturePage);
 app.get(['/nossen/agent-memory', '/nossen/agent-memory/', '/nossen/prior-art', '/nossen/prior-art/'], sendEmbeddedUiNossenAgentMemoryPage);
 app.get(['/nossen/grok', '/nossen/grok/', '/nossen/world-brief', '/nossen/world-brief/', '/nossen/frontier-ai', '/nossen/frontier-ai/'], sendEmbeddedUiNossenGrokPage);
@@ -8925,6 +9047,14 @@ app.get([
   '/cgu/',
   '/terms',
   '/terms/',
+  '/mille-fleurs',
+  '/mille-fleurs/',
+  '/millefleurs',
+  '/millefleurs/',
+  '/mille_fleurs',
+  '/mille_fleurs/',
+  '/charte-mille-fleurs',
+  '/charte-mille-fleurs/',
   '/vivy',
   '/vivy/',
   '/casino',
@@ -14442,6 +14572,7 @@ app.post('/ai', async (req, res) => {
 });
 
 const { A11_AGENT_SYSTEM_PROMPT, A11_AGENT_DEV_PROMPT } = require('./lib/a11Agent.js');
+const { buildAgentsPersonaContext } = require('./src/persona/persona-engine.cjs');
 const { runAction, runActionsEnvelope, getAllowedActionNames } = require('./src/a11/tools-dispatcher.cjs');
 
 function buildA11AgentInjectedContext(messages, toolResults = [], options = {}) {
@@ -14565,8 +14696,12 @@ async function callA11LLMAttempt(messages, options = {}) {
     allowedActions: options.allowedActions,
     compact: options.compact,
   });
+  const personaContext = buildAgentsPersonaContext();
   const promptMessages = [
     { role: 'system', content: A11_AGENT_SYSTEM_PROMPT },
+    ...(personaContext
+      ? [{ role: 'system', content: personaContext }]
+      : []),
     { role: 'system', content: A11_AGENT_DEV_PROMPT },
     { role: 'user', content: injectedContext }
   ];

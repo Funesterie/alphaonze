@@ -51,6 +51,9 @@ const {
   processClosedPhaseD40V8Plus,
   processTurboD40V9,
 } = require('../audio/double-harmonic-closed-phase-v8.cjs');
+const {
+  exportZenReliqueForPublic,
+} = require('../audio/zen-relique-exporter.cjs');
 
 const DEFAULT_MAX_MB = 80;
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -124,6 +127,7 @@ function extForUpload(file = {}) {
 
 function contentTypeForFile(filename = '') {
   const ext = path.extname(filename).toLowerCase();
+  if (ext === '.json') return 'application/json; charset=utf-8';
   if (ext === '.mp3') return 'audio/mpeg';
   if (ext === '.flac') return 'audio/flac';
   if (ext === '.ogg') return 'audio/ogg';
@@ -209,10 +213,15 @@ function pruneIndex(indexPath, root, ttlMs) {
     const createdAt = Date.parse(asset.createdAt || '') || 0;
     const expired = createdAt && now - createdAt > ttlMs;
     if (expired) {
-      for (const key of ['inputFilename', 'outputFilename']) {
+      for (const key of ['inputFilename', 'outputFilename', 'manifestFilename']) {
         const filename = path.basename(String(asset[key] || ''));
         if (!filename) continue;
         try { fs.rmSync(path.join(root, filename), { force: true }); } catch {}
+      }
+      for (const filename of Array.isArray(asset.outputFilenames) ? asset.outputFilenames : []) {
+        const safe = path.basename(String(filename || ''));
+        if (!safe) continue;
+        try { fs.rmSync(path.join(root, safe), { force: true }); } catch {}
       }
       continue;
     }
@@ -306,6 +315,101 @@ function createDoubleHarmonicRouter(options = {}) {
       v8pivot: buildClosedPhaseD40PlanV8Pivot(),
       v9turbo: buildTurboD40PlanV9(),
     });
+  });
+
+  router.post('/relique/export', verifyJWT, upload.single('audio'), async (req, res) => {
+    try {
+      pruneIndex(indexPath, assetRoot, ttlMs);
+      if (!req.file?.buffer?.length) {
+        return res.status(400).json({ ok: false, error: 'missing_audio', message: 'Ajoute une relique WAV/Zen.' });
+      }
+
+      const id = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+      const base = safeBaseName(req.body?.name || req.file.originalname || 'relique');
+      const inputExt = extForUpload(req.file);
+      const inputFilename = `${id}-${base}.relique.${inputExt === 'wav' ? 'wav' : inputExt}`;
+      const inputPath = path.join(assetRoot, inputFilename);
+      fs.writeFileSync(inputPath, req.file.buffer);
+
+      const polish = reqBoolean(req.body?.polish || req.query?.polish || req.body?.protectivePolish || req.query?.protectivePolish) === true;
+      const exportBase = `${id}-${base}-zen-relique`;
+      const result = await exportZenReliqueForPublic({
+        inputPath,
+        outputDir: assetRoot,
+        baseName: exportBase,
+        polish,
+      });
+
+      const outputFilenames = Object.values(result.outputs || {})
+        .map((entry) => path.basename(String(entry?.path || '')))
+        .filter(Boolean);
+      const manifestFilename = path.basename(result.manifestPath);
+      const primaryOutput = path.basename(
+        result.outputs?.polishedFlac?.path
+        || result.outputs?.flac?.path
+        || result.outputs?.polishedWav?.path
+        || result.outputs?.wav?.path
+        || ''
+      );
+      const token = crypto.randomBytes(18).toString('base64url');
+      const createdAt = new Date().toISOString();
+      const owner = String(req.user?.email || req.user?.username || req.user?.sub || '').trim();
+      const asset = {
+        id,
+        token,
+        createdAt,
+        owner,
+        originalName: req.file.originalname || '',
+        inputFilename,
+        outputFilename: primaryOutput,
+        outputFilenames,
+        manifestFilename,
+        contentType: contentTypeForFile(primaryOutput),
+        method: 'zen-relique-public-export',
+        polish,
+        repairs: result.repairs,
+        audio: result.audio,
+        bytes: primaryOutput ? fs.statSync(path.join(assetRoot, primaryOutput)).size : 0,
+      };
+      const index = readIndex(indexPath);
+      index.assets = [asset, ...index.assets].slice(0, 300);
+      writeIndex(indexPath, index);
+
+      const baseUrl = routePublicBase(req);
+      const makeUrl = (filename) => {
+        const local = `/api/double-harmonic/out/${encodeURIComponent(filename)}`;
+        return {
+          url: local,
+          shareUrl: `${local}?token=${encodeURIComponent(token)}`,
+          publicUrl: baseUrl ? `${baseUrl}${local}` : local,
+          publicShareUrl: baseUrl ? `${baseUrl}${local}?token=${encodeURIComponent(token)}` : `${local}?token=${encodeURIComponent(token)}`,
+        };
+      };
+      return res.json({
+        ok: true,
+        id,
+        schema: result.schema,
+        polish,
+        reliqueOriginalPreserved: true,
+        audio: result.audio,
+        repairs: result.repairs,
+        primary: primaryOutput ? { filename: primaryOutput, ...makeUrl(primaryOutput) } : null,
+        manifest: { filename: manifestFilename, ...makeUrl(manifestFilename) },
+        outputs: Object.fromEntries(
+          Object.entries(result.outputs || {}).map(([key, entry]) => {
+            const filename = path.basename(String(entry?.path || ''));
+            return [key, { filename, bytes: entry.bytes, sha256: entry.sha256, ...makeUrl(filename) }];
+          })
+        ),
+      });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        error: 'zen_relique_export_failed',
+        code: error?.code || undefined,
+        message: String(error?.message || error),
+      });
+    }
   });
 
   router.get('/v2/status', (_req, res) => {
@@ -487,6 +591,7 @@ function createDoubleHarmonicRouter(options = {}) {
       ok: true,
       v9turbo: buildTurboD40PlanV9({
         maxSeconds: reqNumber(_req.query?.maxSeconds),
+        frameMs: reqNumber(_req.query?.frameMs),
         cycleSeconds: reqNumber(_req.query?.cycleSeconds),
         userK: reqNumber(
           _req.query?.userK
@@ -498,6 +603,17 @@ function createDoubleHarmonicRouter(options = {}) {
         kCeiling: reqNumber(_req.query?.kCeiling),
         phaseSlots: reqNumber(_req.query?.phaseSlots || _req.query?.binaryGridSlots),
         c7PhaseScale: reqNumber(_req.query?.c7PhaseScale),
+        modulation: _req.query?.modulation || _req.query?.modulationMode,
+        electrolysis: reqBoolean(_req.query?.electrolysis || _req.query?.electrolysisGuitar),
+        frequencyHz: reqNumber(_req.query?.frequencyHz || _req.query?.modulationFrequencyHz || _req.query?.electrolysisHz || _req.query?.waterFrequencyHz),
+        frequencyMinHz: reqNumber(_req.query?.frequencyMinHz || _req.query?.minFrequencyHz || _req.query?.frequencyLowHz || _req.query?.electrolysisMinHz || _req.query?.waterMinHz),
+        frequencyMaxHz: reqNumber(_req.query?.frequencyMaxHz || _req.query?.maxFrequencyHz || _req.query?.frequencyHighHz || _req.query?.electrolysisMaxHz || _req.query?.waterMaxHz),
+        amount: reqNumber(_req.query?.amount || _req.query?.modulationAmount),
+        irregularity: reqNumber(_req.query?.irregularity),
+        asymmetry: reqNumber(_req.query?.asymmetry),
+        bidirectional: reqBoolean(_req.query?.bidirectional),
+        followForce: reqNumber(_req.query?.followForce),
+        schemaMix: reqNumber(_req.query?.schemaMix),
       }),
     });
   });
@@ -1292,6 +1408,17 @@ function createDoubleHarmonicRouter(options = {}) {
           kCeiling: reqNumber(req.body?.kCeiling || req.query?.kCeiling),
           phaseSlots: reqNumber(req.body?.phaseSlots || req.query?.phaseSlots || req.body?.binaryGridSlots || req.query?.binaryGridSlots),
           c7PhaseScale: reqNumber(req.body?.c7PhaseScale || req.query?.c7PhaseScale),
+          modulation: req.body?.modulation || req.query?.modulation || req.body?.modulationMode || req.query?.modulationMode,
+          electrolysis: reqBoolean(req.body?.electrolysis || req.query?.electrolysis || req.body?.electrolysisGuitar || req.query?.electrolysisGuitar),
+          frequencyHz: reqNumber(req.body?.frequencyHz || req.query?.frequencyHz || req.body?.modulationFrequencyHz || req.query?.modulationFrequencyHz || req.body?.electrolysisHz || req.query?.electrolysisHz || req.body?.waterFrequencyHz || req.query?.waterFrequencyHz),
+          frequencyMinHz: reqNumber(req.body?.frequencyMinHz || req.query?.frequencyMinHz || req.body?.minFrequencyHz || req.query?.minFrequencyHz || req.body?.frequencyLowHz || req.query?.frequencyLowHz || req.body?.electrolysisMinHz || req.query?.electrolysisMinHz || req.body?.waterMinHz || req.query?.waterMinHz),
+          frequencyMaxHz: reqNumber(req.body?.frequencyMaxHz || req.query?.frequencyMaxHz || req.body?.maxFrequencyHz || req.query?.maxFrequencyHz || req.body?.frequencyHighHz || req.query?.frequencyHighHz || req.body?.electrolysisMaxHz || req.query?.electrolysisMaxHz || req.body?.waterMaxHz || req.query?.waterMaxHz),
+          amount: reqNumber(req.body?.amount || req.query?.amount || req.body?.modulationAmount || req.query?.modulationAmount),
+          irregularity: reqNumber(req.body?.irregularity || req.query?.irregularity),
+          asymmetry: reqNumber(req.body?.asymmetry || req.query?.asymmetry),
+          bidirectional: reqBoolean(req.body?.bidirectional || req.query?.bidirectional),
+          followForce: reqNumber(req.body?.followForce || req.query?.followForce),
+          schemaMix: reqNumber(req.body?.schemaMix || req.query?.schemaMix),
         },
       });
       const token = crypto.randomBytes(18).toString('base64url');
@@ -1319,6 +1446,7 @@ function createDoubleHarmonicRouter(options = {}) {
         phaseClosure: processing.phaseClosure || null,
         weights: processing.weights || null,
         dynamicSummary: processing.dynamic?.summary || null,
+        modulation: processing.dynamic?.modulation || null,
         safety: processing.safety || null,
         bytes: fs.statSync(outputPath).size,
       };
@@ -1438,6 +1566,7 @@ function createDoubleHarmonicRouter(options = {}) {
         phaseClosure: processing.phaseClosure || null,
         weights: processing.weights || null,
         dynamicSummary: processing.dynamic?.summary || null,
+        modulation: processing.dynamic?.modulation || null,
         safety: processing.safety || null,
         bytes: fs.statSync(outputPath).size,
       };
@@ -1602,7 +1731,7 @@ function createDoubleHarmonicRouter(options = {}) {
     }
   });
 
-  router.post('/v9turbo/process', verifyJWT, upload.single('audio'), async (req, res) => {
+  router.post(['/v9turbo/process', '/v9electrolysis/process'], verifyJWT, upload.single('audio'), async (req, res) => {
     try {
       pruneIndex(indexPath, assetRoot, ttlMs);
       if (!req.file?.buffer?.length) {
@@ -1611,15 +1740,28 @@ function createDoubleHarmonicRouter(options = {}) {
 
       const id = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
       const base = safeBaseName(req.body?.name || req.file.originalname || 'audio');
+      const requestedElectrolysis = /\/v9electrolysis\/process$/i.test(req.path)
+        || reqBoolean(req.body?.electrolysis || req.query?.electrolysis)
+        || reqBoolean(req.body?.electrolysisGuitar || req.query?.electrolysisGuitar)
+        || String(req.body?.modulation || req.query?.modulation || req.body?.modulationMode || req.query?.modulationMode || '').toLowerCase() === 'electrolysis-guitar';
+      const publicVariant = requestedElectrolysis ? 'v9electrolysis' : 'v9turbo';
       const inputExt = extForUpload(req.file);
-      const inputFilename = `${id}-${base}-v9turbo-input.${inputExt}`;
+      const inputFilename = `${id}-${base}-${publicVariant}-input.${inputExt}`;
       const outputFormat = resolveOutputFormat(req.body?.format || req.query?.format, inputExt);
-      const outputFilename = `${id}-${base}-funesterie-d40-v9turbo.${outputFormat.ext}`;
+      const outputFilename = `${id}-${base}-funesterie-d40-${publicVariant}.${outputFormat.ext}`;
       const inputPath = path.join(assetRoot, inputFilename);
       const outputPath = path.join(assetRoot, outputFilename);
       fs.writeFileSync(inputPath, req.file.buffer);
 
       const profile = String(req.body?.profile || req.query?.profile || 'blend').trim() || 'blend';
+      const requestedAmount = reqNumber(req.body?.amount || req.query?.amount || req.body?.modulationAmount || req.query?.modulationAmount);
+      const requestedIrregularity = reqNumber(req.body?.irregularity || req.query?.irregularity);
+      const requestedAsymmetry = reqNumber(req.body?.asymmetry || req.query?.asymmetry);
+      const requestedLegacyHotElectrolysis = requestedElectrolysis
+        && Math.abs((requestedAmount ?? 0) - 0.05) < 1e-9
+        && Math.abs((requestedIrregularity ?? 0) - 0.5) < 1e-9
+        && Math.abs((requestedAsymmetry ?? 0) - 0.3) < 1e-9
+        && !reqBoolean(req.body?.allowLegacyElectrolysisHot || req.query?.allowLegacyElectrolysisHot);
       const processing = await processAudioV9Turbo({
         inputPath,
         outputPath,
@@ -1643,6 +1785,20 @@ function createDoubleHarmonicRouter(options = {}) {
           kCeiling: reqNumber(req.body?.kCeiling || req.query?.kCeiling),
           phaseSlots: reqNumber(req.body?.phaseSlots || req.query?.phaseSlots || req.body?.binaryGridSlots || req.query?.binaryGridSlots),
           c7PhaseScale: reqNumber(req.body?.c7PhaseScale || req.query?.c7PhaseScale),
+          modulation: req.body?.modulation || req.query?.modulation || req.body?.modulationMode || req.query?.modulationMode || (requestedElectrolysis ? 'electrolysis-guitar' : undefined),
+          modulationMode: req.body?.modulationMode || req.query?.modulationMode || (requestedElectrolysis ? 'electrolysis-guitar' : undefined),
+          electrolysis: requestedElectrolysis || reqBoolean(req.body?.electrolysis || req.query?.electrolysis),
+          electrolysisGuitar: requestedElectrolysis || reqBoolean(req.body?.electrolysisGuitar || req.query?.electrolysisGuitar),
+          frequencyHz: reqNumber(req.body?.frequencyHz || req.query?.frequencyHz || req.body?.modulationFrequencyHz || req.query?.modulationFrequencyHz || req.body?.electrolysisHz || req.query?.electrolysisHz || req.body?.waterFrequencyHz || req.query?.waterFrequencyHz) ?? (requestedElectrolysis ? 40.44 : undefined),
+          frequencyMinHz: reqNumber(req.body?.frequencyMinHz || req.query?.frequencyMinHz || req.body?.minFrequencyHz || req.query?.minFrequencyHz || req.body?.frequencyLowHz || req.query?.frequencyLowHz || req.body?.electrolysisMinHz || req.query?.electrolysisMinHz || req.body?.waterMinHz || req.query?.waterMinHz) ?? (requestedElectrolysis ? 40.26 : undefined),
+          frequencyMaxHz: reqNumber(req.body?.frequencyMaxHz || req.query?.frequencyMaxHz || req.body?.maxFrequencyHz || req.query?.maxFrequencyHz || req.body?.frequencyHighHz || req.query?.frequencyHighHz || req.body?.electrolysisMaxHz || req.query?.electrolysisMaxHz || req.body?.waterMaxHz || req.query?.waterMaxHz) ?? (requestedElectrolysis ? 40.62 : undefined),
+          amount: requestedLegacyHotElectrolysis ? 0.042 : (requestedAmount ?? (requestedElectrolysis ? 0.042 : undefined)),
+          modulationAmount: reqNumber(req.body?.modulationAmount || req.query?.modulationAmount),
+          irregularity: requestedLegacyHotElectrolysis ? 0.36 : (requestedIrregularity ?? (requestedElectrolysis ? 0.36 : undefined)),
+          asymmetry: requestedLegacyHotElectrolysis ? 0.27 : (requestedAsymmetry ?? (requestedElectrolysis ? 0.27 : undefined)),
+          bidirectional: requestedElectrolysis ? true : reqBoolean(req.body?.bidirectional || req.query?.bidirectional),
+          followForce: reqNumber(req.body?.followForce || req.query?.followForce),
+          schemaMix: reqNumber(req.body?.schemaMix || req.query?.schemaMix),
         },
       });
       const token = crypto.randomBytes(18).toString('base64url');
@@ -1661,7 +1817,7 @@ function createDoubleHarmonicRouter(options = {}) {
         profile: processing.profile,
         preset: processing.preset,
         intensity: processing.intensity || 'vocal-safe-99ms-turbo-1024',
-        variant: processing.variant || 'v9turbo',
+        variant: publicVariant,
         resonance: processing.resonance || null,
         operators: processing.operators || null,
         projection: processing.projection || null,
@@ -1685,7 +1841,7 @@ function createDoubleHarmonicRouter(options = {}) {
         id,
         method: processing.method,
         state: processing.state,
-        variant: processing.variant,
+        variant: publicVariant,
         profile: processing.profile,
         preset: processing.preset,
         intensity: processing.intensity || 'vocal-safe-99ms-turbo-1024',
@@ -1704,7 +1860,9 @@ function createDoubleHarmonicRouter(options = {}) {
         contentType: outputFormat.contentType,
         filename: outputFilename,
         bytes: asset.bytes,
-        publicSummary: 'V9 Turbo: V8 Pivot valide, poids haut/bas dynamiques vocal-safe a 99 ms, fermeture 1024 et mg_phase recentre conserves.',
+        publicSummary: requestedElectrolysis || processing.dynamic?.modulation?.enabled
+          ? 'V9 Électrolyse: V8 Pivot conserve, micro-modulation asymétrique/irrégulière audio-only 40.26-40.62 Hz sur les enveloppes haut/bas.'
+          : 'V9 Turbo: V8 Pivot valide, poids haut/bas dynamiques vocal-safe a 99 ms, fermeture 1024 et mg_phase recentre conserves.',
       });
     } catch (error) {
       return res.status(500).json({
@@ -1787,11 +1945,15 @@ function createDoubleHarmonicRouter(options = {}) {
     try {
       pruneIndex(indexPath, assetRoot, ttlMs);
       const filename = path.basename(String(req.params.filename || ''));
-      if (!/^[\w.-]+\.(?:mp3|m4a|wav|flac|ogg)$/i.test(filename)) {
+      if (!/^[\w.-]+\.(?:mp3|m4a|wav|flac|ogg|json)$/i.test(filename)) {
         return res.status(400).json({ ok: false, error: 'invalid_audio_asset' });
       }
       const index = readIndex(indexPath);
-      const asset = index.assets.find((item) => item.outputFilename === filename);
+      const asset = index.assets.find((item) => (
+        item.outputFilename === filename
+        || item.manifestFilename === filename
+        || (Array.isArray(item.outputFilenames) && item.outputFilenames.includes(filename))
+      ));
       const token = String(req.query?.token || '').trim();
       if (!asset) return res.status(404).json({ ok: false, error: 'audio_asset_not_found' });
 
@@ -1810,7 +1972,7 @@ function createDoubleHarmonicRouter(options = {}) {
     }
   });
 
-  router.use(['/process', '/v2/analyze', '/v2/process', '/v3/process', '/v4/process', '/v5/process', '/v6/process', '/v7/process', '/v71/process', '/v8/process', '/v8plus/process', '/v8pivot/process', '/v9turbo/process'], (err, _req, res, _next) => {
+  router.use(['/process', '/relique/export', '/v2/analyze', '/v2/process', '/v3/process', '/v4/process', '/v5/process', '/v6/process', '/v7/process', '/v71/process', '/v8/process', '/v8plus/process', '/v8pivot/process', '/v9turbo/process', '/v9electrolysis/process'], (err, _req, res, _next) => {
     return res.status(400).json({
       ok: false,
       error: 'double_harmonic_upload_failed',

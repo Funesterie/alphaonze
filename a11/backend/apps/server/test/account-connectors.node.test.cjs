@@ -10,6 +10,7 @@ const {
   buildConnectorStatePrompt,
   isConnectorCapabilitiesQuestion,
   resolveOAuthProviderConfig,
+  resolveSocialProviderConfig,
 } = require('../src/auth/account-connectors.cjs');
 
 test('detecte les questions outils et connecteurs autorisees', () => {
@@ -105,7 +106,14 @@ test('construit un etat avec Google et Microsoft lies en meme temps', () => {
 
 test('construit un etat Fondateur avec connecteurs avances annonces mais bornes a la session', () => {
   const state = buildAccountConnectorState({
-    env: {},
+    env: {
+      SOCIAL_YOUTUBE_CLIENT_ID: 'yt-id',
+      SOCIAL_YOUTUBE_CLIENT_SECRET: 'yt-secret',
+      SOCIAL_YOUTUBE_REDIRECT_URI: 'https://funesterie.me/api/admin/social-connect/youtube/callback',
+      SOCIAL_META_APP_ID: 'meta-id',
+      SOCIAL_META_APP_SECRET: 'meta-secret',
+      SOCIAL_META_REDIRECT_URI: 'https://funesterie.me/api/admin/social-connect/meta/callback',
+    },
     user: {
       id: 'founder-1',
       email: 'founder@example.test',
@@ -116,8 +124,35 @@ test('construit un etat Fondateur avec connecteurs avances annonces mais bornes 
   assert.equal(state.tier, 'founder');
   assert.equal(state.quota.label, '30 Go');
   assert.equal(state.connectors.github.minimumTier, 'founder');
-  assert.equal(state.connectors.youtube.minimumTier, 'founder');
+  assert.equal(state.connectors.youtube.minimumTier, 'premium');
+  assert.equal(state.connectors.meta.minimumTier, 'premium');
+  assert.equal(state.connectors.instagram.minimumTier, 'premium');
+  assert.equal(state.connectors.youtube.configured, true);
+  assert.equal(state.connectors.meta.configured, true);
+  assert.equal(state.connectors.instagram.configured, true);
   assert.match(buildConnectorStateContext(state), /sans suppression ni acces cross-compte/);
+  assert.match(buildConnectorStateContext(state), /Facebook\/Instagram/);
+});
+
+test('resout les connecteurs sociaux YouTube et Meta', () => {
+  const youtube = resolveSocialProviderConfig('youtube', {
+    env: {
+      SOCIAL_YOUTUBE_CLIENT_ID: 'yt-id',
+      SOCIAL_YOUTUBE_CLIENT_SECRET: 'yt-secret',
+    },
+    derivedCallbackAvailable: true,
+  });
+  const meta = resolveSocialProviderConfig('instagram', {
+    env: {
+      SOCIAL_META_APP_ID: 'meta-id',
+      SOCIAL_META_APP_SECRET: 'meta-secret',
+    },
+    derivedCallbackAvailable: true,
+  });
+
+  assert.equal(youtube.configured, true);
+  assert.equal(meta.provider, 'meta');
+  assert.equal(meta.configured, true);
 });
 
 test('injecte le bloc connecteurs une seule fois dans le prompt systeme', () => {

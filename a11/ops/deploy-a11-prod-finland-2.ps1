@@ -1,10 +1,11 @@
 param(
   [string]$RepoRoot = "D:\projets\funesterie",
   [string]$Remote = $(if ($env:A11_HETZNER_REMOTE) { $env:A11_HETZNER_REMOTE } else { "deploy@37.27.63.109" }),
-  [string]$SshKey = $(if ($env:A11_HETZNER_SSH_KEY) { $env:A11_HETZNER_SSH_KEY } else { "C:\Users\Djeff\.ssh\codex-a11-hetzner-20260602_ed25519" }),
+  [string]$SshKey = $(if ($env:A11_HETZNER_SSH_KEY) { $env:A11_HETZNER_SSH_KEY } else { "C:\Users\cella\.ssh\codex-a11-hetzner-20260627_ed25519" }),
   [switch]$ReuseRemoteSecrets,
   [switch]$BlueGreen,
-  [switch]$CleanOldBlueGreen
+  [switch]$CleanOldBlueGreen,
+  [switch]$SkipSourceUpdate
 )
 
 Set-StrictMode -Version Latest
@@ -50,6 +51,7 @@ $RemoteRoot = "/home/deploy/a11-prod"
 $RemoteDataRoot = "/home/deploy/a11-data"
 $RemoteArchive = "$RemoteRoot/releases/$Stamp.tar.gz"
 $JfrogEnv = Join-Path $RepoRoot "scripts\jfrog\jfrog.env.ps1"
+$StrongSongOllamaModel = if ($env:A11_OLLAMA_STRONG_SONG_MODEL) { $env:A11_OLLAMA_STRONG_SONG_MODEL } else { "qwen2.5:7b" }
 
 function Require-Path([string]$Path, [string]$Label) {
   if (-not (Test-Path -LiteralPath $Path)) {
@@ -214,7 +216,11 @@ function Assert-FunesterieWebBundle([string]$DistRoot, [string]$Label) {
 }
 
 Require-Path $RepoRoot "Repo"
-Invoke-SourceUpdate $RepoRoot
+if ($SkipSourceUpdate) {
+  Write-Host "Mise a jour source sautee a la demande; packaging depuis le workspace local." -ForegroundColor Yellow
+} else {
+  Invoke-SourceUpdate $RepoRoot
+}
 $BuildCommit = (& git -C $RepoRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($BuildCommit)) {
   throw "Lecture du commit Git impossible"
@@ -553,15 +559,86 @@ services:
       A11_VOICE_XTTS_RVC_URL: ${A11_VOICE_XTTS_RVC_URL:-http://a11-xtts-rvc:5000}
       A11_PROFILE_ENV: /app/profiles/a11.prod.env.disabled
       A11_RUNTIME_ROOT: /app/runtime
+      A11_EPISODIC_MEMORY_DIR: /app/runtime/episodic-memory
       A11_LLM_PROVIDER: groq
-      A11_OLLAMA_PRIMARY_MODEL: llama3.2:3b
-      A11_OLLAMA_FALLBACK_MODEL: llama3.2:3b
-      A11_TRANSLATION_MODEL: llama3.2:3b
+      A11_OLLAMA_PRIMARY_MODEL: qwen2.5:32b
+      A11_OLLAMA_FALLBACK_MODEL: qwen2.5:7b
+      VIVY_CHAT_LOCAL_FIRST: "false"
+      VIVY_OLLAMA_BASE_URL: http://a11-ollama:11434
+      VIVY_CHAT_LOCAL_MODEL: qwen2.5:7b
+      VIVY_CHAT_LOCAL_TIMEOUT_MS: ${VIVY_CHAT_LOCAL_TIMEOUT_MS:-90000}
+      VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS: ${VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS:-10000}
+      VIVY_CHAT_LOCAL_MAX_TOKENS: ${VIVY_CHAT_LOCAL_MAX_TOKENS:-800}
+      VIVY_SONG_PROVIDER: ${VIVY_SONG_PROVIDER:-groq}
+      VIVY_XAI_MODEL: ${VIVY_XAI_MODEL:-grok-4.3}
+      OLLAMA_CLOUD_ENABLED: ${OLLAMA_CLOUD_ENABLED:-1}
+      OLLAMA_CLOUD_BASE_URL: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
+      OLLAMA_CLOUD_LYRICS_MODEL: ${OLLAMA_CLOUD_LYRICS_MODEL:-gpt-oss:120b}
+      OLLAMA_CLOUD_FAST_MODEL: ${OLLAMA_CLOUD_FAST_MODEL:-gpt-oss:20b}
+      OLLAMA_CLOUD_CHAT_ENABLED: ${OLLAMA_CLOUD_CHAT_ENABLED:-1}
+      OLLAMA_CLOUD_CHAT_MODEL: ${OLLAMA_CLOUD_CHAT_MODEL:-gpt-oss:120b}
+      OLLAMA_CLOUD_CHAT_THINK_LEVEL: ${OLLAMA_CLOUD_CHAT_THINK_LEVEL:-high}
+      OLLAMA_CLOUD_CHAT_TIMEOUT_MS: ${OLLAMA_CLOUD_CHAT_TIMEOUT_MS:-300000}
+      OLLAMA_CLOUD_THINK_LEVEL: ${OLLAMA_CLOUD_THINK_LEVEL:-high}
+      OLLAMA_CLOUD_LYRICS_TIMEOUT_MS: ${OLLAMA_CLOUD_LYRICS_TIMEOUT_MS:-360000}
+      VIVY_SONG_CERBERE_FALLBACK_ENABLED: ${VIVY_SONG_CERBERE_FALLBACK_ENABLED:-1}
+      VIVY_SONG_CERBERE_MODEL: ${VIVY_SONG_CERBERE_MODEL:-anthropic/claude-sonnet-4.5}
+      VIVY_SONG_CERBERE_TIMEOUT_MS: ${VIVY_SONG_CERBERE_TIMEOUT_MS:-240000}
+      VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS: ${VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS:-300000}
+      VIVY_CHAT_MAX_TOKENS: ${VIVY_CHAT_MAX_TOKENS:-5000}
+      VIVY_CHAT_MAX_TOKENS_SONG: ${VIVY_CHAT_MAX_TOKENS_SONG:-10000}
+      VIVY_CHAT_MAX_TOKENS_SONG_CEILING: ${VIVY_CHAT_MAX_TOKENS_SONG_CEILING:-12000}
+      VIVY_SONG_ALLOW_LOCAL_FALLBACK: ${VIVY_SONG_ALLOW_LOCAL_FALLBACK:-true}
+      VIVY_SONG_LOCAL_MODEL: ${VIVY_SONG_LOCAL_MODEL:-qwen2.5:7b}
+      VIVY_STREAM_FREESTYLE_MAX_CHARS: ${VIVY_STREAM_FREESTYLE_MAX_CHARS:-12000}
+      VIVY_STREAM_FREESTYLE_MAX_TOKENS: ${VIVY_STREAM_FREESTYLE_MAX_TOKENS:-10000}
+      VIVY_STREAM_COVER_ENABLED: ${VIVY_STREAM_COVER_ENABLED:-1}
+      VIVY_STREAM_COVER_URL: ${VIVY_STREAM_COVER_URL:-http://127.0.0.1:3000/api/tools/generate_sd}
+      VIVY_STREAM_COVER_TIMEOUT_MS: ${VIVY_STREAM_COVER_TIMEOUT_MS:-120000}
+      VIVY_STREAM_CLIP_ENABLED: ${VIVY_STREAM_CLIP_ENABLED:-1}
+      VIVY_STREAM_CLIP_PROVIDER: ${VIVY_STREAM_CLIP_PROVIDER:-auto}
+      VIVY_STREAM_CLIP_DURATION_SECONDS: ${VIVY_STREAM_CLIP_DURATION_SECONDS:-3}
+      VIVY_STREAM_CLIP_TIMEOUT_MS: ${VIVY_STREAM_CLIP_TIMEOUT_MS:-2700000}
+      VIVY_STREAM_FULL_CLIP_ENABLED: ${VIVY_STREAM_FULL_CLIP_ENABLED:-1}
+      VIVY_STREAM_FULL_CLIP_SOURCE_IMAGE_URL: ${VIVY_STREAM_FULL_CLIP_SOURCE_IMAGE_URL:-}
+      VIVY_STREAM_DREAMCLIP_SOURCE_IMAGE_URL: ${VIVY_STREAM_DREAMCLIP_SOURCE_IMAGE_URL:-}
+      VIVY_STREAM_FULL_CLIP_PROVIDER: ${VIVY_STREAM_FULL_CLIP_PROVIDER:-}
+      VIVY_STREAM_FULL_CLIP_SCENES: ${VIVY_STREAM_FULL_CLIP_SCENES:-8}
+      VIVY_STREAM_DREAMCLIP_SCENES: ${VIVY_STREAM_DREAMCLIP_SCENES:-8}
+      VIVY_STREAM_DREAMCLIP_MAX_DURATION_SECONDS: ${VIVY_STREAM_DREAMCLIP_MAX_DURATION_SECONDS:-420}
+      VIVY_STREAM_DREAMCLIP_LOOP_SECONDS: ${VIVY_STREAM_DREAMCLIP_LOOP_SECONDS:-15}
+      VIVY_STREAM_DREAMCLIP_MIN_GENERATED_COVERAGE: ${VIVY_STREAM_DREAMCLIP_MIN_GENERATED_COVERAGE:-}
+      VIVY_STREAM_DREAMCLIP_ALLOW_STATIC_FALLBACK: ${VIVY_STREAM_DREAMCLIP_ALLOW_STATIC_FALLBACK:-}
+      VIVY_STREAM_FULL_CLIP_INSTRUMENTAL_SCENES: ${VIVY_STREAM_FULL_CLIP_INSTRUMENTAL_SCENES:-8}
+      VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS: ${VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS:-5}
+      VIVY_STREAM_FULL_CLIP_REUSE_CHORUS: ${VIVY_STREAM_FULL_CLIP_REUSE_CHORUS:-1}
+      VIVY_STREAM_FULL_CLIP_CONCURRENCY: ${VIVY_STREAM_FULL_CLIP_CONCURRENCY:-2}
+      VIVY_STREAM_FULL_CLIP_GENERATE_SCENE_LOOPS: ${VIVY_STREAM_FULL_CLIP_GENERATE_SCENE_LOOPS:-1}
+      VIVY_STREAM_FULL_CLIP_LOOP_SECONDS: ${VIVY_STREAM_FULL_CLIP_LOOP_SECONDS:-8}
+      VIVY_STREAM_FULL_CLIP_WIDTH: ${VIVY_STREAM_FULL_CLIP_WIDTH:-1280}
+      VIVY_STREAM_FULL_CLIP_HEIGHT: ${VIVY_STREAM_FULL_CLIP_HEIGHT:-720}
+      VIVY_STREAM_FULL_CLIP_FPS: ${VIVY_STREAM_FULL_CLIP_FPS:-24}
+      VIVY_STREAM_FULL_CLIP_VISUAL_QA: ${VIVY_STREAM_FULL_CLIP_VISUAL_QA:-}
+      A11_HF_VIDEO_PROVIDER: ${A11_HF_VIDEO_PROVIDER:-replicate}
+      A11_REPLICATE_VIDEO_MODEL: ${A11_REPLICATE_VIDEO_MODEL:-wan-video/wan-2.6-i2v}
+      A11_VIDEO_PROMPT_MAX_DURATION_SECONDS: ${A11_VIDEO_PROMPT_MAX_DURATION_SECONDS:-15}
+      VIVY_STREAM_FULL_CLIP_CROP_SOURCE_IMAGE: ${VIVY_STREAM_FULL_CLIP_CROP_SOURCE_IMAGE:-1}
+      VIVY_STREAM_FULL_CLIP_SOURCE_CROP_WIDTH_RATIO: ${VIVY_STREAM_FULL_CLIP_SOURCE_CROP_WIDTH_RATIO:-0.58}
+      VIVY_STREAM_FULL_CLIP_SOURCE_CROP_X_BIAS: ${VIVY_STREAM_FULL_CLIP_SOURCE_CROP_X_BIAS:-0.62}
+      VIVY_STREAM_FULL_CLIP_SOURCE_CROP_Y_BIAS: ${VIVY_STREAM_FULL_CLIP_SOURCE_CROP_Y_BIAS:-0.5}
+      VIVY_STREAM_FULL_CLIP_DEMOSAIC_GRID: ${VIVY_STREAM_FULL_CLIP_DEMOSAIC_GRID:-0}
+      VIVY_STREAM_FULL_CLIP_DEMOSAIC_COLUMNS: ${VIVY_STREAM_FULL_CLIP_DEMOSAIC_COLUMNS:-3}
+      VIVY_STREAM_FULL_CLIP_DEMOSAIC_ROWS: ${VIVY_STREAM_FULL_CLIP_DEMOSAIC_ROWS:-3}
+      VIVY_STREAM_FULL_CLIP_DEMOSAIC_ACTIVE_HEIGHT_RATIO: ${VIVY_STREAM_FULL_CLIP_DEMOSAIC_ACTIVE_HEIGHT_RATIO:-0.9}
+      VIVY_STREAM_FULL_CLIP_DEMOSAIC_SEGMENT_SECONDS: ${VIVY_STREAM_FULL_CLIP_DEMOSAIC_SEGMENT_SECONDS:-1.25}
+      VIVY_STREAM_FULL_CLIP_DEMOSAIC_ORDER: ${VIVY_STREAM_FULL_CLIP_DEMOSAIC_ORDER:-4,1,5,7,2,8}
+      A11_TRANSLATION_MODEL: ${A11_TRANSLATION_MODEL:-qwen2.5:32b}
       LOCAL_DEFAULT_MODEL: llama3.2:3b
       A11_LLM_FALLBACK_PROVIDER: ollama
       A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,openai,gemini,xai,huggingface,deepseek,together
       A11_CERBERE_LOCAL_ONLY: "false"
-      A11_LOCAL_CHAT_TIMEOUT_MS: "45000"
+      A11_LOCAL_CHAT_TIMEOUT_MS: "90000"
+      A11_LOCAL_SONG_TIMEOUT_MS: "180000"
       A11_VIDEO_PROMPT_GROQ_ENABLED: ${A11_VIDEO_PROMPT_GROQ_ENABLED:-1}
       A11_VIDEO_PROMPT_BUILDER_LLM: ${A11_VIDEO_PROMPT_BUILDER_LLM:-1}
       A11_OLLAMA_KEEP_ALIVE: "30m"
@@ -598,10 +675,19 @@ services:
       A11_TTS_ASYNC_QUEUE_MAX: ${A11_TTS_ASYNC_QUEUE_MAX:-50}
       A11_MATCH_ARENA_ENABLED: ${A11_MATCH_ARENA_ENABLED:-true}
       A11_MATCH_ARENA_WORKER_TOKEN_FILE: ${A11_MATCH_ARENA_WORKER_TOKEN_FILE:-/app/runtime/secrets/match_arena_worker_token}
+      A11_VIDEO_COMFY_CLOUD_ENABLED: ${A11_VIDEO_COMFY_CLOUD_ENABLED:-1}
+      A11_COMFY_CLOUD_API_KEY: ${A11_COMFY_CLOUD_API_KEY:-}
+      A11_COMFY_CLOUD_BASE_URL: ${A11_COMFY_CLOUD_BASE_URL:-https://cloud.comfy.org}
+      A11_COMFY_CLOUD_WORKFLOW_PATH: ${A11_COMFY_CLOUD_WORKFLOW_PATH:-}
+      A11_COMFY_CLOUD_TIMEOUT_MS: ${A11_COMFY_CLOUD_TIMEOUT_MS:-2700000}
+      A11_COMFY_CLOUD_POLL_INTERVAL_MS: ${A11_COMFY_CLOUD_POLL_INTERVAL_MS:-5000}
+      A11_COMFY_CLOUD_WAN_MODEL: ${A11_COMFY_CLOUD_WAN_MODEL:-wan2.5-i2v-preview}
+      A11_COMFY_CLOUD_WAN_RESOLUTION: ${A11_COMFY_CLOUD_WAN_RESOLUTION:-480P}
       A11_VIDEO_PROXY_URL: ${A11_VIDEO_PROXY_URL:-}
       A11_VIDEO_PROXY_TOKEN: ${A11_VIDEO_PROXY_TOKEN:-}
       A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL: ${A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL:-}
-      A11_VIDEO_PROXY_TIMEOUT_MS: ${A11_VIDEO_PROXY_TIMEOUT_MS:-600000}
+      A11_VIDEO_PROXY_TIMEOUT_MS: ${A11_VIDEO_PROXY_TIMEOUT_MS:-2700000}
+      A11_VIDEO_ASYNC_JOB_TTL_MS: ${A11_VIDEO_ASYNC_JOB_TTL_MS:-2700000}
     depends_on:
       a11-postgres:
         condition: service_healthy
@@ -625,6 +711,111 @@ services:
       timeout: 10s
       start_period: 60s
       retries: 5
+
+  vivy-twitch-worker:
+    image: server-a11-backend:latest
+    container_name: vivy-twitch-worker
+    restart: unless-stopped
+    command: ["npm", "run", "worker:vivy:twitch"]
+    healthcheck:
+      disable: true
+    env_file:
+      - /srv/a11/secrets/compose.env
+    environment:
+      TWITCH_CHANNEL: ${TWITCH_CHANNEL:-}
+      TWITCH_BOT_USERNAME: ${TWITCH_BOT_USERNAME:-}
+      TWITCH_OAUTH_TOKEN: ${TWITCH_OAUTH_TOKEN:-}
+      TWITCH_ACCESS_TOKEN: ${TWITCH_ACCESS_TOKEN:-}
+      TWITCH_CLIENT_ID: ${TWITCH_CLIENT_ID:-}
+      TWITCH_REFRESH_TOKEN: ${TWITCH_REFRESH_TOKEN:-}
+      VIVY_STREAM_SECRET: ${VIVY_STREAM_SECRET:?VIVY_STREAM_SECRET is required}
+      VIVY_STREAM_INGEST_URL: ${VIVY_STREAM_INGEST_URL:-https://vivy.funesterie.me/api/vivy/stream/chat}
+      VIVY_STREAM_RESET_URL: ${VIVY_STREAM_RESET_URL:-https://vivy.funesterie.me/api/vivy/stream/reset}
+      VIVY_STREAM_STATE_URL: http://a11-backend:3000/api/vivy/stream/state
+      VIVY_PUBLIC_BASE_URL: ${VIVY_PUBLIC_BASE_URL:-https://vivy.funesterie.me}
+      VIVY_STREAM_COMMANDS_ONLY: ${VIVY_STREAM_COMMANDS_ONLY:-1}
+      VIVY_STREAM_ANNOUNCE_INTERVAL_MS: ${VIVY_STREAM_ANNOUNCE_INTERVAL_MS:-720000}
+      VIVY_STREAM_ANNOUNCE_DISABLED: ${VIVY_STREAM_ANNOUNCE_DISABLED:-0}
+      VIVY_STREAM_BOT_MESSAGE_GAP_MS: ${VIVY_STREAM_BOT_MESSAGE_GAP_MS:-15000}
+      VIVY_STREAM_TRACK_NOTICE_POLL_INTERVAL_MS: ${VIVY_STREAM_TRACK_NOTICE_POLL_INTERVAL_MS:-10000}
+      VIVY_STREAM_RECAP_INTERVAL_MS: ${VIVY_STREAM_RECAP_INTERVAL_MS:-1680000}
+      VIVY_STREAM_IDLE_JUKEBOX_DISABLED: ${VIVY_STREAM_IDLE_JUKEBOX_DISABLED:-1}
+      VIVY_STREAM_COVER_ENABLED: ${VIVY_STREAM_COVER_ENABLED:-1}
+      VIVY_STREAM_COVER_URL: ${VIVY_STREAM_COVER_URL:-http://127.0.0.1:3000/api/tools/generate_sd}
+      VIVY_STREAM_COVER_TIMEOUT_MS: ${VIVY_STREAM_COVER_TIMEOUT_MS:-120000}
+      VIVY_STREAM_CLIP_ENABLED: ${VIVY_STREAM_CLIP_ENABLED:-1}
+      VIVY_STREAM_CLIP_PROVIDER: ${VIVY_STREAM_CLIP_PROVIDER:-auto}
+      VIVY_STREAM_CLIP_DURATION_SECONDS: ${VIVY_STREAM_CLIP_DURATION_SECONDS:-3}
+      VIVY_STREAM_CLIP_TIMEOUT_MS: ${VIVY_STREAM_CLIP_TIMEOUT_MS:-2700000}
+      VIVY_STREAM_FULL_CLIP_ENABLED: ${VIVY_STREAM_FULL_CLIP_ENABLED:-1}
+      VIVY_STREAM_FULL_CLIP_SOURCE_IMAGE_URL: ${VIVY_STREAM_FULL_CLIP_SOURCE_IMAGE_URL:-}
+      VIVY_STREAM_DREAMCLIP_SOURCE_IMAGE_URL: ${VIVY_STREAM_DREAMCLIP_SOURCE_IMAGE_URL:-}
+      VIVY_STREAM_FULL_CLIP_PROVIDER: ${VIVY_STREAM_FULL_CLIP_PROVIDER:-}
+      VIVY_STREAM_FULL_CLIP_SCENES: ${VIVY_STREAM_FULL_CLIP_SCENES:-8}
+      VIVY_STREAM_DREAMCLIP_SCENES: ${VIVY_STREAM_DREAMCLIP_SCENES:-8}
+      VIVY_STREAM_DREAMCLIP_MAX_DURATION_SECONDS: ${VIVY_STREAM_DREAMCLIP_MAX_DURATION_SECONDS:-420}
+      VIVY_STREAM_DREAMCLIP_LOOP_SECONDS: ${VIVY_STREAM_DREAMCLIP_LOOP_SECONDS:-15}
+      VIVY_STREAM_DREAMCLIP_MIN_GENERATED_COVERAGE: ${VIVY_STREAM_DREAMCLIP_MIN_GENERATED_COVERAGE:-}
+      VIVY_STREAM_DREAMCLIP_ALLOW_STATIC_FALLBACK: ${VIVY_STREAM_DREAMCLIP_ALLOW_STATIC_FALLBACK:-}
+      VIVY_STREAM_FULL_CLIP_INSTRUMENTAL_SCENES: ${VIVY_STREAM_FULL_CLIP_INSTRUMENTAL_SCENES:-8}
+      VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS: ${VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS:-5}
+      VIVY_STREAM_FULL_CLIP_REUSE_CHORUS: ${VIVY_STREAM_FULL_CLIP_REUSE_CHORUS:-1}
+      VIVY_STREAM_FULL_CLIP_CONCURRENCY: ${VIVY_STREAM_FULL_CLIP_CONCURRENCY:-2}
+      VIVY_STREAM_FULL_CLIP_GENERATE_SCENE_LOOPS: ${VIVY_STREAM_FULL_CLIP_GENERATE_SCENE_LOOPS:-1}
+      VIVY_STREAM_FULL_CLIP_LOOP_SECONDS: ${VIVY_STREAM_FULL_CLIP_LOOP_SECONDS:-8}
+      VIVY_STREAM_FULL_CLIP_WIDTH: ${VIVY_STREAM_FULL_CLIP_WIDTH:-1280}
+      VIVY_STREAM_FULL_CLIP_HEIGHT: ${VIVY_STREAM_FULL_CLIP_HEIGHT:-720}
+      VIVY_STREAM_FULL_CLIP_FPS: ${VIVY_STREAM_FULL_CLIP_FPS:-24}
+      VIVY_STREAM_FULL_CLIP_VISUAL_QA: ${VIVY_STREAM_FULL_CLIP_VISUAL_QA:-}
+      A11_HF_VIDEO_PROVIDER: ${A11_HF_VIDEO_PROVIDER:-replicate}
+      A11_REPLICATE_VIDEO_MODEL: ${A11_REPLICATE_VIDEO_MODEL:-wan-video/wan-2.6-i2v}
+      A11_VIDEO_PROMPT_MAX_DURATION_SECONDS: ${A11_VIDEO_PROMPT_MAX_DURATION_SECONDS:-15}
+      VIVY_STREAM_FULL_CLIP_CROP_SOURCE_IMAGE: ${VIVY_STREAM_FULL_CLIP_CROP_SOURCE_IMAGE:-1}
+      VIVY_STREAM_FULL_CLIP_SOURCE_CROP_WIDTH_RATIO: ${VIVY_STREAM_FULL_CLIP_SOURCE_CROP_WIDTH_RATIO:-0.58}
+      VIVY_STREAM_FULL_CLIP_SOURCE_CROP_X_BIAS: ${VIVY_STREAM_FULL_CLIP_SOURCE_CROP_X_BIAS:-0.62}
+      VIVY_STREAM_FULL_CLIP_SOURCE_CROP_Y_BIAS: ${VIVY_STREAM_FULL_CLIP_SOURCE_CROP_Y_BIAS:-0.5}
+      VIVY_STREAM_FULL_CLIP_DEMOSAIC_GRID: ${VIVY_STREAM_FULL_CLIP_DEMOSAIC_GRID:-0}
+      VIVY_STREAM_FULL_CLIP_DEMOSAIC_COLUMNS: ${VIVY_STREAM_FULL_CLIP_DEMOSAIC_COLUMNS:-3}
+      VIVY_STREAM_FULL_CLIP_DEMOSAIC_ROWS: ${VIVY_STREAM_FULL_CLIP_DEMOSAIC_ROWS:-3}
+      VIVY_STREAM_FULL_CLIP_DEMOSAIC_ACTIVE_HEIGHT_RATIO: ${VIVY_STREAM_FULL_CLIP_DEMOSAIC_ACTIVE_HEIGHT_RATIO:-0.9}
+      VIVY_STREAM_FULL_CLIP_DEMOSAIC_SEGMENT_SECONDS: ${VIVY_STREAM_FULL_CLIP_DEMOSAIC_SEGMENT_SECONDS:-1.25}
+      VIVY_STREAM_FULL_CLIP_DEMOSAIC_ORDER: ${VIVY_STREAM_FULL_CLIP_DEMOSAIC_ORDER:-4,1,5,7,2,8}
+      A11_VIDEO_COMFY_CLOUD_ENABLED: ${A11_VIDEO_COMFY_CLOUD_ENABLED:-1}
+      A11_COMFY_CLOUD_API_KEY: ${A11_COMFY_CLOUD_API_KEY:-}
+      A11_COMFY_CLOUD_BASE_URL: ${A11_COMFY_CLOUD_BASE_URL:-https://cloud.comfy.org}
+      A11_COMFY_CLOUD_WORKFLOW_PATH: ${A11_COMFY_CLOUD_WORKFLOW_PATH:-}
+      A11_COMFY_CLOUD_TIMEOUT_MS: ${A11_COMFY_CLOUD_TIMEOUT_MS:-2700000}
+      A11_COMFY_CLOUD_POLL_INTERVAL_MS: ${A11_COMFY_CLOUD_POLL_INTERVAL_MS:-5000}
+      A11_COMFY_CLOUD_WAN_MODEL: ${A11_COMFY_CLOUD_WAN_MODEL:-wan2.5-i2v-preview}
+      A11_COMFY_CLOUD_WAN_RESOLUTION: ${A11_COMFY_CLOUD_WAN_RESOLUTION:-480P}
+      VIVY_TWITCH_LIVE_POLL_INTERVAL_MS: ${VIVY_TWITCH_LIVE_POLL_INTERVAL_MS:-60000}
+      VIVY_TWITCH_RESET_ON_OFFLINE: ${VIVY_TWITCH_RESET_ON_OFFLINE:-1}
+      VIVY_TWITCH_RESET_ON_IRC_CLOSE: ${VIVY_TWITCH_RESET_ON_IRC_CLOSE:-0}
+      VIVY_TWITCH_LIVE_GATE_DISABLED: ${VIVY_TWITCH_LIVE_GATE_DISABLED:-0}
+
+  vivy-social-ingest-worker:
+    image: server-a11-backend:latest
+    container_name: vivy-social-ingest-worker
+    restart: unless-stopped
+    command: ["sh", "-lc", "if [ \"$${SOCIAL_INGEST_WORKER_ENABLED:-0}\" = \"1\" ] && [ -n \"$${SOCIAL_TOKEN_ENC_KEY:-}\" ]; then npm run worker:social:ingest:loop; elif [ \"$${SOCIAL_INGEST_WORKER_ENABLED:-0}\" = \"1\" ]; then echo '[social-ingest] disabled: SOCIAL_TOKEN_ENC_KEY missing'; tail -f /dev/null; else echo '[social-ingest] disabled'; tail -f /dev/null; fi"]
+    healthcheck:
+      disable: true
+    env_file:
+      - /srv/a11/secrets/compose.env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      PGSSLMODE_DISABLE: ${PGSSLMODE_DISABLE:-1}
+      SOCIAL_TOKEN_ENC_KEY: ${SOCIAL_TOKEN_ENC_KEY:-}
+      SOCIAL_CONTEXT_USER_ID: ${SOCIAL_CONTEXT_USER_ID:-}
+      SOCIAL_YOUTUBE_CLIENT_ID: ${SOCIAL_YOUTUBE_CLIENT_ID:-}
+      SOCIAL_YOUTUBE_CLIENT_SECRET: ${SOCIAL_YOUTUBE_CLIENT_SECRET:-}
+      SOCIAL_YOUTUBE_REDIRECT_URI: ${SOCIAL_YOUTUBE_REDIRECT_URI:-https://funesterie.me/api/admin/social-connect/youtube/callback}
+      SOCIAL_YOUTUBE_INGEST_LIMIT: ${SOCIAL_YOUTUBE_INGEST_LIMIT:-12}
+      SOCIAL_INGEST_WORKER_ENABLED: ${SOCIAL_INGEST_WORKER_ENABLED:-1}
+      SOCIAL_INGEST_INTERVAL_MS: ${SOCIAL_INGEST_INTERVAL_MS:-900000}
+    depends_on:
+      a11-postgres:
+        condition: service_healthy
 
   kaen44-backend:
     build:
@@ -654,14 +845,43 @@ services:
       KAEN44_PROFILE_ENV: /app/profiles/kaen44.prod.env.disabled
       A11_RUNTIME_ROOT: /app/runtime
       A11_LLM_PROVIDER: groq
-      A11_OLLAMA_PRIMARY_MODEL: llama3.2:3b
-      A11_OLLAMA_FALLBACK_MODEL: llama3.2:3b
-      A11_TRANSLATION_MODEL: llama3.2:3b
+      A11_OLLAMA_PRIMARY_MODEL: qwen2.5:32b
+      A11_OLLAMA_FALLBACK_MODEL: qwen2.5:7b
+      VIVY_CHAT_LOCAL_FIRST: "false"
+      VIVY_OLLAMA_BASE_URL: http://a11-ollama:11434
+      VIVY_CHAT_LOCAL_MODEL: qwen2.5:7b
+      VIVY_CHAT_LOCAL_TIMEOUT_MS: ${VIVY_CHAT_LOCAL_TIMEOUT_MS:-90000}
+      VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS: ${VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS:-10000}
+      VIVY_CHAT_LOCAL_MAX_TOKENS: ${VIVY_CHAT_LOCAL_MAX_TOKENS:-800}
+      A11_TRANSLATION_MODEL: ${A11_TRANSLATION_MODEL:-qwen2.5:32b}
       LOCAL_DEFAULT_MODEL: llama3.2:3b
+      VIVY_SONG_PROVIDER: ${VIVY_SONG_PROVIDER:-groq}
+      OLLAMA_CLOUD_ENABLED: ${OLLAMA_CLOUD_ENABLED:-1}
+      OLLAMA_CLOUD_BASE_URL: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
+      OLLAMA_CLOUD_LYRICS_MODEL: ${OLLAMA_CLOUD_LYRICS_MODEL:-gpt-oss:120b}
+      OLLAMA_CLOUD_FAST_MODEL: ${OLLAMA_CLOUD_FAST_MODEL:-gpt-oss:20b}
+      OLLAMA_CLOUD_CHAT_ENABLED: ${OLLAMA_CLOUD_CHAT_ENABLED:-1}
+      OLLAMA_CLOUD_CHAT_MODEL: ${OLLAMA_CLOUD_CHAT_MODEL:-gpt-oss:120b}
+      OLLAMA_CLOUD_CHAT_THINK_LEVEL: ${OLLAMA_CLOUD_CHAT_THINK_LEVEL:-high}
+      OLLAMA_CLOUD_CHAT_TIMEOUT_MS: ${OLLAMA_CLOUD_CHAT_TIMEOUT_MS:-300000}
+      OLLAMA_CLOUD_THINK_LEVEL: ${OLLAMA_CLOUD_THINK_LEVEL:-high}
+      OLLAMA_CLOUD_LYRICS_TIMEOUT_MS: ${OLLAMA_CLOUD_LYRICS_TIMEOUT_MS:-360000}
+      VIVY_SONG_CERBERE_FALLBACK_ENABLED: ${VIVY_SONG_CERBERE_FALLBACK_ENABLED:-1}
+      VIVY_SONG_CERBERE_MODEL: ${VIVY_SONG_CERBERE_MODEL:-anthropic/claude-sonnet-4.5}
+      VIVY_SONG_CERBERE_TIMEOUT_MS: ${VIVY_SONG_CERBERE_TIMEOUT_MS:-240000}
+      VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS: ${VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS:-300000}
+      VIVY_CHAT_MAX_TOKENS: ${VIVY_CHAT_MAX_TOKENS:-5000}
+      VIVY_CHAT_MAX_TOKENS_SONG: ${VIVY_CHAT_MAX_TOKENS_SONG:-10000}
+      VIVY_CHAT_MAX_TOKENS_SONG_CEILING: ${VIVY_CHAT_MAX_TOKENS_SONG_CEILING:-12000}
+      VIVY_SONG_ALLOW_LOCAL_FALLBACK: ${VIVY_SONG_ALLOW_LOCAL_FALLBACK:-true}
+      VIVY_SONG_LOCAL_MODEL: ${VIVY_SONG_LOCAL_MODEL:-qwen2.5:7b}
+      VIVY_STREAM_FREESTYLE_MAX_CHARS: ${VIVY_STREAM_FREESTYLE_MAX_CHARS:-12000}
+      VIVY_STREAM_FREESTYLE_MAX_TOKENS: ${VIVY_STREAM_FREESTYLE_MAX_TOKENS:-10000}
       A11_LLM_FALLBACK_PROVIDER: ollama
       A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,openai,gemini,xai,huggingface,deepseek,together
       A11_CERBERE_LOCAL_ONLY: "false"
-      A11_LOCAL_CHAT_TIMEOUT_MS: "45000"
+      A11_LOCAL_CHAT_TIMEOUT_MS: "90000"
+      A11_LOCAL_SONG_TIMEOUT_MS: "180000"
       A11_VIDEO_PROMPT_GROQ_ENABLED: ${A11_VIDEO_PROMPT_GROQ_ENABLED:-1}
       A11_VIDEO_PROMPT_BUILDER_LLM: ${A11_VIDEO_PROMPT_BUILDER_LLM:-1}
       A11_OLLAMA_KEEP_ALIVE: "30m"
@@ -698,10 +918,19 @@ services:
       A11_TTS_ASYNC_QUEUE_MAX: ${A11_TTS_ASYNC_QUEUE_MAX:-50}
       A11_MATCH_ARENA_ENABLED: ${A11_MATCH_ARENA_ENABLED:-true}
       A11_MATCH_ARENA_WORKER_TOKEN_FILE: ${A11_MATCH_ARENA_WORKER_TOKEN_FILE:-/app/runtime/secrets/match_arena_worker_token}
+      A11_VIDEO_COMFY_CLOUD_ENABLED: ${A11_VIDEO_COMFY_CLOUD_ENABLED:-1}
+      A11_COMFY_CLOUD_API_KEY: ${A11_COMFY_CLOUD_API_KEY:-}
+      A11_COMFY_CLOUD_BASE_URL: ${A11_COMFY_CLOUD_BASE_URL:-https://cloud.comfy.org}
+      A11_COMFY_CLOUD_WORKFLOW_PATH: ${A11_COMFY_CLOUD_WORKFLOW_PATH:-}
+      A11_COMFY_CLOUD_TIMEOUT_MS: ${A11_COMFY_CLOUD_TIMEOUT_MS:-2700000}
+      A11_COMFY_CLOUD_POLL_INTERVAL_MS: ${A11_COMFY_CLOUD_POLL_INTERVAL_MS:-5000}
+      A11_COMFY_CLOUD_WAN_MODEL: ${A11_COMFY_CLOUD_WAN_MODEL:-wan2.5-i2v-preview}
+      A11_COMFY_CLOUD_WAN_RESOLUTION: ${A11_COMFY_CLOUD_WAN_RESOLUTION:-480P}
       A11_VIDEO_PROXY_URL: ${A11_VIDEO_PROXY_URL:-}
       A11_VIDEO_PROXY_TOKEN: ${A11_VIDEO_PROXY_TOKEN:-}
       A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL: ${A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL:-}
-      A11_VIDEO_PROXY_TIMEOUT_MS: ${A11_VIDEO_PROXY_TIMEOUT_MS:-600000}
+      A11_VIDEO_PROXY_TIMEOUT_MS: ${A11_VIDEO_PROXY_TIMEOUT_MS:-2700000}
+      A11_VIDEO_ASYNC_JOB_TTL_MS: ${A11_VIDEO_ASYNC_JOB_TTL_MS:-2700000}
       A11_PRODUCT: kaen44
       A11_INSTANCE_NAME: Kaen44
       A11_RUNTIME_PROFILE: kaen44
@@ -768,6 +997,7 @@ if ($BlueGreen) {
   $compose = $compose.Replace("  kaen44-backend:`n", "  ${Kaen44BackendService}:`n")
   $compose = $compose.Replace("container_name: a11-backend", "container_name: $A11BackendService")
   $compose = $compose.Replace("container_name: kaen44-backend", "container_name: $Kaen44BackendService")
+  $compose = $compose.Replace("image: server-a11-backend:latest", "image: server-${A11BackendService}:latest")
   $compose = $compose.Replace("http://a11-backend:3000", "http://${A11BackendService}:3000")
   $compose = $compose.Replace("http://kaen44-backend:3001", "http://${Kaen44BackendService}:3001")
   $compose = $compose.Replace("      - a11-backend", "      - $A11BackendService")
@@ -783,7 +1013,6 @@ $caddy = @"
 (a11_backend) {
   reverse_proxy ${caddyA11BackendService}:3000 {
     header_up Host {host}
-    header_up X-Forwarded-Host {host}
     header_up X-Forwarded-Proto https
     lb_try_duration 45s
     lb_try_interval 250ms
@@ -793,7 +1022,6 @@ $caddy = @"
 (kaen44_backend) {
   reverse_proxy ${caddyKaen44BackendService}:3001 {
     header_up Host {host}
-    header_up X-Forwarded-Host {host}
     header_up X-Forwarded-Proto https
     lb_try_duration 45s
     lb_try_interval 250ms
@@ -811,7 +1039,7 @@ $caddy = @"
 http://funesterie.me, http://www.funesterie.me, http://k44.funesterie.me, http://kaen44.funesterie.me, http://kaen44-hetzner-test.funesterie.me, http://vivy.funesterie.me, http://music.funesterie.me {
   encode zstd gzip
   import microsoft_identity_association
-  @a11Path path /a11 /a11/* /api/admin/* /api/tools/run /api/runtime* /api/qflush/* /api/stt/* /api/ekko /api/ekko/* /api/double-harmonic /api/double-harmonic/*
+  @a11Path path /a11 /a11/* /api/admin/* /api/tools/run /api/runtime* /api/qflush/* /api/stt/* /api/tts /api/tts/* /api/vivy /api/vivy/* /api/ekko /api/ekko/* /api/double-harmonic /api/double-harmonic/*
   @a11PaymentApi path /api/paypal /api/paypal/* /api/subscription /api/subscription/* /subscription/success /subscription/cancel
   handle @a11Path {
     import a11_backend
@@ -832,7 +1060,11 @@ http://a11.funesterie.me, http://api.funesterie.me, http://cp.funesterie.me {
 
 :80 {
   import microsoft_identity_association
-  import a11_backend
+  @localHealth path /health
+  handle @localHealth {
+    import a11_backend
+  }
+  respond 404
 }
 "@
 Set-Content -LiteralPath (Join-Path $StageRoot "Caddyfile") -Value $caddy -Encoding UTF8
@@ -846,6 +1078,18 @@ $mcpEnvMap = if (Test-Path -LiteralPath $McpEnvSource) { Read-EnvMap $McpEnvSour
 $localEnvSource = Join-Path $ServerRoot ".env.local"
 $localEnvMap = if (Test-Path -LiteralPath $localEnvSource) { Read-EnvMap $localEnvSource } else { [ordered]@{} }
 $localSecretRoot = Join-Path $env:USERPROFILE ".funesterie\secrets"
+Import-OptionalSecretFile $envMap "SOCIAL_TOKEN_ENC_KEY" @(
+  $localEnvMap["SOCIAL_TOKEN_ENC_KEY_FILE"],
+  (Join-Path $localSecretRoot "social-token-enc-key.txt")
+)
+Import-OptionalSecretFile $envMap "SOCIAL_META_APP_ID" @(
+  $localEnvMap["SOCIAL_META_APP_ID_FILE"],
+  (Join-Path $localSecretRoot "social-meta-app-id.txt")
+)
+Import-OptionalSecretFile $envMap "SOCIAL_META_APP_SECRET" @(
+  $localEnvMap["SOCIAL_META_APP_SECRET_FILE"],
+  (Join-Path $localSecretRoot "social-meta-app-secret.txt")
+)
 Import-OptionalSecretFile $envMap "A11_ELEVENLABS_API_KEY" @(
   $env:A11_ELEVENLABS_API_KEY_FILE,
   $localEnvMap["A11_ELEVENLABS_API_KEY_FILE"],
@@ -1085,8 +1329,39 @@ $overrides = [ordered]@{
   OLLAMA_HOST = "a11-ollama"
   OLLAMA_PORT = "11434"
   A11_OLLAMA_BASE = "http://a11-ollama:11434"
-  A11_OLLAMA_PRIMARY_MODEL = "llama3.2:3b"
-  A11_OLLAMA_FALLBACK_MODEL = "llama3.2:3b"
+  A11_OLLAMA_PRIMARY_MODEL = "qwen2.5:32b"
+  A11_OLLAMA_FALLBACK_MODEL = "qwen2.5:7b"
+  VIVY_CHAT_LOCAL_FIRST = "false"
+  VIVY_OLLAMA_BASE_URL = "http://a11-ollama:11434"
+  VIVY_CHAT_LOCAL_MODEL = "qwen2.5:7b"
+  VIVY_CHAT_LOCAL_TIMEOUT_MS = "90000"
+  VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS = "10000"
+  VIVY_CHAT_LOCAL_MAX_TOKENS = "800"
+  VIVY_SONG_PROVIDER = $(if ($env:VIVY_SONG_PROVIDER) { $env:VIVY_SONG_PROVIDER } elseif ($envMap.Contains("VIVY_SONG_PROVIDER") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_SONG_PROVIDER"])) { [string]$envMap["VIVY_SONG_PROVIDER"] } else { "groq" })
+  VIVY_SONG_GROQ_MODEL = $(if ($env:VIVY_SONG_GROQ_MODEL) { $env:VIVY_SONG_GROQ_MODEL } elseif ($envMap.Contains("VIVY_SONG_GROQ_MODEL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_SONG_GROQ_MODEL"])) { [string]$envMap["VIVY_SONG_GROQ_MODEL"] } else { "llama-3.3-70b-versatile" })
+  VIVY_XAI_MODEL = $(if ($env:VIVY_XAI_MODEL) { $env:VIVY_XAI_MODEL } elseif ($envMap.Contains("VIVY_XAI_MODEL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_XAI_MODEL"])) { [string]$envMap["VIVY_XAI_MODEL"] } else { "grok-4.3" })
+  OLLAMA_CLOUD_ENABLED = "1"
+  OLLAMA_CLOUD_BASE_URL = "https://ollama.com"
+  OLLAMA_CLOUD_LYRICS_MODEL = "gpt-oss:120b"
+  OLLAMA_CLOUD_FAST_MODEL = "gpt-oss:20b"
+  OLLAMA_CLOUD_CHAT_ENABLED = "1"
+  OLLAMA_CLOUD_CHAT_MODEL = "gpt-oss:120b"
+  OLLAMA_CLOUD_CHAT_THINK_LEVEL = "high"
+  OLLAMA_CLOUD_CHAT_TIMEOUT_MS = "300000"
+  OLLAMA_CLOUD_THINK_LEVEL = "high"
+  OLLAMA_CLOUD_LYRICS_TIMEOUT_MS = "360000"
+  VIVY_SONG_CERBERE_FALLBACK_ENABLED = "1"
+  VIVY_SONG_CERBERE_MODEL = "anthropic/claude-sonnet-4.5"
+  VIVY_SONG_CERBERE_TIMEOUT_MS = "240000"
+  VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS = "300000"
+  VIVY_CHAT_MAX_TOKENS = "5000"
+  VIVY_CHAT_MAX_TOKENS_SONG = "10000"
+  VIVY_CHAT_MAX_TOKENS_SONG_CEILING = "12000"
+  A11_OLLAMA_STRONG_SONG_MODEL = $StrongSongOllamaModel
+  VIVY_SONG_ALLOW_LOCAL_FALLBACK = "true"
+  VIVY_SONG_LOCAL_MODEL = $StrongSongOllamaModel
+  VIVY_STREAM_FREESTYLE_MAX_CHARS = $(if ($env:VIVY_STREAM_FREESTYLE_MAX_CHARS) { $env:VIVY_STREAM_FREESTYLE_MAX_CHARS } elseif ($envMap.Contains("VIVY_STREAM_FREESTYLE_MAX_CHARS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FREESTYLE_MAX_CHARS"])) { [string]$envMap["VIVY_STREAM_FREESTYLE_MAX_CHARS"] } else { "12000" })
+  VIVY_STREAM_FREESTYLE_MAX_TOKENS = $(if ($env:VIVY_STREAM_FREESTYLE_MAX_TOKENS) { $env:VIVY_STREAM_FREESTYLE_MAX_TOKENS } elseif ($envMap.Contains("VIVY_STREAM_FREESTYLE_MAX_TOKENS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FREESTYLE_MAX_TOKENS"])) { [string]$envMap["VIVY_STREAM_FREESTYLE_MAX_TOKENS"] } else { "10000" })
   A11_ENABLE_EMBEDDINGS = "true"
   A11_EMBEDDING_BASE_URL = "http://a11-ollama:11434"
   A11_EMBEDDING_MODEL = "nomic-embed-text"
@@ -1103,7 +1378,7 @@ $overrides = [ordered]@{
   A11_STT_ALLOW_OPENAI_COMPATIBLE = $(if ($env:A11_STT_ALLOW_OPENAI_COMPATIBLE) { $env:A11_STT_ALLOW_OPENAI_COMPATIBLE } else { "false" })
   A11_STT_ALLOW_OPENAI_FALLBACK = $(if ($env:A11_STT_ALLOW_OPENAI_FALLBACK) { $env:A11_STT_ALLOW_OPENAI_FALLBACK } else { "false" })
   A11_TRANSLATION_BASE_URL = "http://a11-ollama:11434"
-  A11_TRANSLATION_MODEL = "llama3.2:3b"
+  A11_TRANSLATION_MODEL = "qwen2.5:32b"
   A11_CERBERE_OPENAI_BASE_URL = "https://openrouter.ai/api/v1"
   A11_CERBERE_OPENAI_API_KEY = $(if ($mcpEnvMap.Contains("OPENROUTER_API_KEY") -and -not [string]::IsNullOrWhiteSpace($mcpEnvMap["OPENROUTER_API_KEY"])) { $mcpEnvMap["OPENROUTER_API_KEY"] } elseif ($envMap.Contains("OPENROUTER_API_KEY")) { $envMap["OPENROUTER_API_KEY"] } else { "" })
   LOCAL_DEFAULT_MODEL = "llama3.2:3b"
@@ -1111,15 +1386,77 @@ $overrides = [ordered]@{
   A11_LLM_FALLBACK_PROVIDER = "ollama"
   A11_LLM_RUNTIME_FALLBACK_ORDER = "ollama,openai,gemini,xai,huggingface,deepseek,together"
   A11_CERBERE_LOCAL_ONLY = "false"
-  A11_LOCAL_CHAT_TIMEOUT_MS = "45000"
+  A11_LOCAL_CHAT_TIMEOUT_MS = "90000"
+  A11_LOCAL_SONG_TIMEOUT_MS = "180000"
   A11_OLLAMA_KEEP_ALIVE = "30m"
   A11_MEMORY_LOCAL_TIMEOUT_MS = "3500"
   A11_MEMORY_REMOTE_TIMEOUT_MS = "5000"
   A11_EMBEDDING_TIMEOUT_MS = "2500"
   A11_RUNTIME_ROOT = "/app/runtime"
+  A11_EPISODIC_MEMORY_DIR = "/app/runtime/episodic-memory"
   A11_RUNTIME_PROFILE = "prod"
   A11_PRODUCT = "a11"
   A11_INSTANCE_NAME = "Alpha Onze"
+  VIVY_STREAM_SECRET = $(if ($env:VIVY_STREAM_SECRET) { $env:VIVY_STREAM_SECRET } elseif ($envMap.Contains("VIVY_STREAM_SECRET") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_SECRET"])) { [string]$envMap["VIVY_STREAM_SECRET"] } else { New-HexSecret 32 })
+  VIVY_STREAM_INGEST_URL = $(if ($env:VIVY_STREAM_INGEST_URL) { $env:VIVY_STREAM_INGEST_URL } elseif ($envMap.Contains("VIVY_STREAM_INGEST_URL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_INGEST_URL"])) { [string]$envMap["VIVY_STREAM_INGEST_URL"] } else { "https://vivy.funesterie.me/api/vivy/stream/chat" })
+  VIVY_STREAM_STATE_URL = $(if ($env:VIVY_STREAM_STATE_URL) { $env:VIVY_STREAM_STATE_URL } else { "http://${A11BackendService}:3000/api/vivy/stream/state" })
+  VIVY_PUBLIC_BASE_URL = $(if ($env:VIVY_PUBLIC_BASE_URL) { $env:VIVY_PUBLIC_BASE_URL } elseif ($envMap.Contains("VIVY_PUBLIC_BASE_URL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_PUBLIC_BASE_URL"])) { [string]$envMap["VIVY_PUBLIC_BASE_URL"] } else { "https://vivy.funesterie.me" })
+  SOCIAL_TOKEN_ENC_KEY = $(if ($env:SOCIAL_TOKEN_ENC_KEY) { $env:SOCIAL_TOKEN_ENC_KEY } elseif ($envMap.Contains("SOCIAL_TOKEN_ENC_KEY") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["SOCIAL_TOKEN_ENC_KEY"])) { [string]$envMap["SOCIAL_TOKEN_ENC_KEY"] } else { New-HexSecret 32 })
+  SOCIAL_PUBLIC_BASE_URL = $(if ($env:SOCIAL_PUBLIC_BASE_URL) { $env:SOCIAL_PUBLIC_BASE_URL } elseif ($envMap.Contains("SOCIAL_PUBLIC_BASE_URL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["SOCIAL_PUBLIC_BASE_URL"])) { [string]$envMap["SOCIAL_PUBLIC_BASE_URL"] } else { "https://funesterie.me" })
+  PGSSLMODE_DISABLE = $(if ($env:PGSSLMODE_DISABLE) { $env:PGSSLMODE_DISABLE } elseif ($envMap.Contains("PGSSLMODE_DISABLE") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["PGSSLMODE_DISABLE"])) { [string]$envMap["PGSSLMODE_DISABLE"] } else { "1" })
+  SOCIAL_CONTEXT_USER_ID = $(if ($env:SOCIAL_CONTEXT_USER_ID) { $env:SOCIAL_CONTEXT_USER_ID } elseif ($envMap.Contains("SOCIAL_CONTEXT_USER_ID")) { [string]$envMap["SOCIAL_CONTEXT_USER_ID"] } else { "" })
+  SOCIAL_YOUTUBE_CLIENT_ID = $(if ($env:SOCIAL_YOUTUBE_CLIENT_ID) { $env:SOCIAL_YOUTUBE_CLIENT_ID } elseif ($envMap.Contains("SOCIAL_YOUTUBE_CLIENT_ID") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["SOCIAL_YOUTUBE_CLIENT_ID"])) { [string]$envMap["SOCIAL_YOUTUBE_CLIENT_ID"] } else { "" })
+  SOCIAL_YOUTUBE_CLIENT_SECRET = $(if ($env:SOCIAL_YOUTUBE_CLIENT_SECRET) { $env:SOCIAL_YOUTUBE_CLIENT_SECRET } elseif ($envMap.Contains("SOCIAL_YOUTUBE_CLIENT_SECRET") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["SOCIAL_YOUTUBE_CLIENT_SECRET"])) { [string]$envMap["SOCIAL_YOUTUBE_CLIENT_SECRET"] } else { "" })
+  SOCIAL_YOUTUBE_REDIRECT_URI = $(if ($env:SOCIAL_YOUTUBE_REDIRECT_URI) { $env:SOCIAL_YOUTUBE_REDIRECT_URI } elseif ($envMap.Contains("SOCIAL_YOUTUBE_REDIRECT_URI") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["SOCIAL_YOUTUBE_REDIRECT_URI"])) { [string]$envMap["SOCIAL_YOUTUBE_REDIRECT_URI"] } else { "https://funesterie.me/api/admin/social-connect/youtube/callback" })
+  SOCIAL_YOUTUBE_INGEST_LIMIT = $(if ($env:SOCIAL_YOUTUBE_INGEST_LIMIT) { $env:SOCIAL_YOUTUBE_INGEST_LIMIT } elseif ($envMap.Contains("SOCIAL_YOUTUBE_INGEST_LIMIT") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["SOCIAL_YOUTUBE_INGEST_LIMIT"])) { [string]$envMap["SOCIAL_YOUTUBE_INGEST_LIMIT"] } else { "12" })
+  SOCIAL_META_APP_ID = $(if ($env:SOCIAL_META_APP_ID) { $env:SOCIAL_META_APP_ID } elseif ($envMap.Contains("SOCIAL_META_APP_ID") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["SOCIAL_META_APP_ID"])) { [string]$envMap["SOCIAL_META_APP_ID"] } else { "" })
+  SOCIAL_META_APP_SECRET = $(if ($env:SOCIAL_META_APP_SECRET) { $env:SOCIAL_META_APP_SECRET } elseif ($envMap.Contains("SOCIAL_META_APP_SECRET") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["SOCIAL_META_APP_SECRET"])) { [string]$envMap["SOCIAL_META_APP_SECRET"] } else { "" })
+  SOCIAL_META_REDIRECT_URI = $(if ($env:SOCIAL_META_REDIRECT_URI) { $env:SOCIAL_META_REDIRECT_URI } elseif ($envMap.Contains("SOCIAL_META_REDIRECT_URI") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["SOCIAL_META_REDIRECT_URI"])) { [string]$envMap["SOCIAL_META_REDIRECT_URI"] } else { "https://funesterie.me/api/admin/social-connect/meta/callback" })
+  SOCIAL_INGEST_WORKER_ENABLED = $(if ($env:SOCIAL_INGEST_WORKER_ENABLED) { $env:SOCIAL_INGEST_WORKER_ENABLED } elseif ($envMap.Contains("SOCIAL_INGEST_WORKER_ENABLED") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["SOCIAL_INGEST_WORKER_ENABLED"])) { [string]$envMap["SOCIAL_INGEST_WORKER_ENABLED"] } else { "1" })
+  SOCIAL_INGEST_INTERVAL_MS = $(if ($env:SOCIAL_INGEST_INTERVAL_MS) { $env:SOCIAL_INGEST_INTERVAL_MS } elseif ($envMap.Contains("SOCIAL_INGEST_INTERVAL_MS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["SOCIAL_INGEST_INTERVAL_MS"])) { [string]$envMap["SOCIAL_INGEST_INTERVAL_MS"] } else { "900000" })
+  VIVY_STREAM_SOCIAL_CONTEXT_DISABLED = $(if ($env:VIVY_STREAM_SOCIAL_CONTEXT_DISABLED) { $env:VIVY_STREAM_SOCIAL_CONTEXT_DISABLED } elseif ($envMap.Contains("VIVY_STREAM_SOCIAL_CONTEXT_DISABLED") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_SOCIAL_CONTEXT_DISABLED"])) { [string]$envMap["VIVY_STREAM_SOCIAL_CONTEXT_DISABLED"] } else { "0" })
+  VIVY_STREAM_SOCIAL_CONTEXT_USER_ID = $(if ($env:VIVY_STREAM_SOCIAL_CONTEXT_USER_ID) { $env:VIVY_STREAM_SOCIAL_CONTEXT_USER_ID } elseif ($envMap.Contains("VIVY_STREAM_SOCIAL_CONTEXT_USER_ID")) { [string]$envMap["VIVY_STREAM_SOCIAL_CONTEXT_USER_ID"] } else { "" })
+  A11_SOCIAL_MCP_ALLOW_ANONYMOUS = $(if ($env:A11_SOCIAL_MCP_ALLOW_ANONYMOUS) { $env:A11_SOCIAL_MCP_ALLOW_ANONYMOUS } elseif ($envMap.Contains("A11_SOCIAL_MCP_ALLOW_ANONYMOUS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["A11_SOCIAL_MCP_ALLOW_ANONYMOUS"])) { [string]$envMap["A11_SOCIAL_MCP_ALLOW_ANONYMOUS"] } else { "0" })
+  VIVY_STREAM_COMMANDS_ONLY = $(if ($env:VIVY_STREAM_COMMANDS_ONLY) { $env:VIVY_STREAM_COMMANDS_ONLY } elseif ($envMap.Contains("VIVY_STREAM_COMMANDS_ONLY") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_COMMANDS_ONLY"])) { [string]$envMap["VIVY_STREAM_COMMANDS_ONLY"] } else { "1" })
+  VIVY_STREAM_ANNOUNCE_INTERVAL_MS = $(if ($env:VIVY_STREAM_ANNOUNCE_INTERVAL_MS) { $env:VIVY_STREAM_ANNOUNCE_INTERVAL_MS } elseif ($envMap.Contains("VIVY_STREAM_ANNOUNCE_INTERVAL_MS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_ANNOUNCE_INTERVAL_MS"])) { [string]$envMap["VIVY_STREAM_ANNOUNCE_INTERVAL_MS"] } else { "720000" })
+  VIVY_STREAM_ANNOUNCE_DISABLED = $(if ($env:VIVY_STREAM_ANNOUNCE_DISABLED) { $env:VIVY_STREAM_ANNOUNCE_DISABLED } elseif ($envMap.Contains("VIVY_STREAM_ANNOUNCE_DISABLED") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_ANNOUNCE_DISABLED"])) { [string]$envMap["VIVY_STREAM_ANNOUNCE_DISABLED"] } else { "0" })
+  VIVY_STREAM_BOT_MESSAGE_GAP_MS = $(if ($env:VIVY_STREAM_BOT_MESSAGE_GAP_MS) { $env:VIVY_STREAM_BOT_MESSAGE_GAP_MS } elseif ($envMap.Contains("VIVY_STREAM_BOT_MESSAGE_GAP_MS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_BOT_MESSAGE_GAP_MS"])) { [string]$envMap["VIVY_STREAM_BOT_MESSAGE_GAP_MS"] } else { "15000" })
+  VIVY_STREAM_COVER_ENABLED = $(if ($env:VIVY_STREAM_COVER_ENABLED) { $env:VIVY_STREAM_COVER_ENABLED } elseif ($envMap.Contains("VIVY_STREAM_COVER_ENABLED") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_COVER_ENABLED"])) { [string]$envMap["VIVY_STREAM_COVER_ENABLED"] } else { "1" })
+  VIVY_STREAM_COVER_URL = $(if ($env:VIVY_STREAM_COVER_URL) { $env:VIVY_STREAM_COVER_URL } elseif ($envMap.Contains("VIVY_STREAM_COVER_URL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_COVER_URL"])) { [string]$envMap["VIVY_STREAM_COVER_URL"] } else { "http://127.0.0.1:3000/api/tools/generate_sd" })
+  VIVY_STREAM_COVER_TIMEOUT_MS = $(if ($env:VIVY_STREAM_COVER_TIMEOUT_MS) { $env:VIVY_STREAM_COVER_TIMEOUT_MS } elseif ($envMap.Contains("VIVY_STREAM_COVER_TIMEOUT_MS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_COVER_TIMEOUT_MS"])) { [string]$envMap["VIVY_STREAM_COVER_TIMEOUT_MS"] } else { "120000" })
+  VIVY_STREAM_CLIP_ENABLED = $(if ($env:VIVY_STREAM_CLIP_ENABLED) { $env:VIVY_STREAM_CLIP_ENABLED } elseif ($envMap.Contains("VIVY_STREAM_CLIP_ENABLED") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_CLIP_ENABLED"])) { [string]$envMap["VIVY_STREAM_CLIP_ENABLED"] } else { "1" })
+  VIVY_STREAM_CLIP_PROVIDER = $(if ($env:VIVY_STREAM_CLIP_PROVIDER) { $env:VIVY_STREAM_CLIP_PROVIDER } elseif ($envMap.Contains("VIVY_STREAM_CLIP_PROVIDER") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_CLIP_PROVIDER"])) { [string]$envMap["VIVY_STREAM_CLIP_PROVIDER"] } else { "auto" })
+  VIVY_STREAM_CLIP_DURATION_SECONDS = $(if ($env:VIVY_STREAM_CLIP_DURATION_SECONDS) { $env:VIVY_STREAM_CLIP_DURATION_SECONDS } elseif ($envMap.Contains("VIVY_STREAM_CLIP_DURATION_SECONDS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_CLIP_DURATION_SECONDS"])) { [string]$envMap["VIVY_STREAM_CLIP_DURATION_SECONDS"] } else { "3" })
+  VIVY_STREAM_CLIP_TIMEOUT_MS = $(if ($env:VIVY_STREAM_CLIP_TIMEOUT_MS) { $env:VIVY_STREAM_CLIP_TIMEOUT_MS } elseif ($envMap.Contains("VIVY_STREAM_CLIP_TIMEOUT_MS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_CLIP_TIMEOUT_MS"])) { [string]$envMap["VIVY_STREAM_CLIP_TIMEOUT_MS"] } else { "2700000" })
+  VIVY_STREAM_FULL_CLIP_ENABLED = $(if ($env:VIVY_STREAM_FULL_CLIP_ENABLED) { $env:VIVY_STREAM_FULL_CLIP_ENABLED } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_ENABLED") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_ENABLED"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_ENABLED"] } else { "1" })
+  VIVY_STREAM_FULL_CLIP_SCENES = $(if ($env:VIVY_STREAM_FULL_CLIP_SCENES) { $env:VIVY_STREAM_FULL_CLIP_SCENES } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_SCENES") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_SCENES"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_SCENES"] } else { "8" })
+  VIVY_STREAM_FULL_CLIP_INSTRUMENTAL_SCENES = $(if ($env:VIVY_STREAM_FULL_CLIP_INSTRUMENTAL_SCENES) { $env:VIVY_STREAM_FULL_CLIP_INSTRUMENTAL_SCENES } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_INSTRUMENTAL_SCENES") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_INSTRUMENTAL_SCENES"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_INSTRUMENTAL_SCENES"] } else { "8" })
+  VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS = $(if ($env:VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS) { $env:VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS"] } else { "5" })
+  VIVY_STREAM_FULL_CLIP_REUSE_CHORUS = $(if ($env:VIVY_STREAM_FULL_CLIP_REUSE_CHORUS) { $env:VIVY_STREAM_FULL_CLIP_REUSE_CHORUS } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_REUSE_CHORUS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_REUSE_CHORUS"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_REUSE_CHORUS"] } else { "1" })
+  VIVY_STREAM_FULL_CLIP_CONCURRENCY = $(if ($env:VIVY_STREAM_FULL_CLIP_CONCURRENCY) { $env:VIVY_STREAM_FULL_CLIP_CONCURRENCY } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_CONCURRENCY") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_CONCURRENCY"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_CONCURRENCY"] } else { "2" })
+  VIVY_STREAM_FULL_CLIP_GENERATE_SCENE_LOOPS = $(if ($env:VIVY_STREAM_FULL_CLIP_GENERATE_SCENE_LOOPS) { $env:VIVY_STREAM_FULL_CLIP_GENERATE_SCENE_LOOPS } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_GENERATE_SCENE_LOOPS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_GENERATE_SCENE_LOOPS"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_GENERATE_SCENE_LOOPS"] } else { "1" })
+  VIVY_STREAM_FULL_CLIP_LOOP_SECONDS = $(if ($env:VIVY_STREAM_FULL_CLIP_LOOP_SECONDS) { $env:VIVY_STREAM_FULL_CLIP_LOOP_SECONDS } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_LOOP_SECONDS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_LOOP_SECONDS"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_LOOP_SECONDS"] } else { "8" })
+  VIVY_STREAM_FULL_CLIP_WIDTH = $(if ($env:VIVY_STREAM_FULL_CLIP_WIDTH) { $env:VIVY_STREAM_FULL_CLIP_WIDTH } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_WIDTH") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_WIDTH"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_WIDTH"] } else { "1280" })
+  VIVY_STREAM_FULL_CLIP_HEIGHT = $(if ($env:VIVY_STREAM_FULL_CLIP_HEIGHT) { $env:VIVY_STREAM_FULL_CLIP_HEIGHT } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_HEIGHT") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_HEIGHT"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_HEIGHT"] } else { "720" })
+  VIVY_STREAM_FULL_CLIP_FPS = $(if ($env:VIVY_STREAM_FULL_CLIP_FPS) { $env:VIVY_STREAM_FULL_CLIP_FPS } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_FPS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_FPS"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_FPS"] } else { "24" })
+  VIVY_STREAM_FULL_CLIP_CROP_SOURCE_IMAGE = $(if ($env:VIVY_STREAM_FULL_CLIP_CROP_SOURCE_IMAGE) { $env:VIVY_STREAM_FULL_CLIP_CROP_SOURCE_IMAGE } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_CROP_SOURCE_IMAGE") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_CROP_SOURCE_IMAGE"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_CROP_SOURCE_IMAGE"] } else { "1" })
+  VIVY_STREAM_FULL_CLIP_SOURCE_CROP_WIDTH_RATIO = $(if ($env:VIVY_STREAM_FULL_CLIP_SOURCE_CROP_WIDTH_RATIO) { $env:VIVY_STREAM_FULL_CLIP_SOURCE_CROP_WIDTH_RATIO } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_SOURCE_CROP_WIDTH_RATIO") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_SOURCE_CROP_WIDTH_RATIO"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_SOURCE_CROP_WIDTH_RATIO"] } else { "0.58" })
+  VIVY_STREAM_FULL_CLIP_SOURCE_CROP_X_BIAS = $(if ($env:VIVY_STREAM_FULL_CLIP_SOURCE_CROP_X_BIAS) { $env:VIVY_STREAM_FULL_CLIP_SOURCE_CROP_X_BIAS } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_SOURCE_CROP_X_BIAS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_SOURCE_CROP_X_BIAS"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_SOURCE_CROP_X_BIAS"] } else { "0.62" })
+  VIVY_STREAM_FULL_CLIP_SOURCE_CROP_Y_BIAS = $(if ($env:VIVY_STREAM_FULL_CLIP_SOURCE_CROP_Y_BIAS) { $env:VIVY_STREAM_FULL_CLIP_SOURCE_CROP_Y_BIAS } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_SOURCE_CROP_Y_BIAS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_SOURCE_CROP_Y_BIAS"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_SOURCE_CROP_Y_BIAS"] } else { "0.5" })
+  VIVY_STREAM_FULL_CLIP_DEMOSAIC_GRID = $(if ($env:VIVY_STREAM_FULL_CLIP_DEMOSAIC_GRID) { $env:VIVY_STREAM_FULL_CLIP_DEMOSAIC_GRID } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_DEMOSAIC_GRID") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_DEMOSAIC_GRID"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_DEMOSAIC_GRID"] } else { "0" })
+  VIVY_STREAM_FULL_CLIP_DEMOSAIC_COLUMNS = $(if ($env:VIVY_STREAM_FULL_CLIP_DEMOSAIC_COLUMNS) { $env:VIVY_STREAM_FULL_CLIP_DEMOSAIC_COLUMNS } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_DEMOSAIC_COLUMNS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_DEMOSAIC_COLUMNS"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_DEMOSAIC_COLUMNS"] } else { "3" })
+  VIVY_STREAM_FULL_CLIP_DEMOSAIC_ROWS = $(if ($env:VIVY_STREAM_FULL_CLIP_DEMOSAIC_ROWS) { $env:VIVY_STREAM_FULL_CLIP_DEMOSAIC_ROWS } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_DEMOSAIC_ROWS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_DEMOSAIC_ROWS"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_DEMOSAIC_ROWS"] } else { "3" })
+  VIVY_STREAM_FULL_CLIP_DEMOSAIC_ACTIVE_HEIGHT_RATIO = $(if ($env:VIVY_STREAM_FULL_CLIP_DEMOSAIC_ACTIVE_HEIGHT_RATIO) { $env:VIVY_STREAM_FULL_CLIP_DEMOSAIC_ACTIVE_HEIGHT_RATIO } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_DEMOSAIC_ACTIVE_HEIGHT_RATIO") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_DEMOSAIC_ACTIVE_HEIGHT_RATIO"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_DEMOSAIC_ACTIVE_HEIGHT_RATIO"] } else { "0.9" })
+  VIVY_STREAM_FULL_CLIP_DEMOSAIC_SEGMENT_SECONDS = $(if ($env:VIVY_STREAM_FULL_CLIP_DEMOSAIC_SEGMENT_SECONDS) { $env:VIVY_STREAM_FULL_CLIP_DEMOSAIC_SEGMENT_SECONDS } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_DEMOSAIC_SEGMENT_SECONDS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_DEMOSAIC_SEGMENT_SECONDS"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_DEMOSAIC_SEGMENT_SECONDS"] } else { "1.25" })
+  VIVY_STREAM_FULL_CLIP_DEMOSAIC_ORDER = $(if ($env:VIVY_STREAM_FULL_CLIP_DEMOSAIC_ORDER) { $env:VIVY_STREAM_FULL_CLIP_DEMOSAIC_ORDER } elseif ($envMap.Contains("VIVY_STREAM_FULL_CLIP_DEMOSAIC_ORDER") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FULL_CLIP_DEMOSAIC_ORDER"])) { [string]$envMap["VIVY_STREAM_FULL_CLIP_DEMOSAIC_ORDER"] } else { "4,1,5,7,2,8" })
+  VIVY_STREAM_IDLE_JUKEBOX_DISABLED = $(if ($env:VIVY_STREAM_IDLE_JUKEBOX_DISABLED) { $env:VIVY_STREAM_IDLE_JUKEBOX_DISABLED } elseif ($envMap.Contains("VIVY_STREAM_IDLE_JUKEBOX_DISABLED") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_IDLE_JUKEBOX_DISABLED"])) { [string]$envMap["VIVY_STREAM_IDLE_JUKEBOX_DISABLED"] } else { "1" })
+  VIVY_STREAM_AUTOGENERATE_ENABLED = $(if ($env:VIVY_STREAM_AUTOGENERATE_ENABLED) { $env:VIVY_STREAM_AUTOGENERATE_ENABLED } elseif ($envMap.Contains("VIVY_STREAM_AUTOGENERATE_ENABLED") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_AUTOGENERATE_ENABLED"])) { [string]$envMap["VIVY_STREAM_AUTOGENERATE_ENABLED"] } else { "1" })
+  TWITCH_CHANNEL = $(if ($env:TWITCH_CHANNEL) { $env:TWITCH_CHANNEL } elseif ($envMap.Contains("TWITCH_CHANNEL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_CHANNEL"])) { [string]$envMap["TWITCH_CHANNEL"] } else { "" })
+  TWITCH_BOT_USERNAME = $(if ($env:TWITCH_BOT_USERNAME) { $env:TWITCH_BOT_USERNAME } elseif ($envMap.Contains("TWITCH_BOT_USERNAME") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_BOT_USERNAME"])) { [string]$envMap["TWITCH_BOT_USERNAME"] } else { "" })
+  TWITCH_OAUTH_TOKEN = $(if ($env:TWITCH_OAUTH_TOKEN) { $env:TWITCH_OAUTH_TOKEN } elseif ($envMap.Contains("TWITCH_OAUTH_TOKEN") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_OAUTH_TOKEN"])) { [string]$envMap["TWITCH_OAUTH_TOKEN"] } else { "" })
+  TWITCH_ACCESS_TOKEN = $(if ($env:TWITCH_ACCESS_TOKEN) { $env:TWITCH_ACCESS_TOKEN } elseif ($envMap.Contains("TWITCH_ACCESS_TOKEN") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_ACCESS_TOKEN"])) { [string]$envMap["TWITCH_ACCESS_TOKEN"] } else { "" })
+  TWITCH_CLIENT_ID = $(if ($env:TWITCH_CLIENT_ID) { $env:TWITCH_CLIENT_ID } elseif ($envMap.Contains("TWITCH_CLIENT_ID") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_CLIENT_ID"])) { [string]$envMap["TWITCH_CLIENT_ID"] } else { "" })
+  TWITCH_REFRESH_TOKEN = $(if ($env:TWITCH_REFRESH_TOKEN) { $env:TWITCH_REFRESH_TOKEN } elseif ($envMap.Contains("TWITCH_REFRESH_TOKEN") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["TWITCH_REFRESH_TOKEN"])) { [string]$envMap["TWITCH_REFRESH_TOKEN"] } else { "" })
   SERVE_STATIC = "true"
   A11_WEB_DIST_DIR = "/web/dist"
   TTS_URL = "http://a11-voice:5002"
@@ -1143,11 +1480,20 @@ $overrides = [ordered]@{
   A11_ELEVENLABS_KAEN44_VOICE_ID = $(if ($env:A11_ELEVENLABS_KAEN44_VOICE_ID) { $env:A11_ELEVENLABS_KAEN44_VOICE_ID } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["A11_ELEVENLABS_KAEN44_VOICE_ID"])) { [string]$envMap["A11_ELEVENLABS_KAEN44_VOICE_ID"] } elseif ($env:A11_ELEVENLABS_K44_VOICE_ID) { $env:A11_ELEVENLABS_K44_VOICE_ID } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["A11_ELEVENLABS_K44_VOICE_ID"])) { [string]$envMap["A11_ELEVENLABS_K44_VOICE_ID"] } else { "EXAVITQu4vr4xnSDxMaL" })
   A11_ELEVENLABS_VIVY_VOICE_ID = $(if ($env:A11_ELEVENLABS_VIVY_VOICE_ID) { $env:A11_ELEVENLABS_VIVY_VOICE_ID } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["A11_ELEVENLABS_VIVY_VOICE_ID"])) { [string]$envMap["A11_ELEVENLABS_VIVY_VOICE_ID"] } else { "21m00Tcm4TlvDq8ikWAM" })
   VIVY_ELEVENLABS_MUSIC_MODEL = $(if ($env:VIVY_ELEVENLABS_MUSIC_MODEL) { $env:VIVY_ELEVENLABS_MUSIC_MODEL } else { "" })
-  VIVY_MUSIC_PROVIDER = $(if ($env:VIVY_MUSIC_PROVIDER) { $env:VIVY_MUSIC_PROVIDER } else { "suno" })
+  VIVY_MUSIC_PROVIDER = $(if ($env:VIVY_MUSIC_PROVIDER) { $env:VIVY_MUSIC_PROVIDER } else { "suno,mureka" })
+  VIVY_MUREKA_API_KEY_FILE = $(if ($env:VIVY_MUREKA_API_KEY_FILE) { $env:VIVY_MUREKA_API_KEY_FILE } else { "/app/runtime/secrets/mureka_api_key" })
+  VIVY_MUREKA_BASE_URL = $(if ($env:VIVY_MUREKA_BASE_URL) { $env:VIVY_MUREKA_BASE_URL } else { "https://api.mureka.ai" })
+  VIVY_MUREKA_MODEL = $(if ($env:VIVY_MUREKA_MODEL) { $env:VIVY_MUREKA_MODEL } else { "mureka-9" })
   VIVY_SUNO_API_KEY_FILE = $(if ($env:VIVY_SUNO_API_KEY_FILE) { $env:VIVY_SUNO_API_KEY_FILE } else { "/app/runtime/secrets/suno_api_key" })
   VIVY_SUNO_BASE_URL = $(if ($env:VIVY_SUNO_BASE_URL) { $env:VIVY_SUNO_BASE_URL } else { "https://api.sunoapi.org/api/v1" })
   VIVY_SUNO_MODEL = $(if ($env:VIVY_SUNO_MODEL) { $env:VIVY_SUNO_MODEL } else { "V5_5" })
+  VIVY_SUNO_LONG_MODEL = $(if ($env:VIVY_SUNO_LONG_MODEL) { $env:VIVY_SUNO_LONG_MODEL } else { "V5_5" })
   VIVY_SUNO_VOICE_ID = $(if ($env:VIVY_SUNO_VOICE_ID) { $env:VIVY_SUNO_VOICE_ID } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_SUNO_VOICE_ID"])) { [string]$envMap["VIVY_SUNO_VOICE_ID"] } else { "" })
+  VIVY_SUNO_DJEFF_VOICE_ID = $(if ($env:VIVY_SUNO_DJEFF_VOICE_ID) { $env:VIVY_SUNO_DJEFF_VOICE_ID } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_SUNO_DJEFF_VOICE_ID"])) { [string]$envMap["VIVY_SUNO_DJEFF_VOICE_ID"] } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["SUNO_DJEFF_VOICE_ID"])) { [string]$envMap["SUNO_DJEFF_VOICE_ID"] } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["A11_SUNO_DJEFF_VOICE_ID"])) { [string]$envMap["A11_SUNO_DJEFF_VOICE_ID"] } else { "" })
+  VIVY_SUNO_MARVIN_VOICE_ID = $(if ($env:VIVY_SUNO_MARVIN_VOICE_ID) { $env:VIVY_SUNO_MARVIN_VOICE_ID } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_SUNO_MARVIN_VOICE_ID"])) { [string]$envMap["VIVY_SUNO_MARVIN_VOICE_ID"] } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_SUNO_FRERE_VOICE_ID"])) { [string]$envMap["VIVY_SUNO_FRERE_VOICE_ID"] } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["SUNO_MARVIN_VOICE_ID"])) { [string]$envMap["SUNO_MARVIN_VOICE_ID"] } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["SUNO_FRERE_VOICE_ID"])) { [string]$envMap["SUNO_FRERE_VOICE_ID"] } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["A11_SUNO_MARVIN_VOICE_ID"])) { [string]$envMap["A11_SUNO_MARVIN_VOICE_ID"] } else { "" })
+  VIVY_SUNO_A11_VOICE_ID = $(if ($env:VIVY_SUNO_A11_VOICE_ID) { $env:VIVY_SUNO_A11_VOICE_ID } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_SUNO_A11_VOICE_ID"])) { [string]$envMap["VIVY_SUNO_A11_VOICE_ID"] } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["SUNO_A11_VOICE_ID"])) { [string]$envMap["SUNO_A11_VOICE_ID"] } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["A11_SUNO_A11_VOICE_ID"])) { [string]$envMap["A11_SUNO_A11_VOICE_ID"] } else { "" })
+  VIVY_SUNO_K44_VOICE_ID = $(if ($env:VIVY_SUNO_K44_VOICE_ID) { $env:VIVY_SUNO_K44_VOICE_ID } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_SUNO_K44_VOICE_ID"])) { [string]$envMap["VIVY_SUNO_K44_VOICE_ID"] } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_SUNO_KAEN44_VOICE_ID"])) { [string]$envMap["VIVY_SUNO_KAEN44_VOICE_ID"] } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["SUNO_K44_VOICE_ID"])) { [string]$envMap["SUNO_K44_VOICE_ID"] } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["SUNO_KAEN44_VOICE_ID"])) { [string]$envMap["SUNO_KAEN44_VOICE_ID"] } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["A11_SUNO_K44_VOICE_ID"])) { [string]$envMap["A11_SUNO_K44_VOICE_ID"] } else { "" })
+  VIVY_SUNO_KAEN44_VOICE_ID = $(if ($env:VIVY_SUNO_KAEN44_VOICE_ID) { $env:VIVY_SUNO_KAEN44_VOICE_ID } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_SUNO_KAEN44_VOICE_ID"])) { [string]$envMap["VIVY_SUNO_KAEN44_VOICE_ID"] } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_SUNO_K44_VOICE_ID"])) { [string]$envMap["VIVY_SUNO_K44_VOICE_ID"] } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["SUNO_KAEN44_VOICE_ID"])) { [string]$envMap["SUNO_KAEN44_VOICE_ID"] } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["SUNO_K44_VOICE_ID"])) { [string]$envMap["SUNO_K44_VOICE_ID"] } elseif (-not [string]::IsNullOrWhiteSpace([string]$envMap["A11_SUNO_K44_VOICE_ID"])) { [string]$envMap["A11_SUNO_K44_VOICE_ID"] } else { "" })
   VIVY_SUNO_CALLBACK_URL = $(if ($env:VIVY_SUNO_CALLBACK_URL) { $env:VIVY_SUNO_CALLBACK_URL } else { "https://vivy.funesterie.me/api/vivy/studio/suno/callback" })
   VIVY_SUNO_CALLBACK_TOKEN = $(if ($env:VIVY_SUNO_CALLBACK_TOKEN) { $env:VIVY_SUNO_CALLBACK_TOKEN } else { "" })
   ENABLE_PIPER_HTTP = $(if ($env:ENABLE_PIPER_HTTP) { $env:ENABLE_PIPER_HTTP } else { "true" })
@@ -1168,10 +1514,19 @@ $overrides = [ordered]@{
   A11_TTS_ASYNC_QUEUE_MAX = $(if ($env:A11_TTS_ASYNC_QUEUE_MAX) { $env:A11_TTS_ASYNC_QUEUE_MAX } else { "50" })
   A11_MATCH_ARENA_ENABLED = $(if ($env:A11_MATCH_ARENA_ENABLED) { $env:A11_MATCH_ARENA_ENABLED } else { "true" })
   A11_MATCH_ARENA_WORKER_TOKEN_FILE = $(if ($env:A11_MATCH_ARENA_WORKER_TOKEN_FILE) { $env:A11_MATCH_ARENA_WORKER_TOKEN_FILE } else { "/app/runtime/secrets/match_arena_worker_token" })
-  A11_VIDEO_PROXY_URL = $(if ($env:A11_VIDEO_PROXY_URL) { $env:A11_VIDEO_PROXY_URL } else { "" })
-  A11_VIDEO_PROXY_TOKEN = $(if ($env:A11_VIDEO_PROXY_TOKEN) { $env:A11_VIDEO_PROXY_TOKEN } else { "" })
-  A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL = $(if ($env:A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL) { $env:A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL } else { "" })
-  A11_VIDEO_PROXY_TIMEOUT_MS = $(if ($env:A11_VIDEO_PROXY_TIMEOUT_MS) { $env:A11_VIDEO_PROXY_TIMEOUT_MS } else { "600000" })
+  A11_VIDEO_COMFY_CLOUD_ENABLED = $(if ($env:A11_VIDEO_COMFY_CLOUD_ENABLED) { $env:A11_VIDEO_COMFY_CLOUD_ENABLED } elseif ($envMap.Contains("A11_VIDEO_COMFY_CLOUD_ENABLED") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["A11_VIDEO_COMFY_CLOUD_ENABLED"])) { [string]$envMap["A11_VIDEO_COMFY_CLOUD_ENABLED"] } else { "1" })
+  A11_COMFY_CLOUD_API_KEY = $(if ($env:A11_COMFY_CLOUD_API_KEY) { $env:A11_COMFY_CLOUD_API_KEY } elseif ($envMap.Contains("A11_COMFY_CLOUD_API_KEY") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["A11_COMFY_CLOUD_API_KEY"])) { [string]$envMap["A11_COMFY_CLOUD_API_KEY"] } else { "" })
+  A11_COMFY_CLOUD_BASE_URL = $(if ($env:A11_COMFY_CLOUD_BASE_URL) { $env:A11_COMFY_CLOUD_BASE_URL } elseif ($envMap.Contains("A11_COMFY_CLOUD_BASE_URL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["A11_COMFY_CLOUD_BASE_URL"])) { [string]$envMap["A11_COMFY_CLOUD_BASE_URL"] } else { "https://cloud.comfy.org" })
+  A11_COMFY_CLOUD_WORKFLOW_PATH = $(if ($env:A11_COMFY_CLOUD_WORKFLOW_PATH) { $env:A11_COMFY_CLOUD_WORKFLOW_PATH } elseif ($envMap.Contains("A11_COMFY_CLOUD_WORKFLOW_PATH") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["A11_COMFY_CLOUD_WORKFLOW_PATH"])) { [string]$envMap["A11_COMFY_CLOUD_WORKFLOW_PATH"] } else { "" })
+  A11_COMFY_CLOUD_TIMEOUT_MS = $(if ($env:A11_COMFY_CLOUD_TIMEOUT_MS) { $env:A11_COMFY_CLOUD_TIMEOUT_MS } elseif ($envMap.Contains("A11_COMFY_CLOUD_TIMEOUT_MS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["A11_COMFY_CLOUD_TIMEOUT_MS"])) { [string]$envMap["A11_COMFY_CLOUD_TIMEOUT_MS"] } else { "2700000" })
+  A11_COMFY_CLOUD_POLL_INTERVAL_MS = $(if ($env:A11_COMFY_CLOUD_POLL_INTERVAL_MS) { $env:A11_COMFY_CLOUD_POLL_INTERVAL_MS } elseif ($envMap.Contains("A11_COMFY_CLOUD_POLL_INTERVAL_MS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["A11_COMFY_CLOUD_POLL_INTERVAL_MS"])) { [string]$envMap["A11_COMFY_CLOUD_POLL_INTERVAL_MS"] } else { "5000" })
+  A11_COMFY_CLOUD_WAN_MODEL = $(if ($env:A11_COMFY_CLOUD_WAN_MODEL) { $env:A11_COMFY_CLOUD_WAN_MODEL } elseif ($envMap.Contains("A11_COMFY_CLOUD_WAN_MODEL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["A11_COMFY_CLOUD_WAN_MODEL"])) { [string]$envMap["A11_COMFY_CLOUD_WAN_MODEL"] } else { "wan2.5-i2v-preview" })
+  A11_COMFY_CLOUD_WAN_RESOLUTION = $(if ($env:A11_COMFY_CLOUD_WAN_RESOLUTION) { $env:A11_COMFY_CLOUD_WAN_RESOLUTION } elseif ($envMap.Contains("A11_COMFY_CLOUD_WAN_RESOLUTION") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["A11_COMFY_CLOUD_WAN_RESOLUTION"])) { [string]$envMap["A11_COMFY_CLOUD_WAN_RESOLUTION"] } else { "480P" })
+  A11_VIDEO_PROXY_URL = $(if ($env:A11_VIDEO_PROXY_URL) { $env:A11_VIDEO_PROXY_URL } elseif ($envMap.Contains("A11_VIDEO_PROXY_URL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["A11_VIDEO_PROXY_URL"])) { [string]$envMap["A11_VIDEO_PROXY_URL"] } else { "" })
+  A11_VIDEO_PROXY_TOKEN = $(if ($env:A11_VIDEO_PROXY_TOKEN) { $env:A11_VIDEO_PROXY_TOKEN } elseif ($envMap.Contains("A11_VIDEO_PROXY_TOKEN") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["A11_VIDEO_PROXY_TOKEN"])) { [string]$envMap["A11_VIDEO_PROXY_TOKEN"] } else { "" })
+  A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL = $(if ($env:A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL) { $env:A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL } elseif ($envMap.Contains("A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL"])) { [string]$envMap["A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL"] } else { "" })
+  A11_VIDEO_PROXY_TIMEOUT_MS = $(if ($env:A11_VIDEO_PROXY_TIMEOUT_MS) { $env:A11_VIDEO_PROXY_TIMEOUT_MS } elseif ($envMap.Contains("A11_VIDEO_PROXY_TIMEOUT_MS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["A11_VIDEO_PROXY_TIMEOUT_MS"])) { [string]$envMap["A11_VIDEO_PROXY_TIMEOUT_MS"] } else { "2700000" })
+  A11_VIDEO_ASYNC_JOB_TTL_MS = $(if ($env:A11_VIDEO_ASYNC_JOB_TTL_MS) { $env:A11_VIDEO_ASYNC_JOB_TTL_MS } elseif ($envMap.Contains("A11_VIDEO_ASYNC_JOB_TTL_MS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["A11_VIDEO_ASYNC_JOB_TTL_MS"])) { [string]$envMap["A11_VIDEO_ASYNC_JOB_TTL_MS"] } else { "2700000" })
   VIVY_ALEXA_TRACK_URL = "https://files.funesterie.me/public/vivy/2026-05-14/6e66f829-2c46-4254-95c8-4757a75ca07d-vivy-reference-short.mp3"
   VIVY_ALEXA_TRACK_TITLE = "Vivy Reference"
   VIVY_ALEXA_TRACK_ARTIST = "Funesterie"
@@ -1253,6 +1608,21 @@ if (Test-Path -LiteralPath $localSunoSecret) {
   & ssh @sshBase $Remote "chmod 600 $RemoteDataRoot/runtime/secrets/suno_api_key"
   if ($LASTEXITCODE -ne 0) { throw "Permissions secret Suno echouees" }
   Write-Host "Secret Suno synchronise vers le runtime canonique." -ForegroundColor DarkCyan
+}
+
+$localMurekaSecretCandidates = @(
+  $env:VIVY_MUREKA_LOCAL_API_KEY_FILE,
+  (Join-Path $A11Root "runtime\secrets\mureka_api_key"),
+  (Join-Path $env:USERPROFILE "OneDrive\Bureau\mureka api.txt")
+) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+$localMurekaSecret = $localMurekaSecretCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if ($localMurekaSecret) {
+  $remoteMurekaSecret = "$RemoteDataRoot/runtime/secrets/mureka_api_key"
+  & scp @sshBase $localMurekaSecret "${Remote}:$remoteMurekaSecret"
+  if ($LASTEXITCODE -ne 0) { throw "Copie secret Mureka echouee vers $remoteMurekaSecret" }
+  & ssh @sshBase $Remote "chmod 600 $RemoteDataRoot/runtime/secrets/mureka_api_key"
+  if ($LASTEXITCODE -ne 0) { throw "Permissions secret Mureka echouees" }
+  Write-Host "Secret Mureka synchronise vers le runtime canonique." -ForegroundColor DarkCyan
 }
 
 $piperVoiceDownload = @"
@@ -1347,7 +1717,109 @@ build_env="__REMOTE_ROOT__/secrets/build.env"
 a11_env="__REMOTE_ROOT__/secrets/a11.env"
 compose_env="__REMOTE_ROOT__/secrets/compose.env"
 tmp_build="$(mktemp)"
-managed_keys='^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK|A11_LLM_PROVIDER|A11_OLLAMA_PRIMARY_MODEL|A11_OLLAMA_FALLBACK_MODEL|A11_TRANSLATION_MODEL|LOCAL_DEFAULT_MODEL|A11_LLM_FALLBACK_PROVIDER|A11_LLM_RUNTIME_FALLBACK_ORDER|A11_CERBERE_LOCAL_ONLY|A11_LOCAL_CHAT_TIMEOUT_MS|A11_OLLAMA_KEEP_ALIVE|A11_MEMORY_LOCAL_TIMEOUT_MS|A11_MEMORY_REMOTE_TIMEOUT_MS|A11_EMBEDDING_TIMEOUT_MS|A11_RUNTIME_ROOT|VIVY_ELEVENLABS_MUSIC_DISABLED|VIVY_SUNO_MODEL)='
+managed_keys='^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK|A11_LLM_PROVIDER|A11_OLLAMA_PRIMARY_MODEL|A11_OLLAMA_FALLBACK_MODEL|A11_OLLAMA_STRONG_SONG_MODEL|VIVY_CHAT_LOCAL_FIRST|VIVY_OLLAMA_BASE_URL|VIVY_CHAT_LOCAL_MODEL|VIVY_CHAT_LOCAL_TIMEOUT_MS|VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS|VIVY_CHAT_LOCAL_MAX_TOKENS|VIVY_XAI_MODEL|OLLAMA_CLOUD_ENABLED|OLLAMA_CLOUD_BASE_URL|OLLAMA_CLOUD_LYRICS_MODEL|OLLAMA_CLOUD_FAST_MODEL|OLLAMA_CLOUD_CHAT_ENABLED|OLLAMA_CLOUD_CHAT_MODEL|OLLAMA_CLOUD_CHAT_THINK_LEVEL|OLLAMA_CLOUD_CHAT_TIMEOUT_MS|OLLAMA_CLOUD_THINK_LEVEL|OLLAMA_CLOUD_LYRICS_TIMEOUT_MS|VIVY_SONG_CERBERE_FALLBACK_ENABLED|VIVY_SONG_CERBERE_MODEL|VIVY_SONG_CERBERE_TIMEOUT_MS|VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS|VIVY_CHAT_MAX_TOKENS|VIVY_CHAT_MAX_TOKENS_SONG|VIVY_CHAT_MAX_TOKENS_SONG_CEILING|VIVY_SONG_ALLOW_LOCAL_FALLBACK|VIVY_SONG_LOCAL_MODEL|A11_TRANSLATION_MODEL|LOCAL_DEFAULT_MODEL|A11_LLM_FALLBACK_PROVIDER|A11_LLM_RUNTIME_FALLBACK_ORDER|A11_CERBERE_LOCAL_ONLY|A11_LOCAL_CHAT_TIMEOUT_MS|A11_LOCAL_SONG_TIMEOUT_MS|A11_OLLAMA_KEEP_ALIVE|A11_MEMORY_LOCAL_TIMEOUT_MS|A11_MEMORY_REMOTE_TIMEOUT_MS|A11_EMBEDDING_TIMEOUT_MS|A11_RUNTIME_ROOT|VIVY_ELEVENLABS_MUSIC_DISABLED|VIVY_MUSIC_PROVIDER|VIVY_MUREKA_API_KEY_FILE|VIVY_MUREKA_BASE_URL|VIVY_MUREKA_MODEL|VIVY_SUNO_MODEL|VIVY_SUNO_LONG_MODEL|VIVY_SUNO_VOICE_ID|VIVY_SUNO_DJEFF_VOICE_ID|VIVY_SUNO_MARVIN_VOICE_ID|VIVY_SUNO_FRERE_VOICE_ID|SUNO_MARVIN_VOICE_ID|SUNO_FRERE_VOICE_ID|A11_SUNO_MARVIN_VOICE_ID|VIVY_SUNO_A11_VOICE_ID|VIVY_SUNO_K44_VOICE_ID|VIVY_SUNO_KAEN44_VOICE_ID|SUNO_DJEFF_VOICE_ID|SUNO_A11_VOICE_ID|SUNO_K44_VOICE_ID|SUNO_KAEN44_VOICE_ID|A11_SUNO_DJEFF_VOICE_ID|A11_SUNO_A11_VOICE_ID|A11_SUNO_K44_VOICE_ID|VIVY_STREAM_AUTOGENERATE_ENABLED|VIVY_STREAM_IDLE_JUKEBOX_DISABLED|VIVY_STREAM_STATE_URL|VIVY_PUBLIC_BASE_URL|VIVY_STREAM_BOT_MESSAGE_GAP_MS|VIVY_STREAM_COVER_ENABLED|VIVY_STREAM_COVER_URL|VIVY_STREAM_COVER_TIMEOUT_MS|VIVY_STREAM_CLIP_ENABLED|VIVY_STREAM_CLIP_PROVIDER|VIVY_STREAM_CLIP_DURATION_SECONDS|VIVY_STREAM_CLIP_TIMEOUT_MS|VIVY_STREAM_FULL_CLIP_ENABLED|VIVY_STREAM_FULL_CLIP_SOURCE_IMAGE_URL|VIVY_STREAM_DREAMCLIP_SOURCE_IMAGE_URL|VIVY_STREAM_FULL_CLIP_PROVIDER|VIVY_STREAM_FULL_CLIP_SCENES|VIVY_STREAM_DREAMCLIP_SCENES|VIVY_STREAM_DREAMCLIP_MAX_DURATION_SECONDS|VIVY_STREAM_DREAMCLIP_LOOP_SECONDS|VIVY_STREAM_DREAMCLIP_MIN_GENERATED_COVERAGE|VIVY_STREAM_DREAMCLIP_ALLOW_STATIC_FALLBACK|VIVY_STREAM_FULL_CLIP_INSTRUMENTAL_SCENES|VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS|VIVY_STREAM_FULL_CLIP_REUSE_CHORUS|VIVY_STREAM_FULL_CLIP_CONCURRENCY|VIVY_STREAM_FULL_CLIP_GENERATE_SCENE_LOOPS|VIVY_STREAM_FULL_CLIP_LOOP_SECONDS|VIVY_STREAM_FULL_CLIP_WIDTH|VIVY_STREAM_FULL_CLIP_HEIGHT|VIVY_STREAM_FULL_CLIP_FPS|VIVY_STREAM_FULL_CLIP_VISUAL_QA|A11_HF_VIDEO_PROVIDER|A11_REPLICATE_VIDEO_MODEL|A11_VIDEO_PROMPT_MAX_DURATION_SECONDS|VIVY_STREAM_FULL_CLIP_CROP_SOURCE_IMAGE|VIVY_STREAM_FULL_CLIP_SOURCE_CROP_WIDTH_RATIO|VIVY_STREAM_FULL_CLIP_SOURCE_CROP_X_BIAS|VIVY_STREAM_FULL_CLIP_SOURCE_CROP_Y_BIAS|VIVY_STREAM_FULL_CLIP_DEMOSAIC_GRID|VIVY_STREAM_FULL_CLIP_DEMOSAIC_COLUMNS|VIVY_STREAM_FULL_CLIP_DEMOSAIC_ROWS|VIVY_STREAM_FULL_CLIP_DEMOSAIC_ACTIVE_HEIGHT_RATIO|VIVY_STREAM_FULL_CLIP_DEMOSAIC_SEGMENT_SECONDS|VIVY_STREAM_FULL_CLIP_DEMOSAIC_ORDER|A11_VIDEO_PROXY_URL|A11_VIDEO_PROXY_TOKEN|A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL|A11_VIDEO_PROXY_TIMEOUT_MS|A11_VIDEO_ASYNC_JOB_TTL_MS|A11_VIDEO_COMFY_CLOUD_ENABLED|A11_COMFY_CLOUD_API_KEY|A11_COMFY_CLOUD_BASE_URL|A11_COMFY_CLOUD_WORKFLOW_PATH|A11_COMFY_CLOUD_TIMEOUT_MS|A11_COMFY_CLOUD_POLL_INTERVAL_MS|A11_COMFY_CLOUD_WAN_MODEL|A11_COMFY_CLOUD_WAN_RESOLUTION)='
+vivy_stream_secret="$(awk -F= '/^VIVY_STREAM_SECRET=/{sub(/^[^=]*=/,""); print; exit}' "$compose_env" "$a11_env" "$build_env" 2>/dev/null || true)"
+vivy_stream_autogenerate="$(awk -F= '/^VIVY_STREAM_AUTOGENERATE_ENABLED=/{sub(/^[^=]*=/,""); print; exit}' "$compose_env" "$a11_env" "$build_env" 2>/dev/null || true)"
+if [ -z "$vivy_stream_autogenerate" ]; then
+  vivy_stream_autogenerate="1"
+fi
+vivy_stream_idle_jukebox_disabled="$(awk -F= '/^VIVY_STREAM_IDLE_JUKEBOX_DISABLED=/{sub(/^[^=]*=/,""); print; exit}' "$compose_env" "$a11_env" "$build_env" 2>/dev/null || true)"
+if [ -z "$vivy_stream_idle_jukebox_disabled" ]; then
+  vivy_stream_idle_jukebox_disabled="1"
+fi
+read_first_env_value() {
+  awk -v k="$1" -F= '$1 == k { sub(/^[^=]*=/, ""); print; exit }' "$compose_env" "$a11_env" "$build_env" 2>/dev/null || true
+}
+suno_voice_id="$(read_first_env_value VIVY_SUNO_VOICE_ID)"
+suno_djeff_voice_id="$(read_first_env_value VIVY_SUNO_DJEFF_VOICE_ID)"
+[ -n "$suno_djeff_voice_id" ] || suno_djeff_voice_id="$(read_first_env_value SUNO_DJEFF_VOICE_ID)"
+[ -n "$suno_djeff_voice_id" ] || suno_djeff_voice_id="$(read_first_env_value A11_SUNO_DJEFF_VOICE_ID)"
+suno_marvin_voice_id="$(read_first_env_value VIVY_SUNO_MARVIN_VOICE_ID)"
+[ -n "$suno_marvin_voice_id" ] || suno_marvin_voice_id="$(read_first_env_value VIVY_SUNO_FRERE_VOICE_ID)"
+[ -n "$suno_marvin_voice_id" ] || suno_marvin_voice_id="$(read_first_env_value SUNO_MARVIN_VOICE_ID)"
+[ -n "$suno_marvin_voice_id" ] || suno_marvin_voice_id="$(read_first_env_value SUNO_FRERE_VOICE_ID)"
+[ -n "$suno_marvin_voice_id" ] || suno_marvin_voice_id="$(read_first_env_value A11_SUNO_MARVIN_VOICE_ID)"
+suno_a11_voice_id="$(read_first_env_value VIVY_SUNO_A11_VOICE_ID)"
+[ -n "$suno_a11_voice_id" ] || suno_a11_voice_id="$(read_first_env_value SUNO_A11_VOICE_ID)"
+[ -n "$suno_a11_voice_id" ] || suno_a11_voice_id="$(read_first_env_value A11_SUNO_A11_VOICE_ID)"
+suno_k44_voice_id="$(read_first_env_value VIVY_SUNO_K44_VOICE_ID)"
+[ -n "$suno_k44_voice_id" ] || suno_k44_voice_id="$(read_first_env_value VIVY_SUNO_KAEN44_VOICE_ID)"
+[ -n "$suno_k44_voice_id" ] || suno_k44_voice_id="$(read_first_env_value SUNO_K44_VOICE_ID)"
+[ -n "$suno_k44_voice_id" ] || suno_k44_voice_id="$(read_first_env_value SUNO_KAEN44_VOICE_ID)"
+[ -n "$suno_k44_voice_id" ] || suno_k44_voice_id="$(read_first_env_value A11_SUNO_K44_VOICE_ID)"
+ensure_full_throttle_scene_count() {
+  value="$1"
+  case "$value" in
+    ''|*[!0-9]*) echo "8" ;;
+    *) if [ "$value" -lt 8 ]; then echo "8"; else echo "$value"; fi ;;
+  esac
+}
+vivy_stream_full_clip_scenes="$(read_first_env_value VIVY_STREAM_FULL_CLIP_SCENES)"
+[ -n "$vivy_stream_full_clip_scenes" ] || vivy_stream_full_clip_scenes="8"
+vivy_stream_full_clip_scenes="$(ensure_full_throttle_scene_count "$vivy_stream_full_clip_scenes")"
+vivy_stream_full_clip_source_image_url="$(read_first_env_value VIVY_STREAM_FULL_CLIP_SOURCE_IMAGE_URL)"
+vivy_stream_dreamclip_source_image_url="$(read_first_env_value VIVY_STREAM_DREAMCLIP_SOURCE_IMAGE_URL)"
+vivy_stream_full_clip_provider="$(read_first_env_value VIVY_STREAM_FULL_CLIP_PROVIDER)"
+vivy_stream_dreamclip_scenes="$(read_first_env_value VIVY_STREAM_DREAMCLIP_SCENES)"
+[ -n "$vivy_stream_dreamclip_scenes" ] || vivy_stream_dreamclip_scenes="8"
+vivy_stream_dreamclip_scenes="$(ensure_full_throttle_scene_count "$vivy_stream_dreamclip_scenes")"
+vivy_stream_dreamclip_max_duration_seconds="$(read_first_env_value VIVY_STREAM_DREAMCLIP_MAX_DURATION_SECONDS)"
+[ -n "$vivy_stream_dreamclip_max_duration_seconds" ] || vivy_stream_dreamclip_max_duration_seconds="420"
+vivy_stream_dreamclip_loop_seconds="$(read_first_env_value VIVY_STREAM_DREAMCLIP_LOOP_SECONDS)"
+[ -n "$vivy_stream_dreamclip_loop_seconds" ] || vivy_stream_dreamclip_loop_seconds="15"
+vivy_stream_dreamclip_min_generated_coverage="$(read_first_env_value VIVY_STREAM_DREAMCLIP_MIN_GENERATED_COVERAGE)"
+vivy_stream_dreamclip_allow_static_fallback="$(read_first_env_value VIVY_STREAM_DREAMCLIP_ALLOW_STATIC_FALLBACK)"
+vivy_stream_full_clip_instrumental_scenes="$(read_first_env_value VIVY_STREAM_FULL_CLIP_INSTRUMENTAL_SCENES)"
+[ -n "$vivy_stream_full_clip_instrumental_scenes" ] || vivy_stream_full_clip_instrumental_scenes="8"
+vivy_stream_full_clip_instrumental_scenes="$(ensure_full_throttle_scene_count "$vivy_stream_full_clip_instrumental_scenes")"
+vivy_stream_full_clip_unique_loops="$(read_first_env_value VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS)"
+[ -n "$vivy_stream_full_clip_unique_loops" ] || vivy_stream_full_clip_unique_loops="5"
+vivy_stream_full_clip_reuse_chorus="$(read_first_env_value VIVY_STREAM_FULL_CLIP_REUSE_CHORUS)"
+[ -n "$vivy_stream_full_clip_reuse_chorus" ] || vivy_stream_full_clip_reuse_chorus="1"
+vivy_stream_full_clip_concurrency="$(read_first_env_value VIVY_STREAM_FULL_CLIP_CONCURRENCY)"
+[ -n "$vivy_stream_full_clip_concurrency" ] || vivy_stream_full_clip_concurrency="2"
+vivy_stream_full_clip_generate_scene_loops="$(read_first_env_value VIVY_STREAM_FULL_CLIP_GENERATE_SCENE_LOOPS)"
+[ -n "$vivy_stream_full_clip_generate_scene_loops" ] || vivy_stream_full_clip_generate_scene_loops="1"
+vivy_stream_full_clip_loop_seconds="$(read_first_env_value VIVY_STREAM_FULL_CLIP_LOOP_SECONDS)"
+[ -n "$vivy_stream_full_clip_loop_seconds" ] || vivy_stream_full_clip_loop_seconds="8"
+vivy_stream_full_clip_width="$(read_first_env_value VIVY_STREAM_FULL_CLIP_WIDTH)"
+[ -n "$vivy_stream_full_clip_width" ] || vivy_stream_full_clip_width="1280"
+vivy_stream_full_clip_height="$(read_first_env_value VIVY_STREAM_FULL_CLIP_HEIGHT)"
+[ -n "$vivy_stream_full_clip_height" ] || vivy_stream_full_clip_height="720"
+vivy_stream_full_clip_fps="$(read_first_env_value VIVY_STREAM_FULL_CLIP_FPS)"
+[ -n "$vivy_stream_full_clip_fps" ] || vivy_stream_full_clip_fps="24"
+vivy_stream_full_clip_visual_qa="$(read_first_env_value VIVY_STREAM_FULL_CLIP_VISUAL_QA)"
+a11_hf_video_provider="$(read_first_env_value A11_HF_VIDEO_PROVIDER)"
+[ -n "$a11_hf_video_provider" ] || a11_hf_video_provider="replicate"
+a11_replicate_video_model="$(read_first_env_value A11_REPLICATE_VIDEO_MODEL)"
+[ -n "$a11_replicate_video_model" ] || a11_replicate_video_model="wan-video/wan-2.6-i2v"
+vivy_stream_full_clip_crop_source_image="$(read_first_env_value VIVY_STREAM_FULL_CLIP_CROP_SOURCE_IMAGE)"
+[ -n "$vivy_stream_full_clip_crop_source_image" ] || vivy_stream_full_clip_crop_source_image="1"
+vivy_stream_full_clip_source_crop_width_ratio="$(read_first_env_value VIVY_STREAM_FULL_CLIP_SOURCE_CROP_WIDTH_RATIO)"
+[ -n "$vivy_stream_full_clip_source_crop_width_ratio" ] || vivy_stream_full_clip_source_crop_width_ratio="0.58"
+vivy_stream_full_clip_source_crop_x_bias="$(read_first_env_value VIVY_STREAM_FULL_CLIP_SOURCE_CROP_X_BIAS)"
+[ -n "$vivy_stream_full_clip_source_crop_x_bias" ] || vivy_stream_full_clip_source_crop_x_bias="0.62"
+vivy_stream_full_clip_source_crop_y_bias="$(read_first_env_value VIVY_STREAM_FULL_CLIP_SOURCE_CROP_Y_BIAS)"
+[ -n "$vivy_stream_full_clip_source_crop_y_bias" ] || vivy_stream_full_clip_source_crop_y_bias="0.5"
+vivy_stream_full_clip_demosaic_grid="$(read_first_env_value VIVY_STREAM_FULL_CLIP_DEMOSAIC_GRID)"
+[ -n "$vivy_stream_full_clip_demosaic_grid" ] || vivy_stream_full_clip_demosaic_grid="0"
+vivy_stream_full_clip_demosaic_columns="$(read_first_env_value VIVY_STREAM_FULL_CLIP_DEMOSAIC_COLUMNS)"
+[ -n "$vivy_stream_full_clip_demosaic_columns" ] || vivy_stream_full_clip_demosaic_columns="3"
+vivy_stream_full_clip_demosaic_rows="$(read_first_env_value VIVY_STREAM_FULL_CLIP_DEMOSAIC_ROWS)"
+[ -n "$vivy_stream_full_clip_demosaic_rows" ] || vivy_stream_full_clip_demosaic_rows="3"
+vivy_stream_full_clip_demosaic_active_height_ratio="$(read_first_env_value VIVY_STREAM_FULL_CLIP_DEMOSAIC_ACTIVE_HEIGHT_RATIO)"
+[ -n "$vivy_stream_full_clip_demosaic_active_height_ratio" ] || vivy_stream_full_clip_demosaic_active_height_ratio="0.9"
+vivy_stream_full_clip_demosaic_segment_seconds="$(read_first_env_value VIVY_STREAM_FULL_CLIP_DEMOSAIC_SEGMENT_SECONDS)"
+[ -n "$vivy_stream_full_clip_demosaic_segment_seconds" ] || vivy_stream_full_clip_demosaic_segment_seconds="1.25"
+vivy_stream_full_clip_demosaic_order="$(read_first_env_value VIVY_STREAM_FULL_CLIP_DEMOSAIC_ORDER)"
+[ -n "$vivy_stream_full_clip_demosaic_order" ] || vivy_stream_full_clip_demosaic_order="4,1,5,7,2,8"
+preserved_env="$(mktemp)"
+for key in TWITCH_CHANNEL TWITCH_BOT_USERNAME TWITCH_OAUTH_TOKEN TWITCH_ACCESS_TOKEN TWITCH_CLIENT_ID TWITCH_REFRESH_TOKEN VIVY_STREAM_INGEST_URL VIVY_STREAM_RESET_URL VIVY_STREAM_STATE_URL VIVY_PUBLIC_BASE_URL VIVY_STREAM_COMMANDS_ONLY VIVY_STREAM_ANNOUNCE_INTERVAL_MS VIVY_STREAM_ANNOUNCE_DISABLED VIVY_STREAM_BOT_MESSAGE_GAP_MS VIVY_STREAM_AUTOGENERATE_ENABLED VIVY_STREAM_IDLE_JUKEBOX_DISABLED VIVY_STREAM_COVER_ENABLED VIVY_STREAM_COVER_URL VIVY_STREAM_COVER_TIMEOUT_MS VIVY_STREAM_CLIP_ENABLED VIVY_STREAM_CLIP_PROVIDER VIVY_STREAM_CLIP_DURATION_SECONDS VIVY_STREAM_CLIP_TIMEOUT_MS VIVY_STREAM_FULL_CLIP_ENABLED VIVY_STREAM_FULL_CLIP_SOURCE_IMAGE_URL VIVY_STREAM_DREAMCLIP_SOURCE_IMAGE_URL VIVY_STREAM_FULL_CLIP_PROVIDER VIVY_STREAM_FULL_CLIP_SCENES VIVY_STREAM_DREAMCLIP_SCENES VIVY_STREAM_DREAMCLIP_MAX_DURATION_SECONDS VIVY_STREAM_DREAMCLIP_LOOP_SECONDS VIVY_STREAM_DREAMCLIP_MIN_GENERATED_COVERAGE VIVY_STREAM_DREAMCLIP_ALLOW_STATIC_FALLBACK VIVY_STREAM_FULL_CLIP_INSTRUMENTAL_SCENES VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS VIVY_STREAM_FULL_CLIP_REUSE_CHORUS VIVY_STREAM_FULL_CLIP_CONCURRENCY VIVY_STREAM_FULL_CLIP_GENERATE_SCENE_LOOPS VIVY_STREAM_FULL_CLIP_LOOP_SECONDS VIVY_STREAM_FULL_CLIP_WIDTH VIVY_STREAM_FULL_CLIP_HEIGHT VIVY_STREAM_FULL_CLIP_FPS VIVY_STREAM_FULL_CLIP_VISUAL_QA A11_HF_VIDEO_PROVIDER A11_REPLICATE_VIDEO_MODEL VIVY_STREAM_FULL_CLIP_CROP_SOURCE_IMAGE VIVY_STREAM_FULL_CLIP_SOURCE_CROP_WIDTH_RATIO VIVY_STREAM_FULL_CLIP_SOURCE_CROP_X_BIAS VIVY_STREAM_FULL_CLIP_SOURCE_CROP_Y_BIAS VIVY_STREAM_FULL_CLIP_DEMOSAIC_GRID VIVY_STREAM_FULL_CLIP_DEMOSAIC_COLUMNS VIVY_STREAM_FULL_CLIP_DEMOSAIC_ROWS VIVY_STREAM_FULL_CLIP_DEMOSAIC_ACTIVE_HEIGHT_RATIO VIVY_STREAM_FULL_CLIP_DEMOSAIC_SEGMENT_SECONDS VIVY_STREAM_FULL_CLIP_DEMOSAIC_ORDER A11_VIDEO_PROXY_URL A11_VIDEO_PROXY_TOKEN A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL A11_VIDEO_PROXY_TIMEOUT_MS A11_VIDEO_ASYNC_JOB_TTL_MS A11_VIDEO_COMFY_CLOUD_ENABLED A11_COMFY_CLOUD_API_KEY A11_COMFY_CLOUD_BASE_URL A11_COMFY_CLOUD_WORKFLOW_PATH A11_COMFY_CLOUD_TIMEOUT_MS A11_COMFY_CLOUD_POLL_INTERVAL_MS A11_COMFY_CLOUD_WAN_MODEL A11_COMFY_CLOUD_WAN_RESOLUTION VIVY_STREAM_TRACK_NOTICE_POLL_INTERVAL_MS VIVY_STREAM_RECAP_INTERVAL_MS VIVY_TWITCH_LIVE_POLL_INTERVAL_MS VIVY_TWITCH_RESET_ON_OFFLINE VIVY_TWITCH_RESET_ON_IRC_CLOSE VIVY_TWITCH_LIVE_GATE_DISABLED; do
+  value="$(awk -v k="$key" -F= '$1 == k { sub(/^[^=]*=/, ""); print; exit }' "$compose_env" "$a11_env" "$build_env" 2>/dev/null || true)"
+  if [ -n "$value" ]; then
+    printf '%s=%s\n' "$key" "$value" >> "$preserved_env"
+  fi
+done
 if [ -s "$build_env" ]; then
   grep -v -E "$managed_keys" "$build_env" > "$tmp_build" || true
 fi
@@ -1356,21 +1828,120 @@ printf 'A11_BUILD_BRANCH=%s\n' '__BUILD_BRANCH__' >> "$tmp_build"
 printf 'A11_BUILD_DATE=%s\n' '__BUILD_DATE__' >> "$tmp_build"
 printf 'A11_VOICE_XTTS_RVC_FALLBACK=false\n' >> "$tmp_build"
 printf 'A11_LLM_PROVIDER=groq\n' >> "$tmp_build"
-printf 'A11_OLLAMA_PRIMARY_MODEL=llama3.2:3b\n' >> "$tmp_build"
-printf 'A11_OLLAMA_FALLBACK_MODEL=llama3.2:3b\n' >> "$tmp_build"
-printf 'A11_TRANSLATION_MODEL=llama3.2:3b\n' >> "$tmp_build"
+printf 'A11_OLLAMA_PRIMARY_MODEL=qwen2.5:32b\n' >> "$tmp_build"
+printf 'A11_OLLAMA_FALLBACK_MODEL=qwen2.5:7b\n' >> "$tmp_build"
+printf 'VIVY_CHAT_LOCAL_FIRST=false\n' >> "$tmp_build"
+printf 'VIVY_OLLAMA_BASE_URL=http://a11-ollama:11434\n' >> "$tmp_build"
+printf 'VIVY_CHAT_LOCAL_MODEL=qwen2.5:7b\n' >> "$tmp_build"
+printf 'VIVY_CHAT_LOCAL_TIMEOUT_MS=90000\n' >> "$tmp_build"
+printf 'VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS=10000\n' >> "$tmp_build"
+printf 'VIVY_CHAT_LOCAL_MAX_TOKENS=800\n' >> "$tmp_build"
+printf 'VIVY_XAI_MODEL=grok-4.3\n' >> "$tmp_build"
+printf 'OLLAMA_CLOUD_ENABLED=1\n' >> "$tmp_build"
+printf 'OLLAMA_CLOUD_BASE_URL=https://ollama.com\n' >> "$tmp_build"
+printf 'OLLAMA_CLOUD_LYRICS_MODEL=gpt-oss:120b\n' >> "$tmp_build"
+printf 'OLLAMA_CLOUD_FAST_MODEL=gpt-oss:20b\n' >> "$tmp_build"
+printf 'OLLAMA_CLOUD_CHAT_ENABLED=1\n' >> "$tmp_build"
+printf 'OLLAMA_CLOUD_CHAT_MODEL=gpt-oss:120b\n' >> "$tmp_build"
+printf 'OLLAMA_CLOUD_CHAT_THINK_LEVEL=high\n' >> "$tmp_build"
+printf 'OLLAMA_CLOUD_CHAT_TIMEOUT_MS=300000\n' >> "$tmp_build"
+ollama_cloud_think_level="$(awk -F= '$1 == "OLLAMA_CLOUD_THINK_LEVEL" { sub(/^[^=]*=/, ""); print; exit }' "$a11_env" 2>/dev/null || true)"
+if [ -z "$ollama_cloud_think_level" ]; then ollama_cloud_think_level="high"; fi
+printf 'OLLAMA_CLOUD_THINK_LEVEL=%s\n' "$ollama_cloud_think_level" >> "$tmp_build"
+printf 'OLLAMA_CLOUD_LYRICS_TIMEOUT_MS=360000\n' >> "$tmp_build"
+printf 'VIVY_SONG_CERBERE_FALLBACK_ENABLED=1\n' >> "$tmp_build"
+vivy_song_cerbere_model="$(awk -F= '$1 == "VIVY_SONG_CERBERE_MODEL" { sub(/^[^=]*=/, ""); print; exit }' "$a11_env" 2>/dev/null || true)"
+if [ -z "$vivy_song_cerbere_model" ]; then vivy_song_cerbere_model="anthropic/claude-sonnet-4.5"; fi
+printf 'VIVY_SONG_CERBERE_MODEL=%s\n' "$vivy_song_cerbere_model" >> "$tmp_build"
+printf 'VIVY_SONG_CERBERE_TIMEOUT_MS=240000\n' >> "$tmp_build"
+printf 'VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS=300000\n' >> "$tmp_build"
+printf 'VIVY_CHAT_MAX_TOKENS=5000\n' >> "$tmp_build"
+printf 'VIVY_CHAT_MAX_TOKENS_SONG=10000\n' >> "$tmp_build"
+printf 'VIVY_CHAT_MAX_TOKENS_SONG_CEILING=12000\n' >> "$tmp_build"
+printf 'A11_OLLAMA_STRONG_SONG_MODEL=__STRONG_SONG_MODEL__\n' >> "$tmp_build"
+printf 'VIVY_SONG_ALLOW_LOCAL_FALLBACK=true\n' >> "$tmp_build"
+printf 'VIVY_SONG_LOCAL_MODEL=__STRONG_SONG_MODEL__\n' >> "$tmp_build"
+printf 'A11_TRANSLATION_MODEL=qwen2.5:32b\n' >> "$tmp_build"
 printf 'LOCAL_DEFAULT_MODEL=llama3.2:3b\n' >> "$tmp_build"
 printf 'A11_LLM_FALLBACK_PROVIDER=ollama\n' >> "$tmp_build"
 printf 'A11_LLM_RUNTIME_FALLBACK_ORDER=ollama,openai,gemini,xai,huggingface,deepseek,together\n' >> "$tmp_build"
 printf 'A11_CERBERE_LOCAL_ONLY=false\n' >> "$tmp_build"
-printf 'A11_LOCAL_CHAT_TIMEOUT_MS=45000\n' >> "$tmp_build"
+printf 'A11_LOCAL_CHAT_TIMEOUT_MS=90000\n' >> "$tmp_build"
+printf 'A11_LOCAL_SONG_TIMEOUT_MS=180000\n' >> "$tmp_build"
 printf 'A11_OLLAMA_KEEP_ALIVE=30m\n' >> "$tmp_build"
 printf 'A11_MEMORY_LOCAL_TIMEOUT_MS=3500\n' >> "$tmp_build"
 printf 'A11_MEMORY_REMOTE_TIMEOUT_MS=5000\n' >> "$tmp_build"
 printf 'A11_EMBEDDING_TIMEOUT_MS=2500\n' >> "$tmp_build"
 printf 'A11_RUNTIME_ROOT=/app/runtime\n' >> "$tmp_build"
+printf 'A11_EPISODIC_MEMORY_DIR=/app/runtime/episodic-memory\n' >> "$tmp_build"
 printf 'VIVY_ELEVENLABS_MUSIC_DISABLED=false\n' >> "$tmp_build"
+printf 'VIVY_MUSIC_PROVIDER=suno,mureka\n' >> "$tmp_build"
+printf 'VIVY_MUREKA_API_KEY_FILE=/app/runtime/secrets/mureka_api_key\n' >> "$tmp_build"
+printf 'VIVY_MUREKA_BASE_URL=https://api.mureka.ai\n' >> "$tmp_build"
+printf 'VIVY_MUREKA_MODEL=mureka-9\n' >> "$tmp_build"
 printf 'VIVY_SUNO_MODEL=V5_5\n' >> "$tmp_build"
+printf 'VIVY_SUNO_LONG_MODEL=V5_5\n' >> "$tmp_build"
+if [ -n "$suno_voice_id" ]; then printf 'VIVY_SUNO_VOICE_ID=%s\n' "$suno_voice_id" >> "$tmp_build"; fi
+if [ -n "$suno_djeff_voice_id" ]; then printf 'VIVY_SUNO_DJEFF_VOICE_ID=%s\n' "$suno_djeff_voice_id" >> "$tmp_build"; fi
+if [ -n "$suno_marvin_voice_id" ]; then printf 'VIVY_SUNO_MARVIN_VOICE_ID=%s\n' "$suno_marvin_voice_id" >> "$tmp_build"; fi
+if [ -n "$suno_a11_voice_id" ]; then printf 'VIVY_SUNO_A11_VOICE_ID=%s\n' "$suno_a11_voice_id" >> "$tmp_build"; fi
+if [ -n "$suno_k44_voice_id" ]; then
+  printf 'VIVY_SUNO_K44_VOICE_ID=%s\n' "$suno_k44_voice_id" >> "$tmp_build"
+  printf 'VIVY_SUNO_KAEN44_VOICE_ID=%s\n' "$suno_k44_voice_id" >> "$tmp_build"
+fi
+printf 'VIVY_STREAM_AUTOGENERATE_ENABLED=%s\n' "$vivy_stream_autogenerate" >> "$tmp_build"
+printf 'VIVY_STREAM_IDLE_JUKEBOX_DISABLED=%s\n' "$vivy_stream_idle_jukebox_disabled" >> "$tmp_build"
+printf 'VIVY_STREAM_STATE_URL=http://__A11_BACKEND_SERVICE__:3000/api/vivy/stream/state\n' >> "$tmp_build"
+printf 'VIVY_PUBLIC_BASE_URL=https://vivy.funesterie.me\n' >> "$tmp_build"
+printf 'VIVY_STREAM_BOT_MESSAGE_GAP_MS=15000\n' >> "$tmp_build"
+printf 'VIVY_STREAM_COVER_ENABLED=1\n' >> "$tmp_build"
+printf 'VIVY_STREAM_COVER_URL=http://127.0.0.1:3000/api/tools/generate_sd\n' >> "$tmp_build"
+printf 'VIVY_STREAM_COVER_TIMEOUT_MS=120000\n' >> "$tmp_build"
+printf 'VIVY_STREAM_CLIP_ENABLED=1\n' >> "$tmp_build"
+printf 'VIVY_STREAM_CLIP_PROVIDER=auto\n' >> "$tmp_build"
+printf 'VIVY_STREAM_CLIP_DURATION_SECONDS=3\n' >> "$tmp_build"
+printf 'VIVY_STREAM_CLIP_TIMEOUT_MS=2700000\n' >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_ENABLED=1\n' >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_SOURCE_IMAGE_URL=%s\n' "$vivy_stream_full_clip_source_image_url" >> "$tmp_build"
+printf 'VIVY_STREAM_DREAMCLIP_SOURCE_IMAGE_URL=%s\n' "$vivy_stream_dreamclip_source_image_url" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_PROVIDER=%s\n' "$vivy_stream_full_clip_provider" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_SCENES=%s\n' "$vivy_stream_full_clip_scenes" >> "$tmp_build"
+printf 'VIVY_STREAM_DREAMCLIP_SCENES=%s\n' "$vivy_stream_dreamclip_scenes" >> "$tmp_build"
+printf 'VIVY_STREAM_DREAMCLIP_MAX_DURATION_SECONDS=%s\n' "$vivy_stream_dreamclip_max_duration_seconds" >> "$tmp_build"
+printf 'VIVY_STREAM_DREAMCLIP_LOOP_SECONDS=%s\n' "$vivy_stream_dreamclip_loop_seconds" >> "$tmp_build"
+printf 'VIVY_STREAM_DREAMCLIP_MIN_GENERATED_COVERAGE=%s\n' "$vivy_stream_dreamclip_min_generated_coverage" >> "$tmp_build"
+printf 'VIVY_STREAM_DREAMCLIP_ALLOW_STATIC_FALLBACK=%s\n' "$vivy_stream_dreamclip_allow_static_fallback" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_INSTRUMENTAL_SCENES=%s\n' "$vivy_stream_full_clip_instrumental_scenes" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS=%s\n' "$vivy_stream_full_clip_unique_loops" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_REUSE_CHORUS=%s\n' "$vivy_stream_full_clip_reuse_chorus" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_CONCURRENCY=%s\n' "$vivy_stream_full_clip_concurrency" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_GENERATE_SCENE_LOOPS=%s\n' "$vivy_stream_full_clip_generate_scene_loops" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_LOOP_SECONDS=%s\n' "$vivy_stream_full_clip_loop_seconds" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_WIDTH=%s\n' "$vivy_stream_full_clip_width" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_HEIGHT=%s\n' "$vivy_stream_full_clip_height" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_FPS=%s\n' "$vivy_stream_full_clip_fps" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_VISUAL_QA=%s\n' "$vivy_stream_full_clip_visual_qa" >> "$tmp_build"
+printf 'A11_HF_VIDEO_PROVIDER=%s\n' "$a11_hf_video_provider" >> "$tmp_build"
+printf 'A11_REPLICATE_VIDEO_MODEL=%s\n' "$a11_replicate_video_model" >> "$tmp_build"
+printf 'A11_VIDEO_PROMPT_MAX_DURATION_SECONDS=15\n' >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_CROP_SOURCE_IMAGE=%s\n' "$vivy_stream_full_clip_crop_source_image" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_SOURCE_CROP_WIDTH_RATIO=%s\n' "$vivy_stream_full_clip_source_crop_width_ratio" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_SOURCE_CROP_X_BIAS=%s\n' "$vivy_stream_full_clip_source_crop_x_bias" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_SOURCE_CROP_Y_BIAS=%s\n' "$vivy_stream_full_clip_source_crop_y_bias" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_DEMOSAIC_GRID=%s\n' "$vivy_stream_full_clip_demosaic_grid" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_DEMOSAIC_COLUMNS=%s\n' "$vivy_stream_full_clip_demosaic_columns" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_DEMOSAIC_ROWS=%s\n' "$vivy_stream_full_clip_demosaic_rows" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_DEMOSAIC_ACTIVE_HEIGHT_RATIO=%s\n' "$vivy_stream_full_clip_demosaic_active_height_ratio" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_DEMOSAIC_SEGMENT_SECONDS=%s\n' "$vivy_stream_full_clip_demosaic_segment_seconds" >> "$tmp_build"
+printf 'VIVY_STREAM_FULL_CLIP_DEMOSAIC_ORDER=%s\n' "$vivy_stream_full_clip_demosaic_order" >> "$tmp_build"
+printf 'A11_VIDEO_COMFY_CLOUD_ENABLED=1\n' >> "$tmp_build"
+printf 'A11_COMFY_CLOUD_BASE_URL=https://cloud.comfy.org\n' >> "$tmp_build"
+printf 'A11_COMFY_CLOUD_TIMEOUT_MS=2700000\n' >> "$tmp_build"
+printf 'A11_VIDEO_PROXY_TIMEOUT_MS=2700000\n' >> "$tmp_build"
+printf 'A11_VIDEO_ASYNC_JOB_TTL_MS=2700000\n' >> "$tmp_build"
+printf 'A11_COMFY_CLOUD_POLL_INTERVAL_MS=5000\n' >> "$tmp_build"
+printf 'A11_COMFY_CLOUD_WAN_MODEL=wan2.5-i2v-preview\n' >> "$tmp_build"
+printf 'A11_COMFY_CLOUD_WAN_RESOLUTION=480P\n' >> "$tmp_build"
 mv "$tmp_build" "$build_env"
 chmod 600 "$build_env"
 if [ -s "$a11_env" ]; then
@@ -1384,13 +1955,37 @@ else
   cat "$build_env" >> "$tmp_compose"
   mv "$tmp_compose" "$compose_env"
 fi
+if ! grep -q '^VIVY_STREAM_SECRET=' "$compose_env"; then
+  if [ -z "$vivy_stream_secret" ]; then
+    vivy_stream_secret="$(openssl rand -hex 32)"
+  fi
+  printf 'VIVY_STREAM_SECRET=%s\n' "$vivy_stream_secret" >> "$compose_env"
+fi
+if [ -s "$preserved_env" ]; then
+  while IFS= read -r line; do
+    key="${line%%=*}"
+    if [ -n "$key" ]; then
+      if ! grep -q "^$key=" "$compose_env"; then
+        printf '%s\n' "$line" >> "$compose_env"
+      elif grep -q "^$key=$" "$compose_env"; then
+        tmp_compose_fix="$(mktemp)"
+        grep -v "^$key=" "$compose_env" > "$tmp_compose_fix" || true
+        mv "$tmp_compose_fix" "$compose_env"
+        printf '%s\n' "$line" >> "$compose_env"
+      fi
+    fi
+  done < "$preserved_env"
+fi
+rm -f "$preserved_env"
 chmod 600 "$compose_env"
 '@
 $remoteBuildEnvRefresh = $remoteBuildEnvRefresh.
   Replace('__REMOTE_ROOT__', $RemoteRoot).
   Replace('__BUILD_COMMIT__', $BuildCommit).
   Replace('__BUILD_BRANCH__', $BuildBranch).
-  Replace('__BUILD_DATE__', $BuildDateIso)
+  Replace('__BUILD_DATE__', $BuildDateIso).
+  Replace('__A11_BACKEND_SERVICE__', $A11BackendService).
+  Replace('__STRONG_SONG_MODEL__', $StrongSongOllamaModel)
 
 $remoteSecretStep = if ($ReuseRemoteSecrets) {
   $remoteBuildEnvRefresh
@@ -1398,8 +1993,8 @@ $remoteSecretStep = if ($ReuseRemoteSecrets) {
   @"
 chmod 600 $RemoteRoot/secrets/a11.env
 chmod 600 $RemoteRoot/secrets/build.env
-cat $RemoteRoot/secrets/a11.env $RemoteRoot/secrets/build.env > $RemoteRoot/secrets/compose.env
-chmod 600 $RemoteRoot/secrets/compose.env
+test -s $RemoteRoot/secrets/compose.env || cat $RemoteRoot/secrets/a11.env $RemoteRoot/secrets/build.env > $RemoteRoot/secrets/compose.env
+$remoteBuildEnvRefresh
 "@
 }
 
@@ -1440,9 +2035,18 @@ if ! docker inspect a11-ollama --format '{{json .NetworkSettings.Networks}}' | g
 fi
 docker update --restart unless-stopped a11-ollama >/dev/null
 docker exec a11-ollama sh -lc 'mkdir -p /root/.ollama; if [ ! -s /root/.ollama/id_ed25519.pub ]; then ollama signin >/dev/null 2>&1 || true; fi'
-docker exec a11-ollama sh -lc 'ollama list | awk "NR>1 {print \$1}" | grep -qx nomic-embed-text || ollama pull nomic-embed-text >/dev/null 2>&1 || true'
-docker exec a11-ollama sh -lc 'ollama list | awk "NR>1 {print \$1}" | grep -qx llama3.2:3b || ollama pull llama3.2:3b >/dev/null 2>&1 || true'
+docker exec a11-ollama sh -lc 'ollama show nomic-embed-text >/dev/null 2>&1 || ollama pull nomic-embed-text >/dev/null 2>&1 || true'
+docker exec a11-ollama sh -lc 'ollama show llama3.2:3b >/dev/null 2>&1 || ollama pull llama3.2:3b >/dev/null 2>&1 || true'
+compose_env="${compose_env:-__REMOTE_ROOT__/secrets/compose.env}"
+if [ -s "$compose_env" ]; then
+  strong_song_model="$(awk -F= '/^VIVY_SONG_LOCAL_MODEL=/{print $2; exit}' "$compose_env" 2>/dev/null | tr -d '\r' | sed 's/^"//; s/"$//' || true)"
+else
+  strong_song_model=""
+fi
+strong_song_model="${strong_song_model:-qwen2.5:32b}"
+docker exec a11-ollama sh -lc 'ollama show "$0" >/dev/null 2>&1 || ollama pull "$0"' "$strong_song_model"
 '@
+$remoteOllamaStep = $remoteOllamaStep.Replace('__REMOTE_ROOT__', $RemoteRoot)
 
 $remoteComposeOwnershipStep = @'
 compose_file="${compose_file:-__REMOTE_ROOT__/current/server/docker-compose.prod.yml}"
@@ -1474,6 +2078,7 @@ if ($BlueGreen) {
   $cleanOldFlag = if ($CleanOldBlueGreen) { "1" } else { "0" }
   $remoteDeploy = @"
 set -euo pipefail
+trap 'echo "__A11_DEPLOY_FAILED__ line=`$LINENO command=`$BASH_COMMAND" >&2' ERR
 release=$RemoteRoot/releases/$Stamp
 compose_file=$RemoteRoot/current/server/docker-compose.prod.yml
 a11_service=$A11BackendService
@@ -1484,6 +2089,7 @@ clean_old=$cleanOldFlag
 mkdir -p "`$release" $RemoteRoot/bluegreen
 tar -xzf $RemoteArchive -C "`$release"
 ln -sfn "`$release" $RemoteRoot/current
+docker run --rm -v $RemoteRoot/current:/srv/a11/current caddy:2-alpine caddy fmt --overwrite /srv/a11/current/Caddyfile
 $remoteSecretStep
 $remoteOllamaStep
 $remoteComposeOwnershipStep
@@ -1505,6 +2111,7 @@ for i in `$(seq 1 45); do
   sleep 2
 done
 docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --no-deps --force-recreate a11-caddy
+docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --no-deps --force-recreate vivy-twitch-worker vivy-social-ingest-worker
 echo "`$next_color" > $RemoteRoot/bluegreen/active-color
 docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env ps
 if [ "`$clean_old" = "1" ] && [ "`$old_color" != "none" ] && [ "`$old_color" != "`$next_color" ]; then
@@ -1521,10 +2128,12 @@ done
 } else {
   $remoteDeploy = @"
 set -euo pipefail
+trap 'echo "__A11_DEPLOY_FAILED__ line=`$LINENO command=`$BASH_COMMAND" >&2' ERR
 release=$RemoteRoot/releases/$Stamp
 mkdir -p "`$release"
 tar -xzf $RemoteArchive -C "`$release"
 ln -sfn "`$release" $RemoteRoot/current
+docker run --rm -v $RemoteRoot/current:/srv/a11/current caddy:2-alpine caddy fmt --overwrite /srv/a11/current/Caddyfile
 $remoteSecretStep
 $remoteOllamaStep
 $remoteComposeOwnershipStep
@@ -1544,13 +2153,22 @@ rm -f $RemoteRoot/releases/*.tar.gz $RemoteRoot/releases/*.tgz || true
 echo "__A11_PRUNE_DONE__"
 "@
 }
-$remoteDeployEncoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remoteDeploy.Replace("`r`n", "`n").Replace("`r", "`n")))
-& ssh @sshBase $Remote "printf '%s' '$remoteDeployEncoded' | base64 -d | bash"
+$localRemoteDeployScript = Join-Path $TmpRoot "a11-remote-deploy-$Stamp.sh"
+$remoteDeployScript = "/tmp/a11-remote-deploy-$Stamp.sh"
+[IO.File]::WriteAllText(
+  $localRemoteDeployScript,
+  $remoteDeploy.Replace("`r`n", "`n").Replace("`r", "`n"),
+  [Text.UTF8Encoding]::new($false)
+)
+& scp @sshBase $localRemoteDeployScript "${Remote}:$remoteDeployScript"
+if ($LASTEXITCODE -ne 0) { throw "Copie script de deploiement distant echouee" }
+$remoteDeployRunCommand = "chmod 700 '$remoteDeployScript' && bash '$remoteDeployScript'; rc=`$?; rm -f '$remoteDeployScript'; exit `$rc"
+& ssh @sshBase $Remote $remoteDeployRunCommand
 if ($LASTEXITCODE -ne 0) { throw "Deploiement distant echoue" }
+Remove-Item -LiteralPath $localRemoteDeployScript -Force -ErrorAction SilentlyContinue
 
 if ($BlueGreen) {
   Write-Host "Deploy A11 prod Finlande termine: $Remote / release $Stamp / blue-green=$DeployBlueGreenColor" -ForegroundColor Green
 } else {
   Write-Host "Deploy A11 prod Finlande termine: $Remote / release $Stamp" -ForegroundColor Green
 }
-

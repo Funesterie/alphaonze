@@ -14,12 +14,12 @@ if (-not (Test-Path -LiteralPath $datasetScript)) {
 $profiles = @(
   [pscustomobject]@{
     persona = "a11"
-    sources = @("a11-terminator.wav", "a11-terminator-context.wav")
+    sources = @("a11-official-stern-french.wav", "A11 ref.wav", "a11-official-stern-french-context.wav")
     direction = "grave, cybernetique, protectrice, diction courte et nette"
   },
   [pscustomobject]@{
     persona = "kaen44"
-    sources = @("kaen44-donna.wav", "kaen44-donna-extra.wav", "kaen44-donna-context.wav")
+    sources = @("kaen44-official-french-narrator.wav", "K44 Ref.wav")
     direction = "assistante executive vive, elegante, precise, chaleur controlee"
   },
   [pscustomobject]@{

@@ -265,6 +265,84 @@ function getAvailablePlans() {
   }));
 }
 
+// ─── One-time contributions (royalties / support) ───────────────────────────
+// Distinct from subscriptions: a pay-what-you-want one-time payment so anyone can
+// "participer à l'évolution de la Funesterie". Uses a Stripe custom_unit_amount price.
+const CONTRIBUTIONS = Object.freeze({
+  royalties: Object.freeze({
+    id: 'royalties',
+    kind: 'contribution',
+    label: 'Royalties — Soutien Funesterie',
+    description: "Contribution libre pour participer à l'évolution de la Funesterie.",
+    mode: 'payment',
+    priceEnv: 'STRIPE_ROYALTIES_PRICE_ID',
+    payWhatYouWant: true,
+    minEur: 2,
+    presetEur: 10,
+  }),
+});
+
+function normalizeContribution(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  return CONTRIBUTIONS[raw] ? raw : 'royalties';
+}
+
+function getContributionPriceId(id = 'royalties') {
+  const contribution = CONTRIBUTIONS[normalizeContribution(id)];
+  return String(process.env[contribution.priceEnv] || '').trim();
+}
+
+function isContributionEnabled(id = 'royalties') {
+  return stripe !== null && Boolean(getContributionPriceId(id));
+}
+
+/**
+ * Create a one-time contribution ("royalties") checkout session. Pay-what-you-want:
+ * the amount is entered by the supporter via the custom_unit_amount price.
+ */
+async function createContributionSession(userId, userEmail, options = {}) {
+  if (!stripe) {
+    throw new Error('Stripe non configuré');
+  }
+  const id = normalizeContribution(options.contribution || options.plan);
+  const contribution = CONTRIBUTIONS[id];
+  const priceId = getContributionPriceId(id);
+  if (!priceId) {
+    throw new Error(`Stripe price non configuré pour ${contribution.id}`);
+  }
+  const metadata = {
+    userId: userId || '',
+    contribution: contribution.id,
+    kind: 'contribution',
+  };
+  const session = await stripe.checkout.sessions.create({
+    mode: 'payment',
+    line_items: [{ price: priceId, quantity: 1 }],
+    submit_type: 'donate',
+    billing_address_collection: 'auto',
+    success_url: `${SUCCESS_URL}?session_id={CHECKOUT_SESSION_ID}&contribution=${contribution.id}`,
+    cancel_url: CANCEL_URL,
+    ...(userId ? { client_reference_id: userId } : {}),
+    ...(userEmail ? { customer_email: userEmail } : {}),
+    metadata,
+    payment_intent_data: { metadata },
+  });
+  return { sessionId: session.id, url: session.url, contribution: contribution.id };
+}
+
+function getAvailableContributions() {
+  return Object.values(CONTRIBUTIONS).map((contribution) => ({
+    id: contribution.id,
+    kind: contribution.kind,
+    label: contribution.label,
+    description: contribution.description,
+    payWhatYouWant: contribution.payWhatYouWant,
+    minEur: contribution.minEur,
+    presetEur: contribution.presetEur,
+    enabled: isContributionEnabled(contribution.id),
+  }));
+}
+
 module.exports = {
   SUBSCRIPTION_PLANS,
   createCheckoutSession,
@@ -277,4 +355,10 @@ module.exports = {
   inferSubscriptionPlan,
   getAvailablePlans,
   getConfiguredPriceIds,
+  CONTRIBUTIONS,
+  normalizeContribution,
+  getContributionPriceId,
+  isContributionEnabled,
+  createContributionSession,
+  getAvailableContributions,
 };

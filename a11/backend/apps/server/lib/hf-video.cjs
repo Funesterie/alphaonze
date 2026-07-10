@@ -50,8 +50,8 @@ function resolveReplicateVideoModel(env = process.env) {
   return String(
     env.A11_REPLICATE_VIDEO_MODEL
     || env.REPLICATE_VIDEO_MODEL
-    || 'wan-video/wan-2.2-5b-fast'
-  ).trim() || 'wan-video/wan-2.2-5b-fast';
+    || 'wan-video/wan-2.6-i2v'
+  ).trim() || 'wan-video/wan-2.6-i2v';
 }
 
 function defaultReplicateEndpoint(env = process.env) {
@@ -66,7 +66,7 @@ function defaultEndpointForProvider(provider = 'fal-ai', model = '') {
     return 'https://router.huggingface.co/fal-ai/fal-ai/wan/v2.2-5b/text-to-video?_subdomain=queue';
   }
   if (provider === 'replicate') {
-    return 'https://router.huggingface.co/replicate/v1/models/wan-video/wan-2.2-5b-fast/predictions';
+    return 'https://router.huggingface.co/replicate/v1/models/wan-video/wan-2.6-i2v/predictions';
   }
   if (provider === 'wavespeed') {
     return 'https://router.huggingface.co/wavespeed/api/v3/wavespeed-ai/wan-2.2/t2v-5b-720p';

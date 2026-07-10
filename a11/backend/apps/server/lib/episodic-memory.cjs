@@ -5,10 +5,12 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { getLogger } = require('./structured-logger.cjs');
+const { getCanonicalRuntimeRoot } = require('./runtime-root.cjs');
 
 const logger = getLogger({ component: 'episodic-memory' });
 
-const MEMORY_DIR = process.env.A11_EPISODIC_MEMORY_DIR || path.join(__dirname, '../../../a11_memory/episodic');
+const MEMORY_DIR = process.env.A11_EPISODIC_MEMORY_DIR
+  || path.join(getCanonicalRuntimeRoot(process.env), 'episodic-memory');
 const MAX_EPISODES_PER_USER = Number(process.env.A11_MAX_EPISODES_PER_USER || 1000);
 const EPISODE_RETENTION_DAYS = Number(process.env.A11_EPISODE_RETENTION_DAYS || 90);
 

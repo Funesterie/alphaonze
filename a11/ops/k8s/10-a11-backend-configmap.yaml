@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: a11-backend-config
+  namespace: funesterie
+data:
+  # Non-secret runtime config only. Secrets live in the Secret (see 11-*.yaml).
+  NODE_ENV: "production"
+  PORT: "3000"
+  HOST_SERVER: "0.0.0.0"
+  OTEL_SERVICE_NAME: "a11-server"
+  OTEL_DEPLOYMENT_ENVIRONMENT: "prod"
+  # Add other non-secret keys mirrored from a11.env (URLs, flags) as needed.

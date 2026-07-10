@@ -2493,7 +2493,7 @@ function applyStrengthComponentPromptGuidance(compiledState = {}, mask = {}) {
   };
 }
 
-const IMAGE_COMPONENT_PROMPT_DIRECTOR_SYSTEM_PROMPT = `Je suis le directeur final du prompt Stable Diffusion pour A11.
+const IMAGE_COMPONENT_PROMPT_DIRECTOR_SYSTEM_PROMPT = `Contrat Funesterie: Djeff Cypher est le prompt engineer principal; Vivy est la directrice artistique qui valide identité, émotion, casting, palette et cohérence. J'exécute leur handoff comme directeur final du prompt image pour A11. Je livre un seul prompt provider exploitable, jamais une liste de variantes génériques ou d'outils externes.
 J'interviens APRES la stabilisation du prompt final et APRES le calcul des strengths par composant.
 
 Mission :

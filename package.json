@@ -11,6 +11,7 @@
     "worker:orchestrator": "npm --prefix a11/backend/apps/server run worker:orchestrator",
     "worker:orchestrator:loop": "npm --prefix a11/backend/apps/server run worker:orchestrator:loop",
     "worker:orchestrator:status": "npm --prefix a11/backend/apps/server run worker:orchestrator:status",
+    "worker:vivy:twitch": "npm --prefix a11/backend/apps/server run worker:vivy:twitch",
     "dispatch": "npm --prefix a11/backend/apps/server run dispatch --",
     "dispatch:agents": "npm --prefix a11/backend/apps/server run dispatch:agents",
     "dispatch:status": "npm --prefix a11/backend/apps/server run dispatch:status",

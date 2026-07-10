@@ -84,6 +84,10 @@ const FUNESTERIE_MODULES = [
     capabilities: ['ops-tooling', 'sharp-actions', 'runtime-utility'],
   },
   {
+    id: 'shiryu',
+    capabilities: ['blood-rain-blade', 'json-to-zen-rgba', 'controlled-noise-sculpting', 'conversation-smoke-cutter', 'katana-allmight-context-triage'],
+  },
+  {
     id: 'mask',
     capabilities: ['image-mask', 'prompt-structure', 'semantic-guard'],
   },

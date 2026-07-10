@@ -303,6 +303,9 @@ test('a11 MCP tools expose explicit ChatGPT Apps annotations', async () => {
   const ecosystem = tools.find((tool) => tool.name === 'a11_ecosystem_scope');
   const ecosystemCorpus = tools.find((tool) => tool.name === 'a11_ecosystem_corpus');
   const ecosystemBriefing = tools.find((tool) => tool.name === 'a11_ecosystem_briefing');
+  const vivyGraphManifest = tools.find((tool) => tool.name === 'a11_vivy_graph_manifest');
+  const vivyGraphSearch = tools.find((tool) => tool.name === 'a11_vivy_graph_search');
+  const vivyGraphSync = tools.find((tool) => tool.name === 'a11_vivy_graph_sync');
   const chopperStatus = tools.find((tool) => tool.name === 'a11_chopper_status');
   const chopperPlan = tools.find((tool) => tool.name === 'a11_chopper_plan');
   const chopperRumble = tools.find((tool) => tool.name === 'a11_chopper_rumble');
@@ -317,6 +320,13 @@ test('a11 MCP tools expose explicit ChatGPT Apps annotations', async () => {
   const rubixStatus = tools.find((tool) => tool.name === 'a11_rubixcube_vault_status');
   const rubixConsume = tools.find((tool) => tool.name === 'a11_rubixcube_vault_consume');
   const rubixMcpCheck = tools.find((tool) => tool.name === 'a11_rubixcube_shared_mcp_token_check');
+  const aiIdentityRegistry = tools.find((tool) => tool.name === 'a11_ai_identity_registry');
+  const aiIdentityHandshake = tools.find((tool) => tool.name === 'a11_ai_identity_handshake');
+  const dialogueOpen = tools.find((tool) => tool.name === 'a11_agent_dialogue_open');
+  const dialogueAsk = tools.find((tool) => tool.name === 'a11_agent_dialogue_ask');
+  const dialogueInbox = tools.find((tool) => tool.name === 'a11_agent_dialogue_inbox');
+  const dialogueRead = tools.find((tool) => tool.name === 'a11_agent_dialogue_read');
+  const dialoguePost = tools.find((tool) => tool.name === 'a11_agent_dialogue_post');
   const inbox = tools.find((tool) => tool.name === 'a11_kiro_inbox_check');
   const post = tools.find((tool) => tool.name === 'a11_kiro_discussion_post');
   assert.equal(health.annotations.readOnlyHint, true);
@@ -327,6 +337,12 @@ test('a11 MCP tools expose explicit ChatGPT Apps annotations', async () => {
   assert.equal(ecosystemCorpus.annotations.destructiveHint, false);
   assert.equal(ecosystemBriefing.annotations.readOnlyHint, true);
   assert.equal(ecosystemBriefing.annotations.destructiveHint, false);
+  assert.equal(vivyGraphManifest.annotations.readOnlyHint, true);
+  assert.equal(vivyGraphManifest.annotations.destructiveHint, false);
+  assert.equal(vivyGraphSearch.annotations.readOnlyHint, true);
+  assert.equal(vivyGraphSearch.annotations.destructiveHint, false);
+  assert.equal(vivyGraphSync.annotations.readOnlyHint, false);
+  assert.equal(vivyGraphSync.annotations.destructiveHint, false);
   assert.equal(chopperStatus.annotations.readOnlyHint, true);
   assert.equal(chopperStatus.annotations.destructiveHint, false);
   assert.equal(chopperPlan.annotations.readOnlyHint, true);
@@ -354,10 +370,145 @@ test('a11 MCP tools expose explicit ChatGPT Apps annotations', async () => {
   assert.equal(rubixMcpCheck.annotations.readOnlyHint, false);
   assert.equal(rubixMcpCheck.annotations.openWorldHint, true);
   assert.equal(rubixMcpCheck.annotations.destructiveHint, false);
+  assert.equal(aiIdentityRegistry.annotations.readOnlyHint, true);
+  assert.equal(aiIdentityRegistry.annotations.destructiveHint, false);
+  assert.equal(aiIdentityHandshake.annotations.readOnlyHint, true);
+  assert.equal(aiIdentityHandshake.annotations.destructiveHint, false);
+  assert.ok(dialogueAsk.inputSchema.properties.targets.items.enum.includes('grok'));
+  assert.equal(dialogueOpen.annotations.readOnlyHint, false);
+  assert.equal(dialogueOpen.annotations.destructiveHint, false);
+  assert.equal(dialogueAsk.annotations.readOnlyHint, false);
+  assert.equal(dialogueAsk.annotations.destructiveHint, false);
+  assert.equal(dialogueInbox.annotations.readOnlyHint, true);
+  assert.equal(dialogueRead.annotations.readOnlyHint, true);
+  assert.equal(dialoguePost.annotations.readOnlyHint, false);
+  assert.equal(dialoguePost.annotations.destructiveHint, false);
   assert.equal(inbox.annotations.readOnlyHint, true);
   assert.equal(inbox.annotations.openWorldHint, true);
   assert.equal(post.annotations.readOnlyHint, false);
   assert.equal(post.annotations.openWorldHint, true);
+});
+
+test('a11 MCP routes Vivy visual review as creative direction without lyric mode', async () => {
+  const calls = [];
+  const server = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', (chunk) => {
+      raw += chunk.toString('utf8');
+    });
+    req.on('end', () => {
+      const payload = JSON.parse(raw || '{}');
+      const toolName = payload?.params?.name;
+      const args = payload?.params?.arguments || {};
+      calls.push({ toolName, args });
+      const result = toolName === 'agent_general_call'
+        ? { ok: true, threadId: 'discussion-visual-review-test' }
+        : { ok: true };
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        jsonrpc: '2.0',
+        id: payload.id,
+        result,
+      }));
+    });
+  });
+
+  try {
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = server.address().port;
+    const [response] = await callMcpOnce({
+      jsonrpc: '2.0',
+      id: 52,
+      method: 'tools/call',
+      params: {
+        name: 'a11_agent_dialogue_ask',
+        arguments: {
+          title: 'Revue visuelle Vivy Live',
+          from: 'ChatGPT',
+          message: 'Analyse le visuel et l’audio analysé: micro de studio, néons roses, main incohérente. Donne la direction live et l’identité canon.',
+          targets: ['vivy'],
+          scope: 'prod',
+        },
+      },
+    }, {
+      A11_SHARED_MCP_URL: `http://127.0.0.1:${port}/mcp`,
+    });
+
+    assert.equal(response.id, 52);
+    const result = JSON.parse(response.result.content[0].text);
+    assert.equal(result.vivyIntent, 'visual-review');
+    assert.equal(result.creativeDirectionPosted, true);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].toolName, 'agent_general_call');
+    assert.match(calls[0].args.message, /Intent prioritaire: visual-review \/ creative-direction/i);
+    assert.match(calls[0].args.message, /jamais sous forme de paroles/i);
+    assert.equal(calls[1].toolName, 'discussion_post');
+    assert.equal(calls[1].args.from, 'Vivy');
+    assert.equal(calls[1].args.kind, 'answer');
+    assert.match(calls[1].args.body, /Ce que Vivy garde/i);
+    assert.match(calls[1].args.body, /Identité visuelle canon/i);
+    assert.doesNotMatch(calls[1].args.body, /\[(?:Verse|Couplet|Chorus|Refrain)\]/i);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('a11 MCP AI identity handshake grants dialogue access but refuses high-risk tools', async () => {
+  const [registryResponse] = await callMcpOnce({
+    jsonrpc: '2.0',
+    id: 41,
+    method: 'tools/call',
+    params: {
+      name: 'a11_ai_identity_registry',
+      arguments: {},
+    },
+  });
+
+  assert.equal(registryResponse.id, 41);
+  const registryText = registryResponse.result.content[0].text;
+  const registry = JSON.parse(registryText);
+  assert.equal(registry.ok, true);
+  assert.equal(registry.profiles.chatgpt.provider, 'openai');
+  assert.equal(registry.profiles.grok.provider, 'xai');
+  assert.equal(registry.profiles.claude.provider, 'anthropic');
+  assert.equal(registryText.includes('Bearer '), false);
+
+  const [handshakeResponse] = await callMcpOnce({
+    jsonrpc: '2.0',
+    id: 42,
+    method: 'tools/call',
+    params: {
+      name: 'a11_ai_identity_handshake',
+      arguments: {
+        agent: 'grok',
+        model: 'grok-3-fast',
+        purpose: 'critique créative Vivy',
+        requestedTools: [
+          'a11_agent_dialogue_ask',
+          'a11_agent_dialogue_read',
+          'a11_chat',
+          'a11_shell',
+          'a11_rubixcube_vault_consume',
+        ],
+      },
+    },
+  });
+
+  assert.equal(handshakeResponse.id, 42);
+  const payloadText = handshakeResponse.result.content[0].text;
+  const payload = JSON.parse(payloadText);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.identity.id, 'grok');
+  assert.equal(payload.identity.provider, 'xai');
+  assert.ok(payload.access.allowedTools.includes('a11_agent_dialogue_ask'));
+  assert.ok(payload.access.allowedTools.includes('a11_chat'));
+  assert.ok(payload.access.deniedTools.includes('a11_shell'));
+  assert.ok(payload.access.deniedTools.includes('a11_rubixcube_vault_consume'));
+  assert.equal(payload.policy.adminRoleForbidden, true);
+  assert.equal(payload.policy.secretsForbidden, true);
+  assert.equal(payload.policy.shellForbidden, true);
+  assert.equal(payload.secretExposure, 'none');
+  assert.equal(payloadText.includes('Bearer '), false);
 });
 
 test('a11 MCP worker supervisor starts only as a whitelisted dry-run plan', async () => {
@@ -386,6 +537,44 @@ test('a11 MCP worker supervisor starts only as a whitelisted dry-run plan', asyn
       fs.existsSync(path.join(runtimeRoot, 'worker-supervisor', 'locks', 'identity-archivist-dry-run.lock.json')),
       false
     );
+  } finally {
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('a11 MCP Vivy graph sync defaults to a safe dry-run', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-mcp-vivy-graph-'));
+  try {
+    const [manifestResponse, syncResponse] = await callMcpOnce({
+      jsonrpc: '2.0',
+      id: 31,
+      method: 'tools/call',
+      params: {
+        name: 'a11_vivy_graph_manifest',
+        arguments: {},
+      },
+    }, { A11_RUNTIME_ROOT: runtimeRoot });
+
+    assert.equal(manifestResponse.id, 31);
+    const manifest = JSON.parse(manifestResponse.result.content[0].text);
+    assert.equal(manifest.ok, true);
+    assert.ok(manifest.files.some((file) => file.path === 'a11/docs/VIVY_TWITCH_OBS.md'));
+
+    const [dryRunResponse] = await callMcpOnce({
+      jsonrpc: '2.0',
+      id: 32,
+      method: 'tools/call',
+      params: {
+        name: 'a11_vivy_graph_sync',
+        arguments: {},
+      },
+    }, { A11_RUNTIME_ROOT: runtimeRoot });
+
+    const dryRun = JSON.parse(dryRunResponse.result.content[0].text);
+    assert.equal(dryRunResponse.id, 32);
+    assert.equal(dryRun.ok, true);
+    assert.equal(dryRun.dryRun, true);
+    assert.ok(dryRun.corpus.files > 5);
   } finally {
     fs.rmSync(runtimeRoot, { recursive: true, force: true });
   }

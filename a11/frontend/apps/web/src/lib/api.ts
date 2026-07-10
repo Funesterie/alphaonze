@@ -49,6 +49,7 @@ function normalizeVideoProviderName(value = "") {
   const normalized = String(value || "").trim().toLowerCase().replace(/[\s_]+/g, "-");
   if (["grok", "grok-imagine", "xai", "x-ai"].includes(normalized)) return "xai";
   if (["hf", "hugging-face", "huggingface"].includes(normalized)) return "huggingface";
+  if (["comfy-cloud", "comfycloud", "comfy-org", "comfy-api"].includes(normalized)) return "comfy-cloud";
   if (["run-comfy", "runcomfy", "comfy", "comfyui", "comfy-ui"].includes(normalized)) return "runcomfy";
   return normalized;
 }
@@ -70,12 +71,12 @@ function resolveSessionVideoProvider(tokens: Record<string, string>, requestedPr
   if (options?.hasVisualReference) {
     if (tokens.replicate) return "replicate";
     if (tokens.huggingface || tokens.hf) return "huggingface";
-    if (tokens.runcomfy || tokens.comfy) return "runcomfy";
+    if (tokens.runcomfy || tokens.comfy) return "comfy-cloud";
     return "";
   }
   if (resolveSessionXaiToken(tokens)) return "xai";
   if (tokens.huggingface || tokens.hf) return "huggingface";
-  if (tokens.runcomfy || tokens.comfy) return "runcomfy";
+  // Comfy Cloud direct est image-to-video: sans image, laisser le backend choisir xAI/local/fallback.
   if (tokens.replicate) return "replicate";
   return "";
 }
@@ -260,7 +261,7 @@ export async function generateVideoWithPrompt(
   const mobileAsync = options.mobileAsync ?? isMobileLongTaskClient();
   const maxWaitMs = Math.max(
     60000,
-    Math.min(3600000, Math.round(Number(options.maxWaitMs || (mobileAsync ? 900000 : 600000)) || 600000))
+    Math.min(3600000, Math.round(Number(options.maxWaitMs || 2700000) || 2700000))
   );
   const pollIntervalMs = Math.max(
     1000,
@@ -298,9 +299,10 @@ export async function generateVideoWithPrompt(
   }
 
   return withMobileLongTaskGuard(maxWaitMs, async () => {
-    const res = await fetch(getApiUrl('/api/video/generate'), {
+    const res = await authFetch(getApiUrl('/api/video/generate'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...sessionVideoAuth.headers },
+      credentials: 'include',
       body: JSON.stringify(body)
     });
     let data: any = {};
@@ -323,6 +325,48 @@ export async function generateVideoWithPrompt(
       raw: data
     };
   });
+}
+
+export async function resumeLastVideoGenerationJob(
+  options: { maxWaitMs?: number } = {}
+): Promise<{ ok?: boolean; url?: string; videoUrl?: string; video_url?: string; filename?: string; prompt?: string; raw?: any } | null> {
+  let saved: any = null;
+  try {
+    const raw = globalThis.localStorage?.getItem("a11:video-job:last");
+    saved = raw ? JSON.parse(raw) : null;
+  } catch {
+    globalThis.localStorage?.removeItem("a11:video-job:last");
+    return null;
+  }
+  if (!saved) return null;
+
+  const startedAt = Number(saved.startedAt || saved.createdAt || 0);
+  if (startedAt > 0 && Date.now() - startedAt > 7_200_000) {
+    globalThis.localStorage?.removeItem("a11:video-job:last");
+    return null;
+  }
+
+  const maxWaitMs = Math.max(
+    60_000,
+    Math.min(3_600_000, Math.round(Number(options.maxWaitMs || 2_700_000) || 2_700_000))
+  );
+  try {
+    const data = await withMobileLongTaskGuard(maxWaitMs, () => resolveAsyncMediaJobPayload(saved, {
+      eventPrefix: "video-job",
+      fallbackPollUrl: "/api/video/jobs",
+      maxWaitMs,
+    }));
+    return {
+      ...data,
+      videoUrl: data?.videoUrl || data?.video_url || data?.url || data?.result?.videoUrl || data?.result?.video_url || data?.result?.url || null,
+      raw: data,
+    };
+  } catch (error: any) {
+    if (/(?:not[_ ]found|introuvable|404|expired|expir)/i.test(String(error?.message || error))) {
+      globalThis.localStorage?.removeItem("a11:video-job:last");
+    }
+    throw error;
+  }
 }
 // @ts-nocheck
 
@@ -1231,6 +1275,9 @@ export type AuthConnectorProviderState = {
   account?: string | null;
   filesAccess?: string;
   missing?: string[];
+  minimumTier?: string;
+  note?: string;
+  connectUrl?: string;
 };
 
 export type AuthConnectorsResponse = {
@@ -1241,6 +1288,9 @@ export type AuthConnectorsResponse = {
   connectors?: {
     google?: AuthConnectorProviderState;
     microsoft?: AuthConnectorProviderState;
+    youtube?: AuthConnectorProviderState;
+    meta?: AuthConnectorProviderState;
+    instagram?: AuthConnectorProviderState;
     accountFiles?: {
       configured?: boolean;
       linked?: boolean;
@@ -1250,6 +1300,8 @@ export type AuthConnectorsResponse = {
   serverConfig?: {
     google?: { configured?: boolean; missing?: string[] };
     microsoft?: { configured?: boolean; missing?: string[] };
+    youtube?: { configured?: boolean; missing?: string[] };
+    meta?: { configured?: boolean; missing?: string[] };
   };
   error?: string;
   message?: string;
@@ -1287,7 +1339,7 @@ function shouldUseCookieOnlyAuthSessionProbe() {
     if (hostname !== 'funesterie.me' && hostname !== 'www.funesterie.me') return false;
     const pathname = String(globalThis.location?.pathname || '/').toLowerCase();
     return pathname === '/'
-      || /^\/(?:home|accueil|agents|architecture|carte|graph|etat|cockpit|compte|contact|privacy|terms|login)(?:\/|$)/.test(pathname);
+      || /^\/(?:home|accueil|agents|architecture|carte|graph|etat|cockpit|compte|contact|privacy|terms|mille-fleurs|login)(?:\/|$)/.test(pathname);
   } catch {
     return false;
   }
@@ -2345,6 +2397,12 @@ export type VoiceLearningStatus = {
   voiceIdentityLabel?: string;
   voiceStyle?: string;
   minimumTier?: string;
+  sunoVoiceLinked?: boolean;
+  sunoVoiceProvider?: string;
+  sunoVoiceIdHash?: string;
+  sunoVoiceIdMask?: string;
+  sunoVoiceLabel?: string;
+  sunoVoiceUpdatedAt?: string;
   clipCount?: number;
   secondsCollected?: number;
   requiredSeconds?: number;
@@ -2406,7 +2464,50 @@ export async function uploadVoiceLearningSnippet(
   return payload as VoiceLearningStatus;
 }
 
-export type DoubleHarmonicProcessMode = 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7' | 'v71' | 'v8' | 'v8plus' | 'v8pivot' | 'v9turbo';
+export async function linkPersonalSunoVoice(
+  voiceId: string,
+  options: {
+    label?: string;
+    persona?: 'personal' | string;
+  } = {}
+): Promise<VoiceLearningStatus> {
+  const res = await authFetch(getApiUrl('/api/voice-learning/suno-voice'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({
+      persona: options.persona || 'personal',
+      voiceId,
+      label: options.label || 'Voix Suno personnelle',
+      consent: 'suno-voice-slot-v1',
+      source: 'vivy-studio',
+    }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Liaison voix Suno impossible (${res.status})`);
+  }
+  return payload as VoiceLearningStatus;
+}
+
+export async function unlinkPersonalSunoVoice(): Promise<VoiceLearningStatus> {
+  const res = await authFetch(getApiUrl('/api/voice-learning/suno-voice'), {
+    method: 'DELETE',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({
+      persona: 'personal',
+      confirm: 'delete-suno-voice-slot',
+    }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Retrait voix Suno impossible (${res.status})`);
+  }
+  return payload as VoiceLearningStatus;
+}
+
+export type DoubleHarmonicProcessMode = 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7' | 'v71' | 'v8' | 'v8plus' | 'v8pivot' | 'v9turbo' | 'v9electrolysis';
 export type DoubleHarmonicOutputFormat = 'source' | 'flac' | 'mp3' | 'm4a' | 'wav';
 
 export type DoubleHarmonicProcessResult = {
@@ -2505,6 +2606,21 @@ export async function processDoubleHarmonicAudio(
     maxBricks?: number;
     brickInfluence?: number;
     binaryGrid?: string;
+    modulation?: string;
+    electrolysis?: boolean;
+    electrolysisGuitar?: boolean;
+    frequencyHz?: number;
+    frequencyMinHz?: number;
+    frequencyMaxHz?: number;
+    electrolysisHz?: number;
+    electrolysisMinHz?: number;
+    electrolysisMaxHz?: number;
+    amount?: number;
+    irregularity?: number;
+    asymmetry?: number;
+    bidirectional?: boolean;
+    followForce?: number;
+    schemaMix?: number;
   }
 ): Promise<DoubleHarmonicProcessResult> {
   const form = new FormData();
@@ -2513,7 +2629,7 @@ export async function processDoubleHarmonicAudio(
   if (options?.format) {
     form.append('format', options.format);
   }
-  if ((options?.mode === 'v1' || options?.mode === 'v2' || options?.mode === 'v4' || options?.mode === 'v5' || options?.mode === 'v6' || options?.mode === 'v7' || options?.mode === 'v71' || options?.mode === 'v8' || options?.mode === 'v8plus' || options?.mode === 'v8pivot' || options?.mode === 'v9turbo' || !options?.mode) && Number.isFinite(Number(options?.intensity))) {
+  if ((options?.mode === 'v1' || options?.mode === 'v2' || options?.mode === 'v4' || options?.mode === 'v5' || options?.mode === 'v6' || options?.mode === 'v7' || options?.mode === 'v71' || options?.mode === 'v8' || options?.mode === 'v8plus' || options?.mode === 'v8pivot' || options?.mode === 'v9turbo' || options?.mode === 'v9electrolysis' || !options?.mode) && Number.isFinite(Number(options?.intensity))) {
     form.append('intensity', String(options?.intensity));
   }
   if (Number.isFinite(Number(options?.lowGrainMultiplier))) {
@@ -2534,9 +2650,39 @@ export async function processDoubleHarmonicAudio(
   if (options?.binaryGrid) {
     form.append('binaryGrid', options.binaryGrid);
   }
+  const wantsV9Electrolysis = options?.mode === 'v9electrolysis';
+  const modulation = options?.modulation || (wantsV9Electrolysis ? 'electrolysis-guitar' : '');
+  if (modulation) {
+    form.append('modulation', modulation);
+  }
+  if (options?.electrolysis === true || wantsV9Electrolysis) {
+    form.append('electrolysis', '1');
+  }
+  if (options?.electrolysisGuitar === true || wantsV9Electrolysis) {
+    form.append('electrolysisGuitar', '1');
+  }
+  const appendFinite = (key: string, value: unknown) => {
+    if (Number.isFinite(Number(value))) form.append(key, String(value));
+  };
+  appendFinite('frequencyHz', options?.frequencyHz ?? (wantsV9Electrolysis ? 40.44 : undefined));
+  appendFinite('frequencyMinHz', options?.frequencyMinHz ?? (wantsV9Electrolysis ? 40.26 : undefined));
+  appendFinite('frequencyMaxHz', options?.frequencyMaxHz ?? (wantsV9Electrolysis ? 40.62 : undefined));
+  appendFinite('electrolysisHz', options?.electrolysisHz);
+  appendFinite('electrolysisMinHz', options?.electrolysisMinHz);
+  appendFinite('electrolysisMaxHz', options?.electrolysisMaxHz);
+  appendFinite('amount', options?.amount ?? (wantsV9Electrolysis ? 0.042 : undefined));
+  appendFinite('irregularity', options?.irregularity ?? (wantsV9Electrolysis ? 0.36 : undefined));
+  appendFinite('asymmetry', options?.asymmetry ?? (wantsV9Electrolysis ? 0.27 : undefined));
+  if (typeof options?.bidirectional === 'boolean' || wantsV9Electrolysis) {
+    form.append('bidirectional', options?.bidirectional === false ? '0' : '1');
+  }
+  appendFinite('followForce', options?.followForce);
+  appendFinite('schemaMix', options?.schemaMix);
   if (options?.name) form.append('name', options.name);
 
-  const endpoint = options?.mode === 'v9turbo'
+  const endpoint = options?.mode === 'v9electrolysis'
+    ? '/api/double-harmonic/v9electrolysis/process'
+    : options?.mode === 'v9turbo'
     ? '/api/double-harmonic/v9turbo/process'
     : options?.mode === 'v8pivot'
       ? '/api/double-harmonic/v8pivot/process'
@@ -2620,12 +2766,22 @@ export type VivyStudioMedia = {
   jobId?: string;
   title?: string;
   url?: string;
+  downloadUrl?: string;
+  download_url?: string;
   audioUrl?: string;
   audio_url?: string;
   videoUrl?: string;
   video_url?: string;
+  contentType?: string;
   content_type?: string;
   filename?: string;
+  id?: string;
+  audioId?: string;
+  audio_id?: string;
+  duration?: number;
+  durationSeconds?: number;
+  model?: string;
+  sourceAudioId?: string;
 };
 
 export type VivyDoubleHarmonicNavigation = {
@@ -2700,6 +2856,8 @@ export type VivyStudioProductionInput = {
   text?: string;
   history?: Array<{ role: 'user' | 'assistant' | 'system'; content: string; ts?: string }>;
   conversationId?: string;
+  sessionId?: string;
+  sessionName?: string;
   files?: VivyChatFileAttachment[];
   voiceTool?: string;
   voiceInstruction?: string;
@@ -2708,6 +2866,9 @@ export type VivyStudioProductionInput = {
   voiceReferenceName?: string;
   voiceCatalogName?: string;
   voiceCatalogConsent?: string;
+  voiceLearningPersona?: string;
+  sunoVoiceScope?: 'personal' | string;
+  usePersonalSunoVoice?: boolean;
   songSource?: string;
   songArtists?: string[];
   vocalCast?: string;
@@ -2728,12 +2889,18 @@ export type VivyStudioProductionInput = {
   makeSong?: boolean;
   preserveSelectedVoice?: boolean;
   allowExternalVoiceMix?: boolean;
+  externalVoiceMix?: boolean;
+  forceExternalVoiceMix?: boolean;
   sunoVoiceId?: string;
   instrumental?: boolean;
   forceInstrumental?: boolean;
   previewInstrumental?: boolean;
   musicProvider?: 'suno' | 'elevenlabs' | 'elevenlabs-music' | string;
+  musicModel?: string;
   durationSeconds?: number;
+  targetDurationSeconds?: number;
+  longSong?: boolean;
+  workspace?: VivyWorkspaceStateInput;
 };
 
 export type VivyStudioProductionResult = {
@@ -2788,6 +2955,9 @@ export type VivyStudioProductionResult = {
     status?: string;
     reason?: string;
     message?: string;
+    extension?: boolean;
+    sourceAudioId?: string;
+    model?: string;
     voiceMode?: 'suno_voice' | 'external_mix' | 'suno_generated' | string;
     selectedVoicePreserved?: boolean;
   };
@@ -2797,6 +2967,9 @@ export type VivyStudioProductionResult = {
     jobId?: string;
     state?: string;
     status?: string;
+    extension?: boolean;
+    sourceAudioId?: string;
+    model?: string;
     voiceMode?: 'suno_voice' | 'external_mix' | 'suno_generated' | string;
     selectedVoicePreserved?: boolean;
   };
@@ -2825,6 +2998,82 @@ export type VivyStudioProductionResult = {
   files?: VivyChatFileAttachment[];
   error?: string;
   message?: string;
+};
+
+export type VivyChatSessionMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  ts: string;
+  media?: VivyStudioMedia | null;
+};
+
+export type VivyChatSessionRecord = {
+  id: string;
+  name: string;
+  conversationId: string;
+  createdAt?: string;
+  updatedAt?: string;
+  messageCount?: number;
+  messages?: VivyChatSessionMessage[];
+};
+
+export type VivyChatSessionsResponse = {
+  ok: boolean;
+  sessions: VivyChatSessionRecord[];
+};
+
+export type VivyWorkspaceStateInput = {
+  sessionId?: string;
+  sessionName?: string;
+  conversationId?: string;
+  notes?: string;
+  notepad?: string;
+  canvas?: string;
+  canevas?: string;
+  nossenCanvas?: string;
+  chromeContext?: string | {
+    title?: string;
+    url?: string;
+    selection?: string;
+    note?: string;
+  };
+  updatedAt?: string;
+};
+
+export type VivyWorkspaceTool = {
+  id: string;
+  label: string;
+  target?: string;
+  minimumTier?: string;
+  ready?: boolean;
+  public?: boolean;
+};
+
+export type VivyWorkspaceState = {
+  version?: number;
+  sessionId: string;
+  sessionName: string;
+  conversationId: string;
+  notes: string;
+  canvas: string;
+  chromeContext: string;
+  updatedAt?: string;
+};
+
+export type VivyWorkspaceResponse = {
+  ok: boolean;
+  workspace: VivyWorkspaceState;
+  access?: {
+    account?: {
+      tier?: string;
+      label?: string;
+      authenticated?: boolean;
+      permissions?: Record<string, boolean>;
+    };
+    tools?: VivyWorkspaceTool[];
+  };
+  memoryStored?: boolean;
 };
 
 export async function runVivyStudioProduction(
@@ -2882,13 +3131,23 @@ export async function assembleVivyStudioVoicePreview(
   return (payload?.media || payload) as VivyStudioMedia;
 }
 
-export async function getVivyStudioMusicJob(taskId: string, sessionSunoApiKey?: string): Promise<VivyStudioProductionResult> {
+export async function getVivyStudioMusicJob(
+  taskId: string,
+  sessionSunoApiKey?: string,
+  options: { targetDurationSeconds?: number; preferLongForm?: boolean } = {}
+): Promise<VivyStudioProductionResult> {
   const safeTaskId = String(taskId || '').trim();
   if (!safeTaskId) throw new Error('job_vivy_manquant');
   const headers = buildAuthHeaders();
   const safeSessionKey = String(sessionSunoApiKey || '').trim();
   if (safeSessionKey) headers['X-Vivy-Suno-Key'] = safeSessionKey;
-  const res = await authFetch(getApiUrl(`/api/vivy/studio/jobs/${encodeURIComponent(safeTaskId)}`), {
+  const query = new URLSearchParams();
+  if (Number.isFinite(Number(options.targetDurationSeconds)) && Number(options.targetDurationSeconds) > 0) {
+    query.set('targetDurationSeconds', String(Math.round(Number(options.targetDurationSeconds))));
+  }
+  if (options.preferLongForm === true) query.set('preferLongForm', '1');
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/jobs/${encodeURIComponent(safeTaskId)}${suffix}`), {
     method: 'GET',
     headers,
     credentials: 'include',
@@ -2900,6 +3159,53 @@ export async function getVivyStudioMusicJob(taskId: string, sessionSunoApiKey?: 
   return payload as VivyStudioProductionResult;
 }
 
+export async function extendVivyStudioSunoMusic(input: {
+  audioId: string;
+  model?: string;
+  musicModel?: string;
+  sessionSunoApiKey?: string;
+  sourceTaskId?: string;
+  sourceDurationSeconds?: number;
+  continueAtSeconds?: number;
+  targetDurationSeconds?: number;
+  title?: string;
+  style?: string;
+  prompt?: string;
+  instrumental?: boolean;
+  previewInstrumental?: boolean;
+}): Promise<VivyStudioProductionResult> {
+  const headers = buildAuthHeaders('application/json');
+  const safeSessionKey = String(input.sessionSunoApiKey || '').trim();
+  if (safeSessionKey) headers['X-Vivy-Suno-Key'] = safeSessionKey;
+  const res = await authFetch(getApiUrl('/api/vivy/studio/suno/extend'), {
+    method: 'POST',
+    headers,
+    credentials: 'include',
+    body: JSON.stringify({
+      audioId: input.audioId,
+      model: input.model || input.musicModel,
+      musicModel: input.musicModel || input.model,
+      sourceTaskId: input.sourceTaskId,
+      sourceDurationSeconds: input.sourceDurationSeconds,
+      continueAtSeconds: input.continueAtSeconds,
+      targetDurationSeconds: input.targetDurationSeconds,
+      title: input.title,
+      style: input.style,
+      prompt: input.prompt,
+      instrumental: input.instrumental,
+      previewInstrumental: input.previewInstrumental,
+      defaultParamFlag: true,
+      customMode: true,
+      sessionSunoApiKey: safeSessionKey || undefined,
+    }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Extension Suno indisponible (${res.status})`);
+  }
+  return payload as VivyStudioProductionResult;
+}
+
 export async function chatWithVivy(
   input: {
     message?: string;
@@ -2907,7 +3213,18 @@ export async function chatWithVivy(
     mode?: VivyChatMode;
     language?: string;
     conversationId?: string;
+    sessionId?: string;
+    sessionName?: string;
     files?: VivyChatFileAttachment[];
+    songText?: string;
+    songMood?: string;
+    songArtists?: string[];
+    vocalCast?: string;
+    artistCount?: number;
+    singerCount?: number;
+    workspace?: VivyWorkspaceStateInput;
+    useWorkspaceForSong?: boolean;
+    disableSongcraftFallback?: boolean;
   }
 ): Promise<VivyStudioProductionResult> {
   const res = await authFetch(getApiUrl('/api/vivy/studio/chat'), {
@@ -2927,6 +3244,186 @@ export async function chatWithVivy(
     throw new Error(payload?.message || payload?.error || `Chat Vivy indisponible (${res.status})`);
   }
   return payload as VivyStudioProductionResult;
+}
+
+export async function chatWithDjeff(
+  input: {
+    message: string;
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    // Budget: dialogue (medium, défaut) reste fluide. archive/debug ouvrent le
+    // coffre profond (full token). freestyle reste medium sauf GO explicite.
+    mode?: 'dialogue' | 'freestyle' | 'archive' | 'debug';
+    // GO explicite du patron pour descendre en full token, quel que soit le mode.
+    fullToken?: boolean;
+    maxTokens?: number;
+  }
+): Promise<{ ok: boolean; persona: string; reply: string; mode?: string; tokenBudget?: 'medium' | 'full'; provider?: string; model?: string }> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/djeff/chat'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Djeff Engine indisponible (${res.status})`);
+  }
+  return payload as { ok: boolean; persona: string; reply: string; mode?: string; tokenBudget?: 'medium' | 'full'; provider?: string; model?: string };
+}
+
+export async function routeVivyNossenComposition(input: {
+  canvas: string;
+  notes?: string;
+  songText?: string;
+  message?: string;
+  sessionId?: string;
+  conversationId?: string;
+}): Promise<{ ok: boolean; artists: string[]; songMood: string; model?: string; provider?: string }> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/nossen-route'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Routage NOSSEN indisponible (${res.status})`);
+  }
+  return {
+    ok: true,
+    artists: Array.isArray(payload?.artists) ? payload.artists : [],
+    songMood: String(payload?.songMood || '').trim(),
+    model: payload?.model,
+    provider: payload?.provider,
+  };
+}
+
+export async function fetchVivyChatSessions(): Promise<VivyChatSessionsResponse> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/sessions'), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Sessions Vivy indisponibles (${res.status})`);
+  }
+  return {
+    ok: true,
+    sessions: Array.isArray(payload?.sessions) ? payload.sessions : [],
+  };
+}
+
+export async function fetchVivyChatSession(sessionId: string): Promise<VivyChatSessionRecord> {
+  const safeSessionId = String(sessionId || 'default').trim() || 'default';
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/sessions/${encodeURIComponent(safeSessionId)}`), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Session Vivy indisponible (${res.status})`);
+  }
+  return payload.session as VivyChatSessionRecord;
+}
+
+export async function fetchVivyWorkspace(
+  input: { sessionId?: string; sessionName?: string; conversationId?: string } = {}
+): Promise<VivyWorkspaceResponse> {
+  const params = new URLSearchParams();
+  if (input.sessionId) params.set('sessionId', input.sessionId);
+  if (input.sessionName) params.set('sessionName', input.sessionName);
+  if (input.conversationId) params.set('conversationId', input.conversationId);
+  const query = params.toString();
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/workspace${query ? `?${query}` : ''}`), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Atelier Vivy indisponible (${res.status})`);
+  }
+  return payload as VivyWorkspaceResponse;
+}
+
+export async function saveVivyWorkspace(input: VivyWorkspaceStateInput): Promise<VivyWorkspaceResponse> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/workspace'), {
+    method: 'PUT',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Sauvegarde atelier Vivy impossible (${res.status})`);
+  }
+  return payload as VivyWorkspaceResponse;
+}
+
+export async function appendVivyChatSessionMessageOnServer(
+  input: {
+    sessionId?: string;
+    sessionName?: string;
+    conversationId?: string;
+    role: 'user' | 'assistant';
+    content: string;
+    media?: VivyStudioMedia | null;
+    mode?: VivyChatMode;
+    id?: string;
+  }
+): Promise<{ ok: boolean; message?: VivyChatSessionMessage; session?: VivyChatSessionRecord }> {
+  const safeSessionId = String(input.sessionId || 'default').trim() || 'default';
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/sessions/${encodeURIComponent(safeSessionId)}/messages`), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({
+      ...input,
+      shareToken: undefined,
+      shareTokenPresent: false,
+    }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Synchronisation session Vivy impossible (${res.status})`);
+  }
+  return {
+    ok: true,
+    message: payload.message as VivyChatSessionMessage | undefined,
+    session: payload.session as VivyChatSessionRecord | undefined,
+  };
+}
+
+export async function createVivyChatSessionOnServer(name: string): Promise<VivyChatSessionRecord> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/sessions'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({ name }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Création session Vivy impossible (${res.status})`);
+  }
+  return payload.session as VivyChatSessionRecord;
+}
+
+export async function deleteVivyChatSessionOnServer(sessionId: string): Promise<{ ok: boolean; cleared: number }> {
+  const safeSessionId = String(sessionId || '').trim();
+  if (!safeSessionId) return { ok: false, cleared: 0 };
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/sessions/${encodeURIComponent(safeSessionId)}`), {
+    method: 'DELETE',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Suppression session Vivy impossible (${res.status})`);
+  }
+  return { ok: true, cleared: Number(payload?.cleared ?? 0) };
 }
 
 export type Provider = "local" | "ollama" | "openai" | "groq";
@@ -3523,18 +4020,30 @@ function extractAsyncMediaJobDescriptor(
       Math.floor(Number(asyncJob?.pollIntervalMs || payload?.pollIntervalMs || 5000) || 5000)
     )
   );
-  const maxPollAttempts = Math.max(
+  const reportedMaxPollAttempts = Math.max(
     1,
-    Math.min(
-      720,
-      Math.floor(Number(asyncJob?.maxPollAttempts || payload?.maxPollAttempts || 72) || 72)
-    )
+    Math.floor(Number(asyncJob?.maxPollAttempts || payload?.maxPollAttempts || 72) || 72)
   );
+  const reportedMaxWaitMs = Math.floor(
+    Number(asyncJob?.maxWaitMs || payload?.maxWaitMs || 0) || 0
+  );
+  const requestedMaxWaitMs = Math.floor(Number(options.maxWaitMs || 0) || 0);
   const maxWaitMs = Math.max(
     pollIntervalMs,
     Math.min(
       3600000,
-      Math.floor(Number(asyncJob?.maxWaitMs || payload?.maxWaitMs || options.maxWaitMs || maxPollAttempts * pollIntervalMs) || maxPollAttempts * pollIntervalMs)
+      Math.max(
+        reportedMaxWaitMs,
+        requestedMaxWaitMs,
+        reportedMaxPollAttempts * pollIntervalMs
+      )
+    )
+  );
+  const maxPollAttempts = Math.max(
+    1,
+    Math.min(
+      720,
+      Math.max(reportedMaxPollAttempts, Math.ceil(maxWaitMs / pollIntervalMs))
     )
   );
 
@@ -3640,7 +4149,7 @@ async function resolveAsyncMediaJobPayload(
   }
 
   const timeoutMessage = `Timeout async apres ${Math.round(descriptor.maxWaitMs / 1000)}s`;
-  dispatchBrowserEvent(new CustomEvent(`a11:${eventPrefix}.failed`, {
+  dispatchBrowserEvent(new CustomEvent(`a11:${eventPrefix}.pending`, {
     detail: {
       jobId: descriptor.jobId,
       message: timeoutMessage,
@@ -4660,6 +5169,108 @@ function parseDownloadFilename(contentDisposition: string, fallback: string) {
   return fallback;
 }
 
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const blobUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = blobUrl;
+  anchor.download = filename;
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  globalThis.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+}
+
+function triggerDirectDownload(url: string, filename: string) {
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = 'none';
+  anchor.rel = 'noreferrer';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
+function getDownloadBaseOrigin() {
+  return globalThis.location?.origin || getApiOrigin() || 'https://vivy.funesterie.me';
+}
+
+function parseDownloadUrl(rawValue: string) {
+  try {
+    return new URL(rawValue, getDownloadBaseOrigin());
+  } catch {
+    return null;
+  }
+}
+
+function extractMediaDownloadProxyTarget(rawValue: string) {
+  const parsed = parseDownloadUrl(rawValue);
+  if (!parsed || !/^\/api\/media\/download$/i.test(parsed.pathname)) return '';
+  return String(parsed.searchParams.get('url') || '').trim();
+}
+
+function isKnownPublicVivyGeneratedFilename(filename: string) {
+  return /^(?:vivy-music-|vivy-preview-mix-|vivy-multi-voice-).+\.mp3$/i.test(filename);
+}
+
+export function resolvePublicVivyMediaDownloadUrl(rawValue: string | null | undefined): string | null {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return null;
+
+  const proxyTarget = extractMediaDownloadProxyTarget(raw);
+  if (proxyTarget && proxyTarget !== raw) {
+    return resolvePublicVivyMediaDownloadUrl(proxyTarget);
+  }
+
+  const resolved = resolveApiAssetUrl(raw) || raw;
+  const parsed = parseDownloadUrl(resolved);
+  if (!parsed) return null;
+
+  if (
+    /^\/api\/vivy\/studio\/assets\/[^/]+$/i.test(parsed.pathname)
+    || /^\/api\/vivy\/stream\/s\/[^/]+$/i.test(parsed.pathname)
+    || /^\/api\/double-harmonic\/out\/[^/]+$/i.test(parsed.pathname)
+  ) {
+    return resolved;
+  }
+
+  let filename = '';
+  try {
+    filename = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).at(-1) || '');
+  } catch {
+    filename = parsed.pathname.split('/').filter(Boolean).at(-1) || '';
+  }
+  if (!isKnownPublicVivyGeneratedFilename(filename)) return null;
+
+  if (
+    /\/files\/(?:runtime|uploads|a11_runtime)\//i.test(parsed.pathname)
+    || /\/runtime\/files\//i.test(parsed.pathname)
+    || /\/vivy-generated\//i.test(parsed.pathname)
+  ) {
+    return resolveApiAssetUrl(`/api/vivy/studio/assets/${encodeURIComponent(filename)}`);
+  }
+
+  return null;
+}
+
+async function downloadPublicMediaUrl(rawUrl: string, fallbackName: string) {
+  const directUrl = resolvePublicVivyMediaDownloadUrl(rawUrl);
+  if (!directUrl) return false;
+
+  try {
+    const res = await fetch(directUrl, { method: 'GET', credentials: 'omit' });
+    if (!res.ok) throw new Error(`public_media_download_failed_${res.status}`);
+    const blob = await res.blob();
+    const filename = parseDownloadFilename(res.headers.get('content-disposition') || '', fallbackName);
+    triggerBlobDownload(blob, filename);
+  } catch {
+    triggerDirectDownload(directUrl, fallbackName);
+  }
+
+  return true;
+}
+
 async function downloadProtectedBlob(pathname: string, fallbackName: string) {
   const res = await authFetch(getApiUrl(pathname), {
     method: 'GET',
@@ -4678,15 +5289,7 @@ async function downloadProtectedBlob(pathname: string, fallbackName: string) {
 
   const blob = await res.blob();
   const filename = parseDownloadFilename(res.headers.get('content-disposition') || '', fallbackName);
-  const blobUrl = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = blobUrl;
-  anchor.download = filename;
-  anchor.style.display = 'none';
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  globalThis.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+  triggerBlobDownload(blob, filename);
 
   return {
     ok: true,
@@ -4836,6 +5439,7 @@ export async function downloadMediaUrl(rawUrl: string, fallbackFilename?: string
     await downloadResourceById(resourceId, filename);
     return;
   }
+  if (await downloadPublicMediaUrl(url, filename)) return;
   const proxyPath = `/api/media/download?url=${encodeURIComponent(url)}`;
   await downloadProtectedBlob(proxyPath, filename);
 }
@@ -6083,6 +6687,27 @@ export async function createCheckoutSession(plan: 'premium' | 'founder' = 'premi
   }
 
   return res.json();
+}
+
+/**
+ * Crée une session de don "Royalties" — contribution libre one-time, ouverte à tous
+ * (montant choisi par le supporter). La route backend collecte l'email au checkout.
+ */
+export async function createFunesterieContribution(
+  contribution: string = 'royalties',
+): Promise<{ ok: boolean; url?: string; error?: string }> {
+  try {
+    const res = await authFetch(getApiUrl('/api/subscription/create-contribution'), {
+      method: 'POST',
+      headers: buildAuthHeaders('application/json'),
+      body: JSON.stringify({ contribution }),
+    });
+    const data = await res.json().catch(() => ({} as { url?: string; error?: string }));
+    if (data?.url) return { ok: true, url: String(data.url) };
+    return { ok: false, error: String(data?.error || `contribution_failed_${res.status}`) };
+  } catch (err) {
+    return { ok: false, error: (err as Error)?.message || 'network_error' };
+  }
 }
 
 /**

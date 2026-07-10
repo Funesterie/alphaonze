@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: a11-backend
+  namespace: funesterie
+  labels:
+    app: a11-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: a11-backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

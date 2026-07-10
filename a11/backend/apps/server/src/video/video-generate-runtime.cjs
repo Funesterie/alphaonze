@@ -3668,6 +3668,7 @@ function createGenerateVideoHandler(overrides = {}) {
         mode: 'funesterie-media-roles-v1',
         intent: audioRequest.enabled ? 'clip' : 'video',
         promptOwner: mediaAgentRoles.prompt.primary,
+        artDirectionOwner: mediaAgentRoles.art_direction.primary,
         imageOwner: mediaAgentRoles.image.primary,
         audioOwner: mediaAgentRoles.audio.primary,
         videoOwner: mediaAgentRoles.video.primary,

@@ -28,6 +28,10 @@ console.log(funeste.privatePackageCount);
 console.log(funeste.privatePackages);
 ```
 
+## Current snapshot
+
+Repo source `0.1.6` tracks the private operator train from `@funeste/all-in-one-nossen` 0.1.5, updates the public bridge to `@nossen/all-in-one` 0.1.7, and keeps `@funeste/zen` / `@nossen/zen` on 0.1.2.
+
 ## Local Operator Rule
 
 On a trusted Funesterie PC, keep this package as the only top-level NOSSEN dependency. The individual public and private packages should arrive through this meta-package so the machine stays easy to update.

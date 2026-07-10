@@ -393,6 +393,7 @@ function collectMediaCandidates(options = {}) {
     { root: path.join(runtimeRoot, 'voice-library'), source: 'runtime:voice-library', maxDepth: 1 },
     { root: path.join(runtimeRoot, 'files', 'generated'), source: 'runtime:generated', maxDepth: 4 },
     { root: path.join(runtimeRoot, 'files', 'uploads'), source: 'runtime:uploads', maxDepth: 3 },
+    { root: path.join(runtimeRoot, 'Corpus'), source: 'runtime:corpus', maxDepth: 1 },
     { root: path.join(parentRoot, 'runtime', 'Corpus'), source: 'corpus', maxDepth: 1 },
   ];
 

@@ -7,6 +7,7 @@ param(
   [string]$RunnerHost = "127.0.0.1",
   [int]$RunnerPort = 17882,
   [string]$ApiKeyFile = "C:\Users\Djeff\Desktop\api comfy UI.txt",
+  [bool]$DisableCustomNodes = $true,
   [switch]$NoRunner
 )
 
@@ -85,21 +86,25 @@ $comfyHealthUrl = "http://$ComfyHost`:$ComfyPort/system_stats"
 if (-not (Test-HttpOk $comfyHealthUrl)) {
   $comfyOut = Join-Path $logDir "comfy-server.out.log"
   $comfyErr = Join-Path $logDir "comfy-server.err.log"
+  $comfyArgs = @(
+    "main.py",
+    "--listen", $ComfyHost,
+    "--port", "$ComfyPort",
+    "--disable-auto-launch",
+    "--lowvram",
+    "--reserve-vram", "1",
+    "--output-directory", $outputDir,
+    "--temp-directory", $tempDir
+  )
+  if ($DisableCustomNodes) {
+    $comfyArgs += "--disable-all-custom-nodes"
+  }
   Start-Process -FilePath $Python `
     -WorkingDirectory $ComfyRoot `
     -WindowStyle Hidden `
     -RedirectStandardOutput $comfyOut `
     -RedirectStandardError $comfyErr `
-    -ArgumentList @(
-      "main.py",
-      "--listen", $ComfyHost,
-      "--port", "$ComfyPort",
-      "--disable-auto-launch",
-      "--lowvram",
-      "--reserve-vram", "1",
-      "--output-directory", $outputDir,
-      "--temp-directory", $tempDir
-    ) | Out-Null
+    -ArgumentList $comfyArgs | Out-Null
 
   $deadline = (Get-Date).AddSeconds(90)
   do {

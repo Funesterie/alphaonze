@@ -3,10 +3,19 @@
 const DEFAULT_ROLE_MATRIX = Object.freeze({
   prompt: Object.freeze({
     stage: 'prompt',
-    primary: 'kaen44',
-    title: 'Prompt + intention',
-    responsibility: 'clarifier le besoin, cadrer le brief, enrichir les contraintes et preparer le handoff',
+    primary: 'djeff-cypher',
+    title: 'Prompt engineering + intention',
+    responsibility: 'transformer l intention en un brief unique, propre et directement exploitable par le provider; jamais une liste generique de prompts',
+    helpers: Object.freeze(['vivy']),
     fallbacks: Object.freeze(['a11', 'codex', 'prompt-review']),
+  }),
+  art_direction: Object.freeze({
+    stage: 'art_direction',
+    primary: 'vivy',
+    title: 'Direction artistique',
+    responsibility: 'valider identite, casting, emotion, palette, rythme et continuite avant le handoff provider',
+    helpers: Object.freeze(['djeff-cypher']),
+    fallbacks: Object.freeze(['a11', 'manual-creative-review']),
   }),
   image: Object.freeze({
     stage: 'image',
@@ -54,13 +63,13 @@ const DEFAULT_ROLE_MATRIX = Object.freeze({
 });
 
 const PIPELINES = Object.freeze({
-  image: Object.freeze(['prompt', 'image', 'vision_qa', 'client_handoff']),
-  audio: Object.freeze(['prompt', 'audio', 'audio_qa', 'client_handoff']),
-  voice: Object.freeze(['prompt', 'audio', 'audio_qa', 'client_handoff']),
-  song: Object.freeze(['prompt', 'audio', 'image', 'audio_qa', 'vision_qa', 'client_handoff']),
-  video: Object.freeze(['prompt', 'image', 'video', 'vision_qa', 'client_handoff']),
-  clip: Object.freeze(['prompt', 'audio', 'image', 'video', 'audio_qa', 'vision_qa', 'client_handoff']),
-  share: Object.freeze(['prompt', 'client_handoff', 'image', 'video', 'vision_qa']),
+  image: Object.freeze(['prompt', 'art_direction', 'image', 'vision_qa', 'client_handoff']),
+  audio: Object.freeze(['prompt', 'art_direction', 'audio', 'audio_qa', 'client_handoff']),
+  voice: Object.freeze(['prompt', 'art_direction', 'audio', 'audio_qa', 'client_handoff']),
+  song: Object.freeze(['prompt', 'art_direction', 'audio', 'image', 'audio_qa', 'vision_qa', 'client_handoff']),
+  video: Object.freeze(['prompt', 'art_direction', 'image', 'video', 'vision_qa', 'client_handoff']),
+  clip: Object.freeze(['prompt', 'art_direction', 'audio', 'image', 'video', 'audio_qa', 'vision_qa', 'client_handoff']),
+  share: Object.freeze(['prompt', 'art_direction', 'client_handoff', 'image', 'video', 'vision_qa']),
 });
 
 function cloneRole(role) {
@@ -123,7 +132,7 @@ function buildMediaPipeline(intent = 'media', options = {}) {
   let stages = (PIPELINES[normalizedIntent] || PIPELINES.video).slice();
 
   if (normalizedIntent === 'video' && options.withAudio) {
-    stages = ['prompt', 'audio', 'image', 'video', 'audio_qa', 'vision_qa', 'client_handoff'];
+    stages = ['prompt', 'art_direction', 'audio', 'image', 'video', 'audio_qa', 'vision_qa', 'client_handoff'];
   }
   if (options.withoutHandoff) {
     stages = stages.filter((stage) => stage !== 'client_handoff');
@@ -166,6 +175,7 @@ function attachMediaAgentRoles(payload = {}, intent = 'media', options = {}) {
       mode: 'funesterie-media-roles-v1',
       intent: normalizeIntent(intent),
       promptOwner: mediaAgentRoles.prompt.primary,
+      artDirectionOwner: mediaAgentRoles.art_direction.primary,
       imageOwner: mediaAgentRoles.image.primary,
       audioOwner: mediaAgentRoles.audio.primary,
       videoOwner: mediaAgentRoles.video.primary,

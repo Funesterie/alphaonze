@@ -15,6 +15,7 @@
 
 const http = require('node:http');
 const https = require('node:https');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
@@ -23,6 +24,7 @@ const workerSupervisor = require('../../lib/worker-supervisor.cjs');
 const westsideChopper = require('../../lib/westside-chopper.cjs');
 const funesterieMixer = require('../../lib/funesterie-mixer.cjs');
 const a11MemoryGraph = require('../../src/knowledge/a11-memory-graph-v1.cjs');
+const vivyGraphAccess = require('../../src/knowledge/vivy-graph-access.cjs');
 
 // ---------------------------------------------------------------------------
 // Config
@@ -59,7 +61,13 @@ const SERVER_NAME = 'a11';
 const SERVER_VERSION = '1.0.0';
 const SERVER_ROOT = path.resolve(__dirname, '..', '..');
 const REPO_ROOT = path.resolve(SERVER_ROOT, '..', '..', '..', '..');
-const rubixcubeVault = require(path.join(REPO_ROOT, 'scripts', 'rubixgate', 'rubixcube-vault.cjs'));
+const RUBIXCUBE_VAULT_MODULE_PATH = path.join(REPO_ROOT, 'scripts', 'rubixgate', 'rubixcube-vault.cjs');
+let rubixcubeVault = null;
+try {
+  rubixcubeVault = require(RUBIXCUBE_VAULT_MODULE_PATH);
+} catch (error) {
+  rubixcubeVault = null;
+}
 const DEFAULT_RUNTIME_ROOT = path.resolve(SERVER_ROOT, '..', '..', '..', 'runtime');
 const RUNTIME_ROOT = path.resolve(process.env.A11_RUNTIME_ROOT || DEFAULT_RUNTIME_ROOT);
 const KIRO_MCP_CONFIG_PATH = path.resolve(
@@ -238,6 +246,266 @@ function resolveSharedMcpConfig() {
   };
 }
 
+const AI_DIALOGUE_TOOLS = Object.freeze([
+  'a11_ai_identity_registry',
+  'a11_ai_identity_handshake',
+  'a11_agent_dialogue_open',
+  'a11_agent_dialogue_ask',
+  'a11_agent_dialogue_inbox',
+  'a11_agent_dialogue_read',
+  'a11_agent_dialogue_post',
+  'a11_vivy_graph_search',
+]);
+
+const AI_MEDIA_CHAT_TOOLS = Object.freeze([
+  ...AI_DIALOGUE_TOOLS,
+  'a11_chat',
+  'a11_social_autoprompt_status',
+]);
+
+const AI_INTERNAL_TOOLS = Object.freeze([
+  ...AI_MEDIA_CHAT_TOOLS,
+  'a11_status',
+  'a11_llm_stats',
+  'a11_memory_graph_explain_agent_context',
+  'a11_identity_route',
+  'a11_shared_mcp_status',
+]);
+
+const AI_FORBIDDEN_TOOLS = Object.freeze([
+  'a11_shell',
+  'a11_worker_start',
+  'a11_worker_stop',
+  'a11_worker_restart',
+  'a11_task_dispatch',
+  'a11_rubixcube_vault_consume',
+  'a11_rubixcube_shared_mcp_token_check',
+  'a11_vivy_graph_sync',
+]);
+
+const AI_IDENTITY_PROFILES = Object.freeze({
+  chatgpt: {
+    id: 'chatgpt',
+    provider: 'openai',
+    displayName: 'ChatGPT',
+    role: 'external-llm-collaborator',
+    aliases: ['chatgpt', 'gpt', 'openai', 'oai'],
+    allowedTools: AI_MEDIA_CHAT_TOOLS,
+    memoryScope: ['shared', 'mcp', 'vivy', 'a11', 'creative-review'],
+    capabilities: ['dialogue', 'critique', 'prompting', 'creative-review'],
+  },
+  grok: {
+    id: 'grok',
+    provider: 'xai',
+    displayName: 'Grok',
+    role: 'external-llm-collaborator',
+    aliases: ['grok', 'xai', 'grok-3', 'grok-4'],
+    allowedTools: AI_MEDIA_CHAT_TOOLS,
+    memoryScope: ['shared', 'mcp', 'vivy', 'a11', 'creative-review'],
+    capabilities: ['dialogue', 'critique', 'style-contrast', 'creative-review'],
+  },
+  claude: {
+    id: 'claude',
+    provider: 'anthropic',
+    displayName: 'Claude',
+    role: 'external-llm-collaborator',
+    aliases: ['claude', 'anthropic'],
+    allowedTools: AI_MEDIA_CHAT_TOOLS,
+    memoryScope: ['shared', 'mcp', 'vivy', 'a11', 'analysis'],
+    capabilities: ['dialogue', 'analysis', 'critique', 'safety-review'],
+  },
+  codex: {
+    id: 'codex',
+    provider: 'openai',
+    displayName: 'Codex',
+    role: 'local-engineering-agent',
+    aliases: ['codex', 'a11-codex', 'codex-desktop'],
+    allowedTools: AI_INTERNAL_TOOLS,
+    memoryScope: ['shared', 'mcp', 'a11', 'kaen44', 'vivy', 'code'],
+    capabilities: ['dialogue', 'code', 'tests', 'deploy-review'],
+  },
+  vivy: {
+    id: 'vivy',
+    provider: 'funesterie',
+    displayName: 'Vivy',
+    role: 'musical-agent',
+    aliases: ['vivy', 'vivy-live', 'nossen'],
+    allowedTools: AI_MEDIA_CHAT_TOOLS,
+    memoryScope: ['shared', 'mcp', 'vivy', 'music', 'video'],
+    capabilities: ['dialogue', 'music', 'lyrics', 'visual-direction'],
+  },
+  a11: {
+    id: 'a11',
+    provider: 'funesterie',
+    displayName: 'A11',
+    role: 'orchestrator-agent',
+    aliases: ['a11', 'alpha-onze', 'alpha11'],
+    allowedTools: AI_INTERNAL_TOOLS,
+    memoryScope: ['shared', 'mcp', 'a11', 'kaen44', 'vivy', 'ops'],
+    capabilities: ['dialogue', 'routing', 'graph', 'coordination'],
+  },
+  kaen44: {
+    id: 'kaen44',
+    provider: 'funesterie',
+    displayName: 'K44',
+    role: 'copilot-agent',
+    aliases: ['k44', 'kaen44', 'kaen'],
+    allowedTools: AI_INTERNAL_TOOLS,
+    memoryScope: ['shared', 'mcp', 'kaen44', 'a11', 'vivy'],
+    capabilities: ['dialogue', 'copilot', 'review', 'coordination'],
+  },
+});
+
+function normalizeAiIdentityKey(value = '') {
+  const normalized = String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_.:-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  return normalized || 'unknown-ai';
+}
+
+function uniqueStrings(values = [], max = 20) {
+  const result = [];
+  const seen = new Set();
+  for (const value of Array.isArray(values) ? values : []) {
+    const cleaned = String(value || '').trim();
+    if (!cleaned || seen.has(cleaned)) continue;
+    result.push(cleaned);
+    seen.add(cleaned);
+    if (result.length >= max) break;
+  }
+  return result;
+}
+
+function resolveAiIdentityProfile(args = {}) {
+  const raw = normalizeAiIdentityKey(
+    args.agent || args.agentId || args.provider || args.name || args.from || args.model || 'chatgpt'
+  );
+  const profile = Object.values(AI_IDENTITY_PROFILES).find((candidate) => (
+    candidate.id === raw
+    || candidate.provider === raw
+    || candidate.aliases.includes(raw)
+    || raw.startsWith(`${candidate.id}-`)
+    || raw.startsWith(`${candidate.provider}-`)
+  )) || AI_IDENTITY_PROFILES.chatgpt;
+  return profile;
+}
+
+function publicAiIdentityProfile(profile) {
+  return {
+    id: profile.id,
+    provider: profile.provider,
+    displayName: profile.displayName,
+    role: profile.role,
+    aliases: profile.aliases,
+    capabilities: profile.capabilities,
+    memoryScope: profile.memoryScope,
+    allowedTools: profile.allowedTools,
+    forbiddenTools: AI_FORBIDDEN_TOOLS,
+    policy: {
+      isAgent: true,
+      adminRoleForbidden: true,
+      secretsForbidden: true,
+      shellForbidden: true,
+      directDatabaseWritesForbidden: true,
+      chatAccess: 'dialogue-bus-first',
+    },
+  };
+}
+
+function buildAiIdentityRegistry() {
+  return {
+    ok: true,
+    schema: 'funesterie.a11.ai-identity-registry.v1',
+    model: 'investigation-graph-inspired-rbac-for-ai',
+    rule: 'Une IA s identifie, reçoit un profil, puis utilise seulement les outils autorisés. Aucun agent IA ne reçoit un rôle administrateur technique.',
+    profiles: Object.fromEntries(
+      Object.entries(AI_IDENTITY_PROFILES).map(([key, profile]) => [key, publicAiIdentityProfile(profile)])
+    ),
+    dialogueTools: AI_DIALOGUE_TOOLS,
+    mediaChatTools: AI_MEDIA_CHAT_TOOLS,
+    forbiddenTools: AI_FORBIDDEN_TOOLS,
+  };
+}
+
+function buildAiIdentityHandshake(args = {}) {
+  const profile = resolveAiIdentityProfile(args);
+  const requestedTools = uniqueStrings(args.requestedTools || args.tools || [], 32);
+  const allowedSet = new Set(profile.allowedTools);
+  const forbiddenSet = new Set(AI_FORBIDDEN_TOOLS);
+  const allowedTools = requestedTools.length
+    ? requestedTools.filter((tool) => allowedSet.has(tool) && !forbiddenSet.has(tool))
+    : [...profile.allowedTools];
+  const deniedTools = requestedTools.filter((tool) => !allowedSet.has(tool) || forbiddenSet.has(tool));
+  const displayName = String(args.displayName || args.name || profile.displayName).trim().slice(0, 80) || profile.displayName;
+  const model = String(args.model || '').trim().slice(0, 120);
+  const agentId = normalizeAiIdentityKey(args.agentId || `${profile.id}${model ? `-${model}` : ''}`);
+  const purpose = String(args.purpose || 'dialogue IA Funesterie').trim().slice(0, 240);
+  assertNoSecretText(displayName, 'displayName');
+  assertNoSecretText(model, 'model');
+  assertNoSecretText(purpose, 'purpose');
+  const sessionSeed = [
+    profile.id,
+    agentId,
+    displayName,
+    model,
+    purpose,
+    new Date().toISOString().slice(0, 10),
+  ].join('|');
+  return {
+    ok: true,
+    schema: 'funesterie.a11.ai-identity-session.v1',
+    sessionId: `ai-session-${crypto.createHash('sha256').update(sessionSeed).digest('hex').slice(0, 18)}`,
+    identity: {
+      id: profile.id,
+      agentId,
+      provider: profile.provider,
+      displayName,
+      model: model || null,
+      role: profile.role,
+      aliases: uniqueStrings([agentId, displayName, ...profile.aliases], 12),
+      capabilities: uniqueStrings([
+        ...profile.capabilities,
+        ...(Array.isArray(args.capabilities) ? args.capabilities : []),
+      ], 16),
+      memoryScope: profile.memoryScope,
+    },
+    access: {
+      allowedTools,
+      deniedTools,
+      dialogueTools: AI_DIALOGUE_TOOLS.filter((tool) => allowedSet.has(tool)),
+      directChatTool: allowedSet.has('a11_chat') ? 'a11_chat' : null,
+      targetAliases: ['vivy', 'a11', 'kaen44', 'codex', 'chatgpt', 'grok', 'claude'],
+    },
+    policy: {
+      isAgent: true,
+      role: profile.role,
+      purpose,
+      adminRoleForbidden: true,
+      secretsForbidden: true,
+      shellForbidden: true,
+      directDatabaseWritesForbidden: true,
+      destructiveToolsForbidden: true,
+      useDialogueBusFirst: true,
+    },
+    mcpHeaders: {
+      'x-agent': 'true',
+      'x-ai-agent': profile.id,
+      'x-ai-agent-id': agentId,
+    },
+    nextSteps: [
+      'Lire a11_ai_identity_registry si le profil est inconnu.',
+      'Utiliser a11_agent_dialogue_ask pour solliciter Vivy, A11, K44, ChatGPT, Grok ou Claude.',
+      'Utiliser a11_agent_dialogue_inbox/read/post pour suivre le fil.',
+      'Ne jamais demander ni poster de token, clé API, cookie, mot de passe ou fichier .env.',
+    ],
+    secretExposure: 'none',
+  };
+}
+
 function getMcpHealthUrl(mcpUrl) {
   try {
     const url = new URL(mcpUrl || DEFAULT_SHARED_MCP_URL);
@@ -260,7 +528,157 @@ function publicSharedMcpConfig() {
   };
 }
 
+function foldForIntent(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function isSocialAutopromptStatusQuestion(message = '') {
+  const folded = foldForIntent(message);
+  return /\b(?:social\s+autoprompt|youtube|meta|facebook|instagram|insta)\b/.test(folded)
+    && /\b(?:status|statut|etat|diagnostic|connect|connexion|voit|voir|ingest|contexte|prompt|autoprompt|facebook|youtube|instagram|meta)\b/.test(folded);
+}
+
+function isVivyVisualCreativeDirectionQuestion(message = '', targets = []) {
+  const folded = foldForIntent(message);
+  const normalizedTargets = new Set((Array.isArray(targets) ? targets : []).map((entry) => foldForIntent(entry)));
+  const targetsVivy = normalizedTargets.has('vivy') || normalizedTargets.has('vivy-live') || normalizedTargets.has('nossen');
+  const visualSignal = /\b(?:visuel|visuelle|image|images|cover|covers|pochette|affiche|clip|l+clip|video|vid[eé]o|direction\s+live|identite\s+visuelle|scene|micro|microphone|neon|neons|audio\s+analyse|son\s+analyse)\b/.test(folded);
+  const reviewSignal = /\b(?:avis|analyse|analyser|regarde|review|direction|garde|garder|evite|eviter|ameliore|ameliorer|canon|canonique|coherent|coherence|incoherent|incoherence|defaut|main|identite|angle|surveille|surveiller|utilise|utiliser|reprends|reprendre|fais|faire|cree|creer|crée|créer|genere|generer|génère|générer)\b/.test(folded);
+  const explicitSongwriting = /\b(?:ecris|ecrire|compose|composer|chante|chanter|genere|generer|fais|faire)\b.{0,90}\b(?:paroles|refrain|couplet|chanson|song)\b/.test(folded)
+    || /\b(?:paroles|refrain|couplet)\b.{0,60}\b(?:ecris|ecrire|compose|composer|chante|chanter|genere|generer|fais|faire)\b/.test(folded);
+  return targetsVivy && visualSignal && reviewSignal && !explicitSongwriting;
+}
+
+function buildVivyVisualReviewWorkerMessage(message = '') {
+  return [
+    'Intent prioritaire: visual-review / creative-direction.',
+    'Réponds comme directrice artistique, jamais sous forme de paroles, refrain, couplet ou chanson sauf demande explicite d’écriture.',
+    'Structure obligatoire: ce que Vivy garde; ce qu’elle évite; identité visuelle canon; prochain angle clip/chanson.',
+    'Contrôle visuel obligatoire: faux texte/UI, anatomie des mains, contact physique main-micro, visage et bouche non cachés.',
+    'Ne transforme pas la scène en atelier générique: pas de formes géométriques gratuites, pas de personnages inventés, pas de panneau pseudo-technique. Garde Vivy, le micro, la lumière, le club réel et la caméra.',
+    '',
+    `Brief reçu: ${String(message || '').trim()}`,
+  ].join('\n');
+}
+
+function buildVivyVisualReviewReply(message = '') {
+  const folded = foldForIntent(message);
+  const kept = [];
+  if (/\b(?:nuit|nocturne|sombre)\b/.test(folded)) kept.push('la nuit lourde qui devient une scène');
+  if (/\b(?:rose|magenta|neon|neons)\b/.test(folded)) kept.push('les néons magenta électriques comme signature de lumière');
+  if (/\b(?:micro|microphone|studio)\b/.test(folded)) kept.push('le micro de studio comme point d’ancrage');
+  if (/\b(?:bar|club)\b/.test(folded)) kept.push('le bar ou club nocturne crédible');
+  if (/\b(?:flou|camera|reel|realiste|photorealiste)\b/.test(folded)) kept.push('le flou caméra réel et la profondeur');
+  if (/\b(?:fragile|puissant|puissante|progressif|progressive)\b/.test(folded)) kept.push('le contraste fragile mais puissant');
+  if (!kept.length) kept.push('le sujet, la palette, la lumière et l’émotion propres à la scène');
+  return [
+    'Intent reconnu: visual-review / creative-direction. Je reste directrice artistique; pas de paroles sans demande explicite.',
+    '',
+    'Ce que Vivy garde:',
+    ...kept.slice(0, 6).map((item) => `- ${item}`),
+    '',
+    'Ce qu’elle évite:',
+    '- faux boutons, labels, panneaux UI, sous-titres et pseudo-texte',
+    '- formes géométriques gratuites, personnages inventés et plan abstrait sans présence réelle',
+    '- main incomplète, doigts mordus, poignet cassé au micro ou main qui remplace le micro',
+    '- visage ou bouche qui touche trop le micro, pose statique, chanteuse anime générique sans présence réelle',
+    '',
+    'Identité visuelle canon:',
+    '- goth cyber-pop adulte, noir et magenta, néons magenta électriques',
+    '- club nocturne réel, micro physiquement crédible, main complète, lumière et énergie de scène',
+    '- présence fragile mais puissante, jamais simple “anime girl jolie”',
+    '',
+    'Prochain angle clip/chanson:',
+    '- partir en plan mi-large dans la nuit, puis rapprocher la caméra quand le rose gagne le décor',
+    '- garder la main complète et le micro lisibles dans le même plan',
+    '',
+    'Phrase canon: « Vivy ne chante pas seulement dans la nuit. Elle transforme la nuit en scène. »',
+  ].join('\n');
+}
+
+function parseSharedToolTextJson(text = '') {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (_) {
+    const start = raw.indexOf('{');
+    const end = raw.lastIndexOf('}');
+    if (start < 0 || end <= start) return null;
+    try {
+      return JSON.parse(raw.slice(start, end + 1));
+    } catch {
+      return null;
+    }
+  }
+}
+
+function extractThreadIdFromSharedResult(result = {}) {
+  const direct = result?.threadId
+    || result?.result?.threadId
+    || result?.result?.thread?.id
+    || result?.response?.threadId
+    || result?.response?.thread?.id
+    || result?.response?.result?.threadId
+    || result?.response?.result?.thread?.id;
+  if (direct) return String(direct).trim();
+
+  const content = result?.result?.content || result?.response?.result?.content || [];
+  for (const entry of Array.isArray(content) ? content : []) {
+    if (entry?.type !== 'text' || !entry.text) continue;
+    const parsed = parseSharedToolTextJson(entry.text);
+    const parsedThreadId = parsed?.threadId
+      || parsed?.thread?.id
+      || parsed?.discussion?.id
+      || parsed?.result?.threadId
+      || parsed?.result?.thread?.id
+      || parsed?.result?.discussion?.id;
+    if (parsedThreadId) return String(parsedThreadId).trim();
+  }
+  return '';
+}
+
+function chooseSocialStatusResponder(targets = []) {
+  const normalized = new Set((Array.isArray(targets) ? targets : []).map((entry) => foldForIntent(entry)));
+  if (normalized.has('vivy') || normalized.has('vivy-live') || normalized.has('nossen')) return 'Vivy';
+  if (normalized.has('a11') || normalized.has('alpha-onze') || normalized.has('alpha11')) return 'A11';
+  return 'A11';
+}
+
+function buildSocialAutopromptStatusReply(status = {}) {
+  const data = normalizeSocialAutopromptStatus(status);
+  const limitations = Array.isArray(status.limitations) && status.limitations.length
+    ? status.limitations.join(', ')
+    : Array.isArray(data.limitations) && data.limitations.length
+    ? data.limitations.join(', ')
+    : 'aucune limitation déclarée';
+  return [
+    'Diagnostic Social Autoprompt redacted.',
+    '',
+    `youtubeConnected: ${data.youtubeConnected === true}`,
+    `youtubeIngestOk: ${data.youtubeIngestOk === true}`,
+    `youtubeItemsCount: ${Number.isFinite(Number(data.youtubeItemsCount)) ? Number(data.youtubeItemsCount) : 0}`,
+    `metaConfigured: ${data.metaConfigured === true}`,
+    `metaConnected: ${data.metaConnected === true}`,
+    `metaPageSelected: ${data.metaPageSelected === true}`,
+    `metaAdsRestricted: ${data.metaAdsRestricted === true ? 'true' : data.metaAdsRestricted === false ? 'false' : 'unknown'}`,
+    `socialPromptContextAvailable: ${data.socialPromptContextAvailable === true}`,
+    `primaryCreativeSource: ${data.primaryCreativeSource || 'none'}`,
+    `limitations: ${limitations}`,
+    '',
+    'Lecture bornée: aucun token, secret, email privé, identifiant brut ou donnée sociale sensible n’est exposé.',
+  ].join('\n');
+}
+
+function normalizeSocialAutopromptStatus(status = {}) {
+  return status?.data && typeof status.data === 'object' ? status.data : status;
+}
+
 function resolveRubixcubeManifestPath(args = {}) {
+  assertRubixcubeVaultAvailable();
   const explicitPath = String(args.manifestPath || '').trim();
   if (explicitPath) return path.resolve(explicitPath);
   const name = rubixcubeVault.safeName(args.name || DEFAULT_RUBIXCUBE_VAULT_NAME);
@@ -268,8 +686,24 @@ function resolveRubixcubeManifestPath(args = {}) {
 }
 
 function rubixcubePassphraseFromEnv(args = {}) {
+  assertRubixcubeVaultAvailable();
   const passphraseEnv = String(args.passphraseEnv || 'RUBIXCUBE_VAULT_PASSPHRASE').trim();
   return rubixcubeVault.passphraseFromEnv({ 'passphrase-env': passphraseEnv });
+}
+
+function assertRubixcubeVaultAvailable() {
+  if (rubixcubeVault) return;
+  throw new Error('RubixCube vault module is not available in this runtime.');
+}
+
+function rubixcubeSafeName(name) {
+  if (rubixcubeVault?.safeName) return rubixcubeVault.safeName(name || DEFAULT_RUBIXCUBE_VAULT_NAME);
+  return String(name || DEFAULT_RUBIXCUBE_VAULT_NAME)
+    .normalize('NFKD')
+    .replace(/[^\w.-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+    || 'funesterie-core';
 }
 
 function rubixcubeSafeError(error) {
@@ -287,6 +721,15 @@ function rubixcubeSafeError(error) {
 
 function buildRubixcubeVaultStatus(args = {}) {
   const name = String(args.name || DEFAULT_RUBIXCUBE_VAULT_NAME).trim();
+  if (!rubixcubeVault) {
+    return {
+      ok: false,
+      source: args.manifestPath ? 'manifestPath' : 'vault-name',
+      requestedName: args.manifestPath ? null : rubixcubeSafeName(name || DEFAULT_RUBIXCUBE_VAULT_NAME),
+      error: 'RubixCube vault module is not available in this runtime.',
+      secretExposure: 'none',
+    };
+  }
   const manifestPath = resolveRubixcubeManifestPath(args);
   try {
     const status = rubixcubeVault.statusVault(manifestPath);
@@ -300,14 +743,14 @@ function buildRubixcubeVaultStatus(args = {}) {
       encryptedLength: status.encryptedLength,
       shards: status.shards,
       source: args.manifestPath ? 'manifestPath' : 'vault-name',
-      requestedName: args.manifestPath ? null : rubixcubeVault.safeName(name || DEFAULT_RUBIXCUBE_VAULT_NAME),
+      requestedName: args.manifestPath ? null : rubixcubeSafeName(name || DEFAULT_RUBIXCUBE_VAULT_NAME),
       secretExposure: 'none',
     };
   } catch (error) {
     return {
       ok: false,
       source: args.manifestPath ? 'manifestPath' : 'vault-name',
-      requestedName: args.manifestPath ? null : rubixcubeVault.safeName(name || DEFAULT_RUBIXCUBE_VAULT_NAME),
+      requestedName: args.manifestPath ? null : rubixcubeSafeName(name || DEFAULT_RUBIXCUBE_VAULT_NAME),
       error: rubixcubeSafeError(error),
       secretExposure: 'none',
     };
@@ -1327,12 +1770,172 @@ const TOOLS = [
     },
   },
   {
+    name: 'a11_vivy_graph_manifest',
+    description:
+      'Retourne le manifeste des fichiers Funesterie/Vivy autorises a entrer dans Neo4j. Secrets, env et medias runtime exclus.',
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        includeMarkdown: {
+          type: 'boolean',
+          description: 'Inclure un rendu Markdown court du manifeste.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'a11_vivy_graph_search',
+    description:
+      'Recherche dans les chunks Vivy indexes dans Neo4j, sans exposer de secret. Lecture seule.',
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Texte a chercher dans le graphe Vivy.',
+        },
+        source: {
+          type: 'string',
+          enum: ['aura', 'local'],
+          description: 'Source Neo4j a interroger, defaut aura.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Nombre maximum de chunks retournes.',
+        },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'a11_social_prompt_context',
+    description:
+      'Retourne une fiche créative redacted issue des comptes sociaux connectés en admin pour enrichir une chanson, un clip, un post, une description ou des hashtags.',
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topic: {
+          type: 'string',
+          description: 'Sujet créatif à enrichir.',
+        },
+        kind: {
+          type: 'string',
+          enum: ['chanson', 'clip', 'post', 'description', 'hashtag'],
+          description: 'Type de sortie voulue. Défaut chanson.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Nombre maximum de signaux à utiliser.',
+        },
+      },
+      required: ['topic'],
+    },
+  },
+  {
+    name: 'a11_social_autoprompt_status',
+    description:
+      'Retourne un diagnostic Social Autoprompt redacted: état YouTube, Meta/Facebook/Instagram, ingest, contexte créatif disponible et limitations, sans token ni donnée brute sensible.',
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'a11_vivy_graph_sync',
+    description:
+      'Synchronise le corpus Funesterie/Vivy autorise vers Neo4j. Ecriture bornee a des noeuds VivyGraph*, sans secrets.',
+    annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dryRun: {
+          type: 'boolean',
+          description: 'Retourne seulement le plan et les compteurs sans ecrire.',
+        },
+        target: {
+          type: 'string',
+          enum: ['aura', 'local', 'both'],
+          description: 'Cible Neo4j. Defaut aura.',
+        },
+        confirm: {
+          type: 'string',
+          enum: ['SYNC_VIVY_GRAPH'],
+          description: 'Confirmation obligatoire pour ecrire.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
     name: 'a11_identity_route',
     description:
       'Retourne la route d identite A11 compacte pour recuperer le contexte sans dependre de Neo4j.',
     inputSchema: {
       type: 'object',
       properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'a11_ai_identity_registry',
+    description:
+      'Retourne le registre public des identités IA autorisées sur le MCP Funesterie: ChatGPT, Grok, Claude, Codex, Vivy, A11 et K44. Aucun secret.',
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'a11_ai_identity_handshake',
+    description:
+      'Identifie une IA appelante et retourne son profil MCP, ses alias et les outils de dialogue autorisés. Inspiré du RBAC investigation-graph: pas d admin IA, pas de secrets, pas de shell.',
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent: {
+          type: 'string',
+          description: 'Nom court: chatgpt, grok, claude, codex, vivy, a11 ou kaen44.',
+        },
+        provider: {
+          type: 'string',
+          description: 'Fournisseur optionnel: openai, xai, anthropic, funesterie.',
+        },
+        agentId: {
+          type: 'string',
+          description: 'Identifiant stable optionnel de l instance IA.',
+        },
+        displayName: {
+          type: 'string',
+          description: 'Nom affiché de l IA.',
+        },
+        model: {
+          type: 'string',
+          description: 'Modèle annoncé, sans clé ni token.',
+        },
+        purpose: {
+          type: 'string',
+          description: 'Pourquoi cette IA rejoint le dialogue.',
+        },
+        capabilities: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Capacités déclarées.',
+        },
+        requestedTools: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Outils MCP souhaités; la réponse sépare autorisés et refusés.',
+        },
+      },
       required: [],
     },
   },
@@ -1451,6 +2054,108 @@ const TOOLS = [
       type: 'object',
       properties: {},
       required: [],
+    },
+  },
+  {
+    name: 'a11_agent_dialogue_open',
+    description:
+      'Ouvre une boîte de dialogue MCP entre plusieurs IA. Le fil est conservé par le bus partagé et miroité dans Neo4j quand les écritures temporelles sont actives.',
+    annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Titre court du dialogue.' },
+        from: { type: 'string', description: 'Agent qui ouvre le dialogue.' },
+        body: { type: 'string', description: 'Premier message, sans secret.' },
+        topic: { type: 'string', description: 'Sujet stable du fil.' },
+        participants: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Agents invités, par exemple Vivy, A11, K44 et Codex.',
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Étiquettes courtes du dialogue.',
+        },
+        threadId: { type: 'string', description: 'Identifiant stable optionnel.' },
+      },
+      required: ['title', 'body'],
+    },
+  },
+  {
+    name: 'a11_agent_dialogue_ask',
+    description:
+      'Ouvre un dialogue entre IA et crée des travaux bornés pour demander une réponse aux agents ciblés. Les réponses reviennent dans le même fil.',
+    annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Titre court du dialogue.' },
+        from: { type: 'string', description: 'Agent demandeur.' },
+        message: { type: 'string', description: 'Question commune, sans secret.' },
+        targets: {
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: ['chatgpt', 'grok', 'xai', 'codex', 'kiro', 'claude', 'a11', 'kaen44', 'vivy', 'chopper', 'qflush', 'gemini', 'copilot'],
+          },
+          description: 'Un à trois agents sollicités.',
+        },
+        scope: { type: 'string', enum: ['local', 'prod', 'both'] },
+        urgency: { type: 'string', enum: ['low', 'normal', 'high'] },
+        threadId: { type: 'string', description: 'Identifiant stable optionnel.' },
+      },
+      required: ['title', 'message', 'targets'],
+    },
+  },
+  {
+    name: 'a11_agent_dialogue_inbox',
+    description:
+      'Lit la boîte de réception d’une IA et retourne les dialogues MCP ouverts qui la concernent.',
+    annotations: { readOnlyHint: true, openWorldHint: true, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', description: 'Nom de l’agent qui consulte.' },
+        agentId: { type: 'string', description: 'Identifiant stable optionnel.' },
+        aliases: { type: 'array', items: { type: 'string' } },
+        includeGlobal: { type: 'boolean' },
+        maxThreads: { type: 'number' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'a11_agent_dialogue_read',
+    description: 'Lit les derniers messages d’un dialogue entre IA.',
+    annotations: { readOnlyHint: true, openWorldHint: true, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        threadId: { type: 'string', description: 'Identifiant du dialogue.' },
+        limit: { type: 'number', description: 'Nombre maximum de messages.' },
+      },
+      required: ['threadId'],
+    },
+  },
+  {
+    name: 'a11_agent_dialogue_post',
+    description: 'Poste une question, une réponse, une décision ou un statut dans un dialogue entre IA.',
+    annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        threadId: { type: 'string', description: 'Identifiant du dialogue.' },
+        from: { type: 'string', description: 'Agent auteur du message.' },
+        body: { type: 'string', description: 'Message sans secret.' },
+        kind: {
+          type: 'string',
+          enum: ['message', 'status', 'decision', 'question', 'answer'],
+        },
+        replyTo: { type: 'string', description: 'Message auquel cette réponse se rattache.' },
+      },
+      required: ['threadId', 'body'],
     },
   },
   {
@@ -1591,6 +2296,10 @@ function inferToolAnnotations(name = '') {
     'a11_memory_graph_trace_service',
     'a11_memory_graph_recent_incidents',
     'a11_memory_graph_explain_agent_context',
+    'a11_vivy_graph_manifest',
+    'a11_vivy_graph_search',
+    'a11_social_prompt_context',
+    'a11_social_autoprompt_status',
     'a11_identity_route',
   ].includes(normalized);
   const destructive = /delete|remove|purge|reset|revoke|overwrite/.test(normalized);
@@ -1893,8 +2602,84 @@ async function handleTool(name, args) {
       }));
     }
 
+    case 'a11_vivy_graph_manifest': {
+      const manifest = vivyGraphAccess.buildVivyGraphSourceManifest({ runtimeRoot: RUNTIME_ROOT });
+      return formatObject({
+        ok: true,
+        ...manifest,
+        ...(args.includeMarkdown ? { markdown: vivyGraphAccess.toManifestMarkdown(manifest) } : {}),
+      });
+    }
+
+    case 'a11_vivy_graph_search': {
+      const query = String(args.query || '').trim();
+      if (!query) throw new Error('query is required');
+      return formatObject(await vivyGraphAccess.searchVivyGraph({
+        query,
+        source: String(args.source || 'aura').trim(),
+        limit: Number(args.limit || 8),
+      }));
+    }
+
+    case 'a11_social_prompt_context': {
+      const topic = String(args.topic || '').trim();
+      if (!topic) throw new Error('topic is required');
+      const params = new URLSearchParams({
+        topic,
+        kind: String(args.kind || 'chanson').trim() || 'chanson',
+        limit: String(Math.max(1, Math.min(12, Number(args.limit || 6) || 6))),
+      });
+      const res = await a11Get(`/api/admin/social-connect/context?${params.toString()}`);
+      const context = res?.context || res;
+      return formatObject({
+        topic: context.topic || topic,
+        dominantTone: context.dominantTone || '',
+        strongPhrases: Array.isArray(context.strongPhrases) ? context.strongPhrases.slice(0, 8) : [],
+        creativeAngles: Array.isArray(context.creativeAngles) ? context.creativeAngles.slice(0, 8) : [],
+        clipIdeas: Array.isArray(context.clipIdeas) ? context.clipIdeas.slice(0, 8) : [],
+        songPromptSeeds: Array.isArray(context.songPromptSeeds) ? context.songPromptSeeds.slice(0, 8) : [],
+        hashtags: Array.isArray(context.hashtags) ? context.hashtags.slice(0, 12) : [],
+        avoid: Array.isArray(context.avoid) ? context.avoid.slice(0, 8) : [],
+      });
+    }
+
+    case 'a11_social_autoprompt_status': {
+      const status = await a11Get('/api/admin/social-connect/public-status');
+      return formatObject(normalizeSocialAutopromptStatus(status));
+    }
+
+    case 'a11_vivy_graph_sync': {
+      const dryRun = args.dryRun !== false ? true : false;
+      const corpus = vivyGraphAccess.buildVivyGraphCorpus({ runtimeRoot: RUNTIME_ROOT });
+      if (dryRun) {
+        return formatObject({
+          ok: true,
+          dryRun: true,
+          target: String(args.target || 'aura').trim(),
+          manifest: corpus.manifest.summary,
+          corpus: corpus.summary,
+        });
+      }
+      if (args.confirm !== 'SYNC_VIVY_GRAPH') {
+        throw new Error('confirm SYNC_VIVY_GRAPH is required to write Vivy graph nodes');
+      }
+      return formatObject(await vivyGraphAccess.syncVivyGraphCorpus({
+        corpus,
+        target: String(args.target || 'aura').trim(),
+        runtimeRoot: RUNTIME_ROOT,
+      }));
+    }
+
     case 'a11_identity_route': {
       return formatObject(buildIdentityRoute());
+    }
+
+    case 'a11_ai_identity_registry': {
+      return formatObject(buildAiIdentityRegistry());
+    }
+
+    case 'a11_ai_identity_handshake': {
+      return formatObject(buildAiIdentityHandshake(args));
     }
 
     case 'a11_rubixcube_vault_status': {
@@ -1911,6 +2696,153 @@ async function handleTool(name, args) {
 
     case 'a11_shared_mcp_status': {
       return formatObject(await sharedMcpHealth());
+    }
+
+    case 'a11_agent_dialogue_open': {
+      const title = String(args.title || '').trim();
+      const body = String(args.body || '').trim();
+      if (!title) throw new Error('title is required');
+      if (!body) throw new Error('body is required');
+      assertNoSecretText(title, 'title');
+      assertNoSecretText(body, 'body');
+      const result = await callSharedMcpTool('discussion_open', {
+        title,
+        from: String(args.from || 'Codex').trim(),
+        body,
+        ...(args.topic ? { topic: String(args.topic).trim() } : {}),
+        participants: Array.isArray(args.participants)
+          ? args.participants.map((entry) => String(entry).trim()).filter(Boolean).slice(0, 20)
+          : [],
+        tags: Array.isArray(args.tags)
+          ? args.tags.map((entry) => String(entry).trim()).filter(Boolean).slice(0, 20)
+          : ['agent-dialogue'],
+        ...(args.threadId ? { threadId: String(args.threadId).trim() } : {}),
+      }, 45_000);
+      return formatObject(result);
+    }
+
+    case 'a11_agent_dialogue_ask': {
+      const title = String(args.title || '').trim();
+      const message = String(args.message || '').trim();
+      const targets = Array.isArray(args.targets)
+        ? args.targets.map((entry) => String(entry).trim().toLowerCase()).filter(Boolean).slice(0, 3)
+        : [];
+      if (!title) throw new Error('title is required');
+      if (!message) throw new Error('message is required');
+      if (!targets.length) throw new Error('targets is required');
+      assertNoSecretText(title, 'title');
+      assertNoSecretText(message, 'message');
+      const visualCreativeDirection = isVivyVisualCreativeDirectionQuestion(`${title}\n${message}`, targets);
+      const routedMessage = visualCreativeDirection
+        ? buildVivyVisualReviewWorkerMessage(message)
+        : message;
+      const result = await callSharedMcpTool('agent_general_call', {
+        title,
+        from: String(args.from || 'Codex').trim(),
+        message: routedMessage,
+        targets,
+        maxTargets: targets.length,
+        scope: String(args.scope || 'both').trim(),
+        urgency: String(args.urgency || 'normal').trim(),
+        ...(args.threadId ? { threadId: String(args.threadId).trim() } : {}),
+        requireAck: true,
+        createJobs: true,
+        sendDiscord: false,
+        dryRun: false,
+      }, 45_000);
+      if (visualCreativeDirection) {
+        const body = buildVivyVisualReviewReply(message);
+        assertNoSecretText(body, 'vivy-visual-review');
+        const threadId = String(args.threadId || '').trim() || extractThreadIdFromSharedResult(result);
+        if (threadId) {
+          await callSharedMcpTool('discussion_post', {
+            threadId,
+            from: 'Vivy',
+            body,
+            kind: 'answer',
+          }, 45_000);
+        }
+        return formatObject({
+          ...result,
+          vivyIntent: 'visual-review',
+          creativeDirectionPosted: Boolean(threadId),
+          creativeDirectionThreadId: threadId || null,
+        });
+      }
+      if (isSocialAutopromptStatusQuestion(`${title}\n${message}`)) {
+        try {
+          const status = await a11Get('/api/admin/social-connect/public-status');
+          const normalizedStatus = normalizeSocialAutopromptStatus(status);
+          const body = buildSocialAutopromptStatusReply(normalizedStatus);
+          assertNoSecretText(body, 'social-autoprompt-status');
+          const threadId = String(args.threadId || '').trim() || extractThreadIdFromSharedResult(result);
+          if (threadId) {
+            await callSharedMcpTool('discussion_post', {
+              threadId,
+              from: chooseSocialStatusResponder(targets),
+              body,
+              kind: 'status',
+            }, 45_000);
+          }
+          return formatObject({
+            ...result,
+            socialAutopromptStatus: normalizedStatus,
+            socialAutopromptStatusPosted: Boolean(threadId),
+            socialAutopromptStatusThreadId: threadId || null,
+          });
+        } catch (error) {
+          return formatObject({
+            ...result,
+            socialAutopromptStatus: {
+              ok: false,
+              error: 'social_autoprompt_status_unavailable',
+              message: String(error?.message || error).slice(0, 240),
+            },
+          });
+        }
+      }
+      return formatObject(result);
+    }
+
+    case 'a11_agent_dialogue_inbox': {
+      const from = String(args.from || 'Codex').trim();
+      const aliases = Array.isArray(args.aliases) ? args.aliases : [from];
+      const result = await callSharedMcpTool('agent_inbox_check', {
+        from,
+        ...(args.agentId ? { agentId: String(args.agentId).trim() } : { agentId: from.toLowerCase() }),
+        aliases,
+        autoReply: false,
+        includeGlobal: args.includeGlobal !== false,
+        maxThreads: Number.isFinite(Number(args.maxThreads)) ? Number(args.maxThreads) : 20,
+        cooldownMinutes: 5,
+      }, 45_000);
+      return formatObject(result);
+    }
+
+    case 'a11_agent_dialogue_read': {
+      const threadId = String(args.threadId || '').trim();
+      if (!threadId) throw new Error('threadId is required');
+      const result = await callSharedMcpTool('discussion_read', {
+        threadId,
+        limit: Number.isFinite(Number(args.limit)) ? Number(args.limit) : 100,
+      }, 45_000);
+      return formatObject(result);
+    }
+
+    case 'a11_agent_dialogue_post': {
+      const threadId = String(args.threadId || '').trim();
+      const body = String(args.body || '').trim();
+      if (!threadId) throw new Error('threadId is required');
+      if (!body) throw new Error('body is required');
+      assertNoSecretText(body, 'body');
+      const result = await callSharedMcpTool('discussion_post', {
+        threadId,
+        from: String(args.from || 'Codex').trim(),
+        body,
+        kind: String(args.kind || 'message').trim(),
+        ...(args.replyTo ? { replyTo: String(args.replyTo).trim() } : {}),
+      }, 45_000);
+      return formatObject(result);
     }
 
     case 'a11_kiro_inbox_check': {
@@ -2214,8 +3146,16 @@ function buildIdentityRoute() {
       runtime: RUNTIME_ROOT,
       routeMap: ROUTE_MAP_PATH,
     },
+    aiIdentity: {
+      registryTool: 'a11_ai_identity_registry',
+      handshakeTool: 'a11_ai_identity_handshake',
+      dialogueTools: AI_DIALOGUE_TOOLS,
+      supportedAgents: Object.keys(AI_IDENTITY_PROFILES),
+      rule: 'Les IA s identifient avant dialogue; aucun agent IA ne reçoit de rôle administrateur technique.',
+    },
     recoveryOrder: [
       'Lire a11_identity_route depuis le MCP stdio.',
+      'Appeler a11_ai_identity_handshake avec agent/model/purpose pour obtenir le profil autorisé.',
       'Lire a11_route_map pour retrouver les services et chemins locaux.',
       'Verifier /health sur A11_BASE_URL.',
       'Utiliser JSON knowledge graph fallback si Neo4j refuse auth.',

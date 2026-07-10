@@ -1,6 +1,6 @@
 {
   "name": "@nossen/zen",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Zero-Exposed NEZ archive encoder/decoder for .zen corpus containers.",
   "type": "commonjs",
   "main": "src/index.cjs",
