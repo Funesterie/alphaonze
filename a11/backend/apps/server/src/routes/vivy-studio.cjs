@@ -10161,9 +10161,9 @@ function createVivyStudioRouter({ verifyJWT, creativeCapabilityService = null } 
       }
       res.json(payload);
     } catch (error) {
-      res.status(500).json({
+      res.status(error?.status || 500).json({
         ok: false,
-        error: 'vivy_studio_failed',
+        error: error?.code || 'vivy_studio_failed',
         message: error?.message || String(error),
       });
     }

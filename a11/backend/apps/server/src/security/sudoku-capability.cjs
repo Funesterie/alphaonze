@@ -207,7 +207,7 @@ function createSudokuCapabilityService(options = {}) {
     if (record.state !== 'awaiting_marvin') throw fail('sudoku_challenge_not_awaiting_approval', 409, `Challenge state is ${record.state}.`);
     record.approvalAttempts += 1;
     if (!sameMac(record.approvalHash, mac(secret, `${id}:${String(approvalCode || '').trim()}`))) {
-      if (record.approvalAttempts >= 5) record.state = 'locked';
+      if (record.approvalAttempts >= maxAttempts) record.state = 'locked';
       throw fail('marvin_approval_code_invalid', 400, 'Marvin approval code is invalid.');
     }
     record.state = 'approved';

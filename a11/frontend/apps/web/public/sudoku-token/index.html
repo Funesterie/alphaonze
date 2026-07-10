@@ -221,8 +221,12 @@
       el('verify').addEventListener('click', verifyGrant);
       el('copy').addEventListener('click', async () => {
         const text = `Sudoku Cerbère Funesterie\nChallenge: ${el('challenge-id').textContent}\nCode Marvin: ${el('approval-code').textContent}\nPage: ${location.origin}/sudoku-token/`;
-        await navigator.clipboard.writeText(text);
-        setStatus(el('owner-status'), 'Demande Marvin copiée.', true);
+        try {
+          await navigator.clipboard.writeText(text);
+          setStatus(el('owner-status'), 'Demande Marvin copiée.', true);
+        } catch (err) {
+          setStatus(el('owner-status'), 'Copie impossible: ' + (err?.message || 'contexte non sécurisé ou clipboard indisponible.'), false);
+        }
       });
 
       renderGrid(Array(81).fill(0));
