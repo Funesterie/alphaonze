@@ -215,6 +215,13 @@ const VIVY_TOOL_CAPABILITIES = [
     route: 'intent borné vers backend/MCP/agents; pas de shell arbitraire depuis Vivy public',
     limit: 'confirmation ou opérateur requis pour écriture, suppression, secret, infra et coûts',
   },
+  {
+    id: 'security.sudoku-token',
+    label: 'Session créative Sudoku Cerbère',
+    trigger: 'token sudoku, session créative Djeff/Vivy, validation Marvin',
+    route: 'challenge Sudoku côté serveur, approbation séparée Marvin, puis jeton court et limité',
+    limit: 'aucune clé maître; secrets, coûts, publication, deploy, données cross-compte et hardware restent hors périmètre',
+  },
 ];
 
 function cleanText(value, max = 2000) {
@@ -9684,8 +9691,14 @@ function runVivyMultiVoiceAssembly(rawSegments = []) {
   });
 }
 
-function createVivyStudioRouter({ verifyJWT } = {}) {
+function createVivyStudioRouter({ verifyJWT, creativeCapabilityService = null } = {}) {
   const router = express.Router();
+  const resolveCreativeAuthorization = (req) => {
+    if (!creativeCapabilityService || typeof creativeCapabilityService.verifyCapabilityToken !== 'function') return null;
+    const token = cleanOneLine(req.headers?.['x-a11-creative-capability'], '', 4096);
+    if (!token) return null;
+    return creativeCapabilityService.verifyCapabilityToken(token, req.user || {});
+  };
   const optionalAuth = (req, res, next) => {
     if (typeof verifyJWT !== 'function' || !extractRequestAuthToken(req)) return next();
     return verifyJWT(req, res, next);
@@ -10059,6 +10072,7 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
   router.post('/produce', requireAuth, express.json({ limit: '96kb' }), async (req, res) => {
     try {
       const input = req.body || {};
+      const creativeAuthorization = resolveCreativeAuthorization(req);
       const payload = buildVivyStudioProduction({
         ...input,
         language: resolveVivyResponseLanguage(input, req),
@@ -10067,6 +10081,7 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
         sunoApiKey: undefined,
         personalSunoApiKey: undefined,
       });
+      if (creativeAuthorization) payload.creativeAuthorization = creativeAuthorization;
       let media = null;
       let mediaError = null;
       try {
@@ -10156,10 +10171,13 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
 
   router.post('/chat', requireAuth, express.json({ limit: '512kb' }), async (req, res) => {
     try {
-      res.json(await buildVivyAiChat({
+      const creativeAuthorization = resolveCreativeAuthorization(req);
+      const payload = await buildVivyAiChat({
         ...(req.body || {}),
         shareToken: undefined,
-      }, req));
+      }, req);
+      if (creativeAuthorization) payload.creativeAuthorization = creativeAuthorization;
+      res.json(payload);
     } catch (error) {
       res.status(error?.status || 500).json({
         ok: false,
