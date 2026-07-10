@@ -26,13 +26,19 @@
   </url>
   <url>
     <loc>https://funesterie.me/privacy/</loc>
-    <lastmod>2026-05-25</lastmod>
+    <lastmod>2026-07-09</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.3</priority>
   </url>
   <url>
     <loc>https://funesterie.me/terms/</loc>
-    <lastmod>2026-05-25</lastmod>
+    <lastmod>2026-07-09</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://funesterie.me/mille-fleurs/</loc>
+    <lastmod>2026-07-09</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.3</priority>
   </url>

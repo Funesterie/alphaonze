@@ -35,12 +35,15 @@ const REQUIRED_CORPUS_MS = Math.max(
 const DEFAULT_PERSONA_EMAILS = {
   a11: ['bayetgerard@gmail.com'],
   djeff: ['cellaurojeffrey@gmail.com'],
+  marvin: ['marvincellauro@gmail.com', 'cellauromarvin@gmail.com'],
   kaen44: ['giovannabrunetto@gmail.com', 'giovannabrunettogiovanna@gmail.com'],
   vivy: ['jewitt.charlene@gmail.com', 'charlenejewitt@gmail.com'],
 };
 
 const VOICE_LEARNING_CONSENT = 'voice-learning-v1';
 const DELETE_CONFIRMATION = 'delete-voice-learning-corpus';
+const SUNO_VOICE_SLOT_CONSENT = 'suno-voice-slot-v1';
+const SUNO_VOICE_DELETE_CONFIRMATION = 'delete-suno-voice-slot';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -69,11 +72,75 @@ function normalizePersona(value = '') {
   const raw = String(value || '').trim().toLowerCase();
   if (raw === 'k44' || raw === 'kaen') return 'kaen44';
   if (raw === 'djeff' || raw === 'djeff-rap' || raw === 'pignon') return 'djeff';
+  if (raw === 'marvin' || raw === 'frere' || raw === 'frère' || raw === 'brother') return 'marvin';
   if (raw === 'vivy' || raw === 'vivi') return 'vivy';
   if (raw === 'personal' || raw === 'personal-voice' || raw === 'my-voice' || raw === 'myvoice' || raw === 'ma-voix' || raw === 'ma_voix') return 'personal';
   if (raw === 'a11' || raw === 'alphaonze' || raw === 'alpha-onze') return 'a11';
   if (raw === 'kaen44') return 'kaen44';
   return '';
+}
+
+function normalizeSunoVoiceId(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (raw.length < 8 || raw.length > 180) return '';
+  if (!/^[a-zA-Z0-9:_-]+$/.test(raw)) return '';
+  return raw;
+}
+
+function maskSunoVoiceId(value = '') {
+  const raw = normalizeSunoVoiceId(value);
+  if (!raw) return '';
+  if (raw.length <= 12) return `${raw.slice(0, 3)}…${raw.slice(-3)}`;
+  return `${raw.slice(0, 6)}…${raw.slice(-6)}`;
+}
+
+function hashSunoVoiceId(value = '') {
+  const raw = normalizeSunoVoiceId(value);
+  return raw ? crypto.createHash('sha256').update(raw).digest('hex').slice(0, 16) : '';
+}
+
+function normalizeSunoVoiceLabel(value = '') {
+  return String(value || '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+}
+
+function normalizeStoredSunoVoice(value = null) {
+  const voiceId = normalizeSunoVoiceId(value?.voiceId || value?.id || '');
+  if (!voiceId) return null;
+  const updatedAt = String(value?.updatedAt || value?.linkedAt || value?.createdAt || '').trim();
+  return {
+    provider: 'suno',
+    voiceId,
+    idHash: hashSunoVoiceId(voiceId),
+    idMask: maskSunoVoiceId(voiceId),
+    label: normalizeSunoVoiceLabel(value?.label || value?.name || '') || 'Voix Suno personnelle',
+    consent: String(value?.consent || SUNO_VOICE_SLOT_CONSENT).trim(),
+    linkedAt: String(value?.linkedAt || updatedAt || new Date().toISOString()).trim(),
+    updatedAt: updatedAt || new Date().toISOString(),
+    source: String(value?.source || 'vivy-studio').trim().slice(0, 60) || 'vivy-studio',
+  };
+}
+
+function describeSunoVoiceSlot(slot = null) {
+  const normalized = normalizeStoredSunoVoice(slot);
+  if (!normalized) {
+    return {
+      sunoVoiceLinked: false,
+      sunoVoiceProvider: 'suno',
+    };
+  }
+  return {
+    sunoVoiceLinked: true,
+    sunoVoiceProvider: 'suno',
+    sunoVoiceIdHash: normalized.idHash,
+    sunoVoiceIdMask: normalized.idMask,
+    sunoVoiceLabel: normalized.label,
+    sunoVoiceUpdatedAt: normalized.updatedAt,
+  };
 }
 
 function getAllowedEmailsForPersona(persona) {
@@ -143,7 +210,7 @@ function resolveLearningAccess(req, requestedPersona = '') {
   if (hasRequestedPersona && !persona) return null;
   if (persona === 'personal') return buildPersonalVoiceAccess(req, email);
 
-  const candidates = persona ? [persona] : ['a11', 'kaen44', 'vivy', 'djeff'];
+  const candidates = persona ? [persona] : ['a11', 'kaen44', 'vivy', 'djeff', 'marvin'];
   const sourceOnly = requireOfficialSourceAccount();
   for (const candidate of candidates) {
     const allowed = getAllowedEmailsForPersona(candidate);
@@ -203,16 +270,17 @@ function stripRuntimeFields(clip = {}) {
 
 function readIndexFile(indexPath, corpusDir) {
   try {
-    if (!fs.existsSync(indexPath)) return { clips: [], trainRequests: [] };
+    if (!fs.existsSync(indexPath)) return { clips: [], trainRequests: [], sunoVoice: null };
     const parsed = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
     return {
       clips: Array.isArray(parsed?.clips)
         ? parsed.clips.map((clip) => withRuntimeCorpusDir(clip, corpusDir))
         : [],
       trainRequests: Array.isArray(parsed?.trainRequests) ? parsed.trainRequests : [],
+      sunoVoice: normalizeStoredSunoVoice(parsed?.sunoVoice),
     };
   } catch {
-    return { clips: [], trainRequests: [] };
+    return { clips: [], trainRequests: [], sunoVoice: null };
   }
 }
 
@@ -229,6 +297,7 @@ function mergeIndexes(indexes = []) {
   const clipKeys = new Set();
   const trainRequests = [];
   const trainKeys = new Set();
+  let sunoVoice = null;
 
   for (const index of indexes) {
     for (const clip of (index?.clips || [])) {
@@ -243,11 +312,17 @@ function mergeIndexes(indexes = []) {
       if (key) trainKeys.add(key);
       trainRequests.push(job);
     }
+    const candidateSunoVoice = normalizeStoredSunoVoice(index?.sunoVoice);
+    if (candidateSunoVoice) {
+      const currentTime = Date.parse(sunoVoice?.updatedAt || sunoVoice?.linkedAt || '') || 0;
+      const candidateTime = Date.parse(candidateSunoVoice.updatedAt || candidateSunoVoice.linkedAt || '') || 0;
+      if (!sunoVoice || candidateTime >= currentTime) sunoVoice = candidateSunoVoice;
+    }
   }
 
   clips.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
   trainRequests.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
-  return { clips, trainRequests };
+  return { clips, trainRequests, sunoVoice };
 }
 
 function readIndex(access) {
@@ -281,6 +356,7 @@ function writeIndex(access, index) {
   fs.writeFileSync(tmpPath, JSON.stringify({
     clips: Array.isArray(index.clips) ? index.clips.map(stripRuntimeFields) : [],
     trainRequests: Array.isArray(index.trainRequests) ? index.trainRequests : [],
+    sunoVoice: normalizeStoredSunoVoice(index.sunoVoice),
   }, null, 2));
   fs.renameSync(tmpPath, indexPath);
 }
@@ -331,9 +407,58 @@ function requireConsent(req) {
   return raw === VOICE_LEARNING_CONSENT || raw === 'true' || raw === '1' || raw === 'yes';
 }
 
+function requireSunoVoiceSlotConsent(req) {
+  const raw = String(req.body?.consent || req.query?.consent || '').trim().toLowerCase();
+  return raw === SUNO_VOICE_SLOT_CONSENT
+    || raw === VOICE_LEARNING_CONSENT
+    || raw === 'true'
+    || raw === '1'
+    || raw === 'yes';
+}
+
 function requireDeleteConfirmation(req) {
   const raw = String(req.body?.confirm || req.query?.confirm || '').trim().toLowerCase();
   return raw === DELETE_CONFIRMATION;
+}
+
+function requireSunoVoiceDeleteConfirmation(req) {
+  const raw = String(req.body?.confirm || req.query?.confirm || '').trim().toLowerCase();
+  return raw === SUNO_VOICE_DELETE_CONFIRMATION;
+}
+
+function buildPersonalSunoVoiceSlot(access, req) {
+  const voiceId = normalizeSunoVoiceId(req.body?.voiceId || req.body?.sunoVoiceId || req.body?.id || '');
+  if (!voiceId) return null;
+  const now = new Date().toISOString();
+  return normalizeStoredSunoVoice({
+    provider: 'suno',
+    voiceId,
+    label: normalizeSunoVoiceLabel(req.body?.label || req.body?.name || access.voiceIdentityLabel || ''),
+    consent: SUNO_VOICE_SLOT_CONSENT,
+    linkedAt: now,
+    updatedAt: now,
+    source: String(req.body?.source || 'vivy-studio').trim().slice(0, 60) || 'vivy-studio',
+  });
+}
+
+function resolvePersonalSunoVoiceForRequest(req = null) {
+  if (!req) return null;
+  const access = resolveLearningAccess(req, 'personal');
+  if (!access) return null;
+  const slot = normalizeStoredSunoVoice(readIndex(access).sunoVoice);
+  if (!slot) return null;
+  return {
+    provider: 'suno',
+    voiceId: slot.voiceId,
+    label: slot.label,
+    idHash: slot.idHash,
+    idMask: slot.idMask,
+    updatedAt: slot.updatedAt,
+    persona: access.persona,
+    contributorRole: access.contributorRole,
+    voiceIdentityKey: access.voiceIdentityKey,
+    voiceIdentityLabel: access.voiceIdentityLabel,
+  };
 }
 
 function createVoiceLearningRouter(options = {}) {
@@ -354,6 +479,7 @@ function createVoiceLearningRouter(options = {}) {
         consentRequired: true,
         consent: VOICE_LEARNING_CONSENT,
         minimumTier: requestedPersona === 'personal' ? PERSONAL_VOICE_POLICY.minimumTier : undefined,
+        ...describeSunoVoiceSlot(null),
         message: 'Connecte-toi puis active la contribution voix pour participer au corpus.',
         requiredSeconds: REQUIRED_CORPUS_MS / 1000,
       });
@@ -374,8 +500,96 @@ function createVoiceLearningRouter(options = {}) {
       voiceIdentityLabel: access.voiceIdentityLabel,
       voiceStyle: access.voiceStyle,
       minimumTier: access.minimumTier,
+      ...describeSunoVoiceSlot(access.persona === 'personal' ? index.sunoVoice : null),
       ...summary,
       nextAction: summary.corpusReady ? 'train' : 'record',
+    });
+  });
+
+  router.post('/voice-learning/suno-voice', verifyJWT, express.json({ limit: '64kb' }), (req, res) => {
+    if (!requireSunoVoiceSlotConsent(req)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'missing_suno_voice_consent',
+        message: 'Consentement liaison voix Suno manquant.',
+        consent: SUNO_VOICE_SLOT_CONSENT,
+      });
+    }
+    const access = resolveLearningAccess(req, 'personal');
+    if (!access) {
+      return res.status(403).json({
+        ok: false,
+        error: 'personal_suno_voice_not_allowed',
+        minimumTier: PERSONAL_VOICE_POLICY.minimumTier,
+        message: 'Compte Premium, Fondateur ou Famille requis pour lier une voix Suno personnelle.',
+      });
+    }
+    const slot = buildPersonalSunoVoiceSlot(access, req);
+    if (!slot) {
+      return res.status(400).json({
+        ok: false,
+        error: 'invalid_suno_voice_id',
+        message: 'ID voix Suno invalide. Colle l’identifiant brut fourni par Suno.',
+      });
+    }
+    const index = readIndex(access);
+    index.sunoVoice = slot;
+    writeIndex(access, index);
+    return res.json({
+      ok: true,
+      enabled: true,
+      canCapture: true,
+      persona: access.persona,
+      consentRequired: true,
+      consent: SUNO_VOICE_SLOT_CONSENT,
+      contributorRole: access.contributorRole,
+      voiceIdentityKey: access.voiceIdentityKey,
+      voiceIdentityLabel: access.voiceIdentityLabel,
+      voiceStyle: access.voiceStyle,
+      minimumTier: access.minimumTier,
+      ...describeSunoVoiceSlot(slot),
+      ...makeSummary(index),
+      nextAction: 'use-suno-voice',
+      message: 'Voix Suno personnelle liée à ce compte.',
+    });
+  });
+
+  router.delete('/voice-learning/suno-voice', verifyJWT, express.json({ limit: '64kb' }), (req, res) => {
+    if (!requireSunoVoiceDeleteConfirmation(req)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'missing_suno_voice_delete_confirmation',
+        message: 'Confirmation de suppression voix Suno manquante.',
+      });
+    }
+    const access = resolveLearningAccess(req, 'personal');
+    if (!access) {
+      return res.status(403).json({
+        ok: false,
+        error: 'personal_suno_voice_not_allowed',
+        minimumTier: PERSONAL_VOICE_POLICY.minimumTier,
+        message: 'Compte Premium, Fondateur ou Famille requis pour retirer une voix Suno personnelle.',
+      });
+    }
+    const index = readIndex(access);
+    index.sunoVoice = null;
+    writeIndex(access, index);
+    return res.json({
+      ok: true,
+      enabled: true,
+      canCapture: true,
+      persona: access.persona,
+      consentRequired: true,
+      consent: SUNO_VOICE_SLOT_CONSENT,
+      contributorRole: access.contributorRole,
+      voiceIdentityKey: access.voiceIdentityKey,
+      voiceIdentityLabel: access.voiceIdentityLabel,
+      voiceStyle: access.voiceStyle,
+      minimumTier: access.minimumTier,
+      ...describeSunoVoiceSlot(null),
+      ...makeSummary(index),
+      nextAction: 'record',
+      message: 'Voix Suno personnelle retirée de ce compte.',
     });
   });
 
@@ -395,9 +609,16 @@ function createVoiceLearningRouter(options = {}) {
         message: 'Compte connecte requis pour retirer ce corpus voix.',
       });
     }
+    const previousIndex = readIndex(access);
     for (const corpusDir of getCorpusDirs(access, { ensure: false })) {
       fs.rmSync(corpusDir, { recursive: true, force: true });
     }
+    const nextIndex = {
+      clips: [],
+      trainRequests: [],
+      sunoVoice: previousIndex.sunoVoice || null,
+    };
+    if (nextIndex.sunoVoice) writeIndex(access, nextIndex);
     return res.json({
       ok: true,
       enabled: true,
@@ -412,7 +633,8 @@ function createVoiceLearningRouter(options = {}) {
       voiceIdentityLabel: access.voiceIdentityLabel,
       voiceStyle: access.voiceStyle,
       minimumTier: access.minimumTier,
-      ...makeSummary({ clips: [], trainRequests: [] }),
+      ...describeSunoVoiceSlot(nextIndex.sunoVoice),
+      ...makeSummary(nextIndex),
       nextAction: 'record',
     });
   });
@@ -575,3 +797,6 @@ function createVoiceLearningRouter(options = {}) {
 }
 
 module.exports = createVoiceLearningRouter;
+module.exports.resolvePersonalSunoVoiceForRequest = resolvePersonalSunoVoiceForRequest;
+module.exports.normalizeSunoVoiceId = normalizeSunoVoiceId;
+module.exports.describeSunoVoiceSlot = describeSunoVoiceSlot;

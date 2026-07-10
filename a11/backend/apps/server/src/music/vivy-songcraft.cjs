@@ -848,6 +848,7 @@ function buildVivySongcraftSystemPrompt(mode, context) {
     : '';
   return [
     'Module Vivy Songcraft actif.',
+    'Contrat de création: Djeff Cypher cadre silencieusement le prompt et le sujet; Vivy assure la direction artistique et sonore finale. Une seule chanson exploitable, jamais une liste de prompts ou de plateformes.',
     'Application Songcraft: preserver le grain, les accidents utiles et l\u2019intention emotionnelle avant de lisser.',
     'Si l\u2019utilisateur demande une chanson, reponds comme une artiste-auteure, pas comme un assistant qui explique.',
     'Liberté créative: tu peux réécrire, déplacer, condenser ou enrichir la matière pour produire une vraie chanson; ne te limite pas à paraphraser les phrases reçues.',
@@ -894,6 +895,16 @@ const VIVY_SONG_ARTISTS = [
     sunoRole: 'rough male rap lead with dry close-mic tone',
   },
   {
+    id: 'marvin',
+    label: 'Marvin',
+    tag: '[Marvin]',
+    role: 'voix frere/famille, lead masculin naturel, presence directe et refrains rap-chantes',
+    grammar: 'masculin singulier; accords et pronoms il/lui',
+    style: 'natural French male family lead, close-mic melodic rap tone',
+    sunoTag: '[French Male Family Lead]',
+    sunoRole: 'natural French male family lead with close-mic melodic rap tone',
+  },
+  {
     id: 'vivy',
     label: 'Vivy',
     tag: '[Vivy]',
@@ -937,7 +948,10 @@ function normalizeVivySongArtistIds(input = {}) {
     .filter((artist) => {
       const id = foldTextForLookup(artist.id);
       const label = foldTextForLookup(artist.label);
-      return foldedItems.has(id) || foldedItems.has(label) || (artist.id === 'k44' && foldedItems.has('kaen44'));
+      return foldedItems.has(id)
+        || foldedItems.has(label)
+        || (artist.id === 'marvin' && (foldedItems.has('frere') || foldedItems.has('brother')))
+        || (artist.id === 'k44' && foldedItems.has('kaen44'));
     })
     .map((artist) => artist.id);
 
@@ -965,6 +979,7 @@ function normalizeVivySongArtistIds(input = {}) {
     return ['a11', 'vivy'];
   }
   if (/djeff.*vivy|vivy.*djeff/.test(folded)) return ['djeff', 'vivy'];
+  if (/\bmarvin\b|\bfrere\b|\bbrother\b/.test(folded)) return ['marvin'];
   if (/\bdjeff\b|\brap\b|\bfraiyeur\b|\bmoto\b|\bmoteur\b|\bpignon\b|\bcouronne\b|\bradiateur\b/.test(folded)) return ['djeff'];
   if (/\bk44\b|\bkaen44\b|\bkaen\b/.test(folded)) return ['k44'];
   if (/\ba11\b|\balpha\s*onze\b|\balphaonze\b/.test(folded)) return ['a11'];
@@ -1020,6 +1035,9 @@ function buildVivySongArtistCast(input = {}) {
   const ensembleStyle = count > 1
     ? `${count} clearly different vocal timbres: ${sunoRoleFragment}; switch singer timbre at every role tag, solo handoff arrangement, one vocalist at a time, brief call-and-response hook only, ${label}, `
     : '';
+  const vocalDeliveryStyle = count === 1 && ids.includes('djeff')
+    ? 'rap hook, rap vocals, no melodic pop singing'
+    : 'melodic chorus, sung vocals';
   return {
     ids,
     artists,
@@ -1030,7 +1048,7 @@ function buildVivySongArtistCast(input = {}) {
     songCastLines,
     musicLead: `Original Funesterie song for ${label}, in ${languageName}.`,
     musicMood: `${countLabel}: ${label}. Original voices only, no celebrity imitation. Solo handoff before shared hooks. ${styleFragment}.`,
-    sunoStyle: `${languageStyle} original vocal production, ${ensembleStyle}${styleFragment}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration`,
+    sunoStyle: `${languageStyle} original vocal production, ${ensembleStyle}${styleFragment}, structured rhymed lyrics, ${vocalDeliveryStyle}, no spoken narration`,
   };
 }
 
@@ -1332,6 +1350,7 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
   const hasVivy = artistCast.ids.includes('vivy');
   const hasA11 = artistCast.ids.includes('a11');
   const hasK44 = artistCast.ids.includes('k44');
+  const hasMarvin = artistCast.ids.includes('marvin');
   const lead = artistCast.artists[0]?.label || 'Vivy';
   const isA11VivyDuo = artistCast.count === 2 && artistCast.ids.includes('a11') && artistCast.ids.includes('vivy');
   const leadTag = isA11VivyDuo ? `[${lead.toUpperCase()}]` : `[${lead}]`;
@@ -1363,6 +1382,18 @@ function buildVivyMultiArtistLyrics(input = {}, material = '', artistCast = buil
       `je garde ${title.toLocaleLowerCase('fr-FR')} dans l'axe du morceau.`,
       `${punctuateVivySongLine(imageC, ',')}`,
       `je serre ${motif} jusqu'au prochain passage.`,
+      ''
+    );
+  }
+
+  if (hasMarvin) {
+    blocks.push(
+      '[Verse 1 - Marvin]',
+      '[Marvin]',
+      `${punctuateVivySongLine(imageA, ',')}`,
+      `je prends ${title.toLocaleLowerCase('fr-FR')} sans copier personne.`,
+      `${punctuateVivySongLine(imageC, ',')}`,
+      `la voix reste famille, proche du micro et du moment.`,
       ''
     );
   }

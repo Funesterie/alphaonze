@@ -98,10 +98,13 @@ test('image chat payload treats missing URL as failure even when backend says ok
   assert.doesNotMatch(content, /C'est fait/i);
 });
 
-test('media agent roles keep prompt, image and audio ownership separated', () => {
+test('media agent roles put Djeff Cypher on prompts and Vivy on art direction', () => {
   const matrix = getMediaAgentRoleMatrix({});
 
-  assert.equal(matrix.prompt.primary, 'kaen44');
+  assert.equal(matrix.prompt.primary, 'djeff-cypher');
+  assert.equal(matrix.art_direction.primary, 'vivy');
+  assert.ok(matrix.prompt.helpers.includes('vivy'));
+  assert.match(matrix.prompt.responsibility, /brief unique/i);
   assert.equal(matrix.audio.primary, 'vivy');
   assert.equal(matrix.image.primary, 'a11');
   assert.equal(matrix.audio_qa.primary, 'ekko');
@@ -110,12 +113,13 @@ test('media agent roles keep prompt, image and audio ownership separated', () =>
   assert.ok(matrix.audio.fallbacks.includes('silent-track'));
 });
 
-test('video media pipeline includes owners and fallbacks for generated clips', () => {
+test('video media pipeline includes prompt engineering then Vivy art direction', () => {
   const pipeline = buildMediaPipeline('video', { withAudio: true, env: {} });
   const stages = pipeline.map((entry) => entry.stage);
 
-  assert.deepEqual(stages, ['prompt', 'audio', 'image', 'video', 'audio_qa', 'vision_qa', 'client_handoff']);
-  assert.equal(pipeline.find((entry) => entry.stage === 'prompt')?.primary, 'kaen44');
+  assert.deepEqual(stages, ['prompt', 'art_direction', 'audio', 'image', 'video', 'audio_qa', 'vision_qa', 'client_handoff']);
+  assert.equal(pipeline.find((entry) => entry.stage === 'prompt')?.primary, 'djeff-cypher');
+  assert.equal(pipeline.find((entry) => entry.stage === 'art_direction')?.primary, 'vivy');
   assert.equal(pipeline.find((entry) => entry.stage === 'audio')?.primary, 'vivy');
   assert.equal(pipeline.find((entry) => entry.stage === 'image')?.primary, 'a11');
   assert.ok(pipeline.find((entry) => entry.stage === 'video')?.fallbacks.includes('mp4-cpu-ffmpeg'));
@@ -127,8 +131,10 @@ test('image payloads expose Funesterie media orchestration contract', () => {
     url: 'https://files.funesterie.me/public/example.png',
   }, 'image', { env: {} });
 
-  assert.equal(payload.orchestration.promptOwner, 'kaen44');
+  assert.equal(payload.orchestration.promptOwner, 'djeff-cypher');
+  assert.equal(payload.orchestration.artDirectionOwner, 'vivy');
   assert.equal(payload.orchestration.imageOwner, 'a11');
   assert.equal(payload.mediaPipeline[0].stage, 'prompt');
-  assert.equal(payload.mediaPipeline[1].stage, 'image');
+  assert.equal(payload.mediaPipeline[1].stage, 'art_direction');
+  assert.equal(payload.mediaPipeline[2].stage, 'image');
 });

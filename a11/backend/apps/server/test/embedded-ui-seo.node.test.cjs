@@ -18,6 +18,9 @@ test('embedded UI SEO canonicalizes public Funesterie aliases', () => {
   assert.equal(canonicalFunesteriePath('/home'), '/');
   assert.equal(canonicalFunesteriePath('/accueil/'), '/');
   assert.equal(canonicalFunesteriePath('/architecture/details'), '/architecture/');
+  assert.equal(canonicalFunesteriePath('/mille-fleurs/'), '/mille-fleurs/');
+  assert.equal(canonicalFunesteriePath('/millefleurs/intro'), '/mille-fleurs/');
+  assert.equal(canonicalFunesteriePath('/charte-mille-fleurs'), '/mille-fleurs/');
 });
 
 test('embedded UI SEO marks private utility pages as noindex', () => {
@@ -30,6 +33,10 @@ test('embedded UI SEO resolves Funesterie public and private pages', () => {
   assert.deepEqual(
     resolveEmbeddedUiSeo({ hostname: 'funesterie.me', pathname: '/architecture/' }),
     { canonical: 'https://funesterie.me/architecture/', robots: INDEX_FOLLOW }
+  );
+  assert.deepEqual(
+    resolveEmbeddedUiSeo({ hostname: 'funesterie.me', pathname: '/mille-fleurs/' }),
+    { canonical: 'https://funesterie.me/mille-fleurs/', robots: INDEX_FOLLOW }
   );
   assert.deepEqual(
     resolveEmbeddedUiSeo({ hostname: 'funesterie.me', pathname: '/login?returnTo=/compte/' }),

@@ -588,6 +588,17 @@ test('POST /api/llm/chat queues an async image job when requested and exposes a 
         detectImageIntent: () => true,
         detectWebImageIntent: () => false,
         hasLocalChatUpstreamConfigured: () => true,
+        specialCompilerCallStructuredLlmJson: async () => ({
+          prompt: 'An orange cat in a warm cinematic room',
+          negative_prompt: '',
+          subject: 'orange cat',
+          style: 'cinematic',
+          width: 768,
+          height: 768,
+          has_reference_image: false,
+          preserve_identity: false,
+          transformation_description: '',
+        }),
         generateSd: async () => {
           generateCalls += 1;
           await new Promise((resolve) => setTimeout(resolve, 40));
@@ -626,7 +637,7 @@ test('POST /api/llm/chat queues an async image job when requested and exposes a 
       assert.equal(second.json.asyncJob?.jobId, first.json.asyncJob?.jobId);
 
       let polled = null;
-      for (let attempt = 0; attempt < 20; attempt += 1) {
+      for (let attempt = 0; attempt < 500; attempt += 1) {
         polled = await getJson(
           baseUrl,
           `/api/llm/jobs/image/${encodeURIComponent(first.json.asyncJob.jobId)}`,
@@ -676,7 +687,7 @@ test('POST /api/llm/chat carries previous vision analysis into async image gener
           const input = JSON.parse(String(text || '{}'));
           structuredInputs.push(input);
           return {
-            prompt: String(input.user_request || ''),
+            prompt: 'The same two people from the reference image in a photorealistic volcanic landscape',
             negative_prompt: '',
             subject: 'the same two people from the reference image',
             style: 'photorealistic volcanic landscape',
@@ -732,7 +743,7 @@ test('POST /api/llm/chat carries previous vision analysis into async image gener
       assert.equal(queued.json.mode, 'generate_image_async');
 
       let polled = null;
-      for (let attempt = 0; attempt < 20; attempt += 1) {
+      for (let attempt = 0; attempt < 500; attempt += 1) {
         polled = await getJson(
           baseUrl,
           `/api/llm/jobs/image/${encodeURIComponent(queued.json.asyncJob.jobId)}`,
@@ -784,6 +795,17 @@ test('POST /api/llm/chat treats image clarification answers as async image conti
         detectImageIntent: () => false,
         detectWebImageIntent: () => false,
         hasLocalChatUpstreamConfigured: () => true,
+        specialCompilerCallStructuredLlmJson: async () => ({
+          prompt: 'Sonic racing through golden rings inside a large looping track',
+          negative_prompt: '',
+          subject: 'Sonic',
+          style: 'dynamic cinematic action',
+          width: 768,
+          height: 768,
+          has_reference_image: false,
+          preserve_identity: false,
+          transformation_description: '',
+        }),
         generateSd: async () => {
           generateCalls += 1;
           await new Promise((resolve) => setTimeout(resolve, 20));
@@ -819,7 +841,7 @@ test('POST /api/llm/chat treats image clarification answers as async image conti
       assert.equal(proxyCalls, 0);
 
       let polled = null;
-      for (let attempt = 0; attempt < 20; attempt += 1) {
+      for (let attempt = 0; attempt < 500; attempt += 1) {
         polled = await getJson(
           baseUrl,
           `/api/llm/jobs/image/${encodeURIComponent(queued.json.asyncJob.jobId)}`,

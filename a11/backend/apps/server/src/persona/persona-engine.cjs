@@ -8,6 +8,10 @@ const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
 const {
   getFamilyVoiceIdentitiesForPersona,
 } = require('../config/family-accounts.cjs');
+const {
+  buildReferenceCapsuleContext,
+  hasFunesterieReferenceCapsuleContext,
+} = require('../chat/funesterie-reference-capsules.cjs');
 
 // PERSONA_ENGINE — couche injectable bornée.
 //
@@ -247,6 +251,10 @@ function buildAgentsPersonaContext(env = process.env, options = {}) {
   }
   const docs = buildSharedDocsBrief(env, options);
   if (docs) lines.push(`DOCS FUNESTERIE (extraits opérateur, à utiliser sans réciter): ${docs}`);
+  const referenceCapsules = buildReferenceCapsuleContext(env, { maxChars: 1800 });
+  if (referenceCapsules && !hasFunesterieReferenceCapsuleContext(lines.join('\n'))) {
+    lines.push(`RÉFÉRENCES FUNESTERIE (capsules abstraites, jamais de copie): ${referenceCapsules}`);
+  }
   if (!lines.length) return '';
   return [
     'Contexte persona Funesterie borné — usage interne, jamais récité tel quel.',

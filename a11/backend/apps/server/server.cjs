@@ -569,6 +569,7 @@ const { ingestUploadedFile } = require('./lib/file-ingestion.cjs');
 const { createArtifact, normalizeArtifactKind, buildArtifactOrigin } = require('./lib/artifact-manager.cjs');
 const { createEmailService, resolveEmailServiceConfigFromEnv } = require('./lib/email-service.cjs');
 const { analyzeUploadedResource, buildConversationResourceContext } = require('./lib/resource-reader.cjs');
+const { resolveZenUploadMaxBytes } = require('./lib/zen-upload.cjs');
 const { resolveSdProxyUrl, resolveSdScriptPath, runSdScript } = require('./lib/sd-runtime.cjs');
 const { resolveBindHost } = require('./src/network/bind-config.cjs');
 const createAdminRunRouter = require('./src/routes/admin-run.cjs');
@@ -1554,7 +1555,9 @@ const R2_ENDPOINT = String(process.env.R2_ENDPOINT || '').trim();
 const R2_ACCESS_KEY = String(process.env.R2_ACCESS_KEY || '').trim();
 const R2_SECRET_KEY = String(process.env.R2_SECRET_KEY || '').trim();
 const R2_BUCKET = String(process.env.R2_BUCKET || '').trim();
-const FILE_UPLOAD_MAX_BYTES = Number(process.env.FILE_UPLOAD_MAX_BYTES || 10 * 1024 * 1024);
+const FILE_UPLOAD_MAX_BYTES = Number(process.env.FILE_UPLOAD_MAX_BYTES || 80 * 1024 * 1024);
+const ZEN_UPLOAD_MAX_BYTES = resolveZenUploadMaxBytes(process.env.A11_ZEN_UPLOAD_MAX_BYTES, FILE_UPLOAD_MAX_BYTES);
+const FILE_UPLOAD_BODY_LIMIT = process.env.A11_FILE_UPLOAD_BODY_LIMIT || '128mb';
 const TEMP_SHARED_FILE_TTL_MS = Math.max(60 * 1000, Number(process.env.A11_SHARED_FILE_TTL_MS || 60 * 60 * 1000));
 const TEMP_SHARED_FILE_CLEANUP_INTERVAL_MS = Math.max(60 * 1000, Number(process.env.A11_SHARED_FILE_CLEANUP_INTERVAL_MS || 60 * 1000));
 const DEFAULT_ADMIN_USERNAME = String(process.env.DEFAULT_ADMIN_USERNAME || 'Djeff').trim();
@@ -4625,7 +4628,7 @@ async function listEphemeralConversationMemory(userId, conversationId, limit = P
 function normalizeConversationResourceKind(resourceKind) {
   const normalized = String(resourceKind || '').trim().toLowerCase();
   if (normalized === 'artifact') return 'artifact';
-  if (['image', 'audio', 'video', 'pdf', 'document', 'file'].includes(normalized)) return normalized;
+  if (['image', 'audio', 'video', 'pdf', 'document', 'zen', 'file'].includes(normalized)) return normalized;
   return 'file';
 }
 
@@ -4636,6 +4639,7 @@ function inferConversationResourceKind({ resourceKind, filename, contentType } =
 
   const mime = String(contentType || '').trim().toLowerCase();
   const name = String(filename || '').trim().toLowerCase();
+  if (/^application\/(?:vnd\.funesterie\.zen|x-zen|zen)(?:;|$)/i.test(mime) || /\.zen$/i.test(name)) return 'zen';
   if (mime.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(name)) return 'image';
   if (mime.startsWith('audio/') || /\.(mp3|wav|ogg|flac|aac|m4a|opus|aiff?|wma)$/i.test(name)) return 'audio';
   if (mime.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v|mpeg|mpg)$/i.test(name)) return 'video';
@@ -7120,7 +7124,7 @@ app.get('/api/storage/session-drive/status', verifyJWT, async (req, res) => {
   }
 });
 
-app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_BODY_LIMIT || '64mb' }), async (req, res) => {
+app.post('/api/files/upload', express.json({ limit: FILE_UPLOAD_BODY_LIMIT }), async (req, res) => {
   try {
     let userId = String(req.user?.id || '').trim();
     // Permettre l'appel interne (A11/Qflush) sans JWT via un header spécial
@@ -7203,6 +7207,7 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
       contentType,
       contentBase64,
       maxBytes: FILE_UPLOAD_MAX_BYTES,
+      maxZenBytes: ZEN_UPLOAD_MAX_BYTES,
       origin: 'upload',
       conversationId: normalizedConversationId,
       resourceKind: resolvedResourceKind,
@@ -7320,6 +7325,15 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
     }
     if (e?.code === 'file_too_large') {
       return res.status(413).json({ ok: false, error: e.code, maxBytes: e.maxBytes || FILE_UPLOAD_MAX_BYTES });
+    }
+    if (e?.code === 'zen_file_too_large') {
+      return res.status(413).json({ ok: false, error: e.code, maxBytes: e.maxBytes || ZEN_UPLOAD_MAX_BYTES });
+    }
+    if (e?.code === 'zen_content_type_invalid' || e?.code === 'zen_extension_required') {
+      return res.status(415).json({ ok: false, error: e.code });
+    }
+    if (e?.code === 'zen_header_invalid' || e?.code === 'zen_plaintext_not_allowed') {
+      return res.status(400).json({ ok: false, error: e.code });
     }
     if (e?.code === 'account_storage_quota_exceeded') {
       return sendStorageQuotaExceeded(res, e);
@@ -8797,6 +8811,7 @@ app.post('/api/artifacts/create', express.json({ limit: '20mb' }), async (req, r
       conversationId: scopeConversationIdForSurface(conversationId, resolveRequestSurface(req.body || {}, req)),
       description,
       maxBytes: FILE_UPLOAD_MAX_BYTES,
+      maxZenBytes: ZEN_UPLOAD_MAX_BYTES,
       emailTo,
       emailSubject,
       emailMessage,
@@ -8834,6 +8849,15 @@ app.post('/api/artifacts/create', express.json({ limit: '20mb' }), async (req, r
     }
     if (e?.code === 'file_too_large') {
       return res.status(413).json({ ok: false, error: e.code, maxBytes: e.maxBytes || FILE_UPLOAD_MAX_BYTES });
+    }
+    if (e?.code === 'zen_file_too_large') {
+      return res.status(413).json({ ok: false, error: e.code, maxBytes: e.maxBytes || ZEN_UPLOAD_MAX_BYTES });
+    }
+    if (e?.code === 'zen_content_type_invalid' || e?.code === 'zen_extension_required') {
+      return res.status(415).json({ ok: false, error: e.code });
+    }
+    if (e?.code === 'zen_header_invalid' || e?.code === 'zen_plaintext_not_allowed') {
+      return res.status(400).json({ ok: false, error: e.code });
     }
     if (e?.code === 'account_storage_quota_exceeded') {
       return sendStorageQuotaExceeded(res, e);
@@ -8921,6 +8945,10 @@ function sendEmbeddedUiTermsPage(req, res) {
   return sendEmbeddedUiStandalonePage(req, res, 'terms/index.html');
 }
 
+function sendEmbeddedUiMilleFleursPage(req, res) {
+  return sendEmbeddedUiStandalonePage(req, res, 'mille-fleurs/index.html');
+}
+
 function sendEmbeddedUiArchitecturePage(req, res) {
   return sendEmbeddedUiStandalonePage(req, res, 'architecture/index.html');
 }
@@ -8954,6 +8982,7 @@ app.get('/', sendEmbeddedUiRoot);
 app.get(['/home', '/home/', '/accueil', '/accueil/'], redirectEmbeddedUiAliasToRoot);
 app.get(['/privacy', '/privacy/', '/confidentialite', '/confidentialite/'], sendEmbeddedUiPrivacyPage);
 app.get(['/terms', '/terms/', '/conditions', '/conditions/', '/cgu', '/cgu/'], sendEmbeddedUiTermsPage);
+app.get(['/mille-fleurs', '/mille-fleurs/', '/millefleurs', '/millefleurs/', '/mille_fleurs', '/mille_fleurs/', '/charte-mille-fleurs', '/charte-mille-fleurs/'], sendEmbeddedUiMilleFleursPage);
 app.get(['/architecture', '/architecture/', '/carte', '/carte/', '/graph', '/graph/'], sendEmbeddedUiArchitecturePage);
 app.get(['/nossen/agent-memory', '/nossen/agent-memory/', '/nossen/prior-art', '/nossen/prior-art/'], sendEmbeddedUiNossenAgentMemoryPage);
 app.get(['/nossen/grok', '/nossen/grok/', '/nossen/world-brief', '/nossen/world-brief/', '/nossen/frontier-ai', '/nossen/frontier-ai/'], sendEmbeddedUiNossenGrokPage);
@@ -9018,6 +9047,14 @@ app.get([
   '/cgu/',
   '/terms',
   '/terms/',
+  '/mille-fleurs',
+  '/mille-fleurs/',
+  '/millefleurs',
+  '/millefleurs/',
+  '/mille_fleurs',
+  '/mille_fleurs/',
+  '/charte-mille-fleurs',
+  '/charte-mille-fleurs/',
   '/vivy',
   '/vivy/',
   '/casino',

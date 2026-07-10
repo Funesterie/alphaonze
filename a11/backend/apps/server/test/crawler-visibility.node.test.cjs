@@ -40,7 +40,7 @@ test('crawler visibility marks technical routes as private for crawlers', () => 
 });
 
 test('crawler visibility keeps public pages indexable', () => {
-  for (const pathname of ['/', '/agents/', '/contact/', '/compte/', '/privacy/', '/terms/', '/vivy/']) {
+  for (const pathname of ['/', '/agents/', '/contact/', '/compte/', '/privacy/', '/terms/', '/mille-fleurs/', '/vivy/']) {
     assert.equal(isCrawlerPrivatePath(pathname), false, `${pathname} should stay public`);
   }
 });

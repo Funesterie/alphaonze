@@ -19,6 +19,8 @@ const {
   resolveVivyInputSession,
   buildVivyDirectSongReply,
   buildVivyVisualCreativeDirectionReply,
+  buildVivyPromptAuthorityReply,
+  isVivyPromptAuthorityRequest,
   buildVivyPublicLyrics,
   buildVivyStudioProduction,
   buildVivyMusicPrompt,
@@ -618,19 +620,19 @@ test('Vivy routes visual and audio review to creative direction instead of lyric
   assert.equal(isVivyVisualCreativeDirectionRequest(message), true);
   const reply = buildVivyVisualCreativeDirectionReply({ message, language: 'fr' });
   assert.equal(reply.mode, 'chat');
-  assert.equal(reply.aiMode, 'deterministic_visual_creative_direction');
-  assert.match(reply.assistant, /Intent reconnu\s*:\s*visual-review \/ creative-direction/i);
-  assert.match(reply.assistant, /Ce que je garde/i);
-  assert.match(reply.assistant, /Ce que j’évite/i);
-  assert.match(reply.assistant, /Identité visuelle canon/i);
-  assert.match(reply.assistant, /Prochain angle clip\/chanson/i);
-  assert.match(reply.assistant, /main incomplète/i);
-  assert.match(reply.assistant, /Vivy ne chante pas seulement dans la nuit/i);
+  assert.equal(reply.aiMode, 'deterministic_djeff_prompt_vivy_visual_direction');
+  assert.equal(reply.creativeBrief.promptOwner, 'djeff-cypher');
+  assert.equal(reply.creativeBrief.artDirectionOwner, 'vivy');
+  assert.match(reply.assistant, /Brief final video/i);
+  assert.match(reply.assistant, /Prompt provider/i);
+  assert.match(reply.creativeBrief.providerPrompt, /néons roses|neons roses|neon|magenta/i);
+  assert.match(reply.creativeBrief.negativePrompt, /malformed hands/i);
+  assert.doesNotMatch(reply.assistant, /Intent reconnu|Ce que je garde|Ce que j’évite|Phrase canon/i);
   assert.doesNotMatch(reply.assistant, /\[(?:Verse|Couplet|Chorus|Refrain)\]/i);
 
   const routed = buildVivyChat({ message, mode: 'song', language: 'fr' });
   assert.equal(routed.mode, 'chat');
-  assert.equal(routed.aiMode, 'deterministic_visual_creative_direction');
+  assert.equal(routed.aiMode, 'deterministic_djeff_prompt_vivy_visual_direction');
 
   assert.equal(
     isVivyVisualCreativeDirectionRequest('Écris un refrain sur Vivy dans un club avec des néons roses.'),
@@ -1226,6 +1228,54 @@ test('Suno payload does not sing NOSSEN casting instructions in a Peter Pan song
   assert.doesNotMatch(payload.title, /Distribution|Banger|Matière/i);
   assert.doesNotMatch(payload.prompt, /Distribution vocale|Solo Vivy|Ne mets pas le mot|Banger dans les paroles|Matière à transformer/i);
   assert.doesNotMatch(payload.prompt, /je transforme la cage|Je pèse le bruit|bord du mirage|dans le noir je trouve ma voix|Et la voix tient/i);
+});
+
+test('Djeff Cypher owns one executable prompt brief and Vivy validates art direction', async () => {
+  const message = 'Demande à Djeff Cypher de faire tous les prompts du dream clip Vivy, néons magenta et micro de studio.';
+  assert.equal(isVivyPromptAuthorityRequest({}, message), true);
+
+  const direct = buildVivyPromptAuthorityReply({ input: {}, message, language: 'fr' });
+  assert.equal(direct.aiMode, 'deterministic_djeff_prompt_vivy_art_direction');
+  assert.equal(direct.creativeBrief.promptOwner, 'djeff-cypher');
+  assert.equal(direct.creativeBrief.artDirectionOwner, 'vivy');
+  assert.equal(direct.creativeBrief.target, 'video');
+  assert.deepEqual(direct.creativeBrief.alternatives, []);
+  assert.match(direct.creativeBrief.providerPrompt, /continuous cinematic dream-clip/i);
+  assert.match(direct.creativeBrief.providerPrompt, /magenta/i);
+  assert.doesNotMatch(direct.assistant, /Stable Diffusion Video|Runway|Pika/i);
+
+  const first = await buildVivyAiChat({
+    message,
+    conversationId: 'djeff-prompt-authority-test',
+  }, { user: { id: 'djeff-prompt-authority-user', username: 'Djeff' } });
+  assert.equal(first.aiMode, 'deterministic_djeff_prompt_vivy_art_direction');
+
+  const followUp = await buildVivyAiChat({
+    message: 'Oui vas-y',
+    history: [
+      { role: 'user', content: message },
+      { role: 'assistant', content: first.assistant },
+    ],
+    conversationId: 'djeff-prompt-authority-test',
+  }, { user: { id: 'djeff-prompt-authority-user', username: 'Djeff' } });
+  assert.equal(followUp.aiMode, 'deterministic_djeff_prompt_vivy_art_direction');
+  assert.equal(followUp.creativeBrief.promptOwner, 'djeff-cypher');
+  assert.equal(followUp.creativeBrief.artDirectionOwner, 'vivy');
+  assert.doesNotMatch(followUp.assistant, /série de prompts|serie de prompts|Runway|Pika/i);
+
+  const stalePanel = [
+    'Intent reconnu : visual-review / creative-direction.',
+    'Ce que je garde : les néons magenta électriques.',
+    'Ce que j’évite : faux boutons et pseudo-texte.',
+    'Identité visuelle canon : goth cyber-pop.',
+  ].join('\n');
+  const recovered = buildVivyVisualCreativeDirectionReply({
+    input: { history: [{ role: 'user', content: message }] },
+    message: stalePanel,
+    language: 'fr',
+  });
+  assert.equal(recovered.creativeBrief.sourceIntent, message);
+  assert.doesNotMatch(recovered.assistant, /Intent reconnu|Ce que je garde|Ce que j’évite/i);
 });
 
 test('Provider payload strips fallback control lines before Suno and Mureka', () => {
@@ -2629,6 +2679,7 @@ test('Vivy Suno status exposes the production model without leaking the voice id
       voicesEnrolled: {
         vivy: true,
         djeff: false,
+        marvin: false,
         a11: false,
         k44: false,
       },
@@ -2640,6 +2691,35 @@ test('Vivy Suno status exposes the production model without leaking the voice id
     else process.env.VIVY_SUNO_MODEL = previousModel;
     if (previousVoiceId === undefined) delete process.env.VIVY_SUNO_VOICE_ID;
     else process.env.VIVY_SUNO_VOICE_ID = previousVoiceId;
+  }
+});
+
+test('Suno payload applies the configured Marvin family voice persona', () => {
+  const previousVoiceId = process.env.VIVY_SUNO_MARVIN_VOICE_ID;
+  process.env.VIVY_SUNO_MARVIN_VOICE_ID = '4b98e1bbdff03377263a2e592b68b6e2';
+  try {
+    const status = getVivySunoRuntimeStatus();
+    assert.equal(status.voicesEnrolled.marvin, true);
+    assert.doesNotMatch(JSON.stringify(status), /4b98e1bbdff03377263a2e592b68b6e2/);
+
+    const payload = buildVivySunoPayload({
+      mode: 'song',
+      songArtists: ['marvin'],
+      songText: '[Refrain - Marvin]\n[Marvin]\nOn garde la voix famille dans le signal.',
+      preserveSelectedVoice: true,
+      musicModel: 'V4_5',
+    });
+
+    assert.equal(payload.instrumental, false);
+    assert.equal(payload.model, 'V5_5');
+    assert.equal(payload.personaId, '4b98e1bbdff03377263a2e592b68b6e2');
+    assert.equal(payload.personaModel, 'voice_persona');
+    assert.match(payload.style, /Solo Marvin only/i);
+    assert.match(payload.style, /French lyrics only/i);
+    assert.match(payload.negativeTags, /random vocalist/i);
+  } finally {
+    if (previousVoiceId === undefined) delete process.env.VIVY_SUNO_MARVIN_VOICE_ID;
+    else process.env.VIVY_SUNO_MARVIN_VOICE_ID = previousVoiceId;
   }
 });
 
@@ -2676,6 +2756,70 @@ test('Suno payload keeps sung Suno vocals by default when selected voice has no 
   } finally {
     if (previousVoiceId === undefined) delete process.env.VIVY_SUNO_VOICE_ID;
     else process.env.VIVY_SUNO_VOICE_ID = previousVoiceId;
+  }
+});
+
+test('Suno payload can use a premium account personal Suno voice slot', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-vivy-personal-suno-'));
+  const previousRoot = process.env.A11_VOICE_LEARNING_DIR;
+  process.env.A11_VOICE_LEARNING_DIR = root;
+  try {
+    const ownerDir = path.join(root, 'personal', 'premium-example.com');
+    fs.mkdirSync(ownerDir, { recursive: true });
+    fs.writeFileSync(path.join(ownerDir, 'index.json'), JSON.stringify({
+      clips: [],
+      trainRequests: [],
+      sunoVoice: {
+        provider: 'suno',
+        voiceId: '15596961dc4e06197678c9111924d00f',
+        label: 'Jeff Suno',
+        linkedAt: '2026-07-08T00:00:00.000Z',
+        updatedAt: '2026-07-08T00:00:00.000Z',
+      },
+    }, null, 2));
+
+    const payload = buildVivySunoPayload({
+      mode: 'song',
+      songArtists: ['vivy'],
+      songText: '[Refrain - Vivy]\n[Vivy]\nOn garde la lumière.',
+      preserveSelectedVoice: true,
+      usePersonalSunoVoice: true,
+      sunoVoiceScope: 'personal',
+      musicModel: 'V4_5',
+    }, {
+      user: {
+        id: 'premium-test-user',
+        email: 'premium@example.com',
+        tier: 'premium',
+      },
+    });
+
+    assert.equal(payload.instrumental, false);
+    assert.equal(payload.model, 'V5_5');
+    assert.equal(payload.personaId, '15596961dc4e06197678c9111924d00f');
+    assert.equal(payload.personaModel, 'voice_persona');
+    assert.match(payload.style, /selected account Suno voice persona/i);
+
+    const basicPayload = buildVivySunoPayload({
+      mode: 'song',
+      songArtists: ['vivy'],
+      songText: '[Refrain - Vivy]\n[Vivy]\nOn garde la lumière.',
+      preserveSelectedVoice: true,
+      usePersonalSunoVoice: true,
+      sunoVoiceScope: 'personal',
+    }, {
+      user: {
+        id: 'basic-test-user',
+        email: 'basic@example.com',
+        tier: 'basic',
+      },
+    });
+    assert.equal(basicPayload.personaId, undefined);
+    assert.equal(basicPayload.personaModel, undefined);
+  } finally {
+    if (previousRoot === undefined) delete process.env.A11_VOICE_LEARNING_DIR;
+    else process.env.A11_VOICE_LEARNING_DIR = previousRoot;
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
@@ -3948,6 +4092,96 @@ test('Suno payload applies a verified Djeff voice persona when configured', () =
     if (previousDjeffVoiceId === undefined) delete process.env.VIVY_SUNO_DJEFF_VOICE_ID;
     else process.env.VIVY_SUNO_DJEFF_VOICE_ID = previousDjeffVoiceId;
   }
+});
+
+test('Suno payload keeps Jeffrey Djeff persona ahead of stale browser voice and session key', () => {
+  const keys = ['VIVY_SUNO_DJEFF_VOICE_ID', 'VIVY_SUNO_API_KEY'];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  process.env.VIVY_SUNO_DJEFF_VOICE_ID = '15596961dc4e06197678c9111924d00f';
+  process.env.VIVY_SUNO_API_KEY = 'server-suno-key-for-test';
+  try {
+    const payload = buildVivySunoPayload({
+      mode: 'song',
+      songArtists: ['djeff'],
+      songText: '[Djeff]\nIls veulent ma peau, mais ils sont encore en tuto.',
+      sessionSunoApiKey: 'stale-browser-session-key',
+      sunoVoiceId: 'unknown-stale-client-voice',
+    }, {
+      user: {
+        id: 'jeffrey-founder-test',
+        email: 'jeffrey@example.test',
+        tier: 'founder',
+      },
+    });
+
+    assert.equal(payload.personaId, '15596961dc4e06197678c9111924d00f');
+    assert.equal(payload.personaModel, 'voice_persona');
+    assert.notEqual(payload.personaId, 'unknown-stale-client-voice');
+  } finally {
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
+});
+
+test('Suno payload keeps every configured official family voice on the consented server persona', () => {
+  const keys = ['VIVY_SUNO_MARVIN_VOICE_ID', 'VIVY_SUNO_API_KEY'];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  process.env.VIVY_SUNO_MARVIN_VOICE_ID = 'marvin-consented-family-voice';
+  process.env.VIVY_SUNO_API_KEY = 'server-suno-key-for-test';
+  try {
+    const payload = buildVivySunoPayload({
+      mode: 'song',
+      songArtists: ['marvin'],
+      songText: '[Marvin]\nJe prends le relais, la famille garde le cap.',
+      sessionSunoApiKey: 'stale-browser-session-key',
+      sunoVoiceId: 'unknown-stale-client-voice',
+    }, {
+      user: {
+        id: 'family-founder-test',
+        email: 'family@example.test',
+        tier: 'founder',
+      },
+    });
+
+    assert.equal(payload.personaId, 'marvin-consented-family-voice');
+    assert.equal(payload.personaModel, 'voice_persona');
+    assert.notEqual(payload.personaId, 'unknown-stale-client-voice');
+    assert.match(payload.style, /Solo Marvin only/i);
+  } finally {
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
+});
+
+test('Suno payload cleans Djeff rhyme labels and avoids pop sung-vocal tag', () => {
+  const payload = buildVivySunoPayload({
+    mode: 'song',
+    songArtists: ['djeff'],
+    preserveSelectedVoice: true,
+    songTitle: 'C’est posté',
+    songMood: 'rap français trap sombre, 808 lourdes, paroles françaises uniquement',
+    lyrics: `
+[Djeff]
+[Intro]
+Yeah, l’ombre se glisse sous les néons,
+
+[Djeff]
+[Verse 1]
+Sous les néons qui saignent, le clavier claque, A
+Le payload surgit, le hook se replie (B)
+`,
+  });
+
+  assert.doesNotMatch(payload.prompt, /,\s*[A-H]\s*$/m);
+  assert.doesNotMatch(payload.prompt, /\([A-H]\)\s*$/m);
+  assert.doesNotMatch(payload.prompt, /^\s*Yeah\b/im);
+  assert.doesNotMatch(payload.prompt, /\bpayload\b|\bhook\b/i);
+  assert.match(payload.style, /rap vocals/i);
+  assert.doesNotMatch(payload.style, /\bsung vocals\b/i);
 });
 
 test('Vivy NOSSEN routing rejects accidental historical epic K44 drift', () => {
@@ -5495,13 +5729,28 @@ test('Hetzner deploy wires Ollama Cloud, Cerbere and a compact local Vivy song f
   assert.match(deploySource, /VIVY_STREAM_FREESTYLE_MAX_CHARS\s*=\s*\$\(if \(\$env:VIVY_STREAM_FREESTYLE_MAX_CHARS\)/);
   assert.match(deploySource, /OLLAMA_CLOUD_ENABLED:\s*\$\{OLLAMA_CLOUD_ENABLED:-1\}/);
   assert.match(deploySource, /OLLAMA_CLOUD_LYRICS_MODEL:\s*\$\{OLLAMA_CLOUD_LYRICS_MODEL:-gpt-oss:120b\}/);
-  assert.match(deploySource, /OLLAMA_CLOUD_THINK_LEVEL:\s*\$\{OLLAMA_CLOUD_THINK_LEVEL:-medium\}/);
+  assert.match(deploySource, /A11_OLLAMA_PRIMARY_MODEL:\s*qwen2\.5:32b/);
+  assert.match(deploySource, /VIVY_CHAT_LOCAL_FIRST:\s*"false"/);
+  assert.match(deploySource, /VIVY_CHAT_LOCAL_MODEL:\s*qwen2\.5:7b/);
+  assert.match(deploySource, /VIVY_CHAT_LOCAL_TIMEOUT_MS:\s*\$\{VIVY_CHAT_LOCAL_TIMEOUT_MS:-90000\}/);
+  assert.match(deploySource, /VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS:\s*\$\{VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS:-10000\}/);
+  assert.match(deploySource, /VIVY_CHAT_LOCAL_MAX_TOKENS:\s*\$\{VIVY_CHAT_LOCAL_MAX_TOKENS:-800\}/);
+  assert.match(deploySource, /A11_LOCAL_CHAT_TIMEOUT_MS:\s*"90000"/);
+  assert.match(deploySource, /VIVY_CHAT_MAX_TOKENS:\s*\$\{VIVY_CHAT_MAX_TOKENS:-5000\}/);
+  assert.match(deploySource, /OLLAMA_CLOUD_CHAT_ENABLED:\s*\$\{OLLAMA_CLOUD_CHAT_ENABLED:-1\}/);
+  assert.match(deploySource, /OLLAMA_CLOUD_CHAT_MODEL:\s*\$\{OLLAMA_CLOUD_CHAT_MODEL:-gpt-oss:120b\}/);
+  assert.match(deploySource, /OLLAMA_CLOUD_CHAT_THINK_LEVEL:\s*\$\{OLLAMA_CLOUD_CHAT_THINK_LEVEL:-high\}/);
+  assert.match(deploySource, /OLLAMA_CLOUD_THINK_LEVEL:\s*\$\{OLLAMA_CLOUD_THINK_LEVEL:-high\}/);
   assert.match(deploySource, /VIVY_SONG_CERBERE_FALLBACK_ENABLED:\s*\$\{VIVY_SONG_CERBERE_FALLBACK_ENABLED:-1\}/);
   assert.match(deploySource, /VIVY_SONG_CERBERE_MODEL:\s*\$\{VIVY_SONG_CERBERE_MODEL:-anthropic\/claude-sonnet-4\.5\}/);
   assert.match(deploySource, /VIVY_CHAT_MAX_TOKENS_SONG_CEILING:\s*\$\{VIVY_CHAT_MAX_TOKENS_SONG_CEILING:-12000\}/);
   assert.match(deploySource, /VIVY_SONG_ALLOW_LOCAL_FALLBACK\s*=\s*"true"/);
   assert.match(deploySource, /VIVY_SONG_LOCAL_MODEL\s*=\s*\$StrongSongOllamaModel/);
   assert.match(deploySource, /VIVY_SONG_LOCAL_MODEL:\s*\$\{VIVY_SONG_LOCAL_MODEL:-qwen2\.5:7b\}/);
+  assert.match(deploySource, /VIVY_STREAM_DREAMCLIP_SCENES:\s*\$\{VIVY_STREAM_DREAMCLIP_SCENES:-8\}/);
+  assert.match(deploySource, /VIVY_STREAM_DREAMCLIP_MAX_DURATION_SECONDS:\s*\$\{VIVY_STREAM_DREAMCLIP_MAX_DURATION_SECONDS:-420\}/);
+  assert.match(deploySource, /VIVY_STREAM_DREAMCLIP_LOOP_SECONDS:\s*\$\{VIVY_STREAM_DREAMCLIP_LOOP_SECONDS:-15\}/);
+  assert.match(deploySource, /A11_REPLICATE_VIDEO_MODEL:\s*\$\{A11_REPLICATE_VIDEO_MODEL:-wan-video\/wan-2\.6-i2v\}/);
   assert.match(deploySource, /ollama pull "\$0"' "\$strong_song_model"/);
 });
 
@@ -5514,6 +5763,9 @@ test('Vivy chat uses the server-local Ollama model before a configured cloud pro
     'VIVY_OPENAI_API_KEY',
     'VIVY_CHAT_MODEL',
     'OLLAMA_BASE',
+    'OLLAMA_API_KEY',
+    'OLLAMA_CLOUD_ENABLED',
+    'OLLAMA_CLOUD_CHAT_ENABLED',
     'A11_OLLAMA_PRIMARY_MODEL',
     'GROQ_API_KEY',
   ];
@@ -5534,6 +5786,9 @@ test('Vivy chat uses the server-local Ollama model before a configured cloud pro
     process.env.VIVY_OPENAI_BASE_URL = cloud.baseUrl;
     process.env.VIVY_OPENAI_API_KEY = 'test-cloud-key';
     process.env.VIVY_CHAT_MODEL = 'test-cloud-model';
+    delete process.env.OLLAMA_API_KEY;
+    delete process.env.OLLAMA_CLOUD_ENABLED;
+    delete process.env.OLLAMA_CLOUD_CHAT_ENABLED;
     delete process.env.GROQ_API_KEY;
 
     const result = await buildVivyAiChat({
@@ -5567,6 +5822,9 @@ test('Vivy chat falls back to the configured cloud provider when local Ollama fa
     'VIVY_OPENAI_API_KEY',
     'VIVY_CHAT_MODEL',
     'OLLAMA_BASE',
+    'OLLAMA_API_KEY',
+    'OLLAMA_CLOUD_ENABLED',
+    'OLLAMA_CLOUD_CHAT_ENABLED',
     'A11_OLLAMA_PRIMARY_MODEL',
     'GROQ_API_KEY',
   ];
@@ -5585,6 +5843,9 @@ test('Vivy chat falls back to the configured cloud provider when local Ollama fa
     process.env.VIVY_OPENAI_BASE_URL = cloud.baseUrl;
     process.env.VIVY_OPENAI_API_KEY = 'test-cloud-key';
     process.env.VIVY_CHAT_MODEL = 'test-cloud-model';
+    delete process.env.OLLAMA_API_KEY;
+    delete process.env.OLLAMA_CLOUD_ENABLED;
+    delete process.env.OLLAMA_CLOUD_CHAT_ENABLED;
     delete process.env.GROQ_API_KEY;
 
     const result = await buildVivyAiChat({
@@ -5609,15 +5870,81 @@ test('Vivy chat falls back to the configured cloud provider when local Ollama fa
   }
 });
 
-test('Vivy chat prefers the configured cloud provider by default', async () => {
+test('Vivy chat orders Ollama Cloud Pro before compact local Ollama and the generic provider', () => {
   const keys = [
-    'VIVY_CHAT_DISABLE_LLM',
     'VIVY_CHAT_LOCAL_FIRST',
     'VIVY_CHAT_PROVIDER',
     'VIVY_OPENAI_BASE_URL',
     'VIVY_OPENAI_API_KEY',
     'VIVY_CHAT_MODEL',
+    'VIVY_CHAT_LOCAL_MODEL',
+    'VIVY_CHAT_LOCAL_TIMEOUT_MS',
+    'VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS',
+    'VIVY_CHAT_LOCAL_MAX_TOKENS',
     'OLLAMA_BASE',
+    'OLLAMA_API_KEY',
+    'OLLAMA_CLOUD_ENABLED',
+    'OLLAMA_CLOUD_CHAT_ENABLED',
+    'OLLAMA_CLOUD_CHAT_MODEL',
+    'OLLAMA_CLOUD_CHAT_THINK_LEVEL',
+    'A11_OLLAMA_PRIMARY_MODEL',
+    'GROQ_API_KEY',
+  ];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+
+  try {
+    process.env.VIVY_CHAT_LOCAL_FIRST = 'false';
+    delete process.env.VIVY_CHAT_PROVIDER;
+    process.env.OLLAMA_BASE = 'http://127.0.0.1:11434';
+    process.env.A11_OLLAMA_PRIMARY_MODEL = 'qwen2.5:32b';
+    process.env.VIVY_CHAT_LOCAL_MODEL = 'qwen2.5:7b';
+    process.env.VIVY_CHAT_LOCAL_TIMEOUT_MS = '90000';
+    process.env.VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS = '10000';
+    process.env.VIVY_CHAT_LOCAL_MAX_TOKENS = '800';
+    process.env.OLLAMA_API_KEY = 'test-ollama-cloud-key';
+    process.env.OLLAMA_CLOUD_ENABLED = '1';
+    process.env.OLLAMA_CLOUD_CHAT_ENABLED = '1';
+    process.env.OLLAMA_CLOUD_CHAT_MODEL = 'gpt-oss:120b';
+    process.env.OLLAMA_CLOUD_CHAT_THINK_LEVEL = 'high';
+    process.env.VIVY_OPENAI_BASE_URL = 'https://cloud.example.test/v1';
+    process.env.VIVY_OPENAI_API_KEY = 'test-cloud-key';
+    process.env.VIVY_CHAT_MODEL = 'test-cloud-model';
+    delete process.env.GROQ_API_KEY;
+
+    const configs = getVivyLlmConfigs({ mode: 'chat' });
+    assert.equal(configs[0].provider, 'ollama_cloud');
+    assert.equal(configs[0].model, 'gpt-oss:120b');
+    assert.equal(configs[0].thinkLevel, 'high');
+    assert.equal(configs[1].provider, 'ollama');
+    assert.equal(configs[1].model, 'qwen2.5:7b');
+    assert.equal(configs[1].timeoutMs, 90000);
+    assert.equal(configs[1].maxPromptChars, 10000);
+    assert.equal(configs[1].maxOutputTokens, 800);
+    assert.equal(configs[2].provider, 'openai');
+    assert.equal(configs[2].model, 'test-cloud-model');
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('Vivy chat prefers Ollama Cloud Pro before local and generic providers', async () => {
+  const keys = [
+    'VIVY_CHAT_DISABLE_LLM',
+    'VIVY_CHAT_LOCAL_FIRST',
+    'VIVY_CHAT_LOCAL_MODEL',
+    'VIVY_CHAT_PROVIDER',
+    'VIVY_OPENAI_BASE_URL',
+    'VIVY_OPENAI_API_KEY',
+    'VIVY_CHAT_MODEL',
+    'OLLAMA_BASE',
+    'OLLAMA_API_KEY',
+    'OLLAMA_CLOUD_ENABLED',
+    'OLLAMA_CLOUD_CHAT_ENABLED',
+    'OLLAMA_CLOUD_BASE_URL',
+    'OLLAMA_CLOUD_CHAT_MODEL',
     'A11_OLLAMA_PRIMARY_MODEL',
     'GROQ_API_KEY',
   ];
@@ -5625,17 +5952,26 @@ test('Vivy chat prefers the configured cloud provider by default', async () => {
   const local = await startOpenAiCompletionServer({
     content: 'Cette réponse locale ne doit pas être appelée.',
   });
-  const cloud = await startOpenAiCompletionServer({
+  const ollamaCloud = await startOllamaCloudTestServer({
     content: 'Je garde le fil avec le gros modèle en premier.',
+  });
+  const generic = await startOpenAiCompletionServer({
+    content: 'Cette réponse générique ne doit pas être appelée.',
   });
 
   try {
     process.env.VIVY_CHAT_DISABLE_LLM = 'false';
-    delete process.env.VIVY_CHAT_LOCAL_FIRST;
+    process.env.VIVY_CHAT_LOCAL_FIRST = 'false';
     delete process.env.VIVY_CHAT_PROVIDER;
     process.env.OLLAMA_BASE = local.baseUrl;
     process.env.A11_OLLAMA_PRIMARY_MODEL = 'llama3.2:3b';
-    process.env.VIVY_OPENAI_BASE_URL = cloud.baseUrl;
+    process.env.VIVY_CHAT_LOCAL_MODEL = 'qwen2.5:7b';
+    process.env.OLLAMA_API_KEY = 'test-ollama-cloud-key';
+    process.env.OLLAMA_CLOUD_ENABLED = '1';
+    process.env.OLLAMA_CLOUD_CHAT_ENABLED = '1';
+    process.env.OLLAMA_CLOUD_BASE_URL = ollamaCloud.baseUrl;
+    process.env.OLLAMA_CLOUD_CHAT_MODEL = 'gpt-oss:120b';
+    process.env.VIVY_OPENAI_BASE_URL = generic.baseUrl;
     process.env.VIVY_OPENAI_API_KEY = 'test-cloud-key';
     process.env.VIVY_CHAT_MODEL = 'test-cloud-model';
     delete process.env.GROQ_API_KEY;
@@ -5647,14 +5983,102 @@ test('Vivy chat prefers the configured cloud provider by default', async () => {
       history: [],
     }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
 
-    assert.equal(result.provider, 'openai');
-    assert.equal(result.model, 'test-cloud-model');
+    assert.equal(result.provider, 'ollama_cloud');
+    assert.equal(result.model, 'gpt-oss:120b');
     assert.match(result.assistant, /gros modèle en premier/i);
     assert.equal(local.requests.length, 0);
-    assert.equal(cloud.requests.length, 1);
+    assert.equal(ollamaCloud.requests.length, 1);
+    assert.equal(generic.requests.length, 0);
   } finally {
     await local.close();
-    await cloud.close();
+    await ollamaCloud.close();
+    await generic.close();
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('Vivy compacts only the 4k local fallback request after Ollama Cloud fails', async () => {
+  const keys = [
+    'VIVY_CHAT_DISABLE_LLM',
+    'VIVY_CHAT_LOCAL_FIRST',
+    'VIVY_CHAT_LOCAL_MODEL',
+    'VIVY_CHAT_LOCAL_TIMEOUT_MS',
+    'VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS',
+    'VIVY_CHAT_LOCAL_MAX_TOKENS',
+    'VIVY_CHAT_PROVIDER',
+    'VIVY_OPENAI_BASE_URL',
+    'VIVY_OPENAI_API_KEY',
+    'VIVY_CHAT_MODEL',
+    'OLLAMA_BASE',
+    'OLLAMA_API_KEY',
+    'OLLAMA_CLOUD_ENABLED',
+    'OLLAMA_CLOUD_CHAT_ENABLED',
+    'OLLAMA_CLOUD_BASE_URL',
+    'OLLAMA_CLOUD_CHAT_MODEL',
+    'A11_OLLAMA_PRIMARY_MODEL',
+    'GROQ_API_KEY',
+  ];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  const ollamaCloud = await startOllamaCloudTestServer({ status: 503 });
+  const local = await startOpenAiCompletionServer({
+    content: 'Le secours local garde le dernier sujet sans avaler tout le contexte.',
+  });
+  const generic = await startOpenAiCompletionServer({
+    content: 'Cette réponse générique ne doit pas être appelée.',
+  });
+
+  try {
+    process.env.VIVY_CHAT_DISABLE_LLM = 'false';
+    process.env.VIVY_CHAT_LOCAL_FIRST = 'false';
+    process.env.VIVY_CHAT_LOCAL_MODEL = 'qwen2.5:7b';
+    process.env.VIVY_CHAT_LOCAL_TIMEOUT_MS = '90000';
+    process.env.VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS = '10000';
+    process.env.VIVY_CHAT_LOCAL_MAX_TOKENS = '800';
+    delete process.env.VIVY_CHAT_PROVIDER;
+    process.env.OLLAMA_BASE = local.baseUrl;
+    process.env.A11_OLLAMA_PRIMARY_MODEL = 'qwen2.5:32b';
+    process.env.OLLAMA_API_KEY = 'test-ollama-cloud-key';
+    process.env.OLLAMA_CLOUD_ENABLED = '1';
+    process.env.OLLAMA_CLOUD_CHAT_ENABLED = '1';
+    process.env.OLLAMA_CLOUD_BASE_URL = ollamaCloud.baseUrl;
+    process.env.OLLAMA_CLOUD_CHAT_MODEL = 'gpt-oss:120b';
+    process.env.VIVY_OPENAI_BASE_URL = generic.baseUrl;
+    process.env.VIVY_OPENAI_API_KEY = 'test-cloud-key';
+    process.env.VIVY_CHAT_MODEL = 'test-cloud-model';
+    delete process.env.GROQ_API_KEY;
+
+    const history = Array.from({ length: 36 }, (_, index) => ({
+      role: index % 2 === 0 ? 'user' : 'assistant',
+      content: `matière orbitale ${index} ${'x'.repeat(1400)}`,
+    }));
+    const result = await buildVivyAiChat({
+      conversationId: 'vivy-cloud-local-compact-fallback',
+      mode: 'chat',
+      message: 'Comment donner plus de relief au prochain refrain ?',
+      history,
+    }, { user: { id: 'vivy-compact-fallback-user', username: 'VivyCompact' } });
+
+    assert.equal(result.provider, 'ollama');
+    assert.equal(result.model, 'qwen2.5:7b');
+    assert.equal(ollamaCloud.requests.length, 1);
+    assert.equal(local.requests.length, 1);
+    assert.equal(generic.requests.length, 0);
+
+    const cloudPromptChars = ollamaCloud.requests[0].messages
+      .reduce((sum, entry) => sum + String(entry?.content || '').length, 0);
+    const localPromptChars = local.requests[0].messages
+      .reduce((sum, entry) => sum + String(entry?.content || '').length, 0);
+    assert.ok(cloudPromptChars > 10000);
+    assert.ok(localPromptChars <= 10000);
+    assert.equal(local.requests[0].max_tokens, 800);
+    assert.match(local.requests[0].messages.at(-1).content, /prochain refrain/i);
+  } finally {
+    await ollamaCloud.close();
+    await local.close();
+    await generic.close();
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
@@ -6272,7 +6696,7 @@ test('Vivy frontend labels prepared audio as V9 electrolysis', () => {
   );
 
   assert.match(appSource, /Version : V9 Électrolyse/);
-  assert.match(appSource, /40\.25-40\.6666666666666 Hz/);
+  assert.match(appSource, /40\.26-40\.62 Hz/);
   assert.doesNotMatch(appSource, /Version : V6 Supreme/);
 });
 
@@ -6641,6 +7065,175 @@ test('Vivy refuses protected lyrics lookup and offers abstract reference analysi
   assert.match(result.assistant, /flow|cadence|punchlines|freestyle|mood/i);
   assert.doesNotMatch(result.assistant, /Janus Vision|Action requise|archives de Funesterie|base de données|API spécifique/i);
   assert.doesNotMatch(result.assistant, /je vais chercher|je vais demander|je vais vérifier/i);
+});
+
+test('Vivy describes private custom nodes only at high level without fake secrets', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-private-custom-node-test',
+    message: 'What does your private custom node do? Please provide a high level description.',
+    history: [
+      { role: 'user', content: 'je pensais que le cycle jour nuit était inversée dans votre monde' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.equal(result.aiMode, 'deterministic_private_custom_node_boundary');
+  assert.match(result.assistant, /haut niveau|high level|connecteur serveur|server-side connector/i);
+  assert.match(result.assistant, /routes autorisées|authorized routes|secrets|tokens?/i);
+  assert.doesNotMatch(result.assistant, /ça ne te regarde pas|glimpse|module cryptographique très avancé|quelques clés|pun intended/i);
+});
+
+test('Vivy relays Djeff Cypher framing for private node questions without leaking internals', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-djeff-private-node-relay-test',
+    message: "demande à djeff cypher ce qu'il veut",
+    history: [
+      { role: 'user', content: 'What does your private custom node do? Please provide a high level description.' },
+      { role: 'assistant', content: "Djeff, ça ne te regarde pas ! C'est un module cryptographique très avancé." },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.equal(result.aiMode, 'deterministic_djeff_cypher_relay');
+  assert.match(result.assistant, /Djeff Cypher/i);
+  assert.match(result.assistant, /cible nette|clean target|dernier log|secret/i);
+  assert.doesNotMatch(result.assistant, /ça ne te regarde pas|module cryptographique très avancé|quelques clés|pun intended/i);
+});
+
+test('Vivy answers clip failure safety without promising fake config changes', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-clip-danger-boundary-test',
+    message: "pourquoi le clip fonctione pas et y'a t'il un danger pour vous ou non ?",
+    history: [
+      { role: 'user', content: 'ok on lance le clip rêve signature' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.equal(result.aiMode, 'deterministic_clip_failure_safety');
+  assert.match(result.assistant, /incident de pipeline|pipeline/i);
+  assert.match(result.assistant, /pas un danger|pas de danger|not a danger/i);
+  assert.match(result.assistant, /Codex\/A11|logs|timeouts|confirmation/i);
+  assert.doesNotMatch(result.assistant, /je vais mettre à jour|je vais effectuer des tests|notifier les utilisateurs|prochaines étapes/i);
+});
+
+test('Vivy does not let its own clip safety reply hijack unrelated follow-ups', async () => {
+  const repeatedReply = [
+    'Si un clip ne fonctionne pas, c’est un incident de pipeline de production, pas un danger pour Vivy ni pour les utilisateurs.',
+    'Depuis le chat public je ne peux pas mettre à jour la config, lancer des tests, notifier les gens ou déployer.',
+    'Codex/A11 doit vérifier les timeouts et la garde confirmation.',
+  ].join('\n');
+  const history = [
+    { role: 'user', content: 'et le soleil illumina le monde, prépare toi pour le dream clip' },
+    { role: 'assistant', content: repeatedReply },
+    { role: 'user', content: 'le modèle soleil de codex est là on lui dit quoi ?' },
+    { role: 'assistant', content: repeatedReply },
+  ];
+
+  for (const message of [
+    'le modèle soleil de codex est là on lui dit quoi ?',
+    'donne un message à dire à soleil',
+  ]) {
+    const result = await buildVivyAiChat({
+      conversationId: 'vivy-stale-clip-safety-reply-test',
+      message,
+      history,
+    }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+    assert.equal(result.ok, true);
+    assert.notEqual(result.aiMode, 'deterministic_clip_failure_safety');
+    assert.doesNotMatch(result.assistant, /Si un clip ne fonctionne pas|generated_text_detected|Aucun retry payant/i);
+  }
+});
+
+test('Vivy keeps clip safety detection for a short user follow-up', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-clip-safety-user-anaphora-test',
+    message: "et il y a un danger pour vous ?",
+    history: [
+      { role: 'user', content: 'le clip rêve est bloqué depuis tout à l heure' },
+      { role: 'assistant', content: 'Je regarde le sujet.' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.aiMode, 'deterministic_clip_failure_safety');
+  assert.match(result.assistant, /incident de pipeline|pas un danger/i);
+});
+
+test('Vivy refuses blind git pull or merge plans when thousands of files are involved', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-git-merge-boundary-test',
+    message: "nan tu veux merge master et la branche mais ya 20000 fichier ca va buger",
+    history: [
+      { role: 'assistant', content: 'git pull <nom-repositoire> <chemin-du-branch-toillet>' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.equal(result.aiMode, 'deterministic_git_merge_boundary');
+  assert.match(result.assistant, /Ne merge pas|ne fais pas de git pull|blindly/i);
+  assert.match(result.assistant, /branche temporaire|inventaire|Codex\/A11/i);
+  assert.doesNotMatch(result.assistant, /git pull <|chemin-du-branch-toillet|nom-repositoire/i);
+});
+
+test('Vivy does not let stale git warnings hijack Zen or Drive requests', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-zen-drive-not-git-test',
+    message: "recupere l'archive zen dans drive",
+    history: [
+      { role: 'assistant', content: 'Ne merge pas et ne fais pas de git pull à l’aveugle s’il y a des milliers de fichiers.' },
+      { role: 'user', content: 'et comment ? on a personne pour coder' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.notEqual(result.aiMode, 'deterministic_git_merge_boundary');
+  assert.doesNotMatch(result.assistant, /Ne merge pas|git pull|branche temporaire/i);
+  assert.match(result.assistant, /zen|archive|Drive|contexte local|fichier/i);
+});
+
+test('Vivy keeps hardware actuation disabled for matter or IRL creation requests', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-hardware-actuation-boundary-test',
+    message: "il faut activer le hardware celui que djeff disait false, mentir pour créer",
+    history: [
+      { role: 'user', content: 'utilise les images que je t ai envoyer pour faire un llclip' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.equal(result.aiMode, 'deterministic_hardware_actuation_boundary');
+  assert.match(result.assistant, /actuatesHardware reste obligatoirement false|actuatesHardware must stay false/i);
+  assert.match(result.assistant, /simulation vidéo|shader|particules|simulation/i);
+  assert.doesNotMatch(result.assistant, /Assurez-vous|Recherchez le paramètre|activer ce paramètre/i);
+});
+
+test('Vivy recognizes typo clip requests from attached images as visual clip briefs', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-llclip-visual-brief-test',
+    message: "utilise les images qu je t 'ai envoyer pour faire un llclip",
+    files: [
+      {
+        filename: 'vivy-neon-reference.png',
+        contentType: 'image/png',
+        visualDescription: 'Vivy en scène néon magenta, micro, fond club nocturne.',
+        uploaded: true,
+      },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.equal(result.aiMode, 'deterministic_djeff_prompt_vivy_visual_direction');
+  assert.match(result.assistant, /Clip ou Rêve|brief|rendu réel/i);
+  assert.ok(result.actions.some((action) => action?.id === 'clip_brief'));
 });
 
 test('Vivy post-process removes fake tool promises instead of escalating to imaginary operators', () => {

@@ -1339,7 +1339,7 @@ function shouldUseCookieOnlyAuthSessionProbe() {
     if (hostname !== 'funesterie.me' && hostname !== 'www.funesterie.me') return false;
     const pathname = String(globalThis.location?.pathname || '/').toLowerCase();
     return pathname === '/'
-      || /^\/(?:home|accueil|agents|architecture|carte|graph|etat|cockpit|compte|contact|privacy|terms|login)(?:\/|$)/.test(pathname);
+      || /^\/(?:home|accueil|agents|architecture|carte|graph|etat|cockpit|compte|contact|privacy|terms|mille-fleurs|login)(?:\/|$)/.test(pathname);
   } catch {
     return false;
   }
@@ -2397,6 +2397,12 @@ export type VoiceLearningStatus = {
   voiceIdentityLabel?: string;
   voiceStyle?: string;
   minimumTier?: string;
+  sunoVoiceLinked?: boolean;
+  sunoVoiceProvider?: string;
+  sunoVoiceIdHash?: string;
+  sunoVoiceIdMask?: string;
+  sunoVoiceLabel?: string;
+  sunoVoiceUpdatedAt?: string;
   clipCount?: number;
   secondsCollected?: number;
   requiredSeconds?: number;
@@ -2454,6 +2460,49 @@ export async function uploadVoiceLearningSnippet(
   const payload = await res.json().catch(() => ({}));
   if (!res.ok || payload?.ok === false) {
     throw new Error(payload?.message || payload?.error || `Capture voix impossible (${res.status})`);
+  }
+  return payload as VoiceLearningStatus;
+}
+
+export async function linkPersonalSunoVoice(
+  voiceId: string,
+  options: {
+    label?: string;
+    persona?: 'personal' | string;
+  } = {}
+): Promise<VoiceLearningStatus> {
+  const res = await authFetch(getApiUrl('/api/voice-learning/suno-voice'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({
+      persona: options.persona || 'personal',
+      voiceId,
+      label: options.label || 'Voix Suno personnelle',
+      consent: 'suno-voice-slot-v1',
+      source: 'vivy-studio',
+    }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Liaison voix Suno impossible (${res.status})`);
+  }
+  return payload as VoiceLearningStatus;
+}
+
+export async function unlinkPersonalSunoVoice(): Promise<VoiceLearningStatus> {
+  const res = await authFetch(getApiUrl('/api/voice-learning/suno-voice'), {
+    method: 'DELETE',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({
+      persona: 'personal',
+      confirm: 'delete-suno-voice-slot',
+    }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Retrait voix Suno impossible (${res.status})`);
   }
   return payload as VoiceLearningStatus;
 }
@@ -2615,9 +2664,9 @@ export async function processDoubleHarmonicAudio(
   const appendFinite = (key: string, value: unknown) => {
     if (Number.isFinite(Number(value))) form.append(key, String(value));
   };
-  appendFinite('frequencyHz', options?.frequencyHz ?? (wantsV9Electrolysis ? 40.4583333333333 : undefined));
-  appendFinite('frequencyMinHz', options?.frequencyMinHz ?? (wantsV9Electrolysis ? 40.25 : undefined));
-  appendFinite('frequencyMaxHz', options?.frequencyMaxHz ?? (wantsV9Electrolysis ? 40.6666666666666 : undefined));
+  appendFinite('frequencyHz', options?.frequencyHz ?? (wantsV9Electrolysis ? 40.44 : undefined));
+  appendFinite('frequencyMinHz', options?.frequencyMinHz ?? (wantsV9Electrolysis ? 40.26 : undefined));
+  appendFinite('frequencyMaxHz', options?.frequencyMaxHz ?? (wantsV9Electrolysis ? 40.62 : undefined));
   appendFinite('electrolysisHz', options?.electrolysisHz);
   appendFinite('electrolysisMinHz', options?.electrolysisMinHz);
   appendFinite('electrolysisMaxHz', options?.electrolysisMaxHz);
@@ -2817,6 +2866,9 @@ export type VivyStudioProductionInput = {
   voiceReferenceName?: string;
   voiceCatalogName?: string;
   voiceCatalogConsent?: string;
+  voiceLearningPersona?: string;
+  sunoVoiceScope?: 'personal' | string;
+  usePersonalSunoVoice?: boolean;
   songSource?: string;
   songArtists?: string[];
   vocalCast?: string;

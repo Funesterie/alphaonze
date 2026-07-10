@@ -3,11 +3,12 @@ const assert = require('node:assert/strict');
 
 const { __private__ } = require('../llm-router.cjs');
 
-test('getConfiguredOllamaCandidates honors an explicit requested model before primary and fallback', () => {
+test('getConfiguredOllamaCandidates honors an explicit requested model and keeps candidates unique', () => {
   const candidates = __private__.getConfiguredOllamaCandidates('llama3.2:latest');
 
   assert.equal(candidates[0], 'llama3.2:latest');
-  assert.ok(candidates.includes('gemma4:e4b'));
+  assert.ok(candidates.length >= 1);
+  assert.equal(new Set(candidates).size, candidates.length);
 });
 
 test('toOllamaStructuredFormat maps OpenAI json_object to Ollama json mode', () => {

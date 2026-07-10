@@ -255,13 +255,13 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(v2Payload.v2.frameMs, 20);
     assert.equal(v2Payload.v2.safety.keepV1RouteUntouched, true);
 
-    const v9Electro = await fetch(`${baseUrl}/api/double-harmonic/v9turbo/status?modulation=electrolysis-guitar&frequencyMinHz=40.25&frequencyMaxHz=40.6666666666666&amount=0.05&bidirectional=1`);
+    const v9Electro = await fetch(`${baseUrl}/api/double-harmonic/v9turbo/status?modulation=electrolysis-guitar&frequencyMinHz=40.26&frequencyMaxHz=40.62&amount=0.05&bidirectional=1`);
     const v9ElectroPayload = await v9Electro.json();
     assert.equal(v9Electro.status, 200);
     assert.equal(v9ElectroPayload.v9turbo.defaults.modulation.enabled, true);
     assert.equal(v9ElectroPayload.v9turbo.defaults.modulation.mode, 'electrolysis-guitar');
-    assert.equal(v9ElectroPayload.v9turbo.defaults.modulation.frequencyMinHz, 40.25);
-    assert.equal(v9ElectroPayload.v9turbo.defaults.modulation.frequencyMaxHz, 40.6666666666666);
+    assert.equal(v9ElectroPayload.v9turbo.defaults.modulation.frequencyMinHz, 40.26);
+    assert.equal(v9ElectroPayload.v9turbo.defaults.modulation.frequencyMaxHz, 40.62);
     assert.equal(v9ElectroPayload.v9turbo.safety.electrolysisGuitarModulation, true);
     assert.equal(v9ElectroPayload.v9turbo.safety.modulationAudioOnlyNoPhysicalElectrolysis, true);
   } finally {
@@ -727,8 +727,8 @@ test('turbo d40 v9 keeps pivot closure and splits high low dynamic envelopes at 
 test('turbo d40 v9 electrolysis guitar modulation is asymmetric and audio-only', () => {
   const modulation = resolveV9TurboModulationConfig({
     modulation: 'electrolysis-guitar',
-    frequencyMinHz: 40.25,
-    frequencyMaxHz: 40.6666666666666,
+    frequencyMinHz: 40.26,
+    frequencyMaxHz: 40.62,
     amount: 0.05,
     irregularity: 0.5,
     asymmetry: 0.3,
@@ -750,8 +750,8 @@ test('turbo d40 v9 electrolysis guitar modulation is asymmetric and audio-only',
 
   assert.equal(modulation.enabled, true);
   assert.equal(modulation.mode, V9_ELECTROLYSIS_GUITAR_MODULATION.mode);
-  assert.equal(modulation.frequencyMinHz, 40.25);
-  assert.equal(modulation.frequencyMaxHz, 40.6666666666666);
+  assert.equal(modulation.frequencyMinHz, 40.26);
+  assert.equal(modulation.frequencyMaxHz, 40.62);
   assert.equal(modulated.modulation.enabled, true);
   assert.equal(modulated.modulation.note.includes('not as a physical electrolysis instruction'), true);
   assert.ok(Math.abs(modulated.summary.modulation.min) > 0 || Math.abs(modulated.summary.modulation.max) > 0);
@@ -1969,9 +1969,9 @@ test('double harmonic route normalizes legacy hot v9 electrolysis modulation bef
     form.append('modulation', 'electrolysis-guitar');
     form.append('electrolysis', '1');
     form.append('electrolysisGuitar', '1');
-    form.append('frequencyHz', '40.4583333333333');
-    form.append('frequencyMinHz', '40.25');
-    form.append('frequencyMaxHz', '40.6666666666666');
+    form.append('frequencyHz', '40.44');
+    form.append('frequencyMinHz', '40.26');
+    form.append('frequencyMaxHz', '40.62');
     form.append('amount', '0.05');
     form.append('irregularity', '0.5');
     form.append('asymmetry', '0.3');
@@ -1990,9 +1990,9 @@ test('double harmonic route normalizes legacy hot v9 electrolysis modulation bef
       modulation: 'electrolysis-guitar',
       electrolysis: true,
       electrolysisGuitar: true,
-      frequencyHz: 40.4583333333333,
-      frequencyMinHz: 40.25,
-      frequencyMaxHz: 40.6666666666666,
+      frequencyHz: 40.44,
+      frequencyMinHz: 40.26,
+      frequencyMaxHz: 40.62,
       amount: 0.042,
       irregularity: 0.36,
       asymmetry: 0.27,
@@ -2007,9 +2007,9 @@ test('double harmonic route normalizes legacy hot v9 electrolysis modulation bef
     legacyForm.append('modulation', 'electrolysis-guitar');
     legacyForm.append('electrolysis', '1');
     legacyForm.append('electrolysisGuitar', '1');
-    legacyForm.append('frequencyHz', '40.4583333333333');
-    legacyForm.append('frequencyMinHz', '40.25');
-    legacyForm.append('frequencyMaxHz', '40.6666666666666');
+    legacyForm.append('frequencyHz', '40.44');
+    legacyForm.append('frequencyMinHz', '40.26');
+    legacyForm.append('frequencyMaxHz', '40.62');
     legacyForm.append('amount', '0.05');
     legacyForm.append('irregularity', '0.5');
     legacyForm.append('asymmetry', '0.3');
@@ -2089,8 +2089,8 @@ test('double harmonic route exposes v9 electrolysis as a public mode instead of 
     assert.doesNotMatch(payload.audioUrl, /v9turbo/i);
     assert.match(payload.publicSummary, /V9 Électrolyse/i);
     assert.equal(calls[0].modulation, 'electrolysis-guitar');
-    assert.equal(calls[0].frequencyMinHz, 40.25);
-    assert.equal(calls[0].frequencyMaxHz, 40.6666666666666);
+    assert.equal(calls[0].frequencyMinHz, 40.26);
+    assert.equal(calls[0].frequencyMaxHz, 40.62);
     assert.equal(calls[0].amount, 0.042);
     assert.equal(calls[0].irregularity, 0.36);
     assert.equal(calls[0].asymmetry, 0.27);

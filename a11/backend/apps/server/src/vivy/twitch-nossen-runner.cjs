@@ -489,6 +489,32 @@ function reduceMechanicalLyricRepeats(lyrics = '') {
   return cleanLyrics(kept.join('\n'));
 }
 
+function stripTwitchRhymeSchemeLineLabels(lyrics = '') {
+  const lines = cleanLyrics(lyrics).split('\n');
+  const kept = lines.map((rawLine) => {
+    const line = String(rawLine || '').trimEnd();
+    if (!line.trim() || /^\s*\[[^\]]+\]\s*$/.test(line)) return line;
+    return line
+      .replace(/\s*(?:[,;:]\s*[A-H]|\([A-H]\)|\[[A-H]\])\s*$/i, '')
+      .trimEnd();
+  });
+  return cleanLyrics(kept.join('\n'));
+}
+
+function sanitizeTwitchFrenchOnlyLyricLeaks(lyrics = '') {
+  const lines = cleanLyrics(lyrics).split('\n');
+  const kept = lines.map((rawLine) => {
+    const line = String(rawLine || '').trimEnd();
+    if (!line.trim() || /^\s*\[[^\]]+\]\s*$/.test(line)) return line;
+    return line
+      .replace(/^\s*yeah[,!\s-]*/i, '')
+      .replace(/\bhook\b/gi, 'refrain')
+      .replace(/\bpayload\b/gi, 'signal')
+      .trimEnd();
+  });
+  return cleanLyrics(kept.join('\n'));
+}
+
 function extractLyricEndWord(line = '') {
   const match = String(line || '').trim().match(/[\p{L}\p{N}'’.-]+$/u);
   return match ? match[0] : '';
@@ -1914,6 +1940,53 @@ function sanitizeTwitchLyricsForPromptLeakage(lyrics = '') {
   };
 }
 
+function rescueTwitchLyricsAfterDestructivePromptScrub({
+  originalLyrics = '',
+  cleanedLyrics = '',
+  removed = 0,
+  winner = {},
+  routing = {},
+  seed = {},
+  intentPlan = {},
+  lyricScope = {},
+  artists = [],
+  stage = 'lyrics',
+  roundId = '',
+  logger = console,
+} = {}) {
+  const cleaned = cleanLyrics(cleanedLyrics, lyricScope.maxChars || 12000);
+  const original = cleanLyrics(originalLyrics, lyricScope.maxChars || 12000);
+  if (removed < 4 || !original) return { lyrics: cleaned, rescued: false };
+  const minUseful = Math.max(700, Math.min(Number(lyricScope.minLyricsChars || 0) || 0, 1400));
+  const freestyleLike = isRapFreestyleRequest(winner.text, routing?.songMood, seed?.notes, seed?.canvas)
+    || /\b(?:cypher|freestyle|clash|egotrip|ego\s+trip|battle)\b/i.test([
+      winner?.text,
+      routing?.songMood,
+      seed?.notes,
+      seed?.canvas,
+    ].filter(Boolean).join(' '));
+  const destructive = cleaned.length < 700
+    || (freestyleLike && cleaned.length < minUseful)
+    || (original.length >= 1000 && cleaned.length < original.length * 0.45);
+  if (!destructive) return { lyrics: cleaned, rescued: false };
+  const emergencyLyrics = buildTwitchEmergencyLyrics({ winner, routing, seed, intentPlan, lyricScope, artists });
+  const emergencyAssessment = assessTwitchSongLyrics(emergencyLyrics);
+  const canUseEmergency = emergencyAssessment.valid
+    && !hasTwitchProviderLyricsLeakage(emergencyLyrics)
+    && emergencyLyrics.length > cleaned.length + 240;
+  if (!canUseEmergency) return { lyrics: cleaned, rescued: false };
+  logger.warn?.(
+    '[VivyPromptGuard] round=%s stage=%s destructive prompt scrub removed=%s chars=%s/%s; using contextual emergency length=%s',
+    cleanText(roundId, 'unknown', 120),
+    cleanText(stage, 'lyrics', 40),
+    removed,
+    cleaned.length,
+    original.length,
+    emergencyLyrics.length
+  );
+  return { lyrics: emergencyLyrics, rescued: true };
+}
+
 function assessTwitchSongLyrics(lyrics = '') {
   const text = cleanLyrics(lyrics);
   const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
@@ -2135,6 +2208,8 @@ function buildTwitchProviderPack({
     .filter((line) => /^\s*\[[^\]]+\]\s*$/.test(line) || !hasTwitchProviderLyricsLeakage(line))
     .join('\n')
     .replace(/\n{3,}/g, '\n\n'), maxLyricsChars);
+  cleanProviderLyrics = stripTwitchRhymeSchemeLineLabels(cleanProviderLyrics);
+  cleanProviderLyrics = sanitizeTwitchFrenchOnlyLyricLeaks(cleanProviderLyrics);
   cleanProviderLyrics = cleanLyrics(reduceMechanicalLyricRepeats(cleanProviderLyrics), maxLyricsChars);
   const afterLeakage = hasTwitchProviderLyricsLeakage(cleanProviderLyrics);
   return {
@@ -2987,6 +3062,7 @@ function createVivyStreamNossenRunner(options = {}) {
             contextLeakage.groups.join(',')
           );
         }
+        let lyricsBeforePromptScrub = lyrics;
         let promptLeakage = sanitizeTwitchLyricsForPromptLeakage(lyrics);
         if (promptLeakage.removed > 0) {
           logger.warn?.(
@@ -2995,6 +3071,21 @@ function createVivyStreamNossenRunner(options = {}) {
             promptLeakage.removed
           );
           lyrics = promptLeakage.lyrics;
+          const rescue = rescueTwitchLyricsAfterDestructivePromptScrub({
+            originalLyrics: lyricsBeforePromptScrub,
+            cleanedLyrics: lyrics,
+            removed: promptLeakage.removed,
+            winner,
+            routing,
+            seed,
+            intentPlan,
+            lyricScope,
+            artists,
+            stage: 'initial',
+            roundId,
+            logger,
+          });
+          if (rescue.rescued) lyrics = rescue.lyrics;
         }
         const dedupedLyrics = reduceMechanicalLyricRepeats(lyrics);
         if (dedupedLyrics !== lyrics) {
@@ -3226,6 +3317,7 @@ function createVivyStreamNossenRunner(options = {}) {
                 contextLeakage.groups.join(',')
               );
             }
+            lyricsBeforePromptScrub = lyrics;
             promptLeakage = sanitizeTwitchLyricsForPromptLeakage(lyrics);
             if (promptLeakage.removed > 0) {
               logger.warn?.(
@@ -3234,6 +3326,21 @@ function createVivyStreamNossenRunner(options = {}) {
                 promptLeakage.removed
               );
               lyrics = promptLeakage.lyrics;
+              const rescue = rescueTwitchLyricsAfterDestructivePromptScrub({
+                originalLyrics: lyricsBeforePromptScrub,
+                cleanedLyrics: lyrics,
+                removed: promptLeakage.removed,
+                winner,
+                routing,
+                seed,
+                intentPlan,
+                lyricScope,
+                artists,
+                stage: 'rewrite',
+                roundId,
+                logger,
+              });
+              if (rescue.rescued) lyrics = rescue.lyrics;
             }
             const dedupedRewrite = reduceMechanicalLyricRepeats(lyrics);
             if (dedupedRewrite !== lyrics) {
@@ -3352,7 +3459,14 @@ function createVivyStreamNossenRunner(options = {}) {
           const normalizedArtists = Array.isArray(artists)
             ? artists.map((artist) => String(artist || '').toLowerCase())
             : [];
-          if (normalizedArtists.includes('djeff') && lyrics.length < 900) {
+          const freestyleOrCypher = freestyleRequested
+            || /\b(?:cypher|freestyle|clash|egotrip|ego\s+trip|battle)\b/.test(foldTwitchLyricText([
+              winner?.text,
+              routing?.songMood,
+              seed?.notes,
+              seed?.canvas,
+            ].filter(Boolean).join(' ')));
+          if ((normalizedArtists.includes('djeff') || freestyleOrCypher) && lyrics.length < 1200) {
             const emergencyLyrics = buildTwitchEmergencyLyrics({ winner, routing, seed, intentPlan, lyricScope, artists });
             const emergencyAssessment = assessTwitchSongLyrics(emergencyLyrics);
             const canUseEmergency = emergencyAssessment.valid
@@ -4202,6 +4316,7 @@ module.exports = {
   assessTwitchRhymeSignals,
   assessTwitchSongLyrics,
   buildTwitchProviderPack,
+  rescueTwitchLyricsAfterDestructivePromptScrub,
   sanitizeTwitchLyricsForPromptLeakage,
   sanitizeTwitchLyricsForSubjectDetailed,
   looksLikeTwitchDjeffVoiceCalibrationDrift,

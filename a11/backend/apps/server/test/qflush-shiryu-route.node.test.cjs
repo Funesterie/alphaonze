@@ -123,3 +123,34 @@ test('Qflush publishes Shiryu V3 GPU status with Cerbère telemetry metadata', a
     assert.ok(Array.isArray(status.json.connectedTelemetry.metrics));
   });
 });
+
+test('Qflush publishes Shiryu V3 Mille-Fleurs matter bridge for Blender/Unreal', async () => {
+  await withServer(async (baseUrl) => {
+    const status = await getJson(baseUrl, '/api/qflush/shiryu/v3/matter/status');
+    assert.equal(status.response.status, 200);
+    assert.equal(status.json.ok, true);
+    assert.equal(status.json.safeMode, true);
+    assert.equal(status.json.mode, 'mille-fleurs-gpu-matter');
+
+    const prepared = await postJson(baseUrl, '/api/qflush/shiryu/v3/matter/prepare', {
+      engine: 'unreal',
+      input: {
+        currentMessage: 'Shiryu transforme le cube zen en matière vivante',
+        intent: 'materialize',
+        payload: { rgba: true, render: 'mille fleurs' },
+      },
+      op: 'sculpt',
+      maxParticles: 16,
+    });
+    assert.equal(prepared.response.status, 200);
+    assert.equal(prepared.json.ok, true);
+    assert.equal(prepared.json.schema, 'nossen.shiryu.v3_matter_field.v1');
+    assert.equal(prepared.json.safeMode, true);
+    assert.equal(prepared.json.targetEngine, 'unreal');
+    assert.match(prepared.json.pipeline, /matter-field/);
+    assert.ok(prepared.json.particles.length >= 1);
+    assert.ok(prepared.json.adapters.blender);
+    assert.ok(prepared.json.adapters.unreal);
+    assert.match(prepared.json.adapters.unreal.blueprintHint, /Niagara/i);
+  });
+});

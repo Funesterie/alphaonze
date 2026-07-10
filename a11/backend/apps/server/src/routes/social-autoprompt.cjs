@@ -2,6 +2,9 @@
 
 const crypto = require('node:crypto');
 const express = require('express');
+const fs = require('node:fs');
+const path = require('node:path');
+const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
 const {
   resolveAccountTier,
 } = require('../auth/account-connectors.cjs');
@@ -11,10 +14,12 @@ const {
   buildSocialAutopromptRedactedStatus,
   cleanText,
   exchangeMetaCode,
+  exchangeSoundCloudCode,
   exchangeYoutubeCode,
   ensureSocialSchema,
   formatSocialContextForPrompt,
   getFreshSocialTokens,
+  getSoundCloudAccountIdentity,
   ingestYoutubeAccount,
   listSocialAccounts,
   normalizeKind,
@@ -24,10 +29,12 @@ const {
   setSocialAccountPaused,
   disconnectSocialAccount,
   splitScopes,
+  uploadSoundCloudTrack,
   upsertSocialAccount,
 } = require('../social/social-autoprompt.cjs');
 
 const SOCIAL_OAUTH_COOKIE = 'a11_social_oauth_state';
+const SOCIAL_PKCE_COOKIE = 'a11_social_oauth_pkce';
 const SOCIAL_ALLOWED_TIERS = new Set(['admin', 'admin_family', 'founder', 'family', 'premium']);
 
 function boolEnv(name, fallback = false, env = process.env) {
@@ -49,7 +56,7 @@ function getAdminUserId(req) {
 }
 
 function redactedProviderConfig(req, env = process.env) {
-  return ['youtube', 'meta'].map((provider) => {
+  return ['youtube', 'meta', 'soundcloud'].map((provider) => {
     const config = resolveProviderConfig(provider, { env, req });
     return {
       provider: config.provider,
@@ -72,9 +79,40 @@ function createOauthState({ provider, userId }) {
   })).toString('base64url');
 }
 
+function createPkcePair() {
+  const codeVerifier = crypto.randomBytes(48).toString('base64url');
+  const codeChallenge = crypto
+    .createHash('sha256')
+    .update(codeVerifier)
+    .digest('base64url');
+  return { codeVerifier, codeChallenge };
+}
+
 function parseOauthState(value = '') {
   try {
     const parsed = JSON.parse(Buffer.from(String(value || ''), 'base64url').toString('utf8'));
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (Date.now() - Number(parsed.issuedAt || 0) > 15 * 60 * 1000) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function setPkceCookie(res, payload = {}) {
+  res.cookie(SOCIAL_PKCE_COOKIE, Buffer.from(JSON.stringify(payload)).toString('base64url'), {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 15 * 60 * 1000,
+  });
+}
+
+function readPkceCookie(req) {
+  try {
+    const value = readCookie(req, SOCIAL_PKCE_COOKIE);
+    if (!value) return null;
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
     if (!parsed || typeof parsed !== 'object') return null;
     if (Date.now() - Number(parsed.issuedAt || 0) > 15 * 60 * 1000) return null;
     return parsed;
@@ -94,6 +132,11 @@ function setOauthCookie(res, state) {
 
 function clearOauthCookie(res) {
   res.clearCookie(SOCIAL_OAUTH_COOKIE, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+  });
+  res.clearCookie(SOCIAL_PKCE_COOKIE, {
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
@@ -291,6 +334,23 @@ async function getMetaAccountIdentity(accessToken, fetchFn = globalThis.fetch) {
   };
 }
 
+function resolveGeneratedAudioFile(filename = '', env = process.env) {
+  const safe = path.basename(cleanText(filename, 260));
+  if (!/^[\w.-]+\.(?:wav|flac|mp3|m4a|ogg)$/i.test(safe)) return '';
+  const runtimeRoot = path.resolve(getCanonicalRuntimeRoot(env));
+  const candidates = [
+    path.join(runtimeRoot, 'double-harmonic-d40', safe),
+    path.join(runtimeRoot, 'files', safe),
+    path.join(runtimeRoot, 'files', 'uploads', safe),
+  ];
+  for (const candidate of candidates) {
+    const resolved = path.resolve(candidate);
+    if (!resolved.startsWith(runtimeRoot)) continue;
+    if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) return resolved;
+  }
+  return '';
+}
+
 function buildSocialConnectHtml() {
   return `<!doctype html>
 <html lang="fr">
@@ -364,7 +424,7 @@ function buildSocialConnectHtml() {
       })[char]);
     }
     function providerLabel(provider) {
-      return provider === 'meta' ? 'Facebook / Instagram' : provider === 'youtube' ? 'YouTube' : provider;
+      return provider === 'meta' ? 'Facebook / Instagram' : provider === 'youtube' ? 'YouTube' : provider === 'soundcloud' ? 'SoundCloud' : provider;
     }
     async function api(path, options = {}) {
       const res = await fetch('/api/admin/social-connect' + path, {
@@ -502,15 +562,25 @@ function createSocialAutopromptApiRouter({ verifyJWT, isAdminRequest, db, env = 
 
   router.get('/:provider/start', (req, res) => {
     const provider = normalizeProvider(req.params.provider);
-    if (!['youtube', 'meta'].includes(provider)) {
+    if (!['youtube', 'meta', 'soundcloud'].includes(provider)) {
       return res.status(400).json({ ok: false, error: 'social_provider_unsupported' });
     }
     const state = createOauthState({ provider, userId: getAdminUserId(req) });
-    const auth = buildProviderAuthUrl(provider, { state, req, env });
+    let pkce = null;
+    if (provider === 'soundcloud') pkce = createPkcePair();
+    const auth = buildProviderAuthUrl(provider, { state, req, env, codeChallenge: pkce?.codeChallenge || '' });
     if (!auth.ok) {
       return res.status(400).json({ ok: false, error: 'social_oauth_not_configured', provider, missing: auth.missing || [] });
     }
     setOauthCookie(res, state);
+    if (pkce) {
+      setPkceCookie(res, {
+        provider,
+        state,
+        codeVerifier: pkce.codeVerifier,
+        issuedAt: Date.now(),
+      });
+    }
     return res.redirect(auth.url);
   });
 
@@ -569,13 +639,61 @@ function createSocialAutopromptApiRouter({ verifyJWT, isAdminRequest, db, env = 
     }
   });
 
+  router.get('/soundcloud/callback', async (req, res) => {
+    const queryState = String(req.query.state || '');
+    const cookieState = readCookie(req, SOCIAL_OAUTH_COOKIE);
+    const parsedState = parseOauthState(queryState);
+    const pkce = readPkceCookie(req);
+    clearOauthCookie(res);
+    if (
+      !parsedState
+      || !cookieState
+      || queryState !== cookieState
+      || parsedState.provider !== 'soundcloud'
+      || !pkce
+      || pkce.provider !== 'soundcloud'
+      || pkce.state !== queryState
+      || !pkce.codeVerifier
+    ) {
+      return res.status(400).send('OAuth SoundCloud invalide ou expiré.');
+    }
+    try {
+      const tokens = await exchangeSoundCloudCode({
+        code: req.query.code,
+        codeVerifier: pkce.codeVerifier,
+        req,
+        env,
+        fetchFn,
+      });
+      const identity = await getSoundCloudAccountIdentity(tokens.access_token, fetchFn);
+      const account = await upsertSocialAccount(db, {
+        userId: parsedState.userId || getAdminUserId(req),
+        provider: 'soundcloud',
+        accountLabel: identity.accountLabel || 'SoundCloud',
+        accountExternalId: identity.accountExternalId || 'soundcloud',
+        scopes: splitScopes(tokens.scope).length ? splitScopes(tokens.scope) : resolveProviderConfig('soundcloud', { req, env }).scopes,
+        tokens,
+        metadata: {
+          ...(identity.metadata || {}),
+          connectedAt: new Date().toISOString(),
+        },
+      }, env);
+      return res.redirect(`/admin/social-connect?connected=soundcloud&account=${encodeURIComponent(account?.account_label || 'SoundCloud')}`);
+    } catch (error) {
+      return res.status(500).send(`Connexion SoundCloud échouée: ${String(error?.message || error)}`);
+    }
+  });
+
   router.post('/:provider/test-refresh', async (req, res) => {
     const provider = normalizeProvider(req.params.provider);
-    if (!['youtube', 'meta'].includes(provider)) return res.status(400).json({ ok: false, error: 'social_provider_unsupported' });
+    if (!['youtube', 'meta', 'soundcloud'].includes(provider)) return res.status(400).json({ ok: false, error: 'social_provider_unsupported' });
     try {
       const bundle = await getFreshSocialTokens(db, { provider, userId: getAdminUserId(req) }, env, fetchFn);
       if (provider === 'meta' && bundle?.tokens?.accessToken) {
         await getMetaAccountIdentity(bundle.tokens.accessToken, fetchFn);
+      }
+      if (provider === 'soundcloud' && bundle?.tokens?.accessToken) {
+        await getSoundCloudAccountIdentity(bundle.tokens.accessToken, fetchFn);
       }
       return res.json({
         ok: Boolean(bundle?.row && bundle?.tokens?.accessToken),
@@ -606,6 +724,71 @@ function createSocialAutopromptApiRouter({ verifyJWT, isAdminRequest, db, env = 
       return res.json(result);
     } catch (error) {
       return res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  router.post('/soundcloud/upload-generated', async (req, res) => {
+    try {
+      if (req.body?.confirm !== true && req.body?.confirm !== 'true') {
+        return res.status(400).json({
+          ok: false,
+          error: 'soundcloud_upload_confirm_required',
+          message: 'Publication externe verrouillée: renvoie confirm:true pour publier sur SoundCloud.',
+        });
+      }
+      const filename = cleanText(
+        req.body?.filename
+        || req.body?.audioFilename
+        || req.body?.doubleHarmonicFilename
+        || '',
+        260
+      );
+      const audioPath = resolveGeneratedAudioFile(filename, env);
+      if (!audioPath) {
+        return res.status(404).json({ ok: false, error: 'generated_audio_not_found', filename });
+      }
+      const bundle = await getFreshSocialTokens(db, { provider: 'soundcloud', userId: getAdminUserId(req) }, env, fetchFn);
+      if (!bundle?.tokens?.accessToken) {
+        return res.status(401).json({
+          ok: false,
+          error: 'soundcloud_not_connected',
+          reconnectRequired: bundle?.refresh?.reconnectRequired === true,
+          refresh: bundle?.refresh || null,
+        });
+      }
+      const upload = await uploadSoundCloudTrack({
+        accessToken: bundle.tokens.accessToken,
+        audioPath,
+        title: cleanText(req.body?.title, 120) || path.basename(audioPath).replace(/\.[^.]+$/, ''),
+        description: cleanText(req.body?.description, 4000),
+        sharing: cleanText(req.body?.sharing, 40) || 'private',
+        genre: cleanText(req.body?.genre, 120),
+        tagList: Array.isArray(req.body?.tags)
+          ? req.body.tags.map((tag) => cleanText(tag, 60)).filter(Boolean).join(' ')
+          : cleanText(req.body?.tagList || req.body?.tags, 500),
+      }, fetchFn);
+      return res.json({
+        ok: true,
+        provider: 'soundcloud',
+        uploaded: {
+          id: upload.id,
+          title: upload.title,
+          permalinkUrl: upload.permalinkUrl,
+          sharing: upload.sharing,
+          raw: upload.raw,
+        },
+        source: {
+          filename: path.basename(audioPath),
+          bytes: fs.statSync(audioPath).size,
+        },
+      });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        error: 'soundcloud_upload_failed',
+        status: error?.status || undefined,
+        message: cleanText(error?.message || error, 500),
+      });
     }
   });
 

@@ -51,6 +51,7 @@ const {
   reinforceTwitchHardcoreRouting,
   reinforceTwitchRapFreestyleRouting,
   buildRapFreestyleGuidance,
+  rescueTwitchLyricsAfterDestructivePromptScrub,
   assessTwitchLyricLoopiness,
   assessTwitchRhymeSignals,
   sanitizeTwitchLyricsForPromptLeakage,
@@ -909,6 +910,40 @@ Y'a Carmelo
   assert.match(result.lyrics, /Y'a Carmelo/i);
 });
 
+test('Twitch prompt scrub rescues cypher lyrics instead of sending a tiny fragment to Suno', () => {
+  const draft = `
+[Verse 1]
+Règles privées non chantables pour freestyle rap: écris en couplets continus par phases
+Direction freestyle rap obligatoire: couplets continus en phases, punchlines concrètes et fréquentes
+Rimes techniques multisyllabiques, variations de flow et de débit
+Refrain seulement si le sujet le demande explicitement
+Brouillon à transformer, ne le commente pas
+Avant Suno, retire les consignes
+Chaque couplet doit contenir une scène concrète
+Le micro claque, Djeff rentre dans le cypher
+`;
+  const scrubbed = sanitizeTwitchLyricsForPromptLeakage(draft);
+  assert.ok(scrubbed.removed >= 6);
+  assert.ok(scrubbed.lyrics.length < 160);
+
+  const rescued = rescueTwitchLyricsAfterDestructivePromptScrub({
+    originalLyrics: draft,
+    cleanedLyrics: scrubbed.lyrics,
+    removed: scrubbed.removed,
+    winner: { text: 'Djeff cypher, ils veulent ma peau mais ils sont encore en tuto' },
+    routing: { songMood: 'cypher battle rap français, punchlines, 808 lourdes' },
+    lyricScope: { minLyricsChars: 1400, maxChars: 5200 },
+    artists: ['djeff'],
+    logger: { warn() {} },
+    roundId: 'test-cypher-rescue',
+  });
+
+  assert.equal(rescued.rescued, true);
+  assert.ok(rescued.lyrics.length > 700);
+  assert.equal(assessTwitchSongLyrics(rescued.lyrics).valid, true);
+  assert.doesNotMatch(rescued.lyrics, /Règles privées|Direction freestyle rap obligatoire|Brouillon à transformer|Avant Suno/i);
+});
+
 test('Twitch lyrics block extractor keeps only CLEAN_LYRICS before provider brief', () => {
   const result = extractCleanTwitchLyricsBlock(`
 CLEAN_LYRICS:
@@ -962,6 +997,33 @@ Cette ligne ne doit pas être dans le style`,
   assert.doesNotMatch(pack.styleBrief, /\[Verse 1\]|Cette ligne ne doit pas/);
   assert.equal(pack.lyricLeakage, true);
   assert.equal(pack.styleLeakage, true);
+});
+
+test('Twitch provider pack removes literal rhyme labels and small English leaks before Suno', () => {
+  const pack = buildTwitchProviderPack({
+    lyrics: `
+[Djeff]
+[Intro]
+Yeah, l’ombre se glisse sous les néons,
+
+[Djeff]
+[Verse 1]
+Sous les néons qui saignent, le clavier claque, A
+Le curseur file, fauché par le vent (B)
+Le payload surgit, le hook se replie, C
+
+[Djeff]
+[Chorus]
+C’est posté, la flamme d’un pixel s’envole.
+`,
+    styleBrief: 'rap français trap sombre, 808 lourdes, paroles françaises uniquement',
+  });
+
+  assert.doesNotMatch(pack.cleanLyrics, /,\s*[A-H]\s*$/m);
+  assert.doesNotMatch(pack.cleanLyrics, /\([A-H]\)\s*$/m);
+  assert.doesNotMatch(pack.cleanLyrics, /^\s*Yeah\b/im);
+  assert.doesNotMatch(pack.cleanLyrics, /\bpayload\b|\bhook\b/i);
+  assert.match(pack.cleanLyrics, /signal surgit, le refrain se replie/i);
 });
 
 test('Twitch provider pack strips cover and routing prompt fragments from archived lyrics', () => {

@@ -1761,7 +1761,7 @@ test('video generate router uses direct Replicate token for replicate video prov
     assert.equal(payload.provider, 'replicate');
     assert.match(payload.video_url, /^https:\/\/a11\.funesterie\.me\/files\/runtime\/files\/generated\/videos\/a11-hf-video-/);
     assert.equal(calls.length, 3);
-    assert.equal(calls[0].url, 'https://api.replicate.com/v1/models/wan-video/wan-2.2-5b-fast/predictions');
+    assert.equal(calls[0].url, 'https://api.replicate.com/v1/models/wan-video/wan-2.6-i2v/predictions');
     assert.equal(calls[0].headers.Authorization, 'Bearer r8_test_video_token');
     assert.equal(calls[0].headers.Prefer, 'wait=60');
     assert.match(calls[0].body.input.prompt, /hypervitesse|reference subject|cinematic motion/i);

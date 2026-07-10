@@ -1,5 +1,10 @@
 'use strict';
 
+const {
+  buildReferenceCapsuleContext,
+  hasFunesterieReferenceCapsuleContext,
+} = require('./funesterie-reference-capsules.cjs');
+
 const VOIX_DE_LAIT_CORPUS_CAPSULE = Object.freeze({
   id: 'a11-voix-de-lait',
   label: 'Voix de lait',
@@ -54,6 +59,7 @@ const PRIVATE_CORPUS_CAPSULES = Object.freeze([
 ]);
 
 function buildPrivateCorpusCapsuleContext() {
+  const referenceCapsules = buildReferenceCapsuleContext();
   return [
     '[Funesterie private corpus capsules]',
     ...PRIVATE_CORPUS_CAPSULES.flatMap((capsule) => [
@@ -62,6 +68,7 @@ function buildPrivateCorpusCapsuleContext() {
       ...capsule.promptCapsule.map((line) => `- ${line}`),
     ]),
     '- Privacy rule: the raw transcript stays private/local by default; visible answers use synthesis, short paraphrase, or explicit user-approved excerpts only.',
+    referenceCapsules,
   ].join('\n');
 }
 
@@ -73,7 +80,8 @@ function hasPrivateCorpusCapsuleContext(text = '') {
     || /a11-voix-de-lait.*private-local-transcript/i.test(value)
     || /djeff-pignon-rap.*private-local-rap/i.test(value)
     || /a11-fatigue-voice.*persona-only/i.test(value)
-    || /raw transcript stays private\/local/i.test(value);
+    || /raw transcript stays private\/local/i.test(value)
+    || hasFunesterieReferenceCapsuleContext(value);
 }
 
 function appendPrivateCorpusCapsuleContext(text = '') {

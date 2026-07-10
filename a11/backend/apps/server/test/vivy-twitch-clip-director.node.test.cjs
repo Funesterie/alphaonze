@@ -298,7 +298,7 @@ test('Vivy DreamClip mode generates every planned scene without loop reuse', asy
   assert.equal(mode.mode, 'dreamclip');
   assert.equal(mode.dream, true);
   assert.equal(mode.allowStaticFallback, false);
-  assert.equal(resolveTwitchFullClipRenderDurationSeconds(env, 480), 300);
+  assert.equal(resolveTwitchFullClipRenderDurationSeconds(env, 480), 420);
 
   const storyboard = buildTwitchFullClipStoryboard({
     publicTitle: 'Clip de rêve',
@@ -416,6 +416,21 @@ test('Vivy full clip cost estimate scales with dream mode and configured rate', 
   assert.equal(dream.estimatedCostEur.typical, 3.2);
   assert.ok(dream.estimatedCostEur.high > dream.estimatedCostEur.typical);
   assert.ok(dream.estimatedCostEur.low < dream.estimatedCostEur.typical);
+});
+
+test('Vivy DreamClip defaults to WAN 2.6 scene loops and longer montage cap', () => {
+  const mode = resolveTwitchFullClipMode({ VIVY_STREAM_FULL_CLIP_MODE: 'dreamclip' });
+  assert.equal(mode.dream, true);
+  assert.equal(mode.sceneCount, 8);
+  assert.equal(mode.maxDurationSeconds, 420);
+
+  const estimate = estimateTwitchFullClipCost({
+    VIVY_STREAM_CLIP_COST_PER_VIDEO_SECOND_EUR: '0.06',
+  }, { mode: 'dream' });
+  assert.equal(estimate.uniqueLoops, 8);
+  assert.equal(estimate.loopSeconds, 15);
+  assert.equal(estimate.videoSecondsGenerated, 120);
+  assert.equal(estimate.estimatedCostEur.typical, 7.2);
 });
 
 test('Vivy full clip finalize reuses prepared loops without new paid generations', async () => {

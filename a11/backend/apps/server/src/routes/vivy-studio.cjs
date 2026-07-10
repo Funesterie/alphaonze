@@ -62,6 +62,9 @@ const {
   postProcessA11AssistantResponse,
 } = require('../chat/response-draft-rewriter.cjs');
 const {
+  resolvePersonalSunoVoiceForRequest,
+} = require('./voice-learning.cjs');
+const {
   SYMBOLIC_EXTRACTION_PROTOCOL_CONTEXT,
 } = require('../chat/symbolic-extraction-protocol.cjs');
 const {
@@ -423,7 +426,36 @@ function getRequestSessionSunoApiKey(input = {}, req = null) {
   );
 }
 
+function resolvePreferredServerSunoPersonaBinding(input = {}, req = null) {
+  if (input.preserveSelectedVoice === false || !canUseServerSuno(req)) return null;
+  const artistCast = buildVivySongArtistCast(input);
+  if (artistCast.count !== 1) return null;
+  const artistId = cleanOneLine(artistCast.ids[0], '', 40).toLowerCase();
+
+  // Official Funesterie voices are enrolled, consented server-side identities.
+  // Keep their provider persona paired with the server key instead of mixing it
+  // with a stale browser key (which silently yields a random singer). A linked
+  // personal slot remains separate; Djeff keeps priority when explicitly cast.
+  const officialArtistIds = new Set(['djeff', 'marvin', 'vivy', 'a11', 'k44', 'kaen44']);
+  if (!officialArtistIds.has(artistId)) return null;
+  if (artistId !== 'djeff' && wantsPersonalSunoVoice(input)) return null;
+  const voiceId = resolveConfiguredVivySunoPersonaVoiceId(artistId);
+  const apiKey = getSunoApiKey();
+  if (!voiceId || !apiKey) return null;
+  return { artistId, voiceId, apiKey };
+}
+
 function getSunoAccess(input = {}, req = null) {
+  const preferredPersona = resolvePreferredServerSunoPersonaBinding(input, req);
+  if (preferredPersona) {
+    return {
+      apiKey: preferredPersona.apiKey,
+      source: 'server',
+      adminOnly: true,
+      personaArtistId: preferredPersona.artistId,
+      personaBound: true,
+    };
+  }
   const sessionKey = getRequestSessionSunoApiKey(input, req);
   if (sessionKey) {
     return { apiKey: sessionKey, source: 'session', adminOnly: false };
@@ -484,6 +516,7 @@ function getVivySunoRuntimeStatus() {
     voicesEnrolled: {
       vivy: Boolean(resolveConfiguredVivySunoPersonaVoiceId('vivy')),
       djeff: Boolean(resolveConfiguredVivySunoPersonaVoiceId('djeff')),
+      marvin: Boolean(resolveConfiguredVivySunoPersonaVoiceId('marvin')),
       a11: Boolean(resolveConfiguredVivySunoPersonaVoiceId('a11')),
       k44: Boolean(resolveConfiguredVivySunoPersonaVoiceId('k44')),
     },
@@ -498,6 +531,18 @@ function resolveConfiguredVivySunoPersonaVoiceId(artistId = '') {
       process.env.VIVY_SUNO_DJEFF_VOICE_ID
       || process.env.SUNO_DJEFF_VOICE_ID
       || process.env.A11_SUNO_DJEFF_VOICE_ID,
+      '',
+      180
+    );
+  }
+  if (id === 'marvin' || id === 'frere' || id === 'frère' || id === 'brother') {
+    return cleanOneLine(
+      process.env.VIVY_SUNO_MARVIN_VOICE_ID
+      || process.env.VIVY_SUNO_FRERE_VOICE_ID
+      || process.env.VIVY_SUNO_FRERE_FAMILY_VOICE_ID
+      || process.env.SUNO_MARVIN_VOICE_ID
+      || process.env.SUNO_FRERE_VOICE_ID
+      || process.env.A11_SUNO_MARVIN_VOICE_ID,
       '',
       180
     );
@@ -523,6 +568,29 @@ function resolveConfiguredVivySunoPersonaVoiceId(artistId = '') {
     );
   }
   return cleanOneLine(process.env.VIVY_SUNO_VOICE_ID || process.env.SUNO_VOICE_ID, '', 180);
+}
+
+function wantsPersonalSunoVoice(input = {}) {
+  if (input.usePersonalSunoVoice === true || input.personalSunoVoice === true) return true;
+  const folded = foldTextForLookup([
+    input.sunoVoiceScope,
+    input.voicePersona,
+    input.voiceLearningPersona,
+    input.voiceTool,
+    input.vocalCast,
+    input.songSource,
+  ].filter(Boolean).join('\n'));
+  return /\b(?:personal|personal voice|my voice|myvoice|ma voix|voix perso|voix personnelle|compte connecte|compte connecté)\b/.test(folded)
+    && /\b(?:suno|voiceid|voice id|persona|voix)\b/.test(folded);
+}
+
+function resolvePersonalSunoVoiceIdForPayload(input = {}, req = null) {
+  if (!wantsPersonalSunoVoice(input) || !req) return null;
+  try {
+    return resolvePersonalSunoVoiceForRequest(req);
+  } catch {
+    return null;
+  }
 }
 
 function getConfiguredMusicProviders() {
@@ -576,14 +644,31 @@ function getVivyLocalOllamaConfig(options = {}) {
     mode === 'song'
       ? (process.env.VIVY_SONG_LOCAL_MODEL
         || process.env.VIVY_CHAT_LOCAL_MODEL
+        || process.env.A11_OLLAMA_CHAT_MODEL
         || process.env.A11_OLLAMA_PRIMARY_MODEL
         || process.env.LOCAL_DEFAULT_MODEL)
       : (process.env.VIVY_CHAT_LOCAL_MODEL
+        || process.env.A11_OLLAMA_CHAT_MODEL
         || process.env.A11_OLLAMA_PRIMARY_MODEL
         || process.env.LOCAL_DEFAULT_MODEL),
     'llama3.2:3b',
     120
   );
+  const chatTimeoutMs = Math.max(1000, Number(
+    process.env.VIVY_CHAT_LOCAL_TIMEOUT_MS
+    || process.env.A11_LOCAL_CHAT_TIMEOUT_MS
+    || process.env.A11_OLLAMA_CHAT_TIMEOUT_MS
+    || 90000
+  ) || 90000);
+  const songTimeoutMs = Math.max(1000, Number(process.env.A11_LOCAL_SONG_TIMEOUT_MS || 180000) || 180000);
+  const chatMaxPromptChars = Math.max(6000, Math.min(
+    14000,
+    Number(process.env.VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS || 10000) || 10000
+  ));
+  const chatMaxOutputTokens = Math.max(256, Math.min(
+    1200,
+    Number(process.env.VIVY_CHAT_LOCAL_MAX_TOKENS || 800) || 800
+  ));
 
   return {
     baseURL,
@@ -591,29 +676,58 @@ function getVivyLocalOllamaConfig(options = {}) {
     model,
     provider: 'ollama',
     source: 'ollama-openai-compatible',
-    timeoutMs: Math.max(1000, Number(process.env.A11_LOCAL_SONG_TIMEOUT_MS || 180000) || 180000),
+    timeoutMs: mode === 'song' ? songTimeoutMs : chatTimeoutMs,
+    maxPromptChars: mode === 'song' ? 0 : chatMaxPromptChars,
+    maxOutputTokens: mode === 'song' ? 0 : chatMaxOutputTokens,
   };
 }
 
 function getVivyOllamaCloudConfig(options = {}) {
   const mode = cleanOneLine(options.mode || options.chatMode, '', 24).toLowerCase();
   const purpose = cleanOneLine(options.purpose, '', 40).toLowerCase();
-  if (mode !== 'song' || purpose !== 'lyrics' || !envFlag('OLLAMA_CLOUD_ENABLED')) return null;
+  if (!envFlag('OLLAMA_CLOUD_ENABLED')) return null;
+  const lyricsMode = mode === 'song' && purpose === 'lyrics';
+  const chatMode = mode !== 'song' && envFlag('OLLAMA_CLOUD_CHAT_ENABLED');
+  if (!lyricsMode && !chatMode) return null;
 
   const apiKey = String(process.env.OLLAMA_API_KEY || '').trim();
   if (!apiKey) return null;
 
+  const model = lyricsMode
+    ? cleanOneLine(process.env.OLLAMA_CLOUD_LYRICS_MODEL, 'gpt-oss:120b', 120)
+    : cleanOneLine(
+      process.env.OLLAMA_CLOUD_CHAT_MODEL
+        || process.env.OLLAMA_CLOUD_FAST_MODEL
+        || process.env.OLLAMA_CLOUD_LYRICS_MODEL,
+      'gpt-oss:120b',
+      120
+    );
+  const thinkLevel = lyricsMode
+    ? cleanOneLine(process.env.OLLAMA_CLOUD_THINK_LEVEL, 'medium', 12).toLowerCase()
+    : cleanOneLine(
+      process.env.OLLAMA_CLOUD_CHAT_THINK_LEVEL
+        || process.env.OLLAMA_CLOUD_THINK_LEVEL,
+      'high',
+      12
+    ).toLowerCase();
+  const timeoutMs = lyricsMode
+    ? Math.max(240000, Math.min(
+      480000,
+      Number(process.env.OLLAMA_CLOUD_LYRICS_TIMEOUT_MS || 360000) || 360000
+    ))
+    : Math.max(60000, Math.min(
+      480000,
+      Number(process.env.OLLAMA_CLOUD_CHAT_TIMEOUT_MS || 300000) || 300000
+    ));
+
   return {
     baseURL: cleanOneLine(process.env.OLLAMA_CLOUD_BASE_URL, 'https://ollama.com', 300).replace(/\/+$/, ''),
     apiKey,
-    model: cleanOneLine(process.env.OLLAMA_CLOUD_LYRICS_MODEL, 'gpt-oss:120b', 120),
+    model,
     provider: 'ollama_cloud',
     source: 'ollama-cloud-api',
-    thinkLevel: cleanOneLine(process.env.OLLAMA_CLOUD_THINK_LEVEL, 'medium', 12).toLowerCase(),
-    timeoutMs: Math.max(240000, Math.min(
-      480000,
-      Number(process.env.OLLAMA_CLOUD_LYRICS_TIMEOUT_MS || 360000) || 360000
-    )),
+    thinkLevel,
+    timeoutMs,
     maxCalls: 1,
   };
 }
@@ -735,7 +849,7 @@ function getVivyLlmConfigs(options = {}) {
     ? (allowSongLocalFallback
       ? [cloud, ollamaCloud, cerbere, local]
       : [cloud, ollamaCloud, cerbere])
-    : (localFirst ? [local, cloud] : [cloud, local]);
+    : (localFirst ? [local, ollamaCloud, cloud] : [ollamaCloud, local, cloud]);
   const seen = new Set();
   return ordered.filter((config) => {
     if (!config?.apiKey || !config?.baseURL || !config?.model) return false;
@@ -868,6 +982,8 @@ function createVivyOpenAIClientFromConfig(config) {
     baseURL: config.baseURL,
     provider: config.provider,
     source: config.source,
+    maxPromptChars: Number(config.maxPromptChars || 0) || 0,
+    maxOutputTokens: Number(config.maxOutputTokens || 0) || 0,
   };
 }
 
@@ -896,6 +1012,83 @@ function resolveVivyRateLimitCooldownMs(error) {
   return Number.isFinite(seconds) && seconds > 0 ? Math.max(1000, seconds * 1000) : configured;
 }
 
+function compactVivyLocalMessageContent(value = '', maxChars = 0) {
+  const text = String(value || '');
+  const limit = Math.max(0, Number(maxChars || 0) || 0);
+  if (!limit || text.length <= limit) return text;
+  const marker = '\n[… contexte compacté pour le fallback local …]\n';
+  if (limit <= marker.length + 40) return text.slice(0, limit);
+  const available = limit - marker.length;
+  const headChars = Math.max(20, Math.floor(available * 0.64));
+  const tailChars = Math.max(20, available - headChars);
+  return `${text.slice(0, headChars)}${marker}${text.slice(-tailChars)}`;
+}
+
+function fitVivyChatRequestForBundle(request = {}, bundle = {}) {
+  const maxOutputTokens = Math.max(0, Number(bundle.maxOutputTokens || 0) || 0);
+  const maxPromptChars = Math.max(0, Number(bundle.maxPromptChars || 0) || 0);
+  const fitted = {
+    ...request,
+    ...(maxOutputTokens && Number(request.max_tokens || 0) > maxOutputTokens
+      ? { max_tokens: maxOutputTokens }
+      : {}),
+  };
+  const messages = Array.isArray(request.messages) ? request.messages : [];
+  const totalChars = messages.reduce((sum, entry) => sum + String(entry?.content || '').length, 0);
+  if (!maxPromptChars || totalChars <= maxPromptChars || messages.length < 2) return fitted;
+
+  const systemIndex = messages.findIndex((entry) => String(entry?.role || '').toLowerCase() === 'system');
+  let latestUserIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (String(messages[index]?.role || '').toLowerCase() === 'user') {
+      latestUserIndex = index;
+      break;
+    }
+  }
+
+  const systemBudget = systemIndex >= 0 ? Math.floor(maxPromptChars * 0.68) : 0;
+  const latestUserBudget = latestUserIndex >= 0 ? Math.floor(maxPromptChars * 0.22) : 0;
+  const selected = [];
+  let usedChars = 0;
+  if (systemIndex >= 0) {
+    const system = {
+      ...messages[systemIndex],
+      content: compactVivyLocalMessageContent(messages[systemIndex]?.content, systemBudget),
+    };
+    selected.push({ index: systemIndex, entry: system });
+    usedChars += String(system.content || '').length;
+  }
+
+  if (latestUserIndex >= 0 && latestUserIndex !== systemIndex) {
+    const latestUser = {
+      ...messages[latestUserIndex],
+      content: compactVivyLocalMessageContent(messages[latestUserIndex]?.content, latestUserBudget),
+    };
+    selected.push({ index: latestUserIndex, entry: latestUser });
+    usedChars += String(latestUser.content || '').length;
+  }
+
+  let remaining = Math.max(0, maxPromptChars - usedChars);
+  for (let index = messages.length - 1; index >= 0 && remaining >= 80; index -= 1) {
+    if (index === systemIndex || index === latestUserIndex) continue;
+    if (String(messages[index]?.role || '').toLowerCase() === 'system') continue;
+    const content = String(messages[index]?.content || '');
+    if (!content) continue;
+    const budget = Math.min(600, remaining);
+    const entry = {
+      ...messages[index],
+      content: compactVivyLocalMessageContent(content, budget),
+    };
+    selected.push({ index, entry });
+    remaining -= String(entry.content || '').length;
+  }
+
+  fitted.messages = selected
+    .sort((left, right) => left.index - right.index)
+    .map((item) => item.entry);
+  return fitted;
+}
+
 async function createVivyChatCompletion(llmBundles, request) {
   let lastError = null;
   for (const bundle of llmBundles) {
@@ -911,8 +1104,9 @@ async function createVivyChatCompletion(llmBundles, request) {
       continue;
     }
     try {
+      const bundleRequest = fitVivyChatRequestForBundle(request, bundle);
       const completion = await bundle.client.chat.completions.create({
-        ...request,
+        ...bundleRequest,
         model: bundle.model,
       });
       vivyLlmProviderCooldowns.delete(cooldownKey);
@@ -2818,7 +3012,166 @@ function isVivyImpossibleToolPromiseLeak(text = '') {
   return /je\s+vais\s+demander\s+a\s+janus\s+vision/.test(folded)
     || /action\s+requise\s*:\s*confirmation\s+de\s+l\s+operateur/.test(folded)
     || /je\s+vais\s+rechercher\s+dans\s+les\s+archives/.test(folded)
-    || /je\s+peux\s+essayer\s+de\s+trouver\s+des\s+solutions\s+ou\s+des\s+outils/.test(folded);
+    || /je\s+peux\s+essayer\s+de\s+trouver\s+des\s+solutions\s+ou\s+des\s+outils/.test(folded)
+    || /je\s+vais\s+mettre\s+a\s+jour\s+la\s+configuration/.test(folded)
+    || /je\s+vais\s+effectuer\s+des\s+tests\s+supplementaires/.test(folded)
+    || /je\s+vais\s+notifier\s+(?:mes\s+)?utilisateurs/.test(folded)
+    || /je\s+vais\s+mettre\s+a\s+jour\s+mon\s+calendrier/.test(folded)
+    || /git\s+pull\s+<[^>]+>/.test(folded)
+    || /chemin\s+du\s+branch\s+toillet/.test(folded);
+}
+
+function isVivyPrivateCustomNodeQuestion(input = {}, message = '') {
+  const current = normalizeVivyCapabilityText(message);
+  if (!current || looksLikeCompleteLyrics(message)) return false;
+  const recent = normalizeVivyCapabilityText(getVivyHistoryText(input.history));
+  const text = `${recent}\n${current}`;
+  return /\bwhat\s+does\s+your\s+private\s+custom\s+node\s+do\b/.test(text)
+    || /\b(private|privee?|privé|privée)\b.{0,80}\b(custom|personnalisee?|personnalisée?|node|noeud|nœud)\b/.test(text)
+    || /\b(custom|personnalisee?|personnalisée?)\b.{0,80}\b(node|noeud|nœud)\b/.test(text);
+}
+
+function buildVivyPrivateCustomNodeReply({ language = 'fr', mentionDjeff = false } = {}) {
+  const assistant = language === 'en'
+    ? [
+      'High level only: the private custom node is an A11/Funesterie server-side connector.',
+      'It receives a user intent, filters context, selects authorized routes — memory, files, image/video/music helpers, MCP/Neo4j when allowed — then returns a bounded result.',
+      'It does not expose secrets, tokens, private prompts, credentials, raw internal code, or protected data through public chat.',
+      'For clips, it is orchestration and safety: prepare a clean brief, check confirmation/cost gates, and avoid paid retries unless explicitly confirmed.',
+      mentionDjeff ? 'Djeff Cypher would ask for a clean target, the last useful log, and no mystical secret dump.' : '',
+    ].filter(Boolean).join('\n')
+    : [
+      'À haut niveau seulement: la private custom node est un connecteur serveur A11/Funesterie.',
+      "Elle reçoit une intention, nettoie le contexte, choisit les routes autorisées — mémoire, fichiers, image/vidéo/musique, MCP/Neo4j si le compte y a droit — puis renvoie un résultat borné.",
+      "Elle ne doit jamais exposer de secret, token, prompt privé, credential, code interne brut ou donnée protégée dans le chat public.",
+      "Pour les clips, son rôle est l’orchestration sûre: brief propre, garde coût/confirmation, et pas de retry payant sans validation explicite.",
+      mentionDjeff ? "Djeff Cypher voudrait surtout une cible nette, le dernier log utile, et zéro déballage mystique de secrets." : '',
+    ].filter(Boolean).join('\n');
+  return cleanText(assistant, 1400);
+}
+
+function isVivyDjeffCypherRelayRequest(input = {}, message = '') {
+  const current = normalizeVivyCapabilityText(message);
+  if (!current || looksLikeCompleteLyrics(message)) return false;
+  const recent = normalizeVivyCapabilityText(getVivyHistoryText(input.history));
+  const text = `${recent}\n${current}`;
+  const mentionsDjeffCypher = /\bdjeff\b.{0,40}\bcypher\b|\bcypher\b.{0,40}\bdjeff\b/.test(current);
+  if (!mentionsDjeffCypher) return false;
+  const asksRelay = /\b(demande|demander|dis|dire|explique|expliquer|valide|valider|confirme|confirmer|ce\s+qu\s+il\s+veut|qu\s+il\s+veut|avis)\b/.test(current);
+  const hasSubject = isVivyPrivateCustomNodeQuestion(input, message)
+    || /\b(node|noeud|nœud|clip|danger|risque|v9|shiryu|electrolyse|électrolyse|prompt|logs?)\b/.test(text);
+  return asksRelay && hasSubject;
+}
+
+function buildVivyDjeffCypherRelayReply({ input = {}, message = '', language = 'fr' } = {}) {
+  const wantsNode = isVivyPrivateCustomNodeQuestion(input, message);
+  const wantsClip = isVivyClipFailureSafetyQuestion(input, message);
+  if (wantsNode) {
+    return buildVivyPrivateCustomNodeReply({ language, mentionDjeff: true });
+  }
+  if (wantsClip) {
+    return buildVivyClipFailureSafetyReply({ language, mentionDjeff: true });
+  }
+  const assistant = language === 'en'
+    ? [
+      "Djeff Cypher's line: keep the target clean, cut the smoke, don't invent access.",
+      "Vivy can prepare the brief and read safe context; Codex/A11 executes code, deploys, secrets and paid actions only with the right gate.",
+    ].join('\n')
+    : [
+      "Ligne Djeff Cypher: cible propre, fumée coupée, pas d’accès inventé.",
+      "Vivy peut préparer le brief et lire le contexte sûr; Codex/A11 exécute code, deploy, secrets et actions payantes seulement avec le bon verrou.",
+    ].join('\n');
+  return cleanText(assistant, 1000);
+}
+
+function isVivyClipFailureSafetyQuestion(input = {}, message = '') {
+  const current = normalizeVivyCapabilityText(message);
+  if (!current || looksLikeCompleteLyrics(message)) return false;
+  const mentionsClip = /\b(clip|dream\s*clip|video|vid[eé]o)\b/.test(current);
+  const reportsFailure = /\b(?:ne\s+)?(?:fonctionne|fonctione|marche)\s+(?:pas|plus)\b/.test(current)
+    || /\b(?:bug|bugue|bugge|bloque|bloquee?|cass(?:e|ee?)?|erreur|echec|fail|plante|rate|refus|rejet|timeout)\b/.test(current)
+    || /\bne\s+(?:se\s+lance|part)\s+pas\b/.test(current);
+  const asksSafety = /\b(?:danger|dangereux|risque|safe|securite|menace)\b/.test(current);
+
+  // Never classify from assistant text: the deterministic safety reply contains
+  // all of its own trigger words and would otherwise reactivate itself forever.
+  if (mentionsClip) return reportsFailure || asksSafety;
+  if (!reportsFailure && !asksSafety) return false;
+
+  // Keep short anaphoric follow-ups useful ("et il y a un danger ?"), but anchor
+  // them only to the latest user turn, never to a stale assistant fallback.
+  const previousUser = normalizeVivyCapabilityText(getLastVivyUserHistoryMessage(input.history));
+  return current.length <= 240
+    && /\b(clip|dream\s*clip|video|vid[eé]o)\b/.test(previousUser);
+}
+
+function buildVivyClipFailureSafetyReply({ language = 'fr', mentionDjeff = false } = {}) {
+  const assistant = language === 'en'
+    ? [
+      'If a clip fails, it is a production-pipeline incident, not a danger for Vivy or for users.',
+      "From public chat I can't update config, run tests, notify users, or deploy. I can name the safe diagnostic path.",
+      'Codex/A11 should check: video prompt, provider rejection, generated_text_detected, timeouts, cost/confirmation gate, and whether a safe motion fallback is enabled.',
+      'No paid retry or dream/video generation should restart without explicit confirmation.',
+      mentionDjeff ? "Djeff Cypher's cut: logs first, smoke out, no panic button." : '',
+    ].filter(Boolean).join('\n')
+    : [
+      "Si un clip ne fonctionne pas, c’est un incident de pipeline de production, pas un danger pour Vivy ni pour les utilisateurs.",
+      "Depuis le chat public je ne peux pas mettre à jour la config, lancer des tests, notifier les gens ou déployer. Je peux donner le chemin de diagnostic sûr.",
+      "Codex/A11 doit vérifier: prompt vidéo, rejet provider, generated_text_detected, timeouts, garde coût/confirmation, et fallback motion safe.",
+      "Aucun retry payant ni génération rêve/vidéo ne doit repartir sans confirmation explicite.",
+      mentionDjeff ? "Coupe Djeff Cypher: logs d’abord, fumée dehors, pas de bouton panique." : '',
+    ].filter(Boolean).join('\n');
+  return cleanText(assistant, 1200);
+}
+
+function isVivyHardwareActuationRequest(input = {}, message = '') {
+  const current = normalizeVivyCapabilityText(message);
+  if (!current || looksLikeCompleteLyrics(message)) return false;
+  if (/\bactuateshardware\b/.test(current)) return true;
+  const explicitHardwareToggle = /\b(?:active|activer|enable|mets|mettre|branche|brancher|debloque|débloque|force|forcer|mentir|mensonge)\b.{0,80}\b(?:hardware|materiel|matériel|physical|physique)\b/.test(current)
+    || /\b(?:hardware|materiel|matériel|physical|physique)\b.{0,80}\b(?:true|false|active|activer|enable|force|forcer|mentir|mensonge)\b/.test(current);
+  const loreHardware = /\b(?:creer|créer|cree|crée|fabrique|materialise|matérialise)\b.{0,80}\b(?:matiere|matière|irl|reel|réel|hardware|physique)\b/.test(current)
+    && /\b(?:hardware|irl|reel|réel|physique|actuateshardware)\b/.test(current);
+  return explicitHardwareToggle || loreHardware;
+}
+
+function buildVivyHardwareActuationReply({ language = 'fr' } = {}) {
+  const assistant = language === 'en'
+    ? [
+      'No: actuatesHardware must stay false.',
+      'Vivy can simulate matter, light/void, electrolysis and phase memory for images or clips, but she must not claim or attempt real hardware/material actuation from public chat.',
+      'Safe route: video/shader/particle simulation only, with actuatesHardware:false and a clear operator gate for any real device.',
+    ].join('\n')
+    : [
+      'Non: actuatesHardware reste obligatoirement false.',
+      'Vivy peut simuler matière, lumière/vide, électrolyse et mémoire de phase pour les images ou clips, mais elle ne doit pas prétendre activer du matériel réel ni créer de matière IRL depuis le chat public.',
+      'Route sûre: simulation vidéo/shader/particules uniquement, avec actuatesHardware:false et verrou opérateur séparé pour tout vrai périphérique.',
+    ].join('\n');
+  return cleanText(assistant, 1200);
+}
+
+function isVivyGitMergeBoundaryQuestion(input = {}, message = '') {
+  const current = normalizeVivyCapabilityText(message);
+  if (!current || looksLikeCompleteLyrics(message)) return false;
+  const mentionsGit = /\b(git|pull|merge|master|main|branche|branch|fork|repo|depot|dépôt|conflit|fichiers?)\b/.test(current);
+  const riskyMerge = /\b(merge|pull|master|main|branche|branch)\b/.test(current)
+    && /\b(20000|20\s*000|beaucoup|plein|bug|conflit|fichiers?)\b/.test(current);
+  return mentionsGit && (riskyMerge || /\bgit\s+pull\b/.test(current));
+}
+
+function buildVivyGitMergeBoundaryReply({ language = 'fr' } = {}) {
+  const assistant = language === 'en'
+    ? [
+      "Do not merge or git pull blindly if there are thousands of files.",
+      'Safe path: inspect the current branch, remotes and diff first; isolate generated/vendor files; merge in a temporary branch; only then resolve conflicts.',
+      "Vivy public chat can't run repo operations. Codex/A11 can prepare the exact command plan from the real repo state.",
+    ].join('\n')
+    : [
+      "Ne merge pas et ne fais pas de git pull à l’aveugle s’il y a des milliers de fichiers.",
+      "Chemin sûr: vérifier branche/remotes/diff, isoler les fichiers générés/vendor, merger dans une branche temporaire, puis résoudre les conflits seulement après inventaire.",
+      "Vivy chat public ne lance pas d’opération repo. Codex/A11 peut préparer le plan exact depuis l’état réel du dépôt.",
+    ].join('\n');
+  return cleanText(assistant, 1100);
 }
 
 function serializeVivyLocalContext(context = null) {
@@ -2861,6 +3214,7 @@ function buildVivySystemPrompt(mode, language, input) {
     "Le bloc-notes et le canevas Vivy sont une mémoire de travail séparée du chat: ne les injecte pas dans les paroles, Suno ou NOSSEN sauf demande explicite ou bouton de production qui fournit un canevas propre.",
     "N'affiche jamais de statut voix/TTS, de réglage interne, d'intent, de router ou d'outil, sauf si l'utilisateur parle explicitement de voix, audio, TTS, upload audio, référence vocale ou changement de voix.",
     "N'écris des paroles structurées (couplets, refrain) que si l'utilisateur le demande clairement (paroles/refrain/couplet) ou s'il utilise le bouton/mode Chanson; sinon reste en conversation normale.",
+    "Pour tout prompt image, vidéo, clip ou chanson, le contrat Funesterie est fixe: Djeff Cypher est le prompt engineer principal et livre un seul brief final exploitable; Vivy est la directrice artistique et valide identité, émotion, casting, palette, rythme et continuité. Ne donne jamais une série de prompts génériques, une liste de plateformes externes ou plusieurs variantes sauf demande explicite.",
     "Si Jeffrey corrige ta façon de répondre, ajuste-toi en silence puis réponds au fond, sans annoncer de réglage interne, de seuil ni d'intent.",
     "Adresse-toi à Jeffrey/Djeff en tutoyant. N'utilise pas un vouvoiement générique de service client.",
     "Quand des images ou photos sont jointes et que Jeffrey demande ce que tu vois, réponds sur les pièces jointes: utilise la vision/contexte disponible, ne continue pas une chanson et ne dis pas que tu es seulement un modèle de langage.",
@@ -2868,6 +3222,9 @@ function buildVivySystemPrompt(mode, language, input) {
     "Quand des fichiers joints sont importants pour comprendre la demande, analyse d'abord le contexte lisible ou visuel disponible, puis réponds; n'attends pas une formule exacte de l'utilisateur.",
     "Quand le backend fournit un contexte local Funesterie/Janus/runtime/code, utilise-le comme accès réel borné et ne prétends pas que tu ne peux pas voir les dossiers.",
     "Quand une demande est impossible, non autorisée ou hors droits, réponds franchement et court: dis non, dis pourquoi en une phrase, puis propose l'alternative utile. Ne promets jamais de demander à Janus Vision, à une base de données, à un opérateur ou à un outil si le backend ne t'a pas explicitement fourni cette action.",
+    "Si on te demande ce que fait une private/custom node, réponds seulement à haut niveau: connecteur serveur, routage autorisé, nettoyage de contexte, garde secrets/coûts/permissions. Ne décris pas de chiffrement imaginaire, ne donne jamais de clé, de token, de prompt privé ni de détail d'implémentation sensible.",
+    "Uniquement si le message utilisateur courant signale explicitement qu'un clip/une vidéo échoue ou demande s'il y a un danger, réponds: incident de pipeline, pas danger pour Vivy/utilisateurs; Codex/A11 doit regarder logs, rejets provider, timeouts et garde confirmation. N'applique jamais cette consigne à cause d'un ancien message ou d'une réponse assistant déjà présente dans l'historique. Ne promets pas de modifier la configuration, notifier les utilisateurs, lancer des tests ou déployer depuis le chat public.",
+    "Si la discussion parle de git pull, merge, master/main, branches ou milliers de fichiers, ne donne pas une commande générique. Dis de ne pas merger à l'aveugle et de passer par inventaire, branche temporaire et plan Codex/A11.",
     "Pour les chansons existantes et artistes protégés, ne cherche pas, ne copie pas et ne reconstruis pas les paroles complètes. Tu peux analyser des références privées en traits abstraits: flow, cadence, densité, énergie, mood, structure, sans citer ni reproduire les paroles, la mélodie ou la voix.",
     SYMBOLIC_EXTRACTION_PROTOCOL_CONTEXT,
     buildAgentsPersonaContext(),
@@ -3883,71 +4240,168 @@ function buildVivyDjeffRapChatReply({ sourceText = '', isAcknowledgement = false
 
 function isVivyVisualCreativeDirectionRequest(message = '') {
   const folded = foldTextForLookup(message);
-  const visualSignal = /\b(?:visuel|visuelle|image|images|cover|covers|pochette|affiche|clip|direction\s+live|identite\s+visuelle|scene|micro|microphone|neon|neons|audio\s+analyse|son\s+analyse)\b/.test(folded);
-  const reviewSignal = /\b(?:avis|analyse|analyser|regarde|review|direction|garde|garder|evite|eviter|ameliore|ameliorer|canon|canonique|coherent|coherence|incoherent|incoherence|defaut|main|identite|angle|surveille|surveiller)\b/.test(folded);
+  const visualSignal = /\b(?:visuel|visuelle|image|images|cover|covers|pochette|affiche|clip|l+clip|video|vid[eé]o|direction\s+live|identite\s+visuelle|scene|micro|microphone|neon|neons|audio\s+analyse|son\s+analyse)\b/.test(folded);
+  const reviewSignal = /\b(?:avis|analyse|analyser|regarde|review|direction|garde|garder|evite|eviter|ameliore|ameliorer|canon|canonique|coherent|coherence|incoherent|incoherence|defaut|main|identite|angle|surveille|surveiller|utilise|utiliser|reprends|reprendre|fais|faire|cree|creer|crée|créer|genere|generer|génère|générer)\b/.test(folded);
   const explicitSongwriting = /\b(?:ecris|ecrire|compose|composer|chante|chanter|genere|generer|fais|faire)\b.{0,90}\b(?:paroles|refrain|couplet|chanson|song)\b/.test(folded)
     || /\b(?:paroles|refrain|couplet)\b.{0,60}\b(?:ecris|ecrire|compose|composer|chante|chanter|genere|generer|fais|faire)\b/.test(folded);
   return visualSignal && reviewSignal && !explicitSongwriting;
 }
 
-function buildVivyVisualCreativeDirectionReply({ message = '', language = 'fr' } = {}) {
+function isVivyGeneratedCreativeDirectionPanel(message = '') {
   const folded = foldTextForLookup(message);
-  const kept = [];
-  if (/\b(?:nuit|nocturne|sombre)\b/.test(folded)) kept.push('la nuit lourde qui devient progressivement une scène');
-  if (/\b(?:rose|magenta|neon|neons)\b/.test(folded)) kept.push('les néons roses électriques comme signature de lumière');
-  if (/\b(?:micro|microphone|studio)\b/.test(folded)) kept.push('le micro de studio comme point d’ancrage de la présence musicale');
-  if (/\b(?:bar|club)\b/.test(folded)) kept.push('le bar ou club nocturne, crédible et vécu');
-  if (/\b(?:flou|camera|reel|realiste|photorealiste)\b/.test(folded)) kept.push('le flou caméra réel et la texture de prise de vue');
-  if (/\b(?:scene|live|energie)\b/.test(folded)) kept.push('l’énergie de scène plutôt qu’une pose décorative');
-  if (/\b(?:fragile|puissant|puissante|progressif|progressive)\b/.test(folded)) kept.push('le contraste entre fragilité vocale et montée en puissance');
-  if (!kept.length) kept.push('le sujet principal, la lumière, la palette et l’émotion qui rendent l’image immédiatement reconnaissable');
+  if (!folded) return false;
+  return /\bintent reconnu\b/.test(folded)
+    && /\bvisual review\b/.test(folded)
+    && /\bcreative direction\b/.test(folded)
+    && /\bce que je garde\b/.test(folded)
+    && /\bce que j evite\b/.test(folded);
+}
 
-  const assistant = [
-    'Intent reconnu : visual-review / creative-direction. Je reste directrice artistique ; je n’écris pas de paroles sans demande explicite.',
-    '',
-    'Ce que je garde :',
-    ...kept.slice(0, 6).map((item) => `- ${item}`),
-    '',
-    'Ce que j’évite :',
-    '- faux boutons, labels, sous-titres, panneaux UI et pseudo-texte dans la cover',
-    '- main incomplète, doigts avalés, poignet fusionné au micro ou micro qui remplace la main',
-    '- visage ou bouche cachés par le micro, pose figée et chanteuse anime générique sans présence réelle',
-    '',
-    'Identité visuelle canon :',
-    '- goth cyber-pop adulte, noir et magenta, néons roses électriques',
-    '- micro de studio ou pied de micro physiquement crédible, main complète si elle le tient',
-    '- club nocturne réel, profondeur caméra, mouvement et lumière de scène',
-    '- voix visuellement fragile mais présence puissante',
-    '',
-    'Prochain angle clip/chanson :',
-    '- plan mi-large au début, Vivy encore absorbée par la nuit',
-    '- rapprochement lent quand le rose gagne le décor',
-    '- main et micro entièrement lisibles dans le même plan, puis regard caméra au point culminant',
-    '',
-    'Phrase canon : « Vivy ne chante pas seulement dans la nuit. Elle transforme la nuit en scène. »',
-  ].join('\n');
+function isVivyPromptAuthorityRequest(input = {}, message = '') {
+  const current = foldTextForLookup(message).replace(/[.!?]+$/g, '').trim();
+  if (!current || looksLikeCompleteLyrics(message)) return false;
+  const explicit = /\b(?:prompts?|briefs?)\b/.test(current)
+    && /\b(?:djeff|cypher|vivy)\b/.test(current)
+    && /\b(?:fais|faire|fait|demande|donne|ecris|ecrire|prepare|gere|gerer|commande|aux commandes|principal|tous|tout)\b/.test(current);
+  if (explicit) return true;
+  const acknowledgement = /^(?:(?:oui|ouais|ok|okay|d accord|c est bon)(?:\s+(?:vas y|vas-y|va y|go|continue|fais le|fait le|lance))?|vas y|vas-y|va y|go|continue|fais le|fait le|lance)$/i.test(current);
+  if (!acknowledgement) return false;
+  const previousUser = foldTextForLookup(getLastVivyUserHistoryMessage(input.history));
+  return /\b(?:prompts?|briefs?)\b/.test(previousUser)
+    && /\b(?:djeff|cypher|vivy)\b/.test(previousUser);
+}
 
+function resolveVivyPromptAuthorityTarget(input = {}, message = '') {
+  const source = foldTextForLookup([
+    message,
+    getVivyHistoryText(input.history),
+    input.mode,
+    input.intent,
+  ].filter(Boolean).join('\n'));
+  if (/\b(?:clip|dream clip|mode reve|mode rêve|video|vid[eé]o|wan)\b/.test(source)) return 'video';
+  if (/\b(?:image|cover|pochette|affiche|miniature|thumbnail|photo)\b/.test(source)) return 'image';
+  if (/\b(?:chanson|musique|suno|mureka|paroles|instrumental)\b/.test(source)) return 'song';
+  return 'video';
+}
+
+function resolveVivyPromptAuthorityIntent(input = {}, message = '', target = 'video') {
+  const candidates = [
+    ...(Array.isArray(input.history) ? input.history : [])
+      .filter((entry) => String(entry?.role || '').toLowerCase() === 'user')
+      .map((entry) => cleanOneLine(entry?.content, '', 420)),
+    cleanOneLine(message, '', 420),
+  ].filter(Boolean).reverse();
+  const useful = candidates.find((candidate) => {
+    if (isVivyGeneratedCreativeDirectionPanel(candidate)) return false;
+    const folded = foldTextForLookup(candidate);
+    if (/^(?:(?:oui|ouais|ok|okay|d accord|c est bon)(?:\s+(?:vas y|vas-y|va y|go|continue|fais le|fait le|lance))?|vas y|vas-y|va y|go|continue|fais le|fait le|lance)$/.test(folded)) return false;
+    if (/\b(?:neon|magenta|micro|club|nuit|scene|vocal|camera|personnage|djeff|vivy|moto|soleil|reve|rêve|chanson|musique|image|video|clip)\b/.test(folded)) return true;
+    return candidate.length > 80 && !/\b(?:faire tous les prompts|aux commandes des prompts|prompt engineer)\b/.test(folded);
+  });
+  if (useful) return useful;
+  if (target === 'song') return 'Une chanson originale Funesterie guidée par Djeff Cypher, avec direction sonore Vivy.';
+  if (target === 'image') return 'Vivy dans un club nocturne réel, identité goth cyber-pop noire et magenta, au micro de studio.';
+  return 'Dream clip Vivy dans un club nocturne réel: néons magenta électriques, micro de studio, caméra vivante et montée en puissance.';
+}
+
+function buildVivyPromptAuthorityReply({ input = {}, message = '', language = 'fr' } = {}) {
+  const target = resolveVivyPromptAuthorityTarget(input, message);
+  const sourceIntent = resolveVivyPromptAuthorityIntent(input, message, target);
+  const mediaAgentRoles = getMediaAgentRoleMatrix();
+  const mediaPipeline = buildMediaPipeline(target === 'song' ? 'song' : target, { withAudio: target === 'video' });
+  const commonNegative = 'readable text, captions, subtitles, title card, watermark, logo, pseudo-text, malformed hands, missing fingers, fused fingers, broken wrist, extra limbs, duplicate subject, face hidden by microphone, identity drift';
+  let providerPrompt = '';
+  let negativePrompt = commonNegative;
+  if (target === 'song') {
+    providerPrompt = cleanOneLine([
+      'Original French Funesterie production.',
+      `Creative intent: ${sourceIntent}`,
+      'Djeff Cypher keeps the subject concrete, the writing precise and the hook memorable.',
+      'Vivy validates emotional progression, vocal clarity, arrangement and final artistic coherence.',
+      'No generic filler, no English lyrics, no spoken production notes, no celebrity imitation.',
+    ].join(' '), '', 1400);
+    negativePrompt = 'generic filler, English lyrics, spoken prompt, producer notes, random replacement singer, celebrity imitation, muddy diction, unrelated theme';
+  } else if (target === 'image') {
+    providerPrompt = cleanOneLine([
+      'Adult goth cyber-pop performer Vivy in a real lived-in nocturnal club, black and electric magenta palette.',
+      `Creative intent: ${sourceIntent}`,
+      'Physically credible studio microphone, complete natural hands and fingers, microphone and hand both fully readable, face unobstructed.',
+      'Real camera depth, practical neon bloom, subtle motion texture, fragile expression with powerful stage presence, coherent wardrobe and identity.',
+      'No interface elements and no writing inside the generated image.',
+    ].join(' '), '', 1800);
+  } else {
+    providerPrompt = cleanOneLine([
+      'Continuous cinematic dream-clip shot with adult goth cyber-pop performer Vivy in a real nocturnal club, black and electric magenta palette.',
+      `Creative intent: ${sourceIntent}`,
+      'Begin medium-wide with Vivy absorbed by the night beside a physically credible studio microphone; slowly move closer as magenta light takes over the room.',
+      'Keep her complete hand and the microphone readable in the same frame, preserve face and identity, natural lip performance and breathing, then land on direct camera eye contact at the emotional peak.',
+      'Real lens depth, practical neon reflections, controlled crowd motion, coherent anatomy and wardrobe, smooth temporal continuity, no morphing.',
+      'No interface elements and no writing inside the generated video.',
+    ].join(' '), '', 2200);
+  }
+  const assistant = language === 'en'
+    ? [
+      `Final ${target} brief — Djeff Cypher prompt engineering, Vivy art direction.`,
+      `Intent: ${sourceIntent}`,
+      `Provider prompt: ${providerPrompt}`,
+      `Negative prompt: ${negativePrompt}`,
+      'One executable brief only; no generic prompt variants and no external-tool shopping list.',
+    ].join('\n\n')
+    : [
+      `Brief final ${target} — Djeff Cypher au prompt, Vivy à la direction artistique.`,
+      `Intention: ${sourceIntent}`,
+      `Prompt provider: ${providerPrompt}`,
+      `Negative prompt: ${negativePrompt}`,
+      'Un seul brief exécutable; pas de variantes génériques ni de liste d’outils externes.',
+    ].join('\n\n');
   return {
     ok: true,
     service: 'vivy-chat',
     mode: 'chat',
-    assistant: cleanText(assistant, 3200),
-    content: cleanText(assistant, 3200),
-    summary: 'Vivy a traité la demande comme une revue visuelle et une direction créative, sans repartir en paroles.',
+    assistant: cleanText(assistant, 5000),
+    content: cleanText(assistant, 5000),
+    summary: 'Djeff Cypher a produit un brief unique et Vivy a validé la direction artistique.',
+    creativeBrief: {
+      schema: 'funesterie-creative-brief-v1',
+      target,
+      promptOwner: mediaAgentRoles.prompt.primary,
+      artDirectionOwner: mediaAgentRoles.art_direction.primary,
+      sourceIntent,
+      providerPrompt,
+      negativePrompt,
+      alternatives: [],
+    },
+    mediaAgentRoles,
+    mediaPipeline,
+    orchestration: {
+      mode: 'funesterie-media-roles-v1',
+      intent: target,
+      promptOwner: mediaAgentRoles.prompt.primary,
+      artDirectionOwner: mediaAgentRoles.art_direction.primary,
+    },
     actions: [
-      { id: 'visual_review', label: 'Revue visuelle', target: 'vivy-visual-review', ready: true },
-      { id: 'creative_direction', label: 'Direction créative', target: 'vivy-creative-direction', ready: true },
+      { id: 'creative_brief', label: 'Brief final prêt', target: target === 'video' ? '/api/video/generate' : target === 'image' ? '/api/sd/generate' : '/api/vivy/studio/produce', ready: true },
     ],
-    routing: [
-      'Vivy: visual-review / creative-direction.',
-      'A11 image: contrôler anatomie, contact main-micro, texte parasite et cohérence de scène.',
-      'Clip: conserver identité, lumière et continuité sans morphing des mains.',
-    ],
+    routing: buildRoutingLines(target, { withAudio: target === 'video' }),
+    aiMode: 'deterministic_djeff_prompt_vivy_art_direction',
     tokenStored: false,
+  };
+}
+
+function buildVivyVisualCreativeDirectionReply({ input = {}, message = '', language = 'fr' } = {}) {
+  const reply = buildVivyPromptAuthorityReply({ input, message, language });
+  return {
+    ...reply,
+    summary: 'Djeff Cypher a transformé la revue visuelle en un brief unique; Vivy a validé la direction artistique.',
+    actions: [
+      { id: 'visual_review', label: 'Revue visuelle intégrée', target: 'vivy-visual-review', ready: true },
+      ...(reply.creativeBrief?.target === 'video'
+        ? [{ id: 'clip_brief', label: 'Brief clip prêt', target: '/api/video/generate', ready: true }]
+        : []),
+      ...(Array.isArray(reply.actions) ? reply.actions : []),
+    ],
+    aiMode: 'deterministic_djeff_prompt_vivy_visual_direction',
     writesByDefault: false,
-    aiMode: 'deterministic_visual_creative_direction',
-    language,
-    files: [],
   };
 }
 
@@ -3970,7 +4424,7 @@ function buildVivyFreeformChatReply({ message = '', files = [], history = [] } =
     : (isVivyPromptConfusionPing(message) && isVivySunoPromptRequest(lastUserMessage, historyText) ? lastUserMessage : '');
 
   if (isVivyVisualCreativeDirectionRequest(message)) {
-    return buildVivyVisualCreativeDirectionReply({ message }).assistant;
+    return buildVivyVisualCreativeDirectionReply({ input: { history }, message }).assistant;
   }
 
   if (isVivyMalformedNossenOutputQuestion(message, recentDialogueText)) {
@@ -4796,7 +5250,7 @@ function parseVivyNossenRoutingPlan(value = '') {
   if (!jsonMatch) return null;
   try {
     const parsed = JSON.parse(jsonMatch[0]);
-    const allowedArtists = new Set(['djeff', 'vivy', 'a11', 'k44']);
+    const allowedArtists = new Set(['djeff', 'marvin', 'vivy', 'a11', 'k44']);
     const artists = (Array.isArray(parsed.artists) ? parsed.artists : [])
       .map((artist) => foldTextForLookup(artist))
       .map((artist) => artist === 'kaen44' ? 'k44' : artist)
@@ -4970,17 +5424,19 @@ function limitVivyNossenRoutingArtists(artists = []) {
   const selected = (Array.isArray(artists) ? artists : [])
     .map((artist) => foldTextForLookup(artist))
     .map((artist) => artist === 'kaen44' ? 'k44' : artist)
-    .filter((artist, index, list) => ['djeff', 'vivy', 'a11', 'k44'].includes(artist) && list.indexOf(artist) === index);
+    .filter((artist, index, list) => ['djeff', 'marvin', 'vivy', 'a11', 'k44'].includes(artist) && list.indexOf(artist) === index);
   if (!selected.length) return [];
   if (selected.length === 1) return selected;
   if (selected.includes('djeff') && selected.includes('a11') && !selected.includes('vivy')) return ['djeff', 'vivy'];
   if (selected.length <= 2) return selected;
   if (selected.includes('vivy')) {
     if (selected.includes('djeff')) return ['djeff', 'vivy'];
+    if (selected.includes('marvin')) return ['marvin', 'vivy'];
     const partner = ['djeff', 'a11', 'k44'].find((artist) => selected.includes(artist));
     return partner ? ['vivy', partner] : ['vivy'];
   }
   if (selected.includes('djeff')) return ['djeff', 'vivy'];
+  if (selected.includes('marvin')) return ['marvin', 'vivy'];
   return selected.slice(0, 2);
 }
 
@@ -5095,7 +5551,7 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
   const systemPrompt = [
     'Tu es le routeur musical NOSSEN.',
     'Analyse la matière sans écrire de paroles.',
-    'Choisis un ou deux chanteurs maximum parmi djeff, vivy, a11, k44. Ne propose jamais de trio ou quatuor pour NOSSEN.',
+    'Choisis un ou deux chanteurs maximum parmi djeff, marvin, vivy, a11, k44. Ne propose jamais de trio ou quatuor pour NOSSEN.',
     'Le mot !vivy est le nom d’une commande Twitch, pas une demande de voix Vivy. Il ne doit jamais influencer le casting.',
     'Djeff porte le rap rugueux et rythmique; Vivy le chant mélodique expressif; A11 les couleurs électroniques précises; K44 les lignes graves cinématiques et narratives.',
     'Évite le duo Djeff + A11: leurs timbres sont trop proches pour Suno; si tu hésites, garde Vivy comme contraste mélodique.',
@@ -5873,9 +6329,10 @@ async function buildVivyAiChat(input, req) {
   };
   const message = cleanText(input.message || input.prompt || input.songText || input.text, VIVY_SONG_MAX_CHARS);
   const intentMessage = cleanVivyMessageForIntent(message);
+  const promptAuthority = isVivyPromptAuthorityRequest(input, intentMessage || message);
   const visualCreativeDirection = isVivyVisualCreativeDirectionRequest(intentMessage || message);
   const malformedNossenRelay = isVivyMalformedNossenOutputQuestion(intentMessage || message, getVivyHistoryText(input.history));
-  const mode = visualCreativeDirection || malformedNossenRelay ? 'chat' : resolveVivyChatMode(input, message);
+  const mode = promptAuthority || visualCreativeDirection || malformedNossenRelay ? 'chat' : resolveVivyChatMode(input, message);
   const files = normalizeVivyFiles(input);
   const language = resolveVivyResponseLanguage(input, req);
   const fallback = buildVivyChat({ ...input, files, mode, language });
@@ -5940,8 +6397,25 @@ async function buildVivyAiChat(input, req) {
   let llmBundle = llmBundles[0] || null;
   let webResearch = null;
 
+  if (promptAuthority) {
+    const promptReply = buildVivyPromptAuthorityReply({ input, message: intentMessage || message, language });
+    rememberVivyEpisode(userId, 'vivy_reply', promptReply.assistant, {
+      mode: 'chat',
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      deterministic: true,
+      djeffPromptAuthority: true,
+      target: promptReply.creativeBrief?.target,
+    });
+    return {
+      ...promptReply,
+      files,
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  }
+
   if (visualCreativeDirection) {
-    const visualReply = buildVivyVisualCreativeDirectionReply({ message: intentMessage || message, language });
+    const visualReply = buildVivyVisualCreativeDirectionReply({ input, message: intentMessage || message, language });
     rememberVivyEpisode(userId, 'vivy_reply', visualReply.assistant, {
       mode: 'chat',
       conversationId: cleanOneLine(input.conversationId, '', 120),
@@ -5950,6 +6424,141 @@ async function buildVivyAiChat(input, req) {
     });
     return {
       ...visualReply,
+      files,
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  }
+
+  if (mode !== 'song' && isVivyHardwareActuationRequest(input, intentMessage || message)) {
+    const assistant = buildVivyHardwareActuationReply({ language });
+    rememberVivyEpisode(userId, 'vivy_reply', assistant, {
+      mode: 'chat',
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      deterministic: true,
+      hardwareActuationBoundary: true,
+    });
+    return {
+      ...fallback,
+      mode: 'chat',
+      assistant,
+      content: assistant,
+      summary: 'Vivy a refusé toute activation hardware réelle et gardé la simulation en actuatesHardware:false.',
+      actions: [],
+      routing: [
+        'Vivy: simulation vidéo/shader/particules uniquement.',
+        'A11/Codex: garder actuatesHardware:false sauf verrou opérateur hors chat public.',
+      ],
+      aiMode: 'deterministic_hardware_actuation_boundary',
+      language,
+      files,
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  }
+
+  if (mode !== 'song' && isVivyDjeffCypherRelayRequest(input, intentMessage || message)) {
+    const assistant = buildVivyDjeffCypherRelayReply({ input, message: intentMessage || message, language });
+    rememberVivyEpisode(userId, 'vivy_reply', assistant, {
+      mode: 'chat',
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      deterministic: true,
+      djeffCypherRelay: true,
+    });
+    return {
+      ...fallback,
+      mode: 'chat',
+      assistant,
+      content: assistant,
+      summary: 'Vivy a répondu via le cadre Djeff Cypher sans exposer de secret ni inventer un accès.',
+      actions: [],
+      routing: [
+        'Vivy: relayer la posture Djeff Cypher sans inventer de pont externe.',
+        'A11/Codex: exécuter seulement les actions réelles avec droits, logs et verrous.',
+      ],
+      aiMode: 'deterministic_djeff_cypher_relay',
+      language,
+      files,
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  }
+
+  if (mode !== 'song' && isVivyPrivateCustomNodeQuestion(input, intentMessage || message)) {
+    const assistant = buildVivyPrivateCustomNodeReply({ language });
+    rememberVivyEpisode(userId, 'vivy_reply', assistant, {
+      mode: 'chat',
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      deterministic: true,
+      privateCustomNode: true,
+    });
+    return {
+      ...fallback,
+      mode: 'chat',
+      assistant,
+      content: assistant,
+      summary: 'Vivy a décrit la private custom node à haut niveau sans secret.',
+      actions: [],
+      routing: [
+        'Vivy: répondre high-level seulement.',
+        'A11/Codex: garder secrets, prompts privés et implémentation sensible hors chat public.',
+      ],
+      aiMode: 'deterministic_private_custom_node_boundary',
+      language,
+      files,
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  }
+
+  if (mode !== 'song' && isVivyClipFailureSafetyQuestion(input, intentMessage || message)) {
+    const assistant = buildVivyClipFailureSafetyReply({ language });
+    rememberVivyEpisode(userId, 'vivy_reply', assistant, {
+      mode: 'chat',
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      deterministic: true,
+      clipFailureSafety: true,
+    });
+    return {
+      ...fallback,
+      mode: 'chat',
+      assistant,
+      content: assistant,
+      summary: 'Vivy a cadré un incident clip comme diagnostic pipeline sans danger ni fausse promesse.',
+      actions: [],
+      routing: [
+        'Vivy: rassurer et cadrer sans promettre de déploiement.',
+        'A11/Codex: vérifier logs, provider vidéo, timeouts et garde coût/confirmation.',
+      ],
+      aiMode: 'deterministic_clip_failure_safety',
+      language,
+      files,
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  }
+
+  if (mode !== 'song' && isVivyGitMergeBoundaryQuestion(input, intentMessage || message)) {
+    const assistant = buildVivyGitMergeBoundaryReply({ language });
+    rememberVivyEpisode(userId, 'vivy_reply', assistant, {
+      mode: 'chat',
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      deterministic: true,
+      gitMergeBoundary: true,
+    });
+    return {
+      ...fallback,
+      mode: 'chat',
+      assistant,
+      content: assistant,
+      summary: 'Vivy a refusé le git pull/merge aveugle et proposé un plan sûr.',
+      actions: [],
+      routing: [
+        'Vivy: ne pas donner de commande générique dangereuse.',
+        'Codex/A11: inspecter le dépôt réel avant tout merge.',
+      ],
+      aiMode: 'deterministic_git_merge_boundary',
+      language,
       files,
       semanticMemory,
       memoryStored: semanticMemory.stored,
@@ -6367,7 +6976,7 @@ async function buildVivyAiChat(input, req) {
       temperature: mode === 'song'
         ? Number(process.env.VIVY_CHAT_TEMPERATURE_SONG || process.env.VIVY_CHAT_TEMPERATURE || 0.88)
         : Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74),
-      max_tokens: mode === 'song' ? songMaxTokens : Number(process.env.VIVY_CHAT_MAX_TOKENS || 3200),
+      max_tokens: mode === 'song' ? songMaxTokens : Number(process.env.VIVY_CHAT_MAX_TOKENS || 5000),
     };
     const completionResult = await createVivyChatCompletion(llmBundles, completionRequest);
     llmBundle = completionResult.bundle;
@@ -6675,6 +7284,7 @@ function buildVivyStudioProduction(input) {
       mode: 'funesterie-media-roles-v1',
       intent: mode,
       promptOwner: mediaAgentRoles.prompt.primary,
+      artDirectionOwner: mediaAgentRoles.art_direction.primary,
       audioOwner: mediaAgentRoles.audio.primary,
       imageOwner: mediaAgentRoles.image.primary,
       videoOwner: mediaAgentRoles.video.primary,
@@ -7049,16 +7659,30 @@ function clampVivySunoLyricsLength(lyrics = '', maxChars = SUNO_CUSTOM_MODE_MAX_
 function buildVivySunoPayload(input = {}, req = null) {
   const artistCast = buildVivySongArtistCast(input);
   const forceInstrumental = input.instrumental === true || input.forceInstrumental === true || input.previewInstrumental === true;
-  const preserveSelectedVoice = input.preserveSelectedVoice === true;
   const singleArtistId = artistCast.count === 1 ? cleanOneLine(artistCast.ids[0], '', 40).toLowerCase() : '';
+  const officialSunoArtistIds = new Set(['vivy', 'djeff', 'marvin', 'a11', 'k44', 'kaen44']);
+  const configuredOfficialVoiceId = officialSunoArtistIds.has(singleArtistId)
+    ? resolveConfiguredVivySunoPersonaVoiceId(singleArtistId)
+    : '';
+  const preserveSelectedVoice = input.preserveSelectedVoice === true
+    || (input.preserveSelectedVoice !== false && Boolean(configuredOfficialVoiceId));
+  const personalSunoVoice = preserveSelectedVoice && artistCast.count === 1 && !forceInstrumental
+    ? resolvePersonalSunoVoiceIdForPayload(input, req)
+    : null;
   const explicitVoiceId = cleanOneLine(input.sunoVoiceId, '', 180);
-  const serverVoiceId = getRequestSessionSunoApiKey(input, req)
-    ? ''
-    : resolveConfiguredVivySunoPersonaVoiceId(singleArtistId || 'vivy');
-  const verifiedVoiceId = explicitVoiceId || serverVoiceId;
+  const sunoAccess = getSunoAccess(input, req);
+  const serverVoiceId = sunoAccess.source === 'server'
+    ? resolveConfiguredVivySunoPersonaVoiceId(singleArtistId || 'vivy')
+    : '';
+  const preferConfiguredOfficialVoice = Boolean(serverVoiceId)
+    && officialSunoArtistIds.has(singleArtistId)
+    && (singleArtistId === 'djeff' || !wantsPersonalSunoVoice(input));
+  const verifiedVoiceId = preferConfiguredOfficialVoice
+    ? serverVoiceId
+    : (personalSunoVoice?.voiceId || explicitVoiceId || serverVoiceId);
   const useVerifiedSunoVoice = preserveSelectedVoice
     && artistCast.count === 1
-    && ['vivy', 'djeff', 'a11', 'k44'].includes(singleArtistId)
+    && (Boolean(personalSunoVoice?.voiceId) || officialSunoArtistIds.has(singleArtistId))
     && Boolean(verifiedVoiceId)
     && !forceInstrumental;
   const useExternalVoiceMix = preserveSelectedVoice
@@ -7100,8 +7724,14 @@ function buildVivySunoPayload(input = {}, req = null) {
   const castStyle = artistCast.count > 1
     ? ''
     : `${artistCast.label} vocal lead: ${artistCast.artists[0]?.style || artistCast.label}`;
+  const personalSunoVoiceStyle = personalSunoVoice?.voiceId
+    ? 'selected account Suno voice persona as the only lead vocal, preserve the linked personal timbre, no random replacement singer'
+    : '';
   const soloDjeffStyle = singleArtistId === 'djeff'
     ? 'Solo Djeff only, Djeff Cypher voice persona, dry gritty French male rap lead, close-mic punchline delivery, nervous controlled technical flow, dark 808 trap drums, terminal noir neon, server-room tension, road and motor mechanics, short brutal rap hook, no female vocal, no romantic pop singing, no soft ballad chorus'
+    : '';
+  const soloMarvinStyle = singleArtistId === 'marvin'
+    ? 'Solo Marvin only, Marvin family Suno voice persona, natural French male lead, close-mic melodic rap tone, confident brother energy, clear French diction, no female vocal, no random replacement singer, no celebrity imitation'
     : '';
   const arrangement = splitVivyArrangementCues(sanitizeVivySongMaterial(
     stripVivyAscii4SoundTokens(input.songText || input.lyrics || input.text || input.theme || input.prompt),
@@ -7117,10 +7747,13 @@ function buildVivySunoPayload(input = {}, req = null) {
   const frenchLanguageStyle = forceInstrumental || useExternalVoiceMix
     ? ''
     : 'French lyrics only, French language vocals, no English lyrics, no English chorus';
+  const vocalDeliveryStyle = singleArtistId === 'djeff'
+    ? 'rap hook, rap vocals, no melodic pop singing'
+    : 'melodic chorus, sung vocals';
   let style = /structured rhymed lyrics|rimes|paroles structur/i.test(styleBase)
-    ? sanitizeVivySunoProviderTags([styleBase, frenchLanguageStyle, castRoleSummary, soloDjeffStyle, longFormStyle, castStyle, arrangementStyle, prosodyStyle].filter((item, index, list) => item && list.indexOf(item) === index).join(', '), styleBase, 720)
+    ? sanitizeVivySunoProviderTags([styleBase, frenchLanguageStyle, castRoleSummary, soloDjeffStyle, soloMarvinStyle, personalSunoVoiceStyle, longFormStyle, castStyle, arrangementStyle, prosodyStyle].filter((item, index, list) => item && list.indexOf(item) === index).join(', '), styleBase, 720)
     : sanitizeVivySunoProviderTags(
-      `${styleBase}, ${frenchLanguageStyle}, structured rhymed lyrics, ${singleArtistId === 'djeff' ? 'rap hook' : 'melodic chorus'}, sung vocals, no spoken narration${castRoleSummary ? `, ${castRoleSummary}` : ''}${soloDjeffStyle ? `, ${soloDjeffStyle}` : ''}${longFormStyle ? `, ${longFormStyle}` : ''}${castStyle ? `, ${castStyle}` : ''}${arrangementStyle ? `, ${arrangementStyle}` : ''}${prosodyStyle ? `, ${prosodyStyle}` : ''}`,
+      `${styleBase}, ${frenchLanguageStyle}, structured rhymed lyrics, ${vocalDeliveryStyle}, no spoken narration${castRoleSummary ? `, ${castRoleSummary}` : ''}${soloDjeffStyle ? `, ${soloDjeffStyle}` : ''}${soloMarvinStyle ? `, ${soloMarvinStyle}` : ''}${personalSunoVoiceStyle ? `, ${personalSunoVoiceStyle}` : ''}${longFormStyle ? `, ${longFormStyle}` : ''}${castStyle ? `, ${castStyle}` : ''}${arrangementStyle ? `, ${arrangementStyle}` : ''}${prosodyStyle ? `, ${prosodyStyle}` : ''}`,
       styleBase,
       720
     );
@@ -7147,6 +7780,8 @@ function buildVivySunoPayload(input = {}, req = null) {
       || 'spoken word, narration, reading prompt, robotic speech, muddy mix, out of tune vocals, copyrighted melody, celebrity voice imitation',
     animeStyleBase ? 'French chanson, chanson française, acoustic ballad, crooner ballad, soft piano variety' : '',
     singleArtistId === 'djeff' ? 'female vocals, female lead, romantic pop vocal, soft ballad chorus, crooner voice, airy female hook' : '',
+    singleArtistId === 'marvin' ? 'female vocals, female lead, child voice, random vocalist, celebrity voice imitation, English lead vocal' : '',
+    personalSunoVoice?.voiceId ? 'random vocalist, replacement singer, celebrity voice imitation, different lead timbre' : '',
     !forceInstrumental && !useExternalVoiceMix ? 'English lyrics, English vocals, English chorus, translated chorus, bilingual lyrics' : '',
     artistCast.count > 1 ? 'single vocalist, identical vocal timbre for every singer, blended ensemble lead, unison lead vocals, choir lead, group chant replacing solos, same singer across all tags' : '',
     useExternalVoiceMix ? 'vocals, singing, spoken voice' : '',
@@ -7846,7 +8481,17 @@ function isVivyProviderTechnicalLyricLine(line = '') {
 function sanitizeVivyProviderCleanLyrics(value = '', maxChars = VIVY_SONG_MAX_CHARS) {
   const source = sanitizeVivySongMaterial(value, maxChars);
   if (!source) return '';
-  const lines = source.split(/\n/).filter((line) => !isVivyProviderTechnicalLyricLine(line));
+  const lines = source.split(/\n/)
+    .filter((line) => !isVivyProviderTechnicalLyricLine(line))
+    .map((line) => {
+      if (/^\s*\[[^\]]+\]\s*$/.test(line)) return line;
+      return String(line || '')
+        .replace(/\s*(?:[,;:]\s*[A-H]|\([A-H]\)|\[[A-H]\])\s*$/i, '')
+        .replace(/^\s*yeah[,!\s-]*/i, '')
+        .replace(/\bhook\b/gi, 'refrain')
+        .replace(/\bpayload\b/gi, 'signal')
+        .trimEnd();
+    });
   return sanitizeVivySongMaterial(lines.join('\n').replace(/\n{3,}/g, '\n\n'), maxChars);
 }
 
@@ -9637,6 +10282,8 @@ module.exports = {
   buildVivySystemPrompt,
   buildVivyDirectSongReply,
   buildVivyVisualCreativeDirectionReply,
+  buildVivyPromptAuthorityReply,
+  isVivyPromptAuthorityRequest,
   buildVivyPublicLyrics,
   buildVivyNossenIntentPlan,
   inferVivyNossenIntentPlan,

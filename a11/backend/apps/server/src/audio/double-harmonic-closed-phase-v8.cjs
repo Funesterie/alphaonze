@@ -47,6 +47,9 @@ const V8_PRESET = 'v8-fermeture-1024-mg-phase-c7-k3';
 const V8_PLUS_PRESET = 'v8-plus-e2-grain-1024-mg-phase-c7-k3';
 const V8_PIVOT_PRESET = 'v8-pivot-1024-pivot-0292-mg-phase-c7-k3';
 const V9_TURBO_PRESET = 'v9-turbo-pivot-1024-vocal-safe-99ms-k3';
+const V9_ELECTROLYSIS_MIN_HZ = 40.26;
+const V9_ELECTROLYSIS_MAX_HZ = 40.62;
+const V9_ELECTROLYSIS_CENTER_HZ = (V9_ELECTROLYSIS_MIN_HZ + V9_ELECTROLYSIS_MAX_HZ) / 2;
 const DEFAULT_V8_FRAME_MS = 250;
 const DEFAULT_V8_MAX_SEGMENTS = 2400;
 const DEFAULT_V8_CURVE = 'grain-6d7d8d';
@@ -76,9 +79,9 @@ const V9_TURBO_TRANSITION = Object.freeze({
 const V9_ELECTROLYSIS_GUITAR_MODULATION = Object.freeze({
   mode: 'electrolysis-guitar',
   enabled: true,
-  frequencyHz: D40_SOURCE_N,
-  frequencyMinHz: D40_SOURCE_N,
-  frequencyMaxHz: D40_SOURCE_N,
+  frequencyHz: V9_ELECTROLYSIS_CENTER_HZ,
+  frequencyMinHz: V9_ELECTROLYSIS_MIN_HZ,
+  frequencyMaxHz: V9_ELECTROLYSIS_MAX_HZ,
   amount: 0.042,
   irregularity: 0.36,
   asymmetry: 0.27,
@@ -781,8 +784,8 @@ function resolveV9TurboModulationConfig(options = {}) {
     ?? options.frequencyHighHz
     ?? options.electrolysisMaxHz
     ?? options.waterMaxHz;
-  const parsedMin = clampNumber(rawMin, 0.05, 120, frequencyHz);
-  const parsedMax = clampNumber(rawMax, 0.05, 120, frequencyHz);
+  const parsedMin = clampNumber(rawMin, 0.05, 120, base.frequencyMinHz);
+  const parsedMax = clampNumber(rawMax, 0.05, 120, base.frequencyMaxHz);
   const frequencyMinHz = Math.min(parsedMin, parsedMax);
   const frequencyMaxHz = Math.max(parsedMin, parsedMax);
   return {

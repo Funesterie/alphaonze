@@ -80,6 +80,8 @@ import {
   deleteVoiceLearningCorpus,
   uploadVoiceLearningSnippet,
   queueVoiceLearningTraining,
+  linkPersonalSunoVoice,
+  unlinkPersonalSunoVoice,
   uploadTtsVoiceReference,
   processDoubleHarmonicAudio,
   saveRemoteProviderProfile,
@@ -590,6 +592,14 @@ function isGeneralTermsRoute() {
   return isLocalSurfaceHost(hostname) && /^\/terms(?:\/|$)/.test(pathname);
 }
 
+function isGeneralMilleFleursRoute() {
+  const { hostname, pathname } = getLocationSnapshot();
+  if (isGeneralFunesterieHost(hostname)) {
+    return /^\/mille-fleurs(?:\/|$)/.test(pathname);
+  }
+  return isLocalSurfaceHost(hostname) && /^\/mille-fleurs(?:\/|$)/.test(pathname);
+}
+
 function isGeneralLoginRoute() {
   const { hostname, pathname } = getLocationSnapshot();
   return isLoginRoute(pathname)
@@ -734,6 +744,7 @@ function getSurfaceLinks() {
       contact: "/contact/",
       privacy: "/privacy/",
       terms: "/terms/",
+      milleFleurs: "/mille-fleurs/",
       vivyPrivacy: "/vivy/privacy",
       vivyTerms: "/vivy/terms",
       qflush: "/k44/cockpit#qflush",
@@ -763,6 +774,7 @@ function getSurfaceLinks() {
     contact: new URL("/contact/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     privacy: new URL("/privacy/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     terms: new URL("/terms/", FUNESTERIE_PUBLIC_APP_URL).toString(),
+    milleFleurs: new URL("/mille-fleurs/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     vivyPrivacy: new URL("/privacy/", VIVY_PUBLIC_APP_URL).toString(),
     vivyTerms: new URL("/terms/", VIVY_PUBLIC_APP_URL).toString(),
     qflush: new URL("/cockpit#qflush", KAEN44_PUBLIC_APP_URL).toString(),
@@ -2218,9 +2230,9 @@ const D40_V7_DEFAULT_INTENSITY = 3;
 const D40_V8_INTENSITY_MIN = 0.1;
 const D40_V8_INTENSITY_MAX = 10;
 const D40_V8_DEFAULT_INTENSITY = 3;
-const D40_V9_ELECTROLYSIS_MIN_HZ = 40.25;
-const D40_V9_ELECTROLYSIS_MAX_HZ = 40.6666666666666;
-const D40_V9_ELECTROLYSIS_MID_HZ = 40.4583333333333;
+const D40_V9_ELECTROLYSIS_MIN_HZ = 40.26;
+const D40_V9_ELECTROLYSIS_MAX_HZ = 40.62;
+const D40_V9_ELECTROLYSIS_MID_HZ = 40.44;
 const D40_V9_ELECTROLYSIS_AMOUNT = 0.042;
 const D40_V9_ELECTROLYSIS_IRREGULARITY = 0.36;
 const D40_V9_ELECTROLYSIS_ASYMMETRY = 0.27;
@@ -2939,6 +2951,7 @@ const VIVY_PUBLIC_CHAT_KEY = "vivy:public-chat:v2";
 const VIVY_PUBLIC_CONVERSATION_ID_KEY = "vivy:conversation-id";
 const VIVY_PUBLIC_VOICE_REFERENCE_KEY = "vivy:voice-reference";
 const VIVY_PRIVATE_REFERENCE_UPLOAD_LIMIT_BYTES = 20 * 1024 * 1024;
+const VIVY_ZEN_UPLOAD_LIMIT_BYTES = 64 * 1024 * 1024;
 const VIVY_VOICE_CATALOG_CONSENT = "voice-catalog-song-v1";
 const VIVY_STUDIO_SONG_MAX_CHARS = 12000;
 const VIVY_PUBLIC_CHAT_MAX_MESSAGES = A11_MAX_HISTORY_MESSAGES;
@@ -3347,9 +3360,26 @@ function isVivyImageFile(file: File | VivyPublicChatFile | null | undefined) {
   return type.startsWith("image/") || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(name);
 }
 
+function isVivyZenFile(file: File | VivyPublicChatFile | null | undefined) {
+  const value = file as any;
+  const type = String(value?.type || value?.contentType || "").toLowerCase().split(";")[0].trim();
+  const name = String(file instanceof File ? file.name : value?.filename || "").toLowerCase();
+  return /\.zen$/i.test(name)
+    || ["application/vnd.funesterie.zen", "application/x-zen", "application/zen"].includes(type);
+}
+
 function describeVivyUploadAnalysis(analysis: any) {
   const payload = analysis && typeof analysis === "object" ? analysis : null;
   if (!payload) return "";
+  if (payload.fileKind === "zen" || payload.parser === "zen_public_header") {
+    const header = payload.publicHeader && typeof payload.publicHeader === "object" ? payload.publicHeader : {};
+    const details = [
+      header.version ? `v${header.version}` : "",
+      header.mode ? String(header.mode) : "",
+      header.cipher ? String(header.cipher) : "",
+    ].filter(Boolean).join(", ");
+    return `Conteneur ZEN reçu${details ? ` (${details})` : ""}; seul le header public a été inspecté, payload opaque non décodé.`;
+  }
   const preview = toUnicodeText(payload.preview, 900);
   if (payload.readableInChatContext && preview) return `Analyse A11/OCR: ${preview}`;
   const parts = [
@@ -3771,11 +3801,12 @@ function limitVivyNossenPublicArtists(artists: VivyStudioArtistId[] = [], source
   if (unique.length <= 2) return unique;
   if (unique.includes("vivy")) {
     if (unique.includes("djeff")) return ["djeff", "vivy"];
-    const partnerPreference: VivyStudioArtistId[] = wantsAnime ? ["djeff", "a11", "k44"] : ["djeff", "k44", "a11"];
+    const partnerPreference: VivyStudioArtistId[] = wantsAnime ? ["djeff", "marvin", "a11", "k44"] : ["djeff", "marvin", "k44", "a11"];
     const partner = partnerPreference.find((artistId) => unique.includes(artistId));
     return partner ? ["vivy", partner] : ["vivy"];
   }
   if (unique.includes("djeff")) return ["djeff", "vivy"];
+  if (unique.includes("marvin")) return ["marvin", "vivy"];
   return unique.slice(0, 2);
 }
 
@@ -3795,9 +3826,10 @@ function inferVivyNossenBangerArtists(source = ""): VivyStudioArtistId[] {
   }
   if (/\bduo|deux\s+voix|2\s+voix\b/.test(folded)) {
     add("vivy");
-    add(/\bk44|kaen44|kaen\b/.test(folded) ? "k44" : "djeff");
+    add(/\bmarvin\b|\bfrere\b|\bbrother\b/.test(folded) ? "marvin" : /\bk44|kaen44|kaen\b/.test(folded) ? "k44" : "djeff");
   }
   if (/\bdjeff\b/.test(folded)) add("djeff");
+  if (/\bmarvin\b|\bfrere\b|\bbrother\b/.test(folded)) add("marvin");
   if (/\bvivy\b|refrain|melodie|mélodie|chant/.test(folded)) add("vivy");
   if (/\ba11\b|alpha/.test(folded)) add("a11");
   if (/\bk44\b|kaen44|kaen\b/.test(folded)) add("k44");
@@ -4036,7 +4068,7 @@ function strengthenVivyNossenSoloSectionLabels(value = "", artists: VivyStudioAr
     foldForLookup(getVivyStudioArtistLabel(artistId)),
     getVivyStudioArtistLabel(artistId),
   ]));
-  const performerTagPattern = /^\s*\[(?:Djeff|Vivy|A11|K44|Duo|Tous)\]\s*$/i;
+  const performerTagPattern = /^\s*\[(?:Djeff|Marvin|Vivy|A11|K44|Duo|Tous)\]\s*$/i;
   const lines = String(value || "").split(/\r?\n/);
   for (let index = 0; index < lines.length; index += 1) {
     const tag = lines[index].trim().match(/^\[([^\]]+)\]$/);
@@ -4463,20 +4495,28 @@ function writeVivySessionSunoKey(value: string) {
   }
 }
 
-type VivyStudioArtistId = "djeff" | "vivy" | "a11" | "k44";
-type VivyStudioVoiceLearningPersona = "djeff" | "vivy" | "a11" | "kaen44" | "personal";
+type VivyStudioArtistId = "djeff" | "marvin" | "vivy" | "a11" | "k44";
+type VivyStudioVoiceLearningPersona = "djeff" | "marvin" | "vivy" | "a11" | "kaen44" | "personal";
 
 const VIVY_STUDIO_ARTISTS: Array<{
   id: VivyStudioArtistId;
   label: string;
   tag: string;
   role: string;
+  aliases?: string[];
 }> = [
   {
     id: "djeff",
     label: "Djeff",
     tag: "[Djeff]",
     role: "couplets rap techniques, grain proche micro, images mécaniques concrètes",
+  },
+  {
+    id: "marvin",
+    label: "Marvin",
+    tag: "[Marvin]",
+    role: "voix frère/famille, lead masculin naturel, refrains rap-chantés",
+    aliases: ["frere", "frère", "brother"],
   },
   {
     id: "vivy",
@@ -4548,6 +4588,22 @@ const VIVY_STUDIO_VOICE_DIRECTORY: Array<{
     statusLabel: "référence prête",
     statusKind: "ready",
     testLine: "K44 pose la ligne calmement, chaque mot tient la route, net et sans forcer.",
+  },
+  {
+    id: "marvin",
+    label: "Marvin / voix frère",
+    shortLabel: "Marvin",
+    ownerLabel: "Compte famille Marvin",
+    persona: "marvin",
+    artistId: "marvin",
+    voiceTool: "Voix Marvin Suno officielle",
+    ttsPersona: "a11",
+    surface: "a11",
+    voiceStyle: "marvin-family-suno-persona",
+    referenceLabel: "voiceId Suno serveur",
+    statusLabel: "Suno lié",
+    statusKind: "ready",
+    testLine: "Marvin prend le relais, voix famille proche du micro, claire et directe.",
   },
   {
     id: "a11",
@@ -4662,7 +4718,11 @@ function normalizeVivyStudioArtists(value: unknown, fallback: VivyStudioArtistId
     .filter((artist) => {
       const id = foldForLookup(artist.id);
       const label = foldForLookup(artist.label);
-      return foldedValues.has(id) || foldedValues.has(label) || (artist.id === "k44" && foldedValues.has("kaen44"));
+      const aliases = new Set((artist.aliases || []).map((alias) => foldForLookup(alias)));
+      return foldedValues.has(id)
+        || foldedValues.has(label)
+        || [...aliases].some((alias) => foldedValues.has(alias))
+        || (artist.id === "k44" && foldedValues.has("kaen44"));
     })
     .map((artist) => artist.id);
   if (selected.length) return selected;
@@ -4827,6 +4887,7 @@ function normalizeVivyStudioVoicePersona(value: unknown, fallback: VivyStudioVoi
   const folded = foldForLookup(value);
   if (folded === "k44" || folded === "kaen44" || folded === "kaen") return "kaen44";
   if (folded === "djeff" || folded === "djeff-rap" || folded === "djeff-officielle" || folded === "djeff-official" || folded === "pignon") return "djeff";
+  if (folded === "marvin" || folded === "frere" || folded === "brother") return "marvin";
   if (folded === "vivy" || folded === "vivi") return "vivy";
   if (folded === "a11" || folded === "alphaonze" || folded === "alpha-onze") return "a11";
   if (folded === "personal" || folded === "ma-voix" || folded === "ma_voix" || folded === "my-voice") return "personal";
@@ -5147,7 +5208,7 @@ function VivyD9DiagnosticsPanel({ prosody }: { prosody: VivyStudioProductionResu
     <section className="vivy-studio-diagnostics vivy-studio-diagnostics--supreme" aria-label="Version audio Vivy">
       <header>
         <span>Version : V9 Électrolyse</span>
-        <small>Même format par défaut · k 3x · 40.25-40.6666666666666 Hz · dynamique 99 ms · pivot 0.292 · 1024</small>
+        <small>Même format par défaut · k 3x · 40.26-40.62 Hz · dynamique 99 ms · pivot 0.292 · 1024</small>
       </header>
       <p>
         Préparation Vivy prête: {segments.length || 1} segment{(segments.length || 1) > 1 ? "s" : ""} calé{(segments.length || 1) > 1 ? "s" : ""}.
@@ -5191,6 +5252,8 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [voiceLearningTranscript, setVoiceLearningTranscript] = useState(String(initialDraft.voiceLearningTranscript || ""));
   const [voiceLearningStatus, setVoiceLearningStatus] = useState<VoiceLearningStatus | null>(null);
   const [voiceLearningMessage, setVoiceLearningMessage] = useState("");
+  const [personalSunoVoiceId, setPersonalSunoVoiceId] = useState("");
+  const [personalSunoVoiceLabel, setPersonalSunoVoiceLabel] = useState(String(initialDraft.personalSunoVoiceLabel || "Ma voix Suno"));
   const [doubleHarmonicFile, setDoubleHarmonicFile] = useState<File | null>(null);
   const [doubleHarmonicFileName, setDoubleHarmonicFileName] = useState("");
   const [doubleHarmonicMode, setDoubleHarmonicMode] = useState<DoubleHarmonicProcessMode>("v9electrolysis");
@@ -5393,6 +5456,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       voiceLearningPersona,
       voiceLearningFileName,
       voiceLearningTranscript,
+      personalSunoVoiceLabel,
       songSource,
       songArtists,
       songCastingAuto,
@@ -5404,7 +5468,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       tokenPresent: Boolean(shareToken.trim()),
       vivyOutput: normalizeVivyStudioOutputForState(vivyOutput),
     });
-  }, [activeMode, voiceTool, voiceInstruction, voiceFileName, voiceReferenceId, selectedCatalogVoiceId, catalogVoiceName, publishVoiceToCatalog, catalogConsentAccepted, voiceLearningPersona, voiceLearningFileName, voiceLearningTranscript, songSource, songArtists, songCastingAuto, songMood, songText, shareTarget, shareUrl, shareInstruction, shareToken, vivyOutput]);
+  }, [activeMode, voiceTool, voiceInstruction, voiceFileName, voiceReferenceId, selectedCatalogVoiceId, catalogVoiceName, publishVoiceToCatalog, catalogConsentAccepted, voiceLearningPersona, voiceLearningFileName, voiceLearningTranscript, personalSunoVoiceLabel, songSource, songArtists, songCastingAuto, songMood, songText, shareTarget, shareUrl, shareInstruction, shareToken, vivyOutput]);
 
   useEffect(() => {
     writeVivySessionSunoKey(sunoSessionKey);
@@ -5443,6 +5507,10 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const voiceLearningProgressLabel = voiceLearningStatus
     ? `${Math.round(Number(voiceLearningStatus.secondsCollected || 0))}s/${Math.round(Number(voiceLearningStatus.requiredSeconds || 0))}s, ${Number(voiceLearningStatus.clipCount || 0)} extrait${Number(voiceLearningStatus.clipCount || 0) > 1 ? "s" : ""}`
     : "statut non chargé";
+  const personalSunoVoiceLinked = voiceLearningPersona === "personal" && voiceLearningStatus?.sunoVoiceLinked === true;
+  const personalSunoVoiceStatusLabel = voiceLearningStatus?.sunoVoiceLinked
+    ? `Suno lié: ${voiceLearningStatus.sunoVoiceLabel || "voix personnelle"} (${voiceLearningStatus.sunoVoiceIdMask || "id masqué"})`
+    : "Suno non lié";
 
   useEffect(() => {
     if (!hasSession) {
@@ -5906,6 +5974,66 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     }
   }
 
+  async function savePersonalSunoVoiceSlot() {
+    if (!hasSession) {
+      setStatus("Connexion requise pour lier une voix Suno personnelle.");
+      return;
+    }
+    const voiceId = personalSunoVoiceId.trim();
+    if (!voiceId) {
+      setStatus("Colle d'abord le voiceId Suno à lier à ton compte.");
+      return;
+    }
+    setIsBusy(true);
+    setVoiceLearningMessage("Liaison voix Suno personnelle...");
+    try {
+      const result = await linkPersonalSunoVoice(voiceId, {
+        persona: "personal",
+        label: personalSunoVoiceLabel.trim() || "Ma voix Suno",
+      });
+      setVoiceLearningPersona("personal");
+      setVoiceLearningStatus(result);
+      setPersonalSunoVoiceId("");
+      const message = result.sunoVoiceIdMask
+        ? `Voix Suno personnelle liée (${result.sunoVoiceIdMask}).`
+        : "Voix Suno personnelle liée.";
+      setVoiceLearningMessage(message);
+      setStatus(message);
+    } catch (error: any) {
+      const message = `Liaison voix Suno impossible: ${error?.message || error}`;
+      setVoiceLearningMessage(message);
+      setStatus(message);
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function removePersonalSunoVoiceSlot() {
+    if (!hasSession) {
+      setStatus("Connexion requise pour retirer une voix Suno personnelle.");
+      return;
+    }
+    const confirmed = window.confirm("Retirer la voix Suno personnelle liée à ce compte ?");
+    if (!confirmed) return;
+    setIsBusy(true);
+    setVoiceLearningMessage("Retrait voix Suno personnelle...");
+    try {
+      const result = await unlinkPersonalSunoVoice();
+      setVoiceLearningPersona("personal");
+      setVoiceLearningStatus(result);
+      setPersonalSunoVoiceId("");
+      const message = "Voix Suno personnelle retirée de ce compte.";
+      setVoiceLearningMessage(message);
+      setStatus(message);
+    } catch (error: any) {
+      const message = `Retrait voix Suno impossible: ${error?.message || error}`;
+      setVoiceLearningMessage(message);
+      setStatus(message);
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function resetVoiceLearningCorpus() {
     if (!hasSession) {
       setStatus("Connexion requise pour retirer un corpus voix.");
@@ -6250,6 +6378,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         voiceReferenceName: activeCatalogVoiceName || voiceFileName,
         voiceCatalogName: activeCatalogVoiceName || undefined,
         voiceCatalogConsent: activeCatalogVoice ? VIVY_VOICE_CATALOG_CONSENT : undefined,
+        voiceLearningPersona,
+        sunoVoiceScope: personalSunoVoiceLinked ? "personal" : undefined,
+        usePersonalSunoVoice: personalSunoVoiceLinked,
         songSource,
         songArtists,
         vocalCast: activeSongArtistCast.label,
@@ -6698,6 +6829,46 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     ))}
                   </select>
                 </label>
+                {voiceLearningPersona === "personal" ? (
+                  <fieldset className="vivy-studio-consent-fieldset">
+                    <legend>Voix Suno personnelle</legend>
+                    <p className="vivy-studio-voice-summary">
+                      {personalSunoVoiceStatusLabel}. Un compte Premium, Fondateur ou Famille peut garder 1 voix Suno privée.
+                    </p>
+                    <label>
+                      Nom interne
+                      <input
+                        id="vivy-studio-personal-suno-label"
+                        name="personalSunoVoiceLabel"
+                        value={personalSunoVoiceLabel}
+                        disabled={!hasSession || isBusy}
+                        onChange={(event) => setPersonalSunoVoiceLabel(event.target.value)}
+                        placeholder="Ex: Ma voix Suno"
+                      />
+                    </label>
+                    <label>
+                      voiceId Suno
+                      <input
+                        id="vivy-studio-personal-suno-id"
+                        name="personalSunoVoiceId"
+                        value={personalSunoVoiceId}
+                        disabled={!hasSession || isBusy}
+                        onChange={(event) => setPersonalSunoVoiceId(event.target.value)}
+                        placeholder="Ex: 15596961dc4e06197678c9111924d00f"
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                    </label>
+                    <div className="vivy-studio-actions vivy-studio-actions--voice">
+                      <button type="button" onClick={savePersonalSunoVoiceSlot} disabled={!hasSession || isBusy || !personalSunoVoiceId.trim()}>
+                        {personalSunoVoiceLinked ? "Remplacer voiceId Suno" : "Lier voiceId Suno"}
+                      </button>
+                      <button type="button" onClick={removePersonalSunoVoiceSlot} disabled={!hasSession || isBusy || !personalSunoVoiceLinked}>
+                        Retirer voiceId
+                      </button>
+                    </div>
+                  </fieldset>
+                ) : null}
                 <label>
                   Extrait source
                   <input
@@ -7946,7 +8117,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     }
     if (isSending || isVideoGenerating) return;
     const workspace = readVivyStudioCompositionWorkspace();
-    const idea = toUnicodeText([draft.trim(), workspace.canvas].filter(Boolean).join("\n\n"), 3200).trim();
+    const rawDraftText = toUnicodeText(draft.trim(), 900).trim();
+    const idea = toUnicodeText([rawDraftText, workspace.canvas].filter(Boolean).join("\n\n"), 3200).trim();
     const filesForMessage = attachedFiles.slice(0, 6);
     const referenceImageUrls = resolveVivyClipReferenceImageUrls(filesForMessage);
     if (!idea && !filesForMessage.length) {
@@ -7958,9 +8130,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     const userMessage: VivyPublicChatMessage = {
       id: `vivy-image-user-${Date.now()}`,
       role: "user",
-      content: idea
-        ? `Générer une image Vivy: ${toUnicodeText(idea, 900)}`
-        : "Générer une image Vivy depuis l'image de référence jointe.",
+      content: rawDraftText
+        || (workspace.canvas ? "Image Vivy demandée depuis le canevas Studio." : "Image Vivy demandée depuis l'image de référence jointe."),
       ts: now,
       files: filesForMessage.length ? filesForMessage : undefined,
     };
@@ -8027,7 +8198,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     }
     if (isSending || isVideoGenerating) return;
     const workspace = readVivyStudioCompositionWorkspace();
-    const idea = toUnicodeText([draft.trim(), workspace.canvas].filter(Boolean).join("\n\n"), 3200).trim();
+    const rawDraftText = toUnicodeText(draft.trim(), 900).trim();
+    const idea = toUnicodeText([rawDraftText, workspace.canvas].filter(Boolean).join("\n\n"), 3200).trim();
     const filesForMessage = attachedFiles.slice(0, 6);
     const referenceImageUrls = resolveVivyClipReferenceImageUrls(filesForMessage);
     if (!idea && !filesForMessage.length) {
@@ -8047,9 +8219,10 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     const userMessage: VivyPublicChatMessage = {
       id: `${options.dream ? "vivy-dream-user" : "vivy-clip-user"}-${Date.now()}`,
       role: "user",
-      content: idea
-        ? `${options.dream ? "Générer un clip rêve animé" : "Générer un clip vidéo"}: ${toUnicodeText(idea, 900)}`
-        : `${options.dream ? "Générer un clip rêve animé" : "Générer un clip vidéo"} depuis l'image de référence jointe.`,
+      content: rawDraftText
+        || (workspace.canvas
+          ? `${options.dream ? "Clip rêve" : "Clip vidéo"} demandé depuis le canevas Studio.`
+          : `${options.dream ? "Clip rêve" : "Clip vidéo"} demandé depuis l'image de référence jointe.`),
       ts: now,
       files: filesForMessage.length ? filesForMessage : undefined,
     };
@@ -8603,6 +8776,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     for (const file of selected) {
       const textPreview = await readVivyFileTextPreview(file);
       const isImage = isVivyImageFile(file);
+      const isZen = isVivyZenFile(file);
       const baseFile: VivyPublicChatFile = {
         id: `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
         filename: toUnicodeLine(file.name, "fichier", 180),
@@ -8614,12 +8788,22 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         uploadState: "local",
       };
 
+      if (isZen && file.size > VIVY_ZEN_UPLOAD_LIMIT_BYTES) {
+        nextFiles.push({
+          ...baseFile,
+          description: "Conteneur ZEN trop lourd pour l’upload Vivy (64 Mo maximum). Le fichier reste local au navigateur.",
+          uploadError: "zen_file_too_large",
+          storageBackend: "browser-local",
+        });
+        continue;
+      }
+
       try {
         const upload = await uploadConversationFile(file, {
           conversationId,
           surface: "vivy",
-          storagePreference: isImage ? "server-local" : "session-drive",
-          preferExternalStorage: !isImage,
+          storagePreference: isImage || isZen ? "server-local" : "session-drive",
+          preferExternalStorage: !isImage && !isZen,
         });
         const resource = upload.conversationResource || upload.file || null;
         const analysis = upload.analysis || (resource as any)?.metadata?.analysis || null;
@@ -8804,7 +8988,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         {isVideoGenerating && (
           <article className="vivy-chat-message vivy-chat-message--assistant">
             <span>Vivy</span>
-            <p>Je prépare le clip...</p>
+            <p>Rendu en cours — je garde ton prompt brut, le brief technique reste interne.</p>
           </article>
         )}
         <div ref={endRef} aria-hidden="true" />
@@ -8928,7 +9112,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         name="vivyChatFiles"
         ref={fileInputRef}
         type="file"
-        accept="audio/*,image/*,video/*,text/*,.txt,.md,.json,.csv,.srt,.vtt,.pdf"
+        accept="audio/*,image/*,video/*,text/*,application/vnd.funesterie.zen,application/x-zen,.txt,.md,.json,.csv,.srt,.vtt,.pdf,.zen"
         multiple
         onChange={onVivyConversationFileChange}
         hidden
@@ -9682,6 +9866,7 @@ function FunesteriePublicFooter({
       <div className="fun-public-footer-legal" aria-label="Liens légaux Funesterie">
         <a href={surfaceLinks.privacy}>Confidentialité</a>
         <a href={surfaceLinks.terms}>Conditions</a>
+        <a href={surfaceLinks.milleFleurs}>Mille Fleurs</a>
         <a href={surfaceLinks.contact}>Contact</a>
       </div>
       <div className="fun-public-footer-session" aria-label="Session Funesterie">
@@ -12258,6 +12443,59 @@ function FunesterieLegalPage({
   );
 }
 
+function FunesterieMilleFleursPage({
+  surfaceLinks,
+  authenticated = false,
+  displayName = "",
+  onLogout,
+}: {
+  surfaceLinks: SurfaceLinks;
+  authenticated?: boolean;
+  displayName?: string;
+  onLogout?: () => void;
+}) {
+  const blocks = [
+    ["Consentement", "Pas de voix, visage, œuvre, script, image ou identité sans droit clair ou accord de la personne concernée."],
+    ["Traçabilité", "Une contribution utile doit pouvoir être reliée à une fiche, une release, un log ou une note."],
+    ["Crédit", "Le crédit peut être public, privé ou pseudonyme, mais il ne remplace pas un accord de droits."],
+    ["Royalties", "Aucun partage de revenus n'est automatique sans fiche de contribution ou accord validé."],
+    ["Retrait", "Un contributeur peut demander l'arrêt des usages futurs, sous réserve des publications déjà sorties."],
+    ["Anti-fumée", "Pas de secrets, pas de contenu volé, pas d'usurpation, pas de publication majeure sans validation."],
+  ] as const;
+
+  return (
+    <main id="top" className="fun-home-shell fun-public-surface fun-account-shell" aria-label="Charte Mille Fleurs Funesterie">
+      <FunesteriePublicNav surfaceLinks={surfaceLinks} brandLabel="Mille Fleurs" />
+
+      <section className="fun-account-panel" aria-label="Charte Mille Fleurs">
+        <img src={FUNESTERIE_LOGO_SRC} alt="Funesterie" />
+        <div className="fun-account-copy">
+          <h1>Mille Fleurs</h1>
+          <p>La charte des contributions Funesterie : beaucoup de voix, beaucoup d'idées, mais du consentement clair.</p>
+        </div>
+        <div className="fun-account-grid">
+          {blocks.map(([title, text]) => (
+            <article key={title}>
+              <strong>{title}</strong>
+              <span>{text}</span>
+            </article>
+          ))}
+        </div>
+        <p style={{ color: "#cbd5e1", marginTop: 18 }}>
+          Version longue : <a href="/mille-fleurs/">ouvrir la charte complète</a>.
+        </p>
+      </section>
+
+      <FunesteriePublicFooter
+        surfaceLinks={surfaceLinks}
+        authenticated={authenticated}
+        displayName={displayName}
+        onLogout={onLogout}
+      />
+    </main>
+  );
+}
+
 function Kaen44ModulesPanel({
   isCompactLayout,
   onBackToChat,
@@ -13078,6 +13316,7 @@ export function App() {
   const isGeneralContact = isGeneralContactRoute();
   const isGeneralPrivacy = isGeneralPrivacyRoute();
   const isGeneralTerms = isGeneralTermsRoute();
+  const isGeneralMilleFleurs = isGeneralMilleFleursRoute();
   const isGeneralLogin = isGeneralLoginRoute();
   const isFunesteriePublicShell = isGeneralCockpit
     || isGeneralHome
@@ -13087,6 +13326,7 @@ export function App() {
     || isGeneralContact
     || isGeneralPrivacy
     || isGeneralTerms
+    || isGeneralMilleFleurs
     || isGeneralLogin;
   const productName = isVivy ? "Vivy" : isKaen44 ? "K44" : "A11";
   const surfaceLinks = getSurfaceLinks();
@@ -13158,15 +13398,17 @@ export function App() {
                   ? "Funesterie - Confidentialité"
                   : isGeneralTerms
                     ? "Funesterie - Conditions"
-                    : isGeneralLogin
-                      ? "Funesterie - Connexion"
-                      : isVivy
-                        ? "Vivy - Funesterie"
-                        : isKaen44
-                          ? "K44 - Assistante bureau Funesterie"
-                          : "A11 - Alpha Onze Funesterie";
+                    : isGeneralMilleFleurs
+                      ? "Funesterie - Mille Fleurs"
+                      : isGeneralLogin
+                        ? "Funesterie - Connexion"
+                        : isVivy
+                          ? "Vivy - Funesterie"
+                          : isKaen44
+                            ? "K44 - Assistante bureau Funesterie"
+                            : "A11 - Alpha Onze Funesterie";
     // data-surface permet de cibler le thème en CSS sans inline styles
-    document.body.setAttribute('data-surface', (isGeneralCockpit || isGeneralHome || isGeneralAgents || isGeneralArchitecture || isGeneralAccount || isGeneralContact || isGeneralPrivacy || isGeneralTerms || isGeneralLogin) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
+    document.body.setAttribute('data-surface', (isGeneralCockpit || isGeneralHome || isGeneralAgents || isGeneralArchitecture || isGeneralAccount || isGeneralContact || isGeneralPrivacy || isGeneralTerms || isGeneralMilleFleurs || isGeneralLogin) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
     document.documentElement.classList.toggle("funesterie-public-page-root", isFunesteriePublicShell);
     document.body.classList.toggle("funesterie-public-page-body", isFunesteriePublicShell);
 
@@ -13174,7 +13416,7 @@ export function App() {
       document.documentElement.classList.remove("funesterie-public-page-root");
       document.body.classList.remove("funesterie-public-page-body");
     };
-  }, [isFunesteriePublicShell, isGeneralAccount, isGeneralAgents, isGeneralArchitecture, isGeneralCockpit, isGeneralContact, isGeneralHome, isGeneralLogin, isGeneralPrivacy, isGeneralTerms, isKaen44, isVivy]);
+  }, [isFunesteriePublicShell, isGeneralAccount, isGeneralAgents, isGeneralArchitecture, isGeneralCockpit, isGeneralContact, isGeneralHome, isGeneralLogin, isGeneralMilleFleurs, isGeneralPrivacy, isGeneralTerms, isKaen44, isVivy]);
 
   // Audio-blocked banner: listen for autoplay block events
   useEffect(() => {
@@ -13662,6 +13904,7 @@ export function App() {
     isGeneralContact,
     isGeneralHome,
     isGeneralLogin,
+    isGeneralMilleFleurs,
     isGeneralPrivacy,
     isGeneralTerms,
     isKaen44,
@@ -16266,6 +16509,17 @@ export function App() {
       <FunesterieLegalPage
         surfaceLinks={surfaceLinks}
         kind="terms"
+        authenticated={isAuthenticated}
+        displayName={displayName}
+        onLogout={handlePublicLogout}
+      />
+    );
+  }
+
+  if (isGeneralMilleFleurs) {
+    return (
+      <FunesterieMilleFleursPage
+        surfaceLinks={surfaceLinks}
         authenticated={isAuthenticated}
         displayName={displayName}
         onLogout={handlePublicLogout}

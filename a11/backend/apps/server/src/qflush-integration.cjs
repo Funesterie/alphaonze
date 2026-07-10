@@ -23,6 +23,9 @@ const {
   buildQflushRgbaMultiload,
   buildShiryuZenRgba,
 } = require('./qflush-rgba-cube.cjs');
+const {
+  prepareShiryuV3MatterField,
+} = require('./shiryu-v3-matter-bridge.cjs');
 
 // Always available since we have our own implementation
 const qflushAvailable = true;
@@ -906,6 +909,42 @@ function runBuiltInLocalFlow(flow, payload = {}, options = {}) {
         accountTier: payload?.accountTier || payload?.tier,
         admin: options.admin === true || payload?.admin === true,
         priority: payload?.priority,
+      }),
+      flow: normalizedFlow,
+      provider: 'local-qflush-fallback',
+    };
+  }
+  if (normalizedFlow === 'qflush.shiryu.v3.matter.v1') {
+    return {
+      ...prepareShiryuV3MatterField(payload?.input || payload || {}, {
+        engine: payload?.engine || payload?.targetEngine,
+        op: payload?.op,
+        threshold: payload?.threshold,
+        maxParticles: payload?.maxParticles,
+        includeScripts: payload?.includeScripts !== false,
+        autoDetectGpu: payload?.autoDetectGpu === true || payload?.gpu === true,
+        gpu: payload?.gpu === true,
+        includeAtoms: payload?.includeAtoms === true,
+        now: payload?.now || payload?.time || payload?.timestamp,
+        timeBasis: payload?.timeBasis || payload?.basis || payload?.cosmicBasis,
+        instantShift: payload?.instantShift,
+        decorFirst: payload?.decorFirst,
+        bypassForeground: payload?.bypassForeground,
+        gravityBase: payload?.gravityBase,
+        gravityPeak: payload?.gravityPeak,
+        tideMin: payload?.tideMin,
+        tideMax: payload?.tideMax,
+        tideDampingDivisor: payload?.tideDampingDivisor,
+        tideDriftTarget: payload?.tideDriftTarget,
+        physicalElectrolysis: payload?.physicalElectrolysis,
+        lightVacuumFrequency: payload?.lightVacuumFrequency,
+        lightVacuumVibration: payload?.lightVacuumVibration,
+        emotionSource: payload?.emotionSource || payload?.emotions || payload?.emotion || payload?.emotionalTone,
+        emotionSignal: payload?.emotionSignal ?? payload?.emotionalSignal,
+        emotionBalance: payload?.emotionBalance,
+        emotionBalanceEnabled: payload?.emotionBalanceEnabled,
+        emotionBalanceStrength: payload?.emotionBalanceStrength,
+        emotionStrength: payload?.emotionStrength,
       }),
       flow: normalizedFlow,
       provider: 'local-qflush-fallback',

@@ -20,9 +20,10 @@ const DEFAULT_CLOUD_SCENE_COUNT = 8;
 const DEFAULT_INSTRUMENTAL_SCENE_COUNT = 8;
 const DEFAULT_UNIQUE_LOOP_COUNT = 5;
 const DEFAULT_DREAM_CLIP_SCENES = 8;
-const DEFAULT_DREAM_CLIP_MAX_SECONDS = 300;
+const DEFAULT_DREAM_CLIP_MAX_SECONDS = 420;
 const DEFAULT_DREAM_CLIP_MIN_COVERAGE = 0.72;
 const FULL_THROTTLE_LOOP_SECONDS = 8;
+const DEFAULT_DREAM_CLIP_LOOP_SECONDS = 15;
 const DEFAULT_GRID_DEMOSAIC_ORDER = [4, 1, 5, 7, 2, 8];
 const DEFAULT_SOURCE_CROP_WIDTH_RATIO = 0.58;
 const DEFAULT_SOURCE_CROP_X_BIAS = 0.62;
@@ -456,7 +457,7 @@ function resolveTwitchFullClipMode(env = process.env) {
   const maxDurationSeconds = clampNumber(
     env.VIVY_STREAM_DREAMCLIP_MAX_DURATION_SECONDS || env.VIVY_STREAM_FULL_CLIP_MAX_DURATION_SECONDS,
     90,
-    420,
+    600,
     DEFAULT_DREAM_CLIP_MAX_SECONDS
   );
   const explicitStaticFallback = String(env.VIVY_STREAM_DREAMCLIP_ALLOW_STATIC_FALLBACK ?? '').trim();
@@ -497,6 +498,19 @@ function resolveFullClipUniqueLoopCount(env = process.env) {
   return clampNumber(env.VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS, 1, 8, DEFAULT_UNIQUE_LOOP_COUNT);
 }
 
+function resolveTwitchFullClipLoopSeconds(env = process.env, mode = null, overrideValue = null) {
+  const clipMode = mode || resolveTwitchFullClipMode(env);
+  const rawValue = overrideValue
+    || (clipMode.dream ? env.VIVY_STREAM_DREAMCLIP_LOOP_SECONDS : '')
+    || env.VIVY_STREAM_FULL_CLIP_LOOP_SECONDS;
+  return clampNumber(
+    rawValue,
+    2,
+    clipMode.dream ? 15 : 8,
+    clipMode.dream ? DEFAULT_DREAM_CLIP_LOOP_SECONDS : FULL_THROTTLE_LOOP_SECONDS
+  );
+}
+
 function shouldReuseFullClipLoops(env = process.env) {
   const mode = resolveTwitchFullClipMode(env);
   if (mode.dream) {
@@ -512,7 +526,7 @@ function estimateTwitchFullClipCost(env = process.env, overrides = {}) {
   const modeToken = cleanText(overrides.mode, '', 40);
   const clipEnv = modeToken ? { ...env, VIVY_STREAM_FULL_CLIP_MODE: modeToken } : env;
   const mode = resolveTwitchFullClipMode(clipEnv);
-  const loopSeconds = clampNumber(clipEnv.VIVY_STREAM_FULL_CLIP_LOOP_SECONDS, 2, 8, FULL_THROTTLE_LOOP_SECONDS);
+  const loopSeconds = resolveTwitchFullClipLoopSeconds(clipEnv, mode);
   const uniqueLoops = mode.dream
     ? mode.sceneCount
     : clampNumber(clipEnv.VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS, 1, 8, DEFAULT_UNIQUE_LOOP_COUNT);
@@ -1113,6 +1127,15 @@ function resolveTwitchGridDemosaicConfig(env = process.env) {
   };
 }
 
+function shouldUseDreamClipSafeMotionFallback(env = process.env) {
+  const explicit = String(
+    env.VIVY_STREAM_DREAMCLIP_SAFE_FALLBACK
+    ?? env.VIVY_STREAM_FULL_CLIP_DREAM_SAFE_FALLBACK
+    ?? ''
+  ).trim();
+  return explicit ? toBoolean(explicit) : false;
+}
+
 async function probeVideoInfo(videoPath = '', env = process.env) {
   if (!videoPath) throw new Error('video_probe_path_missing');
   const ffprobeBin = resolveFfprobeBinary(env);
@@ -1695,7 +1718,7 @@ async function generateTwitchFullSongClip(input = {}) {
   const width = clampNumber(env.VIVY_STREAM_FULL_CLIP_WIDTH, 320, 1920, 1280);
   const height = clampNumber(env.VIVY_STREAM_FULL_CLIP_HEIGHT, 180, 1080, 720);
   const fps = clampNumber(env.VIVY_STREAM_FULL_CLIP_FPS, 8, 30, 24);
-  const loopSeconds = clampNumber(env.VIVY_STREAM_FULL_CLIP_LOOP_SECONDS, 2, 8, FULL_THROTTLE_LOOP_SECONDS);
+  const loopSeconds = resolveTwitchFullClipLoopSeconds(env, clipMode);
   const explicitSceneLoops = String(env.VIVY_STREAM_FULL_CLIP_GENERATE_SCENE_LOOPS ?? '').trim();
   const shouldGenerateSceneLoops = clipMode.requireSceneGeneration
     ? true
@@ -1753,7 +1776,7 @@ async function prepareTwitchFullSongClip(input = {}) {
   const width = clampNumber(input.width || env.VIVY_STREAM_FULL_CLIP_WIDTH, 320, 1920, 1280);
   const height = clampNumber(input.height || env.VIVY_STREAM_FULL_CLIP_HEIGHT, 180, 1080, 720);
   const fps = clampNumber(input.fps || env.VIVY_STREAM_FULL_CLIP_FPS, 8, 30, 24);
-  const loopSeconds = clampNumber(input.loopSeconds || env.VIVY_STREAM_FULL_CLIP_LOOP_SECONDS, 2, 8, FULL_THROTTLE_LOOP_SECONDS);
+  const loopSeconds = resolveTwitchFullClipLoopSeconds(env, clipMode, input.loopSeconds);
   const explicitSceneLoops = String(env.VIVY_STREAM_FULL_CLIP_GENERATE_SCENE_LOOPS ?? '').trim();
   const shouldGenerateSceneLoops = clipMode.requireSceneGeneration
     ? true
@@ -1767,6 +1790,7 @@ async function prepareTwitchFullSongClip(input = {}) {
   const qualityInspector = input.videoQualityInspector || inspectVideoLoopQuality;
   const concurrency = clampNumber(env.VIVY_STREAM_FULL_CLIP_CONCURRENCY, 1, 3, 2);
   const gridDemosaic = resolveTwitchGridDemosaicConfig(env);
+  const dreamSafeMotionFallback = shouldUseDreamClipSafeMotionFallback(env);
   const loopPlan = buildReusableLoopPlan(storyboard, env);
   const plannedStoryboard = loopPlan.scenes;
   const uniqueScenes = loopPlan.uniqueScenes;
@@ -1821,7 +1845,49 @@ async function prepareTwitchFullSongClip(input = {}) {
             );
           }
         }
-        if (!sceneUrl) continue;
+        if (!sceneUrl) {
+          if (sourceImageUrl && dreamSafeMotionFallback) {
+            const safeLoopPath = path.join(workDir, `${scene.sceneId}-safe-motion.mp4`);
+            try {
+              await createSafeImageMotionLoop({
+                imageUrl: sourceImageUrl,
+                outputPath: safeLoopPath,
+                durationSeconds: loopSeconds,
+                width,
+                height,
+                fps,
+                fetchFn,
+                env,
+              });
+              uniqueLoopVideos.set(scene.loopKey || scene.sceneId, {
+                sceneId: scene.sceneId,
+                loopKey: scene.loopKey || scene.sceneId,
+                path: safeLoopPath,
+                originalPath: safeLoopPath,
+                url: sourceImageUrl,
+                demosaic: null,
+                visualQa: {
+                  ok: true,
+                  rejected: false,
+                  fallbackApplied: true,
+                  fallbackMode: 'clean_cover_motion_after_generation_failure',
+                },
+                videoInfo: await probeVideoInfo(safeLoopPath, env).catch(() => null),
+              });
+              logger.warn?.(
+                '[vivy-full-clip] scene=%s generation unavailable fallback=clean_cover_motion',
+                scene.sceneId
+              );
+            } catch (error) {
+              logger.warn?.(
+                '[vivy-full-clip] scene=%s clean motion fallback failed: %s',
+                scene.sceneId,
+                cleanText(error?.message || error, '', 180)
+              );
+            }
+          }
+          continue;
+        }
         const loopPath = path.join(workDir, `${scene.sceneId}.mp4`);
         await downloadToFile(sceneUrl, loopPath, fetchFn);
         let finalLoopPath = loopPath;
@@ -1849,7 +1915,11 @@ async function prepareTwitchFullSongClip(input = {}) {
           scene,
           logger,
         });
-        if (visualQa?.rejected && sourceImageUrl && clipMode.allowStaticFallback) {
+        if (
+          visualQa?.rejected
+          && sourceImageUrl
+          && (clipMode.allowStaticFallback || (clipMode.dream && dreamSafeMotionFallback))
+        ) {
           const safeLoopPath = path.join(workDir, `${scene.sceneId}-safe-motion.mp4`);
           try {
             await createSafeImageMotionLoop({
@@ -1869,11 +1939,12 @@ async function prepareTwitchFullSongClip(input = {}) {
               fallbackMode: 'clean_cover_motion',
             };
             logger.warn?.(
-              '[vivy-video-qa] scene=%s rejected=%s suspicious=%s strong=%s fallback=clean_cover_motion',
+              '[vivy-video-qa] scene=%s rejected=%s suspicious=%s strong=%s fallback=clean_cover_motion%s',
               scene.sceneId,
               visualQa.reason || 'generated_text_detected',
               visualQa.suspiciousSamples || 0,
-              visualQa.strongSamples || 0
+              visualQa.strongSamples || 0,
+              clipMode.dream ? '_dream_safe' : ''
             );
           } catch (error) {
             logger.warn?.(

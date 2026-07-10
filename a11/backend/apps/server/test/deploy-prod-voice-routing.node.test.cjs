@@ -83,12 +83,17 @@ test('prod deploy preserves Suno persona voice ids across blue-green refreshes',
   const script = readDeployScript();
 
   assert.match(script, /VIVY_SUNO_DJEFF_VOICE_ID\s*=\s*\$\(if \(\$env:VIVY_SUNO_DJEFF_VOICE_ID\)[\s\S]+?\$envMap\["SUNO_DJEFF_VOICE_ID"\][\s\S]+?\$envMap\["A11_SUNO_DJEFF_VOICE_ID"\]/);
+  assert.match(script, /VIVY_SUNO_MARVIN_VOICE_ID\s*=\s*\$\(if \(\$env:VIVY_SUNO_MARVIN_VOICE_ID\)[\s\S]+?\$envMap\["VIVY_SUNO_FRERE_VOICE_ID"\][\s\S]+?\$envMap\["SUNO_MARVIN_VOICE_ID"\][\s\S]+?\$envMap\["A11_SUNO_MARVIN_VOICE_ID"\]/);
   assert.match(script, /VIVY_SUNO_A11_VOICE_ID\s*=\s*\$\(if \(\$env:VIVY_SUNO_A11_VOICE_ID\)[\s\S]+?\$envMap\["SUNO_A11_VOICE_ID"\][\s\S]+?\$envMap\["A11_SUNO_A11_VOICE_ID"\]/);
   assert.match(script, /VIVY_SUNO_K44_VOICE_ID\s*=\s*\$\(if \(\$env:VIVY_SUNO_K44_VOICE_ID\)[\s\S]+?\$envMap\["VIVY_SUNO_KAEN44_VOICE_ID"\][\s\S]+?\$envMap\["SUNO_KAEN44_VOICE_ID"\][\s\S]+?\$envMap\["A11_SUNO_K44_VOICE_ID"\]/);
   assert.match(script, /managed_keys='[^']*VIVY_SUNO_DJEFF_VOICE_ID/);
+  assert.match(script, /managed_keys='[^']*VIVY_SUNO_MARVIN_VOICE_ID/);
+  assert.match(script, /managed_keys='[^']*SUNO_MARVIN_VOICE_ID/);
   assert.match(script, /managed_keys='[^']*SUNO_DJEFF_VOICE_ID/);
   assert.match(script, /managed_keys='[^']*A11_SUNO_DJEFF_VOICE_ID/);
   assert.match(script, /suno_djeff_voice_id="\$\(read_first_env_value VIVY_SUNO_DJEFF_VOICE_ID\)"/);
+  assert.match(script, /suno_marvin_voice_id="\$\(read_first_env_value VIVY_SUNO_MARVIN_VOICE_ID\)"/);
   assert.match(script, /printf 'VIVY_SUNO_DJEFF_VOICE_ID=%s\\n' "\$suno_djeff_voice_id"/);
+  assert.match(script, /printf 'VIVY_SUNO_MARVIN_VOICE_ID=%s\\n' "\$suno_marvin_voice_id"/);
   assert.match(script, /printf 'VIVY_SUNO_KAEN44_VOICE_ID=%s\\n' "\$suno_k44_voice_id"/);
 });

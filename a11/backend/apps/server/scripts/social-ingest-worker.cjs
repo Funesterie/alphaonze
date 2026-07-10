@@ -12,6 +12,7 @@ try {
 }
 
 const {
+  ingestSoundCloudRssFeed,
   ingestYoutubeAccount,
   listSocialAccounts,
   ensureSocialSchema,
@@ -47,6 +48,7 @@ async function runOnce(db) {
   const userId = Object.prototype.hasOwnProperty.call(process.env, 'SOCIAL_CONTEXT_USER_ID')
     ? process.env.SOCIAL_CONTEXT_USER_ID
     : (process.env.VIVY_STREAM_SOCIAL_CONTEXT_USER_ID || '');
+  const safeUserId = userId || 'admin';
   const accounts = await listSocialAccounts(db, { userId });
   const youtubeAccounts = accounts.filter((account) => account.provider === 'youtube' && !account.paused && !account.reconnectRequired);
   const results = [];
@@ -64,6 +66,20 @@ async function runOnce(db) {
     }
   }
   if (!youtubeAccounts.length) console.log('[social-ingest] no active YouTube account');
+  const soundCloudRssUrl = String(process.env.SOCIAL_SOUNDCLOUD_RSS_URL || process.env.SOUNDCLOUD_RSS_URL || '').trim();
+  if (soundCloudRssUrl) {
+    try {
+      const result = await ingestSoundCloudRssFeed(db, {
+        userId: safeUserId,
+        limit: intEnv('SOCIAL_SOUNDCLOUD_RSS_INGEST_LIMIT', 12, 1, 50),
+      });
+      results.push({ userId: safeUserId, provider: 'soundcloud_rss', ok: result.ok === true, result });
+      console.log('[social-ingest] soundcloud_rss user=%s ok=%s items=%s', safeUserId, result.ok === true ? 'true' : 'false', result.items || 0);
+    } catch (error) {
+      results.push({ userId: safeUserId, provider: 'soundcloud_rss', ok: false, error: String(error?.message || error) });
+      console.warn('[social-ingest] soundcloud_rss user=%s error=%s', safeUserId, String(error?.message || error));
+    }
+  }
   return results;
 }
 

@@ -17,6 +17,10 @@ const FUNESTERIE_PUBLIC_PATHS = new Map([
   ['/terms', '/terms/'],
   ['/conditions', '/terms/'],
   ['/cgu', '/terms/'],
+  ['/mille-fleurs', '/mille-fleurs/'],
+  ['/millefleurs', '/mille-fleurs/'],
+  ['/mille_fleurs', '/mille-fleurs/'],
+  ['/charte-mille-fleurs', '/mille-fleurs/'],
   ['/vivy', '/vivy/'],
 ]);
 

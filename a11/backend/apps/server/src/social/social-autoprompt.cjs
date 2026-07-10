@@ -8,6 +8,10 @@ const YOUTUBE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
 const META_AUTH_URL = 'https://www.facebook.com/v22.0/dialog/oauth';
 const META_TOKEN_URL = 'https://graph.facebook.com/v22.0/oauth/access_token';
+const SOUNDCLOUD_AUTH_URL = 'https://secure.soundcloud.com/authorize';
+const SOUNDCLOUD_TOKEN_URL = 'https://secure.soundcloud.com/oauth/token';
+const SOUNDCLOUD_API_BASE = 'https://api.soundcloud.com';
+const DEFAULT_SOCIAL_RSS_ALLOWED_HOSTS = ['feeds.soundcloud.com', 'soundcloud.com', 'www.soundcloud.com'];
 
 const DEFAULT_YOUTUBE_SCOPES = [
   'openid',
@@ -22,6 +26,8 @@ const DEFAULT_META_SCOPES = [
   'pages_read_engagement',
   'instagram_basic',
 ];
+
+const DEFAULT_SOUNDCLOUD_SCOPES = [];
 
 function cleanText(value = '', fallbackOrMax = 2000, maybeMax = undefined) {
   const fallback = typeof fallbackOrMax === 'string' ? fallbackOrMax : '';
@@ -53,6 +59,7 @@ function normalizeProvider(value = '') {
   if (['youtube', 'yt', 'googleyoutube'].includes(normalized)) return 'youtube';
   if (['meta', 'facebook', 'fb', 'instagram', 'ig'].includes(normalized)) return 'meta';
   if (['soundcloud'].includes(normalized)) return 'soundcloud';
+  if (['soundcloudrss', 'soundcloudfeed', 'scrss'].includes(normalized)) return 'soundcloud_rss';
   if (['amazonmusic', 'amazon'].includes(normalized)) return 'amazon_music';
   return '';
 }
@@ -92,6 +99,14 @@ function unique(values = [], max = 20) {
     if (output.length >= max) break;
   }
   return output;
+}
+
+function splitCsv(value = '') {
+  if (Array.isArray(value)) return value.map((entry) => cleanText(entry, 240)).filter(Boolean);
+  return String(value || '')
+    .split(/[,\n]+/g)
+    .map((entry) => cleanText(entry, 240))
+    .filter(Boolean);
 }
 
 function clampNumber(value, fallback = 0, min = 0, max = Number.MAX_SAFE_INTEGER) {
@@ -171,6 +186,33 @@ function resolveProviderConfig(provider, { env = process.env, req = null } = {})
         appId ? '' : 'SOCIAL_META_APP_ID',
         appSecret ? '' : 'SOCIAL_META_APP_SECRET',
         redirectUri ? '' : 'SOCIAL_META_REDIRECT_URI',
+      ].filter(Boolean),
+    };
+  }
+  if (normalized === 'soundcloud') {
+    const redirectUri = firstEnv(env, [
+      'SOCIAL_SOUNDCLOUD_REDIRECT_URI',
+      'SOCIAL_SOUNDCLOUD_CALLBACK_URL',
+      'SOUNDCLOUD_REDIRECT_URI',
+    ]) || `${getBaseUrl(req)}/api/admin/social-connect/soundcloud/callback`;
+    const scopes = splitScopes(firstEnv(env, ['SOCIAL_SOUNDCLOUD_SCOPES', 'SOUNDCLOUD_OAUTH_SCOPES']))
+      .concat(DEFAULT_SOUNDCLOUD_SCOPES);
+    const clientId = firstEnv(env, ['SOCIAL_SOUNDCLOUD_CLIENT_ID', 'SOUNDCLOUD_CLIENT_ID']);
+    const clientSecret = firstEnv(env, ['SOCIAL_SOUNDCLOUD_CLIENT_SECRET', 'SOUNDCLOUD_CLIENT_SECRET']);
+    const envAccessToken = firstEnv(env, ['SOCIAL_SOUNDCLOUD_ACCESS_TOKEN', 'SOUNDCLOUD_ACCESS_TOKEN']);
+    const envRefreshToken = firstEnv(env, ['SOCIAL_SOUNDCLOUD_REFRESH_TOKEN', 'SOUNDCLOUD_REFRESH_TOKEN']);
+    return {
+      provider: 'soundcloud',
+      configured: Boolean(clientId && clientSecret && redirectUri),
+      clientId,
+      clientSecret,
+      redirectUri,
+      scopes: unique(scopes, 16),
+      envTokenConfigured: Boolean(envAccessToken || envRefreshToken),
+      missing: [
+        clientId ? '' : 'SOCIAL_SOUNDCLOUD_CLIENT_ID',
+        clientSecret ? '' : 'SOCIAL_SOUNDCLOUD_CLIENT_SECRET',
+        redirectUri ? '' : 'SOCIAL_SOUNDCLOUD_REDIRECT_URI',
       ].filter(Boolean),
     };
   }
@@ -448,6 +490,9 @@ async function buildSocialAutopromptRedactedStatus(db, { userId = '', env = proc
   const safeUserId = cleanText(userId, 160);
   const youtubeConfig = resolveProviderConfig('youtube', { env, req });
   const metaConfig = resolveProviderConfig('meta', { env, req });
+  const soundCloudConfig = resolveProviderConfig('soundcloud', { env, req });
+  const soundCloudRssUrl = cleanText(env.SOCIAL_SOUNDCLOUD_RSS_URL || env.SOUNDCLOUD_RSS_URL, 1000);
+  const soundCloudRssConfigured = Boolean(soundCloudRssUrl);
 
   if (!db || typeof db.query !== 'function') {
     return {
@@ -461,6 +506,11 @@ async function buildSocialAutopromptRedactedStatus(db, { userId = '', env = proc
       youtubeItemsCount: 0,
       metaConfigured: metaConfig.configured === true,
       metaConnected: false,
+      soundCloudConfigured: soundCloudConfig.configured === true,
+      soundCloudConnected: false,
+      soundCloudEnvTokenConfigured: soundCloudConfig.envTokenConfigured === true,
+      soundCloudRssConfigured,
+      soundCloudRssItemsCount: 0,
       metaPageSelected: false,
       metaAdsRestricted: 'unknown',
       socialPromptContextAvailable: false,
@@ -473,8 +523,10 @@ async function buildSocialAutopromptRedactedStatus(db, { userId = '', env = proc
   const accounts = await listSocialAccounts(db, { userId: safeUserId });
   const youtubeAccount = accounts.find((account) => account.provider === 'youtube') || null;
   const metaAccount = accounts.find((account) => account.provider === 'meta') || null;
+  const soundCloudAccount = accounts.find((account) => account.provider === 'soundcloud') || null;
   const youtubeConnected = isConnectedAccount(youtubeAccount);
   const metaConnected = isConnectedAccount(metaAccount);
+  const soundCloudConnected = isConnectedAccount(soundCloudAccount) || soundCloudConfig.envTokenConfigured === true;
 
   const itemCountsResult = safeUserId
     ? await db.query(`
@@ -490,6 +542,7 @@ async function buildSocialAutopromptRedactedStatus(db, { userId = '', env = proc
     `);
   const itemCounts = countByProvider(itemCountsResult.rows);
   const youtubeItemsCount = itemCounts.youtube || 0;
+  const soundCloudRssItemsCount = itemCounts.soundcloud_rss || 0;
 
   const contextCountResult = safeUserId
     ? await db.query(`
@@ -516,9 +569,11 @@ async function buildSocialAutopromptRedactedStatus(db, { userId = '', env = proc
   const youtubeOAuthConnected = youtubeConnected;
   const youtubeReconnectRequired = youtubeAccount?.reconnectRequired === true;
   const youtubeCachedContextAvailable = youtubeItemsCount > 0;
-  const socialPromptContextAvailable = socialPromptContextCount > 0 || youtubeItemsCount > 0;
+  const socialPromptContextAvailable = socialPromptContextCount > 0 || youtubeItemsCount > 0 || soundCloudRssItemsCount > 0;
   const primaryCreativeSource = youtubeItemsCount > 0
     ? 'youtube'
+    : soundCloudRssItemsCount > 0
+      ? 'soundcloud_rss'
     : socialPromptContextCount > 0
       ? 'social_prompt_context'
       : metaConnected
@@ -534,6 +589,9 @@ async function buildSocialAutopromptRedactedStatus(db, { userId = '', env = proc
   if (youtubeConnected && !youtubeIngestOk) limitations.push('youtube_ingest_not_ready');
   if (!metaConfig.configured) limitations.push('meta_oauth_not_configured');
   if (metaConfig.configured && !metaConnected) limitations.push('meta_not_connected');
+  if (!soundCloudConfig.configured) limitations.push('soundcloud_oauth_not_configured');
+  if (!soundCloudConnected) limitations.push('soundcloud_not_connected');
+  if (soundCloudRssConfigured && soundCloudRssItemsCount <= 0) limitations.push('soundcloud_rss_configured_but_no_items');
   if (metaConnected && !metaPageSelected) limitations.push('meta_connected_but_no_facebook_page_or_instagram_business_link_detected');
   if (metaConnected) limitations.push('meta_ingest_planned_only_for_now');
   if (metaAdsRestricted === 'unknown') limitations.push('meta_ads_status_not_checked_no_ads_scope');
@@ -550,6 +608,11 @@ async function buildSocialAutopromptRedactedStatus(db, { userId = '', env = proc
     youtubeItemsCount,
     metaConfigured: metaConfig.configured === true,
     metaConnected,
+    soundCloudConfigured: soundCloudConfig.configured === true,
+    soundCloudConnected,
+    soundCloudEnvTokenConfigured: soundCloudConfig.envTokenConfigured === true,
+    soundCloudRssConfigured,
+    soundCloudRssItemsCount,
     metaPageSelected,
     metaAdsRestricted,
     socialPromptContextAvailable,
@@ -644,15 +707,114 @@ async function refreshYoutubeAccount(db, account, tokens = {}, env = process.env
   return { ok: true, account: redactAccount({ ...updated, last_refresh_at: new Date().toISOString() }) };
 }
 
+function getSoundCloudEnvTokenBundle({ userId = 'admin', env = process.env } = {}) {
+  const accessToken = firstEnv(env, ['SOCIAL_SOUNDCLOUD_ACCESS_TOKEN', 'SOUNDCLOUD_ACCESS_TOKEN']);
+  const refreshToken = firstEnv(env, ['SOCIAL_SOUNDCLOUD_REFRESH_TOKEN', 'SOUNDCLOUD_REFRESH_TOKEN']);
+  if (!accessToken && !refreshToken) return null;
+  return {
+    envBacked: true,
+    row: {
+      id: 0,
+      user_id: cleanOneLine(userId, 'admin', 160),
+      provider: 'soundcloud',
+      account_label: firstEnv(env, ['SOCIAL_SOUNDCLOUD_ACCOUNT_LABEL', 'SOUNDCLOUD_ACCOUNT_LABEL']) || 'SoundCloud',
+      account_external_id: firstEnv(env, ['SOCIAL_SOUNDCLOUD_ACCOUNT_ID', 'SOUNDCLOUD_ACCOUNT_ID']) || 'env',
+      scopes: splitScopes(firstEnv(env, ['SOCIAL_SOUNDCLOUD_SCOPES', 'SOUNDCLOUD_OAUTH_SCOPES'])),
+      paused: false,
+      reconnect_required: false,
+      status: 'connected',
+      metadata_json: { source: 'env' },
+    },
+    tokens: {
+      provider: 'soundcloud',
+      userId: cleanOneLine(userId, 'admin', 160),
+      accessToken,
+      refreshToken,
+      tokenType: 'OAuth',
+      scope: firstEnv(env, ['SOCIAL_SOUNDCLOUD_SCOPES', 'SOUNDCLOUD_OAUTH_SCOPES']),
+      expiresAt: firstEnv(env, ['SOCIAL_SOUNDCLOUD_EXPIRES_AT', 'SOUNDCLOUD_EXPIRES_AT']),
+      updatedAt: new Date().toISOString(),
+    },
+  };
+}
+
+async function refreshSoundCloudAccount(db, account, tokens = {}, env = process.env, fetchFn = globalThis.fetch) {
+  const refreshToken = cleanText(tokens.refreshToken, 8000);
+  if (!refreshToken) {
+    if (account?.id) await markReconnectRequired(db, account.id, 'refresh_token_missing');
+    return { ok: false, reconnectRequired: true, error: 'refresh_token_missing' };
+  }
+  const config = resolveProviderConfig('soundcloud', { env });
+  if (!config.configured) return { ok: false, error: 'soundcloud_oauth_not_configured', missing: config.missing };
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
+    refresh_token: refreshToken,
+  });
+  const response = await fetchFn(SOUNDCLOUD_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json; charset=utf-8' },
+    body,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (account?.id) await markReconnectRequired(db, account.id, data?.error_description || data?.error || `soundcloud_refresh_http_${response.status}`);
+    return { ok: false, reconnectRequired: true, error: data?.error || `soundcloud_refresh_http_${response.status}` };
+  }
+  const mergedTokens = {
+    ...tokens,
+    access_token: data.access_token || tokens.accessToken,
+    refresh_token: data.refresh_token || tokens.refreshToken,
+    token_type: data.token_type || tokens.tokenType || 'OAuth',
+    expires_in: data.expires_in,
+    scope: data.scope || tokens.scope,
+  };
+  if (!account?.id) {
+    return { ok: true, tokens: mergedTokens, envBacked: true };
+  }
+  const updated = await upsertSocialAccount(db, {
+    userId: account.user_id,
+    provider: 'soundcloud',
+    accountLabel: account.account_label || 'SoundCloud',
+    accountExternalId: account.account_external_id || 'soundcloud',
+    scopes: account.scopes || splitScopes(mergedTokens.scope),
+    tokens: mergedTokens,
+    metadata: {
+      ...(account.metadata_json || {}),
+      refreshedAt: new Date().toISOString(),
+    },
+  }, env);
+  await db.query('UPDATE social_accounts SET last_refresh_at = NOW() WHERE id = $1', [updated.id]);
+  return { ok: true, account: redactAccount({ ...updated, last_refresh_at: new Date().toISOString() }) };
+}
+
 async function getFreshSocialTokens(db, { provider, userId = 'admin' } = {}, env = process.env, fetchFn = globalThis.fetch) {
-  const account = await getSocialAccountWithTokens(db, { provider, userId }, env);
+  const normalizedProvider = normalizeProvider(provider);
+  const account = await getSocialAccountWithTokens(db, { provider: normalizedProvider, userId }, env)
+    || (normalizedProvider === 'soundcloud' ? getSoundCloudEnvTokenBundle({ userId, env }) : null);
   if (!account) return null;
   const expiresAt = account.tokens?.expiresAt ? new Date(account.tokens.expiresAt).getTime() : 0;
   const refreshWindowMs = 10 * 60 * 1000;
-  if (expiresAt && expiresAt - Date.now() < refreshWindowMs && normalizeProvider(provider) === 'youtube') {
+  if (expiresAt && expiresAt - Date.now() < refreshWindowMs && normalizedProvider === 'youtube') {
     const refreshed = await refreshYoutubeAccount(db, account.row, account.tokens, env, fetchFn);
     if (!refreshed.ok) return { ...account, refresh: refreshed };
-    return getSocialAccountWithTokens(db, { provider, userId }, env);
+    return getSocialAccountWithTokens(db, { provider: normalizedProvider, userId }, env);
+  }
+  if (expiresAt && expiresAt - Date.now() < refreshWindowMs && normalizedProvider === 'soundcloud') {
+    if (account.envBacked) {
+      return {
+        ...account,
+        refresh: {
+          ok: false,
+          reconnectRequired: true,
+          error: 'soundcloud_env_token_expiring_reconnect_or_store_refresh_in_vault',
+        },
+      };
+    }
+    const refreshed = await refreshSoundCloudAccount(db, account.row, account.tokens, env, fetchFn);
+    if (!refreshed.ok) return { ...account, refresh: refreshed };
+    return getSocialAccountWithTokens(db, { provider: normalizedProvider, userId }, env);
   }
   return account;
 }
@@ -675,8 +837,238 @@ async function youtubeApi(pathname, accessToken, query = {}, fetchFn = globalThi
   return data;
 }
 
+async function soundCloudApi(pathname, accessToken, { method = 'GET', query = {}, body = undefined, headers = {} } = {}, fetchFn = globalThis.fetch) {
+  const url = new URL(`${SOUNDCLOUD_API_BASE}${pathname}`);
+  for (const [key, value] of Object.entries(query || {})) {
+    if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
+  }
+  const response = await fetchFn(url, {
+    method,
+    headers: {
+      accept: 'application/json; charset=utf-8',
+      authorization: `OAuth ${accessToken}`,
+      ...headers,
+    },
+    body,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data?.error_description || data?.error?.message || data?.message || data?.error || `soundcloud_http_${response.status}`);
+    error.status = response.status;
+    error.data = data;
+    throw error;
+  }
+  return data;
+}
+
+async function getSoundCloudAccountIdentity(accessToken, fetchFn = globalThis.fetch) {
+  const data = await soundCloudApi('/me', accessToken, {}, fetchFn);
+  return {
+    accountExternalId: cleanText(data.id || data.urn || data.permalink || 'soundcloud', 180),
+    accountLabel: cleanText(data.username || data.full_name || 'SoundCloud', 200),
+    metadata: {
+      soundCloudUserId: cleanText(data.id || '', 180),
+      username: cleanText(data.username || '', 200),
+      permalinkUrl: cleanText(data.permalink_url || data.uri || '', 500),
+      connectedAt: new Date().toISOString(),
+    },
+  };
+}
+
+function contentTypeForAudioPath(audioPath = '') {
+  const ext = String(audioPath || '').split('.').pop().toLowerCase();
+  if (ext === 'flac') return 'audio/flac';
+  if (ext === 'mp3') return 'audio/mpeg';
+  if (ext === 'm4a' || ext === 'aac' || ext === 'mp4') return 'audio/mp4';
+  if (ext === 'ogg') return 'audio/ogg';
+  return 'audio/wav';
+}
+
+async function uploadSoundCloudTrack({ accessToken, audioPath, title, description = '', sharing = 'private', genre = '', tagList = '', artworkPath = '' } = {}, fetchFn = globalThis.fetch) {
+  if (!accessToken) throw new Error('soundcloud_access_token_missing');
+  if (!audioPath) throw new Error('soundcloud_audio_path_missing');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const audioBuffer = fs.readFileSync(audioPath);
+  const form = new FormData();
+  form.append('track[title]', cleanOneLine(title || path.basename(audioPath).replace(/\.[^.]+$/, ''), 'Funesterie', 120));
+  form.append('track[sharing]', ['public', 'private'].includes(String(sharing || '').toLowerCase()) ? String(sharing).toLowerCase() : 'private');
+  if (description) form.append('track[description]', cleanText(description, 4000));
+  if (genre) form.append('track[genre]', cleanOneLine(genre, '', 120));
+  if (tagList) form.append('track[tag_list]', cleanText(tagList, 500));
+  if (artworkPath && fs.existsSync(artworkPath)) {
+    const artworkBuffer = fs.readFileSync(artworkPath);
+    form.append('track[artwork_data]', new Blob([artworkBuffer]), path.basename(artworkPath));
+  }
+  form.append('track[asset_data]', new Blob([audioBuffer], { type: contentTypeForAudioPath(audioPath) }), path.basename(audioPath));
+  const data = await soundCloudApi('/tracks', accessToken, {
+    method: 'POST',
+    body: form,
+  }, fetchFn);
+  return {
+    ok: true,
+    provider: 'soundcloud',
+    id: data.id || data.urn || null,
+    title: data.title || cleanOneLine(title, 'Funesterie', 120),
+    permalinkUrl: data.permalink_url || data.uri || '',
+    sharing: data.sharing || sharing,
+    raw: {
+      id: data.id,
+      urn: data.urn,
+      state: data.state,
+      processingState: data.processing_state,
+      permalinkUrl: data.permalink_url,
+    },
+  };
+}
+
 function youtubeWatchUrl(videoId = '') {
   return videoId ? `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}` : '';
+}
+
+function decodeXmlEntities(value = '') {
+  return String(value || '')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, code) => {
+      const number = Number(code);
+      return Number.isFinite(number) ? String.fromCodePoint(number) : _;
+    })
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => {
+      const number = Number.parseInt(code, 16);
+      return Number.isFinite(number) ? String.fromCodePoint(number) : _;
+    });
+}
+
+function extractXmlTag(block = '', tagName = '') {
+  if (!tagName) return '';
+  const match = String(block || '').match(new RegExp(`<${tagName}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tagName}>`, 'i'));
+  return cleanText(decodeXmlEntities(match?.[1] || ''), 5000);
+}
+
+function extractXmlTagAttr(block = '', tagName = '', attrName = '') {
+  if (!tagName || !attrName) return '';
+  const tag = String(block || '').match(new RegExp(`<${tagName}\\b([^>]*)>`, 'i'))?.[1] || '';
+  const attr = tag.match(new RegExp(`${attrName}\\s*=\\s*["']([^"']+)["']`, 'i'))?.[1] || '';
+  return cleanText(decodeXmlEntities(attr), 1000);
+}
+
+function normalizeRssDate(value = '') {
+  const parsed = Date.parse(String(value || '').trim());
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
+function socialRssAllowedHosts(env = process.env) {
+  return unique([
+    ...DEFAULT_SOCIAL_RSS_ALLOWED_HOSTS,
+    ...splitCsv(env.SOCIAL_RSS_ALLOWED_HOSTS || env.SOCIAL_SOUNDCLOUD_RSS_ALLOWED_HOSTS || ''),
+  ], 40).map((host) => foldForLookup(host).replace(/^\.+|\.+$/g, ''));
+}
+
+function isPrivateHostname(hostname = '') {
+  const host = foldForLookup(hostname).replace(/^\[|\]$/g, '');
+  if (!host || host === 'localhost' || host.endsWith('.localhost')) return true;
+  if (/^(?:127\.|10\.|0\.|169\.254\.|192\.168\.)/.test(host)) return true;
+  const match172 = host.match(/^172\.(\d{1,3})\./);
+  if (match172) {
+    const octet = Number(match172[1]);
+    if (octet >= 16 && octet <= 31) return true;
+  }
+  if (host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80')) return true;
+  return false;
+}
+
+function assertAllowedSocialRssUrl(rawUrl = '', env = process.env) {
+  const url = new URL(cleanText(rawUrl, 1000));
+  if (url.protocol !== 'https:') throw new Error('social_rss_https_required');
+  if (isPrivateHostname(url.hostname)) throw new Error('social_rss_private_host_denied');
+  const host = foldForLookup(url.hostname);
+  const allowed = socialRssAllowedHosts(env);
+  if (!allowed.some((entry) => host === entry || host.endsWith(`.${entry}`))) {
+    throw new Error(`social_rss_host_denied:${host}`);
+  }
+  return url;
+}
+
+async function fetchSocialRssXml(feedUrl = '', { fetchFn = globalThis.fetch, env = process.env, maxBytes = 2 * 1024 * 1024 } = {}) {
+  let current = assertAllowedSocialRssUrl(feedUrl, env);
+  for (let redirects = 0; redirects <= 3; redirects += 1) {
+    const response = await fetchFn(current, {
+      redirect: 'manual',
+      headers: {
+        accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1',
+        'user-agent': 'Funesterie-A11-SocialRSS/1.0',
+      },
+    });
+    const status = Number(response?.status || 0);
+    if ([301, 302, 303, 307, 308].includes(status)) {
+      const location = response.headers?.get?.('location') || response.headers?.location || '';
+      if (!location) throw new Error('social_rss_redirect_without_location');
+      current = assertAllowedSocialRssUrl(new URL(location, current).toString(), env);
+      continue;
+    }
+    if (!response?.ok) throw new Error(`social_rss_http_${status || 'failed'}`);
+    const contentType = cleanText(response.headers?.get?.('content-type') || response.headers?.['content-type'] || '', 160).toLowerCase();
+    const text = await response.text();
+    if (Buffer.byteLength(text, 'utf8') > maxBytes) throw new Error('social_rss_too_large');
+    const head = text.slice(0, 800).toLowerCase();
+    if (contentType.includes('html') || /^\s*<!doctype html/i.test(text) || /^\s*<html\b/i.test(text)) {
+      throw new Error('social_rss_html_response_denied');
+    }
+    if (!/<(?:rss|feed)\b/i.test(text)) throw new Error('social_rss_xml_missing_feed_root');
+    return { ok: true, url: current.toString(), xml: text };
+  }
+  throw new Error('social_rss_too_many_redirects');
+}
+
+function parseSocialRssItems(xml = '', { limit = 12 } = {}) {
+  const safeLimit = Math.max(1, Math.min(50, Number(limit) || 12));
+  const channelBlock = String(xml || '').match(/<channel\b[^>]*>([\s\S]*?)<\/channel>/i)?.[1] || String(xml || '');
+  const channel = {
+    title: cleanOneLine(extractXmlTag(channelBlock, 'title'), 'SoundCloud RSS', 240),
+    link: cleanText(extractXmlTag(channelBlock, 'link'), 500),
+    description: cleanText(extractXmlTag(channelBlock, 'description'), 1000),
+  };
+  const rawItems = [...String(xml || '').matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)]
+    .map((match) => match[1])
+    .slice(0, safeLimit);
+  const items = rawItems.map((block) => {
+    const title = cleanOneLine(extractXmlTag(block, 'title'), 'Piste SoundCloud', 280);
+    const description = cleanText(extractXmlTag(block, 'description'), 5000);
+    const link = cleanText(extractXmlTag(block, 'link'), 700);
+    const guid = cleanText(extractXmlTag(block, 'guid'), 700);
+    const enclosureUrl = extractXmlTagAttr(block, 'enclosure', 'url');
+    const enclosureType = extractXmlTagAttr(block, 'enclosure', 'type');
+    const pubDate = normalizeRssDate(extractXmlTag(block, 'pubDate') || extractXmlTag(block, 'published') || extractXmlTag(block, 'updated'));
+    const stableSeed = guid || enclosureUrl || link || `${title}|${pubDate || ''}`;
+    const digest = crypto.createHash('sha256').update(stableSeed).digest('hex').slice(0, 32);
+    return {
+      externalId: cleanText(guid || digest, 180),
+      itemType: 'audio',
+      title,
+      description,
+      url: link || enclosureUrl || channel.link,
+      publishedAt: pubDate,
+      stats: {},
+      commentsSummary: enclosureType ? `Flux audio RSS SoundCloud (${enclosureType}).` : 'Flux audio RSS SoundCloud.',
+      raw: {
+        channel: {
+          title: channel.title,
+          link: channel.link,
+        },
+        guid,
+        enclosure: {
+          urlPresent: Boolean(enclosureUrl),
+          type: enclosureType,
+        },
+      },
+    };
+  }).filter((item) => item.externalId && item.title);
+  return { channel, items };
 }
 
 function normalizeYoutubeVideoItem(video = {}, fallback = {}) {
@@ -1134,7 +1526,83 @@ async function exchangeMetaCode({ code, req, env = process.env, fetchFn = global
   return data;
 }
 
-function buildProviderAuthUrl(provider, { state, req, env = process.env } = {}) {
+async function ingestSoundCloudRssFeed(db, { userId = 'admin', feedUrl = '', limit = 12, fetchFn = globalThis.fetch, env = process.env } = {}) {
+  await ensureSocialSchema(db);
+  const configuredFeedUrl = cleanText(feedUrl || env.SOCIAL_SOUNDCLOUD_RSS_URL || env.SOUNDCLOUD_RSS_URL, 1000);
+  if (!configuredFeedUrl) return { ok: false, error: 'soundcloud_rss_url_missing' };
+  const fetched = await fetchSocialRssXml(configuredFeedUrl, { fetchFn, env });
+  const parsed = parseSocialRssItems(fetched.xml, { limit });
+  const account = await upsertSocialAccount(db, {
+    userId,
+    provider: 'soundcloud_rss',
+    accountExternalId: crypto.createHash('sha256').update(fetched.url).digest('hex').slice(0, 24),
+    accountLabel: parsed.channel.title || 'SoundCloud RSS',
+    scopes: ['rss.read'],
+    tokens: {},
+    metadata: {
+      feedUrl: fetched.url,
+      channelLink: parsed.channel.link,
+      channelDescription: parsed.channel.description,
+    },
+  }, env);
+  const savedIds = [];
+  for (const item of parsed.items) {
+    const savedId = await upsertSocialItem(db, item, account);
+    if (savedId) savedIds.push(savedId);
+  }
+  await db.query('UPDATE social_accounts SET last_ingest_at = NOW(), updated_at = NOW() WHERE id = $1', [account.id]);
+  const context = await buildAndStoreSocialPromptContext(db, {
+    userId: account.user_id,
+    topic: '',
+    kind: 'chanson',
+    limit: 8,
+  });
+  await db.query(`
+    INSERT INTO social_context_snapshots (user_id, provider, topic, summary_json, created_at)
+    VALUES ($1, 'soundcloud_rss', $2, $3::jsonb, NOW())
+  `, [account.user_id, '', JSON.stringify(context)]);
+  return {
+    ok: true,
+    provider: 'soundcloud_rss',
+    feedUrl: fetched.url,
+    channel: parsed.channel.title,
+    items: savedIds.length,
+    sourceItemIds: savedIds,
+    context,
+  };
+}
+
+async function exchangeSoundCloudCode({ code, codeVerifier, req, env = process.env, fetchFn = globalThis.fetch } = {}) {
+  const config = resolveProviderConfig('soundcloud', { env, req });
+  if (!config.configured) {
+    const error = new Error('soundcloud_oauth_not_configured');
+    error.data = { missing: config.missing };
+    throw error;
+  }
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code',
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
+    redirect_uri: config.redirectUri,
+    code_verifier: cleanText(codeVerifier, 4000),
+    code: cleanText(code, 4000),
+  });
+  const response = await fetchFn(SOUNDCLOUD_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json; charset=utf-8' },
+    body,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data?.error_description || data?.error || `soundcloud_oauth_http_${response.status}`);
+    error.status = response.status;
+    error.data = data;
+    throw error;
+  }
+  return data;
+}
+
+function buildProviderAuthUrl(provider, { state, req, env = process.env, codeChallenge = '' } = {}) {
   const normalized = normalizeProvider(provider);
   const config = resolveProviderConfig(normalized, { env, req });
   if (!config.configured) return { ok: false, provider: normalized, configured: false, missing: config.missing };
@@ -1156,6 +1624,19 @@ function buildProviderAuthUrl(provider, { state, req, env = process.env } = {}) 
     url.searchParams.set('redirect_uri', config.redirectUri);
     url.searchParams.set('response_type', 'code');
     url.searchParams.set('scope', config.scopes.join(','));
+    url.searchParams.set('state', state);
+    return { ok: true, provider: normalized, url: url.toString(), scopes: config.scopes, redirectUri: config.redirectUri };
+  }
+  if (normalized === 'soundcloud') {
+    const url = new URL(SOUNDCLOUD_AUTH_URL);
+    url.searchParams.set('client_id', config.clientId);
+    url.searchParams.set('redirect_uri', config.redirectUri);
+    url.searchParams.set('response_type', 'code');
+    if (config.scopes?.length) url.searchParams.set('scope', config.scopes.join(' '));
+    if (codeChallenge) {
+      url.searchParams.set('code_challenge', codeChallenge);
+      url.searchParams.set('code_challenge_method', 'S256');
+    }
     url.searchParams.set('state', state);
     return { ok: true, provider: normalized, url: url.toString(), scopes: config.scopes, redirectUri: config.redirectUri };
   }
@@ -1208,6 +1689,7 @@ async function purgeSocialContext(db, { provider = '', userId = 'admin' } = {}) 
 
 module.exports = {
   DEFAULT_META_SCOPES,
+  DEFAULT_SOUNDCLOUD_SCOPES,
   DEFAULT_YOUTUBE_SCOPES,
   SOCIAL_SCHEMA_VERSION,
   buildAndStoreSocialPromptContext,
@@ -1216,10 +1698,14 @@ module.exports = {
   buildSocialPromptContextFromItems,
   cleanText,
   exchangeMetaCode,
+  exchangeSoundCloudCode,
   exchangeYoutubeCode,
   ensureSocialSchema,
   formatSocialContextForPrompt,
   getFreshSocialTokens,
+  getSoundCloudAccountIdentity,
+  fetchSocialRssXml,
+  ingestSoundCloudRssFeed,
   ingestYoutubeAccount,
   listSocialAccounts,
   normalizeKind,
@@ -1227,9 +1713,12 @@ module.exports = {
   purgeSocialContext,
   redactAccount,
   refreshYoutubeAccount,
+  refreshSoundCloudAccount,
   resolveProviderConfig,
   setSocialAccountPaused,
   disconnectSocialAccount,
   splitScopes,
+  parseSocialRssItems,
+  uploadSoundCloudTrack,
   upsertSocialAccount,
 };

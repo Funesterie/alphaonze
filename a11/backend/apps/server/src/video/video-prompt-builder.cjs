@@ -1,6 +1,6 @@
 // video-prompt-builder.cjs
 // Interprete le message utilisateur (francais ou autre) et produit
-// un prompt anglais optimise pour WAN 2.2, via Groq 70B direct ou callStructuredLlmJson.
+// un prompt anglais optimise pour WAN 2.6, via Groq 70B direct ou callStructuredLlmJson.
 
 const {
   callStructuredLlmJson: defaultCallStructuredLlmJson,
@@ -41,7 +41,7 @@ const VIDEO_STRUCTURAL_NEGATIVE_TERMS = [
 const VIDEO_FACE_NEGATIVE_TERMS = 'face covered by glow, overexposed face, glow replacing face';
 const VIDEO_SINGING_NEGATIVE_TERMS = 'closed mouth, sealed lips, frozen lips, expressionless face, mouth hidden, microphone covering mouth';
 
-const VIDEO_PROMPT_SYSTEM_PROMPT = `I am A11's video prompt engineer. I receive a user request in any language and descriptions of the user's reference media (images, audio, video). I produce an optimized English prompt for WAN 2.2 video generation.
+const VIDEO_PROMPT_SYSTEM_PROMPT = `Funesterie role contract: Djeff Cypher is the primary video prompt engineer; Vivy is the art director who validates identity, emotion, casting, palette, rhythm and continuity. I execute that handoff for A11. I receive a user request in any language and descriptions of the user's reference media (images, audio, video). I produce one optimized English prompt for WAN 2.6 / modern image-to-video generation, never a generic list of prompt alternatives or external tools.
 
 I receive a JSON input with: user_request, has_reference_image, reference_count, reference_image_urls, reference_video_urls, reference_audio_urls, reference_visual_context (description of one or more reference images), audio_motion_plan.
 
@@ -111,8 +111,8 @@ DURATION RULE:
 - Otherwise, choose based on action complexity:
   - Quick strike or single pose: 3
   - Standard action (walk, fight move, escort): 5
-  - Complex sequence (transformation, power-up, long escort): 8
-- If audio_motion_plan is provided and no requested_duration_seconds: ALWAYS set duration_seconds to match the audio duration (round to nearest integer, clamp 2–10)
+  - Complex sequence (transformation, power-up, long escort): 8 to 15
+- If audio_motion_plan is provided and no requested_duration_seconds: ALWAYS set duration_seconds to match the audio duration (round to nearest integer, clamped by the backend max duration)
 - Default: 5
 
 AUDIO SYNC RULE (when audio_motion_plan is provided):
@@ -143,7 +143,7 @@ Rules:
 - ALWAYS include structural integrity terms in negative_prompt (floating limbs, disconnected body parts, disembodied legs, missing torso, incomplete anatomy, cut off body, severed limbs).
 - 2-3 sentences max for the prompt field.
 - negative_prompt: style conflicts + wrong props + wrong FX + structural integrity terms + face-obscuring FX. Do not include orientation-inversion terms.
-- duration_seconds: 3 (quick strike), 5 (standard action), 8 (complex sequence). Default 5.
+- duration_seconds: 3 (quick strike), 5 (standard action), 8 to 15 (complex sequence, provider permitting). Default 5.
 - motion_type: one of walk, run, fly, fight, dance, idle, transform, other
 - has_reference_subject: true if the user refers to a specific person/vehicle/object from a reference image
 
@@ -169,7 +169,7 @@ function parseRequestedDuration(text = '') {
     const m = re.exec(t);
     if (m) {
       const n = Number(m[1]);
-      if (Number.isFinite(n) && n >= 1 && n <= 60) return Math.round(n);
+      if (Number.isFinite(n) && n >= 1 && n <= 120) return Math.round(n);
     }
   }
   return null;
@@ -177,6 +177,32 @@ function parseRequestedDuration(text = '') {
 
 function isTruthyEnv(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function resolveVideoPromptTimeoutMs(value = null, env = process.env) {
+  const configured = Number(
+    env.A11_VIDEO_PROMPT_TIMEOUT_MS
+    || env.A11_VIDEO_PROMPT_LLM_TIMEOUT_MS
+    || 0
+  ) || 0;
+  const requested = Number(value || 0) || 0;
+  const raw = configured > 0 ? configured : (requested > 0 ? requested : 12000);
+  return Math.max(5000, Math.min(10 * 60 * 1000, Math.round(raw)));
+}
+
+function resolveGroqVideoPromptTimeoutMs(overallTimeoutMs = 12000, env = process.env) {
+  const configured = Number(env.A11_VIDEO_PROMPT_GROQ_TIMEOUT_MS || 0) || 0;
+  if (configured > 0) return Math.max(5000, Math.min(120000, Math.round(configured)));
+  return Math.max(5000, Math.min(30000, Number(overallTimeoutMs) || 12000));
+}
+
+function resolveVideoPromptMaxDurationSeconds(env = process.env) {
+  const configured = Number(
+    env.A11_VIDEO_PROMPT_MAX_DURATION_SECONDS
+    || env.A11_VIDEO_MAX_DURATION_SECONDS
+    || 15
+  ) || 15;
+  return Math.max(3, Math.min(120, Math.round(configured)));
 }
 
 function shouldUseVideoPromptLlm(env = process.env) {
@@ -238,10 +264,20 @@ function hasVocalPerformanceIntent(userMessage = '', audioMotionPlan = null) {
   return /\b(?:song|singer|singing|lyrics|lyric|vocal|vocals|voice|mouth|lip|lips|microphone|mic|chorus|refrain|verse|couplet|clip musical|music video|chanson|chant|chante|chanter|paroles|voix|micro|scene|concert)\b/.test(text);
 }
 
+function stripVideoPromptLiteralDisplayTokens(value = '') {
+  return normalizeText(value)
+    .replace(/\b[vV]\s*\d+(?:[.,]\d+)?\b/g, 'evolving energy system')
+    .replace(/\b\d+(?:[.,]\d+)?(?:\s*[\/:x×+\-]\s*\d+(?:[.,]\d+)?)+\b/g, 'a balanced sequence of abstract rhythmic pulses')
+    .replace(/\b\d+(?:[.,]\d+)?\b/g, 'an abstract pulse')
+    .replace(/\b(?:version|target|cible)\s+an abstract pulse\b/gi, 'abstract balance target')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function hardenVideoPromptText(prompt = '', { vocalPerformance = false } = {}) {
-  let next = normalizeText(prompt);
+  let next = stripVideoPromptLiteralDisplayTokens(prompt);
   if (!/\b(?:no text|without text|no readable text|no captions|no subtitles|no logos|no watermark)\b/i.test(next)) {
-    next = `${next}. No readable text, no fake letters, no subtitles, no captions, no logos, no watermarks; all screens, signs, labels and clothing prints stay blank or abstract.`;
+    next = `${next}. No readable text, no digits, no formulas, no fake letters, no subtitles, no captions, no logos, no watermarks; all screens, signs, labels and clothing prints stay blank or abstract. If the request contains numeric lore or version names, represent them only as abstract pulses, color balance, motion timing and light intensity, never as visible characters.`;
   }
   if (vocalPerformance && !/\b(?:singing|sings|mouth articulation|lips open|lip movement|visible vocal performance)\b/i.test(next)) {
     next = `${next}. Visible vocal performance: the lead performer sings on camera with natural mouth articulation, lips opening and closing, expressive phrasing and the microphone never hiding the mouth.`;
@@ -324,8 +360,10 @@ function buildGroqVideoLlmFn(env = process.env) {
   const groqKey = String(env.GROQ_API_KEY || '').trim();
   if (!groqKey) return null;
   // A11_VIDEO_PROMPT_GROQ_ENABLED is preferred; A11_IMAGE_DIRECT_GROQ_ENABLED accepted for backward compat
-  const isEnabled = isTruthyEnv(env.A11_VIDEO_PROMPT_GROQ_ENABLED)
-    || isTruthyEnv(env.A11_IMAGE_DIRECT_GROQ_ENABLED);
+  const explicitVideoGroq = String(env.A11_VIDEO_PROMPT_GROQ_ENABLED ?? '').trim();
+  const isEnabled = explicitVideoGroq
+    ? isTruthyEnv(explicitVideoGroq)
+    : isTruthyEnv(env.A11_IMAGE_DIRECT_GROQ_ENABLED);
   if (!isEnabled) return null;
 
   const groqModel = String(env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim();
@@ -377,6 +415,7 @@ function resolveDurSource(parsedDuration, audioMotionPlan) {
 function resolveVideoPromptResult({ response, userMessage, hasReference, referenceVisualContext = '', audioMotionPlan, parsedDuration, groqUsed }) {
   const prompt = normalizeText(response?.prompt || '');
   const vocalPerformance = hasVocalPerformanceIntent(userMessage, audioMotionPlan);
+  const maxDurationSeconds = resolveVideoPromptMaxDurationSeconds(process.env);
   if (!prompt) {
     console.warn('[A11][video-prompt] LLM returned no prompt, using raw message as fallback');
     return {
@@ -396,11 +435,13 @@ function resolveVideoPromptResult({ response, userMessage, hasReference, referen
   const negativePrompt = hardenVideoNegativePrompt(response?.negative_prompt || '', { vocalPerformance });
   const rawDuration = Number(response?.duration_seconds);
   const audioDurationSec = audioMotionPlan?.durationMs
-    ? Math.min(10, Math.max(2, Math.round(audioMotionPlan.durationMs / 1000)))
+    ? Math.min(maxDurationSeconds, Math.max(2, Math.round(audioMotionPlan.durationMs / 1000)))
     : 5;
-  const llmDuration = Number.isFinite(rawDuration) && rawDuration >= 2 && rawDuration <= 10
-    ? Math.round(rawDuration) : audioDurationSec;
-  const durationSeconds = (parsedDuration && parsedDuration >= 1) ? Math.min(parsedDuration, 60) : llmDuration;
+  const llmDuration = Number.isFinite(rawDuration) && rawDuration >= 2
+    ? Math.min(maxDurationSeconds, Math.round(rawDuration)) : audioDurationSec;
+  const durationSeconds = (parsedDuration && parsedDuration >= 1)
+    ? Math.min(parsedDuration, maxDurationSeconds)
+    : llmDuration;
   const negSuffix = negativePrompt ? ' (neg: "' + negativePrompt.slice(0, 60) + '")' : '';
   console.log('[A11][video-prompt] "' + safePrompt.slice(0, 100) + '"' + negSuffix + ' dur=' + durationSeconds + 's src=' + resolveDurSource(parsedDuration, audioMotionPlan));
   return { prompt: safePrompt, negativePrompt, durationSeconds, hasReferenceSubject: hasReference || response?.has_reference_subject === true, motionType: normalizeText(response?.motion_type || 'other'), source: groqUsed ? 'groq' : 'llm' };
@@ -465,12 +506,17 @@ async function buildVideoPrompt({
       : null,
   });
   const groqFn = buildGroqVideoLlmFn(process.env);
+  const promptTimeoutMs = resolveVideoPromptTimeoutMs(timeoutMs, process.env);
 
   let response = null;
   let groqUsed = false;
   if (groqFn) {
     try {
-      response = await groqFn({ text: input, systemPrompt: VIDEO_PROMPT_SYSTEM_PROMPT, timeoutMs });
+      response = await groqFn({
+        text: input,
+        systemPrompt: VIDEO_PROMPT_SYSTEM_PROMPT,
+        timeoutMs: resolveGroqVideoPromptTimeoutMs(promptTimeoutMs, process.env),
+      });
       groqUsed = true;
     } catch (err) {
       console.warn('[A11][video-prompt] groq-direct failed, trying callStructuredLlmJson:', String(err?.message || err));
@@ -484,7 +530,7 @@ async function buildVideoPrompt({
         systemPrompt: VIDEO_PROMPT_SYSTEM_PROMPT,
         temperature: 0.2,
         maxTokens: 300,
-        timeoutMs: Math.max(5000, Number(timeoutMs) || 12000),
+        timeoutMs: promptTimeoutMs,
         responseFormat: VIDEO_PROMPT_RESPONSE_FORMAT,
         stage: 'video_prompt_builder',
       });
@@ -499,6 +545,7 @@ async function buildVideoPrompt({
 module.exports = {
   buildVideoPrompt,
   parseRequestedDuration,
+  resolveVideoPromptMaxDurationSeconds,
   sanitizeVideoNegativePrompt,
   shouldUseVideoPromptLlm,
   VIDEO_PROMPT_SYSTEM_PROMPT,

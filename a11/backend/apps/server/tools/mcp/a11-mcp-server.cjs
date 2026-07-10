@@ -545,8 +545,8 @@ function isVivyVisualCreativeDirectionQuestion(message = '', targets = []) {
   const folded = foldForIntent(message);
   const normalizedTargets = new Set((Array.isArray(targets) ? targets : []).map((entry) => foldForIntent(entry)));
   const targetsVivy = normalizedTargets.has('vivy') || normalizedTargets.has('vivy-live') || normalizedTargets.has('nossen');
-  const visualSignal = /\b(?:visuel|visuelle|image|images|cover|covers|pochette|affiche|clip|direction\s+live|identite\s+visuelle|scene|micro|microphone|neon|neons|audio\s+analyse|son\s+analyse)\b/.test(folded);
-  const reviewSignal = /\b(?:avis|analyse|analyser|regarde|review|direction|garde|garder|evite|eviter|ameliore|ameliorer|canon|canonique|coherent|coherence|incoherent|incoherence|defaut|main|identite|angle|surveille|surveiller)\b/.test(folded);
+  const visualSignal = /\b(?:visuel|visuelle|image|images|cover|covers|pochette|affiche|clip|l+clip|video|vid[eé]o|direction\s+live|identite\s+visuelle|scene|micro|microphone|neon|neons|audio\s+analyse|son\s+analyse)\b/.test(folded);
+  const reviewSignal = /\b(?:avis|analyse|analyser|regarde|review|direction|garde|garder|evite|eviter|ameliore|ameliorer|canon|canonique|coherent|coherence|incoherent|incoherence|defaut|main|identite|angle|surveille|surveiller|utilise|utiliser|reprends|reprendre|fais|faire|cree|creer|crée|créer|genere|generer|génère|générer)\b/.test(folded);
   const explicitSongwriting = /\b(?:ecris|ecrire|compose|composer|chante|chanter|genere|generer|fais|faire)\b.{0,90}\b(?:paroles|refrain|couplet|chanson|song)\b/.test(folded)
     || /\b(?:paroles|refrain|couplet)\b.{0,60}\b(?:ecris|ecrire|compose|composer|chante|chanter|genere|generer|fais|faire)\b/.test(folded);
   return targetsVivy && visualSignal && reviewSignal && !explicitSongwriting;
@@ -558,6 +558,7 @@ function buildVivyVisualReviewWorkerMessage(message = '') {
     'Réponds comme directrice artistique, jamais sous forme de paroles, refrain, couplet ou chanson sauf demande explicite d’écriture.',
     'Structure obligatoire: ce que Vivy garde; ce qu’elle évite; identité visuelle canon; prochain angle clip/chanson.',
     'Contrôle visuel obligatoire: faux texte/UI, anatomie des mains, contact physique main-micro, visage et bouche non cachés.',
+    'Ne transforme pas la scène en atelier générique: pas de formes géométriques gratuites, pas de personnages inventés, pas de panneau pseudo-technique. Garde Vivy, le micro, la lumière, le club réel et la caméra.',
     '',
     `Brief reçu: ${String(message || '').trim()}`,
   ].join('\n');
@@ -567,7 +568,7 @@ function buildVivyVisualReviewReply(message = '') {
   const folded = foldForIntent(message);
   const kept = [];
   if (/\b(?:nuit|nocturne|sombre)\b/.test(folded)) kept.push('la nuit lourde qui devient une scène');
-  if (/\b(?:rose|magenta|neon|neons)\b/.test(folded)) kept.push('les néons roses électriques');
+  if (/\b(?:rose|magenta|neon|neons)\b/.test(folded)) kept.push('les néons magenta électriques comme signature de lumière');
   if (/\b(?:micro|microphone|studio)\b/.test(folded)) kept.push('le micro de studio comme point d’ancrage');
   if (/\b(?:bar|club)\b/.test(folded)) kept.push('le bar ou club nocturne crédible');
   if (/\b(?:flou|camera|reel|realiste|photorealiste)\b/.test(folded)) kept.push('le flou caméra réel et la profondeur');
@@ -581,12 +582,13 @@ function buildVivyVisualReviewReply(message = '') {
     '',
     'Ce qu’elle évite:',
     '- faux boutons, labels, panneaux UI, sous-titres et pseudo-texte',
-    '- main incomplète, doigts avalés, poignet fusionné au micro ou micro remplaçant la main',
-    '- visage caché par le micro et présence anime générique sans crédibilité de scène',
+    '- formes géométriques gratuites, personnages inventés et plan abstrait sans présence réelle',
+    '- main incomplète, doigts mordus, poignet cassé au micro ou main qui remplace le micro',
+    '- visage ou bouche qui touche trop le micro, pose statique, chanteuse anime générique sans présence réelle',
     '',
     'Identité visuelle canon:',
-    '- goth cyber-pop adulte, noir et magenta, néons roses électriques',
-    '- club nocturne réel, micro physiquement crédible, lumière et énergie de scène',
+    '- goth cyber-pop adulte, noir et magenta, néons magenta électriques',
+    '- club nocturne réel, micro physiquement crédible, main complète, lumière et énergie de scène',
     '- présence fragile mais puissante, jamais simple “anime girl jolie”',
     '',
     'Prochain angle clip/chanson:',

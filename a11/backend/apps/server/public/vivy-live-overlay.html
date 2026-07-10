@@ -925,16 +925,27 @@
       return { duration, elapsed };
     }
 
+    function stopPlayer() {
+      if (!elements.player.paused) elements.player.pause();
+      try { elements.player.currentTime = 0; } catch {}
+      if (elements.player.getAttribute('src')) {
+        elements.player.removeAttribute('src');
+        try { elements.player.load(); } catch {}
+      }
+      lastTrackUrl = '';
+    }
+
     function syncPlayer(state) {
       const current = state.current || {};
-      if (current.trackUrl && current.trackUrl !== lastTrackUrl) {
+      const playable = Boolean(current.trackUrl && (current.phase === 'playing' || current.phase === 'interlude'));
+      if (!playable) {
+        stopPlayer();
+        return;
+      }
+      if (current.trackUrl !== lastTrackUrl) {
         lastTrackUrl = current.trackUrl;
         elements.player.src = current.trackUrl;
         elements.player.load();
-      }
-      if ((current.phase !== 'playing' && current.phase !== 'interlude') || !current.trackUrl) {
-        if (!elements.player.paused) elements.player.pause();
-        return;
       }
       const expected = Math.max(0, (now() - safeDate(current.playbackStartedAt)) / 1000);
       if (Math.abs((elements.player.currentTime || 0) - expected) > 3 && Number.isFinite(expected)) {

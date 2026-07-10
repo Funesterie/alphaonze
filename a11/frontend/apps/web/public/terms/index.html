@@ -1,33 +1,124 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Conditions d'utilisation - Funesterie</title>
-    <meta name="description" content="Conditions d'utilisation de Funesterie, A11, Kaen44, Vivy et des services connectés." />
+    <title>CGU - Funesterie</title>
+    <meta name="description" content="Conditions générales d'utilisation de Funesterie, A11, Kaen44, Vivy, NOSSEN et de la charte Mille Fleurs." />
     <meta name="robots" content="index,follow" />
     <link rel="canonical" href="https://funesterie.me/terms/" />
+    <style>
+      :root { color-scheme: dark; --bg:#080613; --panel:#130f22; --line:#3b2852; --text:#f8f3ff; --muted:#cbb9dd; --accent:#f06adf; --cyan:#78e8ff; }
+      * { box-sizing: border-box; }
+      body { margin:0; background:radial-gradient(circle at top left,#251139,#080613 58%,#03040a); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,sans-serif; }
+      main { width:min(980px,calc(100vw - 32px)); margin:0 auto; padding:48px 0 64px; line-height:1.65; }
+      img.logo { width:96px; height:96px; object-fit:cover; border-radius:22px; box-shadow:0 18px 60px rgba(240,106,223,.22); }
+      h1 { font-size:clamp(36px,6vw,64px); line-height:.98; margin:28px 0 12px; letter-spacing:-.04em; }
+      h2 { margin:34px 0 10px; font-size:24px; }
+      h3 { margin:22px 0 6px; font-size:18px; color:#fff; }
+      p, li { color:var(--muted); }
+      a { color:#d8b4fe; font-weight:800; }
+      .badge { display:inline-flex; gap:8px; align-items:center; border:1px solid var(--line); border-radius:999px; padding:7px 12px; color:#f9d8ff; background:rgba(255,255,255,.04); font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; }
+      .panel { border:1px solid var(--line); border-radius:18px; background:rgba(19,15,34,.82); padding:22px; margin:22px 0; box-shadow:0 18px 70px rgba(0,0,0,.28); }
+      .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin:18px 0; }
+      .card { border:1px solid rgba(120,232,255,.22); border-radius:14px; padding:16px; background:rgba(120,232,255,.06); }
+      .card strong { display:block; color:#fff; margin-bottom:6px; }
+      .warning { border-color:rgba(240,106,223,.38); background:rgba(240,106,223,.08); }
+      nav { display:flex; flex-wrap:wrap; gap:14px; margin-top:34px; padding-top:20px; border-top:1px solid var(--line); }
+      small { color:#a994bd; }
+    </style>
   </head>
-  <body style="margin:0;background:#0b1020;color:#f8fafc;font-family:system-ui,-apple-system,Segoe UI,sans-serif;">
-    <main style="max-width:900px;margin:0 auto;padding:48px 24px;line-height:1.65;">
-      <img src="/assets/funesterie-logo.png" alt="Logo Funesterie" style="width:96px;height:96px;object-fit:cover;border-radius:22px;" />
-      <h1 style="font-size:42px;line-height:1.05;margin:28px 0 16px;">Conditions d'utilisation de Funesterie</h1>
-      <p>Funesterie fournit A11, Kaen44, Vivy et NOSSEN comme services web et agents connectés pour aider à traiter des documents, fichiers partagés, factures, projets, messages, demandes vocales et contenus créatifs.</p>
-      <h2>Usage du service</h2>
-      <p>L'utilisateur reste responsable des contenus qu'il partage avec Funesterie et des décisions prises à partir des réponses générées. Les réponses peuvent contenir des erreurs et doivent être vérifiées pour les usages sensibles.</p>
-      <h2>Comptes et accès</h2>
-      <p>Certaines fonctions nécessitent une connexion Google, Microsoft ou un compte Funesterie. Les droits accordés doivent correspondre à l'usage souhaité par l'utilisateur.</p>
-      <p>La connexion Microsoft peut utiliser Microsoft Graph et Microsoft OneDrive pour lire le profil autorisé, ouvrir les fichiers choisis, modifier les documents explicitement demandés et conserver l'accès accordé lorsque l'utilisateur l'autorise.</p>
-      <h2>Limites</h2>
-      <p>Funesterie peut limiter, suspendre ou adapter l'accès en cas d'usage abusif, de risque de sécurité, de coût anormal ou de demande contraire aux règles du service.</p>
-      <h2>Vivy et contenus publiés</h2>
-      <p>Les chansons, voix, clips et métadonnées publiés via Vivy doivent être originaux, autorisés ou fournis par l'utilisateur. L'utilisateur reste responsable des droits et validations avant publication sur YouTube, SoundCloud ou tout autre service.</p>
-      <h2>Contact</h2>
-      <p>Pour le support ou les questions contractuelles, contactez Funesterie : cellaurojeffrey@gmail.com.</p>
-      <nav style="display:flex;flex-wrap:wrap;gap:14px;margin-top:32px;">
-        <a href="/" style="color:#c4b5fd;font-weight:700;">Accueil Funesterie</a>
-        <a href="/vivy/" style="color:#c4b5fd;font-weight:700;">Vivy</a>
-        <a href="/privacy/" style="color:#c4b5fd;font-weight:700;">Règles de confidentialité</a>
+  <body>
+    <main>
+      <img class="logo" src="/assets/funesterie-logo.png" alt="Logo Funesterie" />
+      <p class="badge">CGU · Mille Fleurs · version 2026-07-09</p>
+      <h1>Conditions générales d'utilisation</h1>
+      <p>
+        Funesterie regroupe A11, Kaen44, Vivy, NOSSEN et les outils créatifs associés. Ces conditions expliquent comment utiliser les services, comment les contenus sont traités, et comment fonctionne l'esprit “Mille Fleurs” : beaucoup de voix, beaucoup d'idées, mais du consentement clair.
+      </p>
+
+      <section class="panel warning">
+        <h2>Résumé simple</h2>
+        <ul>
+          <li>Tu gardes tes droits sur ce que tu fournis, sauf autorisation explicite de publication ou d'exploitation.</li>
+          <li>Funesterie peut traiter les fichiers, voix, images, prompts et métadonnées nécessaires pour répondre à ta demande.</li>
+          <li>Une publication externe, une action payante ou une opération sensible doit être validée clairement.</li>
+          <li>Les voix, visages, personnages et références doivent être fournis avec autorisation.</li>
+          <li>Les revenus ou royalties éventuels relèvent d'un accord séparé ou d'une fiche de contribution validée.</li>
+        </ul>
+      </section>
+
+      <h2>1. Services concernés</h2>
+      <p>
+        Les présentes CGU couvrent les surfaces Funesterie, A11, Kaen44, Vivy, NOSSEN, les outils de chat, studio musical, traitement de fichiers, publication sociale, voix/persona, génération d'images, clips, archives et modules expérimentaux reliés.
+      </p>
+
+      <h2>2. Comptes, accès et sécurité</h2>
+      <p>
+        Certaines fonctions nécessitent un compte Funesterie ou une connexion à des services tiers comme Google, Microsoft, YouTube ou SoundCloud. L'utilisateur choisit les droits accordés et peut les retirer depuis les plateformes concernées. Funesterie peut limiter ou suspendre un accès en cas d'abus, de risque de sécurité, de coût anormal ou de tentative de contournement.
+      </p>
+
+      <h2>3. Contenus fournis par l'utilisateur</h2>
+      <p>
+        L'utilisateur reste responsable des textes, fichiers, sons, voix, images, prompts, liens, références et métadonnées qu'il transmet. Il confirme disposer des droits nécessaires ou d'une autorisation suffisante pour les utiliser dans Funesterie.
+      </p>
+      <div class="grid">
+        <article class="card"><strong>Traitement</strong><span>Funesterie peut analyser, transformer, mixer, transcrire, indexer ou résumer les contenus pour exécuter la demande.</span></article>
+        <article class="card"><strong>Publication</strong><span>La publication sur YouTube, SoundCloud ou autre plateforme doit être demandée ou confirmée par l'utilisateur.</span></article>
+        <article class="card"><strong>Retrait</strong><span>Un contenu peut être retiré des usages futurs sur demande, sous réserve des copies déjà publiées ou obligations techniques.</span></article>
+      </div>
+
+      <h2>4. Voix, persona, image et identité</h2>
+      <p>
+        Les voix personnelles, images de personnes, noms, avatars et personas ne doivent pas être utilisés sans consentement de la personne concernée. Un utilisateur qui fournit sa propre voix ou ses fichiers de référence autorise Funesterie à créer ou utiliser un persona vocal pour les actions demandées. Cette autorisation peut être retirée pour les usages futurs.
+      </p>
+      <p>
+        Les clones trompeurs, l'usurpation d'identité, l'imitation non autorisée d'une personne réelle, ou la publication d'un contenu portant atteinte à quelqu'un sont interdits.
+      </p>
+
+      <h2>5. IA, erreurs et validation humaine</h2>
+      <p>
+        Les agents et modèles d'IA peuvent se tromper, halluciner, reformuler maladroitement ou produire un résultat incomplet. Les réponses doivent être vérifiées pour les décisions importantes, notamment juridiques, médicales, financières, administratives, commerciales ou de sécurité.
+      </p>
+
+      <h2>6. Actions payantes et publications externes</h2>
+      <p>
+        Les générations payantes, les retries coûteux, les achats, les publications publiques, les suppressions importantes et les modifications de droits doivent être confirmés clairement. Funesterie peut afficher une estimation, mais les coûts réels dépendent aussi des fournisseurs externes.
+      </p>
+
+      <h2>7. Mille Fleurs : contributions, crédits et royalties</h2>
+      <p>
+        “Mille Fleurs” désigne la doctrine créative Funesterie : plusieurs personnes peuvent apporter une voix, une idée, un texte, un fichier, une référence, une interprétation ou une énergie au projet. Chaque contribution doit être consentie, traçable et respectée.
+      </p>
+      <p>
+        Les crédits, partages de revenus, royalties ou contreparties ne sont pas automatiques. Ils doivent être définis dans une fiche de contribution, un accord séparé, un tableau de répartition ou une règle affichée au moment de la participation. À défaut d'accord explicite, la contribution autorise seulement le traitement nécessaire au service demandé.
+      </p>
+
+      <h2>8. Usages interdits</h2>
+      <ul>
+        <li>Publier ou générer du contenu illégal, haineux, harcelant, diffamatoire ou sexuellement exploiteur.</li>
+        <li>Utiliser des voix, images, œuvres, scripts, musiques ou données sans droit ni autorisation.</li>
+        <li>Tenter d'extraire des secrets, tokens, mots de passe, données privées ou accès administrateur.</li>
+        <li>Contourner les limites de coût, de sécurité, de quotas ou de confirmation.</li>
+        <li>Présenter une sortie IA comme une vérité garantie quand elle doit être vérifiée.</li>
+      </ul>
+
+      <h2>9. Services tiers</h2>
+      <p>
+        Les contenus publiés ou traités via YouTube, SoundCloud, Google, Microsoft, OpenAI, Suno, Replicate, ElevenLabs, Ollama ou d'autres fournisseurs restent aussi soumis aux conditions de ces plateformes. Funesterie ne contrôle pas leurs règles, délais, quotas, suppressions, blocages ou changements tarifaires.
+      </p>
+
+      <h2>10. Contact</h2>
+      <p>
+        Pour une question, un retrait, un signalement ou une demande liée aux conditions : <a href="mailto:cellaurojeffrey@gmail.com">cellaurojeffrey@gmail.com</a>.
+      </p>
+      <p><small>Cette version est un socle opérationnel. Les mentions administratives complètes peuvent être complétées selon le statut juridique final de l'éditeur.</small></p>
+
+      <nav aria-label="Liens légaux Funesterie">
+        <a href="/">Accueil</a>
+        <a href="/privacy/">Confidentialité</a>
+        <a href="/mille-fleurs/">Charte Mille Fleurs</a>
+        <a href="/contact/">Contact</a>
       </nav>
     </main>
   </body>
