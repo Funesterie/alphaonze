@@ -88,3 +88,7 @@ __pycache__/
 
 # Local Netlify folder
 .netlify
+
+# Runtime memory and state (generated)
+a11/a11_memory/
+a11/backend/apps/server/.a11_state/
