@@ -97,3 +97,7 @@ a11/backend/apps/server/.a11_state/
 secrets/google/vivy/workspace_sepa_mandate.json
 secrets/google/vivy/workspace_dns_verification.json
 secrets/google/vivy/cloudflare_token.json
+secrets/google/vivy/gemini_api_key.json
+
+# RSA keys (PKCS#1)
+secrets/funesterie-crypto/
