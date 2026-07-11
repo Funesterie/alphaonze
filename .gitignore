@@ -92,3 +92,8 @@ __pycache__/
 # Runtime memory and state (generated)
 a11/a11_memory/
 a11/backend/apps/server/.a11_state/
+
+# SEPA mandate (sensitive)
+secrets/google/vivy/workspace_sepa_mandate.json
+secrets/google/vivy/workspace_dns_verification.json
+secrets/google/vivy/cloudflare_token.json

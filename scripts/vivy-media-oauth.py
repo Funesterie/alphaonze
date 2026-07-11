@@ -22,7 +22,7 @@ DEFAULT_TOKEN = SECRET_DIR / "token_vivy_media.json"
 TARGET_EMAIL = "cellaurojeffrey@gmail.com"
 SCOPES = [
     "https://www.googleapis.com/auth/drive.file",
-    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube",
 ]
 
 
@@ -33,8 +33,8 @@ def load_client_secret(path: Path) -> dict:
     if "installed" not in data:
         raise ValueError("Expected a Desktop OAuth client JSON with an 'installed' root key.")
     installed = data["installed"]
-    if installed.get("project_id") != "vivy-496507":
-        raise ValueError(f"Expected project_id vivy-496507, got {installed.get('project_id')!r}.")
+    if installed.get("project_id") != "alphaonze":
+        raise ValueError(f"Expected project_id alphaonze, got {installed.get('project_id')!r}.")
     return installed
 
 

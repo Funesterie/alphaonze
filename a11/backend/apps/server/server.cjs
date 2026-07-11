@@ -1,4 +1,4 @@
-﻿
+
 // --- Telemetry: initialise before any other module so OpenTelemetry can
 // auto-instrument them. Inert unless APPLICATIONINSIGHTS_CONNECTION_STRING is set
 // (present from the container env in prod). Never throws into startup. ---
@@ -617,6 +617,7 @@ const createEpisodicMemoryRouter = require('./src/routes/episodic-memory.cjs');
 const createImageCardinalityDebugRouter = require('./src/routes/image-cardinality-debug.cjs');
 const createCasinoRouter = require('./src/routes/casino.cjs');
 const createChatRouter = require('./src/routes/chat.cjs');
+const { createAIAssistantRouter } = require('./src/routes/ai-assistant.cjs');
 const {
   buildA11ChatSystemPrompt,
   buildA11CompactLocalSystemPrompt,
@@ -8385,6 +8386,9 @@ function createRateLimiter({ windowMs = 60_000, max = 100, message = 'Too many r
 // Rate limits par route
 app.use('/api/auth', createRateLimiter({ windowMs: 60_000, max: 20, message: 'Trop de tentatives de connexion' }));
 app.use('/api/chat', createRateLimiter({ windowMs: 60_000, max: 60, message: 'Trop de requêtes chat' }));
+
+// AI Assistant - problem-solving assistant
+app.use('/api/ai-assistant', createAIAssistantRouter({ verifyJWT }));
 app.use('/api/image-generate', createRateLimiter({ windowMs: 60_000, max: 20, message: 'Trop de générations d\'images' }));
 app.use('/api', createRateLimiter({ windowMs: 60_000, max: 300, message: 'Trop de requêtes' }));
 
