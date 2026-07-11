@@ -101,3 +101,5 @@ secrets/google/vivy/gemini_api_key.json
 
 # RSA keys (PKCS#1)
 secrets/funesterie-crypto/
+secrets/google/vivy/vivy_account_info.json
+secrets/funesterie-crypto/neo4j_config.json
