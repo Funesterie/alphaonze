@@ -90,6 +90,26 @@ after(() => {
   fs.rmSync(vivyMemoryDir, { recursive: true, force: true });
 });
 
+test('Vivy Studio serves generated PNG assets with an image content type', async () => {
+  const filename = `vivy-generated-${process.pid}-${Date.now()}.png`;
+  const imagePath = getEmergencyMediaAssetPath(filename);
+  fs.mkdirSync(path.dirname(imagePath), { recursive: true });
+  fs.writeFileSync(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
+  try {
+    await withServer((app) => {
+      app.use('/api/vivy/studio', createVivyStudioRouter());
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/vivy/studio/assets/${filename}`);
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('content-type'), 'image/png');
+      assert.deepEqual(Buffer.from(await response.arrayBuffer()), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    });
+  } finally {
+    fs.rmSync(imagePath, { force: true });
+  }
+});
+
 async function withServer(registerRoutes, runAssertions) {
   const app = express();
   registerRoutes(app);

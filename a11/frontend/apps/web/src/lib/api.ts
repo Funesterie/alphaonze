@@ -5259,13 +5259,17 @@ async function downloadPublicMediaUrl(rawUrl: string, fallbackName: string) {
   if (!directUrl) return false;
 
   try {
-    const res = await fetch(directUrl, { method: 'GET', credentials: 'omit' });
-    if (!res.ok) throw new Error(`public_media_download_failed_${res.status}`);
+    const res = await fetch(directUrl, {
+      method: 'GET',
+      credentials: 'include',
+      headers: buildAuthHeaders(),
+    });
+    if (!res.ok) return false;
     const blob = await res.blob();
     const filename = parseDownloadFilename(res.headers.get('content-disposition') || '', fallbackName);
     triggerBlobDownload(blob, filename);
   } catch {
-    triggerDirectDownload(directUrl, fallbackName);
+    return false;
   }
 
   return true;
