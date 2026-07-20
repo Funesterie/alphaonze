@@ -5254,16 +5254,29 @@ export function resolvePublicVivyMediaDownloadUrl(rawValue: string | null | unde
   return null;
 }
 
+function isApiMediaDownloadUrl(rawUrl: string) {
+  const parsed = parseDownloadUrl(rawUrl);
+  const apiOrigin = getApiOrigin();
+  if (!parsed || !apiOrigin) return false;
+
+  try {
+    return parsed.origin === new URL(apiOrigin, getDownloadBaseOrigin()).origin;
+  } catch {
+    return false;
+  }
+}
+
 async function downloadPublicMediaUrl(rawUrl: string, fallbackName: string) {
   const directUrl = resolvePublicVivyMediaDownloadUrl(rawUrl);
   if (!directUrl) return false;
 
   try {
-    const res = await fetch(directUrl, {
+    const requestInit: RequestInit = {
       method: 'GET',
-      credentials: 'include',
-      headers: buildAuthHeaders(),
-    });
+      credentials: isApiMediaDownloadUrl(directUrl) ? 'include' : 'omit',
+    };
+    if (requestInit.credentials === 'include') requestInit.headers = buildAuthHeaders();
+    const res = await fetch(directUrl, requestInit);
     if (!res.ok) return false;
     const blob = await res.blob();
     const filename = parseDownloadFilename(res.headers.get('content-disposition') || '', fallbackName);
