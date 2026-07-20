@@ -9721,12 +9721,23 @@ function createVivyStudioRouter({ verifyJWT, creativeCapabilityService = null } 
         return res.status(404).json({ ok: false, error: 'asset_not_found' });
       }
       const extension = path.extname(filePath).toLowerCase();
-      if (extension !== '.wav' && extension !== '.mp3' && extension !== '.mp4') {
+      const contentTypes = {
+        '.wav': 'audio/wav',
+        '.mp3': 'audio/mpeg',
+        '.mp4': 'video/mp4',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.webp': 'image/webp',
+        '.gif': 'image/gif',
+      };
+      const contentType = contentTypes[extension];
+      if (!contentType) {
         return res.status(404).json({ ok: false, error: 'asset_not_found' });
       }
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-      res.type(extension === '.mp4' ? 'video/mp4' : extension === '.mp3' ? 'audio/mpeg' : 'audio/wav');
+      res.type(contentType);
       return res.sendFile(filePath);
     } catch {
       return res.status(404).json({ ok: false, error: 'asset_not_found' });

@@ -4101,7 +4101,7 @@ function isValidVivyNossenSongSeed(value = "") {
     .map((line) => line.trim())
     .filter((line) => line && !/^\[[^\]]+\]$/.test(line))
     .length;
-  return sectionCount >= 4 && chorusCount >= 2 && lyricLineCount >= 16;
+  return sectionCount >= 3 && chorusCount >= 2 && lyricLineCount >= 10;
 }
 
 function getVivyNossenThemeTerms(value = "") {
@@ -8655,7 +8655,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           });
           const d40Url = String(d40.shareUrl || d40.audioUrl || "").trim();
           if (d40Url) {
-            const d40DownloadUrl = String(d40.audioUrl || d40.shareUrl || "").trim();
+            const d40DownloadUrl = String(d40.shareUrl || d40.audioUrl || "").trim();
             preparedMedia = {
               kind: "audio",
               url: resolveApiAssetUrl(d40Url) || d40Url,
