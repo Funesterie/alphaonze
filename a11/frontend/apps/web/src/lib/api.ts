@@ -5229,6 +5229,7 @@ export function resolvePublicVivyMediaDownloadUrl(rawValue: string | null | unde
 
   if (
     /^\/api\/vivy\/studio\/assets\/[^/]+$/i.test(parsed.pathname)
+    || /^\/api\/vivy\/studio\/assets\/[a-z0-9_-]+\/[^/?#/]+$/i.test(parsed.pathname)
     || /^\/api\/vivy\/stream\/s\/[^/]+$/i.test(parsed.pathname)
     || /^\/api\/double-harmonic\/out\/[^/]+$/i.test(parsed.pathname)
   ) {
@@ -5266,7 +5267,16 @@ function isApiMediaDownloadUrl(rawUrl: string) {
   }
 }
 
-async function downloadPublicMediaUrl(rawUrl: string, fallbackName: string) {
+/**
+ * Try to download a Vivy public media URL directly in the browser.
+ * Returns `true` on success, `false` when the URL is not a recognised Vivy
+ * public URL (caller may fall back to the authenticated proxy), or
+ * `'direct_miss'` when the URL was recognised but the server returned a
+ * non-OK response (e.g. 404).  In the `'direct_miss'` case the caller must
+ * NOT retry through the proxy — it would hit the same endpoint and produce a
+ * second identical error.
+ */
+async function downloadPublicMediaUrl(rawUrl: string, fallbackName: string): Promise<boolean | 'direct_miss'> {
   const directUrl = resolvePublicVivyMediaDownloadUrl(rawUrl);
   if (!directUrl) return false;
 
@@ -5277,7 +5287,7 @@ async function downloadPublicMediaUrl(rawUrl: string, fallbackName: string) {
     };
     if (requestInit.credentials === 'include') requestInit.headers = buildAuthHeaders();
     const res = await fetch(directUrl, requestInit);
-    if (!res.ok) return false;
+    if (!res.ok) return 'direct_miss';
     const blob = await res.blob();
     const filename = parseDownloadFilename(res.headers.get('content-disposition') || '', fallbackName);
     triggerBlobDownload(blob, filename);
@@ -5456,7 +5466,12 @@ export async function downloadMediaUrl(rawUrl: string, fallbackFilename?: string
     await downloadResourceById(resourceId, filename);
     return;
   }
-  if (await downloadPublicMediaUrl(url, filename)) return;
+  const publicResult = await downloadPublicMediaUrl(url, filename);
+  if (publicResult === true) return;
+  // 'direct_miss': the URL was a known Vivy API path but the server returned a
+  // non-OK status.  The authenticated proxy would call the same endpoint again
+  // and produce a second identical error, so stop here.
+  if (publicResult === 'direct_miss') return;
   const proxyPath = `/api/media/download?url=${encodeURIComponent(url)}`;
   await downloadProtectedBlob(proxyPath, filename);
 }

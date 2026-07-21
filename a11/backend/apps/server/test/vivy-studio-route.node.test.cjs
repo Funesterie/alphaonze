@@ -71,6 +71,7 @@ const {
 } = require('../src/routes/vivy-studio.cjs');
 const {
   getEmergencyMediaAssetPath,
+  getEmergencyMediaAssetSubpath,
 } = require('../src/media/emergency-media.cjs');
 const {
   buildVivySongcraftSystemPrompt,
@@ -108,6 +109,48 @@ test('Vivy Studio serves generated PNG assets with an image content type', async
   } finally {
     fs.rmSync(imagePath, { force: true });
   }
+});
+
+test('Vivy Studio serves assets from a one-level subdirectory (e.g. covers/)', async () => {
+  const subdir = 'covers';
+  const filename = `example-${process.pid}-${Date.now()}.png`;
+  const imagePath = getEmergencyMediaAssetSubpath(`${subdir}/${filename}`);
+  fs.mkdirSync(path.dirname(imagePath), { recursive: true });
+  fs.writeFileSync(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
+  try {
+    await withServer((app) => {
+      app.use('/api/vivy/studio', createVivyStudioRouter());
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/vivy/studio/assets/${subdir}/${filename}`);
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('content-type'), 'image/png');
+      assert.deepEqual(Buffer.from(await response.arrayBuffer()), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    });
+  } finally {
+    fs.rmSync(imagePath, { force: true });
+  }
+});
+
+test('Vivy Studio rejects path-traversal attempts on the subdirectory asset route', async () => {
+  await withServer((app) => {
+    app.use('/api/vivy/studio', createVivyStudioRouter());
+  }, async (baseUrl) => {
+    // Express decodes the encoded ".." before routing, but a literal "../" in
+    // the path would change the route segment itself.  Use a double-encoded
+    // slash to probe at the Express level, then test the raw traversal string
+    // directly via getEmergencyMediaAssetSubpath.
+    const response = await fetch(`${baseUrl}/api/vivy/studio/assets/..%2F..%2Fetc%2Fpasswd`);
+    // Express normalises this into a different route — either 404 from vivy-studio
+    // or a higher-level 404, not a real file read.
+    assert.ok(response.status === 404 || response.status === 400);
+
+    // Unit-level guard: the helper must refuse traversal strings directly.
+    assert.equal(getEmergencyMediaAssetSubpath('../etc/passwd'), '');
+    assert.equal(getEmergencyMediaAssetSubpath('../../etc/passwd'), '');
+    assert.equal(getEmergencyMediaAssetSubpath('/etc/passwd'), '');
+    assert.equal(getEmergencyMediaAssetSubpath('covers/../../../etc/passwd'), '');
+  });
 });
 
 async function withServer(registerRoutes, runAssertions) {

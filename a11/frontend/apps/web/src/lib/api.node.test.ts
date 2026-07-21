@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { downloadMediaUrl } from "./api.ts";
+import { downloadMediaUrl, resolvePublicVivyMediaDownloadUrl } from "./api.ts";
 
-test("a missing Vivy asset is fetched once before the authenticated proxy fallback", async () => {
+test("a missing same-origin Vivy asset triggers a single request with no proxy fallback", async () => {
   const originalFetch = globalThis.fetch;
   const originalDocument = globalThis.document;
   const originalLocation = globalThis.location;
@@ -17,13 +17,7 @@ test("a missing Vivy asset is fetched once before the authenticated proxy fallba
     fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       requests.push({ url, init });
-      if (url.includes("/api/vivy/studio/assets/missing.mp3")) {
-        return new Response("missing", { status: 404 });
-      }
-      return new Response(new Blob(["audio"]), {
-        status: 200,
-        headers: { "content-disposition": 'attachment; filename="missing.mp3"' },
-      });
+      return new Response("missing", { status: 404 });
     },
   });
 
@@ -37,9 +31,11 @@ test("a missing Vivy asset is fetched once before the authenticated proxy fallba
     });
   }
 
-  assert.equal(requests.filter(({ url }) => url.includes("/api/vivy/studio/assets/missing.mp3")).length, 1);
-  assert.equal(requests.length, 2);
-  assert.match(requests[1].url, /\/api\/media\/download\?url=/);
+  // Only one request: the direct fetch. The authenticated proxy is not called
+  // because it would resolve to the same same-origin endpoint and produce a
+  // second identical 404.
+  assert.equal(requests.length, 1);
+  assert.ok(requests[0].url.includes("/api/vivy/studio/assets/missing.mp3"));
   assert.equal(requests[0].init?.credentials, "include");
 });
 
@@ -87,3 +83,29 @@ test("an external Vivy-shaped URL is fetched without API credentials", async () 
   assert.equal(requests[0].init?.credentials, "omit");
   assert.equal(new Headers(requests[0].init?.headers).has("Authorization"), false);
 });
+
+test("resolvePublicVivyMediaDownloadUrl recognises subdirectory asset paths like covers/ville.png", () => {
+  const originalLocation = globalThis.location;
+  Object.assign(globalThis, { location: { origin: "https://vivy.funesterie.me" } });
+
+  try {
+    const flat = resolvePublicVivyMediaDownloadUrl("/api/vivy/studio/assets/song.mp3");
+    assert.ok(flat?.includes("/api/vivy/studio/assets/song.mp3"), "flat path must be recognised");
+
+    const cover = resolvePublicVivyMediaDownloadUrl("/api/vivy/studio/assets/covers/ville.png");
+    assert.ok(cover?.includes("/api/vivy/studio/assets/covers/ville.png"), "covers/ subdirectory must be recognised");
+
+    // External hosts must not receive auth credentials regardless of path shape.
+    const external = resolvePublicVivyMediaDownloadUrl(
+      "https://untrusted.example/api/vivy/studio/assets/covers/ville.png",
+    );
+    // resolvePublicVivyMediaDownloadUrl may return the URL but downloadPublicMediaUrl
+    // will fetch it with credentials:'omit' since it is not an API origin.
+    // The important invariant is it does NOT return null (so the direct fetch is
+    // attempted) — and no auth headers are attached (verified in the cross-origin test).
+    assert.ok(external !== null, "external subdirectory URL should be attempted directly (no auth)");
+  } finally {
+    Object.assign(globalThis, { location: originalLocation });
+  }
+});
+

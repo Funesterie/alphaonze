@@ -5799,6 +5799,7 @@ function isPublicOptionalJwtBypassRequest(req) {
   if (method !== 'GET' && method !== 'HEAD') return false;
   const pathname = getOptionalJwtPathname(req).replace(/\/+$/, '') || '/';
   return /^\/api\/vivy\/studio\/assets\/[^/]+$/i.test(pathname)
+    || /^\/api\/vivy\/studio\/assets\/[a-z0-9_-]+\/[^/?#]+$/i.test(pathname)
     || /^\/api\/vivy\/stream\/s\/[^/]+$/i.test(pathname)
     || /^\/api\/vivy\/stream\/(?:health|state|events|overlay|overlay\/background|nossen-seed)$/i.test(pathname)
     || /^\/api\/double-harmonic\/out\/[^/]+$/i.test(pathname)

@@ -413,9 +413,44 @@ function getEmergencyMediaAssetPath(filename = '') {
   return path.join(getVivyGeneratedDir(), safeName);
 }
 
+/**
+ * Like `getEmergencyMediaAssetPath` but accepts an optional one-level
+ * subdirectory prefix (e.g. `covers/ville.png`).  The subdirectory name must
+ * consist solely of letters, digits, hyphens and underscores.  Path traversal
+ * (`..`) and absolute paths are rejected.  Returns an empty string when the
+ * input is invalid.
+ */
+function getEmergencyMediaAssetSubpath(rawSubpath = '') {
+  const raw = String(rawSubpath || '').trim();
+  if (!raw) return '';
+
+  // Normalise separators to the platform separator then guard against escaping
+  // the base directory.
+  const normalised = path.normalize(raw);
+  if (normalised.startsWith('..') || path.isAbsolute(normalised)) return '';
+
+  const parts = normalised.split(path.sep).filter(Boolean);
+  if (parts.length === 0 || parts.length > 2) return '';
+
+  const filename = parts.at(-1) || '';
+  const subdir = parts.length === 2 ? parts[0] : '';
+
+  if (!filename || !/^[a-z0-9_.-]+$/i.test(filename)) return '';
+  if (subdir && !/^[a-z0-9_-]+$/i.test(subdir)) return '';
+
+  const base = getVivyGeneratedDir();
+  const resolved = path.join(base, normalised);
+
+  // Belt-and-suspenders: ensure the resolved path is still inside the base dir.
+  if (!resolved.startsWith(base + path.sep) && resolved !== base) return '';
+
+  return resolved;
+}
+
 module.exports = {
   createEmergencyImageAsset,
   createEmergencySongAsset,
   createEmergencyVideoAsset,
   getEmergencyMediaAssetPath,
+  getEmergencyMediaAssetSubpath,
 };
