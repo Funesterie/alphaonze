@@ -17,6 +17,7 @@ const {
   createEmergencySongAsset,
   createEmergencyVideoAsset,
   getEmergencyMediaAssetPath,
+  getEmergencyMediaAssetSubpath,
 } = require('../media/emergency-media.cjs');
 const { buildAgentsPersonaContext, buildDjeffSystemPrompt } = require('../persona/persona-engine.cjs');
 const {
@@ -9717,6 +9718,39 @@ function createVivyStudioRouter({ verifyJWT, creativeCapabilityService = null } 
   router.get('/assets/:filename', async (req, res) => {
     try {
       const filePath = getEmergencyMediaAssetPath(req.params.filename);
+      if (!filePath) {
+        return res.status(404).json({ ok: false, error: 'asset_not_found' });
+      }
+      const extension = path.extname(filePath).toLowerCase();
+      const contentTypes = {
+        '.wav': 'audio/wav',
+        '.mp3': 'audio/mpeg',
+        '.mp4': 'video/mp4',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.webp': 'image/webp',
+        '.gif': 'image/gif',
+      };
+      const contentType = contentTypes[extension];
+      if (!contentType) {
+        return res.status(404).json({ ok: false, error: 'asset_not_found' });
+      }
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.type(contentType);
+      return res.sendFile(filePath);
+    } catch {
+      return res.status(404).json({ ok: false, error: 'asset_not_found' });
+    }
+  });
+
+  // Sub-directory variant: /assets/:subdir/:filename (e.g. covers/ville.png).
+  // The subdirectory name is restricted to [a-z0-9_-] and the filename to
+  // [a-z0-9_.-]; path traversal is rejected inside getEmergencyMediaAssetSubpath.
+  router.get('/assets/:subdir/:filename', async (req, res) => {
+    try {
+      const filePath = getEmergencyMediaAssetSubpath(`${req.params.subdir}/${req.params.filename}`);
       if (!filePath) {
         return res.status(404).json({ ok: false, error: 'asset_not_found' });
       }

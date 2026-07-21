@@ -151,6 +151,7 @@ function isAllowedVivyStreamDownloadUrl(rawUrl = '', req = null, publicBaseUrl =
     }
   })();
   if ((sameHost || publicHost) && /^\/api\/vivy\/studio\/assets\/[^/?#]+$/i.test(parsed.pathname)) return true;
+  if ((sameHost || publicHost) && /^\/api\/vivy\/studio\/assets\/[a-z0-9_-]+\/[^/?#]+$/i.test(parsed.pathname)) return true;
   if ((sameHost || publicHost) && /^\/api\/double-harmonic\/out\/[^/?#]+$/i.test(parsed.pathname)) return true;
   if (parsed.hostname === 'files.funesterie.me') {
     return /^\/users\/(?:vivy-twitch-live|image-tool)\//i.test(parsed.pathname)
