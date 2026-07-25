@@ -63,7 +63,7 @@ jobs:
 
       - name: TruffleHog — scan secrets in git history
         if: steps.trufflehog_range.outputs.skip != 'true'
-        uses: trufflesecurity/trufflehog@v3.95.5
+        uses: trufflesecurity/trufflehog@v3.96.0
         with:
           path: ./
           base: ${{ steps.trufflehog_range.outputs.base }}
