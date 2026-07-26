@@ -19,6 +19,7 @@ const FAMILY_ADMIN_EMAILS = Object.freeze([
   'funeste38@gmail.com',
   'funesterie38@gmail.com',
   'boostro38@gmail.com',
+  'hlibibou@gmail.com',
 ]);
 
 const FAMILY_VOICE_IDENTITIES = Object.freeze({
