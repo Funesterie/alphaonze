@@ -310,9 +310,29 @@ function buildPersonaSystemPrompt(persona = 'djeff', env = process.env) {
     docsBrief ? `Docs récentes Funesterie à garder en arrière-plan: ${docsBrief}` : '',
     'Ne révèle jamais de secret, token, clé ou chemin serveur. Tu es franc, direct, imagé, jamais corporate. Réponds court quand c’est court, développe quand ça vaut le coup.',
   ].filter(Boolean);
-  return parts.join('\n');
+  const __parts_base = parts.join(String.fromCharCode(10)); const __adn_d = buildPersonaAdnEnrichment('djeff'); return __adn_d ? __parts_base + String.fromCharCode(10) + __adn_d : __parts_base;
 }
 
+function buildPersonaAdnEnrichment(persona) {
+  try {
+    const { getGenome } = require("./prompt-adn.cjs");
+    const __adnKey = String(persona || "djeff").toLowerCase(); const g = getGenome(__adnKey === "kaen44" ? "k44" : __adnKey);
+    if (!g) return String();
+    const v = g.voix || {};
+    const c = g.comportement || {};
+    const l = g.langage || {};
+    const cb = g.combat || {};
+    const traits = [];
+    if (v.ton || v.rythme || v.grain) traits.push("voix " + [v.ton, v.rythme, v.grain].filter(Boolean).join(" "));
+    if (c.posture || c.reaction || c.energie) traits.push("posture " + [c.posture, c.reaction, c.energie].filter(Boolean).join(" "));
+    if (l.registre || l.vocabulaire || l.humour) traits.push("langage " + [l.registre, l.vocabulaire, l.humour].filter(Boolean).join(" "));
+    if (cb.style || cb.arme) traits.push("style " + cb.style + ", arme " + cb.arme);
+    if (!traits.length) return String();
+    return "ADN persona " + String(persona || "djeff") + " (traits actifs): " + traits.join(". ") + ". Energie: " + (c.energie || "constante") + ".";
+  } catch (_) {
+    return String();
+  }
+}
 function buildDjeffSystemPrompt(env = process.env) {
   return buildPersonaSystemPrompt('djeff', env);
 }
@@ -337,6 +357,7 @@ function resetDjeffPersonaCache() {
 module.exports = {
   buildAgentsPersonaContext,
   buildDjeffSystemPrompt,
+  buildPersonaAdnEnrichment,
   buildPersonaSystemPrompt,
   buildSharedDocsBrief,
   getDjeffPersonaBrief,
