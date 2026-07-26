@@ -29,6 +29,8 @@ import {
   fetchRemoteProviderProfiles,
   fetchA11PortraitFramebook,
   fetchTtsVoiceCatalog,
+  listVoiceCatalog,
+  type VoiceCatalogEntry,
   fetchTtsVoiceReferences,
   fetchAuthSession,
   fetchVivyChatSession,
@@ -5490,9 +5492,42 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       return;
     }
     try {
-      const result = await fetchTtsVoiceCatalog();
-      setCatalogVoices(result.voices || []);
-      setCatalogStatus(result.message || "");
+      // Deux catalogues distincts alimentent la meme liste:
+      // - references audio TTS (exigent un upload)
+      // - voix Suno nommees (un voiceId suffit, aucun upload)
+      // Une voix presente dans les deux n'apparait qu'une fois, la reference
+      // audio primant car elle porte le contrat de consentement complet.
+      const [ttsResult, sunoVoices] = await Promise.all([
+        fetchTtsVoiceCatalog().catch(() => ({ voices: [] as TtsVoiceReference[], message: "" })),
+        listVoiceCatalog().catch(() => [] as VoiceCatalogEntry[]),
+      ]);
+
+      const ttsVoices = ttsResult.voices || [];
+      const knownNames = new Set(
+        ttsVoices
+          .map((voice) => String(voice.catalog?.name || voice.label || "").trim().toLowerCase())
+          .filter(Boolean)
+      );
+
+      const sunoOnly: TtsVoiceReference[] = sunoVoices
+        .filter((entry) => entry.active !== false && !knownNames.has(String(entry.name || "").toLowerCase()))
+        .map((entry) => ({
+          id: `suno-catalog:${entry.name}`,
+          label: `${entry.label || entry.name}${entry.owner ? ` (${entry.owner})` : ""} — Suno`,
+          scope: "suno-catalog",
+          source: "voice-catalog",
+          catalog: {
+            enabled: true,
+            status: "ready",
+            name: entry.name,
+            slug: entry.name,
+            consent: entry.consentBy || "",
+          },
+        }));
+
+      setCatalogVoices([...ttsVoices, ...sunoOnly]);
+      const extra = sunoOnly.length ? ` + ${sunoOnly.length} voix Suno` : "";
+      setCatalogStatus(`${ttsResult.message || ""}${extra}`.trim());
     } catch (error: any) {
       setCatalogVoices([]);
       setCatalogStatus(`Catalogue voix indisponible: ${error?.message || error}`);
