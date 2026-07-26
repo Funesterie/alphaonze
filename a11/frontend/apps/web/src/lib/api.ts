@@ -2875,6 +2875,7 @@ export type VivyStudioProductionInput = {
   artistCount?: number;
   singerCount?: number;
   songMood?: string;
+  songTitle?: string;
   lyrics?: string;
   songText?: string;
   sessionSunoApiKey?: string;
@@ -3111,6 +3112,23 @@ export async function mixVivyStudioPreview(
   const payload = await res.json().catch(() => ({}));
   if (!res.ok || payload?.ok === false) {
     throw new Error(payload?.message || payload?.error || `Mix Vivy indisponible (${res.status})`);
+  }
+  return (payload?.media || payload) as VivyStudioMedia;
+}
+
+export async function applyVivyStudioVivyLayer(
+  audioUrl: string,
+  options: { profile?: string; intensity?: number } = {}
+): Promise<VivyStudioMedia> {
+  const res = await authFetch(getApiUrl("/api/vivy/studio/apply-vivy-layer"), {
+    method: "POST",
+    headers: buildAuthHeaders("application/json"),
+    credentials: "include",
+    body: JSON.stringify({ audioUrl, profile: options.profile, intensity: options.intensity }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || "Couche Vivy indisponible (" + res.status + ")");
   }
   return (payload?.media || payload) as VivyStudioMedia;
 }

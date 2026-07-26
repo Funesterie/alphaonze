@@ -81,6 +81,8 @@ const {
   TIERS,
 } = require('../auth/mcp-account-tier.cjs');
 
+const { registerVivyLayerRoute } = require("../vivy/vivy-layer-apply.cjs");
+
 let getJanusVisionStatus = null;
 try {
   ({ getJanusVisionStatus } = require('../../lib/janus-vision-runtime.cjs'));
@@ -10162,6 +10164,7 @@ function runVivyMultiVoiceAssembly(rawSegments = []) {
 
 function createVivyStudioRouter({ verifyJWT, creativeCapabilityService = null } = {}) {
   const router = express.Router();
+  registerVivyLayerRoute(router, () => requireAuth, { express, cleanOneLine, materializeVivyPreviewInstrumentalPath, getVivyPreviewAssetFilename, getEmergencyMediaAssetPath, crypto, fs, path });
   const resolveCreativeAuthorization = (req) => {
     if (!creativeCapabilityService || typeof creativeCapabilityService.verifyCapabilityToken !== 'function') return null;
     const token = cleanOneLine(req.headers?.['x-a11-creative-capability'], '', 4096);

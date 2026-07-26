@@ -18,11 +18,11 @@ const NEO4J_AUTH = 'Basic ' + Buffer.from(
   (process.env.NEO4J_USER || 'neo4j') + ':' + (process.env.NEO4J_PASSWORD || 'nossen1234')
 ).toString('base64');
 
-async function cypher(statement) {
+async function cypher(statement, parameters = {}) {
   const res = await fetch(NEO4J_URL, {
     method: 'POST',
     headers: { Authorization: NEO4J_AUTH, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ statements: [{ statement }] }),
+    body: JSON.stringify({ statements: [{ statement, parameters: parameters || {} }] }),
   });
   const data = await res.json();
   if (data.errors && data.errors.length > 0) {

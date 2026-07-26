@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import {
   clearA11History,
   createTextArtifact,
@@ -67,6 +67,7 @@ import {
   deleteVivyChatSessionOnServer,
   assembleVivyStudioVoicePreview,
   mixVivyStudioPreview,
+  applyVivyStudioVivyLayer,
   routeVivyNossenComposition,
   runVivyStudioProduction,
   sendMatchArenaInput,
@@ -7561,6 +7562,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   const [status, setStatus] = useState("");
   const [voiceReferenceName, setVoiceReferenceName] = useState(() => readVivyVoiceReferenceLabel());
   const [nossenMusicProvider, setNossenMusicProvider] = useState<VivyNossenMusicProvider>(() => readVivyNossenMusicProvider());
+  const [nossenVivyLayer, setNossenVivyLayer] = useState(false);
   const [awaitingVoiceReference, setAwaitingVoiceReference] = useState(false);
   const chatRootRef = useRef<HTMLElement | null>(null);
   const composeRef = useRef<HTMLFormElement | null>(null);
@@ -8419,6 +8421,11 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         compositionCanvas: useCompositionWorkspace ? songWorkspace.canvas : "",
         workspaceNotes: useCompositionWorkspace ? songWorkspace.notes : "",
       });
+      // Vivy remplit la couleur sonore (songMood draft) via NOSSEN pour la persister et l'afficher.
+      const vivyRoutedColor = (routedMood || inferVivyNossenSonicMood(routedReadiness, artists) || "").trim();
+      if (vivyRoutedColor) {
+        try { writeVivyStudioDraft({ ...(readVivyStudioDraft() || {}), songMood: vivyRoutedColor }); } catch {}
+      }
       let lyricsPayload: any = null;
       let vocalLyricsForProduction = "";
       let publicLyricsForChat = "";
@@ -8562,6 +8569,26 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         throw new Error(finalPayload?.mediaStatus?.message || finalPayload?.mediaStatus?.reason || "audio_url_missing");
       }
 
+      if (nossenVivyLayer && preparedMedia && preparedMedia.url) {
+        try {
+          setStatus(productionLabel + ": couche sonore Vivy (D40) en cours...");
+          const layered = await applyVivyStudioVivyLayer(preparedMedia.url, { profile: "blend" });
+          const layeredUrl = String(layered?.url || layered?.audioUrl || layered?.audio_url || String()).trim();
+          if (layeredUrl) {
+            preparedMedia = {
+              kind: "audio",
+              url: resolveApiAssetUrl(layeredUrl) || layeredUrl,
+              downloadUrl: resolveApiAssetUrl(layeredUrl) || layeredUrl,
+              provider: String(layered?.provider || "vivy-d40-layer"),
+              contentType: String(layered?.content_type || layered?.contentType || "audio/mpeg"),
+              filename: String(layered?.filename || "vivy-nossen-d40.mp3"),
+            };
+            setStatus(productionLabel + ": morceau Suno + couche Vivy D40 prête.");
+          }
+        } catch (layerError) {
+          setStatus(productionLabel + ": couche Vivy ignorée (" + String(layerError) + "), morceau Suno conservé.");
+        }
+      }
       let sunoExtended = false;
       if (preparedMedia.kind === "audio") {
         let durationSeconds = await probeVivyProductionAudioDurationSeconds(finalPayload, preparedMedia);
@@ -9082,6 +9109,15 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
               </button>
             ))}
           </div>
+          <label className="vivy-nossen-vivy-layer-toggle">
+            <input
+              type="checkbox"
+              checked={nossenVivyLayer}
+              disabled={!hasSession || isSending || isVideoGenerating}
+              onChange={(event) => setNossenVivyLayer(event.target.checked)}
+            />
+            <span>Couche Vivy (D40)</span>
+          </label>
           <button type="button" disabled={!hasSession || isVideoGenerating} onClick={() => fileInputRef.current?.click()}>Fichier</button>
           <button type="submit" disabled={!hasSession || isSending || isVideoGenerating || (!draft.trim() && !attachedFiles.length)}>Envoyer</button>
         </div>
