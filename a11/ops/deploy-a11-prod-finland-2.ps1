@@ -5,7 +5,10 @@ param(
   [switch]$ReuseRemoteSecrets,
   [switch]$BlueGreen,
   [switch]$CleanOldBlueGreen,
-  [switch]$SkipSourceUpdate
+  [switch]$SkipSourceUpdate,
+  [string]$ReleaseStamp = "",
+  [switch]$ReuseRemoteArchive,
+  [switch]$SkipRuntimeAssetSync
 )
 
 Set-StrictMode -Version Latest
@@ -43,7 +46,10 @@ function Resolve-VoiceReferencePath {
 $A11VoiceReference = Resolve-VoiceReferencePath "a11-official-stern-french.wav"
 $VivyVoiceReference = Resolve-VoiceReferencePath "vivy.wav"
 $Kaen44VoiceReference = Resolve-VoiceReferencePath "kaen44-official-french-narrator.wav"
-$Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+if ($ReleaseStamp -and $ReleaseStamp -notmatch '^\d{8}-\d{6}$') {
+  throw "ReleaseStamp invalide: format attendu yyyyMMdd-HHmmss"
+}
+$Stamp = if ($ReleaseStamp) { $ReleaseStamp } else { Get-Date -Format "yyyyMMdd-HHmmss" }
 $TmpRoot = Join-Path $RepoRoot ".codex-tmp"
 $StageRoot = Join-Path $TmpRoot "a11-prod-finland-2-$Stamp"
 $Archive = Join-Path $TmpRoot "a11-prod-finland-2-$Stamp.tar.gz"
@@ -51,7 +57,7 @@ $RemoteRoot = "/home/deploy/a11-prod"
 $RemoteDataRoot = "/home/deploy/a11-data"
 $RemoteArchive = "$RemoteRoot/releases/$Stamp.tar.gz"
 $JfrogEnv = Join-Path $RepoRoot "scripts\jfrog\jfrog.env.ps1"
-$StrongSongOllamaModel = if ($env:A11_OLLAMA_STRONG_SONG_MODEL) { $env:A11_OLLAMA_STRONG_SONG_MODEL } else { "qwen2.5:7b" }
+$StrongSongOllamaModel = if ($env:A11_OLLAMA_STRONG_SONG_MODEL) { $env:A11_OLLAMA_STRONG_SONG_MODEL } else { "qwen2.5:32b" }
 
 function Require-Path([string]$Path, [string]$Label) {
   if (-not (Test-Path -LiteralPath $Path)) {
@@ -560,16 +566,20 @@ services:
       A11_PROFILE_ENV: /app/profiles/a11.prod.env.disabled
       A11_RUNTIME_ROOT: /app/runtime
       A11_EPISODIC_MEMORY_DIR: /app/runtime/episodic-memory
-      A11_LLM_PROVIDER: groq
+      A11_LOCAL_NEO4J_URI: ${A11_LOCAL_NEO4J_URI:-bolt://a11-neo4j:7687}
+      A11_LOCAL_NEO4J_USER: ${A11_LOCAL_NEO4J_USER:-neo4j}
+      A11_LOCAL_NEO4J_DATABASE: ${A11_LOCAL_NEO4J_DATABASE:-neo4j}
+      VIVY_GRAPH_ALLOW_PARTIAL_SYNC: ${VIVY_GRAPH_ALLOW_PARTIAL_SYNC:-1}
+      A11_LLM_PROVIDER: ollama
       A11_OLLAMA_PRIMARY_MODEL: qwen2.5:32b
       A11_OLLAMA_FALLBACK_MODEL: qwen2.5:7b
-      VIVY_CHAT_LOCAL_FIRST: "false"
+      VIVY_CHAT_LOCAL_FIRST: "true"
       VIVY_OLLAMA_BASE_URL: http://a11-ollama:11434
       VIVY_CHAT_LOCAL_MODEL: qwen2.5:7b
       VIVY_CHAT_LOCAL_TIMEOUT_MS: ${VIVY_CHAT_LOCAL_TIMEOUT_MS:-90000}
       VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS: ${VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS:-10000}
       VIVY_CHAT_LOCAL_MAX_TOKENS: ${VIVY_CHAT_LOCAL_MAX_TOKENS:-800}
-      VIVY_SONG_PROVIDER: ${VIVY_SONG_PROVIDER:-groq}
+      VIVY_SONG_PROVIDER: ${VIVY_SONG_PROVIDER:-ollama}
       VIVY_XAI_MODEL: ${VIVY_XAI_MODEL:-grok-4.3}
       OLLAMA_CLOUD_ENABLED: ${OLLAMA_CLOUD_ENABLED:-1}
       OLLAMA_CLOUD_BASE_URL: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
@@ -582,14 +592,28 @@ services:
       OLLAMA_CLOUD_THINK_LEVEL: ${OLLAMA_CLOUD_THINK_LEVEL:-high}
       OLLAMA_CLOUD_LYRICS_TIMEOUT_MS: ${OLLAMA_CLOUD_LYRICS_TIMEOUT_MS:-360000}
       VIVY_SONG_CERBERE_FALLBACK_ENABLED: ${VIVY_SONG_CERBERE_FALLBACK_ENABLED:-1}
-      VIVY_SONG_CERBERE_MODEL: ${VIVY_SONG_CERBERE_MODEL:-anthropic/claude-sonnet-4.5}
+      VIVY_SONG_CERBERE_MODEL: ${VIVY_SONG_CERBERE_MODEL:-openai/gpt-oss-120b}
       VIVY_SONG_CERBERE_TIMEOUT_MS: ${VIVY_SONG_CERBERE_TIMEOUT_MS:-240000}
       VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS: ${VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS:-300000}
       VIVY_CHAT_MAX_TOKENS: ${VIVY_CHAT_MAX_TOKENS:-5000}
       VIVY_CHAT_MAX_TOKENS_SONG: ${VIVY_CHAT_MAX_TOKENS_SONG:-10000}
       VIVY_CHAT_MAX_TOKENS_SONG_CEILING: ${VIVY_CHAT_MAX_TOKENS_SONG_CEILING:-12000}
       VIVY_SONG_ALLOW_LOCAL_FALLBACK: ${VIVY_SONG_ALLOW_LOCAL_FALLBACK:-true}
+      VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK: ${VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK:-true}
       VIVY_SONG_LOCAL_MODEL: ${VIVY_SONG_LOCAL_MODEL:-qwen2.5:7b}
+      VIVY_NOSSEN_LOCAL_MODEL: ${VIVY_NOSSEN_LOCAL_MODEL:-qwen2.5:32b}
+      VIVY_NOSSEN_LARGE_MODEL_FIRST: ${VIVY_NOSSEN_LARGE_MODEL_FIRST:-true}
+      VIVY_NOSSEN_120B_MAX_PROMPT_CHARS: ${VIVY_NOSSEN_120B_MAX_PROMPT_CHARS:-22000}
+      VIVY_NOSSEN_120B_MAX_TOKENS: ${VIVY_NOSSEN_120B_MAX_TOKENS:-1800}
+      VIVY_NOSSEN_120B_TIMEOUT_MS: ${VIVY_NOSSEN_120B_TIMEOUT_MS:-60000}
+      VIVY_NOSSEN_FAST_LOCAL_ONLY: ${VIVY_NOSSEN_FAST_LOCAL_ONLY:-true}
+      VIVY_NOSSEN_ROUTE_LLM_ENABLED: ${VIVY_NOSSEN_ROUTE_LLM_ENABLED:-false}
+      VIVY_NOSSEN_ROUTER_LOCAL_TIMEOUT_MS: ${VIVY_NOSSEN_ROUTER_LOCAL_TIMEOUT_MS:-20000}
+      VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS: ${VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS:-40000}
+      VIVY_NOSSEN_LOCAL_MAX_TOKENS: ${VIVY_NOSSEN_LOCAL_MAX_TOKENS:-560}
+      VIVY_NOSSEN_LLM_BUDGET_MS: ${VIVY_NOSSEN_LLM_BUDGET_MS:-80000}
+      VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS: ${VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS:-8000}
+      VIVY_NOSSEN_EMERGENCY_SONGCRAFT: ${VIVY_NOSSEN_EMERGENCY_SONGCRAFT:-true}
       VIVY_STREAM_FREESTYLE_MAX_CHARS: ${VIVY_STREAM_FREESTYLE_MAX_CHARS:-12000}
       VIVY_STREAM_FREESTYLE_MAX_TOKENS: ${VIVY_STREAM_FREESTYLE_MAX_TOKENS:-10000}
       VIVY_STREAM_COVER_ENABLED: ${VIVY_STREAM_COVER_ENABLED:-1}
@@ -635,7 +659,7 @@ services:
       A11_TRANSLATION_MODEL: ${A11_TRANSLATION_MODEL:-qwen2.5:32b}
       LOCAL_DEFAULT_MODEL: llama3.2:3b
       A11_LLM_FALLBACK_PROVIDER: ollama
-      A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,openai,gemini,xai,huggingface,deepseek,together
+      A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,ollama_cloud,openai,gemini,xai,huggingface,deepseek,together,groq,openrouter
       A11_CERBERE_LOCAL_ONLY: "false"
       A11_LOCAL_CHAT_TIMEOUT_MS: "90000"
       A11_LOCAL_SONG_TIMEOUT_MS: "180000"
@@ -844,10 +868,10 @@ services:
       A11_PROFILE_ENV: /app/profiles/kaen44.prod.env.disabled
       KAEN44_PROFILE_ENV: /app/profiles/kaen44.prod.env.disabled
       A11_RUNTIME_ROOT: /app/runtime
-      A11_LLM_PROVIDER: groq
+      A11_LLM_PROVIDER: ollama
       A11_OLLAMA_PRIMARY_MODEL: qwen2.5:32b
       A11_OLLAMA_FALLBACK_MODEL: qwen2.5:7b
-      VIVY_CHAT_LOCAL_FIRST: "false"
+      VIVY_CHAT_LOCAL_FIRST: "true"
       VIVY_OLLAMA_BASE_URL: http://a11-ollama:11434
       VIVY_CHAT_LOCAL_MODEL: qwen2.5:7b
       VIVY_CHAT_LOCAL_TIMEOUT_MS: ${VIVY_CHAT_LOCAL_TIMEOUT_MS:-90000}
@@ -855,7 +879,7 @@ services:
       VIVY_CHAT_LOCAL_MAX_TOKENS: ${VIVY_CHAT_LOCAL_MAX_TOKENS:-800}
       A11_TRANSLATION_MODEL: ${A11_TRANSLATION_MODEL:-qwen2.5:32b}
       LOCAL_DEFAULT_MODEL: llama3.2:3b
-      VIVY_SONG_PROVIDER: ${VIVY_SONG_PROVIDER:-groq}
+      VIVY_SONG_PROVIDER: ${VIVY_SONG_PROVIDER:-ollama}
       OLLAMA_CLOUD_ENABLED: ${OLLAMA_CLOUD_ENABLED:-1}
       OLLAMA_CLOUD_BASE_URL: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
       OLLAMA_CLOUD_LYRICS_MODEL: ${OLLAMA_CLOUD_LYRICS_MODEL:-gpt-oss:120b}
@@ -867,18 +891,32 @@ services:
       OLLAMA_CLOUD_THINK_LEVEL: ${OLLAMA_CLOUD_THINK_LEVEL:-high}
       OLLAMA_CLOUD_LYRICS_TIMEOUT_MS: ${OLLAMA_CLOUD_LYRICS_TIMEOUT_MS:-360000}
       VIVY_SONG_CERBERE_FALLBACK_ENABLED: ${VIVY_SONG_CERBERE_FALLBACK_ENABLED:-1}
-      VIVY_SONG_CERBERE_MODEL: ${VIVY_SONG_CERBERE_MODEL:-anthropic/claude-sonnet-4.5}
+      VIVY_SONG_CERBERE_MODEL: ${VIVY_SONG_CERBERE_MODEL:-openai/gpt-oss-120b}
       VIVY_SONG_CERBERE_TIMEOUT_MS: ${VIVY_SONG_CERBERE_TIMEOUT_MS:-240000}
       VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS: ${VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS:-300000}
       VIVY_CHAT_MAX_TOKENS: ${VIVY_CHAT_MAX_TOKENS:-5000}
       VIVY_CHAT_MAX_TOKENS_SONG: ${VIVY_CHAT_MAX_TOKENS_SONG:-10000}
       VIVY_CHAT_MAX_TOKENS_SONG_CEILING: ${VIVY_CHAT_MAX_TOKENS_SONG_CEILING:-12000}
       VIVY_SONG_ALLOW_LOCAL_FALLBACK: ${VIVY_SONG_ALLOW_LOCAL_FALLBACK:-true}
+      VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK: ${VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK:-true}
       VIVY_SONG_LOCAL_MODEL: ${VIVY_SONG_LOCAL_MODEL:-qwen2.5:7b}
+      VIVY_NOSSEN_LOCAL_MODEL: ${VIVY_NOSSEN_LOCAL_MODEL:-qwen2.5:32b}
+      VIVY_NOSSEN_LARGE_MODEL_FIRST: ${VIVY_NOSSEN_LARGE_MODEL_FIRST:-true}
+      VIVY_NOSSEN_120B_MAX_PROMPT_CHARS: ${VIVY_NOSSEN_120B_MAX_PROMPT_CHARS:-22000}
+      VIVY_NOSSEN_120B_MAX_TOKENS: ${VIVY_NOSSEN_120B_MAX_TOKENS:-1800}
+      VIVY_NOSSEN_120B_TIMEOUT_MS: ${VIVY_NOSSEN_120B_TIMEOUT_MS:-60000}
+      VIVY_NOSSEN_FAST_LOCAL_ONLY: ${VIVY_NOSSEN_FAST_LOCAL_ONLY:-true}
+      VIVY_NOSSEN_ROUTE_LLM_ENABLED: ${VIVY_NOSSEN_ROUTE_LLM_ENABLED:-false}
+      VIVY_NOSSEN_ROUTER_LOCAL_TIMEOUT_MS: ${VIVY_NOSSEN_ROUTER_LOCAL_TIMEOUT_MS:-20000}
+      VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS: ${VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS:-40000}
+      VIVY_NOSSEN_LOCAL_MAX_TOKENS: ${VIVY_NOSSEN_LOCAL_MAX_TOKENS:-560}
+      VIVY_NOSSEN_LLM_BUDGET_MS: ${VIVY_NOSSEN_LLM_BUDGET_MS:-80000}
+      VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS: ${VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS:-8000}
+      VIVY_NOSSEN_EMERGENCY_SONGCRAFT: ${VIVY_NOSSEN_EMERGENCY_SONGCRAFT:-true}
       VIVY_STREAM_FREESTYLE_MAX_CHARS: ${VIVY_STREAM_FREESTYLE_MAX_CHARS:-12000}
       VIVY_STREAM_FREESTYLE_MAX_TOKENS: ${VIVY_STREAM_FREESTYLE_MAX_TOKENS:-10000}
       A11_LLM_FALLBACK_PROVIDER: ollama
-      A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,openai,gemini,xai,huggingface,deepseek,together
+      A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,ollama_cloud,openai,gemini,xai,huggingface,deepseek,together,groq,openrouter
       A11_CERBERE_LOCAL_ONLY: "false"
       A11_LOCAL_CHAT_TIMEOUT_MS: "90000"
       A11_LOCAL_SONG_TIMEOUT_MS: "180000"
@@ -1178,6 +1216,7 @@ $removeKeys = @(
   "A11_USAGE_GUARD_ADMIN_EMAIL", "DEFAULT_ADMIN_USERNAME", "DEFAULT_ADMIN_PASSWORD",
   "A11_PROFILE_ENV", "KAEN44_PROFILE_ENV", "KAEN44_MODE", "A11_RESPONDER_MODE",
   "A11_ALLOW_DEV_ROUTES", "A11_ENABLE_LEGACY_WORD_INTENT_DETECTORS",
+  "A11_MCP_TOKEN", "A11_PUBLIC_MCP_TOKEN", "MCP_AUTH_TOKEN",
   "NODE_ENV", "PORT", "HOST_SERVER"
 )
 foreach ($key in $removeKeys) {
@@ -1202,7 +1241,6 @@ if ([string]::IsNullOrWhiteSpace($existingPgPass)) {
   $existingPgPass = Read-RemoteEnvValue "POSTGRES_PASSWORD"
 }
 $existingAdminPass = Read-RemoteEnvValue "DEFAULT_ADMIN_PASSWORD"
-$existingMcpToken = Read-RemoteEnvValue "A11_MCP_TOKEN"
 $existingEkkoToken = Read-RemoteEnvValue "EKKO_TOKEN"
 $existingJwtSecret = Read-RemoteEnvValue "JWT_SECRET"
 $pgPass = if ([string]::IsNullOrWhiteSpace($existingPgPass)) { New-HexSecret 32 } else { $existingPgPass }
@@ -1218,17 +1256,6 @@ $jwtSecret = if (-not [string]::IsNullOrWhiteSpace($env:JWT_SECRET)) {
 } else {
   New-HexSecret 32
 }
-$mcpToken = if (-not [string]::IsNullOrWhiteSpace($env:A11_MCP_TOKEN)) {
-  $env:A11_MCP_TOKEN
-} elseif (-not [string]::IsNullOrWhiteSpace($env:MCP_AUTH_TOKEN)) {
-  $env:MCP_AUTH_TOKEN
-} elseif ($mcpEnvMap.Contains("MCP_AUTH_TOKEN") -and -not [string]::IsNullOrWhiteSpace($mcpEnvMap["MCP_AUTH_TOKEN"])) {
-  $mcpEnvMap["MCP_AUTH_TOKEN"]
-} elseif (-not [string]::IsNullOrWhiteSpace($existingMcpToken)) {
-  $existingMcpToken
-} else {
-  ""
-}
 $ekkoToken = if (-not [string]::IsNullOrWhiteSpace($env:EKKO_TOKEN)) {
   $env:EKKO_TOKEN
 } elseif (-not [string]::IsNullOrWhiteSpace($existingEkkoToken)) {
@@ -1242,9 +1269,6 @@ if (-not [string]::IsNullOrWhiteSpace($existingPgPass)) {
 }
 if (-not [string]::IsNullOrWhiteSpace($existingAdminPass)) {
   Write-Host "Mot de passe admin distant reutilise." -ForegroundColor DarkCyan
-}
-if (-not [string]::IsNullOrWhiteSpace($mcpToken)) {
-  Write-Host "Token MCP A11/K44 disponible pour le relais." -ForegroundColor DarkCyan
 }
 if (-not [string]::IsNullOrWhiteSpace($existingEkkoToken)) {
   Write-Host "Secret Ekko distant reutilise." -ForegroundColor DarkCyan
@@ -1323,7 +1347,7 @@ $overrides = [ordered]@{
   OPENAI_BASE_URL = "https://openrouter.ai/api/v1"
   OPENAI_MODEL = "meta-llama/llama-3.3-70b-instruct"
   A11_OPENAI_MODEL = "meta-llama/llama-3.3-70b-instruct"
-  A11_LLM_PROVIDER = "groq"
+  A11_LLM_PROVIDER = "ollama"
   OLLAMA_BASE = "http://a11-ollama:11434"
   LLAMA_BASE = "http://a11-ollama:11434"
   OLLAMA_HOST = "a11-ollama"
@@ -1331,13 +1355,13 @@ $overrides = [ordered]@{
   A11_OLLAMA_BASE = "http://a11-ollama:11434"
   A11_OLLAMA_PRIMARY_MODEL = "qwen2.5:32b"
   A11_OLLAMA_FALLBACK_MODEL = "qwen2.5:7b"
-  VIVY_CHAT_LOCAL_FIRST = "false"
+  VIVY_CHAT_LOCAL_FIRST = "true"
   VIVY_OLLAMA_BASE_URL = "http://a11-ollama:11434"
   VIVY_CHAT_LOCAL_MODEL = "qwen2.5:7b"
   VIVY_CHAT_LOCAL_TIMEOUT_MS = "90000"
   VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS = "10000"
   VIVY_CHAT_LOCAL_MAX_TOKENS = "800"
-  VIVY_SONG_PROVIDER = $(if ($env:VIVY_SONG_PROVIDER) { $env:VIVY_SONG_PROVIDER } elseif ($envMap.Contains("VIVY_SONG_PROVIDER") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_SONG_PROVIDER"])) { [string]$envMap["VIVY_SONG_PROVIDER"] } else { "groq" })
+  VIVY_SONG_PROVIDER = $(if ($env:VIVY_SONG_PROVIDER) { $env:VIVY_SONG_PROVIDER } elseif ($envMap.Contains("VIVY_SONG_PROVIDER") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_SONG_PROVIDER"])) { [string]$envMap["VIVY_SONG_PROVIDER"] } else { "ollama" })
   VIVY_SONG_GROQ_MODEL = $(if ($env:VIVY_SONG_GROQ_MODEL) { $env:VIVY_SONG_GROQ_MODEL } elseif ($envMap.Contains("VIVY_SONG_GROQ_MODEL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_SONG_GROQ_MODEL"])) { [string]$envMap["VIVY_SONG_GROQ_MODEL"] } else { "llama-3.3-70b-versatile" })
   VIVY_XAI_MODEL = $(if ($env:VIVY_XAI_MODEL) { $env:VIVY_XAI_MODEL } elseif ($envMap.Contains("VIVY_XAI_MODEL") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_XAI_MODEL"])) { [string]$envMap["VIVY_XAI_MODEL"] } else { "grok-4.3" })
   OLLAMA_CLOUD_ENABLED = "1"
@@ -1351,7 +1375,7 @@ $overrides = [ordered]@{
   OLLAMA_CLOUD_THINK_LEVEL = "high"
   OLLAMA_CLOUD_LYRICS_TIMEOUT_MS = "360000"
   VIVY_SONG_CERBERE_FALLBACK_ENABLED = "1"
-  VIVY_SONG_CERBERE_MODEL = "anthropic/claude-sonnet-4.5"
+  VIVY_SONG_CERBERE_MODEL = "openai/gpt-oss-120b"
   VIVY_SONG_CERBERE_TIMEOUT_MS = "240000"
   VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS = "300000"
   VIVY_CHAT_MAX_TOKENS = "5000"
@@ -1359,7 +1383,21 @@ $overrides = [ordered]@{
   VIVY_CHAT_MAX_TOKENS_SONG_CEILING = "12000"
   A11_OLLAMA_STRONG_SONG_MODEL = $StrongSongOllamaModel
   VIVY_SONG_ALLOW_LOCAL_FALLBACK = "true"
-  VIVY_SONG_LOCAL_MODEL = $StrongSongOllamaModel
+  VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK = "true"
+  VIVY_SONG_LOCAL_MODEL = "qwen2.5:7b"
+  VIVY_NOSSEN_LOCAL_MODEL = "qwen2.5:32b"
+  VIVY_NOSSEN_LARGE_MODEL_FIRST = "true"
+  VIVY_NOSSEN_120B_MAX_PROMPT_CHARS = "22000"
+  VIVY_NOSSEN_120B_MAX_TOKENS = "1800"
+  VIVY_NOSSEN_120B_TIMEOUT_MS = "60000"
+  VIVY_NOSSEN_FAST_LOCAL_ONLY = "true"
+  VIVY_NOSSEN_ROUTE_LLM_ENABLED = "false"
+  VIVY_NOSSEN_ROUTER_LOCAL_TIMEOUT_MS = "20000"
+  VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS = "40000"
+  VIVY_NOSSEN_LOCAL_MAX_TOKENS = "560"
+  VIVY_NOSSEN_LLM_BUDGET_MS = "80000"
+  VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS = "8000"
+  VIVY_NOSSEN_EMERGENCY_SONGCRAFT = "true"
   VIVY_STREAM_FREESTYLE_MAX_CHARS = $(if ($env:VIVY_STREAM_FREESTYLE_MAX_CHARS) { $env:VIVY_STREAM_FREESTYLE_MAX_CHARS } elseif ($envMap.Contains("VIVY_STREAM_FREESTYLE_MAX_CHARS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FREESTYLE_MAX_CHARS"])) { [string]$envMap["VIVY_STREAM_FREESTYLE_MAX_CHARS"] } else { "12000" })
   VIVY_STREAM_FREESTYLE_MAX_TOKENS = $(if ($env:VIVY_STREAM_FREESTYLE_MAX_TOKENS) { $env:VIVY_STREAM_FREESTYLE_MAX_TOKENS } elseif ($envMap.Contains("VIVY_STREAM_FREESTYLE_MAX_TOKENS") -and -not [string]::IsNullOrWhiteSpace([string]$envMap["VIVY_STREAM_FREESTYLE_MAX_TOKENS"])) { [string]$envMap["VIVY_STREAM_FREESTYLE_MAX_TOKENS"] } else { "10000" })
   A11_ENABLE_EMBEDDINGS = "true"
@@ -1384,7 +1422,7 @@ $overrides = [ordered]@{
   LOCAL_DEFAULT_MODEL = "llama3.2:3b"
   A11_CERBERE_PREFER_NON_GROQ = "false"
   A11_LLM_FALLBACK_PROVIDER = "ollama"
-  A11_LLM_RUNTIME_FALLBACK_ORDER = "ollama,openai,gemini,xai,huggingface,deepseek,together"
+  A11_LLM_RUNTIME_FALLBACK_ORDER = "ollama,ollama_cloud,openai,gemini,xai,huggingface,deepseek,together,groq,openrouter"
   A11_CERBERE_LOCAL_ONLY = "false"
   A11_LOCAL_CHAT_TIMEOUT_MS = "90000"
   A11_LOCAL_SONG_TIMEOUT_MS = "180000"
@@ -1552,10 +1590,6 @@ $overrides = [ordered]@{
 foreach ($key in $overrides.Keys) {
   $envMap[$key] = $overrides[$key]
 }
-if (-not [string]::IsNullOrWhiteSpace($mcpToken)) {
-  $envMap["A11_MCP_TOKEN"] = $mcpToken
-  $envMap["A11_PUBLIC_MCP_TOKEN"] = $mcpToken
-}
 $SecretStage = Join-Path $StageRoot "a11.env"
 Write-EnvFile $envMap $SecretStage
 
@@ -1644,8 +1678,16 @@ $piperVoiceDownloadEncoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.Get
 & ssh @sshBase $Remote "printf '%s' '$piperVoiceDownloadEncoded' | base64 -d | bash"
 if ($LASTEXITCODE -ne 0) { throw "Telechargement voix Piper distantes echoue" }
 
-& scp @sshBase $Archive "${Remote}:$RemoteArchive"
-if ($LASTEXITCODE -ne 0) { throw "Copie archive echouee" }
+if ($ReuseRemoteArchive) {
+  $remoteArchiveSize = (& ssh @sshBase $Remote "test -s '$RemoteArchive' && gzip -t '$RemoteArchive' && stat -c '%s' '$RemoteArchive'").Trim()
+  if ($LASTEXITCODE -ne 0 -or -not $remoteArchiveSize) {
+    throw "Archive distante absente ou invalide: $RemoteArchive"
+  }
+  Write-Host "Archive distante valide reutilisee: $RemoteArchive ($remoteArchiveSize octets)" -ForegroundColor DarkCyan
+} else {
+  & scp @sshBase $Archive "${Remote}:$RemoteArchive"
+  if ($LASTEXITCODE -ne 0) { throw "Copie archive echouee" }
+}
 if (-not $ReuseRemoteSecrets) {
   & scp @sshBase $SecretStage "${Remote}:$RemoteRoot/secrets/a11.env"
   if ($LASTEXITCODE -ne 0) { throw "Copie env echouee" }
@@ -1656,59 +1698,63 @@ if (-not $ReuseRemoteSecrets) {
   if ($LASTEXITCODE -ne 0) { throw "compose.env distant introuvable; relancer sans -ReuseRemoteSecrets depuis un magasin de secrets local valide." }
 }
 
-$voiceReferenceCopies = @(
-  @{ Path = $A11VoiceReference; Name = "a11-official-stern-french.wav"; Label = "A11 official stern French" },
-  @{ Path = $VivyVoiceReference; Name = "vivy-official-french-conversational.wav"; Label = "Vivy official French conversational" },
-  @{ Path = $Kaen44VoiceReference; Name = "kaen44-official-french-narrator.wav"; Label = "Kaen44 official French narrator" }
-)
-$voiceReferenceCopiesByName = @{}
-foreach ($voiceReference in $voiceReferenceCopies) {
-  if (-not $voiceReferenceCopiesByName.ContainsKey($voiceReference.Name)) {
-    $voiceReferenceCopiesByName[$voiceReference.Name] = $voiceReference
+if ($SkipRuntimeAssetSync) {
+  Write-Host "Synchronisation voix/corpus sautee; volumes runtime distants conserves." -ForegroundColor Yellow
+} else {
+  $voiceReferenceCopies = @(
+    @{ Path = $A11VoiceReference; Name = "a11-official-stern-french.wav"; Label = "A11 official stern French" },
+    @{ Path = $VivyVoiceReference; Name = "vivy-official-french-conversational.wav"; Label = "Vivy official French conversational" },
+    @{ Path = $Kaen44VoiceReference; Name = "kaen44-official-french-narrator.wav"; Label = "Kaen44 official French narrator" }
+  )
+  $voiceReferenceCopiesByName = @{}
+  foreach ($voiceReference in $voiceReferenceCopies) {
+    if (-not $voiceReferenceCopiesByName.ContainsKey($voiceReference.Name)) {
+      $voiceReferenceCopiesByName[$voiceReference.Name] = $voiceReference
+    }
   }
-}
-if (Test-Path -LiteralPath $RuntimeVoiceLibrary) {
-  Get-ChildItem -LiteralPath $RuntimeVoiceLibrary -File |
-    Where-Object { $_.Extension -match '^\.(wav|wave|mp3|ogg|webm|m4a|flac)$' } |
-    ForEach-Object {
-      if (-not $voiceReferenceCopiesByName.ContainsKey($_.Name)) {
-        $voiceReferenceCopiesByName[$_.Name] = @{
-          Path = $_.FullName
-          Name = $_.Name
-          Label = "Voice library $($_.Name)"
+  if (Test-Path -LiteralPath $RuntimeVoiceLibrary) {
+    Get-ChildItem -LiteralPath $RuntimeVoiceLibrary -File |
+      Where-Object { $_.Extension -match '^\.(wav|wave|mp3|ogg|webm|m4a|flac)$' } |
+      ForEach-Object {
+        if (-not $voiceReferenceCopiesByName.ContainsKey($_.Name)) {
+          $voiceReferenceCopiesByName[$_.Name] = @{
+            Path = $_.FullName
+            Name = $_.Name
+            Label = "Voice library $($_.Name)"
+          }
         }
       }
-    }
-}
-$voiceReferenceCopies = $voiceReferenceCopiesByName.Values | Sort-Object Name
-foreach ($voiceReference in $voiceReferenceCopies) {
-  if (-not (Test-Path -LiteralPath $voiceReference.Path)) {
-    Write-Warning "Reference voix absente: $($voiceReference.Label) ($($voiceReference.Path))"
-    continue
   }
-  & scp @sshBase $voiceReference.Path "${Remote}:$RemoteDataRoot/runtime/voice-library/$($voiceReference.Name)"
-  if ($LASTEXITCODE -ne 0) { throw "Copie reference voix $($voiceReference.Label) echouee" }
-}
-
-if (Test-Path -LiteralPath $PrivateCorpusRoot) {
-  Get-ChildItem -LiteralPath $PrivateCorpusRoot -Directory |
-    ForEach-Object {
-      $corpusDir = $_
-      $privateCorpusTargets = @(
-        "$RemoteDataRoot/runtime/Corpus/private/$($corpusDir.Name)"
-      )
-      foreach ($privateCorpusTarget in $privateCorpusTargets) {
-        & ssh @sshBase $Remote "mkdir -p '$privateCorpusTarget'"
-        if ($LASTEXITCODE -ne 0) { throw "Creation dossier corpus prive echouee: $privateCorpusTarget" }
-        Get-ChildItem -LiteralPath $corpusDir.FullName -File |
-          ForEach-Object {
-            & scp @sshBase $_.FullName "${Remote}:$privateCorpusTarget/$($_.Name)"
-            if ($LASTEXITCODE -ne 0) { throw "Copie corpus prive $($corpusDir.Name) echouee: $($_.Name)" }
-          }
-      }
+  $voiceReferenceCopies = $voiceReferenceCopiesByName.Values | Sort-Object Name
+  foreach ($voiceReference in $voiceReferenceCopies) {
+    if (-not (Test-Path -LiteralPath $voiceReference.Path)) {
+      Write-Warning "Reference voix absente: $($voiceReference.Label) ($($voiceReference.Path))"
+      continue
     }
-} else {
-  Write-Warning "Corpus prive absent localement: $PrivateCorpusRoot"
+    & scp @sshBase $voiceReference.Path "${Remote}:$RemoteDataRoot/runtime/voice-library/$($voiceReference.Name)"
+    if ($LASTEXITCODE -ne 0) { throw "Copie reference voix $($voiceReference.Label) echouee" }
+  }
+
+  if (Test-Path -LiteralPath $PrivateCorpusRoot) {
+    Get-ChildItem -LiteralPath $PrivateCorpusRoot -Directory |
+      ForEach-Object {
+        $corpusDir = $_
+        $privateCorpusTargets = @(
+          "$RemoteDataRoot/runtime/Corpus/private/$($corpusDir.Name)"
+        )
+        foreach ($privateCorpusTarget in $privateCorpusTargets) {
+          & ssh @sshBase $Remote "mkdir -p '$privateCorpusTarget'"
+          if ($LASTEXITCODE -ne 0) { throw "Creation dossier corpus prive echouee: $privateCorpusTarget" }
+          Get-ChildItem -LiteralPath $corpusDir.FullName -File |
+            ForEach-Object {
+              & scp @sshBase $_.FullName "${Remote}:$privateCorpusTarget/$($_.Name)"
+              if ($LASTEXITCODE -ne 0) { throw "Copie corpus prive $($corpusDir.Name) echouee: $($_.Name)" }
+            }
+        }
+      }
+  } else {
+    Write-Warning "Corpus prive absent localement: $PrivateCorpusRoot"
+  }
 }
 
 $remoteBuildEnvRefresh = @'
@@ -1716,8 +1762,17 @@ test -s __REMOTE_ROOT__/secrets/compose.env
 build_env="__REMOTE_ROOT__/secrets/build.env"
 a11_env="__REMOTE_ROOT__/secrets/a11.env"
 compose_env="__REMOTE_ROOT__/secrets/compose.env"
+for token_env in "$a11_env" "$compose_env" "$build_env"; do
+  if [ -f "$token_env" ]; then
+    token_env_clean="$(mktemp)"
+    grep -v -E '^(A11_MCP_TOKEN|A11_PUBLIC_MCP_TOKEN|MCP_AUTH_TOKEN)=' "$token_env" > "$token_env_clean" || true
+    mv "$token_env_clean" "$token_env"
+    chmod 600 "$token_env"
+  fi
+done
 tmp_build="$(mktemp)"
-managed_keys='^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK|A11_LLM_PROVIDER|A11_OLLAMA_PRIMARY_MODEL|A11_OLLAMA_FALLBACK_MODEL|A11_OLLAMA_STRONG_SONG_MODEL|VIVY_CHAT_LOCAL_FIRST|VIVY_OLLAMA_BASE_URL|VIVY_CHAT_LOCAL_MODEL|VIVY_CHAT_LOCAL_TIMEOUT_MS|VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS|VIVY_CHAT_LOCAL_MAX_TOKENS|VIVY_XAI_MODEL|OLLAMA_CLOUD_ENABLED|OLLAMA_CLOUD_BASE_URL|OLLAMA_CLOUD_LYRICS_MODEL|OLLAMA_CLOUD_FAST_MODEL|OLLAMA_CLOUD_CHAT_ENABLED|OLLAMA_CLOUD_CHAT_MODEL|OLLAMA_CLOUD_CHAT_THINK_LEVEL|OLLAMA_CLOUD_CHAT_TIMEOUT_MS|OLLAMA_CLOUD_THINK_LEVEL|OLLAMA_CLOUD_LYRICS_TIMEOUT_MS|VIVY_SONG_CERBERE_FALLBACK_ENABLED|VIVY_SONG_CERBERE_MODEL|VIVY_SONG_CERBERE_TIMEOUT_MS|VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS|VIVY_CHAT_MAX_TOKENS|VIVY_CHAT_MAX_TOKENS_SONG|VIVY_CHAT_MAX_TOKENS_SONG_CEILING|VIVY_SONG_ALLOW_LOCAL_FALLBACK|VIVY_SONG_LOCAL_MODEL|A11_TRANSLATION_MODEL|LOCAL_DEFAULT_MODEL|A11_LLM_FALLBACK_PROVIDER|A11_LLM_RUNTIME_FALLBACK_ORDER|A11_CERBERE_LOCAL_ONLY|A11_LOCAL_CHAT_TIMEOUT_MS|A11_LOCAL_SONG_TIMEOUT_MS|A11_OLLAMA_KEEP_ALIVE|A11_MEMORY_LOCAL_TIMEOUT_MS|A11_MEMORY_REMOTE_TIMEOUT_MS|A11_EMBEDDING_TIMEOUT_MS|A11_RUNTIME_ROOT|VIVY_ELEVENLABS_MUSIC_DISABLED|VIVY_MUSIC_PROVIDER|VIVY_MUREKA_API_KEY_FILE|VIVY_MUREKA_BASE_URL|VIVY_MUREKA_MODEL|VIVY_SUNO_MODEL|VIVY_SUNO_LONG_MODEL|VIVY_SUNO_VOICE_ID|VIVY_SUNO_DJEFF_VOICE_ID|VIVY_SUNO_MARVIN_VOICE_ID|VIVY_SUNO_FRERE_VOICE_ID|SUNO_MARVIN_VOICE_ID|SUNO_FRERE_VOICE_ID|A11_SUNO_MARVIN_VOICE_ID|VIVY_SUNO_A11_VOICE_ID|VIVY_SUNO_K44_VOICE_ID|VIVY_SUNO_KAEN44_VOICE_ID|SUNO_DJEFF_VOICE_ID|SUNO_A11_VOICE_ID|SUNO_K44_VOICE_ID|SUNO_KAEN44_VOICE_ID|A11_SUNO_DJEFF_VOICE_ID|A11_SUNO_A11_VOICE_ID|A11_SUNO_K44_VOICE_ID|VIVY_STREAM_AUTOGENERATE_ENABLED|VIVY_STREAM_IDLE_JUKEBOX_DISABLED|VIVY_STREAM_STATE_URL|VIVY_PUBLIC_BASE_URL|VIVY_STREAM_BOT_MESSAGE_GAP_MS|VIVY_STREAM_COVER_ENABLED|VIVY_STREAM_COVER_URL|VIVY_STREAM_COVER_TIMEOUT_MS|VIVY_STREAM_CLIP_ENABLED|VIVY_STREAM_CLIP_PROVIDER|VIVY_STREAM_CLIP_DURATION_SECONDS|VIVY_STREAM_CLIP_TIMEOUT_MS|VIVY_STREAM_FULL_CLIP_ENABLED|VIVY_STREAM_FULL_CLIP_SOURCE_IMAGE_URL|VIVY_STREAM_DREAMCLIP_SOURCE_IMAGE_URL|VIVY_STREAM_FULL_CLIP_PROVIDER|VIVY_STREAM_FULL_CLIP_SCENES|VIVY_STREAM_DREAMCLIP_SCENES|VIVY_STREAM_DREAMCLIP_MAX_DURATION_SECONDS|VIVY_STREAM_DREAMCLIP_LOOP_SECONDS|VIVY_STREAM_DREAMCLIP_MIN_GENERATED_COVERAGE|VIVY_STREAM_DREAMCLIP_ALLOW_STATIC_FALLBACK|VIVY_STREAM_FULL_CLIP_INSTRUMENTAL_SCENES|VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS|VIVY_STREAM_FULL_CLIP_REUSE_CHORUS|VIVY_STREAM_FULL_CLIP_CONCURRENCY|VIVY_STREAM_FULL_CLIP_GENERATE_SCENE_LOOPS|VIVY_STREAM_FULL_CLIP_LOOP_SECONDS|VIVY_STREAM_FULL_CLIP_WIDTH|VIVY_STREAM_FULL_CLIP_HEIGHT|VIVY_STREAM_FULL_CLIP_FPS|VIVY_STREAM_FULL_CLIP_VISUAL_QA|A11_HF_VIDEO_PROVIDER|A11_REPLICATE_VIDEO_MODEL|A11_VIDEO_PROMPT_MAX_DURATION_SECONDS|VIVY_STREAM_FULL_CLIP_CROP_SOURCE_IMAGE|VIVY_STREAM_FULL_CLIP_SOURCE_CROP_WIDTH_RATIO|VIVY_STREAM_FULL_CLIP_SOURCE_CROP_X_BIAS|VIVY_STREAM_FULL_CLIP_SOURCE_CROP_Y_BIAS|VIVY_STREAM_FULL_CLIP_DEMOSAIC_GRID|VIVY_STREAM_FULL_CLIP_DEMOSAIC_COLUMNS|VIVY_STREAM_FULL_CLIP_DEMOSAIC_ROWS|VIVY_STREAM_FULL_CLIP_DEMOSAIC_ACTIVE_HEIGHT_RATIO|VIVY_STREAM_FULL_CLIP_DEMOSAIC_SEGMENT_SECONDS|VIVY_STREAM_FULL_CLIP_DEMOSAIC_ORDER|A11_VIDEO_PROXY_URL|A11_VIDEO_PROXY_TOKEN|A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL|A11_VIDEO_PROXY_TIMEOUT_MS|A11_VIDEO_ASYNC_JOB_TTL_MS|A11_VIDEO_COMFY_CLOUD_ENABLED|A11_COMFY_CLOUD_API_KEY|A11_COMFY_CLOUD_BASE_URL|A11_COMFY_CLOUD_WORKFLOW_PATH|A11_COMFY_CLOUD_TIMEOUT_MS|A11_COMFY_CLOUD_POLL_INTERVAL_MS|A11_COMFY_CLOUD_WAN_MODEL|A11_COMFY_CLOUD_WAN_RESOLUTION)='
+managed_keys='^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE|A11_VOICE_XTTS_RVC_FALLBACK|A11_LLM_PROVIDER|A11_OLLAMA_PRIMARY_MODEL|A11_OLLAMA_FALLBACK_MODEL|A11_OLLAMA_STRONG_SONG_MODEL|VIVY_CHAT_LOCAL_FIRST|VIVY_OLLAMA_BASE_URL|VIVY_CHAT_LOCAL_MODEL|VIVY_CHAT_LOCAL_TIMEOUT_MS|VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS|VIVY_CHAT_LOCAL_MAX_TOKENS|VIVY_XAI_MODEL|OLLAMA_CLOUD_ENABLED|OLLAMA_CLOUD_BASE_URL|OLLAMA_CLOUD_LYRICS_MODEL|OLLAMA_CLOUD_FAST_MODEL|OLLAMA_CLOUD_CHAT_ENABLED|OLLAMA_CLOUD_CHAT_MODEL|OLLAMA_CLOUD_CHAT_THINK_LEVEL|OLLAMA_CLOUD_CHAT_TIMEOUT_MS|OLLAMA_CLOUD_THINK_LEVEL|OLLAMA_CLOUD_LYRICS_TIMEOUT_MS|VIVY_SONG_CERBERE_FALLBACK_ENABLED|VIVY_SONG_CERBERE_MODEL|VIVY_SONG_CERBERE_TIMEOUT_MS|VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS|VIVY_CHAT_MAX_TOKENS|VIVY_CHAT_MAX_TOKENS_SONG|VIVY_CHAT_MAX_TOKENS_SONG_CEILING|VIVY_SONG_ALLOW_LOCAL_FALLBACK|VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK|VIVY_SONG_LOCAL_MODEL|A11_TRANSLATION_MODEL|LOCAL_DEFAULT_MODEL|A11_LLM_FALLBACK_PROVIDER|A11_LLM_RUNTIME_FALLBACK_ORDER|A11_CERBERE_LOCAL_ONLY|A11_LOCAL_CHAT_TIMEOUT_MS|A11_LOCAL_SONG_TIMEOUT_MS|A11_OLLAMA_KEEP_ALIVE|A11_MEMORY_LOCAL_TIMEOUT_MS|A11_MEMORY_REMOTE_TIMEOUT_MS|A11_EMBEDDING_TIMEOUT_MS|A11_RUNTIME_ROOT|VIVY_ELEVENLABS_MUSIC_DISABLED|VIVY_MUSIC_PROVIDER|VIVY_MUREKA_API_KEY_FILE|VIVY_MUREKA_BASE_URL|VIVY_MUREKA_MODEL|VIVY_SUNO_MODEL|VIVY_SUNO_LONG_MODEL|VIVY_SUNO_VOICE_ID|VIVY_SUNO_DJEFF_VOICE_ID|VIVY_SUNO_MARVIN_VOICE_ID|VIVY_SUNO_FRERE_VOICE_ID|SUNO_MARVIN_VOICE_ID|SUNO_FRERE_VOICE_ID|A11_SUNO_MARVIN_VOICE_ID|VIVY_SUNO_A11_VOICE_ID|VIVY_SUNO_K44_VOICE_ID|VIVY_SUNO_KAEN44_VOICE_ID|SUNO_DJEFF_VOICE_ID|SUNO_A11_VOICE_ID|SUNO_K44_VOICE_ID|SUNO_KAEN44_VOICE_ID|A11_SUNO_DJEFF_VOICE_ID|A11_SUNO_A11_VOICE_ID|A11_SUNO_K44_VOICE_ID|VIVY_STREAM_AUTOGENERATE_ENABLED|VIVY_STREAM_IDLE_JUKEBOX_DISABLED|VIVY_STREAM_STATE_URL|VIVY_PUBLIC_BASE_URL|VIVY_STREAM_BOT_MESSAGE_GAP_MS|VIVY_STREAM_COVER_ENABLED|VIVY_STREAM_COVER_URL|VIVY_STREAM_COVER_TIMEOUT_MS|VIVY_STREAM_CLIP_ENABLED|VIVY_STREAM_CLIP_PROVIDER|VIVY_STREAM_CLIP_DURATION_SECONDS|VIVY_STREAM_CLIP_TIMEOUT_MS|VIVY_STREAM_FULL_CLIP_ENABLED|VIVY_STREAM_FULL_CLIP_SOURCE_IMAGE_URL|VIVY_STREAM_DREAMCLIP_SOURCE_IMAGE_URL|VIVY_STREAM_FULL_CLIP_PROVIDER|VIVY_STREAM_FULL_CLIP_SCENES|VIVY_STREAM_DREAMCLIP_SCENES|VIVY_STREAM_DREAMCLIP_MAX_DURATION_SECONDS|VIVY_STREAM_DREAMCLIP_LOOP_SECONDS|VIVY_STREAM_DREAMCLIP_MIN_GENERATED_COVERAGE|VIVY_STREAM_DREAMCLIP_ALLOW_STATIC_FALLBACK|VIVY_STREAM_FULL_CLIP_INSTRUMENTAL_SCENES|VIVY_STREAM_FULL_CLIP_UNIQUE_LOOPS|VIVY_STREAM_FULL_CLIP_REUSE_CHORUS|VIVY_STREAM_FULL_CLIP_CONCURRENCY|VIVY_STREAM_FULL_CLIP_GENERATE_SCENE_LOOPS|VIVY_STREAM_FULL_CLIP_LOOP_SECONDS|VIVY_STREAM_FULL_CLIP_WIDTH|VIVY_STREAM_FULL_CLIP_HEIGHT|VIVY_STREAM_FULL_CLIP_FPS|VIVY_STREAM_FULL_CLIP_VISUAL_QA|A11_HF_VIDEO_PROVIDER|A11_REPLICATE_VIDEO_MODEL|A11_VIDEO_PROMPT_MAX_DURATION_SECONDS|VIVY_STREAM_FULL_CLIP_CROP_SOURCE_IMAGE|VIVY_STREAM_FULL_CLIP_SOURCE_CROP_WIDTH_RATIO|VIVY_STREAM_FULL_CLIP_SOURCE_CROP_X_BIAS|VIVY_STREAM_FULL_CLIP_SOURCE_CROP_Y_BIAS|VIVY_STREAM_FULL_CLIP_DEMOSAIC_GRID|VIVY_STREAM_FULL_CLIP_DEMOSAIC_COLUMNS|VIVY_STREAM_FULL_CLIP_DEMOSAIC_ROWS|VIVY_STREAM_FULL_CLIP_DEMOSAIC_ACTIVE_HEIGHT_RATIO|VIVY_STREAM_FULL_CLIP_DEMOSAIC_SEGMENT_SECONDS|VIVY_STREAM_FULL_CLIP_DEMOSAIC_ORDER|A11_VIDEO_PROXY_URL|A11_VIDEO_PROXY_TOKEN|A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL|A11_VIDEO_PROXY_TIMEOUT_MS|A11_VIDEO_ASYNC_JOB_TTL_MS|A11_VIDEO_COMFY_CLOUD_ENABLED|A11_VIDEO_COMFY_CLOUD_API_KEY|A11_VIDEO_COMFY_CLOUD_BASE_URL|A11_VIDEO_COMFY_CLOUD_WORKFLOW_PATH|A11_VIDEO_COMFY_CLOUD_TIMEOUT_MS|A11_VIDEO_COMFY_CLOUD_POLL_INTERVAL_MS|A11_VIDEO_COMFY_CLOUD_WAN_MODEL|A11_VIDEO_COMFY_CLOUD_WAN_RESOLUTION)='
+managed_nossen_keys='^(VIVY_NOSSEN_LOCAL_MODEL|VIVY_NOSSEN_LARGE_MODEL_FIRST|VIVY_NOSSEN_120B_MAX_PROMPT_CHARS|VIVY_NOSSEN_120B_MAX_TOKENS|VIVY_NOSSEN_120B_TIMEOUT_MS|VIVY_NOSSEN_FAST_LOCAL_ONLY|VIVY_NOSSEN_ROUTE_LLM_ENABLED|VIVY_NOSSEN_ROUTER_LOCAL_TIMEOUT_MS|VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS|VIVY_NOSSEN_LOCAL_MAX_TOKENS|VIVY_NOSSEN_LLM_BUDGET_MS|VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS|VIVY_NOSSEN_EMERGENCY_SONGCRAFT)='
 vivy_stream_secret="$(awk -F= '/^VIVY_STREAM_SECRET=/{sub(/^[^=]*=/,""); print; exit}' "$compose_env" "$a11_env" "$build_env" 2>/dev/null || true)"
 vivy_stream_autogenerate="$(awk -F= '/^VIVY_STREAM_AUTOGENERATE_ENABLED=/{sub(/^[^=]*=/,""); print; exit}' "$compose_env" "$a11_env" "$build_env" 2>/dev/null || true)"
 if [ -z "$vivy_stream_autogenerate" ]; then
@@ -1821,16 +1876,16 @@ for key in TWITCH_CHANNEL TWITCH_BOT_USERNAME TWITCH_OAUTH_TOKEN TWITCH_ACCESS_T
   fi
 done
 if [ -s "$build_env" ]; then
-  grep -v -E "$managed_keys" "$build_env" > "$tmp_build" || true
+  grep -v -E "$managed_keys" "$build_env" | grep -v -E "$managed_nossen_keys" > "$tmp_build" || true
 fi
 printf 'A11_BUILD_COMMIT=%s\n' '__BUILD_COMMIT__' >> "$tmp_build"
 printf 'A11_BUILD_BRANCH=%s\n' '__BUILD_BRANCH__' >> "$tmp_build"
 printf 'A11_BUILD_DATE=%s\n' '__BUILD_DATE__' >> "$tmp_build"
 printf 'A11_VOICE_XTTS_RVC_FALLBACK=false\n' >> "$tmp_build"
-printf 'A11_LLM_PROVIDER=groq\n' >> "$tmp_build"
+printf 'A11_LLM_PROVIDER=ollama\n' >> "$tmp_build"
 printf 'A11_OLLAMA_PRIMARY_MODEL=qwen2.5:32b\n' >> "$tmp_build"
 printf 'A11_OLLAMA_FALLBACK_MODEL=qwen2.5:7b\n' >> "$tmp_build"
-printf 'VIVY_CHAT_LOCAL_FIRST=false\n' >> "$tmp_build"
+printf 'VIVY_CHAT_LOCAL_FIRST=true\n' >> "$tmp_build"
 printf 'VIVY_OLLAMA_BASE_URL=http://a11-ollama:11434\n' >> "$tmp_build"
 printf 'VIVY_CHAT_LOCAL_MODEL=qwen2.5:7b\n' >> "$tmp_build"
 printf 'VIVY_CHAT_LOCAL_TIMEOUT_MS=90000\n' >> "$tmp_build"
@@ -1851,7 +1906,9 @@ printf 'OLLAMA_CLOUD_THINK_LEVEL=%s\n' "$ollama_cloud_think_level" >> "$tmp_buil
 printf 'OLLAMA_CLOUD_LYRICS_TIMEOUT_MS=360000\n' >> "$tmp_build"
 printf 'VIVY_SONG_CERBERE_FALLBACK_ENABLED=1\n' >> "$tmp_build"
 vivy_song_cerbere_model="$(awk -F= '$1 == "VIVY_SONG_CERBERE_MODEL" { sub(/^[^=]*=/, ""); print; exit }' "$a11_env" 2>/dev/null || true)"
-if [ -z "$vivy_song_cerbere_model" ]; then vivy_song_cerbere_model="anthropic/claude-sonnet-4.5"; fi
+case "$vivy_song_cerbere_model" in
+  ""|"anthropic/claude-sonnet-4.5") vivy_song_cerbere_model="openai/gpt-oss-120b" ;;
+esac
 printf 'VIVY_SONG_CERBERE_MODEL=%s\n' "$vivy_song_cerbere_model" >> "$tmp_build"
 printf 'VIVY_SONG_CERBERE_TIMEOUT_MS=240000\n' >> "$tmp_build"
 printf 'VIVY_GROQ_RATE_LIMIT_COOLDOWN_MS=300000\n' >> "$tmp_build"
@@ -1860,11 +1917,25 @@ printf 'VIVY_CHAT_MAX_TOKENS_SONG=10000\n' >> "$tmp_build"
 printf 'VIVY_CHAT_MAX_TOKENS_SONG_CEILING=12000\n' >> "$tmp_build"
 printf 'A11_OLLAMA_STRONG_SONG_MODEL=__STRONG_SONG_MODEL__\n' >> "$tmp_build"
 printf 'VIVY_SONG_ALLOW_LOCAL_FALLBACK=true\n' >> "$tmp_build"
-printf 'VIVY_SONG_LOCAL_MODEL=__STRONG_SONG_MODEL__\n' >> "$tmp_build"
+printf 'VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK=true\n' >> "$tmp_build"
+printf 'VIVY_SONG_LOCAL_MODEL=qwen2.5:7b\n' >> "$tmp_build"
+printf 'VIVY_NOSSEN_LOCAL_MODEL=qwen2.5:32b\n' >> "$tmp_build"
+printf 'VIVY_NOSSEN_LARGE_MODEL_FIRST=true\n' >> "$tmp_build"
+printf 'VIVY_NOSSEN_120B_MAX_PROMPT_CHARS=22000\n' >> "$tmp_build"
+printf 'VIVY_NOSSEN_120B_MAX_TOKENS=1800\n' >> "$tmp_build"
+printf 'VIVY_NOSSEN_120B_TIMEOUT_MS=60000\n' >> "$tmp_build"
+printf 'VIVY_NOSSEN_FAST_LOCAL_ONLY=true\n' >> "$tmp_build"
+printf 'VIVY_NOSSEN_ROUTE_LLM_ENABLED=false\n' >> "$tmp_build"
+printf 'VIVY_NOSSEN_ROUTER_LOCAL_TIMEOUT_MS=20000\n' >> "$tmp_build"
+printf 'VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS=40000\n' >> "$tmp_build"
+printf 'VIVY_NOSSEN_LOCAL_MAX_TOKENS=560\n' >> "$tmp_build"
+printf 'VIVY_NOSSEN_LLM_BUDGET_MS=80000\n' >> "$tmp_build"
+printf 'VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS=8000\n' >> "$tmp_build"
+printf 'VIVY_NOSSEN_EMERGENCY_SONGCRAFT=true\n' >> "$tmp_build"
 printf 'A11_TRANSLATION_MODEL=qwen2.5:32b\n' >> "$tmp_build"
 printf 'LOCAL_DEFAULT_MODEL=llama3.2:3b\n' >> "$tmp_build"
 printf 'A11_LLM_FALLBACK_PROVIDER=ollama\n' >> "$tmp_build"
-printf 'A11_LLM_RUNTIME_FALLBACK_ORDER=ollama,openai,gemini,xai,huggingface,deepseek,together\n' >> "$tmp_build"
+printf 'A11_LLM_RUNTIME_FALLBACK_ORDER=ollama,ollama_cloud,openai,gemini,xai,huggingface,deepseek,together,groq,openrouter\n' >> "$tmp_build"
 printf 'A11_CERBERE_LOCAL_ONLY=false\n' >> "$tmp_build"
 printf 'A11_LOCAL_CHAT_TIMEOUT_MS=90000\n' >> "$tmp_build"
 printf 'A11_LOCAL_SONG_TIMEOUT_MS=180000\n' >> "$tmp_build"
@@ -1946,12 +2017,12 @@ mv "$tmp_build" "$build_env"
 chmod 600 "$build_env"
 if [ -s "$a11_env" ]; then
   tmp_compose="$(mktemp)"
-  grep -v -E "$managed_keys" "$a11_env" > "$tmp_compose" || true
+  grep -v -E "$managed_keys" "$a11_env" | grep -v -E "$managed_nossen_keys" > "$tmp_compose" || true
   cat "$build_env" >> "$tmp_compose"
   mv "$tmp_compose" "$compose_env"
 else
   tmp_compose="$(mktemp)"
-  grep -v -E "$managed_keys" "$compose_env" > "$tmp_compose" || true
+  grep -v -E "$managed_keys" "$compose_env" | grep -v -E "$managed_nossen_keys" > "$tmp_compose" || true
   cat "$build_env" >> "$tmp_compose"
   mv "$tmp_compose" "$compose_env"
 fi

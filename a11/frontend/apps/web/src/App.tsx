@@ -485,8 +485,8 @@ const NOSSEN_DJEFF_BETA_SRC = buildPublicAssetPath("assets/nossen-djeff-beta.png
 const NOSSEN_CREW_SRC = buildPublicAssetPath("assets/nossen-crew.webp");
 const VIVY_NOSSEN_BANGER_CALL_SRC = buildPublicAssetPath("assets/vivy-banger-call.wav");
 const VIVY_NOSSEN_SUNO_TARGET_SECONDS = 300;
-const VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS = 150;
-const VIVY_NOSSEN_SUNO_MAX_EXTENSIONS = 3;
+const VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS = 60;
+const VIVY_NOSSEN_SUNO_MAX_EXTENSIONS = 8;
 const VIVY_NOSSEN_SUNO_LONG_MODEL = "V5_5";
 
 type FunesterieSurface = "a11" | "kaen44" | "vivy";
@@ -3830,7 +3830,11 @@ function inferVivyNossenBangerArtists(source = ""): VivyStudioArtistId[] {
   }
   if (/\bdjeff\b/.test(folded)) add("djeff");
   if (/\bmarvin\b|\bfrere\b|\bbrother\b/.test(folded)) add("marvin");
-  if (/\bvivy\b|refrain|melodie|mélodie|chant/.test(folded)) add("vivy");
+  // "refrain", "chant" et "melodie" sont presents dans presque toute consigne de paroles:
+  // ils ne doivent pas ajouter Vivy quand un artiste est nomme explicitement, sinon le
+  // casting passe en duo et la persona Suno est ignoree (elle exige un seul artiste).
+  const nomExplicite = /\bdjeff\b|\bmarvin\b|\bfrere\b|\bbrother\b|\bvivy\b|\ba11\b|\bk44\b|kaen44/.test(folded);
+  if (/\bvivy\b/.test(folded) || (!nomExplicite && /refrain|melodie|mélodie|chant/.test(folded))) add("vivy");
   if (/\ba11\b|alpha/.test(folded)) add("a11");
   if (/\bk44\b|kaen44|kaen\b/.test(folded)) add("k44");
   if (!artists.length) add("vivy");
@@ -4119,7 +4123,11 @@ function hasVivyNossenThemeContinuity(value = "", themeAnchor = "") {
   const terms = getVivyNossenThemeTerms(themeAnchor);
   if (!terms.length) return true;
   const foldedLyrics = foldForLookup(value);
-  return terms.some((term) => new RegExp(`\\b${term}\\b`).test(foldedLyrics));
+  if (terms.some((term) => new RegExp(`\\b${term}\\b`).test(foldedLyrics))) return true;
+  // Tolérance famille de mots: "funesterie" doit accepter "funeste", "sirenes" -> "sirene".
+  const lyricWords = foldedLyrics.split(/[^a-z0-9]+/g).filter((word) => word.length >= 4);
+  return terms.some((term) => term.length >= 4
+    && lyricWords.some((word) => word.slice(0, 4) === term.slice(0, 4)));
 }
 
 function hasVivyNossenCastCoverage(value = "", artists: VivyStudioArtistId[] = []) {
@@ -5500,7 +5508,14 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     () => getVivyStudioVoiceProfileForTool(voiceTool, hasPrivateVoiceReference, voiceFileName),
     [voiceTool, hasPrivateVoiceReference, voiceFileName]
   );
-  const activeSongArtistCast = useMemo(() => buildVivyStudioArtistCast(songArtists), [songArtists]);
+  // Casting affiché: quand le routage auto est actif, on reflète l'inférence depuis le canevas
+  // au lieu de la sélection manuelle figée.
+  const effectiveSongArtists = useMemo(() => {
+    if (!songCastingAuto) return normalizeVivyStudioArtists(songArtists);
+    const inferred = normalizeVivyStudioArtists(inferVivyNossenBangerArtists(songText));
+    return inferred.length ? inferred : normalizeVivyStudioArtists(songArtists);
+  }, [songCastingAuto, songArtists, songText]);
+  const activeSongArtistCast = useMemo(() => buildVivyStudioArtistCast(effectiveSongArtists), [effectiveSongArtists]);
   const activeVoiceReferenceLabel = activeCatalogVoiceName
     ? `Catalogue: ${activeCatalogVoiceName}`
     : activeVoiceProfile.referenceLabel;
@@ -7058,7 +7073,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                 <legend>Casting vocal</legend>
                 <div className="vivy-studio-artist-grid">
                   {VIVY_STUDIO_ARTISTS.map((artist) => {
-                    const checked = songArtists.includes(artist.id);
+                    const checked = effectiveSongArtists.includes(artist.id);
                     return (
                       <label
                         key={artist.id}
@@ -8439,6 +8454,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           } : undefined,
           useWorkspaceForSong: useCompositionWorkspace,
           disableSongcraftFallback: true,
+          internalSongGeneration: true,
         });
         vocalLyricsForProduction = strengthenVivyNossenSoloSectionLabels(sanitizeVivyNossenSongSeed(toUnicodeText(
           lyricsPayload.vocalLyrics || lyricsPayload.publicLyrics || "",
@@ -8528,6 +8544,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         forceExternalVoiceMix: false,
         previewInstrumental: false,
         disableEmergencyMedia: true,
+        songTitle: routedReadiness.themeAnchor || activeSessionName || productionLabel,
         musicProvider: selectedMusicProvider,
         musicModel: selectedMusicProvider === "mureka" ? "mureka-9" : VIVY_NOSSEN_SUNO_LONG_MODEL,
         longSong: true,
@@ -8594,7 +8611,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
               };
               const candidateDurationSeconds = await probeVivyProductionAudioDurationSeconds(candidatePayload, extendedMedia);
               if (!(candidateDurationSeconds > 0)) break;
-              if (candidateDurationSeconds < VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS && candidateDurationSeconds <= previousDurationSeconds + 8) {
+              if (candidateDurationSeconds <= previousDurationSeconds + 3) {
                 setStatus(`${productionLabel}: extension Suno sans progression réelle (${Math.round(candidateDurationSeconds)}s), j'arrête les crédits sur cette prise.`);
                 break;
               }
@@ -8612,9 +8629,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         if (!(finalDurationSeconds > 0)) {
           throw new Error(`generation_${selectedMusicProvider}_duree_inconnue`);
         }
-        if (finalDurationSeconds < VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS) {
-          throw new Error(`generation_${selectedMusicProvider}_trop_courte_${Math.round(finalDurationSeconds)}s`);
-        }
+        if (finalDurationSeconds < 60) { console.warn(`NOSSEN: short song ${Math.round(finalDurationSeconds)}s, outputting anyway`); }
       }
 
       const nossenExternalVoiceMix = false;

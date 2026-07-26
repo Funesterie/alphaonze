@@ -7,7 +7,7 @@
  */
 
 const express = require('express');
-const { askOpenAI } = require('../providers/openai');
+const { askOpenAI } = require('../../providers/openai');
 
 const SYSTEM_PROMPT = `Tu es l'assistant IA de Funesterie, la plateforme créative qui regroupe A11, K44, Vivy, Djeff, Kiro et Codex.
 

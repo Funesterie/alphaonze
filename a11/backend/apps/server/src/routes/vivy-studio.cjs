@@ -632,12 +632,17 @@ function getVivyProviderFromBaseUrl(baseURL = '') {
   if (/ollama|(?:127\.0\.0\.1|localhost):11434/i.test(baseURL)) return 'ollama';
   if (/groq/i.test(baseURL)) return 'groq';
   if (/openrouter\.ai/i.test(baseURL)) return 'openrouter';
+  if (/generativelanguage\.googleapis\.com|gemini/i.test(baseURL)) return 'gemini';
+  if (/deepseek/i.test(baseURL)) return 'deepseek';
+  if (/together/i.test(baseURL)) return 'together';
+  if (/huggingface|hf\.co/i.test(baseURL)) return 'huggingface';
   if (/x\.ai|grok/i.test(baseURL)) return 'xai';
   return 'openai';
 }
 
-function getVivyLocalOllamaConfig(options = {}) {
+function getVivyLocalOllamaConfigs(options = {}) {
   const mode = cleanOneLine(options.mode || options.chatMode, '', 24).toLowerCase();
+  const purpose = cleanOneLine(options.purpose, '', 40).toLowerCase();
   const rawBaseURL = cleanOneLine(
     process.env.VIVY_OLLAMA_BASE_URL
       || process.env.A11_OLLAMA_BASE
@@ -645,30 +650,62 @@ function getVivyLocalOllamaConfig(options = {}) {
     '',
     300
   ).replace(/\/+$/, '');
-  if (!rawBaseURL) return null;
+  if (!rawBaseURL) return [];
 
   const baseURL = /\/v1$/i.test(rawBaseURL) ? rawBaseURL : `${rawBaseURL}/v1`;
-  const model = cleanOneLine(
-    mode === 'song'
-      ? (process.env.VIVY_SONG_LOCAL_MODEL
-        || process.env.VIVY_CHAT_LOCAL_MODEL
-        || process.env.A11_OLLAMA_CHAT_MODEL
-        || process.env.A11_OLLAMA_PRIMARY_MODEL
-        || process.env.LOCAL_DEFAULT_MODEL)
-      : (process.env.VIVY_CHAT_LOCAL_MODEL
-        || process.env.A11_OLLAMA_CHAT_MODEL
-        || process.env.A11_OLLAMA_PRIMARY_MODEL
-        || process.env.LOCAL_DEFAULT_MODEL),
-    'llama3.2:3b',
-    120
-  );
+  const fastNossenLocalOnly = mode === 'song'
+    && purpose === 'lyrics'
+    && !['0', 'false', 'off', 'no'].includes(
+      String(process.env.VIVY_NOSSEN_FAST_LOCAL_ONLY || 'true').trim().toLowerCase()
+    );
+  const routingPurpose = mode === 'song' && ['intent', 'routing'].includes(purpose);
+  const fastNossenModel = routingPurpose
+    ? (
+      process.env.VIVY_CHAT_LOCAL_MODEL
+      || process.env.A11_OLLAMA_FALLBACK_MODEL
+      || process.env.VIVY_SONG_LOCAL_MODEL
+      || process.env.A11_OLLAMA_PRIMARY_MODEL
+    )
+    : (
+      process.env.VIVY_NOSSEN_LOCAL_MODEL
+      || process.env.VIVY_SONG_LOCAL_MODEL
+      || process.env.VIVY_CHAT_LOCAL_MODEL
+      || process.env.A11_OLLAMA_FALLBACK_MODEL
+      || process.env.A11_OLLAMA_PRIMARY_MODEL
+    );
+  const configuredModels = mode === 'song'
+    ? (fastNossenLocalOnly || routingPurpose
+      ? [fastNossenModel]
+      : [
+        process.env.VIVY_SONG_LOCAL_MODEL,
+        process.env.A11_OLLAMA_STRONG_SONG_MODEL,
+        process.env.A11_OLLAMA_PRIMARY_MODEL,
+        process.env.VIVY_CHAT_LOCAL_MODEL,
+        process.env.A11_OLLAMA_FALLBACK_MODEL,
+        process.env.LOCAL_DEFAULT_MODEL,
+      ])
+    : [
+      process.env.VIVY_CHAT_LOCAL_MODEL,
+      process.env.A11_OLLAMA_CHAT_MODEL,
+      process.env.A11_OLLAMA_PRIMARY_MODEL,
+      process.env.A11_OLLAMA_FALLBACK_MODEL,
+      process.env.LOCAL_DEFAULT_MODEL,
+    ];
+  const models = configuredModels
+    .map((value) => cleanOneLine(value, '', 120))
+    .filter((value, index, list) => value && !/embed/i.test(value) && list.indexOf(value) === index);
+  if (!models.length) models.push('llama3.2:3b');
   const chatTimeoutMs = Math.max(1000, Number(
     process.env.VIVY_CHAT_LOCAL_TIMEOUT_MS
     || process.env.A11_LOCAL_CHAT_TIMEOUT_MS
     || process.env.A11_OLLAMA_CHAT_TIMEOUT_MS
     || 90000
   ) || 90000);
-  const songTimeoutMs = Math.max(1000, Number(process.env.A11_LOCAL_SONG_TIMEOUT_MS || 180000) || 180000);
+  const songTimeoutMs = routingPurpose
+    ? Math.max(1000, Number(process.env.VIVY_NOSSEN_ROUTER_LOCAL_TIMEOUT_MS || 20000) || 20000)
+    : fastNossenLocalOnly
+      ? Math.max(1000, Number(process.env.VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS || 40000) || 40000)
+      : Math.max(1000, Number(process.env.A11_LOCAL_SONG_TIMEOUT_MS || 180000) || 180000);
   const chatMaxPromptChars = Math.max(6000, Math.min(
     14000,
     Number(process.env.VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS || 10000) || 10000
@@ -677,17 +714,30 @@ function getVivyLocalOllamaConfig(options = {}) {
     1200,
     Number(process.env.VIVY_CHAT_LOCAL_MAX_TOKENS || 800) || 800
   ));
+  const songMaxOutputTokens = routingPurpose
+    ? Math.max(128, Math.min(700, Number(process.env.VIVY_NOSSEN_ROUTER_MAX_TOKENS || 520) || 520))
+    : fastNossenLocalOnly
+      ? Math.max(420, Math.min(2200, Number(process.env.VIVY_NOSSEN_LOCAL_MAX_TOKENS || 560) || 560))
+      : 0;
 
-  return {
+  return models.map((model) => ({
     baseURL,
     apiKey: String(process.env.OLLAMA_API_KEY || 'ollama-local').trim(),
     model,
     provider: 'ollama',
     source: 'ollama-openai-compatible',
     timeoutMs: mode === 'song' ? songTimeoutMs : chatTimeoutMs,
-    maxPromptChars: mode === 'song' ? 0 : chatMaxPromptChars,
-    maxOutputTokens: mode === 'song' ? 0 : chatMaxOutputTokens,
-  };
+    // Un prompt song non borné sur un 7b local se paye en dizaines de secondes de latence.
+    maxPromptChars: mode === 'song'
+      ? Math.max(6000, Math.min(32000, Number(process.env.VIVY_SONG_LOCAL_MAX_PROMPT_CHARS || 16000) || 16000))
+      : chatMaxPromptChars,
+    maxOutputTokens: mode === 'song' ? songMaxOutputTokens : chatMaxOutputTokens,
+    maxRetries: 0,
+  }));
+}
+
+function getVivyLocalOllamaConfig(options = {}) {
+  return getVivyLocalOllamaConfigs(options)[0] || null;
 }
 
 function getVivyOllamaCloudConfig(options = {}) {
@@ -736,6 +786,12 @@ function getVivyOllamaCloudConfig(options = {}) {
     source: 'ollama-cloud-api',
     thinkLevel,
     timeoutMs,
+    maxPromptChars: lyricsMode
+      ? Math.max(10000, Math.min(30000, Number(process.env.VIVY_NOSSEN_120B_MAX_PROMPT_CHARS || 22000) || 22000))
+      : 0,
+    maxOutputTokens: lyricsMode
+      ? Math.max(900, Math.min(2600, Number(process.env.VIVY_NOSSEN_120B_MAX_TOKENS || 1800) || 1800))
+      : 0,
     maxCalls: 1,
   };
 }
@@ -768,8 +824,8 @@ function getVivyCerbereSongConfig(options = {}) {
     provider: 'cerbere',
     source: 'cerbere-openai-compatible',
     timeoutMs: Math.max(30000, Number(process.env.VIVY_SONG_CERBERE_TIMEOUT_MS || 240000) || 240000),
-    maxCalls: Math.max(1, Math.min(4, Number(process.env.VIVY_SONG_CERBERE_MAX_CALLS || 2) || 2)),
-    maxRetries: Math.max(0, Math.min(2, Number(process.env.VIVY_SONG_CERBERE_MAX_RETRIES || 1) || 1)),
+    maxCalls: 1,
+    maxRetries: 0,
   };
 }
 
@@ -816,6 +872,13 @@ function getVivyOpenAIConfig(options = {}) {
     80
   );
 
+  // Sans budget, fitVivyChatRequestForBundle ne tronque rien (0 == illimité) et le prompt
+  // song complet part tel quel: Groq répond alors 413 et toute la chaîne bascule sur les
+  // providers lents, ce qui fait dépasser le timeout ~100s du proxy Cloudflare.
+  const maxPromptChars = mode === 'song'
+    ? Math.max(8000, Math.min(48000, Number(process.env.VIVY_SONG_PRIMARY_MAX_PROMPT_CHARS || 24000) || 24000))
+    : Math.max(6000, Math.min(48000, Number(process.env.VIVY_CHAT_PRIMARY_MAX_PROMPT_CHARS || 18000) || 18000));
+
   return {
     baseURL,
     apiKey: String(apiKey || '').trim(),
@@ -828,44 +891,191 @@ function getVivyOpenAIConfig(options = {}) {
         : getVivyProviderFromBaseUrl(normalizedBaseUrl) === 'xai'
           ? 'xai-openai-compatible'
           : 'openai-compatible',
-    maxRetries: mode === 'song' && getVivyProviderFromBaseUrl(normalizedBaseUrl) === 'groq' ? 0 : 2,
+    maxPromptChars,
+    maxRetries: 0,
   };
+}
+
+function getVivyCloudProviderConfig(provider, options = {}) {
+  const mode = cleanOneLine(options.mode || options.chatMode, '', 24).toLowerCase();
+  const songMode = mode === 'song';
+  const normalizedProvider = cleanOneLine(provider, '', 40).toLowerCase();
+  const definitions = {
+    groq: {
+      baseURL: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
+      apiKey: songMode
+        ? (process.env.VIVY_SONG_GROQ_API_KEY || process.env.VIVY_GROQ_API_KEY || process.env.GROQ_API_KEY)
+        : (process.env.VIVY_GROQ_API_KEY || process.env.GROQ_API_KEY),
+      model: songMode
+        ? (process.env.VIVY_SONG_GROQ_MODEL || process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile')
+        : (process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'),
+    },
+    openai: {
+      baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+      apiKey: process.env.A11_OPENAI_API_KEY
+        || process.env.OPENAI_API_KEY
+        || ((!process.env.VIVY_OPENAI_BASE_URL
+          && !(songMode && (process.env.VIVY_SONG_OPENAI_BASE_URL || process.env.VIVY_SONG_BASE_URL)))
+          ? process.env.VIVY_OPENAI_API_KEY
+          : ''),
+      model: songMode
+        ? (process.env.VIVY_SONG_OPENAI_MODEL || process.env.OPENAI_MODEL || process.env.A11_OPENAI_MODEL || 'gpt-4o-mini')
+        : (process.env.VIVY_OPENAI_MODEL || process.env.OPENAI_MODEL || process.env.A11_OPENAI_MODEL || 'gpt-4o-mini'),
+    },
+    gemini: {
+      baseURL: process.env.GEMINI_OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai',
+      apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY || process.env.GOOGLE_API_KEY,
+      model: songMode
+        ? (process.env.VIVY_SONG_GEMINI_MODEL || process.env.GEMINI_MODEL || process.env.GOOGLE_GENAI_MODEL || 'gemini-2.5-flash')
+        : (process.env.VIVY_GEMINI_MODEL || process.env.GEMINI_MODEL || process.env.GOOGLE_GENAI_MODEL || 'gemini-2.5-flash'),
+    },
+    deepseek: {
+      baseURL: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1',
+      apiKey: process.env.DEEPSEEK_API_KEY,
+      model: songMode
+        ? (process.env.VIVY_SONG_DEEPSEEK_MODEL || process.env.DEEPSEEK_MODEL || 'deepseek-chat')
+        : (process.env.VIVY_DEEPSEEK_MODEL || process.env.DEEPSEEK_MODEL || 'deepseek-chat'),
+    },
+    together: {
+      baseURL: process.env.TOGETHER_BASE_URL || 'https://api.together.xyz/v1',
+      apiKey: process.env.TOGETHER_API_KEY,
+      model: songMode
+        ? (process.env.VIVY_SONG_TOGETHER_MODEL || process.env.TOGETHER_MODEL || 'meta-llama/Llama-3.3-70B-Instruct-Turbo')
+        : (process.env.VIVY_TOGETHER_MODEL || process.env.TOGETHER_MODEL || 'meta-llama/Llama-3.3-70B-Instruct-Turbo'),
+    },
+    xai: {
+      baseURL: process.env.XAI_BASE_URL || 'https://api.x.ai/v1',
+      apiKey: process.env.VIVY_XAI_API_KEY || process.env.XAI_API_KEY || process.env.X_AI_API_KEY,
+      model: songMode
+        ? (process.env.VIVY_SONG_XAI_MODEL || process.env.VIVY_XAI_MODEL || process.env.XAI_MODEL || 'grok-3-fast')
+        : (process.env.VIVY_XAI_MODEL || process.env.XAI_MODEL || 'grok-3-fast'),
+    },
+    huggingface: {
+      baseURL: process.env.HF_BASE_URL || 'https://api-inference.huggingface.co/v1',
+      apiKey: process.env.HF_TOKEN
+        || process.env.HUGGINGFACE_API_KEY
+        || process.env.HUGGINGFACE_HUB_TOKEN
+        || process.env.HUGGINGFACEHUB_API_TOKEN,
+      model: songMode
+        ? (process.env.VIVY_SONG_HF_MODEL || process.env.HF_MODEL || 'meta-llama/Llama-3.1-8B-Instruct')
+        : (process.env.VIVY_HF_MODEL || process.env.HF_MODEL || 'meta-llama/Llama-3.1-8B-Instruct'),
+    },
+    openrouter: {
+      baseURL: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+      apiKey: process.env.VIVY_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY,
+      model: songMode
+        ? (process.env.VIVY_SONG_OPENROUTER_MODEL || process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct')
+        : (process.env.VIVY_OPENROUTER_MODEL || process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct'),
+    },
+  };
+  const definition = definitions[normalizedProvider];
+  if (!definition) return null;
+  return {
+    baseURL: cleanOneLine(definition.baseURL, '', 300).replace(/\/+$/, ''),
+    apiKey: String(definition.apiKey || '').trim(),
+    model: cleanOneLine(definition.model, '', 120),
+    provider: normalizedProvider,
+    source: `${normalizedProvider}-openai-compatible`,
+    maxRetries: 0,
+  };
+}
+
+function getVivyCloudConfigs(options = {}) {
+  const explicitConfig = getVivyOpenAIConfig(options);
+  const ollamaCloud = getVivyOllamaCloudConfig(options);
+  const cerbere = getVivyCerbereSongConfig(options);
+  const configuredOrder = String(
+    process.env.VIVY_LLM_FALLBACK_ORDER
+      || process.env.A11_LLM_RUNTIME_FALLBACK_ORDER
+      || 'ollama,ollama_cloud,groq,openrouter,openai,gemini,deepseek,together,xai,huggingface'
+  )
+    .split(/[,\s]+/)
+    .map((value) => cleanOneLine(value, '', 40).toLowerCase())
+    .filter(Boolean);
+  const providerOrder = [...configuredOrder, 'ollama_cloud', 'groq', 'openrouter', 'openai', 'gemini', 'deepseek', 'together', 'xai', 'huggingface']
+    .filter((value, index, list) => value !== 'ollama' && list.indexOf(value) === index);
+  const candidates = [];
+  const explicitBase = cleanOneLine(
+    (String(options.mode || options.chatMode || '').toLowerCase() === 'song'
+      ? (process.env.VIVY_SONG_OPENAI_BASE_URL || process.env.VIVY_SONG_BASE_URL)
+      : '')
+      || process.env.VIVY_OPENAI_BASE_URL,
+    '',
+    300
+  );
+  const explicitProvider = explicitBase ? getVivyProviderFromBaseUrl(explicitConfig.baseURL) : '';
+  let explicitAdded = false;
+  for (const provider of providerOrder) {
+    if (explicitBase && provider === explicitProvider) {
+      candidates.push(explicitConfig);
+      explicitAdded = true;
+    } else if (provider === 'ollama_cloud') candidates.push(ollamaCloud);
+    else if (provider === 'cerbere') candidates.push(cerbere);
+    else candidates.push(getVivyCloudProviderConfig(provider, options));
+  }
+  if (!explicitBase || !explicitAdded) candidates.push(explicitConfig);
+  if (cerbere) candidates.push(cerbere);
+  return candidates;
 }
 
 function getVivyLlmConfigs(options = {}) {
   const mode = cleanOneLine(options.mode || options.chatMode, '', 24).toLowerCase();
   const purpose = cleanOneLine(options.purpose, '', 40).toLowerCase();
-  const cloud = getVivyOpenAIConfig(options);
-  const ollamaCloud = getVivyOllamaCloudConfig(options);
-  const cerbere = getVivyCerbereSongConfig(options);
-  const local = getVivyLocalOllamaConfig(options);
-  const allowLegacySongLocalFallback = ['1', 'true', 'yes', 'on'].includes(
-    String(process.env.VIVY_SONG_ALLOW_LOCAL_FALLBACK || '').trim().toLowerCase()
+  const cloudConfigs = getVivyCloudConfigs(options);
+  const localConfigs = getVivyLocalOllamaConfigs(options);
+  const allowLegacySongLocalFallback = !['0', 'false', 'off', 'no'].includes(
+    String(process.env.VIVY_SONG_ALLOW_LOCAL_FALLBACK || 'true').trim().toLowerCase()
   );
   const allowLyricsLocalFallback = options.allowLocalLyricsFallback === true
-    || ['1', 'true', 'yes', 'on'].includes(
-      String(process.env.VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK || '').trim().toLowerCase()
+    || !['0', 'false', 'off', 'no'].includes(
+      String(process.env.VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK || 'true').trim().toLowerCase()
     );
   const allowSongLocalFallback = purpose === 'lyrics'
     ? allowLyricsLocalFallback
     : allowLegacySongLocalFallback;
-  const localFirst = mode !== 'song'
-    && !['0', 'false', 'off', 'no'].includes(
-      String(process.env.VIVY_CHAT_LOCAL_FIRST || 'false').trim().toLowerCase()
-    );
+  const localFirst = !['0', 'false', 'off', 'no'].includes(
+    String(process.env.VIVY_CHAT_LOCAL_FIRST || 'true').trim().toLowerCase()
+  );
   const ordered = mode === 'song'
     ? (allowSongLocalFallback
-      ? [cloud, ollamaCloud, cerbere, local]
-      : [cloud, ollamaCloud, cerbere])
-    : (localFirst ? [local, ollamaCloud, cloud] : [ollamaCloud, local, cloud]);
+      ? [...localConfigs, ...cloudConfigs]
+      : cloudConfigs)
+    : (localFirst ? [...localConfigs, ...cloudConfigs] : [...cloudConfigs, ...localConfigs]);
   const seen = new Set();
-  return ordered.filter((config) => {
+  const configs = ordered.filter((config) => {
     if (!config?.apiKey || !config?.baseURL || !config?.model) return false;
     const key = `${config.provider}|${config.baseURL}|${config.model}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+  const largeLyricsFirst = mode === 'song'
+    && purpose === 'lyrics'
+    && !['0', 'false', 'off', 'no'].includes(
+      String(process.env.VIVY_NOSSEN_LARGE_MODEL_FIRST || 'true').trim().toLowerCase()
+    )
+    && configs.some((config) => ['ollama_cloud', 'cerbere'].includes(config.provider));
+  if (!largeLyricsFirst) return configs;
+
+  const providerPriority = [
+    'ollama_cloud',
+    'cerbere',
+    'groq',
+    'openrouter',
+    'xai',
+    'gemini',
+    'deepseek',
+    'together',
+    'openai',
+  ];
+  return configs
+    .filter((config) => config.provider !== 'ollama' && config.provider !== 'huggingface')
+    .sort((left, right) => {
+      const leftIndex = providerPriority.indexOf(left.provider);
+      const rightIndex = providerPriority.indexOf(right.provider);
+      return (leftIndex < 0 ? providerPriority.length : leftIndex)
+        - (rightIndex < 0 ? providerPriority.length : rightIndex);
+    });
 }
 
 function createVivyOllamaCloudClientFromConfig(config) {
@@ -875,7 +1085,7 @@ function createVivyOllamaCloudClientFromConfig(config) {
     client: {
       chat: {
         completions: {
-          create: async (request = {}) => {
+          create: async (request = {}, requestOptions = {}) => {
             if (calls >= maxCalls) {
               const error = new Error('ollama_cloud_round_call_limit');
               error.code = 'ollama_cloud_round_call_limit';
@@ -906,7 +1116,13 @@ function createVivyOllamaCloudClientFromConfig(config) {
                 Authorization: `Bearer ${config.apiKey}`,
               },
               body: JSON.stringify(body),
-              signal: AbortSignal.timeout(config.timeoutMs),
+              signal: AbortSignal.timeout(Math.max(
+                1000,
+                Math.min(
+                  Number(config.timeoutMs || 300000) || 300000,
+                  Number(requestOptions?.timeout || config.timeoutMs || 300000) || 300000
+                )
+              )),
             });
             const data = await response.json().catch(() => ({}));
             if (!response.ok) {
@@ -950,6 +1166,9 @@ function createVivyOllamaCloudClientFromConfig(config) {
     baseURL: config.baseURL,
     provider: config.provider,
     source: config.source,
+    timeoutMs: Number(config.timeoutMs || 0) || 0,
+    maxPromptChars: Number(config.maxPromptChars || 0) || 0,
+    maxOutputTokens: Number(config.maxOutputTokens || 0) || 0,
   };
 }
 
@@ -990,6 +1209,7 @@ function createVivyOpenAIClientFromConfig(config) {
     baseURL: config.baseURL,
     provider: config.provider,
     source: config.source,
+    timeoutMs: Number(config.timeoutMs || 0) || 0,
     maxPromptChars: Number(config.maxPromptChars || 0) || 0,
     maxOutputTokens: Number(config.maxOutputTokens || 0) || 0,
   };
@@ -1097,9 +1317,51 @@ function fitVivyChatRequestForBundle(request = {}, bundle = {}) {
   return fitted;
 }
 
-async function createVivyChatCompletion(llmBundles, request) {
+function buildVivyLlmDeadlineError() {
+  const error = new Error('vivy_llm_deadline_exceeded');
+  error.code = 'vivy_llm_deadline_exceeded';
+  error.status = 504;
+  return error;
+}
+
+async function createVivyBundleCompletion(bundle, request, options = {}) {
+  const deadlineAt = Math.max(0, Number(options.deadlineAt || 0) || 0);
+  const remainingMs = deadlineAt ? deadlineAt - Date.now() : Number.POSITIVE_INFINITY;
+  if (remainingMs <= 500) throw buildVivyLlmDeadlineError();
+  const defaultAttemptMs = bundle.provider === 'ollama'
+    ? Math.max(1000, Number(options.localAttemptTimeoutMs || bundle.timeoutMs || 65000) || 65000)
+    : bundle.provider === 'ollama_cloud'
+      ? Math.max(1000, Number(options.largeLyricsAttemptTimeoutMs || options.attemptTimeoutMs || 60000) || 60000)
+    : Math.max(1000, Number(options.attemptTimeoutMs || 20000) || 20000);
+  const attemptTimeoutMs = Math.max(500, Math.floor(Math.min(defaultAttemptMs, remainingMs)));
+  const bundleRequest = fitVivyChatRequestForBundle(request, bundle);
+  return bundle.client.chat.completions.create({
+    ...bundleRequest,
+    model: bundle.model,
+  }, {
+    timeout: attemptTimeoutMs,
+  });
+}
+
+async function createVivyChatCompletion(llmBundles, request, options = {}) {
   let lastError = null;
+  // Filet de sécurité central: sans deadline explicite, la chaîne complète de providers peut
+  // cumuler plus de 100s et se faire couper par le proxy Cloudflare, auquel cas le navigateur
+  // ne voit aucun code HTTP mais un "Failed to fetch". Tous les appelants sont couverts ici.
+  if (!(Number(options.deadlineAt || 0) > 0)) {
+    options = {
+      ...options,
+      deadlineAt: Date.now() + Math.max(15000, Math.min(
+        95000,
+        Number(process.env.VIVY_LLM_CHAIN_BUDGET_MS || 85000) || 85000
+      )),
+    };
+  }
   for (const bundle of llmBundles) {
+    if (options.deadlineAt && Date.now() >= Number(options.deadlineAt) - 500) {
+      lastError = buildVivyLlmDeadlineError();
+      break;
+    }
     const cooldownKey = getVivyProviderCooldownKey(bundle);
     const cooldownUntil = Number(vivyLlmProviderCooldowns.get(cooldownKey) || 0);
     if (cooldownUntil > Date.now()) {
@@ -1112,17 +1374,15 @@ async function createVivyChatCompletion(llmBundles, request) {
       continue;
     }
     try {
-      const bundleRequest = fitVivyChatRequestForBundle(request, bundle);
-      const completion = await bundle.client.chat.completions.create({
-        ...bundleRequest,
-        model: bundle.model,
-      });
+      const completion = await createVivyBundleCompletion(bundle, request, options);
       vivyLlmProviderCooldowns.delete(cooldownKey);
       return { bundle, completion };
     } catch (error) {
       lastError = error;
       const status = Number(error?.status || error?.response?.status || 0) || 0;
-      if (bundle.provider === 'groq' && status === 429) {
+      const rateLimited = status === 429
+        || /rate.?limit|quota|too many requests/i.test(String(error?.code || error?.message || ''));
+      if (rateLimited) {
         vivyLlmProviderCooldowns.set(cooldownKey, Date.now() + resolveVivyRateLimitCooldownMs(error));
       }
       console.warn(
@@ -3719,6 +3979,11 @@ function inferVivyChatMode(message = '') {
   return 'chat';
 }
 
+function isVivyInternalSongGeneration(input = {}) {
+  return input?.internalSongGeneration === true
+    && parseVivyChatMode(input.mode) === 'song';
+}
+
 function summarizeChatMessage(message = '') {
   const cleaned = sanitizeVivyPublicText(cleanVivyMessageForIntent(message), 360);
   if (!cleaned) return 'on part sur une intention musicale à préciser.';
@@ -4293,18 +4558,31 @@ function resolveVivyPromptAuthorityTarget(input = {}, message = '') {
 }
 
 function resolveVivyPromptAuthorityIntent(input = {}, message = '', target = 'video') {
+  const stripInstructions = (text) => {
+    return String(text || '')
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter((line) => {
+        if (!line) return false;
+        const folded = foldTextForLookup(line);
+        if (/^(?:ecris|utilise|distribution|ecrire|direction|souhait|matiere|sujet|format|ne mets|ne jamais|garde|relais|contrat|regles|originale|refrain|chaque|tag exact|version longue|le mot|production musicale|casting)/.test(folded)) return false;
+        if (/^(?:oui|ouais|ok|okay|d accord|vas y|go|continue|fais|lance)/.test(folded)) return false;
+        return true;
+      })
+      .join(' ')
+      .trim();
+  };
   const candidates = [
     ...(Array.isArray(input.history) ? input.history : [])
       .filter((entry) => String(entry?.role || '').toLowerCase() === 'user')
-      .map((entry) => cleanOneLine(entry?.content, '', 420)),
-    cleanOneLine(message, '', 420),
-  ].filter(Boolean).reverse();
+      .map((entry) => stripInstructions(cleanOneLine(entry?.content, '', 420))),
+    stripInstructions(cleanOneLine(message, '', 420)),
+  ].filter((line) => line && line.length >= 5).reverse();
   const useful = candidates.find((candidate) => {
     if (isVivyGeneratedCreativeDirectionPanel(candidate)) return false;
     const folded = foldTextForLookup(candidate);
     if (/^(?:(?:oui|ouais|ok|okay|d accord|c est bon)(?:\s+(?:vas y|vas-y|va y|go|continue|fais le|fait le|lance))?|vas y|vas-y|va y|go|continue|fais le|fait le|lance)$/.test(folded)) return false;
-    if (/\b(?:neon|magenta|micro|club|nuit|scene|vocal|camera|personnage|djeff|vivy|moto|soleil|reve|rêve|chanson|musique|image|video|clip)\b/.test(folded)) return true;
-    return candidate.length > 80 && !/\b(?:faire tous les prompts|aux commandes des prompts|prompt engineer)\b/.test(folded);
+    return candidate.length >= 5;
   });
   if (useful) return useful;
   if (target === 'song') return 'Une chanson originale Funesterie guidée par Djeff Cypher, avec direction sonore Vivy.';
@@ -4864,11 +5142,13 @@ function countVivyChorusSections(value = '') {
   return String(value || '')
     .split(/\r?\n+/)
     .filter((line) => {
-      const tag = String(line || '').trim().match(/^\[([^\]]+)\]$/);
-      if (!tag) return false;
-      const folded = foldTextForLookup(tag[1]);
-      if (/\b(pre chorus|pre refrain|pre-chorus|pre-refrain)\b/.test(folded)) return false;
-      return /\b(chorus|refrain|refren)\b/.test(folded);
+      const tags = [...String(line || '').matchAll(/\[([^\]]+)\]|\(([^)]+)\)/g)]
+        .map((match) => foldTextForLookup(match[1] || match[2] || ''))
+        .filter(Boolean);
+      return tags.some((tag) => {
+        if (/\b(pre chorus|pre refrain|pre-chorus|pre-refrain)\b/.test(tag)) return false;
+        return /\b(chorus|refrain|refren)\b/.test(tag);
+      });
     }).length;
 }
 
@@ -5541,19 +5821,27 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
   );
   const sessionContext = resolveVivyInputSession(input);
   const llmBundles = createVivyOpenAIClients({ mode: 'song', purpose: 'routing' });
-  if (!llmBundles.length || String(process.env.VIVY_CHAT_DISABLE_LLM || '').toLowerCase() === 'true') {
+  const routeLlmEnabled = ['1', 'true', 'yes', 'on'].includes(
+    String(process.env.VIVY_NOSSEN_ROUTE_LLM_ENABLED || 'false').trim().toLowerCase()
+  );
+  const llmDisabled = String(process.env.VIVY_CHAT_DISABLE_LLM || '').toLowerCase() === 'true';
+  if (!routeLlmEnabled || !llmBundles.length || llmDisabled) {
+    const warning = (llmDisabled || !llmBundles.length)
+      ? 'vivy_song_llm_unavailable'
+      : 'vivy_nossen_fast_route';
     console.info(
-      '[vivy-nossen-route] session=%s provider=deterministic model=vivy-routing-rules artists=%s mood=%s warning=llm_unavailable',
+      '[vivy-nossen-route] session=%s provider=deterministic model=vivy-routing-rules artists=%s mood=%s warning=%s',
       sessionContext.sessionId,
       fallbackPlan.artists.join('+'),
-      fallbackPlan.songMood
+      fallbackPlan.songMood,
+      warning
     );
     return {
       ok: true,
       ...fallbackPlan,
       model: 'vivy-routing-rules',
       provider: 'deterministic',
-      warning: 'vivy_song_llm_unavailable',
+      warning,
     };
   }
   const systemPrompt = [
@@ -5587,6 +5875,10 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
       ],
       temperature: 0.72,
       max_tokens: 500,
+    }, {
+      deadlineAt: Date.now() + Math.max(5000, Number(process.env.VIVY_NOSSEN_ROUTE_LLM_BUDGET_MS || 25000) || 25000),
+      localAttemptTimeoutMs: Math.max(1000, Number(process.env.VIVY_NOSSEN_ROUTER_LOCAL_TIMEOUT_MS || 20000) || 20000),
+      attemptTimeoutMs: 8000,
     });
     raw = cleanText(completionResult.completion?.choices?.[0]?.message?.content, 2400);
     plan = parseVivyNossenRoutingPlan(raw);
@@ -6051,10 +6343,14 @@ function buildVivyToolCapabilityReply({ localContext = null, language = 'fr' } =
 function buildVivyChat(input) {
   const message = cleanText(input.message || input.prompt || input.songText || input.text, VIVY_SONG_MAX_CHARS);
   const intentMessage = cleanVivyMessageForIntent(message);
-  const visualCreativeDirection = isVivyVisualCreativeDirectionRequest(intentMessage || message);
-  const mode = visualCreativeDirection
-    ? 'chat'
-    : resolveVivyChatMode(input, message);
+  const internalSongGeneration = isVivyInternalSongGeneration(input);
+  const visualCreativeDirection = !internalSongGeneration
+    && isVivyVisualCreativeDirectionRequest(intentMessage || message);
+  const mode = internalSongGeneration
+    ? 'song'
+    : visualCreativeDirection
+      ? 'chat'
+      : resolveVivyChatMode(input, message);
   const files = normalizeVivyFiles(input);
   const language = resolveVivyResponseLanguage(input);
   const normalizedHistory = normalizeVivyChatHistory(input.history);
@@ -6251,7 +6547,30 @@ function isDjeffCypherRequest(message = '', input = {}) {
   return /\b(cypher|freestyle|rap|punchline|egotrip|ego trip|kickage|kicke|kick|barres?|couplets?|flow|djeff aux manettes)\b/.test(source);
 }
 
+function isDjeffTechnicalAuditRequest(message = '', input = {}) {
+  const folded = foldTextForLookup([
+    message,
+    input.mode,
+    input.depth,
+    input.intent,
+  ].filter(Boolean).join(' '));
+  return /\b(?:audit|diagnostic|architecture|infra|infrastructure|llm|modele|modeles|neo4j|graphe|graph intelligence|docker|twitch|clip|pipeline|clean lyrics|persona|latence|budget|cout|coût)\b/.test(folded);
+}
+
 function buildDjeffModeSystemPrompt(message = '', input = {}) {
+  const isTechnicalAudit = isDjeffTechnicalAuditRequest(message, input);
+  if (isTechnicalAudit && !isDjeffCypherRequest(message, input)) {
+    return [
+      'Mode Djeff audit technique: réponds direct, factuel et priorisé, sans cypher ni mise en scène.',
+      'N’invente aucun GPU, cluster, coût, débit, latence, version, capacité, index, service ou métrique.',
+      'Utilise seulement les faits explicitement fournis dans la demande et le contexte. Marque le reste « non vérifié ».',
+      'Distingue clairement: fait observé, risque, recommandation. Ne transforme jamais une recommandation en état actuel.',
+      'Ne transforme jamais « non vérifié » en « absent », « détecté » ou « présent ».',
+      'Zéro procédure GDS ne prouve pas que toute Graph Intelligence est absente, et ne justifie aucun achat de GPU.',
+      'Ne recommande ni matériel, ni nouvelle VM, ni cluster, ni load balancer si la demande ne les exige pas explicitement.',
+      'Pas de secret, pas de fausse action accomplie, pas de configuration imaginaire.',
+    ].join('\n');
+  }
   if (!isDjeffCypherRequest(message, input)) {
     return [
       'Mode Djeff dialogue: réponds comme Djeff, direct et humain. Pas de service client, pas de panneau interne, pas de secrets.',
@@ -6266,6 +6585,70 @@ function buildDjeffModeSystemPrompt(message = '', input = {}) {
     'Évite les formules molles: “la mélodie s’élève”, “créons une expérience”, “je comprends”, “ensemble nous allons”.',
     'Punchline > poésie vague. Djeff ne récite pas des réglages: il tranche, il transforme, il garde le feu sous contrôle.',
     'Ne copie jamais de paroles, de flow identifiable ou de signature d’artiste existant.',
+  ].join('\n');
+}
+
+function hasDjeffTechnicalGroundingViolation(reply = '') {
+  const folded = foldTextForLookup(reply);
+  return [
+    /\baucun gpu\b.{0,60}\b(?:detecte|présent|present|installe)\b/,
+    /\b(?:ajouter|acheter|installer|deployer|déployer|configurer)\b.{0,100}\b(?:gpu|a100|vm|cluster|load balanc|load-balanc|failover|faiss)\b/,
+    /\b(?:gpu|a100)\b.{0,100}\b(?:debloque|débloque|accelere|accélère|necessaire|nécessaire|requis|limite lourdement)\b/,
+    /\bgds\b.{0,100}\b(?:gpu|a100)\b/,
+    /\b(?:ollama cloud|cerbere|cerbère)\b.{0,120}\b(?:seule source|seules sources|seul fournisseur|seuls fournisseurs)\b/,
+    /\bcout\b.{0,60}\b(?:€|eur|dollar|usd|par mois|mensuel)\b/,
+  ].some((pattern) => pattern.test(folded));
+}
+
+function buildDjeffGroundedAuditFallback(message = '') {
+  const folded = foldTextForLookup(message);
+  const facts = [];
+  const priorities = [];
+  const limits = [];
+
+  if (/\bhetzner\b/.test(folded) && /\bseul\b.{0,30}\bhote\b|\bun seul hote\b/.test(folded)) {
+    facts.push('la production décrite repose sur un seul hôte Hetzner');
+    limits.push('le matériel exact et une éventuelle redondance externe restent non vérifiés');
+  }
+  if (/\b1130\b/.test(folded) && /\b11953\b/.test(folded) && /\b82\b/.test(folded)) {
+    facts.push('Neo4j contient 1 130 nœuds, 11 953 relations et 82 types de relation');
+  }
+  if (/\bgds\b.{0,40}\b0\b|\b0\b.{0,40}\bgds\b/.test(folded)) {
+    facts.push('aucune procédure GDS n’est exposée');
+    limits.push('cela ne prouve pas l’absence de la Graph Intelligence métier personnalisée');
+  }
+  if (/\bmcp\b/.test(folded) && /\b(?:absent|indisponible|manquant)\b/.test(folded)) {
+    facts.push('l’outil public MCP de recherche du graphe est absent');
+    priorities.push('rétablir puis tester l’exposition publique de la recherche graphe');
+  }
+  if (/\b120b\b/.test(folded) && /\bollama\b/.test(folded) && /\bcerbere|cerbère\b/.test(folded)) {
+    facts.push('NOSSEN utilise le 120B Ollama Cloud puis le 120B Cerbère, hors petits modèles locaux pour les paroles');
+    priorities.push('conserver ce domino 120B et surveiller ses délais et ses fallbacks');
+  }
+  if (/\bparseur\b/.test(folded) && /\bcorrige|corrigé\b/.test(folded)) {
+    facts.push('le parseur de refrain est annoncé corrigé');
+  }
+  if (/\bsuno\b/.test(folded) && /\b109[,.]77\b/.test(folded)) {
+    facts.push('une génération Suno payante est terminée avec un audio public de 109,77 secondes');
+    priorities.push('conserver cette génération comme preuve de bout en bout et tester séparément l’extension longue');
+  }
+
+  if (!priorities.length) {
+    priorities.push('vérifier chaque composant avec une preuve observable avant toute modification');
+  }
+  limits.push('GPU, cluster, coût, capacité, latence et topologie non fournis restent non vérifiés');
+
+  return [
+    'Audit Djeff — sortie bornée par les faits fournis.',
+    '',
+    'Faits observés:',
+    ...facts.map((fact) => `- ${fact}.`),
+    '',
+    'Priorités:',
+    ...priorities.map((priority, index) => `${index + 1}. ${priority}.`),
+    '',
+    'Limites:',
+    ...limits.map((limit) => `- ${limit}.`),
   ].join('\n');
 }
 
@@ -6292,10 +6675,8 @@ async function buildDjeffAiChat(input, req) {
       .slice(-budget.historyDepth)
       .map((entry) => ({ role: entry.role, content: cleanText(entry.content, budget.historyCharCap) }))
     : [];
-  // Djeff Engine pense avec la chaîne forte (celle des paroles Vivy):
-  // Groq OSS 120b -> Ollama Cloud 120b -> OpenRouter Sonnet -> local. En mode
-  // chat simple il tombait sur llama3.2:3b au moindre 429 Groq. Le miroir
-  // mérite un vrai cerveau.
+  // Djeff Engine pense avec la chaîne forte 120B de Vivy. Les petits modèles
+  // locaux restent hors du miroir stratégique tant qu'un 120B répond.
   const llmBundles = createVivyOpenAIClients({ mode: 'song', purpose: 'lyrics' });
   if (!llmBundles.length) {
     const error = new Error('djeff_llm_unavailable');
@@ -6303,6 +6684,8 @@ async function buildDjeffAiChat(input, req) {
     error.status = 503;
     throw error;
   }
+  const technicalAudit = isDjeffTechnicalAuditRequest(message, input)
+    && !isDjeffCypherRequest(message, input);
   const completionResult = await createVivyChatCompletion(llmBundles, {
     messages: [
       { role: 'system', content: systemPrompt },
@@ -6310,10 +6693,14 @@ async function buildDjeffAiChat(input, req) {
       ...history,
       { role: 'user', content: message },
     ],
-    temperature: 0.7,
+    temperature: technicalAudit ? 0.1 : 0.7,
     max_tokens: budget.maxTokens,
   });
-  const reply = cleanText(completionResult.completion?.choices?.[0]?.message?.content, 12000);
+  const rawReply = cleanText(completionResult.completion?.choices?.[0]?.message?.content, 12000);
+  const groundingFallback = technicalAudit && hasDjeffTechnicalGroundingViolation(rawReply);
+  const reply = groundingFallback
+    ? buildDjeffGroundedAuditFallback(message)
+    : rawReply;
   return {
     ok: true,
     persona: 'djeff',
@@ -6323,6 +6710,7 @@ async function buildDjeffAiChat(input, req) {
     tokenBudget: budget.label,
     provider: completionResult.bundle.provider || getVivyProviderFromBaseUrl(completionResult.bundle.baseURL || ''),
     model: completionResult.bundle.model,
+    grounding: technicalAudit ? (groundingFallback ? 'fallback' : 'verified') : 'not_applicable',
   };
 }
 
@@ -6337,10 +6725,18 @@ async function buildVivyAiChat(input, req) {
   };
   const message = cleanText(input.message || input.prompt || input.songText || input.text, VIVY_SONG_MAX_CHARS);
   const intentMessage = cleanVivyMessageForIntent(message);
-  const promptAuthority = isVivyPromptAuthorityRequest(input, intentMessage || message);
-  const visualCreativeDirection = isVivyVisualCreativeDirectionRequest(intentMessage || message);
-  const malformedNossenRelay = isVivyMalformedNossenOutputQuestion(intentMessage || message, getVivyHistoryText(input.history));
-  const mode = promptAuthority || visualCreativeDirection || malformedNossenRelay ? 'chat' : resolveVivyChatMode(input, message);
+  const internalSongGeneration = isVivyInternalSongGeneration(input);
+  const promptAuthority = !internalSongGeneration
+    && isVivyPromptAuthorityRequest(input, intentMessage || message);
+  const visualCreativeDirection = !internalSongGeneration
+    && isVivyVisualCreativeDirectionRequest(intentMessage || message);
+  const malformedNossenRelay = !internalSongGeneration
+    && isVivyMalformedNossenOutputQuestion(intentMessage || message, getVivyHistoryText(input.history));
+  const mode = internalSongGeneration
+    ? 'song'
+    : promptAuthority || visualCreativeDirection || malformedNossenRelay
+      ? 'chat'
+      : resolveVivyChatMode(input, message);
   const files = normalizeVivyFiles(input);
   const language = resolveVivyResponseLanguage(input, req);
   const fallback = buildVivyChat({ ...input, files, mode, language });
@@ -6371,9 +6767,19 @@ async function buildVivyAiChat(input, req) {
     : '';
   const requiresStrongSongModel = mode === 'song'
     && (input.disableSongcraftFallback === true || isVivyNossenSongGenerationRequest(input, message));
+  const emergencySongcraftConfigured = !['0', 'false', 'off', 'no'].includes(
+    String(process.env.VIVY_NOSSEN_EMERGENCY_SONGCRAFT || 'true').trim().toLowerCase()
+  );
   const allowEmergencySongcraftFallback = mode === 'song'
-    && input.allowEmergencySongcraftFallback === true;
-  rememberVivyChatSession(userId, sessionContext);
+    && (
+      input.allowEmergencySongcraftFallback === true
+      || (
+        input.allowEmergencySongcraftFallback !== false
+        && requiresStrongSongModel
+        && emergencySongcraftConfigured
+      )
+    );
+  if (!internalSongGeneration) rememberVivyChatSession(userId, sessionContext);
   const fileContext = formatVivyFilesForPrompt(files);
   const songFileContext = mode === 'song'
     && /\b(?:utilise|reprends|reprendre|mets|mettre|integre|intègre|copie|prends|prendre)\b.{0,90}\b(?:texte|ocr|image|photo|fichier|piece jointe|pièce jointe|document)\b/.test(foldTextForLookup(intentMessage || message))
@@ -6388,7 +6794,9 @@ async function buildVivyAiChat(input, req) {
     (intentMessage || message) ? `Message: ${intentMessage || message}` : '',
     fileContext ? `Fichiers:\n${fileContext}` : '',
   ], 1800);
-  const semanticMemory = memoryText
+  const semanticMemory = internalSongGeneration
+    ? { stored: false, reason: 'internal_song_generation' }
+    : memoryText
     ? rememberVivyEpisode(userId, 'vivy_idea', memoryText, {
       mode,
       conversationId: cleanOneLine(input.conversationId, '', 120),
@@ -6986,7 +7394,18 @@ async function buildVivyAiChat(input, req) {
         : Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74),
       max_tokens: mode === 'song' ? songMaxTokens : Number(process.env.VIVY_CHAT_MAX_TOKENS || 5000),
     };
-    const completionResult = await createVivyChatCompletion(llmBundles, completionRequest);
+    const nossenLlmDeadlineAt = requiresStrongSongModel
+      ? Date.now() + Math.max(30000, Math.min(
+        90000,
+        Number(process.env.VIVY_NOSSEN_LLM_BUDGET_MS || 80000) || 80000
+      ))
+      : 0;
+    const completionResult = await createVivyChatCompletion(llmBundles, completionRequest, requiresStrongSongModel ? {
+      deadlineAt: nossenLlmDeadlineAt,
+      localAttemptTimeoutMs: Math.max(5000, Number(process.env.VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS || 40000) || 40000),
+      largeLyricsAttemptTimeoutMs: Math.max(10000, Number(process.env.VIVY_NOSSEN_120B_TIMEOUT_MS || 60000) || 60000),
+      attemptTimeoutMs: Math.max(3000, Number(process.env.VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS || 8000) || 8000),
+    } : {});
     llmBundle = completionResult.bundle;
     const completion = completionResult.completion;
     const rawAssistant = cleanText(completion?.choices?.[0]?.message?.content, mode === 'song' ? songResponseMaxChars : VIVY_CHAT_MAX_CHARS);
@@ -7006,16 +7425,22 @@ async function buildVivyAiChat(input, req) {
       && !looksLikeWeakSongwritingReply(content)
       && hasVivyChorusSection(content)
       && (!requiresStrongSongModel || countVivyChorusSections(content) >= 2);
+    const initialBundleIndex = llmBundles.indexOf(llmBundle);
+    const attemptedStrongSongBundles = new Set(
+      llmBundles.slice(0, initialBundleIndex >= 0 ? initialBundleIndex + 1 : 1)
+    );
     const tryNextStrongSongProvider = async () => {
       if (mode !== 'song' || !requiresStrongSongModel || !Array.isArray(llmBundles) || !llmBundle) return null;
-      const currentIndex = llmBundles.indexOf(llmBundle);
-      const alternateBundles = llmBundles.slice(currentIndex >= 0 ? currentIndex + 1 : 1);
-      for (const alternateBundle of alternateBundles) {
+      for (const alternateBundle of llmBundles) {
+        if (attemptedStrongSongBundles.has(alternateBundle)) continue;
+        attemptedStrongSongBundles.add(alternateBundle);
         const alternateStart = Date.now();
         try {
-          const alternateCompletion = await alternateBundle.client.chat.completions.create({
-            ...completionRequest,
-            model: alternateBundle.model,
+          const alternateCompletion = await createVivyBundleCompletion(alternateBundle, completionRequest, {
+            deadlineAt: nossenLlmDeadlineAt,
+            localAttemptTimeoutMs: Math.max(5000, Number(process.env.VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS || 40000) || 40000),
+            largeLyricsAttemptTimeoutMs: Math.max(10000, Number(process.env.VIVY_NOSSEN_120B_TIMEOUT_MS || 60000) || 60000),
+            attemptTimeoutMs: Math.max(3000, Number(process.env.VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS || 8000) || 8000),
           });
           _vivyLlmLatency += Date.now() - alternateStart;
           const alternateRaw = cleanText(alternateCompletion?.choices?.[0]?.message?.content, songResponseMaxChars);
@@ -7054,6 +7479,23 @@ async function buildVivyAiChat(input, req) {
     );
     if (songNeedsRetry) {
       const _retryStart = Date.now();
+      if (requiresStrongSongModel) {
+        const providerFallback = await tryNextStrongSongProvider();
+        if (providerFallback) {
+          llmBundle = providerFallback.bundle;
+          llmProviderFallback = true;
+          assistantCandidate = providerFallback.content;
+        } else if (allowEmergencySongcraftFallback) {
+          usedSongcraftFallback = true;
+          assistantCandidate = buildVivyDirectSongReply({ ...input, message, files, history });
+        } else {
+          const error = new Error('vivy_song_llm_weak_output');
+          error.code = 'vivy_song_llm_weak_output';
+          error.status = 502;
+          throw error;
+        }
+        _vivyLlmLatency += Date.now() - _retryStart;
+      } else {
       try {
         const retryCompletion = await llmBundle.client.chat.completions.create({
           model: llmBundle.model,
@@ -7074,42 +7516,15 @@ async function buildVivyAiChat(input, req) {
           llmRetried = true;
           assistantCandidate = retryProcessed.content;
         } else {
-          if (requiresStrongSongModel) {
-            const providerFallback = await tryNextStrongSongProvider();
-            if (providerFallback) {
-              llmBundle = providerFallback.bundle;
-              llmProviderFallback = true;
-              assistantCandidate = providerFallback.content;
-            } else if (allowEmergencySongcraftFallback) {
-              usedSongcraftFallback = true;
-              assistantCandidate = buildVivyDirectSongReply({ ...input, message, files, history });
-            } else {
-              throw new Error('vivy_song_llm_weak_output');
-            }
-          } else {
-            usedSongcraftFallback = true;
-            assistantCandidate = buildVivyDirectSongReply({ ...input, message, files, history });
-          }
-        }
-      } catch (_retryErr) {
-        if (requiresStrongSongModel) {
-          const providerFallback = await tryNextStrongSongProvider();
-          if (providerFallback) {
-            llmBundle = providerFallback.bundle;
-            llmProviderFallback = true;
-            assistantCandidate = providerFallback.content;
-          } else if (allowEmergencySongcraftFallback) {
-            usedSongcraftFallback = true;
-            assistantCandidate = buildVivyDirectSongReply({ ...input, message, files, history });
-          } else {
-            throw _retryErr;
-          }
-        } else {
           usedSongcraftFallback = true;
           assistantCandidate = buildVivyDirectSongReply({ ...input, message, files, history });
         }
+      } catch (_retryErr) {
+        usedSongcraftFallback = true;
+        assistantCandidate = buildVivyDirectSongReply({ ...input, message, files, history });
       }
       _vivyLlmLatency += Date.now() - _retryStart;
+      }
     }
 
     const assistant = mode === 'song'
@@ -7187,6 +7602,56 @@ async function buildVivyAiChat(input, req) {
     };
   } catch (error) {
     if (requiresStrongSongModel) {
+      if (allowEmergencySongcraftFallback) {
+        const emergencyDraft = buildVivyDirectSongReply({
+          ...input,
+          message,
+          files,
+          history: [],
+        });
+        const emergencyVocalLyrics = buildVivyPublicLyrics(
+          { ...input, message, files, history: [] },
+          emergencyDraft,
+          fallback.publicLyrics,
+          {
+            allowDeterministicFallback: true,
+            requireRepeatedChorus: false,
+          }
+        );
+        const emergencyPublicLyrics = stripVivySingerTagsForPublicLyrics(emergencyVocalLyrics)
+          || emergencyVocalLyrics
+          || fallback.publicLyrics;
+        logVivySongcraftTrace({
+          provider: 'deterministic',
+          model: 'vivy-songcraft-v1',
+          source: 'nossen_deadline_fallback',
+          fallback: true,
+          latencyMs: 0,
+        });
+        rememberVivyEpisode(userId, 'vivy_reply', emergencyPublicLyrics, {
+          mode: 'song',
+          conversationId: cleanOneLine(input.conversationId, '', 120),
+          internalNossenDraft: true,
+          deterministic: true,
+          llmError: cleanOneLine(error?.code || error?.message || error, 'vivy_llm_failed', 120),
+        });
+        return {
+          ...fallback,
+          assistant: emergencyPublicLyrics,
+          content: emergencyPublicLyrics,
+          publicText: emergencyPublicLyrics,
+          publicLyrics: emergencyPublicLyrics,
+          vocalLyrics: emergencyVocalLyrics,
+          aiMode: 'deterministic_fallback',
+          model: 'vivy-songcraft-v1',
+          provider: 'deterministic',
+          language,
+          files,
+          semanticMemory,
+          memoryStored: semanticMemory.stored,
+          llmError: cleanOneLine(error?.code || error?.message || error, 'vivy_llm_failed', 180),
+        };
+      }
       error.code = error.code || 'vivy_song_llm_failed';
       error.status = error.status || 503;
       throw error;
@@ -7552,7 +8017,10 @@ function buildVivySunoLyrics(input = {}) {
   );
   const arrangement = splitVivyArrangementCues(material);
   if (looksLikeExplicitSunoLyricsBlock(arrangement.lyrics) || looksLikeCompleteLyrics(arrangement.lyrics)) {
-    const repaired = cleanText(repairVivySemanticImageCoherence(arrangement.lyrics, material), VIVY_SONG_MAX_CHARS);
+    const repaired = cleanText(
+      repairVivySemanticImageCoherence(restoreVivyFrenchSongAccents(arrangement.lyrics), material),
+      VIVY_SONG_MAX_CHARS
+    );
     return sanitizeVivyProviderCleanLyrics(repaired, VIVY_SONG_MAX_CHARS) || repaired;
   }
 
@@ -10293,6 +10761,36 @@ function createVivyStudioRouter({ verifyJWT, creativeCapabilityService = null } 
     }
   });
 
+  // POST /nossen-status - preflight: check provider before songwriting
+  router.post('/nossen-status', requireAuth, express.json({ limit: '16kb' }), async (req, res) => {
+    try {
+      const input = req.body || {};
+      const provider = String(input.musicProvider || '').trim().toLowerCase();
+
+      if (provider === 'mureka') {
+        const authorized = canUseServerSuno(req);
+        if (!authorized) { return res.status(403).json({ ok: false, error: 'mureka_not_authorized', message: 'Mureka reserve aux comptes Famille/Premium/Fondateur.' }); }
+        const configured = isMurekaMusicConfigured();
+        if (!configured) { return res.status(503).json({ ok: false, error: 'mureka_not_configured', message: 'La cle serveur Mureka est absente.' }); }
+        return res.json({ ok: true, provider: 'mureka', configured: true, authorized: true });
+      }
+
+      if (provider === 'suno') {
+        const sessionKey = getRequestSessionSunoApiKey(input, req);
+        if (sessionKey) { return res.json({ ok: true, provider: 'suno', configured: true, authorized: true, personalSessionKey: true }); }
+        const authorized = canUseServerSuno(req);
+        if (!authorized) { return res.status(403).json({ ok: false, error: 'suno_not_authorized', message: 'Suno serveur reserve aux comptes Famille/Premium/Fondateur.' }); }
+        const configured = isSunoMusicConfigured();
+        if (!configured) { return res.status(503).json({ ok: false, error: 'suno_not_configured', message: 'La cle serveur Suno est absente.' }); }
+        return res.json({ ok: true, provider: 'suno', configured: true, authorized: true, personalSessionKey: false });
+      }
+
+      return res.status(400).json({ ok: false, error: 'unknown_music_provider', message: 'Fournisseur inconnu: ' + (provider || '(vide)') });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: 'vivy_nossen_status_failed', message: error?.message || String(error) });
+    }
+  });
+
 
   // DELETE /memory - efface les episodes memoire de l'utilisateur (reset chat backend)
   router.delete('/memory', requireAuth, async (req, res) => {
@@ -10330,6 +10828,9 @@ module.exports = {
   buildDjeffAiChat,
   buildDjeffModeSystemPrompt,
   isDjeffCypherRequest,
+  isDjeffTechnicalAuditRequest,
+  hasDjeffTechnicalGroundingViolation,
+  buildDjeffGroundedAuditFallback,
   resolveDjeffTokenBudget,
   masterVivyMusicFile,
   buildVivyConversationIdForSession,
@@ -10337,10 +10838,15 @@ module.exports = {
   listVivyChatSessionsForUser,
   normalizeVivyChatHistory,
   getVivyOpenAIConfig,
+  getVivyLocalOllamaConfig,
+  getVivyLocalOllamaConfigs,
+  getVivyCloudProviderConfig,
+  getVivyCloudConfigs,
   getVivyOllamaCloudConfig,
   getVivyCerbereSongConfig,
   getVivyLlmConfigs,
   createVivyOpenAIClientFromConfig,
+  countVivyChorusSections,
   buildVivyMemoryContext,
   buildVivySystemPrompt,
   buildVivyDirectSongReply,

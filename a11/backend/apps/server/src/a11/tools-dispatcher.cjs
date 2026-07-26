@@ -68,9 +68,13 @@ function resolveSafePath(p, label) {
 function isPathWithinRoot(targetPath, rootPath) {
   const target = path.resolve(String(targetPath || ''));
   const root = path.resolve(String(rootPath || ''));
-  const normalizedTarget = process.platform === 'win32' ? target.toLowerCase() : target;
-  const normalizedRoot = process.platform === 'win32' ? root.toLowerCase() : root;
-  return normalizedTarget === normalizedRoot || normalizedTarget.startsWith(normalizedRoot + path.sep);
+  const relative = path.relative(root, target);
+  return relative === ''
+    || (
+      relative !== '..'
+      && !relative.startsWith(`..${path.sep}`)
+      && !path.isAbsolute(relative)
+    );
 }
 
 function resolveManagedPath(p, label) {

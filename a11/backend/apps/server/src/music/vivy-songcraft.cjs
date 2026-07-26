@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const {
   LANGUAGE_NAMES,
@@ -28,6 +28,69 @@ function applyCasePattern(source = '', replacement = '') {
   return replacement;
 }
 
+const VIVY_ACCENT_REPAIR_DICT = {
+  apres: "après",
+  repare: "répare", repares: "répares", reparons: "réparons", reparez: "réparez",
+  reparant: "réparant", reparer: "réparer", reparait: "réparait", reparaient: "réparaient",
+  reparions: "réparions", repariez: "répariez",
+  reparé: "réparé", reparée: "réparée", reparées: "réparées", reparés: "réparés",
+  reparation: "réparation", reparations: "réparations",
+  ete: "été", etes: "êtes",
+  etat: "état",
+  etape: "étape", etapes: "étapes",
+  etrange: "étrange", etranges: "étranges",
+  ecrit: "écrit", ecrits: "écrits", ecrire: "écrire",
+  ecran: "écran", ecrans: "écrans",
+  eclair: "éclair", eclairs: "éclairs",
+  eglise: "église", eglises: "églises",
+  ecole: "école", ecoles: "écoles",
+  ecoute: "écoute", ecoutes: "écoutes", ecouter: "écouter",
+  eteint: "éteint", eteints: "éteints", eteindre: "éteindre",
+  evite: "évite", evites: "évites", eviter: "éviter",
+  epouse: "épouse", epouses: "épouses", epouser: "épouser",
+  echappe: "échappe", echappes: "échappes", echapper: "échapper",
+  epine: "épine", epines: "épines",
+  eleve: "élève", eleves: "élèves",
+  cle: "clé", cles: "clés",
+  siecle: "siècle", siecles: "siècles",
+  mere: "mère", meres: "mères",
+  pere: "père", peres: "pères",
+  frere: "frère", freres: "frères",
+  derniere: "dernière", dernieres: "dernières",
+  arriere: "arrière", arrieres: "arrières",
+  derriere: "derrière",
+  barriere: "barrière", barrieres: "barrières",
+  frontiere: "frontière", frontieres: "frontières",
+  maniere: "manière", manieres: "manières",
+  mystere: "mystère", mysteres: "mystères",
+  sphere: "sphère", spheres: "sphères",
+  amere: "amère", ameres: "amères",
+  bete: "bête", betes: "bêtes",
+  fete: "fête", fetes: "fêtes",
+  tete: "tête", tetes: "têtes",
+  foret: "forêt", forets: "forêts",
+  hotel: "hôtel", hotels: "hôtels",
+  maitre: "maître", maitres: "maîtres",
+  fenetre: "fenêtre", fenetres: "fenêtres",
+  pret: "prêt", prets: "prêts",
+  abime: "abîme", abimes: "abîmes",
+  ile: "île", iles: "îles",
+  gout: "goût", gouts: "goûts",
+  cout: "coût", couts: "coûts",
+  aout: "août", aouts: "aoûts",
+  pole: "pôle", poles: "pôles",
+  role: "rôle", roles: "rôles",
+  naive: "naïve", naives: "naïves", naif: "naïf", naifs: "naïfs",
+  noel: "Noël", noels: "Noëls",
+  voila: "voilà",
+  episode: "épisode", episodes: "épisodes",
+  evenement: "événement", evenements: "événements",
+  veritable: "véritable", veritables: "véritables",
+  depeche: "dépêche", depeches: "dépêches",
+};
+const VIVY_ACCENT_REPAIR_ENTRIES = Object.entries(VIVY_ACCENT_REPAIR_DICT).map(
+  ([from, to]) => [new RegExp("(?<![\\p{L}\\p{N}])" + from + "(?![\\p{L}\\p{N}])", "giu"), to]
+);
 function restoreVivyFrenchSongAccents(value = '') {
   const replacements = [
     [/\brefren\b/gi, (match) => applyCasePattern(match, 'refrain')],
@@ -68,7 +131,14 @@ function restoreVivyFrenchSongAccents(value = '') {
   return String(value || '')
     .split(/\r?\n/)
     .map((line) => {
-      return replacements.reduce((current, [pattern, replacement]) => current.replace(pattern, replacement), line);
+      let current = replacements.reduce(
+        (acc, [pattern, replacement]) => acc.replace(pattern, replacement),
+        line.normalize("NFC")
+      );
+      for (const [pattern, to] of VIVY_ACCENT_REPAIR_ENTRIES) {
+        current = current.replace(pattern, (match) => applyCasePattern(match, to));
+      }
+      return current;
     })
     .join('\n')
     .normalize('NFC');

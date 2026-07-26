@@ -3225,6 +3225,8 @@ export async function chatWithVivy(
     workspace?: VivyWorkspaceStateInput;
     useWorkspaceForSong?: boolean;
     disableSongcraftFallback?: boolean;
+    allowEmergencySongcraftFallback?: boolean;
+    internalSongGeneration?: boolean;
   }
 ): Promise<VivyStudioProductionResult> {
   const res = await authFetch(getApiUrl('/api/vivy/studio/chat'), {
@@ -3296,6 +3298,23 @@ export async function routeVivyNossenComposition(input: {
     model: payload?.model,
     provider: payload?.provider,
   };
+}
+
+export async function checkVivyNossenStatus(input: {
+  musicProvider: 'suno' | 'mureka';
+  sessionSunoApiKey?: string;
+}): Promise<{ ok: boolean; provider: string; configured: boolean; authorized: boolean; personalSessionKey?: boolean }> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/nossen-status'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || 'NOSSEN indisponible');
+  }
+  return payload;
 }
 
 export async function fetchVivyChatSessions(): Promise<VivyChatSessionsResponse> {

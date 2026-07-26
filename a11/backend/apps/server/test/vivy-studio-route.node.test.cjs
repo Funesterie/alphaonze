@@ -48,6 +48,10 @@ const {
   getVivyCerbereSongConfig,
   getVivyLlmConfigs,
   createVivyOpenAIClientFromConfig,
+  countVivyChorusSections,
+  buildDjeffModeSystemPrompt,
+  hasDjeffTechnicalGroundingViolation,
+  buildDjeffGroundedAuditFallback,
   isDirectSongwritingRequest,
   isVivyMcpNeo4jQuestion,
   isVivyWorkspaceToolRequest,
@@ -3419,6 +3423,43 @@ test('Vivy French accent repair never corrupts an already accented word', () => 
   assert.doesNotMatch(text, /fenêtrès/i);
 });
 
+test("Vivy French accent repair restores the réparer family and common missing accents", () => {
+  const text = restoreVivyFrenchSongAccents([
+    "Je dois reparé la moto apres la fete,",
+    "vous etes la, bete de jour, foret, hotel, maitre, pôle, rôle.",
+    "Noel voila un episode veritable, evenement depeche, ecoute ecrit eteint.",
+  ].join("\n"));
+  assert.match(text, /Je dois réparé la moto après la fête/);
+  assert.match(text, /vous êtes la, bête de jour, forêt, hôtel, maître, pôle, rôle/);
+  assert.match(text, /Noël voilà un épisode véritable, événement dépêche, écoute écrit éteint/);
+  assert.doesNotMatch(text, /\bapres\b/);
+  assert.doesNotMatch(text, /reparé/);
+});
+
+test('Vivy Suno payload restores French accents even when lyrics arrive as an explicit block', () => {
+  const payload = buildVivySunoPayload({
+    mode: 'song',
+    songArtists: ['vivy'],
+    songMood: 'ballade pop',
+    songText: [
+      '[Verse - Vivy]',
+      "Je decide deja, je connait le chemin.",
+      "Les premieres lumieres sont tres precises.",
+      '[Chorus - Vivy]',
+      "Le refren revient, toujours le meme.",
+      "Ces details melodies restent serrees.",
+    ].join('\n'),
+  });
+
+  assert.match(payload.prompt, /décide déjà/i);
+  assert.match(payload.prompt, /connaît le chemin/i);
+  assert.match(payload.prompt, /premières lumières/i);
+  assert.match(payload.prompt, /très précises/i);
+  assert.match(payload.prompt, /refrain revient, toujours le même/i);
+  assert.match(payload.prompt, /détails mélodies/i);
+  assert.match(payload.prompt, /serrées/i);
+});
+
 test('Vivy Songcraft treats references as inspiration without reusing distinctive lyrics', () => {
   const prompt = buildVivySongcraftSystemPrompt('song', {});
 
@@ -3673,6 +3714,7 @@ test('Vivy NOSSEN asks Vivy for lyrics before Suno sees production', () => {
   assert.match(launchBlock, /songText:\s*launchReadiness\.source/);
   assert.match(launchBlock, /useWorkspaceForSong:\s*useCompositionWorkspace/);
   assert.match(launchBlock, /disableSongcraftFallback:\s*true/);
+  assert.match(launchBlock, /internalSongGeneration:\s*true/);
   assert.match(launchBlock, /lyrics:\s*vocalLyricsForProduction/);
   assert.match(launchBlock, /songText:\s*vocalLyricsForProduction/);
   assert.doesNotMatch(launchBlock, /buildVivyNossenBangerSongText|On rallume la nuit|Le coeur reprend la piste|Le feu clair nous suit|MASK dresse une muraille claire/);
@@ -3841,6 +3883,37 @@ test('Vivy NOSSEN server guard also blocks deterministic lyrics from an older br
   );
 });
 
+test('Vivy internal NOSSEN lyrics cannot be reclassified as visual or stored as user memory', async () => {
+  const userId = `vivy-nossen-internal-routing-${Date.now()}`;
+  const conversationId = 'vivy-nossen-internal-routing';
+  const message = [
+    "Écris uniquement les paroles complètes d'une chanson originale.",
+    'Distribution vocale choisie: Duo Djeff + Vivy.',
+    'Direction artistique: image nouvelle, cadrage de rêve et lumière nocturne.',
+    'Prompt provider: garde le canevas comme matière de chanson.',
+  ].join('\n\n');
+
+  await assert.rejects(
+    buildVivyAiChat({
+      conversationId,
+      mode: 'song',
+      message,
+      songText: 'Deux voix traversent une ville nocturne.',
+      songArtists: ['djeff', 'vivy'],
+      artistCount: 2,
+      singerCount: 2,
+      vocalCast: 'Duo Djeff + Vivy',
+      disableSongcraftFallback: true,
+      internalSongGeneration: true,
+    }, { user: { id: userId, username: 'VivyNossenInternal' } }),
+    (error) => error?.code === 'vivy_song_llm_unavailable' && error?.status === 503
+  );
+
+  const stored = getEpisodes(`user:${userId}`, { limit: 100 }).episodes
+    .filter((episode) => episode.metadata?.conversationId === conversationId);
+  assert.equal(stored.some((episode) => /Prompt provider|Direction artistique/i.test(episode.content || '')), false);
+});
+
 test('Vivy strict NOSSEN finalizer never substitutes deterministic template lyrics', () => {
   const deterministicTemplate = [
     '[Intro]',
@@ -3961,8 +4034,8 @@ test('Vivy NOSSEN automatically extends short Suno songs before D40', () => {
 
   assert.match(apiSource, /\/api\/vivy\/studio\/suno\/extend/);
   assert.match(appSource, /const VIVY_NOSSEN_SUNO_TARGET_SECONDS = 300/);
-  assert.match(appSource, /const VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS = 150/);
-  assert.match(appSource, /const VIVY_NOSSEN_SUNO_MAX_EXTENSIONS = 3/);
+  assert.match(appSource, /const VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS = 60/);
+  assert.match(appSource, /const VIVY_NOSSEN_SUNO_MAX_EXTENSIONS = 8/);
   assert.match(appSource, /const VIVY_NOSSEN_SUNO_LONG_MODEL = ["']V5_5["']/);
   assert.match(appSource, /function getVivyProductionSunoAudioId/);
   assert.match(appSource, /function getVivyProductionDurationSeconds/);
@@ -3983,17 +4056,13 @@ test('Vivy NOSSEN automatically extends short Suno songs before D40', () => {
   assert.doesNotMatch(launchBlock, /instrumental backing track only, no vocals, no singing, leave clear space for the external lead vocal/);
   assert.match(launchBlock, /await probeVivyProductionAudioDurationSeconds/);
   assert.match(launchBlock, /generation_\$\{selectedMusicProvider\}_duree_inconnue/);
-  assert.match(launchBlock, /generation_\$\{selectedMusicProvider\}_trop_courte_\$\{Math\.round\(finalDurationSeconds\)\}s/);
   assert.ok(
     launchBlock.indexOf('await extendVivyStudioSunoMusic(') > -1
       && launchBlock.indexOf('await extendVivyStudioSunoMusic(') < launchBlock.indexOf('processDoubleHarmonicAudio'),
     'NOSSEN must extend before applying D40'
   );
-  assert.ok(
-    launchBlock.indexOf('generation_${selectedMusicProvider}_trop_courte_${Math.round(finalDurationSeconds)}s') > -1
-      && launchBlock.indexOf('generation_${selectedMusicProvider}_trop_courte_${Math.round(finalDurationSeconds)}s') < launchBlock.indexOf('processDoubleHarmonicAudio'),
-    'NOSSEN must reject too-short Suno audio before final audio processing'
-  );
+  // Vivy n'est plus bloquee sur la longueur: un morceau court part quand meme, avec un warn.
+  assert.match(launchBlock, /short song \$\{Math\.round\(finalDurationSeconds\)\}s, outputting anyway/);
 });
 
 test('Vivy NOSSEN maps Kirito and anime seeds to an opening color before generic vehicle styles', () => {
@@ -4032,6 +4101,9 @@ test('Vivy NOSSEN routes casting and sonic color from Composition before lyrics'
 
   assert.match(appSource, /songCastingAuto/);
   assert.match(appSource, /Routage automatique du casting et de la couleur depuis le canevas/);
+  assert.match(appSource, /const effectiveSongArtists = useMemo/);
+  assert.match(appSource, /songCastingAuto[\s\S]{0,180}inferVivyNossenBangerArtists\(songText\)/);
+  assert.match(appSource, /const checked = effectiveSongArtists\.includes\(artist\.id\)/);
   assert.match(apiSource, /\/api\/vivy\/studio\/nossen-route/);
   assert.match(appSource, /function buildVivyNossenCompositionContract/);
   assert.match(appSource, /CONTRAT_COMPOSITION_NOSSEN/);
@@ -4122,6 +4194,47 @@ test('Vivy NOSSEN routing falls back locally for Djeff freestyle instead of stop
     assert.match(routed.songMood, /rap freestyle français nerveux/i);
   } finally {
     process.env.VIVY_CHAT_DISABLE_LLM = previousDisable;
+  }
+});
+
+test('Vivy NOSSEN routing stays deterministic and does not wait for an LLM by default', async () => {
+  const keys = [
+    'VIVY_CHAT_DISABLE_LLM',
+    'VIVY_NOSSEN_ROUTE_LLM_ENABLED',
+    'OLLAMA_BASE',
+    'VIVY_CHAT_LOCAL_MODEL',
+  ];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  const local = await startOpenAiCompletionServer({
+    content: '{"artists":["vivy"],"songMood":"réponse qui ne doit pas être appelée"}',
+  });
+
+  try {
+    process.env.VIVY_CHAT_DISABLE_LLM = 'false';
+    process.env.VIVY_NOSSEN_ROUTE_LLM_ENABLED = 'false';
+    process.env.OLLAMA_BASE = local.baseUrl;
+    process.env.VIVY_CHAT_LOCAL_MODEL = 'qwen2.5:7b';
+
+    const startedAt = Date.now();
+    const routed = await buildVivyNossenRoutingPlan({
+      message: 'Djeff rappe une course nocturne à moto, 808 lourdes et sirènes.',
+      songText: 'Course nocturne à moto',
+      conversationId: 'vivy-routing-fast-test',
+      sessionId: 'vivy-routing-fast-test',
+    }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+    assert.equal(routed.ok, true);
+    assert.equal(routed.provider, 'deterministic');
+    assert.equal(routed.warning, 'vivy_nossen_fast_route');
+    assert.deepEqual(routed.artists, ['djeff']);
+    assert.equal(local.requests.length, 0);
+    assert.ok(Date.now() - startedAt < 1000);
+  } finally {
+    await local.close();
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });
 
@@ -5431,7 +5544,7 @@ test('Suno payload keeps long-form arrangement when NOSSEN uses external voice m
   assert.match(payload.style, /no short radio edit/i);
 });
 
-test('Vivy lyrics chain adds Ollama Cloud and Cerbere only for the lyrics writer', () => {
+test('Vivy lyrics chain starts with 120B providers and keeps small local models out of NOSSEN', () => {
   const keys = [
     'OLLAMA_CLOUD_ENABLED',
     'OLLAMA_API_KEY',
@@ -5444,7 +5557,18 @@ test('Vivy lyrics chain adds Ollama Cloud and Cerbere only for the lyrics writer
     'VIVY_SONG_ALLOW_LOCAL_FALLBACK',
     'VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK',
     'VIVY_SONG_LOCAL_MODEL',
+    'VIVY_NOSSEN_LOCAL_MODEL',
+    'VIVY_NOSSEN_LARGE_MODEL_FIRST',
+    'VIVY_NOSSEN_120B_MAX_PROMPT_CHARS',
+    'VIVY_NOSSEN_120B_MAX_TOKENS',
+    'VIVY_NOSSEN_FAST_LOCAL_ONLY',
+    'VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS',
+    'VIVY_NOSSEN_LOCAL_MAX_TOKENS',
     'OLLAMA_BASE',
+    'A11_OLLAMA_STRONG_SONG_MODEL',
+    'A11_OLLAMA_PRIMARY_MODEL',
+    'A11_OLLAMA_FALLBACK_MODEL',
+    'A11_LLM_RUNTIME_FALLBACK_ORDER',
     'GROQ_API_KEY',
   ];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
@@ -5460,7 +5584,18 @@ test('Vivy lyrics chain adds Ollama Cloud and Cerbere only for the lyrics writer
     process.env.VIVY_SONG_ALLOW_LOCAL_FALLBACK = 'true';
     delete process.env.VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK;
     process.env.VIVY_SONG_LOCAL_MODEL = 'qwen2.5:7b';
+    process.env.VIVY_NOSSEN_LOCAL_MODEL = 'qwen2.5:32b';
+    process.env.VIVY_NOSSEN_LARGE_MODEL_FIRST = 'true';
+    process.env.VIVY_NOSSEN_120B_MAX_PROMPT_CHARS = '22000';
+    process.env.VIVY_NOSSEN_120B_MAX_TOKENS = '1800';
+    process.env.VIVY_NOSSEN_FAST_LOCAL_ONLY = 'true';
+    process.env.VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS = '40000';
+    process.env.VIVY_NOSSEN_LOCAL_MAX_TOKENS = '560';
     process.env.OLLAMA_BASE = 'http://127.0.0.1:11434';
+    process.env.A11_OLLAMA_STRONG_SONG_MODEL = 'qwen2.5:32b';
+    process.env.A11_OLLAMA_PRIMARY_MODEL = 'qwen2.5:32b';
+    process.env.A11_OLLAMA_FALLBACK_MODEL = 'qwen2.5:7b';
+    process.env.A11_LLM_RUNTIME_FALLBACK_ORDER = 'ollama,ollama_cloud,groq,openrouter';
     process.env.GROQ_API_KEY = 'groq-test-key';
 
     assert.equal(getVivyOllamaCloudConfig({ mode: 'song', purpose: 'routing' }), null);
@@ -5468,29 +5603,31 @@ test('Vivy lyrics chain adds Ollama Cloud and Cerbere only for the lyrics writer
 
     const configs = getVivyLlmConfigs({ mode: 'song', purpose: 'lyrics' });
     assert.deepEqual(configs.map((config) => config.provider), [
-      'groq',
       'ollama_cloud',
       'cerbere',
+      'groq',
     ]);
-    assert.equal(configs[1].model, 'gpt-oss:120b');
+    assert.equal(configs[0].model, 'gpt-oss:120b');
+    assert.equal(configs[0].maxPromptChars, 22000);
+    assert.equal(configs[0].maxOutputTokens, 1800);
+    assert.equal(configs[0].maxCalls, 1);
+    assert.equal(configs.some((config) => config.provider === 'ollama'), false);
+    assert.equal(configs.some((config) => config.model === 'qwen2.5:32b'), false);
+    assert.equal(configs[1].model, 'openai/gpt-oss-120b');
     assert.equal(configs[1].maxCalls, 1);
-    assert.equal(configs[2].model, 'openai/gpt-oss-120b');
-    assert.equal(configs[2].maxCalls, 2);
-    assert.equal(configs[2].maxRetries, 1);
+    assert.equal(configs[1].maxRetries, 0);
 
     const routingConfigs = getVivyLlmConfigs({ mode: 'song', purpose: 'routing' });
     assert.equal(routingConfigs.some((config) => config.provider === 'ollama_cloud'), false);
     assert.equal(routingConfigs.some((config) => config.provider === 'cerbere'), false);
 
-    process.env.VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK = '1';
-    const explicitLocalConfigs = getVivyLlmConfigs({ mode: 'song', purpose: 'lyrics' });
-    assert.deepEqual(explicitLocalConfigs.map((config) => config.provider), [
-      'groq',
+    process.env.VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK = 'false';
+    const cloudOnlyConfigs = getVivyLlmConfigs({ mode: 'song', purpose: 'lyrics' });
+    assert.deepEqual(cloudOnlyConfigs.map((config) => config.provider), [
       'ollama_cloud',
       'cerbere',
-      'ollama',
+      'groq',
     ]);
-    assert.equal(explicitLocalConfigs[3].model, 'qwen2.5:7b');
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];
@@ -5566,14 +5703,17 @@ test('Vivy Cerbere lyrics fallback is also capped to one call per round', async 
   }
 });
 
-test('Vivy song writing does not fall back to small local Ollama by default', () => {
+test('Vivy song writing starts with local Ollama by default and can explicitly disable it', () => {
   const keys = [
     'VIVY_OPENAI_BASE_URL',
     'VIVY_OPENAI_API_KEY',
     'VIVY_SONG_MODEL',
     'VIVY_SONG_ALLOW_LOCAL_FALLBACK',
+    'VIVY_SONG_LOCAL_MODEL',
     'OLLAMA_BASE',
+    'A11_OLLAMA_STRONG_SONG_MODEL',
     'A11_OLLAMA_PRIMARY_MODEL',
+    'A11_OLLAMA_FALLBACK_MODEL',
     'GROQ_API_KEY',
   ];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
@@ -5583,19 +5723,24 @@ test('Vivy song writing does not fall back to small local Ollama by default', ()
     process.env.VIVY_OPENAI_API_KEY = 'test-cloud-key';
     process.env.VIVY_SONG_MODEL = 'llama-3.3-70b-versatile';
     process.env.OLLAMA_BASE = 'http://127.0.0.1:11434';
+    process.env.VIVY_SONG_LOCAL_MODEL = 'qwen2.5:32b';
+    process.env.A11_OLLAMA_STRONG_SONG_MODEL = 'qwen2.5:32b';
     process.env.A11_OLLAMA_PRIMARY_MODEL = 'llama3.2:3b';
+    process.env.A11_OLLAMA_FALLBACK_MODEL = 'llama3.2:3b';
     delete process.env.VIVY_SONG_ALLOW_LOCAL_FALLBACK;
     delete process.env.GROQ_API_KEY;
 
     const configs = getVivyLlmConfigs({ mode: 'song' });
-    assert.equal(configs.length, 1);
-    assert.equal(configs[0].provider, 'openai');
-    assert.equal(configs[0].model, 'llama-3.3-70b-versatile');
-    assert.equal(configs.some((config) => config.provider === 'ollama'), false);
+    assert.equal(configs[0].provider, 'ollama');
+    assert.equal(configs[0].model, 'qwen2.5:32b');
+    assert.equal(configs[1].provider, 'ollama');
+    assert.equal(configs[1].model, 'llama3.2:3b');
+    assert.equal(configs.some((config) => config.provider === 'openai'), true);
 
-    process.env.VIVY_SONG_ALLOW_LOCAL_FALLBACK = 'true';
-    const fallbackConfigs = getVivyLlmConfigs({ mode: 'song' });
-    assert.equal(fallbackConfigs.some((config) => config.provider === 'ollama'), true);
+    process.env.VIVY_SONG_ALLOW_LOCAL_FALLBACK = 'false';
+    const cloudOnlyConfigs = getVivyLlmConfigs({ mode: 'song' });
+    assert.equal(cloudOnlyConfigs.some((config) => config.provider === 'ollama'), false);
+    assert.equal(cloudOnlyConfigs.some((config) => config.provider === 'openai'), true);
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];
@@ -5623,10 +5768,10 @@ test('Vivy strong song writing tries the next provider when the first provider r
     'XAI_API_KEY',
   ];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
-  const weakCloud = await startOpenAiCompletionServer({
+  const weakLocal = await startOpenAiCompletionServer({
     content: 'Je vais essayer de faire une chanson, mais peux-tu préciser le ton ?',
   });
-  const strongLocal = await startOpenAiCompletionServer({
+  const strongCloud = await startOpenAiCompletionServer({
     content: [
       '[Intro]',
       'Le petit dragon tremble au bord du vieux volcan',
@@ -5671,13 +5816,13 @@ test('Vivy strong song writing tries the next provider when the first provider r
     delete process.env.VIVY_CHAT_PROVIDER;
     delete process.env.VIVY_SONG_PROVIDER;
     delete process.env.VIVY_OPENAI_BASE_URL;
-    process.env.VIVY_SONG_OPENAI_BASE_URL = weakCloud.baseUrl;
+    process.env.VIVY_SONG_OPENAI_BASE_URL = strongCloud.baseUrl;
     process.env.VIVY_OPENAI_API_KEY = 'test-cloud-key';
-    process.env.VIVY_SONG_MODEL = 'weak-cloud-model';
+    process.env.VIVY_SONG_MODEL = 'strong-cloud-model';
     process.env.VIVY_SONG_ALLOW_LOCAL_FALLBACK = 'true';
     process.env.VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK = 'true';
     process.env.VIVY_SONG_LOCAL_MODEL = 'qwen2.5:32b';
-    process.env.OLLAMA_BASE = strongLocal.baseUrl;
+    process.env.OLLAMA_BASE = weakLocal.baseUrl;
     process.env.A11_OLLAMA_PRIMARY_MODEL = 'llama3.2:3b';
     delete process.env.GROQ_API_KEY;
     delete process.env.VIVY_XAI_API_KEY;
@@ -5693,14 +5838,14 @@ test('Vivy strong song writing tries the next provider when the first provider r
       disableSongcraftFallback: true,
     }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
 
-    assert.equal(result.provider, 'ollama');
-    assert.equal(result.model, 'qwen2.5:32b');
+    assert.equal(result.provider, 'openai');
+    assert.equal(result.model, 'strong-cloud-model');
     assert.match(result.publicLyrics || result.assistant, /Ma voix est ma flamme/i);
-    assert.equal(weakCloud.requests.length, 2);
-    assert.equal(strongLocal.requests.length, 1);
+    assert.equal(weakLocal.requests.length, 1);
+    assert.equal(strongCloud.requests.length, 1);
   } finally {
-    await weakCloud.close();
-    await strongLocal.close();
+    await weakLocal.close();
+    await strongCloud.close();
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
@@ -5708,7 +5853,160 @@ test('Vivy strong song writing tries the next provider when the first provider r
   }
 });
 
-test('Vivy Twitch strong song writing uses emergency songcraft when every lyrics provider fails', async () => {
+test('Vivy accepts repeated chorus markers emitted after performer tags by the 120B author', () => {
+  const lyrics = [
+    '[Djeff]',
+    'Premier couplet',
+    '[Duo] (Refrain)',
+    'On rallume la lumière',
+    '[Vivy]',
+    'Deuxième couplet',
+    '[Duo] (Refrain – répété)',
+    'On rallume la lumière',
+  ].join('\n');
+
+  assert.equal(countVivyChorusSections(lyrics), 2);
+});
+
+test('Djeff technical audit persona forbids invented infrastructure and metrics', () => {
+  const prompt = buildDjeffModeSystemPrompt(
+    'Audit technique des modèles LLM, de Neo4j, Docker, Twitch et des clips.',
+    { mode: 'medium' }
+  );
+
+  assert.match(prompt, /N.invente aucun GPU, cluster, coût, débit, latence/i);
+  assert.match(prompt, /faits explicitement fournis/i);
+  assert.match(prompt, /non vérifié/i);
+  assert.doesNotMatch(prompt, /Mode DJEFF CYPHER/i);
+});
+
+test('Djeff technical audit grounding rejects speculative hardware and returns a bounded fallback', () => {
+  const hallucinated = [
+    'Aucun GPU A100 détecté.',
+    'Ajouter un GPU A100 pour débloquer GDS.',
+    'Déployer une seconde VM et configurer un load-balancer.',
+  ].join(' ');
+  assert.equal(hasDjeffTechnicalGroundingViolation(hallucinated), true);
+
+  const fallback = buildDjeffGroundedAuditFallback([
+    'Production sur un seul hôte Hetzner, matériel non vérifié.',
+    'Neo4j: 1130 nœuds, 11953 relations, 82 types; GDS expose 0 procédure.',
+    'L’outil public MCP de recherche graphe est absent.',
+    'NOSSEN: 120B Ollama Cloud puis 120B Cerbère.',
+    'Parseur corrigé. Suno terminé, audio 109,77 secondes.',
+  ].join(' '));
+  assert.match(fallback, /11 953 relations/i);
+  assert.match(fallback, /rétablir puis tester l’exposition publique/i);
+  assert.match(fallback, /Graph Intelligence métier personnalisée/i);
+  assert.match(fallback, /GPU, cluster, coût, capacité, latence.*non vérifiés/i);
+  assert.doesNotMatch(fallback, /ajouter un GPU|seconde VM|load-balancer/i);
+});
+
+test('Vivy song domino skips local, crosses an Ollama Cloud 429, and reaches the next strong provider', async () => {
+  const keys = [
+    'VIVY_CHAT_DISABLE_LLM',
+    'VIVY_CHAT_PROVIDER',
+    'VIVY_SONG_PROVIDER',
+    'VIVY_OPENAI_BASE_URL',
+    'VIVY_SONG_OPENAI_BASE_URL',
+    'VIVY_OPENAI_API_KEY',
+    'VIVY_SONG_MODEL',
+    'VIVY_SONG_ALLOW_LOCAL_FALLBACK',
+    'VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK',
+    'VIVY_SONG_LOCAL_MODEL',
+    'VIVY_CHAT_LOCAL_MODEL',
+    'OLLAMA_BASE',
+    'OLLAMA_API_KEY',
+    'OLLAMA_CLOUD_ENABLED',
+    'OLLAMA_CLOUD_BASE_URL',
+    'OLLAMA_CLOUD_LYRICS_MODEL',
+    'A11_OLLAMA_STRONG_SONG_MODEL',
+    'A11_OLLAMA_PRIMARY_MODEL',
+    'A11_OLLAMA_FALLBACK_MODEL',
+    'A11_LLM_RUNTIME_FALLBACK_ORDER',
+    'GROQ_API_KEY',
+  ];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  const failingLocal = await startOpenAiCompletionServer({ status: 503 });
+  const limitedOllamaCloud = await startOllamaCloudTestServer({ status: 429 });
+  const strongCloud = await startOpenAiCompletionServer({
+    content: [
+      '[Verse 1]',
+      'La ville rallume ses fenêtres une à une',
+      'Vivy garde le cap sous la pluie et la lune',
+      '',
+      '[Chorus]',
+      'On traverse les bugs, on retrouve la lumière',
+      'La mémoire tient bon, la chanson reste entière',
+      '',
+      '[Verse 2]',
+      'Le graphe relie nos voix sans perdre le chemin',
+      'Chaque modèle passe le relais au suivant',
+      '',
+      '[Chorus]',
+      'On traverse les bugs, on retrouve la lumière',
+      'La mémoire tient bon, la chanson reste entière',
+      '',
+      '[Bridge]',
+      'Si le nuage se ferme, le local ouvre la voie',
+      '',
+      '[Final Chorus]',
+      'On traverse les bugs, on retrouve la lumière',
+      'La mémoire tient bon, la chanson reste entière',
+    ].join('\n'),
+  });
+
+  try {
+    process.env.VIVY_CHAT_DISABLE_LLM = 'false';
+    delete process.env.VIVY_CHAT_PROVIDER;
+    delete process.env.VIVY_SONG_PROVIDER;
+    delete process.env.VIVY_OPENAI_BASE_URL;
+    process.env.VIVY_SONG_OPENAI_BASE_URL = strongCloud.baseUrl;
+    process.env.VIVY_OPENAI_API_KEY = 'test-cloud-key';
+    process.env.VIVY_SONG_MODEL = 'strong-cloud-model';
+    process.env.VIVY_SONG_ALLOW_LOCAL_FALLBACK = 'true';
+    process.env.VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK = 'true';
+    process.env.VIVY_SONG_LOCAL_MODEL = 'local-test-model';
+    process.env.VIVY_CHAT_LOCAL_MODEL = 'local-test-model';
+    process.env.A11_OLLAMA_STRONG_SONG_MODEL = 'local-test-model';
+    process.env.A11_OLLAMA_PRIMARY_MODEL = 'local-test-model';
+    process.env.A11_OLLAMA_FALLBACK_MODEL = 'local-test-model';
+    process.env.OLLAMA_BASE = failingLocal.baseUrl;
+    process.env.OLLAMA_API_KEY = 'test-ollama-cloud-key';
+    process.env.OLLAMA_CLOUD_ENABLED = '1';
+    process.env.OLLAMA_CLOUD_BASE_URL = limitedOllamaCloud.baseUrl;
+    process.env.OLLAMA_CLOUD_LYRICS_MODEL = 'gpt-oss:test';
+    process.env.A11_LLM_RUNTIME_FALLBACK_ORDER = 'ollama,ollama_cloud,openai';
+    delete process.env.GROQ_API_KEY;
+
+    const result = await buildVivyAiChat({
+      conversationId: 'vivy-song-429-domino',
+      mode: 'song',
+      message: 'Écris uniquement les paroles complètes sur les réparations de Vivy.',
+      songText: 'Les réparations de Vivy',
+      songArtists: ['vivy'],
+      vocalCast: 'vivy',
+      disableSongcraftFallback: true,
+    }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+    assert.equal(result.provider, 'openai');
+    assert.equal(result.model, 'strong-cloud-model');
+    assert.match(result.publicLyrics || result.assistant, /retrouve la lumière/i);
+    assert.equal(failingLocal.requests.length, 0);
+    assert.equal(limitedOllamaCloud.requests.length, 1);
+    assert.equal(strongCloud.requests.length, 1);
+  } finally {
+    await failingLocal.close();
+    await limitedOllamaCloud.close();
+    await strongCloud.close();
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('Vivy internal NOSSEN uses emergency songcraft when every lyrics provider fails', async () => {
   const keys = [
     'VIVY_CHAT_DISABLE_LLM',
     'VIVY_CHAT_PROVIDER',
@@ -5727,9 +6025,7 @@ test('Vivy Twitch strong song writing uses emergency songcraft when every lyrics
     'XAI_API_KEY',
   ];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
-  const weakCloud = await startOpenAiCompletionServer({
-    content: 'Je vais essayer de créer une chanson. Peux-tu préciser le style ?',
-  });
+  const weakCloud = await startOpenAiCompletionServer({ status: 503 });
   const failingLocal = await startOpenAiCompletionServer({ status: 500 });
 
   try {
@@ -5758,14 +6054,14 @@ test('Vivy Twitch strong song writing uses emergency songcraft when every lyrics
       songArtists: ['djeff'],
       vocalCast: 'Djeff',
       disableSongcraftFallback: true,
-      allowEmergencySongcraftFallback: true,
+      internalSongGeneration: true,
     }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
 
     const output = result.publicLyrics || result.assistant || '';
     assert.equal(result.aiMode, 'deterministic_fallback');
     assert.match(output, /\[Chorus\]|\[Refrain\]/i);
     assert.match(output, /Djeff|guidon|hélicos|gyros|aube/i);
-    assert.equal(weakCloud.requests.length, 2);
+    assert.equal(weakCloud.requests.length, 1);
     assert.equal(failingLocal.requests.length, 1);
   } finally {
     await weakCloud.close();
@@ -5777,14 +6073,15 @@ test('Vivy Twitch strong song writing uses emergency songcraft when every lyrics
   }
 });
 
-test('Hetzner deploy wires Ollama Cloud, Cerbere and a compact local Vivy song fallback', () => {
+test('Hetzner deploy wires local-first Ollama with a cloud provider domino', () => {
   const deploySource = fs.readFileSync(
     path.join(__dirname, '../../../../ops/deploy-a11-prod-finland-2.ps1'),
     'utf8'
   );
 
-  assert.match(deploySource, /StrongSongOllamaModel[\s\S]{0,160}qwen2\.5:7b/);
-  assert.match(deploySource, /VIVY_SONG_PROVIDER:\s*\$\{VIVY_SONG_PROVIDER:-groq\}/);
+  assert.match(deploySource, /StrongSongOllamaModel[\s\S]{0,160}qwen2\.5:32b/);
+  assert.match(deploySource, /A11_LLM_PROVIDER:\s*ollama/);
+  assert.match(deploySource, /VIVY_SONG_PROVIDER:\s*\$\{VIVY_SONG_PROVIDER:-ollama\}/);
   assert.match(deploySource, /VIVY_SONG_PROVIDER\s*=\s*\$\(if \(\$env:VIVY_SONG_PROVIDER\)/);
   assert.match(deploySource, /VIVY_SONG_GROQ_MODEL\s*=\s*\$\(if \(\$env:VIVY_SONG_GROQ_MODEL\)/);
   assert.match(deploySource, /llama-3\.3-70b-versatile/);
@@ -5793,7 +6090,7 @@ test('Hetzner deploy wires Ollama Cloud, Cerbere and a compact local Vivy song f
   assert.match(deploySource, /OLLAMA_CLOUD_ENABLED:\s*\$\{OLLAMA_CLOUD_ENABLED:-1\}/);
   assert.match(deploySource, /OLLAMA_CLOUD_LYRICS_MODEL:\s*\$\{OLLAMA_CLOUD_LYRICS_MODEL:-gpt-oss:120b\}/);
   assert.match(deploySource, /A11_OLLAMA_PRIMARY_MODEL:\s*qwen2\.5:32b/);
-  assert.match(deploySource, /VIVY_CHAT_LOCAL_FIRST:\s*"false"/);
+  assert.match(deploySource, /VIVY_CHAT_LOCAL_FIRST:\s*"true"/);
   assert.match(deploySource, /VIVY_CHAT_LOCAL_MODEL:\s*qwen2\.5:7b/);
   assert.match(deploySource, /VIVY_CHAT_LOCAL_TIMEOUT_MS:\s*\$\{VIVY_CHAT_LOCAL_TIMEOUT_MS:-90000\}/);
   assert.match(deploySource, /VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS:\s*\$\{VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS:-10000\}/);
@@ -5805,11 +6102,24 @@ test('Hetzner deploy wires Ollama Cloud, Cerbere and a compact local Vivy song f
   assert.match(deploySource, /OLLAMA_CLOUD_CHAT_THINK_LEVEL:\s*\$\{OLLAMA_CLOUD_CHAT_THINK_LEVEL:-high\}/);
   assert.match(deploySource, /OLLAMA_CLOUD_THINK_LEVEL:\s*\$\{OLLAMA_CLOUD_THINK_LEVEL:-high\}/);
   assert.match(deploySource, /VIVY_SONG_CERBERE_FALLBACK_ENABLED:\s*\$\{VIVY_SONG_CERBERE_FALLBACK_ENABLED:-1\}/);
-  assert.match(deploySource, /VIVY_SONG_CERBERE_MODEL:\s*\$\{VIVY_SONG_CERBERE_MODEL:-anthropic\/claude-sonnet-4\.5\}/);
+  assert.match(deploySource, /VIVY_SONG_CERBERE_MODEL:\s*\$\{VIVY_SONG_CERBERE_MODEL:-openai\/gpt-oss-120b\}/);
   assert.match(deploySource, /VIVY_CHAT_MAX_TOKENS_SONG_CEILING:\s*\$\{VIVY_CHAT_MAX_TOKENS_SONG_CEILING:-12000\}/);
   assert.match(deploySource, /VIVY_SONG_ALLOW_LOCAL_FALLBACK\s*=\s*"true"/);
-  assert.match(deploySource, /VIVY_SONG_LOCAL_MODEL\s*=\s*\$StrongSongOllamaModel/);
+  assert.match(deploySource, /VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK\s*=\s*"true"/);
+  assert.match(deploySource, /VIVY_SONG_LOCAL_MODEL\s*=\s*"qwen2\.5:7b"/);
   assert.match(deploySource, /VIVY_SONG_LOCAL_MODEL:\s*\$\{VIVY_SONG_LOCAL_MODEL:-qwen2\.5:7b\}/);
+  assert.match(deploySource, /VIVY_NOSSEN_LOCAL_MODEL:\s*\$\{VIVY_NOSSEN_LOCAL_MODEL:-qwen2\.5:32b\}/);
+  assert.match(deploySource, /VIVY_NOSSEN_LARGE_MODEL_FIRST:\s*\$\{VIVY_NOSSEN_LARGE_MODEL_FIRST:-true\}/);
+  assert.match(deploySource, /VIVY_NOSSEN_120B_MAX_PROMPT_CHARS:\s*\$\{VIVY_NOSSEN_120B_MAX_PROMPT_CHARS:-22000\}/);
+  assert.match(deploySource, /VIVY_NOSSEN_120B_MAX_TOKENS:\s*\$\{VIVY_NOSSEN_120B_MAX_TOKENS:-1800\}/);
+  assert.match(deploySource, /VIVY_NOSSEN_120B_TIMEOUT_MS:\s*\$\{VIVY_NOSSEN_120B_TIMEOUT_MS:-60000\}/);
+  assert.match(deploySource, /VIVY_NOSSEN_FAST_LOCAL_ONLY:\s*\$\{VIVY_NOSSEN_FAST_LOCAL_ONLY:-true\}/);
+  assert.match(deploySource, /VIVY_NOSSEN_ROUTE_LLM_ENABLED:\s*\$\{VIVY_NOSSEN_ROUTE_LLM_ENABLED:-false\}/);
+  assert.match(deploySource, /VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS:\s*\$\{VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS:-40000\}/);
+  assert.match(deploySource, /VIVY_NOSSEN_LOCAL_MAX_TOKENS:\s*\$\{VIVY_NOSSEN_LOCAL_MAX_TOKENS:-560\}/);
+  assert.match(deploySource, /VIVY_NOSSEN_LLM_BUDGET_MS:\s*\$\{VIVY_NOSSEN_LLM_BUDGET_MS:-80000\}/);
+  assert.match(deploySource, /VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS:\s*\$\{VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS:-8000\}/);
+  assert.match(deploySource, /VIVY_NOSSEN_EMERGENCY_SONGCRAFT:\s*\$\{VIVY_NOSSEN_EMERGENCY_SONGCRAFT:-true\}/);
   assert.match(deploySource, /VIVY_STREAM_DREAMCLIP_SCENES:\s*\$\{VIVY_STREAM_DREAMCLIP_SCENES:-8\}/);
   assert.match(deploySource, /VIVY_STREAM_DREAMCLIP_MAX_DURATION_SECONDS:\s*\$\{VIVY_STREAM_DREAMCLIP_MAX_DURATION_SECONDS:-420\}/);
   assert.match(deploySource, /VIVY_STREAM_DREAMCLIP_LOOP_SECONDS:\s*\$\{VIVY_STREAM_DREAMCLIP_LOOP_SECONDS:-15\}/);
@@ -5933,7 +6243,7 @@ test('Vivy chat falls back to the configured cloud provider when local Ollama fa
   }
 });
 
-test('Vivy chat orders Ollama Cloud Pro before compact local Ollama and the generic provider', () => {
+test('Vivy chat orders local Ollama models before the cloud provider domino', () => {
   const keys = [
     'VIVY_CHAT_LOCAL_FIRST',
     'VIVY_CHAT_PROVIDER',
@@ -5951,12 +6261,13 @@ test('Vivy chat orders Ollama Cloud Pro before compact local Ollama and the gene
     'OLLAMA_CLOUD_CHAT_MODEL',
     'OLLAMA_CLOUD_CHAT_THINK_LEVEL',
     'A11_OLLAMA_PRIMARY_MODEL',
+    'A11_LLM_RUNTIME_FALLBACK_ORDER',
     'GROQ_API_KEY',
   ];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
 
   try {
-    process.env.VIVY_CHAT_LOCAL_FIRST = 'false';
+    process.env.VIVY_CHAT_LOCAL_FIRST = 'true';
     delete process.env.VIVY_CHAT_PROVIDER;
     process.env.OLLAMA_BASE = 'http://127.0.0.1:11434';
     process.env.A11_OLLAMA_PRIMARY_MODEL = 'qwen2.5:32b';
@@ -5972,19 +6283,22 @@ test('Vivy chat orders Ollama Cloud Pro before compact local Ollama and the gene
     process.env.VIVY_OPENAI_BASE_URL = 'https://cloud.example.test/v1';
     process.env.VIVY_OPENAI_API_KEY = 'test-cloud-key';
     process.env.VIVY_CHAT_MODEL = 'test-cloud-model';
+    process.env.A11_LLM_RUNTIME_FALLBACK_ORDER = 'ollama,ollama_cloud,openai';
     delete process.env.GROQ_API_KEY;
 
     const configs = getVivyLlmConfigs({ mode: 'chat' });
-    assert.equal(configs[0].provider, 'ollama_cloud');
-    assert.equal(configs[0].model, 'gpt-oss:120b');
-    assert.equal(configs[0].thinkLevel, 'high');
+    assert.equal(configs[0].provider, 'ollama');
+    assert.equal(configs[0].model, 'qwen2.5:7b');
+    assert.equal(configs[0].timeoutMs, 90000);
+    assert.equal(configs[0].maxPromptChars, 10000);
+    assert.equal(configs[0].maxOutputTokens, 800);
     assert.equal(configs[1].provider, 'ollama');
-    assert.equal(configs[1].model, 'qwen2.5:7b');
-    assert.equal(configs[1].timeoutMs, 90000);
-    assert.equal(configs[1].maxPromptChars, 10000);
-    assert.equal(configs[1].maxOutputTokens, 800);
-    assert.equal(configs[2].provider, 'openai');
-    assert.equal(configs[2].model, 'test-cloud-model');
+    assert.equal(configs[1].model, 'qwen2.5:32b');
+    assert.equal(configs[2].provider, 'ollama_cloud');
+    assert.equal(configs[2].model, 'gpt-oss:120b');
+    assert.equal(configs[2].thinkLevel, 'high');
+    assert.equal(configs[3].provider, 'openai');
+    assert.equal(configs[3].model, 'test-cloud-model');
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];
@@ -5993,7 +6307,7 @@ test('Vivy chat orders Ollama Cloud Pro before compact local Ollama and the gene
   }
 });
 
-test('Vivy chat prefers Ollama Cloud Pro before local and generic providers', async () => {
+test('Vivy chat prefers local Ollama before Ollama Cloud and generic providers', async () => {
   const keys = [
     'VIVY_CHAT_DISABLE_LLM',
     'VIVY_CHAT_LOCAL_FIRST',
@@ -6013,7 +6327,7 @@ test('Vivy chat prefers Ollama Cloud Pro before local and generic providers', as
   ];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   const local = await startOpenAiCompletionServer({
-    content: 'Cette réponse locale ne doit pas être appelée.',
+    content: 'Je garde le fil avec le modèle local en premier.',
   });
   const ollamaCloud = await startOllamaCloudTestServer({
     content: 'Je garde le fil avec le gros modèle en premier.',
@@ -6024,7 +6338,7 @@ test('Vivy chat prefers Ollama Cloud Pro before local and generic providers', as
 
   try {
     process.env.VIVY_CHAT_DISABLE_LLM = 'false';
-    process.env.VIVY_CHAT_LOCAL_FIRST = 'false';
+    process.env.VIVY_CHAT_LOCAL_FIRST = 'true';
     delete process.env.VIVY_CHAT_PROVIDER;
     process.env.OLLAMA_BASE = local.baseUrl;
     process.env.A11_OLLAMA_PRIMARY_MODEL = 'llama3.2:3b';
@@ -6046,11 +6360,11 @@ test('Vivy chat prefers Ollama Cloud Pro before local and generic providers', as
       history: [],
     }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
 
-    assert.equal(result.provider, 'ollama_cloud');
-    assert.equal(result.model, 'gpt-oss:120b');
-    assert.match(result.assistant, /gros modèle en premier/i);
-    assert.equal(local.requests.length, 0);
-    assert.equal(ollamaCloud.requests.length, 1);
+    assert.equal(result.provider, 'ollama');
+    assert.equal(result.model, 'qwen2.5:7b');
+    assert.match(result.assistant, /modèle local en premier/i);
+    assert.equal(local.requests.length, 1);
+    assert.equal(ollamaCloud.requests.length, 0);
     assert.equal(generic.requests.length, 0);
   } finally {
     await local.close();
@@ -6063,7 +6377,7 @@ test('Vivy chat prefers Ollama Cloud Pro before local and generic providers', as
   }
 });
 
-test('Vivy compacts only the 4k local fallback request after Ollama Cloud fails', async () => {
+test('Vivy compacts the local-first request before using any cloud provider', async () => {
   const keys = [
     'VIVY_CHAT_DISABLE_LLM',
     'VIVY_CHAT_LOCAL_FIRST',
@@ -6095,7 +6409,7 @@ test('Vivy compacts only the 4k local fallback request after Ollama Cloud fails'
 
   try {
     process.env.VIVY_CHAT_DISABLE_LLM = 'false';
-    process.env.VIVY_CHAT_LOCAL_FIRST = 'false';
+    process.env.VIVY_CHAT_LOCAL_FIRST = 'true';
     process.env.VIVY_CHAT_LOCAL_MODEL = 'qwen2.5:7b';
     process.env.VIVY_CHAT_LOCAL_TIMEOUT_MS = '90000';
     process.env.VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS = '10000';
@@ -6126,15 +6440,12 @@ test('Vivy compacts only the 4k local fallback request after Ollama Cloud fails'
 
     assert.equal(result.provider, 'ollama');
     assert.equal(result.model, 'qwen2.5:7b');
-    assert.equal(ollamaCloud.requests.length, 1);
+    assert.equal(ollamaCloud.requests.length, 0);
     assert.equal(local.requests.length, 1);
     assert.equal(generic.requests.length, 0);
 
-    const cloudPromptChars = ollamaCloud.requests[0].messages
-      .reduce((sum, entry) => sum + String(entry?.content || '').length, 0);
     const localPromptChars = local.requests[0].messages
       .reduce((sum, entry) => sum + String(entry?.content || '').length, 0);
-    assert.ok(cloudPromptChars > 10000);
     assert.ok(localPromptChars <= 10000);
     assert.equal(local.requests[0].max_tokens, 800);
     assert.match(local.requests[0].messages.at(-1).content, /prochain refrain/i);
