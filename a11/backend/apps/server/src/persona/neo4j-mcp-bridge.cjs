@@ -148,7 +148,7 @@ async function handleTool(name, args) {
 
     case 'nossen_nexus':
       const nexus = await cypher(
-        `MATCH (n:Persona {name: 'NOSSEN'})-[r:CONNECTS]->(all:Persona)
+        `MATCH (n:Nexus {name: 'NOSSEN'})-[r:CONNECTS]->(all:Persona)
          RETURN all.name, all.role, all.style`
       );
       return nexus;

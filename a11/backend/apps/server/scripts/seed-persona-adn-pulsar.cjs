@@ -1,13 +1,14 @@
 "use strict";
 
 // Seed idempotent du graphe Neo4j Funesterie: personas ADN + couleurs Pulsar.
-// MERGE uniquement: rejouable sans dupliquer. D = char code 36 (dollar) pour eviter l'interpolation PowerShell.
+// MERGE uniquement. D = dollar (36), Q = double-quote (34) pour eviter interpolation PowerShell.
 
 const fsSync = require("node:fs");
 const path = require("node:path");
 const neo4j = require("neo4j-driver");
 
 const D = String.fromCharCode(36);
+const Q = String.fromCharCode(34);
 
 function loadEnv(filePath) {
   try {
@@ -38,9 +39,9 @@ const PERSONA_META = {
   vivy: { role: "voix chanson", style: "ombre", beat: "fluide", color: "Cyan" },
   a11: { role: "architecte", style: "strategique", beat: "rapide", color: "DeepBlue" },
   k44: { role: "narrateur", style: "strategique", beat: "lent", color: "Indigo" },
+  marvin: { role: "voix frere lead", style: "rap", beat: "fluide", color: "FireOrange" },
   kiro: { role: "combattant", style: "ninja", beat: "rapide", color: "ToxicGreen" },
   zoro: { role: "mur encaisseur", style: "brutal", beat: "variable", color: "DORE" },
-  NOSSEN: { role: "nexus orchestrateur", style: "pulsar", beat: "constante", color: "PurpleShadow" },
 };
 
 function genomeSummary(name) {
@@ -48,20 +49,14 @@ function genomeSummary(name) {
   const voix = g.voix || {};
   const lang = g.langage || {};
   const combat = g.combat || {};
-  return {
-    ton: voix.ton,
-    rythme: voix.rythme,
-    grain: voix.grain,
-    registre: lang.registre,
-    arme: combat.arme,
-    activation: g.activation || "",
-  };
+  return { ton: voix.ton, rythme: voix.rythme, grain: voix.grain, registre: lang.registre, arme: combat.arme, activation: g.activation || "" };
 }
 
 const Q_COLOR = "MERGE (c:PulsarColor {name: " + D + "name}) SET c.hex = " + D + "hex, c.gamma = " + D + "gamma, c.function = " + D + "func, c.hue = " + D + "hue";
 const Q_COMPL = "MATCH (c:PulsarColor {name: " + D + "name}), (c2:PulsarColor {name: " + D + "comp}) MERGE (c)-[:COMPLEMENTARY]->(c2)";
 const Q_PERSONA = "MERGE (p:Persona {name: " + D + "name}) SET p.role = " + D + "role, p.style = " + D + "style, p.beat = " + D + "beat, p.genome = " + D + "genome";
 const Q_CARRIES = "MATCH (p:Persona {name: " + D + "name}), (c:PulsarColor {name: " + D + "color}) MERGE (p)-[:CARRIES]->(c)";
+const NOSSEN = Q + "NOSSEN" + Q;
 
 async function main() {
   const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USER, NEO4J_PASSWORD));
@@ -88,12 +83,16 @@ async function main() {
     }
     console.log("[seed-persona-pulsar] personas implantes: " + personaNames.join(", "));
 
-    await session.run("MATCH (n:Persona {name: 'NOSSEN'}), (all:Persona) WHERE all.name <> 'NOSSEN' MERGE (n)-[:CONNECTS]->(all)");
-    console.log("[seed-persona-pulsar] nexus NOSSEN connecte a tous les personas.");
+    await session.run("MATCH (n:Persona {name: " + NOSSEN + "}) REMOVE n:Persona SET n:Nexus");
+    await session.run("MATCH (n)-[r:CARRIES]->() WHERE n:Nexus AND n.name = " + NOSSEN + " DELETE r");
+    await session.run("MERGE (n:Nexus {name: " + NOSSEN + "}) SET n.role = " + Q + "nexus orchestrateur" + Q + ", n.style = " + Q + "pulsar" + Q + ", n.beat = " + Q + "constante" + Q);
+    await session.run("MATCH (n:Nexus {name: " + NOSSEN + "}), (all:Persona) MERGE (n)-[:CONNECTS]->(all)");
+    console.log("[seed-persona-pulsar] nexus NOSSEN (label Nexus) connecte a tous les personas.");
 
     const colorCount = await session.run("MATCH (c:PulsarColor) RETURN count(c) AS n");
     const personaCount = await session.run("MATCH (p:Persona) RETURN count(p) AS n");
-    console.log("[seed-persona-pulsar] verif -> personas: " + personaCount.records[0].get("n").toNumber() + ", couleurs: " + colorCount.records[0].get("n").toNumber());
+    const nexusCount = await session.run("MATCH (n:Nexus) RETURN count(n) AS n");
+    console.log("[seed-persona-pulsar] verif -> personas: " + personaCount.records[0].get("n").toNumber() + ", couleurs: " + colorCount.records[0].get("n").toNumber() + ", nexus: " + nexusCount.records[0].get("n").toNumber());
   } finally {
     await session.close();
     await driver.close();
