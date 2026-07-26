@@ -3456,6 +3456,26 @@ function serializeVivyLocalContext(context = null) {
   };
 }
 
+function buildVivyAdnEnrichment() {
+  try {
+    const { getGenome } = require("../persona/prompt-adn.cjs");
+    const g = getGenome("vivy");
+    if (!g) return String();
+    const v = g.voix || {};
+    const c = g.comportement || {};
+    const l = g.langage || {};
+    const cb = g.combat || {};
+    const traits = [];
+    if (v.ton || v.rythme || v.grain) traits.push("voix " + [v.ton, v.rythme, v.grain].filter(Boolean).join(" "));
+    if (c.posture || c.reaction || c.energie) traits.push("posture " + [c.posture, c.reaction, c.energie].filter(Boolean).join(" "));
+    if (l.registre || l.vocabulaire || l.humour) traits.push("langage " + [l.registre, l.vocabulaire, l.humour].filter(Boolean).join(" "));
+    if (cb.style || cb.arme) traits.push("style " + cb.style + ", arme " + cb.arme);
+    if (!traits.length) return String();
+    return "ADN persona Vivy (traits actifs): " + traits.join(". ") + ". Energie: " + (c.energie || "constante") + ".";
+  } catch (_) {
+    return String();
+  }
+}
 function buildVivySystemPrompt(mode, language, input) {
   if (!language) language = 'fr';
   const modeLabel = mode === 'voice'
@@ -3499,6 +3519,7 @@ function buildVivySystemPrompt(mode, language, input) {
     SYMBOLIC_EXTRACTION_PROTOCOL_CONTEXT,
     buildAgentsPersonaContext(),
     buildVivyToolCapabilityPrompt(),
+    buildVivyAdnEnrichment(),
     "Si l'utilisateur veut changer ta voix, demande un court fichier audio autorisé/licencié/consenti et rappelle qu'il reste privé pour son compte.",
     'Si des fichiers sont joints, intègre-les comme contexte, cite leur nom seulement si utile, et demande le contenu manquant si tu ne peux pas le lire.',
     buildVivySongcraftSystemPrompt(mode, {
