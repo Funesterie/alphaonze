@@ -2507,6 +2507,68 @@ export async function unlinkPersonalSunoVoice(): Promise<VoiceLearningStatus> {
   return payload as VoiceLearningStatus;
 }
 
+export type VoiceCatalogEntry = {
+  name: string;
+  label: string;
+  owner?: string;
+  aliases?: string[];
+  idMask?: string;
+  consentBy?: string;
+  consentAt?: string;
+  addedBy?: string;
+  note?: string;
+  active?: boolean;
+};
+
+/** Catalogue de voix Suno nommees: ajout sans deploiement, selectionnables au casting. */
+export async function listVoiceCatalog(): Promise<VoiceCatalogEntry[]> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/voice-catalog'), {
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Catalogue de voix illisible (${res.status})`);
+  }
+  return Array.isArray(payload?.voices) ? (payload.voices as VoiceCatalogEntry[]) : [];
+}
+
+export async function addVoiceToCatalog(input: {
+  name: string;
+  voiceId: string;
+  label?: string;
+  owner?: string;
+  aliases?: string[];
+  note?: string;
+  /** Qui atteste que la personne autorise l'usage de sa voix. Obligatoire. */
+  consentBy?: string;
+}): Promise<VoiceCatalogEntry> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/voice-catalog'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Ajout de voix impossible (${res.status})`);
+  }
+  return payload.voice as VoiceCatalogEntry;
+}
+
+export async function removeVoiceFromCatalog(name: string): Promise<boolean> {
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/voice-catalog/${encodeURIComponent(name)}`), {
+    method: 'DELETE',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(payload?.message || payload?.error || `Retrait de voix impossible (${res.status})`);
+  }
+  return payload?.removed === true;
+}
+
 export type DoubleHarmonicProcessMode = 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7' | 'v71' | 'v8' | 'v8plus' | 'v8pivot' | 'v9turbo' | 'v9electrolysis';
 export type DoubleHarmonicOutputFormat = 'source' | 'flac' | 'mp3' | 'm4a' | 'wav';
 

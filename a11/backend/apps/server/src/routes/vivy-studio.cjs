@@ -53,6 +53,15 @@ const {
   hasVivyChorusSection,
 } = require('../music/vivy-songcraft.cjs');
 const {
+  resolveCatalogVoiceId,
+  findVoiceInCatalog,
+  describeVoiceCatalog,
+  upsertVoiceInCatalog,
+  removeVoiceFromCatalog,
+  slugifyVoiceName,
+  normalizeVoiceId,
+} = require('../music/voice-catalog.cjs');
+const {
   buildVivyProsodyPlan,
   buildVivyProsodyStyleHint,
   formatVivyProsodyPlanForBrief,
@@ -577,7 +586,22 @@ function resolveConfiguredVivySunoPersonaVoiceId(artistId = '') {
       180
     );
   }
+  // Repli catalogue: une voix ajoutee par l'UI (Ilyana, un ami qui a autorise sa voix)
+  // se resout ici sans branche codee en dur ni deploiement.
+  const fromCatalog = resolveCatalogVoiceId(id);
+  if (fromCatalog) return fromCatalog;
+
   return cleanOneLine(process.env.VIVY_SUNO_VOICE_ID || process.env.SUNO_VOICE_ID, '', 180);
+}
+
+/**
+ * Voix choisie explicitement par son nom de catalogue (balise [Ilyana], selection
+ * dans le casting). Prioritaire sur la persona d'artiste quand elle est fournie.
+ */
+function resolveVivyCatalogVoiceIdFromInput(input = {}) {
+  const requested = cleanOneLine(input.voiceCatalogName || input.catalogVoiceName, '', 80);
+  if (!requested) return '';
+  return resolveCatalogVoiceId(requested);
 }
 
 function wantsPersonalSunoVoice(input = {}) {
@@ -8173,15 +8197,22 @@ function buildVivySunoPayload(input = {}, req = null) {
   const serverVoiceId = sunoAccess.source === 'server'
     ? resolveConfiguredVivySunoPersonaVoiceId(singleArtistId || 'vivy')
     : '';
-  const preferConfiguredOfficialVoice = Boolean(serverVoiceId)
+  // Voix nommee du catalogue: demandee explicitement, elle prime sur tout le reste.
+  // C'est ce qui permet de chanter avec une voix ajoutee depuis l'UI sans deploiement.
+  const catalogVoiceId = resolveVivyCatalogVoiceIdFromInput(input);
+  const preferConfiguredOfficialVoice = !catalogVoiceId
+    && Boolean(serverVoiceId)
     && officialSunoArtistIds.has(singleArtistId)
     && (singleArtistId === 'djeff' || !wantsPersonalSunoVoice(input));
-  const verifiedVoiceId = preferConfiguredOfficialVoice
-    ? serverVoiceId
-    : (personalSunoVoice?.voiceId || explicitVoiceId || serverVoiceId);
+  const verifiedVoiceId = catalogVoiceId
+    || (preferConfiguredOfficialVoice
+      ? serverVoiceId
+      : (personalSunoVoice?.voiceId || explicitVoiceId || serverVoiceId));
   const useVerifiedSunoVoice = preserveSelectedVoice
     && artistCast.count === 1
-    && (Boolean(personalSunoVoice?.voiceId) || officialSunoArtistIds.has(singleArtistId))
+    && (Boolean(catalogVoiceId)
+      || Boolean(personalSunoVoice?.voiceId)
+      || officialSunoArtistIds.has(singleArtistId))
     && Boolean(verifiedVoiceId)
     && !forceInstrumental;
   const useExternalVoiceMix = preserveSelectedVoice
@@ -10206,6 +10237,95 @@ function createVivyStudioRouter({ verifyJWT, creativeCapabilityService = null } 
     }
     return verifyJWT(req, res, next);
   };
+
+  // --- Catalogue de voix -------------------------------------------------
+  // Ajouter une voix ne demande plus de modifier le code ni de deployer.
+
+  router.get('/voice-catalog', requireAuth, (req, res) => {
+    try {
+      return res.json({ ok: true, ...describeVoiceCatalog(process.env) });
+    } catch (error) {
+      return res.status(500).json({ ok: false, error: 'voice_catalog_read_failed', message: String(error.message || error) });
+    }
+  });
+
+  router.post('/voice-catalog', requireAuth, (req, res) => {
+    if (!isVivyFounderUser(req.user || {})) {
+      return res.status(403).json({
+        ok: false,
+        error: 'voice_catalog_forbidden',
+        message: 'Seul un compte fondateur ou famille peut ajouter une voix au catalogue.',
+      });
+    }
+
+    const body = req.body || {};
+    const name = slugifyVoiceName(body.name || body.label);
+    const voiceId = normalizeVoiceId(body.voiceId || body.id);
+    if (!name) {
+      return res.status(400).json({ ok: false, error: 'missing_name', message: 'Nom de voix requis.' });
+    }
+    if (!voiceId) {
+      return res.status(400).json({
+        ok: false,
+        error: 'invalid_voice_id',
+        message: 'voiceId Suno invalide: 32 caracteres hexadecimaux attendus.',
+      });
+    }
+
+    // Consentement obligatoire: vivy-song-lab-plan.md impose voice_consent et
+    // no_artist_voice_clone avant publication. On refuse plutot que de le deviner.
+    const consentBy = cleanOneLine(body.consentBy || req.user?.email, '', 160);
+    if (!consentBy) {
+      return res.status(400).json({
+        ok: false,
+        error: 'missing_consent',
+        message: 'Indiquer qui atteste de l autorisation d utiliser cette voix.',
+      });
+    }
+
+    try {
+      const saved = upsertVoiceInCatalog({
+        name,
+        label: body.label || body.name,
+        voiceId,
+        owner: body.owner,
+        aliases: body.aliases,
+        note: body.note,
+        consentBy,
+        addedBy: cleanOneLine(req.user?.email, '', 160),
+        active: body.active !== false,
+      }, process.env);
+
+      return res.json({
+        ok: true,
+        voice: {
+          name: saved.name,
+          label: saved.label,
+          owner: saved.owner,
+          aliases: saved.aliases,
+          idMask: saved.idMask,
+          consentBy: saved.consentBy,
+          active: saved.active,
+        },
+      });
+    } catch (error) {
+      const code = String(error.message || 'voice_catalog_write_failed');
+      const status = code === 'catalog_full' ? 409 : 400;
+      return res.status(status).json({ ok: false, error: code });
+    }
+  });
+
+  router.delete('/voice-catalog/:name', requireAuth, (req, res) => {
+    if (!isVivyFounderUser(req.user || {})) {
+      return res.status(403).json({ ok: false, error: 'voice_catalog_forbidden' });
+    }
+    try {
+      const removed = removeVoiceFromCatalog(req.params.name, process.env);
+      return res.json({ ok: removed, removed, name: slugifyVoiceName(req.params.name) });
+    } catch (error) {
+      return res.status(500).json({ ok: false, error: 'voice_catalog_delete_failed', message: String(error.message || error) });
+    }
+  });
 
   router.get('/assets/:filename', async (req, res) => {
     try {
