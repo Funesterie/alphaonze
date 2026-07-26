@@ -1,12 +1,13 @@
 "use strict";
 
 // Seed idempotent du graphe Neo4j Funesterie: personas ADN + couleurs Pulsar.
-// Reutilise prompt-adn.cjs (PERSONA_GENOMES) et freeland-bros-pulsar.cjs (PULSAR_COLORS).
-// MERGE uniquement: rejouable sans dupliquer.
+// MERGE uniquement: rejouable sans dupliquer. D = char code 36 (dollar) pour eviter l'interpolation PowerShell.
 
 const fsSync = require("node:fs");
 const path = require("node:path");
 const neo4j = require("neo4j-driver");
+
+const D = String.fromCharCode(36);
 
 function loadEnv(filePath) {
   try {
@@ -25,12 +26,12 @@ function loadEnv(filePath) {
 
 loadEnv(path.resolve(__dirname, "..", ".env.local"));
 
-const { PERSONA_GENOMES, listPersonas } = require("../src/persona/prompt-adn.cjs");
+const { PERSONA_GENOMES } = require("../src/persona/prompt-adn.cjs");
 const { PULSAR_COLORS } = require("../src/persona/freeland-bros-pulsar.cjs");
 
-const NEO4J_URI = process.env.NEO4J_URI || "bolt://localhost:7687";
-const NEO4J_USER = process.env.NEO4J_USER || "neo4j";
-const NEO4J_PASSWORD = process.env.NEO4J_PASSWORD || "nossen1234";
+const NEO4J_URI = process.env.NEO4J_URI || process.env.A11_LOCAL_NEO4J_URI || "bolt://localhost:7687";
+const NEO4J_USER = process.env.NEO4J_USER || process.env.NEO4J_USERNAME || process.env.A11_LOCAL_NEO4J_USER || "neo4j";
+const NEO4J_PASSWORD = process.env.NEO4J_PASSWORD || process.env.A11_LOCAL_NEO4J_PASSWORD || "nossen1234";
 
 const PERSONA_META = {
   djeff: { role: "rappeur cypher", style: "rap", beat: "saccade", color: "BloodRed" },
@@ -57,53 +58,42 @@ function genomeSummary(name) {
   };
 }
 
+const Q_COLOR = "MERGE (c:PulsarColor {name: " + D + "name}) SET c.hex = " + D + "hex, c.gamma = " + D + "gamma, c.function = " + D + "func, c.hue = " + D + "hue";
+const Q_COMPL = "MATCH (c:PulsarColor {name: " + D + "name}), (c2:PulsarColor {name: " + D + "comp}) MERGE (c)-[:COMPLEMENTARY]->(c2)";
+const Q_PERSONA = "MERGE (p:Persona {name: " + D + "name}) SET p.role = " + D + "role, p.style = " + D + "style, p.beat = " + D + "beat, p.genome = " + D + "genome";
+const Q_CARRIES = "MATCH (p:Persona {name: " + D + "name}), (c:PulsarColor {name: " + D + "color}) MERGE (p)-[:CARRIES]->(c)";
+
 async function main() {
   const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USER, NEO4J_PASSWORD));
   const session = driver.session();
   try {
-    const colorNames = PULSAR_COLORS.map((c) => c.name);
-    console.log("[seed-persona-pulsar] couleurs: " + colorNames.join(", "));
+    console.log("[seed-persona-pulsar] URI=" + NEO4J_URI + " user=" + NEO4J_USER);
 
     for (const color of PULSAR_COLORS) {
-      await session.run(
-        "MERGE (c:PulsarColor {name: }) SET c.hex = , c.gamma = , c.function = , c.hue = ",
-        { name: color.name, hex: color.hex, gamma: color.gamma, func: color.function, hue: color.hue }
-      );
+      await session.run(Q_COLOR, { name: color.name, hex: color.hex, gamma: color.gamma, func: color.function, hue: color.hue });
       if (color.complement) {
-        await session.run(
-          "MATCH (c:PulsarColor {name: }), (c2:PulsarColor {name: }) MERGE (c)-[:COMPLEMENTARY]->(c2)",
-          { name: color.name, comp: color.complement }
-        );
+        await session.run(Q_COMPL, { name: color.name, comp: color.complement });
       }
     }
-    console.log("[seed-persona-pulsar] couleurs Pulsar implantées: " + PULSAR_COLORS.length);
+    console.log("[seed-persona-pulsar] couleurs Pulsar implantees: " + PULSAR_COLORS.length);
 
     const personaNames = Object.keys(PERSONA_META);
     for (const name of personaNames) {
       const meta = PERSONA_META[name];
       const summary = genomeSummary(name);
-      await session.run(
-        "MERGE (p:Persona {name: }) SET p.role = , p.style = , p.beat = , p.genome = ",
-        { name: name, role: meta.role, style: meta.style, beat: meta.beat, genome: JSON.stringify(summary) }
-      );
-      const colorNode = PULSAR_COLORS.find((c) => c.name === meta.color);
-      if (colorNode) {
-        await session.run(
-          "MATCH (p:Persona {name: }), (c:PulsarColor {name: }) MERGE (p)-[:CARRIES]->(c)",
-          { name: name, color: meta.color }
-        );
+      await session.run(Q_PERSONA, { name: name, role: meta.role, style: meta.style, beat: meta.beat, genome: JSON.stringify(summary) });
+      if (PULSAR_COLORS.find((c) => c.name === meta.color)) {
+        await session.run(Q_CARRIES, { name: name, color: meta.color });
       }
     }
-    console.log("[seed-persona-pulsar] personas implantés: " + personaNames.join(", "));
+    console.log("[seed-persona-pulsar] personas implantes: " + personaNames.join(", "));
 
-    await session.run(
-      "MATCH (n:Persona {name: 'NOSSEN'}), (all:Persona) WHERE all.name <> 'NOSSEN' MERGE (n)-[:CONNECTS]->(all)"
-    );
-    console.log("[seed-persona-pulsar] nexus NOSSEN connecté à tous les personas.");
+    await session.run("MATCH (n:Persona {name: 'NOSSEN'}), (all:Persona) WHERE all.name <> 'NOSSEN' MERGE (n)-[:CONNECTS]->(all)");
+    console.log("[seed-persona-pulsar] nexus NOSSEN connecte a tous les personas.");
 
     const colorCount = await session.run("MATCH (c:PulsarColor) RETURN count(c) AS n");
     const personaCount = await session.run("MATCH (p:Persona) RETURN count(p) AS n");
-    console.log("[seed-persona-pulsar] vérif -> personas: " + personaCount.records[0].get("n").toNumber() + ", couleurs: " + colorCount.records[0].get("n").toNumber());
+    console.log("[seed-persona-pulsar] verif -> personas: " + personaCount.records[0].get("n").toNumber() + ", couleurs: " + colorCount.records[0].get("n").toNumber());
   } finally {
     await session.close();
     await driver.close();
