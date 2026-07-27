@@ -3499,9 +3499,17 @@ function isVivyNossenStructureInstructionLine(value = "") {
   const folded = foldForLookup(value);
   if (!folded) return false;
   if (/^(?:instruction|consigne|structure|format\s+attendu|ecrire|écrire|ecris|écris)\b/.test(folded)) return true;
-  if (/\b(?:mets|met|mettre)\b.{0,80}\b(?:action|theme|th[eè]me|ambiance|titre)\b/.test(folded)) return true;
-  if (/\b(?:put|turn|make)\b.{0,80}\b(?:action|theme|mood|ambience|ambiance|title|epic|fantasy)\b/.test(folded)) return true;
-  if (/\b(?:quand\s+tu\s+es\s+prete|quand\s+tu\s+es\s+prête|envoie|envois|envoies|lance|sort)\b.{0,80}\b(?:son|ton|chanson|musique|voix\s+feminine|voix\s+féminine|bien\s+aimee|bien\s+aimée)\b/.test(folded)) return true;
+  // Ces motifs visaient des consignes mais mangeaient le vocabulaire courant du rap:
+  // << j'envoie le son >>, << je mets l'ambiance >>, << il sort son flow >>. Un couplet
+  // entier est parti comme ca. Le discriminant n'est pas le verbe mais l'adresse: une
+  // consigne parle a Vivy (imperatif en tete de ligne, << quand tu es prete >>), une
+  // parole a un sujet qui chante. On exige donc la forme imperative, et on abandonne
+  // << sort >>, qui n'est jamais un verbe de consigne ici.
+  if (/^(?:mets|met|mettre)\b.{0,80}\b(?:action|theme|th[eè]me|ambiance|titre)\b/.test(folded)) return true;
+  if (/\btu\s+(?:mets|met)\b.{0,60}\b(?:action|theme|th[eè]me|ambiance|titre)\b/.test(folded)) return true;
+  if (/^(?:put|turn|make)\b.{0,80}\b(?:action|theme|mood|ambience|ambiance|title|epic|fantasy)\b/.test(folded)) return true;
+  if (/\bquand\s+tu\s+es\s+pr[eê]te\b/.test(folded)) return true;
+  if (/^(?:envoie|envois|envoies|lance)\b.{0,80}\b(?:son|chanson|musique|voix\s+f[eé]minine|bien\s+aim[eé]e)\b/.test(folded)) return true;
   if (/\b(?:when\s+you(?:\s+re|\s+are)\s+ready|send|launch|release|drop)\b.{0,80}\b(?:song|track|music|lyrics|female\s+voice|beloved)\b/.test(folded)) return true;
   if (/\b(?:vraie\s+chanson\s+complete|vraie\s+chanson\s+complète|ecrire.{0,50}chanson\s+complete|écrire.{0,50}chanson\s+complète|ecris.{0,50}chanson\s+complete|écris.{0,50}chanson\s+complète|intro.*couplet.*refrain|couplet.*refrain.*pont|ne\s+pas\s+recopier|ne\s+chante\s+pas|paroles\s+chantables)\b/.test(folded)) return true;
 
@@ -3516,7 +3524,10 @@ function isVivyNossenStructureInstructionLine(value = "") {
   if (/\bevite\s+les\s+formules\b|\bformules\s+generiques\b/.test(folded)) return true;
   if (/\bne\s+decris\s+jamais\b|\bfabrication\s+du\s+morceau\b/.test(folded)) return true;
   if (/\brimes\s+travaillees\b|\bprogression\s+emotionnelle\b/.test(folded)) return true;
-  if (/^(?:on\s+garde|le\s+dernier\s+mot\s+reste|le\s+refrain\s+prend\s+forme)\b/.test(folded)) return true;
+  // << on garde le cap >> et << le dernier mot reste au micro >> sont des paroles. Ces
+  // tournures ne trahissent une consigne que si elles parlent de la fabrication.
+  if (/^(?:on\s+garde|le\s+dernier\s+mot\s+reste)\b.{0,60}\b(?:refrain|couplet|structure|section|tag|casting|voix|titre|format)\b/.test(folded)) return true;
+  if (/^le\s+refrain\s+prend\s+forme\b/.test(folded)) return true;
   // Jetons internes en majuscules avec underscore: jamais des paroles.
   if (/^[A-Z][A-Z0-9_]{6,}$/.test(String(value || '').trim())) return true;
 
@@ -5437,6 +5448,12 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     [catalogVoices, selectedCatalogVoiceId]
   );
   const activeCatalogVoiceName = String(activeCatalogVoice?.catalog?.name || activeCatalogVoice?.label || "").trim();
+  // Suno n'accepte qu'une persona par morceau: des qu'une voix premium tient le role,
+  // cocher une voix officielle de plus la faisait abandonner sans aucun message.
+  const voixPremiumTientLeRole = Boolean(selectedCatalogVoiceId);
+  const selectedCatalogVoiceLabel = String(
+    activeCatalogVoice?.label || activeCatalogVoice?.catalog?.name || "La voix premium"
+  ).trim();
 
   const baseBrief = useMemo(() => buildVivyStudioBrief({
     mode: activeMode,
@@ -7345,12 +7362,12 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     return (
                       <label
                         key={artist.id}
-                        className={`vivy-studio-artist-option${checked ? " is-selected" : ""}`}
+                        className={`vivy-studio-artist-option${checked ? " is-selected" : ""}${voixPremiumTientLeRole ? " is-disabled" : ""}`}
                       >
                         <input
                           type="checkbox"
                           checked={checked}
-                          disabled={!hasSession || songCastingAuto}
+                          disabled={!hasSession || songCastingAuto || voixPremiumTientLeRole}
                           onChange={() => toggleSongArtist(artist.id)}
                         />
                         <span>
@@ -7361,7 +7378,16 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     );
                   })}
                 </div>
-                <p>{activeSongArtistCast.countLabel}: {activeSongArtistCast.label}</p>
+                {voixPremiumTientLeRole ? (
+                  // Suno n'accepte qu'une persona par morceau: cocher deux voix officielles
+                  // faisait abandonner la voix premium sans le moindre message.
+                  <p className="vivy-studio-cast-note">
+                    {selectedCatalogVoiceLabel} chante seule. Les voix officielles sont
+                    désactivées : Suno n’accepte qu’une voix par morceau.
+                  </p>
+                ) : (
+                  <p>{activeSongArtistCast.countLabel}: {activeSongArtistCast.label}</p>
+                )}
               </fieldset>
               <label>
                 Voix catalogue
