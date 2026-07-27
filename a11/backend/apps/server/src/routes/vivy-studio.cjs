@@ -1001,6 +1001,11 @@ function getVivyCloudProviderConfig(provider, options = {}) {
       model: songMode
         ? (process.env.VIVY_SONG_GROQ_MODEL || process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile')
         : (process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'),
+      // Groq refuse en 413 des que le prompt depasse sa limite, et c'est arrive a
+      // chaque chanson dans les journaux du 27/07. Le mecanisme de budget existait
+      // (fitVivyChatRequestForBundle lit bundle.maxPromptChars), Groq n'avait
+      // simplement aucune valeur: on envoyait le prompt entier pour se faire refuser.
+      maxPromptChars: Math.max(4000, Number(process.env.VIVY_GROQ_MAX_PROMPT_CHARS || 18000) || 18000),
     },
     openai: {
       baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
@@ -1069,6 +1074,11 @@ function getVivyCloudProviderConfig(provider, options = {}) {
     provider: normalizedProvider,
     source: `${normalizedProvider}-openai-compatible`,
     maxRetries: 0,
+    // Sans cette ligne le budget defini plus haut restait lettre morte: l'objet
+    // renvoye ne le reprenait pas, et fitVivyChatRequestForBundle ne voyait rien.
+    ...(Number(definition.maxPromptChars || 0) > 0
+      ? { maxPromptChars: Number(definition.maxPromptChars) }
+      : {}),
   };
 }
 
@@ -1480,8 +1490,25 @@ async function createVivyChatCompletion(llmBundles, request, options = {}) {
       const status = Number(error?.status || error?.response?.status || 0) || 0;
       const rateLimited = status === 429
         || /rate.?limit|quota|too many requests/i.test(String(error?.code || error?.message || ''));
+      // 401 cle refusee, 402 plus de credits, 403 accès interdit: ces echecs ne
+      // dependent pas de la requete et ne guerissent pas d'eux-memes. Ils n'etaient
+      // pourtant pas mis au repos, donc reessayes a chaque chanson -- un aller-retour
+      // reseau perdu par fournisseur en panne, sur un budget deja trop court. Constate
+      // le 27/07: openai 401, deepseek 402, xai 403, tous les trois a chaque tentative.
+      const credentialFailure = [401, 402, 403].includes(status);
       if (rateLimited) {
         vivyLlmProviderCooldowns.set(cooldownKey, Date.now() + resolveVivyRateLimitCooldownMs(error));
+      } else if (credentialFailure) {
+        // Repos court volontairement: le jour ou la cle est renouvelee, le fournisseur
+        // doit revenir sans redemarrage.
+        const reposMs = Math.max(60000, Number(process.env.VIVY_LLM_CREDENTIAL_COOLDOWN_MS || 900000) || 900000);
+        vivyLlmProviderCooldowns.set(cooldownKey, Date.now() + reposMs);
+        console.warn(
+          '[vivy-chat] provider=%s ecarte %d min: statut %d (cle, credits ou acces). A verifier cote compte.',
+          bundle.provider,
+          Math.round(reposMs / 60000),
+          status
+        );
       }
       console.warn(
         '[vivy-chat] provider=%s model=%s failed status=%s; trying next provider',

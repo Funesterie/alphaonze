@@ -4526,11 +4526,19 @@ test('Vivy NOSSEN Banger ignores operator bug reports before deciding readiness'
   const readinessEnd = appSource.indexOf('function inferVivyNossenBangerArtists', readinessStart);
   const readinessBlock = appSource.slice(readinessStart, readinessEnd);
 
+  // Les quatre filtres ont quitte App.tsx le 27/07 pour lib/vivy-lyrics-filters.ts,
+  // afin qu'un corpus de non-regression puisse les importer au lieu d'en recopier les
+  // regex. Le vocabulaire se verifie donc la-bas; App.tsx doit toujours les appeler.
+  const filtersSource = fs.readFileSync(
+    path.join(__dirname, '../../../../frontend/apps/web/src/lib/vivy-lyrics-filters.ts'),
+    'utf8'
+  );
+
   assert.match(normalizeBlock, /normalizeVivyNossenUserContent/);
   assert.match(normalizeBlock, /looksLikeVivyNossenOperatorNoiseLine/);
-  assert.match(normalizeBlock, /perroquet|singeur/);
-  assert.match(normalizeBlock, /compilateur/);
-  assert.match(normalizeBlock, /affichage|telephone|téléphone|dezoom|dézoom|clavier/);
+  assert.match(filtersSource, /perroquet|singeur/);
+  assert.match(filtersSource, /compilateur/);
+  assert.match(filtersSource, /affichage|dezoom|dézoom|viewport/);
   assert.match(readinessBlock, /actualCreativeUserTurns/);
   assert.doesNotMatch(readinessBlock, /actualUserTurns/);
 });
