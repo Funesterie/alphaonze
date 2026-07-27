@@ -916,6 +916,18 @@ function buildVivySongcraftSystemPrompt(mode, context) {
   var moodInstruction = songMood
     ? 'Direction sonore imposee: ' + songMood + '. Incarne-la dans les images et le rythme des vers - ne l\u2019explique pas, montre-la.'
     : '';
+  // Le routage vocal decide dans le studio doit remonter jusqu'ici: sans lui Vivy
+  // repartit des couplets entre des artistes qui ne chanteront pas.
+  // Les cles sont celles du payload de production, diffusees telles quelles dans le
+  // contexte: pas de renommage a maintenir de part et d'autre.
+  var routingInstruction = '';
+  var voixCatalogue = cleanOneLine(context.voiceCatalogName || context.catalogVoiceName, '', 80);
+  if (context.instrumental === true || context.forceInstrumental === true || context.instrumentalOnly === true) {
+    routingInstruction = 'ROUTAGE: instrumental seul, aucune voix ne chantera. N\u2019ecris pas de couplets a repartir: donne une direction sonore et une structure.';
+  } else if (voixCatalogue) {
+    routingInstruction = 'ROUTAGE: c\u2019est la voix premium << ' + voixCatalogue
+      + ' >> qui chante, a la place de l\u2019artiste officiel. Ecris pour elle: une seule voix, sections homogenes.';
+  }
   return [
     'Module Vivy Songcraft actif.',
     'Contrat de création: Djeff Cypher cadre silencieusement le prompt et le sujet; Vivy assure la direction artistique et sonore finale. Une seule chanson exploitable, jamais une liste de prompts ou de plateformes.',
@@ -938,6 +950,7 @@ function buildVivySongcraftSystemPrompt(mode, context) {
     'Structure: choisis une forme musicale complète adaptée au morceau. Les balises [Intro], [Verse], [Pre-Chorus], [Chorus], [Bridge] et [Outro] sont disponibles, sans canevas rigide si une autre forme sert mieux la chanson.',
     artistInstruction,
     moodInstruction,
+    routingInstruction,
     'Livre une seule chanson complète par réponse. Si plusieurs partenaires sont proposés avec « ou », choisis le casting sélectionné; sinon choisis une option et termine-la au lieu de commencer plusieurs versions.',
     'Chaque couplet: minimum 4 vers. Refrain mémorable, minimum 3 sections de paroles avec contenu réel.',
     'Construis des rimes audibles selon un schéma cohérent par section (AABB, ABAB ou rimes embrassées), avec assonances et rimes internes quand elles sonnent naturellement.',
@@ -1707,14 +1720,28 @@ function buildVivySongProductionBrief(input = {}) {
     '',
     180
   );
+  // Vivy execute le bouton NOSSEN: elle doit connaitre le routage vocal decide dans le
+  // studio, sinon elle ecrit des couplets pour des chanteurs qui ne chanteront pas.
+  const instrumentalSeul = input.instrumental === true || input.forceInstrumental === true;
+  const voixCatalogue = cleanOneLine(input.voiceCatalogName || input.catalogVoiceName, '', 80);
+  const routageLines = [];
+  if (instrumentalSeul) {
+    routageLines.push('Routage vocal: INSTRUMENTAL SEUL. Aucune voix ne chantera: pas de paroles a placer, ecris une direction sonore.');
+  } else if (voixCatalogue) {
+    routageLines.push(`Routage vocal: voix premium << ${voixCatalogue} >> du catalogue. Elle remplace l'artiste officiel: adresse-lui les sections, pas a un persona maison.`);
+  }
+
   return {
     title,
     lyrics,
     rhymeScheme,
+    instrumentalOnly: instrumentalSeul,
+    catalogVoiceName: voixCatalogue,
     craftLines: [
       `Titre: ${title}`,
       `Rimes: ${rhymeScheme}`,
       `Motif: ${inferMotif(lyrics)}`,
+      ...routageLines,
       'Structure: intro, couplet 1, pré-refrain, refrain, couplet 2, pont, refrain, outro.',
       'Intention: paroles chantables, détails précis, refrain stable, sujet lisible.',
     ],

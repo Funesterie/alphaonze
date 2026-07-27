@@ -85,8 +85,44 @@ function normalizeEntry(value = null) {
     updatedAt: new Date().toISOString(),
     aliases: [...new Set(aliases)],
     note: cleanLine(value?.note, 200),
+    // Echantillon Suno persiste: Vivy s'en sert comme matiere de reference, il doit
+    // donc survivre a la generation qui l'a produit (les URL Suno expirent).
+    sampleFile: cleanLine(value?.sampleFile, 200),
+    sampleDurationSeconds: Math.max(0, Math.round(Number(value?.sampleDurationSeconds || 0))) || 0,
+    sampleAt: cleanLine(value?.sampleAt, 40),
     active: value?.active !== false,
   };
+}
+
+function resolveVoiceSampleDir(env = process.env) {
+  return path.join(path.dirname(resolveVoiceCatalogPath(env)), 'voice-samples');
+}
+
+/** Attache un echantillon deja telecharge a une voix du catalogue. */
+function attachVoiceSample(nameOrAlias, { buffer, durationSeconds = 0 }, env = process.env) {
+  const entry = findVoiceInCatalog(nameOrAlias, env);
+  if (!entry) throw new Error('voice_not_found');
+  if (!Buffer.isBuffer(buffer) || !buffer.length) throw new Error('empty_sample');
+
+  const dir = resolveVoiceSampleDir(env);
+  fs.mkdirSync(dir, { recursive: true });
+  const file = `${entry.name}.mp3`;
+  fs.writeFileSync(path.join(dir, file), buffer);
+
+  return upsertVoiceInCatalog({
+    ...entry,
+    sampleFile: file,
+    sampleDurationSeconds: Math.round(Number(durationSeconds || 0)) || 0,
+    sampleAt: new Date().toISOString(),
+  }, env);
+}
+
+function readVoiceSample(nameOrAlias, env = process.env) {
+  const entry = findVoiceInCatalog(nameOrAlias, env);
+  if (!entry?.sampleFile) return null;
+  const full = path.join(resolveVoiceSampleDir(env), entry.sampleFile);
+  if (!fs.existsSync(full)) return null;
+  return { path: full, name: entry.name, durationSeconds: entry.sampleDurationSeconds };
 }
 
 function readVoiceCatalog(env = process.env) {
@@ -179,6 +215,9 @@ function describeVoiceCatalog(env = process.env) {
       addedAt: v.addedAt,
       updatedAt: v.updatedAt,
       note: v.note,
+      hasSample: Boolean(v.sampleFile),
+      sampleDurationSeconds: v.sampleDurationSeconds || 0,
+      sampleAt: v.sampleAt || '',
       active: v.active,
     })),
   };
@@ -197,4 +236,7 @@ module.exports = {
   upsertVoiceInCatalog,
   removeVoiceFromCatalog,
   describeVoiceCatalog,
+  resolveVoiceSampleDir,
+  attachVoiceSample,
+  readVoiceSample,
 };

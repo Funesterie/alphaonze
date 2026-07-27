@@ -60,6 +60,8 @@ const {
   removeVoiceFromCatalog,
   slugifyVoiceName,
   normalizeVoiceId,
+  attachVoiceSample,
+  readVoiceSample,
 } = require('../music/voice-catalog.cjs');
 const {
   buildVivyProsodyPlan,
@@ -10369,16 +10371,51 @@ function createVivyStudioRouter({ verifyJWT, creativeCapabilityService = null } 
       // getSunoMusicJob expose le rendu sous `media`, pas sous une liste de pistes.
       const media = job?.media || {};
       const audioUrl = cleanOneLine(media.audioUrl || media.audio_url || media.url, '', 600);
+      const durationSeconds = Math.round(Number(media.durationSeconds || media.duration || 0)) || 0;
+
+      // Les URL Suno expirent. On rapatrie l'echantillon et on l'attache a la voix:
+      // Vivy s'en sert comme matiere de reference, il doit rester disponible apres coup.
+      let stored = false;
+      if (audioUrl) {
+        try {
+          const response = await fetch(audioUrl, { signal: AbortSignal.timeout(60000) });
+          if (response.ok) {
+            const buffer = Buffer.from(await response.arrayBuffer());
+            if (buffer.length > 10000) {
+              attachVoiceSample(req.params.name, { buffer, durationSeconds }, process.env);
+              stored = true;
+            }
+          }
+        } catch (error) {
+          // Un echec de rapatriement ne doit pas masquer un rendu reussi: on le signale.
+          console.warn('[VoiceCatalog] echantillon non rapatrie: %s', String(error.message || error).slice(0, 120));
+        }
+      }
+
       return res.json({
         ok: true,
         state: cleanOneLine(job?.state, 'processing', 40),
         status: cleanOneLine(job?.status, '', 60),
         ready: Boolean(audioUrl),
         audioUrl,
-        durationSeconds: Math.round(Number(media.durationSeconds || media.duration || 0)) || 0,
+        durationSeconds,
+        stored,
       });
     } catch (error) {
       return res.status(500).json({ ok: false, error: 'voice_sample_status_failed', message: String(error.message || error).slice(0, 300) });
+    }
+  });
+
+  // Echantillon deja stocke: on le sert directement, sans regenerer ni depenser de credit.
+  router.get('/voice-catalog/:name/sample', requireAuth, (req, res) => {
+    try {
+      const sample = readVoiceSample(req.params.name, process.env);
+      if (!sample) return res.status(404).json({ ok: false, error: 'sample_not_found' });
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Cache-Control', 'private, max-age=300');
+      return res.sendFile(sample.path);
+    } catch (error) {
+      return res.status(500).json({ ok: false, error: 'sample_read_failed', message: String(error.message || error).slice(0, 200) });
     }
   });
 

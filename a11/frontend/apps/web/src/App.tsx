@@ -6300,6 +6300,42 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       setStatus("Connexion requise pour tester la voix active.");
       return;
     }
+
+    // Une voix premium vit chez Suno, pas dans le moteur TTS local. Tester une persona
+    // Suno via ttsSpeak rendait la voix TTS de Vivy prononcant le nom de l'autre --
+    // exactement ce qu'on entendait. On passe donc par un echantillon Suno reel.
+    if (activeCatalogVoiceName) {
+      setIsBusy(true);
+      setStatus(`Échantillon Suno pour ${activeCatalogVoiceName} (2 à 3 min)…`);
+      try {
+        const { taskId } = await requestVoiceCatalogSample(activeCatalogVoiceName);
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 6000));
+          const sample = await getVoiceCatalogSample(activeCatalogVoiceName, taskId);
+          if (sample.ready && sample.audioUrl) {
+            setVivyMedia({
+              kind: "audio",
+              url: resolveApiAssetUrl(sample.audioUrl) || sample.audioUrl,
+              downloadUrl: resolveApiAssetUrl(sample.audioUrl) || sample.audioUrl,
+              provider: "suno-voice-catalog",
+              contentType: "audio/mpeg",
+              filename: `echantillon-${activeCatalogVoiceName}.mp3`,
+            });
+            setStatus(`Voix ${activeCatalogVoiceName} : échantillon Suno prêt (${sample.durationSeconds}s).`);
+            return;
+          }
+          if (sample.state === "error") throw new Error("génération échouée côté Suno");
+        }
+        setStatus(`Échantillon ${activeCatalogVoiceName} toujours en cours, réessaie dans une minute.`);
+        return;
+      } catch (error: any) {
+        setStatus(`Test voix premium impossible : ${error?.message || error}`);
+        return;
+      } finally {
+        setIsBusy(false);
+      }
+    }
+
     setIsBusy(true);
     setStatus(`Test ${activeVoiceProfile.label}: ${activeVoiceReferenceLabel}...`);
     try {

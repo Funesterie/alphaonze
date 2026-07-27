@@ -38,7 +38,14 @@ function registerVivyLayerRoute(router, getRequireAuth, deps) {
       throw error;
     }
     const digest = crypto.createHash("sha1").update(sourcePath + "\n" + safeProfile + "\n" + String(Date.now())).digest("hex").slice(0, 10);
-    const filename = "vivy-layer-" + Date.now() + "-" + digest + ".mp3";
+    // Le fichier source s'appelle vivy-music-<titre>-<hash>.mp3: on reprend le titre
+    // plutot que d'empiler un second horodatage. Sans ca la sortie D40, qui reprend ce
+    // nom comme base, devenait une suite de chiffres ou l'on ne retrouvait rien.
+    const sourceName = path.basename(String(sourcePath || ""), ".mp3");
+    const titleSlug = (sourceName.match(/^vivy-music-(.+)-[0-9a-f]{6,}$/i) || [])[1] || "";
+    const filename = titleSlug
+      ? "vivy-layer-" + titleSlug + "-" + digest + ".mp3"
+      : "vivy-layer-" + Date.now() + "-" + digest + ".mp3";
     const outputPath = getEmergencyMediaAssetPath(filename);
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
     const seal = await processProtectMixD40({ inputPath: sourcePath, outputPath, profile: safeProfile, intensity });
