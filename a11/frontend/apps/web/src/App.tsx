@@ -2,6 +2,11 @@ import React, { useEffect, useState, useRef, useMemo, useCallback } from "react"
 import {
   clearA11History,
   createTextArtifact,
+  deleteAccountFiles,
+  deleteAccountVoiceCorpus,
+  deleteAllAccountConversations,
+  fetchAccountDataSummary,
+  type AccountDataSummary,
   deleteRemoteProviderProfile,
   downloadAccountInventoryZip,
   downloadConversationResource,
@@ -11820,6 +11825,60 @@ function FunesterieAccountPage({
     loading: false,
     error: "",
   });
+  // Suppression des donnees du compte: vie privee et place disque. On affiche d'abord
+  // ce qui est stocke -- personne ne devrait supprimer a l'aveugle.
+  const [dataSummary, setDataSummary] = useState<AccountDataSummary | null>(null);
+  const [dataBusy, setDataBusy] = useState<"" | "summary" | "files" | "conversations" | "voice">("");
+  const [dataMessage, setDataMessage] = useState("");
+  const [dataError, setDataError] = useState("");
+  const [dataConfirm, setDataConfirm] = useState<"" | "files" | "conversations" | "voice">("");
+
+  const paramètresConfirmation: Record<string, { libelle: string; avertissement: string }> = {
+    files: { libelle: "les fichiers", avertissement: "Tes fichiers stockés seront supprimés définitivement." },
+    conversations: { libelle: "les conversations", avertissement: "Toutes tes discussions et leur mémoire seront supprimées définitivement." },
+    voice: { libelle: "le corpus voix", avertissement: "Tes enregistrements de voix seront supprimés définitivement." },
+  };
+
+  const rafraichirBilan = useCallback(async () => {
+    if (!authenticated) return;
+    setDataBusy("summary");
+    setDataError("");
+    try {
+      setDataSummary(await fetchAccountDataSummary());
+    } catch (error) {
+      setDataError(error instanceof Error ? error.message : "Bilan indisponible.");
+    } finally {
+      setDataBusy("");
+    }
+  }, [authenticated]);
+
+  useEffect(() => { void rafraichirBilan(); }, [rafraichirBilan]);
+
+  async function supprimerDonnees(cible: "files" | "conversations" | "voice") {
+    setDataBusy(cible);
+    setDataError("");
+    setDataMessage("");
+    try {
+      if (cible === "files") {
+        const r = await deleteAccountFiles();
+        const mo = (r.octetsLiberes / 1048576).toFixed(1);
+        setDataMessage(`${r.supprimes} fichier(s) supprimé(s), ${mo} Mo libérés.`);
+      } else if (cible === "conversations") {
+        await deleteAllAccountConversations();
+        setDataMessage("Conversations supprimées.");
+      } else {
+        await deleteAccountVoiceCorpus();
+        setDataMessage("Corpus voix supprimé.");
+      }
+      setDataConfirm("");
+      await rafraichirBilan();
+    } catch (error) {
+      setDataError(error instanceof Error ? error.message : "Suppression impossible.");
+    } finally {
+      setDataBusy("");
+    }
+  }
+
   const [paymentBusy, setPaymentBusy] = useState<"" | "premium" | "founder" | "portal" | "cancel">("");
   const [inventoryDownloadBusy, setInventoryDownloadBusy] = useState("");
   const [sessionAppTokens, setSessionAppTokens] = useState<FunesterieSessionAppTokenMap>(() => readSessionAppTokens());
@@ -12142,6 +12201,74 @@ function FunesterieAccountPage({
                 <a href={buildCentralLoginUrl(surfaceLinks.account)}>Se connecter</a>
               )}
             </footer>
+          </article>
+          <article className="fun-token-card fun-account-erase-card">
+            <header>
+              <h3>Supprimer mes données</h3>
+              <span>Vie privée</span>
+            </header>
+            <p>
+              Ce que ce compte garde sur les serveurs Funesterie. La suppression est
+              définitive et libère la place correspondante.
+            </p>
+            {!authenticated ? (
+              <p className="fun-account-alert">Connecte-toi pour voir et supprimer tes données.</p>
+            ) : (
+              <>
+                <ul className="fun-account-erase-list">
+                  <li>
+                    <span>Conversations</span>
+                    <strong>
+                      {dataSummary?.conversations.disponible
+                        ? `${dataSummary.conversations.conversations} fil(s), ${dataSummary.conversations.messages} message(s)`
+                        : dataBusy === "summary" ? "…" : "indisponible"}
+                    </strong>
+                  </li>
+                  <li>
+                    <span>Fichiers</span>
+                    <strong>
+                      {dataSummary
+                        ? `${dataSummary.fichiers.fichiers} fichier(s), ${(dataSummary.fichiers.octets / 1048576).toFixed(1)} Mo`
+                        : dataBusy === "summary" ? "…" : "—"}
+                    </strong>
+                  </li>
+                </ul>
+                {dataMessage && <p className="fun-account-erase-done">{dataMessage}</p>}
+                {dataError && <p className="fun-account-alert">{dataError}</p>}
+                {dataConfirm ? (
+                  // Deux temps volontaires: une suppression definitive ne part jamais
+                  // d'un seul clic.
+                  <div className="fun-account-erase-confirm">
+                    <p>{paramètresConfirmation[dataConfirm]?.avertissement} Confirmer ?</p>
+                    <footer>
+                      <button
+                        type="button"
+                        className="fun-account-erase-danger"
+                        disabled={Boolean(dataBusy)}
+                        onClick={() => void supprimerDonnees(dataConfirm as "files" | "conversations" | "voice")}
+                      >
+                        {dataBusy ? "Suppression…" : `Supprimer ${paramètresConfirmation[dataConfirm]?.libelle}`}
+                      </button>
+                      <button type="button" onClick={() => setDataConfirm("")} disabled={Boolean(dataBusy)}>
+                        Annuler
+                      </button>
+                    </footer>
+                  </div>
+                ) : (
+                  <footer>
+                    <button type="button" onClick={() => setDataConfirm("conversations")} disabled={Boolean(dataBusy)}>
+                      Conversations
+                    </button>
+                    <button type="button" onClick={() => setDataConfirm("files")} disabled={Boolean(dataBusy)}>
+                      Fichiers
+                    </button>
+                    <button type="button" onClick={() => setDataConfirm("voice")} disabled={Boolean(dataBusy)}>
+                      Corpus voix
+                    </button>
+                  </footer>
+                )}
+              </>
+            )}
           </article>
           <article className="fun-token-card fun-token-card--conversation-recap">
             <header>

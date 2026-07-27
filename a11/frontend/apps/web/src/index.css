@@ -10815,3 +10815,46 @@ body {
     align-items: stretch;
   }
 }
+
+/* Suppression des donnees du compte: vie privee et place disque. */
+.fun-account-erase-list {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.fun-account-erase-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.9rem;
+}
+
+.fun-account-erase-list strong {
+  text-align: right;
+}
+
+.fun-account-erase-done {
+  color: rgba(126, 231, 168, 0.95);
+  font-size: 0.88rem;
+}
+
+/* L'avertissement doit se distinguer nettement des boutons ordinaires. */
+.fun-account-erase-confirm {
+  border: 1px solid rgba(240, 121, 121, 0.55);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(240, 121, 121, 0.1);
+}
+
+.fun-account-erase-confirm p {
+  margin: 0 0 10px;
+  font-size: 0.88rem;
+}
+
+.fun-account-erase-danger {
+  border-color: rgba(240, 121, 121, 0.7) !important;
+  color: rgba(255, 190, 190, 0.98) !important;
+}

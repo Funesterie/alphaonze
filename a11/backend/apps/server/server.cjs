@@ -6925,6 +6925,10 @@ app.use('/api/tools', createToolsRouter({ toolCallingLayer }));
 app.use('/api/agent/shell', createAgentShellRouter({ workspaceRoot: WORKSPACE_ROOT }));
 app.use('/api/agent/runtime/files', verifyJWT, createRuntimeFilesRouter({ runtimeRoot: PUBLIC_RUNTIME_ROOT }));
 console.log('[Server] Runtime files routes mounted under /api/agent/runtime/files');
+// Bilan et suppression des donnees d'un compte: vie privee et place disque.
+const createAccountDataRouter = require('./src/routes/account-data.cjs');
+app.use('/api/account/data', createAccountDataRouter({ verifyJWT, db, runtimeRoot: PUBLIC_RUNTIME_ROOT }));
+console.log('[Server] Account data routes mounted under /api/account/data');
 app.use('/api/agent/vision-memory', verifyJWT, createVisionMemoryRouter({ runtimeRoot: PUBLIC_RUNTIME_ROOT }));
 console.log('[Server] Vision memory routes mounted under /api/agent/vision-memory');
 app.use('/api/agent/media', verifyJWT, createSemanticMediaRouletteRouter({

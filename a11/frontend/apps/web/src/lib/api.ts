@@ -6977,3 +6977,68 @@ export async function clearVivyMemory(conversationId?: string): Promise<{ ok: bo
   }
   return { ok: true, cleared: Number(data?.cleared ?? 0) };
 }
+
+// ─── Données du compte : bilan et suppression ────────────────────────────────
+// Djeff : « donne la possibilité de supprimer les fichiers et conversations
+// stockés dans compte, ça peut servir à ceux qui tiennent à leur vie privée et à
+// libérer de la place. » Le bilan précède la suppression : on ne supprime pas à
+// l'aveugle.
+
+export type AccountDataSummary = {
+  ok: boolean;
+  conversations: { disponible: boolean; conversations: number; messages: number };
+  fichiers: { fichiers: number; octets: number; tronque: boolean };
+  octetsTotal?: number;
+};
+
+export async function fetchAccountDataSummary(): Promise<AccountDataSummary> {
+  const res = await authFetch(getApiUrl('/api/account/data/summary'), {
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Bilan du compte indisponible (${res.status})`);
+  }
+  return data as AccountDataSummary;
+}
+
+export async function deleteAccountFiles(): Promise<{ supprimes: number; octetsLiberes: number }> {
+  const res = await authFetch(getApiUrl('/api/account/data/files'), {
+    method: 'DELETE',
+    headers: { ...buildAuthHeaders(), 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ confirm: true }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Fichiers non supprimés (${res.status})`);
+  }
+  return { supprimes: Number(data?.supprimes ?? 0), octetsLiberes: Number(data?.octetsLiberes ?? 0) };
+}
+
+export async function deleteAllAccountConversations(): Promise<void> {
+  const res = await authFetch(getApiUrl('/api/a11/history'), {
+    method: 'DELETE',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Conversations non supprimées (${res.status})`);
+  }
+}
+
+export async function deleteAccountVoiceCorpus(persona = ''): Promise<void> {
+  const res = await authFetch(getApiUrl('/api/voice-learning/corpus'), {
+    method: 'DELETE',
+    headers: { ...buildAuthHeaders(), 'Content-Type': 'application/json' },
+    credentials: 'include',
+    // Le serveur attend ce jeton exact, pas un booleen (voice-learning.cjs:45).
+    body: JSON.stringify({ confirm: 'delete-voice-learning-corpus', persona }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Corpus voix non supprimé (${res.status})`);
+  }
+}
