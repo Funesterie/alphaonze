@@ -22,7 +22,7 @@
     "build": "vite build && node scripts/copy_legacy.js",
     "preview": "vite preview",
     "lint": "echo \"no lint configured\"",
-    "test": "node --experimental-strip-types --test src/App.node.test.ts src/lib/api.node.test.ts src/lib/casino.node.test.ts",
+    "test": "node --experimental-strip-types --test src/App.node.test.ts src/lib/api.node.test.ts src/lib/casino.node.test.ts src/lib/vivy-lyrics-filters.node.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

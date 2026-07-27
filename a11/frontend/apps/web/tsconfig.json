@@ -11,6 +11,10 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
+    // Les tests tournent via `node --experimental-strip-types`, qui exige l'extension
+    // explicite a l'import. Les fichiers .node.test.ts l'utilisent deja; un module
+    // partage entre l'application et un test doit pouvoir faire pareil.
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "strict": true,
     // TODO: 'baseUrl' is deprecated and will stop working in TS 7.0. Migrate to project references and 'paths' soon.

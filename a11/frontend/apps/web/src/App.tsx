@@ -182,6 +182,12 @@ import {
 } from "./lib/speech";
 import handleImportFiles, { type ImportedConversationAttachment } from "./lib/importer";
 import { foldForLookup, toUnicodeLine, toUnicodeText } from "./lib/language";
+import {
+  looksLikeVivyNossenTechnicalMediaLine,
+  isVivyNossenSonicStyleLine,
+  isVivyNossenStructureInstructionLine,
+  looksLikeVivyNossenOperatorNoiseLine,
+} from "./lib/vivy-lyrics-filters";
 import { sanitizeMediaDisplayName, sanitizeMediaDisplayNameFromUrl } from "./lib/safe-media-name";
 import {
   attachLegacyStaticUiTranslator,
@@ -3477,16 +3483,6 @@ function isVivyNossenUseAttachmentTextRequest(value = "") {
   return /\b(?:utilise|reprends|reprendre|mets|mettre|integre|intègre|copie|prends|prendre)\b.{0,90}\b(?:texte|ocr|image|photo|fichier|piece jointe|pièce jointe|document)\b/.test(folded);
 }
 
-function looksLikeVivyNossenTechnicalMediaLine(value = "") {
-  const raw = String(value || "").trim();
-  const folded = foldForLookup(raw);
-  if (!folded) return false;
-  if (/\.(?:jpe?g|png|webp|gif|bmp|svg|heic|avif)\b/i.test(raw)) return true;
-  if (/https?:\/\/\S+/i.test(raw) || /\b(?:downloadurl|storagekey|contenttype|textpreview|visualdescription|analysissummary)\b/i.test(raw)) return true;
-  if (/\b(?:ocr|analyse\s+a11|jpg|jpeg|png|webp|gif|maxresdefault|wallpaper|preview|filename|nom\s+de\s+fichier|fichier\s+image|metadata|metadonnees|métadonnées|lecture\s+locale|vision\s+avancee|vision\s+avancée|format\s+jpeg|format\s+png|image\s+recue|image\s+reçue|px|ko)\b/.test(folded)) return true;
-  if (/\b[a-f0-9]{14,}\b/i.test(raw) || /\b\d{8,}\b/.test(raw)) return true;
-  return false;
-}
 
 function stripVivyNossenControlLabel(value = "") {
   return toUnicodeLine(value, "", 260)
@@ -3494,60 +3490,7 @@ function stripVivyNossenControlLabel(value = "") {
     .trim();
 }
 
-function isVivyNossenSonicStyleLine(value = "") {
-  const raw = String(value || "").trim();
-  const folded = foldForLookup(raw);
-  if (!folded) return false;
-  if (/^(?:style\s+sonore|direction\s+sonore|couleur\s+sonore|ambiance\s+sonore|mood|genre|style)\b/.test(folded)) return true;
-  const styleMatches = folded.match(/\b(?:epic|cinematic|cinematique|cinématique|dark|pop|rock|metal|electro|rap|anthem|motorbike|racing|powerful|female|male|vocal|voice|guitars?|guitares?|drums?|batterie|synths?|orchestr(?:e|al|ation)?|strings?|bpm|stadium|crowd|choir|reverb|bass|basse)\b/g) || [];
-  return styleMatches.length >= 3 && (raw.includes(",") || /\b(?:vocal|bpm|drums?|guitars?|synths?|orchestr|anthem)\b/.test(folded));
-}
 
-function isVivyNossenStructureInstructionLine(value = "") {
-  const folded = foldForLookup(value);
-  if (!folded) return false;
-  if (/^(?:instruction|consigne|structure|format\s+attendu|ecrire|écrire|ecris|écris)\b/.test(folded)) return true;
-  // Ces motifs visaient des consignes mais mangeaient le vocabulaire courant du rap:
-  // << j'envoie le son >>, << je mets l'ambiance >>, << il sort son flow >>. Un couplet
-  // entier est parti comme ca. Le discriminant n'est pas le verbe mais l'adresse: une
-  // consigne parle a Vivy (imperatif en tete de ligne, << quand tu es prete >>), une
-  // parole a un sujet qui chante. On exige donc la forme imperative, et on abandonne
-  // << sort >>, qui n'est jamais un verbe de consigne ici.
-  if (/^(?:mets|met|mettre)\b.{0,80}\b(?:action|theme|th[eè]me|ambiance|titre)\b/.test(folded)) return true;
-  if (/\btu\s+(?:mets|met)\b.{0,60}\b(?:action|theme|th[eè]me|ambiance|titre)\b/.test(folded)) return true;
-  if (/^(?:put|turn|make)\b.{0,80}\b(?:action|theme|mood|ambience|ambiance|title|epic|fantasy)\b/.test(folded)) return true;
-  if (/\bquand\s+tu\s+es\s+pr[eê]te\b/.test(folded)) return true;
-  if (/^(?:envoie|envois|envoies|lance)\b.{0,80}\b(?:son|chanson|musique|voix\s+f[eé]minine|bien\s+aim[eé]e)\b/.test(folded)) return true;
-  if (/\b(?:when\s+you(?:\s+re|\s+are)\s+ready|send|launch|release|drop)\b.{0,80}\b(?:song|track|music|lyrics|female\s+voice|beloved)\b/.test(folded)) return true;
-  if (/\b(?:vraie\s+chanson\s+complete|vraie\s+chanson\s+complète|ecrire.{0,50}chanson\s+complete|écrire.{0,50}chanson\s+complète|ecris.{0,50}chanson\s+complete|écris.{0,50}chanson\s+complète|intro.*couplet.*refrain|couplet.*refrain.*pont|ne\s+pas\s+recopier|ne\s+chante\s+pas|paroles\s+chantables)\b/.test(folded)) return true;
-
-  // Consignes que Vivy a recrachees telles quelles dans des paroles envoyees a Suno:
-  // << Utilise le tag exact [Vivy] >>, << CONTRAT_COMPOSITION_NOSSEN >>, << Casting
-  // verrouille >>... Ces lignes finissaient chantees. Motifs releves sur cas reel.
-  if (/^utilise\b.{0,60}\btag\b/.test(folded)) return true;
-  if (/\btag\s+exact\b/.test(folded)) return true;
-  if (/^chaque\s+(?:section|detail|nom)\b/.test(folded)) return true;
-  if (/^(?:origine\s+de\s+mati|casting\s+(?:verrouille|demande|impose)|distribution\s+vocale|contrat\b)/.test(folded)) return true;
-  if (/contrat[_\s-]?composition|composition[_\s-]?nossen/.test(folded)) return true;
-  if (/\bevite\s+les\s+formules\b|\bformules\s+generiques\b/.test(folded)) return true;
-  if (/\bne\s+decris\s+jamais\b|\bfabrication\s+du\s+morceau\b/.test(folded)) return true;
-  if (/\brimes\s+travaillees\b|\bprogression\s+emotionnelle\b/.test(folded)) return true;
-  // << on garde le cap >> et << le dernier mot reste au micro >> sont des paroles. Ces
-  // tournures ne trahissent une consigne que si elles parlent de la fabrication.
-  if (/^(?:on\s+garde|le\s+dernier\s+mot\s+reste)\b.{0,60}\b(?:refrain|couplet|structure|section|tag|casting|voix|titre|format)\b/.test(folded)) return true;
-  if (/^le\s+refrain\s+prend\s+forme\b/.test(folded)) return true;
-  // Jetons internes en majuscules avec underscore: jamais des paroles.
-  if (/^[A-Z][A-Z0-9_]{6,}$/.test(String(value || '').trim())) return true;
-
-  // Seconde vague relevee en freestyle: la matiere brute du canevas et les etiquettes
-  // internes remontaient telles quelles. Volontairement etroit: << le cypher reste
-  // ouvert >> ou << Solo Djeff dans la piece >> sont de vraies paroles, on n'y touche pas.
-  if (/^mati[eè]re\s+creative\b/.test(folded)) return true;
-  if (/\bcanevas\s+composition\b|\ba\s+transformer\s*$/.test(folded)) return true;
-  if (/^origine\s+de\s+mati|^source\s+de\s+mati|^seed\b|^brouillon\s*:/.test(folded)) return true;
-
-  return false;
-}
 
 function looksLikeVivyNossenAssistantLyricsBlock(value = "") {
   const text = toUnicodeText(value, 6000);
@@ -3935,32 +3878,6 @@ function cleanVivyNossenLyricSourceLine(value = "") {
     .trim();
 }
 
-function looksLikeVivyNossenOperatorNoiseLine(folded = "") {
-  if (!folded) return true;
-  if (looksLikeVivyNossenTechnicalMediaLine(folded)) return true;
-  if (isVivyNossenSonicStyleLine(folded)) return true;
-  if (isVivyNossenStructureInstructionLine(folded)) return true;
-  if (/\b(?:d40|suno|fallback|secours|codex|prompt|telechargement|téléchargement|telecharger|télécharger|bouton|compile|compil|compiler|compilateur|formulaire|detecteur|détecteur|ajustements internes|grand modele|grand modèle|mode automatique|generation d40|génération d40)\b/.test(folded)) return true;
-  if (/\b(?:nossen\s+mode|mode\s+nossen|tu\s+peux\s+faire\s+le\s+nossen|que\s+tu\s+fasses\s+un\s+son|fais\s+le\s+banger|lance\s+le\s+banger|demander\s+a\s+vivy|demander\s+à\s+vivy)\b/.test(folded)) return true;
-  if (/\b(?:paroles?\s+passent?\s+pas|musique\s+bug|generation\s+musique\s+bug|génération\s+musique\s+bug|phrase générique|truc générique|generique|réecrit|réécrit|reecrit|recopie|recopier)\b/.test(folded)) return true;
-  if (/\b(?:bug|bugs?|marche\s+pas|sort\s+pas|sorti\s+pas|corrige|corriger|fix|logs?|credits?|crédits?|cles?|clés?|key|llm|quota|token|secret)\b/.test(folded)) return true;
-  if (/\b(?:repete|répète|repetes|répètes|reponse|réponse|reponses|réponses|perroquet|singeur|singe|confond|confondu|sortie\s+compilateur|user\s+avec|compiler\s+output)\b/.test(folded)) return true;
-  if (/\b(?:oui\s+je\s+te\s+suis|je\s+suis\s+la\s+et\s+je\s+te\s+suis|je\s+dois\s+repondre\s+a\s+ce\s+que\s+tu\s+poses|je\s+dois\s+répondre\s+à\s+ce\s+que\s+tu\s+poses|sur\s+le\s+fond|avec\s+le\s+contexte)\b/.test(folded)) return true;
-  if (/\b(?:affichage|telephone|téléphone|mobile|dezoom|dézoom|clavier|viewport|scroll|impossible\s+d[' ]?ecrire|impossible\s+d[' ]?écrire|ca\s+bouge|ça\s+bouge)\b/.test(folded)) return true;
-  // Ces motifs sont aussi appliques aux PAROLES: sanitizeVivyNossenSongSeed appelle
-  // cette fonction ligne par ligne. Les avoir laisses larges ici annulait la correction
-  // faite dans isVivyNossenStructureInstructionLine -- « j'envoie le son », « je mets
-  // l'ambiance », « il sort son flow » disparaissaient encore, le compte de lignes
-  // tombait sous le minimum de dix, et la production s'arretait sur
-  // paroles_vivy_invalides. Meme discriminant que la-bas: l'adresse, pas le verbe.
-  if (/^(?:mets|met|mettre)\b.{0,80}\b(?:action|theme|th[eè]me|ambiance|titre)\b/.test(folded)) return true;
-  if (/\btu\s+(?:mets|met)\b.{0,60}\b(?:action|theme|th[eè]me|ambiance|titre)\b/.test(folded)) return true;
-  if (/^(?:put|turn|make)\b.{0,80}\b(?:action|theme|mood|ambience|ambiance|title|epic|fantasy)\b/.test(folded)) return true;
-  if (/\bquand\s+tu\s+es\s+pr[eê]te\b/.test(folded)) return true;
-  if (/^(?:envoie|envois|envoies|lance)\b.{0,80}\b(?:son|chanson|musique|voix\s+f[eé]minine|bien\s+aim[eé]e)\b/.test(folded)) return true;
-  if (/^(?:when\s+you(?:\s+re|\s+are)\s+ready|send|launch|release|drop)\b.{0,80}\b(?:song|track|music|lyrics|female\s+voice|beloved)\b/.test(folded)) return true;
-  return false;
-}
 
 function normalizeVivyNossenUserContent(value = "") {
   return toUnicodeText(value, 2400)
