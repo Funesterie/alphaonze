@@ -188,6 +188,16 @@ function upsertVoiceInCatalog(entry, env = process.env) {
   if (existing) {
     normalized.addedBy = existing.addedBy || normalized.addedBy;
     normalized.addedAt = existing.addedAt || normalized.addedAt;
+
+    // Remplacement d'une persona expiree: l'ancien echantillon ne correspond plus a
+    // la nouvelle voix. On le supprime du disque au lieu de le laisser orphelin, et
+    // le rattrapage automatique en regenerera un.
+    if (existing.sampleFile && existing.voiceId !== normalized.voiceId && !normalized.sampleFile) {
+      try {
+        fs.unlinkSync(path.join(resolveVoiceSampleDir(env), existing.sampleFile));
+      } catch { /* deja absent: rien a faire */ }
+    }
+
     catalog.voices = catalog.voices.map((v) => (v.name === normalized.name ? normalized : v));
   } else {
     if (catalog.voices.length >= MAX_ENTRIES) throw new Error('catalog_full');
