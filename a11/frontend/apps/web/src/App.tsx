@@ -9060,7 +9060,22 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           }
           const blob = await response.blob();
           const fallbackAudioName = useBangerWord ? "vivy-banger-nossen.mp3" : "vivy-nossen.mp3";
-          const sourceName = sanitizeMediaDisplayName(preparedMedia.filename || fallbackAudioName) || fallbackAudioName;
+          // Le titre de la chanson doit se retrouver dans le nom du fichier, avant comme
+          // apres le D40. Sans lui on obtenait « 178515...-vivy-music-suno-8ec0da7f-
+          // funesterie-d40-v9electrolysis.mp3 »: que des numeros, impossible de s'y
+          // retrouver entre deux morceaux.
+          const titreChanson = String(
+            (finalPayload as any)?.title
+            || (finalPayload as any)?.songTitle
+            || (finalPayload as any)?.media?.title
+            || ""
+          ).trim();
+          const baseTitre = titreChanson
+            ? sanitizeMediaDisplayName(titreChanson, "").replace(/\.[a-z0-9]{2,5}$/i, "").trim()
+            : "";
+          const sourceName = baseTitre
+            ? `${baseTitre}.mp3`
+            : (sanitizeMediaDisplayName(preparedMedia.filename || fallbackAudioName) || fallbackAudioName);
           const sourceFile = new File([blob], sourceName, { type: blob.type || preparedMedia.contentType || "audio/mpeg" });
           const d40 = await processDoubleHarmonicAudio(sourceFile, {
             profile: "blend",

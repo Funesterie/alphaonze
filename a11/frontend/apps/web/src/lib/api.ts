@@ -2724,6 +2724,13 @@ export async function processDoubleHarmonicAudio(
   const form = new FormData();
   form.append('audio', file);
   form.append('profile', options?.profile || 'blend');
+  // L'option `name` existait dans la signature mais n'etait jamais envoyee: le serveur
+  // retombait donc sur le nom du fichier source, d'ou des sorties du genre
+  // « 178515...-vivy-music-suno-8ec0da7f-funesterie-d40-v9electrolysis.mp3 », que des
+  // numeros. Djeff: « il faut un titre a la chanson, juste des numeros on s'y perd. »
+  if (options?.name) {
+    form.append('name', options.name);
+  }
   if (options?.format) {
     form.append('format', options.format);
   }

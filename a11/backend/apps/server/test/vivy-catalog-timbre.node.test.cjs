@@ -14,6 +14,7 @@ const assert = require('node:assert/strict');
 const {
   stripCastTimbreForCatalogVoice,
   buildCatalogVoiceNegativeTags,
+  retagLyricsForCatalogVoice,
 } = require('../src/routes/vivy-studio.cjs');
 
 const STYLE_VIVY = 'French cyber pop, cinematic synthwave, clear female vocal, structured rhymed lyrics, melodic chorus, polished web mix, no spoken narration';
@@ -48,7 +49,34 @@ test('les tags negatifs repoussent le timbre oppose', () => {
   // cast vivy n'avait rien pour repousser la voix feminine.
   assert.match(buildCatalogVoiceNegativeTags('homme'), /female vocals/);
   assert.match(buildCatalogVoiceNegativeTags('femme'), /male vocals/);
-  assert.equal(buildCatalogVoiceNegativeTags(''), '', 'sans genre connu, on n invente pas de contrainte');
+});
+
+test('une voix premium chante seule, refrains compris', () => {
+  // Djeff: « ya Vivy qui chante alors qu'il y a juste une voix premium, elle fait les
+  // refrains ». Retirer la direction de timbre ne suffisait pas: Suno ajoutait quand
+  // meme une seconde voix. Cette contrainte ne depend pas du genre.
+  for (const genre of ['homme', 'femme', '']) {
+    const tags = buildCatalogVoiceNegativeTags(genre);
+    assert.match(tags, /second vocalist/, `genre "${genre}"`);
+    assert.match(tags, /different singer on the chorus/, `genre "${genre}"`);
+  }
+  const style = stripCastTimbreForCatalogVoice(STYLE_VIVY, 'Ilyana', 'femme');
+  assert.match(style, /one single lead vocalist for the entire song/);
+  assert.match(style, /same voice on every verse and every chorus/);
+});
+
+test('les etiquettes composees nommant un interprete sont reecrites', () => {
+  // La premiere version ne traitait que la forme exacte [Vivy]: « [Refrain - Vivy] »
+  // survivait, et Suno confiait la section a une autre voix.
+  const paroles = ['[Intro]', 'texte', '[Vivy]', 'ligne', '[Refrain - Vivy]', 'ligne',
+    '[Final Chorus - Djeff]', 'ligne', '[Couplet 2 (Vivy)]', 'ligne', '[Chorus]', 'ligne'].join('\n');
+  const sortie = retagLyricsForCatalogVoice(paroles, 'Ilyana');
+  assert.doesNotMatch(sortie, /\bVivy\b/, 'aucun interprete officiel ne doit rester');
+  assert.doesNotMatch(sortie, /\bDjeff\b/);
+  assert.match(sortie, /\[Refrain - Ilyana\]/);
+  assert.match(sortie, /\[Couplet 2 \(Ilyana\)\]/);
+  assert.match(sortie, /\[Intro\]/, 'une section sans interprete reste intacte');
+  assert.match(sortie, /\[Chorus\]/);
 });
 
 test('un style sans direction de voix reste intact, hors ajout catalogue', () => {

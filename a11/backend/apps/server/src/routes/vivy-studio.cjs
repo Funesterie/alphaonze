@@ -5142,31 +5142,63 @@ function stripCastTimbreForCatalogVoice(style = '', catalogLabel = '', gender = 
       : '';
   kept.push(`authorized custom voice direction ${label}`);
   if (genreDirection) kept.push(genreDirection);
+  // Retirer la direction du timbre ne suffisait pas: Suno ajoutait quand meme une
+  // seconde voix sur les refrains. On demande explicitement une seule voix d'un bout
+  // a l'autre, couplets comme refrains.
+  kept.push('one single lead vocalist for the entire song');
+  kept.push('same voice on every verse and every chorus');
+  kept.push('solo performance, no second singer');
 
   return kept.join(', ');
 }
 
+/**
+ * Ce qu'il faut repousser quand une voix premium chante seule.
+ *
+ * Independant du genre: Suno confiait les refrains a une autre voix meme quand la
+ * persona etait correctement envoyee. Djeff l'a entendu -- « ya Vivy qui chante alors
+ * qu'il y a juste une voix premium, elle fait les refrains ».
+ */
+const CATALOG_VOICE_SOLO_NEGATIVES = 'duet, second vocalist, backing vocals, choir, '
+  + 'group chant, different singer on the chorus, guest vocalist, vocal harmonies by another singer';
+
 /** Tags negatifs deduits du genre de la voix premium, comme pour les echantillons. */
 function buildCatalogVoiceNegativeTags(gender = '') {
+  // Le refus d'une seconde voix s'applique quel que soit le genre: c'est la voix
+  // premium qui doit tenir toute la chanson, refrains compris.
   if (gender === 'homme') {
     // Pas de "soprano" ici: le nettoyeur anti-celebrite y voit le rappeur Soprano et le
     // remplace par "contemporary French urban vocal" -- on demanderait alors a Suno
     // d'eviter le rap urbain francais sur un morceau de rap.
-    return 'female vocals, female lead, high female head voice, airy female hook, romantic pop female vocal';
+    return `female vocals, female lead, high female head voice, airy female hook, romantic pop female vocal, ${CATALOG_VOICE_SOLO_NEGATIVES}`;
   }
   if (gender === 'femme') {
-    return 'male vocals, male lead, deep male voice, gruff male vocal';
+    return `male vocals, male lead, deep male voice, gruff male vocal, ${CATALOG_VOICE_SOLO_NEGATIVES}`;
   }
-  return '';
+  return CATALOG_VOICE_SOLO_NEGATIVES;
 }
 
 function retagLyricsForCatalogVoice(lyrics = '', catalogLabel = '') {
   const label = cleanOneLine(catalogLabel, '', 60);
   if (!lyrics || !label) return lyrics;
-  const performerTag = /^(\s*)\[(Djeff|Marvin|Vivy|A11|K44|Kaen44|Duo|Tous)\](\s*)$/i;
+  const INTERPRETES = 'Djeff|Marvin|Vivy|Vivi|A11|K44|Kaen44|Kaen|Duo|Tous|Toutes|Ensemble';
+  // Etiquette qui ne nomme qu'un interprete: elle devient la voix du catalogue.
+  const seul = new RegExp(`^(\\s*)\\[(?:${INTERPRETES})\\](\\s*)$`, 'i');
+  // Etiquette composee: « [Refrain - Vivy] », « [Final Chorus: Djeff] ». La premiere
+  // version ne traitait que la forme exacte, donc ces noms survivaient et Suno confiait
+  // la section a une autre voix -- d'ou Vivy sur les refrains.
+  const composee = new RegExp(`^(\\s*\\[[^\\]]*?)\\s*[-:–—]\\s*(?:${INTERPRETES})\\s*(\\]\\s*)$`, 'i');
+  // Forme parenthesee: « [Refrain (Vivy)] ».
+  const parenthesee = new RegExp(`^(\\s*\\[[^\\]]*?)\\s*\\(\\s*(?:${INTERPRETES})\\s*\\)\\s*(\\]\\s*)$`, 'i');
+
   return String(lyrics)
     .split(/\r?\n/)
-    .map((line) => (performerTag.test(line) ? line.replace(performerTag, `$1[${label}]$3`) : line))
+    .map((line) => {
+      if (seul.test(line)) return line.replace(seul, `$1[${label}]$2`);
+      if (composee.test(line)) return line.replace(composee, `$1 - ${label}$2`);
+      if (parenthesee.test(line)) return line.replace(parenthesee, `$1 (${label})$2`);
+      return line;
+    })
     .join('\n');
 }
 
@@ -11373,6 +11405,7 @@ module.exports = {
   buildEmergencyMediaForProduction,
   stripCastTimbreForCatalogVoice,
   buildCatalogVoiceNegativeTags,
+  retagLyricsForCatalogVoice,
   resolveVivyRequestDeadlineAt,
   resolveVivyRemainingMs,
   resolveVivySunoTimeoutMs,
