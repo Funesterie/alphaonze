@@ -5583,10 +5583,19 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   // Casting affiché: quand le routage auto est actif, on reflète l'inférence depuis le canevas
   // au lieu de la sélection manuelle figée.
   const effectiveSongArtists = useMemo(() => {
-    if (!songCastingAuto) return normalizeVivyStudioArtists(songArtists);
+    // normalizeVivyStudioArtists remet le casting par defaut quand la selection est
+    // vide. C'est souhaitable d'ordinaire, mais pas quand l'utilisateur a decoche
+    // exprES: en instrumental, ou quand une voix du catalogue tient le role. Sans ce
+    // fallback vide, les cases se recochaient seules et paraissaient bloquees.
+    const casteVideVoulu = instrumentalOnly || Boolean(selectedCatalogVoiceId);
+    const fallback = casteVideVoulu ? [] : undefined;
+    const manuel = fallback
+      ? normalizeVivyStudioArtists(songArtists, fallback)
+      : normalizeVivyStudioArtists(songArtists);
+    if (!songCastingAuto) return manuel;
     const inferred = normalizeVivyStudioArtists(inferVivyNossenBangerArtists(songText));
-    return inferred.length ? inferred : normalizeVivyStudioArtists(songArtists);
-  }, [songCastingAuto, songArtists, songText]);
+    return inferred.length ? inferred : manuel;
+  }, [songCastingAuto, songArtists, songText, instrumentalOnly, selectedCatalogVoiceId]);
   const activeSongArtistCast = useMemo(() => buildVivyStudioArtistCast(effectiveSongArtists), [effectiveSongArtists]);
   const activeVoiceReferenceLabel = activeCatalogVoiceName
     ? `Catalogue: ${activeCatalogVoiceName}`
