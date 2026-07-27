@@ -61,8 +61,21 @@ const upload = multer({
 function createSttRouter(options = {}) {
   const router = express.Router();
 
+  // La transcription appelle un fournisseur facturable, et Caddy publie /api/stt/*
+  // sur l'internet: la route etait donc joignable par n'importe qui, sans compte.
+  // Si la garde n'est pas fournie au montage, on refuse au lieu de laisser passer --
+  // un passe-plat silencieux rouvrirait le trou a la premiere etourderie.
+  const verifyJWT = typeof options.verifyJWT === 'function'
+    ? options.verifyJWT
+    : (_req, res) => res.status(503).json({
+      ok: false,
+      error: 'auth_guard_missing',
+      message: "Transcription indisponible: garde d'authentification non montee.",
+    });
+
   // ── GET /api/stt/status ──────────────────────────────────────────────────
-  router.get('/stt/status', (_req, res) => {
+  // Protege aussi: la reponse detaille les fournisseurs configures.
+  router.get('/stt/status', verifyJWT, (_req, res) => {
     try {
       const status = getSttStatus();
       return res.json({ ok: true, ...status });
@@ -75,6 +88,7 @@ function createSttRouter(options = {}) {
   // ── POST /api/stt/transcribe ─────────────────────────────────────────────
   router.post(
     '/stt/transcribe',
+    verifyJWT,
     upload.single('audio'),
     async (req, res) => {
       const startTime = Date.now();

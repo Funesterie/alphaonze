@@ -6455,7 +6455,7 @@ app.use('/api', optionalVerifyJWT, videoTools.router);
 // === STT — Speech-to-Text (Whisper via Ollama ou OpenAI) ===
 try {
   const createSttRouter = require('./src/routes/stt.cjs');
-  app.use('/api', createSttRouter());
+  app.use('/api', createSttRouter({ verifyJWT }));
   console.log('[Server] STT routes mounted under /api/stt');
 } catch (e) {
   console.warn('[Server] STT routes unavailable:', e.message);
