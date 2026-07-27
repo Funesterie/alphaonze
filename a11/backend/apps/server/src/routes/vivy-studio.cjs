@@ -10317,14 +10317,25 @@ function createVivyStudioRouter({ verifyJWT, creativeCapabilityService = null } 
         active: body.active !== false,
       }, process.env);
 
+      // Echantillon lance des l'ajout, en tache de fond: sans ca il fallait attendre
+      // une consultation du catalogue pour entendre la voix. Le runner porte ses
+      // garde-fous, un ajout repete ne peut pas declencher de rafale.
+      const access = getSunoAccess({}, req);
+      setImmediate(() => {
+        runMissingVoiceSamples({ apiKey: access.apiKey, baseUrl: getSunoBaseUrl(), env: process.env })
+          .catch((error) => console.warn('[VoiceSample] echantillon initial: %s', String(error.message || error).slice(0, 140)));
+      });
+
       return res.json({
         ok: true,
+        sampleQueued: true,
         voice: {
           name: saved.name,
           label: saved.label,
           owner: saved.owner,
           aliases: saved.aliases,
           idMask: saved.idMask,
+          gender: saved.gender,
           consentBy: saved.consentBy,
           active: saved.active,
         },
