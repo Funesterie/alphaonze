@@ -8368,6 +8368,14 @@ body {
   transform-origin: 42% 20%;
 }
 
+/* Vivy n'avait pas de correction et retombait sur << center bottom >>: sur mobile,
+   ou la carte est plus haute que large, l'ancrage en bas lui coupait la tete. */
+.fun-home-agent-card--vivy > img {
+  object-position: 50% 18%;
+  transform: scale(1.12);
+  transform-origin: 50% 18%;
+}
+
 .fun-home-agent-card::after {
   content: "";
   position: absolute;

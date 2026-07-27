@@ -3504,6 +3504,22 @@ function isVivyNossenStructureInstructionLine(value = "") {
   if (/\b(?:quand\s+tu\s+es\s+prete|quand\s+tu\s+es\s+prête|envoie|envois|envoies|lance|sort)\b.{0,80}\b(?:son|ton|chanson|musique|voix\s+feminine|voix\s+féminine|bien\s+aimee|bien\s+aimée)\b/.test(folded)) return true;
   if (/\b(?:when\s+you(?:\s+re|\s+are)\s+ready|send|launch|release|drop)\b.{0,80}\b(?:song|track|music|lyrics|female\s+voice|beloved)\b/.test(folded)) return true;
   if (/\b(?:vraie\s+chanson\s+complete|vraie\s+chanson\s+complète|ecrire.{0,50}chanson\s+complete|écrire.{0,50}chanson\s+complète|ecris.{0,50}chanson\s+complete|écris.{0,50}chanson\s+complète|intro.*couplet.*refrain|couplet.*refrain.*pont|ne\s+pas\s+recopier|ne\s+chante\s+pas|paroles\s+chantables)\b/.test(folded)) return true;
+
+  // Consignes que Vivy a recrachees telles quelles dans des paroles envoyees a Suno:
+  // << Utilise le tag exact [Vivy] >>, << CONTRAT_COMPOSITION_NOSSEN >>, << Casting
+  // verrouille >>... Ces lignes finissaient chantees. Motifs releves sur cas reel.
+  if (/^utilise\b.{0,60}\btag\b/.test(folded)) return true;
+  if (/\btag\s+exact\b/.test(folded)) return true;
+  if (/^chaque\s+(?:section|detail|nom)\b/.test(folded)) return true;
+  if (/^(?:origine\s+de\s+mati|casting\s+(?:verrouille|demande|impose)|distribution\s+vocale|contrat\b)/.test(folded)) return true;
+  if (/contrat[_\s-]?composition|composition[_\s-]?nossen/.test(folded)) return true;
+  if (/\bevite\s+les\s+formules\b|\bformules\s+generiques\b/.test(folded)) return true;
+  if (/\bne\s+decris\s+jamais\b|\bfabrication\s+du\s+morceau\b/.test(folded)) return true;
+  if (/\brimes\s+travaillees\b|\bprogression\s+emotionnelle\b/.test(folded)) return true;
+  if (/^(?:on\s+garde|le\s+dernier\s+mot\s+reste|le\s+refrain\s+prend\s+forme)\b/.test(folded)) return true;
+  // Jetons internes en majuscules avec underscore: jamais des paroles.
+  if (/^[A-Z][A-Z0-9_]{6,}$/.test(String(value || '').trim())) return true;
+
   return false;
 }
 

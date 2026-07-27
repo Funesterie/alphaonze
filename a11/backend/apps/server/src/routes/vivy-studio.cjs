@@ -5034,6 +5034,21 @@ function injectVivySectionArtistTags(lyrics = '', artistCast = null) {
   return output.join('\n');
 }
 
+/**
+ * Quand une voix du catalogue chante, les balises de section doivent porter SON nom.
+ * Sinon les paroles annoncent [Vivy] pendant qu'on envoie la persona d'Ilyana: Suno
+ * recoit deux signaux contradictoires et melange les deux timbres.
+ */
+function retagLyricsForCatalogVoice(lyrics = '', catalogLabel = '') {
+  const label = cleanOneLine(catalogLabel, '', 60);
+  if (!lyrics || !label) return lyrics;
+  const performerTag = /^(\s*)\[(Djeff|Marvin|Vivy|A11|K44|Kaen44|Duo|Tous)\](\s*)$/i;
+  return String(lyrics)
+    .split(/\r?\n/)
+    .map((line) => (performerTag.test(line) ? line.replace(performerTag, `$1[${label}]$3`) : line))
+    .join('\n');
+}
+
 function strengthenVivySunoSoloSectionHeaders(lyrics = '', artistCast = null) {
   if (!lyrics || !artistCast?.artists?.length || Number(artistCast.count || 0) <= 1) return lyrics;
   const sharedRoleLabel = 'Call and Response Hook';
@@ -8325,9 +8340,13 @@ function buildVivySunoPayload(input = {}, req = null) {
   const requestedModel = resolveVivySunoRequestedModel(input);
   const prompt = forceInstrumental
     ? buildVivyInstrumentalSunoPrompt({ ...input, songTitle: input.songTitle || input.title || title }, title)
-    : clampVivySunoLyricsLength(strengthenVivySunoSoloSectionHeaders(
-      buildVivySunoLyrics({ ...input, songTitle: input.songTitle || input.title || title }),
-      artistCast
+    : clampVivySunoLyricsLength(retagLyricsForCatalogVoice(
+      strengthenVivySunoSoloSectionHeaders(
+        buildVivySunoLyrics({ ...input, songTitle: input.songTitle || input.title || title }),
+        artistCast
+      ),
+      // Seulement quand une voix du catalogue est effectivement envoyee a Suno.
+      catalogVoiceId ? (findVoiceInCatalog(input.voiceCatalogName || input.catalogVoiceName)?.label || '') : ''
     ));
   const payload = {
     model: useVerifiedSunoVoice && !/^V5(?:_5)?$/i.test(requestedModel) ? 'V5_5' : requestedModel,
@@ -8343,6 +8362,18 @@ function buildVivySunoPayload(input = {}, req = null) {
     payload.personaId = verifiedVoiceId;
     payload.personaModel = 'voice_persona';
   }
+
+  // Trace de la decision vocale: sans elle, impossible de savoir pourquoi une voix
+  // premium demandee n'a pas ete appliquee. On ne loge jamais l'identifiant complet.
+  console.info(
+    '[VivyVoiceRouting] cast=%s count=%s catalogDemande=%s catalogResolu=%s officiel=%s personaEnvoyee=%s',
+    singleArtistId || '(aucun)',
+    artistCast.count,
+    cleanOneLine(input.voiceCatalogName || input.catalogVoiceName, '(aucun)', 40),
+    catalogVoiceId ? `${catalogVoiceId.slice(0, 4)}...` : 'non',
+    serverVoiceId ? `${serverVoiceId.slice(0, 4)}...` : 'non',
+    useVerifiedSunoVoice ? `${String(verifiedVoiceId).slice(0, 4)}...` : 'aucune'
+  );
   return payload;
 }
 
