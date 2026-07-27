@@ -9556,7 +9556,17 @@ async function requestSunoMusicExtension(input = {}, req = null) {
     error.status = 400;
     throw error;
   }
-  const model = cleanOneLine(input.musicModel || input.model || input.sourceModel || process.env.VIVY_SUNO_MODEL || 'V5_5', 'V5_5', 40);
+  // Une chanson longue est generee puis prolongee. L'extension ne portait aucune
+  // persona et repartait sur le modele renvoye par Suno pour la source (chirp-fenix):
+  // la fin du morceau etait donc chantee par une autre voix que le debut. L'API
+  // accepte personaId sur /generate/extend (sonde du 27/07: HTTP 200, msg=success),
+  // on la transmet donc, avec le modele compatible persona comme a la generation.
+  const extensionVoiceId = resolveVivyCatalogVoiceIdFromInput(input)
+    || resolveConfiguredVivySunoPersonaVoiceId(cleanOneLine(input.sunoPersonaArtist || input.artistId, '', 40));
+  const requestedExtensionModel = cleanOneLine(input.musicModel || input.model || input.sourceModel || process.env.VIVY_SUNO_MODEL || 'V5_5', 'V5_5', 40);
+  const model = extensionVoiceId && !/^V5(?:_5)?$/i.test(requestedExtensionModel)
+    ? 'V5_5'
+    : requestedExtensionModel;
   const sourceDurationSeconds = Number(
     input.sourceDurationSeconds
     ?? input.source_duration_seconds
@@ -9599,6 +9609,16 @@ async function requestSunoMusicExtension(input = {}, req = null) {
       body.instrumental = true;
     }
   }
+  // Un morceau instrumental n'a pas de voix a prolonger.
+  if (extensionVoiceId && !wantsInstrumental) {
+    body.personaId = extensionVoiceId;
+    body.personaModel = 'voice_persona';
+  }
+  console.info(
+    '[VivySunoExtendVoice] persona=%s modele=%s',
+    extensionVoiceId ? `${String(extensionVoiceId).slice(0, 4)}...` : 'aucune',
+    model
+  );
   console.info(
     '[VivySunoPayload] %s model=%s custom=%s instrumental=%s sourceDuration=%s continueAt=%s target=%s titleChars=%s styleChars=%s promptChars=%s',
     useUploadExtend ? 'upload-extend' : 'extend',
