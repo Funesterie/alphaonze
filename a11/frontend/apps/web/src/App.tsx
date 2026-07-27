@@ -3947,10 +3947,18 @@ function looksLikeVivyNossenOperatorNoiseLine(folded = "") {
   if (/\b(?:repete|répète|repetes|répètes|reponse|réponse|reponses|réponses|perroquet|singeur|singe|confond|confondu|sortie\s+compilateur|user\s+avec|compiler\s+output)\b/.test(folded)) return true;
   if (/\b(?:oui\s+je\s+te\s+suis|je\s+suis\s+la\s+et\s+je\s+te\s+suis|je\s+dois\s+repondre\s+a\s+ce\s+que\s+tu\s+poses|je\s+dois\s+répondre\s+à\s+ce\s+que\s+tu\s+poses|sur\s+le\s+fond|avec\s+le\s+contexte)\b/.test(folded)) return true;
   if (/\b(?:affichage|telephone|téléphone|mobile|dezoom|dézoom|clavier|viewport|scroll|impossible\s+d[' ]?ecrire|impossible\s+d[' ]?écrire|ca\s+bouge|ça\s+bouge)\b/.test(folded)) return true;
-  if (/\b(?:mets|met|mettre)\b.{0,80}\b(?:action|theme|th[eè]me|ambiance|titre)\b/.test(folded)) return true;
-  if (/\b(?:put|turn|make)\b.{0,80}\b(?:action|theme|mood|ambience|ambiance|title|epic|fantasy)\b/.test(folded)) return true;
-  if (/\b(?:quand\s+tu\s+es\s+prete|quand\s+tu\s+es\s+prête|envoie|envois|envoies|lance|sort)\b.{0,80}\b(?:son|ton|chanson|musique|voix\s+feminine|voix\s+féminine|bien\s+aimee|bien\s+aimée)\b/.test(folded)) return true;
-  if (/\b(?:when\s+you(?:\s+re|\s+are)\s+ready|send|launch|release|drop)\b.{0,80}\b(?:song|track|music|lyrics|female\s+voice|beloved)\b/.test(folded)) return true;
+  // Ces motifs sont aussi appliques aux PAROLES: sanitizeVivyNossenSongSeed appelle
+  // cette fonction ligne par ligne. Les avoir laisses larges ici annulait la correction
+  // faite dans isVivyNossenStructureInstructionLine -- « j'envoie le son », « je mets
+  // l'ambiance », « il sort son flow » disparaissaient encore, le compte de lignes
+  // tombait sous le minimum de dix, et la production s'arretait sur
+  // paroles_vivy_invalides. Meme discriminant que la-bas: l'adresse, pas le verbe.
+  if (/^(?:mets|met|mettre)\b.{0,80}\b(?:action|theme|th[eè]me|ambiance|titre)\b/.test(folded)) return true;
+  if (/\btu\s+(?:mets|met)\b.{0,60}\b(?:action|theme|th[eè]me|ambiance|titre)\b/.test(folded)) return true;
+  if (/^(?:put|turn|make)\b.{0,80}\b(?:action|theme|mood|ambience|ambiance|title|epic|fantasy)\b/.test(folded)) return true;
+  if (/\bquand\s+tu\s+es\s+pr[eê]te\b/.test(folded)) return true;
+  if (/^(?:envoie|envois|envoies|lance)\b.{0,80}\b(?:son|chanson|musique|voix\s+f[eé]minine|bien\s+aim[eé]e)\b/.test(folded)) return true;
+  if (/^(?:when\s+you(?:\s+re|\s+are)\s+ready|send|launch|release|drop)\b.{0,80}\b(?:song|track|music|lyrics|female\s+voice|beloved)\b/.test(folded)) return true;
   return false;
 }
 
