@@ -63,6 +63,7 @@ const {
   attachVoiceSample,
   readVoiceSample,
 } = require('../music/voice-catalog.cjs');
+const { runMissingVoiceSamples } = require('../music/voice-sample-runner.cjs');
 const {
   buildVivyProsodyPlan,
   buildVivyProsodyStyleHint,
@@ -10247,7 +10248,21 @@ function createVivyStudioRouter({ verifyJWT, creativeCapabilityService = null } 
 
   router.get('/voice-catalog', requireAuth, (req, res) => {
     try {
-      return res.json({ ok: true, ...describeVoiceCatalog(process.env) });
+      const payload = describeVoiceCatalog(process.env);
+
+      // Rattrapage des echantillons manquants, en tache de fond: la reponse ne doit
+      // jamais attendre une generation Suno de plusieurs minutes. Le runner porte ses
+      // propres garde-fous (verrou, plafond d'essais, delai, budget par campagne),
+      // donc l'appeler a chaque consultation ne peut pas partir en boucle.
+      if (payload.voices.some((v) => v.active && !v.hasSample)) {
+        const access = getSunoAccess({}, req);
+        setImmediate(() => {
+          runMissingVoiceSamples({ apiKey: access.apiKey, baseUrl: getSunoBaseUrl(), env: process.env })
+            .catch((error) => console.warn('[VoiceSample] campagne interrompue: %s', String(error.message || error).slice(0, 140)));
+        });
+      }
+
+      return res.json({ ok: true, ...payload });
     } catch (error) {
       return res.status(500).json({ ok: false, error: 'voice_catalog_read_failed', message: String(error.message || error) });
     }
@@ -10293,6 +10308,8 @@ function createVivyStudioRouter({ verifyJWT, creativeCapabilityService = null } 
         label: body.label || body.name,
         voiceId,
         owner: body.owner,
+        // Sans genre, Suno derive et rend parfois l'inverse de la voix attendue.
+        gender: body.gender,
         aliases: body.aliases,
         note: body.note,
         consentBy,

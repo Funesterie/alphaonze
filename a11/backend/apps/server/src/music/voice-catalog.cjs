@@ -77,6 +77,12 @@ function normalizeEntry(value = null) {
     idMask: maskVoiceId(voiceId),
     idHash: hashVoiceId(voiceId),
     owner: cleanLine(value?.owner || value?.ownerName, 80),
+    // Sans indication de genre, Suno derive: un echantillon Djeff est sorti avec une
+    // voix feminine faute de tags negatifs. Le projet en pose pour ses artistes
+    // officiels, le catalogue doit faire pareil.
+    gender: ['homme', 'femme'].includes(String(value?.gender || '').trim().toLowerCase())
+      ? String(value.gender).trim().toLowerCase()
+      : '',
     // Qui atteste que la personne autorise l'usage de sa voix. Obligatoire.
     consentBy: cleanLine(value?.consentBy || value?.consentedBy, 160),
     consentAt: cleanLine(value?.consentAt, 40) || new Date().toISOString(),
@@ -90,6 +96,11 @@ function normalizeEntry(value = null) {
     sampleFile: cleanLine(value?.sampleFile, 200),
     sampleDurationSeconds: Math.max(0, Math.round(Number(value?.sampleDurationSeconds || 0))) || 0,
     sampleAt: cleanLine(value?.sampleAt, 40),
+    // Compteurs d'echec: sans eux, une voix dont la persona est morte relancerait une
+    // generation a chaque passage, indefiniment, en brulant des credits pour rien.
+    sampleAttempts: Math.max(0, Math.round(Number(value?.sampleAttempts || 0))) || 0,
+    sampleLastAttemptAt: cleanLine(value?.sampleLastAttemptAt, 40),
+    sampleLastError: cleanLine(value?.sampleLastError, 200),
     active: value?.active !== false,
   };
 }
