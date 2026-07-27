@@ -7042,3 +7042,53 @@ export async function deleteAccountVoiceCorpus(persona = ''): Promise<void> {
     throw new Error(data?.message || data?.error || `Corpus voix non supprimé (${res.status})`);
   }
 }
+
+// ─── Chat vocal avec Vivy (fondateur/famille) ────────────────────────────────
+// Djeff : « ya beaucoup de gens qui veulent lui parler [...] mais tu débloque ça
+// que pour les compte fondateur/famille. » Le verrou est côté serveur ; cet appel
+// d'accès sert seulement à ne pas afficher un bouton qui refuserait ensuite.
+
+export type VivyVoiceChatAccess = { allowed: boolean; reason: string; message: string };
+
+export async function fetchVivyVoiceChatAccess(): Promise<VivyVoiceChatAccess> {
+  const res = await authFetch(getApiUrl('/api/vivy/voice-chat/access'), {
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { allowed: false, reason: 'unavailable', message: '' };
+  return {
+    allowed: data?.allowed === true,
+    reason: String(data?.reason || ''),
+    message: String(data?.message || ''),
+  };
+}
+
+export type VivyVoiceChatTurn = { transcript: string; reply: string; message?: string };
+
+export async function sendVivyVoiceChat(
+  file: File,
+  options?: { language?: string; sessionId?: string; conversationId?: string }
+): Promise<VivyVoiceChatTurn> {
+  const form = new FormData();
+  form.append('audio', file);
+  if (options?.language) form.append('language', options.language);
+  if (options?.sessionId) form.append('sessionId', options.sessionId);
+  if (options?.conversationId) form.append('conversationId', options.conversationId);
+
+  const res = await authFetch(getApiUrl('/api/vivy/voice-chat'), {
+    method: 'POST',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+    body: form,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Chat vocal indisponible (${res.status})`);
+  }
+  return {
+    transcript: String(data?.transcript || ''),
+    reply: String(data?.reply || ''),
+    message: String(data?.message || ''),
+  };
+}

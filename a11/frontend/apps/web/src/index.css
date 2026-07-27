@@ -10858,3 +10858,24 @@ body {
   border-color: rgba(240, 121, 121, 0.7) !important;
   color: rgba(255, 190, 190, 0.98) !important;
 }
+
+/* Chat vocal Vivy (fondateur/famille). L'etat d'enregistrement doit se voir d'un
+   coup d'oeil: on parle sans regarder l'ecran. */
+.vivy-voice-chat-button.is-recording {
+  border-color: rgba(240, 121, 121, 0.85) !important;
+  background: rgba(240, 121, 121, 0.18) !important;
+  animation: vivy-voice-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes vivy-voice-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vivy-voice-chat-button.is-recording { animation: none; }
+}
+
+.vivy-chat-status--voice {
+  color: rgba(240, 121, 216, 0.92);
+}

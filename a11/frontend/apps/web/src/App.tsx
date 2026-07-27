@@ -6,6 +6,8 @@ import {
   deleteAccountVoiceCorpus,
   deleteAllAccountConversations,
   fetchAccountDataSummary,
+  fetchVivyVoiceChatAccess,
+  sendVivyVoiceChat,
   type AccountDataSummary,
   deleteRemoteProviderProfile,
   downloadAccountInventoryZip,
@@ -7850,6 +7852,15 @@ function normalizeVivyImageGenerationResult(result: any): VivyStudioMediaPreview
   };
 }
 
+// Pure, et utilisee par la dictee comme par le chat vocal: elle vit au niveau module.
+function getCaptureFileExtension(mimeType: string) {
+  const normalized = String(mimeType || "").toLowerCase();
+  if (normalized.includes("mp4") || normalized.includes("m4a")) return "m4a";
+  if (normalized.includes("ogg")) return "ogg";
+  if (normalized.includes("wav")) return "wav";
+  return "webm";
+}
+
 function VivyPublicChat({ hasSession }: VivySessionProps) {
   const [messages, setMessages] = useState<VivyPublicChatMessage[]>(() => hasSession ? readVivyPublicChat() : [buildVivyLockedMessage()]);
   const [conversationId, setConversationId] = useState(() => readOrCreateVivyConversationId("default"));
@@ -7872,9 +7883,76 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   const vivySendLockRef = useRef(false);
   const lastVivySubmitRef = useRef({ key: "", at: 0 });
   const videoResumeAttemptRef = useRef(false);
+  // Chat vocal, reserve fondateur/famille. Le verrou est cote serveur: ce sondage
+  // sert uniquement a ne pas montrer un bouton qui refuserait ensuite.
+  const [voiceChatAllowed, setVoiceChatAllowed] = useState(false);
+  const [voiceChatRecording, setVoiceChatRecording] = useState(false);
+  const [voiceChatBusy, setVoiceChatBusy] = useState(false);
+  const [voiceChatStatus, setVoiceChatStatus] = useState("");
   const [copiedMsgId, setCopiedMsgId] = useState("");
   const [chatSessions, setChatSessions] = useState<VivyChatSessionMeta[]>(() => hasSession ? listVivyChatSessions() : []);
   const [activeChatSessionId, setActiveChatSessionId] = useState("default");
+
+  useEffect(() => {
+    if (!hasSession) { setVoiceChatAllowed(false); return; }
+    let annule = false;
+    void fetchVivyVoiceChatAccess()
+      .then((acces) => { if (!annule) setVoiceChatAllowed(acces.allowed); })
+      .catch(() => { if (!annule) setVoiceChatAllowed(false); });
+    return () => { annule = true; };
+  }, [hasSession]);
+
+  async function basculerChatVocal() {
+    if (voiceChatBusy) return;
+
+    if (!voiceChatRecording) {
+      try {
+        await startMicAudioCapture();
+        setVoiceChatRecording(true);
+        setVoiceChatStatus("Je t'écoute…");
+      } catch {
+        setVoiceChatStatus("Micro indisponible. Vérifie l'autorisation du navigateur.");
+      }
+      return;
+    }
+
+    setVoiceChatRecording(false);
+    setVoiceChatBusy(true);
+    setVoiceChatStatus("Je réfléchis…");
+    try {
+      const capture = await stopMicAudioCapture();
+      if (!capture?.blob) {
+        setVoiceChatStatus("Rien n'a été enregistré.");
+        return;
+      }
+      const fichier = new File(
+        [capture.blob],
+        `vivy-vocal-${Date.now()}.${getCaptureFileExtension(capture.mimeType)}`,
+        { type: capture.mimeType || "audio/webm" }
+      );
+      const tour = await sendVivyVoiceChat(fichier, { language: "fr", conversationId });
+      if (!tour.transcript) {
+        setVoiceChatStatus(tour.message || "Je n'ai rien entendu de clair.");
+        return;
+      }
+      // La question et la reponse rejoignent le fil ecrit: une conversation vocale
+      // laisse une trace lisible, et on peut reprendre au clavier.
+      const tourMessages: VivyPublicChatMessage[] = [
+        { id: `vivy-vocal-user-${Date.now()}`, role: "user", content: tour.transcript, ts: new Date().toISOString() },
+        { id: `vivy-vocal-assistant-${Date.now()}`, role: "assistant", content: tour.reply, ts: new Date().toISOString() },
+      ];
+      setMessages((current) => [...current, ...tourMessages].slice(-36));
+      setVoiceChatStatus("");
+      if (tour.reply) {
+        // La voix est un plus: si la synthese echoue, le texte reste affiche.
+        void ttsSpeak(tour.reply, "vivy", "auto").catch(() => undefined);
+      }
+    } catch (error: any) {
+      setVoiceChatStatus(error?.message || "Chat vocal indisponible.");
+    } finally {
+      setVoiceChatBusy(false);
+    }
+  }
   const compositionWorkspace = readVivyStudioCompositionWorkspace();
   const nossenMusicProviderLabel = getVivyNossenMusicProviderLabel(nossenMusicProvider);
   const nossenBangerReadiness = useMemo(
@@ -9354,6 +9432,19 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           disabled={!hasSession}
         />
         <div>
+          {voiceChatAllowed && (
+            // Reserve fondateur/famille. Le bouton n'est cache qu'en confort: le
+            // serveur refuse de toute facon les autres comptes.
+            <button
+              type="button"
+              className={`vivy-voice-chat-button${voiceChatRecording ? " is-recording" : ""}`}
+              disabled={!hasSession || voiceChatBusy}
+              onClick={() => void basculerChatVocal()}
+              title="Parler à Vivy — réservé aux comptes fondateur et famille."
+            >
+              {voiceChatRecording ? "Stop" : voiceChatBusy ? "…" : "Parler"}
+            </button>
+          )}
           <button type="button" disabled={!hasSession} onClick={() => sendModeFromComposer("voice")}>Voix</button>
           <button type="button" disabled={!hasSession} onClick={() => sendModeFromComposer("song")}>Chanson</button>
           <button type="button" disabled={!hasSession} onClick={() => sendModeFromComposer("share")}>Scène</button>
@@ -9474,6 +9565,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         onChange={onVivyConversationFileChange}
         hidden
       />
+      {voiceChatStatus && <p className="vivy-chat-status vivy-chat-status--voice">{voiceChatStatus}</p>}
       {status && <p className="vivy-chat-status">{status}</p>}
     </section>
   );
@@ -16000,14 +16092,6 @@ export function App() {
       e.preventDefault();
       sendMessage();
     }
-  }
-
-  function getCaptureFileExtension(mimeType: string) {
-    const normalized = String(mimeType || "").toLowerCase();
-    if (normalized.includes("mp4") || normalized.includes("m4a")) return "m4a";
-    if (normalized.includes("ogg")) return "ogg";
-    if (normalized.includes("wav")) return "wav";
-    return "webm";
   }
 
   function setVoiceLearningContribution(next: boolean) {

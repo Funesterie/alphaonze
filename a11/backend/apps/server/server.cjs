@@ -6964,6 +6964,16 @@ app.use('/api/vivy/studio', createVivyStudioRouter({
 }));
 console.log('[Server] Vivy Studio routes mounted under /api/vivy/studio');
 
+// Chat vocal reserve fondateur/famille: la porte se ferme cote serveur, avant la
+// transcription facturable et l'appel LLM.
+const createVivyVoiceChatRouter = require('./src/routes/vivy-voice-chat.cjs');
+const { buildVivyAiChat: buildVivyAiChatForVoice } = require('./src/routes/vivy-studio.cjs');
+app.use('/api/vivy/voice-chat', createVivyVoiceChatRouter({
+  verifyJWT,
+  buildVivyAiChat: buildVivyAiChatForVoice,
+}));
+console.log('[Server] Vivy voice chat mounted under /api/vivy/voice-chat (fondateur/famille)');
+
 const { createVivyStreamRouter } = require('./src/routes/vivy-stream.cjs');
 app.use('/api/vivy/stream', createVivyStreamRouter({ verifyJWT, db }));
 console.log('[Server] Vivy Stream routes mounted under /api/vivy/stream');
