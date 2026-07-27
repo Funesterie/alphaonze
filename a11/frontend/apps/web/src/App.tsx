@@ -3434,31 +3434,6 @@ function writeVivyVoiceReferenceLabel(label: string) {
   }
 }
 
-// Le catalogue est selectionne dans le studio, mais la production finale part de
-// VivyPublicChat (NOSSEN), un autre composant sans acces a cet etat. On persiste donc
-// le choix, comme la voix de reference juste au-dessus. Sans ca la voix premium
-// n'atteint jamais la vraie generation.
-const VIVY_CATALOG_VOICE_STORAGE_KEY = "vivy.catalogVoiceName";
-
-function readVivyCatalogVoiceName() {
-  if (!hasVivyAuthenticatedSession()) return "";
-  try {
-    return String(globalThis.localStorage?.getItem(VIVY_CATALOG_VOICE_STORAGE_KEY) || "").trim();
-  } catch {
-    return "";
-  }
-}
-
-function writeVivyCatalogVoiceName(name: string) {
-  if (!hasVivyAuthenticatedSession()) return;
-  try {
-    if (name) globalThis.localStorage?.setItem(VIVY_CATALOG_VOICE_STORAGE_KEY, name);
-    else globalThis.localStorage?.removeItem(VIVY_CATALOG_VOICE_STORAGE_KEY);
-  } catch {
-    // Best effort: le catalogue reste la source de verite cote serveur.
-  }
-}
-
 function isVivyVoiceChangeRequest(text: string) {
   const folded = foldForLookup(text);
   if (!folded) return false;
@@ -4504,13 +4479,29 @@ function writeVivyStudioDraft(value: Record<string, unknown>) {
 function readVivyStudioCompositionWorkspace() {
   const draft = readVivyStudioDraft();
   if (!draft || typeof draft !== "object") {
-    return { canvas: "", notes: "", songArtists: [] as VivyStudioArtistId[], castingAuto: true };
+    return {
+      canvas: "",
+      notes: "",
+      songArtists: [] as VivyStudioArtistId[],
+      castingAuto: true,
+      instrumentalOnly: false,
+      catalogVoiceName: "",
+    };
   }
+  const instrumentalOnly = draft.instrumentalOnly === true;
+  const catalogVoiceName = String(draft.catalogVoiceName || "").trim();
+  // Casting vide volontaire: sans fallback vide, normalizeVivyStudioArtists remet le
+  // defaut et NOSSEN se retrouvait avec des chanteurs que l'utilisateur avait decoches.
+  const casteVideVoulu = instrumentalOnly || Boolean(catalogVoiceName);
   return {
     canvas: toUnicodeText(String(draft.songText || ""), VIVY_STUDIO_SONG_MAX_CHARS).trim(),
     notes: toUnicodeText(String(draft.songMood || ""), 800).trim(),
-    songArtists: normalizeVivyStudioArtists(draft.songArtists),
+    songArtists: casteVideVoulu
+      ? normalizeVivyStudioArtists(draft.songArtists, [])
+      : normalizeVivyStudioArtists(draft.songArtists),
     castingAuto: draft.songCastingAuto !== false,
+    instrumentalOnly,
+    catalogVoiceName,
   };
 }
 
@@ -5284,7 +5275,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [newCatalogVoiceConsent, setNewCatalogVoiceConsent] = useState("");
   const [isSavingCatalogVoice, setIsSavingCatalogVoice] = useState(false);
   // Instrumental seul: aucune voix chantee, meme si une est selectionnee au casting.
-  const [instrumentalOnly, setInstrumentalOnly] = useState(false);
+  const [instrumentalOnly, setInstrumentalOnly] = useState(initialDraft.instrumentalOnly === true);
   const [samplingVoiceName, setSamplingVoiceName] = useState("");
   const [selectedCatalogVoiceId, setSelectedCatalogVoiceId] = useState(String(initialDraft.selectedCatalogVoiceId || ""));
   const [catalogVoiceName, setCatalogVoiceName] = useState(String(initialDraft.catalogVoiceName || ""));
@@ -5497,6 +5488,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       voiceFileName,
       voiceReferenceId,
       selectedCatalogVoiceId,
+      instrumentalOnly,
       catalogVoiceName,
       publishVoiceToCatalog,
       catalogConsentAccepted,
@@ -5515,7 +5507,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       tokenPresent: Boolean(shareToken.trim()),
       vivyOutput: normalizeVivyStudioOutputForState(vivyOutput),
     });
-  }, [activeMode, voiceTool, voiceInstruction, voiceFileName, voiceReferenceId, selectedCatalogVoiceId, catalogVoiceName, publishVoiceToCatalog, catalogConsentAccepted, voiceLearningPersona, voiceLearningFileName, voiceLearningTranscript, personalSunoVoiceLabel, songSource, songArtists, songCastingAuto, songMood, songText, shareTarget, shareUrl, shareInstruction, shareToken, vivyOutput]);
+  }, [activeMode, voiceTool, voiceInstruction, voiceFileName, voiceReferenceId, selectedCatalogVoiceId, instrumentalOnly, catalogVoiceName, publishVoiceToCatalog, catalogConsentAccepted, voiceLearningPersona, voiceLearningFileName, voiceLearningTranscript, personalSunoVoiceLabel, songSource, songArtists, songCastingAuto, songMood, songText, shareTarget, shareUrl, shareInstruction, shareToken, vivyOutput]);
 
   useEffect(() => {
     writeVivySessionSunoKey(sunoSessionKey);
@@ -7266,8 +7258,6 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                           ? String(nextVoice.catalog?.name || nextVoice.label || "").trim()
                           : "";
                         setCatalogVoiceName(nextName);
-                        // Persiste pour NOSSEN, qui produit depuis un autre composant.
-                        writeVivyCatalogVoiceName(nextName);
                         if (nextVoice) {
                           setVoiceReferenceId(nextVoice.id);
                           setVoiceFileName(nextName || nextVoice.label || "voix catalogue");
@@ -8760,10 +8750,14 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         lyrics: vocalLyricsForProduction,
         songText: vocalLyricsForProduction,
         sessionSunoApiKey: sunoSessionKey || undefined,
-        // La production finale omettait la voix du catalogue: seuls les apercus la
-        // transmettaient. La voix premium n'atteignait donc jamais la vraie generation.
-        // Le nom vient du studio via localStorage, ce composant n'ayant pas son etat.
-        voiceCatalogName: readVivyCatalogVoiceName() || undefined,
+        // La production finale ignorait la voix du catalogue ET la case instrumentale:
+        // seuls les apercus les transmettaient. Ces reglages viennent du plan de travail
+        // du studio, ce composant n'ayant pas son etat.
+        voiceCatalogName: songWorkspace.instrumentalOnly
+          ? undefined
+          : (songWorkspace.catalogVoiceName || undefined),
+        instrumental: songWorkspace.instrumentalOnly || undefined,
+        forceInstrumental: songWorkspace.instrumentalOnly || undefined,
         forceRealMusic: true,
         generateMusic: true,
         makeSong: true,
