@@ -149,7 +149,15 @@ function resolveVivySongMaxTokens(input = {}) {
     || 0
   );
   const configured = Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG || VIVY_CHAT_SONG_MAX_TOKENS_DEFAULT);
-  const ceiling = Math.max(3200, Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG_CEILING || 9000) || 9000);
+  // La prod demande 10000 et recevait 9000: le plafond par defaut rabotait en silence
+  // une valeur pourtant reglee expressement. Un plafond doit borner ce qui n'est pas
+  // configure, pas contredire ce qui l'est -- sinon on croit avoir donne des jetons
+  // qu'on n'a jamais donnes.
+  const ceiling = Math.max(
+    3200,
+    Number(process.env.VIVY_CHAT_MAX_TOKENS_SONG_CEILING || 9000) || 9000,
+    Number.isFinite(configured) ? configured : 0
+  );
   const value = Number.isFinite(requested) && requested > 0 ? requested : configured;
   return Math.max(1200, Math.min(ceiling, Math.round(value)));
 }
