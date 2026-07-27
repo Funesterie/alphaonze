@@ -30,6 +30,7 @@ import {
   fetchA11PortraitFramebook,
   fetchTtsVoiceCatalog,
   listVoiceCatalog,
+  addVoiceToCatalog,
   type VoiceCatalogEntry,
   fetchTtsVoiceReferences,
   fetchAuthSession,
@@ -5250,6 +5251,11 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [voiceFileName, setVoiceFileName] = useState(String(initialDraft.voiceFileName || ""));
   const [voiceReferenceId, setVoiceReferenceId] = useState(String(initialDraft.voiceReferenceId || ""));
   const [catalogVoices, setCatalogVoices] = useState<TtsVoiceReference[]>([]);
+  // Ajout d'une voix Suno au catalogue: un nom, un voiceId, une attestation d'accord.
+  const [newCatalogVoiceName, setNewCatalogVoiceName] = useState("");
+  const [newCatalogVoiceId, setNewCatalogVoiceId] = useState("");
+  const [newCatalogVoiceConsent, setNewCatalogVoiceConsent] = useState("");
+  const [isSavingCatalogVoice, setIsSavingCatalogVoice] = useState(false);
   const [selectedCatalogVoiceId, setSelectedCatalogVoiceId] = useState(String(initialDraft.selectedCatalogVoiceId || ""));
   const [catalogVoiceName, setCatalogVoiceName] = useState(String(initialDraft.catalogVoiceName || ""));
   const [publishVoiceToCatalog, setPublishVoiceToCatalog] = useState(Boolean(initialDraft.publishVoiceToCatalog));
@@ -6856,6 +6862,74 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                 {!catalogVoices.length ? (
                   <p className="vivy-studio-voice-summary">Catalogue premium vide pour l’instant. Les voix publiées avec accord apparaîtront ici.</p>
                 ) : null}
+
+                <details style={{ marginTop: 10 }}>
+                  <summary style={{ cursor: "pointer", fontSize: 13, color: "#a78bfa", userSelect: "none" }}>
+                    Ajouter une voix Suno au catalogue
+                  </summary>
+                  <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                    <label>
+                      Nom
+                      <input
+                        type="text"
+                        value={newCatalogVoiceName}
+                        placeholder="Ilyana"
+                        disabled={!hasSession || isSavingCatalogVoice}
+                        onChange={(event) => setNewCatalogVoiceName(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      voiceId Suno
+                      <input
+                        type="text"
+                        value={newCatalogVoiceId}
+                        placeholder="32 caractères hexadécimaux"
+                        disabled={!hasSession || isSavingCatalogVoice}
+                        onChange={(event) => setNewCatalogVoiceId(event.target.value.trim())}
+                      />
+                    </label>
+                    <label>
+                      Autorisation obtenue auprès de
+                      <input
+                        type="text"
+                        value={newCatalogVoiceConsent}
+                        placeholder="Qui atteste de l’accord (obligatoire)"
+                        disabled={!hasSession || isSavingCatalogVoice}
+                        onChange={(event) => setNewCatalogVoiceConsent(event.target.value)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={!hasSession || isSavingCatalogVoice || !newCatalogVoiceName.trim() || !newCatalogVoiceId.trim()}
+                      onClick={async () => {
+                        setIsSavingCatalogVoice(true);
+                        try {
+                          const saved = await addVoiceToCatalog({
+                            name: newCatalogVoiceName.trim(),
+                            voiceId: newCatalogVoiceId.trim(),
+                            owner: newCatalogVoiceName.trim(),
+                            consentBy: newCatalogVoiceConsent.trim(),
+                          });
+                          setNewCatalogVoiceName("");
+                          setNewCatalogVoiceId("");
+                          setNewCatalogVoiceConsent("");
+                          await refreshVoiceCatalog();
+                          setStatus(`Voix ajoutée au catalogue: ${saved.label} (${saved.idMask}).`);
+                        } catch (error: any) {
+                          setStatus(`Ajout impossible: ${error?.message || error}`);
+                        } finally {
+                          setIsSavingCatalogVoice(false);
+                        }
+                      }}
+                    >
+                      {isSavingCatalogVoice ? "Ajout…" : "Ajouter la voix"}
+                    </button>
+                    <p className="vivy-studio-voice-summary">
+                      Aucun fichier à envoyer : le voiceId suffit. L’autorisation est obligatoire
+                      et reste attachée à la voix.
+                    </p>
+                  </div>
+                </details>
               </fieldset>
               </details>
               <details style={{ marginTop: 8 }}>
