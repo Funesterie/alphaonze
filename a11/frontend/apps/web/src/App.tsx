@@ -3520,6 +3520,13 @@ function isVivyNossenStructureInstructionLine(value = "") {
   // Jetons internes en majuscules avec underscore: jamais des paroles.
   if (/^[A-Z][A-Z0-9_]{6,}$/.test(String(value || '').trim())) return true;
 
+  // Seconde vague relevee en freestyle: la matiere brute du canevas et les etiquettes
+  // internes remontaient telles quelles. Volontairement etroit: << le cypher reste
+  // ouvert >> ou << Solo Djeff dans la piece >> sont de vraies paroles, on n'y touche pas.
+  if (/^mati[eè]re\s+creative\b/.test(folded)) return true;
+  if (/\bcanevas\s+composition\b|\ba\s+transformer\s*$/.test(folded)) return true;
+  if (/^origine\s+de\s+mati|^source\s+de\s+mati|^seed\b|^brouillon\s*:/.test(folded)) return true;
+
   return false;
 }
 
