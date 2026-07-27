@@ -31,6 +31,8 @@ import {
   fetchTtsVoiceCatalog,
   listVoiceCatalog,
   addVoiceToCatalog,
+  requestVoiceCatalogSample,
+  getVoiceCatalogSample,
   type VoiceCatalogEntry,
   fetchTtsVoiceReferences,
   fetchAuthSession,
@@ -5256,6 +5258,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [newCatalogVoiceId, setNewCatalogVoiceId] = useState("");
   const [newCatalogVoiceConsent, setNewCatalogVoiceConsent] = useState("");
   const [isSavingCatalogVoice, setIsSavingCatalogVoice] = useState(false);
+  // Instrumental seul: aucune voix chantee, meme si une est selectionnee au casting.
+  const [instrumentalOnly, setInstrumentalOnly] = useState(false);
+  const [samplingVoiceName, setSamplingVoiceName] = useState("");
   const [selectedCatalogVoiceId, setSelectedCatalogVoiceId] = useState(String(initialDraft.selectedCatalogVoiceId || ""));
   const [catalogVoiceName, setCatalogVoiceName] = useState(String(initialDraft.catalogVoiceName || ""));
   const [publishVoiceToCatalog, setPublishVoiceToCatalog] = useState(Boolean(initialDraft.publishVoiceToCatalog));
@@ -5777,9 +5782,12 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       voiceReferenceName: activeCatalogVoiceName || voiceFileName || activeVoiceProfile.referenceFileName || activeVoiceProfile.referenceLabel,
       voiceReferenceLabel: activeCatalogVoiceName || activeVoiceProfile.referenceLabel,
       referenceVoiceStyle: activeCatalogVoiceName || activeVoiceProfile.voiceStyle,
-      voiceCatalogName: activeCatalogVoiceName || undefined,
-      voiceCatalogConsent: activeCatalogVoice ? VIVY_VOICE_CATALOG_CONSENT : undefined,
-      licensedVoiceCatalog: Boolean(activeCatalogVoice),
+      // Instrumental seul: on n'envoie aucune voix, meme si une est selectionnee.
+      instrumental: instrumentalOnly || undefined,
+      forceInstrumental: instrumentalOnly || undefined,
+      voiceCatalogName: instrumentalOnly ? undefined : (activeCatalogVoiceName || undefined),
+      voiceCatalogConsent: activeCatalogVoice && !instrumentalOnly ? VIVY_VOICE_CATALOG_CONSENT : undefined,
+      licensedVoiceCatalog: Boolean(activeCatalogVoice) && !instrumentalOnly,
       voiceTool,
       vocalCast: activeVoiceProfile.label,
       provider,
@@ -6825,6 +6833,22 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     );
                   })}
                 </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={instrumentalOnly}
+                    disabled={!hasSession || isBusy}
+                    onChange={(event) => {
+                      const next = event.target.checked;
+                      setInstrumentalOnly(next);
+                      setStatus(next
+                        ? "Instrumental seul: aucune voix ne sera chantée."
+                        : "Voix réactivées.");
+                    }}
+                  />
+                  Instrumental seul (aucune voix)
+                </label>
+
                 <label>
                   Voix premium autorisée
                   <select
@@ -6861,6 +6885,46 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                 </label>
                 {!catalogVoices.length ? (
                   <p className="vivy-studio-voice-summary">Catalogue premium vide pour l’instant. Les voix publiées avec accord apparaîtront ici.</p>
+                ) : null}
+
+                {activeCatalogVoiceName ? (
+                  <button
+                    type="button"
+                    disabled={!hasSession || Boolean(samplingVoiceName)}
+                    onClick={async () => {
+                      const name = activeCatalogVoiceName;
+                      setSamplingVoiceName(name);
+                      setStatus(`Génération d’un échantillon pour ${name}…`);
+                      try {
+                        const { taskId } = await requestVoiceCatalogSample(name);
+                        // Suno met 2 a 3 minutes: on interroge sans bloquer l'interface.
+                        for (let attempt = 0; attempt < 40; attempt += 1) {
+                          await new Promise((resolve) => setTimeout(resolve, 6000));
+                          const sample = await getVoiceCatalogSample(name, taskId);
+                          if (sample.ready && sample.audioUrl) {
+                            setVivyMedia({
+                              kind: "audio",
+                              url: resolveApiAssetUrl(sample.audioUrl) || sample.audioUrl,
+                              downloadUrl: resolveApiAssetUrl(sample.audioUrl) || sample.audioUrl,
+                              provider: "suno-voice-catalog",
+                              contentType: "audio/mpeg",
+                              filename: `echantillon-${name}.mp3`,
+                            });
+                            setStatus(`Échantillon ${name} prêt (${sample.durationSeconds}s).`);
+                            return;
+                          }
+                          if (sample.state === "error") throw new Error("génération échouée côté Suno");
+                        }
+                        setStatus(`Échantillon ${name}: toujours en cours, réessaie dans une minute.`);
+                      } catch (error: any) {
+                        setStatus(`Échantillon impossible: ${error?.message || error}`);
+                      } finally {
+                        setSamplingVoiceName("");
+                      }
+                    }}
+                  >
+                    {samplingVoiceName ? `Génération ${samplingVoiceName}…` : `Générer un échantillon (${activeCatalogVoiceName})`}
+                  </button>
                 ) : null}
 
                 <details style={{ marginTop: 10 }}>

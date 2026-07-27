@@ -10315,6 +10315,71 @@ function createVivyStudioRouter({ verifyJWT, creativeCapabilityService = null } 
     }
   });
 
+  // Echantillon d'une voix du catalogue: on genere un court extrait avec sa persona
+  // Suno pour l'avoir cote serveur (test d'ecoute, matiere reutilisable par Vivy).
+  // Deux temps volontairement: Suno met 2-3 min, bloquer la requete serait pire.
+  router.post('/voice-catalog/:name/sample', requireAuth, async (req, res) => {
+    if (!isVivyFounderUser(req.user || {})) {
+      return res.status(403).json({ ok: false, error: 'voice_catalog_forbidden' });
+    }
+    const entry = findVoiceInCatalog(req.params.name, process.env);
+    if (!entry) {
+      return res.status(404).json({ ok: false, error: 'voice_not_found' });
+    }
+
+    try {
+      const job = await requestSunoMusic({
+        mode: 'song',
+        songText: [
+          '[Verse]',
+          `[${entry.label}]`,
+          'Je pose ma voix, un mot puis deux',
+          'Le souffle passe, tu sais qui parle',
+        ].join('\n'),
+        songTitle: `Echantillon ${entry.label}`,
+        style: 'clean vocal take, sparse backing, close mic, neutral tempo',
+        voiceCatalogName: entry.name,
+        preserveSelectedVoice: true,
+        songArtists: ['vivy'],
+        instrumental: false,
+      }, req);
+
+      const taskId = cleanOneLine(job?.taskId || job?.data?.taskId, '', 120);
+      if (!taskId) {
+        return res.status(502).json({ ok: false, error: 'sample_task_missing', detail: job?.message || '' });
+      }
+      return res.json({ ok: true, taskId, name: entry.name, label: entry.label });
+    } catch (error) {
+      return res.status(Number(error.status) || 500).json({
+        ok: false,
+        error: cleanOneLine(error.code || 'voice_sample_failed', 'voice_sample_failed', 60),
+        message: String(error.message || error).slice(0, 300),
+      });
+    }
+  });
+
+  router.get('/voice-catalog/:name/sample/:taskId', requireAuth, async (req, res) => {
+    if (!isVivyFounderUser(req.user || {})) {
+      return res.status(403).json({ ok: false, error: 'voice_catalog_forbidden' });
+    }
+    try {
+      const job = await getVivyMusicJob(req.params.taskId, {}, req);
+      // getSunoMusicJob expose le rendu sous `media`, pas sous une liste de pistes.
+      const media = job?.media || {};
+      const audioUrl = cleanOneLine(media.audioUrl || media.audio_url || media.url, '', 600);
+      return res.json({
+        ok: true,
+        state: cleanOneLine(job?.state, 'processing', 40),
+        status: cleanOneLine(job?.status, '', 60),
+        ready: Boolean(audioUrl),
+        audioUrl,
+        durationSeconds: Math.round(Number(media.durationSeconds || media.duration || 0)) || 0,
+      });
+    } catch (error) {
+      return res.status(500).json({ ok: false, error: 'voice_sample_status_failed', message: String(error.message || error).slice(0, 300) });
+    }
+  });
+
   router.delete('/voice-catalog/:name', requireAuth, (req, res) => {
     if (!isVivyFounderUser(req.user || {})) {
       return res.status(403).json({ ok: false, error: 'voice_catalog_forbidden' });

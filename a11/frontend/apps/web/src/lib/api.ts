@@ -2556,6 +2556,42 @@ export async function addVoiceToCatalog(input: {
   return payload.voice as VoiceCatalogEntry;
 }
 
+/** Lance la generation d'un echantillon Suno pour une voix du catalogue. */
+export async function requestVoiceCatalogSample(name: string): Promise<{ taskId: string; label: string }> {
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/voice-catalog/${encodeURIComponent(name)}/sample`), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Echantillon impossible (${res.status})`);
+  }
+  return { taskId: String(payload.taskId || ''), label: String(payload.label || name) };
+}
+
+export async function getVoiceCatalogSample(name: string, taskId: string): Promise<{
+  ready: boolean;
+  state: string;
+  audioUrl: string;
+  durationSeconds: number;
+}> {
+  const res = await authFetch(
+    getApiUrl(`/api/vivy/studio/voice-catalog/${encodeURIComponent(name)}/sample/${encodeURIComponent(taskId)}`),
+    { headers: buildAuthHeaders('application/json'), credentials: 'include' }
+  );
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Statut echantillon indisponible (${res.status})`);
+  }
+  return {
+    ready: payload?.ready === true,
+    state: String(payload?.state || 'processing'),
+    audioUrl: String(payload?.audioUrl || ''),
+    durationSeconds: Number(payload?.durationSeconds || 0),
+  };
+}
+
 export async function removeVoiceFromCatalog(name: string): Promise<boolean> {
   const res = await authFetch(getApiUrl(`/api/vivy/studio/voice-catalog/${encodeURIComponent(name)}`), {
     method: 'DELETE',
