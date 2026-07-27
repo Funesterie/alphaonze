@@ -5041,6 +5041,56 @@ function injectVivySectionArtistTags(lyrics = '', artistCast = null) {
  * Sinon les paroles annoncent [Vivy] pendant qu'on envoie la persona d'Ilyana: Suno
  * recoit deux signaux contradictoires et melange les deux timbres.
  */
+/**
+ * Retire du style les consignes de timbre qui appartiennent au cast officiel.
+ *
+ * Le cast reste "vivy" meme quand on ne coche qu'une voix premium: Suno recevait donc
+ * a la fois la persona demandee et "clear female vocal". La consigne de timbre l'emporte
+ * sur la persona -- d'ou un Djeff premium a voix de femme, et une Ilyana noyee sous le
+ * timbre de Vivy. On garde le genre musical, on enleve la direction de voix.
+ */
+function stripCastTimbreForCatalogVoice(style = '', catalogLabel = '', gender = '') {
+  const source = String(style || '');
+  if (!source) return source;
+
+  const performerNames = /\b(vivy|vivi|djeff|k44|kaen44|kaen|a11|alphaonze|marvin)\b/i;
+  const genderedVoice = /\b(female|male|feminine|masculine|soprano|chanteuse)\b/i;
+  const voiceWord = /\b(vocal|vocals|voice|lead|hook|timbre|chant)\b/i;
+
+  const kept = source.split(',')
+    .map((fragment) => fragment.trim())
+    .filter((fragment) => {
+      if (!fragment) return false;
+      // Un fragment qui nomme un interprete officiel dirige un autre timbre.
+      if (performerNames.test(fragment)) return false;
+      // "clear female vocal", "male rap verses": genre + voix dans le meme fragment.
+      if (genderedVoice.test(fragment) && voiceWord.test(fragment)) return false;
+      return true;
+    });
+
+  const label = cleanOneLine(catalogLabel, 'la voix du catalogue', 60);
+  const genreDirection = gender === 'homme'
+    ? 'male lead vocal'
+    : gender === 'femme'
+      ? 'female lead vocal'
+      : '';
+  kept.push(`authorized custom voice direction ${label}`);
+  if (genreDirection) kept.push(genreDirection);
+
+  return kept.join(', ');
+}
+
+/** Tags negatifs deduits du genre de la voix premium, comme pour les echantillons. */
+function buildCatalogVoiceNegativeTags(gender = '') {
+  if (gender === 'homme') {
+    return 'female vocals, female lead, soprano, airy female hook, romantic pop female vocal';
+  }
+  if (gender === 'femme') {
+    return 'male vocals, male lead, deep male voice, gruff male vocal';
+  }
+  return '';
+}
+
 function retagLyricsForCatalogVoice(lyrics = '', catalogLabel = '') {
   const label = cleanOneLine(catalogLabel, '', 60);
   if (!lyrics || !label) return lyrics;
@@ -8333,9 +8383,24 @@ function buildVivySunoPayload(input = {}, req = null) {
       prosodyStyle,
     ].filter(Boolean).join(', '), 'instrumental backing track only, no vocals', 720);
   }
+  // Une voix premium chante: le style ne doit plus diriger le timbre d'un autre.
+  const catalogEntry = catalogVoiceId
+    ? findVoiceInCatalog(input.voiceCatalogName || input.catalogVoiceName)
+    : null;
+  if (useVerifiedSunoVoice && catalogEntry && !forceInstrumental && !useExternalVoiceMix) {
+    style = sanitizeVivySunoProviderTags(
+      stripCastTimbreForCatalogVoice(style, catalogEntry.label || catalogEntry.name, catalogEntry.gender),
+      style,
+      720
+    );
+  }
+
   const negativeTags = sanitizeVivySunoProviderTags([
     input.negativeTags || process.env.VIVY_SUNO_NEGATIVE_TAGS
       || 'spoken word, narration, reading prompt, robotic speech, muddy mix, out of tune vocals, copyrighted melody, celebrity voice imitation',
+    // Le garde-fou anti-timbre n'existait que pour le cast djeff: une voix premium
+    // masculine sur un cast vivy n'avait donc rien pour repousser la voix feminine.
+    catalogEntry && !forceInstrumental ? buildCatalogVoiceNegativeTags(catalogEntry.gender) : '',
     animeStyleBase ? 'French chanson, chanson française, acoustic ballad, crooner ballad, soft piano variety' : '',
     singleArtistId === 'djeff' ? 'female vocals, female lead, romantic pop vocal, soft ballad chorus, crooner voice, airy female hook' : '',
     singleArtistId === 'marvin' ? 'female vocals, female lead, child voice, random vocalist, celebrity voice imitation, English lead vocal' : '',
@@ -11207,4 +11272,6 @@ module.exports = {
   getVivyZenRuntimeStatus,
   getSunoMusicJob,
   buildEmergencyMediaForProduction,
+  stripCastTimbreForCatalogVoice,
+  buildCatalogVoiceNegativeTags,
 };
