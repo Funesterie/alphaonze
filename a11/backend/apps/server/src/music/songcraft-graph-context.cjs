@@ -60,6 +60,22 @@ function formatExtracts(results = []) {
   return lines;
 }
 
+/** Extraits de l'historique ChatGPT via l'index inverse. Ne leve jamais. */
+function formatChatGptExtracts(query, env = process.env) {
+  if (String(env.A11_SONGCRAFT_CHATGPT_CONTEXT || '1') === '0') return [];
+  try {
+    const { searchChatGptHistory } = require('../knowledge/chatgpt-keyword-search.cjs');
+    const found = searchChatGptHistory(query, { limit: 4, env });
+    if (!found?.ok || !found.results?.length) return [];
+    return found.results
+      .filter((r) => Number(r.matched) >= 2)   // au moins deux termes: sinon c'est du bruit
+      .slice(0, 2)
+      .map((r) => `- memoire (${String(r.title).slice(0, 50)}): ${String(r.preview).replace(/\s+/g, ' ').slice(0, 280)}`);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Renvoie un bloc de matiere pret a coller dans le prompt, ou une chaine vide.
  * Ne leve jamais.
@@ -70,6 +86,9 @@ async function buildSongcraftGraphContext(input = {}, env = process.env) {
   const query = buildSearchQuery(input);
   if (query.length < 8) return '';
 
+  // Les deux sources sont independantes: le graphe peut tomber sans priver Vivy de la
+  // memoire ChatGPT, et inversement. Les coupler ferait perdre les deux d'un coup.
+  let lines = [];
   try {
     const { searchVivyGraph } = require('../knowledge/vivy-graph-access.cjs');
     const search = searchVivyGraph({
@@ -77,25 +96,27 @@ async function buildSongcraftGraphContext(input = {}, env = process.env) {
       source: String(env.A11_SONGCRAFT_GRAPH_SOURCE || 'local'),
       limit: 10,
     });
-
     // Une recherche lente ne doit jamais retarder une production musicale.
     const timeout = new Promise((resolve) => setTimeout(() => resolve(null), SEARCH_TIMEOUT_MS));
     const result = await Promise.race([search, timeout]);
-    if (!result?.results?.length) return '';
-
-    const lines = formatExtracts(result.results);
-    if (!lines.length) return '';
-
-    return [
-      'MATIERE FUNESTERIE (extraits du graphe, pour nourrir ton ecriture):',
-      ...lines,
-      'Sers-t-en comme reference de ton, de lore et de vocabulaire. Ne cite jamais ces',
-      'lignes telles quelles dans les paroles: elles t informent, elles ne se chantent pas.',
-    ].join('\n');
+    if (result?.results?.length) lines = formatExtracts(result.results);
   } catch {
-    // Graphe indisponible: on ecrit sans matiere plutot que d'echouer.
-    return '';
+    lines = [];
   }
+
+  // L'historique ChatGPT pese 218 Mo: interroge par index inverse, jamais charge
+  // dans le graphe. Recherche locale et synchrone, donc sans risque de latence.
+  const memoire = formatChatGptExtracts(query, env);
+
+  if (!lines.length && !memoire.length) return '';
+
+  return [
+    'MATIERE FUNESTERIE (pour nourrir ton ecriture):',
+    ...lines,
+    ...memoire,
+    'Sers-t-en comme reference de ton, de lore et de vocabulaire. Ne cite jamais ces',
+    'lignes telles quelles dans les paroles: elles t informent, elles ne se chantent pas.',
+  ].join('\n');
 }
 
 module.exports = {
