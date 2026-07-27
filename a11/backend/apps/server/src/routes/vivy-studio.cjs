@@ -500,6 +500,53 @@ function canUseServerSuno(req = null) {
   return values.some((value) => /\b(premium|famille|family|founder|fondateur|admin_family)\b/i.test(value));
 }
 
+/**
+ * Echeance unique pour toute une requete de production.
+ *
+ * Le budget LLM (80 s) et le delai Suno (30 s) etaient regles independamment, sans
+ * jamais se parler: 110 s possibles alors que Cloudflare coupe vers 100 s. D'ou le
+ * « NOSSEN stoppe: Chat Vivy indisponible (524) », d'autant plus probable que la
+ * chaine de repli s'enchaine -- et elle s'enchaine justement quand les paroles
+ * sortent tronquees faute de jetons.
+ *
+ * Baisser le budget LLM degraderait les paroles. On partage donc une echeance: le
+ * LLM garde son budget, et les etapes suivantes recoivent le temps restant.
+ */
+const VIVY_REQUEST_BUDGET_MS_DEFAULT = 92000;
+const VIVY_SUNO_RESERVE_MS = 20000;
+
+function resolveVivyRequestDeadlineAt(req = null) {
+  if (!req || typeof req !== 'object') return 0;
+  if (!req.__vivyRequestDeadlineAt) {
+    const budget = Math.max(30000, Math.min(
+      150000,
+      Number(process.env.VIVY_REQUEST_BUDGET_MS || VIVY_REQUEST_BUDGET_MS_DEFAULT) || VIVY_REQUEST_BUDGET_MS_DEFAULT
+    ));
+    req.__vivyRequestDeadlineAt = Date.now() + budget;
+  }
+  return req.__vivyRequestDeadlineAt;
+}
+
+/** Temps restant avant l'echeance, ou 0 si aucune echeance n'est posee. */
+function resolveVivyRemainingMs(req = null) {
+  const deadline = resolveVivyRequestDeadlineAt(req);
+  return deadline ? Math.max(0, deadline - Date.now()) : 0;
+}
+
+/** Delai d'un appel Suno: le configure, mais jamais au-dela du temps restant. */
+function resolveVivySunoTimeoutMs(req = null) {
+  const configure = Math.max(5000, Number(process.env.VIVY_SUNO_TIMEOUT_MS || 30000) || 30000);
+  // On teste l'echeance, pas le temps restant: un budget epuise donne un restant de
+  // zero, et le confondre avec « aucune echeance » rendait les 30 s completes --
+  // exactement la protection qu'on voulait poser.
+  const echeance = resolveVivyRequestDeadlineAt(req);
+  if (!echeance) return configure;
+  const restant = Math.max(0, echeance - Date.now());
+  // Un plancher de 8 s: en dessous, l'appel echouerait a coup sur et on prefere
+  // une erreur claire de Suno a une coupure reseau opaque.
+  return Math.max(8000, Math.min(configure, restant));
+}
+
 function getSunoBaseUrl() {
   return String(
     process.env.VIVY_SUNO_BASE_URL
@@ -7522,11 +7569,17 @@ async function buildVivyAiChat(input, req) {
         : Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74),
       max_tokens: mode === 'song' ? songMaxTokens : Number(process.env.VIVY_CHAT_MAX_TOKENS || 5000),
     };
+    const nossenLlmBudgetMs = Math.max(30000, Math.min(
+      90000,
+      Number(process.env.VIVY_NOSSEN_LLM_BUDGET_MS || 80000) || 80000
+    ));
+    // On reserve de quoi soumettre a Suno derriere: sans cette reserve, un LLM qui
+    // consomme tout son budget ne laissait plus rien avant la coupure Cloudflare.
+    const nossenLlmCeilingAt = resolveVivyRequestDeadlineAt(req);
     const nossenLlmDeadlineAt = requiresStrongSongModel
-      ? Date.now() + Math.max(30000, Math.min(
-        90000,
-        Number(process.env.VIVY_NOSSEN_LLM_BUDGET_MS || 80000) || 80000
-      ))
+      ? (nossenLlmCeilingAt
+        ? Math.min(Date.now() + nossenLlmBudgetMs, nossenLlmCeilingAt - VIVY_SUNO_RESERVE_MS)
+        : Date.now() + nossenLlmBudgetMs)
       : 0;
     const completionResult = await createVivyChatCompletion(llmBundles, completionRequest, requiresStrongSongModel ? {
       deadlineAt: nossenLlmDeadlineAt,
@@ -9468,7 +9521,9 @@ async function requestSunoMusic(input = {}, req = null) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(Number(process.env.VIVY_SUNO_TIMEOUT_MS || 30000) || 30000),
+    // Borne par le temps qui reste avant la coupure Cloudflare: un delai fixe de
+    // 30 s s'ajoutait au budget LLM et faisait deborder le total.
+    signal: AbortSignal.timeout(resolveVivySunoTimeoutMs(req)),
   });
   const payload = await response.json().catch(() => ({}));
   const apiCode = findSunoApiCode(payload);
@@ -9639,7 +9694,9 @@ async function requestSunoMusicExtension(input = {}, req = null) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(Number(process.env.VIVY_SUNO_TIMEOUT_MS || 30000) || 30000),
+    // Borne par le temps qui reste avant la coupure Cloudflare: un delai fixe de
+    // 30 s s'ajoutait au budget LLM et faisait deborder le total.
+    signal: AbortSignal.timeout(resolveVivySunoTimeoutMs(req)),
   });
   const payload = await response.json().catch(() => ({}));
   const apiCode = findSunoApiCode(payload);
@@ -11297,4 +11354,7 @@ module.exports = {
   buildEmergencyMediaForProduction,
   stripCastTimbreForCatalogVoice,
   buildCatalogVoiceNegativeTags,
+  resolveVivyRequestDeadlineAt,
+  resolveVivyRemainingMs,
+  resolveVivySunoTimeoutMs,
 };
