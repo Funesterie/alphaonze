@@ -5,6 +5,7 @@ import {
   deleteAccountFiles,
   deleteAccountVoiceCorpus,
   deleteAllAccountConversations,
+  deleteStoredAccountFile,
   fetchAccountDataSummary,
   fetchVivyVoiceChatAccess,
   sendVivyVoiceChat,
@@ -11973,6 +11974,34 @@ function FunesterieAccountPage({
 
   const [paymentBusy, setPaymentBusy] = useState<"" | "premium" | "founder" | "portal" | "cancel">("");
   const [inventoryDownloadBusy, setInventoryDownloadBusy] = useState("");
+  // Suppression fichier par fichier. Une croix qui efface au premier clic effacerait
+  // aussi par accident, et un fichier supprime ne revient pas: le premier clic arme,
+  // le second execute. Ca reste deux gestes au meme endroit.
+  const [fileDeleteArmed, setFileDeleteArmed] = useState("");
+  const [fileDeleteBusy, setFileDeleteBusy] = useState("");
+
+  async function supprimerFichierInventaire(item: FunesterieInventoryFileItem) {
+    const id = Number(item.file?.id || 0);
+    if (!id) return;
+    setFileDeleteBusy(item.key);
+    try {
+      await deleteStoredAccountFile(id);
+      // On retire la ligne localement plutot que de tout recharger: la liste peut
+      // compter des centaines d'elements.
+      setInventory((current) => ({
+        ...current,
+        files: current.files.filter((f) => Number(f.id || 0) !== id),
+      }));
+      setFileDeleteArmed("");
+    } catch (error) {
+      setInventory((current) => ({
+        ...current,
+        error: error instanceof Error ? error.message : "Suppression impossible.",
+      }));
+    } finally {
+      setFileDeleteBusy("");
+    }
+  }
   const [sessionAppTokens, setSessionAppTokens] = useState<FunesterieSessionAppTokenMap>(() => readSessionAppTokens());
   const [sessionAppTokenDrafts, setSessionAppTokenDrafts] = useState<FunesterieSessionAppTokenMap>(() => readSessionAppTokens());
   const [providerHealth, setProviderHealth] = useState<ProviderHealthResponse | null>(null);
@@ -12441,6 +12470,40 @@ function FunesterieAccountPage({
                     >
                       {busy ? "..." : "Télécharger"}
                     </button>
+                    {item.file?.id ? (
+                      fileDeleteArmed === item.key ? (
+                        <span className="fun-media-inventory-confirm">
+                          <button
+                            type="button"
+                            className="fun-media-inventory-delete is-armed"
+                            onClick={() => void supprimerFichierInventaire(item)}
+                            disabled={fileDeleteBusy === item.key}
+                            aria-label={`Confirmer la suppression de ${item.filename}`}
+                          >
+                            {fileDeleteBusy === item.key ? "..." : "Supprimer"}
+                          </button>
+                          <button
+                            type="button"
+                            className="fun-media-inventory-delete"
+                            onClick={() => setFileDeleteArmed("")}
+                            aria-label="Annuler"
+                          >
+                            ↩
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="fun-media-inventory-delete"
+                          onClick={() => setFileDeleteArmed(item.key)}
+                          disabled={!authenticated}
+                          title={`Supprimer ${item.filename}`}
+                          aria-label={`Supprimer ${item.filename}`}
+                        >
+                          ×
+                        </button>
+                      )
+                    ) : null}
                   </li>
                 );
               })}

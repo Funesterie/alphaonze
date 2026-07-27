@@ -45,7 +45,13 @@ function runFfmpeg(args, env = process.env) {
  * Renvoie toujours un WAV analysable, quel que soit le format entrant.
  * Le fichier d'origine n'est jamais perdu: on renvoie aussi sa taille et son format.
  */
-async function ensureAnalyzableWav(buffer, originalName = '', env = process.env) {
+/**
+ * @param {object} [options]
+ * @param {number} [options.sampleRate] Frequence cible. 22,05 kHz pour la chaine de
+ *   reference vocale; 16 kHz pour la transcription, frequence native des modeles
+ *   Whisper -- lui donner du WAV propre evite un reencodage et ameliore le resultat.
+ */
+async function ensureAnalyzableWav(buffer, originalName = '', env = process.env, options = {}) {
   if (!Buffer.isBuffer(buffer) || !buffer.length) {
     return { ok: false, error: 'empty_buffer' };
   }
@@ -71,13 +77,15 @@ async function ensureAnalyzableWav(buffer, originalName = '', env = process.env)
 
   try {
     fs.writeFileSync(src, buffer);
-    // Mono 22.05 kHz 16 bits: format attendu par la chaine de reference vocale.
+    // Mono 16 bits. 22,05 kHz par defaut: format attendu par la chaine de reference
+    // vocale. Les appelants qui transcrivent demandent 16 kHz.
+    const frequence = Math.max(8000, Math.min(48000, Number(options?.sampleRate) || TARGET_SAMPLE_RATE));
     await runFfmpeg([
       '-hide_banner', '-loglevel', 'error', '-y',
       '-i', src,
       '-vn',
       '-ac', '1',
-      '-ar', String(TARGET_SAMPLE_RATE),
+      '-ar', String(frequence),
       '-c:a', 'pcm_s16le',
       dst,
     ], env);

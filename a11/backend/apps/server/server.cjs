@@ -8046,6 +8046,64 @@ app.get('/api/files/my', async (req, res) => {
   }
 });
 
+// Suppression d'un fichier precis. Djeff: « exemple la photo ou j'ai une sale gueule,
+// une petite croix et hop supprime. » Le tout-ou-rien ne suffit pas.
+// Meme rigueur que le nettoyage automatique: objet de stockage d'abord, puis les
+// lignes liees en transaction -- sinon on laisse des references vers du vide.
+app.delete('/api/files/:id', async (req, res) => {
+  try {
+    const userId = String(req.user?.id || '').trim();
+    if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
+    if (!db) return res.status(503).json({ ok: false, error: 'database_unavailable' });
+
+    const fileId = Number(req.params.id || 0);
+    if (!Number.isFinite(fileId) || fileId <= 0) {
+      return res.status(400).json({ ok: false, error: 'invalid_file_id' });
+    }
+
+    // La propriete est verifiee dans la requete elle-meme: un identifiant d'autrui
+    // ne renvoie simplement aucune ligne.
+    const found = await db.query(
+      'SELECT id, storage_key, filename FROM files WHERE id=$1 AND user_id=$2 LIMIT 1',
+      [fileId, userId]
+    );
+    const row = found.rows?.[0];
+    if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
+
+    const storageKey = String(row.storage_key || '').trim();
+    let objetSupprime = false;
+    if (storageKey) {
+      try {
+        await deleteObjectFromR2(storageKey);
+        objetSupprime = true;
+      } catch (error_) {
+        // On continue: laisser la ligne en base pour un objet deja absent
+        // condamnerait l'utilisateur a revoir le fichier sans pouvoir l'effacer.
+        console.warn('[FILES] object delete failed:', storageKey, error_?.message);
+      }
+    }
+
+    await db.query('BEGIN');
+    try {
+      if (storageKey) {
+        await db.query('DELETE FROM conversation_resources WHERE storage_key=$1', [storageKey]);
+        await db.query('DELETE FROM user_files WHERE storage_key=$1', [storageKey]);
+      }
+      await db.query('DELETE FROM files WHERE id=$1 AND user_id=$2', [fileId, userId]);
+      await db.query('COMMIT');
+    } catch (error_) {
+      try { await db.query('ROLLBACK'); } catch { }
+      throw error_;
+    }
+
+    console.info('[Files] fichier supprime id=%s objet=%s', fileId, objetSupprime ? 'oui' : 'non');
+    return res.json({ ok: true, id: fileId, filename: row.filename || '', storageObjectDeleted: objetSupprime });
+  } catch (e) {
+    console.error('[FILES] delete failed:', e?.message);
+    return res.status(500).json({ ok: false, error: 'delete_failed', message: String(e?.message) });
+  }
+});
+
 app.use(createMemoryRouter({
   verifyJWT,
   db,

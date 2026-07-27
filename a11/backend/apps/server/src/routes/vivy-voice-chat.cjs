@@ -22,6 +22,7 @@ const express = require('express');
 const multer = require('multer');
 
 const { transcribe } = require('../../lib/stt-service.cjs');
+const { ensureAnalyzableWav } = require('../tts/audio-intake.cjs');
 const { getLogger } = require('../../lib/structured-logger.cjs');
 const { getFamilyAdminEmails, normalizeEmail } = require('../config/family-accounts.cjs');
 
@@ -92,9 +93,26 @@ function createVivyVoiceChatRouter({ verifyJWT, buildVivyAiChat } = {}) {
     }
 
     const debut = Date.now();
+
+    // Le navigateur enregistre en webm/opus. Whisper l'accepte mais doit le decoder,
+    // et la transcription s'en ressent -- « c'est mon test » ressortait « c'est mon
+    // temps ». On lui donne du WAV mono 16 kHz, sa frequence native. Si ffmpeg
+    // echoue, on envoie l'original plutot que de perdre le tour.
+    let audio = buffer;
+    let typeAudio = req.file?.mimetype || 'audio/webm';
+    try {
+      const converti = await ensureAnalyzableWav(buffer, req.file?.originalname || 'voix.webm', process.env, { sampleRate: 16000 });
+      if (converti?.ok && converti.buffer?.length) {
+        audio = converti.buffer;
+        typeAudio = 'audio/wav';
+      }
+    } catch (error) {
+      logger.warn('Conversion WAV impossible, envoi de l original', { error: error?.message });
+    }
+
     let transcription;
     try {
-      transcription = await transcribe(buffer, req.file?.mimetype || 'audio/webm', {
+      transcription = await transcribe(audio, typeAudio, {
         language: String(req.body?.language || 'fr').trim() || 'fr',
       });
     } catch (error) {
@@ -123,13 +141,27 @@ function createVivyVoiceChatRouter({ verifyJWT, buildVivyAiChat } = {}) {
         shareToken: undefined,
       }, req);
 
-      const reply = String(reponse?.reply || reponse?.text || reponse?.message || '').trim();
-      logger.info('Chat vocal Vivy', {
-        userId: String(req.user?.id || ''),
-        transcriptChars: texte.length,
-        replyChars: reply.length,
-        ms: Date.now() - debut,
-      });
+      // Memes champs, meme ordre que la route de chat ecrite. Une premiere version
+      // lisait reply/text/message: aucun n'existe, donc Vivy repondait dans le vide
+      // alors que le modele avait bien tourne.
+      const reply = String(
+        reponse?.publicLyrics
+        || reponse?.publicText
+        || reponse?.assistant
+        || reponse?.content
+        || reponse?.summary
+        || ''
+      ).trim();
+      // Le journal structure ne retenait que userId: sans les compteurs en clair,
+      // impossible de voir qu'une reponse partait vide.
+      console.info(
+        '[VivyVoiceChat] audio=%s transcription=%s caracteres reponse=%s caracteres duree=%sms',
+        typeAudio,
+        texte.length,
+        reply.length,
+        Date.now() - debut
+      );
+      logger.info('Chat vocal Vivy', { userId: String(req.user?.id || '') });
 
       return res.json({
         ok: true,

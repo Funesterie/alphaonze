@@ -7092,3 +7092,20 @@ export async function sendVivyVoiceChat(
     message: String(data?.message || ''),
   };
 }
+
+/**
+ * Supprime un fichier précis du compte. Djeff : « la photo où j'ai une sale gueule,
+ * une petite croix et hop supprimé. » Le serveur vérifie la propriété : un
+ * identifiant qui n'est pas le tien renvoie 404.
+ */
+export async function deleteStoredAccountFile(id: number): Promise<void> {
+  const res = await authFetch(getApiUrl(`/api/files/${Number(id)}`), {
+    method: 'DELETE',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Fichier non supprimé (${res.status})`);
+  }
+}
