@@ -7944,10 +7944,9 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       ];
       setMessages((current) => [...current, ...tourMessages].slice(-36));
       setVoiceChatStatus("");
-      if (tour.reply) {
-        // La voix est un plus: si la synthese echoue, le texte reste affiche.
-        void ttsSpeak(tour.reply, "vivy", "auto").catch(() => undefined);
-      }
+      // Pas de synthese vocale ici, sur demande de Djeff: la valeur du vocal est la
+      // transcription fidele de ce qu'on dit, pas une voix robotique qui repond.
+      // Vivy repond par ecrit, comme dans le fil normal.
     } catch (error: any) {
       setVoiceChatStatus(error?.message || "Chat vocal indisponible.");
     } finally {

@@ -795,8 +795,13 @@ function getVivyLocalOllamaConfigs(options = {}) {
   ));
   const songMaxOutputTokens = routingPurpose
     ? Math.max(128, Math.min(700, Number(process.env.VIVY_NOSSEN_ROUTER_MAX_TOKENS || 520) || 520))
+    // Marge, pas correction d'un blocage: mesure faite sur un vrai cypher Funesterie
+    // (7 sections, 15 lignes), il pese environ 420 jetons -- 560 passaient, mais avec
+    // 25 % de marge seulement. Une chanson longue ou un couplet dense depasse, sort
+    // tronquee, se fait juger faible par looksLikeWeakSongwritingReply, et declenche la
+    // cascade de repli qui coute cher en temps. La borne haute de 2200 existait deja.
     : fastNossenLocalOnly
-      ? Math.max(420, Math.min(2200, Number(process.env.VIVY_NOSSEN_LOCAL_MAX_TOKENS || 560) || 560))
+      ? Math.max(420, Math.min(2200, Number(process.env.VIVY_NOSSEN_LOCAL_MAX_TOKENS || 1600) || 1600))
       : 0;
 
   return models.map((model) => ({
