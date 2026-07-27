@@ -545,6 +545,13 @@ function getVivySunoRuntimeStatus() {
 
 function resolveConfiguredVivySunoPersonaVoiceId(artistId = '') {
   const id = cleanOneLine(artistId, '', 40).toLowerCase();
+
+  // Le catalogue prime sur les variables d'environnement, y compris pour les artistes
+  // officiels: une persona Suno expire, et remplacer une variable d'env impose de
+  // toucher trois fichiers puis de deployer. Le catalogue se corrige en une requete.
+  const fromCatalog = resolveCatalogVoiceId(id);
+  if (fromCatalog) return fromCatalog;
+
   if (id === 'djeff') {
     return cleanOneLine(
       process.env.VIVY_SUNO_DJEFF_VOICE_ID
@@ -586,11 +593,6 @@ function resolveConfiguredVivySunoPersonaVoiceId(artistId = '') {
       180
     );
   }
-  // Repli catalogue: une voix ajoutee par l'UI (Ilyana, un ami qui a autorise sa voix)
-  // se resout ici sans branche codee en dur ni deploiement.
-  const fromCatalog = resolveCatalogVoiceId(id);
-  if (fromCatalog) return fromCatalog;
-
   return cleanOneLine(process.env.VIVY_SUNO_VOICE_ID || process.env.SUNO_VOICE_ID, '', 180);
 }
 

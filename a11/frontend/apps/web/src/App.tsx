@@ -6833,22 +6833,6 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     );
                   })}
                 </div>
-                <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                  <input
-                    type="checkbox"
-                    checked={instrumentalOnly}
-                    disabled={!hasSession || isBusy}
-                    onChange={(event) => {
-                      const next = event.target.checked;
-                      setInstrumentalOnly(next);
-                      setStatus(next
-                        ? "Instrumental seul: aucune voix ne sera chantée."
-                        : "Voix réactivées.");
-                    }}
-                  />
-                  Instrumental seul (aucune voix)
-                </label>
-
                 <label>
                   Voix premium autorisée
                   <select
@@ -7245,6 +7229,54 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
               </label>
               <fieldset className="vivy-studio-artist-fieldset">
                 <legend>Casting vocal</legend>
+
+                {/* Ces deux controles etaient enfermes dans << Options avancees >>, replie
+                    par defaut: personne ne les trouvait. Ils appartiennent au casting. */}
+                <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={instrumentalOnly}
+                    disabled={!hasSession || isBusy}
+                    onChange={(event) => {
+                      const next = event.target.checked;
+                      setInstrumentalOnly(next);
+                      setStatus(next
+                        ? "Instrumental seul : aucune voix ne sera chantée."
+                        : "Voix réactivées.");
+                    }}
+                  />
+                  <strong>Instrumental seul</strong> — aucune voix
+                </label>
+
+                {catalogVoices.length ? (
+                  <label style={{ display: "block", marginBottom: 10 }}>
+                    Voix premium (remplace l’artiste coché)
+                    <select
+                      value={selectedCatalogVoiceId}
+                      disabled={!hasSession || instrumentalOnly}
+                      onChange={(event) => {
+                        const nextId = event.target.value;
+                        const nextVoice = catalogVoices.find((voice) => voice.id === nextId) || null;
+                        setSelectedCatalogVoiceId(nextId);
+                        const nextName = nextVoice
+                          ? String(nextVoice.catalog?.name || nextVoice.label || "").trim()
+                          : "";
+                        setCatalogVoiceName(nextName);
+                        setStatus(nextVoice
+                          ? `Voix premium : ${nextName}. Elle chantera à la place de l’artiste coché.`
+                          : "Voix premium désactivée.");
+                      }}
+                    >
+                      <option value="">Aucune (voix de l’artiste coché)</option>
+                      {catalogVoices.map((voice) => (
+                        <option key={voice.id} value={voice.id}>
+                          {String(voice.catalog?.name || voice.label || voice.id).trim()}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+
                 <div className="vivy-studio-artist-grid">
                   {VIVY_STUDIO_ARTISTS.map((artist) => {
                     const checked = effectiveSongArtists.includes(artist.id);
