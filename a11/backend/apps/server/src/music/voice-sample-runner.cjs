@@ -62,7 +62,8 @@ function buildSamplePayload(entry) {
   // Le projet en pose pour ses artistes officiels (pour Djeff: << female vocals,
   // female lead, airy female hook >>), on applique la meme protection ici.
   const genreTags = entry.gender === 'homme'
-    ? 'female vocals, female lead, soprano, airy female hook, romantic pop female vocal'
+    // "soprano" est evite: le nettoyeur anti-celebrite y voit le rappeur Soprano.
+    ? 'female vocals, female lead, high female head voice, airy female hook, romantic pop female vocal'
     : entry.gender === 'femme'
       ? 'male vocals, male lead, deep male voice, gruff male vocal'
       : '';

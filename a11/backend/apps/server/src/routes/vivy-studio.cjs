@@ -5083,7 +5083,10 @@ function stripCastTimbreForCatalogVoice(style = '', catalogLabel = '', gender = 
 /** Tags negatifs deduits du genre de la voix premium, comme pour les echantillons. */
 function buildCatalogVoiceNegativeTags(gender = '') {
   if (gender === 'homme') {
-    return 'female vocals, female lead, soprano, airy female hook, romantic pop female vocal';
+    // Pas de "soprano" ici: le nettoyeur anti-celebrite y voit le rappeur Soprano et le
+    // remplace par "contemporary French urban vocal" -- on demanderait alors a Suno
+    // d'eviter le rap urbain francais sur un morceau de rap.
+    return 'female vocals, female lead, high female head voice, airy female hook, romantic pop female vocal';
   }
   if (gender === 'femme') {
     return 'male vocals, male lead, deep male voice, gruff male vocal';
