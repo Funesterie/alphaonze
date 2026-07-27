@@ -1118,9 +1118,15 @@ function getVivyLlmConfigs(options = {}) {
   const allowLegacySongLocalFallback = !['0', 'false', 'off', 'no'].includes(
     String(process.env.VIVY_SONG_ALLOW_LOCAL_FALLBACK || 'true').trim().toLowerCase()
   );
+  // Defaut passe a false le 27/07, sur mesure et non sur intuition: qwen2.5:7b tourne
+  // a 8 jetons/seconde en production, soit 53 a 77 s pour une chanson complete, alors
+  // que la tentative locale expire a 40 s. Elle ne pouvait donc jamais aboutir et
+  // consommait 40 s du budget de 92 s avant meme la chaine cloud -- d'ou les 524.
+  // Le local reste en tete pour le chat et le routage: leurs reponses font quelques
+  // dizaines de jetons et reviennent en quelques secondes.
   const allowLyricsLocalFallback = options.allowLocalLyricsFallback === true
     || !['0', 'false', 'off', 'no'].includes(
-      String(process.env.VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK || 'true').trim().toLowerCase()
+      String(process.env.VIVY_SONG_ALLOW_LOCAL_LYRICS_FALLBACK || 'false').trim().toLowerCase()
     );
   const allowSongLocalFallback = purpose === 'lyrics'
     ? allowLyricsLocalFallback

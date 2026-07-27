@@ -3933,6 +3933,31 @@ html.a11-auth-page-root body {
   border-radius: 8px;
 }
 
+/* La regle ci-dessus ne couvrait pas les images: une generation Vivy s'affichait a
+   sa taille naturelle -- souvent 1024 px -- debordait de la bulle et cassait la mise
+   en page. On borne la largeur ET la hauteur, et `object-fit: contain` garde l'image
+   entiere plutot que d'en recadrer un morceau. */
+.vivy-chat-media-link img {
+  width: 100%;
+  max-width: 100%;
+  max-height: 340px;
+  height: auto;
+  object-fit: contain;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+/* Le conteneur lui-meme doit pouvoir retrecir: sans min-width, une grille refuse de
+   descendre sous la taille de son contenu et le debordement revient par la fenetre. */
+.vivy-chat-media-link {
+  min-width: 0;
+}
+
+.vivy-chat-media-link > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .vivy-chat-media-link a {
   width: fit-content;
   min-height: 32px;
