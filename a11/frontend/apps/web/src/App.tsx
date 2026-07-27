@@ -3434,6 +3434,31 @@ function writeVivyVoiceReferenceLabel(label: string) {
   }
 }
 
+// Le catalogue est selectionne dans le studio, mais la production finale part de
+// VivyPublicChat (NOSSEN), un autre composant sans acces a cet etat. On persiste donc
+// le choix, comme la voix de reference juste au-dessus. Sans ca la voix premium
+// n'atteint jamais la vraie generation.
+const VIVY_CATALOG_VOICE_STORAGE_KEY = "vivy.catalogVoiceName";
+
+function readVivyCatalogVoiceName() {
+  if (!hasVivyAuthenticatedSession()) return "";
+  try {
+    return String(globalThis.localStorage?.getItem(VIVY_CATALOG_VOICE_STORAGE_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function writeVivyCatalogVoiceName(name: string) {
+  if (!hasVivyAuthenticatedSession()) return;
+  try {
+    if (name) globalThis.localStorage?.setItem(VIVY_CATALOG_VOICE_STORAGE_KEY, name);
+    else globalThis.localStorage?.removeItem(VIVY_CATALOG_VOICE_STORAGE_KEY);
+  } catch {
+    // Best effort: le catalogue reste la source de verite cote serveur.
+  }
+}
+
 function isVivyVoiceChangeRequest(text: string) {
   const folded = foldForLookup(text);
   if (!folded) return false;
@@ -5639,8 +5664,11 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     const normalized = normalizeVivyStudioArtists(songArtists);
     let nextArtists: VivyStudioArtistId[];
     if (normalized.includes(id)) {
-      if (normalized.length <= 1) {
-        setStatus("Garde au moins un artiste pour la chanson.");
+      // Un casting vide est legitime quand personne ne doit chanter (instrumental)
+      // ou quand une voix du catalogue tient deja le role.
+      const casteVideAutorise = instrumentalOnly || Boolean(selectedCatalogVoiceId);
+      if (normalized.length <= 1 && !casteVideAutorise) {
+        setStatus("Garde au moins un artiste, coche « Instrumental seul » ou choisis une voix premium.");
         return;
       }
       nextArtists = normalized.filter((item) => item !== id);
@@ -6833,40 +6861,6 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                     );
                   })}
                 </div>
-                <label>
-                  Voix premium autorisée
-                  <select
-                    id="vivy-studio-catalog-voice"
-                    name="vivyCatalogVoice"
-                    value={selectedCatalogVoiceId}
-                    disabled={!hasSession || !catalogVoices.length}
-                    onChange={(event) => {
-                      const nextId = event.target.value;
-                      const nextVoice = catalogVoices.find((voice) => voice.id === nextId) || null;
-                      setSelectedCatalogVoiceId(nextId);
-                      if (nextVoice) {
-                        const nextName = String(nextVoice.catalog?.name || nextVoice.label || "").trim();
-                        setVoiceReferenceId(nextVoice.id);
-                        setVoiceFileName(nextName || nextVoice.label || "voix catalogue");
-                        setVoiceTool("Voix catalogue premium");
-                        setCatalogVoiceName(nextName);
-                        setStatus(`Voix catalogue sélectionnée: ${nextName || nextVoice.label}.`);
-                      } else {
-                        setVoiceReferenceId("");
-                        setVoiceFileName("");
-                        setStatus("Voix catalogue désactivée.");
-                      }
-                    }}
-                  >
-                    <option value="">Aucune voix catalogue</option>
-                    {catalogVoices.map((voice) => {
-                      const name = String(voice.catalog?.name || voice.label || voice.id).trim();
-                      return (
-                        <option key={voice.id} value={voice.id}>{name}</option>
-                      );
-                    })}
-                  </select>
-                </label>
                 {!catalogVoices.length ? (
                   <p className="vivy-studio-voice-summary">Catalogue premium vide pour l’instant. Les voix publiées avec accord apparaîtront ici.</p>
                 ) : null}
@@ -7230,9 +7224,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
               <fieldset className="vivy-studio-artist-fieldset">
                 <legend>Casting vocal</legend>
 
-                {/* Ces deux controles etaient enfermes dans << Options avancees >>, replie
-                    par defaut: personne ne les trouvait. Ils appartiennent au casting. */}
-                <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                {/* Selecteur unique: il y en avait deux, ce qui donnait deux listes
+                    << ilyana >> a l'ecran sans qu'on sache laquelle comptait. */}
+                <label style={{ display: "block", marginBottom: 10 }}>
                   <input
                     type="checkbox"
                     checked={instrumentalOnly}
@@ -7244,13 +7238,14 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                         ? "Instrumental seul : aucune voix ne sera chantée."
                         : "Voix réactivées.");
                     }}
+                    style={{ marginRight: 8 }}
                   />
-                  <strong>Instrumental seul</strong> — aucune voix
+                  Instrumental seul (aucune voix)
                 </label>
 
                 {catalogVoices.length ? (
                   <label style={{ display: "block", marginBottom: 10 }}>
-                    Voix premium (remplace l’artiste coché)
+                    Voix premium — remplace l’artiste coché
                     <select
                       value={selectedCatalogVoiceId}
                       disabled={!hasSession || instrumentalOnly}
@@ -7262,9 +7257,18 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                           ? String(nextVoice.catalog?.name || nextVoice.label || "").trim()
                           : "";
                         setCatalogVoiceName(nextName);
-                        setStatus(nextVoice
-                          ? `Voix premium : ${nextName}. Elle chantera à la place de l’artiste coché.`
-                          : "Voix premium désactivée.");
+                        // Persiste pour NOSSEN, qui produit depuis un autre composant.
+                        writeVivyCatalogVoiceName(nextName);
+                        if (nextVoice) {
+                          setVoiceReferenceId(nextVoice.id);
+                          setVoiceFileName(nextName || nextVoice.label || "voix catalogue");
+                          setVoiceTool("Voix catalogue premium");
+                          setStatus(`Voix premium : ${nextName}. Elle chante à la place de l’artiste coché, y compris dans NOSSEN.`);
+                        } else {
+                          setVoiceReferenceId("");
+                          setVoiceFileName("");
+                          setStatus("Voix premium désactivée.");
+                        }
                       }}
                     >
                       <option value="">Aucune (voix de l’artiste coché)</option>
@@ -8747,6 +8751,10 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         lyrics: vocalLyricsForProduction,
         songText: vocalLyricsForProduction,
         sessionSunoApiKey: sunoSessionKey || undefined,
+        // La production finale omettait la voix du catalogue: seuls les apercus la
+        // transmettaient. La voix premium n'atteignait donc jamais la vraie generation.
+        // Le nom vient du studio via localStorage, ce composant n'ayant pas son etat.
+        voiceCatalogName: readVivyCatalogVoiceName() || undefined,
         forceRealMusic: true,
         generateMusic: true,
         makeSong: true,
