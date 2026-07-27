@@ -26,6 +26,7 @@ const {
   getUserKey,
   isAllowedAudioUpload,
 } = require('../tts/voice-reference-store.cjs');
+const { ensureAnalyzableWav } = require('../tts/audio-intake.cjs');
 
 const REQUIRED_CORPUS_MS = Math.max(
   30_000,
@@ -639,7 +640,7 @@ function createVoiceLearningRouter(options = {}) {
     });
   });
 
-  router.post('/voice-learning/snippet', verifyJWT, upload.single('audio'), (req, res) => {
+  router.post('/voice-learning/snippet', verifyJWT, upload.single('audio'), async (req, res) => {
     if (!req.file?.buffer?.length) {
       return res.status(400).json({ ok: false, error: 'missing_audio', message: 'Aucun extrait audio fourni.' });
     }
@@ -674,16 +675,34 @@ function createVoiceLearningRouter(options = {}) {
       });
     }
 
-    const analysis = analyzeWavBuffer(req.file.buffer);
-    const durationMs = analysis.ok
-      ? Number(analysis.durationMs || 0)
-      : clampDurationMs(req.body?.durationMs);
+    // Tout format entrant est ramene a un WAV analysable. Sans ca, un m4a ou un mp3
+    // passait le filtre puis se retrouvait enregistre a 0 ms (analyzeWavBuffer ne lit
+    // que le WAV, et la duree retombait sur une valeur navigateur souvent absente):
+    // le clip ne comptait pas vers le quota, sans la moindre erreur visible.
+    const intake = await ensureAnalyzableWav(req.file.buffer, req.file.originalname, process.env);
+    const declaredMs = clampDurationMs(req.body?.durationMs);
+    const storedBuffer = intake.ok ? intake.buffer : req.file.buffer;
+    const durationMs = intake.ok ? Number(intake.durationMs || 0) : declaredMs;
+
+    // On refuse seulement quand rien ne permet de connaitre la duree: c'est le cas
+    // qui produisait un clip a 0 ms, invisible dans le quota et sans erreur. Une duree
+    // declaree par le client reste honoree, meme si le contenu n'est pas decodable.
+    if (!(durationMs > 0)) {
+      return res.status(415).json({
+        ok: false,
+        error: intake.error || 'audio_duration_unknown',
+        message: `Audio illisible (${intake.sourceFormat || 'format inconnu'}) et aucune durée fournie: le clip ne compterait pas.`,
+        detail: intake.detail || '',
+      });
+    }
+
     const id = `vl_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-    const ext = inferAudioExtension(req.file);
+    // Apres conversion le contenu est du WAV: l'extension doit le refleter.
+    const ext = intake.ok && intake.converted ? '.wav' : inferAudioExtension(req.file);
     const filename = `${id}${ext}`;
     const corpusDir = getCorpusDir(access);
     const filePath = path.join(corpusDir, filename);
-    fs.writeFileSync(filePath, req.file.buffer);
+    fs.writeFileSync(filePath, storedBuffer);
 
     const clip = {
       id,
@@ -697,12 +716,22 @@ function createVoiceLearningRouter(options = {}) {
       voiceStyle: access.voiceStyle,
       consent: VOICE_LEARNING_CONSENT,
       filename,
-      mimeType: req.file.mimetype || null,
+      mimeType: intake.converted ? 'audio/wav' : (req.file.mimetype || null),
       originalName: req.file.originalname || null,
-      bytes: req.file.buffer.length,
+      // On garde la trace de l'original: format et poids avant conversion.
+      originalFormat: intake.sourceFormat || null,
+      originalBytes: intake.sourceBytes || req.file.buffer.length,
+      converted: intake.converted === true,
+      bytes: storedBuffer.length,
       sha256: hash,
       durationMs,
-      analysis: analysis.ok ? analysis : { ok: false, reason: analysis.reason || 'analysis_unavailable' },
+      analysis: {
+        ok: intake.ok === true,
+        durationMs,
+        converted: intake.converted === true,
+        sourceFormat: intake.sourceFormat || 'inconnu',
+        durationSource: intake.ok ? 'mesuree' : 'declaree',
+      },
       source: String(req.body?.source || 'micro').trim().slice(0, 40) || 'micro',
       transcriptPreview: safeTranscriptPreview(req.body?.transcript || ''),
       status: 'collected',
