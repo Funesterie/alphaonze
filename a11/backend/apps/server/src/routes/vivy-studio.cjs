@@ -64,6 +64,7 @@ const {
   readVoiceSample,
 } = require('../music/voice-catalog.cjs');
 const { runMissingVoiceSamples } = require('../music/voice-sample-runner.cjs');
+const { buildSongcraftGraphContext } = require('../music/songcraft-graph-context.cjs');
 const {
   buildVivyProsodyPlan,
   buildVivyProsodyStyleHint,
@@ -3505,7 +3506,7 @@ function buildVivyAdnEnrichment() {
     return String();
   }
 }
-function buildVivySystemPrompt(mode, language, input) {
+function buildVivySystemPrompt(mode, language, input, graphContext = '') {
   if (!language) language = 'fr';
   const modeLabel = mode === 'voice'
     ? 'voix'
@@ -3555,6 +3556,7 @@ function buildVivySystemPrompt(mode, language, input) {
       ...(input || {}),
       artists: buildVivySongArtistCast(input || {}).artists,
     }),
+    graphContext || '',
     'Ne révèle jamais de secret, token, chemin privé sensible ou configuration interne.',
   ].filter(Boolean).join('\n');
 }
@@ -7440,7 +7442,13 @@ async function buildVivyAiChat(input, req) {
       promptFileContext ? `Pièces jointes et contexte fichier:\n${promptFileContext}` : '',
     ], VIVY_SONG_MAX_CHARS) || 'Continue la conversation Vivy avec douceur et précision.';
 
-    const systemPrompt = buildVivySystemPrompt(mode, language, input);
+    // Matiere de doctrine tiree du graphe: 239 documents y sont indexes mais la chaine
+    // d'ecriture ne les interrogeait jamais. Calcule ici car buildVivySystemPrompt est
+    // synchrone et le rendre asynchrone se propagerait a tout le module.
+    const songcraftGraphContext = mode === 'song'
+      ? await buildSongcraftGraphContext(input, process.env)
+      : '';
+    const systemPrompt = buildVivySystemPrompt(mode, language, input, songcraftGraphContext);
     const messages = [
       { role: 'system', content: systemPrompt },
       memoryContext ? { role: 'system', content: `Mémoire Vivy récente, privée pour cette session:\n${memoryContext}` } : null,
