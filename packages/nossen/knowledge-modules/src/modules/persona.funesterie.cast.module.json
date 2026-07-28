@@ -3,11 +3,28 @@
   "label": "Personas Funesterie - distribution et ADN",
   "discipline": "persona-canon",
   "activation": {
-    "languagesAny": ["fr"],
-    "modesAny": ["semantic", "plan", "chat", "generate", "song"],
+    "modesAny": [
+      "chat",
+      "generate",
+      "plan",
+      "semantic",
+      "song"
+    ],
     "keywordsAny": [
-      "persona", "personas", "ADN persona", "chromosome", "casting", "distribution vocale",
-      "Vivy", "Djeff", "A11", "K44", "Kaen44", "qui chante", "voix officielle", "voix premium"
+      "persona",
+      "personas",
+      "ADN persona",
+      "chromosome",
+      "casting",
+      "distribution vocale",
+      "Vivy",
+      "Djeff",
+      "A11",
+      "K44",
+      "Kaen44",
+      "qui chante",
+      "voix officielle",
+      "voix premium"
     ]
   },
   "knowledge": {
@@ -41,7 +58,13 @@
       }
     ],
     "adn": {
-      "chromosomes": ["VOIX", "COMPORTEMENT", "LANGAGE", "COMBAT", "ACTIVATION"],
+      "chromosomes": [
+        "VOIX",
+        "COMPORTEMENT",
+        "LANGAGE",
+        "COMBAT",
+        "ACTIVATION"
+      ],
       "note": "Le code de reference fait foi: ce module en donne la lecture, il ne la remplace pas."
     }
   },

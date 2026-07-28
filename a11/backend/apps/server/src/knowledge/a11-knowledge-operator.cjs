@@ -15,6 +15,8 @@ const MODULES = [
   require('./modules/format.zen.container.module.json'),
   require('./modules/mobility.wheeling.gate.module.json'),
   require('./modules/persona.funesterie.cast.module.json'),
+  require('./modules/encoding.pulsar.palette.module.json'),
+  require('./modules/physics.temporal.gravity.module.json'),
 ];
 
 function inferLanguage(text = '') {
