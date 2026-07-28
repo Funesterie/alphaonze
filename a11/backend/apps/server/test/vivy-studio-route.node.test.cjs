@@ -4281,8 +4281,13 @@ test('Suno payload applies a verified Djeff voice persona when configured', () =
     assert.match(payload.style, /Solo Djeff only/i);
     assert.match(payload.style, /Djeff Cypher voice persona/i);
     assert.match(payload.style, /dry gritty French male rap lead/i);
-    assert.match(payload.style, /terminal noir neon/i);
-    assert.match(payload.style, /server-room tension/i);
+    // Le decor n'est plus impose. Djeff: « t'as mis des prerequis neons violets, nuit,
+    // crepuscule, ca limite le champ lexical et le type de chanson que Vivy peut faire ».
+    // Le style decrit la VOIX et l'interpretation; le lieu et l'imagerie appartiennent
+    // a la chanson, donc a Vivy.
+    assert.doesNotMatch(payload.style, /terminal noir neon/i);
+    assert.doesNotMatch(payload.style, /server-room tension/i);
+    assert.doesNotMatch(payload.style, /ninjutsu|chakra|biting fingers/i);
     assert.match(payload.negativeTags, /female vocals/i);
     assert.doesNotMatch(payload.prompt, /\[Vivy\]/i);
     assert.match(payload.prompt, /\[Djeff\]/);

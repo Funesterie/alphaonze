@@ -3863,9 +3863,14 @@ function getVivyStudioVoiceProfile(input = {}) {
         'Djeff: lead rap technique, diction nette, rimes internes, fins de lignes percussives, grain sec proche micro.',
         'Vivy: adlibs ou refrain possible si le mode duo est demandé.',
       ],
-      sunoStyle: 'French male technical rap cypher, gritty close-mic Djeff lead, dark 808 trap drums, terminal noir neon energy, server-room tension, road and motor mechanics, punchline freestyle, concrete imagery from the current subject, structured rhymed lyrics, no spoken narration, ninjutsu invocation energy, hands sealing signs before the beat drops, biting fingers raw aggression, summoning jutsu cypher flow, shadows and fire jutsu imagery woven into punchlines, Djeff bites his fingers before spitting, chakra pressure in the vocal delivery',
+      // Voix et interpretation seulement. Le decor -- terminal noir, neons, salle
+      // serveurs, mecanique moto, imagerie ninjutsu -- a ete retire: impose a chaque
+      // morceau, il verrouillait le champ lexical de toutes les chansons de Djeff.
+      // Djeff: « ca limite le champ lexical et le type de chanson que Vivy peut faire ».
+      // Ces decors restent disponibles si Vivy les choisit, ils ne sont plus imposes.
+      sunoStyle: 'French male technical rap cypher, gritty close-mic Djeff lead, dark 808 trap drums, punchline freestyle, concrete imagery from the current subject, structured rhymed lyrics, no spoken narration',
       musicLead: 'Original Funesterie rap song for Djeff, in French.',
-      musicMood: 'Djeff lead rap energy: dry close-mic grain, nervous controlled flow, 808 cypher, terminal noir, briques/serveurs/moteur, no celebrity imitation, ninjutsu invocation pressure, biting fingers before the attack, summoning jutsu cypher energy, chakra in the vocal cords.',
+      musicMood: 'Djeff lead rap energy: dry close-mic grain, nervous controlled flow, 808 cypher, no celebrity imitation.',
     };
   }
 
@@ -8275,7 +8280,7 @@ function inferVivySunoStyleBase(input = {}, artistCast = buildVivySongArtistCast
     return withCastStyle('technical rap moto, basse lourde, drums secs, guitares garage, engine pulse, hook proche micro');
   }
   if (hasVivyNossenConflictRapSignal(material)) {
-    return withCastStyle('rap français egotrip/cypher sombre façon clips Djeff, voix masculine sèche proche micro, punchlines de clash, 808 lourdes, drums secs, terminal noir, énergie serveurs/briques/moteur, refrain court sans romance, aucun refrain anglais');
+    return withCastStyle('rap français egotrip/cypher sombre, voix masculine sèche proche micro, punchlines de clash, 808 lourdes, drums secs, refrain court sans romance, aucun refrain anglais');
   }
   if (/\becrans?\b|\bécrans?\b|\bnouvelle\s+generation\b|\bnouvelle\s+génération\b|\breseaux\b|\bréseaux\b|\bnumerique\b|\bnumérique\b/.test(folded)) {
     return withCastStyle('modern alt-pop numérique, basses rondes, pads granuleux, percussion glitch, hook humain');
@@ -8514,7 +8519,7 @@ function buildVivySunoPayload(input = {}, req = null) {
     ? 'selected account Suno voice persona as the only lead vocal, preserve the linked personal timbre, no random replacement singer'
     : '';
   const soloDjeffStyle = singleArtistId === 'djeff'
-    ? 'Solo Djeff only, Djeff Cypher voice persona, dry gritty French male rap lead, close-mic punchline delivery, nervous controlled technical flow, dark 808 trap drums, terminal noir neon, server-room tension, road and motor mechanics, short brutal rap hook, no female vocal, no romantic pop singing, no soft ballad chorus, ninjutsu hand sign energy before each verse, biting fingers aggression, summoning jutsu cypher pressure, shadow clone flow switching, chakra burning in the grain'
+    ? 'Solo Djeff only, Djeff Cypher voice persona, dry gritty French male rap lead, close-mic punchline delivery, nervous controlled technical flow, dark 808 trap drums, short brutal rap hook, no female vocal, no romantic pop singing, no soft ballad chorus'
     : '';
   const soloMarvinStyle = singleArtistId === 'marvin'
     ? 'Solo Marvin only, Marvin family Suno voice persona, natural French male lead, close-mic melodic rap tone, confident brother energy, clear French diction, no female vocal, no random replacement singer, no celebrity imitation'
@@ -9301,12 +9306,21 @@ function isVivyProviderTechnicalLyricLine(line = '') {
 function sanitizeVivyProviderCleanLyrics(value = '', maxChars = VIVY_SONG_MAX_CHARS) {
   const source = sanitizeVivySongMaterial(value, maxChars);
   if (!source) return '';
+  // Schema de rimes seul sur sa ligne: « AABB », « ABAB », « AABB BA BA ». C'est une
+  // annotation de travail de Vivy, pas une parole -- Djeff l'a vue arriver telle quelle
+  // dans un morceau. Deux ou plus de lettres A-H en capitales, rien d'autre: aucune
+  // parole francaise ne ressemble a ca.
+  const estSchemaDeRimes = (line) => /^\s*[A-H]{2,}(?:\s+[A-H]{1,4})*\s*$/.test(String(line || ''));
+
   const lines = source.split(/\n/)
     .filter((line) => !isVivyProviderTechnicalLyricLine(line))
+    .filter((line) => !estSchemaDeRimes(line))
     .map((line) => {
       if (/^\s*\[[^\]]+\]\s*$/.test(line)) return line;
       return String(line || '')
         .replace(/\s*(?:[,;:]\s*[A-H]|\([A-H]\)|\[[A-H]\])\s*$/i, '')
+        // Meme schema, mais colle en fin de vers: « ...la fuite devient fil. AABB ».
+        .replace(/\s+[A-H]{2,}(?:\s+[A-H]{1,4})*\s*$/, '')
         .replace(/^\s*yeah[,!\s-]*/i, '')
         .replace(/\bhook\b/gi, 'refrain')
         .replace(/\bpayload\b/gi, 'signal')
