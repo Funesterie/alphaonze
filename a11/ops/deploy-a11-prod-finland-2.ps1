@@ -1391,7 +1391,10 @@ $overrides = [ordered]@{
   VIVY_NOSSEN_120B_MAX_TOKENS = "1800"
   VIVY_NOSSEN_120B_TIMEOUT_MS = "60000"
   VIVY_NOSSEN_FAST_LOCAL_ONLY = "true"
-  VIVY_NOSSEN_ROUTE_LLM_ENABLED = "false"
+  # Djeff: « c'est Vivy qui doit piloter les chanteurs et les couleurs sonores ».
+  # A false, buildVivyNossenRoutingPlan renvoyait toujours son moteur de regles, qui rend
+  # la meme direction pour un rock, une ballade et une techno -- d'ou la monotonie.
+  VIVY_NOSSEN_ROUTE_LLM_ENABLED = "true"
   VIVY_NOSSEN_ROUTER_LOCAL_TIMEOUT_MS = "20000"
   VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS = "40000"
   VIVY_NOSSEN_LOCAL_MAX_TOKENS = "560"
@@ -1925,7 +1928,7 @@ printf 'VIVY_NOSSEN_120B_MAX_PROMPT_CHARS=22000\n' >> "$tmp_build"
 printf 'VIVY_NOSSEN_120B_MAX_TOKENS=1800\n' >> "$tmp_build"
 printf 'VIVY_NOSSEN_120B_TIMEOUT_MS=60000\n' >> "$tmp_build"
 printf 'VIVY_NOSSEN_FAST_LOCAL_ONLY=true\n' >> "$tmp_build"
-printf 'VIVY_NOSSEN_ROUTE_LLM_ENABLED=false\n' >> "$tmp_build"
+printf 'VIVY_NOSSEN_ROUTE_LLM_ENABLED=true\n' >> "$tmp_build"
 printf 'VIVY_NOSSEN_ROUTER_LOCAL_TIMEOUT_MS=20000\n' >> "$tmp_build"
 printf 'VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS=40000\n' >> "$tmp_build"
 printf 'VIVY_NOSSEN_LOCAL_MAX_TOKENS=560\n' >> "$tmp_build"
