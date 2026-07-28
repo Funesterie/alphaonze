@@ -1094,7 +1094,11 @@ function getVivyCloudConfigs(options = {}) {
     .split(/[,\s]+/)
     .map((value) => cleanOneLine(value, '', 40).toLowerCase())
     .filter(Boolean);
-  const providerOrder = [...configuredOrder, 'ollama_cloud', 'groq', 'openrouter', 'openai', 'gemini', 'deepseek', 'together', 'xai', 'huggingface']
+  // xAI/Grok retire de l'ordre par defaut le 28/07, decision de Djeff: « xai je veux
+  // pas, grok est une plaie ». La cle est aussi retiree de l'environnement; le sortir
+  // d'ici en plus evite qu'une cle rajoutee par megarde le fasse revenir en silence.
+  // Reste atteignable par VIVY_LLM_FALLBACK_ORDER si l'avis change un jour.
+  const providerOrder = [...configuredOrder, 'ollama_cloud', 'groq', 'openrouter', 'openai', 'gemini', 'deepseek', 'together', 'huggingface']
     .filter((value, index, list) => value !== 'ollama' && list.indexOf(value) === index);
   const candidates = [];
   const explicitBase = cleanOneLine(
