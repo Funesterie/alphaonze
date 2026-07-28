@@ -10528,8 +10528,46 @@ function runVivyMultiVoiceAssembly(rawSegments = []) {
   });
 }
 
-function createVivyStudioRouter({ verifyJWT, creativeCapabilityService = null } = {}) {
+function createVivyStudioRouter({
+  verifyJWT,
+  creativeCapabilityService = null,
+  saveChatMemoryMessage = null,
+} = {}) {
   const router = express.Router();
+
+  /**
+   * Enregistre un tour de chat dans l'historique partage entre appareils.
+   *
+   * La memoire episodique de Vivy etait deja commune a tous les appareils, mais la
+   * LISTE des conversations vient de la table `messages`, ou cette route n'ecrivait
+   * jamais: aucune conversation « vivy: » n'existait, la ou a11 et kaen44 en avaient.
+   * On retrouvait donc Vivy avec ses souvenirs, mais sans ses fils de discussion.
+   *
+   * Le prefixe de surface est celui qu'attend /api/a11/history pour rendre le fil a la
+   * bonne interface. Rien ici ne doit interrompre le chat: on echoue en silence.
+   */
+  async function persistVivyConversationTurn(req, body = {}, payload = {}) {
+    if (typeof saveChatMemoryMessage !== 'function') return;
+    const userId = cleanOneLine(req?.user?.id, '', 80);
+    if (!userId) return;
+
+    const brut = cleanOneLine(body.conversationId || body.sessionId, '', 120) || 'default';
+    const conversationId = /^(?:a11|kaen44|vivy):/i.test(brut) ? brut : `vivy:${brut}`;
+
+    const question = cleanText(body.message || body.prompt || body.text, 8000);
+    const reponse = cleanText(
+      payload?.publicLyrics || payload?.publicText || payload?.assistant || payload?.content || payload?.summary,
+      8000
+    );
+
+    try {
+      if (question) await saveChatMemoryMessage(userId, 'user', question, conversationId);
+      if (reponse) await saveChatMemoryMessage(userId, 'assistant', reponse, conversationId);
+    } catch (error) {
+      console.warn('[VivyHistory] enregistrement impossible:', error?.message);
+    }
+  }
+
   registerVivyLayerRoute(router, () => requireAuth, { express, cleanOneLine, materializeVivyPreviewInstrumentalPath, getVivyPreviewAssetFilename, getEmergencyMediaAssetPath, crypto, fs, path });
   const resolveCreativeAuthorization = (req) => {
     if (!creativeCapabilityService || typeof creativeCapabilityService.verifyCapabilityToken !== 'function') return null;
@@ -11276,6 +11314,11 @@ function createVivyStudioRouter({ verifyJWT, creativeCapabilityService = null } 
       }, req);
       if (creativeAuthorization) payload.creativeAuthorization = creativeAuthorization;
       res.json(payload);
+
+      // Apres la reponse: la persistance ne doit jamais retarder ni casser un tour de
+      // chat. Elle alimente la liste des conversations, partagee entre appareils --
+      // c'est ce qui manquait pour retrouver ses fils Vivy du telephone sur le PC.
+      void persistVivyConversationTurn(req, req.body || {}, payload);
     } catch (error) {
       res.status(error?.status || 500).json({
         ok: false,

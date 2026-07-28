@@ -6961,6 +6961,17 @@ const { createVivyStudioRouter } = require('./src/routes/vivy-studio.cjs');
 app.use('/api/vivy/studio', createVivyStudioRouter({
   verifyJWT,
   creativeCapabilityService: sudokuCapabilityService,
+  // La memoire de Vivy etait deja partagee entre appareils (mémoire episodique par
+  // compte), mais la LISTE des conversations ne l'etait pas: l'interface la lit dans la
+  // table messages, ou la route de chat de Vivy n'ecrivait jamais. Aucune conversation
+  // « vivy: » n'existait en base, la ou a11 et kaen44 en avaient. On branche la meme
+  // persistance que les autres surfaces.
+  saveChatMemoryMessage: (userId, role, content, conversationId) => saveChatMemoryMessage(
+    userId,
+    role,
+    content,
+    conversationId
+  ),
 }));
 console.log('[Server] Vivy Studio routes mounted under /api/vivy/studio');
 
