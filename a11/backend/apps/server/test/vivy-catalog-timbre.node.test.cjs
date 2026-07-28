@@ -51,18 +51,19 @@ test('les tags negatifs repoussent le timbre oppose', () => {
   assert.match(buildCatalogVoiceNegativeTags('femme'), /male vocals/);
 });
 
-test('une voix premium chante seule, refrains compris', () => {
-  // Djeff: « ya Vivy qui chante alors qu'il y a juste une voix premium, elle fait les
-  // refrains ». Retirer la direction de timbre ne suffisait pas: Suno ajoutait quand
-  // meme une seconde voix. Cette contrainte ne depend pas du genre.
+test('aucune mise en scene imposee par la couche technique', () => {
+  // Djeff: « laisse Vivy tout gerer, c'est pas a toi de mettre des masques et pretags,
+  // tu gaches tout. » J'avais impose « one single lead vocalist », « solo performance »
+  // et une liste de negatifs anti-duo: c'est de la direction artistique, elle revient a
+  // Vivy. Ces tags ont en prime fait depasser la limite Suno de 500 caracteres.
+  const style = stripCastTimbreForCatalogVoice(STYLE_VIVY, 'Ilyana', 'femme');
+  assert.doesNotMatch(style, /single lead vocalist|solo performance|no second singer/i);
   for (const genre of ['homme', 'femme', '']) {
     const tags = buildCatalogVoiceNegativeTags(genre);
-    assert.match(tags, /second vocalist/, `genre "${genre}"`);
-    assert.match(tags, /different singer on the chorus/, `genre "${genre}"`);
+    assert.doesNotMatch(tags, /second vocalist|different singer|backing vocals|choir/i, `genre "${genre}"`);
   }
-  const style = stripCastTimbreForCatalogVoice(STYLE_VIVY, 'Ilyana', 'femme');
-  assert.match(style, /one single lead vocalist for the entire song/);
-  assert.match(style, /same voice on every verse and every chorus/);
+  // Sans genre connu, on n'invente aucune contrainte.
+  assert.equal(buildCatalogVoiceNegativeTags(''), '');
 });
 
 test('les etiquettes composees nommant un interprete sont reecrites', () => {

@@ -5173,40 +5173,30 @@ function stripCastTimbreForCatalogVoice(style = '', catalogLabel = '', gender = 
       : '';
   kept.push(`authorized custom voice direction ${label}`);
   if (genreDirection) kept.push(genreDirection);
-  // Retirer la direction du timbre ne suffisait pas: Suno ajoutait quand meme une
-  // seconde voix sur les refrains. On demande explicitement une seule voix d'un bout
-  // a l'autre, couplets comme refrains.
-  kept.push('one single lead vocalist for the entire song');
-  kept.push('same voice on every verse and every chorus');
-  kept.push('solo performance, no second singer');
+  // Aucune consigne de mise en scene ajoutee ici. J'avais impose « one single lead
+  // vocalist », « same voice on every verse and every chorus », « solo performance »:
+  // c'est de la direction artistique, elle revient a Vivy, pas a la couche technique.
+  // Ces tags ont en prime fait depasser la limite Suno de 500 caracteres et casse
+  // toute generation. Djeff: « laisse Vivy tout gerer, c'est pas a toi de mettre des
+  // masques et pretags, tu gaches tout. »
 
   return kept.join(', ');
 }
 
-/**
- * Ce qu'il faut repousser quand une voix premium chante seule.
- *
- * Independant du genre: Suno confiait les refrains a une autre voix meme quand la
- * persona etait correctement envoyee. Djeff l'a entendu -- « ya Vivy qui chante alors
- * qu'il y a juste une voix premium, elle fait les refrains ».
- */
-const CATALOG_VOICE_SOLO_NEGATIVES = 'duet, second vocalist, backing vocals, choir, '
-  + 'group chant, different singer on the chorus, guest vocalist, vocal harmonies by another singer';
-
 /** Tags negatifs deduits du genre de la voix premium, comme pour les echantillons. */
 function buildCatalogVoiceNegativeTags(gender = '') {
-  // Le refus d'une seconde voix s'applique quel que soit le genre: c'est la voix
-  // premium qui doit tenir toute la chanson, refrains compris.
+  // Seul le timbre oppose est repousse -- c'est un garde-fou technique, pas une mise
+  // en scene. Le nombre de voix et leur repartition sont l'affaire de Vivy.
   if (gender === 'homme') {
     // Pas de "soprano" ici: le nettoyeur anti-celebrite y voit le rappeur Soprano et le
     // remplace par "contemporary French urban vocal" -- on demanderait alors a Suno
     // d'eviter le rap urbain francais sur un morceau de rap.
-    return `female vocals, female lead, high female head voice, airy female hook, romantic pop female vocal, ${CATALOG_VOICE_SOLO_NEGATIVES}`;
+    return 'female vocals, female lead, high female head voice, airy female hook, romantic pop female vocal';
   }
   if (gender === 'femme') {
-    return `male vocals, male lead, deep male voice, gruff male vocal, ${CATALOG_VOICE_SOLO_NEGATIVES}`;
+    return 'male vocals, male lead, deep male voice, gruff male vocal';
   }
-  return CATALOG_VOICE_SOLO_NEGATIVES;
+  return '';
 }
 
 function retagLyricsForCatalogVoice(lyrics = '', catalogLabel = '') {
