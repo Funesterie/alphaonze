@@ -2798,13 +2798,14 @@ test('Suno payload applies the configured Marvin family voice persona', () => {
       musicModel: 'V4_5',
     });
 
+    // Politique du 28/07, demandee par Djeff: « pour les personas officielles tu ne
+    // mets pas de suno id, tu gardes des personas Funesterie ». Une persona Suno expire
+    // sans prevenir et renvoie « 553 voice persona generation failed »; l'identite
+    // Marvin se rend par le style et les tags, pas par un identifiant chez un tiers.
     assert.equal(payload.instrumental, false);
-    assert.equal(payload.model, 'V5_5');
-    assert.equal(payload.personaId, '4b98e1bbdff03377263a2e592b68b6e2');
-    assert.equal(payload.personaModel, 'voice_persona');
-    assert.match(payload.style, /Solo Marvin only/i);
+    assert.equal(payload.personaId, undefined, 'aucune persona Suno pour un artiste officiel');
+    assert.match(payload.style, /Solo Marvin only/i, "l'identite passe par le style");
     assert.match(payload.style, /French lyrics only/i);
-    assert.match(payload.negativeTags, /random vocalist/i);
   } finally {
     if (previousVoiceId === undefined) delete process.env.VIVY_SUNO_MARVIN_VOICE_ID;
     else process.env.VIVY_SUNO_MARVIN_VOICE_ID = previousVoiceId;
@@ -4272,10 +4273,11 @@ test('Suno payload applies a verified Djeff voice persona when configured', () =
       musicModel: 'V4_5',
     });
 
+    // Plus de persona Suno pour un artiste officiel: c'est celle de Djeff, expiree
+    // cote fournisseur, qui renvoyait « 553 voice persona generation failed » et
+    // bloquait toute generation. Son identite tient dans le style.
     assert.equal(payload.instrumental, false);
-    assert.equal(payload.model, 'V5_5');
-    assert.equal(payload.personaId, 'djeff-verified-voice-test');
-    assert.equal(payload.personaModel, 'voice_persona');
+    assert.equal(payload.personaId, undefined, 'aucune persona Suno pour un artiste officiel');
     assert.match(payload.style, /Solo Djeff only/i);
     assert.match(payload.style, /Djeff Cypher voice persona/i);
     assert.match(payload.style, /dry gritty French male rap lead/i);
@@ -4311,9 +4313,13 @@ test('Suno payload keeps Jeffrey Djeff persona ahead of stale browser voice and 
       },
     });
 
-    assert.equal(payload.personaId, '15596961dc4e06197678c9111924d00f');
-    assert.equal(payload.personaModel, 'voice_persona');
+    // Politique du 28/07: plus de persona officielle depuis la configuration. Et rien
+    // ici ne demande de preserver une voix -- l'identifiant vient d'une session de
+    // navigateur perimee. Aucune persona n'est donc envoyee, ce qui est exactement ce
+    // que ce test protege: la valeur perimee ne doit jamais etre retenue.
+    assert.notEqual(payload.personaId, '15596961dc4e06197678c9111924d00f');
     assert.notEqual(payload.personaId, 'unknown-stale-client-voice');
+    assert.equal(payload.personaId, undefined);
   } finally {
     for (const key of keys) {
       if (previous[key] === undefined) delete process.env[key];
@@ -4342,10 +4348,11 @@ test('Suno payload keeps every configured official family voice on the consented
       },
     });
 
-    assert.equal(payload.personaId, 'marvin-consented-family-voice');
-    assert.equal(payload.personaModel, 'voice_persona');
-    assert.notEqual(payload.personaId, 'unknown-stale-client-voice');
-    assert.match(payload.style, /Solo Marvin only/i);
+    // Meme regle pour toute la famille: la persona configuree par environnement ne part
+    // plus. Le consentement n'est pas en cause -- on utilise moins, pas plus -- mais une
+    // persona Suno expire et fait echouer la generation entiere.
+    assert.notEqual(payload.personaId, 'marvin-consented-family-voice');
+    assert.match(payload.style, /Solo Marvin only/i, "l'identite reste portee par le style");
   } finally {
     for (const key of keys) {
       if (previous[key] === undefined) delete process.env[key];

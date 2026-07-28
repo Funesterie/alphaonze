@@ -8423,10 +8423,18 @@ function buildVivySunoPayload(input = {}, req = null) {
   const artistCast = buildVivySongArtistCast(input);
   const forceInstrumental = input.instrumental === true || input.forceInstrumental === true || input.previewInstrumental === true;
   const singleArtistId = artistCast.count === 1 ? cleanOneLine(artistCast.ids[0], '', 40).toLowerCase() : '';
+  // Les artistes officiels ne passent plus par une persona Suno. Djeff: « pour les
+  // personas officielles tu ne mets pas de suno id, tu gardes des personas Funesterie ».
+  //
+  // Une persona Suno expire sans prevenir et renvoie alors « 553 voice persona
+  // generation failed » -- c'est ce qui bloquait la generation, la persona de Djeff
+  // etant morte cote fournisseur. Les identites officielles sont celles du projet:
+  // elles se rendent par le style et les tags, pas par un identifiant chez un tiers.
+  //
+  // Les voix du catalogue gardent leur persona: elles n'existent que par elle, et leur
+  // proprietaire peut en fournir une nouvelle sans deploiement.
   const officialSunoArtistIds = new Set(['vivy', 'djeff', 'marvin', 'a11', 'k44', 'kaen44']);
-  const configuredOfficialVoiceId = officialSunoArtistIds.has(singleArtistId)
-    ? resolveConfiguredVivySunoPersonaVoiceId(singleArtistId)
-    : '';
+  const configuredOfficialVoiceId = '';
   const preserveSelectedVoice = input.preserveSelectedVoice === true
     || (input.preserveSelectedVoice !== false && Boolean(configuredOfficialVoiceId));
   const personalSunoVoice = preserveSelectedVoice && artistCast.count === 1 && !forceInstrumental
@@ -8440,19 +8448,20 @@ function buildVivySunoPayload(input = {}, req = null) {
   // Voix nommee du catalogue: demandee explicitement, elle prime sur tout le reste.
   // C'est ce qui permet de chanter avec une voix ajoutee depuis l'UI sans deploiement.
   const catalogVoiceId = resolveVivyCatalogVoiceIdFromInput(input);
-  const preferConfiguredOfficialVoice = !catalogVoiceId
-    && Boolean(serverVoiceId)
-    && officialSunoArtistIds.has(singleArtistId)
-    && (singleArtistId === 'djeff' || !wantsPersonalSunoVoice(input));
+  // Plus de preference pour une persona officielle: il n'y en a plus.
+  const preferConfiguredOfficialVoice = false;
   const verifiedVoiceId = catalogVoiceId
     || (preferConfiguredOfficialVoice
       ? serverVoiceId
       : (personalSunoVoice?.voiceId || explicitVoiceId || serverVoiceId));
+  // Une persona n'est envoyee que si quelqu'un l'a explicitement designee: voix du
+  // catalogue, voix personnelle enregistree par son proprietaire, ou identifiant fourni
+  // dans la requete. Ce qui disparait, c'est l'attribution AUTOMATIQUE d'une persona a
+  // un artiste officiel depuis la configuration -- c'est elle qui envoyait une persona
+  // morte et declenchait le 553.
   const useVerifiedSunoVoice = preserveSelectedVoice
     && artistCast.count === 1
-    && (Boolean(catalogVoiceId)
-      || Boolean(personalSunoVoice?.voiceId)
-      || officialSunoArtistIds.has(singleArtistId))
+    && (Boolean(catalogVoiceId) || Boolean(personalSunoVoice?.voiceId) || Boolean(explicitVoiceId))
     && Boolean(verifiedVoiceId)
     && !forceInstrumental;
   const useExternalVoiceMix = preserveSelectedVoice
