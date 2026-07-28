@@ -1005,7 +1005,9 @@ function getVivyCloudProviderConfig(provider, options = {}) {
       // chaque chanson dans les journaux du 27/07. Le mecanisme de budget existait
       // (fitVivyChatRequestForBundle lit bundle.maxPromptChars), Groq n'avait
       // simplement aucune valeur: on envoyait le prompt entier pour se faire refuser.
-      maxPromptChars: Math.max(4000, Number(process.env.VIVY_GROQ_MAX_PROMPT_CHARS || 18000) || 18000),
+      // 18 000 renvoyait encore 413 sur le palier gratuit de Groq: sa limite porte sur
+      // la taille de la requete, pas seulement sur le contexte du modele.
+      maxPromptChars: Math.max(4000, Number(process.env.VIVY_GROQ_MAX_PROMPT_CHARS || 8000) || 8000),
     },
     openai: {
       baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
@@ -7656,7 +7658,12 @@ async function buildVivyAiChat(input, req) {
     const completionResult = await createVivyChatCompletion(llmBundles, completionRequest, requiresStrongSongModel ? {
       deadlineAt: nossenLlmDeadlineAt,
       localAttemptTimeoutMs: Math.max(5000, Number(process.env.VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS || 40000) || 40000),
-      largeLyricsAttemptTimeoutMs: Math.max(10000, Number(process.env.VIVY_NOSSEN_120B_TIMEOUT_MS || 60000) || 60000),
+      // 60 s sur un budget LLM de 72 s: le gros modele, essaye en premier, ne laissait
+      // rien aux suivants et tout retombait en 504. Les journaux du 28/07 montrent la
+      // cascade: ollama_cloud puis cerbere consomment tout, deepseek/together/openrouter
+      // -- qui repondent -- ne sont jamais atteints. On lui laisse sa chance, pas la
+      // totalite du temps.
+      largeLyricsAttemptTimeoutMs: Math.max(10000, Number(process.env.VIVY_NOSSEN_120B_TIMEOUT_MS || 35000) || 35000),
       attemptTimeoutMs: Math.max(3000, Number(process.env.VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS || 8000) || 8000),
     } : {});
     llmBundle = completionResult.bundle;
@@ -7692,7 +7699,12 @@ async function buildVivyAiChat(input, req) {
           const alternateCompletion = await createVivyBundleCompletion(alternateBundle, completionRequest, {
             deadlineAt: nossenLlmDeadlineAt,
             localAttemptTimeoutMs: Math.max(5000, Number(process.env.VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS || 40000) || 40000),
-            largeLyricsAttemptTimeoutMs: Math.max(10000, Number(process.env.VIVY_NOSSEN_120B_TIMEOUT_MS || 60000) || 60000),
+            // 60 s sur un budget LLM de 72 s: le gros modele, essaye en premier, ne laissait
+      // rien aux suivants et tout retombait en 504. Les journaux du 28/07 montrent la
+      // cascade: ollama_cloud puis cerbere consomment tout, deepseek/together/openrouter
+      // -- qui repondent -- ne sont jamais atteints. On lui laisse sa chance, pas la
+      // totalite du temps.
+      largeLyricsAttemptTimeoutMs: Math.max(10000, Number(process.env.VIVY_NOSSEN_120B_TIMEOUT_MS || 35000) || 35000),
             attemptTimeoutMs: Math.max(3000, Number(process.env.VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS || 8000) || 8000),
           });
           _vivyLlmLatency += Date.now() - alternateStart;

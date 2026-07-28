@@ -7797,7 +7797,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   const [status, setStatus] = useState("");
   const [voiceReferenceName, setVoiceReferenceName] = useState(() => readVivyVoiceReferenceLabel());
   const [nossenMusicProvider, setNossenMusicProvider] = useState<VivyNossenMusicProvider>(() => readVivyNossenMusicProvider());
-  const [nossenVivyLayer, setNossenVivyLayer] = useState(false);
+  // Cochee d'office: Djeff l'active a chaque morceau, la decocher est l'exception.
+  const [nossenVivyLayer, setNossenVivyLayer] = useState(true);
   const [awaitingVoiceReference, setAwaitingVoiceReference] = useState(false);
   const chatRootRef = useRef<HTMLElement | null>(null);
   const composeRef = useRef<HTMLFormElement | null>(null);
