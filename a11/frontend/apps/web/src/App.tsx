@@ -979,6 +979,30 @@ function buildAuthSuccessReturnToForTarget(targetUrl: string) {
   return authSuccess.toString();
 }
 
+/**
+ * Nom de fichier court et lisible pour une chanson.
+ *
+ * Le « titre » renvoye par la production est souvent la demande entiere, parfois avec
+ * un nom de fichier dedans. Tel quel, on obtenait:
+ *   1785249678666-2ef8cd72-salut-vivy-je-fais-de-mon-mieux-pour-r-gler-tous-les-probl
+ *   -mes-avec-cla.mp3-salu-funesterie-d40-v9electrolysis.mp3
+ * Une extension au milieu du nom, et plus rien de reconnaissable.
+ *
+ * On retire donc toute extension OU QU'ELLE SOIT, puis on coupe a un mot entier: un
+ * nom tronque au milieu d'un mot ne se lit pas mieux qu'un numero.
+ */
+function buildSongFileBase(rawTitle: string, maxChars = 48) {
+  const propre = sanitizeMediaDisplayName(rawTitle, "")
+    .replace(/\.(?:mp3|wav|m4a|ogg|flac|webm|mp4|aac)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!propre) return "";
+  if (propre.length <= maxChars) return propre;
+  const coupe = propre.slice(0, maxChars);
+  const dernierEspace = coupe.lastIndexOf(" ");
+  return (dernierEspace > 12 ? coupe.slice(0, dernierEspace) : coupe).trim();
+}
+
 function buildSessionBridgeUrl(targetUrl: string) {
   const target = normalizeAllowedReturnTo(targetUrl);
   if (typeof window === "undefined") return target;
@@ -8996,9 +9020,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
             || (finalPayload as any)?.media?.title
             || ""
           ).trim();
-          const baseTitre = titreChanson
-            ? sanitizeMediaDisplayName(titreChanson, "").replace(/\.[a-z0-9]{2,5}$/i, "").trim()
-            : "";
+          const baseTitre = buildSongFileBase(titreChanson);
           const sourceName = baseTitre
             ? `${baseTitre}.mp3`
             : (sanitizeMediaDisplayName(preparedMedia.filename || fallbackAudioName) || fallbackAudioName);
