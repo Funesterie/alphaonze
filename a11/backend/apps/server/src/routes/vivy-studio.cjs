@@ -8201,6 +8201,30 @@ function looksLikeWeakVivyAnimeSunoStyle(value = '') {
   return !/\b(?:anime|j\s*rock|j\s*pop|rock|metal|guitare|guitar|drums?|batterie|basse|synth|shonen|shônen|opening|generique|générique)\b/.test(folded);
 }
 
+/**
+ * Borne une liste de tags a un nombre de caracteres, sans couper un tag en deux.
+ *
+ * Suno refuse en 400 des que negativeTags depasse 500 caracteres. Le nettoyeur
+ * autorisait 720: en ajoutant les negatifs « une seule voix » le 27/07, la somme est
+ * passee au-dessus et toute la generation echouait. Une troncature brute couperait au
+ * milieu d'un tag et en inventerait un faux, donc on retire des tags entiers, en
+ * partant de la fin -- les premiers sont les plus importants.
+ */
+function boundVivySunoTagList(value = '', maxChars = 500) {
+  const texte = String(value || '').trim();
+  if (texte.length <= maxChars) return texte;
+  const tags = texte.split(',').map((t) => t.trim()).filter(Boolean);
+  const gardes = [];
+  let longueur = 0;
+  for (const tag of tags) {
+    const ajout = gardes.length ? tag.length + 2 : tag.length;
+    if (longueur + ajout > maxChars) break;
+    gardes.push(tag);
+    longueur += ajout;
+  }
+  return gardes.join(', ');
+}
+
 function sanitizeVivySunoProviderTags(value = '', fallback = '', max = 720) {
   return cleanOneLine(String(value || '')
     .replace(/\bpatrick\s+bruel\b/gi, 'French chanson crooner')
@@ -8547,7 +8571,10 @@ function buildVivySunoPayload(input = {}, req = null) {
     artistCast.count > 1 ? 'single vocalist, identical vocal timbre for every singer, blended ensemble lead, unison lead vocals, choir lead, group chant replacing solos, same singer across all tags' : '',
     useExternalVoiceMix ? 'vocals, singing, spoken voice' : '',
     forceInstrumental ? 'vocals, singing, lyrics, sung words, spoken words, rap lead, narration, choir lead, group chant' : '',
+    // Suno refuse en 400 au-dela de 500 caracteres: on borne apres assemblage, en
+    // retirant des tags entiers plutot qu'en coupant au milieu de l'un d'eux.
   ].filter(Boolean).join(', '), 'spoken word, narration', 520);
+  const negativeTagsBornes = boundVivySunoTagList(negativeTags, 500);
   const requestedModel = resolveVivySunoRequestedModel(input);
   const prompt = forceInstrumental
     ? buildVivyInstrumentalSunoPrompt({ ...input, songTitle: input.songTitle || input.title || title }, title)
@@ -8566,7 +8593,7 @@ function buildVivySunoPayload(input = {}, req = null) {
     title,
     style,
     prompt,
-    negativeTags,
+    negativeTags: negativeTagsBornes,
     callBackUrl: buildSunoCallbackUrl(req),
   };
   if (useVerifiedSunoVoice) {
@@ -11436,6 +11463,7 @@ module.exports = {
   buildEmergencyMediaForProduction,
   stripCastTimbreForCatalogVoice,
   buildCatalogVoiceNegativeTags,
+  boundVivySunoTagList,
   retagLyricsForCatalogVoice,
   resolveVivyRequestDeadlineAt,
   resolveVivyRemainingMs,
