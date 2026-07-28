@@ -9675,6 +9675,20 @@ function VivyPublicPage({ authenticated, displayName, diagnosticsAllowed = false
                   </a>
                 </div>
               </section>
+              {/* Djeff: « ce lien je l'oublie a chaque fois, tu devrais mettre un
+                  raccourci quelque part pour y acceder depuis Vivy ». */}
+              <section className="vivy-agent-menu-section" aria-label="Musique">
+                <p className="vivy-agent-menu-title">Musique</p>
+                <a
+                  className="vivy-agent-menu-row"
+                  href="/api/vivy/stream/songs"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <span>Toutes les chansons</span>
+                  <span>Listing</span>
+                </a>
+              </section>
               <section className="vivy-agent-menu-section" aria-label="Légal">
                 <p className="vivy-agent-menu-title">Légal</p>
                 <a className="vivy-agent-menu-row" href={surfaceLinks.vivyPrivacy}>

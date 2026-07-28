@@ -809,6 +809,26 @@ function extractVivySoloSeedLines(value = '', maxLines = 8) {
   return lines;
 }
 
+/**
+ * Fragment court et chantable tire d'un titre.
+ *
+ * Les gabarits de secours interpolaient le titre entier dans le refrain, en supposant
+ * une formule breve. Or il vient d'une demande Twitch complete, phrase et ponctuee:
+ * chante, il donne « Je HURLE ! Vivy exprime sa joie de redecouvrir la Funesterie... »
+ * en ouverture de couplet. On n'en garde qu'un motif court, sinon on retombe sur le
+ * motif deduit du theme, qui est fait pour ca.
+ */
+function shortSingableHook(title = '', motif = '') {
+  const brut = String(title || '')
+    .replace(/[!?.…:;]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const mots = brut.split(' ').filter(Boolean);
+  if (!mots.length) return motif;
+  if (mots.length <= 5 && brut.length <= 38) return brut;
+  return motif || mots.slice(0, 4).join(' ');
+}
+
 function buildVivyThemeSeed(value = '', fallback = '') {
   const material = sanitizeVivySongMaterial(value, 900);
   let seed = stripSongCommand(material)
@@ -1246,8 +1266,12 @@ function buildDjeffRapDuoLyrics(input = {}, material = '') {
   // Only use the hardcoded motif phrases when the user provided no seed content.
   // With user content, keep the structure but avoid injecting cliché lines.
   const hasUserContent = verseOneLines.length >= 2;
+  // Le titre vient souvent d'une demande Twitch entiere -- « Je HURLE ! Vivy exprime sa
+  // joie de redecouvrir la Funesterie qui s'est releve avec un tsun ». Interpole tel
+  // quel, il se fait reciter: Djeff a entendu sa propre demande ouvrir le couplet.
+  const hook = shortSingableHook(title, motif);
   const introLineDjeff1 = hasUserContent
-    ? `${title} — j'entre en première,`
+    ? `${hook} — j'entre en première,`
     : `${motif} — j'entre dans le tour,`;
   const introLineDjeff2 = hasUserContent
     ? 'Chaque ligne compte, le grain reste brut.'
@@ -1256,16 +1280,16 @@ function buildDjeffRapDuoLyrics(input = {}, material = '') {
     ? `Je prends ta note, on tient depuis là.`
     : 'Deux voix, même axe, on garde le sujet.';
   const chorusLine1 = hasUserContent
-    ? `${title} — on coupe le silence,`
+    ? `${hook} — on coupe le silence,`
     : `${motif} — le refrain répond,`;
   const chorusLine2 = hasUserContent
     ? 'Deux voix, un son — ce qui compte reste.'
     : 'Deux voix, même axe, le sens garde le fond.';
   const bridgeLine1 = hasUserContent
-    ? `${title} — on le garde intact,`
+    ? `${hook} — on le garde intact,`
     : `${motif} — je le garde intact,`;
   const outroLine1 = hasUserContent
-    ? `Il reste ${title},`
+    ? `Il reste ${hook},`
     : `Il reste ${motif},`;
 
   const lyrics = [
@@ -1379,7 +1403,7 @@ function buildDjeffRapSoloLyrics(input = {}, material = '') {
         'si le cypher prend feu, c’est que j’ai fermé le tour.',
       ]
     : [
-        `${title} — je garde le grain brut,`,
+        `${shortSingableHook(title, motif)} — je garde le grain brut,`,
         'la voix dans le kick, les mots dans la chute.',
         'Solo Djeff dans la pièce, le couplet reste net,',
         'chaque rime fait son trou, chaque silence complète.',
