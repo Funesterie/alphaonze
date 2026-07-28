@@ -6155,7 +6155,10 @@ test('Hetzner deploy wires local-first Ollama with a cloud provider domino', () 
   assert.match(deploySource, /VIVY_NOSSEN_120B_MAX_TOKENS:\s*\$\{VIVY_NOSSEN_120B_MAX_TOKENS:-1800\}/);
   assert.match(deploySource, /VIVY_NOSSEN_120B_TIMEOUT_MS:\s*\$\{VIVY_NOSSEN_120B_TIMEOUT_MS:-60000\}/);
   assert.match(deploySource, /VIVY_NOSSEN_FAST_LOCAL_ONLY:\s*\$\{VIVY_NOSSEN_FAST_LOCAL_ONLY:-true\}/);
-  assert.match(deploySource, /VIVY_NOSSEN_ROUTE_LLM_ENABLED:\s*\$\{VIVY_NOSSEN_ROUTE_LLM_ENABLED:-false\}/);
+  // Le bloc environment: du compose ECRASE ce que fournit env_file:. Tant que ce defaut
+  // valait false, aucune modification de a11.env ne pouvait rendre la main a Vivy: le
+  // drapeau restait a false dans le conteneur malgre trois corrections en amont.
+  assert.match(deploySource, /VIVY_NOSSEN_ROUTE_LLM_ENABLED:\s*\$\{VIVY_NOSSEN_ROUTE_LLM_ENABLED:-true\}/);
   assert.match(deploySource, /VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS:\s*\$\{VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS:-40000\}/);
   assert.match(deploySource, /VIVY_NOSSEN_LOCAL_MAX_TOKENS:\s*\$\{VIVY_NOSSEN_LOCAL_MAX_TOKENS:-560\}/);
   assert.match(deploySource, /VIVY_NOSSEN_LLM_BUDGET_MS:\s*\$\{VIVY_NOSSEN_LLM_BUDGET_MS:-80000\}/);
