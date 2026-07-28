@@ -2810,6 +2810,7 @@ function createVivyStreamNossenRunner(options = {}) {
         optionalContext: cleanText([
           seed.canvas,
           seed.notes,
+          seed.directives,
           payload.optionalContext,
         ].filter(Boolean).join('\n\n'), '', 4000),
         canvas: seed.canvas,
@@ -2840,21 +2841,21 @@ function createVivyStreamNossenRunner(options = {}) {
         `VivyIntentRouter: intent=${intentPlan?.intent || 'unknown'}; shouldGenerateLyrics=${intentPlan?.shouldGenerateLyrics === true}; shouldUseVocals=${intentPlan?.shouldUseVocals === true}; shouldPrioritizeSfx=${intentPlan?.shouldPrioritizeSfx === true}; sfxPriority=${intentPlan?.sfxPriority || 'none'}; vocalPolicy=${intentPlan?.vocalPolicy || 'forbid'}.`,
         intentPlan?.generationBrief ? `Brief production: ${intentPlan.generationBrief}` : '',
       ].filter(Boolean).join('\n'), '', 1400);
+      // Le canevas ne porte plus que la matiere. Le cadre semantique, la telemetrie du
+      // routeur (« VivyIntentRouter: intent=...; shouldGenerateLyrics=true »)  et la
+      // direction instrumentale sont des consignes: melangees a la matiere, elles se
+      // retrouvaient chantees. Elles passent par `notes`, qui instruit le redacteur.
       let routing = await routeComposition({
-        canvas: cleanText([
-          seed.canvas || winner.text,
-          subjectFrame.guidance ? `Cadre sémantique prioritaire: ${subjectFrame.guidance}` : '',
-          intentContext,
-          instrumentalDirection,
-        ].filter(Boolean).join('\n\n'), '', 6000),
+        canvas: cleanText(seed.canvas || winner.text, '', 6000),
         songText: winner.text,
         message: winner.text,
         notes: cleanText([
           seed.notes,
+          seed.directives,
           subjectFrame.guidance ? `Cadre sémantique prioritaire: ${subjectFrame.guidance}` : '',
           intentContext,
           instrumentalDirection,
-        ].filter(Boolean).join('\n\n'), '', 2600),
+        ].filter(Boolean).join('\n\n'), '', 3600),
         sessionId,
         conversationId,
       }, req);

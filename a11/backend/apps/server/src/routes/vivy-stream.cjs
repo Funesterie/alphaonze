@@ -568,6 +568,26 @@ function refreshSuggestionScores(round) {
     || String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
 }
 
+/**
+ * Texte d'une suggestion Twitch, debarrasse de ce qui l'entoure.
+ *
+ * Une suggestion arrive souvent sous la forme « !nossen fais une chanson sur X ».
+ * La commande et le verbe de demande ne sont pas le sujet: laisses tels quels, ils
+ * finissaient chantes.
+ */
+function cleanSuggestionText(value = '') {
+  return String(value || '')
+    .replace(/^\s*!?\s*(?:nossen|banger|song|chanson)\b[\s:,-]*/i, '')
+    .replace(/^\s*(?:fais|fait|faire|ecris|écris|compose|genere|génère)\s+(?:moi\s+)?(?:une?\s+)?(?:chanson|son|morceau|track|musique)\s*(?:sur|a\s+propos\s+de|about)?\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    // Pas de troncature courte: une demande Twitch place souvent sa contrainte
+    // decisive a la fin (« ... instrumental uniquement, aucune voix chantée »).
+    // Couper a 600 caracteres la faisait disparaitre, et Vivy chantait sur un
+    // morceau demande sans voix.
+    .slice(0, 2400);
+}
+
 function buildNossenSeedFromRound(state) {
   const round = state?.round || {};
   refreshSuggestionScores(round);
@@ -584,19 +604,43 @@ function buildNossenSeedFromRound(state) {
   const topIdeas = (round.suggestions || []).slice(0, 5).map((entry) => (
     `${entry.id}: ${entry.text} (${entry.votes || 0} votes, ${entry.starAverage || 0}/5)`
   ));
+  // Deux canaux distincts, et non un seul melange.
+  //
+  // `canvas` melangeait la matiere creative et la methode de travail: « Objectif:
+  // transformer la demande gagnante... », « Architecture narrative attendue:... »,
+  // ainsi que les identifiants et compteurs de votes des suggestions. Ce bloc part
+  // comme MATIERE vers le redacteur, qui le recopie donc dans les paroles -- Djeff a
+  // entendu ses consignes chantees. Filtrer en sortie revenait a courir apres le texte
+  // une fois entre; on le detourne a la source.
+  //
+  // canvas     = ce qui peut legitimement inspirer des paroles (le sujet demande).
+  // directives = la methode, qui doit instruire le redacteur sans jamais etre chantee.
+  const idees = (round.suggestions || [])
+    .slice(0, 5)
+    .map((entry) => cleanSuggestionText(entry?.text))
+    .filter(Boolean);
+
   return {
     ok: Boolean(winner),
     source: 'twitch-live',
     winner,
     canvas: [
-      winner ? `Matière Twitch gagnante: ${winner.text}` : '',
-      topIdeas.length ? `Autres idées du round:\n${topIdeas.join('\n')}` : '',
-      likedTerms.length ? `Vocabulaire validé dans ce round: ${likedTerms.join(', ')}` : '',
+      winner ? cleanSuggestionText(winner.text) : '',
+      // Les autres idees sans leur identifiant ni leurs votes: « 3: bagarre (7 votes,
+      // 4/5) » se retrouvait tel quel dans un couplet.
+      idees.length > 1 ? idees.slice(1).join('\n') : '',
+    ].filter(Boolean).join('\n'),
+    directives: [
+      likedTerms.length ? `Vocabulaire apprecie du public: ${likedTerms.join(', ')}` : '',
       'Objectif: transformer la demande gagnante en mini-histoire chantée, précise, pas générique, avec vocabulaire vécu.',
       'Architecture narrative attendue: sujet + personnages + problème + évolution + scène finale + style musical. Chaque couplet doit avoir une fonction.',
       'Lecture à trois intentions: sujet visible, sous-thème humain ou émotionnel, puis morale cachée / message de troisième intention. La morale doit rester incarnée dans les scènes, jamais expliquée comme une leçon.',
       'Validation avant Suno: début clair, problème clair, bascule claire, fin mémorable, comportement risqué non glorifié, message caché perceptible sans être scolaire.',
+      'Ces consignes guident ton écriture: elles ne se chantent jamais, ne se citent pas, et ne doivent apparaître sous aucune forme dans les paroles.',
     ].filter(Boolean).join('\n\n'),
+    // Conserve pour les consommateurs existants, mais vide de methode: le detail des
+    // votes et des identifiants n'a rien a faire dans un texte destine a etre chante.
+    roundIdeas: topIdeas,
     notes: likedTerms.length
       ? `Construire une vraie progression dramatique avec une troisième intention cachée. Éviter les images passe-partout; privilégier les détails concrets aimés: ${likedTerms.join(', ')}.`
       : 'Construire une vraie progression dramatique avec une troisième intention cachée. Éviter les images passe-partout; chercher des détails concrets dans le sujet demandé.',

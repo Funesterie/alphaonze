@@ -1331,13 +1331,24 @@ test('Vivy stream route stores Twitch ideas, votes, stars and builds a NOSSEN se
     assert.equal(result.json.winner.id, 'S1');
     assert.equal(result.json.state.current.phase, 'winner');
     assert.equal(result.json.state.round.status, 'locked');
+    // Deux canaux separes depuis le 28/07: le canevas ne porte que la matiere, la
+    // methode passe par `directives`. Melangees, les consignes finissaient chantees --
+    // Djeff a entendu « transformer la demande gagnante en mini-histoire » dans un
+    // morceau. Filtrer en sortie ne reglait rien, on detourne a la source.
     assert.match(result.json.nossenSeed.canvas, /Bleach opening sombre/);
     assert.match(result.json.nossenSeed.canvas, /ichigo|bleach/i);
-    assert.match(result.json.nossenSeed.canvas, /mini-histoire chantée/i);
-    assert.match(result.json.nossenSeed.canvas, /Architecture narrative attendue/i);
-    assert.match(result.json.nossenSeed.canvas, /Lecture à trois intentions/i);
-    assert.match(result.json.nossenSeed.canvas, /morale cachée/i);
-    assert.match(result.json.nossenSeed.canvas, /Validation avant Suno/i);
+    assert.doesNotMatch(result.json.nossenSeed.canvas, /mini-histoire chantée/i);
+    assert.doesNotMatch(result.json.nossenSeed.canvas, /Architecture narrative attendue/i);
+    assert.doesNotMatch(result.json.nossenSeed.canvas, /Validation avant Suno/i);
+    assert.doesNotMatch(result.json.nossenSeed.canvas, /votes|\/5\b/i, 'ni identifiants ni compteurs de votes dans la matiere');
+
+    assert.match(result.json.nossenSeed.directives, /mini-histoire chantée/i);
+    assert.match(result.json.nossenSeed.directives, /Architecture narrative attendue/i);
+    assert.match(result.json.nossenSeed.directives, /Lecture à trois intentions/i);
+    assert.match(result.json.nossenSeed.directives, /morale cachée/i);
+    assert.match(result.json.nossenSeed.directives, /Validation avant Suno/i);
+    assert.match(result.json.nossenSeed.directives, /ne se chantent jamais/i, 'la consigne doit se declarer non chantable');
+
     assert.match(result.json.nossenSeed.notes, /progression dramatique/i);
     assert.match(result.json.nossenSeed.notes, /troisième intention cachée/i);
     assert.doesNotMatch(result.json.nossenSeed.canvas, /Autres idées du chat|chanson NOSSEN/i);
