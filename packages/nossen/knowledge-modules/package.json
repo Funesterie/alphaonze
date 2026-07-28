@@ -1,0 +1,28 @@
+{
+  "name": "@nossen/knowledge-modules",
+  "version": "0.1.0",
+  "description": "Public NOSSEN knowledge modules: persona canon and temporal gravity constants.",
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "main": "src/index.cjs",
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "keywords": [
+    "nossen",
+    "funesterie",
+    "knowledge",
+    "modules",
+    "persona",
+    "gravity"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Funesterie/funesterie.git",
+    "directory": "packages/nossen/knowledge-modules"
+  }
+}
