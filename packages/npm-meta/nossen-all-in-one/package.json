@@ -1,6 +1,6 @@
 {
   "name": "@nossen/all-in-one",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Public all-in-one NOSSEN package that installs every public NOSSEN module.",
   "type": "commonjs",
   "main": "index.cjs",
@@ -40,7 +40,6 @@
     "@nossen/freeland": "2.0.2",
     "@nossen/freeland-bros": "2.0.4",
     "@nossen/katana": "2.0.0",
-    "@nossen/knowledge-modules": "0.1.0",
     "@nossen/logic-reduce": "2.0.2",
     "@nossen/mcp-agent-bus": "0.1.2",
     "@nossen/mcp-chopper-mixer": "0.1.2",

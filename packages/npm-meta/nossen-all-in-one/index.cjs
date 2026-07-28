@@ -13,7 +13,6 @@ const packages = Object.freeze([
   '@nossen/freeland',
   '@nossen/freeland-bros',
   '@nossen/katana',
-  '@nossen/knowledge-modules',
   '@nossen/logic-reduce',
   '@nossen/mcp-agent-bus',
   '@nossen/mcp-chopper-mixer',
