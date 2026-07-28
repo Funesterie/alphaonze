@@ -1,7 +1,7 @@
 {
   "name": "@nossen/knowledge-modules",
-  "version": "0.1.0",
-  "description": "Public NOSSEN knowledge modules: persona canon and temporal gravity constants.",
+  "version": "0.2.0",
+  "description": "Public NOSSEN knowledge modules: persona canon, temporal gravity constants, pulsar colour palette.",
   "license": "UNLICENSED",
   "type": "commonjs",
   "main": "src/index.cjs",
@@ -10,12 +10,16 @@
     "README.md"
   ],
   "keywords": [
-    "nossen",
+    "encoding",
     "funesterie",
+    "gravity",
     "knowledge",
     "modules",
+    "nossen",
+    "palette",
     "persona",
-    "gravity"
+    "pulsar",
+    "zen"
   ],
   "publishConfig": {
     "access": "public"

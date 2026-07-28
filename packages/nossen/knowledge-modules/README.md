@@ -13,13 +13,14 @@ pas dans un fichier que personne ne relit.
 |---|---|
 | `persona.funesterie.cast` | Distribution des personas, ADN à cinq chromosomes, règles de casting |
 | `physics.temporal.gravity` | Gravité temporelle du moteur Shiryu/V9, constantes exactes |
+| `encoding.pulsar.palette` | Mode Pulsar : dix couleurs porteuses d'une fonction technique |
 
 ## Usage
 
 ```js
 const { listModules, getModule, matchModules } = require('@nossen/knowledge-modules');
 
-listModules().length;                       // 2
+listModules().length;                       // 3
 getModule('physics.temporal.gravity');      // le module complet
 
 // Sélection par mots-clés, insensible aux accents
@@ -53,3 +54,20 @@ Toute voix ajoutée à un catalogue exige un **consentement nommé**, conservé 
 ## Licence
 
 UNLICENSED — usage interne Funesterie.
+
+## Mode Pulsar, en bref
+
+Dix couleurs, chacune porteuse d'une **fonction technique** — pas d'une valeur
+décorative. Langage commun entre la compression `.zen` et le rendu Unreal Engine.
+
+| Couleur | Fonction | Complément | Gamma |
+|---|---|---|---|
+| ToxicGreen | énergie NVENC | Magenta | 0.95 |
+| DORÉ | blindage alchimique | Noir-Pétrole | 0.88 |
+| FireOrange | chaleur du flux | Violet | 0.80 |
+| BloodRed | compression HEVC | Flamme-Bleu | 0.75 |
+| Cyan | transmission | BloodRed | 0.70 |
+
+Deux pièges : **Magenta porte la matière, pas le rouge** — le rouge porte la
+compression, et les confondre inverse le contrat. Et la complémentaire est *déclarée*,
+pas calculée : elle peut différer de la complémentaire chromatique stricte.
