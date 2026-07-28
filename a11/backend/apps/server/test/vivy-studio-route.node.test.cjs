@@ -1443,19 +1443,40 @@ test('Suno payload gives distinct inferred styles to different adventure subject
   assert.notEqual(peter.style, zorro.style);
 });
 
-test('Suno payload routes Bleach away from French chanson defaults', () => {
+test('la direction fournie par Vivy est respectee, meme douce sur un theme anime', () => {
+  // Changement de politique du 28/07, demande par Djeff: « je veux un bouton NOSSEN ou
+  // tout doit etre gere par Vivy avec ses idees et son intention ».
+  //
+  // Auparavant, une direction jugee « faible » -- ce qui incluait ballade, piano,
+  // acoustique, chanson francaise, romantique -- etait remplacee par du J-rock des que
+  // la matiere evoquait un anime. Une ballade choisie exprES ne survivait donc jamais a
+  // un theme shonen. Le jugement esthetique revient a Vivy, pas a la couche technique.
   const payload = buildVivySunoPayload({
     mode: 'song',
     songArtists: ['djeff', 'vivy'],
-    songMood: 'chanson française à la Patrick Bruel, ballade acoustique',
+    songMood: 'ballade acoustique douce, piano feutre',
     songText: 'Fais un opening animé sur Bleach avec Ichigo, Rukia, les Shinigami, Soul Society et Getsuga Tensho.',
     longSong: true,
   });
 
-  assert.match(payload.style, /Bleach|shonen anime opening|J-rock|electric guitars|fast drums/i);
-  assert.doesNotMatch(payload.style, /Patrick Bruel|ballade acoustique|chanson française/i);
-  assert.match(payload.negativeTags, /French chanson|acoustic ballad/i);
+  assert.match(payload.style, /ballade acoustique|piano/i, 'la direction de Vivy doit survivre');
+  // Le nettoyeur anti-celebrite reste actif: aucun nom d'artiste reel ne part chez Suno.
+  assert.doesNotMatch(payload.style, /Patrick Bruel|Johnny Hallyday/i);
   assert.doesNotMatch(payload.negativeTags, /Patrick Bruel|Johnny Hallyday/i);
+});
+
+test('sans direction de Vivy, le repli par mot-cle prend le relais', () => {
+  // Le mapping code en dur n'est pas supprime: il reste utile quand Vivy ne fournit
+  // rien. Il ne doit simplement plus ecraser une direction existante.
+  const payload = buildVivySunoPayload({
+    mode: 'song',
+    songArtists: ['djeff', 'vivy'],
+    songMood: '',
+    songText: 'Fais un opening animé sur Bleach avec Ichigo, Rukia, les Shinigami, Soul Society et Getsuga Tensho.',
+    longSong: true,
+  });
+
+  assert.match(payload.style, /anime|shonen|J-rock|guitar|drums|opening/i);
 });
 
 test('Suno payload isolates a clean lyric block from NOSSEN chat planning context', () => {

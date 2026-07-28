@@ -8184,12 +8184,10 @@ function inferVivyAnimeSunoStyle(folded = '') {
   return '';
 }
 
-function looksLikeWeakVivyAnimeSunoStyle(value = '') {
-  const folded = foldTextForLookup(value);
-  if (!folded) return true;
-  if (/\b(?:patrick\s+bruel|bruel|variete|variété|chanson\s+francaise|chanson\s+française|ballade|piano\s+doux|acoustique|classique|symphonique|crooner|slow|romantique|folk\s+doux)\b/.test(folded)) return true;
-  return !/\b(?:anime|j\s*rock|j\s*pop|rock|metal|guitare|guitar|drums?|batterie|basse|synth|shonen|shônen|opening|generique|générique)\b/.test(folded);
-}
+// looksLikeWeakVivyAnimeSunoStyle a ete retiree le 28/07. Elle qualifiait de « faible »
+// toute direction douce -- ballade, piano, acoustique, chanson francaise, romantique --
+// et servait a remplacer la direction de Vivy par du J-rock des que la matiere evoquait
+// un anime. C'est un jugement esthetique, il ne revient pas a la couche technique.
 
 /**
  * Borne une liste de tags a un nombre de caracteres, sans couper un tag en deux.
@@ -8466,10 +8464,17 @@ function buildVivySunoPayload(input = {}, req = null) {
   );
   const sunoStyleMaterialFolded = foldTextForLookup(buildVivySunoStyleMaterial(input));
   const animeStyleBase = inferVivyAnimeSunoStyle(sunoStyleMaterialFolded);
+  // Vivy decide de la direction sonore. Le mapping mot-cle ne sert que si elle n'a rien
+  // fourni du tout.
+  //
+  // Une branche ecrasait sa direction quand la matiere evoquait un anime et que son
+  // style etait juge « faible » -- or looksLikeWeakVivyAnimeSunoStyle qualifie ainsi
+  // TOUTE direction douce: ballade, piano, acoustique, chanson francaise, romantique.
+  // Une ballade piano choisie exprES sur un theme anime etait donc remplacee par du
+  // J-rock. Djeff: « je veux un bouton NOSSEN ou tout doit etre gere par Vivy avec ses
+  // idees et son intention. » Retiree.
   const styleBase = looksLikeVivySunoStylePlaceholder(requestedStyleBase)
     ? inferVivySunoStyleBase(input, artistCast)
-    : animeStyleBase && looksLikeWeakVivyAnimeSunoStyle(requestedStyleBase)
-      ? sanitizeVivySunoProviderTags([artistCast.sunoStyle, animeStyleBase].filter(Boolean).join(', '), animeStyleBase, 520)
     : requestedStyleBase;
   const castRoles = artistCast.artists
     .map((artist) => cleanOneLine(artist.sunoRole || artist.style, '', 80)
