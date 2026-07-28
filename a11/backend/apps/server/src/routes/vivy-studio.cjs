@@ -6069,8 +6069,16 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
   );
   const sessionContext = resolveVivyInputSession(input);
   const llmBundles = createVivyOpenAIClients({ mode: 'song', purpose: 'routing' });
+  // Defaut passe a true le 28/07. Djeff: « c'est Vivy qui doit piloter les chanteurs et
+  // les couleurs sonores, elle doit adapter en fonction du theme et de la demande ».
+  //
+  // Avec false, cette fonction renvoyait TOUJOURS le plan de repli --
+  // inferVivyNossenRoutingPlan, un moteur de regles. Vivy ne choisissait donc ni le
+  // casting ni la direction sonore, et toutes les chansons se ressemblaient: le repli
+  // produit le meme mood pour des themes differents. Le routeur reste borne (520 jetons,
+  // 20 s), et son echec retombe sur le repli: activer ne fragilise rien.
   const routeLlmEnabled = ['1', 'true', 'yes', 'on'].includes(
-    String(process.env.VIVY_NOSSEN_ROUTE_LLM_ENABLED || 'false').trim().toLowerCase()
+    String(process.env.VIVY_NOSSEN_ROUTE_LLM_ENABLED || 'true').trim().toLowerCase()
   );
   const llmDisabled = String(process.env.VIVY_CHAT_DISABLE_LLM || '').toLowerCase() === 'true';
   if (!routeLlmEnabled || !llmBundles.length || llmDisabled) {
