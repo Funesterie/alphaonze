@@ -63,6 +63,13 @@ const {
   attachVoiceSample,
   readVoiceSample,
 } = require('../music/voice-catalog.cjs');
+const {
+  looksLikeExpiredPersona,
+  markPersonaExpired,
+  recoverPersonaFromSample,
+  buildSampleShareUrl,
+  verifySampleShare,
+} = require('../music/persona-recovery.cjs');
 const { runMissingVoiceSamples } = require('../music/voice-sample-runner.cjs');
 const { buildSongcraftGraphContext } = require('../music/songcraft-graph-context.cjs');
 const {
@@ -3981,9 +3988,10 @@ function buildSongProduction(input) {
   const artistCast = buildVivySongArtistCast(input);
   const source = cleanOneLine(input.songSource || input.source, 'Thème', 80);
   const requestedMood = cleanOneLine(stripVivyAscii4SoundTokens(input.songMood || input.mood || input.style), '', 160);
-  const mood = looksLikeVivySunoStylePlaceholder(requestedMood)
-    ? inferVivySunoStyleBase(input, artistCast)
-    : requestedMood;
+  // Meme regle que dans buildVivyMusicPrompt: sans demande explicite, la direction
+  // sonore reste vide. Le brief est le canevas de Vivy, pas la sortie d'un moteur de
+  // mots-cles; une couleur deduite ici lui reviendrait comme si elle l'avait choisie.
+  const mood = looksLikeVivySunoStylePlaceholder(requestedMood) ? '' : requestedMood;
   const primaryMaterial = compactUniqueLines([
     input.songText,
     input.lyrics,
@@ -4030,7 +4038,7 @@ function buildSongProduction(input) {
   const briefLines = [
     'VIVY_SONG_PRODUCTION',
     `Source: ${source}`,
-    `Direction sonore: ${mood}`,
+    ...(mood ? [`Direction sonore: ${mood}`] : []),
     `Titre de travail: ${title}`,
     '',
     'Structure proposée:',
@@ -8118,9 +8126,11 @@ function buildVivyMusicPrompt(input = {}) {
   const source = cleanOneLine(input.songSource || input.source, 'Theme', 80);
   const artistCast = buildVivySongArtistCast(input);
   const requestedMood = cleanOneLine(stripVivyAscii4SoundTokens(input.songMood || input.mood || input.style), '', 180);
-  const mood = looksLikeVivySunoStylePlaceholder(requestedMood)
-    ? inferVivySunoStyleBase(input, artistCast)
-    : requestedMood;
+  // Canevas laisse VIDE quand rien n'est demande. Ce prompt est ce que Vivy recoit:
+  // y injecter une couleur sonore deduite de mots-cles revient a lui dicter la
+  // direction, puis a la lui faire repeter. Djeff: « c'est a Vivy de remplir ce
+  // canevas ». Sans ligne de style, elle choisit.
+  const mood = looksLikeVivySunoStylePlaceholder(requestedMood) ? '' : requestedMood;
   const voiceProfile = getVivyStudioVoiceProfile(input);
   const catalogVoiceName = cleanOneLine(input.voiceCatalogName || input.catalogVoiceName, '', 80);
   const prosodyPlan = buildVivyProsodyPlan(input);
@@ -8143,7 +8153,7 @@ function buildVivyMusicPrompt(input = {}) {
       ? 'Original instrumental Funesterie score, French production context.'
       : artistCast.musicLead,
     `Source: ${source}.`,
-    `Style and production: ${mood}.`,
+    mood ? `Style and production: ${mood}.` : '',
     forceInstrumental
       ? 'Vocal cast: none. Instrumental only, no vocals, no singing, no spoken narration.'
       : `Vocal cast: ${artistCast.countLabel}: ${artistCast.label}. ${artistCast.musicMood}`,
@@ -8507,6 +8517,12 @@ function buildVivySunoPayload(input = {}, req = null) {
   // Une ballade piano choisie exprES sur un theme anime etait donc remplacee par du
   // J-rock. Djeff: « je veux un bouton NOSSEN ou tout doit etre gere par Vivy avec ses
   // idees et son intention. » Retiree.
+  //
+  // Ici, contrairement aux briefs (buildSongProduction, buildVivyMusicPrompt) ou le
+  // canevas reste VIDE pour que Vivy le remplisse, on est sur le fil qui part chez
+  // Suno: en customMode, un style vide fait rejeter la requete. Le mapping ne sert
+  // donc que de dernier recours, quand Vivy n'a rien fourni du tout -- son choix
+  // arrive normalement jusqu'ici par input.songMood via le routage.
   const styleBase = looksLikeVivySunoStylePlaceholder(requestedStyleBase)
     ? inferVivySunoStyleBase(input, artistCast)
     : requestedStyleBase;
@@ -9654,26 +9670,62 @@ async function requestSunoMusic(input = {}, req = null) {
     String(input.songText || '').length,
     String(input.lyrics || '').length
   );
-  const voiceMode = body.personaModel === 'voice_persona'
+  let voiceMode = body.personaModel === 'voice_persona'
     ? 'suno_voice'
     : input.preserveSelectedVoice === true
       && wantsVivyExternalVoiceMix(input)
       && body.instrumental === true
       ? 'external_mix'
       : 'suno_generated';
-  const response = await fetch(`${getSunoBaseUrl()}/generate`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-    // Borne par le temps qui reste avant la coupure Cloudflare: un delai fixe de
-    // 30 s s'ajoutait au budget LLM et faisait deborder le total.
-    signal: AbortSignal.timeout(resolveVivySunoTimeoutMs(req)),
-  });
-  const payload = await response.json().catch(() => ({}));
-  const apiCode = findSunoApiCode(payload);
+
+  const envoyerAuGenerateur = async () => {
+    const reponse = await fetch(`${getSunoBaseUrl()}/generate`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      // Borne par le temps qui reste avant la coupure Cloudflare: un delai fixe de
+      // 30 s s'ajoutait au budget LLM et faisait deborder le total.
+      signal: AbortSignal.timeout(resolveVivySunoTimeoutMs(req)),
+    });
+    const corps = await reponse.json().catch(() => ({}));
+    return { response: reponse, payload: corps, apiCode: findSunoApiCode(corps) };
+  };
+
+  let { response, payload, apiCode } = await envoyerAuGenerateur();
+
+  // Une persona morte ne doit jamais emporter la chanson. Une persona n'est qu'une
+  // reference chez Suno: quand ils purgent le clip source, l'identifiant survit chez
+  // nous mais ne designe plus rien (553, « the voice has expired »). Jusqu'ici cette
+  // reponse remontait telle quelle et NOSSEN s'arretait, alors que les paroles, le
+  // titre et l'arrangement etaient prets. On constate le deces, on retire la voix
+  // morte, et on produit le morceau avec la voix generee par defaut.
+  const personaMorte = body.personaId
+    && looksLikeExpiredPersona({
+      status: response.status,
+      code: apiCode,
+      message: findSunoProviderMessage(payload) || '',
+    });
+  if (personaMorte) {
+    const nomCatalogue = cleanOneLine(input.voiceCatalogName || input.catalogVoiceName, '', 80);
+    if (nomCatalogue) {
+      try {
+        markPersonaExpired(nomCatalogue, findSunoProviderMessage(payload) || 'persona expiree');
+      } catch { /* le catalogue ne doit jamais bloquer une generation */ }
+    }
+    console.warn(
+      '[PersonaRecovery] persona=%s... expiree, production poursuivie sans elle (voix=%s)',
+      String(body.personaId).slice(0, 4),
+      nomCatalogue || '(inconnue)'
+    );
+    delete body.personaId;
+    delete body.personaModel;
+    voiceMode = 'suno_generated';
+    ({ response, payload, apiCode } = await envoyerAuGenerateur());
+  }
+
   if (!response.ok) {
     const error = buildSunoProviderError(response.status || apiCode || 'http_error', payload, 'http_error');
     error.status = response.status;
@@ -10759,6 +10811,29 @@ function createVivyStudioRouter({
     }
   });
 
+  // Declaree AVANT /voice-catalog/:name/sample/:taskId, sinon « shared » serait pris
+  // pour un identifiant de tache et capture par la route authentifiee.
+  //
+  // Seule route du catalogue sans requireAuth: Suno doit telecharger l'echantillon
+  // pour reconstruire une persona expiree, et il ne porte pas nos jetons. La
+  // protection tient a la signature: lien indevinable, valide quelques minutes.
+  router.get('/voice-catalog/:name/sample/shared', (req, res) => {
+    const nom = slugifyVoiceName(req.params.name);
+    if (!verifySampleShare(nom, req.query.exp, req.query.sig, process.env)) {
+      return res.status(403).json({ ok: false, error: 'sample_share_invalid' });
+    }
+    try {
+      const sample = readVoiceSample(nom, process.env);
+      if (!sample) return res.status(404).json({ ok: false, error: 'sample_not_found' });
+      res.setHeader('Content-Type', 'audio/mpeg');
+      // Un echantillon de voix consentie ne doit rester dans aucun cache partage.
+      res.setHeader('Cache-Control', 'no-store');
+      return res.sendFile(sample.path);
+    } catch (error) {
+      return res.status(500).json({ ok: false, error: 'sample_read_failed', message: String(error.message || error).slice(0, 200) });
+    }
+  });
+
   router.get('/voice-catalog/:name/sample/:taskId', requireAuth, async (req, res) => {
     if (!isVivyFounderUser(req.user || {})) {
       return res.status(403).json({ ok: false, error: 'voice_catalog_forbidden' });
@@ -10813,6 +10888,39 @@ function createVivyStudioRouter({
       return res.sendFile(sample.path);
     } catch (error) {
       return res.status(500).json({ ok: false, error: 'sample_read_failed', message: String(error.message || error).slice(0, 200) });
+    }
+  });
+
+  // Reanimation d'une voix dont la persona Suno a expire. Elle consomme une
+  // generation: reservee au fondateur, et bornee par les compteurs du catalogue.
+  router.post('/voice-catalog/:name/recover', requireAuth, async (req, res) => {
+    if (!isVivyFounderUser(req.user || {})) {
+      return res.status(403).json({ ok: false, error: 'voice_catalog_forbidden' });
+    }
+    const nom = slugifyVoiceName(req.params.name);
+    try {
+      const sunoAccess = getSunoAccess({}, req);
+      if (!sunoAccess.apiKey) {
+        return res.status(503).json({ ok: false, error: 'suno_music_key_missing' });
+      }
+      const sampleUrl = buildSampleShareUrl(nom, getPublicBaseUrl(req), process.env);
+      if (!sampleUrl) {
+        // Sans secret de signature, on refuse plutot que d'exposer l'echantillon nu.
+        return res.status(503).json({ ok: false, error: 'sample_share_not_configured' });
+      }
+      const resultat = await recoverPersonaFromSample(nom, {
+        apiKey: sunoAccess.apiKey,
+        baseUrl: getSunoBaseUrl(),
+        sampleUrl,
+        callBackUrl: buildSunoCallbackUrl(req),
+      }, process.env);
+      return res.status(resultat.ok ? 200 : 409).json(resultat);
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        error: 'persona_recovery_failed',
+        message: String(error.message || error).slice(0, 300),
+      });
     }
   });
 

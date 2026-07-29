@@ -101,6 +101,17 @@ function normalizeEntry(value = null) {
     sampleAttempts: Math.max(0, Math.round(Number(value?.sampleAttempts || 0))) || 0,
     sampleLastAttemptAt: cleanLine(value?.sampleLastAttemptAt, 40),
     sampleLastError: cleanLine(value?.sampleLastError, 200),
+    // Acte de deces de la persona Suno. Une persona n'est pas un fichier chez nous,
+    // c'est une reference chez eux: quand ils retirent le clip source, l'identifiant
+    // survit dans le catalogue mais ne designe plus rien (erreur 553, « voice has
+    // expired »). Constater le deces evite de le redecouvrir a chaque generation.
+    personaExpiredAt: cleanLine(value?.personaExpiredAt, 40),
+    // Reanimation depuis l'echantillon garde sur notre disque. Elle coute une
+    // generation Suno: memes garde-fous que les echantillons, compteur et horodatage.
+    recoveryAttempts: Math.max(0, Math.round(Number(value?.recoveryAttempts || 0))) || 0,
+    recoveryLastAttemptAt: cleanLine(value?.recoveryLastAttemptAt, 40),
+    recoveryLastError: cleanLine(value?.recoveryLastError, 200),
+    recoveredAt: cleanLine(value?.recoveredAt, 40),
     active: value?.active !== false,
   };
 }
@@ -239,6 +250,12 @@ function describeVoiceCatalog(env = process.env) {
       hasSample: Boolean(v.sampleFile),
       sampleDurationSeconds: v.sampleDurationSeconds || 0,
       sampleAt: v.sampleAt || '',
+      // L'echantillon est l'ADN de la voix: sans lui, une persona expiree est
+      // definitivement perdue et il faut refaire un enregistrement.
+      personaExpired: Boolean(v.personaExpiredAt),
+      personaExpiredAt: v.personaExpiredAt || '',
+      recoverable: Boolean(v.personaExpiredAt) && Boolean(v.sampleFile),
+      recoveredAt: v.recoveredAt || '',
       active: v.active,
     })),
   };
