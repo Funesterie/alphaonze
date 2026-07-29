@@ -2724,6 +2724,17 @@ function resolveVivyResponseLanguage(input = {}, req = null) {
   if (req) return resolveUserLanguage(req, 'fr');
   return 'fr';
 }
+function isVivyEnglishLanguageMode(input = {}, fallbackLang = 'fr') {
+  // Mode ricain / album US: on regarde la langue EXPLICITE de la requete (input.language)
+  // avant toute normalisation, sinon normalizeLanguageCode('us') retomberait sur 'fr'.
+  // Un toggle « album US » cote frontend envoie language='en' (et/ou americanMode=true).
+  const raw = String(input?.language || input?.locale || '').trim().toLowerCase();
+  if (raw === 'us' || raw === 'en' || raw.startsWith('en') || raw.includes('american') || input?.americanMode === true) {
+    return true;
+  }
+  const resolved = String(fallbackLang || 'fr').toLowerCase().replace(/[_-].*$/, '');
+  return resolved === 'en' || resolved === 'us';
+}
 
 function safeExistingPath(candidate = '') {
   const raw = String(candidate || '').trim();
@@ -5910,7 +5921,7 @@ function hasVivyNossenInstrumentalSignal(material = '') {
   return /\b(?:instrumental|sans paroles|sans chant|no vocals|no lyrics|bruitages?|sfx|foley|sound design)\b/.test(folded);
 }
 
-function sanitizeVivyNossenRoutingPlanForRequest(plan = {}, material = '', fallback = null) {
+function sanitizeVivyNossenRoutingPlanForRequest(plan = {}, material = '', fallback = null, englishMode = false) {
   const fallbackPlan = fallback && fallback.songMood
     ? fallback
     : strengthenVivyNossenRoutingPlan(inferVivyNossenRoutingPlan({ message: material }), material);
@@ -5949,13 +5960,25 @@ function sanitizeVivyNossenRoutingPlanForRequest(plan = {}, material = '', fallb
 
   if (!artists.length) artists = ['djeff', 'vivy'];
   if (!songMood) songMood = 'rap français NOSSEN moderne, groove clair, refrain mémorable';
-  if (!hasVivyNossenInstrumentalSignal(material) && !hasVivyNossenExplicitEnglishSignal(material)) {
-    songMood = joinVivyNossenRoutingMoodParts([
-      songMood,
-      'paroles françaises uniquement',
-      'voix en français',
-      'aucun refrain anglais',
-    ], 520);
+  // Mode ricain: on verrouille l'anglais; sinon on garde le verrou francais, sauf si
+  // la matiere signale explicitement de l'anglais (auquel cas Vivy a decide l'anglais).
+  if (!hasVivyNossenInstrumentalSignal(material)) {
+    if (englishMode) {
+      songMood = joinVivyNossenRoutingMoodParts([
+        songMood,
+        'English lyrics only',
+        'American English vocals',
+        'no French lyrics',
+        'no French chorus',
+      ], 520);
+    } else if (!hasVivyNossenExplicitEnglishSignal(material)) {
+      songMood = joinVivyNossenRoutingMoodParts([
+        songMood,
+        'paroles françaises uniquement',
+        'voix en français',
+        'aucun refrain anglais',
+      ], 520);
+    }
   }
   return {
     ...plan,
@@ -6071,7 +6094,9 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
   const fallbackPlan = enforceVivyNossenVoiceSemantics(
     sanitizeVivyNossenRoutingPlanForRequest(
       strengthenVivyNossenRoutingPlan(inferVivyNossenRoutingPlan(input), material),
-      material
+      material,
+      null,
+      isVivyEnglishLanguageMode(input, resolveVivyResponseLanguage(input, req))
     ),
     material
   );
@@ -6182,7 +6207,8 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
     sanitizeVivyNossenRoutingPlanForRequest(
       strengthenVivyNossenRoutingPlan(plan, material),
       material,
-      fallbackPlan
+      fallbackPlan,
+      isVivyEnglishLanguageMode(input, resolveVivyResponseLanguage(input, req))
     ),
     material
   );
@@ -8559,9 +8585,16 @@ function buildVivySunoPayload(input = {}, req = null) {
   const longFormStyle = wantsVivySunoLongForm(input)
     ? 'long-form full song arrangement around five minutes, expanded sections, recurring hook after the bridge, complete final chorus, no short radio edit'
     : '';
+  const englishMode = isVivyEnglishLanguageMode(input, resolveVivyResponseLanguage(input, req));
+  // Mode ricain: on verrouille l'anglais americain au lieu du francais. La bride dure
+  // « French lyrics only » etait codée en dur et empechait tout album US -- meme si
+  // Vivy routait du rap americain, Suno recevait « French lyrics only » et chantait
+  // en francais. Djeff: « on part a la conquete des states ».
   const frenchLanguageStyle = forceInstrumental || useExternalVoiceMix
     ? ''
-    : 'French lyrics only, French language vocals, no English lyrics, no English chorus';
+    : englishMode
+      ? 'English lyrics only, American English vocals, no French lyrics, no French chorus, no translated chorus'
+      : 'French lyrics only, French language vocals, no English lyrics, no English chorus';
   const vocalDeliveryStyle = singleArtistId === 'djeff'
     ? 'rap hook, rap vocals, no melodic pop singing'
     : 'melodic chorus, sung vocals';
@@ -8612,7 +8645,7 @@ function buildVivySunoPayload(input = {}, req = null) {
     singleArtistId === 'djeff' ? 'female vocals, female lead, romantic pop vocal, soft ballad chorus, crooner voice, airy female hook' : '',
     singleArtistId === 'marvin' ? 'female vocals, female lead, child voice, random vocalist, celebrity voice imitation, English lead vocal' : '',
     personalSunoVoice?.voiceId ? 'random vocalist, replacement singer, celebrity voice imitation, different lead timbre' : '',
-    !forceInstrumental && !useExternalVoiceMix ? 'English lyrics, English vocals, English chorus, translated chorus, bilingual lyrics' : '',
+    !forceInstrumental && !useExternalVoiceMix ? (englishMode ? 'French lyrics, French vocals, French chorus, translated chorus, bilingual lyrics' : 'English lyrics, English vocals, English chorus, translated chorus, bilingual lyrics') : '',
     artistCast.count > 1 ? 'single vocalist, identical vocal timbre for every singer, blended ensemble lead, unison lead vocals, choir lead, group chant replacing solos, same singer across all tags' : '',
     useExternalVoiceMix ? 'vocals, singing, spoken voice' : '',
     forceInstrumental ? 'vocals, singing, lyrics, sung words, spoken words, rap lead, narration, choir lead, group chant' : '',

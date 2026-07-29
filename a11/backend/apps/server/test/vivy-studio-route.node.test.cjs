@@ -7939,3 +7939,32 @@ test('Vivy Suno lyrics are clamped under the 5000-char custom mode limit at a se
   const shortLyrics = '[Verse]\nCourt et propre';
   assert.equal(clampVivySunoLyricsLength(shortLyrics), shortLyrics);
 });
+
+
+test('Mode ricain: buildVivySunoPayload verrouille l anglais americain quand language=en/americanMode, francais sinon', () => {
+  const baseInput = {
+    songSource: 'American album, west coast ride',
+    songArtists: ['vivy'],
+    vocalCast: 'Solo Vivy',
+    songMood: 'west coast hip-hop, g-funk synth, warm bass, crisp drums',
+    songText: '[Intro]\nNight ride on the PCH\n[Verse]\nCruising the 405 at sunset\n[Chorus]\nCalifornia dreaming',
+  };
+
+  // US / album americain: Suno doit recevoir un verrou anglais, pas francais.
+  const usPayload = buildVivySunoPayload({ ...baseInput, language: 'en' });
+  assert.match(usPayload.style, /English lyrics only/i);
+  assert.match(usPayload.style, /American English vocals/i);
+  assert.doesNotMatch(usPayload.style, /French lyrics only/i);
+  // Et le negatif bascule: on evite le francais, pas l anglais.
+  assert.ok(/French lyrics/i.test(usPayload.negativeTags || usPayload.style || usPayload.negative_tags || ''), 'negatif evite le francais en mode US');
+
+  // Pareil via le drapeau americanMode.
+  const amPayload = buildVivySunoPayload({ ...baseInput, americanMode: true });
+  assert.match(amPayload.style, /English lyrics only/i);
+  assert.doesNotMatch(amPayload.style, /French lyrics only/i);
+
+  // Par defaut (fr): verrou francais conserve, anglais evite -- pas de regression.
+  const frPayload = buildVivySunoPayload(baseInput);
+  assert.match(frPayload.style, /French lyrics only/i);
+  assert.doesNotMatch(frPayload.style, /English lyrics only/i);
+});
