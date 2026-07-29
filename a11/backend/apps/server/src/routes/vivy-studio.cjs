@@ -4428,7 +4428,11 @@ function getVivySmallTalkReply(message = '', { fileLine = '' } = {}) {
 
 function buildVivyGeneralChatFallbackReply({ message = '', current = '', historyText = '', fileLine = '' } = {}) {
   const currentFolded = foldTextForLookup(message);
-  const folded = foldTextForLookup(`${historyText}\n${message}`);
+  // Le secours repond au dernier contexte, pas une phrase generique. On parle du fond
+  // (le sujet concret du dernier message), puis on propose une action seulement si elle
+  // aide. Aucun ajustement interne, aucun echo de directive, aucun wrapper meta.
+  // Djeff: « si le grand modele ne repond pas, le secours doit quand meme repondre au
+  // sujet, pas sortir une phrase generique ».
   const angle = (() => {
     if (isVivyNossenLyricsMusicBugMessage(message)) {
       return buildVivyNossenLyricsMusicBugReply();
@@ -4436,32 +4440,18 @@ function buildVivyGeneralChatFallbackReply({ message = '', current = '', history
     if (isVivyMusicGenerationRepairMessage(message)) {
       return buildVivyMusicGenerationRepairReply();
     }
-    if (/\b(codex|kiro|claude|chatgpt|local)\b/.test(currentFolded)
-      && /\b(que|quoi|dire|message|transmets|rapporte|previens|préviens)\b/.test(currentFolded)) {
-      return [
-        "Dis à Codex : Vivy doit rester en chat vivant quand on utilise Envoyer.",
-        "Si le grand modèle ne répond pas, le secours doit quand même répondre au sujet, pas sortir une phrase générique.",
-        "Les ajustements internes doivent rester invisibles côté utilisateur; Vivy doit parler du fond, puis proposer une action seulement si elle aide.",
-      ].join('\n');
-    }
-    if (/\b(audio|son|d40|v6|supreme|mix|grain|harmonique|resonance|résonance|poids)\b/.test(currentFolded)) {
-      return "Sur l'audio, je te suis: dis-moi ce que tu entends et ce que tu veux ajuster, et on compare le grain, la présence et la résonance ensemble.";
-    }
-    if (/\b(site|bug|route|routage|prod|deploy|deploiement|déploiement|interface|bouton|menu)\b/.test(currentFolded)) {
-      return "Pour ce point, on avance simplement: ce qui s'affiche, ce qui devrait s'afficher, puis le plus petit correctif vérifiable.";
-    }
-    if (!isVivySunoPromptRequest(message, historyText)
-      && /\b(pense|avis|idee|idée|theorie|théorie|intuition|comprendre)\b/.test(currentFolded)) {
-      return "Mon avis franc: c'est une vraie idée de travail. Je peux être d'accord, douter, ou te proposer un test concret.";
-    }
     if (isVivySoftSongIdeaMessage(message)) {
       return buildVivySoftSongIdeaChatReply({ message, historyText });
     }
-    const subject = cleanOneLine(current || summarizeChatMessage(message), 'ton dernier message', 180);
-    return [
-      `Je te suis sur ça: ${subject}`,
-      "Je reste avec le fond avant de transformer en sortie. Dis-moi ce qui compte le plus dans l'idée, et je garde ce centre-là.",
-    ].join('\n');
+    // Relay vers Codex/agent: on transmet, on ne repete pas la directive mot pour mot.
+    if (/\b(codex|kiro|claude|chatgpt|local)\b/.test(currentFolded)
+      && /\b(que|quoi|dire|message|transmets|rapporte|previens|préviens|dis|dit)\b/.test(currentFolded)) {
+      return "Je transmets à Codex.";
+    }
+    // Sujet d'abord, puis une seule question concrete liee au sujet. Pas de phrase
+    // decrochee, pas de « je te suis sur ça » ni de meta sur le fond.
+    const subject = cleanOneLine(current || summarizeChatMessage(message), 'ton dernier message', 200);
+    return `Sur ${subject} : qu'est-ce que tu veux en sortir, exactement ? Je pars de là.`;
   })();
 
   return cleanText([
