@@ -5338,6 +5338,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   ));
   const [songCastingAuto, setSongCastingAuto] = useState(initialDraft.songCastingAuto !== false);
   const [songMood, setSongMood] = useState(String(initialDraft.songMood || ""));
+  const [songAmericanMode, setSongAmericanMode] = useState(Boolean(initialDraft && initialDraft.songAmericanMode));
   const [songText, setSongText] = useState(String(initialDraft.songText || ""));
   const [sunoSessionKey, setSunoSessionKey] = useState(() => readVivySessionSunoKey());
   const [shareTarget, setShareTarget] = useState(String(initialDraft.shareTarget || "YouTube"));
@@ -7303,6 +7304,15 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                 />
                 <span>Routage automatique du casting et de la couleur depuis le canevas</span>
               </label>
+              <label className="vivy-studio-inline-option">
+                <input
+                  type="checkbox"
+                  checked={songAmericanMode}
+                  disabled={!hasSession}
+                  onChange={(event) => { const next = event.target.checked; setSongAmericanMode(next); try { writeVivyStudioDraft({ ...(readVivyStudioDraft() || {}), songAmericanMode: next }); } catch {} }}
+                />
+                <span>Mode ricain — album US (paroles et voix en anglais américain)</span>
+              </label>
               <fieldset className="vivy-studio-artist-fieldset">
                 <legend>Casting vocal</legend>
 
@@ -7439,7 +7449,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                   value={songMood}
                   disabled={!hasSession}
                   onChange={(event) => setSongMood(event.target.value)}
-                  placeholder="Laisse vide pour que Vivy choisisse depuis la matière."
+                  placeholder="Laisse vide pour que Vivy choisisse. Drift : tu peux mélanger 3-4 styles et des instrus qui se chevauchent."
                 />
               </label>
               <label>
@@ -8765,12 +8775,18 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       const sunoSessionKey = readVivySessionSunoKey();
       const activeSessionName = getActiveSessionName(activeChatSessionId);
       const vivyLanguage = normalizeA11LanguageCode(getAuthAccountLanguage(localStorage.getItem("a11:language") || "fr"));
+      // launchNossenBanger est hors du scope du state songAmericanMode: on lit le drapeau
+      // depuis le draft (stockage partage), pas depuis le state React.
+      const americanMode = Boolean((readVivyStudioDraft() || {}).songAmericanMode);
+      const songLanguage = americanMode ? "en" : vivyLanguage;
       if (songWorkspace.castingAuto && launchReadiness.source.trim()) {
         setStatus(`${productionLabel}: routage du canevas...`);
         const routingPlan = await routeVivyNossenComposition({
           canvas: launchReadiness.source,
           notes: useCompositionWorkspace ? songWorkspace.notes || undefined : undefined,
           songText: useCompositionWorkspace ? songWorkspace.canvas || undefined : undefined,
+          americanMode,
+          language: songLanguage,
           sessionId: activeChatSessionId,
           conversationId,
         });
@@ -8816,7 +8832,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           ].join(" ");
         lyricsPayload = await chatWithVivy({
           mode: "song",
-          language: vivyLanguage,
+          language: songLanguage,
+          americanMode,
           conversationId,
           sessionId: activeChatSessionId,
           sessionName: activeSessionName,
@@ -8902,7 +8919,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       };
       const payload = await runVivyStudioProduction({
         mode: "song",
-        language: vivyLanguage,
+        language: songLanguage,
+        americanMode,
         conversationId,
         sessionId: activeChatSessionId,
         sessionName: activeSessionName,

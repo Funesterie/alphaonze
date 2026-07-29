@@ -2980,6 +2980,7 @@ export type VivyStudioProductionInput = {
   artistCount?: number;
   singerCount?: number;
   songMood?: string;
+  americanMode?: boolean;
   songTitle?: string;
   lyrics?: string;
   songText?: string;
@@ -3350,6 +3351,7 @@ export async function chatWithVivy(
     disableSongcraftFallback?: boolean;
     allowEmergencySongcraftFallback?: boolean;
     internalSongGeneration?: boolean;
+    americanMode?: boolean;
   }
 ): Promise<VivyStudioProductionResult> {
   const res = await authFetch(getApiUrl('/api/vivy/studio/chat'), {
@@ -3403,6 +3405,8 @@ export async function routeVivyNossenComposition(input: {
   message?: string;
   sessionId?: string;
   conversationId?: string;
+  americanMode?: boolean;
+  language?: string;
 }): Promise<{ ok: boolean; artists: string[]; songMood: string; model?: string; provider?: string }> {
   const res = await authFetch(getApiUrl('/api/vivy/studio/nossen-route'), {
     method: 'POST',
