@@ -20,3 +20,10 @@ test("D40 downloads prefer the token-bearing share URL", () => {
     /const d40DownloadUrl = String\(d40\.shareUrl \|\| d40\.audioUrl \|\| ""\)\.trim\(\);/
   );
 });
+
+
+test("sanitizeVivyNossenSongSeed normalise les traits d''union Unicode (U+2011) en ASCII", () => {
+  // gpt-oss emet U+2011 (non-breaking hyphen) dans [Pre\u2011Chorus]; le parseur de sections
+  // a trait d''union ASCII ne le matchait pas -> paroles_vivy_invalides. Vu en prod 29/07/2026.
+  assert.ok(appSource.includes("replace(/[\\u2010-\\u2015"), "normalisation des traits d''union Unicode absente de sanitizeVivyNossenSongSeed");
+});

@@ -141,6 +141,13 @@ function restoreVivyFrenchSongAccents(value = '') {
       return current;
     })
     .join('\n')
+    // Les modeles de paroles (notamment gpt-oss) emettent des traits d'union Unicode
+    // (U+2011 non-breaking hyphen, U+2010-2015, U+2212 minus, variantes pleine chasse)
+    // que nos parseurs de sections ne reconnaissent pas: [Pre‑Chorus] n’etait compte
+    // ni par le faible-check (looksLikeWeakSongwritingReply) ni par isValidVivyNossenSongSeed,
+    // et Suno non plus ne le decoupait. Vu en prod le 29/07/2026 dans [Pre‑Chorus - Djeff].
+    // On ramene tous ces separateurs au trait d’union ASCII avant tout decoupage/envoi.
+    .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-')
     .normalize('NFC');
 }
 

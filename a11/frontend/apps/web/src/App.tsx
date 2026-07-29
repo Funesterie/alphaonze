@@ -4048,7 +4048,12 @@ function buildVivyNossenBangerProductionBrief(
 }
 
 function sanitizeVivyNossenSongSeed(value = "") {
+  // Les modeles de paroles (notamment gpt-oss) emettent U+2011 (trait d'union insécable)
+  // et autres separateurs Unicode dans les balises de section ([Pre‑Chorus]); nos regex a
+  // trait d'union ASCII ne les matchaient pas et isValidVivyNossenSongSeed sous-comptait les
+  // sections -> paroles_vivy_invalides. Vu en prod le 29/07/2026. On ramene tout en ASCII.
   const lines = toUnicodeText(value, VIVY_STUDIO_SONG_MAX_CHARS)
+    .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-")
     .split(/\r?\n/)
     .filter((line) => {
       const trimmed = line.trim();
@@ -4480,7 +4485,15 @@ function readVivyStudioCompositionWorkspace() {
     };
   }
   const instrumentalOnly = draft.instrumentalOnly === true;
-  const catalogVoiceName = String(draft.catalogVoiceName || "").trim();
+  // Une voix premium ne s'applique que si elle est SELECTIONNEE. On lisait ici
+  // draft.catalogVoiceName, qui est le champ de saisie d'inscription au catalogue: un
+  // nom tape une seule fois y restait indefiniment et repartait a chaque production,
+  // sans qu'aucune case ne soit cochee. Djeff, 29/07/2026: « le catalogue premium
+  // n'etait meme pas coche et ca a fail avec l'erreur persona. » La selection fait
+  // foi, et sans identifiant selectionne il n'y a pas de voix premium.
+  const catalogVoiceName = String(draft.selectedCatalogVoiceId || "").trim()
+    ? String(draft.selectedCatalogVoiceName || "").trim()
+    : "";
   // Casting vide volontaire: sans fallback vide, normalizeVivyStudioArtists remet le
   // defaut et NOSSEN se retrouvait avec des chanteurs que l'utilisateur avait decoches.
   const casteVideVoulu = instrumentalOnly || Boolean(catalogVoiceName);
@@ -5485,6 +5498,11 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       voiceFileName,
       voiceReferenceId,
       selectedCatalogVoiceId,
+      // Nom de la voix REELLEMENT selectionnee. A ne pas confondre avec
+      // catalogVoiceName juste dessous, qui est le champ de saisie servant a INSCRIRE
+      // une nouvelle voix au catalogue: il garde ce que l'utilisateur a tape la
+      // derniere fois, meme apres publication, et ne designe aucune selection.
+      selectedCatalogVoiceName: activeCatalogVoiceName,
       instrumentalOnly,
       catalogVoiceName,
       publishVoiceToCatalog,
@@ -5504,7 +5522,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       tokenPresent: Boolean(shareToken.trim()),
       vivyOutput: normalizeVivyStudioOutputForState(vivyOutput),
     });
-  }, [activeMode, voiceTool, voiceInstruction, voiceFileName, voiceReferenceId, selectedCatalogVoiceId, instrumentalOnly, catalogVoiceName, publishVoiceToCatalog, catalogConsentAccepted, voiceLearningPersona, voiceLearningFileName, voiceLearningTranscript, personalSunoVoiceLabel, songSource, songArtists, songCastingAuto, songMood, songText, shareTarget, shareUrl, shareInstruction, shareToken, vivyOutput]);
+  }, [activeMode, voiceTool, voiceInstruction, voiceFileName, voiceReferenceId, selectedCatalogVoiceId, activeCatalogVoiceName, instrumentalOnly, catalogVoiceName, publishVoiceToCatalog, catalogConsentAccepted, voiceLearningPersona, voiceLearningFileName, voiceLearningTranscript, personalSunoVoiceLabel, songSource, songArtists, songCastingAuto, songMood, songText, shareTarget, shareUrl, shareInstruction, shareToken, vivyOutput]);
 
   useEffect(() => {
     writeVivySessionSunoKey(sunoSessionKey);
