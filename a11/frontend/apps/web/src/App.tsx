@@ -3946,7 +3946,11 @@ function buildVivyNossenCompositionContract(
   } = {}
 ) {
   const castLabel = describeVivyNossenBangerCast(artists);
-  const mood = toUnicodeLine(options.routedMood || inferVivyNossenSonicMood(readiness, artists), "", 420);
+  // Par defaut la couleur sonore est LIBRE: on ne verrouille QUE le choix route par
+  // Vivy. Inferer une couleur quand Vivy n'en a pas choisie, c'est ecrire « Couleur
+  // sonore verrouillee: ... » a sa place. Djeff: « par defaut faut laisser libre la
+  // couleur sonore pour que vivy decide ».
+  const mood = toUnicodeLine(options.routedMood || "", "", 420);
   const structure = readiness.structureHints.length
     ? readiness.structureHints.slice(0, 4).join(" / ")
     : "structure chanson longue: intro, couplets, refrains répétés, pont, montée finale, outro";
@@ -3977,10 +3981,14 @@ function buildVivyNossenCompositionContract(
 function buildVivyNossenLyricsRequest(
   readiness: VivyNossenBangerReadiness,
   artists: VivyStudioArtistId[],
-  compositionContract = buildVivyNossenCompositionContract(readiness, artists)
+  compositionContract = buildVivyNossenCompositionContract(readiness, artists),
+  routedMood = ""
 ) {
   const useBangerWord = wantsVivyNossenBangerWord(readiness.source);
-  const sonicMood = inferVivyNossenSonicMood(readiness, artists);
+  // La direction sonore n'est que le choix route par Vivy; sans routage, le canevas
+  // reste libre (styleLine vide). Djeff: « par defaut faut laisser libre la couleur
+  // sonore pour que vivy decide ».
+  const sonicMood = toUnicodeLine(routedMood, "", 420);
   const styleLine = sonicMood
     ? `Direction sonore à ressentir sans la chanter: ${sonicMood}.`
     : "";
@@ -4020,11 +4028,15 @@ function buildVivyNossenLyricsRequest(
 function buildVivyNossenBangerProductionBrief(
   readiness: VivyNossenBangerReadiness,
   artists: VivyStudioArtistId[],
-  compositionContract = buildVivyNossenCompositionContract(readiness, artists)
+  compositionContract = buildVivyNossenCompositionContract(readiness, artists),
+  routedMood = ""
 ) {
   const useBangerWord = wantsVivyNossenBangerWord(readiness.source);
   const hasUserStyleHints = readiness.styleHints.length > 0;
-  const sonicMood = inferVivyNossenSonicMood(readiness, artists);
+  // Le style sonore du brief est le choix route par Vivy, rien d'autre. Sans routage,
+  // on laisse libre (styleLine vide) plutot que d'inferer une couleur a sa place.
+  // Djeff: « par defaut faut laisser libre la couleur sonore pour que vivy decide ».
+  const sonicMood = toUnicodeLine(routedMood, "", 420);
   const styleLine = sonicMood
     ? `${hasUserStyleHints ? "Style sonore utilisateur" : "Style sonore choisi par Vivy depuis la matière"} (direction uniquement, jamais paroles): ${sonicMood}.`
     : "";
@@ -4472,6 +4484,21 @@ function writeVivyStudioDraft(value: Record<string, unknown>) {
   }
 }
 
+/**
+ * Le nom de la voix premium est DERIVE du catalogue, charge en asynchrone. Tant qu'il
+ * n'est pas arrive — au rechargement de la page, ou si le service catalogue repond mal —
+ * le nom derive vaut "". L'ecrire tel quel effacait le nom deja memorise: NOSSEN partait
+ * alors sans voix premium, avec les cases officielles grisees et aucun signal a l'ecran.
+ * On ne persiste donc jamais un vide derive tant qu'un identifiant est selectionne.
+ */
+function resolveNomPremiumAPersister(selectedId: string, nomDerive: string) {
+  if (!String(selectedId || "").trim()) return "";
+  const derive = String(nomDerive || "").trim();
+  if (derive) return derive;
+  const draft = readVivyStudioDraft();
+  return String(draft?.selectedCatalogVoiceName || "").trim();
+}
+
 function readVivyStudioCompositionWorkspace() {
   const draft = readVivyStudioDraft();
   if (!draft || typeof draft !== "object") {
@@ -4496,7 +4523,10 @@ function readVivyStudioCompositionWorkspace() {
     : "";
   // Casting vide volontaire: sans fallback vide, normalizeVivyStudioArtists remet le
   // defaut et NOSSEN se retrouvait avec des chanteurs que l'utilisateur avait decoches.
-  const casteVideVoulu = instrumentalOnly || Boolean(catalogVoiceName);
+  // Indexe sur l'IDENTIFIANT selectionne, comme effectiveSongArtists et toggleSongArtist:
+  // sur le nom, un catalogue pas encore charge ramenait le solo Vivy par defaut alors que
+  // l'utilisateur avait vide les cases au profit d'une voix premium.
+  const casteVideVoulu = instrumentalOnly || Boolean(String(draft.selectedCatalogVoiceId || "").trim());
   return {
     canvas: toUnicodeText(String(draft.songText || ""), VIVY_STUDIO_SONG_MAX_CHARS).trim(),
     notes: toUnicodeText(String(draft.songMood || ""), 800).trim(),
@@ -5502,7 +5532,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       // catalogVoiceName juste dessous, qui est le champ de saisie servant a INSCRIRE
       // une nouvelle voix au catalogue: il garde ce que l'utilisateur a tape la
       // derniere fois, meme apres publication, et ne designe aucune selection.
-      selectedCatalogVoiceName: activeCatalogVoiceName,
+      selectedCatalogVoiceName: resolveNomPremiumAPersister(selectedCatalogVoiceId, activeCatalogVoiceName),
       instrumentalOnly,
       catalogVoiceName,
       publishVoiceToCatalog,
@@ -8766,7 +8796,10 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         workspaceNotes: useCompositionWorkspace ? songWorkspace.notes : "",
       });
       // Vivy remplit la couleur sonore (songMood draft) via NOSSEN pour la persister et l'afficher.
-      const vivyRoutedColor = (routedMood || inferVivyNossenSonicMood(routedReadiness, artists) || "").trim();
+      // On ne persiste dans le draft QUE la couleur sonore choisie par Vivy (routage).
+      // Inferer une couleur quand Vivy n'en a pas choisie, c'est la mettre a sa place.
+      // Djeff: « par defaut faut laisser libre la couleur sonore pour que vivy decide ».
+      const vivyRoutedColor = (routedMood || "").trim();
       if (vivyRoutedColor) {
         try { writeVivyStudioDraft({ ...(readVivyStudioDraft() || {}), songMood: vivyRoutedColor }); } catch {}
       }
@@ -8789,7 +8822,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           sessionName: activeSessionName,
           files: apiFiles,
           history: productionHistory,
-          message: [buildVivyNossenLyricsRequest(routedReadiness, artists, sharedCompositionContract), repairInstruction].filter(Boolean).join("\n\n"),
+          message: [buildVivyNossenLyricsRequest(routedReadiness, artists, sharedCompositionContract, routedMood), repairInstruction].filter(Boolean).join("\n\n"),
           songText: launchReadiness.source,
           songMood: routedMood || undefined,
           songArtists: artists,
@@ -8827,12 +8860,16 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         if (!validCast) throw new Error("paroles_vivy_casting_incomplet");
         throw new Error("paroles_vivy_invalides");
       }
-      const productionBrief = buildVivyNossenBangerProductionBrief(routedReadiness, artists, sharedCompositionContract);
+      const productionBrief = buildVivyNossenBangerProductionBrief(routedReadiness, artists, sharedCompositionContract, routedMood);
       const requestedSonicMood = inferVivyNossenSonicMood({
         ...routedReadiness,
         styleHints: routedMood ? [routedMood] : routedReadiness.styleHints,
       }, artists);
-      const songMood = requestedSonicMood || undefined;
+      // Par defaut la couleur sonore est LIBRE: on n'envoie a la production que le choix
+      // route par Vivy (routedMood). L'inference (requestedSonicMood) ne reste qu'au bord
+      // Suno, pour l'extension d'un morceau deja lance -- jamais pour choisir a la place
+      // de Vivy. Djeff: « par defaut faut laisser libre la couleur sonore pour que vivy decide ».
+      const songMood = routedMood || undefined;
       setStatus(`${productionLabel}: paroles prêtes, ${selectedMusicProviderLabel} démarre...`);
       const waitForNossenMusicJob = async (safeTaskId: string, label = selectedMusicProviderLabel) => {
         const pause = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));

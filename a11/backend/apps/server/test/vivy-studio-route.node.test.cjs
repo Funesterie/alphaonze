@@ -3732,7 +3732,7 @@ test('Vivy NOSSEN asks Vivy for lyrics before Suno sees production', () => {
   assert.doesNotMatch(launchBlock, /lyricsPayload\.assistant/);
   assert.doesNotMatch(launchBlock, /lyricsPayload\.content/);
   assert.match(launchBlock, /const productionLabel = useBangerWord \? "NOSSEN Banger" : "NOSSEN"/);
-  assert.match(launchBlock, /buildVivyNossenLyricsRequest\(routedReadiness,\s*artists,\s*sharedCompositionContract\)/);
+  assert.match(launchBlock, /buildVivyNossenLyricsRequest\(routedReadiness,\s*artists,\s*sharedCompositionContract,\s*routedMood\)/);
   assert.match(launchBlock, /songText:\s*launchReadiness\.source/);
   assert.match(launchBlock, /useWorkspaceForSong:\s*useCompositionWorkspace/);
   assert.match(launchBlock, /disableSongcraftFallback:\s*true/);
@@ -4135,8 +4135,8 @@ test('Vivy NOSSEN routes casting and sonic color from Composition before lyrics'
   assert.match(launchBlock, /routedMood = useCompositionWorkspace[\s\S]{0,120}routingPlan\.songMood/);
   assert.match(launchBlock, /uniqueVivyNossenLines\(\[routedMood,\s*\.\.\.launchReadiness\.styleHints\]/);
   assert.match(launchBlock, /const sharedCompositionContract = buildVivyNossenCompositionContract\(routedReadiness,\s*artists/);
-  assert.match(launchBlock, /buildVivyNossenLyricsRequest\(routedReadiness,\s*artists,\s*sharedCompositionContract\)/);
-  assert.match(launchBlock, /buildVivyNossenBangerProductionBrief\(routedReadiness,\s*artists,\s*sharedCompositionContract\)/);
+  assert.match(launchBlock, /buildVivyNossenLyricsRequest\(routedReadiness,\s*artists,\s*sharedCompositionContract,\s*routedMood\)/);
+  assert.match(launchBlock, /buildVivyNossenBangerProductionBrief\(routedReadiness,\s*artists,\s*sharedCompositionContract,\s*routedMood\)/);
   assert.match(launchBlock, /songArtists:\s*artists/);
   assert.match(launchBlock, /songMood,/);
   assert.match(launchBlock, /limitVivyNossenPublicArtists/);
