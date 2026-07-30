@@ -6102,7 +6102,23 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
     material
   );
   const sessionContext = resolveVivyInputSession(input);
-  const llmBundles = createVivyOpenAIClients({ mode: 'song', purpose: 'routing' });
+  let llmBundles = createVivyOpenAIClients({ mode: 'song', purpose: 'routing' });
+  // Routeur NOSSEN sur un vrai modele cloud quand VIVY_NOSSEN_ROUTER_MODEL est set.
+  // Djeff: « envoie chier le 4o, mets open router avec gpt sol ». gpt-4o-mini renvoyait
+  // un plan vide (invalid_llm_json) -> fallback deterministe -> style generique mou.
+  // On prefere un bundle OpenRouter dedie (gpt-5/solid) en tete, sans toucher au chat
+  // ni a la generation d'images. C'est Vivy qui route, avec un vrai cerveau.
+  const nossRouterModel = cleanOneLine(process.env.VIVY_NOSSEN_ROUTER_MODEL, '', 120);
+  if (nossRouterModel) {
+    const routerKey = String(process.env.VIVY_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || '').trim();
+    const routerBase = cleanOneLine(process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1', '', 300).replace(/\/+$/, '');
+    if (routerKey && routerBase) {
+      llmBundles = [
+        { baseURL: routerBase, apiKey: routerKey, model: nossRouterModel, provider: 'openrouter', source: 'openrouter-openai-compatible', maxRetries: 0 },
+        ...llmBundles,
+      ];
+    }
+  }
   // Defaut passe a true le 28/07. Djeff: « c'est Vivy qui doit piloter les chanteurs et
   // les couleurs sonores, elle doit adapter en fonction du theme et de la demande ».
   //
