@@ -1232,6 +1232,18 @@ async function processClosedPhaseD40V8({
     }
   }
 
+  // V10 Boom : couche bass/phase en plan complexe (axe m = fermeture inverse), sur le
+  // canon Prime Spiral. Off-by-default (VIVY_V10_BOOM_ENABLED). Best-effort : si la
+  // passe echoue, on garde le master V8 et on avertit -- la mastering de base reste safe.
+  if (boolOption(process.env.VIVY_V10_BOOM_ENABLED, false)) {
+    try {
+      const { runV10Boom } = require('./v10-boom.cjs');
+      await runV10Boom(outputPath, outputPath, { runFfmpeg, timeoutMs });
+    } catch (error) {
+      console.warn('[V10Boom] passe echouee, master V8 conserve: %s', String(error.message || error).slice(0, 160));
+    }
+  }
+
   return {
     method: built.method,
     state: built.state,
