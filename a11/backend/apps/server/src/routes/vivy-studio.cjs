@@ -275,10 +275,21 @@ function parseVivyChatMode(value) {
 
 function resolveVivyChatMode(input = {}, message = '') {
   const rawMode = cleanOneLine(input.mode, '', 24);
-  if (rawMode && parseVivyChatMode(rawMode) !== 'chat') return parseVivyChatMode(rawMode);
+  const parsed = rawMode ? parseVivyChatMode(rawMode) : '';
+  // Mode explicite non-chat (song/voice/share): on l'honore tel quel.
+  if (parsed && parsed !== 'chat') return parsed;
+  // Envoyer = mode chat explicite: Vivy reste en chat vivant. On ne promeut PAS en
+  // chanson sur une simple demande d'ecriture -- la chanson se lance depuis le mode
+  // Composition/NOSSEN, pas depuis le chat Envoyer. Djeff: « Vivy doit rester en chat
+  // vivant quand on utilise Envoyer ». Seule exception: des paroles completes collees
+  // -- c'est une entree chanson, pas une conversation.
+  if (parsed === 'chat') {
+    if (looksLikeCompleteLyrics(message)) return 'song';
+    return 'chat';
+  }
+  // Sans mode explicite: on inferre, et la promotion chanson reste possible ici.
   if (looksLikeCompleteLyrics(message)) return 'song';
   if (isDirectSongwritingRequest(message)) return 'song';
-  if (rawMode) return 'chat';
   return inferVivyChatMode(cleanVivyMessageForIntent(message));
 }
 

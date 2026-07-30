@@ -5322,8 +5322,11 @@ test('Vivy chat song mode exposes paste-ready lyrics without singer tags', async
 });
 
 test('Vivy song fallback does not sing provider prompt fragments', async () => {
+  // Nouveau contrat: en chat (Envoyer) Vivy reste en chat vivant. Pour demander les
+  // paroles, on est en mode song explicite -- ce test verifie toujours le filtrage des
+  // fragments de prompt, mais via le mode song.
   const result = await buildVivyAiChat({
-    mode: 'chat',
+    mode: 'song',
     conversationId: 'vivy-prompt-fragment-not-lyrics',
     message: "j'ai pas toute la réponse, tu peux envoyer le reste avec les paroles ?",
     history: [
