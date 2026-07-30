@@ -9062,6 +9062,88 @@ function extractSunoMedia(payload = {}, options = {}) {
   const tracks = collectSunoTracks(payload, []);
   return selectVivySunoDirectorTrack(tracks, options);
 }
+// --- Selection Suno par qualite AUDIO reelle (pas seulement des mots-cles) ---
+// Djeff: « l'autre sortie suno etait clairement mieu ». Le director syncope ci-dessus
+// score des metadonnees et prioritise la duree en long-form: il prenait la sortie la
+// plus longue, pas celle qui sonnait le mieux. On probe maintenant chaque variation
+// avec ffmpeg (clip/saturation, niveau RMS, plage dynamique) et on trie par qualite
+// audio d'abord, duree en tiebreaker seulement. Best-effort: si le probe echoue, score
+// neutre et on retombe sur le director metadata.
+async function probeVivySunoAudioQuality(audioUrl) {
+  if (!audioUrl || !/^https?:\/\//i.test(audioUrl)) return null;
+  const ffmpeg = String(getVivyFfmpegBinary && getVivyFfmpegBinary() || 'ffmpeg').trim() || 'ffmpeg';
+  const timeoutMs = Math.max(8000, Number(process.env.VIVY_SUNO_AUDIO_PROBE_TIMEOUT_MS || 30000) || 30000);
+  // On analyse les 45 premieres secondes (representatif pour loudness/DR/clip), plus vite.
+  const args = ['-hide_banner', '-nostats', '-t', '45', '-i', audioUrl, '-vn', '-af', 'volumedetect,astats=metadata=1:reset=0', '-f', 'null', '-'];
+  return new Promise((resolve) => {
+    let stderr = '';
+    let child;
+    try { child = spawn(ffmpeg, args, { windowsHide: true }); }
+    catch (_) { resolve(null); return; }
+    const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch (_) {} resolve(null); }, timeoutMs);
+    child.stderr.on('data', (chunk) => { stderr += String(chunk || ''); });
+    child.on('error', () => { clearTimeout(timer); resolve(null); });
+    child.on('close', () => {
+      clearTimeout(timer);
+      try {
+        const num = (re) => { const m = stderr.match(re); return m ? parseFloat(m[1]) : undefined; };
+        const maxVolume = num(/max_volume:\s*(-?[0-9.]+)\s*dB/);
+        const meanVolume = num(/mean_volume:\s*(-?[0-9.]+)\s*dB/);
+        const peakDb = num(/Peak level dB:\s*(-?[0-9.]+)/);
+        const rmsDb = num(/RMS level dB:\s*(-?[0-9.]+)/);
+        const drDb = num(/Dynamic range dB:\s*([0-9.]+)/);
+        const clip = (Number.isFinite(maxVolume) && maxVolume >= -0.2) || (Number.isFinite(peakDb) && peakDb >= -0.2);
+        let score = 0.68;
+        if (clip) score -= 0.32; else score += 0.10;
+        const rms = Number.isFinite(rmsDb) ? rmsDb : meanVolume;
+        if (Number.isFinite(rms)) {
+          if (rms >= -20 && rms <= -7) score += 0.10;       // niveau sain
+          else if (rms < -26) score -= 0.12;                 // trop faible
+          else if (rms > -4) score -= 0.12;                  // ecrase/sature
+        }
+        if (Number.isFinite(drDb)) {
+          if (drDb >= 12) score += 0.10;                     // dynamique vivante
+          else if (drDb < 6) score -= 0.08;                  // sur-comprime
+        }
+        score = Math.max(0, Math.min(1, score));
+        resolve({ score, clip: !!clip, maxVolume, meanVolume, rms, dynamicRange: drDb });
+      } catch (_) { resolve(null); }
+    });
+  });
+}
+
+async function selectVivySunoDirectorTrackWithAudio(tracks = [], options = {}) {
+  // Une seule sortie (extension Suno): pas de probe, on retourne le director synchrone.
+  if (tracks.length <= 1) return selectVivySunoDirectorTrack(tracks, options);
+  const targetDurationSeconds = normalizeVivySunoTargetDuration(options);
+  const preferLongForm = options.preferLongForm === true || targetDurationSeconds >= 240;
+  const minLongSeconds = preferLongForm ? Math.min(180, Math.max(60, Math.round(targetDurationSeconds * 0.6))) : 0;
+  const scored = await Promise.all(tracks.map(async (track, index) => {
+    const directorScore = scoreVivySunoDirectorTrack(track);
+    const probeFn = options.probeAudio || probeVivySunoAudioQuality;
+    const probe = await probeFn(track.audioUrl || track.audio_url || track.url);
+    const audioScore = probe ? probe.score : 0.5;
+    return { ...track, directorScore, directorRank: index + 1, audioProbe: probe, audioScore };
+  }));
+  // Long-form: on exclut les pistes trop courtes pour etre un vrai morceau, sans
+  // prioriser la duree brute au-dessus de la qualite. Si tout est trop court, on garde tout.
+  const eligible = preferLongForm
+    ? scored.filter((t) => (Number(t.durationSeconds || t.duration || 0) || 0) >= minLongSeconds)
+    : scored;
+  const pool = eligible.length ? eligible : scored;
+  return pool.sort((left, right) => {
+    const audioDelta = Number(right.audioScore || 0) - Number(left.audioScore || 0);
+    if (Math.abs(audioDelta) > 0.04) return audioDelta;                 // qualite audio d'abord
+    const scoreDelta = Number(right.directorScore?.score || 0) - Number(left.directorScore?.score || 0);
+    if (Math.abs(scoreDelta) > 0.5) return scoreDelta;                 // puis score metadata
+    return Number(right?.durationSeconds || right?.duration || 0) - Number(left?.durationSeconds || left?.duration || 0); // duree tiebreaker
+  })[0] || null;
+}
+
+async function extractSunoMediaWithAudio(payload = {}, options = {}) {
+  const tracks = collectSunoTracks(payload, []);
+  return selectVivySunoDirectorTrackWithAudio(tracks, options);
+}
 
 function readCachedSunoCallback(taskId) {
   const safeTaskId = sanitizeSunoTaskId(taskId);
@@ -9788,7 +9870,7 @@ async function requestSunoMusic(input = {}, req = null) {
   }
 
   const taskId = findSunoTaskId(payload);
-  const readyMedia = extractSunoMedia(payload, {
+  const readyMedia = await extractSunoMediaWithAudio(payload, {
     preferLongForm: wantsVivySunoLongForm(input),
     targetDurationSeconds: normalizeVivySunoTargetDuration(input),
   });
@@ -9961,7 +10043,7 @@ async function requestSunoMusicExtension(input = {}, req = null) {
   }
 
   const taskId = findSunoTaskId(payload);
-  const readyMedia = extractSunoMedia(payload, {
+  const readyMedia = await extractSunoMediaWithAudio(payload, {
     preferLongForm: wantsVivySunoLongForm(input),
     targetDurationSeconds: normalizeVivySunoTargetDuration(input),
   });
@@ -10070,7 +10152,7 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
       providerDetail: detail,
     };
   }
-  const cachedMedia = extractSunoMedia(cached?.payload || {}, {
+  const cachedMedia = await extractSunoMediaWithAudio(cached?.payload || {}, {
     preferLongForm: wantsVivySunoLongForm(input),
     targetDurationSeconds: normalizeVivySunoTargetDuration(input),
   });
@@ -10140,7 +10222,7 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
       providerDetail: detail,
     };
   }
-  const media = extractSunoMedia(payload, {
+  const media = await extractSunoMediaWithAudio(payload, {
     preferLongForm: wantsVivySunoLongForm(input),
     targetDurationSeconds: normalizeVivySunoTargetDuration(input),
   });
@@ -11675,6 +11757,9 @@ module.exports = {
   clampVivySunoLyricsLength,
   buildVivyMurekaPayload,
   extractSunoMedia,
+  extractSunoMediaWithAudio,
+  selectVivySunoDirectorTrackWithAudio,
+  probeVivySunoAudioQuality,
   scoreVivySunoDirectorTrack,
   selectVivySunoDirectorTrack,
   getVivySunoRuntimeStatus,

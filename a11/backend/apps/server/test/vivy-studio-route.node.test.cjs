@@ -7971,3 +7971,34 @@ test('Mode ricain: buildVivySunoPayload verrouille l anglais americain quand lan
   assert.match(frPayload.style, /French lyrics only/i);
   assert.doesNotMatch(frPayload.style, /English lyrics only/i);
 });
+
+
+test('Suno director choisit la sortie qui sonne le mieux (score audio) meme si une autre est plus longue', async () => {
+  const { selectVivySunoDirectorTrackWithAudio } = require('../src/routes/vivy-studio.cjs');
+  // Deux sorties: la longue (280s) sonne mal (clip/sature), la courte (210s) sonne bien.
+  // Avant, le director long-form prenait la plus longue. Maintenant le score audio gagne.
+  const tracks = [
+    { audioUrl: 'https://example/long.mp3', title: 'Long', durationSeconds: 280, model: 'V5_5', prompt: '[Verse]\nLine\n[Chorus]\nHook' },
+    { audioUrl: 'https://example/good.mp3', title: 'Good', durationSeconds: 210, model: 'V5_5', prompt: '[Verse]\nLine\n[Chorus]\nHook' },
+  ];
+  const probeAudio = async (url) => (url.includes('good.mp3')
+    ? { score: 0.88, clip: false }
+    : { score: 0.30, clip: true });
+  const best = await selectVivySunoDirectorTrackWithAudio(tracks, {
+    preferLongForm: true,
+    targetDurationSeconds: 300,
+    probeAudio,
+  });
+  assert.equal(best && best.audioUrl, 'https://example/good.mp3', 'la sortie qui sonne le mieux doit gagner, pas la plus longue');
+});
+
+test('Suno director audio: une seule sortie ne probe pas et retourne le director synchrone', async () => {
+  const { selectVivySunoDirectorTrackWithAudio } = require('../src/routes/vivy-studio.cjs');
+  let probed = false;
+  const best = await selectVivySunoDirectorTrackWithAudio(
+    [{ audioUrl: 'https://example/only.mp3', title: 'Only', durationSeconds: 200, model: 'V5_5', prompt: '[Verse]\nLine' }],
+    { preferLongForm: true, targetDurationSeconds: 300, probeAudio: async () => { probed = true; return { score: 0.9 }; } },
+  );
+  assert.equal(best && best.audioUrl, 'https://example/only.mp3');
+  assert.equal(probed, false, 'pas de probe pour une seule sortie (extension Suno)');
+});
