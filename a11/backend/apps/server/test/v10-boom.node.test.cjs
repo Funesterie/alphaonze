@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { V10_CANON, resolveV10BoomConfig, buildV10BoomFilterGraph, runV10Boom } = require('../src/audio/v10-boom.cjs');
+const { V10_CANON, resolveV10BoomConfig, buildV10BoomFilterGraph, runV10Boom, loadV10Compass, opSym, oppositeArm, nextArmClockwise } = require('../src/audio/v10-boom.cjs');
 
 test('V10 Boom — constantes canon Prime Spiral verrouillees', () => {
   assert.ok(Math.abs(V10_CANON.c7 - 0.029194480637266783) < 1e-12, 'c7 = |jhi|/phi');
@@ -45,4 +45,32 @@ test('V10 Boom — runV10Boom desactive par defaut, active si VIVY_V10_BOOM_ENAB
   assert.equal(on.applied, true);
   assert.equal(called, true);
   assert.ok(Math.abs(on.canon.mgPhase - 0.001554497790530303) < 1e-12);
+});
+
+
+test('V10 Boom — carte orientée canon : croix diagonale, cycle horaire, M reequilibre r/i', () => {
+  // Croix diagonale (pas cartésienne classique) : chaque état dans un quadrant.
+  assert.deepEqual(V10_CANON.orientation['+real'], { h: 'gauche', v: 'haut' });
+  assert.deepEqual(V10_CANON.orientation['+imag'], { h: 'droite', v: 'haut' });
+  assert.deepEqual(V10_CANON.orientation['-real'], { h: 'droite', v: 'bas' });
+  assert.deepEqual(V10_CANON.orientation['-imag'], { h: 'gauche', v: 'bas' });
+  // Cycle horaire : +real -> +imag -> -real -> -imag -> +real.
+  assert.deepEqual(V10_CANON.crossCycle, ['+real', '+imag', '-real', '-imag']);
+  assert.equal(nextArmClockwise('+real'), '+imag');
+  assert.equal(nextArmClockwise('+imag'), '-real');
+  assert.equal(nextArmClockwise('-real'), '-imag');
+  assert.equal(nextArmClockwise('-imag'), '+real');
+  // M reequilibre r/i et i/r : les bras opposés se ferment sur 1 (retombe sur la croix de reference).
+  assert.equal(oppositeArm('+real'), '-real');
+  assert.equal(oppositeArm('+imag'), '-imag');
+  assert.equal(opSym('+real', '-real'), 1);
+  assert.equal(opSym('+imag', '-imag'), 1);
+  assert.equal(opSym('+real', '+imag'), 0);
+  // Boussole chargée avant calcul (pas d'ecran noir) : origin/axes/orientation/state/transition/return.
+  const compass = loadV10Compass('+imag', 0.6);
+  assert.equal(compass.origin, 0);
+  assert.equal(compass.currentState, '+imag');
+  assert.equal(compass.transitionTable['+real'], '+imag');
+  assert.equal(compass.returnRatio, 0.6);
+  assert.equal(compass.researchOnly, true);
 });

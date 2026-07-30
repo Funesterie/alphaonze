@@ -32,7 +32,51 @@ const V10_CANON = {
   grainLow: 0.3694777356929151,                     // ~= 1/e
   // balance_RH(t) = 1 - 2|phase - 1/2| : 1 au centre (ligne critique), 0 aux bords.
   balanceRh(phase) { return 1 - 2 * Math.abs(Number(phase || 0) - 0.5); },
+  // Carte orientée canon (transmis par Djeff/ChatGPT 2026-07-30) : croix DIAGONALE, pas
+  // cartésienne classique. Chaque état dans un quadrant, cycle horaire autour de l'origine.
+  //   +reel = gauche/haut   +imaginaire = droite/haut
+  //   -reel = droite/bas    -imaginaire = gauche/bas
+  // Cycle : +reel -> +imaginaire -> -reel -> -imaginaire -> +reel (horaire).
+  // M reequilibre r/i et i/r (op_sym: bras opposés -> 1) pour retomber sur la croix de
+  // reference. Avant tout calcul on charge la boussole (origin/axes/orientation/state/
+  // transition/return) pour ne pas demarrer écran noir.
+  orientation: {
+    '+real': { h: 'gauche', v: 'haut' },
+    '+imag': { h: 'droite', v: 'haut' },
+    '-real': { h: 'droite', v: 'bas' },
+    '-imag': { h: 'gauche', v: 'bas' },
+  },
+  crossCycle: ['+real', '+imag', '-real', '-imag'], // horaire
+  transitionTable: { '+real': '+imag', '+imag': '-real', '-real': '-imag', '-imag': '+real' },
 };
+
+const V10_CROSS_ARMS = ['+real', '+imag', '-real', '-imag'];
+function oppositeArm(arm) {
+  if (arm === '+real') return '-real';
+  if (arm === '-real') return '+real';
+  if (arm === '+imag') return '-imag';
+  return '+imag';
+}
+// M reequilibre r/i et i/r : les bras opposés de la croix se ferment sur 1 (retombe sur
+// la croix de reference). op_sym(-M,+M)=1, op_sym(-iM,+iM)=1 (Symetrie OP Table).
+function opSym(a, b) { return a === oppositeArm(b) ? 1 : 0; }
+function nextArmClockwise(arm) {
+  const idx = V10_CROSS_ARMS.indexOf(arm);
+  return V10_CROSS_ARMS[(idx + 1) % V10_CROSS_ARMS.length];
+}
+// Charger la boussole avant calcul : origin, axes, orientation, current_state,
+// transition_table, return_ratio. Evite le demarrage écran noir sans repere.
+function loadV10Compass(currentState = '+real', returnRatio = 0.5) {
+  return {
+    origin: 0,
+    axes: { real: 'diagonal', imag: 'diagonal' },
+    orientation: V10_CANON.orientation,
+    currentState,
+    transitionTable: V10_CANON.transitionTable,
+    returnRatio,
+    researchOnly: true,
+  };
+}
 
 function clampNumber(value, min, max, fallback) {
   const numeric = Number(value);
@@ -135,4 +179,8 @@ module.exports = {
   buildV10BoomFilterGraph,
   buildV10BoomArgs,
   runV10Boom,
+  loadV10Compass,
+  opSym,
+  oppositeArm,
+  nextArmClockwise,
 };
