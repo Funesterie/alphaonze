@@ -2733,6 +2733,9 @@ export async function processDoubleHarmonicAudio(
     schemaMix?: number;
   }
 ): Promise<DoubleHarmonicProcessResult> {
+  // V10 Boom est le master D40 canonique. Les versions precedentes restent
+  // accessibles explicitement, mais un appel sans mode ne doit plus retomber sur V1.
+  const requestedMode: DoubleHarmonicProcessMode = options?.mode || 'v10boom';
   const form = new FormData();
   form.append('audio', file);
   form.append('profile', options?.profile || 'blend');
@@ -2746,7 +2749,7 @@ export async function processDoubleHarmonicAudio(
   if (options?.format) {
     form.append('format', options.format);
   }
-  if ((options?.mode === 'v1' || options?.mode === 'v2' || options?.mode === 'v4' || options?.mode === 'v5' || options?.mode === 'v6' || options?.mode === 'v7' || options?.mode === 'v71' || options?.mode === 'v8' || options?.mode === 'v8plus' || options?.mode === 'v8pivot' || options?.mode === 'v9turbo' || options?.mode === 'v9electrolysis' || options?.mode === 'v10boom' || !options?.mode) && Number.isFinite(Number(options?.intensity))) {
+  if ((requestedMode === 'v1' || requestedMode === 'v2' || requestedMode === 'v4' || requestedMode === 'v5' || requestedMode === 'v6' || requestedMode === 'v7' || requestedMode === 'v71' || requestedMode === 'v8' || requestedMode === 'v8plus' || requestedMode === 'v8pivot' || requestedMode === 'v9turbo' || requestedMode === 'v9electrolysis' || requestedMode === 'v10boom') && Number.isFinite(Number(options?.intensity))) {
     form.append('intensity', String(options?.intensity));
   }
   if (Number.isFinite(Number(options?.lowGrainMultiplier))) {
@@ -2767,7 +2770,7 @@ export async function processDoubleHarmonicAudio(
   if (options?.binaryGrid) {
     form.append('binaryGrid', options.binaryGrid);
   }
-  const wantsV9Electrolysis = options?.mode === 'v9electrolysis' || options?.mode === 'v10boom';
+  const wantsV9Electrolysis = requestedMode === 'v9electrolysis' || requestedMode === 'v10boom';
   const modulation = options?.modulation || (wantsV9Electrolysis ? 'electrolysis-guitar' : '');
   if (modulation) {
     form.append('modulation', modulation);
@@ -2795,33 +2798,31 @@ export async function processDoubleHarmonicAudio(
   }
   appendFinite('followForce', options?.followForce);
   appendFinite('schemaMix', options?.schemaMix);
-  if (options?.name) form.append('name', options.name);
-
-  const endpoint = options?.mode === 'v10boom'
+  const endpoint = requestedMode === 'v10boom'
     ? '/api/double-harmonic/v10boom/process'
-    : options?.mode === 'v9electrolysis'
+    : requestedMode === 'v9electrolysis'
       ? '/api/double-harmonic/v9electrolysis/process'
-      : options?.mode === 'v9turbo'
+      : requestedMode === 'v9turbo'
     ? '/api/double-harmonic/v9turbo/process'
-    : options?.mode === 'v8pivot'
+    : requestedMode === 'v8pivot'
       ? '/api/double-harmonic/v8pivot/process'
-      : options?.mode === 'v8plus'
+      : requestedMode === 'v8plus'
         ? '/api/double-harmonic/v8plus/process'
-        : options?.mode === 'v8'
+        : requestedMode === 'v8'
           ? '/api/double-harmonic/v8/process'
-          : options?.mode === 'v71'
+          : requestedMode === 'v71'
             ? '/api/double-harmonic/v71/process'
-            : options?.mode === 'v7'
+            : requestedMode === 'v7'
               ? '/api/double-harmonic/v7/process'
-              : options?.mode === 'v6'
+              : requestedMode === 'v6'
                 ? '/api/double-harmonic/v6/process'
-                : options?.mode === 'v5'
+                : requestedMode === 'v5'
                   ? '/api/double-harmonic/v5/process'
-                  : options?.mode === 'v4'
+                  : requestedMode === 'v4'
                     ? '/api/double-harmonic/v4/process'
-                    : options?.mode === 'v3'
+                    : requestedMode === 'v3'
                       ? '/api/double-harmonic/v3/process'
-                      : options?.mode === 'v2'
+                      : requestedMode === 'v2'
                         ? '/api/double-harmonic/v2/process'
                         : '/api/double-harmonic/process';
   const res = await authFetch(getApiUrl(endpoint), {

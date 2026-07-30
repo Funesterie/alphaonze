@@ -4,9 +4,10 @@
 //
 // Source canon : docs/research/prime_spiral/ (Spatial Imaginary Map, Formula Registry,
 // GrainLow/GrainPure Origins, Constants Locked, Operators Chain Recap, Symetrie OP Table).
-// Statut : research-only, off-by-default (VIVY_V10_BOOM_ENABLED). Pas un claim de preuve
-// RH ni de generation de premiers. Les constantes ci-dessous sont les traces verrouillees
-// de la cascade imaginaire phi -> jhi -> c7 -> target_0005pi -> mg_phase -> lg -> lym -> inv.
+// Statut : master D40 par defaut dans le chemin V10 compose. L'appel bas niveau
+// runV10Boom reste opt-in (VIVY_V10_BOOM_ENABLED) pour ne pas modifier silencieusement
+// les anciennes routes qui l'utilisent seules. Pas un claim de preuve RH ni de generation
+// de premiers. Les constantes ci-dessous sont les traces verrouillees de la cascade.
 //
 // Principe : la basse/boom = l'axe m, « m porte la fermeture inverse, avec R/m = -R pour
 // un reel R » (GRAINLOW_GRAINPURE_ORIGINS). L'inversion retardée y(t) = x(t) - a*x(t-tau)
@@ -25,7 +26,7 @@ const {
 
 const V10_BOOM_SCHEMA = 'funesterie.audio.double-harmonic-boom-d40.v10';
 const V10_BOOM_METHOD = 'v9-electrolysis-plus-axis-m-inversion-delay-boom-v10';
-const V10_BOOM_STATE = 'v10-boom-listening-candidate';
+const V10_BOOM_STATE = 'v10-boom-production-default';
 const V10_BOOM_PRESET = 'v10-boom-v9-electrolysis-cross-m-wet015';
 
 const V10_CANON = {
@@ -82,7 +83,9 @@ function loadV10Compass(currentState = '+real', returnRatio = 0.5) {
     currentState,
     transitionTable: V10_CANON.transitionTable,
     returnRatio,
-    researchOnly: true,
+    researchOnly: false,
+    researchOrigin: true,
+    productionDefault: true,
   };
 }
 
@@ -102,7 +105,7 @@ function boolOption(value, fallback = false) {
 }
 
 function resolveV10BoomConfig(options = {}) {
-  // Garde-fou canon : research-only, dry/wet <= 0.2, gain <= +-3 dB.
+  // Garde-fou canon : dry/wet <= 0.2, gain <= +-3 dB.
   const wet = clampNumber(options.wet ?? options.return ?? process.env.VIVY_V10_BOOM_WET, 0, 0.2, 0.15);
   const inversionDepth = clampNumber(options.boom ?? options.inversionDepth ?? process.env.VIVY_V10_BOOM_DEPTH, 0, 1, 0.6);
   // tau derive du cycle canon 40.0005 Hz : la moitie de la periode (1000/40.0005/2 ~= 12.5 ms).
@@ -121,7 +124,9 @@ function resolveV10BoomConfig(options = {}) {
     bassBandHz,
     peakLimit,
     boomGain: Math.pow(10, boomGainDb / 20),
-    researchOnly: true,
+    researchOnly: false,
+    researchOrigin: true,
+    productionDefault: true,
   };
 }
 
@@ -144,8 +149,11 @@ function buildV10BoomPlan(options = {}) {
     compass: loadV10Compass(options.currentState || '+real', options.returnRatio ?? config.wet),
     boom: config,
     safety: {
-      researchOnly: true,
-      explicitListeningCandidate: true,
+      researchOnly: false,
+      researchOrigin: true,
+      explicitListeningCandidate: false,
+      ownerListeningValidated: true,
+      productionDefault: true,
       v9ElectrolysisBasePreserved: true,
       wetCeiling: 0.2,
       gainCeilingDb: 3,
@@ -279,8 +287,11 @@ async function processV10BoomD40({
     boom,
     safety: {
       ...(base.safety || {}),
-      researchOnly: true,
-      explicitListeningCandidate: true,
+      researchOnly: false,
+      researchOrigin: true,
+      explicitListeningCandidate: false,
+      ownerListeningValidated: true,
+      productionDefault: true,
       v9ElectrolysisBasePreserved: true,
       wetCeiling: 0.2,
       gainCeilingDb: 3,

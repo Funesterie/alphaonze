@@ -1,6 +1,20 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 import { downloadMediaUrl, resolvePublicVivyMediaDownloadUrl } from "./api.ts";
+
+const apiSource = fs.readFileSync(new URL("./api.ts", import.meta.url), "utf8");
+
+test("D40 API calls without an explicit mode use V10 Boom", () => {
+  assert.match(
+    apiSource,
+    /const requestedMode: DoubleHarmonicProcessMode = options\?\.mode \|\| 'v10boom';/,
+  );
+  assert.match(
+    apiSource,
+    /const endpoint = requestedMode === 'v10boom'\s*\?\s*'\/api\/double-harmonic\/v10boom\/process'/,
+  );
+});
 
 test("a missing same-origin Vivy asset triggers a single request with no proxy fallback", async () => {
   const originalFetch = globalThis.fetch;

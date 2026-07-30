@@ -21,6 +21,25 @@ test("D40 downloads prefer the token-bearing share URL", () => {
   );
 });
 
+test("V10 Boom is the canonical D40 default across Studio and Suno production", () => {
+  assert.match(appSource, /const DEFAULT_D40_PROCESS_MODE: DoubleHarmonicProcessMode = "v10boom";/);
+  assert.match(appSource, /useState<DoubleHarmonicProcessMode>\(DEFAULT_D40_PROCESS_MODE\)/);
+  assert.match(appSource, /mode: DEFAULT_D40_PROCESS_MODE/);
+  assert.match(appSource, /provider: "funesterie-d40-v10boom"/);
+  assert.match(appSource, /Auto-DJ — routage automatique du casting et de la couleur depuis le canevas/);
+
+  const simpleStart = appSource.indexOf("async function produceSimpleVivySong");
+  const simpleEnd = appSource.indexOf("async function askVivy", simpleStart);
+  const simpleBlock = appSource.slice(simpleStart, simpleEnd);
+  assert.match(simpleBlock, /americanMode: songAmericanMode/);
+  assert.match(simpleBlock, /songArtists: effectiveSongArtists/);
+  assert.match(simpleBlock, /applyDefaultV10BoomToVivyMedia/);
+
+  const nossenStart = appSource.indexOf("async function launchNossenBanger");
+  const nossenEnd = appSource.indexOf("async function onVivyVoiceReferenceChange", nossenStart);
+  assert.match(appSource.slice(nossenStart, nossenEnd), /applyDefaultV10BoomToVivyMedia/);
+});
+
 
 test("sanitizeVivyNossenSongSeed normalise les traits d''union Unicode (U+2011) en ASCII", () => {
   // gpt-oss emet U+2011 (non-breaking hyphen) dans [Pre\u2011Chorus]; le parseur de sections

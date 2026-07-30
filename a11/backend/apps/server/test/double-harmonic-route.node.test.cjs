@@ -187,6 +187,10 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     const statusPayload = await status.json();
     assert.equal(status.status, 200);
     assert.equal(statusPayload.method, 'dry-master-plus-adaptive-d40-harmonic-overlay-v1');
+    assert.equal(statusPayload.defaultVariant, 'v10boom');
+    assert.equal(statusPayload.defaultRoute, '/api/double-harmonic/v10boom/process');
+    assert.equal(statusPayload.defaultMethod, V10_BOOM_METHOD);
+    assert.equal(statusPayload.defaultState, V10_BOOM_STATE);
     assert.equal(statusPayload.v2.preservesV1, true);
     assert.equal(statusPayload.v2.state, 'analysis-plan');
     assert.equal(statusPayload.v3.controls.minWeight, MIN_HARMONIC_INTENSITY);
@@ -257,6 +261,8 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(statusPayload.v10boom.baseVariant, 'v9electrolysis');
     assert.equal(statusPayload.v10boom.safety.wetCeiling, 0.2);
     assert.equal(statusPayload.v10boom.safety.v9ElectrolysisBasePreserved, true);
+    assert.equal(statusPayload.v10boom.safety.productionDefault, true);
+    assert.equal(statusPayload.v10boom.safety.ownerListeningValidated, true);
 
     const v2 = await fetch(`${baseUrl}/api/double-harmonic/v2/status?smoothing=1%2Fe&frameMs=20`);
     const v2Payload = await v2.json();
@@ -2152,8 +2158,10 @@ test('double harmonic route exposes V10 Boom after the V9 Electrolyse base', asy
         safety: {
           vocalSafe99ms: true,
           electrolysisGuitarModulation: true,
-          researchOnly: true,
-          explicitListeningCandidate: true,
+          researchOnly: false,
+          explicitListeningCandidate: false,
+          ownerListeningValidated: true,
+          productionDefault: true,
           v9ElectrolysisBasePreserved: true,
           wetCeiling: 0.2,
         },

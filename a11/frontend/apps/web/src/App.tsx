@@ -2280,6 +2280,7 @@ const D40_V9_ELECTROLYSIS_MID_HZ = 40.44;
 const D40_V9_ELECTROLYSIS_AMOUNT = 0.042;
 const D40_V9_ELECTROLYSIS_IRREGULARITY = 0.36;
 const D40_V9_ELECTROLYSIS_ASYMMETRY = 0.27;
+const DEFAULT_D40_PROCESS_MODE: DoubleHarmonicProcessMode = "v10boom";
 const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v1: "V1 stable",
   v2: "V2 Release",
@@ -2976,6 +2977,66 @@ type VivyStudioMediaPreview = {
     output?: string | null;
   };
 };
+
+async function applyDefaultV10BoomToVivyMedia(
+  media: VivyStudioMediaPreview,
+  options: { title?: string; fallbackName?: string } = {}
+): Promise<VivyStudioMediaPreview> {
+  if (media.kind !== "audio") return media;
+  const sourceUrl = String(media.downloadUrl || media.url || "").trim();
+  if (!sourceUrl) throw new Error("v10_boom_source_missing");
+
+  let response: Response;
+  try {
+    response = await fetch(sourceUrl, { credentials: "include" });
+    if (!response.ok) throw new Error(`status_${response.status}`);
+  } catch {
+    response = await fetch(sourceUrl, { credentials: "omit" });
+    if (!response.ok) throw new Error(`status_${response.status}`);
+  }
+
+  const blob = await response.blob();
+  const fallbackName = options.fallbackName || "vivy-chanson.mp3";
+  const titleBase = buildSongFileBase(String(options.title || ""));
+  const sourceName = titleBase
+    ? `${titleBase}.mp3`
+    : (sanitizeMediaDisplayName(media.filename || fallbackName) || fallbackName);
+  const sourceFile = new File(
+    [blob],
+    sourceName,
+    { type: blob.type || media.contentType || "audio/mpeg" }
+  );
+  const d40 = await processDoubleHarmonicAudio(sourceFile, {
+    profile: "blend",
+    intensity: D40_V8_DEFAULT_INTENSITY,
+    format: "mp3",
+    name: sourceName,
+    mode: DEFAULT_D40_PROCESS_MODE,
+    modulation: "electrolysis-guitar",
+    electrolysis: true,
+    electrolysisGuitar: true,
+    frequencyHz: D40_V9_ELECTROLYSIS_MID_HZ,
+    frequencyMinHz: D40_V9_ELECTROLYSIS_MIN_HZ,
+    frequencyMaxHz: D40_V9_ELECTROLYSIS_MAX_HZ,
+    amount: D40_V9_ELECTROLYSIS_AMOUNT,
+    irregularity: D40_V9_ELECTROLYSIS_IRREGULARITY,
+    asymmetry: D40_V9_ELECTROLYSIS_ASYMMETRY,
+    bidirectional: true,
+  });
+  const d40Url = String(d40.shareUrl || d40.audioUrl || "").trim();
+  const d40DownloadUrl = String(d40.shareUrl || d40.audioUrl || "").trim();
+  if (!d40Url) throw new Error("v10_boom_audio_missing");
+
+  return {
+    ...media,
+    kind: "audio",
+    url: resolveApiAssetUrl(d40Url) || d40Url,
+    downloadUrl: resolveApiAssetUrl(d40DownloadUrl) || d40DownloadUrl,
+    provider: "funesterie-d40-v10boom",
+    contentType: String(d40.contentType || "audio/mpeg"),
+    filename: String(d40.filename || sourceName.replace(/\.[^.]+$/, "-d40-v10-boom.mp3")),
+  };
+}
 
 type VivyStudioVocalSegment = {
   artistIds: VivyStudioArtistId[];
@@ -5272,12 +5333,12 @@ function VivyD9DiagnosticsPanel({ prosody }: { prosody: VivyStudioProductionResu
   return (
     <section className="vivy-studio-diagnostics vivy-studio-diagnostics--supreme" aria-label="Version audio Vivy">
       <header>
-        <span>Version : V9 Électrolyse</span>
-        <small>Même format par défaut · k 3x · 40.26-40.62 Hz · dynamique 99 ms · pivot 0.292 · 1024</small>
+        <span>Version : V10 Boom</span>
+        <small>V9 Électrolyse + couche Boom · k 3x · axe m wet 0.15 · peak guard 0.95 · pivot 0.292 · 1024</small>
       </header>
       <p>
         Préparation Vivy prête: {segments.length || 1} segment{(segments.length || 1) > 1 ? "s" : ""} calé{(segments.length || 1) > 1 ? "s" : ""}.
-        Le traitement audio final se fait avec Mix D40 V9 Électrolyse.
+        Le traitement audio final se fait avec Mix D40 V10 Boom.
       </p>
     </section>
   );
@@ -5329,7 +5390,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [personalSunoVoiceLabel, setPersonalSunoVoiceLabel] = useState(String(initialDraft.personalSunoVoiceLabel || "Ma voix Suno"));
   const [doubleHarmonicFile, setDoubleHarmonicFile] = useState<File | null>(null);
   const [doubleHarmonicFileName, setDoubleHarmonicFileName] = useState("");
-  const [doubleHarmonicMode, setDoubleHarmonicMode] = useState<DoubleHarmonicProcessMode>("v9electrolysis");
+  const [doubleHarmonicMode, setDoubleHarmonicMode] = useState<DoubleHarmonicProcessMode>(DEFAULT_D40_PROCESS_MODE);
   const [doubleHarmonicOutputFormat, setDoubleHarmonicOutputFormat] = useState<DoubleHarmonicOutputFormat>("source");
   const [doubleHarmonicIntensity, setDoubleHarmonicIntensity] = useState(D40_V8_DEFAULT_INTENSITY);
   const [doubleHarmonicResult, setDoubleHarmonicResult] = useState<DoubleHarmonicProcessResult | null>(null);
@@ -6554,6 +6615,8 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       const playablePrompt = buildVivyPlayableText(prompt, songMood || "Vivy garde le fil du morceau.", 320);
       const payload = await runVivyStudioProduction({
         mode: "song",
+        language: songAmericanMode ? "en" : normalizeA11LanguageCode(getAuthAccountLanguage(localStorage.getItem("a11:language") || "fr")),
+        americanMode: songAmericanMode,
         voiceTool,
         voiceInstruction,
         voiceFileName,
@@ -6565,7 +6628,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         sunoVoiceScope: personalSunoVoiceLinked ? "personal" : undefined,
         usePersonalSunoVoice: personalSunoVoiceLinked,
         songSource,
-        songArtists,
+        songArtists: effectiveSongArtists,
         vocalCast: activeSongArtistCast.label,
         artistCount: activeSongArtistCast.count,
         singerCount: activeSongArtistCast.count,
@@ -6651,6 +6714,16 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
           voiceManifest: voicePreview.voiceManifest,
         };
       }
+      let v10BoomError = "";
+      try {
+        setStatus("Suno a terminé. Mix final D40 V10 Boom...");
+        preparedMedia = await applyDefaultV10BoomToVivyMedia(preparedMedia, {
+          title: String(finalPayload?.title || finalPayload?.songTitle || ""),
+          fallbackName: "vivy-chanson.mp3",
+        });
+      } catch (error: any) {
+        v10BoomError = String(error?.message || error || "mix_v10_boom_indisponible");
+      }
       setVivyMedia(preparedMedia);
       const voiceRoute = voiceMode === "suno_voice"
         ? "Voix Vivy vérifiée utilisée directement par Suno."
@@ -6661,15 +6734,19 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         "Production musicale Suno prête.",
         `Direction: ${songMood || "couleur sonore automatique depuis la matière"}`,
         `Casting vocal: ${activeSongArtistCast.countLabel} - ${activeSongArtistCast.label}`,
+        v10BoomError ? "Mix final D40 V10 Boom à relancer." : "Mix final D40 V10 Boom appliqué.",
         voiceRoute,
         taskId ? "Job Suno: lancé (identifiant masqué du brief)" : "",
         finalPayload?.summary || payload?.summary || "Sortie: chanson audio Suno générée.",
       ].filter(Boolean).join("\n")));
-      setStatus(voiceMode === "suno_voice"
+      const readyStatus = voiceMode === "suno_voice"
         ? "Chanson Suno prête avec la voix Vivy vérifiée."
         : voiceMode === "external_mix"
           ? `Chanson prête: instrumental Suno + voix ${activeSongArtistCast.label}.`
-          : "Chanson complète Suno prête. Le timbre Vivy sera disponible après l’enregistrement Suno Voice.");
+          : "Chanson complète Suno prête. Le timbre Vivy sera disponible après l’enregistrement Suno Voice.";
+      setStatus(v10BoomError
+        ? `${readyStatus} Mix V10 Boom à relancer: ${v10BoomError}`
+        : `${readyStatus} Mix final D40 V10 Boom appliqué.`);
     } catch (error: any) {
       setStatus(`Chanson Vivy indisponible: ${error?.message || error}`);
     } finally {
@@ -7309,7 +7386,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                   disabled={!hasSession}
                   onChange={(event) => setSongCastingAuto(event.target.checked)}
                 />
-                <span>Routage automatique du casting et de la couleur depuis le canevas</span>
+                <span>Auto-DJ — routage automatique du casting et de la couleur depuis le canevas</span>
               </label>
               <label className="vivy-studio-inline-option">
                 <input
@@ -9081,66 +9158,23 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       let d40Applied = false;
       if (preparedMedia.kind === "audio") {
         try {
-          setStatus(sunoExtended ? "Finalisation audio après extension..." : "Finalisation audio...");
-          const sourceUrl = preparedMedia.downloadUrl || preparedMedia.url;
-          let response: Response;
-          try {
-            response = await fetch(sourceUrl, { credentials: "include" });
-            if (!response.ok) throw new Error(`status_${response.status}`);
-          } catch {
-            response = await fetch(sourceUrl, { credentials: "omit" });
-            if (!response.ok) throw new Error(`status_${response.status}`);
-          }
-          const blob = await response.blob();
+          setStatus(sunoExtended
+            ? "Finalisation D40 V10 Boom après extension..."
+            : "Finalisation D40 V10 Boom...");
           const fallbackAudioName = useBangerWord ? "vivy-banger-nossen.mp3" : "vivy-nossen.mp3";
-          // Le titre de la chanson doit se retrouver dans le nom du fichier, avant comme
-          // apres le D40. Sans lui on obtenait « 178515...-vivy-music-suno-8ec0da7f-
-          // funesterie-d40-v9electrolysis.mp3 »: que des numeros, impossible de s'y
-          // retrouver entre deux morceaux.
           const titreChanson = String(
             (finalPayload as any)?.title
             || (finalPayload as any)?.songTitle
             || (finalPayload as any)?.media?.title
             || ""
           ).trim();
-          const baseTitre = buildSongFileBase(titreChanson);
-          const sourceName = baseTitre
-            ? `${baseTitre}.mp3`
-            : (sanitizeMediaDisplayName(preparedMedia.filename || fallbackAudioName) || fallbackAudioName);
-          const sourceFile = new File([blob], sourceName, { type: blob.type || preparedMedia.contentType || "audio/mpeg" });
-          const d40 = await processDoubleHarmonicAudio(sourceFile, {
-            profile: "blend",
-            intensity: D40_V8_DEFAULT_INTENSITY,
-            format: "mp3",
-            name: sourceName,
-            mode: "v9electrolysis",
-            modulation: "electrolysis-guitar",
-            electrolysis: true,
-            electrolysisGuitar: true,
-            frequencyHz: D40_V9_ELECTROLYSIS_MID_HZ,
-            frequencyMinHz: D40_V9_ELECTROLYSIS_MIN_HZ,
-            frequencyMaxHz: D40_V9_ELECTROLYSIS_MAX_HZ,
-            amount: D40_V9_ELECTROLYSIS_AMOUNT,
-            irregularity: D40_V9_ELECTROLYSIS_IRREGULARITY,
-            asymmetry: D40_V9_ELECTROLYSIS_ASYMMETRY,
-            bidirectional: true,
+          preparedMedia = await applyDefaultV10BoomToVivyMedia(preparedMedia, {
+            title: titreChanson,
+            fallbackName: fallbackAudioName,
           });
-          const d40Url = String(d40.shareUrl || d40.audioUrl || "").trim();
-          if (d40Url) {
-            const d40DownloadUrl = String(d40.shareUrl || d40.audioUrl || "").trim();
-            preparedMedia = {
-              kind: "audio",
-              url: resolveApiAssetUrl(d40Url) || d40Url,
-              downloadUrl: resolveApiAssetUrl(d40DownloadUrl) || d40DownloadUrl || resolveApiAssetUrl(d40Url) || d40Url,
-              provider: "funesterie-d40-v9electrolysis",
-              contentType: String(d40.contentType || "audio/mpeg"),
-              filename: String(d40.filename || sourceName.replace(/\.[^.]+$/, "-d40-v9.mp3")),
-              voiceManifest: finalPayload?.media?.voiceManifest,
-            };
-            d40Applied = true;
-          }
+          d40Applied = preparedMedia.provider === "funesterie-d40-v10boom";
         } catch (error: any) {
-          setStatus(`${productionLabel} prêt; mix final à relancer dans le Studio: ${error?.message || error}`);
+          setStatus(`${productionLabel} prêt; mix final V10 Boom à relancer dans le Studio: ${error?.message || error}`);
         }
       }
 

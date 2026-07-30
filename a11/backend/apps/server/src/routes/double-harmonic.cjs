@@ -304,6 +304,10 @@ function createDoubleHarmonicRouter(options = {}) {
     return res.json({
       ok: true,
       method: 'dry-master-plus-adaptive-d40-harmonic-overlay-v1',
+      defaultVariant: 'v10boom',
+      defaultRoute: '/api/double-harmonic/v10boom/process',
+      defaultMethod: buildV10BoomPlan().method,
+      defaultState: buildV10BoomPlan().state,
       maxMb: Math.max(1, Math.min(500, Number(process.env.A11_DH_MAX_MB || DEFAULT_MAX_MB) || DEFAULT_MAX_MB)),
       d40: resolveD40Density(),
       mg: MICROGAP_HALF_PLUS_CANON_MG,

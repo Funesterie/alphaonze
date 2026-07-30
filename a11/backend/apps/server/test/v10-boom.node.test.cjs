@@ -49,12 +49,14 @@ test('V10 Boom — le filtre est la fermeture axe m (inversion retardee y=x-a*x(
   assert.deepEqual(mp3Args.slice(-5), ['-codec:a', 'libmp3lame', '-b:a', '192k', 'v10.mp3']);
 });
 
-test('V10 Boom — garde-fou canon : wet <= 0.2, gain <= +3 dB, off par defaut', () => {
+test('V10 Boom — garde-fou canon : wet <= 0.2, gain <= +3 dB, master de production', () => {
   const cfg = resolveV10BoomConfig({ wet: 0.9, boomGainDb: 12 });
   assert.ok(cfg.wet <= 0.2, 'wet clamped <= 0.2');
   assert.ok(cfg.boomGainDb <= 3, 'gain clamped <= +3 dB');
   assert.equal(cfg.peakLimit, 0.95);
-  assert.equal(cfg.researchOnly, true);
+  assert.equal(cfg.researchOnly, false);
+  assert.equal(cfg.researchOrigin, true);
+  assert.equal(cfg.productionDefault, true);
 });
 
 test('V10 Boom — runV10Boom desactive par defaut, active si VIVY_V10_BOOM_ENABLED', async () => {
@@ -152,11 +154,15 @@ test('V10 Boom — carte orientée canon : croix diagonale, cycle horaire, M ree
   assert.equal(compass.currentState, '+imag');
   assert.equal(compass.transitionTable['+real'], '+imag');
   assert.equal(compass.returnRatio, 0.6);
-  assert.equal(compass.researchOnly, true);
+  assert.equal(compass.researchOnly, false);
+  assert.equal(compass.researchOrigin, true);
+  assert.equal(compass.productionDefault, true);
   const plan = buildV10BoomPlan();
   assert.equal(plan.variant, 'v10boom');
   assert.equal(plan.baseVariant, 'v9electrolysis');
   assert.equal(plan.method, V10_BOOM_METHOD);
   assert.equal(plan.state, V10_BOOM_STATE);
   assert.equal(plan.safety.wetCeiling, 0.2);
+  assert.equal(plan.safety.productionDefault, true);
+  assert.equal(plan.safety.ownerListeningValidated, true);
 });
