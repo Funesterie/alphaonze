@@ -103,6 +103,10 @@ const {
   buildTurboD40PlanV9,
   resolveV9TurboModulationConfig,
 } = require('../src/audio/double-harmonic-closed-phase-v8.cjs');
+const {
+  V10_BOOM_METHOD,
+  V10_BOOM_STATE,
+} = require('../src/audio/v10-boom.cjs');
 
 function listen(app) {
   return new Promise((resolve) => {
@@ -247,6 +251,12 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(statusPayload.v9turbo.safety.dynamicHighLowWeights, true);
     assert.equal(statusPayload.v9turbo.safety.vocalSafe99ms, true);
     assert.equal(statusPayload.v9turbo.safety.turbo99ListeningValidated, true);
+    assert.equal(statusPayload.v10boom.method, V10_BOOM_METHOD);
+    assert.equal(statusPayload.v10boom.state, V10_BOOM_STATE);
+    assert.equal(statusPayload.v10boom.variant, 'v10boom');
+    assert.equal(statusPayload.v10boom.baseVariant, 'v9electrolysis');
+    assert.equal(statusPayload.v10boom.safety.wetCeiling, 0.2);
+    assert.equal(statusPayload.v10boom.safety.v9ElectrolysisBasePreserved, true);
 
     const v2 = await fetch(`${baseUrl}/api/double-harmonic/v2/status?smoothing=1%2Fe&frameMs=20`);
     const v2Payload = await v2.json();
@@ -264,6 +274,15 @@ test('double harmonic route exposes phase-lock v2 as status only', async () => {
     assert.equal(v9ElectroPayload.v9turbo.defaults.modulation.frequencyMaxHz, 40.62);
     assert.equal(v9ElectroPayload.v9turbo.safety.electrolysisGuitarModulation, true);
     assert.equal(v9ElectroPayload.v9turbo.safety.modulationAudioOnlyNoPhysicalElectrolysis, true);
+
+    const v10Boom = await fetch(`${baseUrl}/api/double-harmonic/v10boom/status?wet=0.18&boom=0.7&delay=14`);
+    const v10BoomPayload = await v10Boom.json();
+    assert.equal(v10Boom.status, 200);
+    assert.equal(v10BoomPayload.v10boom.variant, 'v10boom');
+    assert.equal(v10BoomPayload.v10boom.baseVariant, 'v9electrolysis');
+    assert.equal(v10BoomPayload.v10boom.boom.wet, 0.18);
+    assert.equal(v10BoomPayload.v10boom.boom.inversionDepth, 0.7);
+    assert.equal(v10BoomPayload.v10boom.boom.inversionDelayMs, 14);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(runtimeRoot, { recursive: true, force: true });
@@ -2095,6 +2114,92 @@ test('double harmonic route exposes v9 electrolysis as a public mode instead of 
     assert.equal(calls[0].irregularity, 0.36);
     assert.equal(calls[0].asymmetry, 0.27);
     assert.equal(calls[0].bidirectional, true);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('double harmonic route exposes V10 Boom after the V9 Electrolyse base', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-dh-route-v10-boom-'));
+  const calls = [];
+  const app = express();
+  app.use('/api/double-harmonic', createDoubleHarmonicRouter({
+    runtimeRoot,
+    processV10BoomD40: async ({ outputPath, profile, analysisOptions, boomOptions }) => {
+      calls.push({ profile, analysisOptions, boomOptions });
+      fs.writeFileSync(outputPath, Buffer.from('processed v10 boom mp3'));
+      return {
+        method: V10_BOOM_METHOD,
+        state: V10_BOOM_STATE,
+        variant: 'v10boom',
+        baseVariant: 'v9electrolysis',
+        profile,
+        preset: 'v10-boom-v9-electrolysis-cross-m-wet015',
+        intensity: 'vocal-safe-99ms-turbo-1024',
+        dynamic: {
+          frameMs: DEFAULT_V9_TURBO_FRAME_MS,
+          modulation: { enabled: true, mode: 'electrolysis-guitar' },
+        },
+        boom: {
+          applied: true,
+          config: {
+            wet: boomOptions.wet,
+            inversionDepth: boomOptions.inversionDepth,
+            inversionDelayMs: boomOptions.inversionDelayMs,
+          },
+        },
+        safety: {
+          vocalSafe99ms: true,
+          electrolysisGuitarModulation: true,
+          researchOnly: true,
+          explicitListeningCandidate: true,
+          v9ElectrolysisBasePreserved: true,
+          wetCeiling: 0.2,
+        },
+      };
+    },
+    verifyJWT: (req, _res, next) => {
+      req.user = { email: 'djeff@example.test' };
+      next();
+    },
+  }));
+
+  const { server, baseUrl } = await listen(app);
+  try {
+    const form = new FormData();
+    form.append('audio', new Blob([Buffer.from('ID3demo')], { type: 'audio/mpeg' }), 'demo.mp3');
+    form.append('profile', 'blend');
+    form.append('format', 'mp3');
+    form.append('wet', '0.18');
+    form.append('boom', '0.7');
+    form.append('delay', '14');
+    const res = await fetch(`${baseUrl}/api/double-harmonic/v10boom/process`, {
+      method: 'POST',
+      body: form,
+    });
+    const payload = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.method, V10_BOOM_METHOD);
+    assert.equal(payload.state, V10_BOOM_STATE);
+    assert.equal(payload.variant, 'v10boom');
+    assert.equal(payload.baseVariant, 'v9electrolysis');
+    assert.equal(payload.boom.applied, true);
+    assert.equal(payload.safety.v9ElectrolysisBasePreserved, true);
+    assert.match(payload.publicSummary, /V10 Boom/i);
+    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v10boom\.mp3$/);
+    assert.equal(calls[0].analysisOptions.modulation, 'electrolysis-guitar');
+    assert.equal(calls[0].analysisOptions.electrolysis, true);
+    assert.equal(calls[0].analysisOptions.frequencyMinHz, 40.26);
+    assert.equal(calls[0].analysisOptions.frequencyMaxHz, 40.62);
+    assert.equal(calls[0].boomOptions.wet, 0.18);
+    assert.equal(calls[0].boomOptions.inversionDepth, 0.7);
+    assert.equal(calls[0].boomOptions.inversionDelayMs, 14);
+
+    const shared = await fetch(payload.shareUrl);
+    assert.equal(shared.status, 200);
+    assert.match(shared.headers.get('content-type') || '', /audio\/mpeg/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(runtimeRoot, { recursive: true, force: true });

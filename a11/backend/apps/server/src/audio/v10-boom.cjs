@@ -19,6 +19,14 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const {
+  buildOutputCodecArgs,
+} = require('./double-harmonic-d40.cjs');
+
+const V10_BOOM_SCHEMA = 'funesterie.audio.double-harmonic-boom-d40.v10';
+const V10_BOOM_METHOD = 'v9-electrolysis-plus-axis-m-inversion-delay-boom-v10';
+const V10_BOOM_STATE = 'v10-boom-listening-candidate';
+const V10_BOOM_PRESET = 'v10-boom-v9-electrolysis-cross-m-wet015';
 
 const V10_CANON = {
   phi: 1.618033988749895,
@@ -103,6 +111,7 @@ function resolveV10BoomConfig(options = {}) {
   // boomGain en dB, clampé <= +3 dB (garde-fou). volume = 10^(dB/20).
   const boomGainDb = clampNumber(options.boomGainDb ?? process.env.VIVY_V10_BOOM_GAIN_DB, -6, 3, 2);
   const bassBandHz = clampNumber(options.bassBandHz ?? process.env.VIVY_V10_BOOM_BAND_HZ, 60, 300, 120);
+  const peakLimit = clampNumber(options.peakLimit ?? process.env.VIVY_V10_BOOM_PEAK_LIMIT, 0.8, 0.99, 0.95);
   return {
     wet,
     inversionDepth,
@@ -110,8 +119,38 @@ function resolveV10BoomConfig(options = {}) {
     subCapHz,
     boomGainDb,
     bassBandHz,
+    peakLimit,
     boomGain: Math.pow(10, boomGainDb / 20),
     researchOnly: true,
+  };
+}
+
+function buildV10BoomPlan(options = {}) {
+  const config = resolveV10BoomConfig(options);
+  return {
+    schema: V10_BOOM_SCHEMA,
+    method: V10_BOOM_METHOD,
+    state: V10_BOOM_STATE,
+    variant: 'v10boom',
+    baseVariant: 'v9electrolysis',
+    preset: V10_BOOM_PRESET,
+    canon: {
+      mgPhase: V10_CANON.mgPhase,
+      c7: V10_CANON.c7,
+      pivot: V10_CANON.pivot,
+      S: V10_CANON.S,
+      crossCycle: V10_CANON.crossCycle,
+    },
+    compass: loadV10Compass(options.currentState || '+real', options.returnRatio ?? config.wet),
+    boom: config,
+    safety: {
+      researchOnly: true,
+      explicitListeningCandidate: true,
+      v9ElectrolysisBasePreserved: true,
+      wetCeiling: 0.2,
+      gainCeilingDb: 3,
+      peakGuard: config.peakLimit,
+    },
   };
 }
 
@@ -130,7 +169,8 @@ function buildV10BoomFilterGraph(config) {
     '[dry][inv]amix=inputs=2:duration=first:normalize=0:weights=1 1[m]',
     `[m]highpass=f=${config.subCapHz}[m2]`,
     `[m2]volume=${config.boomGain.toFixed(4)}[m3]`,
-    `[full][m3]amix=inputs=2:duration=first:normalize=0:weights=1 ${wetW}[out]`,
+    `[full][m3]amix=inputs=2:duration=first:normalize=0:weights=1 ${wetW}[mix]`,
+    `[mix]alimiter=limit=${config.peakLimit.toFixed(3)}:attack=5:release=50:level=false[out]`,
   ].join(';');
 }
 
@@ -148,6 +188,7 @@ function buildV10BoomArgs(inputPath, outputPath, config) {
     '[out]',
     '-ac',
     '2',
+    ...buildOutputCodecArgs(outputPath),
     outputPath,
   ];
 }
@@ -161,24 +202,105 @@ async function runV10Boom(inputPath, outputPath, options = {}, runFfmpeg) {
     throw new Error('v10_boom_missing_ffmpeg_runner');
   }
   const timeoutMs = Math.max(1000, Number(options.timeoutMs || process.env.VIVY_V10_BOOM_TIMEOUT_MS || 180000) || 180000);
-  // ffmpeg ne peut pas lire et ecrire le meme fichier : on passe par un temp puis rename.
+  // ffmpeg ne peut pas lire et ecrire le meme fichier. Le suffixe temporaire doit garder
+  // l'extension audio en dernier, sinon ffmpeg voit ".tmp" et ne sait pas quel conteneur
+  // produire. On copie ensuite par-dessus l'original seulement apres une passe reussie.
   const sameFile = path.resolve(inputPath) === path.resolve(outputPath);
-  const finalOutput = sameFile ? `${outputPath}.v10boom.tmp` : outputPath;
+  const parsedOutput = path.parse(outputPath);
+  const finalOutput = sameFile
+    ? path.join(
+      parsedOutput.dir,
+      `${parsedOutput.name}.v10boom.${process.pid}.${Date.now()}.tmp${parsedOutput.ext || '.wav'}`
+    )
+    : outputPath;
   const args = buildV10BoomArgs(inputPath, finalOutput, config);
-  await run(args, { timeoutMs, errorCode: 'v10_boom_failed' });
-  if (sameFile) {
-    fs.rmSync(outputPath, { force: true });
-    fs.renameSync(finalOutput, outputPath);
+  try {
+    await run(args, { timeoutMs, errorCode: 'v10_boom_failed' });
+    if (sameFile) {
+      fs.copyFileSync(finalOutput, outputPath);
+      fs.rmSync(finalOutput, { force: true });
+    }
+  } catch (error) {
+    if (sameFile) fs.rmSync(finalOutput, { force: true });
+    throw error;
   }
   return { applied: true, config, canon: { mgPhase: V10_CANON.mgPhase, c7: V10_CANON.c7, S: V10_CANON.S } };
 }
 
+async function processV10BoomD40({
+  inputPath,
+  outputPath,
+  profile = 'blend',
+  timeoutMs,
+  analysisOptions = {},
+  boomOptions = {},
+  processV9Turbo,
+  runFfmpeg,
+} = {}) {
+  if (typeof processV9Turbo !== 'function') throw new Error('v10_boom_missing_v9_processor');
+  const base = await processV9Turbo({
+    inputPath,
+    outputPath,
+    profile,
+    timeoutMs,
+    analysisOptions: {
+      ...analysisOptions,
+      modulation: analysisOptions.modulation || analysisOptions.modulationMode || 'electrolysis-guitar',
+      modulationMode: analysisOptions.modulationMode || analysisOptions.modulation || 'electrolysis-guitar',
+      electrolysis: true,
+      electrolysisGuitar: true,
+      frequencyHz: analysisOptions.frequencyHz ?? 40.44,
+      frequencyMinHz: analysisOptions.frequencyMinHz ?? 40.26,
+      frequencyMaxHz: analysisOptions.frequencyMaxHz ?? 40.62,
+      amount: analysisOptions.amount ?? 0.042,
+      irregularity: analysisOptions.irregularity ?? 0.36,
+      asymmetry: analysisOptions.asymmetry ?? 0.27,
+      bidirectional: true,
+    },
+  });
+  const boom = await runV10Boom(
+    outputPath,
+    outputPath,
+    {
+      ...boomOptions,
+      enabled: true,
+      timeoutMs,
+      runFfmpeg,
+    },
+    runFfmpeg
+  );
+  return {
+    ...base,
+    method: V10_BOOM_METHOD,
+    state: V10_BOOM_STATE,
+    variant: 'v10boom',
+    baseVariant: 'v9electrolysis',
+    preset: V10_BOOM_PRESET,
+    boom,
+    safety: {
+      ...(base.safety || {}),
+      researchOnly: true,
+      explicitListeningCandidate: true,
+      v9ElectrolysisBasePreserved: true,
+      wetCeiling: 0.2,
+      gainCeilingDb: 3,
+      peakGuard: boom.config.peakLimit,
+    },
+  };
+}
+
 module.exports = {
+  V10_BOOM_SCHEMA,
+  V10_BOOM_METHOD,
+  V10_BOOM_STATE,
+  V10_BOOM_PRESET,
   V10_CANON,
   resolveV10BoomConfig,
+  buildV10BoomPlan,
   buildV10BoomFilterGraph,
   buildV10BoomArgs,
   runV10Boom,
+  processV10BoomD40,
   loadV10Compass,
   opSym,
   oppositeArm,

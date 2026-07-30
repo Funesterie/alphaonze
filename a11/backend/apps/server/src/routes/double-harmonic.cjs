@@ -14,6 +14,7 @@ const {
   processProtectMixD40,
   resolveD40Density,
   resolveHarmonicIntensity,
+  runFfmpeg,
 } = require('../audio/double-harmonic-d40.cjs');
 const {
   analyzePhaseLockV2,
@@ -51,6 +52,10 @@ const {
   processClosedPhaseD40V8Plus,
   processTurboD40V9,
 } = require('../audio/double-harmonic-closed-phase-v8.cjs');
+const {
+  buildV10BoomPlan,
+  processV10BoomD40,
+} = require('../audio/v10-boom.cjs');
 const {
   exportZenReliqueForPublic,
 } = require('../audio/zen-relique-exporter.cjs');
@@ -270,6 +275,13 @@ function createDoubleHarmonicRouter(options = {}) {
   const processAudioV9Turbo = typeof options.processTurboD40V9 === 'function'
     ? options.processTurboD40V9
     : processTurboD40V9;
+  const processAudioV10Boom = typeof options.processV10BoomD40 === 'function'
+    ? options.processV10BoomD40
+    : (input) => processV10BoomD40({
+      ...input,
+      processV9Turbo: processAudioV9Turbo,
+      runFfmpeg,
+    });
   const runtimeRoot = path.resolve(options.runtimeRoot || getCanonicalRuntimeRoot(process.env));
   const assetRoot = ensureDir(path.join(runtimeRoot, 'double-harmonic-d40'));
   const indexPath = path.join(assetRoot, 'index.json');
@@ -314,6 +326,7 @@ function createDoubleHarmonicRouter(options = {}) {
       v8plus: buildClosedPhaseD40PlanV8Plus(),
       v8pivot: buildClosedPhaseD40PlanV8Pivot(),
       v9turbo: buildTurboD40PlanV9(),
+      v10boom: buildV10BoomPlan(),
     });
   });
 
@@ -614,6 +627,22 @@ function createDoubleHarmonicRouter(options = {}) {
         bidirectional: reqBoolean(_req.query?.bidirectional),
         followForce: reqNumber(_req.query?.followForce),
         schemaMix: reqNumber(_req.query?.schemaMix),
+      }),
+    });
+  });
+
+  router.get('/v10boom/status', (_req, res) => {
+    return res.json({
+      ok: true,
+      v10boom: buildV10BoomPlan({
+        wet: reqNumber(_req.query?.wet || _req.query?.returnRatio),
+        inversionDepth: reqNumber(_req.query?.boom || _req.query?.inversionDepth),
+        inversionDelayMs: reqNumber(_req.query?.delay || _req.query?.inversionDelayMs),
+        subCapHz: reqNumber(_req.query?.sub || _req.query?.subCapHz),
+        boomGainDb: reqNumber(_req.query?.boomGainDb || _req.query?.gainDb),
+        bassBandHz: reqNumber(_req.query?.bassBandHz || _req.query?.bandHz),
+        currentState: _req.query?.currentState,
+        returnRatio: reqNumber(_req.query?.returnRatio),
       }),
     });
   });
@@ -1731,6 +1760,143 @@ function createDoubleHarmonicRouter(options = {}) {
     }
   });
 
+  router.post('/v10boom/process', verifyJWT, upload.single('audio'), async (req, res) => {
+    try {
+      pruneIndex(indexPath, assetRoot, ttlMs);
+      if (!req.file?.buffer?.length) {
+        return res.status(400).json({ ok: false, error: 'missing_audio', message: 'Ajoute un fichier audio.' });
+      }
+
+      const id = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+      const base = safeBaseName(req.body?.name || req.file.originalname || 'audio');
+      const inputExt = extForUpload(req.file);
+      const inputFilename = `${id}-${base}-v10boom-input.${inputExt}`;
+      const outputFormat = resolveOutputFormat(req.body?.format || req.query?.format, inputExt);
+      const outputFilename = `${id}-${base}-funesterie-d40-v10boom.${outputFormat.ext}`;
+      const inputPath = path.join(assetRoot, inputFilename);
+      const outputPath = path.join(assetRoot, outputFilename);
+      fs.writeFileSync(inputPath, req.file.buffer);
+
+      const processing = await processAudioV10Boom({
+        inputPath,
+        outputPath,
+        profile: String(req.body?.profile || req.query?.profile || 'blend').trim() || 'blend',
+        analysisOptions: {
+          frameMs: DEFAULT_V9_TURBO_FRAME_MS,
+          maxSeconds: reqNumber(req.body?.maxSeconds || req.query?.maxSeconds),
+          cycleSeconds: reqNumber(req.body?.cycleSeconds || req.query?.cycleSeconds),
+          userK: reqNumber(
+            req.body?.userK
+            || req.query?.userK
+            || req.body?.resonanceK
+            || req.query?.resonanceK
+            || req.body?.weightScale
+            || req.query?.weightScale
+            || req.body?.intensity
+            || req.query?.intensity
+            || req.body?.harmonicIntensity
+            || req.query?.harmonicIntensity
+          ),
+          kCeiling: reqNumber(req.body?.kCeiling || req.query?.kCeiling),
+          phaseSlots: reqNumber(req.body?.phaseSlots || req.query?.phaseSlots || req.body?.binaryGridSlots || req.query?.binaryGridSlots),
+          c7PhaseScale: reqNumber(req.body?.c7PhaseScale || req.query?.c7PhaseScale),
+          modulation: 'electrolysis-guitar',
+          modulationMode: 'electrolysis-guitar',
+          electrolysis: true,
+          electrolysisGuitar: true,
+          frequencyHz: reqNumber(req.body?.frequencyHz || req.query?.frequencyHz) ?? 40.44,
+          frequencyMinHz: reqNumber(req.body?.frequencyMinHz || req.query?.frequencyMinHz) ?? 40.26,
+          frequencyMaxHz: reqNumber(req.body?.frequencyMaxHz || req.query?.frequencyMaxHz) ?? 40.62,
+          amount: reqNumber(req.body?.amount || req.query?.amount) ?? 0.042,
+          irregularity: reqNumber(req.body?.irregularity || req.query?.irregularity) ?? 0.36,
+          asymmetry: reqNumber(req.body?.asymmetry || req.query?.asymmetry) ?? 0.27,
+          bidirectional: true,
+          followForce: reqNumber(req.body?.followForce || req.query?.followForce),
+          schemaMix: reqNumber(req.body?.schemaMix || req.query?.schemaMix),
+        },
+        boomOptions: {
+          wet: reqNumber(req.body?.wet || req.query?.wet || req.body?.returnRatio || req.query?.returnRatio),
+          inversionDepth: reqNumber(req.body?.boom || req.query?.boom || req.body?.inversionDepth || req.query?.inversionDepth),
+          inversionDelayMs: reqNumber(req.body?.delay || req.query?.delay || req.body?.inversionDelayMs || req.query?.inversionDelayMs),
+          subCapHz: reqNumber(req.body?.sub || req.query?.sub || req.body?.subCapHz || req.query?.subCapHz),
+          boomGainDb: reqNumber(req.body?.boomGainDb || req.query?.boomGainDb || req.body?.gainDb || req.query?.gainDb),
+          bassBandHz: reqNumber(req.body?.bassBandHz || req.query?.bassBandHz || req.body?.bandHz || req.query?.bandHz),
+        },
+      });
+      const token = crypto.randomBytes(18).toString('base64url');
+      const createdAt = new Date().toISOString();
+      const owner = String(req.user?.email || req.user?.username || req.user?.sub || '').trim();
+      const asset = {
+        id,
+        token,
+        createdAt,
+        owner,
+        originalName: req.file.originalname || '',
+        inputFilename,
+        outputFilename,
+        contentType: outputFormat.contentType,
+        method: processing.method,
+        profile: processing.profile,
+        preset: processing.preset,
+        intensity: processing.intensity || 'vocal-safe-99ms-turbo-1024',
+        variant: 'v10boom',
+        baseVariant: 'v9electrolysis',
+        resonance: processing.resonance || null,
+        operators: processing.operators || null,
+        projection: processing.projection || null,
+        grain: processing.grain || null,
+        binaryGrid: processing.binaryGrid || null,
+        phaseClosure: processing.phaseClosure || null,
+        weights: processing.weights || null,
+        dynamicSummary: processing.dynamic?.summary || null,
+        boom: processing.boom || null,
+        safety: processing.safety || null,
+        bytes: fs.statSync(outputPath).size,
+      };
+      const index = readIndex(indexPath);
+      index.assets = [asset, ...index.assets].slice(0, 300);
+      writeIndex(indexPath, index);
+
+      const baseUrl = routePublicBase(req);
+      const audioUrl = `/api/double-harmonic/out/${encodeURIComponent(outputFilename)}`;
+      const sharePath = `${audioUrl}?token=${encodeURIComponent(token)}`;
+      return res.json({
+        ok: true,
+        id,
+        method: processing.method,
+        state: processing.state,
+        variant: 'v10boom',
+        baseVariant: 'v9electrolysis',
+        profile: processing.profile,
+        preset: processing.preset,
+        intensity: processing.intensity || 'vocal-safe-99ms-turbo-1024',
+        d40: processing.d40,
+        resonance: processing.resonance,
+        operators: processing.operators,
+        projection: processing.projection,
+        grain: processing.grain,
+        binaryGrid: processing.binaryGrid,
+        phaseClosure: processing.phaseClosure,
+        dynamic: processing.dynamic,
+        weights: processing.weights || undefined,
+        boom: processing.boom || undefined,
+        safety: processing.safety || undefined,
+        audioUrl,
+        shareUrl: baseUrl ? `${baseUrl}${sharePath}` : sharePath,
+        contentType: outputFormat.contentType,
+        filename: outputFilename,
+        bytes: asset.bytes,
+        publicSummary: 'V10 Boom: V9 Électrolyse conservée, puis fermeture inverse retardée sur la bande grave (axe m), wet plafonné à 0.2 pour comparaison d’écoute.',
+      });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        error: 'double_harmonic_v10boom_process_failed',
+        message: String(error?.message || error),
+      });
+    }
+  });
+
   router.post(['/v9turbo/process', '/v9electrolysis/process'], verifyJWT, upload.single('audio'), async (req, res) => {
     try {
       pruneIndex(indexPath, assetRoot, ttlMs);
@@ -1972,7 +2138,7 @@ function createDoubleHarmonicRouter(options = {}) {
     }
   });
 
-  router.use(['/process', '/relique/export', '/v2/analyze', '/v2/process', '/v3/process', '/v4/process', '/v5/process', '/v6/process', '/v7/process', '/v71/process', '/v8/process', '/v8plus/process', '/v8pivot/process', '/v9turbo/process', '/v9electrolysis/process'], (err, _req, res, _next) => {
+  router.use(['/process', '/relique/export', '/v2/analyze', '/v2/process', '/v3/process', '/v4/process', '/v5/process', '/v6/process', '/v7/process', '/v71/process', '/v8/process', '/v8plus/process', '/v8pivot/process', '/v9turbo/process', '/v9electrolysis/process', '/v10boom/process'], (err, _req, res, _next) => {
     return res.status(400).json({
       ok: false,
       error: 'double_harmonic_upload_failed',
