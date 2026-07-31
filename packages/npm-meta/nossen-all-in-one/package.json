@@ -79,6 +79,10 @@
     {
       "type": "custom",
       "url": "https://funesterie.me/contact/"
+    },
+    {
+      "type": "custom",
+      "url": "https://pay.qonto.com/payment-links/019fb9c8-9299-7a60-8130-cc40268dfd2b?resource_id=019fb9c8-929b-7269-9db7-19eed62119e0"
     }
   ],
   "donations": {
@@ -89,11 +93,14 @@
     "weroDisplay": "+33 7 83 46 37 61",
     "weroQr": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png",
     "paypal": "https://paypal.me/funeste38",
-    "contact": "https://funesterie.me/contact/"
+    "contact": "https://funesterie.me/contact/",
+    "qonto": "https://pay.qonto.com/payment-links/019fb9c8-9299-7a60-8130-cc40268dfd2b?resource_id=019fb9c8-929b-7269-9db7-19eed62119e0",
+    "notes": "qonto: lien recurrent (abonnement trimestriel), desabonnement facile, interface accessible."
   },
   "funesterieSupport": {
     "paypal": "https://paypal.me/funeste38",
     "weroQr": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png",
-    "contact": "https://funesterie.me/contact/"
+    "contact": "https://funesterie.me/contact/",
+    "qonto": "https://pay.qonto.com/payment-links/019fb9c8-9299-7a60-8130-cc40268dfd2b?resource_id=019fb9c8-929b-7269-9db7-19eed62119e0"
   }
 }
