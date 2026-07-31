@@ -103,3 +103,11 @@ secrets/google/vivy/gemini_api_key.json
 secrets/funesterie-crypto/
 secrets/google/vivy/vivy_account_info.json
 secrets/funesterie-crypto/neo4j_config.json
+
+# Deploiement / artefacts temporaires (blue-green staging, logs, heartbeats)
+.codex-tmp/
+.codex-tmp-deploy*
+.codex-tmp-tierchk.cjs
+.tmp-*
+out.mp3
+.mcp.json
