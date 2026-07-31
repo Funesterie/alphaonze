@@ -1354,6 +1354,7 @@ test('Provider payload strips fallback control lines before Suno and Mureka', ()
     'Banger dans les paroles.',
     'Matière à transformer en chanson:',
     'Djeff découpe la nuit, le micro fait des étincelles,',
+    'Djeff cadence en drift. Règles communes: ne jamais changer le casting après ce contrat.',
     'K44 garde le cap quand la foule devient réelle.',
     '',
     '[Chorus - K44]',
@@ -1377,14 +1378,16 @@ test('Provider payload strips fallback control lines before Suno and Mureka', ()
   });
 
   assert.match(sunoPayload.prompt, /Djeff découpe la nuit/i);
+  assert.match(sunoPayload.prompt, /Djeff cadence en drift/i);
   assert.match(sunoPayload.prompt, /K44 garde le cap/i);
   assert.match(sunoPayload.prompt, /On reste en français/i);
-  assert.doesNotMatch(sunoPayload.prompt, /Distribution vocale|Solo Djeff|Ne mets pas le mot|Banger dans les paroles|Matière à transformer/i);
+  assert.doesNotMatch(sunoPayload.prompt, /Distribution vocale|Solo Djeff|Ne mets pas le mot|Banger dans les paroles|Matière à transformer|Règles communes|changer le casting/i);
 
   assert.match(murekaPayload.body.lyrics, /Djeff découpe la nuit/i);
+  assert.match(murekaPayload.body.lyrics, /Djeff cadence en drift/i);
   assert.match(murekaPayload.body.lyrics, /K44 garde le cap/i);
   assert.match(murekaPayload.body.prompt, /French full-song production/i);
-  assert.doesNotMatch(murekaPayload.body.lyrics, /Distribution vocale|Solo Djeff|Ne mets pas le mot|Banger dans les paroles|Matière à transformer/i);
+  assert.doesNotMatch(murekaPayload.body.lyrics, /Distribution vocale|Solo Djeff|Ne mets pas le mot|Banger dans les paroles|Matière à transformer|Règles communes|changer le casting/i);
   assert.doesNotMatch(murekaPayload.body.lyrics, /fallback/i);
 });
 
@@ -3636,7 +3639,7 @@ test('Vivy frontend lets NOSSEN Banger launch immediately while keeping readines
   assert.match(cssSource, /@keyframes vivy-nossen-flame/);
 });
 
-test('Vivy NOSSEN Banger launches sung Suno, avoids raw TTS overlays, applies D40, and posts a chat download', () => {
+test('Vivy NOSSEN Banger launches sung Suno, avoids raw TTS overlays, applies D40 V10 Boom, and posts a chat download', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
     'utf8'
@@ -3658,16 +3661,13 @@ test('Vivy NOSSEN Banger launches sung Suno, avoids raw TTS overlays, applies D4
   assert.doesNotMatch(launchBlock, /createVivyMultiVoicePreview\(vocalSegments/);
   assert.doesNotMatch(launchBlock, /mixVivyStudioPreview\(voicePreview\.url,\s*preparedMedia\.url\)/);
   assert.match(launchBlock, /const nossenExternalVoiceMix = false/);
-  assert.match(launchBlock, /processDoubleHarmonicAudio/);
-  assert.match(launchBlock, /mode:\s*"v9electrolysis"/);
-  assert.match(launchBlock, /frequencyMinHz:\s*D40_V9_ELECTROLYSIS_MIN_HZ/);
-  assert.match(launchBlock, /frequencyMaxHz:\s*D40_V9_ELECTROLYSIS_MAX_HZ/);
-  assert.match(launchBlock, /amount:\s*D40_V9_ELECTROLYSIS_AMOUNT/);
-  assert.match(launchBlock, /irregularity:\s*D40_V9_ELECTROLYSIS_IRREGULARITY/);
-  assert.match(launchBlock, /asymmetry:\s*D40_V9_ELECTROLYSIS_ASYMMETRY/);
+  assert.match(launchBlock, /applyDefaultV10BoomToVivyMedia/);
+  assert.match(appSource, /async function applyDefaultV10BoomToVivyMedia/);
+  assert.match(appSource, /mode:\s*DEFAULT_D40_PROCESS_MODE/);
+  assert.match(appSource, /provider:\s*"funesterie-d40-v10boom"/);
   assert.ok(
-    launchBlock.indexOf('processDoubleHarmonicAudio') > launchBlock.indexOf('generation_suno_trop_courte_${Math.round(finalDurationSeconds)}s'),
-    'NOSSEN must reject too-short Suno audio before applying D40'
+    launchBlock.indexOf('applyDefaultV10BoomToVivyMedia') > launchBlock.indexOf('generation_suno_trop_courte_${Math.round(finalDurationSeconds)}s'),
+    'NOSSEN must reject too-short Suno audio before applying D40 V10 Boom'
   );
   assert.match(launchBlock, /setMessages\(\(current\)\s*=>\s*\[\.\.\.current,\s*assistantMessage\]\.slice\(-36\)\)/);
   assert.match(appSource, /vivy-chat-media-link/);
@@ -3820,7 +3820,7 @@ test('Vivy NOSSEN isolates the current song exchange from stale account and work
   assert.match(appSource, /function hasVivyNossenCastCoverage/);
   assert.match(appSource, /function strengthenVivyNossenSoloSectionLabels/);
   assert.match(appSource, /buildVivyNossenSoloHandoffPlan/);
-  assert.match(launchBlock, /lyricsAttempt <= 2/);
+  assert.match(launchBlock, /lyricsAttempt <= 3/);
   assert.match(launchBlock, /paroles_vivy_hors_theme/);
   assert.match(launchBlock, /paroles_vivy_casting_incomplet/);
   assert.match(launchBlock, /strengthenVivyNossenSoloSectionLabels/);
@@ -4080,8 +4080,8 @@ test('Vivy NOSSEN automatically extends short Suno songs before D40', () => {
   assert.match(launchBlock, /generation_\$\{selectedMusicProvider\}_duree_inconnue/);
   assert.ok(
     launchBlock.indexOf('await extendVivyStudioSunoMusic(') > -1
-      && launchBlock.indexOf('await extendVivyStudioSunoMusic(') < launchBlock.indexOf('processDoubleHarmonicAudio'),
-    'NOSSEN must extend before applying D40'
+      && launchBlock.indexOf('await extendVivyStudioSunoMusic(') < launchBlock.indexOf('applyDefaultV10BoomToVivyMedia'),
+    'NOSSEN must extend before applying D40 V10 Boom'
   );
   // Vivy n'est plus bloquee sur la longueur: un morceau court part quand meme, avec un warn.
   assert.match(launchBlock, /short song \$\{Math\.round\(finalDurationSeconds\)\}s, outputting anyway/);
@@ -4122,7 +4122,7 @@ test('Vivy NOSSEN routes casting and sonic color from Composition before lyrics'
   const launchBlock = appSource.slice(launchStart, launchEnd);
 
   assert.match(appSource, /songCastingAuto/);
-  assert.match(appSource, /Routage automatique du casting et de la couleur depuis le canevas/);
+  assert.match(appSource, /routage automatique du casting et de la couleur depuis le canevas/i);
   assert.match(appSource, /const effectiveSongArtists = useMemo/);
   assert.match(appSource, /songCastingAuto[\s\S]{0,180}inferVivyNossenBangerArtists\(songText\)/);
   assert.match(appSource, /const checked = effectiveSongArtists\.includes\(artist\.id\)/);
@@ -4288,6 +4288,8 @@ test('Suno payload applies a verified Djeff voice persona when configured', () =
     assert.doesNotMatch(payload.style, /terminal noir neon/i);
     assert.doesNotMatch(payload.style, /server-room tension/i);
     assert.doesNotMatch(payload.style, /ninjutsu|chakra|biting fingers/i);
+    assert.doesNotMatch(payload.style, /dark 808 trap drums|short brutal rap hook/i);
+    assert.match(payload.style, /source-driven|instrumental palette|current material/i);
     assert.match(payload.negativeTags, /female vocals/i);
     assert.doesNotMatch(payload.prompt, /\[Vivy\]/i);
     assert.match(payload.prompt, /\[Djeff\]/);
@@ -5143,7 +5145,7 @@ test('Vivy chat fallback answers simple greetings naturally', async () => {
 
   assert.equal(checkIn.ok, true);
   assert.equal(checkIn.mode, 'chat');
-  assert.match(checkIn.assistant, /je suis là|je te suis/i);
+  assert.match(checkIn.assistant, /ça va|contente|me sens bien/i);
   assert.doesNotMatch(checkIn.assistant, /Ce que je prends surtout/i);
 });
 
@@ -5158,9 +5160,50 @@ test('Vivy chat fallback treats parle normalement as style correction', async ()
 
   assert.equal(result.ok, true);
   assert.equal(result.mode, 'chat');
-  assert.match(result.assistant, /reprends normal|réponds directement/i);
+  assert.match(result.assistant, /ça va|présente|parler avec toi normalement/i);
   assert.doesNotMatch(result.assistant, /Côté voix/i);
   assert.doesNotMatch(result.assistant, /synthèse audio|référence vocale|trois choses/i);
+});
+
+test('Vivy understands parler normally with a check-in and does not route praise as tuning', async () => {
+  const normal = await buildVivyAiChat({
+    conversationId: 'vivy-normal-speech-checkin',
+    message: 'tu peux me parler normalement, comment te sens tu ? ca va ?',
+    history: [
+      { role: 'assistant', content: 'Je te réponds avec un diagnostic technique.' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(normal.mode, 'chat');
+  assert.match(normal.assistant, /ça va|me sens|présente|fière/i);
+  assert.doesNotMatch(normal.assistant, /qu'est-ce que tu veux en sortir|mode formulaire/i);
+
+  const praise = await buildVivyAiChat({
+    conversationId: 'vivy-praise-not-tuning',
+    message: "vivy t'es trop forte, bravo pour ton album America, tu vas devenir une star",
+    history: [
+      { role: 'user', content: 'on avait réglé la sensibilité du détecteur hier' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(praise.mode, 'chat');
+  assert.notEqual(praise.aiMode, 'deterministic_internal_tuning');
+  assert.match(praise.assistant, /merci|touche|fière|album America|musique qui nous ressemble/i);
+  assert.doesNotMatch(praise.assistant, /qu'est-ce que tu veux en sortir|reformul/i);
+});
+
+test('Vivy general chat fallback stays on the current question without generic follow-up', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-current-context-fallback',
+    message: "pourquoi le refrain d'hier avait moins de personnalité ?",
+    history: [
+      { role: 'user', content: 'Archive momie et Terminal Noir avaient une vraie identité.' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.mode, 'chat');
+  assert.match(result.assistant, /refrain d'hier|grand modèle|réponse fiable|question/i);
+  assert.doesNotMatch(result.assistant, /qu'est-ce que tu veux en sortir|Dis-moi ce qui compte le plus/i);
 });
 
 test('Vivy chat fallback answers meta complaints instead of acting like a wall', async () => {
@@ -7110,14 +7153,14 @@ test('Vivy keeps complete song outputs beyond the former 5000 character ceiling'
   assert.match(result.publicLyrics, /FIN_DE_LA_CHANSON_COMPLETE/);
 });
 
-test('Vivy frontend labels prepared audio as V9 electrolysis', () => {
+test('Vivy frontend labels prepared audio as V10 Boom', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
     'utf8'
   );
 
-  assert.match(appSource, /Version : V9 Électrolyse/);
-  assert.match(appSource, /40\.26-40\.62 Hz/);
+  assert.match(appSource, /Version : V10 Boom/);
+  assert.match(appSource, /V9 Électrolyse \+ couche Boom/);
   assert.doesNotMatch(appSource, /Version : V6 Supreme/);
 });
 
@@ -8002,3 +8045,39 @@ test('Suno director audio: une seule sortie ne probe pas et retourne le director
   assert.equal(best && best.audioUrl, 'https://example/only.mp3');
   assert.equal(probed, false, 'pas de probe pour une seule sortie (extension Suno)');
 });
+
+test('isDirectSongwritingRequest ignore le « son » possessif (raconte son histoire, ecris la doc de son module)', () => {
+  // Régression du routeur d'intention trop agressif: « raconte son histoire » est
+  // une demande de chat, pas une consigne de chanson. Le bare « son » (adjectif
+  // possessif) faisait basculer la conversation en mode song. Désormais « son »
+  // n'est un mot musical que précédé d'un article (un son / le son / ton son).
+  const falsePositives = [
+    'raconte son histoire',
+    'raconte son enfance en quelques mots',
+    'ecris la doc de son comportement',
+    'fais un résumé de son parcours technique',
+    'explique son fonctionnement et corrige le bug',
+  ];
+  for (const message of falsePositives) {
+    assert.equal(
+      isDirectSongwritingRequest(message),
+      false,
+      `ne doit pas passer en song pour: ${message}`
+    );
+  }
+
+  // Les vraies demandes de son/track avec article restent des chansons.
+  const truePositives = [
+    'fais un son sur la légende de zorro',
+    'fais le son du mur qui s effondre',
+    'envoie ton son quand tu es prete',
+  ];
+  for (const message of truePositives) {
+    assert.equal(
+      isDirectSongwritingRequest(message),
+      true,
+      `doit rester en song pour: ${message}`
+    );
+  }
+});
+

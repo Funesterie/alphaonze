@@ -87,8 +87,33 @@ export function isVivyNossenStructureInstructionLine(value = "") {
   if (/^mati[eè]re\s+creative\b/.test(folded)) return true;
   if (/\bcanevas\s+composition\b|\ba\s+transformer\s*$/.test(folded)) return true;
   if (/^origine\s+de\s+mati|^source\s+de\s+mati|^seed\b|^brouillon\s*:/.test(folded)) return true;
+  if (/^r[eè]gles\s+communes\b/.test(folded)) return true;
+  if (/^ce\s+bloc\s+est\s+l\s+autorit[eé]\s+commune\b/.test(folded)) return true;
+  if (/^ne\s+jamais\s+(?:remplacer|changer|chanter)\b.{0,120}\b(?:univers|casting|consignes?|techniques?)\b/.test(folded)) return true;
+  if (/^(?:ne\s+mets\s+pas\s+le\s+mot\s+banger|le\s+mot\s+banger\s+est\s+autoris[eé])\b/.test(folded)) return true;
+  if (/^mati[eè]re\s+cr[eé]ative\s+du\s+canevas\s+composition\s+[àa]\s+transformer\b/.test(folded)) return true;
 
   return false;
+}
+
+/**
+ * Coupe une fuite de contrat NOSSEN collee apres une vraie ligne.
+ *
+ * Le filtre ligne-par-ligne ne suffisait pas lorsque le LLM renvoyait:
+ * « vraie punchline : Règles communes: ... ». Dans ce cas on conserve la punchline
+ * et on supprime seulement la queue d'instruction, avant validation et envoi a Suno.
+ */
+export function stripVivyNossenInstructionLeakTail(value = "") {
+  const raw = String(value || "");
+  if (!raw.trim()) return raw;
+  const leak = raw.match(
+    /(?:^|\s)(?:r[eè]gles\s+communes\s*:|ce\s+bloc\s+est\s+l['’]autorit[eé]\s+commune\b|origine\s+de\s+mati[eè]re\s*:|sujet\s+original\s+verrouill[eé]\s*:|casting\s+verrouill[eé]\s*:|couleur\s+sonore(?:\s+verrouill[eé]e)?\s*:|structure\s+verrouill[eé]e\s*:|notes?\s+composition\s+verrouill[eé]es?\s*:|mati[eè]re\s+cr[eé]ative\s+canonique\s*:|mati[eè]re\s+cr[eé]ative\s+du\s+canevas\s+composition\s+[àa]\s+transformer\s*:|canevas\s+composition\s+brut\b|distribution\s+vocale\s+choisie\s*:|utilise\s+le\s+tag\s+exact\b|ne\s+reprends\s+pas\s+les\s+phrases\s+de\s+r[eé]glage\b|ne\s+mets\s+pas\s+le\s+mot\s+banger\b|le\s+mot\s+banger\s+est\s+autoris[eé]\b)/i
+  );
+  if (!leak || typeof leak.index !== "number") return raw;
+  return raw
+    .slice(0, leak.index)
+    .replace(/[\s,;:—-]+$/g, "")
+    .trimEnd();
 }
 
 export function looksLikeVivyNossenOperatorNoiseLine(folded = "") {

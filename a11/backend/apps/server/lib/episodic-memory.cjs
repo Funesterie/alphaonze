@@ -144,6 +144,21 @@ function getEpisodes(userId, options = {}) {
     episodes = episodes.filter((ep) => ep.type === typeFilter);
   }
   
+  // Filtre par conversation. addEpisode enregistre metadata.conversationId depuis
+  // toujours, mais la relecture ne s'en servait pas: le contexte remis a chaque tour
+  // couvrait SEPT JOURS de tous les fils et de tous les appareils confondus. Djeff,
+  // 29/07/2026: « si je commence une discussion avec un compte et que je demande une
+  // chanson avec mon telephone, j'aurais tout le contexte de l'autre session sans le
+  // savoir. » Les preferences restent volontairement globales: elles decrivent la
+  // personne, pas la conversation, et les redemander a chaque nouveau fil serait absurde.
+  if (options.conversationId) {
+    const conversationFilter = String(options.conversationId).trim();
+    episodes = episodes.filter((ep) => (
+      ep.type === 'preference'
+      || String(ep?.metadata?.conversationId || '').trim() === conversationFilter
+    ));
+  }
+
   // Filtre par date (depuis X jours)
   if (options.days) {
     const days = Number(options.days);
@@ -199,8 +214,8 @@ function setPreference(userId, key, value, metadata = {}) {
 /**
  * Récupère le contexte récent (derniers N jours)
  */
-function getRecentContext(userId, days = 7) {
-  return getEpisodes(userId, { days });
+function getRecentContext(userId, days = 7, options = {}) {
+  return getEpisodes(userId, { days, conversationId: options.conversationId });
 }
 
 /**
@@ -285,8 +300,8 @@ function clearUserEpisodes(userId, options = {}) {
 /**
  * Construit un contexte textuel à partir des épisodes récents
  */
-function buildEpisodicContext(userId, days = 7) {
-  const result = getRecentContext(userId, days);
+function buildEpisodicContext(userId, days = 7, options = {}) {
+  const result = getRecentContext(userId, days, options);
   
   if (!result.ok || result.episodes.length === 0) {
     return '';

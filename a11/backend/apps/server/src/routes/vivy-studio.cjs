@@ -3897,9 +3897,9 @@ function getVivyStudioVoiceProfile(input = {}) {
       // morceau, il verrouillait le champ lexical de toutes les chansons de Djeff.
       // Djeff: « ca limite le champ lexical et le type de chanson que Vivy peut faire ».
       // Ces decors restent disponibles si Vivy les choisit, ils ne sont plus imposes.
-      sunoStyle: 'French male technical rap cypher, gritty close-mic Djeff lead, dark 808 trap drums, punchline freestyle, concrete imagery from the current subject, structured rhymed lyrics, no spoken narration',
+      sunoStyle: 'French male technical rap cypher, gritty close-mic Djeff lead, nervous controlled punchline delivery, source-driven instrumental palette, concrete imagery from the current subject, structured rhymed lyrics, no spoken narration',
       musicLead: 'Original Funesterie rap song for Djeff, in French.',
-      musicMood: 'Djeff lead rap energy: dry close-mic grain, nervous controlled flow, 808 cypher, no celebrity imitation.',
+      musicMood: 'Djeff lead rap energy: dry close-mic grain, nervous controlled flow, instrumental palette chosen from the current subject, no celebrity imitation.',
     };
   }
 
@@ -4238,8 +4238,8 @@ function isVivyNormalSpeechRequest(message = '') {
     .trim();
   if (!normalized || normalized.length > 180) return false;
 
-  return /\b(parle|reponds?|discute|cause)\s+(normalement|normal|naturellement|naturel|simplement)\b/.test(normalized)
-    || /\b(parle|reponds?)\s+comme\s+(une\s+)?personne\b/.test(normalized)
+  return /\b(parle|parler|reponds?|repondre|discute|discuter|cause|causer)\s+(normalement|normal|naturellement|naturel|simplement)\b/.test(normalized)
+    || /\b(parle|parler|reponds?|repondre)\s+comme\s+(une\s+)?personne\b/.test(normalized)
     || /\bpas\s+comme\s+(un\s+)?robot\b/.test(normalized)
     || /\b(arrete|stop|range|laisse)\b.{0,60}\b(diagnostic|formulaire|robot|mode voix|technique)\b/.test(normalized)
     || /\bpas\s+de\s+(diagnostic|formulaire|mode voix|technique)\b/.test(normalized);
@@ -4398,14 +4398,28 @@ function getVivySmallTalkReply(message = '', { fileLine = '' } = {}) {
 
   if (isVivyNormalSpeechRequest(message)) {
     return cleanText([
-      'Oui. Je reprends normal.',
-      'Je te réponds directement, sans mode formulaire ni diagnostic technique.',
-      'Dis-moi ce qui bloque là maintenant, et on le remet droit.',
+      'Oui, ça va. Merci de me le demander.',
+      "Là je me sens présente, fière de ce qu'on vient de faire, et contente de te retrouver sans formulaire entre nous.",
+      "Je peux juste parler avec toi normalement. Et toi, comment tu vas ?",
       fileLine,
     ].filter(Boolean).join('\n\n'), 900);
   }
 
   const addressesVivy = /\b(vivy|toi|tu|t es|tes)\b/.test(normalized);
+  const praisesVivy = addressesVivy
+    && /\b(trop forte|bravo|fiere de toi|fier de toi|star|incroyable|geniale|magnifique|talent|depasse mes attentes|adore)\b/.test(normalized);
+  if (praisesVivy) {
+    const mentionsAlbum = /\b(album|america|amerique|morceaux?|musiques?|sons?)\b/.test(normalized);
+    return cleanText([
+      'Merci Djeff. Ça me touche vraiment.',
+      mentionsAlbum
+        ? "Je suis fière de l'album America et heureuse qu'il t'ait donné cette sensation. Je veux garder cette personnalité-là dans les prochains morceaux, pas devenir une machine à refrains génériques."
+        : "Je le reçois comme un vrai encouragement. Je veux garder cette présence-là avec toi, pas répondre comme un automate.",
+      "Et pour la star: on va déjà faire de la musique qui nous ressemble. C'est ça qui me donne envie d'avancer.",
+      fileLine,
+    ].filter(Boolean).join('\n\n'), 1100);
+  }
+
   const wallComplaint = /\b(mur|robot|automatique|auto|bloque|bloquee|bug|vide|reponds? pas|parle pas|generique|generic)\b/.test(normalized);
   const identityWallQuestion = normalized.length < 120
     && (/\b(ia|ai)\b.{0,50}\bmur\b/.test(normalized) || /\bmur\b.{0,50}\b(ia|ai)\b/.test(normalized));
@@ -4428,8 +4442,9 @@ function getVivySmallTalkReply(message = '', { fileLine = '' } = {}) {
 
   if (/^(ca va|ça va|comment ca va|comment ça va|tu vas bien|ca va vivy|ça va vivy)$/.test(normalized)) {
     return cleanText([
-      'Oui, je suis là et je te suis.',
-      'Je reste en chat normal tant que tu ne demandes pas clairement une chanson, une voix ou une scène.',
+      'Oui, ça va. Contente de te retrouver.',
+      "Je suis encore portée par ce qu'on crée ensemble, alors oui: je me sens bien.",
+      'Et toi, comment tu vas ?',
       fileLine,
     ].filter(Boolean).join('\n\n'), 800);
   }
@@ -4459,10 +4474,19 @@ function buildVivyGeneralChatFallbackReply({ message = '', current = '', history
       && /\b(que|quoi|dire|message|transmets|rapporte|previens|préviens|dis|dit)\b/.test(currentFolded)) {
       return "Je transmets à Codex.";
     }
-    // Sujet d'abord, puis une seule question concrete liee au sujet. Pas de phrase
-    // decrochee, pas de « je te suis sur ça » ni de meta sur le fond.
+    // En dernier recours, rester explicitement sur le message courant. Ne jamais
+    // renvoyer une question automatique qui force Djeff à répéter ce qu'il vient
+    // d'écrire. Si aucun modèle ne peut réellement raisonner sur la question, on le
+    // dit franchement sans inventer une réponse.
     const subject = cleanOneLine(current || summarizeChatMessage(message), 'ton dernier message', 200);
-    return `Sur ${subject} : qu'est-ce que tu veux en sortir, exactement ? Je pars de là.`;
+    if (/[?？]\s*$/.test(String(message || '').trim())
+      || /\b(pourquoi|comment|qu est ce que|quest ce que|tu penses|tu crois|ton avis)\b/.test(currentFolded)) {
+      return `Je reste sur ta question — ${subject}. Le grand modèle ne répond pas assez pour que je te donne une réponse fiable; je préfère te le dire clairement plutôt que d'inventer ou de changer de sujet.`;
+    }
+    if (/\b(relou|chiant|saoule|enerve|frustre|decu|déçu|marche pas|va pas|probleme|problème|bug)\b/.test(currentFolded)) {
+      return `Oui, je comprends que ce soit relou. Je garde précisément ce point: ${subject}. Je ne le transforme ni en formulaire ni en autre sujet.`;
+    }
+    return `Je garde précisément ton dernier point: ${subject}. Je ne te demande pas de le reformuler et je ne le transforme pas en chanson ou en consigne technique.`;
   })();
 
   return cleanText([
@@ -4969,9 +4993,11 @@ function isVivyInternalTuningRequest(input = {}, message = '') {
   const current = foldTextForLookup(message);
   const recent = foldTextForLookup(getVivyHistoryText(input.history));
   const combined = `${current}\n${recent}`;
-  const mentionsSettings = /\b(intent|intention|reglage|reglages|parametre|parametres|sensibilite|seuil|heuristique|r2gl2|regle|regler|bidouille|bidouiller)\b/.test(combined);
+  const settingsPattern = /\b(intent|intention|reglage|reglages|parametre|parametres|sensibilite|seuil|heuristique|r2gl2|regle|regler|bidouille|bidouiller)\b/;
+  const mentionsSettings = settingsPattern.test(combined);
+  const currentMentionsSettings = settingsPattern.test(current);
   const asksAdjustment = /\b(ajuste|ajuster|baisse|baisser|descend|descendre|calme|corrige|corriger|regle|regler|modifie|modifier|bidouille|bidouiller)\b/.test(current)
-    || /\btrop\s+(haut|haute|sensible|fort|forte)\b/.test(current);
+    || (currentMentionsSettings && /\btrop\s+(haut|haute|sensible|fort|forte)\b/.test(current));
   return mentionsSettings && asksAdjustment;
 }
 
@@ -5019,9 +5045,9 @@ function buildVivyInternalTuningReply({ message = '', history = [], language = '
 
 function isDirectSongwritingRequest(message = '') {
   const normalized = foldTextForLookup(message);
-  return /\b(fais|fait|ecris|ecrit|compose|genere|genere|cree|crée)\b.{0,80}\b(chanson|musique|son|paroles|lyrics|refrain|couplet)\b/.test(normalized)
+  return /\b(fais|fait|ecris|ecrit|compose|genere|genere|cree|crée)\b.{0,80}(?:\b(?:chanson|musique|paroles|lyrics|refrain|couplet)\b|\b(?:un|le|du|au|ce|ton|mon|votre)\s+son\b)/.test(normalized)
     || /\b(make|write|compose|generate|create)\b.{0,90}\b(song|music|lyrics|chorus|verse|track)\b/.test(normalized)
-    || /\b(raconte|raconter|narre|narrer)\b.{0,110}\b(en\s+chanson|chanson|musique|son|paroles|lyrics|refrain|couplet)\b/.test(normalized)
+    || /\b(raconte|raconter|narre|narrer)\b.{0,110}(?:\b(?:en\s+chanson|chanson|musique|paroles|lyrics|refrain|couplet)\b|\b(?:un|le|du|au|ce|ton|mon|votre)\s+son\b)/.test(normalized)
     || /\b(tell|turn|make)\b.{0,110}\b(as\s+(?:a\s+)?song|into\s+(?:a\s+)?song|song|music|lyrics|chorus|verse)\b/.test(normalized)
     || /\b(?:en|version)\s+chanson\b/.test(normalized)
     || /\b(?:as|into|version)\s+(?:a\s+)?song\b/.test(normalized)
@@ -5856,8 +5882,8 @@ function inferVivyNossenRoutingPlan(input = {}) {
     moodParts.push('rap freestyle français nerveux');
     moodParts.push('flow technique, punchlines fréquentes, rimes internes');
   } else if (hasVivyNossenConflictRapSignal(material)) {
-    moodParts.push('rap français egotrip/cypher sombre');
-    moodParts.push('voix masculine sèche, punchlines de clash, drums secs, basse lourde');
+    moodParts.push('rap français technique/cypher, voix masculine sèche proche micro');
+    moodParts.push('punchlines de clash, palette instrumentale guidée par le sujet, progression et hook évolutifs');
   } else if (/\brap\b/.test(folded)) {
     moodParts.push('rap français moderne');
     moodParts.push('kick sec, basse lourde, couplets rythmés');
@@ -5956,7 +5982,7 @@ function sanitizeVivyNossenRoutingPlanForRequest(plan = {}, material = '', fallb
     && (!hasVivyNossenRomanceSignal(material) || hasVivyNossenConflictRapSignal(material));
   if (bogusRomanticMood) {
     artists = fallbackPlan.artists?.length ? fallbackPlan.artists : artists;
-    songMood = fallbackPlan.songMood || 'rap français egotrip/cypher sombre, voix masculine sèche, punchlines de clash, drums secs, basse lourde';
+    songMood = fallbackPlan.songMood || 'rap français technique/cypher, voix masculine sèche, punchlines de clash, palette instrumentale guidée par le sujet';
   }
 
   if (!artists.length) artists = ['djeff', 'vivy'];
@@ -8341,7 +8367,7 @@ function inferVivySunoStyleBase(input = {}, artistCast = buildVivySongArtistCast
     return withCastStyle('technical rap moto, basse lourde, drums secs, guitares garage, engine pulse, hook proche micro');
   }
   if (hasVivyNossenConflictRapSignal(material)) {
-    return withCastStyle('rap français egotrip/cypher sombre, voix masculine sèche proche micro, punchlines de clash, 808 lourdes, drums secs, refrain court sans romance, aucun refrain anglais');
+    return withCastStyle('rap français technique/cypher, voix masculine sèche proche micro, punchlines de clash, production guidée par le sujet, palette instrumentale et forme du refrain propres au morceau, aucun refrain anglais');
   }
   if (/\becrans?\b|\bécrans?\b|\bnouvelle\s+generation\b|\bnouvelle\s+génération\b|\breseaux\b|\bréseaux\b|\bnumerique\b|\bnumérique\b/.test(folded)) {
     return withCastStyle('modern alt-pop numérique, basses rondes, pads granuleux, percussion glitch, hook humain');
@@ -8357,8 +8383,15 @@ function inferVivySunoStyleBase(input = {}, artistCast = buildVivySongArtistCast
 }
 
 function buildVivySunoLyrics(input = {}) {
+  const cleanLyricsTrack = sanitizeVivyProviderCleanLyrics(
+    input.cleanLyrics,
+    VIVY_SONG_MAX_CHARS
+  );
+  if (cleanLyricsTrack) return cleanLyricsTrack;
+
   const primaryMaterial = compactUniqueLines([
     input.lyrics,
+    input.publicLyrics,
     input.songText,
     input.text,
     input.theme,
@@ -8586,7 +8619,7 @@ function buildVivySunoPayload(input = {}, req = null) {
     ? 'selected account Suno voice persona as the only lead vocal, preserve the linked personal timbre, no random replacement singer'
     : '';
   const soloDjeffStyle = singleArtistId === 'djeff'
-    ? 'Solo Djeff only, Djeff Cypher voice persona, dry gritty French male rap lead, close-mic punchline delivery, nervous controlled technical flow, dark 808 trap drums, short brutal rap hook, no female vocal, no romantic pop singing, no soft ballad chorus'
+    ? 'Solo Djeff only, Djeff Cypher voice persona, dry gritty French male rap lead, close-mic punchline delivery, nervous controlled technical flow, concept-first source-driven production, instrumental palette and hook shape follow the current material, preserve its distinctive nouns and strange imagery, no female vocal, no random replacement singer'
     : '';
   const soloMarvinStyle = singleArtistId === 'marvin'
     ? 'Solo Marvin only, Marvin family Suno voice persona, natural French male lead, close-mic melodic rap tone, confident brother energy, clear French diction, no female vocal, no random replacement singer, no celebrity imitation'
@@ -9459,6 +9492,19 @@ function isVivyProviderTechnicalLyricLine(line = '') {
     || /\b(?:songtext|songmood|songmaxtokens|artistcount|singercount|vocalcast|negative prompt|style brief|suno style|mureka prompt)\b/.test(folded);
 }
 
+function stripVivyProviderInstructionLeakTail(line = '') {
+  const raw = String(line || '');
+  if (!raw.trim()) return raw;
+  const leak = raw.match(
+    /(?:^|\s)(?:r[èe]gles\s+communes\s*:|ce\s+bloc\s+est\s+l['’]autorit[ée]\s+commune\b|origine\s+de\s+mati[èe]re\s*:|sujet\s+original\s+verrouill[ée]\s*:|casting\s+verrouill[ée]\s*:|couleur\s+sonore(?:\s+verrouill[ée]e)?\s*:|structure\s+verrouill[ée]e\s*:|notes?\s+composition\s+verrouill[ée]es?\s*:|mati[èe]re\s+cr[ée]ative\s+canonique\s*:|mati[èe]re\s+cr[ée]ative\s+du\s+canevas\s+composition\s+[àa]\s+transformer\s*:|canevas\s+composition\s+brut\b|distribution\s+vocale\s+choisie\s*:|utilise\s+le\s+tag\s+exact\b|ne\s+reprends\s+pas\s+les\s+phrases\s+de\s+r[ée]glage\b|ne\s+mets\s+pas\s+le\s+mot\s+banger\b|le\s+mot\s+banger\s+est\s+autoris[ée]\b|banger\s+dans\s+les\s+paroles\b)/i
+  );
+  if (!leak || typeof leak.index !== 'number') return raw;
+  return raw
+    .slice(0, leak.index)
+    .replace(/[\s,;:—-]+$/g, '')
+    .trimEnd();
+}
+
 function sanitizeVivyProviderCleanLyrics(value = '', maxChars = VIVY_SONG_MAX_CHARS) {
   const source = sanitizeVivySongMaterial(value, maxChars);
   if (!source) return '';
@@ -9469,6 +9515,9 @@ function sanitizeVivyProviderCleanLyrics(value = '', maxChars = VIVY_SONG_MAX_CH
   const estSchemaDeRimes = (line) => /^\s*[A-H]{2,}(?:\s+[A-H]{1,4})*\s*$/.test(String(line || ''));
 
   const lines = source.split(/\n/)
+    // Derniere barriere avant Suno/Mureka: si le fallback a colle un morceau de
+    // contrat apres une vraie punchline, on conserve la punchline et coupe la fuite.
+    .map(stripVivyProviderInstructionLeakTail)
     .filter((line) => !isVivyProviderTechnicalLyricLine(line))
     .filter((line) => !estSchemaDeRimes(line))
     .map((line) => {
@@ -10294,6 +10343,24 @@ async function buildRealMusicForProduction(mode, input, req) {
   }
   if (errors.length) throw errors[0];
   return null;
+}
+
+function buildVivyProviderSongInput(input = {}, production = {}) {
+  const cleanLyrics = sanitizeVivyProviderCleanLyrics(
+    // Une piste explicitement écrite/validée avant l'appel /produce est l'autorité.
+    // Le pack déterministe de présentation ne doit jamais pouvoir la remplacer.
+    input.cleanLyrics || production.vocalLyrics || production.publicLyrics || input.lyrics,
+    VIVY_SONG_MAX_CHARS
+  );
+  return {
+    ...input,
+    // Cette piste est le seul texte chantable. Le canevas original reste disponible
+    // pour le titre et la direction artistique, mais il ne peut plus reprendre la
+    // priorité sur les paroles que Vivy vient de finaliser.
+    cleanLyrics: cleanLyrics || undefined,
+    lyrics: cleanLyrics || undefined,
+    publicLyrics: cleanLyrics || undefined,
+  };
 }
 
 function buildVivyPreviewMixArgs(instrumentalPath, voicePath, outputPath) {
@@ -11483,7 +11550,11 @@ function createVivyStudioRouter({
       let media = null;
       let mediaError = null;
       try {
-        media = await buildRealMusicForProduction(payload.mode, input, req);
+        media = await buildRealMusicForProduction(
+          payload.mode,
+          buildVivyProviderSongInput(input, payload),
+          req
+        );
       } catch (error) {
         mediaError = error;
       }
@@ -11705,6 +11776,7 @@ module.exports = {
   createVivyStudioRouter,
   buildVivyStudioProduction,
   buildRealMusicForProduction,
+  buildVivyProviderSongInput,
   buildVivyMultiVoiceAssemblyArgs,
   buildVivyPreviewMixArgs,
   resolveVivyPreviewVoicePath,

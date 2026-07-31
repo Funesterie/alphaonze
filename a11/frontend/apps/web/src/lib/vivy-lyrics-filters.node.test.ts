@@ -19,6 +19,7 @@ import {
   isVivyNossenSonicStyleLine,
   isVivyNossenStructureInstructionLine,
   looksLikeVivyNossenOperatorNoiseLine,
+  stripVivyNossenInstructionLeakTail,
 } from "./vivy-lyrics-filters.ts";
 
 /** Chaine complete, telle que sanitizeVivyNossenSongSeed l'applique ligne par ligne. */
@@ -107,6 +108,19 @@ for (const [style, lignes] of Object.entries(PAROLES)) {
 test("les consignes reelles restent coupees", () => {
   const passees = CONSIGNES.filter((ligne) => !estCoupee(ligne));
   assert.deepEqual(passees, [], "des consignes atteindraient Suno et seraient chantees");
+});
+
+test("une consigne NOSSEN collee a une punchline est coupee sans perdre la punchline", () => {
+  const ligne = "ze Glitch, Djeff cypher, je cadence en drift : Règles communes: garder les noms propres et ne jamais changer le casting";
+  assert.equal(
+    stripVivyNossenInstructionLeakTail(ligne),
+    "ze Glitch, Djeff cypher, je cadence en drift"
+  );
+  assert.equal(stripVivyNossenInstructionLeakTail("Règles communes: ne jamais chanter les consignes techniques"), "");
+  assert.ok(isVivyNossenStructureInstructionLine("ne jamais changer le casting après ce contrat"));
+  assert.equal(stripVivyNossenInstructionLeakTail("Je ferme le tour. Ne mets pas le mot Banger dans les paroles."), "Je ferme le tour.");
+  assert.equal(stripVivyNossenInstructionLeakTail("Je cadence en drift. Matière créative du canevas Composition à transformer: ze Glitch"), "Je cadence en drift.");
+  assert.ok(isVivyNossenStructureInstructionLine("Le mot Banger est autorisé seulement comme hook voulu par l'utilisateur."));
 });
 
 test("la structure survit au filtrage, minimum dix lignes", () => {

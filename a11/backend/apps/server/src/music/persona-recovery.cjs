@@ -60,11 +60,15 @@ function intConfig(env, key, fallback) {
  */
 function looksLikeExpiredPersona(value) {
   if (!value) return false;
-  const code = Number(value?.status ?? value?.code ?? value?.apiCode);
+  // Suno transporte son code reel dans l'enveloppe du corps avec un HTTP 200: un
+  // ?? sur status masquait donc toujours le 553 au seul site d'appel de production.
+  const codes = [value?.status, value?.code, value?.apiCode]
+    .map((brut) => Number(brut))
+    .filter((nombre) => Number.isFinite(nombre));
   const texte = String(
     value?.message || value?.msg || value?.detail || value || ''
   ).toLowerCase();
-  if (code === 553) return true;
+  if (codes.includes(553)) return true;
   if (/voice\s+has\s+expired/.test(texte)) return true;
   if (/voice\s+persona\s+generation\s+failed/.test(texte)) return true;
   if (/recreate\s+the\s+voice/.test(texte)) return true;
@@ -143,9 +147,14 @@ function verifySampleShare(name, expiresAt, signature, env = process.env) {
   const echeance = Number(expiresAt);
   if (!Number.isFinite(echeance) || echeance <= Date.now()) return false;
   const attendue = signSampleShare(name, expiresAt, env);
-  const fournie = String(signature || '');
-  if (!attendue || attendue.length !== fournie.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(attendue), Buffer.from(fournie));
+  if (!attendue) return false;
+  // timingSafeEqual compare des OCTETS: une garde sur la longueur en caracteres
+  // laissait passer une signature accentuee et levait une RangeError sur une
+  // route publique sans authentification.
+  const attendueOctets = Buffer.from(attendue, 'utf8');
+  const fournieOctets = Buffer.from(String(signature || ''), 'utf8');
+  if (attendueOctets.length !== fournieOctets.length) return false;
+  return crypto.timingSafeEqual(attendueOctets, fournieOctets);
 }
 
 function buildSampleShareUrl(name, publicBaseUrl, env = process.env, ttlMs = 900000) {
@@ -154,7 +163,10 @@ function buildSampleShareUrl(name, publicBaseUrl, env = process.env, ttlMs = 900
   const expiresAt = Date.now() + Math.max(60000, Number(ttlMs) || 0);
   const signature = signSampleShare(name, expiresAt, env);
   if (!signature) return '';
-  return `${base}/voice-catalog/${encodeURIComponent(name)}/sample/shared`
+  // getPublicBaseUrl ne rend que l'origine: le prefixe de montage du routeur doit
+  // etre concatene ici, exactement comme le fait buildSunoCallbackUrl. Sans lui,
+  // Suno recevait une URL en 404 et aucune reanimation ne pouvait aboutir.
+  return `${base}/api/vivy/studio/voice-catalog/${encodeURIComponent(name)}/sample/shared`
     + `?exp=${expiresAt}&sig=${signature}`;
 }
 

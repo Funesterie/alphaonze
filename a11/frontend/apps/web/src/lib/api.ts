@@ -2997,7 +2997,9 @@ export type VivyStudioProductionInput = {
   songMood?: string;
   americanMode?: boolean;
   songTitle?: string;
+  cleanLyrics?: string;
   lyrics?: string;
+  publicLyrics?: string;
   songText?: string;
   sessionSunoApiKey?: string;
   shareTarget?: string;

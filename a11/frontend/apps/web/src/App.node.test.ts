@@ -4,12 +4,15 @@ import test from "node:test";
 
 const appSource = fs.readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 
-test("NOSSEN seed validation accepts the production minimum while retaining chorus protection", () => {
+test("NOSSEN seed validation rejects empty or skeletal sections", () => {
   const validationBlock = appSource.match(/function isValidVivyNossenSongSeed\(value = ""\) \{[\s\S]*?\n\}/)?.[0] || "";
 
-  assert.match(validationBlock, /sectionCount >= 3/);
+  assert.match(validationBlock, /sectionCount >= 5/);
   assert.match(validationBlock, /chorusCount >= 2/);
-  assert.match(validationBlock, /lyricLineCount >= 10/);
+  assert.match(validationBlock, /lyricLineCount >= 16/);
+  assert.match(validationBlock, /verseSections\.length >= 2/);
+  assert.match(validationBlock, /section\.lyricLines >= 4/);
+  assert.match(validationBlock, /completeVerses && completeChoruses/);
   assert.match(validationBlock, /sanitizeVivyNossenSongSeed/);
   assert.match(validationBlock, /oui\\s\+je\\s\+te\\s\+suis/);
 });
@@ -33,6 +36,11 @@ test("V10 Boom is the canonical D40 default across Studio and Suno production", 
   const simpleBlock = appSource.slice(simpleStart, simpleEnd);
   assert.match(simpleBlock, /americanMode: songAmericanMode/);
   assert.match(simpleBlock, /songArtists: effectiveSongArtists/);
+  assert.match(simpleBlock, /const lyricsPayload = await chatWithVivy/);
+  assert.match(simpleBlock, /disableSongcraftFallback: true/);
+  assert.match(simpleBlock, /cleanLyrics: authoredVocalLyrics/);
+  assert.match(simpleBlock, /publicLyrics: authoredPublicLyrics/);
+  assert.match(simpleBlock, /paroles_vivy_invalides_avant_suno/);
   assert.match(simpleBlock, /applyDefaultV10BoomToVivyMedia/);
 
   const nossenStart = appSource.indexOf("async function launchNossenBanger");
@@ -45,6 +53,20 @@ test("sanitizeVivyNossenSongSeed normalise les traits d''union Unicode (U+2011) 
   // gpt-oss emet U+2011 (non-breaking hyphen) dans [Pre\u2011Chorus]; le parseur de sections
   // a trait d''union ASCII ne le matchait pas -> paroles_vivy_invalides. Vu en prod 29/07/2026.
   assert.ok(appSource.includes("replace(/[\\u2010-\\u2015"), "normalisation des traits d''union Unicode absente de sanitizeVivyNossenSongSeed");
+});
+
+test("les paroles simples retirent les annotations de schema de rimes avant Suno", () => {
+  const sanitizeStart = appSource.indexOf("function sanitizeVivyNossenSongSeed");
+  const sanitizeEnd = appSource.indexOf("function strengthenVivyNossenSoloSectionLabels", sanitizeStart);
+  const sanitizeBlock = appSource.slice(sanitizeStart, sanitizeEnd);
+  assert.match(sanitizeBlock, /rhymeSchemeMarkerCount/);
+  assert.match(sanitizeBlock, /hasRhymeSchemeAnnotations/);
+  assert.match(sanitizeBlock, /\\\(\[A-H\]\\\)/);
+
+  const simpleStart = appSource.indexOf("async function produceSimpleVivySong");
+  const simpleEnd = appSource.indexOf("async function askVivy", simpleStart);
+  const simpleBlock = appSource.slice(simpleStart, simpleEnd);
+  assert.match(simpleBlock, /Do not output rhyme-scheme letters such as A\/B/);
 });
 
 
@@ -77,5 +99,14 @@ test("par defaut la couleur sonore est libre: pas d'inference injectee a la plac
   assert.match(launchBlock, /buildVivyNossenBangerProductionBrief\(routedReadiness,\s*artists,\s*sharedCompositionContract,\s*routedMood\)/);
   // La couleur sonore de production envoyee a Suno est le choix route par Vivy, libre sinon.
   assert.match(launchBlock, /const songMood = routedMood \|\| undefined;/);
-  assert.match(launchBlock, /const vivyRoutedColor = \(routedMood \|\| ""\)\.trim\(\);/);
+  assert.doesNotMatch(launchBlock, /writeVivyStudioDraft\(\{[\s\S]*songMood:\s*vivyRoutedColor/);
+});
+
+test("la couleur sonore affichee repart vide et ne se restaure pas depuis le brouillon", () => {
+  assert.match(appSource, /const \[songMood, setSongMood\] = useState\(""\);/);
+  const persistenceStart = appSource.indexOf("useEffect(() => {\n    writeVivyStudioDraft");
+  const persistenceEnd = appSource.indexOf("useEffect(() => {\n    writeVivySessionSunoKey", persistenceStart);
+  const persistenceBlock = appSource.slice(persistenceStart, persistenceEnd);
+  assert.match(persistenceBlock, /songMood:\s*""/);
+  assert.doesNotMatch(persistenceBlock, /^\s+songMood,\s*$/m);
 });

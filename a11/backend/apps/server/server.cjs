@@ -11856,7 +11856,11 @@ async function loadUserMemoryContext(userId, latestUserMessage, conversationId) 
   // Récupérer le contexte épisodique (préférences et événements récents)
   let episodicContext = '';
   try {
-    episodicContext = buildEpisodicContext(normalizedUserId, 7);
+    // Rattache au fil en cours: sans lui, une demande faite depuis le telephone
+    // heritait en silence du contexte d'une conversation ouverte sur le PC.
+    episodicContext = buildEpisodicContext(normalizedUserId, 7, {
+      conversationId: normalizedConversationId,
+    });
   } catch (error_) {
     console.warn('[A11][EPISODIC] episodic context retrieval failed:', error_?.message);
   }

@@ -187,6 +187,7 @@ import {
   isVivyNossenSonicStyleLine,
   isVivyNossenStructureInstructionLine,
   looksLikeVivyNossenOperatorNoiseLine,
+  stripVivyNossenInstructionLeakTail,
 } from "./lib/vivy-lyrics-filters";
 import { sanitizeMediaDisplayName, sanitizeMediaDisplayNameFromUrl } from "./lib/safe-media-name";
 import {
@@ -4077,6 +4078,7 @@ function buildVivyNossenLyricsRequest(
     castingLine,
     handoffLine,
     "Écris une version longue, dense et chantable: intro, trois ou quatre couplets, pré-refrains, refrain mémorable répété au moins trois fois, pont, montée finale et outro. Le refrain doit revenir après le dernier pont.",
+    "Chaque couplet et chaque refrain doit contenir au moins quatre vraies lignes chantées. Aucun en-tête de section ne doit rester vide et la chanson doit contenir au moins vingt lignes chantées.",
     "Chaque section doit apporter une image nouvelle, une progression émotionnelle et des rimes travaillées; évite les formules génériques et ne décris jamais la fabrication du morceau.",
     useBangerWord
       ? "Le mot Banger est autorisé seulement comme hook voulu par l'utilisateur."
@@ -4126,9 +4128,25 @@ function sanitizeVivyNossenSongSeed(value = "") {
   // et autres separateurs Unicode dans les balises de section ([Pre‑Chorus]); nos regex a
   // trait d'union ASCII ne les matchaient pas et isValidVivyNossenSongSeed sous-comptait les
   // sections -> paroles_vivy_invalides. Vu en prod le 29/07/2026. On ramene tout en ASCII.
-  const lines = toUnicodeText(value, VIVY_STUDIO_SONG_MAX_CHARS)
+  const normalizedLines = toUnicodeText(value, VIVY_STUDIO_SONG_MAX_CHARS)
     .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-")
-    .split(/\r?\n/)
+    .split(/\r?\n/);
+  // Certains LLM ajoutent un schema de rimes comme des lignes autonomes « A », « B »
+  // ou comme des suffixes « (A) ». Vu sur Jetstream Heart le 30/07/2026. On ne retire
+  // ces lettres que lorsqu'elles se repetent et forment clairement une annotation,
+  // afin de ne jamais toucher a une vraie phrase qui finirait par la lettre A.
+  const rhymeSchemeMarkerCount = normalizedLines.filter((line) => (
+    /^\s*\(?[A-H]\)?[.:;-]?\s*$/i.test(line)
+    || /\s+\([A-H]\)[.:;-]?\s*$/i.test(line)
+  )).length;
+  const hasRhymeSchemeAnnotations = rhymeSchemeMarkerCount >= 2;
+  const lines = normalizedLines
+    .map((line) => {
+      if (!hasRhymeSchemeAnnotations || /^\s*\[[^\]]+\]\s*$/.test(line)) return line;
+      if (/^\s*\(?[A-H]\)?[.:;-]?\s*$/i.test(line)) return "";
+      return line.replace(/\s+\([A-H]\)[.:;-]?\s*$/i, "").trimEnd();
+    })
+    .map(stripVivyNossenInstructionLeakTail)
     .filter((line) => {
       const trimmed = line.trim();
       if (!trimmed) return true;
@@ -4174,14 +4192,32 @@ function isValidVivyNossenSongSeed(value = "") {
   if (!text) return false;
   const folded = foldForLookup(text);
   if (/\b(?:oui\s+je\s+te\s+suis|je\s+dois\s+repondre\s+a\s+ce\s+que\s+tu\s+poses|sur\s+le\s+fond|avec\s+le\s+contexte)\b/.test(folded)) return false;
-  const sectionCount = (text.match(/^\s*\[(?:Intro|Verse|Couplet|Pre[- ]?Chorus|Pré[- ]?refrain|Refrain|Chorus|Bridge|Pont|Outro|Final(?:\s+Chorus)?)\b[^\]]*\]\s*$/gim) || []).length;
-  const chorusCount = (text.match(/^\s*\[(?:Refrain|Chorus|Final\s+Chorus)\b[^\]]*\]\s*$/gim) || []).length;
+  const sectionHeader = /^\s*\[(Intro|Verse|Couplet|Pre[- ]?Chorus|Pré[- ]?refrain|Refrain|Chorus|Bridge|Pont|Outro|Final(?:\s+Chorus)?)\b[^\]]*\]\s*$/i;
+  const sectionStats: Array<{ kind: string; lyricLines: number }> = [];
+  let activeSection: { kind: string; lyricLines: number } | null = null;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const header = line.match(sectionHeader);
+    if (header) {
+      if (activeSection) sectionStats.push(activeSection);
+      activeSection = { kind: foldForLookup(header[1]), lyricLines: 0 };
+      continue;
+    }
+    if (activeSection && line && !/^\[[^\]]+\]$/.test(line)) activeSection.lyricLines += 1;
+  }
+  if (activeSection) sectionStats.push(activeSection);
+  const sectionCount = sectionStats.length;
+  const chorusSections = sectionStats.filter((section) => /^(?:refrain|chorus|final chorus)$/.test(section.kind));
+  const verseSections = sectionStats.filter((section) => /^(?:verse|couplet)$/.test(section.kind));
+  const chorusCount = chorusSections.length;
   const lyricLineCount = text
     .split(/\r?\n+/)
     .map((line) => line.trim())
     .filter((line) => line && !/^\[[^\]]+\]$/.test(line))
     .length;
-  return sectionCount >= 3 && chorusCount >= 2 && lyricLineCount >= 10;
+  const completeVerses = verseSections.length >= 2 && verseSections.every((section) => section.lyricLines >= 4);
+  const completeChoruses = chorusSections.length >= 2 && chorusSections.every((section) => section.lyricLines >= 3);
+  return sectionCount >= 5 && chorusCount >= 2 && lyricLineCount >= 16 && completeVerses && completeChoruses;
 }
 
 function getVivyNossenThemeTerms(value = "") {
@@ -5399,7 +5435,10 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     hasLegacyVivySunoSource ? ["vivy"] : normalizeVivyStudioArtists(initialDraft.songArtists)
   ));
   const [songCastingAuto, setSongCastingAuto] = useState(initialDraft.songCastingAuto !== false);
-  const [songMood, setSongMood] = useState(String(initialDraft.songMood || ""));
+  // La couleur sonore est un canevas ponctuel, pas un réglage de compte. Une valeur
+  // restaurée remplissait le champ à chaque visite et obligeait à l'effacer avant de
+  // laisser Vivy choisir. On repart donc toujours d'un champ visiblement vide.
+  const [songMood, setSongMood] = useState("");
   const [songAmericanMode, setSongAmericanMode] = useState(Boolean(initialDraft && initialDraft.songAmericanMode));
   const [songText, setSongText] = useState(String(initialDraft.songText || ""));
   const [sunoSessionKey, setSunoSessionKey] = useState(() => readVivySessionSunoKey());
@@ -5613,7 +5652,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       songArtists,
       songCastingAuto,
       songAmericanMode,
-      songMood,
+      // Ne jamais restaurer une ancienne couleur au prochain chargement. Une couleur
+      // saisie reste active pendant la session courante et part bien dans la requête.
+      songMood: "",
       songText,
       shareTarget,
       shareUrl,
@@ -6608,14 +6649,52 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
     setIsBusy(true);
     setVivyMedia(null);
     setVivyArrangementCues([]);
-    setStatus(sunoSessionKey.trim()
-      ? `${activeVoiceProfile.label} lance Suno avec ta clé personnelle de session...`
-      : `${activeVoiceProfile.label} lance Suno si ton compte a les droits fondateur/admin.`);
+    setStatus(`${activeVoiceProfile.label} écrit d’abord les paroles complètes...`);
     try {
+      const songLanguage = songAmericanMode
+        ? "en"
+        : normalizeA11LanguageCode(getAuthAccountLanguage(localStorage.getItem("a11:language") || "fr"));
+      const lyricsPayload = await chatWithVivy({
+        mode: "song",
+        language: songLanguage,
+        americanMode: songAmericanMode,
+        conversationId: `vivy-studio-${Date.now()}`,
+        message: [
+          songAmericanMode
+            ? "Write only the complete lyrics of one fully original song in natural American English. Never switch to French."
+            : "Écris uniquement les paroles complètes d’une chanson originale en français naturel.",
+          "Use clear section tags: [Intro], [Verse 1], [Pre-Chorus], [Chorus], [Verse 2], [Bridge], a repeated [Chorus], and [Outro].",
+          "Do not output rhyme-scheme letters such as A/B, parenthesized rhyme labels, line numbers, metrical labels, annotations or explanations. Output only section tags and finished lyric lines.",
+          "Write real, fluent, singable lines with concrete imagery, emotional progression and a memorable chorus. Never copy setup labels, UI text, tool names, prompts or production instructions into the lyrics.",
+          `Creative brief:\n${prompt}`,
+        ].join("\n\n"),
+        songText: prompt,
+        songMood: songMood || undefined,
+        songArtists: effectiveSongArtists,
+        vocalCast: activeSongArtistCast.label,
+        artistCount: activeSongArtistCast.count,
+        singerCount: activeSongArtistCast.count,
+        disableSongcraftFallback: true,
+        internalSongGeneration: true,
+      });
+      const authoredVocalLyrics = sanitizeVivyNossenSongSeed(toUnicodeText(
+        lyricsPayload.vocalLyrics || lyricsPayload.publicLyrics || "",
+        VIVY_STUDIO_SONG_MAX_CHARS
+      ));
+      const authoredPublicLyrics = sanitizeVivyNossenSongSeed(toUnicodeText(
+        lyricsPayload.publicLyrics || authoredVocalLyrics,
+        VIVY_STUDIO_SONG_MAX_CHARS
+      ));
+      if (!isValidVivyNossenSongSeed(authoredVocalLyrics)) {
+        throw new Error("paroles_vivy_invalides_avant_suno");
+      }
+      setStatus(sunoSessionKey.trim()
+        ? `${activeVoiceProfile.label} a fini les paroles et lance Suno avec ta clé personnelle de session...`
+        : `${activeVoiceProfile.label} a fini les paroles et lance Suno avec les droits du compte...`);
       const playablePrompt = buildVivyPlayableText(prompt, songMood || "Vivy garde le fil du morceau.", 320);
       const payload = await runVivyStudioProduction({
         mode: "song",
-        language: songAmericanMode ? "en" : normalizeA11LanguageCode(getAuthAccountLanguage(localStorage.getItem("a11:language") || "fr")),
+        language: songLanguage,
         americanMode: songAmericanMode,
         voiceTool,
         voiceInstruction,
@@ -6633,6 +6712,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         artistCount: activeSongArtistCast.count,
         singerCount: activeSongArtistCast.count,
         songMood,
+        cleanLyrics: authoredVocalLyrics,
+        lyrics: authoredVocalLyrics,
+        publicLyrics: authoredPublicLyrics,
         songText: prompt,
         sessionSunoApiKey: sunoSessionKey.trim() || undefined,
         prompt: playablePrompt,
@@ -6647,8 +6729,8 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       const payloadAny = payload as any;
       let finalPayload: any = payloadAny;
       setVivyDiagnostics(payload.prosody || null);
-      const publicLyrics = toUnicodeText(payloadAny?.publicLyrics || prompt, VIVY_STUDIO_SONG_MAX_CHARS).trim();
-      const vocalLyrics = toUnicodeText(payloadAny?.vocalLyrics || publicLyrics, VIVY_STUDIO_SONG_MAX_CHARS).trim();
+      const publicLyrics = toUnicodeText(authoredPublicLyrics || payloadAny?.publicLyrics || prompt, VIVY_STUDIO_SONG_MAX_CHARS).trim();
+      const vocalLyrics = toUnicodeText(authoredVocalLyrics || payloadAny?.vocalLyrics || publicLyrics, VIVY_STUDIO_SONG_MAX_CHARS).trim();
       const vocalSegments = Array.isArray(payloadAny?.vocalSegments) ? payloadAny.vocalSegments : [];
       setVivyLyrics(publicLyrics);
       setVivyArrangementCues(Array.isArray(payloadAny?.arrangementCues) ? payloadAny.arrangementCues : []);
@@ -8898,25 +8980,26 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         compositionCanvas: useCompositionWorkspace ? songWorkspace.canvas : "",
         workspaceNotes: useCompositionWorkspace ? songWorkspace.notes : "",
       });
-      // Vivy remplit la couleur sonore (songMood draft) via NOSSEN pour la persister et l'afficher.
-      // On ne persiste dans le draft QUE la couleur sonore choisie par Vivy (routage).
-      // Inferer une couleur quand Vivy n'en a pas choisie, c'est la mettre a sa place.
-      // Djeff: « par defaut faut laisser libre la couleur sonore pour que vivy decide ».
-      const vivyRoutedColor = (routedMood || "").trim();
-      if (vivyRoutedColor) {
-        try { writeVivyStudioDraft({ ...(readVivyStudioDraft() || {}), songMood: vivyRoutedColor }); } catch {}
-      }
+      // Le choix route par Vivy sert à cette production seulement. Il ne remplit plus
+      // le champ visible et ne devient plus le défaut de la génération suivante.
       let lyricsPayload: any = null;
       let vocalLyricsForProduction = "";
       let publicLyricsForChat = "";
-      for (let lyricsAttempt = 1; lyricsAttempt <= 2; lyricsAttempt += 1) {
+      for (let lyricsAttempt = 1; lyricsAttempt <= 3; lyricsAttempt += 1) {
         const repairInstruction = lyricsAttempt === 1
           ? ""
-          : [
-            "Réécris depuis le sujet original, pas depuis une précédente sortie NOSSEN.",
-            "La version précédente a été refusée car elle perdait le thème ou fusionnait le casting.",
-            "Respecte les noms distinctifs du sujet et donne à chaque chanteur sa propre section solo de quatre vers minimum.",
-          ].join(" ");
+          : lyricsAttempt === 2
+            ? [
+              "Réécris depuis le sujet original, pas depuis une précédente sortie NOSSEN.",
+              "La version précédente a été refusée car elle était trop courte, contenait une section vide, perdait le thème ou fusionnait le casting.",
+              "Chaque couplet et chaque refrain doit avoir au moins quatre lignes chantées. Ne recopie aucune consigne, aucun contrat et aucun commentaire technique.",
+              "Respecte les noms distinctifs du sujet et donne à chaque chanteur sa propre section solo de quatre vers minimum.",
+            ].join(" ")
+            : [
+              "Jette entièrement les sorties précédentes et recommence depuis le sujet utilisateur.",
+              "Renvoie uniquement une chanson complète de vingt lignes chantées minimum: au moins deux couplets pleins, trois refrains pleins, un pont et une outro.",
+              "Aucune section vide, aucune règle, aucun contrat NOSSEN, aucune phrase d'opérateur dans les paroles.",
+            ].join(" ");
         lyricsPayload = await chatWithVivy({
           mode: "song",
           language: songLanguage,
@@ -8956,7 +9039,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         const validTheme = hasVivyNossenThemeContinuity(vocalLyricsForProduction, routedReadiness.themeAnchor);
         const validCast = hasVivyNossenCastCoverage(vocalLyricsForProduction, artists);
         if (validStructure && validTheme && validCast) break;
-        if (lyricsAttempt < 2) {
+        if (lyricsAttempt < 3) {
           setStatus(`${productionLabel}: Vivy recentre le thème et sépare les ${artists.length} voix...`);
           continue;
         }
