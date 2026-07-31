@@ -63,7 +63,11 @@ test('V10 Boom — runV10Boom desactive par defaut, active si VIVY_V10_BOOM_ENAB
   const off = await runV10Boom('in.mp3', 'out.mp3', {}, async () => { throw new Error('ne doit pas tourner'); });
   assert.equal(off.applied, false);
   let called = false;
-  const fakeRun = async (args) => { called = true; assert.ok(args.includes('-filter_complex')); };
+  const fakeRun = async (args) => {
+    called = true;
+    assert.ok(args.includes('-filter_complex'));
+    fs.writeFileSync(String(args.at(-1)), Buffer.from('v10-audio'));
+  };
   const on = await runV10Boom('in.mp3', 'out.mp3', { enabled: true, runFfmpeg: fakeRun }, fakeRun);
   assert.equal(on.applied, true);
   assert.equal(called, true);
@@ -84,7 +88,7 @@ test('V10 Boom — traitement in-place garde une extension audio exploitable par
       },
     });
     assert.equal(result.applied, true);
-    assert.match(renderedPath, /\.tmp\.mp3$/);
+    assert.match(renderedPath, /[\\/]render\.mp3$/);
     assert.equal(fs.readFileSync(audioPath, 'utf8'), 'v10-audio');
     assert.equal(fs.existsSync(renderedPath), false);
   } finally {
@@ -103,7 +107,7 @@ test('V10 Boom — compose V9 Electrolyse puis la passe Boom explicite', async (
       analysisOptions: { amount: 0.04 },
       processV9Turbo: async (options) => {
         calls.push({ type: 'v9', options });
-        fs.writeFileSync(outputPath, Buffer.from('v9-audio'));
+        fs.writeFileSync(options.outputPath, Buffer.from('v9-audio'));
         return { method: 'v9', state: 'v9', variant: 'v9turbo', safety: { vocalSafe99ms: true } };
       },
       runFfmpeg: async (args) => {
@@ -116,6 +120,8 @@ test('V10 Boom — compose V9 Electrolyse puis la passe Boom explicite', async (
     assert.equal(calls[0].options.analysisOptions.electrolysisGuitar, true);
     assert.equal(calls[0].options.analysisOptions.modulation, 'electrolysis-guitar');
     assert.equal(calls[0].options.analysisOptions.amount, 0.04);
+    assert.notEqual(calls[0].options.outputPath, outputPath);
+    assert.match(calls[0].options.outputPath, /[\\/]v9-electrolysis\.flac$/);
     assert.equal(calls[1].type, 'boom');
     assert.equal(processed.method, V10_BOOM_METHOD);
     assert.equal(processed.state, V10_BOOM_STATE);
@@ -124,6 +130,42 @@ test('V10 Boom — compose V9 Electrolyse puis la passe Boom explicite', async (
     assert.equal(processed.boom.applied, true);
     assert.equal(processed.safety.v9ElectrolysisBasePreserved, true);
     assert.equal(fs.readFileSync(outputPath, 'utf8'), 'v10-audio');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('V10 Boom — deux mixes concurrents restent isoles et ne s ecrasent pas', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v10-boom-isolated-'));
+  const outputs = [
+    path.join(root, 'premier.wav'),
+    path.join(root, 'second.wav'),
+  ];
+  try {
+    await Promise.all(outputs.map((outputPath, index) => processV10BoomD40({
+      inputPath: path.join(root, `source-${index + 1}.mp3`),
+      outputPath,
+      processV9Turbo: async (options) => {
+        await new Promise((resolve) => setTimeout(resolve, index === 0 ? 15 : 5));
+        fs.writeFileSync(options.outputPath, Buffer.from(`v9-${index + 1}`));
+        return { method: 'v9', state: 'v9', safety: {} };
+      },
+      runFfmpeg: async (args) => {
+        const inputIndex = args.indexOf('-i');
+        const v9Path = String(args[inputIndex + 1]);
+        const finalPath = String(args.at(-1));
+        await new Promise((resolve) => setTimeout(resolve, index === 0 ? 5 : 15));
+        fs.writeFileSync(finalPath, Buffer.from(`${fs.readFileSync(v9Path, 'utf8')}-v10`));
+      },
+    })));
+
+    assert.equal(fs.readFileSync(outputs[0], 'utf8'), 'v9-1-v10');
+    assert.equal(fs.readFileSync(outputs[1], 'utf8'), 'v9-2-v10');
+    assert.deepEqual(
+      fs.readdirSync(root).sort(),
+      ['premier.wav', 'second.wav'],
+      'aucun repertoire de travail ne reste apres les deux mixes'
+    );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

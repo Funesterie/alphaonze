@@ -1765,6 +1765,7 @@ function createDoubleHarmonicRouter(options = {}) {
   });
 
   router.post('/v10boom/process', verifyJWT, upload.single('audio'), async (req, res) => {
+    let heartbeat = null;
     try {
       pruneIndex(indexPath, assetRoot, ttlMs);
       if (!req.file?.buffer?.length) {
@@ -1780,6 +1781,25 @@ function createDoubleHarmonicRouter(options = {}) {
       const inputPath = path.join(assetRoot, inputFilename);
       const outputPath = path.join(assetRoot, outputFilename);
       fs.writeFileSync(inputPath, req.file.buffer);
+
+      // Un mix V10 peut depasser le delai du proxy avec un WAV long ou deux traitements
+      // rapproches. Envoyer les en-tetes puis un battement JSON (espaces autorises avant
+      // l'objet) garde la connexion active sans changer le contrat de l'API: fetch().json()
+      // recoit toujours un unique objet final.
+      res.status(200);
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store, no-transform');
+      res.setHeader('X-Accel-Buffering', 'no');
+      if (typeof res.flushHeaders === 'function') res.flushHeaders();
+      res.write('\n');
+      const heartbeatMs = Math.max(
+        5_000,
+        Math.min(60_000, Number(process.env.A11_DH_V10_HEARTBEAT_MS || 15_000) || 15_000)
+      );
+      heartbeat = setInterval(() => {
+        if (!res.writableEnded && !res.destroyed) res.write(' \n');
+      }, heartbeatMs);
+      if (typeof heartbeat.unref === 'function') heartbeat.unref();
 
       const processing = await processAudioV10Boom({
         inputPath,
@@ -1864,7 +1884,7 @@ function createDoubleHarmonicRouter(options = {}) {
       const baseUrl = routePublicBase(req);
       const audioUrl = `/api/double-harmonic/out/${encodeURIComponent(outputFilename)}`;
       const sharePath = `${audioUrl}?token=${encodeURIComponent(token)}`;
-      return res.json({
+      const payload = {
         ok: true,
         id,
         method: processing.method,
@@ -1891,13 +1911,20 @@ function createDoubleHarmonicRouter(options = {}) {
         filename: outputFilename,
         bytes: asset.bytes,
         publicSummary: 'V10 Boom: V9 Électrolyse conservée, puis fermeture inverse retardée sur la bande grave (axe m), wet plafonné à 0.2 pour comparaison d’écoute.',
-      });
+      };
+      clearInterval(heartbeat);
+      heartbeat = null;
+      return res.end(JSON.stringify(payload));
     } catch (error) {
-      return res.status(500).json({
+      const payload = {
         ok: false,
         error: 'double_harmonic_v10boom_process_failed',
         message: String(error?.message || error),
-      });
+      };
+      if (res.headersSent) return res.end(JSON.stringify(payload));
+      return res.status(500).json(payload);
+    } finally {
+      if (heartbeat) clearInterval(heartbeat);
     }
   });
 

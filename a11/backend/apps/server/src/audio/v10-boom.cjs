@@ -210,27 +210,29 @@ async function runV10Boom(inputPath, outputPath, options = {}, runFfmpeg) {
     throw new Error('v10_boom_missing_ffmpeg_runner');
   }
   const timeoutMs = Math.max(1000, Number(options.timeoutMs || process.env.VIVY_V10_BOOM_TIMEOUT_MS || 180000) || 180000);
-  // ffmpeg ne peut pas lire et ecrire le meme fichier. Le suffixe temporaire doit garder
-  // l'extension audio en dernier, sinon ffmpeg voit ".tmp" et ne sait pas quel conteneur
-  // produire. On copie ensuite par-dessus l'original seulement apres une passe reussie.
+  // ffmpeg ne peut pas lire et ecrire le meme fichier. Un repertoire temporaire unique
+  // par passe evite toute collision entre deux jobs lances dans la meme milliseconde et
+  // garde l'extension audio exploitable par ffmpeg.
   const sameFile = path.resolve(inputPath) === path.resolve(outputPath);
   const parsedOutput = path.parse(outputPath);
+  const tempRoot = sameFile
+    ? fs.mkdtempSync(path.join(parsedOutput.dir, `.${parsedOutput.name}.v10boom-`))
+    : '';
   const finalOutput = sameFile
-    ? path.join(
-      parsedOutput.dir,
-      `${parsedOutput.name}.v10boom.${process.pid}.${Date.now()}.tmp${parsedOutput.ext || '.wav'}`
-    )
+    ? path.join(tempRoot, `render${parsedOutput.ext || '.wav'}`)
     : outputPath;
   const args = buildV10BoomArgs(inputPath, finalOutput, config);
   try {
     await run(args, { timeoutMs, errorCode: 'v10_boom_failed' });
+    const rendered = fs.statSync(finalOutput);
+    if (!rendered.isFile() || rendered.size <= 0) {
+      throw new Error('v10_boom_empty_output');
+    }
     if (sameFile) {
       fs.copyFileSync(finalOutput, outputPath);
-      fs.rmSync(finalOutput, { force: true });
     }
-  } catch (error) {
-    if (sameFile) fs.rmSync(finalOutput, { force: true });
-    throw error;
+  } finally {
+    if (tempRoot) fs.rmSync(tempRoot, { recursive: true, force: true });
   }
   return { applied: true, config, canon: { mgPhase: V10_CANON.mgPhase, c7: V10_CANON.c7, S: V10_CANON.S } };
 }
@@ -246,37 +248,58 @@ async function processV10BoomD40({
   runFfmpeg,
 } = {}) {
   if (typeof processV9Turbo !== 'function') throw new Error('v10_boom_missing_v9_processor');
-  const base = await processV9Turbo({
-    inputPath,
-    outputPath,
-    profile,
-    timeoutMs,
-    analysisOptions: {
-      ...analysisOptions,
-      modulation: analysisOptions.modulation || analysisOptions.modulationMode || 'electrolysis-guitar',
-      modulationMode: analysisOptions.modulationMode || analysisOptions.modulation || 'electrolysis-guitar',
-      electrolysis: true,
-      electrolysisGuitar: true,
-      frequencyHz: analysisOptions.frequencyHz ?? 40.44,
-      frequencyMinHz: analysisOptions.frequencyMinHz ?? 40.26,
-      frequencyMaxHz: analysisOptions.frequencyMaxHz ?? 40.62,
-      amount: analysisOptions.amount ?? 0.042,
-      irregularity: analysisOptions.irregularity ?? 0.36,
-      asymmetry: analysisOptions.asymmetry ?? 0.27,
-      bidirectional: true,
-    },
-  });
-  const boom = await runV10Boom(
-    outputPath,
-    outputPath,
-    {
-      ...boomOptions,
-      enabled: true,
+  if (!inputPath) throw new Error('missing_input_path');
+  if (!outputPath) throw new Error('missing_output_path');
+
+  // La V9 et la V10 ne partagent plus le fichier final. Chaque mix possede son espace
+  // de travail; la V10 lit le master V9 intermediaire et ecrit le master public une
+  // seule fois. Deux traitements consecutifs ou concurrents ne peuvent donc plus se
+  // supprimer ou se recopier l'un sur l'autre.
+  const parsedOutput = path.parse(outputPath);
+  fs.mkdirSync(parsedOutput.dir, { recursive: true });
+  const jobRoot = fs.mkdtempSync(path.join(parsedOutput.dir, `.${parsedOutput.name}.v10job-`));
+  const v9OutputPath = path.join(jobRoot, `v9-electrolysis${parsedOutput.ext || '.wav'}`);
+  let base;
+  let boom;
+  try {
+    base = await processV9Turbo({
+      inputPath,
+      outputPath: v9OutputPath,
+      profile,
       timeoutMs,
-      runFfmpeg,
-    },
-    runFfmpeg
-  );
+      analysisOptions: {
+        ...analysisOptions,
+        modulation: analysisOptions.modulation || analysisOptions.modulationMode || 'electrolysis-guitar',
+        modulationMode: analysisOptions.modulationMode || analysisOptions.modulation || 'electrolysis-guitar',
+        electrolysis: true,
+        electrolysisGuitar: true,
+        frequencyHz: analysisOptions.frequencyHz ?? 40.44,
+        frequencyMinHz: analysisOptions.frequencyMinHz ?? 40.26,
+        frequencyMaxHz: analysisOptions.frequencyMaxHz ?? 40.62,
+        amount: analysisOptions.amount ?? 0.042,
+        irregularity: analysisOptions.irregularity ?? 0.36,
+        asymmetry: analysisOptions.asymmetry ?? 0.27,
+        bidirectional: true,
+      },
+    });
+    const v9Rendered = fs.statSync(v9OutputPath);
+    if (!v9Rendered.isFile() || v9Rendered.size <= 0) {
+      throw new Error('v10_boom_empty_v9_base');
+    }
+    boom = await runV10Boom(
+      v9OutputPath,
+      outputPath,
+      {
+        ...boomOptions,
+        enabled: true,
+        timeoutMs,
+        runFfmpeg,
+      },
+      runFfmpeg
+    );
+  } finally {
+    fs.rmSync(jobRoot, { recursive: true, force: true });
+  }
   return {
     ...base,
     method: V10_BOOM_METHOD,

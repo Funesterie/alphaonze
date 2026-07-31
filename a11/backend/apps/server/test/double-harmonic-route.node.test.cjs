@@ -171,6 +171,16 @@ test('harmonic intensity scales only the overlay weights and stays bounded', () 
     intensity: 1,
   }).args;
   assert.deepEqual(mp3Args.slice(-5), ['-codec:a', 'libmp3lame', '-b:a', '192k', 'output.mp3']);
+
+  const wavArgs = buildProtectMixD40Args({
+    inputPath: 'input.mp3',
+    outputPath: 'output.wav',
+    intensity: 1,
+  }).args;
+  assert.deepEqual(
+    wavArgs.slice(-7),
+    ['-codec:a', 'pcm_s16le', '-ar', '44100', '-sample_fmt', 's16', 'output.wav']
+  );
 });
 
 test('double harmonic route exposes phase-lock v2 as status only', async () => {

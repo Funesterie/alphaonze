@@ -179,6 +179,7 @@ function buildOutputCodecArgs(outputPath, options = {}) {
   if (ext === '.m4a' || ext === '.aac' || ext === '.mp4') return ['-codec:a', 'aac', '-b:a', aacBitrate];
   if (ext === '.flac') return ['-codec:a', 'flac'];
   if (ext === '.ogg') return ['-codec:a', 'libvorbis', '-q:a', '5'];
+  if (ext === '.wav') return ['-codec:a', 'pcm_s16le', '-ar', '44100', '-sample_fmt', 's16'];
   return [];
 }
 
