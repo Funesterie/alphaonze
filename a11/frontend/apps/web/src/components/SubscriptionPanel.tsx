@@ -28,7 +28,7 @@ const SUBSCRIPTION_PLANS: Array<{
     id: 'premium',
     name: 'A11 Premium',
     price: '8,99 EUR',
-    period: 'par mois',
+    period: 'par trimestre',
     includedTokens: 'Chat long + crédits création inclus',
     features: [
       'Chat long et contexte mieux conservé',
@@ -41,7 +41,7 @@ const SUBSCRIPTION_PLANS: Array<{
     id: 'founder',
     name: 'Fondateur',
     price: '29,99 EUR',
-    period: 'par mois',
+    period: 'par trimestre',
     includedTokens: 'Priorité haute, IA custom future et permissions avancées',
     features: [
       'Priorité haute sur les jobs et files de traitement',

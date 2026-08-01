@@ -3,8 +3,8 @@
 /**
  * Service Stripe pour gerer les abonnements A11.
  * Plans publics :
- * - Premium : 8,99 EUR / mois
- * - Fondateur : 29,99 EUR / mois
+ * - Premium : 8,99 EUR / trimestre
+ * - Fondateur : 29,99 EUR / trimestre
  */
 
 let stripe = null;
@@ -38,6 +38,8 @@ const SUBSCRIPTION_PLANS = Object.freeze({
     label: 'A11 Premium',
     monthlyEur: 8.99,
     priceCentsEur: 899,
+    billingPeriod: 'quarterly',
+    intervalLabel: 'trimestre',
     features: Object.freeze([
       'Chat long et credits creation inclus',
       'Catalogue voix consenties pour preview et chanson',
@@ -53,6 +55,8 @@ const SUBSCRIPTION_PLANS = Object.freeze({
     label: 'A11 Fondateur',
     monthlyEur: 29.99,
     priceCentsEur: 2999,
+    billingPeriod: 'quarterly',
+    intervalLabel: 'trimestre',
     features: Object.freeze([
       'Priorite haute',
       'Catalogue voix consenties pour preview et chanson',

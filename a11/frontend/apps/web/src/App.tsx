@@ -11922,7 +11922,7 @@ function formatTierPriceLabel(tier: McpAccessTierCard) {
   const monthlyEur = tier.pricing?.monthlyEur;
   if (monthlyEur == null) return tier.pricing?.publicLabel || "Interne";
   if (monthlyEur <= 0) return tier.pricing?.publicLabel || "0 EUR";
-  return `${monthlyEur.toFixed(2).replace(".", ",")} EUR/mois`;
+  return `${monthlyEur.toFixed(2).replace(".", ",")} EUR/${tier.pricing?.intervalLabel || "mois"}`;
 }
 
 function formatMcpTierLabel(tier?: string) {

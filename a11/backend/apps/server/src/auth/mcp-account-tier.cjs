@@ -39,8 +39,8 @@ const TIER_ORDER = Object.freeze([
 
 const TIER_PRICING = Object.freeze({
   [TIERS.BASIC]: Object.freeze({ monthlyEur: 0, publicLabel: 'Basic' }),
-  [TIERS.PREMIUM]: Object.freeze({ monthlyEur: 8.99, publicLabel: 'Premium' }),
-  [TIERS.FOUNDER]: Object.freeze({ monthlyEur: 29.99, priceCentsEur: 2999, publicLabel: 'Fondateur' }),
+  [TIERS.PREMIUM]: Object.freeze({ monthlyEur: 8.99, billingPeriod: 'quarterly', intervalLabel: 'trimestre', publicLabel: 'Premium' }),
+  [TIERS.FOUNDER]: Object.freeze({ monthlyEur: 29.99, priceCentsEur: 2999, billingPeriod: 'quarterly', intervalLabel: 'trimestre', publicLabel: 'Fondateur' }),
   [TIERS.ADMIN_FAMILY]: Object.freeze({ monthlyEur: null, publicLabel: 'Admin famille' }),
 });
 
