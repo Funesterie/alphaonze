@@ -45,6 +45,11 @@ const {
   resolveMcpAccountProfileSync,
 } = require('../auth/mcp-account-tier.cjs');
 const {
+  buildQuotaExceededResponse,
+  checkDefaultLlmQuota,
+  recordDefaultLlmUsage,
+} = require('../auth/tier-usage-quota.cjs');
+const {
   callMcpTool: defaultCallMcpTool,
   checkMcpHealth: defaultCheckMcpHealth,
   getMcpConfig: defaultGetMcpConfig,
@@ -3133,6 +3138,39 @@ function createProtectedChatProxyRouter({
 
     const intentHandled = await tryHandleIntentRequest(req, res);
     if (intentHandled !== false) return intentHandled;
+
+    // Quota anti-deficit sur le LLM PAR DEFAUT (celui que Funesterie paie). Place ici
+    // volontairement: en amont, le greeting rapide et le routage d'intention repondent
+    // SANS toucher au LLM, et ne doivent donc rien decompter. Un utilisateur qui apporte
+    // sa propre cle paie son usage lui-meme et sort du quota. Voir tier-usage-quota.cjs
+    // pour le modele (on vend une technique, pas une machine a sons).
+    // Interrupteur d'arret: A11_DEFAULT_LLM_QUOTA=off desactive le blocage sans
+    // redeploiement (le compteur et les logs continuent). A utiliser si la resolution
+    // de tier degrade des comptes payants en 'basic' et bloque de vrais utilisateurs.
+    const quotaMode = String(process.env.A11_DEFAULT_LLM_QUOTA || 'on').trim().toLowerCase();
+    const quotaEnforced = quotaMode !== 'off' && quotaMode !== 'false' && quotaMode !== '0';
+    if (!familyAccess) {
+      const quotaProfile = resolveProxyAccountProfile(req);
+      const quotaTier = String(quotaProfile?.tier || 'basic').trim().toLowerCase() || 'basic';
+      const bringsOwnLlmKey = Boolean(
+        String(req.body?.apiKey || '').trim()
+        && quotaProfile?.permissions?.customAiProviderKeys,
+      );
+      if (!bringsOwnLlmKey) {
+        const quota = checkDefaultLlmQuota(req.user, quotaTier);
+        if (!quota.ok) {
+          console.warn(`[A11][quota] default_llm depasse user=${req.user?.id || 'anon'} tier=${quotaTier} used=${quota.used}/${quota.limit} enforce=${quotaEnforced}`);
+          if (quotaEnforced) {
+            return res.status(429).json(buildQuotaExceededResponse(quota));
+          }
+        }
+        // Ne decompter qu'une reponse reellement servie: une panne amont (502) ne doit
+        // pas consommer le quota de l'utilisateur.
+        res.once('finish', () => {
+          if (res.statusCode < 400) recordDefaultLlmUsage(req.user, quotaTier);
+        });
+      }
+    }
 
     applyProviderDefaults(req);
     injectProxySystemPrompt(req);

@@ -250,7 +250,19 @@ if (-not $ReuseRemoteSecrets) {
 }
 Require-Path $SshKey "Cle SSH"
 
-$sshBase = @("-i", $SshKey, "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new")
+# ServerAlive*: sur un lien qui tombe en silence (tethering, reseau filtre), la connexion
+# meurt sans que rien ne le signale et ssh attend INDEFINIMENT. Observe le 29/07/2026: un
+# ssh reste 90 minutes a 0 % de CPU, le deploiement fige, et aucune logique de reprise ne
+# peut se declencher puisque la commande ne rend jamais la main. Avec ces options, un pair
+# muet est declare mort en ~60 s, la commande sort en erreur et l'appelant peut reessayer.
+$sshBase = @(
+  "-i", $SshKey,
+  "-o", "BatchMode=yes",
+  "-o", "StrictHostKeyChecking=accept-new",
+  "-o", "ConnectTimeout=20",
+  "-o", "ServerAliveInterval=15",
+  "-o", "ServerAliveCountMax=4"
+)
 
 $ActiveBlueGreenColor = "none"
 $DeployBlueGreenColor = "blue"
@@ -1681,6 +1693,94 @@ $piperVoiceDownloadEncoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.Get
 & ssh @sshBase $Remote "printf '%s' '$piperVoiceDownloadEncoded' | base64 -d | bash"
 if ($LASTEXITCODE -ne 0) { throw "Telechargement voix Piper distantes echoue" }
 
+# Envoi reprenable. Sur un lien qui coupe (tethering, reseau filtre), un scp de 40 Mo
+# meurt en vol et repart de zero a chaque tentative: le 29/07/2026 huit morceaux ont ete
+# tronques d'affilee sans qu'aucun deploiement n'aboutisse. Ici on interroge la taille
+# REELLEMENT recue et on ne renvoie que ce qui manque, par tranches. Une coupure ne coute
+# plus que la tranche en cours. L'integrite est verifiee a la fin, et un prefixe corrompu
+# fait repartir proprement de zero.
+function Send-FileResumable {
+  param(
+    [string[]]$SshArgs,
+    [string]$RemoteHost,
+    [string]$LocalPath,
+    [string]$RemotePath,
+    [int]$ChunkBytes = 4194304,
+    [int]$MaxStalls = 40
+  )
+
+  $localSize = (Get-Item -LiteralPath $LocalPath).Length
+  $tmpChunk = Join-Path ([IO.Path]::GetTempPath()) ("a11-upload-" + [Guid]::NewGuid().ToString('N') + ".part")
+  $remotePart = "$RemotePath.part"
+  $stalls = 0
+
+  while ($true) {
+    # Une reponse vide (ssh qui echoue) donnait [int64]('') -> exception, et le
+    # deploiement mourait a la premiere tranche au lieu de reessayer.
+    $raw = (& ssh @SshArgs $RemoteHost "stat -c '%s' '$RemotePath' 2>/dev/null || echo 0")
+    $chiffres = ("$raw").Trim() -replace '[^0-9]', ''
+    if ([string]::IsNullOrWhiteSpace($chiffres)) { $chiffres = '0' }
+    $offset = [int64]$chiffres
+    if ($offset -gt $localSize) {
+      Write-Host "Archive distante plus grande que la locale, on repart de zero." -ForegroundColor DarkYellow
+      & ssh @SshArgs $RemoteHost "rm -f '$RemotePath' '$remotePart'" | Out-Null
+      continue
+    }
+    if ($offset -eq $localSize) { break }
+
+    $take = [int][Math]::Min([int64]$ChunkBytes, $localSize - $offset)
+    $stream = [IO.File]::OpenRead($LocalPath)
+    try {
+      $stream.Seek($offset, [IO.SeekOrigin]::Begin) | Out-Null
+      $buffer = New-Object byte[] $take
+      $read = $stream.Read($buffer, 0, $take)
+    } finally { $stream.Dispose() }
+
+    $out = [IO.File]::Create($tmpChunk)
+    try { $out.Write($buffer, 0, $read) } finally { $out.Dispose() }
+
+    $pct = [math]::Round(100 * $offset / $localSize, 1)
+    Write-Host ("  envoi {0} % ({1:N0}/{2:N0} octets)" -f $pct, $offset, $localSize) -ForegroundColor DarkGray
+    # Transport: stdin de ssh, PAS scp. Mesure du 01/08/2026 depuis un lien filtre:
+    # scp cale en plein transfert (canal de donnees fige, aucune progression), alors que
+    # le meme lien fait passer 8 Mo par stdin de ssh sans interruption (~70 Ko/s). On
+    # ecrit donc la tranche directement en append sur la cible distante. Avantage
+    # supplementaire: si la connexion meurt en cours de tranche, les octets deja ecrits
+    # sont conserves et l'iteration suivante repart de la taille reellement recue --
+    # la reprise devient octet par octet au lieu de tranche par tranche.
+    $catArgs = @($SshArgs) + @($RemoteHost, "cat >> '$RemotePath'")
+    $sshErrTmp = "$tmpChunk.ssh.err"
+    $sendProc = Start-Process -FilePath "ssh" -ArgumentList $catArgs -NoNewWindow -PassThru -RedirectStandardInput $tmpChunk -RedirectStandardError $sshErrTmp
+    $sendProc | Wait-Process -Timeout 300 -ErrorAction SilentlyContinue
+    if (-not $sendProc.HasExited) { Stop-Process -Id $sendProc.Id -Force -ErrorAction SilentlyContinue; $global:LASTEXITCODE = 124 } else { $global:LASTEXITCODE = [int]$sendProc.ExitCode }
+    Remove-Item -LiteralPath $sshErrTmp -Force -ErrorAction SilentlyContinue
+
+    $rawApres = (& ssh @SshArgs $RemoteHost "stat -c '%s' '$RemotePath' 2>/dev/null || echo 0")
+    $chiffresApres = ("$rawApres").Trim() -replace '[^0-9]', ''
+    if ([string]::IsNullOrWhiteSpace($chiffresApres)) { $chiffresApres = '0' }
+    $apres = [int64]$chiffresApres
+    if ($apres -le $offset) {
+      $stalls++
+      Write-Host "  tranche perdue, nouvelle tentative ($stalls/$MaxStalls)" -ForegroundColor DarkYellow
+      & ssh @SshArgs $RemoteHost "rm -f '$remotePart'" | Out-Null
+      if ($stalls -ge $MaxStalls) {
+        Remove-Item -LiteralPath $tmpChunk -Force -ErrorAction SilentlyContinue
+        throw "Envoi interrompu: $MaxStalls tranches perdues d'affilee sur $RemotePath"
+      }
+    } else {
+      $stalls = 0
+    }
+  }
+
+  Remove-Item -LiteralPath $tmpChunk -Force -ErrorAction SilentlyContinue
+  & ssh @SshArgs $RemoteHost "gzip -t '$RemotePath'" | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    & ssh @SshArgs $RemoteHost "rm -f '$RemotePath'" | Out-Null
+    throw "Archive distante corrompue apres envoi (gzip -t). Relancer le deploiement."
+  }
+  Write-Host ("Archive transmise et verifiee ({0:N0} octets)" -f $localSize) -ForegroundColor Green
+}
+
 if ($ReuseRemoteArchive) {
   $remoteArchiveSize = (& ssh @sshBase $Remote "test -s '$RemoteArchive' && gzip -t '$RemoteArchive' && stat -c '%s' '$RemoteArchive'").Trim()
   if ($LASTEXITCODE -ne 0 -or -not $remoteArchiveSize) {
@@ -1688,8 +1788,7 @@ if ($ReuseRemoteArchive) {
   }
   Write-Host "Archive distante valide reutilisee: $RemoteArchive ($remoteArchiveSize octets)" -ForegroundColor DarkCyan
 } else {
-  & scp @sshBase $Archive "${Remote}:$RemoteArchive"
-  if ($LASTEXITCODE -ne 0) { throw "Copie archive echouee" }
+  Send-FileResumable -SshArgs $sshBase -RemoteHost $Remote -LocalPath $Archive -RemotePath $RemoteArchive
 }
 if (-not $ReuseRemoteSecrets) {
   & scp @sshBase $SecretStage "${Remote}:$RemoteRoot/secrets/a11.env"

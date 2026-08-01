@@ -348,8 +348,10 @@ function expandVivySongMaterialCandidate(value = '') {
 
   if (/^(matiere chanson nossen|matiere chanson|matiere a transformer en chanson|matiere a transformer|nossen banger production brief|nossen banger)\.?$/.test(folded)) return [];
   if (/^(?:distribution vocale(?: choisie)?|voix|vocal cast|casting(?: choisi)?|contexte utile)\s*:/i.test(line)) return [];
+  if (/^(?:distribution\s+vocale(?:\s+choisie)?|vocal\s+cast|casting(?:\s+choisi)?)\s*$/i.test(line)) return [];
   if (/^(?:solo|duo|trio|quatuor)\s+(?:vivy|djeff|a11|k44|kaen44)(?:\s*(?:[+&,]|et|avec)\s*(?:vivy|djeff|a11|k44|kaen44))*\.?$/i.test(line)) return [];
   if (/^(?:ne mets? pas le mot|pas le mot|banger dans les paroles)\b/.test(folded)) return [];
+  if (/\b(?:ne mets? pas le mot|pas le mot|banger dans les paroles)\b/i.test(folded)) return [];
   if (/\bsections?\s+s[ée]par[ée]es?\b/i.test(line)) return [];
   if (/^(a transformer|à transformer|ecris une chanson|écris une chanson|le refrain doit|si le mot anglais|composer une chanson|production chantee|production chantée|appliquer ensuite)\b/.test(folded)) return [];
   if (/\b(?:ne chante jamais|pas a recopier|pas à recopier|jamais les consignes|bouton|bugs?|repete|perroquet|singeur|sortie compilateur|user|affichage|telephone|dezoom|clavier|credit|credits|cles?|key|llm|logs?|mot prompt|production suno|mix final d40|d40 v9|suno)\b/.test(folded)) return [];
