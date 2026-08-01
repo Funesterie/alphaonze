@@ -3156,7 +3156,15 @@ function createProtectedChatProxyRouter({
         String(req.body?.apiKey || '').trim()
         && quotaProfile?.permissions?.customAiProviderKeys,
       );
-      if (!bringsOwnLlmKey) {
+      // Sans identite exploitable, le compteur retombe sur une cle 'anon' PARTAGEE :
+      // un seul visiteur epuiserait alors le quota de tous les autres. Ces routes
+      // sont deja derriere verifyJWT, donc l'absence d'identite signale un probleme
+      // ailleurs, pas un abus. On echoue ouvert et on le journalise.
+      const quotaIdentity = req.user?.id || req.user?.email || '';
+      if (!bringsOwnLlmKey && !quotaIdentity) {
+        console.warn('[A11][quota] identite absente sur une route authentifiee: quota non applique');
+      }
+      if (!bringsOwnLlmKey && quotaIdentity) {
         const quota = checkDefaultLlmQuota(req.user, quotaTier);
         if (!quota.ok) {
           console.warn(`[A11][quota] default_llm depasse user=${req.user?.id || 'anon'} tier=${quotaTier} used=${quota.used}/${quota.limit} enforce=${quotaEnforced}`);

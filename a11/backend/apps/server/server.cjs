@@ -8337,9 +8337,16 @@ app.get('/api/llm/stats', async (req, res) => {
       return res.json(__stats_cache);
     }
 
+    // La cible des stats est le routeur Cerbere, PAS l'amont de chat. DEFAULT_UPSTREAM
+    // vaut Ollama (:11434) des qu'aucun routeur externe n'est configure (voir le bloc
+    // __A11_DEFAULT_UPSTREAM plus bas): le sonder renvoyait le "404 page not found" de
+    // Go, remonte tel quel au client sous la forme {"error":"upstream_error"}. Et comme
+    // DEFAULT_UPSTREAM etait truthy, le repli local ci-dessous n'etait jamais atteint.
+    // Le routeur est embarque dans ce meme process (routerKind: embedded-router) et
+    // sert /api/stats en local: on interroge donc le serveur lui-meme par defaut, et on
+    // ne cede la priorite qu'a un routeur explicitement configure.
     const upstreamHost =
       sanitizeConfiguredLocalUpstream(process.env.LLM_ROUTER_URL?.trim(), 'LLM_ROUTER_URL')
-      || DEFAULT_UPSTREAM
       || `http://127.0.0.1:${String(process.env.PORT || '3000').trim() || '3000'}`;
     const probeUrl = String(upstreamHost).replace(/\/$/, '') + '/api/stats';
     console.log('[A11] Proxying /api/llm/stats ->', probeUrl);
@@ -8348,7 +8355,8 @@ app.get('/api/llm/stats', async (req, res) => {
     if (!r.ok) {
       const txt = await r.text().catch(() => null);
       const payload = { ok: false, error: 'upstream_error', detail: txt };
-      __stats_cache = payload; __stats_cache_ts = Date.now();
+      // Cached hits are returned with res.json(), which defaults to HTTP 200.
+      // Keep the cache success-only so an upstream error always preserves its status.
       return res.status(r.status).json(payload);
     }
     const json = await r.json().catch(() => null) || { ok: true };
