@@ -347,7 +347,14 @@ function expandVivySongMaterialCandidate(value = '') {
   if (!folded) return [];
 
   if (/^(matiere chanson nossen|matiere chanson|matiere a transformer en chanson|matiere a transformer|nossen banger production brief|nossen banger)\.?$/.test(folded)) return [];
-  if (/^(?:distribution vocale(?: choisie)?|voix|vocal cast|casting(?: choisi)?|contexte utile)\s*:/i.test(line)) return [];
+  // Les marqueurs contractuels precis restent filtrables sans deux-points. Les mots
+  // courants « voix », « casting » et « contexte utile » exigent en revanche leur
+  // separateur de libelle, sinon de vraies paroles (« Voix du desert... ») sautent.
+  if (/^(?:distribution vocale(?: choisie)?|vocal cast)\b(?:\s*:|\s+(?:solo|duo|trio|quatuor|vivy|djeff|a11|k44|kaen44)\b|\s*$)/i.test(line)) return [];
+  if (/^(?:voix|casting(?: choisi)?|contexte utile)\s*:/i.test(line)) return [];
+  if (/^voix\s+(?:solo|duo|trio|quatuor|vivy|djeff|a11|k44|kaen44)\b/i.test(line)) return [];
+  if (/^casting(?: choisi)?\s+(?:solo|duo|trio|quatuor|vivy|djeff|a11|k44|kaen44)\b/i.test(line)) return [];
+  if (/^contexte utile\s+(?:ne\b|pour\s+(?:le|la|les)\b|casting\b|distribution\b|voix\b|suno\b|nossen\b)/i.test(line)) return [];
   if (/^(?:distribution\s+vocale(?:\s+choisie)?|vocal\s+cast|casting(?:\s+choisi)?)\s*$/i.test(line)) return [];
   if (/^(?:solo|duo|trio|quatuor)\s+(?:vivy|djeff|a11|k44|kaen44)(?:\s*(?:[+&,]|et|avec)\s*(?:vivy|djeff|a11|k44|kaen44))*\.?$/i.test(line)) return [];
   if (/^(?:ne mets? pas le mot|pas le mot|banger dans les paroles)\b/.test(folded)) return [];

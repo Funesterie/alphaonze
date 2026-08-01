@@ -8383,11 +8383,16 @@ function inferVivySunoStyleBase(input = {}, artistCast = buildVivySongArtistCast
 }
 
 function buildVivySunoLyrics(input = {}) {
+  const hasLockedCleanLyrics = input.providerLyricsLocked === true
+    || (Object.prototype.hasOwnProperty.call(input, 'cleanLyrics') && Boolean(String(input.cleanLyrics || '').trim()));
   const cleanLyricsTrack = sanitizeVivyProviderCleanLyrics(
     input.cleanLyrics,
     VIVY_SONG_MAX_CHARS
   );
   if (cleanLyricsTrack) return cleanLyricsTrack;
+  // CLEAN_LYRICS est une piste autoritaire : si elle est fournie mais entierement
+  // rejetee comme technique, ne jamais retomber silencieusement sur le canevas.
+  if (hasLockedCleanLyrics) return '';
 
   const primaryMaterial = compactUniqueLines([
     input.lyrics,
@@ -8704,7 +8709,7 @@ function buildVivySunoPayload(input = {}, req = null) {
   ].filter(Boolean).join(', '), 'spoken word, narration', 520);
   const negativeTagsBornes = boundVivySunoTagList(negativeTags, 500);
   const requestedModel = resolveVivySunoRequestedModel(input);
-  const prompt = forceInstrumental
+  const rawPrompt = forceInstrumental
     ? buildVivyInstrumentalSunoPrompt({ ...input, songTitle: input.songTitle || input.title || title }, title)
     : clampVivySunoLyricsLength(retagLyricsForCatalogVoice(
       strengthenVivySunoSoloSectionHeaders(
@@ -8714,6 +8719,12 @@ function buildVivySunoPayload(input = {}, req = null) {
       // Seulement quand une voix du catalogue est effectivement envoyee a Suno.
       catalogVoiceId ? (findVoiceInCatalog(input.voiceCatalogName || input.catalogVoiceName)?.label || '') : ''
     ));
+  // Derniere barriere backend avant Suno. Certains chemins de secours (notamment
+  // cleanLyrics) court-circuitent le nettoyage de la matiere en amont; sans ce point
+  // unique, leurs libelles internes pouvaient etre chantes tels quels.
+  const prompt = forceInstrumental
+    ? rawPrompt
+    : clampVivySunoLyricsLength(sanitizeVivyProviderCleanLyrics(rawPrompt, VIVY_SONG_MAX_CHARS));
   const payload = {
     model: useVerifiedSunoVoice && !/^V5(?:_5)?$/i.test(requestedModel) ? 'V5_5' : requestedModel,
     customMode: true,
@@ -9478,18 +9489,26 @@ function resolveVivyMurekaModel(input = {}) {
 }
 
 function isVivyProviderTechnicalLyricLine(line = '') {
-  const value = String(line || '').trim();
+  let value = String(line || '').trim();
   if (!value) return false;
-  if (/^\[[^\]]+\]$/.test(value)) return false;
+  const bracketed = value.match(/^\[([^\]]+)\]$/);
+  if (bracketed) value = String(bracketed[1] || '').trim();
+  if (!value) return false;
   const folded = foldTextForLookup(value);
   if (!folded) return false;
-  return /\bstyle\s*:/i.test(value)
-    || /\b(?:prompt|brief|suno|mureka|provider|mod[èe]le|model|negative\s+prompt|distribution\s+vocale|direction\s+sonore|canevas|consignes?|r[èe]gles?\s+priv[ée]es?|non\s+chantables?|ne\s+(?:mets|met|chante|r[ée]cite|dis)\s+pas)\b/i.test(value)
+  return /^(?=[A-Z0-9_]*_)[A-Z][A-Z0-9_]{6,}$/.test(value)
+    || /\bstyle\s*:/i.test(value)
+    || /^(?:mod[èe]le|model)\s*[:=]/i.test(value)
+    || /\b(?:prompt|brief|suno|mureka|provider|negative\s+prompt|distribution\s+vocale|direction\s+sonore|canevas|consignes?|r[èe]gles?\s+priv[ée]es?|non\s+chantables?|ne\s+(?:mets|met|chante|r[ée]cite|dis)\s+pas)\b/i.test(value)
     || /\b(?:distribution vocale|casting vocal|vocal cast|voix selectionnees|voix choisies|direction sonore|canevas|consignes?|regles? privees?|non chantables?)\b/.test(folded)
     || /\b(?:matiere (?:chanson )?nossen|matiere a transformer|matiere creative|matiere composition|a transformer en (?:chanson|paroles)|pas a recopier)\b/.test(folded)
     || /\b(?:banger dans les paroles|ne mets? pas le mot|ne chante jamais|jamais les consignes)\b/.test(folded)
     || /\b(?:fallback|grand modele|llm|provider pack|clean lyrics|paroles propres|paroles finales|paroles envoyees a suno)\b/.test(folded)
-    || /\b(?:songtext|songmood|songmaxtokens|artistcount|singercount|vocalcast|negative prompt|style brief|suno style|mureka prompt)\b/.test(folded);
+    || /\b(?:songtext|songmood|songmaxtokens|artistcount|singercount|vocalcast|negative prompt|style brief|suno style|mureka prompt)\b/.test(folded)
+    || /^chaque\s+(?:section|couplet\s+et\s+chaque\s+refrain)\s+doit\b/.test(folded)
+    || /^(?:origine\s+de\s+matiere|sujet\s+original\s+verrouille|casting\s+verrouille|regles\s+communes|ce\s+bloc\s+est\s+l\s+autorite\s+commune)\b/.test(folded)
+    || /\b(?:contrat[_\s-]?composition|composition[_\s-]?nossen)\b/.test(folded)
+    || /\b(?:ne\s+decris\s+jamais|fabrication\s+du\s+morceau)\b/.test(folded);
 }
 
 function stripVivyProviderInstructionLeakTail(line = '') {
@@ -9832,6 +9851,12 @@ async function requestSunoMusic(input = {}, req = null) {
   }
 
   const body = buildVivySunoPayload(input, req);
+  if (body.instrumental !== true && !String(body.prompt || '').trim()) {
+    const error = new Error('suno_music_lyrics_missing');
+    error.code = 'suno_music_lyrics_missing';
+    error.status = 400;
+    throw error;
+  }
   console.info(
     '[VivyProviderPack] provider=suno cleanLyricsChars=%s styleBriefChars=%s instrumental=%s',
     body.instrumental === true ? 0 : String(body.prompt || '').length,
@@ -10019,15 +10044,30 @@ async function requestSunoMusicExtension(input = {}, req = null) {
       : 0;
   const title = cleanOneLine(input.title || input.songTitle || input.song_title, '', 80);
   const style = cleanOneLine(input.style || input.songMood || input.song_mood || input.tags, '', 520);
-  const prompt = sanitizeVivySongMaterial(input.prompt || input.lyrics || input.songText || input.song_text || input.extensionPrompt, VIVY_SONG_MAX_CHARS);
+  const wantsInstrumental = input.instrumental === true || input.forceInstrumental === true || input.previewInstrumental === true;
+  const extensionPromptSource = wantsInstrumental
+    ? (input.prompt || input.lyrics || input.songText || input.song_text || input.extensionPrompt)
+    : (input.cleanLyrics || input.prompt || input.lyrics || input.songText || input.song_text || input.extensionPrompt);
+  const prompt = wantsInstrumental
+    ? sanitizeVivySongMaterial(extensionPromptSource, VIVY_SONG_MAX_CHARS)
+    : clampVivySunoLyricsLength(sanitizeVivyProviderCleanLyrics(extensionPromptSource, VIVY_SONG_MAX_CHARS));
+  const hasExtensionPromptSource = Boolean(String(extensionPromptSource || '').trim());
+  const explicitlyRequestsCustomExtension = input.defaultParamFlag === true
+    || input.customMode === true
+    || (Number.isFinite(explicitContinueAt) && explicitContinueAt > 0);
+  if (!wantsInstrumental && !prompt && (hasExtensionPromptSource || explicitlyRequestsCustomExtension)) {
+    const error = new Error('vivy_suno_extension_lyrics_invalid');
+    error.code = 'vivy_suno_extension_lyrics_invalid';
+    error.status = 400;
+    throw error;
+  }
   const useCustomExtension = (input.defaultParamFlag === true || input.customMode === true || continueAtSeconds > 0)
-    && Boolean(title || style || prompt);
+    && (wantsInstrumental ? Boolean(title || style || prompt) : Boolean(prompt));
   const body = {
     defaultParamFlag: false,
     model,
     callBackUrl: buildSunoCallbackUrl(req),
   };
-  const wantsInstrumental = input.instrumental === true || input.forceInstrumental === true || input.previewInstrumental === true;
   if (useUploadExtend) {
     body.uploadUrl = uploadUrl;
     body.instrumental = wantsInstrumental;
@@ -10037,8 +10077,12 @@ async function requestSunoMusicExtension(input = {}, req = null) {
   if (useCustomExtension) {
     body.defaultParamFlag = true;
     body.title = title || 'Vivy NOSSEN extension';
-    body.style = style || 'long-form full song arrangement around five minutes, instrumental backing track only, no vocals';
-    body.prompt = prompt || 'Continue the same original song structure with a longer instrumental arrangement and a complete final chorus.';
+    body.style = style || (wantsInstrumental
+      ? 'long-form full song arrangement around five minutes, instrumental backing track only, no vocals'
+      : 'long-form full song arrangement around five minutes, expressive sung vocals, coherent final chorus');
+    body.prompt = wantsInstrumental
+      ? (prompt || 'Continue the same original instrumental arrangement with a longer complete ending.')
+      : prompt;
     if (continueAtSeconds > 0) body.continueAt = continueAtSeconds;
     if (wantsInstrumental) {
       body.instrumental = true;
@@ -10346,10 +10390,11 @@ async function buildRealMusicForProduction(mode, input, req) {
 }
 
 function buildVivyProviderSongInput(input = {}, production = {}) {
+  const providerLyricsSource = input.cleanLyrics || production.vocalLyrics || production.publicLyrics || input.lyrics;
   const cleanLyrics = sanitizeVivyProviderCleanLyrics(
     // Une piste explicitement écrite/validée avant l'appel /produce est l'autorité.
     // Le pack déterministe de présentation ne doit jamais pouvoir la remplacer.
-    input.cleanLyrics || production.vocalLyrics || production.publicLyrics || input.lyrics,
+    providerLyricsSource,
     VIVY_SONG_MAX_CHARS
   );
   return {
@@ -10360,6 +10405,7 @@ function buildVivyProviderSongInput(input = {}, production = {}) {
     cleanLyrics: cleanLyrics || undefined,
     lyrics: cleanLyrics || undefined,
     publicLyrics: cleanLyrics || undefined,
+    providerLyricsLocked: Boolean(String(providerLyricsSource || '').trim()),
   };
 }
 
@@ -11836,6 +11882,7 @@ module.exports = {
   selectVivySunoDirectorTrack,
   getVivySunoRuntimeStatus,
   requestSunoMusicExtension,
+  requestSunoMusic,
   requestMurekaMusic,
   getMurekaMusicJob,
   getVivyMusicJob,

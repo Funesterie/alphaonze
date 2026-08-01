@@ -301,6 +301,15 @@ function getInternalBaseUrl() {
   );
 }
 
+function resolveA11NezServiceToken(env = process.env) {
+  return String(
+    env.A11_NEZ_TOKEN
+    || env.NEZ_TOKENS
+    || env.NEZ_ALLOWED_TOKEN
+    || ''
+  ).trim();
+}
+
 function getLocalWorkspaceRoot() {
   return path.resolve(
     String(
@@ -572,15 +581,6 @@ async function fetchInternalJson(pathname, options = {}) {
   return data;
 }
 
-function pickForwardedAuthHeaders(req) {
-  const headers = {};
-  const authorization = String(req.headers.authorization || '').trim();
-  const nezToken = String(req.headers['x-nez-token'] || '').trim();
-  if (authorization) headers.authorization = authorization;
-  if (nezToken) headers['x-nez-token'] = nezToken;
-  return headers;
-}
-
 async function callLocalTool(req, toolName, args = {}) {
   if (toolName === 'a11_health') {
     return {
@@ -589,17 +589,23 @@ async function callLocalTool(req, toolName, args = {}) {
   }
 
   if (toolName === 'a11_llm_stats') {
+    const data = await fetchInternalJson('/api/llm/stats');
     return {
-      content: [{ type: 'text', text: JSON.stringify(await fetchInternalJson('/api/llm/stats'), null, 2) }],
+      content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+      isError: data?.ok === false,
     };
   }
 
   if (toolName === 'a11_chat') {
     const message = String(args.message || '').trim();
     if (!message) throw new Error('a11_chat: missing message');
+    const serviceToken = resolveA11NezServiceToken();
+    if (!serviceToken) {
+      throw new Error('a11_chat: A11 NEZ service token is not configured');
+    }
     const data = await fetchInternalJson('/api/chat', {
       method: 'POST',
-      headers: pickForwardedAuthHeaders(req),
+      headers: { 'x-nez-token': serviceToken },
       timeoutMs: 120000,
       body: {
         message,

@@ -39,6 +39,7 @@ const {
   scoreVivySunoDirectorTrack,
   getVivySunoRuntimeStatus,
   requestSunoMusicExtension,
+  requestSunoMusic,
   requestMurekaMusic,
   getMurekaMusicJob,
   listVivyChatSessionsForUser,
@@ -1666,11 +1667,22 @@ test('Mureka payload requires explicit clean lyrics instead of reusing the Suno 
     songMood: 'electro funk adulte, basse ronde, voix expressive',
     songArtists: ['vivy'],
   }), /mureka_music_lyrics_missing/);
+  assert.throws(() => buildVivyMurekaPayload({
+    cleanLyrics: '[CONTRAT_COMPOSITION_NOSSEN]\n[Distribution vocale choisie Vivy puis Djeff]',
+    songText: '[Chorus]\nCe fallback ne doit pas gagner',
+    songMood: 'electro française',
+  }), /mureka_music_lyrics_missing/);
 
   const lyrics = [
     '[Verse 1]',
     'La mémoire rame au port quand le débit perd le nord',
     'Prompt Suno: electro funk adulte, basse ronde',
+    '[CONTRAT_COMPOSITION_NOSSEN]',
+    '[Distribution vocale choisie Vivy puis Djeff]',
+    'Chaque détail de toi rallume la nuit',
+    'Chaque nom sur le mur raconte notre histoire',
+    'Notre progression émotionnelle éclaire le chemin',
+    'Le modèle danse sous la lune',
     '[Chorus]',
     'La carte croque le bit et le circuit répond',
   ].join('\n');
@@ -1685,6 +1697,11 @@ test('Mureka payload requires explicit clean lyrics instead of reusing the Suno 
   assert.match(payload.body.lyrics, /La mémoire rame au port/i);
   assert.match(payload.body.lyrics, /La carte croque le bit/i);
   assert.doesNotMatch(payload.body.lyrics, /Prompt Suno|basse ronde/i);
+  assert.doesNotMatch(payload.body.lyrics, /CONTRAT_COMPOSITION_NOSSEN|Distribution vocale choisie/i);
+  assert.match(payload.body.lyrics, /Chaque détail de toi rallume la nuit/i);
+  assert.match(payload.body.lyrics, /Chaque nom sur le mur raconte notre histoire/i);
+  assert.match(payload.body.lyrics, /Notre progression émotionnelle éclaire le chemin/i);
+  assert.match(payload.body.lyrics, /Le modèle danse sous la lune/i);
   assert.match(payload.body.prompt, /electro funk adulte/i);
 });
 
@@ -2539,6 +2556,121 @@ test('Vivy sends custom long-form Suno extension parameters when continuing NOSS
     assert.match(postedBody.style, /long-form full song arrangement/i);
     assert.match(postedBody.prompt, /MegaZord revient/);
     assert.doesNotMatch(JSON.stringify(postedBody), /must-not-leak/);
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('Vivy nettoie et borne CLEAN_LYRICS avant une extension Suno vocale', async () => {
+  const previousEnv = {
+    VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
+    VIVY_SUNO_BASE_URL: process.env.VIVY_SUNO_BASE_URL,
+    VIVY_PUBLIC_BASE_URL: process.env.VIVY_PUBLIC_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  let postedBody = null;
+
+  process.env.VIVY_SUNO_API_KEY = 'test-suno-key';
+  process.env.VIVY_SUNO_BASE_URL = 'https://api.suno.test/api/v1';
+  process.env.VIVY_PUBLIC_BASE_URL = 'https://vivy.test';
+  global.fetch = async (url, options = {}) => {
+    if (String(url) === 'https://api.suno.test/api/v1/generate/extend') {
+      postedBody = JSON.parse(String(options.body || '{}'));
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return { code: 200, data: { taskId: 'suno-clean-extension-task', status: 'PENDING' } };
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  const longCleanLyrics = [
+    '[Verse]',
+    'Voix du désert, appelle-moi',
+    'MEGAZORD',
+    'CONTRAT_COMPOSITION_NOSSEN',
+    '[CONTRAT_COMPOSITION_NOSSEN]',
+    '[Distribution vocale choisie Vivy puis Djeff]',
+    'Règles communes ce bloc est autorité commune',
+    'Chaque section doit suivre le contrat',
+    'Chaque détail de toi rallume la nuit',
+    'Chaque nom sur le mur raconte notre histoire',
+    'Notre progression émotionnelle éclaire le chemin',
+    'Le modèle danse sous la lune',
+    ...Array.from({ length: 260 }, (_, index) => `Ligne originale ${index} avance dans la nuit sans détour`),
+    '[Chorus]',
+    'On garde la musique et on ferme la fuite',
+  ].join('\n');
+
+  try {
+    const media = await requestSunoMusicExtension({
+      audioId: 'suno-audio-clean',
+      sourceDurationSeconds: 140,
+      title: 'Extension propre',
+      cleanLyrics: longCleanLyrics,
+      prompt: '[Chorus]\nPROMPT_SHOULD_NOT_WIN',
+      sessionSunoApiKey: 'must-not-leak',
+    }, {
+      user: { id: 'djeff', roles: ['founder'] },
+      get(name) {
+        if (name === 'host') return 'vivy.test';
+        return '';
+      },
+    });
+
+    assert.equal(media.state, 'processing');
+    assert.equal(postedBody.defaultParamFlag, true);
+    assert.ok(postedBody.prompt.length <= 4900, `extension prompt too long: ${postedBody.prompt.length}`);
+    assert.match(postedBody.prompt, /Voix du désert, appelle-moi/);
+    assert.match(postedBody.prompt, /^MEGAZORD$/m);
+    assert.doesNotMatch(postedBody.prompt, /CONTRAT_COMPOSITION_NOSSEN|Règles communes|Chaque section doit|PROMPT_SHOULD_NOT_WIN/i);
+    assert.doesNotMatch(postedBody.prompt, /Distribution vocale choisie/i);
+    assert.match(postedBody.prompt, /Chaque détail de toi rallume la nuit/i);
+    assert.match(postedBody.prompt, /Chaque nom sur le mur raconte notre histoire/i);
+    assert.match(postedBody.prompt, /Notre progression émotionnelle éclaire le chemin/i);
+    assert.match(postedBody.prompt, /Le modèle danse sous la lune/i);
+    assert.doesNotMatch(postedBody.style, /instrumental|no vocals/i);
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('Vivy refuse une extension vocale dont CLEAN_LYRICS est entierement technique', async () => {
+  const previousEnv = {
+    VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
+    VIVY_SUNO_BASE_URL: process.env.VIVY_SUNO_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  let fetchCalled = false;
+  process.env.VIVY_SUNO_API_KEY = 'test-suno-key';
+  process.env.VIVY_SUNO_BASE_URL = 'https://api.suno.test/api/v1';
+  global.fetch = async () => {
+    fetchCalled = true;
+    throw new Error('provider_must_not_be_called');
+  };
+
+  try {
+    await assert.rejects(requestSunoMusicExtension({
+      audioId: 'suno-audio-invalid-clean-lyrics',
+      sourceDurationSeconds: 140,
+      cleanLyrics: '[CONTRAT_COMPOSITION_NOSSEN]\n[Distribution vocale choisie Vivy puis Djeff]',
+      sessionSunoApiKey: 'must-not-leak',
+    }, {
+      user: { id: 'djeff', roles: ['founder'] },
+      get() { return ''; },
+    }), /vivy_suno_extension_lyrics_invalid/);
+    assert.equal(fetchCalled, false);
   } finally {
     global.fetch = previousFetch;
     for (const [key, value] of Object.entries(previousEnv)) {
@@ -8015,6 +8147,73 @@ test('Mode ricain: buildVivySunoPayload verrouille l anglais americain quand lan
   assert.doesNotMatch(frPayload.style, /English lyrics only/i);
 });
 
+test('Suno payload retire les instructions internes meme sans deux-points et via cleanLyrics', () => {
+  const payload = buildVivySunoPayload({
+    songTitle: 'La fuite bouchee',
+    songArtists: ['vivy', 'djeff'],
+    cleanLyrics: [
+      '[Verse - Vivy]',
+      'Une etincelle traverse la nuit',
+      'Distribution vocale choisie Vivy puis Djeff',
+      'Contexte utile ne jamais chanter cette consigne',
+      'CONTRAT_COMPOSITION_NOSSEN',
+      '[CONTRAT_COMPOSITION_NOSSEN]',
+      '[Distribution vocale choisie Vivy puis Djeff]',
+      'Règles communes ce bloc est autorité commune',
+      'Sujet original verrouillé ne pas changer',
+      'Chaque section doit suivre le contrat',
+      'Ne décris jamais la fabrication du morceau',
+      'MEGAZORD',
+      'Voix du désert, appelle-moi',
+      'Casting des ombres sur le mur',
+      'Contexte utile à nos amours',
+      'Chaque détail de toi rallume la nuit',
+      'Chaque nom sur le mur raconte notre histoire',
+      'Notre progression émotionnelle éclaire le chemin',
+      'Le modèle danse sous la lune',
+      '[Chorus - Djeff]',
+      'On garde la musique et on ferme la fuite',
+    ].join('\n'),
+  });
+
+  assert.match(payload.prompt, /\[Verse - [^\]]+\]/);
+  assert.match(payload.prompt, /Une etincelle traverse la nuit/);
+  assert.match(payload.prompt, /\[Chorus - [^\]]+\]/);
+  assert.doesNotMatch(payload.prompt, /Distribution vocale choisie/i);
+  assert.doesNotMatch(payload.prompt, /Contexte utile ne jamais chanter/i);
+  assert.doesNotMatch(payload.prompt, /CONTRAT_COMPOSITION_NOSSEN|Règles communes|Sujet original verrouillé|Chaque section doit|fabrication du morceau/i);
+  assert.doesNotMatch(payload.prompt, /Distribution vocale choisie/i);
+  assert.match(payload.prompt, /Voix du désert, appelle-moi/);
+  assert.match(payload.prompt, /^MEGAZORD$/m);
+  assert.match(payload.prompt, /Casting des ombres sur le mur/);
+  assert.match(payload.prompt, /Contexte utile à nos amours/);
+  assert.match(payload.prompt, /Chaque détail de toi rallume la nuit/i);
+  assert.match(payload.prompt, /Chaque nom sur le mur raconte notre histoire/i);
+  assert.match(payload.prompt, /Notre progression émotionnelle éclaire le chemin/i);
+  assert.match(payload.prompt, /Le modèle danse sous la lune/i);
+});
+
+test('Suno refuse CLEAN_LYRICS technique sans repli silencieux ni appel provider', async () => {
+  const previousFetch = global.fetch;
+  let fetchCalled = false;
+  global.fetch = async () => {
+    fetchCalled = true;
+    throw new Error('provider_must_not_be_called');
+  };
+  try {
+    await assert.rejects(requestSunoMusic({
+      cleanLyrics: '[CONTRAT_COMPOSITION_NOSSEN]\n[Distribution vocale choisie Vivy puis Djeff]',
+      songText: '[Chorus]\nCe fallback ne doit pas gagner',
+      sessionSunoApiKey: 'test-session-suno-key',
+    }, {
+      user: { id: 'djeff', roles: ['founder'] },
+    }), /suno_music_lyrics_missing/);
+    assert.equal(fetchCalled, false);
+  } finally {
+    global.fetch = previousFetch;
+  }
+});
+
 
 test('Suno director choisit la sortie qui sonne le mieux (score audio) meme si une autre est plus longue', async () => {
   const { selectVivySunoDirectorTrackWithAudio } = require('../src/routes/vivy-studio.cjs');
@@ -8080,4 +8279,3 @@ test('isDirectSongwritingRequest ignore le « son » possessif (raconte son hist
     );
   }
 });
-
