@@ -53,6 +53,8 @@ const {
   looksLikeExplicitSunoLyricsBlock,
   hasVivyChorusSection,
 } = require('../music/vivy-songcraft.cjs');
+const { deriveSonicSignature } = require('../music/vivy-prime-color.cjs');
+const { buildVivyDynamicArc, extractSectionLabels, resolveEnergyCeiling: resolveVivyEnergyCeiling } = require('../music/vivy-dynamic-arc.cjs');
 const {
   resolveCatalogVoiceId,
   findVoiceInCatalog,
@@ -8606,8 +8608,38 @@ function buildVivySunoPayload(input = {}, req = null) {
   // 02/08/2026. Elle emet desormais une ligne "Direction sonore:" en tete de reponse,
   // qu'on recupere ici et qui disparait des paroles.
   const directionDeVivy = extractVivySonicDirection(buildVivySunoStyleMaterial(input));
+  const couleurDemandee = input.songMood || input.mood || input.style || directionDeVivy.mood;
+
+  // Signature et arc, ajoutes APRES la couleur : elle garde la tete du style, la
+  // position la plus forte pour Suno.
+  //
+  // Djeff : « le style redondant et vu 100 fois ». La couleur seule ne suffit pas --
+  // deux morceaux de meme genre recevaient encore le meme vocabulaire de catalogue.
+  // La signature derive de la MATIERE du morceau par la courbe C1 du canon
+  // (audio_mapping), l'arc derive des sections. Deterministe : la meme chanson
+  // redonne la meme signature, deux chansons differentes divergent.
+  //
+  // Le plafond vient de la direction que Vivy s'est choisie : la courbe apporte la
+  // singularite, sa direction apporte la pertinence. Sans ce garde-fou, une berceuse
+  // pouvait recevoir une texture de combat.
+  let complementStyle = '';
+  try {
+    const plafond = resolveVivyEnergyCeiling(couleurDemandee);
+    const signature = deriveSonicSignature(buildVivySunoStyleMaterial(input), { ceiling: plafond });
+    const sections = extractSectionLabels(input.cleanLyrics || input.songText || '');
+    const arc = buildVivyDynamicArc(sections, { direction: couleurDemandee });
+    complementStyle = [signature.line, arc.compact].filter(Boolean).join(', ');
+  } catch (error) {
+    // Une signature manquante ne doit jamais empecher une chanson de partir.
+    console.warn('[vivy-studio] signature/arc indisponibles:', error?.message || error);
+  }
+
+  // La signature N EST PAS versee ici. Elle l etait, et rendait requestedStyleBase
+  // non vide meme sans couleur demandee -- ce qui SUPPRIMAIT le repli par mots-cles
+  // qui prend normalement le relais. Neuf tests existants sont tombes la-dessus.
+  // Elle est ajoutee plus bas, une fois le style resolu.
   const requestedStyleBase = sanitizeVivySunoProviderTags(
-    stripVivyAscii4SoundTokens(input.songMood || input.mood || input.style || directionDeVivy.mood),
+    stripVivyAscii4SoundTokens(couleurDemandee),
     '',
     420
   );
@@ -8702,6 +8734,13 @@ function buildVivySunoPayload(input = {}, req = null) {
       prosodyStyle,
     ].filter(Boolean).join(', '), 'instrumental backing track only, no vocals', 720);
   }
+  // Signature et arc ajoutes APRES la resolution complete du style, jamais avant :
+  // les verser dans requestedStyleBase rendait celui-ci non vide et supprimait le
+  // repli par mots-cles. On complete ici, sans rien remplacer.
+  if (complementStyle && !forceInstrumental) {
+    style = sanitizeVivySunoProviderTags([style, complementStyle].filter(Boolean).join(', '), style, 720);
+  }
+
   // Une voix premium chante: le style ne doit plus diriger le timbre d'un autre.
   const catalogEntry = catalogVoiceId
     ? findVoiceInCatalog(input.voiceCatalogName || input.catalogVoiceName)

@@ -83,10 +83,10 @@ const POIDS_SECTION = [
  * milieu de la courbe.
  */
 const PLAFONDS = [
-  { motif: /(berceuse|lullaby|douce|calme|ambient|acoustique|intimiste|murmure|nocturne calme)/i, plafond: 0.55 },
-  { motif: /(ballade|folk|jazz|bossa|soul lente|slow)/i, plafond: 0.7 },
-  { motif: /(techno|hardcore|metal|banger|drop|saturee?|distordue?|punk|drum and bass|dnb|hardstyle)/i, plafond: 1 },
-  { motif: /(rap|trap|boom bap|hip[- ]?hop|rock|electro|house)/i, plafond: 0.92 },
+  { motif: /\b(berceuse|lullaby|douce|calme|ambient|acoustique|intimiste|murmure|nocturne calme)\b/i, plafond: 0.55 },
+  { motif: /\b(ballade|folk|jazz|bossa|soul lente|slow)\b/i, plafond: 0.7 },
+  { motif: /\b(techno|hardcore|metal|banger|drop|saturee?|distordue?|punk|drum and bass|dnb|hardstyle)\b/i, plafond: 1 },
+  { motif: /\b(rap|trap|boom bap|hip[- ]?hop|rock|electro|house)\b/i, plafond: 0.92 },
 ];
 function resolveEnergyCeiling(direction) {
   const texte = String(direction == null ? "" : direction);
@@ -219,10 +219,12 @@ function extractSectionLabels(paroles) {
 module.exports = {
   CARACTERE_BRAS,
   MATIERE_SONORE,
+  PLAFONDS,
   POIDS_SECTION,
   buildVivyDynamicArc,
   couleurPourIntensite,
   decrireIntensite,
   extractSectionLabels,
   listerPalette,
+  resolveEnergyCeiling,
 };
