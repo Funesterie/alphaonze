@@ -38,6 +38,7 @@ import {
   fetchA11PortraitFramebook,
   fetchTtsVoiceCatalog,
   listVoiceCatalog,
+  recoverVoicePersona,
   addVoiceToCatalog,
   requestVoiceCatalogSample,
   getVoiceCatalogSample,
@@ -5434,6 +5435,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const [songArtists, setSongArtists] = useState<VivyStudioArtistId[]>(() => (
     hasLegacyVivySunoSource ? ["vivy"] : normalizeVivyStudioArtists(initialDraft.songArtists)
   ));
+  const [personaRecoveryBusy, setPersonaRecoveryBusy] = useState(false);
   const [songCastingAuto, setSongCastingAuto] = useState(initialDraft.songCastingAuto !== false);
   // La couleur sonore est un canevas ponctuel, pas un réglage de compte. Une valeur
   // restaurée remplissait le champ à chaque visite et obligeait à l'effacer avant de
@@ -7606,6 +7608,45 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
               </label>
               {catalogStatus ? (
                 <p className="vivy-studio-active-voice">{catalogStatus}</p>
+              ) : null}
+              {/* Réanimation d'une persona Suno expirée, à partir de l'échantillon conservé.
+                  La route backend existait depuis le début, mais sans fonction cliente ni
+                  bouton : personne ne pouvait l'appeler, et la persona Djeff est restée
+                  morte trois jours avec recoveryAttempts à 0. La clé Suno vient de cette
+                  session navigateur — c'est ce qui empêche un agent de dépenser les
+                  crédits sans l'utilisateur. */}
+              {activeCatalogVoice?.catalog?.personaExpiredAt ? (
+                <div className="vivy-studio-active-voice">
+                  <span>
+                    Persona expirée le{" "}
+                    {String(activeCatalogVoice.catalog.personaExpiredAt).slice(0, 10)}.
+                    L'échantillon est conservé, la voix peut être réanimée.
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!hasSession || personaRecoveryBusy}
+                    onClick={async () => {
+                      const nom = String(activeCatalogVoice?.catalog?.name || "").trim();
+                      if (!nom) return;
+                      setPersonaRecoveryBusy(true);
+                      setStatus(`Réanimation de la voix ${nom} en cours…`);
+                      try {
+                        const r = await recoverVoicePersona(nom);
+                        setStatus(
+                          r.ok
+                            ? `Voix ${nom} réanimée.`
+                            : `Réanimation refusée : ${r.reason || "raison inconnue"}.`
+                        );
+                      } catch (error) {
+                        setStatus(`Réanimation impossible : ${(error as Error).message}`);
+                      } finally {
+                        setPersonaRecoveryBusy(false);
+                      }
+                    }}
+                  >
+                    {personaRecoveryBusy ? "Réanimation…" : "Réanimer la voix"}
+                  </button>
+                </div>
               ) : null}
               <label>
                 Couleur sonore

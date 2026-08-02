@@ -2605,6 +2605,37 @@ export async function removeVoiceFromCatalog(name: string): Promise<boolean> {
   return payload?.removed === true;
 }
 
+/**
+ * Réanime une persona Suno expirée à partir de son échantillon conservé.
+ *
+ * La route existait côté serveur depuis le début, mais sans fonction cliente ni
+ * bouton : personne ne pouvait l'appeler. La persona Djeff est restée morte trois
+ * jours avec `recoveryAttempts: 0` — non pas bloquée, jamais sollicitée.
+ *
+ * La clé Suno vient de la session navigateur, c'est voulu : un agent ne peut pas
+ * dépenser les crédits de l'utilisateur sans lui.
+ */
+export type PersonaRecoveryResult = {
+  ok: boolean;
+  reason?: string;
+  voice?: string;
+  personaId?: string;
+  message?: string;
+};
+
+export async function recoverVoicePersona(name: string): Promise<PersonaRecoveryResult> {
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/voice-catalog/${encodeURIComponent(name)}/recover`), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok && res.status !== 409) {
+    throw new Error(payload?.message || payload?.error || `Réanimation impossible (${res.status})`);
+  }
+  return payload as PersonaRecoveryResult;
+}
+
 export type DoubleHarmonicProcessMode = 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7' | 'v71' | 'v8' | 'v8plus' | 'v8pivot' | 'v9turbo' | 'v9electrolysis' | 'v10boom';
 export type DoubleHarmonicOutputFormat = 'source' | 'flac' | 'mp3' | 'm4a' | 'wav';
 
