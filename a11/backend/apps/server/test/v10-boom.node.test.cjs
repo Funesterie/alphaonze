@@ -9,6 +9,7 @@ const {
   V10_BOOM_METHOD,
   V10_BOOM_STATE,
   V10_CANON,
+  V10_PAN_WIDTH,
   resolveV10BoomConfig,
   buildV10BoomPlan,
   buildV10BoomFilterGraph,
@@ -47,6 +48,30 @@ test('V10 Boom — le filtre est la fermeture axe m (inversion retardee y=x-a*x(
   assert.match(g, /\[out\]/);
   const mp3Args = buildV10BoomArgs('v9.mp3', 'v10.mp3', cfg);
   assert.deepEqual(mp3Args.slice(-5), ['-codec:a', 'libmp3lame', '-b:a', '192k', 'v10.mp3']);
+});
+
+test('V11 — l ouverture du pan se pose avant le limiteur et se desactive proprement', () => {
+  // Constat de Djeff : « on n entend pas les violons ». Cause mesuree le 02/08/2026
+  // sur un rendu reel : le boom resserre l image (ecart milieu-cote 10.30 -> 11.00)
+  // et laisse la bande des cordes inchangee a -30.1 dB. A slev 1.5 : largeur 7.40 et
+  // cordes -29.0, avec l equilibre gauche/droite exactement celui de la source.
+  const parDefaut = resolveV10BoomConfig({});
+  assert.equal(parDefaut.panWidth, V10_PAN_WIDTH);
+  assert.equal(V10_PAN_WIDTH, 1.5);
+
+  const g = buildV10BoomFilterGraph(parDefaut);
+  assert.match(g, /stereotools=slev=1\.500,alimiter=/, 'le pan doit preceder immediatement le limiteur');
+  // Le limiteur est non lineaire : il reste dernier, sinon le plafond n est plus garanti.
+  assert.ok(g.indexOf('stereotools') < g.indexOf('alimiter'), 'le limiteur doit rester en dernier');
+
+  // A 1 on ne doit rien inserer du tout : le graphe redevient celui de la V10.
+  const neutre = buildV10BoomFilterGraph(resolveV10BoomConfig({ panWidth: 1 }));
+  assert.ok(!neutre.includes('stereotools'), 'panWidth=1 ne doit rien ajouter au graphe');
+  assert.match(neutre, /\[mix\]alimiter=limit=0\.950/);
+
+  // Borne haute : 2.0 creuse deja le centre, on ne laisse pas monter n importe ou.
+  assert.equal(resolveV10BoomConfig({ panWidth: 9 }).panWidth, 2.5);
+  assert.equal(resolveV10BoomConfig({ panWidth: 0 }).panWidth, 1);
 });
 
 test('V10 Boom — garde-fou canon : wet <= 0.2, gain <= +3 dB, master de production', () => {

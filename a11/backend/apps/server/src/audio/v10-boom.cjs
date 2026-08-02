@@ -59,6 +59,25 @@ const V10_CANON = {
   transitionTable: { '+real': '+imag', '+imag': '-real', '-real': '-imag', '-imag': '+real' },
 };
 
+// V11 — ouverture du pan. Le boom V10 ne touche que le grave et RESSERRE l'image :
+// mesure du 02/08/2026 sur un rendu reel (40 s), ecart milieu-cote en dB, plus petit
+// = plus large — brut Suno 10.30, apres boom 11.00, bande des cordes -30.1 des deux
+// cotes. Le boom n'apporte donc rien aux cordes, il ajoute 0.5 dB dans le grave.
+// D'ou « on n'entend pas les violons ».
+//
+// A 1.5 : largeur 11.00 -> 7.40, cordes -30.1 -> -29.0, et l'equilibre gauche/droite
+// reste exactement celui de la source (-0.40 global, -0.10 sur les cordes) — ce
+// qu'aucune construction a base de dephasage n'a tenu. Cout : repli mono -0.30 -> -0.70.
+// Valeur choisie a l'oreille par Djeff contre 2.0 (qui creuse le centre).
+//
+// Le boom est un filtre lineaire identique sur les deux canaux, donc il COMMUTE avec
+// toute operation milieu/cote : l'ordre boom<->pan est sans effet. Verifie par
+// difference echantillon par echantillon entre les deux ordres : -91 dB, silence.
+// Seul l'alimiter, non lineaire, doit rester en dernier — d'ou la place ci-dessous.
+// Elargir la bande haute seule a ete teste et ne sert a rien : le grave est deja
+// quasi mono, le repli en souffre autant (-0.80) et le raccord s'ajoute pour rien.
+const V10_PAN_WIDTH = 1.5;
+
 const V10_CROSS_ARMS = ['+real', '+imag', '-real', '-imag'];
 function oppositeArm(arm) {
   if (arm === '+real') return '-real';
@@ -115,6 +134,8 @@ function resolveV10BoomConfig(options = {}) {
   const boomGainDb = clampNumber(options.boomGainDb ?? process.env.VIVY_V10_BOOM_GAIN_DB, -6, 3, 2);
   const bassBandHz = clampNumber(options.bassBandHz ?? process.env.VIVY_V10_BOOM_BAND_HZ, 60, 300, 120);
   const peakLimit = clampNumber(options.peakLimit ?? process.env.VIVY_V10_BOOM_PEAK_LIMIT, 0.8, 0.99, 0.95);
+  // V11 — ouverture du pan. 1 = image inchangee (comportement V10 d'origine).
+  const panWidth = clampNumber(options.panWidth ?? process.env.VIVY_V10_BOOM_PAN_WIDTH, 1, 2.5, V10_PAN_WIDTH);
   return {
     wet,
     inversionDepth,
@@ -123,6 +144,7 @@ function resolveV10BoomConfig(options = {}) {
     boomGainDb,
     bassBandHz,
     peakLimit,
+    panWidth,
     boomGain: Math.pow(10, boomGainDb / 20),
     researchOnly: false,
     researchOrigin: true,
@@ -166,6 +188,10 @@ function buildV10BoomFilterGraph(config) {
   const negAlpha = -config.inversionDepth;
   const tau = String(config.inversionDelayMs);
   const wetW = config.wet.toFixed(3);
+  // Ouverture du pan juste avant le limiteur. A 1 on n'insere rien : le graphe
+  // redevient octet pour octet celui de la V10 d'origine.
+  const panWidth = Number(config.panWidth) || 1;
+  const pan = panWidth === 1 ? '' : `stereotools=slev=${panWidth.toFixed(3)},`;
   // y(t) = x(t) - a*x(t-tau) : dry + copie retardée inversée (fermeture axe m).
   // [full] = signal complet ; [bass] = bande grave isolee ; le boom traite puis remixé à wet.
   return [
@@ -178,7 +204,7 @@ function buildV10BoomFilterGraph(config) {
     `[m]highpass=f=${config.subCapHz}[m2]`,
     `[m2]volume=${config.boomGain.toFixed(4)}[m3]`,
     `[full][m3]amix=inputs=2:duration=first:normalize=0:weights=1 ${wetW}[mix]`,
-    `[mix]alimiter=limit=${config.peakLimit.toFixed(3)}:attack=5:release=50:level=false[out]`,
+    `[mix]${pan}alimiter=limit=${config.peakLimit.toFixed(3)}:attack=5:release=50:level=false[out]`,
   ].join(';');
 }
 
@@ -329,6 +355,7 @@ module.exports = {
   V10_BOOM_STATE,
   V10_BOOM_PRESET,
   V10_CANON,
+  V10_PAN_WIDTH,
   resolveV10BoomConfig,
   buildV10BoomPlan,
   buildV10BoomFilterGraph,
