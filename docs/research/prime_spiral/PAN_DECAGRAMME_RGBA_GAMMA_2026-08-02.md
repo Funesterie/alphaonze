@@ -66,6 +66,51 @@ se disputent le créneau 270 (PurpleShadow 265, Violet 280) — à départager.
 (`360 / 40 = 9`), pas douze (`360 / 30`). Ce sont deux quantifications différentes du même
 cercle, et rien ici ne justifie de les rapprocher.
 
+### La roue à douze est l'anneau d'un cube RGB à trois niveaux
+
+Les dix hex de la palette n'utilisent que **trois valeurs d'octet** : `0x0a`, `0x4a`, `0x8a`
+— espacées de 64 exactement. La palette n'est pas une liste de couleurs choisies, c'est un
+**cube RGB quantifié à trois niveaux**.
+
+En prenant tous les triplets où un canal est au maximum et un au minimum — l'anneau extérieur
+du cube — on obtient **exactement douze couleurs**, toutes multiples de 30°, toutes à la même
+luminosité (29 %) :
+
+```
+teinte   hex          etat
+    0    0x8a0a0a     BloodRed
+   30    0x8a4a0a     FireOrange
+   60    0x8a8a0a     DORE
+   90    0x4a8a0a     MANQUANTE   -> « vert pomme » (Djeff)
+  120    0x0a8a0a     MANQUANTE
+  150    0x0a8a4a     ToxicGreen  -> « verdoyant » ? (voir ci-dessous)
+  180    0x0a8a8a     Cyan
+  210    0x0a4a8a     DeepBlue
+  240    0x0a0a8a     MANQUANTE   (version claire ; Indigo occupe la sombre)
+  270    0x4a0a8a     PurpleShadow -> « mauve » (Djeff)
+  300    0x8a0a8a     Magenta
+  330    0x8a0a4a     MANQUANTE   -> « rose bonbon » (Djeff)
+```
+
+**Les couleurs manquantes ne sont pas à choisir : leurs hex sont déterminés par la structure.**
+
+**L'anneau sombre existe déjà.** Indigo (`0x0a0a4a`) et Violet (`0x4a0a4a`) ont `0x4a` pour
+canal dominant au lieu de `0x8a` : ce sont les branches 240 et 300 sur un **second anneau**, à
+16 % de luminosité. Indigo *est* la branche 240 — c'est sa version claire qui manque.
+
+La structure complète est donc **12 branches × N anneaux de luminosité**. État actuel : huit
+couleurs sur l'anneau clair, deux sur l'anneau sombre, quatre trous.
+
+### Deux corrections de données à trancher
+
+1. **ToxicGreen.** Son hex (`0x0a8a4a`) le place à 150, le créneau « verdoyant ». Son champ
+   `hue` dit 120. Soit il *est* le verdoyant et le champ est faux, soit c'est le vert acide pur
+   et son hex devrait être `0x0a8a0a`. Le nom (*Toxic*Green) plaide pour la seconde ; c'est une
+   décision de lore, pas de code.
+2. **Le champ `hue` est faux quatre fois sur dix** : ToxicGreen −30°, Violet −20°, DeepBlue
+   −10°, PurpleShadow −5°. Les hex sont exacts. **Régénérer `hue` depuis le hex**, ne pas
+   corriger à la main.
+
 ### Détail des compléments déclarés
 
 Voici l'état **réel** de `src/knowledge/modules/encoding.pulsar.palette.module.json` :
@@ -100,17 +145,34 @@ constante. Total des dix : **5.880**.
 
 ## 3. Trois axes, et le contraste n'en est pas un
 
-1. **Teinte** — les douze branches, pas de 30°. La position sur la roue.
-2. **Luminosité** — ce que `Noir-Pétrole`, `Bleu-Gris` et `Flamme-Bleu` encodent réellement.
-   Absente du fichier aujourd'hui, alors que les données la supposent (§2).
-3. **Aγ** — le poids opératoire, déjà présent, indépendant des deux autres.
+Sémantique donnée par Djeff le 02/08 :
+
+| axe | sens persona | où il est dans les données |
+|---|---|---|
+| **Teinte** | **la façade — ce que le persona décide d'afficher** | branche sur la roue à douze, exacte dans le hex |
+| **Luminosité** | **ce qu'il garde en retrait, la part dans l'ombre** | niveau du canal dominant (`0x8a` clair / `0x4a` sombre) — **implicite, pas un champ** |
+| **Aγ** | la force avec laquelle la couleur agit | champ `gamma`, déjà explicite |
+
+**Confirmation dans le fichier, non cherchée :** la seule couleur nommée pour sa profondeur —
+**Indigo, fonction déclarée « le profond »** — est l'une des deux qui vivent sur l'anneau
+sombre (16 % au lieu de 29 %). L'axe de luminosité était déjà utilisé, il n'était pas nommé.
 
 **Le contraste n'est pas un quatrième axe : c'est une relation entre deux branches** —
 distance angulaire sur la roue, plus écart de luminosité, plus différence d'Aγ. En faire une
 coordonnée le compterait deux fois. Contraste = dérivé, pas primitif.
 
-C'est cohérent avec ce que PAN désigne (§1) : une tension **entre** deux pôles, pas la
-propriété d'un pôle isolé.
+La définition de PAN (§1) se répartit alors sur les trois axes **sans reste** :
+
+```
+« presence / retrait »                -> luminosite
+« centre / cote »                     -> ouverture du pan, reglee par A_gamma
+« reel / imaginaire »                 -> l'axe : la branche et son opposee
+« deux caracteres complementaires »   -> la paire a 180 deg sur la roue
+« opposition sans destruction »       -> |G| = |D| : l'image ne penche pas
+```
+
+La façade est ce qui sort ; le retrait est ce qui n'en sort pas ; le contraste est la tension
+entre les deux.
 
 Correspondance avec les sous-systèmes qui existent déjà :
 
@@ -119,6 +181,9 @@ teinte      -> choix de couleur / timbre     src/music/vivy-prime-color.cjs
 luminosite  -> dynamique, energie            src/music/vivy-dynamic-arc.cjs
 A_gamma     -> ouverture du pan              V11 pan (constante globale aujourd'hui)
 ```
+
+**À faire dans les données :** sortir la luminosité en champ explicite. Tant qu'elle reste
+encodée dans le niveau du canal dominant, aucun code ne peut s'en servir sans redécoder le hex.
 
 ---
 
