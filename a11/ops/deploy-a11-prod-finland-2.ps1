@@ -309,14 +309,26 @@ function Send-FileViaSsh {
 
   $debut = Get-Date
   try {
-    $proc = Start-Process -FilePath "ssh" -ArgumentList $args -NoNewWindow -PassThru `
-      -RedirectStandardInput $LocalPath -RedirectStandardError $errFile
-    $proc | Wait-Process -Timeout $TimeoutSeconds -ErrorAction SilentlyContinue
-    if (-not $proc.HasExited) {
-      Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-      $global:LASTEXITCODE = 124
-    } else {
-      $global:LASTEXITCODE = [int]$proc.ExitCode
+    # Reprise sur coupure passagere. Le 02/08, apres 31 fichiers transmis dont
+    # vivy.wav (24 Mo), le deploiement est mort sur un fichier de 441 octets :
+    # "ssh: connect to host ... port 22: Connection timed out". Le lien avait lache
+    # une seconde. Sans reprise, une seconde de reseau coute une passe entiere.
+    $tentatives = 3
+    for ($essai = 1; $essai -le $tentatives; $essai += 1) {
+      $proc = Start-Process -FilePath "ssh" -ArgumentList $args -NoNewWindow -PassThru `
+        -RedirectStandardInput $LocalPath -RedirectStandardError $errFile
+      $proc | Wait-Process -Timeout $TimeoutSeconds -ErrorAction SilentlyContinue
+      if (-not $proc.HasExited) {
+        Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+        $global:LASTEXITCODE = 124
+      } else {
+        $global:LASTEXITCODE = [int]$proc.ExitCode
+      }
+      if ($LASTEXITCODE -eq 0) { break }
+      if ($essai -lt $tentatives) {
+        Write-Host ("  reprise {0}/{1} sur {2}" -f $essai, ($tentatives - 1), (Split-Path $LocalPath -Leaf)) -ForegroundColor DarkGray
+        Start-Sleep -Seconds (5 * $essai)
+      }
     }
 
     # Le flux d'erreur de ssh etait supprime sans jamais etre lu. Consequence : trois
