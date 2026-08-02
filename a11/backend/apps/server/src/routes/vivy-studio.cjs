@@ -4377,8 +4377,15 @@ function buildVivySunoPromptChatReply({ message = '', historyText = '', fileLine
   });
   const bikerStyle = /\b(torque|moto|motard|biker|bike|moteur|vitesse|course|route|asphalte|pneu|poursuite)\b/.test(foldedTheme);
   const style = bikerStyle
-    ? `French original cinematic biker electro-rock, industrial rap edge, high-speed motorcycle chase energy, neon asphalt, roaring engines, aggressive synth bass, distorted guitars, tight drums, adrenaline chorus, ${artistCast.label} vocal lead, structured rhymed lyrics, sung vocals, no spoken narration, no copyrighted melody, no celebrity voice imitation`
-    : `${artistCast.sunoStyle}, cinematic production, strong hook, clean modern mix, no copyrighted melody, no celebrity voice imitation`;
+    ? `French original cinematic biker electro-rock, industrial rap edge, high-speed motorcycle chase energy, neon asphalt, roaring engines, aggressive synth bass, distorted guitars, tight drums, adrenaline chorus, ${artistCast.label} vocal lead, structured rhymed lyrics, sung vocals, no spoken narration, original Funesterie signature`
+    // "no copyrighted melody" et "no celebrity voice imitation" retires du champ STYLE
+    // le 2026-08-01. Le style donne la direction musicale : y nommer une interdiction
+    // de ressemblance fait penser le modele a ce qu'il doit eviter, et le catalogue
+    // Funesterie etant depose au nom civil de Djeff, l'artiste "protege" est lui-meme.
+    // Le probleme ne se limitait donc pas aux voix : il touchait le style et les
+    // instrumentales. Les deux contraintes existent deja dans negativeTags, le champ
+    // que Suno traite comme une exclusion sans peser sur la direction artistique.
+    : `${artistCast.sunoStyle}, cinematic production, strong hook, clean modern mix, original Funesterie signature`;
   const themeLine = bikerStyle
     ? `Theme: original song inspired by ${theme}; speed, rival crews, pressure, neon road, engine heat, freedom and danger.`
     : `Theme: original song inspired by ${theme}.`;
@@ -8246,7 +8253,7 @@ function buildVivyMusicPrompt(input = {}) {
       ? 'Instrumental only. No vocals, spoken words, narration, or sung directions.'
       : 'Lyrics must be sung, not spoken. Use the provided sections as real lyrics.',
     forceInstrumental ? '' : `Lyrics:\n${lyrics}`,
-    'Arrangement: intro, verse, pre-chorus, memorable chorus, second verse, bridge, chorus, clean ending. Web-ready, no copyrighted melody.',
+    'Arrangement: intro, verse, pre-chorus, memorable chorus, second verse, bridge, chorus, clean ending. Web-ready, original Funesterie signature.',
   ].filter(Boolean).join('\n');
   return cleanText(prompt, 4000);
 }
