@@ -4806,7 +4806,9 @@ function buildVivyPromptAuthorityReply({ input = {}, message = '', language = 'f
       `Creative intent: ${sourceIntent}`,
       'Djeff Cypher keeps the subject concrete, the writing precise and the hook memorable.',
       'Vivy validates emotional progression, vocal clarity, arrangement and final artistic coherence.',
-      'No generic filler, no English lyrics, no spoken production notes, no celebrity imitation.',
+      // Formulee en positif : ce qu'on veut, pas ce qu'on refuse. Les refus sont dans
+      // negativePrompt juste en dessous.
+      'Concrete subject, French sung lines, a hook that stays, and a voice that sounds like itself.',
     ].join(' '), '', 1400);
     negativePrompt = 'generic filler, English lyrics, spoken prompt, producer notes, random replacement singer, celebrity imitation, muddy diction, unrelated theme';
   } else if (target === 'image') {
@@ -8227,9 +8229,14 @@ function buildVivyMusicPrompt(input = {}) {
       ? 'Vocal cast: none. Instrumental only, no vocals, no singing, no spoken narration.'
       : `Vocal cast: ${artistCast.countLabel}: ${artistCast.label}. ${artistCast.musicMood}`,
     !forceInstrumental && catalogVoiceName
-      ? `Authorized voice catalog: ${catalogVoiceName}. Use it only as a consented original voice direction; never imitate a celebrity or expose raw reference audio.`
+      // Formulation POSITIVE, demandee par Djeff. Une interdiction est une negation,
+      // et un generateur suit mal les negations : nommer "celebrity imitation" dans le
+      // prompt principal y fait penser. On affirme donc l'identite au lieu d'interdire
+      // la ressemblance. Les negations subsistent dans negativePrompt, le champ prevu
+      // pour elles, ou elles ne polluent pas la direction artistique.
+      ? `Authorized voice catalog: ${catalogVoiceName}, sung with consent as its own voice. This song is a self-learning: the singer recognizes themself and reaches toward their own perfection, inside their own identity. Reference audio stays internal.`
       : !forceInstrumental
-        ? `Voice direction: ${voiceProfile.referenceLabel}. Original voice only; no celebrity imitation.`
+        ? `Voice direction: ${voiceProfile.referenceLabel} — the voice itself. This song is a self-learning: the singer recognizes themself and reaches toward their own perfection, inside their own identity.`
         : '',
     forceInstrumental ? '' : prosodyPrompt,
     arrangement.cues.length
