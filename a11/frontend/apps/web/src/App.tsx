@@ -7609,6 +7609,12 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
               ) : null}
               <label>
                 Couleur sonore
+                {/* autoComplete off : Chrome traitait ce champ comme un identifiant de
+                    connexion et y injectait les noms d'utilisateur enregistrés. « Jeffrey »
+                    s'est retrouvé en couleur sonore, puis dans le style envoyé à Suno.
+                    Cause : « Clé Suno personnelle », juste en dessous, est un type=password,
+                    et l'heuristique du navigateur prend le champ texte précédent pour le
+                    nom d'utilisateur de la paire. */}
                 <input
                   id="vivy-studio-song-mood"
                   name="songMood"
@@ -7616,6 +7622,9 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                   disabled={!hasSession}
                   onChange={(event) => setSongMood(event.target.value)}
                   placeholder="Laisse vide pour que Vivy choisisse. Drift : tu peux mélanger 3-4 styles et des instrus qui se chevauchent."
+                  autoComplete="off"
+                  data-lpignore="true"
+                  data-1p-ignore="true"
                 />
               </label>
               <label>

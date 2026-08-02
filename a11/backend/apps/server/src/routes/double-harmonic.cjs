@@ -1937,11 +1937,12 @@ function createDoubleHarmonicRouter(options = {}) {
 
       const id = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
       const base = safeBaseName(req.body?.name || req.file.originalname || 'audio');
+      const requestedBoom = /\/v10boom\/process$/i.test(req.path);
       const requestedElectrolysis = /\/v9electrolysis\/process$/i.test(req.path)
         || reqBoolean(req.body?.electrolysis || req.query?.electrolysis)
         || reqBoolean(req.body?.electrolysisGuitar || req.query?.electrolysisGuitar)
         || String(req.body?.modulation || req.query?.modulation || req.body?.modulationMode || req.query?.modulationMode || '').toLowerCase() === 'electrolysis-guitar';
-      const publicVariant = requestedElectrolysis ? 'v9electrolysis' : 'v9turbo';
+      const publicVariant = requestedBoom ? 'v10boom' : requestedElectrolysis ? 'v9electrolysis' : 'v9turbo';
       const inputExt = extForUpload(req.file);
       const inputFilename = `${id}-${base}-${publicVariant}-input.${inputExt}`;
       const outputFormat = resolveOutputFormat(req.body?.format || req.query?.format, inputExt);
@@ -2057,7 +2058,9 @@ function createDoubleHarmonicRouter(options = {}) {
         contentType: outputFormat.contentType,
         filename: outputFilename,
         bytes: asset.bytes,
-        publicSummary: requestedElectrolysis || processing.dynamic?.modulation?.enabled
+        publicSummary: requestedBoom
+          ? 'V10 Boom: impact D40 dynamique vocal-safe a 99 ms, fermeture 1024 et pivot 0.292 conserves.'
+          : requestedElectrolysis || processing.dynamic?.modulation?.enabled
           ? 'V9 Électrolyse: V8 Pivot conserve, micro-modulation asymétrique/irrégulière audio-only 40.26-40.62 Hz sur les enveloppes haut/bas.'
           : 'V9 Turbo: V8 Pivot valide, poids haut/bas dynamiques vocal-safe a 99 ms, fermeture 1024 et mg_phase recentre conserves.',
       });
