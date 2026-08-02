@@ -9,7 +9,7 @@ const {
   V10_BOOM_METHOD,
   V10_BOOM_STATE,
   V10_CANON,
-  V10_PAN_WIDTH,
+  V11_PAN_WIDTH,
   resolveV10BoomConfig,
   buildV10BoomPlan,
   buildV10BoomFilterGraph,
@@ -50,14 +50,14 @@ test('V10 Boom — le filtre est la fermeture axe m (inversion retardee y=x-a*x(
   assert.deepEqual(mp3Args.slice(-5), ['-codec:a', 'libmp3lame', '-b:a', '192k', 'v10.mp3']);
 });
 
-test('V11 — l ouverture du pan se pose avant le limiteur et se desactive proprement', () => {
+test('V11 pan — l ouverture se pose avant le limiteur et se desactive proprement', () => {
   // Constat de Djeff : « on n entend pas les violons ». Cause mesuree le 02/08/2026
   // sur un rendu reel : le boom resserre l image (ecart milieu-cote 10.30 -> 11.00)
   // et laisse la bande des cordes inchangee a -30.1 dB. A slev 1.5 : largeur 7.40 et
   // cordes -29.0, avec l equilibre gauche/droite exactement celui de la source.
   const parDefaut = resolveV10BoomConfig({});
-  assert.equal(parDefaut.panWidth, V10_PAN_WIDTH);
-  assert.equal(V10_PAN_WIDTH, 1.5);
+  assert.equal(parDefaut.panWidth, V11_PAN_WIDTH);
+  assert.equal(V11_PAN_WIDTH, 1.5);
 
   const g = buildV10BoomFilterGraph(parDefaut);
   assert.match(g, /stereotools=slev=1\.500,alimiter=/, 'le pan doit preceder immediatement le limiteur');
@@ -72,6 +72,15 @@ test('V11 — l ouverture du pan se pose avant le limiteur et se desactive propr
   // Borne haute : 2.0 creuse deja le centre, on ne laisse pas monter n importe ou.
   assert.equal(resolveV10BoomConfig({ panWidth: 9 }).panWidth, 2.5);
   assert.equal(resolveV10BoomConfig({ panWidth: 0 }).panWidth, 1);
+
+  // La V10 Boom n est pas modifiee : la V11 est une couche posee apres elle.
+  const plan = buildV10BoomPlan();
+  assert.equal(plan.v11Pan.width, 1.5);
+  assert.equal(plan.v11Pan.applied, true);
+  assert.equal(plan.v11Pan.boomPreserved, true);
+  assert.equal(plan.boom.wet, 0.15, 'le wet du boom reste celui de la V10');
+  assert.equal(plan.boom.inversionDelayMs, 12, 'le tau du boom reste celui de la V10');
+  assert.equal(buildV10BoomPlan({ panWidth: 1 }).v11Pan.applied, false);
 });
 
 test('V10 Boom — garde-fou canon : wet <= 0.2, gain <= +3 dB, master de production', () => {

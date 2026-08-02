@@ -59,7 +59,7 @@ const V10_CANON = {
   transitionTable: { '+real': '+imag', '+imag': '-real', '-real': '-imag', '-imag': '+real' },
 };
 
-// V11 — ouverture du pan. Le boom V10 ne touche que le grave et RESSERRE l'image :
+// V11 PAN — ouverture du pan. Le boom V10 ne touche que le grave et RESSERRE l'image :
 // mesure du 02/08/2026 sur un rendu reel (40 s), ecart milieu-cote en dB, plus petit
 // = plus large — brut Suno 10.30, apres boom 11.00, bande des cordes -30.1 des deux
 // cotes. Le boom n'apporte donc rien aux cordes, il ajoute 0.5 dB dans le grave.
@@ -76,7 +76,11 @@ const V10_CANON = {
 // Seul l'alimiter, non lineaire, doit rester en dernier — d'ou la place ci-dessous.
 // Elargir la bande haute seule a ete teste et ne sert a rien : le grave est deja
 // quasi mono, le repli en souffre autant (-0.80) et le raccord s'ajoute pour rien.
-const V10_PAN_WIDTH = 1.5;
+//
+// Nom retenu par Djeff : « V11 pan ». La V10 Boom n'est pas modifiee — la V11 est
+// l'ouverture du pan posee apres elle. Note complete : docs/research/audio/V11_PAN_2026-08-02.md
+const V11_PAN_SCHEMA = 'funesterie.audio.v11-pan';
+const V11_PAN_WIDTH = 1.5;
 
 const V10_CROSS_ARMS = ['+real', '+imag', '-real', '-imag'];
 function oppositeArm(arm) {
@@ -134,8 +138,15 @@ function resolveV10BoomConfig(options = {}) {
   const boomGainDb = clampNumber(options.boomGainDb ?? process.env.VIVY_V10_BOOM_GAIN_DB, -6, 3, 2);
   const bassBandHz = clampNumber(options.bassBandHz ?? process.env.VIVY_V10_BOOM_BAND_HZ, 60, 300, 120);
   const peakLimit = clampNumber(options.peakLimit ?? process.env.VIVY_V10_BOOM_PEAK_LIMIT, 0.8, 0.99, 0.95);
-  // V11 — ouverture du pan. 1 = image inchangee (comportement V10 d'origine).
-  const panWidth = clampNumber(options.panWidth ?? process.env.VIVY_V10_BOOM_PAN_WIDTH, 1, 2.5, V10_PAN_WIDTH);
+  // V11 pan — 1 = image inchangee (comportement V10 d'origine).
+  // VIVY_V10_BOOM_PAN_WIDTH reste lu en second : c'est le nom sous lequel la valeur
+  // est partie en prod le 02/08 avant d'etre renommee, on ne veut pas la perdre.
+  const panWidth = clampNumber(
+    options.panWidth ?? options.v11Pan ?? process.env.VIVY_V11_PAN_WIDTH ?? process.env.VIVY_V10_BOOM_PAN_WIDTH,
+    1,
+    2.5,
+    V11_PAN_WIDTH
+  );
   return {
     wet,
     inversionDepth,
@@ -170,6 +181,27 @@ function buildV10BoomPlan(options = {}) {
     },
     compass: loadV10Compass(options.currentState || '+real', options.returnRatio ?? config.wet),
     boom: config,
+    // V11 pan : couche posee APRES la V10 Boom, qui n'est pas modifiee. Elle commute
+    // avec le boom (filtre lineaire identique sur les deux canaux) — seul le limiteur,
+    // non lineaire, impose de rester en dernier.
+    v11Pan: {
+      schema: V11_PAN_SCHEMA,
+      width: config.panWidth,
+      applied: config.panWidth !== 1,
+      neutralAt: 1,
+      max: 2.5,
+      envKey: 'VIVY_V11_PAN_WIDTH',
+      boomPreserved: true,
+      commutesWithBoom: true,
+      measuredOn: '1785657333928-209bf9de-Session-principale (40 s, 2026-08-02)',
+      // ecart milieu-cote en dB, plus petit = plus large
+      widthSourceDb: 10.3,
+      widthBoomOnlyDb: 11,
+      widthWithPanDb: 7.4,
+      stringsBoomOnlyDb: -30.1,
+      stringsWithPanDb: -29,
+      monoFoldCostDb: -0.4,
+    },
     safety: {
       researchOnly: false,
       researchOrigin: true,
@@ -188,7 +220,7 @@ function buildV10BoomFilterGraph(config) {
   const negAlpha = -config.inversionDepth;
   const tau = String(config.inversionDelayMs);
   const wetW = config.wet.toFixed(3);
-  // Ouverture du pan juste avant le limiteur. A 1 on n'insere rien : le graphe
+  // V11 pan : ouverture juste avant le limiteur. A 1 on n'insere rien, le graphe
   // redevient octet pour octet celui de la V10 d'origine.
   const panWidth = Number(config.panWidth) || 1;
   const pan = panWidth === 1 ? '' : `stereotools=slev=${panWidth.toFixed(3)},`;
@@ -355,7 +387,8 @@ module.exports = {
   V10_BOOM_STATE,
   V10_BOOM_PRESET,
   V10_CANON,
-  V10_PAN_WIDTH,
+  V11_PAN_SCHEMA,
+  V11_PAN_WIDTH,
   resolveV10BoomConfig,
   buildV10BoomPlan,
   buildV10BoomFilterGraph,
