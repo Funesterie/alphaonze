@@ -26,6 +26,22 @@ const RAW_LOW_PRESET = Object.freeze({
   lowWeight: HARMONIC_WEIGHT_MIN,
 });
 
+// V11 PAN — ouverture du pan, posee juste avant le limiteur, en fin de chaine.
+// Definie ici parce que v10-boom.cjs importe deja ce module : une seule source.
+//
+// Les deux couches harmoniques sortent a pan=stereo|c0=c0|c1=c0, donc gauche
+// exactement egale a droite : plaquees au centre absolu, la ou se trouve la voix.
+// Mesure du 02/08/2026 sur la chaine v10 boom (ecart milieu-cote, plus petit =
+// plus large) : 11.00 sans pan, 7.40 a 1.5, avec l'equilibre gauche/droite
+// exactement conserve. Cout : repli mono -0.30 -> -0.70.
+//
+// L'operateur commute avec tout filtre lineaire identique sur les deux canaux
+// (verifie a -91 dB entre les deux ordres de rendu) ; seul le limiteur, non
+// lineaire, impose de rester en dernier. Note : docs/research/audio/V11_PAN_2026-08-02.md
+const V11_PAN_SCHEMA = 'funesterie.audio.v11-pan';
+const V11_PAN_WIDTH = 1.5;
+const V11_PAN_MAX = 2.5;
+
 const DEFAULT_HARMONIC_INTENSITY = 1;
 const MIN_HARMONIC_INTENSITY = HARMONIC_WEIGHT_RATIO;
 const MAX_HARMONIC_INTENSITY = 1 / HARMONIC_WEIGHT_RATIO;
@@ -56,6 +72,23 @@ function normalizeProfile(value = 'blend') {
 
 function resolveHarmonicIntensity(value = DEFAULT_HARMONIC_INTENSITY) {
   return clampNumber(value, MIN_HARMONIC_INTENSITY, MAX_HARMONIC_INTENSITY, DEFAULT_HARMONIC_INTENSITY);
+}
+
+// 1 = image inchangee, et on n'insere alors rien du tout dans le graphe.
+// VIVY_V10_BOOM_PAN_WIDTH reste lu en second : c'est le nom sous lequel la valeur
+// est partie en prod le 02/08 avant d'etre renommee.
+function resolveV11Pan(value) {
+  const raw = value ?? process.env.VIVY_V11_PAN_WIDTH ?? process.env.VIVY_V10_BOOM_PAN_WIDTH;
+  const width = clampNumber(raw, 1, V11_PAN_MAX, V11_PAN_WIDTH);
+  return {
+    schema: V11_PAN_SCHEMA,
+    width,
+    applied: width !== 1,
+    neutralAt: 1,
+    max: V11_PAN_MAX,
+    envKey: 'VIVY_V11_PAN_WIDTH',
+    chain: width === 1 ? '' : `stereotools=slev=${width.toFixed(3)},`,
+  };
 }
 
 function resolveD40Density(options = {}) {
@@ -133,12 +166,14 @@ function buildProtectMixD40Filter(options = {}) {
   const low = RAW_LOW_PRESET.lowWeight * mg * intensity;
   const highVolume = `${numberText(high)}*(${envelope.expression})`;
   const lowVolume = `${numberText(low)}*(${envelope.expression})`;
+  const v11Pan = resolveV11Pan(options.panWidth ?? options.v11Pan);
 
   return {
     envelope,
     mg,
     balance,
     intensity,
+    v11Pan,
     highWeight: high,
     lowWeight: low,
     filter: [
@@ -147,7 +182,7 @@ function buildProtectMixD40Filter(options = {}) {
       '[work]aformat=channel_layouts=mono,highpass=f=120,lowpass=f=6500,afftdn=nf=-28,asplit=2[h1][h2]',
       `[h1]rubberband=pitch=${RAW_LOW_PRESET.highPitch},highpass=f=1200,lowpass=f=10000,volume='${highVolume}':eval=frame,pan=stereo|c0=c0|c1=c0[h1o]`,
       `[h2]rubberband=pitch=${RAW_LOW_PRESET.lowPitch},highpass=f=90,lowpass=f=2600,volume='${lowVolume}':eval=frame,pan=stereo|c0=c0|c1=c0[h2o]`,
-      '[dryfull][h1o][h2o]amix=inputs=3:weights=\'1 1 1\':normalize=0,alimiter=limit=0.97[out]',
+      `[dryfull][h1o][h2o]amix=inputs=3:weights='1 1 1':normalize=0,${v11Pan.chain}alimiter=limit=0.97[out]`,
     ].join(';'),
   };
 }
@@ -183,8 +218,8 @@ function buildOutputCodecArgs(outputPath, options = {}) {
   return [];
 }
 
-function buildProtectMixD40Args({ inputPath, outputPath, profile = 'blend', intensity } = {}) {
-  const built = buildProtectMixD40Filter({ profile, intensity });
+function buildProtectMixD40Args({ inputPath, outputPath, profile = 'blend', intensity, panWidth } = {}) {
+  const built = buildProtectMixD40Filter({ profile, intensity, panWidth });
   return {
     built,
     args: [
@@ -208,10 +243,10 @@ function buildProtectMixD40Args({ inputPath, outputPath, profile = 'blend', inte
   };
 }
 
-async function processProtectMixD40({ inputPath, outputPath, profile = 'blend', intensity, timeoutMs } = {}) {
+async function processProtectMixD40({ inputPath, outputPath, profile = 'blend', intensity, panWidth, timeoutMs } = {}) {
   if (!inputPath) throw new Error('missing_input_path');
   if (!outputPath) throw new Error('missing_output_path');
-  const { built, args } = buildProtectMixD40Args({ inputPath, outputPath, profile, intensity });
+  const { built, args } = buildProtectMixD40Args({ inputPath, outputPath, profile, intensity, panWidth });
   await runFfmpeg(args, { timeoutMs });
   return {
     method: 'dry-master-plus-adaptive-d40-harmonic-overlay-v1',
@@ -219,6 +254,7 @@ async function processProtectMixD40({ inputPath, outputPath, profile = 'blend', 
     mg: built.mg,
     balance: built.balance,
     intensity: built.intensity,
+    v11Pan: built.v11Pan,
     d40: built.envelope.density,
     weights: {
       dry: 1,
@@ -249,6 +285,10 @@ module.exports = {
   RAW_LOW_PRESET,
   TARGET_0005_PI,
   T_LINEAR,
+  V11_PAN_MAX,
+  V11_PAN_SCHEMA,
+  V11_PAN_WIDTH,
+  resolveV11Pan,
   buildD40EnvelopeExpression,
   buildOutputCodecArgs,
   buildProtectMixD40Args,

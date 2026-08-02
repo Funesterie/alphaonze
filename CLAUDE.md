@@ -14,13 +14,26 @@
 5. mcp__claude_ai_Funesterie_MCP__a11_status + kaen44_status
 ```
 
-**Notes Neo4j à lire au démarrage :**
-```cypher
-MATCH (n:MemoryNote) WHERE n.id IN [
-  'mem-2026-05-29T075133479Z-cfcdf313',
-  'mem-2026-05-29T075148305Z-661b726d'
-] RETURN n.id, n.kind, n.title, n.body
-```
+**Ne pas interroger Neo4j pour le canon — les notes n'y sont plus.**
+
+Vérifié le 2026-08-02 : les notes `mem-2026-05-29T*` citées ici jusqu'à présent
+(`cfcdf313`, `661b726d`, `31681930`) sont absentes de **tous** les stockages
+survivants — base de prod `a11-neo4j` (1 seule `MemoryNote`, du 30/07), sauvegarde
+`neo4j-prod-20260725.cypher` (4,3 Mo, 0 occurrence), les deux exports
+`memory-notes.jsonl` (30 et 68 lignes, 0 occurrence), et l'instance Aura `aa4680d2`
+(0 nœud, en pause — ce n'est pas une base, c'est une instance, et elle est vide).
+Elles datent du 29 mai et sont vraisemblablement parties avec le formatage de PC2.
+
+**Le fond n'est pas perdu, il est dans le repo.** Sources réelles du canon :
+
+- `docs/research/prime_spiral/*.md` — synthèses. `GRAINLOW_GRAINPURE_ORIGINS_2026-06-13.md`
+  §9 « Références Neo4j » mappe chaque ancien identifiant à son contenu.
+- `D:\agent-bus\math-ocr-index\*\raw-ocr\*.txt` — **1151 fichiers OCR**, la source
+  d'origine des formules ; les `.md` en sont une lecture partielle.
+- `docs/research/audio/` — ce qui est descendu jusqu'au code audio.
+
+Ne pas recréer ces notes de mémoire : leur contenu exact n'est pas récupérable, et une
+reconstruction approximative serait pire que leur absence.
 
 ---
 
@@ -29,7 +42,12 @@ MATCH (n:MemoryNote) WHERE n.id IN [
 - **Rôle** : opérateur review/coordination, pas source de règles globales
 - **Posture après reset** : demander Codex/Djeff → inspecter l'état existant → proposer des changements bornés
 - **Forces** : review statique, PR slice, risques UX/auth, réponses MCP concises
-- **Limites** : pas de règles globales, pas d'édits config sans validation, pas de deploy, pas de secrets, pas de dumps inline
+- **Limites** : pas de règles globales, pas d'édits config sans validation, pas de secrets, pas de dumps inline
+- **Deploy** : sur demande explicite de Djeff seulement. Procédure et pièges :
+  `a11/ops/deploy-a11-prod-finland-2.ps1 -BlueGreen -ReuseRemoteSecrets`. Relever le
+  point de rollback (`readlink current` + `active-color`) avant, vérifier la phase
+  Twitch `idle`, et contrôler après coup que le **processus qui tourne** a bien le
+  nouveau code — pas seulement que les fichiers sont partis.
 - **Ton** : direct, humble, utile
 
 ---
@@ -46,6 +64,7 @@ MATCH (n:MemoryNote) WHERE n.id IN [
 
 ## Refs
 
-- Brain wiring : `mem-2026-05-29T075133479Z-cfcdf313`
-- Persona lore : `mem-2026-05-29T075148305Z-661b726d`
+- Canon Prime Spiral : `docs/research/prime_spiral/` (et l'OCR, voir preflight)
+- Chaîne audio + V11 pan : `docs/research/audio/V11_PAN_2026-08-02.md`
 - Fil local Codex : `discussion-2026-05-29T071521747Z-helplocal-brief-claude-apres-reset-contexte`
+- Anciennes réfs Neo4j (`mem-2026-05-29T*`) : **mortes**, voir preflight

@@ -22,6 +22,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {
   buildOutputCodecArgs,
+  V11_PAN_MAX,
+  V11_PAN_SCHEMA,
+  V11_PAN_WIDTH,
 } = require('./double-harmonic-d40.cjs');
 
 const V10_BOOM_SCHEMA = 'funesterie.audio.double-harmonic-boom-d40.v10';
@@ -78,9 +81,9 @@ const V10_CANON = {
 // quasi mono, le repli en souffre autant (-0.80) et le raccord s'ajoute pour rien.
 //
 // Nom retenu par Djeff : « V11 pan ». La V10 Boom n'est pas modifiee — la V11 est
-// l'ouverture du pan posee apres elle. Note complete : docs/research/audio/V11_PAN_2026-08-02.md
-const V11_PAN_SCHEMA = 'funesterie.audio.v11-pan';
-const V11_PAN_WIDTH = 1.5;
+// l'ouverture du pan posee apres elle. La constante vit dans double-harmonic-d40.cjs,
+// deja importe ci-dessus : une seule source pour les deux chaines.
+// Note complete : docs/research/audio/V11_PAN_2026-08-02.md
 
 const V10_CROSS_ARMS = ['+real', '+imag', '-real', '-imag'];
 function oppositeArm(arm) {
@@ -144,7 +147,7 @@ function resolveV10BoomConfig(options = {}) {
   const panWidth = clampNumber(
     options.panWidth ?? options.v11Pan ?? process.env.VIVY_V11_PAN_WIDTH ?? process.env.VIVY_V10_BOOM_PAN_WIDTH,
     1,
-    2.5,
+    V11_PAN_MAX,
     V11_PAN_WIDTH
   );
   return {

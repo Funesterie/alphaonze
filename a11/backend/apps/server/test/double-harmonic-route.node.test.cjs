@@ -151,6 +151,39 @@ test('D40 calculation uses cross multiplication from 40.0005 to 40', () => {
   assert.match(built.filter, /amix=inputs=3:weights='1 1 1':normalize=0/);
 });
 
+test('V11 pan — la chaine d40 ouvre le pan avant le limiteur, et se neutralise exactement', () => {
+  // Les deux couches harmoniques sortent a pan=stereo|c0=c0|c1=c0, donc plaquees au
+  // centre absolu, sur la voix. La V11 ouvre l image en fin de chaine. Mesure du
+  // 02/08/2026 sur la chaine v10 boom : ecart milieu-cote 11.00 -> 7.40 a slev 1.5.
+  const {
+    V11_PAN_WIDTH,
+    resolveV11Pan,
+  } = require(path.join(__dirname, '../src/audio/double-harmonic-d40.cjs'));
+  const { V11_PAN_WIDTH: depuisBoom } = require(path.join(__dirname, '../src/audio/v10-boom.cjs'));
+
+  // Une seule source de verite : v10-boom importe la constante de d40.
+  assert.equal(depuisBoom, V11_PAN_WIDTH, 'les deux chaines doivent partager la constante');
+  assert.equal(V11_PAN_WIDTH, 1.5);
+
+  const built = buildProtectMixD40Filter({});
+  assert.equal(built.v11Pan.width, 1.5);
+  assert.equal(built.v11Pan.applied, true);
+  assert.match(built.filter, /stereotools=slev=1\.500,alimiter=/, 'le pan precede immediatement le limiteur');
+  assert.ok(built.filter.indexOf('stereotools') < built.filter.indexOf('alimiter'), 'le limiteur reste en dernier');
+  // Les couches harmoniques ne sont pas touchees : la V11 n ajoute que l ouverture.
+  assert.match(built.filter, /rubberband=pitch=1\.259921/);
+  assert.match(built.filter, /rubberband=pitch=0\.840896/);
+
+  // A 1, rien n est insere : le graphe redevient celui d avant la V11.
+  const neutre = buildProtectMixD40Filter({ panWidth: 1 });
+  assert.ok(!neutre.filter.includes('stereotools'), 'panWidth=1 ne doit rien ajouter');
+  assert.match(neutre.filter, /normalize=0,alimiter=limit=0\.97\[out\]/);
+  assert.equal(neutre.v11Pan.applied, false);
+
+  assert.equal(resolveV11Pan(9).width, 2.5, 'borne haute');
+  assert.equal(resolveV11Pan(0).width, 1, 'borne basse');
+});
+
 test('harmonic intensity scales only the overlay weights and stays bounded', () => {
   const normal = buildProtectMixD40Filter({ intensity: 1 });
   const stronger = buildProtectMixD40Filter({ intensity: 1.08 });
