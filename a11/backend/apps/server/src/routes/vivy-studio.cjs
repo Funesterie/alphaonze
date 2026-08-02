@@ -38,6 +38,7 @@ const {
 const {
   VIVY_SONG_MAX_CHARS,
   buildVivySongcraftSystemPrompt,
+  extractVivySonicDirection,
   buildVivySongProductionBrief,
   buildVivyStructuredLyrics,
   buildVivySongArtistCast,
@@ -8596,8 +8597,17 @@ function buildVivySunoPayload(input = {}, req = null) {
     72
   ).replace(/^["'“”]+|["'“”]+$/g, '');
   const title = cleanOneLine(titleSeed, 'Sans titre', 80);
+  // Direction sonore choisie par Vivy elle-meme, quand rien n'est impose. Le
+  // commentaire ci-dessous dit depuis longtemps qu'elle decide -- mais elle n'avait
+  // aucun moyen de l'exprimer : songMood etait une entree de songcraft, jamais une
+  // sortie. Faute de couleur, le style partait en "production adaptative facon
+  // <titre>, refrain dynamique, mix moderne", sans genre ni tempo ni instrument, et
+  // Suno retombait sur sa ballade piano. Vingt morceaux identiques, constate le
+  // 02/08/2026. Elle emet desormais une ligne "Direction sonore:" en tete de reponse,
+  // qu'on recupere ici et qui disparait des paroles.
+  const directionDeVivy = extractVivySonicDirection(buildVivySunoStyleMaterial(input));
   const requestedStyleBase = sanitizeVivySunoProviderTags(
-    stripVivyAscii4SoundTokens(input.songMood || input.mood || input.style),
+    stripVivyAscii4SoundTokens(input.songMood || input.mood || input.style || directionDeVivy.mood),
     '',
     420
   );

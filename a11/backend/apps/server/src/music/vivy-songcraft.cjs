@@ -949,9 +949,25 @@ function buildVivySongcraftSystemPrompt(mode, context) {
         'Chaque section doit commencer par le tag de l\u2019artiste entre crochets sur sa propre ligne.',
       ].join('\n')
     : 'Utilise [Vivy] comme tag de section par defaut.';
+  // Quand aucune couleur n'est imposee, Vivy CHOISIT la sienne au lieu de laisser
+  // Suno appliquer son style maison. Sans cette branche, le champ style partait avec
+  // "production adaptative facon<titre>, refrain dynamique, mix moderne" -- aucun
+  // genre, aucun tempo, aucune instrumentation -- et Suno retombait invariablement
+  // sur la ballade piano. Vingt morceaux d'affilee, constate par Djeff le 02/08/2026.
+  //
+  // La ligne est emise en tete de reponse et retiree des paroles a l'extraction :
+  // "Direction sonore" fait deja partie des etiquettes internes filtrees.
   var moodInstruction = songMood
     ? 'Direction sonore imposee: ' + songMood + '. Incarne-la dans les images et le rythme des vers - ne l\u2019explique pas, montre-la.'
-    : '';
+    : [
+        'Aucune couleur sonore n\u2019est imposee: choisis-la toi-meme, c\u2019est ton role.',
+        'Commence ta reponse par UNE seule ligne, avant toute parole:',
+        'Direction sonore: <genre precis>, <instruments>, <tempo ou energie>, <texture>',
+        'Sois concret et musical: un genre nommable, deux ou trois instruments, une allure.',
+        'Varie selon le sujet et l\u2019emotion du morceau - deux chansons differentes ne doivent',
+        'pas recevoir la meme couleur. Evite le reflexe piano-ballade si rien ne l\u2019appelle.',
+        'Ecris ensuite les paroles normalement, sans repeter cette ligne.',
+      ].join('\n');
   // Le routage vocal decide dans le studio doit remonter jusqu'ici: sans lui Vivy
   // repartit des couplets entre des artistes qui ne chanteront pas.
   // Les cles sont celles du payload de production, diffusees telles quelles dans le
@@ -1795,8 +1811,50 @@ function buildVivySongProductionBrief(input = {}) {
   };
 }
 
+/**
+ * Recupere la couleur sonore que Vivy s'est choisie, et rend les paroles sans elle.
+ *
+ * Elle emet une ligne "Direction sonore: ..." en tete quand aucune couleur n'est
+ * imposee (voir moodInstruction). Cette ligne est une consigne, pas une parole :
+ * elle doit alimenter le champ style et disparaitre du bloc chante. Sans cette
+ * extraction elle serait simplement filtree, et la couleur perdue.
+ *
+ * @param {string} texte reponse brute du modele
+ * @returns {{ mood: string, lyrics: string }}
+ */
+function extractVivySonicDirection(texte) {
+  var brut = String(texte == null ? '' : texte);
+  var lignes = brut.split(/\r?\n/);
+  var mood = '';
+  var gardees = [];
+
+  for (var i = 0; i < lignes.length; i += 1) {
+    var ligne = lignes[i];
+    // Insensible aux accents, a la casse et a une puce eventuelle : la ligne est
+    // ecrite par un modele, sa forme exacte n'est pas garantie.
+    var replie = ligne
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/^[-*•]\s*/, '')
+      .trim()
+      .toLowerCase();
+    if (!mood && replie.indexOf('direction sonore') === 0) {
+      var apres = ligne.slice(ligne.indexOf(':') + 1).trim();
+      // "Direction sonore imposee: X" est un rappel de consigne, pas un choix d'elle.
+      if (apres && replie.indexOf('imposee') === -1 && replie.indexOf('imposée') === -1) {
+        mood = apres.replace(/^[<\[]|[>\]]$/g, '').trim();
+        continue;
+      }
+    }
+    gardees.push(ligne);
+  }
+
+  return { mood: mood, lyrics: gardees.join('\n').replace(/^\s+/, '') };
+}
+
 module.exports = {
   VIVY_SONG_MAX_CHARS,
+  extractVivySonicDirection,
   restoreVivyFrenchSongAccents,
   buildVivySongcraftSystemPrompt,
   buildVivySongProductionBrief,
