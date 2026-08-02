@@ -221,3 +221,43 @@ test('la fuite de consignes laisse un tombstone et ne nourrit jamais un repli fu
 
   resetPath(session);
 });
+
+// Paroles reelles de production (NOSSEN, duo Djeff + Vivy, 2026-08-01), fournies
+// par Djeff. Un faux positif du filtre sur de vraies paroles serait pire que la
+// fuite d'origine : on amputerait une chanson au lieu de laisser passer une
+// consigne. Ce test garde cette frontiere avec du materiau authentique.
+const PAROLES_NOSSEN = [
+  '[Intro - Vivy solo]',
+  "Sous les néons, la nuit s'allume,",
+  "Un souffle d'acier dans la brume,",
+  '[Verse 1 - Djeff solo]',
+  'Sur la route, le moteur crie,',
+  "Les pistons chantent, l'adrénaline fuit,",
+  '[Pre-chorus]',
+  "Un éclair sur l'asphalte, le temps se fige,",
+  '[Refrain 1]',
+  'Je cours les néons, mon feu intérieur,',
+  'Dans le chaos, je trouve ma couleur.',
+  '[Bridge - Vivy solo]',
+  "Un souffle de verre, la ville s'efface,",
+].join('\n');
+
+test('de vraies paroles de production traversent le filtre sans perdre une ligne', () => {
+  const propre = stripInternalInstructions(PAROLES_NOSSEN);
+  assert.equal(
+    propre.split('\n').filter((l) => l.trim()).length,
+    PAROLES_NOSSEN.split('\n').filter((l) => l.trim()).length,
+    'aucune ligne de vraies paroles ne doit etre supprimee',
+  );
+  assert.equal(assessTurn({ text: PAROLES_NOSSEN }).holds, true);
+});
+
+test('les marqueurs de section ne sont pas confondus avec des directives de casting', () => {
+  // "[Verse 1 - Djeff solo]" nomme un artiste et une structure : c'est un repere
+  // de section legitime. "Distribution vocale choisie: Solo Djeff." est une
+  // consigne. La difference doit tenir.
+  assert.equal(isInternalInstructionLine('[Intro - Vivy solo]'), false);
+  assert.equal(isInternalInstructionLine('[Verse 1 - Djeff solo]'), false);
+  assert.equal(isInternalInstructionLine('[Refrain 1]'), false);
+  assert.equal(isInternalInstructionLine('Distribution vocale choisie: Solo Djeff.'), true);
+});

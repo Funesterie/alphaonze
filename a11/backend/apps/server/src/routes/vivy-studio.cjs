@@ -3773,7 +3773,7 @@ function getVivyStudioVoiceProfile(input = {}) {
       ],
       sunoStyle: `French original vocal production with authorized custom voice direction ${label}, structured rhymed lyrics, melodic chorus, no spoken narration`,
       musicLead: `Original Funesterie song using authorized voice catalog reference ${label}, in French.`,
-      musicMood: `Authorized catalog voice ${label}; original voice only, consented song use, no celebrity imitation.`,
+      musicMood: `Authorized catalog voice ${label}; original voice only, consented song use.`,
     };
   }
 
@@ -3794,12 +3794,12 @@ function getVivyStudioVoiceProfile(input = {}) {
       testPhrase: 'Djeff cale le kick, diction serrée, rimes nettes; Vivy répond dans la nuit avec un refrain clair.',
       songCastLines: [
         'Djeff: couplets rap techniques, diction serrée, grain grave A11/Djeff ou référence privée.',
-        'Vivy: refrain clair, réponses mélodiques, lift vocal sans imiter une artiste protégée.',
+        'Vivy: refrain clair, réponses mélodiques, lift vocal, timbre original Funesterie.',
         'Duo: tags [Djeff], [Vivy] et [Duo] dans les paroles pour éviter que le moteur mélange tout.',
       ],
       sunoStyle: 'French technical rap duet, male rap verses for Djeff, clear female melodic hook for Vivy, concrete imagery from the current subject, cinematic bass, structured rhymed lyrics, no spoken narration',
       musicLead: 'Original Funesterie rap duet for Djeff and Vivy, in French.',
-      musicMood: 'Djeff delivers technical rap verses; Vivy answers with a clean melodic hook. Original voices only, no celebrity imitation.',
+      musicMood: 'Djeff delivers technical rap verses; Vivy answers with a clean melodic hook. Original voices only.',
     };
   }
 
@@ -3821,7 +3821,7 @@ function getVivyStudioVoiceProfile(input = {}) {
       ],
       sunoStyle: 'French original calm counter-vocal, K44 second lead, structured rhymed lyrics, melodic chorus, no spoken narration',
       musicLead: 'Original Funesterie song for K44, in French.',
-      musicMood: 'K44 calm counter-vocal, composed delivery, no celebrity imitation.',
+      musicMood: 'K44 calm counter-vocal, composed delivery.',
     };
   }
 
@@ -3843,7 +3843,7 @@ function getVivyStudioVoiceProfile(input = {}) {
       ],
       sunoStyle: 'French original low synthetic vocal, A11 spoken-sung bridge, structured rhymed lyrics, melodic chorus, no spoken narration',
       musicLead: 'Original Funesterie song for A11, in French.',
-      musicMood: 'A11 low synthetic voice direction, human-machine tension, no celebrity imitation.',
+      musicMood: 'A11 low synthetic voice direction, human-machine tension.',
     };
   }
 
@@ -3864,12 +3864,12 @@ function getVivyStudioVoiceProfile(input = {}) {
       testPhrase: 'Djeff cale le kick, diction serrée, rimes nettes; Vivy répond dans la nuit avec un refrain clair.',
       songCastLines: [
         'Djeff: couplets rap techniques, diction serrée, grain grave A11/Djeff ou référence privée.',
-        'Vivy: refrain clair, réponses mélodiques, lift vocal sans imiter une artiste protégée.',
+        'Vivy: refrain clair, réponses mélodiques, lift vocal, timbre original Funesterie.',
         'Duo: tags [Djeff], [Vivy] et [Duo] dans les paroles pour éviter que le moteur mélange tout.',
       ],
       sunoStyle: 'French technical rap duet, male rap verses for Djeff, clear female melodic hook for Vivy, structured rhymed lyrics, no spoken narration',
       musicLead: 'Original Funesterie rap duet for Djeff and Vivy, in French.',
-      musicMood: 'Djeff delivers technical rap verses; Vivy answers with a clean melodic hook. Original voices only, no celebrity imitation.',
+      musicMood: 'Djeff delivers technical rap verses; Vivy answers with a clean melodic hook. Original voices only.',
     };
   }
 
@@ -3899,7 +3899,7 @@ function getVivyStudioVoiceProfile(input = {}) {
       // Ces decors restent disponibles si Vivy les choisit, ils ne sont plus imposes.
       sunoStyle: 'French male technical rap cypher, gritty close-mic Djeff lead, nervous controlled punchline delivery, source-driven instrumental palette, concrete imagery from the current subject, structured rhymed lyrics, no spoken narration',
       musicLead: 'Original Funesterie rap song for Djeff, in French.',
-      musicMood: 'Djeff lead rap energy: dry close-mic grain, nervous controlled flow, instrumental palette chosen from the current subject, no celebrity imitation.',
+      musicMood: 'Djeff lead rap energy: dry close-mic grain, nervous controlled flow, instrumental palette chosen from the current subject.',
     };
   }
 
@@ -3921,7 +3921,7 @@ function getVivyStudioVoiceProfile(input = {}) {
       ],
       sunoStyle: 'French cyber pop, cinematic synthwave, clear female vocal, structured rhymed lyrics, melodic chorus, polished web mix, no spoken narration',
       musicLead: 'Original Funesterie song for Vivy, in French.',
-      musicMood: 'Clear synthetic singer, clean vowels, emotional but not imitating any protected artist or character.',
+      musicMood: 'Clear synthetic singer, clean vowels, emotional, original Funesterie timbre.',
     };
   }
 
@@ -3942,7 +3942,7 @@ function getVivyStudioVoiceProfile(input = {}) {
     ],
     sunoStyle: 'French cyber pop, cinematic synthwave, clear female vocal, structured rhymed lyrics, melodic chorus, polished web mix, no spoken narration',
     musicLead: 'Original Funesterie song for Vivy, in French.',
-    musicMood: 'Clear synthetic singer, clean vowels, emotional but not imitating any protected artist or character.',
+    musicMood: 'Clear synthetic singer, clean vowels, emotional, original Funesterie timbre.',
   };
 }
 
@@ -8627,7 +8627,7 @@ function buildVivySunoPayload(input = {}, req = null) {
     ? 'Solo Djeff only, Djeff Cypher voice persona, dry gritty French male rap lead, close-mic punchline delivery, nervous controlled technical flow, concept-first source-driven production, instrumental palette and hook shape follow the current material, preserve its distinctive nouns and strange imagery, no female vocal, no random replacement singer'
     : '';
   const soloMarvinStyle = singleArtistId === 'marvin'
-    ? 'Solo Marvin only, Marvin family Suno voice persona, natural French male lead, close-mic melodic rap tone, confident brother energy, clear French diction, no female vocal, no random replacement singer, no celebrity imitation'
+    ? 'Solo Marvin only, Marvin family Suno voice persona, natural French male lead, close-mic melodic rap tone, confident brother energy, clear French diction, no female vocal, no random replacement singer'
     : '';
   const arrangement = splitVivyArrangementCues(sanitizeVivySongMaterial(
     stripVivyAscii4SoundTokens(input.songText || input.lyrics || input.text || input.theme || input.prompt),

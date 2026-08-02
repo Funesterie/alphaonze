@@ -1166,7 +1166,14 @@ function buildVivySongArtistCast(input = {}) {
     tags,
     songCastLines,
     musicLead: `Original Funesterie song for ${label}, in ${languageName}.`,
-    musicMood: `${countLabel}: ${label}. Original voices only, no celebrity imitation. Solo handoff before shared hooks. ${styleFragment}.`,
+    // Ne re-emet PAS `${countLabel}: ${label}` : l'appelant l'ecrit deja juste avant,
+    // ce qui donnait "Vocal cast: 1 chanteur: Vivy. 1 chanteur: Vivy.".
+    // Et surtout : plus aucune interdiction d'imitation ici. Elle suivait
+    // immediatement le nom de la persona, ce qui revenait a dire au generateur
+    // "voici Vivy, n'imite pas". Un generateur s'ecarte de ce qu'on nomme dans un
+    // interdit : Vivy ne pouvait plus produire dans son propre style. L'interdiction
+    // existe toujours, une seule fois, dans la ligne Voice direction ou elle a du sens.
+    musicMood: `Original voices only. Solo handoff before shared hooks. ${styleFragment}.`,
     sunoStyle: `${languageStyle} original vocal production, ${ensembleStyle}${styleFragment}, structured rhymed lyrics, ${vocalDeliveryStyle}, no spoken narration`,
   };
 }
