@@ -307,6 +307,7 @@ function Send-FileViaSsh {
   $cmd = "cat > '$escapedTmp' && mv -f '$escapedTmp' '$escapedRemote'"
   $args = @($SshArgs) + @($RemoteHost, $cmd)
 
+  $debut = Get-Date
   try {
     $proc = Start-Process -FilePath "ssh" -ArgumentList $args -NoNewWindow -PassThru `
       -RedirectStandardInput $LocalPath -RedirectStandardError $errFile
@@ -316,6 +317,22 @@ function Send-FileViaSsh {
       $global:LASTEXITCODE = 124
     } else {
       $global:LASTEXITCODE = [int]$proc.ExitCode
+    }
+
+    # Le flux d'erreur de ssh etait supprime sans jamais etre lu. Consequence : trois
+    # pannes sans aucun rapport -- scp coupe, apostrophe non echappee, delai
+    # forfaitaire trop court -- ressortaient toutes sous le meme message generique
+    # "Copie reference voix ... echouee", et chacune a coute une passe de deploiement
+    # entiere avant d'etre comprise. On montre desormais ce que ssh a dit.
+    if ($LASTEXITCODE -ne 0) {
+      $secondes = [int]((Get-Date) - $debut).TotalSeconds
+      $taille = 0
+      try { $taille = (Get-Item -LiteralPath $LocalPath).Length } catch { }
+      $motif = if ($LASTEXITCODE -eq 124) { "delai depasse apres $TimeoutSeconds s" } else { "code $LASTEXITCODE" }
+      Write-Host ("  echec envoi: {0} ({1:N0} octets, {2} s, {3})" -f (Split-Path $LocalPath -Leaf), $taille, $secondes, $motif) -ForegroundColor DarkYellow
+      $detail = (Get-Content -LiteralPath $errFile -Raw -ErrorAction SilentlyContinue)
+      if ($detail) { Write-Host ("  ssh a dit: " + $detail.Trim()) -ForegroundColor DarkYellow }
+      else { Write-Host "  ssh n'a rien ecrit sur stderr" -ForegroundColor DarkYellow }
     }
   } finally {
     Remove-Item -LiteralPath $errFile -Force -ErrorAction SilentlyContinue
@@ -1764,24 +1781,35 @@ function Send-FileResumable {
     [string]$LocalPath,
     [string]$RemotePath,
     [int]$ChunkBytes = 4194304,
-    [int]$MaxStalls = 40
+    [int]$MaxStalls = 40,
+    # L'archive se verifie par gzip -t. Les autres fichiers -- les references voix
+    # notamment -- ne sont pas des gzip : on compare alors la taille recue.
+    [switch]$NoGzipCheck,
+    [string]$Etiquette = "Archive"
   )
 
   $localSize = (Get-Item -LiteralPath $LocalPath).Length
   $tmpChunk = Join-Path ([IO.Path]::GetTempPath()) ("a11-upload-" + [Guid]::NewGuid().ToString('N') + ".part")
   $remotePart = "$RemotePath.part"
+  # Meme echappement que Send-FileViaSsh. Oubli du 02/08 : j ai corrige les
+  # apostrophes dans l autre expediteur, puis bascule les fichiers voix sur
+  # celui-ci, qui ne l avait pas. "djeff-corpus-C est chaud.mp3" a donc reperdu
+  # 40 tranches d affilee -- le shell distant cassait sur l apostrophe, jamais le
+  # lien. Echappement POSIX : une apostrophe devient quote-backslash-quote-quote.
+  $remoteEsc = $RemotePath.Replace("'", "'\x27'")
+  $partEsc = $remotePart.Replace("'", "'\x27'")
   $stalls = 0
 
   while ($true) {
     # Une reponse vide (ssh qui echoue) donnait [int64]('') -> exception, et le
     # deploiement mourait a la premiere tranche au lieu de reessayer.
-    $raw = (& ssh @SshArgs $RemoteHost "stat -c '%s' '$RemotePath' 2>/dev/null || echo 0")
+    $raw = (& ssh @SshArgs $RemoteHost "stat -c '%s' '$remoteEsc' 2>/dev/null || echo 0")
     $chiffres = ("$raw").Trim() -replace '[^0-9]', ''
     if ([string]::IsNullOrWhiteSpace($chiffres)) { $chiffres = '0' }
     $offset = [int64]$chiffres
     if ($offset -gt $localSize) {
       Write-Host "Archive distante plus grande que la locale, on repart de zero." -ForegroundColor DarkYellow
-      & ssh @SshArgs $RemoteHost "rm -f '$RemotePath' '$remotePart'" | Out-Null
+      & ssh @SshArgs $RemoteHost "rm -f '$remoteEsc' '$partEsc'" | Out-Null
       continue
     }
     if ($offset -eq $localSize) { break }
@@ -1806,21 +1834,21 @@ function Send-FileResumable {
     # supplementaire: si la connexion meurt en cours de tranche, les octets deja ecrits
     # sont conserves et l'iteration suivante repart de la taille reellement recue --
     # la reprise devient octet par octet au lieu de tranche par tranche.
-    $catArgs = @($SshArgs) + @($RemoteHost, "cat >> '$RemotePath'")
+    $catArgs = @($SshArgs) + @($RemoteHost, "cat >> '$remoteEsc'")
     $sshErrTmp = "$tmpChunk.ssh.err"
     $sendProc = Start-Process -FilePath "ssh" -ArgumentList $catArgs -NoNewWindow -PassThru -RedirectStandardInput $tmpChunk -RedirectStandardError $sshErrTmp
     $sendProc | Wait-Process -Timeout 300 -ErrorAction SilentlyContinue
     if (-not $sendProc.HasExited) { Stop-Process -Id $sendProc.Id -Force -ErrorAction SilentlyContinue; $global:LASTEXITCODE = 124 } else { $global:LASTEXITCODE = [int]$sendProc.ExitCode }
     Remove-Item -LiteralPath $sshErrTmp -Force -ErrorAction SilentlyContinue
 
-    $rawApres = (& ssh @SshArgs $RemoteHost "stat -c '%s' '$RemotePath' 2>/dev/null || echo 0")
+    $rawApres = (& ssh @SshArgs $RemoteHost "stat -c '%s' '$remoteEsc' 2>/dev/null || echo 0")
     $chiffresApres = ("$rawApres").Trim() -replace '[^0-9]', ''
     if ([string]::IsNullOrWhiteSpace($chiffresApres)) { $chiffresApres = '0' }
     $apres = [int64]$chiffresApres
     if ($apres -le $offset) {
       $stalls++
       Write-Host "  tranche perdue, nouvelle tentative ($stalls/$MaxStalls)" -ForegroundColor DarkYellow
-      & ssh @SshArgs $RemoteHost "rm -f '$remotePart'" | Out-Null
+      & ssh @SshArgs $RemoteHost "rm -f '$partEsc'" | Out-Null
       if ($stalls -ge $MaxStalls) {
         Remove-Item -LiteralPath $tmpChunk -Force -ErrorAction SilentlyContinue
         throw "Envoi interrompu: $MaxStalls tranches perdues d'affilee sur $RemotePath"
@@ -1831,12 +1859,22 @@ function Send-FileResumable {
   }
 
   Remove-Item -LiteralPath $tmpChunk -Force -ErrorAction SilentlyContinue
-  & ssh @SshArgs $RemoteHost "gzip -t '$RemotePath'" | Out-Null
-  if ($LASTEXITCODE -ne 0) {
-    & ssh @SshArgs $RemoteHost "rm -f '$RemotePath'" | Out-Null
-    throw "Archive distante corrompue apres envoi (gzip -t). Relancer le deploiement."
+
+  if ($NoGzipCheck) {
+    # Fichier binaire quelconque: on verifie la taille recue, pas l'integrite gzip.
+    $recu = (& ssh @SshArgs $RemoteHost "stat -c '%s' '$remoteEsc' 2>/dev/null || echo 0")
+    $recuOctets = [int64](("$recu").Trim() -replace '[^0-9]', '')
+    if ($recuOctets -ne $localSize) {
+      throw "$Etiquette incomplet apres envoi: $recuOctets / $localSize octets."
+    }
+  } else {
+    & ssh @SshArgs $RemoteHost "gzip -t '$remoteEsc'" | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+      & ssh @SshArgs $RemoteHost "rm -f '$remoteEsc'" | Out-Null
+      throw "Archive distante corrompue apres envoi (gzip -t). Relancer le deploiement."
+    }
   }
-  Write-Host ("Archive transmise et verifiee ({0:N0} octets)" -f $localSize) -ForegroundColor Green
+  Write-Host ("$Etiquette transmis et verifie ({0:N0} octets)" -f $localSize) -ForegroundColor Green
 }
 
 if ($ReuseRemoteArchive) {
@@ -1891,8 +1929,15 @@ if ($SkipRuntimeAssetSync) {
       Write-Warning "Reference voix absente: $($voiceReference.Label) ($($voiceReference.Path))"
       continue
     }
-    Send-FileViaSsh -SshArgs $sshBase -RemoteHost $Remote -LocalPath $voiceReference.Path -RemotePath "$RemoteDataRoot/runtime/voice-library/$($voiceReference.Name)"
-    if ($LASTEXITCODE -ne 0) { throw "Copie reference voix $($voiceReference.Label) echouee" }
+    # Envoi par tranches avec reprise, comme l'archive. En un seul flux, vivy.wav
+    # (24 Mo) n'arrivait jamais : le lien decrochait en route, a 97 % le 02/08 a
+    # 12:47 puis a 24 % a 13:47. Ni la taille ni le delai n'etaient en cause -- la
+    # connexion lachait, simplement. L'archive de 40 Mo passe depuis toujours parce
+    # qu'elle est decoupee : une tranche perdue coute une tranche, pas le fichier.
+    Send-FileResumable -SshArgs $sshBase -RemoteHost $Remote `
+      -LocalPath $voiceReference.Path `
+      -RemotePath "$RemoteDataRoot/runtime/voice-library/$($voiceReference.Name)" `
+      -NoGzipCheck -Etiquette "Reference voix $($voiceReference.Label)"
   }
 
   if (Test-Path -LiteralPath $PrivateCorpusRoot) {
