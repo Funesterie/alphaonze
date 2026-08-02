@@ -69,6 +69,21 @@ const INTERNAL_LABELS = [
   'Rôle',
   'Règles communes',
   'Brouillon interne',
+  // Étiquettes relevées le 2026-08-01 dans le brief réel de vivy-studio (l.4062-4082),
+  // en confrontant le filtre au bloc qui fuitait vraiment. Elles passaient toutes.
+  'Titre de travail',
+  'Artistes cochés',
+  'Outil voix actif',
+  'Tags obligatoires',
+  'Tag conseillé',
+  'Structure proposée',
+  'Refrain guide',
+];
+
+// Lignes de brief sans étiquette, que le filtre par « libellé: » ne peut pas voir.
+// « 2 chanteurs. » est émis nu par le brief : ce n'est pas une parole, c'est un compte.
+const INTERNAL_PATTERNS = [
+  /^\d+\s+chanteurs?\.?$/,
 ];
 
 // Consignes en phrase, sans deux-points, que le filtre par étiquette raterait.
@@ -116,6 +131,10 @@ function isInternalInstructionLine(ligne) {
 
   for (const phrase of SENTENCES_REPLIEES) {
     if (repliee.includes(phrase)) return true;
+  }
+
+  for (const motif of INTERNAL_PATTERNS) {
+    if (motif.test(repliee)) return true;
   }
 
   const deuxPoints = repliee.indexOf(':');

@@ -261,3 +261,38 @@ test('les marqueurs de section ne sont pas confondus avec des directives de cast
   assert.equal(isInternalInstructionLine('[Refrain 1]'), false);
   assert.equal(isInternalInstructionLine('Distribution vocale choisie: Solo Djeff.'), true);
 });
+
+// Le brief reel de vivy-studio (l.4062-4082). C'est LUI que le chemin de secours
+// prenait pour de la matiere a chanter : ses etiquettes sont exactement les
+// chaines vues fuiter en production. Confronte au filtre le 2026-08-01, cinq
+// lignes passaient encore.
+const BRIEF_VIVY_STUDIO = [
+  'Source: canevas Composition.',
+  'Direction sonore: French night drive, duo.',
+  'Titre de travail: NOSSEN.',
+  'Artistes cochés: Duo Djeff + Vivy.',
+  '2 chanteurs.',
+  'Distribution vocale: Duo Djeff + Vivy.',
+  'Outil voix actif: XTTS local.',
+  'Nombre de chanteurs: 2.',
+  'Tags obligatoires: [Djeff], [Vivy].',
+  'Matière à transformer en chanson:',
+  '',
+  "Sous les néons, la nuit s'allume,",
+  "Un souffle d'acier dans la brume,",
+].join('\n');
+
+test('le brief complet de vivy-studio est bloqué, seules les paroles survivent', () => {
+  const propre = stripInternalInstructions(BRIEF_VIVY_STUDIO);
+  assert.equal(propre, "Sous les néons, la nuit s'allume,\nUn souffle d'acier dans la brume,");
+  for (const etiquette of ['Source', 'Direction sonore', 'Titre de travail', 'Artistes', 'Outil voix', 'Distribution vocale', 'Nombre de chanteurs', 'Tags obligatoires', 'Matière à transformer']) {
+    assert.doesNotMatch(propre, new RegExp(etiquette, 'i'), `${etiquette} a survécu au filtre`);
+  }
+});
+
+test('un compte de chanteurs émis nu est une consigne, pas une parole', () => {
+  assert.equal(isInternalInstructionLine('2 chanteurs.'), true);
+  assert.equal(isInternalInstructionLine('1 chanteur'), true);
+  // Mais un vers qui parle de chanteurs reste un vers.
+  assert.equal(isInternalInstructionLine('Nous étions 2 chanteurs perdus dans la nuit'), false);
+});
