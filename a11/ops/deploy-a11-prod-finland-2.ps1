@@ -281,8 +281,20 @@ function Send-FileViaSsh {
     [string]$RemoteHost,
     [string]$LocalPath,
     [string]$RemotePath,
-    [int]$TimeoutSeconds = 300
+    [int]$TimeoutSeconds = 0
   )
+
+  # Delai proportionnel a la taille, pas fixe. Le forfait de 300 s tuait vivy.wav
+  # (24 Mo) a cinquante secondes de la fin : a la vitesse mesuree du lien, environ
+  # 70 Ko/s, ce fichier demande ~350 s. Le fichier voisin de 2 Mo passait, celui-ci
+  # ne pouvait pas -- l'echec ressemblait a un probleme de fichier alors qu'il etait
+  # arithmetique. On prend un plancher pessimiste de 20 Ko/s, et jamais moins de
+  # 300 s pour les petits fichiers.
+  if ($TimeoutSeconds -le 0) {
+    $tailleOctets = 0
+    try { $tailleOctets = (Get-Item -LiteralPath $LocalPath).Length } catch { }
+    $TimeoutSeconds = [Math]::Max(300, [int][Math]::Ceiling($tailleOctets / 20000))
+  }
 
   # Les chemins distants sont entoures de guillemets simples cote shell. Un nom de
   # fichier contenant une apostrophe -- "djeff-corpus-C'est chaud.mp3" existe dans la
