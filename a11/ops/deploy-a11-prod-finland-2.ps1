@@ -284,9 +284,15 @@ function Send-FileViaSsh {
     [int]$TimeoutSeconds = 300
   )
 
-  $remoteTmp = "$RemotePath.part"
+  # Les chemins distants sont entoures de guillemets simples cote shell. Un nom de
+  # fichier contenant une apostrophe -- "djeff-corpus-C'est chaud.mp3" existe dans la
+  # bibliotheque de voix -- fermait la chaine et cassait la commande. Echappement
+  # POSIX standard : ' devient '\''.
+  $escapedRemote = $RemotePath.Replace("'", "'\''")
+  $escapedTmp = "$RemotePath.part".Replace("'", "'\''")
+
   $errFile = [IO.Path]::GetTempFileName()
-  $cmd = "cat > '$remoteTmp' && mv -f '$remoteTmp' '$RemotePath'"
+  $cmd = "cat > '$escapedTmp' && mv -f '$escapedTmp' '$escapedRemote'"
   $args = @($SshArgs) + @($RemoteHost, $cmd)
 
   try {
