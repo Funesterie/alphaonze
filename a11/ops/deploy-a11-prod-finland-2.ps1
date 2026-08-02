@@ -264,6 +264,46 @@ $sshBase = @(
   "-o", "ServerAliveCountMax=4"
 )
 
+# Envoi d'un fichier par le canal stdin de ssh, jamais par scp.
+#
+# Mesure du 01/08/2026 depuis la meme machine et le meme lien : scp se fige ou se
+# fait couper ("Connection reset by <box> port 22") alors que le meme lien fait
+# passer 40 Mo par stdin de ssh sans une seule interruption. Le deploiement du
+# 02/08 est mort exactement la : l'archive de 40 Mo etait passee par stdin sans
+# incident, puis la copie d'un simple mp3 de reference voix, restee en scp, a ete
+# reinitialisee.
+#
+# On ecrit d'abord dans un fichier temporaire distant, puis on renomme : un
+# transfert coupe en vol ne laisse jamais un fichier a moitie ecrit en place.
+function Send-FileViaSsh {
+  param(
+    [string[]]$SshArgs,
+    [string]$RemoteHost,
+    [string]$LocalPath,
+    [string]$RemotePath,
+    [int]$TimeoutSeconds = 300
+  )
+
+  $remoteTmp = "$RemotePath.part"
+  $errFile = [IO.Path]::GetTempFileName()
+  $cmd = "cat > '$remoteTmp' && mv -f '$remoteTmp' '$RemotePath'"
+  $args = @($SshArgs) + @($RemoteHost, $cmd)
+
+  try {
+    $proc = Start-Process -FilePath "ssh" -ArgumentList $args -NoNewWindow -PassThru `
+      -RedirectStandardInput $LocalPath -RedirectStandardError $errFile
+    $proc | Wait-Process -Timeout $TimeoutSeconds -ErrorAction SilentlyContinue
+    if (-not $proc.HasExited) {
+      Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+      $global:LASTEXITCODE = 124
+    } else {
+      $global:LASTEXITCODE = [int]$proc.ExitCode
+    }
+  } finally {
+    Remove-Item -LiteralPath $errFile -Force -ErrorAction SilentlyContinue
+  }
+}
+
 $ActiveBlueGreenColor = "none"
 $DeployBlueGreenColor = "blue"
 if ($BlueGreen) {
@@ -1652,7 +1692,7 @@ $localSunoSecret = if ($env:VIVY_SUNO_LOCAL_API_KEY_FILE) {
 }
 if (Test-Path -LiteralPath $localSunoSecret) {
   $remoteSunoSecret = "$RemoteDataRoot/runtime/secrets/suno_api_key"
-  & scp @sshBase $localSunoSecret "${Remote}:$remoteSunoSecret"
+  Send-FileViaSsh -SshArgs $sshBase -RemoteHost $Remote -LocalPath $localSunoSecret -RemotePath $remoteSunoSecret
   if ($LASTEXITCODE -ne 0) { throw "Copie secret Suno echouee vers $remoteSunoSecret" }
   & ssh @sshBase $Remote "chmod 600 $RemoteDataRoot/runtime/secrets/suno_api_key"
   if ($LASTEXITCODE -ne 0) { throw "Permissions secret Suno echouees" }
@@ -1667,7 +1707,7 @@ $localMurekaSecretCandidates = @(
 $localMurekaSecret = $localMurekaSecretCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 if ($localMurekaSecret) {
   $remoteMurekaSecret = "$RemoteDataRoot/runtime/secrets/mureka_api_key"
-  & scp @sshBase $localMurekaSecret "${Remote}:$remoteMurekaSecret"
+  Send-FileViaSsh -SshArgs $sshBase -RemoteHost $Remote -LocalPath $localMurekaSecret -RemotePath $remoteMurekaSecret
   if ($LASTEXITCODE -ne 0) { throw "Copie secret Mureka echouee vers $remoteMurekaSecret" }
   & ssh @sshBase $Remote "chmod 600 $RemoteDataRoot/runtime/secrets/mureka_api_key"
   if ($LASTEXITCODE -ne 0) { throw "Permissions secret Mureka echouees" }
@@ -1791,9 +1831,9 @@ if ($ReuseRemoteArchive) {
   Send-FileResumable -SshArgs $sshBase -RemoteHost $Remote -LocalPath $Archive -RemotePath $RemoteArchive
 }
 if (-not $ReuseRemoteSecrets) {
-  & scp @sshBase $SecretStage "${Remote}:$RemoteRoot/secrets/a11.env"
+  Send-FileViaSsh -SshArgs $sshBase -RemoteHost $Remote -LocalPath $SecretStage -RemotePath "$RemoteRoot/secrets/a11.env"
   if ($LASTEXITCODE -ne 0) { throw "Copie env echouee" }
-  & scp @sshBase $BuildEnvStage "${Remote}:$RemoteRoot/secrets/build.env"
+  Send-FileViaSsh -SshArgs $sshBase -RemoteHost $Remote -LocalPath $BuildEnvStage -RemotePath "$RemoteRoot/secrets/build.env"
   if ($LASTEXITCODE -ne 0) { throw "Copie env build echouee" }
 } else {
   & ssh @sshBase $Remote "test -s $RemoteRoot/secrets/compose.env"
@@ -1833,7 +1873,7 @@ if ($SkipRuntimeAssetSync) {
       Write-Warning "Reference voix absente: $($voiceReference.Label) ($($voiceReference.Path))"
       continue
     }
-    & scp @sshBase $voiceReference.Path "${Remote}:$RemoteDataRoot/runtime/voice-library/$($voiceReference.Name)"
+    Send-FileViaSsh -SshArgs $sshBase -RemoteHost $Remote -LocalPath $voiceReference.Path -RemotePath "$RemoteDataRoot/runtime/voice-library/$($voiceReference.Name)"
     if ($LASTEXITCODE -ne 0) { throw "Copie reference voix $($voiceReference.Label) echouee" }
   }
 
@@ -1849,7 +1889,7 @@ if ($SkipRuntimeAssetSync) {
           if ($LASTEXITCODE -ne 0) { throw "Creation dossier corpus prive echouee: $privateCorpusTarget" }
           Get-ChildItem -LiteralPath $corpusDir.FullName -File |
             ForEach-Object {
-              & scp @sshBase $_.FullName "${Remote}:$privateCorpusTarget/$($_.Name)"
+              Send-FileViaSsh -SshArgs $sshBase -RemoteHost $Remote -LocalPath $_.FullName -RemotePath "$privateCorpusTarget/$($_.Name)"
               if ($LASTEXITCODE -ne 0) { throw "Copie corpus prive $($corpusDir.Name) echouee: $($_.Name)" }
             }
         }
@@ -2333,7 +2373,7 @@ $remoteDeployScript = "/tmp/a11-remote-deploy-$Stamp.sh"
   $remoteDeploy.Replace("`r`n", "`n").Replace("`r", "`n"),
   [Text.UTF8Encoding]::new($false)
 )
-& scp @sshBase $localRemoteDeployScript "${Remote}:$remoteDeployScript"
+Send-FileViaSsh -SshArgs $sshBase -RemoteHost $Remote -LocalPath $localRemoteDeployScript -RemotePath $remoteDeployScript
 if ($LASTEXITCODE -ne 0) { throw "Copie script de deploiement distant echouee" }
 $remoteDeployRunCommand = "chmod 700 '$remoteDeployScript' && bash '$remoteDeployScript'; rc=`$?; rm -f '$remoteDeployScript'; exit `$rc"
 & ssh @sshBase $Remote $remoteDeployRunCommand
