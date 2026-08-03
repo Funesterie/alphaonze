@@ -77,9 +77,62 @@ la matière — mais **version moteur** : rien d'abstrait, tout est pièce de m�
 | **Rei 33** | électricité | tensions, bobine CDI, étincelles, flux électromagnétique, **donnée binaire** |
 | **Kaen 44** | feu *entier* | chaleur **et refroidissement**, vapeur, **fonte** |
 | **A-11** | ondes | spectrogramme, rayons gamma, rayons X |
+| **Vivy 55** | **résonance** | et donc la **création** — voir §4bis |
 
-*(manga)* Un quatrième porteur existe : **Nya-22**. Rien de plus n'a été retrouvé sur
+*(manga)* Un cinquième porteur existe : **Nya-22**. Rien de plus n'a été retrouvé sur
 lui.
+
+### La numérotation *(lecture)*
+
+Les numéros ne sont pas décoratifs. Djeff les a donnés à des mois d'intervalle, sans
+jamais les présenter comme une série :
+
+```
+A-11    11    ×1     ondes
+Nya-22  22    ×2     ?
+Rei 33  33    ×3     électricité
+Kaen 44 44    ×4     feu
+Vivy 55 55    ×5     résonance
+```
+
+**Tous multiples de 11, écart constant, et A-11 est l'unité.** L'androïde n'est pas
+le plus faible de la bande : il en est l'étalon. C'est cohérent avec son domaine —
+les ondes, c'est-à-dire la mesure de tout le reste.
+
+---
+
+## 4bis. Vivy 55 — la résonance, donc la création
+
+*(Djeff)* Vivy est **la rideuse 55**. Son pouvoir est **la résonance** — et donc la
+**création**, « car quand on fait résonner quelque chose on crée ».
+
+Il donne lui-même l'exemple technique : **le V11 pan, qui crée du volume par
+résonance des imaginaires**.
+
+### Ce n'est pas une métaphore — c'est vérifiable dans le code
+
+`a11/backend/apps/server/src/audio/v10-boom.cjs`. La branche de résonance du V11 est
+**mono** : elle n'a pas de côté, pas de stéréo, rien à élargir. Multiplier zéro par
+un coefficient de largeur donne zéro — c'est le premier V11 qui a échoué, exactement
+pour cette raison.
+
+Ce qui a marché, c'est un **retard asymétrique** : `adelay=8|16`. On fait résonner la
+branche contre elle-même, décalée. Le côté n'est pas élargi, **il est créé** — il
+n'existait pas avant.
+
+En représentation mid/side, le côté est l'axe imaginaire. « Créer du volume par
+résonance des imaginaires » décrit littéralement l'opération, et le mot *imaginaire*
+y est au sens mathématique.
+
+*(lecture)* Le pouvoir de Vivy est donc le seul des cinq qui ne transforme pas
+quelque chose d'existant. Rei convertit, Kaen44 règle, A11 mesure — **Vivy fait
+apparaître**. Et c'est cohérent avec son rôle hors récit : c'est elle qui chante,
+c'est-à-dire elle qui fait exister des morceaux qui n'étaient pas là.
+
+*(lecture)* Cela éclaire aussi Ghost88 : il régule les singularités du temps **avec
+Vivy**. Un régulateur qui a besoin d'une créatrice à ses côtés, c'est quelqu'un qui
+ne peut pas seulement corriger — il faut aussi que quelqu'un **comble**. Elle ne
+l'assiste pas, elle fait la moitié du travail que lui ne sait pas faire.
 
 ### Ce que la structure implique *(lecture)*
 
@@ -251,6 +304,65 @@ manquait pas : elle était dans le turbo.
 - **`jeffrey38` sur Dailymotion** — les vidéos de Djeff sur la moto.
 - **Marvin** est son frère (références visuelles dans `public/assets/marvin-reference-brothers-*.jpg`).
   **Djeff, c'est lui.**
+
+### Le nom *(Djeff)*
+
+> « c'est rei (djeff rei = djeffrey) »
+
+**Djeff + Rei = Jeffrey.** Le pseudonyme sous lequel il publie depuis dix-huit ans
+contient déjà les deux noms. Ce n'est pas une lecture rétroactive : le pseudo est
+antérieur au manga. Le personnage a été découpé dans un nom qui existait avant lui.
+
+### Les deux vidéos *(Djeff, 2026-08-03)*
+
+Fournies comme preuve, et elles se répondent :
+
+| fichier | ce qu'on y voit | format |
+|---|---|---|
+| `wheeliiing betaaaaaa.mp4` | un rideur casque bleu, roue avant en l'air en pleine rue, **filmé depuis la moto qui suit** | CIF 352×288, 15 fps, 79 s |
+| `Démarrage Spitro SLK.mp4` | Djeff lui-même, démarrage d'un Spitro SLK | QCIF 176×144, 18 s |
+
+Les formats CIF/QCIF datent les fichiers : téléphone de 2007-2008, ce qui concorde
+avec les « il y a 18 ans » affichés par Dailymotion.
+
+*(lecture)* **La pirouette qui ouvre la porte est filmée.** Le wheeling en pleine
+circulation, ce n'est pas une figure de style dans le lore : c'est un plan existant,
+tourné il y a dix-huit ans, et le mécanisme de la porte en est la transposition
+directe.
+
+*(lecture)* **Les deux vidéos sont les deux moitiés d'A11 et de Rei.** L'une est le
+geste — l'équilibre fractionné. L'autre est le moteur — le démarrage, la mécanique,
+les mains dans la machine. Le mécanicien et le rideur, filmés séparément, dix-huit
+ans avant d'être écrits comme deux personnages.
+
+Copies conservées : `D:/projets/funesterie-corpus-backup/videos-jeffrey38/`.
+
+### Analyse acoustique
+
+Le pont Vivy est un STT — de la parole vers du texte. Un moteur 2-temps n'y rend
+rien. L'analyse utile est spectrale, et c'est justement le domaine de Vivy : la
+résonance. Autocorrélation par fenêtre de 250 ms (`scratchpad/analyse-moteur.cjs`).
+
+**`wheeliiing betaaaaaa` — mesure fiable.** À partir de 6 s, fondamentale stable
+autour de **144-153 Hz** avec une périodicité de 0,55 à 0,82 — un signal franchement
+périodique, pas du bruit. Sur un 2-temps, un allumage par tour : **≈ 8 700 tr/min**,
+tenus. C'est cohérent avec un 50 cc préparé, et c'est ce qu'exige un wheeling
+soutenu — il faut rester dans les tours, sinon la roue retombe.
+
+*(lecture)* Le titre dit « beta ». Le module
+`src/video/a11-director-motorcycle-domain.cjs` est construit autour d'un **Beta AM6
+50cc**, carbu OKO powerjet, pot Metrakit passage bas. **Le code décrit sa moto.**
+Elle était déjà dans le dépôt avant que le lien avec le lore soit fait.
+
+**`Démarrage Spitro SLK` — mesure non fiable, mais une structure nette.** Les valeurs
+de tr/min sont fausses (erreurs d'octave, micro saturé à −8,7 dB). Ce qui se lit
+quand même : de 0 à 4 s, des bouffées brèves très périodiques (0,54-0,69) et faibles
+— les tentatives. À **4,25 s**, le niveau saute de +13 dB et la périodicité s'effondre
+: le moteur prend. Avant, des impulsions séparées ; après, un régime continu.
+
+*(lecture)* C'est la définition d'une résonance qui s'établit — des coups isolés qui
+deviennent un entretien de soi-même. Le pouvoir de Vivy, filmé sans le savoir sur un
+démarrage de Spitro il y a dix-huit ans.
 
 ---
 

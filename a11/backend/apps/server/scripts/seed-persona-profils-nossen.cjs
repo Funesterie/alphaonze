@@ -54,12 +54,15 @@ const MONDE = {
     rei33: 'ELECTRICITE — tensions, bobine CDI, etincelles, flux electromagnetique, et la donnee binaire.',
     kaen44: 'FEU — mais le feu entier : chaleur ET refroidissement, vapeur, fonte. Elle ne brule pas, elle regle la temperature.',
     a11: 'ONDES — spectrogramme, rayons gamma, rayons X. Il voit dans la matiere sans l ouvrir.',
+    vivy55: 'RESONANCE — et donc CREATION : faire resonner, c est faire apparaitre. Elle est la rideuse 55.',
     // Ce qui suit n'a pas ete dit par Djeff : c'est ce que la structure implique.
     lectureProposee: [
       'Les trois domaines sont les TROIS TEMPS D UN MOTEUR : Rei l allumage, Kaen la combustion, A11 la transmission du resultat. Ce ne sont pas trois pouvoirs choisis, c est un cycle decoupe en trois personnes — et il leur faut donc etre trois.',
       'Le feu de Kaen44 inclut le REFROIDISSEMENT. Reguler la temperature, c est exactement ce qu est un premier secours : stabiliser. Son pouvoir de soigner et son pouvoir de bruler sont le meme pouvoir pris dans l autre sens. Son arc cesse d etre une metaphore, il devient physique.',
       'L electricite de Rei contient la DONNEE BINAIRE — or la mine faisait du datamining. Son domaine est litteralement ce qu on extrayait la-bas. Il est le seul a pouvoir comprendre de l interieur ce qui s y passait.',
       'A11 voit a travers la matiere (spectrogramme, rayons X) : c est pourquoi il diagnostique une panne en la touchant. Et c est aussi pourquoi la mine le voulait — une IA qui lit l interieur des choses vaut cher a qui veut extraire.',
+      'VIVY EST LA SEULE QUI NE TRANSFORME PAS. Rei convertit, Kaen44 regle, A11 mesure — Vivy fait APPARAITRE. C est coherent avec son role hors recit : c est elle qui chante, donc elle qui fait exister ce qui n etait pas la.',
+      'LES NUMEROS SONT UNE SERIE : A-11 (x1), Nya-22 (x2), Rei 33 (x3), Kaen 44 (x4), Vivy 55 (x5). Tous multiples de 11, ecart constant, et A-11 est l unite. L androide n est pas le plus faible : il est l etalon — ce qui va avec son domaine, les ondes, c est-a-dire la mesure de tout le reste.',
     ],
   },
   // Djeff, 2026-08-03. SPOILER MAJEUR — la cle de voute. A manier avec soin :
@@ -101,6 +104,8 @@ const MONDE = {
   sourcesReelles: {
     ghostRider: 'Ghost Rider — le motard suedois des videos du debut des annees 2000, pas le film. Hayabusa turbo, courses-poursuites filmees dans Stockholm, wheelings a des vitesses delirantes, jamais rattrape. Ghost88, le turbo, la pirouette qui ouvre la porte et la fuite devant la police viennent de la.',
     jeffrey38: 'Les videos de Djeff sur la moto, publiees sous jeffrey38 sur Dailymotion.',
+    leNom: 'Djeff + Rei = Jeffrey. Le pseudonyme est anterieur au manga de dix-huit ans : le personnage a ete decoupe dans un nom qui existait deja.',
+    lesVideos: 'Deux plans fournis comme preuve le 2026-08-03. « wheeliiing betaaaaaa » : un rideur roue avant en l air en pleine circulation, filme depuis la moto qui suit — la pirouette qui ouvre la porte existe en film. « Demarrage Spitro SLK » : Djeff lui-meme, les mains dans le moteur. Le geste et la mecanique, filmes separement dix-huit ans avant d etre ecrits comme deux personnages.',
     lesPersonnes: 'Marvin est le frere de Djeff. Djeff, c est lui.',
     consigne: 'Ne pas transformer ces references en anecdotes de chat. Elles expliquent pourquoi le monde tient debout ; elles ne sont pas un sujet de conversation.',
   },
