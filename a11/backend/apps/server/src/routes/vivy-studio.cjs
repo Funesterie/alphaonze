@@ -4772,6 +4772,39 @@ function resolveVivyPromptAuthorityTarget(input = {}, message = '') {
   return 'video';
 }
 
+/**
+ * Ce texte parle-t-il DU SYSTEME plutot que de quelque chose a creer ?
+ *
+ * Djeff, 03/08 : Vivy lui sortait un brief d'image dont l'intention creative
+ * etait... mon explication technique sur l'historique des messages, collee dans
+ * son message. Le resolveur ne retenait que les tournures de CONSIGNE (« ecris »,
+ * « utilise », « ne mets pas ») ; du bavardage technique n'en est pas une, donc il
+ * passait et partait en prompt chez le fournisseur d'images.
+ *
+ * On exige DEUX marqueurs distincts, et uniquement des mots sans double sens dans
+ * un contexte artistique. « production » et « mix » n'y sont pas : ils appartiennent
+ * autant a la musique qu'a l'informatique, et un seul faux positif couterait une
+ * intention legitime.
+ */
+const MOTS_TECHNIQUES = [
+  'deploiement', 'deployement', 'deploie', 'commit', 'backend', 'frontend',
+  'endpoint', 'docker', 'conteneur', 'correctif', 'git', 'merge', 'patch',
+  'release', 'serveur', 'script', 'json', 'variable', 'parametre', 'fonction',
+  'module', 'historique', 'contexte', 'cache', 'log ', 'logs', 'bug', 'defaut',
+  'regression', 'refactor', 'api ', 'route ', 'requete', 'timeout', 'stacktrace',
+];
+
+function looksLikeTechnicalChatter(texte = '') {
+  const plie = foldTextForLookup(String(texte || ''));
+  if (!plie) return false;
+  const trouves = new Set();
+  for (const mot of MOTS_TECHNIQUES) {
+    if (plie.includes(mot)) trouves.add(mot.trim());
+    if (trouves.size >= 2) return true;
+  }
+  return false;
+}
+
 function resolveVivyPromptAuthorityIntent(input = {}, message = '', target = 'video') {
   const stripInstructions = (text) => {
     return String(text || '')
@@ -4795,6 +4828,12 @@ function resolveVivyPromptAuthorityIntent(input = {}, message = '', target = 'vi
   ].filter((line) => line && line.length >= 5).reverse();
   const useful = candidates.find((candidate) => {
     if (isVivyGeneratedCreativeDirectionPanel(candidate)) return false;
+    // Du bavardage technique n'est pas une intention creative. Sans ce garde,
+    // une explication sur un correctif partait en prompt chez le fournisseur
+    // d'images — et les replis honnetes plus bas ne servaient jamais.
+    if (looksLikeTechnicalChatter(candidate)) return false;
+    // Un compte rendu de production n'en est pas une non plus.
+    if (!stripProductionReport(candidate).trim()) return false;
     const folded = foldTextForLookup(candidate);
     if (/^(?:(?:oui|ouais|ok|okay|d accord|c est bon)(?:\s+(?:vas y|vas-y|va y|go|continue|fais le|fait le|lance))?|vas y|vas-y|va y|go|continue|fais le|fait le|lance)$/.test(folded)) return false;
     return candidate.length >= 5;

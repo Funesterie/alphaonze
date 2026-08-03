@@ -8279,3 +8279,41 @@ test('isDirectSongwritingRequest ignore le « son » possessif (raconte son hist
     );
   }
 });
+
+test('du bavardage technique ne devient pas une intention creative', () => {
+  // Djeff, 03/08 : Vivy lui a sorti un brief d'image dont l'intention creative
+  // etait une explication technique sur l'historique des messages. Le resolveur
+  // ne rejetait que les tournures de CONSIGNE ; du bavardage technique n'en est
+  // pas une, donc il partait en prompt chez le fournisseur d'images.
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/vivy-studio.cjs'), 'utf8');
+
+  assert.match(source, /function looksLikeTechnicalChatter/);
+  assert.match(source, /if \(looksLikeTechnicalChatter\(candidate\)\) return false;/);
+  assert.match(source, /if \(!stripProductionReport\(candidate\)\.trim\(\)\) return false;/);
+
+  // Le garde doit preceder le test de longueur, sinon il ne sert a rien.
+  const bloc = source.match(/const useful = candidates\.find\([\s\S]*?\n  \}\);/)?.[0] || '';
+  assert.ok(bloc, 'le bloc de selection doit etre trouve');
+  assert.ok(
+    bloc.indexOf('looksLikeTechnicalChatter') < bloc.indexOf('candidate.length >= 5'),
+    'le garde doit passer avant le simple test de longueur'
+  );
+
+  // « production » et « mix » ne doivent PAS etre des marqueurs techniques : ils
+  // appartiennent autant a la musique, et un faux positif couterait une intention
+  // legitime. « une chanson sur la production et le mix de nuit » doit passer.
+  const liste = source.match(/const MOTS_TECHNIQUES = \[([\s\S]*?)\];/)?.[1] || '';
+  assert.ok(liste, 'la liste de mots techniques doit exister');
+  assert.doesNotMatch(liste, /'production'/, '« production » est aussi un mot de musique');
+  assert.doesNotMatch(liste, /'mix'/, '« mix » est aussi un mot de musique');
+  assert.match(liste, /'deploiement'/);
+  assert.match(liste, /'historique'/);
+});
+
+test('les replis d intention creative existent et sont concrets', () => {
+  // Quand rien d'utilisable ne survit, mieux vaut un brief neutre mais juste
+  // qu'une explication technique collee dans un prompt d'image.
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/vivy-studio.cjs'), 'utf8');
+  assert.match(source, /Une chanson originale Funesterie guidée par Djeff Cypher/);
+  assert.match(source, /Vivy dans un club nocturne réel/);
+});
