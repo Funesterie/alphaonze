@@ -104,6 +104,7 @@ function personaProfilePath(personaOrEnv = 'djeff', maybeEnv = process.env) {
 // Une persona dont le profil manque a deja ete signalee : on ne repete pas a
 // chaque tour de chat, mais on ne se tait pas non plus.
 const ABSENCES_SIGNALEES = new Set();
+const INACTIFS_SIGNALES = new Set();
 
 /**
  * Charge le profil, et DIT quand il manque.
@@ -124,6 +125,15 @@ function loadPersonaProfileRaw(persona = 'djeff', env = process.env) {
   try {
     const profil = JSON.parse(fs.readFileSync(chemin, 'utf8'));
     ABSENCES_SIGNALEES.delete(cle);
+    // Un profil present mais non approuve n'injecte rien — et sans ce mot, ce
+    // serait le meme silence qu'une absence, sous une autre forme.
+    if (!isPersonaInjectEnabled(profil) && !INACTIFS_SIGNALES.has(cle)) {
+      INACTIFS_SIGNALES.add(cle);
+      console.warn(
+        `[persona-engine] "${cle}" a un profil mais il n'est pas approuve `
+        + `(status "${profil?.status || '?'}", active ${profil?.active === true}) — il n'injecte rien.`
+      );
+    }
     return profil;
   } catch (error) {
     if (!ABSENCES_SIGNALEES.has(cle)) {
