@@ -2283,6 +2283,10 @@ const D40_V9_ELECTROLYSIS_AMOUNT = 0.042;
 const D40_V9_ELECTROLYSIS_IRREGULARITY = 0.36;
 const D40_V9_ELECTROLYSIS_ASYMMETRY = 0.27;
 const DEFAULT_D40_PROCESS_MODE: DoubleHarmonicProcessMode = "v10boom";
+// V11 pan — valeurs par défaut côté serveur (src/audio/double-harmonic-d40.cjs).
+// Affichées seulement : la V11 s'ajoute à la V10 Boom, elle ne la remplace pas.
+const V11_PAN_WIDTH = 1.5;
+const V11_PAN_SPREAD_MS = 4;
 const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v1: "V1 stable",
   v2: "V2 Release",
@@ -5370,12 +5374,18 @@ function VivyD9DiagnosticsPanel({ prosody }: { prosody: VivyStudioProductionResu
   return (
     <section className="vivy-studio-diagnostics vivy-studio-diagnostics--supreme" aria-label="Version audio Vivy">
       <header>
-        <span>Version : V10 Boom</span>
+        <span>Version : V10 Boom + V11 pan</span>
         <small>V9 Électrolyse + couche Boom · k 3x · axe m wet 0.15 · peak guard 0.95 · pivot 0.292 · 1024</small>
       </header>
       <p>
         Préparation Vivy prête: {segments.length || 1} segment{(segments.length || 1) > 1 ? "s" : ""} calé{(segments.length || 1) > 1 ? "s" : ""}.
         Le traitement audio final se fait avec Mix D40 V10 Boom.
+      </p>
+      {/* La V11 ne remplace pas la V10 : elle ouvre la résonance d'axe m en fin de chaîne,
+          sans toucher au signal d'origine ni aux réglages du boom. */}
+      <p className="vivy-studio-diagnostics__v11">
+        <strong>V11 pan</strong> · ouverture de la résonance M seule · écart {V11_PAN_SPREAD_MS} ms
+        symétrique autour de τ · côté ×{V11_PAN_WIDTH} · boom V10 inchangé.
       </p>
     </section>
   );
