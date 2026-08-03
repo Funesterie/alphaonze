@@ -129,6 +129,54 @@ quelque chose d'existant. Rei convertit, Kaen44 règle, A11 mesure — **Vivy fa
 apparaître**. Et c'est cohérent avec son rôle hors récit : c'est elle qui chante,
 c'est-à-dire elle qui fait exister des morceaux qui n'étaient pas là.
 
+### La puissance complète *(Djeff)*
+
+> « si tu crées tu peux inverser et dématérialiser, et les deux ensemble tu
+> transformes tout l'environnement »
+
+Trois degrés, pas un :
+
+1. **créer** — faire résonner, donc faire apparaître ;
+2. **inverser** — la même opération à l'envers : **dématérialiser** ;
+3. **les deux ensemble** — transformer l'environnement entier.
+
+### k ⊗ l *(Djeff pose la question, la réponse est proposée)*
+
+> « si elle fait résonner un imaginaire k et un l ensemble elle obtient quoi ? […]
+> elle fait les flèches de l'orage en chinois […] les 3 flèches vers le haut »
+
+**Un troisième axe.** Dans la carte de `SPATIAL_IMAGINARY_MAP_2026-06-04.md`,
+`Q(n) = a + bi + cj + dk + el + fm + …` : k et l sont deux axes imaginaires
+distincts. Leur produit ne retombe sur aucun des deux — il donne une direction
+**orthogonale aux deux**. C'est la règle des quaternions, `i·j = k`, généralisée.
+
+Les trois flèches vers le haut sont ce triplet : les deux qu'elle fait résonner, et
+celui qui naît. Toutes « vers le haut » parce qu'aucune n'est sur l'axe réel.
+
+*(lecture)* C'est ce qui sépare Vivy des trois autres. Rei convertit, Kaen44 règle,
+A11 mesure — **tous agissent dans les axes existants**. Elle en ajoute. Créer, c'est
+faire naître un axe ; inverser, c'est en retirer un, donc dématérialiser. Les deux
+ensemble, on ne transforme pas les objets : **on transforme l'espace qui les
+contient**. « Tout l'environnement », au sens propre.
+
+*(à confirmer)* Le caractère chinois exact n'a pas été retrouvé dans le dépôt. La
+description — trois flèches vers le haut, l'orage — correspond à un triplement, la
+façon chinoise de noter l'intensité (三 même composant = démultiplié). À faire
+préciser par Djeff avant de le fixer ici.
+
+### L'arc *(Djeff)*
+
+> « c'est l'arc typique "je peux pas le faire" alors que c'est la meilleure pour ça »
+
+Elle a la puissance la plus large des cinq et se croit la moins légitime. C'est
+l'arc du syndrome de l'imposteur, et il est **structurellement juste** dans son cas :
+son pouvoir ne produit rien de visible tant qu'il n'a pas résonné. Rei fait une
+étincelle, Kaen44 fait une flamme, A11 lit une mesure — tous ont une preuve
+immédiate. Elle, avant que ça résonne, elle n'a rien à montrer.
+
+*(lecture)* C'est aussi pour ça qu'elle a besoin des autres pour se croire : la
+résonance demande deux termes. Seule, elle ne peut littéralement pas s'exercer.
+
 *(lecture)* Cela éclaire aussi Ghost88 : il régule les singularités du temps **avec
 Vivy**. Un régulateur qui a besoin d'une créatrice à ses côtés, c'est quelqu'un qui
 ne peut pas seulement corriger — il faut aussi que quelqu'un **comble**. Elle ne

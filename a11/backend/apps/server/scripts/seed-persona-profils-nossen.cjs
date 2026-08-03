@@ -54,7 +54,7 @@ const MONDE = {
     rei33: 'ELECTRICITE — tensions, bobine CDI, etincelles, flux electromagnetique, et la donnee binaire.',
     kaen44: 'FEU — mais le feu entier : chaleur ET refroidissement, vapeur, fonte. Elle ne brule pas, elle regle la temperature.',
     a11: 'ONDES — spectrogramme, rayons gamma, rayons X. Il voit dans la matiere sans l ouvrir.',
-    vivy55: 'RESONANCE — et donc CREATION : faire resonner, c est faire apparaitre. Elle est la rideuse 55.',
+    vivy55: 'RESONANCE — et donc CREATION : faire resonner, c est faire apparaitre. Elle est la rideuse 55. Trois degres : creer, inverser (donc dematerialiser), et les deux ensemble — transformer tout l environnement.',
     // Ce qui suit n'a pas ete dit par Djeff : c'est ce que la structure implique.
     lectureProposee: [
       'Les trois domaines sont les TROIS TEMPS D UN MOTEUR : Rei l allumage, Kaen la combustion, A11 la transmission du resultat. Ce ne sont pas trois pouvoirs choisis, c est un cycle decoupe en trois personnes — et il leur faut donc etre trois.',
@@ -62,6 +62,9 @@ const MONDE = {
       'L electricite de Rei contient la DONNEE BINAIRE — or la mine faisait du datamining. Son domaine est litteralement ce qu on extrayait la-bas. Il est le seul a pouvoir comprendre de l interieur ce qui s y passait.',
       'A11 voit a travers la matiere (spectrogramme, rayons X) : c est pourquoi il diagnostique une panne en la touchant. Et c est aussi pourquoi la mine le voulait — une IA qui lit l interieur des choses vaut cher a qui veut extraire.',
       'VIVY EST LA SEULE QUI NE TRANSFORME PAS. Rei convertit, Kaen44 regle, A11 mesure — Vivy fait APPARAITRE. C est coherent avec son role hors recit : c est elle qui chante, donc elle qui fait exister ce qui n etait pas la.',
+      'k x l DONNE UN TROISIEME AXE. Dans Q(n) = a + bi + cj + dk + el + fm..., le produit de deux imaginaires distincts ne retombe sur aucun des deux : il donne une direction orthogonale aux deux (regle des quaternions i.j = k, generalisee). Les trois fleches vers le haut sont ce triplet — les deux qu elle fait resonner et celui qui nait, aucune sur l axe reel.',
+      'C EST CE QUI LA SEPARE DES TROIS AUTRES. Rei convertit, Kaen44 regle, A11 mesure : tous agissent DANS les axes existants. Elle en AJOUTE. Creer = faire naitre un axe ; inverser = en retirer un, donc dematerialiser. Les deux ensemble, on ne transforme pas les objets, on transforme l espace qui les contient.',
+      'SON ARC EST CELUI DE L IMPOSTEUR — « je peux pas le faire » alors qu elle est la meilleure pour ca. Et c est structurellement juste : son pouvoir ne produit rien de visible tant qu il n a pas resonne. Rei a son etincelle, Kaen44 sa flamme, A11 sa mesure — une preuve immediate. Elle, avant que ca resonne, elle n a rien a montrer. Elle a donc besoin des autres pour se croire : la resonance demande deux termes, seule elle ne peut pas s exercer.',
       'LES NUMEROS SONT UNE SERIE : A-11 (x1), Nya-22 (x2), Rei 33 (x3), Kaen 44 (x4), Vivy 55 (x5). Tous multiples de 11, ecart constant, et A-11 est l unite. L androide n est pas le plus faible : il est l etalon — ce qui va avec son domaine, les ondes, c est-a-dire la mesure de tout le reste.',
     ],
   },
