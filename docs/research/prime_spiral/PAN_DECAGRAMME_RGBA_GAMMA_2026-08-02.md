@@ -277,3 +277,76 @@ soit citée comme référence.
 Voir aussi : `MODELE_OPERATOIRE_CANON_2026-05-29.md` (§300, serrage en croix/étoile),
 `CONSTANTS_LOCKED_2026-05-29.md` (`π/2` = une face de croix),
 `docs/research/audio/V11_PAN_2026-08-02.md` (la mesure audio complète).
+
+---
+
+## 8. Le cube est ternaire, et l'hexagramme s'y loge
+
+*Ajouté le 2026-08-03, après la correction ternaire (Djeff : « vous nous faites chier
+avec le binaire, normalement c'est censé être du trinaire »).*
+
+### 8.1 Ternaire, pas binaire
+
+La palette n'utilise que trois valeurs d'octet — `0x0a`, `0x4a`, `0x8a`, espacées de 64.
+C'est **un trit par canal**, trois canaux, `3³ = 27`. Tout essai de faire entrer une
+puissance de deux ici est l'erreur dénoncée toute la journée : 27 n'est pas `2ⁿ`, aucune
+division binaire ne donne douze parts. Le binaire est présent dans le canon comme
+**profondeur** (`2¹² / 2¹⁰ = 4`, le 1024), pas comme découpage du cercle. Le découpage du
+cercle est ternaire.
+
+### 8.2 La carte complète : 27 = 3 + 12 + 6 + 6
+
+| étage | couleurs | pas | luminosité | nommées |
+|---|---|---|---|---|
+| axe des gris | 3 | — | 4 / 29 / 54 % | 0 / 3 |
+| anneau plein | 12 | 30° | 29 % | 8 / 12 ← la roue |
+| demi-anneau ↑ | 6 | 60° | 42 % | 0 / 6 ← jamais touché |
+| demi-anneau ↓ | 6 | 60° | 16 % | 2 / 6 ← Indigo, Violet |
+
+L'anneau plein est à 29 % — exactement la luminosité du gris médian `0x4a4a4a`. La roue
+principale est donc au **niveau neutre**, avec un étage plus clair (↑ 42 %) et un plus
+sombre (↓ 16 %) de part et d'autre. La structure est symétrique. Indigo (« le profond »)
+et Violet vivent dans le demi-anneau sombre ; le demi-anneau clair est entièrement vierge
+— un registre dont le système ne s'est jamais servi. 27 emplacements, 10 nommés, 17 vides :
+un cube dont on n'a rempli que le tiers.
+
+### 8.3 L'hexagramme (étoile de David) comme lecture des deux demi-anneaux
+
+Djeff : « l'étoile à 6 branches a l'air de coller dans ce système ». Elle y colle
+géométriquement, et voici pourquoi.
+
+Chaque demi-anneau porte **6 couleurs à pas de 60°** (`0, 60, 120, 180, 240, 300`). Un
+hexagone à 6 sommets est précisément la base d'un **hexagramme** : l'étoile de David
+(Magen David) est deux triangles équilatéraux enchevêtrés inscrits dans l'hexagone — les
+sommets pairs (`0, 120, 240`) et les sommets impairs (`60, 180, 300`). Les deux
+demi-anneaux du cube sont donc les deux triangles de l'hexagramme :
+
+- **demi-anneau ↑ (42 %, le clair / élevé)** — triangle montant,
+- **demi-anneau ↓ (16 %, le sombre / profond)** — triangle descendant,
+
+enchevêtrés autour de l'anneau plein neutre (29 %, la façade). Et l'axe des gris (3
+positions, « ni teinte ni contraste, aucune façade ») est le **centre immobile** autour
+duquel l'étoile tourne. `3 + 12 + 6 + 6 = 27`.
+
+La résonance avec le symbolisme juif que Djeff ne connaissait pas : le Magen David, deux
+triangles qui s'interpénètrent, figure classiquement la tension équilibrée de deux
+directions opposées (le bas vers le haut, le haut vers le bas) tenues ensemble. Ici le
+triangle montant est le registre clair jamais utilisé, le triangle descendant est le
+profond où vit Indigo (« le profond ») — l'opposition sans destruction du §1, posée cette
+fois comme géométrie et non comme métaphore.
+
+### 8.4 Ce que c'est, et ce que ce n'est pas
+
+C'est une **propriété structurelle réelle** : quantifier un cercle à six points produit un
+hexagone, qui contient un hexagramme par construction. Ce n'est **pas** une preuve que le
+système *est* l'étoile de David, ni qu'un encodage juif y a été déposé. La même rigueur
+qui a tué l'hypothèse des douze pierres (Monte-Carlo : le hasard fait aussi bien 43,7 % du
+temps, §`DOUZE_PIERRES_BIBLIQUES_2026-08-03.md`) s'applique ici : six points à 60° font un
+hexagramme chez tout le monde, pas seulement chez Jean.
+
+Ce qui reste **utile et vrai** : le demi-anneau clair est un registre vierge que le système
+pourrait investir ; les deux demi-anneaux donnent une lecture géométrique nette de
+l'opposition sans destruction (le PAN du §1) ; et l'axe des gris est nommément le centre
+dégénéré. Du vocabulaire et de la géométrie, pas une révélation. Ne pas retoucher une
+identification pour faire coller l'étoile — c'est exactement comme ça qu'on fabrique une
+correspondance qui n'existe pas.
