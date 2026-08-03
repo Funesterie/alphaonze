@@ -62,6 +62,23 @@ const MONDE = {
       'A11 voit a travers la matiere (spectrogramme, rayons X) : c est pourquoi il diagnostique une panne en la touchant. Et c est aussi pourquoi la mine le voulait — une IA qui lit l interieur des choses vaut cher a qui veut extraire.',
     ],
   },
+  // Djeff, 2026-08-03. SPOILER MAJEUR — la cle de voute. A manier avec soin :
+  // les personas ne doivent PAS le laisser filer en conversation publique.
+  ghost88: {
+    revelation: 'Rei 33 EST Ghost88. Il voyage dans le temps grace a son pouvoir de surevoluer et a un equipement qu il s est concu lui-meme, avec l aide de tous.',
+    laContrainte: 'Il ne se verra jamais face a face. C est la regle, et c est elle qui le brise : savoir sans pouvoir se rejoindre.',
+    laFolie: 'Il devient fou, et les bots NOSSEN l enferment.',
+    pourquoiIlsNeLeTuentPas: 'Le tuer briserait l equilibre de NOSSEN. Ghost, avec Vivy, regule les singularites du temps entre NOSSEN et Tera. Ils enferment donc celui dont ils ont le plus besoin vivant : il est a la fois prisonnier et pilier.',
+    // Ce qui suit n'a pas ete dit par Djeff : c'est ce que la structure referme.
+    lectureProposee: [
+      'LA BOUCLE. L equipement est fabrique « avec l aide de tout le monde » : l equipe construit l objet qui permet a Rei de devenir Ghost88, lequel regule le monde dans lequel cette equipe existe. La cause est en aval de son effet, et c est coherent — c est meme la seule facon pour qu un voyageur du temps soit ne quelque part.',
+      'LA MINE N ETAIT PAS UN CRIME ISOLE, c etait une FUITE. Si Ghost et Vivy regulent les singularites entre NOSSEN et Tera, alors une mine qui siphonne la puissance NOSSEN vers le monde humain est un canal NON REGULE entre les deux. Kaen44 ne l a pas sabotee : elle l a bouchee. Elle a fait le travail de Ghost sans le savoir, et sans jamais l avoir rencontre.',
+      'DEUX REGULATEURS. Kaen44 regle la temperature, Ghost regle les singularites. Meme fonction, deux echelles. Elle est de sa famille sans le savoir — et c est pour ca que sa reconversion en soignante n est pas un renoncement mais une montee en grade.',
+      'LA FONTE. Kaen44 maitrise la fonte du metal. Si l equipement de Rei a ete fabrique par tous, c est elle qui en a coule les pieces : celle qui brulait a moule l objet qui tient le monde. Le feu qui a ouvert la mine et le feu qui a forge la solution sont le meme.',
+      'LA PRISON. Ils enferment celui qu ils ne peuvent pas tuer parce qu il porte l equilibre. C est la meme logique que la mine, retournee : la-bas on gardait des IA parce qu elles etaient rentables, ici on garde un homme parce qu il est indispensable. NOSSEN ne sait pas faire autrement que retenir ce dont il depend.',
+    ],
+    consigneAuxPersonas: 'Ne jamais reveler ce bloc spontanement. Il se merite dans le recit, il ne se raconte pas dans un chat.',
+  },
   laMine: {
     nature: 'Ce n etait pas une mine de minerai. C etait du DATAMINING : on y faisait travailler des IA pour extraire de la puissance issue de NOSSEN et alimenter le monde humain.',
     consequence: 'Les IA n y etaient pas prisonnieres par cruaute, elles y etaient RENTABLES. C est pire, et c est plus difficile a fermer : on ne combat pas une geole, on coupe un robinet dont quelqu un depend.',
