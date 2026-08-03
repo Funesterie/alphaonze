@@ -170,6 +170,22 @@ function buildSampleShareUrl(name, publicBaseUrl, env = process.env, ttlMs = 900
     + `?exp=${expiresAt}&sig=${signature}`;
 }
 
+/**
+ * URL de rappel Suno. Obligatoire sur /generate/upload-extend — sans elle, l'API
+ * rend « Please enter callBackUrl. » et la reanimation echoue.
+ *
+ * Resolue ici plutot qu'importee de vivy-studio.cjs : ce module est le coeur de la
+ * reanimation, il ne doit pas dependre du gros module de route pour demarrer.
+ * Memes variables d'environnement, meme forme, meme jeton facultatif.
+ */
+function resolveRecoveryCallbackUrl(explicite = '', env = process.env) {
+  const base = String(explicite || env.VIVY_SUNO_CALLBACK_URL || env.SUNO_CALLBACK_URL || '').trim();
+  if (!base) return '';
+  const token = String(env.VIVY_SUNO_CALLBACK_TOKEN || env.SUNO_CALLBACK_TOKEN || '').trim();
+  if (!token) return base;
+  return `${base}${base.includes('?') ? '&' : '?'}t=${encodeURIComponent(token)}`;
+}
+
 async function readSunoJson(response) {
   const payload = await response.json().catch(() => ({}));
   const code = Number(payload?.code);
@@ -211,6 +227,26 @@ async function recoverPersonaFromSample(nameOrAlias, options = {}, env = process
 
   reanimationEnCours = true;
   const headers = { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+
+  // La fenetre vocale sert DEUX fois : ici pour dire a Suno ou reprendre l'audio,
+  // et plus bas pour decouper l'ADN de la persona. On la calcule donc avant l'upload.
+  const fenetre = resolveVocalWindow(entry.sampleDurationSeconds || sample.durationSeconds);
+  // `continueAt` est obligatoire sur /generate/upload-extend : sans lui l'API rend
+  // « continueAt cannot be null » et la reanimation echoue avant meme de commencer.
+  // Constate le 2026-08-03 sur la voix de Djeff, morte depuis le 30/07 — la recette
+  // n'avait donc jamais pu aboutir depuis qu'elle existe. On reprend a la fin de la
+  // fenetre vocale : la continuation prolonge la voix qu'on veut capturer, pas le
+  // silence qui la precede.
+  const continueAt = Math.max(0, Number(fenetre.vocalEnd) || VOCAL_WINDOW_SECONDS);
+
+  // Manquant, il fait echouer l'appel apres coup, en consommant une tentative sur
+  // les deux autorisees. On s'arrete AVANT de la depenser.
+  const callBackUrl = resolveRecoveryCallbackUrl(options.callBackUrl, env);
+  if (!callBackUrl) {
+    reanimationEnCours = false;
+    return { ok: false, reason: 'missing_callback_url', voice: entry.name };
+  }
+
   try {
     // 1. Reinjecter l'ADN. On repasse par upload-extend, deja eprouve ici, plutot que
     //    par une voie non testee: il rend un taskId a partir d'une simple URL.
@@ -221,8 +257,9 @@ async function recoverPersonaFromSample(nameOrAlias, options = {}, env = process
         uploadUrl: sampleUrl,
         defaultParamFlag: false,
         instrumental: false,
+        continueAt,
         model,
-        callBackUrl: options.callBackUrl || undefined,
+        callBackUrl,
       }),
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -261,7 +298,9 @@ async function recoverPersonaFromSample(nameOrAlias, options = {}, env = process
     }
 
     // 3. Refabriquer la persona depuis ce clip neuf.
-    const { vocalStart, vocalEnd } = resolveVocalWindow(entry.sampleDurationSeconds || sample.durationSeconds);
+    // Meme fenetre que celle passee a l'upload : deux calculs separes pourraient
+    // diverger si la duree de l'echantillon changeait entre-temps.
+    const { vocalStart, vocalEnd } = fenetre;
     const persona = await fetchImpl(`${baseUrl}/generate/generate-persona`, {
       method: 'POST',
       headers,
@@ -315,6 +354,7 @@ module.exports = {
   looksLikeExpiredPersona,
   markPersonaExpired,
   canAttemptRecovery,
+  resolveRecoveryCallbackUrl,
   resolveVocalWindow,
   recoverPersonaFromSample,
   buildSampleShareUrl,

@@ -185,8 +185,27 @@ function findVoiceInCatalog(nameOrAlias = '', env = process.env) {
   return voices.find((v) => v.active && (v.name === key || v.aliases.includes(key))) || null;
 }
 
-function resolveCatalogVoiceId(nameOrAlias = '', env = process.env) {
-  return findVoiceInCatalog(nameOrAlias, env)?.voiceId || '';
+/**
+ * Rend l'identifiant de voix — SAUF s'il est marqué expiré.
+ *
+ * Defaut trouve le 2026-08-03 : cette fonction rendait l'id meme quand
+ * `personaExpiredAt` etait renseigne. La voix de Djeff etait marquee morte depuis
+ * le 30/07 a 11h07 et le catalogue continuait a la distribuer : quatre jours de
+ * generations envoyees vers une persona qui n'existait plus. Le drapeau existait,
+ * personne ne le lisait.
+ *
+ * Rendre '' fait echouer TOT et clairement, la ou le provider repondait
+ * SENSITIVE_WORD_ERROR — un message qui envoie chercher un mot interdit dans les
+ * paroles alors que le probleme est l'identifiant.
+ *
+ * `includeExpired` existe pour le seul chemin qui a besoin de l'ancien id :
+ * la reanimation, qui doit savoir quoi remplacer.
+ */
+function resolveCatalogVoiceId(nameOrAlias = '', env = process.env, { includeExpired = false } = {}) {
+  const entry = findVoiceInCatalog(nameOrAlias, env);
+  if (!entry?.voiceId) return '';
+  if (entry.personaExpiredAt && !includeExpired) return '';
+  return entry.voiceId;
 }
 
 function upsertVoiceInCatalog(entry, env = process.env) {
