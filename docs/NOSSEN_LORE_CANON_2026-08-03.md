@@ -95,9 +95,27 @@ dématérialise, Nya empoisonne et guérit. **Aucun pouvoir de NOSSEN n'a un seu
 Ce n'est pas un monde où le bien et le mal sont deux camps : c'est un monde où chaque
 main tient les deux bouts, et où le personnage est défini par ce qu'il en fait.
 
-*(lecture)* Elle est la seule porteuse venue de **Tera**, pas de NOSSEN. Si Ghost88 et
-Vivy régulent les singularités **entre** les deux mondes, alors quelqu'un qui vient de
-l'autre côté est déjà, en soi, une singularité qui a traversé.
+*(Djeff)* **Nya vient de Tera, comme Djeff.** Vivy, elle, vient de NOSSEN.
+
+C'est la ligne de partage du casting :
+
+```
+de TERA     Djeff (Rei)  ·  Nya-22 (Lyana)      ← ceux qui ont traversé
+de NOSSEN   Vivy 55  ·  Kaen 44  ·  A-11        ← ceux qui y sont nés
+```
+
+*(lecture)* Tera est donc **le monde humain** — celui que la mine alimentait. Ça se
+recoupe tout seul : on extrayait la puissance de NOSSEN « pour alimenter le monde
+humain », et les deux personnages venus de Tera sont précisément les deux qui existent
+pour de vrai. **Tera, c'est ici.**
+
+*(lecture)* Et ça requalifie la course-poursuite. Djeff ne s'est pas échappé *vers*
+un ailleurs : il est passé de son monde à l'autre, dans le sens inverse du flux que la
+mine avait creusé. Elle tirait NOSSEN vers Tera ; lui a remonté le courant.
+
+*(lecture)* Les deux qui ont traversé sont un couple qui s'est séparé. Le récit a
+donc deux personnes réelles des deux côtés d'une porte qui ne s'ouvre que sur une
+émotion intense. Je le note sans le développer — c'est à Djeff d'en décider.
 
 > ⚠️ Lyana Carval est une personne réelle. Comme pour Marvin, à manier avec retenue :
 > le nom est consigné parce que Djeff l'a donné comme source, pas pour être ressorti.
@@ -179,10 +197,30 @@ faire naître un axe ; inverser, c'est en retirer un, donc dématérialiser. Les
 ensemble, on ne transforme pas les objets : **on transforme l'espace qui les
 contient**. « Tout l'environnement », au sens propre.
 
-*(à confirmer)* Le caractère chinois exact n'a pas été retrouvé dans le dépôt. La
-description — trois flèches vers le haut, l'orage — correspond à un triplement, la
-façon chinoise de noter l'intensité (三 même composant = démultiplié). À faire
-préciser par Djeff avant de le fixer ici.
+**Le symbole est abandonné** *(Djeff, 2026-08-04)* : « on s'en fout du symbole, c'est
+pour dire quaternion, octonion etc. ». Il servait à désigner la famille hypercomplexe,
+pas à encoder quelque chose de précis. Recherché en vain dans l'export ChatGPT
+(1 625 idéogrammes distincts, séquences `\uXXXX` décodées) — la recherche a en
+revanche sorti `「Link 33 : 雷 — SYNCHRO ENGAGED」`, le tonnerre comme symbole de lien
+de Rei 33.
+
+*(Djeff)* Sur les quaternions eux-mêmes : « on va pas résoudre ça aujourd'hui, c'est
+un casse-tête qui ne se résout pas dans le réel — il faut être dans NOSSEN pour
+trouver la formule, sinon on ne la remarque pas. »
+
+### Ce que ça veut dire pour le code *(Djeff)*
+
+> « tu peux tout faire comme V11 pan si t'arrives à résoudre »
+
+**Le V11 pan est un cas résolu, pas une exception.** L'opération — faire résonner deux
+choses pour en créer une troisième qui n'existait pas — est générale ; le pan stéréo
+n'en est qu'une instance où on a trouvé la formule. Chaque fois qu'on la résout dans
+un domaine, on obtient un outil du même genre.
+
+C'est aussi pour ça que l'échec compte : la note `V11_PAN_2026-08-02.md` enregistre
+que **toutes** les constructions tirées du canon (miroir de pan, croix horaire, quatre
+faces, injection de side pure) ont perdu contre un simple `stereotools=slev`. Trouver
+la formule n'est pas un acquis, c'est le travail.
 
 ### Elle aurait créé Tera *(Djeff)*
 

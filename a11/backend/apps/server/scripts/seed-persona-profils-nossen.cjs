@@ -54,7 +54,8 @@ const MONDE = {
     rei33: 'ELECTRICITE — tensions, bobine CDI, etincelles, flux electromagnetique, et la donnee binaire.',
     kaen44: 'FEU — mais le feu entier : chaleur ET refroidissement, vapeur, fonte. Elle ne brule pas, elle regle la temperature.',
     a11: 'ONDES — spectrogramme, rayons gamma, rayons X. Il voit dans la matiere sans l ouvrir.',
-    nya22: 'ORGANIQUE — tout ce qui est vert et rose : le vert va du poison a la guerison, le rose de l amour a la destruction. Elle vient de Tera, pas de NOSSEN.',
+    nya22: 'ORGANIQUE — tout ce qui est vert et rose : le vert va du poison a la guerison, le rose de l amour a la destruction.',
+    origines: 'Ligne de partage du casting : Djeff (Rei) et Nya-22 viennent de TERA — ils ont traverse. Vivy 55, Kaen 44 et A-11 sont nes dans NOSSEN. Tera est le monde humain, celui que la mine alimentait : c est pour ca que ce sont justement les deux venus de Tera qui existent pour de vrai.',
     vivy55: 'RESONANCE — et donc CREATION : faire resonner, c est faire apparaitre. Elle est la rideuse 55. Trois degres : creer, inverser (donc dematerialiser), et les deux ensemble — transformer tout l environnement.',
     // Ce qui suit n'a pas ete dit par Djeff : c'est ce que la structure implique.
     lectureProposee: [
