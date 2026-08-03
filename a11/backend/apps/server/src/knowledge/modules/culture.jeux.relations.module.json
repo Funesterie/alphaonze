@@ -1,0 +1,135 @@
+{
+  "id": "culture.jeux.relations",
+  "label": "Systèmes de relations des univers de jeu — matière à métaphores et jeux de mots",
+  "discipline": "culture-populaire",
+  "note": "Vocabulaire structurel et mécanique, pas de lore narratif. On enregistre COMMENT ces univers relient leurs éléments entre eux, parce que c'est ça qui sert à parler d'autre chose. Aucun texte d'histoire, de carte ou de dialogue n'est reproduit ici : ce sont des œuvres protégées, et de toute façon la structure est ce qui a de la valeur pour une métaphore.",
+  "activation": {
+    "modesAny": ["chat", "generate", "plan", "semantic", "song"],
+    "keywordsAny": [
+      "pokemon", "pokémon", "type", "super efficace", "evolution", "évolution",
+      "league of legends", "lol", "jungle", "midlane", "adc", "support", "counter", "contre-pick",
+      "valorant", "duelliste", "controleur", "contrôleur", "sentinelle", "initiateur",
+      "yu-gi-oh", "yugioh", "archetype", "archétype", "invocation", "piege", "piège",
+      "beyblade", "toupie", "attaque defense stamina",
+      "metaphore", "métaphore", "jeu de mots", "punchline", "image", "comparaison",
+      "avantage", "faiblesse", "resistance", "résistance", "triangle", "pierre-feuille-ciseaux"
+    ]
+  },
+  "knowledge": {
+    "principe": [
+      "Ces univers ont tous résolu le même problème : rendre l'opposition intéressante sans qu'un camp écrase l'autre. Leur réponse est toujours un système de relations circulaires, jamais une échelle linéaire.",
+      "C'est exactement la structure de PAN dans le canon Funesterie : une tension entre deux pôles qui restent équilibrés, opposition sans destruction. Ces jeux en donnent des variantes déjà éprouvées sur des millions de joueurs — donc lisibles par tout le monde.",
+      "Pour une métaphore ou une punchline, c'est la RELATION qui porte, pas le nom propre. « Il est de type eau contre mon feu » se comprend même sans connaître Pokémon."
+    ],
+    "pokemon": {
+      "nature": "18 types en graphe d'efficacité — le plus riche système de relations grand public",
+      "relations": "Chaque type est super efficace (×2) contre certains, peu efficace (×0.5) contre d'autres, sans effet (×0) contre quelques-uns. Ce n'est pas un cycle simple : c'est un graphe orienté avec des immunités.",
+      "typesUtiles": {
+        "feu": "bat plante, glace, insecte, acier — perd contre eau, roche, sol",
+        "eau": "bat feu, roche, sol — perd contre plante, électrik",
+        "plante": "bat eau, roche, sol — perd contre feu, vol, insecte, poison, glace",
+        "électrik": "bat eau, vol — sans effet sur sol (immunité totale)",
+        "spectre": "sans effet sur normal, et réciproquement — deux camps qui ne peuvent pas se toucher",
+        "acier": "le plus résistant, faible au feu, combat et sol"
+      },
+      "imagesFortes": [
+        "l'immunité : électrik contre sol, spectre contre normal — deux forces qui coexistent sans jamais se rencontrer",
+        "l'évolution en trois stades, avec un palier de puissance et parfois un renoncement à la vitesse",
+        "le double type : deux natures dans un seul corps, avec des faiblesses qui se cumulent ou s'annulent",
+        "les altérations d'état — brûlure qui ronge, paralysie qui ralentit, sommeil qui suspend"
+      ]
+    },
+    "leagueOfLegends": {
+      "nature": "cinq rôles complémentaires sur une carte à trois voies",
+      "roles": {
+        "top": "l'isolé — tient sa ligne seul, longtemps",
+        "jungle": "le nomade — n'a pas de ligne, apparaît là où on ne l'attend pas",
+        "mid": "le centre — le plus court chemin vers partout",
+        "adc": "fragile mais décisif tard — dépend des autres pour survivre",
+        "support": "ne compte pas ses points, rend les autres possibles"
+      },
+      "imagesFortes": [
+        "le scaling : celui qui est faible tôt et écrasant tard, contre celui qui doit gagner vite ou perdre",
+        "le contre-pick : choisir après l'adversaire pour l'annuler — la force du dernier mot",
+        "le gank : l'arrivée par le côté, depuis un endroit où personne ne regardait",
+        "l'objectif neutre qu'on se dispute — personne ne le possède, tout le monde le veut",
+        "le split-push : gagner ailleurs pendant que l'autre gagne ici"
+      ]
+    },
+    "valorant": {
+      "nature": "quatre rôles d'agents, autour d'une prise ou d'une défense de site",
+      "roles": {
+        "duelliste": "entre en premier, prend l'espace, meurt en premier",
+        "contrôleur": "coupe la vue, fabrique le terrain plutôt que de le prendre",
+        "initiateur": "révèle, déloge, ouvre la porte pour les autres",
+        "sentinelle": "tient le dos, pose des alarmes, gagne du temps"
+      },
+      "imagesFortes": [
+        "la fumée : on ne détruit pas l'ennemi, on lui retire l'information",
+        "le retake : reprendre un terrain déjà perdu, avec le désavantage de l'arrivant",
+        "l'économie de round — savoir perdre un round pour gagner le suivant",
+        "le clutch : rester seul contre plusieurs et gagner quand même"
+      ]
+    },
+    "yugioh": {
+      "nature": "trois familles de cartes et une logique de réponse à retardement",
+      "familles": {
+        "monstre": "ce qui agit visiblement",
+        "magie": "ce qui modifie les règles",
+        "piège": "posé face cachée, se déclenche sur l'action de l'autre"
+      },
+      "imagesFortes": [
+        "le piège posé : préparer une réponse avant même de connaître la question",
+        "l'archétype : une famille de cartes qui ne fonctionne qu'ensemble, inutile isolée",
+        "le sacrifice pour invoquer plus grand — payer en présent pour de la puissance",
+        "la chaîne : les effets se résolvent en ordre inverse de leur déclenchement, le dernier parlé agit en premier"
+      ]
+    },
+    "beyblade": {
+      "nature": "quatre types en équilibre, le plus proche d'un pierre-feuille-ciseaux pur",
+      "types": {
+        "attaque": "bat la stamina, perd contre la défense",
+        "défense": "bat l'attaque, perd contre la stamina",
+        "stamina": "bat la défense, perd contre l'attaque",
+        "équilibre": "moyen partout, ne domine rien, ne s'effondre nulle part"
+      },
+      "imagesFortes": [
+        "le cycle à trois où le quatrième refuse d'entrer dans le jeu",
+        "durer plus longtemps est une façon de gagner — la stamina bat la défense par l'usure",
+        "l'attaque qui se consume elle-même en frappant"
+      ]
+    },
+    "autresSources": {
+      "echecs": "sacrifice positionnel, zugzwang (être obligé de jouer et donc de s'affaiblir), le pion qui devient dame au bout de la traversée",
+      "go": "le territoire plutôt que la capture ; on gagne en encerclant le vide",
+      "tarot": "arcanes comme figures partagées — la Tour, l'Ermite, la Roue",
+      "arts martiaux": "esquiver plutôt que bloquer, utiliser l'élan de l'autre",
+      "alchimie": "solve et coagula, dissoudre et recomposer — déjà présent dans le canon Funesterie"
+    }
+  },
+  "apply": {
+    "guidance": [
+      "Pour une métaphore, prendre la RELATION et non le nom propre : « type eau contre feu » se comprend sans connaître le jeu, « Ludicolo » non.",
+      "Ces systèmes servent surtout à dire une opposition qui n'écrase pas — le même problème que PAN résout en audio. Un contre-pick, une immunité, un cycle à trois : autant de façons de dire deux forces qui se tiennent.",
+      "Pour un jeu de mots, les termes courts et sonores marchent le mieux : gank, clutch, retake, combo, chaîne, piège, évolution, stamina.",
+      "Ne jamais citer de texte de carte, de réplique ou de récit : ce sont des œuvres protégées. La mécanique et le vocabulaire, oui ; l'expression, non."
+    ],
+    "constraints": {
+      "noCopyrightedText": true,
+      "structureNotNarrative": true,
+      "relationOverProperNoun": true
+    }
+  },
+  "impacts": [
+    "Donne à Vivy un stock d'images d'opposition équilibrée, partagées par un très large public.",
+    "Fournit un vocabulaire court et percussif pour les punchlines de Djeff.",
+    "Relie la culture de jeu au canon Funesterie par ce qu'ils ont réellement en commun : des systèmes de relations circulaires, pas des échelles."
+  ],
+  "sources": [
+    "Tables d'efficacité des types Pokémon (mécanique de jeu, faits publics)",
+    "Rôles et vocabulaire compétitif de League of Legends et Valorant",
+    "Familles de cartes et résolution en chaîne de Yu-Gi-Oh",
+    "Types de toupies Beyblade",
+    "docs/research/prime_spiral/PAN_DECAGRAMME_RGBA_GAMMA_2026-08-02.md — le rapprochement avec PAN"
+  ]
+}

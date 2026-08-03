@@ -17,6 +17,7 @@ const MODULES = [
   require('./modules/persona.funesterie.cast.module.json'),
   require('./modules/encoding.pulsar.palette.module.json'),
   require('./modules/physics.temporal.gravity.module.json'),
+  require('./modules/culture.jeux.relations.module.json'),
 ];
 
 function inferLanguage(text = '') {
