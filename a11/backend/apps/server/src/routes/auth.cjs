@@ -1407,10 +1407,22 @@ function createAuthRouter({
       .includes(String(profile || '').trim().toLowerCase());
   }
 
-  function getGoogleOAuthConfig(req) {
+  /**
+   * @param {object} req
+   * @param {object} [options]
+   * @param {string} [options.profil]  profil impose, quand la requete ne le porte pas.
+   *
+   * Le RETOUR d'OAuth n'a pas le parametre : Google ne renvoie que le code et le
+   * state. Sans cet argument, l'aller partait sur le client de la persona et le
+   * retour tentait d'echanger le code avec celui du site — Google refusait, et
+   * l'utilisateur voyait « La connexion externe a echoue » sans autre indice.
+   * Le profil voyage donc dans le state signe, et le retour le repasse ici.
+   */
+  function getGoogleOAuthConfig(req, { profil = '' } = {}) {
     const callbackUrl = resolveGoogleCallbackUrl(req, normalizePublicAppUrl);
+    const profilEffectif = String(profil || '').trim() || resolveGoogleOAuthScopeProfile(req);
 
-    if (isGmailScopeProfile(resolveGoogleOAuthScopeProfile(req))) {
+    if (isGmailScopeProfile(profilEffectif)) {
       const personaId = firstEnv(process.env, PERSONA_GOOGLE_CLIENT_ID_NAMES);
       const personaSecret = firstEnv(process.env, PERSONA_GOOGLE_CLIENT_SECRET_NAMES);
       // Configure a moitie, on ne retombe PAS sur le client du site : une demande
@@ -1668,7 +1680,12 @@ function createAuthRouter({
       return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, 'oauth_state_expired'));
     }
 
-    const { clientIds, clientId, clientSecret, callbackUrl } = getGoogleOAuthConfig(req);
+    // Le profil vient du state signe, pas de la requete : Google ne renvoie que le
+    // code. C'est ce qui garantit qu'on echange avec le MEME client que celui qui a
+    // emis le code.
+    const { clientIds, clientId, clientSecret, callbackUrl } = getGoogleOAuthConfig(req, {
+      profil: statePayload?.oauthScopeProfile,
+    });
     if (!clientId || !clientSecret || !callbackUrl) {
       logOAuthTrace('google', 'callback_not_configured', req, normalizePublicAppUrl, {
         hasClientId: Boolean(clientId),

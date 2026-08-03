@@ -55,7 +55,7 @@ test('la connexion simple reste sans acces au courrier', () => {
 
 // --- client dedie a la persona -------------------------------------------
 
-const config = source.match(/function getGoogleOAuthConfig\(req\) \{[\s\S]*?\n  \}/)?.[0] || '';
+const config = source.match(/function getGoogleOAuthConfig\([\s\S]*?\n  \}/)?.[0] || '';
 
 test('un client dedie sert la boite de la persona, sans toucher au client du site', () => {
   // GOOGLE_CLIENT_ID connecte les UTILISATEURS de funesterie.me et gagne l'ordre de
@@ -64,7 +64,7 @@ test('un client dedie sert la boite de la persona, sans toucher au client du sit
   assert.ok(config, 'le bloc de configuration doit etre trouve');
   assert.match(source, /VIVY_GOOGLE_CLIENT_ID/);
   assert.match(source, /VIVY_GOOGLE_CLIENT_SECRET/);
-  assert.match(config, /isGmailScopeProfile\(resolveGoogleOAuthScopeProfile\(req\)\)/);
+  assert.match(config, /isGmailScopeProfile\(profilEffectif\)/);
 });
 
 test('le client persona n est consulte que pour les profils courrier', () => {
@@ -80,4 +80,23 @@ test('configure a moitie, on refuse plutot que de retomber sur le client du site
   assert.match(config, /if \(personaId \|\| personaSecret\)/);
   const partiel = config.slice(config.indexOf('if (personaId || personaSecret)'));
   assert.match(partiel.slice(0, 240), /clientId: ''/, 'moitie configure doit rendre une config vide');
+});
+
+test('le retour OAuth reprend le profil depuis le state, pas depuis la requete', () => {
+  // Google ne renvoie que le code et le state sur le callback : sans cela, l'aller
+  // partait sur le client de la persona et le retour tentait d'echanger le code
+  // avec celui du site. Google refusait, et l'utilisateur voyait « La connexion
+  // externe a echoue » sans le moindre indice de la cause. Vu le 03/08.
+  assert.match(config, /function getGoogleOAuthConfig\(req, \{ profil = '' \} = \{\}\)/);
+  assert.match(config, /profil \|\| ''\)\.trim\(\) \|\| resolveGoogleOAuthScopeProfile\(req\)/);
+  assert.match(
+    source,
+    /getGoogleOAuthConfig\(req, \{\s*profil: statePayload\?\.oauthScopeProfile,\s*\}\)/,
+    'le callback doit passer le profil du state'
+  );
+});
+
+test('le state emis transporte bien le profil', () => {
+  // Sinon le callback n'aurait rien a reprendre.
+  assert.match(source, /oauthScopeProfile,\s*\n\s*oauthScopes:/);
 });
