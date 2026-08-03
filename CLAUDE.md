@@ -64,6 +64,11 @@ reconstruction approximative serait pire que leur absence.
 
 ## Refs
 
+- Canon narratif NOSSEN : `docs/NOSSEN_LORE_CANON_2026-08-03.md` — sépare ce que
+  Djeff a dit, ce que le manga contient, et ce qui n'est qu'une lecture proposée.
+  Contient un spoiler majeur (Ghost88) et les sources réelles : à ne pas ressortir
+  spontanément. Les personas n'en voient que leur `injectable_brief`, c'est testé
+  (`test/nossen-persona-profils-lore.node.test.cjs`).
 - Canon Prime Spiral : `docs/research/prime_spiral/` (et l'OCR, voir preflight)
 - Chaîne audio + V11 pan : `docs/research/audio/V11_PAN_2026-08-02.md`
 - Fil local Codex : `discussion-2026-05-29T071521747Z-helplocal-brief-claude-apres-reset-contexte`
