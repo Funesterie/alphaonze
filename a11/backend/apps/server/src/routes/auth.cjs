@@ -1457,6 +1457,40 @@ function createAuthRouter({
       );
     }
 
+    // Gmail, pour la persona Vivy (compte vivy.funesterie@vivy.funesterie.me).
+    //
+    // LIMITE DE GOOGLE, a connaitre avant de choisir : il n'existe AUCUN perimetre
+    // qui autorise les brouillons sans autoriser l'envoi. gmail.compose et
+    // gmail.modify permettent les deux. Le « elle redige, tu envoies » ne peut donc
+    // pas etre garanti par le perimetre — la retenue doit vivre dans notre code.
+    // D'ou la separation ici : la lecture seule est le defaut, l'ecriture est un
+    // profil distinct qu'il faut ouvrir explicitement, comme pour Drive.
+    if (['gmail', 'mail', 'google-mail', 'gmail-lecture'].includes(profile)) {
+      return resolveOAuthScope(
+        ['GOOGLE_OAUTH_GMAIL_SCOPES', 'A11_GOOGLE_OAUTH_GMAIL_SCOPES'],
+        'openid email profile https://www.googleapis.com/auth/gmail.readonly'
+      );
+    }
+
+    if (['gmail-compose', 'gmail-ecriture', 'gmail-write'].includes(profile)) {
+      const allowCompose = isTruthy(
+        process.env.GOOGLE_OAUTH_ALLOW_GMAIL_COMPOSE
+        || process.env.A11_GOOGLE_OAUTH_ALLOW_GMAIL_COMPOSE
+      );
+      if (!allowCompose) {
+        // Fermé par defaut : demander l'ecriture sans l'avoir ouverte ne doit pas
+        // accorder l'envoi en silence. On retombe sur la lecture seule.
+        return resolveOAuthScope(
+          ['GOOGLE_OAUTH_GMAIL_SCOPES', 'A11_GOOGLE_OAUTH_GMAIL_SCOPES'],
+          'openid email profile https://www.googleapis.com/auth/gmail.readonly'
+        );
+      }
+      return resolveOAuthScope(
+        ['GOOGLE_OAUTH_GMAIL_COMPOSE_SCOPES', 'A11_GOOGLE_OAUTH_GMAIL_COMPOSE_SCOPES'],
+        'openid email profile https://www.googleapis.com/auth/gmail.compose'
+      );
+    }
+
     return resolveOAuthScope(
       ['GOOGLE_OAUTH_LOGIN_SCOPES', 'A11_GOOGLE_OAUTH_LOGIN_SCOPES'],
       'openid email profile'
