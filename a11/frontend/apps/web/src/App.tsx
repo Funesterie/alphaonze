@@ -2301,7 +2301,7 @@ const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v8pivot: "V8 Pivot",
   v9turbo: "V9 Dynamique",
   v9electrolysis: "V9 Électrolyse",
-  v10boom: "V10 Boom",
+  v10boom: "V10 Boom + V11 Pan",
 };
 const D40_OUTPUT_FORMAT_LABELS: Record<DoubleHarmonicOutputFormat, string> = {
   flac: "FLAC master",
@@ -5498,7 +5498,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
   const doubleHarmonicWeightLabel = doubleHarmonicMode === "v3"
     ? "Auto"
     : doubleHarmonicMode === "v10boom"
-      ? `k ${doubleHarmonicIntensityLabel} · base V9 Électrolyse · boom axe m wet 0.15 · pivot 0.292 · 1024`
+      ? `k ${doubleHarmonicIntensityLabel} · base V9 Électrolyse · boom axe m wet 0.15 · V11 pan résonance ×${V11_PAN_WIDTH} écart ${V11_PAN_SPREAD_MS} ms · pivot 0.292 · 1024`
     : doubleHarmonicMode === "v9electrolysis"
       ? `k ${doubleHarmonicIntensityLabel} · électrolyse ${D40_V9_ELECTROLYSIS_MIN_HZ}-${D40_V9_ELECTROLYSIS_MAX_HZ} Hz · bidir irrégulière · pivot 0.292 · 1024`
     : doubleHarmonicMode === "v9turbo"
@@ -5521,7 +5521,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
           ? `${doubleHarmonicIntensityLabel} · grain bas x${D40_V4_LOW_GRAIN_MULTIPLIER} · haut ^${D40_V4_HIGH_GRAIN_POWER}`
           : doubleHarmonicIntensityLabel;
   const doubleHarmonicIntensityTitle = doubleHarmonicMode === "v10boom"
-    ? "V10 Boom"
+    ? "V10 Boom + V11 Pan"
     : doubleHarmonicMode === "v9electrolysis"
     ? "V9 Électrolyse"
     : doubleHarmonicMode === "v9turbo"
@@ -7845,7 +7845,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                   setDoubleHarmonicResult(null);
                 }}
               >
-                <option value="v10boom">V10 Boom</option>
+                <option value="v10boom">V10 Boom + V11 Pan</option>
                 <option value="v9electrolysis">V9 Électrolyse</option>
                 <option value="v9turbo">V9 Dynamique</option>
                 <option value="v8pivot">V8 Pivot</option>
