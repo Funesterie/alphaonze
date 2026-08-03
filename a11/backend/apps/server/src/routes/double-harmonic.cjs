@@ -1777,7 +1777,10 @@ function createDoubleHarmonicRouter(options = {}) {
       const inputExt = extForUpload(req.file);
       const inputFilename = `${id}-${base}-v10boom-input.${inputExt}`;
       const outputFormat = resolveOutputFormat(req.body?.format || req.query?.format, inputExt);
-      const outputFilename = `${id}-${base}-funesterie-d40-v10boom.${outputFormat.ext}`;
+      // Le nom porte les DEUX etages : le boom V10 est toujours la, la V11 pan
+      // s'ajoute par-dessus. Djeff, 03/08 : « le nom des fichiers convertis est
+      // encore v10 boom » — le gabarit ne disait pas ce que le fichier contient.
+      const outputFilename = `${id}-${base}-funesterie-d40-v10boom-v11pan.${outputFormat.ext}`;
       const inputPath = path.join(assetRoot, inputFilename);
       const outputPath = path.join(assetRoot, outputFilename);
       fs.writeFileSync(inputPath, req.file.buffer);

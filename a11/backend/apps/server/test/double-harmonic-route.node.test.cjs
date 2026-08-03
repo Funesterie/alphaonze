@@ -2239,7 +2239,8 @@ test('double harmonic route exposes V10 Boom after the V9 Electrolyse base', asy
     assert.equal(payload.boom.applied, true);
     assert.equal(payload.safety.v9ElectrolysisBasePreserved, true);
     assert.match(payload.publicSummary, /V10 Boom/i);
-    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v10boom\.mp3$/);
+    // Le nom porte les deux etages : boom V10 + V11 pan.
+    assert.match(payload.audioUrl, /^\/api\/double-harmonic\/out\/.+-funesterie-d40-v10boom-v11pan\.mp3$/);
     assert.equal(calls[0].analysisOptions.modulation, 'electrolysis-guitar');
     assert.equal(calls[0].analysisOptions.electrolysis, true);
     assert.equal(calls[0].analysisOptions.frequencyMinHz, 40.26);
