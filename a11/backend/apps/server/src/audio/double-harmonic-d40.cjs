@@ -41,6 +41,11 @@ const RAW_LOW_PRESET = Object.freeze({
 const V11_PAN_SCHEMA = 'funesterie.audio.v11-pan';
 const V11_PAN_WIDTH = 1.5;
 const V11_PAN_MAX = 2.5;
+// Ecart de retard entre canaux, en ms, applique a la fermeture d'axe m.
+// C'est lui qui CREE le cote dans la resonance ; slev ne fait que l'amplifier
+// ensuite. A 0, la resonance reste mono et slev n'a rien a multiplier.
+const V11_PAN_SPREAD_MS = 4;
+const V11_PAN_SPREAD_MAX_MS = 8;
 
 const DEFAULT_HARMONIC_INTENSITY = 1;
 const MIN_HARMONIC_INTENSITY = HARMONIC_WEIGHT_RATIO;
@@ -287,6 +292,8 @@ module.exports = {
   T_LINEAR,
   V11_PAN_MAX,
   V11_PAN_SCHEMA,
+  V11_PAN_SPREAD_MAX_MS,
+  V11_PAN_SPREAD_MS,
   V11_PAN_WIDTH,
   resolveV11Pan,
   buildD40EnvelopeExpression,

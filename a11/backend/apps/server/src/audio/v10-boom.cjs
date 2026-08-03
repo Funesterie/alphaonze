@@ -24,6 +24,8 @@ const {
   buildOutputCodecArgs,
   V11_PAN_MAX,
   V11_PAN_SCHEMA,
+  V11_PAN_SPREAD_MAX_MS,
+  V11_PAN_SPREAD_MS,
   V11_PAN_WIDTH,
 } = require('./double-harmonic-d40.cjs');
 
@@ -150,6 +152,14 @@ function resolveV10BoomConfig(options = {}) {
     V11_PAN_MAX,
     V11_PAN_WIDTH
   );
+  // Ecart de retard gauche/droite sur la fermeture d'axe m. Symetrique autour de tau,
+  // donc rien ne penche. Borne pour rester sous le seuil d'echo dans le grave.
+  const panSpreadMs = clampNumber(
+    options.panSpreadMs ?? process.env.VIVY_V11_PAN_SPREAD_MS,
+    0,
+    Math.min(V11_PAN_SPREAD_MAX_MS, inversionDelayMs),
+    V11_PAN_SPREAD_MS
+  );
   return {
     wet,
     inversionDepth,
@@ -159,6 +169,7 @@ function resolveV10BoomConfig(options = {}) {
     bassBandHz,
     peakLimit,
     panWidth,
+    panSpreadMs,
     boomGain: Math.pow(10, boomGainDb / 20),
     researchOnly: false,
     researchOrigin: true,
@@ -223,23 +234,47 @@ function buildV10BoomFilterGraph(config) {
   const negAlpha = -config.inversionDepth;
   const tau = String(config.inversionDelayMs);
   const wetW = config.wet.toFixed(3);
-  // V11 pan : ouverture juste avant le limiteur. A 1 on n'insere rien, le graphe
-  // redevient octet pour octet celui de la V10 d'origine.
+  // V11 pan : l'ouverture porte sur la RESONANCE M seule — la branche [m2]->[m3],
+  // c'est-a-dire y(t) = x(t) - a*x(t-tau) sur la bande grave. PAS sur le mix complet.
+  //
+  // Djeff, 02/08 : « ca arrive en toute fin sur la resonance M, pas sur tout le son ;
+  // c'est seulement quand il y a resonance qu'il faut elargir ».
+  //
+  // Pourquoi c'est la bonne place, et pas [mix] : elargir le mix multiplie le cote
+  // DEJA PRESENT dans la source. Mesure du 02/08 sur huit rendus reels — six sources
+  // arrivaient a 10-11 dB d'ecart milieu-cote et tombaient a 6.7-7.9 (bon), mais deux
+  // arrivaient deja larges (7.0 et 7.9) et tombaient a 3.6 et 4.5 : cote presque aussi
+  // fort que le milieu, repli mono a -1.5 dB, limiteur en ecretage permanent. C'est ce
+  // que Djeff a entendu comme « le son bugait ».
+  // Sur la branche de resonance, le signal d'origine n'est jamais touche : une source
+  // deja large ne peut plus etre sur-elargie. Aucune mesure adaptative n'est necessaire.
+  //
+  // A 1 on n'insere rien : le graphe redevient octet pour octet celui de la V10.
   const panWidth = Number(config.panWidth) || 1;
-  const pan = panWidth === 1 ? '' : `stereotools=slev=${panWidth.toFixed(3)},`;
+  const pan = panWidth === 1 ? '' : `,stereotools=slev=${panWidth.toFixed(3)}`;
+  // Le retard CREE le cote, slev ne fait que l'amplifier. Mesure du 02/08 sur un rendu
+  // reel, ecart milieu-cote dans la bande 30-120 Hz (plus petit = plus large) :
+  //   V10 pure                 21.40      image globale 12.20
+  //   slev 1.5 seul            21.20      12.30   <- ne fait rien : rien a multiplier
+  //   ecart 4 ms seul          19.10      12.00   <- cree le cote
+  //   ecart 4 ms + slev 1.5    17.10      11.70   <- les deux : -4.3 dB sur la resonance
+  // L'image globale ne bouge que de 0.5 dB : le signal d'origine n'est pas touche.
+  const spread = Math.round(Number(config.panSpreadMs) || 0);
+  const tauG = Math.max(0, Number(tau) - spread);
+  const tauD = Number(tau) + spread;
   // y(t) = x(t) - a*x(t-tau) : dry + copie retardée inversée (fermeture axe m).
   // [full] = signal complet ; [bass] = bande grave isolee ; le boom traite puis remixé à wet.
   return [
     '[0:a]asplit=2[full][basssrc]',
     `[basssrc]lowpass=f=${config.bassBandHz}[bass]`,
     '[bass]asplit=2[dry][d]',
-    `[d]adelay=${tau}|${tau}[d2]`,
+    `[d]adelay=${tauG}|${tauD}[d2]`,
     `[d2]volume=${negAlpha.toFixed(4)}[inv]`,
     '[dry][inv]amix=inputs=2:duration=first:normalize=0:weights=1 1[m]',
     `[m]highpass=f=${config.subCapHz}[m2]`,
-    `[m2]volume=${config.boomGain.toFixed(4)}[m3]`,
+    `[m2]volume=${config.boomGain.toFixed(4)}${pan}[m3]`,
     `[full][m3]amix=inputs=2:duration=first:normalize=0:weights=1 ${wetW}[mix]`,
-    `[mix]${pan}alimiter=limit=${config.peakLimit.toFixed(3)}:attack=5:release=50:level=false[out]`,
+    `[mix]alimiter=limit=${config.peakLimit.toFixed(3)}:attack=5:release=50:level=false[out]`,
   ].join(';');
 }
 

@@ -35,7 +35,8 @@ test('V10 Boom — constantes canon Prime Spiral verrouillees', () => {
 });
 
 test('V10 Boom — le filtre est la fermeture axe m (inversion retardee y=x-a*x(t-tau))', () => {
-  const cfg = resolveV10BoomConfig({ wet: 0.15, boom: 0.6, delay: 12, sub: 30 });
+  // panSpreadMs=0 : la fermeture d'axe m reste exactement celle de la V10.
+  const cfg = resolveV10BoomConfig({ wet: 0.15, boom: 0.6, delay: 12, sub: 30, panSpreadMs: 0 });
   const g = buildV10BoomFilterGraph(cfg);
   // m-axis : copie retardée (adelay) + inversion (volume negatif) + mix dry.
   assert.match(g, /adelay=12\|12/);
@@ -60,14 +61,25 @@ test('V11 pan — l ouverture se pose avant le limiteur et se desactive propreme
   assert.equal(V11_PAN_WIDTH, 1.5);
 
   const g = buildV10BoomFilterGraph(parDefaut);
-  assert.match(g, /stereotools=slev=1\.500,alimiter=/, 'le pan doit preceder immediatement le limiteur');
-  // Le limiteur est non lineaire : il reste dernier, sinon le plafond n est plus garanti.
-  assert.ok(g.indexOf('stereotools') < g.indexOf('alimiter'), 'le limiteur doit rester en dernier');
+  // L'ouverture porte sur la RESONANCE M seule — la branche [m2]->[m3] — jamais sur
+  // le mix complet. Regression du 02/08 : posee sur [mix], elle multipliait le cote
+  // deja present dans la source ; deux rendus sur huit sortaient a 3.6 et 4.5 d'ecart
+  // milieu-cote, avec le limiteur en ecretage permanent.
+  assert.match(g, /\[m2\]volume=[\d.]+,stereotools=slev=1\.500\[m3\]/, 'le pan porte sur la resonance');
+  assert.match(g, /\[mix\]alimiter=/, 'le mix complet ne doit PAS etre elargi');
 
-  // A 1 on ne doit rien inserer du tout : le graphe redevient celui de la V10.
-  const neutre = buildV10BoomFilterGraph(resolveV10BoomConfig({ panWidth: 1 }));
+  // Le retard CREE le cote ; slev seul n'a rien a multiplier (la resonance est mono).
+  assert.equal(parDefaut.panSpreadMs, 4);
+  assert.match(g, /adelay=8\|16/, 'ecart symetrique autour de tau=12');
+
+  // Tout a neutre : le graphe redevient exactement celui de la V10.
+  const neutre = buildV10BoomFilterGraph(resolveV10BoomConfig({ panWidth: 1, panSpreadMs: 0 }));
   assert.ok(!neutre.includes('stereotools'), 'panWidth=1 ne doit rien ajouter au graphe');
+  assert.match(neutre, /adelay=12\|12/, 'spread=0 rend la fermeture d axe m identique');
   assert.match(neutre, /\[mix\]alimiter=limit=0\.950/);
+
+  // L'ecart ne peut pas depasser tau, sinon le retard gauche deviendrait negatif.
+  assert.ok(resolveV10BoomConfig({ delay: 3, panSpreadMs: 8 }).panSpreadMs <= 3);
 
   // Borne haute : 2.0 creuse deja le centre, on ne laisse pas monter n importe ou.
   assert.equal(resolveV10BoomConfig({ panWidth: 9 }).panWidth, 2.5);
