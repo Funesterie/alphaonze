@@ -468,6 +468,8 @@ function splitVivyArrangementCues(value = '') {
     }
     return '';
   })
+    .replace(/[,;:]\s*[A-Z]\s*$/gm, '')
+    .replace(/([.!?])\s+[A-Z]\s*$/gm, '$1')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n'), VIVY_SONG_MAX_CHARS);
 
