@@ -15,6 +15,8 @@ const {
   stripInternalInstructions,
 } = require(path.join(__dirname, '../src/chat/load-bearing-turn.cjs'));
 
+const lb = require(path.join(__dirname, '../src/chat/load-bearing-turn.cjs'));
+
 // Les quatre chaînes effectivement vues fuiter dans Suno en production.
 const FUITES_PROD = [
   'Distribution vocale choisie: Solo Vivy.',
@@ -295,4 +297,50 @@ test('un compte de chanteurs émis nu est une consigne, pas une parole', () => {
   assert.equal(isInternalInstructionLine('1 chanteur'), true);
   // Mais un vers qui parle de chanteurs reste un vers.
   assert.equal(isInternalInstructionLine('Nous étions 2 chanteurs perdus dans la nuit'), false);
+});
+
+// --- le compte rendu de production ne doit pas devenir du contexte -----------
+
+test('le rapport de production sort du contexte, l oeuvre y reste', () => {
+  // Djeff, 03/08 : « les consignes ou le wav banger du bouton NOSSEN partent en
+  // contexte, c est ca le probleme ». Le rapport a sa place A L ECRAN ; il n a
+  // rien a faire dans ce que Vivy relit au tour suivant, sans quoi « Casting
+  // demande » et « Paroles envoyees a Suno » ressortent DANS les paroles.
+  const rapport = [
+    'Banger.', '', 'Titre: Lumiere de nuit', '', 'Casting demande: Solo Vivy.', '',
+    'Mix final pret.', '', 'Telechargement: https://vivy.funesterie.me/out/x.mp3?token=A', '',
+    'Paroles envoyees a Suno:', '', '[Intro]', 'Sous la pluie d argent',
+  ].join('\n');
+  const contexte = lb.stripProductionReport(rapport);
+
+  for (const plomberie of ['Banger.', 'Casting demande', 'Mix final pret', 'Telechargement', 'Paroles envoyees a Suno']) {
+    assert.ok(!contexte.includes(plomberie), `« ${plomberie} » ne doit pas rester dans le contexte`);
+  }
+  // L oeuvre reste : elle doit se souvenir de ce qu elle a ecrit.
+  assert.match(contexte, /Titre: Lumiere de nuit/);
+  assert.match(contexte, /\[Intro\]/);
+  assert.match(contexte, /Sous la pluie d argent/);
+});
+
+test('une vraie conversation traverse le filtre sans une egratignure', () => {
+  // Le risque de ce genre de filtre est de manger la parole de l utilisateur.
+  const chat = 'je veux une chanson triste sur la pluie\nplutot en rap, avec Djeff\nnon finalement garde Vivy';
+  assert.equal(lb.stripProductionReport(chat), chat);
+});
+
+test('l ouverture du bouton NOSSEN est reconnue seule sur sa ligne', () => {
+  assert.equal(lb.isProductionReportLine('Banger.'), true);
+  assert.equal(lb.isProductionReportLine('NOSSEN.'), true);
+  assert.equal(lb.isProductionReportLine('nossen'), true);
+  // Mais pas quand le mot est dans une phrase : « banger » peut etre un vrai mot.
+  assert.equal(lb.isProductionReportLine('fais moi un banger de l ete'), false);
+  assert.equal(lb.isProductionReportLine('NOSSEN est un manga'), false);
+});
+
+test('les marqueurs techniques de la chaine Suno sont traites en interne', () => {
+  // Ils ne designent pas un contenu mais un FORMAT : les voir dans des paroles
+  // signifie qu une consigne de tuyauterie est partie chanter.
+  for (const marqueur of ['CLEAN_LYRICS', 'Voice direction: cyan, large']) {
+    assert.notEqual(String(lb.stripInternalInstructions(marqueur)).trim(), marqueur.trim(), `« ${marqueur} » doit etre filtre`);
+  }
 });

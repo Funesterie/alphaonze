@@ -95,6 +95,9 @@ const {
   FUNESTERIE_SOURCE_PRINCIPLE_CONTEXT_FR,
 } = require('../chat/funesterie-source-principle.cjs');
 const {
+  stripProductionReport,
+} = require('../chat/load-bearing-turn.cjs');
+const {
   autoDescribeImage,
   loadImageBuffer,
 } = require('../image/image-auto-describe.cjs');
@@ -6335,11 +6338,29 @@ function normalizeVivyCapabilityText(value = '') {
     .trim();
 }
 
+/**
+ * L'historique redevenu CONTEXTE, debarrasse des comptes rendus de production.
+ *
+ * Djeff, 03/08 : « les consignes ou le wav banger du bouton NOSSEN partent en
+ * contexte, c'est ca le probleme », et « il faut differencier le chat du contexte ».
+ *
+ * Le rapport affiche apres une production — « Banger. », « Casting demande »,
+ * « Mix final pret », « Telechargement », « Paroles envoyees a Suno » — a toute sa
+ * place A L'ECRAN. Mais il entre dans l'historique, et l'historique revient nourrir
+ * le tour suivant : Vivy relit son propre rapport comme une conversation, et ces
+ * lignes de tuyauterie ressortent DANS LES PAROLES du morceau d'apres.
+ *
+ * On filtre donc a la lecture, pas a l'ecriture. Deux raisons : l'affichage reste
+ * intact, et les historiques DEJA pollues sont nettoyes sans migration.
+ *
+ * Le titre et les paroles, eux, restent : elle doit se souvenir de ce qu'elle a
+ * ecrit. C'est la plomberie qu'on retire, pas l'oeuvre.
+ */
 function getVivyHistoryText(history = []) {
   if (!Array.isArray(history)) return '';
   return history
     .slice(-12)
-    .map((entry) => cleanText(entry?.content, 620))
+    .map((entry) => cleanText(stripProductionReport(entry?.content || ''), 620))
     .filter(Boolean)
     .join('\n');
 }

@@ -63,6 +63,11 @@ const INTERNAL_LABELS = [
   'Nombre de chanteurs',
   'Distribution vocale',
   'Distribution vocale choisie',
+  // Ajoutee le 02/08 pour affirmer l'identite de la voix plutot que l'interdire.
+  // Elle passait ensuite dans les paroles : une consigne ecrite pour proteger la
+  // persona finissait chantee par elle. Corrige le 03/08.
+  'Voice direction',
+  'Direction vocale',
   'Clé Suno',
   'Sortie simple possible',
   'Sortie attendue',
@@ -101,7 +106,82 @@ const INTERNAL_SENTENCES = [
   'intent utilisateur',
   'contexte fiable',
   'brouillon interne',
+  // Marqueurs techniques de la chaine Suno. Ils ne designent pas un contenu, ils
+  // designent un FORMAT — les voir dans des paroles signifie qu'une consigne de
+  // tuyauterie est partie chanter. Djeff les a vus sortir en prod.
+  'clean_lyrics',
+  'clean lyrics',
+  'vocal_lyrics',
+  'public_lyrics',
+  'songcraft',
 ];
+
+/**
+ * Lignes du COMPTE RENDU DE PRODUCTION. Ce ne sont pas des instructions internes :
+ * c'est le rapport que Vivy affiche apres avoir fabrique un morceau, et il a toute
+ * sa place a l'ecran.
+ *
+ * Le probleme est ailleurs. Ce bloc entre dans l'historique, et l'historique
+ * redevient du CONTEXTE au tour suivant : Vivy relit son propre rapport comme si
+ * c'etait une conversation, et « Casting demande », « Mix final pret »,
+ * « Paroles envoyees a Suno » ressortent dans les paroles du morceau suivant.
+ *
+ * Djeff, 03/08 : « les consignes ou le wav banger du bouton NOSSEN partent en
+ * contexte, c'est ca le probleme » — et « il faut differencier le chat du contexte ».
+ *
+ * On ne supprime donc pas ces lignes de l'affichage. On les retire du contexte.
+ */
+const PRODUCTION_REPORT_LABELS = [
+  'Casting demandé',
+  'Casting demande',
+  'Téléchargement',
+  'Telechargement',
+  'Paroles envoyées à Suno',
+  'Paroles envoyees a Suno',
+  'Paroles chantées par les voix Funesterie',
+  'Paroles chantees par les voix Funesterie',
+  'Voix séparées',
+  'Voix separees',
+];
+
+const PRODUCTION_REPORT_SENTENCES = [
+  'mix final prêt',
+  'mix final pret',
+  'production prête',
+  'production prete',
+  'fond instrumental suno',
+];
+
+/** L'ouverture posee par le bouton NOSSEN : « Banger. » ou « NOSSEN. », seule sur sa ligne. */
+const PRODUCTION_OPENER = /^\s*(banger|nossen)\s*\.?\s*$/i;
+
+const RAPPORT_LABELS_REPLIES = new Set(PRODUCTION_REPORT_LABELS.map(replier));
+const RAPPORT_SENTENCES_REPLIEES = PRODUCTION_REPORT_SENTENCES.map(replier);
+
+/** Une ligne appartient-elle au compte rendu de production ? */
+function isProductionReportLine(ligne = '') {
+  const brut = String(ligne || '').trim();
+  if (!brut) return false;
+  if (PRODUCTION_OPENER.test(brut)) return true;
+  const plie = replier(brut);
+  const avantDeuxPoints = replier(brut.split(':')[0] || '');
+  if (RAPPORT_LABELS_REPLIES.has(avantDeuxPoints)) return true;
+  return RAPPORT_SENTENCES_REPLIEES.some((s) => s && plie.includes(s));
+}
+
+/**
+ * Retire le compte rendu de production d'un texte destine au CONTEXTE.
+ * A ne jamais appliquer a ce qu'on affiche : le rapport est utile a l'ecran.
+ */
+function stripProductionReport(texte = '') {
+  const source = String(texte || '');
+  if (!source.trim()) return '';
+  const gardees = source
+    .split(/\r?\n/)
+    .filter((ligne) => !isProductionReportLine(ligne));
+  // Un rapport entierement retire laisse des lignes vides en cascade : on les tasse.
+  return gardees.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
 
 // Phrases de repli préfabriquées. Elles ne répondent à rien : ce sont des accusés
 // de présence. Voir request-planner.cjs.
@@ -251,12 +331,16 @@ module.exports = {
   HOLLOW_PHRASES,
   INTERNAL_LABELS,
   INTERNAL_SENTENCES,
+  PRODUCTION_REPORT_LABELS,
+  PRODUCTION_REPORT_SENTENCES,
   assessTurn,
   fallenTiles,
   isHollow,
   isInternalInstructionLine,
+  isProductionReportLine,
   lastLoadBearingTurn,
   recordTile,
   resetPath,
   stripInternalInstructions,
+  stripProductionReport,
 };
