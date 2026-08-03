@@ -1378,11 +1378,56 @@ function createAuthRouter({
     }
   });
 
+  /**
+   * Client Google dedie a la boite de la persona (vivy.funesterie@vivy.funesterie.me).
+   *
+   * Pourquoi un second client plutot qu'un seul. GOOGLE_CLIENT_ID est le client qui
+   * connecte les UTILISATEURS de funesterie.me, et il gagne l'ordre de precedence.
+   * Le remplacer par celui de la persona casserait toutes les connexions du site ;
+   * ajouter le sien sous un nom moins prioritaire ne servirait a rien puisqu'il ne
+   * serait jamais lu. Deux usages distincts appellent deux clients distincts, et
+   * c'est aussi plus sain : revoquer l'acces au courrier de la persona ne doit pas
+   * deconnecter les visiteurs.
+   *
+   * Il n'est consulte QUE pour les profils courrier. Partout ailleurs, rien ne change.
+   */
+  const PERSONA_GOOGLE_CLIENT_ID_NAMES = [
+    'VIVY_GOOGLE_CLIENT_ID',
+    'A11_VIVY_GOOGLE_CLIENT_ID',
+    'PERSONA_GOOGLE_CLIENT_ID',
+  ];
+  const PERSONA_GOOGLE_CLIENT_SECRET_NAMES = [
+    'VIVY_GOOGLE_CLIENT_SECRET',
+    'A11_VIVY_GOOGLE_CLIENT_SECRET',
+    'PERSONA_GOOGLE_CLIENT_SECRET',
+  ];
+
+  function isGmailScopeProfile(profile = '') {
+    return ['gmail', 'mail', 'google-mail', 'gmail-lecture', 'gmail-compose', 'gmail-ecriture', 'gmail-write']
+      .includes(String(profile || '').trim().toLowerCase());
+  }
+
   function getGoogleOAuthConfig(req) {
+    const callbackUrl = resolveGoogleCallbackUrl(req, normalizePublicAppUrl);
+
+    if (isGmailScopeProfile(resolveGoogleOAuthScopeProfile(req))) {
+      const personaId = firstEnv(process.env, PERSONA_GOOGLE_CLIENT_ID_NAMES);
+      const personaSecret = firstEnv(process.env, PERSONA_GOOGLE_CLIENT_SECRET_NAMES);
+      // Configure a moitie, on ne retombe PAS sur le client du site : une demande
+      // de boite mail traitee avec le client de connexion enverrait l'utilisateur
+      // consentir a des perimetres que ce client n'a pas declares, et Google
+      // refuserait avec un message incomprehensible.
+      if (personaId && personaSecret) {
+        return { clientIds: [personaId], clientId: personaId, clientSecret: personaSecret, callbackUrl, persona: true };
+      }
+      if (personaId || personaSecret) {
+        return { clientIds: [], clientId: '', clientSecret: '', callbackUrl, persona: true };
+      }
+    }
+
     const clientIds = getGoogleClientIds(process.env);
     const clientId = firstEnv(process.env, GOOGLE_CLIENT_ID_NAMES) || clientIds[0] || '';
     const clientSecret = firstEnv(process.env, GOOGLE_CLIENT_SECRET_NAMES);
-    const callbackUrl = resolveGoogleCallbackUrl(req, normalizePublicAppUrl);
     return { clientIds: clientIds.length ? clientIds : [clientId].filter(Boolean), clientId, clientSecret, callbackUrl };
   }
 

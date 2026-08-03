@@ -52,3 +52,32 @@ test('la connexion simple reste sans acces au courrier', () => {
   assert.match(defaut, /'openid email profile'/);
   assert.doesNotMatch(defaut, /gmail/, 'se connecter ne doit jamais ouvrir la boite mail');
 });
+
+// --- client dedie a la persona -------------------------------------------
+
+const config = source.match(/function getGoogleOAuthConfig\(req\) \{[\s\S]*?\n  \}/)?.[0] || '';
+
+test('un client dedie sert la boite de la persona, sans toucher au client du site', () => {
+  // GOOGLE_CLIENT_ID connecte les UTILISATEURS de funesterie.me et gagne l'ordre de
+  // precedence. L'ecraser par celui de la persona casserait toutes les connexions ;
+  // poser le sien sous un nom moins prioritaire ne servirait a rien.
+  assert.ok(config, 'le bloc de configuration doit etre trouve');
+  assert.match(source, /VIVY_GOOGLE_CLIENT_ID/);
+  assert.match(source, /VIVY_GOOGLE_CLIENT_SECRET/);
+  assert.match(config, /isGmailScopeProfile\(resolveGoogleOAuthScopeProfile\(req\)\)/);
+});
+
+test('le client persona n est consulte que pour les profils courrier', () => {
+  const iGarde = config.indexOf('isGmailScopeProfile');
+  const iDefaut = config.indexOf('firstEnv(process.env, GOOGLE_CLIENT_ID_NAMES)');
+  assert.ok(iGarde > -1 && iDefaut > iGarde, 'le chemin par defaut doit rester apres la garde');
+});
+
+test('configure a moitie, on refuse plutot que de retomber sur le client du site', () => {
+  // Traiter une demande de boite mail avec le client de connexion enverrait
+  // l'utilisateur consentir a des perimetres que ce client n'a pas declares, et
+  // Google refuserait avec un message incomprehensible.
+  assert.match(config, /if \(personaId \|\| personaSecret\)/);
+  const partiel = config.slice(config.indexOf('if (personaId || personaSecret)'));
+  assert.match(partiel.slice(0, 240), /clientId: ''/, 'moitie configure doit rendre une config vide');
+});
