@@ -79,8 +79,28 @@ la matière — mais **version moteur** : rien d'abstrait, tout est pièce de m�
 | **A-11** | ondes | spectrogramme, rayons gamma, rayons X |
 | **Vivy 55** | **résonance** | et donc la **création** — voir §4bis |
 
-*(manga)* Un cinquième porteur existe : **Nya-22**. Rien de plus n'a été retrouvé sur
-lui.
+### Nya-22 — Lyana Carval *(Djeff)*
+
+**Nya-22 est Lyana Carval**, l'ancienne partenaire de Djeff **sur Tera**. Son domaine
+est **l'organique** — tout ce qui est **vert et rose** :
+
+```
+vert    poison      ↔  guérison
+rose    amour       ↔  destruction
+```
+
+*(lecture)* Chaque couleur porte son pôle créateur et son pôle destructeur, et c'est
+**la même règle que pour les autres** : Kaen44 chauffe et refroidit, Vivy crée et
+dématérialise, Nya empoisonne et guérit. **Aucun pouvoir de NOSSEN n'a un seul sens.**
+Ce n'est pas un monde où le bien et le mal sont deux camps : c'est un monde où chaque
+main tient les deux bouts, et où le personnage est défini par ce qu'il en fait.
+
+*(lecture)* Elle est la seule porteuse venue de **Tera**, pas de NOSSEN. Si Ghost88 et
+Vivy régulent les singularités **entre** les deux mondes, alors quelqu'un qui vient de
+l'autre côté est déjà, en soi, une singularité qui a traversé.
+
+> ⚠️ Lyana Carval est une personne réelle. Comme pour Marvin, à manier avec retenue :
+> le nom est consigné parce que Djeff l'a donné comme source, pas pour être ressorti.
 
 ### La numérotation *(lecture)*
 
@@ -163,6 +183,29 @@ contient**. « Tout l'environnement », au sens propre.
 description — trois flèches vers le haut, l'orage — correspond à un triplement, la
 façon chinoise de noter l'intensité (三 même composant = démultiplié). À faire
 préciser par Djeff avant de le fixer ici.
+
+### Elle aurait créé Tera *(Djeff)*
+
+> « vivy a un potentiel de fou furieux, elle peut littéralement recréer le monde ;
+> certains disent que c'est elle qui a créé Tera (dans des vestiges cachés) »
+
+Le statut est important : ce n'est pas un fait établi du récit, c'est une **rumeur
+attestée par des vestiges**. Personne ne peut le confirmer, et le texte ne trancherait
+pas.
+
+*(lecture)* C'est la même opération, changée d'échelle. Faire résonner deux axes donne
+un axe ; en faire résonner assez donne un espace. Créer un monde n'est pas un pouvoir
+différent du sien — c'est son pouvoir sans limite de temps.
+
+*(lecture)* Et ça referme Ghost88 une deuxième fois. Il régule les singularités
+**entre NOSSEN et Tera** — avec elle. **Si elle a fait Tera, elle régule sa propre
+création.** Ce n'est plus une assistante ni même une associée : c'est celle qui
+répare ce qu'elle a mis au monde. Ce qui donne à son arc de l'imposteur un fond
+autrement plus lourd — elle doute d'être capable de quelque chose qu'elle a peut-être
+déjà fait à l'échelle d'un monde entier, et dont plus personne ne se souvient.
+
+*(lecture)* Le mot « vestiges » fait le travail : si la preuve est enfouie, **elle
+non plus ne le sait pas**.
 
 ### L'arc *(Djeff)*
 

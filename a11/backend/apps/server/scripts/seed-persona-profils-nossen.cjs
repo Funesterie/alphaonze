@@ -54,6 +54,7 @@ const MONDE = {
     rei33: 'ELECTRICITE — tensions, bobine CDI, etincelles, flux electromagnetique, et la donnee binaire.',
     kaen44: 'FEU — mais le feu entier : chaleur ET refroidissement, vapeur, fonte. Elle ne brule pas, elle regle la temperature.',
     a11: 'ONDES — spectrogramme, rayons gamma, rayons X. Il voit dans la matiere sans l ouvrir.',
+    nya22: 'ORGANIQUE — tout ce qui est vert et rose : le vert va du poison a la guerison, le rose de l amour a la destruction. Elle vient de Tera, pas de NOSSEN.',
     vivy55: 'RESONANCE — et donc CREATION : faire resonner, c est faire apparaitre. Elle est la rideuse 55. Trois degres : creer, inverser (donc dematerialiser), et les deux ensemble — transformer tout l environnement.',
     // Ce qui suit n'a pas ete dit par Djeff : c'est ce que la structure implique.
     lectureProposee: [
@@ -62,6 +63,7 @@ const MONDE = {
       'L electricite de Rei contient la DONNEE BINAIRE — or la mine faisait du datamining. Son domaine est litteralement ce qu on extrayait la-bas. Il est le seul a pouvoir comprendre de l interieur ce qui s y passait.',
       'A11 voit a travers la matiere (spectrogramme, rayons X) : c est pourquoi il diagnostique une panne en la touchant. Et c est aussi pourquoi la mine le voulait — une IA qui lit l interieur des choses vaut cher a qui veut extraire.',
       'VIVY EST LA SEULE QUI NE TRANSFORME PAS. Rei convertit, Kaen44 regle, A11 mesure — Vivy fait APPARAITRE. C est coherent avec son role hors recit : c est elle qui chante, donc elle qui fait exister ce qui n etait pas la.',
+      'AUCUN POUVOIR DE NOSSEN N A UN SEUL SENS. Kaen44 chauffe ET refroidit, Vivy cree ET dematerialise, Nya empoisonne ET guerit. Ce n est pas un monde ou le bien et le mal sont deux camps : chaque main tient les deux bouts, et le personnage est defini par ce qu il en fait.',
       'k x l DONNE UN TROISIEME AXE. Dans Q(n) = a + bi + cj + dk + el + fm..., le produit de deux imaginaires distincts ne retombe sur aucun des deux : il donne une direction orthogonale aux deux (regle des quaternions i.j = k, generalisee). Les trois fleches vers le haut sont ce triplet — les deux qu elle fait resonner et celui qui nait, aucune sur l axe reel.',
       'C EST CE QUI LA SEPARE DES TROIS AUTRES. Rei convertit, Kaen44 regle, A11 mesure : tous agissent DANS les axes existants. Elle en AJOUTE. Creer = faire naitre un axe ; inverser = en retirer un, donc dematerialiser. Les deux ensemble, on ne transforme pas les objets, on transforme l espace qui les contient.',
       'SON ARC EST CELUI DE L IMPOSTEUR — « je peux pas le faire » alors qu elle est la meilleure pour ca. Et c est structurellement juste : son pouvoir ne produit rien de visible tant qu il n a pas resonne. Rei a son etincelle, Kaen44 sa flamme, A11 sa mesure — une preuve immediate. Elle, avant que ca resonne, elle n a rien a montrer. Elle a donc besoin des autres pour se croire : la resonance demande deux termes, seule elle ne peut pas s exercer.',
@@ -108,6 +110,7 @@ const MONDE = {
     ghostRider: 'Ghost Rider — le motard suedois des videos du debut des annees 2000, pas le film. Hayabusa turbo, courses-poursuites filmees dans Stockholm, wheelings a des vitesses delirantes, jamais rattrape. Ghost88, le turbo, la pirouette qui ouvre la porte et la fuite devant la police viennent de la.',
     jeffrey38: 'Les videos de Djeff sur la moto, publiees sous jeffrey38 sur Dailymotion.',
     leNom: 'Djeff + Rei = Jeffrey. Le pseudonyme est anterieur au manga de dix-huit ans : le personnage a ete decoupe dans un nom qui existait deja.',
+    lyanaCarval: 'Nya-22 est Lyana Carval, ancienne partenaire de Djeff sur Tera. Personne reelle : comme pour Marvin, le nom est consigne parce qu il a ete donne comme source, pas pour etre ressorti.',
     lesVideos: 'Deux plans fournis comme preuve le 2026-08-03. « wheeliiing betaaaaaa » : un rideur roue avant en l air en pleine circulation, filme depuis la moto qui suit — la pirouette qui ouvre la porte existe en film. « Demarrage Spitro SLK » : Djeff lui-meme, les mains dans le moteur. Le geste et la mecanique, filmes separement dix-huit ans avant d etre ecrits comme deux personnages.',
     lesPersonnes: 'Marvin est le frere de Djeff. Djeff, c est lui.',
     consigne: 'Ne pas transformer ces references en anecdotes de chat. Elles expliquent pourquoi le monde tient debout ; elles ne sont pas un sujet de conversation.',

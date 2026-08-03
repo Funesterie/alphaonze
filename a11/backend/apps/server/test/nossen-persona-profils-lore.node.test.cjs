@@ -71,7 +71,12 @@ test('le spoiler Ghost88 ne fuit dans aucun brief', () => {
 });
 
 test('les sources reelles ne fuitent dans aucun brief', () => {
-  const interdits = [/ghost\s*rider/i, /jeffrey\s*38/i, /dailymotion/i, /hayabusa/i, /stockholm/i, /\bfrere\b/i];
+  // Les noms de personnes reelles comptent autant que le spoiler : Djeff les a
+  // donnes comme sources, pas pour qu'une persona les prononce.
+  const interdits = [
+    /ghost\s*rider/i, /jeffrey\s*38/i, /dailymotion/i, /hayabusa/i, /stockholm/i,
+    /\bfrere\b/i, /lyana/i, /carval/i, /marvin/i,
+  ];
   for (const cle of CLES) {
     for (const motif of interdits) {
       assert.doesNotMatch(BRIEFS[cle], motif, `${cle}: ${motif} fuite dans le brief`);
