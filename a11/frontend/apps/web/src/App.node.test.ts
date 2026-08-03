@@ -5,7 +5,8 @@ import test from "node:test";
 const appSource = fs.readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 
 test("NOSSEN seed validation rejects empty or skeletal sections", () => {
-  const validationBlock = appSource.match(/function isValidVivyNossenSongSeed\(value = ""\) \{[\s\S]*?\n\}/)?.[0] || "";
+  const validationBlock = appSource.match(/function isValidVivyNossenSongSeed\([\s\S]*?\n\}/)?.[0] || "";
+  assert.ok(validationBlock, "le bloc de validation doit etre trouve");
 
   assert.match(validationBlock, /sectionCount >= 5/);
   assert.match(validationBlock, /chorusCount >= 2/);
@@ -15,6 +16,29 @@ test("NOSSEN seed validation rejects empty or skeletal sections", () => {
   assert.match(validationBlock, /completeVerses && completeChoruses/);
   assert.match(validationBlock, /sanitizeVivyNossenSongSeed/);
   assert.match(validationBlock, /oui\\s\+je\\s\+te\\s\+suis/);
+});
+
+test("NOSSEN seed validation ne reclame pas de refrain a un cypher", () => {
+  // Regression du 03/08 : la formule exigeait deux refrains de TOUT morceau. Un
+  // cypher n'en a pas — c'est sa definition — donc des que Djeff rappait seul, la
+  // validation echouait par construction, quoi que Vivy ecrive, et NOSSEN
+  // s'arretait sur paroles_vivy_invalides sans designer la vraie cause.
+  const validationBlock = appSource.match(/function isValidVivyNossenSongSeed\([\s\S]*?\n\}/)?.[0] || "";
+  assert.match(validationBlock, /isFlowFormSongSeed\(context\)/, "le genre doit etre consulte");
+  // Sur ces formes on lache le refrain, PAS la matiere : lignes et couplets pleins restent exiges.
+  assert.match(validationBlock, /sectionCount >= 3 && lyricLineCount >= 16/);
+  assert.match(validationBlock, /verseSections\.every\(\(section\) => section\.lyricLines >= 4\)/);
+
+  const flowForm = appSource.match(/function isFlowFormSongSeed\([\s\S]*?\n\}/)?.[0] || "";
+  assert.match(flowForm, /cypher\|freestyle\|spoken/);
+  // Un morceau confie au seul Djeff est un rap, meme si le brief ne le dit pas.
+  assert.match(flowForm, /cast\.length === 1 && cast\[0\] === "djeff"/);
+
+  // Le contexte doit reellement etre transmis a l'appel, sinon la correction est morte.
+  assert.match(
+    appSource,
+    /isValidVivyNossenSongSeed\(authoredVocalLyrics, \{ brief: prompt, cast: effectiveSongArtists \}\)/
+  );
 });
 
 test("D40 downloads prefer the token-bearing share URL", () => {

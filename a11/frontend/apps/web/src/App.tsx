@@ -4192,7 +4192,10 @@ function strengthenVivyNossenSoloSectionLabels(value = "", artists: VivyStudioAr
   return toUnicodeText(lines.join("\n").replace(/\n{3,}/g, "\n\n"), VIVY_STUDIO_SONG_MAX_CHARS).trim();
 }
 
-function isValidVivyNossenSongSeed(value = "") {
+function isValidVivyNossenSongSeed(
+  value = "",
+  context: { brief?: string; cast?: VivyStudioArtistId[] } = {}
+) {
   const text = sanitizeVivyNossenSongSeed(value);
   if (!text) return false;
   const folded = foldForLookup(text);
@@ -4222,7 +4225,31 @@ function isValidVivyNossenSongSeed(value = "") {
     .length;
   const completeVerses = verseSections.length >= 2 && verseSections.every((section) => section.lyricLines >= 4);
   const completeChoruses = chorusSections.length >= 2 && chorusSections.every((section) => section.lyricLines >= 3);
+
+  // Un cypher n'a pas de refrain — c'est sa definition. Exiger deux refrains de
+  // tout morceau faisait echouer la validation par construction des que Djeff
+  // rappait seul, quoi que Vivy ecrive : NOSSEN s'arretait sur
+  // paroles_vivy_invalides sans que rien ne designe la vraie cause. Vu le 03/08.
+  // Sur ces formes, on garde la meme exigence de matiere (lignes, couplets pleins)
+  // et on lache la seule contrainte qui ne s'applique pas.
+  if (isFlowFormSongSeed(context)) {
+    return sectionCount >= 3 && lyricLineCount >= 16 && verseSections.length >= 2
+      && verseSections.every((section) => section.lyricLines >= 4);
+  }
+
   return sectionCount >= 5 && chorusCount >= 2 && lyricLineCount >= 16 && completeVerses && completeChoruses;
+}
+
+/**
+ * Formes ou le refrain n'est pas obligatoire : cypher, freestyle, spoken word.
+ * On lit le brief ET le casting — un morceau confie au seul Djeff est un rap,
+ * meme si le brief ne le dit pas.
+ */
+function isFlowFormSongSeed(context: { brief?: string; cast?: VivyStudioArtistId[] } = {}) {
+  const brief = foldForLookup(String(context.brief || ""));
+  if (/\b(cypher|freestyle|spoken\s*word|slam|acapella|a\s*capella)\b/.test(brief)) return true;
+  const cast = Array.isArray(context.cast) ? context.cast : [];
+  return cast.length === 1 && cast[0] === "djeff";
 }
 
 function getVivyNossenThemeTerms(value = "") {
@@ -6697,7 +6724,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         lyricsPayload.publicLyrics || authoredVocalLyrics,
         VIVY_STUDIO_SONG_MAX_CHARS
       ));
-      if (!isValidVivyNossenSongSeed(authoredVocalLyrics)) {
+      if (!isValidVivyNossenSongSeed(authoredVocalLyrics, { brief: prompt, cast: effectiveSongArtists })) {
         throw new Error("paroles_vivy_invalides_avant_suno");
       }
       setStatus(sunoSessionKey.trim()
