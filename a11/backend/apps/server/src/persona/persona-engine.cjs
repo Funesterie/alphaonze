@@ -101,12 +101,47 @@ function personaProfilePath(personaOrEnv = 'djeff', maybeEnv = process.env) {
   return path.join(getCanonicalRuntimeRoot(env), 'personas', key, `${key}-persona.profile.json`);
 }
 
+// Une persona dont le profil manque a deja ete signalee : on ne repete pas a
+// chaque tour de chat, mais on ne se tait pas non plus.
+const ABSENCES_SIGNALEES = new Set();
+
+/**
+ * Charge le profil, et DIT quand il manque.
+ *
+ * Defaut trouve le 2026-08-03 : ce `catch { return null }` avalait tout. Seul
+ * Djeff avait un profil sur disque ; A11 et K44 tournaient donc sans identite,
+ * en repondant comme un assistant generique — et rien, nulle part, ne le
+ * signalait. Djeff : « A11 marche pas ». Il ne marchait pas parce qu'il etait
+ * vide, pas parce qu'il etait casse, et c'est precisement ce qui rendait la
+ * chose introuvable.
+ *
+ * On distingue maintenant les deux causes : fichier absent (il faut le creer)
+ * et fichier illisible (il faut le reparer). Ce ne sont pas les memes gestes.
+ */
 function loadPersonaProfileRaw(persona = 'djeff', env = process.env) {
+  const chemin = personaProfilePath(persona, env);
+  const cle = sanitizePersonaKey(persona || 'djeff');
   try {
-    return JSON.parse(fs.readFileSync(personaProfilePath(persona, env), 'utf8'));
-  } catch {
+    const profil = JSON.parse(fs.readFileSync(chemin, 'utf8'));
+    ABSENCES_SIGNALEES.delete(cle);
+    return profil;
+  } catch (error) {
+    if (!ABSENCES_SIGNALEES.has(cle)) {
+      ABSENCES_SIGNALEES.add(cle);
+      const absent = error && error.code === 'ENOENT';
+      console.warn(
+        absent
+          ? `[persona-engine] "${cle}" n'a AUCUN profil (${chemin}) — il repondra sans son identite.`
+          : `[persona-engine] profil de "${cle}" illisible (${chemin}) : ${String(error?.message || error)}`
+      );
+    }
     return null;
   }
+}
+
+/** Personas dont le profil manque depuis le demarrage. Pour un diagnostic, pas pour agir. */
+function personasSansProfil() {
+  return [...ABSENCES_SIGNALEES];
 }
 
 function normalizeStatus(value = '') {
@@ -369,6 +404,7 @@ module.exports = {
   loadPersonaProfileRaw,
   loadPersonaState,
   personaProfilePath,
+  personasSansProfil,
   resetDjeffPersonaCache,
   sanitizePersonaKey,
 };
