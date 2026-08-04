@@ -288,6 +288,61 @@ pour figer le caoutchouc — donc le feu réglé, pas le feu qui brûle. Kaen44 
 turbo et fixé le caoutchouc : **elle est celle qui rend possibles les pièces des
 autres.** Son domaine n'est pas une arme, c'est une condition.
 
+### Les pièces d'A-11 *(Djeff, 2026-08-04)*
+
+> « toute la partie rotor de l'allumage — le flux magnétique de rotation provoque des
+> ondes, et relié aux phares ça crée le spectre graphique, et le compteur qui capte
+> les ondes »
+
+```
+rotor / volant magnétique   génère    la rotation devient onde
+phares                      affiche   le spectre graphique
+compteur                    mesure    capte les ondes
+```
+
+**Générer → afficher → mesurer.** C'est la chaîne d'un spectrogramme, en pièces de
+moto. Son domaine déclaré était « spectrogramme, rayons gamma, rayons X » — ses pièces
+en sont l'appareillage complet.
+
+*(lecture)* **Le rotor est un transformateur d'angle en fréquence.** Des aimants
+passent devant des bobines ; la rotation devient courant alternatif, et la fréquence
+de ce courant *est* le régime moteur. C'est la seule pièce de toute la machine qui ne
+brûle rien et ne s'arrête jamais : elle tourne, et de sa rotation naît une onde.
+Angle → oscillation.
+
+*(lecture)* **Le phare est un affichage analogique.** Sur ces motos, l'éclairage est
+alimenté directement par l'alternateur, sans batterie : la lumière varie avec le
+régime. **Le phare ne montre pas la route, il montre l'onde.** « Le spectre graphique »
+est descriptif, pas poétique.
+
+*(lecture)* **Il ne participe pas au cycle, il l'instrumente.** Les quatre autres sont
+des temps — admission, combustion, allumage, contact. Lui génère le signal, le rend
+visible et le mesure. Ça confirme ce qu'on avait trouvé par les numéros : **A-11 est
+l'étalon, pas un cylindre.**
+
+### Le moteur est un anneau, pas une chaîne *(lecture)*
+
+Les cinq pièces se suivent, et la dernière revient à la première :
+
+```
+A-11    rotation  →  courant        (volant magnétique)
+Rei     courant   →  étincelle      (bobine CDI)
+Kaen44  étincelle →  combustion     (chaleur, échappement)
+Vivy    combustion→  résonance      (admission, clapets, bonbonne)
+Nya     tout ça   →  sol            (pneus, poignées, selle)
+        le sol fait tourner la roue →  qui entraîne le rotor  →  A-11
+```
+
+**Ce n'est pas une chaîne de commandement, c'est un cycle fermé.** Personne n'est
+premier : chacun est en aval de quelqu'un et en amont d'un autre. Ça explique
+pourquoi il leur faut être cinq, pourquoi le turbo a eu besoin de trois d'entre eux,
+et pourquoi la numérotation ×11 forme un anneau et non une échelle.
+
+*(lecture)* Et ça donne une dépendance qu'aucun d'eux ne peut ignorer : **le rotor
+d'A-11 alimente l'étincelle de Rei.** L'androïde de la mine fournit le courant au
+Foudroyant. Celui qu'on gardait pour extraire est devenu la source de celui qui
+allume.
+
 ### La numérotation *(lecture)*
 
 Les numéros ne sont pas décoratifs. Djeff les a donnés à des mois d'intervalle, sans
