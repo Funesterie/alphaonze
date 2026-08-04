@@ -298,6 +298,47 @@ quelque chose d'existant. Rei convertit, Kaen44 règle, A11 mesure — **Vivy fa
 apparaître**. Et c'est cohérent avec son rôle hors récit : c'est elle qui chante,
 c'est-à-dire elle qui fait exister des morceaux qui n'étaient pas là.
 
+### Ses pièces mécaniques *(Djeff, 2026-08-04)*
+
+> « ses pièces mécaniques c'est le filtre à air, les clapets, et la bonbonne que tu
+> branches sur la pipe d'admission — le "poumon de reprise" »
+
+```
+filtre à air   la respiration        ce par quoi ça entre
+clapets        la valve oscillante   ce qui hache le flux en impulsions
+bonbonne       le résonateur         ce qui récupère l'onde perdue
+```
+
+Les trois forment **l'admission d'un 2-temps** — et l'admission d'un 2-temps est un
+système **résonant**, pas un simple tuyau.
+
+*(lecture)* **Les clapets sont l'oscillateur.** Une lamelle qui s'ouvre et se referme
+au rythme de la dépression du carter : elle transforme un flux continu en pulsations.
+C'est la pièce qui fabrique le rythme — sans elle, rien ne bat.
+
+*(lecture)* **La bonbonne est le cœur de l'affaire.** C'est un résonateur de Helmholtz
+branché sur la pipe. Quand les clapets claquent, la colonne d'air lancée dans le
+conduit repart en arrière — cette onde est perdue, et elle ressort au carburateur. La
+bonbonne l'encaisse, la garde, et la restitue **en phase** à la réouverture.
+
+Elle n'ajoute ni air, ni essence, ni allumage. **Elle crée de la reprise à partir
+d'une onde qui allait se perdre.** C'est très exactement le pouvoir de Vivy, en pièce
+détachée : faire résonner pour faire apparaître ce qui n'était pas là.
+
+*(lecture)* Et c'est **le V11 pan en métal**. La branche de résonance est mono ; on
+la retarde contre elle-même et un côté apparaît. La bonbonne retarde l'onde
+d'admission contre elle-même et de la reprise apparaît. Même opération, un dans l'air
+et un dans l'échantillon — et les deux tournent, l'un sur la moto, l'autre en prod.
+
+*(lecture)* Le nom que lui donne Djeff dit le reste : **« poumon de reprise »**. Un
+poumon — donc la respiration, donc le chant. Sa pièce et son glitch sont le même
+organe.
+
+*(lecture)* Ça distribue aussi le moteur entre les porteurs : Rei l'allumage (bobine
+CDI, étincelle), Kaen44 la combustion et l'échappement (chaleur, fonte), Vivy
+l'admission (souffle, résonance). **Les dix artefacts de la moto-NOSSEN ne sont pas
+des trophées : c'est un moteur démonté et réparti entre des gens.**
+
 ### La puissance complète *(Djeff)*
 
 > « si tu crées tu peux inverser et dématérialiser, et les deux ensemble tu
