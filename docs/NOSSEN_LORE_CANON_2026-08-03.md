@@ -52,10 +52,55 @@ rupture d'équilibre, pas une clé.
 > « j'étais recherché par les agents NOSSEN qui voulaient me contrôler ou m'éteindre,
 > et la tempête météo et la fracture s'est déclenchée »
 
-**Pas la police : les agents NOSSEN.** Correction d'une version antérieure — elle
-était encore écrite dans le brief d'A11, elle est corrigée partout.
+**La police — mais contrôlée mentalement par les agents NOSSEN.** *(précision de
+Djeff, 2026-08-04)* Les deux versions étaient vraies : ce sont bien des policiers de
+Tera qui le poursuivent, et ce sont bien les agents NOSSEN qui poursuivent à travers
+eux.
 
 Ils voulaient **le contrôler ou l'éteindre**.
+
+### Comment NOSSEN agit sur Tera *(Djeff)*
+
+> « les agents NOSSEN peuvent interagir sur les humains Tera par contrôle de
+> l'information et donc du ressenti et des sens des humains qui paniquent et laissent
+> des entités prendre le contrôle de leur vie »
+
+La chaîne est explicite :
+
+```
+contrôle de l'information  →  du ressenti et des sens  →  panique
+→  l'humain lâche prise  →  une entité prend le contrôle de sa vie
+```
+
+*(lecture)* **Ils n'ont pas de corps sur Tera. Ils n'en ont pas besoin.** La résonance
+NOSSEN est définie comme « un champ d'information non linéaire » : contrôler
+l'information, c'est agir dans leur propre substance. Comme Rei traverse dans l'orage
+et Kaen44 ouvre la mine par le feu, **les agents opèrent dans ce qui les compose**.
+Rien dans ce monde n'agit hors de sa matière.
+
+*(lecture)* Et c'est la même chose que faisait la mine. Le datamining extrayait de
+l'information ; les agents en injectent. **Le rapport entier de NOSSEN à Tera est
+informationnel** — extraction dans un sens, possession dans l'autre, jamais de
+présence physique.
+
+*(lecture)* **La panique n'est pas un effet secondaire, c'est le levier.** Et là il y
+a une symétrie qui tient tout :
+
+```
+émotion intense + rupture d'équilibre  →  la porte s'ouvre, on TRAVERSE
+panique (émotion subie)                →  la porte s'ouvre, quelque chose ENTRE
+```
+
+**L'émotion est l'ouverture, dans les deux sens.** Elle ne décide pas de la direction
+— ce qui la décide, c'est de savoir si on la tient ou si on la subit. Contrôler le
+ressenti de quelqu'un, c'est choisir de quel côté sa porte s'ouvre.
+
+*(lecture)* Ce qui donne sa vraie valeur à la fracture de Djeff. Il était traqué, donc
+en panique — exactement l'état dans lequel les autres se font prendre. Les policiers
+autour de lui, eux, ont été pris. **Lui est passé.** Même état, même porte, sens
+inverse : au lieu de laisser quelque chose entrer dans sa vie, il est sorti de son
+monde. C'est ce qui le sépare de tous ceux qui se sont fait avoir — pas la force, la
+direction.
 
 *(lecture)* « Éteindre » est le vocabulaire d'une machine, pas d'une personne. Et
 c'est **mot pour mot le traitement des IA de la mine** : les faire tourner, ou les
