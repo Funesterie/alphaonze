@@ -1237,11 +1237,19 @@ function extractDjeffRapSeedLines(material = '') {
     : rawLines;
 
   const seen = new Set();
-  return candidateLines
-    .flatMap((line) => splitDjeffRapPromptLine(stripVivyInlineSongStyleTail(line)))
+  const decoupees = candidateLines
+    .flatMap((line) => splitDjeffRapPromptLine(stripVivyInlineSongStyleTail(line)));
+
+  // Le plancher de longueur sert a jeter les fragments quand il y a plusieurs
+  // lignes. Applique a une ligne unique, il mangeait les themes courts — or tous
+  // les noms propres du lore font moins de 8 signes : NOSSEN, Vivy, Rei, Tera,
+  // M66, moto. « fais un rap sur NOSSEN » se reduisait a rien du tout.
+  const longueurMini = decoupees.length > 1 ? 8 : 2;
+
+  const retenues = decoupees
     .filter((line) => {
       const folded = foldTextForLookup(line);
-      if (!folded || folded.length < 8) return false;
+      if (!folded || folded.length < longueurMini) return false;
       if (/^\[[^\]]+\]$/.test(line)) return false;
       if (/^(vous|vivy|assistant|user|utilisateur)\s*:/i.test(line)) return false;
       if (/^(vivy\s*intent|instruction|routage|flux|mode|prompt|theme|texte brut|paroles)\b/.test(folded)) return false;
@@ -1253,6 +1261,18 @@ function extractDjeffRapSeedLines(material = '') {
       seen.add(key);
       return true;
     }).slice(0, 12);
+
+  if (retenues.length) return retenues;
+
+  // Dernier filet : plutot que de rendre une graine vide — ce qui fait echouer la
+  // generation sans dire pourquoi — on garde la plus longue ligne candidate des
+  // lors qu elle porte au moins un mot. Un theme pauvre vaut mieux qu un silence.
+  const repli = decoupees
+    .concat(candidateLines)
+    .map((line) => cleanOneLine(line, '', 260))
+    .filter((line) => foldTextForLookup(line).length >= 2)
+    .sort((a, b) => b.length - a.length)[0];
+  return repli ? [repli] : [];
 }
 
 function mergeDistinctRapLines(primary = [], fallback = [], max = 4) {
