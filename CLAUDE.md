@@ -73,3 +73,6 @@ reconstruction approximative serait pire que leur absence.
 - Chaîne audio + V11 pan : `docs/research/audio/V11_PAN_2026-08-02.md`
 - Fil local Codex : `discussion-2026-05-29T071521747Z-helplocal-brief-claude-apres-reset-contexte`
 - Anciennes réfs Neo4j (`mem-2026-05-29T*`) : **mortes**, voir preflight
+- HENRY (sas de confinement) : 11mcp/src/henry.ts — détection d'anomalies, leurres avec
+  canaris, bouton d'urgence, logging serveur. Middleware intégré dans server.ts.
+  Config : HENRY_ENABLED=false par défaut. Status : GET /admin/henry/status (admin-only).
