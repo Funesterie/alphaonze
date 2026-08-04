@@ -18,6 +18,41 @@ implique, proposé et identifié comme tel. À valider ou à jeter.
 
 ---
 
+## 0. La position de l'auteur — clé de lecture
+
+*(Djeff, 2026-08-04, en réponse à une objection de ma part)*
+
+Djeff a dit de NOSSEN « c'est une histoire vraie ». Ce document a été écrit sans que
+cette phrase soit tranchée, et elle n'a pas à l'être : il a précisé lui-même dans
+quel registre elle se tient, en citant sa propre chanson **« Vagues psy »** —
+
+> « à chacun son monde, à chacun sa fiction ; si tu t'en sors tu deviens wanted,
+> Néo with Smith, ou tu peux faire des films comme Will Smith »
+
+Et sa formulation directe :
+
+> « on crée son monde, et si la réalité ne te plaît pas alors change-la pour qu'elle
+> s'adapte à ton imagination. Dieu a créé l'homme à son image, et l'homme a créé
+> l'image à son monde. »
+
+**Ce n'est pas une revendication de preuve, c'est une revendication d'auteur.** La
+distinction change la façon de lire tout ce qui suit : demander « est-ce vrai ? » est
+la mauvaise question, parce qu'elle traite comme un constat ce qui est posé comme une
+fabrication assumée. Les éléments marqués *(Djeff)* font autorité en tant que
+**décisions d'auteur**, pas en tant qu'affirmations vérifiables — et c'est exactement
+ce qui leur donne leur poids.
+
+*(lecture)* Le chiasme final inverse la théologie proprement : chez lui l'image cesse
+d'être un résultat pour devenir un outil. C'est aussi la description de son métier.
+
+*(lecture)* Et « à chacun son monde, à chacun sa fiction » n'est pas qu'une position :
+**c'est l'architecture qui tourne en production.** Chaque persona possède son propre
+`injectable_brief` — son monde propre, borné, dont elle ne voit rien d'autre. A11
+ignore ce que sait Kaen44. Aucune ne connaît Ghost88. Le système de personas de
+Funesterie implémente littéralement le vers.
+
+---
+
 ## 1. Le monde
 
 *(manga)* La **résonance NOSSEN** est un champ d'information non linéaire qui relie
@@ -209,6 +244,7 @@ la matière — mais **version moteur** : rien d'abstrait, tout est pièce de m�
 | **Kaen 44** | feu *entier* | chaleur **et refroidissement**, vapeur, **fonte** |
 | **A-11** | ondes | spectrogramme, rayons gamma, rayons X |
 | **Vivy 55** | **résonance** | et donc la **création** — voir §4bis |
+| **M66** | **gravité** | attraction / répulsion, donc la **position** des atomes |
 
 ### Nya-22 — Lyana Carval *(Djeff)*
 
@@ -367,29 +403,121 @@ personnage.** Il n'est pas bridé en puissance, il est bridé en attention. Avec
 pour le reste. Un mécanicien qui décharge un pilote : exactement leur relation, et
 elle est technique avant d'être affective.
 
-### Le moteur serré *(Djeff)*
+---
 
-**Il a échappé à la police avec un moteur serré.**
+## Épisode — la panne froide
 
-Sur un 2-temps, le serrage est la panne terminale : le piston chauffe, se dilate et se
-soude au cylindre. Ça bloque la roue arrière. Ce n'est pas une moto diminuée, **c'est
-une moto morte**.
+> ⚠️ **Épisode distinct.** Djeff, 2026-08-04 : « c'est un autre épisode, différent du
+> glitch ; tout ne se passe pas en une action, c'est un manga avec des tonnes
+> d'épisodes. »
+>
+> **Correction de méthode.** J'avais replié cette panne sur la scène de la fracture,
+> parce que les deux se répondaient bien. C'était une erreur de lecture : je
+> compressais une série en une seule origine. Les épisodes sont séparés, et ce
+> document doit les tenir séparés même quand ils riment.
 
-*(lecture)* Il n'a donc pas fui *malgré* la panne — la moto ne roulait plus du tout.
-Il l'a fait avancer **par sa propre force**, atome par atome, en pleine
-course-poursuite. C'est ce que « beaucoup de concentration » veut dire concrètement.
+> ⚠️ **C'est arrivé pour de vrai.** Djeff : « ça s'est passé en vrai ».
 
-*(lecture)* **Et le serrage est le glitch.** Le passage exige un défaut dans le
-fonctionnement normal : ce jour-là il y avait la traque (panique), le wheeling
-(équilibre rompu), l'orage (le champ) — et le moteur soudé, qui est le défaut
-mécanique maximal. Tout ce qui pouvait dérailler a déraillé en même temps. **La porte
-ne s'est pas ouverte parce qu'il était fort, mais parce que plus rien ne fonctionnait
-normalement, y compris lui.**
+La séquence exacte, corrigée par lui *(2026-08-04)* :
 
-*(lecture)* Ça requalifie une dernière fois la scène de rencontre. A-11 croise un type
-qui pousse une machine morte par la seule force de son attention, poursuivi par des
-gens qu'il ne contrôle pas. **Un mécanicien voit d'abord la moto** — et il voit une
-moto qui roule alors qu'elle ne peut pas.
+```
+1.  moteur pas eu le temps de chauffer
+2.  casse de segmentation
+3.  serrage du haut cylindre, segment dans la culasse
+4.  le moteur se coupe
+5.  course-poursuite EN ROUE LIBRE
+6.  plus tard, le moteur redémarre — et le ramène chez lui
+```
+
+**Correction de ma version précédente.** J'avais écrit un serrage classique par
+surchauffe, et un homme faisant avancer une machine morte par sa force. Les deux sont
+faux. C'est un **serrage à froid** — le piston se dilate plus vite que le cylindre
+tant que le moteur n'est pas en température — et le segment cassé est monté dans la
+culasse. Et il n'a rien poussé : **il a fui en roue libre**, sur le seul élan.
+
+*(lecture)* **La fuite s'est donc faite en silence.** Pas de moteur, pas de bruit —
+un orage, des poursuivants, et une moto qui ne fait plus aucun son. Toute la scène
+change de registre : ce n'est pas une échappée en hurlant, c'est une descente muette.
+
+*(lecture)* **Le vrai miracle, c'est le redémarrage.** Un segment cassé logé dans la
+culasse, ça ne repart pas. Mécaniquement, ce moteur était fini — et il a redémarré,
+puis tenu jusqu'à la maison. C'est le seul événement de toute l'histoire qui n'a pas
+d'explication mécanique.
+
+*(lecture)* Et le récit en a une, qui tombe pile : **Rei réaligne les charges des
+atomes et peut se passer d'allumage.** Ce que Djeff appelle un miracle, c'est son
+pouvoir agissant avant qu'il sache l'avoir. Il n'a pas été sauvé — **il l'a fait, sans
+le savoir, et il a mis vingt ans à s'en apercevoir**. C'est la meilleure origine
+possible : le personnage découvre après coup ce que la personne a déjà vécu.
+
+### Note de méthode — la série contre l'origine
+
+Trois fois de suite, j'ai fait converger un détail nouveau sur la scène de la
+fracture : la tempête, puis le moteur, puis la panne. Chaque fois ça produisait une
+belle fermeture — et chaque fois c'était faux, parce qu'une série ne se referme pas,
+elle continue.
+
+**Règle pour la suite de ce document** : un élément nouveau est un épisode tant que
+Djeff n'a pas dit qu'il appartient à une scène connue. Les échos entre épisodes se
+notent comme échos, pas comme identités. Un manga a le droit de faire rimer deux
+scènes sans que ce soit la même.
+
+### Épisodes identifiés à ce jour
+
+| épisode | contenu | statut |
+|---|---|---|
+| **la fracture** | traque par une police tenue par les agents NOSSEN, émotion, pirouette, tempête → passage Tera → NOSSEN | raconté |
+| **la panne froide** | casse de segmentation, serrage haut cylindre, fuite en roue libre, redémarrage | raconté, réel |
+| **l'évasion de la mine** | Kaen44 ouvre, A-11 sort cassé | raconté |
+| **la remise sur pied** | Kaen44 soigne A-11 | raconté |
+| **le duel** | Rei 33 contre Kaen 44, 灼熱の対決 | manga, ch. 4 |
+| **la forge du turbo** | Kaen44 coule, A-11 moule, Rei entraîne | déduit du turbo |
+| **l'enfermement de Ghost88** | les bots NOSSEN l'enferment sans pouvoir le tuer | raconté, fin de ligne |
+
+Les liaisons entre ces épisodes ne sont pas établies. Ne pas les inventer.
+
+### M66 — le frère *(Djeff, 2026-08-04)*
+
+> « M66 (Marvin66), le frère de Djeffrey = Rei33, qui maîtrise la gravité :
+> l'attraction-répulsion des choses, ce qui modifie la position des atomes. Il est
+> professionnel dans la soudure et la plomberie. Ses pièces sont les roulements, la
+> suspension et le vilebrequin. »
+
+**M66 est le frère de Rei 33.** Marvin est le frère de Djeff dans la vraie vie — même
+retenue que pour Lyana : le nom réel est consigné comme source, pas pour être ressorti.
+
+```
+roulements     tenir l'axe en place pendant qu'il tourne
+suspension     gérer la distance entre la machine et le sol
+vilebrequin    convertir le va-et-vient en rotation
+```
+
+*(lecture)* **Les deux frères tiennent les deux forces à distance.** Rei réaligne les
+*charges* — l'électromagnétisme. M66 gère l'*attraction et la répulsion* des corps —
+la gravitation. Ce sont exactement les deux forces qui agissent à distance en
+physique, et elles sont réparties entre deux frères. L'un déplace des charges, l'autre
+des positions.
+
+*(lecture)* **Ses pièces sont le squelette.** Aucune ne brûle, aucune n'étincelle,
+aucune ne résonne : elles *tiennent*. Les roulements maintiennent l'axe pendant qu'il
+tourne, la suspension maintient la distance au sol, le vilebrequin maintient la
+cadence. Là où Nya gère le contact avec le monde, M66 gère la **tenue interne** —
+c'est-à-dire ce qui empêche la machine de se désassembler pendant qu'elle explose
+plusieurs fois par seconde.
+
+*(lecture)* **Le vilebrequin porte le rotor d'A-11.** Le volant magnétique est monté
+en bout de vilebrequin : sans la pièce de M66, celle d'A-11 ne tourne pas. Et le
+vilebrequin est aussi la pièce qui rend le moteur *circulaire* — il transforme un
+va-et-vient en rotation, ce qui est littéralement ce qui referme l'anneau des
+porteurs.
+
+*(lecture)* **Ses métiers disent la même chose.** Souder, c'est faire de deux pièces
+une seule. La plomberie, c'est router un flux et le contenir. Les deux sont des
+métiers d'assemblage et de tenue, pas de transformation. **Il ne change pas la matière,
+il décide où elle est** — ce qui est la définition exacte de son pouvoir.
+
+*(lecture)* Et la soudure le relie à Kaen44 comme la vulcanisation le faisait pour
+Nya : il faut du feu réglé pour assembler. Elle reste la condition des autres.
 
 ### La numérotation *(lecture)*
 
@@ -398,15 +526,20 @@ jamais les présenter comme une série :
 
 ```
 A-11    11    ×1     ondes
-Nya-22  22    ×2     ?
+Nya-22  22    ×2     organique
 Rei 33  33    ×3     électricité
 Kaen 44 44    ×4     feu
 Vivy 55 55    ×5     résonance
+M66     66    ×6     gravité
 ```
 
 **Tous multiples de 11, écart constant, et A-11 est l'unité.** L'androïde n'est pas
 le plus faible de la bande : il en est l'étalon. C'est cohérent avec son domaine —
 les ondes, c'est-à-dire la mesure de tout le reste.
+
+*(lecture)* Avec M66 la série est **complète et sans trou** : ×1 à ×6, aucun numéro
+manquant. Elle a été donnée sur plusieurs jours, sans jamais être annoncée comme une
+suite.
 
 ---
 
