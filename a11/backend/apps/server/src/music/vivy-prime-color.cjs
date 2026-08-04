@@ -502,6 +502,44 @@ function buildCubeMorph(matiere, choix = {}) {
     })
     .filter(Boolean);
 
+  // Retour au theme. Djeff : « un retour equilibre sur le debut pour rester dans
+  // le theme ».
+  //
+  //   'exact'     on revient a la couleur de depart — c est une reprise.
+  //   'equilibre' on revient a une couleur de MEME MASSE (8/4/2) mais differente.
+  //               L equilibre du mix est restaure, la couleur non : le morceau
+  //               finit ou il a commence en poids, pas en teinte. Une resolution
+  //               qui n est pas une repetition.
+  //
+  // Si aucune couleur de meme masse n existe — DORE est seule a 24 — on retombe
+  // sur le retour exact plutot que d inventer, et on le dit.
+  const retour = String(choix.retour || '').trim().toLowerCase();
+  let retourApplique = null;
+  if (retour && arrets.length >= 2) {
+    const depart = arrets[0];
+    if (retour === 'exact') {
+      arrets.push({ ...depart });
+      retourApplique = 'exact';
+    } else if (retour === 'equilibre') {
+      const jumelles = palette
+        .map((c) => ({ name: c.name, ...enTrinaire(c.hex) }))
+        .filter((c) => c.poids === depart.poids && c.rang !== depart.rang);
+      if (jumelles.length) {
+        // La plus eloignee en trits : le retour doit s entendre comme un
+        // deplacement, pas comme un voisinage.
+        jumelles.sort((a, b) => {
+          const d = (x) => x.trits.reduce((s, t, i) => s + Math.abs(t - depart.trits[i]), 0);
+          return d(b) - d(a);
+        });
+        arrets.push(jumelles[0]);
+        retourApplique = 'equilibre';
+      } else {
+        arrets.push({ ...depart });
+        retourApplique = 'exact-faute-de-jumelle';
+      }
+    }
+  }
+
   if (arrets.length < 2) {
     const seule = base.color ? { name: base.color.name, ...enTrinaire(base.color.hex) } : null;
     return {
@@ -535,6 +573,7 @@ function buildCubeMorph(matiere, choix = {}) {
       trits: pas.trits,
       base3: info.base3,
       rang: info.rang,
+      poids: info.poids,
       position: info.position,
       hex: pas.hex,
       nom: pas.nom,
@@ -549,6 +588,7 @@ function buildCubeMorph(matiere, choix = {}) {
     seed: base.seed,
     chemin,
     sections: echantillons,
+    retour: retourApplique,
     chosenBy: 'vivy',
     couleursInconnues: inconnues,
     line,

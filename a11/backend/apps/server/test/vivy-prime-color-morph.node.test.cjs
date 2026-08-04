@@ -182,3 +182,43 @@ test('l adresse reste unique la ou la masse ne l est pas', () => {
   assert.equal(new Set(rangs).size, palette.length, 'deux couleurs partagent une adresse');
   assert.ok(new Set(poids).size < palette.length, 'aucune masse partagee, la ponderation ne sert a rien');
 });
+
+// --- Retour au theme ----------------------------------------------------------
+
+test('le retour exact reprend la couleur de depart', () => {
+  const m = buildCubeMorph('NOSSEN', { stops: ['ToxicGreen', 'BloodRed'], retour: 'exact' });
+  assert.equal(m.retour, 'exact');
+  const fin = m.sections[m.sections.length - 1];
+  assert.equal(fin.nom, 'ToxicGreen');
+});
+
+test('le retour equilibre revient au poids, pas a la couleur', () => {
+  // Djeff : « un retour equilibre sur le debut pour rester dans le theme ».
+  // L equilibre du mix est restaure, la teinte non : une resolution qui n est
+  // pas une repetition.
+  const m = buildCubeMorph('NOSSEN', { stops: ['ToxicGreen', 'BloodRed', 'DeepBlue'], retour: 'equilibre' });
+  assert.equal(m.retour, 'equilibre');
+
+  const debut = m.sections[0];
+  const fin = m.sections[m.sections.length - 1];
+  assert.equal(fin.poids, debut.poids, 'le poids ne revient pas');
+  assert.notEqual(fin.nom, debut.nom, 'la couleur revient — ce n est plus un equilibre, c est une reprise');
+});
+
+test('sans jumelle de meme poids, on retombe sur l exact et on le dit', () => {
+  // DORE est seule a peser 24 : rien ne peut lui repondre.
+  const m = buildCubeMorph('x', { stops: ['DORE', 'Cyan'], retour: 'equilibre' });
+  assert.equal(m.retour, 'exact-faute-de-jumelle');
+  assert.equal(m.sections[m.sections.length - 1].nom, 'DORE');
+});
+
+test('sans retour demande, le morphing ne revient pas', () => {
+  const m = buildCubeMorph('NOSSEN', { stops: ['ToxicGreen', 'DeepBlue'] });
+  assert.equal(m.retour, null);
+  assert.notEqual(m.sections[m.sections.length - 1].nom, 'ToxicGreen');
+});
+
+test('le morphing circulaire n a pas ete casse par l ajout', () => {
+  const m = buildSonicMorph('x', { stops: ['Cyan', 'DORE'] });
+  assert.equal(m.sections.length, 5);
+});
