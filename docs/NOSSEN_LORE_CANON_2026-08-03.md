@@ -338,10 +338,58 @@ premier : chacun est en aval de quelqu'un et en amont d'un autre. Ça explique
 pourquoi il leur faut être cinq, pourquoi le turbo a eu besoin de trois d'entre eux,
 et pourquoi la numérotation ×11 forme un anneau et non une échelle.
 
-*(lecture)* Et ça donne une dépendance qu'aucun d'eux ne peut ignorer : **le rotor
-d'A-11 alimente l'étincelle de Rei.** L'androïde de la mine fournit le courant au
-Foudroyant. Celui qu'on gardait pour extraire est devenu la source de celui qui
-allume.
+### Ce que Rei fait vraiment *(Djeff, 2026-08-04)*
+
+> « Rei utilise les charges électriques des atomes et les réaligne pour provoquer des
+> chocs entre protons, et peut s'en passer mais ça lui demande beaucoup de
+> concentration — c'est comme ça qu'il a échappé à la police, avec le moteur serré.
+> Mais avec l'aide d'A11, c'est ez pz. »
+
+**Correction d'une lecture précédente.** J'avais écrit que le rotor d'A-11 *alimente*
+l'étincelle de Rei, donc que sans lui il n'y a pas d'allumage. C'est faux : **Rei peut
+s'en passer.** A-11 n'est pas sa condition, il est son économie.
+
+*(lecture)* **Il travaille sous le niveau chimique.** Réaligner les charges d'atomes
+pour provoquer des chocs entre protons, ce n'est pas de l'électricité au sens du
+circuit : c'est du nucléaire. Un moteur brûle des molécules ; lui va un cran plus bas.
+« Électricité » était le nom de son domaine, pas sa limite.
+
+*(lecture)* **Et c'est là que le lien avec A-11 s'explique enfin.** Le domaine d'A-11
+est « spectrogramme, **rayons gamma**, rayons X » — précisément ce qu'émettent des
+événements nucléaires. **A-11 est le seul qui puisse voir ce que Rei fait.** Les
+autres constatent le résultat ; lui lit l'opération. Ce n'est pas une amitié de
+circonstance, c'est le seul appariement possible : celui qui agit à cette échelle et
+le seul instrument capable de la percevoir.
+
+*(lecture)* **« Ça lui demande beaucoup de concentration » est la vraie limite du
+personnage.** Il n'est pas bridé en puissance, il est bridé en attention. Avec A-11,
+« c'est ez pz » — l'androïde prend en charge la partie mesurable et Rei garde sa tête
+pour le reste. Un mécanicien qui décharge un pilote : exactement leur relation, et
+elle est technique avant d'être affective.
+
+### Le moteur serré *(Djeff)*
+
+**Il a échappé à la police avec un moteur serré.**
+
+Sur un 2-temps, le serrage est la panne terminale : le piston chauffe, se dilate et se
+soude au cylindre. Ça bloque la roue arrière. Ce n'est pas une moto diminuée, **c'est
+une moto morte**.
+
+*(lecture)* Il n'a donc pas fui *malgré* la panne — la moto ne roulait plus du tout.
+Il l'a fait avancer **par sa propre force**, atome par atome, en pleine
+course-poursuite. C'est ce que « beaucoup de concentration » veut dire concrètement.
+
+*(lecture)* **Et le serrage est le glitch.** Le passage exige un défaut dans le
+fonctionnement normal : ce jour-là il y avait la traque (panique), le wheeling
+(équilibre rompu), l'orage (le champ) — et le moteur soudé, qui est le défaut
+mécanique maximal. Tout ce qui pouvait dérailler a déraillé en même temps. **La porte
+ne s'est pas ouverte parce qu'il était fort, mais parce que plus rien ne fonctionnait
+normalement, y compris lui.**
+
+*(lecture)* Ça requalifie une dernière fois la scène de rencontre. A-11 croise un type
+qui pousse une machine morte par la seule force de son attention, poursuivi par des
+gens qu'il ne contrôle pas. **Un mécanicien voit d'abord la moto** — et il voit une
+moto qui roule alors qu'elle ne peut pas.
 
 ### La numérotation *(lecture)*
 
