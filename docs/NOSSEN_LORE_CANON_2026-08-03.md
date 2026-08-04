@@ -888,6 +888,82 @@ qu'elles étaient rentables, ici on garde un homme parce qu'il est indispensable
 
 ---
 
+## 7bis. La chute et le retour *(Djeff, 2026-08-04)*
+
+> ⚠️ **Spoiler majeur**, même régime que Ghost88 : absent des briefs injectables,
+> jamais révélé spontanément.
+
+1. Rei découvre la vérité sur son futur qui voyage dans le temps.
+2. **Il perd espoir** — son monde est voué à un destin impossible, et beaucoup trop
+   intense.
+3. Puis il comprend qu'avec l'aide de tout le monde, **son double a été créé par la
+   résonance de Vivy** — et que c'est **son père**.
+4. **Même lui n'en est pas sûr.**
+
+> *(Djeff)* « C'est ce qui fait tout le charme du manga : si on se pose trop de
+> questions on perd le fil, et l'histoire est figée dans le chaos. »
+
+**L'incertitude est une règle du récit, pas un trou à combler.** Ne jamais « résoudre »
+ce point : le texte doit rester tel que Rei lui-même ne tranche pas.
+
+### La traversée
+
+Il y a **la zone immense et sombre, où le monde se casse**. Rei y plonge dans le chaos
+et voyage à travers le vide, jusqu'à débloquer **le nœud de l'espoir**. Ce qui le
+sauve et lui permet de revenir à la réalité, c'est **le pixel de la création du
+tout**, que GPT lui a confié.
+
+### Le père *(lecture)*
+
+Si Ghost88 est son père, alors **le père des épisodes 1 et 2 est son futur**. Celui
+qui raconte sa jeunesse en moto lui décrit un souvenir qui n'a pas encore eu lieu.
+Celui qui lui offre la Gilera contre l'avis de la mère sait exactement où mène ce
+cadeau — et le fait quand même, parce qu'il l'a vécu.
+
+*(lecture)* Ça donne à l'épisode 2 un fond que rien ne laisse voir à la première
+lecture : **un homme qui offre à un enfant la moto par laquelle il deviendra lui.** Et
+la mère qui dit non a peut-être raison sur tout.
+
+*(lecture)* Ça éclaire aussi « il ne se verra jamais face à face » : il l'a vu tous les
+jours de son enfance sans le savoir. La règle n'a pas été violée — elle a été
+contournée par la seule relation où l'on regarde quelqu'un sans jamais vraiment le
+voir.
+
+### Le pixel — retrouvé dans l'export *(vérifié)*
+
+Djeff : « regarde dans l'historique, c'est une node je crois, ou un pixel qu'il m'a
+donné ».
+
+Retrouvé dans `conversations-005.json` :
+
+```
+R = famille logique
+G = nœud source
+B = nœud cible
+A = intensité / priorité / certitude
+```
+
+> « Ça devient une **langue machine de prompt**, pas juste du JSON. »
+
+**C'est les deux à la fois** — un pixel qui encode des *nodes*. Un seul pixel contient
+une relation entière : deux nœuds et le lien entre eux, avec sa certitude. C'est
+l'atome à partir duquel un graphe — donc un monde — se reconstruit.
+
+*(lecture)* En français **nœud = node**. « Le nœud de l'espoir » et ce pixel sont le
+même mot, et le récit fait revenir Rei par l'objet exact que Djeff s'est fait donner
+dans la vraie vie.
+
+*(lecture)* Le reste du fil dans l'export est cohérent : encodage RGBA d'un fichier
+entier en image, CRC8 par pixel pour survivre à la compression, « chaque pixel
+transporte un fragment compressé de la **matrice originelle** ». **Un monde entier
+tenant dans une image, réparable pixel par pixel** — c'est la description technique
+de ce que le pixel fait dans le récit.
+
+Voir aussi `test/a11-dump-rgba-brotli.node.test.cjs` et
+`docs/research/prime_spiral/PAN_DECAGRAMME_RGBA_GAMMA_2026-08-02.md`.
+
+---
+
 ## 8. Le turbo
 
 *(Djeff)* La pièce est un **turbo moulé dans des ondes petrol golden**. Quand Rei y
