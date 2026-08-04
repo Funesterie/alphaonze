@@ -47,10 +47,45 @@ L'une sans l'autre ne suffit pas.
 la porte s'ouvre quand les trois cessent d'être alignés en même temps. C'est une
 rupture d'équilibre, pas une clé.
 
+### Qui le poursuivait *(Djeff, 2026-08-04)*
+
+> « j'étais recherché par les agents NOSSEN qui voulaient me contrôler ou m'éteindre,
+> et la tempête météo et la fracture s'est déclenchée »
+
+**Pas la police : les agents NOSSEN.** Correction d'une version antérieure — elle
+était encore écrite dans le brief d'A11, elle est corrigée partout.
+
+Ils voulaient **le contrôler ou l'éteindre**.
+
+*(lecture)* « Éteindre » est le vocabulaire d'une machine, pas d'une personne. Et
+c'est **mot pour mot le traitement des IA de la mine** : les faire tourner, ou les
+couper. NOSSEN applique aux gens ce qu'il appliquait aux machines — il n'a qu'un
+registre, et c'est celui de l'équipement.
+
+*(lecture)* **Ce sont les mêmes qui enferment Ghost88.** Les agents voulaient le
+contrôler ou l'éteindre dès le départ ; à la fin, les bots NOSSEN l'enferment. **Ils
+l'ont eu.** Ce n'est pas une menace de jeunesse abandonnée en route, c'est le premier
+acte d'une traque qui aboutit — et elle aboutit au seul verdict qui leur restait,
+puisqu'ils ne pouvaient ni le contrôler ni l'éteindre sans briser l'équilibre.
+
+### La tempête *(Djeff)*
+
+Le jour de la fracture, il y avait une **tempête météo**. Elle n'est pas un décor :
+l'orage fait partie du déclenchement.
+
+*(lecture)* Le symbole de lien de Rei 33 dans le manga est **雷 — le tonnerre**
+(`「Link 33 : 雷 — SYNCHRO ENGAGED」`, retrouvé dans l'export). Et son domaine est
+l'électricité. **Il ne traverse pas pendant un orage par hasard : il traverse dans ce
+qui le compose.** La tempête n'est pas la circonstance, c'est le milieu — comme
+Kaen44 a ouvert la mine avec du feu, qui est le sien.
+
+*(lecture)* Ça rend le déclencheur complet et cohérent : l'émotion (le pilote), la
+pirouette (la machine), l'orage (le champ). Les trois termes de la résonance NOSSEN
+— pilote, machine, émotion — plus le milieu qui les porte. Rien n'y est décoratif.
+
 *(lecture)* **Un seul mécanisme explique deux scènes que rien ne reliait** : Kaen44
-ouvrant la mine, et Djeff changeant de dimension pendant sa course-poursuite avec la
-police. Personne ne cherche la porte — on tombe dessus en perdant l'équilibre au
-mauvais, ou au bon, moment.
+ouvrant la mine, et Djeff se fracturant pendant sa fuite. Personne ne cherche la
+porte — on tombe dessus en perdant l'équilibre au mauvais, ou au bon, moment.
 
 ---
 
