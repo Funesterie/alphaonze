@@ -3476,7 +3476,7 @@ export async function routeVivyNossenComposition(input: {
 }
 
 export async function checkVivyNossenStatus(input: {
-  musicProvider: 'suno' | 'mureka';
+  musicProvider: 'suno' | 'mureka' | 'acestep';
   sessionSunoApiKey?: string;
 }): Promise<{ ok: boolean; provider: string; configured: boolean; authorized: boolean; personalSessionKey?: boolean }> {
   const res = await authFetch(getApiUrl('/api/vivy/studio/nossen-status'), {

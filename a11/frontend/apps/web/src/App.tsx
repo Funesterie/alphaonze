@@ -3089,7 +3089,7 @@ type VivyPublicChatMessage = {
   media?: VivyStudioMediaPreview | null;
 };
 type VivyPublicChatMode = "chat" | VivyStudioProductionMode;
-type VivyNossenMusicProvider = "suno" | "mureka";
+type VivyNossenMusicProvider = "suno" | "mureka" | "acestep";
 const VIVY_NOSSEN_MUSIC_PROVIDER_OPTIONS: Array<{
   id: VivyNossenMusicProvider;
   label: string;
@@ -3105,11 +3105,21 @@ const VIVY_NOSSEN_MUSIC_PROVIDER_OPTIONS: Array<{
     label: "Mureka",
     title: "Composer avec Mureka, utile pour tester une autre couleur sonore.",
   },
+  {
+    id: "acestep",
+    label: "ACE-Step",
+    title:
+      "Composer en local sur la machine de Djeff. Rien ne part chez un tiers, donc aucun texte n'est soumis a un moderateur distant. Necessite que la machine soit allumee.",
+  },
 ];
 
 function normalizeVivyNossenMusicProvider(value: unknown): VivyNossenMusicProvider {
   const normalized = String(value || "").trim().toLowerCase();
-  return normalized === "mureka" ? "mureka" : "suno";
+  if (normalized === "mureka") return "mureka";
+  // "ace-step" est accepte parce que c'est l'orthographe du modele ; le backend
+  // repond aux deux, autant ne pas perdre un choix deja enregistre localement.
+  if (normalized === "acestep" || normalized === "ace-step") return "acestep";
+  return "suno";
 }
 
 function readVivyNossenMusicProvider(): VivyNossenMusicProvider {
@@ -3129,7 +3139,9 @@ function writeVivyNossenMusicProvider(value: VivyNossenMusicProvider) {
 }
 
 function getVivyNossenMusicProviderLabel(provider: VivyNossenMusicProvider) {
-  return provider === "mureka" ? "Mureka" : "Suno";
+  if (provider === "mureka") return "Mureka";
+  if (provider === "acestep") return "ACE-Step";
+  return "Suno";
 }
 
 type VivyNossenBangerReadiness = {
@@ -9217,7 +9229,15 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         disableEmergencyMedia: true,
         songTitle: routedReadiness.themeAnchor || activeSessionName || productionLabel,
         musicProvider: selectedMusicProvider,
-        musicModel: selectedMusicProvider === "mureka" ? "mureka-9" : VIVY_NOSSEN_SUNO_LONG_MODEL,
+        // ACE-Step ne prend pas de nom de modele : le fichier de poids est choisi
+        // cote serveur. Lui envoyer un identifiant Suno le ferait passer pour une
+        // demande Suno plus loin dans la chaine.
+        musicModel:
+          selectedMusicProvider === "mureka"
+            ? "mureka-9"
+            : selectedMusicProvider === "acestep"
+              ? undefined
+              : VIVY_NOSSEN_SUNO_LONG_MODEL,
         longSong: true,
         targetDurationSeconds: VIVY_NOSSEN_SUNO_TARGET_SECONDS,
       });
