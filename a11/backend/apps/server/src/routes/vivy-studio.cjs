@@ -54,6 +54,7 @@ const {
   hasVivyChorusSection,
 } = require('../music/vivy-songcraft.cjs');
 const { deriveSonicSignature } = require('../music/vivy-prime-color.cjs');
+const { isAceStepConfigured, requestAceStepMusic } = require('../music/acestep-provider.cjs');
 const { buildVivyDynamicArc, extractSectionLabels, resolveEnergyCeiling: resolveVivyEnergyCeiling } = require('../music/vivy-dynamic-arc.cjs');
 const {
   resolveCatalogVoiceId,
@@ -9758,6 +9759,42 @@ function getMurekaProviderError(payload = {}, fallback = 'mureka_music_failed') 
   );
 }
 
+// ACE-Step 1.5 via le ComfyUI local. Troisieme fournisseur, et le seul qui ne
+// sorte pas de la machine : rien n'est soumis a un moderateur distant, et il sait
+// reprendre une section au lieu de tout refaire.
+//
+// La couleur sonore choisie par Vivy alimente directement les entrees du modele —
+// bpm, tonalite, tags — au lieu d'etre recollee en fin de chaine comme pour Suno.
+async function requestAceStepViaComfy(input = {}) {
+  const matiere = buildVivySunoStyleMaterial(input);
+  const signature = deriveSonicSignature(matiere);
+
+  const tags = [
+    cleanOneLine(input.styleTags || input.style || '', '', 200),
+    signature.texture,
+    signature.mouvement,
+  ].filter(Boolean).join(', ');
+
+  const resultat = await requestAceStepMusic({
+    tags,
+    lyrics: cleanText(input.lyrics || input.paroles || '', 6000),
+    seed: signature.seed,
+    bpm: Number(input.bpm) || undefined,
+    duration: Number(input.durationSeconds || input.duration) || undefined,
+    language: cleanOneLine(input.language || 'fr', 'fr', 8),
+    keyscale: cleanOneLine(input.keyscale || '', '', 20) || undefined,
+    negative: cleanOneLine(input.negativeStyle || '', '', 200),
+    prefix: 'funesterie/acestep',
+  });
+
+  if (!resultat.ok) {
+    const erreur = new Error(`acestep: ${resultat.raison}`);
+    erreur.provider = 'acestep';
+    throw erreur;
+  }
+  return resultat;
+}
+
 async function requestMurekaMusic(input = {}, req = null) {
   const apiKey = getMurekaApiKey();
   if (!apiKey) throw new Error('mureka_music_key_missing');
@@ -10501,6 +10538,9 @@ async function buildRealMusicForProduction(mode, input, req) {
     try {
       if (provider === 'suno' && (isSunoMusicConfigured() || getRequestSessionSunoApiKey(input, req))) return await requestSunoMusic(input, req);
       if (provider === 'mureka' && isMurekaMusicConfigured()) return await requestMurekaMusic(input, req);
+      if ((provider === 'acestep' || provider === 'ace-step') && isAceStepConfigured()) {
+        return await requestAceStepViaComfy(input);
+      }
       if ((provider === 'elevenlabs' || provider === 'elevenlabs-music') && (isElevenLabsMusicConfigured() || explicitElevenLabsPreview)) {
         return await requestElevenLabsMusic(input, req);
       }
@@ -11401,10 +11441,11 @@ function createVivyStudioRouter({
         provider: getConfiguredMusicProviders()[0] || 'suno',
         providers: {
           suno: isSunoMusicConfigured(),
+          acestep: isAceStepConfigured(),
           mureka: isMurekaMusicConfigured(),
           elevenlabs: isElevenLabsMusicConfigured(),
         },
-        configured: isSunoMusicConfigured() || isMurekaMusicConfigured() || isElevenLabsMusicConfigured(),
+        configured: isSunoMusicConfigured() || isMurekaMusicConfigured() || isElevenLabsMusicConfigured() || isAceStepConfigured(),
         adminOnly: !envFlag('VIVY_MUSIC_ALLOW_NON_ADMIN'),
         sessionSunoKeySupported: true,
         suno: getVivySunoRuntimeStatus(),
