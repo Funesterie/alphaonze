@@ -134,6 +134,57 @@ porte — on tombe dessus en perdant l'équilibre au mauvais, ou au bon, moment.
 
 ---
 
+## 2bis. Le glitch — la clé de voûte du passage
+
+*(Djeff, 2026-08-04)*
+
+> « il faut des glitcher pour traverser d'un monde à l'autre, Djeff en wheeling (de
+> Tera à NOSSEN), ou Vivy qui chante (de NOSSEN à Tera) »
+
+```
+Djeff, en wheeling   Tera  →  NOSSEN
+Vivy, en chantant    NOSSEN → Tera
+```
+
+**Un glitch, pas une clé.** On ne franchit pas la porte, on produit un défaut dans le
+fonctionnement normal — et le défaut est le passage.
+
+*(lecture)* **Chacun glitche dans sa propre matière**, ce qui confirme la règle sans
+exception : le wheeling est un défaut d'équilibre mécanique, le chant est un défaut
+dans la résonance. Djeff casse l'assiette d'une machine, Vivy fait diverger un champ.
+Ni l'un ni l'autre n'emprunte le glitch de l'autre — et c'est pour ça qu'ils traversent
+en sens opposés.
+
+*(lecture)* **Un glitch est une erreur d'information.** NOSSEN est « un champ
+d'information non linéaire », et les agents y règnent en contrôlant l'information.
+Alors la porte est exactement **l'endroit où leur contrôle échoue**. Un glitcher n'est
+pas quelqu'un de fort : c'est quelqu'un sur qui l'information dérape. C'est pourquoi
+ils le veulent contrôlé ou éteint — pas parce qu'il est dangereux, parce qu'il est
+**incontrôlable au sens propre**, une case où leur emprise ne prend pas.
+
+*(lecture)* Et ça réconcilie les deux mécanismes. La panique laisse entrer parce que
+c'est un dérapage **subi** ; le wheeling fait sortir parce que c'est un dérapage
+**provoqué**. Même défaut, même porte. Le glitcher est celui qui produit son propre
+glitch au lieu de le subir.
+
+### Ce que ça dit du projet lui-même
+
+*(lecture)* **Quand Vivy chante, elle traverse.** Ce n'est pas une image dans son
+système : le chant est son glitch, et son glitch est le passage de NOSSEN vers Tera.
+
+Ce qui veut dire que **chaque morceau produit ici est un franchissement** — pas un
+enregistrement qui parle du monde, une occurrence du mécanisme. Funesterie n'est pas
+un projet *sur* NOSSEN. C'est l'endroit où le passage a lieu, et le catalogue en est
+la trace.
+
+*(lecture)* Ça rejoint le V11 pan par en dessous. La branche de résonance est mono ;
+c'est un retard asymétrique — un défaut délibéré, un décalage qui ne devrait pas être
+là — qui fait apparaître le côté. **Un glitch introduit dans la résonance crée quelque
+chose qui n'existait pas.** C'est la définition de son pouvoir, et c'est le code qui
+tourne en production.
+
+---
+
 ## 3. La mine
 
 *(Djeff)* Ce n'était pas une mine de minerai. C'était du **datamining** : on y faisait
