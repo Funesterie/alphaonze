@@ -34,6 +34,28 @@ const V10_BOOM_METHOD = 'v9-electrolysis-plus-axis-m-inversion-delay-boom-v10';
 const V10_BOOM_STATE = 'v10-boom-production-default';
 const V10_BOOM_PRESET = 'v10-boom-v9-electrolysis-cross-m-wet015';
 
+// Un neper exprime en dB : -20*log10(1/e). C'est le gain naturel du shelf V12,
+// et V10_CANON.grainLow (0,3695) est deja 1/e a 0,4 % pres.
+const NEPER_DB = 20 / Math.LN10;
+
+/**
+ * Bas-shelf derive du canon. Rend '' si desactive.
+ *
+ * La frequence n'est pas reglable a la main : elle vaut 1/tau, le premier zero
+ * du peigne d'inversion. La deplacer reviendrait a combler autre chose que le
+ * trou qu'on veut combler.
+ */
+function buildLowShelf(config) {
+  const gainDb = config.shelfGainDb;
+  if (!Number.isFinite(gainDb) || gainDb <= 0) return '';
+  const tauSec = Number(config.inversionDelayMs) / 1000;
+  if (!(tauSec > 0)) return '';
+  const freq = 1 / tauSec;
+  // width_type=q, q modere : un shelf trop raide sonne comme une bosse, pas
+  // comme du poids.
+  return `bass=g=${gainDb.toFixed(3)}:f=${freq.toFixed(1)}:width_type=q:width=0.5`;
+}
+
 const V10_CANON = {
   phi: 1.618033988749895,
   jhi: Math.PI / 2 - 1.618033988749895,            // -0.0472376619549983
@@ -143,6 +165,15 @@ function resolveV10BoomConfig(options = {}) {
   const boomGainDb = clampNumber(options.boomGainDb ?? process.env.VIVY_V10_BOOM_GAIN_DB, -6, 3, 2);
   const bassBandHz = clampNumber(options.bassBandHz ?? process.env.VIVY_V10_BOOM_BAND_HZ, 60, 300, 120);
   const peakLimit = clampNumber(options.peakLimit ?? process.env.VIVY_V10_BOOM_PEAK_LIMIT, 0.8, 0.99, 0.95);
+  // Bas-shelf V12. Defaut = un neper (8,686 dB), plafonne a deux nepers : au-dela
+  // le limiteur travaille en permanence et le morceau perd sa dynamique au lieu
+  // de gagner du poids. 0 desactive.
+  const shelfGainDb = clampNumber(
+    options.shelfGainDb ?? process.env.VIVY_V12_SHELF_GAIN_DB,
+    0,
+    2 * NEPER_DB,
+    NEPER_DB
+  );
   // V11 pan — 1 = image inchangee (comportement V10 d'origine).
   // VIVY_V10_BOOM_PAN_WIDTH reste lu en second : c'est le nom sous lequel la valeur
   // est partie en prod le 02/08 avant d'etre renommee, on ne veut pas la perdre.
@@ -168,6 +199,7 @@ function resolveV10BoomConfig(options = {}) {
     boomGainDb,
     bassBandHz,
     peakLimit,
+    shelfGainDb,
     panWidth,
     panSpreadMs,
     boomGain: Math.pow(10, boomGainDb / 20),
@@ -262,6 +294,28 @@ function buildV10BoomFilterGraph(config) {
   const spread = Math.round(Number(config.panSpreadMs) || 0);
   const tauG = Math.max(0, Number(tau) - spread);
   const tauD = Number(tau) + spread;
+  // Bas-shelf V12 — derive du canon, pas choisi a l'oreille.
+  //
+  // Mesure du 04/08 sur une sortie V11 : le spectre est plat. 60-90 Hz a -20,9 dB
+  // pour 300-800 Hz a -25,6 — soit 4,7 dB d'ecart la ou un morceau qui fait
+  // vibrer les vitres en demande 10 a 15. Le grave n'est pas absent, il n'est
+  // pas au-dessus.
+  //
+  // Le boom ne peut pas corriger ca : c'est une resonance, il elargit le grave,
+  // il ne lui donne pas de poids. Pire, il creuse un trou. L'inversion
+  // y(t) = x(t) - a*x(t-tau) est un peigne : crete a 1/(2*tau) = 40 Hz — la
+  // frequence canon — et PREMIER ZERO a 1/tau = 80 Hz.
+  //
+  // Le shelf est donc pose exactement sur ce zero, pour combler ce que le boom
+  // annule au lieu de rajouter du grave par-dessus du grave :
+  //
+  //   frequence = 1/tau            = 80 Hz avec tau = 12,5 ms
+  //   gain      = -20*log10(1/e)   = 8,686 dB, soit UN NEPER
+  //
+  // Le neper n'est pas arbitraire non plus : V10_CANON.grainLow vaut 0,3695,
+  // c'est-a-dire 1/e a 0,4 % pres. Le canon portait deja l'unite.
+  const shelf = buildLowShelf(config);
+
   // y(t) = x(t) - a*x(t-tau) : dry + copie retardée inversée (fermeture axe m).
   // [full] = signal complet ; [bass] = bande grave isolee ; le boom traite puis remixé à wet.
   return [
@@ -274,7 +328,8 @@ function buildV10BoomFilterGraph(config) {
     `[m]highpass=f=${config.subCapHz}[m2]`,
     `[m2]volume=${config.boomGain.toFixed(4)}${pan}[m3]`,
     `[full][m3]amix=inputs=2:duration=first:normalize=0:weights=1 ${wetW}[mix]`,
-    `[mix]alimiter=limit=${config.peakLimit.toFixed(3)}:attack=5:release=50:level=false[out]`,
+    ...(shelf ? [`[mix]${shelf}[mixb]`] : []),
+    `[${shelf ? 'mixb' : 'mix'}]alimiter=limit=${config.peakLimit.toFixed(3)}:attack=5:release=50:level=false[out]`,
   ].join(';');
 }
 
