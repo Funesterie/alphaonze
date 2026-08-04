@@ -476,6 +476,64 @@ scènes sans que ce soit la même.
 
 Les liaisons entre ces épisodes ne sont pas établies. Ne pas les inventer.
 
+---
+
+## Épisodes 1 et 2 — l'enfance de Rei 33 *(Djeff, 2026-08-04)*
+
+Premiers épisodes envisagés pour une production vidéo. Entièrement autobiographiques.
+
+### La chronologie des motos
+
+```
+1.  Cagiva 125 enduro     la jeunesse du père — la mère est sur la photo, derrière lui
+2.  Gilera GSM 50cc       offerte à Rei pour ses 14 ans — moteur RK66, celui des KTM
+3.  ( la chaîne casse en wheeling, puis la Gilera est VOLÉE )
+4.  Beta 50cc             arrive après la perte
+```
+
+*(Djeff)* La Gilera GSM n'est **pas** un AM6 — c'est un **RK66**, le moteur des KTM.
+Correction d'une supposition de ma part.
+
+### Épisode 1 — le récit du père
+
+Le père raconte sa jeunesse : la Cagiva 125 enduro. La mère ne veut pas que Rei ait
+une moto. Rei pleure à l'intérieur, travaille dur à l'école, et rêve en 50cc.
+
+*(lecture)* **La mère était sur la Cagiva.** Une photo de famille la montre assise
+derrière le père, sur la moto dont il raconte l'histoire. Son refus n'est donc pas
+de l'ignorance ni une peur vague : **c'est quelqu'un qui sait exactement ce que
+c'est.** Elle a été à cette place, elle connaît la vitesse, et c'est précisément pour
+ça qu'elle dit non.
+
+*(lecture)* Ça donne à l'épisode la scène qui lui manquait. Tel que raconté, tout est
+du récit — le père narre, le fils encaisse en silence. Mais **le père racontant devant
+la mère** est une scène : trois personnes, un souvenir que l'un célèbre et que l'autre
+a vécu autrement, et un gamin qui écoute. Personne n'a besoin de hausser le ton, et
+Rei n'a pas une réplique à dire — c'est lui qu'on regarde.
+
+*(lecture)* Et ça installe le vrai sujet de la série sans l'énoncer : **on hérite de
+ce qui a failli coûter cher.**
+
+### Épisode 2 — les 14 ans
+
+Le père demande à Rei de venir l'aider à chercher du matériel pour son travail. Il
+l'emmène au garage. C'est sa première Gilera GSM 50cc.
+
+*(lecture)* Le mensonge est banal — « viens m'aider », une corvée — et c'est ce qui
+rend le garage fort. Aucune cérémonie, aucun emballage : la surprise passe par
+l'ordinaire. Ça se tourne tel quel.
+
+*(lecture)* **Et le père offre en sachant que la mère a dit non.** Ce n'est pas
+seulement un cadeau, c'est un camp choisi. L'épisode 2 tranche ce que l'épisode 1
+laissait ouvert, et il le tranche sans un mot d'explication.
+
+### Le vol
+
+*(lecture)* La Gilera est volée après que Rei a cassé sa chaîne en wheeling. **La
+première moto ne s'use pas, elle est prise.** C'est un premier deuil, et il arrive
+juste après une figure — le geste qui, plus tard, ouvrira les portes. La série lui
+fait donc payer le wheeling avant de lui en donner le pouvoir.
+
 ### M66 — le frère *(Djeff, 2026-08-04)*
 
 > « M66 (Marvin66), le frère de Djeffrey = Rei33, qui maîtrise la gravité :
