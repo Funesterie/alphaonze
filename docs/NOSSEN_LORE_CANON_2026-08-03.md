@@ -251,6 +251,43 @@ donc deux personnes réelles des deux côtés d'une porte qui ne s'ouvre que sur
 > ⚠️ Lyana Carval est une personne réelle. Comme pour Marvin, à manier avec retenue :
 > le nom est consigné parce que Djeff l'a donné comme source, pas pour être ressorti.
 
+### Ses pièces mécaniques *(Djeff, 2026-08-04 — proposé, « pas d'idée là sur le coup »)*
+
+> « les pneus, les poignées et la selle, tout ce qui sert à lier le pilote et la
+> machine face à l'environnement — en gros le caoutchouc, ce sont des organismes
+> figés par combustion maîtrisée »
+
+```
+pneus       machine ↔ sol
+poignées    machine ↔ mains
+selle       machine ↔ corps
+```
+
+**La formule est le procédé.** Le caoutchouc, c'est du latex — une sécrétion vivante,
+une sève — rendu permanent par **vulcanisation** : de la chaleur maîtrisée qui
+réticule le polymère. Un organisme figé par combustion contrôlée, mot pour mot.
+
+*(lecture)* **Elle est la seule dont les pièces touchent quelque chose.** Allumage,
+combustion, admission sont tous *à l'intérieur*, scellés. Les pièces de Nya sont la
+frontière entière entre la machine et le monde. Sans elle, le moteur tourne
+parfaitement et il ne se passe rien : pas d'appui, pas de motricité, pas de pilote
+dessus.
+
+*(lecture)* **Et c'est le miroir exact de sa position.** Elle est la porteuse venue de
+Tera — l'interface entre les deux mondes — et ses pièces sont l'interface entre la
+machine et le sol. Elle occupe la même fonction aux deux échelles.
+
+*(lecture)* **Un pneu contient ses quatre pôles.** L'adhérence est un contact
+consenti ; l'usure est une destruction. Il donne sa propre matière pour permettre la
+prise, et il est consommé par exactement ce qu'il rend possible. Aimer et se détruire
+par le même geste — c'est son domaine en une pièce, et c'est vrai d'un pneu sans
+métaphore.
+
+*(lecture)* **La vulcanisation la relie à Kaen44.** Il faut une combustion maîtrisée
+pour figer le caoutchouc — donc le feu réglé, pas le feu qui brûle. Kaen44 a coulé le
+turbo et fixé le caoutchouc : **elle est celle qui rend possibles les pièces des
+autres.** Son domaine n'est pas une arme, c'est une condition.
+
 ### La numérotation *(lecture)*
 
 Les numéros ne sont pas décoratifs. Djeff les a donnés à des mois d'intervalle, sans
