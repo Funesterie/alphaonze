@@ -34,23 +34,43 @@ test('la config se laisse surcharger par l environnement', () => {
   const c = resolveAceStepConfig({ ACESTEP_DIFFUSION_MODEL: 'autre.safetensors', ACESTEP_STEPS: '20' });
   assert.equal(c.diffusion, 'autre.safetensors');
   assert.equal(c.steps, 20);
-  assert.match(c.textEncoder, /qwen_1\.7b/);
+  assert.match(c.textEncoder1, /qwen_0\.6b/);
+  assert.match(c.textEncoder2, /qwen_1\.7b/);
 });
 
-test('le graphe cable les noeuds lus dans ComfyUI 0.30.0', () => {
+test('le graphe suit le workflow officiel audio_ace_step_1_5_split', () => {
   const g = buildAceStepGraph({ tags: 'french rap', lyrics: 'seize mesures', duration: 30 });
 
-  assert.equal(g[2].inputs.type, 'ace', 'le CLIPLoader doit etre de type ace');
+  assert.equal(g[2].class_type, 'DualCLIPLoader', 'ACE-Step veut DEUX encodeurs');
+  assert.equal(g[2].inputs.type, 'ace');
+  assert.ok(g[2].inputs.clip_name1 && g[2].inputs.clip_name2);
   assert.equal(g[4].class_type, 'TextEncodeAceStepAudio1.5');
   assert.equal(g[6].class_type, 'EmptyAceStep1.5LatentAudio');
   assert.equal(g[8].class_type, 'VAEDecodeAudio');
 
-  // Le cablage : encodeur -> conditioning -> sampler -> vae -> sauvegarde.
   assert.deepEqual(g[4].inputs.clip, ['2', 0]);
   assert.deepEqual(g[7].inputs.positive, ['4', 0]);
-  assert.deepEqual(g[7].inputs.negative, ['5', 0]);
   assert.deepEqual(g[8].inputs.samples, ['7', 0]);
   assert.deepEqual(g[9].inputs.audio, ['8', 0]);
+});
+
+test('le modele passe par ModelSamplingAuraFlow avant le sampler', () => {
+  // Sans ce patch le sampler recoit un modele non prepare. Il est dans tous les
+  // workflows officiels ACE-Step 1.5, jamais optionnel.
+  const g = buildAceStepGraph({});
+  assert.equal(g[10].class_type, 'ModelSamplingAuraFlow');
+  assert.deepEqual(g[10].inputs.model, ['1', 0]);
+  assert.deepEqual(g[7].inputs.model, ['10', 0], 'le sampler doit lire le modele patche, pas le brut');
+  assert.equal(g[10].inputs.shift, 3);
+});
+
+test('le turbo tourne en 8 pas et cfg 1', () => {
+  // Valeurs du workflow officiel. Monter degrade au lieu d ameliorer.
+  const g = buildAceStepGraph({});
+  assert.equal(g[7].inputs.steps, 8);
+  assert.equal(g[7].inputs.cfg, 1);
+  assert.equal(g[7].inputs.sampler_name, 'euler');
+  assert.equal(g[7].inputs.scheduler, 'simple');
 });
 
 test('le francais est la langue par defaut', () => {
@@ -60,12 +80,16 @@ test('le francais est la langue par defaut', () => {
   assert.equal(buildAceStepGraph({ language: 'en' })[4].inputs.language, 'en');
 });
 
-test('le negatif ne porte ni paroles ni codes audio', () => {
-  // Sinon on genere un second morceau au lieu de decrire ce qu on evite.
+test('le negatif est un ConditioningZeroOut, pas un second encodage', () => {
+  // Regression reelle : un TextEncode avec generate_audio_codes=false rend une
+  // conditioning dont le tenseur est None. Le sampler tombe alors sur
+  // « NoneType has no attribute shape » vingt lignes plus bas, sans aucun
+  // rapport apparent avec la cause. Le workflow officiel met la positive a zero.
   const g = buildAceStepGraph({ lyrics: 'du texte', negative: 'saturation' });
-  assert.equal(g[5].inputs.lyrics, '');
-  assert.equal(g[5].inputs.tags, 'saturation');
-  assert.equal(g[5].inputs.generate_audio_codes, false);
+
+  assert.equal(g[5].class_type, 'ConditioningZeroOut');
+  assert.deepEqual(g[5].inputs.conditioning, ['4', 0]);
+  assert.deepEqual(g[7].inputs.negative, ['5', 0]);
   assert.equal(g[4].inputs.generate_audio_codes, true);
 });
 

@@ -17,23 +17,37 @@ const { createComfyClient, isComfyEnabled, resolveComfyBaseUrl } = require('../v
 
 const NOEUDS = {
   unet: 'UNETLoader',
-  clip: 'CLIPLoader',
+  clip: 'DualCLIPLoader',
   vae: 'VAELoader',
   encode: 'TextEncodeAceStepAudio1.5',
   latent: 'EmptyAceStep1.5LatentAudio',
+  patchModele: 'ModelSamplingAuraFlow',
+  zeroOut: 'ConditioningZeroOut',
   sampler: 'KSampler',
   decode: 'VAEDecodeAudio',
-  save: 'SaveAudio',
+  save: 'SaveAudioMP3',
 };
 
+// Valeurs relevees sur le workflow officiel livre avec ComfyUI 0.30.0 :
+// templates/audio_ace_step_1_5_split.json. Trois d'entre elles ne se devinent
+// pas et ma premiere version echouait dessus :
+//
+//   - DualCLIPLoader, pas CLIPLoader : ACE-Step veut DEUX encodeurs.
+//   - ConditioningZeroOut pour le negatif, pas un second encodage. Un
+//     TextEncode avec generate_audio_codes=false rend une conditioning dont le
+//     tenseur est None, et le sampler tombe sur « NoneType has no attribute
+//     shape » vingt lignes plus bas, sans rapport apparent avec la cause.
+//   - ModelSamplingAuraFlow(shift=3) entre le modele et le sampler.
 const DEFAUTS = {
   diffusion: 'acestep_v1.5_turbo.safetensors',
-  textEncoder: 'qwen_1.7b_ace15.safetensors',
+  textEncoder1: 'qwen_0.6b_ace15.safetensors',
+  textEncoder2: 'qwen_1.7b_ace15.safetensors',
   vae: 'ace_1.5_vae.safetensors',
-  // Le turbo est entraine pour peu de pas ; monter au-dessus coute du temps
-  // sans rien apporter.
-  steps: 12,
-  cfg: 2.0,
+  // Le turbo est entraine pour huit pas et un cfg de 1 ; monter coute du temps
+  // et degrade le resultat au lieu de l'ameliorer.
+  steps: 8,
+  cfg: 1,
+  shift: 3,
   sampler: 'euler',
   scheduler: 'simple',
   bpm: 90,
@@ -55,10 +69,12 @@ function resolveAceStepConfig(env = process.env) {
   return {
     baseUrl: resolveComfyBaseUrl(env),
     diffusion: lireEnv(env, 'ACESTEP_DIFFUSION_MODEL') || DEFAUTS.diffusion,
-    textEncoder: lireEnv(env, 'ACESTEP_TEXT_ENCODER') || DEFAUTS.textEncoder,
+    textEncoder1: lireEnv(env, 'ACESTEP_TEXT_ENCODER_1') || DEFAUTS.textEncoder1,
+    textEncoder2: lireEnv(env, 'ACESTEP_TEXT_ENCODER_2') || DEFAUTS.textEncoder2,
     vae: lireEnv(env, 'ACESTEP_VAE') || DEFAUTS.vae,
     steps: Number(lireEnv(env, 'ACESTEP_STEPS')) || DEFAUTS.steps,
     cfg: Number(lireEnv(env, 'ACESTEP_CFG')) || DEFAUTS.cfg,
+    shift: Number(lireEnv(env, 'ACESTEP_SHIFT')) || DEFAUTS.shift,
   };
 }
 
@@ -109,20 +125,22 @@ function buildAceStepGraph(demande = {}, config = resolveAceStepConfig()) {
 
   return {
     1: { class_type: NOEUDS.unet, inputs: { unet_name: config.diffusion, weight_dtype: 'default' } },
-    2: { class_type: NOEUDS.clip, inputs: { clip_name: config.textEncoder, type: 'ace' } },
+    2: {
+      class_type: NOEUDS.clip,
+      inputs: { clip_name1: config.textEncoder1, clip_name2: config.textEncoder2, type: 'ace', device: 'default' },
+    },
     3: { class_type: NOEUDS.vae, inputs: { vae_name: config.vae } },
     4: { class_type: NOEUDS.encode, inputs: { clip: ['2', 0], tags, lyrics, ...commun } },
-    // Le negatif partage la meme structure mais sans paroles ni tags : c'est ce
-    // que le modele doit s'eloigner, pas un second morceau.
-    5: {
-      class_type: NOEUDS.encode,
-      inputs: { clip: ['2', 0], tags: String(demande.negative || ''), lyrics: '', ...commun, generate_audio_codes: false },
-    },
+    // Le negatif est la conditioning positive mise a zero, pas un second
+    // encodage : c'est ce que fait le workflow officiel, et c'est la seule
+    // forme qui donne un tenseur exploitable au sampler.
+    5: { class_type: NOEUDS.zeroOut, inputs: { conditioning: ['4', 0] } },
     6: { class_type: NOEUDS.latent, inputs: { seconds: commun.duration, batch_size: 1 } },
+    10: { class_type: NOEUDS.patchModele, inputs: { model: ['1', 0], shift: config.shift } },
     7: {
       class_type: NOEUDS.sampler,
       inputs: {
-        model: ['1', 0],
+        model: ['10', 0],
         positive: ['4', 0],
         negative: ['5', 0],
         latent_image: ['6', 0],
@@ -135,7 +153,10 @@ function buildAceStepGraph(demande = {}, config = resolveAceStepConfig()) {
       },
     },
     8: { class_type: NOEUDS.decode, inputs: { samples: ['7', 0], vae: ['3', 0] } },
-    9: { class_type: NOEUDS.save, inputs: { audio: ['8', 0], filename_prefix: String(demande.prefix || 'funesterie/acestep') } },
+    9: {
+      class_type: NOEUDS.save,
+      inputs: { audio: ['8', 0], filename_prefix: String(demande.prefix || 'funesterie/acestep'), quality: 'V0' },
+    },
   };
 }
 
