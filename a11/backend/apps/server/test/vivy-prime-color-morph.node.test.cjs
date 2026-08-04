@@ -81,3 +81,80 @@ test('la derivation reste disponible et deterministe', () => {
   assert.equal(a.color.name, b.color.name);
   assert.equal(a.chosenBy, 'derive');
 });
+
+// --- Cube trinaire ------------------------------------------------------------
+
+const {
+  buildCubeMorph,
+  cheminTrinaire,
+  enTrinaire,
+  hexDepuisTrits,
+  NIVEAUX_CUBE,
+} = require('../src/music/vivy-prime-color.cjs');
+
+test('le cube n a que trois niveaux par canal — d ou le trinaire', () => {
+  assert.deepEqual(NIVEAUX_CUBE, [0x0a, 0x4a, 0x8a]);
+  const niveaux = new Set();
+  for (const c of describeSonicPalette()) {
+    const t = enTrinaire(paletteAvecTeinteReelle().find((p) => p.name === c.name).hex);
+    t.trits.forEach((v) => niveaux.add(v));
+  }
+  assert.deepEqual([...niveaux].sort(), [0, 1, 2]);
+});
+
+test('chaque couleur est un nombre a trois chiffres en base 3', () => {
+  const t = enTrinaire('0x0a4a8a');
+  assert.deepEqual(t.trits, [0, 1, 2]);
+  assert.equal(t.base3, '012');
+  assert.equal(t.rang, 5); // 0*9 + 1*3 + 2
+  assert.equal(t.position, 'arete');
+
+  assert.equal(enTrinaire('0x8a0a0a').position, 'coin');
+  assert.equal(enTrinaire('0x4a4a4a').position, 'centre');
+  assert.equal(enTrinaire('0x4a4a4a').rang, 13); // le milieu exact de 0..26
+});
+
+test('hexDepuisTrits fait l aller-retour', () => {
+  for (const trits of [[0, 0, 0], [1, 2, 0], [2, 2, 2]]) {
+    assert.deepEqual(enTrinaire(hexDepuisTrits(trits)).trits, trits);
+  }
+});
+
+test('le chemin trinaire ne bouge qu un seul trit par pas', () => {
+  const pas = cheminTrinaire([0, 1, 2], [2, 2, 0]);
+  assert.deepEqual(pas[0].trits, [0, 1, 2]);
+  assert.deepEqual(pas[pas.length - 1].trits, [2, 2, 0]);
+
+  for (let i = 1; i < pas.length; i += 1) {
+    const diff = pas[i].trits.filter((t, k) => t !== pas[i - 1].trits[k]).length;
+    assert.equal(diff, 1, `pas ${i} change ${diff} trits au lieu d un`);
+  }
+});
+
+test('chaque etape est un point reel du treillis, pas un fondu', () => {
+  for (const p of cheminTrinaire([0, 0, 0], [2, 2, 2])) {
+    assert.ok(p.trits.every((t) => [0, 1, 2].includes(t)));
+    assert.match(p.hex, /^0x[0-9a-f]{6}$/);
+  }
+});
+
+test('le morphing cube traverse l interieur au lieu de longer le bord', () => {
+  const m = buildCubeMorph('NOSSEN', { stops: ['DeepBlue', 'BloodRed', 'DORE'] });
+  assert.equal(m.chosenBy, 'vivy');
+  assert.equal(m.sections.length, 5);
+  // Le chemin doit passer par au moins un point qui n'est pas un coin :
+  // c'est precisement ce que le morphing circulaire ne pouvait pas faire.
+  assert.ok(m.chemin.some((p) => enTrinaire(p.hex).position !== 'coin'));
+  assert.equal(m.sections[0].nom, 'DeepBlue');
+});
+
+test('un seul arret ne fait pas un morphing — repli annonce', () => {
+  const m = buildCubeMorph('NOSSEN', { stops: ['DORE'] });
+  assert.equal(m.chosenBy, 'derive');
+  assert.equal(m.sections.length, 0);
+});
+
+test('les couleurs hors palette sont signalees ici aussi', () => {
+  const m = buildCubeMorph('x', { stops: ['Cyan', 'PasUneCouleur', 'DORE'] });
+  assert.deepEqual(m.couleursInconnues, ['PasUneCouleur']);
+});

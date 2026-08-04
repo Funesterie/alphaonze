@@ -381,7 +381,158 @@ function buildSonicMorph(matiere, choix = {}) {
   };
 }
 
+// --- Le cube trinaire ---------------------------------------------------------
+//
+// Djeff, 2026-08-04 : « il faut un morphing cube » puis « en trinaire ».
+//
+// La palette n'est pas un cercle de teintes : c'est un treillis 3x3x3. Chaque
+// canal ne prend que trois valeurs — 0x0a, 0x4a, 0x8a — donc chaque couleur est
+// un nombre a trois chiffres en BASE 3, et le cube compte 27 etats.
+//
+// Morpher sur le cercle des teintes ne longeait que le bord. Morpher dans le cube
+// permet de traverser, et morpher EN TRINAIRE rend le chemin discret : chaque pas
+// change un seul trit, donc chaque etape est un point reel du treillis — une vraie
+// couleur, pas un fondu entre deux.
+
+const NIVEAUX_CUBE = [0x0a, 0x4a, 0x8a];
+
+function tritDepuisNiveau(v) {
+  let meilleur = 0;
+  let ecartMin = Infinity;
+  NIVEAUX_CUBE.forEach((niveau, i) => {
+    const ecart = Math.abs(niveau - v);
+    if (ecart < ecartMin) { ecartMin = ecart; meilleur = i; }
+  });
+  return meilleur;
+}
+
+/**
+ * Coordonnees trinaires d'une couleur : [r, g, b] dans {0,1,2}, plus son rang
+ * 0..26 dans le cube et sa position (coin, arete, face, centre).
+ */
+function enTrinaire(hex = '') {
+  const rgb = hexVersRgb(hex);
+  if (!rgb) return null;
+  const trits = [tritDepuisNiveau(rgb.r), tritDepuisNiveau(rgb.g), tritDepuisNiveau(rgb.b)];
+  const rang = trits[0] * 9 + trits[1] * 3 + trits[2];
+  const extremes = trits.filter((t) => t !== 1).length;
+  const position = ['centre', 'face', 'arete', 'coin'][extremes];
+  return { trits, rang, position, base3: trits.join('') };
+}
+
+function hexDepuisTrits(trits = [0, 0, 0]) {
+  const [r, g, b] = trits.map((t) => NIVEAUX_CUBE[Math.min(2, Math.max(0, t))]);
+  return `0x${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+}
+
+function nommerTrits(trits) {
+  const cible = trits.join('');
+  const trouve = listerPalette().find((c) => {
+    const t = enTrinaire(c.hex);
+    return t && t.trits.join('') === cible;
+  });
+  return trouve ? trouve.name : null;
+}
+
+/**
+ * Chemin trinaire entre deux couleurs : un seul trit change par pas. Le canal qui
+ * a le plus grand ecart bouge en premier, ce qui fait entendre le grand
+ * mouvement avant les retouches.
+ */
+function cheminTrinaire(depart = [0, 0, 0], arrivee = [0, 0, 0]) {
+  const courant = [...depart];
+  const pas = [{ trits: [...courant], hex: hexDepuisTrits(courant), nom: nommerTrits(courant) }];
+  for (;;) {
+    const ecarts = courant.map((t, i) => Math.abs(arrivee[i] - t));
+    const total = ecarts.reduce((a, b) => a + b, 0);
+    if (!total) break;
+    let canal = 0;
+    let max = -1;
+    ecarts.forEach((e, i) => { if (e > max) { max = e; canal = i; } });
+    courant[canal] += arrivee[canal] > courant[canal] ? 1 : -1;
+    pas.push({ trits: [...courant], hex: hexDepuisTrits(courant), nom: nommerTrits(courant) });
+  }
+  return pas;
+}
+
+/**
+ * Morphing dans le cube trinaire, reparti sur les sections du morceau.
+ *
+ * @param {string} matiere
+ * @param {{ stops?: string[], sections?: string[] }} [choix]
+ */
+function buildCubeMorph(matiere, choix = {}) {
+  const palette = listerPalette();
+  const base = deriveSonicSignature(matiere, choix);
+  const inconnues = [];
+
+  const arrets = (Array.isArray(choix.stops) ? choix.stops : [])
+    .map((nom) => {
+      const trouve = palette.find((c) => String(c.name).toLowerCase() === String(nom).trim().toLowerCase());
+      if (!trouve) { if (String(nom).trim()) inconnues.push(String(nom).trim()); return null; }
+      return { name: trouve.name, ...enTrinaire(trouve.hex) };
+    })
+    .filter(Boolean);
+
+  if (arrets.length < 2) {
+    const seule = base.color ? { name: base.color.name, ...enTrinaire(base.color.hex) } : null;
+    return {
+      seed: base.seed,
+      chemin: seule ? [seule] : [],
+      sections: [],
+      chosenBy: 'derive',
+      couleursInconnues: inconnues,
+      line: base.line,
+    };
+  }
+
+  // Chaine les segments, sans repeter le point de jonction.
+  const chemin = [];
+  for (let i = 0; i < arrets.length - 1; i += 1) {
+    const segment = cheminTrinaire(arrets[i].trits, arrets[i + 1].trits);
+    chemin.push(...(i === 0 ? segment : segment.slice(1)));
+  }
+
+  const sections = Array.isArray(choix.sections) && choix.sections.length
+    ? choix.sections.map((s) => String(s).trim()).filter(Boolean)
+    : SECTIONS_PAR_DEFAUT;
+
+  const echantillons = sections.map((nom, i) => {
+    const t = sections.length > 1 ? i / (sections.length - 1) : 0;
+    const pas = chemin[Math.min(chemin.length - 1, Math.round(t * (chemin.length - 1)))];
+    const info = enTrinaire(pas.hex);
+    return {
+      section: nom,
+      at: t,
+      trits: pas.trits,
+      base3: info.base3,
+      rang: info.rang,
+      position: info.position,
+      hex: pas.hex,
+      nom: pas.nom,
+    };
+  });
+
+  const line = echantillons
+    .map((e) => `${e.section}: ${e.nom ? e.nom.toLowerCase() : e.base3} [${e.base3}]`)
+    .join(' -> ');
+
+  return {
+    seed: base.seed,
+    chemin,
+    sections: echantillons,
+    chosenBy: 'vivy',
+    couleursInconnues: inconnues,
+    line,
+  };
+}
+
 module.exports = {
+  NIVEAUX_CUBE,
+  buildCubeMorph,
+  cheminTrinaire,
+  enTrinaire,
+  hexDepuisTrits,
   buildSonicMorph,
   chooseSonicSignature,
   describeSonicPalette,
