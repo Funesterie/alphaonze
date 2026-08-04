@@ -111,3 +111,7 @@ secrets/funesterie-crypto/neo4j_config.json
 .tmp-*
 out.mp3
 .mcp.json
+
+# Encrypted env files
+*.env.enc
+*.env.bak
