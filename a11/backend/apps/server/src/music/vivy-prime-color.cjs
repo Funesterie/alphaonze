@@ -410,14 +410,42 @@ function tritDepuisNiveau(v) {
  * Coordonnees trinaires d'une couleur : [r, g, b] dans {0,1,2}, plus son rang
  * 0..26 dans le cube et sa position (coin, arete, face, centre).
  */
+// Djeff, 2026-08-04 : « c est 8 4 2 par bit ».
+//
+// Deux lectures des memes trits, et elles ne font pas le meme travail :
+//
+//   rang  = 9/3/1  adresse.  Bijective, 27 etats distincts, dit LAQUELLE.
+//   poids = 8/4/2  masse.    15 valeurs seulement, dit COMBIEN.
+//
+// Le poids n est donc pas une adresse ratee : c est une ponderation de mixage —
+// R compte 8, G compte 4, B compte 2 — et deux couleurs ont le droit d y peser
+// pareil. Dans la palette : ToxicGreen = Violet (10), PurpleShadow = Cyan (12),
+// FireOrange = Magenta (20).
+const POIDS_CANAUX = [8, 4, 2];
+
 function enTrinaire(hex = '') {
   const rgb = hexVersRgb(hex);
   if (!rgb) return null;
   const trits = [tritDepuisNiveau(rgb.r), tritDepuisNiveau(rgb.g), tritDepuisNiveau(rgb.b)];
   const rang = trits[0] * 9 + trits[1] * 3 + trits[2];
+  const poids = trits.reduce((total, t, i) => total + t * POIDS_CANAUX[i], 0);
   const extremes = trits.filter((t) => t !== 1).length;
   const position = ['centre', 'face', 'arete', 'coin'][extremes];
-  return { trits, rang, position, base3: trits.join('') };
+  return { trits, rang, poids, position, base3: trits.join('') };
+}
+
+/**
+ * Les couleurs de meme masse. Sert a substituer sans changer l equilibre du mix.
+ */
+function memePoids(hex = '') {
+  const cible = enTrinaire(hex);
+  if (!cible) return [];
+  return listerPalette()
+    .filter((c) => {
+      const t = enTrinaire(c.hex);
+      return t && t.poids === cible.poids && t.rang !== cible.rang;
+    })
+    .map((c) => c.name);
 }
 
 function hexDepuisTrits(trits = [0, 0, 0]) {
@@ -529,7 +557,9 @@ function buildCubeMorph(matiere, choix = {}) {
 
 module.exports = {
   NIVEAUX_CUBE,
+  POIDS_CANAUX,
   buildCubeMorph,
+  memePoids,
   cheminTrinaire,
   enTrinaire,
   hexDepuisTrits,

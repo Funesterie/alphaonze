@@ -158,3 +158,27 @@ test('les couleurs hors palette sont signalees ici aussi', () => {
   const m = buildCubeMorph('x', { stops: ['Cyan', 'PasUneCouleur', 'DORE'] });
   assert.deepEqual(m.couleursInconnues, ['PasUneCouleur']);
 });
+
+test('8/4/2 pese, 9/3/1 adresse — les deux coexistent', () => {
+  // Djeff : « c est 8 4 2 par bit ». Ce n est pas une adresse ratee, c est une
+  // ponderation de mixage : deux couleurs ont le droit d y peser pareil.
+  const { memePoids, POIDS_CANAUX } = require('../src/music/vivy-prime-color.cjs');
+  assert.deepEqual(POIDS_CANAUX, [8, 4, 2]);
+
+  const plein = enTrinaire('0x8a8a8a');
+  assert.equal(plein.rang, 26);   // adresse : 2*9 + 2*3 + 2
+  assert.equal(plein.poids, 28);  // masse   : 2*8 + 2*4 + 2*2
+
+  // Les trois paires de meme masse dans la palette.
+  assert.deepEqual(memePoids('0x0a8a4a'), ['Violet']);       // ToxicGreen
+  assert.deepEqual(memePoids('0x8a4a0a'), ['Magenta']);      // FireOrange
+  assert.equal(memePoids('0x8a8a0a').length, 0);             // DORE est seule
+});
+
+test('l adresse reste unique la ou la masse ne l est pas', () => {
+  const palette = paletteAvecTeinteReelle();
+  const rangs = palette.map((c) => enTrinaire(c.hex).rang);
+  const poids = palette.map((c) => enTrinaire(c.hex).poids);
+  assert.equal(new Set(rangs).size, palette.length, 'deux couleurs partagent une adresse');
+  assert.ok(new Set(poids).size < palette.length, 'aucune masse partagee, la ponderation ne sert a rien');
+});
