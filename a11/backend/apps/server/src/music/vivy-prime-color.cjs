@@ -169,10 +169,224 @@ function deriveSonicSignature(matiere, options = {}) {
     .filter(Boolean)
     .join(', ');
 
-  return { seed, s, normalized, color: couleur, texture, mouvement, line };
+  return { seed, s, normalized, color: couleur, texture, mouvement, line, chosenBy: 'derive' };
+}
+
+// --- Choix, plutot que derivation ---------------------------------------------
+//
+// Djeff, 2026-08-04 : « c est au LLM (ou Vivy) de choisir le style, la couleur
+// sonore de la chanson, avant ou apres avoir fait les paroles ».
+//
+// deriveSonicSignature() reste utile comme repli — elle est deterministe, donc
+// reproductible. Mais un hachage ne CHOISIT rien : le meme theme rendra toujours
+// la meme couleur, et Vivy n a pas voix au chapitre.
+//
+// On garde la palette comme vocabulaire contraint — c est ce qui maintient la
+// couleur dans le canon Pulsar — et on laisse le choix a l interieur. Ni hachage,
+// ni invention libre : une carte a douze entrees dans laquelle on pointe.
+
+/**
+ * Le menu a presenter au modele. Douze couleurs, leur fonction et leur gamma.
+ */
+function describeSonicPalette() {
+  return listerPalette().map((c) => ({
+    name: c.name,
+    hue: c.hue,
+    gamma: c.gamma,
+    fonction: c.function,
+    complement: c.complement,
+  }));
+}
+
+function trouverCouleur(nom = '') {
+  const cible = String(nom || '').trim().toLowerCase();
+  if (!cible) return null;
+  return listerPalette().find((c) => String(c.name).toLowerCase() === cible) || null;
+}
+
+/**
+ * Signature d'un morceau dont la couleur, la texture et le mouvement peuvent
+ * avoir ete choisis. Tout champ absent retombe sur la derivation.
+ *
+ * @param {string} matiere
+ * @param {{ color?: string, texture?: string, mouvement?: string, ceiling?: number }} [choix]
+ */
+function chooseSonicSignature(matiere, choix = {}) {
+  const base = deriveSonicSignature(matiere, choix);
+  const couleurChoisie = trouverCouleur(choix.color);
+
+  // Un nom de couleur hors palette n'est pas silencieusement ignore : on le
+  // signale, sinon une faute de frappe ferait croire au choix pendant des mois.
+  const couleurInconnue = Boolean(String(choix.color || '').trim()) && !couleurChoisie;
+
+  const texture = String(choix.texture || '').trim() || base.texture;
+  const mouvement = String(choix.mouvement || '').trim() || base.mouvement;
+  const couleur = couleurChoisie || base.color;
+
+  const line = [texture, mouvement, couleur ? `poids ${couleur.name.toLowerCase()}` : '']
+    .filter(Boolean)
+    .join(', ');
+
+  const choisi = Boolean(couleurChoisie) || texture !== base.texture || mouvement !== base.mouvement;
+
+  return {
+    ...base,
+    color: couleur,
+    texture,
+    mouvement,
+    line,
+    chosenBy: choisi ? 'vivy' : 'derive',
+    couleurInconnue: couleurInconnue ? String(choix.color).trim() : null,
+  };
+}
+
+// --- Morphing -----------------------------------------------------------------
+//
+// Djeff, 2026-08-04 : « c est du morphing qu il faut la, pas une couleur fixe ».
+//
+// Un morceau a une trajectoire : il ne reste pas sur un timbre du debut a la fin.
+// On decrit donc la couleur sonore comme un CHEMIN — des arrets poses le long du
+// morceau, et une interpolation entre eux.
+//
+// Piege : le champ `hue` de la palette est faux sur 4 entrees sur 10 (releve du
+// 02/08). Interpoler dessus ferait tourner le morphing dans le mauvais sens. La
+// teinte est donc recalculee depuis le hex, qui lui est exact.
+
+function hexVersRgb(hex = '') {
+  const n = parseInt(String(hex).replace(/^0x/i, ''), 16);
+  if (!Number.isFinite(n)) return null;
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+function teinteDepuisHex(hex = '') {
+  const rgb = hexVersRgb(hex);
+  if (!rgb) return null;
+  const r = rgb.r / 255;
+  const g = rgb.g / 255;
+  const b = rgb.b / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  if (d === 0) return 0;
+  let h;
+  if (max === r) h = ((g - b) / d) % 6;
+  else if (max === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  h *= 60;
+  return h < 0 ? h + 360 : h;
+}
+
+/**
+ * Palette augmentee : teinte recalculee, et l'ecart avec le champ declare.
+ */
+function paletteAvecTeinteReelle() {
+  return listerPalette().map((c) => {
+    const reelle = teinteDepuisHex(c.hex);
+    const declaree = Number(c.hue);
+    return {
+      ...c,
+      hueReelle: reelle,
+      hueDeclaree: Number.isFinite(declaree) ? declaree : null,
+      hueFausse: Number.isFinite(declaree) && reelle !== null
+        ? Math.abs(((reelle - declaree + 540) % 360) - 180) > 1
+        : false,
+    };
+  });
+}
+
+// Plus court chemin sur le cercle : on tourne dans le sens qui coute le moins.
+function interpolerTeinte(a, b, t) {
+  let ecart = ((b - a + 540) % 360) - 180;
+  return ((a + ecart * t) % 360 + 360) % 360;
+}
+
+const SECTIONS_PAR_DEFAUT = ['intro', 'couplet', 'refrain', 'pont', 'outro'];
+
+/**
+ * Construit un morphing de couleur sonore le long du morceau.
+ *
+ * @param {string} matiere
+ * @param {{ stops?: Array<string|{color:string, at?:number}>, sections?: string[], ceiling?: number }} [choix]
+ */
+function buildSonicMorph(matiere, choix = {}) {
+  const palette = paletteAvecTeinteReelle();
+  const base = deriveSonicSignature(matiere, choix);
+
+  const bruts = Array.isArray(choix.stops) ? choix.stops : [];
+  const arrets = [];
+  const inconnues = [];
+
+  bruts.forEach((entree, index) => {
+    const nom = typeof entree === 'string' ? entree : String(entree?.color || '');
+    const trouve = palette.find((c) => String(c.name).toLowerCase() === nom.trim().toLowerCase());
+    if (!trouve) { if (nom.trim()) inconnues.push(nom.trim()); return; }
+    const at = typeof entree === 'object' && Number.isFinite(Number(entree.at))
+      ? Math.min(1, Math.max(0, Number(entree.at)))
+      : (bruts.length > 1 ? index / (bruts.length - 1) : 0);
+    arrets.push({ color: trouve, at });
+  });
+
+  arrets.sort((a, b) => a.at - b.at);
+
+  // Sans arret utilisable, le morphing degenere en couleur fixe derivee : c'est
+  // le repli, et il est signale comme tel plutot que presente comme un choix.
+  if (!arrets.length) {
+    const seule = palette.find((c) => c.name === base.color?.name) || null;
+    return {
+      seed: base.seed,
+      stops: seule ? [{ color: seule, at: 0 }] : [],
+      sections: [],
+      chosenBy: 'derive',
+      couleursInconnues: inconnues,
+      line: base.line,
+    };
+  }
+
+  const sections = Array.isArray(choix.sections) && choix.sections.length
+    ? choix.sections.map((s) => String(s).trim()).filter(Boolean)
+    : SECTIONS_PAR_DEFAUT;
+
+  const echantillons = sections.map((nom, i) => {
+    const t = sections.length > 1 ? i / (sections.length - 1) : 0;
+    let avant = arrets[0];
+    let apres = arrets[arrets.length - 1];
+    for (let k = 0; k < arrets.length - 1; k += 1) {
+      if (t >= arrets[k].at && t <= arrets[k + 1].at) { avant = arrets[k]; apres = arrets[k + 1]; break; }
+    }
+    const portee = apres.at - avant.at;
+    const local = portee > 0 ? (t - avant.at) / portee : 0;
+    const teinte = interpolerTeinte(avant.color.hueReelle ?? 0, apres.color.hueReelle ?? 0, local);
+    const gamma = Number(avant.color.gamma) + (Number(apres.color.gamma) - Number(avant.color.gamma)) * local;
+    return {
+      section: nom,
+      at: t,
+      hue: Math.round(teinte),
+      gamma: Number(gamma.toFixed(3)),
+      entre: [avant.color.name, apres.color.name],
+      dominante: local < 0.5 ? avant.color.name : apres.color.name,
+    };
+  });
+
+  const line = echantillons
+    .map((e) => `${e.section}: ${e.dominante.toLowerCase()} (${e.hue}deg)`)
+    .join(' -> ');
+
+  return {
+    seed: base.seed,
+    stops: arrets,
+    sections: echantillons,
+    chosenBy: 'vivy',
+    couleursInconnues: inconnues,
+    line,
+  };
 }
 
 module.exports = {
+  buildSonicMorph,
+  chooseSonicSignature,
+  describeSonicPalette,
+  paletteAvecTeinteReelle,
+  teinteDepuisHex,
   GRILLE,
   PIVOT,
   T_LINEAR,
