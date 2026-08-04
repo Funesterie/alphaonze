@@ -14,16 +14,78 @@ quelqu'un raconter.
 
 ---
 
+## Le visage de Rei — évolution voulue, dérive interdite
+
+*(Djeff, 2026-08-04)* « Rei évolue au fil du manga donc sa tête changera forcément,
+légèrement mais un peu. »
+
+**Ça ne relâche pas la contrainte, ça la déplace.** Il faut distinguer deux choses que
+la production confond toujours :
+
+```
+évolution   entre les eras       voulue, écrite, contrôlée      → un visage de référence PAR era
+dérive      dans une même scène  le modèle qui oublie           → interdite, elle casse le plan
+```
+
+Un visage qui change entre l'épisode 1 et l'épisode 5, c'est le personnage qui
+grandit. Un visage qui change entre le plan 4 et le plan 9 de la même soirée, c'est
+un défaut — le spectateur ne lit pas « il a mûri », il lit « ce n'est pas le même
+gosse ».
+
+**Donc : une fiche visage par era, pas une pour la série.** Et l'épisode 1 (12 ans) et
+l'épisode 2 (14 ans) sont déjà deux eras — deux ans à cet âge-là, c'est un autre
+visage. Ça tombe bien : ça veut dire deux jeux de références, pas un seul à tenir sur
+des années.
+
+*(lecture, à valider)* Le pouvoir de Rei est de **surévoluer**. Si son visage change
+visiblement d'un arc à l'autre, ce n'est pas un artefact à cacher : c'est la trace
+visible de son pouvoir. Ce que toute autre production devrait dissimuler, celle-ci
+peut le montrer. À manier avec parcimonie — l'idée est bonne tant qu'elle reste
+implicite.
+
+---
+
+## MiniMax H3 — ce que ça change
+
+D'après l'annonce Comfy du 03/08 : open source, texte+image → vidéo, **jusqu'à 15 s
+par clip**, 2K, son stéréo natif, **choix de la première ET de la dernière image**,
+référence vidéo, retouche de plan directe, et ça tourne sur une RTX 3060 via ComfyUI.
+
+**La fonction qui compte est le couple première/dernière image.** Elle déplace le
+problème de constance du modèle vidéo vers le modèle d'image — là où tu contrôles
+l'identité par références. Le plan de production devient :
+
+```
+1.  fiche visage de l'era          (images fixes, identité verrouillée)
+2.  keyframes début + fin par plan (image, identité déjà tenue)
+3.  H3 interpole entre les deux    (le mouvement, pas l'identité)
+```
+
+Conséquence directe : **la colonne B devient beaucoup plus atteignable**, parce que
+le visage n'est plus « inventé » par le modèle vidéo — il est donné aux deux bouts.
+
+Et 15 s par clip veut dire que les plans de 4-8 s de ce découpage passent
+confortablement, avec de la marge pour des plans plus longs si tu veux respirer.
+
+*Le son stéréo natif est à ignorer ici : les voix off et le 2-temps viennent de la
+chaîne existante, qui est meilleure et que tu contrôles.*
+
 ## Le test décisif — à faire avant de produire un seul plan
 
+Révisé pour H3 :
+
 ```
-1.  le même visage de garçon de 12 ans, sur 3 plans différents, 3 angles
-2.  une Cagiva WMX 125 blanche/bleue/rouge reconnaissable de profil
+1.  fiche visage « Rei 12 ans » : 3 images fixes, 3 angles, même garçon
+2.  un plan H3 avec première et dernière image imposées — le visage tient-il
+    entre les deux bouts, ou dérive-t-il au milieu ?
+3.  une Cagiva WMX 125 blanche/bleue/rouge reconnaissable de profil
 ```
 
-Résultat 1 → décide colonne A ou B.
-Résultat 2 → décide si la moto est montrée entière, ou seulement par morceaux
-(réservoir, roue, guidon), ce qui est de toute façon plus beau.
+Test 1 échoue → colonne A, et on ne discute plus.
+Test 2 échoue → plans courts (4 s), le milieu n'a pas le temps de dériver.
+Test 2 passe → colonne B ouverte, et le découpage peut respirer.
+Test 3 → décide si la moto est montrée entière ou par morceaux (réservoir, roue,
+guidon), ce qui est de toute façon plus beau.
 
 Le module `a11-director-motorcycle-domain.cjs` connaît maintenant les deux motos :
 lui passer « Cagiva WMX 125 1985 » ou « Gilera GSM 2001 » injecte les bonnes
@@ -224,14 +286,19 @@ Le son s'éloigne. La fenêtre reste vide.
 
 ## Ce qu'il faut produire, dans l'ordre
 
-1. **Le test de constance** (visage ×3, Cagiva ×1) — décide A ou B plan par plan.
-2. **Les voix off** — 6 répliques au total, dont 4 pour le père. Le catalogue de
-   voix et la chaîne Suno sont déjà en place.
-3. **Le son du 2-temps** — `Démarrage Spitro SLK.mp4` fournit déjà le plan 1, et
-   `wheeliiing betaaaaaa.mp4` a 79 s de moteur en charge pour les plans 17-20.
-4. **Les images-clés** — un keyframe par plan, avec le module moto pour les 5 et 22.
-5. **L'animation** — image-to-video plan par plan.
-6. **Le montage** — ffmpeg, la chaîne existe déjà.
+1. **La fiche visage « Rei 12 ans »** — 3 images fixes, 3 angles. C'est l'actif le
+   plus important de tout l'épisode : tout le reste en dépend, et elle se réutilise
+   sur chaque plan.
+2. **Le test H3 première/dernière image** — décide A ou B, et la durée des plans.
+3. **Les voix off** — 6 répliques, dont 4 pour le père. Catalogue de voix et chaîne
+   Suno déjà en place.
+4. **Le son du 2-temps** — `Démarrage Spitro SLK.mp4` fournit le plan 1 tel quel, et
+   `wheeliiing betaaaaaa.mp4` a 79 s de moteur en charge pour les plans 17-20, dont
+   un régime stable à ~145 Hz.
+5. **Les keyframes début+fin par plan** — avec le module moto pour les plans 5 et 22.
+6. **H3 plan par plan**, puis montage ffmpeg — la chaîne existe déjà.
 
-**Aucun fournisseur vidéo n'est branché dans le dépôt.** C'est le seul verrou
-technique restant : dire lequel, et le câbler.
+**Le seul verrou restant est le branchement.** Rien dans le dépôt ne parle à H3 : ni
+provider vidéo, ni client ComfyUI. Deux voies possibles — l'API cloud Comfy, ou un
+ComfyUI local piloté par son API HTTP. La seconde ne coûte rien par plan et garde
+tout sur la machine, ce qui compte quand on itère plan par plan.
