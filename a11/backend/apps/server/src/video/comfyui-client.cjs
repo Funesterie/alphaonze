@@ -33,6 +33,7 @@ function createComfyClient(options = {}) {
   const pollMs = Number(options.pollMs) || DEFAULT_POLL_MS;
   const timeoutMs = Number(options.timeoutMs) || DEFAULT_TIMEOUT_MS;
   const clientId = String(options.clientId || 'funesterie-a11');
+  const jeton = String(options.token || env.COMFYUI_TUNNEL_TOKEN || '').trim();
   const now = options.now || (() => Date.now());
 
   if (typeof doFetch !== 'function') {
@@ -40,7 +41,13 @@ function createComfyClient(options = {}) {
   }
 
   async function requete(chemin, init = {}) {
-    const reponse = await doFetch(`${baseUrl}${chemin}`, init);
+    // Jeton du portier. En local il n'y en a pas — on parle a ComfyUI en direct.
+    // Des que l'URL passe par le tunnel, le portier l'exige sur CHAQUE requete,
+    // et sans lui tout repond 401.
+    const entetes = jeton
+      ? { ...(init.headers || {}), authorization: `Bearer ${jeton}` }
+      : init.headers;
+    const reponse = await doFetch(`${baseUrl}${chemin}`, entetes ? { ...init, headers: entetes } : init);
     if (!reponse || reponse.ok !== true) {
       const statut = reponse ? reponse.status : 'sans reponse';
       throw new Error(`comfyui ${chemin} a repondu ${statut}`);

@@ -128,6 +128,39 @@ test('waitFor abandonne au bout du delai imparti', async () => {
   assert.match(r.raison, /delai depasse/);
 });
 
+test('le jeton du portier est porte sur chaque requete', async () => {
+  // Sans lui, tout appel passant par le tunnel repond 401 — et le portier a ete
+  // ecrit AVANT que le client sache l envoyer. C est le genre de trou qui ne se
+  // voit qu en production.
+  const vus = [];
+  const client = createComfyClient({
+    env: { COMFYUI_TUNNEL_TOKEN: 'jeton-porte-par-le-client-1234' },
+    fetch: async (url, init = {}) => {
+      vus.push(init.headers || {});
+      return { ok: true, status: 200, json: async () => ({ devices: [{}], system: {} }) };
+    },
+  });
+
+  await client.health();
+  assert.equal(vus.length, 1);
+  assert.equal(vus[0].authorization, 'Bearer jeton-porte-par-le-client-1234');
+});
+
+test('sans jeton configure, aucune entete d autorisation n est ajoutee', async () => {
+  // En local on parle a ComfyUI en direct : un Bearer vide vaut mieux ne pas exister.
+  const vus = [];
+  const client = createComfyClient({
+    env: {},
+    fetch: async (url, init = {}) => {
+      vus.push(init.headers);
+      return { ok: true, status: 200, json: async () => ({ devices: [{}], system: {} }) };
+    },
+  });
+
+  await client.health();
+  assert.ok(!vus[0] || !vus[0].authorization);
+});
+
 test('firstOutputFile trouve la sortie quel que soit le noeud et le type', () => {
   const client = createComfyClient({ fetch: async () => ({ ok: true, json: async () => ({}) }) });
   assert.equal(client.firstOutputFile({ 12: { images: [{ filename: 'a.png' }] } }).kind, 'images');
