@@ -949,6 +949,39 @@ A = intensité / priorité / certitude
 une relation entière : deux nœuds et le lien entre eux, avec sa certitude. C'est
 l'atome à partir duquel un graphe — donc un monde — se reconstruit.
 
+### Le cube est soustractif — et le turbo est un axe *(Djeff, 2026-08-04)*
+
+> « l'opposé de petrol c'est translucide, c'est 0.0.0 je crois »
+
+**Vérifié, et ça va plus loin que la question.** La palette est un treillis 3×3×3 :
+trois niveaux par canal (`0x0a`, `0x4a`, `0x8a`), donc chaque couleur est un nombre
+à trois chiffres en base 3, et le cube compte 27 états.
+
+Lu en **soustractif** — l'encre, pas la lumière — `000` est l'absence totale de
+pigment, donc **translucide**. C'est aussi le zéro des deux échelles à la fois
+(rang 0, poids 0) : le seul état minimal partout. **Il est absent de la palette.**
+
+Le complément, dans ce cube, est l'**inversion trit à trit**. Confirmé exactement sur
+`Cyan(022) ↔ BloodRed(200)`, dans les deux sens. D'où :
+
+```
+DORE          220
+Noir-Pétrole  002  =  0x0a0a8a     absent de la palette
+```
+
+`002` = zéro encre rouge, zéro verte, encre bleue au maximum : le bleu-noir du
+pétrole. **Le nom décrit sa position.** Djeff l'avait nommé sans l'avoir situé.
+
+*(lecture)* **Le turbo est donc un axe du cube, pas un accord de couleurs.** « Petrol
+golden » = `002` et `220`, les deux bouts d'une même diagonale. Une couleur et son
+inverse exact, fondues dans une pièce. Ce qui donne son sens à la fonction que la
+palette attribuait déjà à DORE : *blindage alchimique*.
+
+*(constat technique)* Le champ `complement` de la palette est un relevé **imparfait**
+d'une règle exacte : il tombe juste sur Cyan/BloodRed, à un trit près sur Indigo, et
+à côté sur DeepBlue et FireOrange. Même défaut que le champ `hue`, faux 4 fois sur 10.
+**La géométrie est fiable, les étiquettes ont dérivé** — se fier au cube, pas aux noms.
+
 *(lecture)* En français **nœud = node**. « Le nœud de l'espoir » et ce pixel sont le
 même mot, et le récit fait revenir Rei par l'objet exact que Djeff s'est fait donner
 dans la vraie vie.
