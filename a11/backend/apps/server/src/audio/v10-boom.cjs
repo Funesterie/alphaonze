@@ -27,6 +27,7 @@ const {
   V11_PAN_SPREAD_MAX_MS,
   V11_PAN_SPREAD_MS,
   V11_PAN_WIDTH,
+  T_LINEAR,
 } = require('./double-harmonic-d40.cjs');
 
 const V10_BOOM_SCHEMA = 'funesterie.audio.double-harmonic-boom-d40.v10';
@@ -34,9 +35,24 @@ const V10_BOOM_METHOD = 'v9-electrolysis-plus-axis-m-inversion-delay-boom-v10';
 const V10_BOOM_STATE = 'v10-boom-production-default';
 const V10_BOOM_PRESET = 'v10-boom-v9-electrolysis-cross-m-wet015';
 
-// Un neper exprime en dB : -20*log10(1/e). C'est le gain naturel du shelf V12,
-// et V10_CANON.grainLow (0,3695) est deja 1/e a 0,4 % pres.
-const NEPER_DB = 20 / Math.LN10;
+// Gain du shelf V12, tire de T_LINEAR : -20*log10(0,3695) = 8,648 dB.
+//
+// CORRECTION du 04/08, relevee par Djeff. J'avais d'abord ecrit ce gain comme
+// « un neper » en justifiant que V10_CANON.grainLow (0,3694777) valait 1/e a
+// 0,4 % pres. C'est faux, et le canon le dit deja :
+//
+//   grainLow vs T_LINEAR (0,3695)   0,006 %   <- le meme nombre, arrondi
+//   grainLow vs 1/e      (0,367879) 0,43 %    <- 70 fois plus loin
+//
+// grainLow EST T_LINEAR. Et double-harmonic-d40.cjs definit ONE_OVER_E comme une
+// constante SEPAREE : le canon distingue explicitement les deux, et la confusion
+// que j'ai faite est celle contre laquelle vivy-prime-color.cjs met deja en garde
+// (« T_linear est explicitement un coefficient spectral linearise, PAS mg_phase »).
+//
+// L'ecart audible entre les deux lectures est de 0,038 dB — rien. Mais T_LINEAR
+// est un coefficient SPECTRAL, et le shelf est une operation spectrale : ce n'est
+// pas seulement la valeur honnete, c'est la bonne raison.
+const SHELF_GAIN_DB = -20 * Math.log10(T_LINEAR);
 
 /**
  * Bas-shelf derive du canon. Rend '' si desactive.
@@ -65,7 +81,7 @@ const V10_CANON = {
   get mgPhase() { return 9 - (2 * this.t1) / Math.PI; }, // 0.001554497790530303
   target0005Pi: 0.0005 * Math.PI,                   // 0.0015707963267948967
   S: 40.0005 * Math.PI,                             // ~= 125.6699 (grille cycle)
-  grainLow: 0.3694777356929151,                     // ~= 1/e
+  grainLow: 0.3694777356929151,                     // = T_LINEAR arrondi, PAS 1/e (ecart 0,43 %)
   // balance_RH(t) = 1 - 2|phase - 1/2| : 1 au centre (ligne critique), 0 aux bords.
   balanceRh(phase) { return 1 - 2 * Math.abs(Number(phase || 0) - 0.5); },
   // Carte orientée canon (transmis par Djeff/ChatGPT 2026-07-30) : croix DIAGONALE, pas
@@ -171,8 +187,8 @@ function resolveV10BoomConfig(options = {}) {
   const shelfGainDb = clampNumber(
     options.shelfGainDb ?? process.env.VIVY_V12_SHELF_GAIN_DB,
     0,
-    2 * NEPER_DB,
-    NEPER_DB
+    2 * SHELF_GAIN_DB,
+    SHELF_GAIN_DB
   );
   // V11 pan — 1 = image inchangee (comportement V10 d'origine).
   // VIVY_V10_BOOM_PAN_WIDTH reste lu en second : c'est le nom sous lequel la valeur
@@ -482,6 +498,7 @@ module.exports = {
   V10_CANON,
   V11_PAN_SCHEMA,
   V11_PAN_WIDTH,
+  T_LINEAR,
   resolveV10BoomConfig,
   buildV10BoomPlan,
   buildV10BoomFilterGraph,
