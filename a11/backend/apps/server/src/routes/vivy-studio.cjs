@@ -9442,11 +9442,62 @@ function buildVivyMp3RepairArgs(inputPath, outputPath) {
   ];
 }
 
-function buildVivyMusicMasterArgs(inputPath, outputPath) {
-  const targetI = cleanOneLine(process.env.VIVY_MUSIC_MASTER_LUFS, '-14', 12);
-  const targetTp = cleanOneLine(process.env.VIVY_MUSIC_MASTER_TP, '-1.5', 12);
-  const targetLra = cleanOneLine(process.env.VIVY_MUSIC_MASTER_LRA, '9', 12);
-  const limiterValue = Math.max(0.8, Math.min(0.95, Number(process.env.VIVY_MUSIC_MASTER_LIMIT || 0.84) || 0.84));
+function resolveVivyMusicMasterConfig(env = process.env) {
+  const bounded = (value, min, max, fallback) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? Math.max(min, Math.min(max, numeric)) : fallback;
+  };
+  return {
+    targetI: bounded(env.VIVY_MUSIC_MASTER_LUFS, -24, -8, -14),
+    targetTp: bounded(env.VIVY_MUSIC_MASTER_TP, -3, -0.5, -1.5),
+    targetLra: bounded(env.VIVY_MUSIC_MASTER_LRA, 1, 20, 9),
+    // 0,80 ~= -1,94 dBFS : l'overshoot inter-echantillon du MP3 reste alors
+    // proche du plafond -1,5 dBTP, au lieu de remonter vers -1 dBTP.
+    limiterValue: bounded(env.VIVY_MUSIC_MASTER_LIMIT, 0.75, 0.95, 0.8),
+  };
+}
+
+function buildVivyMusicLoudnormAnalysisArgs(inputPath, config = resolveVivyMusicMasterConfig()) {
+  return [
+    '-hide_banner',
+    '-nostats',
+    '-i', inputPath,
+    '-map', '0:a:0',
+    '-vn',
+    '-sn',
+    '-dn',
+    '-af', `highpass=f=35,loudnorm=I=${config.targetI}:TP=${config.targetTp}:LRA=${config.targetLra}:print_format=json`,
+    '-f', 'null',
+    '-',
+  ];
+}
+
+function parseVivyMusicLoudnormAnalysis(stderr = '') {
+  const matches = [...String(stderr || '').matchAll(/\{\s*"input_i"[\s\S]*?\}/g)];
+  if (!matches.length) return null;
+  try {
+    const parsed = JSON.parse(matches.at(-1)[0]);
+    const numeric = (key) => {
+      const value = Number(parsed[key]);
+      return Number.isFinite(value) ? value : null;
+    };
+    const analysis = {
+      inputI: numeric('input_i'),
+      inputTp: numeric('input_tp'),
+      inputLra: numeric('input_lra'),
+      inputThresh: numeric('input_thresh'),
+      targetOffset: numeric('target_offset'),
+    };
+    return Object.values(analysis).every(Number.isFinite) ? analysis : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildVivyMusicMasterArgs(inputPath, outputPath, analysis = null, config = resolveVivyMusicMasterConfig()) {
+  const measured = analysis && Object.values(analysis).every(Number.isFinite)
+    ? `:measured_I=${analysis.inputI}:measured_TP=${analysis.inputTp}:measured_LRA=${analysis.inputLra}:measured_thresh=${analysis.inputThresh}:offset=${analysis.targetOffset}:linear=true`
+    : '';
   return [
     '-y',
     '-hide_banner',
@@ -9457,7 +9508,7 @@ function buildVivyMusicMasterArgs(inputPath, outputPath) {
     '-sn',
     '-dn',
     '-map_metadata', '-1',
-    '-af', `highpass=f=35,loudnorm=I=${targetI}:TP=${targetTp}:LRA=${targetLra},alimiter=limit=${limiterValue.toFixed(3)}:level=false`,
+    '-af', `highpass=f=35,loudnorm=I=${config.targetI}:TP=${config.targetTp}:LRA=${config.targetLra}${measured},alimiter=limit=${config.limiterValue.toFixed(3)}:level=false`,
     '-ac', '2',
     '-ar', '44100',
     '-c:a', 'libmp3lame',
@@ -9517,7 +9568,14 @@ async function masterVivyMusicFile(filePath, options = {}) {
   const runFfmpeg = options.runFfmpeg || runVivyFfmpeg;
   try {
     const originalSize = fs.statSync(targetPath).size;
-    await runFfmpeg(buildVivyMusicMasterArgs(targetPath, tempPath), {
+    const config = resolveVivyMusicMasterConfig();
+    const probe = await runFfmpeg(buildVivyMusicLoudnormAnalysisArgs(targetPath, config), {
+      timeoutMs: options.timeoutMs || process.env.VIVY_MUSIC_MASTER_TIMEOUT_MS || 180000,
+      errorCode: 'vivy_music_master_analysis_failed',
+      ffmpegBin: options.ffmpegBin,
+    });
+    const analysis = parseVivyMusicLoudnormAnalysis(probe?.stderr);
+    await runFfmpeg(buildVivyMusicMasterArgs(targetPath, tempPath, analysis, config), {
       timeoutMs: options.timeoutMs || process.env.VIVY_MUSIC_MASTER_TIMEOUT_MS || 180000,
       errorCode: 'vivy_music_master_failed',
       ffmpegBin: options.ffmpegBin,
@@ -9532,9 +9590,10 @@ async function masterVivyMusicFile(filePath, options = {}) {
       ok: true,
       originalSize,
       masteredSize,
-      targetLufs: cleanOneLine(process.env.VIVY_MUSIC_MASTER_LUFS, '-14', 12),
-      truePeak: cleanOneLine(process.env.VIVY_MUSIC_MASTER_TP, '-1.5', 12),
-      lra: cleanOneLine(process.env.VIVY_MUSIC_MASTER_LRA, '9', 12),
+      targetLufs: config.targetI,
+      truePeak: config.targetTp,
+      lra: config.targetLra,
+      twoPass: Boolean(analysis),
     };
   } catch (error) {
     try { fs.rmSync(tempPath, { force: true }); } catch (_) {}
@@ -9612,20 +9671,28 @@ async function saveVivyMusicBuffer(buffer, input = {}, req = null) {
   let mastering;
   try {
     fs.writeFileSync(sourcePath, buffer);
-    await runVivyFfmpeg(buildVivyMusicMasterArgs(sourcePath, filePath), {
+    const config = resolveVivyMusicMasterConfig();
+    const probe = await runVivyFfmpeg(buildVivyMusicLoudnormAnalysisArgs(sourcePath, config), {
+      timeoutMs: process.env.VIVY_MUSIC_MASTER_TIMEOUT_MS || 180000,
+      errorCode: 'vivy_music_master_analysis_failed',
+    });
+    const analysis = parseVivyMusicLoudnormAnalysis(probe?.stderr);
+    await runVivyFfmpeg(buildVivyMusicMasterArgs(sourcePath, filePath, analysis, config), {
       timeoutMs: process.env.VIVY_MUSIC_MASTER_TIMEOUT_MS || 180000,
       errorCode: 'vivy_music_master_failed',
     });
     if (!fs.existsSync(filePath) || fs.statSync(filePath).size <= 0) throw new Error('vivy_music_master_empty_output');
     mastering = {
       ok: true,
+      // Une analyse loudnorm plus un rendu, mais toujours un seul encodage MP3.
       singlePass: true,
       sourceFormat: sourceExtension.slice(1),
       originalSize: buffer.length,
       masteredSize: fs.statSync(filePath).size,
-      targetLufs: cleanOneLine(process.env.VIVY_MUSIC_MASTER_LUFS, '-14', 12),
-      truePeak: cleanOneLine(process.env.VIVY_MUSIC_MASTER_TP, '-1.5', 12),
-      lra: cleanOneLine(process.env.VIVY_MUSIC_MASTER_LRA, '9', 12),
+      targetLufs: config.targetI,
+      truePeak: config.targetTp,
+      lra: config.targetLra,
+      twoPass: Boolean(analysis),
     };
   } catch (error) {
     try { fs.rmSync(filePath, { force: true }); } catch (_) {}
@@ -12415,6 +12482,9 @@ module.exports = {
   buildVivyAceStepTags,
   prepareVivyAceStepLyrics,
   buildVivyMusicMasterArgs,
+  buildVivyMusicLoudnormAnalysisArgs,
+  parseVivyMusicLoudnormAnalysis,
+  resolveVivyMusicMasterConfig,
   extractSunoMedia,
   extractSunoMediaWithAudio,
   selectVivySunoDirectorTrackWithAudio,
