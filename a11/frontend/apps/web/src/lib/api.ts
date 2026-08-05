@@ -1579,6 +1579,7 @@ export type McpAccountProfile = {
   pricing?: {
     monthlyEur?: number | null;
     publicLabel?: string;
+    intervalLabel?: string;
   };
   features?: string[];
   user?: {
@@ -1602,6 +1603,7 @@ export type McpAccessTierCard = {
   pricing?: {
     monthlyEur?: number | null;
     publicLabel?: string;
+    intervalLabel?: string;
   };
   features?: string[];
 };
@@ -2212,6 +2214,7 @@ export type TtsVoiceReference = {
     rawAudioPublic?: boolean;
     ownerRetainsRights?: boolean;
     consentedAt?: string | null;
+    personaExpiredAt?: string | null;
   } | null;
   mimeType?: string | null;
   originalName?: string | null;
@@ -2641,6 +2644,10 @@ export type DoubleHarmonicOutputFormat = 'source' | 'flac' | 'mp3' | 'm4a' | 'wa
 
 export type DoubleHarmonicProcessResult = {
   ok: boolean;
+  jobId?: string;
+  status?: string;
+  statusUrl?: string;
+  pollIntervalMs?: number;
   id?: string;
   method?: string;
   state?: string;
@@ -2731,6 +2738,13 @@ export type DoubleHarmonicProcessResult = {
     };
   };
   message?: string;
+  quota?: {
+    scope?: string;
+    period?: string;
+    used?: number;
+    limit?: number;
+    remaining?: number;
+  };
 };
 
 export async function processDoubleHarmonicAudio(
@@ -2863,6 +2877,30 @@ export async function processDoubleHarmonicAudio(
     body: form,
   });
   const payload = await res.json().catch(() => ({}));
+  if (requestedMode === 'v10boom' && res.status === 202 && payload?.jobId && payload?.statusUrl) {
+    const startedAt = Date.now();
+    const maxWaitMs = 30 * 60 * 1000;
+    const pollIntervalMs = Math.max(500, Math.min(10_000, Number(payload.pollIntervalMs || 1500)));
+    while (Date.now() - startedAt < maxWaitMs) {
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+      const pollRes = await authFetch(getApiUrl(String(payload.statusUrl)), {
+        method: 'GET',
+        headers: buildAuthHeaders(),
+        credentials: 'include',
+      });
+      const job = await pollRes.json().catch(() => ({}));
+      if (!pollRes.ok) {
+        throw new Error(job?.message || job?.error || `Statut V11Pan indisponible (${pollRes.status})`);
+      }
+      if (job?.status === 'done' && job?.result?.ok !== false) {
+        return job.result as DoubleHarmonicProcessResult;
+      }
+      if (job?.status === 'failed' || job?.status === 'cancelled') {
+        throw new Error(job?.message || job?.error || `Traitement V11Pan ${job?.status}`);
+      }
+    }
+    throw new Error('Le traitement V11Pan dépasse 30 minutes. Le job continue côté serveur.');
+  }
   if (!res.ok || payload?.ok === false) {
     throw new Error(payload?.message || payload?.error || `Traitement D40 impossible (${res.status})`);
   }

@@ -2002,6 +2002,7 @@ fi
 read_first_env_value() {
   awk -v k="$1" -F= '$1 == k { sub(/^[^=]*=/, ""); print; exit }' "$compose_env" "$a11_env" "$build_env" 2>/dev/null || true
 }
+scentgate_signal_secret="$(read_first_env_value A11_SCENTGATE_SIGNAL_SECRET)"
 suno_voice_id="$(read_first_env_value VIVY_SUNO_VOICE_ID)"
 suno_djeff_voice_id="$(read_first_env_value VIVY_SUNO_DJEFF_VOICE_ID)"
 [ -n "$suno_djeff_voice_id" ] || suno_djeff_voice_id="$(read_first_env_value SUNO_DJEFF_VOICE_ID)"
@@ -2248,6 +2249,12 @@ if ! grep -q '^VIVY_STREAM_SECRET=' "$compose_env"; then
     vivy_stream_secret="$(openssl rand -hex 32)"
   fi
   printf 'VIVY_STREAM_SECRET=%s\n' "$vivy_stream_secret" >> "$compose_env"
+fi
+if ! grep -q '^A11_SCENTGATE_SIGNAL_SECRET=' "$compose_env"; then
+  if [ -z "$scentgate_signal_secret" ]; then
+    scentgate_signal_secret="$(openssl rand -hex 32)"
+  fi
+  printf 'A11_SCENTGATE_SIGNAL_SECRET=%s\n' "$scentgate_signal_secret" >> "$compose_env"
 fi
 if [ -s "$preserved_env" ]; then
   while IFS= read -r line; do

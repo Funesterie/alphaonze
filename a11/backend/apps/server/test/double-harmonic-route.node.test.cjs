@@ -2175,6 +2175,7 @@ test('double harmonic route exposes V10 Boom after the V9 Electrolyse base', asy
   const app = express();
   app.use('/api/double-harmonic', createDoubleHarmonicRouter({
     runtimeRoot,
+    scentGateSignalSecret: 'test-scent-gate-secret-32-bytes-minimum',
     processV10BoomD40: async ({ outputPath, profile, analysisOptions, boomOptions }) => {
       calls.push({ profile, analysisOptions, boomOptions });
       fs.writeFileSync(outputPath, Buffer.from('processed v10 boom mp3'));
@@ -2229,8 +2230,31 @@ test('double harmonic route exposes V10 Boom after the V9 Electrolyse base', asy
       method: 'POST',
       body: form,
     });
-    const payload = await res.json();
-    assert.equal(res.status, 200);
+    const accepted = await res.json();
+    assert.equal(res.status, 202);
+    assert.equal(accepted.status, 'queued');
+    assert.match(accepted.statusUrl, /^\/api\/double-harmonic\/v10boom\/jobs\/v11pan_/);
+    assert.equal(accepted.quota.limit, 3);
+    let job = null;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const statusRes = await fetch(`${baseUrl}${accepted.statusUrl}`);
+      job = await statusRes.json();
+      if (job.status === 'done' || job.status === 'failed') break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(job.status, 'done');
+    assert.equal(job.scentGateSignal.payload.type, 'job.completed');
+    assert.equal(job.scentGateSignal.payload.issuer, 'a11-v11pan');
+    assert.match(job.scentGateSignal.payload.audience, /^account:[a-f0-9]{24}$/);
+    const { verifyScentGateSignal } = await import('@nossen/scentgate');
+    assert.deepEqual(
+      verifyScentGateSignal(job.scentGateSignal, {
+        secret: 'test-scent-gate-secret-32-bytes-minimum',
+        expectedAudience: job.scentGateSignal.payload.audience,
+      }).ok,
+      true
+    );
+    const payload = job.result;
     assert.equal(payload.ok, true);
     assert.equal(payload.method, V10_BOOM_METHOD);
     assert.equal(payload.state, V10_BOOM_STATE);

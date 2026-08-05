@@ -637,7 +637,9 @@ test('POST /api/llm/chat queues an async image job when requested and exposes a 
       assert.equal(second.json.asyncJob?.jobId, first.json.asyncJob?.jobId);
 
       let polled = null;
-      for (let attempt = 0; attempt < 500; attempt += 1) {
+      // La suite complete lance plusieurs tests audio/video lourds en parallele.
+      // Laisse 20 s au job asynchrone afin de tester le contrat, pas la charge CI.
+      for (let attempt = 0; attempt < 1000; attempt += 1) {
         polled = await getJson(
           baseUrl,
           `/api/llm/jobs/image/${encodeURIComponent(first.json.asyncJob.jobId)}`,
@@ -743,7 +745,7 @@ test('POST /api/llm/chat carries previous vision analysis into async image gener
       assert.equal(queued.json.mode, 'generate_image_async');
 
       let polled = null;
-      for (let attempt = 0; attempt < 500; attempt += 1) {
+      for (let attempt = 0; attempt < 1000; attempt += 1) {
         polled = await getJson(
           baseUrl,
           `/api/llm/jobs/image/${encodeURIComponent(queued.json.asyncJob.jobId)}`,
@@ -841,7 +843,7 @@ test('POST /api/llm/chat treats image clarification answers as async image conti
       assert.equal(proxyCalls, 0);
 
       let polled = null;
-      for (let attempt = 0; attempt < 500; attempt += 1) {
+      for (let attempt = 0; attempt < 1000; attempt += 1) {
         polled = await getJson(
           baseUrl,
           `/api/llm/jobs/image/${encodeURIComponent(queued.json.asyncJob.jobId)}`,

@@ -4196,7 +4196,8 @@ test('Vivy NOSSEN automatically extends short Suno songs before D40', () => {
   assert.match(appSource, /payload\?\.id\s*\|\|\s*payload\?\.audioId\s*\|\|\s*payload\?\.audio_id/);
   assert.match(appSource, /payload\?\.durationSeconds\s*\?\?\s*payload\?\.duration/);
   assert.match(launchBlock, /musicProvider:\s*selectedMusicProvider/);
-  assert.match(launchBlock, /musicModel:\s*selectedMusicProvider === ["']mureka["'] \? ["']mureka-9["'] : VIVY_NOSSEN_SUNO_LONG_MODEL/);
+  assert.match(launchBlock, /selectedMusicProvider === ["']mureka["']\s*\?\s*["']mureka-9["']/);
+  assert.match(launchBlock, /selectedMusicProvider === ["']acestep["']\s*\?\s*undefined\s*:\s*VIVY_NOSSEN_SUNO_LONG_MODEL/);
   assert.match(launchBlock, /longSong:\s*true/);
   assert.match(launchBlock, /targetDurationSeconds:\s*VIVY_NOSSEN_SUNO_TARGET_SECONDS/);
   assert.match(launchBlock, /selectedMusicProvider === ["']suno["'] && extensionIndex <= VIVY_NOSSEN_SUNO_MAX_EXTENSIONS/);

@@ -97,3 +97,22 @@ test('le fair-use des ressources a cle user est distinct du quota LLM', () => {
     'Suno tourne sur la cle de l utilisateur: son quota ne doit pas suivre celui du LLM',
   );
 });
+
+test('V11Pan réserve un quota durable par compte: 3 basic, 50 premium, 300 founder', async () => {
+  const quota = freshModule();
+  assert.equal(quota.getTierUsageQuota(TIERS.BASIC).v11PanJobsPerAccount, 3);
+  assert.equal(quota.getTierUsageQuota(TIERS.PREMIUM).v11PanJobsPerAccount, 50);
+  assert.equal(quota.getTierUsageQuota(TIERS.FOUNDER).v11PanJobsPerAccount, 300);
+
+  const user = { id: 'v11pan-basic-test' };
+  for (let index = 1; index <= 3; index += 1) {
+    const reserved = await quota.reserveV11PanUsage({ user, tier: TIERS.BASIC });
+    assert.equal(reserved.ok, true);
+    assert.equal(reserved.used, index);
+    assert.equal(reserved.period, 'account');
+  }
+  const blocked = await quota.reserveV11PanUsage({ user, tier: TIERS.BASIC });
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.used, 3);
+  assert.equal(blocked.remaining, 0);
+});

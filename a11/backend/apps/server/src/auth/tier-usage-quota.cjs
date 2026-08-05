@@ -35,24 +35,28 @@ const TIER_USAGE_QUOTA = Object.freeze({
     defaultLlmMessagesPerDay: 5,        // basic = surtout lecture seule (MCP public)
     sunoFairUsePerDay: 0,               // pas de Suno (permission false en basic)
     imageFairUsePerDay: 0,
+    v11PanJobsPerAccount: 3,
     storageBytes: 1 * 1024 * 1024 * 1024,
   }),
   [TIERS.PREMIUM]: Object.freeze({
     defaultLlmMessagesPerDay: 20,       // LLM par defaut (Ollama Cloud) cappe
     sunoFairUsePerDay: 30,              // cle user: anti-abus seulement
     imageFairUsePerDay: 50,
+    v11PanJobsPerAccount: 50,
     storageBytes: 10 * 1024 * 1024 * 1024,
   }),
   [TIERS.FOUNDER]: Object.freeze({
     defaultLlmMessagesPerDay: 60,       // si le fondateur n'apporte pas de cle LLM ; sinon ~0 (sa cle)
     sunoFairUsePerDay: 100,
     imageFairUsePerDay: 200,
+    v11PanJobsPerAccount: 300,
     storageBytes: 10 * 1024 * 1024 * 1024,
   }),
   [TIERS.ADMIN_FAMILY]: Object.freeze({
     defaultLlmMessagesPerDay: Infinity,
     sunoFairUsePerDay: Infinity,
     imageFairUsePerDay: Infinity,
+    v11PanJobsPerAccount: Infinity,
     storageBytes: Infinity,
   }),
 });
@@ -61,6 +65,8 @@ const TIER_USAGE_QUOTA = Object.freeze({
 // la date dans la cle. Suffisant pour un anti-deficit v1 ; pour le billing precis,
 // passer en Postgres (table usage_counters).
 const _daily = new Map();
+const _account = new Map();
+const _initializedQuotaDbs = new WeakSet();
 const _DAY_KEY = () => new Date().toISOString().slice(0, 10);
 function _counterKey(scope, userId) {
   return scope + '|' + String(userId || 'anon') + '|' + _DAY_KEY();
@@ -113,13 +119,83 @@ function recordFairUse(scope, user) {
   _bumpCounter(scope, user?.id || user?.email);
 }
 
+function accountIdentity(user = {}) {
+  return String(user?.id || user?.email || user?.username || '').trim().toLowerCase();
+}
+
+async function ensureAccountQuotaTable(db) {
+  if (!db || typeof db.query !== 'function' || _initializedQuotaDbs.has(db)) return;
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS account_feature_usage (
+      user_id TEXT NOT NULL,
+      feature TEXT NOT NULL,
+      used_count INTEGER NOT NULL DEFAULT 0 CHECK (used_count >= 0),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, feature)
+    )
+  `);
+  _initializedQuotaDbs.add(db);
+}
+
+/**
+ * Reserve atomiquement une utilisation V11Pan pour toute la vie du compte.
+ * En production le compteur est durable dans Postgres. Le fallback mémoire ne sert
+ * qu'aux tests et au développement local sans DATABASE_URL.
+ */
+async function reserveV11PanUsage({ db = null, user = {}, tier = TIERS.BASIC } = {}) {
+  const limit = Number(getTierUsageQuota(tier).v11PanJobsPerAccount);
+  const userId = accountIdentity(user);
+  if (!userId) {
+    return { ok: false, used: 0, limit, remaining: limit, scope: 'v11pan', period: 'account', error: 'account_identity_missing' };
+  }
+  if (!Number.isFinite(limit)) {
+    return { ok: true, used: 0, limit: Infinity, remaining: Infinity, scope: 'v11pan', period: 'account' };
+  }
+
+  if (!db || typeof db.query !== 'function') {
+    const key = `v11pan|${userId}`;
+    const used = Number(_account.get(key) || 0);
+    if (used >= limit) {
+      return { ok: false, used, limit, remaining: 0, scope: 'v11pan', period: 'account' };
+    }
+    const nextUsed = used + 1;
+    _account.set(key, nextUsed);
+    return { ok: true, used: nextUsed, limit, remaining: Math.max(0, limit - nextUsed), scope: 'v11pan', period: 'account' };
+  }
+
+  await ensureAccountQuotaTable(db);
+  const reserved = await db.query(`
+    INSERT INTO account_feature_usage (user_id, feature, used_count)
+    VALUES ($1, 'v11pan', 1)
+    ON CONFLICT (user_id, feature) DO UPDATE
+      SET used_count = account_feature_usage.used_count + 1,
+          updated_at = NOW()
+      WHERE account_feature_usage.used_count < $2
+    RETURNING used_count
+  `, [userId, limit]);
+  const nextUsed = Number(reserved?.rows?.[0]?.used_count || 0);
+  if (nextUsed > 0) {
+    return { ok: true, used: nextUsed, limit, remaining: Math.max(0, limit - nextUsed), scope: 'v11pan', period: 'account' };
+  }
+  const current = await db.query(
+    "SELECT used_count FROM account_feature_usage WHERE user_id = $1 AND feature = 'v11pan' LIMIT 1",
+    [userId]
+  );
+  const used = Number(current?.rows?.[0]?.used_count || limit);
+  return { ok: false, used, limit, remaining: 0, scope: 'v11pan', period: 'account' };
+}
+
 function buildQuotaExceededResponse(check, upgradeUrl) {
+  const isAccountQuota = check?.period === 'account';
   return {
     ok: false,
     error: 'quota_exceeded',
     code: 'QUOTA_EXCEEDED',
-    message: 'Quota quotidien atteint pour ce tier. Reviens demain ou passe au tier superieur.',
-    quota: { scope: check.scope, used: check.used, limit: check.limit, remaining: check.remaining },
+    message: isAccountQuota
+      ? 'Quota V11Pan du compte atteint. Passe au tier superieur pour augmenter la limite.'
+      : 'Quota quotidien atteint pour ce tier. Reviens demain ou passe au tier superieur.',
+    quota: { scope: check.scope, period: check.period || 'day', used: check.used, limit: check.limit, remaining: check.remaining },
     upgradeUrl: upgradeUrl || '/api/subscription/create-checkout',
   };
 }
@@ -142,6 +218,7 @@ module.exports = {
   recordDefaultLlmUsage,
   checkFairUseQuota,
   recordFairUse,
+  reserveV11PanUsage,
   buildQuotaExceededResponse,
   pruneCounters,
 };

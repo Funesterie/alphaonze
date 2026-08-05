@@ -66,7 +66,8 @@ test('V11 pan — l ouverture se pose avant le limiteur et se desactive propreme
   // deja present dans la source ; deux rendus sur huit sortaient a 3.6 et 4.5 d'ecart
   // milieu-cote, avec le limiteur en ecretage permanent.
   assert.match(g, /\[m2\]volume=[\d.]+,stereotools=slev=1\.500\[m3\]/, 'le pan porte sur la resonance');
-  assert.match(g, /\[mix\]alimiter=/, 'le mix complet ne doit PAS etre elargi');
+  assert.doesNotMatch(g, /\[mix(?:b)?\][^;]*stereotools=/, 'le mix complet ne doit PAS etre elargi');
+  assert.match(g, /\[mixb\]alimiter=/, 'le limiteur final reste apres le shelf de securite');
 
   // Le retard CREE le cote ; slev seul n'a rien a multiplier (la resonance est mono).
   assert.equal(parDefaut.panSpreadMs, 4);
@@ -76,7 +77,7 @@ test('V11 pan — l ouverture se pose avant le limiteur et se desactive propreme
   const neutre = buildV10BoomFilterGraph(resolveV10BoomConfig({ panWidth: 1, panSpreadMs: 0 }));
   assert.ok(!neutre.includes('stereotools'), 'panWidth=1 ne doit rien ajouter au graphe');
   assert.match(neutre, /adelay=12\|12/, 'spread=0 rend la fermeture d axe m identique');
-  assert.match(neutre, /\[mix\]alimiter=limit=0\.950/);
+  assert.match(neutre, /\[mixb\]alimiter=limit=0\.950/);
 
   // L'ecart ne peut pas depasser tau, sinon le retard gauche deviendrait negatif.
   assert.ok(resolveV10BoomConfig({ delay: 3, panSpreadMs: 8 }).panSpreadMs <= 3);

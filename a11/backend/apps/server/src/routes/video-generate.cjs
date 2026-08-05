@@ -1084,6 +1084,9 @@ function withProxyDefaults(body = {}, prompt = '') {
 
 function createVideoGenerateRouter(overrides = {}) {
   const router = express.Router();
+  const verifyJWT = typeof overrides.verifyJWT === 'function'
+    ? overrides.verifyJWT
+    : (_req, _res, next) => next();
   const localGenerateVideoInternal = overrides.generateVideo || createGenerateVideoHandler({
     generateSd: overrides.generateSd || sdToolsModule.generateImageInternal || sdToolsModule.generateSdInternal,
     fetch: overrides.fetch,
@@ -1096,6 +1099,10 @@ function createVideoGenerateRouter(overrides = {}) {
   const buildVideoPromptImpl = typeof overrides.buildVideoPrompt === 'function'
     ? overrides.buildVideoPrompt
     : buildVideoPrompt;
+
+  function videoJobOwner(user = {}) {
+    return String(user?.id || user?.email || user?.username || user?.sub || '').trim().toLowerCase();
+  }
 
   async function pollVideoProxyJob({ videoProxyUrl = '', initialPayload = {}, req = null } = {}) {
     const pollUrl = resolveProxyPollUrl(videoProxyUrl, initialPayload);
@@ -1531,6 +1538,7 @@ function createVideoGenerateRouter(overrides = {}) {
     const jobId = `vjob_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
     const job = {
       id: jobId,
+      owner: videoJobOwner(req.user),
       status: 'pending',
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -1602,7 +1610,8 @@ function createVideoGenerateRouter(overrides = {}) {
     cleanupExpiredVideoJobs();
     const jobId = String(req.params?.jobId || '').trim();
     const job = asyncVideoJobs.get(jobId);
-    if (!job) {
+    const owner = videoJobOwner(req.user);
+    if (!job || (job.owner && job.owner !== owner)) {
       return res.status(404).json({
         ok: false,
         error: 'video_job_not_found',
@@ -1613,8 +1622,8 @@ function createVideoGenerateRouter(overrides = {}) {
     return res.json(serializeAsyncVideoJob(job));
   }
 
-  router.post('/video/generate', express.json({ limit: '4mb' }), handleGenerate);
-  router.post('/tools/generate_video', express.json({ limit: '4mb' }), handleGenerate);
+  router.post('/video/generate', verifyJWT, express.json({ limit: '4mb' }), handleGenerate);
+  router.post('/tools/generate_video', verifyJWT, express.json({ limit: '4mb' }), handleGenerate);
   router.get('/video/health', (_req, res) => {
     const xaiVideoConfig = resolveXaiVideoConfig();
     const comfyCloudConfig = resolveComfyCloudVideoConfig();
@@ -1658,8 +1667,8 @@ function createVideoGenerateRouter(overrides = {}) {
       asyncJobs: asyncVideoJobs.size,
     });
   });
-  router.get('/video/jobs/:jobId', handleJobStatus);
-  router.get('/tools/video_jobs/:jobId', handleJobStatus);
+  router.get('/video/jobs/:jobId', verifyJWT, handleJobStatus);
+  router.get('/tools/video_jobs/:jobId', verifyJWT, handleJobStatus);
 
   return {
     router,

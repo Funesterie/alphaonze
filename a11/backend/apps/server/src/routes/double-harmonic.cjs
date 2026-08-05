@@ -59,6 +59,13 @@ const {
 const {
   exportZenReliqueForPublic,
 } = require('../audio/zen-relique-exporter.cjs');
+const {
+  resolveMcpAccountProfile,
+} = require('../auth/mcp-account-tier.cjs');
+const {
+  buildQuotaExceededResponse,
+  reserveV11PanUsage,
+} = require('../auth/tier-usage-quota.cjs');
 
 const DEFAULT_MAX_MB = 80;
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -283,6 +290,7 @@ function createDoubleHarmonicRouter(options = {}) {
       runFfmpeg,
     });
   const runtimeRoot = path.resolve(options.runtimeRoot || getCanonicalRuntimeRoot(process.env));
+  const db = options.db || null;
   const assetRoot = ensureDir(path.join(runtimeRoot, 'double-harmonic-d40'));
   const indexPath = path.join(assetRoot, 'index.json');
   const ttlMs = Math.max(60_000, Number(process.env.A11_DH_ASSET_TTL_MS || DEFAULT_TTL_MS) || DEFAULT_TTL_MS);
@@ -298,6 +306,202 @@ function createDoubleHarmonicRouter(options = {}) {
       return cb(new Error(`Type audio non supporte: ${file.mimetype || 'unknown'}`));
     },
   });
+
+  const v11PanJobs = new Map();
+  const v11PanQueue = [];
+  const maxV11PanConcurrency = Math.max(1, Math.min(4, Number(process.env.A11_DH_V11_MAX_CONCURRENCY || 1) || 1));
+  const v11PanJobTtlMs = Math.max(60_000, Number(process.env.A11_DH_V11_JOB_TTL_MS || 60 * 60 * 1000) || 60 * 60 * 1000);
+  let activeV11PanJobs = 0;
+  let scentGateModulePromise = null;
+
+  function requestOwner(user = {}) {
+    return String(user?.id || user?.email || user?.username || user?.sub || '').trim().toLowerCase();
+  }
+
+  function pruneV11PanJobs() {
+    const now = Date.now();
+    for (const [jobId, job] of v11PanJobs.entries()) {
+      if (['queued', 'running', 'cancel_pending'].includes(job.status)) continue;
+      if (now - Number(job.completedAt || job.updatedAt || job.createdAt || now) > v11PanJobTtlMs) {
+        v11PanJobs.delete(jobId);
+      }
+    }
+  }
+
+  function serializeV11PanJob(job) {
+    const base = {
+      ok: job.status !== 'failed',
+      jobId: job.id,
+      status: job.status,
+      statusUrl: `/api/double-harmonic/v10boom/jobs/${encodeURIComponent(job.id)}`,
+      pollIntervalMs: 1500,
+      createdAt: job.createdAt,
+      updatedAt: job.updatedAt,
+      completedAt: job.completedAt || null,
+      quota: job.quota,
+    };
+    if (job.scentGateSignal) base.scentGateSignal = job.scentGateSignal;
+    if (job.status === 'done') return { ...base, result: job.result };
+    if (job.status === 'failed') return { ...base, error: job.error, message: job.message };
+    return base;
+  }
+
+  function deleteIfPresent(filePath) {
+    try {
+      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch {}
+  }
+
+  function sha256File(filePath) {
+    return new Promise((resolve, reject) => {
+      const digest = crypto.createHash('sha256');
+      const stream = fs.createReadStream(filePath);
+      stream.on('error', reject);
+      stream.on('data', (chunk) => digest.update(chunk));
+      stream.on('end', () => resolve(digest.digest('hex')));
+    });
+  }
+
+  function scentGateAudience(owner) {
+    return `account:${crypto.createHash('sha256').update(String(owner || '')).digest('hex').slice(0, 24)}`;
+  }
+
+  async function createV11PanSignal(job, type, resultDigest = '') {
+    const secret = String(options.scentGateSignalSecret || process.env.A11_SCENTGATE_SIGNAL_SECRET || '');
+    if (Buffer.byteLength(secret, 'utf8') < 32) return null;
+    scentGateModulePromise ||= import('@nossen/scentgate');
+    const { createScentGateSignal } = await scentGateModulePromise;
+    return createScentGateSignal({
+      type,
+      issuer: 'a11-v11pan',
+      audience: scentGateAudience(job.owner),
+      jobId: job.id,
+      resultDigest,
+      ttlSeconds: 120,
+    }, { secret });
+  }
+
+  async function executeV11PanJob(job) {
+    job.status = 'running';
+    job.updatedAt = Date.now();
+    try {
+      const processing = await processAudioV10Boom(job.processingInput);
+      if (job.cancelRequested) {
+        deleteIfPresent(job.inputPath);
+        deleteIfPresent(job.outputPath);
+        job.status = 'cancelled';
+        job.updatedAt = Date.now();
+        job.completedAt = job.updatedAt;
+        try {
+          job.scentGateSignal = await createV11PanSignal(job, 'job.cancelled');
+        } catch (signalError) {
+          console.warn('[V11Pan] SCENT GATE cancellation signal unavailable:', String(signalError?.message || signalError));
+        }
+        return;
+      }
+
+      const token = crypto.randomBytes(18).toString('base64url');
+      const createdAt = new Date().toISOString();
+      const asset = {
+        id: job.id,
+        token,
+        createdAt,
+        owner: job.owner,
+        originalName: job.originalName,
+        inputFilename: job.inputFilename,
+        outputFilename: job.outputFilename,
+        contentType: job.outputFormat.contentType,
+        method: processing.method,
+        profile: processing.profile,
+        preset: processing.preset,
+        intensity: processing.intensity || 'vocal-safe-99ms-turbo-1024',
+        variant: 'v10boom',
+        baseVariant: 'v9electrolysis',
+        resonance: processing.resonance || null,
+        operators: processing.operators || null,
+        projection: processing.projection || null,
+        grain: processing.grain || null,
+        binaryGrid: processing.binaryGrid || null,
+        phaseClosure: processing.phaseClosure || null,
+        weights: processing.weights || null,
+        dynamicSummary: processing.dynamic?.summary || null,
+        boom: processing.boom || null,
+        safety: processing.safety || null,
+        bytes: fs.statSync(job.outputPath).size,
+      };
+      const index = readIndex(indexPath);
+      index.assets = [asset, ...index.assets].slice(0, 300);
+      writeIndex(indexPath, index);
+
+      const audioUrl = `/api/double-harmonic/out/${encodeURIComponent(job.outputFilename)}`;
+      const sharePath = `${audioUrl}?token=${encodeURIComponent(token)}`;
+      const resultDigest = await sha256File(job.outputPath);
+      job.result = {
+        ok: true,
+        id: job.id,
+        method: processing.method,
+        state: processing.state,
+        variant: 'v10boom',
+        baseVariant: 'v9electrolysis',
+        profile: processing.profile,
+        preset: processing.preset,
+        intensity: processing.intensity || 'vocal-safe-99ms-turbo-1024',
+        d40: processing.d40,
+        resonance: processing.resonance,
+        operators: processing.operators,
+        projection: processing.projection,
+        grain: processing.grain,
+        binaryGrid: processing.binaryGrid,
+        phaseClosure: processing.phaseClosure,
+        dynamic: processing.dynamic,
+        weights: processing.weights || undefined,
+        boom: processing.boom || undefined,
+        safety: processing.safety || undefined,
+        audioUrl,
+        shareUrl: job.baseUrl ? `${job.baseUrl}${sharePath}` : sharePath,
+        contentType: job.outputFormat.contentType,
+        filename: job.outputFilename,
+        bytes: asset.bytes,
+        resultDigest,
+        publicSummary: 'V10 Boom: V9 Électrolyse conservée, puis fermeture inverse retardée sur la bande grave (axe m), wet plafonné à 0.2 pour comparaison d’écoute.',
+      };
+      try {
+        job.scentGateSignal = await createV11PanSignal(job, 'job.completed', resultDigest);
+      } catch (signalError) {
+        console.warn('[V11Pan] SCENT GATE completion signal unavailable:', String(signalError?.message || signalError));
+      }
+      job.status = 'done';
+      job.updatedAt = Date.now();
+      job.completedAt = job.updatedAt;
+    } catch (error) {
+      deleteIfPresent(job.outputPath);
+      job.status = job.cancelRequested ? 'cancelled' : 'failed';
+      job.error = job.cancelRequested ? 'v11pan_job_cancelled' : 'double_harmonic_v10boom_process_failed';
+      job.message = job.cancelRequested ? 'Traitement V11Pan annulé.' : String(error?.message || error);
+      try {
+        job.scentGateSignal = await createV11PanSignal(
+          job,
+          job.cancelRequested ? 'job.cancelled' : 'job.failed'
+        );
+      } catch (signalError) {
+        console.warn('[V11Pan] SCENT GATE failure signal unavailable:', String(signalError?.message || signalError));
+      }
+      job.updatedAt = Date.now();
+      job.completedAt = job.updatedAt;
+    }
+  }
+
+  function drainV11PanQueue() {
+    while (activeV11PanJobs < maxV11PanConcurrency && v11PanQueue.length > 0) {
+      const job = v11PanQueue.shift();
+      if (!job || job.cancelRequested) continue;
+      activeV11PanJobs += 1;
+      executeV11PanJob(job).finally(() => {
+        activeV11PanJobs -= 1;
+        drainV11PanQueue();
+      });
+    }
+  }
 
   router.get('/status', (_req, res) => {
     const outputFormat = resolveOutputFormat();
@@ -1764,171 +1968,134 @@ function createDoubleHarmonicRouter(options = {}) {
     }
   });
 
+  // V11Pan est un vrai job asynchrone. Le proxy ne garde plus une requete HTTP
+  // ouverte pendant FFmpeg: le client recoit 202 puis interroge le statut.
   router.post('/v10boom/process', verifyJWT, upload.single('audio'), async (req, res) => {
-    let heartbeat = null;
     try {
       pruneIndex(indexPath, assetRoot, ttlMs);
+      pruneV11PanJobs();
       if (!req.file?.buffer?.length) {
         return res.status(400).json({ ok: false, error: 'missing_audio', message: 'Ajoute un fichier audio.' });
       }
 
-      const id = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+      const account = await resolveMcpAccountProfile(req, { db });
+      const owner = requestOwner(account.user || req.user);
+      const quota = await reserveV11PanUsage({ db, user: account.user || req.user, tier: account.tier });
+      if (!quota.ok) {
+        if (quota.error === 'account_identity_missing') {
+          return res.status(401).json({ ok: false, error: 'account_identity_missing', message: 'Compte authentifié requis.' });
+        }
+        return res.status(429).json(buildQuotaExceededResponse(quota));
+      }
+
+      const id = `v11pan_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
       const base = safeBaseName(req.body?.name || req.file.originalname || 'audio');
       const inputExt = extForUpload(req.file);
       const inputFilename = `${id}-${base}-v10boom-input.${inputExt}`;
       const outputFormat = resolveOutputFormat(req.body?.format || req.query?.format, inputExt);
-      // Le nom porte les DEUX etages : le boom V10 est toujours la, la V11 pan
-      // s'ajoute par-dessus. Djeff, 03/08 : « le nom des fichiers convertis est
-      // encore v10 boom » — le gabarit ne disait pas ce que le fichier contient.
       const outputFilename = `${id}-${base}-funesterie-d40-v10boom-v11pan.${outputFormat.ext}`;
       const inputPath = path.join(assetRoot, inputFilename);
       const outputPath = path.join(assetRoot, outputFilename);
       fs.writeFileSync(inputPath, req.file.buffer);
 
-      // Un mix V10 peut depasser le delai du proxy avec un WAV long ou deux traitements
-      // rapproches. Envoyer les en-tetes puis un battement JSON (espaces autorises avant
-      // l'objet) garde la connexion active sans changer le contrat de l'API: fetch().json()
-      // recoit toujours un unique objet final.
-      res.status(200);
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.setHeader('Cache-Control', 'no-store, no-transform');
-      res.setHeader('X-Accel-Buffering', 'no');
-      if (typeof res.flushHeaders === 'function') res.flushHeaders();
-      res.write('\n');
-      const heartbeatMs = Math.max(
-        5_000,
-        Math.min(60_000, Number(process.env.A11_DH_V10_HEARTBEAT_MS || 15_000) || 15_000)
-      );
-      heartbeat = setInterval(() => {
-        if (!res.writableEnded && !res.destroyed) res.write(' \n');
-      }, heartbeatMs);
-      if (typeof heartbeat.unref === 'function') heartbeat.unref();
-
-      const processing = await processAudioV10Boom({
-        inputPath,
-        outputPath,
-        profile: String(req.body?.profile || req.query?.profile || 'blend').trim() || 'blend',
-        analysisOptions: {
-          frameMs: DEFAULT_V9_TURBO_FRAME_MS,
-          maxSeconds: reqNumber(req.body?.maxSeconds || req.query?.maxSeconds),
-          cycleSeconds: reqNumber(req.body?.cycleSeconds || req.query?.cycleSeconds),
-          userK: reqNumber(
-            req.body?.userK
-            || req.query?.userK
-            || req.body?.resonanceK
-            || req.query?.resonanceK
-            || req.body?.weightScale
-            || req.query?.weightScale
-            || req.body?.intensity
-            || req.query?.intensity
-            || req.body?.harmonicIntensity
-            || req.query?.harmonicIntensity
-          ),
-          kCeiling: reqNumber(req.body?.kCeiling || req.query?.kCeiling),
-          phaseSlots: reqNumber(req.body?.phaseSlots || req.query?.phaseSlots || req.body?.binaryGridSlots || req.query?.binaryGridSlots),
-          c7PhaseScale: reqNumber(req.body?.c7PhaseScale || req.query?.c7PhaseScale),
-          modulation: 'electrolysis-guitar',
-          modulationMode: 'electrolysis-guitar',
-          electrolysis: true,
-          electrolysisGuitar: true,
-          frequencyHz: reqNumber(req.body?.frequencyHz || req.query?.frequencyHz) ?? 40.44,
-          frequencyMinHz: reqNumber(req.body?.frequencyMinHz || req.query?.frequencyMinHz) ?? 40.26,
-          frequencyMaxHz: reqNumber(req.body?.frequencyMaxHz || req.query?.frequencyMaxHz) ?? 40.62,
-          amount: reqNumber(req.body?.amount || req.query?.amount) ?? 0.042,
-          irregularity: reqNumber(req.body?.irregularity || req.query?.irregularity) ?? 0.36,
-          asymmetry: reqNumber(req.body?.asymmetry || req.query?.asymmetry) ?? 0.27,
-          bidirectional: true,
-          followForce: reqNumber(req.body?.followForce || req.query?.followForce),
-          schemaMix: reqNumber(req.body?.schemaMix || req.query?.schemaMix),
-        },
-        boomOptions: {
-          wet: reqNumber(req.body?.wet || req.query?.wet || req.body?.returnRatio || req.query?.returnRatio),
-          inversionDepth: reqNumber(req.body?.boom || req.query?.boom || req.body?.inversionDepth || req.query?.inversionDepth),
-          inversionDelayMs: reqNumber(req.body?.delay || req.query?.delay || req.body?.inversionDelayMs || req.query?.inversionDelayMs),
-          subCapHz: reqNumber(req.body?.sub || req.query?.sub || req.body?.subCapHz || req.query?.subCapHz),
-          boomGainDb: reqNumber(req.body?.boomGainDb || req.query?.boomGainDb || req.body?.gainDb || req.query?.gainDb),
-          bassBandHz: reqNumber(req.body?.bassBandHz || req.query?.bassBandHz || req.body?.bandHz || req.query?.bandHz),
-        },
-      });
-      const token = crypto.randomBytes(18).toString('base64url');
-      const createdAt = new Date().toISOString();
-      const owner = String(req.user?.email || req.user?.username || req.user?.sub || '').trim();
-      const asset = {
+      const job = {
         id,
-        token,
-        createdAt,
         owner,
+        status: 'queued',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        completedAt: null,
+        quota,
+        baseUrl: routePublicBase(req),
         originalName: req.file.originalname || '',
         inputFilename,
         outputFilename,
-        contentType: outputFormat.contentType,
-        method: processing.method,
-        profile: processing.profile,
-        preset: processing.preset,
-        intensity: processing.intensity || 'vocal-safe-99ms-turbo-1024',
-        variant: 'v10boom',
-        baseVariant: 'v9electrolysis',
-        resonance: processing.resonance || null,
-        operators: processing.operators || null,
-        projection: processing.projection || null,
-        grain: processing.grain || null,
-        binaryGrid: processing.binaryGrid || null,
-        phaseClosure: processing.phaseClosure || null,
-        weights: processing.weights || null,
-        dynamicSummary: processing.dynamic?.summary || null,
-        boom: processing.boom || null,
-        safety: processing.safety || null,
-        bytes: fs.statSync(outputPath).size,
+        inputPath,
+        outputPath,
+        outputFormat,
+        processingInput: {
+          inputPath,
+          outputPath,
+          profile: String(req.body?.profile || req.query?.profile || 'blend').trim() || 'blend',
+          analysisOptions: {
+            frameMs: DEFAULT_V9_TURBO_FRAME_MS,
+            maxSeconds: reqNumber(req.body?.maxSeconds || req.query?.maxSeconds),
+            cycleSeconds: reqNumber(req.body?.cycleSeconds || req.query?.cycleSeconds),
+            userK: reqNumber(
+              req.body?.userK || req.query?.userK || req.body?.resonanceK || req.query?.resonanceK
+              || req.body?.weightScale || req.query?.weightScale || req.body?.intensity || req.query?.intensity
+              || req.body?.harmonicIntensity || req.query?.harmonicIntensity
+            ),
+            kCeiling: reqNumber(req.body?.kCeiling || req.query?.kCeiling),
+            phaseSlots: reqNumber(req.body?.phaseSlots || req.query?.phaseSlots || req.body?.binaryGridSlots || req.query?.binaryGridSlots),
+            c7PhaseScale: reqNumber(req.body?.c7PhaseScale || req.query?.c7PhaseScale),
+            modulation: 'electrolysis-guitar',
+            modulationMode: 'electrolysis-guitar',
+            electrolysis: true,
+            electrolysisGuitar: true,
+            frequencyHz: reqNumber(req.body?.frequencyHz || req.query?.frequencyHz) ?? 40.44,
+            frequencyMinHz: reqNumber(req.body?.frequencyMinHz || req.query?.frequencyMinHz) ?? 40.26,
+            frequencyMaxHz: reqNumber(req.body?.frequencyMaxHz || req.query?.frequencyMaxHz) ?? 40.62,
+            amount: reqNumber(req.body?.amount || req.query?.amount) ?? 0.042,
+            irregularity: reqNumber(req.body?.irregularity || req.query?.irregularity) ?? 0.36,
+            asymmetry: reqNumber(req.body?.asymmetry || req.query?.asymmetry) ?? 0.27,
+            bidirectional: true,
+            followForce: reqNumber(req.body?.followForce || req.query?.followForce),
+            schemaMix: reqNumber(req.body?.schemaMix || req.query?.schemaMix),
+          },
+          boomOptions: {
+            wet: reqNumber(req.body?.wet || req.query?.wet || req.body?.returnRatio || req.query?.returnRatio),
+            inversionDepth: reqNumber(req.body?.boom || req.query?.boom || req.body?.inversionDepth || req.query?.inversionDepth),
+            inversionDelayMs: reqNumber(req.body?.delay || req.query?.delay || req.body?.inversionDelayMs || req.query?.inversionDelayMs),
+            subCapHz: reqNumber(req.body?.sub || req.query?.sub || req.body?.subCapHz || req.query?.subCapHz),
+            boomGainDb: reqNumber(req.body?.boomGainDb || req.query?.boomGainDb || req.body?.gainDb || req.query?.gainDb),
+            bassBandHz: reqNumber(req.body?.bassBandHz || req.query?.bassBandHz || req.body?.bandHz || req.query?.bandHz),
+          },
+        },
       };
-      const index = readIndex(indexPath);
-      index.assets = [asset, ...index.assets].slice(0, 300);
-      writeIndex(indexPath, index);
-
-      const baseUrl = routePublicBase(req);
-      const audioUrl = `/api/double-harmonic/out/${encodeURIComponent(outputFilename)}`;
-      const sharePath = `${audioUrl}?token=${encodeURIComponent(token)}`;
-      const payload = {
-        ok: true,
-        id,
-        method: processing.method,
-        state: processing.state,
-        variant: 'v10boom',
-        baseVariant: 'v9electrolysis',
-        profile: processing.profile,
-        preset: processing.preset,
-        intensity: processing.intensity || 'vocal-safe-99ms-turbo-1024',
-        d40: processing.d40,
-        resonance: processing.resonance,
-        operators: processing.operators,
-        projection: processing.projection,
-        grain: processing.grain,
-        binaryGrid: processing.binaryGrid,
-        phaseClosure: processing.phaseClosure,
-        dynamic: processing.dynamic,
-        weights: processing.weights || undefined,
-        boom: processing.boom || undefined,
-        safety: processing.safety || undefined,
-        audioUrl,
-        shareUrl: baseUrl ? `${baseUrl}${sharePath}` : sharePath,
-        contentType: outputFormat.contentType,
-        filename: outputFilename,
-        bytes: asset.bytes,
-        publicSummary: 'V10 Boom: V9 Électrolyse conservée, puis fermeture inverse retardée sur la bande grave (axe m), wet plafonné à 0.2 pour comparaison d’écoute.',
-      };
-      clearInterval(heartbeat);
-      heartbeat = null;
-      return res.end(JSON.stringify(payload));
+      v11PanJobs.set(id, job);
+      v11PanQueue.push(job);
+      queueMicrotask(drainV11PanQueue);
+      return res.status(202).json(serializeV11PanJob(job));
     } catch (error) {
-      const payload = {
-        ok: false,
-        error: 'double_harmonic_v10boom_process_failed',
-        message: String(error?.message || error),
-      };
-      if (res.headersSent) return res.end(JSON.stringify(payload));
-      return res.status(500).json(payload);
-    } finally {
-      if (heartbeat) clearInterval(heartbeat);
+      console.error('[V11Pan] job enqueue failed:', String(error?.message || error));
+      return res.status(503).json({ ok: false, error: 'v11pan_job_unavailable', message: 'La file V11Pan est momentanément indisponible.' });
     }
+  });
+
+  router.get('/v10boom/jobs/:jobId', verifyJWT, (req, res) => {
+    pruneV11PanJobs();
+    const job = v11PanJobs.get(String(req.params.jobId || ''));
+    const owner = requestOwner(req.user);
+    if (!job || !owner || job.owner !== owner) {
+      return res.status(404).json({ ok: false, error: 'v11pan_job_not_found' });
+    }
+    return res.json(serializeV11PanJob(job));
+  });
+
+  router.delete('/v10boom/jobs/:jobId', verifyJWT, async (req, res) => {
+    const job = v11PanJobs.get(String(req.params.jobId || ''));
+    const owner = requestOwner(req.user);
+    if (!job || !owner || job.owner !== owner) {
+      return res.status(404).json({ ok: false, error: 'v11pan_job_not_found' });
+    }
+    if (['done', 'failed', 'cancelled'].includes(job.status)) {
+      return res.status(409).json({ ok: false, error: 'v11pan_job_not_cancellable', status: job.status });
+    }
+    job.cancelRequested = true;
+    job.status = job.status === 'queued' ? 'cancelled' : 'cancel_pending';
+    job.updatedAt = Date.now();
+    if (job.status === 'cancelled') {
+      job.completedAt = job.updatedAt;
+      deleteIfPresent(job.inputPath);
+      deleteIfPresent(job.outputPath);
+      try {
+        job.scentGateSignal = await createV11PanSignal(job, 'job.cancelled');
+      } catch (signalError) {
+        console.warn('[V11Pan] SCENT GATE cancellation signal unavailable:', String(signalError?.message || signalError));
+      }
+    }
+    return res.status(job.status === 'cancelled' ? 200 : 202).json(serializeV11PanJob(job));
   });
 
   router.post(['/v9turbo/process', '/v9electrolysis/process'], verifyJWT, upload.single('audio'), async (req, res) => {

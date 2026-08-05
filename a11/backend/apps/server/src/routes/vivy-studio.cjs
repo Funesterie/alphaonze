@@ -11823,7 +11823,11 @@ function createVivyStudioRouter({
             ? (mediaError && mediaError.provider === 'acestep'
               ? 'ACE-Step (ComfyUI) injoignable. Demarre ComfyUI sur 127.0.0.1:8188 ou utilise le prompt Suno manuel.'
               : 'Fournisseurs musicaux non configures. Copie le prompt ci-dessous ou lance ComfyUI en local.')
-            : 'La generation musicale a echoue. Aucun audio de secours ajoute.',
+            : cleanOneLine(
+              mediaError?.providerDetail || mediaError?.message,
+              'La generation musicale a echoue. Aucun audio de secours ajoute.',
+              240
+            ),
           sunoPromptAvailable: Boolean(payload.sunoPrompt || payload.musicPrompt || payload.publicLyrics),
           lyricsPack: true,
         };

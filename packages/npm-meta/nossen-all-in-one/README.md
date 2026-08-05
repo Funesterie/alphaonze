@@ -15,10 +15,11 @@ npm install @nossen/all-in-one
 - Public NOSSEN runtime vocabulary and orchestration modules.
 - MCP helper packages for agent bus, job queue, worker supervision, memory graph, cloud assets, media bridge and tool manifests.
 - Public Rome, QFlush, Dragon, BAT, Beam, Freeland, Morphing, Scentgate, Scream, Spyder and related adapters.
-- ZEN 0.1.2 with bounded parsing, authenticated verification and large-file streaming.
+- ZEN 0.1.3 with bounded parsing, authenticated verification and large-file streaming.
+- ScentGate 2.1.0 with its original ephemeral capsules plus closed, signed job notifications.
 - The public `a11-coder` package.
 
-The 0.1.7 snapshot was checked against the npm registry on 2026-07-04. Its internal NOSSEN versions are exact, including ZEN 0.1.2, Morphing 2.1.0 and the coordinated Dragon, Freeland Bros and QFlush patch train.
+The 0.1.13 snapshot was checked against the npm registry on 2026-08-05. Its internal NOSSEN versions are exact, including ZEN 0.1.3, Logic Reduce 2.0.3, ScentGate 2.1.0, Morphing 2.1.0 and the coordinated Dragon, Freeland Bros and QFlush patch train.
 
 ## Package Manifest
 

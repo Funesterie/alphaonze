@@ -79,7 +79,7 @@ const NOSSEN_PUBLISHED_PACKAGES = [
   ['@nossen/morphing', '1.0.0', '@nossen/morphing@1.0.0'],
   ['@nossen/nezlephant', '1.0.0', '@nossen/nezlephant@1.0.0'],
   ['@nossen/rome', '1.0.0', '@nossen/rome@1.0.0'],
-  ['@nossen/scentgate', '1.0.0', '@nossen/scentgate@1.0.0'],
+  ['@nossen/scentgate', '2.1.0', '@nossen/scentgate@2.1.0'],
   ['@nossen/scream', '1.0.0', '@nossen/scream@1.0.0'],
   ['@nossen/spyder', '1.0.0', '@nossen/spyder@1.0.0'],
   ['@nossen/katana', '1.0.0', '@nossen/katana@1.0.0'],

@@ -49,7 +49,7 @@ const DEFAULT_VOICE_PERSONA_BRIEFS = Object.freeze({
     'En musique: Djeff porte les couplets rap, Vivy peut répondre en refrain; ne copie jamais d’artiste existant.',
   ].join(' '),
   vivy: [
-    'Vivy: présence musicale Funesterie, claire, sombre-néon, expressive, précise émotionnellement.',
+    'Vivy: présence musicale Funesterie, claire, expressive, précise émotionnellement; aucune couleur sonore fixe ne vient du persona.',
     'En conversation: rester humaine et utile, ne pas réciter les paramètres internes, transformer la matière en chanson seulement si demandé.',
   ].join(' '),
   a11: [
@@ -141,7 +141,7 @@ function loadPersonaProfileRaw(persona = 'djeff', env = process.env) {
       const absent = error && error.code === 'ENOENT';
       console.warn(
         absent
-          ? `[persona-engine] "${cle}" n'a AUCUN profil (${chemin}) — il repondra sans son identite.`
+          ? `[persona-engine] "${cle}" n'a pas de profil complet (${chemin}) — repli canonique public minimal utilise.`
           : `[persona-engine] profil de "${cle}" illisible (${chemin}) : ${String(error?.message || error)}`
       );
     }
@@ -311,7 +311,25 @@ function buildAgentsPersonaContext(env = process.env, options = {}) {
 function buildPersonaSystemPrompt(persona = 'djeff', env = process.env) {
   const key = sanitizePersonaKey(persona);
   const profile = loadPersonaProfileRaw(key, env);
-  if (!isPersonaInjectEnabled(profile)) return '';
+  if (!isPersonaInjectEnabled(profile)) {
+    // Un profil present mais inactif attend une validation humaine et ne doit
+    // jamais etre contourne. Seule l'absence totale de Vivy active son repli
+    // public minimal, afin que son routage technique ne devienne pas vide.
+    if (profile || key !== 'vivy') return '';
+    const brief = getVoicePersonaBrief(key);
+    if (!brief) return '';
+    const separation = key === 'vivy'
+      ? 'Une demande technique appelle une réponse technique directe. Ne la transforme en chanson, paroles ou direction artistique que si la demande le demande explicitement. La couleur sonore reste séparée du persona et libre pour chaque chanson.'
+      : '';
+    const base = cleanInline([
+      `Tu es le persona ${key} de Funesterie (repli canonique public minimal; profil complet absent).`,
+      brief,
+      separation,
+      'Tu restes borné: aucun secret, aucun token, aucun chemin sensible, aucun brut privé.',
+    ].filter(Boolean).join('\n'), 5000);
+    const adn = buildPersonaAdnEnrichment(key);
+    return cleanInline([base, adn].filter(Boolean).join('\n'), 5000);
+  }
   if (key !== 'djeff') {
     const brief = personaProfileToBrief(profile, key) || getVoicePersonaBrief(key);
     return cleanInline([

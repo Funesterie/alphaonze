@@ -1,0 +1,57 @@
+{
+  "name": "@nossen/scentgate",
+  "version": "2.1.0",
+  "description": "Ephemeral research capsule for structured notes, signals and short-lived investigation context.",
+  "author": "NOSSEN <contact@funesterie.me>",
+  "license": "MIT",
+  "funding": {
+    "type": "custom",
+    "url": "https://paypal.me/funeste38"
+  },
+  "donations": {
+    "wero": "+33783463761",
+    "weroDisplay": "+33 7 83 46 37 61",
+    "paypal": "https://paypal.me/funeste38",
+    "stripe": "https://funesterie.me/subscription",
+    "contact": "https://funesterie.me/contact/"
+  },
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "scentgate": "bin/scentgate.js"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Funesterie/funesterie.git",
+    "directory": "runtime/modules/scentgate"
+  },
+  "bugs": {
+    "url": "https://github.com/Funesterie/funesterie/issues"
+  },
+  "homepage": "https://github.com/Funesterie/funesterie/tree/master/runtime/modules/scentgate#readme",
+  "keywords": [
+    "scentgate",
+    "nossen",
+    "funesterie",
+    "a11",
+    "portalcake",
+    "capsule",
+    "jfrog"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

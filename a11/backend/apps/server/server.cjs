@@ -60,6 +60,126 @@ const { getProviderHealth } = require('./src/providers/provider-health.cjs');
   if (!process.env.A11_EARLY_DOTENV_PATH) process.env.A11_EARLY_DOTENV_PATH = envPath;
 })();
 
+// Fortress HTTP doit etre montee avant la premiere route Express. L'ancienne
+// integration etait placee plusieurs milliers de lignes apres des routes API,
+// donc Helmet et les limites ne les protegeaient pas reellement.
+const helmet = require('helmet');
+const cookieParser = require('cookie-parser');
+const net = require('node:net');
+
+function isTrustedReverseProxyAddress(value = '') {
+  const ip = String(value || '').replace(/^::ffff:/, '').trim().toLowerCase();
+  if (!ip) return false;
+  if (ip === '::1' || ip === '127.0.0.1') return true;
+  if (/^10\./.test(ip) || /^192\.168\./.test(ip)) return true;
+  const match172 = ip.match(/^172\.(\d{1,3})\./);
+  return Boolean(match172 && Number(match172[1]) >= 16 && Number(match172[1]) <= 31);
+}
+
+app.set('trust proxy', (address) => isTrustedReverseProxyAddress(address));
+
+function fortressClientIp(req) {
+  const remote = String(req.socket?.remoteAddress || req.connection?.remoteAddress || '');
+  const cfConnectingIp = String(req.headers?.['cf-connecting-ip'] || '').split(',')[0].trim();
+  if (isTrustedReverseProxyAddress(remote) && net.isIP(cfConnectingIp)) return cfConnectingIp;
+  return String(req.ip || remote || 'unknown');
+}
+
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  xContentTypeOptions: true,
+  xFrameOptions: { action: 'deny' },
+  xXssProtection: true,
+}));
+app.use(cookieParser());
+
+const _rateLimitWindows = new Map();
+const _usageGuardAlerts = new Map();
+const USAGE_GUARD_ADMIN_EMAIL = String(
+  process.env.A11_USAGE_GUARD_ADMIN_EMAIL || process.env.KAEN44_ADMIN_EMAIL || 'funeste38@gmail.com'
+).trim();
+const USAGE_GUARD_ALERT_COOLDOWN_MS = Number(process.env.A11_USAGE_GUARD_ALERT_COOLDOWN_MS || 5 * 60_000);
+
+function notifyUsageGuardRateLimit(req, { key, count, max, message }) {
+  if (!USAGE_GUARD_ADMIN_EMAIL || !emailService?.isConfigured?.()) return;
+  const now = Date.now();
+  const route = String(req.originalUrl || req.path || '').split('?')[0] || 'unknown';
+  const alertKey = `${key}:${route}:${message}`;
+  const lastAlertAt = _usageGuardAlerts.get(alertKey) || 0;
+  if (now - lastAlertAt < USAGE_GUARD_ALERT_COOLDOWN_MS) return;
+  _usageGuardAlerts.set(alertKey, now);
+  const userHint = req.user?.email || req.auth?.email || 'unknown';
+  const text = [
+    'A11 usage guard: rate limit triggered.',
+    `Time: ${new Date(now).toISOString()}`,
+    `Route: ${route}`,
+    `IP: ${fortressClientIp(req)}`,
+    `User: ${userHint}`,
+    `Count: ${count}`,
+    `Limit: ${max}`,
+    `Message: ${message}`,
+    '',
+    'No secrets or payload content were included.',
+  ].join('\n');
+  emailService.sendEmail({
+    to: USAGE_GUARD_ADMIN_EMAIL,
+    subject: 'A11 usage guard - rate limit',
+    text,
+    tags: [{ name: 'type', value: 'usage_guard' }],
+  }).catch((error_) => console.warn('[USAGE_GUARD] admin alert failed:', error_?.message || error_));
+}
+
+function createRateLimiter({ bucket = 'global', windowMs = 60_000, max = 100, methods = null, message = 'Too many requests' } = {}) {
+  const allowedMethods = Array.isArray(methods)
+    ? new Set(methods.map((method) => String(method || '').trim().toUpperCase()).filter(Boolean))
+    : null;
+  return (req, res, next) => {
+    if (allowedMethods && !allowedMethods.has(String(req.method || '').toUpperCase())) return next();
+    const now = Date.now();
+    if (_rateLimitWindows.size >= 10_000) {
+      for (const [entryKey, entry] of _rateLimitWindows.entries()) {
+        if (now > Number(entry?.resetAt || 0)) _rateLimitWindows.delete(entryKey);
+      }
+    }
+    const key = `${bucket}:${fortressClientIp(req)}`;
+    while (!_rateLimitWindows.has(key) && _rateLimitWindows.size >= 10_000) {
+      const oldestKey = _rateLimitWindows.keys().next().value;
+      if (!oldestKey) break;
+      _rateLimitWindows.delete(oldestKey);
+    }
+    const window = _rateLimitWindows.get(key) || { count: 0, resetAt: now + windowMs };
+    if (now > window.resetAt) {
+      window.count = 0;
+      window.resetAt = now + windowMs;
+    }
+    window.count += 1;
+    _rateLimitWindows.set(key, window);
+    res.setHeader('X-RateLimit-Limit', max);
+    res.setHeader('X-RateLimit-Remaining', Math.max(0, max - window.count));
+    res.setHeader('X-RateLimit-Reset', Math.ceil(window.resetAt / 1000));
+    if (window.count > max) {
+      notifyUsageGuardRateLimit(req, { key, count: window.count, max, message });
+      res.setHeader('Retry-After', Math.max(1, Math.ceil((window.resetAt - now) / 1000)));
+      return res.status(429).json({ ok: false, error: 'rate_limited', message });
+    }
+    return next();
+  };
+}
+
+app.use('/api/auth', createRateLimiter({ bucket: 'auth', methods: ['POST'], max: 20, message: 'Trop de tentatives de connexion' }));
+app.use('/api/chat', createRateLimiter({ bucket: 'chat', max: 60, message: 'Trop de requêtes chat' }));
+app.use('/api/image-generate', createRateLimiter({ bucket: 'image', methods: ['POST'], max: 20, message: 'Trop de générations d images' }));
+app.use('/api/sd', createRateLimiter({ bucket: 'image', methods: ['POST'], max: 20, message: 'Trop de générations d images' }));
+app.use('/api/jobs/sd', createRateLimiter({ bucket: 'image-job', methods: ['POST'], max: 20, message: 'Trop de générations d images' }));
+app.use('/api/double-harmonic/v10boom/process', createRateLimiter({ bucket: 'v11pan', methods: ['POST'], max: 12, message: 'Trop de requêtes V11Pan' }));
+app.use('/api/video', createRateLimiter({ bucket: 'video', methods: ['POST'], max: 12, message: 'Trop de requêtes vidéo' }));
+app.use('/api/tools/generate_video', createRateLimiter({ bucket: 'video-tool', methods: ['POST'], max: 12, message: 'Trop de requêtes vidéo' }));
+app.use('/api/vivy/studio/produce', createRateLimiter({ bucket: 'vivy-produce', methods: ['POST'], max: 12, message: 'Trop de générations Vivy' }));
+app.use('/api', createRateLimiter({ bucket: 'api', max: 300, message: 'Trop de requêtes' }));
+
 // Render services can start this file directly, bypassing npm start.
 // Keep this worker best-effort so a corpus refresh never blocks the API.
 (() => {
@@ -6429,6 +6549,7 @@ app.use('/api/admin', createImageCardinalityDebugRouter({
 
 const videoTools = createVideoGenerateRouter({
   generateSd: sdTools.generateImageInternal,
+  verifyJWT,
 });
 
 app.use('/api', createChatRouter({
@@ -6450,7 +6571,7 @@ app.use(createMemoryGraphV1Router({
 }));
 
 app.use('/api', sdTools.router);
-app.use('/api', optionalVerifyJWT, videoTools.router);
+app.use('/api', videoTools.router);
 
 // === STT — Speech-to-Text (Whisper via Ollama ou OpenAI) ===
 try {
@@ -6472,28 +6593,35 @@ try {
 
 // === Async SD job queue (pour Space HF / clients avec timeout court) ===
 const _sdJobQueue = new Map();
+function sdJobOwner(user = {}) {
+  return String(user?.id || user?.email || user?.username || user?.sub || '').trim().toLowerCase();
+}
 app.post('/api/jobs/sd', express.json({ limit: '2mb' }), verifyJWT, requireSubscription, async (req, res) => {
   const jobId = `sdjob_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  _sdJobQueue.set(jobId, { status: 'pending', createdAt: Date.now() });
+  const owner = sdJobOwner(req.user);
+  _sdJobQueue.set(jobId, { status: 'pending', owner, createdAt: Date.now() });
   res.json({ ok: true, jobId, status: 'pending' });
   // Lance SD en arrière-plan
   sdTools.generateSdInternal({ req, prompt: req.body?.prompt, body: req.body })
     .then((result) => {
-      _sdJobQueue.set(jobId, { status: 'done', result, completedAt: Date.now() });
+      _sdJobQueue.set(jobId, { status: 'done', owner, result, completedAt: Date.now() });
     })
     .catch((error_) => {
-      _sdJobQueue.set(jobId, { status: 'error', error: String(error_?.message || error_), completedAt: Date.now() });
+      _sdJobQueue.set(jobId, { status: 'error', owner, error: String(error_?.message || error_), completedAt: Date.now() });
     });
 });
 app.get('/api/jobs/sd/:jobId', verifyJWT, (req, res) => {
   const job = _sdJobQueue.get(req.params.jobId);
-  if (!job) return res.status(404).json({ ok: false, error: 'job_not_found' });
+  if (!job || !job.owner || job.owner !== sdJobOwner(req.user)) {
+    return res.status(404).json({ ok: false, error: 'job_not_found' });
+  }
   // Nettoyage auto après 10 min
   if (job.completedAt && Date.now() - job.completedAt > 600000) {
     _sdJobQueue.delete(req.params.jobId);
     return res.status(404).json({ ok: false, error: 'job_expired' });
   }
-  return res.json({ ok: true, jobId: req.params.jobId, ...job });
+  const { owner: _owner, ...safeJob } = job;
+  return res.json({ ok: true, jobId: req.params.jobId, ...safeJob });
 });
 
 // Protection des routes de génération d'images/vidéos avec abonnement
@@ -6990,7 +7118,7 @@ app.use('/api/vivy/stream', createVivyStreamRouter({ verifyJWT, db }));
 console.log('[Server] Vivy Stream routes mounted under /api/vivy/stream');
 
 const createDoubleHarmonicRouter = require('./src/routes/double-harmonic.cjs');
-app.use('/api/double-harmonic', createDoubleHarmonicRouter({ verifyJWT, runtimeRoot: PUBLIC_RUNTIME_ROOT }));
+app.use('/api/double-harmonic', createDoubleHarmonicRouter({ verifyJWT, db, runtimeRoot: PUBLIC_RUNTIME_ROOT }));
 console.log('[Server] Double Harmonic D40 routes mounted under /api/double-harmonic');
 
 const createMatchArenaRouter = require('./routes/match-arena.cjs');
@@ -8380,111 +8508,6 @@ app.get('/api/llm/stats', async (req, res) => {
     return res.status(502).json({ ok: false, error: 'upstream_unreachable', message: String(e?.message) });
   }
 });
-
-// Ajout helmet et cookieParser AVANT les routes
-const helmet = require('helmet');
-const cookieParser = require('cookie-parser');
-
-// Helmet — headers de sécurité complets
-app.use(helmet({
-  contentSecurityPolicy: false, // géré séparément pour ne pas casser le frontend
-  crossOriginEmbedderPolicy: false, // nécessaire pour les images/vidéos
-  hsts: {
-    maxAge: 31536000, // 1 an
-    includeSubDomains: true,
-    preload: true,
-  },
-  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
-  xContentTypeOptions: true,
-  xFrameOptions: { action: 'deny' },
-  xXssProtection: true,
-}));
-
-// Rate limiting global — protection contre les abus
-const _rateLimitWindows = new Map();
-const _usageGuardAlerts = new Map();
-const USAGE_GUARD_ADMIN_EMAIL = String(
-  process.env.A11_USAGE_GUARD_ADMIN_EMAIL
-  || process.env.KAEN44_ADMIN_EMAIL
-  || 'funeste38@gmail.com'
-).trim();
-const USAGE_GUARD_ALERT_COOLDOWN_MS = Number(process.env.A11_USAGE_GUARD_ALERT_COOLDOWN_MS || 5 * 60_000);
-
-function notifyUsageGuardRateLimit(req, { key, count, max, message }) {
-  if (!USAGE_GUARD_ADMIN_EMAIL || !emailService?.isConfigured?.()) {
-    return;
-  }
-
-  const now = Date.now();
-  const route = String(req.originalUrl || req.path || '').split('?')[0] || 'unknown';
-  const alertKey = `${key}:${route}:${message}`;
-  const lastAlertAt = _usageGuardAlerts.get(alertKey) || 0;
-  if (now - lastAlertAt < USAGE_GUARD_ALERT_COOLDOWN_MS) {
-    return;
-  }
-
-  _usageGuardAlerts.set(alertKey, now);
-  const ip = req.ip || req.connection?.remoteAddress || 'unknown';
-  const userHint = req.user?.email || req.auth?.email || req.headers?.['x-user-email'] || 'unknown';
-  const text = [
-    'A11 usage guard: rate limit triggered.',
-    `Time: ${new Date(now).toISOString()}`,
-    `Route: ${route}`,
-    `IP: ${ip}`,
-    `User: ${userHint}`,
-    `Count: ${count}`,
-    `Limit: ${max}`,
-    `Message: ${message}`,
-    '',
-    'No secrets or payload content were included.',
-  ].join('\n');
-
-  emailService.sendEmail({
-    to: USAGE_GUARD_ADMIN_EMAIL,
-    subject: 'A11 usage guard - rate limit',
-    text,
-    tags: [{ name: 'type', value: 'usage_guard' }],
-  }).catch((error_) => {
-    console.warn('[USAGE_GUARD] admin alert failed:', error_?.message || error_);
-  });
-}
-function createRateLimiter({ windowMs = 60_000, max = 100, message = 'Too many requests' } = {}) {
-  return (req, res, next) => {
-    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
-    const key = `${ip}:${req.path}`;
-    const now = Date.now();
-    const window = _rateLimitWindows.get(key) || { count: 0, resetAt: now + windowMs };
-
-    if (now > window.resetAt) {
-      window.count = 0;
-      window.resetAt = now + windowMs;
-    }
-
-    window.count++;
-    _rateLimitWindows.set(key, window);
-
-    res.setHeader('X-RateLimit-Limit', max);
-    res.setHeader('X-RateLimit-Remaining', Math.max(0, max - window.count));
-    res.setHeader('X-RateLimit-Reset', Math.ceil(window.resetAt / 1000));
-
-    if (window.count > max) {
-      notifyUsageGuardRateLimit(req, { key, count: window.count, max, message });
-      return res.status(429).json({ ok: false, error: 'rate_limited', message });
-    }
-    next();
-  };
-}
-
-// Rate limits par route
-app.use('/api/auth', createRateLimiter({ windowMs: 60_000, max: 20, message: 'Trop de tentatives de connexion' }));
-app.use('/api/chat', createRateLimiter({ windowMs: 60_000, max: 60, message: 'Trop de requêtes chat' }));
-
-// AI Assistant - problem-solving assistant
-app.use('/api/ai-assistant', createAIAssistantRouter({ verifyJWT }));
-app.use('/api/image-generate', createRateLimiter({ windowMs: 60_000, max: 20, message: 'Trop de générations d\'images' }));
-app.use('/api', createRateLimiter({ windowMs: 60_000, max: 300, message: 'Trop de requêtes' }));
-
-app.use(cookieParser());
 
 // Serve frontend static files from a configurable embedded build directory.
 function hasEmbeddedUiIndex(directory) {
