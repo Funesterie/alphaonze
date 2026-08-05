@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   buildAceStepGraph,
+  getAceStepMusicJob,
   isAceStepConfigured,
   requestAceStepMusic,
   resolveAceStepConfig,
@@ -18,6 +19,7 @@ function faireClient({ noeuds = Object.values(NOEUDS), sante = { ok: true, vramL
     listNodes: async () => noeuds,
     submit: async (g) => { vu.graphe = g; if (refus) throw new Error(refus); return 'pid-1'; },
     waitFor: async () => resultat || { ok: true, outputs: { 9: { audio: [{ filename: 'a.flac', type: 'output' }] } } },
+    getStatus: async () => resultat || { ok: true, state: 'done', outputs: { 9: { audio: [{ filename: 'a.flac', type: 'output' }] } } },
     firstOutputFile: (o) => (fichier === null ? null : (fichier || { filename: 'a.flac', type: 'output', kind: 'audio' })),
     fetchOutput: async () => Buffer.from('AUDIO'),
   };
@@ -115,6 +117,25 @@ test('genere et rend l audio', async () => {
   assert.equal(r.audio.toString(), 'AUDIO');
   assert.equal(r.meta.langue, 'fr');
   assert.equal(r.meta.duree, 16);
+});
+
+test('le mode web soumet ACE-Step sans attendre la generation', async () => {
+  const client = faireClient();
+  const r = await requestAceStepMusic({ tags: 'rap', lyrics: 'test' }, { client, wait: false });
+  assert.equal(r.ok, true);
+  assert.equal(r.state, 'processing');
+  assert.equal(r.promptId, 'pid-1');
+  assert.equal(r.audio, undefined);
+});
+
+test('le polling ACE-Step recupere le fichier seulement quand il est pret', async () => {
+  const pending = faireClient({ resultat: { ok: true, state: 'processing', outputs: {} } });
+  assert.equal((await getAceStepMusicJob('pid-1', { client: pending })).state, 'processing');
+
+  const done = faireClient();
+  const r = await getAceStepMusicJob('pid-1', { client: done });
+  assert.equal(r.state, 'done');
+  assert.equal(r.audio.toString(), 'AUDIO');
 });
 
 test('ComfyUI eteint donne une raison lisible, pas une exception', async () => {

@@ -54,7 +54,11 @@ const {
   hasVivyChorusSection,
 } = require('../music/vivy-songcraft.cjs');
 const { deriveSonicSignature } = require('../music/vivy-prime-color.cjs');
-const { isAceStepConfigured, requestAceStepMusic } = require('../music/acestep-provider.cjs');
+const {
+  getAceStepMusicJob: pollAceStepMusicJob,
+  isAceStepConfigured,
+  requestAceStepMusic,
+} = require('../music/acestep-provider.cjs');
 const { buildVivyDynamicArc, extractSectionLabels, resolveEnergyCeiling: resolveVivyEnergyCeiling } = require('../music/vivy-dynamic-arc.cjs');
 const {
   resolveCatalogVoiceId,
@@ -1474,12 +1478,31 @@ async function createVivyBundleCompletion(bundle, request, options = {}) {
     : Math.max(1000, Number(options.attemptTimeoutMs || 20000) || 20000);
   const attemptTimeoutMs = Math.max(500, Math.floor(Math.min(defaultAttemptMs, remainingMs)));
   const bundleRequest = fitVivyChatRequestForBundle(request, bundle);
-  return bundle.client.chat.completions.create({
-    ...bundleRequest,
-    model: bundle.model,
-  }, {
-    timeout: attemptTimeoutMs,
-  });
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  let rejectTimeout = null;
+  const timeoutPromise = new Promise((_, reject) => { rejectTimeout = reject; });
+  const timer = setTimeout(() => {
+    try { controller?.abort(); } catch (_) {}
+    rejectTimeout?.(buildVivyLlmDeadlineError());
+  }, attemptTimeoutMs);
+  try {
+    const completionPromise = bundle.client.chat.completions.create({
+      ...bundleRequest,
+      model: bundle.model,
+    }, {
+      timeout: attemptTimeoutMs,
+      // Le SDK OpenAI applique sinon ses retries au timeout de chaque tentative:
+      // 35 s x 3 a ete observe en prod, soit 95-163 s et un 524 Cloudflare.
+      maxRetries: 0,
+      ...(controller ? { signal: controller.signal } : {}),
+    });
+    return await Promise.race([completionPromise, timeoutPromise]);
+  } catch (error) {
+    if (controller?.signal?.aborted) throw buildVivyLlmDeadlineError();
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function createVivyChatCompletion(llmBundles, request, options = {}) {
@@ -9785,14 +9808,65 @@ async function requestAceStepViaComfy(input = {}) {
     keyscale: cleanOneLine(input.keyscale || '', '', 20) || undefined,
     negative: cleanOneLine(input.negativeStyle || '', '', 200),
     prefix: 'funesterie/acestep',
-  });
+  }, { wait: false });
 
   if (!resultat.ok) {
     const erreur = new Error(`acestep: ${resultat.raison}`);
     erreur.provider = 'acestep';
     throw erreur;
   }
-  return resultat;
+  const taskId = `acestep:${resultat.promptId}`;
+  return {
+    ...resultat,
+    state: 'processing',
+    status: resultat.status || 'submitted',
+    taskId,
+    jobId: taskId,
+  };
+}
+
+function parseAceStepTaskRef(value = '') {
+  const match = String(value || '').trim().match(/^acestep:([a-z0-9-]{6,180})$/i);
+  return match ? match[1] : '';
+}
+
+async function getAceStepMusicStatus(taskId, input = {}, req = null) {
+  const promptId = parseAceStepTaskRef(taskId);
+  if (!promptId) throw new Error('acestep_task_invalid');
+  const job = await pollAceStepMusicJob(promptId);
+  if (!job.ok) {
+    const error = new Error(`acestep: ${job.raison || 'execution echouee'}`);
+    error.code = 'acestep_generation_failed';
+    error.provider = 'acestep';
+    throw error;
+  }
+  if (job.state !== 'done') {
+    return {
+      ok: true,
+      provider: 'acestep',
+      taskId,
+      jobId: taskId,
+      state: 'processing',
+      status: job.status || 'running',
+      message: 'ACE-Step genere le morceau dans ComfyUI.',
+    };
+  }
+  const media = await saveVivyMusicBuffer(job.audio, {
+    ...input,
+    title: input.title || input.songTitle || 'Vivy ACE-Step',
+    musicProvider: 'acestep',
+    mediaProvider: 'acestep',
+  }, req);
+  if (!media?.url) throw new Error('acestep_music_save_failed');
+  return {
+    ok: true,
+    provider: 'acestep',
+    taskId,
+    jobId: taskId,
+    state: 'done',
+    status: 'completed',
+    media: { ...media, taskId, jobId: taskId },
+  };
 }
 
 async function requestMurekaMusic(input = {}, req = null) {
@@ -10513,6 +10587,7 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
 }
 
 async function getVivyMusicJob(taskId, input = {}, req = null) {
+  if (parseAceStepTaskRef(taskId)) return getAceStepMusicStatus(taskId, input, req);
   if (parseMurekaTaskRef(taskId)) return getMurekaMusicJob(taskId, input, req);
   return getSunoMusicJob(taskId, input, req);
 }
@@ -11624,7 +11699,7 @@ function createVivyStudioRouter({
           message: 'Génération musicale réservée aux comptes Famille/Premium/Fondateur, sauf clé Suno personnelle de session.',
         });
       }
-      res.json(await getSunoMusicJob(req.params.taskId, req.query || {}, req));
+      res.json(await getVivyMusicJob(req.params.taskId, req.query || {}, req));
     } catch (error) {
       res.status(error?.status || 500).json({
         ok: false,
@@ -12026,6 +12101,7 @@ module.exports = {
   getVivyCerbereSongConfig,
   getVivyLlmConfigs,
   createVivyOpenAIClientFromConfig,
+  createVivyBundleCompletion,
   countVivyChorusSections,
   buildVivyMemoryContext,
   buildVivySystemPrompt,
@@ -12056,6 +12132,7 @@ module.exports = {
   requestSunoMusicExtension,
   requestSunoMusic,
   requestMurekaMusic,
+  getAceStepMusicStatus,
   getMurekaMusicJob,
   getVivyMusicJob,
   buildVivyWebSearchQuery,

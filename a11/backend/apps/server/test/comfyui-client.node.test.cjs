@@ -101,6 +101,22 @@ test('waitFor sonde jusqu au succes', async () => {
   assert.equal(client.firstOutputFile(r.outputs).filename, 'plan.mp4');
 });
 
+test('getStatus rend processing sans attendre puis done avec les sorties', async () => {
+  let tour = 0;
+  const client = createComfyClient({
+    fetch: fauxFetch([[/\/history\//, () => {
+      tour += 1;
+      if (tour === 1) return { json: {} };
+      return { json: { abc: { status: { completed: true }, outputs: { 9: { audio: [{ filename: 'song.mp3' }] } } } } };
+    }]]),
+  });
+
+  assert.equal((await client.getStatus('abc')).state, 'processing');
+  const fini = await client.getStatus('abc');
+  assert.equal(fini.state, 'done');
+  assert.equal(client.firstOutputFile(fini.outputs).filename, 'song.mp3');
+});
+
 test('waitFor rend la main sur erreur d execution, sans boucler', async () => {
   const client = createComfyClient({
     pollMs: 1,

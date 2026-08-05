@@ -120,24 +120,38 @@ function createComfyClient(options = {}) {
     return data.prompt_id;
   }
 
+  // Une seule lecture de l'etat d'un prompt. Les routes HTTP longues doivent
+  // soumettre puis rendre la main; le navigateur rappelle ensuite /jobs/:id.
+  // waitFor() reste disponible pour les workers hors requete web.
+  async function getStatus(promptId) {
+    const safePromptId = String(promptId || '').trim();
+    if (!safePromptId) {
+      return { ok: false, state: 'error', raison: 'identifiant de prompt absent' };
+    }
+    const r = await requete(`/history/${encodeURIComponent(safePromptId)}`);
+    const data = await r.json();
+    const entree = data?.[safePromptId];
+    if (!entree) {
+      return { ok: true, state: 'processing', promptId: safePromptId, outputs: {} };
+    }
+    const statut = entree.status || {};
+    if (statut.status_str === 'error') {
+      const msg = (statut.messages || []).map((m) => JSON.stringify(m)).join(' ').slice(0, 500);
+      return { ok: false, state: 'error', promptId: safePromptId, raison: msg || 'erreur d execution' };
+    }
+    if (statut.completed === true || statut.status_str === 'success') {
+      return { ok: true, state: 'done', promptId: safePromptId, outputs: entree.outputs || {} };
+    }
+    return { ok: true, state: 'processing', promptId: safePromptId, outputs: entree.outputs || {} };
+  }
+
   // Sondage de /history. ComfyUI expose aussi un WebSocket de progression, mais le
   // sondage suffit ici : un plan met des minutes, pas des millisecondes.
   async function waitFor(promptId, { onProgress = null } = {}) {
     const debut = now();
     for (;;) {
-      const r = await requete(`/history/${encodeURIComponent(promptId)}`);
-      const data = await r.json();
-      const entree = data?.[promptId];
-      if (entree) {
-        const statut = entree.status || {};
-        if (statut.completed === true || statut.status_str === 'success') {
-          return { ok: true, promptId, outputs: entree.outputs || {} };
-        }
-        if (statut.status_str === 'error') {
-          const msg = (statut.messages || []).map((m) => JSON.stringify(m)).join(' ').slice(0, 500);
-          return { ok: false, promptId, raison: msg || 'erreur d execution' };
-        }
-      }
+      const etat = await getStatus(promptId);
+      if (!etat.ok || etat.state === 'done') return etat;
       if (now() - debut > timeoutMs) {
         return { ok: false, promptId, raison: `delai depasse apres ${Math.round(timeoutMs / 1000)} s` };
       }
@@ -175,6 +189,7 @@ function createComfyClient(options = {}) {
     describeNode,
     uploadImage,
     submit,
+    getStatus,
     waitFor,
     firstOutputFile,
     fetchOutput,

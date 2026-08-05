@@ -202,6 +202,28 @@ async function requestAceStepMusic(demande = {}, options = {}) {
     return { ok: false, provider: 'acestep', raison: erreur.message };
   }
 
+  // Une generation audio locale peut durer plusieurs minutes. Derriere
+  // Cloudflare, attendre ici produit inevitablement un 524. La route web demande
+  // donc une soumission asynchrone et sonde ensuite le prompt ComfyUI.
+  if (options.wait === false) {
+    return {
+      ok: true,
+      provider: 'acestep',
+      state: 'processing',
+      status: 'submitted',
+      promptId,
+      meta: {
+        modele: config.diffusion,
+        steps: config.steps,
+        bpm: graphe[4].inputs.bpm,
+        duree: graphe[4].inputs.duration,
+        langue: graphe[4].inputs.language,
+        keyscale: graphe[4].inputs.keyscale,
+        vram: etat.vramLibre,
+      },
+    };
+  }
+
   const resultat = await client.waitFor(promptId, { onProgress: options.onProgress || null });
   if (!resultat.ok) return { ok: false, provider: 'acestep', raison: resultat.raison, promptId };
 
@@ -227,10 +249,44 @@ async function requestAceStepMusic(demande = {}, options = {}) {
   };
 }
 
+async function getAceStepMusicJob(promptId, options = {}) {
+  const env = options.env || process.env;
+  const config = { ...resolveAceStepConfig(env), ...(options.config || {}) };
+  const client = options.client || createComfyClient({ env, baseUrl: config.baseUrl });
+  const resultat = await client.getStatus(promptId);
+  if (!resultat.ok) {
+    return {
+      ok: false,
+      provider: 'acestep',
+      state: 'error',
+      promptId,
+      raison: resultat.raison || 'execution ACE-Step echouee',
+    };
+  }
+  if (resultat.state !== 'done') {
+    return { ok: true, provider: 'acestep', state: 'processing', status: 'running', promptId };
+  }
+  const fichier = client.firstOutputFile(resultat.outputs);
+  if (!fichier) {
+    return { ok: false, provider: 'acestep', state: 'error', promptId, raison: 'aucun fichier produit' };
+  }
+  const audio = await client.fetchOutput(fichier);
+  return {
+    ok: true,
+    provider: 'acestep',
+    state: 'done',
+    status: 'completed',
+    promptId,
+    audio,
+    filename: fichier.filename,
+  };
+}
+
 module.exports = {
   DEFAUTS,
   NOEUDS,
   buildAceStepGraph,
+  getAceStepMusicJob,
   isAceStepConfigured,
   requestAceStepMusic,
   resolveAceStepConfig,
