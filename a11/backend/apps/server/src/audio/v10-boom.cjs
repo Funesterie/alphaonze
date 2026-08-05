@@ -27,7 +27,6 @@ const {
   V11_PAN_SPREAD_MAX_MS,
   V11_PAN_SPREAD_MS,
   V11_PAN_WIDTH,
-  T_LINEAR,
 } = require('./double-harmonic-d40.cjs');
 
 const V10_BOOM_SCHEMA = 'funesterie.audio.double-harmonic-boom-d40.v10';
@@ -35,31 +34,13 @@ const V10_BOOM_METHOD = 'v9-electrolysis-plus-axis-m-inversion-delay-boom-v10';
 const V10_BOOM_STATE = 'v10-boom-production-default';
 const V10_BOOM_PRESET = 'v10-boom-v9-electrolysis-cross-m-wet015';
 
-// Gain du shelf V12, tire de T_LINEAR : -20*log10(0,3695) = 8,648 dB.
-//
-// CORRECTION du 04/08, relevee par Djeff. J'avais d'abord ecrit ce gain comme
-// « un neper » en justifiant que V10_CANON.grainLow (0,3694777) valait 1/e a
-// 0,4 % pres. C'est faux, et le canon le dit deja :
-//
-//   grainLow vs T_LINEAR (0,3695)   0,006 %   <- le meme nombre, arrondi
-//   grainLow vs 1/e      (0,367879) 0,43 %    <- 70 fois plus loin
-//
-// grainLow EST T_LINEAR. Et double-harmonic-d40.cjs definit ONE_OVER_E comme une
-// constante SEPAREE : le canon distingue explicitement les deux, et la confusion
-// que j'ai faite est celle contre laquelle vivy-prime-color.cjs met deja en garde
-// (« T_linear est explicitement un coefficient spectral linearise, PAS mg_phase »).
-//
-// L'ecart audible entre les deux lectures est de 0,038 dB — rien. Mais T_LINEAR
-// est un coefficient SPECTRAL, et le shelf est une operation spectrale : ce n'est
-// pas seulement la valeur honnete, c'est la bonne raison.
-const SHELF_GAIN_DB = -20 * Math.log10(T_LINEAR);
-
 /**
- * Bas-shelf derive du canon. Rend '' si desactive.
+ * Bas-shelf manuel. Rend '' si desactive.
  *
- * La frequence n'est pas reglable a la main : elle vaut 1/tau, le premier zero
- * du peigne d'inversion. La deplacer reviendrait a combler autre chose que le
- * trou qu'on veut combler.
+ * Il n'est jamais active par une constante Prime. Les documents canoniques
+ * distinguent T_linear d'un coefficient spectral mesure et de grainLow : une
+ * valeur arrondie ne peut donc pas devenir automatiquement un gain en dB.
+ * La frequence reste liee a 1/tau quand un operateur la demande explicitement.
  */
 function buildLowShelf(config) {
   const gainDb = config.shelfGainDb;
@@ -81,7 +62,7 @@ const V10_CANON = {
   get mgPhase() { return 9 - (2 * this.t1) / Math.PI; }, // 0.001554497790530303
   target0005Pi: 0.0005 * Math.PI,                   // 0.0015707963267948967
   S: 40.0005 * Math.PI,                             // ~= 125.6699 (grille cycle)
-  grainLow: 0.3694777356929151,                     // = T_LINEAR arrondi, PAS 1/e (ecart 0,43 %)
+  grainLow: 0.3694777356929151,                     // trace GrainLow distincte; proximite avec T_linear != substitution
   // balance_RH(t) = 1 - 2|phase - 1/2| : 1 au centre (ligne critique), 0 aux bords.
   balanceRh(phase) { return 1 - 2 * Math.abs(Number(phase || 0) - 0.5); },
   // Carte orientée canon (transmis par Djeff/ChatGPT 2026-07-30) : croix DIAGONALE, pas
@@ -180,15 +161,14 @@ function resolveV10BoomConfig(options = {}) {
   // boomGain en dB, clampé <= +3 dB (garde-fou). volume = 10^(dB/20).
   const boomGainDb = clampNumber(options.boomGainDb ?? process.env.VIVY_V10_BOOM_GAIN_DB, -6, 3, 2);
   const bassBandHz = clampNumber(options.bassBandHz ?? process.env.VIVY_V10_BOOM_BAND_HZ, 60, 300, 120);
-  const peakLimit = clampNumber(options.peakLimit ?? process.env.VIVY_V10_BOOM_PEAK_LIMIT, 0.8, 0.99, 0.95);
-  // Bas-shelf V12. Defaut = un neper (8,686 dB), plafonne a deux nepers : au-dela
-  // le limiteur travaille en permanence et le morceau perd sa dynamique au lieu
-  // de gagner du poids. 0 desactive.
+  // 0,84 ~= -1,51 dBFS : garde assez de marge pour l'encodage MP3 final.
+  const peakLimit = clampNumber(options.peakLimit ?? process.env.VIVY_V10_BOOM_PEAK_LIMIT, 0.8, 0.99, 0.84);
+  // Bas-shelf manuel, desactive par defaut. Aucune constante Prime ne sert de gain.
   const shelfGainDb = clampNumber(
     options.shelfGainDb ?? process.env.VIVY_V12_SHELF_GAIN_DB,
     0,
-    2 * SHELF_GAIN_DB,
-    SHELF_GAIN_DB
+    12,
+    0
   );
   // V11 pan — 1 = image inchangee (comportement V10 d'origine).
   // VIVY_V10_BOOM_PAN_WIDTH reste lu en second : c'est le nom sous lequel la valeur
@@ -310,26 +290,9 @@ function buildV10BoomFilterGraph(config) {
   const spread = Math.round(Number(config.panSpreadMs) || 0);
   const tauG = Math.max(0, Number(tau) - spread);
   const tauD = Number(tau) + spread;
-  // Bas-shelf V12 — derive du canon, pas choisi a l'oreille.
-  //
-  // Mesure du 04/08 sur une sortie V11 : le spectre est plat. 60-90 Hz a -20,9 dB
-  // pour 300-800 Hz a -25,6 — soit 4,7 dB d'ecart la ou un morceau qui fait
-  // vibrer les vitres en demande 10 a 15. Le grave n'est pas absent, il n'est
-  // pas au-dessus.
-  //
-  // Le boom ne peut pas corriger ca : c'est une resonance, il elargit le grave,
-  // il ne lui donne pas de poids. Pire, il creuse un trou. L'inversion
-  // y(t) = x(t) - a*x(t-tau) est un peigne : crete a 1/(2*tau) = 40 Hz — la
-  // frequence canon — et PREMIER ZERO a 1/tau = 80 Hz.
-  //
-  // Le shelf est donc pose exactement sur ce zero, pour combler ce que le boom
-  // annule au lieu de rajouter du grave par-dessus du grave :
-  //
-  //   frequence = 1/tau            = 80 Hz avec tau = 12,5 ms
-  //   gain      = -20*log10(1/e)   = 8,686 dB, soit UN NEPER
-  //
-  // Le neper n'est pas arbitraire non plus : V10_CANON.grainLow vaut 0,3695,
-  // c'est-a-dire 1/e a 0,4 % pres. Le canon portait deja l'unite.
+  // Bas-shelf optionnel, uniquement sur reglage explicite. Il reste a zero dans
+  // le chemin de production : V11 ouvre la resonance M, elle ne remasterise pas
+  // arbitrairement tout le grave.
   const shelf = buildLowShelf(config);
 
   // y(t) = x(t) - a*x(t-tau) : dry + copie retardée inversée (fermeture axe m).
@@ -425,7 +388,9 @@ async function processV10BoomD40({
   const parsedOutput = path.parse(outputPath);
   fs.mkdirSync(parsedOutput.dir, { recursive: true });
   const jobRoot = fs.mkdtempSync(path.join(parsedOutput.dir, `.${parsedOutput.name}.v10job-`));
-  const v9OutputPath = path.join(jobRoot, `v9-electrolysis${parsedOutput.ext || '.wav'}`);
+  // Intermediaire sans perte : quand la sortie publique est un MP3, reutiliser son
+  // extension imposait un encodage avec perte avant la passe V10, puis un second.
+  const v9OutputPath = path.join(jobRoot, 'v9-electrolysis.flac');
   let base;
   let boom;
   try {
@@ -498,7 +463,6 @@ module.exports = {
   V10_CANON,
   V11_PAN_SCHEMA,
   V11_PAN_WIDTH,
-  T_LINEAR,
   resolveV10BoomConfig,
   buildV10BoomPlan,
   buildV10BoomFilterGraph,

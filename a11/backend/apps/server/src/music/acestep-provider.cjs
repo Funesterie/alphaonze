@@ -25,7 +25,10 @@ const NOEUDS = {
   zeroOut: 'ConditioningZeroOut',
   sampler: 'KSampler',
   decode: 'VAEDecodeAudio',
-  save: 'SaveAudioMP3',
+  // Conserver la sortie modele sans perte. Le MP3 public est encode une seule
+  // fois, apres le mastering Vivy; SaveAudioMP3 ajoutait deja une generation
+  // avec perte avant les passes V9/V10.
+  save: 'SaveAudio',
 };
 
 // Valeurs relevees sur le workflow officiel livre avec ComfyUI 0.30.0 :
@@ -208,7 +211,6 @@ function buildAceStepGraph(demande = {}, config = resolveAceStepConfig()) {
       inputs: {
         audio: ['8', 0],
         filename_prefix: String(demande.prefix || 'funesterie/acestep'),
-        quality: config.mp3Quality || DEFAUTS.mp3Quality,
       },
     },
   };

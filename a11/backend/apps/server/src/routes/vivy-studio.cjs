@@ -59,6 +59,12 @@ const {
   isAceStepConfigured,
   requestAceStepMusic,
 } = require('../music/acestep-provider.cjs');
+const {
+  appendAceStepMasteryEvent,
+  buildAceStepMasteryHints,
+  normalizeDefects: normalizeAceStepDefects,
+  summarizeAceStepMastery,
+} = require('../music/acestep-mastery.cjs');
 const { buildVivyDynamicArc, extractSectionLabels, resolveEnergyCeiling: resolveVivyEnergyCeiling } = require('../music/vivy-dynamic-arc.cjs');
 const {
   resolveCatalogVoiceId,
@@ -9438,8 +9444,9 @@ function buildVivyMp3RepairArgs(inputPath, outputPath) {
 
 function buildVivyMusicMasterArgs(inputPath, outputPath) {
   const targetI = cleanOneLine(process.env.VIVY_MUSIC_MASTER_LUFS, '-14', 12);
-  const targetTp = cleanOneLine(process.env.VIVY_MUSIC_MASTER_TP, '-1.2', 12);
+  const targetTp = cleanOneLine(process.env.VIVY_MUSIC_MASTER_TP, '-1.5', 12);
   const targetLra = cleanOneLine(process.env.VIVY_MUSIC_MASTER_LRA, '9', 12);
+  const limiterValue = Math.max(0.8, Math.min(0.95, Number(process.env.VIVY_MUSIC_MASTER_LIMIT || 0.84) || 0.84));
   return [
     '-y',
     '-hide_banner',
@@ -9450,7 +9457,7 @@ function buildVivyMusicMasterArgs(inputPath, outputPath) {
     '-sn',
     '-dn',
     '-map_metadata', '-1',
-    '-af', `highpass=f=35,loudnorm=I=${targetI}:TP=${targetTp}:LRA=${targetLra},alimiter=limit=0.98`,
+    '-af', `highpass=f=35,loudnorm=I=${targetI}:TP=${targetTp}:LRA=${targetLra},alimiter=limit=${limiterValue.toFixed(3)}:level=false`,
     '-ac', '2',
     '-ar', '44100',
     '-c:a', 'libmp3lame',
@@ -9526,7 +9533,7 @@ async function masterVivyMusicFile(filePath, options = {}) {
       originalSize,
       masteredSize,
       targetLufs: cleanOneLine(process.env.VIVY_MUSIC_MASTER_LUFS, '-14', 12),
-      truePeak: cleanOneLine(process.env.VIVY_MUSIC_MASTER_TP, '-1.2', 12),
+      truePeak: cleanOneLine(process.env.VIVY_MUSIC_MASTER_TP, '-1.5', 12),
       lra: cleanOneLine(process.env.VIVY_MUSIC_MASTER_LRA, '9', 12),
     };
   } catch (error) {
@@ -9589,9 +9596,57 @@ async function saveVivyMusicBuffer(buffer, input = {}, req = null) {
   const filePath = getEmergencyMediaAssetPath(filename);
   if (!filePath) return null;
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, buffer);
-  const repair = await repairVivyMp3File(filePath);
-  const mastering = await masterVivyMusicFile(filePath);
+  const providedSourceName = cleanOneLine(
+    input.sourceFilename || input.providerFilename || input.originalFilename,
+    '',
+    240
+  );
+  const providedExtension = path.extname(providedSourceName).toLowerCase();
+  const sourceExtension = ['.flac', '.wav', '.ogg', '.m4a', '.aac', '.mp3'].includes(providedExtension)
+    ? providedExtension
+    : '.mp3';
+  const sourcePath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filename, '.mp3')}.source-${process.pid}-${Date.now()}${sourceExtension}`
+  );
+  let mastering;
+  try {
+    fs.writeFileSync(sourcePath, buffer);
+    await runVivyFfmpeg(buildVivyMusicMasterArgs(sourcePath, filePath), {
+      timeoutMs: process.env.VIVY_MUSIC_MASTER_TIMEOUT_MS || 180000,
+      errorCode: 'vivy_music_master_failed',
+    });
+    if (!fs.existsSync(filePath) || fs.statSync(filePath).size <= 0) throw new Error('vivy_music_master_empty_output');
+    mastering = {
+      ok: true,
+      singlePass: true,
+      sourceFormat: sourceExtension.slice(1),
+      originalSize: buffer.length,
+      masteredSize: fs.statSync(filePath).size,
+      targetLufs: cleanOneLine(process.env.VIVY_MUSIC_MASTER_LUFS, '-14', 12),
+      truePeak: cleanOneLine(process.env.VIVY_MUSIC_MASTER_TP, '-1.5', 12),
+      lra: cleanOneLine(process.env.VIVY_MUSIC_MASTER_LRA, '9', 12),
+    };
+  } catch (error) {
+    try { fs.rmSync(filePath, { force: true }); } catch (_) {}
+    console.warn('[Vivy Studio] Music single-pass mastering failed:', cleanOneLine(error?.message || error, 'unknown', 240));
+    // Compatibilite fournisseurs : certains tests/connecteurs rendent un MP3 deja
+    // materialise mais non sondable dans l'environnement courant. Conserver ce MP3
+    // est plus sur que de le reencoder deux fois. Une source lossless, en revanche,
+    // ne doit jamais etre servie sous une fausse extension .mp3.
+    if (sourceExtension !== '.mp3') return null;
+    fs.copyFileSync(sourcePath, filePath);
+    mastering = {
+      ok: false,
+      skipped: true,
+      reason: 'single_pass_master_failed_source_mp3_preserved',
+      sourceFormat: 'mp3',
+      message: cleanOneLine(error?.message || error, 'unknown', 240),
+    };
+  } finally {
+    try { fs.rmSync(sourcePath, { force: true }); } catch (_) {}
+  }
+  const repair = { ok: false, skipped: true, reason: 'single_pass_master' };
   const url = `/api/vivy/studio/assets/${encodeURIComponent(filename)}`;
   return {
     ok: true,
@@ -9833,23 +9888,111 @@ function getMurekaProviderError(payload = {}, fallback = 'mureka_music_failed') 
 //
 // La couleur sonore choisie par Vivy alimente directement les entrees du modele —
 // bpm, tonalite, tags — au lieu d'etre recollee en fin de chaine comme pour Suno.
-async function requestAceStepViaComfy(input = {}) {
+function buildVivyAceStepCastDirection(artistCast = {}) {
+  const roles = (artistCast.artists || []).map((artist) => cleanOneLine(artist.sunoRole || artist.style, '', 180)).filter(Boolean);
+  if (roles.length > 1) {
+    return cleanOneLine([
+      `French dual-vocal production with ${roles.length} clearly different vocal timbres`,
+      roles.join(' versus '),
+      'strictly switch vocal timbre at every role section',
+      'one solo vocalist at a time',
+      'brief duet only in sections marked male and female duet',
+    ].join(', '), '', 760);
+  }
+  return cleanOneLine(roles[0] || 'clear expressive French lead vocal', '', 240);
+}
+
+function prepareVivyAceStepLyrics(input = {}, artistCast = buildVivySongArtistCast(input), maxChars = VIVY_SONG_MAX_CHARS) {
+  const lyrics = sanitizeVivyProviderCleanLyrics(resolveVivyProviderLyricsSource(input), maxChars);
+  if (!lyrics) return '';
+  const replacements = new Map((artistCast.artists || []).map((artist) => {
+    let role = cleanOneLine(artist.sunoRole || artist.style, 'lead vocal', 100);
+    if (artist.id === 'djeff') role = 'Male Rap Vocal';
+    else if (artist.id === 'vivy') role = 'Female Melodic Vocal';
+    else if (artist.id === 'marvin') role = 'Male Melodic Rap Vocal';
+    else if (artist.id === 'a11') role = 'Low Robotic Vocal';
+    else if (artist.id === 'k44') role = 'Warm Male Counter Vocal';
+    return [String(artist.label || '').toLowerCase(), role];
+  }));
+  const lines = lyrics.split(/\r?\n/);
+  const output = [];
+  let previousSectionRole = '';
+  for (const rawLine of lines) {
+    const match = String(rawLine || '').trim().match(/^\[([^\]]+)\]$/);
+    if (!match) {
+      output.push(rawLine);
+      if (String(rawLine || '').trim()) previousSectionRole = '';
+      continue;
+    }
+    const inner = match[1].trim();
+    const foldedInner = foldTextForLookup(inner);
+    const standalone = [...replacements.entries()].find(([label]) => foldedInner === foldTextForLookup(label));
+    if (standalone && previousSectionRole === standalone[1]) continue;
+
+    let transformed = inner;
+    let detectedRole = '';
+    for (const [label, role] of replacements.entries()) {
+      const matcher = new RegExp(`\\b${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'ig');
+      if (!matcher.test(transformed)) continue;
+      transformed = transformed.replace(matcher, role);
+      detectedRole = role;
+    }
+    if (/\b(?:duo|tous|ensemble)\b/i.test(transformed)) {
+      transformed = transformed.replace(/\b(?:duo|tous|ensemble)\b/ig, 'Male and Female Duet');
+      detectedRole = 'Male and Female Duet';
+    }
+    output.push(`[${transformed}]`);
+    previousSectionRole = detectedRole;
+  }
+  return cleanText(output.join('\n').replace(/\n{3,}/g, '\n\n'), maxChars);
+}
+
+function buildVivyAceStepTags(input = {}, masterySummary = null) {
+  const artistCast = buildVivySongArtistCast(input);
+  const material = buildVivySunoStyleMaterial(input);
+  const direction = extractVivySonicDirection(material);
+  const explicitStyle = cleanOneLine(
+    input.styleTags || input.songMood || input.mood || input.style || direction.mood,
+    '',
+    500
+  );
+  const inferredStyle = explicitStyle || inferVivySunoStyleBase(input, artistCast);
+  const intentionalNoise = /\b(?:vinyl|lo-?fi|tape hiss|cassette|crackle|distortion|saturation|noise texture|bruit de fond|gresillement|grésillement)\b/i.test(explicitStyle);
+  const fixedQuality = intentionalNoise
+    ? 'controlled intentional texture, no digital clipping, balanced low end, clear midrange, preserved dynamics'
+    : 'high-fidelity studio production, clean noise floor, no crackle, no vinyl noise, no clipping, controlled sub-bass, clear midrange, preserved dynamics';
+  const arrangement = 'detailed evolving arrangement, layered instrumentation, countermelodies, fills, transitions and clear contrast between sections';
+  const learnedHints = buildAceStepMasteryHints(masterySummary || {})
+    .filter((hint) => !intentionalNoise || !/no crackle|no vinyl noise|clean noise floor/i.test(hint));
+  const parts = [
+    inferredStyle,
+    buildVivyAceStepCastDirection(artistCast),
+    arrangement,
+    fixedQuality,
+    ...learnedHints,
+  ].map((value) => cleanOneLine(value, '', 900)).filter(Boolean);
+  return {
+    tags: cleanOneLine(parts.filter((value, index, list) => list.indexOf(value) === index).join(', '), '', 1800),
+    artistCast,
+    learnedHints,
+    intentionalNoise,
+  };
+}
+
+async function requestAceStepViaComfy(input = {}, req = null) {
   const matiere = buildVivySunoStyleMaterial(input);
   const signature = deriveSonicSignature(matiere);
-
-  const tags = [
-    cleanOneLine(input.styleTags || input.style || '', '', 200),
-    signature.texture,
-    signature.mouvement,
-  ].filter(Boolean).join(', ');
+  const masteryActor = resolveVivyMemoryUser(req, input);
+  const masterySummary = masteryActor ? summarizeAceStepMastery(masteryActor) : null;
+  const direction = buildVivyAceStepTags(input, masterySummary);
 
   const aceLyricsMaxChars = Math.max(6000, Math.min(
     VIVY_SONG_MAX_CHARS,
     Number(process.env.VIVY_ACESTEP_LYRICS_MAX_CHARS || VIVY_SONG_MAX_CHARS) || VIVY_SONG_MAX_CHARS
   ));
   const resultat = await requestAceStepMusic({
-    tags,
-    lyrics: cleanText(input.lyrics || input.paroles || '', aceLyricsMaxChars),
+    tags: direction.tags,
+    lyrics: prepareVivyAceStepLyrics(input, direction.artistCast, aceLyricsMaxChars),
     seed: signature.seed,
     bpm: Number(input.bpm) || undefined,
     // Le studio NOSSEN envoie targetDurationSeconds=300. Avant ce raccord, ACE
@@ -9878,6 +10021,27 @@ async function requestAceStepViaComfy(input = {}) {
     erreur.provider = 'acestep';
     throw erreur;
   }
+  if (masteryActor) {
+    try {
+      appendAceStepMasteryEvent(masteryActor, {
+        type: 'submitted',
+        promptId: resultat.promptId,
+        castCount: direction.artistCast.count,
+        castMode: direction.artistCast.count > 1 ? 'guided_multi_timbre' : 'single_voice',
+        durationSeconds: resultat.meta?.duree,
+        tags: direction.tags,
+        masteryHints: direction.learnedHints.flatMap((hint) => {
+          const defects = [];
+          if (/crackle|noise|clipping|harsh/i.test(hint)) defects.push('crackle');
+          if (/arrangement/i.test(hint)) defects.push('simple_arrangement');
+          if (/vocal timbres/i.test(hint)) defects.push('duo_not_distinct');
+          return defects;
+        }),
+      });
+    } catch (error) {
+      console.warn('[ACE-Step Mastery] submit memory skipped:', cleanOneLine(error?.message || error, 'unknown', 180));
+    }
+  }
   const taskId = `acestep:${resultat.promptId}`;
   return {
     ...resultat,
@@ -9885,6 +10049,9 @@ async function requestAceStepViaComfy(input = {}) {
     status: resultat.status || 'submitted',
     taskId,
     jobId: taskId,
+    castGuidance: direction.artistCast.count > 1,
+    voiceIdentityGuaranteed: false,
+    masteryApplied: direction.learnedHints.length > 0,
   };
 }
 
@@ -9919,8 +10086,22 @@ async function getAceStepMusicStatus(taskId, input = {}, req = null) {
     title: input.title || input.songTitle || 'Vivy ACE-Step',
     musicProvider: 'acestep',
     mediaProvider: 'acestep',
+    sourceFilename: job.filename,
   }, req);
   if (!media?.url) throw new Error('acestep_music_save_failed');
+  const masteryActor = resolveVivyMemoryUser(req, input);
+  if (masteryActor) {
+    try {
+      appendAceStepMasteryEvent(masteryActor, {
+        type: 'completed',
+        promptId,
+        sourceFormat: path.extname(job.filename || '').slice(1),
+        singlePassMaster: media.mastering?.singlePass === true,
+      });
+    } catch (error) {
+      console.warn('[ACE-Step Mastery] completion memory skipped:', cleanOneLine(error?.message || error, 'unknown', 180));
+    }
+  }
   return {
     ok: true,
     provider: 'acestep',
@@ -10677,7 +10858,7 @@ async function buildRealMusicForProduction(mode, input, req) {
       if (provider === 'suno' && (isSunoMusicConfigured() || getRequestSessionSunoApiKey(input, req))) return await requestSunoMusic(input, req);
       if (provider === 'mureka' && isMurekaMusicConfigured()) return await requestMurekaMusic(input, req);
       if ((provider === 'acestep' || provider === 'ace-step') && isAceStepConfigured()) {
-        return await requestAceStepViaComfy(input);
+        return await requestAceStepViaComfy(input, req);
       }
       if ((provider === 'elevenlabs' || provider === 'elevenlabs-music') && (isElevenLabsMusicConfigured() || explicitElevenLabsPreview)) {
         return await requestElevenLabsMusic(input, req);
@@ -11753,6 +11934,50 @@ function createVivyStudioRouter({
     }
   });
 
+  router.get('/acestep/mastery', requireAuth, (req, res) => {
+    try {
+      const actor = resolveVivyMemoryUser(req, {});
+      if (!actor) return res.status(401).json({ ok: false, error: 'vivy_auth_required' });
+      return res.json({ ok: true, mastery: summarizeAceStepMastery(actor) });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        error: 'acestep_mastery_read_failed',
+        message: cleanOneLine(error?.message || error, 'unknown', 180),
+      });
+    }
+  });
+
+  router.post('/acestep/feedback', requireAuth, express.json({ limit: '16kb' }), (req, res) => {
+    try {
+      const actor = resolveVivyMemoryUser(req, req.body || {});
+      if (!actor) return res.status(401).json({ ok: false, error: 'vivy_auth_required' });
+      const promptId = parseAceStepTaskRef(req.body?.taskId) || cleanOneLine(req.body?.promptId, '', 180);
+      if (!/^[a-z0-9-]{6,180}$/i.test(promptId)) {
+        return res.status(400).json({ ok: false, error: 'acestep_prompt_invalid' });
+      }
+      const defects = normalizeAceStepDefects(req.body?.defects);
+      const verdict = cleanOneLine(req.body?.verdict, 'mixed', 20).toLowerCase();
+      if (!defects.length && !cleanOneLine(req.body?.notes, '', 600) && verdict === 'mixed') {
+        return res.status(400).json({ ok: false, error: 'acestep_feedback_empty' });
+      }
+      appendAceStepMasteryEvent(actor, {
+        type: 'feedback',
+        promptId,
+        verdict,
+        defects,
+        notes: req.body?.notes,
+      });
+      return res.json({ ok: true, mastery: summarizeAceStepMastery(actor) });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        error: 'acestep_mastery_write_failed',
+        message: cleanOneLine(error?.message || error, 'unknown', 180),
+      });
+    }
+  });
+
   router.get('/jobs/:taskId', requireAuth, async (req, res) => {
     try {
       if (!canUseServerSuno(req) && !getRequestSessionSunoApiKey({}, req)) {
@@ -12186,6 +12411,10 @@ module.exports = {
   buildVivySunoPayload,
   clampVivySunoLyricsLength,
   buildVivyMurekaPayload,
+  buildVivyAceStepCastDirection,
+  buildVivyAceStepTags,
+  prepareVivyAceStepLyrics,
+  buildVivyMusicMasterArgs,
   extractSunoMedia,
   extractSunoMediaWithAudio,
   selectVivySunoDirectorTrackWithAudio,

@@ -45,7 +45,7 @@ test('V10 Boom — le filtre est la fermeture axe m (inversion retardee y=x-a*x(
   // sub cap (highpass) + remix a wet 0.15
   assert.match(g, /highpass=f=30/);
   assert.match(g, /weights=1 0\.150/);
-  assert.match(g, /alimiter=limit=0\.950:attack=5:release=50:level=false/);
+  assert.match(g, /alimiter=limit=0\.840:attack=5:release=50:level=false/);
   assert.match(g, /\[out\]/);
   const mp3Args = buildV10BoomArgs('v9.mp3', 'v10.mp3', cfg);
   assert.deepEqual(mp3Args.slice(-5), ['-codec:a', 'libmp3lame', '-b:a', '192k', 'v10.mp3']);
@@ -67,7 +67,8 @@ test('V11 pan — l ouverture se pose avant le limiteur et se desactive propreme
   // milieu-cote, avec le limiteur en ecretage permanent.
   assert.match(g, /\[m2\]volume=[\d.]+,stereotools=slev=1\.500\[m3\]/, 'le pan porte sur la resonance');
   assert.doesNotMatch(g, /\[mix(?:b)?\][^;]*stereotools=/, 'le mix complet ne doit PAS etre elargi');
-  assert.match(g, /\[mixb\]alimiter=/, 'le limiteur final reste apres le shelf de securite');
+  assert.match(g, /\[mix\]alimiter=/, 'le limiteur final reste apres la resonance');
+  assert.doesNotMatch(g, /\bbass=g=/, 'aucun shelf ne doit etre derive automatiquement d une constante Prime');
 
   // Le retard CREE le cote ; slev seul n'a rien a multiplier (la resonance est mono).
   assert.equal(parDefaut.panSpreadMs, 4);
@@ -77,7 +78,7 @@ test('V11 pan — l ouverture se pose avant le limiteur et se desactive propreme
   const neutre = buildV10BoomFilterGraph(resolveV10BoomConfig({ panWidth: 1, panSpreadMs: 0 }));
   assert.ok(!neutre.includes('stereotools'), 'panWidth=1 ne doit rien ajouter au graphe');
   assert.match(neutre, /adelay=12\|12/, 'spread=0 rend la fermeture d axe m identique');
-  assert.match(neutre, /\[mixb\]alimiter=limit=0\.950/);
+  assert.match(neutre, /\[mix\]alimiter=limit=0\.840/);
 
   // L'ecart ne peut pas depasser tau, sinon le retard gauche deviendrait negatif.
   assert.ok(resolveV10BoomConfig({ delay: 3, panSpreadMs: 8 }).panSpreadMs <= 3);
@@ -100,7 +101,8 @@ test('V10 Boom — garde-fou canon : wet <= 0.2, gain <= +3 dB, master de produc
   const cfg = resolveV10BoomConfig({ wet: 0.9, boomGainDb: 12 });
   assert.ok(cfg.wet <= 0.2, 'wet clamped <= 0.2');
   assert.ok(cfg.boomGainDb <= 3, 'gain clamped <= +3 dB');
-  assert.equal(cfg.peakLimit, 0.95);
+  assert.equal(cfg.peakLimit, 0.84);
+  assert.equal(cfg.shelfGainDb, 0, 'T_linear ne doit pas devenir un gain de grave');
   assert.equal(cfg.researchOnly, false);
   assert.equal(cfg.researchOrigin, true);
   assert.equal(cfg.productionDefault, true);

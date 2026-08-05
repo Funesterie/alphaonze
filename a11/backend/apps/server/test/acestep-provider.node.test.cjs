@@ -71,6 +71,8 @@ test('le graphe suit le workflow officiel audio_ace_step_1_5_split', () => {
   assert.equal(g[4].class_type, 'TextEncodeAceStepAudio1.5');
   assert.equal(g[6].class_type, 'EmptyAceStep1.5LatentAudio');
   assert.equal(g[8].class_type, 'VAEDecodeAudio');
+  assert.equal(g[9].class_type, 'SaveAudio', 'la source ACE reste en FLAC jusqu au master final');
+  assert.equal(g[9].inputs.quality, undefined, 'aucun MP3 intermediaire avec perte');
 
   assert.deepEqual(g[4].inputs.clip, ['2', 0]);
   assert.deepEqual(g[7].inputs.positive, ['4', 0]);
