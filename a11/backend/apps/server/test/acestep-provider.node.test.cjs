@@ -11,11 +11,18 @@ const {
 } = require('../src/music/acestep-provider.cjs');
 
 // Client factice : on verifie le contrat sans instance ComfyUI.
-function faireClient({ noeuds = Object.values(NOEUDS), sante = { ok: true, vramLibre: 11e9 }, resultat, fichier, refus } = {}) {
+function faireClient({ noeuds = Object.values(NOEUDS), sante = { ok: true, vramLibre: 11e9 }, santes, resultat, fichier, refus } = {}) {
   const vu = {};
+  let healthIndex = 0;
   return {
     vu,
-    health: async () => sante,
+    health: async () => {
+      vu.healthCalls = (vu.healthCalls || 0) + 1;
+      if (!Array.isArray(santes) || !santes.length) return sante;
+      const resultatSante = santes[Math.min(healthIndex, santes.length - 1)];
+      healthIndex += 1;
+      return resultatSante;
+    },
     listNodes: async () => noeuds,
     submit: async (g) => { vu.graphe = g; if (refus) throw new Error(refus); return 'pid-1'; },
     waitFor: async () => resultat || { ok: true, outputs: { 9: { audio: [{ filename: 'a.flac', type: 'output' }] } } },
@@ -162,9 +169,26 @@ test('le polling ACE-Step recupere le fichier seulement quand il est pret', asyn
 
 test('ComfyUI eteint donne une raison lisible, pas une exception', async () => {
   const client = faireClient({ sante: { ok: false, raison: 'ECONNREFUSED' } });
-  const r = await requestAceStepMusic({}, { client });
+  const r = await requestAceStepMusic({}, { client, config: { healthAttempts: 1 } });
   assert.equal(r.ok, false);
   assert.match(r.raison, /injoignable.*ECONNREFUSED/);
+});
+
+test('un 502 transitoire de ComfyUI est retente avant de stopper la chanson', async () => {
+  const client = faireClient({
+    santes: [
+      { ok: false, raison: 'comfyui /system_stats a repondu 502' },
+      { ok: true, vramLibre: 11e9 },
+    ],
+  });
+  const pauses = [];
+  const r = await requestAceStepMusic(
+    { lyrics: 'paroles completes' },
+    { client, wait: false, config: { healthAttempts: 3, healthRetryMs: 25 }, sleep: async (ms) => pauses.push(ms) },
+  );
+  assert.equal(r.ok, true);
+  assert.equal(client.vu.healthCalls, 2);
+  assert.deepEqual(pauses, [25]);
 });
 
 test('un noeud manquant est nomme avant toute generation', async () => {

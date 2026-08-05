@@ -67,6 +67,11 @@ const DEFAUTS = {
   topK: 0,
   minP: 0,
   mp3Quality: 'V0',
+  // ComfyUI peut repondre 502 quelques secondes pendant le chargement des
+  // noeuds ou la reconnexion du tunnel. Une chanson ne doit pas echouer sur
+  // cette seule sonde transitoire apres plusieurs minutes d'ecriture.
+  healthAttempts: 6,
+  healthRetryMs: 3000,
 };
 
 function lireEnv(env, ...noms) {
@@ -118,6 +123,8 @@ function resolveAceStepConfig(env = process.env) {
     topK: Math.round(lireNombreEnv(env, ['ACESTEP_TOP_K'], DEFAUTS.topK, 0, 100)),
     minP: lireNombreEnv(env, ['ACESTEP_MIN_P'], DEFAUTS.minP, 0, 1),
     mp3Quality: lireEnv(env, 'ACESTEP_MP3_QUALITY') || DEFAUTS.mp3Quality,
+    healthAttempts: Math.round(lireNombreEnv(env, ['ACESTEP_HEALTH_ATTEMPTS'], DEFAUTS.healthAttempts, 1, 20)),
+    healthRetryMs: Math.round(lireNombreEnv(env, ['ACESTEP_HEALTH_RETRY_MS'], DEFAUTS.healthRetryMs, 0, 30000)),
   };
 }
 
@@ -226,7 +233,13 @@ async function requestAceStepMusic(demande = {}, options = {}) {
   const config = { ...resolveAceStepConfig(env), ...(options.config || {}) };
   const client = options.client || createComfyClient({ env, baseUrl: config.baseUrl });
 
-  const etat = await client.health();
+  let etat;
+  for (let tentative = 1; tentative <= config.healthAttempts; tentative += 1) {
+    etat = await client.health();
+    if (etat.ok || tentative === config.healthAttempts) break;
+    const pause = options.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    await pause(config.healthRetryMs);
+  }
   if (!etat.ok) {
     return { ok: false, provider: 'acestep', raison: `ComfyUI injoignable sur ${config.baseUrl} — ${etat.raison}` };
   }
