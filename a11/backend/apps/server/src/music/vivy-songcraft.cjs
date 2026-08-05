@@ -1001,7 +1001,7 @@ function buildVivySongcraftSystemPrompt(mode, context) {
     'Une référence sert uniquement à comprendre une ambiance, une structure ou un mécanisme d’écriture; elle ne fournit jamais des paroles à recycler.',
     'Ne reprends, ne réutilise et ne recopie aucune formulation distinctive de la référence, même légèrement modifiée.',
     'Si l’utilisateur demande de s’en inspirer sans copier, repars d’une page blanche avec de nouvelles images, de nouvelles rimes et un nouveau refrain.',
-    'Structure: choisis une forme musicale complète adaptée au morceau. Les balises [Intro], [Verse], [Pre-Chorus], [Chorus], [Bridge] et [Outro] sont disponibles, sans canevas rigide si une autre forme sert mieux la chanson.',
+    'Structure OBLIGATOIRE: utilise les balises de section entre crochets sur leur propre ligne: [Intro], [Verse 1], [Pre-Chorus], [Chorus], [Verse 2], [Bridge], [Outro]. Minimum 5 sections, 2 couplets complets (4+ lignes chacun), 2 refrains complets (3+ lignes chacun), 16+ lignes chantees au total. NE PAS omettre les balises de section.',
     artistInstruction,
     moodInstruction,
     routingInstruction,
