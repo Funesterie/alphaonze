@@ -39,6 +39,14 @@ test("NOSSEN seed validation ne reclame pas de refrain a un cypher", () => {
     appSource,
     /isValidVivyNossenSongSeed\(authoredVocalLyrics, \{ brief: prompt, cast: effectiveSongArtists \}\)/
   );
+  const nossenStart = appSource.indexOf("async function launchNossenBanger");
+  const nossenEnd = appSource.indexOf("async function onVivyVoiceReferenceChange", nossenStart);
+  const nossenBlock = appSource.slice(nossenStart, nossenEnd);
+  assert.match(nossenBlock, /isValidVivyNossenSongSeed\(vocalLyricsForProduction, \{/);
+  assert.match(nossenBlock, /cast: artists/);
+  assert.match(nossenBlock, /songMaxTokens: 2200/);
+  assert.match(nossenBlock, /songResponseMaxChars: VIVY_STUDIO_SONG_MAX_CHARS/);
+  assert.match(nossenBlock, /allowEmergencySongcraftFallback: lyricsAttempt === 3/);
 });
 
 test("D40 downloads prefer the token-bearing share URL", () => {

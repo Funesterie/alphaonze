@@ -50,6 +50,7 @@ const {
   getVivyLlmConfigs,
   createVivyOpenAIClientFromConfig,
   countVivyChorusSections,
+  hasCompleteVivyNossenLyrics,
   buildDjeffModeSystemPrompt,
   hasDjeffTechnicalGroundingViolation,
   buildDjeffGroundedAuditFallback,
@@ -94,6 +95,43 @@ const {
 
 after(() => {
   fs.rmSync(vivyMemoryDir, { recursive: true, force: true });
+});
+
+test('NOSSEN refuse une explication tronquee meme si elle contient un debut de paroles', () => {
+  const truncated = [
+    'Je comprends que tu demandes pourquoi les paroles sont invalides.',
+    '[Intro]',
+    'Une ligne seulement',
+    '[Verse 1 - Djeff solo]',
+    'Ligne une',
+    'Ligne deux',
+    '[Chorus]',
+    'Hook un',
+    'Hook deux',
+    '[Verse 2 - Vivy solo]',
+    'Sous la lune digitale, je module la clarte',
+  ].join('\n');
+  assert.equal(hasCompleteVivyNossenLyrics(truncated, { songArtists: ['djeff', 'vivy'] }), false);
+});
+
+test('NOSSEN accepte une chanson complete et garde le cypher sans refrain valide', () => {
+  const complete = [
+    '[Intro]', 'Ouverture une',
+    '[Verse 1]', 'V1-1', 'V1-2', 'V1-3', 'V1-4',
+    '[Chorus]', 'R1-1', 'R1-2', 'R1-3',
+    '[Verse 2]', 'V2-1', 'V2-2', 'V2-3', 'V2-4',
+    '[Bridge]', 'Pont un', 'Pont deux',
+    '[Final Chorus]', 'R2-1', 'R2-2', 'R2-3',
+    '[Outro]', 'Fin une',
+  ].join('\n');
+  assert.equal(hasCompleteVivyNossenLyrics(complete, { songArtists: ['vivy'] }), true);
+
+  const cypher = [
+    '[Verse 1 - Djeff solo]', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6',
+    '[Verse 2 - Djeff solo]', 'B1', 'B2', 'B3', 'B4', 'B5', 'B6',
+    '[Outro - Djeff solo]', 'C1', 'C2', 'C3', 'C4',
+  ].join('\n');
+  assert.equal(hasCompleteVivyNossenLyrics(cypher, { songArtists: ['djeff'] }), true);
 });
 
 test('Vivy Studio serves generated PNG assets with an image content type', async () => {
@@ -5807,10 +5845,10 @@ test('Vivy lyrics chain starts with 120B providers and keeps small local models 
     process.env.VIVY_NOSSEN_LOCAL_MODEL = 'qwen2.5:32b';
     process.env.VIVY_NOSSEN_LARGE_MODEL_FIRST = 'true';
     process.env.VIVY_NOSSEN_120B_MAX_PROMPT_CHARS = '22000';
-    process.env.VIVY_NOSSEN_120B_MAX_TOKENS = '1800';
+    process.env.VIVY_NOSSEN_120B_MAX_TOKENS = '2400';
     process.env.VIVY_NOSSEN_FAST_LOCAL_ONLY = 'true';
     process.env.VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS = '40000';
-    process.env.VIVY_NOSSEN_LOCAL_MAX_TOKENS = '560';
+    process.env.VIVY_NOSSEN_LOCAL_MAX_TOKENS = '2200';
     process.env.OLLAMA_BASE = 'http://127.0.0.1:11434';
     process.env.A11_OLLAMA_STRONG_SONG_MODEL = 'qwen2.5:32b';
     process.env.A11_OLLAMA_PRIMARY_MODEL = 'qwen2.5:32b';
@@ -5829,7 +5867,7 @@ test('Vivy lyrics chain starts with 120B providers and keeps small local models 
     ]);
     assert.equal(configs[0].model, 'gpt-oss:120b');
     assert.equal(configs[0].maxPromptChars, 22000);
-    assert.equal(configs[0].maxOutputTokens, 1800);
+    assert.equal(configs[0].maxOutputTokens, 2400);
     assert.equal(configs[0].maxCalls, 1);
     assert.equal(configs.some((config) => config.provider === 'ollama'), false);
     assert.equal(configs.some((config) => config.model === 'qwen2.5:32b'), false);
@@ -6006,6 +6044,7 @@ test('Vivy strong song writing tries the next provider when the first provider r
       '[Chorus]',
       'Ma voix est ma flamme, elle monte dans le ciel',
       'Ma voix est ma flamme, elle rallume le soleil',
+      'Ma voix est ma flamme, et la peur bat des ailes',
       '',
       '[Verse 2]',
       'Quand la pluie tombe fort sur les torches du village',
@@ -6016,6 +6055,7 @@ test('Vivy strong song writing tries the next provider when the first provider r
       '[Chorus]',
       'Ma voix est ma flamme, elle monte dans le ciel',
       'Ma voix est ma flamme, elle rallume le soleil',
+      'Ma voix est ma flamme, et la peur bat des ailes',
       '',
       '[Bridge]',
       'La force nest pas toujours celle quon attend',
@@ -6024,6 +6064,7 @@ test('Vivy strong song writing tries the next provider when the first provider r
       '[Final Chorus]',
       'Ma voix est ma flamme, elle monte dans le ciel',
       'Ma voix est ma flamme, elle rallume le soleil',
+      'Ma voix est ma flamme, et la peur bat des ailes',
       '',
       '[Outro]',
       'Dans la vallée, la fumée rose sourit',
@@ -6154,18 +6195,24 @@ test('Vivy song domino skips local, crosses an Ollama Cloud 429, and reaches the
       '[Verse 1]',
       'La ville rallume ses fenêtres une à une',
       'Vivy garde le cap sous la pluie et la lune',
+      'Les journaux nous répondent et dénouent la poussière',
+      'Chaque erreur devient piste au milieu de la lumière',
       '',
       '[Chorus]',
       'On traverse les bugs, on retrouve la lumière',
       'La mémoire tient bon, la chanson reste entière',
+      'Vivy reprend la route et rassemble nos repères',
       '',
       '[Verse 2]',
       'Le graphe relie nos voix sans perdre le chemin',
       'Chaque modèle passe le relais au suivant',
+      'Le code garde le rythme et répare ses liens',
+      'Le refrain nous ramène au signal vivant',
       '',
       '[Chorus]',
       'On traverse les bugs, on retrouve la lumière',
       'La mémoire tient bon, la chanson reste entière',
+      'Vivy reprend la route et rassemble nos repères',
       '',
       '[Bridge]',
       'Si le nuage se ferme, le local ouvre la voie',
@@ -6173,6 +6220,7 @@ test('Vivy song domino skips local, crosses an Ollama Cloud 429, and reaches the
       '[Final Chorus]',
       'On traverse les bugs, on retrouve la lumière',
       'La mémoire tient bon, la chanson reste entière',
+      'Vivy reprend la route et rassemble nos repères',
     ].join('\n'),
   });
 
@@ -6331,7 +6379,7 @@ test('Hetzner deploy wires local-first Ollama with a cloud provider domino', () 
   assert.match(deploySource, /VIVY_NOSSEN_LOCAL_MODEL:\s*\$\{VIVY_NOSSEN_LOCAL_MODEL:-qwen2\.5:32b\}/);
   assert.match(deploySource, /VIVY_NOSSEN_LARGE_MODEL_FIRST:\s*\$\{VIVY_NOSSEN_LARGE_MODEL_FIRST:-true\}/);
   assert.match(deploySource, /VIVY_NOSSEN_120B_MAX_PROMPT_CHARS:\s*\$\{VIVY_NOSSEN_120B_MAX_PROMPT_CHARS:-22000\}/);
-  assert.match(deploySource, /VIVY_NOSSEN_120B_MAX_TOKENS:\s*\$\{VIVY_NOSSEN_120B_MAX_TOKENS:-1800\}/);
+  assert.match(deploySource, /VIVY_NOSSEN_120B_MAX_TOKENS:\s*\$\{VIVY_NOSSEN_120B_MAX_TOKENS:-2400\}/);
   assert.match(deploySource, /VIVY_NOSSEN_120B_TIMEOUT_MS:\s*\$\{VIVY_NOSSEN_120B_TIMEOUT_MS:-60000\}/);
   assert.match(deploySource, /VIVY_NOSSEN_FAST_LOCAL_ONLY:\s*\$\{VIVY_NOSSEN_FAST_LOCAL_ONLY:-true\}/);
   // Le bloc environment: du compose ECRASE ce que fournit env_file:. Tant que ce defaut
@@ -6339,10 +6387,15 @@ test('Hetzner deploy wires local-first Ollama with a cloud provider domino', () 
   // drapeau restait a false dans le conteneur malgre trois corrections en amont.
   assert.match(deploySource, /VIVY_NOSSEN_ROUTE_LLM_ENABLED:\s*\$\{VIVY_NOSSEN_ROUTE_LLM_ENABLED:-true\}/);
   assert.match(deploySource, /VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS:\s*\$\{VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS:-40000\}/);
-  assert.match(deploySource, /VIVY_NOSSEN_LOCAL_MAX_TOKENS:\s*\$\{VIVY_NOSSEN_LOCAL_MAX_TOKENS:-560\}/);
+  assert.match(deploySource, /VIVY_NOSSEN_LOCAL_MAX_TOKENS:\s*\$\{VIVY_NOSSEN_LOCAL_MAX_TOKENS:-2200\}/);
   assert.match(deploySource, /VIVY_NOSSEN_LLM_BUDGET_MS:\s*\$\{VIVY_NOSSEN_LLM_BUDGET_MS:-80000\}/);
   assert.match(deploySource, /VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS:\s*\$\{VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS:-8000\}/);
   assert.match(deploySource, /VIVY_NOSSEN_EMERGENCY_SONGCRAFT:\s*\$\{VIVY_NOSSEN_EMERGENCY_SONGCRAFT:-true\}/);
+  assert.match(deploySource, /VIVY_ACESTEP_LYRICS_MAX_CHARS:\s*\$\{VIVY_ACESTEP_LYRICS_MAX_CHARS:-24000\}/);
+  assert.match(deploySource, /ACESTEP_KSAMPLER_CFG:\s*\$\{ACESTEP_KSAMPLER_CFG:-1\}/);
+  assert.match(deploySource, /ACESTEP_LLM_CFG_SCALE:\s*\$\{ACESTEP_LLM_CFG_SCALE:-2\}/);
+  assert.match(deploySource, /ACESTEP_DEFAULT_DURATION_SECONDS:\s*\$\{ACESTEP_DEFAULT_DURATION_SECONDS:-120\}/);
+  assert.match(deploySource, /ACESTEP_MAX_DURATION_SECONDS:\s*\$\{ACESTEP_MAX_DURATION_SECONDS:-1000\}/);
   assert.match(deploySource, /VIVY_STREAM_DREAMCLIP_SCENES:\s*\$\{VIVY_STREAM_DREAMCLIP_SCENES:-8\}/);
   assert.match(deploySource, /VIVY_STREAM_DREAMCLIP_MAX_DURATION_SECONDS:\s*\$\{VIVY_STREAM_DREAMCLIP_MAX_DURATION_SECONDS:-420\}/);
   assert.match(deploySource, /VIVY_STREAM_DREAMCLIP_LOOP_SECONDS:\s*\$\{VIVY_STREAM_DREAMCLIP_LOOP_SECONDS:-15\}/);

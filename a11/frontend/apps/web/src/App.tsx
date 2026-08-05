@@ -3065,7 +3065,7 @@ const VIVY_PUBLIC_VOICE_REFERENCE_KEY = "vivy:voice-reference";
 const VIVY_PRIVATE_REFERENCE_UPLOAD_LIMIT_BYTES = 20 * 1024 * 1024;
 const VIVY_ZEN_UPLOAD_LIMIT_BYTES = 64 * 1024 * 1024;
 const VIVY_VOICE_CATALOG_CONSENT = "voice-catalog-song-v1";
-const VIVY_STUDIO_SONG_MAX_CHARS = 12000;
+const VIVY_STUDIO_SONG_MAX_CHARS = 24000;
 const VIVY_PUBLIC_CHAT_MAX_MESSAGES = A11_MAX_HISTORY_MESSAGES;
 
 function getVivyVoiceTuning(vocalMode?: string | null): Record<string, number> {
@@ -9124,6 +9124,11 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           } : undefined,
           useWorkspaceForSong: useCompositionWorkspace,
           disableSongcraftFallback: true,
+          // Le qwen 32b local etait bride a 560 jetons par le deploiement: assez
+          // pour un extrait, pas pour 2 couplets + 3 refrains + pont + outro.
+          songMaxTokens: 2200,
+          songResponseMaxChars: VIVY_STUDIO_SONG_MAX_CHARS,
+          allowEmergencySongcraftFallback: lyricsAttempt === 3,
           internalSongGeneration: true,
         });
         vocalLyricsForProduction = strengthenVivyNossenSoloSectionLabels(sanitizeVivyNossenSongSeed(toUnicodeText(
@@ -9134,7 +9139,10 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           lyricsPayload.publicLyrics || vocalLyricsForProduction,
           VIVY_STUDIO_SONG_MAX_CHARS
         )), artists);
-        const validStructure = isValidVivyNossenSongSeed(vocalLyricsForProduction);
+        const validStructure = isValidVivyNossenSongSeed(vocalLyricsForProduction, {
+          brief: [routedReadiness.source, routedMood].filter(Boolean).join(" "),
+          cast: artists,
+        });
         const validTheme = hasVivyNossenThemeContinuity(vocalLyricsForProduction, routedReadiness.themeAnchor);
         const validCast = hasVivyNossenCastCoverage(vocalLyricsForProduction, artists);
         if (validStructure && validTheme && validCast) break;

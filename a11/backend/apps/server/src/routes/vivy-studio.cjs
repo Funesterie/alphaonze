@@ -838,7 +838,7 @@ function getVivyLocalOllamaConfigs(options = {}) {
     // tronquee, se fait juger faible par looksLikeWeakSongwritingReply, et declenche la
     // cascade de repli qui coute cher en temps. La borne haute de 2200 existait deja.
     : fastNossenLocalOnly
-      ? Math.max(420, Math.min(2200, Number(process.env.VIVY_NOSSEN_LOCAL_MAX_TOKENS || 1600) || 1600))
+      ? Math.max(420, Math.min(2200, Number(process.env.VIVY_NOSSEN_LOCAL_MAX_TOKENS || 2200) || 2200))
       : 0;
 
   return models.map((model) => ({
@@ -911,7 +911,7 @@ function getVivyOllamaCloudConfig(options = {}) {
       ? Math.max(10000, Math.min(30000, Number(process.env.VIVY_NOSSEN_120B_MAX_PROMPT_CHARS || 22000) || 22000))
       : 0,
     maxOutputTokens: lyricsMode
-      ? Math.max(900, Math.min(2600, Number(process.env.VIVY_NOSSEN_120B_MAX_TOKENS || 1800) || 1800))
+      ? Math.max(900, Math.min(2600, Number(process.env.VIVY_NOSSEN_120B_MAX_TOKENS || 2400) || 2400))
       : 0,
     maxCalls: 1,
   };
@@ -5524,6 +5524,50 @@ function countVivyChorusSections(value = '') {
     }).length;
 }
 
+function hasCompleteVivyNossenLyrics(value = '', input = {}) {
+  const text = sanitizeVivyPublicLyrics(value, VIVY_SONG_MAX_CHARS);
+  if (!text || looksLikeTruncatedSongEnding(text)) return false;
+  const sectionHeader = /^\s*\[(Intro|Verse|Couplet|Pre[- ]?Chorus|Pr[ée][- ]?refrain|Refrain|Chorus|Bridge|Pont|Outro|Final(?:\s+Chorus)?)\b[^\]]*\]\s*$/i;
+  const sections = [];
+  let active = null;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const header = line.match(sectionHeader);
+    if (header) {
+      if (active) sections.push(active);
+      active = { kind: foldTextForLookup(header[1]), lyricLines: 0 };
+      continue;
+    }
+    if (active && line && !/^\[[^\]]+\]$/.test(line)) active.lyricLines += 1;
+  }
+  if (active) sections.push(active);
+
+  const verses = sections.filter((section) => /^(?:verse|couplet)$/.test(section.kind));
+  const choruses = sections.filter((section) => /^(?:refrain|chorus|final chorus)$/.test(section.kind));
+  const lyricLineCount = sections.reduce((sum, section) => sum + section.lyricLines, 0);
+  const completeVerses = verses.length >= 2 && verses.every((section) => section.lyricLines >= 4);
+  const subject = foldTextForLookup([
+    input.message,
+    input.songText,
+    input.prompt,
+    input.vocalCast,
+  ].filter(Boolean).join(' '));
+  const artistIds = Array.isArray(input.songArtists)
+    ? input.songArtists.map((artist) => foldTextForLookup(artist)).filter(Boolean)
+    : [];
+  const flowForm = /\b(cypher|freestyle|spoken word|slam|acapella|a capella)\b/.test(subject)
+    || (artistIds.length === 1 && artistIds[0] === 'djeff');
+
+  if (flowForm) {
+    return sections.length >= 3 && lyricLineCount >= 16 && completeVerses;
+  }
+  return sections.length >= 5
+    && lyricLineCount >= 16
+    && completeVerses
+    && choruses.length >= 2
+    && choruses.every((section) => section.lyricLines >= 3);
+}
+
 function isVivyNossenSongGenerationRequest(input = {}, message = '') {
   if (!input.vocalCast && !input.songArtists && !input.artistCount) return false;
   const folded = foldTextForLookup(message);
@@ -7869,8 +7913,9 @@ async function buildVivyAiChat(input, req) {
     let assistantCandidate = processed.content;
     const isUsableStrongSongContent = (content = '') => content
       && !looksLikeWeakSongwritingReply(content)
-      && hasVivyChorusSection(content)
-      && (!requiresStrongSongModel || countVivyChorusSections(content) >= 2);
+      && (!requiresStrongSongModel
+        ? hasVivyChorusSection(content)
+        : hasCompleteVivyNossenLyrics(content, input));
     const initialBundleIndex = llmBundles.indexOf(llmBundle);
     const attemptedStrongSongBundles = new Set(
       llmBundles.slice(0, initialBundleIndex >= 0 ? initialBundleIndex + 1 : 1)
@@ -7926,7 +7971,7 @@ async function buildVivyAiChat(input, req) {
     const songNeedsRetry = mode === 'song' && (
       looksLikeWeakSongwritingReply(processed.content)
       || !hasVivyChorusSection(processed.content)
-      || (requiresStrongSongModel && countVivyChorusSections(processed.content) < 2)
+      || (requiresStrongSongModel && !hasCompleteVivyNossenLyrics(processed.content, input))
     );
     if (songNeedsRetry) {
       const _retryStart = Date.now();
@@ -9798,14 +9843,32 @@ async function requestAceStepViaComfy(input = {}) {
     signature.mouvement,
   ].filter(Boolean).join(', ');
 
+  const aceLyricsMaxChars = Math.max(6000, Math.min(
+    VIVY_SONG_MAX_CHARS,
+    Number(process.env.VIVY_ACESTEP_LYRICS_MAX_CHARS || VIVY_SONG_MAX_CHARS) || VIVY_SONG_MAX_CHARS
+  ));
   const resultat = await requestAceStepMusic({
     tags,
-    lyrics: cleanText(input.lyrics || input.paroles || '', 6000),
+    lyrics: cleanText(input.lyrics || input.paroles || '', aceLyricsMaxChars),
     seed: signature.seed,
     bpm: Number(input.bpm) || undefined,
-    duration: Number(input.durationSeconds || input.duration) || undefined,
+    // Le studio NOSSEN envoie targetDurationSeconds=300. Avant ce raccord, ACE
+    // ignorait cette valeur et retombait toujours sur son ancien defaut de 60 s.
+    duration: Number(
+      input.durationSeconds
+      || input.duration
+      || input.targetDurationSeconds
+      || input.target_duration_seconds
+    ) || undefined,
     language: cleanOneLine(input.language || 'fr', 'fr', 8),
     keyscale: cleanOneLine(input.keyscale || '', '', 20) || undefined,
+    timesignature: cleanOneLine(input.timesignature || input.timeSignature || '', '', 4) || undefined,
+    audioCodes: input.audioCodes ?? input.generateAudioCodes,
+    llmCfgScale: Number(input.llmCfgScale ?? input.cfgScale) || undefined,
+    temperature: Number(input.temperature) || undefined,
+    topP: Number(input.topP ?? input.top_p) || undefined,
+    topK: Number(input.topK ?? input.top_k) || undefined,
+    minP: Number(input.minP ?? input.min_p) || undefined,
     negative: cleanOneLine(input.negativeStyle || '', '', 200),
     prefix: 'funesterie/acestep',
   }, { wait: false });
@@ -12103,6 +12166,7 @@ module.exports = {
   createVivyOpenAIClientFromConfig,
   createVivyBundleCompletion,
   countVivyChorusSections,
+  hasCompleteVivyNossenLyrics,
   buildVivyMemoryContext,
   buildVivySystemPrompt,
   buildVivyDirectSongReply,

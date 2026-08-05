@@ -32,10 +32,25 @@ test('actif quand ComfyUI est declare, coupable explicitement', () => {
   assert.equal(isAceStepConfigured({ COMFYUI_BASE_URL: 'http://x', ACESTEP_DISABLED: 'true' }), false);
 });
 
-test('la config se laisse surcharger par l environnement', () => {
-  const c = resolveAceStepConfig({ ACESTEP_DIFFUSION_MODEL: 'autre.safetensors', ACESTEP_STEPS: '20' });
+test('la config se laisse entierement surcharger par l environnement', () => {
+  const c = resolveAceStepConfig({
+    ACESTEP_DIFFUSION_MODEL: 'autre.safetensors',
+    ACESTEP_STEPS: '20',
+    ACESTEP_KSAMPLER_CFG: '1.25',
+    ACESTEP_LLM_CFG_SCALE: '2.5',
+    ACESTEP_DEFAULT_DURATION_SECONDS: '300',
+    ACESTEP_MAX_DURATION_SECONDS: '900',
+    ACESTEP_SAMPLER: 'dpmpp_2m',
+    ACESTEP_GENERATE_AUDIO_CODES: 'false',
+  });
   assert.equal(c.diffusion, 'autre.safetensors');
   assert.equal(c.steps, 20);
+  assert.equal(c.cfg, 1.25);
+  assert.equal(c.llmCfgScale, 2.5);
+  assert.equal(c.duration, 300);
+  assert.equal(c.maxDuration, 900);
+  assert.equal(c.sampler, 'dpmpp_2m');
+  assert.equal(c.audioCodes, false);
   assert.match(c.textEncoder1, /qwen_0\.6b/);
   assert.match(c.textEncoder2, /qwen_1\.7b/);
 });
@@ -73,6 +88,7 @@ test('le turbo tourne en 8 pas et cfg 1', () => {
   assert.equal(g[7].inputs.cfg, 1);
   assert.equal(g[7].inputs.sampler_name, 'euler');
   assert.equal(g[7].inputs.scheduler, 'simple');
+  assert.equal(g[4].inputs.cfg_scale, 2, 'le CFG Qwen officiel est distinct du CFG sampler');
 });
 
 test('le francais est la langue par defaut', () => {
@@ -99,13 +115,19 @@ test('les valeurs hors bornes sont ramenees, pas refusees', () => {
   const g = buildAceStepGraph({ bpm: 9000, duration: -5 });
   assert.equal(g[4].inputs.bpm, 300);
   assert.equal(g[4].inputs.duration, 1);
-  assert.equal(buildAceStepGraph({ bpm: 'abc' })[4].inputs.bpm, 90);
+  assert.equal(buildAceStepGraph({ bpm: 'abc' })[4].inputs.bpm, 120);
 });
 
 test('la duree du latent suit celle demandee', () => {
   const g = buildAceStepGraph({ duration: 45 });
   assert.equal(g[6].inputs.seconds, 45);
   assert.equal(g[4].inputs.duration, 45);
+});
+
+test('la duree est bornee par le latent ACE a 1000 secondes', () => {
+  const g = buildAceStepGraph({ duration: 2000 });
+  assert.equal(g[4].inputs.duration, 1000);
+  assert.equal(g[6].inputs.seconds, 1000);
 });
 
 test('genere et rend l audio', async () => {

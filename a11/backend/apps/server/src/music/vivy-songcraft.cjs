@@ -8,7 +8,10 @@ const {
   normalizeLanguageCode,
 } = require('../../lib/language-text.cjs');
 
-const VIVY_SONG_MAX_CHARS = 12000;
+// ACE-Step accepte des paroles bien plus longues que le mode custom Suno. La
+// limite fournisseur Suno reste appliquee plus loin a 4900 caracteres; ce
+// plafond-ci protege seulement le canevas interne et ACE/Mureka.
+const VIVY_SONG_MAX_CHARS = 24000;
 
 function cleanText(value, max = 2400) {
   return normalizeTextNfc(value, max);

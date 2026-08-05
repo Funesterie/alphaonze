@@ -3436,6 +3436,8 @@ export async function chatWithVivy(
     useWorkspaceForSong?: boolean;
     disableSongcraftFallback?: boolean;
     allowEmergencySongcraftFallback?: boolean;
+    songMaxTokens?: number;
+    songResponseMaxChars?: number;
     internalSongGeneration?: boolean;
     americanMode?: boolean;
   }

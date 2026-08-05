@@ -47,14 +47,26 @@ const DEFAUTS = {
   // et degrade le resultat au lieu de l'ameliorer.
   steps: 8,
   cfg: 1,
+  // Le workflow ACE 1.5 distingue bien le CFG du sampler (1) de celui de
+  // l'encodeur Qwen (2). Les confondre donnait cfg_scale=1 aux paroles.
+  llmCfgScale: 2,
   shift: 3,
   sampler: 'euler',
   scheduler: 'simple',
-  bpm: 90,
-  duration: 60,
+  bpm: 120,
+  duration: 120,
+  // EmptyAceStep1.5LatentAudio refuse plus de 1000 secondes, meme si
+  // TextEncodeAceStepAudio1.5 annonce 2000. La borne la plus basse fait foi.
+  maxDuration: 1000,
   timesignature: '4',
   language: 'fr',
   keyscale: 'C minor',
+  audioCodes: true,
+  temperature: 0.85,
+  topP: 0.9,
+  topK: 0,
+  minP: 0,
+  mp3Quality: 'V0',
 };
 
 function lireEnv(env, ...noms) {
@@ -65,16 +77,47 @@ function lireEnv(env, ...noms) {
   return '';
 }
 
+function lireNombreEnv(env, noms, defaut, min, max) {
+  const brut = lireEnv(env, ...noms);
+  if (!brut) return defaut;
+  const nombre = Number(brut);
+  return Number.isFinite(nombre) ? Math.min(max, Math.max(min, nombre)) : defaut;
+}
+
+function lireBooleenEnv(env, noms, defaut) {
+  const brut = lireEnv(env, ...noms).toLowerCase();
+  if (!brut) return defaut;
+  if (['1', 'true', 'yes', 'on', 'oui'].includes(brut)) return true;
+  if (['0', 'false', 'no', 'off', 'non'].includes(brut)) return false;
+  return defaut;
+}
+
 function resolveAceStepConfig(env = process.env) {
+  const maxDuration = lireNombreEnv(env, ['ACESTEP_MAX_DURATION_SECONDS'], DEFAUTS.maxDuration, 1, 1000);
   return {
     baseUrl: resolveComfyBaseUrl(env),
     diffusion: lireEnv(env, 'ACESTEP_DIFFUSION_MODEL') || DEFAUTS.diffusion,
     textEncoder1: lireEnv(env, 'ACESTEP_TEXT_ENCODER_1') || DEFAUTS.textEncoder1,
     textEncoder2: lireEnv(env, 'ACESTEP_TEXT_ENCODER_2') || DEFAUTS.textEncoder2,
     vae: lireEnv(env, 'ACESTEP_VAE') || DEFAUTS.vae,
-    steps: Number(lireEnv(env, 'ACESTEP_STEPS')) || DEFAUTS.steps,
-    cfg: Number(lireEnv(env, 'ACESTEP_CFG')) || DEFAUTS.cfg,
-    shift: Number(lireEnv(env, 'ACESTEP_SHIFT')) || DEFAUTS.shift,
+    steps: Math.round(lireNombreEnv(env, ['ACESTEP_STEPS'], DEFAUTS.steps, 1, 100)),
+    cfg: lireNombreEnv(env, ['ACESTEP_KSAMPLER_CFG', 'ACESTEP_CFG'], DEFAUTS.cfg, 0, 100),
+    llmCfgScale: lireNombreEnv(env, ['ACESTEP_LLM_CFG_SCALE'], DEFAUTS.llmCfgScale, 0, 100),
+    shift: lireNombreEnv(env, ['ACESTEP_SHIFT'], DEFAUTS.shift, 0, 100),
+    sampler: lireEnv(env, 'ACESTEP_SAMPLER') || DEFAUTS.sampler,
+    scheduler: lireEnv(env, 'ACESTEP_SCHEDULER') || DEFAUTS.scheduler,
+    bpm: lireNombreEnv(env, ['ACESTEP_DEFAULT_BPM'], DEFAUTS.bpm, 10, 300),
+    duration: lireNombreEnv(env, ['ACESTEP_DEFAULT_DURATION_SECONDS'], DEFAUTS.duration, 1, maxDuration),
+    maxDuration,
+    timesignature: lireEnv(env, 'ACESTEP_TIME_SIGNATURE') || DEFAUTS.timesignature,
+    language: lireEnv(env, 'ACESTEP_LANGUAGE') || DEFAUTS.language,
+    keyscale: lireEnv(env, 'ACESTEP_KEYSCALE') || DEFAUTS.keyscale,
+    audioCodes: lireBooleenEnv(env, ['ACESTEP_GENERATE_AUDIO_CODES'], DEFAUTS.audioCodes),
+    temperature: lireNombreEnv(env, ['ACESTEP_TEMPERATURE'], DEFAUTS.temperature, 0, 2),
+    topP: lireNombreEnv(env, ['ACESTEP_TOP_P'], DEFAUTS.topP, 0, 1),
+    topK: Math.round(lireNombreEnv(env, ['ACESTEP_TOP_K'], DEFAUTS.topK, 0, 100)),
+    minP: lireNombreEnv(env, ['ACESTEP_MIN_P'], DEFAUTS.minP, 0, 1),
+    mp3Quality: lireEnv(env, 'ACESTEP_MP3_QUALITY') || DEFAUTS.mp3Quality,
   };
 }
 
@@ -107,20 +150,20 @@ function buildAceStepGraph(demande = {}, config = resolveAceStepConfig()) {
 
   const commun = {
     seed,
-    bpm: clamp(demande.bpm, 10, 300, DEFAUTS.bpm),
-    duration: clamp(demande.duration, 1, 2000, DEFAUTS.duration),
-    timesignature: String(demande.timesignature || DEFAUTS.timesignature),
-    language: String(demande.language || DEFAUTS.language),
-    keyscale: String(demande.keyscale || DEFAUTS.keyscale),
+    bpm: clamp(demande.bpm, 10, 300, config.bpm ?? DEFAUTS.bpm),
+    duration: clamp(demande.duration, 1, config.maxDuration ?? DEFAUTS.maxDuration, config.duration ?? DEFAUTS.duration),
+    timesignature: String(demande.timesignature || config.timesignature || DEFAUTS.timesignature),
+    language: String(demande.language || config.language || DEFAUTS.language),
+    keyscale: String(demande.keyscale || config.keyscale || DEFAUTS.keyscale),
     // Les codes audio ameliorent la qualite mais coutent cher en temps. On les
     // garde actifs par defaut : sur du rap, l'articulation est ce qui casse en
     // premier, et c'est exactement ce que cette etape rattrape.
-    generate_audio_codes: demande.audioCodes !== false,
-    cfg_scale: config.cfg,
-    temperature: 0.85,
-    top_p: 0.9,
-    top_k: 0,
-    min_p: 0,
+    generate_audio_codes: demande.audioCodes == null ? config.audioCodes !== false : demande.audioCodes !== false,
+    cfg_scale: clamp(demande.llmCfgScale ?? demande.cfgScale, 0, 100, config.llmCfgScale ?? DEFAUTS.llmCfgScale),
+    temperature: clamp(demande.temperature, 0, 2, config.temperature ?? DEFAUTS.temperature),
+    top_p: clamp(demande.topP, 0, 1, config.topP ?? DEFAUTS.topP),
+    top_k: Math.round(clamp(demande.topK, 0, 100, config.topK ?? DEFAUTS.topK)),
+    min_p: clamp(demande.minP, 0, 1, config.minP ?? DEFAUTS.minP),
   };
 
   return {
@@ -147,15 +190,19 @@ function buildAceStepGraph(demande = {}, config = resolveAceStepConfig()) {
         seed,
         steps: config.steps,
         cfg: config.cfg,
-        sampler_name: DEFAUTS.sampler,
-        scheduler: DEFAUTS.scheduler,
+        sampler_name: config.sampler || DEFAUTS.sampler,
+        scheduler: config.scheduler || DEFAUTS.scheduler,
         denoise: 1,
       },
     },
     8: { class_type: NOEUDS.decode, inputs: { samples: ['7', 0], vae: ['3', 0] } },
     9: {
       class_type: NOEUDS.save,
-      inputs: { audio: ['8', 0], filename_prefix: String(demande.prefix || 'funesterie/acestep'), quality: 'V0' },
+      inputs: {
+        audio: ['8', 0],
+        filename_prefix: String(demande.prefix || 'funesterie/acestep'),
+        quality: config.mp3Quality || DEFAUTS.mp3Quality,
+      },
     },
   };
 }
@@ -219,6 +266,9 @@ async function requestAceStepMusic(demande = {}, options = {}) {
         duree: graphe[4].inputs.duration,
         langue: graphe[4].inputs.language,
         keyscale: graphe[4].inputs.keyscale,
+        lyricChars: String(demande.lyrics || '').length,
+        llmCfgScale: graphe[4].inputs.cfg_scale,
+        samplerCfg: graphe[7].inputs.cfg,
         vram: etat.vramLibre,
       },
     };
@@ -244,6 +294,9 @@ async function requestAceStepMusic(demande = {}, options = {}) {
       duree: graphe[4].inputs.duration,
       langue: graphe[4].inputs.language,
       keyscale: graphe[4].inputs.keyscale,
+      lyricChars: String(demande.lyrics || '').length,
+      llmCfgScale: graphe[4].inputs.cfg_scale,
+      samplerCfg: graphe[7].inputs.cfg,
       vram: etat.vramLibre,
     },
   };
