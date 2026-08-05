@@ -11820,14 +11820,18 @@ function createVivyStudioRouter({
           reason: mediaError?.code || mediaError?.message || 'real_music_provider_not_connected',
           provider: getConfiguredMusicProviders()[0] || 'suno',
           message: notConfigured
-            ? 'Suno/ElevenLabs non configuré sur ce serveur. Copie le prompt Suno ci-dessous et colle-le sur suno.com.'
-            : `La génération musicale a échoué : ${mediaError?.message || 'erreur inconnue'}. Aucun audio de secours ajouté.`,
+            ? (mediaError && mediaError.provider === 'acestep'
+              ? 'ACE-Step (ComfyUI) injoignable. Demarre ComfyUI sur 127.0.0.1:8188 ou utilise le prompt Suno manuel.'
+              : 'Fournisseurs musicaux non configures. Copie le prompt ci-dessous ou lance ComfyUI en local.')
+            : 'La generation musicale a echoue. Aucun audio de secours ajoute.',
           sunoPromptAvailable: Boolean(payload.sunoPrompt || payload.musicPrompt || payload.publicLyrics),
           lyricsPack: true,
         };
         payload.summary = notConfigured
-          ? 'Pack Suno prêt. Clé Suno non configurée côté serveur — utilise le prompt directement sur suno.com.'
-          : `Paroles prêtes. Génération audio échouée : ${mediaError?.message || 'provider non connecté'}.`;
+          ? (mediaError && mediaError.provider === 'acestep'
+          ? 'Paroles pretes. ComfyUI injoignable - demarre-le ou utilise le prompt Suno manuel.'
+          : 'Paroles pretes. Aucun fournisseur configure. Prompt Suno disponible ci-dessous.')
+          : 'Paroles pretes. Generation audio echouee : ' + (mediaError?.message || 'provider non connecte') + '.';
       } else {
         payload.mediaStatus = {
           state: 'not_configured',
