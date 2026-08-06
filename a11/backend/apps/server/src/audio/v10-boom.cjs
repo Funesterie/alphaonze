@@ -1,6 +1,6 @@
 'use strict';
 
-// V10 Boom — couche bass/phase en plan complexe, sur le canon Prime Spiral.
+// V10 Boom — etape bass/phase de la recette cumulative « V11 Pan ».
 //
 // Source canon : docs/research/prime_spiral/ (Spatial Imaginary Map, Formula Registry,
 // GrainLow/GrainPure Origins, Constants Locked, Operators Chain Recap, Symetrie OP Table).
@@ -101,9 +101,10 @@ const V10_CANON = {
 // Elargir la bande haute seule a ete teste et ne sert a rien : le grave est deja
 // quasi mono, le repli en souffre autant (-0.80) et le raccord s'ajoute pour rien.
 //
-// Nom retenu par Djeff : « V11 pan ». La V10 Boom n'est pas modifiee — la V11 est
-// l'ouverture du pan posee apres elle. La constante vit dans double-harmonic-d40.cjs,
-// deja importe ci-dessus : une seule source pour les deux chaines.
+// Nom retenu par Djeff : « V11 Pan » designe la recette complete calibree de V2 a
+// V11. Le numero V11 ci-dessous nomme seulement son dernier operateur spatial :
+// l'ouverture de la resonance, sans relancer toutes les anciennes versions en serie.
+// La constante vit dans double-harmonic-d40.cjs : une seule source pour les chaines.
 // Note complete : docs/research/audio/V11_PAN_2026-08-02.md
 
 const V10_CROSS_ARMS = ['+real', '+imag', '-real', '-imag'];
@@ -130,9 +131,13 @@ function loadV10Compass(currentState = '+real', returnRatio = 0.5) {
     currentState,
     transitionTable: V10_CANON.transitionTable,
     returnRatio,
-    researchOnly: false,
+    // La boussole conserve fidelement la specification de l'inventeur, mais
+    // buildV10BoomFilterGraph() ne la transforme pas encore en branches audio.
+    // Ne pas confondre "notee et testee" avec "active dans le DSP".
+    researchOnly: true,
     researchOrigin: true,
-    productionDefault: true,
+    productionDefault: false,
+    implementationStatus: 'recorded-not-wired-to-audio-graph',
   };
 }
 
@@ -173,8 +178,27 @@ function resolveV10BoomConfig(options = {}) {
   // V11 pan — 1 = image inchangee (comportement V10 d'origine).
   // VIVY_V10_BOOM_PAN_WIDTH reste lu en second : c'est le nom sous lequel la valeur
   // est partie en prod le 02/08 avant d'etre renommee, on ne veut pas la perdre.
+  // Adaptive pan: derive width from persona color gamma (Ay).
+  // Behind a flag: VIVY_V11_PAN_ADAPTIVE=true activates it.
+  // Formula: panWidth = 1 + Ay * 0.6 (conservative, keeps 1.5 as sweet spot).
+  const adaptivePan = boolOption(process.env.VIVY_V11_PAN_ADAPTIVE, false);
+  let adaptiveWidth = null;
+  if (adaptivePan && !options.panWidth && !options.v11Pan && !process.env.VIVY_V11_PAN_WIDTH && !process.env.VIVY_V10_BOOM_PAN_WIDTH) {
+    try {
+      const paletteMod = require("../knowledge/modules/encoding.pulsar.palette.module.json");
+      const palette = paletteMod && paletteMod.knowledge ? paletteMod.knowledge.palette : [];
+      const personaColor = String(options.personaColor || options.color || process.env.VIVY_PERSONA_COLOR || "").trim().toLowerCase();
+      if (personaColor) {
+        const match = palette.find(function(c) { return c.name.toLowerCase() === personaColor; });
+        if (match && Number.isFinite(Number(match.gamma))) {
+          adaptiveWidth = 1 + Number(match.gamma) * 0.6;
+          console.log("[v10-boom] adaptive pan: color=" + match.name + " Ay=" + match.gamma + " -> width=" + adaptiveWidth.toFixed(3));
+        }
+      }
+    } catch (e) { /* palette not available, fall through to constant */ }
+  }
   const panWidth = clampNumber(
-    options.panWidth ?? options.v11Pan ?? process.env.VIVY_V11_PAN_WIDTH ?? process.env.VIVY_V10_BOOM_PAN_WIDTH,
+    adaptiveWidth ?? options.panWidth ?? options.v11Pan ?? process.env.VIVY_V11_PAN_WIDTH ?? process.env.VIVY_V10_BOOM_PAN_WIDTH,
     1,
     V11_PAN_MAX,
     V11_PAN_WIDTH
@@ -223,8 +247,8 @@ function buildV10BoomPlan(options = {}) {
     },
     compass: loadV10Compass(options.currentState || '+real', options.returnRatio ?? config.wet),
     boom: config,
-    // V11 pan : couche posee APRES la V10 Boom, qui n'est pas modifiee. Elle commute
-    // avec le boom (filtre lineaire identique sur les deux canaux) — seul le limiteur,
+    // Dernier operateur spatial de la recette cumulative V2->V11. Il commute avec
+    // le boom (filtre lineaire identique sur les deux canaux); seul le limiteur,
     // non lineaire, impose de rester en dernier.
     v11Pan: {
       schema: V11_PAN_SCHEMA,
