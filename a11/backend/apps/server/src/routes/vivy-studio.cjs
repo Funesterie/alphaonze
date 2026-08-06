@@ -8829,7 +8829,7 @@ function buildVivySunoPayload(input = {}, req = null) {
     : '';
   const soundDesignStyle = forceInstrumental ? buildVivyInstrumentalSoundDesignHint(input) : '';
   const longFormStyle = wantsVivySunoLongForm(input)
-    ? 'long-form full song arrangement around five minutes, expanded sections, recurring hook after the bridge, complete final chorus, no short radio edit'
+    ? 'long-form complete song arrangement with naturally developed sections, recurring hook after the bridge, complete final chorus, no forced duration and no short radio edit'
     : '';
   const englishMode = isVivyEnglishLanguageMode(input, resolveVivyResponseLanguage(input, req));
   // Mode ricain: on verrouille l'anglais americain au lieu du francais. La bride dure
@@ -9498,6 +9498,7 @@ function buildVivyMusicMasterArgs(inputPath, outputPath, analysis = null, config
   const measured = analysis && Object.values(analysis).every(Number.isFinite)
     ? `:measured_I=${analysis.inputI}:measured_TP=${analysis.inputTp}:measured_LRA=${analysis.inputLra}:measured_thresh=${analysis.inputThresh}:offset=${analysis.targetOffset}:linear=true`
     : '';
+  const lossless = path.extname(String(outputPath || '')).toLowerCase() === '.flac';
   return [
     '-y',
     '-hide_banner',
@@ -9511,10 +9512,8 @@ function buildVivyMusicMasterArgs(inputPath, outputPath, analysis = null, config
     '-af', `highpass=f=35,loudnorm=I=${config.targetI}:TP=${config.targetTp}:LRA=${config.targetLra}${measured},alimiter=limit=${config.limiterValue.toFixed(3)}:level=false`,
     '-ac', '2',
     '-ar', '44100',
-    '-c:a', 'libmp3lame',
-    '-b:a', '192k',
-    '-write_xing', '1',
-    '-id3v2_version', '3',
+    '-c:a', lossless ? 'flac' : 'libmp3lame',
+    ...(lossless ? [] : ['-b:a', '192k', '-write_xing', '1', '-id3v2_version', '3']),
     outputPath,
   ];
 }
@@ -9668,6 +9667,15 @@ async function saveVivyMusicBuffer(buffer, input = {}, req = null) {
     path.dirname(filePath),
     `.${path.basename(filename, '.mp3')}.source-${process.pid}-${Date.now()}${sourceExtension}`
   );
+  const keepLosslessSource = input.musicProvider === 'acestep'
+    && ['.flac', '.wav'].includes(sourceExtension)
+    && input.keepLosslessSource !== false;
+  const losslessFilename = keepLosslessSource
+    ? `${path.basename(filename, '.mp3')}.master.flac`
+    : '';
+  const losslessPath = losslessFilename
+    ? path.join(path.dirname(filePath), losslessFilename)
+    : '';
   let mastering;
   try {
     fs.writeFileSync(sourcePath, buffer);
@@ -9677,6 +9685,15 @@ async function saveVivyMusicBuffer(buffer, input = {}, req = null) {
       errorCode: 'vivy_music_master_analysis_failed',
     });
     const analysis = parseVivyMusicLoudnormAnalysis(probe?.stderr);
+    if (losslessPath) {
+      await runVivyFfmpeg(buildVivyMusicMasterArgs(sourcePath, losslessPath, analysis, config), {
+        timeoutMs: process.env.VIVY_MUSIC_MASTER_TIMEOUT_MS || 180000,
+        errorCode: 'vivy_music_lossless_master_failed',
+      });
+      if (!fs.existsSync(losslessPath) || fs.statSync(losslessPath).size <= 0) {
+        throw new Error('vivy_music_lossless_master_empty_output');
+      }
+    }
     await runVivyFfmpeg(buildVivyMusicMasterArgs(sourcePath, filePath, analysis, config), {
       timeoutMs: process.env.VIVY_MUSIC_MASTER_TIMEOUT_MS || 180000,
       errorCode: 'vivy_music_master_failed',
@@ -9693,9 +9710,11 @@ async function saveVivyMusicBuffer(buffer, input = {}, req = null) {
       truePeak: config.targetTp,
       lra: config.targetLra,
       twoPass: Boolean(analysis),
+      losslessMaster: Boolean(losslessPath),
     };
   } catch (error) {
     try { fs.rmSync(filePath, { force: true }); } catch (_) {}
+    try { if (losslessPath) fs.rmSync(losslessPath, { force: true }); } catch (_) {}
     console.warn('[Vivy Studio] Music single-pass mastering failed:', cleanOneLine(error?.message || error, 'unknown', 240));
     // Compatibilite fournisseurs : certains tests/connecteurs rendent un MP3 deja
     // materialise mais non sondable dans l'environnement courant. Conserver ce MP3
@@ -9715,6 +9734,9 @@ async function saveVivyMusicBuffer(buffer, input = {}, req = null) {
   }
   const repair = { ok: false, skipped: true, reason: 'single_pass_master' };
   const url = `/api/vivy/studio/assets/${encodeURIComponent(filename)}`;
+  const losslessUrl = losslessFilename
+    ? `/api/vivy/studio/assets/${encodeURIComponent(losslessFilename)}`
+    : '';
   return {
     ok: true,
     kind: 'audio',
@@ -9731,6 +9753,10 @@ async function saveVivyMusicBuffer(buffer, input = {}, req = null) {
     url,
     audio_url: url,
     audioUrl: url,
+    losslessUrl: losslessUrl || undefined,
+    lossless_url: losslessUrl || undefined,
+    sourceMasterUrl: losslessUrl || undefined,
+    source_master_url: losslessUrl || undefined,
     content_type: 'audio/mpeg',
     containerRepaired: repair.ok === true,
     mastered: mastering.ok === true,
@@ -10062,8 +10088,9 @@ async function requestAceStepViaComfy(input = {}, req = null) {
     lyrics: prepareVivyAceStepLyrics(input, direction.artistCast, aceLyricsMaxChars),
     seed: signature.seed,
     bpm: Number(input.bpm) || undefined,
-    // Le studio NOSSEN envoie targetDurationSeconds=300. Avant ce raccord, ACE
-    // ignorait cette valeur et retombait toujours sur son ancien defaut de 60 s.
+    // Une duree explicite est respectee, mais le studio n'en fabrique plus une
+    // de 300 s ou 120 s par defaut. Le raccord Comfy dimensionne son latent a
+    // la structure/paroles; l'API ACE native pourra, elle, recevoir -1/None.
     duration: Number(
       input.durationSeconds
       || input.duration
@@ -10074,6 +10101,13 @@ async function requestAceStepViaComfy(input = {}, req = null) {
     keyscale: cleanOneLine(input.keyscale || '', '', 20) || undefined,
     timesignature: cleanOneLine(input.timesignature || input.timeSignature || '', '', 4) || undefined,
     audioCodes: input.audioCodes ?? input.generateAudioCodes,
+    // Profil 4B explicitement demande seulement. Le 1.7B reste le profil stable
+    // sur la RTX 5070 12 Go; aucune bascule automatique selon la disponibilite
+    // du fichier ne doit rendre les temps/VRAM imprevisibles.
+    textEncoderProfile: input.aceTextEncoderProfile
+      || input.textEncoderProfile
+      || input.qwenProfile
+      || undefined,
     llmCfgScale: Number(input.llmCfgScale ?? input.cfgScale) || undefined,
     temperature: Number(input.temperature) || undefined,
     topP: Number(input.topP ?? input.top_p) || undefined,
@@ -10623,8 +10657,8 @@ async function requestSunoMusicExtension(input = {}, req = null) {
     body.defaultParamFlag = true;
     body.title = title || 'Vivy NOSSEN extension';
     body.style = style || (wantsInstrumental
-      ? 'long-form full song arrangement around five minutes, instrumental backing track only, no vocals'
-      : 'long-form full song arrangement around five minutes, expressive sung vocals, coherent final chorus');
+      ? 'long-form complete song arrangement, instrumental backing track only, no vocals, no forced duration'
+      : 'long-form complete song arrangement, expressive sung vocals, coherent final chorus, no forced duration');
     body.prompt = wantsInstrumental
       ? (prompt || 'Continue the same original instrumental arrangement with a longer complete ending.')
       : prompt;
@@ -12417,8 +12451,36 @@ function createVivyStudioRouter({
     }
   });
 
+  // === FULL CLIP — génération de clip vidéo complet ===
+  router.post('/full-clip', requireAuth, express.json({ limit: '2mb' }), async (req, res) => {
+    try {
+      const input = req.body || {};
+      if (!input.audioUrl) {
+        return res.status(400).json({ ok: false, error: 'missing_audio_url', message: 'audioUrl requis' });
+      }
+      const result = await generateFullClip({
+        audioUrl: input.audioUrl,
+        lyrics: input.lyrics || input.publicLyrics || '',
+        title: input.title || input.songTitle || 'Funesterie Clip',
+        artistId: input.artistId || 'vivy',
+        visualMood: input.visualMood || input.songMood || '',
+        durationSeconds: Number(input.durationSeconds) || 0,
+        formats: input.formats || ['landscape', 'portrait', 'square'],
+        uploadToR2: typeof uploadBufferToR2 === 'function' ? uploadBufferToR2 : null,
+        logger: console,
+      }, { userId: req.user?.id });
+      res.json(result);
+    } catch (error) {
+      res.status(error.status || 500).json({
+        ok: false,
+        error: error.code || 'full_clip_failed',
+        message: error.message || String(error),
+      });
+    }
+  });
+
   return router;
-}
+};
 
 module.exports = {
   createVivyStudioRouter,
