@@ -12469,6 +12469,7 @@ function createVivyStudioRouter({
         durationSeconds: Number(input.durationSeconds) || 0,
         formats: input.formats || ['landscape', 'portrait', 'square'],
         uploadToR2: typeof uploadBufferToR2 === 'function' ? uploadBufferToR2 : null,
+        fetchFn: (url, opts) => fetch(url, { ...opts, credentials: 'include', headers: { ...(opts?.headers || {}), cookie: req.headers?.cookie || '' } }),
         logger: console,
       }, { userId: req.user?.id });
       res.json(result);

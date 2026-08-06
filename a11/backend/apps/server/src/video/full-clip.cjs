@@ -134,11 +134,11 @@ function buildScenePrompt(title, mood, artistId, index, total, firstLine) {
 
 function getPersonaColor(artistId) {
   const colors = {
-    vivy: ["0x0a,0x8a,0x8a", "0x8a,0x0a,0x8a"], // Cyan to Magenta
-    djeff: ["0x8a,0x0a,0x0a", "0x8a,0x4a,0x0a"], // BloodRed to FireOrange
-    a11: ["0x0a,0x4a,0x8a", "0x0a,0x0a,0x4a"], // DeepBlue to Indigo
-    k44: ["0x0a,0x0a,0x4a", "0x8a,0x8a,0x0a"], // Indigo to DORE
-    kaen44: ["0x0a,0x0a,0x4a", "0x8a,0x8a,0x0a"],
+    vivy: ["0x0a8a8a", "0x8a0a8a"], // Cyan to Magenta
+    djeff: ["0x8a0a0a", "0x8a4a0a"], // BloodRed to FireOrange
+    a11: ["0x0a4a8a", "0x0a0a4a"], // DeepBlue to Indigo
+    k44: ["0x0a0a4a", "0x8a8a0a"], // Indigo to DORE
+    kaen44: ["0x0a0a4a", "0x8a8a0a"],
   };
   return colors[artistId] || colors.vivy;
 }
@@ -154,8 +154,8 @@ async function generateFallbackImage(scene, options = {}) {
   const args = [
     "-y",
     "-f", "lavfi",
-    "-i", `gradients=c0=${c1}:c1=${c2}:d=1:s=${w}x${h}`,
-    "-vf", `drawtext=text='${scene.header.replace(/'/g, "\\'")}':fontsize=48:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2:shadowcolor=black:shadowx=2:shadowy=2`,
+    "-i", `color=c=${c1}:s=${w}x${h}:d=1`,
+    "-vf", `drawtext=text='${scene.header.replace(/'/g, "\\'")}':fontsize=48:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2:`,
     "-frames:v", "1",
     imagePath,
   ];
@@ -253,10 +253,53 @@ async function assembleMontage(loopPaths, outputPath, options = {}) {
 
 async function muxAudio(videoPath, audioUrl, outputPath, options = {}) {
   const ffmpeg = options.ffmpeg || "ffmpeg";
+  const fetchFn = options.fetchFn || globalThis.fetch;
+  const workDir = options.workDir || path.dirname(videoPath);
+  
+  let audioInput = audioUrl;
+  
+  // If the URL is an external HTTPS URL, download it locally first
+  // because ffmpeg can't authenticate against our own API
+  if (/^https?:/i.test(audioUrl)) {
+    // Try 1: direct fetch with the provided fetchFn (may have auth cookies)
+    // Try 2: convert to localhost URL (internal backend access, no auth needed)
+    // Try 3: use ffmpeg directly (last resort)
+    
+    const urls = [
+      audioUrl,
+      audioUrl.replace(/^https?:\/\/[^/]+/i, "http://localhost:3000"),
+    ];
+    
+    for (const tryUrl of urls) {
+      try {
+        const useFetch = tryUrl.includes("localhost") ? globalThis.fetch : fetchFn;
+        const response = await useFetch(tryUrl, { redirect: "follow" });
+        if (response.ok) {
+          const buffer = Buffer.from(await response.arrayBuffer());
+          if (buffer.length > 1000) {
+            const tempAudio = path.join(workDir, "audio-input-" + crypto.randomBytes(4).toString("hex") + ".mp3");
+            fs.writeFileSync(tempAudio, buffer);
+            audioInput = tempAudio;
+            break;
+          }
+        }
+      } catch (e) {
+        // try next URL
+      }
+    }
+    
+    // If still an HTTP URL, try ffmpeg with -headers for auth
+    if (/^https?:/i.test(audioInput)) {
+      // Last resort: strip the token and try without auth (some endpoints are public)
+      const cleanUrl = audioInput.replace(/\?token=[^&]*/i, "");
+      audioInput = cleanUrl;
+    }
+  }
+  
   const args = [
     "-y",
     "-i", videoPath,
-    "-i", audioUrl,
+    "-i", audioInput,
     "-c:v", "copy",
     "-c:a", "aac",
     "-b:a", "192k",
@@ -306,6 +349,7 @@ async function generateFullClip(input = {}, context = {}) {
     durationSeconds = 0,
     formats = ["landscape", "portrait", "square"],
     uploadToR2 = null,
+    fetchFn = null,
     logger = console,
   } = input;
 
@@ -364,7 +408,7 @@ async function generateFullClip(input = {}, context = {}) {
 
   // 4. Mux audio into the master
   const masterWithAudio = path.join(workDir, "master-with-audio.mp4");
-  await muxAudio(masterPath, audioUrl, masterWithAudio);
+  await muxAudio(masterPath, audioUrl, masterWithAudio, { workDir, fetchFn: options.fetchFn || globalThis.fetch });
   logger.log(`[full-clip] audio muxed: ${masterWithAudio}`);
 
   // 5. Export social formats and upload
