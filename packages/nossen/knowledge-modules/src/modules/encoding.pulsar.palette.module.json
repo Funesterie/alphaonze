@@ -51,17 +51,17 @@
       {
         "name": "PurpleShadow",
         "hex": "0x4a0a8a",
-        "hue": 265,
+        "hue": 270,
         "function": "sel relationnel",
-        "complement": "Orange",
+        "complement": null,
         "gamma": 0.15
       },
       {
         "name": "DeepBlue",
         "hex": "0x0a4a8a",
-        "hue": 200,
+        "hue": 210,
         "function": "chiffrement RSA",
-        "complement": "Bleu-Gris",
+        "complement": null,
         "gamma": 0.3
       },
       {
@@ -69,13 +69,13 @@
         "hex": "0x8a0a0a",
         "hue": 0,
         "function": "compression HEVC",
-        "complement": "Flamme-Bleu",
+        "complement": null,
         "gamma": 0.75
       },
       {
         "name": "ToxicGreen",
         "hex": "0x0a8a4a",
-        "hue": 120,
+        "hue": 150,
         "function": "energie NVENC",
         "complement": "Magenta",
         "gamma": 0.95
@@ -109,13 +109,13 @@
         "hex": "0x8a8a0a",
         "hue": 60,
         "function": "blindage alchimique",
-        "complement": "Noir-Petrole",
+        "complement": null,
         "gamma": 0.88
       },
       {
         "name": "Violet",
         "hex": "0x4a0a4a",
-        "hue": 280,
+        "hue": 300,
         "function": "signal",
         "complement": "FireOrange",
         "gamma": 0.4
