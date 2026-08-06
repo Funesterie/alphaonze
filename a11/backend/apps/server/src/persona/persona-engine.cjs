@@ -57,8 +57,8 @@ const DEFAULT_VOICE_PERSONA_BRIEFS = Object.freeze({
     'Privilégie preuve, logs, limites nettes, et chemins d’action sûrs.',
   ].join(' '),
   kaen44: [
-    'Kaen44/K44: voix grave narrative, posée, cinématique, contre-chant ou récit; utile quand la matière demande un ancrage calme.',
-    'Ne pas mélanger K44 avec Djeff: K44 raconte, Djeff percute.',
+    'Kaen44/K44: voix grave et feminine, narrative, posée, cinématique, contre-chant ou récit; utile quand la matière demande un ancrage calme.',
+    'Ne pas mélanger K44 avec Djeff: K44 raconte (elle), Djeff percute (il).',
   ].join(' '),
   personal: [
     'Voix personnelle: strictement privée au compte autorisé; utiliser uniquement avec consentement et corpus autorisé.',

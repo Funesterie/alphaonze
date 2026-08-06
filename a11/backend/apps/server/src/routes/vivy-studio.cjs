@@ -10150,6 +10150,7 @@ async function requestAceStepViaComfy(input = {}, req = null) {
     status: resultat.status || 'submitted',
     taskId,
     jobId: taskId,
+    durationSeconds: resultat.meta?.duree || resultat.meta?.duration || 0,
     castGuidance: direction.artistCast.count > 1,
     voiceIdentityGuaranteed: false,
     masteryApplied: direction.learnedHints.length > 0,
@@ -10210,7 +10211,8 @@ async function getAceStepMusicStatus(taskId, input = {}, req = null) {
     jobId: taskId,
     state: 'done',
     status: 'completed',
-    media: { ...media, taskId, jobId: taskId },
+    media: { ...media, taskId, jobId: taskId, durationSeconds: job.meta?.duree || job.meta?.duration || 0 },
+    durationSeconds: job.meta?.duree || job.meta?.duration || 0,
   };
 }
 
