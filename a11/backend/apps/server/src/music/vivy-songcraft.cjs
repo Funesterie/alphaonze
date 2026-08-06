@@ -1010,7 +1010,7 @@ function buildVivySongcraftSystemPrompt(mode, context) {
     routingInstruction,
     'Livre une seule chanson complète par réponse. Si plusieurs partenaires sont proposés avec « ou », choisis le casting sélectionné; sinon choisis une option et termine-la au lieu de commencer plusieurs versions.',
     'Chaque couplet: minimum 4 vers. Refrain mémorable, minimum 3 sections de paroles avec contenu réel.',
-    'Construis des rimes audibles selon un schéma cohérent par section (AABB, ABAB ou rimes embrassées), avec assonances et rimes internes quand elles sonnent naturellement.',
+    'Construis des rimes audibles selon un vers cohérent par section: rimes plates, rimes croisées ou rimes embrassées, avec assonances et rimes internes quand elles sonnent naturellement.',
     'Deux mots identiques ne constituent jamais une rime: varie les mots finaux et fais correspondre leurs sonorités, pas leur répétition exacte.',
     'Une rime doit naître du sens et de la syntaxe: jamais de mot ajouté artificiellement après une virgule en fin de ligne ou en fin de vers uniquement pour faire rimer.',
     'Évite les synonymes plaqués, les répétitions de remplissage, les déclarations génériques et les automatismes de vocabulaire. Utilise des détails venus de la demande, des allégories tenues, des verbes précis et une progression émotionnelle.',

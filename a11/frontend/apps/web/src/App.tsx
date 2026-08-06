@@ -76,12 +76,11 @@ import {
   forgotPassword,
   resetPassword,
   getVivyStudioMusicJob,
-  extendVivyStudioSunoMusic,
+  produceFullClip,
   createVivyChatSessionOnServer,
   deleteVivyChatSessionOnServer,
   assembleVivyStudioVoicePreview,
   mixVivyStudioPreview,
-  applyVivyStudioVivyLayer,
   routeVivyNossenComposition,
   runVivyStudioProduction,
   sendMatchArenaInput,
@@ -506,9 +505,7 @@ const NOSSEN_K44_TZR_SRC = buildPublicAssetPath("assets/nossen-k44-tzr.png");
 const NOSSEN_DJEFF_BETA_SRC = buildPublicAssetPath("assets/nossen-djeff-beta.png");
 const NOSSEN_CREW_SRC = buildPublicAssetPath("assets/nossen-crew.webp");
 const VIVY_NOSSEN_BANGER_CALL_SRC = buildPublicAssetPath("assets/vivy-banger-call.wav");
-const VIVY_NOSSEN_SUNO_TARGET_SECONDS = 300;
 const VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS = 60;
-const VIVY_NOSSEN_SUNO_MAX_EXTENSIONS = 8;
 const VIVY_NOSSEN_SUNO_LONG_MODEL = "V5_5";
 
 type FunesterieSurface = "a11" | "kaen44" | "vivy";
@@ -2283,8 +2280,8 @@ const D40_V9_ELECTROLYSIS_AMOUNT = 0.042;
 const D40_V9_ELECTROLYSIS_IRREGULARITY = 0.36;
 const D40_V9_ELECTROLYSIS_ASYMMETRY = 0.27;
 const DEFAULT_D40_PROCESS_MODE: DoubleHarmonicProcessMode = "v10boom";
-// V11 pan — valeurs par défaut côté serveur (src/audio/double-harmonic-d40.cjs).
-// Affichées seulement : la V11 s'ajoute à la V10 Boom, elle ne la remplace pas.
+// V11 Pan intégrale — recette cumulative V2→V11. Les constantes ci-dessous
+// décrivent son dernier opérateur spatial sur la résonance, pas toute la recette.
 const V11_PAN_WIDTH = 1.5;
 const V11_PAN_SPREAD_MS = 4;
 const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
@@ -2301,7 +2298,7 @@ const D40_PROCESS_MODE_LABELS: Record<DoubleHarmonicProcessMode, string> = {
   v8pivot: "V8 Pivot",
   v9turbo: "V9 Dynamique",
   v9electrolysis: "V9 Électrolyse",
-  v10boom: "V10 Boom + V11 Pan",
+  v10boom: "V11 Pan intégrale (V2→V11)",
 };
 const D40_OUTPUT_FORMAT_LABELS: Record<DoubleHarmonicOutputFormat, string> = {
   flac: "FLAC master",
@@ -2963,6 +2960,7 @@ type VivyStudioMediaPreview = {
   kind: "audio" | "video" | "image";
   url: string;
   downloadUrl?: string;
+  losslessUrl?: string;
   provider?: string;
   contentType?: string;
   filename?: string;
@@ -2989,7 +2987,10 @@ async function applyDefaultV10BoomToVivyMedia(
   options: { title?: string; fallbackName?: string } = {}
 ): Promise<VivyStudioMediaPreview> {
   if (media.kind !== "audio") return media;
-  const sourceUrl = String(media.downloadUrl || media.url || "").trim();
+  // ACE-Step expose un master FLAC : la recette V2→V11 part de ce PCM et le
+  // MP3 n'est encode qu'apres. Pour Suno, dont la source publique est deja MP3,
+  // on decode cette source une fois puis on ne cree aucun MP3 intermediaire.
+  const sourceUrl = String(media.losslessUrl || media.downloadUrl || media.url || "").trim();
   if (!sourceUrl) throw new Error("v10_boom_source_missing");
 
   let response: Response;
@@ -3004,13 +3005,14 @@ async function applyDefaultV10BoomToVivyMedia(
   const blob = await response.blob();
   const fallbackName = options.fallbackName || "vivy-chanson.mp3";
   const titleBase = buildSongFileBase(String(options.title || ""));
+  const sourceExtension = /\.flac(?:[?#].*)?$/i.test(sourceUrl) ? ".flac" : ".mp3";
   const sourceName = titleBase
-    ? `${titleBase}.mp3`
+    ? `${titleBase}${sourceExtension}`
     : (sanitizeMediaDisplayName(media.filename || fallbackName) || fallbackName);
   const sourceFile = new File(
     [blob],
     sourceName,
-    { type: blob.type || media.contentType || "audio/mpeg" }
+    { type: blob.type || (sourceExtension === ".flac" ? "audio/flac" : media.contentType) || "audio/mpeg" }
   );
   const d40 = await processDoubleHarmonicAudio(sourceFile, {
     profile: "blend",
@@ -4368,6 +4370,20 @@ function getVivyProductionMediaPreview(payload: any, fallbackFilename = "vivy-no
     kind: audioUrl ? "audio" : "video",
     url: resolveApiAssetUrl(url) || url,
     downloadUrl: resolveApiAssetUrl(downloadUrl) || downloadUrl || resolveApiAssetUrl(url) || url,
+    losslessUrl: (() => {
+      const value = String(
+        media?.losslessUrl
+        || media?.lossless_url
+        || media?.sourceMasterUrl
+        || media?.source_master_url
+        || payload?.losslessUrl
+        || payload?.lossless_url
+        || payload?.sourceMasterUrl
+        || payload?.source_master_url
+        || ''
+      ).trim();
+      return value ? (resolveApiAssetUrl(value) || value) : undefined;
+    })(),
     provider: String(media?.provider || payload?.mediaStatus?.provider || payload?.musicJob?.provider || "vivy-music").trim(),
     contentType: String(media?.contentType || media?.content_type || payload?.contentType || payload?.content_type || (audioUrl ? "audio/mpeg" : "video/mp4")).trim(),
     filename: String(media?.filename || payload?.filename || fallbackFilename).trim(),
@@ -4379,21 +4395,6 @@ function getVivyProductionMediaPreview(payload: any, fallbackFilename = "vivy-no
     model: String(media?.model || payload?.musicJob?.model || payload?.mediaStatus?.model || payload?.model || payload?.modelName || payload?.model_name || "").trim() || undefined,
     taskId: String(media?.taskId || media?.jobId || payload?.taskId || payload?.jobId || payload?.musicJob?.taskId || payload?.mediaStatus?.taskId || "").trim() || undefined,
   };
-}
-
-function getVivyProductionSunoAudioId(payload: any, media?: VivyStudioMediaPreview | null) {
-  const raw = media?.audioId
-    || media?.id
-    || payload?.media?.audioId
-    || payload?.media?.audio_id
-    || payload?.media?.id
-    || payload?.musicJob?.media?.audioId
-    || payload?.musicJob?.media?.audio_id
-    || payload?.musicJob?.media?.id
-    || payload?.audioId
-    || payload?.audio_id
-    || "";
-  return String(raw || "").trim();
 }
 
 function getVivyProductionDurationSeconds(payload: any, media?: VivyStudioMediaPreview | null) {
@@ -4452,17 +4453,6 @@ async function probeVivyProductionAudioDurationSeconds(payload: any, media?: Viv
   }
 }
 
-function getVivyProductionSunoModel(payload: any, media?: VivyStudioMediaPreview | null) {
-  return String(
-    media?.model
-    || payload?.media?.model
-    || payload?.musicJob?.model
-    || payload?.mediaStatus?.model
-    || payload?.model
-    || ""
-  ).trim();
-}
-
 function buildVivyNossenBangerAssistantText(
   payload: any,
   media: VivyStudioMediaPreview | null,
@@ -4474,7 +4464,8 @@ function buildVivyNossenBangerAssistantText(
   const title = toUnicodeLine(payload?.title, "", 120);
   const summary = toUnicodeText(payload?.summary || payload?.publicText || payload?.assistant || payload?.content, 900);
   const lyrics = toUnicodeText(payload?.publicLyrics || payload?.vocalLyrics || fallbackLyrics || "", 4200);
-  const downloadLine = media?.downloadUrl || media?.url ? `Téléchargement: ${media.downloadUrl || media.url}` : "";
+  const rawDownloadUrl = String(media?.downloadUrl || media?.url || "").replace(/\?token=[^&]*/i, "");
+  const downloadLine = rawDownloadUrl ? `Téléchargement: ${rawDownloadUrl}` : "";
   const opener = wantsVivyNossenBangerWord(fallbackLyrics) ? "Banger." : "NOSSEN.";
   const lyricsLabel = externalVoiceMix ? "Paroles chantées par les voix Funesterie:" : "Paroles envoyées à Suno:";
   return toUnicodeText([
@@ -5413,12 +5404,12 @@ function VivyD9DiagnosticsPanel({ prosody }: { prosody: VivyStudioProductionResu
   return (
     <section className="vivy-studio-diagnostics vivy-studio-diagnostics--supreme" aria-label="Version audio Vivy">
       <header>
-        <span>Version : V10 Boom + V11 pan</span>
+        <span>Version : V11 Pan intégrale (V2→V11)</span>
         <small>V9 Électrolyse + couche Boom · k 3x · axe m wet 0.15 · peak guard 0.95 · pivot 0.292 · 1024</small>
       </header>
       <p>
         Préparation Vivy prête: {segments.length || 1} segment{(segments.length || 1) > 1 ? "s" : ""} calé{(segments.length || 1) > 1 ? "s" : ""}.
-        Le traitement audio final se fait avec Mix D40 V10 Boom.
+        Le traitement audio final applique une seule fois la recette V11 Pan intégrale.
       </p>
       {/* La V11 ne remplace pas la V10 : elle ouvre la résonance d'axe m en fin de chaîne,
           sans toucher au signal d'origine ni aux réglages du boom. */}
@@ -5560,7 +5551,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
           ? `${doubleHarmonicIntensityLabel} · grain bas x${D40_V4_LOW_GRAIN_MULTIPLIER} · haut ^${D40_V4_HIGH_GRAIN_POWER}`
           : doubleHarmonicIntensityLabel;
   const doubleHarmonicIntensityTitle = doubleHarmonicMode === "v10boom"
-    ? "V10 Boom + V11 Pan"
+    ? "V11 Pan intégrale (V2→V11)"
     : doubleHarmonicMode === "v9electrolysis"
     ? "V9 Électrolyse"
     : doubleHarmonicMode === "v9turbo"
@@ -6849,7 +6840,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
       }
       let v10BoomError = "";
       try {
-        setStatus("Suno a terminé. Mix final D40 V10 Boom...");
+        setStatus("Suno a terminé. Finalisation V11 Pan intégrale (V2→V11)...");
         preparedMedia = await applyDefaultV10BoomToVivyMedia(preparedMedia, {
           title: String(finalPayload?.title || finalPayload?.songTitle || ""),
           fallbackName: "vivy-chanson.mp3",
@@ -6867,7 +6858,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
         "Production musicale Suno prête.",
         `Direction: ${songMood || "couleur sonore automatique depuis la matière"}`,
         `Casting vocal: ${activeSongArtistCast.countLabel} - ${activeSongArtistCast.label}`,
-        v10BoomError ? "Mix final D40 V10 Boom à relancer." : "Mix final D40 V10 Boom appliqué.",
+        v10BoomError ? "V11 Pan intégrale à relancer." : "V11 Pan intégrale (V2→V11) appliquée.",
         voiceRoute,
         taskId ? "Job Suno: lancé (identifiant masqué du brief)" : "",
         finalPayload?.summary || payload?.summary || "Sortie: chanson audio Suno générée.",
@@ -6878,8 +6869,8 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
           ? `Chanson prête: instrumental Suno + voix ${activeSongArtistCast.label}.`
           : "Chanson complète Suno prête. Le timbre Vivy sera disponible après l’enregistrement Suno Voice.";
       setStatus(v10BoomError
-        ? `${readyStatus} Mix V10 Boom à relancer: ${v10BoomError}`
-        : `${readyStatus} Mix final D40 V10 Boom appliqué.`);
+        ? `${readyStatus} V11 Pan intégrale à relancer: ${v10BoomError}`
+        : `${readyStatus} V11 Pan intégrale (V2→V11) appliquée.`);
     } catch (error: any) {
       setStatus(`Chanson Vivy indisponible: ${error?.message || error}`);
     } finally {
@@ -7884,7 +7875,7 @@ function VivyStudioLab({ hasSession, diagnosticsAllowed = false }: VivySessionPr
                   setDoubleHarmonicResult(null);
                 }}
               >
-                <option value="v10boom">V10 Boom + V11 Pan</option>
+                <option value="v10boom">V11 Pan intégrale (V2→V11)</option>
                 <option value="v9electrolysis">V9 Électrolyse</option>
                 <option value="v9turbo">V9 Dynamique</option>
                 <option value="v8pivot">V8 Pivot</option>
@@ -8146,9 +8137,13 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   const [isVideoGenerating, setIsVideoGenerating] = useState(false);
   const [status, setStatus] = useState("");
   const [voiceReferenceName, setVoiceReferenceName] = useState(() => readVivyVoiceReferenceLabel());
+  const [lastNossenAudioUrl, setLastNossenAudioUrl] = useState<string>("");
+  const [lastNossenLyrics, setLastNossenLyrics] = useState<string>("");
+  const [lastNossenTitle, setLastNossenTitle] = useState<string>("");
+  const [lastNossenDuration, setLastNossenDuration] = useState<number>(0);
+  const [nossenArtistId] = useState<string>("vivy");
   const [nossenMusicProvider, setNossenMusicProvider] = useState<VivyNossenMusicProvider>(() => readVivyNossenMusicProvider());
   // Cochee d'office: Djeff l'active a chaque morceau, la decocher est l'exception.
-  const [nossenVivyLayer, setNossenVivyLayer] = useState(true);
   const [awaitingVoiceReference, setAwaitingVoiceReference] = useState(false);
   const chatRootRef = useRef<HTMLElement | null>(null);
   const composeRef = useRef<HTMLFormElement | null>(null);
@@ -9155,14 +9150,9 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         throw new Error("paroles_vivy_invalides");
       }
       const productionBrief = buildVivyNossenBangerProductionBrief(routedReadiness, artists, sharedCompositionContract, routedMood);
-      const requestedSonicMood = inferVivyNossenSonicMood({
-        ...routedReadiness,
-        styleHints: routedMood ? [routedMood] : routedReadiness.styleHints,
-      }, artists);
       // Par defaut la couleur sonore est LIBRE: on n'envoie a la production que le choix
-      // route par Vivy (routedMood). L'inference (requestedSonicMood) ne reste qu'au bord
-      // Suno, pour l'extension d'un morceau deja lance -- jamais pour choisir a la place
-      // de Vivy. Djeff: « par defaut faut laisser libre la couleur sonore pour que vivy decide ».
+      // route par Vivy (routedMood), jamais une couleur inferee a sa place.
+      // Djeff: « par defaut faut laisser libre la couleur sonore pour que vivy decide ».
       const songMood = routedMood || undefined;
       setStatus(`${productionLabel}: paroles prêtes, ${selectedMusicProviderLabel} démarre...`);
       const waitForNossenMusicJob = async (safeTaskId: string, label = selectedMusicProviderLabel) => {
@@ -9172,10 +9162,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           await pause(attempt <= 3 ? 6000 : 10000);
           let job: any;
           try {
-            job = await getVivyStudioMusicJob(safeTaskId, sunoSessionKey || undefined, {
-              targetDurationSeconds: VIVY_NOSSEN_SUNO_TARGET_SECONDS,
-              preferLongForm: true,
-            });
+            job = await getVivyStudioMusicJob(safeTaskId, sunoSessionKey || undefined);
           } catch (error: any) {
             if (attempt < 60 && isRetryableVivyMusicJobError(error)) {
               setStatus(`${productionLabel} attend ${label}... réponse lente ${attempt}/60`);
@@ -9246,8 +9233,10 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
             : selectedMusicProvider === "acestep"
               ? undefined
               : VIVY_NOSSEN_SUNO_LONG_MODEL,
-        longSong: true,
-        targetDurationSeconds: VIVY_NOSSEN_SUNO_TARGET_SECONDS,
+        // La longueur appartient a la composition. L'ancien raccord imposait
+        // exactement 300 s puis achetait jusqu'a huit extensions pour remplir
+        // ce moule, meme quand la chanson etait deja terminee musicalement.
+        longSong: false,
       });
 
       let finalPayload: any = payload;
@@ -9261,89 +9250,10 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         throw new Error(finalPayload?.mediaStatus?.message || finalPayload?.mediaStatus?.reason || "audio_url_missing");
       }
 
-      if (nossenVivyLayer && preparedMedia && preparedMedia.url) {
-        try {
-          setStatus(productionLabel + ": couche sonore Vivy (D40) en cours...");
-          const layered = await applyVivyStudioVivyLayer(preparedMedia.url, { profile: "blend" });
-          const layeredUrl = String(layered?.url || layered?.audioUrl || layered?.audio_url || String()).trim();
-          if (layeredUrl) {
-            preparedMedia = {
-              kind: "audio",
-              url: resolveApiAssetUrl(layeredUrl) || layeredUrl,
-              downloadUrl: resolveApiAssetUrl(layeredUrl) || layeredUrl,
-              provider: String(layered?.provider || "vivy-d40-layer"),
-              contentType: String(layered?.content_type || layered?.contentType || "audio/mpeg"),
-              filename: String(layered?.filename || "vivy-nossen-d40.mp3"),
-            };
-            setStatus(productionLabel + ": morceau Suno + couche Vivy D40 prête.");
-          }
-        } catch (layerError) {
-          setStatus(productionLabel + ": couche Vivy ignorée (" + String(layerError) + "), morceau Suno conservé.");
-        }
-      }
-      let sunoExtended = false;
+      // La V11 Pan est la recette cumulative V2→V11. Ne jamais appliquer une
+      // couche D40 autonome ici : applyDefaultV10BoomToVivyMedia consolide la
+      // recette une seule fois, de préférence depuis le master FLAC/PCM.
       if (preparedMedia.kind === "audio") {
-        let durationSeconds = await probeVivyProductionAudioDurationSeconds(finalPayload, preparedMedia);
-        for (let extensionIndex = 1; selectedMusicProvider === "suno" && extensionIndex <= VIVY_NOSSEN_SUNO_MAX_EXTENSIONS; extensionIndex += 1) {
-          const sunoAudioId = getVivyProductionSunoAudioId(finalPayload, preparedMedia);
-          if (!(durationSeconds > 0 && durationSeconds < VIVY_NOSSEN_SUNO_TARGET_SECONDS && sunoAudioId)) break;
-          try {
-            setStatus(`${productionLabel}: ${Math.round(durationSeconds)}s, extension Suno ${extensionIndex}/${VIVY_NOSSEN_SUNO_MAX_EXTENSIONS} vers 5 min...`);
-            const extensionStart = await extendVivyStudioSunoMusic({
-              audioId: sunoAudioId,
-              model: getVivyProductionSunoModel(finalPayload, preparedMedia) || undefined,
-              sourceTaskId: taskId || preparedMedia.taskId || undefined,
-              sourceDurationSeconds: durationSeconds,
-              continueAtSeconds: Math.max(1, Math.floor(durationSeconds - 8)),
-              targetDurationSeconds: VIVY_NOSSEN_SUNO_TARGET_SECONDS,
-              title: routedReadiness.themeAnchor || activeSessionName || "Vivy NOSSEN",
-              style: [
-                songMood || requestedSonicMood,
-                "long-form full song arrangement around five minutes with sung lead vocals",
-                "continue the same vocal performance, keep the selected casting handoffs and recurring hook",
-                "complete final chorus, no short radio edit",
-              ].filter(Boolean).join(", "),
-              prompt: vocalLyricsForProduction,
-              instrumental: false,
-              previewInstrumental: false,
-              sessionSunoApiKey: sunoSessionKey || undefined,
-            });
-            let extendedPayload: any = extensionStart;
-            let extendedMedia = getVivyProductionMediaPreview(extendedPayload, preparedMedia.filename || "vivy-nossen-extended.mp3");
-            const extensionTaskId = String(
-              extensionStart?.mediaStatus?.taskId
-              || extensionStart?.musicJob?.taskId
-              || extensionStart?.media?.taskId
-              || ""
-            ).trim();
-            if (!extendedMedia && extensionTaskId) {
-              extendedPayload = await waitForNossenMusicJob(extensionTaskId, "l'extension Suno");
-              extendedMedia = getVivyProductionMediaPreview(extendedPayload, preparedMedia.filename || "vivy-nossen-extended.mp3");
-            }
-            if (extendedMedia?.url) {
-              const previousDurationSeconds = durationSeconds;
-              const candidatePayload = {
-                ...extendedPayload,
-                publicLyrics: finalPayload?.publicLyrics,
-                vocalLyrics: finalPayload?.vocalLyrics,
-                summary: finalPayload?.summary,
-              };
-              const candidateDurationSeconds = await probeVivyProductionAudioDurationSeconds(candidatePayload, extendedMedia);
-              if (!(candidateDurationSeconds > 0)) break;
-              if (candidateDurationSeconds <= previousDurationSeconds + 3) {
-                setStatus(`${productionLabel}: extension Suno sans progression réelle (${Math.round(candidateDurationSeconds)}s), j'arrête les crédits sur cette prise.`);
-                break;
-              }
-              finalPayload = candidatePayload;
-              preparedMedia = extendedMedia;
-              sunoExtended = true;
-              durationSeconds = candidateDurationSeconds;
-            }
-          } catch {
-            setStatus(`${productionLabel}: extension indisponible, je garde la prise Suno originale.`);
-            break;
-          }
-        }
         const finalDurationSeconds = await probeVivyProductionAudioDurationSeconds(finalPayload, preparedMedia);
         if (!(finalDurationSeconds > 0)) {
           throw new Error(`generation_${selectedMusicProvider}_duree_inconnue`);
@@ -9356,9 +9266,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       let d40Applied = false;
       if (preparedMedia.kind === "audio") {
         try {
-          setStatus(sunoExtended
-            ? "Finalisation D40 V10 Boom après extension..."
-            : "Finalisation D40 V10 Boom...");
+          setStatus("Finalisation V11 Pan intégrale (V2→V11)...");
           const fallbackAudioName = useBangerWord ? "vivy-banger-nossen.mp3" : "vivy-nossen.mp3";
           const titreChanson = String(
             (finalPayload as any)?.title
@@ -9372,7 +9280,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           });
           d40Applied = preparedMedia.provider === "funesterie-d40-v10boom";
         } catch (error: any) {
-          setStatus(`${productionLabel} prêt; mix final V10 Boom à relancer dans le Studio: ${error?.message || error}`);
+          setStatus(`${productionLabel} prêt; V11 Pan intégrale à relancer dans le Studio: ${error?.message || error}`);
         }
       }
 
@@ -9401,6 +9309,10 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         media: preparedMedia,
         mode: "song",
       }).catch(() => {});
+      setLastNossenAudioUrl(String(preparedMedia?.downloadUrl || preparedMedia?.url || "").replace(/\?token=[^&]*/i, ""));
+      setLastNossenLyrics(String(finalPayload?.publicLyrics || finalPayload?.vocalLyrics || lyricsPayload?.publicLyrics || "").slice(0, 6000));
+      setLastNossenTitle(String(finalPayload?.title || finalPayload?.songTitle || productionLabel || "Funesterie Clip").slice(0, 120));
+      setLastNossenDuration(Number(finalPayload?.durationSeconds || finalPayload?.media?.durationSeconds || preparedMedia?.durationSeconds || 0) || 0);
       setStatus(d40Applied ? `${productionLabel} prêt avec mix final.` : `${productionLabel} prêt.`);
     } catch (error: any) {
       const rawErrorMessage = String(error?.message || error || "").trim();
@@ -9784,15 +9696,49 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
               </button>
             ))}
           </div>
-          <label className="vivy-nossen-vivy-layer-toggle">
-            <input
-              type="checkbox"
-              checked={nossenVivyLayer}
-              disabled={!hasSession || isSending || isVideoGenerating}
-              onChange={(event) => setNossenVivyLayer(event.target.checked)}
-            />
-            <span>Couche Vivy (D40)</span>
-          </label>
+          <button
+            type="button"
+            className="vivy-nossen-fullclip-btn"
+            disabled={!hasSession || isSending || isVideoGenerating || !lastNossenAudioUrl}
+            onClick={async () => {
+              if (!lastNossenAudioUrl) return;
+              setIsVideoGenerating(true);
+              setStatus("Génération du clip vidéo complet...");
+              try {
+                const result: any = await produceFullClip({
+                    audioUrl: lastNossenAudioUrl,
+                    lyrics: lastNossenLyrics || "",
+                    title: lastNossenTitle || "Funesterie Clip",
+                    artistId: nossenArtistId || "vivy",
+                    durationSeconds: lastNossenDuration || 0,
+                    formats: ["landscape", "portrait", "square"],
+                  });
+                if (result?.ok && result?.socialReady) {
+                  const urls = result.socialReady;
+                  const links = [
+                    urls.youtube ? "YouTube/Facebook: " + urls.youtube : "",
+                    urls.instagram ? "Instagram/TikTok: " + urls.instagram : "",
+                  ].filter(Boolean).join("\n");
+                  setMessages((current: any) => [...current, {
+                    id: "vivy-full-clip-" + Date.now(),
+                    role: "assistant",
+                    content: "Clip vidéo généré.\n\n" + links,
+                    ts: new Date().toISOString(),
+                  }].slice(-36));
+                  setStatus("Clip vidéo prêt.");
+                } else {
+                  setStatus("Clip échoué: " + ((result as any)?.message || "erreur inconnue"));
+                }
+              } catch (e) {
+                setStatus("Clip échoué: " + ((e as any)?.message || e));
+              } finally {
+                setIsVideoGenerating(false);
+              }
+            }}
+            title="Génère un clip vidéo complet synchronisé sur la musique NOSSEN, exporté en formats YouTube, Instagram et Facebook"
+          >
+            Clip Full
+          </button>
           <button type="button" disabled={!hasSession || isVideoGenerating} onClick={() => fileInputRef.current?.click()}>Fichier</button>
           <button type="submit" disabled={!hasSession || isSending || isVideoGenerating || (!draft.trim() && !attachedFiles.length)}>Envoyer</button>
         </div>

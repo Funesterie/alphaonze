@@ -3369,6 +3369,22 @@ export async function getVivyStudioMusicJob(
   return payload as VivyStudioProductionResult;
 }
 
+export async function produceFullClip(input: {
+  audioUrl: string;
+  lyrics?: string;
+  title?: string;
+  artistId?: string;
+  durationSeconds?: number;
+  formats?: string[];
+}): Promise<Record<string, any>> {
+  const res = await authFetch(getApiUrl("/api/vivy/studio/full-clip"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return res.json();
+}
+
 export async function extendVivyStudioSunoMusic(input: {
   audioId: string;
   model?: string;
