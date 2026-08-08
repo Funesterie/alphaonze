@@ -7113,6 +7113,19 @@ app.use('/api/vivy/voice-chat', createVivyVoiceChatRouter({
 }));
 console.log('[Server] Vivy voice chat mounted under /api/vivy/voice-chat (fondateur/famille)');
 
+// Dialogue borne Vivy <-> Djeff. Chaque tour garde son moteur d'identite et
+// expose une requete TTS polie; aucune sortie synthetique ne rejoint le corpus.
+const createPersonaVoiceDialogueRouter = require('./src/routes/persona-voice-dialogue.cjs');
+const { buildDjeffAiChat: buildDjeffAiChatForDialogue } = require('./src/routes/vivy-studio.cjs');
+app.use('/api/personas/dialogue', createPersonaVoiceDialogueRouter({
+  verifyJWT,
+  responders: {
+    vivy: buildVivyAiChatForVoice,
+    djeff: buildDjeffAiChatForDialogue,
+  },
+}));
+console.log('[Server] Persona voice dialogue mounted under /api/personas/dialogue (Vivy + Djeff)');
+
 const { createVivyStreamRouter } = require('./src/routes/vivy-stream.cjs');
 app.use('/api/vivy/stream', createVivyStreamRouter({ verifyJWT, db }));
 console.log('[Server] Vivy Stream routes mounted under /api/vivy/stream');
