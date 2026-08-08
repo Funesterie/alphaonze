@@ -700,6 +700,33 @@ function resolveVivyCatalogVoiceIdFromInput(input = {}) {
   return resolveCatalogVoiceId(requested);
 }
 
+/**
+ * Voix nommee demandee explicitement, mais dont la persona Suno est morte.
+ *
+ * Constate le 08/08/2026 sur Ile: sa persona expire, resolveCatalogVoiceId rend une
+ * chaine vide, useVerifiedSunoVoice tombe a faux, et le morceau part chez Suno SANS
+ * aucune persona. Suno improvise alors une voix a partir du seul prompt de style --
+ * feminine ici, donc celle de Vivy a l'oreille. Personne n'est prevenu, le morceau
+ * revient dans la mauvaise voix et les credits sont depenses quand meme.
+ *
+ * On distingue donc « aucune voix demandee » de « voix demandee mais morte ». Le
+ * second cas doit refuser, pas substituer en silence.
+ */
+function findExpiredRequestedCatalogVoice(input = {}) {
+  const requested = cleanOneLine(input.voiceCatalogName || input.catalogVoiceName, '', 80);
+  if (!requested) return null;
+  const entry = findVoiceInCatalog(requested);
+  if (!entry || !entry.personaExpiredAt) return null;
+  return {
+    name: entry.name || slugifyVoiceName(requested),
+    label: entry.label || entry.name || requested,
+    expiredAt: entry.personaExpiredAt,
+    // Sans echantillon local, la reanimation est impossible: il faut un nouvel
+    // enregistrement et le consentement qui va avec.
+    recoverable: Boolean(entry.sampleFile),
+  };
+}
+
 function wantsPersonalSunoVoice(input = {}) {
   if (input.usePersonalSunoVoice === true || input.personalSunoVoice === true) return true;
   const folded = foldTextForLookup([
@@ -8704,6 +8731,24 @@ function buildVivySunoPayload(input = {}, req = null) {
   // Voix nommee du catalogue: demandee explicitement, elle prime sur tout le reste.
   // C'est ce qui permet de chanter avec une voix ajoutee depuis l'UI sans deploiement.
   const catalogVoiceId = resolveVivyCatalogVoiceIdFromInput(input);
+  // Voix nommee demandee mais persona morte: on refuse au lieu de laisser Suno
+  // improviser une autre voix en silence. Voir findExpiredRequestedCatalogVoice.
+  if (!catalogVoiceId) {
+    const voixMorte = findExpiredRequestedCatalogVoice(input);
+    if (voixMorte) {
+      const erreur = new Error('suno_catalog_voice_expired');
+      erreur.code = 'suno_catalog_voice_expired';
+      erreur.status = 409;
+      erreur.voiceName = voixMorte.name;
+      erreur.voiceLabel = voixMorte.label;
+      erreur.expiredAt = voixMorte.expiredAt;
+      erreur.recoverable = voixMorte.recoverable;
+      erreur.hint = voixMorte.recoverable
+        ? `La persona Suno de ${voixMorte.label} a expire. Elle garde son echantillon: POST /api/vivy/voice-catalog/${voixMorte.name}/recover la refabrique (une generation Suno).`
+        : `La persona Suno de ${voixMorte.label} a expire et aucun echantillon local ne permet de la refabriquer: il faut un nouvel enregistrement et son consentement.`;
+      throw erreur;
+    }
+  }
   // Plus de preference pour une persona officielle: il n'y en a plus.
   const preferConfiguredOfficialVoice = false;
   const verifiedVoiceId = catalogVoiceId
