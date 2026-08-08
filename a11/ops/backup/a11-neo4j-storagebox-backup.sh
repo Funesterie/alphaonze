@@ -199,11 +199,22 @@ flock -n 9 || { printf 'another Neo4j Storage Box backup is active\n' >&2; exit 
 run_id="$(date -u +%Y%m%dT%H%M%SZ)"
 host_run="$host_staging_root/$run_id"
 container_run="$container_staging_root/$run_id"
+host_uid="$(id -u)"
+host_gid="$(id -g)"
 install -d -m 0700 "$host_run"
 neo4j_stopped_by_backup=0
 verify_container="a11-neo4j-restore-check-${run_id,,}"
 verify_volume="a11-neo4j-restore-check-${run_id,,}"
 dump_container="a11-neo4j-dump-${run_id,,}"
+normalize_campaign_ownership() {
+  docker run --rm --user 0:0 --entrypoint /bin/sh \
+    --mount "type=bind,src=$host_run,dst=/campaign" \
+    "$neo4j_image_id" -lc \
+    "chown -R $host_uid:$host_gid /campaign
+     find /campaign -type d -exec chmod 0700 {} +
+     find /campaign -type f -exec chmod 0600 {} +" \
+    >/dev/null
+}
 cleanup() {
   docker rm -f "$dump_container" >/dev/null 2>&1 || true
   docker rm -f "$verify_container" >/dev/null 2>&1 || true
@@ -213,6 +224,7 @@ cleanup() {
     docker start "$neo4j_container" >/dev/null 2>&1 || true
   fi
   if [[ "$host_run" == "$host_staging_root"/20??????T??????Z ]]; then
+    normalize_campaign_ownership >/dev/null 2>&1 || true
     rm -rf -- "$host_run"
   else
     printf 'refusing unsafe staging cleanup: %s\n' "$host_run" >&2
@@ -233,8 +245,6 @@ docker exec "$backend_container" \
 if [[ "$native_dump_mode" == required ]]; then
   neo4j_uid="$(docker exec "$neo4j_container" sh -lc 'id -u neo4j 2>/dev/null || id -u' | tr -d '[:space:]')"
   neo4j_gid="$(docker exec "$neo4j_container" sh -lc 'id -g neo4j 2>/dev/null || id -g' | tr -d '[:space:]')"
-  host_uid="$(id -u)"
-  host_gid="$(id -g)"
   native_dump_dir="$host_run/native-dump"
   install -d -m 0700 "$native_dump_dir"
   # The parent is 0700, so this temporary write permission is not reachable by
@@ -261,10 +271,12 @@ if [[ "$native_dump_mode" == required ]]; then
     printf 'native Neo4j dump was not created\n' >&2
     exit 1
   }
+  # The disposable load process runs as the same Neo4j UID. Keep the dump
+  # private but readable by that UID until restore verification has finished.
   docker run --rm --user 0:0 --entrypoint /bin/sh \
     --mount "type=bind,src=$native_dump_dir,dst=/backups" \
     "$neo4j_image_id" -lc \
-    "chown -R $host_uid:$host_gid /backups && chmod -R go-rwx /backups"
+    "chown -R $neo4j_uid:$neo4j_gid /backups && chmod -R go-rwx /backups"
   docker start "$neo4j_container" >/dev/null
   if ! wait_for_source_neo4j; then
     docker logs --tail 80 "$neo4j_container" >&2 || true
@@ -360,6 +372,11 @@ if [[ "$native_dump_mode" == required ]]; then
     docker volume rm "$verify_volume" >/dev/null
   fi
 fi
+
+# docker exec and the Neo4j helpers use container UIDs. Normalize the complete
+# campaign back to the caller account only after the native restore proof, so
+# checksums, Restic and fail-safe cleanup can read/remove every artifact.
+normalize_campaign_ownership
 
 {
   printf 'schema=funesterie.storagebox-backup.v1\n'
