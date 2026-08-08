@@ -41,7 +41,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@nossen/logic-reduce": "2.0.2"
+    "@nossen/logic-reduce": "2.0.3"
   },
   "funding": [
     {

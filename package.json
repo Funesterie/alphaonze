@@ -75,7 +75,8 @@
     "ollama:down": "docker compose -f docker-compose.ollama.yml down",
     "research:d40:closure": "node scripts/research/scan-d40-spiral-closure.cjs",
     "research:d40:7d": "node scripts/research/scan-d40-dimensional-7d.cjs",
-    "research:d40:music": "node scripts/research/render-d40-spiral-music-test.cjs"
+    "research:d40:music": "node scripts/research/render-d40-spiral-music-test.cjs",
+    "research:cross-m": "node scripts/research/verify-cross-m-transform.cjs"
   },
   "version": "0.0.1",
   "funding": [
