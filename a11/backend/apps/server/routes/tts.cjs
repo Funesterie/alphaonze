@@ -36,6 +36,9 @@ const {
   saveVoiceReference,
 } = require('../src/tts/voice-reference-store.cjs');
 const {
+  resolveVoiceQualityProfileForRequest,
+} = require('../src/routes/voice-learning.cjs');
+const {
   DEFAULT_TTS_MODEL_NAME,
   firstExistingPath,
   getBackendRoot,
@@ -2099,11 +2102,14 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
 }
 
 async function finalizeTtsPayload(payload, req, vocalMode) {
+  let finalized;
   if (isReferenceAwareTtsPayload(payload) && !wantsElevenLabsRvcPipeline(req?.body || {})) {
-    return enrichTtsPayloadWithAudioModule(payload, req, vocalMode);
+    finalized = await enrichTtsPayloadWithAudioModule(payload, req, vocalMode);
+  } else {
+    const converted = await requestVoiceConversionWithModule(payload, req, vocalMode);
+    finalized = await enrichTtsPayloadWithAudioModule(converted, req, vocalMode);
   }
-  const converted = await requestVoiceConversionWithModule(payload, req, vocalMode);
-  return enrichTtsPayloadWithAudioModule(converted, req, vocalMode);
+  return polishTtsPayloadAudio(finalized, req, vocalMode);
 }
 
 function isReferenceAwareTtsPayload(payload = {}) {
@@ -3080,21 +3086,34 @@ function getAudioFfmpegBinary() {
   return String(process.env.A11_AUDIO_FFMPEG_BIN || process.env.FFMPEG_BIN || 'ffmpeg').trim() || 'ffmpeg';
 }
 
-function buildTtsOutputAudioFilter() {
-  return String(
-    process.env.A11_TTS_OUTPUT_AUDIO_FILTER
-    || 'highpass=f=70,lowpass=f=12000,acompressor=threshold=-20dB:ratio=2.2:attack=8:release=120,loudnorm=I=-16:LRA=8:TP=-1.2'
-  ).trim();
+function buildTtsOutputAudioFilter(profile = {}) {
+  const configured = String(process.env.A11_TTS_OUTPUT_AUDIO_FILTER || '').trim();
+  if (configured) return configured;
+  const stages = [
+    'aresample=48000:resampler=soxr:precision=28',
+    'highpass=f=65',
+    'lowpass=f=16500',
+    // Seuil volontairement doux: retirer les impulsions numeriques sans lisser
+    // les consonnes et attaques comme le faisait l'ancien lowpass a 12 kHz.
+    'adeclick=w=25:o=75:a=2:t=8:b=1:m=s',
+  ];
+  if (profile.denoise === true) stages.push('afftdn=nf=-32:tn=1:gs=4');
+  stages.push(profile.deess === true
+    ? 'deesser=i=0.24:m=0.45:f=0.55'
+    : 'deesser=i=0.12:m=0.30:f=0.55');
+  stages.push('acompressor=threshold=-18dB:ratio=1.6:attack=12:release=160:makeup=1');
+  stages.push(`alimiter=limit=${profile.peakGuard === true ? '0.92' : '0.95'}:attack=5:release=80:level=false`);
+  return stages.join(',');
 }
 
-async function transcodeAudioBuffer(buffer, targetFormat = 'mp3') {
+async function transcodeAudioBuffer(buffer, targetFormat = 'mp3', options = {}) {
   if (!Buffer.isBuffer(buffer) || buffer.length <= 0) return null;
   const format = String(targetFormat || '').toLowerCase();
-  if (format !== 'mp3') return null;
+  if (!['mp3', 'wav'].includes(format)) return null;
   const ttsDir = ensurePublicTtsDir();
   const tempBase = `tts-transcode-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const inputPath = path.join(ttsDir, `${tempBase}.input`);
-  const outputPath = path.join(ttsDir, `${tempBase}.mp3`);
+  const outputPath = path.join(ttsDir, `${tempBase}.${format}`);
   fs.writeFileSync(inputPath, buffer);
   try {
     await new Promise((resolve, reject) => {
@@ -3106,13 +3125,12 @@ async function transcodeAudioBuffer(buffer, targetFormat = 'mp3') {
         '-i',
         inputPath,
         '-vn',
-        ...(buildTtsOutputAudioFilter() ? ['-af', buildTtsOutputAudioFilter()] : []),
+        ...(buildTtsOutputAudioFilter(options.profile) ? ['-af', buildTtsOutputAudioFilter(options.profile)] : []),
         '-ac',
         '1',
         '-ar',
-        '44100',
-        '-b:a',
-        '160k',
+        '48000',
+        ...(format === 'mp3' ? ['-c:a', 'libmp3lame', '-b:a', '192k'] : ['-c:a', 'pcm_s16le']),
         outputPath,
       ], { windowsHide: true });
       let stderr = '';
@@ -3130,6 +3148,61 @@ async function transcodeAudioBuffer(buffer, targetFormat = 'mp3') {
         if (fs.existsSync(item)) fs.unlinkSync(item);
       } catch {}
     }
+  }
+}
+
+function isVoicePolishEnabled(body = {}) {
+  if (body.voicePolish === false || body.polishVoice === false) return false;
+  const configured = String(process.env.A11_TTS_VOICE_POLISH_ENABLED || 'true').trim().toLowerCase();
+  return !['0', 'false', 'off', 'no'].includes(configured);
+}
+
+async function polishTtsPayloadAudio(payload = {}, req = null, vocalMode = 'speech') {
+  if (!isVoicePolishEnabled(req?.body || {}) || payload?.voicePolish?.ok === true) return payload;
+  const audioUrl = String(payload?.audioUrl || payload?.audio_url || '').trim();
+  if (!audioUrl) return payload;
+  const persona = getTtsPersonaFromBody(req?.body || {}, req?.body?.surface || '');
+  const profile = resolveVoiceQualityProfileForRequest(req || {}, persona);
+  try {
+    const audio = await loadTtsAudioBuffer(audioUrl);
+    if (!audio?.buffer?.length) return payload;
+    const requestedFormat = normalizeTtsAudioFormat(req?.body || {}, 'mp3');
+    const targetFormat = requestedFormat === 'wav' ? 'wav' : 'mp3';
+    const polished = await transcodeAudioBuffer(audio.buffer, targetFormat, { profile });
+    if (!polished?.length) return payload;
+    const polishedUrl = saveProviderAudioBuffer(polished, 'voice-polish', targetFormat);
+    if (!polishedUrl) return payload;
+    await loadTtsAudioBuffer(audioUrl, { consume: true }).catch(() => null);
+    const sourceContentType = String(audio.contentType || '').toLowerCase();
+    const sourceWasLossless = /(?:wav|wave|flac|pcm|l16)/.test(sourceContentType);
+    return {
+      ...payload,
+      prePolishAudioUrl: audioUrl,
+      audioUrl: polishedUrl,
+      audio_url: polishedUrl,
+      audioFormat: targetFormat,
+      content_type: targetFormat === 'wav' ? 'audio/wav' : 'audio/mpeg',
+      voicePolish: {
+        ok: true,
+        schema: 'funesterie.voice-polish.v1',
+        profile: profile.profile,
+        learnedDefects: profile.learnedDefects,
+        vocalMode,
+        sampleRate: 48000,
+        sourceContentType: sourceContentType || null,
+        singleFinalEncode: sourceWasLossless,
+        lossyReencode: !sourceWasLossless,
+      },
+    };
+  } catch (error_) {
+    return {
+      ...payload,
+      voicePolish: {
+        ok: false,
+        skipped: true,
+        reason: String(error_?.message || error_).slice(0, 240),
+      },
+    };
   }
 }
 
@@ -5929,3 +6002,6 @@ module.exports.shouldDefaultOfficialToElevenLabsRvc = shouldDefaultOfficialToEle
 module.exports.shouldRouteOfficialToElevenLabsRvc = shouldRouteOfficialToElevenLabsRvc;
 module.exports.hasSpecialLocalVoiceStyle = hasSpecialLocalVoiceStyle;
 module.exports.normalizeTtsPayloadMediaMeta = normalizeTtsPayloadMediaMeta;
+module.exports.buildTtsOutputAudioFilter = buildTtsOutputAudioFilter;
+module.exports.polishTtsPayloadAudio = polishTtsPayloadAudio;
+module.exports.transcodeAudioBuffer = transcodeAudioBuffer;

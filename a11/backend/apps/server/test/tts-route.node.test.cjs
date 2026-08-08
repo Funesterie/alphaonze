@@ -8,6 +8,19 @@ const path = require('node:path');
 
 const ttsRouter = require('../routes/tts.cjs');
 
+test('voice polish keeps consonants while guarding crackle, sibilance and peaks', () => {
+  const regular = ttsRouter.buildTtsOutputAudioFilter({});
+  const learned = ttsRouter.buildTtsOutputAudioFilter({ denoise: true, deess: true, peakGuard: true });
+  assert.match(regular, /aresample=48000/);
+  assert.match(regular, /adeclick=/);
+  assert.match(regular, /deesser=/);
+  assert.match(regular, /acompressor=/);
+  assert.match(regular, /alimiter=limit=0\.95/);
+  assert.doesNotMatch(regular, /afftdn=/);
+  assert.match(learned, /afftdn=/);
+  assert.match(learned, /alimiter=limit=0\.92/);
+});
+
 async function withServer(registerRoutes, runAssertions) {
   const app = express();
   app.use((req, _res, next) => {
@@ -670,7 +683,9 @@ test('tts speak route gives basic A11 the official local reference without paid 
 
         assert.equal(result.response.status, 200);
         assert.equal(result.json.provider, 'xtts-rvc');
-        assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
+        assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-voice-polish\.mp3$/);
+        assert.equal(result.json.voicePolish?.ok, true);
+        assert.equal(result.json.voicePolish?.lossyReencode, true);
         assert.equal(backendBodies.length, 0);
         assert.equal(conversionForms.length, 1);
         assert.equal(conversionForms[0].get('persona'), 'a11');
@@ -1377,7 +1392,8 @@ test('vivy jobs route exposes a Bat/Rome async official TTS job with web audio o
 
         assert.equal(polled.state, 'done');
         assert.equal(polled.provider, 'xtts-rvc');
-        assert.match(polled.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
+        assert.match(polled.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-voice-polish\.mp3$/);
+        assert.equal(polled.result?.voicePolish?.ok, true);
         assert.equal(bridgeCalls.length, 1);
       }
     );
@@ -1485,7 +1501,8 @@ test('vivy jobs route keeps stale private voice state away from the local GPU wo
 
         assert.equal(polled.state, 'done');
         assert.equal(polled.provider, 'xtts-rvc');
-        assert.match(polled.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
+        assert.match(polled.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-voice-polish\.mp3$/);
+        assert.equal(polled.result?.voicePolish?.ok, true);
         assert.equal(bridgeCalls.length, 1);
       }
     );
@@ -2049,7 +2066,8 @@ test('tts speak route defaults official auto voices to ElevenLabs before any RVC
             assert.equal(result.json.voiceManifest.rvcApplied, true);
             assert.match(result.json.originalAudioUrl, /^\/api\/tts\/out\/tts-out-\d+-elevenlabs\.mp3$/);
             assert.equal(result.json.voiceConversion.engine, 'xtts-rvc');
-            assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
+            assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-voice-polish\.mp3$/);
+            assert.equal(result.json.voicePolish?.ok, true);
           } else {
             assert.equal(result.json.provider, 'elevenlabs');
             assert.equal(result.json.voiceManifest.rvcApplied, false);
@@ -2207,7 +2225,8 @@ test('tts async official auto voice falls back to the local Vivy identity when E
         assert.equal(polled.result.voiceManifest.personaApplied, true);
         assert.equal(polled.result.voiceManifest.fallbackUsed, true);
         assert.match(polled.result.voiceManifest.fallbackReason, /elevenlabs_/);
-        assert.match(polled.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
+        assert.match(polled.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-voice-polish\.mp3$/);
+        assert.equal(polled.result?.voicePolish?.ok, true);
         assert.equal(bridgeCalls.length, 1);
       }
     );
@@ -2700,7 +2719,8 @@ test('tts async official auto voices keep Cartesia explicit-only and use local o
 
           assert.equal(polled.state, 'done');
           assert.equal(polled.provider, 'xtts-rvc');
-          assert.match(polled.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
+          assert.match(polled.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-voice-polish\.mp3$/);
+          assert.equal(polled.result?.voicePolish?.ok, true);
         }
 
         assert.equal(bridgeCalls.length, cases.length);
@@ -4568,7 +4588,8 @@ test('tts route can run generated audio through the voice conversion module', as
         });
 
         assert.equal(result.response.status, 200);
-        assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
+        assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-voice-polish\.mp3$/);
+        assert.equal(result.json.voicePolish?.ok, true);
         assert.match(result.json.originalAudioUrl, /^\/api\/tts\/out\/tts-out-\d+-http-tts\.mp3$/);
         assert.equal(result.json.audioFormat, 'mp3');
         assert.equal(result.json.voiceConversion.ok, true);

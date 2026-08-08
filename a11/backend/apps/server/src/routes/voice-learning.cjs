@@ -45,6 +45,21 @@ const VOICE_LEARNING_CONSENT = 'voice-learning-v1';
 const DELETE_CONFIRMATION = 'delete-voice-learning-corpus';
 const SUNO_VOICE_SLOT_CONSENT = 'suno-voice-slot-v1';
 const SUNO_VOICE_DELETE_CONFIRMATION = 'delete-suno-voice-slot';
+const VOICE_QUALITY_FEEDBACK_SCHEMA = 'funesterie.voice-quality-feedback.v1';
+const VOICE_QUALITY_DEFECTS = new Set([
+  'crackle',
+  'noise',
+  'clipping',
+  'harsh',
+  'sibilance',
+  'metallic',
+  'robotic',
+  'rough_join',
+  'breath_cut',
+  'wrong_voice',
+  'too_loud',
+  'too_quiet',
+]);
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -271,17 +286,18 @@ function stripRuntimeFields(clip = {}) {
 
 function readIndexFile(indexPath, corpusDir) {
   try {
-    if (!fs.existsSync(indexPath)) return { clips: [], trainRequests: [], sunoVoice: null };
+    if (!fs.existsSync(indexPath)) return { clips: [], trainRequests: [], qualityFeedback: [], sunoVoice: null };
     const parsed = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
     return {
       clips: Array.isArray(parsed?.clips)
         ? parsed.clips.map((clip) => withRuntimeCorpusDir(clip, corpusDir))
         : [],
       trainRequests: Array.isArray(parsed?.trainRequests) ? parsed.trainRequests : [],
+      qualityFeedback: Array.isArray(parsed?.qualityFeedback) ? parsed.qualityFeedback : [],
       sunoVoice: normalizeStoredSunoVoice(parsed?.sunoVoice),
     };
   } catch {
-    return { clips: [], trainRequests: [], sunoVoice: null };
+    return { clips: [], trainRequests: [], qualityFeedback: [], sunoVoice: null };
   }
 }
 
@@ -298,6 +314,8 @@ function mergeIndexes(indexes = []) {
   const clipKeys = new Set();
   const trainRequests = [];
   const trainKeys = new Set();
+  const qualityFeedback = [];
+  const feedbackKeys = new Set();
   let sunoVoice = null;
 
   for (const index of indexes) {
@@ -313,6 +331,12 @@ function mergeIndexes(indexes = []) {
       if (key) trainKeys.add(key);
       trainRequests.push(job);
     }
+    for (const feedback of (index?.qualityFeedback || [])) {
+      const key = String(feedback?.id || `${feedback?.createdAt || ''}:${feedback?.outputHash || ''}`).trim();
+      if (key && feedbackKeys.has(key)) continue;
+      if (key) feedbackKeys.add(key);
+      qualityFeedback.push(feedback);
+    }
     const candidateSunoVoice = normalizeStoredSunoVoice(index?.sunoVoice);
     if (candidateSunoVoice) {
       const currentTime = Date.parse(sunoVoice?.updatedAt || sunoVoice?.linkedAt || '') || 0;
@@ -323,7 +347,8 @@ function mergeIndexes(indexes = []) {
 
   clips.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
   trainRequests.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
-  return { clips, trainRequests, sunoVoice };
+  qualityFeedback.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  return { clips, trainRequests, qualityFeedback, sunoVoice };
 }
 
 function readIndex(access) {
@@ -357,6 +382,7 @@ function writeIndex(access, index) {
   fs.writeFileSync(tmpPath, JSON.stringify({
     clips: Array.isArray(index.clips) ? index.clips.map(stripRuntimeFields) : [],
     trainRequests: Array.isArray(index.trainRequests) ? index.trainRequests : [],
+    qualityFeedback: Array.isArray(index.qualityFeedback) ? index.qualityFeedback.slice(-500) : [],
     sunoVoice: normalizeStoredSunoVoice(index.sunoVoice),
   }, null, 2));
   fs.renameSync(tmpPath, indexPath);
@@ -396,7 +422,56 @@ function makeSummary(index) {
     totalBytes,
     lastClipAt: clips.at(-1)?.createdAt || null,
     queuedTrainingCount: (index.trainRequests || []).filter((job) => job?.state === 'queued').length,
+    voiceQuality: summarizeVoiceQualityFeedback(index.qualityFeedback),
   };
+}
+
+function normalizeVoiceQualityDefects(values = []) {
+  const list = Array.isArray(values) ? values : String(values || '').split(/[;,\s]+/g);
+  return list
+    .map((value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''))
+    .filter((value, index, all) => VOICE_QUALITY_DEFECTS.has(value) && all.indexOf(value) === index)
+    .slice(0, 12);
+}
+
+function summarizeVoiceQualityFeedback(events = []) {
+  const feedback = Array.isArray(events) ? events : [];
+  const defectCounts = {};
+  const verdictCounts = { accepted: 0, mixed: 0, rejected: 0 };
+  for (const event of feedback) {
+    const verdict = ['accepted', 'mixed', 'rejected'].includes(event?.verdict) ? event.verdict : 'mixed';
+    verdictCounts[verdict] += 1;
+    for (const defect of normalizeVoiceQualityDefects(event?.defects)) {
+      defectCounts[defect] = (defectCounts[defect] || 0) + 1;
+    }
+  }
+  return {
+    schema: VOICE_QUALITY_FEEDBACK_SCHEMA,
+    feedbackCount: feedback.length,
+    verdictCounts,
+    learnedDefects: Object.entries(defectCounts)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([defect, count]) => ({ defect, count })),
+  };
+}
+
+function buildVoiceQualityProfile(summary = {}) {
+  const defects = new Set((summary?.learnedDefects || []).map((item) => item?.defect).filter(Boolean));
+  return {
+    profile: defects.size ? 'persona-learned-smooth' : 'persona-smooth-default',
+    declick: defects.has('crackle') || defects.has('rough_join'),
+    denoise: defects.has('noise'),
+    deess: defects.has('harsh') || defects.has('sibilance') || defects.has('metallic'),
+    peakGuard: defects.has('clipping') || defects.has('too_loud'),
+    learnedDefects: [...defects],
+  };
+}
+
+function resolveVoiceQualityProfileForRequest(req, requestedPersona = '') {
+  const access = resolveLearningAccess(req || {}, requestedPersona);
+  if (!access) return buildVoiceQualityProfile();
+  const index = readIndex(access);
+  return buildVoiceQualityProfile(summarizeVoiceQualityFeedback(index.qualityFeedback));
 }
 
 function safeTranscriptPreview(value = '') {
@@ -822,6 +897,51 @@ function createVoiceLearningRouter(options = {}) {
     });
   });
 
+  router.post('/voice-learning/quality-feedback', verifyJWT, express.json({ limit: '128kb' }), (req, res) => {
+    const persona = normalizePersona(req.body?.persona || req.body?.voicePersona || req.query?.persona || '');
+    const access = resolveLearningAccess(req, persona);
+    if (!access) {
+      return res.status(403).json({
+        ok: false,
+        error: 'voice_quality_feedback_not_allowed',
+        message: 'Compte ou persona non autorise pour cette memoire vocale.',
+      });
+    }
+    const verdict = ['accepted', 'mixed', 'rejected'].includes(String(req.body?.verdict || '').trim().toLowerCase())
+      ? String(req.body.verdict).trim().toLowerCase()
+      : 'mixed';
+    const defects = normalizeVoiceQualityDefects(req.body?.defects || []);
+    const notes = safeTranscriptPreview(req.body?.notes || req.body?.feedback || '');
+    if (!defects.length && !notes && verdict === 'mixed') {
+      return res.status(400).json({ ok: false, error: 'voice_quality_feedback_empty' });
+    }
+    const outputRef = String(req.body?.outputId || req.body?.audioId || req.body?.audioUrl || '').trim();
+    const event = {
+      schema: VOICE_QUALITY_FEEDBACK_SCHEMA,
+      id: `vq_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+      persona: access.persona,
+      verdict,
+      defects,
+      notes,
+      provider: String(req.body?.provider || '').trim().slice(0, 60),
+      // On ne stocke jamais une URL avec jeton. Le hash suffit a relier un retour
+      // a une sortie dans les journaux operateur.
+      outputHash: outputRef ? crypto.createHash('sha256').update(outputRef).digest('hex').slice(0, 20) : '',
+      createdAt: new Date().toISOString(),
+    };
+    const index = readIndex(access);
+    index.qualityFeedback = [...(index.qualityFeedback || []), event].slice(-500);
+    writeIndex(access, index);
+    const voiceQuality = summarizeVoiceQualityFeedback(index.qualityFeedback);
+    return res.json({
+      ok: true,
+      persona: access.persona,
+      feedback: event,
+      voiceQuality,
+      voiceProfile: buildVoiceQualityProfile(voiceQuality),
+    });
+  });
+
   return router;
 }
 
@@ -829,3 +949,9 @@ module.exports = createVoiceLearningRouter;
 module.exports.resolvePersonalSunoVoiceForRequest = resolvePersonalSunoVoiceForRequest;
 module.exports.normalizeSunoVoiceId = normalizeSunoVoiceId;
 module.exports.describeSunoVoiceSlot = describeSunoVoiceSlot;
+module.exports.VOICE_QUALITY_FEEDBACK_SCHEMA = VOICE_QUALITY_FEEDBACK_SCHEMA;
+module.exports.VOICE_QUALITY_DEFECTS = VOICE_QUALITY_DEFECTS;
+module.exports.buildVoiceQualityProfile = buildVoiceQualityProfile;
+module.exports.normalizeVoiceQualityDefects = normalizeVoiceQualityDefects;
+module.exports.resolveVoiceQualityProfileForRequest = resolveVoiceQualityProfileForRequest;
+module.exports.summarizeVoiceQualityFeedback = summarizeVoiceQualityFeedback;

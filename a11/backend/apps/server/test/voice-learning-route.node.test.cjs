@@ -506,3 +506,45 @@ test('voice learning queues training only after enough real audio duration is co
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('voice quality feedback learns persona defects without storing token-bearing URLs', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-voice-quality-'));
+  const previousRoot = process.env.A11_VOICE_LEARNING_DIR;
+  process.env.A11_VOICE_LEARNING_DIR = root;
+
+  try {
+    await withVoiceLearningServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/voice-learning/quality-feedback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-test-email': 'jewitt.charlene@gmail.com',
+        },
+        body: JSON.stringify({
+          persona: 'vivy',
+          verdict: 'rejected',
+          defects: ['crackle', 'harsh', 'clipping'],
+          notes: 'La voix gresille et les sifflantes sont dures.',
+          audioUrl: 'https://vivy.funesterie.me/out/test.mp3?token=secret-never-store',
+        }),
+      });
+      const payload = await response.json();
+      assert.equal(response.status, 200);
+      assert.equal(payload.voiceProfile.declick, true);
+      assert.equal(payload.voiceProfile.deess, true);
+      assert.equal(payload.voiceProfile.peakGuard, true);
+      assert.equal(payload.feedback.outputHash.length, 20);
+
+      const indexPath = path.join(root, 'vivy');
+      const indexFile = fs.readdirSync(indexPath, { recursive: true })
+        .map((entry) => path.join(indexPath, String(entry)))
+        .find((entry) => path.basename(entry) === 'index.json');
+      const stored = fs.readFileSync(indexFile, 'utf8');
+      assert.doesNotMatch(stored, /secret-never-store|https:\/\//);
+    });
+  } finally {
+    if (previousRoot === undefined) delete process.env.A11_VOICE_LEARNING_DIR;
+    else process.env.A11_VOICE_LEARNING_DIR = previousRoot;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
