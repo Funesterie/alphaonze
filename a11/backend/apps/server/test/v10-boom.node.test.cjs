@@ -221,7 +221,7 @@ test('V10 Boom — deux mixes concurrents restent isoles et ne s ecrasent pas', 
 });
 
 
-test('V10 Boom — carte orientée canon : croix diagonale, cycle horaire, M reequilibre r/i', () => {
+test('V10 Boom — la specification croix M est conservee sans etre declaree active dans le DSP', () => {
   // Croix diagonale (pas cartésienne classique) : chaque état dans un quadrant.
   assert.deepEqual(V10_CANON.orientation['+real'], { h: 'gauche', v: 'haut' });
   assert.deepEqual(V10_CANON.orientation['+imag'], { h: 'droite', v: 'haut' });
@@ -245,9 +245,10 @@ test('V10 Boom — carte orientée canon : croix diagonale, cycle horaire, M ree
   assert.equal(compass.currentState, '+imag');
   assert.equal(compass.transitionTable['+real'], '+imag');
   assert.equal(compass.returnRatio, 0.6);
-  assert.equal(compass.researchOnly, false);
+  assert.equal(compass.researchOnly, true);
   assert.equal(compass.researchOrigin, true);
-  assert.equal(compass.productionDefault, true);
+  assert.equal(compass.productionDefault, false);
+  assert.equal(compass.implementationStatus, 'recorded-not-wired-to-audio-graph');
   const plan = buildV10BoomPlan();
   assert.equal(plan.variant, 'v10boom');
   assert.equal(plan.baseVariant, 'v9electrolysis');

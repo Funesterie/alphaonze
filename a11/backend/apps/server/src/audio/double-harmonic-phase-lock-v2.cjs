@@ -26,7 +26,10 @@ const {
 const PHASE_LOCK_SCHEMA = 'funesterie.audio.double-harmonic-phase-lock.v2';
 const DEFAULT_FRAME_MS = 40;
 const DEFAULT_CYCLE_SECONDS = 4;
-const DEFAULT_SMOOTHING = 't-linear';
+// Le t-linear historique est un arrondi de travail, pas l'operateur canonique.
+// Il reste lisible pour reproduire les anciens essais, mais la production part
+// sur la dissipation 1/e.
+const DEFAULT_SMOOTHING = 'one-over-e';
 const DEFAULT_ANALYSIS_SAMPLE_RATE = 16_000;
 const DEFAULT_MAX_SECONDS = 30;
 const DEFAULT_MIN_F0 = 65;

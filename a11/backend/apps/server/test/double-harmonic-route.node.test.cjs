@@ -148,7 +148,7 @@ test('D40 calculation uses cross multiplication from 40.0005 to 40', () => {
   const built = buildProtectMixD40Filter({ profile: 'prime3' });
   assert.equal(built.envelope.profile, 'prime3');
   assert.match(built.filter, /asplit=2\[full\]\[work\]/);
-  assert.match(built.filter, /amix=inputs=3:weights='1 1 1':normalize=0/);
+  assert.match(built.filter, /\[h1o\]\[h2o\]amix=inputs=2:weights='1 1':normalize=0\[harm\]/);
 });
 
 test('V11 pan — la chaine d40 ouvre le pan avant le limiteur, et se neutralise exactement', () => {
@@ -168,7 +168,9 @@ test('V11 pan — la chaine d40 ouvre le pan avant le limiteur, et se neutralise
   const built = buildProtectMixD40Filter({});
   assert.equal(built.v11Pan.width, 1.5);
   assert.equal(built.v11Pan.applied, true);
-  assert.match(built.filter, /stereotools=slev=1\.500,alimiter=/, 'le pan precede immediatement le limiteur');
+  assert.match(built.filter, /\[harm\]adelay=8\|16\[harmspread\]/, 'le retard cree le cote dans la resonance seule');
+  assert.match(built.filter, /\[harmspread\]stereotools=slev=1\.500\[harmwide\]/, 'slev amplifie le cote de la resonance');
+  assert.doesNotMatch(built.filter, /\[dryfull\][^;]*stereotools=/, 'le master sec ne doit jamais etre elargi');
   assert.ok(built.filter.indexOf('stereotools') < built.filter.indexOf('alimiter'), 'le limiteur reste en dernier');
   // Les couches harmoniques ne sont pas touchees : la V11 n ajoute que l ouverture.
   assert.match(built.filter, /rubberband=pitch=1\.259921/);
@@ -177,7 +179,7 @@ test('V11 pan — la chaine d40 ouvre le pan avant le limiteur, et se neutralise
   // A 1, rien n est insere : le graphe redevient celui d avant la V11.
   const neutre = buildProtectMixD40Filter({ panWidth: 1 });
   assert.ok(!neutre.filter.includes('stereotools'), 'panWidth=1 ne doit rien ajouter');
-  assert.match(neutre.filter, /normalize=0,alimiter=limit=0\.97\[out\]/);
+  assert.match(neutre.filter, /\[dryfull\]\[h1o\]\[h2o\]amix=inputs=3:weights='1 1 1':normalize=0,alimiter=limit=0\.97\[out\]/);
   assert.equal(neutre.v11Pan.applied, false);
 
   assert.equal(resolveV11Pan(9).width, 2.5, 'borne haute');
@@ -196,7 +198,9 @@ test('harmonic intensity scales only the overlay weights and stays bounded', () 
   assert.equal(Number((normal.lowWeight / normal.highWeight).toFixed(12)), Number(BALANCE_AUTO.toFixed(12)));
   assert.equal(Number(stronger.highWeight.toFixed(12)), Number((normal.highWeight * 1.08).toFixed(12)));
   assert.equal(Number(stronger.lowWeight.toFixed(12)), Number((normal.lowWeight * 1.08).toFixed(12)));
-  assert.match(stronger.filter, /amix=inputs=3:weights='1 1 1':normalize=0/);
+  assert.match(stronger.filter, /\[h1o\]\[h2o\]amix=inputs=2:weights='1 1':normalize=0\[harm\]/);
+  assert.match(stronger.filter, /\[harmspread\]stereotools=slev=1\.500\[harmwide\]/);
+  assert.match(stronger.filter, /\[dryfull\]\[harmwide\]amix=inputs=2:weights='1 1':normalize=0/);
 
   const mp3Args = buildProtectMixD40Args({
     inputPath: 'input.wav',
