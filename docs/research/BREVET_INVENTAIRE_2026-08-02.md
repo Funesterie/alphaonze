@@ -6,6 +6,16 @@
 > évidentes. La qualification — nouveauté, activité inventive, caractère technique — relève
 > d'un professionnel, et la recherche d'antériorités formelle reste entière.
 
+**Mise à jour du 5 août 2026 :** la définition corrigée de V11 Pan comme recette
+cumulative V2→V11, le chemin sans perte et un premier jeu de revendications sont
+regroupés dans `BREVET_DRAFT_V11_PAN_INTEGRALE_2026-08-05.md`.
+
+La précision « croix de résonance horaire + M → croix de référence » est
+désormais conservée séparément dans
+`prime_spiral/CROIX_RESONANCE_HORAIRE_M_2026-08-05.md`. La carte orientée était
+déjà présente dans le code, mais **l'opérateur composite n'est pas encore câblé
+au DSP**. Il ne doit donc pas être décrit comme une réalisation active.
+
 ---
 
 ## 1. Ce qui est trivialement antérieur — à ne pas revendiquer seul
@@ -64,6 +74,9 @@ paramètres sont dérivés**, pas l'opérateur.
   complet à un taux borné, avec `τ` dérivé d'une constante de grille (12 ms ≈ demi-période
   de 40.0005 Hz).
 - **État :** en production.
+- **Limite clarifiée le 5 août :** la boussole à quatre bras et `opSym` sont des
+  données symboliques testées. Le graphe actif n'exécute ni le cycle complet ni
+  la transformation M vers la croix de référence.
 
 ### 2.5 V11 pan et sa propriété de commutation
 

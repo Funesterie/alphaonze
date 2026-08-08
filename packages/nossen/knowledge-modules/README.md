@@ -14,13 +14,14 @@ pas dans un fichier que personne ne relit.
 | `persona.funesterie.cast` | Distribution des personas, ADN à cinq chromosomes, règles de casting |
 | `physics.temporal.gravity` | Gravité temporelle du moteur Shiryu/V9, constantes exactes |
 | `encoding.pulsar.palette` | Mode Pulsar : dix couleurs porteuses d'une fonction technique |
+| `research.prime-spiral.cross-m` | Croix diagonale horaire, précision M et frontière entre canon, hypothèse et DSP actif |
 
 ## Usage
 
 ```js
 const { listModules, getModule, matchModules } = require('@nossen/knowledge-modules');
 
-listModules().length;                       // 3
+listModules().length;                       // 4
 getModule('physics.temporal.gravity');      // le module complet
 
 // Sélection par mots-clés, insensible aux accents

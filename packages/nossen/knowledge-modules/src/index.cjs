@@ -12,8 +12,9 @@
 const persona = require('./modules/persona.funesterie.cast.module.json');
 const temporalGravity = require('./modules/physics.temporal.gravity.module.json');
 const pulsarPalette = require('./modules/encoding.pulsar.palette.module.json');
+const primeSpiralCrossM = require('./modules/research.prime-spiral.cross-m.module.json');
 
-const modules = Object.freeze([persona, temporalGravity, pulsarPalette]);
+const modules = Object.freeze([persona, temporalGravity, pulsarPalette, primeSpiralCrossM]);
 
 /** Tous les modules, dans l'ordre de declaration. */
 function listModules() {
