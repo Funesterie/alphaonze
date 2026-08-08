@@ -167,11 +167,29 @@ function scoreLanguage(text, folded, code, words, extraScore = 0) {
   return score;
 }
 
+// Un seul ideogramme ne fait pas une langue. La version precedente retournait 'zh'
+// des le premier caractere Han rencontre, sans seuil ni score: il suffisait qu'un
+// modele local derape sur un mot, ou qu'un titre de fichier contienne un ideogramme,
+// pour que 6000 caracteres de francais soient classes chinois -- et le contrat de
+// langue ordonnait alors de repondre en chinois. On exige desormais une part reelle.
+const PART_CJK_MINIMALE = 0.1;
+const CARACTERES_CJK_MINIMUM = 4;
+
+function partDeScript(text, motif) {
+  const total = text.replace(/\s+/g, '').length;
+  if (!total) return { part: 0, compte: 0 };
+  const compte = (text.match(motif) || []).length;
+  return { part: compte / total, compte };
+}
+
 function detectTextLanguage(value = '', fallback = 'fr') {
   const text = normalizeTextNfc(value, 6000);
   if (!text) return fallback;
-  if (/[\u3040-\u30ff]/.test(text)) return 'ja';
-  if (/[\u4e00-\u9fff]/.test(text)) return 'zh';
+
+  const kana = partDeScript(text, /[\u3040-\u30ff]/g);
+  if (kana.compte >= CARACTERES_CJK_MINIMUM && kana.part >= PART_CJK_MINIMALE) return 'ja';
+  const han = partDeScript(text, /[\u4e00-\u9fff]/g);
+  if (han.compte >= CARACTERES_CJK_MINIMUM && han.part >= PART_CJK_MINIMALE) return 'zh';
 
   const folded = foldTextForLookup(text);
   const scores = {
