@@ -9,6 +9,10 @@
 
 const express = require('express');
 const { isFamilyVoiceUser } = require('./vivy-voice-chat.cjs');
+const {
+  ensurePersonaAgentRevivalSweep,
+  getPersonaAgentRevivalStatus,
+} = require('../persona/persona-agent-revival-runner.cjs');
 
 const DIALOGUE_SCHEMA = 'funesterie.persona-voice-dialogue.v1';
 const SUPPORTED_PERSONAS = new Set(['vivy', 'djeff']);
@@ -79,10 +83,21 @@ function buildTtsRequest(turn = {}, language = 'fr') {
 
 function createPersonaVoiceDialogueRouter(options = {}) {
   const router = express.Router();
+  // La fabrique est montée une fois au boot du serveur. Le runner porte son propre
+  // singleton global, donc un remontage de route en test/hot reload n'empile jamais
+  // les minuteurs. Ce watchdog concerne les agents, pas les voix Suno du dialogue.
+  ensurePersonaAgentRevivalSweep({ env: options.env || process.env });
   const verifyJWT = typeof options.verifyJWT === 'function'
     ? options.verifyJWT
     : (_req, res) => res.status(503).json({ ok: false, error: 'auth_guard_missing' });
   const responders = options.responders || {};
+
+  router.get('/recovery/status', verifyJWT, (req, res) => {
+    if (!isFamilyVoiceUser(req)) {
+      return res.status(403).json({ ok: false, error: 'persona_recovery_family_only' });
+    }
+    return res.json(getPersonaAgentRevivalStatus());
+  });
 
   router.get('/capabilities', verifyJWT, (req, res) => res.json({
     ok: true,

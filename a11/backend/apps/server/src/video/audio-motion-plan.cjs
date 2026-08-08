@@ -10,6 +10,12 @@
 const os = require('node:os');
 const fs = require('node:fs');
 const path = require('node:path');
+const {
+  downloadRemoteMedia,
+  parseBoolean,
+  parsePositiveInteger,
+  splitList,
+} = require('../security/safe-media-input.cjs');
 
 const {
   analyzeDynamicWeightV3,
@@ -85,21 +91,39 @@ function classifyV9Peak(normalizedEnergy) {
     : { layer: 'camera', action: 'camera cut / subtle angle shift' };
 }
 
-async function resolveBuffer(audioUrlOrBuffer, fetchImpl) {
-  if (Buffer.isBuffer(audioUrlOrBuffer)) return { buffer: audioUrlOrBuffer, ext: '.mp3' };
+async function resolveBuffer(audioUrlOrBuffer, fetchImpl, options = {}) {
+  const maxBytes = parsePositiveInteger(
+    options.maxBytes || process.env.A11_VIDEO_AUDIO_MAX_BYTES,
+    32 * 1024 * 1024,
+    1024,
+    128 * 1024 * 1024
+  );
+  if (Buffer.isBuffer(audioUrlOrBuffer)) {
+    if (audioUrlOrBuffer.length > maxBytes) throw new Error('media_payload_too_large');
+    return { buffer: audioUrlOrBuffer, ext: '.mp3' };
+  }
   const url = String(audioUrlOrBuffer || '').trim();
   if (!url) return null;
-  const ext = (() => {
-    try { return path.extname(new URL(url, 'http://localhost').pathname) || '.mp3'; }
-    catch { return '.mp3'; }
+  const requestedExt = (() => {
+    try { return path.extname(new URL(url).pathname).toLowerCase(); }
+    catch { return ''; }
   })();
-  const fetch_ = typeof fetchImpl === 'function' ? fetchImpl
-    : (typeof globalThis.fetch === 'function' ? globalThis.fetch : null);
-  if (!fetch_) return null;
+  const ext = AUDIO_EXTENSIONS.test(requestedExt) ? requestedExt : '.mp3';
+  // Production intentionally leaves this undefined so safe-media-input pins
+  // the socket to the DNS addresses it validated. Injection is test-only.
+  const fetch_ = typeof fetchImpl === 'function' ? fetchImpl : undefined;
   try {
-    const res = await fetch_(url, { signal: AbortSignal.timeout?.(20000) });
-    if (!res.ok) return null;
-    return { buffer: Buffer.from(await res.arrayBuffer()), ext };
+    const downloaded = await downloadRemoteMedia(url, {
+      fetchImpl: fetch_,
+      lookupImpl: options.lookupImpl,
+      allowHttp: parseBoolean(process.env.A11_VIDEO_AUDIO_ALLOW_HTTP),
+      allowedHosts: splitList(process.env.A11_VIDEO_AUDIO_ALLOWED_HOSTS),
+      allowedContentTypes: ['audio/*', 'video/webm', 'application/ogg', 'application/octet-stream'],
+      maxBytes,
+      timeoutMs: parsePositiveInteger(process.env.A11_VIDEO_AUDIO_TIMEOUT_MS, 20_000, 1_000, 120_000),
+      userAgent: 'A11-AudioMotion/1.0',
+    });
+    return { buffer: downloaded.buffer, ext };
   } catch { return null; }
 }
 
@@ -231,8 +255,8 @@ function extractPeaksFromFrames(frames, durationMs, { minPeakGapMs, maxPeaks }) 
  * @param {{ fetchImpl?: Function, fps?: number }} opts
  * @returns {Promise<{durationMs, fps, source, events}|null>}
  */
-async function buildAudioMotionPlan(audioUrlOrBuffer, { fetchImpl, fps, style } = {}) {
-  const resolved = await resolveBuffer(audioUrlOrBuffer, fetchImpl).catch(() => null);
+async function buildAudioMotionPlan(audioUrlOrBuffer, { fetchImpl, lookupImpl, fps, style } = {}) {
+  const resolved = await resolveBuffer(audioUrlOrBuffer, fetchImpl, { lookupImpl }).catch(() => null);
   if (!resolved) return null;
 
   const tmpFile = path.join(os.tmpdir(), `a11_amplan_${Date.now()}${resolved.ext}`);

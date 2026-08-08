@@ -29,6 +29,33 @@ const ACTIONS = Object.freeze(['inchange', 'recable', 'recree', 'echec']);
 
 /** Messages qui signalent une voix morte en se faisant passer pour autre chose. */
 const SYMPTOMES_VOIX_MORTE = /(voice has expired|voice_not_found|persona_not_found|SENSITIVE_WORD_ERROR|invalid persona)/i;
+const INLINE_SECRET_KEYS = new Set([
+  'apikey',
+  'apitoken',
+  'token',
+  'accesstoken',
+  'refreshtoken',
+  'idtoken',
+  'secret',
+  'secretkey',
+  'clientsecret',
+  'password',
+  'passphrase',
+  'credential',
+  'credentials',
+  'authorization',
+  'cookie',
+  'privatekey',
+  'signingkey',
+]);
+const INLINE_SECRET_VALUE_PATTERNS = Object.freeze([
+  /-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY-----/i,
+  /\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{16,}/i,
+  /\bsk-(?:proj-|live-|test-)?[A-Za-z0-9_-]{12,}\b/i,
+  /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|hf_[A-Za-z0-9]{20,}|(?:AKIA|ASIA)[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{30,})\b/,
+  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/,
+  /\b(?:api[\s_-]*key|api[\s_-]*token|access[\s_-]*token|refresh[\s_-]*token|client[\s_-]*secret|password|passphrase|authorization)\b\s*[:=]\s*["']?[^\s"',;]{8,}/i,
+]);
 
 function estVoixMorte(erreurOuTexte) {
   if (!erreurOuTexte) return false;
@@ -119,10 +146,117 @@ async function rebindProviders(voices, options = {}) {
   };
 }
 
+/**
+ * Vérifie les raccords d'une persona AGENT sans toucher aux voix fournisseur.
+ *
+ * Les liaisons viennent exclusivement des fichiers `models.json` et `tools.json`
+ * du holocron déjà vérifié par l'appelant. Aucun probe réseau, aucune recréation
+ * Suno, aucun coût : cette étape garantit seulement que le profil restauré ne
+ * démarre pas avec des modèles/outils informes ou un secret injecté en clair.
+ */
+function rebindAgentProviders(holocron) {
+  const models = holocron?.files?.['models.json']?.chain;
+  const tools = holocron?.files?.['tools.json']?.permissions;
+  const journal = [];
+
+  if (!Array.isArray(models)) {
+    journal.push({ type: 'models', action: 'echec', raison: 'chaine de modeles absente' });
+  } else {
+    for (const binding of models) {
+      const valide = binding
+        && typeof binding === 'object'
+        && String(binding.role || '').trim()
+        && String(binding.provider || '').trim()
+        && String(binding.model || '').trim()
+        && !hasInlineSecret(binding);
+      journal.push({
+        type: 'model',
+        role: String(binding?.role || '').slice(0, 80),
+        provider: String(binding?.provider || '').slice(0, 80),
+        model: String(binding?.model || '').slice(0, 120),
+        action: valide ? 'inchange' : 'echec',
+        raison: valide ? null : 'liaison modele incomplete ou secret en clair',
+      });
+    }
+  }
+
+  if (!Array.isArray(tools)) {
+    journal.push({ type: 'tools', action: 'echec', raison: 'permissions outils absentes' });
+  } else {
+    for (const binding of tools) {
+      const valide = binding
+        && typeof binding === 'object'
+        && String(binding.name || '').trim()
+        && typeof binding.allowed === 'boolean'
+        && !hasInlineSecret(binding);
+      journal.push({
+        type: 'tool',
+        name: String(binding?.name || '').slice(0, 100),
+        allowed: binding?.allowed === true,
+        action: valide ? 'inchange' : 'echec',
+        raison: valide ? null : 'permission outil incomplete ou secret en clair',
+      });
+    }
+  }
+
+  const echecs = journal.filter((entry) => entry.action === 'echec');
+  const total = journal.length;
+  return {
+    at: nowIso(),
+    kind: 'agent-runtime',
+    total,
+    toutesLiees: total > 0 && echecs.length === 0,
+    inchangees: total - echecs.length,
+    modifiees: 0,
+    echecs: echecs.length,
+    pointeurs: [],
+    journal,
+    voiceProviderTouched: false,
+    paidProviderTouched: false,
+  };
+}
+
+function normalizeSecretKey(value) {
+  return String(value || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+}
+
+function looksLikeInlineSecret(value) {
+  const text = String(value || '').trim();
+  return Boolean(text) && INLINE_SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function hasSecretKeyValue(value) {
+  if (typeof value === 'string') return Boolean(value.trim());
+  if (Buffer.isBuffer(value)) return value.length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return Boolean(value && typeof value === 'object' && Object.keys(value).length > 0);
+}
+
+function hasInlineSecret(value) {
+  const seen = new Set();
+  const visit = (candidate) => {
+    if (typeof candidate === 'string' || Buffer.isBuffer(candidate)) {
+      return looksLikeInlineSecret(candidate);
+    }
+    if (!candidate || typeof candidate !== 'object') return false;
+    if (seen.has(candidate)) return false;
+    seen.add(candidate);
+    if (Array.isArray(candidate)) return candidate.some(visit);
+    for (const [key, child] of Object.entries(candidate)) {
+      if (INLINE_SECRET_KEYS.has(normalizeSecretKey(key)) && hasSecretKeyValue(child)) return true;
+      if (visit(child)) return true;
+    }
+    return false;
+  };
+  return visit(value);
+}
+
 module.exports = {
   ACTIONS,
   SYMPTOMES_VOIX_MORTE,
   estVoixMorte,
+  hasInlineSecret,
+  rebindAgentProviders,
   rebindProviders,
   rebindVoix,
 };

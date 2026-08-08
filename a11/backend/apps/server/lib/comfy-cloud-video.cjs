@@ -3,6 +3,15 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const { uploadBufferToR2 } = require('./file-storage.cjs');
+const {
+  decodeDataUrl,
+  downloadRemoteMedia,
+  parseBoolean,
+  parsePositiveInteger,
+  readLocalMedia,
+  resolveAllowedLocalRoots,
+  splitList,
+} = require('../src/security/safe-media-input.cjs');
 
 const DEFAULT_BASE_URL = 'https://cloud.comfy.org';
 const DEFAULT_WORKFLOW_PATH = path.resolve(__dirname, '../src/video/workflows/comfy-wan-image-to-video-api.json');
@@ -191,37 +200,53 @@ function safeFilenameFromSource(source = '', contentType = '') {
   return `reference-${crypto.randomBytes(4).toString('hex')}${contentTypeToExtension(contentType)}`;
 }
 
-async function readReferenceImage(source = '', fetchImpl = globalThis.fetch) {
+async function readReferenceImage(source = '', fetchImpl, options = {}) {
   const value = String(source || '').trim();
   if (!value) throw new Error('reference_image_required_for_comfy_cloud');
+  const maxBytes = parsePositiveInteger(
+    options.maxBytes || process.env.A11_VIDEO_REFERENCE_MAX_BYTES,
+    12 * 1024 * 1024,
+    1024,
+    64 * 1024 * 1024
+  );
+  const allowedContentTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif'];
 
   if (/^data:/i.test(value)) {
-    const [header, encoded = ''] = value.split(',', 2);
-    const contentType = header.slice(5).split(';')[0] || 'image/png';
+    const { buffer, contentType } = decodeDataUrl(value, { allowedContentTypes, maxBytes });
     return {
       filename: safeFilenameFromSource('', contentType),
       contentType,
-      buffer: Buffer.from(encoded, 'base64'),
+      buffer,
     };
   }
 
   if (/^https?:\/\//i.test(value)) {
-    if (typeof fetchImpl !== 'function') throw new Error('fetch_unavailable_for_comfy_cloud_image');
-    const response = await fetchImpl(value, { headers: { 'User-Agent': 'A11-ComfyCloud/1.0' } });
-    if (!response.ok) throw new Error(`comfy_cloud_reference_download_${response.status}`);
-    const contentType = response.headers?.get?.('content-type') || 'image/png';
+    const downloaded = await downloadRemoteMedia(value, {
+      fetchImpl,
+      lookupImpl: options.lookupImpl,
+      allowHttp: parseBoolean(process.env.A11_VIDEO_REFERENCE_ALLOW_HTTP),
+      allowedHosts: splitList(process.env.A11_VIDEO_REFERENCE_ALLOWED_HOSTS),
+      allowedContentTypes,
+      maxBytes,
+      timeoutMs: parsePositiveInteger(process.env.A11_VIDEO_REFERENCE_TIMEOUT_MS, 20_000, 1_000, 120_000),
+      userAgent: 'A11-ComfyCloud/1.0',
+    });
     return {
-      filename: safeFilenameFromSource(value, contentType),
-      contentType,
-      buffer: Buffer.from(await response.arrayBuffer()),
+      filename: safeFilenameFromSource(downloaded.finalUrl, downloaded.contentType),
+      contentType: downloaded.contentType,
+      buffer: downloaded.buffer,
     };
   }
 
-  const buffer = await fs.readFile(value);
+  const local = await readLocalMedia(value, {
+    allowedRoots: options.allowedRoots || resolveAllowedLocalRoots(),
+    allowedExtensions: ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.avif'],
+    maxBytes,
+  });
   return {
-    filename: path.basename(value),
-    contentType: extensionToContentType(value),
-    buffer,
+    filename: path.basename(local.path),
+    contentType: extensionToContentType(local.path),
+    buffer: local.buffer,
   };
 }
 
@@ -244,8 +269,8 @@ async function fetchJson(fetchImpl, url, options = {}, context = 'comfy_cloud_re
   return payload;
 }
 
-async function uploadInputImage({ config, source, fetchImpl }) {
-  const image = await readReferenceImage(source, fetchImpl);
+async function uploadInputImage({ config, source, fetchImpl, mediaFetchImpl, lookupImpl }) {
+  const image = await readReferenceImage(source, mediaFetchImpl, { lookupImpl });
   if (!image.buffer.length) throw new Error('comfy_cloud_reference_empty');
   const form = new FormData();
   form.set('type', 'input');
@@ -461,6 +486,8 @@ async function tryGenerateVideoWithComfyCloud({
   uploadBufferToR2Impl = uploadBufferToR2,
   tokenOverride = '',
   configOverrides = {},
+  mediaFetchImpl,
+  mediaLookupImpl,
 } = {}) {
   const config = resolveComfyCloudVideoConfig(process.env, { ...configOverrides, token: tokenOverride || configOverrides.token });
   if (!config.enabled) {
@@ -478,7 +505,13 @@ async function tryGenerateVideoWithComfyCloud({
 
   try {
     const jobId = `wan-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-    const uploadedImage = await uploadInputImage({ config, source, fetchImpl });
+    const uploadedImage = await uploadInputImage({
+      config,
+      source,
+      fetchImpl,
+      mediaFetchImpl,
+      lookupImpl: mediaLookupImpl,
+    });
     const baseWorkflow = await loadWorkflowTemplate(config);
     const patched = patchComfyWorkflow(baseWorkflow, {
       body,
@@ -559,6 +592,7 @@ async function tryGenerateVideoWithComfyCloud({
 module.exports = {
   DEFAULT_WORKFLOW_PATH,
   patchComfyWorkflow,
+  readReferenceImage,
   resolveComfyCloudVideoConfig,
   tryGenerateVideoWithComfyCloud,
 };

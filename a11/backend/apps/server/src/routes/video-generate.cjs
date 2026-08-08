@@ -32,6 +32,9 @@ const {
 const {
   resolveMcpAccountProfileSync,
 } = require('../auth/mcp-account-tier.cjs');
+const {
+  createVideoAsyncJobStore,
+} = require('../video/video-async-job-store.cjs');
 
 function normalizeProxyUrl(rawValue = '') {
   const value = String(rawValue || '').trim();
@@ -686,13 +689,17 @@ function resolveProxyPollUrl(videoProxyUrl = '', payload = {}) {
   }
 }
 
-function cleanupExpiredVideoJobs() {
+function cleanupExpiredVideoJobs(videoJobStore = null) {
   const now = Date.now();
   for (const [jobId, job] of asyncVideoJobs.entries()) {
     const updatedAt = Number(job?.updatedAt || job?.createdAt || 0);
     if (!updatedAt || now - updatedAt > ASYNC_VIDEO_JOB_TTL_MS) {
       asyncVideoJobs.delete(jobId);
+      videoJobStore?.remove?.(jobId);
     }
+  }
+  try { videoJobStore?.cleanup?.(); } catch (error_) {
+    console.warn('[A11][video-job] durable cleanup failed:', String(error_?.message || error_));
   }
 }
 
@@ -1084,6 +1091,17 @@ function withProxyDefaults(body = {}, prompt = '') {
 
 function createVideoGenerateRouter(overrides = {}) {
   const router = express.Router();
+  const videoJobStore = overrides.videoJobStore || createVideoAsyncJobStore({ ttlMs: ASYNC_VIDEO_JOB_TTL_MS });
+  try {
+    for (const persistedJob of videoJobStore.loadAll()) {
+      const cached = asyncVideoJobs.get(persistedJob.id);
+      if (!cached || Number(persistedJob.updatedAt || 0) >= Number(cached.updatedAt || 0)) {
+        asyncVideoJobs.set(persistedJob.id, persistedJob);
+      }
+    }
+  } catch (error_) {
+    console.warn('[A11][video-job] durable state unavailable:', String(error_?.message || error_));
+  }
   const verifyJWT = typeof overrides.verifyJWT === 'function'
     ? overrides.verifyJWT
     : (_req, _res, next) => next();
@@ -1339,6 +1357,8 @@ function createVideoGenerateRouter(overrides = {}) {
         fetchImpl,
         uploadBufferToR2Impl: overrides.uploadBufferToR2,
         tokenOverride: sessionVideoTokens.runcomfy,
+        mediaFetchImpl: overrides.mediaFetch,
+        mediaLookupImpl: overrides.mediaLookup,
       });
       if (comfyResult?.ok) {
         return enrichVideoResult(rewriteVideoProxyPayload(comfyResult, req), {
@@ -1404,7 +1424,11 @@ function createVideoGenerateRouter(overrides = {}) {
         const bodyAudioUrl = referenceAudioUrls[0] || '';
         // Analyse audio first (V9 Turbo 99ms granularity), then build prompt with sync context in one LLM call
         const audioMotionPlan = bodyAudioUrl
-          ? await buildAudioMotionPlan(bodyAudioUrl, { fetchImpl, fps: 16 }).catch((e) => {
+          ? await buildAudioMotionPlan(bodyAudioUrl, {
+              fetchImpl: overrides.mediaFetch,
+              lookupImpl: overrides.mediaLookup,
+              fps: 16,
+            }).catch((e) => {
               console.warn('[A11][audio-sync] analysis failed:', String(e?.message || e));
               return null;
             })
@@ -1521,7 +1545,7 @@ function createVideoGenerateRouter(overrides = {}) {
   }
 
   function startAsyncVideoJob(req) {
-    cleanupExpiredVideoJobs();
+    cleanupExpiredVideoJobs(videoJobStore);
     const body = { ...(req.body || {}) };
     const prompt = body.prompt || body.message || '';
     const pollIntervalMs = Math.max(
@@ -1540,43 +1564,75 @@ function createVideoGenerateRouter(overrides = {}) {
       id: jobId,
       owner: videoJobOwner(req.user),
       status: 'pending',
+      workerId: videoJobStore.workerId,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      heartbeatAt: Date.now(),
       pollIntervalMs,
       maxPollAttempts: Math.max(1, Math.floor(maxWaitMs / pollIntervalMs)),
       maxWaitMs,
     };
     asyncVideoJobs.set(jobId, job);
+    try { videoJobStore.persist(job); } catch (error_) {
+      console.warn('[A11][video-job] cannot persist pending job:', String(error_?.message || error_));
+    }
 
     const reqSnapshot = snapshotRequestForAsyncJob(req);
+    let heartbeatTimer = null;
     Promise.resolve().then(async () => {
       const runningJob = asyncVideoJobs.get(jobId);
       if (runningJob) {
         runningJob.status = 'running';
         runningJob.updatedAt = Date.now();
+        runningJob.heartbeatAt = runningJob.updatedAt;
+        try { videoJobStore.persist(runningJob); } catch (error_) {
+          console.warn('[A11][video-job] cannot persist running job:', String(error_?.message || error_));
+        }
       }
+      heartbeatTimer = setInterval(() => {
+        const active = asyncVideoJobs.get(jobId);
+        if (!active || !['pending', 'running'].includes(active.status)) return;
+        active.heartbeatAt = Date.now();
+        active.updatedAt = active.heartbeatAt;
+        try { videoJobStore.persist(active); } catch (error_) {
+          console.warn('[A11][video-job] heartbeat persistence failed:', String(error_?.message || error_));
+        }
+      }, 15_000);
+      heartbeatTimer.unref?.();
       const result = await generateVideoInternal({
         req: reqSnapshot,
         prompt,
         body,
       });
-      asyncVideoJobs.set(jobId, {
+      const completedJob = {
         ...job,
         status: 'done',
         result,
         updatedAt: Date.now(),
+        heartbeatAt: Date.now(),
         completedAt: Date.now(),
-      });
+      };
+      asyncVideoJobs.set(jobId, completedJob);
+      try { videoJobStore.persist(completedJob); } catch (error_) {
+        console.warn('[A11][video-job] cannot persist completed job:', String(error_?.message || error_));
+      }
     }).catch((error_) => {
       console.error('[A11][video-job] generation failed:', String(error_?.stack || error_?.message || error_));
-      asyncVideoJobs.set(jobId, {
+      const failedJob = {
         ...job,
         status: 'error',
         error: String(error_?.message || error_ || 'video_job_failed'),
         message: String(error_?.message || error_ || 'video_job_failed'),
         updatedAt: Date.now(),
+        heartbeatAt: Date.now(),
         completedAt: Date.now(),
-      });
+      };
+      asyncVideoJobs.set(jobId, failedJob);
+      try { videoJobStore.persist(failedJob); } catch (persistError) {
+        console.warn('[A11][video-job] cannot persist failed job:', String(persistError?.message || persistError));
+      }
+    }).finally(() => {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
     });
 
     return serializeAsyncVideoJob(job);
@@ -1607,9 +1663,14 @@ function createVideoGenerateRouter(overrides = {}) {
   }
 
   function handleJobStatus(req, res) {
-    cleanupExpiredVideoJobs();
+    cleanupExpiredVideoJobs(videoJobStore);
     const jobId = String(req.params?.jobId || '').trim();
-    const job = asyncVideoJobs.get(jobId);
+    let job = asyncVideoJobs.get(jobId);
+    const persistedJob = videoJobStore.get(jobId);
+    if (persistedJob && (!job || Number(persistedJob.updatedAt || 0) >= Number(job.updatedAt || 0))) {
+      job = persistedJob;
+      asyncVideoJobs.set(jobId, job);
+    }
     const owner = videoJobOwner(req.user);
     if (!job || (job.owner && job.owner !== owner)) {
       return res.status(404).json({
@@ -1645,6 +1706,7 @@ function createVideoGenerateRouter(overrides = {}) {
       emergencyMode: shouldUseEmergencyVideoFirst({}),
       emergencyFallback: shouldFallbackToEmergencyVideo({}),
       asyncJobs: asyncVideoJobs.size,
+      asyncJobPersistence: true,
     });
   });
   router.get('/video/status', (_req, res) => {
@@ -1665,6 +1727,7 @@ function createVideoGenerateRouter(overrides = {}) {
       localWeights: resolveLocalVideoWeightsStatus(),
       emergencyMode: shouldUseEmergencyVideoFirst({}),
       asyncJobs: asyncVideoJobs.size,
+      asyncJobPersistence: true,
     });
   });
   router.get('/video/jobs/:jobId', verifyJWT, handleJobStatus);
@@ -1673,6 +1736,7 @@ function createVideoGenerateRouter(overrides = {}) {
   return {
     router,
     generateVideoInternal,
+    videoJobStore,
   };
 }
 

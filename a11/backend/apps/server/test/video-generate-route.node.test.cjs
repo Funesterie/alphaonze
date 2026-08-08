@@ -390,6 +390,8 @@ test('video generate router can call Comfy Cloud directly with workflow polling'
   app.use(express.json({ limit: '4mb' }));
   app.use('/api', videoGenerateModule.createVideoGenerateRouter({
     fetch: fakeFetch,
+    mediaFetch: fakeFetch,
+    mediaLookup: async () => [{ address: '93.184.216.34', family: 4 }],
     uploadBufferToR2: async ({ filename, buffer, contentType }) => ({
       url: `https://files.funesterie.me/users/generated/${filename}`,
       filename,
@@ -516,6 +518,8 @@ test('Comfy Cloud video generation recovers preview-only mp4 outputs', async () 
       },
       prompt: 'Vivy chante sous les néons',
       fetchImpl: fakeFetch,
+      mediaFetchImpl: fakeFetch,
+      mediaLookupImpl: async () => [{ address: '93.184.216.34', family: 4 }],
       uploadBufferToR2Impl: async ({ filename, buffer, contentType }) => ({
         url: `https://files.funesterie.me/users/generated/${filename}`,
         filename,
@@ -1858,6 +1862,8 @@ test('video generate router builds a first-person cloud prompt before Replicate 
   app.use(express.json({ limit: '4mb' }));
   app.use('/api', videoGenerateModule.createVideoGenerateRouter({
     fetch: fakeFetch,
+    mediaFetch: fakeFetch,
+    mediaLookup: async () => [{ address: '93.184.216.34', family: 4 }],
     buildVideoPrompt: async (input) => {
       promptBuilderCalls.push(input);
       return {

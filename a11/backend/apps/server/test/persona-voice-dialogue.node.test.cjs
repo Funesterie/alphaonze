@@ -51,3 +51,23 @@ test('persona dialogue remains family-only', async () => {
     assert.equal(response.status, 403);
   });
 });
+
+test('persona agent recovery status is observable to family only', async () => {
+  await withServer(async (baseUrl) => {
+    const allowed = await fetch(`${baseUrl}/api/personas/dialogue/recovery/status`, {
+      headers: { 'x-test-email': 'cellaurojeffrey@gmail.com' },
+    });
+    const payload = await allowed.json();
+    assert.equal(allowed.status, 200);
+    assert.equal(payload.schema, 'funesterie.persona-agent-revival.status.v1');
+    assert.equal(payload.safeguards.signedCapsuleOnly, true);
+    assert.equal(payload.safeguards.voicePersonaRecovery, false);
+    assert.ok(Object.prototype.hasOwnProperty.call(payload, 'lastSweep'));
+    assert.ok(Object.prototype.hasOwnProperty.call(payload, 'lastRecovery'));
+
+    const denied = await fetch(`${baseUrl}/api/personas/dialogue/recovery/status`, {
+      headers: { 'x-test-email': 'outside@example.com' },
+    });
+    assert.equal(denied.status, 403);
+  });
+});

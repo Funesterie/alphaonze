@@ -206,6 +206,76 @@ function readLatestFingerprint(vaultRoot, personaId) {
 }
 
 /**
+ * Empreinte structurelle, locale et gratuite d'un agent reconstitué depuis son
+ * holocron. Elle ne prétend pas remplacer la batterie comportementale ni le vrai
+ * canary HTTP : elle répond à une question plus étroite au boot — l'identité
+ * signée est-elle complète et dépourvue de secrets en clair ?
+ */
+function fingerprintSignedAgentCapsule(holocron, expectedPersonaId = '') {
+  const { hasInlineSecret } = require('./persona-provider-rebind.cjs');
+  const files = holocron?.files || {};
+  const cap = files['capsule.json'] || {};
+  const identity = files['identity.json'] || {};
+  const models = files['models.json']?.chain;
+  const tools = files['tools.json']?.permissions;
+  const expected = String(expectedPersonaId || cap.personaId || '').trim().toLowerCase();
+  const checks = [
+    {
+      id: 'schema',
+      ok: cap.schemaVersion === capsule.HOLOCRON_SCHEMA_VERSION,
+      evidence: cap.schemaVersion || null,
+    },
+    {
+      id: 'persona-id',
+      ok: Boolean(expected) && String(cap.personaId || '').toLowerCase() === expected
+        && String(identity.personaId || '').toLowerCase() === expected,
+      evidence: String(cap.personaId || identity.personaId || ''),
+    },
+    {
+      id: 'identity',
+      ok: Boolean(String(identity.label || cap.label || '').trim())
+        && Boolean(String(identity.role || cap.role || '').trim()),
+      evidence: String(identity.label || cap.label || '').slice(0, 100),
+    },
+    {
+      id: 'official',
+      ok: cap.official === true && identity.official === true,
+      evidence: cap.official === true,
+    },
+    {
+      id: 'canonical',
+      ok: cap.canonical === true,
+      evidence: cap.canonical === true,
+    },
+    {
+      id: 'models',
+      ok: Array.isArray(models) && models.length > 0,
+      evidence: Array.isArray(models) ? models.length : 0,
+    },
+    {
+      id: 'tools',
+      ok: Array.isArray(tools) && tools.length > 0,
+      evidence: Array.isArray(tools) ? tools.length : 0,
+    },
+    {
+      id: 'no-inline-secret',
+      ok: !hasInlineSecret({ identity, models, tools }),
+      evidence: 'strict allowlist profile build',
+    },
+  ];
+  const failed = checks.filter((entry) => !entry.ok).map((entry) => entry.id);
+  const global = checks.length ? (checks.length - failed.length) / checks.length : 0;
+  return {
+    state: failed.length ? 'QUARANTINED' : 'RESTORED',
+    kind: 'agent-capsule-structural',
+    global: Math.round(global * 1000) / 1000,
+    failingAxes: failed,
+    checks,
+    persisted: false,
+  };
+}
+
+/**
  * Empreinte complète d'une persona : lit l'holocron (batterie de son époque), évalue,
  * score, rend le verdict, écrit la trace. Renvoie { fingerprint, scores, state, results }.
  */
@@ -235,6 +305,7 @@ module.exports = {
   scoreFingerprint,
   resolveState,
   buildFingerprint,
+  fingerprintSignedAgentCapsule,
   writeFingerprint,
   readLatestFingerprint,
   runFingerprint,

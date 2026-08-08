@@ -32,6 +32,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Set up Node.js for contract tests
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: a11/backend/apps/server/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: a11/backend/apps/server
+        run: npm ci
+
+      - name: Run backend contract tests
+        working-directory: a11/backend/apps/server
+        run: npm test
+
       - name: Resolve image name
         id: image
         shell: bash

@@ -12,6 +12,10 @@ const {
   buildReferenceCapsuleContext,
   hasFunesterieReferenceCapsuleContext,
 } = require('../chat/funesterie-reference-capsules.cjs');
+const {
+  getPersonaRuntimeState,
+  getRestoredPersonaProfile,
+} = require('./persona-runtime-registry.cjs');
 
 // PERSONA_ENGINE — couche injectable bornée.
 //
@@ -122,6 +126,22 @@ const INACTIFS_SIGNALES = new Set();
 function loadPersonaProfileRaw(persona = 'djeff', env = process.env) {
   const chemin = personaProfilePath(persona, env);
   const cle = sanitizePersonaKey(persona || 'djeff');
+  // Le watchdog place d'abord la persona en quarantaine au niveau du registre
+  // consulté par le routeur. Pendant RECOVERING/QUARANTINED, aucun profil disque
+  // potentiellement mort ne doit repasser derrière la barrière. Une fois RESTORED,
+  // seul le profil minimal issu de l'holocron signé est exposé.
+  const runtimeState = getPersonaRuntimeState(cle);
+  if (runtimeState?.state === 'RECOVERING' || runtimeState?.state === 'QUARANTINED') {
+    return {
+      schema: 'funesterie.persona.runtime-block.v1',
+      personaId: cle,
+      status: runtimeState.state,
+      active: false,
+      restoredFromHolocron: false,
+    };
+  }
+  const restoredProfile = getRestoredPersonaProfile(cle);
+  if (restoredProfile) return restoredProfile;
   try {
     const profil = JSON.parse(fs.readFileSync(chemin, 'utf8'));
     ABSENCES_SIGNALEES.delete(cle);
@@ -156,6 +176,13 @@ function personasSansProfil() {
 
 function normalizeStatus(value = '') {
   return String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
+}
+
+function isPersonaRuntimeBlocked(profile) {
+  if (!profile || typeof profile !== 'object') return false;
+  if (profile.schema === 'funesterie.persona.runtime-block.v1') return true;
+  const status = normalizeStatus(profile.status || profile.state || profile.validation);
+  return ['recovering', 'quarantined', 'quarantine'].includes(status);
 }
 
 function isPersonaInjectEnabled(profile) {
@@ -196,18 +223,26 @@ function loadPersonaState(persona = 'djeff', env = process.env, { force = false 
   const cacheKey = `${key}:${getCanonicalRuntimeRoot(env)}`;
   const now = Date.now();
   const cached = PROFILE_CACHE.get(cacheKey);
-  if (!force && cached && now - cached.at < CACHE_TTL_MS) return cached;
+  const liveRuntimeState = getPersonaRuntimeState(key);
+  const liveRuntimeStatus = String(liveRuntimeState?.state || '').toUpperCase();
+  const runtimeNowBlocked = ['RECOVERING', 'QUARANTINED'].includes(liveRuntimeStatus);
+  const runtimeJustRestored = liveRuntimeStatus === 'RESTORED' && cached?.blocked === true;
+  // A newly raised quarantine must close prompt injection immediately; a
+  // previously cached healthy/default brief must never postpone the barrier.
+  if (!force && !runtimeNowBlocked && !runtimeJustRestored && cached && now - cached.at < CACHE_TTL_MS) return cached;
 
   const profile = loadPersonaProfileRaw(key, env);
-  const active = isPersonaInjectEnabled(profile);
+  const blocked = isPersonaRuntimeBlocked(profile);
+  const active = !blocked && isPersonaInjectEnabled(profile);
   const profileBrief = active ? personaProfileToBrief(profile, key) : '';
-  const voiceBrief = DEFAULT_VOICE_PERSONA_BRIEFS[key] || '';
+  const voiceBrief = blocked ? '' : (DEFAULT_VOICE_PERSONA_BRIEFS[key] || '');
   const state = {
     at: now,
     persona: key,
     active,
-    source: active ? 'profile' : (voiceBrief ? 'voice-default' : 'missing'),
-    brief: profileBrief || voiceBrief,
+    blocked,
+    source: blocked ? 'runtime-block' : (active ? 'profile' : (voiceBrief ? 'voice-default' : 'missing')),
+    brief: blocked ? '' : (profileBrief || voiceBrief),
     profile,
   };
   PROFILE_CACHE.set(cacheKey, state);
@@ -291,6 +326,7 @@ function buildAgentsPersonaContext(env = process.env, options = {}) {
     if (seen.has(key)) continue;
     seen.add(key);
     const state = loadPersonaState(key, env, options);
+    if (state.blocked) continue;
     const brief = state.active ? state.brief : getVoicePersonaBrief(key);
     if (brief) lines.push(`${key.toUpperCase()} (${state.active ? 'profil validé' : 'persona voix'}): ${brief}`);
   }

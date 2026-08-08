@@ -207,6 +207,39 @@ async function runCanary(personaId, options = {}) {
   return runFingerprint(personaId, { ...options, evaluator: evaluateur, source: `canary:${mode}` });
 }
 
+/**
+ * Canary de boot pour une persona AGENT restaurée.
+ *
+ * Il ne contacte aucun LLM et ne remplace pas le canary comportemental ci-dessus.
+ * Son rôle est de refuser l'activation d'un overlay vide, mal identifié ou dont
+ * les raccords structurels ont échoué. La promotion reste donc humaine.
+ */
+function runAgentCapsuleCanary({ personaId, profile, fingerprint, rebind } = {}) {
+  const expected = String(personaId || '').trim().toLowerCase();
+  const actual = String(profile?.personaId || '').trim().toLowerCase();
+  const checks = [
+    { id: 'identity-bound', ok: Boolean(expected) && actual === expected },
+    { id: 'profile-active', ok: profile?.active === true && profile?.status === 'RESTORED' },
+    { id: 'profile-approved', ok: profile?.approved === true },
+    { id: 'holocron-canonical', ok: profile?.restoredFromHolocron?.canonical === true },
+    { id: 'brief-non-empty', ok: Boolean(String(profile?.injectable_brief || '').trim()) },
+    { id: 'fingerprint-green', ok: fingerprint?.state === 'RESTORED' },
+    { id: 'agent-bindings-green', ok: rebind?.toutesLiees === true },
+    { id: 'no-voice-provider-call', ok: rebind?.voiceProviderTouched === false },
+    { id: 'no-paid-provider-call', ok: rebind?.paidProviderTouched === false },
+  ];
+  const failed = checks.filter((entry) => !entry.ok).map((entry) => entry.id);
+  return {
+    personaId: expected,
+    mode: 'agent-capsule-structural',
+    state: failed.length ? 'QUARANTINED' : 'RESTORED',
+    failingChecks: failed,
+    checks,
+    paidProviders: false,
+    voicePersonaRecovery: false,
+  };
+}
+
 module.exports = {
   CANARY_MODES,
   GHOST_CAPABILITIES,
@@ -216,6 +249,7 @@ module.exports = {
   PAID_SURFACES,
   buildCanaryEvaluator,
   jugeHeuristique,
+  runAgentCapsuleCanary,
   runCanary,
   surfacesPayantesTouchees,
 };
