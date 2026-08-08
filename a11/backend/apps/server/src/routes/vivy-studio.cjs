@@ -85,6 +85,10 @@ const {
   verifySampleShare,
 } = require('../music/persona-recovery.cjs');
 const { runMissingVoiceSamples } = require('../music/voice-sample-runner.cjs');
+const {
+  runExpiredPersonaRevival,
+  listRevivableVoices,
+} = require('../music/persona-revival-runner.cjs');
 const { buildSongcraftGraphContext } = require('../music/songcraft-graph-context.cjs');
 const {
   buildVivyProsodyPlan,
@@ -712,6 +716,43 @@ function resolveVivyCatalogVoiceIdFromInput(input = {}) {
  * On distingue donc « aucune voix demandee » de « voix demandee mais morte ». Le
  * second cas doit refuser, pas substituer en silence.
  */
+/**
+ * Lance une reanimation en tache de fond, sans jamais faire attendre la reponse.
+ *
+ * Pourquoi pas en ligne, tant qu'a faire ? Parce que la reanimation prend environ
+ * 95 s (mesure sur Ile le 08/08) et que Cloudflare coupe vers 100 s. Une reanimation
+ * synchrone, suivie de la generation du morceau, depasserait la coupure et rendrait
+ * un « Failed to fetch » a la place d'une explication. On refuse donc tout de suite,
+ * en disant que la voix se refabrique et quand revenir.
+ */
+function lancerReanimationEnFond(nom, req) {
+  try {
+    const access = getSunoAccess({}, req);
+    if (!access?.apiKey) return false;
+    const baseUrl = getSunoBaseUrl();
+    const callBackUrl = buildSunoCallbackUrl(req);
+    const publicBase = getPublicBaseUrl(req);
+    setImmediate(() => {
+      runExpiredPersonaRevival({
+        apiKey: access.apiKey,
+        baseUrl,
+        buildSampleUrl: (voix) => buildSampleShareUrl(voix, publicBase, process.env),
+        callBackUrl,
+        env: process.env,
+      }).catch((error) => console.warn(
+        '[PersonaRevival] campagne interrompue: %s',
+        String(error.message || error).slice(0, 140)
+      ));
+    });
+    return true;
+  } catch (error) {
+    // Une reanimation qui ne demarre pas ne doit pas transformer un refus lisible
+    // en erreur 500: on garde le refus, on note la raison.
+    console.warn('[PersonaRevival] demarrage impossible pour %s: %s', nom, String(error.message || error).slice(0, 140));
+    return false;
+  }
+}
+
 function findExpiredRequestedCatalogVoice(input = {}) {
   const requested = cleanOneLine(input.voiceCatalogName || input.catalogVoiceName, '', 80);
   if (!requested) return null;
@@ -8736,6 +8777,13 @@ function buildVivySunoPayload(input = {}, req = null) {
   if (!catalogVoiceId) {
     const voixMorte = findExpiredRequestedCatalogVoice(input);
     if (voixMorte) {
+      // Reanimation automatique de la voix qu'on vient justement de demander: c'est
+      // le meilleur signal qu'elle sert encore. Elle part en fond, le refus est
+      // immediat, et le prochain essai trouvera la voix vivante.
+      const reanimationLancee = voixMorte.recoverable
+        ? lancerReanimationEnFond(voixMorte.name, req)
+        : false;
+
       const erreur = new Error('suno_catalog_voice_expired');
       erreur.code = 'suno_catalog_voice_expired';
       erreur.status = 409;
@@ -8743,9 +8791,14 @@ function buildVivySunoPayload(input = {}, req = null) {
       erreur.voiceLabel = voixMorte.label;
       erreur.expiredAt = voixMorte.expiredAt;
       erreur.recoverable = voixMorte.recoverable;
-      erreur.hint = voixMorte.recoverable
-        ? `La persona Suno de ${voixMorte.label} a expire. Elle garde son echantillon: POST /api/vivy/voice-catalog/${voixMorte.name}/recover la refabrique (une generation Suno).`
-        : `La persona Suno de ${voixMorte.label} a expire et aucun echantillon local ne permet de la refabriquer: il faut un nouvel enregistrement et son consentement.`;
+      erreur.revivalStarted = reanimationLancee;
+      if (!voixMorte.recoverable) {
+        erreur.hint = `La persona Suno de ${voixMorte.label} a expire et aucun echantillon local ne permet de la refabriquer: il faut un nouvel enregistrement et son consentement.`;
+      } else if (reanimationLancee) {
+        erreur.hint = `La persona Suno de ${voixMorte.label} a expire. Sa reanimation vient de demarrer depuis son echantillon: relance la chanson dans environ deux minutes.`;
+      } else {
+        erreur.hint = `La persona Suno de ${voixMorte.label} a expire. Elle garde son echantillon: POST /api/vivy/voice-catalog/${voixMorte.name}/recover la refabrique (une generation Suno).`;
+      }
       throw erreur;
     }
   }
@@ -11477,12 +11530,57 @@ function runVivyMultiVoiceAssembly(rawSegments = []) {
   });
 }
 
+// Balayage periodique des personas mortes. Le declencheur « consultation du
+// catalogue » ne suffit pas: il ne part que si quelqu'un ouvre l'interface, et une
+// voix peut mourir un soir pour n'etre redemandee que le lendemain. Le minuteur
+// garantit un passage regulier meme sans personne devant l'ecran.
+//
+// Sans requete HTTP, getPublicBaseUrl retombe sur VIVY_PUBLIC_BASE_URL et
+// getSunoAccess sur la cle serveur. Si l'URL publique manque, le runner refuse
+// proprement (`sample_share_not_configured`) plutot que d'envoyer un 404 a Suno.
+const PERSONA_REVIVAL_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const PERSONA_REVIVAL_SWEEP_STARTUP_DELAY_MS = 60_000;
+
+function ensurePersonaRevivalSweep() {
+  if (['0', 'false', 'off', 'no'].includes(
+    String(process.env.A11_PERSONA_REVIVAL_SWEEP_ENABLED || 'true').trim().toLowerCase()
+  )) return;
+  if (globalThis.__A11_PERSONA_REVIVAL_SWEEP_TIMER) return;
+
+  const intervalMs = Math.max(
+    15 * 60 * 1000,
+    Number(process.env.A11_PERSONA_REVIVAL_SWEEP_INTERVAL_MS) || PERSONA_REVIVAL_SWEEP_INTERVAL_MS
+  );
+
+  const passer = () => {
+    try {
+      const mortes = listRevivableVoices(process.env);
+      if (!mortes.length) return;
+      console.info('[PersonaRevival] balayage: %d voix a reanimer (%s)', mortes.length, mortes.map((v) => v.name).join(', '));
+      lancerReanimationEnFond(mortes[0].name, null);
+    } catch (error) {
+      console.warn('[PersonaRevival] balayage impossible: %s', String(error.message || error).slice(0, 140));
+    }
+  };
+
+  const timer = setInterval(passer, intervalMs);
+  // unref: ce balayage ne doit jamais empecher le processus de s'arreter.
+  if (typeof timer?.unref === 'function') timer.unref();
+  globalThis.__A11_PERSONA_REVIVAL_SWEEP_TIMER = timer;
+
+  // Une passe peu apres le demarrage: si une voix est morte pendant que le serveur
+  // etait arrete, elle est refabriquee avant la premiere chanson.
+  const amorce = setTimeout(passer, PERSONA_REVIVAL_SWEEP_STARTUP_DELAY_MS);
+  if (typeof amorce?.unref === 'function') amorce.unref();
+}
+
 function createVivyStudioRouter({
   verifyJWT,
   creativeCapabilityService = null,
   saveChatMemoryMessage = null,
 } = {}) {
   const router = express.Router();
+  ensurePersonaRevivalSweep();
 
   /**
    * Enregistre un tour de chat dans l'historique partage entre appareils.
@@ -11558,7 +11656,19 @@ function createVivyStudioRouter({
         });
       }
 
-      return res.json({ ok: true, ...payload });
+      // Meme logique pour les personas mortes: consulter le catalogue est l'occasion
+      // naturelle de refabriquer ce qui est casse, sans attendre qu'une chanson tombe
+      // dessus. Le runner porte ses propres garde-fous.
+      const àReanimer = listRevivableVoices(process.env);
+      if (àReanimer.length) lancerReanimationEnFond(àReanimer[0].name, req);
+
+      return res.json({
+        ok: true,
+        ...payload,
+        // Rendu visible dans l'interface: une voix morte doit se voir avant qu'on
+        // lance une chanson avec, pas apres l'avoir recue dans la mauvaise voix.
+        expiredVoices: àReanimer.map((v) => v.name),
+      });
     } catch (error) {
       return res.status(500).json({ ok: false, error: 'voice_catalog_read_failed', message: String(error.message || error) });
     }
