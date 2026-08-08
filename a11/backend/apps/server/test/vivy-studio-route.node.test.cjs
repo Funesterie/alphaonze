@@ -26,6 +26,7 @@ const {
   buildVivyMusicPrompt,
   buildVivyMultiVoiceAssemblyArgs,
   buildVivyPreviewMixArgs,
+  buildVivyMusicMasterArgs,
   resolveVivyPreviewVoicePath,
   buildVivyMp3RepairArgs,
   repairVivyMp3File,
@@ -542,6 +543,16 @@ test('Vivy preview mix keeps the voice clear and masters the final song', () => 
   assert.match(args.join(' '), /-write_xing 1/);
   assert.match(args.join(' '), /-id3v2_version 3/);
   assert.equal(args.at(-1), 'mix.mp3');
+});
+
+test('Vivy ACE mastering keeps a lossless FLAC master before the single MP3 encode', () => {
+  const flacArgs = buildVivyMusicMasterArgs('source.wav', 'master.flac');
+  const mp3Args = buildVivyMusicMasterArgs('source.flac', 'distribution.mp3');
+  assert.deepEqual(flacArgs.slice(-3), ['-c:a', 'flac', 'master.flac']);
+  assert.ok(!flacArgs.includes('libmp3lame'));
+  assert.ok(!flacArgs.includes('-b:a'));
+  assert.match(mp3Args.join(' '), /-c:a libmp3lame -b:a 192k/);
+  assert.equal(mp3Args.at(-1), 'distribution.mp3');
 });
 
 test('Vivy MP3 repair rewrites Clipchamp-compatible duration metadata', async () => {
@@ -3150,7 +3161,7 @@ test('Suno payload pushes NOSSEN trios toward solo handoffs instead of one blend
   assert.match(payload.prompt, /\[Bridge - Low Robotic Vocal solo\]\n\[Low Robotic Vocal\]/);
 });
 
-test('Suno payload treats NOSSEN long songs as V5.5 long-form generations', () => {
+test('Suno payload keeps complete NOSSEN arrangements without forcing five minutes', () => {
   const previousModel = process.env.VIVY_SUNO_MODEL;
   const previousLongModel = process.env.VIVY_SUNO_LONG_MODEL;
   process.env.VIVY_SUNO_MODEL = 'V4';
@@ -3166,8 +3177,9 @@ test('Suno payload treats NOSSEN long songs as V5.5 long-form generations', () =
     });
 
     assert.equal(payload.model, 'V5_5');
-    assert.match(payload.style, /long-form full song arrangement/i);
+    assert.match(payload.style, /long-form complete song arrangement/i);
     assert.match(payload.style, /complete final chorus/i);
+    assert.match(payload.style, /no forced duration/i);
     assert.doesNotMatch(payload.prompt, /long-form full song arrangement|300|5 minutes/i);
   } finally {
     if (previousModel === undefined) delete process.env.VIVY_SUNO_MODEL;
@@ -4211,7 +4223,7 @@ test('Vivy NOSSEN production removes the hard duration cap', () => {
   assert.match(appSource, /refrain mémorable répété au moins trois fois|refrain memorable repete au moins trois fois/);
 });
 
-test('Vivy NOSSEN automatically extends short Suno songs before D40', () => {
+test('Vivy NOSSEN leaves song duration free instead of forcing five minutes', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
     'utf8'
@@ -4225,35 +4237,20 @@ test('Vivy NOSSEN automatically extends short Suno songs before D40', () => {
   const launchBlock = appSource.slice(launchStart, launchEnd);
 
   assert.match(apiSource, /\/api\/vivy\/studio\/suno\/extend/);
-  assert.match(appSource, /const VIVY_NOSSEN_SUNO_TARGET_SECONDS = 300/);
   assert.match(appSource, /const VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS = 60/);
-  assert.match(appSource, /const VIVY_NOSSEN_SUNO_MAX_EXTENSIONS = 8/);
   assert.match(appSource, /const VIVY_NOSSEN_SUNO_LONG_MODEL = ["']V5_5["']/);
-  assert.match(appSource, /function getVivyProductionSunoAudioId/);
   assert.match(appSource, /function getVivyProductionDurationSeconds/);
-  assert.match(appSource, /payload\?\.id\s*\|\|\s*payload\?\.audioId\s*\|\|\s*payload\?\.audio_id/);
   assert.match(appSource, /payload\?\.durationSeconds\s*\?\?\s*payload\?\.duration/);
   assert.match(launchBlock, /musicProvider:\s*selectedMusicProvider/);
   assert.match(launchBlock, /selectedMusicProvider === ["']mureka["']\s*\?\s*["']mureka-9["']/);
   assert.match(launchBlock, /selectedMusicProvider === ["']acestep["']\s*\?\s*undefined\s*:\s*VIVY_NOSSEN_SUNO_LONG_MODEL/);
-  assert.match(launchBlock, /longSong:\s*true/);
-  assert.match(launchBlock, /targetDurationSeconds:\s*VIVY_NOSSEN_SUNO_TARGET_SECONDS/);
-  assert.match(launchBlock, /selectedMusicProvider === ["']suno["'] && extensionIndex <= VIVY_NOSSEN_SUNO_MAX_EXTENSIONS/);
-  assert.match(launchBlock, /durationSeconds < VIVY_NOSSEN_SUNO_TARGET_SECONDS/);
-  assert.match(launchBlock, /vers 5 min/);
-  assert.match(launchBlock, /await extendVivyStudioSunoMusic\(/);
-  assert.match(launchBlock, /long-form full song arrangement around five minutes with sung lead vocals/);
-  assert.match(launchBlock, /continue the same vocal performance/);
-  assert.match(launchBlock, /instrumental:\s*false/);
-  assert.match(launchBlock, /previewInstrumental:\s*false/);
+  assert.match(launchBlock, /longSong:\s*false/);
+  assert.doesNotMatch(launchBlock, /VIVY_NOSSEN_SUNO_TARGET_SECONDS/);
+  assert.doesNotMatch(launchBlock, /vers 5 min|around five minutes/i);
+  assert.doesNotMatch(launchBlock, /await extendVivyStudioSunoMusic\(/);
   assert.doesNotMatch(launchBlock, /instrumental backing track only, no vocals, no singing, leave clear space for the external lead vocal/);
   assert.match(launchBlock, /await probeVivyProductionAudioDurationSeconds/);
   assert.match(launchBlock, /generation_\$\{selectedMusicProvider\}_duree_inconnue/);
-  assert.ok(
-    launchBlock.indexOf('await extendVivyStudioSunoMusic(') > -1
-      && launchBlock.indexOf('await extendVivyStudioSunoMusic(') < launchBlock.indexOf('applyDefaultV10BoomToVivyMedia'),
-    'NOSSEN must extend before applying D40 V10 Boom'
-  );
   // Vivy n'est plus bloquee sur la longueur: un morceau court part quand meme, avec un warn.
   assert.match(launchBlock, /short song \$\{Math\.round\(finalDurationSeconds\)\}s, outputting anyway/);
 });
@@ -5798,7 +5795,8 @@ test('Suno payload keeps long-form arrangement when NOSSEN uses external voice m
 
   assert.equal(payload.instrumental, true);
   assert.match(payload.style, /instrumental backing track only/i);
-  assert.match(payload.style, /long-form full song arrangement around five minutes/i);
+  assert.match(payload.style, /long-form complete song arrangement/i);
+  assert.doesNotMatch(payload.style, /five minutes|300/i);
   assert.match(payload.style, /no short radio edit/i);
 });
 
@@ -6394,7 +6392,18 @@ test('Hetzner deploy wires local-first Ollama with a cloud provider domino', () 
   assert.match(deploySource, /VIVY_ACESTEP_LYRICS_MAX_CHARS:\s*\$\{VIVY_ACESTEP_LYRICS_MAX_CHARS:-24000\}/);
   assert.match(deploySource, /ACESTEP_KSAMPLER_CFG:\s*\$\{ACESTEP_KSAMPLER_CFG:-1\}/);
   assert.match(deploySource, /ACESTEP_LLM_CFG_SCALE:\s*\$\{ACESTEP_LLM_CFG_SCALE:-2\}/);
-  assert.match(deploySource, /ACESTEP_DEFAULT_DURATION_SECONDS:\s*\$\{ACESTEP_DEFAULT_DURATION_SECONDS:-120\}/);
+  assert.doesNotMatch(
+    deploySource,
+    /ACESTEP_DEFAULT_DURATION_SECONDS:\s*\$\{ACESTEP_DEFAULT_DURATION_SECONDS:-\d+\}/,
+    'le compose ne doit plus imposer une minuterie ACE globale'
+  );
+  assert.doesNotMatch(deploySource, /ACESTEP_DEFAULT_DURATION_SECONDS\s*=\s*"\d+"/);
+  assert.doesNotMatch(deploySource, /printf\s+'ACESTEP_DEFAULT_DURATION_SECONDS=\d+/);
+  assert.match(
+    deploySource,
+    /managed_nossen_keys='[^'\r\n]*ACESTEP_DEFAULT_DURATION_SECONDS/,
+    'la cle reste geree afin de purger les anciennes valeurs 120/300'
+  );
   assert.match(deploySource, /ACESTEP_MAX_DURATION_SECONDS:\s*\$\{ACESTEP_MAX_DURATION_SECONDS:-1000\}/);
   assert.match(deploySource, /VIVY_STREAM_DREAMCLIP_SCENES:\s*\$\{VIVY_STREAM_DREAMCLIP_SCENES:-8\}/);
   assert.match(deploySource, /VIVY_STREAM_DREAMCLIP_MAX_DURATION_SECONDS:\s*\$\{VIVY_STREAM_DREAMCLIP_MAX_DURATION_SECONDS:-420\}/);
@@ -7339,13 +7348,13 @@ test('Vivy keeps complete song outputs beyond the former 5000 character ceiling'
   assert.match(result.publicLyrics, /FIN_DE_LA_CHANSON_COMPLETE/);
 });
 
-test('Vivy frontend labels prepared audio as V10 Boom', () => {
+test('Vivy frontend labels prepared audio as the integral V2 to V11 recipe', () => {
   const appSource = fs.readFileSync(
     path.join(__dirname, '../../../../frontend/apps/web/src/App.tsx'),
     'utf8'
   );
 
-  assert.match(appSource, /Version : V10 Boom/);
+  assert.match(appSource, /Version : V11 Pan intégrale \(V2→V11\)/);
   assert.match(appSource, /V9 Électrolyse \+ couche Boom/);
   assert.doesNotMatch(appSource, /Version : V6 Supreme/);
 });

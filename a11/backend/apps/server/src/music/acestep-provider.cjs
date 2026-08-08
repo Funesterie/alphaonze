@@ -45,6 +45,10 @@ const DEFAUTS = {
   diffusion: 'acestep_v1.5_turbo.safetensors',
   textEncoder1: 'qwen_0.6b_ace15.safetensors',
   textEncoder2: 'qwen_1.7b_ace15.safetensors',
+  // Le 4B est un profil de qualite optionnel. Sur la RTX 5070 12 Go, le garder
+  // hors du chemin par defaut evite de transformer chaque generation en test
+  // d'offload VRAM. Il ne remplace jamais silencieusement le 1.7B stable.
+  textEncoder2Qwen4: 'qwen_4b_ace15.safetensors',
   vae: 'ace_1.5_vae.safetensors',
   // Le turbo est entraine pour huit pas et un cfg de 1 ; monter coute du temps
   // et degrade le resultat au lieu de l'ameliorer.
@@ -57,7 +61,11 @@ const DEFAUTS = {
   sampler: 'euler',
   scheduler: 'simple',
   bpm: 120,
-  duration: 120,
+  // Aucune duree cible par defaut. L'API ACE-Step 1.5 officielle utilise -1
+  // pour laisser le LM choisir selon les paroles. Le noeud ComfyUI 0.30.0 ne
+  // sait pas recevoir ce sentinel (son latent exige un nombre positif), donc
+  // le raccord Comfy calcule plus bas un canevas musical adapte au contenu.
+  duration: null,
   // EmptyAceStep1.5LatentAudio refuse plus de 1000 secondes, meme si
   // TextEncodeAceStepAudio1.5 annonce 2000. La borne la plus basse fait foi.
   maxDuration: 1000,
@@ -92,6 +100,14 @@ function lireNombreEnv(env, noms, defaut, min, max) {
   return Number.isFinite(nombre) ? Math.min(max, Math.max(min, nombre)) : defaut;
 }
 
+function lireNombrePositifOptionnelEnv(env, noms, min, max) {
+  const brut = lireEnv(env, ...noms);
+  if (!brut) return null;
+  const nombre = Number(brut);
+  if (!Number.isFinite(nombre) || nombre <= 0) return null;
+  return Math.min(max, Math.max(min, nombre));
+}
+
 function lireBooleenEnv(env, noms, defaut) {
   const brut = lireEnv(env, ...noms).toLowerCase();
   if (!brut) return defaut;
@@ -107,6 +123,8 @@ function resolveAceStepConfig(env = process.env) {
     diffusion: lireEnv(env, 'ACESTEP_DIFFUSION_MODEL') || DEFAUTS.diffusion,
     textEncoder1: lireEnv(env, 'ACESTEP_TEXT_ENCODER_1') || DEFAUTS.textEncoder1,
     textEncoder2: lireEnv(env, 'ACESTEP_TEXT_ENCODER_2') || DEFAUTS.textEncoder2,
+    textEncoder2Qwen4: lireEnv(env, 'ACESTEP_TEXT_ENCODER_2_QWEN4') || DEFAUTS.textEncoder2Qwen4,
+    qwen4Enabled: lireBooleenEnv(env, ['ACESTEP_QWEN4_PROFILE_ENABLED'], false),
     vae: lireEnv(env, 'ACESTEP_VAE') || DEFAUTS.vae,
     steps: Math.round(lireNombreEnv(env, ['ACESTEP_STEPS'], DEFAUTS.steps, 1, 100)),
     cfg: lireNombreEnv(env, ['ACESTEP_KSAMPLER_CFG', 'ACESTEP_CFG'], DEFAUTS.cfg, 0, 100),
@@ -115,7 +133,9 @@ function resolveAceStepConfig(env = process.env) {
     sampler: lireEnv(env, 'ACESTEP_SAMPLER') || DEFAUTS.sampler,
     scheduler: lireEnv(env, 'ACESTEP_SCHEDULER') || DEFAUTS.scheduler,
     bpm: lireNombreEnv(env, ['ACESTEP_DEFAULT_BPM'], DEFAUTS.bpm, 10, 300),
-    duration: lireNombreEnv(env, ['ACESTEP_DEFAULT_DURATION_SECONDS'], DEFAUTS.duration, 1, maxDuration),
+    // Compatibilite avec un profil fixe explicitement configure. La production
+    // ne doit pas ecrire cette variable par defaut : absente, elle vaut auto.
+    duration: lireNombrePositifOptionnelEnv(env, ['ACESTEP_DEFAULT_DURATION_SECONDS'], 1, maxDuration),
     maxDuration,
     timesignature: lireEnv(env, 'ACESTEP_TIME_SIGNATURE') || DEFAUTS.timesignature,
     language: lireEnv(env, 'ACESTEP_LANGUAGE') || DEFAUTS.language,
@@ -143,6 +163,105 @@ function clamp(v, min, max, defaut) {
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : defaut;
 }
 
+function hashAceStepDurationSeed(value = '') {
+  // FNV-1a 32 bits : stable entre comptes/processus, sans horloge ni hasard
+  // cache. Deux structures differentes ne retombent pas toutes sur 2:00.
+  let hash = 0x811c9dc5;
+  for (const caractere of String(value)) {
+    hash ^= caractere.codePointAt(0);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash >>> 0;
+}
+
+function estimateAceStepAutoDuration(demande = {}, config = {}) {
+  // Compatibilite ComfyUI, pas l'auto-duree native ACE-Step : le LM officiel
+  // accepte duration=-1/None, tandis que les deux noeuds Comfy locaux exigent
+  // une valeur positive identique pour l'encodage et le latent. Cette fonction
+  // dimensionne donc le canevas a partir de la composition sans minuterie fixe.
+  const lyrics = String(demande.lyrics || '').trim();
+  const tags = String(demande.tags || '').trim();
+  const bpm = clamp(demande.bpm, 10, 300, config.bpm ?? DEFAUTS.bpm);
+  const timesignature = String(demande.timesignature || config.timesignature || DEFAUTS.timesignature);
+  const beatsPerBar = Math.max(2, Math.min(6, Number.parseInt(timesignature, 10) || 4));
+  const secondsPerBeat = 60 / bpm;
+  const secondsPerBar = beatsPerBar * secondsPerBeat;
+  const maxDuration = Number(config.maxDuration ?? DEFAUTS.maxDuration) || DEFAUTS.maxDuration;
+  const folded = `${tags}\n${lyrics}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const contentHash = hashAceStepDurationSeed(`${folded}\n${demande.seed ?? 0}\n${bpm}\n${timesignature}`);
+  const longForm = /\b(long[ -]?form|epique|epic|progressif|progressive|suite|extended|ample)\b/.test(folded);
+  const fastDelivery = /\b(rap|drill|trap|grime|double[ -]?time|rapide|nerveux|fast)\b/.test(folded);
+  const slowDelivery = /\b(ballad|ballade|slow|lent|ambient|spoken|parle|slam)\b/.test(folded);
+  const wordsPerMinute = fastDelivery ? 145 : slowDelivery ? 86 : 112;
+  const rows = lyrics.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const sectionRows = rows.filter((line) => /^\[[^\]\n]{1,100}\]$/.test(line));
+  const lyricRows = rows.filter((line) => !/^\[[^\]\n]{1,100}\]$/.test(line));
+  const vocalText = lyricRows.join(' ')
+    .replace(/\[(?:instrumental|music|solo|intro|outro)\]/gi, ' ')
+    .trim();
+  const words = vocalText.match(/[\p{L}\p{N}]+(?:['\u2019-][\p{L}\p{N}]+)*/gu) || [];
+  const instrumental = words.length === 0 || /^\s*\[instrumental\]\s*$/i.test(lyrics);
+
+  let seconds;
+  let basis;
+  if (instrumental) {
+    // Sans paroles, varier une forme complete en nombre de mesures. Ce n'est
+    // pas une cible ronde globale : le prompt/seed choisit le canevas.
+    const baseBars = longForm ? 80 : 48;
+    const variableBars = contentHash % (longForm ? 41 : 33);
+    const tailBeats = 1 + ((contentHash >>> 8) % beatsPerBar);
+    seconds = ((baseBars + variableBars) * secondsPerBar) + (tailBeats * secondsPerBeat);
+    basis = 'comfy-instrumental-layout';
+  } else {
+    const vocalSeconds = (words.length / wordsPerMinute) * 60;
+    const phrasingSeconds = lyricRows.length * secondsPerBar;
+    const transitionBars = 8 + (sectionRows.length * 2) + (longForm ? 8 : 0);
+    const tailBeats = 1 + ((contentHash >>> 8) % Math.max(1, beatsPerBar * 2));
+    seconds = Math.max(vocalSeconds, phrasingSeconds)
+      + (transitionBars * secondsPerBar)
+      + (tailBeats * secondsPerBeat);
+    basis = 'comfy-lyrics-layout';
+  }
+
+  // Aligner sur un demi-beat donne au latent une longueur musicale, pas un
+  // entier arbitraire en minutes. Le plafond reste un garde-fou, pas une cible.
+  const halfBeat = secondsPerBeat / 2;
+  const musicalSeconds = Math.ceil(seconds / halfBeat) * halfBeat;
+  return {
+    seconds: Math.round(Math.min(maxDuration, Math.max(10, musicalSeconds)) * 100) / 100,
+    mode: 'comfy-adaptive-fallback',
+    basis,
+    bpm,
+    beatsPerBar,
+    wordCount: words.length,
+    lyricLineCount: lyricRows.length,
+    sectionCount: sectionRows.length,
+  };
+}
+
+function resolveAceStepDuration(demande = {}, config = {}) {
+  const maxDuration = Number(config.maxDuration ?? DEFAUTS.maxDuration) || DEFAUTS.maxDuration;
+  const requested = Number(demande.duration);
+  if (Number.isFinite(requested) && requested > 0) {
+    return {
+      seconds: Math.min(maxDuration, Math.max(1, requested)),
+      mode: 'explicit',
+      basis: 'request',
+    };
+  }
+
+  const configured = Number(config.duration);
+  if (Number.isFinite(configured) && configured > 0) {
+    return {
+      seconds: Math.min(maxDuration, Math.max(1, configured)),
+      mode: 'configured',
+      basis: 'legacy-fixed-profile',
+    };
+  }
+
+  return estimateAceStepAutoDuration(demande, config);
+}
+
 /**
  * Construit le graphe ComfyUI au format API.
  *
@@ -157,11 +276,23 @@ function buildAceStepGraph(demande = {}, config = resolveAceStepConfig()) {
   const seed = Number.isFinite(Number(demande.seed))
     ? Math.abs(Math.floor(Number(demande.seed)))
     : 0;
+  const requestedTextEncoderProfile = String(
+    demande.textEncoderProfile
+    || demande.qwenProfile
+    || demande.qualityProfile
+    || ''
+  ).trim().toLowerCase();
+  const useQwen4 = config.qwen4Enabled === true
+    && ['4b', 'qwen4', 'qwen-4b', 'quality-4b', 'experimental-4b'].includes(requestedTextEncoderProfile);
+  const textEncoder2 = useQwen4
+    ? (config.textEncoder2Qwen4 || DEFAUTS.textEncoder2Qwen4)
+    : (config.textEncoder2 || DEFAUTS.textEncoder2);
+  const duration = resolveAceStepDuration(demande, config);
 
   const commun = {
     seed,
     bpm: clamp(demande.bpm, 10, 300, config.bpm ?? DEFAUTS.bpm),
-    duration: clamp(demande.duration, 1, config.maxDuration ?? DEFAUTS.maxDuration, config.duration ?? DEFAUTS.duration),
+    duration: duration.seconds,
     timesignature: String(demande.timesignature || config.timesignature || DEFAUTS.timesignature),
     language: String(demande.language || config.language || DEFAUTS.language),
     keyscale: String(demande.keyscale || config.keyscale || DEFAUTS.keyscale),
@@ -180,7 +311,7 @@ function buildAceStepGraph(demande = {}, config = resolveAceStepConfig()) {
     1: { class_type: NOEUDS.unet, inputs: { unet_name: config.diffusion, weight_dtype: 'default' } },
     2: {
       class_type: NOEUDS.clip,
-      inputs: { clip_name1: config.textEncoder1, clip_name2: config.textEncoder2, type: 'ace', device: 'default' },
+      inputs: { clip_name1: config.textEncoder1, clip_name2: textEncoder2, type: 'ace', device: 'default' },
     },
     3: { class_type: NOEUDS.vae, inputs: { vae_name: config.vae } },
     4: { class_type: NOEUDS.encode, inputs: { clip: ['2', 0], tags, lyrics, ...commun } },
@@ -255,7 +386,8 @@ async function requestAceStepMusic(demande = {}, options = {}) {
     };
   }
 
-  const graphe = buildAceStepGraph(demande, config);
+  const duration = resolveAceStepDuration(demande, config);
+  const graphe = buildAceStepGraph({ ...demande, duration: duration.seconds }, config);
 
   let promptId;
   try {
@@ -279,6 +411,8 @@ async function requestAceStepMusic(demande = {}, options = {}) {
         steps: config.steps,
         bpm: graphe[4].inputs.bpm,
         duree: graphe[4].inputs.duration,
+        dureeMode: duration.mode,
+        dureeBase: duration.basis,
         langue: graphe[4].inputs.language,
         keyscale: graphe[4].inputs.keyscale,
         lyricChars: String(demande.lyrics || '').length,
@@ -307,6 +441,8 @@ async function requestAceStepMusic(demande = {}, options = {}) {
       steps: config.steps,
       bpm: graphe[4].inputs.bpm,
       duree: graphe[4].inputs.duration,
+      dureeMode: duration.mode,
+      dureeBase: duration.basis,
       langue: graphe[4].inputs.language,
       keyscale: graphe[4].inputs.keyscale,
       lyricChars: String(demande.lyrics || '').length,
@@ -354,9 +490,11 @@ module.exports = {
   DEFAUTS,
   NOEUDS,
   buildAceStepGraph,
+  estimateAceStepAutoDuration,
   getAceStepMusicJob,
   isAceStepConfigured,
   requestAceStepMusic,
+  resolveAceStepDuration,
   resolveAceStepConfig,
   verifierNoeuds,
 };

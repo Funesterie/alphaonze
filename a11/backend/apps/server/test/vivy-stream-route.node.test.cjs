@@ -2397,11 +2397,12 @@ test('Twitch NOSSEN runner lets Vivy choose a longer lyric scope for no-limit st
     });
 
     assert.equal(result.ok, true);
-    assert.equal(productionInput.targetDurationSeconds, 330);
-    assert.equal(productionInput.longSong, true);
+    assert.equal(productionInput.targetDurationSeconds, undefined);
+    assert.equal(productionInput.longSong, false);
     assert.ok(lyricsInput.songMaxTokens >= 7600);
     assert.equal(lyricsInput.songResponseMaxChars, 4800); // plafond Suno custom mode (API 400 au-dela de 5000 caracteres)
-    assert.match(lyricsInput.message, /Vivy décide la longueur/i);
+    assert.match(lyricsInput.message, /Vivy décide librement la longueur/i);
+    assert.doesNotMatch(lyricsInput.message, /environ 330 secondes/i);
     assert.match(lyricsInput.message, /no-limit créatif/i);
     assert.match(updates.map((entry) => entry.message || '').join('\n'), /no-limit créatif/);
   } finally {

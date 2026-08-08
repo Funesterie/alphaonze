@@ -2624,7 +2624,7 @@ function buildTwitchLyricsRequest({
     lyricScope?.freeStructure
       ? 'Structure libre: plusieurs longs couplets continus qui montent en intensité; refrain, pré-refrain et pont facultatifs, seulement si le sujet les appelle.'
       : '',
-    lyricScope?.targetDurationSeconds
+    lyricScope?.chaseDuration && lyricScope?.targetDurationSeconds
       ? `Vivy décide la longueur: vise une forme adaptée à environ ${Math.round(lyricScope.targetDurationSeconds)} secondes de chanson, sans remplir artificiellement.`
       : 'Vivy décide librement la longueur selon l’histoire et l’énergie du sujet.',
     buildShortTwitchIdeaExpansionGuidance({ winner, routing, seed }),
@@ -3787,8 +3787,12 @@ function createVivyStreamNossenRunner(options = {}) {
           : musicProvider === 'elevenlabs'
             ? process.env.VIVY_ELEVENLABS_MUSIC_MODEL || 'music_v2'
             : process.env.VIVY_SUNO_LONG_MODEL || process.env.VIVY_SUNO_MODEL || 'V5_5',
-        longSong: targetDurationSeconds >= 300,
-        targetDurationSeconds,
+        // Le scope garde une estimation pour dimensionner les paroles, mais le
+        // fournisseur ne reçoit une durée chiffrée que si elle a été demandée
+        // explicitement ou verrouillée par configuration. Sinon, une valeur
+        // ronde (notamment 300 s) transforme une intention en moule obligatoire.
+        longSong: lyricScope.chaseDuration === true && targetDurationSeconds >= 300,
+        ...(lyricScope.chaseDuration === true ? { targetDurationSeconds } : {}),
         requireLocalSunoAudio: true,
         sunoLocalAudioRequired: true,
         sunoStatusAudioFetchAttempts: Number(process.env.VIVY_STREAM_SUNO_AUDIO_FETCH_ATTEMPTS || 4),

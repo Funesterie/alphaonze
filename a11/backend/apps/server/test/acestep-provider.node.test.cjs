@@ -3,9 +3,11 @@ const assert = require('node:assert/strict');
 
 const {
   buildAceStepGraph,
+  estimateAceStepAutoDuration,
   getAceStepMusicJob,
   isAceStepConfigured,
   requestAceStepMusic,
+  resolveAceStepDuration,
   resolveAceStepConfig,
   NOEUDS,
 } = require('../src/music/acestep-provider.cjs');
@@ -60,6 +62,30 @@ test('la config se laisse entierement surcharger par l environnement', () => {
   assert.equal(c.audioCodes, false);
   assert.match(c.textEncoder1, /qwen_0\.6b/);
   assert.match(c.textEncoder2, /qwen_1\.7b/);
+  assert.match(c.textEncoder2Qwen4, /qwen_4b/);
+  assert.equal(c.qwen4Enabled, false);
+});
+
+test('aucune duree globale n est imposee quand la variable est absente', () => {
+  assert.equal(resolveAceStepConfig({}).duration, null);
+  assert.equal(resolveAceStepConfig({ ACESTEP_DEFAULT_DURATION_SECONDS: '' }).duration, null);
+  assert.equal(resolveAceStepConfig({ ACESTEP_DEFAULT_DURATION_SECONDS: '-1' }).duration, null);
+});
+
+test('le Qwen 4B reste un profil explicite et ne remplace jamais le 1.7B stable', () => {
+  const config = resolveAceStepConfig({
+    ACESTEP_QWEN4_PROFILE_ENABLED: 'true',
+    ACESTEP_TEXT_ENCODER_2_QWEN4: 'qwen_4b_ace15.safetensors',
+  });
+  const stable = buildAceStepGraph({}, config);
+  const quality = buildAceStepGraph({ textEncoderProfile: 'qwen4' }, config);
+
+  assert.equal(stable[2].inputs.clip_name2, 'qwen_1.7b_ace15.safetensors');
+  assert.equal(quality[2].inputs.clip_name2, 'qwen_4b_ace15.safetensors');
+  assert.equal(
+    buildAceStepGraph({ textEncoderProfile: 'qwen4' }, { ...config, qwen4Enabled: false })[2].inputs.clip_name2,
+    'qwen_1.7b_ace15.safetensors'
+  );
 });
 
 test('le graphe suit le workflow officiel audio_ace_step_1_5_split', () => {
@@ -120,11 +146,43 @@ test('le negatif est un ConditioningZeroOut, pas un second encodage', () => {
   assert.equal(g[4].inputs.generate_audio_codes, true);
 });
 
-test('les valeurs hors bornes sont ramenees, pas refusees', () => {
-  const g = buildAceStepGraph({ bpm: 9000, duration: -5 });
+test('les valeurs hors bornes sont ramenees et une duree negative signifie adaptatif', () => {
+  const g = buildAceStepGraph({ bpm: 9000, duration: -5, lyrics: '[Verse]\nune ligne courte' });
   assert.equal(g[4].inputs.bpm, 300);
-  assert.equal(g[4].inputs.duration, 1);
+  assert.ok(g[4].inputs.duration >= 10);
+  assert.equal(g[6].inputs.seconds, g[4].inputs.duration);
   assert.equal(buildAceStepGraph({ bpm: 'abc' })[4].inputs.bpm, 120);
+});
+
+test('le fallback Comfy dimensionne le latent selon la composition sans cible 120 ou 300', () => {
+  const court = {
+    tags: 'chanson acoustique',
+    lyrics: '[Verse]\nJe marche sous la pluie\n[Chorus]\nJe rentre chez moi',
+    bpm: 111,
+    seed: 42,
+  };
+  const long = {
+    ...court,
+    lyrics: `${court.lyrics}\n[Verse 2]\n${'une phrase qui poursuit le recit '.repeat(60)}\n[Bridge]\n${'un autre mouvement '.repeat(24)}`,
+  };
+  const a = estimateAceStepAutoDuration(court, resolveAceStepConfig({}));
+  const b = estimateAceStepAutoDuration(long, resolveAceStepConfig({}));
+
+  assert.equal(a.mode, 'comfy-adaptive-fallback');
+  assert.match(a.basis, /^comfy-/);
+  assert.ok(b.seconds > a.seconds, 'des paroles nettement plus longues doivent agrandir le canevas');
+  assert.ok(![120, 300].includes(a.seconds), `la courte est retombee sur une ancienne minuterie: ${a.seconds}`);
+  assert.deepEqual(estimateAceStepAutoDuration(court, resolveAceStepConfig({})), a, 'le meme contenu reste reproductible');
+  assert.equal(resolveAceStepDuration(court, resolveAceStepConfig({})).seconds, a.seconds);
+});
+
+test('une duree explicite ou un ancien profil fixe restent volontairement respectes', () => {
+  assert.deepEqual(resolveAceStepDuration({ duration: 45 }, resolveAceStepConfig({})), {
+    seconds: 45,
+    mode: 'explicit',
+    basis: 'request',
+  });
+  assert.equal(resolveAceStepDuration({}, resolveAceStepConfig({ ACESTEP_DEFAULT_DURATION_SECONDS: '75' })).seconds, 75);
 });
 
 test('la duree du latent suit celle demandee', () => {
@@ -148,6 +206,21 @@ test('genere et rend l audio', async () => {
   assert.equal(r.audio.toString(), 'AUDIO');
   assert.equal(r.meta.langue, 'fr');
   assert.equal(r.meta.duree, 16);
+  assert.equal(r.meta.dureeMode, 'explicit');
+});
+
+test('la soumission sans duree annonce clairement le fallback adaptatif Comfy', async () => {
+  const client = faireClient();
+  const r = await requestAceStepMusic(
+    { tags: 'ambient organique', lyrics: '[Instrumental]', bpm: 97, seed: 7 },
+    { client, wait: false },
+  );
+
+  assert.equal(r.ok, true);
+  assert.equal(r.meta.dureeMode, 'comfy-adaptive-fallback');
+  assert.match(r.meta.dureeBase, /^comfy-/);
+  assert.equal(client.vu.graphe[4].inputs.duration, client.vu.graphe[6].inputs.seconds);
+  assert.ok(![120, 300].includes(r.meta.duree));
 });
 
 test('le mode web soumet ACE-Step sans attendre la generation', async () => {
