@@ -2145,14 +2145,21 @@ test('GET /api/vivy/studio/jobs/:taskId reports Suno callback API rejection', as
   }
 });
 
-test('GET /api/vivy/studio/jobs/:taskId falls back to provider URL when Suno MP3 materialization is slow', async () => {
+// Le repli sur l'URL du fournisseur n'est plus le defaut depuis le 09/08: Djeff
+// refuse de livrer un mix dont la longueur n'est pas mesurable, et sans fichier local
+// il n'y a rien a mesurer. Le chemin existe toujours, mais il faut desormais le
+// demander -- ici via VIVY_SUNO_REQUIRE_LOCAL_AUDIO=false. Le test qui suit couvre le
+// nouveau defaut.
+test('GET /api/vivy/studio/jobs/:taskId falls back to provider URL when local audio is explicitly not required', async () => {
   const previousEnv = {
     VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
     VIVY_SUNO_BASE_URL: process.env.VIVY_SUNO_BASE_URL,
     VIVY_SUNO_AUDIO_HOSTS: process.env.VIVY_SUNO_AUDIO_HOSTS,
     VIVY_SUNO_STATUS_AUDIO_FETCH_TIMEOUT_MS: process.env.VIVY_SUNO_STATUS_AUDIO_FETCH_TIMEOUT_MS,
     VIVY_SUNO_STATUS_AUDIO_FETCH_ATTEMPTS: process.env.VIVY_SUNO_STATUS_AUDIO_FETCH_ATTEMPTS,
+    VIVY_SUNO_REQUIRE_LOCAL_AUDIO: process.env.VIVY_SUNO_REQUIRE_LOCAL_AUDIO,
   };
+  process.env.VIVY_SUNO_REQUIRE_LOCAL_AUDIO = 'false';
   const previousFetch = global.fetch;
   const founderAuth = (req, res, next) => {
     if (req.headers.authorization === 'Bearer vivy-founder-token') {
@@ -6378,7 +6385,14 @@ test('Hetzner deploy wires local-first Ollama with a cloud provider domino', () 
   assert.match(deploySource, /VIVY_NOSSEN_LARGE_MODEL_FIRST:\s*\$\{VIVY_NOSSEN_LARGE_MODEL_FIRST:-true\}/);
   assert.match(deploySource, /VIVY_NOSSEN_120B_MAX_PROMPT_CHARS:\s*\$\{VIVY_NOSSEN_120B_MAX_PROMPT_CHARS:-22000\}/);
   assert.match(deploySource, /VIVY_NOSSEN_120B_MAX_TOKENS:\s*\$\{VIVY_NOSSEN_120B_MAX_TOKENS:-2400\}/);
-  assert.match(deploySource, /VIVY_NOSSEN_120B_TIMEOUT_MS:\s*\$\{VIVY_NOSSEN_120B_TIMEOUT_MS:-60000\}/);
+  // 35 s et non 60: sur un budget VIVY_NOSSEN_LLM_BUDGET_MS de 80 s, le gros modele
+  // essaye en premier en prenait 60 et les fournisseurs suivants tombaient tous en
+  // faux 504 (deadline maison, pas panne amont). Le correctif 979a0d72 avait baisse le
+  // defaut du CODE, mais ce script reimposait 60000 a chaque deploiement -- il n'avait
+  // donc jamais pris effet. Les trois ecritures doivent rester alignees.
+  assert.match(deploySource, /VIVY_NOSSEN_120B_TIMEOUT_MS:\s*\$\{VIVY_NOSSEN_120B_TIMEOUT_MS:-35000\}/);
+  assert.match(deploySource, /VIVY_NOSSEN_120B_TIMEOUT_MS\s*=\s*"35000"/);
+  assert.match(deploySource, /printf 'VIVY_NOSSEN_120B_TIMEOUT_MS=35000/);
   assert.match(deploySource, /VIVY_NOSSEN_FAST_LOCAL_ONLY:\s*\$\{VIVY_NOSSEN_FAST_LOCAL_ONLY:-true\}/);
   // Le bloc environment: du compose ECRASE ce que fournit env_file:. Tant que ce defaut
   // valait false, aucune modification de a11.env ne pouvait rendre la main a Vivy: le

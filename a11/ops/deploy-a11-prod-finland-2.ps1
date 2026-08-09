@@ -708,7 +708,7 @@ services:
       VIVY_NOSSEN_LARGE_MODEL_FIRST: ${VIVY_NOSSEN_LARGE_MODEL_FIRST:-true}
       VIVY_NOSSEN_120B_MAX_PROMPT_CHARS: ${VIVY_NOSSEN_120B_MAX_PROMPT_CHARS:-22000}
       VIVY_NOSSEN_120B_MAX_TOKENS: ${VIVY_NOSSEN_120B_MAX_TOKENS:-2400}
-      VIVY_NOSSEN_120B_TIMEOUT_MS: ${VIVY_NOSSEN_120B_TIMEOUT_MS:-60000}
+      VIVY_NOSSEN_120B_TIMEOUT_MS: ${VIVY_NOSSEN_120B_TIMEOUT_MS:-35000}
       VIVY_NOSSEN_FAST_LOCAL_ONLY: ${VIVY_NOSSEN_FAST_LOCAL_ONLY:-true}
       VIVY_NOSSEN_ROUTE_LLM_ENABLED: ${VIVY_NOSSEN_ROUTE_LLM_ENABLED:-true}
       VIVY_NOSSEN_ROUTER_LOCAL_TIMEOUT_MS: ${VIVY_NOSSEN_ROUTER_LOCAL_TIMEOUT_MS:-20000}
@@ -1034,7 +1034,7 @@ services:
       VIVY_NOSSEN_LARGE_MODEL_FIRST: ${VIVY_NOSSEN_LARGE_MODEL_FIRST:-true}
       VIVY_NOSSEN_120B_MAX_PROMPT_CHARS: ${VIVY_NOSSEN_120B_MAX_PROMPT_CHARS:-22000}
       VIVY_NOSSEN_120B_MAX_TOKENS: ${VIVY_NOSSEN_120B_MAX_TOKENS:-2400}
-      VIVY_NOSSEN_120B_TIMEOUT_MS: ${VIVY_NOSSEN_120B_TIMEOUT_MS:-60000}
+      VIVY_NOSSEN_120B_TIMEOUT_MS: ${VIVY_NOSSEN_120B_TIMEOUT_MS:-35000}
       VIVY_NOSSEN_FAST_LOCAL_ONLY: ${VIVY_NOSSEN_FAST_LOCAL_ONLY:-true}
       VIVY_NOSSEN_ROUTE_LLM_ENABLED: ${VIVY_NOSSEN_ROUTE_LLM_ENABLED:-true}
       VIVY_NOSSEN_ROUTER_LOCAL_TIMEOUT_MS: ${VIVY_NOSSEN_ROUTER_LOCAL_TIMEOUT_MS:-20000}
@@ -1569,7 +1569,15 @@ $overrides = [ordered]@{
   VIVY_NOSSEN_LARGE_MODEL_FIRST = "true"
   VIVY_NOSSEN_120B_MAX_PROMPT_CHARS = "22000"
   VIVY_NOSSEN_120B_MAX_TOKENS = "2400"
-  VIVY_NOSSEN_120B_TIMEOUT_MS = "60000"
+  # 35 s, pas 60. Le correctif 979a0d72 du 28/07 avait baisse le DEFAUT du code a
+  # 35 s parce que le gros modele, essaye en premier, mangeait 60 des 80 s de
+  # VIVY_NOSSEN_LLM_BUDGET_MS: les fournisseurs suivants -- ceux qui repondent --
+  # se partageaient 20 s par tranches de 8 s et tombaient tous en faux 504
+  # (buildVivyLlmDeadlineError pose status=504, ce ne sont pas les fournisseurs qui
+  # echouent). Ce fichier reimposait 60000 a chaque deploiement, donc le correctif
+  # n'a jamais pris effet en prod. Cascade encore observee le 09/08 a 07h24 et
+  # 07h30, avec un 502 cote Cloudflare au bout.
+  VIVY_NOSSEN_120B_TIMEOUT_MS = "35000"
   VIVY_NOSSEN_FAST_LOCAL_ONLY = "true"
   # Djeff: « c'est Vivy qui doit piloter les chanteurs et les couleurs sonores ».
   # A false, buildVivyNossenRoutingPlan renvoyait toujours son moteur de regles, qui rend
@@ -2249,7 +2257,7 @@ printf 'VIVY_NOSSEN_LOCAL_MODEL=qwen2.5:32b\n' >> "$tmp_build"
 printf 'VIVY_NOSSEN_LARGE_MODEL_FIRST=true\n' >> "$tmp_build"
 printf 'VIVY_NOSSEN_120B_MAX_PROMPT_CHARS=22000\n' >> "$tmp_build"
 printf 'VIVY_NOSSEN_120B_MAX_TOKENS=2400\n' >> "$tmp_build"
-printf 'VIVY_NOSSEN_120B_TIMEOUT_MS=60000\n' >> "$tmp_build"
+printf 'VIVY_NOSSEN_120B_TIMEOUT_MS=35000\n' >> "$tmp_build"
 printf 'VIVY_NOSSEN_FAST_LOCAL_ONLY=true\n' >> "$tmp_build"
 printf 'VIVY_NOSSEN_ROUTE_LLM_ENABLED=true\n' >> "$tmp_build"
 printf 'VIVY_NOSSEN_ROUTER_LOCAL_TIMEOUT_MS=20000\n' >> "$tmp_build"

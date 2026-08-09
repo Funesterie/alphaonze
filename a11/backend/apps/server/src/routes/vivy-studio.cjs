@@ -89,6 +89,7 @@ const {
   runExpiredPersonaRevival,
   listRevivableVoices,
 } = require('../music/persona-revival-runner.cjs');
+const { probeAudioDurationSeconds } = require('../audio/probe-audio-duration.cjs');
 const { buildSongcraftGraphContext } = require('../music/songcraft-graph-context.cjs');
 const {
   buildVivyProsodyPlan,
@@ -10859,16 +10860,86 @@ function vivyInputFlag(value) {
   return /^(1|true|yes|on)$/i.test(String(value || '').trim());
 }
 
+/** Un appelant a-t-il explicitement REFUSE l'audio local ? */
+function vivyInputFlagRefused(value) {
+  if (value === false) return true;
+  if (value === null || value === undefined || value === true) return false;
+  return /^(0|false|no|off)$/i.test(String(value).trim());
+}
+
+/**
+ * Faut-il exiger le MP3 en local avant de livrer le mix ?
+ *
+ * Djeff, 09/08/2026: « je refuse de livrer un mix sans pouvoir verifier sa longueur ».
+ * Cette fonction ne lisait que la requete: si le frontend oubliait le drapeau,
+ * materializeVivySunoMedia gardait silencieusement l'URL du fournisseur. Aucun fichier
+ * chez nous, donc aucune duree mesurable, et un mix livre sans qu'on sache ce qu'il
+ * contient. Observe le 09/08: « Suno MP3 local materialization failed, keeping
+ * provider URL ».
+ *
+ * Le defaut est donc desormais cote serveur, et il exige le local. Un appelant peut
+ * toujours refuser explicitement (un apercu jetable n'a pas besoin d'etre mesure),
+ * et VIVY_SUNO_REQUIRE_LOCAL_AUDIO=false rend l'ancien comportement sans deploiement
+ * si la materialisation devait poser probleme.
+ */
 function requiresLocalVivySunoAudio(input = {}) {
-  return vivyInputFlag(input.requireLocalSunoAudio)
-    || vivyInputFlag(input.sunoLocalAudioRequired)
-    || vivyInputFlag(input.requireLocalAudio)
-    || vivyInputFlag(input.localAudioRequired)
-    || vivyInputFlag(input.throwOnSunoMaterializationFailure);
+  const drapeaux = [
+    input.requireLocalSunoAudio,
+    input.sunoLocalAudioRequired,
+    input.requireLocalAudio,
+    input.localAudioRequired,
+    input.throwOnSunoMaterializationFailure,
+  ];
+  if (drapeaux.some((value) => vivyInputFlag(value))) return true;
+  if (drapeaux.some((value) => vivyInputFlagRefused(value))) return false;
+  return !['0', 'false', 'off', 'no'].includes(
+    String(process.env.VIVY_SUNO_REQUIRE_LOCAL_AUDIO ?? 'true').trim().toLowerCase()
+  );
+}
+
+// Depuis quand un rapatriement echoue-t-il, par tache. Sans cette borne, exiger
+// l'audio local par defaut (09/08) transformait une panne de CDN en attente infinie:
+// l'etat « processing » etait renvoye indefiniment, retryable a chaque fois, et la
+// chanson ne se terminait jamais. On ne peut pas non plus livrer l'URL distante --
+// c'est precisement ce que Djeff refuse -- donc au bout du delai on echoue en le
+// disant.
+const vivySunoLocalizationFirstFailureAt = new Map();
+const VIVY_SUNO_LOCALIZATION_DEADLINE_MS = 10 * 60 * 1000;
+
+function resolveVivySunoLocalizationDeadlineMs() {
+  return Math.max(
+    60000,
+    Number(process.env.VIVY_SUNO_LOCALIZATION_DEADLINE_MS) || VIVY_SUNO_LOCALIZATION_DEADLINE_MS
+  );
+}
+
+function forgetVivySunoLocalizationFailure(taskId) {
+  vivySunoLocalizationFirstFailureAt.delete(taskId);
 }
 
 function buildVivySunoLocalizingJob(taskId, error = null, upstreamStatus = '') {
   const detail = cleanOneLine(error?.message || error, '', 180);
+  const premier = vivySunoLocalizationFirstFailureAt.get(taskId) || Date.now();
+  vivySunoLocalizationFirstFailureAt.set(taskId, premier);
+  const écoulé = Date.now() - premier;
+  const deadlineMs = resolveVivySunoLocalizationDeadlineMs();
+
+  if (écoulé >= deadlineMs) {
+    vivySunoLocalizationFirstFailureAt.delete(taskId);
+    return {
+      ok: false,
+      provider: 'suno',
+      taskId,
+      state: 'error',
+      status: 'suno_audio_localization_failed',
+      upstreamStatus: cleanOneLine(upstreamStatus || 'callback_ready', 'callback_ready', 80),
+      retryable: false,
+      error: 'vivy_suno_local_materialization_failed',
+      message: `Suno a rendu l’audio mais Vivy n’a pas pu rapatrier le MP3 en ${Math.round(deadlineMs / 60000)} min: la longueur du mix n’est pas verifiable, donc il n’est pas publie. L’URL du fournisseur reste disponible dans les journaux.`,
+      localMaterializationError: detail || undefined,
+    };
+  }
+
   return {
     ok: true,
     provider: 'suno',
@@ -10879,6 +10950,7 @@ function buildVivySunoLocalizingJob(taskId, error = null, upstreamStatus = '') {
     retryable: true,
     message: 'Suno a rendu l’audio; Vivy rapatrie le MP3 local avant publication.',
     localMaterializationError: detail || undefined,
+    localizingForMs: écoulé,
   };
 }
 
@@ -10935,6 +11007,9 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
       targetDurationSeconds: normalizeVivySunoTargetDuration(input),
     });
     if (materialized.pending) return buildVivySunoLocalizingJob(safeTaskId, materialized.error);
+    // Rapatriement reussi: on oublie l'echec precedent, sinon un incident plus tard
+    // sur la meme tache heriterait d'un compteur deja entame et echouerait trop tot.
+    forgetVivySunoLocalizationFailure(safeTaskId);
     const preparedMedia = materialized.media;
     return {
       ok: true,
@@ -11007,6 +11082,7 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
       targetDurationSeconds: normalizeVivySunoTargetDuration(input),
     });
     if (materialized.pending) return buildVivySunoLocalizingJob(safeTaskId, materialized.error, status);
+    forgetVivySunoLocalizationFailure(safeTaskId);
     const preparedMedia = materialized.media;
     return {
       ok: true,
@@ -11317,11 +11393,19 @@ async function materializeVivySunoMedia(media = {}, options = {}) {
       const filePath = await materializeVivyPreviewInstrumentalPath(sourceUrl, sunoOptions);
       const filename = path.basename(filePath);
       const url = `/api/vivy/studio/assets/${encodeURIComponent(filename)}`;
+      // Longueur mesuree sur le fichier, pas celle annoncee par le fournisseur: c'est
+      // la seule qui dise ce qui a vraiment ete rendu. 0 signifie « non mesuree »
+      // (ffprobe absent ou illisible), jamais « morceau vide » -- d'ou le champ
+      // separe `durationMeasured` pour que l'appelant distingue les deux.
+      const durationSeconds = await probeAudioDurationSeconds(filePath);
       return {
         ...media,
         filename,
         path: filePath,
         url,
+        durationSeconds: durationSeconds || Number(media.durationSeconds) || 0,
+        durationMeasuredSeconds: durationSeconds,
+        durationMeasured: durationSeconds > 0,
         audioUrl: url,
         audio_url: url,
         originalAudioUrl: sourceUrl,
@@ -12696,6 +12780,8 @@ module.exports = {
   enforceVivyNossenVoiceSemantics,
   sanitizeVivyNossenRoutingPlanForRequest,
   buildVivySunoPayload,
+  buildVivySunoLocalizingJob,
+  requiresLocalVivySunoAudio,
   clampVivySunoLyricsLength,
   buildVivyMurekaPayload,
   buildVivyAceStepCastDirection,
