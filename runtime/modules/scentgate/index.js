@@ -272,6 +272,192 @@ export function createScentGateSignal(input = {}, options = {}) {
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* Pièce de capacité — le jeton temporaire du Jukebox NUMA.                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Une pièce dit « cet agent peut faire CETTE action, dans CETTE zone, pendant
+ * CE temps ». Elle ne contient jamais de jeton OAuth: la vraie clé reste dans le
+ * coffre, la pièce n'est qu'un droit de tirage borné.
+ *
+ * Pourquoi un contrat séparé du signal de job plutôt qu'un type de plus. Le signal
+ * répond « le travail est fini » et son enveloppe est faite pour ça: resultDigest,
+ * bloopReportId. Une capacité répond « tu as le droit », ce qui demande d'autres
+ * champs et surtout d'autres validations — un chemin de zone mal vérifié est une
+ * faille, pas une donnée. Mélanger les deux dans un schéma unique aurait rendu
+ * chaque champ optionnel, donc chaque validation facultative.
+ */
+export const SCENT_GATE_CAPABILITY_ACTIONS = Object.freeze([
+  'read',
+  'list',
+  'write'
+]);
+
+// La suppression n'est délibérément PAS une capacité délivrable. Effacer chez
+// quelqu'un demande une décision humaine, pas une pièce de soixante secondes.
+
+const CAPABILITY_SCHEMA = 'nossen.scentgate.capability.v1';
+
+/**
+ * Normalise une zone et refuse tout ce qui pourrait en sortir.
+ *
+ * C'est la validation la plus importante du module. Une pièce pour
+ * /Vivy/Productions qui se laisse ramener à / donne accès à tout le disque; la
+ * traversée de chemin est la façon habituelle d'y arriver. On refuse plutôt que
+ * de nettoyer: un chemin douteux est une erreur d'appelant, pas une entrée à
+ * corriger en silence.
+ */
+function normalizeZone(value) {
+  const brut = String(value ?? '').trim();
+  if (!brut) {
+    const error = new Error('ScentGate capability zone is required');
+    error.code = 'SCENTGATE_CAPABILITY_ZONE_MISSING';
+    throw error;
+  }
+  // On travaille en séparateurs POSIX: les Drive (Graph, Google) les utilisent.
+  const unifie = brut.replace(/\\/g, '/');
+  if (unifie.includes('\0') || /%2e|%2f/i.test(unifie)) {
+    const error = new Error('ScentGate capability zone contains an encoded traversal');
+    error.code = 'SCENTGATE_CAPABILITY_ZONE_INVALID';
+    throw error;
+  }
+  const segments = unifie.split('/').filter((s) => s.length > 0);
+  if (segments.some((s) => s === '.' || s === '..')) {
+    const error = new Error('ScentGate capability zone must not contain . or ..');
+    error.code = 'SCENTGATE_CAPABILITY_ZONE_INVALID';
+    throw error;
+  }
+  if (!segments.length) {
+    // « / » seul reviendrait à donner le disque entier. Une pièce doit être bornée.
+    const error = new Error('ScentGate capability zone must not be the drive root');
+    error.code = 'SCENTGATE_CAPABILITY_ZONE_TOO_BROAD';
+    throw error;
+  }
+  const zone = `/${segments.join('/')}`;
+  if (zone.length > 240) {
+    const error = new Error('ScentGate capability zone is too long');
+    error.code = 'SCENTGATE_CAPABILITY_ZONE_INVALID';
+    throw error;
+  }
+  return zone;
+}
+
+/**
+ * Forge une pièce signée. Le secret et les règles de signature sont exactement
+ * ceux du signal: même HMAC-SHA-256 sur JSON canonique, même plancher de 32 octets.
+ *
+ * @param {object} input  { agent, drive, zone, action, issuer, audience, ttlSeconds, nonce }
+ * @param {object} options { secret, now, nonce }
+ */
+export function createScentGateCapability(input = {}, options = {}) {
+  const action = allowedText(input.action, '', 20).toLowerCase();
+  if (!SCENT_GATE_CAPABILITY_ACTIONS.includes(action)) {
+    const error = new Error(`Unsupported ScentGate capability action: ${action || 'empty'}`);
+    error.code = 'SCENTGATE_CAPABILITY_ACTION_DENIED';
+    throw error;
+  }
+  const now = nowMs(options.now);
+  // TTL volontairement plus court que celui d'un signal: une pièce se consomme
+  // tout de suite. Une minute par défaut, cinq au maximum.
+  const ttlSeconds = clampInt(input.ttlSeconds, 15, 300, 60);
+  const payload = {
+    schema: CAPABILITY_SCHEMA,
+    action,
+    agent: allowedText(input.agent, '', 60),
+    drive: allowedText(input.drive, '', 60),
+    zone: normalizeZone(input.zone),
+    issuer: allowedText(input.issuer, '', 80),
+    audience: allowedText(input.audience, '', 80),
+    issuedAt: toIso(now),
+    expiresAt: toIso(now + ttlSeconds * 1000),
+    nonce: allowedText(options.nonce || input.nonce || randomBytes(18).toString('base64url'), '', 120)
+  };
+  if (!payload.agent || !payload.drive || !payload.issuer || !payload.audience || !payload.nonce) {
+    const error = new Error('ScentGate capability agent, drive, issuer, audience and nonce are required');
+    error.code = 'SCENTGATE_CAPABILITY_INVALID';
+    throw error;
+  }
+  return {
+    payload,
+    signature: signSignalPayload(payload, options.secret)
+  };
+}
+
+/**
+ * Vérifie une pièce et, si on lui donne une demande concrète, vérifie que cette
+ * demande tient DANS la pièce.
+ *
+ * Le second contrôle est celui qu'on oublie: une signature valide prouve que la
+ * pièce est authentique, pas qu'elle autorise ce qu'on est en train de faire.
+ * Sans `requested`, on ne rend qu'une authenticité.
+ *
+ * @param {object} envelope   { payload, signature }
+ * @param {object} options    { secret, expectedAudience, now, clockSkewMs, seenNonces,
+ *                              requested: { drive, zone, action } }
+ */
+export function verifyScentGateCapability(envelope, options = {}) {
+  try {
+    const payload = envelope?.payload;
+    if (!payload || payload.schema !== CAPABILITY_SCHEMA) {
+      return { ok: false, error: 'SCENTGATE_CAPABILITY_SCHEMA_INVALID' };
+    }
+    if (!SCENT_GATE_CAPABILITY_ACTIONS.includes(payload.action)) {
+      return { ok: false, error: 'SCENTGATE_CAPABILITY_ACTION_DENIED' };
+    }
+    if (options.expectedAudience && payload.audience !== options.expectedAudience) {
+      return { ok: false, error: 'SCENTGATE_CAPABILITY_AUDIENCE_MISMATCH' };
+    }
+    const signature = Buffer.from(String(envelope.signature || ''), 'base64url');
+    const expected = Buffer.from(signSignalPayload(payload, options.secret), 'base64url');
+    if (signature.length !== expected.length || !timingSafeEqual(signature, expected)) {
+      return { ok: false, error: 'SCENTGATE_CAPABILITY_SIGNATURE_INVALID' };
+    }
+    const now = nowMs(options.now);
+    const issuedAt = Date.parse(payload.issuedAt || '');
+    const expiresAt = Date.parse(payload.expiresAt || '');
+    const clockSkewMs = Math.max(0, Number(options.clockSkewMs || 5000));
+    if (!Number.isFinite(issuedAt) || !Number.isFinite(expiresAt) || issuedAt > now + clockSkewMs || now >= expiresAt) {
+      return { ok: false, error: 'SCENTGATE_CAPABILITY_EXPIRED' };
+    }
+    const nonce = String(payload.nonce || '');
+    if (!nonce) return { ok: false, error: 'SCENTGATE_CAPABILITY_NONCE_MISSING' };
+    if (options.seenNonces?.has?.(nonce)) return { ok: false, error: 'SCENTGATE_CAPABILITY_REPLAYED' };
+
+    const demande = options.requested;
+    if (demande) {
+      if (allowedText(demande.drive, '', 60) !== payload.drive) {
+        return { ok: false, error: 'SCENTGATE_CAPABILITY_DRIVE_MISMATCH' };
+      }
+      const actionDemandee = allowedText(demande.action, '', 20).toLowerCase();
+      // Pas de hiérarchie implicite: une pièce « read » n'autorise pas « list ».
+      // Une échelle de privilèges devinée est une échelle qu'on escalade.
+      if (actionDemandee !== payload.action) {
+        return { ok: false, error: 'SCENTGATE_CAPABILITY_ACTION_MISMATCH' };
+      }
+      let zoneDemandee;
+      try {
+        zoneDemandee = normalizeZone(demande.zone);
+      } catch (_) {
+        return { ok: false, error: 'SCENTGATE_CAPABILITY_ZONE_INVALID' };
+      }
+      // Confinement: la zone demandée doit être la zone accordée ou dessous.
+      // La barre oblique finale évite que /Vivy/Prod autorise /Vivy/Production.
+      const prefixe = payload.zone.endsWith('/') ? payload.zone : `${payload.zone}/`;
+      if (zoneDemandee !== payload.zone && !zoneDemandee.startsWith(prefixe)) {
+        return { ok: false, error: 'SCENTGATE_CAPABILITY_ZONE_OUTSIDE' };
+      }
+    }
+
+    // Le nonce n'est consommé qu'une fois TOUT validé: une pièce refusée pour une
+    // zone hors périmètre doit rester rejouable pour la bonne zone.
+    options.seenNonces?.add?.(nonce);
+    return { ok: true, payload };
+  } catch (error) {
+    return { ok: false, error: String(error?.code || 'SCENTGATE_CAPABILITY_INVALID') };
+  }
+}
+
 export function verifyScentGateSignal(envelope, options = {}) {
   try {
     const payload = envelope?.payload;
@@ -310,13 +496,16 @@ export default {
   DEFAULT_ALIASES,
   DEFAULT_LIMITS,
   SCENT_GATE_SIGNAL_TYPES,
+  SCENT_GATE_CAPABILITY_ACTIONS,
   assertScentGateActive,
+  createScentGateCapability,
   createScentGateCapsule,
   createScentGateSignal,
   destroyScentGateCapsule,
   describeScentGate,
   isScentGateExpired,
   renderScentGateCapsule,
+  verifyScentGateCapability,
   verifyScentGateSignal,
   withScentGateCapsule
 };
