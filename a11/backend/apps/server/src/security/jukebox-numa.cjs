@@ -31,6 +31,9 @@ function chargerScentGate() {
   return scentgatePromesse;
 }
 
+const fs = require('node:fs');
+const path = require('node:path');
+
 const { authorizeCerbereMega } = require('./cerbere-mega.cjs');
 
 /**
@@ -101,14 +104,28 @@ function resolveCassette(drive) {
   return Object.prototype.hasOwnProperty.call(CASSETTES, cle) ? { cle, ...CASSETTES[cle] } : null;
 }
 
-/** Secret de signature. Jamais de valeur par défaut: pas de secret, pas de pièce. */
+/**
+ * Secret de signature. Jamais de valeur par défaut: pas de secret, pas de pièce.
+ *
+ * Le fichier prime sur la variable, comme partout ailleurs dans Funesterie
+ * (azure_client_secret, suno_api_key): un secret en variable d'environnement se
+ * retrouve dans `docker inspect`, dans les journaux de démarrage et dans tout
+ * `env` lancé par curiosité.
+ */
 function resolveSigningSecret(env = process.env) {
-  const secret = String(
-    env.JUKEBOX_CAPABILITY_SECRET
-    || env.SCENTGATE_SIGNAL_SECRET
-    || ''
-  ).trim();
-  return secret;
+  const fichiers = [
+    env.JUKEBOX_CAPABILITY_SECRET_FILE,
+    '/app/runtime/secrets/jukebox_capability_secret',
+  ].filter(Boolean);
+  for (const chemin of fichiers) {
+    try {
+      const valeur = fs.readFileSync(path.resolve(chemin), 'utf8').trim();
+      if (valeur) return valeur;
+    } catch (_) {
+      // fichier optionnel: on tente le suivant
+    }
+  }
+  return String(env.JUKEBOX_CAPABILITY_SECRET || env.SCENTGATE_SIGNAL_SECRET || '').trim();
 }
 
 /**
