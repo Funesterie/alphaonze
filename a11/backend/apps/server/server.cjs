@@ -7009,6 +7009,19 @@ app.use('/api/cerbere-mega', verifyJWT, createCerbereMegaRouter({
 }));
 console.log('[Server] Cerbere MEGA routes mounted under /api/cerbere-mega');
 
+// Jukebox NUMA: Vivy demande une piece, Cerbere tranche, ScentGate signe, le coffre
+// garde la vraie clef. La route n'accepte jamais une URL -- seulement une cassette,
+// une zone et un nom -- pour ne pas devenir un proxy ouvert avec les identifiants
+// du serveur. verifyJWT d'abord: aucune piece ne se demande sans session.
+const createVivyDriveRouter = require('./src/routes/vivy-drive.cjs');
+app.use('/api/vivy/drive', verifyJWT, createVivyDriveRouter({
+  db,
+  vault: oauthTokenVault,
+  trace: (evenement) => console.info('[Jukebox] %s', JSON.stringify(evenement).slice(0, 400)),
+  env: process.env,
+}));
+console.log('[Server] Jukebox NUMA routes mounted under /api/vivy/drive');
+
 const sudokuCapabilityService = createSudokuCapabilityService({ env: process.env });
 app.use('/api/security/sudoku-token', verifyJWT, createSudokuCapabilityRouter({
   service: sudokuCapabilityService,
