@@ -8,7 +8,7 @@ function clampInt(value, min, max, fallback) {
 
 function normalizeProvider(provider = {}) {
   return {
-    id: String(provider.id || provider.provider || provider.name || '').trim(),
+    id: String(provider.id || provider.name || '').trim(),
     provider: String(provider.provider || provider.id || provider.name || '').trim(),
     baseURL: String(provider.baseURL || provider.baseUrl || '').replace(/\/$/, ''),
     model: String(provider.model || '').trim(),
@@ -16,6 +16,12 @@ function normalizeProvider(provider = {}) {
     headers: provider.headers && typeof provider.headers === 'object' ? provider.headers : {},
     probe: provider.probe,
   };
+}
+
+function providerInstanceKey(provider = {}) {
+  const normalized = normalizeProvider(provider);
+  if (normalized.id) return `id:${normalized.id}`;
+  return `route:${normalized.provider}|${normalized.baseURL}|${normalized.model}`;
 }
 
 function classifyStatus(status) {
@@ -28,8 +34,6 @@ function classifyStatus(status) {
 async function defaultProbe(provider, options = {}) {
   if (!provider.baseURL) return { state: 'unknown', reason: 'missing_base_url' };
   const timeoutMs = clampInt(options.timeoutMs, 100, 5000, 1200);
-  const controller = typeof AbortController === 'function' ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   const headers = {
     Accept: 'application/json',
     ...provider.headers,
@@ -41,8 +45,10 @@ async function defaultProbe(provider, options = {}) {
     `${provider.baseURL}/v1/models`,
   ];
 
-  try {
-    for (const url of urls) {
+  for (const url of urls) {
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    try {
       let response;
       try {
         response = await fetch(url, {
@@ -57,18 +63,25 @@ async function defaultProbe(provider, options = {}) {
       const state = classifyStatus(response.status);
       if (state === 'available') return { state, reason: `http_${response.status}`, status: response.status, url };
       if (state === 'unavailable') return { state, reason: `http_${response.status}`, status: response.status, url };
+    } finally {
+      if (timer) clearTimeout(timer);
     }
-    return { state: 'unknown', reason: 'probe_inconclusive' };
-  } finally {
-    if (timer) clearTimeout(timer);
   }
+  return { state: 'unknown', reason: 'probe_inconclusive' };
 }
 
 async function ringProvider(providerInput, options = {}) {
   const provider = normalizeProvider(providerInput);
   const startedAt = Date.now();
+  const instanceKey = providerInstanceKey(providerInput);
   if (!provider.id && !provider.baseURL) {
-    return { provider: provider.provider || 'unknown', state: 'unknown', reason: 'provider_identity_missing', latencyMs: 0 };
+    return {
+      provider: provider.provider || 'unknown',
+      instanceKey,
+      state: 'unknown',
+      reason: 'provider_identity_missing',
+      latencyMs: 0,
+    };
   }
   try {
     const probe = typeof provider.probe === 'function'
@@ -76,7 +89,8 @@ async function ringProvider(providerInput, options = {}) {
       : await defaultProbe(provider, options);
     return {
       provider: provider.provider || provider.id || 'unknown',
-      id: provider.id || provider.provider || 'unknown',
+      id: provider.id || '',
+      instanceKey,
       model: provider.model || '',
       baseURL: provider.baseURL || '',
       state: ['available', 'unavailable', 'unknown'].includes(probe?.state) ? probe.state : 'unknown',
@@ -87,7 +101,8 @@ async function ringProvider(providerInput, options = {}) {
   } catch (error) {
     return {
       provider: provider.provider || provider.id || 'unknown',
-      id: provider.id || provider.provider || 'unknown',
+      id: provider.id || '',
+      instanceKey,
       model: provider.model || '',
       baseURL: provider.baseURL || '',
       state: 'unknown',
@@ -112,24 +127,13 @@ async function ringProviders(providers = [], options = {}) {
 }
 
 function filterProvidersByDoorbell(providers = [], report = {}) {
-  const unavailableKeys = new Set((report.unavailable || []).flatMap((item) => [
-    item.id,
-    item.provider,
-    `${item.provider}|${item.baseURL}|${item.model}`,
-  ].filter(Boolean)));
-  return (Array.isArray(providers) ? providers : []).filter((provider) => {
-    const normalized = normalizeProvider(provider);
-    const keys = [
-      normalized.id,
-      normalized.provider,
-      `${normalized.provider}|${normalized.baseURL}|${normalized.model}`,
-    ].filter(Boolean);
-    return !keys.some((key) => unavailableKeys.has(key));
-  });
+  const unavailableKeys = new Set((report.unavailable || []).map((item) => item.instanceKey).filter(Boolean));
+  return (Array.isArray(providers) ? providers : []).filter((provider) => !unavailableKeys.has(providerInstanceKey(provider)));
 }
 
 module.exports = {
   filterProvidersByDoorbell,
+  providerInstanceKey,
   ringProvider,
   ringProviders,
 };
