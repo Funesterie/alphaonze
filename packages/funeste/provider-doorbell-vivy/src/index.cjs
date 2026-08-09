@@ -9,6 +9,15 @@ function clean(value, max = 240) {
   return String(value ?? '').replace(/[\r\n\t]+/g, ' ').trim().slice(0, max);
 }
 
+function timeoutResult(promise, timeoutMs) {
+  const bounded = Math.max(100, Math.min(5000, Number(timeoutMs || 1200) || 1200));
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve({ doorbellTimeout: true }), bounded);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 async function fetchProbe(url, options = {}) {
   const timeoutMs = Math.max(100, Math.min(5000, Number(options.timeoutMs || 1200) || 1200));
   const controller = typeof AbortController === 'function' ? new AbortController() : null;
@@ -16,7 +25,6 @@ async function fetchProbe(url, options = {}) {
   try {
     const response = await fetch(url, {
       method: 'GET',
-      headers: options.headers || {},
       ...(controller ? { signal: controller.signal } : {}),
     });
     return response;
@@ -28,26 +36,55 @@ async function fetchProbe(url, options = {}) {
   }
 }
 
+function classifyAuthenticatedError(error) {
+  const status = Number(error?.status || error?.response?.status || 0) || 0;
+  if ([401, 402, 403, 404, 409, 423, 429].includes(status)) {
+    return { state: 'unavailable', reason: `http_${status}`, status };
+  }
+  return { state: 'unknown', reason: status ? `http_${status}` : clean(error?.code || error?.message || 'probe_error', 120), status: status || undefined };
+}
+
 function vivyProbeForBundle(bundle = {}) {
   const provider = clean(bundle.provider, 40).toLowerCase();
   const baseURL = clean(bundle.baseURL, 300).replace(/\/$/, '');
-  const apiKey = bundle.apiKey;
 
-  if (provider === 'ollama' || provider === 'ollama_cloud') {
+  if (provider === 'ollama') {
     return async (_provider, options = {}) => {
       if (!baseURL) return { state: 'unknown', reason: 'missing_base_url' };
-      const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
-      const response = await fetchProbe(`${baseURL}/api/tags`, { ...options, headers });
+      const response = await fetchProbe(`${baseURL}/api/tags`, options);
       if (!response) return { state: 'unknown', reason: 'probe_timeout' };
       if (response.ok) return { state: 'available', reason: `http_${response.status}`, status: response.status };
-      if ([401, 402, 403, 404, 423, 429].includes(response.status)) {
+      if ([404, 423, 429].includes(response.status)) {
         return { state: 'unavailable', reason: `http_${response.status}`, status: response.status };
       }
       return { state: 'unknown', reason: `http_${response.status}`, status: response.status };
     };
   }
 
-  return undefined;
+  if (provider === 'ollama_cloud') {
+    // The custom Vivy Ollama Cloud wrapper deliberately keeps the bearer inside
+    // its closure and exposes no cheap authenticated metadata method. Ringing it
+    // anonymously would manufacture a false 401, so keep it fail-open.
+    return async () => ({ state: 'unknown', reason: 'authenticated_probe_not_exposed' });
+  }
+
+  const modelsList = bundle?.client?.models?.list;
+  if (typeof modelsList === 'function') {
+    return async (_provider, options = {}) => {
+      try {
+        const result = await timeoutResult(
+          Promise.resolve(bundle.client.models.list({ limit: 1 }, { maxRetries: 0 })),
+          options.timeoutMs
+        );
+        if (result?.doorbellTimeout) return { state: 'unknown', reason: 'probe_timeout' };
+        return { state: 'available', reason: 'authenticated_models_ok' };
+      } catch (error) {
+        return classifyAuthenticatedError(error);
+      }
+    };
+  }
+
+  return async () => ({ state: 'unknown', reason: 'authenticated_probe_not_exposed' });
 }
 
 function toDoorbellProvider(bundle = {}) {
@@ -55,7 +92,6 @@ function toDoorbellProvider(bundle = {}) {
     provider: clean(bundle.provider || 'unknown', 40),
     baseURL: clean(bundle.baseURL, 300),
     model: clean(bundle.model, 160),
-    apiKey: bundle.apiKey,
     probe: vivyProbeForBundle(bundle),
   };
 }
