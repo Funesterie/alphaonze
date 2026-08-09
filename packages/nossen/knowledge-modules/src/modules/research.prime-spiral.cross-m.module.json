@@ -122,7 +122,6 @@
   },
   "impacts": {
     "research": "Evite de perdre le composite croix horaire plus M et rend visible le chaînon mathematique manquant.",
-    "audio": "Interdit de pretendre que la boussole symbolique est deja cablee au DSP V10/V11.",
-    "patent": "Reserve l'originalite eventuelle a T_M, son ordre, sa transduction et un effet technique mesure."
+    "audio": "Interdit de pretendre que la boussole symbolique est deja cablee au DSP V10/V11."
   }
 }
