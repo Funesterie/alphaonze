@@ -137,7 +137,7 @@
     "@nossen/nezlephant": "^2.0.2",
     "@nossen/qflush": "^2.0.1",
     "@nossen/rome": "^2.0.3",
-    "@nossen/scentgate": "2.1.0",
+    "@nossen/scentgate": "^2.2.0",
     "@nossen/scream": "^2.0.2",
     "@nossen/spyder": "^2.0.2",
     "@nossen/zen": "0.1.3",
