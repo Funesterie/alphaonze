@@ -1,6 +1,6 @@
 {
   "name": "@nossen/knowledge-modules",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Public NOSSEN knowledge modules: persona canon, temporal gravity constants, pulsar colour palette.",
   "license": "UNLICENSED",
   "type": "commonjs",
