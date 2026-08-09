@@ -1539,6 +1539,21 @@ function buildVivyLlmDeadlineError() {
   const error = new Error('vivy_llm_deadline_exceeded');
   error.code = 'vivy_llm_deadline_exceeded';
   error.status = 504;
+  // Marque l'origine: c'est NOUS qui coupons, pas le fournisseur. Sans ce drapeau,
+  // le journal ecrivait « failed status=504 » et faisait accuser openrouter, gemini,
+  // deepseek et together d'etre en panne alors qu'ils n'avaient jamais eu le temps
+  // de repondre. Le diagnostic du 09/08 a mis des semaines a cause de ce message.
+  error.selfInflicted = true;
+  return error;
+}
+
+/** Coupure de NOTRE fait, sur la fenetre allouee a une tentative precise. */
+function buildVivyLlmAttemptTimeoutError(attemptTimeoutMs) {
+  const error = new Error('vivy_llm_attempt_timeout');
+  error.code = 'vivy_llm_attempt_timeout';
+  error.status = 504;
+  error.selfInflicted = true;
+  error.attemptTimeoutMs = Number(attemptTimeoutMs) || 0;
   return error;
 }
 
@@ -1558,7 +1573,7 @@ async function createVivyBundleCompletion(bundle, request, options = {}) {
   const timeoutPromise = new Promise((_, reject) => { rejectTimeout = reject; });
   const timer = setTimeout(() => {
     try { controller?.abort(); } catch (_) {}
-    rejectTimeout?.(buildVivyLlmDeadlineError());
+    rejectTimeout?.(buildVivyLlmAttemptTimeoutError(attemptTimeoutMs));
   }, attemptTimeoutMs);
   try {
     const completionPromise = bundle.client.chat.completions.create({
@@ -1639,12 +1654,24 @@ async function createVivyChatCompletion(llmBundles, request, options = {}) {
           status
         );
       }
-      console.warn(
-        '[vivy-chat] provider=%s model=%s failed status=%s; trying next provider',
-        bundle.provider,
-        bundle.model,
-        status || 'exception'
-      );
+      // Distinguer « le fournisseur a refuse » de « nous l'avons coupe ». Les deux
+      // s'ecrivaient « failed status=504 », ce qui a fait chercher six pannes
+      // simultanees la ou une seule fenetre trop courte expliquait tout.
+      if (error?.selfInflicted) {
+        console.warn(
+          '[vivy-chat] provider=%s model=%s coupe par nous apres %dms (fenetre allouee); trying next provider',
+          bundle.provider,
+          bundle.model,
+          Number(error.attemptTimeoutMs) || 0
+        );
+      } else {
+        console.warn(
+          '[vivy-chat] provider=%s model=%s failed status=%s; trying next provider',
+          bundle.provider,
+          bundle.model,
+          status || 'exception'
+        );
+      }
     }
   }
   throw lastError || new Error('vivy_llm_unavailable');
@@ -7968,8 +7995,15 @@ async function buildVivyAiChat(input, req) {
       // cascade: ollama_cloud puis cerbere consomment tout, deepseek/together/openrouter
       // -- qui repondent -- ne sont jamais atteints. On lui laisse sa chance, pas la
       // totalite du temps.
-      largeLyricsAttemptTimeoutMs: Math.max(10000, Number(process.env.VIVY_NOSSEN_120B_TIMEOUT_MS || 35000) || 35000),
-      attemptTimeoutMs: Math.max(3000, Number(process.env.VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS || 8000) || 8000),
+      largeLyricsAttemptTimeoutMs: Math.max(10000, Number(process.env.VIVY_NOSSEN_120B_TIMEOUT_MS || 25000) || 25000),
+      // 8 s pour ecrire des paroles completes: aucun modele ne tient ce delai. Les
+      // journaux du 09/08 montrent openrouter, gemini, deepseek, together et openai
+      // coupes a exactement 8 s chacun, cinq echecs par construction, jamais une
+      // panne. Une tentative trop courte pour aboutir est pire que pas de tentative:
+      // elle consomme le budget ET garantit l'echec. Fenetre LLM de 72 s (92 s de
+      // requete moins 20 s reserves a Suno): 25 s au gros modele puis 22 s chacun,
+      // soit trois chances reelles au lieu de six simulacres.
+      attemptTimeoutMs: Math.max(3000, Number(process.env.VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS || 22000) || 22000),
     } : {});
     llmBundle = completionResult.bundle;
     const completion = completionResult.completion;
@@ -8010,8 +8044,15 @@ async function buildVivyAiChat(input, req) {
       // cascade: ollama_cloud puis cerbere consomment tout, deepseek/together/openrouter
       // -- qui repondent -- ne sont jamais atteints. On lui laisse sa chance, pas la
       // totalite du temps.
-      largeLyricsAttemptTimeoutMs: Math.max(10000, Number(process.env.VIVY_NOSSEN_120B_TIMEOUT_MS || 35000) || 35000),
-            attemptTimeoutMs: Math.max(3000, Number(process.env.VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS || 8000) || 8000),
+      largeLyricsAttemptTimeoutMs: Math.max(10000, Number(process.env.VIVY_NOSSEN_120B_TIMEOUT_MS || 25000) || 25000),
+            // 8 s pour ecrire des paroles completes: aucun modele ne tient ce delai. Les
+      // journaux du 09/08 montrent openrouter, gemini, deepseek, together et openai
+      // coupes a exactement 8 s chacun, cinq echecs par construction, jamais une
+      // panne. Une tentative trop courte pour aboutir est pire que pas de tentative:
+      // elle consomme le budget ET garantit l'echec. Fenetre LLM de 72 s (92 s de
+      // requete moins 20 s reserves a Suno): 25 s au gros modele puis 22 s chacun,
+      // soit trois chances reelles au lieu de six simulacres.
+      attemptTimeoutMs: Math.max(3000, Number(process.env.VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS || 22000) || 22000),
           });
           _vivyLlmLatency += Date.now() - alternateStart;
           const alternateRaw = cleanText(alternateCompletion?.choices?.[0]?.message?.content, songResponseMaxChars);
@@ -8032,12 +8073,22 @@ async function buildVivyAiChat(input, req) {
           );
         } catch (error) {
           _vivyLlmLatency += Date.now() - alternateStart;
-          console.warn(
-            '[vivy-songcraft] provider=%s model=%s failed status=%s; trying next provider',
-            alternateBundle.provider || getVivyProviderFromBaseUrl(alternateBundle.baseURL || ''),
-            alternateBundle.model,
-            Number(error?.status || error?.response?.status || 0) || 'exception'
-          );
+          const fournisseur = alternateBundle.provider || getVivyProviderFromBaseUrl(alternateBundle.baseURL || '');
+          if (error?.selfInflicted) {
+            console.warn(
+              '[vivy-songcraft] provider=%s model=%s coupe par nous apres %dms (fenetre allouee); trying next provider',
+              fournisseur,
+              alternateBundle.model,
+              Number(error.attemptTimeoutMs) || 0
+            );
+          } else {
+            console.warn(
+              '[vivy-songcraft] provider=%s model=%s failed status=%s; trying next provider',
+              fournisseur,
+              alternateBundle.model,
+              Number(error?.status || error?.response?.status || 0) || 'exception'
+            );
+          }
         }
       }
       return null;

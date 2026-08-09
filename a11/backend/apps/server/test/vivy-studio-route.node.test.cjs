@@ -6385,14 +6385,16 @@ test('Hetzner deploy wires local-first Ollama with a cloud provider domino', () 
   assert.match(deploySource, /VIVY_NOSSEN_LARGE_MODEL_FIRST:\s*\$\{VIVY_NOSSEN_LARGE_MODEL_FIRST:-true\}/);
   assert.match(deploySource, /VIVY_NOSSEN_120B_MAX_PROMPT_CHARS:\s*\$\{VIVY_NOSSEN_120B_MAX_PROMPT_CHARS:-22000\}/);
   assert.match(deploySource, /VIVY_NOSSEN_120B_MAX_TOKENS:\s*\$\{VIVY_NOSSEN_120B_MAX_TOKENS:-2400\}/);
-  // 35 s et non 60: sur un budget VIVY_NOSSEN_LLM_BUDGET_MS de 80 s, le gros modele
+  // 25 s et non 60: sur un budget VIVY_NOSSEN_LLM_BUDGET_MS de 80 s, le gros modele
   // essaye en premier en prenait 60 et les fournisseurs suivants tombaient tous en
   // faux 504 (deadline maison, pas panne amont). Le correctif 979a0d72 avait baisse le
   // defaut du CODE, mais ce script reimposait 60000 a chaque deploiement -- il n'avait
   // donc jamais pris effet. Les trois ecritures doivent rester alignees.
-  assert.match(deploySource, /VIVY_NOSSEN_120B_TIMEOUT_MS:\s*\$\{VIVY_NOSSEN_120B_TIMEOUT_MS:-35000\}/);
-  assert.match(deploySource, /VIVY_NOSSEN_120B_TIMEOUT_MS\s*=\s*"35000"/);
-  assert.match(deploySource, /printf 'VIVY_NOSSEN_120B_TIMEOUT_MS=35000/);
+  // Abaisse de 35 s a 25 s le 09/08: il est souvent en 429 ou en cooldown, et le temps
+  // qu'il monopolise manquait aux fournisseurs qui, eux, repondent.
+  assert.match(deploySource, /VIVY_NOSSEN_120B_TIMEOUT_MS:\s*\$\{VIVY_NOSSEN_120B_TIMEOUT_MS:-25000\}/);
+  assert.match(deploySource, /VIVY_NOSSEN_120B_TIMEOUT_MS\s*=\s*"25000"/);
+  assert.match(deploySource, /printf 'VIVY_NOSSEN_120B_TIMEOUT_MS=25000/);
   assert.match(deploySource, /VIVY_NOSSEN_FAST_LOCAL_ONLY:\s*\$\{VIVY_NOSSEN_FAST_LOCAL_ONLY:-true\}/);
   // Le bloc environment: du compose ECRASE ce que fournit env_file:. Tant que ce defaut
   // valait false, aucune modification de a11.env ne pouvait rendre la main a Vivy: le
@@ -6401,7 +6403,13 @@ test('Hetzner deploy wires local-first Ollama with a cloud provider domino', () 
   assert.match(deploySource, /VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS:\s*\$\{VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS:-40000\}/);
   assert.match(deploySource, /VIVY_NOSSEN_LOCAL_MAX_TOKENS:\s*\$\{VIVY_NOSSEN_LOCAL_MAX_TOKENS:-2200\}/);
   assert.match(deploySource, /VIVY_NOSSEN_LLM_BUDGET_MS:\s*\$\{VIVY_NOSSEN_LLM_BUDGET_MS:-80000\}/);
-  assert.match(deploySource, /VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS:\s*\$\{VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS:-8000\}/);
+  // 22 s et non 8: a 8 s, aucun fournisseur n'avait le temps d'ecrire des paroles.
+  // Journaux de prod du 09/08, une seule demande NOSSEN -- openrouter, gemini,
+  // deepseek, together et openai coupes a exactement 8 s d'intervalle, cinq echecs
+  // par construction puis 502 chez Cloudflare. Les trois ecritures restent alignees.
+  assert.match(deploySource, /VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS:\s*\$\{VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS:-22000\}/);
+  assert.match(deploySource, /VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS\s*=\s*"22000"/);
+  assert.match(deploySource, /printf 'VIVY_NOSSEN_CLOUD_ATTEMPT_TIMEOUT_MS=22000/);
   assert.match(deploySource, /VIVY_NOSSEN_EMERGENCY_SONGCRAFT:\s*\$\{VIVY_NOSSEN_EMERGENCY_SONGCRAFT:-true\}/);
   assert.match(deploySource, /VIVY_ACESTEP_LYRICS_MAX_CHARS:\s*\$\{VIVY_ACESTEP_LYRICS_MAX_CHARS:-24000\}/);
   assert.match(deploySource, /ACESTEP_KSAMPLER_CFG:\s*\$\{ACESTEP_KSAMPLER_CFG:-1\}/);
