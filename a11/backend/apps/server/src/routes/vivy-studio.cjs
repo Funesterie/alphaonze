@@ -86,6 +86,12 @@ const {
 } = require('../music/persona-recovery.cjs');
 const { runMissingVoiceSamples } = require('../music/voice-sample-runner.cjs');
 const {
+  sonnerTous,
+  ordonnerParDisponibilite,
+  resumerSonnerie,
+  SONNERIE_TIMEOUT_MS,
+} = require('../llm/provider-doorbell.cjs');
+const {
   runExpiredPersonaRevival,
   listRevivableVoices,
 } = require('../music/persona-revival-runner.cjs');
@@ -1609,7 +1615,42 @@ async function createVivyChatCompletion(llmBundles, request, options = {}) {
       )),
     };
   }
-  for (const bundle of llmBundles) {
+
+  // La sonnette. On demande a tous les fournisseurs en meme temps « tu es la ? »
+  // avant de s'engager sur l'un d'eux. GET /models ne coute aucun jeton et repond en
+  // quelques centaines de millisecondes; deux secondes et demie suffisent pour tout
+  // le monde, en parallele. Sans elle, on decouvrait les indisponibilites une par
+  // une, au prix d'une fenetre complete a chaque fois -- le 502 du 09/08.
+  //
+  // On reordonne seulement: ceux qui repondent passent devant, les muets reculent.
+  // Aucun n'est retire, parce qu'une passerelle peut refuser /models et accepter une
+  // generation, et se retrouver sans personne serait pire.
+  let ordreBundles = llmBundles;
+  const sonnetteActive = !['0', 'false', 'off', 'no'].includes(
+    String(process.env.VIVY_LLM_DOORBELL_ENABLED || 'true').trim().toLowerCase()
+  );
+  if (sonnetteActive && Array.isArray(llmBundles) && llmBundles.length > 1) {
+    const restantMs = Number(options.deadlineAt || 0) - Date.now();
+    const fenetre = Math.max(800, Math.min(
+      Number(process.env.VIVY_LLM_DOORBELL_TIMEOUT_MS || SONNERIE_TIMEOUT_MS) || SONNERIE_TIMEOUT_MS,
+      // Jamais plus d'un dixieme du budget restant: la sonnette renseigne, elle ne
+      // doit pas devenir elle-meme une depense.
+      Math.floor(restantMs / 10)
+    ));
+    try {
+      const verdicts = await sonnerTous(llmBundles, { timeoutMs: fenetre });
+      ordreBundles = ordonnerParDisponibilite(llmBundles, verdicts);
+      const aRecule = ordreBundles[0] !== llmBundles[0];
+      if (aRecule) {
+        console.info('[vivy-doorbell] %s', resumerSonnerie(llmBundles, verdicts));
+      }
+    } catch (error) {
+      // Une sonnette cassee ne doit jamais empecher de passer commande.
+      console.warn('[vivy-doorbell] sonnerie impossible: %s', String(error?.message || error).slice(0, 120));
+    }
+  }
+
+  for (const bundle of ordreBundles) {
     if (options.deadlineAt && Date.now() >= Number(options.deadlineAt) - 500) {
       lastError = buildVivyLlmDeadlineError();
       break;
