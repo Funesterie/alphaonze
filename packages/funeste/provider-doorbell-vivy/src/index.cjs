@@ -68,6 +68,27 @@ function vivyProbeForBundle(bundle = {}) {
     return async () => ({ state: 'unknown', reason: 'authenticated_probe_not_exposed' });
   }
 
+  const countTokens = bundle?.client?.models?.countTokens;
+  if (typeof countTokens === 'function') {
+    return async (_provider, options = {}) => {
+      const model = clean(bundle.model, 160);
+      if (!model) return { state: 'unknown', reason: 'missing_model' };
+      try {
+        const result = await timeoutResult(
+          Promise.resolve(bundle.client.models.countTokens({
+            model,
+            contents: [{ role: 'user', parts: [{ text: 'ping' }] }],
+          })),
+          options.timeoutMs
+        );
+        if (result?.doorbellTimeout) return { state: 'unknown', reason: 'probe_timeout' };
+        return { state: 'available', reason: 'authenticated_count_tokens_ok' };
+      } catch (error) {
+        return classifyAuthenticatedError(error);
+      }
+    };
+  }
+
   const modelsList = bundle?.client?.models?.list;
   if (typeof modelsList === 'function') {
     return async (_provider, options = {}) => {
