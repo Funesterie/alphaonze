@@ -37,24 +37,58 @@ const { authorizeCerbereMega } = require('./cerbere-mega.cjs');
  * Table des cassettes. Déterministe, explicite, relue d'un coup d'oeil.
  * `capability` est la permission Cerbère exigée pour obtenir une pièce.
  */
+/**
+ * Deux modes d'authentification, et ils ne se mélangent pas.
+ *
+ *   delegated   — jeton de session de l'utilisateur, pris dans le coffre. Il a un
+ *                 /me, donc /me/drive fonctionne.
+ *   application — jeton client_credentials du serveur. Il n'a AUCUN /me: sans
+ *                 utilisateur, il n'y a pas de « moi ». Toute URL doit passer par
+ *                 un driveId explicite, sinon Graph rend 400 sur chaque appel.
+ *
+ * Cette distinction a coûté un bug: la première version du passeur écrivait
+ * /me/drive pour les deux, alors que la documentation de la sonde disait déjà
+ * l'inverse deux fichiers plus loin.
+ */
 const CASSETTES = Object.freeze({
   perso: Object.freeze({
-    label: 'OneDrive personnel',
+    label: 'OneDrive personnel (session utilisateur)',
+    auth: 'delegated',
     provider: 'microsoft',
     capability: 'oauth:microsoft:personal',
-    base: 'https://graph.microsoft.com/v1.0/me/drive/root:',
+    base: () => 'https://graph.microsoft.com/v1.0/me/drive/root:',
   }),
   entra: Object.freeze({
-    label: 'Drive du locataire Entra',
+    label: 'Bibliothèque du locataire Entra (app-only)',
+    auth: 'application',
     provider: 'microsoft',
     capability: 'files:own',
-    base: 'https://graph.microsoft.com/v1.0/me/drive/root:',
+    // Le driveId est configuré, jamais deviné: le découvrir à chaud ferait dépendre
+    // une écriture d'un listing qui peut changer d'ordre.
+    base: (env) => {
+      const id = String(env.JUKEBOX_ENTRA_DRIVE_ID || '').trim();
+      return id ? `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(id)}/root:` : '';
+    },
+  }),
+  // Compartiment réservé pour plus tard: un site SharePoint dédié à K44, afin de
+  // séparer les rôles au lieu de donner à tout le monde le même coffre. Inerte tant
+  // que JUKEBOX_K44_DRIVE_ID n'est pas posé.
+  k44: Object.freeze({
+    label: 'SharePoint K44 (compartiment dédié)',
+    auth: 'application',
+    provider: 'microsoft',
+    capability: 'files:own',
+    base: (env) => {
+      const id = String(env.JUKEBOX_K44_DRIVE_ID || '').trim();
+      return id ? `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(id)}/root:` : '';
+    },
   }),
   google: Object.freeze({
-    label: 'Google Drive',
+    label: 'Google Drive (session utilisateur)',
+    auth: 'delegated',
     provider: 'google',
     capability: 'oauth:google:personal',
-    base: 'https://www.googleapis.com/drive/v3',
+    base: () => 'https://www.googleapis.com/drive/v3',
   }),
 });
 
@@ -171,10 +205,26 @@ function createJukebox({ vault, trace = null, seenNonces = new Set(), env = proc
     const cassette = resolveCassette(payload.drive);
     if (!cassette) return { ok: false, error: 'jukebox_unknown_drive' };
 
+    // L'URL de base doit exister AVANT de chercher une clef: une cassette
+    // applicative sans driveId configuré ne mène nulle part, autant le dire tout de
+    // suite plutot que d'aller chercher un jeton pour rien.
+    const racine = typeof cassette.base === 'function' ? cassette.base(env) : String(cassette.base || '');
+    if (!racine) {
+      tracer({ event: 'capability.no_route', agent: payload.agent, drive: payload.drive, zone: payload.zone, action: payload.action, outcome: 'drive_id_absent' });
+      return { ok: false, error: 'jukebox_drive_not_configured' };
+    }
+
     let jeton = '';
     try {
-      const tokens = await vault?.getSessionProviderTokens?.({ sessionId, provider: cassette.provider });
-      jeton = String(tokens?.accessToken || tokens?.access_token || '').trim();
+      if (cassette.auth === 'application') {
+        // Jeton serveur: pas d'utilisateur, donc pas de session a fournir.
+        const { getGraphToken } = require('../auth/azure-graph-client.cjs');
+        const resultat = await getGraphToken(env);
+        jeton = String(typeof resultat === 'string' ? resultat : (resultat?.accessToken || '')).trim();
+      } else {
+        const tokens = await vault?.getSessionProviderTokens?.({ sessionId, provider: cassette.provider });
+        jeton = String(tokens?.accessToken || tokens?.access_token || '').trim();
+      }
     } catch (_) {
       jeton = '';
     }
@@ -191,7 +241,7 @@ function createJukebox({ vault, trace = null, seenNonces = new Set(), env = proc
       if (suffixe.includes('..') || suffixe.includes('\0')) {
         throw Object.assign(new Error('chemin hors zone'), { code: 'jukebox_path_escape' });
       }
-      const cible = `${cassette.base}${payload.zone}${suffixe ? `/${suffixe}` : ''}`;
+      const cible = `${racine}${payload.zone}${suffixe ? `/${suffixe}` : ''}`;
       const entetes = { ...(init.headers || {}), authorization: `Bearer ${jeton}` };
       return fetch(cible, { ...init, headers: entetes });
     };

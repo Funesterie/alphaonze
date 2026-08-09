@@ -133,4 +133,48 @@ function formatGraphCapabilities(rapport) {
   return lignes;
 }
 
-module.exports = { probeGraphCapabilities, formatGraphCapabilities, SONDES };
+/**
+ * Liste les disques atteignables en mode application.
+ *
+ * Necessaire parce qu'un jeton applicatif n'a PAS de /me: il faut un identifiant
+ * de disque explicite pour construire la moindre URL. C'est la donnee qui manque
+ * au passeur, et l'oublier donne un 400 sur chaque appel.
+ *
+ * Ne renvoie que id / name / driveType / owner affichable — jamais d'adresse
+ * courriel ni d'identifiant d'utilisateur.
+ */
+async function listGraphDrives(env = process.env, { fetchToken = getGraphToken } = {}) {
+  let jeton = '';
+  try {
+    const resultat = await fetchToken(env);
+    jeton = typeof resultat === 'string' ? resultat : String(resultat?.accessToken || '');
+  } catch (error) {
+    return { ok: false, error: String(error?.message || 'echec_jeton').slice(0, 60), drives: [] };
+  }
+  if (!jeton) return { ok: false, error: 'jeton_vide', drives: [] };
+
+  const controleur = new AbortController();
+  const minuteur = setTimeout(() => { try { controleur.abort(); } catch (_) {} }, TIMEOUT_MS);
+  try {
+    const reponse = await fetch(`${GRAPH_BASE}/drives?$select=id,name,driveType`, {
+      headers: { authorization: `Bearer ${jeton}`, accept: 'application/json' },
+      signal: controleur.signal,
+    });
+    const corps = await reponse.json().catch(() => ({}));
+    if (!reponse.ok) {
+      return { ok: false, error: String(corps?.error?.code || `statut_${reponse.status}`).slice(0, 60), drives: [] };
+    }
+    const drives = (Array.isArray(corps?.value) ? corps.value : []).map((d) => ({
+      id: String(d?.id || ''),
+      name: String(d?.name || '').slice(0, 80),
+      driveType: String(d?.driveType || ''),
+    })).filter((d) => d.id);
+    return { ok: true, drives };
+  } catch (error) {
+    return { ok: false, error: error?.name === 'AbortError' ? 'timeout' : 'reseau', drives: [] };
+  } finally {
+    clearTimeout(minuteur);
+  }
+}
+
+module.exports = { probeGraphCapabilities, formatGraphCapabilities, listGraphDrives, SONDES };

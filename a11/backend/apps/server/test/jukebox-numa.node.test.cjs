@@ -38,7 +38,35 @@ function demande(zone = '/Vivy/Productions', action = 'write', drive = 'perso') 
 
 test('les cassettes sont explicites et déterministes', () => {
   const noms = listCassettes().map((c) => c.drive).sort();
-  assert.deepEqual(noms, ['entra', 'google', 'perso']);
+  assert.deepEqual(noms, ['entra', 'google', 'k44', 'perso']);
+});
+
+test('une cassette app-only sans driveId configuré refuse au lieu d appeler /me', () => {
+  // Un jeton applicatif n'a pas de /me. Sans driveId, il n'y a aucune URL valide
+  // a construire: mieux vaut le dire que d'envoyer une requete qui rendra 400.
+  const { CASSETTES } = require('../src/security/jukebox-numa.cjs');
+  assert.equal(CASSETTES.entra.auth, 'application');
+  assert.equal(CASSETTES.entra.base({}), '', 'sans JUKEBOX_ENTRA_DRIVE_ID, aucune racine');
+  assert.match(CASSETTES.entra.base({ JUKEBOX_ENTRA_DRIVE_ID: 'b!abc' }), /\/drives\/b!abc\/root:$/);
+  // Et surtout: jamais /me sur une cassette applicative.
+  assert.ok(!CASSETTES.entra.base({ JUKEBOX_ENTRA_DRIVE_ID: 'b!abc' }).includes('/me/'));
+  assert.ok(!CASSETTES.k44.base({ JUKEBOX_K44_DRIVE_ID: 'b!k44' }).includes('/me/'));
+});
+
+test('les cassettes déléguées gardent /me, qui est correct pour un jeton de session', () => {
+  const { CASSETTES } = require('../src/security/jukebox-numa.cjs');
+  assert.equal(CASSETTES.perso.auth, 'delegated');
+  assert.match(CASSETTES.perso.base({}), /\/me\/drive\/root:$/);
+});
+
+test('k44 est réservé mais inerte tant que son driveId n est pas posé', async () => {
+  // Compartiment prévu pour séparer les rôles plus tard. Il ne doit surtout pas
+  // retomber silencieusement sur le disque d'à côté.
+  const jukebox = createJukebox({ vault: coffreFactice(), env: ENV });
+  const { coin } = await jukebox.requestCoin(demande('/K44/Docs', 'write', 'k44'), { cerbereState: SESSION_OK });
+  const sortie = await jukebox.withDrive(coin, { drive: 'k44', zone: '/K44/Docs', action: 'write' }, async () => 'x');
+  assert.equal(sortie.ok, false);
+  assert.equal(sortie.error, 'jukebox_drive_not_configured');
 });
 
 test('Cerbère décide avant la forge: pas de session, pas de pièce', async () => {
