@@ -8907,7 +8907,7 @@ function buildVivySunoPayload(input = {}, req = null) {
   // un artiste officiel depuis la configuration -- c'est elle qui envoyait une persona
   // morte et declenchait le 553.
   const useVerifiedSunoVoice = preserveSelectedVoice
-    && artistCast.count === 1
+    && (artistCast.count === 1 || Boolean(catalogVoiceId))
     && (Boolean(catalogVoiceId) || Boolean(personalSunoVoice?.voiceId) || Boolean(explicitVoiceId))
     && Boolean(verifiedVoiceId)
     && !forceInstrumental;
