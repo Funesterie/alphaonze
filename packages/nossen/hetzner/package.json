@@ -1,0 +1,8 @@
+{
+  "name": "@nossen/hetzner",
+  "version": "0.1.0",
+  "description": "Hetzner Robot API client for the Funesterie AIs - manage EX44 (dedicated) over 443: server info, reboot, rescue, reverse DNS. No SSH.",
+  "main": "src/index.cjs",
+  "bin": { "nossen-hetzner": "bin/hetzner.cjs" },
+  "license": "MIT"
+}

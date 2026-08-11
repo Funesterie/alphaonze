@@ -117,3 +117,7 @@ Recurring plans (trimestriel, resiliable a tout moment):
 - Premium 29.99 EUR — Stripe: https://buy.stripe.com/00w7sL6am3HW1p98qo7Re05 · PayPal: https://www.paypal.com/ncp/payment/YXRY5G9QMKRNY
 - Fondateur 29.99 EUR — Stripe: https://buy.stripe.com/dRmeVdeGSemA3xh7mk7Re03 · PayPal: https://www.paypal.com/ncp/payment/DJ7HKGB8PLYJ4
 
+
+---
+
+Part of [`@nossen/all-in-one`](https://www.npmjs.com/package/@nossen/all-in-one) — the whole NOSSEN / Funesterie AI toolkit in one import.
