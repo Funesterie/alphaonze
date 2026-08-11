@@ -55,6 +55,10 @@ node_modules
 # Secrets & credentials — jamais committer
 secrets/
 .codex-tmp/
+# Meme intention que .codex-tmp/ mais pour les fichiers a plat que les scripts de
+# deploiement laissent a la racine (.codex-tmp-dep-blue.sh, .codex-tmp-dep12.txt) :
+# le motif en dossier ne les attrapait pas, et ils portent des chemins de secrets.
+.codex-tmp*
 credentials.routes.js
 credentials.store.js
 runtime/auth/
