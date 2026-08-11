@@ -13,11 +13,27 @@ const SOUNDCLOUD_TOKEN_URL = 'https://secure.soundcloud.com/oauth/token';
 const SOUNDCLOUD_API_BASE = 'https://api.soundcloud.com';
 const DEFAULT_SOCIAL_RSS_ALLOWED_HOSTS = ['feeds.soundcloud.com', 'soundcloud.com', 'www.soundcloud.com'];
 
+/**
+ * Perimetres YouTube.
+ *
+ * `youtube.upload` ajoute le 11/08/2026 : sans lui, `videos.insert` repond 403
+ * `insufficientPermissions` (voir src/social/youtube-upload.cjs). Il est
+ * *sensible*, pas *restreint* — il n'entraine donc pas l'evaluation de securite
+ * par un tiers qu'imposerait un perimetre restreint comme gmail.readonly.
+ *
+ * A savoir, et ce n'est pas une question de perimetre : tout envoi depuis un
+ * projet API non audite est VERROUILLE EN PRIVE par YouTube. L'audit de
+ * conformite YouTube est distinct de la verification OAuth.
+ *
+ * Un jeton emis avant cet ajout ne porte pas le nouveau perimetre : il faut
+ * reconsentir, sinon l'envoi echoue avec un jeton pourtant valide.
+ */
 const DEFAULT_YOUTUBE_SCOPES = [
   'openid',
   'email',
   'profile',
   'https://www.googleapis.com/auth/youtube.readonly',
+  'https://www.googleapis.com/auth/youtube.upload',
 ];
 
 const DEFAULT_META_SCOPES = [
