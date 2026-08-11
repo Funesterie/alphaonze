@@ -2,20 +2,214 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const {
+  DEFAULT_YOUTUBE_SCOPES,
+  YOUTUBE_PUBLIC_CONTEXT_MIGRATION,
   buildSocialAutopromptRedactedStatus,
   buildProviderAuthUrl,
   buildSocialPromptContextFromItems,
+  ensureSocialSchema,
+  fetchYoutubePublicFeedVideoIds,
+  fetchYoutubePublicVideoItems,
   formatSocialContextForPrompt,
   normalizeProvider,
   resolveProviderConfig,
+  runSocialDataMigrations,
 } = require('../src/social/social-autoprompt.cjs');
 const {
   getMetaAccountIdentity,
   hasSocialConnectAccess,
   normalizeMetaPageInstagramContext,
 } = require('../src/routes/social-autoprompt.cjs');
+
+test('YouTube ingest ne garde que les metadonnees minimales des videos publiques de la chaine', async () => {
+  const requests = [];
+  const fetchFn = async (input) => {
+    const url = new URL(String(input));
+    requests.push(url);
+    if (url.pathname.endsWith('/channels')) {
+      return { ok: true, json: async () => ({ items: [{
+        id: 'UCchannel-own',
+        snippet: { title: 'Funesterie' },
+      }] }) };
+    }
+    if (url.hostname === 'www.youtube.com' && url.pathname === '/feeds/videos.xml') {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (name) => name === 'content-type' ? 'application/atom+xml' : null },
+        text: async () => `<?xml version="1.0" encoding="UTF-8"?>
+          <feed xmlns:yt="http://www.youtube.com/xml/schemas/2015">
+            <yt:channelId>channel-own</yt:channelId>
+            ${['pub', 'private', 'unlisted', 'other'].map((videoId) => `<entry><yt:videoId>${videoId}</yt:videoId></entry>`).join('')}
+          </feed>`,
+      };
+    }
+    if (url.pathname.endsWith('/videos')) {
+      const item = (id, channelId, privacyStatus, title) => ({
+        id,
+        snippet: { channelId, title, description: `description-${id}`, tags: ['ne-doit-pas-etre-conserve'] },
+        statistics: { viewCount: '42', likeCount: '999' },
+        status: { privacyStatus },
+      });
+      return { ok: true, json: async () => ({ items: [
+        item('pub', 'UCchannel-own', 'public', 'Titre public'),
+        item('private', 'UCchannel-own', 'private', 'Titre prive'),
+        item('unlisted', 'UCchannel-own', 'unlisted', 'Titre non repertorie'),
+        item('other', 'channel-other', 'public', 'Autre chaine'),
+      ] }) };
+    }
+    throw new Error(`requete YouTube inattendue: ${url.pathname}`);
+  };
+
+  const result = await fetchYoutubePublicVideoItems('token-test', { limit: 12, fetchFn });
+  assert.equal(result.channelId, 'UCchannel-own');
+  assert.equal(result.items.length, 1);
+  assert.deepEqual(result.items[0], {
+    externalId: 'pub',
+    itemType: 'video',
+    title: 'Titre public',
+    description: 'description-pub',
+    url: 'https://www.youtube.com/watch?v=pub',
+    publishedAt: null,
+    stats: { viewCount: '42' },
+    commentsSummary: '',
+    raw: { id: 'pub' },
+  });
+  assert.equal(requests.some((url) => url.pathname.endsWith('/commentThreads')), false);
+  assert.equal(requests.some((url) => url.pathname.endsWith('/playlistItems')), false);
+  assert.equal(requests.some((url) => url.pathname.endsWith('/search')), false);
+  const feedRequest = requests.find((url) => url.pathname === '/feeds/videos.xml');
+  assert.equal(feedRequest.hostname, 'www.youtube.com');
+  assert.equal(feedRequest.searchParams.get('channel_id'), 'UCchannel-own');
+  const videosRequest = requests.find((url) => url.pathname.endsWith('/videos'));
+  assert.equal(videosRequest.searchParams.get('part'), 'snippet,statistics,status');
+  assert.match(videosRequest.searchParams.get('fields'), /statistics\(viewCount\)/);
+  assert.match(videosRequest.searchParams.get('fields'), /status\(privacyStatus\)/);
+  const serialized = JSON.stringify(result.items);
+  assert.equal(serialized.includes('ne-doit-pas-etre-conserve'), false);
+  assert.equal(serialized.includes('likeCount'), false);
+  assert.equal(serialized.includes('Titre prive'), false);
+});
+
+test('YouTube social OAuth utilise exactement les deux scopes media et un client dedie', () => {
+  assert.deepEqual(DEFAULT_YOUTUBE_SCOPES, [
+    'https://www.googleapis.com/auth/youtube.readonly',
+    'https://www.googleapis.com/auth/youtube.upload',
+  ]);
+
+  const generalOnly = resolveProviderConfig('youtube', { env: {
+    GOOGLE_CLIENT_ID: 'login-client',
+    GOOGLE_CLIENT_SECRET: 'login-secret',
+    A11_GOOGLE_CLIENT_ID: 'a11-login-client',
+    A11_GOOGLE_CLIENT_SECRET: 'a11-login-secret',
+  } });
+  assert.equal(generalOnly.configured, false);
+  assert.equal(generalOnly.clientId, '');
+  assert.equal(generalOnly.clientSecret, '');
+
+  const dedicated = resolveProviderConfig('youtube', { env: {
+    YOUTUBE_CLIENT_ID: 'youtube-client',
+    YOUTUBE_CLIENT_SECRET: 'youtube-secret',
+    SOCIAL_YOUTUBE_SCOPES: 'openid email profile https://www.googleapis.com/auth/youtube.readonly',
+  } });
+  assert.equal(dedicated.configured, true);
+  assert.deepEqual(dedicated.scopes, DEFAULT_YOUTUBE_SCOPES);
+  const auth = buildProviderAuthUrl('youtube', { env: {
+    SOCIAL_YOUTUBE_CLIENT_ID: 'youtube-client',
+    SOCIAL_YOUTUBE_CLIENT_SECRET: 'youtube-secret',
+  }, state: 'scope-test' });
+  const authUrl = new URL(auth.url);
+  assert.deepEqual(authUrl.searchParams.get('scope').split(' '), DEFAULT_YOUTUBE_SCOPES);
+  assert.equal(authUrl.searchParams.get('include_granted_scopes'), 'false');
+
+  const source = fs.readFileSync(path.join(__dirname, '../src/social/social-autoprompt.cjs'), 'utf8');
+  assert.doesNotMatch(source, /include_granted_scopes['"],\s*['"]true['"]/);
+});
+
+test('le flux public YouTube refuse une redirection hors youtube.com et borne la reponse', async () => {
+  const redirected = async () => ({
+    ok: false,
+    status: 302,
+    headers: { get: (name) => name === 'location' ? 'https://attacker.example/videos.xml?channel_id=channel-own' : null },
+  });
+  await assert.rejects(
+    () => fetchYoutubePublicFeedVideoIds('channel-own', { fetchFn: redirected }),
+    /youtube_public_feed_url_denied/
+  );
+
+  const oversized = async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: (name) => name === 'content-length' ? '4096' : 'application/atom+xml' },
+    text: async () => '<feed/>',
+  });
+  await assert.rejects(
+    () => fetchYoutubePublicFeedVideoIds('channel-own', { fetchFn: oversized, maxBytes: 1024 }),
+    /youtube_public_feed_too_large/
+  );
+});
+
+test('la migration YouTube globale est atomique, multi-utilisateur et idempotente', async () => {
+  const queries = [];
+  const migrationRuns = [];
+  let migrationApplied = false;
+  const db = {
+    async query(sql, params) {
+      const statement = String(sql);
+      queries.push({ sql: statement, params });
+      if (/WITH claimed_migration AS/i.test(statement)) {
+        const applied = !migrationApplied;
+        migrationApplied = true;
+        migrationRuns.push(applied);
+        return { rows: [{
+          applied,
+          deleted_youtube_items: applied ? 7 : 0,
+          deleted_youtube_snapshots: applied ? 3 : 0,
+          deleted_prompt_context: applied ? 5 : 0,
+        }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 0 };
+    },
+  };
+  await ensureSocialSchema(db);
+  await ensureSocialSchema(db);
+
+  const migrationTableQueries = queries.filter((entry) => /CREATE TABLE IF NOT EXISTS social_data_migrations/i.test(entry.sql));
+  const migrationQueries = queries.filter((entry) => /WITH claimed_migration AS/i.test(entry.sql));
+  assert.equal(migrationTableQueries.length, 2);
+  assert.equal(migrationQueries.length, 2);
+  assert.deepEqual(migrationRuns, [true, false]);
+  assert.deepEqual(migrationQueries.map((entry) => entry.params), [
+    [YOUTUBE_PUBLIC_CONTEXT_MIGRATION],
+    [YOUTUBE_PUBLIC_CONTEXT_MIGRATION],
+  ]);
+
+  const migrationSql = migrationQueries[0].sql;
+  assert.match(migrationSql, /INSERT INTO social_data_migrations[\s\S]*ON CONFLICT \(migration_key\) DO NOTHING[\s\S]*RETURNING migration_key/i);
+  assert.match(migrationSql, /DELETE FROM social_items\s+WHERE provider = 'youtube'\s+AND EXISTS \(SELECT 1 FROM claimed_migration\)/i);
+  assert.match(migrationSql, /DELETE FROM social_context_snapshots\s+WHERE provider = 'youtube'\s+AND EXISTS \(SELECT 1 FROM claimed_migration\)/i);
+  assert.match(migrationSql, /DELETE FROM social_prompt_context\s+WHERE EXISTS \(SELECT 1 FROM claimed_migration\)/i);
+  assert.doesNotMatch(migrationSql, /user_id\s*=/i);
+  assert.equal((migrationSql.match(/DELETE FROM /gi) || []).length, 3);
+
+  const ensureSource = ensureSocialSchema.toString();
+  assert.match(ensureSource, /await runSocialDataMigrations\(db\)/);
+  assert.doesNotMatch(runSocialDataMigrations.toString(), /accessToken|reconnect_required|paused|fetchFn/);
+});
+
+test('la page de confidentialite decrit les deux perimetres YouTube et leurs verrous', () => {
+  const privacy = fs.readFileSync(path.join(__dirname, '../../../../frontend/apps/web/public/privacy/index.html'), 'utf8');
+  assert.match(privacy, /youtube\.readonly/);
+  assert.match(privacy, /youtube\.upload/);
+  assert.match(privacy, /confirmation explicite/i);
+  assert.match(privacy, /statut privé par défaut/i);
+  assert.match(privacy, /ne\s+modifie ni ne supprime/i);
+  assert.doesNotMatch(privacy, /Aucune\s+autorisation\s+d'envoi\s+de\s+vidéo\s+n'est\s+demandée/i);
+});
 
 test('social prompt context builds redacted creative guidance from recent items', () => {
   const context = buildSocialPromptContextFromItems([

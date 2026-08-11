@@ -97,3 +97,51 @@ test('prod deploy preserves Suno persona voice ids across blue-green refreshes',
   assert.match(script, /printf 'VIVY_SUNO_MARVIN_VOICE_ID=%s\\n' "\$suno_marvin_voice_id"/);
   assert.match(script, /printf 'VIVY_SUNO_KAEN44_VOICE_ID=%s\\n' "\$suno_k44_voice_id"/);
 });
+
+test('prod deploy proves Caddy health and the exact blue-green build before switching traffic', () => {
+  const script = readDeployScript();
+
+  assert.equal(countNeedle(script, 'caddy_health_ok=0'), 2, 'both deploy paths must initialize the Caddy health result');
+  assert.equal(countNeedle(script, 'caddy_health_ok=1'), 2, 'both deploy paths must record a successful Caddy probe');
+  assert.equal(
+    countNeedle(script, 'if [ "`$caddy_health_ok" != "1" ]; then'),
+    2,
+    'both deploy paths must check the final Caddy health result'
+  );
+  assert.equal(countNeedle(script, 'Caddy healthcheck failed after 30 attempts'), 2);
+  assert.equal(countNeedle(script, 'exit 43'), 2, 'both deploy paths must return a non-zero status after exhausting retries');
+  assert.match(script, /\$BuildCommit -notmatch '\^\[0-9a-fA-F\]\{40\}\$'/);
+  assert.match(script, /\$BuildCommitBase64 = \[Convert\]::ToBase64String\(\[Text\.Encoding\]::ASCII\.GetBytes\(\$BuildCommit\)\)/);
+  assert.match(script, /expected_build_commit_b64='__EXPECTED_BUILD_COMMIT_B64__'/);
+  assert.match(script, /expected_build_commit="`\$\(printf '%s' "`\$expected_build_commit_b64" \| base64 -d\)"/);
+  assert.match(script, /\$remoteDeploy = \$remoteDeploy\.Replace\('__EXPECTED_BUILD_COMMIT_B64__', \$BuildCommitBase64\)/);
+  assert.equal(countNeedle(script, "curl -fsS -H 'Host: a11.funesterie.me' http://127.0.0.1/api/build"), 1);
+  assert.equal(countNeedle(script, 'caddy_build_ok=0'), 1);
+  assert.equal(countNeedle(script, 'caddy_build_ok=1'), 1);
+  assert.equal(countNeedle(script, 'Caddy build probe failed: /api/build did not return the expected commit'), 1);
+
+  const blueGreenMatch = script.match(/if \(\$BlueGreen\) \{\r?\n\s+\$cleanOldFlag[\s\S]*?\r?\n"@\r?\n\} else \{/);
+  assert.ok(blueGreenMatch, 'blue-green remote deploy block must exist');
+  const blueGreen = blueGreenMatch[0];
+  assert.equal(countNeedle(blueGreen, 'exit 44'), 1, 'the blue-green path must fail hard on a stale Caddy fallback');
+  const probeIndex = blueGreen.indexOf('echo "__A11_HEALTH__"');
+  const failureExitIndex = blueGreen.indexOf('exit 43', probeIndex);
+  const buildProbeIndex = blueGreen.indexOf('http://127.0.0.1/api/build', probeIndex);
+  const exactBuildIndex = blueGreen.indexOf('if [ "`$caddy_build_commit" = "`$expected_build_commit" ]; then', buildProbeIndex);
+  const buildFailureExitIndex = blueGreen.indexOf('exit 44', exactBuildIndex);
+  const activeColorIndex = blueGreen.indexOf('bluegreen/active-color', probeIndex);
+  const cleanupIndex = blueGreen.indexOf('docker rm -f "a11-backend-', probeIndex);
+
+  assert.ok(probeIndex >= 0, 'blue-green path must run the final Caddy probe');
+  assert.ok(failureExitIndex > probeIndex, 'blue-green path must fail hard after the final Caddy probe');
+  assert.ok(buildProbeIndex > probeIndex, 'blue-green path must query /api/build through Caddy');
+  assert.ok(exactBuildIndex > buildProbeIndex, 'the Caddy response commit must equal the packaged commit');
+  assert.ok(buildFailureExitIndex > exactBuildIndex, 'a stale fallback build must fail hard');
+  assert.ok(activeColorIndex > buildFailureExitIndex, 'active-color must only change after health and exact-build probes succeed');
+  assert.ok(cleanupIndex > activeColorIndex, 'old-color cleanup must only run after the active marker changes');
+  assert.doesNotMatch(
+    blueGreen.slice(0, probeIndex),
+    /bluegreen\/active-color|docker rm -f "a11-backend-/,
+    'the old marker and containers must remain untouched before the final Caddy probe'
+  );
+});

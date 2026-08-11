@@ -2,12 +2,45 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const {
   buildPostingDesire,
+  loadYoutubeCredentials,
   maybeRecordPostingDesire,
   parseRandomThemes,
 } = require('../scripts/vivy-youtube-autocast-worker.cjs');
+
+test('YouTube autocast refuses the Social Connect OAuth clients without exposing their id', (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vivy-youtube-autocast-'));
+  t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
+  const tokenFile = path.join(tempRoot, 'legacy-token.json');
+  const sharedClientId = 'shared-client-id.apps.googleusercontent.com';
+  fs.writeFileSync(tokenFile, JSON.stringify({
+    refresh_token: 'legacy-refresh-token',
+    client_id: sharedClientId,
+    client_secret: 'legacy-client-secret',
+  }));
+
+  for (const envName of ['SOCIAL_YOUTUBE_CLIENT_ID', 'YOUTUBE_CLIENT_ID']) {
+    assert.throws(
+      () => loadYoutubeCredentials(tokenFile, { [envName]: sharedClientId }),
+      (error) => {
+        assert.equal(error.code, 'youtube_autocast_social_connect_client_forbidden');
+        assert.equal(error.message, 'youtube_autocast_social_connect_client_forbidden');
+        assert.equal(error.message.includes(sharedClientId), false);
+        return true;
+      },
+    );
+  }
+
+  assert.doesNotThrow(() => loadYoutubeCredentials(tokenFile, {
+    SOCIAL_YOUTUBE_CLIENT_ID: sharedClientId.toUpperCase(),
+    YOUTUBE_CLIENT_ID: `${sharedClientId}-other`,
+  }));
+});
 
 test('YouTube autocast parses custom random themes with a useful fallback', () => {
   assert.deepEqual(parseRandomThemes('alpha|beta; gamma'), ['alpha', 'beta', 'gamma']);

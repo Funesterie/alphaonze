@@ -91,7 +91,7 @@ async function main() {
     do {
       await runOnce(db);
       if (!loop) break;
-      const delayMs = intEnv('SOCIAL_INGEST_INTERVAL_MS', 15 * 60 * 1000, 60 * 1000, 24 * 60 * 60 * 1000);
+      const delayMs = intEnv('SOCIAL_INGEST_INTERVAL_MS', 30 * 60 * 1000, 30 * 60 * 1000, 24 * 60 * 60 * 1000);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     } while (loop);
   } finally {

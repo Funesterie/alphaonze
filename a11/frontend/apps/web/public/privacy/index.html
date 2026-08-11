@@ -60,9 +60,17 @@
           </article>
           <article class="card">
             <strong>youtube.readonly</strong>
-            <span>Lecture seule des informations de la chaîne que l'utilisateur relie volontairement :
-            titres, descriptions et statistiques publiques, afin de préparer des publications. Aucune
-            autorisation d'envoi de vidéo n'est demandée.</span>
+            <span>Lecture seule des vidéos publiques de la chaîne que l'utilisateur relie volontairement :
+            titres, descriptions et nombres de vues, uniquement afin d'aider à préparer le contenu
+            demandé et son brouillon de publication dans le style de cette chaîne. Les commentaires et les vidéos privées ou non
+            répertoriées ne sont ni demandés ni conservés.</span>
+          </article>
+          <article class="card">
+            <strong>youtube.upload</strong>
+            <span>Pour cette connexion et dans l'interface Social Connect, l'envoi d'une nouvelle vidéo
+            vers la seule chaîne reliée exige à chaque fois une confirmation explicite de l'utilisateur
+            et utilise le statut privé par défaut. Cette interface n'initie aucun envoi de sa propre
+            initiative et ne modifie ni ne supprime les vidéos existantes.</span>
           </article>
           <article class="card">
             <strong>openid, email, profile</strong>
@@ -105,10 +113,11 @@
         <ul>
           <li><strong>Transport</strong> — tout accès se fait en HTTPS/TLS. Aucun point d'entrée en clair
           n'est exposé.</li>
-          <li><strong>Jetons au repos</strong> — les jetons OAuth ne sont jamais stockés en clair. Ils
-          sont chiffrés en AES-256-GCM, un chiffrement authentifié qui rend toute altération du stockage
-          détectable, avec une clé dérivée par séparation de domaine d'un secret serveur qui ne quitte
-          pas la machine. Ils ne sont jamais restitués en clair par une interface ni par une API.</li>
+          <li><strong>Jetons Social Connect au repos</strong> — les jetons OAuth créés et conservés par
+          l'interface Social Connect ne sont jamais stockés en clair. Ces jetons sont chiffrés en
+          AES-256-GCM, un chiffrement authentifié qui rend toute altération du stockage détectable, avec
+          une clé dérivée par séparation de domaine d'un secret serveur qui ne quitte pas la machine. Ils
+          ne sont jamais restitués en clair par l'interface Social Connect ni par son API.</li>
           <li><strong>Contrôle d'accès</strong> — les routes d'administration exigent une authentification
           OAuth ; le magasin de secrets du serveur n'est lisible que par le compte de service qui exécute
           l'application.</li>
@@ -159,7 +168,7 @@
         <article class="card"><strong>Conversations</strong><span>Messages, instructions, historiques, votes, commandes Twitch ou demandes créatives.</span></article>
         <article class="card"><strong>Fichiers</strong><span>Documents, images, sons, vidéos, exports, métadonnées et fichiers générés.</span></article>
         <article class="card"><strong>Voix et personas</strong><span>Échantillons vocaux, références, voiceId/personaId, analyses techniques et sorties générées.</span></article>
-        <article class="card"><strong>Connexions sociales</strong><span>Jetons OAuth chiffrés, chaînes YouTube, SoundCloud, flux RSS, descriptions, titres, statistiques accessibles.</span></article>
+        <article class="card"><strong>Connexions sociales</strong><span>Jetons OAuth chiffrés, chaînes YouTube, SoundCloud, flux RSS et métadonnées publiques strictement nécessaires aux fonctions demandées.</span></article>
         <article class="card"><strong>Technique</strong><span>Logs, erreurs, quotas, état des workers, sécurité, IP ou empreintes techniques nécessaires.</span></article>
       </div>
 

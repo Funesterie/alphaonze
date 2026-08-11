@@ -25,8 +25,9 @@
  *    Consequence pratique : envoyer en `private` et publier a la main tant que
  *    l'audit n'est pas obtenu, plutot que de croire a une panne.
  *
- * 3. QUOTA. Un envoi coute ~1600 unites sur un quota journalier de 10 000 par
- *    defaut. Six envois par jour, pas soixante.
+ * 3. QUOTA. Depuis le quota granulaire 2026, `videos.insert` coute 1 unite dans
+ *    le compartiment Video Uploads, alloue a 100 appels par jour par defaut.
+ *    Verifier la console Google avant une campagne ou des essais repetes.
  */
 
 const fs = require('node:fs');
@@ -105,6 +106,67 @@ function construireMetadonnees({
   };
 }
 
+function indicateursErreurGoogle(donnees = {}) {
+  const erreur = donnees && typeof donnees === 'object' ? donnees.error : null;
+  const details = Array.isArray(erreur?.details) ? erreur.details : [];
+  const erreurs = Array.isArray(erreur?.errors) ? erreur.errors : [];
+  const valeurs = [
+    donnees?.reason,
+    donnees?.code,
+    erreur?.reason,
+    erreur?.code,
+    ...erreurs.flatMap((item) => [item?.reason, item?.code]),
+    ...details.flatMap((item) => [item?.reason, item?.code]),
+  ];
+
+  // Le message humain n'est volontairement pas inspecte: il est localisable et
+  // parfois trompeur. Seuls les champs machine `reason`/`code` font foi.
+  return new Set(
+    valeurs
+      .filter((valeur) => typeof valeur === 'string')
+      .map((valeur) => valeur.trim().toLowerCase().replace(/[^a-z0-9]/g, ''))
+      .filter(Boolean)
+  );
+}
+
+function classifierErreurYoutubeUpload(status, donnees = {}) {
+  const indicateurs = indicateursErreurGoogle(donnees);
+  const contient = (...valeurs) => valeurs.some((valeur) => indicateurs.has(valeur));
+
+  if (contient(
+    'insufficientpermissions',
+    'insufficientpermission',
+    'accesstokenscopeinsufficient',
+    'insufficientauthenticationscopes'
+  )) {
+    return 'youtube_upload_scope_missing';
+  }
+  if (contient('uploadlimitexceeded')) return 'youtube_upload_limit_exceeded';
+  if (contient('dailylimitexceeded', 'dailylimitexceededunreg')) {
+    return 'youtube_upload_daily_limit_exceeded';
+  }
+  if (contient('quotaexceeded', 'ratelimitexceeded', 'userratelimitexceeded')) {
+    return 'youtube_upload_quota_exceeded';
+  }
+  if (Number(status) === 403 || contient('forbidden')) return 'youtube_upload_forbidden';
+  return '';
+}
+
+function offsetConfirmeDepuisRange(range, fileSize) {
+  const correspondance = /^bytes=0-(\d+)$/i.exec(String(range || '').trim());
+  if (!correspondance) return 0;
+  const dernierOctet = Number(correspondance[1]);
+  const taille = Number(fileSize);
+  if (
+    !Number.isSafeInteger(dernierOctet)
+    || !Number.isSafeInteger(taille)
+    || dernierOctet < 0
+    || taille <= 0
+    || dernierOctet >= taille
+  ) return 0;
+  return dernierOctet + 1;
+}
+
 /**
  * Ouvre une session d'envoi et rend son URL.
  *
@@ -134,9 +196,8 @@ async function ouvrirSession({ accessToken, metadata, fileSize, mimeType, fetchI
     const error = new Error(message);
     error.status = reponse.status;
     error.data = donnees;
-    // 403 `insufficientPermissions` = le jeton ne porte pas youtube.upload.
-    // Le nommer ici evite de chercher la panne dans le transfert.
-    if (reponse.status === 403) error.code = 'youtube_upload_scope_missing';
+    const code = classifierErreurYoutubeUpload(reponse.status, donnees);
+    if (code) error.code = code;
     throw error;
   }
 
@@ -155,10 +216,21 @@ async function ouvrirSession({ accessToken, metadata, fileSize, mimeType, fetchI
  * C'est la seule source de verite pour reprendre : notre propre compteur peut
  * avoir avance sur des octets jamais arrives.
  */
-async function octetsRecus({ sessionUrl, fileSize, fetchImpl = globalThis.fetch }) {
+async function octetsRecus({
+  sessionUrl,
+  fileSize,
+  accessToken,
+  mimeType,
+  fetchImpl = globalThis.fetch,
+}) {
   const reponse = await fetchImpl(sessionUrl, {
     method: 'PUT',
-    headers: { 'content-range': `bytes */${fileSize}`, 'content-length': '0' },
+    headers: {
+      authorization: `Bearer ${texte(accessToken)}`,
+      'content-type': mimeType,
+      'content-range': `bytes */${fileSize}`,
+      'content-length': '0',
+    },
   });
 
   if (reponse.status === 200 || reponse.status === 201) {
@@ -166,13 +238,14 @@ async function octetsRecus({ sessionUrl, fileSize, fetchImpl = globalThis.fetch 
   }
   if (reponse.status === 308) {
     const range = reponse.headers.get('range');
-    // Pas d'en-tete Range = rien n'est encore arrive.
-    if (!range) return { termine: false, offset: 0 };
-    const fin = Number(String(range).split('-')[1]);
-    return { termine: false, offset: Number.isFinite(fin) ? fin + 1 : 0 };
+    return { termine: false, offset: offsetConfirmeDepuisRange(range, fileSize) };
   }
-  const error = new Error(`youtube_upload_status_http_${reponse.status}`);
+  const donnees = await reponse.json().catch(() => ({}));
+  const error = new Error(donnees?.error?.message || `youtube_upload_status_http_${reponse.status}`);
   error.status = reponse.status;
+  error.data = donnees;
+  const code = classifierErreurYoutubeUpload(reponse.status, donnees);
+  if (code) error.code = code;
   throw error;
 }
 
@@ -199,40 +272,69 @@ async function uploadVideo({
   }
 
   const chemin = path.resolve(String(filePath || ''));
-  if (!fs.existsSync(chemin)) {
-    const error = new Error('youtube_upload_file_missing');
-    error.code = 'youtube_upload_file_missing';
+  let fd;
+  try {
+    // Le descripteur est ouvert AVANT la session: si le chemin est remplace
+    // pendant le POST, on continue a lire exactement le fichier valide ici.
+    fd = fs.openSync(chemin, 'r');
+  } catch (cause) {
+    const absent = cause?.code === 'ENOENT';
+    const error = new Error(absent ? 'youtube_upload_file_missing' : 'youtube_upload_file_unreadable');
+    error.code = absent ? 'youtube_upload_file_missing' : 'youtube_upload_file_unreadable';
     error.filePath = chemin;
+    error.cause = cause;
     throw error;
   }
-
-  const stat = fs.statSync(chemin);
-  if (!stat.size) {
-    const error = new Error('youtube_upload_file_empty');
-    error.code = 'youtube_upload_file_empty';
-    throw error;
-  }
-
-  const metadata = construireMetadonnees(metaBrute);
-  const mimeType = typeMime(chemin);
-  const sessionUrl = await ouvrirSession({
-    accessToken: jeton,
-    metadata,
-    fileSize: stat.size,
-    mimeType,
-    fetchImpl,
-  });
-
-  let offset = 0;
-  let reprises = 0;
-  let echecsConsecutifs = 0;
-  const fd = fs.openSync(chemin, 'r');
 
   try {
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile()) {
+      const error = new Error('youtube_upload_file_not_regular');
+      error.code = 'youtube_upload_file_not_regular';
+      throw error;
+    }
+    if (!stat.size) {
+      const error = new Error('youtube_upload_file_empty');
+      error.code = 'youtube_upload_file_empty';
+      throw error;
+    }
+
+    const metadata = construireMetadonnees(metaBrute);
+    const mimeType = typeMime(chemin);
+    const sessionUrl = await ouvrirSession({
+      accessToken: jeton,
+      metadata,
+      fileSize: stat.size,
+      mimeType,
+      fetchImpl,
+    });
+
+    // Le POST de session laisse le temps a un producteur concurrent de
+    // tronquer le fichier. Aucun octet ne part si sa taille a change.
+    const statApresSession = fs.fstatSync(fd);
+    if (!statApresSession.isFile() || statApresSession.size !== stat.size) {
+      const error = new Error('youtube_upload_file_changed');
+      error.code = 'youtube_upload_file_changed';
+      error.expectedSize = stat.size;
+      error.actualSize = statApresSession.size;
+      throw error;
+    }
+
+    let offset = 0;
+    let reprises = 0;
+    let echecsConsecutifs = 0;
     while (offset < stat.size) {
       const longueur = Math.min(TAILLE_BLOC, stat.size - offset);
-      const tampon = Buffer.allocUnsafe(longueur);
-      fs.readSync(fd, tampon, 0, longueur, offset);
+      const tampon = Buffer.alloc(longueur);
+      const octetsLus = fs.readSync(fd, tampon, 0, longueur, offset);
+      if (octetsLus !== longueur) {
+        const error = new Error('youtube_upload_file_changed');
+        error.code = 'youtube_upload_file_changed';
+        error.expectedBytes = longueur;
+        error.actualBytes = octetsLus;
+        error.offset = offset;
+        throw error;
+      }
       const fin = offset + longueur - 1;
 
       let reponse;
@@ -240,6 +342,8 @@ async function uploadVideo({
         reponse = await fetchImpl(sessionUrl, {
           method: 'PUT',
           headers: {
+            authorization: `Bearer ${jeton}`,
+            'content-type': mimeType,
             'content-length': String(longueur),
             'content-range': `bytes ${offset}-${fin}/${stat.size}`,
           },
@@ -251,7 +355,13 @@ async function uploadVideo({
         echecsConsecutifs += 1;
         if (echecsConsecutifs > maxRetries) throw erreurReseau;
         reprises += 1;
-        const etat = await octetsRecus({ sessionUrl, fileSize: stat.size, fetchImpl });
+        const etat = await octetsRecus({
+          sessionUrl,
+          fileSize: stat.size,
+          accessToken: jeton,
+          mimeType,
+          fetchImpl,
+        });
         if (etat.termine) return finaliser(etat.donnees, metadata, stat.size, reprises);
         offset = etat.offset;
         continue;
@@ -263,11 +373,24 @@ async function uploadVideo({
       }
 
       if (reponse.status === 308) {
-        echecsConsecutifs = 0;
         const range = reponse.headers.get('range');
-        const finRecue = range ? Number(String(range).split('-')[1]) : NaN;
-        // On avance sur ce que YouTube confirme, pas sur ce qu'on a envoye.
-        offset = Number.isFinite(finRecue) ? finRecue + 1 : offset + longueur;
+        // Sans Range, YouTube ne confirme aucun octet. Il ne faut surtout pas
+        // avancer de la taille envoyee: cela creerait un trou silencieux.
+        const prochainOffset = offsetConfirmeDepuisRange(range, stat.size);
+        if (prochainOffset <= offset) {
+          echecsConsecutifs += 1;
+          if (echecsConsecutifs > maxRetries) {
+            const error = new Error('youtube_upload_no_progress');
+            error.code = 'youtube_upload_no_progress';
+            error.status = 308;
+            error.offset = prochainOffset;
+            throw error;
+          }
+          reprises += 1;
+        } else {
+          echecsConsecutifs = 0;
+        }
+        offset = prochainOffset;
         if (typeof onProgress === 'function') {
           onProgress({ uploadedBytes: offset, totalBytes: stat.size, resumes: reprises });
         }
@@ -283,7 +406,13 @@ async function uploadVideo({
           throw error;
         }
         reprises += 1;
-        const etat = await octetsRecus({ sessionUrl, fileSize: stat.size, fetchImpl });
+        const etat = await octetsRecus({
+          sessionUrl,
+          fileSize: stat.size,
+          accessToken: jeton,
+          mimeType,
+          fetchImpl,
+        });
         if (etat.termine) return finaliser(etat.donnees, metadata, stat.size, reprises);
         offset = etat.offset;
         continue;
@@ -293,11 +422,19 @@ async function uploadVideo({
       const error = new Error(donnees?.error?.message || `youtube_upload_http_${reponse.status}`);
       error.status = reponse.status;
       error.data = donnees;
+      const code = classifierErreurYoutubeUpload(reponse.status, donnees);
+      if (code) error.code = code;
       throw error;
     }
 
     // Sortie de boucle sans 200/201 : la position dit si c'est fini.
-    const etat = await octetsRecus({ sessionUrl, fileSize: stat.size, fetchImpl });
+    const etat = await octetsRecus({
+      sessionUrl,
+      fileSize: stat.size,
+      accessToken: jeton,
+      mimeType,
+      fetchImpl,
+    });
     if (etat.termine) return finaliser(etat.donnees, metadata, stat.size, reprises);
     const error = new Error('youtube_upload_incomplete');
     error.code = 'youtube_upload_incomplete';
@@ -369,6 +506,7 @@ module.exports = {
   API_BASE,
   UPLOAD_BASE,
   TAILLE_BLOC,
+  classifierErreurYoutubeUpload,
   construireMetadonnees,
   ouvrirSession,
   octetsRecus,

@@ -305,11 +305,25 @@ async function buildVideoForSong(song = {}, opts = {}) {
   return output;
 }
 
-function loadYoutubeCredentials(tokenFile = DEFAULT_TOKEN_PATH) {
+function assertLegacyYoutubeClientIsolation(token = {}, env = process.env) {
+  const tokenClientId = typeof token.client_id === 'string' ? token.client_id : '';
+  if (!tokenClientId) return;
+  const socialConnectClientIds = [
+    env?.SOCIAL_YOUTUBE_CLIENT_ID,
+    env?.YOUTUBE_CLIENT_ID,
+  ].filter((value) => typeof value === 'string' && value.length > 0);
+  if (!socialConnectClientIds.includes(tokenClientId)) return;
+  const error = new Error('youtube_autocast_social_connect_client_forbidden');
+  error.code = 'youtube_autocast_social_connect_client_forbidden';
+  throw error;
+}
+
+function loadYoutubeCredentials(tokenFile = DEFAULT_TOKEN_PATH, env = process.env) {
   const token = readJson(tokenFile, null);
   if (!token?.refresh_token || !token?.client_id || !token?.client_secret) {
     throw new Error('youtube_token_missing_or_incomplete');
   }
+  assertLegacyYoutubeClientIsolation(token, env);
   return token;
 }
 
@@ -507,6 +521,8 @@ if (require.main === module) {
 }
 
 module.exports = {
+  assertLegacyYoutubeClientIsolation,
+  loadYoutubeCredentials,
   qualityReasons,
   pickNextSong,
   buildYoutubeMetadata,

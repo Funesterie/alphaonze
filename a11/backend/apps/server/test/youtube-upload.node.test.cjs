@@ -99,7 +99,33 @@ test('un jeton absent echoue sans toucher au disque ni au reseau', async () => {
   );
 });
 
-test('un 403 a l ouverture est nomme comme un perimetre manquant', async () => {
+test('un fichier tronque pendant le POST de session ne produit aucun PUT binaire', async () => {
+  const f = fichierTemporaire(2048);
+  let putsBinaires = 0;
+  try {
+    await assert.rejects(
+      () => uploadVideo({
+        accessToken: 'jeton',
+        filePath: f.chemin,
+        metadata: { title: 'x' },
+        fetchImpl: async (_url, init) => {
+          if (init.method === 'POST') {
+            fs.truncateSync(f.chemin, 0);
+            return reponse({ status: 200, headers: { location: SESSION } });
+          }
+          if (init.method === 'PUT' && init.body) putsBinaires += 1;
+          return reponse({ status: 500 });
+        },
+      }),
+      (error) => error.code === 'youtube_upload_file_changed'
+    );
+    assert.equal(putsBinaires, 0, 'aucun buffer partiellement lu ne doit etre envoye');
+  } finally {
+    f.nettoyer();
+  }
+});
+
+test('un 403 insufficientPermissions est nomme comme un perimetre manquant', async () => {
   // C'est le symptome exact d'un jeton emis sans youtube.upload. Sans ce
   // diagnostic, on cherche la panne dans le transfert pendant des heures.
   const f = fichierTemporaire(1024);
@@ -111,10 +137,68 @@ test('un 403 a l ouverture est nomme comme un perimetre manquant', async () => {
         metadata: { title: 'x' },
         fetchImpl: async () => reponse({
           status: 403,
-          body: { error: { message: 'insufficientPermissions' } },
+          body: {
+            error: {
+              code: 403,
+              message: 'Request had insufficient authentication scopes.',
+              errors: [{ reason: 'insufficientPermissions' }],
+            },
+          },
         }),
       }),
       (e) => e.code === 'youtube_upload_scope_missing'
+    );
+  } finally {
+    f.nettoyer();
+  }
+});
+
+test('quota, limite quotidienne, limite d upload et interdit restent distincts du scope', async () => {
+  const cas = [
+    ['quotaExceeded', 403, 'youtube_upload_quota_exceeded'],
+    ['dailyLimitExceeded', 403, 'youtube_upload_daily_limit_exceeded'],
+    ['uploadLimitExceeded', 400, 'youtube_upload_limit_exceeded'],
+    ['forbidden', 403, 'youtube_upload_forbidden'],
+  ];
+  const f = fichierTemporaire(1024);
+  try {
+    for (const [reason, status, codeAttendu] of cas) {
+      await assert.rejects(
+        () => uploadVideo({
+          accessToken: 'jeton',
+          filePath: f.chemin,
+          metadata: { title: 'x' },
+          fetchImpl: async () => reponse({
+            status,
+            body: { error: { code: status, message: 'Forbidden', errors: [{ reason }] } },
+          }),
+        }),
+        (error) => {
+          assert.equal(error.code, codeAttendu, reason);
+          assert.notEqual(error.code, 'youtube_upload_scope_missing', reason);
+          return true;
+        }
+      );
+    }
+  } finally {
+    f.nettoyer();
+  }
+});
+
+test('un message insufficientPermissions sans reason machine reste un interdit generique', async () => {
+  const f = fichierTemporaire(1024);
+  try {
+    await assert.rejects(
+      () => uploadVideo({
+        accessToken: 'jeton',
+        filePath: f.chemin,
+        metadata: { title: 'x' },
+        fetchImpl: async () => reponse({
+          status: 403,
+          body: { error: { code: 403, message: 'insufficientPermissions' } },
+        }),
+      }),
+      (error) => error.code === 'youtube_upload_forbidden'
     );
   } finally {
     f.nettoyer();
@@ -210,6 +294,110 @@ test('sans en-tete Range, la reprise repart de zero au lieu de deviner', async (
   }
 });
 
+test('un 308 de bloc sans Range renvoie le premier bloc depuis zero', async () => {
+  const f = fichierTemporaire(4096);
+  const debuts = [];
+  try {
+    const resultat = await uploadVideo({
+      accessToken: 'jeton',
+      filePath: f.chemin,
+      metadata: { title: 'x' },
+      fetchImpl: async (_url, init) => {
+        if (init.method === 'POST') return reponse({ status: 200, headers: { location: SESSION } });
+        const plage = init.headers['content-range'];
+        debuts.push(Number(plage.split(' ')[1].split('-')[0]));
+        if (debuts.length === 1) return reponse({ status: 308 });
+        return reponse({ status: 200, body: { id: 'VID308', status: { privacyStatus: 'private' } } });
+      },
+    });
+    assert.equal(resultat.videoId, 'VID308');
+    assert.deepEqual(debuts, [0, 0], 'un 308 sans Range ne confirme aucun octet du premier bloc');
+  } finally {
+    f.nettoyer();
+  }
+});
+
+test('un Range 308 malforme ne confirme aucun octet', async () => {
+  const f = fichierTemporaire(4096);
+  const debuts = [];
+  try {
+    await uploadVideo({
+      accessToken: 'jeton',
+      filePath: f.chemin,
+      metadata: { title: 'x' },
+      fetchImpl: async (_url, init) => {
+        if (init.method === 'POST') return reponse({ status: 200, headers: { location: SESSION } });
+        const plage = init.headers['content-range'];
+        debuts.push(Number(plage.split(' ')[1].split('-')[0]));
+        if (debuts.length === 1) {
+          return reponse({ status: 308, headers: { range: 'bytes=12-4095' } });
+        }
+        return reponse({ status: 200, body: { id: 'VIDRANGE', status: { privacyStatus: 'private' } } });
+      },
+    });
+    assert.deepEqual(debuts, [0, 0], 'seule la forme bytes=0-N peut confirmer une progression');
+  } finally {
+    f.nettoyer();
+  }
+});
+
+test('des 308 sans Range repetes echouent avec la garde no-progress', async () => {
+  const f = fichierTemporaire(1024);
+  let blocs = 0;
+  try {
+    await assert.rejects(
+      () => uploadVideo({
+        accessToken: 'jeton',
+        filePath: f.chemin,
+        metadata: { title: 'x' },
+        maxRetries: 2,
+        fetchImpl: async (_url, init) => {
+          if (init.method === 'POST') return reponse({ status: 200, headers: { location: SESSION } });
+          blocs += 1;
+          return reponse({ status: 308 });
+        },
+      }),
+      (error) => error.code === 'youtube_upload_no_progress'
+    );
+    assert.equal(blocs, 3, 'maxRetries=2 autorise deux reprises, puis abandonne');
+  } finally {
+    f.nettoyer();
+  }
+});
+
+test('tous les PUT portent le Bearer et le type MIME attendu', async () => {
+  const f = fichierTemporaire(2048);
+  let blocInitial = true;
+  let sondes = 0;
+  try {
+    const resultat = await uploadVideo({
+      accessToken: 'jeton-auth',
+      filePath: f.chemin,
+      metadata: { title: 'x' },
+      fetchImpl: async (_url, init) => {
+        if (init.method === 'POST') return reponse({ status: 200, headers: { location: SESSION } });
+
+        assert.equal(init.headers.authorization, 'Bearer jeton-auth', 'tout PUT doit etre authentifie');
+        assert.equal(init.headers['content-type'], 'video/mp4', 'tout PUT conserve le MIME de la video');
+        const plage = init.headers['content-range'];
+        if (plage === 'bytes */2048') {
+          sondes += 1;
+          return reponse({ status: 308, headers: { range: 'bytes=0-0' } });
+        }
+        if (blocInitial) {
+          blocInitial = false;
+          return reponse({ status: 503 });
+        }
+        return reponse({ status: 200, body: { id: 'VIDAUTH', status: { privacyStatus: 'private' } } });
+      },
+    });
+    assert.equal(resultat.videoId, 'VIDAUTH');
+    assert.equal(sondes, 1, 'le test doit exercer aussi le PUT de sonde');
+  } finally {
+    f.nettoyer();
+  }
+});
+
 test('les coupures a repetition finissent par echouer plutot que boucler', async () => {
   const f = fichierTemporaire(1024);
   let tentatives = 0;
@@ -276,6 +464,32 @@ test('un 400 arrete tout de suite: ce n est pas reprenable', async () => {
       }),
       /invalidVideoMetadata/
     );
+  } finally {
+    f.nettoyer();
+  }
+});
+
+test('un quotaExceeded pendant le PUT de transfert conserve sa classification 429', async () => {
+  const f = fichierTemporaire(2048);
+  let appels = 0;
+  try {
+    await assert.rejects(
+      () => uploadVideo({
+        accessToken: 'jeton',
+        filePath: f.chemin,
+        metadata: { title: 'x' },
+        fetchImpl: async (_url, init) => {
+          appels += 1;
+          if (init.method === 'POST') return reponse({ status: 200, headers: { location: SESSION } });
+          return reponse({
+            status: 403,
+            body: { error: { code: 403, errors: [{ reason: 'quotaExceeded' }] } },
+          });
+        },
+      }),
+      (error) => error.code === 'youtube_upload_quota_exceeded'
+    );
+    assert.equal(appels, 2, 'le quota ne doit ni etre repris ni transforme en panne generique');
   } finally {
     f.nettoyer();
   }

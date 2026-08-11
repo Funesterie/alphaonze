@@ -11678,7 +11678,7 @@ function FunesterieIntegrationPanel({
             <h3>YouTube</h3>
             <span>{connectorBadge(youtubeState, "Social")}</span>
           </header>
-          <p>{youtubeState.configured === false ? "Configuration serveur incomplète pour YouTube Social." : "Contexte vidéos, titres, descriptions et commentaires pour nourrir Vivy."}</p>
+          <p>{youtubeState.configured === false ? "Configuration serveur incomplète pour YouTube Social." : "Titres, descriptions et nombres de vues des vidéos publiques pour aider Vivy à préparer le contenu demandé et son brouillon de publication."}</p>
           <footer>
             <button type="button" onClick={() => openSocialConnect("youtube")} disabled={busy === "youtube" || youtubeState.configured === false}>
               {busy === "youtube" ? "Ouverture..." : "Connecter YouTube"}

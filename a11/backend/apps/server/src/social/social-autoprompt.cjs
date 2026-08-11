@@ -3,9 +3,12 @@
 const crypto = require('node:crypto');
 
 const SOCIAL_SCHEMA_VERSION = 'funesterie.social-autoprompt.v1';
+const YOUTUBE_PUBLIC_CONTEXT_MIGRATION = '2026-08-11-youtube-public-context-v1';
 const YOUTUBE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const YOUTUBE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
+const YOUTUBE_PUBLIC_FEED_URL = 'https://www.youtube.com/feeds/videos.xml';
+const YOUTUBE_PUBLIC_FEED_HOSTS = ['www.youtube.com', 'youtube.com'];
 const META_AUTH_URL = 'https://www.facebook.com/v22.0/dialog/oauth';
 const META_TOKEN_URL = 'https://graph.facebook.com/v22.0/oauth/access_token';
 const SOUNDCLOUD_AUTH_URL = 'https://secure.soundcloud.com/authorize';
@@ -29,9 +32,6 @@ const DEFAULT_SOCIAL_RSS_ALLOWED_HOSTS = ['feeds.soundcloud.com', 'soundcloud.co
  * reconsentir, sinon l'envoi echoue avec un jeton pourtant valide.
  */
 const DEFAULT_YOUTUBE_SCOPES = [
-  'openid',
-  'email',
-  'profile',
   'https://www.googleapis.com/auth/youtube.readonly',
   'https://www.googleapis.com/auth/youtube.upload',
 ];
@@ -162,11 +162,11 @@ function resolveProviderConfig(provider, { env = process.env, req = null } = {})
       'SOCIAL_YOUTUBE_CALLBACK_URL',
       'YOUTUBE_REDIRECT_URI',
     ]) || `${getBaseUrl(req)}/api/admin/social-connect/youtube/callback`;
-    const scopes = splitScopes(firstEnv(env, ['SOCIAL_YOUTUBE_SCOPES', 'YOUTUBE_OAUTH_SCOPES']))
-      .concat(DEFAULT_YOUTUBE_SCOPES);
-    const uniqueScopes = unique(scopes, 16);
-    const clientId = firstEnv(env, ['SOCIAL_YOUTUBE_CLIENT_ID', 'YOUTUBE_CLIENT_ID', 'GOOGLE_CLIENT_ID', 'A11_GOOGLE_CLIENT_ID']);
-    const clientSecret = firstEnv(env, ['SOCIAL_YOUTUBE_CLIENT_SECRET', 'YOUTUBE_CLIENT_SECRET', 'GOOGLE_CLIENT_SECRET', 'A11_GOOGLE_CLIENT_SECRET']);
+    const requestedScopes = splitScopes(firstEnv(env, ['SOCIAL_YOUTUBE_SCOPES', 'YOUTUBE_OAUTH_SCOPES']));
+    const uniqueScopes = unique([...requestedScopes, ...DEFAULT_YOUTUBE_SCOPES], 16)
+      .filter((scope) => DEFAULT_YOUTUBE_SCOPES.includes(scope));
+    const clientId = firstEnv(env, ['SOCIAL_YOUTUBE_CLIENT_ID', 'YOUTUBE_CLIENT_ID']);
+    const clientSecret = firstEnv(env, ['SOCIAL_YOUTUBE_CLIENT_SECRET', 'YOUTUBE_CLIENT_SECRET']);
     return {
       provider: 'youtube',
       configured: Boolean(clientId && clientSecret && redirectUri),
@@ -277,6 +277,58 @@ function accountAad(account = {}) {
   return `social:${cleanText(account.user_id || account.userId, 'unknown', 160)}:${normalizeProvider(account.provider)}:${cleanText(account.account_external_id || account.accountExternalId || account.provider, 'account', 180)}`;
 }
 
+async function runSocialDataMigrations(db) {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS social_data_migrations (
+      migration_key TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  // Une requete PostgreSQL unique est atomique. La cle primaire departage les
+  // processus concurrents: seul celui qui obtient claimed_migration purge les
+  // donnees historiques, et le marqueur est annule avec les DELETE si une
+  // etape echoue.
+  const result = await db.query(`
+    WITH claimed_migration AS (
+      INSERT INTO social_data_migrations (migration_key, applied_at)
+      VALUES ($1, NOW())
+      ON CONFLICT (migration_key) DO NOTHING
+      RETURNING migration_key
+    ), deleted_youtube_items AS (
+      DELETE FROM social_items
+      WHERE provider = 'youtube'
+        AND EXISTS (SELECT 1 FROM claimed_migration)
+      RETURNING 1
+    ), deleted_youtube_snapshots AS (
+      DELETE FROM social_context_snapshots
+      WHERE provider = 'youtube'
+        AND EXISTS (SELECT 1 FROM claimed_migration)
+      RETURNING 1
+    ), deleted_prompt_context AS (
+      DELETE FROM social_prompt_context
+      WHERE EXISTS (SELECT 1 FROM claimed_migration)
+      RETURNING 1
+    )
+    SELECT
+      EXISTS (SELECT 1 FROM claimed_migration) AS applied,
+      (SELECT COUNT(*)::int FROM deleted_youtube_items) AS deleted_youtube_items,
+      (SELECT COUNT(*)::int FROM deleted_youtube_snapshots) AS deleted_youtube_snapshots,
+      (SELECT COUNT(*)::int FROM deleted_prompt_context) AS deleted_prompt_context
+  `, [YOUTUBE_PUBLIC_CONTEXT_MIGRATION]);
+  const row = result.rows?.[0] || {};
+  return {
+    ok: true,
+    migrationKey: YOUTUBE_PUBLIC_CONTEXT_MIGRATION,
+    applied: row.applied === true,
+    deleted: {
+      youtubeItems: Number(row.deleted_youtube_items || 0),
+      youtubeSnapshots: Number(row.deleted_youtube_snapshots || 0),
+      promptContext: Number(row.deleted_prompt_context || 0),
+    },
+  };
+}
+
 async function ensureSocialSchema(db) {
   if (!db || typeof db.query !== 'function') return { ok: false, skipped: true, reason: 'db_missing' };
   await db.query(`
@@ -371,7 +423,291 @@ async function ensureSocialSchema(db) {
     )
   `);
   await db.query('CREATE INDEX IF NOT EXISTS idx_social_prompt_context_user_updated ON social_prompt_context (user_id, updated_at DESC)');
+
+  // Journal durable des tentatives de publication externe. La contrainte
+  // d'unicite est le verrou d'idempotence inter-processus: une meme cle ne
+  // pourra jamais creer deux appels videos.insert, meme apres un redemarrage.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS social_publication_requests (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_hash TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'succeeded', 'failed')),
+      result_json JSONB,
+      error_code TEXT,
+      attempt_started_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at TIMESTAMPTZ,
+      UNIQUE (user_id, provider, idempotency_key)
+    )
+  `);
+  await db.query('ALTER TABLE social_publication_requests ADD COLUMN IF NOT EXISTS attempt_started_at TIMESTAMPTZ');
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_social_publication_provider_attempt_started
+    ON social_publication_requests (provider, attempt_started_at DESC)
+    WHERE attempt_started_at IS NOT NULL
+  `);
+  await runSocialDataMigrations(db);
   return { ok: true };
+}
+
+function normalizeSocialPublicationRow(row = {}) {
+  let result = row.result_json ?? null;
+  if (typeof result === 'string') {
+    try { result = JSON.parse(result); } catch { result = null; }
+  }
+  return {
+    id: row.id,
+    userId: cleanOneLine(row.user_id, 'admin', 160),
+    provider: normalizeProvider(row.provider),
+    requestHash: cleanOneLine(row.request_hash, '', 128),
+    status: ['pending', 'succeeded', 'failed'].includes(row.status) ? row.status : 'pending',
+    result: result && typeof result === 'object' && !Array.isArray(result) ? result : null,
+    errorCode: cleanOneLine(row.error_code, '', 100),
+    attemptStartedAt: row.attempt_started_at || null,
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+    completedAt: row.completed_at || null,
+  };
+}
+
+/**
+ * Reserve l'identite de la publication avant tout acces au token ou au fichier.
+ * Cette reservation ne consomme pas le quota: seul startSocialPublicationAttempt
+ * marque une vraie ouverture de videos.insert.
+ */
+async function claimSocialPublicationRequest(db, {
+  userId = 'admin',
+  provider = '',
+  idempotencyKey = '',
+  requestHash = '',
+} = {}) {
+  if (!db || typeof db.query !== 'function' || typeof db.connect !== 'function') {
+    const error = new Error('social_publication_db_required');
+    error.code = 'social_publication_db_required';
+    throw error;
+  }
+  await ensureSocialSchema(db);
+
+  const normalizedUserId = cleanOneLine(userId, 'admin', 160);
+  const normalizedProvider = normalizeProvider(provider);
+  const normalizedKey = String(idempotencyKey || '').trim();
+  const normalizedHash = cleanOneLine(requestHash, '', 128);
+  const client = await db.connect();
+  let transactionOpen = false;
+
+  try {
+    await client.query('BEGIN');
+    transactionOpen = true;
+    await client.query(
+      'SELECT pg_advisory_xact_lock(hashtext($1)::bigint)',
+      [`social-publication-idempotency:${normalizedProvider}`]
+    );
+
+    const existingResult = await client.query(`
+      SELECT id, user_id, provider, request_hash, status, result_json, error_code,
+        attempt_started_at, created_at, updated_at, completed_at
+      FROM social_publication_requests
+      WHERE user_id = $1 AND provider = $2 AND idempotency_key = $3
+      LIMIT 1
+    `, [normalizedUserId, normalizedProvider, normalizedKey]);
+    const existing = existingResult.rows?.[0];
+    if (existing) {
+      await client.query('COMMIT');
+      transactionOpen = false;
+      const request = normalizeSocialPublicationRow(existing);
+      return {
+        outcome: request.requestHash === normalizedHash ? request.status : 'mismatch',
+        request,
+      };
+    }
+
+    const inserted = await client.query(`
+      INSERT INTO social_publication_requests (
+        user_id, provider, idempotency_key, request_hash, status,
+        created_at, updated_at
+      )
+      VALUES ($1,$2,$3,$4,'pending',NOW(),NOW())
+      RETURNING id, user_id, provider, request_hash, status, result_json,
+        error_code, attempt_started_at, created_at, updated_at, completed_at
+    `, [normalizedUserId, normalizedProvider, normalizedKey, normalizedHash]);
+    await client.query('COMMIT');
+    transactionOpen = false;
+    return {
+      outcome: 'claimed',
+      request: normalizeSocialPublicationRow(inserted.rows?.[0] || {
+        user_id: normalizedUserId,
+        provider: normalizedProvider,
+        request_hash: normalizedHash,
+        status: 'pending',
+      }),
+    };
+  } catch (error) {
+    if (transactionOpen) {
+      try { await client.query('ROLLBACK'); } catch { /* connexion deja perdue */ }
+    }
+    throw error;
+  } finally {
+    if (typeof client.release === 'function') client.release();
+  }
+}
+
+/**
+ * Consomme atomiquement une place de quota au dernier instant avant
+ * videos.insert. Le verrou advisory est commun a toutes les instances et reste
+ * tenu pendant le comptage puis l'UPDATE, donc deux processus ne peuvent pas
+ * depasser ensemble la limite.
+ */
+async function startSocialPublicationAttempt(db, {
+  userId = 'admin',
+  provider = '',
+  idempotencyKey = '',
+  requestHash = '',
+  maxAttempts24h = 20,
+} = {}) {
+  if (!db || typeof db.connect !== 'function') {
+    const error = new Error('social_publication_db_required');
+    error.code = 'social_publication_db_required';
+    throw error;
+  }
+  const normalizedUserId = cleanOneLine(userId, 'admin', 160);
+  const normalizedProvider = normalizeProvider(provider);
+  const normalizedKey = String(idempotencyKey || '').trim();
+  const normalizedHash = cleanOneLine(requestHash, '', 128);
+  const parsedLimit = Number(maxAttempts24h);
+  const limit = Number.isFinite(parsedLimit)
+    ? Math.max(0, Math.min(10000, Math.floor(parsedLimit)))
+    : 20;
+  const client = await db.connect();
+  let transactionOpen = false;
+
+  try {
+    await client.query('BEGIN');
+    transactionOpen = true;
+    await client.query(
+      'SELECT pg_advisory_xact_lock(hashtext($1)::bigint)',
+      [`social-publication-attempt-quota:${normalizedProvider}`]
+    );
+    const requestResult = await client.query(`
+      SELECT id, user_id, provider, request_hash, status, result_json, error_code,
+        attempt_started_at, created_at, updated_at, completed_at
+      FROM social_publication_requests
+      WHERE user_id = $1 AND provider = $2 AND idempotency_key = $3
+      FOR UPDATE
+    `, [normalizedUserId, normalizedProvider, normalizedKey]);
+    const row = requestResult.rows?.[0];
+    if (!row || row.request_hash !== normalizedHash) {
+      await client.query('COMMIT');
+      transactionOpen = false;
+      return { outcome: row ? 'mismatch' : 'missing', limit };
+    }
+    const request = normalizeSocialPublicationRow(row);
+    if (request.status !== 'pending' || request.attemptStartedAt) {
+      await client.query('COMMIT');
+      transactionOpen = false;
+      return {
+        outcome: request.attemptStartedAt && request.status === 'pending'
+          ? 'already_started'
+          : request.status,
+        request,
+        limit,
+      };
+    }
+
+    const usageResult = await client.query(`
+      SELECT COUNT(*)::integer AS used,
+        GREATEST(1, CEIL(EXTRACT(EPOCH FROM (
+          MIN(attempt_started_at) + INTERVAL '24 hours' - NOW()
+        ))))::integer AS retry_after_seconds
+      FROM social_publication_requests
+      WHERE provider = $1
+        AND attempt_started_at >= NOW() - INTERVAL '24 hours'
+    `, [normalizedProvider]);
+    const used = Number(usageResult.rows?.[0]?.used || 0);
+    const retryAfterSeconds = Number(usageResult.rows?.[0]?.retry_after_seconds || 86400);
+    if (used >= limit) {
+      await client.query('COMMIT');
+      transactionOpen = false;
+      return {
+        outcome: 'quota',
+        used,
+        limit,
+        retryAfterSeconds: Math.max(1, Math.min(86400, retryAfterSeconds || 86400)),
+      };
+    }
+
+    const startedResult = await client.query(`
+      UPDATE social_publication_requests
+      SET attempt_started_at = NOW(), updated_at = NOW()
+      WHERE user_id = $1 AND provider = $2 AND idempotency_key = $3
+        AND request_hash = $4 AND status = 'pending'
+        AND attempt_started_at IS NULL
+      RETURNING id, user_id, provider, request_hash, status, result_json,
+        error_code, attempt_started_at, created_at, updated_at, completed_at
+    `, [normalizedUserId, normalizedProvider, normalizedKey, normalizedHash]);
+    await client.query('COMMIT');
+    transactionOpen = false;
+    const started = startedResult.rows?.[0];
+    return started
+      ? { outcome: 'started', request: normalizeSocialPublicationRow(started), used: used + 1, limit }
+      : { outcome: 'already_started', used, limit };
+  } catch (error) {
+    if (transactionOpen) {
+      try { await client.query('ROLLBACK'); } catch { /* connexion deja perdue */ }
+    }
+    throw error;
+  } finally {
+    if (typeof client.release === 'function') client.release();
+  }
+}
+
+async function completeSocialPublicationRequest(db, {
+  userId = 'admin',
+  provider = '',
+  idempotencyKey = '',
+  requestHash = '',
+  status = '',
+  result = null,
+  errorCode = '',
+} = {}) {
+  if (!db || typeof db.query !== 'function') {
+    const error = new Error('social_publication_db_required');
+    error.code = 'social_publication_db_required';
+    throw error;
+  }
+  if (!['succeeded', 'failed'].includes(status)) {
+    const error = new Error('social_publication_status_invalid');
+    error.code = 'social_publication_status_invalid';
+    throw error;
+  }
+  const safeResult = status === 'succeeded' && result && typeof result === 'object'
+    ? JSON.stringify(result)
+    : null;
+  const update = await db.query(`
+    UPDATE social_publication_requests
+    SET status = $5,
+      result_json = CASE WHEN $5 = 'succeeded' THEN $6::jsonb ELSE NULL END,
+      error_code = CASE WHEN $5 = 'failed' THEN $7 ELSE NULL END,
+      completed_at = NOW(),
+      updated_at = NOW()
+    WHERE user_id = $1 AND provider = $2 AND idempotency_key = $3
+      AND request_hash = $4 AND status = 'pending'
+    RETURNING id, user_id, provider, request_hash, status, result_json,
+      error_code, attempt_started_at, created_at, updated_at, completed_at
+  `, [
+    cleanOneLine(userId, 'admin', 160),
+    normalizeProvider(provider),
+    String(idempotencyKey || '').trim(),
+    cleanOneLine(requestHash, '', 128),
+    status,
+    safeResult,
+    cleanOneLine(errorCode, 'social_publication_failed', 100),
+  ]);
+  return update.rows?.[0] ? normalizeSocialPublicationRow(update.rows[0]) : null;
 }
 
 function resolveExpiresAt(tokens = {}) {
@@ -1089,48 +1425,159 @@ function parseSocialRssItems(xml = '', { limit = 12 } = {}) {
 
 function normalizeYoutubeVideoItem(video = {}, fallback = {}) {
   const snippet = video.snippet || fallback.snippet || {};
-  const stats = video.statistics || {};
   const id = cleanText(video.id || fallback.contentDetails?.videoId || fallback.snippet?.resourceId?.videoId, 120);
+  const rawViewCount = cleanText(video.statistics?.viewCount, 40);
+  const viewCount = /^\d+$/.test(rawViewCount) ? rawViewCount : '';
   return {
     externalId: id,
     itemType: 'video',
     title: cleanOneLine(snippet.title, 'Vidéo YouTube', 280),
     description: cleanText(snippet.description, 5000),
     url: youtubeWatchUrl(id),
-    publishedAt: snippet.publishedAt || fallback.contentDetails?.videoPublishedAt || fallback.snippet?.publishedAt || null,
-    stats,
-    raw: {
-      id,
-      snippet: {
-        title: snippet.title,
-        channelTitle: snippet.channelTitle,
-        publishedAt: snippet.publishedAt,
-        tags: snippet.tags || [],
-        categoryId: snippet.categoryId,
-      },
-      statistics: stats,
-    },
+    publishedAt: null,
+    stats: viewCount ? { viewCount } : {},
+    commentsSummary: '',
+    raw: { id },
   };
 }
 
-async function fetchYoutubeCommentSummary(videoId, accessToken, fetchFn = globalThis.fetch) {
-  try {
-    const data = await youtubeApi('/commentThreads', accessToken, {
-      part: 'snippet',
-      videoId,
-      maxResults: 20,
-      order: 'relevance',
-      textFormat: 'plainText',
-    }, fetchFn);
-    const comments = (data.items || [])
-      .map((item) => item?.snippet?.topLevelComment?.snippet?.textDisplay || item?.snippet?.topLevelComment?.snippet?.textOriginal)
-      .map((entry) => cleanText(entry, 240))
-      .filter(Boolean)
-      .slice(0, 8);
-    return comments.join(' | ');
-  } catch {
-    return '';
+function assertAllowedYoutubeFeedUrl(rawUrl = '', expectedChannelId = '') {
+  const url = new URL(cleanText(rawUrl, 1000));
+  if (url.protocol !== 'https:') throw new Error('youtube_public_feed_https_required');
+  if (url.username || url.password || url.hash) throw new Error('youtube_public_feed_url_denied');
+  if (url.port && url.port !== '443') throw new Error('youtube_public_feed_port_denied');
+  const host = foldForLookup(url.hostname);
+  if (!YOUTUBE_PUBLIC_FEED_HOSTS.includes(host) || url.pathname !== '/feeds/videos.xml') {
+    throw new Error('youtube_public_feed_url_denied');
   }
+  if ([...url.searchParams.keys()].some((key) => key !== 'channel_id')) {
+    throw new Error('youtube_public_feed_query_denied');
+  }
+  const channelId = cleanText(url.searchParams.get('channel_id'), 180);
+  if (!channelId || (expectedChannelId && channelId !== cleanText(expectedChannelId, 180))) {
+    throw new Error('youtube_public_feed_channel_mismatch');
+  }
+  return url;
+}
+
+function parseYoutubeAtomVideoIds(xml = '', { limit = 12, expectedChannelId = '' } = {}) {
+  const safeLimit = Math.max(1, Math.min(50, Number(limit) || 12));
+  const document = String(xml || '');
+  const feedChannelId = extractXmlTag(document, 'yt:channelId');
+  const safeExpectedChannelId = cleanText(expectedChannelId, 180);
+  // Dans l'element racine, le flux YouTube omet historiquement le prefixe
+  // `UC`; les entrees, elles, exposent l'identifiant complet. Accepter ces
+  // deux representations seulement, puis laisser videos.list revalider chaque
+  // item contre l'identifiant complet de channels.list.
+  const feedChannelMatches = !safeExpectedChannelId
+    || !feedChannelId
+    || feedChannelId === safeExpectedChannelId
+    || (safeExpectedChannelId.startsWith('UC') && feedChannelId === safeExpectedChannelId.slice(2));
+  if (!feedChannelMatches) {
+    throw new Error('youtube_public_feed_channel_mismatch');
+  }
+  const ids = [...document.matchAll(/<entry\b[^>]*>([\s\S]*?)<\/entry>/gi)]
+    .map((match) => extractXmlTag(match[1], 'yt:videoId'))
+    .filter(Boolean);
+  return unique(ids, safeLimit);
+}
+
+async function fetchYoutubePublicFeedVideoIds(channelId, {
+  limit = 12,
+  fetchFn = globalThis.fetch,
+  maxBytes = 1024 * 1024,
+  timeoutMs = 15000,
+} = {}) {
+  const safeChannelId = cleanText(channelId, 180);
+  const initial = new URL(YOUTUBE_PUBLIC_FEED_URL);
+  initial.searchParams.set('channel_id', safeChannelId);
+  let current = assertAllowedYoutubeFeedUrl(initial.toString(), safeChannelId);
+  const safeMaxBytes = Math.max(1024, Math.min(4 * 1024 * 1024, Number(maxBytes) || 1024 * 1024));
+  const safeTimeoutMs = Math.max(1000, Math.min(30000, Number(timeoutMs) || 15000));
+
+  for (let redirects = 0; redirects <= 3; redirects += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), safeTimeoutMs);
+    try {
+      const response = await fetchFn(current, {
+        redirect: 'manual',
+        signal: controller.signal,
+        headers: {
+          accept: 'application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.1',
+          'user-agent': 'Funesterie-A11-YouTubePublicFeed/1.0',
+        },
+      });
+      const status = Number(response?.status || (response?.ok ? 200 : 0));
+      if ([301, 302, 303, 307, 308].includes(status)) {
+        const location = response.headers?.get?.('location') || response.headers?.location || '';
+        if (!location) throw new Error('youtube_public_feed_redirect_without_location');
+        current = assertAllowedYoutubeFeedUrl(new URL(location, current).toString(), safeChannelId);
+        continue;
+      }
+      if (!response?.ok) throw new Error(`youtube_public_feed_http_${status || 'failed'}`);
+      const contentLength = Number(response.headers?.get?.('content-length') || response.headers?.['content-length'] || 0);
+      if (Number.isFinite(contentLength) && contentLength > safeMaxBytes) throw new Error('youtube_public_feed_too_large');
+      const contentType = cleanText(response.headers?.get?.('content-type') || response.headers?.['content-type'] || '', 160).toLowerCase();
+      const xml = await response.text();
+      if (Buffer.byteLength(xml, 'utf8') > safeMaxBytes) throw new Error('youtube_public_feed_too_large');
+      if (contentType.includes('html') || /^\s*<!doctype html/i.test(xml) || /^\s*<html\b/i.test(xml)) {
+        throw new Error('youtube_public_feed_html_response_denied');
+      }
+      if (!/<feed\b/i.test(xml)) throw new Error('youtube_public_feed_xml_missing_feed_root');
+      return {
+        url: current.toString(),
+        videoIds: parseYoutubeAtomVideoIds(xml, { limit, expectedChannelId: safeChannelId }),
+      };
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error('youtube_public_feed_timeout');
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw new Error('youtube_public_feed_too_many_redirects');
+}
+
+async function fetchYoutubePublicVideoItems(accessToken, { limit = 12, fetchFn = globalThis.fetch } = {}) {
+  const boundedLimit = Math.max(1, Math.min(50, Number(limit) || 12));
+  const channels = await youtubeApi('/channels', accessToken, {
+    part: 'snippet',
+    mine: 'true',
+    maxResults: 1,
+    fields: 'items(id,snippet(title))',
+  }, fetchFn);
+  const channel = channels.items?.[0] || {};
+  const channelId = cleanText(channel.id, 180);
+  if (!channelId) {
+    const error = new Error('youtube_channel_identity_missing');
+    error.code = 'youtube_channel_identity_missing';
+    throw error;
+  }
+
+  // Le flux Atom de la chaine n'utilise ni search.list ni la playlist privee
+  // des uploads. Il fournit uniquement les identifiants des publications
+  // publiques; videos.list sert ensuite de verification defensive et de source
+  // minimale pour les metadonnees autorisees.
+  const feed = await fetchYoutubePublicFeedVideoIds(channelId, { limit: boundedLimit, fetchFn });
+  const ids = feed.videoIds;
+  if (!ids.length) return { channel, channelId, items: [] };
+
+  const videos = await youtubeApi('/videos', accessToken, {
+    part: 'snippet,statistics,status',
+    id: ids.join(','),
+    maxResults: ids.length,
+    fields: 'items(id,snippet(channelId,title,description),statistics(viewCount),status(privacyStatus))',
+  }, fetchFn);
+  const byId = new Map((videos.items || []).map((item) => [cleanText(item.id, 120), item]));
+  const items = [];
+  for (const id of ids) {
+    const video = byId.get(id);
+    if (!video) continue;
+    if (cleanText(video.status?.privacyStatus, 20).toLowerCase() !== 'public') continue;
+    if (cleanText(video.snippet?.channelId, 180) !== channelId) continue;
+    items.push(normalizeYoutubeVideoItem(video));
+  }
+  return { channel, channelId, items };
 }
 
 async function upsertSocialItem(db, item = {}, account = {}) {
@@ -1170,6 +1617,12 @@ async function upsertSocialItem(db, item = {}, account = {}) {
   return result.rows[0]?.id || null;
 }
 
+async function clearYoutubeIngestCache(db, { userId = 'admin' } = {}) {
+  const safeUserId = cleanOneLine(userId, 'admin', 160);
+  await db.query("DELETE FROM social_items WHERE user_id = $1 AND provider = 'youtube'", [safeUserId]);
+  await db.query("DELETE FROM social_context_snapshots WHERE user_id = $1 AND provider = 'youtube'", [safeUserId]);
+}
+
 async function ingestYoutubeAccount(db, { userId = 'admin', limit = 12, fetchFn = globalThis.fetch, env = process.env } = {}) {
   await ensureSocialSchema(db);
   const accountBundle = await getFreshSocialTokens(db, { provider: 'youtube', userId }, env, fetchFn);
@@ -1180,75 +1633,40 @@ async function ingestYoutubeAccount(db, { userId = 'admin', limit = 12, fetchFn 
   if (accountBundle.row.reconnect_required === true) return { ok: false, reconnectRequired: true, error: 'reconnect_required' };
   const account = accountBundle.row;
   const accessToken = accountBundle.tokens.accessToken;
-  const channels = await youtubeApi('/channels', accessToken, {
-    part: 'snippet,statistics,contentDetails',
-    mine: 'true',
-    maxResults: 5,
-  }, fetchFn);
-  const channel = channels.items?.[0] || {};
-  const channelId = cleanText(channel.id || account.account_external_id, 180);
-  const uploadsPlaylistId = cleanText(channel.contentDetails?.relatedPlaylists?.uploads, 180);
-  if (channelId && channelId !== account.account_external_id) {
-    const tokenPayload = {
-      access_token: accountBundle.tokens.accessToken,
-      refresh_token: accountBundle.tokens.refreshToken,
-      token_type: accountBundle.tokens.tokenType || 'Bearer',
-      scope: accountBundle.tokens.scope || splitScopes(account.scopes).join(' '),
-      expires_at: accountBundle.tokens.expiresAt,
-    };
-    const updated = await upsertSocialAccount(db, {
-      userId: account.user_id,
-      provider: 'youtube',
-      accountExternalId: channelId,
-      accountLabel: cleanOneLine(channel.snippet?.title, account.account_label || 'YouTube', 200),
-      scopes: account.scopes || splitScopes(accountBundle.tokens.scope),
-      tokens: tokenPayload,
-      metadata: {
-        ...(account.metadata_json || {}),
-        channelStatistics: channel.statistics || {},
-        channelUrl: channelId ? `https://www.youtube.com/channel/${channelId}` : '',
-      },
-    }, env);
-    account.id = updated.id || account.id;
-    account.account_external_id = channelId;
-    account.account_label = cleanOneLine(channel.snippet?.title, account.account_label || 'YouTube', 200);
-    account.metadata_json = { ...(account.metadata_json || {}), channelStatistics: channel.statistics || {} };
-  }
+  const youtubeData = await fetchYoutubePublicVideoItems(accessToken, { limit, fetchFn });
+  const { channel, channelId, items: publicItems } = youtubeData;
+  const sanitizedMetadata = { ...(account.metadata_json || {}) };
+  delete sanitizedMetadata.channelDescription;
+  delete sanitizedMetadata.channelStatistics;
+  sanitizedMetadata.channelTitle = cleanOneLine(channel.snippet?.title, account.account_label || 'YouTube', 200);
+  sanitizedMetadata.channelUrl = `https://www.youtube.com/channel/${channelId}`;
+  const tokenPayload = {
+    access_token: accountBundle.tokens.accessToken,
+    refresh_token: accountBundle.tokens.refreshToken,
+    token_type: accountBundle.tokens.tokenType || 'Bearer',
+    scope: accountBundle.tokens.scope || splitScopes(account.scopes).join(' '),
+    expires_at: accountBundle.tokens.expiresAt,
+  };
+  const updated = await upsertSocialAccount(db, {
+    userId: account.user_id,
+    provider: 'youtube',
+    accountExternalId: channelId,
+    accountLabel: cleanOneLine(channel.snippet?.title, account.account_label || 'YouTube', 200),
+    scopes: account.scopes || splitScopes(accountBundle.tokens.scope),
+    tokens: tokenPayload,
+    metadata: sanitizedMetadata,
+  }, env);
+  account.id = updated.id || account.id;
+  account.account_external_id = channelId;
+  account.account_label = cleanOneLine(channel.snippet?.title, account.account_label || 'YouTube', 200);
+  account.metadata_json = sanitizedMetadata;
 
-  let playlistItems = [];
-  if (uploadsPlaylistId) {
-    const playlist = await youtubeApi('/playlistItems', accessToken, {
-      part: 'snippet,contentDetails',
-      playlistId: uploadsPlaylistId,
-      maxResults: Math.max(1, Math.min(50, Number(limit) || 12)),
-    }, fetchFn);
-    playlistItems = playlist.items || [];
-  } else {
-    const search = await youtubeApi('/search', accessToken, {
-      part: 'snippet',
-      forMine: 'true',
-      type: 'video',
-      maxResults: Math.max(1, Math.min(50, Number(limit) || 12)),
-    }, fetchFn);
-    playlistItems = search.items || [];
-  }
-  const ids = unique(playlistItems.map((item) => item.contentDetails?.videoId || item.snippet?.resourceId?.videoId || item.id?.videoId), 50);
-  if (!ids.length) {
-    await db.query('UPDATE social_accounts SET last_ingest_at = NOW(), updated_at = NOW() WHERE id = $1', [account.id]);
-    return { ok: true, provider: 'youtube', items: 0, context: null };
-  }
-  const videos = await youtubeApi('/videos', accessToken, {
-    part: 'snippet,statistics,contentDetails',
-    id: ids.join(','),
-    maxResults: ids.length,
-  }, fetchFn);
-  const byId = new Map((videos.items || []).map((item) => [cleanText(item.id, 120), item]));
+  // Le nettoyage historique de social_prompt_context est une migration
+  // globale ponctuelle dans ensureSocialSchema. Ici, seule la projection
+  // YouTube courante est remplacee avant sa reconstruction.
+  await clearYoutubeIngestCache(db, { userId: account.user_id });
   const savedIds = [];
-  for (const fallback of playlistItems) {
-    const id = cleanText(fallback.contentDetails?.videoId || fallback.snippet?.resourceId?.videoId || fallback.id?.videoId, 120);
-    if (!id) continue;
-    const item = normalizeYoutubeVideoItem(byId.get(id) || {}, fallback);
-    item.commentsSummary = await fetchYoutubeCommentSummary(id, accessToken, fetchFn);
+  for (const item of publicItems) {
     const savedId = await upsertSocialItem(db, item, account);
     if (savedId) savedIds.push(savedId);
   }
@@ -1629,7 +2047,9 @@ function buildProviderAuthUrl(provider, { state, req, env = process.env, codeCha
     url.searchParams.set('response_type', 'code');
     url.searchParams.set('scope', config.scopes.join(' '));
     url.searchParams.set('access_type', 'offline');
-    url.searchParams.set('include_granted_scopes', 'true');
+    // Ne jamais agréger un ancien consentement Google plus large au jeton
+    // social courant: ce flux reste strictement limité aux deux scopes YouTube.
+    url.searchParams.set('include_granted_scopes', 'false');
     url.searchParams.set('prompt', 'consent');
     url.searchParams.set('state', state);
     return { ok: true, provider: normalized, url: url.toString(), scopes: config.scopes, redirectUri: config.redirectUri };
@@ -1708,11 +2128,14 @@ module.exports = {
   DEFAULT_SOUNDCLOUD_SCOPES,
   DEFAULT_YOUTUBE_SCOPES,
   SOCIAL_SCHEMA_VERSION,
+  YOUTUBE_PUBLIC_CONTEXT_MIGRATION,
   buildAndStoreSocialPromptContext,
   buildProviderAuthUrl,
   buildSocialAutopromptRedactedStatus,
   buildSocialPromptContextFromItems,
+  claimSocialPublicationRequest,
   cleanText,
+  completeSocialPublicationRequest,
   exchangeMetaCode,
   exchangeSoundCloudCode,
   exchangeYoutubeCode,
@@ -1721,17 +2144,22 @@ module.exports = {
   getFreshSocialTokens,
   getSoundCloudAccountIdentity,
   fetchSocialRssXml,
+  fetchYoutubePublicFeedVideoIds,
+  fetchYoutubePublicVideoItems,
   ingestSoundCloudRssFeed,
   ingestYoutubeAccount,
   listSocialAccounts,
   normalizeKind,
   normalizeProvider,
+  parseYoutubeAtomVideoIds,
   purgeSocialContext,
   redactAccount,
   refreshYoutubeAccount,
   refreshSoundCloudAccount,
   resolveProviderConfig,
+  runSocialDataMigrations,
   setSocialAccountPaused,
+  startSocialPublicationAttempt,
   disconnectSocialAccount,
   splitScopes,
   parseSocialRssItems,
