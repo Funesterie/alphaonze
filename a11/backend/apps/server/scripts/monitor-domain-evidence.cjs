@@ -75,6 +75,7 @@ function requestEvidence(url, options = {}) {
         Accept: 'text/html,application/json;q=0.9,*/*;q=0.1',
       },
     }, (response) => {
+      const peerCertificate = response.socket?.getPeerCertificate?.() || {};
       const chunks = [];
       let capturedBytes = 0;
       let truncated = false;
@@ -89,7 +90,6 @@ function requestEvidence(url, options = {}) {
         if (slice.length < chunk.length) truncated = true;
       });
       response.on('end', () => {
-        const certificate = response.socket?.getPeerCertificate?.() || {};
         const body = Buffer.concat(chunks);
         finish({
           ok: Number(response.statusCode) >= 200 && Number(response.statusCode) < 400,
@@ -103,11 +103,11 @@ function requestEvidence(url, options = {}) {
           captureTruncated: truncated,
           bodyPrefixSha256: sha256(body),
           tls: {
-            subject: String(certificate.subject?.CN || '').slice(0, 255),
-            issuer: String(certificate.issuer?.CN || '').slice(0, 255),
-            validFrom: String(certificate.valid_from || ''),
-            validTo: String(certificate.valid_to || ''),
-            fingerprint256: String(certificate.fingerprint256 || ''),
+            subject: String(peerCertificate.subject?.CN || '').slice(0, 255),
+            issuer: String(peerCertificate.issuer?.CN || '').slice(0, 255),
+            validFrom: String(peerCertificate.valid_from || ''),
+            validTo: String(peerCertificate.valid_to || ''),
+            fingerprint256: String(peerCertificate.fingerprint256 || ''),
           },
         });
       });
