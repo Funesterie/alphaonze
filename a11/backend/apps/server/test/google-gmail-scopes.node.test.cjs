@@ -15,10 +15,28 @@ test('le bloc de resolution des perimetres Google est trouve', () => {
   assert.ok(bloc, 'sans ce bloc, les tests suivants ne verifient rien');
 });
 
-test('la lecture seule est le defaut Gmail', () => {
-  // Vivy peut lire et resumer sans qu un mail puisse partir.
+test('la lecture Gmail est un profil distinct, ferme par defaut', () => {
+  // CHANGEMENT DU 11/08/2026 : la lecture seule n'est plus le defaut du profil
+  // courrier, elle est verrouillee. gmail.readonly est un perimetre RESTREINT chez
+  // Google — le demander soumet l'application entiere a une evaluation de securite
+  // par un cabinet tiers, payante et annuelle. C'etait le seul perimetre couteux
+  // sans verrou, alors que Drive et l'ecriture Gmail en avaient un.
   assert.match(bloc, /'gmail', 'mail', 'google-mail', 'gmail-lecture'/);
-  assert.match(bloc, /gmail\.readonly/);
+  const iGarde = bloc.indexOf('GOOGLE_OAUTH_ALLOW_GMAIL_PROFILE');
+  const iPerimetre = bloc.indexOf('auth/gmail.readonly');
+  assert.ok(iGarde > -1, 'la garde de lecture doit exister');
+  assert.ok(iPerimetre > iGarde, 'la garde doit preceder le perimetre de lecture');
+});
+
+test('ferme, le profil courrier retombe sur la connexion simple', () => {
+  // Le repli ne doit pas etre « un peu moins de Gmail » mais AUCUN Gmail : un
+  // perimetre non declare cote Google fait echouer la verification, et le pire
+  // des cas est celui qu'on ne voit pas parce qu'il marche.
+  const helper = bloc.slice(bloc.indexOf('const gmailReadonlyScope'));
+  const avantOuverture = helper.slice(0, helper.indexOf('auth/gmail.readonly'));
+  assert.match(avantOuverture, /if \(!allowGmailProfile\)/);
+  assert.match(avantOuverture, /'openid email profile'/);
+  assert.doesNotMatch(avantOuverture, /auth\/gmail/, 'le repli ne doit ouvrir aucun perimetre courrier');
 });
 
 test('l ecriture est un profil distinct, ferme par defaut', () => {
@@ -27,8 +45,24 @@ test('l ecriture est un profil distinct, ferme par defaut', () => {
   assert.match(bloc, /GOOGLE_OAUTH_ALLOW_GMAIL_COMPOSE/);
   assert.match(bloc, /if \(!allowCompose\)/);
   const apresGarde = bloc.slice(bloc.indexOf('if (!allowCompose)'));
-  const replii = apresGarde.slice(0, apresGarde.indexOf('return resolveOAuthScope', apresGarde.indexOf('return resolveOAuthScope') + 10));
-  assert.match(replii, /gmail\.readonly/, 'le repli doit etre la lecture seule, pas l ecriture');
+  const replii = apresGarde.slice(0, apresGarde.indexOf('return resolveOAuthScope'));
+  // Le repli passe par le verrou de lecture. Deux verrous en serie : sans les
+  // ouvrir tous les deux, l'envoi est hors d'atteinte.
+  assert.match(replii, /return gmailReadonlyScope\(\);/, 'le repli doit passer par le verrou de lecture');
+  assert.doesNotMatch(replii, /gmail\.compose/, 'le repli ne doit jamais accorder l envoi');
+});
+
+test('le profil Drive ne demande aucun perimetre sensible', () => {
+  // drive.file n'est PAS sensible au sens de Google et couvre l'usage reel :
+  // ecrire les fichiers generes dans le Drive de l'utilisateur. Retire le
+  // 11/08/2026, drive.metadata.readonly l'etait, ouvrait la lecture des
+  // metadonnees de TOUT le Drive, et aucun appel ne s'en servait.
+  assert.match(bloc, /auth\/drive\.file/);
+  assert.doesNotMatch(
+    bloc,
+    /auth\/drive\.metadata\.readonly/,
+    'perimetre sensible inutilise : il se fait refuser en verification et inquiete l utilisateur pour rien'
+  );
 });
 
 test('gmail.compose n est atteignable qu apres ouverture explicite', () => {

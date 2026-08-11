@@ -1508,9 +1508,21 @@ function createAuthRouter({
           'openid email profile'
         );
       }
+      // drive.file suffit, et ce n'est deliberement pas un hasard : il n'est PAS
+      // sensible au sens de Google, donc il ne traine pas l'application dans une
+      // revue de verification. Il couvre exactement notre usage — ecrire les
+      // fichiers generes dans le Drive de l'utilisateur (session-drive-writer.cjs)
+      // et relire ce que nous avons cree, y compris via files.list, qui filtre
+      // alors sur les seuls fichiers de l'application.
+      //
+      // drive.metadata.readonly a ete retire le 11/08/2026 : il est SENSIBLE, il
+      // ouvre la lecture des metadonnees de TOUT le Drive, et aucun appel ne s'en
+      // servait. Un defaut qui reclame un perimetre sensible inutilise est un
+      // piege : il se fait refuser en verification et il inquiete l'utilisateur
+      // sur l'ecran de consentement, pour rien.
       return resolveOAuthScope(
         ['GOOGLE_OAUTH_DRIVE_SCOPES', 'A11_GOOGLE_OAUTH_DRIVE_SCOPES', 'GOOGLE_OAUTH_SCOPES', 'A11_GOOGLE_OAUTH_SCOPES'],
-        'openid email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly'
+        'openid email profile https://www.googleapis.com/auth/drive.file'
       );
     }
 
@@ -1522,11 +1534,36 @@ function createAuthRouter({
     // pas etre garanti par le perimetre — la retenue doit vivre dans notre code.
     // D'ou la separation ici : la lecture seule est le defaut, l'ecriture est un
     // profil distinct qu'il faut ouvrir explicitement, comme pour Drive.
-    if (['gmail', 'mail', 'google-mail', 'gmail-lecture'].includes(profile)) {
+    // AJOUT DU 11/08/2026 — la lecture Gmail est desormais verrouillee elle aussi.
+    //
+    // gmail.readonly est un perimetre RESTREINT au sens de Google, la categorie la
+    // plus lourde : le demander soumet l'application ENTIERE a une evaluation de
+    // securite CASA par un cabinet tiers, payante et a renouveler chaque annee.
+    // C'etait le seul perimetre couteux sans verrou, alors que Drive et l'ecriture
+    // Gmail en avaient un — l'oubli exact qui fait demander en production un
+    // perimetre qu'on n'a pas declare, et qui fait echouer la verification.
+    //
+    // Il est donc ferme par defaut. Ne l'ouvrir qu'apres l'avoir declare cote
+    // Google et en acceptant le cout de l'evaluation.
+    const gmailReadonlyScope = () => {
+      const allowGmailProfile = isTruthy(
+        process.env.GOOGLE_OAUTH_ALLOW_GMAIL_PROFILE
+        || process.env.A11_GOOGLE_OAUTH_ALLOW_GMAIL_PROFILE
+      );
+      if (!allowGmailProfile) {
+        return resolveOAuthScope(
+          ['GOOGLE_OAUTH_LOGIN_SCOPES', 'A11_GOOGLE_OAUTH_LOGIN_SCOPES'],
+          'openid email profile'
+        );
+      }
       return resolveOAuthScope(
         ['GOOGLE_OAUTH_GMAIL_SCOPES', 'A11_GOOGLE_OAUTH_GMAIL_SCOPES'],
         'openid email profile https://www.googleapis.com/auth/gmail.readonly'
       );
+    };
+
+    if (['gmail', 'mail', 'google-mail', 'gmail-lecture'].includes(profile)) {
+      return gmailReadonlyScope();
     }
 
     if (['gmail-compose', 'gmail-ecriture', 'gmail-write'].includes(profile)) {
@@ -1536,11 +1573,9 @@ function createAuthRouter({
       );
       if (!allowCompose) {
         // Fermé par defaut : demander l'ecriture sans l'avoir ouverte ne doit pas
-        // accorder l'envoi en silence. On retombe sur la lecture seule.
-        return resolveOAuthScope(
-          ['GOOGLE_OAUTH_GMAIL_SCOPES', 'A11_GOOGLE_OAUTH_GMAIL_SCOPES'],
-          'openid email profile https://www.googleapis.com/auth/gmail.readonly'
-        );
+        // accorder l'envoi en silence. On retombe sur la lecture seule — qui a
+        // maintenant son propre verrou, donc sur la connexion simple par defaut.
+        return gmailReadonlyScope();
       }
       return resolveOAuthScope(
         ['GOOGLE_OAUTH_GMAIL_COMPOSE_SCOPES', 'A11_GOOGLE_OAUTH_GMAIL_COMPOSE_SCOPES'],
