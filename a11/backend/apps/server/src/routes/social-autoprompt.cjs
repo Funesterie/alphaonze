@@ -3,8 +3,10 @@
 const crypto = require('node:crypto');
 const express = require('express');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
+const { uploadVideo: uploadYoutubeVideo } = require('../social/youtube-upload.cjs');
 const {
   resolveAccountTier,
 } = require('../auth/account-connectors.cjs');
@@ -349,6 +351,68 @@ function resolveGeneratedAudioFile(filename = '', env = process.env) {
     if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) return resolved;
   }
   return '';
+}
+
+/**
+ * Resout la source d'une video a publier: fichier genere local, ou URL R2.
+ *
+ * Le full clip envoie son rendu sur R2 puis SUPPRIME son workDir
+ * (src/video/full-clip.cjs): la video n'existe donc souvent que comme URL. Il faut
+ * accepter les deux, sinon la seule source reellement disponible est refusee.
+ *
+ * L'URL est bornee a la base publique R2 configuree. Telecharger une URL
+ * arbitraire fournie par l'appelant ferait de cette route un relais SSRF: le
+ * serveur irait chercher n'importe quelle adresse interne pour le compte de qui
+ * appelle. La liste blanche n'est donc pas du zele, c'est la seule chose qui
+ * empeche cet usage.
+ */
+function resolveGeneratedVideoSource(input = '', env = process.env) {
+  const brut = cleanText(input, 600);
+  if (!brut) return { kind: 'none' };
+
+  if (/^https?:\/\//i.test(brut)) {
+    const bases = [
+      env.R2_PUBLIC_BASE_URL,
+      env.A11_R2_PUBLIC_BASE_URL,
+      env.R2_PUBLIC_URL,
+    ].map((v) => cleanText(v, 300).replace(/\/+$/, '')).filter(Boolean);
+    if (!bases.length) return { kind: 'invalid', reason: 'aucune base publique R2 configuree' };
+
+    let url;
+    try { url = new URL(brut); } catch { return { kind: 'invalid', reason: 'URL illisible' }; }
+    if (url.protocol !== 'https:') return { kind: 'invalid', reason: 'https exige' };
+
+    const autorisee = bases.some((base) => {
+      let b;
+      try { b = new URL(base); } catch { return false; }
+      // Comparaison sur l'hote ET le chemin de base: un hote seul laisserait
+      // passer un sous-chemin d'un autre locataire du meme domaine.
+      return url.host === b.host && url.pathname.startsWith(b.pathname.replace(/\/+$/, '') + '/');
+    });
+    if (!autorisee) return { kind: 'invalid', reason: 'URL hors du stockage Funesterie' };
+    if (!/\.(mp4|mov|webm|mkv)$/i.test(url.pathname)) {
+      return { kind: 'invalid', reason: 'extension video attendue' };
+    }
+    return { kind: 'url', url: url.toString() };
+  }
+
+  // Fichier genere local: meme durcissement que resolveGeneratedAudioFile.
+  const safe = path.basename(brut);
+  if (!/^[\w.-]+\.(?:mp4|mov|webm|mkv)$/i.test(safe)) {
+    return { kind: 'invalid', reason: 'nom de fichier video attendu' };
+  }
+  const runtimeRoot = path.resolve(getCanonicalRuntimeRoot(env));
+  const candidats = [
+    path.join(runtimeRoot, 'video', safe),
+    path.join(runtimeRoot, 'files', safe),
+    path.join(runtimeRoot, 'files', 'uploads', safe),
+  ];
+  for (const candidat of candidats) {
+    const resolu = path.resolve(candidat);
+    if (!resolu.startsWith(runtimeRoot)) continue;
+    if (fs.existsSync(resolu) && fs.statSync(resolu).isFile()) return { kind: 'file', path: resolu };
+  }
+  return { kind: 'missing' };
 }
 
 function buildSocialConnectHtml() {
@@ -789,6 +853,129 @@ function createSocialAutopromptApiRouter({ verifyJWT, isAdminRequest, db, env = 
         status: error?.status || undefined,
         message: cleanText(error?.message || error, 500),
       });
+    }
+  });
+
+  /**
+   * Publie une video sur la chaine YouTube connectee.
+   *
+   * Meme verrou que SoundCloud: confirm:true obligatoire. Une publication externe
+   * ne doit jamais partir d'un appel accidentel.
+   *
+   * Defaut deliberement `private`. Deux raisons, et la seconde n'est pas la notre:
+   * un envoi depuis un projet API non audite est VERROUILLE en prive par YouTube
+   * de toute facon. Demander `public` par defaut donnerait l'illusion d'un choix
+   * et ferait chercher un bug chez nous. Le champ lockedPrivateLikely de la
+   * reponse nomme ce cas quand il se produit.
+   */
+  router.post('/youtube/upload-generated', async (req, res) => {
+    let tempFile = '';
+    try {
+      if (req.body?.confirm !== true && req.body?.confirm !== 'true') {
+        return res.status(400).json({
+          ok: false,
+          error: 'youtube_upload_confirm_required',
+          message: 'Publication externe verrouillée: renvoie confirm:true pour publier sur YouTube.',
+        });
+      }
+
+      const source = resolveGeneratedVideoSource(
+        req.body?.videoUrl || req.body?.filename || req.body?.video || '',
+        env
+      );
+      if (source.kind === 'none') {
+        return res.status(400).json({ ok: false, error: 'youtube_upload_source_required', message: 'videoUrl ou filename requis.' });
+      }
+      if (source.kind === 'invalid') {
+        return res.status(400).json({ ok: false, error: 'youtube_upload_source_invalid', message: source.reason });
+      }
+      if (source.kind === 'missing') {
+        return res.status(404).json({ ok: false, error: 'generated_video_not_found' });
+      }
+
+      const bundle = await getFreshSocialTokens(db, { provider: 'youtube', userId: getAdminUserId(req) }, env, fetchFn);
+      if (!bundle?.tokens?.accessToken) {
+        return res.status(401).json({
+          ok: false,
+          error: 'youtube_not_connected',
+          reconnectRequired: bundle?.refresh?.reconnectRequired === true,
+          refresh: bundle?.refresh || null,
+        });
+      }
+
+      // L'envoi reprenable relit le fichier par tranches, donc il lui faut un
+      // fichier sur disque: une URL est d'abord rapatriee.
+      let videoPath = source.path || '';
+      if (source.kind === 'url') {
+        const reponse = await fetchFn(source.url);
+        if (!reponse.ok) {
+          return res.status(502).json({
+            ok: false,
+            error: 'youtube_upload_source_fetch_failed',
+            status: reponse.status,
+          });
+        }
+        const octets = Buffer.from(await reponse.arrayBuffer());
+        tempFile = path.join(
+          os.tmpdir(),
+          `yt-upload-${crypto.randomBytes(6).toString('hex')}${path.extname(new URL(source.url).pathname) || '.mp4'}`
+        );
+        fs.writeFileSync(tempFile, octets);
+        videoPath = tempFile;
+      }
+
+      const resultat = await uploadYoutubeVideo({
+        accessToken: bundle.tokens.accessToken,
+        filePath: videoPath,
+        metadata: {
+          title: cleanText(req.body?.title, 100) || path.basename(videoPath).replace(/\.[^.]+$/, ''),
+          description: cleanText(req.body?.description, 5000),
+          tags: Array.isArray(req.body?.tags) ? req.body.tags.map((t) => cleanText(t, 100)).filter(Boolean) : [],
+          categoryId: cleanText(req.body?.categoryId, 8) || '10',
+          privacyStatus: cleanText(req.body?.privacyStatus, 20) || 'private',
+          madeForKids: req.body?.madeForKids === true,
+          publishAt: cleanText(req.body?.publishAt, 40),
+        },
+        fetchImpl: fetchFn,
+      });
+
+      return res.json({
+        ok: true,
+        provider: 'youtube',
+        uploaded: {
+          videoId: resultat.videoId,
+          url: resultat.url,
+          privacyStatus: resultat.privacyStatus,
+          lockedPrivateLikely: resultat.lockedPrivateLikely,
+          uploadedBytes: resultat.uploadedBytes,
+          resumes: resultat.resumes,
+        },
+        // Dit explicitement quoi faire quand YouTube a impose le prive, plutot
+        // que de laisser l'appelant conclure a une panne.
+        note: resultat.lockedPrivateLikely
+          ? "YouTube a impose 'private': l'audit de conformite du projet API n'est pas obtenu. Passer la video en public a la main."
+          : undefined,
+      });
+    } catch (error) {
+      const code = cleanText(error?.code, 60);
+      // Le perimetre manquant merite son propre statut: c'est un probleme
+      // d'autorisation a corriger par un reconsentement, pas une panne serveur.
+      if (code === 'youtube_upload_scope_missing') {
+        return res.status(403).json({
+          ok: false,
+          error: code,
+          message: "Le jeton ne porte pas youtube.upload. Reconnecter la chaine pour reconsentir: un jeton emis avant l'ajout du perimetre ne l'a pas.",
+        });
+      }
+      return res.status(500).json({
+        ok: false,
+        error: 'youtube_upload_failed',
+        code: code || undefined,
+        status: error?.status || undefined,
+        message: cleanText(error?.message || error, 500),
+      });
+    } finally {
+      if (tempFile) { try { fs.rmSync(tempFile, { force: true }); } catch { /* deja parti */ } }
     }
   });
 
