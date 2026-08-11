@@ -21,6 +21,11 @@ const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const execFileAsync = promisify(execFile);
 
+// Génération d'image par ComfyUI. C'est la branche que l'en-tête de ce fichier
+// annonce depuis le début et qui n'avait jamais été écrite.
+const { isComfyEnabled } = require("./comfyui-client.cjs");
+const { generateSceneImage, probeComfyAlive } = require("./comfy-image-provider.cjs");
+
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
@@ -363,22 +368,72 @@ async function generateFullClip(input = {}, context = {}) {
   logger.log(`[full-clip] storyboard: ${storyboard.length} scenes, ${totalDuration}s total`);
 
   // 1. Generate images for each scene
-  const imagePaths = [];
-  for (const scene of storyboard) {
-    try {
-      const imgPath = await generateFallbackImage(scene, {
-        workDir,
-        artistId,
-        width: DEFAULT_WIDTH,
-        height: DEFAULT_HEIGHT,
-      });
-      imagePaths.push(imgPath);
-      logger.log(`[full-clip] image: ${scene.sceneId} (${scene.header})`);
-    } catch (e) {
-      logger.warn(`[full-clip] image failed for ${scene.sceneId}: ${e.message}`);
-      throw e;
-    }
+  //
+  // ComfyUI d'abord, dégradé de couleur ensuite — le comportement annoncé ligne 8
+  // de l'en-tête. La branche ComfyUI manquait : generateFallbackImage était appelée
+  // sans condition, et scene.prompt, pourtant construit avec soin par
+  // buildScenePrompt(), n'était jamais utilisé. Voir comfy-image-provider.cjs.
+  //
+  // Un échec ne fait plus tomber le clip. Avant, la moindre image ratée relançait
+  // l'exception et jetait le montage entier ; or le dégradé est une sortie valable,
+  // et perdre un plan vaut mieux que perdre la chanson.
+  // Une seule sonde de vie pour tout le clip. isComfyEnabled() ne dit que « la
+  // variable existe », pas « quelqu'un repond ». En prod, COMFYUI_BASE_URL pointe
+  // sur le tunnel comfy.funesterie.me, et la machine qui porte la carte graphique
+  // n'est pas le serveur : le tunnel n'est pas toujours monte. Sans cette sonde,
+  // chaque scene payait le delai complet du client avant de se replier — une
+  // demi-heure pour huit scenes, pour finir en degrades quand meme.
+  let comfyVivant = false;
+  if (isComfyEnabled(process.env)) {
+    const sonde = await probeComfyAlive(process.env, 6000);
+    comfyVivant = sonde.alive === true;
+    logger.log(
+      comfyVivant
+        ? `[full-clip] ComfyUI joignable (version ${sonde.version}), images generees`
+        : `[full-clip] ComfyUI injoignable (${sonde.reason}), degrades de couleur pour tout le clip`
+    );
+  } else {
+    logger.log("[full-clip] ComfyUI non configure, degrades de couleur");
   }
+
+  const imagePaths = [];
+  let imagesComfy = 0;
+  for (const scene of storyboard) {
+    let imgPath = null;
+
+    if (comfyVivant) {
+      try {
+        const rendu = await generateSceneImage(scene, { workDir });
+        imgPath = rendu.imagePath;
+        imagesComfy += 1;
+        logger.log(
+          `[full-clip] image ComfyUI: ${scene.sceneId} (${scene.header}) via ${rendu.checkpoint}`
+        );
+      } catch (e) {
+        logger.warn(
+          `[full-clip] ComfyUI a echoue sur ${scene.sceneId}, repli sur le degrade: ${e.message}`
+        );
+      }
+    }
+
+    if (!imgPath) {
+      try {
+        imgPath = await generateFallbackImage(scene, {
+          workDir,
+          artistId,
+          width: DEFAULT_WIDTH,
+          height: DEFAULT_HEIGHT,
+        });
+        logger.log(`[full-clip] image degradee: ${scene.sceneId} (${scene.header})`);
+      } catch (e) {
+        logger.warn(`[full-clip] image failed for ${scene.sceneId}: ${e.message}`);
+        throw e;
+      }
+    }
+
+    imagePaths.push(imgPath);
+  }
+  logger.log(`[full-clip] images: ${imagesComfy}/${storyboard.length} par ComfyUI`);
 
   // 2. Create motion loops from images
   const loopPaths = [];
