@@ -281,7 +281,11 @@ function Send-FileViaSsh {
     [string]$RemoteHost,
     [string]$LocalPath,
     [string]$RemotePath,
-    [int]$TimeoutSeconds = 0
+    [int]$TimeoutSeconds = 0,
+    # Tranche volontairement petite : ce chemin porte surtout des fichiers de
+    # quelques kilo-octets (cles, .env, script de deploiement). 1 Mio suffit et
+    # limite ce qu'une coupure fait reperdre.
+    [int]$ChunkBytes = 1048576
   )
 
   # Delai proportionnel a la taille, pas fixe. Le forfait de 300 s tuait vivy.wav
@@ -290,10 +294,16 @@ function Send-FileViaSsh {
   # ne pouvait pas -- l'echec ressemblait a un probleme de fichier alors qu'il etait
   # arithmetique. On prend un plancher pessimiste de 20 Ko/s, et jamais moins de
   # 300 s pour les petits fichiers.
+  # Depuis le passage en tranches (11/08/2026) ce delai s'applique a UNE TRANCHE,
+  # plus au fichier entier : on le calcule donc sur la taille d'une tranche. Le
+  # calculer sur le fichier complet donnerait 1200 s pour envoyer 1 Mio d'un
+  # fichier de 24 Mo -- une tranche vraiment figee mettrait vingt minutes a etre
+  # detectee au lieu d'une poignee.
   if ($TimeoutSeconds -le 0) {
     $tailleOctets = 0
     try { $tailleOctets = (Get-Item -LiteralPath $LocalPath).Length } catch { }
-    $TimeoutSeconds = [Math]::Max(300, [int][Math]::Ceiling($tailleOctets / 20000))
+    $tailleTranche = [Math]::Min([int64]$ChunkBytes, [Math]::Max([int64]1, [int64]$tailleOctets))
+    $TimeoutSeconds = [Math]::Max(300, [int][Math]::Ceiling($tailleTranche / 20000))
   }
 
   # Les chemins distants sont entoures de guillemets simples cote shell. Un nom de
@@ -304,19 +314,71 @@ function Send-FileViaSsh {
   $escapedTmp = "$RemotePath.part".Replace("'", "'\''")
 
   $errFile = [IO.Path]::GetTempFileName()
-  $cmd = "cat > '$escapedTmp' && mv -f '$escapedTmp' '$escapedRemote'"
-  $args = @($SshArgs) + @($RemoteHost, $cmd)
+  $tmpChunk = Join-Path ([IO.Path]::GetTempPath()) ("a11-send-" + [Guid]::NewGuid().ToString('N') + ".part")
+  $localSize = 0
+  try { $localSize = (Get-Item -LiteralPath $LocalPath).Length } catch { }
 
   $debut = Get-Date
   try {
-    # Reprise sur coupure passagere. Le 02/08, apres 31 fichiers transmis dont
-    # vivy.wav (24 Mo), le deploiement est mort sur un fichier de 441 octets :
-    # "ssh: connect to host ... port 22: Connection timed out". Le lien avait lache
-    # une seconde. Sans reprise, une seconde de reseau coute une passe entiere.
-    $tentatives = 3
-    for ($essai = 1; $essai -le $tentatives; $essai += 1) {
-      $proc = Start-Process -FilePath "ssh" -ArgumentList $args -NoNewWindow -PassThru `
-        -RedirectStandardInput $LocalPath -RedirectStandardError $errFile
+    # DURCISSEMENT DU 11/08/2026 -- pourquoi ce n'est plus un seul flux.
+    #
+    # Avant : un unique `cat > .part && mv`, avec trois tentatives repartant de
+    # zero. Deux manques, dont un grave.
+    #
+    #   1. Aucune reprise. Une coupure a 95 % renvoyait tout depuis le debut, et
+    #      sur un lien qui perd des paquets les trois tentatives pouvaient echouer
+    #      d'affilee. Constate le 02/08 : mort sur un fichier de 441 octets apres
+    #      31 fichiers transmis, parce que le lien avait lache une seconde.
+    #
+    #   2. Aucune verification du contenu recu -- on se fiait au seul code de
+    #      sortie de ssh. Si ssh sortait 0 sur un flux tronque, le `mv` avait lieu
+    #      et un SECRET AMPUTE atterrissait en production. Un DATABASE_URL coupe
+    #      en deux, c'est un service qui demarre avec un identifiant casse, et
+    #      rien ne le signale. Ce chemin porte a11.env, build.env, les cles Suno
+    #      et Mureka, le corpus prive et le script de deploiement distant -- un
+    #      script bash tronque s'execute a moitie.
+    #
+    # Desormais : tranches en append sur .part, reprise sur la taille que le
+    # SERVEUR annonce (jamais un compteur local -- un compteur local avance sur des
+    # octets qui ne sont peut-etre jamais arrives), puis empreinte SHA-256 comparee
+    # des deux cotes, et le `mv` seulement si elle correspond. L'atomicite d'origine
+    # est conservee : la cible finale n'apparait qu'une fois le contenu prouve.
+    $stalls = 0
+    $maxStalls = 12
+    while ($true) {
+      $raw = (& ssh @SshArgs $RemoteHost "stat -c '%s' '$escapedTmp' 2>/dev/null || echo 0")
+      $chiffres = ("$raw").Trim() -replace '[^0-9]', ''
+      if ([string]::IsNullOrWhiteSpace($chiffres)) { $chiffres = '0' }
+      $offset = [int64]$chiffres
+
+      if ($offset -gt $localSize) {
+        # Reste d'un envoi precedent plus gros : impossible de reprendre dessus.
+        & ssh @SshArgs $RemoteHost "rm -f '$escapedTmp'" | Out-Null
+        continue
+      }
+      if ($offset -eq $localSize) {
+        # Un fichier vide n'entre jamais dans la boucle : on cree le .part
+        # explicitement, sinon la verification porterait sur un fichier absent.
+        if ($localSize -eq 0) { & ssh @SshArgs $RemoteHost ": > '$escapedTmp'" | Out-Null }
+        $global:LASTEXITCODE = 0
+        break
+      }
+
+      $take = [int][Math]::Min([int64]$ChunkBytes, $localSize - $offset)
+      $stream = [IO.File]::OpenRead($LocalPath)
+      try {
+        $stream.Seek($offset, [IO.SeekOrigin]::Begin) | Out-Null
+        $buffer = New-Object byte[] $take
+        $read = $stream.Read($buffer, 0, $take)
+      } finally { $stream.Dispose() }
+      $out = [IO.File]::Create($tmpChunk)
+      try { $out.Write($buffer, 0, $read) } finally { $out.Dispose() }
+
+      # stdin de ssh, pas scp : mesure du 01/08, scp cale en plein transfert sur
+      # un lien filtre la ou stdin passe.
+      $catArgs = @($SshArgs) + @($RemoteHost, "cat >> '$escapedTmp'")
+      $proc = Start-Process -FilePath "ssh" -ArgumentList $catArgs -NoNewWindow -PassThru `
+        -RedirectStandardInput $tmpChunk -RedirectStandardError $errFile
       $proc | Wait-Process -Timeout $TimeoutSeconds -ErrorAction SilentlyContinue
       if (-not $proc.HasExited) {
         Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
@@ -324,10 +386,23 @@ function Send-FileViaSsh {
       } else {
         $global:LASTEXITCODE = [int]$proc.ExitCode
       }
-      if ($LASTEXITCODE -eq 0) { break }
-      if ($essai -lt $tentatives) {
-        Write-Host ("  reprise {0}/{1} sur {2}" -f $essai, ($tentatives - 1), (Split-Path $LocalPath -Leaf)) -ForegroundColor DarkGray
-        Start-Sleep -Seconds (5 * $essai)
+
+      $rawApres = (& ssh @SshArgs $RemoteHost "stat -c '%s' '$escapedTmp' 2>/dev/null || echo 0")
+      $chiffresApres = ("$rawApres").Trim() -replace '[^0-9]', ''
+      if ([string]::IsNullOrWhiteSpace($chiffresApres)) { $chiffresApres = '0' }
+      $apres = [int64]$chiffresApres
+
+      if ($apres -le $offset) {
+        $stalls += 1
+        Write-Host ("  tranche perdue sur {0} ({1}/{2})" -f (Split-Path $LocalPath -Leaf), $stalls, $maxStalls) -ForegroundColor DarkYellow
+        if ($stalls -ge $maxStalls) { $global:LASTEXITCODE = 1; break }
+        Start-Sleep -Seconds ([Math]::Min(20, 3 * $stalls))
+      } else {
+        $stalls = 0
+        if ($localSize -gt 4194304) {
+          $pct = [math]::Round(100 * $apres / $localSize, 1)
+          Write-Host ("  envoi {0} % ({1:N0}/{2:N0} octets)" -f $pct, $apres, $localSize) -ForegroundColor DarkGray
+        }
       }
     }
 
@@ -345,9 +420,43 @@ function Send-FileViaSsh {
       $detail = (Get-Content -LiteralPath $errFile -Raw -ErrorAction SilentlyContinue)
       if ($detail) { Write-Host ("  ssh a dit: " + $detail.Trim()) -ForegroundColor DarkYellow }
       else { Write-Host "  ssh n'a rien ecrit sur stderr" -ForegroundColor DarkYellow }
+      # Le .part est laisse en place: la tentative suivante reprendra dessus.
+      # L'effacer transformerait une reprise possible en renvoi complet.
+    } else {
+      # PREUVE DU CONTENU, avant de publier le fichier.
+      #
+      # La taille ne suffit pas: un octet altere en vol laisse la taille juste. On
+      # compare les empreintes. Get-FileHash rend du majuscule, sha256sum du
+      # minuscule -- d'ou la comparaison insensible a la casse, faute de quoi
+      # l'egalite serait TOUJOURS fausse et aucun fichier ne passerait jamais.
+      $empreinteLocale = ''
+      try { $empreinteLocale = (Get-FileHash -LiteralPath $LocalPath -Algorithm SHA256).Hash } catch { }
+      $empreinteDistante = (& ssh @SshArgs $RemoteHost "sha256sum '$escapedTmp' 2>/dev/null | cut -d' ' -f1")
+      $empreinteDistante = ("$empreinteDistante").Trim()
+
+      if ([string]::IsNullOrWhiteSpace($empreinteLocale) -or [string]::IsNullOrWhiteSpace($empreinteDistante)) {
+        # Sans empreinte des deux cotes on ne peut RIEN affirmer. On refuse de
+        # publier plutot que de supposer: c'est tout l'objet de ce durcissement.
+        & ssh @SshArgs $RemoteHost "rm -f '$escapedTmp'" | Out-Null
+        $global:LASTEXITCODE = 1
+        throw "Envoi non verifiable ($([IO.Path]::GetFileName($RemotePath))): empreinte absente d'un cote. Rien n'a ete publie."
+      }
+
+      if (-not $empreinteLocale.Equals($empreinteDistante, [StringComparison]::OrdinalIgnoreCase)) {
+        & ssh @SshArgs $RemoteHost "rm -f '$escapedTmp'" | Out-Null
+        $global:LASTEXITCODE = 1
+        throw "Contenu different apres envoi ($([IO.Path]::GetFileName($RemotePath))): la cible n'a pas ete remplacee."
+      }
+
+      # Contenu prouve: publication atomique.
+      & ssh @SshArgs $RemoteHost "mv -f '$escapedTmp' '$escapedRemote'" | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        throw "Renommage final impossible ($([IO.Path]::GetFileName($RemotePath))): la cible reste inchangee."
+      }
     }
   } finally {
     Remove-Item -LiteralPath $errFile -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $tmpChunk -Force -ErrorAction SilentlyContinue
   }
 }
 
