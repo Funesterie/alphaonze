@@ -25,6 +25,12 @@ const execFileAsync = promisify(execFile);
 // annonce depuis le début et qui n'avait jamais été écrite.
 const { isComfyEnabled } = require("./comfyui-client.cjs");
 const { generateSceneImage, probeComfyAlive } = require("./comfy-image-provider.cjs");
+const {
+  downloadRemoteMedia,
+  parsePositiveInteger,
+  splitList,
+} = require("../security/safe-media-input.cjs");
+const { buildAudioProvenanceMetadataArgs } = require("../music/funesterie-audio-provenance.cjs");
 
 // ---------------------------------------------------------------------------
 // Config
@@ -39,6 +45,7 @@ const MIN_SCENES = 4;
 const MAX_SCENES = 12;
 const SCENE_MIN_DURATION = 4;
 const SCENE_MAX_DURATION = 30;
+const CROSSFADE_SECONDS = 0.5;
 
 const SOCIAL_FORMATS = {
   landscape: { width: 1920, height: 1080, label: "16:9 YouTube/Facebook" },
@@ -96,16 +103,22 @@ function buildStoryboard(lyrics, options = {}) {
   }
 
   // Allocate time per section based on line count
-  const totalLines = sections.reduce((sum, s) => sum + Math.max(1, s.lines.length), 0);
-  let cursor = 0;
-  const storyboard = sections.slice(0, MAX_SCENES).map((section, i) => {
+  const selectedSections = sections.slice(0, MAX_SCENES);
+  const totalLines = selectedSections.reduce((sum, s) => sum + Math.max(1, s.lines.length), 0);
+  const rawDurations = selectedSections.map((section) => {
     const weight = Math.max(1, section.lines.length) / totalLines;
-    const sceneDur = Math.max(SCENE_MIN_DURATION, Math.min(SCENE_MAX_DURATION, weight * duration));
-    const end = i === sections.length - 1 ? duration : Math.min(duration, cursor + sceneDur);
+    return Math.max(SCENE_MIN_DURATION, Math.min(SCENE_MAX_DURATION, weight * duration));
+  });
+  const rawTotalDuration = rawDurations.reduce((sum, value) => sum + value, 0) || duration;
+  const normalizedDurations = rawDurations.map((value) => value * duration / rawTotalDuration);
+  let cursor = 0;
+  const storyboard = selectedSections.map((section, i) => {
+    const sceneDur = normalizedDurations[i];
+    const end = i === selectedSections.length - 1 ? duration : Math.min(duration, cursor + sceneDur);
     const scene = {
       sceneId: `scene-${i + 1}`,
       header: section.header,
-      prompt: buildScenePrompt(songTitle, visualMood, artistId, i, sections.length, section.lines[0]),
+      prompt: buildScenePrompt(songTitle, visualMood, artistId, i, selectedSections.length, section.lines[0]),
       lyricPreview: section.lines.slice(0, 2).join(" "),
       startMs: Math.round(cursor * 1000),
       endMs: Math.round(end * 1000),
@@ -221,14 +234,14 @@ async function assembleMontage(loopPaths, outputPath, options = {}) {
   // Simple concat with xfade between scenes
   const filters = [];
   let prevLabel = "0:v";
-  let offset = 0;
+  const fadeDuration = CROSSFADE_SECONDS;
+  let offset = Math.max(0, Number(options.sceneDurations?.[0] || 5) - fadeDuration);
 
   for (let i = 1; i < loopPaths.length; i++) {
-    const fadeDuration = 0.5;
     const label = `v${i}`;
     filters.push(`[${prevLabel}][${i}:v]xfade=transition=fade:duration=${fadeDuration}:offset=${offset.toFixed(2)}[${label}]`);
     prevLabel = label;
-    offset += Number(options.sceneDurations?.[i - 1] || 5) - fadeDuration;
+    offset += Math.max(0, Number(options.sceneDurations?.[i] || 5) - fadeDuration);
   }
 
   const filterComplex = filters.length > 0 ? filters.join(";") : "[0:v]null[out]";
@@ -256,51 +269,135 @@ async function assembleMontage(loopPaths, outputPath, options = {}) {
 // Audio mux
 // ---------------------------------------------------------------------------
 
+function resolveFullClipAudioHosts(env = process.env) {
+  return Array.from(new Set([
+    'files.funesterie.me',
+    'tempfile.aiquickdraw.com',
+    'musicfile.removeai.ai',
+    'suno.ai',
+    '*.suno.ai',
+    'mureka.ai',
+    '*.mureka.ai',
+    ...splitList(env.VIVY_FULL_CLIP_AUDIO_HOSTS),
+    ...splitList(env.VIVY_SUNO_AUDIO_HOSTS),
+    ...splitList(env.VIVY_MUREKA_AUDIO_HOSTS),
+  ]));
+}
+
+function buildSceneRenderDurations(storyboard = [], fadeDuration = CROSSFADE_SECONDS) {
+  const overlap = Math.max(0, Number(fadeDuration) || 0);
+  return storyboard.map((scene, index) => (
+    Math.max(0.1, Number(scene?.durationSeconds) || 0.1)
+    + (index < storyboard.length - 1 ? overlap : 0)
+  ));
+}
+
+function resolveFullClipAuthenticatedHosts(env = process.env) {
+  return Array.from(new Set([
+    'a11.funesterie.me',
+    'funesterie.me',
+    'vivy.funesterie.me',
+    ...splitList(env.VIVY_FULL_CLIP_AUTH_HOSTS),
+  ]));
+}
+
+function isAllowedFullClipInternalPath(pathname = '') {
+  return /^\/api\/(?:vivy\/studio\/assets\/|double-harmonic\/)/i.test(String(pathname || ''));
+}
+
+function extensionForAudioContentType(contentType = '') {
+  const normalized = String(contentType || '').toLowerCase();
+  if (normalized.includes('wav')) return '.wav';
+  if (normalized.includes('flac')) return '.flac';
+  if (normalized.includes('ogg')) return '.ogg';
+  if (normalized.includes('mp4') || normalized.includes('m4a')) return '.m4a';
+  if (normalized.includes('aac')) return '.aac';
+  return '.mp3';
+}
+
+async function materializeFullClipAudio(audioUrl, options = {}) {
+  const workDir = path.resolve(options.workDir || os.tmpdir());
+  const localAudioPath = String(options.localAudioPath || '').trim();
+  if (localAudioPath) {
+    const resolved = fs.realpathSync(localAudioPath);
+    const stats = fs.statSync(resolved);
+    if (!stats.isFile()) throw new Error('full_clip_audio_local_file_required');
+    return resolved;
+  }
+
+  const raw = String(audioUrl || '').trim();
+  if (!raw) throw new Error('full_clip_missing_audio_url');
+  const env = options.env || process.env;
+  const authenticatedHosts = resolveFullClipAuthenticatedHosts(env);
+  const publicOrigin = String(
+    options.publicOrigin
+    || env.A11_PUBLIC_APP_URL
+    || env.PUBLIC_APP_URL
+    || 'https://a11.funesterie.me'
+  ).replace(/\/+$/, '');
+
+  let target;
+  try {
+    if (raw.startsWith('/')) {
+      if (!isAllowedFullClipInternalPath(raw)) throw new Error('full_clip_audio_path_forbidden');
+      target = new URL(raw, `${publicOrigin}/`);
+    } else {
+      target = new URL(raw);
+    }
+  } catch (error) {
+    if (String(error?.message || '') === 'full_clip_audio_path_forbidden') throw error;
+    throw new Error('full_clip_audio_url_invalid');
+  }
+  if (target.protocol !== 'https:' || target.username || target.password || (target.port && target.port !== '443')) {
+    throw new Error('full_clip_audio_url_forbidden');
+  }
+
+  const isAuthenticatedOrigin = authenticatedHosts.includes(target.hostname.toLowerCase());
+  if (isAuthenticatedOrigin && !isAllowedFullClipInternalPath(target.pathname)) {
+    throw new Error('full_clip_audio_path_forbidden');
+  }
+  const allowedHosts = isAuthenticatedOrigin ? authenticatedHosts : resolveFullClipAudioHosts(env);
+  const maxBytes = parsePositiveInteger(
+    options.maxBytes || env.VIVY_FULL_CLIP_AUDIO_MAX_BYTES,
+    160 * 1024 * 1024,
+    1024 * 1024,
+    256 * 1024 * 1024
+  );
+  const timeoutMs = parsePositiveInteger(
+    options.timeoutMs || env.VIVY_FULL_CLIP_AUDIO_TIMEOUT_MS,
+    120_000,
+    1_000,
+    120_000
+  );
+  const downloaded = await downloadRemoteMedia(target.toString(), {
+    fetchImpl: isAuthenticatedOrigin ? options.fetchFn : undefined,
+    lookupImpl: options.lookupImpl,
+    allowHttp: false,
+    allowedHosts,
+    allowedContentTypes: ['audio/*', 'application/octet-stream'],
+    maxBytes,
+    maxRedirects: 3,
+    timeoutMs,
+    userAgent: 'Funesterie-FullClip/1.0',
+  });
+  if (!downloaded?.buffer || downloaded.buffer.length < 512) {
+    throw new Error('full_clip_audio_payload_invalid');
+  }
+  const tempAudio = path.join(
+    workDir,
+    `audio-input-${crypto.randomBytes(6).toString('hex')}${extensionForAudioContentType(downloaded.contentType)}`
+  );
+  fs.writeFileSync(tempAudio, downloaded.buffer, { flag: 'wx', mode: 0o600 });
+  return tempAudio;
+}
+
 async function muxAudio(videoPath, audioUrl, outputPath, options = {}) {
   const ffmpeg = options.ffmpeg || "ffmpeg";
-  const fetchFn = options.fetchFn || globalThis.fetch;
-  const workDir = options.workDir || path.dirname(videoPath);
-  
-  let audioInput = audioUrl;
-  
-  // If the URL is an external HTTPS URL, download it locally first
-  // because ffmpeg can't authenticate against our own API
-  if (/^https?:/i.test(audioUrl)) {
-    // Try 1: direct fetch with the provided fetchFn (may have auth cookies)
-    // Try 2: convert to localhost URL (internal backend access, no auth needed)
-    // Try 3: use ffmpeg directly (last resort)
-    
-    const urls = [
-      audioUrl,
-      audioUrl.replace(/^https?:\/\/[^/]+/i, "http://localhost:3000"),
-    ];
-    
-    for (const tryUrl of urls) {
-      try {
-        const useFetch = tryUrl.includes("localhost") ? globalThis.fetch : fetchFn;
-        const response = await useFetch(tryUrl, { redirect: "follow" });
-        if (response.ok) {
-          const buffer = Buffer.from(await response.arrayBuffer());
-          if (buffer.length > 1000) {
-            const tempAudio = path.join(workDir, "audio-input-" + crypto.randomBytes(4).toString("hex") + ".mp3");
-            fs.writeFileSync(tempAudio, buffer);
-            audioInput = tempAudio;
-            break;
-          }
-        }
-      } catch (e) {
-        // try next URL
-      }
-    }
-    
-    // If still an HTTP URL, try ffmpeg with -headers for auth
-    if (/^https?:/i.test(audioInput)) {
-      // Last resort: strip the token and try without auth (some endpoints are public)
-      const cleanUrl = audioInput.replace(/\?token=[^&]*/i, "");
-      audioInput = cleanUrl;
-    }
-  }
-  
+  const audioInput = await materializeFullClipAudio(audioUrl, {
+    ...options,
+    workDir: options.workDir || path.dirname(videoPath),
+  });
+
   const args = [
     "-y",
     "-i", videoPath,
@@ -320,8 +417,12 @@ async function muxAudio(videoPath, audioUrl, outputPath, options = {}) {
 // Social media format export (resize)
 // ---------------------------------------------------------------------------
 
-async function exportSocialFormat(inputPath, outputPath, format) {
+async function exportSocialFormat(inputPath, outputPath, format, options = {}) {
   const { width, height } = format;
+  const provenanceId = String(options.provenanceId || 'funesterie-full-clip')
+    .trim()
+    .replace(/[^a-zA-Z0-9_.:-]+/g, '_')
+    .slice(0, 120) || 'funesterie-full-clip';
   // Smart crop + resize: center crop to target aspect ratio, then scale
   const args = [
     "-y",
@@ -333,7 +434,10 @@ async function exportSocialFormat(inputPath, outputPath, format) {
     "-crf", "23",
     "-c:a", "aac",
     "-b:a", "128k",
-    "-movflags", "+faststart",
+    ...buildAudioProvenanceMetadataArgs({ provenanceId }),
+    "-metadata", "publisher=Funesterie",
+    "-metadata", "website=https://funesterie.me",
+    "-movflags", "+faststart+use_metadata_tags",
     outputPath,
   ];
   await execFileAsync("ffmpeg", args, { timeout: 180000, maxBuffer: 50 * 1024 * 1024 });
@@ -355,13 +459,28 @@ async function generateFullClip(input = {}, context = {}) {
     formats = ["landscape", "portrait", "square"],
     uploadToR2 = null,
     fetchFn = null,
+    localAudioPath = '',
+    audioLookupImpl = undefined,
+    publicOrigin = '',
+    provenanceId = '',
     logger = console,
   } = input;
 
   if (!audioUrl) throw new Error("full_clip_missing_audio_url");
   if (!lyrics && !title) throw new Error("full_clip_missing_lyrics_or_title");
+  if (typeof uploadToR2 !== 'function') {
+    const error = new Error('full_clip_storage_not_configured');
+    error.code = 'full_clip_storage_not_configured';
+    error.status = 503;
+    throw error;
+  }
+  const clipProvenanceId = String(provenanceId || `fullclip_${crypto.randomUUID().replaceAll('-', '')}`)
+    .trim()
+    .replace(/[^a-zA-Z0-9_.:-]+/g, '_')
+    .slice(0, 120);
 
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "full-clip-"));
+  try {
   const totalDuration = Math.max(MIN_DURATION, Math.min(MAX_DURATION, Number(durationSeconds) || 180));
   const storyboard = buildStoryboard(lyrics, { durationSeconds: totalDuration, artistId, title, visualMood });
 
@@ -437,17 +556,18 @@ async function generateFullClip(input = {}, context = {}) {
 
   // 2. Create motion loops from images
   const loopPaths = [];
-  const sceneDurations = [];
+  // xfade superpose chaque paire de plans. Allonger tous les plans sauf le
+  // dernier de la durée du fondu conserve exactement la durée de la chanson.
+  const sceneDurations = buildSceneRenderDurations(storyboard);
   for (let i = 0; i < storyboard.length; i++) {
     const scene = storyboard[i];
     const loopPath = path.join(workDir, `${scene.sceneId}-loop.mp4`);
-    await createMotionLoop(imagePaths[i], loopPath, scene.durationSeconds, {
+    await createMotionLoop(imagePaths[i], loopPath, sceneDurations[i], {
       width: DEFAULT_WIDTH,
       height: DEFAULT_HEIGHT,
       fps: DEFAULT_FPS,
     });
     loopPaths.push(loopPath);
-    sceneDurations.push(scene.durationSeconds);
     logger.log(`[full-clip] loop: ${scene.sceneId} (${scene.durationSeconds}s)`);
   }
 
@@ -463,7 +583,13 @@ async function generateFullClip(input = {}, context = {}) {
 
   // 4. Mux audio into the master
   const masterWithAudio = path.join(workDir, "master-with-audio.mp4");
-  await muxAudio(masterPath, audioUrl, masterWithAudio, { workDir, fetchFn: options.fetchFn || globalThis.fetch });
+  await muxAudio(masterPath, audioUrl, masterWithAudio, {
+    workDir,
+    fetchFn: fetchFn || undefined,
+    localAudioPath,
+    lookupImpl: audioLookupImpl,
+    publicOrigin,
+  });
   logger.log(`[full-clip] audio muxed: ${masterWithAudio}`);
 
   // 5. Export social formats and upload
@@ -472,38 +598,37 @@ async function generateFullClip(input = {}, context = {}) {
     const format = SOCIAL_FORMATS[formatKey];
     if (!format) continue;
     const exportPath = path.join(workDir, `export-${formatKey}.mp4`);
-    await exportSocialFormat(masterWithAudio, exportPath, format);
+    await exportSocialFormat(masterWithAudio, exportPath, format, { provenanceId: clipProvenanceId });
     logger.log(`[full-clip] exported ${formatKey}: ${format.width}x${format.height}`);
 
-    // Upload to R2 if function provided
-    if (uploadToR2) {
-      const buffer = await fs.promises.readFile(exportPath);
-      const uploaded = await uploadToR2({
-        userId: context.userId || "vivy-full-clip",
-        filename: `${(title || "vivy-clip").replace(/[^a-z0-9_-]/gi, "-").toLowerCase()}-${formatKey}-${crypto.randomBytes(4).toString("hex")}.mp4`,
-        buffer,
-        contentType: "video/mp4",
-      });
-      results[formatKey] = {
-        url: uploaded.url,
-        width: format.width,
-        height: format.height,
-        label: format.label,
-        sizeBytes: buffer.length,
-      };
-      logger.log(`[full-clip] uploaded ${formatKey}: ${uploaded.url}`);
-    } else {
-      results[formatKey] = { path: exportPath, width: format.width, height: format.height, label: format.label };
-    }
+    const buffer = await fs.promises.readFile(exportPath);
+    const uploaded = await uploadToR2({
+      userId: context.userId || "vivy-full-clip",
+      filename: `${(title || "vivy-clip").replace(/[^a-z0-9_-]/gi, "-").toLowerCase()}-${formatKey}-${crypto.randomBytes(4).toString("hex")}.mp4`,
+      buffer,
+      contentType: "video/mp4",
+    });
+    if (!uploaded?.url) throw new Error(`full_clip_upload_url_missing_${formatKey}`);
+    results[formatKey] = {
+      url: uploaded.url,
+      width: format.width,
+      height: format.height,
+      label: format.label,
+      sizeBytes: buffer.length,
+      provenanceId: clipProvenanceId,
+    };
+    logger.log(`[full-clip] uploaded ${formatKey}: ${uploaded.url}`);
   }
-
-  // Cleanup
-  try { fs.rmSync(workDir, { recursive: true, force: true }); } catch {}
 
   return {
     ok: true,
     title: title || "Funesterie Clip",
     artistId,
+    provenance: {
+      brand: 'Funesterie',
+      id: clipProvenanceId,
+      origin: 'https://funesterie.me',
+    },
     durationSeconds: totalDuration,
     storyboard,
     formats: results,
@@ -514,15 +639,22 @@ async function generateFullClip(input = {}, context = {}) {
       tiktok: results.portrait?.url || null,
     },
   };
+  } finally {
+    try { fs.rmSync(workDir, { recursive: true, force: true }); } catch {}
+  }
 }
 
 module.exports = {
   buildStoryboard,
   parseLyricSections,
+  buildSceneRenderDurations,
   generateFullClip,
   createMotionLoop,
   assembleMontage,
+  materializeFullClipAudio,
   muxAudio,
+  resolveFullClipAudioHosts,
+  resolveFullClipAuthenticatedHosts,
   exportSocialFormat,
   SOCIAL_FORMATS,
 };

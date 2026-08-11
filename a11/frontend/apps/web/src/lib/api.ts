@@ -3379,10 +3379,70 @@ export async function produceFullClip(input: {
 }): Promise<Record<string, any>> {
   const res = await authFetch(getApiUrl("/api/vivy/studio/full-clip"), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: buildAuthHeaders("application/json"),
+    credentials: "include",
     body: JSON.stringify(input),
   });
-  return res.json();
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Full Clip indisponible (${res.status})`);
+  }
+  if (!payload?.statusUrl) return payload;
+
+  const startedAt = Date.now();
+  const maxWaitMs = 6 * 60 * 60 * 1000;
+  const pollIntervalMs = Math.max(1_000, Math.min(15_000, Number(payload.pollIntervalMs || 3_000) || 3_000));
+  while (Date.now() - startedAt < maxWaitMs) {
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    const pollRes = await authFetch(getApiUrl(String(payload.statusUrl)), {
+      method: "GET",
+      headers: buildAuthHeaders(),
+      credentials: "include",
+    });
+    const job = await pollRes.json().catch(() => ({}));
+    if (!pollRes.ok) throw new Error(job?.message || job?.error || `Statut Full Clip indisponible (${pollRes.status})`);
+    if (job?.status === "done" && job?.result) return job.result;
+    if (["error", "cancelled"].includes(String(job?.status || ""))) {
+      throw new Error(job?.message || job?.error || "Le rendu Full Clip a échoué.");
+    }
+  }
+  throw new Error("Le rendu Full Clip continue côté serveur; son état reste enregistré dans le compteur.");
+}
+
+export type VivyGenerationStats = {
+  ok: boolean;
+  scope: "global" | "account";
+  hours: number;
+  attempts: number;
+  succeeded: number;
+  failed: number;
+  rejected: number;
+  active: number;
+  byKind: Array<{
+    kind: "lyrics" | "full_clip";
+    attempts: number;
+    succeeded: number;
+    failed: number;
+    rejected: number;
+    active: number;
+    averageDurationMs: number;
+    p95DurationMs: number;
+  }>;
+};
+
+export async function fetchVivyGenerationStats(hours = 24): Promise<VivyGenerationStats> {
+  const safeHours = Math.max(1, Math.min(168, Math.round(Number(hours) || 24)));
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/generation-stats?hours=${safeHours}`), {
+    method: "GET",
+    headers: buildAuthHeaders(),
+    credentials: "include",
+    cache: "no-store",
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Compteur indisponible (${res.status})`);
+  }
+  return payload as VivyGenerationStats;
 }
 
 export async function extendVivyStudioSunoMusic(input: {

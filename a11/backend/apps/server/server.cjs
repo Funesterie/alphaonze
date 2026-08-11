@@ -184,6 +184,7 @@ app.use('/api/double-harmonic/v10boom/process', createRateLimiter({ bucket: 'v11
 app.use('/api/video', createRateLimiter({ bucket: 'video', methods: ['POST'], max: 12, message: 'Trop de requêtes vidéo' }));
 app.use('/api/tools/generate_video', createRateLimiter({ bucket: 'video-tool', methods: ['POST'], max: 12, message: 'Trop de requêtes vidéo' }));
 app.use('/api/vivy/studio/produce', createRateLimiter({ bucket: 'vivy-produce', methods: ['POST'], max: 12, message: 'Trop de générations Vivy' }));
+app.use('/api/vivy/studio/full-clip', createRateLimiter({ bucket: 'vivy-full-clip', windowMs: 60 * 60 * 1000, methods: ['POST'], max: 4, message: 'Trop de rendus Full Clip' }));
 app.use('/api', createRateLimiter({ bucket: 'api', max: 300, message: 'Trop de requêtes' }));
 app.post('/api/security/csp-report', express.json({
   type: ['application/csp-report', 'application/reports+json', 'application/json'],
@@ -7119,6 +7120,7 @@ console.log('[Server] Vivy Alexa routes mounted under /api/vivy/alexa');
 const { createVivyStudioRouter } = require('./src/routes/vivy-studio.cjs');
 app.use('/api/vivy/studio', createVivyStudioRouter({
   verifyJWT,
+  db,
   creativeCapabilityService: sudokuCapabilityService,
   // La memoire de Vivy etait deja partagee entre appareils (mémoire episodique par
   // compte), mais la LISTE des conversations ne l'etait pas: l'interface la lit dans la

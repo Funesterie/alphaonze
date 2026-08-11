@@ -66,6 +66,24 @@ test('health ne jette pas quand ComfyUI est eteint', async () => {
   assert.match(etat.raison, /ECONNREFUSED/);
 });
 
+test('health interrompt aussi un fetch ComfyUI bloque', async () => {
+  let receivedSignal = null;
+  const client = createComfyClient({
+    requestTimeoutMs: 1,
+    fetch: async (_url, init = {}) => new Promise((_resolve, reject) => {
+      receivedSignal = init.signal;
+      init.signal.addEventListener('abort', () => reject(init.signal.reason || new Error('aborted')), { once: true });
+    }),
+  });
+  const startedAt = Date.now();
+  const result = await client.health();
+  assert.equal(result.ok, false);
+  assert.ok(receivedSignal);
+  assert.equal(receivedSignal.aborted, true);
+  assert.match(result.raison, /delai reseau depasse/);
+  assert.ok(Date.now() - startedAt < 2_500);
+});
+
 test('listNodes filtre les noeuds — sert a decouvrir ceux de H3 au lieu de les supposer', async () => {
   const client = createComfyClient({
     fetch: fauxFetch([[/\/object_info$/, {

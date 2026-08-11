@@ -7,7 +7,11 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
 const { getCanonicalTtsDir, getPublicTtsDir } = require('../../lib/tts-paths.cjs');
+const { uploadBufferToR2: defaultUploadBufferToR2 } = require('../../lib/file-storage.cjs');
 const { extractRequestAuthToken } = require('../middleware/jwt-auth.cjs');
+const { generateFullClip: defaultGenerateFullClip } = require('../video/full-clip.cjs');
+const { createVideoAsyncJobStore, resolveVideoJobStoreDir } = require('../video/video-async-job-store.cjs');
+const { createGenerationLedger, hashGenerationUserId } = require('../telemetry/generation-ledger.cjs');
 const {
   buildMediaPipeline,
   buildRoutingLines,
@@ -815,8 +819,7 @@ function getConfiguredMusicProviders() {
   return order.filter((provider, index, list) => list.indexOf(provider) === index);
 }
 
-function isVivyFounderUser(user = {}) {
-  if (envFlag('VIVY_MUSIC_ALLOW_NON_ADMIN')) return true;
+function isVivyStrictAdminUser(user = {}) {
   const values = [
     user?.id,
     user?.email,
@@ -830,6 +833,11 @@ function isVivyFounderUser(user = {}) {
     || user?.admin === true
     || user?.fullAccess === true
     || values.some((value) => /\b(admin|owner|founder|fondateur|djeff|jeffrey|funeste)\b/i.test(value));
+}
+
+function isVivyFounderUser(user = {}) {
+  if (envFlag('VIVY_MUSIC_ALLOW_NON_ADMIN')) return true;
+  return isVivyStrictAdminUser(user);
 }
 
 function getVivyProviderFromBaseUrl(baseURL = '') {
@@ -11389,6 +11397,21 @@ function resolveVivyPreviewInstrumentalPath(value = '') {
   return candidate && fs.existsSync(candidate) && fs.statSync(candidate).isFile() ? candidate : '';
 }
 
+function resolveVivyFullClipLocalAudioPath(value = '') {
+  const filename = getVivyPreviewAssetFilename(value);
+  if (!/^[a-z0-9_.-]+\.(?:mp3|wav|flac|ogg|m4a|aac)$/i.test(filename)) return '';
+  const candidate = getEmergencyMediaAssetPath(filename);
+  if (!candidate || !fs.existsSync(candidate)) return '';
+  try {
+    const root = fs.realpathSync(path.dirname(getEmergencyMediaAssetPath('full-clip-root-probe.mp3')));
+    const target = fs.realpathSync(candidate);
+    if (target !== root && !target.startsWith(`${root}${path.sep}`)) return '';
+    return fs.statSync(target).isFile() ? target : '';
+  } catch {
+    return '';
+  }
+}
+
 function isAllowedVivyRemoteInstrumentalUrl(value = '') {
   try {
     const parsed = new URL(String(value || '').trim());
@@ -11788,8 +11811,23 @@ function createVivyStudioRouter({
   verifyJWT,
   creativeCapabilityService = null,
   saveChatMemoryMessage = null,
+  db = null,
+  fullClipGenerator = defaultGenerateFullClip,
+  fullClipUploader = defaultUploadBufferToR2,
+  fullClipJobStore = null,
+  generationLedger = null,
+  buildVivyAiChatImpl = buildVivyAiChat,
 } = {}) {
   const router = express.Router();
+  const generationMetrics = generationLedger || createGenerationLedger({ db, logger: console });
+  const fullClipJobs = fullClipJobStore || createVideoAsyncJobStore({
+    dir: path.resolve(
+      process.env.A11_FULL_CLIP_JOB_STORE_DIR
+      || path.join(resolveVideoJobStoreDir(process.env), 'full-clip')
+    ),
+    ttlMs: Math.max(60 * 60 * 1000, Number(process.env.VIVY_FULL_CLIP_JOB_TTL_MS || 6 * 60 * 60 * 1000)),
+    orphanAfterMs: Math.max(60_000, Number(process.env.VIVY_FULL_CLIP_ORPHAN_AFTER_MS || 180_000)),
+  });
   ensurePersonaRevivalSweep();
 
   /**
@@ -11846,6 +11884,62 @@ function createVivyStudioRouter({
     }
     return verifyJWT(req, res, next);
   };
+
+  const fullClipMaxConcurrent = Math.max(
+    1,
+    Math.min(4, Number(process.env.VIVY_FULL_CLIP_MAX_CONCURRENT || 1) || 1)
+  );
+  const fullClipPollIntervalMs = Math.max(
+    1_000,
+    Math.min(15_000, Number(process.env.VIVY_FULL_CLIP_POLL_INTERVAL_MS || 3_000) || 3_000)
+  );
+
+  function safeGenerationErrorCode(error, fallback = 'generation_failed') {
+    return cleanOneLine(error?.code || error?.message || fallback, fallback, 160)
+      .replace(/[^a-zA-Z0-9_.:-]+/g, '_');
+  }
+
+  function getFullClipOwner(req) {
+    const userId = resolveVivyMemoryUser(req, {});
+    return { userId, owner: hashGenerationUserId(userId) };
+  }
+
+  function getFullClipStatusUrl(jobId) {
+    return `/api/vivy/studio/full-clip/jobs/${encodeURIComponent(jobId)}`;
+  }
+
+  function publicFullClipJob(job = {}) {
+    return {
+      ok: job.status !== 'error',
+      jobId: job.id,
+      status: job.status,
+      message: job.message || null,
+      error: job.error || null,
+      createdAt: job.createdAt,
+      updatedAt: job.updatedAt,
+      completedAt: job.completedAt,
+      pollIntervalMs: job.pollIntervalMs || fullClipPollIntervalMs,
+      statusUrl: getFullClipStatusUrl(job.id),
+      ...(job.status === 'done' && job.result ? { result: job.result } : {}),
+    };
+  }
+
+  function createAuthenticatedFullClipFetch(req) {
+    const cookie = String(req.headers?.cookie || '').trim();
+    return (url, init = {}) => {
+      const target = new URL(String(url));
+      const ownHosts = new Set([
+        'a11.funesterie.me',
+        'funesterie.me',
+        'vivy.funesterie.me',
+        ...String(process.env.VIVY_FULL_CLIP_AUTH_HOSTS || '').split(/[,;\n]+/).map((value) => value.trim().toLowerCase()).filter(Boolean),
+      ]);
+      if (!ownHosts.has(target.hostname.toLowerCase())) throw new Error('full_clip_authenticated_host_forbidden');
+      const headers = { ...(init.headers || {}) };
+      if (cookie) headers.cookie = cookie;
+      return fetch(target, { ...init, headers });
+    };
+  }
 
   // --- Catalogue de voix -------------------------------------------------
   // Ajouter une voix ne demande plus de modifier le code ni de deployer.
@@ -12688,13 +12782,31 @@ function createVivyStudioRouter({
   });
 
   router.post('/chat', requireAuth, express.json({ limit: '512kb' }), async (req, res) => {
+    let generationRecord = null;
     try {
+      const input = req.body || {};
+      const message = cleanText(input.message || input.prompt || input.songText || input.text, VIVY_SONG_MAX_CHARS);
+      if (resolveVivyChatMode(input, message) === 'song') {
+        generationRecord = await generationMetrics.start({
+          kind: 'lyrics',
+          userId: resolveVivyMemoryUser(req, input),
+          provider: 'vivy-songcraft',
+          stage: 'lyrics-routing',
+        });
+      }
       const creativeAuthorization = resolveCreativeAuthorization(req);
-      const payload = await buildVivyAiChat({
-        ...(req.body || {}),
+      const payload = await buildVivyAiChatImpl({
+        ...input,
         shareToken: undefined,
       }, req);
       if (creativeAuthorization) payload.creativeAuthorization = creativeAuthorization;
+      if (generationRecord) {
+        await generationMetrics.finish(generationRecord, {
+          status: 'succeeded',
+          provider: payload?.provider || payload?.aiProvider || payload?.model || payload?.aiMode || 'vivy-songcraft',
+          stage: 'lyrics-ready',
+        });
+      }
       res.json(payload);
 
       // Apres la reponse: la persistance ne doit jamais retarder ni casser un tour de
@@ -12702,6 +12814,13 @@ function createVivyStudioRouter({
       // c'est ce qui manquait pour retrouver ses fils Vivy du telephone sur le PC.
       void persistVivyConversationTurn(req, req.body || {}, payload);
     } catch (error) {
+      if (generationRecord) {
+        await generationMetrics.finish(generationRecord, {
+          status: 'failed',
+          stage: 'lyrics-failed',
+          errorCode: safeGenerationErrorCode(error, 'vivy_chat_failed'),
+        });
+      }
       res.status(error?.status || 500).json({
         ok: false,
         error: error?.code || 'vivy_chat_failed',
@@ -12818,33 +12937,180 @@ function createVivyStudioRouter({
     }
   });
 
-  // === FULL CLIP — génération de clip vidéo complet ===
-  router.post('/full-clip', requireAuth, express.json({ limit: '2mb' }), async (req, res) => {
+  // === COMPTEUR DE GENERATIONS — preuves 24 h, sans prompts ni identifiants bruts ===
+  router.get('/generation-stats', requireAuth, async (req, res) => {
     try {
-      const input = req.body || {};
-      if (!input.audioUrl) {
-        return res.status(400).json({ ok: false, error: 'missing_audio_url', message: 'audioUrl requis' });
-      }
-      const result = await generateFullClip({
-        audioUrl: input.audioUrl,
-        lyrics: input.lyrics || input.publicLyrics || '',
-        title: input.title || input.songTitle || 'Funesterie Clip',
-        artistId: input.artistId || 'vivy',
-        visualMood: input.visualMood || input.songMood || '',
-        durationSeconds: Number(input.durationSeconds) || 0,
-        formats: input.formats || ['landscape', 'portrait', 'square'],
-        uploadToR2: typeof uploadBufferToR2 === 'function' ? uploadBufferToR2 : null,
-        fetchFn: (url, opts) => fetch(url, { ...opts, credentials: 'include', headers: { ...(opts?.headers || {}), cookie: req.headers?.cookie || '' } }),
-        logger: console,
-      }, { userId: req.user?.id });
-      res.json(result);
+      const userId = resolveVivyMemoryUser(req, {});
+      if (!userId) return res.status(401).json({ ok: false, error: 'vivy_auth_required' });
+      const global = isVivyStrictAdminUser(req.user || {});
+      const hours = Math.max(1, Math.min(168, Number(req.query?.hours || 24) || 24));
+      const stats = await generationMetrics.getStats({ userId, global, hours });
+      res.set('Cache-Control', 'no-store');
+      return res.json({ ok: true, scope: global ? 'global' : 'account', hours, ...stats });
     } catch (error) {
-      res.status(error.status || 500).json({
+      console.error('[generation-ledger] stats failed code=%s', safeGenerationErrorCode(error, 'generation_stats_failed'));
+      return res.status(500).json({ ok: false, error: 'generation_stats_failed' });
+    }
+  });
+
+  // === FULL CLIP — job durable et borne; la requete HTTP ne porte plus 90 min de rendu ===
+  router.get('/full-clip/jobs/:jobId', requireAuth, (req, res) => {
+    const job = fullClipJobs.get(req.params.jobId);
+    if (!job) return res.status(404).json({ ok: false, error: 'full_clip_job_not_found' });
+    const { owner } = getFullClipOwner(req);
+    if (!owner || (job.owner !== owner && !isVivyStrictAdminUser(req.user || {}))) {
+      return res.status(404).json({ ok: false, error: 'full_clip_job_not_found' });
+    }
+    res.set('Cache-Control', 'no-store');
+    return res.json(publicFullClipJob(job));
+  });
+
+  router.post('/full-clip', requireAuth, express.json({ limit: '2mb' }), async (req, res) => {
+    const input = req.body || {};
+    const audioUrl = cleanOneLine(input.audioUrl, '', 1400);
+    const { userId, owner } = getFullClipOwner(req);
+    if (!userId || !owner) return res.status(401).json({ ok: false, error: 'vivy_auth_required' });
+    if (!canUseServerSuno(req)) {
+      const rejected = await generationMetrics.start({ kind: 'full_clip', userId, provider: 'ffmpeg', stage: 'access-check' });
+      await generationMetrics.finish(rejected, { status: 'rejected', stage: 'access-denied', errorCode: 'full_clip_premium_required' });
+      return res.status(403).json({
         ok: false,
-        error: error.code || 'full_clip_failed',
-        message: error.message || String(error),
+        error: 'full_clip_premium_required',
+        message: 'Le rendu Full Clip est reserve aux comptes Famille, Premium et Fondateur.',
       });
     }
+    if (!audioUrl) {
+      return res.status(400).json({ ok: false, error: 'missing_audio_url', message: 'audioUrl requis' });
+    }
+
+    const activeJobs = fullClipJobs.loadAll({ markInterrupted: true })
+      .filter((job) => job.status === 'pending' || job.status === 'running');
+    const ownActive = activeJobs.find((job) => job.owner === owner);
+    if (ownActive) {
+      return res.status(202).json({ ...publicFullClipJob(ownActive), reused: true });
+    }
+    if (activeJobs.length >= fullClipMaxConcurrent) {
+      const rejected = await generationMetrics.start({ kind: 'full_clip', userId, provider: 'ffmpeg', stage: 'concurrency-check' });
+      await generationMetrics.finish(rejected, { status: 'rejected', stage: 'busy', errorCode: 'full_clip_busy' });
+      return res.status(429).json({
+        ok: false,
+        error: 'full_clip_busy',
+        message: 'Un rendu Full Clip est deja actif. Le compteur le garde visible; reessaie quand il est termine.',
+      });
+    }
+
+    const jobId = `vjob_fullclip_${Date.now().toString(36)}_${crypto.randomBytes(6).toString('hex')}`;
+    const createdAt = Date.now();
+    const job = fullClipJobs.persist({
+      id: jobId,
+      owner,
+      status: 'pending',
+      createdAt,
+      updatedAt: createdAt,
+      heartbeatAt: createdAt,
+      pollIntervalMs: fullClipPollIntervalMs,
+      message: 'Rendu Full Clip en file.',
+    });
+    res.status(202).json(publicFullClipJob(job));
+
+    const formats = Array.from(new Set(
+      (Array.isArray(input.formats) ? input.formats : ['landscape', 'portrait', 'square'])
+        .map((value) => String(value || '').toLowerCase())
+        .filter((value) => ['landscape', 'portrait', 'square'].includes(value))
+    ));
+    const authenticatedFetch = createAuthenticatedFullClipFetch(req);
+    const publicOrigin = String(process.env.A11_PUBLIC_APP_URL || process.env.PUBLIC_APP_URL || 'https://a11.funesterie.me');
+    const request = {
+      audioUrl,
+      lyrics: cleanText(input.lyrics || input.publicLyrics || '', 12_000),
+      title: cleanOneLine(input.title || input.songTitle, 'Funesterie Clip', 160),
+      artistId: cleanOneLine(input.artistId, 'vivy', 80),
+      visualMood: cleanText(input.visualMood || input.songMood || '', 600),
+      durationSeconds: Number(input.durationSeconds) || 0,
+      formats: formats.length ? formats : ['landscape'],
+    };
+
+    setImmediate(() => {
+      void (async () => {
+        let generationRecord = null;
+        const heartbeat = setInterval(() => {
+          const current = fullClipJobs.get(jobId);
+          if (!current || !['pending', 'running'].includes(current.status)) return;
+          fullClipJobs.persist({ ...current, heartbeatAt: Date.now(), updatedAt: Date.now() });
+        }, 15_000);
+        heartbeat.unref?.();
+        try {
+          const runningAt = Date.now();
+          fullClipJobs.persist({
+            ...job,
+            status: 'running',
+            updatedAt: runningAt,
+            heartbeatAt: runningAt,
+            message: 'Storyboard, images et montage en cours.',
+          });
+          generationRecord = await generationMetrics.start({
+            kind: 'full_clip',
+            userId,
+            provider: 'comfyui-ffmpeg-r2',
+            stage: 'rendering',
+            id: `gen_${jobId}`,
+          });
+          const localAudioPath = resolveVivyFullClipLocalAudioPath(audioUrl);
+          const prefixedLogger = {
+            log: (...args) => console.log(`[full-clip:${jobId}]`, ...args),
+            warn: (...args) => console.warn(`[full-clip:${jobId}]`, ...args),
+            error: (...args) => console.error(`[full-clip:${jobId}]`, ...args),
+          };
+          const result = await fullClipGenerator({
+            ...request,
+            provenanceId: jobId,
+            localAudioPath,
+            publicOrigin,
+            uploadToR2: fullClipUploader,
+            fetchFn: authenticatedFetch,
+            logger: prefixedLogger,
+          }, { userId });
+          const completedAt = Date.now();
+          fullClipJobs.persist({
+            ...fullClipJobs.get(jobId),
+            status: 'done',
+            result,
+            message: 'Clip genere et sauvegarde sur R2.',
+            updatedAt: completedAt,
+            heartbeatAt: completedAt,
+            completedAt,
+          });
+          await generationMetrics.finish(generationRecord, {
+            status: 'succeeded',
+            provider: 'comfyui-ffmpeg-r2',
+            stage: 'uploaded',
+          });
+          console.info('[full-clip:%s] completed formats=%s duration=%ss', jobId, Object.keys(result?.formats || {}).length, Number(result?.durationSeconds || 0));
+        } catch (error) {
+          const code = safeGenerationErrorCode(error, 'full_clip_failed');
+          const completedAt = Date.now();
+          fullClipJobs.persist({
+            ...fullClipJobs.get(jobId),
+            status: 'error',
+            error: code,
+            message: 'Le rendu Full Clip a echoue. Le code est conserve dans le compteur.',
+            updatedAt: completedAt,
+            heartbeatAt: completedAt,
+            completedAt,
+          });
+          if (generationRecord) {
+            await generationMetrics.finish(generationRecord, {
+              status: 'failed',
+              stage: 'render-failed',
+              errorCode: code,
+            });
+          }
+          console.error('[full-clip:%s] failed code=%s', jobId, code);
+        } finally {
+          clearInterval(heartbeat);
+        }
+      })();
+    });
   });
 
   return router;

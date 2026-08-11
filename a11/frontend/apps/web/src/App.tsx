@@ -77,6 +77,8 @@ import {
   resetPassword,
   getVivyStudioMusicJob,
   produceFullClip,
+  fetchVivyGenerationStats,
+  type VivyGenerationStats,
   createVivyChatSessionOnServer,
   deleteVivyChatSessionOnServer,
   assembleVivyStudioVoicePreview,
@@ -8136,6 +8138,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   const [isSending, setIsSending] = useState(false);
   const [isVideoGenerating, setIsVideoGenerating] = useState(false);
   const [status, setStatus] = useState("");
+  const [generationStats, setGenerationStats] = useState<VivyGenerationStats | null>(null);
   const [voiceReferenceName, setVoiceReferenceName] = useState(() => readVivyVoiceReferenceLabel());
   const [lastNossenAudioUrl, setLastNossenAudioUrl] = useState<string>("");
   const [lastNossenLyrics, setLastNossenLyrics] = useState<string>("");
@@ -8164,6 +8167,22 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   const [copiedMsgId, setCopiedMsgId] = useState("");
   const [chatSessions, setChatSessions] = useState<VivyChatSessionMeta[]>(() => hasSession ? listVivyChatSessions() : []);
   const [activeChatSessionId, setActiveChatSessionId] = useState("default");
+
+  const refreshGenerationStats = useCallback(async () => {
+    if (!hasSession) { setGenerationStats(null); return; }
+    try {
+      setGenerationStats(await fetchVivyGenerationStats(24));
+    } catch {
+      // Le compteur ne doit jamais interrompre le chat ni un rendu.
+    }
+  }, [hasSession]);
+
+  useEffect(() => {
+    if (!hasSession) { setGenerationStats(null); return; }
+    void refreshGenerationStats();
+    const timer = window.setInterval(() => { void refreshGenerationStats(); }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [hasSession, refreshGenerationStats]);
 
   useEffect(() => {
     if (!hasSession) { setVoiceChatAllowed(false); return; }
@@ -8226,6 +8245,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
   }
   const compositionWorkspace = readVivyStudioCompositionWorkspace();
   const nossenMusicProviderLabel = getVivyNossenMusicProviderLabel(nossenMusicProvider);
+  const lyricsGenerationStats = generationStats?.byKind.find((entry) => entry.kind === "lyrics");
+  const fullClipGenerationStats = generationStats?.byKind.find((entry) => entry.kind === "full_clip");
   const nossenBangerReadiness = useMemo(
     () => buildVivyNossenBangerReadiness(messages, draft, attachedFiles, compositionWorkspace.canvas),
     [messages, draft, attachedFiles, compositionWorkspace.canvas]
@@ -8707,6 +8728,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     } finally {
       setIsSending(false);
       vivySendLockRef.current = false;
+      void refreshGenerationStats();
     }
   }
 
@@ -9733,6 +9755,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
                 setStatus("Clip échoué: " + ((e as any)?.message || e));
               } finally {
                 setIsVideoGenerating(false);
+                void refreshGenerationStats();
               }
             }}
             title="Génère un clip vidéo complet synchronisé sur la musique NOSSEN, exporté en formats YouTube, Instagram et Facebook"
@@ -9791,6 +9814,11 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
       />
       {voiceChatStatus && <p className="vivy-chat-status vivy-chat-status--voice">{voiceChatStatus}</p>}
       {status && <p className="vivy-chat-status">{status}</p>}
+      {generationStats && (
+        <p className="vivy-chat-status" title="Tentatives, réussites, échecs et activité réellement enregistrées sur les dernières 24 heures">
+          {`Compteur 24 h ${generationStats.scope === "global" ? "global" : "compte"} · Paroles ${lyricsGenerationStats?.attempts || 0} (${lyricsGenerationStats?.succeeded || 0} ok / ${lyricsGenerationStats?.failed || 0} échecs) · Full Clip ${fullClipGenerationStats?.attempts || 0} (${fullClipGenerationStats?.succeeded || 0} ok / ${fullClipGenerationStats?.failed || 0} échecs / ${fullClipGenerationStats?.active || 0} actif)`}
+        </p>
+      )}
     </section>
   );
 }

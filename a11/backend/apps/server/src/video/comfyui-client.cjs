@@ -32,6 +32,10 @@ function createComfyClient(options = {}) {
   const doFetch = options.fetch || globalThis.fetch;
   const pollMs = Number(options.pollMs) || DEFAULT_POLL_MS;
   const timeoutMs = Number(options.timeoutMs) || DEFAULT_TIMEOUT_MS;
+  const requestTimeoutMs = Math.max(
+    1_000,
+    Math.min(120_000, Number(options.requestTimeoutMs || env.COMFYUI_REQUEST_TIMEOUT_MS || 60_000) || 60_000)
+  );
   const clientId = String(options.clientId || 'funesterie-a11');
   const jeton = String(options.token || env.COMFYUI_TUNNEL_TOKEN || '').trim();
   const now = options.now || (() => Date.now());
@@ -47,7 +51,29 @@ function createComfyClient(options = {}) {
     const entetes = jeton
       ? { ...(init.headers || {}), authorization: `Bearer ${jeton}` }
       : init.headers;
-    const reponse = await doFetch(`${baseUrl}${chemin}`, entetes ? { ...init, headers: entetes } : init);
+    const controller = new AbortController();
+    const upstreamSignal = init.signal;
+    const abortFromUpstream = () => controller.abort(upstreamSignal?.reason);
+    if (upstreamSignal?.aborted) abortFromUpstream();
+    else upstreamSignal?.addEventListener?.('abort', abortFromUpstream, { once: true });
+    const timer = setTimeout(() => controller.abort(new Error('comfyui_request_timeout')), requestTimeoutMs);
+    timer.unref?.();
+    let reponse;
+    try {
+      reponse = await doFetch(`${baseUrl}${chemin}`, {
+        ...init,
+        ...(entetes ? { headers: entetes } : {}),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (controller.signal.aborted && !upstreamSignal?.aborted) {
+        throw new Error(`comfyui ${chemin} delai reseau depasse apres ${requestTimeoutMs} ms`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      upstreamSignal?.removeEventListener?.('abort', abortFromUpstream);
+    }
     if (!reponse || reponse.ok !== true) {
       const statut = reponse ? reponse.status : 'sans reponse';
       throw new Error(`comfyui ${chemin} a repondu ${statut}`);
