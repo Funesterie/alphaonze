@@ -66,6 +66,10 @@ const { getProviderHealth } = require('./src/providers/provider-health.cjs');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const net = require('node:net');
+const {
+  buildBrowserEgressDirectives,
+  appendCspReport,
+} = require('./src/security/browser-egress-policy.cjs');
 
 function isTrustedReverseProxyAddress(value = '') {
   const ip = String(value || '').replace(/^::ffff:/, '').trim().toLowerCase();
@@ -86,7 +90,9 @@ function fortressClientIp(req) {
 }
 
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: buildBrowserEgressDirectives(process.env),
+  },
   crossOriginEmbedderPolicy: false,
   hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
@@ -179,6 +185,18 @@ app.use('/api/video', createRateLimiter({ bucket: 'video', methods: ['POST'], ma
 app.use('/api/tools/generate_video', createRateLimiter({ bucket: 'video-tool', methods: ['POST'], max: 12, message: 'Trop de requêtes vidéo' }));
 app.use('/api/vivy/studio/produce', createRateLimiter({ bucket: 'vivy-produce', methods: ['POST'], max: 12, message: 'Trop de générations Vivy' }));
 app.use('/api', createRateLimiter({ bucket: 'api', max: 300, message: 'Trop de requêtes' }));
+app.post('/api/security/csp-report', express.json({
+  type: ['application/csp-report', 'application/reports+json', 'application/json'],
+  limit: '64kb',
+}), (req, res) => {
+  try {
+    const reports = Array.isArray(req.body) ? req.body.slice(0, 20) : [req.body];
+    for (const report of reports) appendCspReport(report);
+  } catch (error) {
+    console.warn('[CSP] violation report could not be recorded:', String(error?.message || error).slice(0, 180));
+  }
+  res.status(204).end();
+});
 
 // Render services can start this file directly, bypassing npm start.
 // Keep this worker best-effort so a corpus refresh never blocks the API.

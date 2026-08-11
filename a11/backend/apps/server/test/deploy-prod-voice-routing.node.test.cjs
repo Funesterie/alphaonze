@@ -145,3 +145,13 @@ test('prod deploy proves Caddy health and the exact blue-green build before swit
     'the old marker and containers must remain untouched before the final Caddy probe'
   );
 });
+
+test('prod deploy starts the persistent public evidence monitor in both deployment modes', () => {
+  const script = readDeployScript();
+
+  assert.match(script, /funesterie-evidence-monitor:\r?\n[\s\S]*?command: \["npm", "run", "monitor:evidence:loop"\]/);
+  assert.match(script, /FUNESTERIE_EVIDENCE_MONITOR_INTERVAL_MS: \$\{FUNESTERIE_EVIDENCE_MONITOR_INTERVAL_MS:-60000\}/);
+  assert.match(script, /- \/srv\/a11-data\/a11\/runtime:\/app\/runtime/);
+  assert.match(script, /force-recreate vivy-twitch-worker vivy-social-ingest-worker funesterie-evidence-monitor/);
+  assert.match(script, /docker compose -f \$RemoteRoot\/current\/server\/docker-compose\.prod\.yml[\s\S]*?up -d --build --force-recreate/);
+});

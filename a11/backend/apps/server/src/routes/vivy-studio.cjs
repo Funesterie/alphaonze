@@ -98,6 +98,13 @@ const {
 const { probeAudioDurationSeconds } = require('../audio/probe-audio-duration.cjs');
 const { buildSongcraftGraphContext } = require('../music/songcraft-graph-context.cjs');
 const {
+  resolveSilentTailSeconds,
+  createAudioProvenancePlan,
+  buildAudioProvenanceMetadataArgs,
+  buildSignedAudioProvenanceManifest,
+  writeAudioProvenanceManifest,
+} = require('../music/funesterie-audio-provenance.cjs');
+const {
   buildVivyProsodyPlan,
   buildVivyProsodyStyleHint,
   formatVivyProsodyPlanForBrief,
@@ -9690,6 +9697,9 @@ function buildVivyMusicMasterArgs(inputPath, outputPath, analysis = null, config
     ? `:measured_I=${analysis.inputI}:measured_TP=${analysis.inputTp}:measured_LRA=${analysis.inputLra}:measured_thresh=${analysis.inputThresh}:offset=${analysis.targetOffset}:linear=true`
     : '';
   const lossless = path.extname(String(outputPath || '')).toLowerCase() === '.flac';
+  const silentTailFilter = lossless
+    ? ''
+    : `,apad=pad_dur=${Number(config.silentTailSeconds || 1).toFixed(3)}`;
   return [
     '-y',
     '-hide_banner',
@@ -9700,11 +9710,12 @@ function buildVivyMusicMasterArgs(inputPath, outputPath, analysis = null, config
     '-sn',
     '-dn',
     '-map_metadata', '-1',
-    '-af', `highpass=f=35,loudnorm=I=${config.targetI}:TP=${config.targetTp}:LRA=${config.targetLra}${measured},alimiter=limit=${config.limiterValue.toFixed(3)}:level=false`,
+    '-af', `highpass=f=35,loudnorm=I=${config.targetI}:TP=${config.targetTp}:LRA=${config.targetLra}${measured},alimiter=limit=${config.limiterValue.toFixed(3)}:level=false${silentTailFilter}`,
     '-ac', '2',
     '-ar', '44100',
     '-c:a', lossless ? 'flac' : 'libmp3lame',
     ...(lossless ? [] : ['-b:a', '192k', '-write_xing', '1', '-id3v2_version', '3']),
+    ...buildAudioProvenanceMetadataArgs({ provenanceId: config.provenanceId }),
     outputPath,
   ];
 }
@@ -9758,7 +9769,16 @@ async function masterVivyMusicFile(filePath, options = {}) {
   const runFfmpeg = options.runFfmpeg || runVivyFfmpeg;
   try {
     const originalSize = fs.statSync(targetPath).size;
-    const config = resolveVivyMusicMasterConfig();
+    const provenancePlan = createAudioProvenancePlan(targetPath, {
+      env: options.env || process.env,
+      generatedAt: options.generatedAt,
+      silentTailSeconds: options.silentTailSeconds || resolveSilentTailSeconds(options.env || process.env),
+    });
+    const config = {
+      ...resolveVivyMusicMasterConfig(options.env || process.env),
+      provenanceId: provenancePlan.provenanceId,
+      silentTailSeconds: provenancePlan.silentTailSeconds,
+    };
     const probe = await runFfmpeg(buildVivyMusicLoudnormAnalysisArgs(targetPath, config), {
       timeoutMs: options.timeoutMs || process.env.VIVY_MUSIC_MASTER_TIMEOUT_MS || 180000,
       errorCode: 'vivy_music_master_analysis_failed',
@@ -9773,8 +9793,18 @@ async function masterVivyMusicFile(filePath, options = {}) {
     if (!fs.existsSync(tempPath) || fs.statSync(tempPath).size <= 0) {
       throw new Error('vivy_music_master_empty_output');
     }
+    const provenanceManifest = buildSignedAudioProvenanceManifest(tempPath, provenancePlan, {
+      env: options.env || process.env,
+      keyPair: options.provenanceKeyPair,
+      audioFileName: path.basename(targetPath),
+    });
+    const manifestPath = `${targetPath}.funesterie.provenance.json`;
+    const tempManifestPath = `${tempPath}.funesterie.provenance.json`;
+    writeAudioProvenanceManifest(tempManifestPath, provenanceManifest);
     fs.copyFileSync(tempPath, targetPath);
+    fs.copyFileSync(tempManifestPath, manifestPath);
     fs.rmSync(tempPath, { force: true });
+    fs.rmSync(tempManifestPath, { force: true });
     const masteredSize = fs.statSync(targetPath).size;
     return {
       ok: true,
@@ -9784,9 +9814,13 @@ async function masterVivyMusicFile(filePath, options = {}) {
       truePeak: config.targetTp,
       lra: config.targetLra,
       twoPass: Boolean(analysis),
+      silentTailSeconds: provenancePlan.silentTailSeconds,
+      provenanceId: provenancePlan.provenanceId,
+      provenanceManifestPath: manifestPath,
     };
   } catch (error) {
     try { fs.rmSync(tempPath, { force: true }); } catch (_) {}
+    try { fs.rmSync(`${tempPath}.funesterie.provenance.json`, { force: true }); } catch (_) {}
     console.warn('[Vivy Studio] Music mastering skipped:', cleanOneLine(error?.message || error, 'unknown', 240));
     return { ok: false, skipped: true, reason: 'master_failed', message: cleanOneLine(error?.message || error, 'unknown', 240) };
   }

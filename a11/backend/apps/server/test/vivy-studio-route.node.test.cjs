@@ -27,6 +27,7 @@ const {
   buildVivyMultiVoiceAssemblyArgs,
   buildVivyPreviewMixArgs,
   buildVivyMusicMasterArgs,
+  masterVivyMusicFile,
   resolveVivyPreviewVoicePath,
   buildVivyMp3RepairArgs,
   repairVivyMp3File,
@@ -548,11 +549,57 @@ test('Vivy preview mix keeps the voice clear and masters the final song', () => 
 test('Vivy ACE mastering keeps a lossless FLAC master before the single MP3 encode', () => {
   const flacArgs = buildVivyMusicMasterArgs('source.wav', 'master.flac');
   const mp3Args = buildVivyMusicMasterArgs('source.flac', 'distribution.mp3');
-  assert.deepEqual(flacArgs.slice(-3), ['-c:a', 'flac', 'master.flac']);
+  assert.match(flacArgs.join(' '), /-c:a flac/);
+  assert.doesNotMatch(flacArgs.join(' '), /apad=pad_dur=/, 'le master FLAC intermediaire ne doit pas ajouter un second silence');
+  assert.equal(flacArgs.at(-1), 'master.flac');
   assert.ok(!flacArgs.includes('libmp3lame'));
   assert.ok(!flacArgs.includes('-b:a'));
   assert.match(mp3Args.join(' '), /-c:a libmp3lame -b:a 192k/);
+  assert.match(mp3Args.join(' '), /apad=pad_dur=1\.000/);
+  assert.match(mp3Args.join(' '), /encoded_by=Funesterie/);
+  assert.match(mp3Args.join(' '), /copyright=Funesterie/);
+  assert.match(mp3Args.join(' '), /funesterie_provenance_id=funesterie/);
   assert.equal(mp3Args.at(-1), 'distribution.mp3');
+});
+
+test('Vivy mastering appends a silent tail and writes a signed Funesterie sidecar', async () => {
+  const crypto = require('node:crypto');
+  const sourcePath = path.join(os.tmpdir(), `vivy-provenance-${process.pid}-${Date.now()}.mp3`);
+  const manifestPath = `${sourcePath}.funesterie.provenance.json`;
+  fs.writeFileSync(sourcePath, Buffer.from('ID3-original-audio'));
+  const pair = crypto.generateKeyPairSync('ed25519');
+  const publicKey = pair.publicKey.export({ type: 'spki', format: 'pem' });
+  const keyPair = {
+    privateKey: pair.privateKey,
+    publicKey,
+    keyId: crypto.createHash('sha256').update(publicKey).digest('hex').slice(0, 16),
+  };
+  const calls = [];
+  try {
+    const result = await masterVivyMusicFile(sourcePath, {
+      generatedAt: '2026-08-11T17:30:00.000Z',
+      silentTailSeconds: 1,
+      provenanceKeyPair: keyPair,
+      runFfmpeg: async (args) => {
+        calls.push(args);
+        if (args.at(-1) !== '-') fs.writeFileSync(args.at(-1), Buffer.from('ID3-mastered-funesterie'));
+        return { ok: true, stderr: '' };
+      },
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.silentTailSeconds, 1);
+    assert.equal(fs.existsSync(manifestPath), true);
+    assert.match(calls[1].join(' '), /apad=pad_dur=1\.000/);
+    assert.match(calls[1].join(' '), new RegExp(`funesterie_provenance_id=${result.provenanceId}`));
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    assert.equal(manifest.brand, 'Funesterie');
+    assert.equal(manifest.assetSha256, crypto.createHash('sha256').update(fs.readFileSync(sourcePath)).digest('hex'));
+    const { verifyAudioProvenanceManifest } = require('../src/music/funesterie-audio-provenance.cjs');
+    assert.equal(verifyAudioProvenanceManifest(manifest), true);
+  } finally {
+    fs.rmSync(sourcePath, { force: true });
+    fs.rmSync(manifestPath, { force: true });
+  }
 });
 
 test('Vivy MP3 repair rewrites Clipchamp-compatible duration metadata', async () => {

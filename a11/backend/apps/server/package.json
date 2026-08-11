@@ -110,6 +110,8 @@
     "worker:vivy:youtube-autocast": "node scripts/vivy-youtube-autocast-worker.cjs --loop",
     "worker:social:ingest": "node scripts/social-ingest-worker.cjs --once",
     "worker:social:ingest:loop": "node scripts/social-ingest-worker.cjs --loop",
+    "monitor:evidence": "node scripts/monitor-domain-evidence.cjs",
+    "monitor:evidence:loop": "node scripts/monitor-domain-evidence.cjs --loop",
     "worker:orchestrator:status": "node scripts/orchestrator-worker.cjs --status",
     "dispatch": "node scripts/task-dispatcher.cjs",
     "dispatch:agents": "node scripts/task-dispatcher.cjs --agents",

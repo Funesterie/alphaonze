@@ -1086,6 +1086,22 @@ services:
       a11-postgres:
         condition: service_healthy
 
+  funesterie-evidence-monitor:
+    image: server-a11-backend:latest
+    container_name: funesterie-evidence-monitor
+    restart: unless-stopped
+    command: ["npm", "run", "monitor:evidence:loop"]
+    healthcheck:
+      disable: true
+    env_file:
+      - /srv/a11/secrets/compose.env
+    environment:
+      A11_RUNTIME_ROOT: /app/runtime
+      FUNESTERIE_EVIDENCE_MONITOR_URLS: ${FUNESTERIE_EVIDENCE_MONITOR_URLS:-https://funesterie.me/,https://a11.funesterie.me/health,https://vivy.funesterie.me/,https://musicgeneratorai.com/}
+      FUNESTERIE_EVIDENCE_MONITOR_INTERVAL_MS: ${FUNESTERIE_EVIDENCE_MONITOR_INTERVAL_MS:-60000}
+    volumes:
+      - /srv/a11-data/a11/runtime:/app/runtime
+
   kaen44-backend:
     build:
       context: .
@@ -2669,7 +2685,7 @@ for i in `$(seq 1 45); do
   sleep 2
 done
 docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --no-deps --force-recreate a11-caddy
-docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --no-deps --force-recreate vivy-twitch-worker vivy-social-ingest-worker
+docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --no-deps --force-recreate vivy-twitch-worker vivy-social-ingest-worker funesterie-evidence-monitor
 docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env ps
 echo "__A11_HEALTH__"
 caddy_health_ok=0
