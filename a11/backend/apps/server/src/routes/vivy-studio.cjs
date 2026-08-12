@@ -100,7 +100,7 @@ const {
   listRevivableVoices,
 } = require('../music/persona-revival-runner.cjs');
 const { probeAudioDurationSeconds } = require('../audio/probe-audio-duration.cjs');
-const { buildSongcraftGraphContext } = require('../music/songcraft-graph-context.cjs');
+const { buildSongcraftGraphContext, buildChatGraphContext } = require('../music/songcraft-graph-context.cjs');
 const {
   resolveSilentTailSeconds,
   createAudioProvenancePlan,
@@ -8007,9 +8007,13 @@ async function buildVivyAiChat(input, req) {
     // Matiere de doctrine tiree du graphe: 239 documents y sont indexes mais la chaine
     // d'ecriture ne les interrogeait jamais. Calcule ici car buildVivySystemPrompt est
     // synchrone et le rendre asynchrone se propagerait a tout le module.
+    // En chanson, la matiere sert a nourrir l'ecriture sans etre citee. Hors chanson,
+    // c'est de la memoire consultable et citable: deux cadrages opposes, donc deux
+    // fonctions. Avant le 11/08/2026 la branche « sinon » rendait une chaine vide et
+    // Vivy etait amnesique des qu'on ne composait pas.
     const songcraftGraphContext = mode === 'song'
       ? await buildSongcraftGraphContext(input, process.env)
-      : '';
+      : await buildChatGraphContext(intentMessage || message, process.env);
     const systemPrompt = buildVivySystemPrompt(mode, language, input, songcraftGraphContext);
     const messages = [
       { role: 'system', content: systemPrompt },

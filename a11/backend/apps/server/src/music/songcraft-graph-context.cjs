@@ -119,8 +119,84 @@ async function buildSongcraftGraphContext(input = {}, env = process.env) {
   ].join('\n');
 }
 
+/**
+ * Termes de recherche tires d'un message de conversation.
+ *
+ * buildSearchQuery() ne sert pas ici: elle lit songTitle/theme/songMood, des champs
+ * qui n'existent pas dans un echange ordinaire. En conversation la seule matiere
+ * est ce que la personne vient d'ecrire.
+ *
+ * On retire les mots trop courts et la ponctuation: l'index plein texte de Neo4j
+ * repond au bruit par du bruit, et une question de trois mots vides ramenerait
+ * n'importe quel document.
+ */
+function buildChatSearchQuery(message = '') {
+  const mots = String(message || '')
+    .replace(/[^\p{L}\p{N}\s'-]/gu, ' ')
+    .split(/\s+/)
+    .map((mot) => mot.trim())
+    .filter((mot) => mot.length >= 4);
+
+  // Au-dela d'une douzaine de termes on ne cherche plus, on ratisse.
+  return mots.slice(0, 12).join(' ').slice(0, 300);
+}
+
+/**
+ * Matiere de memoire injectee dans une conversation ordinaire.
+ *
+ * POURQUOI CETTE FONCTION EXISTE, alors que buildSongcraftGraphContext lui ressemble:
+ * le graphe n'etait consulte QUE pendant l'ecriture d'une chanson
+ * (`mode === 'song'` dans vivy-studio.cjs). Dans un echange normal Vivy ne pouvait
+ * donc pas s'appuyer sur les 2 715 messages et 21 documents indexes -- elle ne
+ * pouvait pas repondre « on avait dit ca le 3 aout ». La matiere existait, la porte
+ * etait fermee.
+ *
+ * Le CADRAGE est l'inverse de celui de l'ecriture, et c'est tout l'interet d'une
+ * fonction distincte: en chanson on interdit de citer ces lignes (« elles t'informent,
+ * elles ne se chantent pas »); en conversation, citer est precisement le service rendu.
+ *
+ * Memes precautions que sa soeur: ne leve jamais, borne ce qu'elle injecte, et se
+ * desactive proprement.
+ */
+async function buildChatGraphContext(message = '', env = process.env) {
+  if (String(env.A11_CHAT_GRAPH_CONTEXT || '1') === '0') return '';
+
+  const query = buildChatSearchQuery(message);
+  // Sous trois termes utiles, une recherche plein texte ne discrimine rien.
+  if (query.split(' ').filter(Boolean).length < 3) return '';
+
+  let lines = [];
+  try {
+    const { searchVivyGraph } = require('../knowledge/vivy-graph-access.cjs');
+    const search = searchVivyGraph({
+      query,
+      source: String(env.A11_CHAT_GRAPH_SOURCE || env.A11_SONGCRAFT_GRAPH_SOURCE || 'local'),
+      limit: 10,
+    });
+    // Une recherche lente ne doit jamais retarder une reponse de chat: on repond
+    // sans memoire plutot que de faire attendre.
+    const timeout = new Promise((resolve) => setTimeout(() => resolve(null), SEARCH_TIMEOUT_MS));
+    const result = await Promise.race([search, timeout]);
+    if (result?.results?.length) lines = formatExtracts(result.results);
+  } catch {
+    lines = [];
+  }
+
+  if (!lines.length) return '';
+
+  return [
+    'MEMOIRE FUNESTERIE (echanges et documents deja indexes):',
+    ...lines,
+    "Tu PEUX t'y referer explicitement et citer ce qui s'y trouve: c'est la memoire",
+    'partagee de Funesterie, pas une source externe. Si un element contredit ce que dit',
+    "la personne, dis-le sans trancher a sa place -- une note peut etre perimee.",
+  ].join('\n');
+}
+
 module.exports = {
   buildSongcraftGraphContext,
+  buildChatGraphContext,
+  buildChatSearchQuery,
   buildSearchQuery,
   formatExtracts,
 };
