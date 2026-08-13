@@ -1,16 +1,21 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const {
   createVerifyJWT,
   resolveNezServiceIdentity,
   getNezServiceTokens,
 } = require('../src/middleware/jwt-auth.cjs');
+const {
+  verifyQuinteNezToken,
+} = require('../src/security/quinte-nez-token.cjs');
 
-// L'outil MCP a11_chat envoie un X-NEZ-TOKEN (secret statique) a /api/chat.
-// Avant le correctif, verifyJWT n'acceptait qu'un JWT HMAC et renvoyait
-// 401 A11_JWT_Missing: le moteur tournait mais le message restait devant une
-// porte fermee. Ces tests verifient que l'identite service NEZ est acceptee et
-// qu'un JWT valide reste prioritaire.
+// L'outil MCP a11_chat envoie un X-NEZ-TOKEN a /api/chat.
+// Le rail historique utilise un secret statique. Le rail RubixGate ajoute une
+// preuve journaliere Quinté × NEZ sans transformer le resultat hippique public
+// en mot de passe. Un JWT utilisateur valide reste prioritaire.
+
+const AUTH_CONTEXT = 'a11mcp-auth:v1';
 
 function resStub() {
   const captured = {};
@@ -25,7 +30,17 @@ function fakeFailingJwt() {
   return { verify() { throw new Error('invalid signature'); } };
 }
 
+function clearQuinteEnv() {
+  delete process.env.NEZ_QUINTE_TOKEN_ENABLED;
+  delete process.env.NEZ_QUINTE_TOKEN_REQUIRED;
+  delete process.env.NEZ_QUINTE_MAX_AGE_HOURS;
+  delete process.env.NEZ_QUINTE_MAX_FUTURE_MINUTES;
+  delete process.env.NEZ_QUINTE_BASE_SECRET;
+  delete process.env.STEGO_SALT;
+}
+
 function setupNezToken(token) {
+  clearQuinteEnv();
   if (token === undefined) {
     delete process.env.A11_NEZ_TOKEN;
     delete process.env.NEZ_TOKENS;
@@ -33,6 +48,35 @@ function setupNezToken(token) {
   } else {
     process.env.A11_NEZ_TOKEN = token;
   }
+}
+
+function todayKeyHint(nowMs = Date.now()) {
+  return `quinte-${new Date(nowMs).toISOString().slice(0, 10)}-R1`;
+}
+
+function makeDailyToken({
+  secret,
+  keyHint = todayKeyHint(),
+  numbers = '07-03-12-05-09',
+  publishedAt = new Date(Date.now() - 60_000).toISOString(),
+  validUntil = new Date(Date.now() + 60 * 60_000).toISOString(),
+}) {
+  const payload = { k: keyHint, n: numbers, p: publishedAt, e: validUntil };
+  const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  const root = crypto.createHmac('sha256', secret)
+    .update(`${keyHint}:${numbers}`)
+    .digest();
+  const mac = crypto.createHmac('sha256', root)
+    .update(`${AUTH_CONTEXT}:${encoded}`)
+    .digest('hex');
+  return `nezq1.${encoded}.${mac}`;
+}
+
+function setupDailyEnv(secret, { required = true } = {}) {
+  process.env.STEGO_SALT = secret;
+  process.env.NEZ_QUINTE_TOKEN_ENABLED = 'true';
+  process.env.NEZ_QUINTE_TOKEN_REQUIRED = required ? 'true' : 'false';
+  process.env.NEZ_QUINTE_MAX_AGE_HOURS = '36';
 }
 
 test('X-NEZ-TOKEN valide est accepte comme identite service sur /api/chat', async () => {
@@ -154,6 +198,95 @@ test('resolveNezServiceIdentity expose un user admin/fullAccess pour le chat', (
     const r = resolveNezServiceIdentity({ headers: { 'x-nez-token': 'nez:abc' } });
     assert.equal(r.user.fullAccess, true);
     assert.equal(r.user.isAdmin, true);
+  } finally {
+    setupNezToken(undefined);
+  }
+});
+
+test('Quinté x NEZ journalier valide est accepte sans partager le fichier resultat', async () => {
+  setupNezToken('legacy-static-token');
+  const secret = 'fortress-private-salt-1234567890';
+  setupDailyEnv(secret, { required: true });
+  try {
+    const token = makeDailyToken({ secret });
+    const direct = verifyQuinteNezToken(token);
+    assert.equal(direct.valid, true);
+
+    const verifyJWT = createVerifyJWT({
+      jwt: fakeFailingJwt(),
+      jwtSecret: 'server-secret',
+      logger: { warn() {}, log() {} },
+    });
+    let nextCalled = false;
+    const req = {
+      method: 'POST',
+      path: '/api/chat',
+      headers: { 'x-nez-token': token },
+    };
+    await verifyJWT(req, resStub(), () => { nextCalled = true; });
+    assert.equal(nextCalled, true);
+    assert.equal(req.serviceAuth?.mode, 'nez-quinte-daily');
+    assert.equal(req.serviceAuth?.keyHint, todayKeyHint());
+    assert.equal(req.user?.isService, true);
+  } finally {
+    setupNezToken(undefined);
+  }
+});
+
+test('modifier l ordre public sans recalculer le MAC invalide le token', () => {
+  setupNezToken('legacy-static-token');
+  const secret = 'fortress-private-salt-1234567890';
+  setupDailyEnv(secret, { required: true });
+  try {
+    const token = makeDailyToken({ secret });
+    const [, encoded, mac] = token.split('.');
+    const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    payload.n = '03-07-12-05-09';
+    const tampered = `nezq1.${Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')}.${mac}`;
+    const result = verifyQuinteNezToken(tampered);
+    assert.equal(result.valid, false);
+    assert.equal(result.reason, 'quinte_token_mac_invalid');
+  } finally {
+    setupNezToken(undefined);
+  }
+});
+
+test('un token journalier signe mais expire est refuse', () => {
+  setupNezToken('legacy-static-token');
+  const secret = 'fortress-private-salt-1234567890';
+  setupDailyEnv(secret, { required: true });
+  try {
+    const now = Date.now();
+    const token = makeDailyToken({
+      secret,
+      publishedAt: new Date(now - 2 * 60 * 60_000).toISOString(),
+      validUntil: new Date(now - 60 * 60_000).toISOString(),
+    });
+    const result = verifyQuinteNezToken(token, process.env, now);
+    assert.equal(result.valid, false);
+    assert.equal(result.reason, 'quinte_token_expired');
+  } finally {
+    setupNezToken(undefined);
+  }
+});
+
+test('mode Quinté REQUIRED refuse le token NEZ statique historique', () => {
+  setupNezToken('legacy-static-token');
+  setupDailyEnv('fortress-private-salt-1234567890', { required: true });
+  try {
+    const result = resolveNezServiceIdentity({ headers: { 'x-nez-token': 'legacy-static-token' } });
+    assert.equal(result, null);
+  } finally {
+    setupNezToken(undefined);
+  }
+});
+
+test('mode Quinté observe garde le token statique comme repli de migration', () => {
+  setupNezToken('legacy-static-token');
+  setupDailyEnv('fortress-private-salt-1234567890', { required: false });
+  try {
+    const result = resolveNezServiceIdentity({ headers: { 'x-nez-token': 'legacy-static-token' } });
+    assert.equal(result?.mode, 'nez-service');
   } finally {
     setupNezToken(undefined);
   }
