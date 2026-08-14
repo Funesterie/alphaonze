@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NOSSEN</title>
+<title>NOSSEN — Clips musicaux</title>
 <style>
 :root{--bg:#08080f;--card:#111119;--border:rgba(255,255,255,.05);--accent:#7b2ff7;--cyan:#00f5d4;--pink:#f72585;--gold:#fbbf24;--text:#eee;--muted:#777}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -22,20 +22,19 @@ nav a:hover{color:var(--cyan)}
 .btn-clip{background:linear-gradient(135deg,var(--accent),var(--pink));color:#fff}
 .btn-full{background:linear-gradient(135deg,var(--gold),#f59e0b);color:#111;font-weight:800}
 .btn-full.locked{opacity:.3;cursor:not-allowed}
-.btn-upload{background:rgba(255,255,255,.06);color:var(--cyan);border:1px solid rgba(0,245,212,.2)}
 select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.78rem}
 .input-url::placeholder{color:var(--muted)}
 .or{text-align:center;font-size:.6rem;color:var(--muted);margin:.2rem 0}
-.file-input{display:none}
-.file-label{display:inline-flex;align-items:center;gap:.3rem;padding:.35rem .6rem;border-radius:6px;font-size:.7rem;cursor:pointer;background:rgba(255,255,255,.04);border:1px dashed rgba(255,255,255,.15);color:var(--muted);transition:border-color .2s}
+.file-label{display:inline-flex;align-items:center;gap:.3rem;padding:.35rem .6rem;border-radius:6px;font-size:.7rem;cursor:pointer;background:rgba(255,255,255,.04);border:1px dashed rgba(255,255,255,.15);color:var(--muted);transition:border-color .2s;width:100%}
 .file-label:hover{border-color:var(--cyan);color:var(--cyan)}
+.file-input{display:none}
 .file-name{font-size:.6rem;color:var(--cyan);margin-top:.2rem;word-break:break-all}
 .bar{height:3px;background:rgba(255,255,255,.03);border-radius:2px;margin:.4rem 0;display:none}
 .bar.on{display:block}
 .bar div{height:100%;background:var(--cyan);border-radius:2px;transition:width .3s}
 .msg{font-size:.65rem;color:var(--muted);min-height:1em;margin-top:.3rem}
-.produce-row{display:flex;gap:.4rem;margin-top:.4rem;flex-wrap:wrap;align-items:center}
-.produce-info{font-size:.55rem;color:var(--muted);margin-top:.2rem}
+.produce-row{display:flex;gap:.4rem;margin-top:.5rem;flex-wrap:wrap;align-items:center}
+.produce-info{font-size:.55rem;color:var(--muted);margin-top:.3rem;line-height:1.4}
 .songs{max-height:320px;overflow-y:auto}
 .s{display:flex;align-items:center;padding:.4rem 0;border-bottom:1px solid rgba(255,255,255,.03);gap:.4rem}
 .s .play{width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;border:none;font-size:.65rem;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:background .15s}
@@ -67,37 +66,42 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   <a href="https://vivy.funesterie.me">Vivy</a>
   <a href="https://a11.funesterie.me">A11</a>
   <a href="https://k44.funesterie.me">K44</a>
-  <a href="https://funesterie.me">Home</a>
+  <a href="https://funesterie.me">Accueil</a>
 </nav>
 
 <div class="card">
   <h2>🎬 Produire un clip</h2>
-  <select id="song"><option value="">Choisir une chanson ou importer...</option></select>
+  <select id="song"><option value="">Choisir une chanson ou importer…</option></select>
 
   <div class="or">— ou importer ta musique —</div>
-  <input class="input-url" type="url" id="import-url" placeholder="Colle un lien audio (mp3, m4a...)">
-  <label class="file-label" id="file-label">📁 Ou glisse/choisis un fichier audio
+  <input class="input-url" type="url" id="import-url" placeholder="Colle un lien audio (mp3, m4a…)">
+  <label class="file-label" id="file-label">
+    📁 Glisse ou choisis un fichier audio
     <input class="file-input" type="file" id="import-file" accept="audio/*">
   </label>
   <div class="file-name" id="file-name"></div>
 
   <select id="vibe">
-    <option value="live">🎤 Live concert</option>
+    <option value="auto">🤖 Mode libre (l'IA décide)</option>
+    <option value="live">🎤 Concert live</option>
     <option value="cyberpunk">🌃 Cyberpunk</option>
-    <option value="cosmic">🌌 Cosmic</option>
-    <option value="intimate">🎹 Intime</option>
+    <option value="cosmic">🌌 Cosmique</option>
+    <option value="intimate">🎹 Intimiste</option>
   </select>
   <div class="produce-row">
     <button class="btn btn-clip" id="go-clip">Clip</button>
     <button class="btn btn-full" id="go-full">Full Clip ✨</button>
   </div>
-  <div class="produce-info">Clip = images sur la musique · Full Clip = vidéo générée complète (admin)</div>
+  <div class="produce-info">
+    Clip = images sur la musique (gratuit) · Full Clip = vidéo complète générée (réservé admin)<br>
+    Mode libre : l'IA analyse les paroles et choisit le thème.
+  </div>
   <div class="bar" id="bar"><div id="fill" style="width:0%"></div></div>
   <div class="msg" id="msg"></div>
 </div>
 
 <div class="card">
-  <h2>🎤 Chansons <span class="badge badge-gold" id="song-count">0</span></h2>
+  <h2>🎤 Mes chansons <span class="badge badge-gold" id="song-count">0</span></h2>
   <div id="list" class="songs"></div>
 </div>
 
@@ -114,6 +118,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 
 <script>
 (function() {
+  "use strict";
   var A = location.origin;
   var songs = [];
   var currentIdx = null;
@@ -121,14 +126,13 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   var userEmail = null;
   var isAdmin = false;
   var ADMIN_EMAILS = ["cellaurojeffrey@gmail.com"];
-  var importedAudioUrl = null;
   var importedFile = null;
 
   var SC = {
-    live: [{n:"L",v:"Wide concert arena lights fog lasers crowd anticipation blue purple"},{n:"V",v:"Female singer long purple-cyan hair microphone golden spotlight emotional white violet outfit"},{n:"C",v:"Stage erupts holographics singer arms spread crowd hands confetti energy"},{n:"B",v:"Singer alone blue light eyes closed crowd phone lights stars emotional"},{n:"F",v:"Full stage fireworks singer triumphant arms raised holographic wings purple gold"},{n:"E",v:"Singer bows confetti smile wave lights dim single spotlight camera back"}],
-    cyberpunk: [{n:"A",v:"Aerial cyberpunk city night neon rain holographic ads"},{n:"S",v:"Programmer holographic workstation blue light circuit hoodie"},{n:"P",v:"Woman materializing data purple-cyan hair particles"},{n:"E",v:"Energy rings pulsing constellation patterns sky"},{n:"D",v:"Two figures rooftop light bridge between city below"},{n:"W",v:"Dawn skyscraper edge golden light cyan hair morning"}],
-    cosmic: [{n:"V",v:"Dark space nebulae figure floating energy gathering"},{n:"R",v:"Concentric rings pulsing geometric patterns purple gold"},{n:"S",v:"Light streams converging sphere pure energy rotation"},{n:"X",v:"Sphere burst new constellations across sky"},{n:"P",v:"Figures floating star field connected light serene"},{n:"F",v:"Ember light pulsing darkness breathing alive"}],
-    intimate: [{n:"S",v:"Recording studio microphone amber light vinyl wall"},{n:"K",v:"Piano keys close-up notes golden particles"},{n:"V",v:"Singer eyes closed studio mic headphones warm"},{n:"W",v:"Rain window city lights contemplative"},{n:"G",v:"Guitar strummed close-up warm wood"},{n:"E",v:"Lights dimming empty studio instruments resting"}]
+    live: [{n:"Ouverture",v:"Wide concert arena lights fog lasers crowd anticipation blue purple"},{n:"Voix",v:"Female singer long purple-cyan hair microphone golden spotlight emotional white violet outfit"},{n:"Climax",v:"Stage erupts holographics singer arms spread crowd hands confetti energy"},{n:"Pont",v:"Singer alone blue light eyes closed crowd phone lights stars emotional"},{n:"Final",v:"Full stage fireworks singer triumphant arms raised holographic wings purple gold"},{n:"Fermeture",v:"Singer bows confetti smile wave lights dim single spotlight camera back"}],
+    cyberpunk: [{n:"Ville",v:"Aerial cyberpunk city night neon rain holographic ads"},{n:"Code",v:"Programmer holographic workstation blue light circuit hoodie"},{n:"Portail",v:"Woman materializing data purple-cyan hair particles"},{n:"Énergie",v:"Energy rings pulsing constellation patterns sky"},{n:"Duo",v:"Two figures rooftop light bridge between city below"},{n:"Aube",v:"Dawn skyscraper edge golden light cyan hair morning"}],
+    cosmic: [{n:"Vide",v:"Dark space nebulae figure floating energy gathering"},{n:"Anneaux",v:"Concentric rings pulsing geometric patterns purple gold"},{n:"Sphère",v:"Light streams converging sphere pure energy rotation"},{n:"Explosion",v:"Sphere burst new constellations across sky"},{n:"Paix",v:"Figures floating star field connected light serene"},{n:"Braise",v:"Ember light pulsing darkness breathing alive"}],
+    intimate: [{n:"Studio",v:"Recording studio microphone amber light vinyl wall"},{n:"Piano",v:"Piano keys close-up notes golden particles"},{n:"Voix",v:"Singer eyes closed studio mic headphones warm"},{n:"Pluie",v:"Rain window city lights contemplative"},{n:"Guitare",v:"Guitar strummed close-up warm wood"},{n:"Silence",v:"Lights dimming empty studio instruments resting"}]
   };
 
   function api(p, b) {
@@ -158,7 +162,6 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 
   function pick(i) {
     document.getElementById("song").value = i;
-    importedAudioUrl = null;
     importedFile = null;
     document.getElementById("import-url").value = "";
     document.getElementById("file-name").textContent = "";
@@ -169,11 +172,11 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       if (d && d.authenticated && d.user) {
         userEmail = d.user.email || d.user.displayName || null;
         isAdmin = ADMIN_EMAILS.indexOf((userEmail || "").toLowerCase()) !== -1;
-        document.getElementById("user-badge").textContent = "\uD83D\uDD13 " + (userEmail || "Connecte");
+        document.getElementById("user-badge").textContent = "\uD83D\uDD13 " + (userEmail || "Connecté");
       } else {
         userEmail = null;
         isAdmin = false;
-        document.getElementById("user-badge").innerHTML = '<a href="/login" style="color:var(--muted);text-decoration:underline;font-size:.6rem">Se connecter pour Full Clip</a>';
+        document.getElementById("user-badge").innerHTML = '<a href="/login" style="color:var(--muted);text-decoration:underline;font-size:.6rem">Se connecter pour accéder aux clips</a>';
       }
       updateFullClipButton();
     }).catch(function() {
@@ -187,22 +190,21 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     if (isAdmin) {
       btn.classList.remove("locked");
       btn.disabled = false;
-      btn.title = "Full Clip \u2014 video generee sur toute la duree";
+      btn.title = "Full Clip — vidéo générée sur toute la durée de la chanson";
     } else {
       btn.classList.add("locked");
       btn.disabled = true;
-      btn.title = "Bientot disponible (5\u20AC) \u2014 connecte-toi en admin pour l'instant";
+      btn.title = "Bientôt disponible (5 \u20AC) — réservé admin pour l'instant";
     }
   }
 
   function getSelectedAudioSource() {
-    // Priority: imported URL > imported file > selected song
     var urlInput = document.getElementById("import-url").value.trim();
     if (urlInput && (urlInput.startsWith("http://") || urlInput.startsWith("https://"))) {
       return { type: "url", url: urlInput, title: "Import" };
     }
     if (importedFile) {
-      return { type: "file", file: importedFile, title: importedFile.name };
+      return { type: "file", file: importedFile, title: importedFile.name.replace(/\.[^.]+$/, "") };
     }
     var i = document.getElementById("song").value;
     if (i !== "") {
@@ -212,7 +214,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     return null;
   }
 
-  function uploadFileAndGetUrl(file) {
+  function uploadFile(file) {
     var formData = new FormData();
     formData.append("file", file);
     return fetch(A + "/api/mcp-bridge/upload-audio", {
@@ -221,19 +223,33 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       credentials: "include"
     }).then(function(r) { return r.json(); }).then(function(d) {
       if (d.ok && d.url) return d.url;
-      throw new Error(d.error || "Upload failed");
+      throw new Error(d.error || "Échec de l'envoi");
     });
+  }
+
+  function buildStylePrompt(vibe, title) {
+    if (vibe === "auto") {
+      // Mode libre : l'IA analyse le titre/paroles et décide
+      return "Analyse le titre et le contexte de cette chanson intitulée \"" + (title || "musique") + "\". " +
+        "Choisis le style visuel le plus adapté aux paroles et à l'ambiance. " +
+        "Produis un clip anime cinématique cohérent avec l'émotion de la musique. " +
+        "Utilise des couleurs, décors et mouvements de caméra qui reflètent le mood.";
+    }
+    if (vibe === "live") return "Professional anime live concert, singer with long purple-cyan hair white violet outfit dramatic lighting";
+    if (vibe === "cyberpunk") return "Cinematic anime cyberpunk style neon city volumetric lighting rich detail";
+    if (vibe === "cosmic") return "Cinematic anime cosmic space style nebulae energy volumetric lighting";
+    return "Cinematic anime intimate studio style warm amber lighting rich detail";
   }
 
   function startClip(mode) {
     var source = getSelectedAudioSource();
     if (!source) {
-      document.getElementById("msg").textContent = "Choisis une chanson ou importe un audio";
+      document.getElementById("msg").textContent = "Choisis une chanson ou importe un fichier audio";
       return;
     }
 
     if (mode === "full" && !isAdmin) {
-      document.getElementById("msg").textContent = "Full Clip reserve admin \u2014 bientot payant (5\u20AC)";
+      document.getElementById("msg").textContent = "Full Clip réservé — bientôt disponible (5 \u20AC)";
       return;
     }
 
@@ -241,14 +257,16 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     var goFull = document.getElementById("go-full");
     goClip.disabled = true;
     goFull.disabled = true;
-    document.getElementById("msg").textContent = "\u23F3 " + (mode === "full" ? "Full Clip" : "Clip") + "...";
+    var label = mode === "full" ? "Full Clip" : "Clip";
+    document.getElementById("msg").textContent = "\u23F3 Lancement " + label + "…";
     document.getElementById("bar").classList.add("on");
     document.getElementById("fill").style.width = "5%";
 
     var vibe = document.getElementById("vibe").value;
-    var stylePrompt = vibe === "live"
-      ? "Professional anime live concert, singer with long purple-cyan hair white violet outfit dramatic lighting"
-      : "Cinematic anime " + vibe + " style volumetric lighting rich detail";
+    var stylePrompt = buildStylePrompt(vibe, source.title);
+    var sections = vibe === "auto" ? [] : (SC[vibe] || SC.live).map(function(x) {
+      return { name: x.n, visual: x.v, duration: mode === "full" ? 30 : 15 };
+    });
 
     function doCall(audioUrl) {
       var payload = {
@@ -256,15 +274,16 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
         title: truncate(source.title, 25),
         mode: mode === "full" ? "full-video" : "slideshow",
         style: stylePrompt,
-        sections: SC[vibe].map(function(x) { return { name: x.n, visual: x.v, duration: mode === "full" ? 30 : 15 }; })
+        autoTheme: vibe === "auto",
+        sections: sections
       };
 
       api("/api/mcp-bridge/clip/start", payload).then(function(d) {
         if (d.ok) {
-          document.getElementById("msg").textContent = (mode === "full" ? "Full Clip" : "Clip") + " en cours...";
+          document.getElementById("msg").textContent = label + " en cours…";
           pollJob(d.jobId, mode);
         } else {
-          document.getElementById("msg").textContent = "\u274C " + (d.error || "Erreur");
+          document.getElementById("msg").textContent = "\u274C " + (d.error || "Erreur inconnue");
           goClip.disabled = false;
           updateFullClipButton();
         }
@@ -276,12 +295,12 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     }
 
     if (source.type === "file") {
-      document.getElementById("msg").textContent = "\u23F3 Upload du fichier...";
-      uploadFileAndGetUrl(source.file).then(function(url) {
-        document.getElementById("msg").textContent = "\u23F3 Fichier uploade, lancement...";
+      document.getElementById("msg").textContent = "\u23F3 Envoi du fichier…";
+      uploadFile(source.file).then(function(url) {
+        document.getElementById("msg").textContent = "\u23F3 Fichier envoyé, lancement…";
         doCall(url);
       }).catch(function(e) {
-        document.getElementById("msg").textContent = "\u274C Upload: " + e.message;
+        document.getElementById("msg").textContent = "\u274C Envoi : " + e.message;
         goClip.disabled = false;
         updateFullClipButton();
       });
@@ -291,16 +310,17 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   }
 
   function pollJob(id, mode) {
+    var label = mode === "full" ? "Full Clip" : "Clip";
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(function() {
       api("/api/mcp-bridge/clip/status/" + id).then(function(d) {
         var progress = d.progress || 0;
         document.getElementById("fill").style.width = progress + "%";
-        document.getElementById("msg").textContent = (mode === "full" ? "Full Clip" : "Clip") + ": " + (d.status || "...") + " " + progress + "%";
+        document.getElementById("msg").textContent = label + " : " + (d.status || "…") + " " + progress + "%";
         if (d.status === "done") {
           clearInterval(pollTimer);
           document.getElementById("fill").style.width = "100%";
-          document.getElementById("msg").textContent = "\u2705 " + (mode === "full" ? "Full Clip" : "Clip") + " pret!";
+          document.getElementById("msg").textContent = "\u2705 " + label + " prêt !";
           document.getElementById("go-clip").disabled = false;
           updateFullClipButton();
           loadClips();
@@ -319,7 +339,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       var clips = c.clips || [];
       document.getElementById("clips").innerHTML = clips.length
         ? clips.map(function(x) { return '<div class="c"><a href="' + x.url + '" target="_blank">\uD83C\uDFAC ' + x.name + '</a></div>'; }).join("")
-        : '<div class="empty">Aucun clip encore</div>';
+        : '<div class="empty">Aucun clip pour le moment</div>';
     }).catch(function() {});
   }
 
@@ -337,58 +357,26 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
         };
       });
 
-      // Filter: user only sees their own songs (by requestedBy match)
-      // Admin sees everything
       var vivySongs;
       if (isAdmin) {
         vivySongs = allVivySongs;
       } else if (userEmail) {
         var userLower = userEmail.toLowerCase();
-        var userPrefix = userLower.split("@")[0]; // "funeste38", "ile", etc.
+        var userPrefix = userLower.split("@")[0];
         vivySongs = allVivySongs.filter(function(s) {
           if (!s.requestedBy) return false;
           return s.requestedBy === userLower
             || s.requestedBy === userPrefix
             || s.requestedBy.indexOf(userPrefix) !== -1;
         });
-        // If user has no songs yet, show a message
-        if (vivySongs.length === 0) {
-          vivySongs = []; // Empty — they'll see the "Aucune chanson" message
-        }
       } else {
-        // Not logged in: show nothing from Vivy stream (only local if available)
         vivySongs = [];
       }
 
-      api("/api/mcp-bridge/songs").then(function(local) {
-        var localSongs = (local.songs || []).map(function(s) {
-          return {
-            title: s.title || "Sans titre",
-            playUrl: A + "/api/mcp-bridge/play/" + s.filename,
-            audioUrl: A + "/api/mcp-bridge/play/" + s.filename,
-            date: s.date || "",
-            duration: "",
-            source: "local",
-            requestedBy: ""
-          };
-        });
-
-        // Admin gets local songs too, others don't (those are Djeff's productions)
-        var mergedLocal = isAdmin ? localSongs : [];
-
-        var seen = {};
-        songs = [];
-        vivySongs.concat(mergedLocal).forEach(function(s) {
-          var key = s.playUrl || s.title;
-          if (!seen[key]) { seen[key] = true; songs.push(s); }
-        });
-        renderSongs();
-      }).catch(function() { songs = vivySongs; renderSongs(); });
-    }).catch(function() {
-      // Fallback: local only for admin
+      // Admin also gets local catalog
       if (isAdmin) {
         api("/api/mcp-bridge/songs").then(function(local) {
-          songs = (local.songs || []).map(function(s) {
+          var localSongs = (local.songs || []).map(function(s) {
             return {
               title: s.title || "Sans titre",
               playUrl: A + "/api/mcp-bridge/play/" + s.filename,
@@ -399,20 +387,27 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
               requestedBy: ""
             };
           });
+          var seen = {};
+          songs = [];
+          vivySongs.concat(localSongs).forEach(function(s) {
+            var key = s.playUrl || s.title + s.date;
+            if (!seen[key]) { seen[key] = true; songs.push(s); }
+          });
           renderSongs();
-        }).catch(function() {
-          document.getElementById("list").innerHTML = '<div class="empty">Aucune chanson</div>';
-        });
+        }).catch(function() { songs = vivySongs; renderSongs(); });
       } else {
-        songs = [];
+        songs = vivySongs;
         renderSongs();
       }
+    }).catch(function() {
+      songs = [];
+      renderSongs();
     });
   }
 
   function renderSongs() {
     document.getElementById("song-count").textContent = songs.length;
-    document.getElementById("song").innerHTML = '<option value="">Choisir une chanson...</option>' +
+    document.getElementById("song").innerHTML = '<option value="">Choisir une chanson…</option>' +
       songs.map(function(s, i) { return '<option value="' + i + '">' + truncate(s.title, 45) + '</option>'; }).join("");
 
     document.getElementById("list").innerHTML = songs.length
@@ -421,22 +416,21 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
             '<button class="play" data-idx="' + i + '">\u25B6</button>' +
             '<div class="info"><div class="title">' + truncate(s.title, 50) + '</div>' +
             '<div class="meta">' + [s.date, s.duration, s.source].filter(Boolean).join(" \u00B7 ") + '</div></div>' +
-            '<button class="use" data-pick="' + i + '">clip</button></div>';
+            '<button class="use" data-pick="' + i + '">utiliser</button></div>';
         }).join("")
-      : '<div class="empty">Aucune chanson</div>';
+      : '<div class="empty">' + (userEmail ? "Aucune chanson trouvée pour ton compte" : "Connecte-toi pour voir tes chansons") + '</div>';
   }
 
   function init() {
     api("/api/mcp-bridge/health").then(function(h) {
-      document.getElementById("st").textContent = (h.upstreams && h.upstreams.comfy && h.upstreams.comfy.ok) ? "\u2705 Online" : "\u26A0\uFE0F Partiel";
-    }).catch(function() { document.getElementById("st").textContent = "\u274C Offline"; });
+      document.getElementById("st").textContent = (h.upstreams && h.upstreams.comfy && h.upstreams.comfy.ok) ? "\u2705 En ligne" : "\u26A0\uFE0F Partiel";
+    }).catch(function() { document.getElementById("st").textContent = "\u274C Hors ligne"; });
 
-    checkAuth();
-    loadSongs();
+    checkAuth().then(function() { loadSongs(); });
     loadClips();
   }
 
-  // Event delegation
+  // Délégation d'événements
   document.getElementById("list").addEventListener("click", function(e) {
     var playBtn = e.target.closest(".play[data-idx]");
     if (playBtn) { play(parseInt(playBtn.dataset.idx, 10)); return; }
@@ -447,19 +441,16 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   document.getElementById("go-clip").addEventListener("click", function() { startClip("clip"); });
   document.getElementById("go-full").addEventListener("click", function() { startClip("full"); });
 
-  // File import
   document.getElementById("import-file").addEventListener("change", function(e) {
     var file = e.target.files[0];
     if (file) {
       importedFile = file;
-      importedAudioUrl = null;
       document.getElementById("file-name").textContent = "\uD83C\uDFB5 " + file.name;
       document.getElementById("song").value = "";
       document.getElementById("import-url").value = "";
     }
   });
 
-  // URL import clears file
   document.getElementById("import-url").addEventListener("input", function() {
     if (this.value.trim()) {
       importedFile = null;
@@ -468,11 +459,9 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     }
   });
 
-  // Song select clears imports
   document.getElementById("song").addEventListener("change", function() {
     if (this.value) {
       importedFile = null;
-      importedAudioUrl = null;
       document.getElementById("import-url").value = "";
       document.getElementById("file-name").textContent = "";
     }
@@ -487,7 +476,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   });
 
   init();
-  setInterval(loadSongs, 120000);
+  setInterval(function() { loadSongs(); }, 120000);
 })();
 </script>
 </body>
