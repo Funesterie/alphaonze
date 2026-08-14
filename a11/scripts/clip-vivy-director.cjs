@@ -98,29 +98,19 @@ async function findLyrics(title, songUrl) {
  * Demande au LLM de générer 6 scènes visuelles pour le clip.
  */
 async function generateVisualScenes(title, lyrics, style) {
-  var prompt = `Tu es Vivy, directrice artistique de clips musicaux.
+  var prompt = `Tu es directrice artistique de clips musicaux.
 
-Crée exactement 6 scènes visuelles pour un clip anime cinématique.
+Crée 6 scènes visuelles pour un clip anime cinématique.
 
 CHANSON : "${title || "sans titre"}"
-${lyrics ? "PAROLES / CONTEXTE :\n" + lyrics.slice(0, 1500) : "Pas de paroles disponibles — base-toi uniquement sur le titre."}
-${style ? "STYLE DEMANDÉ : " + style : ""}
+${lyrics ? "PAROLES :\n" + lyrics.slice(0, 1500) : "Base-toi sur le titre."}
 
-RÈGLES CRITIQUES :
-- Chaque scène = 1 phrase en anglais décrivant un plan visuel précis
-- Les visuels doivent correspondre AU SUJET DES PAROLES, pas à Funesterie
-- Si la chanson parle de ChatGPT → montre de l'IA, des écrans, du code
-- Si la chanson parle de Link/Zelda → montre un héros vert, Hyrule, aventure
-- Si la chanson parle d'amour → montre un couple, pas forcément Djeff/Vivy
-- NE METS PAS Djeff ou Vivy sauf si les paroles les mentionnent explicitement
-- PAS de texte/mots/lettres dans l'image
-- Varier les plans : large, moyen, gros plan, mouvement de caméra
-- Style anime cinématique, volumétrique, détaillé, haute qualité
+Chaque scène = 1 phrase anglaise décrivant le plan visuel.
+Les visuels illustrent le sujet des paroles. Les personnages et décors correspondent à ce que la chanson raconte.
+Style anime cinématique, volumétrique, plans variés (large, gros plan, mouvement).
 
-Réponds UNIQUEMENT avec un JSON array de 6 objets :
-[{"name":"Nom court","visual":"Description anglais du plan visuel"}]
-
-JSON :`;
+JSON array de 6 objets :
+[{"name":"Nom","visual":"English visual description"}]`;
 
   try {
     var response = await postJsonInternal(CHAT_URL, {
