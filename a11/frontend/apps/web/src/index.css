@@ -7559,6 +7559,22 @@ body {
   text-transform: uppercase;
 }
 
+.fun-home-nav-links a[href*="nossen"],
+.fun-public-menu-panel a[href*="nossen"] {
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.15), rgba(245, 158, 11, 0.08));
+  color: #fbbf24;
+  padding: 0 14px;
+  gap: 4px;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.fun-home-nav-links a[href*="nossen"]:hover,
+.fun-public-menu-panel a[href*="nossen"]:hover {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.28), rgba(245, 158, 11, 0.14));
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.18);
+}
+
 .fun-home-nav-links a:hover,
 .fun-home-cockpit:hover {
   background: rgba(255, 255, 255, 0.06);

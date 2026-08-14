@@ -769,7 +769,7 @@ function getSurfaceLinks() {
       vivyPrivacy: "/vivy/privacy",
       vivyTerms: "/vivy/terms",
       qflush: "/k44/cockpit#qflush",
-      nossen: "/agents/",
+      nossen: "/nossen",
       kaen44Login: buildCentralLoginUrl("/k44/cockpit"),
       kaen44Privacy: "/k44/privacy",
       kaen44Terms: "/k44/terms",
@@ -799,7 +799,7 @@ function getSurfaceLinks() {
     vivyPrivacy: new URL("/privacy/", VIVY_PUBLIC_APP_URL).toString(),
     vivyTerms: new URL("/terms/", VIVY_PUBLIC_APP_URL).toString(),
     qflush: new URL("/cockpit#qflush", KAEN44_PUBLIC_APP_URL).toString(),
-    nossen: new URL("/agents/", FUNESTERIE_PUBLIC_APP_URL).toString(),
+    nossen: new URL("/nossen", A11_PUBLIC_APP_URL).toString(),
     kaen44Login: buildCentralLoginUrl(new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString()),
     kaen44Privacy: new URL("/privacy/", KAEN44_PUBLIC_APP_URL).toString(),
     kaen44Terms: new URL("/terms/", KAEN44_PUBLIC_APP_URL).toString(),
@@ -10500,6 +10500,7 @@ const VIVY_STUDIO_VALID_VOICE_TOOLS = [
 
 function getFunesteriePublicNavItems(surfaceLinks: SurfaceLinks) {
   return [
+    ["🎬 NOSSEN", surfaceLinks.nossen],
     ["Accueil", surfaceLinks.home],
     ["Agents", surfaceLinks.agents],
     ["Architecture", surfaceLinks.architecture],
