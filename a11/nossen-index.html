@@ -328,22 +328,27 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     var stylePrompt = buildStylePrompt(vibe, source.title);
     var sections;
     if (vibe === "auto") {
-      // Mode libre : on n'envoie PAS de sections, le Vivy Director côté serveur
-      // analysera les paroles et créera les scènes adaptées
+      // Mode libre : pas de sections, le Vivy Director côté serveur décide
       sections = [];
     } else {
       sections = (SC[vibe] || SC.live).map(function(x) {
-        return { name: x.n, visual: x.v, duration: mode === "full" ? 30 : 15 };
+        return { name: x.n, visual: x.v, duration: 15 };
       });
     }
+
+    // Full Clip : multiplier les sections pour couvrir toute la chanson
+    // Une chanson typique = 2-4 min. Seedance fait ~8-10s par vidéo.
+    // On envoie fullDuration: true pour que le backend adapte le nombre de sections.
+    var isFullClip = (mode === "full");
 
     function doCall(audioUrl) {
       var payload = {
         songUrl: audioUrl,
         title: truncate(source.title, 25),
-        mode: mode === "full" ? "full-video" : "video",
+        mode: "video",
         style: stylePrompt,
-        sections: sections
+        sections: sections,
+        fullDuration: isFullClip
       };
 
       api("/api/mcp-bridge/clip/start", payload).then(function(d) {
