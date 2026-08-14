@@ -3445,6 +3445,20 @@ html.a11-auth-page-root body {
   text-transform: none;
 }
 
+.vivy-agent-nossen {
+  text-decoration: none;
+  text-transform: none;
+  color: #fbbf24 !important;
+  border-color: rgba(251, 191, 36, 0.5) !important;
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.15), rgba(245, 158, 11, 0.08)) !important;
+}
+
+.vivy-agent-nossen:hover {
+  border-color: rgba(251, 191, 36, 0.7) !important;
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.25), rgba(245, 158, 11, 0.14)) !important;
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.15);
+}
+
 .vivy-agent-discussion {
   text-decoration: none;
   text-transform: none;
@@ -3475,6 +3489,7 @@ html.a11-auth-page-root body {
   display: flex !important;
   flex-direction: column;
   align-items: stretch;
+  flex-wrap: nowrap !important;
   grid-template-columns: minmax(0, 1fr) !important;
   gap: 14px !important;
   border: 1px solid rgba(240, 121, 216, 0.28);
@@ -3485,6 +3500,11 @@ html.a11-auth-page-root body {
     rgba(7, 4, 12, 0.98);
   box-shadow: 0 20px 54px rgba(0, 0, 0, 0.46);
   backdrop-filter: blur(18px);
+}
+
+.vivy-agent-menu-panel > * {
+  width: 100% !important;
+  flex: none !important;
 }
 
 .vivy-agent-session-panel {

@@ -9935,6 +9935,9 @@ function VivyPublicPage({ authenticated, displayName, diagnosticsAllowed = false
           </span>
         </a>
         <div className="vivy-agent-actions">
+          <a className="vivy-agent-nossen" href={surfaceLinks.nossen}>
+            🎬 NOSSEN
+          </a>
           <a className="vivy-agent-home" href={surfaceLinks.home}>
             Accueil
           </a>
@@ -17783,6 +17786,13 @@ export function App() {
             flexWrap: "nowrap",
           }}
         >
+          <a
+            href={surfaceLinks.nossen}
+            style={{ ...headerLinkButtonStyle, color: "#fbbf24", border: "1px solid rgba(251,191,36,.4)" }}
+            title="Produire un clip NOSSEN"
+          >
+            🎬 NOSSEN
+          </a>
           <a
             href={surfaceLinks.home}
             style={headerLinkButtonStyle}
