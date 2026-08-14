@@ -328,7 +328,9 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     var stylePrompt = buildStylePrompt(vibe, source.title);
     var sections;
     if (vibe === "auto") {
-      sections = buildAutoSections(source.title);
+      // Mode libre : on n'envoie PAS de sections, le Vivy Director côté serveur
+      // analysera les paroles et créera les scènes adaptées
+      sections = [];
     } else {
       sections = (SC[vibe] || SC.live).map(function(x) {
         return { name: x.n, visual: x.v, duration: mode === "full" ? 30 : 15 };
@@ -396,7 +398,15 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
           document.getElementById("go-clip").disabled = false;
           updateFullClipButton();
         }
-      }).catch(function() {});
+      }).catch(function(e) {
+        // 404 = job perdu (serveur restarté pendant la génération)
+        clearInterval(pollTimer);
+        document.getElementById("msg").textContent = "\u26A0\uFE0F Génération en cours mais le suivi a été perdu (serveur redémarré). Vérifie la liste des clips dans quelques minutes.";
+        document.getElementById("go-clip").disabled = false;
+        updateFullClipButton();
+        // Reload clips in case it finished
+        setTimeout(loadClips, 5000);
+      });
     }, 8000);
   }
 
