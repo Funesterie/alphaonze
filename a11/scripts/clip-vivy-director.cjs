@@ -98,21 +98,24 @@ async function findLyrics(title, songUrl) {
  * Demande au LLM de générer 6 scènes visuelles pour le clip.
  */
 async function generateVisualScenes(title, lyrics, style) {
-  var prompt = `Tu es Vivy, directrice artistique de clips musicaux pour Funesterie/NOSSEN.
+  var prompt = `Tu es Vivy, directrice artistique de clips musicaux.
 
-Tu dois créer exactement 6 scènes visuelles pour un clip anime cinématique.
+Crée exactement 6 scènes visuelles pour un clip anime cinématique.
 
 CHANSON : "${title || "sans titre"}"
-${lyrics ? "PAROLES / CONTEXTE :\n" + lyrics.slice(0, 1500) : "Pas de paroles disponibles — base-toi sur le titre."}
+${lyrics ? "PAROLES / CONTEXTE :\n" + lyrics.slice(0, 1500) : "Pas de paroles disponibles — base-toi uniquement sur le titre."}
 ${style ? "STYLE DEMANDÉ : " + style : ""}
 
-RÈGLES :
+RÈGLES CRITIQUES :
 - Chaque scène = 1 phrase en anglais décrivant un plan visuel précis
-- Style anime cinématique, volumétrique, détaillé
-- Les scènes doivent raconter une histoire cohérente avec les paroles
-- Inclure des personnages : Djeff (homme, cheveux courts foncés, hoodie noir circuits) et/ou Vivy (cheveux longs dégradé violet-cyan, yeux lumineux, combinaison blanche violet)
-- PAS de texte/mots dans l'image, PAS de titre
-- Varier les plans : large, moyen, gros plan, mouvement
+- Les visuels doivent correspondre AU SUJET DES PAROLES, pas à Funesterie
+- Si la chanson parle de ChatGPT → montre de l'IA, des écrans, du code
+- Si la chanson parle de Link/Zelda → montre un héros vert, Hyrule, aventure
+- Si la chanson parle d'amour → montre un couple, pas forcément Djeff/Vivy
+- NE METS PAS Djeff ou Vivy sauf si les paroles les mentionnent explicitement
+- PAS de texte/mots/lettres dans l'image
+- Varier les plans : large, moyen, gros plan, mouvement de caméra
+- Style anime cinématique, volumétrique, détaillé, haute qualité
 
 Réponds UNIQUEMENT avec un JSON array de 6 objets :
 [{"name":"Nom court","visual":"Description anglais du plan visuel"}]
@@ -183,12 +186,12 @@ async function directClipScenes(config) {
   // 3. Fallback : scènes génériques basées sur le mood du titre
   console.log("[clip-director] Fallback : scènes génériques");
   return [
-    { name: "Intro", visual: "Dark atmospheric opening, city lights in distance, figure silhouette, anticipation building, purple-cyan ambient glow", duration: 15 },
-    { name: "Verse", visual: "Djeff in dark hoodie with circuit patterns, walking through neon-lit corridor, determined expression, volumetric light beams", duration: 15 },
-    { name: "Hook", visual: "Vivy appears with flowing purple-to-cyan gradient hair, glowing eyes, singing into holographic microphone, particles swirling", duration: 15 },
-    { name: "Build", visual: "Both characters on rooftop overlooking cyberpunk city, energy crackling between them, dramatic wind, camera orbiting", duration: 15 },
-    { name: "Peak", visual: "Explosive climax, stage erupts with holographic effects, crowd silhouettes, confetti and laser beams, maximum energy", duration: 15 },
-    { name: "Outro", visual: "Calm resolution, dawn light breaking through clouds, characters walking into golden horizon, peaceful, hopeful", duration: 15 }
+    { name: "Intro", visual: "Dark atmospheric opening, city lights in distance, silhouette figure, anticipation building, purple-cyan ambient glow", duration: 15 },
+    { name: "Verse", visual: "Main character walking through neon-lit corridor, determined expression, volumetric light beams cutting through haze", duration: 15 },
+    { name: "Hook", visual: "Energy burst, dynamic movement, particles swirling around central figure, dramatic lighting shift", duration: 15 },
+    { name: "Build", visual: "Wide shot overlooking cyberpunk cityscape from rooftop, wind blowing, dramatic clouds, camera orbiting slowly", duration: 15 },
+    { name: "Peak", visual: "Explosive climax moment, maximum visual energy, holographic effects erupting, confetti and laser beams everywhere", duration: 15 },
+    { name: "Outro", visual: "Calm resolution, dawn light breaking through clouds, figure walking into golden horizon, peaceful and hopeful ending", duration: 15 }
   ];
 }
 
