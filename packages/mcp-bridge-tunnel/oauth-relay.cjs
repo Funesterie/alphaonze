@@ -73,11 +73,21 @@ function loadTokens() {
 
 function saveTokens(tokens) {
   try {
+    if (!isEncryptionAvailable()) throw new Error('Encryption unavailable');
     const dir = path.dirname(TOKEN_FILE);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(TOKEN_FILE, encrypt(JSON.stringify(tokens)), 'utf8');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const encrypted = encrypt(JSON.stringify(tokens));
+    // Atomic write: tmp file → fsync → rename (prevents corruption on crash)
+    const tmpFile = TOKEN_FILE + '.tmp.' + process.pid;
+    const fd = fs.openSync(tmpFile, 'w', 0o600);
+    fs.writeSync(fd, encrypted, 0, 'utf8');
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fs.renameSync(tmpFile, TOKEN_FILE);
   } catch (err) {
-    console.error('[oauth-relay] Failed to save tokens:', err.message);
+    console.error('[oauth-relay] Échec sauvegarde tokens :', err.message);
+    // Clean up tmp file on error
+    try { fs.unlinkSync(TOKEN_FILE + '.tmp.' + process.pid); } catch (e) { /* ignore */ }
   }
 }
 
@@ -140,20 +150,26 @@ function getAuthHeaders(service) {
 // The caller MUST mount these behind their auth middleware, or provide requireAuth here.
 function mountOAuthRelayRoutes(app, options = {}) {
   const requireAuth = options.requireAuth || function(req, res, next) {
-    // Default guard: check for a valid session or admin token
+    const sessionUser = req.user || (req.session && req.session.user);
+    if (sessionUser && (sessionUser.email || sessionUser.id)) return next();
     const authHeader = req.headers.authorization || '';
-    const sessionUser = req.user || req.session?.user;
-    if (sessionUser && sessionUser.email) return next();
-    if (authHeader && authHeader.startsWith('Bearer ') && authHeader.length > 20) return next();
-    return res.status(401).json({ error: 'Authentication required for Zen Gate OAuth relay' });
+    if (authHeader.startsWith('Bearer ')) {
+      const secret = process.env.JWT_SECRET;
+      if (!secret) return res.status(401).json({ error: 'JWT_SECRET manquant' });
+      try {
+        const jwt = require('jsonwebtoken');
+        jwt.verify(authHeader.slice(7).trim(), secret, { algorithms: ['HS256', 'HS384', 'HS512'] });
+        return next();
+      } catch (e) { return res.status(401).json({ error: 'Token invalide' }); }
+    }
+    return res.status(401).json({ error: 'Authentification requise' });
   };
 
   const requireAdmin = options.requireAdmin || function(req, res, next) {
-    // Only the Funesterie admin can store/revoke tokens
-    const email = req.user?.email || req.session?.user?.email || '';
-    const ADMIN_EMAILS = (process.env.ZEN_GATE_ADMIN_EMAILS || 'cellaurojeffrey@gmail.com').split(',').map(e => e.trim().toLowerCase());
+    const email = (req.user && req.user.email) || (req.session && req.session.user && req.session.user.email) || '';
+    const ADMIN_EMAILS = (process.env.ZEN_GATE_ADMIN_EMAILS || 'cellaurojeffrey@gmail.com').split(',').map(function(e) { return e.trim().toLowerCase(); });
     if (ADMIN_EMAILS.includes(email.toLowerCase())) return next();
-    return res.status(403).json({ error: 'Zen Gate admin access required' });
+    return res.status(403).json({ error: 'Accès admin Zen Gate requis' });
   };
 
   // Store a token (ADMIN ONLY)

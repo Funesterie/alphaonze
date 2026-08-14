@@ -310,13 +310,40 @@ function mountBridgeRoutes(app, options = {}) {
     oauthRelay.mountOAuthRelayRoutes(app, options);
   }
 
-  // Auth guard for tool calls — require at minimum a valid session
+  // Auth guard for tool calls — MUST verify the session, not just check header length.
+  // If no requireAuth is provided, we use a strict default that checks:
+  //   1. Express session (req.user populated by passport/session middleware)
+  //   2. JWT token verified with the server's JWT_SECRET
+  // A raw Bearer header of unknown origin is NEVER accepted.
   const requireAuth = options.requireAuth || function(req, res, next) {
-    const sessionUser = req.user || req.session?.user;
+    // Priority 1: Session-authenticated user (passport, cookie session)
+    const sessionUser = req.user || (req.session && req.session.user);
+    if (sessionUser && (sessionUser.email || sessionUser.id)) {
+      req._zenGateUser = sessionUser;
+      return next();
+    }
+
+    // Priority 2: JWT Bearer token verified with JWT_SECRET
     const authHeader = req.headers.authorization || '';
-    if (sessionUser && sessionUser.email) return next();
-    if (authHeader && authHeader.startsWith('Bearer ') && authHeader.length > 20) return next();
-    return res.status(401).json({ error: 'Authentication required for Zen Gate bridge' });
+    if (authHeader.startsWith('Bearer ')) {
+      const token = authHeader.slice(7).trim();
+      const secret = process.env.JWT_SECRET;
+      if (!secret) {
+        // No JWT_SECRET configured — cannot verify tokens, fail closed
+        return res.status(401).json({ error: 'Zen Gate: authentification indisponible (JWT_SECRET manquant)' });
+      }
+      try {
+        const jwt = require('jsonwebtoken');
+        const decoded = jwt.verify(token, secret, { algorithms: ['HS256', 'HS384', 'HS512'] });
+        req._zenGateUser = { email: decoded.email || decoded.sub, id: decoded.sub || decoded.id, jwt: true };
+        return next();
+      } catch (err) {
+        return res.status(401).json({ error: 'Zen Gate: token invalide ou expiré' });
+      }
+    }
+
+    // No valid auth — fail closed
+    return res.status(401).json({ error: 'Zen Gate: authentification requise (session ou JWT)' });
   };
 
   // Health is public (used by NOSSEN page)
