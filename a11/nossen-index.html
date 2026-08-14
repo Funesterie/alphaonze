@@ -325,16 +325,40 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 
   function loadSongs() {
     api("/api/vivy/stream/songs.json").then(function(d) {
-      var vivySongs = (d.songs || []).map(function(s) {
+      var allVivySongs = (d.songs || []).map(function(s) {
         return {
           title: s.trackTitle || s.title || "Sans titre",
           playUrl: A + (s.trackUrl || ""),
           audioUrl: s.trackUrl ? (A + s.trackUrl) : "",
           date: s.createdAt ? s.createdAt.slice(0, 10) : "",
           duration: s.durationSeconds ? Math.round(s.durationSeconds) + "s" : "",
-          source: s.source || "vivy"
+          source: s.source || "vivy",
+          requestedBy: (s.requestedBy || "").toLowerCase()
         };
       });
+
+      // Filter: user only sees their own songs (by requestedBy match)
+      // Admin sees everything
+      var vivySongs;
+      if (isAdmin) {
+        vivySongs = allVivySongs;
+      } else if (userEmail) {
+        var userLower = userEmail.toLowerCase();
+        var userPrefix = userLower.split("@")[0]; // "funeste38", "ile", etc.
+        vivySongs = allVivySongs.filter(function(s) {
+          if (!s.requestedBy) return false;
+          return s.requestedBy === userLower
+            || s.requestedBy === userPrefix
+            || s.requestedBy.indexOf(userPrefix) !== -1;
+        });
+        // If user has no songs yet, show a message
+        if (vivySongs.length === 0) {
+          vivySongs = []; // Empty — they'll see the "Aucune chanson" message
+        }
+      } else {
+        // Not logged in: show nothing from Vivy stream (only local if available)
+        vivySongs = [];
+      }
 
       api("/api/mcp-bridge/songs").then(function(local) {
         var localSongs = (local.songs || []).map(function(s) {
@@ -344,34 +368,45 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
             audioUrl: A + "/api/mcp-bridge/play/" + s.filename,
             date: s.date || "",
             duration: "",
-            source: "local"
+            source: "local",
+            requestedBy: ""
           };
         });
 
+        // Admin gets local songs too, others don't (those are Djeff's productions)
+        var mergedLocal = isAdmin ? localSongs : [];
+
         var seen = {};
         songs = [];
-        vivySongs.concat(localSongs).forEach(function(s) {
+        vivySongs.concat(mergedLocal).forEach(function(s) {
           var key = s.playUrl || s.title;
           if (!seen[key]) { seen[key] = true; songs.push(s); }
         });
         renderSongs();
       }).catch(function() { songs = vivySongs; renderSongs(); });
     }).catch(function() {
-      api("/api/mcp-bridge/songs").then(function(local) {
-        songs = (local.songs || []).map(function(s) {
-          return {
-            title: s.title || "Sans titre",
-            playUrl: A + "/api/mcp-bridge/play/" + s.filename,
-            audioUrl: A + "/api/mcp-bridge/play/" + s.filename,
-            date: s.date || "",
-            duration: "",
-            source: "local"
-          };
+      // Fallback: local only for admin
+      if (isAdmin) {
+        api("/api/mcp-bridge/songs").then(function(local) {
+          songs = (local.songs || []).map(function(s) {
+            return {
+              title: s.title || "Sans titre",
+              playUrl: A + "/api/mcp-bridge/play/" + s.filename,
+              audioUrl: A + "/api/mcp-bridge/play/" + s.filename,
+              date: s.date || "",
+              duration: "",
+              source: "local",
+              requestedBy: ""
+            };
+          });
+          renderSongs();
+        }).catch(function() {
+          document.getElementById("list").innerHTML = '<div class="empty">Aucune chanson</div>';
         });
+      } else {
+        songs = [];
         renderSongs();
-      }).catch(function() {
-        document.getElementById("list").innerHTML = '<div class="empty">Aucune chanson</div>';
-      });
+      }
     });
   }
 
