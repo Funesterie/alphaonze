@@ -31,8 +31,8 @@ function mountZenGate(app, options = {}) {
 
   let bridgeTunnel;
   try {
-    // Essayer le package @nossen/mcp-bridge-tunnel (path relatif depuis le monorepo)
-    const tunnelPath = path.resolve(__dirname, "../../../../packages/mcp-bridge-tunnel/index.cjs");
+    // Essayer le package @nossen/mcp-bridge-tunnel (path depuis a11/backend/apps/server/src/security/)
+    const tunnelPath = path.resolve(__dirname, "../../../../../packages/mcp-bridge-tunnel/index.cjs");
     bridgeTunnel = require(tunnelPath);
   } catch (e1) {
     try {

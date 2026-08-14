@@ -229,16 +229,78 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 
   function buildStylePrompt(vibe, title) {
     if (vibe === "auto") {
-      // Mode libre : l'IA analyse le titre/paroles et décide
-      return "Analyse le titre et le contexte de cette chanson intitulée \"" + (title || "musique") + "\". " +
-        "Choisis le style visuel le plus adapté aux paroles et à l'ambiance. " +
-        "Produis un clip anime cinématique cohérent avec l'émotion de la musique. " +
-        "Utilise des couleurs, décors et mouvements de caméra qui reflètent le mood.";
+      return "Cinematic anime style inspired by the song. Analyze the mood of: " + (title || "music") + ". Choose colors, lighting and camera movement that match the emotion. Rich detail, volumetric lighting.";
     }
     if (vibe === "live") return "Professional anime live concert, singer with long purple-cyan hair white violet outfit dramatic lighting";
     if (vibe === "cyberpunk") return "Cinematic anime cyberpunk style neon city volumetric lighting rich detail";
     if (vibe === "cosmic") return "Cinematic anime cosmic space style nebulae energy volumetric lighting";
     return "Cinematic anime intimate studio style warm amber lighting rich detail";
+  }
+
+  function buildAutoSections(title) {
+    // Mode libre : on génère des sections basées sur le titre
+    var t = (title || "musique").toLowerCase();
+    var mood = "energetic";
+    if (/triste|sombre|nuit|pluie|mélanc|alone|sad/.test(t)) mood = "melancholic";
+    if (/cosmic|espace|star|galaxy|univers/.test(t)) mood = "cosmic";
+    if (/amour|love|coeur|heart|doux/.test(t)) mood = "romantic";
+    if (/rage|fight|combat|war|colère/.test(t)) mood = "intense";
+    if (/libre|free|vent|wind|road|route/.test(t)) mood = "freedom";
+
+    var moodSections = {
+      energetic: [
+        {n:"Intro", v:"Neon city rooftop night, figure silhouette against skyline, energy building"},
+        {n:"Build", v:"Fast motion through digital corridors, data streams, bass drop anticipation"},
+        {n:"Peak", v:"Explosion of color and light, dancer mid-air, holographic particles everywhere"},
+        {n:"Bridge", v:"Slow motion close-up, sweat drops catching neon light, determination"},
+        {n:"Climax", v:"Full arena crowd hands up, stage erupts with lasers and confetti"},
+        {n:"Outro", v:"Calm after storm, single spotlight fading, city lights below"}
+      ],
+      melancholic: [
+        {n:"Intro", v:"Rain on window, city lights blurred, contemplative figure alone"},
+        {n:"Verse", v:"Empty streets at night, puddle reflections, slow walking"},
+        {n:"Memory", v:"Warm golden flashback, laughter frozen in time, fading photos"},
+        {n:"Bridge", v:"Hands reaching through mist, almost touching, dissolving"},
+        {n:"Resolve", v:"Dawn breaking through clouds, first light on face, acceptance"},
+        {n:"Outro", v:"Walking away into morning fog, peaceful, forward"}
+      ],
+      cosmic: [
+        {n:"Void", v:"Deep space nebulae, figure floating weightless, energy gathering"},
+        {n:"Birth", v:"Stars forming from dust, cosmic dance, creation"},
+        {n:"Flight", v:"Racing through asteroid field, light trail behind, speed"},
+        {n:"Peak", v:"Supernova explosion, rings of energy expanding, awe"},
+        {n:"Peace", v:"Floating among new constellations, serene, connected"},
+        {n:"Return", v:"Earth rising on horizon, gentle descent, home"}
+      ],
+      romantic: [
+        {n:"Meet", v:"Two silhouettes in golden hour, cherry blossoms falling"},
+        {n:"Dance", v:"Slow dance under string lights, intimate, warm"},
+        {n:"Together", v:"Hands intertwined walking pier at sunset, ocean reflecting"},
+        {n:"Apart", v:"Train pulling away, figure on platform, longing gaze"},
+        {n:"Dream", v:"Fantasy sequence, dancing in clouds, ethereal"},
+        {n:"Forever", v:"Reunion embrace, fireworks in sky, joy"}
+      ],
+      intense: [
+        {n:"Tension", v:"Dark corridor, flickering lights, heartbeat rhythm"},
+        {n:"Clash", v:"Lightning strikes, figures facing off, energy crackling"},
+        {n:"Battle", v:"Fast choreographed combat, sparks flying, determination"},
+        {n:"Fall", v:"Slow motion impact, dust rising, silence"},
+        {n:"Rise", v:"Standing up from debris, glowing eyes, power surge"},
+        {n:"Victory", v:"Triumphant stance on peak, storm clearing, golden light"}
+      ],
+      freedom: [
+        {n:"Start", v:"Engine revving, desert highway, heat shimmer on horizon"},
+        {n:"Speed", v:"Racing through open landscape, wind in hair, exhilaration"},
+        {n:"Vista", v:"Cliff edge panorama, arms spread, vast world below"},
+        {n:"Flight", v:"Leap into sky, gravity defied, clouds rushing past"},
+        {n:"Peace", v:"Floating above it all, sunset colors, absolute calm"},
+        {n:"Beyond", v:"New horizon ahead, infinite possibility, dawn"}
+      ]
+    };
+
+    return (moodSections[mood] || moodSections.energetic).map(function(x) {
+      return { name: x.n, visual: x.v, duration: 15 };
+    });
   }
 
   function startClip(mode) {
@@ -264,17 +326,21 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 
     var vibe = document.getElementById("vibe").value;
     var stylePrompt = buildStylePrompt(vibe, source.title);
-    var sections = vibe === "auto" ? [] : (SC[vibe] || SC.live).map(function(x) {
-      return { name: x.n, visual: x.v, duration: mode === "full" ? 30 : 15 };
-    });
+    var sections;
+    if (vibe === "auto") {
+      sections = buildAutoSections(source.title);
+    } else {
+      sections = (SC[vibe] || SC.live).map(function(x) {
+        return { name: x.n, visual: x.v, duration: mode === "full" ? 30 : 15 };
+      });
+    }
 
     function doCall(audioUrl) {
       var payload = {
         songUrl: audioUrl,
         title: truncate(source.title, 25),
-        mode: mode === "full" ? "full-video" : "slideshow",
+        mode: mode === "full" ? "full-video" : "video",
         style: stylePrompt,
-        autoTheme: vibe === "auto",
         sections: sections
       };
 
