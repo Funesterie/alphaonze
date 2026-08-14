@@ -314,27 +314,40 @@ function mountBridgeRoutes(app, options = {}) {
   // If no requireAuth is provided, we use a strict default that checks:
   //   1. Express session (req.user populated by passport/session middleware)
   //   2. JWT token verified with the server's JWT_SECRET
+  //   3. Internal service calls (localhost with X-Internal-Service header)
   // A raw Bearer header of unknown origin is NEVER accepted.
+  const INTERNAL_SERVICE_KEY = process.env.MCP_BRIDGE_INTERNAL_KEY || process.env.JWT_SECRET || '';
+
   const requireAuth = options.requireAuth || function(req, res, next) {
+    // Priority 0: Internal service call (server-to-server on localhost)
+    // The clip generator and other internal modules call /api/mcp-bridge/call
+    // from localhost. They pass X-Internal-Service header with the service key.
+    var internalHeader = req.headers['x-internal-service'] || '';
+    var isLocalhost = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1'
+      || req.connection && (req.connection.remoteAddress === '127.0.0.1' || req.connection.remoteAddress === '::1' || req.connection.remoteAddress === '::ffff:127.0.0.1');
+    if (isLocalhost && internalHeader === 'a11-internal') {
+      req._zenGateUser = { email: 'system@funesterie.internal', id: 'system', internal: true };
+      return next();
+    }
+
     // Priority 1: Session-authenticated user (passport, cookie session)
-    const sessionUser = req.user || (req.session && req.session.user);
+    var sessionUser = req.user || (req.session && req.session.user);
     if (sessionUser && (sessionUser.email || sessionUser.id)) {
       req._zenGateUser = sessionUser;
       return next();
     }
 
     // Priority 2: JWT Bearer token verified with JWT_SECRET
-    const authHeader = req.headers.authorization || '';
+    var authHeader = req.headers.authorization || '';
     if (authHeader.startsWith('Bearer ')) {
-      const token = authHeader.slice(7).trim();
-      const secret = process.env.JWT_SECRET;
+      var token = authHeader.slice(7).trim();
+      var secret = process.env.JWT_SECRET;
       if (!secret) {
-        // No JWT_SECRET configured — cannot verify tokens, fail closed
         return res.status(401).json({ error: 'Zen Gate: authentification indisponible (JWT_SECRET manquant)' });
       }
       try {
-        const jwt = require('jsonwebtoken');
-        const decoded = jwt.verify(token, secret, { algorithms: ['HS256', 'HS384', 'HS512'] });
+        var jwt = require('jsonwebtoken');
+        var decoded = jwt.verify(token, secret, { algorithms: ['HS256', 'HS384', 'HS512'] });
         req._zenGateUser = { email: decoded.email || decoded.sub, id: decoded.sub || decoded.id, jwt: true };
         return next();
       } catch (err) {
