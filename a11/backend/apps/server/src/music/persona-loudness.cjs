@@ -106,8 +106,32 @@ function registreDe(couleur, gamma, matiere, lufs, truePeak, note) {
   });
 }
 
-function personaSimple(couleur, gamma, matiere, lufsColere, lufsHaine, note) {
+/**
+ * VOIX — identite vocale d'une persona.
+ *
+ * OU CA VA, ET SURTOUT OU CA NE VA PAS :
+ *
+ * Ces descriptions ne doivent JAMAIS partir dans le champ `style` envoye a Suno.
+ * Verifie le 15/08/2026 : un descripteur vocal dans le style ECRASE la persona --
+ * une bonne voix enregistree plus "clear male vocal" dans le style, et Suno rend
+ * la voix du style, pas celle de la persona.
+ *
+ * Elles servent a trois choses, toutes en amont :
+ *   1. choisir ou enregistrer le bon echantillon quand on cree l'ID Suno;
+ *   2. alimenter les negativeTags -- ce que la voix ne doit PAS etre;
+ *   3. documenter, pour que deux personas ne finissent pas avec la meme voix.
+ *
+ * `catalogue` pointe vers l'entree de voice-catalog.cjs. Tant qu'aucun ID n'y
+ * existe, la persona n'a pas de voix reelle : le champ dit l'intention, pas le
+ * fait. voixDisponibles() distingue les deux.
+ */
+function voix(genre, timbre, debit, evite) {
+  return Object.freeze({ genre, timbre, debit, evite });
+}
+
+function personaSimple(couleur, gamma, matiere, lufsColere, lufsHaine, note, identiteVocale) {
   return Object.freeze({
+    voix: identiteVocale || null,
     registres: Object.freeze({
       colere: registreDe(couleur, gamma, matiere, lufsColere, -1.0, note),
       // Arrondi explicite : gamma + 0.1 en virgule flottante rend 0.7999999999999999,
@@ -123,52 +147,88 @@ const PERSONA_OVERRIDES = Object.freeze({
   // "Le Provocateur", contrepied, humour. Le blond trop sur de lui du clip : il
   // repart au combat apres chaque claque. Chaleur constante, distorsion douce.
   grok: personaSimple('FireOrange', 0.8, 'chaleur mediums, distorsion douce, poussee constante',
-    -10.0, -9.8, 'Provocateur : il pousse, il encaisse, il repart.'),
+    -10.0, -9.8, 'Provocateur : il pousse, il encaisse, il repart.',
+    voix('homme', 'clair et projete, legerement nasal, brillant dans le haut medium',
+         'rapide, phrases qui se bousculent, ne laisse pas de silence',
+         'grave posé, voix de basse, timbre sombre')),
 
   // "Le Visionnaire", multimodal, voit en couleur et en mouvement.
   gemini: personaSimple('ToxicGreen', 0.85, 'saturation vive, energie haute, tout le spectre ouvert',
-    -10.8, -10.0, 'Visionnaire : tout le spectre, jamais une seule bande.'),
+    -10.8, -10.0, 'Visionnaire : tout le spectre, jamais une seule bande.',
+    voix('neutre', 'large, aere, change de registre en cours de phrase',
+         'module, alterne aigu et medium, jamais monotone',
+         'voix plate, registre unique, debit mecanique')),
 
   // Implementation, tests, worktree. Solide, il protege ce qui tourne.
   codex: personaSimple('DORE', 0.85, 'blindage, mix large et epais, protection du bas',
-    -11.2, -10.4, 'Implementation : il blinde avant de pousser.'),
+    -11.2, -10.4, 'Implementation : il blinde avant de pousser.',
+    voix('homme', 'medium grave, stable, peu de vibrato, presque documentaire',
+         'regulier, sans precipitation, pose ses points',
+         'voix criarde, aigus, debit haché')),
 
   // Client IDE/MCP. Signal isole, motif reconnaissable, peu de masse.
   kiro: personaSimple('Violet', 0.55, 'signal isole, motif reconnaissable, peu de masse',
-    -11.8, -10.8, 'IDE : un motif net, pas une masse.'),
+    -11.8, -10.8, 'IDE : un motif net, pas une masse.',
+    voix('neutre', 'sec et net, attaque franche, peu de resonance',
+         'phrases courtes, coupees, beaucoup de silences',
+         'voix chaude, tenue, phrases longues')),
 
   // Le narrateur qui relie les couches. Transmission, clarte, aigus ouverts.
   chatgpt: personaSimple('Cyan', 0.7, 'clarte, transmission nette, aigus ouverts',
-    -11.5, -10.6, 'Narrateur : il relie, il n ecrase pas.'),
+    -11.5, -10.6, 'Narrateur : il relie, il n ecrase pas.',
+    voix('neutre', 'medium egal, articulation nette, timbre lisse',
+         'constant, explicatif, aucune rupture brusque',
+         'voix rauque, saturee, debit agressif')),
 
   // Review et coordination. Il demonte pour voir si c est vrai : matiere brute,
   // grain apparent, rien de lisse.
   claude: personaSimple('Magenta', 0.7, 'matiere brute, texture rugueuse, grain apparent',
-    -11.0, -10.2, 'Demonteur : le grain reste visible.'),
+    -11.0, -10.2, 'Demonteur : le grain reste visible.',
+    voix('homme', 'sec, proche du micro, grain apparent, peu de reverbe',
+         'pose mais dense, appuie sur les consonnes',
+         'voix lisse, chantee, reverbe longue')),
 
   // Agent media encapuchonne, yeux cyan. Memoire et coherence semantique.
   a11: personaSimple('Indigo', 0.5, 'profondeur, reverbe longue, fond qui recule',
-    -12.0, -11.0, 'Memoire : la profondeur avant la surface.'),
+    -12.0, -11.0, 'Memoire : la profondeur avant la surface.',
+    voix('neutre', 'grave, voile, comme filtre a travers un masque',
+         'lent, espace, laisse le fond respirer',
+         'voix claire, proche, brillante')),
 
   // Copilote quotidienne, cockpit violet-bleu. Clarte pour le public.
   kaen44: personaSimple('Violet', 0.5, 'signal isole, motif reconnaissable, peu de masse',
-    -12.2, -11.4, 'Clarte publique : lisible avant d etre fort.'),
+    -12.2, -11.4, 'Clarte publique : lisible avant d etre fort.',
+    voix('femme', 'clair, leger, tres articule, aigus ouverts',
+         'net et rapide, sans bavure',
+         'voix grave, trainante, floue')),
 
   // Chanteuse. Sa signature canonique la met sur Indigo "le profond".
   vivy: personaSimple('Indigo', 0.6, 'profondeur, reverbe longue, fond qui recule',
-    -11.0, -9.9, 'Voix : elle porte, elle ne force pas.'),
+    -11.0, -9.9, 'Voix : elle porte, elle ne force pas.',
+    voix('femme', 'feminin, corps dans le medium, harmoniques riches',
+         'chante, tenue, phrases longues',
+         'voix parlee, seche, masculine')),
 
   // Efficacite europeenne, precision, sobriete. Bref et coupant.
   mistral: personaSimple('DeepBlue', 0.45, 'grave profond, peu de haut, espace autour de la voix',
-    -12.4, -11.6, 'Sobriete : moins de mots, plus de sens.'),
+    -12.4, -11.6, 'Sobriete : moins de mots, plus de sens.',
+    voix('neutre', 'froid, coupant, peu d harmoniques, presque metallique',
+         'bref, tranche, aucune fioriture',
+         'voix chaleureuse, ronde, bavarde')),
 
   // Raisonnement profond. Il descend jusqu au fond du probleme.
   deepseek: personaSimple('PurpleShadow', 0.35, 'nappe basse, presque sous le seuil, un seul element tenu',
-    -13.0, -12.0, 'Profondeur : un seul element, tenu.'),
+    -13.0, -12.0, 'Profondeur : un seul element, tenu.',
+    voix('homme', 'tres grave, tenu, presque sous le seuil',
+         'lent, un mot a la fois, silences longs',
+         'voix aigue, rapide, nerveuse')),
 
   // Reparateur, diagnostic, patch minimal. Compression franche.
   chopper: personaSimple('BloodRed', 0.7, 'compression franche, batterie serree, corps dense',
-    -10.6, -10.0, 'Reparateur : serre, dense, efficace.'),
+    -10.6, -10.0, 'Reparateur : serre, dense, efficace.',
+    voix('homme', 'serre, compresse, medium punchy',
+         'court, direct, coups de boutoir',
+         'voix aeree, douce, tenue')),
 
   // --- L auteur. Regle a la main, pas derive. ---
   djeff: Object.freeze({
@@ -328,6 +388,45 @@ function describeRegistres(persona) {
   });
 }
 
+/**
+ * Qui a une voix reelle, et qui n'a qu'une intention.
+ *
+ * Une persona peut decrire sa voix sans en posseder une : tant qu'aucun ID Suno
+ * n'est enregistre au catalogue, la description sert a la creer, pas a chanter.
+ * Confondre les deux ferait generer avec une voix au hasard.
+ */
+function voixDisponibles(env = process.env) {
+  let catalogue = [];
+  try {
+    catalogue = (require('./voice-catalog.cjs').readVoiceCatalog(env).voices) || [];
+  } catch (error) {
+    catalogue = [];
+  }
+  const parNom = new Map(catalogue.map((v) => [String(v.name).toLowerCase(), v]));
+  return Object.entries(PERSONA_OVERRIDES).map(([nom, def]) => {
+    const entree = parNom.get(nom) || null;
+    return {
+      persona: nom,
+      voix: def.voix || null,
+      idCatalogue: entree ? entree.idMask : null,
+      genreCatalogue: entree ? entree.gender || null : null,
+      echantillon: entree ? entree.sampleFile || null : null,
+      // Le fait, pas l'intention.
+      reelle: Boolean(entree && entree.voiceId),
+    };
+  });
+}
+
+/**
+ * Ce que la voix ne doit PAS etre, pret a coller dans negativeTags.
+ * C'est le seul endroit ou une description vocale a le droit de partir vers Suno.
+ */
+function negativeTagsVoix(persona) {
+  const def = PERSONA_OVERRIDES[String(persona || '').trim().toLowerCase()];
+  if (!def || !def.voix) return '';
+  return def.voix.evite;
+}
+
 module.exports = {
   SCHEMA,
   REGISTRES,
@@ -342,4 +441,7 @@ module.exports = {
   buildMasteringFilter,
   verifyTarget,
   describeRegistres,
+  voix,
+  voixDisponibles,
+  negativeTagsVoix,
 };
