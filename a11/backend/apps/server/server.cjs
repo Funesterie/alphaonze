@@ -7160,8 +7160,42 @@ app.use('/api/personas/dialogue', createPersonaVoiceDialogueRouter({
 console.log('[Server] Persona voice dialogue mounted under /api/personas/dialogue (Vivy + Djeff)');
 
 const { createVivyStreamRouter } = require('./src/routes/vivy-stream.cjs');
-app.use('/api/vivy/stream', createVivyStreamRouter({ verifyJWT, db }));
+const vivyStreamRouter = createVivyStreamRouter({ verifyJWT, db });
+app.use('/api/vivy/stream', vivyStreamRouter);
 console.log('[Server] Vivy Stream routes mounted under /api/vivy/stream');
+
+// --- NOSSEN: Filtre chansons côté serveur (par session/utilisateur) ---
+const { filterSongsByUser } = require('./src/security/songs-access-filter.cjs');
+app.get('/api/nossen/my-songs', verifyJWT, filterSongsByUser(() => vivyStreamRouter._vivyStore));
+console.log('[Server] NOSSEN filtered songs mounted at /api/nossen/my-songs');
+
+// --- NOSSEN: Zen Gate (MCP Bridge sécurisé avec auth A11) ---
+const { mountZenGate } = require('./src/security/mount-zen-gate.cjs');
+mountZenGate(app, { requireAuth: verifyJWT });
+console.log('[Server] Zen Gate mount attempted');
+
+// --- NOSSEN: Pipeline de clips (jobs persistants, statut durable) ---
+const { createClipRouter } = require('./src/clips/clip-router.cjs');
+app.use('/api/mcp-bridge/clip', verifyJWT, createClipRouter({ verifyJWT }));
+console.log('[Server] NOSSEN clip pipeline mounted at /api/mcp-bridge/clip/{start,status,list,my-jobs}');
+
+// --- NOSSEN: Upload audio pour les clips ---
+const { mountUploadAudioRoute } = require('./src/clips/mount-upload-audio-route.cjs');
+mountUploadAudioRoute(app);
+
+// --- NOSSEN: Route /clips/:filename pour servir les clips vidéo depuis agent-bus ---
+const CLIPS_DIR = process.env.NOSSEN_CLIPS_DIR || '/agent-bus/clips';
+app.get('/clips/:filename', (req, res) => {
+  const decoded = decodeURIComponent(req.params.filename || '');
+  if (!decoded || /[\/\\]/.test(decoded)) return res.status(400).json({ error: 'Invalid filename' });
+  const ext = path.extname(decoded).toLowerCase();
+  if (!['.mp4', '.webm', '.mkv'].includes(ext)) return res.status(403).json({ error: 'Unsupported format' });
+  const filePath = path.join(CLIPS_DIR, decoded);
+  res.sendFile(filePath, (err) => {
+    if (err && !res.headersSent) res.status(404).json({ error: 'Not found' });
+  });
+});
+console.log('[Server] NOSSEN clips route mounted at /clips/:filename');
 
 const createDoubleHarmonicRouter = require('./src/routes/double-harmonic.cjs');
 app.use('/api/double-harmonic', createDoubleHarmonicRouter({ verifyJWT, db, runtimeRoot: PUBLIC_RUNTIME_ROOT }));
@@ -9167,6 +9201,12 @@ app.get(['/terms', '/terms/', '/conditions', '/conditions/', '/cgu', '/cgu/'], s
 app.get(['/mille-fleurs', '/mille-fleurs/', '/millefleurs', '/millefleurs/', '/mille_fleurs', '/mille_fleurs/', '/charte-mille-fleurs', '/charte-mille-fleurs/'], sendEmbeddedUiMilleFleursPage);
 app.get(['/sudoku-token', '/sudoku-token/', '/token-sudoku', '/token-sudoku/', '/cerbere-sudoku', '/cerbere-sudoku/'], sendEmbeddedUiSudokuTokenPage);
 app.get(['/architecture', '/architecture/', '/carte', '/carte/', '/graph', '/graph/'], sendEmbeddedUiArchitecturePage);
+app.get(['/nossen', '/nossen/'], (_req, res) => {
+  const nossenPath = path.resolve(__dirname, 'nossen-index.html');
+  res.sendFile(nossenPath, (err) => {
+    if (err && !res.headersSent) res.status(404).send('Page NOSSEN introuvable');
+  });
+});
 app.get(['/nossen/agent-memory', '/nossen/agent-memory/', '/nossen/prior-art', '/nossen/prior-art/'], sendEmbeddedUiNossenAgentMemoryPage);
 app.get(['/nossen/grok', '/nossen/grok/', '/nossen/world-brief', '/nossen/world-brief/', '/nossen/frontier-ai', '/nossen/frontier-ai/'], sendEmbeddedUiNossenGrokPage);
 app.get(['/k44/privacy', '/k44/privacy/', '/kaen44/privacy', '/kaen44/privacy/'], sendEmbeddedUiPrivacyPage);

@@ -2335,6 +2335,9 @@ function createVivyStreamRouter(options = {}) {
     res.status(result.ok ? 200 : 500).json(result);
   });
 
+  // Exposer le store pour le filtre NOSSEN côté serveur
+  router._vivyStore = store;
+
   return router;
 }
 

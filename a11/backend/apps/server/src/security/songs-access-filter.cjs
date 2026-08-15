@@ -18,6 +18,75 @@
 const ADMIN_EMAILS = (process.env.ZEN_GATE_ADMIN_EMAILS || "cellaurojeffrey@gmail.com")
   .split(",").map(function(e) { return e.trim().toLowerCase(); });
 
+const GENERIC_TITLES = ["session principale", "sans titre", "untitled", "nouveau", "test", "vivy 2026", "morceau vivy", "vivy live"];
+
+/**
+ * Détecte les titres génériques.
+ */
+function isGenericTitle(title) {
+  if (!title) return true;
+  var lower = title.toLowerCase().trim();
+  return GENERIC_TITLES.some(function(g) { return lower === g || lower.startsWith(g + " "); });
+}
+
+/**
+ * Extrait un titre depuis le coverPrompt ou les métadonnées de la chanson.
+ */
+function inferTitleFromSong(song) {
+  // Essayer le coverPrompt (contient souvent "Idée à représenter : ...")
+  if (song.coverPrompt) {
+    var m = song.coverPrompt.match(/Idée.*?:\s*(.+?)(?:\.|Lecture|Direction|Référence|\n)/is);
+    if (m && m[1]) {
+      var inferred = m[1].trim().slice(0, 50).replace(/["""]/g, "");
+      if (inferred.length >= 3 && !isGenericTitle(inferred)) {
+        return inferred.charAt(0).toUpperCase() + inferred.slice(1);
+      }
+    }
+  }
+  // Essayer le filename
+  if (song.filename || (song.trackUrl && song.trackUrl.includes("/"))) {
+    var filename = song.filename || song.trackUrl.split("/").pop() || "";
+    var cleaned = filename
+      .replace(/\.\w{2,4}$/, "")
+      .replace(/^v\d+[a-z]*_\d+_[0-9a-f]+-/i, "")
+      .replace(/[-_]funesterie.*$/i, "")
+      .replace(/^\d{10,}-/, "")
+      .replace(/[-_]+/g, " ")
+      .trim();
+    if (cleaned.length >= 3 && !isGenericTitle(cleaned)) {
+      return cleaned.split(" ").slice(0, 5).map(function(w) {
+        return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+      }).join(" ");
+    }
+  }
+  return null;
+}
+
+/**
+ * Déduplique par trackUrl et corrige les titres génériques.
+ */
+function deduplicateAndFixTitles(songs) {
+  var seen = new Set();
+  var result = [];
+  for (var i = 0; i < songs.length; i++) {
+    var song = songs[i];
+    var key = song.trackUrl || song.id || ("idx-" + i);
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    // Corriger le titre générique à la volée
+    var title = song.trackTitle || song.title;
+    if (isGenericTitle(title)) {
+      var better = inferTitleFromSong(song);
+      if (better) {
+        song = Object.assign({}, song, { trackTitle: better, title: better });
+      }
+    }
+    result.push(song);
+  }
+  return result;
+}
+
 /**
  * Détermine si un utilisateur est admin.
  */
@@ -62,6 +131,9 @@ function filterSongsByUser(getStore) {
       filteredSongs = [];
     }
 
+    // Dédupliquer par trackUrl et corriger les titres génériques
+    filteredSongs = deduplicateAndFixTitles(filteredSongs);
+
     res.set("Cache-Control", "private, no-store");
     res.json({
       ok: true,
@@ -86,6 +158,9 @@ function filterSongsArray(songs, user) {
 module.exports = {
   filterSongsByUser,
   filterSongsArray,
+  deduplicateAndFixTitles,
   isAdminUser,
   songBelongsToUser,
+  isGenericTitle,
+  inferTitleFromSong,
 };

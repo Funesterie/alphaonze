@@ -2813,9 +2813,9 @@ html.a11-auth-page-root body {
   width: min(1500px, 100%);
   min-height: calc(100vh - 102px);
   margin: 0 auto;
-  display: grid;
-  grid-template-columns: minmax(260px, 330px) minmax(0, 1fr) minmax(280px, 350px);
-  gap: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
   align-items: stretch;
   overflow: hidden;
   border-bottom: 1px solid rgba(240, 121, 216, 0.22);

@@ -31,21 +31,26 @@ function mountZenGate(app, options = {}) {
 
   let bridgeTunnel;
   try {
-    // Essayer le package @nossen/mcp-bridge-tunnel (path depuis a11/backend/apps/server/src/security/)
+    // Chemin relatif depuis src/security/ vers packages/ dans le monorepo local
     const tunnelPath = path.resolve(__dirname, "../../../../../packages/mcp-bridge-tunnel/index.cjs");
     bridgeTunnel = require(tunnelPath);
   } catch (e1) {
     try {
-      // Fallback : chemin absolu dans le container Docker
+      // Container Docker: copié à /app/packages/mcp-bridge-tunnel/
       bridgeTunnel = require("/app/packages/mcp-bridge-tunnel/index.cjs");
     } catch (e2) {
       try {
-        // Fallback 2 : npm package si installé
-        bridgeTunnel = require("@nossen/mcp-bridge-tunnel");
+        // Même répertoire que server.cjs (copié par la release)
+        bridgeTunnel = require(path.resolve(__dirname, "../../packages/mcp-bridge-tunnel/index.cjs"));
       } catch (e3) {
-        console.warn("[zen-gate] Package mcp-bridge-tunnel introuvable. Bridge non monté.");
-        console.warn("[zen-gate] Chemins essayés :", e1.message, "|", e2.message, "|", e3.message);
-        return;
+        try {
+          // npm package si installé
+          bridgeTunnel = require("@nossen/mcp-bridge-tunnel");
+        } catch (e4) {
+          console.warn("[zen-gate] Package mcp-bridge-tunnel introuvable. Bridge non monté.");
+          console.warn("[zen-gate] Chemins essayés :", e1.message, "|", e2.message, "|", e3.message, "|", e4.message);
+          return;
+        }
       }
     }
   }
