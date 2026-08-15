@@ -208,6 +208,59 @@ function buildCastBlock(cast = []) {
 }
 
 /**
+ * Vivy en soutien : l'arc du morceau, section par section.
+ *
+ * Sol est chef operateur, il ne connait pas la chanson. Vivy si : son arc
+ * dynamique (src/music/vivy-dynamic-arc.cjs) donne pour chaque section son
+ * intensite, sa couleur interieure, son bras de croix et sa matiere sonore.
+ *
+ * C'est ce qui decide COMBIEN de plans et LESQUELS : un plan par section, et
+ * l'echelle suit l'intensite. Un nombre fixe de plans ignorait l'intonation --
+ * six plans identiques sur une intro depouillee et un refrain plein.
+ */
+function resolveVivyArc(lyrics, fallbackSections) {
+  try {
+    var arcMod = require("../music/vivy-dynamic-arc.cjs");
+    var labels = [];
+    if (lyrics) {
+      try { labels = arcMod.extractSectionLabels(lyrics) || []; } catch (e) { labels = []; }
+    }
+    if (!labels.length) {
+      labels = Array.isArray(fallbackSections) && fallbackSections.length
+        ? fallbackSections
+        : ["intro", "couplet", "pre-refrain", "refrain", "pont", "refrain", "outro"];
+    }
+    var arc = arcMod.buildVivyDynamicArc(labels);
+    var steps = (arc && arc.steps) || [];
+    if (!steps.length) return null;
+    console.log("[clip-director] Vivy — arc " + steps.length + " sections, intensité "
+      + steps[0].intensity + " → " + Math.max.apply(null, steps.map(function(s) { return s.intensity; })));
+    return steps;
+  } catch (e) {
+    console.warn("[clip-director] Arc Vivy indisponible:", e.message);
+    return null;
+  }
+}
+
+function buildArcBlock(steps) {
+  if (!Array.isArray(steps) || !steps.length) return "";
+  var lines = steps.map(function(s, i) {
+    return "  " + (i + 1) + ". " + s.label
+      + " — intensité " + Number(s.intensity).toFixed(2)
+      + ", lumière intérieure " + s.color
+      + ", matière : " + s.matiere;
+  });
+  return "ARC DU MORCEAU, donné par Vivy qui connaît la chanson (" + steps.length + " sections) :\n"
+    + lines.join("\n") + "\n"
+    + "Fais UN plan par section, dans cet ordre. L'échelle et le mouvement suivent l'intensité :\n"
+    + "  intensité basse (< 0,45) → plan serré, caméra posée, geste retenu, peu de monde visible\n"
+    + "  intensité moyenne → plan moyen, léger mouvement, présence du public\n"
+    + "  intensité haute (> 0,80) → plan large ou contre-plongée, mouvement ample, foule pleine\n"
+    + "La lumière intérieure indiquée est celle qui émane de l'interprète à ce moment, "
+    + "elle change avec la section.\n\n";
+}
+
+/**
  * Consigne de l'artiste.
  *
  * La signature derive du TITRE, pas du son : pour un morceau de club sans
@@ -233,7 +286,7 @@ function buildArtistDirection(lieu, direction) {
     + "Si elles contredisent la texture annoncée, suis les consignes.\n\n";
 }
 
-async function generateVisualScenes(title, lyrics, style, mood, cast, signature, lieu, direction) {
+async function generateVisualScenes(title, lyrics, style, mood, cast, signature, lieu, direction, arcSteps) {
   var etat = signature && signature.color
     ? "ETAT DU PERSONA : " + signature.color.name + " — " + signature.color.function
       + " (complement " + signature.color.complement + "). "
@@ -245,18 +298,19 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature,
   // Avant, il rendait six scenes dans six endroits differents : ocean, foret,
   // toit, champ... Sur douze segments ca donne un diaporama, pas un clip, et le
   // modele video n'a aucune continuite a tenir.
-  var prompt = "Tu es chef opérateur. Tu découpes UN clip musical en " + PLAN_COUNT + " plans.\n\n" +
+  var prompt = "Tu es chef opérateur. Tu découpes UN clip musical en plans.\n\n" +
     "CHANSON : \"" + (title || "sans titre") + "\"\n" +
     (lyrics ? "PAROLES :\n" + lyrics.slice(0, 1500) + "\n\n" : "Base-toi sur le titre.\n\n") +
     etat +
     (mood ? "HUMEUR DE L'INTERPRÈTE (à incarner) :\n" + mood + "\n\n" : "") +
     buildCastBlock(cast) +
     buildArtistDirection(lieu, direction) +
+    buildArcBlock(arcSteps) +
     "RÈGLE DE TOURNAGE, la plus importante :\n" +
     (lieu
       ? "1. Le lieu est déjà fixé ci-dessus. Reprends-le tel quel dans le champ lieu.\n"
       : "1. Choisis UN SEUL lieu, cohérent avec la chanson. Un club, un studio, un toit, une salle — un seul.\n") +
-    "2. Les " + PLAN_COUNT + " plans se tournent TOUS dans ce lieu unique. On ne change jamais d'endroit.\n" +
+    "2. TOUS les plans se tournent dans ce lieu unique. On ne change jamais d'endroit.\n" +
     "3. Ce qui varie, c'est le PLAN : échelle (large, moyen, gros plan, très gros plan), " +
     "angle (face, profil, contre-plongée, plongée, dos), mouvement de caméra (fixe, travelling, " +
     "panoramique, orbite lente), et le moment de la performance.\n" +
@@ -278,7 +332,8 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature,
       if (plans.length >= 3) {
         console.log("[clip-director] Sol (" + SEQUENCE_MODEL + ") — lieu unique : " + lieu.slice(0, 80));
         console.log("[clip-director] " + plans.length + " plans dans ce lieu");
-        var scenes = plans.slice(0, PLAN_COUNT).map(function(s) {
+        var maxPlans = Array.isArray(arcSteps) && arcSteps.length ? arcSteps.length : PLAN_COUNT;
+        var scenes = plans.slice(0, maxPlans).map(function(s) {
           return {
             name: String(s.name || "Plan").slice(0, 24),
             visual: String(s.visual || "").slice(0, 300),
@@ -355,7 +410,8 @@ async function directClipScenes(config) {
   // L'etat du persona vient du canon, Grok le traduit en jeu, Sol l'incarne.
   var signature = config.signature !== undefined ? config.signature : resolveSonicColor(title, lyrics, style);
   var mood = config.mood !== undefined ? config.mood : await generateMood(title, lyrics, signature);
-  var scenes = await generateVisualScenes(title, lyrics, style, mood, config.cast, signature, config.lieu, config.direction);
+  var arcSteps = config.arcSteps !== undefined ? config.arcSteps : resolveVivyArc(lyrics, null);
+  var scenes = await generateVisualScenes(title, lyrics, style, mood, config.cast, signature, config.lieu, config.direction, arcSteps);
   if (scenes && scenes.length >= 3) return scenes;
 
   console.log("[clip-director] Fallback génériques");
