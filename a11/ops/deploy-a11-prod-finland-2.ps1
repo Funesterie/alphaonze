@@ -679,11 +679,11 @@ services:
     container_name: a11-stt-whisper
     restart: unless-stopped
     environment:
-      WHISPER_MODEL: ${A11_STT_LOCAL_MODEL:-base}
+      WHISPER_MODEL: ${A11_STT_LOCAL_MODEL:-medium}
       WHISPER_LANGUAGE: ${A11_STT_LANGUAGE:-fr}
       WHISPER_DEVICE: ${A11_STT_FAST_WHISPER_DEVICE:-cpu}
       WHISPER_COMPUTE_TYPE: ${A11_STT_FAST_WHISPER_COMPUTE_TYPE:-int8}
-      WHISPER_THREADS: ${A11_STT_FAST_WHISPER_THREADS:-4}
+      WHISPER_THREADS: ${A11_STT_FAST_WHISPER_THREADS:-12}
     volumes:
       - /srv/a11-data/a11/stt/whisper:/var/lib/whisper
     expose:
