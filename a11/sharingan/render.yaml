@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: sharingan-genjutsu
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.cjs
+    envVars:
+      - key: A11_BASE_URL
+        value: https://a11.funesterie.me
+      - key: NODE_ENV
+        value: production
