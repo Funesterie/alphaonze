@@ -91,8 +91,13 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 
   <select id="casting">
     <option value="auto">🎭 Casting auto (l'auto-DJ choisit)</option>
+    <option value="random-lead">🎲 Voix principale aléatoire</option>
     <option value="djeff">🎤 Solo Djeff</option>
     <option value="vivy">💜 Solo Vivy</option>
+    <option value="grok">⚡ Solo Grok</option>
+    <option value="a11">🤖 Solo A11</option>
+    <option value="kaen44">🔥 Solo Kaen44</option>
+    <option value="claude">🧠 Solo Claude</option>
     <option value="duo-djeff-vivy">🎤💜 Duo Djeff × Vivy</option>
     <option value="duo-djeff-grok">🎤⚡ Duo Djeff × Grok</option>
     <option value="trio">🎤💜⚡ Trio (Djeff + Vivy + Grok)</option>
@@ -353,6 +358,9 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 
     function doCall(audioUrl) {
       var casting = document.getElementById("casting").value;
+      var allVoices = ["djeff", "vivy", "grok", "a11", "kaen44", "claude", "chatgpt", "kiro", "codex", "gemini", "deepseek", "mistral"];
+      var randomLead = casting === "random-lead" ? allVoices[Math.floor(Math.random() * allVoices.length)] : null;
+      var effectiveCasting = randomLead || casting;
       var payload = {
         songUrl: audioUrl,
         title: truncate(source.title, 25),
@@ -360,13 +368,14 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
         style: stylePrompt,
         sections: sections,
         fullDuration: isFullClip,
-        casting: casting,
-        voiceCatalogName: casting === "djeff" ? "djeff" : (casting === "vivy" ? "vivy" : ""),
-        multiVoice: casting === "duo-djeff-vivy" ? ["djeff", "vivy"]
-          : casting === "duo-djeff-grok" ? ["djeff", "grok"]
-          : casting === "trio" ? ["djeff", "vivy", "grok"]
-          : casting === "full" ? ["djeff", "vivy", "grok", "a11", "kaen44", "chatgpt", "kiro", "codex", "gemini"]
-          : casting === "auto" ? [] : [casting]
+        casting: effectiveCasting,
+        preserveSelectedVoice: true,
+        voiceCatalogName: effectiveCasting === "auto" ? "" : (effectiveCasting === "full" ? "djeff" : effectiveCasting),
+        multiVoice: effectiveCasting === "duo-djeff-vivy" ? ["djeff", "vivy"]
+          : effectiveCasting === "duo-djeff-grok" ? ["djeff", "grok"]
+          : effectiveCasting === "trio" ? ["djeff", "vivy", "grok"]
+          : effectiveCasting === "full" ? allVoices
+          : effectiveCasting === "auto" ? [] : [effectiveCasting]
       };
 
       api("/api/mcp-bridge/clip/start", payload).then(function(d) {
