@@ -9669,24 +9669,18 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           >
             Image
           </button>
-          <button
-            type="button"
-            className="vivy-clip-generator-button"
-            disabled={!vivyClipCanLaunch}
-            onClick={() => void launchVivyVideoClip()}
-            title="Ajoute une image avec Fichier pour verrouiller l'identité visuelle du clip."
+          {/* Les anciens boutons Clip et Rêve partaient du texte saisi et fabriquaient
+              un clip sans rapport avec le catalogue. Le clip se pilote maintenant
+              depuis NOSSEN, sur une chanson réelle : ce bouton y emmène. */}
+          <a
+            className="vivy-nossen-redirect-button"
+            href={getSurfaceLinks().nossen}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Ouvrir NOSSEN pour faire un clip depuis une chanson du catalogue."
           >
-            Clip
-          </button>
-          <button
-            type="button"
-            className="vivy-dream-generator-button"
-            disabled={!vivyClipCanLaunch}
-            onClick={() => void launchVivyVideoClip({ dream: true })}
-            title="Mode rêve: clip animé plus ambitieux, confirmation demandée avant lancement."
-          >
-            Rêve
-          </button>
+            Clip NOSSEN
+          </a>
           <button
             type="button"
             className={`vivy-nossen-banger-button${nossenBangerCanLaunch ? " is-ready" : ""}${isSending ? " is-running" : ""}`}
@@ -9701,7 +9695,9 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
               <span className="vivy-nossen-flame-tongue is-center" />
               <span className="vivy-nossen-flame-tongue is-right" />
             </span>
-            <span className="vivy-nossen-button-label">NOSSEN</span>
+            {/* "Banger" plutot que "NOSSEN" : ce bouton genere la musique, il ne
+                mene pas a NOSSEN. Le bouton voisin s'en charge. */}
+            <span className="vivy-nossen-button-label">Banger</span>
           </button>
           <div className="vivy-nossen-provider-toggle" role="group" aria-label="Fournisseur musique NOSSEN">
             {VIVY_NOSSEN_MUSIC_PROVIDER_OPTIONS.map((option) => (

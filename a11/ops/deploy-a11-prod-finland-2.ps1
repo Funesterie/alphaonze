@@ -1771,6 +1771,11 @@ $overrides = [ordered]@{
   A11_CERBERE_OPENAI_BASE_URL = "https://openrouter.ai/api/v1"
   A11_CERBERE_OPENAI_API_KEY = $(if ($mcpEnvMap.Contains("OPENROUTER_API_KEY") -and -not [string]::IsNullOrWhiteSpace($mcpEnvMap["OPENROUTER_API_KEY"])) { $mcpEnvMap["OPENROUTER_API_KEY"] } elseif ($envMap.Contains("OPENROUTER_API_KEY")) { $envMap["OPENROUTER_API_KEY"] } else { "" })
   LOCAL_DEFAULT_MODEL = "llama3.2:3b"
+  # Claude decortique les paroles du clip. Ajoutee ici parce qu'une cle posee a la
+  # main dans compose.env ou a11.env ne survit pas au deploiement suivant : le
+  # 15/08/2026 elle a disparu des deux fichiers apres un seul passage. Toute cle
+  # qui doit durer passe par cette table.
+  CLAUDE_API_KEY = $(if ($env:CLAUDE_API_KEY) { $env:CLAUDE_API_KEY } elseif ($mcpEnvMap.Contains("CLAUDE_API_KEY") -and -not [string]::IsNullOrWhiteSpace($mcpEnvMap["CLAUDE_API_KEY"])) { $mcpEnvMap["CLAUDE_API_KEY"] } elseif ($envMap.Contains("CLAUDE_API_KEY")) { $envMap["CLAUDE_API_KEY"] } elseif ($envMap.Contains("ANTHROPIC_API_KEY")) { $envMap["ANTHROPIC_API_KEY"] } else { "" })
   A11_CERBERE_PREFER_NON_GROQ = "false"
   A11_LLM_FALLBACK_PROVIDER = "ollama"
   A11_LLM_RUNTIME_FALLBACK_ORDER = "ollama,ollama_cloud,openai,gemini,xai,huggingface,deepseek,together,groq,openrouter"

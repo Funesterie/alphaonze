@@ -4229,6 +4229,35 @@ html.a11-auth-page-root body {
   color: #e9fbff;
 }
 
+/* Redirection vers NOSSEN. Vert-ambre, distinct du bleu des generateurs et des
+   flammes du bouton Banger : ce bouton n'engendre rien, il emmene ailleurs. */
+.vivy-chat-compose .vivy-nossen-redirect-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid rgba(122, 226, 160, 0.46);
+  border-radius: 8px;
+  padding: 9px 14px;
+  background: linear-gradient(135deg, rgba(122, 226, 160, 0.24), rgba(240, 197, 96, 0.18));
+  color: #eafff2;
+  font-size: 13px;
+  font-weight: 760;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: filter 140ms ease, transform 140ms ease;
+}
+
+.vivy-chat-compose .vivy-nossen-redirect-button:hover {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+}
+
+.vivy-chat-compose .vivy-nossen-redirect-button:focus-visible {
+  outline: 2px solid rgba(122, 226, 160, 0.8);
+  outline-offset: 2px;
+}
+
 .vivy-chat-reference {
   display: flex;
   align-items: center;
