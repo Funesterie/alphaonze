@@ -192,6 +192,7 @@ import {
   stripVivyNossenInstructionLeakTail,
 } from "./lib/vivy-lyrics-filters";
 import { sanitizeMediaDisplayName, sanitizeMediaDisplayNameFromUrl } from "./lib/safe-media-name";
+import Interactif from "./pages/Interactif";
 import {
   attachLegacyStaticUiTranslator,
   translateLegacyStaticDocumentTitle,
@@ -619,6 +620,21 @@ function isGeneralMilleFleursRoute() {
     return /^\/mille-fleurs(?:\/|$)/.test(pathname);
   }
   return isLocalSurfaceHost(hostname) && /^\/mille-fleurs(?:\/|$)/.test(pathname);
+}
+
+/**
+ * Funesterie Interactif vit sur la surface Vivy, a /interactif.
+ *
+ * Il est donc derriere l'auth Vivy : c'est le choix assume du 15/08/2026. La
+ * consequence a garder en tete est qu'un visiteur non connecte ne verra rien —
+ * le jour ou la page doit etre publique, c'est ce predicat qu'il faut ouvrir, et
+ * la route /api/vivy/auto-dj qu'il faut reexaminer (elle expose le consentement
+ * de chaque voix, ce qui n'a rien a faire dehors).
+ */
+function isVivyInteractifRoute() {
+  const { hostname, pathname } = getLocationSnapshot();
+  const surVivy = hostname === "vivy.funesterie.me" || hostname === "music.funesterie.me";
+  return (surVivy || isLocalSurfaceHost(hostname)) && /^\/interactif(?:\/|$)/.test(pathname);
 }
 
 function isGeneralLoginRoute() {
@@ -14217,6 +14233,7 @@ export function App() {
   const isGeneralPrivacy = isGeneralPrivacyRoute();
   const isGeneralTerms = isGeneralTermsRoute();
   const isGeneralMilleFleurs = isGeneralMilleFleursRoute();
+  const isVivyInteractif = isVivyInteractifRoute();
   const isGeneralLogin = isGeneralLoginRoute();
   const isFunesteriePublicShell = isGeneralCockpit
     || isGeneralHome
@@ -17406,6 +17423,10 @@ export function App() {
         onLogout={handlePublicLogout}
       />
     );
+  }
+
+  if (isVivyInteractif) {
+    return <Interactif />;
   }
 
   if (isGeneralMilleFleurs) {

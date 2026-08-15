@@ -7136,6 +7136,13 @@ app.use('/api/vivy/studio', createVivyStudioRouter({
 }));
 console.log('[Server] Vivy Studio routes mounted under /api/vivy/studio');
 
+// Auto-DJ : quelle voix chante quelle section. Sous auth comme le catalogue de
+// voix dont il derive — un casting expose publiquement dirait qui possede quelle
+// persona Suno, et le consentement de chacun avec.
+const { createAutoDjRouter } = require('./src/routes/auto-dj-route.cjs');
+app.use('/api/vivy/auto-dj', createAutoDjRouter({ verifyJWT }));
+console.log('[Server] Auto-DJ routes mounted under /api/vivy/auto-dj');
+
 // Chat vocal reserve fondateur/famille: la porte se ferme cote serveur, avant la
 // transcription facturable et l'appel LLM.
 const createVivyVoiceChatRouter = require('./src/routes/vivy-voice-chat.cjs');
