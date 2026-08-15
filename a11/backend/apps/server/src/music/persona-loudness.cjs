@@ -207,16 +207,44 @@ function verifyTarget(filePath, registreNom, options = {}) {
   };
 }
 
-function describeRegistres() {
-  return Object.values(REGISTRES).map((r) => ({
-    registre: r.id,
-    couleur: r.couleur,
-    gamma: r.gamma,
-    lufs: r.lufs,
-    truePeak: r.truePeak,
-    plafondEnergie: r.plafondEnergie,
-    ancrage: r.ancrage,
-  }));
+/**
+ * PUISSANCE : la meme grandeur, mais qui monte.
+ *
+ * Le LUFS est negatif par definition -- 0 est le plafond numerique absolu, tout
+ * master vit en dessous. Consequence penible a lire : le registre le plus violent
+ * porte le plus petit nombre (-9.8 pour la haine, -16 pour le calme).
+ *
+ * On expose donc la meme information a l'endroit, en comptant depuis le silence
+ * plutot que depuis le plafond : puissance = 24 + LUFS. Le calme tombe a 8, la
+ * haine monte a 14.2. Plus c'est fort, plus le nombre est grand.
+ *
+ * C'est un confort de lecture, pas une unite : les appels a ffmpeg utilisent
+ * toujours le LUFS signe, sinon le filtre est refuse.
+ */
+const PUISSANCE_ORIGINE = 24;
+
+function lufsVersPuissance(lufs) {
+  return Number((PUISSANCE_ORIGINE + Number(lufs)).toFixed(1));
+}
+
+function puissanceVersLufs(puissance) {
+  return Number((Number(puissance) - PUISSANCE_ORIGINE).toFixed(2));
+}
+
+function describeRegistres(persona) {
+  return Object.keys(REGISTRES).map((clef) => {
+    const r = resolveRegistre(clef, persona);
+    return {
+      registre: r.id,
+      couleur: r.couleur,
+      gamma: r.gamma,
+      puissance: lufsVersPuissance(r.lufs),
+      lufs: r.lufs,
+      truePeak: r.truePeak,
+      plafondEnergie: r.plafondEnergie,
+      ancrage: r.ancrage,
+    };
+  });
 }
 
 module.exports = {
@@ -226,6 +254,9 @@ module.exports = {
   PERSONA_OVERRIDES,
   canonicalRegistre,
   resolveRegistre,
+  lufsVersPuissance,
+  puissanceVersLufs,
+  PUISSANCE_ORIGINE,
   measureLoudness,
   buildMasteringFilter,
   verifyTarget,
