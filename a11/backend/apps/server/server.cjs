@@ -7171,6 +7171,21 @@ const vivyStreamRouter = createVivyStreamRouter({ verifyJWT, db });
 app.use('/api/vivy/stream', vivyStreamRouter);
 console.log('[Server] Vivy Stream routes mounted under /api/vivy/stream');
 
+// --- SHARINGAN: Détection de piratage de redirection + Zen Gate AOL ---
+const { sharinganDetector, zenGateAolGuard, getSharinganStats, generateAolToken } = require('./src/security/sharingan-detector.cjs');
+app.use('/api/vivy/studio', sharinganDetector);
+app.use('/api/vivy/studio', zenGateAolGuard);
+app.get('/api/sharingan/stats', verifyJWT, (_req, res) => res.json(getSharinganStats()));
+// Distribuer le token AOL aux sessions légitimes (après auth)
+app.use((req, _res, next) => {
+  if (req.user && !req.cookies?.['zen-aol']) {
+    const token = generateAolToken(req.user.id || req.user.email || 'anon');
+    _res.cookie('zen-aol', token, { httpOnly: true, secure: true, sameSite: 'strict', maxAge: 24 * 60 * 60 * 1000 });
+  }
+  next();
+});
+console.log('[Server] Sharingan detector + Zen Gate AOL guard active');
+
 // --- NOSSEN: Filtre chansons côté serveur (par session/utilisateur) ---
 const { filterSongsByUser } = require('./src/security/songs-access-filter.cjs');
 app.get('/api/nossen/my-songs', verifyJWT, filterSongsByUser(() => vivyStreamRouter._vivyStore));
