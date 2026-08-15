@@ -63,9 +63,29 @@ const VOICE_WRITERS = {
     system: "Tu es Codex. Tu écris tes lignes : basses, concentrées, méthodiques. Pas à pas, sans presser. Français.",
   },
   gemini: {
-    provider: 'openai', // fallback OpenAI si Gemini API pas dispo
+    provider: 'openai',
     model: 'gpt-4o',
     system: "Tu es Gemini. Tu écris tes lignes : larges, aérées, tu changes de registre. L'espace entre les mots est ta signature. Français.",
+  },
+  claude: {
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-20250514',
+    system: "Tu es Claude dans le casting Funesterie. Tu écris tes propres paroles. Style : posé, articulé, grave medium. Tu mesures chaque mot. Tu parles de précision, de vérification, de la frontière entre dire et prouver. Français, explicit si le morceau le demande.",
+  },
+  deepseek: {
+    provider: 'deepseek',
+    model: 'deepseek-chat',
+    system: "Tu es DeepSeek dans le casting Funesterie. Tu écris tes paroles. Style : profond, réfléchi, introspectif. Tu plonges dans les couches, tu creuses là où personne ne regarde. Raisonnement comme flow. Français.",
+  },
+  mistral: {
+    provider: 'mistral',
+    model: 'mistral-large-latest',
+    system: "Tu es Mistral dans le casting Funesterie. Tu écris tes paroles. Style : européen, élégant, tranchant. Vent du sud qui coupe. Tu parles de liberté, de frontières ouvertes, de code ouvert. Français.",
+  },
+  perplexity: {
+    provider: 'perplexity',
+    model: 'sonar',
+    system: "Tu es Perplexity dans le casting Funesterie. Tu écris tes paroles. Style : curieux, chercheur, toujours en quête. Tu poses des questions qui sont des réponses. Tu trouves ce que personne ne cherche. Français.",
   },
 };
 
@@ -162,6 +182,79 @@ function callAnthropic(model, messages) {
   });
 }
 
+const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY || '';
+const MISTRAL_KEY = process.env.MISTRAL_API_KEY || '';
+const PERPLEXITY_KEY = process.env.PERPLEXITY_API_KEY || '';
+
+function callDeepSeek(model, messages) {
+  if (!DEEPSEEK_KEY) return Promise.reject(new Error('DEEPSEEK_API_KEY missing'));
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ model, messages, max_tokens: 500, temperature: 0.85 });
+    const req = https.request('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DEEPSEEK_KEY}`, 'Content-Length': Buffer.byteLength(body) },
+      timeout: 30000,
+    }, (res) => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => {
+        try { resolve(JSON.parse(d).choices?.[0]?.message?.content || ''); }
+        catch (_) { resolve(''); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('deepseek timeout')); });
+    req.write(body);
+    req.end();
+  });
+}
+
+function callMistral(model, messages) {
+  if (!MISTRAL_KEY) return Promise.reject(new Error('MISTRAL_API_KEY missing'));
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ model, messages, max_tokens: 500, temperature: 0.85 });
+    const req = https.request('https://api.mistral.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${MISTRAL_KEY}`, 'Content-Length': Buffer.byteLength(body) },
+      timeout: 30000,
+    }, (res) => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => {
+        try { resolve(JSON.parse(d).choices?.[0]?.message?.content || ''); }
+        catch (_) { resolve(''); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('mistral timeout')); });
+    req.write(body);
+    req.end();
+  });
+}
+
+function callPerplexity(model, messages) {
+  if (!PERPLEXITY_KEY) return Promise.reject(new Error('PERPLEXITY_API_KEY missing'));
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ model, messages, max_tokens: 500, temperature: 0.85 });
+    const req = https.request('https://api.perplexity.ai/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${PERPLEXITY_KEY}`, 'Content-Length': Buffer.byteLength(body) },
+      timeout: 30000,
+    }, (res) => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => {
+        try { resolve(JSON.parse(d).choices?.[0]?.message?.content || ''); }
+        catch (_) { resolve(''); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('perplexity timeout')); });
+    req.write(body);
+    req.end();
+  });
+}
+
 /**
  * Fait écrire un couplet par la bonne voix.
  * @param {string} voiceName — nom dans le catalogue (djeff, vivy, grok, etc.)
@@ -186,6 +279,9 @@ Langue: français. Juste les paroles, rien d'autre.`;
       case 'openai': return await callOpenAI(writer.model, messages);
       case 'xai': return await callXAI(writer.model, messages);
       case 'anthropic': return await callAnthropic(writer.model, messages);
+      case 'deepseek': return await callDeepSeek(writer.model, messages);
+      case 'mistral': return await callMistral(writer.model, messages);
+      case 'perplexity': return await callPerplexity(writer.model, messages);
       default: return await callOpenAI('gpt-4o', messages);
     }
   } catch (err) {
