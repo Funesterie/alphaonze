@@ -611,6 +611,23 @@ $serverCopyArgs = @("/MIR", "/XD") + $serverExDirs + @("/XF") + $serverExFiles
 $voiceCopyArgs = @("/MIR", "/XD") + $voiceExDirs + @("/XF") + $voiceExFiles
 $ekkoCopyArgs = @("/MIR", "/XD") + $ekkoExDirs + @("/XF") + $ekkoExFiles
 Invoke-RobocopyChecked $ServerRoot $ServerStage $serverCopyArgs
+
+# Le contexte Docker est le repertoire du serveur : packages/ vit a la racine du
+# monorepo et n'y entre pas. Sans cette copie, mount-zen-gate echoue avec
+# "Cannot find module '@nossen/mcp-bridge-tunnel'", le Zen Gate ne se monte pas,
+# et /api/mcp-bridge/health disparait -- la page NOSSEN affiche alors
+# "Hors ligne" alors que le backend va bien. Constate le 15/08/2026.
+$BridgeTunnelRoot = Join-Path $RepoRoot "packages\mcp-bridge-tunnel"
+if (Test-Path -LiteralPath $BridgeTunnelRoot) {
+  $BridgeTunnelStage = Join-Path $ServerStage "packages\mcp-bridge-tunnel"
+  Invoke-RobocopyChecked $BridgeTunnelRoot $BridgeTunnelStage @(
+    "/MIR", "/XD", "node_modules", ".git", "/XF", ".env", "*.env", "*.env.*", "*.log"
+  )
+  Write-Host "Zen Gate: mcp-bridge-tunnel copie dans le contexte Docker." -ForegroundColor DarkCyan
+} else {
+  Write-Host "Zen Gate: packages/mcp-bridge-tunnel introuvable, le bridge ne sera pas monte." -ForegroundColor Yellow
+}
+
 Invoke-RobocopyChecked $VoiceRoot $VoiceStage $voiceCopyArgs
 Invoke-RobocopyChecked $VoiceBridgeRoot $VoiceBridgeStage @(
   "/MIR",
