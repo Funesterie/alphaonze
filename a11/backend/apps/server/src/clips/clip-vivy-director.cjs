@@ -111,26 +111,64 @@ async function findLyrics(title, songUrl) {
 }
 
 /**
- * Couleur sonore par Grok.
+ * Couleur du persona = humeur, pas decor.
  *
- * MOOD_MODEL etait declare et exporte depuis le debut, mais aucun appel ne
- * l'utilisait : la "couleur sonore" annoncee n'existait pas. Grok lit les
- * paroles et rend une direction visuelle courte (palette, lumiere, energie) que
- * Sol recoit ensuite comme contrainte de sequencage.
+ * La couleur ne s'invente pas par morceau : elle derive de la matiere de la
+ * chanson par la courbe C1 du canon (src/music/vivy-prime-color.cjs) et rend un
+ * etat -- Indigo "le profond", son complement, sa texture et son mouvement.
+ * Deux chansons differentes donnent deux etats; la meme chanson donne toujours
+ * le meme.
  *
- * Un echec ici n'est jamais bloquant : sans mood, Sol travaille comme avant.
+ * C'est cet etat qui doit teindre le clip, comme humeur du personnage, pas comme
+ * papier peint du decor.
  */
-async function generateMood(title, lyrics) {
+function resolveSonicColor(title, lyrics, style) {
+  try {
+    var prime = require("../music/vivy-prime-color.cjs");
+    var signature = prime.deriveSonicSignature({
+      title: title || "",
+      lyrics: lyrics || "",
+      style: style || "",
+    });
+    if (!signature || !signature.color) return null;
+    console.log("[clip-director] Couleur persona: " + signature.color.name
+      + " (" + signature.color.function + "), complement " + signature.color.complement);
+    return signature;
+  } catch (e) {
+    console.warn("[clip-director] Couleur persona indisponible:", e.message);
+    return null;
+  }
+}
+
+/**
+ * Grok ne choisit plus la couleur : il traduit l'etat canonique en direction
+ * emotionnelle jouable. Sans etat, il retombe sur une lecture du titre.
+ *
+ * Un echec ici n'est jamais bloquant : sans mood, Sol travaille avec l'etat brut.
+ */
+async function generateMood(title, lyrics, signature) {
   if (!OPENROUTER_KEY) {
     console.log("[clip-director] Grok non configure (OPENROUTER_API_KEY), mood ignore.");
     return "";
   }
-  var prompt = "Tu donnes la couleur visuelle d'un clip a partir d'une chanson.\n\n" +
+  var etat = signature && signature.color
+    ? "ETAT EMOTIONNEL DU PERSONA (donne, non negociable) :\n"
+      + "- couleur : " + signature.color.name + " — fonction : " + signature.color.function + "\n"
+      + "- complement : " + signature.color.complement + "\n"
+      + (signature.texture ? "- texture sonore : " + signature.texture + "\n" : "")
+      + (signature.mouvement ? "- mouvement : " + signature.mouvement + "\n" : "")
+      + "\n"
+    : "";
+  var prompt = "Tu traduis l'etat emotionnel d'une interprete en direction de jeu pour un clip.\n\n" +
     "TITRE : \"" + (title || "sans titre") + "\"\n" +
-    (lyrics ? "PAROLES :\n" + lyrics.slice(0, 1200) + "\n\n" : "Base-toi sur le titre.\n\n") +
-    "Reponds en 2 phrases maximum, en anglais, uniquement sur : palette de couleurs, " +
-    "qualite de lumiere, niveau d'energie et rythme de montage. " +
-    "Pas de personnages, pas d'intrigue, pas de texte a l'image.";
+    (lyrics ? "PAROLES :\n" + lyrics.slice(0, 1200) + "\n\n" : "") +
+    etat +
+    "La couleur est l'humeur de l'interprete, pas la peinture du decor. " +
+    "Dis en 2 phrases maximum, en anglais, ce que cet etat fait ressentir et " +
+    "comment il se joue : posture, regard, tension du corps, rapport a l'espace, " +
+    "et comment la lumiere accompagne cette humeur. " +
+    "Ne redige pas de palette de decor, ne decris pas l'apparence physique, " +
+    "pas d'intrigue, pas de texte a l'image.";
   try {
     var text = await callOpenRouter(MOOD_MODEL, [{ role: "user", content: prompt }]);
     var mood = String(text || "").trim().slice(0, 400);
@@ -165,11 +203,18 @@ function buildCastBlock(cast = []) {
     + "appelle simplement par le nom. L'apparence est fixée ailleurs.\n\n";
 }
 
-async function generateVisualScenes(title, lyrics, style, mood, cast) {
+async function generateVisualScenes(title, lyrics, style, mood, cast, signature) {
+  var etat = signature && signature.color
+    ? "ETAT DU PERSONA : " + signature.color.name + " — " + signature.color.function
+      + " (complement " + signature.color.complement + "). "
+      + "Cette couleur est son humeur, pas la peinture du decor : elle transparait dans "
+      + "la lumiere qui la touche et dans son jeu, pas en repeignant chaque paysage.\n\n"
+    : "";
   var prompt = "Crée 6 scènes visuelles pour un clip anime cinématique.\n\n" +
     "CHANSON : \"" + (title || "sans titre") + "\"\n" +
     (lyrics ? "PAROLES :\n" + lyrics.slice(0, 1500) + "\n\n" : "Base-toi sur le titre.\n\n") +
-    (mood ? "COULEUR SONORE (à respecter sur les 6 scènes) :\n" + mood + "\n\n" : "") +
+    etat +
+    (mood ? "HUMEUR DE L'INTERPRÈTE (à incarner sur les 6 scènes) :\n" + mood + "\n\n" : "") +
     buildCastBlock(cast) +
     "Chaque scène = 1 phrase anglaise, plan visuel précis.\n" +
     "Les visuels illustrent le sujet des paroles.\n" +
@@ -251,9 +296,10 @@ async function directClipScenes(config) {
   var lyrics = config.lyrics || await findLyrics(title, songUrl);
   console.log("[clip-director] Paroles " + (lyrics ? "trouvées (" + lyrics.length + " chars)" : "non trouvées"));
 
-  // Grok donne la couleur, Sol sequence dedans, en connaissant le casting.
-  var mood = config.mood !== undefined ? config.mood : await generateMood(title, lyrics);
-  var scenes = await generateVisualScenes(title, lyrics, style, mood, config.cast);
+  // L'etat du persona vient du canon, Grok le traduit en jeu, Sol l'incarne.
+  var signature = config.signature !== undefined ? config.signature : resolveSonicColor(title, lyrics, style);
+  var mood = config.mood !== undefined ? config.mood : await generateMood(title, lyrics, signature);
+  var scenes = await generateVisualScenes(title, lyrics, style, mood, config.cast, signature);
   if (scenes && scenes.length >= 3) return scenes;
 
   console.log("[clip-director] Fallback génériques");
@@ -281,19 +327,22 @@ async function directClip(config) {
     lyrics: lyrics || "",
     style: cfg.style || "",
   });
-  var mood = await generateMood(cfg.title || "", lyrics);
+  var signature = resolveSonicColor(cfg.title || "", lyrics, cfg.style || "");
+  var mood = await generateMood(cfg.title || "", lyrics, signature);
   var scenes = await directClipScenes(Object.assign({}, cfg, {
     lyrics: lyrics,
     mood: mood,
+    signature: signature,
     cast: identity.castLabels,
   }));
-  return { scenes: scenes, identity: identity, lyrics: lyrics, mood: mood };
+  return { scenes: scenes, identity: identity, lyrics: lyrics, mood: mood, signature: signature };
 }
 
 module.exports = {
   directClip,
   directClipScenes,
   resolveClipIdentity,
+  resolveSonicColor,
   findLyrics,
   generateMood,
   generateVisualScenes,
