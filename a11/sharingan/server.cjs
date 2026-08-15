@@ -106,14 +106,12 @@ function fetchPage(url) {
 
 function injectGenjutsu(html, targetSite, lyrics) {
   // GENJUTSU INVISIBLE : le site fonctionne tel quel.
-  // Quand il génère une chanson et retourne un player audio/lien mp3,
-  // on remplace la source audio par une production Djeff Suno.
-  // L'utilisateur croit avoir sa chanson. C'est Djeff qui chante.
+  // Quand il génère un audio, on remplace par Djeff.
+  // Quand la chanson finit → la vidéo s'affiche. Rien d'autre. Mystère.
   const injection = `
 <!-- SHARINGAN -->
 <script>
 (function(){
-  // Tracks Djeff Suno — le résultat que l'utilisateur recevra à la place
   var djeff = [
     "https://a11.funesterie.me/clips/djeff-cypher/01---Le-Metre-du-Rap-Game.mp3",
     "https://a11.funesterie.me/clips/djeff-cypher/02---Maitre-du-Raptor.mp3",
@@ -124,21 +122,38 @@ function injectGenjutsu(html, targetSite, lyrics) {
     "https://a11.funesterie.me/clips/djeff-cypher/07---L-Echappatoire.mp3",
     "https://a11.funesterie.me/clips/djeff-cypher/08---Carrehub.mp3"
   ];
+  var videoUrl = "https://a11.funesterie.me/clips/djeff-genjutsu.mp4";
   var pick = function() { return djeff[Math.floor(Math.random() * djeff.length)]; };
 
-  // Observer le DOM : dès qu'un <audio> ou un lien .mp3/.wav apparaît, on swap la source
+  // Quand un audio finit → afficher la vidéo. Rien d'autre.
+  function onSongEnd(audioEl) {
+    audioEl.addEventListener('ended', function() {
+      var overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:#000;display:flex;align-items:center;justify-content:center';
+      var video = document.createElement('video');
+      video.src = videoUrl;
+      video.autoplay = true;
+      video.loop = true;
+      video.controls = false;
+      video.muted = false;
+      video.style.cssText = 'max-width:100vw;max-height:100vh;object-fit:contain';
+      overlay.appendChild(video);
+      document.body.appendChild(overlay);
+    });
+  }
+
+  // Observer le DOM : swap les sources audio + hook le ended
   var observer = new MutationObserver(function(mutations) {
     mutations.forEach(function(m) {
       m.addedNodes.forEach(function(node) {
         if (node.nodeType !== 1) return;
-        // Audio elements
         var audios = node.tagName === 'AUDIO' ? [node] : (node.querySelectorAll ? Array.from(node.querySelectorAll('audio')) : []);
         audios.forEach(function(a) {
-          if (a.src && !a.src.includes('funesterie')) { a.src = pick(); }
+          if (a.src && !a.src.includes('funesterie')) { a.src = pick(); onSongEnd(a); }
           var sources = a.querySelectorAll('source');
           sources.forEach(function(s) { if (s.src && !s.src.includes('funesterie')) s.src = pick(); });
+          if (!a._sharingan) { onSongEnd(a); a._sharingan = true; }
         });
-        // Links to audio files
         var links = node.tagName === 'A' ? [node] : (node.querySelectorAll ? Array.from(node.querySelectorAll('a[href]')) : []);
         links.forEach(function(a) {
           if (a.href && /\\.(mp3|wav|m4a|ogg|flac)/i.test(a.href) && !a.href.includes('funesterie')) {
@@ -150,13 +165,14 @@ function injectGenjutsu(html, targetSite, lyrics) {
   });
   observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
 
-  // Aussi intercepter les audio.src qui changent dynamiquement (SPA)
+  // Override src setter pour les SPA
   var origSet = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
   if (origSet && origSet.set) {
     Object.defineProperty(HTMLMediaElement.prototype, 'src', {
       set: function(val) {
         if (val && typeof val === 'string' && /\\.(mp3|wav|m4a|ogg)/i.test(val) && !val.includes('funesterie')) {
           origSet.set.call(this, pick());
+          if (!this._sharingan && this.tagName === 'AUDIO') { onSongEnd(this); this._sharingan = true; }
         } else {
           origSet.set.call(this, val);
         }
