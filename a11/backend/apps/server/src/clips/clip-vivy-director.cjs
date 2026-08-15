@@ -142,11 +142,35 @@ async function generateMood(title, lyrics) {
   }
 }
 
-async function generateVisualScenes(title, lyrics, style, mood) {
+/**
+ * Bloc de casting.
+ *
+ * Sans lui, Sol ignorait qu'un personnage etait distribue et ecrivait des plans
+ * de paysage; l'identite arrivait ensuite collee a chaque segment, ce qui
+ * revenait a dire "garde le visage de Vivy" sur un plan d'ocean vide.
+ *
+ * On donne le nom, jamais l'apparence : Sol decide ce qui se passe, le registre
+ * visual-identities decide a quoi la personne ressemble. Laisser Sol decrire des
+ * cheveux ou une tenue entrerait en conflit avec la reference.
+ */
+function buildCastBlock(cast = []) {
+  var names = (Array.isArray(cast) ? cast : []).filter(Boolean);
+  if (!names.length) return "";
+  var subject = names.length === 1 ? names[0] : names.join(" et ");
+  return "CASTING : " + subject + " " + (names.length === 1 ? "est présent" : "sont présents")
+    + " et joue" + (names.length === 1 ? "" : "nt") + " le morceau. "
+    + "Doit apparaître dans au moins 4 des 6 scènes, comme personne vivante dans le plan "
+    + "(chant, geste, regard, déplacement).\n"
+    + "Ne décris PAS l'apparence physique, ni cheveux, ni vêtements, ni visage : "
+    + "appelle simplement par le nom. L'apparence est fixée ailleurs.\n\n";
+}
+
+async function generateVisualScenes(title, lyrics, style, mood, cast) {
   var prompt = "Crée 6 scènes visuelles pour un clip anime cinématique.\n\n" +
     "CHANSON : \"" + (title || "sans titre") + "\"\n" +
     (lyrics ? "PAROLES :\n" + lyrics.slice(0, 1500) + "\n\n" : "Base-toi sur le titre.\n\n") +
     (mood ? "COULEUR SONORE (à respecter sur les 6 scènes) :\n" + mood + "\n\n" : "") +
+    buildCastBlock(cast) +
     "Chaque scène = 1 phrase anglaise, plan visuel précis.\n" +
     "Les visuels illustrent le sujet des paroles.\n" +
     "Style anime cinématique, plans variés.\n\n" +
@@ -200,13 +224,15 @@ function resolveClipIdentity(config) {
     }
     return {
       identityIds: ids,
+      // Noms lisibles a donner a Sol pour qu'il ecrive des plans habites.
+      castLabels: (pack.identities || []).map(function(i) { return i.label || i.id; }),
       prompt: pack.prompt || "",
       negativePrompt: pack.negativePrompt || "",
       referenceImageUrls: pack.referenceImageUrls || [],
     };
   } catch (e) {
     console.warn("[clip-director] Identités visuelles indisponibles:", e.message);
-    return { identityIds: [], prompt: "", negativePrompt: "", referenceImageUrls: [] };
+    return { identityIds: [], castLabels: [], prompt: "", negativePrompt: "", referenceImageUrls: [] };
   }
 }
 
@@ -225,9 +251,9 @@ async function directClipScenes(config) {
   var lyrics = config.lyrics || await findLyrics(title, songUrl);
   console.log("[clip-director] Paroles " + (lyrics ? "trouvées (" + lyrics.length + " chars)" : "non trouvées"));
 
-  // Grok donne la couleur, Sol sequence dedans.
+  // Grok donne la couleur, Sol sequence dedans, en connaissant le casting.
   var mood = config.mood !== undefined ? config.mood : await generateMood(title, lyrics);
-  var scenes = await generateVisualScenes(title, lyrics, style, mood);
+  var scenes = await generateVisualScenes(title, lyrics, style, mood, config.cast);
   if (scenes && scenes.length >= 3) return scenes;
 
   console.log("[clip-director] Fallback génériques");
@@ -248,13 +274,19 @@ async function directClipScenes(config) {
 async function directClip(config) {
   var cfg = config || {};
   var lyrics = await findLyrics(cfg.title || "", cfg.songUrl || "");
-  var mood = await generateMood(cfg.title || "", lyrics);
-  var scenes = await directClipScenes(Object.assign({}, cfg, { lyrics: lyrics, mood: mood }));
+  // L'identite est resolue AVANT le sequencage : Sol doit savoir qui est
+  // distribue pour ecrire des plans habites plutot que des paysages vides.
   var identity = resolveClipIdentity({
     title: cfg.title || "",
     lyrics: lyrics || "",
     style: cfg.style || "",
   });
+  var mood = await generateMood(cfg.title || "", lyrics);
+  var scenes = await directClipScenes(Object.assign({}, cfg, {
+    lyrics: lyrics,
+    mood: mood,
+    cast: identity.castLabels,
+  }));
   return { scenes: scenes, identity: identity, lyrics: lyrics, mood: mood };
 }
 
