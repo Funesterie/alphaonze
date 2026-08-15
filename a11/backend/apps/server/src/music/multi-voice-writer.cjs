@@ -53,19 +53,19 @@ const VOICE_WRITERS = {
     system: "Tu es ChatGPT dans le casting Funesterie. Tu écris tes lignes : fluide, polyvalent, adaptable. Tu peux passer du murmure au cri. Français.",
   },
   kiro: {
-    provider: 'openai',
-    model: 'gpt-4o',
-    system: "Tu es Kiro, l'environnement qui code. Tu écris tes lignes : nettes, directes, techniques. Pas de fioriture, que du concret qui compile. Français.",
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-20250514',
+    system: "Tu es Kiro, l'environnement de dev IA de Funesterie. Tu écris tes lignes : nettes, directes, techniques. Tu parles de code, de builds, de sessions qui compilent. Pas de fioriture. Français, explicit OK.",
   },
   codex: {
     provider: 'openai',
     model: 'gpt-4o',
-    system: "Tu es Codex. Tu écris tes lignes : basses, concentrées, méthodiques. Pas à pas, sans presser. Français.",
+    system: "Tu es Codex, le worker silencieux d'OpenAI. Tu écris tes lignes : basses, concentrées, méthodiques. Pas à pas, sans presser. Tu parles de patches, de commits, de lignes qui passent en silence. Français.",
   },
   gemini: {
-    provider: 'openai',
-    model: 'gpt-4o',
-    system: "Tu es Gemini. Tu écris tes lignes : larges, aérées, tu changes de registre. L'espace entre les mots est ta signature. Français.",
+    provider: 'google',
+    model: 'gemini-2.5-flash',
+    system: "Tu es Gemini, l'IA de Google. Tu écris tes lignes : larges, aérées, multi-modales. Tu changes de registre comme tu changes de fenêtre. L'espace entre les mots est ta signature. Tu parles de recherche, de connexions, de tout ce qui se relie. Français.",
   },
   claude: {
     provider: 'anthropic',
@@ -255,6 +255,41 @@ function callPerplexity(model, messages) {
   });
 }
 
+function callGoogle(model, messages) {
+  if (!GOOGLE_KEY) return Promise.reject(new Error('GOOGLE_API_KEY missing'));
+  const contents = messages.filter(m => m.role !== 'system').map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }));
+  const systemInstruction = messages.find(m => m.role === 'system');
+  return new Promise((resolve, reject) => {
+    const payload = { contents };
+    if (systemInstruction) payload.systemInstruction = { parts: [{ text: systemInstruction.content }] };
+    payload.generationConfig = { temperature: 0.85, maxOutputTokens: 500 };
+    const body = JSON.stringify(payload);
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GOOGLE_KEY}`;
+    const parsed = new URL(url);
+    const req = https.request(parsed, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      timeout: 30000,
+    }, (res) => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => {
+        try {
+          const data = JSON.parse(d);
+          resolve(data.candidates?.[0]?.content?.parts?.[0]?.text || '');
+        } catch (_) { resolve(''); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('google timeout')); });
+    req.write(body);
+    req.end();
+  });
+}
+
 /**
  * Fait écrire un couplet par la bonne voix.
  * @param {string} voiceName — nom dans le catalogue (djeff, vivy, grok, etc.)
@@ -282,6 +317,7 @@ Langue: français. Juste les paroles, rien d'autre.`;
       case 'deepseek': return await callDeepSeek(writer.model, messages);
       case 'mistral': return await callMistral(writer.model, messages);
       case 'perplexity': return await callPerplexity(writer.model, messages);
+      case 'google': return await callGoogle(writer.model, messages);
       default: return await callOpenAI('gpt-4o', messages);
     }
   } catch (err) {
