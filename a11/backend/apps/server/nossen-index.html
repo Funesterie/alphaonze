@@ -88,6 +88,16 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     <option value="cosmic">🌌 Cosmique</option>
     <option value="intimate">🎹 Intimiste</option>
   </select>
+
+  <select id="casting">
+    <option value="auto">🎭 Casting auto (l'auto-DJ choisit)</option>
+    <option value="djeff">🎤 Solo Djeff</option>
+    <option value="vivy">💜 Solo Vivy</option>
+    <option value="duo-djeff-vivy">🎤💜 Duo Djeff × Vivy</option>
+    <option value="duo-djeff-grok">🎤⚡ Duo Djeff × Grok</option>
+    <option value="trio">🎤💜⚡ Trio (Djeff + Vivy + Grok)</option>
+    <option value="full">🌟 Full cast (toutes les voix)</option>
+  </select>
   <div class="produce-row">
     <button class="btn btn-clip" id="go-clip">Clip</button>
     <button class="btn btn-full" id="go-full">Full Clip ✨</button>
@@ -342,13 +352,21 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     var isFullClip = (mode === "full");
 
     function doCall(audioUrl) {
+      var casting = document.getElementById("casting").value;
       var payload = {
         songUrl: audioUrl,
         title: truncate(source.title, 25),
         mode: "video",
         style: stylePrompt,
         sections: sections,
-        fullDuration: isFullClip
+        fullDuration: isFullClip,
+        casting: casting,
+        voiceCatalogName: casting === "djeff" ? "djeff" : (casting === "vivy" ? "vivy" : ""),
+        multiVoice: casting === "duo-djeff-vivy" ? ["djeff", "vivy"]
+          : casting === "duo-djeff-grok" ? ["djeff", "grok"]
+          : casting === "trio" ? ["djeff", "vivy", "grok"]
+          : casting === "full" ? ["djeff", "vivy", "grok", "a11", "kaen44", "chatgpt", "kiro", "codex", "gemini"]
+          : casting === "auto" ? [] : [casting]
       };
 
       api("/api/mcp-bridge/clip/start", payload).then(function(d) {
