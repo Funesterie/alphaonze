@@ -74,6 +74,7 @@ function buildTrackPayload({
   coverMimeType = 'image/png',
   durationSeconds = 0,
   metadata = {},
+  masters = [],
 } = {}) {
   if (!Buffer.isBuffer(audioBuffer) || !audioBuffer.length) {
     throw new Error('audioBuffer requis et non vide');
@@ -94,6 +95,20 @@ function buildTrackPayload({
     lyrics: cleanText(lyrics),
     cover: null,
     metadata: metadata && typeof metadata === 'object' ? metadata : {},
+    // Masters alternatifs (ex: V11 pan integrale). L'audio d'origine reste dans
+    // `audio` : on ajoute des rendus, on n'en remplace jamais la source.
+    masters: (Array.isArray(masters) ? masters : [])
+      .filter((master) => master && Buffer.isBuffer(master.buffer) && master.buffer.length)
+      .map((master) => ({
+        id: cleanText(master.id || 'master', 60),
+        label: cleanText(master.label || '', 200),
+        chain: cleanText(master.chain || '', 200),
+        mimeType: cleanText(master.mimeType || 'audio/mpeg', 100),
+        bytes: master.buffer.length,
+        sha256: sha256(master.buffer),
+        params: master.params && typeof master.params === 'object' ? master.params : {},
+        base64: master.buffer.toString('base64'),
+      })),
   };
   if (Buffer.isBuffer(coverBuffer) && coverBuffer.length) {
     payload.cover = {
@@ -148,6 +163,23 @@ function decodeTrack(input, options = {}) {
     coverBuffer = Buffer.from(payload.cover.base64, 'base64');
     coverOk = sha256(coverBuffer) === payload.cover.sha256;
   }
+  const masters = (Array.isArray(payload.masters) ? payload.masters : []).map((master) => {
+    const buffer = Buffer.from(master.base64, 'base64');
+    const ok = sha256(buffer) === master.sha256;
+    if (!ok) coverOk = coverOk && false;
+    return {
+      id: master.id,
+      label: master.label,
+      chain: master.chain,
+      mimeType: master.mimeType,
+      params: master.params || {},
+      buffer,
+      bytes: buffer.length,
+      integrityOk: ok,
+    };
+  });
+  const mastersOk = masters.every((master) => master.integrityOk);
+
   return {
     schema: payload.schema,
     title: payload.title,
@@ -166,7 +198,8 @@ function decodeTrack(input, options = {}) {
     cover: payload.cover
       ? { mimeType: payload.cover.mimeType, buffer: coverBuffer, integrityOk: coverOk }
       : null,
-    integrityOk: audioOk && coverOk,
+    masters,
+    integrityOk: audioOk && coverOk && mastersOk,
   };
 }
 
