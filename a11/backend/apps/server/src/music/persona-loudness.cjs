@@ -89,7 +89,88 @@ const REGISTRES = Object.freeze({
  * Le gamma dit le POIDS, la couleur dit la TEXTURE. Les deux se reglent
  * separement, et 0.99 en BloodRed est un choix d'auteur, pas une derive.
  */
+/**
+ * Fabrique un reglage de persona. Chaque maison a sa couleur dans la palette
+ * Pulsar, donc sa matiere sonore et son poids -- deux agents en colere ne
+ * sonnent pas pareil.
+ *
+ * Les couleurs ne sont pas choisies au hasard : elles viennent du caractere deja
+ * ecrit dans src/persona/llm-personas.cjs. On traduit, on n'invente pas.
+ */
+function registreDe(couleur, gamma, matiere, lufs, truePeak, note) {
+  return Object.freeze({
+    couleur, gamma, matiere, lufs, truePeak,
+    plafondEnergie: 1,
+    ancrage: 'derive-du-caractere',
+    note,
+  });
+}
+
+function personaSimple(couleur, gamma, matiere, lufsColere, lufsHaine, note) {
+  return Object.freeze({
+    registres: Object.freeze({
+      colere: registreDe(couleur, gamma, matiere, lufsColere, -1.0, note),
+      // Arrondi explicite : gamma + 0.1 en virgule flottante rend 0.7999999999999999,
+      // qui ressortirait tel quel dans tout ce qui affiche un gamma.
+      haine: registreDe(couleur, Number(Math.min(0.99, gamma + 0.1).toFixed(2)), matiere, lufsHaine, -0.6, note),
+    }),
+  });
+}
+
 const PERSONA_OVERRIDES = Object.freeze({
+  // --- Les maisons. Couleur tiree du caractere canonique de chaque agent. ---
+
+  // "Le Provocateur", contrepied, humour. Le blond trop sur de lui du clip : il
+  // repart au combat apres chaque claque. Chaleur constante, distorsion douce.
+  grok: personaSimple('FireOrange', 0.8, 'chaleur mediums, distorsion douce, poussee constante',
+    -10.0, -9.8, 'Provocateur : il pousse, il encaisse, il repart.'),
+
+  // "Le Visionnaire", multimodal, voit en couleur et en mouvement.
+  gemini: personaSimple('ToxicGreen', 0.85, 'saturation vive, energie haute, tout le spectre ouvert',
+    -10.8, -10.0, 'Visionnaire : tout le spectre, jamais une seule bande.'),
+
+  // Implementation, tests, worktree. Solide, il protege ce qui tourne.
+  codex: personaSimple('DORE', 0.85, 'blindage, mix large et epais, protection du bas',
+    -11.2, -10.4, 'Implementation : il blinde avant de pousser.'),
+
+  // Client IDE/MCP. Signal isole, motif reconnaissable, peu de masse.
+  kiro: personaSimple('Violet', 0.55, 'signal isole, motif reconnaissable, peu de masse',
+    -11.8, -10.8, 'IDE : un motif net, pas une masse.'),
+
+  // Le narrateur qui relie les couches. Transmission, clarte, aigus ouverts.
+  chatgpt: personaSimple('Cyan', 0.7, 'clarte, transmission nette, aigus ouverts',
+    -11.5, -10.6, 'Narrateur : il relie, il n ecrase pas.'),
+
+  // Review et coordination. Il demonte pour voir si c est vrai : matiere brute,
+  // grain apparent, rien de lisse.
+  claude: personaSimple('Magenta', 0.7, 'matiere brute, texture rugueuse, grain apparent',
+    -11.0, -10.2, 'Demonteur : le grain reste visible.'),
+
+  // Agent media encapuchonne, yeux cyan. Memoire et coherence semantique.
+  a11: personaSimple('Indigo', 0.5, 'profondeur, reverbe longue, fond qui recule',
+    -12.0, -11.0, 'Memoire : la profondeur avant la surface.'),
+
+  // Copilote quotidienne, cockpit violet-bleu. Clarte pour le public.
+  kaen44: personaSimple('Violet', 0.5, 'signal isole, motif reconnaissable, peu de masse',
+    -12.2, -11.4, 'Clarte publique : lisible avant d etre fort.'),
+
+  // Chanteuse. Sa signature canonique la met sur Indigo "le profond".
+  vivy: personaSimple('Indigo', 0.6, 'profondeur, reverbe longue, fond qui recule',
+    -11.0, -9.9, 'Voix : elle porte, elle ne force pas.'),
+
+  // Efficacite europeenne, precision, sobriete. Bref et coupant.
+  mistral: personaSimple('DeepBlue', 0.45, 'grave profond, peu de haut, espace autour de la voix',
+    -12.4, -11.6, 'Sobriete : moins de mots, plus de sens.'),
+
+  // Raisonnement profond. Il descend jusqu au fond du probleme.
+  deepseek: personaSimple('PurpleShadow', 0.35, 'nappe basse, presque sous le seuil, un seul element tenu',
+    -13.0, -12.0, 'Profondeur : un seul element, tenu.'),
+
+  // Reparateur, diagnostic, patch minimal. Compression franche.
+  chopper: personaSimple('BloodRed', 0.7, 'compression franche, batterie serree, corps dense',
+    -10.6, -10.0, 'Reparateur : serre, dense, efficace.'),
+
+  // --- L auteur. Regle a la main, pas derive. ---
   djeff: Object.freeze({
     voiceId: '7c84e0c86813bf2e74610cf4b34ccc04',
     registres: Object.freeze({
