@@ -11,11 +11,13 @@ const https = require("https");
 const SONGS_URL = "http://127.0.0.1:3000/api/vivy/stream/songs.json";
 const TIMEOUT_MS = 45000;
 
-// Sol = séquençage visuel, Grok = couleur sonore — les deux via OpenRouter
+// Sol = séquençage visuel via OpenAI direct, Grok = couleur sonore via OpenRouter
+const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_KEY = process.env.NOSSEN_OPENAI_API_KEY || process.env.OPENAI_API_KEY || "";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || "";
-const SEQUENCE_MODEL = process.env.NOSSEN_SEQUENCE_MODEL || "openai/gpt-4o";
-const MOOD_MODEL = process.env.NOSSEN_MOOD_MODEL || "xai/grok-3-mini";
+const SEQUENCE_MODEL = process.env.NOSSEN_SEQUENCE_MODEL || "chatgpt-4o-latest";
+const MOOD_MODEL = process.env.NOSSEN_MOOD_MODEL || "xai/grok-3";
 
 function getJsonInternal(url) {
   return new Promise(function(resolve, reject) {
@@ -33,13 +35,17 @@ function getJsonInternal(url) {
 }
 
 function callOpenRouter(model, messages) {
-  if (!OPENROUTER_KEY) return Promise.reject(new Error("OPENROUTER_API_KEY manquante"));
+  // Sol utilise l'API OpenAI directe, Grok utilise OpenRouter
+  var isOpenAI = !model.includes("/"); // "chatgpt-4o-latest" vs "xai/grok-3"
+  var url = isOpenAI ? OPENAI_URL : OPENROUTER_URL;
+  var key = isOpenAI ? OPENAI_KEY : OPENROUTER_KEY;
+  if (!key) return Promise.reject(new Error(isOpenAI ? "NOSSEN_OPENAI_API_KEY manquante" : "OPENROUTER_API_KEY manquante"));
   return new Promise(function(resolve, reject) {
     var body = JSON.stringify({ model: model, messages: messages, max_tokens: 800, temperature: 0.7 });
-    var parsed = new URL(OPENROUTER_URL);
+    var parsed = new URL(url);
     var req = https.request(parsed, {
       method: "POST",
-      headers: { "content-type": "application/json", "authorization": "Bearer " + OPENROUTER_KEY, "content-length": Buffer.byteLength(body) },
+      headers: { "content-type": "application/json", "authorization": "Bearer " + key, "content-length": Buffer.byteLength(body) },
       timeout: TIMEOUT_MS
     }, function(res) {
       var chunks = [];
