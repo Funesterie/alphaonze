@@ -144,6 +144,7 @@ async function generateClip(config) {
 
   // Vivy Director : scènes issues des paroles + identité visuelle des personnages
   let identity = { identityIds: [], prompt: '', negativePrompt: '', referenceImageUrls: [] };
+  let lieu = '';
   const loadDirector = () => {
     try { return require('./clip-vivy-director.cjs'); }
     catch (e) { return require('/app/clip-vivy-director.cjs'); }
@@ -153,9 +154,13 @@ async function generateClip(config) {
     const directed = await director.directClip({ title, songUrl, style, sections });
     if (directed?.scenes?.length > 0) {
       sections = directed.scenes;
-      console.log(`[clip] Director: ${sections.length} scènes`);
+      console.log(`[clip] Director: ${sections.length} plans`);
     }
     if (directed?.identity) identity = directed.identity;
+    if (directed?.lieu) {
+      lieu = directed.lieu;
+      console.log(`[clip] Lieu unique: ${lieu.slice(0, 70)}`);
+    }
   } catch (e) {
     console.warn('[clip] Director skip:', e.message);
   }
@@ -197,10 +202,13 @@ async function generateClip(config) {
   const identityBrief = identity.prompt
     ? ` Character identity to preserve exactly across every shot: ${identity.prompt}`
     : '';
+  // Le lieu est rappele sur chaque segment, comme l'identite : c'est ce qui
+  // empeche le clip de partir dans six endroits differents.
+  const lieuBrief = lieu ? ` The entire clip is shot in one single location: ${lieu}. Never change location.` : '';
   const videoPaths = [];
   for (let i = 0; i < numSegments; i++) {
     const section = sections[i % sections.length];
-    const prompt = `${section.visual}. Cinematic anime quality, volumetric lighting, smooth camera movement. ${style}${identityBrief}`.trim();
+    const prompt = `${section.visual}.${lieuBrief} Cinematic anime quality, volumetric lighting, smooth camera movement. ${style}${identityBrief}`.trim();
 
     let videoUrl;
     let retries = 2;

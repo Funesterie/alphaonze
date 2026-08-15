@@ -23,6 +23,10 @@ const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || "";
 const SEQUENCE_MODEL = process.env.NOSSEN_SEQUENCE_MODEL || "gpt-4o";
 const MOOD_MODEL = process.env.NOSSEN_MOOD_MODEL || "x-ai/grok-4.3";
 
+// Nombre de plans demandes a Sol. Le generateur cycle dessus pour couvrir la
+// duree, donc six plans varies suffisent meme sur un full clip.
+const PLAN_COUNT = 6;
+
 function getTextInternal(url) {
   return new Promise(function(resolve, reject) {
     var parsed = new URL(url);
@@ -210,27 +214,50 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature)
       + "Cette couleur est son humeur, pas la peinture du decor : elle transparait dans "
       + "la lumiere qui la touche et dans son jeu, pas en repeignant chaque paysage.\n\n"
     : "";
-  var prompt = "Crée 6 scènes visuelles pour un clip anime cinématique.\n\n" +
+  // Un clip se tourne dans UN lieu. On demande donc a Sol de choisir le decor
+  // d'abord, puis d'y decouper des PLANS -- angle, echelle, mouvement, moment.
+  // Avant, il rendait six scenes dans six endroits differents : ocean, foret,
+  // toit, champ... Sur douze segments ca donne un diaporama, pas un clip, et le
+  // modele video n'a aucune continuite a tenir.
+  var prompt = "Tu es chef opérateur. Tu découpes UN clip musical en " + PLAN_COUNT + " plans.\n\n" +
     "CHANSON : \"" + (title || "sans titre") + "\"\n" +
     (lyrics ? "PAROLES :\n" + lyrics.slice(0, 1500) + "\n\n" : "Base-toi sur le titre.\n\n") +
     etat +
-    (mood ? "HUMEUR DE L'INTERPRÈTE (à incarner sur les 6 scènes) :\n" + mood + "\n\n" : "") +
+    (mood ? "HUMEUR DE L'INTERPRÈTE (à incarner) :\n" + mood + "\n\n" : "") +
     buildCastBlock(cast) +
-    "Chaque scène = 1 phrase anglaise, plan visuel précis.\n" +
-    "Les visuels illustrent le sujet des paroles.\n" +
-    "Style anime cinématique, plans variés.\n\n" +
-    "JSON array de 6 objets :\n[{\"name\":\"Nom\",\"visual\":\"English visual description\"}]";
+    "RÈGLE DE TOURNAGE, la plus importante :\n" +
+    "1. Choisis UN SEUL lieu, cohérent avec la chanson. Un club, un studio, un toit, une salle — un seul.\n" +
+    "2. Les " + PLAN_COUNT + " plans se tournent TOUS dans ce lieu unique. On ne change jamais d'endroit.\n" +
+    "3. Ce qui varie, c'est le PLAN : échelle (large, moyen, gros plan, très gros plan), " +
+    "angle (face, profil, contre-plongée, plongée, dos), mouvement de caméra (fixe, travelling, " +
+    "panoramique, orbite lente), et le moment de la performance.\n" +
+    "4. Décris chaque plan comme une consigne de tournage, pas comme un nouveau décor. " +
+    "Rappelle brièvement le lieu dans chaque plan pour la continuité.\n\n" +
+    "Chaque plan = 1 phrase anglaise.\n" +
+    "Style anime cinématique.\n\n" +
+    "JSON strict :\n" +
+    "{\"lieu\":\"description courte du décor unique, en anglais\"," +
+    "\"plans\":[{\"name\":\"Nom du plan\",\"visual\":\"English shot description\"}]}";
 
   try {
     var text = await callOpenRouter(SEQUENCE_MODEL, [{ role: "user", content: prompt }]);
-    var jsonMatch = text.match(/\[[\s\S]*?\]/);
+    var jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      var scenes = JSON.parse(jsonMatch[0]);
-      if (Array.isArray(scenes) && scenes.length >= 3) {
-        console.log("[clip-director] Sol (" + SEQUENCE_MODEL + ") a généré " + scenes.length + " scènes");
-        return scenes.slice(0, 6).map(function(s) {
-          return { name: String(s.name || "Scène").slice(0, 20), visual: String(s.visual || "").slice(0, 300), duration: 15 };
+      var parsed = JSON.parse(jsonMatch[0]);
+      var plans = Array.isArray(parsed.plans) ? parsed.plans : [];
+      var lieu = String(parsed.lieu || "").slice(0, 300);
+      if (plans.length >= 3) {
+        console.log("[clip-director] Sol (" + SEQUENCE_MODEL + ") — lieu unique : " + lieu.slice(0, 80));
+        console.log("[clip-director] " + plans.length + " plans dans ce lieu");
+        var scenes = plans.slice(0, PLAN_COUNT).map(function(s) {
+          return {
+            name: String(s.name || "Plan").slice(0, 24),
+            visual: String(s.visual || "").slice(0, 300),
+            duration: 15,
+          };
         });
+        scenes.lieu = lieu;
+        return scenes;
       }
     }
     console.warn("[clip-director] Sol réponse inutilisable:", text.slice(0, 80));
@@ -335,7 +362,14 @@ async function directClip(config) {
     signature: signature,
     cast: identity.castLabels,
   }));
-  return { scenes: scenes, identity: identity, lyrics: lyrics, mood: mood, signature: signature };
+  return {
+    scenes: scenes,
+    lieu: (scenes && scenes.lieu) || "",
+    identity: identity,
+    lyrics: lyrics,
+    mood: mood,
+    signature: signature,
+  };
 }
 
 module.exports = {
