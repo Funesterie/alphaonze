@@ -7191,14 +7191,14 @@ const { mountUploadAudioRoute } = require('./src/clips/mount-upload-audio-route.
 mountUploadAudioRoute(app);
 
 // --- NOSSEN: Route /clips/:filename pour servir les clips vidéo depuis agent-bus ---
-const CLIPS_DIR = process.env.NOSSEN_CLIPS_DIR || '/agent-bus/clips';
+const CLIPS_DIR = process.env.NOSSEN_CLIPS_DIR || '/app/runtime/clips';
 app.get('/clips/:filename', (req, res) => {
   const decoded = decodeURIComponent(req.params.filename || '');
   if (!decoded || /[\/\\]/.test(decoded)) return res.status(400).json({ error: 'Invalid filename' });
   const ext = path.extname(decoded).toLowerCase();
   if (!['.mp4', '.webm', '.mkv'].includes(ext)) return res.status(403).json({ error: 'Unsupported format' });
   const filePath = path.join(CLIPS_DIR, decoded);
-  res.sendFile(filePath, (err) => {
+  res.sendFile(filePath, { root: '/' }, (err) => {
     if (err && !res.headersSent) res.status(404).json({ error: 'Not found' });
   });
 });
