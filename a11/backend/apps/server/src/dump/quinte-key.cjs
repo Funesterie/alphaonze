@@ -32,9 +32,24 @@ const IV_LENGTH = 16;   // 128 bits
 
 // ─── Salt resolution ─────────────────────────────────────────────────────────
 
+/**
+ * Le sel prive est la seule piece que le public n'a pas : les numeros du Quinte
+ * sont publies, le keyHint est previsible. Retomber sur une valeur ecrite dans
+ * le depot rendait donc la cle entierement calculable par quiconque lit ce
+ * fichier -- c'est-a-dire n'importe qui, le paquet etant publie sur npm.
+ *
+ * On refuse desormais de deriver sans sel plutot que d'en inventer un connu.
+ * Un test peut passer un sel explicite; la production doit poser STEGO_SALT.
+ */
 function resolveSalt(env) {
   const e = env || process.env;
-  const salt = e.STEGO_SALT || e.A11_NEZ_TOKEN || 'funesterie-default-salt-change-me';
+  const salt = e.STEGO_SALT || e.A11_NEZ_TOKEN || '';
+  if (!salt) {
+    throw new Error(
+      'STEGO_SALT absent. Les numeros du Quinte sont publics : sans sel prive, '
+      + 'la cle derivee est calculable par tout le monde. On refuse de chiffrer.'
+    );
+  }
   return salt;
 }
 
