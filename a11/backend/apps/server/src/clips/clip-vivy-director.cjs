@@ -27,6 +27,10 @@ const MOOD_MODEL = process.env.NOSSEN_MOOD_MODEL || "x-ai/grok-4.3";
 // duree, donc six plans varies suffisent meme sur un full clip.
 const PLAN_COUNT = 6;
 
+// A11 relit le montage, K44 le scenario. Modeles verifies par appel reel.
+const MONTAGE_MODEL = process.env.NOSSEN_MONTAGE_MODEL || "openai/gpt-4o";
+const SCENARIO_MODEL = process.env.NOSSEN_SCENARIO_MODEL || "x-ai/grok-4.3";
+
 // Claude decortique les paroles. Identifiants verifies par appel reel le
 // 15/08/2026 : claude-opus-4-5-20251101 et claude-sonnet-4-5-20250929 repondent,
 // claude-3-5-sonnet-20241022 est en 404. Sonnet par defaut : la decortication
@@ -468,6 +472,105 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature,
 }
 
 /**
+ * A11 — montage. K44 — scenario et coherence.
+ *
+ * Sol ecrit les plans mais ne verifie rien apres coup : il ne sait pas si ses
+ * coupes tombent sur les vraies bornes du morceau, ni si la suite se lit comme
+ * une histoire. Ce sont les deux roles canoniques d'A11 (coherence semantique)
+ * et de K44 (clarte publique), appliques au decoupage.
+ *
+ * Les deux passes ne reecrivent que ce qu'elles justifient : une correction sans
+ * plan cible ni remplacement est ignoree. Elles peuvent -- et doivent -- rendre
+ * une liste vide quand le decoupage tient.
+ */
+function formatPlansForReview(scenes, lieu) {
+  return (lieu ? "LIEU : " + lieu + "\n\n" : "")
+    + scenes.map(function(s, i) { return i + ". [" + s.name + "] " + s.visual; }).join("\n");
+}
+
+function applyReview(scenes, corrections, who) {
+  if (!Array.isArray(corrections) || !corrections.length) {
+    console.log("[clip-director] " + who + " : rien à corriger.");
+    return scenes;
+  }
+  var applied = 0;
+  corrections.forEach(function(c) {
+    var index = Number(c.plan);
+    if (!Number.isInteger(index) || index < 0 || index >= scenes.length) return;
+    var replacement = String(c.remplacement || "").trim();
+    if (replacement.length < 20) return;
+    console.log("[clip-director] " + who + " corrige le plan " + index + " : "
+      + String(c.raison || "").slice(0, 90));
+    scenes[index] = Object.assign({}, scenes[index], { visual: replacement.slice(0, 300) });
+    applied += 1;
+  });
+  if (!applied) console.log("[clip-director] " + who + " : aucune correction exploitable.");
+  return scenes;
+}
+
+async function reviewMontageA11(scenes, lieu, teardown, arcSteps) {
+  if (!Array.isArray(scenes) || !scenes.length) return scenes;
+  var bornes = teardown && Array.isArray(teardown.sections) && teardown.sections.length
+    ? "BORNES MESURÉES SUR L'AUDIO :\n" + teardown.sections.map(function(s, i) {
+      return "  " + (i + 1) + ". " + s.startSeconds + "s → " + s.endSeconds + "s, "
+        + s.label + ", énergie " + s.energy;
+    }).join("\n") + "\n\n"
+    : "";
+  var arc = Array.isArray(arcSteps) && arcSteps.length
+    ? "INTENSITÉ ATTENDUE PAR SECTION :\n" + arcSteps.map(function(s, i) {
+      return "  " + i + ". " + s.label + " — " + Number(s.intensity).toFixed(2);
+    }).join("\n") + "\n\n"
+    : "";
+  var prompt = "Tu es A11, responsable du montage. Tu relis un découpage de clip.\n\n"
+    + formatPlansForReview(scenes, lieu) + "\n\n" + bornes + arc
+    + "Vérifie trois choses, et rien d'autre :\n"
+    + "1. l'échelle de chaque plan correspond à l'intensité de sa section "
+    + "(serré quand c'est creux, large quand c'est plein);\n"
+    + "2. deux plans consécutifs ne se ressemblent pas au point d'être redondants;\n"
+    + "3. aucun plan ne quitte le lieu unique.\n\n"
+    + "Ne réécris que ce qui cloche vraiment. Si le découpage tient, rends une liste vide.\n\n"
+    + "JSON strict :\n{\"corrections\":[{\"plan\":0,\"raison\":\"en français, court\","
+    + "\"remplacement\":\"English shot description\"}]}";
+  try {
+    var text = await callOpenRouter(MONTAGE_MODEL, [{ role: "user", content: prompt }]);
+    var match = text.match(/\{[\s\S]*\}/);
+    if (!match) return scenes;
+    return applyReview(scenes, JSON.parse(match[0]).corrections, "A11 (montage)");
+  } catch (e) {
+    console.warn("[clip-director] A11 montage indisponible:", e.message);
+    return scenes;
+  }
+}
+
+async function reviewScenarioK44(scenes, lieu, title, lyricsSections) {
+  if (!Array.isArray(scenes) || !scenes.length) return scenes;
+  var intentions = Array.isArray(lyricsSections) && lyricsSections.length
+    ? "CE QUE DIT LA CHANSON, SECTION PAR SECTION :\n" + lyricsSections.map(function(s, i) {
+      return "  " + i + ". " + s.label + " — " + s.intention;
+    }).join("\n") + "\n\n"
+    : "";
+  var prompt = "Tu es K44, garante du scénario et de la clarté pour le public.\n\n"
+    + "CHANSON : \"" + (title || "sans titre") + "\"\n\n"
+    + formatPlansForReview(scenes, lieu) + "\n\n" + intentions
+    + "Vérifie deux choses, et rien d'autre :\n"
+    + "1. la suite des plans raconte quelque chose de lisible pour quelqu'un qui "
+    + "découvre le morceau, avec un début et une fin qui se répondent;\n"
+    + "2. aucun plan ne contredit ce que dit la chanson à ce moment-là.\n\n"
+    + "Ne réécris que ce qui casse la lecture. Si ça se tient, rends une liste vide.\n\n"
+    + "JSON strict :\n{\"corrections\":[{\"plan\":0,\"raison\":\"en français, court\","
+    + "\"remplacement\":\"English shot description\"}]}";
+  try {
+    var text = await callOpenRouter(SCENARIO_MODEL, [{ role: "user", content: prompt }]);
+    var match = text.match(/\{[\s\S]*\}/);
+    if (!match) return scenes;
+    return applyReview(scenes, JSON.parse(match[0]).corrections, "K44 (scénario)");
+  } catch (e) {
+    console.warn("[clip-director] K44 scénario indisponible:", e.message);
+    return scenes;
+  }
+}
+
+/**
  * Identité visuelle des personnages (Vivy, Djeff, A11, K44, Marvin, Jean).
  *
  * On réutilise le registre canonique src/vivy/visual-identities.cjs — celui qui
@@ -557,19 +660,38 @@ async function directClip(config) {
   });
   var signature = resolveSonicColor(cfg.title || "", lyrics, cfg.style || "");
   var mood = await generateMood(cfg.title || "", lyrics, signature);
+
+  // Claude decoupe le texte; ses sections priment sur le squelette par defaut.
+  var lyricsSections = cfg.lyricsSections !== undefined
+    ? cfg.lyricsSections
+    : await decorticateLyrics(cfg.title || "", lyrics, cfg.teardown);
+  var arcSteps = resolveVivyArc(lyrics, lyricsSections);
+
   var scenes = await directClipScenes(Object.assign({}, cfg, {
     lyrics: lyrics,
     mood: mood,
     signature: signature,
+    arcSteps: arcSteps,
     cast: identity.castLabels,
     lieu: cfg.lieu || '',
     direction: cfg.direction || '',
   }));
+  var lieu = (scenes && scenes.lieu) || cfg.lieu || "";
+
+  // Relecture : A11 sur le montage, K44 sur le scenario. Les deux peuvent ne
+  // rien corriger, c'est le cas nominal quand le decoupage tient.
+  if (Array.isArray(scenes) && scenes.length && cfg.review !== false) {
+    scenes = await reviewMontageA11(scenes, lieu, cfg.teardown, arcSteps);
+    scenes = await reviewScenarioK44(scenes, lieu, cfg.title || "", lyricsSections);
+  }
+
   return {
     scenes: scenes,
-    lieu: (scenes && scenes.lieu) || "",
+    lieu: lieu,
     identity: identity,
     lyrics: lyrics,
+    lyricsSections: lyricsSections,
+    arcSteps: arcSteps,
     mood: mood,
     signature: signature,
   };
@@ -589,5 +711,9 @@ module.exports = {
   decorticateLyrics,
   SEQUENCE_MODEL,
   LYRICS_MODEL,
+  MONTAGE_MODEL,
+  SCENARIO_MODEL,
+  reviewMontageA11,
+  reviewScenarioK44,
   MOOD_MODEL,
 };
