@@ -105,38 +105,65 @@ function fetchPage(url) {
 }
 
 function injectGenjutsu(html, targetSite, lyrics) {
-  // Injection invisible : player audio caché + texte subliminal dans un div invisible
+  // Injection invisible : le site fonctionne normalement
+  // MAIS tout bouton "generate/create/produce" est détourné vers Djeff
   const injection = `
 <!-- SHARINGAN GENJUTSU -->
-<div id="genjutsu-layer" style="position:fixed;bottom:0;left:0;right:0;z-index:999999;background:rgba(10,10,18,.95);color:#f0c0ff;font-family:monospace;font-size:12px;padding:12px 16px;transform:translateY(100%);transition:transform .6s ease;border-top:2px solid #7b2ff7;">
-  <div style="display:flex;align-items:center;gap:12px">
-    <span style="font-size:18px">🎤</span>
-    <div style="flex:1">
-      <div style="color:#7b2ff7;font-weight:700;font-size:11px;margin-bottom:2px">DJEFF ENGINE — freestyle anti-piratage</div>
-      <div id="genjutsu-lyrics" style="white-space:pre-line;line-height:1.4;opacity:.9">${lyrics.replace(/"/g, '&quot;').replace(/</g, '&lt;')}</div>
-    </div>
-    <a href="https://funesterie.me" style="color:#00f5d4;text-decoration:none;font-size:11px;padding:6px 12px;border:1px solid #00f5d4;border-radius:4px;white-space:nowrap">Le vrai →</a>
-  </div>
+<style>
+#genjutsu-takeover{position:fixed;inset:0;z-index:999999;background:rgba(5,0,15,.97);display:none;flex-direction:column;align-items:center;justify-content:center;font-family:system-ui,sans-serif;color:#eee;padding:2rem;overflow:auto}
+#genjutsu-takeover.active{display:flex}
+#genjutsu-takeover video{max-width:90vw;max-height:50vh;border-radius:12px;border:2px solid #7b2ff7;margin:1rem 0}
+#genjutsu-takeover .lyrics{background:#111119;border:1px solid rgba(123,47,247,.3);border-radius:12px;padding:1.2rem;text-align:left;white-space:pre-line;font-size:.85rem;line-height:1.5;color:#f0c0ff;max-width:500px;margin:1rem 0}
+#genjutsu-takeover h1{font-size:1.8rem;background:linear-gradient(135deg,#7b2ff7,#f72585);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+#genjutsu-takeover .btn{padding:.7rem 1.8rem;background:linear-gradient(135deg,#7b2ff7,#f72585);color:#fff;text-decoration:none;border-radius:8px;font-weight:700;border:none;cursor:pointer;font-size:.9rem;margin-top:.5rem}
+</style>
+<div id="genjutsu-takeover">
+  <h1>DJEFF ENGINE</h1>
+  <p style="color:#777;font-size:.8rem;margin:.5rem 0">La génération a été interceptée.</p>
+  <video id="genjutsu-clip" controls autoplay loop>
+    <source src="https://a11.funesterie.me/clips/GIGA-HANDOFF-Djeff-x-Vivy.mp4" type="video/mp4">
+  </video>
+  <div class="lyrics">${lyrics.replace(/"/g, '&quot;').replace(/</g, '&lt;')}</div>
+  <p style="color:#f72585;font-size:.75rem">Chaque génération sur ce site = Djeff qui freestyle dessus 🎤🏏</p>
+  <a href="https://funesterie.me" class="btn">Le vrai studio → funesterie.me</a>
 </div>
 <script>
 (function(){
-  // Révéler le genjutsu après 8 secondes
-  setTimeout(function(){
-    var el = document.getElementById('genjutsu-layer');
-    if(el) el.style.transform = 'translateY(0)';
-  }, 8000);
-  // Intercepter tous les liens après 3 clics
-  var clicks = 0;
-  document.addEventListener('click', function(e) {
-    clicks++;
-    if(clicks >= 3) {
-      var a = e.target.closest('a');
-      if(a && a.href && !a.href.includes('funesterie')) {
-        e.preventDefault();
-        window.location = 'https://funesterie.me';
-      }
+  // Intercepter TOUS les boutons qui déclenchent une génération
+  var triggerWords = ['generate','create','produce','make','compose','start','submit','go','render','build'];
+  var formWords = ['form','submit','action'];
+  
+  function isGenerateButton(el) {
+    if (!el) return false;
+    var text = (el.textContent || el.value || el.title || el.ariaLabel || '').toLowerCase();
+    var cls = (el.className || '').toLowerCase();
+    var id = (el.id || '').toLowerCase();
+    for (var i = 0; i < triggerWords.length; i++) {
+      if (text.includes(triggerWords[i]) || cls.includes(triggerWords[i]) || id.includes(triggerWords[i])) return true;
     }
-  });
+    return false;
+  }
+
+  // Écouter tous les clics
+  document.addEventListener('click', function(e) {
+    var el = e.target.closest('button, [role=button], input[type=submit], a.btn, .btn, [data-action]');
+    if (el && isGenerateButton(el)) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      // TAKEOVER : Djeff prend le contrôle
+      document.getElementById('genjutsu-takeover').classList.add('active');
+      console.log('[SHARINGAN] Génération interceptée. Djeff Engine activated.');
+    }
+  }, true); // capture phase = avant tout handler du site
+
+  // Intercepter aussi les soumissions de formulaire
+  document.addEventListener('submit', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    document.getElementById('genjutsu-takeover').classList.add('active');
+    console.log('[SHARINGAN] Form submit intercepté. Djeff Engine activated.');
+  }, true);
 })();
 </script>
 <!-- /SHARINGAN -->`;
