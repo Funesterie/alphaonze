@@ -1,0 +1,63 @@
+{
+  "name": "funesterie-mcp-bridge",
+  "displayName": "Funesterie MCP Bridge",
+  "description": "Connecte tous les MCP via Zen Gate — bridge Funesterie pour VS Code/Kiro",
+  "version": "0.1.0",
+  "publisher": "funesterie",
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "funesterie.bridge.status", "title": "Funesterie: Bridge Status" },
+      { "command": "funesterie.bridge.connect", "title": "Funesterie: Connect MCP Services" },
+      { "command": "funesterie.bridge.disconnect", "title": "Funesterie: Disconnect Bridge" },
+      { "command": "funesterie.gate.list", "title": "Funesterie: List Gated Services" }
+    ],
+    "configuration": {
+      "title": "Funesterie MCP Bridge",
+      "properties": {
+        "funesterie.gateUrl": {
+          "type": "string",
+          "default": "https://mcp.funesterie.me/gate",
+          "description": "URL de base du Zen Gate proxy"
+        },
+        "funesterie.autoConnect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Connecter automatiquement le bridge au démarrage"
+        },
+        "funesterie.services": {
+          "type": "array",
+          "default": ["comfy", "civitai", "huggingface", "figma", "canva", "notion", "netlify", "cloudflare", "aws", "exa"],
+          "description": "Services MCP à gater via Funesterie"
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "funesterie",
+          "title": "Funesterie",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "funesterie": [
+        { "id": "funesterie.services", "name": "Services MCP" },
+        { "id": "funesterie.audit", "name": "Audit Log" }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.5.0"
+  }
+}
