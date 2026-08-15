@@ -16,8 +16,12 @@ const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 const OPENAI_KEY = process.env.NOSSEN_OPENAI_API_KEY || process.env.OPENAI_API_KEY || "";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || "";
-const SEQUENCE_MODEL = process.env.NOSSEN_SEQUENCE_MODEL || "chatgpt-4o-latest";
-const MOOD_MODEL = process.env.NOSSEN_MOOD_MODEL || "xai/grok-3";
+// Identifiants verifies par appel reel le 15/08/2026 depuis le conteneur de prod.
+// Les precedents ne repondaient pas : "chatgpt-4o-latest" -> 404 pas d'acces sur
+// cette cle, "xai/grok-3" -> 400 identifiant invalide (le prefixe OpenRouter est
+// "x-ai/", et grok-3 puis grok-4 sont deprecies au profit de grok-4.3).
+const SEQUENCE_MODEL = process.env.NOSSEN_SEQUENCE_MODEL || "gpt-4o";
+const MOOD_MODEL = process.env.NOSSEN_MOOD_MODEL || "x-ai/grok-4.3";
 
 function getTextInternal(url) {
   return new Promise(function(resolve, reject) {
@@ -58,11 +62,20 @@ function callOpenRouter(model, messages) {
       var chunks = [];
       res.on("data", function(c) { chunks.push(c); });
       res.on("end", function() {
+        var body = Buffer.concat(chunks).toString();
+        // Un statut d'erreur doit remonter. Avant, tout echec devenait une chaine
+        // vide et ressortait en "reponse inutilisable" : un modele inexistant, un
+        // quota depasse et une cle revoquee etaient indiscernables.
+        if (res.statusCode !== 200) {
+          var detail = "";
+          try { var err = JSON.parse(body); detail = (err.error && (err.error.message || err.error.code)) || ""; } catch (e) {}
+          return reject(new Error("HTTP " + res.statusCode + " sur " + model + (detail ? " : " + String(detail).slice(0, 160) : "")));
+        }
         try {
-          var data = JSON.parse(Buffer.concat(chunks).toString());
+          var data = JSON.parse(body);
           var text = data && data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : "";
           resolve(text || "");
-        } catch (e) { resolve(""); }
+        } catch (e) { reject(new Error("Reponse illisible de " + model)); }
       });
     });
     req.on("error", reject);
