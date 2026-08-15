@@ -740,6 +740,7 @@ async function directClip(config) {
   if (Array.isArray(scenes) && scenes.length && cfg.review !== false) {
     scenes = await reviewMontageA11(scenes, lieu, teardown, arcSteps);
     scenes = await reviewScenarioK44(scenes, lieu, cfg.title || "", lyricsSections);
+    scenes = await reviewDjeffEngine(scenes, lieu, cfg.title || "", lyrics, mood);
   }
 
   return {
@@ -753,6 +754,77 @@ async function directClip(config) {
     mood: mood,
     signature: signature,
   };
+}
+
+/**
+ * Djeff Engine — relecture finale. Il vérifie l'énergie et le style.
+ * Si c'est trop mou, trop générique, ou si ça ne colle pas au morceau,
+ * il corrige. Son critère : brillance > -9 dB, pas de plafond artificiel.
+ */
+async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood) {
+  if (!scenes || scenes.length < 2) return scenes;
+  try {
+    var http = require("http");
+    var OLLAMA = process.env.A11_OLLAMA_BASE || process.env.OLLAMA_BASE_URL || "http://a11-ollama:11434";
+    var MODEL = process.env.DJEFF_ENGINE_MODEL || "djeff-engine";
+
+    var prompt = "Tu es Djeff Engine. Tu relis les plans d'un clip pour \"" + title + "\".\n"
+      + "Mood: " + (mood || "non défini") + "\n"
+      + "Lieu: " + (lieu || "non défini") + "\n"
+      + (lyrics ? "Paroles:\n" + lyrics.slice(0, 600) + "\n\n" : "")
+      + "Plans actuels:\n" + scenes.map(function(s, i) { return (i + 1) + ". " + s.visual; }).join("\n")
+      + "\n\nRÈGLES DJEFF :\n"
+      + "- Si un plan est générique (couloir, lumière, silhouette sans action), REMPLACE-le par quelque chose de violent, concret, qui bouge.\n"
+      + "- Pas de métaphore floue. Des verbes d'action, des impacts, du mouvement.\n"
+      + "- L'énergie doit MONTER, pas stagner. Chaque plan plus intense que le précédent.\n"
+      + "- Si le titre parle de combat/rap/game, les plans doivent taper.\n"
+      + "- Renvoie UNIQUEMENT le JSON array des plans corrigés : [{\"name\":\"...\",\"visual\":\"...\"}]\n"
+      + "- Si tout est bon, renvoie le même array sans changement.";
+
+    var body = JSON.stringify({ model: MODEL, messages: [{ role: "user", content: prompt }], stream: false, options: { temperature: 0.8, num_predict: 1200 } });
+
+    var text = await new Promise(function(resolve, reject) {
+      var req = http.request(OLLAMA + "/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
+        timeout: 45000,
+      }, function(res) {
+        var chunks = [];
+        res.on("data", function(c) { chunks.push(c); });
+        res.on("end", function() {
+          try { var d = JSON.parse(Buffer.concat(chunks).toString()); resolve(d.message ? d.message.content : ""); }
+          catch (e) { resolve(""); }
+        });
+      });
+      req.on("error", function() { resolve(""); });
+      req.on("timeout", function() { req.destroy(); resolve(""); });
+      req.write(body);
+      req.end();
+    });
+
+    if (!text) { console.log("[clip-director] Djeff Engine non disponible, plans inchangés."); return scenes; }
+
+    var jsonMatch = text.match(/\[[\s\S]*?\]/);
+    if (jsonMatch) {
+      var corrected = JSON.parse(jsonMatch[0]);
+      if (Array.isArray(corrected) && corrected.length >= 3) {
+        var changed = 0;
+        for (var i = 0; i < Math.min(corrected.length, scenes.length); i++) {
+          if (corrected[i].visual && corrected[i].visual !== scenes[i].visual) {
+            scenes[i].visual = String(corrected[i].visual).slice(0, 300);
+            if (corrected[i].name) scenes[i].name = String(corrected[i].name).slice(0, 30);
+            changed++;
+          }
+        }
+        console.log("[clip-director] Djeff Engine (" + MODEL + ") — " + changed + " plan(s) corrigé(s) sur " + scenes.length);
+        return scenes;
+      }
+    }
+    console.log("[clip-director] Djeff Engine — réponse non parsable, plans inchangés.");
+  } catch (e) {
+    console.warn("[clip-director] Djeff Engine review skip:", e.message);
+  }
+  return scenes;
 }
 
 module.exports = {
