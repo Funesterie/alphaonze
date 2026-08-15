@@ -27,6 +27,56 @@ const MOOD_MODEL = process.env.NOSSEN_MOOD_MODEL || "x-ai/grok-4.3";
 // duree, donc six plans varies suffisent meme sur un full clip.
 const PLAN_COUNT = 6;
 
+// Claude decortique les paroles. Identifiants verifies par appel reel le
+// 15/08/2026 : claude-opus-4-5-20251101 et claude-sonnet-4-5-20250929 repondent,
+// claude-3-5-sonnet-20241022 est en 404. Sonnet par defaut : la decortication
+// tourne une fois par morceau et le catalogue en compte 120.
+const CLAUDE_URL = "https://api.anthropic.com/v1/messages";
+const CLAUDE_KEY = process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY || "";
+const LYRICS_MODEL = process.env.NOSSEN_LYRICS_MODEL || "claude-sonnet-4-5-20250929";
+
+function callClaude(prompt, maxTokens) {
+  if (!CLAUDE_KEY) return Promise.reject(new Error("CLAUDE_API_KEY manquante"));
+  return new Promise(function(resolve, reject) {
+    var body = JSON.stringify({
+      model: LYRICS_MODEL,
+      max_tokens: maxTokens || 1500,
+      messages: [{ role: "user", content: prompt }],
+    });
+    var req = https.request(new URL(CLAUDE_URL), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": CLAUDE_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-length": Buffer.byteLength(body),
+      },
+      timeout: TIMEOUT_MS,
+    }, function(res) {
+      var chunks = [];
+      res.on("data", function(c) { chunks.push(c); });
+      res.on("end", function() {
+        var raw = Buffer.concat(chunks).toString();
+        if (res.statusCode !== 200) {
+          var detail = "";
+          try { var err = JSON.parse(raw); detail = (err.error && err.error.message) || ""; } catch (e) {}
+          return reject(new Error("HTTP " + res.statusCode + " sur " + LYRICS_MODEL
+            + (detail ? " : " + detail.slice(0, 160) : "")));
+        }
+        try {
+          var data = JSON.parse(raw);
+          var text = (data.content || []).map(function(part) { return part.text || ""; }).join("");
+          resolve(text || "");
+        } catch (e) { reject(new Error("Reponse illisible de " + LYRICS_MODEL)); }
+      });
+    });
+    req.on("error", reject);
+    req.on("timeout", function() { req.destroy(); reject(new Error("Timeout")); });
+    req.write(body);
+    req.end();
+  });
+}
+
 function getTextInternal(url) {
   return new Promise(function(resolve, reject) {
     var parsed = new URL(url);
@@ -208,6 +258,67 @@ function buildCastBlock(cast = []) {
 }
 
 /**
+ * Claude : decortication des paroles.
+ *
+ * extractSectionLabels ne lit que des etiquettes deja ecrites entre crochets.
+ * Quand elles manquent -- ou quand le texte stocke est une consigne d'ecriture
+ * au lieu des paroles -- l'arc repart sur un squelette generique et le clip
+ * suit une structure qui n'est pas celle du morceau.
+ *
+ * On demande ici un decoupage argumente : quelles sections, ou basculent-elles,
+ * quelle est l'image forte de chacune. Pas de reecriture des paroles, pas
+ * d'invention : si le texte ne dit rien, on rend une liste vide plutot qu'un
+ * decoupage plausible.
+ */
+async function decorticateLyrics(title, lyrics, teardown) {
+  if (!CLAUDE_KEY) {
+    console.log("[clip-director] Claude non configure (CLAUDE_API_KEY), décortication ignorée.");
+    return null;
+  }
+  if (!lyrics || lyrics.trim().length < 40) {
+    console.log("[clip-director] Pas de paroles à décortiquer.");
+    return null;
+  }
+  var mesure = teardown && Array.isArray(teardown.sections) && teardown.sections.length
+    ? "STRUCTURE MESURÉE SUR L'AUDIO (bornes réelles, à respecter) :\n"
+      + teardown.sections.map(function(s, i) {
+        return "  " + (i + 1) + ". " + s.startSeconds + "s → " + s.endSeconds + "s — "
+          + s.label + " (énergie " + s.energy + ")";
+      }).join("\n") + "\n\n"
+    : "";
+  var prompt = "Décortique les paroles de cette chanson pour un découpage de clip.\n\n"
+    + "TITRE : \"" + (title || "sans titre") + "\"\n\n"
+    + "PAROLES :\n" + lyrics.slice(0, 4000) + "\n\n"
+    + mesure
+    + "Rends le découpage réel du texte : quelles sections, dans quel ordre, et pour "
+    + "chacune l'intention et l'image la plus forte.\n"
+    + "Si les bornes audio sont données, aligne tes sections dessus.\n"
+    + "N'invente rien : si le texte est trop court ou n'est pas des paroles "
+    + "(par exemple une consigne d'écriture), rends une liste vide.\n\n"
+    + "JSON strict, rien d'autre :\n"
+    + "{\"sections\":[{\"label\":\"intro|couplet|pre-refrain|refrain|pont|outro\","
+    + "\"intention\":\"ce que dit la section, en français, une phrase\","
+    + "\"image\":\"l'image visuelle la plus forte, en anglais, une phrase\"}]}";
+  try {
+    var text = await callClaude(prompt);
+    var match = text.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    var parsed = JSON.parse(match[0]);
+    var sections = Array.isArray(parsed.sections) ? parsed.sections : [];
+    if (!sections.length) {
+      console.log("[clip-director] Claude : texte non exploitable comme paroles.");
+      return null;
+    }
+    console.log("[clip-director] Claude (" + LYRICS_MODEL + ") — "
+      + sections.length + " sections : " + sections.map(function(s) { return s.label; }).join(", "));
+    return sections;
+  } catch (e) {
+    console.warn("[clip-director] Claude indisponible:", e.message);
+    return null;
+  }
+}
+
+/**
  * Vivy en soutien : l'arc du morceau, section par section.
  *
  * Sol est chef operateur, il ne connait pas la chanson. Vivy si : son arc
@@ -222,13 +333,18 @@ function resolveVivyArc(lyrics, fallbackSections) {
   try {
     var arcMod = require("../music/vivy-dynamic-arc.cjs");
     var labels = [];
-    if (lyrics) {
+    // Priorite au decoupage de Claude : il lit le texte, extractSectionLabels ne
+    // lit que des etiquettes deja ecrites entre crochets.
+    if (Array.isArray(fallbackSections) && fallbackSections.length) {
+      labels = fallbackSections
+        .map(function(s) { return typeof s === "string" ? s : s.label; })
+        .filter(Boolean);
+    }
+    if (!labels.length && lyrics) {
       try { labels = arcMod.extractSectionLabels(lyrics) || []; } catch (e) { labels = []; }
     }
     if (!labels.length) {
-      labels = Array.isArray(fallbackSections) && fallbackSections.length
-        ? fallbackSections
-        : ["intro", "couplet", "pre-refrain", "refrain", "pont", "refrain", "outro"];
+      labels = ["intro", "couplet", "pre-refrain", "refrain", "pont", "refrain", "outro"];
     }
     var arc = arcMod.buildVivyDynamicArc(labels);
     var steps = (arc && arc.steps) || [];
@@ -469,6 +585,9 @@ module.exports = {
   generateVisualScenes,
   getTextInternal,
   callOpenRouter,
+  callClaude,
+  decorticateLyrics,
   SEQUENCE_MODEL,
+  LYRICS_MODEL,
   MOOD_MODEL,
 };
