@@ -207,7 +207,33 @@ function buildCastBlock(cast = []) {
     + "appelle simplement par le nom. L'apparence est fixée ailleurs.\n\n";
 }
 
-async function generateVisualScenes(title, lyrics, style, mood, cast, signature) {
+/**
+ * Consigne de l'artiste.
+ *
+ * La signature derive du TITRE, pas du son : pour un morceau de club sans
+ * paroles en base, elle a rendu "cordes frottees graves, aucune percussion" et
+ * Sol a place Vivy au piano dans un studio feutre. Aucune quantite de prompt ne
+ * rattrape une chaine qui n'ecoute pas la musique.
+ *
+ * Tant que l'analyse audio n'alimente pas la direction, celui qui connait le
+ * morceau doit pouvoir imposer le decor et la mise en scene. Ce qui est donne
+ * ici n'est pas negociable et passe avant tout ce que les modeles deduisent.
+ */
+function buildArtistDirection(lieu, direction) {
+  var parts = [];
+  if (lieu) {
+    parts.push("LIEU IMPOSÉ PAR L'ARTISTE (ne pas en choisir un autre) : " + lieu);
+  }
+  if (direction) {
+    parts.push("MISE EN SCÈNE IMPOSÉE PAR L'ARTISTE : " + direction);
+  }
+  if (!parts.length) return "";
+  return parts.join("\n") + "\n"
+    + "Ces consignes priment sur l'ambiance déduite du titre ou de l'état sonore. "
+    + "Si elles contredisent la texture annoncée, suis les consignes.\n\n";
+}
+
+async function generateVisualScenes(title, lyrics, style, mood, cast, signature, lieu, direction) {
   var etat = signature && signature.color
     ? "ETAT DU PERSONA : " + signature.color.name + " — " + signature.color.function
       + " (complement " + signature.color.complement + "). "
@@ -225,8 +251,11 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature)
     etat +
     (mood ? "HUMEUR DE L'INTERPRÈTE (à incarner) :\n" + mood + "\n\n" : "") +
     buildCastBlock(cast) +
+    buildArtistDirection(lieu, direction) +
     "RÈGLE DE TOURNAGE, la plus importante :\n" +
-    "1. Choisis UN SEUL lieu, cohérent avec la chanson. Un club, un studio, un toit, une salle — un seul.\n" +
+    (lieu
+      ? "1. Le lieu est déjà fixé ci-dessus. Reprends-le tel quel dans le champ lieu.\n"
+      : "1. Choisis UN SEUL lieu, cohérent avec la chanson. Un club, un studio, un toit, une salle — un seul.\n") +
     "2. Les " + PLAN_COUNT + " plans se tournent TOUS dans ce lieu unique. On ne change jamais d'endroit.\n" +
     "3. Ce qui varie, c'est le PLAN : échelle (large, moyen, gros plan, très gros plan), " +
     "angle (face, profil, contre-plongée, plongée, dos), mouvement de caméra (fixe, travelling, " +
@@ -326,7 +355,7 @@ async function directClipScenes(config) {
   // L'etat du persona vient du canon, Grok le traduit en jeu, Sol l'incarne.
   var signature = config.signature !== undefined ? config.signature : resolveSonicColor(title, lyrics, style);
   var mood = config.mood !== undefined ? config.mood : await generateMood(title, lyrics, signature);
-  var scenes = await generateVisualScenes(title, lyrics, style, mood, config.cast, signature);
+  var scenes = await generateVisualScenes(title, lyrics, style, mood, config.cast, signature, config.lieu, config.direction);
   if (scenes && scenes.length >= 3) return scenes;
 
   console.log("[clip-director] Fallback génériques");
@@ -361,6 +390,8 @@ async function directClip(config) {
     mood: mood,
     signature: signature,
     cast: identity.castLabels,
+    lieu: cfg.lieu || '',
+    direction: cfg.direction || '',
   }));
   return {
     scenes: scenes,
