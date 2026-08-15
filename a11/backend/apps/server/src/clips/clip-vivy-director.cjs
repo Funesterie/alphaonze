@@ -700,7 +700,12 @@ async function directClipScenes(config) {
  */
 async function directClip(config) {
   var cfg = config || {};
-  var lyrics = await findLyrics(cfg.title || "", cfg.songUrl || "");
+  // Des paroles fournies a l'appel priment sur la recherche au catalogue : sans
+  // ca, un morceau qu'on vient d'ecrire et qui n'est pas encore indexe passait
+  // pour "paroles non trouvees", et toute la decortication etait sautee.
+  var lyrics = (cfg.lyrics && String(cfg.lyrics).trim().length > 40)
+    ? String(cfg.lyrics).trim()
+    : await findLyrics(cfg.title || "", cfg.songUrl || "");
   // L'identite est resolue AVANT le sequencage : Sol doit savoir qui est
   // distribue pour ecrire des plans habites plutot que des paysages vides.
   var identity = resolveClipIdentity({
