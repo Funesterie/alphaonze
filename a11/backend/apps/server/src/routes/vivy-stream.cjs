@@ -2025,6 +2025,11 @@ const VIVY_STREAM_IDENTITY_ASSETS = {
   'marvin-reference-brothers-04': 'marvin-reference-brothers-04.jpg',
   'marvin-reference-family': 'marvin-reference-family.jpeg',
   'vivy-presence-musicale': 'vivy-presence-musicale.png',
+  // Portrait detoure de vivy-presence-musicale.png : meme personnage, sans le
+  // titre, le paragraphe, le logo ni la barre de navigation. C'est cette version
+  // qui sert de reference aux generateurs video — la carte complete faisait
+  // recopier sa mise en page et son texte (illisible) dans les clips.
+  'vivy-reference-portrait': 'vivy-reference-portrait.png',
 };
 
 function createVivyStreamRouter(options = {}) {

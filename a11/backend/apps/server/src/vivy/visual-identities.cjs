@@ -61,7 +61,10 @@ const IDENTITY_DEFINITIONS = [
       /\bchanteuse\s+vivy\b/i,
     ],
     envRefs: ['VIVY_VISUAL_REFERENCE_IMAGE_URL', 'VIVY_IDENTITY_REFERENCE_IMAGE_URL'],
-    defaultRefs: ['https://vivy.funesterie.me/api/vivy/stream/overlay/background'],
+    // Portrait detoure, pas la carte "Presence musicale" : celle-ci porte un
+    // titre, un paragraphe, un logo et une barre de navigation que les modeles
+    // video recopiaient en texte illisible dans les clips.
+    defaultRefs: ['https://vivy.funesterie.me/api/vivy/stream/identity/vivy-reference-portrait'],
     prompt: [
       'Référence visuelle chanteuse IA: jeune femme adulte à peau claire, longs cheveux noirs en couettes avec reflets magenta sombre, frange droite noire, yeux gris-verts expressifs, pinces et boucles d’oreilles en forme d’étoile, tenue gothic electro-pop noire, choker noir, présence micro ou studio, palette néon magenta et noir.',
       'Si cette chanteuse IA apparaît, garder exactement cette identité studio gothic magenta sombre; ne jamais la rendre blonde, pastel, idole générique, cheveux bleus, enfantine ou sans rapport avec la référence.',

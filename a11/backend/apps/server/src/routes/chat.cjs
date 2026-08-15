@@ -1303,7 +1303,10 @@ function createChatRouter(overrides = {}) {
       }
 
       const completion = await activeOpenAIClient.chat.completions.create({
-        model: process.env.A11_OPENAI_MODEL || 'gpt-3.5-turbo',
+        // Defaut remonte de gpt-3.5-turbo a gpt-4o : ce repli ne sert que si
+        // A11_OPENAI_MODEL est absente, et dans ce cas on tombait sur un modele
+        // nettement en retrait du reste de la chaine.
+        model: process.env.A11_OPENAI_MODEL || 'gpt-4o',
         messages: buildOllamaMessages(requestMessages, systemPrompt),
         temperature: 0.7,
         max_tokens: resolveCloudChatMaxTokens(),

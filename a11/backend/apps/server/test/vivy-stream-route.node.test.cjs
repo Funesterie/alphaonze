@@ -3281,7 +3281,9 @@ test('Vivy Twitch cover prompts stay visual and image generation can return a pu
     assert.ok(identityBody.referenceImageUrls.includes('https://files.funesterie.me/users/djeff-reference.webp'));
     assert.ok(identityBody.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-01'));
     assert.ok(identityBody.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-05'));
-    assert.ok(identityBody.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/overlay/background'));
+    // Portrait detoure et non la carte "Presence musicale" : cette derniere
+    // portait du texte que les modeles video recopiaient dans les clips.
+    assert.ok(identityBody.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/vivy-reference-portrait'));
 
     calls.length = 0;
     const a11K44Result = await generateTwitchCoverImage({

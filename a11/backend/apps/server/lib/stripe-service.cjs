@@ -347,8 +347,109 @@ function getAvailableContributions() {
   }));
 }
 
+// ─── Clips NOSSEN (paiement unique, à l'unité) ──────────────────────────────
+// Deux produits Stripe distincts, créés côté dashboard par Djeff.
+//
+// ATTENTION — `productId` ci-dessous est un identifiant de PRODUIT (`prod_…`).
+// Stripe Checkout ne l'accepte pas dans `line_items`: il lui faut un
+// identifiant de PRIX (`price_…`), qui est l'objet tarifaire rattaché au
+// produit. Le produit est gardé ici pour la traçabilité ; c'est `priceEnv` qui
+// porte la valeur réellement utilisée à l'appel.
+const CLIP_PRODUCTS = Object.freeze({
+  full: Object.freeze({
+    id: 'full',
+    kind: 'clip',
+    label: 'Clip vidéo NOSSEN FULL',
+    description: "Clip vidéo complet, séquencé sur les paroles, sur toute la durée du morceau.",
+    productId: 'prod_V4l6GQbhGVxyWT',
+    priceEnv: 'STRIPE_CLIP_FULL_PRICE_ID',
+    priceCentsEur: 2999,
+  }),
+  soft: Object.freeze({
+    id: 'soft',
+    kind: 'clip',
+    label: 'Clip vidéo NOSSEN Soft',
+    description: "Clip court : quelques séquences vidéo montées en boucle sur le morceau.",
+    productId: 'prod_V4jqMLEUf8OLhk',
+    priceEnv: 'STRIPE_CLIP_SOFT_PRICE_ID',
+    priceCentsEur: 499,
+  }),
+});
+
+function normalizeClipProduct(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  return CLIP_PRODUCTS[raw] ? raw : 'full';
+}
+
+function getClipPriceId(id = 'full') {
+  const product = CLIP_PRODUCTS[normalizeClipProduct(id)];
+  return String(process.env[product.priceEnv] || '').trim();
+}
+
+function isClipCheckoutEnabled(id = 'full') {
+  return stripe !== null && Boolean(getClipPriceId(id));
+}
+
+/**
+ * Ouvre un paiement unique pour un clip. La demande (morceau, titre, format)
+ * voyage dans les metadata: c'est ce que le webhook relit pour débloquer la
+ * génération une fois le paiement confirmé.
+ */
+async function createClipCheckoutSession(userId, userEmail, options = {}) {
+  if (!stripe) {
+    throw new Error('Stripe non configuré');
+  }
+  const id = normalizeClipProduct(options.product || options.clip);
+  const product = CLIP_PRODUCTS[id];
+  const priceId = getClipPriceId(id);
+  if (!priceId) {
+    throw new Error(
+      `Stripe price non configuré pour le clip ${product.id}. `
+      + `Renseigner ${product.priceEnv} avec un identifiant price_… `
+      + `(le produit ${product.productId} ne suffit pas).`
+    );
+  }
+  const metadata = {
+    userId: userId || '',
+    kind: 'clip',
+    clipProduct: product.id,
+    songUrl: String(options.songUrl || '').slice(0, 480),
+    title: String(options.title || '').slice(0, 200),
+  };
+  const session = await stripe.checkout.sessions.create({
+    mode: 'payment',
+    line_items: [{ price: priceId, quantity: 1 }],
+    billing_address_collection: 'auto',
+    success_url: `${SUCCESS_URL}?session_id={CHECKOUT_SESSION_ID}&clip=${product.id}`,
+    cancel_url: CANCEL_URL,
+    ...(userId ? { client_reference_id: userId } : {}),
+    ...(userEmail ? { customer_email: userEmail } : {}),
+    metadata,
+    payment_intent_data: { metadata },
+  });
+  return { sessionId: session.id, url: session.url, clipProduct: product.id };
+}
+
+function getAvailableClipProducts() {
+  return Object.values(CLIP_PRODUCTS).map((product) => ({
+    id: product.id,
+    kind: product.kind,
+    label: product.label,
+    description: product.description,
+    priceCentsEur: product.priceCentsEur,
+    productId: product.productId,
+    enabled: isClipCheckoutEnabled(product.id),
+  }));
+}
+
 module.exports = {
   SUBSCRIPTION_PLANS,
+  CLIP_PRODUCTS,
+  normalizeClipProduct,
+  getClipPriceId,
+  isClipCheckoutEnabled,
+  createClipCheckoutSession,
+  getAvailableClipProducts,
   createCheckoutSession,
   createCustomerPortalSession,
   getSubscriptionStatus,

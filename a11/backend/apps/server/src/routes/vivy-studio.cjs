@@ -1143,7 +1143,10 @@ function getVivyCloudProviderConfig(provider, options = {}) {
           ? process.env.VIVY_OPENAI_API_KEY
           : ''),
       model: songMode
-        ? (process.env.VIVY_SONG_OPENAI_MODEL || process.env.OPENAI_MODEL || process.env.A11_OPENAI_MODEL || 'gpt-4o-mini')
+        // Ecriture de paroles : gpt-4o-mini rendait du francais chante plat.
+        // gpt-4o tient la metrique et les rimes ; le mini reste bon pour le
+        // reste du studio, ou la contrainte poetique n'existe pas.
+        ? (process.env.VIVY_SONG_OPENAI_MODEL || process.env.OPENAI_MODEL || process.env.A11_OPENAI_MODEL || 'gpt-4o')
         : (process.env.VIVY_OPENAI_MODEL || process.env.OPENAI_MODEL || process.env.A11_OPENAI_MODEL || 'gpt-4o-mini'),
     },
     gemini: {

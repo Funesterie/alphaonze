@@ -59,14 +59,55 @@ function downloadFile(url, dest) {
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // Soumettre UNE vidéo et ATTENDRE qu'elle soit prête
-async function generateOneVideo(prompt, index, maxWaitMs = 600000) {
+async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = null) {
   console.log(`[clip] Vidéo ${index}: ${prompt.slice(0, 60)}...`);
 
-  // Soumettre
-  const result = await postJson(BRIDGE_URL, {
-    tool: 'comfy__partner_generate',
-    args: { type: 'video', model: 'byteplus/seedance-2.0-t2v', prompt, client_os: 'linux', confirm: true, params: { model: 'Seedance 2.0 Fast' } }
-  });
+  // Image de référence : si un personnage canonique est en jeu, on bascule sur
+  // l'image-to-video pour verrouiller son visage au lieu de le redécrire.
+  const referenceImage = identity && Array.isArray(identity.referenceImageUrls)
+    ? identity.referenceImageUrls[0]
+    : null;
+  const useReference = Boolean(referenceImage) && process.env.NOSSEN_CLIP_USE_REFERENCE !== '0';
+
+  const args = useReference
+    ? {
+        type: 'video',
+        model: 'byteplus/seedance-2.0-i2v',
+        prompt,
+        image: referenceImage,
+        client_os: 'linux',
+        confirm: true,
+        params: { model: 'Seedance 2.0 Fast' },
+      }
+    : {
+        type: 'video',
+        model: 'byteplus/seedance-2.0-t2v',
+        prompt,
+        client_os: 'linux',
+        confirm: true,
+        params: { model: 'Seedance 2.0 Fast' },
+      };
+  if (identity && identity.negativePrompt) args.negative_prompt = identity.negativePrompt;
+  if (useReference) console.log(`[clip] Vidéo ${index}: référence ${referenceImage.slice(0, 60)}`);
+
+  // Submit — si l'i2v n'est pas accepté par le partenaire, on retombe en t2v
+  // plutôt que de perdre le segment.
+  let result = await postJson(BRIDGE_URL, { tool: 'comfy__partner_generate', args });
+  if (!result.ok && useReference) {
+    console.warn(`[clip] Vidéo ${index}: i2v refusé, repli t2v`);
+    result = await postJson(BRIDGE_URL, {
+      tool: 'comfy__partner_generate',
+      args: {
+        type: 'video',
+        model: 'byteplus/seedance-2.0-t2v',
+        prompt,
+        client_os: 'linux',
+        confirm: true,
+        params: { model: 'Seedance 2.0 Fast' },
+        negative_prompt: identity?.negativePrompt || undefined,
+      },
+    });
+  }
   if (!result.ok) throw new Error('Submit failed: ' + JSON.stringify(result.error || result));
   const text = result.result?.content?.[0]?.text || '';
   const match = text.match(/prompt_id:\s*([a-f0-9-]+)/);
@@ -101,17 +142,22 @@ async function generateOneVideo(prompt, index, maxWaitMs = 600000) {
 async function generateClip(config) {
   let { songUrl, title, sections, style = '', fullDuration } = config;
 
-  // Vivy Director
+  // Vivy Director : scènes issues des paroles + identité visuelle des personnages
+  let identity = { identityIds: [], prompt: '', negativePrompt: '', referenceImageUrls: [] };
+  const loadDirector = () => {
+    try { return require('./clip-vivy-director.cjs'); }
+    catch (e) { return require('/app/clip-vivy-director.cjs'); }
+  };
   try {
-    const { directClipScenes } = require('./clip-vivy-director.cjs');
-    const directed = await directClipScenes({ title, songUrl, style, sections });
-    if (directed && directed.length > 0) { sections = directed; console.log(`[clip] Director: ${sections.length} scènes`); }
+    const director = loadDirector();
+    const directed = await director.directClip({ title, songUrl, style, sections });
+    if (directed?.scenes?.length > 0) {
+      sections = directed.scenes;
+      console.log(`[clip] Director: ${sections.length} scènes`);
+    }
+    if (directed?.identity) identity = directed.identity;
   } catch (e) {
-    try {
-      const { directClipScenes } = require('/app/clip-vivy-director.cjs');
-      const directed = await directClipScenes({ title, songUrl, style, sections });
-      if (directed && directed.length > 0) { sections = directed; console.log(`[clip] Director: ${sections.length} scènes`); }
-    } catch (e2) { console.warn('[clip] Director skip:', e.message, e2.message); }
+    console.warn('[clip] Director skip:', e.message);
   }
 
   const clipId = 'clip-' + Date.now();
@@ -146,16 +192,21 @@ async function generateClip(config) {
   }
 
   // 5. Générer les vidéos UNE PAR UNE (séquentiel)
+  // L'identité des personnages est répétée sur CHAQUE segment : c'est ce qui
+  // empêche Vivy de changer de tête entre la 3e et la 12e vidéo.
+  const identityBrief = identity.prompt
+    ? ` Character identity to preserve exactly across every shot: ${identity.prompt}`
+    : '';
   const videoPaths = [];
   for (let i = 0; i < numSegments; i++) {
     const section = sections[i % sections.length];
-    const prompt = `${section.visual}. Cinematic anime quality, volumetric lighting, smooth camera movement. ${style}`.trim();
+    const prompt = `${section.visual}. Cinematic anime quality, volumetric lighting, smooth camera movement. ${style}${identityBrief}`.trim();
 
     let videoUrl;
     let retries = 2;
     while (retries > 0) {
       try {
-        videoUrl = await generateOneVideo(prompt, i);
+        videoUrl = await generateOneVideo(prompt, i, 600000, identity);
         break;
       } catch (e) {
         retries--;
