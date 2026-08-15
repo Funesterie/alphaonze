@@ -262,6 +262,56 @@ function buildCastBlock(cast = []) {
 }
 
 /**
+ * Retrouve le fichier audio sur disque a partir de l'URL de lecture, pour
+ * pouvoir l'ecouter. Les memes correspondances que le generateur, sinon le
+ * demontage ne trouve jamais rien et la chaine se remet a deviner.
+ */
+function resolveLocalAudioPath(songUrl) {
+  var url = String(songUrl || "");
+  if (!url) return null;
+  var candidates = [];
+  if (url.startsWith("/api/mcp-bridge/play-upload/")) {
+    candidates.push("/app/runtime/uploads/" + url.split("/").pop());
+  } else if (url.startsWith("/api/mcp-bridge/play/")) {
+    candidates.push("/app/runtime/double-harmonic-d40/" + url.split("/").pop());
+  } else if (url.startsWith("/api/vivy/studio/assets/")) {
+    candidates.push("/app/runtime/vivy-studio-assets/" + url.split("/").pop());
+  } else if (url.startsWith("/")) {
+    candidates.push(url);
+  }
+  for (var i = 0; i < candidates.length; i += 1) {
+    try {
+      if (require("fs").existsSync(candidates[i])) return candidates[i];
+    } catch (e) {}
+  }
+  return null;
+}
+
+/**
+ * Demontage automatique : on ecoute le fichier avant de parler du morceau.
+ * Sans lui, tout le reste deduit l'ambiance du titre -- c'est ce qui avait
+ * envoye un morceau de club dans un studio feutre.
+ */
+function resolveTeardown(songUrl) {
+  var localPath = resolveLocalAudioPath(songUrl);
+  if (!localPath) {
+    console.log("[clip-director] Audio introuvable sur disque, démontage sauté.");
+    return null;
+  }
+  try {
+    var teardownMod = require("./song-teardown.cjs");
+    var teardown = teardownMod.teardownSong(localPath, { windowSeconds: 3 });
+    console.log("[clip-director] Démontage : " + teardown.durationSeconds + "s, "
+      + teardown.sections.length + " sections mesurées — "
+      + teardown.sections.map(function(s) { return s.label + " " + s.energy; }).join(" | "));
+    return teardown;
+  } catch (e) {
+    console.warn("[clip-director] Démontage indisponible:", e.message);
+    return null;
+  }
+}
+
+/**
  * Claude : decortication des paroles.
  *
  * extractSectionLabels ne lit que des etiquettes deja ecrites entre crochets.
@@ -662,9 +712,11 @@ async function directClip(config) {
   var mood = await generateMood(cfg.title || "", lyrics, signature);
 
   // Claude decoupe le texte; ses sections priment sur le squelette par defaut.
+  // On ecoute le morceau avant d'en parler.
+  var teardown = cfg.teardown !== undefined ? cfg.teardown : resolveTeardown(cfg.songUrl || "");
   var lyricsSections = cfg.lyricsSections !== undefined
     ? cfg.lyricsSections
-    : await decorticateLyrics(cfg.title || "", lyrics, cfg.teardown);
+    : await decorticateLyrics(cfg.title || "", lyrics, teardown);
   var arcSteps = resolveVivyArc(lyrics, lyricsSections);
 
   var scenes = await directClipScenes(Object.assign({}, cfg, {
@@ -681,7 +733,7 @@ async function directClip(config) {
   // Relecture : A11 sur le montage, K44 sur le scenario. Les deux peuvent ne
   // rien corriger, c'est le cas nominal quand le decoupage tient.
   if (Array.isArray(scenes) && scenes.length && cfg.review !== false) {
-    scenes = await reviewMontageA11(scenes, lieu, cfg.teardown, arcSteps);
+    scenes = await reviewMontageA11(scenes, lieu, teardown, arcSteps);
     scenes = await reviewScenarioK44(scenes, lieu, cfg.title || "", lyricsSections);
   }
 
@@ -692,6 +744,7 @@ async function directClip(config) {
     lyrics: lyrics,
     lyricsSections: lyricsSections,
     arcSteps: arcSteps,
+    teardown: teardown,
     mood: mood,
     signature: signature,
   };
@@ -713,6 +766,7 @@ module.exports = {
   LYRICS_MODEL,
   MONTAGE_MODEL,
   SCENARIO_MODEL,
+  resolveTeardown,
   reviewMontageA11,
   reviewScenarioK44,
   MOOD_MODEL,
