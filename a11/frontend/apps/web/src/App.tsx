@@ -9600,6 +9600,15 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
                 {message.media.kind === "video" ? (
                   <video controls preload="metadata" src={message.media.url} />
                 ) : null}
+                {message.media.kind === "video" ? (
+                  <button
+                    type="button"
+                    onClick={() => launchVivyVideoClip({ dream: true })}
+                    title="Relancer un clip vidéo en mode dream"
+                  >
+                    Dream
+                  </button>
+                ) : null}
                 {message.media.kind === "image" ? (
                   <img src={message.media.url} alt="Image générée par Vivy" loading="lazy" />
                 ) : null}
