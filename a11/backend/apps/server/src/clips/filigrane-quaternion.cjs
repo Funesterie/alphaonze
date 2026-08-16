@@ -150,6 +150,20 @@ function marquerImage(pixels, marque, secret, force = FORCE_DEFAUT) {
  * passee de 0.44 a 0.62 sur le meme echantillon. Sur une livraison de
  * clip-livraison.cjs, le texte est en bas a droite : analyser les 70 % du haut.
  *
+ * CHOISIR DES IMAGES CLAIRES. Une rotation ne deplace un pixel qu'a proportion de
+ * la longueur de son vecteur couleur : sur du quasi-noir, elle ne produit presque
+ * rien et ne discrimine pas. Mesure sur un clip 4K de 3 min :
+ *
+ *   3 images dont 2 sombres (lum. 24 et 32/255)   marge 0.38
+ *   la seule image claire (lum. 99/255)           marge 0.76
+ *
+ * Le double, en analysant DEUX FOIS MOINS de matiere. Trier les images par
+ * luminosite moyenne et ne garder que les plus claires vaut mieux que d'en
+ * accumuler beaucoup -- une image noire n'apporte pas zero, elle apporte du bruit.
+ *
+ * COROLLAIRE POUR LES CLIPS SOMBRES : un clip majoritairement noir a besoin d'une
+ * `force` plus elevee que le defaut. C'est la raison d'etre du parametre.
+ *
  * `ecart` est l'erreur quadratique moyenne par canal. `marge` dit de combien le
  * gagnant devance le second : une marge minuscule signifie qu'on ne peut PAS
  * conclure, et c'est une information a ne jamais masquer quand le resultat sert
