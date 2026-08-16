@@ -58,12 +58,22 @@ test('un secret court est refuse', () => {
   assert.throws(() => f.rotationDepuisMarque('x', 'court'), /16 caracteres/);
 });
 
-test('la marque est invisible : moins de 8 niveaux sur 255', () => {
+test('la marque reste discrete : moins de 25 niveaux sur 255', () => {
+  // Seuil releve de 8 a 25 avec le passage de FORCE_DEFAUT de 0.02 a 0.06.
+  // Justification mesuree dans l en-tete du module : a 0.02 la marque ne
+  // certifiait pas sur une vraie video H.264, le codec la noyait.
   const orig = image();
   const marquee = f.marquerImage(orig, 'drive:djeff', SECRET);
   const max = ecartMax(orig, marquee);
   assert.ok(max > 0, 'aucune modification : la marque n a pas ete posee');
-  assert.ok(max <= 8, `derive trop visible : ${max} niveaux`);
+  assert.ok(max <= 25, `derive trop visible : ${max} niveaux`);
+});
+
+test('la force reste reglable clip par clip', () => {
+  const orig = image();
+  const faible = ecartMax(orig, f.marquerImage(orig, 'drive:djeff', SECRET, 0.02));
+  const forte = ecartMax(orig, f.marquerImage(orig, 'drive:djeff', SECRET, 0.10));
+  assert.ok(forte > faible, 'monter la force doit augmenter la derive');
 });
 
 test('la marque ne casse pas les bornes 0-255', () => {

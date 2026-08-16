@@ -47,15 +47,27 @@ const SCHEMA = 'funesterie.filigrane-quaternion.v1';
 /**
  * Amplitude de la rotation, en radians.
  *
- * 0.02 rad ~ 1.15 degre. Sur un pixel a 128 de moyenne, ca deplace chaque canal
- * de l'ordre de 1 a 3 niveaux sur 255 : invisible a l'oeil, largement au-dessus
- * du bruit de quantification d'un encodage de qualite courante.
+ * 0.06 rad ~ 3.4 degres. C'est le seul arbitrage du module, et il a ete REGLE
+ * PAR LA MESURE sur une vraie video, pas choisi au jugé.
  *
- * Monter ce chiffre rend la marque plus robuste ET plus visible. C'est le seul
- * arbitrage du module, et il n'a pas de bonne reponse universelle : sur une image
- * plate et claire une derive se voit, sur une image texturee non.
+ * Mesure du 16/08/2026, clip Seedance 1280x720 reencode en H.264 CRF 18,
+ * identification parmi quatre acheteurs, sur la zone sans texte incruste :
+ *
+ *   force 0.02   ecart 2.02   marge 0.62   -> identifie mais NE CERTIFIE PAS
+ *   force 0.06   ecart 2.03   marge 3.45   -> certifie, second candidat 2.7x pire
+ *
+ * A 0.02, la rotation deplaçait chaque canal de 1 a 3 niveaux -- du meme ordre
+ * que le bruit de quantification de H.264. Le codec noyait donc la marque, et
+ * moyenner sur huit images n'y changeait rien : ce bruit-la n'est pas aleatoire
+ * d'une image a l'autre, il ne s'annule pas.
+ *
+ * Le prix de 0.06 : l'ecart maximal monte a 35 niveaux sur 255 sur le pixel le
+ * plus touche de 900 000. Invisible sur une image texturee, potentiellement
+ * visible en bandes sur un degrade tres plat. Une preuve qui ne certifie pas ne
+ * servant a rien, l'arbitrage penche de ce cote -- mais il se rediscute clip par
+ * clip via le parametre `force`.
  */
-const FORCE_DEFAUT = 0.02;
+const FORCE_DEFAUT = 0.06;
 
 function normaliserAxe(x, y, z) {
   const n = Math.hypot(x, y, z);
@@ -131,6 +143,12 @@ function marquerImage(pixels, marque, secret, force = FORCE_DEFAUT) {
  * celle qui explique le mieux l'ecart observe. C'est realiste -- on connait la
  * liste des lectures qu'on a servies -- et bien plus robuste qu'une detection
  * aveugle.
+ *
+ * ATTENTION, PIEGE MESURE LE 16/08/2026 : ne PAS analyser la zone ou le filigrane
+ * VISIBLE est incruste. Le texte cree un ecart enorme et IDENTIQUE pour tous les
+ * candidats, qui ne discrimine rien et ecrase la marge -- en l'excluant, elle est
+ * passee de 0.44 a 0.62 sur le meme echantillon. Sur une livraison de
+ * clip-livraison.cjs, le texte est en bas a droite : analyser les 70 % du haut.
  *
  * `ecart` est l'erreur quadratique moyenne par canal. `marge` dit de combien le
  * gagnant devance le second : une marge minuscule signifie qu'on ne peut PAS
