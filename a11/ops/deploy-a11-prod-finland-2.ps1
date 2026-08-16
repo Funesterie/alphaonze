@@ -1486,8 +1486,32 @@ if ($Quaternion) {
   # l'ancienne configuration : yellow tournait depuis huit jours sans apparaitre
   # ici, donc sans jamais pouvoir reprendre la main.
   $ordreCaddy = Get-OrdreDepuis $DeployBlueGreenColor $CouleursQuaternion
-  $caddyA11Upstreams = (($ordreCaddy | ForEach-Object { "a11-backend-${_}:3000" }) -join " ")
-  $caddyKaen44Upstreams = (($ordreCaddy | ForEach-Object { "kaen44-backend-${_}:3001" }) -join " ")
+
+  # On ne liste QUE les couleurs qui existent reellement, plus celle qu'on deploie.
+  #
+  # Sans ce filtre, Caddy interroge le health check d'un conteneur absent toutes
+  # les dix secondes et note l'echec a chaque fois. Constate le 16/08/2026 :
+  # 240 lignes en dix minutes pour le seul a11-backend-purple, jamais deploye.
+  # C'est inoffensif -- `lb_policy first` saute simplement l'upstream malade --
+  # mais ca noie les journaux, c'est-a-dire exactement l'endroit ou l'on cherche
+  # quand quelque chose ne va pas.
+  $sondeCouleurs = "docker ps --format '{{.Names}}' | grep -E '^a11-backend-(green|blue|yellow|purple)$' | sed 's/^a11-backend-//'"
+  $couleursVivantes = @()
+  try {
+    $couleursVivantes = @(& ssh @sshBase $Remote $sondeCouleurs 2>$null | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+  } catch { }
+  $global:LASTEXITCODE = 0
+
+  $retenues = @($ordreCaddy | Where-Object { $_ -eq $DeployBlueGreenColor -or $couleursVivantes -contains $_ })
+  if (-not $retenues) { $retenues = @($DeployBlueGreenColor) }
+
+  $ignorees = @($ordreCaddy | Where-Object { $retenues -notcontains $_ })
+  if ($ignorees) {
+    Write-Host "  couleurs non deployees, ecartees de Caddy : $($ignorees -join ', ')" -ForegroundColor DarkGray
+  }
+
+  $caddyA11Upstreams = (($retenues | ForEach-Object { "a11-backend-${_}:3000" }) -join " ")
+  $caddyKaen44Upstreams = (($retenues | ForEach-Object { "kaen44-backend-${_}:3001" }) -join " ")
   $caddyFallbackBlock = @"
 
     lb_policy first
