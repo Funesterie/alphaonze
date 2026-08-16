@@ -2844,7 +2844,13 @@ $remoteSecretStep
 $remoteOllamaStep
 $remoteComposeOwnershipStep
 docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --build a11-postgres a11-redis a11-stt-whisper a11-xtts-rvc a11-voice
-docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --build --force-recreate a11-ekko "`$a11_service" "`$k44_service"
+# a11-ekko (skill Alexa) est un service SECONDAIRE, et le healthcheck ci-dessous
+# ne le verifie meme pas. Le garder dans le meme up que les backends faisait
+# echouer TOUT le deploiement quand son build ratait -- typiquement un pip reseau,
+# le 16/08/2026 -- alors que la prod n'attend rien de lui. On le demarre a part et
+# on tolere son echec : un service d'appoint ne doit pas bloquer la bascule.
+docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --build --force-recreate a11-ekko || echo "AVERTISSEMENT: a11-ekko (Alexa) non demarre, deploiement poursuivi"
+docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --build --force-recreate "`$a11_service" "`$k44_service"
 echo "__BLUEGREEN_HEALTH__"
 for i in `$(seq 1 45); do
   if docker exec "`$a11_service" curl -fsS http://127.0.0.1:3000/health >/tmp/a11-bg-health-a11 2>/dev/null \
