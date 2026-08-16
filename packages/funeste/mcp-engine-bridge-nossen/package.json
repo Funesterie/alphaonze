@@ -1,0 +1,19 @@
+{
+  "name": "@funeste/mcp-engine-bridge-nossen",
+  "version": "0.1.0",
+  "description": "Private Funesterie adapter for queued Unity and Unreal MCP commands.",
+  "type": "commonjs",
+  "main": "src/index.cjs",
+  "files": ["src", "README.md"],
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "pack:dry": "npm pack --dry-run"
+  },
+  "author": "NOSSEN <contact@funesterie.me>",
+  "license": "UNLICENSED",
+  "publishConfig": { "access": "restricted" },
+  "engines": { "node": ">=18.0.0" },
+  "dependencies": {
+    "@nossen/mcp-engine-bridge": "0.1.0"
+  }
+}

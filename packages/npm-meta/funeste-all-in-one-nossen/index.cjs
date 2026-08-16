@@ -18,6 +18,7 @@ const privatePackages = Object.freeze([
   '@funeste/mcp-agent-bus-nossen',
   '@funeste/mcp-chopper-mixer-nossen',
   '@funeste/mcp-cloud-assets-nossen',
+  '@funeste/mcp-engine-bridge-nossen',
   '@funeste/mcp-job-queue-nossen',
   '@funeste/mcp-media-bridge-nossen',
   '@funeste/mcp-memory-graph-nossen',
@@ -31,6 +32,7 @@ const privatePackages = Object.freeze([
   '@funeste/mcp-worker-supervisor-nossen',
   '@funeste/morphing-nossen',
   '@funeste/nezlephant-nossen',
+  '@funeste/provider-doorbell-vivy',
   '@funeste/qflush-nossen',
   '@funeste/qflush-runner-nossen',
   '@funeste/rome-nossen',
@@ -44,7 +46,7 @@ const privatePackages = Object.freeze([
 module.exports = Object.freeze({
   name: '@funeste/all-in-one-nossen',
   scope: 'private',
-  generatedAt: '2026-07-04',
+  generatedAt: '2026-08-09',
   publicMetaPackage: '@nossen/all-in-one',
   privatePackageCount: privatePackages.length,
   privatePackages
