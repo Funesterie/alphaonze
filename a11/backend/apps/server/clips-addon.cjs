@@ -2,8 +2,7 @@
 // clips-addon.cjs — Mounted as a standalone route file
 // Load after server startup via: require('./clips-addon.cjs')(app)
 const path = require('path');
-
-const CLIPS_DIR = process.env.NOSSEN_CLIPS_DIR || '/app/runtime/clips';
+const { CLIPS_DIR } = require('./src/clips/clip-storage.cjs');
 const RIPPER_RE = [/yt-dlp/i, /youtube-dl/i, /wget/i, /aria2/i, /ffmpeg/i, /streamripper/i, /headlesschrome/i, /phantomjs/i, /selenium/i];
 
 module.exports = function mountClipsRoute(app) {

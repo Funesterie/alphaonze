@@ -71,7 +71,7 @@ module.exports = function mountUnityOidc(app) {
       name: name,
       email: email,
       iss: ISSUER,
-      aud: client_id || 'unity-funesterie',
+      aud: client_id || 'oidc-unity-funesterie',
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 3600
     }, privateKey, {

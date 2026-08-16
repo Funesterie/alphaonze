@@ -11,6 +11,8 @@
  */
 'use strict';
 
+const crypto = require('node:crypto');
+
 const BRIDGE_VERSION = '1.2.0';
 
 // --- SECURITY: Tool allowlist ---
@@ -303,6 +305,29 @@ async function routeBridgedTool(fullName, args = {}) {
   return bridgeCallTool(prefix, toolName, args);
 }
 
+function constantTimeSecretEqual(candidate, expected) {
+  const candidateBuffer = Buffer.from(String(candidate || ''), 'utf8');
+  const expectedBuffer = Buffer.from(String(expected || ''), 'utf8');
+  const candidateDigest = crypto.createHash('sha256').update(candidateBuffer).digest();
+  const expectedDigest = crypto.createHash('sha256').update(expectedBuffer).digest();
+  return candidateBuffer.length === expectedBuffer.length
+    && crypto.timingSafeEqual(candidateDigest, expectedDigest);
+}
+
+function isLoopbackRequest(req) {
+  const addresses = [req?.ip, req?.socket?.remoteAddress, req?.connection?.remoteAddress]
+    .map((value) => String(value || '').trim().toLowerCase());
+  return addresses.some((address) => address === '127.0.0.1'
+    || address === '::1'
+    || address === '::ffff:127.0.0.1');
+}
+
+function isAuthorizedInternalRequest(req, internalKey) {
+  const configured = String(internalKey || '');
+  if (Buffer.byteLength(configured, 'utf8') < 32 || !isLoopbackRequest(req)) return false;
+  return constantTimeSecretEqual(req?.headers?.['x-internal-service'], configured);
+}
+
 // --- Express middleware ---
 function mountBridgeRoutes(app, options = {}) {
   // Mount OAuth relay routes if available (with auth guards)
@@ -310,26 +335,11 @@ function mountBridgeRoutes(app, options = {}) {
     oauthRelay.mountOAuthRelayRoutes(app, options);
   }
 
-  // Auth guard for tool calls — MUST verify the session, not just check header length.
-  // If no requireAuth is provided, we use a strict default that checks:
-  //   1. Express session (req.user populated by passport/session middleware)
-  //   2. JWT token verified with the server's JWT_SECRET
-  //   3. Internal service calls (localhost with X-Internal-Service header)
-  // A raw Bearer header of unknown origin is NEVER accepted.
-  const INTERNAL_SERVICE_KEY = process.env.MCP_BRIDGE_INTERNAL_KEY || process.env.JWT_SECRET || '';
-
-  const requireAuth = options.requireAuth || function(req, res, next) {
-    // Priority 0: Internal service call (server-to-server on localhost)
-    // The clip generator and other internal modules call /api/mcp-bridge/call
-    // from localhost. They pass X-Internal-Service header with the service key.
-    var internalHeader = req.headers['x-internal-service'] || '';
-    var isLocalhost = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1'
-      || req.connection && (req.connection.remoteAddress === '127.0.0.1' || req.connection.remoteAddress === '::1' || req.connection.remoteAddress === '::ffff:127.0.0.1');
-    if (isLocalhost && internalHeader === 'a11-internal') {
-      req._zenGateUser = { email: 'system@funesterie.internal', id: 'system', internal: true };
-      return next();
-    }
-
+  // External requests use the verified A11 guard when provided. Internal calls
+  // are accepted separately only from loopback with a dedicated, sufficiently
+  // long environment secret compared in constant time.
+  const internalServiceKey = String(process.env.MCP_BRIDGE_INTERNAL_KEY || '');
+  const requireExternalAuth = options.requireAuth || function(req, res, next) {
     // Priority 1: Session-authenticated user (passport, cookie session)
     var sessionUser = req.user || (req.session && req.session.user);
     if (sessionUser && (sessionUser.email || sessionUser.id)) {
@@ -357,6 +367,17 @@ function mountBridgeRoutes(app, options = {}) {
 
     // No valid auth — fail closed
     return res.status(401).json({ error: 'Zen Gate: authentification requise (session ou JWT)' });
+  };
+
+  const requireAuth = function(req, res, next) {
+    if (isAuthorizedInternalRequest(req, internalServiceKey)) {
+      const serviceUser = { email: 'system@funesterie.internal', id: 'system', internal: true };
+      req.internalService = true;
+      req._zenGateUser = serviceUser;
+      req.user = req.user || serviceUser;
+      return next();
+    }
+    return requireExternalAuth(req, res, next);
   };
 
   // Health is public (used by NOSSEN page)
@@ -423,6 +444,9 @@ module.exports = {
   bridgeCallTool,
   bridgeHealth,
   discoverTools,
+  constantTimeSecretEqual,
+  isAuthorizedInternalRequest,
+  isLoopbackRequest,
   isToolAllowed,
   listBridgedTools,
   mountBridgeRoutes,

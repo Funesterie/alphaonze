@@ -7205,19 +7205,27 @@ console.log('[Server] NOSSEN clip pipeline mounted at /api/mcp-bridge/clip/{star
 const { mountUploadAudioRoute } = require('./src/clips/mount-upload-audio-route.cjs');
 mountUploadAudioRoute(app);
 
-// --- NOSSEN: Route /clips/:filename pour servir les clips vidéo depuis agent-bus ---
-const CLIPS_DIR = process.env.NOSSEN_CLIPS_DIR || '/app/runtime/clips';
-app.get('/clips/:filename', (req, res) => {
+// --- NOSSEN: Route /clips/:filename avec Sharingan Guard (anti-piracy + paywall) ---
+const { CLIPS_DIR } = require('./src/clips/clip-storage.cjs');
+const { createSharinganClipsGuard } = require('./src/clips/sharingan-clips-guard.cjs');
+const sharinganGuard = createSharinganClipsGuard({ clipsDir: CLIPS_DIR });
+app.get('/clips/:filename', sharinganGuard, (req, res) => {
   const decoded = decodeURIComponent(req.params.filename || '');
   if (!decoded || /[\/\\]/.test(decoded)) return res.status(400).json({ error: 'Invalid filename' });
   const ext = path.extname(decoded).toLowerCase();
   if (!['.mp4', '.webm', '.mkv'].includes(ext)) return res.status(403).json({ error: 'Unsupported format' });
+  // Try both clip directories (agent-bus for shared, runtime for local)
   const filePath = path.join(CLIPS_DIR, decoded);
+  const fallbackPath = path.join('/app/runtime/clips', decoded);
   res.sendFile(filePath, { root: '/' }, (err) => {
-    if (err && !res.headersSent) res.status(404).json({ error: 'Not found' });
+    if (err) {
+      res.sendFile(fallbackPath, { root: '/' }, (err2) => {
+        if (err2 && !res.headersSent) res.status(404).json({ error: 'Not found' });
+      });
+    }
   });
 });
-console.log('[Server] NOSSEN clips route mounted at /clips/:filename');
+console.log('[Server] NOSSEN clips route mounted at /clips/:filename (Sharingan Guard active)');
 
 const createDoubleHarmonicRouter = require('./src/routes/double-harmonic.cjs');
 app.use('/api/double-harmonic', createDoubleHarmonicRouter({ verifyJWT, db, runtimeRoot: PUBLIC_RUNTIME_ROOT }));

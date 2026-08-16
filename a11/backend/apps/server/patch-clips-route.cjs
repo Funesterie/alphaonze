@@ -11,7 +11,7 @@ if (code.includes('/clips/:filename')) {
 
 const CLIPS_ROUTE = `
 // --- NOSSEN: Route /clips/:filename avec Sharingan Guard ---
-const CLIPS_DIR_PATH = process.env.NOSSEN_CLIPS_DIR || '/agent-bus/clips';
+const { CLIPS_DIR: CLIPS_DIR_PATH } = require('./src/clips/clip-storage.cjs');
 const RIPPER_RE = [/yt-dlp/i,/youtube-dl/i,/wget/i,/aria2/i,/python-urllib/i,/scrapy/i,/ffmpeg/i,/streamripper/i,/headlesschrome/i,/phantomjs/i,/selenium/i];
 app.get('/clips/:filename', (req, res) => {
   const ua = req.headers['user-agent'] || '';

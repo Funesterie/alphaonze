@@ -14,18 +14,24 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 
-const CLIPS_DIR = '/agent-bus/clips';
+const { CLIPS_DIR } = require('./clip-storage.cjs');
+const { materializeClipMedia } = require('./clip-input.cjs');
 const BRIDGE_URL = 'http://127.0.0.1:3000/api/mcp-bridge/call';
 if (!fs.existsSync(CLIPS_DIR)) fs.mkdirSync(CLIPS_DIR, { recursive: true });
 
 function postJson(url, data) {
   return new Promise((resolve, reject) => {
+    const internalKey = String(process.env.MCP_BRIDGE_INTERNAL_KEY || '');
+    if (Buffer.byteLength(internalKey, 'utf8') < 32) {
+      reject(new Error('mcp_bridge_internal_key_missing_or_too_short'));
+      return;
+    }
     const body = JSON.stringify(data);
     const parsed = new URL(url);
     const mod = parsed.protocol === 'https:' ? https : http;
     const req = mod.request(parsed, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-internal-service': 'a11-internal', 'content-length': Buffer.byteLength(body) }
+      headers: { 'content-type': 'application/json', 'x-internal-service': internalKey, 'content-length': Buffer.byteLength(body) }
     }, (res) => {
       let chunks = [];
       res.on('data', c => chunks.push(c));
@@ -34,25 +40,6 @@ function postJson(url, data) {
     req.on('error', reject);
     req.write(body);
     req.end();
-  });
-}
-
-function downloadFile(url, dest) {
-  return new Promise((resolve, reject) => {
-    if (url.startsWith('/api/mcp-bridge/play-upload/')) { const f = '/app/runtime/uploads/' + url.split('/').pop(); try { fs.copyFileSync(f, dest); return resolve(dest); } catch (e) { return reject(e); } }
-    if (url.startsWith('/api/mcp-bridge/play/')) { const f = '/app/runtime/double-harmonic-d40/' + url.split('/').pop(); try { fs.copyFileSync(f, dest); return resolve(dest); } catch (e) { return reject(e); } }
-    if (url.startsWith('/api/vivy/studio/assets/')) { const f = '/app/runtime/vivy-studio-assets/' + url.split('/').pop(); if (fs.existsSync(f)) { try { fs.copyFileSync(f, dest); return resolve(dest); } catch(e){} } }
-    if (url.startsWith('/')) { try { fs.copyFileSync(url, dest); return resolve(dest); } catch (e) { /* try HTTP */ } }
-    const get = (u) => {
-      const parsed = new URL(u);
-      const mod = parsed.protocol === 'https:' ? https : http;
-      mod.get(u, (res) => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) return get(res.headers.location);
-        if (res.statusCode >= 400) return reject(new Error('HTTP ' + res.statusCode));
-        const ws = fs.createWriteStream(dest); res.pipe(ws); ws.on('finish', () => { ws.close(); resolve(dest); }); ws.on('error', reject);
-      }).on('error', reject);
-    };
-    get(url.startsWith('http') ? url : 'http://127.0.0.1:3000' + url);
   });
 }
 
@@ -171,7 +158,7 @@ async function generateClip(config) {
 
   // 1. Télécharger l'audio
   const audioPath = path.join(clipDir, 'audio.mp3');
-  await downloadFile(songUrl, audioPath);
+  await materializeClipMedia(songUrl, audioPath, { kind: 'audio' });
   console.log('[clip] Audio prêt');
 
   // 2. Mesurer la durée
@@ -225,7 +212,7 @@ async function generateClip(config) {
 
     if (videoUrl) {
       const dest = path.join(clipDir, `scene_${String(i).padStart(2, '0')}.mp4`);
-      await downloadFile(videoUrl, dest);
+      await materializeClipMedia(videoUrl, dest, { kind: 'video' });
       videoPaths.push(dest);
       console.log(`[clip] Vidéo ${i} prête (${videoPaths.length}/${numSegments})`);
     } else {
