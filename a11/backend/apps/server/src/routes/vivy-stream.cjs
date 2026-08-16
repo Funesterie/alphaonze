@@ -29,14 +29,27 @@ const MAX_SUGGESTIONS = 24;
 const MAX_PENDING_SUGGESTIONS = 24;
 const MAX_STARS = 120;
 const MAX_JUKEBOX_TRACKS = 80;
-// Plafond de la liste des morceaux. Il existe pour borner la taille de l'etat
-// persiste et de la page servie -- pas pour cacher des morceaux. A 120 il etait
-// devenu trop bas : le catalogue a depasse 120 morceaux tous valides, et le
-// `.slice(-MAX_LIVE_SONGS)` coupait le surplus, ce qui donnait l'impression que
-// les nouveaux disparaissaient. Releve a 800 (marge large) et rendu configurable
-// pour s'ajuster sans redeploiement. Chaque morceau public fait ~0,5 Ko une fois
-// les paroles retirees, donc 800 tient largement dans une reponse JSON.
-const MAX_LIVE_SONGS = Math.max(120, Number(process.env.VIVY_MAX_LIVE_SONGS) || 800);
+// Plafond de la liste des morceaux : 120, volontairement. Le vrai defaut n'etait
+// pas la valeur mais le DECOUPAGE. `.slice(-120)` garde les 120 DERNIERS DE LA
+// LISTE, ce qui n'est « les 120 plus recents » que si la liste est deja rangee
+// par date. Elle ne l'etait pas -- la migration avait insere les anciens en tete
+// -- donc on gardait 120 vieux et on jetait les nouveaux. La correction est le
+// tri par date AVANT la coupe (voir trierEtLimiterMorceaux), pas la hauteur du
+// plafond.
+const MAX_LIVE_SONGS = 120;
+
+/**
+ * Garde les N morceaux les plus RECENTS, par date, quel que soit l'ordre de la
+ * liste d'entree. Tri ascendant puis coupe par la fin : on conserve l'ordre
+ * chronologique (le plus vieux d'abord) que l'affichage inverse ensuite, tout en
+ * ne gardant que les plus recents.
+ */
+function trierEtLimiterMorceaux(liste, max = MAX_LIVE_SONGS) {
+  return (Array.isArray(liste) ? liste : [])
+    .slice()
+    .sort((a, b) => String(a?.createdAt || '').localeCompare(String(b?.createdAt || '')))
+    .slice(-max);
+}
 const MAX_STREAM_MESSAGE_CHARS = 2200;
 const MAX_STREAM_SUGGESTION_CHARS = 2000;
 const DEFAULT_ROUND_MS = 90 * 1000;
@@ -882,7 +895,7 @@ function createVivyStreamStore(options = {}) {
                 : [],
             },
             songs: Array.isArray(parsed.songs)
-              ? parsed.songs.map(normalizeJukeboxTrack).filter(Boolean).slice(-MAX_LIVE_SONGS)
+              ? trierEtLimiterMorceaux(parsed.songs.map(normalizeJukeboxTrack).filter(Boolean))
               : [],
             learning: { ...initial.learning, ...(parsed.learning || {}) },
             stats: { ...initial.stats, ...(parsed.stats || {}) },
@@ -1011,9 +1024,9 @@ function createVivyStreamStore(options = {}) {
     } else {
       songs.push(song);
     }
-    state.songs = songs
-      .filter((entry, index, list) => entry?.trackUrl && list.findIndex((candidate) => candidate.trackUrl === entry.trackUrl) === index)
-      .slice(-MAX_LIVE_SONGS);
+    state.songs = trierEtLimiterMorceaux(
+      songs.filter((entry, index, list) => entry?.trackUrl && list.findIndex((candidate) => candidate.trackUrl === entry.trackUrl) === index)
+    );
     return song;
   }
 
