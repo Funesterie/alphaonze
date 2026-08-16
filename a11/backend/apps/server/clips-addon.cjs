@@ -3,7 +3,7 @@
 // Load after server startup via: require('./clips-addon.cjs')(app)
 const path = require('path');
 
-const CLIPS_DIR = process.env.NOSSEN_CLIPS_DIR || '/agent-bus/clips';
+const CLIPS_DIR = process.env.NOSSEN_CLIPS_DIR || '/app/runtime/clips';
 const RIPPER_RE = [/yt-dlp/i, /youtube-dl/i, /wget/i, /aria2/i, /ffmpeg/i, /streamripper/i, /headlesschrome/i, /phantomjs/i, /selenium/i];
 
 module.exports = function mountClipsRoute(app) {
@@ -19,7 +19,7 @@ module.exports = function mountClipsRoute(app) {
     // Paywall: external hotlink without auth -> Stripe
     const ref = req.headers['referer'] || req.headers['origin'] || '';
     if (!req.internalService && !req.user && !(req.cookies || {}).session && !ref.includes('funesterie')) {
-      return res.redirect(302, process.env.NOSSEN_CLIP_CHECKOUT_URL || 'https://buy.stripe.com/aEU17k4OG9Kh4xi5kk');
+      return res.redirect(302, process.env.NOSSEN_CLIP_CHECKOUT_URL || 'https://checkout.stripe.com/pay/cs_live_a14rOvdZoDl6OYYaz0pK4pIbAjPbQyiN4n1vfvJSk6UFJaimfP7wUYNgm7');
     }
     // Serve clip
     const decoded = decodeURIComponent(req.params.filename || '');
