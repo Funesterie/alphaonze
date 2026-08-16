@@ -8,30 +8,62 @@
  */
 
 const path = require('path');
+const { CLIPS_DIR } = require('./clip-storage.cjs');
 const TROLL_VIDEO = 'sharingan_troll.mp4';
 
-// Bot/ripper patterns (youtube-dl, yt-dlp, wget recursive, curl bots, etc.)
+/**
+ * Outils dont l'unique raison d'etre ici est d'aspirer un flux video.
+ *
+ * CE QUI A ETE RETIRE, ET POURQUOI — chaque entree suivante renvoyait le troll a
+ * quelqu'un qu'on ne veut surtout pas troller :
+ *
+ *   discordbot, whatsapp, twitterbot, facebookexternalhit
+ *     Robots d'apercu de lien. Ils passent quand NOUS partageons un clip. Leur
+ *     servir le troll, c'est mettre le squelette en vignette de nos propres
+ *     partages.
+ *
+ *   googlebot, bingbot, applebot, baiduspider, yandexbot, duckduckbot
+ *     Moteurs de recherche. Leur servir autre chose qu'aux visiteurs porte un
+ *     nom -- cloaking -- et se paie en desindexation. A eviter en toute saison,
+ *     et particulierement pendant une verification Google en cours.
+ *
+ *   okhttp
+ *     Client HTTP standard d'Android : la moitie des applications du telephone.
+ *
+ *   java/N, go-http-client, node-fetch, httpclient, axios/0.
+ *     Bibliotheques generiques. Nos propres services les utilisent.
+ *
+ *   ffmpeg
+ *     Sert autant a voler qu'a lire. Notre propre chaine de montage l'appelle.
+ *
+ *   grab
+ *     Trop court : attrape « Instagram », entre autres.
+ *
+ * Ce qui reste ne se lance pas par accident.
+ */
 const RIPPER_PATTERNS = [
-  /yt-dlp/i, /youtube-dl/i, /wget/i, /aria2/i, /python-urllib/i,
-  /scrapy/i, /httpclient/i, /libcurl.*bot/i, /go-http-client/i,
-  /java\/\d/i, /okhttp/i, /axios\/0\./i, /node-fetch/i,
-  /ffmpeg/i, /streamripper/i, /grab/i, /telegrambot/i,
-  /discordbot/i, /facebookexternalhit/i, /twitterbot/i,
-  /whatsapp/i, /applebot/i, /bingbot/i, /googlebot/i,
-  /baiduspider/i, /yandexbot/i, /duckduckbot/i,
-  /headlesschrome/i, /phantomjs/i, /selenium/i
+  /yt-dlp/i, /youtube-dl/i, /streamripper/i,
+  /\bwget\b/i, /aria2/i, /scrapy/i, /python-urllib/i,
+  /phantomjs/i, /selenium/i, /headlesschrome/i
 ];
 
 function isRipper(req) {
   const ua = req.headers['user-agent'] || '';
-  // No user-agent at all = suspicious
-  if (!ua || ua.length < 5) return true;
-  // Known ripper patterns
+
+  // Un User-Agent absent n'est PAS une preuve. Certains lecteurs embarques et
+  // proxys d'entreprise n'en envoient pas, et l'en-tete se falsifie de toute
+  // facon en une ligne : celui qui vole en met un. Punir son absence ne coute
+  // qu'aux honnetes gens.
   if (RIPPER_PATTERNS.some(p => p.test(ua))) return true;
-  // Range abuse (downloading full file in chunks without referer)
-  const range = req.headers['range'];
-  const referer = req.headers['referer'] || req.headers['origin'] || '';
-  if (range && !referer && !req.headers['cookie']) return true;
+
+  // ANCIENNE REGLE SUPPRIMEE : « requete Range sans referer = aspiration ».
+  // Safari demande TOUJOURS des Range pour une balise <video>, et n'envoie pas
+  // de referer sous Referrer-Policy: no-referrer ni en navigation privee. La
+  // regle servait donc le troll a des utilisateurs iPhone qui avaient paye.
+  //
+  // Le telechargement massif se mesure au DEBIT, pas a un en-tete : plusieurs
+  // requetes Range disjointes sur le meme fichier depuis la meme IP en peu de
+  // temps. Tant que ce compteur n'existe pas, mieux vaut ne rien conclure.
   return false;
 }
 
@@ -42,12 +74,46 @@ function isRipper(req) {
  * @param {string} opts.stripeCheckoutUrl - Stripe payment link for clips (29.99€)
  * @param {string} opts.trollVideoPath - Full path to troll video (or null to use default in clipsDir)
  */
+/**
+ * Un lien de paiement, PAS une session.
+ *
+ * La valeur codee en dur ici etait `checkout.stripe.com/c/pay/cs_live_...`, donc
+ * une Checkout Session. Une session Stripe expire en 24 h : le lendemain, tout
+ * hotlinkeur etait redirige vers une page morte. Le piege avait l'air de
+ * fonctionner -- il redirigeait bien -- mais il n'encaissait plus rien, et rien
+ * ne le signalait.
+ *
+ * Un Payment Link (`buy.stripe.com/...`) est permanent et cree sa session a la
+ * volee a chaque visite. C'est le bon outil pour une redirection posee une fois
+ * et laissee en place. Le commentaire d'origine disait d'ailleurs « payment
+ * link » : c'est l'intention qui etait juste, pas la valeur.
+ */
+function estLienDePaiementValide(url = '') {
+  const u = String(url || '').trim();
+  if (!/^https:\/\/buy\.stripe\.com\/[A-Za-z0-9_-]+/.test(u)) return false;
+  // Une session deguisee en lien passerait le test ci-dessus si elle etait
+  // hebergee ailleurs; on refuse explicitement tout ce qui porte un cs_.
+  return !/\bcs_(live|test)_/.test(u);
+}
+
 function createSharinganClipsGuard(opts = {}) {
   const {
-    clipsDir = process.env.NOSSEN_CLIPS_DIR || '/agent-bus/clips',
-    stripeCheckoutUrl = process.env.NOSSEN_CLIP_CHECKOUT_URL || 'https://checkout.stripe.com/c/pay/cs_live_a14rOvdZoDl6OYYaz0pK4pIbAjPbQyiN4n1vfvJSk6UFJaimfP7wUYNgm7',
+    clipsDir = CLIPS_DIR,
+    stripeCheckoutUrl = process.env.NOSSEN_CLIP_CHECKOUT_URL || '',
     trollVideoPath = null
   } = opts;
+
+  const lienPaiement = estLienDePaiementValide(stripeCheckoutUrl) ? stripeCheckoutUrl : '';
+  if (!lienPaiement) {
+    // Bruyant au demarrage, une seule fois : un paywall muet qui laisse tout
+    // passer coute plus cher qu'une ligne rouge dans les logs.
+    console.warn(
+      '[Sharingan] NOSSEN_CLIP_CHECKOUT_URL absent ou invalide.'
+      + ' Attendu un Payment Link https://buy.stripe.com/... (permanent),'
+      + ' pas une Checkout Session cs_live_... (expire en 24 h).'
+      + ' Les hotlinks seront refuses en 402 au lieu d etre rediriges.'
+    );
+  }
 
   const trollPath = trollVideoPath || path.join(clipsDir, TROLL_VIDEO);
 
@@ -80,10 +146,23 @@ function createSharinganClipsGuard(opts = {}) {
       return next();
     }
 
-    // External hotlink without auth → redirect to Stripe
-    console.log(`[Sharingan] 💰 Paywall redirect: ${req.ip} → Stripe checkout`);
-    return res.redirect(302, stripeCheckoutUrl);
+    // Hotlink externe sans authentification → la caisse.
+    //
+    // Sans lien valide on REFUSE au lieu de rediriger. Envoyer vers une page de
+    // paiement morte, c'est offrir le clip a celui qui ferme l'onglet : il a le
+    // fichier des que la redirection echoue cote client. Un 402 ne rapporte
+    // rien non plus, mais il ne donne rien.
+    if (!lienPaiement) {
+      console.warn(`[Sharingan] Hotlink refuse (aucun lien de paiement configure): ${req.ip}`);
+      return res.status(402).json({
+        error: 'payment_required',
+        message: 'Ce clip appartient a NOSSEN. Ecoute-le sur funesterie.me.',
+      });
+    }
+
+    console.log(`[Sharingan] Paywall: ${req.ip} → lien de paiement`);
+    return res.redirect(302, lienPaiement);
   };
 }
 
-module.exports = { createSharinganClipsGuard, isRipper };
+module.exports = { createSharinganClipsGuard, isRipper, estLienDePaiementValide };
