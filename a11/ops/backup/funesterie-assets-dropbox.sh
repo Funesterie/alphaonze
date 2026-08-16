@@ -29,15 +29,32 @@
 #   ./funesterie-assets-dropbox.sh              simulation, rien n'est envoye
 #   ./funesterie-assets-dropbox.sh --confirm    envoi reel
 #
-# PREALABLE, A FAIRE UNE FOIS PAR DJEFF (le jeton ne doit passer par aucun chat) :
+# PREALABLE, A FAIRE UNE FOIS. Le jeton ne doit transiter par aucun chat, et avec
+# la methode ci-dessous il n'est meme jamais copie : il reste sur le serveur.
+#
+# Le probleme : rclone veut ouvrir un navigateur sur http://127.0.0.1:53682, et
+# le serveur n'en a pas. Lancer `rclone authorize` sur le serveur ne marche donc
+# pas -- le lien affiche pointe vers le localhost DU SERVEUR, injoignable depuis
+# le poste. Essaye le 16/08/2026, c'est ce qui a bloque.
+#
+# La solution est un tunnel SSH sur ce port precis :
+#
+#   ssh -i <cle> -o IdentitiesOnly=yes -L 53682:127.0.0.1:53682 deploy@<serveur>
 #   rclone config
 #     n) new remote        nom : dropbox
 #     Storage              dropbox
 #     client_id/secret     laisser vide
 #     Edit advanced        n
-#     Use auto config      N   <-- important : le serveur n'a pas de navigateur
-#   rclone affiche alors une commande a lancer SUR LE PC, qui ouvre le
-#   navigateur ; le jeton obtenu se colle dans l'invite du SERVEUR, pas ailleurs.
+#     Use auto config      Y   <-- OUI : le tunnel rend le localhost joignable
+#
+# rclone affiche alors un lien 127.0.0.1:53682 qui s'ouvre dans le navigateur DU
+# POSTE et ressort cote serveur. Dropbox renvoie le jeton directement a rclone,
+# qui l'ecrit lui-meme dans sa configuration.
+#
+# L'autre methode (auto config N, `rclone authorize` sur le poste) marche aussi,
+# mais exige rclone installe en local et fait transiter le jeton par un
+# copier-coller -- donc par le presse-papier, l'historique du terminal, et tout
+# ce qui les lit.
 
 set -euo pipefail
 
