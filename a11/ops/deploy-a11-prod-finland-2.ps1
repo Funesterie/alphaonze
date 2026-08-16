@@ -2850,6 +2850,14 @@ docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up
 # le 16/08/2026 -- alors que la prod n'attend rien de lui. On le demarre a part et
 # on tolere son echec : un service d'appoint ne doit pas bloquer la bascule.
 docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --build --force-recreate a11-ekko || echo "AVERTISSEMENT: a11-ekko (Alexa) non demarre, deploiement poursuivi"
+# On vide la couleur CIBLE avant de la reconstruire. En blue/green classique a
+# deux couleurs le probleme n'existe pas, mais la topologie quaternion garde les
+# quatre conteneurs vivants en permanence : la couleur qu'on redeploie a donc
+# deja un conteneur, et `--force-recreate` echoue en « name already in use »
+# quand ce conteneur n'est pas rattache au meme projet compose (constate le
+# 16/08/2026). On force sa suppression -- uniquement la cible, jamais l'active :
+# purple sert le trafic et n'est pas touche.
+docker rm -f "`$a11_service" "`$k44_service" 2>/dev/null || true
 docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --build --force-recreate "`$a11_service" "`$k44_service"
 echo "__BLUEGREEN_HEALTH__"
 for i in `$(seq 1 45); do
