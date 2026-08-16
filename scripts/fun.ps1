@@ -35,11 +35,18 @@ $SshBase = @('-i', $Cle, '-o', 'IdentitiesOnly=yes')
 # il n'est pas. On lit d'abord la couleur declaree par le deploiement; le repli
 # sur docker ps ne sert qu'a un premier demarrage, et il le dit.
 function Get-ConteneurActif {
+  # Le chemin est /home/deploy/a11-prod/bluegreen/active-color, PAS /srv/a11/...
+  # La premiere version visait /srv/a11 : ce fichier n'existe pas, donc la lecture
+  # echouait en silence et on retombait toujours sur le repli `docker ps | head -1`.
+  # Ca marchait par accident, et ca redonnait une couleur au hasard des que
+  # plusieurs conteneurs tournaient -- ce qui est desormais le cas des quatre.
   $script = @'
-if [ -s /srv/a11/bluegreen/active-color ]; then
-  c=$(cat /srv/a11/bluegreen/active-color | tr -d "[:space:]")
-  if docker ps --format "{{.Names}}" | grep -qx "a11-backend-$c"; then echo "a11-backend-$c"; exit 0; fi
-fi
+for f in /home/deploy/a11-prod/bluegreen/active-color /srv/a11/bluegreen/active-color; do
+  if [ -s "$f" ]; then
+    c=$(tr -d "[:space:]" < "$f")
+    if docker ps --format "{{.Names}}" | grep -qx "a11-backend-$c"; then echo "a11-backend-$c"; exit 0; fi
+  fi
+done
 docker ps --format "{{.Names}}" | grep -E "^a11-backend-(green|blue|yellow|purple)$" | head -1
 '@
   $nom = (& ssh @SshBase $Hote $script 2>$null | Out-String).Trim()
