@@ -9,9 +9,17 @@
  *
  * CE QUI NE SORT JAMAIS D'ICI
  *
- * Aucun `voiceId` Suno. Le catalogue a une vue publique exprès (describeVoiceCatalog,
- * masque + empreinte) et cette route s'y tient : un identifiant de persona est une
- * cle de generation chez un tiers, pas une donnee d'affichage.
+ * Aucun `voiceId` Suno. Le catalogue a une vue publique expres
+ * (describeVoiceCatalog, masque + empreinte) et cette route s'y tient : un
+ * identifiant de persona est une cle de generation chez un tiers, pas une donnee
+ * d'affichage.
+ *
+ * NE PAS REMPLACER PAR UN BOUCHON.
+ * Ce fichier a ete remplace le 16/08/2026 par une version qui repondait
+ * `{status:'ok', voices:[]}` en dur sur toutes les routes. Un bouchon qui rend
+ * 200 est pire qu'une route absente : la supervision le voit vert, l'interface
+ * affiche un casting vide, et personne ne cherche. Le garde anti-traversee de
+ * `resoudreAudio` etait parti avec.
  */
 
 const fs = require('node:fs');
@@ -29,7 +37,7 @@ const { teardownSong } = require('../clips/song-teardown.cjs');
  * `audioPath` vient du client. Sans cette borne, la route serait une primitive de
  * lecture de fichier arbitraire deguisee en lecteur de musique : il suffirait de
  * demander /etc/passwd pour que ffmpeg reponde s'il existe. On resout le chemin
- * puis on verifie qu'il est TOUJOURS sous la racine — comparer les chaines avant
+ * puis on verifie qu'il est TOUJOURS sous la racine -- comparer les chaines avant
  * resolution laisserait passer `../`.
  */
 function resoudreAudio(demande, env = process.env) {
@@ -46,7 +54,7 @@ function resoudreAudio(demande, env = process.env) {
  *
  * Best-effort assume : la presence RETROGRADE une voix, elle ne l'exclut pas
  * (voir auto-dj.cjs). Un bus injoignable doit donc rendre une liste vide et
- * laisser le DJ travailler, surtout pas lever une erreur — c'est precisement le
+ * laisser le DJ travailler, surtout pas lever une erreur -- c'est precisement le
  * scenario ou le casting entier se tairait.
  */
 function lirePresents(env = process.env) {
@@ -65,7 +73,7 @@ function lirePresents(env = process.env) {
 /**
  * Le casting : chaque voix du catalogue avec son profil mesure.
  *
- * Une voix sans echantillon n'a pas de profil — c'est le cas juste apres sa
+ * Une voix sans echantillon n'a pas de profil -- c'est le cas juste apres sa
  * creation, avant le rattrapage. Elle reste dans la liste avec `profil: null` :
  * auto-dj la place alors au centre de l'espace, donc elle chante quand meme.
  */
@@ -89,11 +97,11 @@ function construireCasting(env = process.env) {
 }
 
 /**
- * Cache de decoupage, clé sur taille + date du fichier.
+ * Cache de decoupage, cle sur taille + date du fichier.
  *
  * Un morceau du jukebox ne bouge pas : son decoupage se calcule une fois. Si le
- * fichier est remplace, la cle change et l'analyse repart — sans quoi on servirait
- * la structure de l'ancien mix sur le nouveau.
+ * fichier est remplace, la cle change et l'analyse repart -- sans quoi on
+ * servirait la structure de l'ancien mix sur le nouveau.
  */
 const teardownCache = new Map();
 const TEARDOWN_CACHE_MAX = 100;
@@ -139,12 +147,12 @@ function createAutoDjRouter({ verifyJWT, env = process.env } = {}) {
 
     try {
       // teardownSong est SYNCHRONE : il passe par spawnSync, qui bloque la boucle
-      // d'evenements entiere le temps de l'analyse ffmpeg — plusieurs secondes sur
+      // d'evenements entiere le temps de l'analyse ffmpeg -- plusieurs secondes sur
       // un morceau complet. Deux visiteurs simultanes suffiraient a figer le
       // serveur pour tout le monde, y compris les requetes qui n'ont rien a voir.
       //
       // Le cache rend ce cout non recurrent : un morceau du jukebox ne change pas,
-      // son decoupage non plus. Ce n'est PAS une solution complete — le tout
+      // son decoupage non plus. Ce n'est PAS une solution complete -- le tout
       // premier appel sur un titre bloque encore. Le jour ou cette route s'ouvre
       // au public, l'analyse doit passer en file d'attente (clip-jobs.cjs) au lieu
       // de repondre dans la requete.
