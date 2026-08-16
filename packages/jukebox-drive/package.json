@@ -1,0 +1,11 @@
+{
+  "name": "@nossen/jukebox-drive",
+  "version": "1.0.0",
+  "description": "ScentGate-style music streaming with queue, seeking, and catalog management",
+  "main": "index.cjs",
+  "files": ["index.cjs", "README.md"],
+  "keywords": ["jukebox", "streaming", "music", "queue", "audio", "funesterie"],
+  "author": "Jeffrey Cellauro <cellaurojeffrey@gmail.com>",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/jEFFLEZ/funesterie" }
+}

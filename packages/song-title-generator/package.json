@@ -1,0 +1,11 @@
+{
+  "name": "@nossen/song-title-generator",
+  "version": "1.0.0",
+  "description": "Generate song titles from audio content using Whisper STT + Ollama LLM",
+  "main": "index.cjs",
+  "files": ["index.cjs", "README.md"],
+  "keywords": ["whisper", "ollama", "stt", "title", "lyrics", "music", "ai", "funesterie"],
+  "author": "Jeffrey Cellauro <cellaurojeffrey@gmail.com>",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/jEFFLEZ/funesterie" }
+}

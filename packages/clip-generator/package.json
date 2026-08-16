@@ -1,0 +1,11 @@
+{
+  "name": "@nossen/clip-generator",
+  "version": "1.0.0",
+  "description": "Autonomous music video clip generator — Audio → AI scenes (Seedance/Flux) → FFmpeg assembly",
+  "main": "index.cjs",
+  "files": ["index.cjs", "README.md"],
+  "keywords": ["clip", "video", "music", "seedance", "flux", "ffmpeg", "ai", "funesterie", "vivy"],
+  "author": "Jeffrey Cellauro <cellaurojeffrey@gmail.com>",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/jEFFLEZ/funesterie" }
+}

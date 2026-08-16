@@ -1,0 +1,11 @@
+{
+  "name": "@nossen/discord-bot",
+  "version": "1.0.0",
+  "description": "NOSSEN Discord bot — Clip production via slash commands with Ed25519 signature verification",
+  "main": "index.cjs",
+  "files": ["index.cjs", "README.md"],
+  "keywords": ["discord", "bot", "nossen", "clip", "slash-commands", "ed25519", "funesterie"],
+  "author": "Jeffrey Cellauro <cellaurojeffrey@gmail.com>",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/jEFFLEZ/funesterie" }
+}
