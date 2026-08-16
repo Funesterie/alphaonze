@@ -29,7 +29,14 @@ const MAX_SUGGESTIONS = 24;
 const MAX_PENDING_SUGGESTIONS = 24;
 const MAX_STARS = 120;
 const MAX_JUKEBOX_TRACKS = 80;
-const MAX_LIVE_SONGS = 120;
+// Plafond de la liste des morceaux. Il existe pour borner la taille de l'etat
+// persiste et de la page servie -- pas pour cacher des morceaux. A 120 il etait
+// devenu trop bas : le catalogue a depasse 120 morceaux tous valides, et le
+// `.slice(-MAX_LIVE_SONGS)` coupait le surplus, ce qui donnait l'impression que
+// les nouveaux disparaissaient. Releve a 800 (marge large) et rendu configurable
+// pour s'ajuster sans redeploiement. Chaque morceau public fait ~0,5 Ko une fois
+// les paroles retirees, donc 800 tient largement dans une reponse JSON.
+const MAX_LIVE_SONGS = Math.max(120, Number(process.env.VIVY_MAX_LIVE_SONGS) || 800);
 const MAX_STREAM_MESSAGE_CHARS = 2200;
 const MAX_STREAM_SUGGESTION_CHARS = 2000;
 const DEFAULT_ROUND_MS = 90 * 1000;
