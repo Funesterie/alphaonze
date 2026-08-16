@@ -8,13 +8,67 @@ param(
   [switch]$SkipSourceUpdate,
   [string]$ReleaseStamp = "",
   [switch]$ReuseRemoteArchive,
-  [switch]$SkipRuntimeAssetSync
+  [switch]$SkipRuntimeAssetSync,
+  # Autorise un deploiement depuis une copie autre que D:\projets\funesterie.
+  # A n'utiliser que sciemment : voir le garde-fou plus bas.
+  [switch]$AllowForeignRepo,
+  # Etend la bascule a QUATRE couleurs au lieu de deux (voir « Topologie
+  # quaternion » plus bas). S'utilise avec -BlueGreen, qu'il remplace en pratique.
+  [switch]$Quaternion
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
+
+# --- Une seule source de verite ---
+#
+# Il existe plusieurs copies de ce depot sur cette machine (E:\ notamment). La
+# copie canonique est D:\projets\funesterie : c'est celle ou le travail se fait.
+#
+# Le 15/08/2026, la production a tourne pendant des heures avec un server.cjs
+# anterieur de sept heures a la copie canonique, tout en embarquant un
+# packages/mcp-bridge-tunnel recent. Trois routes NOSSEN repondaient 404
+# (/api/nossen/my-songs, /api/mcp-bridge/health, /api/mcp-bridge/clip/list) et
+# les clips avaient l'air voles. La copie source etait simplement la mauvaise.
+#
+# Rien ne le signalait : robocopy /MIR a fidelement recopie une copie perimee, et
+# A11_BUILD_COMMIT -- lu par `git rev-parse HEAD` juste en dessous -- a estampille
+# l'image avec le commit de CE depot-la. Le controle post-deploiement compare
+# ensuite cette variable a elle-meme, donc il valide toujours.
+#
+# D'ou ce refus. Deployer depuis une autre copie reste possible, mais doit etre
+# un geste explicite : -AllowForeignRepo, ecrit a la main, une fois.
+
+$CanonicalRepoRoot = "D:\projets\funesterie"
+if (-not $AllowForeignRepo) {
+  $canonical = $null
+  try { $canonical = (Resolve-Path -LiteralPath $CanonicalRepoRoot -ErrorAction Stop).Path } catch { }
+  if ($canonical -and $RepoRoot -ne $canonical) {
+    Write-Host ""
+    Write-Host "REFUS : deploiement demande depuis une copie non canonique." -ForegroundColor Red
+    Write-Host "  demande  : $RepoRoot"
+    Write-Host "  canonique: $canonical"
+    Write-Host ""
+    Write-Host "Une copie perimee se deploie sans bruit et s'estampille avec son propre" -ForegroundColor Yellow
+    Write-Host "commit, donc le controle post-deploiement la valide quand meme." -ForegroundColor Yellow
+    Write-Host "Si c'est voulu, relancer avec -AllowForeignRepo." -ForegroundColor Yellow
+    throw "Depot non canonique : $RepoRoot"
+  }
+}
+
+# Ce que git raconte n'est pas ce qui part : robocopy copie l'ARBRE DE TRAVAIL.
+# Un fichier modifie mais non commite part en production; un fichier commite mais
+# absent du disque n'y va pas. On l'affiche pour que l'ecart soit visible AVANT
+# le build, et non decouvert dans les logs trois heures plus tard.
+$dirty = & git -C $RepoRoot status --porcelain 2>$null
+if ($LASTEXITCODE -eq 0 -and $dirty) {
+  $n = @($dirty -split "`n" | Where-Object { $_.Trim() }).Count
+  Write-Host "Arbre de travail non propre : $n fichier(s). C'est CET etat qui part en prod," -ForegroundColor Yellow
+  Write-Host "pas le commit annonce par A11_BUILD_COMMIT." -ForegroundColor Yellow
+}
+
 $A11Root = Join-Path $RepoRoot "a11"
 $ServerRoot = Join-Path $A11Root "backend\apps\server"
 $VoiceRoot = Join-Path $A11Root "backend\apps\voice-module"
@@ -465,6 +519,41 @@ function Send-FileViaSsh {
   }
 }
 
+# --- Topologie quaternion : w + xi + yj + zk ---
+#
+# Quatre couleurs au lieu de deux. La ligne `reverse_proxy` de Caddy porte
+# `lb_policy first` : tout part au PREMIER upstream, les suivants ne servent que
+# si celui-ci echoue son health check. Une liste ordonnee est donc exactement la
+# structure d'un quaternion :
+#
+#   w  la couleur vivante        premiere de la liste, elle prend tout le trafic
+#   x  le repli immediat         prend la main si w tombe
+#   y  le repli suivant
+#   z  la prochaine a etre ecrasee par le deploiement
+#
+# Deployer fait tourner la liste d'un cran. La version qu'on vient de poser passe
+# en tete, l'ancienne vivante devient le repli immediat, et la plus ancienne des
+# quatre est celle qu'on ecrase au tour suivant. On garde donc TROIS versions de
+# repli au lieu d'une, sans rien couter : chaque backend pese 115 Mo sur une
+# machine qui en a 56 Go de libres.
+#
+# L'ordre est fixe, jamais aleatoire : un rollback doit etre previsible.
+$CouleursQuaternion = @("green", "blue", "yellow", "purple")
+
+function Get-ProchaineCouleur($active, $couleurs) {
+  $i = [array]::IndexOf($couleurs, $active)
+  # Couleur active inconnue (premier deploiement, ou fichier active-color perdu) :
+  # on repart de la premiere de la liste plutot que de deviner.
+  if ($i -lt 0) { return $couleurs[0] }
+  return $couleurs[($i + 1) % $couleurs.Count]
+}
+
+function Get-OrdreDepuis($tete, $couleurs) {
+  $i = [array]::IndexOf($couleurs, $tete)
+  if ($i -lt 0) { return $couleurs }
+  return @(0..($couleurs.Count - 1) | ForEach-Object { $couleurs[($i + $_) % $couleurs.Count] })
+}
+
 $ActiveBlueGreenColor = "none"
 $DeployBlueGreenColor = "blue"
 if ($BlueGreen) {
@@ -488,15 +577,25 @@ fi
     throw "Lecture couleur blue/green distante echouee"
   }
   $ActiveBlueGreenColor = (($remoteColor | Select-Object -First 1).ToString().Trim().ToLowerInvariant())
-  if ($ActiveBlueGreenColor -eq "blue") {
-    $DeployBlueGreenColor = "green"
-  } elseif ($ActiveBlueGreenColor -eq "green") {
-    $DeployBlueGreenColor = "blue"
+
+  if ($Quaternion) {
+    if ($ActiveBlueGreenColor -notin $CouleursQuaternion) { $ActiveBlueGreenColor = "none" }
+    $DeployBlueGreenColor = Get-ProchaineCouleur $ActiveBlueGreenColor $CouleursQuaternion
+    $ordre = Get-OrdreDepuis $DeployBlueGreenColor $CouleursQuaternion
+    Write-Host "Mode quaternion: actif=$ActiveBlueGreenColor, prochain=$DeployBlueGreenColor." -ForegroundColor Cyan
+    Write-Host "  ordre apres bascule : w=$($ordre[0])  x=$($ordre[1])  y=$($ordre[2])  z=$($ordre[3])" -ForegroundColor DarkCyan
+    Write-Host "  w prend tout le trafic, x/y/z sont des replis ordonnes." -ForegroundColor DarkCyan
   } else {
-    $ActiveBlueGreenColor = "none"
-    $DeployBlueGreenColor = "blue"
+    if ($ActiveBlueGreenColor -eq "blue") {
+      $DeployBlueGreenColor = "green"
+    } elseif ($ActiveBlueGreenColor -eq "green") {
+      $DeployBlueGreenColor = "blue"
+    } else {
+      $ActiveBlueGreenColor = "none"
+      $DeployBlueGreenColor = "blue"
+    }
+    Write-Host "Mode blue/green: actif=$ActiveBlueGreenColor, prochain=$DeployBlueGreenColor." -ForegroundColor Cyan
   }
-  Write-Host "Mode blue/green: actif=$ActiveBlueGreenColor, prochain=$DeployBlueGreenColor." -ForegroundColor Cyan
 }
 
 function Read-RemoteEnvValue([string]$Key) {
@@ -850,6 +949,12 @@ services:
       JUKEBOX_ENTRA_DRIVE_ID: ${JUKEBOX_ENTRA_DRIVE_ID:-b!zlNXuijyrEiWLsIQWGRe-S-n87CVNF5MulhRkdLzzcsVdEylKhrDQZ7oMFgaX2xk}
       JUKEBOX_K44_DRIVE_ID: ${JUKEBOX_K44_DRIVE_ID:-}
       VIVY_NOSSEN_EMERGENCY_SONGCRAFT: ${VIVY_NOSSEN_EMERGENCY_SONGCRAFT:-true}
+      # Payment Link Stripe du paywall clips. URL PUBLIQUE, pas un secret : elle
+      # vit donc ici et non dans compose.env, ce qui la fait suivre meme avec
+      # -ReuseRemoteSecrets. Doit etre un lien buy.stripe.com (permanent) et
+      # jamais une Checkout Session cs_live_ (qui expire en 24 h) : le garde
+      # refuse explicitement les sessions depuis le 16/08/2026.
+      NOSSEN_CLIP_CHECKOUT_URL: ${NOSSEN_CLIP_CHECKOUT_URL:-https://buy.stripe.com/4gMfZh2Ya1zO4Bl5ec7Re06}
       VIVY_ACESTEP_LYRICS_MAX_CHARS: ${VIVY_ACESTEP_LYRICS_MAX_CHARS:-24000}
       ACESTEP_DIFFUSION_MODEL: ${ACESTEP_DIFFUSION_MODEL:-acestep_v1.5_turbo.safetensors}
       ACESTEP_TEXT_ENCODER_1: ${ACESTEP_TEXT_ENCODER_1:-qwen_0.6b_ace15.safetensors}
@@ -1194,6 +1299,12 @@ services:
       JUKEBOX_ENTRA_DRIVE_ID: ${JUKEBOX_ENTRA_DRIVE_ID:-b!zlNXuijyrEiWLsIQWGRe-S-n87CVNF5MulhRkdLzzcsVdEylKhrDQZ7oMFgaX2xk}
       JUKEBOX_K44_DRIVE_ID: ${JUKEBOX_K44_DRIVE_ID:-}
       VIVY_NOSSEN_EMERGENCY_SONGCRAFT: ${VIVY_NOSSEN_EMERGENCY_SONGCRAFT:-true}
+      # Payment Link Stripe du paywall clips. URL PUBLIQUE, pas un secret : elle
+      # vit donc ici et non dans compose.env, ce qui la fait suivre meme avec
+      # -ReuseRemoteSecrets. Doit etre un lien buy.stripe.com (permanent) et
+      # jamais une Checkout Session cs_live_ (qui expire en 24 h) : le garde
+      # refuse explicitement les sessions depuis le 16/08/2026.
+      NOSSEN_CLIP_CHECKOUT_URL: ${NOSSEN_CLIP_CHECKOUT_URL:-https://buy.stripe.com/4gMfZh2Ya1zO4Bl5ec7Re06}
       VIVY_ACESTEP_LYRICS_MAX_CHARS: ${VIVY_ACESTEP_LYRICS_MAX_CHARS:-24000}
       ACESTEP_DIFFUSION_MODEL: ${ACESTEP_DIFFUSION_MODEL:-acestep_v1.5_turbo.safetensors}
       ACESTEP_TEXT_ENCODER_1: ${ACESTEP_TEXT_ENCODER_1:-qwen_0.6b_ace15.safetensors}
@@ -1366,7 +1477,25 @@ $caddyKaen44BackendService = $Kaen44BackendService
 $caddyA11Upstreams = "${caddyA11BackendService}:3000"
 $caddyKaen44Upstreams = "${caddyKaen44BackendService}:3001"
 $caddyFallbackBlock = ""
-if ($BlueGreen -and $ActiveBlueGreenColor -in @("blue", "green")) {
+if ($Quaternion) {
+  # La liste ordonnee EST le quaternion. `lb_policy first` envoie tout au premier
+  # et ne descend qu'en cas d'echec du health check : la couleur qu'on vient de
+  # deployer passe en tete, les trois autres deviennent des replis ordonnes.
+  #
+  # Les quatre sont listees, donc aucune n'est orpheline. C'etait le defaut de
+  # l'ancienne configuration : yellow tournait depuis huit jours sans apparaitre
+  # ici, donc sans jamais pouvoir reprendre la main.
+  $ordreCaddy = Get-OrdreDepuis $DeployBlueGreenColor $CouleursQuaternion
+  $caddyA11Upstreams = (($ordreCaddy | ForEach-Object { "a11-backend-${_}:3000" }) -join " ")
+  $caddyKaen44Upstreams = (($ordreCaddy | ForEach-Object { "kaen44-backend-${_}:3001" }) -join " ")
+  $caddyFallbackBlock = @"
+
+    lb_policy first
+    health_uri /health
+    health_interval 10s
+    health_timeout 3s
+"@
+} elseif ($BlueGreen -and $ActiveBlueGreenColor -in @("blue", "green")) {
   $caddyA11Upstreams = "${caddyA11BackendService}:3000 a11-backend-${ActiveBlueGreenColor}:3000"
   $caddyKaen44Upstreams = "${caddyKaen44BackendService}:3001 kaen44-backend-${ActiveBlueGreenColor}:3001"
   $caddyFallbackBlock = @"
