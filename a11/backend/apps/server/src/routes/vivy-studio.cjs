@@ -11438,6 +11438,56 @@ function isAllowedVivyRemoteInstrumentalUrl(value = '') {
   }
 }
 
+/**
+ * Suno sert le fichier final DERRIERE une redirection : l'URL de depart est bien
+ * sur un host de confiance (verifie par isAllowedVivyRemoteInstrumentalUrl), mais
+ * elle renvoie un 30x vers un CDN dont le host change et n'est pas listable a
+ * l'avance. Exiger que la CIBLE soit dans la meme allowlist que la SOURCE cassait
+ * toute la materialisation : depuis que Suno a bascule son hebergement (~28/07/2026)
+ * chaque nouvelle generation gardait l'URL provider et se figeait -- liste bloquee
+ * au 28/07, clips qui echouent. On suit donc la redirection en ne gardant QUE la
+ * detection d'origine (sur la source), avec un garde SSRF minimal sur la cible :
+ * https public uniquement, jamais une adresse interne/privee -- au cas ou un host
+ * de confiance serait un jour detourne pour pointer vers le reseau interne.
+ */
+function isPrivateOrReservedHost(host = '') {
+  const h = String(host || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
+  if (!h) return true;
+  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal')) return true;
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
+  if (v4) {
+    const o = v4.slice(1).map(Number);
+    if (o.some((n) => n > 255)) return true;
+    const [a, b] = o;
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;
+    return false;
+  }
+  if (h.includes(':')) { // litteral IPv6
+    if (h === '::1' || h === '::') return true;
+    if (h.startsWith('fe80') || h.startsWith('fc') || h.startsWith('fd')) return true;
+    if (h.includes('127.0.0.1') || h.includes('169.254')) return true;
+    return false;
+  }
+  return false;
+}
+
+function isSafeVivyRedirectTarget(value = '') {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) return false;
+    // Un host Suno explicitement connu passe toujours.
+    if (isAllowedVivyRemoteInstrumentalUrl(value)) return true;
+    // Sinon : n'importe quel CDN public en https, mais jamais une cible interne.
+    return !isPrivateOrReservedHost(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 async function readVivyRemoteAudioBuffer(response, maxBytes) {
   const contentLength = Number(response?.headers?.get?.('content-length') || 0);
   if (contentLength > maxBytes) throw new Error('vivy_preview_remote_source_too_large');
@@ -11477,7 +11527,7 @@ async function materializeVivyPreviewInstrumentalPath(value = '', options = {}) 
   const timeoutMs = Math.max(1000, Number(options.fetchTimeoutMs || options.timeoutMs || process.env.VIVY_PREVIEW_REMOTE_TIMEOUT_MS || 45000));
   let currentUrl = String(value || '').trim();
   let response = null;
-  for (let redirectCount = 0; redirectCount <= 2; redirectCount += 1) {
+  for (let redirectCount = 0; redirectCount <= 5; redirectCount += 1) {
     response = await fetchImpl(currentUrl, {
       method: 'GET',
       redirect: 'manual',
@@ -11486,7 +11536,9 @@ async function materializeVivyPreviewInstrumentalPath(value = '', options = {}) 
     if (![301, 302, 303, 307, 308].includes(Number(response?.status))) break;
     const location = response?.headers?.get?.('location');
     const nextUrl = location ? new URL(location, currentUrl).toString() : '';
-    if (!nextUrl || !isAllowedVivyRemoteInstrumentalUrl(nextUrl)) {
+    // La SOURCE est deja validee comme host Suno de confiance ; ici on ne bloque
+    // que les cibles dangereuses (non-https, interne/privee), pas les CDN publics.
+    if (!nextUrl || !isSafeVivyRedirectTarget(nextUrl)) {
       const error = new Error('vivy_preview_remote_redirect_denied');
       error.status = 400;
       throw error;
@@ -13181,6 +13233,9 @@ module.exports = {
   buildVivySunoPayload,
   buildVivySunoLocalizingJob,
   requiresLocalVivySunoAudio,
+  isAllowedVivyRemoteInstrumentalUrl,
+  isSafeVivyRedirectTarget,
+  isPrivateOrReservedHost,
   clampVivySunoLyricsLength,
   buildVivyMurekaPayload,
   buildVivyAceStepCastDirection,
