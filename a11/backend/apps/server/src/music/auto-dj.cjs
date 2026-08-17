@@ -178,6 +178,51 @@ function estEligible(voix = {}) {
 }
 
 /**
+ * Le cast Funesterie : les voix qui SONT des personas, par opposition aux anciennes
+ * voix d'echantillon du catalogue. Une persona n'a pas de champ dedie dans le
+ * catalogue, elle se reconnait a son nom (meme source que persona-canary.cjs). Le
+ * mode persona-only du DJ s'appuie la-dessus, sans jamais supprimer une entree :
+ * une ancienne voix reste dans le catalogue, elle est seulement ecartee du choix.
+ */
+const CAST_PERSONAS = new Set(['vivy', 'vivi', 'djeff', 'a11', 'alphaonze', 'kaen44', 'kaen', 'k44', 'marvin', 'nossen']);
+
+function estPersona(voix = {}, cast = CAST_PERSONAS) {
+  const noms = [voix?.name, voix?.label, ...(Array.isArray(voix?.aliases) ? voix.aliases : [])]
+    .map((n) => String(n || '').trim().toLowerCase())
+    .filter(Boolean);
+  return noms.some((n) => cast.has(n));
+}
+
+/** Hash 32 bits d'une chaine (FNV-1a) pour transformer une graine texte en nombre. */
+function hashChaine(s = '') {
+  let h = 2166136261;
+  const str = String(s);
+  for (let i = 0; i < str.length; i += 1) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/**
+ * PRNG deterministe (mulberry32) a partir d'une graine.
+ *
+ * Le DJ aleatoire doit rester REJOUABLE : meme graine, meme suite de voix. Sinon on
+ * ne peut ni tester, ni relire pourquoi un round a sonne comme il a sonne. On evite
+ * donc Math.random et on derive tout d'une graine (l'id du morceau, par defaut).
+ */
+function prngDepuis(graine) {
+  let a = typeof graine === 'number' ? (graine >>> 0) : hashChaine(graine ?? '');
+  return function suivant() {
+    a |= 0;
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
  * La faim : combien de sections cette voix a laisse passer.
  *
  * Plafonnee, sinon une voix jamais choisie finirait par gagner contre n'importe
@@ -196,13 +241,25 @@ function faim(nom, historique = [], sectionsTotal = 1) {
  * `voix` : entrees de voice-catalog.cjs enrichies d'un `profil` mesure.
  * `presents` : noms vus vivants sur le bus (agent-presence). Facultatif.
  */
-function choisirVoix({ sections = [], voix = [], presents = [] } = {}) {
-  const eligibles = [];
+function choisirVoix({ sections = [], voix = [], presents = [], mode = 'timbre', graine = 0, personasSeulement = false } = {}) {
+  let eligibles = [];
   const ecartees = [];
   for (const v of voix) {
     const verdict = estEligible(v);
     if (verdict.ok) eligibles.push(v);
     else ecartees.push({ name: v?.name || '(sans nom)', raison: verdict.raison });
+  }
+
+  // « On garde que les personas » : on ecarte les anciennes voix d'echantillon du
+  // CHOIX, sans les retirer du catalogue (reversible). Un simple filtre, pas une
+  // suppression : une voix hors cast reste rangee, elle n'est juste plus tiree.
+  if (personasSeulement) {
+    const gardees = [];
+    for (const v of eligibles) {
+      if (estPersona(v)) gardees.push(v);
+      else ecartees.push({ name: v?.name || '(sans nom)', raison: 'voix-hors-persona' });
+    }
+    eligibles = gardees;
   }
 
   if (!eligibles.length) {
@@ -219,25 +276,40 @@ function choisirVoix({ sections = [], voix = [], presents = [] } = {}) {
   const presentSet = new Set(presents.map((p) => String(p || '').toLowerCase()));
   const historique = [];
   const choix = [];
+  const rng = mode === 'aleatoire' ? prngDepuis(graine) : null;
 
   sections.forEach((section, index) => {
-    const cible = rotation(quaternionDeSection(section), rotationDeSection(index, sections.length));
     const precedent = historique[historique.length - 1];
+    let gagnante;
+    let marge = null;
 
-    const notes = eligibles.map((v) => {
-      const ecart = distance(cible, quaternionDeVoix(v.profil || {}));
-      const bonusFaim = faim(v.name, historique, sections.length);
+    if (mode === 'aleatoire') {
+      // Rotation aleatoire mais REJOUABLE (graine) et polie : jamais deux fois
+      // d'affilee tant qu'il reste quelqu'un d'autre. Pas de mesure de timbre ici,
+      // on assume le tirage — c'est le mode « surprise » demande.
+      const pool = eligibles.length > 1 ? eligibles.filter((v) => v.name !== precedent) : eligibles;
+      const v = pool[Math.floor(rng() * pool.length)] || pool[0];
       const absent = presentSet.size > 0 && !presentSet.has(String(v.name).toLowerCase());
-      // Un ecart PLUS PETIT est meilleur : la faim se soustrait, l'absence s'ajoute.
-      const score = ecart - bonusFaim + (absent ? MALUS_ABSENCE : 0);
-      return { voix: v, ecart, bonusFaim, absent, score };
-    });
-
-    // Regle 1 : jamais deux fois d'affilee. On ne l'applique que s'il reste
-    // quelqu'un d'autre — a une seule voix eligible, se taire serait pire.
-    const ouvertes = notes.length > 1 ? notes.filter((n) => n.voix.name !== precedent) : notes;
-    ouvertes.sort((a, b) => a.score - b.score || a.voix.name.localeCompare(b.voix.name));
-    const gagnante = ouvertes[0];
+      gagnante = { voix: v, ecart: null, bonusFaim: 0, absent };
+    } else {
+      const cible = rotation(quaternionDeSection(section), rotationDeSection(index, sections.length));
+      const notes = eligibles.map((v) => {
+        const ecart = distance(cible, quaternionDeVoix(v.profil || {}));
+        const bonusFaim = faim(v.name, historique, sections.length);
+        const absent = presentSet.size > 0 && !presentSet.has(String(v.name).toLowerCase());
+        // Un ecart PLUS PETIT est meilleur : la faim se soustrait, l'absence s'ajoute.
+        const score = ecart - bonusFaim + (absent ? MALUS_ABSENCE : 0);
+        return { voix: v, ecart, bonusFaim, absent, score };
+      });
+      // Regle 1 : jamais deux fois d'affilee. On ne l'applique que s'il reste
+      // quelqu'un d'autre — a une seule voix eligible, se taire serait pire.
+      const ouvertes = notes.length > 1 ? notes.filter((n) => n.voix.name !== precedent) : notes;
+      ouvertes.sort((a, b) => a.score - b.score || a.voix.name.localeCompare(b.voix.name));
+      gagnante = ouvertes[0];
+      // De quel ecart la deuxieme etait-elle derriere ? Un ecart minuscule veut dire
+      // que le choix s'est joue sur la faim, pas sur le timbre : lisible en relecture.
+      marge = ouvertes[1] ? Number((ouvertes[1].score - gagnante.score).toFixed(4)) : null;
+    }
 
     historique.push(gagnante.voix.name);
     choix.push({
@@ -247,18 +319,17 @@ function choisirVoix({ sections = [], voix = [], presents = [] } = {}) {
       label: section.label || '',
       voix: gagnante.voix.name,
       libelle: gagnante.voix.label || gagnante.voix.name,
-      ecart: Number(gagnante.ecart.toFixed(4)),
-      faim: Number(gagnante.bonusFaim.toFixed(4)),
+      ecart: gagnante.ecart == null ? null : Number(gagnante.ecart.toFixed(4)),
+      faim: Number((gagnante.bonusFaim || 0).toFixed(4)),
       absente: gagnante.absent,
-      // De quel ecart la deuxieme etait-elle derriere ? Un ecart minuscule veut
-      // dire que le choix s'est joue sur la faim, pas sur le timbre : c'est
-      // exactement ce qu'on veut pouvoir relire quand un choix surprend.
-      marge: ouvertes[1] ? Number((ouvertes[1].score - gagnante.score).toFixed(4)) : null,
+      marge,
     });
   });
 
   return {
     schema: PROFILE_SCHEMA,
+    mode: mode === 'aleatoire' ? 'aleatoire' : 'timbre',
+    personasSeulement: Boolean(personasSeulement),
     sections: sections.length,
     eligibles: eligibles.length,
     ecartees,
@@ -284,4 +355,8 @@ module.exports = {
   estEligible,
   faim,
   choisirVoix,
+  CAST_PERSONAS,
+  estPersona,
+  hashChaine,
+  prngDepuis,
 };

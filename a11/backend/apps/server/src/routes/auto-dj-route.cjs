@@ -165,7 +165,24 @@ function createAutoDjRouter({ verifyJWT, env = process.env } = {}) {
         active: true, idHash: c.name, profil: c.profil || {},
       }));
 
-      const plan = choisirVoix({ sections: teardown.sections, voix, presents: lirePresents(env) });
+      // Mode pilotable par la requete, avec defauts d'environnement pour un reglage
+      // global : AUTO_DJ_MODE=aleatoire (mode surprise) et AUTO_DJ_PERSONAS_ONLY=1
+      // (« on garde que les personas »). La graine derive du morceau -> meme titre,
+      // meme suite de voix, rejouable.
+      const modeDemande = String(req.body?.mode || env.AUTO_DJ_MODE || 'timbre').trim().toLowerCase();
+      const mode = modeDemande === 'aleatoire' || modeDemande === 'random' ? 'aleatoire' : 'timbre';
+      const personasSeulement = req.body?.personasSeulement != null
+        ? Boolean(req.body.personasSeulement)
+        : ['1', 'true', 'on', 'yes'].includes(String(env.AUTO_DJ_PERSONAS_ONLY || '').trim().toLowerCase());
+
+      const plan = choisirVoix({
+        sections: teardown.sections,
+        voix,
+        presents: lirePresents(env),
+        mode,
+        graine: demande,
+        personasSeulement,
+      });
       res.json({ ok: true, teardown, plan });
     } catch (error) {
       res.status(500).json({ ok: false, error: 'plan_impossible', detail: String(error?.message || error) });
