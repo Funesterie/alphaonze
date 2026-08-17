@@ -3962,7 +3962,7 @@ function getVivyStudioVoiceProfile(input = {}) {
         `${label}: voix autorisée du catalogue Funesterie pour preview et chanson.`,
         'Ne pas imiter de célébrité, ne pas exposer la référence brute, garder les tags de chanteurs demandés.',
       ],
-      sunoStyle: `French original vocal production with authorized custom voice direction ${label}, structured rhymed lyrics, melodic chorus, no spoken narration`,
+      sunoStyle: 'French original vocal production, authorized original custom vocal, structured rhymed lyrics, melodic chorus, no spoken narration',
       musicLead: `Original Funesterie song using authorized voice catalog reference ${label}, in French.`,
       musicMood: `Authorized catalog voice ${label}; original voice only, consented song use.`,
     };
@@ -5457,13 +5457,20 @@ function stripCastTimbreForCatalogVoice(style = '', catalogLabel = '', gender = 
       return true;
     });
 
-  const label = cleanOneLine(catalogLabel, 'la voix du catalogue', 60);
   const genreDirection = gender === 'homme'
     ? 'male lead vocal'
     : gender === 'femme'
       ? 'female lead vocal'
       : '';
-  kept.push(`authorized custom voice direction ${label}`);
+  // NE PAS renommer la persona dans le style. Suno scanne le champ `style` et rejette
+  // (HTTP 403, « Our models do not recognize artists' names ») tout ce qui ressemble a
+  // un nom d'artiste -- et « Djeff » est aussi un vrai DJ house. C'est ce nom, reinjecte
+  // ici alors qu'on venait justement de le retirer des fragments (performerNames), qui
+  // faisait echouer la generation. La voix est deja portee par `personaId` ; le
+  // consentement / l'anti-copie passent par les negativeTags (« celebrity voice
+  // imitation », « copyrighted melody »). On garde donc l'intention d'autorisation
+  // SANS nommer personne.
+  kept.push('authorized original custom vocal, consented voice use');
   if (genreDirection) kept.push(genreDirection);
   // Aucune consigne de mise en scene ajoutee ici. J'avais impose « one single lead
   // vocalist », « same voice on every verse and every chorus », « solo performance »:
