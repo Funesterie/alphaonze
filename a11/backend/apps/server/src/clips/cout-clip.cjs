@@ -41,6 +41,16 @@ const CREDITS_PAR_SECONDE_REFERENCE = 2.2;
 const MULTIPLICATEUR_DEFAUT = 2;
 
 /**
+ * Forfait de soumission, par SCENE et non par clip.
+ *
+ * Confirme par Djeff le 18/08/2026 sur son releve Comfy. Un clip n'est pas une
+ * generation: c'en est huit, soumises separement. Compter le forfait une seule
+ * fois sous-estimait donc de sept unites -- l'erreur type qui vide une reserve
+ * trois jours avant la fin du mois sans qu'on comprenne ou est passe le compte.
+ */
+const FORFAIT_PAR_SCENE_DEFAUT = 1;
+
+/**
  * Grille Comfy Cloud, facturation annuelle. `usdParAn` est ce qui sort du
  * compte ; `creditsParMois` est la reserve qui se recharge chaque mois.
  */
@@ -57,6 +67,19 @@ function nombre(valeur, defaut) {
 }
 
 /**
+ * Comme `nombre`, mais zero est une valeur et non une absence.
+ *
+ * Un nombre de scenes a zero n'a pas de sens, donc `nombre` a raison de le
+ * refuser. Un forfait de soumission a zero, si: c'est le cas ou Comfy ne
+ * facture pas la soumission. Sans cette distinction, mettre le forfait a 0
+ * retombe silencieusement sur 1 et le reglage n'a aucun effet.
+ */
+function nombreOuZero(valeur, defaut) {
+  const n = Number(valeur);
+  return Number.isFinite(n) && n >= 0 ? n : defaut;
+}
+
+/**
  * Les parametres de rendu reellement utilises en production, lus dans
  * l'environnement pour que le calcul suive les reglages au lieu de les figer.
  */
@@ -66,6 +89,7 @@ function parametresRendu(env = process.env) {
     secondesParScene: nombre(env.VIVY_STREAM_FULL_CLIP_LOOP_SECONDS, 8),
     multiplicateur: nombre(env.A11_COMFY_CREDIT_MULTIPLIER, MULTIPLICATEUR_DEFAUT),
     creditsParSeconde: nombre(env.A11_COMFY_CREDITS_PAR_SECONDE, CREDITS_PAR_SECONDE_REFERENCE),
+    forfaitParScene: nombreOuZero(env.A11_COMFY_FORFAIT_PAR_SCENE, FORFAIT_PAR_SCENE_DEFAUT),
   };
 }
 
@@ -79,11 +103,15 @@ function usdParCredit(palierId = 'standard') {
 function coutClip({ env = process.env, palier = 'standard' } = {}) {
   const p = parametresRendu(env);
   const secondesGenerees = p.scenes * p.secondesParScene;
-  const credits = secondesGenerees * p.creditsParSeconde * p.multiplicateur;
+  const gpu = Math.ceil(secondesGenerees * p.creditsParSeconde * p.multiplicateur);
+  const forfait = p.scenes * p.forfaitParScene;
+  const credits = gpu + forfait;
   return {
     scenes: p.scenes,
     secondesGenerees,
-    credits: Math.ceil(credits),
+    creditsGpu: gpu,
+    creditsForfait: forfait,
+    credits,
     usd: Number((credits * usdParCredit(palier)).toFixed(4)),
     multiplicateur: p.multiplicateur,
     estime: true,

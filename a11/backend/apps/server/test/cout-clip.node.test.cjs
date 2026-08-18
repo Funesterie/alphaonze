@@ -90,3 +90,34 @@ test('le prix plancher reste tres en dessous des tarifs pratiques', () => {
   assert.ok(plancher < 10, `plancher ${plancher} EUR: le pack a 10 EUR/clip passerait sous le cout`);
   assert.ok(plancher < 29.99);
 });
+
+// ── Forfait de soumission, par scene ─────────────────────────────────────────
+
+test('le forfait de soumission se compte par scene, pas par clip', () => {
+  // Un clip n'est pas une generation, c'en est huit. Compter le forfait une
+  // seule fois sous-estime de sept unites -- l'erreur qui vide une reserve
+  // trois jours avant la fin du mois sans qu'on comprenne pourquoi.
+  const cout = coutClip({ env: {} });
+  assert.equal(cout.creditsForfait, cout.scenes);
+  assert.equal(cout.credits, cout.creditsGpu + cout.creditsForfait);
+  assert.equal(cout.credits, 290);
+});
+
+test('le forfait suit le nombre de scenes', () => {
+  const seize = coutClip({ env: { VIVY_STREAM_FULL_CLIP_SCENES: '16' } });
+  assert.equal(seize.creditsForfait, 16);
+});
+
+test('le forfait se regle sans toucher au code', () => {
+  const sans = coutClip({ env: { A11_COMFY_FORFAIT_PAR_SCENE: '0' } });
+  assert.equal(sans.creditsForfait, 0);
+  assert.equal(sans.credits, sans.creditsGpu);
+});
+
+test('le forfait entre dans le plafond mensuel', () => {
+  // Le plafond doit reculer quand le cout unitaire monte: sinon on planifie
+  // sur un nombre de clips qu'on ne pourra pas produire.
+  const avec = capaciteMensuelle({ env: {}, palier: 'creator' });
+  const sans = capaciteMensuelle({ env: { A11_COMFY_FORFAIT_PAR_SCENE: '0' }, palier: 'creator' });
+  assert.ok(avec.clipsParMois < sans.clipsParMois, 'le forfait doit reduire le plafond');
+});
