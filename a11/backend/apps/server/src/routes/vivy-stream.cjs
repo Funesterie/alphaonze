@@ -2086,9 +2086,30 @@ function createVivyStreamRouter(options = {}) {
     res.json({ ok: true, service: 'vivy-stream', schema: STREAM_SCHEMA });
   });
 
-  router.get('/state', (_req, res) => {
+  /**
+   * Etat du direct. `?view=overlay` en rend une version allegee.
+   *
+   * MESURE DU 18/08/2026 : ce document pese 440 Ko, dont 425 Ko (96 %) pour le
+   * seul tableau `songs` -- 120 morceaux portant chacun un `coverPrompt` de 2 Ko,
+   * qui est le prompt d'illustration, une donnee purement serveur.
+   *
+   * Or l'overlay OBS interroge cette route toutes les 6 secondes en `no-store`,
+   * et il ne lit JAMAIS `songs`. Il telechargeait donc 425 Ko pour les jeter,
+   * six fois par minute, en direct comme a l'arret : environ 6 Go par jour pour
+   * une seule fenetre d'overlay ouverte.
+   *
+   * La forme par defaut ne bouge pas -- la CLI et les tests en dependent. Seule
+   * la vue explicitement demandee est allegee, ce qui rend le changement sans
+   * risque pour les autres consommateurs.
+   */
+  router.get('/state', (req, res) => {
     res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.json(store.getState());
+    const state = store.getState();
+    if (String(req.query?.view || '').trim().toLowerCase() !== 'overlay') {
+      return res.json(state);
+    }
+    const { songs, ...allege } = state;
+    return res.json({ ...allege, songsCount: Array.isArray(songs) ? songs.length : 0 });
   });
 
   router.get('/songs', (_req, res) => {

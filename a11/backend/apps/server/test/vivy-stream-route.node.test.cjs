@@ -4408,3 +4408,32 @@ test('Vivy leak filter laisse passer les vers créatifs crus, ne strippe que les
   ].join('\n');
   assert.equal(sanitizeTwitchLyricsForPromptLeakage(directives).removed, 4, 'les 4 directives doivent etre retirees');
 });
+
+// ── Vue overlay : la bande passante du direct au repos ───────────────────────
+//
+// Mesure du 18/08/2026 : /state pese 440 Ko dont 425 Ko de liste de morceaux,
+// et l'overlay OBS la sondait toutes les 6 s sans jamais lire cette liste --
+// environ 6 Go par jour jetes pour une fenetre laissee ouverte.
+
+test('GET /state?view=overlay retire la liste des morceaux et garde le compte', async () => {
+  await withServer({ stateName: 'overlay-view.json' }, async (baseUrl) => {
+    const complet = await (await fetch(`${baseUrl}/api/vivy/stream/state`)).json();
+    const overlay = await (await fetch(`${baseUrl}/api/vivy/stream/state?view=overlay`)).json();
+
+    assert.equal(Object.prototype.hasOwnProperty.call(overlay, 'songs'), false);
+    assert.equal(overlay.songsCount, Array.isArray(complet.songs) ? complet.songs.length : 0);
+    // Tout ce que l'overlay affiche vraiment doit survivre a l'allegement.
+    assert.ok(overlay.current);
+    assert.equal(overlay.schema, complet.schema);
+  });
+});
+
+test('la forme par defaut de /state ne bouge pas', async () => {
+  // La CLI et les autres consommateurs lisent songs: seule la vue explicitement
+  // demandee est allegee.
+  await withServer({ stateName: 'overlay-view-default.json' }, async (baseUrl) => {
+    const complet = await (await fetch(`${baseUrl}/api/vivy/stream/state`)).json();
+    assert.ok(Array.isArray(complet.songs), 'songs doit rester servi par defaut');
+    assert.equal(Object.prototype.hasOwnProperty.call(complet, 'songsCount'), false);
+  });
+});

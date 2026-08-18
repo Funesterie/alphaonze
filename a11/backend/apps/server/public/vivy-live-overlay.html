@@ -676,6 +676,7 @@
     let coverVideoBackdropReady = false;
     const COVER_SLIDE_MS = 10000;
     const STATE_POLL_MS = 6000;
+    const STATE_POLL_IDLE_MS = 60000;
 
     function safeDate(value) {
       const parsed = Date.parse(value || '');
@@ -1068,7 +1069,9 @@
 
     async function fetchFreshState() {
       try {
-        const response = await fetch('/api/vivy/stream/state?overlayPoll=' + Date.now(), { cache: 'no-store' });
+        // view=overlay : sans lui, la reponse pese 440 Ko dont 425 Ko de liste
+        // de morceaux que cette page ne lit jamais.
+        const response = await fetch('/api/vivy/stream/state?view=overlay&overlayPoll=' + Date.now(), { cache: 'no-store' });
         if (!response.ok) throw new Error('state_http_' + response.status);
         render(await response.json());
       } catch {
@@ -1076,8 +1079,25 @@
       }
     }
 
+    // Au repos, on se met en veille au lieu de sonder six fois par minute.
+    //
+    // Ce sondage n'est qu'une ceinture : les changements arrivent deja par le
+    // flux d'evenements juste en dessous. Quand rien ne se passe -- overlay
+    // laisse ouvert dans OBS entre deux directs, ce qui est le cas la plupart du
+    // temps -- il n'a aucune raison de tourner a la cadence du direct.
+    function intervalleSondage() {
+      const phase = String(liveState?.current?.phase || '').trim().toLowerCase();
+      return (!phase || phase === 'idle') ? STATE_POLL_IDLE_MS : STATE_POLL_MS;
+    }
+
+    function planifierSondage() {
+      setTimeout(() => {
+        fetchFreshState().finally(planifierSondage);
+      }, intervalleSondage());
+    }
+
     setInterval(tick, 500);
-    setInterval(fetchFreshState, STATE_POLL_MS);
+    planifierSondage();
     const events = new EventSource('/api/vivy/stream/events');
     events.addEventListener('state', (event) => {
       try { render(JSON.parse(event.data)); } catch {}
