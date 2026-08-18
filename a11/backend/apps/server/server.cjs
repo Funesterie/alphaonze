@@ -14303,7 +14303,23 @@ async function proxyChatToOpenAI(req, res) {
   }
   delete upstreamBody._a11InformativeToolContext;
 
-  const upstreamUrl = getCompletionsUrlForRequest(upstreamBody);
+  // On resout l'URL a partir du provider demande, PAS du corps nettoye.
+  //
+  // Le bloc `if (provider !== 'local')` ci-dessus supprime `provider` et
+  // `providerConfig` du corps envoye a l'upstream (l'API OpenAI refuse les
+  // champs inconnus). Mais `getCompletionsUrlForRequest` lit justement ces deux
+  // champs pour choisir entre Groq, un profil distant et OpenAI : appele apres
+  // le nettoyage, il ne voyait plus rien et renvoyait toujours l'URL OpenAI.
+  // Concretement, choisir « Groq - Llama 3.3 70B rapide » dans l'interface
+  // envoyait `llama-3.3-70b-versatile` a api.openai.com, qui repond 404
+  // model_not_found -- le modele a l'air « expire » alors qu'il est simplement
+  // adresse au mauvais fournisseur. Mini-Cerbere rattrapait le cas Groq apres
+  // coup, mais pas les profils IA personnels, et les logs mentaient.
+  const upstreamUrl = getCompletionsUrlForRequest({
+    ...upstreamBody,
+    provider,
+    providerConfig: remoteProviderConfig || undefined,
+  });
   const localLlamaCompletionUrl = provider === 'local' ? getLocalLlamaCompletionUrl() : null;
   if (!upstreamUrl) {
     if (localLlamaCompletionUrl) {
@@ -14326,7 +14342,7 @@ async function proxyChatToOpenAI(req, res) {
       upstreamUrl,
     });
   }
-  console.log('[A11] USING', provider === 'local' ? 'LLAMA_BASE' : 'OPENAI', '->', upstreamUrl);
+  console.log('[A11] USING', provider === 'local' ? 'LLAMA_BASE' : provider.toUpperCase() || 'OPENAI', '->', upstreamUrl);
 
   try {
     let { upstreamRes, data, target: miniCerbereTarget, skipped: miniCerbereSkipped = [] } = await miniCerbereRuntime.requestChat({

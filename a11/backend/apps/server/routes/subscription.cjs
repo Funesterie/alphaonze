@@ -45,6 +45,28 @@ function buildFullAccessStatus(reason = 'allowlist') {
   };
 }
 
+// Un prix Stripe archive n'est pas une panne serveur.
+//
+// Quand le prix reference par STRIPE_PREMIUM_PRICE_ID / STRIPE_FOUNDER_PRICE_ID
+// est desactive cote Stripe, l'API repond « The price specified is inactive ».
+// Renvoyer un 500 « Erreur lors de la creation de la session » fait chercher le
+// probleme dans le backend alors qu'il est dans le tableau de bord Stripe : le
+// bouton d'abonnement echoue pour tout le monde, sans dire pourquoi. On repond
+// donc 503 avec un code exploitable et on nomme la variable a corriger.
+function isInactivePriceError(error) {
+  return /price specified is inactive|no such price/i.test(String(error?.message || ''));
+}
+
+function buildInactivePriceResponse(planId) {
+  const plan = stripeService.resolvePlanConfig(planId);
+  return {
+    error: "Le tarif Stripe de ce plan est archive: l'abonnement est momentanement indisponible.",
+    code: 'stripe_price_inactive',
+    plan: plan?.id || planId || null,
+    envVar: plan?.priceEnv || null,
+  };
+}
+
 function getCheckoutPlan(req) {
   return stripeService.normalizeCheckoutPlan(req.body?.plan || req.body?.tier || req.query?.plan);
 }
@@ -202,6 +224,14 @@ function createSubscriptionRouter({ verifyJWT, db }) {
         plan: session.plan,
       });
     } catch (error) {
+      if (isInactivePriceError(error)) {
+        // `requestedPlan` est declare dans le try: on le recalcule, la fonction est pure.
+        const payload = buildInactivePriceResponse(getCheckoutPlan(req));
+        console.error(
+          `[Subscription] Prix Stripe inactif pour le plan ${payload.plan}: corriger ${payload.envVar} avec un prix actif.`
+        );
+        return res.status(503).json(payload);
+      }
       console.error('[Subscription] Checkout creation error:', error);
       return res.status(500).json({ error: 'Erreur lors de la création de la session' });
     }
@@ -232,6 +262,13 @@ function createSubscriptionRouter({ verifyJWT, db }) {
       const session = await stripeService.createContributionSession(userId, userEmail, { contribution });
       return res.json({ ok: true, sessionId: session.sessionId, url: session.url, contribution: session.contribution });
     } catch (error) {
+      if (isInactivePriceError(error)) {
+        console.error('[Subscription] Prix Stripe inactif sur une contribution: verifier les prix royalties.');
+        return res.status(503).json({
+          error: 'Le tarif Stripe de cette contribution est archive.',
+          code: 'stripe_price_inactive',
+        });
+      }
       console.error('[Subscription] Contribution creation error:', error);
       return res.status(500).json({ error: 'Erreur lors de la création de la contribution' });
     }

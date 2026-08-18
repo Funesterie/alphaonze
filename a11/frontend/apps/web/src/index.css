@@ -9664,6 +9664,31 @@ body {
   line-height: 1.45;
 }
 
+/* Virement direct, mis en avant devant les boutons carte. */
+.fun-account-payment-direct {
+  margin: 10px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid rgba(143, 240, 191, 0.42);
+  border-radius: 14px;
+  background: rgba(143, 240, 191, 0.08);
+}
+
+.fun-account-payment-direct strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #b9ffdc;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.fun-account-payment-direct small {
+  display: block;
+  margin-top: 8px;
+  color: #9fd8c4;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .fun-account-mini-list {
   min-height: 42px;
   display: grid;

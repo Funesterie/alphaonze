@@ -7025,7 +7025,11 @@ export async function createCheckoutSession(plan: 'premium' | 'founder' = 'premi
   });
 
   if (!res.ok) {
-    throw new Error(`Impossible de créer la session (${res.status})`);
+    // Le backend explique pourquoi (prix Stripe archivé, plan non configuré…).
+    // Sans ça, le bouton d'abonnement échoue avec un code HTTP nu et l'utilisateur
+    // n'a aucun moyen de savoir que le problème n'est pas de son côté.
+    const detail = await res.json().catch(() => null as { error?: string } | null);
+    throw new Error(detail?.error || `Impossible de créer la session (${res.status})`);
   }
 
   return res.json();

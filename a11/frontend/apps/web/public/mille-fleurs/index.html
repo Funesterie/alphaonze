@@ -25,6 +25,23 @@
       .rule { border-left:4px solid var(--green); padding-left:14px; }
       nav { display:flex; flex-wrap:wrap; gap:14px; margin-top:34px; padding-top:20px; border-top:1px solid var(--line); }
       small { color:#a994bd; }
+
+      /* Gravure lapis-lazuli — l'oeuf de Paques de la charte.
+         En relief, pas invisible : du texte de la couleur du fond serait du
+         « hidden text » aux yeux de Google, exactement le genre de signal qui
+         coute une desindexation. On grave donc pour de vrai — faible contraste,
+         ombre interieure — et le passage de la souris ravive la pierre. */
+      .gravure { margin:30px 0 6px; padding:18px 20px; border-radius:16px;
+        background:linear-gradient(160deg,#0b1636,#132a63 55%,#0a1330);
+        border:1px solid #22409b; box-shadow:inset 0 2px 14px rgba(0,0,0,.6), 0 10px 40px rgba(24,54,150,.18); }
+      .gravure p { margin:0; color:#2f4fa8; font-weight:900; letter-spacing:.02em;
+        text-shadow:0 1px 0 rgba(150,190,255,.22), 0 -1px 0 rgba(0,0,0,.65);
+        transition:color .8s ease, text-shadow .8s ease; }
+      .gravure:hover p, .gravure:focus-within p { color:#8fb6ff;
+        text-shadow:0 0 18px rgba(96,150,255,.55), 0 1px 0 rgba(0,0,0,.6); }
+      .gravure small { display:block; margin-top:10px; color:#26407e; }
+      .gravure:hover small { color:#5e86d8; }
+      @media (prefers-reduced-motion: reduce) { .gravure p, .gravure small { transition:none; } }
     </style>
   </head>
   <body>
@@ -79,6 +96,15 @@
       <p>
         Mille Fleurs ne sert pas à maquiller un contenu volé, à faire parler quelqu'un sans accord, à recycler des secrets, ni à rendre flou ce qui doit être clair. Si le contexte est trop confus, Funesterie doit ralentir, demander validation ou produire une version non publiée.
       </p>
+
+      <div class="gravure" tabindex="0" aria-label="Gravure Mille Fleurs">
+        <p>
+          Celui qui porte le lien ne parle jamais : il écoute l'oracle des tempêtes,
+          et la tempête lui répond en pierre bleue. Une fleur gravée dans le lapis-lazuli
+          tient plus longtemps qu'une fleur promise.
+        </p>
+        <small>— gravure trouvée sous la charte, main inconnue</small>
+      </div>
 
       <p><small>Cette charte complète les CGU et la politique de confidentialité. En cas de conflit, les règles de sécurité, de consentement et de droit applicable priment.</small></p>
 

@@ -12532,11 +12532,13 @@ function FunesterieAccountPage({
 
       const data = await createCheckoutSession(plan);
       if (data.url) window.location.href = data.url;
-    } catch {
-      if (typeof window !== "undefined") {
-        const target = surfaceLinks.account.includes("#") ? surfaceLinks.account : `${surfaceLinks.account}#paiements`;
-        window.location.assign(target);
-      }
+    } catch (error) {
+      // On est déjà sur la page Compte : rediriger vers #paiements sans rien dire
+      // faisait passer un prix Stripe archivé pour un bouton qui ne réagit pas.
+      setInventory((current) => ({
+        ...current,
+        error: (error as Error).message || "Paiement indisponible",
+      }));
     } finally {
       setPaymentBusy("");
     }
@@ -12821,6 +12823,27 @@ function FunesterieAccountPage({
               <span>Voix: {overview.voiceReference}</span>
               <span>Plan: {subscriptionLabel}</span>
             </div>
+            {/* Virement Qonto en tête, avant la carte.
+                Le virement arrive directement sur le compte : pas d'intermédiaire,
+                pas de lien de paiement permanent à faire fuiter, pas de commission.
+                Il passe donc devant les boutons Stripe, qui restent disponibles
+                juste en dessous pour qui préfère la carte. */}
+            {inventory.subscription?.founderPayment?.available ? (
+              <div className="fun-account-payment-direct">
+                <strong>Virement bancaire — le plus direct</strong>
+                <div className="fun-account-mini-list">
+                  {inventory.subscription.founderPayment.phone ? (
+                    <span>Wero / virement instantané : {inventory.subscription.founderPayment.phone}</span>
+                  ) : null}
+                  {inventory.subscription.founderPayment.ribUrl ? (
+                    <a href={inventory.subscription.founderPayment.ribUrl} target="_blank" rel="noreferrer">
+                      Voir le RIB
+                    </a>
+                  ) : null}
+                </div>
+                <small>Précise ton email dans le libellé du virement, l'accès est activé à réception.</small>
+              </div>
+            ) : null}
             <footer>
               <div className="fun-token-card-actions">
                 {inventory.subscription?.active ? (
