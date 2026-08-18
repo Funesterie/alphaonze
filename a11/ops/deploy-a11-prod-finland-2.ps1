@@ -959,6 +959,11 @@ services:
       # que personne ne la revoque cote Stripe. Le garde refuse desormais toute
       # URL Stripe ici et n'accepte que funesterie.me.
       NOSSEN_CLIP_LANDING_URL: ${NOSSEN_CLIP_LANDING_URL:-https://funesterie.me/}
+      # Liens d'affiliation partenaires. URL PUBLIQUES mais PERSONNELLES: elles
+      # portent un identifiant de suivi et se revoquent. Vides par defaut, un
+      # partenaire sans lien configure est simplement absent de /api/partners.
+      A11_PARTNER_COMFY_URL: ${A11_PARTNER_COMFY_URL:-}
+      A11_PARTNER_SUNO_URL: ${A11_PARTNER_SUNO_URL:-}
       VIVY_ACESTEP_LYRICS_MAX_CHARS: ${VIVY_ACESTEP_LYRICS_MAX_CHARS:-24000}
       ACESTEP_DIFFUSION_MODEL: ${ACESTEP_DIFFUSION_MODEL:-acestep_v1.5_turbo.safetensors}
       ACESTEP_TEXT_ENCODER_1: ${ACESTEP_TEXT_ENCODER_1:-qwen_0.6b_ace15.safetensors}
@@ -1313,6 +1318,11 @@ services:
       # que personne ne la revoque cote Stripe. Le garde refuse desormais toute
       # URL Stripe ici et n'accepte que funesterie.me.
       NOSSEN_CLIP_LANDING_URL: ${NOSSEN_CLIP_LANDING_URL:-https://funesterie.me/}
+      # Liens d'affiliation partenaires. URL PUBLIQUES mais PERSONNELLES: elles
+      # portent un identifiant de suivi et se revoquent. Vides par defaut, un
+      # partenaire sans lien configure est simplement absent de /api/partners.
+      A11_PARTNER_COMFY_URL: ${A11_PARTNER_COMFY_URL:-}
+      A11_PARTNER_SUNO_URL: ${A11_PARTNER_SUNO_URL:-}
       VIVY_ACESTEP_LYRICS_MAX_CHARS: ${VIVY_ACESTEP_LYRICS_MAX_CHARS:-24000}
       ACESTEP_DIFFUSION_MODEL: ${ACESTEP_DIFFUSION_MODEL:-acestep_v1.5_turbo.safetensors}
       ACESTEP_TEXT_ENCODER_1: ${ACESTEP_TEXT_ENCODER_1:-qwen_0.6b_ace15.safetensors}

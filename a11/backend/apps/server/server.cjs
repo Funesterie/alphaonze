@@ -7207,6 +7207,11 @@ mountUploadAudioRoute(app);
 
 // --- NOSSEN: Route /clips/:filename avec Sharingan Guard (anti-piracy + paywall) ---
 const { CLIPS_DIR } = require('./src/clips/clip-storage.cjs');
+const {
+  MENTION_LEGALE: PARTNERS_MENTION,
+  listerPartenaires,
+  partenairesInvalides: listerPartenairesInvalides,
+} = require('./src/partners/partenaires.cjs');
 const { createSharinganClipsGuard } = require('./src/clips/sharingan-clips-guard.cjs');
 const sharinganGuard = createSharinganClipsGuard({ clipsDir: CLIPS_DIR });
 app.get('/clips/:filename', sharinganGuard, (req, res) => {
@@ -7268,6 +7273,18 @@ console.log('[Server] Subscription routes mounted under /api/subscription');
 // PayPal — Paiements externes et webhooks verifies
 app.use('/api/paypal', createPaypalRouter({ db }));
 console.log('[Server] PayPal routes mounted under /api/paypal');
+
+// Partenaires — renvois vers les outils de la pile, liens remuneres et declares.
+// Route publique: elle ne sert que ce qui est deja destine a etre affiche, et
+// aucune URL n'existe tant qu'un lien de suivi n'est pas configure.
+app.get('/api/partners', (_req, res) => {
+  const invalides = listerPartenairesInvalides(process.env);
+  if (invalides.length) {
+    console.warn('[Partners] liens de suivi malformes, partenaires masques:', invalides.map((e) => e.env).join(', '));
+  }
+  return res.json({ ok: true, mention: PARTNERS_MENTION, partners: listerPartenaires(process.env) });
+});
+console.log('[Server] Partner referrals mounted under /api/partners');
 
 // Qonto — compte bancaire entreprise, lecture admin uniquement
 app.use('/api/qonto', verifyJWT, createQontoRouter({
