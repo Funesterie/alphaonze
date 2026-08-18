@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PIA — Relais de commerce</title>
+<meta name="description" content="PIA, relais de commerce : produits d'ici et d'ailleurs, immobilier, communauté. Le comptoir ouvre bientôt." />
+<meta name="robots" content="noindex,nofollow" />
+<style>
+  /* Identité tirée de l'assiette grecque : cobalt sur porcelaine, filets d'or,
+     laurier. La grecque sert de règle, jamais de fond. */
+  :root {
+    --ground:#F5F6F8; --surface:#FFFFFF; --ink:#14213D; --ink-soft:#55607A;
+    --cobalt:#1B3F8B; --cobalt-wash:#E7ECF7; --gold:#A07C22; --laurel:#566B41;
+    --rule:#D5DAE4; --shadow:0 1px 2px rgba(20,33,61,.06), 0 10px 30px rgba(20,33,61,.06);
+    --display:"Palatino Linotype",Palatino,"Iowan Old Style","Book Antiqua",Georgia,serif;
+    --body:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#0D1524; --surface:#141E31; --ink:#EDF1F7; --ink-soft:#9AA7BF;
+      --cobalt:#7FA0DF; --cobalt-wash:#1B2942; --gold:#D6B25C; --laurel:#9CB57F;
+      --rule:#2A3853; --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0D1524; --surface:#141E31; --ink:#EDF1F7; --ink-soft:#9AA7BF;
+    --cobalt:#7FA0DF; --cobalt-wash:#1B2942; --gold:#D6B25C; --laurel:#9CB57F;
+    --rule:#2A3853; --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.65}
+  .enveloppe{width:min(78ch,calc(100vw - 40px));margin:0 auto}
+
+  .grecque{height:12px;background:
+      repeating-linear-gradient(90deg,var(--cobalt) 0 2px,transparent 2px 6px) 0 0/100% 2px no-repeat,
+      repeating-linear-gradient(90deg,var(--cobalt) 0 2px,transparent 2px 6px) 0 10px/100% 2px no-repeat,
+      repeating-linear-gradient(90deg,transparent 0 4px,var(--gold) 4px 6px) 0 5px/100% 2px no-repeat;
+    opacity:.55}
+
+  header{padding:26px 0 0}
+  .barre{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px 0}
+  .marque{font-family:var(--display);font-size:22px;letter-spacing:.06em;font-weight:700}
+  .marque span{color:var(--gold)}
+  button.theme{font:inherit;font-size:13px;color:var(--ink-soft);background:var(--surface);
+    border:1px solid var(--rule);border-radius:999px;padding:7px 14px;cursor:pointer}
+  button.theme:hover{color:var(--cobalt);border-color:var(--cobalt)}
+  button.theme:focus-visible{outline:2px solid var(--cobalt);outline-offset:2px}
+
+  .hero{padding:52px 0 60px;display:flex;flex-direction:column;gap:18px}
+  .eyebrow{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);font-weight:700}
+  h1{font-family:var(--display);font-size:clamp(38px,7vw,64px);line-height:1.03;margin:0;
+     letter-spacing:-.02em;text-wrap:balance}
+  .chapeau{color:var(--ink-soft);font-size:19px;margin:0;max-width:56ch}
+
+  section{padding:44px 0;border-top:1px solid var(--rule)}
+  h2{font-family:var(--display);font-size:29px;margin:0 0 8px;letter-spacing:-.01em;text-wrap:balance}
+  .intro{color:var(--ink-soft);margin:0 0 26px;max-width:60ch}
+
+  .comptoirs{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;list-style:none;padding:0;margin:0}
+  .comptoirs li{background:var(--surface);border:1px solid var(--rule);border-radius:8px;
+    padding:20px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px}
+  .comptoirs h3{margin:0;font-size:17px;font-family:var(--display);letter-spacing:-.005em}
+  .comptoirs p{margin:0;color:var(--ink-soft);font-size:15px}
+  .comptoirs .etat{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--laurel);margin-top:2px}
+
+  .relais{background:var(--cobalt-wash);border:1px solid var(--rule);border-radius:8px;padding:26px 28px;
+    display:flex;flex-direction:column;gap:12px}
+  .relais p{margin:0;max-width:60ch}
+
+  .contact{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+  .contact a{display:inline-block;background:var(--cobalt);color:var(--ground);text-decoration:none;
+    font-weight:650;padding:13px 22px;border-radius:6px}
+  .contact a:hover{background:var(--ink)}
+  .contact a:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+  .contact small{color:var(--ink-soft)}
+
+  footer{border-top:1px solid var(--rule);padding:28px 0 56px;color:var(--ink-soft);font-size:14px;
+    display:flex;flex-direction:column;gap:8px}
+  .a-remplir{font-family:var(--mono);font-size:12px;color:var(--gold);border-left:2px solid var(--gold);padding-left:10px}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+  <div class="enveloppe">
+    <header>
+      <div class="grecque"></div>
+      <div class="barre">
+        <div class="marque">P<span>I</span>A</div>
+        <button class="theme" type="button" id="theme">Mode sombre</button>
+      </div>
+    </header>
+
+    <div class="hero">
+      <p class="eyebrow">Relais de commerce</p>
+      <h1>Un comptoir, pas une vitrine de plus.</h1>
+      <p class="chapeau">
+        PIA rassemble en un seul endroit ce qui se cherche d'habitude à dix : des produits qu'on ne
+        trouve pas en rayon, des biens à visiter, et des gens à qui parler avant d'acheter.
+      </p>
+    </div>
+
+    <section>
+      <h2>Les comptoirs</h2>
+      <p class="intro">Chacun ouvre à son rythme. Ce qui est prêt est marqué comme tel — nous préférons
+        annoncer moins et tenir.</p>
+      <ul class="comptoirs">
+        <li>
+          <h3>Produits d'ici et d'ailleurs</h3>
+          <p>Artisanat, textiles, épices, objets rapportés. Vente, achat et échange, avec l'origine
+             indiquée pour chaque pièce.</p>
+          <span class="etat">Premier comptoir</span>
+        </li>
+        <li>
+          <h3>Immobilier</h3>
+          <p>Annonces de biens à vendre ou à louer, présentées correctement : photos, quartier,
+             charges réelles.</p>
+          <span class="etat">En préparation</span>
+        </li>
+        <li>
+          <h3>La place</h3>
+          <p>Un espace de discussion entre membres. On y parle des produits, des bons plans et de ce
+             qui ne va pas.</p>
+          <span class="etat">En préparation</span>
+        </li>
+        <li>
+          <h3>Après la vente</h3>
+          <p>Une adresse, une personne, une réponse. Le suivi ne s'arrête pas au paiement.</p>
+          <span class="etat">Avec le premier comptoir</span>
+        </li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Pourquoi un relais</h2>
+      <div class="relais">
+        <p>
+          Un relais, c'est un endroit où l'on dépose et où l'on reprend. Les marchandises y passent,
+          les gens s'y arrêtent, et la maison répond de ce qui transite chez elle.
+        </p>
+        <p>
+          C'est la différence avec une place de marché anonyme : ici, il y a quelqu'un derrière le
+          comptoir, et il donne son nom.
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>Ouverture prochaine</h2>
+      <p class="intro">Le premier comptoir ouvre avec un catalogue restreint et des envois suivis.
+        Pour être prévenu, ou pour proposer des produits :</p>
+      <div class="contact">
+        <a href="mailto:contact@example.invalid">Écrire au comptoir</a>
+        <small>Réponse sous 48 h.</small>
+      </div>
+    </section>
+
+    <footer>
+      <div class="grecque" style="margin-bottom:14px"></div>
+      <div>PIA — relais de commerce.</div>
+      <div class="a-remplir">
+        À REMPLIR AVANT MISE EN LIGNE : raison sociale, forme juridique, numéro d'immatriculation,
+        adresse du siège, directeur de la publication, hébergeur, adresse de contact réelle, CGV.
+        Un site commercial sans mentions légales expose son éditeur.
+      </div>
+    </footer>
+  </div>
+
+<script>
+  // Trois états côté visiteur : choix explicite, ou réglage système. On ne stocke
+  // que le choix explicite, pour ne pas figer quelqu'un qui n'a rien demandé.
+  (function () {
+    var bouton = document.getElementById('theme');
+    var choix = null;
+    try { choix = localStorage.getItem('pia-theme'); } catch (e) {}
+    if (choix) document.documentElement.setAttribute('data-theme', choix);
+
+    function sombreActif() {
+      var pose = document.documentElement.getAttribute('data-theme');
+      if (pose) return pose === 'dark';
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    function etiqueter() {
+      bouton.textContent = sombreActif() ? 'Mode clair' : 'Mode sombre';
+    }
+    bouton.addEventListener('click', function () {
+      var suivant = sombreActif() ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', suivant);
+      try { localStorage.setItem('pia-theme', suivant); } catch (e) {}
+      etiqueter();
+    });
+    etiqueter();
+  })();
+</script>
+</body>
+</html>

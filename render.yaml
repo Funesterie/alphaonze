@@ -8,6 +8,23 @@
 # - Public URLs remain funesterie.me / a11.funesterie.me through Caddy.
 
 services:
+  # Vitrine PIA — site statique, service separe du backend A11.
+  #
+  # Statique et non le backend: la vitrine n'a ni base ni secret, donc rien a
+  # proteger et rien a reveiller. Elle sert aussi de banc d'essai pendant que le
+  # relais chez un partenaire se decide -- Render est gratuit sur ce type de
+  # service, et rien ici ne touche funesterie.me.
+  #
+  # noindex tant que les mentions legales ne sont pas remplies: un site
+  # commercial indexe sans editeur identifie expose la personne qui le publie.
+  - type: web
+    name: pia-vitrine
+    runtime: static
+    branch: master
+    rootDir: sites/pia
+    staticPublishPath: .
+    pullRequestPreviewsEnabled: false
+
   - type: web
     name: a11-backend
     runtime: node
