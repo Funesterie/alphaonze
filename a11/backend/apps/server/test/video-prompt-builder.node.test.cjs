@@ -203,3 +203,41 @@ test('video prompt system keeps Funesterie source intent and role-separated refe
   assert.match(VIDEO_PROMPT_SYSTEM_PROMPT, /references are not decorative/i);
   assert.match(VIDEO_PROMPT_SYSTEM_PROMPT, /identity, setting, rhythm, style, voice, montage/i);
 });
+
+// ── « marche » le lieu contre « marche » le verbe ────────────────────────────
+//
+// Le detecteur testait /march|walk/ sur le texte sans accents. « marche de
+// nuit » y devenait « marche de nuit »: la scene demandee etait jetee et
+// remplacee par une rue de Tokyo. Une scene de marche nocturne est banale dans
+// une chanson, et le clip partait au Japon sans explication.
+
+test('un marche de nuit reste un marche, il ne part pas a Tokyo', async () => {
+  const r = await buildVideoPrompt({
+    userMessage: 'plan large, marché de nuit, lanternes bleues, la foule s écarte',
+    requestedDuration: 8,
+  });
+  const p = String(r?.prompt || '');
+  assert.equal(/tokyo/i.test(p), false, 'un marché ne doit pas déclencher le preset Tokyo');
+  assert.match(p, /lanternes bleues/, 'la scène demandée doit survivre');
+});
+
+test('marchand, démarche et marches ne declenchent rien non plus', async () => {
+  for (const phrase of [
+    'un marchand ambulant sous la nuit étoilée',
+    'la démarche lente d une silhouette, scène de nuit',
+    'les marches d un temple la nuit',
+  ]) {
+    const r = await buildVideoPrompt({ userMessage: phrase, requestedDuration: 8 });
+    assert.equal(/tokyo/i.test(String(r?.prompt || '')), false, `faux positif sur: ${phrase}`);
+  }
+});
+
+test('marcher la nuit declenche bien le preset, sans effacer la demande', async () => {
+  const r = await buildVideoPrompt({
+    userMessage: 'il marche dans la nuit avec un parapluie rouge',
+    requestedDuration: 8,
+  });
+  const p = String(r?.prompt || '');
+  assert.match(p, /tokyo/i, 'le vrai cas doit toujours fonctionner');
+  assert.match(p, /parapluie rouge/, 'le preset ne doit pas effacer ce qui a été demandé');
+});

@@ -304,6 +304,31 @@ function buildReferenceVisualContextClause(value = '') {
     .trim();
 }
 
+// Marcher, le verbe. « marche » le lieu n'y figure pas.
+//
+// La comparaison porte sur des MOTS ENTIERS du texte accentue. Le detecteur
+// d'origine cherchait le fragment /march/ dans le texte SANS accents: un
+// « marche de nuit » y devenait « marcher la nuit », la scene demandee etait
+// jetee et remplacee par une rue de Tokyo. Sur des mots entiers accentues,
+// « marche », « marche », « demarche » et « marchand » restent distincts.
+const MOTS_MARCHE_EN = Object.freeze(['walk', 'walking', 'walks']);
+const MOTS_MARCHE_FR = Object.freeze(['marche', 'marcher', 'marchent', 'marchant']);
+
+// Decoupage par code de caractere: tout ce qui depasse l'ASCII est une lettre.
+// Une classe de caracteres accentues ecrite en dur se corrompt trop facilement
+// selon l'encodage du fichier, et une lettre perdue redevient un separateur.
+function motsDe(texte) {
+  const mots = [];
+  let courant = '';
+  for (const c of String(texte || '')) {
+    const estLettre = (c >= 'a' && c <= 'z') || c.charCodeAt(0) > 127;
+    if (estLettre) courant += c;
+    else if (courant) { mots.push(courant); courant = ''; }
+  }
+  if (courant) mots.push(courant);
+  return mots;
+}
+
 function buildHeuristicVideoPrompt({
   userMessage = '',
   hasReferenceImage = false,
@@ -322,8 +347,28 @@ function buildHeuristicVideoPrompt({
   let prompt = message ? `${message}, cinematic motion, natural atmosphere, realistic light` : 'cinematic motion, natural atmosphere, realistic light';
   let motionType = 'other';
 
-  if (/tokyo|shibuya|neon|nuit|night/.test(folded) && /march|walk/.test(folded)) {
-    prompt = 'Walking through Tokyo streets at night, rain reflecting neon light, first-person cinematic motion, natural camera sway';
+  // « marche » le verbe, PAS « marche » le lieu.
+  //
+  // Le test etait /march|walk/ applique au texte SANS accents. « marche de
+  // nuit » y devenait « marche de nuit », donc marcher la nuit, donc Tokyo:
+  // la scene demandee etait jetee et remplacee par une rue neon. Une scene de
+  // marche nocturne est banale dans une chanson, et le clip partait au Japon
+  // sans que personne comprenne pourquoi.
+  //
+  // On teste donc sur le texte ACCENTUE, ou « marche » et « marche » restent
+  // deux mots differents, et avec des limites de mots: sinon « marchand »,
+  // « demarche » et « marches » rentrent aussi.
+  const motsAccentues = motsDe(message.toLowerCase());
+  const motsFoldes = motsDe(folded);
+  const marcheVraiment = MOTS_MARCHE_EN.some((m) => motsFoldes.includes(m))
+    || MOTS_MARCHE_FR.some((m) => motsAccentues.includes(m));
+
+  if (/tokyo|shibuya|neon|nuit|night/.test(folded) && marcheVraiment) {
+    // On garde ce qui a ete demande. Un preset qui ecrase la description perd
+    // le parapluie rouge, la couleur des lanternes et tout ce qui distinguait
+    // cette scene-la d'une autre.
+    const decor = 'Tokyo streets at night, rain reflecting neon light, first-person cinematic motion, natural camera sway';
+    prompt = message ? `${message}, ${decor}` : `Walking through ${decor}`;
     motionType = 'walk';
   } else if (/far west|western|cowboy|saloon/.test(folded)) {
     prompt = 'Walking through a dusty western frontier town at golden hour, worn boots on dry dirt road, wooden saloon ahead, wide cinematic shot';
