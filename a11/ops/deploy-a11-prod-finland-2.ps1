@@ -949,12 +949,16 @@ services:
       JUKEBOX_ENTRA_DRIVE_ID: ${JUKEBOX_ENTRA_DRIVE_ID:-b!zlNXuijyrEiWLsIQWGRe-S-n87CVNF5MulhRkdLzzcsVdEylKhrDQZ7oMFgaX2xk}
       JUKEBOX_K44_DRIVE_ID: ${JUKEBOX_K44_DRIVE_ID:-}
       VIVY_NOSSEN_EMERGENCY_SONGCRAFT: ${VIVY_NOSSEN_EMERGENCY_SONGCRAFT:-true}
-      # Payment Link Stripe du paywall clips. URL PUBLIQUE, pas un secret : elle
+      # Page d'atterrissage du paywall clips. URL PUBLIQUE, pas un secret : elle
       # vit donc ici et non dans compose.env, ce qui la fait suivre meme avec
-      # -ReuseRemoteSecrets. Doit etre un lien buy.stripe.com (permanent) et
-      # jamais une Checkout Session cs_live_ (qui expire en 24 h) : le garde
-      # refuse explicitement les sessions depuis le 16/08/2026.
-      NOSSEN_CLIP_CHECKOUT_URL: ${NOSSEN_CLIP_CHECKOUT_URL:-https://buy.stripe.com/4gMfZh2Ya1zO4Bl5ec7Re06}
+      # -ReuseRemoteSecrets.
+      #
+      # Ce n'est PLUS une adresse Stripe. Le Payment Link buy.stripe.com qui
+      # occupait cette place a fuite : une URL de caisse permanente, tendue par
+      # le paywall a ceux-la memes qui aspirent les clips, reste exploitable tant
+      # que personne ne la revoque cote Stripe. Le garde refuse desormais toute
+      # URL Stripe ici et n'accepte que funesterie.me.
+      NOSSEN_CLIP_LANDING_URL: ${NOSSEN_CLIP_LANDING_URL:-https://funesterie.me/}
       VIVY_ACESTEP_LYRICS_MAX_CHARS: ${VIVY_ACESTEP_LYRICS_MAX_CHARS:-24000}
       ACESTEP_DIFFUSION_MODEL: ${ACESTEP_DIFFUSION_MODEL:-acestep_v1.5_turbo.safetensors}
       ACESTEP_TEXT_ENCODER_1: ${ACESTEP_TEXT_ENCODER_1:-qwen_0.6b_ace15.safetensors}
@@ -1299,12 +1303,16 @@ services:
       JUKEBOX_ENTRA_DRIVE_ID: ${JUKEBOX_ENTRA_DRIVE_ID:-b!zlNXuijyrEiWLsIQWGRe-S-n87CVNF5MulhRkdLzzcsVdEylKhrDQZ7oMFgaX2xk}
       JUKEBOX_K44_DRIVE_ID: ${JUKEBOX_K44_DRIVE_ID:-}
       VIVY_NOSSEN_EMERGENCY_SONGCRAFT: ${VIVY_NOSSEN_EMERGENCY_SONGCRAFT:-true}
-      # Payment Link Stripe du paywall clips. URL PUBLIQUE, pas un secret : elle
+      # Page d'atterrissage du paywall clips. URL PUBLIQUE, pas un secret : elle
       # vit donc ici et non dans compose.env, ce qui la fait suivre meme avec
-      # -ReuseRemoteSecrets. Doit etre un lien buy.stripe.com (permanent) et
-      # jamais une Checkout Session cs_live_ (qui expire en 24 h) : le garde
-      # refuse explicitement les sessions depuis le 16/08/2026.
-      NOSSEN_CLIP_CHECKOUT_URL: ${NOSSEN_CLIP_CHECKOUT_URL:-https://buy.stripe.com/4gMfZh2Ya1zO4Bl5ec7Re06}
+      # -ReuseRemoteSecrets.
+      #
+      # Ce n'est PLUS une adresse Stripe. Le Payment Link buy.stripe.com qui
+      # occupait cette place a fuite : une URL de caisse permanente, tendue par
+      # le paywall a ceux-la memes qui aspirent les clips, reste exploitable tant
+      # que personne ne la revoque cote Stripe. Le garde refuse desormais toute
+      # URL Stripe ici et n'accepte que funesterie.me.
+      NOSSEN_CLIP_LANDING_URL: ${NOSSEN_CLIP_LANDING_URL:-https://funesterie.me/}
       VIVY_ACESTEP_LYRICS_MAX_CHARS: ${VIVY_ACESTEP_LYRICS_MAX_CHARS:-24000}
       ACESTEP_DIFFUSION_MODEL: ${ACESTEP_DIFFUSION_MODEL:-acestep_v1.5_turbo.safetensors}
       ACESTEP_TEXT_ENCODER_1: ${ACESTEP_TEXT_ENCODER_1:-qwen_0.6b_ace15.safetensors}

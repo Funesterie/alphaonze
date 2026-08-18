@@ -71,47 +71,61 @@ function isRipper(req) {
  * Mount the Sharingan guard on the clips route
  * @param {object} opts
  * @param {string} opts.clipsDir - Path to clips directory
- * @param {string} opts.stripeCheckoutUrl - Stripe payment link for clips (29.99€)
+ * @param {string} opts.landingUrl - Page funesterie.me où renvoyer un hotlink (jamais une URL Stripe)
  * @param {string} opts.trollVideoPath - Full path to troll video (or null to use default in clipsDir)
  */
 /**
- * Un lien de paiement, PAS une session.
+ * Aucune URL Stripe dans ce garde. Plus jamais.
  *
- * La valeur codee en dur ici etait `checkout.stripe.com/c/pay/cs_live_...`, donc
- * une Checkout Session. Une session Stripe expire en 24 h : le lendemain, tout
- * hotlinkeur etait redirige vers une page morte. Le piege avait l'air de
- * fonctionner -- il redirigeait bien -- mais il n'encaissait plus rien, et rien
- * ne le signalait.
+ * Historique en trois temps :
+ *   1. une Checkout Session codee en dur (`checkout.stripe.com/.../cs_live_...`),
+ *      qui expirait en 24 h et redirigeait ensuite vers une page morte ;
+ *   2. un Payment Link (`buy.stripe.com/...`), permanent, donc toujours vivant ;
+ *   3. ce meme Payment Link compromis -- et c'est la que le probleme se voit.
  *
- * Un Payment Link (`buy.stripe.com/...`) est permanent et cree sa session a la
- * volee a chaque visite. C'est le bon outil pour une redirection posee une fois
- * et laissee en place. Le commentaire d'origine disait d'ailleurs « payment
- * link » : c'est l'intention qui etait juste, pas la valeur.
+ * Un Payment Link est une URL publique, permanente, non revocable autrement que
+ * dans le tableau de bord Stripe, et posee ici a la vue de tous ceux qui
+ * declenchent le paywall : c'est-a-dire, par construction, des gens qui aspirent
+ * nos clips. Sa permanence, qui etait l'argument pour le choisir, est exactement
+ * ce qui en fait une prise durable une fois qu'il fuit. Le Sharingan peut trier
+ * les aspirateurs autant qu'il veut : tant qu'il tend lui-meme une adresse de
+ * caisse permanente, le genjutsu ne protege rien.
+ *
+ * On ne redirige donc plus que vers NOTRE domaine. La page d'atterrissage, elle,
+ * fabrique une session fraiche cote serveur quand un humain veut vraiment payer :
+ * rien de permanent ne traine dehors.
  */
-function estLienDePaiementValide(url = '') {
+const DOMAINES_ATTERRISSAGE = /^https:\/\/([a-z0-9-]+\.)*funesterie\.me(\/|$)/i;
+
+function estLienAtterrissageValide(url = '') {
   const u = String(url || '').trim();
-  if (!/^https:\/\/buy\.stripe\.com\/[A-Za-z0-9_-]+/.test(u)) return false;
-  // Une session deguisee en lien passerait le test ci-dessus si elle etait
-  // hebergee ailleurs; on refuse explicitement tout ce qui porte un cs_.
-  return !/\bcs_(live|test)_/.test(u);
+  if (!DOMAINES_ATTERRISSAGE.test(u)) return false;
+  // Ceinture et bretelles : une URL Stripe glissee dans la variable
+  // d'atterrissage (redirection, parametre, sous-domaine bricole) est refusee.
+  return !/stripe\.com|\bcs_(live|test)_/i.test(u);
 }
 
 function createSharinganClipsGuard(opts = {}) {
   const {
     clipsDir = CLIPS_DIR,
-    stripeCheckoutUrl = process.env.NOSSEN_CLIP_CHECKOUT_URL || '',
+    landingUrl = process.env.NOSSEN_CLIP_LANDING_URL || 'https://funesterie.me/',
     trollVideoPath = null
   } = opts;
 
-  const lienPaiement = estLienDePaiementValide(stripeCheckoutUrl) ? stripeCheckoutUrl : '';
-  if (!lienPaiement) {
+  const lienAtterrissage = estLienAtterrissageValide(landingUrl) ? landingUrl : '';
+  if (!lienAtterrissage) {
     // Bruyant au demarrage, une seule fois : un paywall muet qui laisse tout
     // passer coute plus cher qu'une ligne rouge dans les logs.
     console.warn(
-      '[Sharingan] NOSSEN_CLIP_CHECKOUT_URL absent ou invalide.'
-      + ' Attendu un Payment Link https://buy.stripe.com/... (permanent),'
-      + ' pas une Checkout Session cs_live_... (expire en 24 h).'
+      '[Sharingan] NOSSEN_CLIP_LANDING_URL absent ou invalide.'
+      + ' Attendu une URL funesterie.me (jamais une adresse Stripe).'
       + ' Les hotlinks seront refuses en 402 au lieu d etre rediriges.'
+    );
+  }
+  if (String(process.env.NOSSEN_CLIP_CHECKOUT_URL || '').trim()) {
+    console.warn(
+      '[Sharingan] NOSSEN_CLIP_CHECKOUT_URL est encore definie et sera ignoree.'
+      + ' Le Payment Link a ete demantele: desactive-le aussi dans Stripe.'
     );
   }
 
@@ -146,23 +160,23 @@ function createSharinganClipsGuard(opts = {}) {
       return next();
     }
 
-    // Hotlink externe sans authentification → la caisse.
+    // Hotlink externe sans authentification → chez nous, pas chez Stripe.
     //
-    // Sans lien valide on REFUSE au lieu de rediriger. Envoyer vers une page de
-    // paiement morte, c'est offrir le clip a celui qui ferme l'onglet : il a le
-    // fichier des que la redirection echoue cote client. Un 402 ne rapporte
-    // rien non plus, mais il ne donne rien.
-    if (!lienPaiement) {
-      console.warn(`[Sharingan] Hotlink refuse (aucun lien de paiement configure): ${req.ip}`);
+    // Sans lien valide on REFUSE au lieu de rediriger. Envoyer vers une page
+    // morte, c'est offrir le clip a celui qui ferme l'onglet : il a le fichier
+    // des que la redirection echoue cote client. Un 402 ne rapporte rien non
+    // plus, mais il ne donne rien.
+    if (!lienAtterrissage) {
+      console.warn(`[Sharingan] Hotlink refuse (aucune page d atterrissage configuree): ${req.ip}`);
       return res.status(402).json({
         error: 'payment_required',
         message: 'Ce clip appartient a NOSSEN. Ecoute-le sur funesterie.me.',
       });
     }
 
-    console.log(`[Sharingan] Paywall: ${req.ip} → lien de paiement`);
-    return res.redirect(302, lienPaiement);
+    console.log(`[Sharingan] Paywall: ${req.ip} → funesterie.me`);
+    return res.redirect(302, lienAtterrissage);
   };
 }
 
-module.exports = { createSharinganClipsGuard, isRipper, estLienDePaiementValide };
+module.exports = { createSharinganClipsGuard, isRipper, estLienAtterrissageValide };
