@@ -959,6 +959,14 @@ services:
       # que personne ne la revoque cote Stripe. Le garde refuse desormais toute
       # URL Stripe ici et n'accepte que funesterie.me.
       NOSSEN_CLIP_LANDING_URL: ${NOSSEN_CLIP_LANDING_URL:-https://funesterie.me/}
+      # Tout gratuit -- decision de Djeff du 18/08/2026. Le defaut est a 1
+      # volontairement: la valeur porte la decision, pas la session de
+      # deploiement. Un export oublie ne doit pas remettre le produit payant en
+      # silence. Pour revendre un jour: repasser ce defaut a 0.
+      A11_TOUT_GRATUIT: ${A11_TOUT_GRATUIT:-1}
+      # Clips offerts par compte et par mois. Ce qui borne la reserve Comfy:
+      # ~282 credits par clip, 4200 par mois sur le palier Standard.
+      A11_GRATUIT_CLIPS_PAR_MOIS: ${A11_GRATUIT_CLIPS_PAR_MOIS:-1}
       # Liens d'affiliation partenaires. URL PUBLIQUES mais PERSONNELLES: elles
       # portent un identifiant de suivi et se revoquent. Vides par defaut, un
       # partenaire sans lien configure est simplement absent de /api/partners.
@@ -1318,6 +1326,14 @@ services:
       # que personne ne la revoque cote Stripe. Le garde refuse desormais toute
       # URL Stripe ici et n'accepte que funesterie.me.
       NOSSEN_CLIP_LANDING_URL: ${NOSSEN_CLIP_LANDING_URL:-https://funesterie.me/}
+      # Tout gratuit -- decision de Djeff du 18/08/2026. Le defaut est a 1
+      # volontairement: la valeur porte la decision, pas la session de
+      # deploiement. Un export oublie ne doit pas remettre le produit payant en
+      # silence. Pour revendre un jour: repasser ce defaut a 0.
+      A11_TOUT_GRATUIT: ${A11_TOUT_GRATUIT:-1}
+      # Clips offerts par compte et par mois. Ce qui borne la reserve Comfy:
+      # ~282 credits par clip, 4200 par mois sur le palier Standard.
+      A11_GRATUIT_CLIPS_PAR_MOIS: ${A11_GRATUIT_CLIPS_PAR_MOIS:-1}
       # Liens d'affiliation partenaires. URL PUBLIQUES mais PERSONNELLES: elles
       # portent un identifiant de suivi et se revoquent. Vides par defaut, un
       # partenaire sans lien configure est simplement absent de /api/partners.
