@@ -9,6 +9,38 @@ function planLabel(planId) {
   return plan?.label || 'A11 Premium';
 }
 
+/**
+ * Les offres payables par virement, et elles seules.
+ *
+ * Le pack ne passe volontairement par aucun lien de paiement: un Payment Link
+ * est une URL permanente et publique, et c'est precisement ce qui vient d'etre
+ * demantele du paywall clips. Un virement arrive sur le compte sans
+ * intermediaire, sans commission, et sans rien laisser trainer dehors.
+ *
+ * Le plein tarif reste celui du catalogue Stripe (clip FULL a 29,99 EUR): le
+ * pack le divise par trois pour dix clips, ce qui n'a de sens que si le tarif
+ * unitaire reste affiche a cote.
+ */
+function buildDirectOffers() {
+  return [
+    {
+      id: 'clip-full',
+      label: 'Clip vidéo FULL',
+      priceEur: 29.99,
+      unit: "à l'unité",
+      note: 'Séquencé sur les paroles, sur toute la durée du morceau.',
+    },
+    {
+      id: 'clip-pack-10',
+      label: '10 clips vidéo FULL',
+      priceEur: 100,
+      unit: 'le pack',
+      note: '10 € le clip au lieu de 29,99 €. Virement uniquement.',
+      highlight: true,
+    },
+  ];
+}
+
 function buildFounderPayment() {
   const phone = String(
     process.env.A11_FOUNDER_PAYMENT_PHONE
@@ -27,6 +59,7 @@ function buildFounderPayment() {
     available: Boolean(phone || ribUrl),
     phone: phone || null,
     ribUrl: ribUrl || null,
+    offers: buildDirectOffers(),
   };
 }
 
@@ -448,7 +481,13 @@ function createSubscriptionRouter({ verifyJWT, db }) {
         reason: active ? 'subscription' : 'inactive',
         endDate: user.subscription_end_date,
         stripeStatus,
-        founderPayment: active && tier === 'founder' ? buildFounderPayment() : null,
+        // Ouvert a tout compte connecte, decision de Djeff du 18/08/2026.
+        //
+        // Le virement etait reserve aux fondateurs DEJA abonnes, c'est-a-dire aux
+        // seules personnes qui n'ont plus rien a payer: il ne servait donc a rien
+        // comme moyen de paiement. Contrepartie assumee: le numero Wero et l'URL
+        // du RIB sont lisibles par quiconque cree un compte gratuit.
+        founderPayment: buildFounderPayment(),
         availablePlans: stripeService.getAvailablePlans(),
       });
     } catch (error) {

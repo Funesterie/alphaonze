@@ -135,26 +135,81 @@ function marquePourAcheteur(clipId, buyerId) {
 }
 
 /**
+ * Le palier de livraison, decide par le CANAL DE PAIEMENT et rien d'autre.
+ *
+ * Regle de Djeff, 18/08/2026 : un paiement passe par le portefeuille Google chez
+ * Stripe repart avec un clip bas de gamme, signe. Le contexte est le Payment Link
+ * compromis -- la mesure vise un canal juge a risque, pas une population.
+ *
+ * CE QU'IL NE FAUT PAS BRANCHER DESSUS, et pourquoi c'est ecrit ici : le
+ * fournisseur d'identite du SITE (session-registry.cjs, google/microsoft) est une
+ * autre donnee. S'en servir comme approximation enverrait du bas de gamme a des
+ * clients qui ont paye plein tarif au motif qu'ils se sont inscrits avec un
+ * compte Google. Le signal vit dans le webhook Stripe, pas dans req.user.
+ */
+const PALIERS = Object.freeze({
+  // Plein tarif. CRF 18 : la marque invisible se joue sur quelques niveaux par
+  // canal, un encodage plus agressif la noierait dans ses propres artefacts.
+  plein: Object.freeze({ crf: '18', hauteur: 0, signature: '' }),
+  // Bas de gamme assume : 480p et CRF 32. Le filigrane invisible survit -- une
+  // rotation de couleur est globale, la quantification la bruite sans la
+  // detruire -- donc un clip degrade reste identifiable comme les autres.
+  bas: Object.freeze({ crf: '32', hauteur: 480, signature: 'NOSSEN · genjutsu' }),
+});
+
+function resolvePalier(nom) {
+  return PALIERS[String(nom || '').trim().toLowerCase()] || PALIERS.plein;
+}
+
+/**
+ * Vrai quand la charge Stripe a ete reglee via le portefeuille Google.
+ *
+ * On lit `payment_method_details.card.wallet.type`, seul endroit ou Stripe dit
+ * quel portefeuille a servi : `session.payment_method_types` ne rend que « card »
+ * et ne distingue donc rien.
+ */
+function paiementViaGoogle(charge) {
+  const wallet = charge?.payment_method_details?.card?.wallet?.type;
+  return String(wallet || '').trim().toLowerCase() === 'google_pay';
+}
+
+/**
  * Les arguments ffmpeg de la livraison.
  *
  * Rendus plutot qu'executes : ca les rend verifiables par un test, sans encoder
  * une video a chaque execution de la suite.
  */
-function argumentsFfmpeg({ source, destination, clipId, buyerId, secret, force = FORCE_DEFAUT, texteVisible = '' } = {}) {
+function argumentsFfmpeg({
+  source,
+  destination,
+  clipId,
+  buyerId,
+  secret,
+  force = FORCE_DEFAUT,
+  texteVisible = '',
+  palier = 'plein',
+} = {}) {
   if (!source) throw new Error('source requise');
   if (!destination) throw new Error('destination requise');
 
+  const reglage = resolvePalier(palier);
   const marque = marquePourAcheteur(clipId, buyerId);
-  const visible = texteVisible || `NOSSEN · ${buyerId}`;
+  const visible = texteVisible || reglage.signature || `NOSSEN · ${buyerId}`;
+
+  // L'echelle passe AVANT les deux marques. Reduire apres avoir grave, c'est
+  // reechantillonner la rotation de couleur et le texte : la preuve s'abime et
+  // la signature devient floue.
+  const chaine = [
+    reglage.hauteur ? `scale=-2:${reglage.hauteur}` : '',
+    filtreInvisible(marque, secret, force),
+    filtreVisible(visible),
+  ].filter(Boolean).join(',');
 
   return [
     '-hide_banner', '-nostats', '-y',
     '-i', String(source),
-    '-vf', `${filtreInvisible(marque, secret, force)},${filtreVisible(visible)}`,
-    // CRF 18 : la marque invisible se joue sur quelques niveaux par canal. Un
-    // encodage trop agressif la noierait dans ses propres artefacts, et on aurait
-    // fabrique une preuve illisible.
-    '-c:v', 'libx264', '-crf', '18', '-preset', 'medium',
+    '-vf', chaine,
+    '-c:v', 'libx264', '-crf', reglage.crf, '-preset', 'medium',
     // L'audio est recopie tel quel : le filigrane est visuel, re-encoder le son
     // ne ferait que degrader le master pour rien.
     '-c:a', 'copy',
@@ -164,12 +219,15 @@ function argumentsFfmpeg({ source, destination, clipId, buyerId, secret, force =
 }
 
 /** Tout ce que la livraison doit enregistrer pour pouvoir accuser plus tard. */
-function planDeLivraison({ clipId, buyerId, secret, dossierSortie = '' } = {}) {
+function planDeLivraison({ clipId, buyerId, secret, dossierSortie = '', palier = 'plein' } = {}) {
   const nom = nomPourAcheteur(clipId, buyerId, secret);
   return {
     schema: SCHEMA,
     clipId,
     buyerId,
+    // Consigne le palier: sans lui, on ne saurait plus dire si un clip bas de
+    // gamme retrouve dans la nature l'etait a la livraison ou apres recompression.
+    palier: PALIERS[String(palier || '').toLowerCase()] ? String(palier).toLowerCase() : 'plein',
     fichier: nom,
     // path.posix et non path.join : ce chemin designe un emplacement DANS le
     // conteneur Linux. Sur un poste Windows, path.join rendrait des antislashs,
@@ -187,6 +245,9 @@ function planDeLivraison({ clipId, buyerId, secret, dossierSortie = '' } = {}) {
 
 module.exports = {
   SCHEMA,
+  PALIERS,
+  resolvePalier,
+  paiementViaGoogle,
   matriceDepuisRotation,
   filtreInvisible,
   filtreVisible,

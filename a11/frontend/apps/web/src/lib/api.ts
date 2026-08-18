@@ -6965,6 +6965,14 @@ export interface SubscriptionStatus {
     available: boolean;
     phone?: string | null;
     ribUrl?: string | null;
+    offers?: Array<{
+      id: string;
+      label: string;
+      priceEur: number;
+      unit?: string;
+      note?: string;
+      highlight?: boolean;
+    }>;
   } | null;
   availablePlans?: Array<{
     id: 'premium' | 'founder' | string;

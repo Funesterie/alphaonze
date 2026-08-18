@@ -12831,6 +12831,18 @@ function FunesterieAccountPage({
             {inventory.subscription?.founderPayment?.available ? (
               <div className="fun-account-payment-direct">
                 <strong>Virement bancaire — le plus direct</strong>
+                {(inventory.subscription.founderPayment.offers ?? []).map((offer) => (
+                  <div
+                    key={offer.id}
+                    className={offer.highlight ? "fun-direct-offer fun-direct-offer-highlight" : "fun-direct-offer"}
+                  >
+                    <span>
+                      {offer.label} — {offer.priceEur.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
+                      {offer.unit ? ` ${offer.unit}` : ""}
+                    </span>
+                    {offer.note ? <small>{offer.note}</small> : null}
+                  </div>
+                ))}
                 <div className="fun-account-mini-list">
                   {inventory.subscription.founderPayment.phone ? (
                     <span>Wero / virement instantané : {inventory.subscription.founderPayment.phone}</span>
@@ -12841,7 +12853,7 @@ function FunesterieAccountPage({
                     </a>
                   ) : null}
                 </div>
-                <small>Précise ton email dans le libellé du virement, l'accès est activé à réception.</small>
+                <small>Précise ton email et l'offre dans le libellé du virement, l'accès est activé à réception.</small>
               </div>
             ) : null}
             <footer>

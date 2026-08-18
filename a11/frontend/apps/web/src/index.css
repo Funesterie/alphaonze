@@ -9681,6 +9681,31 @@ body {
   letter-spacing: 0.02em;
 }
 
+.fun-direct-offer {
+  display: grid;
+  gap: 2px;
+  padding: 7px 0;
+  border-top: 1px solid rgba(143, 240, 191, 0.16);
+  color: #d7f4f0;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.fun-direct-offer:first-of-type {
+  border-top: 0;
+}
+
+.fun-direct-offer-highlight span {
+  color: #b9ffdc;
+}
+
+.fun-direct-offer small {
+  margin-top: 0;
+  color: #9fd8c4;
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .fun-account-payment-direct small {
   display: block;
   margin-top: 8px;

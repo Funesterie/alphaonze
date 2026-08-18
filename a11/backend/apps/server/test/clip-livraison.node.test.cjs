@@ -122,3 +122,81 @@ test('bout en bout : une fuite designe le bon acheteur', () => {
   const r = fq.identifierMarque(px, reencode, marques, SECRET);
   assert.strictEqual(r.marque, l.marquePourAcheteur('nossen-001.mp4', coupable));
 });
+
+// ── Palier de livraison (Djeff, 18/08/2026) ──────────────────────────────────
+//
+// Le clip bas de gamme se declenche sur le CANAL DE PAIEMENT -- portefeuille
+// Google chez Stripe -- et jamais sur le fournisseur d'identite du site. Ces
+// tests verrouillent les deux moities : le signal lu, et l'encodage produit.
+
+const { paiementViaGoogle, resolvePalier, argumentsFfmpeg, planDeLivraison } = l;
+
+test('le portefeuille Google est reconnu, les autres non', () => {
+  const google = { payment_method_details: { card: { wallet: { type: 'google_pay' } } } };
+  const apple = { payment_method_details: { card: { wallet: { type: 'apple_pay' } } } };
+  const carte = { payment_method_details: { card: {} } };
+
+  assert.equal(paiementViaGoogle(google), true);
+  assert.equal(paiementViaGoogle(apple), false);
+  assert.equal(paiementViaGoogle(carte), false);
+  assert.equal(paiementViaGoogle(null), false);
+});
+
+test('le palier plein reste en pleine definition et sans signature genjutsu', () => {
+  const args = argumentsFfmpeg({
+    source: 'in.mp4', destination: 'out.mp4',
+    clipId: 'clip-1', buyerId: 'acheteur-1', secret: 'secret-de-livraison-32-caracteres',
+  });
+  const vf = args[args.indexOf('-vf') + 1];
+  assert.equal(vf.includes('scale='), false, 'aucune reduction au plein tarif');
+  assert.equal(vf.includes('genjutsu'), false);
+  assert.equal(args[args.indexOf('-crf') + 1], '18');
+});
+
+test('le palier bas reduit, degrade et signe genjutsu', () => {
+  const args = argumentsFfmpeg({
+    source: 'in.mp4', destination: 'out.mp4',
+    clipId: 'clip-1', buyerId: 'acheteur-1', secret: 'secret-de-livraison-32-caracteres',
+    palier: 'bas',
+  });
+  const vf = args[args.indexOf('-vf') + 1];
+  assert.match(vf, /scale=-2:480/);
+  assert.match(vf, /genjutsu/);
+  assert.equal(args[args.indexOf('-crf') + 1], '32');
+});
+
+test("l'echelle passe avant les marques, sinon la preuve s'abime", () => {
+  const args = argumentsFfmpeg({
+    source: 'in.mp4', destination: 'out.mp4',
+    clipId: 'clip-1', buyerId: 'acheteur-1', secret: 'secret-de-livraison-32-caracteres',
+    palier: 'bas',
+  });
+  const vf = args[args.indexOf('-vf') + 1];
+  assert.ok(vf.indexOf('scale=') < vf.indexOf('colorchannelmixer'), 'scale doit preceder la rotation');
+  assert.ok(vf.indexOf('colorchannelmixer') < vf.indexOf('drawtext'), 'la rotation doit preceder le texte');
+});
+
+test('le filigrane invisible est identique dans les deux paliers', () => {
+  const commun = {
+    source: 'in.mp4', destination: 'out.mp4',
+    clipId: 'clip-1', buyerId: 'acheteur-1', secret: 'secret-de-livraison-32-caracteres',
+  };
+  const extraireMatrice = (args) => {
+    const vf = args[args.indexOf('-vf') + 1];
+    return vf.match(/colorchannelmixer=[^,]+/)[0];
+  };
+  assert.equal(
+    extraireMatrice(argumentsFfmpeg(commun)),
+    extraireMatrice(argumentsFfmpeg({ ...commun, palier: 'bas' })),
+    'un clip degrade doit rester identifiable comme les autres'
+  );
+});
+
+test('un palier inconnu retombe sur le plein tarif, jamais sur le bas de gamme', () => {
+  assert.equal(resolvePalier('nawak').crf, '18');
+  assert.equal(resolvePalier('').crf, '18');
+  assert.equal(planDeLivraison({
+    clipId: 'clip-1', buyerId: 'acheteur-1', secret: 'secret-de-livraison-32-caracteres',
+    palier: 'nawak',
+  }).palier, 'plein');
+});
