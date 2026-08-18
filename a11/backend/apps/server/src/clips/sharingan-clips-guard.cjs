@@ -9,6 +9,7 @@
 
 const path = require('path');
 const { CLIPS_DIR } = require('./clip-storage.cjs');
+const { estActif: estToutGratuit } = require('../auth/tout-gratuit.cjs');
 const TROLL_VIDEO = 'sharingan_troll.mp4';
 
 /**
@@ -134,6 +135,19 @@ function createSharinganClipsGuard(opts = {}) {
   return function sharinganGuard(req, res, next) {
     // Internal services always pass
     if (req.internalService) return next();
+
+    // Tout gratuit: il n'y a plus de caisse derriere la porte, donc plus de
+    // raison de la fermer. Le tri des aspirateurs reste actif juste en dessous:
+    // gratuit ne veut pas dire qu'on offre la bande passante a yt-dlp.
+    if (estToutGratuit(process.env)) {
+      if (isRipper(req)) {
+        console.log(`[Sharingan] 🔴 Ripper detected (mode gratuit): ${req.headers['user-agent']?.slice(0, 50)} → troll video`);
+        return res.sendFile(trollPath, (err) => {
+          if (err && !res.headersSent) res.redirect(302, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+        });
+      }
+      return next();
+    }
 
     // Check for rippers → serve troll video
     if (isRipper(req)) {

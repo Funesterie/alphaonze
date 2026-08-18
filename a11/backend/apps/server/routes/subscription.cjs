@@ -3,6 +3,7 @@
 const express = require('express');
 const stripeService = require('../lib/stripe-service.cjs');
 const { hasFullAccess, isFullAccessEmail } = require('../src/auth/full-access.cjs');
+const toutGratuit = require('../src/auth/tout-gratuit.cjs');
 
 function planLabel(planId) {
   const plan = stripeService.resolvePlanConfig(planId);
@@ -60,6 +61,32 @@ function buildFounderPayment() {
     phone: phone || null,
     ribUrl: ribUrl || null,
     offers: buildDirectOffers(),
+  };
+}
+
+/**
+ * Mode « tout gratuit »: chacun a le palier premium, sans rien payer.
+ *
+ * PREMIUM et pas admin_family: le palier famille sert aussi de controle d'acces
+ * administrateur ailleurs dans le serveur. Voir tout-gratuit.cjs.
+ *
+ * Les offres et les coordonnees bancaires disparaissent: laisser un tarif
+ * affiche a cote d'un produit gratuit, c'est promettre une facture qui ne
+ * viendra pas.
+ */
+function buildToutGratuitStatus() {
+  return {
+    ok: true,
+    active: true,
+    fullAccess: false,
+    tier: toutGratuit.palierOffert(),
+    plan: 'Gratuit',
+    reason: 'tout_gratuit',
+    endDate: null,
+    stripeStatus: null,
+    founderPayment: null,
+    availablePlans: [],
+    gratuit: { actif: true, clipsParMois: toutGratuit.quotaClipsParMois() },
   };
 }
 
@@ -219,6 +246,12 @@ function createSubscriptionRouter({ verifyJWT, db }) {
 
       if (!userId) {
         return res.status(400).json({ error: 'User ID requis' });
+      }
+
+      if (toutGratuit.estActif()) {
+        // Ni erreur ni session: le compte a deja tout. Ouvrir un checkout
+        // reviendrait a encaisser pour quelque chose de gratuit.
+        return res.json(buildToutGratuitStatus());
       }
 
       if (hasFullAccess(req.user)) {
@@ -417,6 +450,11 @@ function createSubscriptionRouter({ verifyJWT, db }) {
 
   router.get('/status', verifyJWT, async (req, res) => {
     try {
+      // Le mode gratuit passe avant tout le reste: inutile d'interroger Stripe
+      // ni la base pour un abonnement que personne ne paie plus.
+      if (toutGratuit.estActif()) {
+        return res.json(buildToutGratuitStatus());
+      }
       const userId = req.user?.id;
 
       if (!userId) {

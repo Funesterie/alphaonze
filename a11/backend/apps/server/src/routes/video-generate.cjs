@@ -3,6 +3,16 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
+const {
+  estActif: estToutGratuit,
+  creerCompteurClipsGratuits,
+} = require('../auth/tout-gratuit.cjs');
+
+// Un seul compteur pour le processus: partage entre toutes les requetes, remis a
+// zero par la cle mensuelle. En memoire, comme tier-usage-quota.cjs -- suffisant
+// tant que le backend tourne en un seul exemplaire par couleur.
+const compteurClipsGratuits = creerCompteurClipsGratuits();
+
 const sdToolsModule = require('./sd-tools.cjs');
 const {
   createGenerateVideoHandler,
@@ -450,7 +460,12 @@ function resolveUserRole(req = null) {
 
 function canUsePlatformCloudVideo(req = null) {
   const role = resolveUserRole(req);
-  return ['founder', 'admin_family'].includes(role);
+  if (['founder', 'admin_family'].includes(role)) return true;
+  // En mode « tout gratuit », le cloud plateforme s'ouvre a tout le monde --
+  // mais borne par le quota mensuel, sinon la reserve Comfy est vide au 14e clip
+  // et plus personne n'a rien. Le quota exige un compte: voir tout-gratuit.cjs.
+  if (!estToutGratuit(process.env)) return false;
+  return compteurClipsGratuits.etat(req?.user || null).autorise;
 }
 
 function enrichVideoResult(result, meta = {}) {
@@ -1504,20 +1519,38 @@ function createVideoGenerateRouter(overrides = {}) {
         || sessionVideoTokens.civitai
       );
       if (!hasByokForCloud && !canUsePlatformCloudVideo(req)) {
+        // En mode gratuit, le refus n'a rien a voir avec le role: il dit combien
+        // il reste, ou qu'il faut un compte. Servir « reserve aux fondateurs » a
+        // quelqu'un dont le quota est simplement epuise l'envoie chercher un
+        // probleme de droits qui n'existe pas.
+        const gratuit = estToutGratuit(process.env);
+        const quota = gratuit ? compteurClipsGratuits.etat(req?.user || null) : null;
         const error = new Error('platform_cloud_video_forbidden');
         error.statusCode = 403;
         error.payload = {
           ok: false,
-          error: 'platform_cloud_video_forbidden',
-          message: 'Génération vidéo via le cloud plateforme réservée aux fondateurs et administrateurs. Aucun runner local ni token BYOK disponible.',
+          error: gratuit ? (quota.raison || 'quota_mensuel_epuise') : 'platform_cloud_video_forbidden',
+          message: gratuit
+            ? (quota.raison === 'compte_requis'
+              ? 'Les clips sont gratuits, mais il faut un compte: sans identité, un quota par personne ne veut rien dire.'
+              : `Quota mensuel atteint (${quota.utilises}/${quota.quota}). Il se remet à zéro le 1er du mois, ou apporte ta clé Comfy pour générer sans limite.`)
+            : 'Génération vidéo via le cloud plateforme réservée aux fondateurs et administrateurs. Aucun runner local ni token BYOK disponible.',
           providerUsed: null,
           chargedCredits: null,
+          quota: quota ? { utilises: quota.utilises, quota: quota.quota, restants: quota.restants } : null,
           role,
         };
         throw error;
       }
       const cloudResult = await generateViaProxy({ req, body, prompt, proxyUrl: platformCloudUrl });
       if (cloudResult) {
+        // On decompte APRES la generation, et seulement quand elle a consomme
+        // NOS credits. Decompter avant ferait payer au compte une generation qui
+        // echoue; decompter sur du BYOK ferait payer un quota a quelqu'un qui a
+        // apporte sa propre cle.
+        if (!hasByokForCloud && estToutGratuit(process.env) && !['founder', 'admin_family'].includes(role)) {
+          compteurClipsGratuits.consommer(req?.user || null);
+        }
         return enrichVideoResult(cloudResult, {
           providerUsed: hasByokForCloud ? 'user_cloud' : 'platform_cloud',
           chargedCredits: hasByokForCloud ? 'user_token' : 'platform',

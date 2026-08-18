@@ -12858,7 +12858,15 @@ function FunesterieAccountPage({
             ) : null}
             <footer>
               <div className="fun-token-card-actions">
-                {inventory.subscription?.active ? (
+                {/* Tout gratuit : ni portail Stripe ni désabonnement. Les deux
+                    boutons mèneraient à un abonnement qui n'existe pas — un
+                    bouton qui échoue est pire que pas de bouton. */}
+                {inventory.subscription?.gratuit?.actif ? (
+                  <span>
+                    Tout est gratuit. {inventory.subscription.gratuit.clipsParMois} clip
+                    {inventory.subscription.gratuit.clipsParMois > 1 ? "s" : ""} par mois et par compte.
+                  </span>
+                ) : inventory.subscription?.active ? (
                   <>
                     <button type="button" onClick={() => openPayment("portal")} disabled={!!paymentBusy}>
                       {paymentBusy === "portal" ? "Ouverture" : "Gérer"}

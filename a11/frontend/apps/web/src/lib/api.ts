@@ -6961,6 +6961,7 @@ export interface SubscriptionStatus {
   plan?: string | null;
   reason?: string | null;
   endDate?: string | null;
+  gratuit?: { actif: boolean; clipsParMois: number } | null;
   founderPayment?: {
     available: boolean;
     phone?: string | null;
