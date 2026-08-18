@@ -7,6 +7,15 @@
 #   fun exec <commande>     une commande quelconque dans le conteneur
 #   fun which               dit juste quel conteneur est actif
 #
+# LES ITEMS DE NAVIGATION -- lecture seule, aucun credit depense
+#
+#   fun etat                toutes les salles d'un coup
+#   fun voix                catalogue des voix, ce qui est mort et ce qui vit
+#   fun personas            le casting LLM, qui parle sur quel modele
+#   fun cout                ce qu'un clip coute et le plafond du mois
+#   fun gratuit             etat du commutateur tout-gratuit et du quota
+#   fun graphe              noeuds, relations et labels de Neo4j
+#
 # POURQUOI LE CONTENEUR N'EST PAS ECRIT EN DUR
 #
 # La production est en blue/green : le conteneur actif s'appelle
@@ -83,6 +92,27 @@ switch ($commande) {
       & ssh @SshBase $Hote "docker logs --tail 80 '$c' 2>&1"
     }
   }
+
+  # Les « items » de navigation. Un verbe, une salle.
+  #
+  # Chacune de ces lectures a ete faite a la main le 18/08/2026 en collant des
+  # `node -e` de trois lignes dans un SSH. Ca marche une fois; ca ne se retient
+  # pas, et une accolade oubliee rend une erreur qui ressemble a une panne.
+  # Le script vit dans le depot, il est donc lisible, relisable et corrigible.
+  #
+  # Lecture seule: rien n'ecrit, rien ne genere, rien ne depense un credit.
+  'etat' {
+    $c = Get-ConteneurActif
+    $salle = if ($reste.Count -gt 0) { $reste[0] } else { 'tout' }
+    Write-Host "[$c] etat : $salle" -ForegroundColor DarkGray
+    & ssh @SshBase $Hote "docker exec '$c' node /app/scripts/fun-items/etat.cjs '$salle'"
+  }
+
+  'voix'     { & $PSCommandPath etat voix }
+  'personas' { & $PSCommandPath etat personas }
+  'cout'     { & $PSCommandPath etat cout }
+  'gratuit'  { & $PSCommandPath etat gratuit }
+  'graphe'   { & $PSCommandPath etat graphe }
 
   'shell' {
     $c = Get-ConteneurActif
