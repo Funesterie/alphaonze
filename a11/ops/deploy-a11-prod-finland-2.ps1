@@ -2,6 +2,10 @@ param(
   [string]$RepoRoot = "D:\projets\funesterie",
   [string]$Remote = $(if ($env:A11_HETZNER_REMOTE) { $env:A11_HETZNER_REMOTE } else { "deploy@37.27.63.109" }),
   [string]$SshKey = $(if ($env:A11_HETZNER_SSH_KEY) { $env:A11_HETZNER_SSH_KEY } else { "C:\Users\cella\.ssh\codex-a11-hetzner-20260627_ed25519" }),
+  # Le port SSH du serveur. Defaut 22 pour ne rien changer aujourd'hui, mais il
+  # n'est plus implicite : le jour ou sshd ecoute ailleurs, poser
+  # A11_HETZNER_SSH_PORT suffit, sans toucher au script.
+  [int]$SshPort = $(if ($env:A11_HETZNER_SSH_PORT) { [int]$env:A11_HETZNER_SSH_PORT } else { 22 }),
   [switch]$ReuseRemoteSecrets,
   [switch]$BlueGreen,
   [switch]$CleanOldBlueGreen,
@@ -262,6 +266,7 @@ Require-Path $SshKey "Cle SSH"
 # muet est declare mort en ~60 s, la commande sort en erreur et l'appelant peut reessayer.
 $sshBase = @(
   "-i", $SshKey,
+  "-p", "$SshPort",
   "-o", "BatchMode=yes",
   "-o", "StrictHostKeyChecking=accept-new",
   "-o", "ConnectTimeout=20",

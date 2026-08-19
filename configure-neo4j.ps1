@@ -5,7 +5,7 @@ param(
     [string]$Neo4jDesktopPath = "D:\projets\funesterie\Neo4j Desktop 2",
     [string]$DatabaseName = "a11-knowledge-graph",
     [switch]$EnableSSH = $false,
-    [int]$SSHPort = 22,
+    [int]$SSHPort = $(if ($env:A11_HETZNER_SSH_PORT) { [int]$env:A11_HETZNER_SSH_PORT } else { 22 }),
     [string]$SSHUser = $env:USERNAME
 )
 
