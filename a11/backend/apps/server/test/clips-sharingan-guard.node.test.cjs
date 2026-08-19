@@ -193,6 +193,47 @@ test('une phrase en Latin-1 passe aussi telle quelle, sans encodage', () => {
   process.env.NOSSEN_INTERNAL_TOKEN = 'jeton-interne-de-test';
 });
 
+test('pendant une rotation, l ancienne et la nouvelle phrase passent toutes deux', () => {
+  const ancienne = 'la premiere phrase que tout le monde connait';
+  const nouvelle = 'la seconde phrase que personne ne connait encore';
+  process.env.NOSSEN_INTERNAL_TOKEN = ancienne;
+  process.env.NOSSEN_INTERNAL_TOKEN_FALLBACK = nouvelle;
+
+  const handler = handlerDeLaRoute();
+  for (const phrase of [ancienne, nouvelle]) {
+    const vu = appeler(handler, requete({
+      ua: 'ffmpeg/6.1',
+      entetes: { [config.INTERNAL_HEADER]: config.encoderSecret(phrase) },
+    }));
+    assert.equal(vu.fichier, '/tmp/clips-test/clip.mp4', `refusee pendant la rotation: ${phrase}`);
+  }
+
+  // Une fois l'ancienne retiree, elle ne doit plus ouvrir la porte.
+  process.env.NOSSEN_INTERNAL_TOKEN = nouvelle;
+  delete process.env.NOSSEN_INTERNAL_TOKEN_FALLBACK;
+  const apres = appeler(handlerDeLaRoute(), requete({
+    ua: 'ffmpeg/6.1',
+    entetes: { [config.INTERNAL_HEADER]: config.encoderSecret(ancienne) },
+  }));
+  assert.equal(apres.fichier, '/tmp/clips-test/sharingan_troll.mp4',
+    'l ancienne phrase doit cesser de fonctionner apres retrait');
+
+  process.env.NOSSEN_INTERNAL_TOKEN = 'jeton-interne-de-test';
+});
+
+test('sans aucun secret configure, rien ne passe pour un interne', () => {
+  delete process.env.NOSSEN_INTERNAL_TOKEN;
+  delete process.env.NOSSEN_INTERNAL_TOKEN_FALLBACK;
+  assert.deepEqual(config.secretsAcceptes(), [], 'aucun secret accepte');
+  const vu = appeler(handlerDeLaRoute(), requete({
+    ua: 'ffmpeg/6.1',
+    entetes: { [config.INTERNAL_HEADER]: 'nimporte quoi' },
+  }));
+  assert.equal(vu.fichier, '/tmp/clips-test/sharingan_troll.mp4',
+    'une entete sans secret configure ne doit jamais valoir laissez-passer');
+  process.env.NOSSEN_INTERNAL_TOKEN = 'jeton-interne-de-test';
+});
+
 test('le generateur et le serveur lisent la meme constante', () => {
   const { CLIPS_DIR } = require('../src/clips/clips-config.cjs');
   assert.equal(CLIPS_DIR, '/tmp/clips-test',

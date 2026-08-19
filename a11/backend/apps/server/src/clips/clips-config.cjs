@@ -88,9 +88,12 @@ function isInternalRequest(req) {
   if (!req) return false;
   if (req.internalService) return true;
 
-  const token = process.env.NOSSEN_INTERNAL_TOKEN;
   const presented = req.headers ? req.headers[INTERNAL_HEADER] : null;
-  if (token && presented && secretPresente(presented, token)) return true;
+  if (presented) {
+    for (const attendu of secretsAcceptes()) {
+      if (secretPresente(presented, attendu)) return true;
+    }
+  }
 
   const allow = allowedUserAgents();
   if (allow.length) {
@@ -116,6 +119,22 @@ function isOwnSiteReferer(req) {
 }
 
 /**
+ * Les secrets acceptes, dans l'ordre: le courant, puis celui de secours.
+ *
+ * Deux valeurs valides en meme temps, c'est ce qui rend le changement de phrase
+ * possible sans coupure: on pose la nouvelle en secours, on met les appelants a
+ * jour un par un, on promeut, on retire l'ancienne. Avec un seul secret, changer
+ * de phrase veut dire couper les appels internes pendant la bascule.
+ *
+ * Le secours est une variable distincte plutot qu'une liste separee par des
+ * virgules: une phrase a le droit de contenir une virgule.
+ */
+function secretsAcceptes() {
+  return [process.env.NOSSEN_INTERNAL_TOKEN, process.env.NOSSEN_INTERNAL_TOKEN_FALLBACK]
+    .filter((v) => typeof v === 'string' && v.length > 0);
+}
+
+/**
  * Encode un secret pour qu'il tienne dans un entete HTTP.
  * A utiliser cote appelant: setHeader(INTERNAL_HEADER, encoderSecret(phrase)).
  */
@@ -129,6 +148,7 @@ module.exports = {
   CHECKOUT_URL,
   INTERNAL_HEADER,
   encoderSecret,
+  secretsAcceptes,
   isInternalRequest,
   isAuthenticated,
   isOwnSiteReferer,
