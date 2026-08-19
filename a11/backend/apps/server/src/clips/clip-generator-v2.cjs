@@ -62,6 +62,55 @@ function downloadFile(url, dest) {
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 /**
+ * Le partenaire refuse-t-il pour cause de debit trop eleve ?
+ *
+ * Le message d'erreur porte la reponse brute serialisee, donc on cherche dedans.
+ * Distinguer ce cas des autres est ce qui rend le parallele viable: une panne
+ * ordinaire se retente vite, une limite de debit demande d'attendre plus
+ * longtemps a chaque fois, sinon on ne fait qu'aggraver l'embouteillage.
+ */
+function estLimiteDeDebit(message) {
+  const m = String(message || '').toLowerCase();
+  return m.includes('429')
+    || m.includes('rate limit')
+    || m.includes('rate_limit')
+    || m.includes('too many request')
+    || m.includes('quota');
+}
+
+/**
+ * Execute des taches avec une concurrence bornee, en preservant l'ordre.
+ *
+ * Le fichier posait "UNE video a la fois, jamais parallele" en principe, sans
+ * justification ecrite nulle part. En fullDuration un morceau de trois minutes
+ * demande une vingtaine de segments: a la file, c'est tres long. On borne donc
+ * plutot que d'interdire. NOSSEN_CLIP_CONCURRENCY=1 restitue exactement
+ * l'ancien comportement.
+ *
+ * Les resultats sont ranges par indice, pas par ordre d'arrivee: l'assemblage
+ * FFmpeg depend de l'ordre des plans, et le parallele les termine en desordre.
+ */
+async function executerEnParallele(taches, concurrence, delaiEntreDemarrages = 0) {
+  const resultats = new Array(taches.length).fill(null);
+  let prochain = 0;
+
+  async function ouvrier(rang) {
+    // On decale le demarrage de chaque ouvrier: sans cela toutes les premieres
+    // soumissions partent dans la meme milliseconde.
+    if (delaiEntreDemarrages > 0 && rang > 0) await sleep(delaiEntreDemarrages * rang);
+    while (true) {
+      const i = prochain++;
+      if (i >= taches.length) return;
+      resultats[i] = await taches[i](i);
+    }
+  }
+
+  const largeur = Math.max(1, Math.min(concurrence, taches.length));
+  await Promise.all(Array.from({ length: largeur }, (_, rang) => ouvrier(rang)));
+  return resultats;
+}
+
+/**
  * Choisit l'image de reference d'un plan.
  *
  * `referenceImageUrls` est un tableau depuis l'origine, mais seul l'indice 0
@@ -250,37 +299,50 @@ async function generateClip(config) {
   // Le lieu est rappele sur chaque segment, comme l'identite : c'est ce qui
   // empeche le clip de partir dans six endroits differents.
   const lieuBrief = lieu ? ` The entire clip is shot in one single location: ${lieu}. Never change location.` : '';
-  const videoPaths = [];
-  for (let i = 0; i < numSegments; i++) {
+  const concurrence = Math.max(1, Math.min(4, parseInt(process.env.NOSSEN_CLIP_CONCURRENCY || '2', 10) || 1));
+  console.log(`[clip] Concurrence: ${concurrence} video(s) de front`);
+
+  const taches = Array.from({ length: numSegments }, (_, i) => async () => {
     const section = sections[i % sections.length];
     const prompt = `${section.visual}.${lieuBrief} Cinematic anime quality, volumetric lighting, smooth camera movement. ${style}${identityBrief}`.trim();
     const referenceImage = resolveReferenceImage(identity, section);
 
     let videoUrl;
-    let retries = 2;
-    while (retries > 0) {
+    // Trois essais au lieu de deux: en parallele, un refus pour cause de debit
+    // est probable et ne doit pas coûter le plan.
+    let essaisRestants = 3;
+    let attente = 5000;
+    while (essaisRestants > 0) {
       try {
         videoUrl = await generateOneVideo(prompt, i, 600000, identity, referenceImage);
         break;
       } catch (e) {
-        retries--;
-        console.warn(`[clip] Vidéo ${i} échouée: ${e.message}${retries > 0 ? ', retry...' : ''}`);
-        if (retries > 0) await sleep(5000);
+        essaisRestants--;
+        const debit = estLimiteDeDebit(e.message);
+        console.warn(`[clip] Vidéo ${i} échouée${debit ? ' (débit)' : ''}: ${e.message}${essaisRestants > 0 ? ', retry...' : ''}`);
+        if (essaisRestants > 0) {
+          await sleep(attente);
+          // Limite de debit: on recule franchement. Autre panne: on garde un
+          // delai court, la cause n'est pas l'encombrement.
+          if (debit) attente *= 3;
+        }
       }
     }
 
-    if (videoUrl) {
-      const dest = path.join(clipDir, `scene_${String(i).padStart(2, '0')}.mp4`);
-      await downloadFile(videoUrl, dest);
-      videoPaths.push(dest);
-      console.log(`[clip] Vidéo ${i} prête (${videoPaths.length}/${numSegments})`);
-    } else {
-      console.warn(`[clip] Vidéo ${i} abandonnée après 2 essais`);
+    if (!videoUrl) {
+      console.warn(`[clip] Vidéo ${i} abandonnée après 3 essais`);
+      return null;
     }
 
-    // Petit délai entre les soumissions
-    if (i < numSegments - 1) await sleep(2000);
-  }
+    const dest = path.join(clipDir, `scene_${String(i).padStart(2, '0')}.mp4`);
+    await downloadFile(videoUrl, dest);
+    console.log(`[clip] Vidéo ${i} prête`);
+    return dest;
+  });
+
+  // 2 s de decalage entre les demarrages, comme l'ancien delai entre soumissions.
+  const resultats = await executerEnParallele(taches, concurrence, 2000);
+  const videoPaths = resultats.filter(Boolean);
 
   if (videoPaths.length === 0) throw new Error('Aucune vidéo générée');
   console.log(`[clip] ${videoPaths.length}/${numSegments} vidéos prêtes, assemblage FFmpeg...`);
@@ -335,4 +397,4 @@ function mountClipRoutes(app) {
   console.log('[clip-gen] V2 routes: /clips, /api/mcp-bridge/clip/{generate,list}');
 }
 
-module.exports = { generateClip, mountClipRoutes, resolveReferenceImage };
+module.exports = { generateClip, mountClipRoutes, resolveReferenceImage, executerEnParallele, estLimiteDeDebit };
