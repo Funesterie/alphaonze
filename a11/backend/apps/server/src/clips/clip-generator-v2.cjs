@@ -14,7 +14,10 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 
-const CLIPS_DIR = '/agent-bus/clips';
+// Le dossier vient de la source unique: le serveur sert les clips depuis ce meme
+// chemin. Quand producteur et lecteur divergent, les clips sont bien generes mais
+// introuvables a la lecture.
+const { CLIPS_DIR } = require('./clips-config.cjs');
 const BRIDGE_URL = 'http://127.0.0.1:3000/api/mcp-bridge/call';
 if (!fs.existsSync(CLIPS_DIR)) fs.mkdirSync(CLIPS_DIR, { recursive: true });
 

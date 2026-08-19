@@ -14,7 +14,9 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 
-const CLIPS_DIR = '/agent-bus/clips';
+// Copie autonome: pas de require vers le serveur, mais meme variable et meme
+// defaut que src/clips/clips-config.cjs.
+const CLIPS_DIR = process.env.NOSSEN_CLIPS_DIR || '/app/runtime/clips';
 const BRIDGE_URL = 'http://127.0.0.1:3000/api/mcp-bridge/call';
 if (!fs.existsSync(CLIPS_DIR)) fs.mkdirSync(CLIPS_DIR, { recursive: true });
 
