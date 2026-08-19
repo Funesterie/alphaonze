@@ -145,6 +145,54 @@ test('lecteurs et producteurs de clips designent le meme dossier', () => {
   }
 });
 
+test('le secret peut etre une phrase, dans n importe quelle langue', () => {
+  const phrases = [
+    'الحصان لا يركض بدون قلب',        // arabe
+    'le cheval ne court pas sans coeur', // francais simple
+    'la sauce a tourné mais le blé reste', // accents
+    '馬は心なしでは走らない',            // japonais
+  ];
+  for (const phrase of phrases) {
+    process.env.NOSSEN_INTERNAL_TOKEN = phrase;
+    const handler = handlerDeLaRoute();
+    // Un entete HTTP ne transporte que du Latin-1: on presente la forme encodee.
+    const vu = appeler(handler, requete({
+      ua: 'ffmpeg/6.1',
+      entetes: { [config.INTERNAL_HEADER]: config.encoderSecret(phrase) },
+    }));
+    assert.equal(vu.fichier, '/tmp/clips-test/clip.mp4', `phrase refusee: ${phrase}`);
+  }
+  process.env.NOSSEN_INTERNAL_TOKEN = 'jeton-interne-de-test';
+});
+
+test('une phrase presque juste ne passe pas', () => {
+  process.env.NOSSEN_INTERNAL_TOKEN = 'le cheval ne court pas sans coeur';
+  const handler = handlerDeLaRoute();
+  for (const tentative of [
+    'le cheval ne court pas sans coeurs',
+    'Le cheval ne court pas sans coeur',
+    'le cheval ne court pas sans',
+  ]) {
+    const vu = appeler(handler, requete({
+      ua: 'ffmpeg/6.1',
+      entetes: { [config.INTERNAL_HEADER]: config.encoderSecret(tentative) },
+    }));
+    assert.equal(vu.fichier, '/tmp/clips-test/sharingan_troll.mp4', `acceptee a tort: ${tentative}`);
+  }
+  process.env.NOSSEN_INTERNAL_TOKEN = 'jeton-interne-de-test';
+});
+
+test('une phrase en Latin-1 passe aussi telle quelle, sans encodage', () => {
+  process.env.NOSSEN_INTERNAL_TOKEN = 'le cheval ne court pas sans coeur';
+  const handler = handlerDeLaRoute();
+  const vu = appeler(handler, requete({
+    ua: 'ffmpeg/6.1',
+    entetes: { [config.INTERNAL_HEADER]: 'le cheval ne court pas sans coeur' },
+  }));
+  assert.equal(vu.fichier, '/tmp/clips-test/clip.mp4');
+  process.env.NOSSEN_INTERNAL_TOKEN = 'jeton-interne-de-test';
+});
+
 test('le generateur et le serveur lisent la meme constante', () => {
   const { CLIPS_DIR } = require('../src/clips/clips-config.cjs');
   assert.equal(CLIPS_DIR, '/tmp/clips-test',

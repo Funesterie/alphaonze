@@ -32,11 +32,36 @@ const CHECKOUT_URL = process.env.NOSSEN_CLIP_CHECKOUT_URL
 // peut ni prouver qu'un appel est interne, ni prouver le contraire.
 const INTERNAL_HEADER = 'x-funesterie-internal';
 
+// Le secret n'est pas oblige d'etre une suite de caracteres aleatoires: une
+// phrase fait l'affaire, dans n'importe quelle langue, du moment qu'elle est
+// assez longue pour ne pas se deviner. On normalise en NFC parce que deux
+// chaines visuellement identiques peuvent avoir deux representations Unicode
+// differentes selon le clavier ou le systeme qui les a produites.
+function normaliser(valeur) {
+  return String(valeur).normalize('NFC');
+}
+
 function secretsEqual(a, b) {
-  const bufA = Buffer.from(String(a));
-  const bufB = Buffer.from(String(b));
+  const bufA = Buffer.from(normaliser(a), 'utf8');
+  const bufB = Buffer.from(normaliser(b), 'utf8');
+  // Les longueurs different: on repond non tout de suite. C'est une fuite de
+  // longueur, pas de contenu, et c'est le comportement habituel.
   if (bufA.length !== bufB.length) return false;
   return crypto.timingSafeEqual(bufA, bufB);
+}
+
+/**
+ * Compare ce que presente l'appelant au secret attendu.
+ *
+ * Un entete HTTP ne transporte que du Latin-1: une phrase en arabe, en japonais
+ * ou seulement accentuee y provoque ERR_INVALID_CHAR a l'emission. Le secret
+ * peut donc aussi etre presente encode en base64, ce qui laisse le choix de la
+ * langue sans sortir de ce que le protocole autorise.
+ */
+function secretPresente(presente, attendu) {
+  if (secretsEqual(presente, attendu)) return true;
+  const decode = Buffer.from(String(presente), 'base64').toString('utf8');
+  return Boolean(decode) && secretsEqual(decode, attendu);
 }
 
 /**
@@ -65,7 +90,7 @@ function isInternalRequest(req) {
 
   const token = process.env.NOSSEN_INTERNAL_TOKEN;
   const presented = req.headers ? req.headers[INTERNAL_HEADER] : null;
-  if (token && presented && secretsEqual(presented, token)) return true;
+  if (token && presented && secretPresente(presented, token)) return true;
 
   const allow = allowedUserAgents();
   if (allow.length) {
@@ -90,11 +115,20 @@ function isOwnSiteReferer(req) {
   return ref.includes('funesterie');
 }
 
+/**
+ * Encode un secret pour qu'il tienne dans un entete HTTP.
+ * A utiliser cote appelant: setHeader(INTERNAL_HEADER, encoderSecret(phrase)).
+ */
+function encoderSecret(secret) {
+  return Buffer.from(normaliser(secret), 'utf8').toString('base64');
+}
+
 module.exports = {
   CLIPS_DIR,
   TROLL_VIDEO,
   CHECKOUT_URL,
   INTERNAL_HEADER,
+  encoderSecret,
   isInternalRequest,
   isAuthenticated,
   isOwnSiteReferer,
