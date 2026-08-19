@@ -61,15 +61,57 @@ function downloadFile(url, dest) {
 
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+/**
+ * Choisit l'image de reference d'un plan.
+ *
+ * `referenceImageUrls` est un tableau depuis l'origine, mais seul l'indice 0
+ * etait lu, et pour tous les plans du clip. Un clip a plusieurs personnages --
+ * ou un meme personnage a plusieurs ages -- sortait donc avec un seul visage.
+ *
+ * Trois facons pour une scene de designer la sienne, de la plus explicite a la
+ * plus commode. Sans indication, on garde l'indice 0: l'ancien comportement.
+ */
+function resolveReferenceImage(identity, section) {
+  const urls = Array.isArray(identity && identity.referenceImageUrls)
+    ? identity.referenceImageUrls
+    : [];
+  if (urls.length === 0) return null;
+  if (!section) return urls[0];
+
+  // 1. La scene porte directement l'URL de son image.
+  if (typeof section.referenceImageUrl === 'string' && section.referenceImageUrl) {
+    return section.referenceImageUrl;
+  }
+
+  // 2. Un indice explicite dans le tableau. Hors bornes, on ne devine pas: on
+  //    retombe sur la premiere plutot que de perdre le plan en text-to-video.
+  if (Number.isInteger(section.referenceIndex)) {
+    const i = section.referenceIndex;
+    return (i >= 0 && i < urls.length) ? urls[i] : urls[0];
+  }
+
+  // 3. Un identifiant de personnage, aligne sur identityIds. C'est la forme la
+  //    plus lisible cote Vivy Director: la scene nomme qui elle filme.
+  if (section.identityId) {
+    const ids = Array.isArray(identity.identityIds) ? identity.identityIds : [];
+    const i = ids.indexOf(section.identityId);
+    if (i >= 0 && i < urls.length) return urls[i];
+  }
+
+  return urls[0];
+}
+
 // Soumettre UNE vidéo et ATTENDRE qu'elle soit prête
-async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = null) {
+async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = null, referenceOverride) {
   console.log(`[clip] Vidéo ${index}: ${prompt.slice(0, 60)}...`);
 
   // Image de référence : si un personnage canonique est en jeu, on bascule sur
   // l'image-to-video pour verrouiller son visage au lieu de le redécrire.
-  const referenceImage = identity && Array.isArray(identity.referenceImageUrls)
-    ? identity.referenceImageUrls[0]
-    : null;
+  // L'appelant peut imposer la reference du plan; sans quoi on garde l'ancien
+  // comportement, la premiere du tableau.
+  const referenceImage = referenceOverride !== undefined
+    ? referenceOverride
+    : resolveReferenceImage(identity, null);
   const useReference = Boolean(referenceImage) && process.env.NOSSEN_CLIP_USE_REFERENCE !== '0';
 
   const args = useReference
@@ -212,12 +254,13 @@ async function generateClip(config) {
   for (let i = 0; i < numSegments; i++) {
     const section = sections[i % sections.length];
     const prompt = `${section.visual}.${lieuBrief} Cinematic anime quality, volumetric lighting, smooth camera movement. ${style}${identityBrief}`.trim();
+    const referenceImage = resolveReferenceImage(identity, section);
 
     let videoUrl;
     let retries = 2;
     while (retries > 0) {
       try {
-        videoUrl = await generateOneVideo(prompt, i, 600000, identity);
+        videoUrl = await generateOneVideo(prompt, i, 600000, identity, referenceImage);
         break;
       } catch (e) {
         retries--;
@@ -292,4 +335,4 @@ function mountClipRoutes(app) {
   console.log('[clip-gen] V2 routes: /clips, /api/mcp-bridge/clip/{generate,list}');
 }
 
-module.exports = { generateClip, mountClipRoutes };
+module.exports = { generateClip, mountClipRoutes, resolveReferenceImage };
