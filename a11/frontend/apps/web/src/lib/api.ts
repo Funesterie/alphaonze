@@ -3739,14 +3739,14 @@ export async function deleteVivyChatSessionOnServer(sessionId: string): Promise<
 export type Provider = "local" | "ollama" | "openai" | "groq";
 
 const DEFAULT_OLLAMA_MODEL = 'llama3.2:3b';
-const DEFAULT_GROQ_MODEL = '';
+const DEFAULT_GROQ_MODEL = ''; // Groq est opt-in : doit etre configure explicitement
 
 export function getModelForProvider(provider: Provider): string {
   switch (provider) {
     case 'groq':
-      return DEFAULT_GROQ_MODEL;
+      return DEFAULT_GROQ_MODEL; // Groq opt-in : retourne vide si non configure
     case 'openai':
-      return 'meta-llama/llama-3.3-70b-instruct';
+      return 'llama3.2:latest';
     case 'ollama':
       return DEFAULT_OLLAMA_MODEL;
     case 'local':

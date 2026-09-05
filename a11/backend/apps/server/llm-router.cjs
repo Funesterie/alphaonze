@@ -601,7 +601,10 @@ function resolveOpenAITarget(requestedModel = "", reason = "") {
 
 function resolveGroqTarget(requestedModel = "", reason = "") {
   if (!BACKENDS.groq) return null;
-  const model = String(requestedModel || DEFAULT_GROQ_MODEL).trim() || DEFAULT_GROQ_MODEL;
+  // Groq est strictement opt-in : cle API + modele explicite requis
+  if (!hasProviderCredential("groq")) return null;
+  const model = String(requestedModel || DEFAULT_GROQ_MODEL).trim() || "";
+  if (!model) return null; // Pas de modele Groq configure = pas de Groq
   return {
     provider: "groq",
     model,
@@ -756,20 +759,8 @@ async function resolveLlmTarget(requestedModel = "", { emitLogs = true } = {}) {
       }
     }
 
-    // Fallback 2 : Groq (ultra rapide, gratuit)
-    if (LLM_FALLBACK_PROVIDER === "groq" || LLM_FALLBACK_PROVIDER === "none") {
-      const hasGroqKey = !!(process.env.GROQ_API_KEY);
-      if ((LLM_FALLBACK_PROVIDER === "groq" || hasGroqKey) && BACKENDS.groq) {
-        const groqTarget = resolveGroqTarget(requestedModel, ollamaResult.reason || "ollama_unavailable");
-        if (groqTarget) {
-          if (emitLogs) logWarn(`[LLM] fallback=groq (ultra rapide) reason=${ollamaResult.reason || "ollama_unavailable"}`);
-          rememberResolvedTarget(groqTarget, {
-            availableOllamaModels: ollamaResult.tags?.models || [],
-          });
-          return groqTarget;
-        }
-      }
-    }
+    // Groq est strictement opt-in : pas de fallback automatique vers Groq
+    // (meme si LLM_FALLBACK_PROVIDER === "none" et que GROQ_API_KEY est present)
 
     // Fallback 3 : DeepSeek (bon pour le code, pas cher)
     if (LLM_FALLBACK_PROVIDER === "deepseek" || LLM_FALLBACK_PROVIDER === "none") {
@@ -857,23 +848,9 @@ async function resolveLlmTarget(requestedModel = "", { emitLogs = true } = {}) {
   }
 
   if (provider === "groq") {
-    if (!hasProviderCredential("groq")) {
-      const fallbackTargets = await resolveRuntimeFallbackTargets(
-        { provider: "groq", baseUrl: BACKENDS.groq, model: requestedModel || DEFAULT_GROQ_MODEL },
-        "",
-        "groq_credentials_missing"
-      );
-      const fallbackTarget = fallbackTargets[0] || null;
-      if (fallbackTarget) {
-        if (emitLogs) logWarn(`[LLM] provider=groq sans clé; fallback=${fallbackTarget.provider} model=${fallbackTarget.model}`);
-        rememberResolvedTarget(fallbackTarget, { reason: "groq_credentials_missing" });
-        return fallbackTarget;
-      }
-      throw new Error("groq_credentials_missing");
-    }
     const groqTarget = resolveGroqTarget(requestedModel, "provider_forced");
     if (!groqTarget) {
-      throw new Error("groq_base_missing");
+      throw new Error("groq_not_configured");
     }
     if (emitLogs) logInfo(`[LLM] provider=groq model=${groqTarget.model}`);
     rememberResolvedTarget(groqTarget);
