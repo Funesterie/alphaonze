@@ -165,38 +165,28 @@ test("downloadMediaUrl succeeds with valid audio (200 OK)", async () => {
   }
 });
 
-test("downloadMediaUrl handles empty file (200 OK with empty blob)", async () => {
+test("downloadMediaUrl throws on empty file (0 bytes)", async () => {
   const originalFetch = globalThis.fetch;
   const originalDocument = globalThis.document;
   const originalLocation = globalThis.location;
   const originalLocalStorage = globalThis.localStorage;
-  let downloadTriggered = false;
 
   Object.assign(globalThis, {
     location: { origin: "https://vivy.funesterie.me" },
     localStorage: { getItem: () => null, removeItem: () => {} },
     document: {
-      createElement: (tag: string) => {
-        if (tag === 'a') {
-          return {
-            style: {},
-            href: '',
-            download: '',
-            click() { downloadTriggered = true; },
-            remove() {},
-          };
-        }
-        return { style: {}, click() {}, remove() {} };
-      },
+      createElement: () => ({ style: {}, click() {}, remove() {} }),
       body: { appendChild() {}, removeChild() {} },
     },
     URL: { createObjectURL: () => 'blob:test', revokeObjectURL: () => {} } as any,
-    fetch: async () => new Response(new Blob([]), { status: 200 }),
+    fetch: async () => new Response(new Blob([]), { status: 200, headers: { 'content-length': '0' } }),
   });
 
   try {
-    await downloadMediaUrl("/api/vivy/studio/assets/empty.mp3");
-    assert.equal(downloadTriggered, true, "download should be triggered even for empty file");
+    await assert.rejects(
+      downloadMediaUrl("/api/vivy/studio/assets/empty.mp3"),
+      /.*/,
+    );
   } finally {
     Object.assign(globalThis, {
       fetch: originalFetch,

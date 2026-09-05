@@ -104,11 +104,11 @@ services:
       - key: A11_LLM_RUNTIME_FALLBACK_ORDER
         value: ollama,openai,gemini,xai,huggingface,deepseek,together
       - key: A11_LLM_FALLBACK_PROVIDER
-        value: ollama # groq d'abord, puis secours local si le cloud tombe
+        value: ollama
       - key: GROQ_API_KEY
         sync: false # Secret, à configurer manuellement
       - key: GROQ_MODEL
-        value: meta-llama/llama-3.3-70b-instruct
+        value: '' # Laisser vide. Groq est opt-in : clé + modèle explicite requis
       - key: DEEPSEEK_API_KEY
         sync: false # Secret, à configurer manuellement
       - key: DEEPSEEK_MODEL

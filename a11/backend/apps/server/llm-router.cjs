@@ -212,7 +212,7 @@ const DEFAULT_LOCAL_MODEL = String(
   || OLLAMA_PRIMARY_MODEL
 ).trim() || OLLAMA_PRIMARY_MODEL;
 const DEFAULT_OPENAI_MODEL = String(process.env.OPENAI_MODEL || process.env.A11_OPENAI_MODEL || "gpt-4o-mini").trim() || "gpt-4o-mini";
-const DEFAULT_GROQ_MODEL = String(process.env.GROQ_MODEL || process.env.VIVY_GROQ_MODEL || process.env.VIVY_MODEL || "meta-llama/llama-3.3-70b-instruct").trim() || "meta-llama/llama-3.3-70b-instruct";
+const DEFAULT_GROQ_MODEL = String(process.env.GROQ_MODEL || process.env.VIVY_GROQ_MODEL || "").trim();
 const DEFAULT_DEEPSEEK_MODEL = String(process.env.DEEPSEEK_MODEL || "deepseek-chat").trim() || "deepseek-chat";
 const DEFAULT_TOGETHER_MODEL = String(process.env.TOGETHER_MODEL || "meta-llama/Llama-3.3-70B-Instruct-Turbo").trim() || "meta-llama/Llama-3.3-70B-Instruct-Turbo";
 const DEFAULT_HF_MODEL = String(process.env.HF_MODEL || "meta-llama/Llama-3.1-8B-Instruct").trim() || "meta-llama/Llama-3.1-8B-Instruct";
@@ -224,7 +224,7 @@ const LLM_REQUEST_TIMEOUT_MS = Number(process.env.A11_LLM_REQUEST_TIMEOUT_MS || 
 const OLLAMA_TAGS_CACHE_TTL_MS = Number(process.env.A11_OLLAMA_TAGS_CACHE_TTL_MS || 5000) || 5000;
 const RUNTIME_FALLBACK_ORDER = String(
   process.env.A11_LLM_RUNTIME_FALLBACK_ORDER
-  || "groq,ollama,openai,gemini,deepseek,together,xai,huggingface"
+  || "ollama,openai,gemini,deepseek,together,xai,huggingface"
 )
   .split(",")
   .map((entry) => normalizeLlmProvider(entry, ""))
