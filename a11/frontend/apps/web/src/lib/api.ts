@@ -5582,8 +5582,8 @@ function isApiMediaDownloadUrl(rawUrl: string) {
  * Returns `true` on success, `false` when the URL is not a recognised Vivy
  * public URL (caller may fall back to the authenticated proxy), or
  * throws an error when the URL was recognised but the server returned a
- * non-OK response (e.g. 404, 401, 403). This ensures HTTP errors are never
- * silently transformed into success.
+ * non-OK response (e.g. 404, 401, 403) or an empty file. This ensures HTTP errors
+ * and empty files are never silently transformed into success.
  */
 async function downloadPublicMediaUrl(rawUrl: string, fallbackName: string): Promise<boolean> {
   const directUrl = resolvePublicVivyMediaDownloadUrl(rawUrl);
@@ -5601,13 +5601,15 @@ async function downloadPublicMediaUrl(rawUrl: string, fallbackName: string): Pro
       throw new Error(`Direct media download failed: ${statusText}`);
     }
     const blob = await res.blob();
+    if (blob.size === 0) {
+      throw new Error('Direct media download failed: empty file');
+    }
     const filename = parseDownloadFilename(res.headers.get('content-disposition') || '', fallbackName);
     triggerBlobDownload(blob, filename);
+    return true;
   } catch {
     return false;
   }
-
-  return true;
 }
 
 async function downloadProtectedBlob(pathname: string, fallbackName: string) {
@@ -5627,6 +5629,9 @@ async function downloadProtectedBlob(pathname: string, fallbackName: string) {
   }
 
   const blob = await res.blob();
+  if (blob.size === 0) {
+    throw new Error('Resource download failed: empty file');
+  }
   const filename = parseDownloadFilename(res.headers.get('content-disposition') || '', fallbackName);
   triggerBlobDownload(blob, filename);
 
