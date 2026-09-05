@@ -212,7 +212,7 @@ const DEFAULT_LOCAL_MODEL = String(
   || OLLAMA_PRIMARY_MODEL
 ).trim() || OLLAMA_PRIMARY_MODEL;
 const DEFAULT_OPENAI_MODEL = String(process.env.OPENAI_MODEL || process.env.A11_OPENAI_MODEL || "gpt-4o-mini").trim() || "gpt-4o-mini";
-const DEFAULT_GROQ_MODEL = String(process.env.GROQ_MODEL || "llama-3.3-70b-versatile").trim() || "llama-3.3-70b-versatile";
+const DEFAULT_GROQ_MODEL = String(process.env.GROQ_MODEL || process.env.VIVY_GROQ_MODEL || process.env.VIVY_MODEL || "meta-llama/llama-3.3-70b-instruct").trim() || "meta-llama/llama-3.3-70b-instruct";
 const DEFAULT_DEEPSEEK_MODEL = String(process.env.DEEPSEEK_MODEL || "deepseek-chat").trim() || "deepseek-chat";
 const DEFAULT_TOGETHER_MODEL = String(process.env.TOGETHER_MODEL || "meta-llama/Llama-3.3-70B-Instruct-Turbo").trim() || "meta-llama/Llama-3.3-70B-Instruct-Turbo";
 const DEFAULT_HF_MODEL = String(process.env.HF_MODEL || "meta-llama/Llama-3.1-8B-Instruct").trim() || "meta-llama/Llama-3.1-8B-Instruct";

@@ -22,7 +22,7 @@ function buildGroqCallStructuredLlmJson(env = process.env) {
   if (!shouldUseGroqDirect(env)) return null;
   const groqKey = String(env.GROQ_API_KEY || '').trim();
   if (!groqKey) return null;
-  const groqModel = String(env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim();
+  const groqModel = String(env.GROQ_MODEL || env.VIVY_GROQ_MODEL || env.VIVY_MODEL || 'meta-llama/llama-3.3-70b-instruct').trim();
   const groqUrl = 'https://api.groq.com/openai/v1/chat/completions';
   return async function callGroqStructuredJson({ text, systemPrompt, maxTokens = 600, temperature = 0.2, responseFormat, timeoutMs = 25000, stage = 'image_pipeline_groq' } = {}) {
     const body = {

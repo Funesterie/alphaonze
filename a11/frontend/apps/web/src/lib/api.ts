@@ -5581,12 +5581,11 @@ function isApiMediaDownloadUrl(rawUrl: string) {
  * Try to download a Vivy public media URL directly in the browser.
  * Returns `true` on success, `false` when the URL is not a recognised Vivy
  * public URL (caller may fall back to the authenticated proxy), or
- * `'direct_miss'` when the URL was recognised but the server returned a
- * non-OK response (e.g. 404).  In the `'direct_miss'` case the caller must
- * NOT retry through the proxy — it would hit the same endpoint and produce a
- * second identical error.
+ * throws an error when the URL was recognised but the server returned a
+ * non-OK response (e.g. 404, 401, 403). This ensures HTTP errors are never
+ * silently transformed into success.
  */
-async function downloadPublicMediaUrl(rawUrl: string, fallbackName: string): Promise<boolean | 'direct_miss'> {
+async function downloadPublicMediaUrl(rawUrl: string, fallbackName: string): Promise<boolean> {
   const directUrl = resolvePublicVivyMediaDownloadUrl(rawUrl);
   if (!directUrl) return false;
 
@@ -5597,7 +5596,10 @@ async function downloadPublicMediaUrl(rawUrl: string, fallbackName: string): Pro
     };
     if (requestInit.credentials === 'include') requestInit.headers = buildAuthHeaders();
     const res = await fetch(directUrl, requestInit);
-    if (!res.ok) return 'direct_miss';
+    if (!res.ok) {
+      const statusText = res.statusText || String(res.status);
+      throw new Error(`Direct media download failed: ${statusText}`);
+    }
     const blob = await res.blob();
     const filename = parseDownloadFilename(res.headers.get('content-disposition') || '', fallbackName);
     triggerBlobDownload(blob, filename);
@@ -5776,12 +5778,12 @@ export async function downloadMediaUrl(rawUrl: string, fallbackFilename?: string
     await downloadResourceById(resourceId, filename);
     return;
   }
-  const publicResult = await downloadPublicMediaUrl(url, filename);
-  if (publicResult === true) return;
-  // 'direct_miss': the URL was a known Vivy API path but the server returned a
-  // non-OK status.  The authenticated proxy would call the same endpoint again
-  // and produce a second identical error, so stop here.
-  if (publicResult === 'direct_miss') return;
+  try {
+    const publicResult = await downloadPublicMediaUrl(url, filename);
+    if (publicResult === true) return;
+  } catch (error: any) {
+    throw new Error(`Public media download failed: ${error?.message || String(error)}`);
+  }
   const proxyPath = `/api/media/download?url=${encodeURIComponent(url)}`;
   await downloadProtectedBlob(proxyPath, filename);
 }

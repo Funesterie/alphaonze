@@ -108,7 +108,7 @@ services:
       - key: GROQ_API_KEY
         sync: false # Secret, à configurer manuellement
       - key: GROQ_MODEL
-        value: llama-3.3-70b-versatile
+        value: meta-llama/llama-3.3-70b-instruct
       - key: DEEPSEEK_API_KEY
         sync: false # Secret, à configurer manuellement
       - key: DEEPSEEK_MODEL

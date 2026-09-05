@@ -1074,8 +1074,8 @@ function getVivyOpenAIConfig(options = {}) {
       : (process.env.VIVY_OPENAI_API_KEY || process.env.OPENAI_API_KEY || process.env.A11_OPENAI_API_KEY)));
   const defaultModel = /groq/i.test(normalizedBaseUrl)
     ? (mode === 'song'
-      ? (process.env.VIVY_SONG_GROQ_MODEL || process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile')
-      : (process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'))
+      ? (process.env.VIVY_SONG_GROQ_MODEL || process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || process.env.VIVY_SONG_MODEL || process.env.VIVY_MODEL || 'meta-llama/llama-3.3-70b-instruct')
+      : (process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || process.env.VIVY_MODEL || 'meta-llama/llama-3.3-70b-instruct'))
     : (/x\.ai|grok/i.test(normalizedBaseUrl)
       ? (process.env.VIVY_XAI_MODEL || process.env.XAI_MODEL || 'grok-4.3')
     : (/openrouter\.ai/i.test(normalizedBaseUrl)
