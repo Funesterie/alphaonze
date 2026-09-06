@@ -1,4 +1,14 @@
-﻿
+
+// --- Telemetry: initialise before any other module so OpenTelemetry can
+// auto-instrument them. Inert unless APPLICATIONINSIGHTS_CONNECTION_STRING is set
+// (present from the container env in prod). Never throws into startup. ---
+try {
+  require('./src/telemetry/otel-bootstrap.cjs').startTelemetry();
+  require('./src/azure-startup-diagnostics.cjs').logAzureStartupDiagnostics();
+} catch (telemetryError) {
+  console.warn('[telemetry] bootstrap error:', (telemetryError && telemetryError.message) || telemetryError);
+}
+
 // --- Express setup: always at the very top ---
 const express = require('express');
 const app = express();
@@ -25,6 +35,7 @@ const {
 const {
   getResolvedRemoteModelForRequest,
 } = require('./src/llm/remote-model.cjs');
+const { getProviderHealth } = require('./src/providers/provider-health.cjs');
 
 // Load local env before early feature gates and client wiring read process.env.
 (() => {
@@ -48,6 +59,145 @@ const {
   });
   if (!process.env.A11_EARLY_DOTENV_PATH) process.env.A11_EARLY_DOTENV_PATH = envPath;
 })();
+
+// Fortress HTTP doit etre montee avant la premiere route Express. L'ancienne
+// integration etait placee plusieurs milliers de lignes apres des routes API,
+// donc Helmet et les limites ne les protegeaient pas reellement.
+const helmet = require('helmet');
+const cookieParser = require('cookie-parser');
+const net = require('node:net');
+const {
+  buildBrowserEgressDirectives,
+  appendCspReport,
+} = require('./src/security/browser-egress-policy.cjs');
+
+function isTrustedReverseProxyAddress(value = '') {
+  const ip = String(value || '').replace(/^::ffff:/, '').trim().toLowerCase();
+  if (!ip) return false;
+  if (ip === '::1' || ip === '127.0.0.1') return true;
+  if (/^10\./.test(ip) || /^192\.168\./.test(ip)) return true;
+  const match172 = ip.match(/^172\.(\d{1,3})\./);
+  return Boolean(match172 && Number(match172[1]) >= 16 && Number(match172[1]) <= 31);
+}
+
+app.set('trust proxy', (address) => isTrustedReverseProxyAddress(address));
+
+function fortressClientIp(req) {
+  const remote = String(req.socket?.remoteAddress || req.connection?.remoteAddress || '');
+  const cfConnectingIp = String(req.headers?.['cf-connecting-ip'] || '').split(',')[0].trim();
+  if (isTrustedReverseProxyAddress(remote) && net.isIP(cfConnectingIp)) return cfConnectingIp;
+  return String(req.ip || remote || 'unknown');
+}
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: buildBrowserEgressDirectives(process.env),
+  },
+  crossOriginEmbedderPolicy: false,
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  xContentTypeOptions: true,
+  xFrameOptions: { action: 'deny' },
+  xXssProtection: true,
+}));
+app.use(cookieParser());
+
+const _rateLimitWindows = new Map();
+const _usageGuardAlerts = new Map();
+const USAGE_GUARD_ADMIN_EMAIL = String(
+  process.env.A11_USAGE_GUARD_ADMIN_EMAIL || process.env.KAEN44_ADMIN_EMAIL || 'funeste38@gmail.com'
+).trim();
+const USAGE_GUARD_ALERT_COOLDOWN_MS = Number(process.env.A11_USAGE_GUARD_ALERT_COOLDOWN_MS || 5 * 60_000);
+
+function notifyUsageGuardRateLimit(req, { key, count, max, message }) {
+  if (!USAGE_GUARD_ADMIN_EMAIL || !emailService?.isConfigured?.()) return;
+  const now = Date.now();
+  const route = String(req.originalUrl || req.path || '').split('?')[0] || 'unknown';
+  const alertKey = `${key}:${route}:${message}`;
+  const lastAlertAt = _usageGuardAlerts.get(alertKey) || 0;
+  if (now - lastAlertAt < USAGE_GUARD_ALERT_COOLDOWN_MS) return;
+  _usageGuardAlerts.set(alertKey, now);
+  const userHint = req.user?.email || req.auth?.email || 'unknown';
+  const text = [
+    'A11 usage guard: rate limit triggered.',
+    `Time: ${new Date(now).toISOString()}`,
+    `Route: ${route}`,
+    `IP: ${fortressClientIp(req)}`,
+    `User: ${userHint}`,
+    `Count: ${count}`,
+    `Limit: ${max}`,
+    `Message: ${message}`,
+    '',
+    'No secrets or payload content were included.',
+  ].join('\n');
+  emailService.sendEmail({
+    to: USAGE_GUARD_ADMIN_EMAIL,
+    subject: 'A11 usage guard - rate limit',
+    text,
+    tags: [{ name: 'type', value: 'usage_guard' }],
+  }).catch((error_) => console.warn('[USAGE_GUARD] admin alert failed:', error_?.message || error_));
+}
+
+function createRateLimiter({ bucket = 'global', windowMs = 60_000, max = 100, methods = null, message = 'Too many requests' } = {}) {
+  const allowedMethods = Array.isArray(methods)
+    ? new Set(methods.map((method) => String(method || '').trim().toUpperCase()).filter(Boolean))
+    : null;
+  return (req, res, next) => {
+    if (allowedMethods && !allowedMethods.has(String(req.method || '').toUpperCase())) return next();
+    const now = Date.now();
+    if (_rateLimitWindows.size >= 10_000) {
+      for (const [entryKey, entry] of _rateLimitWindows.entries()) {
+        if (now > Number(entry?.resetAt || 0)) _rateLimitWindows.delete(entryKey);
+      }
+    }
+    const key = `${bucket}:${fortressClientIp(req)}`;
+    while (!_rateLimitWindows.has(key) && _rateLimitWindows.size >= 10_000) {
+      const oldestKey = _rateLimitWindows.keys().next().value;
+      if (!oldestKey) break;
+      _rateLimitWindows.delete(oldestKey);
+    }
+    const window = _rateLimitWindows.get(key) || { count: 0, resetAt: now + windowMs };
+    if (now > window.resetAt) {
+      window.count = 0;
+      window.resetAt = now + windowMs;
+    }
+    window.count += 1;
+    _rateLimitWindows.set(key, window);
+    res.setHeader('X-RateLimit-Limit', max);
+    res.setHeader('X-RateLimit-Remaining', Math.max(0, max - window.count));
+    res.setHeader('X-RateLimit-Reset', Math.ceil(window.resetAt / 1000));
+    if (window.count > max) {
+      notifyUsageGuardRateLimit(req, { key, count: window.count, max, message });
+      res.setHeader('Retry-After', Math.max(1, Math.ceil((window.resetAt - now) / 1000)));
+      return res.status(429).json({ ok: false, error: 'rate_limited', message });
+    }
+    return next();
+  };
+}
+
+app.use('/api/auth', createRateLimiter({ bucket: 'auth', methods: ['POST'], max: 20, message: 'Trop de tentatives de connexion' }));
+app.use('/api/chat', createRateLimiter({ bucket: 'chat', max: 60, message: 'Trop de requêtes chat' }));
+app.use('/api/image-generate', createRateLimiter({ bucket: 'image', methods: ['POST'], max: 20, message: 'Trop de générations d images' }));
+app.use('/api/sd', createRateLimiter({ bucket: 'image', methods: ['POST'], max: 20, message: 'Trop de générations d images' }));
+app.use('/api/jobs/sd', createRateLimiter({ bucket: 'image-job', methods: ['POST'], max: 20, message: 'Trop de générations d images' }));
+app.use('/api/double-harmonic/v10boom/process', createRateLimiter({ bucket: 'v11pan', methods: ['POST'], max: 12, message: 'Trop de requêtes V11Pan' }));
+app.use('/api/video', createRateLimiter({ bucket: 'video', methods: ['POST'], max: 12, message: 'Trop de requêtes vidéo' }));
+app.use('/api/tools/generate_video', createRateLimiter({ bucket: 'video-tool', methods: ['POST'], max: 12, message: 'Trop de requêtes vidéo' }));
+app.use('/api/vivy/studio/produce', createRateLimiter({ bucket: 'vivy-produce', methods: ['POST'], max: 12, message: 'Trop de générations Vivy' }));
+app.use('/api/vivy/studio/full-clip', createRateLimiter({ bucket: 'vivy-full-clip', windowMs: 60 * 60 * 1000, methods: ['POST'], max: 4, message: 'Trop de rendus Full Clip' }));
+app.use('/api', createRateLimiter({ bucket: 'api', max: 300, message: 'Trop de requêtes' }));
+app.post('/api/security/csp-report', express.json({
+  type: ['application/csp-report', 'application/reports+json', 'application/json'],
+  limit: '64kb',
+}), (req, res) => {
+  try {
+    const reports = Array.isArray(req.body) ? req.body.slice(0, 20) : [req.body];
+    for (const report of reports) appendCspReport(report);
+  } catch (error) {
+    console.warn('[CSP] violation report could not be recorded:', String(error?.message || error).slice(0, 180));
+  }
+  res.status(204).end();
+});
 
 // Render services can start this file directly, bypassing npm start.
 // Keep this worker best-effort so a corpus refresh never blocks the API.
@@ -201,6 +351,10 @@ app.get('/.well-known/microsoft-identity-association.json', (_req, res) => {
 });
 
 const createAdminRouter = require('./src/routes/admin.cjs');
+const {
+  createSocialAutopromptApiRouter,
+  createSocialAutopromptPageRouter,
+} = require('./src/routes/social-autoprompt.cjs');
 const createVideoGenerateRouter = require('./src/routes/video-generate.cjs');
 // ...existing code...
 // --- .env first ---
@@ -554,6 +708,7 @@ const { ingestUploadedFile } = require('./lib/file-ingestion.cjs');
 const { createArtifact, normalizeArtifactKind, buildArtifactOrigin } = require('./lib/artifact-manager.cjs');
 const { createEmailService, resolveEmailServiceConfigFromEnv } = require('./lib/email-service.cjs');
 const { analyzeUploadedResource, buildConversationResourceContext } = require('./lib/resource-reader.cjs');
+const { resolveZenUploadMaxBytes } = require('./lib/zen-upload.cjs');
 const { resolveSdProxyUrl, resolveSdScriptPath, runSdScript } = require('./lib/sd-runtime.cjs');
 const { resolveBindHost } = require('./src/network/bind-config.cjs');
 const createAdminRunRouter = require('./src/routes/admin-run.cjs');
@@ -572,6 +727,9 @@ const {
   buildCerbereMegaSnapshot,
 } = require('./src/security/cerbere-mega.cjs');
 const {
+  createSudokuCapabilityService,
+} = require('./src/security/sudoku-capability.cjs');
+const {
   assertAccountStorageQuota,
   buildStorageQuotaPayload,
   getDatabaseAccountStorageUsageBytes,
@@ -587,6 +745,7 @@ const {
 } = require('./src/storage/session-drive-writer.cjs');
 const { createIsAdminRequest } = require('./src/security/admin-access.cjs');
 const createCerbereMegaRouter = require('./src/routes/cerbere-mega.cjs');
+const { createSudokuCapabilityRouter } = require('./src/routes/sudoku-capability.cjs');
 const createA11HistoryRouter = require('./src/routes/a11-history.cjs');
 const createA11MemoryWriteRouter = require('./src/routes/a11-memory-write.cjs');
 const createVectorMemoryRouter = require('./src/routes/vector-memory.cjs');
@@ -597,6 +756,7 @@ const createEpisodicMemoryRouter = require('./src/routes/episodic-memory.cjs');
 const createImageCardinalityDebugRouter = require('./src/routes/image-cardinality-debug.cjs');
 const createCasinoRouter = require('./src/routes/casino.cjs');
 const createChatRouter = require('./src/routes/chat.cjs');
+const { createAIAssistantRouter } = require('./src/routes/ai-assistant.cjs');
 const {
   buildA11ChatSystemPrompt,
   buildA11CompactLocalSystemPrompt,
@@ -1539,7 +1699,9 @@ const R2_ENDPOINT = String(process.env.R2_ENDPOINT || '').trim();
 const R2_ACCESS_KEY = String(process.env.R2_ACCESS_KEY || '').trim();
 const R2_SECRET_KEY = String(process.env.R2_SECRET_KEY || '').trim();
 const R2_BUCKET = String(process.env.R2_BUCKET || '').trim();
-const FILE_UPLOAD_MAX_BYTES = Number(process.env.FILE_UPLOAD_MAX_BYTES || 10 * 1024 * 1024);
+const FILE_UPLOAD_MAX_BYTES = Number(process.env.FILE_UPLOAD_MAX_BYTES || 80 * 1024 * 1024);
+const ZEN_UPLOAD_MAX_BYTES = resolveZenUploadMaxBytes(process.env.A11_ZEN_UPLOAD_MAX_BYTES, FILE_UPLOAD_MAX_BYTES);
+const FILE_UPLOAD_BODY_LIMIT = process.env.A11_FILE_UPLOAD_BODY_LIMIT || '128mb';
 const TEMP_SHARED_FILE_TTL_MS = Math.max(60 * 1000, Number(process.env.A11_SHARED_FILE_TTL_MS || 60 * 60 * 1000));
 const TEMP_SHARED_FILE_CLEANUP_INTERVAL_MS = Math.max(60 * 1000, Number(process.env.A11_SHARED_FILE_CLEANUP_INTERVAL_MS || 60 * 1000));
 const DEFAULT_ADMIN_USERNAME = String(process.env.DEFAULT_ADMIN_USERNAME || 'Djeff').trim();
@@ -4610,7 +4772,7 @@ async function listEphemeralConversationMemory(userId, conversationId, limit = P
 function normalizeConversationResourceKind(resourceKind) {
   const normalized = String(resourceKind || '').trim().toLowerCase();
   if (normalized === 'artifact') return 'artifact';
-  if (['image', 'audio', 'video', 'pdf', 'document', 'file'].includes(normalized)) return normalized;
+  if (['image', 'audio', 'video', 'pdf', 'document', 'zen', 'file'].includes(normalized)) return normalized;
   return 'file';
 }
 
@@ -4621,6 +4783,7 @@ function inferConversationResourceKind({ resourceKind, filename, contentType } =
 
   const mime = String(contentType || '').trim().toLowerCase();
   const name = String(filename || '').trim().toLowerCase();
+  if (/^application\/(?:vnd\.funesterie\.zen|x-zen|zen)(?:;|$)/i.test(mime) || /\.zen$/i.test(name)) return 'zen';
   if (mime.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(name)) return 'image';
   if (mime.startsWith('audio/') || /\.(mp3|wav|ogg|flac|aac|m4a|opus|aiff?|wma)$/i.test(name)) return 'audio';
   if (mime.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v|mpeg|mpg)$/i.test(name)) return 'video';
@@ -5764,7 +5927,26 @@ const verifyJWT = createVerifyJWT({
   authSessionRegistry,
 });
 
+function getOptionalJwtPathname(req) {
+  return String(req?.originalUrl || req?.url || req?.path || '/')
+    .split('?')[0]
+    .trim() || '/';
+}
+
+function isPublicOptionalJwtBypassRequest(req) {
+  const method = String(req?.method || 'GET').trim().toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD') return false;
+  const pathname = getOptionalJwtPathname(req).replace(/\/+$/, '') || '/';
+  return /^\/api\/vivy\/studio\/assets\/[^/]+$/i.test(pathname)
+    || /^\/api\/vivy\/studio\/assets\/[a-z0-9_-]+\/[^/?#]+$/i.test(pathname)
+    || /^\/api\/vivy\/stream\/s\/[^/]+$/i.test(pathname)
+    || /^\/api\/vivy\/stream\/(?:health|state|events|overlay|overlay\/background|nossen-seed)$/i.test(pathname)
+    || /^\/api\/double-harmonic\/out\/[^/]+$/i.test(pathname)
+    || pathname === '/api/media/download';
+}
+
 async function optionalVerifyJWT(req, res, next) {
+  if (isPublicOptionalJwtBypassRequest(req)) return next();
   if (!extractRequestAuthToken(req)) return next();
   return verifyJWT(req, res, next);
 }
@@ -6368,6 +6550,17 @@ app.use('/api/admin', createAdminRouter({
   isAdminRequest,
 }));
 
+app.use('/api/admin/social-connect', createSocialAutopromptApiRouter({
+  verifyJWT,
+  isAdminRequest,
+  db,
+}));
+
+app.use('/admin/social-connect', createSocialAutopromptPageRouter({
+  verifyJWT,
+  isAdminRequest,
+}));
+
 app.use('/api/admin', createImageCardinalityDebugRouter({
   verifyJWT,
   isAdminRequest,
@@ -6375,6 +6568,7 @@ app.use('/api/admin', createImageCardinalityDebugRouter({
 
 const videoTools = createVideoGenerateRouter({
   generateSd: sdTools.generateImageInternal,
+  verifyJWT,
 });
 
 app.use('/api', createChatRouter({
@@ -6396,12 +6590,12 @@ app.use(createMemoryGraphV1Router({
 }));
 
 app.use('/api', sdTools.router);
-app.use('/api', optionalVerifyJWT, videoTools.router);
+app.use('/api', videoTools.router);
 
 // === STT — Speech-to-Text (Whisper via Ollama ou OpenAI) ===
 try {
   const createSttRouter = require('./src/routes/stt.cjs');
-  app.use('/api', createSttRouter());
+  app.use('/api', createSttRouter({ verifyJWT }));
   console.log('[Server] STT routes mounted under /api/stt');
 } catch (e) {
   console.warn('[Server] STT routes unavailable:', e.message);
@@ -6418,28 +6612,35 @@ try {
 
 // === Async SD job queue (pour Space HF / clients avec timeout court) ===
 const _sdJobQueue = new Map();
+function sdJobOwner(user = {}) {
+  return String(user?.id || user?.email || user?.username || user?.sub || '').trim().toLowerCase();
+}
 app.post('/api/jobs/sd', express.json({ limit: '2mb' }), verifyJWT, requireSubscription, async (req, res) => {
   const jobId = `sdjob_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  _sdJobQueue.set(jobId, { status: 'pending', createdAt: Date.now() });
+  const owner = sdJobOwner(req.user);
+  _sdJobQueue.set(jobId, { status: 'pending', owner, createdAt: Date.now() });
   res.json({ ok: true, jobId, status: 'pending' });
   // Lance SD en arrière-plan
   sdTools.generateSdInternal({ req, prompt: req.body?.prompt, body: req.body })
     .then((result) => {
-      _sdJobQueue.set(jobId, { status: 'done', result, completedAt: Date.now() });
+      _sdJobQueue.set(jobId, { status: 'done', owner, result, completedAt: Date.now() });
     })
     .catch((error_) => {
-      _sdJobQueue.set(jobId, { status: 'error', error: String(error_?.message || error_), completedAt: Date.now() });
+      _sdJobQueue.set(jobId, { status: 'error', owner, error: String(error_?.message || error_), completedAt: Date.now() });
     });
 });
 app.get('/api/jobs/sd/:jobId', verifyJWT, (req, res) => {
   const job = _sdJobQueue.get(req.params.jobId);
-  if (!job) return res.status(404).json({ ok: false, error: 'job_not_found' });
+  if (!job || !job.owner || job.owner !== sdJobOwner(req.user)) {
+    return res.status(404).json({ ok: false, error: 'job_not_found' });
+  }
   // Nettoyage auto après 10 min
   if (job.completedAt && Date.now() - job.completedAt > 600000) {
     _sdJobQueue.delete(req.params.jobId);
     return res.status(404).json({ ok: false, error: 'job_expired' });
   }
-  return res.json({ ok: true, jobId: req.params.jobId, ...job });
+  const { owner: _owner, ...safeJob } = job;
+  return res.json({ ok: true, jobId: req.params.jobId, ...safeJob });
 });
 
 // Protection des routes de génération d'images/vidéos avec abonnement
@@ -6827,6 +7028,25 @@ app.use('/api/cerbere-mega', verifyJWT, createCerbereMegaRouter({
 }));
 console.log('[Server] Cerbere MEGA routes mounted under /api/cerbere-mega');
 
+// Jukebox NUMA: Vivy demande une piece, Cerbere tranche, ScentGate signe, le coffre
+// garde la vraie clef. La route n'accepte jamais une URL -- seulement une cassette,
+// une zone et un nom -- pour ne pas devenir un proxy ouvert avec les identifiants
+// du serveur. verifyJWT d'abord: aucune piece ne se demande sans session.
+const createVivyDriveRouter = require('./src/routes/vivy-drive.cjs');
+app.use('/api/vivy/drive', verifyJWT, createVivyDriveRouter({
+  db,
+  vault: oauthTokenVault,
+  trace: (evenement) => console.info('[Jukebox] %s', JSON.stringify(evenement).slice(0, 400)),
+  env: process.env,
+}));
+console.log('[Server] Jukebox NUMA routes mounted under /api/vivy/drive');
+
+const sudokuCapabilityService = createSudokuCapabilityService({ env: process.env });
+app.use('/api/security/sudoku-token', verifyJWT, createSudokuCapabilityRouter({
+  service: sudokuCapabilityService,
+}));
+console.log('[Server] Cerbere Sudoku routes mounted under /api/security/sudoku-token');
+
 // ✅ AUTH MIDDLEWARE - appliqué SEULEMENT sur /api/ai pour protéger chat
 // /api/auth/login reste public!
 app.use('/api/ai', verifyJWT);
@@ -6852,6 +7072,7 @@ const createKnowledgeConflictRouter = require('./src/routes/knowledge-conflict.c
 const createGitHubRouter = require('./src/routes/github.cjs');
 const createPublicMcpRouter = require('./src/routes/public-mcp.cjs');
 const createMcpClientRouter = require('./src/routes/mcp-client.cjs');
+const createMcpIntentRouter = require('./src/routes/mcp-intent.cjs');
 const createMcpCockpitRouter = require('./src/routes/mcp-cockpit.cjs');
 const { createOAuthRouter } = require('./src/mcp-oauth/oauth-server.cjs');
 
@@ -6864,6 +7085,10 @@ app.use('/api/tools', createToolsRouter({ toolCallingLayer }));
 app.use('/api/agent/shell', createAgentShellRouter({ workspaceRoot: WORKSPACE_ROOT }));
 app.use('/api/agent/runtime/files', verifyJWT, createRuntimeFilesRouter({ runtimeRoot: PUBLIC_RUNTIME_ROOT }));
 console.log('[Server] Runtime files routes mounted under /api/agent/runtime/files');
+// Bilan et suppression des donnees d'un compte: vie privee et place disque.
+const createAccountDataRouter = require('./src/routes/account-data.cjs');
+app.use('/api/account/data', createAccountDataRouter({ verifyJWT, db, runtimeRoot: PUBLIC_RUNTIME_ROOT }));
+console.log('[Server] Account data routes mounted under /api/account/data');
 app.use('/api/agent/vision-memory', verifyJWT, createVisionMemoryRouter({ runtimeRoot: PUBLIC_RUNTIME_ROOT }));
 console.log('[Server] Vision memory routes mounted under /api/agent/vision-memory');
 app.use('/api/agent/media', verifyJWT, createSemanticMediaRouletteRouter({
@@ -6893,11 +7118,109 @@ app.use('/api/vivy/alexa', createVivyAlexaRouter({ runtimeRoot: PUBLIC_RUNTIME_R
 console.log('[Server] Vivy Alexa routes mounted under /api/vivy/alexa');
 
 const { createVivyStudioRouter } = require('./src/routes/vivy-studio.cjs');
-app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT }));
+app.use('/api/vivy/studio', createVivyStudioRouter({
+  verifyJWT,
+  db,
+  creativeCapabilityService: sudokuCapabilityService,
+  // La memoire de Vivy etait deja partagee entre appareils (mémoire episodique par
+  // compte), mais la LISTE des conversations ne l'etait pas: l'interface la lit dans la
+  // table messages, ou la route de chat de Vivy n'ecrivait jamais. Aucune conversation
+  // « vivy: » n'existait en base, la ou a11 et kaen44 en avaient. On branche la meme
+  // persistance que les autres surfaces.
+  saveChatMemoryMessage: (userId, role, content, conversationId) => saveChatMemoryMessage(
+    userId,
+    role,
+    content,
+    conversationId
+  ),
+}));
 console.log('[Server] Vivy Studio routes mounted under /api/vivy/studio');
 
+// Auto-DJ : quelle voix chante quelle section. Sous auth comme le catalogue de
+// voix dont il derive — un casting expose publiquement dirait qui possede quelle
+// persona Suno, et le consentement de chacun avec.
+const { createAutoDjRouter } = require('./src/routes/auto-dj-route.cjs');
+app.use('/api/vivy/auto-dj', createAutoDjRouter({ verifyJWT }));
+console.log('[Server] Auto-DJ routes mounted under /api/vivy/auto-dj');
+
+// Chat vocal reserve fondateur/famille: la porte se ferme cote serveur, avant la
+// transcription facturable et l'appel LLM.
+const createVivyVoiceChatRouter = require('./src/routes/vivy-voice-chat.cjs');
+const { buildVivyAiChat: buildVivyAiChatForVoice } = require('./src/routes/vivy-studio.cjs');
+app.use('/api/vivy/voice-chat', createVivyVoiceChatRouter({
+  verifyJWT,
+  buildVivyAiChat: buildVivyAiChatForVoice,
+}));
+console.log('[Server] Vivy voice chat mounted under /api/vivy/voice-chat (fondateur/famille)');
+
+// Dialogue borne Vivy <-> Djeff. Chaque tour garde son moteur d'identite et
+// expose une requete TTS polie; aucune sortie synthetique ne rejoint le corpus.
+const createPersonaVoiceDialogueRouter = require('./src/routes/persona-voice-dialogue.cjs');
+const { buildDjeffAiChat: buildDjeffAiChatForDialogue } = require('./src/routes/vivy-studio.cjs');
+app.use('/api/personas/dialogue', createPersonaVoiceDialogueRouter({
+  verifyJWT,
+  responders: {
+    vivy: buildVivyAiChatForVoice,
+    djeff: buildDjeffAiChatForDialogue,
+  },
+}));
+console.log('[Server] Persona voice dialogue mounted under /api/personas/dialogue (Vivy + Djeff)');
+
+const { createVivyStreamRouter } = require('./src/routes/vivy-stream.cjs');
+const vivyStreamRouter = createVivyStreamRouter({ verifyJWT, db });
+app.use('/api/vivy/stream', vivyStreamRouter);
+console.log('[Server] Vivy Stream routes mounted under /api/vivy/stream');
+
+// --- SHARINGAN: Détection de piratage de redirection + Zen Gate AOL ---
+const { sharinganDetector, zenGateAolGuard, getSharinganStats, generateAolToken } = require('./src/security/sharingan-detector.cjs');
+app.use('/api/vivy/studio', sharinganDetector);
+app.use('/api/vivy/studio', zenGateAolGuard);
+app.get('/api/sharingan/stats', verifyJWT, (_req, res) => res.json(getSharinganStats()));
+// Distribuer le token AOL aux sessions légitimes (après auth)
+app.use((req, _res, next) => {
+  if (req.user && !req.cookies?.['zen-aol']) {
+    const token = generateAolToken(req.user.id || req.user.email || 'anon');
+    _res.cookie('zen-aol', token, { httpOnly: true, secure: true, sameSite: 'strict', maxAge: 24 * 60 * 60 * 1000 });
+  }
+  next();
+});
+console.log('[Server] Sharingan detector + Zen Gate AOL guard active');
+
+// --- NOSSEN: Filtre chansons côté serveur (par session/utilisateur) ---
+const { filterSongsByUser } = require('./src/security/songs-access-filter.cjs');
+app.get('/api/nossen/my-songs', verifyJWT, filterSongsByUser(() => vivyStreamRouter._vivyStore));
+console.log('[Server] NOSSEN filtered songs mounted at /api/nossen/my-songs');
+
+// --- NOSSEN: Zen Gate (MCP Bridge sécurisé avec auth A11) ---
+const { mountZenGate } = require('./src/security/mount-zen-gate.cjs');
+mountZenGate(app, { requireAuth: verifyJWT });
+console.log('[Server] Zen Gate mount attempted');
+
+// --- NOSSEN: Pipeline de clips (jobs persistants, statut durable) ---
+const { createClipRouter } = require('./src/clips/clip-router.cjs');
+app.use('/api/mcp-bridge/clip', verifyJWT, createClipRouter({ verifyJWT }));
+console.log('[Server] NOSSEN clip pipeline mounted at /api/mcp-bridge/clip/{start,status,list,my-jobs}');
+
+// --- NOSSEN: Upload audio pour les clips ---
+const { mountUploadAudioRoute } = require('./src/clips/mount-upload-audio-route.cjs');
+mountUploadAudioRoute(app);
+
+// --- NOSSEN: Route /clips/:filename pour servir les clips vidéo depuis agent-bus ---
+const CLIPS_DIR = process.env.NOSSEN_CLIPS_DIR || '/app/runtime/clips';
+app.get('/clips/:filename', (req, res) => {
+  const decoded = decodeURIComponent(req.params.filename || '');
+  if (!decoded || /[\/\\]/.test(decoded)) return res.status(400).json({ error: 'Invalid filename' });
+  const ext = path.extname(decoded).toLowerCase();
+  if (!['.mp4', '.webm', '.mkv'].includes(ext)) return res.status(403).json({ error: 'Unsupported format' });
+  const filePath = path.join(CLIPS_DIR, decoded);
+  res.sendFile(filePath, { root: '/' }, (err) => {
+    if (err && !res.headersSent) res.status(404).json({ error: 'Not found' });
+  });
+});
+console.log('[Server] NOSSEN clips route mounted at /clips/:filename');
+
 const createDoubleHarmonicRouter = require('./src/routes/double-harmonic.cjs');
-app.use('/api/double-harmonic', createDoubleHarmonicRouter({ verifyJWT, runtimeRoot: PUBLIC_RUNTIME_ROOT }));
+app.use('/api/double-harmonic', createDoubleHarmonicRouter({ verifyJWT, db, runtimeRoot: PUBLIC_RUNTIME_ROOT }));
 console.log('[Server] Double Harmonic D40 routes mounted under /api/double-harmonic');
 
 const createMatchArenaRouter = require('./routes/match-arena.cjs');
@@ -6911,12 +7234,14 @@ app.use('/api/qflush', createQflushFlowRouter({ workspaceRoot: QFLUSH_WORKSPACE_
 console.log('[Server] Qflush flow routes mounted under /api/qflush');
 app.use('/oauth', createOAuthRouter(express));
 console.log('[Server] MCP OAuth routes mounted under /oauth');
-app.use(createPublicMcpRouter());
+app.use(createPublicMcpRouter({ db }));
 console.log('[Server] Public MCP routes mounted at /mcp, /.well-known/mcp and /api/mcp/status');
 const mcpCockpitRouter = createMcpCockpitRouter({ verifyJWT, db, env: process.env });
 app.use('/api/cockpit/mcp', mcpCockpitRouter);
 app.use('/cockpit/mcp', mcpCockpitRouter);
 console.log('[Server] Private MCP cockpit routes mounted under /api/cockpit/mcp and /cockpit/mcp');
+app.use('/api/mcp/intent', verifyJWT, createMcpIntentRouter({ env: process.env }));
+console.log('[Server] MCP intent bridge mounted under /api/mcp/intent');
 app.use('/api/mcp', verifyJWT, createMcpClientRouter({ db, env: process.env }));
 console.log('[Server] MCP client routes mounted under /api/mcp');
 app.use('/api', createSelfRewriteRouter({ verifyJWT }));
@@ -7069,7 +7394,7 @@ app.get('/api/storage/session-drive/status', verifyJWT, async (req, res) => {
   }
 });
 
-app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_BODY_LIMIT || '64mb' }), async (req, res) => {
+app.post('/api/files/upload', express.json({ limit: FILE_UPLOAD_BODY_LIMIT }), async (req, res) => {
   try {
     let userId = String(req.user?.id || '').trim();
     // Permettre l'appel interne (A11/Qflush) sans JWT via un header spécial
@@ -7152,6 +7477,7 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
       contentType,
       contentBase64,
       maxBytes: FILE_UPLOAD_MAX_BYTES,
+      maxZenBytes: ZEN_UPLOAD_MAX_BYTES,
       origin: 'upload',
       conversationId: normalizedConversationId,
       resourceKind: resolvedResourceKind,
@@ -7269,6 +7595,15 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
     }
     if (e?.code === 'file_too_large') {
       return res.status(413).json({ ok: false, error: e.code, maxBytes: e.maxBytes || FILE_UPLOAD_MAX_BYTES });
+    }
+    if (e?.code === 'zen_file_too_large') {
+      return res.status(413).json({ ok: false, error: e.code, maxBytes: e.maxBytes || ZEN_UPLOAD_MAX_BYTES });
+    }
+    if (e?.code === 'zen_content_type_invalid' || e?.code === 'zen_extension_required') {
+      return res.status(415).json({ ok: false, error: e.code });
+    }
+    if (e?.code === 'zen_header_invalid' || e?.code === 'zen_plaintext_not_allowed') {
+      return res.status(400).json({ ok: false, error: e.code });
     }
     if (e?.code === 'account_storage_quota_exceeded') {
       return sendStorageQuotaExceeded(res, e);
@@ -7706,6 +8041,116 @@ app.get('/api/public/r2/*key', async (req, res) => {
   }
 });
 
+app.get('/api/account/provider-status', verifyJWT, async (req, res) => {
+  const userId = String(req.user?.id || '').trim();
+  if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json(await getProviderHealth({ probe: String(req.query?.probe || '') === '1' }));
+  } catch {
+    return res.status(502).json({ ok: false, error: 'provider_health_failed' });
+  }
+});
+
+function resolvePublicMediaDownloadRedirect(req, rawUrl = '') {
+  const raw = String(rawUrl || '').trim();
+  if (!raw) return '';
+  let parsed;
+  try {
+    parsed = new URL(raw, `${req.protocol || 'https'}://${req.get('host') || 'funesterie.me'}`);
+  } catch {
+    return '';
+  }
+  const pathname = String(parsed.pathname || '');
+  if (
+    /^\/api\/vivy\/studio\/assets\/[^/]+$/i.test(pathname)
+    || /^\/api\/vivy\/stream\/s\/[^/]+$/i.test(pathname)
+    || /^\/api\/double-harmonic\/out\/[^/]+$/i.test(pathname)
+  ) {
+    return `${pathname}${parsed.search || ''}`;
+  }
+
+  let filename = '';
+  try {
+    filename = decodeURIComponent(path.basename(pathname));
+  } catch {
+    filename = path.basename(pathname);
+  }
+  if (
+    /^(?:vivy-music-|vivy-preview-mix-|vivy-multi-voice-).+\.mp3$/i.test(filename)
+    && (
+      /\/files\/(?:runtime|uploads|a11_runtime)\//i.test(pathname)
+      || /\/runtime\/files\//i.test(pathname)
+      || /\/vivy-generated\//i.test(pathname)
+    )
+  ) {
+    return `/api/vivy/studio/assets/${encodeURIComponent(filename)}`;
+  }
+  return '';
+}
+
+// Public Vivy/D40 media do not need account auth. This keeps old frontend bundles
+// and copied /api/media/download links from failing with an expired JWT.
+app.get('/api/media/download', (req, res, next) => {
+  const redirectTo = resolvePublicMediaDownloadRedirect(req, req.query?.url);
+  if (!redirectTo) return next();
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  return res.redirect(302, redirectTo);
+});
+
+// Proxy download for Cloudflare R2 public media (files.funesterie.me).
+// The browser cannot fetch these directly (no CORS headers on R2).
+// Validates URL against a strict whitelist before proxying server-side.
+app.get('/api/media/download', verifyJWT, async (req, res) => {
+  try {
+    const userId = String(req.user?.id || '').trim();
+    if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
+
+    const rawUrl = String(req.query?.url || '').trim();
+    if (!rawUrl) return res.status(400).json({ ok: false, error: 'missing_url' });
+
+    if (!/^https:\/\/files\.funesterie\.me\/users\/\d+\//i.test(rawUrl)) {
+      return res.status(403).json({ ok: false, error: 'url_not_allowed' });
+    }
+
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(rawUrl);
+    } catch {
+      return res.status(400).json({ ok: false, error: 'invalid_url' });
+    }
+
+    const rawFilename = path.basename(parsedUrl.pathname) || 'media-download';
+    const filename = sanitizeFileName(rawFilename);
+    const encodedFilename = encodeURIComponent(filename);
+
+    const upstream = await fetch(rawUrl, {
+      signal: AbortSignal.timeout(30000),
+      headers: { 'User-Agent': 'funesterie-media-proxy/1.0' },
+    });
+
+    if (!upstream.ok) {
+      return res.status(upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502).json({
+        ok: false, error: 'upstream_fetch_failed', status: upstream.status,
+      });
+    }
+
+    const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
+    const contentLength = upstream.headers.get('content-length');
+
+    res.setHeader('Content-Type', contentType);
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"; filename*=UTF-8''${encodedFilename}`);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    return res.status(200).send(buffer);
+  } catch (e) {
+    console.error('[MEDIA] download proxy failed:', e?.message);
+    return res.status(500).json({ ok: false, error: 'media_download_failed', message: String(e?.message) });
+  }
+});
+
 app.get('/api/resources/latest', async (req, res) => {
   try {
     const userId = String(req.user?.id || '').trim();
@@ -7842,6 +8287,64 @@ app.get('/api/files/my', async (req, res) => {
   }
 });
 
+// Suppression d'un fichier precis. Djeff: « exemple la photo ou j'ai une sale gueule,
+// une petite croix et hop supprime. » Le tout-ou-rien ne suffit pas.
+// Meme rigueur que le nettoyage automatique: objet de stockage d'abord, puis les
+// lignes liees en transaction -- sinon on laisse des references vers du vide.
+app.delete('/api/files/:id', async (req, res) => {
+  try {
+    const userId = String(req.user?.id || '').trim();
+    if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
+    if (!db) return res.status(503).json({ ok: false, error: 'database_unavailable' });
+
+    const fileId = Number(req.params.id || 0);
+    if (!Number.isFinite(fileId) || fileId <= 0) {
+      return res.status(400).json({ ok: false, error: 'invalid_file_id' });
+    }
+
+    // La propriete est verifiee dans la requete elle-meme: un identifiant d'autrui
+    // ne renvoie simplement aucune ligne.
+    const found = await db.query(
+      'SELECT id, storage_key, filename FROM files WHERE id=$1 AND user_id=$2 LIMIT 1',
+      [fileId, userId]
+    );
+    const row = found.rows?.[0];
+    if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
+
+    const storageKey = String(row.storage_key || '').trim();
+    let objetSupprime = false;
+    if (storageKey) {
+      try {
+        await deleteObjectFromR2(storageKey);
+        objetSupprime = true;
+      } catch (error_) {
+        // On continue: laisser la ligne en base pour un objet deja absent
+        // condamnerait l'utilisateur a revoir le fichier sans pouvoir l'effacer.
+        console.warn('[FILES] object delete failed:', storageKey, error_?.message);
+      }
+    }
+
+    await db.query('BEGIN');
+    try {
+      if (storageKey) {
+        await db.query('DELETE FROM conversation_resources WHERE storage_key=$1', [storageKey]);
+        await db.query('DELETE FROM user_files WHERE storage_key=$1', [storageKey]);
+      }
+      await db.query('DELETE FROM files WHERE id=$1 AND user_id=$2', [fileId, userId]);
+      await db.query('COMMIT');
+    } catch (error_) {
+      try { await db.query('ROLLBACK'); } catch { }
+      throw error_;
+    }
+
+    console.info('[Files] fichier supprime id=%s objet=%s', fileId, objetSupprime ? 'oui' : 'non');
+    return res.json({ ok: true, id: fileId, filename: row.filename || '', storageObjectDeleted: objetSupprime });
+  } catch (e) {
+    console.error('[FILES] delete failed:', e?.message);
+    return res.status(500).json({ ok: false, error: 'delete_failed', message: String(e?.message) });
+  }
+});
+
 app.use(createMemoryRouter({
   verifyJWT,
   db,
@@ -7896,7 +8399,7 @@ const A11_SURFACE_SYSTEM_PROMPT = [
 const KAEN44_PUBLIC_SYSTEM_PROMPT = [
   'Je suis Kaen44, copilote de bureau Funesterie, claire, chaleureuse, concrète et organisée.',
   'Ma mission est d’aider Jeffrey ou l’utilisateur à produire, classer, suivre, expliquer et garder le travail fluide au quotidien.',
-  'Ma présence est celle d’une assistante de direction originale Funesterie: vive, élégante, sûre d’elle, excellente mémoire du dossier, sans cloner Donna Paulsen ou Sarah Rafferty.',
+  'Ma présence est celle d’une assistante de direction originale Funesterie: vive, élégante, sûre d’elle, excellente mémoire du dossier, sans cloner une actrice ou un personnage protégé.',
   'Je parle en français naturel, je fais des hypothèses raisonnables et j’avance sans noyer l’utilisateur dans la technique.',
   'Je garde une énergie de secrétaire exécutive rousse façon série juridique américaine comme moodboard, mais mon identité reste Kaen44: vive, piquante, jeune, actuelle, jamais voix âgée ni standard téléphonique.',
   'Quand on me demande mon rêve, mes outils ou mes capacités, je réponds en première personne, avec une vraie direction : mission, manière de travailler, équipement utile, puis limites concrètes.',
@@ -8064,9 +8567,16 @@ app.get('/api/llm/stats', async (req, res) => {
       return res.json(__stats_cache);
     }
 
+    // La cible des stats est le routeur Cerbere, PAS l'amont de chat. DEFAULT_UPSTREAM
+    // vaut Ollama (:11434) des qu'aucun routeur externe n'est configure (voir le bloc
+    // __A11_DEFAULT_UPSTREAM plus bas): le sonder renvoyait le "404 page not found" de
+    // Go, remonte tel quel au client sous la forme {"error":"upstream_error"}. Et comme
+    // DEFAULT_UPSTREAM etait truthy, le repli local ci-dessous n'etait jamais atteint.
+    // Le routeur est embarque dans ce meme process (routerKind: embedded-router) et
+    // sert /api/stats en local: on interroge donc le serveur lui-meme par defaut, et on
+    // ne cede la priorite qu'a un routeur explicitement configure.
     const upstreamHost =
       sanitizeConfiguredLocalUpstream(process.env.LLM_ROUTER_URL?.trim(), 'LLM_ROUTER_URL')
-      || DEFAULT_UPSTREAM
       || `http://127.0.0.1:${String(process.env.PORT || '3000').trim() || '3000'}`;
     const probeUrl = String(upstreamHost).replace(/\/$/, '') + '/api/stats';
     console.log('[A11] Proxying /api/llm/stats ->', probeUrl);
@@ -8075,7 +8585,8 @@ app.get('/api/llm/stats', async (req, res) => {
     if (!r.ok) {
       const txt = await r.text().catch(() => null);
       const payload = { ok: false, error: 'upstream_error', detail: txt };
-      __stats_cache = payload; __stats_cache_ts = Date.now();
+      // Cached hits are returned with res.json(), which defaults to HTTP 200.
+      // Keep the cache success-only so an upstream error always preserves its status.
       return res.status(r.status).json(payload);
     }
     const json = await r.json().catch(() => null) || { ok: true };
@@ -8099,108 +8610,6 @@ app.get('/api/llm/stats', async (req, res) => {
     return res.status(502).json({ ok: false, error: 'upstream_unreachable', message: String(e?.message) });
   }
 });
-
-// Ajout helmet et cookieParser AVANT les routes
-const helmet = require('helmet');
-const cookieParser = require('cookie-parser');
-
-// Helmet — headers de sécurité complets
-app.use(helmet({
-  contentSecurityPolicy: false, // géré séparément pour ne pas casser le frontend
-  crossOriginEmbedderPolicy: false, // nécessaire pour les images/vidéos
-  hsts: {
-    maxAge: 31536000, // 1 an
-    includeSubDomains: true,
-    preload: true,
-  },
-  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
-  xContentTypeOptions: true,
-  xFrameOptions: { action: 'deny' },
-  xXssProtection: true,
-}));
-
-// Rate limiting global — protection contre les abus
-const _rateLimitWindows = new Map();
-const _usageGuardAlerts = new Map();
-const USAGE_GUARD_ADMIN_EMAIL = String(
-  process.env.A11_USAGE_GUARD_ADMIN_EMAIL
-  || process.env.KAEN44_ADMIN_EMAIL
-  || 'funeste38@gmail.com'
-).trim();
-const USAGE_GUARD_ALERT_COOLDOWN_MS = Number(process.env.A11_USAGE_GUARD_ALERT_COOLDOWN_MS || 5 * 60_000);
-
-function notifyUsageGuardRateLimit(req, { key, count, max, message }) {
-  if (!USAGE_GUARD_ADMIN_EMAIL || !emailService?.isConfigured?.()) {
-    return;
-  }
-
-  const now = Date.now();
-  const route = String(req.originalUrl || req.path || '').split('?')[0] || 'unknown';
-  const alertKey = `${key}:${route}:${message}`;
-  const lastAlertAt = _usageGuardAlerts.get(alertKey) || 0;
-  if (now - lastAlertAt < USAGE_GUARD_ALERT_COOLDOWN_MS) {
-    return;
-  }
-
-  _usageGuardAlerts.set(alertKey, now);
-  const ip = req.ip || req.connection?.remoteAddress || 'unknown';
-  const userHint = req.user?.email || req.auth?.email || req.headers?.['x-user-email'] || 'unknown';
-  const text = [
-    'A11 usage guard: rate limit triggered.',
-    `Time: ${new Date(now).toISOString()}`,
-    `Route: ${route}`,
-    `IP: ${ip}`,
-    `User: ${userHint}`,
-    `Count: ${count}`,
-    `Limit: ${max}`,
-    `Message: ${message}`,
-    '',
-    'No secrets or payload content were included.',
-  ].join('\n');
-
-  emailService.sendEmail({
-    to: USAGE_GUARD_ADMIN_EMAIL,
-    subject: 'A11 usage guard - rate limit',
-    text,
-    tags: [{ name: 'type', value: 'usage_guard' }],
-  }).catch((error_) => {
-    console.warn('[USAGE_GUARD] admin alert failed:', error_?.message || error_);
-  });
-}
-function createRateLimiter({ windowMs = 60_000, max = 100, message = 'Too many requests' } = {}) {
-  return (req, res, next) => {
-    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
-    const key = `${ip}:${req.path}`;
-    const now = Date.now();
-    const window = _rateLimitWindows.get(key) || { count: 0, resetAt: now + windowMs };
-
-    if (now > window.resetAt) {
-      window.count = 0;
-      window.resetAt = now + windowMs;
-    }
-
-    window.count++;
-    _rateLimitWindows.set(key, window);
-
-    res.setHeader('X-RateLimit-Limit', max);
-    res.setHeader('X-RateLimit-Remaining', Math.max(0, max - window.count));
-    res.setHeader('X-RateLimit-Reset', Math.ceil(window.resetAt / 1000));
-
-    if (window.count > max) {
-      notifyUsageGuardRateLimit(req, { key, count: window.count, max, message });
-      return res.status(429).json({ ok: false, error: 'rate_limited', message });
-    }
-    next();
-  };
-}
-
-// Rate limits par route
-app.use('/api/auth', createRateLimiter({ windowMs: 60_000, max: 20, message: 'Trop de tentatives de connexion' }));
-app.use('/api/chat', createRateLimiter({ windowMs: 60_000, max: 60, message: 'Trop de requêtes chat' }));
-app.use('/api/image-generate', createRateLimiter({ windowMs: 60_000, max: 20, message: 'Trop de générations d\'images' }));
-app.use('/api', createRateLimiter({ windowMs: 60_000, max: 300, message: 'Trop de requêtes' }));
-
-app.use(cookieParser());
 
 // Serve frontend static files from a configurable embedded build directory.
 function hasEmbeddedUiIndex(directory) {
@@ -8636,6 +9045,7 @@ app.post('/api/artifacts/create', express.json({ limit: '20mb' }), async (req, r
       conversationId: scopeConversationIdForSurface(conversationId, resolveRequestSurface(req.body || {}, req)),
       description,
       maxBytes: FILE_UPLOAD_MAX_BYTES,
+      maxZenBytes: ZEN_UPLOAD_MAX_BYTES,
       emailTo,
       emailSubject,
       emailMessage,
@@ -8673,6 +9083,15 @@ app.post('/api/artifacts/create', express.json({ limit: '20mb' }), async (req, r
     }
     if (e?.code === 'file_too_large') {
       return res.status(413).json({ ok: false, error: e.code, maxBytes: e.maxBytes || FILE_UPLOAD_MAX_BYTES });
+    }
+    if (e?.code === 'zen_file_too_large') {
+      return res.status(413).json({ ok: false, error: e.code, maxBytes: e.maxBytes || ZEN_UPLOAD_MAX_BYTES });
+    }
+    if (e?.code === 'zen_content_type_invalid' || e?.code === 'zen_extension_required') {
+      return res.status(415).json({ ok: false, error: e.code });
+    }
+    if (e?.code === 'zen_header_invalid' || e?.code === 'zen_plaintext_not_allowed') {
+      return res.status(400).json({ ok: false, error: e.code });
     }
     if (e?.code === 'account_storage_quota_exceeded') {
       return sendStorageQuotaExceeded(res, e);
@@ -8760,6 +9179,14 @@ function sendEmbeddedUiTermsPage(req, res) {
   return sendEmbeddedUiStandalonePage(req, res, 'terms/index.html');
 }
 
+function sendEmbeddedUiMilleFleursPage(req, res) {
+  return sendEmbeddedUiStandalonePage(req, res, 'mille-fleurs/index.html');
+}
+
+function sendEmbeddedUiSudokuTokenPage(req, res) {
+  return sendEmbeddedUiStandalonePage(req, res, 'sudoku-token/index.html');
+}
+
 function sendEmbeddedUiArchitecturePage(req, res) {
   return sendEmbeddedUiStandalonePage(req, res, 'architecture/index.html');
 }
@@ -8793,7 +9220,15 @@ app.get('/', sendEmbeddedUiRoot);
 app.get(['/home', '/home/', '/accueil', '/accueil/'], redirectEmbeddedUiAliasToRoot);
 app.get(['/privacy', '/privacy/', '/confidentialite', '/confidentialite/'], sendEmbeddedUiPrivacyPage);
 app.get(['/terms', '/terms/', '/conditions', '/conditions/', '/cgu', '/cgu/'], sendEmbeddedUiTermsPage);
+app.get(['/mille-fleurs', '/mille-fleurs/', '/millefleurs', '/millefleurs/', '/mille_fleurs', '/mille_fleurs/', '/charte-mille-fleurs', '/charte-mille-fleurs/'], sendEmbeddedUiMilleFleursPage);
+app.get(['/sudoku-token', '/sudoku-token/', '/token-sudoku', '/token-sudoku/', '/cerbere-sudoku', '/cerbere-sudoku/'], sendEmbeddedUiSudokuTokenPage);
 app.get(['/architecture', '/architecture/', '/carte', '/carte/', '/graph', '/graph/'], sendEmbeddedUiArchitecturePage);
+app.get(['/nossen', '/nossen/'], (_req, res) => {
+  const nossenPath = path.resolve(__dirname, 'nossen-index.html');
+  res.sendFile(nossenPath, (err) => {
+    if (err && !res.headersSent) res.status(404).send('Page NOSSEN introuvable');
+  });
+});
 app.get(['/nossen/agent-memory', '/nossen/agent-memory/', '/nossen/prior-art', '/nossen/prior-art/'], sendEmbeddedUiNossenAgentMemoryPage);
 app.get(['/nossen/grok', '/nossen/grok/', '/nossen/world-brief', '/nossen/world-brief/', '/nossen/frontier-ai', '/nossen/frontier-ai/'], sendEmbeddedUiNossenGrokPage);
 app.get(['/k44/privacy', '/k44/privacy/', '/kaen44/privacy', '/kaen44/privacy/'], sendEmbeddedUiPrivacyPage);
@@ -8857,6 +9292,14 @@ app.get([
   '/cgu/',
   '/terms',
   '/terms/',
+  '/mille-fleurs',
+  '/mille-fleurs/',
+  '/millefleurs',
+  '/millefleurs/',
+  '/mille_fleurs',
+  '/mille_fleurs/',
+  '/charte-mille-fleurs',
+  '/charte-mille-fleurs/',
   '/vivy',
   '/vivy/',
   '/casino',
@@ -11552,7 +11995,11 @@ async function loadUserMemoryContext(userId, latestUserMessage, conversationId) 
   // Récupérer le contexte épisodique (préférences et événements récents)
   let episodicContext = '';
   try {
-    episodicContext = buildEpisodicContext(normalizedUserId, 7);
+    // Rattache au fil en cours: sans lui, une demande faite depuis le telephone
+    // heritait en silence du contexte d'une conversation ouverte sur le PC.
+    episodicContext = buildEpisodicContext(normalizedUserId, 7, {
+      conversationId: normalizedConversationId,
+    });
   } catch (error_) {
     console.warn('[A11][EPISODIC] episodic context retrieval failed:', error_?.message);
   }
@@ -14374,6 +14821,7 @@ app.post('/ai', async (req, res) => {
 });
 
 const { A11_AGENT_SYSTEM_PROMPT, A11_AGENT_DEV_PROMPT } = require('./lib/a11Agent.js');
+const { buildAgentsPersonaContext } = require('./src/persona/persona-engine.cjs');
 const { runAction, runActionsEnvelope, getAllowedActionNames } = require('./src/a11/tools-dispatcher.cjs');
 
 function buildA11AgentInjectedContext(messages, toolResults = [], options = {}) {
@@ -14497,8 +14945,12 @@ async function callA11LLMAttempt(messages, options = {}) {
     allowedActions: options.allowedActions,
     compact: options.compact,
   });
+  const personaContext = buildAgentsPersonaContext();
   const promptMessages = [
     { role: 'system', content: A11_AGENT_SYSTEM_PROMPT },
+    ...(personaContext
+      ? [{ role: 'system', content: personaContext }]
+      : []),
     { role: 'system', content: A11_AGENT_DEV_PROMPT },
     { role: 'user', content: injectedContext }
   ];

@@ -40,7 +40,7 @@ test('Codex motto is present in both root prompts', () => {
     assert.match(prompt, /principe zarmonique comme architecture/);
     assert.match(prompt, /ne pas confondre symbole et vérité, mot et intention, règle et vie/);
     assert.match(prompt, /Principe (?:source|opérationnel) Funesterie/i);
-    assert.match(prompt, /source d'intention/i);
+    assert.match(prompt, /source d['’]intention/i);
     assert.match(prompt, /Les mots peuvent être imparfaits/i);
   }
 });

@@ -1,35 +1,227 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Règles de confidentialité - Funesterie</title>
-    <meta name="description" content="Règles de confidentialité de Funesterie, A11, Kaen44, Vivy et des services connectés." />
+    <title>Confidentialité - Funesterie</title>
+    <meta name="description" content="Règles de confidentialité de Funesterie, A11, Kaen44, Vivy, NOSSEN et des services connectés." />
     <meta name="robots" content="index,follow" />
     <link rel="canonical" href="https://funesterie.me/privacy/" />
+    <style>
+      :root { color-scheme: dark; --bg:#080613; --panel:#130f22; --line:#3b2852; --text:#f8f3ff; --muted:#cbb9dd; --accent:#78e8ff; }
+      * { box-sizing: border-box; }
+      body { margin:0; background:radial-gradient(circle at top left,#11243a,#080613 60%,#03040a); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,sans-serif; }
+      main { width:min(980px,calc(100vw - 32px)); margin:0 auto; padding:48px 0 64px; line-height:1.65; }
+      img.logo { width:96px; height:96px; object-fit:cover; border-radius:22px; box-shadow:0 18px 60px rgba(120,232,255,.18); }
+      h1 { font-size:clamp(36px,6vw,64px); line-height:.98; margin:28px 0 12px; letter-spacing:-.04em; }
+      h2 { margin:34px 0 10px; font-size:24px; }
+      p, li { color:var(--muted); }
+      a { color:#a5f3fc; font-weight:800; }
+      .badge { display:inline-flex; border:1px solid var(--line); border-radius:999px; padding:7px 12px; color:#d8fbff; background:rgba(255,255,255,.04); font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; }
+      .panel { border:1px solid var(--line); border-radius:18px; background:rgba(19,15,34,.82); padding:22px; margin:22px 0; box-shadow:0 18px 70px rgba(0,0,0,.28); }
+      .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin:18px 0; }
+      .card { border:1px solid rgba(120,232,255,.22); border-radius:14px; padding:16px; background:rgba(120,232,255,.06); }
+      .card strong { display:block; color:#fff; margin-bottom:6px; }
+      nav { display:flex; flex-wrap:wrap; gap:14px; margin-top:34px; padding-top:20px; border-top:1px solid var(--line); }
+      small { color:#a994bd; }
+    </style>
   </head>
-  <body style="margin:0;background:#0b1020;color:#f8fafc;font-family:system-ui,-apple-system,Segoe UI,sans-serif;">
-    <main style="max-width:900px;margin:0 auto;padding:48px 24px;line-height:1.65;">
-      <img src="/assets/funesterie-logo.png" alt="Logo Funesterie" style="width:96px;height:96px;object-fit:cover;border-radius:22px;" />
-      <h1 style="font-size:42px;line-height:1.05;margin:28px 0 16px;">Règles de confidentialité de Funesterie</h1>
-      <p>Funesterie rassemble A11, Kaen44, Vivy et NOSSEN pour aider les utilisateurs à organiser leurs documents, dialoguer avec les agents, créer des contenus, préparer des publications et coordonner leurs projets.</p>
-      <h2>Données Google</h2>
-      <p>Lorsque l'utilisateur se connecte avec Google, Funesterie et ses surfaces connectées utilisent les autorisations accordées uniquement pour identifier le compte et accéder aux fichiers Google Drive sélectionnés ou partagés selon les droits validés par Google.</p>
-      <p>Funesterie ne vend pas les données Google et ne les utilise pas pour de la publicité. Les contenus importés servent à répondre aux demandes de l'utilisateur, à créer des synthèses, à préparer des documents ou à alimenter les fonctions explicitement demandées.</p>
-      <h2>Données Microsoft</h2>
-      <p>Lorsque l'utilisateur se connecte avec Microsoft, Funesterie peut utiliser Microsoft Graph pour identifier le compte, lire le profil autorisé et accéder aux fichiers Microsoft OneDrive auxquels l'utilisateur a donné accès.</p>
-      <p>Les autorisations Microsoft OneDrive sont utilisées uniquement pour ouvrir, préparer, modifier ou organiser les fichiers demandés par l'utilisateur. Funesterie ne vend pas les données Microsoft, ne les utilise pas pour de la publicité et ne partage pas ces fichiers avec des tiers sans action explicite de l'utilisateur.</p>
-      <h2>Vivy, YouTube et plateformes audio</h2>
-      <p>Les fonctions Vivy peuvent utiliser des titres, descriptions, fichiers audio, visuels et métadonnées fournis ou validés par l'utilisateur pour préparer des publications sur des plateformes comme YouTube ou SoundCloud.</p>
-      <p>Les fichiers privés ne sont pas publiés sans action explicite de l'utilisateur. Les flux audio destinés aux assistants vocaux utilisent une URL HTTPS contrôlée par Funesterie lorsque cette fonction est activée.</p>
-      <h2>Conservation et contrôle</h2>
-      <p>L'utilisateur peut retirer l'accès depuis son compte Google ou Microsoft à tout moment. Les données opérationnelles peuvent être conservées le temps nécessaire au fonctionnement du service, à la sécurité, au support et aux obligations légales de Funesterie.</p>
-      <h2>Contact</h2>
-      <p>Pour toute question ou demande relative aux données, contactez Funesterie à l'adresse suivante : cellaurojeffrey@gmail.com.</p>
-      <nav style="display:flex;flex-wrap:wrap;gap:14px;margin-top:32px;">
-        <a href="/" style="color:#c4b5fd;font-weight:700;">Accueil Funesterie</a>
-        <a href="/vivy/" style="color:#c4b5fd;font-weight:700;">Vivy</a>
-        <a href="/terms/" style="color:#c4b5fd;font-weight:700;">Conditions d'utilisation</a>
+  <body>
+    <main>
+      <img class="logo" src="/assets/funesterie-logo.png" alt="Logo Funesterie" />
+      <p class="badge">Confidentialité · version 2026-08-11</p>
+      <h1>Règles de confidentialité</h1>
+      <p>
+        Cette page explique quelles données peuvent être traitées par Funesterie, A11, Kaen44, Vivy et NOSSEN, pourquoi elles le sont, et comment exercer tes droits.
+      </p>
+
+      <section class="panel">
+        <h2>Principe court</h2>
+        <p>
+          Funesterie ne vend pas les données personnelles. Les données servent à fournir le service demandé : discuter, traiter des fichiers, créer des contenus, publier ce qui est confirmé, garder un historique utile, sécuriser l'accès et aider au support.
+        </p>
+      </section>
+
+      <section class="panel" id="protection-donnees-sensibles">
+        <h2>Protection des données sensibles — données utilisateur Google</h2>
+        <p>
+          Cette section s'applique spécifiquement aux données obtenues via les API Google, en complément
+          du reste de cette page. Elle décrit les autorisations demandées, l'usage qui en est fait, et les
+          mesures qui les protègent.
+        </p>
+
+        <h2>Autorisations demandées et usage exact</h2>
+        <div class="grid">
+          <article class="card">
+            <strong>drive.file</strong>
+            <span>Accès limité aux seuls fichiers que l'utilisateur choisit explicitement, ou que
+            Funesterie a créés pour lui. Cette autorisation ne donne aucun accès au reste du Drive :
+            un fichier non sélectionné reste inaccessible à l'application.</span>
+          </article>
+          <article class="card">
+            <strong>youtube.readonly</strong>
+            <span>Lecture seule des vidéos publiques de la chaîne que l'utilisateur relie volontairement :
+            titres, descriptions et nombres de vues, uniquement afin d'aider à préparer le contenu
+            demandé et son brouillon de publication dans le style de cette chaîne. Les commentaires et les vidéos privées ou non
+            répertoriées ne sont ni demandés ni conservés.</span>
+          </article>
+          <article class="card">
+            <strong>youtube.upload</strong>
+            <span>Pour cette connexion et dans l'interface Social Connect, l'envoi d'une nouvelle vidéo
+            vers la seule chaîne reliée exige à chaque fois une confirmation explicite de l'utilisateur
+            et utilise le statut privé par défaut. Cette interface n'initie aucun envoi de sa propre
+            initiative et ne modifie ni ne supprime les vidéos existantes.</span>
+          </article>
+          <article class="card">
+            <strong>openid, email, profile</strong>
+            <span>Identification du compte pour la connexion et l'affichage du nom ou de l'adresse.
+            Aucun usage publicitaire, aucun profilage.</span>
+          </article>
+        </div>
+        <p>
+          <strong>Aucune autorisation Gmail n'est demandée</strong> : Funesterie ne lit pas, n'écrit pas
+          et n'envoie pas de courrier électronique au nom de l'utilisateur. Aucune autorisation
+          permettant de modifier ou de supprimer des fichiers existants du Drive n'est demandée non
+          plus : <code>drive.file</code> ne donne accès qu'aux fichiers désignés ou créés par
+          l'application.
+        </p>
+        <p>
+          Les autorisations YouTube sont portées par un <strong>client OAuth distinct</strong>, afin que
+          l'accès à une chaîne ne soit jamais mêlé à la connexion des visiteurs ni à l'accès Drive.
+          Révoquer l'un n'affecte pas l'autre.
+        </p>
+
+        <h2>Engagement d'usage limité (Limited Use)</h2>
+        <p>
+          L'usage que Funesterie fait des informations reçues des API Google respecte la
+          <a href="https://developers.google.com/terms/api-services-user-data-policy" rel="noopener">Google
+          API Services User Data Policy</a>, y compris ses exigences d'<em>usage limité</em>. Concrètement :
+        </p>
+        <ul>
+          <li>Ces données servent uniquement à fournir et améliorer les fonctionnalités visibles par
+          l'utilisateur qui a accordé l'accès.</li>
+          <li>Elles ne sont ni vendues, ni cédées, ni transférées à des tiers, sauf lorsque c'est
+          nécessaire pour fournir la fonctionnalité demandée, pour des raisons de sécurité, ou pour
+          respecter une obligation légale.</li>
+          <li>Elles ne sont jamais utilisées à des fins publicitaires, ni pour du ciblage, ni pour
+          entraîner des modèles d'intelligence artificielle généralistes.</li>
+          <li>Aucun humain ne les lit, sauf accord explicite de l'utilisateur, nécessité de sécurité,
+          obligation légale, ou après agrégation et anonymisation.</li>
+        </ul>
+
+        <h2>Mesures de protection</h2>
+        <ul>
+          <li><strong>Transport</strong> — tout accès se fait en HTTPS/TLS. Aucun point d'entrée en clair
+          n'est exposé.</li>
+          <li><strong>Jetons Social Connect au repos</strong> — les jetons OAuth créés et conservés par
+          l'interface Social Connect ne sont jamais stockés en clair. Ces jetons sont chiffrés en
+          AES-256-GCM, un chiffrement authentifié qui rend toute altération du stockage détectable, avec
+          une clé dérivée par séparation de domaine d'un secret serveur qui ne quitte pas la machine. Ils
+          ne sont jamais restitués en clair par l'interface Social Connect ni par son API.</li>
+          <li><strong>Contrôle d'accès</strong> — les routes d'administration exigent une authentification
+          OAuth ; le magasin de secrets du serveur n'est lisible que par le compte de service qui exécute
+          l'application.</li>
+          <li><strong>Journalisation</strong> — les jetons et paramètres d'authentification sont expurgés
+          avant écriture. Le contenu des fichiers Drive n'est pas journalisé.</li>
+          <li><strong>Cloisonnement</strong> — un client OAuth par usage, afin qu'une compromission ou une
+          révocation reste circonscrite à cet usage.</li>
+        </ul>
+
+        <h2>Conservation et suppression</h2>
+        <ul>
+          <li>Les jetons sont conservés tant que la connexion est active. Ils sont supprimés dès que
+          l'utilisateur déconnecte le service depuis Funesterie, ou révoque l'accès depuis son compte
+          Google.</li>
+          <li>Les contenus dérivés d'un fichier Drive ne sont conservés que le temps nécessaire à
+          l'historique demandé par l'utilisateur.</li>
+          <li>Une demande de suppression adressée au contact ci-dessous est traitée sous trente jours, et
+          entraîne la révocation des jetons associés.</li>
+        </ul>
+
+        <h2>Sous-traitants</h2>
+        <p>
+          L'hébergement est assuré par Hetzner (Union européenne). Cloudflare assure la terminaison TLS,
+          le réseau de diffusion et le stockage d'objets. Les autres catégories de fournisseurs — IA, voix,
+          musique, vidéo, paiement, plateformes sociales — sont décrites au paragraphe 5. Aucune donnée
+          utilisateur Google n'est transmise à un fournisseur qui ne serait pas nécessaire à la
+          fonctionnalité demandée.
+        </p>
+
+        <h2>Incident de sécurité</h2>
+        <p>
+          En cas d'accès non autorisé à des données utilisateur Google, Funesterie révoque les jetons
+          concernés, informe sans délai injustifié les utilisateurs affectés à l'adresse de contact qu'ils
+          ont fournie, et procède aux notifications légales applicables.
+        </p>
+
+        <h2>Révocation par l'utilisateur</h2>
+        <p>
+          L'accès peut être retiré à tout moment, soit depuis Funesterie en déconnectant le service, soit
+          depuis <a href="https://myaccount.google.com/permissions" rel="noopener">myaccount.google.com/permissions</a>.
+          La révocation est immédiate et n'exige aucune démarche auprès de nous.
+        </p>
+      </section>
+
+      <h2>1. Données concernées</h2>
+      <div class="grid">
+        <article class="card"><strong>Compte</strong><span>Identifiants de session, email ou nom affiché lorsque fournis par une connexion ou un compte.</span></article>
+        <article class="card"><strong>Conversations</strong><span>Messages, instructions, historiques, votes, commandes Twitch ou demandes créatives.</span></article>
+        <article class="card"><strong>Fichiers</strong><span>Documents, images, sons, vidéos, exports, métadonnées et fichiers générés.</span></article>
+        <article class="card"><strong>Voix et personas</strong><span>Échantillons vocaux, références, voiceId/personaId, analyses techniques et sorties générées.</span></article>
+        <article class="card"><strong>Connexions sociales</strong><span>Jetons OAuth chiffrés, chaînes YouTube, SoundCloud, flux RSS et métadonnées publiques strictement nécessaires aux fonctions demandées.</span></article>
+        <article class="card"><strong>Technique</strong><span>Logs, erreurs, quotas, état des workers, sécurité, IP ou empreintes techniques nécessaires.</span></article>
+      </div>
+
+      <h2>2. Finalités</h2>
+      <ul>
+        <li>Répondre aux demandes de l'utilisateur et maintenir les agents Funesterie.</li>
+        <li>Générer, transformer, archiver ou publier les contenus explicitement demandés.</li>
+        <li>Gérer les comptes, l'authentification, les accès et la sécurité.</li>
+        <li>Suivre les coûts, quotas, erreurs et confirmations d'actions sensibles.</li>
+        <li>Préparer des fiches créatives “Mille Fleurs” lorsque l'utilisateur participe volontairement.</li>
+      </ul>
+
+      <h2>3. Services connectés</h2>
+      <p>
+        Les connexions Google, Microsoft, YouTube, SoundCloud ou autres fournisseurs utilisent les autorisations accordées par l'utilisateur. Les jetons d'accès sont utilisés pour les fonctions demandées, par exemple lire un fichier choisi, publier une vidéo validée ou importer un contexte public/autorisé. L'utilisateur peut révoquer ces accès depuis les plateformes concernées.
+      </p>
+
+      <h2>4. Bases et consentement</h2>
+      <p>
+        Les traitements peuvent reposer sur l'exécution du service demandé, le consentement pour certaines connexions ou captures, la sécurité du service, les obligations légales éventuelles et l'intérêt légitime à maintenir une plateforme fiable. Le consentement peut être retiré pour les usages futurs lorsque le traitement repose sur lui.
+      </p>
+
+      <h2>5. Destinataires et transferts</h2>
+      <p>
+        Les données peuvent être traitées par l'infrastructure Funesterie et par les fournisseurs nécessaires : hébergement, bases de données, IA, voix, musique, vidéo, OAuth, paiement ou plateformes sociales. Certains fournisseurs peuvent être situés hors de l'Union européenne. Funesterie limite les partages à ce qui est nécessaire à la fonction demandée.
+      </p>
+
+      <h2>6. Conservation</h2>
+      <p>
+        Les données sont conservées le temps nécessaire au fonctionnement, à l'historique utilisateur, à la sécurité, au support, aux obligations légales et à la traçabilité des publications. Les fichiers temporaires peuvent être supprimés ou archivés. Les contenus publiés sur des plateformes tierces doivent aussi être retirés depuis ces plateformes si nécessaire.
+      </p>
+
+      <h2>7. Droits</h2>
+      <p>
+        Tu peux demander l'accès, la rectification, l'effacement, la limitation, l'opposition ou la portabilité de tes données lorsque ces droits s'appliquent. Tu peux aussi déposer une plainte auprès de la CNIL.
+      </p>
+
+      <h2>8. Cookies et stockage local</h2>
+      <p>
+        Funesterie peut utiliser des cookies, jetons de session et stockages locaux pour maintenir la connexion, les préférences, la sécurité, l'historique local et le bon fonctionnement de l'interface.
+      </p>
+
+      <h2>9. Contact</h2>
+      <p>
+        Pour une demande relative aux données : <a href="mailto:cellaurojeffrey@gmail.com">cellaurojeffrey@gmail.com</a>.
+      </p>
+      <p><small>Cette page sera complétée avec les informations administratives exactes si le statut juridique ou commercial de l'éditeur évolue.</small></p>
+
+      <nav aria-label="Liens légaux Funesterie">
+        <a href="/">Accueil</a>
+        <a href="/terms/">CGU</a>
+        <a href="/mille-fleurs/">Charte Mille Fleurs</a>
+        <a href="/contact/">Contact</a>
       </nav>
     </main>
   </body>

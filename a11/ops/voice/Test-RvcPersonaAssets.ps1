@@ -132,7 +132,7 @@ if (-not (Test-Path -LiteralPath $personaManifestPath)) {
 }
 
 $manifest = Get-Content -LiteralPath $personaManifestPath -Raw | ConvertFrom-Json
-$styles = @("terminator", "donna", "vivy")
+$styles = @("a11-official-stern-french", "a11-voix-de-lait", "djeff-rap", "kaen44-official-french-narrator", "vivy")
 $rows = foreach ($style in $styles) {
   $entry = Get-ManifestEntry -Manifest $manifest -Style $style
   if (-not $entry) {

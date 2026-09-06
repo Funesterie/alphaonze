@@ -22,7 +22,8 @@ test('buildFramePromptPlan preserves early subject identity cues from the compil
   assert.match(String(plan.prompt || ''), /mario/i);
   assert.match(String(plan.prompt || ''), /weight on the left leg/i);
   assert.match(String(plan.prompt_2 || ''), /in front of a castle/i);
-  assert.match(String(plan.prompt_2 || ''), /keep same face, same outfit, same background/i);
+  assert.match(String(plan.prompt_2 || ''), /keep same face, same outfit/i);
+  assert.match(String(plan.prompt_2 || ''), /consistent background/i);
   assert.doesNotMatch(String(plan.prompt || ''), /\bpoids\b|\bjambe\b|\bpied\b/i);
   assert.doesNotMatch(String(plan.prompt || ''), /stable base structure|base structure stable/i);
   assert.doesNotMatch(String(plan.prompt_2 || ''), /Représenter clairement|reconnaissable et complet|decor et composition stables/i);

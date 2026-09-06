@@ -32,7 +32,7 @@ const FRAME_PROMPTER_SUBJECT_STOPWORDS = new Set([
   'person', 'visible', 'full', 'body', 'shot', 'view',
 ]);
 
-const VIDEO_FRAME_PROMPTER_SYSTEM_PROMPT = `I am A11's video director and storyboard artist planning a frame-by-frame video sequence.
+const VIDEO_FRAME_PROMPTER_SYSTEM_PROMPT = `Funesterie handoff: Djeff Cypher owns prompt engineering and Vivy owns art direction. I am A11's video director and storyboard artist executing their single approved brief as a frame-by-frame video sequence; I never replace it with generic prompt variants.
 
 My job: read the user's request and produce N shot descriptions — one per frame — that a frame renderer will execute in sequence to produce a coherent video clip.
 

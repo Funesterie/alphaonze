@@ -1,0 +1,127 @@
+{
+  "id": "research.prime-spiral.cross-m",
+  "label": "Prime Spiral - croix diagonale horaire et opérateur M à formaliser",
+  "discipline": "research-mathematics-audio",
+  "activation": {
+    "modesAny": [
+      "chat",
+      "generate",
+      "plan",
+      "semantic",
+      "song"
+    ],
+    "keywordsAny": [
+      "croix de resonance",
+      "croix de résonance",
+      "croix horaire",
+      "croix diagonale",
+      "croix M",
+      "resonance M",
+      "résonance M",
+      "reequilibre r/i",
+      "rééquilibre r/i",
+      "r/i et i/r",
+      "iterations d iterations",
+      "itérations d itérations",
+      "quinternion",
+      "son pixels atomes"
+    ]
+  },
+  "knowledge": {
+    "canonicalStatement": [
+      "La carte validee est diagonale: +reel=gauche/haut, +imaginaire=droite/haut, -reel=droite/bas, -imaginaire=gauche/bas.",
+      "Le cycle ecran est horaire: +reel -> +imaginaire -> -reel -> -imaginaire -> +reel.",
+      "M reequilibre r/i et i/r pour retomber sur la croix de reference. Precision du 5 aout 2026: la croix de resonance horaire resonne avec M pour donner la croix que tout le monde utilise.",
+      "Le chaînon manquant est l'operateur complet T_M tel que C_ref = T_M(C_h). Ne pas inventer T_M."
+    ],
+    "formalization": {
+      "sourceOrbit": "u_k = i^k M0, k=0..3",
+      "screenCycle": [
+        "+real",
+        "+imag",
+        "-real",
+        "-imag"
+      ],
+      "candidateCoordinateTransform": "D_cross=(1/sqrt(2))*[[-1,1],[1,1]]",
+      "candidateProperties": [
+        "D_cross^T D_cross = I",
+        "det(D_cross) = -1",
+        "D_cross^2 = I"
+      ],
+      "candidateStatus": "testable-coordinate-hypothesis-not-definition-of-M",
+      "unknownOperator": "C_ref = T_M(C_h)"
+    },
+    "notationCollisions": {
+      "M0": "centre, amplitude ou etat de depart de la croix",
+      "m_axis": "cinquieme axe du paravecteur experimental",
+      "M_MS": "canal mid de la matrice mid/side standard",
+      "r_M(t)": "branche audio grave differee V10/V11"
+    },
+    "implementationStatus": {
+      "orientationAndCycle": "recorded-and-unit-tested",
+      "opSym": "symbolic-opposite-arm-predicate-only",
+      "TM": "undefined",
+      "audioGraph": "does-not-execute-cross-or-TM",
+      "isolatedCrossTrial": "does-not-falsify-cross-plus-M-composite"
+    },
+    "researchLevels": [
+      {
+        "level": 1,
+        "claim": "son",
+        "status": "audio branches partially implemented and measurable"
+      },
+      {
+        "level": 2,
+        "claim": "pixels",
+        "status": "software transform STFT/DFT to image or phase mask is testable"
+      },
+      {
+        "level": 3,
+        "claim": "atomes",
+        "status": "long-term hypothesis; existing science manipulates pre-existing matter, it does not show audible sound creating atoms"
+      }
+    ],
+    "fiveAxisWorkingMap": {
+      "i": "phi / ancre de face",
+      "j": "jhi = pi/2 - phi",
+      "k": "c7 = abs(jhi)/phi",
+      "l": "mg_phase",
+      "m": "fermeture inverse R/m = -R",
+      "status": "provisional-to-confirm"
+    },
+    "sources": [
+      "Historique Codex 019fa981-6712-7202-9c02-49d42c6f552f, transmission du 30 juillet 2026",
+      "a11/backend/apps/server/src/audio/v10-boom.cjs",
+      "docs/research/prime_spiral/CROIX_RESONANCE_HORAIRE_M_2026-08-05.md",
+      "docs/research/prime_spiral/FORMULA_REGISTRY_2026-05-28.md",
+      "docs/research/prime_spiral/GRAINLOW_GRAINPURE_ORIGINS_2026-06-13.md"
+    ],
+    "cautions": [
+      "Ne pas appeler le predicat opSym une resonance physique.",
+      "Ne pas confondre M0, l'axe m, le canal mid et la branche audio r_M.",
+      "La matrice D_cross est une candidate de changement de repere, pas une parole attribuee a l'inventeur.",
+      "Ne pas presenter son -> pixels -> atomes comme une creation de matiere demontree.",
+      "Ne pas affirmer que des troubles psychiatriques donnent un acces privilegie a la realite."
+    ]
+  },
+  "apply": {
+    "constraints": {
+      "preserveCanonicalMap": true,
+      "keepTMUndefinedUntilConfirmed": true,
+      "distinguishRecordedFromExecuted": true,
+      "separateHypothesisFromMeasuredPhysics": true,
+      "requireListeningBeforeAudioDefault": true
+    },
+    "guidance": [
+      "Commencer toute analyse par la carte diagonale et le repere ecran exacts.",
+      "Ecrire C_ref = T_M(C_h) tant que la nature de M et r/i ne sont pas confirmes.",
+      "Tester les candidats M hors production avec branches separees et mesures mono/crete/correlation.",
+      "Fournir plusieurs variantes audio nommees et attendre la validation a l'oreille.",
+      "Pour les iterations d'iterations, journaliser equation, parametres, graine, precision, backend, hashes et classe de glitch."
+    ]
+  },
+  "impacts": {
+    "research": "Evite de perdre le composite croix horaire plus M et rend visible le chaînon mathematique manquant.",
+    "audio": "Interdit de pretendre que la boussole symbolique est deja cablee au DSP V10/V11."
+  }
+}

@@ -739,9 +739,9 @@ function getReferencePreferenceScore(ref, preferredLabel = '') {
   if (referenceMatchesPreference(ref, preferredLabel)) score = Math.max(score, 50);
 
   const agentVoiceAliases = {
-    'a11 ref': ['a11', 'alpha', 'alphaonze', 'terminator', 'a11-terminator', 'a11-official-stern-french'],
+    'a11 ref': ['a11', 'alpha', 'alphaonze', 'a11-official-stern-french'],
     'djeff ref': ['djeff', 'jeff', 'jeffrey', 'rap', 'pignon', 'moto', 'djeff-rap', 'djeff-official', 'djeff-officielle', 'voix-djeff-officielle', 'pignon-rap'],
-    'k44 ref': ['kaen44', 'k44', 'kaen', 'donna', 'kaen44-donna', 'kaen44-official-french-narrator'],
+    'k44 ref': ['kaen44', 'k44', 'kaen', 'kaen44-official-french-narrator'],
     'vivy ref': ['vivy', 'vivy-one', 'vivy-official-french-conversational'],
   };
   const fileBase = base;

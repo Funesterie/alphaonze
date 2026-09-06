@@ -113,6 +113,10 @@ test('/api/mcp exposes account tier for authenticated basic users', async () => 
     assert.equal(json.account.pricing.monthlyEur, 0);
     assert.equal(json.account.permissions.publicEndpoints, true);
     assert.equal(json.account.permissions.privateMcpCall, false);
+    assert.equal(json.catalog.capabilities.some((capability) => capability.id === 'vivy-workbench'), false);
+    assert.equal(json.catalog.capabilities.some((capability) => capability.id === 'vivy-notepad'), false);
+    assert.equal(json.catalog.capabilities.some((capability) => capability.id === 'vivy-canvas'), false);
+    assert.equal(json.catalog.capabilities.find((capability) => capability.id === 'chrome-context').allowed, false);
     assert.equal(json.catalog.connectors.find((connector) => connector.id === 'github').minimumTier, 'founder');
   });
 });
@@ -150,6 +154,14 @@ test('/api/mcp lets premium accounts read status and RomStation state but not pr
     assert.equal(status.json.ok, true);
     assert.equal(status.json.account.tier, 'premium');
     assert.equal(status.json.account.permissions.romstationState, true);
+
+    const access = await getJson(baseUrl, '/api/mcp/access', {
+      'x-test-email': 'premium@example.com',
+    });
+    assert.equal(access.response.status, 200);
+    assert.equal(access.json.catalog.capabilities.find((capability) => capability.id === 'chrome-context').allowed, true);
+    assert.equal(access.json.catalog.capabilities.find((capability) => capability.id === 'mcp-premium-status').allowed, true);
+    assert.equal(access.json.catalog.capabilities.find((capability) => capability.id === 'mcp-private-session').allowed, false);
 
     const romstation = await getJson(baseUrl, '/api/mcp/romstation/state', {
       'x-test-email': 'premium@example.com',

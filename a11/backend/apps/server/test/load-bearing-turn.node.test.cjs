@@ -1,0 +1,346 @@
+'use strict';
+
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const path = require('node:path');
+
+const {
+  assessTurn,
+  fallenTiles,
+  isHollow,
+  isInternalInstructionLine,
+  lastLoadBearingTurn,
+  recordTile,
+  resetPath,
+  stripInternalInstructions,
+} = require(path.join(__dirname, '../src/chat/load-bearing-turn.cjs'));
+
+const lb = require(path.join(__dirname, '../src/chat/load-bearing-turn.cjs'));
+
+// Les quatre chaînes effectivement vues fuiter dans Suno en production.
+const FUITES_PROD = [
+  'Distribution vocale choisie: Solo Vivy.',
+  'Ne mets pas le mot Banger dans les paroles.',
+  'Banger dans les paroles.',
+  'Matière à transformer en chanson:',
+];
+
+test('les quatre fuites constatées en prod sont reconnues comme consignes internes', () => {
+  for (const ligne of FUITES_PROD) {
+    assert.equal(isInternalInstructionLine(ligne), true, `non attrapée : ${ligne}`);
+  }
+});
+
+test('une consigne SANS tiret initial est attrapée (le trou du filtre frontend)', () => {
+  // App.tsx exige ^-\s*Libellé: — une consigne nue passait à travers.
+  assert.equal(isInternalInstructionLine('Distribution vocale: Duo'), true);
+  assert.equal(isInternalInstructionLine('- Distribution vocale: Duo'), true);
+  assert.equal(isInternalInstructionLine('Casting vocal: Trio'), true);
+});
+
+test('les accents et la casse ne permettent pas de contourner le filtre', () => {
+  assert.equal(isInternalInstructionLine('MATIÈRE À TRANSFORMER EN CHANSON:'), true);
+  assert.equal(isInternalInstructionLine('Matiere a transformer en chanson:'), true);
+  assert.equal(isInternalInstructionLine('Distribution Vocale Choisie: Solo'), true);
+  assert.equal(isInternalInstructionLine('Référence: X'), true);
+  assert.equal(isInternalInstructionLine('Reference: X'), true, 'la version sans accent doit rester attrapée');
+  // Un accent mal placé ne doit PAS servir de porte de sortie : pour un filtre,
+  // l'insensibilité aux accents est une protection, pas une approximation.
+  assert.equal(isInternalInstructionLine('Réfèrence: X'), true, 'un accent déplacé ne doit pas contourner le filtre');
+  assert.equal(isInternalInstructionLine('Clé Suno: abc'), true);
+  assert.equal(isInternalInstructionLine('Cle Suno: abc'), true);
+});
+
+test('de vraies paroles ne sont jamais prises pour des consignes', () => {
+  const paroles = [
+    'Je marche seul dans la ville qui dort',
+    'Et le vent me répond sans un mot',
+    'Refrain : on repart demain',
+    'Mon rôle ici est de tenir debout',
+    'La matière du monde me glisse entre les doigts',
+  ];
+  for (const ligne of paroles) {
+    assert.equal(isInternalInstructionLine(ligne), false, `faux positif : ${ligne}`);
+  }
+});
+
+test('le bloc paroles propre est isolé avant Suno', () => {
+  const brut = [
+    'Distribution vocale choisie: Solo Vivy.',
+    'Ne mets pas le mot Banger dans les paroles.',
+    'Matière à transformer en chanson:',
+    '',
+    'Je marche seul dans la ville qui dort',
+    'Et le vent me répond sans un mot',
+  ].join('\n');
+
+  const propre = stripInternalInstructions(brut);
+
+  assert.equal(propre, 'Je marche seul dans la ville qui dort\nEt le vent me répond sans un mot');
+  assert.doesNotMatch(propre, /Distribution vocale|Ne mets pas le mot|Matière à transformer/i);
+});
+
+test('un texte entièrement fait de consignes ne porte pas, et échoue fermé', () => {
+  const verdict = assessTurn({ text: FUITES_PROD.join('\n') });
+  assert.equal(verdict.holds, false);
+  assert.equal(verdict.reason, 'internal_instruction_only');
+  assert.equal(verdict.cleanedText, '', 'aucune parole ne doit être inventée à partir de consignes');
+});
+
+test('la phrase générique du planificateur ne porte pas', () => {
+  // request-planner.cjs ligne 144 : choisie d'après la forme du message entrant,
+  // sans jamais consulter l'historique.
+  const verdict = assessTurn({ text: 'Oui, je suis là. Je reprends simplement.' });
+  assert.equal(verdict.holds, false);
+  assert.equal(verdict.reason, 'canned_phrase');
+});
+
+test('la phrase générique est reconnue même écrite sans accents', () => {
+  const verdict = assessTurn({ text: 'Oui, je suis la. Je reprends simplement.' });
+  assert.equal(verdict.holds, false, 'le repliage doit neutraliser la variante sans accent');
+  assert.equal(verdict.reason, 'canned_phrase');
+});
+
+test('une réponse salie porte quand même, mais nettoyée', () => {
+  const verdict = assessTurn({
+    text: 'Distribution vocale: Duo\nVoici le couplet que tu demandais, il tient en deux lignes.',
+  });
+  assert.equal(verdict.holds, true);
+  assert.equal(verdict.reason, 'held_after_cleaning');
+  assert.equal(verdict.cleanedText, 'Voici le couplet que tu demandais, il tient en deux lignes.');
+});
+
+test('une dalle qui tombe est marquée, pas jetée', () => {
+  const session = 'session-tombeau';
+  resetPath(session);
+
+  recordTile(session, { text: 'Oui, je suis là. Je reprends simplement.', lastUserMessage: 'et le refrain ?' });
+  recordTile(session, { text: 'Le refrain reprend la montée du couplet deux.', lastUserMessage: 'et le refrain ?' });
+  recordTile(session, { text: 'Distribution vocale choisie: Trio.', lastUserMessage: 'et le pont ?' });
+
+  const tombées = fallenTiles(session);
+  assert.equal(tombées.length, 2, 'les deux dalles tombées doivent rester marquées');
+  assert.deepEqual(tombées.map((d) => d.reason), ['canned_phrase', 'internal_instruction_only']);
+
+  resetPath(session);
+});
+
+test('le repli lit la dernière dalle qui a porté, pas le dernier tour', () => {
+  const session = 'session-repli';
+  resetPath(session);
+
+  recordTile(session, { text: 'Le refrain reprend la montée du couplet deux.', lastUserMessage: 'et le refrain ?' });
+  // Le grand modèle lâche : le tour suivant est une phrase générique.
+  recordTile(session, { text: 'Oui, je suis là. Je reprends simplement.', lastUserMessage: 'et le pont ?' });
+
+  const dalle = lastLoadBearingTurn(session);
+  assert.ok(dalle, 'une dalle porteuse doit rester disponible pour le repli');
+  assert.equal(dalle.text, 'Le refrain reprend la montée du couplet deux.');
+  assert.notEqual(dalle.text, 'Oui, je suis là. Je reprends simplement.');
+
+  resetPath(session);
+});
+
+test('sans aucune dalle porteuse, le repli ne fabrique rien', () => {
+  const session = 'session-vide';
+  resetPath(session);
+  recordTile(session, { text: '' });
+  assert.equal(lastLoadBearingTurn(session), null, 'mieux vaut rien qu\'une réponse inventée');
+  resetPath(session);
+});
+
+test('les chemins sont cloisonnés par session', () => {
+  resetPath('session-a');
+  resetPath('session-b');
+
+  recordTile('session-a', { text: 'Le pont monte d\'un demi-ton avant le dernier refrain.' });
+  assert.equal(lastLoadBearingTurn('session-b'), null, 'une session ne doit pas lire le chemin d\'une autre');
+
+  resetPath('session-a');
+  resetPath('session-b');
+});
+
+test('isHollow couvre le vide, le générique et la consigne pure', () => {
+  assert.equal(isHollow(''), true);
+  assert.equal(isHollow('   '), true);
+  assert.equal(isHollow('Oui, je suis là. Je reprends simplement.'), true);
+  assert.equal(isHollow('Distribution vocale choisie: Solo Vivy.'), true);
+  assert.equal(isHollow('Le refrain reprend la montée du couplet deux.'), false);
+});
+
+// --- Câblage sur le repli réel du chat (response-draft-rewriter) ---
+
+const {
+  postProcessA11AssistantResponse,
+} = require(path.join(__dirname, '../src/chat/response-draft-rewriter.cjs'));
+
+test('sans sessionId, le repli garde exactement son comportement historique', () => {
+  const avant = postProcessA11AssistantResponse({
+    text: 'Analyse interne: intention utilisateur = salutation. Contexte fiable: aucun.',
+    userMessage: 'allo ?',
+  });
+  assert.equal(typeof avant.content, 'string');
+  assert.doesNotMatch(avant.content, /là où ça tenait/, 'aucune reprise ne doit apparaitre sans sessionId');
+});
+
+test('avec sessionId, le repli reprend la dalle porteuse au lieu de la phrase générique', () => {
+  const session = 'session-cablage';
+  resetPath(session);
+
+  // Un tour qui porte : il entre dans le chemin.
+  postProcessA11AssistantResponse({
+    text: 'Le pont monte d\'un demi-ton avant le dernier refrain.',
+    userMessage: 'et le pont ?',
+    sessionId: session,
+  });
+
+  // Le grand modèle lâche et laisse fuir du texte interne.
+  const apres = postProcessA11AssistantResponse({
+    text: 'Analyse interne: intention utilisateur = relance. Contexte fiable: aucun.',
+    userMessage: 'allo ?',
+    sessionId: session,
+  });
+
+  assert.match(apres.content, /là où ça tenait/, 'le repli doit repartir du chemin');
+  assert.match(apres.content, /demi-ton avant le dernier refrain/, 'il doit porter le contenu réel');
+
+  resetPath(session);
+});
+
+test('la fuite de consignes laisse un tombstone et ne nourrit jamais un repli futur', () => {
+  const session = 'session-fuite';
+  resetPath(session);
+
+  postProcessA11AssistantResponse({
+    text: 'Distribution vocale choisie: Solo Vivy.\nNe mets pas le mot Banger dans les paroles.',
+    userMessage: 'fais la chanson',
+    sessionId: session,
+  });
+
+  assert.equal(lastLoadBearingTurn(session), null, 'une consigne interne ne doit jamais devenir une dalle porteuse');
+  assert.equal(fallenTiles(session).length, 1);
+  assert.equal(fallenTiles(session)[0].reason, 'internal_instruction_only');
+
+  resetPath(session);
+});
+
+// Paroles reelles de production (NOSSEN, duo Djeff + Vivy, 2026-08-01), fournies
+// par Djeff. Un faux positif du filtre sur de vraies paroles serait pire que la
+// fuite d'origine : on amputerait une chanson au lieu de laisser passer une
+// consigne. Ce test garde cette frontiere avec du materiau authentique.
+const PAROLES_NOSSEN = [
+  '[Intro - Vivy solo]',
+  "Sous les néons, la nuit s'allume,",
+  "Un souffle d'acier dans la brume,",
+  '[Verse 1 - Djeff solo]',
+  'Sur la route, le moteur crie,',
+  "Les pistons chantent, l'adrénaline fuit,",
+  '[Pre-chorus]',
+  "Un éclair sur l'asphalte, le temps se fige,",
+  '[Refrain 1]',
+  'Je cours les néons, mon feu intérieur,',
+  'Dans le chaos, je trouve ma couleur.',
+  '[Bridge - Vivy solo]',
+  "Un souffle de verre, la ville s'efface,",
+].join('\n');
+
+test('de vraies paroles de production traversent le filtre sans perdre une ligne', () => {
+  const propre = stripInternalInstructions(PAROLES_NOSSEN);
+  assert.equal(
+    propre.split('\n').filter((l) => l.trim()).length,
+    PAROLES_NOSSEN.split('\n').filter((l) => l.trim()).length,
+    'aucune ligne de vraies paroles ne doit etre supprimee',
+  );
+  assert.equal(assessTurn({ text: PAROLES_NOSSEN }).holds, true);
+});
+
+test('les marqueurs de section ne sont pas confondus avec des directives de casting', () => {
+  // "[Verse 1 - Djeff solo]" nomme un artiste et une structure : c'est un repere
+  // de section legitime. "Distribution vocale choisie: Solo Djeff." est une
+  // consigne. La difference doit tenir.
+  assert.equal(isInternalInstructionLine('[Intro - Vivy solo]'), false);
+  assert.equal(isInternalInstructionLine('[Verse 1 - Djeff solo]'), false);
+  assert.equal(isInternalInstructionLine('[Refrain 1]'), false);
+  assert.equal(isInternalInstructionLine('Distribution vocale choisie: Solo Djeff.'), true);
+});
+
+// Le brief reel de vivy-studio (l.4062-4082). C'est LUI que le chemin de secours
+// prenait pour de la matiere a chanter : ses etiquettes sont exactement les
+// chaines vues fuiter en production. Confronte au filtre le 2026-08-01, cinq
+// lignes passaient encore.
+const BRIEF_VIVY_STUDIO = [
+  'Source: canevas Composition.',
+  'Direction sonore: French night drive, duo.',
+  'Titre de travail: NOSSEN.',
+  'Artistes cochés: Duo Djeff + Vivy.',
+  '2 chanteurs.',
+  'Distribution vocale: Duo Djeff + Vivy.',
+  'Outil voix actif: XTTS local.',
+  'Nombre de chanteurs: 2.',
+  'Tags obligatoires: [Djeff], [Vivy].',
+  'Matière à transformer en chanson:',
+  '',
+  "Sous les néons, la nuit s'allume,",
+  "Un souffle d'acier dans la brume,",
+].join('\n');
+
+test('le brief complet de vivy-studio est bloqué, seules les paroles survivent', () => {
+  const propre = stripInternalInstructions(BRIEF_VIVY_STUDIO);
+  assert.equal(propre, "Sous les néons, la nuit s'allume,\nUn souffle d'acier dans la brume,");
+  for (const etiquette of ['Source', 'Direction sonore', 'Titre de travail', 'Artistes', 'Outil voix', 'Distribution vocale', 'Nombre de chanteurs', 'Tags obligatoires', 'Matière à transformer']) {
+    assert.doesNotMatch(propre, new RegExp(etiquette, 'i'), `${etiquette} a survécu au filtre`);
+  }
+});
+
+test('un compte de chanteurs émis nu est une consigne, pas une parole', () => {
+  assert.equal(isInternalInstructionLine('2 chanteurs.'), true);
+  assert.equal(isInternalInstructionLine('1 chanteur'), true);
+  // Mais un vers qui parle de chanteurs reste un vers.
+  assert.equal(isInternalInstructionLine('Nous étions 2 chanteurs perdus dans la nuit'), false);
+});
+
+// --- le compte rendu de production ne doit pas devenir du contexte -----------
+
+test('le rapport de production sort du contexte, l oeuvre y reste', () => {
+  // Djeff, 03/08 : « les consignes ou le wav banger du bouton NOSSEN partent en
+  // contexte, c est ca le probleme ». Le rapport a sa place A L ECRAN ; il n a
+  // rien a faire dans ce que Vivy relit au tour suivant, sans quoi « Casting
+  // demande » et « Paroles envoyees a Suno » ressortent DANS les paroles.
+  const rapport = [
+    'Banger.', '', 'Titre: Lumiere de nuit', '', 'Casting demande: Solo Vivy.', '',
+    'Mix final pret.', '', 'Telechargement: https://vivy.funesterie.me/out/x.mp3?token=A', '',
+    'Paroles envoyees a Suno:', '', '[Intro]', 'Sous la pluie d argent',
+  ].join('\n');
+  const contexte = lb.stripProductionReport(rapport);
+
+  for (const plomberie of ['Banger.', 'Casting demande', 'Mix final pret', 'Telechargement', 'Paroles envoyees a Suno']) {
+    assert.ok(!contexte.includes(plomberie), `« ${plomberie} » ne doit pas rester dans le contexte`);
+  }
+  // L oeuvre reste : elle doit se souvenir de ce qu elle a ecrit.
+  assert.match(contexte, /Titre: Lumiere de nuit/);
+  assert.match(contexte, /\[Intro\]/);
+  assert.match(contexte, /Sous la pluie d argent/);
+});
+
+test('une vraie conversation traverse le filtre sans une egratignure', () => {
+  // Le risque de ce genre de filtre est de manger la parole de l utilisateur.
+  const chat = 'je veux une chanson triste sur la pluie\nplutot en rap, avec Djeff\nnon finalement garde Vivy';
+  assert.equal(lb.stripProductionReport(chat), chat);
+});
+
+test('l ouverture du bouton NOSSEN est reconnue seule sur sa ligne', () => {
+  assert.equal(lb.isProductionReportLine('Banger.'), true);
+  assert.equal(lb.isProductionReportLine('NOSSEN.'), true);
+  assert.equal(lb.isProductionReportLine('nossen'), true);
+  // Mais pas quand le mot est dans une phrase : « banger » peut etre un vrai mot.
+  assert.equal(lb.isProductionReportLine('fais moi un banger de l ete'), false);
+  assert.equal(lb.isProductionReportLine('NOSSEN est un manga'), false);
+});
+
+test('les marqueurs techniques de la chaine Suno sont traites en interne', () => {
+  // Ils ne designent pas un contenu mais un FORMAT : les voir dans des paroles
+  // signifie qu une consigne de tuyauterie est partie chanter.
+  for (const marqueur of ['CLEAN_LYRICS', 'Voice direction: cyan, large']) {
+    assert.notEqual(String(lb.stripInternalInstructions(marqueur)).trim(), marqueur.trim(), `« ${marqueur} » doit etre filtre`);
+  }
+});

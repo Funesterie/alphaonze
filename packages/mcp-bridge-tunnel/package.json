@@ -1,0 +1,12 @@
+{
+  "name": "@nossen/mcp-bridge-tunnel",
+  "version": "1.2.0",
+  "description": "Zen Gate MCP Bridge — Secured proxy to ComfyUI, Civitai, HuggingFace with allowlist, audit, and fail-closed encryption",
+  "main": "index.cjs",
+  "files": ["index.cjs", "oauth-relay.cjs", "README.md"],
+  "keywords": ["mcp", "bridge", "tunnel", "zen-gate", "comfyui", "civitai", "huggingface", "ai-agents", "funesterie"],
+  "author": "Jeffrey Cellauro <cellaurojeffrey@gmail.com>",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/jEFFLEZ/funesterie" },
+  "homepage": "https://a11.funesterie.me/open-source/"
+}

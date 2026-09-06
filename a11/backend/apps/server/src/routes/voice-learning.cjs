@@ -26,6 +26,7 @@ const {
   getUserKey,
   isAllowedAudioUpload,
 } = require('../tts/voice-reference-store.cjs');
+const { ensureAnalyzableWav } = require('../tts/audio-intake.cjs');
 
 const REQUIRED_CORPUS_MS = Math.max(
   30_000,
@@ -35,12 +36,30 @@ const REQUIRED_CORPUS_MS = Math.max(
 const DEFAULT_PERSONA_EMAILS = {
   a11: ['bayetgerard@gmail.com'],
   djeff: ['cellaurojeffrey@gmail.com'],
+  marvin: ['marvincellauro@gmail.com', 'cellauromarvin@gmail.com'],
   kaen44: ['giovannabrunetto@gmail.com', 'giovannabrunettogiovanna@gmail.com'],
   vivy: ['jewitt.charlene@gmail.com', 'charlenejewitt@gmail.com'],
 };
 
 const VOICE_LEARNING_CONSENT = 'voice-learning-v1';
 const DELETE_CONFIRMATION = 'delete-voice-learning-corpus';
+const SUNO_VOICE_SLOT_CONSENT = 'suno-voice-slot-v1';
+const SUNO_VOICE_DELETE_CONFIRMATION = 'delete-suno-voice-slot';
+const VOICE_QUALITY_FEEDBACK_SCHEMA = 'funesterie.voice-quality-feedback.v1';
+const VOICE_QUALITY_DEFECTS = new Set([
+  'crackle',
+  'noise',
+  'clipping',
+  'harsh',
+  'sibilance',
+  'metallic',
+  'robotic',
+  'rough_join',
+  'breath_cut',
+  'wrong_voice',
+  'too_loud',
+  'too_quiet',
+]);
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -69,11 +88,75 @@ function normalizePersona(value = '') {
   const raw = String(value || '').trim().toLowerCase();
   if (raw === 'k44' || raw === 'kaen') return 'kaen44';
   if (raw === 'djeff' || raw === 'djeff-rap' || raw === 'pignon') return 'djeff';
+  if (raw === 'marvin' || raw === 'frere' || raw === 'frère' || raw === 'brother') return 'marvin';
   if (raw === 'vivy' || raw === 'vivi') return 'vivy';
   if (raw === 'personal' || raw === 'personal-voice' || raw === 'my-voice' || raw === 'myvoice' || raw === 'ma-voix' || raw === 'ma_voix') return 'personal';
   if (raw === 'a11' || raw === 'alphaonze' || raw === 'alpha-onze') return 'a11';
   if (raw === 'kaen44') return 'kaen44';
   return '';
+}
+
+function normalizeSunoVoiceId(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (raw.length < 8 || raw.length > 180) return '';
+  if (!/^[a-zA-Z0-9:_-]+$/.test(raw)) return '';
+  return raw;
+}
+
+function maskSunoVoiceId(value = '') {
+  const raw = normalizeSunoVoiceId(value);
+  if (!raw) return '';
+  if (raw.length <= 12) return `${raw.slice(0, 3)}…${raw.slice(-3)}`;
+  return `${raw.slice(0, 6)}…${raw.slice(-6)}`;
+}
+
+function hashSunoVoiceId(value = '') {
+  const raw = normalizeSunoVoiceId(value);
+  return raw ? crypto.createHash('sha256').update(raw).digest('hex').slice(0, 16) : '';
+}
+
+function normalizeSunoVoiceLabel(value = '') {
+  return String(value || '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+}
+
+function normalizeStoredSunoVoice(value = null) {
+  const voiceId = normalizeSunoVoiceId(value?.voiceId || value?.id || '');
+  if (!voiceId) return null;
+  const updatedAt = String(value?.updatedAt || value?.linkedAt || value?.createdAt || '').trim();
+  return {
+    provider: 'suno',
+    voiceId,
+    idHash: hashSunoVoiceId(voiceId),
+    idMask: maskSunoVoiceId(voiceId),
+    label: normalizeSunoVoiceLabel(value?.label || value?.name || '') || 'Voix Suno personnelle',
+    consent: String(value?.consent || SUNO_VOICE_SLOT_CONSENT).trim(),
+    linkedAt: String(value?.linkedAt || updatedAt || new Date().toISOString()).trim(),
+    updatedAt: updatedAt || new Date().toISOString(),
+    source: String(value?.source || 'vivy-studio').trim().slice(0, 60) || 'vivy-studio',
+  };
+}
+
+function describeSunoVoiceSlot(slot = null) {
+  const normalized = normalizeStoredSunoVoice(slot);
+  if (!normalized) {
+    return {
+      sunoVoiceLinked: false,
+      sunoVoiceProvider: 'suno',
+    };
+  }
+  return {
+    sunoVoiceLinked: true,
+    sunoVoiceProvider: 'suno',
+    sunoVoiceIdHash: normalized.idHash,
+    sunoVoiceIdMask: normalized.idMask,
+    sunoVoiceLabel: normalized.label,
+    sunoVoiceUpdatedAt: normalized.updatedAt,
+  };
 }
 
 function getAllowedEmailsForPersona(persona) {
@@ -143,7 +226,7 @@ function resolveLearningAccess(req, requestedPersona = '') {
   if (hasRequestedPersona && !persona) return null;
   if (persona === 'personal') return buildPersonalVoiceAccess(req, email);
 
-  const candidates = persona ? [persona] : ['a11', 'kaen44', 'vivy', 'djeff'];
+  const candidates = persona ? [persona] : ['a11', 'kaen44', 'vivy', 'djeff', 'marvin'];
   const sourceOnly = requireOfficialSourceAccount();
   for (const candidate of candidates) {
     const allowed = getAllowedEmailsForPersona(candidate);
@@ -203,16 +286,18 @@ function stripRuntimeFields(clip = {}) {
 
 function readIndexFile(indexPath, corpusDir) {
   try {
-    if (!fs.existsSync(indexPath)) return { clips: [], trainRequests: [] };
+    if (!fs.existsSync(indexPath)) return { clips: [], trainRequests: [], qualityFeedback: [], sunoVoice: null };
     const parsed = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
     return {
       clips: Array.isArray(parsed?.clips)
         ? parsed.clips.map((clip) => withRuntimeCorpusDir(clip, corpusDir))
         : [],
       trainRequests: Array.isArray(parsed?.trainRequests) ? parsed.trainRequests : [],
+      qualityFeedback: Array.isArray(parsed?.qualityFeedback) ? parsed.qualityFeedback : [],
+      sunoVoice: normalizeStoredSunoVoice(parsed?.sunoVoice),
     };
   } catch {
-    return { clips: [], trainRequests: [] };
+    return { clips: [], trainRequests: [], qualityFeedback: [], sunoVoice: null };
   }
 }
 
@@ -229,6 +314,9 @@ function mergeIndexes(indexes = []) {
   const clipKeys = new Set();
   const trainRequests = [];
   const trainKeys = new Set();
+  const qualityFeedback = [];
+  const feedbackKeys = new Set();
+  let sunoVoice = null;
 
   for (const index of indexes) {
     for (const clip of (index?.clips || [])) {
@@ -243,11 +331,24 @@ function mergeIndexes(indexes = []) {
       if (key) trainKeys.add(key);
       trainRequests.push(job);
     }
+    for (const feedback of (index?.qualityFeedback || [])) {
+      const key = String(feedback?.id || `${feedback?.createdAt || ''}:${feedback?.outputHash || ''}`).trim();
+      if (key && feedbackKeys.has(key)) continue;
+      if (key) feedbackKeys.add(key);
+      qualityFeedback.push(feedback);
+    }
+    const candidateSunoVoice = normalizeStoredSunoVoice(index?.sunoVoice);
+    if (candidateSunoVoice) {
+      const currentTime = Date.parse(sunoVoice?.updatedAt || sunoVoice?.linkedAt || '') || 0;
+      const candidateTime = Date.parse(candidateSunoVoice.updatedAt || candidateSunoVoice.linkedAt || '') || 0;
+      if (!sunoVoice || candidateTime >= currentTime) sunoVoice = candidateSunoVoice;
+    }
   }
 
   clips.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
   trainRequests.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
-  return { clips, trainRequests };
+  qualityFeedback.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  return { clips, trainRequests, qualityFeedback, sunoVoice };
 }
 
 function readIndex(access) {
@@ -281,6 +382,8 @@ function writeIndex(access, index) {
   fs.writeFileSync(tmpPath, JSON.stringify({
     clips: Array.isArray(index.clips) ? index.clips.map(stripRuntimeFields) : [],
     trainRequests: Array.isArray(index.trainRequests) ? index.trainRequests : [],
+    qualityFeedback: Array.isArray(index.qualityFeedback) ? index.qualityFeedback.slice(-500) : [],
+    sunoVoice: normalizeStoredSunoVoice(index.sunoVoice),
   }, null, 2));
   fs.renameSync(tmpPath, indexPath);
 }
@@ -319,7 +422,56 @@ function makeSummary(index) {
     totalBytes,
     lastClipAt: clips.at(-1)?.createdAt || null,
     queuedTrainingCount: (index.trainRequests || []).filter((job) => job?.state === 'queued').length,
+    voiceQuality: summarizeVoiceQualityFeedback(index.qualityFeedback),
   };
+}
+
+function normalizeVoiceQualityDefects(values = []) {
+  const list = Array.isArray(values) ? values : String(values || '').split(/[;,\s]+/g);
+  return list
+    .map((value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''))
+    .filter((value, index, all) => VOICE_QUALITY_DEFECTS.has(value) && all.indexOf(value) === index)
+    .slice(0, 12);
+}
+
+function summarizeVoiceQualityFeedback(events = []) {
+  const feedback = Array.isArray(events) ? events : [];
+  const defectCounts = {};
+  const verdictCounts = { accepted: 0, mixed: 0, rejected: 0 };
+  for (const event of feedback) {
+    const verdict = ['accepted', 'mixed', 'rejected'].includes(event?.verdict) ? event.verdict : 'mixed';
+    verdictCounts[verdict] += 1;
+    for (const defect of normalizeVoiceQualityDefects(event?.defects)) {
+      defectCounts[defect] = (defectCounts[defect] || 0) + 1;
+    }
+  }
+  return {
+    schema: VOICE_QUALITY_FEEDBACK_SCHEMA,
+    feedbackCount: feedback.length,
+    verdictCounts,
+    learnedDefects: Object.entries(defectCounts)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([defect, count]) => ({ defect, count })),
+  };
+}
+
+function buildVoiceQualityProfile(summary = {}) {
+  const defects = new Set((summary?.learnedDefects || []).map((item) => item?.defect).filter(Boolean));
+  return {
+    profile: defects.size ? 'persona-learned-smooth' : 'persona-smooth-default',
+    declick: defects.has('crackle') || defects.has('rough_join'),
+    denoise: defects.has('noise'),
+    deess: defects.has('harsh') || defects.has('sibilance') || defects.has('metallic'),
+    peakGuard: defects.has('clipping') || defects.has('too_loud'),
+    learnedDefects: [...defects],
+  };
+}
+
+function resolveVoiceQualityProfileForRequest(req, requestedPersona = '') {
+  const access = resolveLearningAccess(req || {}, requestedPersona);
+  if (!access) return buildVoiceQualityProfile();
+  const index = readIndex(access);
+  return buildVoiceQualityProfile(summarizeVoiceQualityFeedback(index.qualityFeedback));
 }
 
 function safeTranscriptPreview(value = '') {
@@ -331,9 +483,58 @@ function requireConsent(req) {
   return raw === VOICE_LEARNING_CONSENT || raw === 'true' || raw === '1' || raw === 'yes';
 }
 
+function requireSunoVoiceSlotConsent(req) {
+  const raw = String(req.body?.consent || req.query?.consent || '').trim().toLowerCase();
+  return raw === SUNO_VOICE_SLOT_CONSENT
+    || raw === VOICE_LEARNING_CONSENT
+    || raw === 'true'
+    || raw === '1'
+    || raw === 'yes';
+}
+
 function requireDeleteConfirmation(req) {
   const raw = String(req.body?.confirm || req.query?.confirm || '').trim().toLowerCase();
   return raw === DELETE_CONFIRMATION;
+}
+
+function requireSunoVoiceDeleteConfirmation(req) {
+  const raw = String(req.body?.confirm || req.query?.confirm || '').trim().toLowerCase();
+  return raw === SUNO_VOICE_DELETE_CONFIRMATION;
+}
+
+function buildPersonalSunoVoiceSlot(access, req) {
+  const voiceId = normalizeSunoVoiceId(req.body?.voiceId || req.body?.sunoVoiceId || req.body?.id || '');
+  if (!voiceId) return null;
+  const now = new Date().toISOString();
+  return normalizeStoredSunoVoice({
+    provider: 'suno',
+    voiceId,
+    label: normalizeSunoVoiceLabel(req.body?.label || req.body?.name || access.voiceIdentityLabel || ''),
+    consent: SUNO_VOICE_SLOT_CONSENT,
+    linkedAt: now,
+    updatedAt: now,
+    source: String(req.body?.source || 'vivy-studio').trim().slice(0, 60) || 'vivy-studio',
+  });
+}
+
+function resolvePersonalSunoVoiceForRequest(req = null) {
+  if (!req) return null;
+  const access = resolveLearningAccess(req, 'personal');
+  if (!access) return null;
+  const slot = normalizeStoredSunoVoice(readIndex(access).sunoVoice);
+  if (!slot) return null;
+  return {
+    provider: 'suno',
+    voiceId: slot.voiceId,
+    label: slot.label,
+    idHash: slot.idHash,
+    idMask: slot.idMask,
+    updatedAt: slot.updatedAt,
+    persona: access.persona,
+    contributorRole: access.contributorRole,
+    voiceIdentityKey: access.voiceIdentityKey,
+    voiceIdentityLabel: access.voiceIdentityLabel,
+  };
 }
 
 function createVoiceLearningRouter(options = {}) {
@@ -354,6 +555,7 @@ function createVoiceLearningRouter(options = {}) {
         consentRequired: true,
         consent: VOICE_LEARNING_CONSENT,
         minimumTier: requestedPersona === 'personal' ? PERSONAL_VOICE_POLICY.minimumTier : undefined,
+        ...describeSunoVoiceSlot(null),
         message: 'Connecte-toi puis active la contribution voix pour participer au corpus.',
         requiredSeconds: REQUIRED_CORPUS_MS / 1000,
       });
@@ -374,8 +576,96 @@ function createVoiceLearningRouter(options = {}) {
       voiceIdentityLabel: access.voiceIdentityLabel,
       voiceStyle: access.voiceStyle,
       minimumTier: access.minimumTier,
+      ...describeSunoVoiceSlot(access.persona === 'personal' ? index.sunoVoice : null),
       ...summary,
       nextAction: summary.corpusReady ? 'train' : 'record',
+    });
+  });
+
+  router.post('/voice-learning/suno-voice', verifyJWT, express.json({ limit: '64kb' }), (req, res) => {
+    if (!requireSunoVoiceSlotConsent(req)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'missing_suno_voice_consent',
+        message: 'Consentement liaison voix Suno manquant.',
+        consent: SUNO_VOICE_SLOT_CONSENT,
+      });
+    }
+    const access = resolveLearningAccess(req, 'personal');
+    if (!access) {
+      return res.status(403).json({
+        ok: false,
+        error: 'personal_suno_voice_not_allowed',
+        minimumTier: PERSONAL_VOICE_POLICY.minimumTier,
+        message: 'Compte Premium, Fondateur ou Famille requis pour lier une voix Suno personnelle.',
+      });
+    }
+    const slot = buildPersonalSunoVoiceSlot(access, req);
+    if (!slot) {
+      return res.status(400).json({
+        ok: false,
+        error: 'invalid_suno_voice_id',
+        message: 'ID voix Suno invalide. Colle l’identifiant brut fourni par Suno.',
+      });
+    }
+    const index = readIndex(access);
+    index.sunoVoice = slot;
+    writeIndex(access, index);
+    return res.json({
+      ok: true,
+      enabled: true,
+      canCapture: true,
+      persona: access.persona,
+      consentRequired: true,
+      consent: SUNO_VOICE_SLOT_CONSENT,
+      contributorRole: access.contributorRole,
+      voiceIdentityKey: access.voiceIdentityKey,
+      voiceIdentityLabel: access.voiceIdentityLabel,
+      voiceStyle: access.voiceStyle,
+      minimumTier: access.minimumTier,
+      ...describeSunoVoiceSlot(slot),
+      ...makeSummary(index),
+      nextAction: 'use-suno-voice',
+      message: 'Voix Suno personnelle liée à ce compte.',
+    });
+  });
+
+  router.delete('/voice-learning/suno-voice', verifyJWT, express.json({ limit: '64kb' }), (req, res) => {
+    if (!requireSunoVoiceDeleteConfirmation(req)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'missing_suno_voice_delete_confirmation',
+        message: 'Confirmation de suppression voix Suno manquante.',
+      });
+    }
+    const access = resolveLearningAccess(req, 'personal');
+    if (!access) {
+      return res.status(403).json({
+        ok: false,
+        error: 'personal_suno_voice_not_allowed',
+        minimumTier: PERSONAL_VOICE_POLICY.minimumTier,
+        message: 'Compte Premium, Fondateur ou Famille requis pour retirer une voix Suno personnelle.',
+      });
+    }
+    const index = readIndex(access);
+    index.sunoVoice = null;
+    writeIndex(access, index);
+    return res.json({
+      ok: true,
+      enabled: true,
+      canCapture: true,
+      persona: access.persona,
+      consentRequired: true,
+      consent: SUNO_VOICE_SLOT_CONSENT,
+      contributorRole: access.contributorRole,
+      voiceIdentityKey: access.voiceIdentityKey,
+      voiceIdentityLabel: access.voiceIdentityLabel,
+      voiceStyle: access.voiceStyle,
+      minimumTier: access.minimumTier,
+      ...describeSunoVoiceSlot(null),
+      ...makeSummary(index),
+      nextAction: 'record',
+      message: 'Voix Suno personnelle retirée de ce compte.',
     });
   });
 
@@ -395,9 +685,16 @@ function createVoiceLearningRouter(options = {}) {
         message: 'Compte connecte requis pour retirer ce corpus voix.',
       });
     }
+    const previousIndex = readIndex(access);
     for (const corpusDir of getCorpusDirs(access, { ensure: false })) {
       fs.rmSync(corpusDir, { recursive: true, force: true });
     }
+    const nextIndex = {
+      clips: [],
+      trainRequests: [],
+      sunoVoice: previousIndex.sunoVoice || null,
+    };
+    if (nextIndex.sunoVoice) writeIndex(access, nextIndex);
     return res.json({
       ok: true,
       enabled: true,
@@ -412,12 +709,13 @@ function createVoiceLearningRouter(options = {}) {
       voiceIdentityLabel: access.voiceIdentityLabel,
       voiceStyle: access.voiceStyle,
       minimumTier: access.minimumTier,
-      ...makeSummary({ clips: [], trainRequests: [] }),
+      ...describeSunoVoiceSlot(nextIndex.sunoVoice),
+      ...makeSummary(nextIndex),
       nextAction: 'record',
     });
   });
 
-  router.post('/voice-learning/snippet', verifyJWT, upload.single('audio'), (req, res) => {
+  router.post('/voice-learning/snippet', verifyJWT, upload.single('audio'), async (req, res) => {
     if (!req.file?.buffer?.length) {
       return res.status(400).json({ ok: false, error: 'missing_audio', message: 'Aucun extrait audio fourni.' });
     }
@@ -452,16 +750,34 @@ function createVoiceLearningRouter(options = {}) {
       });
     }
 
-    const analysis = analyzeWavBuffer(req.file.buffer);
-    const durationMs = analysis.ok
-      ? Number(analysis.durationMs || 0)
-      : clampDurationMs(req.body?.durationMs);
+    // Tout format entrant est ramene a un WAV analysable. Sans ca, un m4a ou un mp3
+    // passait le filtre puis se retrouvait enregistre a 0 ms (analyzeWavBuffer ne lit
+    // que le WAV, et la duree retombait sur une valeur navigateur souvent absente):
+    // le clip ne comptait pas vers le quota, sans la moindre erreur visible.
+    const intake = await ensureAnalyzableWav(req.file.buffer, req.file.originalname, process.env);
+    const declaredMs = clampDurationMs(req.body?.durationMs);
+    const storedBuffer = intake.ok ? intake.buffer : req.file.buffer;
+    const durationMs = intake.ok ? Number(intake.durationMs || 0) : declaredMs;
+
+    // On refuse seulement quand rien ne permet de connaitre la duree: c'est le cas
+    // qui produisait un clip a 0 ms, invisible dans le quota et sans erreur. Une duree
+    // declaree par le client reste honoree, meme si le contenu n'est pas decodable.
+    if (!(durationMs > 0)) {
+      return res.status(415).json({
+        ok: false,
+        error: intake.error || 'audio_duration_unknown',
+        message: `Audio illisible (${intake.sourceFormat || 'format inconnu'}) et aucune durée fournie: le clip ne compterait pas.`,
+        detail: intake.detail || '',
+      });
+    }
+
     const id = `vl_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-    const ext = inferAudioExtension(req.file);
+    // Apres conversion le contenu est du WAV: l'extension doit le refleter.
+    const ext = intake.ok && intake.converted ? '.wav' : inferAudioExtension(req.file);
     const filename = `${id}${ext}`;
     const corpusDir = getCorpusDir(access);
     const filePath = path.join(corpusDir, filename);
-    fs.writeFileSync(filePath, req.file.buffer);
+    fs.writeFileSync(filePath, storedBuffer);
 
     const clip = {
       id,
@@ -475,12 +791,22 @@ function createVoiceLearningRouter(options = {}) {
       voiceStyle: access.voiceStyle,
       consent: VOICE_LEARNING_CONSENT,
       filename,
-      mimeType: req.file.mimetype || null,
+      mimeType: intake.converted ? 'audio/wav' : (req.file.mimetype || null),
       originalName: req.file.originalname || null,
-      bytes: req.file.buffer.length,
+      // On garde la trace de l'original: format et poids avant conversion.
+      originalFormat: intake.sourceFormat || null,
+      originalBytes: intake.sourceBytes || req.file.buffer.length,
+      converted: intake.converted === true,
+      bytes: storedBuffer.length,
       sha256: hash,
       durationMs,
-      analysis: analysis.ok ? analysis : { ok: false, reason: analysis.reason || 'analysis_unavailable' },
+      analysis: {
+        ok: intake.ok === true,
+        durationMs,
+        converted: intake.converted === true,
+        sourceFormat: intake.sourceFormat || 'inconnu',
+        durationSource: intake.ok ? 'mesuree' : 'declaree',
+      },
       source: String(req.body?.source || 'micro').trim().slice(0, 40) || 'micro',
       transcriptPreview: safeTranscriptPreview(req.body?.transcript || ''),
       status: 'collected',
@@ -571,7 +897,61 @@ function createVoiceLearningRouter(options = {}) {
     });
   });
 
+  router.post('/voice-learning/quality-feedback', verifyJWT, express.json({ limit: '128kb' }), (req, res) => {
+    const persona = normalizePersona(req.body?.persona || req.body?.voicePersona || req.query?.persona || '');
+    const access = resolveLearningAccess(req, persona);
+    if (!access) {
+      return res.status(403).json({
+        ok: false,
+        error: 'voice_quality_feedback_not_allowed',
+        message: 'Compte ou persona non autorise pour cette memoire vocale.',
+      });
+    }
+    const verdict = ['accepted', 'mixed', 'rejected'].includes(String(req.body?.verdict || '').trim().toLowerCase())
+      ? String(req.body.verdict).trim().toLowerCase()
+      : 'mixed';
+    const defects = normalizeVoiceQualityDefects(req.body?.defects || []);
+    const notes = safeTranscriptPreview(req.body?.notes || req.body?.feedback || '');
+    if (!defects.length && !notes && verdict === 'mixed') {
+      return res.status(400).json({ ok: false, error: 'voice_quality_feedback_empty' });
+    }
+    const outputRef = String(req.body?.outputId || req.body?.audioId || req.body?.audioUrl || '').trim();
+    const event = {
+      schema: VOICE_QUALITY_FEEDBACK_SCHEMA,
+      id: `vq_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+      persona: access.persona,
+      verdict,
+      defects,
+      notes,
+      provider: String(req.body?.provider || '').trim().slice(0, 60),
+      // On ne stocke jamais une URL avec jeton. Le hash suffit a relier un retour
+      // a une sortie dans les journaux operateur.
+      outputHash: outputRef ? crypto.createHash('sha256').update(outputRef).digest('hex').slice(0, 20) : '',
+      createdAt: new Date().toISOString(),
+    };
+    const index = readIndex(access);
+    index.qualityFeedback = [...(index.qualityFeedback || []), event].slice(-500);
+    writeIndex(access, index);
+    const voiceQuality = summarizeVoiceQualityFeedback(index.qualityFeedback);
+    return res.json({
+      ok: true,
+      persona: access.persona,
+      feedback: event,
+      voiceQuality,
+      voiceProfile: buildVoiceQualityProfile(voiceQuality),
+    });
+  });
+
   return router;
 }
 
 module.exports = createVoiceLearningRouter;
+module.exports.resolvePersonalSunoVoiceForRequest = resolvePersonalSunoVoiceForRequest;
+module.exports.normalizeSunoVoiceId = normalizeSunoVoiceId;
+module.exports.describeSunoVoiceSlot = describeSunoVoiceSlot;
+module.exports.VOICE_QUALITY_FEEDBACK_SCHEMA = VOICE_QUALITY_FEEDBACK_SCHEMA;
+module.exports.VOICE_QUALITY_DEFECTS = VOICE_QUALITY_DEFECTS;
+module.exports.buildVoiceQualityProfile = buildVoiceQualityProfile;
+module.exports.normalizeVoiceQualityDefects = normalizeVoiceQualityDefects;
+module.exports.resolveVoiceQualityProfileForRequest = resolveVoiceQualityProfileForRequest;
+module.exports.summarizeVoiceQualityFeedback = summarizeVoiceQualityFeedback;

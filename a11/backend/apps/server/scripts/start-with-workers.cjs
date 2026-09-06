@@ -73,6 +73,7 @@ function startServer() {
 try {
   runBlocking('applying startup schema', ['scripts/apply-startup-schema.cjs']);
   runBlocking('ensuring runtime modules', ['scripts/ensure-runtime-modules.cjs']);
+  runBlocking('ensuring canonical Vivy persona', ['scripts/install-vivy-canonical-profile.cjs']);
   runBlocking('assembling WestSide Chopper runtime graph', ['scripts/westside-chopper.cjs', 'assemble', '--no-refresh'], {
     bestEffort: true,
   });

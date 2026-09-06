@@ -1,0 +1,115 @@
+{
+  "name": "@nossen/knowledge-modules",
+  "version": "0.2.3",
+  "description": "Public NOSSEN knowledge modules: persona canon, temporal gravity constants, pulsar colour palette.",
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "main": "src/index.cjs",
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "keywords": [
+    "encoding",
+    "funesterie",
+    "gravity",
+    "knowledge",
+    "modules",
+    "nossen",
+    "palette",
+    "persona",
+    "pulsar",
+    "zen"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Funesterie/funesterie.git",
+    "directory": "packages/nossen/knowledge-modules"
+  },
+  "funding": [
+    {
+      "type": "paypal",
+      "url": "https://paypal.me/funeste38"
+    },
+    {
+      "type": "custom",
+      "url": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png"
+    },
+    {
+      "type": "custom",
+      "url": "https://funesterie.me/contact/"
+    },
+    {
+      "type": "custom",
+      "url": "https://pay.qonto.com/payment-links/019fb9c8-9299-7a60-8130-cc40268dfd2b?resource_id=019fb9c8-929b-7269-9db7-19eed62119e0"
+    },
+    {
+      "type": "custom",
+      "url": "https://buy.stripe.com/00w7sL6am3HW1p98qo7Re05",
+      "note": "premium 29.99 EUR / trimestre (abonnement)"
+    },
+    {
+      "type": "custom",
+      "url": "https://buy.stripe.com/dRmeVdeGSemA3xh7mk7Re03",
+      "note": "fondateur 29.99 EUR / trimestre (abonnement)"
+    },
+    {
+      "type": "custom",
+      "url": "https://www.paypal.com/ncp/payment/YXRY5G9QMKRNY",
+      "note": "premium 29.99 EUR / trimestre (abonnement)"
+    },
+    {
+      "type": "custom",
+      "url": "https://www.paypal.com/ncp/payment/DJ7HKGB8PLYJ4",
+      "note": "fondateur 29.99 EUR / trimestre (abonnement)"
+    }
+  ],
+  "donations": {
+    "policy": "voluntary",
+    "amount": "user-choice",
+    "email": "funeste38@gmail.com",
+    "wero": "+33783463761",
+    "weroDisplay": "+33 7 83 46 37 61",
+    "weroQr": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png",
+    "paypal": "https://paypal.me/funeste38",
+    "contact": "https://funesterie.me/contact/",
+    "qonto": "https://pay.qonto.com/payment-links/019fb9c8-9299-7a60-8130-cc40268dfd2b?resource_id=019fb9c8-929b-7269-9db7-19eed62119e0",
+    "notes": "qonto: lien recurrent (abonnement trimestriel), desabonnement facile, interface accessible.",
+    "stripePremium": "https://buy.stripe.com/00w7sL6am3HW1p98qo7Re05",
+    "stripeFounder": "https://buy.stripe.com/dRmeVdeGSemA3xh7mk7Re03",
+    "paypalPremium": "https://www.paypal.com/ncp/payment/YXRY5G9QMKRNY",
+    "paypalFounder": "https://www.paypal.com/ncp/payment/DJ7HKGB8PLYJ4"
+  },
+  "funesterieSupport": {
+    "paypal": "https://paypal.me/funeste38",
+    "weroQr": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png",
+    "contact": "https://funesterie.me/contact/",
+    "qonto": "https://pay.qonto.com/payment-links/019fb9c8-9299-7a60-8130-cc40268dfd2b?resource_id=019fb9c8-929b-7269-9db7-19eed62119e0",
+    "stripePremium": "https://buy.stripe.com/00w7sL6am3HW1p98qo7Re05",
+    "stripeFounder": "https://buy.stripe.com/dRmeVdeGSemA3xh7mk7Re03",
+    "paypalPremium": "https://www.paypal.com/ncp/payment/YXRY5G9QMKRNY",
+    "paypalFounder": "https://www.paypal.com/ncp/payment/DJ7HKGB8PLYJ4"
+  },
+  "plans": {
+    "standard": {
+      "price": "8.99 EUR / trimestre",
+      "recurring": true,
+      "qonto": "https://pay.qonto.com/payment-links/019fb9c8-9299-7a60-8130-cc40268dfd2b?resource_id=019fb9c8-929b-7269-9db7-19eed62119e0"
+    },
+    "premium": {
+      "price": "29.99 EUR / trimestre",
+      "recurring": true,
+      "stripe": "https://buy.stripe.com/00w7sL6am3HW1p98qo7Re05",
+      "paypal": "https://www.paypal.com/ncp/payment/YXRY5G9QMKRNY"
+    },
+    "founder": {
+      "price": "29.99 EUR / trimestre",
+      "recurring": true,
+      "stripe": "https://buy.stripe.com/dRmeVdeGSemA3xh7mk7Re03",
+      "paypal": "https://www.paypal.com/ncp/payment/DJ7HKGB8PLYJ4"
+    }
+  }
+}

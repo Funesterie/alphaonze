@@ -1,0 +1,15 @@
+name = "funesterie-satellite"
+main = "worker.js"
+compatibility_date = "2024-12-01"
+
+[vars]
+
+# KV pour le buffer de messages (créer avec: wrangler kv namespace create BUFFER)
+# [[kv_namespaces]]
+# binding = "BUFFER"
+# id = "<KV_NAMESPACE_ID>"
+
+# Routes personnalisées (après deploy, ajouter le domaine)
+# routes = [
+#   { pattern = "satellite.funesterie.me/*", zone_name = "funesterie.me" }
+# ]

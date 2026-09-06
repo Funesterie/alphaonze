@@ -2,6 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const ttsRouter = require('../routes/tts.cjs');
 const {
@@ -149,8 +151,22 @@ test('detects dedicated local RVC styles', () => {
   assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: 'djeff-rap' }), true);
   assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: 'djeff-officielle' }), true);
   assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: 'a11-voix-de-lait' }), true);
-  assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: 'terminator' }), true);
-  assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: 'donna' }), true);
+  assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: 'a11-official-stern-french' }), true);
+  assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: 'kaen44-official-french-narrator' }), true);
+  assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: 'vivy-official-french-conversational' }), true);
+  assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: 'terminator' }), false);
+  assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: 'donna' }), false);
   assert.equal(hasSpecialLocalVoiceStyle({ voiceStyle: '' }), false);
   assert.equal(hasSpecialLocalVoiceStyle({}), false);
+});
+
+test('voice reference selection no longer accepts legacy character aliases', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, '../src/tts/voice-reference-store.cjs'),
+    'utf8'
+  );
+
+  assert.doesNotMatch(source, /a11-terminator|kaen44-donna|['"]terminator['"]|['"]donna['"]/i);
+  assert.match(source, /a11-official-stern-french/);
+  assert.match(source, /kaen44-official-french-narrator/);
 });

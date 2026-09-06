@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   buildQflushRgbaMultiload,
   buildQflushRgbaPacket,
+  buildShiryuZenRgba,
   getQflushRgbaCubeSpec,
 } = require('../src/qflush-rgba-cube.cjs');
 const { runQflushFlow } = require('../src/qflush-integration.cjs');
@@ -60,6 +61,34 @@ test('Qflush RGBA cube exposes a compact public spec', () => {
   assert.equal(spec.schema, 'nossen.qflush.rgba_cube.v1');
   assert.deepEqual(Object.keys(spec.faces).sort(), ['A', 'B', 'G', 'R']);
   assert.ok(spec.flows.includes('qflush.rgba.multiload.v1'));
+  assert.ok(spec.flows.includes('qflush.shiryu.zen_rgba.v1'));
+  assert.match(spec.modules.shiryu, /JSON to zen RGBA/i);
+});
+
+test('Shiryu blade sculpts JSON into zen RGBA with bounded deterministic noise', () => {
+  const input = {
+    sessionId: 'conv-shiryu',
+    message: 'allo pourquoi tu repetes ?',
+    history: [
+      { role: 'assistant', content: 'ancienne réponse outil/canevas' },
+      { role: 'user', content: 'chrome et workspace pour vivy' },
+    ],
+    payload: { route: 'vivy.chat', reason: 'smoke_cut' },
+    intent: 'cut stale workspace smoke',
+  };
+  const first = buildShiryuZenRgba(input);
+  const second = buildShiryuZenRgba(input);
+
+  assert.equal(first.ok, true);
+  assert.equal(first.schema, 'nossen.shiryu.zen_rgba.v1');
+  assert.equal(first.blade, 'blood-rain');
+  assert.equal(first.zen.currentFirst, true);
+  assert.equal(first.zen.historyIsContextOnly, true);
+  assert.deepEqual(first.controlledNoise, second.controlledNoise);
+  assert.deepEqual(first.sculptedRgba, second.sculptedRgba);
+  assert.ok(Object.values(first.controlledNoise).every((value) => value >= -8 && value <= 8));
+  assert.equal(first.plan.packets.some((packet) => packet.source === 'shiryu.current'), true);
+  assert.equal(first.plan.packets.some((packet) => packet.source === 'shiryu.json'), true);
 });
 
 test('runQflushFlow supports qflush.rgba.multiload.v1 as a local fallback without previews by default', async () => {
@@ -79,4 +108,20 @@ test('runQflushFlow supports qflush.rgba.multiload.v1 as a local fallback withou
   assert.equal(result.count, 2);
   assert.equal(result.droppedDuplicates, 1);
   assert.equal(result.packets.every((packet) => packet.preview === null), true);
+});
+
+test('runQflushFlow supports qflush.shiryu.zen_rgba.v1 as a local fallback', async () => {
+  const result = await runQflushFlow('qflush.shiryu.zen_rgba.v1', {
+    sessionId: 'conv-flow-shiryu',
+    message: 'allo ?',
+    payload: { json: true, smoke: 'workspace history' },
+    intent: 'conversation smoke cutter',
+  }, { requestId: 'req-shiryu-rgba' });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.flow, 'qflush.shiryu.zen_rgba.v1');
+  assert.equal(result.provider, 'local-qflush-fallback');
+  assert.equal(result.schema, 'nossen.shiryu.zen_rgba.v1');
+  assert.equal(result.zen.currentFirst, true);
+  assert.match(result.principle, /rgba-controlled-noise/);
 });

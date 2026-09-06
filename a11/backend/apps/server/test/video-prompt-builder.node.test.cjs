@@ -6,6 +6,7 @@ const test = require('node:test');
 const {
   buildVideoPrompt,
   sanitizeVideoNegativePrompt,
+  resolveVideoPromptMaxDurationSeconds,
   shouldUseVideoPromptLlm,
   VIDEO_PROMPT_SYSTEM_PROMPT,
 } = require('../src/video/video-prompt-builder.cjs');
@@ -98,6 +99,65 @@ test('video prompt builder can use the LLM when explicitly enabled', async () =>
   });
 });
 
+test('video prompt builder lets local models breathe and turns numeric lore into motion', async () => {
+  await withEnv({
+    A11_VIDEO_PROMPT_BUILDER_LLM: '1',
+    A11_VIDEO_PROMPT_TIMEOUT_MS: '240000',
+    A11_VIDEO_PROMPT_GROQ_ENABLED: '0',
+    A11_IMAGE_DIRECT_GROQ_ENABLED: '1',
+    GROQ_API_KEY: 'groq-disabled-for-video',
+  }, async () => {
+    const calls = [];
+    const result = await buildVideoPrompt({
+      userMessage: 'clip rêve Shiryu V9 avec triforce 0.06/0.12/0.18 et émotion cible 0.12',
+      hasReferenceImage: true,
+      callStructuredLlmJson: async (payload) => {
+        calls.push(payload);
+        return {
+          prompt: 'Vivy V9 stands under neon storm light, 0.06/0.12/0.18 pulses orbit around her, emotion target 0.12',
+          negative_prompt: '',
+          has_reference_subject: true,
+          motion_type: 'transform',
+        };
+      },
+    });
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].timeoutMs, 240000);
+    assert.equal(result.source, 'llm');
+    assert.doesNotMatch(result.prompt, /0\.06|0\.12|0\.18|V9/);
+    assert.match(result.prompt, /abstract rhythmic pulses|abstract pulse|evolving energy system/i);
+    assert.match(result.prompt, /No readable text/i);
+    assert.match(result.prompt, /no digits/i);
+  });
+});
+
+test('video prompt builder caps WAN 2.6 scene duration from env instead of the old 10s ceiling', async () => {
+  await withEnv({
+    A11_VIDEO_PROMPT_BUILDER_LLM: '1',
+    A11_VIDEO_PROMPT_MAX_DURATION_SECONDS: '15',
+    A11_VIDEO_PROMPT_GROQ_ENABLED: '0',
+    A11_IMAGE_DIRECT_GROQ_ENABLED: null,
+    GROQ_API_KEY: null,
+  }, async () => {
+    const result = await buildVideoPrompt({
+      userMessage: 'clip rêve Vivy performance néon sur 30 secondes',
+      hasReferenceImage: true,
+      callStructuredLlmJson: async () => ({
+        prompt: 'Vivy performs under electric magenta neon, cinematic singing performance',
+        negative_prompt: '',
+        duration_seconds: 30,
+        has_reference_subject: true,
+        motion_type: 'dance',
+      }),
+    });
+
+    assert.equal(resolveVideoPromptMaxDurationSeconds(), 15);
+    assert.equal(result.durationSeconds, 15);
+    assert.match(result.prompt, /Vivy performs/i);
+  });
+});
+
 test('video prompt builder keeps energy effects off the face without orientation inversion bans', async () => {
   await withEnv({
     A11_VIDEO_PROMPT_BUILDER_LLM: null,
@@ -133,6 +193,10 @@ test('video prompt negative prompt sanitizer strips orientation inversion terms'
 });
 
 test('video prompt system keeps Funesterie source intent and role-separated references', () => {
+  assert.match(VIDEO_PROMPT_SYSTEM_PROMPT, /WAN 2\.6/i);
+  assert.match(VIDEO_PROMPT_SYSTEM_PROMPT, /Djeff Cypher is the primary video prompt engineer/i);
+  assert.match(VIDEO_PROMPT_SYSTEM_PROMPT, /Vivy is the art director/i);
+  assert.match(VIDEO_PROMPT_SYSTEM_PROMPT, /never a generic list of prompt alternatives/i);
   assert.match(VIDEO_PROMPT_SYSTEM_PROMPT, /Funesterie source principle/i);
   assert.match(VIDEO_PROMPT_SYSTEM_PROMPT, /source of intent/i);
   assert.match(VIDEO_PROMPT_SYSTEM_PROMPT, /Keep roles separate/i);

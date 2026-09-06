@@ -13,7 +13,9 @@ const DEFAULTS = {
   codexHome: 'C:\\Users\\Djeff\\.codex',
   agentBus: process.env.A11_AGENT_BUS_DIR || process.env.AGENT_BUS_DIR || 'D:\\agent-bus',
   heartbeatRoot: process.env.A11_HEARTBEAT_ROOT || 'D:\\agent-bus\\heartbeat',
-  uri: 'bolt://127.0.0.1:17687',
+  // The launcher explicitly sets CODEX_SYNC_NEO4J_URI=...:17687 when the
+  // dedicated Podman mirror is used. Otherwise follow the canonical local DB.
+  uri: 'bolt://127.0.0.1:7687',
   database: 'neo4j',
 };
 

@@ -9,7 +9,11 @@ const neo4j = require('neo4j-driver');
 
 const DEFAULT_AURA_DATABASE = 'aa4680d2';
 const DEFAULT_LOCAL_DATABASE = 'neo4j';
-const DEFAULT_LOCAL_URI = 'bolt://127.0.0.1:17687';
+// 7687 is the canonical Neo4j Bolt port (desktop and EX44 host binding).
+// The historical Podman sync mirror remains available on 17687, but only as
+// a fallback so a generic local configuration never silently targets it.
+const DEFAULT_LOCAL_URI = 'bolt://127.0.0.1:7687';
+const DEFAULT_SYNC_MIRROR_URI = 'bolt://127.0.0.1:17687';
 
 function hashText(value, length = 24) {
   return crypto.createHash('sha256').update(String(value || '')).digest('hex').slice(0, length);
@@ -93,7 +97,7 @@ function resolveRouterConfig(env = process.env) {
   if (!local.password && isLocalNeo4jUri(local.uri)) local.auth = 'none';
   local.fallbacks = uniqueFallbacks(local, [{
     name: 'local',
-    uri: DEFAULT_LOCAL_URI,
+    uri: pick(env.A11_SYNC_MIRROR_NEO4J_URI, env.CODEX_SYNC_NEO4J_URI, DEFAULT_SYNC_MIRROR_URI),
     username: 'neo4j',
     password: '',
     database: DEFAULT_LOCAL_DATABASE,
@@ -364,39 +368,85 @@ async function getEndpointStats(endpoint) {
 }
 
 async function exportEndpointGraph(endpoint) {
-  return withSession(endpoint, 'read', async (session) => {
-    const nodeResult = await session.run('MATCH (n) RETURN elementId(n) AS elementId, labels(n) AS labels, properties(n) AS properties ORDER BY elementId(n)');
-    const relResult = await session.run(`
-      MATCH (a)-[r]->(b)
-      RETURN elementId(r) AS elementId,
-             type(r) AS type,
-             elementId(a) AS startElementId,
-             elementId(b) AS endElementId,
-             properties(r) AS properties
-      ORDER BY elementId(r)
-    `);
-
-    return {
-      endpoint: {
-        name: endpoint.name,
-        uri: endpoint.uri,
-        database: endpoint.database,
-      },
-      exportedAt: new Date().toISOString(),
-      nodes: nodeResult.records.map((record) => ({
-        elementId: record.get('elementId'),
-        labels: record.get('labels') || [],
-        properties: sanitizePropertyMap(record.get('properties') || {}),
-      })),
-      relationships: relResult.records.map((record) => ({
-        elementId: record.get('elementId'),
-        type: record.get('type'),
-        startElementId: record.get('startElementId'),
-        endElementId: record.get('endElementId'),
-        properties: sanitizePropertyMap(record.get('properties') || {}),
-      })),
-    };
-  });
+  const attempts = [endpoint, ...(endpoint.fallbacks || [])];
+  const errors = [];
+  for (const candidate of attempts) {
+    try {
+      return await withSingleEndpointSession(candidate, 'read', async (session) => {
+        // A Neo4j driver session is intentionally single-consumer. Keep the
+        // reads sequential instead of issuing concurrent session.run calls.
+        const nodeResult = await session.run('MATCH (n) RETURN elementId(n) AS elementId, labels(n) AS labels, properties(n) AS properties ORDER BY elementId(n)');
+        const relResult = await session.run(`
+          MATCH (a)-[r]->(b)
+          RETURN elementId(r) AS elementId,
+                 type(r) AS type,
+                 elementId(a) AS startElementId,
+                 elementId(b) AS endElementId,
+                 properties(r) AS properties
+          ORDER BY elementId(r)
+        `);
+        const constraintResult = await session.run('SHOW CONSTRAINTS YIELD * RETURN *');
+        const indexResult = await session.run('SHOW INDEXES YIELD * RETURN *');
+        const nodes = nodeResult.records.map((record) => ({
+          elementId: record.get('elementId'),
+          labels: record.get('labels') || [],
+          properties: sanitizePropertyMap(record.get('properties') || {}),
+        }));
+        const relationships = relResult.records.map((record) => ({
+          elementId: record.get('elementId'),
+          type: record.get('type'),
+          startElementId: record.get('startElementId'),
+          endElementId: record.get('endElementId'),
+          properties: sanitizePropertyMap(record.get('properties') || {}),
+        }));
+        const schemaRow = (record) => sanitizePropertyMap(record.toObject());
+        return {
+          format: 'funesterie.neo4j.logical-inventory.v2',
+          restorable: false,
+          note: 'Diagnostic inventory only. Neo4j native dump is the restorable backup.',
+          endpoint: {
+            name: candidate.name,
+            uri: candidate.uri,
+            database: candidate.database,
+          },
+          requestedEndpoint: {
+            name: endpoint.name,
+            uri: endpoint.uri,
+            database: endpoint.database,
+          },
+          fallbackFrom: candidate === endpoint ? null : {
+            uri: endpoint.uri,
+            database: endpoint.database,
+            errors,
+          },
+          exportedAt: new Date().toISOString(),
+          counts: {
+            nodes: nodes.length,
+            relationships: relationships.length,
+            constraints: constraintResult.records.length,
+            indexes: indexResult.records.length,
+          },
+          schema: {
+            constraints: constraintResult.records.map(schemaRow),
+            indexes: indexResult.records.map(schemaRow),
+          },
+          nodes,
+          relationships,
+        };
+      });
+    } catch (error) {
+      errors.push({
+        uri: candidate.uri,
+        database: candidate.database,
+        error: error.code || error.name || 'Neo4jError',
+        message: String(error.message || error).slice(0, 240),
+      });
+    }
+  }
+  const failure = new Error(errors[0]?.message || 'Neo4j logical inventory failed');
+  failure.code = errors[0]?.error || 'Neo4jError';
+  failure.attempts = errors;
+  throw failure;
 }
 
 class Neo4jMemoryRouter {
@@ -555,57 +605,46 @@ class Neo4jMemoryRouter {
 
   async backupToSeagate(options = {}) {
     const outputRoot = options.outputRoot || resolveBackupRoot();
+    const target = String(options.target || 'both').trim().toLowerCase();
+    if (!['aura', 'local', 'both'].includes(target)) {
+      throw new Error(`Invalid Neo4j backup target "${target}"`);
+    }
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const targetDir = path.join(outputRoot, 'a11-neo4j-memory', timestamp);
     await fs.mkdir(targetDir, { recursive: true });
 
-    const [aura, local] = await Promise.all([
-      exportEndpointGraph(this.config.aura),
-      exportEndpointGraph(this.config.local).catch((error) => ({
-        endpoint: {
-          name: this.config.local.name,
-          uri: this.config.local.uri,
-          database: this.config.local.database,
-        },
-        exportedAt: new Date().toISOString(),
-        error: String(error.message || error).slice(0, 240),
-        nodes: [],
-        relationships: [],
-      })),
-    ]);
+    const exports = await collectBackupGraphs(this.config, target);
 
-    const files = {
-      aura: path.join(targetDir, 'aura-graph.json'),
-      local: path.join(targetDir, 'local-graph.json'),
-    };
-
-    await fs.writeFile(files.aura, JSON.stringify(aura, null, 2), 'utf8');
-    await fs.writeFile(files.local, JSON.stringify(local, null, 2), 'utf8');
+    const files = {};
+    for (const [name, graph] of Object.entries(exports)) {
+      files[name] = path.join(targetDir, `${name}-graph.json`);
+      await fs.writeFile(files[name], JSON.stringify(graph, null, 2), 'utf8');
+    }
 
     const manifest = {
       ok: true,
       createdAt: new Date().toISOString(),
+      target,
       targetDir,
-      sources: {
-        aura: {
-          uri: this.config.aura.uri,
-          database: this.config.aura.database,
-          nodes: aura.nodes.length,
-          relationships: aura.relationships.length,
-        },
-        local: {
-          uri: this.config.local.uri,
-          database: this.config.local.database,
-          nodes: local.nodes.length,
-          relationships: local.relationships.length,
-          error: local.error || null,
-        },
-      },
-      files: {
-        aura: await fileDigest(files.aura),
-        local: await fileDigest(files.local),
-      },
+      sources: {},
+      files: {},
     };
+    for (const [name, graph] of Object.entries(exports)) {
+      manifest.sources[name] = {
+        uri: graph.endpoint.uri,
+        database: graph.endpoint.database,
+        requestedUri: graph.requestedEndpoint?.uri || graph.endpoint.uri,
+        requestedDatabase: graph.requestedEndpoint?.database || graph.endpoint.database,
+        fallbackUsed: Boolean(graph.fallbackFrom),
+        nodes: graph.counts?.nodes ?? graph.nodes.length,
+        relationships: graph.counts?.relationships ?? graph.relationships.length,
+        constraints: graph.counts?.constraints ?? graph.schema?.constraints?.length ?? 0,
+        indexes: graph.counts?.indexes ?? graph.schema?.indexes?.length ?? 0,
+        restorable: graph.restorable === true,
+        error: graph.error || null,
+      };
+      manifest.files[name] = await fileDigest(files[name]);
+    }
 
     const manifestPath = path.join(targetDir, 'manifest.json');
     await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
@@ -633,10 +672,33 @@ async function fileDigest(filePath) {
   };
 }
 
+async function collectBackupGraphs(config, target, exportGraph = exportEndpointGraph) {
+  if (target === 'aura') return { aura: await exportGraph(config.aura) };
+  if (target === 'local') return { local: await exportGraph(config.local) };
+
+  // Backward compatibility for the historical "both" command: Aura is the
+  // required source, while an unavailable optional local mirror is recorded
+  // in the manifest instead of aborting the Aura backup.
+  const aura = await exportGraph(config.aura);
+  const local = await exportGraph(config.local).catch((error) => ({
+    endpoint: {
+      name: config.local.name,
+      uri: config.local.uri,
+      database: config.local.database,
+    },
+    exportedAt: new Date().toISOString(),
+    error: String(error.message || error).slice(0, 240),
+    nodes: [],
+    relationships: [],
+  }));
+  return { aura, local };
+}
+
 module.exports = {
   Neo4jMemoryRouter,
   buildMirrorNodeCypher,
   buildMirrorRelationshipCypher,
+  collectBackupGraphs,
   dedupeMemoryResults,
   exportEndpointGraph,
   getEndpointStats,

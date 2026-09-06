@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Sudoku Cerbère — Funesterie</title>
+  <style>
+    :root { --bg:#08040d; --panel:#160d1f; --line:#5b2b70; --pink:#ff5fd2; --cyan:#71e9ff; --text:#f8efff; --muted:#bdaec9; --ok:#71f5ae; --bad:#ff7b97; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:radial-gradient(circle at 20% 0,#281038 0,transparent 42%),linear-gradient(145deg,var(--bg),#0a0711 70%); color:var(--text); font:16px/1.5 system-ui,sans-serif; }
+    main { width:min(1100px,94vw); margin:0 auto; padding:32px 0 64px; }
+    header { display:flex; gap:20px; align-items:center; justify-content:space-between; margin-bottom:24px; }
+    h1,h2 { margin:.15em 0; line-height:1.1; }
+    h1 { font-size:clamp(2rem,6vw,4rem); letter-spacing:-.04em; }
+    p { color:var(--muted); }
+    a { color:var(--cyan); }
+    .badge { border:1px solid var(--line); border-radius:999px; padding:7px 11px; color:var(--cyan); white-space:nowrap; }
+    .notice { border-left:4px solid var(--pink); padding:12px 15px; background:#170c20; border-radius:8px; }
+    .layout { display:grid; grid-template-columns:minmax(300px,520px) minmax(280px,1fr); gap:24px; align-items:start; }
+    .card { background:color-mix(in srgb,var(--panel) 92%,transparent); border:1px solid var(--line); border-radius:18px; padding:20px; box-shadow:0 18px 50px #0007; }
+    .grid { display:grid; grid-template-columns:repeat(9,1fr); width:min(100%,500px); aspect-ratio:1; border:3px solid var(--pink); margin:18px auto; background:#0b0610; }
+    .cell { min-width:0; width:100%; height:100%; border:0; border-right:1px solid #4b3158; border-bottom:1px solid #4b3158; text-align:center; background:#0d0713; color:var(--text); font-size:clamp(1rem,3vw,1.55rem); outline:none; }
+    .cell:nth-child(9n+3),.cell:nth-child(9n+6) { border-right:3px solid var(--pink); }
+    .cell:nth-child(n+19):nth-child(-n+27),.cell:nth-child(n+46):nth-child(-n+54) { border-bottom:3px solid var(--pink); }
+    .cell.given { color:var(--cyan); background:#1a1021; font-weight:800; }
+    .cell:focus { box-shadow:inset 0 0 0 2px var(--cyan); }
+    label { display:block; margin:12px 0 5px; color:var(--muted); }
+    input[type=text] { width:100%; padding:11px 12px; background:#0c0711; color:var(--text); border:1px solid var(--line); border-radius:9px; }
+    button { border:1px solid #8d3e98; border-radius:10px; background:linear-gradient(135deg,#612274,#b1368c); color:white; padding:11px 15px; font-weight:750; cursor:pointer; margin:5px 5px 5px 0; }
+    button.secondary { background:#18101f; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    code { word-break:break-all; color:var(--cyan); }
+    .status { min-height:48px; padding:10px 12px; border:1px solid #46324f; border-radius:10px; background:#0c0810; white-space:pre-wrap; }
+    .status.ok { border-color:#2e855d; color:var(--ok); }
+    .status.bad { border-color:#9b344f; color:var(--bad); }
+    .limits { padding-left:20px; color:var(--muted); }
+    .hidden { display:none !important; }
+    @media (max-width:800px) { .layout { grid-template-columns:1fr; } header { align-items:flex-start; flex-direction:column; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p>FUNESTERIE · CERBÈRE</p>
+        <h1>Token Sudoku</h1>
+        <p>Djeff Cypher et Vivy préparent. Marvin garde la seconde clé.</p>
+      </div>
+      <a class="badge" href="/">Retour Funesterie</a>
+    </header>
+
+    <p class="notice"><strong>Ce n’est pas une clé maître.</strong> Résoudre le Sudoku ouvre une session créative courte. Marvin doit l’approuver depuis un compte différent. Secrets, déploiement, paiement, publication, données d’autres comptes et matériel réel restent verrouillés.</p>
+
+    <div class="layout">
+      <section class="card">
+        <h2>1. Challenge Djeff / Vivy</h2>
+        <p>Compte Funesterie admin requis. Le calcul et la vérification restent côté serveur.</p>
+        <button id="create">Créer un Sudoku</button>
+        <a id="login" href="/login?next=%2Fsudoku-token%2F">Se connecter</a>
+        <div id="grid" class="grid" aria-label="Grille Sudoku"></div>
+        <button id="solve" disabled>Valider la grille</button>
+        <button id="redeem" class="secondary" disabled>Activer la session approuvée</button>
+        <div id="owner-status" class="status" role="status">Prêt.</div>
+        <div id="handoff" class="hidden">
+          <p>À transmettre à Marvin :</p>
+          <p>Challenge <code id="challenge-id"></code><br>Code <code id="approval-code"></code></p>
+          <button id="copy" class="secondary">Copier la demande Marvin</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>2. Validation Marvin</h2>
+        <p>Marvin se connecte avec son propre compte, puis confirme le challenge reçu.</p>
+        <label for="marvin-id">Identifiant du challenge</label>
+        <input id="marvin-id" type="text" autocomplete="off">
+        <label for="marvin-code">Code d’approbation</label>
+        <input id="marvin-code" type="text" autocomplete="off">
+        <button id="approve">Approuver comme Marvin</button>
+        <div id="marvin-status" class="status" role="status">En attente.</div>
+
+        <h2>Session créative</h2>
+        <ul class="limits">
+          <li>Prompts Djeff Cypher, direction artistique Vivy.</li>
+          <li>Voix consenties, fichiers du compte, graphe en lecture, estimation clip.</li>
+          <li>Durée courte et liée au compte qui a résolu le puzzle.</li>
+          <li>Marvin ne peut pas approuver son propre challenge.</li>
+        </ul>
+        <button id="verify" class="secondary">Vérifier ma session locale</button>
+        <div id="grant-status" class="status" role="status">Aucun jeton créatif dans cette session navigateur.</div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    (() => {
+      'use strict';
+      const api = '/api/security/sudoku-token';
+      const authKeys = ['a11-auth-token', 'a11_jwt_token'];
+      const capabilityKey = 'a11-sudoku-capability-token';
+      let challenge = null;
+
+      const el = (id) => document.getElementById(id);
+      const authToken = () => authKeys.map((key) => localStorage.getItem(key) || '').find(Boolean) || '';
+      const headers = (json = false) => ({
+        ...(json ? { 'Content-Type': 'application/json' } : {}),
+        ...(authToken() ? { Authorization: `Bearer ${authToken()}` } : {}),
+      });
+      const setStatus = (target, text, ok = null) => {
+        target.textContent = text;
+        target.classList.toggle('ok', ok === true);
+        target.classList.toggle('bad', ok === false);
+      };
+      const request = async (path, options = {}) => {
+        const response = await fetch(`${api}${path}`, { credentials: 'include', ...options });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+        return payload;
+      };
+
+      function renderGrid(puzzle = []) {
+        const root = el('grid');
+        root.replaceChildren();
+        puzzle.forEach((value, index) => {
+          const input = document.createElement('input');
+          input.className = `cell${value ? ' given' : ''}`;
+          input.type = 'text';
+          input.inputMode = 'numeric';
+          input.maxLength = 1;
+          input.value = value || '';
+          input.readOnly = Boolean(value);
+          input.setAttribute('aria-label', `Ligne ${Math.floor(index / 9) + 1}, colonne ${(index % 9) + 1}`);
+          input.addEventListener('input', () => { input.value = input.value.replace(/[^1-9]/g, '').slice(0, 1); });
+          root.append(input);
+        });
+      }
+
+      function readGrid() {
+        return [...el('grid').querySelectorAll('.cell')].map((input) => Number(input.value || 0));
+      }
+
+      el('create').addEventListener('click', async () => {
+        setStatus(el('owner-status'), 'Création du challenge…');
+        try {
+          const payload = await request('/challenges', { method: 'POST', headers: headers(true), body: '{}' });
+          challenge = payload.challenge;
+          renderGrid(challenge.puzzle);
+          el('challenge-id').textContent = challenge.id;
+          el('marvin-id').value = challenge.id;
+          el('solve').disabled = false;
+          el('redeem').disabled = true;
+          el('handoff').classList.add('hidden');
+          setStatus(el('owner-status'), `Challenge prêt. Expire à ${new Date(challenge.expiresAt).toLocaleTimeString()}.`, true);
+        } catch (error) {
+          setStatus(el('owner-status'), error.message, false);
+        }
+      });
+
+      el('solve').addEventListener('click', async () => {
+        if (!challenge) return;
+        setStatus(el('owner-status'), 'Vérification serveur…');
+        try {
+          const payload = await request(`/challenges/${encodeURIComponent(challenge.id)}/solve`, {
+            method: 'POST', headers: headers(true), body: JSON.stringify({ solution: readGrid() }),
+          });
+          challenge = payload.challenge;
+          el('approval-code').textContent = challenge.approvalCode;
+          el('marvin-code').value = challenge.approvalCode;
+          el('handoff').classList.remove('hidden');
+          el('solve').disabled = true;
+          el('redeem').disabled = false;
+          setStatus(el('owner-status'), challenge.message, true);
+        } catch (error) {
+          setStatus(el('owner-status'), error.message, false);
+        }
+      });
+
+      el('approve').addEventListener('click', async () => {
+        const id = el('marvin-id').value.trim();
+        const approvalCode = el('marvin-code').value.trim();
+        setStatus(el('marvin-status'), 'Validation Marvin…');
+        try {
+          const payload = await request(`/challenges/${encodeURIComponent(id)}/approve`, {
+            method: 'POST', headers: headers(true), body: JSON.stringify({ approvalCode, confirm: 'marvin-approve-creative-session' }),
+          });
+          setStatus(el('marvin-status'), payload.challenge.message, true);
+        } catch (error) {
+          setStatus(el('marvin-status'), error.message, false);
+        }
+      });
+
+      el('redeem').addEventListener('click', async () => {
+        if (!challenge) return;
+        setStatus(el('owner-status'), 'Activation de la session créative…');
+        try {
+          const payload = await request(`/challenges/${encodeURIComponent(challenge.id)}/redeem`, {
+            method: 'POST', headers: headers(true), body: '{}',
+          });
+          sessionStorage.setItem(capabilityKey, payload.capabilityToken);
+          setStatus(el('owner-status'), `Session active ${Math.round(payload.expiresIn / 60)} min. Le jeton reste uniquement dans cet onglet.`, true);
+          el('redeem').disabled = true;
+          await verifyGrant();
+        } catch (error) {
+          setStatus(el('owner-status'), `${error.message} Si Marvin vient juste d’approuver, réessaie.`, false);
+        }
+      });
+
+      async function verifyGrant() {
+        const token = sessionStorage.getItem(capabilityKey) || '';
+        if (!token) return setStatus(el('grant-status'), 'Aucun jeton créatif dans cette session navigateur.');
+        setStatus(el('grant-status'), 'Vérification…');
+        try {
+          const payload = await request('/validate', { headers: { ...headers(), 'X-A11-Creative-Capability': token } });
+          setStatus(el('grant-status'), `Active jusqu’à ${new Date(payload.expiresAt).toLocaleTimeString()}\nScopes: ${payload.scopes.join(', ')}\nGarde: ${payload.boundaries.join(', ')}`, true);
+        } catch (error) {
+          sessionStorage.removeItem(capabilityKey);
+          setStatus(el('grant-status'), error.message, false);
+        }
+      }
+
+      el('verify').addEventListener('click', verifyGrant);
+      el('copy').addEventListener('click', async () => {
+        const text = `Sudoku Cerbère Funesterie\nChallenge: ${el('challenge-id').textContent}\nCode Marvin: ${el('approval-code').textContent}\nPage: ${location.origin}/sudoku-token/`;
+        try {
+          await navigator.clipboard.writeText(text);
+          setStatus(el('owner-status'), 'Demande Marvin copiée.', true);
+        } catch (error) {
+          setStatus(el('owner-status'), 'Copie impossible. Transmets le challenge et le code Marvin manuellement.', false);
+        }
+      });
+
+      renderGrid(Array(81).fill(0));
+      verifyGrant();
+    })();
+  </script>
+</body>
+</html>

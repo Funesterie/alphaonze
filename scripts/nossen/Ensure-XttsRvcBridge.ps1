@@ -34,7 +34,7 @@ function Get-BridgeSummary {
   try {
     $json = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 5
     $styles = @()
-    foreach ($name in @("terminator", "donna", "vivy")) {
+    foreach ($name in @("a11-official-stern-french", "a11-voix-de-lait", "djeff-rap", "kaen44-official-french-narrator", "vivy")) {
       $item = $json.styles.$name
       if ($item) {
         $styles += "$name voice=$($item.hasVoice) rvc=$($item.hasRvc) index=$($item.hasIndex)"

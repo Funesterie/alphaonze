@@ -23,8 +23,25 @@ const express = require('express');
 const fs = require('node:fs');
 const path = require('node:path');
 const { getLogger } = require('../../lib/structured-logger.cjs');
+const { getFamilyAdminEmails, normalizeEmail } = require('../config/family-accounts.cjs');
 
 const logger = getLogger({ component: 'runtime-files' });
+
+/**
+ * Identifiant de dossier pour un compte. On prefere l'id au courriel: il ne change
+ * pas quand l'adresse change, et il ne met pas d'adresse en clair sur le disque.
+ */
+function resolveAccountSlug(user = {}) {
+  const raw = String(user?.id || user?.email || '').trim().toLowerCase();
+  return raw.replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
+}
+
+function isFamilyAdminRequest(req) {
+  const email = normalizeEmail(req?.user?.email);
+  if (!email) return false;
+  const admins = getFamilyAdminEmails();
+  return Array.isArray(admins) ? admins.includes(email) : Boolean(admins?.has?.(email));
+}
 
 // ─── Sécurité : confinement au runtime ───────────────────────────────────────
 
@@ -67,6 +84,27 @@ function createRuntimeFilesRouter({ runtimeRoot } = {}) {
       || path.resolve(__dirname, '..', '..', '..', '..', '..', 'runtime');
   }
 
+  /**
+   * Racine de travail d'une requete.
+   *
+   * Le confinement au runtime bloquait bien la traversee de chemin, mais rien de plus:
+   * tout compte connecte pouvait lister et supprimer n'importe quoi dans un runtime
+   * partage de plusieurs gigaoctets, qui contient `secrets/`, `auth/`, les personas et
+   * les albums de tout le monde. Chaque compte travaille desormais dans son propre
+   * sous-arbre. Fondateurs et famille gardent la vue complete, mais seulement en le
+   * demandant explicitement -- jamais par defaut.
+   */
+  function resolveScopedRoot(req) {
+    const shared = getRoot();
+    const demandePartage = String(req?.query?.scope || req?.body?.scope || '').trim() === 'shared';
+    if (demandePartage && isFamilyAdminRequest(req)) {
+      return { root: shared, partage: true };
+    }
+    const slug = resolveAccountSlug(req?.user);
+    if (!slug) return null;
+    return { root: path.join(shared, 'accounts', slug), partage: false };
+  }
+
   // ── POST /api/agent/runtime/files/rename ──────────────────────────────────
   router.post('/rename', express.json({ limit: '256kb' }), (req, res) => {
     try {
@@ -83,7 +121,9 @@ function createRuntimeFilesRouter({ runtimeRoot } = {}) {
         });
       }
 
-      const root = getRoot();
+      const scope = resolveScopedRoot(req);
+      if (!scope) return res.status(401).json({ ok: false, error: 'missing_user' });
+      const root = scope.root;
       const fromPath = resolveRuntimePath(root, from);
       const toPath = resolveRuntimePath(root, to);
 
@@ -136,10 +176,17 @@ function createRuntimeFilesRouter({ runtimeRoot } = {}) {
       if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
 
       const subdir = String(req.query?.path || '').trim() || '.';
-      const root = getRoot();
+      const scope = resolveScopedRoot(req);
+      if (!scope) return res.status(401).json({ ok: false, error: 'missing_user' });
+      const root = scope.root;
       const targetPath = resolveRuntimePath(root, subdir);
 
+      // Un compte qui n'a encore rien stocke n'a pas de dossier: c'est un espace
+      // vide, pas une erreur.
       if (!fs.existsSync(targetPath)) {
+        if (path.resolve(targetPath) === path.resolve(root)) {
+          return res.json({ ok: true, path: '.', entries: [], total: 0, scope: scope.partage ? 'shared' : 'account' });
+        }
         return res.status(404).json({
           ok: false,
           error: 'not_found',
@@ -180,6 +227,7 @@ function createRuntimeFilesRouter({ runtimeRoot } = {}) {
         path: path.relative(root, targetPath).replace(/\\/g, '/') || '.',
         entries,
         total: entries.length,
+        scope: scope.partage ? 'shared' : 'account',
       });
 
     } catch (err) {
@@ -205,7 +253,9 @@ function createRuntimeFilesRouter({ runtimeRoot } = {}) {
         });
       }
 
-      const root = getRoot();
+      const scope = resolveScopedRoot(req);
+      if (!scope) return res.status(401).json({ ok: false, error: 'missing_user' });
+      const root = scope.root;
       const resolved = resolveRuntimePath(root, filePath);
 
       if (!fs.existsSync(resolved)) {

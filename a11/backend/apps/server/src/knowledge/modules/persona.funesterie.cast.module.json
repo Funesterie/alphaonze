@@ -1,0 +1,116 @@
+{
+  "id": "persona.funesterie.cast",
+  "label": "Personas Funesterie - distribution et ADN",
+  "discipline": "persona-canon",
+  "activation": {
+    "modesAny": [
+      "chat",
+      "generate",
+      "plan",
+      "semantic",
+      "song"
+    ],
+    "keywordsAny": [
+      "persona",
+      "personas",
+      "ADN persona",
+      "chromosome",
+      "casting",
+      "distribution vocale",
+      "Vivy",
+      "Djeff",
+      "Marvin",
+      "A11",
+      "K44",
+      "Kaen44",
+      "qui chante",
+      "voix officielle",
+      "voix premium",
+      "catalogue de voix"
+    ]
+  },
+  "knowledge": {
+    "concepts": [
+      "Les personas Funesterie sont des identites du projet, pas des voix de fournisseur: elles se rendent par le style, l'ecriture et l'interpretation.",
+      "Une persona Suno n'est envoyee que pour une voix du catalogue ou une voix personnelle enregistree par son proprietaire; jamais automatiquement pour une identite officielle.",
+      "Une persona Suno expire sans prevenir et renvoie alors « 553 voice persona generation failed »: c'est un identifiant chez un tiers, pas une identite.",
+      "L'ADN d'une persona s'exprime en cinq chromosomes: VOIX, COMPORTEMENT, LANGAGE, COMBAT, ACTIVATION.",
+      "Le style decrit la VOIX et l'interpretation. Le lieu, le decor et l'imagerie appartiennent a la chanson, donc a Vivy: les imposer verrouille le champ lexical de tous les morceaux.",
+      "Suno n'accepte qu'une persona par morceau: un duo de deux voix premium est impossible dans un seul appel.",
+      "Toute voix ajoutee au catalogue exige un consentement nomme (consentBy); l'identifiant n'est jamais expose en clair."
+    ],
+    "cast": [
+      {
+        "id": "vivy",
+        "label": "Vivy",
+        "role": "agent musical, ecrit et dirige les morceaux",
+        "voiceStyle": "vivy-official-french-conversational",
+        "official": true,
+        "note": "Tient la direction sonore. Quand elle fournit une direction, elle prime sur tout repli automatique."
+      },
+      {
+        "id": "djeff",
+        "label": "Djeff",
+        "role": "rap technique, punchlines, cypher",
+        "voiceStyle": "djeff-rap",
+        "official": true,
+        "note": "Voix rap Djeff/Pignon, distincte de la voix officielle A11. Grain sec proche micro, flow nerveux controle, 808 sombres."
+      },
+      {
+        "id": "marvin",
+        "label": "Marvin",
+        "role": "voix famille",
+        "voiceStyle": "marvin-family-french-lead",
+        "official": true,
+        "note": "Voix famille Marvin/frere."
+      },
+      {
+        "id": "a11",
+        "label": "A11",
+        "role": "voix officielle, registre severe",
+        "voiceStyle": "a11-official-stern-french",
+        "official": true
+      },
+      {
+        "id": "k44",
+        "label": "K44",
+        "role": "narrateur officiel",
+        "voiceStyle": "kaen44-official-french-narrator",
+        "official": true
+      }
+    ],
+    "adn": {
+      "chromosomes": [
+        "VOIX",
+        "COMPORTEMENT",
+        "LANGAGE",
+        "COMBAT",
+        "ACTIVATION"
+      ],
+      "source": "src/persona/prompt-adn.cjs",
+      "note": "Le code fait foi: ce module en donne la lecture, il ne la remplace pas."
+    },
+    "sources": [
+      "src/config/family-accounts.cjs (identites et styles de voix)",
+      "src/persona/prompt-adn.cjs (chromosomes ADN)",
+      "src/music/voice-catalog.cjs (voix premium et consentement)"
+    ]
+  },
+  "apply": {
+    "constraints": {
+      "officialPersonasNeverUseProviderVoiceId": true,
+      "styleDescribesVoiceNotScenery": true,
+      "onePersonaPerTrack": true,
+      "catalogVoiceRequiresNamedConsent": true
+    },
+    "guidance": [
+      "Ne jamais imposer un decor par defaut a une persona: proposer, ne pas verrouiller.",
+      "Quand Vivy fournit une direction sonore, la respecter meme si elle parait douce ou inattendue.",
+      "Citer la persona par son role dans la chanson, pas par un identifiant technique."
+    ]
+  },
+  "impacts": {
+    "song": "Le casting et la direction viennent de Vivy; la couche technique n'ajoute que des garde-fous de conformite.",
+    "chat": "Chaque persona garde sa langue et son registre propres."
+  }
+}

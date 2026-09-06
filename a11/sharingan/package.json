@@ -1,0 +1,16 @@
+{
+  "name": "sharingan-genjutsu",
+  "version": "1.0.0",
+  "description": "Fake frontend + Djeff freestyle jukebox trolling",
+  "main": "server.cjs",
+  "scripts": {
+    "start": "node server.cjs",
+    "dev": "node server.cjs"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

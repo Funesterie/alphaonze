@@ -1,0 +1,9 @@
+{
+  "name": "@nossen/cf",
+  "version": "0.1.0",
+  "description": "Tiny Cloudflare API client for the Funesterie AIs (zones/DNS/tunnels/Access/R2) - one CLOUDFLARE_API_TOKEN, no browser.",
+  "main": "src/index.cjs",
+  "bin": { "nossen-cf": "bin/cf.cjs" },
+  "scripts": { "test": "node test/smoke.cjs" },
+  "license": "MIT"
+}

@@ -1,0 +1,8 @@
+{
+  "name": "@nossen/zen-gate",
+  "version": "0.1.0",
+  "description": "ZEN Gate / Stargate - chunked dedup transfer (HAVE/NEED) for PC<->EX44, built on @nossen/zen + Brotli + SHA-256.",
+  "main": "src/index.cjs",
+  "scripts": { "test": "node test/roundtrip.cjs" },
+  "license": "MIT"
+}

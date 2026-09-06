@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily encrypted A11 Neo4j Storage Box backup
+
+[Timer]
+OnCalendar=*-*-* 04:17:00
+RandomizedDelaySec=20m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

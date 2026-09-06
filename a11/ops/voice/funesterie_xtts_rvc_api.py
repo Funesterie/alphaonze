@@ -107,18 +107,6 @@ DEFAULT_PERSONA_MANIFEST = {
         "rvc": "",
         "index": "",
     },
-    "terminator": {
-        "persona": "a11",
-        "voice": "a11-terminator.wav",
-        "rvc": "a11-terminator.pth",
-        "index": "a11-terminator.index",
-    },
-    "donna": {
-        "persona": "kaen44",
-        "voice": "kaen44-donna.wav",
-        "rvc": "kaen44-donna.pth",
-        "index": "kaen44-donna.index",
-    },
     "vivy": {
         "persona": "vivy",
         "voice": "vivy.wav",
@@ -211,10 +199,8 @@ def normalize_style(value: str) -> str:
         "narrator",
     }:
         return "kaen44-official-french-narrator"
-    if key in {"terminator", "robot", "robotique"}:
-        return "terminator"
-    if key in {"donna", "kaen44-donna"}:
-        return "donna"
+    if key in {"robot", "robotique", "cyber", "cybernetic", "cybernetique"}:
+        return "a11-official-stern-french"
     if key in {
         "vivy",
         "vivy-official",
@@ -233,8 +219,6 @@ def resolve_style(persona: str = "", voice_style: str = "") -> str:
     if raw_style in {"", "default", "voice", "speech", "song", "sing", "chant", "music", "musique"}:
         return persona_style
     style = normalize_style(raw_style)
-    if style == "terminator" and persona_style != "terminator" and raw_style not in {"terminator", "robot", "robotique"}:
-        return persona_style
     return style
 
 
@@ -350,18 +334,6 @@ STYLE_RVC_TUNING = {
         "pitch": 0.0,
         "index_rate": 0.0,
         "rms_mix_rate": 0.5,
-        "protect": 0.35,
-    },
-    "terminator": {
-        "pitch": -1.0,
-        "index_rate": 0.5,
-        "rms_mix_rate": 0.38,
-        "protect": 0.28,
-    },
-    "donna": {
-        "pitch": 0.0,
-        "index_rate": 0.42,
-        "rms_mix_rate": 0.48,
         "protect": 0.35,
     },
     "vivy": {
@@ -602,7 +574,7 @@ def constrain_xtts_output_duration(xtts_path: Path, text: str, vocal_mode: str, 
 
 
 def resolve_rvc_tuning(style: str, requested_pitch: Optional[float] = None) -> dict:
-    defaults = STYLE_RVC_TUNING.get(style, STYLE_RVC_TUNING["terminator"])
+    defaults = STYLE_RVC_TUNING.get(style, STYLE_RVC_TUNING["a11-official-stern-french"])
     style_key = style.upper().replace("-", "_")
     pitch = requested_pitch if requested_pitch is not None else env_float(
         f"A11_XTTS_RVC_{style_key}_PITCH",
@@ -1020,7 +992,7 @@ def health():
     rvcs = sorted(item.name for item in RVCS_DIR.glob("*.pth") if item.is_file())
     rvc_indexes = sorted(item.name for item in RVCS_DIR.glob("*.index") if item.is_file())
     styles = {}
-    for style in ("a11-official-stern-french", "a11-voix-de-lait", "djeff-rap", "kaen44-official-french-narrator", "terminator", "donna", "vivy"):
+    for style in ("a11-official-stern-french", "a11-voix-de-lait", "djeff-rap", "kaen44-official-french-narrator", "vivy"):
         binding = resolve_persona_binding(style)
         styles[style] = {
             "persona": binding["persona"],

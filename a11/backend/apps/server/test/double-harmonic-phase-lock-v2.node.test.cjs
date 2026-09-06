@@ -62,6 +62,7 @@ test('phase-lock v2 separates D40 envelope, phase correction and smoothing', () 
 });
 
 test('smoothing names normalize without changing phase constants', () => {
+  assert.equal(normalizeSmoothing(), 'one-over-e');
   assert.equal(normalizeSmoothing('dissipation'), 'one-over-e');
   assert.equal(normalizeSmoothing('linear'), 't-linear');
 

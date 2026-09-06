@@ -53,6 +53,7 @@ async function main() {
   const args = process.argv.slice(2);
   const command = args.shift() || 'status';
   const outputRoot = parseOption(args, 'output');
+  const target = parseOption(args, 'target');
   const limit = Number(parseOption(args, 'limit') || 12);
   const router = new Neo4jMemoryRouter(resolveRouterConfig());
 
@@ -72,10 +73,13 @@ async function main() {
     });
   } else if (command === 'sync-local') {
     result = await router.syncAuraToLocal();
-  } else if (command === 'backup-seagate') {
-    result = await router.backupToSeagate(outputRoot ? { outputRoot } : {});
+  } else if (command === 'backup-seagate' || command === 'backup-storagebox') {
+    result = await router.backupToSeagate({
+      ...(outputRoot ? { outputRoot } : {}),
+      ...(target ? { target } : {}),
+    });
   } else {
-    throw new Error(`Unknown command "${command}". Use status, search, write-note, sync-local, backup-seagate.`);
+    throw new Error(`Unknown command "${command}". Use status, search, write-note, sync-local, backup-seagate, backup-storagebox.`);
   }
 
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

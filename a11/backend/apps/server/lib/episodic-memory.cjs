@@ -5,10 +5,12 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { getLogger } = require('./structured-logger.cjs');
+const { getCanonicalRuntimeRoot } = require('./runtime-root.cjs');
 
 const logger = getLogger({ component: 'episodic-memory' });
 
-const MEMORY_DIR = process.env.A11_EPISODIC_MEMORY_DIR || path.join(__dirname, '../../../a11_memory/episodic');
+const MEMORY_DIR = process.env.A11_EPISODIC_MEMORY_DIR
+  || path.join(getCanonicalRuntimeRoot(process.env), 'episodic-memory');
 const MAX_EPISODES_PER_USER = Number(process.env.A11_MAX_EPISODES_PER_USER || 1000);
 const EPISODE_RETENTION_DAYS = Number(process.env.A11_EPISODE_RETENTION_DAYS || 90);
 
@@ -142,6 +144,21 @@ function getEpisodes(userId, options = {}) {
     episodes = episodes.filter((ep) => ep.type === typeFilter);
   }
   
+  // Filtre par conversation. addEpisode enregistre metadata.conversationId depuis
+  // toujours, mais la relecture ne s'en servait pas: le contexte remis a chaque tour
+  // couvrait SEPT JOURS de tous les fils et de tous les appareils confondus. Djeff,
+  // 29/07/2026: « si je commence une discussion avec un compte et que je demande une
+  // chanson avec mon telephone, j'aurais tout le contexte de l'autre session sans le
+  // savoir. » Les preferences restent volontairement globales: elles decrivent la
+  // personne, pas la conversation, et les redemander a chaque nouveau fil serait absurde.
+  if (options.conversationId) {
+    const conversationFilter = String(options.conversationId).trim();
+    episodes = episodes.filter((ep) => (
+      ep.type === 'preference'
+      || String(ep?.metadata?.conversationId || '').trim() === conversationFilter
+    ));
+  }
+
   // Filtre par date (depuis X jours)
   if (options.days) {
     const days = Number(options.days);
@@ -197,8 +214,8 @@ function setPreference(userId, key, value, metadata = {}) {
 /**
  * Récupère le contexte récent (derniers N jours)
  */
-function getRecentContext(userId, days = 7) {
-  return getEpisodes(userId, { days });
+function getRecentContext(userId, days = 7, options = {}) {
+  return getEpisodes(userId, { days, conversationId: options.conversationId });
 }
 
 /**
@@ -245,14 +262,27 @@ function deleteEpisode(userId, episodeId) {
 /**
  * Supprime tous les épisodes d'un utilisateur
  */
-function clearUserEpisodes(userId) {
+function clearUserEpisodes(userId, options = {}) {
   const normalizedUserId = String(userId || '').trim();
   
   if (!normalizedUserId) {
     return { ok: false, error: 'missing_user_id' };
   }
   
-  const saved = saveUserEpisodes(normalizedUserId, []);
+  const conversationId = String(options.conversationId || '').trim();
+  const typePrefix = String(options.typePrefix || '').trim();
+  const episodes = loadUserEpisodes(normalizedUserId);
+  const hasFilter = Boolean(conversationId || typePrefix);
+  const remaining = hasFilter
+    ? episodes.filter((episode) => {
+      const matchesConversation = !conversationId
+        || String(episode?.metadata?.conversationId || '').trim() === conversationId;
+      const matchesType = !typePrefix || String(episode?.type || '').startsWith(typePrefix);
+      return !(matchesConversation && matchesType);
+    })
+    : [];
+  const removed = episodes.length - remaining.length;
+  const saved = saveUserEpisodes(normalizedUserId, remaining);
   
   if (!saved) {
     return { ok: false, error: 'save_failed' };
@@ -263,14 +293,15 @@ function clearUserEpisodes(userId) {
   return {
     ok: true,
     cleared: true,
+    removed,
   };
 }
 
 /**
  * Construit un contexte textuel à partir des épisodes récents
  */
-function buildEpisodicContext(userId, days = 7) {
-  const result = getRecentContext(userId, days);
+function buildEpisodicContext(userId, days = 7, options = {}) {
+  const result = getRecentContext(userId, days, options);
   
   if (!result.ok || result.episodes.length === 0) {
     return '';

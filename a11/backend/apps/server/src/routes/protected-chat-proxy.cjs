@@ -45,6 +45,11 @@ const {
   resolveMcpAccountProfileSync,
 } = require('../auth/mcp-account-tier.cjs');
 const {
+  buildQuotaExceededResponse,
+  checkDefaultLlmQuota,
+  recordDefaultLlmUsage,
+} = require('../auth/tier-usage-quota.cjs');
+const {
   callMcpTool: defaultCallMcpTool,
   checkMcpHealth: defaultCheckMcpHealth,
   getMcpConfig: defaultGetMcpConfig,
@@ -2543,6 +2548,7 @@ function createProtectedChatProxyRouter({
 
   function hydrateAsyncImageJobsFromStore() {
     const persistedJobs = loadAsyncImageJobsFromStore(asyncImageJobStorePath);
+    let repairedInterruptedJob = false;
     for (const persistedJob of persistedJobs) {
       const currentJob = asyncImageJobs.get(persistedJob.id);
       const currentUpdatedAt = Number(currentJob?.updatedAt || 0);
@@ -2553,11 +2559,23 @@ function createProtectedChatProxyRouter({
       if (currentJob && currentUpdatedAt > persistedUpdatedAt) {
         continue;
       }
-      asyncImageJobs.set(persistedJob.id, {
+      const restoredJob = {
         ...currentJob,
         ...persistedJob,
-      });
-      const isActiveJob = persistedJob.status === 'pending' || persistedJob.status === 'running';
+      };
+      const wasActiveBeforeRestart = (persistedJob.status === 'pending' || persistedJob.status === 'running')
+        && !currentJob?.promise;
+      if (wasActiveBeforeRestart) {
+        const now = Date.now();
+        restoredJob.status = 'error';
+        restoredJob.error = 'async_image_job_interrupted';
+        restoredJob.message = 'Le backend a redémarré avant la fin du rendu; relance la demande si nécessaire.';
+        restoredJob.updatedAt = now;
+        restoredJob.completedAt = now;
+        repairedInterruptedJob = true;
+      }
+      asyncImageJobs.set(persistedJob.id, restoredJob);
+      const isActiveJob = restoredJob.status === 'pending' || restoredJob.status === 'running';
       if (isActiveJob && Array.isArray(persistedJob.requestKeys)) {
         for (const key of persistedJob.requestKeys) {
           if (!key) continue;
@@ -2571,6 +2589,7 @@ function createProtectedChatProxyRouter({
         }
       }
     }
+    if (repairedInterruptedJob) persistAsyncImageJobsSnapshot();
   }
 
   hydrateAsyncImageJobsFromStore();
@@ -3119,6 +3138,47 @@ function createProtectedChatProxyRouter({
 
     const intentHandled = await tryHandleIntentRequest(req, res);
     if (intentHandled !== false) return intentHandled;
+
+    // Quota anti-deficit sur le LLM PAR DEFAUT (celui que Funesterie paie). Place ici
+    // volontairement: en amont, le greeting rapide et le routage d'intention repondent
+    // SANS toucher au LLM, et ne doivent donc rien decompter. Un utilisateur qui apporte
+    // sa propre cle paie son usage lui-meme et sort du quota. Voir tier-usage-quota.cjs
+    // pour le modele (on vend une technique, pas une machine a sons).
+    // Interrupteur d'arret: A11_DEFAULT_LLM_QUOTA=off desactive le blocage sans
+    // redeploiement (le compteur et les logs continuent). A utiliser si la resolution
+    // de tier degrade des comptes payants en 'basic' et bloque de vrais utilisateurs.
+    const quotaMode = String(process.env.A11_DEFAULT_LLM_QUOTA || 'on').trim().toLowerCase();
+    const quotaEnforced = quotaMode !== 'off' && quotaMode !== 'false' && quotaMode !== '0';
+    if (!familyAccess) {
+      const quotaProfile = resolveProxyAccountProfile(req);
+      const quotaTier = String(quotaProfile?.tier || 'basic').trim().toLowerCase() || 'basic';
+      const bringsOwnLlmKey = Boolean(
+        String(req.body?.apiKey || '').trim()
+        && quotaProfile?.permissions?.customAiProviderKeys,
+      );
+      // Sans identite exploitable, le compteur retombe sur une cle 'anon' PARTAGEE :
+      // un seul visiteur epuiserait alors le quota de tous les autres. Ces routes
+      // sont deja derriere verifyJWT, donc l'absence d'identite signale un probleme
+      // ailleurs, pas un abus. On echoue ouvert et on le journalise.
+      const quotaIdentity = req.user?.id || req.user?.email || '';
+      if (!bringsOwnLlmKey && !quotaIdentity) {
+        console.warn('[A11][quota] identite absente sur une route authentifiee: quota non applique');
+      }
+      if (!bringsOwnLlmKey && quotaIdentity) {
+        const quota = checkDefaultLlmQuota(req.user, quotaTier);
+        if (!quota.ok) {
+          console.warn(`[A11][quota] default_llm depasse user=${req.user?.id || 'anon'} tier=${quotaTier} used=${quota.used}/${quota.limit} enforce=${quotaEnforced}`);
+          if (quotaEnforced) {
+            return res.status(429).json(buildQuotaExceededResponse(quota));
+          }
+        }
+        // Ne decompter qu'une reponse reellement servie: une panne amont (502) ne doit
+        // pas consommer le quota de l'utilisateur.
+        res.once('finish', () => {
+          if (res.statusCode < 400) recordDefaultLlmUsage(req.user, quotaTier);
+        });
+      }
+    }
 
     applyProviderDefaults(req);
     injectProxySystemPrompt(req);

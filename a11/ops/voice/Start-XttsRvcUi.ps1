@@ -162,17 +162,23 @@ $personaManifest = Join-Path $InstallDir "rvcs\funesterie-personas.json"
 if (-not (Test-Path -LiteralPath $personaManifest)) {
   @'
 {
-  "terminator": {
+  "a11-official-stern-french": {
     "persona": "a11",
-    "voice": "a11-terminator.wav",
-    "rvc": "a11-terminator.pth",
-    "index": "a11-terminator.index"
+    "voice": "a11-official-stern-french.wav",
+    "rvc": "a11-official-stern-french.pth",
+    "index": "a11-official-stern-french.index"
   },
-  "donna": {
+  "a11-voix-de-lait": {
+    "persona": "a11",
+    "voice": "a11-voix-de-lait.wav",
+    "rvc": "",
+    "index": ""
+  },
+  "kaen44-official-french-narrator": {
     "persona": "kaen44",
-    "voice": "kaen44-donna.wav",
-    "rvc": "kaen44-donna.pth",
-    "index": "kaen44-donna.index"
+    "voice": "kaen44-official-french-narrator.wav",
+    "rvc": "kaen44-official-french-narrator.pth",
+    "index": "kaen44-official-french-narrator.index"
   },
   "vivy": {
     "persona": "vivy",
@@ -192,6 +198,37 @@ if (-not (Test-Path -LiteralPath $personaManifest)) {
 
 try {
   $manifestJson = Get-Content -LiteralPath $personaManifest -Raw | ConvertFrom-Json -AsHashtable
+  $legacyStyleKeys = @("termi" + "nator", "don" + "na")
+  foreach ($legacyStyleKey in $legacyStyleKeys) {
+    if ($manifestJson.ContainsKey($legacyStyleKey)) {
+      $manifestJson.Remove($legacyStyleKey)
+    }
+  }
+  $officialEntries = @{
+    "a11-official-stern-french" = @{
+      persona = "a11"
+      voice = "a11-official-stern-french.wav"
+      rvc = "a11-official-stern-french.pth"
+      index = "a11-official-stern-french.index"
+    }
+    "a11-voix-de-lait" = @{
+      persona = "a11"
+      voice = "a11-voix-de-lait.wav"
+      rvc = ""
+      index = ""
+    }
+    "kaen44-official-french-narrator" = @{
+      persona = "kaen44"
+      voice = "kaen44-official-french-narrator.wav"
+      rvc = "kaen44-official-french-narrator.pth"
+      index = "kaen44-official-french-narrator.index"
+    }
+  }
+  foreach ($entryName in $officialEntries.Keys) {
+    if (-not $manifestJson.ContainsKey($entryName)) {
+      $manifestJson[$entryName] = $officialEntries[$entryName]
+    }
+  }
   if (-not $manifestJson.ContainsKey("djeff-rap")) {
     $manifestJson["djeff-rap"] = @{
       persona = "djeff"
@@ -199,9 +236,9 @@ try {
       rvc = "djeff-rap.pth"
       index = "djeff-rap.index"
     }
-    $manifestJson | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $personaManifest -Encoding ASCII
-    Write-Host "Patched persona manifest: djeff-rap."
   }
+  $manifestJson | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $personaManifest -Encoding ASCII
+  Write-Host "Patched persona manifest: official Funesterie voices."
 } catch {
   Write-Host "Persona manifest could not be patched automatically: $($_.Exception.Message)" -ForegroundColor Yellow
 }
@@ -252,14 +289,13 @@ function Join-ExistingRuntime {
   return $null
 }
 Copy-VoiceIfPresent -Candidates @(
-  (Join-ExistingRuntime "voice-library\a11-terminator.wav"),
-  (Join-ExistingRuntime "sfx\terminator.wav")
-) -TargetName "a11-terminator.wav"
+  (Join-ExistingRuntime "voice-library\a11-official-stern-french.wav"),
+  (Join-ExistingRuntime "voice-library\A11 ref.wav")
+) -TargetName "a11-official-stern-french.wav"
 Copy-VoiceIfPresent -Candidates @(
-  (Join-ExistingRuntime "voice-library\kaen44-donna.wav"),
-  (Join-ExistingRuntime "sfx\donna.wav"),
-  (Join-ExistingRuntime "sfx\kaen44-donna.wav")
-) -TargetName "kaen44-donna.wav"
+  (Join-ExistingRuntime "voice-library\kaen44-official-french-narrator.wav"),
+  (Join-ExistingRuntime "voice-library\K44 Ref.wav")
+) -TargetName "kaen44-official-french-narrator.wav"
 Copy-VoiceIfPresent -Candidates @(
   (Join-ExistingRuntime "voice-library\vivy.wav"),
   (Join-ExistingRuntime "sfx\vivy.wav")
@@ -280,8 +316,8 @@ foreach ($runtimeRoot in $runtimeRoots) {
 
 Write-Host ""
 Write-Host "RVC models expected in:" -ForegroundColor Green
-Write-Host "  $(Join-Path $InstallDir "rvcs\a11-terminator.pth")"
-Write-Host "  $(Join-Path $InstallDir "rvcs\kaen44-donna.pth")"
+Write-Host "  $(Join-Path $InstallDir "rvcs\a11-official-stern-french.pth")"
+Write-Host "  $(Join-Path $InstallDir "rvcs\kaen44-official-french-narrator.pth")"
 Write-Host "  $(Join-Path $InstallDir "rvcs\vivy.pth")"
 Write-Host "  $(Join-Path $InstallDir "rvcs\djeff-rap.pth")"
 Write-Host "Optional matching .index files can be placed next to them."

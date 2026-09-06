@@ -39,8 +39,8 @@ const TIER_ORDER = Object.freeze([
 
 const TIER_PRICING = Object.freeze({
   [TIERS.BASIC]: Object.freeze({ monthlyEur: 0, publicLabel: 'Basic' }),
-  [TIERS.PREMIUM]: Object.freeze({ monthlyEur: 8.99, publicLabel: 'Premium' }),
-  [TIERS.FOUNDER]: Object.freeze({ monthlyEur: 29.99, priceCentsEur: 2999, publicLabel: 'Fondateur' }),
+  [TIERS.PREMIUM]: Object.freeze({ monthlyEur: 8.99, billingPeriod: 'quarterly', intervalLabel: 'trimestre', publicLabel: 'Premium' }),
+  [TIERS.FOUNDER]: Object.freeze({ monthlyEur: 29.99, priceCentsEur: 2999, billingPeriod: 'quarterly', intervalLabel: 'trimestre', publicLabel: 'Fondateur' }),
   [TIERS.ADMIN_FAMILY]: Object.freeze({ monthlyEur: null, publicLabel: 'Admin famille' }),
 });
 
@@ -55,6 +55,7 @@ const TIER_FEATURES = Object.freeze({
     'statut cockpit',
     'RomStation en lecture',
     'acces Discord communaute',
+    '1 slot voix Suno personnelle privee',
   ]),
   [TIERS.FOUNDER]: Object.freeze([
     'MCP prive dans la session',
@@ -62,12 +63,14 @@ const TIER_FEATURES = Object.freeze({
     'connecteurs GitHub/YouTube/Discord',
     'IA custom utilisateur: avatar, image, description et prompt',
     'providers IA personnels: OpenAI, Grok, Claude ou compatible',
+    '1 slot voix Suno personnelle privee',
     'parametres avances MCP/Neo4j/Docker avec garde-fous',
     'installation locale A11 guidee',
   ]),
   [TIERS.ADMIN_FAMILY]: Object.freeze([
     'outils famille/admin',
     'operations infra',
+    '1 slot voix Suno personnelle privee',
     'support cross-compte reserve',
   ]),
 });
@@ -99,6 +102,7 @@ const DEFAULT_PERMISSION_MATRIX = Object.freeze({
     customAiProviderKeys: false,
     customAiAvatar: false,
     customAiPrompt: false,
+    personalSunoVoiceSlot: false,
     customAiMcp: false,
     customAiNeo4j: false,
     customAiDocker: false,
@@ -129,6 +133,7 @@ const DEFAULT_PERMISSION_MATRIX = Object.freeze({
     customAiProviderKeys: false,
     customAiAvatar: false,
     customAiPrompt: false,
+    personalSunoVoiceSlot: true,
     customAiMcp: false,
     customAiNeo4j: false,
     customAiDocker: false,
@@ -159,6 +164,7 @@ const DEFAULT_PERMISSION_MATRIX = Object.freeze({
     customAiProviderKeys: true,
     customAiAvatar: true,
     customAiPrompt: true,
+    personalSunoVoiceSlot: true,
     customAiMcp: true,
     customAiNeo4j: true,
     customAiDocker: true,
@@ -189,6 +195,7 @@ const DEFAULT_PERMISSION_MATRIX = Object.freeze({
     customAiProviderKeys: true,
     customAiAvatar: true,
     customAiPrompt: true,
+    personalSunoVoiceSlot: true,
     customAiMcp: true,
     customAiNeo4j: true,
     customAiDocker: true,
@@ -277,6 +284,32 @@ function isSubscriptionActive(user = {}, now = new Date()) {
   return !isExpired(user?.subscription_end_date || user?.subscriptionEndDate, now);
 }
 
+const SUBSCRIPTION_NUDGE = Object.freeze({
+  message: "Pense à t'abonner pour participer à l'évolution de la Funesterie.",
+  detail: "Les comptes gratuits partagent les ressources communes. Un abonnement soutient le développement et débloque les providers IA personnels.",
+  options: Object.freeze([
+    Object.freeze({ tier: TIERS.PREMIUM, label: TIER_LABELS[TIERS.PREMIUM], monthlyEur: TIER_PRICING[TIERS.PREMIUM].monthlyEur }),
+    Object.freeze({ tier: TIERS.FOUNDER, label: TIER_LABELS[TIERS.FOUNDER], monthlyEur: TIER_PRICING[TIERS.FOUNDER].monthlyEur }),
+  ]),
+});
+
+/**
+ * Occasional "support Funesterie by subscribing" nudge, shown only to free (BASIC)
+ * accounts. Paid tiers never see it. The caller surfaces it sparingly — typically
+ * during high load — and respects the cooldown so it never becomes nagging.
+ * @returns {object|null} nudge payload for BASIC, otherwise null.
+ */
+function buildSubscriptionNudge(tier) {
+  if (normalizeTier(tier) !== TIERS.BASIC) return null;
+  return {
+    show: true,
+    reason: 'free_tier_support',
+    showOnOverloadOnly: true,
+    cooldownHours: 12,
+    ...SUBSCRIPTION_NUDGE,
+  };
+}
+
 function buildMcpPermissionProfile(tier) {
   const normalizedTier = normalizeTier(tier);
   return {
@@ -286,6 +319,9 @@ function buildMcpPermissionProfile(tier) {
     pricing: { ...TIER_PRICING[normalizedTier] },
     features: [...TIER_FEATURES[normalizedTier]],
     permissions: { ...DEFAULT_PERMISSION_MATRIX[normalizedTier] },
+    // Free accounts cannot register personal provider keys/tokens (customAiProviderKeys:false);
+    // instead they get a gentle, throttled invitation to subscribe.
+    nudge: buildSubscriptionNudge(normalizedTier),
   };
 }
 
@@ -449,8 +485,10 @@ module.exports = {
   TIER_PRICING,
   DEFAULT_PERMISSION_MATRIX,
   DEFAULT_MCP_ADMIN_FAMILY_EMAILS,
+  SUBSCRIPTION_NUDGE,
   buildMcpPermissionDenied,
   buildMcpPermissionProfile,
+  buildSubscriptionNudge,
   canUseMcpPermission,
   minimumTierForPermission,
   normalizeTier,

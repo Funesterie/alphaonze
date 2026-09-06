@@ -101,6 +101,67 @@ function validatePlanSkills(plan) {
   return { valid: errors.length === 0, errors };
 }
 
+function parseMcpNeo4jRows(result) {
+  const content = result?.result?.content || result?.response?.result?.content || [];
+  for (const item of content) {
+    if (item?.type !== 'text' || typeof item.text !== 'string') continue;
+    const jsonStart = item.text.indexOf('{');
+    if (jsonStart < 0) continue;
+    try {
+      const payload = JSON.parse(item.text.slice(jsonStart));
+      if (payload?.error) throw new Error(String(payload.error));
+      if (Array.isArray(payload?.rows)) return payload.rows;
+    } catch (error) {
+      if (error instanceof SyntaxError) continue;
+      throw error;
+    }
+  }
+  throw new Error('MCP neo4j_read_query returned no parseable rows.');
+}
+
+async function findNeo4jNodesViaMcp(query, limit = 5, options = {}) {
+  const callMcpTool = options.callMcpTool
+    || require('./src/mcp-client.cjs').callMcpTool;
+  const safeLimit = Math.max(1, Math.min(10, Math.floor(Number(limit) || 5)));
+  const safeQuery = String(query || '').trim().slice(0, 100);
+  const terms = (safeQuery.toLowerCase().match(/[\p{L}\p{N}_-]+/gu) || [])
+    .filter((term) => term.length >= 3)
+    .slice(0, 8);
+  const result = await callMcpTool('neo4j_read_query', {
+    query: `
+      MATCH (n)
+      WHERE size($terms) = 0 OR any(
+        term IN $terms WHERE any(
+          value IN [n.id, n.label, n.name, n.title, n.summary, n.text, n.why, n.kind, n.category]
+          WHERE toLower(toString(coalesce(value, ''))) CONTAINS term
+        )
+      )
+      RETURN labels(n) AS labels, {
+        id: toString(n.id),
+        label: coalesce(n.label, n.name, n.title),
+        kind: n.kind,
+        summary: substring(toString(coalesce(n.summary, n.text, n.why, '')), 0, 600),
+        source: toString(n.source),
+        updatedAt: toString(coalesce(n.updatedAt, n.createdAt, n.indexedAt, n.lastSeenAt))
+      } AS node
+      ORDER BY coalesce(n.updatedAt, n.createdAt, n.indexedAt, n.lastSeenAt) DESC
+    `,
+    params: {
+      terms,
+    },
+    limit: safeLimit,
+  });
+  return parseMcpNeo4jRows(result)
+    .map((row) => {
+      if (!row?.node || typeof row.node !== 'object' || Array.isArray(row.node)) return null;
+      return Array.isArray(row.labels)
+        ? { ...row.node, _labels: row.labels }
+        : row.node;
+    })
+    .filter((node) => node && typeof node === 'object' && !Array.isArray(node))
+    .slice(0, safeLimit);
+}
+
 // ---------------------------------------------------------------------------
 // buildWorldContext
 // ---------------------------------------------------------------------------
@@ -119,7 +180,7 @@ function validatePlanSkills(plan) {
  *   timestamp: string
  * }>}
  */
-async function buildWorldContext(task) {
+async function buildWorldContext(task, options = {}) {
   // 1. workspaceRoot
   const workspaceRoot = process.cwd();
 
@@ -127,7 +188,6 @@ async function buildWorldContext(task) {
   const activeServices = [];
   if (process.env.CERBERE_PLANNER_URL) activeServices.push('cerbere');
   if (process.env.TTS_BASE_URL) activeServices.push('tts');
-  if (process.env.NEO4J_URI) activeServices.push('neo4j');
 
   // 3. recentMemory — 5 dernières entrées épisodiques
   let recentMemory = [];
@@ -147,13 +207,20 @@ async function buildWorldContext(task) {
   // 4. neo4jNodes — 5 derniers nœuds Neo4j pertinents
   let neo4jNodes = [];
   try {
-    const { isNeo4jAvailable, createNeo4jKnowledgeGraph } = require('./lib/neo4j-adapter.cjs');
+    const adapter = require('./lib/neo4j-adapter.cjs');
+    const isNeo4jAvailable = options.isNeo4jAvailable || adapter.isNeo4jAvailable;
+    const createNeo4jKnowledgeGraph = options.createNeo4jKnowledgeGraph || adapter.createNeo4jKnowledgeGraph;
+    const goal = (task && task.goal) ? task.goal : '';
     if (isNeo4jAvailable()) {
-      const goal = (task && task.goal) ? task.goal : '';
       const kg = createNeo4jKnowledgeGraph('a11');
       const nodes = await kg.findNodes(goal.slice(0, 100), 5);
       neo4jNodes = nodes || [];
+    } else {
+      neo4jNodes = await findNeo4jNodesViaMcp(goal, 5, {
+        callMcpTool: options.callMcpTool,
+      });
     }
+    activeServices.push('neo4j');
   } catch (_) {
     neo4jNodes = [];
   }
@@ -582,4 +649,10 @@ Donne-moi un plan de démonstration avec au minimum 5 catégories de tools diff�
 // Exports
 // ---------------------------------------------------------------------------
 
-module.exports = { getPlanFromLlm, buildWorldContext, buildShowcasePlan };
+module.exports = {
+  buildShowcasePlan,
+  buildWorldContext,
+  findNeo4jNodesViaMcp,
+  getPlanFromLlm,
+  parseMcpNeo4jRows,
+};

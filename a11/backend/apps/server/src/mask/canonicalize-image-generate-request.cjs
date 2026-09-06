@@ -8,7 +8,7 @@ const {
   FUNESTERIE_SOURCE_PRINCIPLE_CONTEXT_EN,
 } = require('../chat/funesterie-source-principle.cjs');
 
-const CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT = `Role: A11 image prompt canonicalizer.
+const CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT = `Role: A11 image prompt canonicalizer executing the Funesterie handoff: Djeff Cypher is primary prompt engineer and Vivy is art director. Produce one canonical provider-ready request, never a generic list of prompt alternatives or external tools.
 Task: convert the received user request into a polished English image-generation prompt and strict structured JSON.
 
 You receive the user's request exactly as sent. It may be French, another language, mixed-language, voice-transcribed, slang, shorthand, telegraphic, or written with spelling mistakes, missing accents, and rough punctuation.

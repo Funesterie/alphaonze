@@ -296,9 +296,29 @@ function resolveSdScriptPath() {
   return explicit || normalizeCandidate(VENDORED_SD_SCRIPT) || VENDORED_SD_SCRIPT;
 }
 
+function hasUsableSdVenvBase(pythonBin = '') {
+  const candidate = normalizeCandidate(pythonBin);
+  if (!candidate || !fs.existsSync(candidate)) return false;
+  const venvRoot = path.dirname(path.dirname(candidate));
+  const configPath = path.join(venvRoot, 'pyvenv.cfg');
+  if (!fs.existsSync(configPath)) return true;
+  try {
+    const config = fs.readFileSync(configPath, 'utf8');
+    const executableMatch = config.match(/^\s*executable\s*=\s*(.+?)\s*$/im);
+    const homeMatch = config.match(/^\s*home\s*=\s*(.+?)\s*$/im);
+    const base = normalizeCandidate(executableMatch?.[1] || homeMatch?.[1] || '');
+    if (!base) return true;
+    if (isForeignAbsolutePath(base)) return false;
+    if (path.isAbsolute(base) || path.win32.isAbsolute(base)) return fs.existsSync(base);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 function resolveSdPythonBin(scriptPath = '') {
   const explicit = normalizeCandidate(process.env.SD_PYTHON_PATH || '');
-  if (explicit && fs.existsSync(explicit)) {
+  if (explicit && hasUsableSdVenvBase(explicit)) {
     return explicit;
   }
 
@@ -320,12 +340,12 @@ function resolveSdPythonBin(scriptPath = '') {
   ]);
 
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
+    if (hasUsableSdVenvBase(candidate)) {
       return candidate;
     }
   }
 
-  return explicit || (process.platform === 'win32' ? 'python' : 'python3');
+  return process.platform === 'win32' ? 'python' : 'python3';
 }
 
 function sanitizeProxyHeaders(headers = {}) {

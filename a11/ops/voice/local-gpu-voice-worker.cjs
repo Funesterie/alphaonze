@@ -115,9 +115,9 @@ function normalizePersona(value) {
 
 function defaultVoiceStyle(persona) {
   const normalized = normalizePersona(persona);
-  if (normalized === 'kaen44') return 'donna';
+  if (normalized === 'kaen44') return 'kaen44-official-french-narrator';
   if (normalized === 'vivy') return 'vivy';
-  return 'terminator';
+  return 'a11-official-stern-french';
 }
 
 async function postJson(url, token, payload, timeoutMs = 30000) {
