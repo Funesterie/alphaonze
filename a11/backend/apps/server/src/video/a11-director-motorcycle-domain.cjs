@@ -84,6 +84,11 @@ function resolveMotorcycleDirectorDomain(prompt = '') {
   const lookup = normalizeLookup(raw);
   if (!lookup) return createEmptyResult();
 
+  // Motos du recit NOSSEN, en plus du contexte 50cc generique :
+  // la Gilera GSM 2001 (moteur RK66, celui des KTM) et la Cagiva WMX 125 enduro.
+  const isCagiva = hasAny(lookup, [/\bcagiva\b/, /\bwmx\b/]);
+  const isGilera = hasAny(lookup, [/\bgilera\b/, /\bgsm\b/, /\brk66\b/]);
+
   const has50ccContext = hasAny(lookup, [
     /\b50\s*cc\b/,
     /\bam6\b/,
@@ -97,7 +102,7 @@ function resolveMotorcycleDirectorDomain(prompt = '') {
     /\boko\b/,
     /\bmetrakit\b/,
     /\bpowerjet\b/,
-  ]);
+  ]) || isCagiva || isGilera;
   if (!has50ccContext) return createEmptyResult();
 
   const extractedTerms = [];
@@ -107,14 +112,66 @@ function resolveMotorcycleDirectorDomain(prompt = '') {
   const styleReferences = [];
   const plannerFacts = [];
 
-  extractedTerms.push(buildTerm('50cc mecanoboite supermoto', 'vehicle_identity', ['50cc context']));
-  identityReferences.push(buildReference(
-    'vehicle_identity',
-    'adult-size European 50cc supermoto side view',
-    'Beta RR 50 Derbi Rieju 50cc supermoto side view',
-    ['Vehicle identity stays adult-size European 50cc supermoto, slim frame, not big road bike or pocket bike.']
-  ));
-  plannerFacts.push('Vehicle identity: adult-size European 50cc mecanoboite supermoto, slim frame, normal rider-scale proportions.');
+  // La Cagiva est une 125 enduro : lui appliquer l'identite supermotard 50cc
+  // produirait la mauvaise moto (roue avant 17", carenage bas).
+  if (isCagiva) {
+    extractedTerms.push(buildTerm('Cagiva WMX 125 enduro', 'vehicle_identity', ['Cagiva/WMX context']));
+    identityReferences.push(buildReference(
+      'vehicle_identity',
+      'mid-1980s Italian 125 enduro side view',
+      'Cagiva WMX 125 1985 enduro side view',
+      ['Vehicle identity is a mid-80s 125 enduro: tall 21-inch front wheel, high front mudguard, knobby tires, long-travel forks. Not a supermoto, not a modern bike.']
+    ));
+    plannerFacts.push('Vehicle identity: mid-1980s Cagiva 125 enduro, tall 21-inch front wheel, high white front mudguard, knobby tires, period white/blue/red bodywork.');
+  } else {
+    extractedTerms.push(buildTerm('50cc mecanoboite supermoto', 'vehicle_identity', ['50cc context']));
+    identityReferences.push(buildReference(
+      'vehicle_identity',
+      'adult-size European 50cc supermoto side view',
+      'Beta RR 50 Derbi Rieju 50cc supermoto side view',
+      ['Vehicle identity stays adult-size European 50cc supermoto, slim frame, not big road bike or pocket bike.']
+    ));
+    plannerFacts.push('Vehicle identity: adult-size European 50cc mecanoboite supermoto, slim frame, normal rider-scale proportions.');
+  }
+
+  if (isGilera) {
+    extractedTerms.push(buildTerm('Gilera GSM 2001', 'vehicle_model', ['Gilera/GSM/RK66 context']));
+    objectCards.push({
+      term: 'Gilera GSM 2001',
+      domain: '50cc mecaboite, recit NOSSEN',
+      resolvedMeaning: 'Gilera GSM, millesime 2001 — premiere moto de Rei 33, offerte a ses 14 ans',
+      confidence: 0.9,
+      visualRole: 'la moto que le personnage decouvre dans le garage',
+      spatialRole: 'moto complete, vue de trois quarts ou de profil, a hauteur d enfant de 14 ans',
+      mustShow: ['slim early-2000s 50cc mecaboite frame', 'spoked wheels', 'upswept 2-stroke expansion chamber'],
+      forbidden: ['modern LED lighting', 'scooter body', 'pocket bike proportions', 'four-stroke engine block'],
+      queriesUsed: ['Gilera GSM 2001 50cc side view'],
+      // Djeff, 2026-08-04 : « la gilera c'est pas am6 c'est moteur rk66 (ceux des ktm) ».
+      sourceFacts: ['Gilera GSM 2001 runs an RK66 engine, not an AM6 — ne pas reutiliser les references AM6 pour le bloc moteur.'],
+      clipUse: 'plan de revelation, episode 2',
+    });
+    plannerFacts.push('Gilera GSM 2001 : moteur RK66 (pas AM6). Premiere moto de Rei, decouverte au garage.');
+  }
+
+  if (isCagiva) {
+    extractedTerms.push(buildTerm('Cagiva WMX 125', 'vehicle_model', ['Cagiva/WMX context']));
+    objectCards.push({
+      term: 'Cagiva WMX 125',
+      domain: '125 enduro annees 80, recit NOSSEN',
+      resolvedMeaning: 'La moto de la jeunesse du pere — enduro 125 milieu des annees 80',
+      // Identifie d'apres une photo de famille ; le modele exact n'est pas confirme,
+      // les couleurs de la photo ne correspondent a aucune serie retrouvee.
+      confidence: 0.55,
+      visualRole: 'la moto du recit du pere, et celle sur laquelle la mere est assise derriere lui',
+      spatialRole: 'moto complete de profil, souvent avec deux personnes dessus',
+      mustShow: ['21-inch front wheel', 'high front mudguard', 'knobby tires', 'long-travel forks', 'white bodywork with blue and red accents'],
+      forbidden: ['supermoto wheels', 'low front mudguard', 'modern bodywork', 'road tires'],
+      queriesUsed: ['Cagiva WMX 125 1985 enduro side view'],
+      sourceFacts: ['Modele probable : Cagiva WMX 125, 1985. Identification visuelle a partir d une photo de famille — a confirmer, la livree exacte n a pas ete retrouvee.'],
+      clipUse: 'episode 1, le recit du pere',
+    });
+    plannerFacts.push('Cagiva WMX 125 (~1985) : enduro, roue avant 21 pouces, livree blanc/bleu/rouge. Modele probable, non confirme.');
+  }
 
   if (hasAny(lookup, [/\boko\b/, /\bpowerjet\b/, /\bcarbu\b/, /\bcarburateur\b/, /\bcarburetor\b/])) {
     extractedTerms.push(buildTerm('OKO powerjet', 'engine_intake', ['OKO/powerjet context']));

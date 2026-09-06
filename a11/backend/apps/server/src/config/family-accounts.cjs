@@ -19,6 +19,7 @@ const FAMILY_ADMIN_EMAILS = Object.freeze([
   'funeste38@gmail.com',
   'funesterie38@gmail.com',
   'boostro38@gmail.com',
+  'hlibibou@gmail.com',
 ]);
 
 const FAMILY_VOICE_IDENTITIES = Object.freeze({
@@ -31,6 +32,16 @@ const FAMILY_VOICE_IDENTITIES = Object.freeze({
     referencePath: 'voice-library/Djeff ref.wav',
     referenceStatus: 'ready-local-reference',
     note: 'Voix rap Djeff/Pignon, distincte de la voix officielle A11.',
+  }),
+  marvin: Object.freeze({
+    key: 'marvin',
+    accountEmail: 'marvincellauro@gmail.com',
+    persona: 'marvin',
+    label: 'Marvin',
+    voiceStyle: 'marvin-family-french-lead',
+    referencePath: '',
+    referenceStatus: 'ready-suno-persona',
+    note: 'Voix famille Marvin/frere, rattachee au voiceId Suno serveur quand il est configure.',
   }),
   k44: Object.freeze({
     key: 'k44',

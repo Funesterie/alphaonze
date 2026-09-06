@@ -33,6 +33,17 @@ test('language helpers detect the requested response language', () => {
   assert.match(buildLanguageInstruction('fr'), /accents/);
 });
 
+// Regression du 08/08/2026: un modele local (qwen2.5:7b prive de son prompt systeme)
+// terminait une phrase francaise par quelques ideogrammes. La detection basculait sur
+// 'zh' des le premier caractere Han, le contrat de langue ordonnait alors de repondre
+// en chinois, et la conversation ne revenait plus jamais au francais.
+test('language detection ignores a stray ideogram but still recognizes real CJK', () => {
+  assert.equal(detectTextLanguage('Oui je vais bien, merci de demander. Et toi 今日 ?'), 'fr');
+  assert.equal(detectTextLanguage('Prépare une scène douce avec une voix proche 好.'), 'fr');
+  assert.equal(detectTextLanguage('请用自然中文回答这个问题。'), 'zh');
+  assert.equal(detectTextLanguage('自然な日本語で答えてください。'), 'ja');
+});
+
 test('language helpers normalize account language aliases and request headers', () => {
   assert.equal(normalizeLanguageCode('it-IT'), 'it');
   assert.equal(normalizeLanguageCode('Italiano'), 'it');

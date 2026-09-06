@@ -1,5 +1,7 @@
 'use strict';
 
+const { isHollow, lastLoadBearingTurn, recordTile } = require('./load-bearing-turn.cjs');
+
 const A11_RESPONSE_DRAFT_CONTEXT = `
 [A11/Funesterie response hygiene]
 - Je reponds au dernier message visible, dans la langue naturelle de l'utilisateur.
@@ -281,12 +283,28 @@ function appendOfficialVoiceStaticSampleNote(text = '') {
   return `${output}\n\nNote: ce lien est un sample officiel statique. Pour dire une phrase personnalisée, il faut passer par le module voix interactif, pas modifier cette URL.`;
 }
 
-function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = '', draft = null } = {}) {
+function rewriteA11ResponseFromVirtualDraft({
+  userMessage = '',
+  assistantText = '',
+  draft = null,
+  sessionId = '',
+} = {}) {
   const text = normalizeText(assistantText);
   const responseDraft = draft || buildA11VirtualResponseDraft({ userMessage, assistantText: text });
   if (!responseDraft.mustRewrite) return text;
   const foldedUser = foldText(userMessage);
   const fallback = () => {
+    // Avant toute phrase préfabriquée : si une dalle a porté plus tôt dans cette
+    // session, on reprend de LÀ. Les replis ci-dessous annoncent tous « je reprends
+    // sur ton dernier message » sans rien en contenir — c'est précisément le défaut
+    // signalé. Sans sessionId (appelants historiques), rien ne change.
+    if (sessionId) {
+      const dalle = lastLoadBearingTurn(sessionId);
+      if (dalle && dalle.text) {
+        const reprise = dalle.text.length > 220 ? `${dalle.text.slice(0, 220).trim()}…` : dalle.text;
+        return `Je reprends là où ça tenait : « ${reprise} » Dis-moi où tu veux aller à partir de là.`;
+      }
+    }
     if (/(allo|t es la|tu es la|vous etes la|quelqu un|reponds|réponds)/.test(foldedUser)) {
       return "Oui, je suis là. Je reprends normalement.";
     }
@@ -346,7 +364,12 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
       .replace(/^voici\s+un\s+brouillon\b\.?\s*/i, '')
       .replace(/^here(?:'s| is)\s+a\s+draft\b\.?\s*/i, '')
       .trim();
-    return cleaned || fallback();
+    // Le nettoyage ci-dessus ne retire que l'étiquette de tête. Un brouillon comme
+    // « Analyse interne: intention utilisateur = relance. Contexte fiable: aucun. »
+    // en ressortait amputé de deux mots et restait du raisonnement interne servi à
+    // l'utilisateur. On passe donc par l'épreuve : si ça ne porte pas, on reprend le
+    // chemin plutôt que de livrer le reste du brouillon.
+    return isHollow(cleaned) ? fallback() : cleaned;
   }
 
   if (responseDraft.flags.includes('stale_user_message_echo')) {
@@ -356,10 +379,28 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
   return text;
 }
 
-function postProcessA11AssistantResponse({ text = '', userMessage = '', contextText = '' } = {}) {
+function postProcessA11AssistantResponse({
+  text = '',
+  userMessage = '',
+  contextText = '',
+  sessionId = '',
+} = {}) {
   const draft = buildA11VirtualResponseDraft({ userMessage, assistantText: text, contextText });
-  const rewrittenContent = rewriteA11ResponseFromVirtualDraft({ userMessage, assistantText: text, draft });
+  const rewrittenContent = rewriteA11ResponseFromVirtualDraft({
+    userMessage,
+    assistantText: text,
+    draft,
+    sessionId,
+  });
   const content = repairOfficialVoiceListenLinks(rewrittenContent);
+
+  // On pose la dalle sur le texte D'ORIGINE : c'est lui qui dit si le tour a porté.
+  // Une fuite de consignes ou une phrase creuse laisse un tombstone, et n'ira donc
+  // jamais nourrir un repli futur.
+  if (sessionId) {
+    recordTile(sessionId, { text: normalizeText(text), lastUserMessage: userMessage });
+  }
+
   return {
     content,
     draft,

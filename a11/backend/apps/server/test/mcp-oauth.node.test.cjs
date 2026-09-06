@@ -198,3 +198,163 @@ test('public MCP accepts OAuth bearer JWT and rejects invalid tokens when auth i
     );
   });
 });
+
+test('public MCP a11_chat uses only the server-side NEZ service token', async () => {
+  const calls = [];
+  await withServer(
+    (app) => {
+      app.use(express.json());
+      app.post('/api/chat', (req, res) => {
+        calls.push({ headers: req.headers, body: req.body });
+        res.json({ ok: true, response: 'A11 service reply' });
+      });
+    },
+    async (internalBaseUrl) => {
+      await withEnv({
+        A11_PUBLIC_MCP_AUTH_REQUIRED: 'true',
+        A11_INTERNAL_API_BASE_URL: internalBaseUrl,
+        A11_NEZ_TOKEN: 'server-side-nez-service-secret',
+        OAUTH_CLIENT_ID: 'funesterie-chatgpt-test',
+        OAUTH_JWT_SECRET: 'test-jwt-secret-64-chars-for-funesterie-oauth-contract',
+        OAUTH_ISSUER: 'https://mcp.funesterie.me',
+        OAUTH_AUDIENCE: 'https://mcp.funesterie.me',
+      }, async () => {
+        await withServer(
+          (app) => app.use(createPublicMcpRouter()),
+          async (baseUrl) => {
+            const oauthToken = issueAccessToken({
+              clientId: 'funesterie-chatgpt-test',
+              scope: 'mcp:read mcp:write',
+            });
+            const response = await fetch(`${baseUrl}/mcp`, {
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+                authorization: `Bearer ${oauthToken}`,
+              },
+              body: JSON.stringify({
+                jsonrpc: '2.0',
+                id: 3,
+                method: 'tools/call',
+                params: {
+                  name: 'a11_chat',
+                  arguments: { message: 'Le soleil se leve.' },
+                },
+              }),
+            });
+            const payload = await response.json();
+
+            assert.equal(response.status, 200);
+            assert.equal(payload.id, 3);
+            assert.equal(payload.error, undefined);
+            assert.equal(calls.length, 1);
+            assert.equal(calls[0].headers['x-nez-token'], 'server-side-nez-service-secret');
+            assert.equal(calls[0].headers.authorization, undefined);
+            assert.notEqual(calls[0].headers['x-nez-token'], oauthToken);
+            assert.equal(JSON.stringify(payload).includes('server-side-nez-service-secret'), false);
+          }
+        );
+      });
+    }
+  );
+});
+
+test('public MCP a11_chat fails closed when no server-side NEZ token is configured', async () => {
+  let upstreamCalls = 0;
+  await withServer(
+    (app) => {
+      app.use(express.json());
+      app.post('/api/chat', (_req, res) => {
+        upstreamCalls += 1;
+        res.json({ ok: true });
+      });
+    },
+    async (internalBaseUrl) => {
+      await withEnv({
+        A11_PUBLIC_MCP_AUTH_REQUIRED: 'true',
+        A11_INTERNAL_API_BASE_URL: internalBaseUrl,
+        A11_NEZ_TOKEN: undefined,
+        NEZ_TOKENS: undefined,
+        NEZ_ALLOWED_TOKEN: undefined,
+        OAUTH_CLIENT_ID: 'funesterie-chatgpt-test',
+        OAUTH_JWT_SECRET: 'test-jwt-secret-64-chars-for-funesterie-oauth-contract',
+        OAUTH_ISSUER: 'https://mcp.funesterie.me',
+        OAUTH_AUDIENCE: 'https://mcp.funesterie.me',
+      }, async () => {
+        await withServer(
+          (app) => app.use(createPublicMcpRouter()),
+          async (baseUrl) => {
+            const oauthToken = issueAccessToken({
+              clientId: 'funesterie-chatgpt-test',
+              scope: 'mcp:read mcp:write',
+            });
+            const response = await fetch(`${baseUrl}/mcp`, {
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+                authorization: `Bearer ${oauthToken}`,
+              },
+              body: JSON.stringify({
+                jsonrpc: '2.0',
+                id: 4,
+                method: 'tools/call',
+                params: {
+                  name: 'a11_chat',
+                  arguments: { message: 'test' },
+                },
+              }),
+            });
+            const payload = await response.json();
+
+            assert.equal(response.status, 200);
+            assert.equal(payload.id, 4);
+            assert.equal(payload.error.code, -32603);
+            assert.match(payload.error.message, /service token is not configured/i);
+            assert.equal(upstreamCalls, 0);
+          }
+        );
+      });
+    }
+  );
+});
+
+test('public MCP a11_llm_stats marks an HTTP 200 body with ok false as an MCP error', async () => {
+  await withServer(
+    (app) => {
+      app.get('/api/llm/stats', (_req, res) => {
+        res.json({ ok: false, error: 'cerbere_unavailable' });
+      });
+    },
+    async (internalBaseUrl) => {
+      await withEnv({
+        A11_PUBLIC_MCP_AUTH_REQUIRED: 'false',
+        A11_INTERNAL_API_BASE_URL: internalBaseUrl,
+      }, async () => {
+        await withServer(
+          (app) => app.use(createPublicMcpRouter()),
+          async (baseUrl) => {
+            const response = await fetch(`${baseUrl}/mcp`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                jsonrpc: '2.0',
+                id: 5,
+                method: 'tools/call',
+                params: { name: 'a11_llm_stats', arguments: {} },
+              }),
+            });
+            const payload = await response.json();
+
+            assert.equal(response.status, 200);
+            assert.equal(payload.id, 5);
+            assert.equal(payload.result.isError, true);
+            assert.deepEqual(JSON.parse(payload.result.content[0].text), {
+              ok: false,
+              error: 'cerbere_unavailable',
+            });
+          }
+        );
+      });
+    }
+  );
+});

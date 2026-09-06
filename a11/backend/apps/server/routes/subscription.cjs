@@ -207,6 +207,36 @@ function createSubscriptionRouter({ verifyJWT, db }) {
     }
   });
 
+  // Royalties / soutien: contribution one-time pay-what-you-want, ouverte à tous
+  // (même sans compte). L'email est collecté par Stripe au checkout si absent.
+  router.get('/contributions', (_req, res) => {
+    return res.json({ ok: true, contributions: stripeService.getAvailableContributions() });
+  });
+
+  router.post('/create-contribution', async (req, res) => {
+    try {
+      const contribution = stripeService.normalizeContribution(req.body?.contribution || req.body?.plan || 'royalties');
+      if (!stripeService.isContributionEnabled(contribution)) {
+        return res.status(503).json({ error: 'Contribution non configurée' });
+      }
+      const userId = req.user?.id || '';
+      let userEmail = req.user?.email || '';
+      if (!userEmail && userId && db) {
+        try {
+          const row = await db.query('SELECT email FROM users WHERE id = $1', [userId]);
+          userEmail = row.rows[0]?.email || '';
+        } catch {
+          // best-effort; Stripe still collects the email at checkout
+        }
+      }
+      const session = await stripeService.createContributionSession(userId, userEmail, { contribution });
+      return res.json({ ok: true, sessionId: session.sessionId, url: session.url, contribution: session.contribution });
+    } catch (error) {
+      console.error('[Subscription] Contribution creation error:', error);
+      return res.status(500).json({ error: 'Erreur lors de la création de la contribution' });
+    }
+  });
+
   router.post('/create-portal', verifyJWT, async (req, res) => {
     try {
       const userId = req.user?.id;

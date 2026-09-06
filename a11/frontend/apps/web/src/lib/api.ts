@@ -49,6 +49,7 @@ function normalizeVideoProviderName(value = "") {
   const normalized = String(value || "").trim().toLowerCase().replace(/[\s_]+/g, "-");
   if (["grok", "grok-imagine", "xai", "x-ai"].includes(normalized)) return "xai";
   if (["hf", "hugging-face", "huggingface"].includes(normalized)) return "huggingface";
+  if (["comfy-cloud", "comfycloud", "comfy-org", "comfy-api"].includes(normalized)) return "comfy-cloud";
   if (["run-comfy", "runcomfy", "comfy", "comfyui", "comfy-ui"].includes(normalized)) return "runcomfy";
   return normalized;
 }
@@ -70,12 +71,12 @@ function resolveSessionVideoProvider(tokens: Record<string, string>, requestedPr
   if (options?.hasVisualReference) {
     if (tokens.replicate) return "replicate";
     if (tokens.huggingface || tokens.hf) return "huggingface";
-    if (tokens.runcomfy || tokens.comfy) return "runcomfy";
+    if (tokens.runcomfy || tokens.comfy) return "comfy-cloud";
     return "";
   }
   if (resolveSessionXaiToken(tokens)) return "xai";
   if (tokens.huggingface || tokens.hf) return "huggingface";
-  if (tokens.runcomfy || tokens.comfy) return "runcomfy";
+  // Comfy Cloud direct est image-to-video: sans image, laisser le backend choisir xAI/local/fallback.
   if (tokens.replicate) return "replicate";
   return "";
 }
@@ -260,7 +261,7 @@ export async function generateVideoWithPrompt(
   const mobileAsync = options.mobileAsync ?? isMobileLongTaskClient();
   const maxWaitMs = Math.max(
     60000,
-    Math.min(3600000, Math.round(Number(options.maxWaitMs || (mobileAsync ? 900000 : 600000)) || 600000))
+    Math.min(3600000, Math.round(Number(options.maxWaitMs || 2700000) || 2700000))
   );
   const pollIntervalMs = Math.max(
     1000,
@@ -298,9 +299,10 @@ export async function generateVideoWithPrompt(
   }
 
   return withMobileLongTaskGuard(maxWaitMs, async () => {
-    const res = await fetch(getApiUrl('/api/video/generate'), {
+    const res = await authFetch(getApiUrl('/api/video/generate'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...sessionVideoAuth.headers },
+      credentials: 'include',
       body: JSON.stringify(body)
     });
     let data: any = {};
@@ -323,6 +325,48 @@ export async function generateVideoWithPrompt(
       raw: data
     };
   });
+}
+
+export async function resumeLastVideoGenerationJob(
+  options: { maxWaitMs?: number } = {}
+): Promise<{ ok?: boolean; url?: string; videoUrl?: string; video_url?: string; filename?: string; prompt?: string; raw?: any } | null> {
+  let saved: any = null;
+  try {
+    const raw = globalThis.localStorage?.getItem("a11:video-job:last");
+    saved = raw ? JSON.parse(raw) : null;
+  } catch {
+    globalThis.localStorage?.removeItem("a11:video-job:last");
+    return null;
+  }
+  if (!saved) return null;
+
+  const startedAt = Number(saved.startedAt || saved.createdAt || 0);
+  if (startedAt > 0 && Date.now() - startedAt > 7_200_000) {
+    globalThis.localStorage?.removeItem("a11:video-job:last");
+    return null;
+  }
+
+  const maxWaitMs = Math.max(
+    60_000,
+    Math.min(3_600_000, Math.round(Number(options.maxWaitMs || 2_700_000) || 2_700_000))
+  );
+  try {
+    const data = await withMobileLongTaskGuard(maxWaitMs, () => resolveAsyncMediaJobPayload(saved, {
+      eventPrefix: "video-job",
+      fallbackPollUrl: "/api/video/jobs",
+      maxWaitMs,
+    }));
+    return {
+      ...data,
+      videoUrl: data?.videoUrl || data?.video_url || data?.url || data?.result?.videoUrl || data?.result?.video_url || data?.result?.url || null,
+      raw: data,
+    };
+  } catch (error: any) {
+    if (/(?:not[_ ]found|introuvable|404|expired|expir)/i.test(String(error?.message || error))) {
+      globalThis.localStorage?.removeItem("a11:video-job:last");
+    }
+    throw error;
+  }
 }
 // @ts-nocheck
 
@@ -664,6 +708,14 @@ export function resolveApiAssetUrl(rawValue: string | null | undefined) {
       ) {
         const origin = getApiOrigin() || globalThis.location?.origin || 'http://178.105.86.89';
         return `${origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      }
+      // Rewrite internal container URLs (127.0.0.1 / localhost) to the public API origin
+      if (
+        /^(127\.0\.0\.1|localhost|::1)$/.test(assetHost)
+        && /^\/files\//i.test(parsed.pathname)
+      ) {
+        const origin = getApiOrigin() || globalThis.location?.origin || '';
+        if (origin) return `${origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
       }
     } catch {
       // keep the original absolute URL when it is not parseable by URL.
@@ -1223,6 +1275,9 @@ export type AuthConnectorProviderState = {
   account?: string | null;
   filesAccess?: string;
   missing?: string[];
+  minimumTier?: string;
+  note?: string;
+  connectUrl?: string;
 };
 
 export type AuthConnectorsResponse = {
@@ -1233,6 +1288,9 @@ export type AuthConnectorsResponse = {
   connectors?: {
     google?: AuthConnectorProviderState;
     microsoft?: AuthConnectorProviderState;
+    youtube?: AuthConnectorProviderState;
+    meta?: AuthConnectorProviderState;
+    instagram?: AuthConnectorProviderState;
     accountFiles?: {
       configured?: boolean;
       linked?: boolean;
@@ -1242,6 +1300,8 @@ export type AuthConnectorsResponse = {
   serverConfig?: {
     google?: { configured?: boolean; missing?: string[] };
     microsoft?: { configured?: boolean; missing?: string[] };
+    youtube?: { configured?: boolean; missing?: string[] };
+    meta?: { configured?: boolean; missing?: string[] };
   };
   error?: string;
   message?: string;
@@ -1279,7 +1339,7 @@ function shouldUseCookieOnlyAuthSessionProbe() {
     if (hostname !== 'funesterie.me' && hostname !== 'www.funesterie.me') return false;
     const pathname = String(globalThis.location?.pathname || '/').toLowerCase();
     return pathname === '/'
-      || /^\/(?:home|accueil|agents|architecture|carte|graph|etat|cockpit|compte|contact|privacy|terms|login)(?:\/|$)/.test(pathname);
+      || /^\/(?:home|accueil|agents|architecture|carte|graph|etat|cockpit|compte|contact|privacy|terms|mille-fleurs|login)(?:\/|$)/.test(pathname);
   } catch {
     return false;
   }
@@ -1519,6 +1579,7 @@ export type McpAccountProfile = {
   pricing?: {
     monthlyEur?: number | null;
     publicLabel?: string;
+    intervalLabel?: string;
   };
   features?: string[];
   user?: {
@@ -1542,6 +1603,7 @@ export type McpAccessTierCard = {
   pricing?: {
     monthlyEur?: number | null;
     publicLabel?: string;
+    intervalLabel?: string;
   };
   features?: string[];
 };
@@ -2152,6 +2214,7 @@ export type TtsVoiceReference = {
     rawAudioPublic?: boolean;
     ownerRetainsRights?: boolean;
     consentedAt?: string | null;
+    personaExpiredAt?: string | null;
   } | null;
   mimeType?: string | null;
   originalName?: string | null;
@@ -2337,6 +2400,12 @@ export type VoiceLearningStatus = {
   voiceIdentityLabel?: string;
   voiceStyle?: string;
   minimumTier?: string;
+  sunoVoiceLinked?: boolean;
+  sunoVoiceProvider?: string;
+  sunoVoiceIdHash?: string;
+  sunoVoiceIdMask?: string;
+  sunoVoiceLabel?: string;
+  sunoVoiceUpdatedAt?: string;
   clipCount?: number;
   secondsCollected?: number;
   requiredSeconds?: number;
@@ -2398,15 +2467,192 @@ export async function uploadVoiceLearningSnippet(
   return payload as VoiceLearningStatus;
 }
 
-export type DoubleHarmonicProcessMode = 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7' | 'v71' | 'v8' | 'v8plus' | 'v8pivot' | 'v9turbo';
+export async function linkPersonalSunoVoice(
+  voiceId: string,
+  options: {
+    label?: string;
+    persona?: 'personal' | string;
+  } = {}
+): Promise<VoiceLearningStatus> {
+  const res = await authFetch(getApiUrl('/api/voice-learning/suno-voice'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({
+      persona: options.persona || 'personal',
+      voiceId,
+      label: options.label || 'Voix Suno personnelle',
+      consent: 'suno-voice-slot-v1',
+      source: 'vivy-studio',
+    }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Liaison voix Suno impossible (${res.status})`);
+  }
+  return payload as VoiceLearningStatus;
+}
+
+export async function unlinkPersonalSunoVoice(): Promise<VoiceLearningStatus> {
+  const res = await authFetch(getApiUrl('/api/voice-learning/suno-voice'), {
+    method: 'DELETE',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({
+      persona: 'personal',
+      confirm: 'delete-suno-voice-slot',
+    }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Retrait voix Suno impossible (${res.status})`);
+  }
+  return payload as VoiceLearningStatus;
+}
+
+export type VoiceCatalogEntry = {
+  name: string;
+  label: string;
+  owner?: string;
+  aliases?: string[];
+  idMask?: string;
+  consentBy?: string;
+  consentAt?: string;
+  addedBy?: string;
+  note?: string;
+  active?: boolean;
+};
+
+/** Catalogue de voix Suno nommees: ajout sans deploiement, selectionnables au casting. */
+export async function listVoiceCatalog(): Promise<VoiceCatalogEntry[]> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/voice-catalog'), {
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Catalogue de voix illisible (${res.status})`);
+  }
+  return Array.isArray(payload?.voices) ? (payload.voices as VoiceCatalogEntry[]) : [];
+}
+
+export async function addVoiceToCatalog(input: {
+  name: string;
+  voiceId: string;
+  label?: string;
+  owner?: string;
+  aliases?: string[];
+  note?: string;
+  /** Qui atteste que la personne autorise l'usage de sa voix. Obligatoire. */
+  consentBy?: string;
+}): Promise<VoiceCatalogEntry> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/voice-catalog'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Ajout de voix impossible (${res.status})`);
+  }
+  return payload.voice as VoiceCatalogEntry;
+}
+
+/** Lance la generation d'un echantillon Suno pour une voix du catalogue. */
+export async function requestVoiceCatalogSample(name: string): Promise<{ taskId: string; label: string }> {
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/voice-catalog/${encodeURIComponent(name)}/sample`), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Echantillon impossible (${res.status})`);
+  }
+  return { taskId: String(payload.taskId || ''), label: String(payload.label || name) };
+}
+
+export async function getVoiceCatalogSample(name: string, taskId: string): Promise<{
+  ready: boolean;
+  state: string;
+  audioUrl: string;
+  durationSeconds: number;
+}> {
+  const res = await authFetch(
+    getApiUrl(`/api/vivy/studio/voice-catalog/${encodeURIComponent(name)}/sample/${encodeURIComponent(taskId)}`),
+    { headers: buildAuthHeaders('application/json'), credentials: 'include' }
+  );
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Statut echantillon indisponible (${res.status})`);
+  }
+  return {
+    ready: payload?.ready === true,
+    state: String(payload?.state || 'processing'),
+    audioUrl: String(payload?.audioUrl || ''),
+    durationSeconds: Number(payload?.durationSeconds || 0),
+  };
+}
+
+export async function removeVoiceFromCatalog(name: string): Promise<boolean> {
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/voice-catalog/${encodeURIComponent(name)}`), {
+    method: 'DELETE',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(payload?.message || payload?.error || `Retrait de voix impossible (${res.status})`);
+  }
+  return payload?.removed === true;
+}
+
+/**
+ * Réanime une persona Suno expirée à partir de son échantillon conservé.
+ *
+ * La route existait côté serveur depuis le début, mais sans fonction cliente ni
+ * bouton : personne ne pouvait l'appeler. La persona Djeff est restée morte trois
+ * jours avec `recoveryAttempts: 0` — non pas bloquée, jamais sollicitée.
+ *
+ * La clé Suno vient de la session navigateur, c'est voulu : un agent ne peut pas
+ * dépenser les crédits de l'utilisateur sans lui.
+ */
+export type PersonaRecoveryResult = {
+  ok: boolean;
+  reason?: string;
+  voice?: string;
+  personaId?: string;
+  message?: string;
+};
+
+export async function recoverVoicePersona(name: string): Promise<PersonaRecoveryResult> {
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/voice-catalog/${encodeURIComponent(name)}/recover`), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok && res.status !== 409) {
+    throw new Error(payload?.message || payload?.error || `Réanimation impossible (${res.status})`);
+  }
+  return payload as PersonaRecoveryResult;
+}
+
+export type DoubleHarmonicProcessMode = 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7' | 'v71' | 'v8' | 'v8plus' | 'v8pivot' | 'v9turbo' | 'v9electrolysis' | 'v10boom';
 export type DoubleHarmonicOutputFormat = 'source' | 'flac' | 'mp3' | 'm4a' | 'wav';
 
 export type DoubleHarmonicProcessResult = {
   ok: boolean;
+  jobId?: string;
+  status?: string;
+  statusUrl?: string;
+  pollIntervalMs?: number;
   id?: string;
   method?: string;
   state?: string;
   variant?: string;
+  baseVariant?: string;
   profile?: string;
   intensity?: number | string;
   audioUrl?: string;
@@ -2480,7 +2726,25 @@ export type DoubleHarmonicProcessResult = {
     };
   };
   publicSummary?: string;
+  boom?: {
+    applied?: boolean;
+    config?: {
+      wet?: number;
+      inversionDepth?: number;
+      inversionDelayMs?: number;
+      subCapHz?: number;
+      boomGainDb?: number;
+      bassBandHz?: number;
+    };
+  };
   message?: string;
+  quota?: {
+    scope?: string;
+    period?: string;
+    used?: number;
+    limit?: number;
+    remaining?: number;
+  };
 };
 
 export async function processDoubleHarmonicAudio(
@@ -2497,15 +2761,40 @@ export async function processDoubleHarmonicAudio(
     maxBricks?: number;
     brickInfluence?: number;
     binaryGrid?: string;
+    modulation?: string;
+    electrolysis?: boolean;
+    electrolysisGuitar?: boolean;
+    frequencyHz?: number;
+    frequencyMinHz?: number;
+    frequencyMaxHz?: number;
+    electrolysisHz?: number;
+    electrolysisMinHz?: number;
+    electrolysisMaxHz?: number;
+    amount?: number;
+    irregularity?: number;
+    asymmetry?: number;
+    bidirectional?: boolean;
+    followForce?: number;
+    schemaMix?: number;
   }
 ): Promise<DoubleHarmonicProcessResult> {
+  // V10 Boom est le master D40 canonique. Les versions precedentes restent
+  // accessibles explicitement, mais un appel sans mode ne doit plus retomber sur V1.
+  const requestedMode: DoubleHarmonicProcessMode = options?.mode || 'v10boom';
   const form = new FormData();
   form.append('audio', file);
   form.append('profile', options?.profile || 'blend');
+  // L'option `name` existait dans la signature mais n'etait jamais envoyee: le serveur
+  // retombait donc sur le nom du fichier source, d'ou des sorties du genre
+  // « 178515...-vivy-music-suno-8ec0da7f-funesterie-d40-v9electrolysis.mp3 », que des
+  // numeros. Djeff: « il faut un titre a la chanson, juste des numeros on s'y perd. »
+  if (options?.name) {
+    form.append('name', options.name);
+  }
   if (options?.format) {
     form.append('format', options.format);
   }
-  if ((options?.mode === 'v1' || options?.mode === 'v2' || options?.mode === 'v4' || options?.mode === 'v5' || options?.mode === 'v6' || options?.mode === 'v7' || options?.mode === 'v71' || options?.mode === 'v8' || options?.mode === 'v8plus' || options?.mode === 'v8pivot' || options?.mode === 'v9turbo' || !options?.mode) && Number.isFinite(Number(options?.intensity))) {
+  if ((requestedMode === 'v1' || requestedMode === 'v2' || requestedMode === 'v4' || requestedMode === 'v5' || requestedMode === 'v6' || requestedMode === 'v7' || requestedMode === 'v71' || requestedMode === 'v8' || requestedMode === 'v8plus' || requestedMode === 'v8pivot' || requestedMode === 'v9turbo' || requestedMode === 'v9electrolysis' || requestedMode === 'v10boom') && Number.isFinite(Number(options?.intensity))) {
     form.append('intensity', String(options?.intensity));
   }
   if (Number.isFinite(Number(options?.lowGrainMultiplier))) {
@@ -2526,29 +2815,59 @@ export async function processDoubleHarmonicAudio(
   if (options?.binaryGrid) {
     form.append('binaryGrid', options.binaryGrid);
   }
-  if (options?.name) form.append('name', options.name);
-
-  const endpoint = options?.mode === 'v9turbo'
+  const wantsV9Electrolysis = requestedMode === 'v9electrolysis' || requestedMode === 'v10boom';
+  const modulation = options?.modulation || (wantsV9Electrolysis ? 'electrolysis-guitar' : '');
+  if (modulation) {
+    form.append('modulation', modulation);
+  }
+  if (options?.electrolysis === true || wantsV9Electrolysis) {
+    form.append('electrolysis', '1');
+  }
+  if (options?.electrolysisGuitar === true || wantsV9Electrolysis) {
+    form.append('electrolysisGuitar', '1');
+  }
+  const appendFinite = (key: string, value: unknown) => {
+    if (Number.isFinite(Number(value))) form.append(key, String(value));
+  };
+  appendFinite('frequencyHz', options?.frequencyHz ?? (wantsV9Electrolysis ? 40.44 : undefined));
+  appendFinite('frequencyMinHz', options?.frequencyMinHz ?? (wantsV9Electrolysis ? 40.26 : undefined));
+  appendFinite('frequencyMaxHz', options?.frequencyMaxHz ?? (wantsV9Electrolysis ? 40.62 : undefined));
+  appendFinite('electrolysisHz', options?.electrolysisHz);
+  appendFinite('electrolysisMinHz', options?.electrolysisMinHz);
+  appendFinite('electrolysisMaxHz', options?.electrolysisMaxHz);
+  appendFinite('amount', options?.amount ?? (wantsV9Electrolysis ? 0.042 : undefined));
+  appendFinite('irregularity', options?.irregularity ?? (wantsV9Electrolysis ? 0.36 : undefined));
+  appendFinite('asymmetry', options?.asymmetry ?? (wantsV9Electrolysis ? 0.27 : undefined));
+  if (typeof options?.bidirectional === 'boolean' || wantsV9Electrolysis) {
+    form.append('bidirectional', options?.bidirectional === false ? '0' : '1');
+  }
+  appendFinite('followForce', options?.followForce);
+  appendFinite('schemaMix', options?.schemaMix);
+  const endpoint = requestedMode === 'v10boom'
+    ? '/api/double-harmonic/v10boom/process'
+    : requestedMode === 'v9electrolysis'
+      ? '/api/double-harmonic/v9electrolysis/process'
+      : requestedMode === 'v9turbo'
     ? '/api/double-harmonic/v9turbo/process'
-    : options?.mode === 'v8pivot'
+    : requestedMode === 'v8pivot'
       ? '/api/double-harmonic/v8pivot/process'
-      : options?.mode === 'v8plus'
+      : requestedMode === 'v8plus'
         ? '/api/double-harmonic/v8plus/process'
-        : options?.mode === 'v8'
+        : requestedMode === 'v8'
           ? '/api/double-harmonic/v8/process'
-          : options?.mode === 'v71'
+          : requestedMode === 'v71'
             ? '/api/double-harmonic/v71/process'
-            : options?.mode === 'v7'
+            : requestedMode === 'v7'
               ? '/api/double-harmonic/v7/process'
-              : options?.mode === 'v6'
+              : requestedMode === 'v6'
                 ? '/api/double-harmonic/v6/process'
-                : options?.mode === 'v5'
+                : requestedMode === 'v5'
                   ? '/api/double-harmonic/v5/process'
-                  : options?.mode === 'v4'
+                  : requestedMode === 'v4'
                     ? '/api/double-harmonic/v4/process'
-                    : options?.mode === 'v3'
+                    : requestedMode === 'v3'
                       ? '/api/double-harmonic/v3/process'
-                      : options?.mode === 'v2'
+                      : requestedMode === 'v2'
                         ? '/api/double-harmonic/v2/process'
                         : '/api/double-harmonic/process';
   const res = await authFetch(getApiUrl(endpoint), {
@@ -2558,6 +2877,30 @@ export async function processDoubleHarmonicAudio(
     body: form,
   });
   const payload = await res.json().catch(() => ({}));
+  if (requestedMode === 'v10boom' && res.status === 202 && payload?.jobId && payload?.statusUrl) {
+    const startedAt = Date.now();
+    const maxWaitMs = 30 * 60 * 1000;
+    const pollIntervalMs = Math.max(500, Math.min(10_000, Number(payload.pollIntervalMs || 1500)));
+    while (Date.now() - startedAt < maxWaitMs) {
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+      const pollRes = await authFetch(getApiUrl(String(payload.statusUrl)), {
+        method: 'GET',
+        headers: buildAuthHeaders(),
+        credentials: 'include',
+      });
+      const job = await pollRes.json().catch(() => ({}));
+      if (!pollRes.ok) {
+        throw new Error(job?.message || job?.error || `Statut V11Pan indisponible (${pollRes.status})`);
+      }
+      if (job?.status === 'done' && job?.result?.ok !== false) {
+        return job.result as DoubleHarmonicProcessResult;
+      }
+      if (job?.status === 'failed' || job?.status === 'cancelled') {
+        throw new Error(job?.message || job?.error || `Traitement V11Pan ${job?.status}`);
+      }
+    }
+    throw new Error('Le traitement V11Pan dépasse 30 minutes. Le job continue côté serveur.');
+  }
   if (!res.ok || payload?.ok === false) {
     throw new Error(payload?.message || payload?.error || `Traitement D40 impossible (${res.status})`);
   }
@@ -2612,12 +2955,22 @@ export type VivyStudioMedia = {
   jobId?: string;
   title?: string;
   url?: string;
+  downloadUrl?: string;
+  download_url?: string;
   audioUrl?: string;
   audio_url?: string;
   videoUrl?: string;
   video_url?: string;
+  contentType?: string;
   content_type?: string;
   filename?: string;
+  id?: string;
+  audioId?: string;
+  audio_id?: string;
+  duration?: number;
+  durationSeconds?: number;
+  model?: string;
+  sourceAudioId?: string;
 };
 
 export type VivyDoubleHarmonicNavigation = {
@@ -2692,6 +3045,8 @@ export type VivyStudioProductionInput = {
   text?: string;
   history?: Array<{ role: 'user' | 'assistant' | 'system'; content: string; ts?: string }>;
   conversationId?: string;
+  sessionId?: string;
+  sessionName?: string;
   files?: VivyChatFileAttachment[];
   voiceTool?: string;
   voiceInstruction?: string;
@@ -2700,12 +3055,20 @@ export type VivyStudioProductionInput = {
   voiceReferenceName?: string;
   voiceCatalogName?: string;
   voiceCatalogConsent?: string;
+  voiceLearningPersona?: string;
+  sunoVoiceScope?: 'personal' | string;
+  usePersonalSunoVoice?: boolean;
   songSource?: string;
   songArtists?: string[];
   vocalCast?: string;
   artistCount?: number;
   singerCount?: number;
   songMood?: string;
+  americanMode?: boolean;
+  songTitle?: string;
+  cleanLyrics?: string;
+  lyrics?: string;
+  publicLyrics?: string;
   songText?: string;
   sessionSunoApiKey?: string;
   shareTarget?: string;
@@ -2717,7 +3080,20 @@ export type VivyStudioProductionInput = {
   forceRealMusic?: boolean;
   generateMusic?: boolean;
   makeSong?: boolean;
+  preserveSelectedVoice?: boolean;
+  allowExternalVoiceMix?: boolean;
+  externalVoiceMix?: boolean;
+  forceExternalVoiceMix?: boolean;
+  sunoVoiceId?: string;
+  instrumental?: boolean;
+  forceInstrumental?: boolean;
+  previewInstrumental?: boolean;
+  musicProvider?: 'suno' | 'elevenlabs' | 'elevenlabs-music' | string;
+  musicModel?: string;
   durationSeconds?: number;
+  targetDurationSeconds?: number;
+  longSong?: boolean;
+  workspace?: VivyWorkspaceStateInput;
 };
 
 export type VivyStudioProductionResult = {
@@ -2730,6 +3106,9 @@ export type VivyStudioProductionResult = {
   content?: string;
   publicText?: string;
   publicLyrics?: string;
+  vocalLyrics?: string;
+  vocalSegments?: Array<{ artistIds: string[]; text: string }>;
+  arrangementCues?: string[];
   internalBrief?: string;
   brief?: string;
   productionPlan?: Record<string, unknown>;
@@ -2769,6 +3148,11 @@ export type VivyStudioProductionResult = {
     status?: string;
     reason?: string;
     message?: string;
+    extension?: boolean;
+    sourceAudioId?: string;
+    model?: string;
+    voiceMode?: 'suno_voice' | 'external_mix' | 'suno_generated' | string;
+    selectedVoicePreserved?: boolean;
   };
   musicJob?: {
     provider?: string;
@@ -2776,6 +3160,11 @@ export type VivyStudioProductionResult = {
     jobId?: string;
     state?: string;
     status?: string;
+    extension?: boolean;
+    sourceAudioId?: string;
+    model?: string;
+    voiceMode?: 'suno_voice' | 'external_mix' | 'suno_generated' | string;
+    selectedVoicePreserved?: boolean;
   };
   tokenStored?: boolean;
   aiMode?: 'llm' | 'fallback' | string;
@@ -2804,6 +3193,82 @@ export type VivyStudioProductionResult = {
   message?: string;
 };
 
+export type VivyChatSessionMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  ts: string;
+  media?: VivyStudioMedia | null;
+};
+
+export type VivyChatSessionRecord = {
+  id: string;
+  name: string;
+  conversationId: string;
+  createdAt?: string;
+  updatedAt?: string;
+  messageCount?: number;
+  messages?: VivyChatSessionMessage[];
+};
+
+export type VivyChatSessionsResponse = {
+  ok: boolean;
+  sessions: VivyChatSessionRecord[];
+};
+
+export type VivyWorkspaceStateInput = {
+  sessionId?: string;
+  sessionName?: string;
+  conversationId?: string;
+  notes?: string;
+  notepad?: string;
+  canvas?: string;
+  canevas?: string;
+  nossenCanvas?: string;
+  chromeContext?: string | {
+    title?: string;
+    url?: string;
+    selection?: string;
+    note?: string;
+  };
+  updatedAt?: string;
+};
+
+export type VivyWorkspaceTool = {
+  id: string;
+  label: string;
+  target?: string;
+  minimumTier?: string;
+  ready?: boolean;
+  public?: boolean;
+};
+
+export type VivyWorkspaceState = {
+  version?: number;
+  sessionId: string;
+  sessionName: string;
+  conversationId: string;
+  notes: string;
+  canvas: string;
+  chromeContext: string;
+  updatedAt?: string;
+};
+
+export type VivyWorkspaceResponse = {
+  ok: boolean;
+  workspace: VivyWorkspaceState;
+  access?: {
+    account?: {
+      tier?: string;
+      label?: string;
+      authenticated?: boolean;
+      permissions?: Record<string, boolean>;
+    };
+    tools?: VivyWorkspaceTool[];
+  };
+  memoryStored?: boolean;
+};
+
 export async function runVivyStudioProduction(
   input: VivyStudioProductionInput
 ): Promise<VivyStudioProductionResult> {
@@ -2826,13 +3291,73 @@ export async function runVivyStudioProduction(
   return payload as VivyStudioProductionResult;
 }
 
-export async function getVivyStudioMusicJob(taskId: string, sessionSunoApiKey?: string): Promise<VivyStudioProductionResult> {
+export async function mixVivyStudioPreview(
+  voiceUrl: string,
+  instrumentalUrl: string
+): Promise<VivyStudioMedia> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/mix-preview'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({ voiceUrl, instrumentalUrl }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Mix Vivy indisponible (${res.status})`);
+  }
+  return (payload?.media || payload) as VivyStudioMedia;
+}
+
+export async function applyVivyStudioVivyLayer(
+  audioUrl: string,
+  options: { profile?: string; intensity?: number } = {}
+): Promise<VivyStudioMedia> {
+  const res = await authFetch(getApiUrl("/api/vivy/studio/apply-vivy-layer"), {
+    method: "POST",
+    headers: buildAuthHeaders("application/json"),
+    credentials: "include",
+    body: JSON.stringify({ audioUrl, profile: options.profile, intensity: options.intensity }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || "Couche Vivy indisponible (" + res.status + ")");
+  }
+  return (payload?.media || payload) as VivyStudioMedia;
+}
+
+export async function assembleVivyStudioVoicePreview(
+  segments: Array<{ audioUrls: string[] }>
+): Promise<VivyStudioMedia> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/assemble-voice-preview'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({ segments }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Assemblage vocal Vivy indisponible (${res.status})`);
+  }
+  return (payload?.media || payload) as VivyStudioMedia;
+}
+
+export async function getVivyStudioMusicJob(
+  taskId: string,
+  sessionSunoApiKey?: string,
+  options: { targetDurationSeconds?: number; preferLongForm?: boolean } = {}
+): Promise<VivyStudioProductionResult> {
   const safeTaskId = String(taskId || '').trim();
   if (!safeTaskId) throw new Error('job_vivy_manquant');
   const headers = buildAuthHeaders();
   const safeSessionKey = String(sessionSunoApiKey || '').trim();
   if (safeSessionKey) headers['X-Vivy-Suno-Key'] = safeSessionKey;
-  const res = await authFetch(getApiUrl(`/api/vivy/studio/jobs/${encodeURIComponent(safeTaskId)}`), {
+  const query = new URLSearchParams();
+  if (Number.isFinite(Number(options.targetDurationSeconds)) && Number(options.targetDurationSeconds) > 0) {
+    query.set('targetDurationSeconds', String(Math.round(Number(options.targetDurationSeconds))));
+  }
+  if (options.preferLongForm === true) query.set('preferLongForm', '1');
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/jobs/${encodeURIComponent(safeTaskId)}${suffix}`), {
     method: 'GET',
     headers,
     credentials: 'include',
@@ -2844,6 +3369,129 @@ export async function getVivyStudioMusicJob(taskId: string, sessionSunoApiKey?: 
   return payload as VivyStudioProductionResult;
 }
 
+export async function produceFullClip(input: {
+  audioUrl: string;
+  lyrics?: string;
+  title?: string;
+  artistId?: string;
+  durationSeconds?: number;
+  formats?: string[];
+}): Promise<Record<string, any>> {
+  const res = await authFetch(getApiUrl("/api/vivy/studio/full-clip"), {
+    method: "POST",
+    headers: buildAuthHeaders("application/json"),
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Full Clip indisponible (${res.status})`);
+  }
+  if (!payload?.statusUrl) return payload;
+
+  const startedAt = Date.now();
+  const maxWaitMs = 6 * 60 * 60 * 1000;
+  const pollIntervalMs = Math.max(1_000, Math.min(15_000, Number(payload.pollIntervalMs || 3_000) || 3_000));
+  while (Date.now() - startedAt < maxWaitMs) {
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    const pollRes = await authFetch(getApiUrl(String(payload.statusUrl)), {
+      method: "GET",
+      headers: buildAuthHeaders(),
+      credentials: "include",
+    });
+    const job = await pollRes.json().catch(() => ({}));
+    if (!pollRes.ok) throw new Error(job?.message || job?.error || `Statut Full Clip indisponible (${pollRes.status})`);
+    if (job?.status === "done" && job?.result) return job.result;
+    if (["error", "cancelled"].includes(String(job?.status || ""))) {
+      throw new Error(job?.message || job?.error || "Le rendu Full Clip a échoué.");
+    }
+  }
+  throw new Error("Le rendu Full Clip continue côté serveur; son état reste enregistré dans le compteur.");
+}
+
+export type VivyGenerationStats = {
+  ok: boolean;
+  scope: "global" | "account";
+  hours: number;
+  attempts: number;
+  succeeded: number;
+  failed: number;
+  rejected: number;
+  active: number;
+  byKind: Array<{
+    kind: "lyrics" | "full_clip";
+    attempts: number;
+    succeeded: number;
+    failed: number;
+    rejected: number;
+    active: number;
+    averageDurationMs: number;
+    p95DurationMs: number;
+  }>;
+};
+
+export async function fetchVivyGenerationStats(hours = 24): Promise<VivyGenerationStats> {
+  const safeHours = Math.max(1, Math.min(168, Math.round(Number(hours) || 24)));
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/generation-stats?hours=${safeHours}`), {
+    method: "GET",
+    headers: buildAuthHeaders(),
+    credentials: "include",
+    cache: "no-store",
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Compteur indisponible (${res.status})`);
+  }
+  return payload as VivyGenerationStats;
+}
+
+export async function extendVivyStudioSunoMusic(input: {
+  audioId: string;
+  model?: string;
+  musicModel?: string;
+  sessionSunoApiKey?: string;
+  sourceTaskId?: string;
+  sourceDurationSeconds?: number;
+  continueAtSeconds?: number;
+  targetDurationSeconds?: number;
+  title?: string;
+  style?: string;
+  prompt?: string;
+  instrumental?: boolean;
+  previewInstrumental?: boolean;
+}): Promise<VivyStudioProductionResult> {
+  const headers = buildAuthHeaders('application/json');
+  const safeSessionKey = String(input.sessionSunoApiKey || '').trim();
+  if (safeSessionKey) headers['X-Vivy-Suno-Key'] = safeSessionKey;
+  const res = await authFetch(getApiUrl('/api/vivy/studio/suno/extend'), {
+    method: 'POST',
+    headers,
+    credentials: 'include',
+    body: JSON.stringify({
+      audioId: input.audioId,
+      model: input.model || input.musicModel,
+      musicModel: input.musicModel || input.model,
+      sourceTaskId: input.sourceTaskId,
+      sourceDurationSeconds: input.sourceDurationSeconds,
+      continueAtSeconds: input.continueAtSeconds,
+      targetDurationSeconds: input.targetDurationSeconds,
+      title: input.title,
+      style: input.style,
+      prompt: input.prompt,
+      instrumental: input.instrumental,
+      previewInstrumental: input.previewInstrumental,
+      defaultParamFlag: true,
+      customMode: true,
+      sessionSunoApiKey: safeSessionKey || undefined,
+    }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Extension Suno indisponible (${res.status})`);
+  }
+  return payload as VivyStudioProductionResult;
+}
+
 export async function chatWithVivy(
   input: {
     message?: string;
@@ -2851,7 +3499,23 @@ export async function chatWithVivy(
     mode?: VivyChatMode;
     language?: string;
     conversationId?: string;
+    sessionId?: string;
+    sessionName?: string;
     files?: VivyChatFileAttachment[];
+    songText?: string;
+    songMood?: string;
+    songArtists?: string[];
+    vocalCast?: string;
+    artistCount?: number;
+    singerCount?: number;
+    workspace?: VivyWorkspaceStateInput;
+    useWorkspaceForSong?: boolean;
+    disableSongcraftFallback?: boolean;
+    allowEmergencySongcraftFallback?: boolean;
+    songMaxTokens?: number;
+    songResponseMaxChars?: number;
+    internalSongGeneration?: boolean;
+    americanMode?: boolean;
   }
 ): Promise<VivyStudioProductionResult> {
   const res = await authFetch(getApiUrl('/api/vivy/studio/chat'), {
@@ -2871,6 +3535,205 @@ export async function chatWithVivy(
     throw new Error(payload?.message || payload?.error || `Chat Vivy indisponible (${res.status})`);
   }
   return payload as VivyStudioProductionResult;
+}
+
+export async function chatWithDjeff(
+  input: {
+    message: string;
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    // Budget: dialogue (medium, défaut) reste fluide. archive/debug ouvrent le
+    // coffre profond (full token). freestyle reste medium sauf GO explicite.
+    mode?: 'dialogue' | 'freestyle' | 'archive' | 'debug';
+    // GO explicite du patron pour descendre en full token, quel que soit le mode.
+    fullToken?: boolean;
+    maxTokens?: number;
+  }
+): Promise<{ ok: boolean; persona: string; reply: string; mode?: string; tokenBudget?: 'medium' | 'full'; provider?: string; model?: string }> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/djeff/chat'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Djeff Engine indisponible (${res.status})`);
+  }
+  return payload as { ok: boolean; persona: string; reply: string; mode?: string; tokenBudget?: 'medium' | 'full'; provider?: string; model?: string };
+}
+
+export async function routeVivyNossenComposition(input: {
+  canvas: string;
+  notes?: string;
+  songText?: string;
+  message?: string;
+  sessionId?: string;
+  conversationId?: string;
+  americanMode?: boolean;
+  language?: string;
+}): Promise<{ ok: boolean; artists: string[]; songMood: string; model?: string; provider?: string }> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/nossen-route'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Routage NOSSEN indisponible (${res.status})`);
+  }
+  return {
+    ok: true,
+    artists: Array.isArray(payload?.artists) ? payload.artists : [],
+    songMood: String(payload?.songMood || '').trim(),
+    model: payload?.model,
+    provider: payload?.provider,
+  };
+}
+
+export async function checkVivyNossenStatus(input: {
+  musicProvider: 'suno' | 'mureka' | 'acestep';
+  sessionSunoApiKey?: string;
+}): Promise<{ ok: boolean; provider: string; configured: boolean; authorized: boolean; personalSessionKey?: boolean }> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/nossen-status'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || 'NOSSEN indisponible');
+  }
+  return payload;
+}
+
+export async function fetchVivyChatSessions(): Promise<VivyChatSessionsResponse> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/sessions'), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Sessions Vivy indisponibles (${res.status})`);
+  }
+  return {
+    ok: true,
+    sessions: Array.isArray(payload?.sessions) ? payload.sessions : [],
+  };
+}
+
+export async function fetchVivyChatSession(sessionId: string): Promise<VivyChatSessionRecord> {
+  const safeSessionId = String(sessionId || 'default').trim() || 'default';
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/sessions/${encodeURIComponent(safeSessionId)}`), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Session Vivy indisponible (${res.status})`);
+  }
+  return payload.session as VivyChatSessionRecord;
+}
+
+export async function fetchVivyWorkspace(
+  input: { sessionId?: string; sessionName?: string; conversationId?: string } = {}
+): Promise<VivyWorkspaceResponse> {
+  const params = new URLSearchParams();
+  if (input.sessionId) params.set('sessionId', input.sessionId);
+  if (input.sessionName) params.set('sessionName', input.sessionName);
+  if (input.conversationId) params.set('conversationId', input.conversationId);
+  const query = params.toString();
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/workspace${query ? `?${query}` : ''}`), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Atelier Vivy indisponible (${res.status})`);
+  }
+  return payload as VivyWorkspaceResponse;
+}
+
+export async function saveVivyWorkspace(input: VivyWorkspaceStateInput): Promise<VivyWorkspaceResponse> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/workspace'), {
+    method: 'PUT',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Sauvegarde atelier Vivy impossible (${res.status})`);
+  }
+  return payload as VivyWorkspaceResponse;
+}
+
+export async function appendVivyChatSessionMessageOnServer(
+  input: {
+    sessionId?: string;
+    sessionName?: string;
+    conversationId?: string;
+    role: 'user' | 'assistant';
+    content: string;
+    media?: VivyStudioMedia | null;
+    mode?: VivyChatMode;
+    id?: string;
+  }
+): Promise<{ ok: boolean; message?: VivyChatSessionMessage; session?: VivyChatSessionRecord }> {
+  const safeSessionId = String(input.sessionId || 'default').trim() || 'default';
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/sessions/${encodeURIComponent(safeSessionId)}/messages`), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({
+      ...input,
+      shareToken: undefined,
+      shareTokenPresent: false,
+    }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Synchronisation session Vivy impossible (${res.status})`);
+  }
+  return {
+    ok: true,
+    message: payload.message as VivyChatSessionMessage | undefined,
+    session: payload.session as VivyChatSessionRecord | undefined,
+  };
+}
+
+export async function createVivyChatSessionOnServer(name: string): Promise<VivyChatSessionRecord> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/sessions'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({ name }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Création session Vivy impossible (${res.status})`);
+  }
+  return payload.session as VivyChatSessionRecord;
+}
+
+export async function deleteVivyChatSessionOnServer(sessionId: string): Promise<{ ok: boolean; cleared: number }> {
+  const safeSessionId = String(sessionId || '').trim();
+  if (!safeSessionId) return { ok: false, cleared: 0 };
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/sessions/${encodeURIComponent(safeSessionId)}`), {
+    method: 'DELETE',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Suppression session Vivy impossible (${res.status})`);
+  }
+  return { ok: true, cleared: Number(payload?.cleared ?? 0) };
 }
 
 export type Provider = "local" | "ollama" | "openai" | "groq";
@@ -3467,18 +4330,30 @@ function extractAsyncMediaJobDescriptor(
       Math.floor(Number(asyncJob?.pollIntervalMs || payload?.pollIntervalMs || 5000) || 5000)
     )
   );
-  const maxPollAttempts = Math.max(
+  const reportedMaxPollAttempts = Math.max(
     1,
-    Math.min(
-      720,
-      Math.floor(Number(asyncJob?.maxPollAttempts || payload?.maxPollAttempts || 72) || 72)
-    )
+    Math.floor(Number(asyncJob?.maxPollAttempts || payload?.maxPollAttempts || 72) || 72)
   );
+  const reportedMaxWaitMs = Math.floor(
+    Number(asyncJob?.maxWaitMs || payload?.maxWaitMs || 0) || 0
+  );
+  const requestedMaxWaitMs = Math.floor(Number(options.maxWaitMs || 0) || 0);
   const maxWaitMs = Math.max(
     pollIntervalMs,
     Math.min(
       3600000,
-      Math.floor(Number(asyncJob?.maxWaitMs || payload?.maxWaitMs || options.maxWaitMs || maxPollAttempts * pollIntervalMs) || maxPollAttempts * pollIntervalMs)
+      Math.max(
+        reportedMaxWaitMs,
+        requestedMaxWaitMs,
+        reportedMaxPollAttempts * pollIntervalMs
+      )
+    )
+  );
+  const maxPollAttempts = Math.max(
+    1,
+    Math.min(
+      720,
+      Math.max(reportedMaxPollAttempts, Math.ceil(maxWaitMs / pollIntervalMs))
     )
   );
 
@@ -3584,7 +4459,7 @@ async function resolveAsyncMediaJobPayload(
   }
 
   const timeoutMessage = `Timeout async apres ${Math.round(descriptor.maxWaitMs / 1000)}s`;
-  dispatchBrowserEvent(new CustomEvent(`a11:${eventPrefix}.failed`, {
+  dispatchBrowserEvent(new CustomEvent(`a11:${eventPrefix}.pending`, {
     detail: {
       jobId: descriptor.jobId,
       message: timeoutMessage,
@@ -4604,6 +5479,135 @@ function parseDownloadFilename(contentDisposition: string, fallback: string) {
   return fallback;
 }
 
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const blobUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = blobUrl;
+  anchor.download = filename;
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  globalThis.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+}
+
+function triggerDirectDownload(url: string, filename: string) {
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = 'none';
+  anchor.rel = 'noreferrer';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
+function getDownloadBaseOrigin() {
+  return globalThis.location?.origin || getApiOrigin() || 'https://vivy.funesterie.me';
+}
+
+function parseDownloadUrl(rawValue: string) {
+  try {
+    return new URL(rawValue, getDownloadBaseOrigin());
+  } catch {
+    return null;
+  }
+}
+
+function extractMediaDownloadProxyTarget(rawValue: string) {
+  const parsed = parseDownloadUrl(rawValue);
+  if (!parsed || !/^\/api\/media\/download$/i.test(parsed.pathname)) return '';
+  return String(parsed.searchParams.get('url') || '').trim();
+}
+
+function isKnownPublicVivyGeneratedFilename(filename: string) {
+  return /^(?:vivy-music-|vivy-preview-mix-|vivy-multi-voice-).+\.mp3$/i.test(filename);
+}
+
+export function resolvePublicVivyMediaDownloadUrl(rawValue: string | null | undefined): string | null {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return null;
+
+  const proxyTarget = extractMediaDownloadProxyTarget(raw);
+  if (proxyTarget && proxyTarget !== raw) {
+    return resolvePublicVivyMediaDownloadUrl(proxyTarget);
+  }
+
+  const resolved = resolveApiAssetUrl(raw) || raw;
+  const parsed = parseDownloadUrl(resolved);
+  if (!parsed) return null;
+
+  if (
+    /^\/api\/vivy\/studio\/assets\/[^/]+$/i.test(parsed.pathname)
+    || /^\/api\/vivy\/studio\/assets\/[a-z0-9_-]+\/[^/?#/]+$/i.test(parsed.pathname)
+    || /^\/api\/vivy\/stream\/s\/[^/]+$/i.test(parsed.pathname)
+    || /^\/api\/double-harmonic\/out\/[^/]+$/i.test(parsed.pathname)
+  ) {
+    return resolved;
+  }
+
+  let filename = '';
+  try {
+    filename = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).at(-1) || '');
+  } catch {
+    filename = parsed.pathname.split('/').filter(Boolean).at(-1) || '';
+  }
+  if (!isKnownPublicVivyGeneratedFilename(filename)) return null;
+
+  if (
+    /\/files\/(?:runtime|uploads|a11_runtime)\//i.test(parsed.pathname)
+    || /\/runtime\/files\//i.test(parsed.pathname)
+    || /\/vivy-generated\//i.test(parsed.pathname)
+  ) {
+    return resolveApiAssetUrl(`/api/vivy/studio/assets/${encodeURIComponent(filename)}`);
+  }
+
+  return null;
+}
+
+function isApiMediaDownloadUrl(rawUrl: string) {
+  const parsed = parseDownloadUrl(rawUrl);
+  const apiOrigin = getApiOrigin();
+  if (!parsed || !apiOrigin) return false;
+
+  try {
+    return parsed.origin === new URL(apiOrigin, getDownloadBaseOrigin()).origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Try to download a Vivy public media URL directly in the browser.
+ * Returns `true` on success, `false` when the URL is not a recognised Vivy
+ * public URL (caller may fall back to the authenticated proxy), or
+ * `'direct_miss'` when the URL was recognised but the server returned a
+ * non-OK response (e.g. 404).  In the `'direct_miss'` case the caller must
+ * NOT retry through the proxy — it would hit the same endpoint and produce a
+ * second identical error.
+ */
+async function downloadPublicMediaUrl(rawUrl: string, fallbackName: string): Promise<boolean | 'direct_miss'> {
+  const directUrl = resolvePublicVivyMediaDownloadUrl(rawUrl);
+  if (!directUrl) return false;
+
+  try {
+    const requestInit: RequestInit = {
+      method: 'GET',
+      credentials: isApiMediaDownloadUrl(directUrl) ? 'include' : 'omit',
+    };
+    if (requestInit.credentials === 'include') requestInit.headers = buildAuthHeaders();
+    const res = await fetch(directUrl, requestInit);
+    if (!res.ok) return 'direct_miss';
+    const blob = await res.blob();
+    const filename = parseDownloadFilename(res.headers.get('content-disposition') || '', fallbackName);
+    triggerBlobDownload(blob, filename);
+  } catch {
+    return false;
+  }
+
+  return true;
+}
+
 async function downloadProtectedBlob(pathname: string, fallbackName: string) {
   const res = await authFetch(getApiUrl(pathname), {
     method: 'GET',
@@ -4622,15 +5626,7 @@ async function downloadProtectedBlob(pathname: string, fallbackName: string) {
 
   const blob = await res.blob();
   const filename = parseDownloadFilename(res.headers.get('content-disposition') || '', fallbackName);
-  const blobUrl = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = blobUrl;
-  anchor.download = filename;
-  anchor.style.display = 'none';
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  globalThis.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+  triggerBlobDownload(blob, filename);
 
   return {
     ok: true,
@@ -4726,6 +5722,68 @@ export async function downloadStoredAccountFile(file: A11UserStoredFile) {
 
 export async function downloadAccountInventoryZip() {
   return downloadProtectedBlob('/api/account/inventory.zip', 'funesterie-inventaire-medias.zip');
+}
+
+export type ProviderHealthStatus = {
+  id: 'groq' | 'elevenlabs' | string;
+  label: string;
+  configured: boolean;
+  available: boolean | null;
+  model?: string;
+  modelAvailable?: boolean | null;
+  tier?: string;
+  credits?: {
+    used?: number | null;
+    limit?: number | null;
+    remaining?: number | null;
+    unit?: string;
+  };
+};
+
+export type ProviderHealthResponse = {
+  ok: boolean;
+  probed: boolean;
+  checkedAt: string;
+  providers: ProviderHealthStatus[];
+};
+
+export async function fetchProviderHealth(probe = true): Promise<ProviderHealthResponse> {
+  const res = await authFetch(getApiUrl(`/api/account/provider-status${probe ? '?probe=1' : ''}`), {
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `État fournisseurs indisponible (${res.status})`);
+  }
+  return data as ProviderHealthResponse;
+}
+
+/**
+ * Download a Cloudflare R2 public media file (files.funesterie.me) via the
+ * backend proxy route. The browser cannot fetch these directly because R2
+ * returns no CORS headers. The proxy validates the URL (whitelist) and re-serves
+ * the file with Content-Disposition: attachment.
+ *
+ * Throws on failure so the UI can report the problem without behaving like Open.
+ */
+export async function downloadMediaUrl(rawUrl: string, fallbackFilename?: string): Promise<void> {
+  const url = String(rawUrl || '').trim();
+  if (!url) return;
+  const filename = fallbackFilename || url.split('/').at(-1) || 'media-download';
+  const resourceId = parseA11ResourceDownloadId(url);
+  if (resourceId) {
+    await downloadResourceById(resourceId, filename);
+    return;
+  }
+  const publicResult = await downloadPublicMediaUrl(url, filename);
+  if (publicResult === true) return;
+  // 'direct_miss': the URL was a known Vivy API path but the server returned a
+  // non-OK status.  The authenticated proxy would call the same endpoint again
+  // and produce a second identical error, so stop here.
+  if (publicResult === 'direct_miss') return;
+  const proxyPath = `/api/media/download?url=${encodeURIComponent(url)}`;
+  await downloadProtectedBlob(proxyPath, filename);
 }
 
 type MemoryCounts = {
@@ -5974,6 +7032,27 @@ export async function createCheckoutSession(plan: 'premium' | 'founder' = 'premi
 }
 
 /**
+ * Crée une session de don "Royalties" — contribution libre one-time, ouverte à tous
+ * (montant choisi par le supporter). La route backend collecte l'email au checkout.
+ */
+export async function createFunesterieContribution(
+  contribution: string = 'royalties',
+): Promise<{ ok: boolean; url?: string; error?: string }> {
+  try {
+    const res = await authFetch(getApiUrl('/api/subscription/create-contribution'), {
+      method: 'POST',
+      headers: buildAuthHeaders('application/json'),
+      body: JSON.stringify({ contribution }),
+    });
+    const data = await res.json().catch(() => ({} as { url?: string; error?: string }));
+    if (data?.url) return { ok: true, url: String(data.url) };
+    return { ok: false, error: String(data?.error || `contribution_failed_${res.status}`) };
+  } catch (err) {
+    return { ok: false, error: (err as Error)?.message || 'network_error' };
+  }
+}
+
+/**
  * Crée une session du portail client Stripe pour gérer l'abonnement
  */
 export async function createCustomerPortal(): Promise<CustomerPortalResponse> {
@@ -6058,8 +7137,11 @@ export async function fetchEkkoStatus(): Promise<EkkoStatusResponse> {
   return data as EkkoStatusResponse;
 }
 
-export async function clearVivyMemory(): Promise<{ ok: boolean; cleared: number }> {
-  const res = await authFetch(getApiUrl('/api/vivy/studio/memory'), {
+export async function clearVivyMemory(conversationId?: string): Promise<{ ok: boolean; cleared: number }> {
+  const query = String(conversationId || '').trim()
+    ? `?conversationId=${encodeURIComponent(String(conversationId).trim())}`
+    : '';
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/memory${query}`), {
     method: 'DELETE',
     headers: buildAuthHeaders(),
     credentials: 'include',
@@ -6069,4 +7151,136 @@ export async function clearVivyMemory(): Promise<{ ok: boolean; cleared: number 
     throw new Error(data?.message || data?.error || `Mémoire Vivy non effacée (${res.status})`);
   }
   return { ok: true, cleared: Number(data?.cleared ?? 0) };
+}
+
+// ─── Données du compte : bilan et suppression ────────────────────────────────
+// Djeff : « donne la possibilité de supprimer les fichiers et conversations
+// stockés dans compte, ça peut servir à ceux qui tiennent à leur vie privée et à
+// libérer de la place. » Le bilan précède la suppression : on ne supprime pas à
+// l'aveugle.
+
+export type AccountDataSummary = {
+  ok: boolean;
+  conversations: { disponible: boolean; conversations: number; messages: number };
+  fichiers: { fichiers: number; octets: number; tronque: boolean };
+  octetsTotal?: number;
+};
+
+export async function fetchAccountDataSummary(): Promise<AccountDataSummary> {
+  const res = await authFetch(getApiUrl('/api/account/data/summary'), {
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Bilan du compte indisponible (${res.status})`);
+  }
+  return data as AccountDataSummary;
+}
+
+export async function deleteAccountFiles(): Promise<{ supprimes: number; octetsLiberes: number }> {
+  const res = await authFetch(getApiUrl('/api/account/data/files'), {
+    method: 'DELETE',
+    headers: { ...buildAuthHeaders(), 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ confirm: true }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Fichiers non supprimés (${res.status})`);
+  }
+  return { supprimes: Number(data?.supprimes ?? 0), octetsLiberes: Number(data?.octetsLiberes ?? 0) };
+}
+
+export async function deleteAllAccountConversations(): Promise<void> {
+  const res = await authFetch(getApiUrl('/api/a11/history'), {
+    method: 'DELETE',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Conversations non supprimées (${res.status})`);
+  }
+}
+
+export async function deleteAccountVoiceCorpus(persona = ''): Promise<void> {
+  const res = await authFetch(getApiUrl('/api/voice-learning/corpus'), {
+    method: 'DELETE',
+    headers: { ...buildAuthHeaders(), 'Content-Type': 'application/json' },
+    credentials: 'include',
+    // Le serveur attend ce jeton exact, pas un booleen (voice-learning.cjs:45).
+    body: JSON.stringify({ confirm: 'delete-voice-learning-corpus', persona }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Corpus voix non supprimé (${res.status})`);
+  }
+}
+
+// ─── Chat vocal avec Vivy (fondateur/famille) ────────────────────────────────
+// Djeff : « ya beaucoup de gens qui veulent lui parler [...] mais tu débloque ça
+// que pour les compte fondateur/famille. » Le verrou est côté serveur ; cet appel
+// d'accès sert seulement à ne pas afficher un bouton qui refuserait ensuite.
+
+export type VivyVoiceChatAccess = { allowed: boolean; reason: string; message: string };
+
+export async function fetchVivyVoiceChatAccess(): Promise<VivyVoiceChatAccess> {
+  const res = await authFetch(getApiUrl('/api/vivy/voice-chat/access'), {
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { allowed: false, reason: 'unavailable', message: '' };
+  return {
+    allowed: data?.allowed === true,
+    reason: String(data?.reason || ''),
+    message: String(data?.message || ''),
+  };
+}
+
+export type VivyVoiceChatTurn = { transcript: string; reply: string; message?: string };
+
+export async function sendVivyVoiceChat(
+  file: File,
+  options?: { language?: string; sessionId?: string; conversationId?: string }
+): Promise<VivyVoiceChatTurn> {
+  const form = new FormData();
+  form.append('audio', file);
+  if (options?.language) form.append('language', options.language);
+  if (options?.sessionId) form.append('sessionId', options.sessionId);
+  if (options?.conversationId) form.append('conversationId', options.conversationId);
+
+  const res = await authFetch(getApiUrl('/api/vivy/voice-chat'), {
+    method: 'POST',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+    body: form,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Chat vocal indisponible (${res.status})`);
+  }
+  return {
+    transcript: String(data?.transcript || ''),
+    reply: String(data?.reply || ''),
+    message: String(data?.message || ''),
+  };
+}
+
+/**
+ * Supprime un fichier précis du compte. Djeff : « la photo où j'ai une sale gueule,
+ * une petite croix et hop supprimé. » Le serveur vérifie la propriété : un
+ * identifiant qui n'est pas le tien renvoie 404.
+ */
+export async function deleteStoredAccountFile(id: number): Promise<void> {
+  const res = await authFetch(getApiUrl(`/api/files/${Number(id)}`), {
+    method: 'DELETE',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Fichier non supprimé (${res.status})`);
+  }
 }

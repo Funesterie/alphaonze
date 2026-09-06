@@ -1,0 +1,202 @@
+[
+  {
+    "name": "@nossen/allmight",
+    "version": "2.0.1",
+    "description": "Audit-first duplicate detector and canonicalization helper for large JavaScript and TypeScript repositories."
+  },
+  {
+    "name": "@nossen/bat",
+    "version": "2.0.2",
+    "description": "Adaptive request-control primitives: ears for sensing, wings for routing, fangs for guarded execution."
+  },
+  {
+    "name": "@nossen/bat-system",
+    "version": "2.0.2",
+    "description": "Compatibility layer for older BAT system workflows. Prefer @nossen/bat for new code."
+  },
+  {
+    "name": "@nossen/beam",
+    "version": "2.0.1",
+    "description": "Pipeline orchestration primitives for routing work through Funesterie and A11 systems."
+  },
+  {
+    "name": "@nossen/dragon",
+    "version": "2.0.2",
+    "description": "Dragon control-plane daemon for the Funesterie ecosystem."
+  },
+  {
+    "name": "@nossen/dragon-contracts",
+    "version": "2.0.1",
+    "description": "Shared Dragon contracts for the Funesterie control plane."
+  },
+  {
+    "name": "@nossen/dragon-upstream",
+    "version": "2.0.2",
+    "description": "Dragon upstream probing, daemon policy and integration workflows."
+  },
+  {
+    "name": "@nossen/envapt-superimg",
+    "version": "2.0.2",
+    "description": "Image-oriented ENVAPT helpers for OC8-style payload verification and transport experiments."
+  },
+  {
+    "name": "@nossen/envaptex",
+    "version": "2.0.1",
+    "description": "Environment adapter toolkit for typed runtime configuration, profile loading and integration checks."
+  },
+  {
+    "name": "@nossen/freeland",
+    "version": "2.0.2",
+    "description": "Neutral normalization layer for values crossing Funesterie, A11 and runtime module boundaries."
+  },
+  {
+    "name": "@nossen/freeland-bros",
+    "version": "2.0.4",
+    "description": "Runtime diagnostics and RGBA/cube projection layer on top of Freeland and Morphing."
+  },
+  {
+    "name": "@nossen/katana",
+    "version": "2.0.0",
+    "description": "Focused CLI and library helpers for repository cuts, checks and small automation tasks."
+  },
+  {
+    "name": "@nossen/knowledge-modules",
+    "version": "0.2.3",
+    "description": "Public NOSSEN knowledge modules: persona canon, temporal gravity constants, pulsar colour palette."
+  },
+  {
+    "name": "@nossen/logic-reduce",
+    "version": "2.0.3",
+    "description": "Deterministic direct-path reducer for plans, runbooks, and agent handoffs."
+  },
+  {
+    "name": "@nossen/mcp-agent-bus",
+    "version": "0.1.2",
+    "description": "Request builders for agent presence, inbox, discussions and bounded handoffs."
+  },
+  {
+    "name": "@nossen/mcp-chopper-mixer",
+    "version": "0.1.2",
+    "description": "Read-only planning contracts for runtime hooks, doctor/chopper diagnostics and mixer routing."
+  },
+  {
+    "name": "@nossen/mcp-cloud-assets",
+    "version": "0.1.2",
+    "description": "Read-only search/fetch contracts plus generated asset bucket request builders for trusted MCP profiles."
+  },
+  {
+    "name": "@nossen/mcp-job-queue",
+    "version": "0.1.2",
+    "description": "Safe declarative job queue builders for MCP workers: enqueue, lease, heartbeat, complete and recover."
+  },
+  {
+    "name": "@nossen/mcp-media-bridge",
+    "version": "0.1.2",
+    "description": "Request builders for window capture, source selection, vision/audio analysis and combined media summaries."
+  },
+  {
+    "name": "@nossen/mcp-memory-graph",
+    "version": "0.1.2",
+    "description": "Secret-safe memory and graph request builders for Neo4j-style MCP profiles."
+  },
+  {
+    "name": "@nossen/mcp-public-endpoints",
+    "version": "0.1.2",
+    "description": "Endpoint profile helpers for public read-only MCP clients such as ChatGPT, Gemini, Claude and Grok."
+  },
+  {
+    "name": "@nossen/mcp-qflush-control",
+    "version": "0.1.2",
+    "description": "Bounded gamepad, keyboard and mouse command contracts for Qflush-compatible controller bridges."
+  },
+  {
+    "name": "@nossen/mcp-retro-session",
+    "version": "0.1.2",
+    "description": "Retro session contracts for SNES/KI/RomStation state and bounded controller plans."
+  },
+  {
+    "name": "@nossen/mcp-security-preflight",
+    "version": "0.1.2",
+    "description": "Secret redaction, token-presence summaries and preflight-safe helpers for MCP clients."
+  },
+  {
+    "name": "@nossen/mcp-tool-manifest",
+    "version": "0.1.2",
+    "description": "A grouped manifest for NOSSEN-compatible MCP tools and safe public profiles."
+  },
+  {
+    "name": "@nossen/mcp-toolkit",
+    "version": "0.1.2",
+    "description": "Small dependency-free helpers for JSON-RPC MCP calls, endpoint normalization and tool call payloads."
+  },
+  {
+    "name": "@nossen/mcp-web-drafts",
+    "version": "0.1.2",
+    "description": "Append-only website draft contracts for MCP agents that should never deploy directly to production."
+  },
+  {
+    "name": "@nossen/mcp-worker-supervisor",
+    "version": "0.1.2",
+    "description": "Contracts for bounded worker status, start/stop/restart, task dispatch and task result polling."
+  },
+  {
+    "name": "@nossen/morphing",
+    "version": "2.1.0",
+    "description": "Compact 4-byte value shapes and RGBA/cube helpers for low-friction transport."
+  },
+  {
+    "name": "@nossen/nezlephant",
+    "version": "2.0.2",
+    "description": "OC8 image payload helper for encoding, decoding and inspecting small binary/image carriers."
+  },
+  {
+    "name": "@nossen/qflush",
+    "version": "2.0.4",
+    "description": "QFlush - portable command-line orchestrator for local modules, workflows, and supervised services."
+  },
+  {
+    "name": "@nossen/qflush-runner",
+    "version": "2.0.2",
+    "description": "Small runner package for invoking QFlush in lightweight automation contexts."
+  },
+  {
+    "name": "@nossen/rome",
+    "version": "2.0.3",
+    "description": "Runtime orchestration and command vocabulary used by QFlush, A11 and local automation flows."
+  },
+  {
+    "name": "@nossen/scentgate",
+    "version": "2.2.0",
+    "description": "Ephemeral research capsule for structured notes, signals and short-lived investigation context."
+  },
+  {
+    "name": "@nossen/scream",
+    "version": "2.0.2",
+    "description": "Small semantic prototype for SCREAM, WAZAA and MASK primitives."
+  },
+  {
+    "name": "@nossen/spyder",
+    "version": "2.0.2",
+    "description": "Lightweight local assistant and scanner primitives for NOSSEN/Funesterie developer tooling."
+  },
+  {
+    "name": "@nossen/zen",
+    "version": "0.1.3",
+    "description": "Zero-Exposed NEZ archive encoder/decoder for .zen corpus containers."
+  },
+  {
+    "name": "@nossen/cf",
+    "version": "0.1.0",
+    "description": "Tiny Cloudflare API client for the Funesterie AIs (zones/DNS/tunnels/Access/R2) - one CLOUDFLARE_API_TOKEN, no browser."
+  },
+  {
+    "name": "@nossen/hetzner",
+    "version": "0.1.0",
+    "description": "Hetzner Robot API client for the Funesterie AIs - manage EX44 (dedicated) over 443: server info, reboot, rescue, reverse DNS. No SSH."
+  },
+  {
+    "name": "@nossen/zen-gate",
+    "version": "0.1.0",
+    "description": "ZEN Gate / Stargate - chunked dedup transfer (HAVE/NEED) for PC<->EX44, built on @nossen/zen + Brotli + SHA-256."
+  }
+]

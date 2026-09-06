@@ -1,0 +1,39 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__A11_SOURCE_IMAGE__"
+    }
+  },
+  "2": {
+    "class_type": "WanImageToVideoApi",
+    "inputs": {
+      "model": "wan2.5-i2v-preview",
+      "image": [
+        "1",
+        0
+      ],
+      "prompt": "__A11_PROMPT__",
+      "negative_prompt": "low quality, blurry, distorted face, broken hands, unreadable text, watermark, bad anatomy",
+      "resolution": "480P",
+      "duration": 5,
+      "seed": 123456789,
+      "generate_audio": false,
+      "prompt_extend": true,
+      "watermark": false,
+      "shot_type": "single"
+    }
+  },
+  "3": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": [
+        "2",
+        0
+      ],
+      "filename_prefix": "a11-comfy-cloud/__A11_JOB_ID__",
+      "format": "mp4",
+      "codec": "h264"
+    }
+  }
+}

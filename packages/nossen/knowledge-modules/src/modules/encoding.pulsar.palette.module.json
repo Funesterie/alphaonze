@@ -1,0 +1,160 @@
+{
+  "id": "encoding.pulsar.palette",
+  "label": "Mode Pulsar - palette de dix couleurs fonctionnelles",
+  "discipline": "encoding-symbolic",
+  "activation": {
+    "modesAny": [
+      "chat",
+      "generate",
+      "plan",
+      "semantic",
+      "song"
+    ],
+    "keywordsAny": [
+      "pulsar",
+      "mode pulsar",
+      "palette",
+      "dix couleurs",
+      "10 couleurs",
+      "vert toxine",
+      "toxic green",
+      "toxine",
+      "golden",
+      "dore",
+      "doré",
+      "petrol",
+      "petrole",
+      "zen",
+      "compression zen",
+      "unreal",
+      "unreal engine",
+      "encodage couleur",
+      "PurpleShadow",
+      "DeepBlue",
+      "BloodRed",
+      "ToxicGreen",
+      "FireOrange",
+      "Magenta",
+      "Indigo"
+    ]
+  },
+  "knowledge": {
+    "concepts": [
+      "Le mode Pulsar est un systeme de dix couleurs de base ou chaque couleur porte une FONCTION technique, pas une valeur decorative.",
+      "Chaque couleur a une complementaire designee, une teinte sur le cercle chromatique et un gamma propre: le triplet forme le contrat visuel.",
+      "Les fonctions couvrent la chaine de traitement: chiffrement, compression, energie d'encodage, transmission, blindage, signal.",
+      "La palette est liee a la compression .zen et au rendu Unreal Engine: elle sert de langage commun entre le conteneur de corpus et le moteur 3D.",
+      "Magenta porte la matiere -- explicitement pas le rouge, qui porte la compression. Confondre les deux inverse le sens du contrat.",
+      "La palette vit dans le code (persona/freeland-bros-pulsar.cjs) et dans le pont Neo4j (persona/neo4j-mcp-bridge.cjs): le code fait foi."
+    ],
+    "palette": [
+      {
+        "name": "PurpleShadow",
+        "hex": "0x4a0a8a",
+        "hue": 270,
+        "function": "sel relationnel",
+        "complement": null,
+        "gamma": 0.15
+      },
+      {
+        "name": "DeepBlue",
+        "hex": "0x0a4a8a",
+        "hue": 210,
+        "function": "chiffrement RSA",
+        "complement": null,
+        "gamma": 0.3
+      },
+      {
+        "name": "BloodRed",
+        "hex": "0x8a0a0a",
+        "hue": 0,
+        "function": "compression HEVC",
+        "complement": null,
+        "gamma": 0.75
+      },
+      {
+        "name": "ToxicGreen",
+        "hex": "0x0a8a4a",
+        "hue": 150,
+        "function": "energie NVENC",
+        "complement": "Magenta",
+        "gamma": 0.95
+      },
+      {
+        "name": "FireOrange",
+        "hex": "0x8a4a0a",
+        "hue": 30,
+        "function": "chaleur du flux",
+        "complement": "Violet",
+        "gamma": 0.8
+      },
+      {
+        "name": "Cyan",
+        "hex": "0x0a8a8a",
+        "hue": 180,
+        "function": "transmission",
+        "complement": "BloodRed",
+        "gamma": 0.7
+      },
+      {
+        "name": "Magenta",
+        "hex": "0x8a0a8a",
+        "hue": 300,
+        "function": "matiere (pas rouge)",
+        "complement": "ToxicGreen",
+        "gamma": 0.6
+      },
+      {
+        "name": "DORE",
+        "hex": "0x8a8a0a",
+        "hue": 60,
+        "function": "blindage alchimique",
+        "complement": null,
+        "gamma": 0.88
+      },
+      {
+        "name": "Violet",
+        "hex": "0x4a0a4a",
+        "hue": 300,
+        "function": "signal",
+        "complement": "FireOrange",
+        "gamma": 0.4
+      },
+      {
+        "name": "Indigo",
+        "hex": "0x0a0a4a",
+        "hue": 240,
+        "function": "le profond",
+        "complement": "DORE",
+        "gamma": 0.35
+      }
+    ],
+    "aliases": {
+      "vert toxine": "ToxicGreen",
+      "golden": "DORE",
+      "petrole": "Noir-Petrole (complementaire du DORE)",
+      "v10 toxine": "nom de version, pas une couleur"
+    },
+    "sources": [
+      "src/persona/freeland-bros-pulsar.cjs (definition de reference)",
+      "src/persona/neo4j-mcp-bridge.cjs (couleurs Pulsar dans le graphe)",
+      "Discussions Codex, session 019f9b53 du 26/07/2026"
+    ]
+  },
+  "apply": {
+    "constraints": {
+      "colorCarriesFunctionNotDecoration": true,
+      "magentaIsMatterNotRed": true,
+      "complementIsDeclaredNotComputed": true
+    },
+    "guidance": [
+      "Nommer une couleur par son role technique quand on decrit un encodage: « energie NVENC » plutot que « vert ».",
+      "Ne pas recalculer une complementaire: elle est declaree dans la palette et peut differer de la complementaire chromatique stricte.",
+      "Le gamma n'est pas une luminosite: c'est le poids de la couleur dans le contrat."
+    ]
+  },
+  "impacts": {
+    "render": "Langage commun entre la compression .zen et le rendu Unreal Engine.",
+    "plan": "Permet de designer une etape de la chaine d'encodage par sa couleur sans ambiguite."
+  }
+}

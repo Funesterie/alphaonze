@@ -1,4 +1,5 @@
 const crypto = require('node:crypto');
+const { prepareZenUpload } = require('./zen-upload.cjs');
 
 function decodeBase64Content(contentBase64) {
   const rawBase64 = String(contentBase64 || '').trim();
@@ -36,6 +37,7 @@ async function ingestUploadedFile({
   contentType,
   contentBase64,
   maxBytes,
+  maxZenBytes,
   origin = 'upload',
   conversationId,
   resourceKind = 'file',
@@ -58,7 +60,7 @@ async function ingestUploadedFile({
   }
 
   const safeFilename = sanitizeFileName(filename || 'generated-file.bin');
-  const normalizedContentType = String(contentType || 'application/octet-stream').trim() || 'application/octet-stream';
+  let normalizedContentType = String(contentType || 'application/octet-stream').trim() || 'application/octet-stream';
   const buffer = decodeBase64Content(contentBase64);
 
   if (buffer.length > Number(maxBytes || 0)) {
@@ -68,6 +70,15 @@ async function ingestUploadedFile({
     throw error;
   }
 
+  const zenUpload = prepareZenUpload({
+    filename: safeFilename,
+    contentType: normalizedContentType,
+    buffer,
+    maxBytes: maxZenBytes,
+    globalMaxBytes: Number(maxBytes || 0),
+  });
+  if (zenUpload.isZen) normalizedContentType = zenUpload.contentType;
+
   const contentHash = buildContentHash(buffer);
   const baseResourceMetadata = resourceMetadata && typeof resourceMetadata === 'object'
     ? resourceMetadata
@@ -76,6 +87,13 @@ async function ingestUploadedFile({
     ...baseResourceMetadata,
     contentHash,
     sha256: contentHash,
+    ...(zenUpload.isZen ? {
+      zen: {
+        publicHeader: zenUpload.publicHeader,
+        payloadOpaque: true,
+        payloadDecoded: false,
+      },
+    } : {}),
     allmight: {
       ...(baseResourceMetadata.allmight && typeof baseResourceMetadata.allmight === 'object'
         ? baseResourceMetadata.allmight

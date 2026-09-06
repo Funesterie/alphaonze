@@ -1,0 +1,88 @@
+{
+  "id": "persona.funesterie.cast",
+  "label": "Personas Funesterie - distribution et ADN",
+  "discipline": "persona-canon",
+  "activation": {
+    "modesAny": [
+      "chat",
+      "generate",
+      "plan",
+      "semantic",
+      "song"
+    ],
+    "keywordsAny": [
+      "persona",
+      "personas",
+      "ADN persona",
+      "chromosome",
+      "casting",
+      "distribution vocale",
+      "Vivy",
+      "Djeff",
+      "A11",
+      "K44",
+      "Kaen44",
+      "qui chante",
+      "voix officielle",
+      "voix premium"
+    ]
+  },
+  "knowledge": {
+    "concepts": [
+      "Les personas Funesterie sont des identites du projet, pas des voix de fournisseur: elles se rendent par le style, l'ecriture et l'interpretation.",
+      "Une persona de fournisseur n'est envoyee que pour une voix explicitement designee -- catalogue, voix personnelle enregistree, ou identifiant fourni dans la requete. Jamais automatiquement pour une identite officielle.",
+      "Une persona de fournisseur expire sans prevenir et renvoie alors une erreur illisible: c'est un identifiant chez un tiers, pas une identite.",
+      "L'ADN d'une persona s'exprime en cinq chromosomes: VOIX, COMPORTEMENT, LANGAGE, COMBAT, ACTIVATION.",
+      "Le style decrit la VOIX et l'interpretation. Le lieu, le decor et l'imagerie appartiennent a la chanson, donc a l'agent qui l'ecrit: les imposer verrouille le champ lexical de tous les morceaux.",
+      "Un fournisseur de generation musicale n'accepte generalement qu'une persona par morceau: un duo de deux voix nommees est impossible dans un seul appel.",
+      "Toute voix ajoutee a un catalogue exige un consentement nomme, conserve avec l'entree. L'identifiant technique n'est jamais expose en clair."
+    ],
+    "cast": [
+      {
+        "id": "vivy",
+        "role": "agent musical: ecrit, dirige et arbitre la direction sonore",
+        "note": "Quand elle fournit une direction, celle-ci prime sur tout repli automatique, meme si elle parait douce ou inattendue."
+      },
+      {
+        "id": "djeff",
+        "role": "rap technique, punchlines, cypher",
+        "note": "Grain sec proche micro, flow nerveux controle, basses sombres. Le decor n'est pas impose."
+      },
+      {
+        "id": "a11",
+        "role": "voix officielle, registre severe"
+      },
+      {
+        "id": "k44",
+        "role": "narrateur officiel, contre-voix calme"
+      }
+    ],
+    "adn": {
+      "chromosomes": [
+        "VOIX",
+        "COMPORTEMENT",
+        "LANGAGE",
+        "COMBAT",
+        "ACTIVATION"
+      ],
+      "note": "Le code de reference fait foi: ce module en donne la lecture, il ne la remplace pas."
+    }
+  },
+  "apply": {
+    "constraints": {
+      "officialPersonasNeverUseProviderVoiceId": true,
+      "styleDescribesVoiceNotScenery": true,
+      "onePersonaPerTrack": true,
+      "catalogVoiceRequiresNamedConsent": true
+    },
+    "guidance": [
+      "Ne jamais imposer un decor par defaut a une persona: proposer, ne pas verrouiller.",
+      "Respecter la direction sonore fournie par l'agent qui ecrit.",
+      "Citer la persona par son role dans la chanson, pas par un identifiant technique."
+    ]
+  },
+  "impacts": {
+    "song": "Le casting et la direction viennent de l'agent musical; la couche technique n'ajoute que des garde-fous de conformite.",
+    "chat": "Chaque persona garde sa langue et son registre propres."
+  }
+}

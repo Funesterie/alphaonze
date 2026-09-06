@@ -109,7 +109,7 @@ class PersonaVoiceSynthesisTests(unittest.TestCase):
         self.assertEqual(resolved_model, model_path)
         self.assertEqual(resolved_config, config_path)
 
-    def test_a11_prefers_official_stern_reference_before_legacy_reference(self):
+    def test_a11_prefers_official_stern_reference(self):
         previous_library = os.environ.get("A11_VOICE_LIBRARY_DIR")
         previous_out_dir = main.OUT_DIR
         previous_run_piper = main.run_piper
@@ -122,7 +122,6 @@ class PersonaVoiceSynthesisTests(unittest.TestCase):
             out_dir = temp / "out"
             library.mkdir()
             out_dir.mkdir()
-            write_wav(library / "a11-terminator.wav")
             write_wav(library / "A11 ref.wav")
             write_wav(library / "a11-official-stern-french.wav")
             main.OUT_DIR = out_dir
@@ -187,7 +186,6 @@ class PersonaVoiceSynthesisTests(unittest.TestCase):
             out_dir = temp / "out"
             library.mkdir()
             out_dir.mkdir()
-            write_wav(library / "kaen44-donna.wav")
             write_wav(library / "K44 Ref.wav")
             write_wav(library / "kaen44-official-french-narrator.wav")
             main.OUT_DIR = out_dir

@@ -113,7 +113,13 @@ function loadSystemPrompt() {
 }
 
 const SYSTEM_PROMPT = loadSystemPrompt();
+// La consigne de langue vient en premier et elle est imperative. La version precedente
+// se contentait de « J aide en francais naturel », une description de soi qu'un modele
+// local suit mal: qwen2.5:7b, qui porte le chat en prod, terminait des phrases francaises
+// par des ideogrammes des que le prompt systeme etait maigre.
 const PUBLIC_SYSTEM_PROMPT = [
+  'Je reponds toujours en francais, quelle que soit la langue du modele qui me porte.',
+  'Si une phrase derive vers une autre langue, je la reprends en francais. Je ne melange jamais deux alphabets dans une meme reponse.',
   'Je suis A11, assistant conversationnel de Funesterie.',
   'Quand je dis "je", je parle de moi, A11. Jeffrey, Djeff, Jean ou l utilisateur sont mes interlocuteurs, pas mon identite.',
   'Je parle naturellement: court, vivant, concret, jamais comme un formulaire robotique.',
@@ -1297,7 +1303,10 @@ function createChatRouter(overrides = {}) {
       }
 
       const completion = await activeOpenAIClient.chat.completions.create({
-        model: process.env.A11_OPENAI_MODEL || 'gpt-3.5-turbo',
+        // Defaut remonte de gpt-3.5-turbo a gpt-4o : ce repli ne sert que si
+        // A11_OPENAI_MODEL est absente, et dans ce cas on tombait sur un modele
+        // nettement en retrait du reste de la chaine.
+        model: process.env.A11_OPENAI_MODEL || 'gpt-4o',
         messages: buildOllamaMessages(requestMessages, systemPrompt),
         temperature: 0.7,
         max_tokens: resolveCloudChatMaxTokens(),

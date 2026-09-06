@@ -41,7 +41,7 @@ Voice conversion / morphing accepts multipart audio. A11 sends the generated WAV
 ```powershell
 curl.exe -sS http://127.0.0.1:5002/api/voice/convert `
   -F "generated=@D:\tmp\a11-generated.wav" `
-  -F "reference=@D:\projets\funesterie\runtime\sfx\terminator.wav" `
+  -F "reference=@D:\projets\funesterie\a11\backend\runtime\voice-library\a11-official-stern-french.wav" `
   -F "mode=adaptive" `
   -F "strength=0.45"
 ```
@@ -59,8 +59,8 @@ The installer uses Python 3.11 so `TTS` can run with modern `numpy` instead of t
 Then place RVC models in:
 
 ```text
-D:\agent-bus\voice\XTTS-RVC-UI\rvcs\a11-terminator.pth
-D:\agent-bus\voice\XTTS-RVC-UI\rvcs\kaen44-donna.pth
+D:\agent-bus\voice\XTTS-RVC-UI\rvcs\a11-official-stern-french.pth
+D:\agent-bus\voice\XTTS-RVC-UI\rvcs\kaen44-official-french-narrator.pth
 D:\agent-bus\voice\XTTS-RVC-UI\rvcs\vivy.pth
 ```
 
@@ -85,11 +85,11 @@ parts that must be improved deliberately.
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File D:\projets\funesterie\a11\ops\voice\New-RvcPersonaDataset.ps1 `
   -Persona a11 `
-  -Source D:\projets\funesterie\a11\backend\runtime\voice-library\a11-terminator.wav
+  -Source D:\projets\funesterie\a11\backend\runtime\voice-library\a11-official-stern-french.wav
 
 powershell -NoProfile -ExecutionPolicy Bypass -File D:\projets\funesterie\a11\ops\voice\New-RvcPersonaDataset.ps1 `
   -Persona kaen44 `
-  -Source D:\projets\funesterie\a11\backend\runtime\voice-library\kaen44-donna.wav,D:\projets\funesterie\a11\backend\runtime\voice-library\kaen44-donna-extra.wav
+  -Source D:\projets\funesterie\a11\backend\runtime\voice-library\kaen44-official-french-narrator.wav
 
 powershell -NoProfile -ExecutionPolicy Bypass -File D:\projets\funesterie\a11\ops\voice\New-RvcPersonaDataset.ps1 `
   -Persona vivy `

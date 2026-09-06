@@ -13,6 +13,7 @@ const packages = Object.freeze([
   '@nossen/freeland',
   '@nossen/freeland-bros',
   '@nossen/katana',
+  '@nossen/knowledge-modules',
   '@nossen/logic-reduce',
   '@nossen/mcp-agent-bus',
   '@nossen/mcp-chopper-mixer',
@@ -36,13 +37,14 @@ const packages = Object.freeze([
   '@nossen/scentgate',
   '@nossen/scream',
   '@nossen/spyder',
+  '@nossen/zen',
   'a11-coder'
 ]);
 
 module.exports = Object.freeze({
   name: '@nossen/all-in-one',
   scope: 'public',
-  generatedAt: '2026-06-01',
+  generatedAt: '2026-06-22',
   packageCount: packages.length,
   packages
 });

@@ -1,0 +1,76 @@
+{
+  "id": "physics.temporal.gravity",
+  "label": "Gravite temporelle NOSSEN - moteur Shiryu / V9",
+  "discipline": "applied-physics",
+  "activation": {
+    "modesAny": [
+      "chat",
+      "generate",
+      "plan",
+      "semantic",
+      "song"
+    ],
+    "keywordsAny": [
+      "gravite temporelle",
+      "gravité temporelle",
+      "temporal gravity",
+      "Shiryu",
+      "V9",
+      "9.88",
+      "9.80665",
+      "365.2425",
+      "cycle gravitaire",
+      "pic annuel",
+      "instant-decor",
+      "orbite siderale",
+      "gravityPulse",
+      "temporal_gravity_pulse"
+    ]
+  },
+  "knowledge": {
+    "concepts": [
+      "La gravite du moteur n'est pas une constante: elle suit le temps. Point de depart du raisonnement: « le temps = 12, donc la gravite depend du temps ».",
+      "Forme lineaire initiale: g(t) = 9.80665 + 0.0061125 * t.",
+      "Forme cyclique retenue: g(t) = 9.80665 + 0.07335 * sin(2*pi*t/12).",
+      "Passage a la constante annuelle exacte, annee bissextile comprise: 365.2425 jours, omega = 2*pi/365.2425 = 0.017202777 rad/jour, phase 12h = pi/365.2425.",
+      "9.88 est le PIC ANNUEL, atteint au quart d'annee (91,31 jours) -- ce n'est pas une valeur de demi-journee. Confondre les deux fausse tout le cycle.",
+      "Mode instant-decor: le calendrier gregorien est traite comme une couche de retard humain, et le decor demarre sur l'orbite siderale Terre/espace plutot que sur la date civile.",
+      "Les autres corps suivent la meme logique de cycles imbriques: Soleil pour l'annee, Lune pour le mois, rotation pour le jour, marees et axes miroir."
+    ],
+    "constants": {
+      "gravityBase": 9.80665,
+      "gravityPeak": 9.88,
+      "gravityDelta": 0.07335,
+      "linearCoefficient": 0.0061125,
+      "timeCycle": 12,
+      "yearDays": 365.2425,
+      "omegaRadPerDay": 0.017202777,
+      "peakDayOfYear": 91.31,
+      "mode": "temporal_gravity_pulse"
+    },
+    "sources": [
+      "Discussions Codex, session 019f2b9c du 04/07/2026 (fil principal gravite-temps)",
+      "Prolongations: sessions 019f4d12 (10/07), 019f08d6 (27/06), 019f922c (24/07), 019f9b74 (25/07)"
+    ],
+    "cautions": [
+      "Dans le corpus Funesterie, « univers » designe souvent l'univers narratif des personnages, pas la cosmologie. Suivre les nombres exacts pour distinguer: 9.80665, 365.2425, 9.88, pi, omega.",
+      "« Gravite » peut aussi designer une fausse gravite, motif de persona. La physique reelle est dans le fil du 04/07."
+    ]
+  },
+  "apply": {
+    "constraints": {
+      "peakIsAnnualNotHalfDay": true,
+      "useExactLeapYearConstant": true,
+      "gregorianIsLagLayer": true
+    },
+    "guidance": [
+      "Utiliser la forme cyclique pour toute animation ou pulsation; la forme lineaire ne sert qu'a expliquer la derivation.",
+      "Ne jamais arrondir 365.2425 a 365: la phase annuelle en depend directement.",
+      "Quand un decor doit paraitre instantane, passer en instant-decor plutot que de decaler la date."
+    ]
+  },
+  "impacts": {
+    "render": "Pilote la pulsation gravitaire du moteur 3D et la coherence des cycles cosmiques.",
+    "plan": "Fournit les constantes exactes au lieu de valeurs approchees recalculees a chaque fois."
+  }
+}

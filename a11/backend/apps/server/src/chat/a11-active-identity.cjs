@@ -17,6 +17,8 @@ const {
   hasFunesterieSourcePrincipleContext,
 } = require('./funesterie-source-principle.cjs');
 
+const { buildPersonaAdnEnrichment } = require("../persona/persona-engine.cjs");
+
 const A11_CHAT_IDENTITY_CONTEXT = `
 [A11/Funesterie active identity]
 - A11, K44 et Vivy sont trois identites front distinctes. La surface active decide qui dit "je".
@@ -243,6 +245,7 @@ function buildA11ChatSystemPrompt(systemPrompt = '', options = {}) {
   }
   if (!hasSymbolicExtractionProtocolContext(basePrompt)) {
     sections.push(SYMBOLIC_EXTRACTION_PROTOCOL_CONTEXT);
+    sections.push(buildPersonaAdnEnrichment(options.persona || options.voicePersona || options.surface || "a11"));
   }
 
   return sections.filter(Boolean).join('\n\n');

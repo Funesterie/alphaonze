@@ -24,6 +24,9 @@ test('default full-access allowlist includes family accounts', () => {
     'funeste38@gmail.com',
     'funesterie38@gmail.com',
     'boostro38@gmail.com',
+    // Ajoute le 26/07/2026 (e05a7bf71) sans mise a jour du test: la suite echouait
+    // depuis, et un test rouge en permanence masque les vraies regressions.
+    'hlibibou@gmail.com',
     'cjcarme38@yahoo.fr',
     'valerie.atek@gmail.com',
     'k.quinquinet@hseb-dresden.de',

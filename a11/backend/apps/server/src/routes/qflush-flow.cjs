@@ -38,6 +38,21 @@ const {
   getQflushRgbaCubeSpec,
 } = require('../qflush-rgba-cube.cjs');
 const {
+  buildShiryuV2Plan,
+  getShiryuV2Spec,
+} = require('../shiryu-v2-planner.cjs');
+const {
+  runShiryuV2Plan,
+} = require('../shiryu-v2-runner.cjs');
+const {
+  prepareCubeCuda,
+  resolveCudaRuntimeStatus,
+} = require('../cube-to-cuda.cjs');
+const {
+  getShiryuV3MatterSpec,
+  prepareShiryuV3MatterField,
+} = require('../shiryu-v3-matter-bridge.cjs');
+const {
   getGamepadStatus,
   queueGamepadCommand,
   queueGamepadPilot,
@@ -55,6 +70,8 @@ const PUBLIC_FLOWS = new Set([
   'a11.memory.summary.v1',
   'a11.memory.ephemeral.v1',
   'qflush.rgba.multiload.v1',
+  'qflush.shiryu.zen_rgba.v1',
+  'qflush.shiryu.v3.matter.v1',
   'web_fetch',
   'fs.search',
 ]);
@@ -419,6 +436,10 @@ function createQflushFlowRouter({ workspaceRoot, runtimeRoot } = {}) {
           'a11.memory.summary.v1': 'Résumé de mémoire conversationnelle',
           'a11.memory.ephemeral.v1': 'Mémoire clé-valeur éphémère (set/get/list/delete/clear)',
           'qflush.rgba.multiload.v1': 'Projection Qflush RGBA vers mémoire, outils, données et orchestration',
+          'qflush.shiryu.zen_rgba.v1': 'Shiryu lame de sang: JSON vers signal zen RGBA avec bruit contrôlé',
+          'qflush.shiryu.v2.plan': 'Shiryu V2: fan-out 9 lames, plan Cerbère sans appel provider',
+          'qflush.shiryu.v3.cuda': 'Shiryu V3/Robin: cube RGBA vers atomes CUDA avec fallback CPU',
+          'qflush.shiryu.v3.matter.v1': 'Shiryu V3 Mille-Fleurs: atomes RGBA vers matière Blender/Unreal/GPU',
           'web_fetch': 'Fetch HTTP d\'une URL',
           'fs.search': 'Recherche de fichiers dans le workspace',
         },
@@ -456,6 +477,175 @@ function createQflushFlowRouter({ workspaceRoot, runtimeRoot } = {}) {
     } catch (err) {
       logger.error('Qflush RGBA cube plan error', { error: err.message });
       return res.status(500).json({ ok: false, error: 'cube_plan_failed', message: err.message });
+    }
+  });
+
+  router.get('/shiryu/v2/status', (_req, res) => {
+    return res.json({
+      ...getShiryuV2Spec(),
+      published: true,
+      safeMode: true,
+      endpoints: {
+        plan: 'POST /api/qflush/shiryu/v2/plan',
+        dryRun: 'POST /api/qflush/shiryu/v2/dry-run',
+        v3Status: 'GET /api/qflush/shiryu/v3/cuda/status',
+        v3Cuda: 'POST /api/qflush/shiryu/v3/cuda/prepare',
+        v3MatterStatus: 'GET /api/qflush/shiryu/v3/matter/status',
+        v3Matter: 'POST /api/qflush/shiryu/v3/matter/prepare',
+      },
+      note: 'dry-run utilise un exécuteur mock: aucun appel LLM, aucun coût provider.',
+    });
+  });
+
+  router.get('/shiryu/v3/cuda/status', (_req, res) => {
+    return res.json({
+      ...resolveCudaRuntimeStatus(process.env, { autoDetect: true }),
+      safeMode: true,
+      connectedTelemetry: {
+        cerbere: 'x9',
+        flower: 'robin-mil-fleurs',
+        metrics: ['shiryu.jobs', 'shiryu.failovers', 'shiryu.atoms'],
+      },
+      note: 'Détection/planification seulement: aucun kernel GPU destructif ni appel provider.',
+    });
+  });
+
+  router.get('/shiryu/v3/matter/status', (_req, res) => {
+    return res.json({
+      ...getShiryuV3MatterSpec(process.env, { autoDetectGpu: true }),
+      safeMode: true,
+      connectedTelemetry: {
+        cerbere: 'x9',
+        flower: 'mille-fleurs-gpu',
+        metrics: ['shiryu.atoms', 'shiryu.matter.particles'],
+      },
+    });
+  });
+
+  router.post('/shiryu/v2/plan', express.json({ limit: '4mb' }), (req, res) => {
+    try {
+      const body = req.body || {};
+      const input = body.input || body.payload || body;
+      const plan = buildShiryuV2Plan(input, {
+        heads: body.heads,
+        maxConcurrency: body.maxConcurrency,
+        accountTier: body.accountTier || body.tier,
+      });
+      return res.json({
+        ...plan,
+        safeMode: true,
+        executed: false,
+      });
+    } catch (err) {
+      logger.error('Shiryu V2 plan error', { error: err.message });
+      return res.status(500).json({ ok: false, error: 'shiryu_v2_plan_failed', message: err.message });
+    }
+  });
+
+  router.post('/shiryu/v2/dry-run', express.json({ limit: '4mb' }), async (req, res) => {
+    try {
+      const body = req.body || {};
+      const input = body.input || body.payload || body;
+      const plan = buildShiryuV2Plan(input, {
+        heads: body.heads,
+        maxConcurrency: body.maxConcurrency,
+        accountTier: body.accountTier || body.tier,
+      });
+      const run = await runShiryuV2Plan(plan, {
+        maxAttempts: body.maxAttempts,
+        execute: async (job) => ({
+          ok: true,
+          output: {
+            dryRun: true,
+            lane: job.lane,
+            task: job.task,
+            head: job.head,
+            message: 'shiryu_v2_dry_run_no_provider_call',
+          },
+        }),
+      });
+      return res.json({
+        ok: run.ok,
+        schema: 'nossen.shiryu.v2_public_dry_run.v1',
+        safeMode: true,
+        providerCalls: 0,
+        plan,
+        run,
+      });
+    } catch (err) {
+      logger.error('Shiryu V2 dry-run error', { error: err.message });
+      return res.status(500).json({ ok: false, error: 'shiryu_v2_dry_run_failed', message: err.message });
+    }
+  });
+
+  router.post('/shiryu/v3/cuda/prepare', express.json({ limit: '4mb' }), (req, res) => {
+    try {
+      const body = req.body || {};
+      const input = body.input || body.payload || body;
+      const out = prepareCubeCuda(input, {
+        op: body.op,
+        threshold: body.threshold,
+        threadsPerBlock: body.threadsPerBlock,
+        includeAtoms: body.includeAtoms === true,
+        autoDetectGpu: body.autoDetectGpu === true || body.gpu === true,
+      });
+      return res.json({
+        ...out,
+        safeMode: true,
+        gpuForced: body.gpu === true,
+      });
+    } catch (err) {
+      logger.error('Shiryu V3 CUDA prepare error', { error: err.message });
+      return res.status(500).json({ ok: false, error: 'shiryu_v3_cuda_prepare_failed', message: err.message });
+    }
+  });
+
+  router.post(['/shiryu/v3/matter/prepare', '/mille-fleurs/gpu/prepare'], express.json({ limit: '4mb' }), (req, res) => {
+    try {
+      const body = req.body || {};
+      const input = body.input || body.payload || body;
+      const out = prepareShiryuV3MatterField(input, {
+        engine: body.engine || body.targetEngine,
+        op: body.op,
+        threshold: body.threshold,
+        threadsPerBlock: body.threadsPerBlock,
+        maxParticles: body.maxParticles,
+        includeAtoms: body.includeAtoms === true,
+        includeScripts: body.includeScripts !== false,
+        autoDetectGpu: body.autoDetectGpu === true || body.gpu === true,
+        gpu: body.gpu === true,
+        radius: body.radius,
+        verticalSpread: body.verticalSpread,
+        displacementScale: body.displacementScale,
+        now: body.now || body.time || body.timestamp,
+        timeBasis: body.timeBasis || body.basis || body.cosmicBasis,
+        instantShift: body.instantShift,
+        decorFirst: body.decorFirst,
+        bypassForeground: body.bypassForeground,
+        gravityBase: body.gravityBase,
+        gravityPeak: body.gravityPeak,
+        tideMin: body.tideMin,
+        tideMax: body.tideMax,
+        tideDampingDivisor: body.tideDampingDivisor,
+        tideDriftTarget: body.tideDriftTarget,
+        physicalElectrolysis: body.physicalElectrolysis,
+        lightVacuumFrequency: body.lightVacuumFrequency,
+        lightVacuumVibration: body.lightVacuumVibration,
+        emotionSource: body.emotionSource || body.emotions || body.emotion || body.emotionalTone,
+        emotionSignal: body.emotionSignal ?? body.emotionalSignal,
+        emotionBalance: body.emotionBalance,
+        emotionBalanceEnabled: body.emotionBalanceEnabled,
+        emotionBalanceStrength: body.emotionBalanceStrength,
+        emotionStrength: body.emotionStrength,
+      });
+      return res.json({
+        ...out,
+        safeMode: true,
+        gpuForced: body.gpu === true,
+      });
+    } catch (err) {
+      logger.error('Shiryu V3 matter prepare error', { error: err.message });
+      return res.status(500).json({ ok: false, error: 'shiryu_v3_matter_prepare_failed', message: err.message });
     }
   });
 

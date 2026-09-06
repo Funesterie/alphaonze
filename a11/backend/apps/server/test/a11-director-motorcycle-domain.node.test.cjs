@@ -65,3 +65,45 @@ test('seeds reference board roles without mixing identity and style', () => {
   assert.ok(roles.includes('art_direction'));
   assert.ok(result.referenceBoard.roleSeparationRules.some((rule) => /style references never replace/i.test(rule)));
 });
+
+// Motos du recit NOSSEN — episodes 1 et 2.
+
+test('resolves Gilera GSM 2001 as an RK66 bike, never AM6', () => {
+  const result = resolveMotorcycleDirectorDomain('Gilera GSM 2001 dans le garage');
+  const gilera = result.objectCards.find((card) => /Gilera/i.test(card.term));
+
+  assert.ok(gilera);
+  assert.match(gilera.sourceFacts.join(' '), /RK66/);
+  // Le piege : reutiliser les references AM6 donnerait le mauvais bloc moteur.
+  assert.ok(gilera.sourceFacts.some((fact) => /not an AM6|pas.{0,4}am6/i.test(fact)));
+  assert.ok(gilera.forbidden.some((entry) => /four-stroke|scooter|pocket bike/i.test(entry)));
+});
+
+test('resolves Cagiva WMX as a 125 enduro, not a 50cc supermoto', () => {
+  const result = resolveMotorcycleDirectorDomain('Cagiva WMX 125 1985 avec deux personnes dessus');
+  const cagiva = result.objectCards.find((card) => /Cagiva/i.test(card.term));
+
+  assert.ok(cagiva);
+  assert.ok(cagiva.mustShow.some((entry) => /21-inch|21 pouces/i.test(entry)));
+  assert.ok(cagiva.forbidden.some((entry) => /supermoto/i.test(entry)));
+
+  // L'identite vehicule doit basculer : sinon le module sortirait un supermotard 50cc.
+  const facts = result.plannerFacts.join(' ');
+  assert.match(facts, /125 enduro/i);
+  assert.doesNotMatch(facts, /50cc mecanoboite supermoto/i);
+});
+
+test('keeps the 50cc supermoto identity when no period bike is named', () => {
+  const facts = resolveMotorcycleDirectorDomain('Beta AM6 50cc supermotard').plannerFacts.join(' ');
+  assert.match(facts, /50cc mecanoboite supermoto/i);
+  assert.doesNotMatch(facts, /enduro/i);
+});
+
+test('flags the Cagiva model as unconfirmed rather than asserting it', () => {
+  // Identifie d'apres une photo de famille ; Djeff n'a pas retrouve la livree exacte.
+  const cagiva = resolveMotorcycleDirectorDomain('Cagiva WMX 125')
+    .objectCards.find((card) => /Cagiva/i.test(card.term));
+
+  assert.ok(cagiva.confidence < 0.7, `confiance trop haute pour un modele non confirme : ${cagiva.confidence}`);
+  assert.ok(cagiva.sourceFacts.some((fact) => /confirmer|probable/i.test(fact)));
+});

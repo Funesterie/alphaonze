@@ -1,3 +1,57 @@
+const crypto = require('node:crypto');
+
+function getNezServiceTokens(env = process.env) {
+  return [
+    env.A11_NEZ_TOKEN,
+    env.NEZ_TOKENS,
+    env.NEZ_ALLOWED_TOKEN,
+  ]
+    .map((token) => String(token || '').trim())
+    .filter(Boolean);
+}
+
+function timingSafeEqualStrings(left, right) {
+  const a = Buffer.from(String(left || ''), 'utf8');
+  const b = Buffer.from(String(right || ''), 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// Identite service pour les appels server-to-server et l'outil MCP a11_chat.
+// L'outil a11_chat envoie un X-NEZ-TOKEN (secret statique) a /api/chat, mais
+// verifyJWT n'acceptait qu'un JWT HMAC: l'appel tombait en 401 A11_JWT_Missing
+// alors que le moteur tournait. On accepte ici le token NEZ configure -- jamais
+// le defaut faible 'nez:a11-client-funesterie-pro' -- exactement comme la route
+// MCP publique, et on synthetise un req.user service marque isService/admin.
+function resolveNezServiceIdentity(req, env = process.env) {
+  const candidates = [
+    String(req?.headers?.['x-nez-token'] || '').trim(),
+    String(req?.headers?.authorization || '').replace(/^Bearer\s+/i, '').trim(),
+  ].filter(Boolean);
+  if (!candidates.length) return null;
+  const allowed = getNezServiceTokens(env);
+  if (!allowed.length) return null;
+  for (const token of candidates) {
+    if (allowed.some((expected) => timingSafeEqualStrings(token, expected))) {
+      return {
+        token,
+        mode: 'nez-service',
+        user: {
+          id: 'a11-mcp-service',
+          username: 'a11-mcp',
+          email: 'a11-mcp-service@funesterie.local',
+          role: 'admin',
+          permissions: ['admin'],
+          isAdmin: true,
+          fullAccess: true,
+          isService: true,
+          serviceMode: 'nez',
+        },
+      };
+    }
+  }
+  return null;
+}
+
 function looksLikeJwtToken(value) {
   return /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(String(value || '').trim());
 }
@@ -160,6 +214,20 @@ function createVerifyJWT({ jwt, jwtSecret, logger = console, logSuccess = false,
         message: 'Session révoquée. Reconnecte-toi.',
       });
     }
+    // Aucun JWT valide: dernier recours, l'identite service NEZ/MCP (outil
+    // a11_chat et appels server-to-server). On ne l'accepte que si un token
+    // NEZ est configure -- jamais le defaut faible -- pour ne pas laisser le
+    // chat derriere une porte fermee (401 A11_JWT_Missing).
+    const serviceIdentity = resolveNezServiceIdentity(req);
+    if (serviceIdentity) {
+      req.user = serviceIdentity.user;
+      req.authToken = serviceIdentity.token;
+      req.serviceAuth = { mode: serviceIdentity.mode };
+      if (logSuccess) {
+        logger?.log?.(`[JWT] ✅ Identité service ${serviceIdentity.mode} acceptée`);
+      }
+      return next();
+    }
     logger?.warn?.('[JWT] Verification failed:', lastError?.message);
     return res.status(401).json({
       error: 'A11_JWT_Invalid',
@@ -176,4 +244,6 @@ module.exports = {
   isPublicAuthRoute,
   shouldBypassJwtForLocalDev,
   createVerifyJWT,
+  getNezServiceTokens,
+  resolveNezServiceIdentity,
 };

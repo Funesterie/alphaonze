@@ -96,6 +96,14 @@ function buildConnectorCatalog(account) {
         category: 'MCP',
         description: 'Appels publics autorisés, sans routes privées ni secrets.',
       }),
+      capability('chrome-context', 'Contexte Chrome borné', 'publicProxyCall', TIERS.PREMIUM, account, {
+        category: 'MCP',
+        description: 'Contexte page/onglet/sélection fourni explicitement par la session, sans contrôle libre du navigateur.',
+      }),
+      capability('mcp-premium-status', 'Statut MCP premium', 'privateMcpStatus', TIERS.PREMIUM, account, {
+        category: 'MCP',
+        description: 'Lecture de statut MCP autorisée aux comptes Premium, sans liste d’outils privés ni secrets.',
+      }),
       capability('romstation-state', 'RomStation lecture', 'romstationState', TIERS.PREMIUM, account, {
         category: 'Jeu',
         description: 'État session, jeux détectés, préparation match sans contrôle direct.',

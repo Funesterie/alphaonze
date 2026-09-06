@@ -1,0 +1,28 @@
+'use strict';
+const assert = require('node:assert');
+const crypto = require('node:crypto');
+const fs = require('node:fs'), path = require('node:path'), os = require('node:os');
+const { ChunkStore, InMemoryTransport, syncBuffer, buildManifestFromBuffer, haveNeed } = require('../src/index.cjs');
+const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
+const CS = 256 * 1024;
+(async () => {
+  const tmp = path.join(os.tmpdir(), 'zen-gate-mem-' + process.pid);
+  fs.rmSync(tmp, { recursive: true, force: true }); fs.mkdirSync(tmp, { recursive: true });
+  const recv = new ChunkStore(path.join(tmp, 'recv'));
+  const A = crypto.randomBytes(1024 * 1024);
+  let tp = new InMemoryTransport(recv);
+  let r = await syncBuffer(A, tp, { name: 'A', chunkSize: CS });
+  assert.ok(r.ok && r.sha256 === sha(A) && r.sent === r.total);
+  console.log('1) first sync : sent=' + r.sent + '/' + r.total + ' wire=' + (tp.bytes/1024).toFixed(0) + 'KiB');
+  tp = new InMemoryTransport(recv);
+  r = await syncBuffer(A, tp, { name: 'A', chunkSize: CS });
+  assert.strictEqual(r.sent, 0);
+  console.log('2) same file  : sent=' + r.sent + ' wire=' + tp.bytes + 'B (full dedup)');
+  const B = Buffer.from(A); const off = 2 * CS; for (let i = off; i < off + 1000; i++) B[i] ^= 0xff;
+  tp = new InMemoryTransport(recv);
+  r = await syncBuffer(B, tp, { name: 'B', chunkSize: CS });
+  assert.ok(r.ok && r.sha256 === sha(B) && r.sent === 1);
+  console.log('3) 1-chunk mod: sent=' + r.sent + '/' + r.total + ' wire=' + (tp.bytes/1024).toFixed(0) + 'KiB');
+  console.log('\nZEN Gate V1 in-memory round-trip: OK');
+  fs.rmSync(tmp, { recursive: true, force: true });
+})().catch(e => { console.error('TEST FAILED:', e); process.exit(1); });

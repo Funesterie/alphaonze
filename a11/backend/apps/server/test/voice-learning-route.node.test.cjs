@@ -82,6 +82,24 @@ async function postAudio(baseUrl, { email, tier = '', persona = 'a11', file, fil
   return { res, payload };
 }
 
+async function postSunoVoice(baseUrl, { email, tier = '', voiceId = '15596961dc4e06197678c9111924d00f', label = 'Ma voix test', consent = 'suno-voice-slot-v1' } = {}) {
+  const headers = { 'content-type': 'application/json' };
+  if (email !== undefined) headers['x-test-email'] = email;
+  if (tier) headers['x-test-tier'] = tier;
+  const res = await fetch(`${baseUrl}/api/voice-learning/suno-voice`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      persona: 'personal',
+      voiceId,
+      label,
+      consent,
+    }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  return { res, payload };
+}
+
 test('voice learning accepts consented snippets from any connected account', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-voice-learning-'));
   const previousRoot = process.env.A11_VOICE_LEARNING_DIR;
@@ -182,6 +200,16 @@ test('voice learning maps family voice owners and premium personal voice access'
       assert.equal(vivyPayload.voiceIdentityKey, 'vivy');
       assert.equal(vivyPayload.voiceStyle, 'vivy-official-french-conversational');
 
+      const marvin = await fetch(`${baseUrl}/api/voice-learning/status?persona=marvin`, {
+        headers: { 'x-test-email': 'marvincellauro@gmail.com' },
+      });
+      const marvinPayload = await marvin.json();
+      assert.equal(marvin.status, 200);
+      assert.equal(marvinPayload.canCapture, true);
+      assert.equal(marvinPayload.isOfficialSource, true);
+      assert.equal(marvinPayload.voiceIdentityKey, 'marvin');
+      assert.equal(marvinPayload.voiceStyle, 'marvin-family-french-lead');
+
       const basicPersonal = await fetch(`${baseUrl}/api/voice-learning/status?persona=personal`, {
         headers: { 'x-test-email': 'basic@example.com' },
       });
@@ -209,6 +237,91 @@ test('voice learning maps family voice owners and premium personal voice access'
       assert.equal(premiumPersonalPayload.persona, 'personal');
       assert.equal(premiumPersonalPayload.contributorRole, 'personal-owner');
       assert.equal(premiumPersonalPayload.minimumTier, 'premium');
+    });
+  } finally {
+    if (previousRoot === undefined) delete process.env.A11_VOICE_LEARNING_DIR;
+    else process.env.A11_VOICE_LEARNING_DIR = previousRoot;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('premium personal voice account can link one private Suno voice slot without leaking the raw id', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-voice-learning-suno-slot-'));
+  const previousRoot = process.env.A11_VOICE_LEARNING_DIR;
+  process.env.A11_VOICE_LEARNING_DIR = root;
+
+  try {
+    await withVoiceLearningServer(async (baseUrl) => {
+      const basic = await postSunoVoice(baseUrl, {
+        email: 'basic@example.com',
+        voiceId: '15596961dc4e06197678c9111924d00f',
+      });
+      assert.equal(basic.res.status, 403);
+      assert.equal(basic.payload.error, 'personal_suno_voice_not_allowed');
+      assert.equal(basic.payload.minimumTier, 'premium');
+
+      const invalid = await postSunoVoice(baseUrl, {
+        email: 'premium@example.com',
+        tier: 'premium',
+        voiceId: 'bad id with spaces',
+      });
+      assert.equal(invalid.res.status, 400);
+      assert.equal(invalid.payload.error, 'invalid_suno_voice_id');
+
+      const linked = await postSunoVoice(baseUrl, {
+        email: 'premium@example.com',
+        tier: 'premium',
+        voiceId: '15596961dc4e06197678c9111924d00f',
+        label: 'Jeff Suno',
+      });
+      assert.equal(linked.res.status, 200);
+      assert.equal(linked.payload.ok, true);
+      assert.equal(linked.payload.sunoVoiceLinked, true);
+      assert.equal(linked.payload.sunoVoiceProvider, 'suno');
+      assert.equal(linked.payload.sunoVoiceLabel, 'Jeff Suno');
+      assert.match(linked.payload.sunoVoiceIdMask, /^155969.*24d00f$/);
+      assert.doesNotMatch(JSON.stringify(linked.payload), /15596961dc4e06197678c9111924d00f/);
+
+      const replaced = await postSunoVoice(baseUrl, {
+        email: 'premium@example.com',
+        tier: 'premium',
+        voiceId: '20cdb130cfa1fd51edbc58c94dca4e24',
+        label: 'Jeff Suno v2',
+      });
+      assert.equal(replaced.res.status, 200);
+      assert.equal(replaced.payload.sunoVoiceLabel, 'Jeff Suno v2');
+      assert.match(replaced.payload.sunoVoiceIdMask, /^20cdb1.*ca4e24$/);
+      assert.doesNotMatch(JSON.stringify(replaced.payload), /20cdb130cfa1fd51edbc58c94dca4e24/);
+
+      const status = await fetch(`${baseUrl}/api/voice-learning/status?persona=personal`, {
+        headers: {
+          'x-test-email': 'premium@example.com',
+          'x-test-tier': 'premium',
+        },
+      });
+      const statusPayload = await status.json();
+      assert.equal(status.status, 200);
+      assert.equal(statusPayload.sunoVoiceLinked, true);
+      assert.equal(statusPayload.sunoVoiceLabel, 'Jeff Suno v2');
+      assert.doesNotMatch(JSON.stringify(statusPayload), /20cdb130cfa1fd51edbc58c94dca4e24/);
+
+      const clearedCorpus = await fetch(`${baseUrl}/api/voice-learning/corpus`, {
+        method: 'DELETE',
+        headers: {
+          'content-type': 'application/json',
+          'x-test-email': 'premium@example.com',
+          'x-test-tier': 'premium',
+        },
+        body: JSON.stringify({
+          persona: 'personal',
+          confirm: 'delete-voice-learning-corpus',
+        }),
+      });
+      const clearedPayload = await clearedCorpus.json();
+      assert.equal(clearedCorpus.status, 200);
+      assert.equal(clearedPayload.clipCount, 0);
+      assert.equal(clearedPayload.sunoVoiceLinked, true);
+      assert.equal(clearedPayload.sunoVoiceLabel, 'Jeff Suno v2');
     });
   } finally {
     if (previousRoot === undefined) delete process.env.A11_VOICE_LEARNING_DIR;
@@ -386,6 +499,48 @@ test('voice learning queues training only after enough real audio duration is co
       assert.equal(trainPayload.ok, true);
       assert.equal(trainPayload.training.state, 'queued');
       assert.equal(trainPayload.persona, 'kaen44');
+    });
+  } finally {
+    if (previousRoot === undefined) delete process.env.A11_VOICE_LEARNING_DIR;
+    else process.env.A11_VOICE_LEARNING_DIR = previousRoot;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('voice quality feedback learns persona defects without storing token-bearing URLs', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-voice-quality-'));
+  const previousRoot = process.env.A11_VOICE_LEARNING_DIR;
+  process.env.A11_VOICE_LEARNING_DIR = root;
+
+  try {
+    await withVoiceLearningServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/voice-learning/quality-feedback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-test-email': 'jewitt.charlene@gmail.com',
+        },
+        body: JSON.stringify({
+          persona: 'vivy',
+          verdict: 'rejected',
+          defects: ['crackle', 'harsh', 'clipping'],
+          notes: 'La voix gresille et les sifflantes sont dures.',
+          audioUrl: 'https://vivy.funesterie.me/out/test.mp3?token=secret-never-store',
+        }),
+      });
+      const payload = await response.json();
+      assert.equal(response.status, 200);
+      assert.equal(payload.voiceProfile.declick, true);
+      assert.equal(payload.voiceProfile.deess, true);
+      assert.equal(payload.voiceProfile.peakGuard, true);
+      assert.equal(payload.feedback.outputHash.length, 20);
+
+      const indexPath = path.join(root, 'vivy');
+      const indexFile = fs.readdirSync(indexPath, { recursive: true })
+        .map((entry) => path.join(indexPath, String(entry)))
+        .find((entry) => path.basename(entry) === 'index.json');
+      const stored = fs.readFileSync(indexFile, 'utf8');
+      assert.doesNotMatch(stored, /secret-never-store|https:\/\//);
     });
   } finally {
     if (previousRoot === undefined) delete process.env.A11_VOICE_LEARNING_DIR;

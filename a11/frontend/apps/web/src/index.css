@@ -2813,9 +2813,9 @@ html.a11-auth-page-root body {
   width: min(1500px, 100%);
   min-height: calc(100vh - 102px);
   margin: 0 auto;
-  display: grid;
-  grid-template-columns: minmax(260px, 330px) minmax(0, 1fr) minmax(280px, 350px);
-  gap: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
   align-items: stretch;
   overflow: hidden;
   border-bottom: 1px solid rgba(240, 121, 216, 0.22);
@@ -3445,6 +3445,20 @@ html.a11-auth-page-root body {
   text-transform: none;
 }
 
+.vivy-agent-nossen {
+  text-decoration: none;
+  text-transform: none;
+  color: #fbbf24 !important;
+  border-color: rgba(251, 191, 36, 0.5) !important;
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.15), rgba(245, 158, 11, 0.08)) !important;
+}
+
+.vivy-agent-nossen:hover {
+  border-color: rgba(251, 191, 36, 0.7) !important;
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.25), rgba(245, 158, 11, 0.14)) !important;
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.15);
+}
+
 .vivy-agent-discussion {
   text-decoration: none;
   text-transform: none;
@@ -3475,6 +3489,7 @@ html.a11-auth-page-root body {
   display: flex !important;
   flex-direction: column;
   align-items: stretch;
+  flex-wrap: nowrap !important;
   grid-template-columns: minmax(0, 1fr) !important;
   gap: 14px !important;
   border: 1px solid rgba(240, 121, 216, 0.28);
@@ -3485,6 +3500,11 @@ html.a11-auth-page-root body {
     rgba(7, 4, 12, 0.98);
   box-shadow: 0 20px 54px rgba(0, 0, 0, 0.46);
   backdrop-filter: blur(18px);
+}
+
+.vivy-agent-menu-panel > * {
+  width: 100% !important;
+  flex: none !important;
 }
 
 .vivy-agent-session-panel {
@@ -3812,6 +3832,50 @@ html.a11-auth-page-root body {
   opacity: 0.5;
 }
 
+.vivy-chat-sessions {
+  width: min(440px, 100%);
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+.vivy-chat-session-list {
+  width: 100%;
+  max-height: 118px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+  gap: 6px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid rgba(240, 121, 216, 0.22);
+  background: rgba(1, 1, 5, 0.38);
+}
+
+.vivy-chat-session-tab {
+  min-height: 34px !important;
+  width: 100%;
+  justify-content: flex-start;
+  padding: 0 9px !important;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  text-transform: none !important;
+  white-space: nowrap;
+}
+
+.vivy-chat-session-tab.is-active {
+  border-color: rgba(255, 210, 244, 0.78);
+  background: rgba(240, 121, 216, 0.24);
+  color: #fff7fd;
+}
+
+.vivy-chat-session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 .vivy-chat-log {
   display: grid;
   gap: 10px;
@@ -3873,6 +3937,210 @@ html.a11-auth-page-root body {
   opacity: 1;
   border-color: rgba(240, 121, 216, 0.7) !important;
   color: #f079d8 !important;
+}
+
+.vivy-chat-media-link {
+  display: grid;
+  gap: 8px;
+  width: min(100%, 520px);
+  margin-top: 4px;
+}
+
+.vivy-chat-media-link audio,
+.vivy-chat-media-link video {
+  width: 100%;
+  max-height: 220px;
+  border-radius: 8px;
+}
+
+/* La regle ci-dessus ne couvrait pas les images: une generation Vivy s'affichait a
+   sa taille naturelle -- souvent 1024 px -- debordait de la bulle et cassait la mise
+   en page. On borne la largeur ET la hauteur, et `object-fit: contain` garde l'image
+   entiere plutot que d'en recadrer un morceau. */
+.vivy-chat-media-link img {
+  width: 100%;
+  max-width: 100%;
+  max-height: 340px;
+  height: auto;
+  object-fit: contain;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+/* Le conteneur lui-meme doit pouvoir retrecir: sans min-width, une grille refuse de
+   descendre sous la taille de son contenu et le debordement revient par la fenetre. */
+.vivy-chat-media-link {
+  min-width: 0;
+}
+
+.vivy-chat-media-link > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.vivy-chat-media-link a {
+  width: fit-content;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(91, 217, 255, 0.42);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: rgba(8, 28, 36, 0.72);
+  color: #bff4ff;
+  font-size: 12px;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.vivy-chat-media-link a:hover,
+.vivy-chat-media-link a:focus-visible {
+  border-color: rgba(255, 190, 92, 0.9);
+  color: #ffe6b0;
+}
+
+.vivy-nossen-banger-button {
+  position: relative;
+  isolation: isolate;
+  overflow: visible;
+  border-color: rgba(91, 217, 255, 0.28) !important;
+  background: linear-gradient(135deg, rgba(16, 42, 50, 0.86), rgba(30, 16, 38, 0.86)) !important;
+  color: #c7f5ff !important;
+  min-width: 88px;
+}
+
+.vivy-nossen-banger-button::before {
+  content: "";
+  position: absolute;
+  inset: auto 10% -35% 10%;
+  height: 62%;
+  border-radius: 999px 999px 0 0;
+  background: linear-gradient(180deg, rgba(255, 216, 119, 0.85), rgba(255, 95, 44, 0));
+  opacity: 0;
+  transform: scaleY(0.7);
+  z-index: -1;
+}
+
+.vivy-nossen-banger-button.is-ready {
+  border-color: rgba(255, 193, 84, 0.95) !important;
+  background: linear-gradient(135deg, #ffd76f, #ff783d 48%, #141018 100%) !important;
+  color: #160a05 !important;
+  box-shadow: 0 0 0 1px rgba(255, 226, 138, 0.54), 0 0 24px rgba(255, 126, 45, 0.38), 0 0 34px rgba(91, 217, 255, 0.18);
+  animation: vivy-nossen-flame 1.08s ease-in-out infinite alternate;
+}
+
+.vivy-nossen-banger-button.is-ready::before {
+  opacity: 0.9;
+  animation: vivy-nossen-flame-core 0.72s ease-in-out infinite alternate;
+}
+
+.vivy-nossen-banger-button.is-running {
+  filter: saturate(1.2) brightness(1.08);
+}
+
+.vivy-nossen-button-label {
+  position: relative;
+  z-index: 2;
+}
+
+.vivy-nossen-flames {
+  position: absolute;
+  pointer-events: none;
+  inset: -24px 8px auto 8px;
+  height: 38px;
+  opacity: 0;
+  transform: translateY(8px) scale(0.78);
+  transform-origin: 50% 100%;
+  transition: opacity 180ms ease, transform 180ms ease;
+  z-index: 1;
+}
+
+.vivy-nossen-banger-button.is-ready .vivy-nossen-flames {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.vivy-nossen-provider-toggle {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px !important;
+  min-width: 0 !important;
+}
+
+.vivy-chat-compose .vivy-nossen-provider-toggle button {
+  min-height: 30px;
+  padding: 0 8px;
+  border-color: rgba(91, 217, 255, 0.22);
+  background: rgba(91, 217, 255, 0.08);
+  color: #dff8ff;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.vivy-chat-compose .vivy-nossen-provider-toggle button.is-active {
+  border-color: rgba(255, 193, 84, 0.86);
+  background: linear-gradient(135deg, rgba(255, 215, 111, 0.9), rgba(240, 121, 216, 0.76));
+  color: #160a05;
+}
+
+.vivy-nossen-flame-tongue {
+  position: absolute;
+  bottom: 0;
+  width: 22px;
+  height: 34px;
+  border-radius: 16px 16px 18px 18px;
+  clip-path: polygon(50% 0%, 70% 24%, 90% 52%, 78% 82%, 51% 100%, 23% 84%, 10% 56%, 29% 25%);
+  background:
+    radial-gradient(circle at 50% 70%, rgba(255, 253, 188, 0.96) 0 24%, rgba(255, 192, 68, 0.96) 25% 46%, rgba(255, 86, 35, 0.9) 47% 72%, rgba(255, 56, 23, 0) 74%),
+    linear-gradient(180deg, rgba(255, 239, 154, 0.95), rgba(255, 92, 31, 0.86));
+  filter: drop-shadow(0 0 8px rgba(255, 111, 32, 0.72));
+  mix-blend-mode: screen;
+  animation: vivy-nossen-tongue 0.78s ease-in-out infinite alternate;
+}
+
+.vivy-nossen-flame-tongue.is-left {
+  left: 7px;
+  height: 26px;
+  transform: rotate(-12deg);
+  animation-delay: -180ms;
+}
+
+.vivy-nossen-flame-tongue.is-center {
+  left: calc(50% - 13px);
+  width: 26px;
+  height: 38px;
+  animation-duration: 0.64s;
+}
+
+.vivy-nossen-flame-tongue.is-right {
+  right: 6px;
+  height: 29px;
+  transform: rotate(11deg);
+  animation-delay: -360ms;
+}
+
+@keyframes vivy-nossen-flame {
+  from { transform: translateY(0); text-shadow: 0 0 8px rgba(255, 246, 190, 0.72); }
+  to { transform: translateY(-1px); text-shadow: 0 0 16px rgba(255, 126, 45, 0.82); }
+}
+
+@keyframes vivy-nossen-flame-core {
+  from { transform: translateY(2px) scaleX(0.8) scaleY(0.66); }
+  to { transform: translateY(-2px) scaleX(1.06) scaleY(1); }
+}
+
+@keyframes vivy-nossen-tongue {
+  0% {
+    transform: translateY(3px) scaleX(0.82) scaleY(0.84) rotate(-4deg);
+    filter: drop-shadow(0 0 5px rgba(255, 107, 31, 0.58));
+  }
+  46% {
+    transform: translateY(-3px) scaleX(1.04) scaleY(1.1) rotate(4deg);
+  }
+  100% {
+    transform: translateY(-7px) scaleX(0.94) scaleY(1.18) rotate(-2deg);
+    filter: drop-shadow(0 0 14px rgba(255, 177, 52, 0.82));
+  }
 }
 
 .vivy-chat-file-list,
@@ -3953,6 +4221,41 @@ html.a11-auth-page-root body {
   background: linear-gradient(135deg, #f079d8, #8f3eff);
   color: #120516;
   border-color: transparent;
+}
+
+.vivy-chat-compose .vivy-clip-generator-button {
+  border-color: rgba(91, 217, 255, 0.42);
+  background: linear-gradient(135deg, rgba(91, 217, 255, 0.22), rgba(240, 121, 216, 0.16));
+  color: #e9fbff;
+}
+
+/* Redirection vers NOSSEN. Vert-ambre, distinct du bleu des generateurs et des
+   flammes du bouton Banger : ce bouton n'engendre rien, il emmene ailleurs. */
+.vivy-chat-compose .vivy-nossen-redirect-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid rgba(122, 226, 160, 0.46);
+  border-radius: 8px;
+  padding: 9px 14px;
+  background: linear-gradient(135deg, rgba(122, 226, 160, 0.24), rgba(240, 197, 96, 0.18));
+  color: #eafff2;
+  font-size: 13px;
+  font-weight: 760;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: filter 140ms ease, transform 140ms ease;
+}
+
+.vivy-chat-compose .vivy-nossen-redirect-button:hover {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+}
+
+.vivy-chat-compose .vivy-nossen-redirect-button:focus-visible {
+  outline: 2px solid rgba(122, 226, 160, 0.8);
+  outline-offset: 2px;
 }
 
 .vivy-chat-reference {
@@ -4336,6 +4639,24 @@ html.a11-auth-page-root body {
   background: rgba(240, 121, 216, 0.14);
 }
 
+/* Une voix premium tient le role: les voix officielles ne sont plus cochables. */
+.vivy-studio-artist-option.is-disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  filter: grayscale(1);
+}
+
+.vivy-studio-artist-option.is-disabled input {
+  cursor: not-allowed;
+}
+
+.vivy-studio-cast-note {
+  margin-top: 8px;
+  font-size: 0.86rem;
+  line-height: 1.35;
+  color: rgba(240, 121, 216, 0.92);
+}
+
 .vivy-studio-artist-option input {
   width: 18px;
   min-width: 18px;
@@ -4397,6 +4718,44 @@ html.a11-auth-page-root body {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.vivy-studio-provider-note {
+  margin: 0;
+  color: #c9b9d0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.vivy-studio-inline-option {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+  min-height: 36px;
+  color: #ead9e8;
+  font-size: 12px;
+}
+
+.vivy-studio-inline-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 16px;
+}
+
+.vivy-studio-arrangement {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin: 8px 0 0;
+  color: #d9bfd2;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.vivy-studio-arrangement strong {
+  color: #f4c8eb;
 }
 
 .vivy-studio-actions button:first-child,
@@ -4722,6 +5081,20 @@ html.a11-auth-page-root body {
     width: 100%;
   }
 
+  .vivy-chat-sessions {
+    width: 100%;
+    justify-items: stretch;
+  }
+
+  .vivy-chat-session-list {
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+    max-height: 142px;
+  }
+
+  .vivy-chat-session-actions {
+    justify-content: stretch;
+  }
+
   .vivy-chat-log {
     max-height: min(52svh, 420px);
     min-height: 172px;
@@ -4735,7 +5108,8 @@ html.a11-auth-page-root body {
   .vivy-chat-compose {
     grid-template-columns: 1fr;
     position: sticky;
-    bottom: calc(var(--vivy-keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px) + 8px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    touch-action: manipulation;
     z-index: 30;
     margin: 12px -6px 0;
     padding: 10px;
@@ -4752,6 +5126,7 @@ html.a11-auth-page-root body {
     min-height: 108px;
     max-height: 30svh;
     resize: none;
+    overscroll-behavior: contain;
   }
 
   .vivy-chat-compose div {
@@ -4761,22 +5136,45 @@ html.a11-auth-page-root body {
 
   body.vivy-keyboard-open .vivy-chat {
     padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    overscroll-behavior: contain;
   }
 
   body.vivy-keyboard-open .vivy-chat-head p {
     display: none;
   }
 
+  body.vivy-keyboard-open .vivy-chat-reference,
+  body.vivy-keyboard-open .vivy-chat-attachments {
+    display: none;
+  }
+
   body.vivy-keyboard-open .vivy-chat-log {
-    max-height: min(34svh, 260px);
+    max-height: min(30svh, 230px);
   }
 
   body.vivy-keyboard-open .vivy-chat-compose div {
-    grid-template-columns: 1fr;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(74px, 1fr);
+    grid-template-columns: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    padding-bottom: 2px;
   }
 
-  body.vivy-keyboard-open .vivy-chat-compose div button:not([type="submit"]) {
+  body.vivy-keyboard-open .vivy-chat-compose div::-webkit-scrollbar {
     display: none;
+  }
+
+  body.vivy-keyboard-open .vivy-chat-compose div button {
+    min-width: 74px;
+    padding-inline: 8px;
+    white-space: nowrap;
+  }
+
+  body.vivy-keyboard-open .vivy-chat-compose button[type="submit"] {
+    min-width: 92px;
   }
 
   .vivy-studio-head {
@@ -7210,6 +7608,22 @@ body {
   text-transform: uppercase;
 }
 
+.fun-home-nav-links a[href*="nossen"],
+.fun-public-menu-panel a[href*="nossen"] {
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.15), rgba(245, 158, 11, 0.08));
+  color: #fbbf24;
+  padding: 0 14px;
+  gap: 4px;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.fun-home-nav-links a[href*="nossen"]:hover,
+.fun-public-menu-panel a[href*="nossen"]:hover {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.28), rgba(245, 158, 11, 0.14));
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.18);
+}
+
 .fun-home-nav-links a:hover,
 .fun-home-cockpit:hover {
   background: rgba(255, 255, 255, 0.06);
@@ -8062,6 +8476,14 @@ body {
   transform-origin: 42% 20%;
 }
 
+/* Vivy n'avait pas de correction et retombait sur << center bottom >>: sur mobile,
+   ou la carte est plus haute que large, l'ancrage en bas lui coupait la tete. */
+.fun-home-agent-card--vivy > img {
+  object-position: 50% 18%;
+  transform: scale(1.12);
+  transform-origin: 50% 18%;
+}
+
 .fun-home-agent-card::after {
   content: "";
   position: absolute;
@@ -8265,6 +8687,13 @@ body {
 
 .fun-status-public-foot a {
   color: #eafffb;
+}
+
+.fun-status-public-links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
 }
 
 .fun-mcp-console {
@@ -9252,6 +9681,33 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.fun-provider-health-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.fun-provider-health-table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+  color: #e5eef7;
+}
+
+.fun-provider-health-table th,
+.fun-provider-health-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  text-align: left;
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+.fun-provider-health-table th {
+  color: #9fb3c8;
+  font-size: 11px;
+  text-transform: uppercase;
 }
 
 .fun-account-mini-list a {
@@ -10448,4 +10904,97 @@ body {
   .vivy-chat-reference {
     align-items: stretch;
   }
+}
+
+/* Suppression des donnees du compte: vie privee et place disque. */
+.fun-account-erase-list {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.fun-account-erase-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.9rem;
+}
+
+.fun-account-erase-list strong {
+  text-align: right;
+}
+
+.fun-account-erase-done {
+  color: rgba(126, 231, 168, 0.95);
+  font-size: 0.88rem;
+}
+
+/* L'avertissement doit se distinguer nettement des boutons ordinaires. */
+.fun-account-erase-confirm {
+  border: 1px solid rgba(240, 121, 121, 0.55);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(240, 121, 121, 0.1);
+}
+
+.fun-account-erase-confirm p {
+  margin: 0 0 10px;
+  font-size: 0.88rem;
+}
+
+.fun-account-erase-danger {
+  border-color: rgba(240, 121, 121, 0.7) !important;
+  color: rgba(255, 190, 190, 0.98) !important;
+}
+
+/* Chat vocal Vivy (fondateur/famille). L'etat d'enregistrement doit se voir d'un
+   coup d'oeil: on parle sans regarder l'ecran. */
+.vivy-voice-chat-button.is-recording {
+  border-color: rgba(240, 121, 121, 0.85) !important;
+  background: rgba(240, 121, 121, 0.18) !important;
+  animation: vivy-voice-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes vivy-voice-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vivy-voice-chat-button.is-recording { animation: none; }
+}
+
+.vivy-chat-status--voice {
+  color: rgba(240, 121, 216, 0.92);
+}
+
+/* Croix de suppression par fichier: discrete au repos, franche une fois armee. */
+.fun-media-inventory-delete {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  border-radius: 8px;
+  min-width: 32px;
+  padding: 4px 8px;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.fun-media-inventory-delete:hover:not(:disabled) {
+  border-color: rgba(240, 121, 121, 0.7);
+  color: rgba(255, 190, 190, 0.98);
+}
+
+.fun-media-inventory-delete.is-armed {
+  border-color: rgba(240, 121, 121, 0.85);
+  background: rgba(240, 121, 121, 0.18);
+  color: rgba(255, 210, 210, 0.98);
+}
+
+.fun-media-inventory-confirm {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
 }

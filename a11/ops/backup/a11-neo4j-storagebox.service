@@ -1,0 +1,22 @@
+[Unit]
+Description=Encrypted A11 Neo4j and graph-artifact backup to Hetzner Storage Box
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/a11-backup/neo4j-storagebox.env
+ExecStart=/usr/local/sbin/a11-neo4j-storagebox-backup --apply
+User=root
+Group=root
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/deploy/a11-data/runtime/backup-staging /run/lock /var/cache/a11-restic
+CacheDirectory=a11-restic
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

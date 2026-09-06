@@ -144,14 +144,38 @@ function decodeFunesteZenFile(inputPath, outputPath, options = {}) {
   return decoded;
 }
 
+function encodeFunesteZenFileAsync(inputPath, outputPath, options = {}) {
+  return zen.encodeZenFileAsync(inputPath, outputPath, {
+    ...options,
+    key: resolveFunesteZenKey(options)
+  });
+}
+
+function decodeFunesteZenFileAsync(inputPath, outputPath, options = {}) {
+  return zen.decodeZenFileAsync(inputPath, outputPath, {
+    ...options,
+    key: resolveFunesteZenKey(options)
+  });
+}
+
+function verifyFunesteZenFileAsync(inputPath, options = {}) {
+  return zen.verifyZenFileAsync(inputPath, {
+    ...options,
+    key: resolveFunesteZenKey(options)
+  });
+}
+
 module.exports = {
   ...zen,
   FUNESTE_ZEN_DEFAULTS,
   buildFunesteZenManifest,
   decodeFunesteZenContainer,
   decodeFunesteZenFile,
+  decodeFunesteZenFileAsync,
   encodeFunesteZenContainer,
   encodeFunesteZenFile,
+  encodeFunesteZenFileAsync,
   materializeContainerData,
-  resolveFunesteZenKey
+  resolveFunesteZenKey,
+  verifyFunesteZenFileAsync
 };

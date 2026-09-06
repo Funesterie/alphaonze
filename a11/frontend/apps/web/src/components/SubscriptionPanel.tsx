@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  getSubscriptionStatus, 
-  createCheckoutSession, 
+import {
+  getSubscriptionStatus,
+  createCheckoutSession,
   createCustomerPortal,
   cancelSubscription,
-  type SubscriptionStatus 
+  createFunesterieContribution,
+  type SubscriptionStatus
 } from '../lib/api';
 
 interface SubscriptionPanelProps {
@@ -27,7 +28,7 @@ const SUBSCRIPTION_PLANS: Array<{
     id: 'premium',
     name: 'A11 Premium',
     price: '8,99 EUR',
-    period: 'par mois',
+    period: 'par trimestre',
     includedTokens: 'Chat long + crédits création inclus',
     features: [
       'Chat long et contexte mieux conservé',
@@ -40,7 +41,7 @@ const SUBSCRIPTION_PLANS: Array<{
     id: 'founder',
     name: 'Fondateur',
     price: '29,99 EUR',
-    period: 'par mois',
+    period: 'par trimestre',
     includedTokens: 'Priorité haute, IA custom future et permissions avancées',
     features: [
       'Priorité haute sur les jobs et files de traitement',
@@ -157,6 +158,23 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
       await loadSubscriptionStatus();
     } catch (err) {
       setError((err as Error).message || "Erreur lors du désabonnement");
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleContribute() {
+    setActionLoading(true);
+    setError('');
+    try {
+      const result = await createFunesterieContribution('royalties');
+      if (result.ok && result.url) {
+        window.location.href = result.url;
+      } else {
+        setError(result.error || 'Contribution indisponible pour le moment');
+      }
+    } catch (err) {
+      setError((err as Error).message || 'Erreur lors de la contribution');
     } finally {
       setActionLoading(false);
     }
@@ -612,6 +630,37 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
             </div>
           </div>
         )}
+      </div>
+
+      <div style={{
+        ...cardStyle,
+        background: 'linear-gradient(135deg, #2e1065 0%, #1e293b 100%)',
+        border: '1px solid #7c3aed',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '16px',
+        flexWrap: 'wrap',
+      }}>
+        <div style={{ minWidth: 240, flex: 1 }}>
+          <div style={{ color: '#f1f5f9', fontWeight: 800, fontSize: '16px' }}>💜 Soutenir la Funesterie</div>
+          <div style={{ color: '#c4b5fd', fontSize: '13px', marginTop: '6px' }}>
+            Contribution libre pour participer à l'évolution de la Funesterie. Montant au choix (à partir de 2 €), sans abonnement.
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleContribute}
+          disabled={actionLoading}
+          style={{
+            ...primaryButtonStyle,
+            opacity: actionLoading ? 0.6 : 1,
+            cursor: actionLoading ? 'not-allowed' : 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {actionLoading ? 'Chargement...' : 'Faire un don'}
+        </button>
       </div>
 
       {isActive && (

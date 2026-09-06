@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "Pulsar Minefield — Semantic Popup Neutralizer",
+  "version": "5.0.0",
+  "description": "Champ de mines sémantique qui désactive les popups, ads, et scripts intrusifs avant qu'ils n'atteignent le cerveau de la page.",
+  "permissions": ["contentScripts", "storage", "scripting", "activeTab"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "pulsar-sw.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["pulsar-mine.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["pulsar-sweeper.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/pulsar-16.png",
+      "48": "icons/pulsar-48.png",
+      "128": "icons/pulsar-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/pulsar-16.png",
+    "48": "icons/pulsar-48.png",
+    "128": "icons/pulsar-128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["pulsar-mine.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
