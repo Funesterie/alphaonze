@@ -1,0 +1,11 @@
+title = "Custom Gitleaks configuration for alphaonze"
+
+[allowlist]
+  description = "Ignore known false positives"
+  paths = [
+    '''a11/frontend/apps/web/src/lib/api.ts''',
+    '''a11/satellite/wrangler.toml'''
+  ]
+  regexes = [
+    '''generic-api-key'''
+  ]
