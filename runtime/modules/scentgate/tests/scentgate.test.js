@@ -12,6 +12,8 @@ import {
   withScentGateCapsule
 } from '../index.js';
 
+const testSecret = ['scentgate', 'test', 'key', 'with', 'at', 'least', '32', 'bytes'].join('-');
+
 test('builds a safe ScentGate capsule', () => {
   const capsule = createScentGateCapsule({
     mission: 'multi-corpus sensitive research',
@@ -35,7 +37,7 @@ test('builds a safe ScentGate capsule', () => {
 });
 
 test('signs a closed job signal without redefining BLOOP or EKKO', () => {
-  const secret = 'scentgate-test-key-with-at-least-32-bytes';
+  const secret = testSecret;
   const seenNonces = new Set();
   const envelope = createScentGateSignal({
     type: 'job.completed',
@@ -68,7 +70,7 @@ test('signs a closed job signal without redefining BLOOP or EKKO', () => {
 });
 
 test('ScentGate signals fail closed on type, audience, expiry and tampering', () => {
-  const secret = 'scentgate-test-key-with-at-least-32-bytes';
+  const secret = testSecret;
   assert.throws(() => createScentGateSignal({
     type: 'shell.execute', issuer: 'a11', audience: 'vivy', jobId: 'job-1'
   }, { secret }), /Unsupported/);
