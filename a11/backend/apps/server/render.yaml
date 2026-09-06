@@ -58,9 +58,10 @@ services:
       - key: A11_GOOGLE_CALLBACK_URL
         value: https://a11.funesterie.me/api/auth/google/callback
 
-      # LLM
+      # LLM - Groq est strictement opt-in : cle + modele explicite requis
+      # Par defaut : ollama (local) pour eviter les dependances externes
       - key: A11_LLM_PROVIDER
-        value: groq
+        value: ollama
       - key: OLLAMA_BASE
         value: http://a11-ollama:11434
       - key: A11_OLLAMA_PRIMARY_MODEL
@@ -104,11 +105,11 @@ services:
       - key: A11_LLM_RUNTIME_FALLBACK_ORDER
         value: ollama,openai,gemini,xai,huggingface,deepseek,together
       - key: A11_LLM_FALLBACK_PROVIDER
-        value: ollama # groq d'abord, puis secours local si le cloud tombe
+        value: ollama
       - key: GROQ_API_KEY
         sync: false # Secret, à configurer manuellement
       - key: GROQ_MODEL
-        value: llama-3.3-70b-versatile
+        value: '' # Groq est opt-in : il faut GROQ_API_KEY + GROQ_MODEL configure explicitement
       - key: DEEPSEEK_API_KEY
         sync: false # Secret, à configurer manuellement
       - key: DEEPSEEK_MODEL

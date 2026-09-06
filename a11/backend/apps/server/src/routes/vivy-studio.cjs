@@ -1074,8 +1074,8 @@ function getVivyOpenAIConfig(options = {}) {
       : (process.env.VIVY_OPENAI_API_KEY || process.env.OPENAI_API_KEY || process.env.A11_OPENAI_API_KEY)));
   const defaultModel = /groq/i.test(normalizedBaseUrl)
     ? (mode === 'song'
-      ? (process.env.VIVY_SONG_GROQ_MODEL || process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile')
-      : (process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'))
+      ? (process.env.VIVY_SONG_GROQ_MODEL || process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || '')
+      : (process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || ''))
     : (/x\.ai|grok/i.test(normalizedBaseUrl)
       ? (process.env.VIVY_XAI_MODEL || process.env.XAI_MODEL || 'grok-4.3')
     : (/openrouter\.ai/i.test(normalizedBaseUrl)
@@ -1124,14 +1124,10 @@ function getVivyCloudProviderConfig(provider, options = {}) {
         ? (process.env.VIVY_SONG_GROQ_API_KEY || process.env.VIVY_GROQ_API_KEY || process.env.GROQ_API_KEY)
         : (process.env.VIVY_GROQ_API_KEY || process.env.GROQ_API_KEY),
       model: songMode
-        ? (process.env.VIVY_SONG_GROQ_MODEL || process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile')
-        : (process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'),
-      // Groq refuse en 413 des que le prompt depasse sa limite, et c'est arrive a
-      // chaque chanson dans les journaux du 27/07. Le mecanisme de budget existait
-      // (fitVivyChatRequestForBundle lit bundle.maxPromptChars), Groq n'avait
-      // simplement aucune valeur: on envoyait le prompt entier pour se faire refuser.
-      // 18 000 renvoyait encore 413 sur le palier gratuit de Groq: sa limite porte sur
-      // la taille de la requete, pas seulement sur le contexte du modele.
+        ? (process.env.VIVY_SONG_GROQ_MODEL || process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || '')
+        : (process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || ''),
+      // Groq est strictement opt-in : cle + modele explicite requis.
+      // Sans configuration explicite, cette entree reste inactive.
       maxPromptChars: Math.max(4000, Number(process.env.VIVY_GROQ_MAX_PROMPT_CHARS || 8000) || 8000),
     },
     openai: {
@@ -12144,20 +12140,50 @@ function createVivyStudioRouter({
       // Les URL Suno expirent. On rapatrie l'echantillon et on l'attache a la voix:
       // Vivy s'en sert comme matiere de reference, il doit rester disponible apres coup.
       let stored = false;
+      let downloadError = null;
       if (audioUrl) {
         try {
           const response = await fetch(audioUrl, { signal: AbortSignal.timeout(60000) });
-          if (response.ok) {
-            const buffer = Buffer.from(await response.arrayBuffer());
-            if (buffer.length > 10000) {
-              attachVoiceSample(req.params.name, { buffer, durationSeconds }, process.env);
-              stored = true;
+          
+          // Faire remonter les erreurs 401/403/404 au lieu de les ignorer
+          if (!response.ok) {
+            const status = response.status;
+            if ([401, 403, 404].includes(status)) {
+              downloadError = new Error(`audio_download_http_${status}`);
+              downloadError.status = status;
+              throw downloadError;
             }
           }
+          
+          const buffer = Buffer.from(await response.arrayBuffer());
+          
+          // Un fichier audio vide doit etre une ERREUR, pas un telechargement reussi
+          if (buffer.length === 0) {
+            downloadError = new Error('audio_download_empty_file');
+            downloadError.status = 400; // Bad Request
+            throw downloadError;
+          }
+          
+          // Minimum reasonable size for an audio file
+          if (buffer.length > 10000) {
+            attachVoiceSample(req.params.name, { buffer, durationSeconds }, process.env);
+            stored = true;
+          }
         } catch (error) {
+          downloadError = error;
           // Un echec de rapatriement ne doit pas masquer un rendu reussi: on le signale.
           console.warn('[VoiceCatalog] echantillon non rapatrie: %s', String(error.message || error).slice(0, 120));
         }
+      }
+
+      // Si telechargement echoue avec erreur critique (401/403/404/empty), retourner l'erreur
+      if (downloadError && [401, 403, 404, 400].includes(downloadError.status)) {
+        return res.status(downloadError.status === 400 ? 400 : downloadError.status).json({
+          ok: false,
+          error: downloadError.message,
+          audioUrl,
+          status: downloadError.status,
+        });
       }
 
       return res.json({

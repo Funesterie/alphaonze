@@ -366,7 +366,7 @@ function buildGroqVideoLlmFn(env = process.env) {
     : isTruthyEnv(env.A11_IMAGE_DIRECT_GROQ_ENABLED);
   if (!isEnabled) return null;
 
-  const groqModel = String(env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim();
+  const groqModel = String(env.GROQ_MODEL || env.VIVY_GROQ_MODEL || '').trim();
   const groqUrl = 'https://api.groq.com/openai/v1/chat/completions';
 
   return async function callGroqVideoJson({ text, systemPrompt, maxTokens = 300, temperature = 0.2, timeoutMs = 15000 } = {}) {
