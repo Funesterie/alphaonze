@@ -1,2 +1,9 @@
-# False positive — authBase is a URL variable, not an API key
+# False positive: authBase is a URL variable, not an API key
 a11/frontend/apps/web/src/lib/api.ts:generic-api-key:924
+
+# False positive: test-only ScentGate signing material used by deterministic unit tests
+runtime/modules/scentgate/tests/scentgate.test.js:generic-api-key:38
+runtime/modules/scentgate/tests/scentgate.test.js:generic-api-key:71
+
+# False positive: this code references a key filename/path, not embedded key material
+a11/backend/apps/server/src/persona/persona-agent-revival-runner.cjs:generic-api-key:141
