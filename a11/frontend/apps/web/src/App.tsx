@@ -18898,16 +18898,30 @@ export function App() {
                           if (audioRefs.length === 0) return null;
                           return (
                             <div style={{ marginTop: 12, display: "grid", gap: 10, maxWidth: 420 }}>
-                              {audioRefs.map((audioRef, audioIndex) => (
+                              {audioRefs.map((audioRef, audioIndex) => {
+                                // Une ref relative (/files/...) rendue brute vise l'origine du site,
+                                // pas celle de l'API : l'element ne charge rien. Le lecteur passe donc
+                                // par la meme resolution que le lien et le bouton telechargement.
+                                const resolvedAudioUrl = resolveApiAssetUrl(audioRef) || audioRef;
+                                return (
                                 <div key={`${audioRef}-${audioIndex}`} style={{ display: "grid", gap: 6 }}>
                                   {audioRefs.length > 1 && (
                                     <div style={{ fontSize: 11, color: "#93c5fd", fontWeight: 700 }}>
                                       Audio ref {audioIndex + 1}/{audioRefs.length}
                                     </div>
                                   )}
-                                  <audio src={audioRef} controls preload="metadata" style={{ width: "100%" }} />
+                                  <audio
+                                    src={resolvedAudioUrl}
+                                    controls
+                                    preload="metadata"
+                                    style={{ width: "100%" }}
+                                    onPointerDown={() => { void unlockAudioOutput(); }}
+                                    onError={() => {
+                                      console.warn("[A11] lecture audio impossible", { ref: audioRef, resolved: resolvedAudioUrl });
+                                    }}
+                                  />
                                   <a
-                                    href={audioRef}
+                                    href={resolvedAudioUrl}
                                     target="_blank"
                                     rel="noreferrer"
                                     style={{ fontSize: 12, color: "#93c5fd", textDecoration: "none" }}
@@ -18915,7 +18929,8 @@ export function App() {
                                     Ouvrir l'audio
                                   </a>
                                 </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           );
                         })()}
@@ -18924,7 +18939,11 @@ export function App() {
                           if (videoRefs.length === 0) return null;
                           return (
                             <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
-                              {videoRefs.map((videoRef, videoIndex) => (
+                              {videoRefs.map((videoRef, videoIndex) => {
+                                // Meme regle que pour l'audio : le lecteur, le lien et le bouton
+                                // telechargement doivent viser exactement la meme URL resolue.
+                                const resolvedVideoUrl = resolveApiAssetUrl(videoRef) || videoRef;
+                                return (
                                 <div key={`${videoRef}-${videoIndex}`} style={{ display: "grid", gap: 8 }}>
                                   {videoRefs.length > 1 && (
                                     <div style={{ fontSize: 11, color: "#c084fc", fontWeight: 700 }}>
@@ -18933,29 +18952,33 @@ export function App() {
                                   )}
                                   {/\.gif(?:[?#].*)?$/i.test(String(videoRef || "")) ? (
                                     <a
-                                      href={videoRef}
+                                      href={resolvedVideoUrl}
                                       target="_blank"
                                       rel="noreferrer"
                                       style={{ display: "inline-block", width: "fit-content" }}
                                     >
                                       <img
-                                        src={videoRef}
+                                        src={resolvedVideoUrl}
                                         alt={`Animation generee par ${productName}`}
                                         style={{ maxWidth: "320px", borderRadius: 12 }}
                                       />
                                     </a>
                                   ) : (
                                     <video
-                                      src={videoRef}
+                                      src={resolvedVideoUrl}
                                       controls
                                       preload="metadata"
                                       playsInline
                                       style={{ maxWidth: "320px", borderRadius: 12, background: "#020617" }}
+                                      onPointerDown={() => { void unlockAudioOutput(); }}
+                                      onError={() => {
+                                        console.warn("[A11] lecture video impossible", { ref: videoRef, resolved: resolvedVideoUrl });
+                                      }}
                                     />
                                   )}
                                   <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                                     <a
-                                      href={videoRef}
+                                      href={resolvedVideoUrl}
                                       target="_blank"
                                       rel="noreferrer"
                                       style={{ fontSize: 12, color: "#93c5fd", textDecoration: "none" }}
@@ -18966,8 +18989,7 @@ export function App() {
                                       type="button"
                                       style={{ fontSize: 12, color: "#86efac", background: "none", border: "none", padding: 0, cursor: "pointer", fontWeight: 600 }}
                                       onClick={() => {
-                                        const vidUrl = resolveApiAssetUrl(videoRef) || videoRef;
-                                        void downloadMediaUrl(vidUrl, `video-${videoIndex + 1}.mp4`)
+                                        void downloadMediaUrl(resolvedVideoUrl, `video-${videoIndex + 1}.mp4`)
                                           .then(() => setUploadFeedback("Téléchargement lancé."))
                                           .catch((error_) => setUploadFeedback(`Échec du téléchargement: ${(error_ as Error)?.message || error_}`));
                                       }}
@@ -18976,7 +18998,8 @@ export function App() {
                                     </button>
                                   </div>
                                 </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           );
                         })()}
