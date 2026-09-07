@@ -142,3 +142,47 @@ test("la couleur sonore affichee repart vide et ne se restaure pas depuis le bro
   assert.match(persistenceBlock, /songMood:\s*""/);
   assert.doesNotMatch(persistenceBlock, /^\s+songMood,\s*$/m);
 });
+
+
+test("bulles: le lecteur audio vise la meme URL que le lien d'ouverture", () => {
+  // Bug du 06/09 : <audio src={audioRef}> rendait la ref brute. Une ref relative
+  // /files/... est alors resolue contre l'origine du SITE, pas celle de l'API,
+  // donc l'element ne charge rien — alors que le bouton telechargement, lui,
+  // passait deja par resolveApiAssetUrl et fonctionnait. D'ou "l'URL existe mais
+  // la bulle ne lit pas".
+  const start = appSource.indexOf("const audioRefs = uniqueMediaUrls(m.audioUrl");
+  const end = appSource.indexOf("const videoRefs = uniqueMediaUrls(m.videoUrl", start);
+  const block = appSource.slice(start, end);
+  assert.ok(start > 0 && end > start, "le bloc audio des bulles doit etre trouve");
+
+  assert.match(block, /const resolvedAudioUrl = resolveApiAssetUrl\(audioRef\) \|\| audioRef;/);
+  // Le src rendu et le href du lien doivent etre la MEME valeur resolue.
+  assert.match(block, /src=\{resolvedAudioUrl\}/);
+  assert.match(block, /href=\{resolvedAudioUrl\}/);
+  assert.doesNotMatch(block, /src=\{audioRef\}/);
+  assert.doesNotMatch(block, /href=\{audioRef\}/);
+  assert.match(block, /preload="metadata"/);
+  // L'echec de lecture doit nommer l'URL reellement demandee, sinon on cherche a l'aveugle.
+  assert.match(block, /lecture audio impossible[\s\S]*resolved: resolvedAudioUrl/);
+  // Premier geste utilisateur = deblocage de la sortie audio (iOS/Safari).
+  assert.match(block, /onPointerDown=\{\(\) => \{ void unlockAudioOutput\(\); \}\}/);
+});
+
+test("bulles: le lecteur video vise la meme URL que le bouton telechargement", () => {
+  const start = appSource.indexOf("const videoRefs = uniqueMediaUrls(m.videoUrl");
+  const end = appSource.indexOf("{m.fileUrl && (", start);
+  const block = appSource.slice(start, end);
+  assert.ok(start > 0 && end > start, "le bloc video des bulles doit etre trouve");
+
+  assert.match(block, /const resolvedVideoUrl = resolveApiAssetUrl\(videoRef\) \|\| videoRef;/);
+  // Lecteur, GIF, lien d'ouverture et telechargement : une seule URL pour les quatre.
+  assert.match(block, /src=\{resolvedVideoUrl\}/);
+  assert.match(block, /href=\{resolvedVideoUrl\}/);
+  assert.match(block, /downloadMediaUrl\(resolvedVideoUrl,/);
+  assert.doesNotMatch(block, /src=\{videoRef\}/);
+  assert.doesNotMatch(block, /href=\{videoRef\}/);
+  assert.match(block, /playsInline/);
+  assert.match(block, /preload="metadata"/);
+  assert.match(block, /lecture video impossible[\s\S]*resolved: resolvedVideoUrl/);
+  assert.match(block, /onPointerDown=\{\(\) => \{ void unlockAudioOutput\(\); \}\}/);
+});
