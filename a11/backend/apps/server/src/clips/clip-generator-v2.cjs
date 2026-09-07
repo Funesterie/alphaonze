@@ -43,6 +43,29 @@ function postJson(url, data) {
   });
 }
 
+/**
+ * Le pont MCP repond 200 avec { ok: true } meme quand l'outil amont a echoue :
+ * l'echec est porte par result.isError, et le VRAI motif par content[0].text.
+ * Ne regarder que `result.ok` fait donc perdre le seul message qui explique la
+ * panne. Vecu le 2026-09-07 : une cle Comfy expiree (« API key is invalid or
+ * expired, 403 on /api/prompt ») arrivait jusqu'ici intacte, et ressortait en
+ * « No prompt_id in response » — un message qui envoie chercher un bug de
+ * parsing pendant que la cause est ecrite en toutes lettres dans la reponse.
+ *
+ * Rend le motif d'echec, ou null si la reponse est exploitable.
+ */
+function describeBridgeFailure(response) {
+  if (!response) return 'reponse vide du pont MCP';
+  if (response.ok === false) return String(response.error || 'appel du pont refuse');
+  const inner = response.result;
+  if (inner && inner.isError) {
+    const texte = String((inner.content && inner.content[0] && inner.content[0].text) || '').trim();
+    // Plafonne : ce motif finit affiche dans la page, il doit rester lisible.
+    return texte ? texte.slice(0, 400) : 'echec amont sans message';
+  }
+  return null;
+}
+
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // Soumettre UNE vidéo et ATTENDRE qu'elle soit prête
@@ -80,7 +103,7 @@ async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = nu
   // Submit — si l'i2v n'est pas accepté par le partenaire, on retombe en t2v
   // plutôt que de perdre le segment.
   let result = await postJson(BRIDGE_URL, { tool: 'comfy__partner_generate', args });
-  if (!result.ok && useReference) {
+  if (describeBridgeFailure(result) && useReference) {
     console.warn(`[clip] Vidéo ${index}: i2v refusé, repli t2v`);
     result = await postJson(BRIDGE_URL, {
       tool: 'comfy__partner_generate',
@@ -95,10 +118,12 @@ async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = nu
       },
     });
   }
-  if (!result.ok) throw new Error('Submit failed: ' + JSON.stringify(result.error || result));
+  const echecAmont = describeBridgeFailure(result);
+  if (echecAmont) throw new Error(echecAmont);
   const text = result.result?.content?.[0]?.text || '';
   const match = text.match(/prompt_id:\s*([a-f0-9-]+)/);
-  if (!match) throw new Error('No prompt_id in response');
+  // Sans prompt_id, on cite la reponse : c'est elle qui dit pourquoi.
+  if (!match) throw new Error('Pas de prompt_id dans la reponse : ' + (text.slice(0, 300) || 'reponse vide'));
   const promptId = match[1];
 
   // Attendre
@@ -162,10 +187,20 @@ async function generateClip(config) {
   console.log('[clip] Audio prêt');
 
   // 2. Mesurer la durée
+  // Le repli de 180 s ne survit que si la mesure est un nombre. Avant, l'affectation
+  // se faisait AVANT toute verification : un ffprobe qui reussit en imprimant « N/A »
+  // ou rien donnait NaN, sans exception, donc sans passer par le catch. numSegments
+  // valait alors NaN, la boucle `i < NaN` ne tournait pas une seule fois, et l'erreur
+  // finale disait « Aucune vidéo générée » sans que rien n'ait ete tente.
   let audioDuration = 180;
   try {
-    audioDuration = Math.ceil(parseFloat(execSync(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`, { timeout: 10000 }).toString().trim()));
-  } catch (e) {}
+    const brut = execSync(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`, { timeout: 10000 }).toString().trim();
+    const mesure = Math.ceil(parseFloat(brut));
+    if (Number.isFinite(mesure) && mesure > 0) audioDuration = mesure;
+    else console.warn(`[clip] Durée illisible (${brut || 'sortie vide'}), repli sur ${audioDuration}s`);
+  } catch (e) {
+    console.warn(`[clip] ffprobe indisponible (${e.message}), repli sur ${audioDuration}s`);
+  }
   console.log(`[clip] Durée audio: ${audioDuration}s`);
 
   // 3. Calculer le nombre de segments (1 vidéo = ~8s, max 8 vidéos pour un clip normal, illimité pour full)
@@ -193,6 +228,8 @@ async function generateClip(config) {
   // empeche le clip de partir dans six endroits differents.
   const lieuBrief = lieu ? ` The entire clip is shot in one single location: ${lieu}. Never change location.` : '';
   const videoPaths = [];
+  // Le motif du dernier segment rate : c'est lui qui explique un clip vide.
+  let dernierEchec = '';
   for (let i = 0; i < numSegments; i++) {
     const section = sections[i % sections.length];
     const prompt = `${section.visual}.${lieuBrief} Cinematic anime quality, volumetric lighting, smooth camera movement. ${style}${identityBrief}`.trim();
@@ -205,6 +242,7 @@ async function generateClip(config) {
         break;
       } catch (e) {
         retries--;
+        dernierEchec = e.message;
         console.warn(`[clip] Vidéo ${i} échouée: ${e.message}${retries > 0 ? ', retry...' : ''}`);
         if (retries > 0) await sleep(5000);
       }
@@ -223,7 +261,13 @@ async function generateClip(config) {
     if (i < numSegments - 1) await sleep(2000);
   }
 
-  if (videoPaths.length === 0) throw new Error('Aucune vidéo générée');
+  // « Aucune vidéo générée » seul est vrai mais muet : il a fallu une journee pour
+  // retrouver que la cause etait une cle API expiree. Le motif voyage avec l'erreur.
+  if (videoPaths.length === 0) {
+    throw new Error(dernierEchec
+      ? `Aucune vidéo générée — dernier échec : ${dernierEchec}`
+      : `Aucune vidéo générée — aucun segment demandé (durée ${audioDuration}s, ${numSegments} segments)`);
+  }
   console.log(`[clip] ${videoPaths.length}/${numSegments} vidéos prêtes, assemblage FFmpeg...`);
 
   // 6. Assembler avec FFmpeg
@@ -276,4 +320,4 @@ function mountClipRoutes(app) {
   console.log('[clip-gen] V2 routes: /clips, /api/mcp-bridge/clip/{generate,list}');
 }
 
-module.exports = { generateClip, mountClipRoutes };
+module.exports = { generateClip, mountClipRoutes, describeBridgeFailure };
