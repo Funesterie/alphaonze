@@ -2,14 +2,14 @@
 /**
  * clip-jobs.cjs — Gestion persistante des jobs de clips NOSSEN.
  *
- * Les jobs sont persistés dans /agent-bus/clips/jobs.json pour survivre
+ * Les jobs sont persistés dans <CLIPS_DIR>/jobs.json pour survivre
  * aux restarts du container. Chaque job a un statut (pending, generating,
  * assembling, done, error) et un pourcentage de progression.
  */
 const fs = require('fs');
 const path = require('path');
 
-const CLIPS_DIR = process.env.NOSSEN_CLIPS_DIR || '/agent-bus/clips';
+const { CLIPS_DIR } = require('./clips-config.cjs');
 const JOBS_FILE = path.join(CLIPS_DIR, 'jobs.json');
 
 // Cache mémoire synchronisé au fichier

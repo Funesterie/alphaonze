@@ -8,7 +8,13 @@
  */
 
 const path = require('path');
-const TROLL_VIDEO = 'sharingan_troll.mp4';
+const {
+  CLIPS_DIR,
+  TROLL_VIDEO,
+  CHECKOUT_URL,
+  isInternalRequest,
+  isAuthenticated,
+} = require('./clips-config.cjs');
 
 // Bot/ripper patterns (youtube-dl, yt-dlp, wget recursive, curl bots, etc.)
 const RIPPER_PATTERNS = [
@@ -44,16 +50,20 @@ function isRipper(req) {
  */
 function createSharinganClipsGuard(opts = {}) {
   const {
-    clipsDir = process.env.NOSSEN_CLIPS_DIR || '/agent-bus/clips',
-    stripeCheckoutUrl = process.env.NOSSEN_CLIP_CHECKOUT_URL || 'https://checkout.stripe.com/c/pay/cs_live_a14rOvdZoDl6OYYaz0pK4pIbAjPbQyiN4n1vfvJSk6UFJaimfP7wUYNgm7',
+    clipsDir = CLIPS_DIR,
+    stripeCheckoutUrl = CHECKOUT_URL,
     trollVideoPath = null
   } = opts;
 
   const trollPath = trollVideoPath || path.join(clipsDir, TROLL_VIDEO);
 
   return function sharinganGuard(req, res, next) {
-    // Internal services always pass
-    if (req.internalService) return next();
+    // Internal services and authenticated users always pass, and they pass
+    // BEFORE ripper detection: la chaine interne telecharge avec ffmpeg et
+    // node-fetch, qui sont tous deux dans la liste des pirates. Detecter
+    // d'abord revenait a servir la video troll a notre propre production.
+    if (isInternalRequest(req)) return next();
+    if (isAuthenticated(req)) return next();
 
     // Check for rippers → serve troll video
     if (isRipper(req)) {
@@ -65,12 +75,6 @@ function createSharinganClipsGuard(opts = {}) {
         }
       });
     }
-
-    // Authenticated users pass through
-    if (req.user && req.user.id) return next();
-
-    // Check for valid session cookie (JWT)
-    if (req.cookies && req.cookies.session) return next();
 
     // Not authenticated, not internal, not a ripper → paywall
     // But allow preview (first 5 seconds) if they have a referer from funesterie
