@@ -18,6 +18,7 @@ const packages = Object.freeze([
   '@nossen/mcp-agent-bus',
   '@nossen/mcp-chopper-mixer',
   '@nossen/mcp-cloud-assets',
+  '@nossen/mcp-engine-bridge',
   '@nossen/mcp-job-queue',
   '@nossen/mcp-media-bridge',
   '@nossen/mcp-memory-graph',
@@ -31,6 +32,7 @@ const packages = Object.freeze([
   '@nossen/mcp-worker-supervisor',
   '@nossen/morphing',
   '@nossen/nezlephant',
+  '@nossen/provider-doorbell',
   '@nossen/qflush',
   '@nossen/qflush-runner',
   '@nossen/rome',
@@ -44,7 +46,7 @@ const packages = Object.freeze([
 module.exports = Object.freeze({
   name: '@nossen/all-in-one',
   scope: 'public',
-  generatedAt: '2026-06-22',
+  generatedAt: '2026-08-09',
   packageCount: packages.length,
   packages
 });

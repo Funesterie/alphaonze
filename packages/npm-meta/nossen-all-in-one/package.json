@@ -1,6 +1,6 @@
 {
   "name": "@nossen/all-in-one",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Public all-in-one NOSSEN package that installs every public NOSSEN module.",
   "type": "commonjs",
   "main": "index.cjs",
@@ -45,6 +45,7 @@
     "@nossen/mcp-agent-bus": "0.1.2",
     "@nossen/mcp-chopper-mixer": "0.1.2",
     "@nossen/mcp-cloud-assets": "0.1.2",
+    "@nossen/mcp-engine-bridge": "0.1.0",
     "@nossen/mcp-job-queue": "0.1.2",
     "@nossen/mcp-media-bridge": "0.1.2",
     "@nossen/mcp-memory-graph": "0.1.2",
@@ -58,6 +59,7 @@
     "@nossen/mcp-worker-supervisor": "0.1.2",
     "@nossen/morphing": "2.1.0",
     "@nossen/nezlephant": "2.0.2",
+    "@nossen/provider-doorbell": "0.1.0",
     "@nossen/qflush": "2.0.4",
     "@nossen/qflush-runner": "2.0.2",
     "@nossen/rome": "2.0.3",

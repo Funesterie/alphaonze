@@ -1,6 +1,6 @@
 {
   "name": "@funeste/all-in-one-nossen",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Private all-in-one Funesterie/NOSSEN package for authenticated operator machines.",
   "type": "commonjs",
   "main": "index.cjs",
@@ -40,10 +40,11 @@
     "@funeste/freeland-nossen": "2.0.2",
     "@funeste/graph-router-nossen": "2.0.2",
     "@funeste/katana-nossen": "2.0.0",
-    "@funeste/logic-reduce-nossen": "2.0.2",
+    "@funeste/logic-reduce-nossen": "2.0.3",
     "@funeste/mcp-agent-bus-nossen": "0.1.2",
     "@funeste/mcp-chopper-mixer-nossen": "0.1.2",
     "@funeste/mcp-cloud-assets-nossen": "0.1.2",
+    "@funeste/mcp-engine-bridge-nossen": "0.1.0",
     "@funeste/mcp-job-queue-nossen": "0.1.2",
     "@funeste/mcp-media-bridge-nossen": "0.1.2",
     "@funeste/mcp-memory-graph-nossen": "0.1.2",
@@ -57,6 +58,7 @@
     "@funeste/mcp-worker-supervisor-nossen": "0.1.2",
     "@funeste/morphing-nossen": "2.1.0",
     "@funeste/nezlephant-nossen": "2.0.2",
+    "@funeste/provider-doorbell-vivy": "0.1.0",
     "@funeste/qflush-nossen": "2.0.2",
     "@funeste/qflush-runner-nossen": "2.0.2",
     "@funeste/rome-nossen": "2.0.3",
@@ -65,7 +67,7 @@
     "@funeste/spyder-graph-nossen": "2.0.2",
     "@funeste/spyder-nossen": "2.0.2",
     "@funeste/zen": "0.1.2",
-    "@nossen/all-in-one": "0.1.13"
+    "@nossen/all-in-one": "0.1.14"
   },
   "funding": [
     {

@@ -1,0 +1,19 @@
+{
+  "name": "@funeste/provider-doorbell-vivy",
+  "version": "0.1.0",
+  "description": "Private Vivy adapter for @nossen/provider-doorbell.",
+  "type": "commonjs",
+  "main": "src/index.cjs",
+  "files": ["src", "README.md"],
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "pack:dry": "npm pack --dry-run"
+  },
+  "author": "NOSSEN <contact@funesterie.me>",
+  "license": "UNLICENSED",
+  "publishConfig": { "access": "restricted" },
+  "engines": { "node": ">=18.0.0" },
+  "dependencies": {
+    "@nossen/provider-doorbell": "0.1.0"
+  }
+}

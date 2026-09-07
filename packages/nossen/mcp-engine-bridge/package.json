@@ -1,0 +1,23 @@
+{
+  "name": "@nossen/mcp-engine-bridge",
+  "version": "0.1.0",
+  "description": "Generic bounded command envelope and JSONL bus for Unity and Unreal MCP bridges.",
+  "type": "commonjs",
+  "main": "src/index.cjs",
+  "files": ["src", "README.md"],
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "pack:dry": "npm pack --dry-run"
+  },
+  "keywords": ["mcp", "unity", "unreal", "engine", "automation", "workflow"],
+  "author": "NOSSEN <contact@funesterie.me>",
+  "license": "MIT",
+  "homepage": "https://github.com/Funesterie/funesterie#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Funesterie/funesterie.git",
+    "directory": "packages/nossen/mcp-engine-bridge"
+  },
+  "publishConfig": { "access": "public" },
+  "engines": { "node": ">=18.0.0" }
+}
