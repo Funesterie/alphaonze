@@ -11,6 +11,8 @@ const { readHistoryTracks, historyDirectory, localAudioUrl } = require('../src/m
 const { processV10BoomD40 } = require('../src/audio/v10-boom.cjs');
 const { processTurboD40V9 } = require('../src/audio/double-harmonic-closed-phase-v8.cjs');
 const { runFfmpeg } = require('../src/audio/double-harmonic-d40.cjs');
+const { readAudioStreamIntegrity } = require('../src/music/audio-stream-integrity.cjs');
+const { buildGoldenThread } = require('../src/music/jukebox-stream-integrity.cjs');
 const RECIPE = 'v11pan-v9electrolysis-blend-1.5-4-v1';
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const root = getCanonicalRuntimeRoot(), directory = historyDirectory();
@@ -37,7 +39,8 @@ async function measure(file) {
   const [stereo, mono] = Object.keys(values).sort((a,b) => Number(a)-Number(b)).map(k => values[k]);
   if (!stereo || !mono || !Number.isFinite(stereo.max) || !Number.isFinite(mono.mean)) throw Error('missing_audio_metrics');
   const decodedDuration = decodedDurationSeconds(stereo.samples, probe.streams.find(s => s.codec_type === 'audio').sample_rate);
-  return { durationSeconds: decodedDuration, containerDurationSeconds: duration, stereoPeakDb: stereo.max, stereoRmsDb: stereo.mean, monoPeakDb: mono.max, monoRmsDb: mono.mean, monoFoldLossDb: mono.mean - stereo.mean };
+  const streamIntegrity = await readAudioStreamIntegrity(file);
+  return { durationSeconds: decodedDuration, containerDurationSeconds: duration, stereoPeakDb: stereo.max, stereoRmsDb: stereo.mean, monoPeakDb: mono.max, monoRmsDb: mono.mean, monoFoldLossDb: mono.mean - stereo.mean, streamSha256: streamIntegrity.sha256, streamIntegrity };
 }
 
 function decodedDurationSeconds(stereoSamples, sampleRate) {
@@ -88,7 +91,7 @@ async function main() {
           if (monoFoldDeltaDb < -3) throw Error('mono_fold_regression');
           if (hash(fs.readFileSync(inputPath)) !== sourceSha256) throw Error('source_changed_during_render');
           if (temporary) { fs.linkSync(temporary, outputPath); fs.unlinkSync(temporary); temporary = ''; }
-          atomic(recordFile, { sourceTrackUrl: track.trackUrl, sourceSha256, outputSha256: hash(fs.readFileSync(outputPath)), trackUrl: '/api/vivy/studio/assets/' + filename, recipe: RECIPE, verified: true, durationSeconds: outputMetrics.durationSeconds, sourceMetrics, outputMetrics, monoFoldDeltaDb, completedAt: new Date().toISOString() });
+          atomic(recordFile, { sourceTrackUrl: track.trackUrl, sourceSha256, outputSha256: hash(fs.readFileSync(outputPath)), trackUrl: '/api/vivy/studio/assets/' + filename, recipe: RECIPE, verified: true, durationSeconds: outputMetrics.durationSeconds, sourceMetrics, outputMetrics, goldenThread: buildGoldenThread(sourceMetrics.streamIntegrity, outputMetrics.streamIntegrity, RECIPE), monoFoldDeltaDb, completedAt: new Date().toISOString() });
           stats.completed++;
           console.log(JSON.stringify({ completed: stats.completed, reused: stats.reused, failed: stats.failed, total: stats.total, id: track.id }));
         } catch (error) {

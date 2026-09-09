@@ -76,7 +76,11 @@ test('un audio altere est signale, pas rendu en silence', () => {
   const payload = jukeboxZen.buildTrackPayload(sampleTrack());
   payload.audio.sha256 = crypto.createHash('sha256').update('autre chose').digest('hex');
   assert.equal(decoded.integrityOk, true);
-  assert.notEqual(payload.audio.sha256, decoded.audio.buffer.length.toString());
+  let zen;
+  try { zen = require('../../../../../packages/nossen/zen/src/index.cjs'); } catch { zen = require('@nossen/zen'); }
+  const altered = jukeboxZen.decodeTrack(zen.encodeZenContainer(payload, { key: KEY }), { key: KEY });
+  assert.equal(altered.integrityOk, false);
+  assert.equal(altered.audio.integrityOk, false);
 });
 
 test('la pochette voyage avec le morceau quand elle existe', () => {

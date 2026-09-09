@@ -18,6 +18,9 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('node:os');
+const { readAudioStreamIntegrity, validateAudioStreamIntegrity } = require('../music/audio-stream-integrity.cjs');
+const { buildGoldenThread } = require('../music/jukebox-stream-integrity.cjs');
 
 const TRACK_SCHEMA = 'funesterie.jukebox.zen-track.v1';
 
@@ -75,6 +78,7 @@ function buildTrackPayload({
   durationSeconds = 0,
   metadata = {},
   masters = [],
+  audioStreamIntegrity = null,
 } = {}) {
   if (!Buffer.isBuffer(audioBuffer) || !audioBuffer.length) {
     throw new Error('audioBuffer requis et non vide');
@@ -90,6 +94,7 @@ function buildTrackPayload({
       mimeType: cleanText(audioMimeType, 100),
       bytes: audioBuffer.length,
       sha256: sha256(audioBuffer),
+      ...(audioStreamIntegrity ? { streamSha256: validateAudioStreamIntegrity(audioStreamIntegrity).sha256, streamIntegrity: validateAudioStreamIntegrity(audioStreamIntegrity) } : {}),
       base64: audioBuffer.toString('base64'),
     },
     lyrics: cleanText(lyrics),
@@ -106,6 +111,7 @@ function buildTrackPayload({
         mimeType: cleanText(master.mimeType || 'audio/mpeg', 100),
         bytes: master.buffer.length,
         sha256: sha256(master.buffer),
+        ...(master.streamIntegrity ? { streamSha256: validateAudioStreamIntegrity(master.streamIntegrity).sha256, streamIntegrity: validateAudioStreamIntegrity(master.streamIntegrity), goldenThread: buildGoldenThread(audioStreamIntegrity, master.streamIntegrity, master.chain) } : {}),
         params: master.params && typeof master.params === 'object' ? master.params : {},
         base64: master.buffer.toString('base64'),
       })),
@@ -166,7 +172,6 @@ function decodeTrack(input, options = {}) {
   const masters = (Array.isArray(payload.masters) ? payload.masters : []).map((master) => {
     const buffer = Buffer.from(master.base64, 'base64');
     const ok = sha256(buffer) === master.sha256;
-    if (!ok) coverOk = coverOk && false;
     return {
       id: master.id,
       label: master.label,
@@ -176,6 +181,9 @@ function decodeTrack(input, options = {}) {
       buffer,
       bytes: buffer.length,
       integrityOk: ok,
+      streamIntegrity: master.streamIntegrity || null,
+      streamSha256: master.streamSha256 || null,
+      goldenThread: master.goldenThread || null,
     };
   });
   const mastersOk = masters.every((master) => master.integrityOk);
@@ -194,13 +202,64 @@ function decodeTrack(input, options = {}) {
       buffer: audioBuffer,
       bytes: audioBuffer.length,
       integrityOk: audioOk,
+      streamIntegrity: payload.audio.streamIntegrity || null,
+      streamSha256: payload.audio.streamSha256 || null,
     },
     cover: payload.cover
       ? { mimeType: payload.cover.mimeType, buffer: coverBuffer, integrityOk: coverOk }
       : null,
     masters,
     integrityOk: audioOk && coverOk && mastersOk,
+    // Synchronous API verifies exact files only; never claims a measured stream.
+    streamIntegrityOk: null,
   };
+}
+
+async function inspectBuffers(buffers, options = {}) {
+  if (buffers.length > 9 || buffers.some(buffer => !Buffer.isBuffer(buffer) || !buffer.length)
+    || buffers.reduce((size, buffer) => size + buffer.length, 0) > 64 * 1024 * 1024) throw Error('zen_audio_size_limit');
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'jukebox-stream-'));
+  try {
+    const results = [];
+    for (let index = 0; index < buffers.length; index++) {
+      const file = path.join(temporary, index + '.audio');
+      fs.writeFileSync(file, buffers[index], { flag: 'wx', mode: 0o600 });
+      results.push(await readAudioStreamIntegrity(file, options));
+    }
+    return results;
+  } finally { fs.rmSync(temporary, { recursive: true, force: true }); }
+}
+
+/** Measured path for delivery: do not trust caller-supplied stream hashes. */
+async function encodeTrackVerified(track, options = {}) {
+  resolveKey(options.key);
+  const masters = Array.isArray(track.masters) ? track.masters : [];
+  const streams = await inspectBuffers([track.audioBuffer, ...masters.map(master => master.buffer)], options);
+  return encodeTrack({ ...track, audioStreamIntegrity: streams[0],
+    masters: masters.map((master, index) => ({ ...master, streamIntegrity: streams[index + 1] })) }, options);
+}
+
+/** Exact-buffer and demuxed-stream checks. Legacy archives remain readable,
+ * but are explicitly NOT marked stream-verified until they carry this evidence. */
+async function decodeTrackVerified(input, options = {}) {
+  const decoded = decodeTrack(input, options);
+  if (!decoded.integrityOk) { decoded.streamIntegrityOk = false; return decoded; }
+  const entries = [decoded.audio, ...decoded.masters];
+  if (entries.every(entry => !entry.streamIntegrity && !entry.streamSha256)) return decoded;
+  try {
+    const streams = await inspectBuffers(entries.map(entry => entry.buffer), options);
+    decoded.streamIntegrityOk = entries.every((entry, index) => {
+      const expected = validateAudioStreamIntegrity(entry.streamIntegrity), actual = streams[index];
+      return entry.streamSha256 === actual.sha256 && expected.sha256 === actual.sha256
+        && expected.codec === actual.codec && expected.channels === actual.channels && expected.sampleRate === actual.sampleRate;
+    });
+    decoded.streamIntegrityOk = decoded.streamIntegrityOk && decoded.masters.every((master, index) => {
+      const expected = buildGoldenThread(streams[0], streams[index + 1], master.chain);
+      return Object.entries(expected).every(([key, value]) => master.goldenThread?.[key] === value);
+    });
+  } catch { decoded.streamIntegrityOk = false; }
+  decoded.integrityOk = decoded.integrityOk && decoded.streamIntegrityOk;
+  return decoded;
 }
 
 /** Encode depuis des chemins disque vers un .zen sur disque. */
@@ -229,4 +288,6 @@ module.exports = {
   encodeTrack,
   decodeTrack,
   encodeTrackFile,
+  encodeTrackVerified,
+  decodeTrackVerified,
 };

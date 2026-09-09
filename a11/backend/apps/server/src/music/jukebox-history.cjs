@@ -5,6 +5,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { validateAudioStreamIntegrity } = require('./audio-stream-integrity.cjs');
 const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
 const cache = new Map();
 const hash = value => crypto.createHash('sha256').update(String(value)).digest('hex');
@@ -154,6 +155,7 @@ function readEnhancements(directory) {
 function applyHistoryEnhancements(tracks, directory = historyDirectory()) {
   const masters = readEnhancements(directory + '-masters');
   const titles = readEnhancements(directory + '-titles');
+  const streams = readEnhancements(directory + '-streams');
   return tracks.filter(track => {
     if (!track.trackUrl || track.available === false) return false;
     const url = localAudioUrl(track.trackUrl);
@@ -176,6 +178,14 @@ function applyHistoryEnhancements(tracks, directory = historyDirectory()) {
         result.trackUrl = masterUrl;
         result.mastering = 'V11 Pan';
         result.durationSeconds = Number(master.durationSeconds) || track.durationSeconds;
+        const evidence = streams[key];
+        try {
+          const source = validateAudioStreamIntegrity(master.sourceMetrics?.streamIntegrity || evidence?.sourceStreamIntegrity);
+          const output = validateAudioStreamIntegrity(master.outputMetrics?.streamIntegrity || evidence?.outputStreamIntegrity);
+          const bound = master.sourceMetrics?.streamIntegrity || (evidence.sourceTrackUrl === track.trackUrl && evidence.trackUrl === masterUrl && evidence.sourceSha256 === master.sourceSha256 && evidence.outputSha256 === master.outputSha256);
+          if (bound) result.goldenThread = { relationship: 'derived-from', sourceStreamSha256: source.sha256, assetStreamSha256: output.sha256,
+            sameEncodedStream: source.sha256 === output.sha256 && source.codec === output.codec, recipe: master.recipe };
+        } catch { /* Missing or stale evidence is never presented as verified. */ }
       }
     }
     return result;

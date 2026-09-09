@@ -33,3 +33,14 @@ La suite locale studio/provenance initiale donne 287/288 tests réussis. L'éche
 ## État de livraison
 
 Correctif préparé dans le dépôt, testé sur des fichiers réels ; **pas encore déployé dans le backend actif**. La production web reste au commit `261536d30987368f819a95776df9ac0c4d7742ac`. Le batch V11 en cours n'a pas été modifié ni redémarré par ce travail. L'ajout ne résout pas à lui seul une URL fournisseur vide ou refusée : la récupération réseau et le contrôle d'intégrité sont deux étapes distinctes.
+
+## Suite autorisée : V11 historique et ZEN
+
+- `measure()` renseigne désormais `streamSha256` et `streamIntegrity` pour les prochains rendus V11 ; leurs fiches portent aussi la filiation `derived-from` et la recette. Les SHA de fichiers gardent leur rôle de contrôle exact et de reprise du lot.
+- `backfill-jukebox-stream-integrity.cjs --apply --follow-master` mesure les couples déjà rendus, puis suit le lot V11 jusqu'à son arrêt. Chaque couple est vérifié contre ses deux SHA de fichiers avant et après mesure. Les preuves vont dans `history-streams/` pour ne jamais concurrencer l'écrivain de `history-masters/`. Aucun rendu ni média n'est modifié. Le catalogue public ne reprend que les preuves rattachées aux bons fichiers source/master. Ces fiches historiques sont des constats techniques, pas des attestations d'auteur signées.
+- Le module ZEN existant reste compatible v1. `encodeTrackVerified()` mesure lui-même l'audio original et chaque master ; `decodeTrackVerified()` contrôle les buffers, les flux et la filiation. Un ancien conteneur reste lisible avec `streamIntegrityOk: null`. Le contrôle synchrone historique ne prétend pas avoir mesuré les flux.
+- Correction d'un ancien test de corruption qui ne décodait pas réellement la charge altérée ; ajout de cas de faux flux et de fausse filiation. Un master corrompu ne marque plus à tort la pochette comme corrompue.
+- Validation locale : 432 tests passent ; le test frontend préexistant `Vivy frontend keeps download` est explicitement exclu. Les 25 tests ciblés couvrent notamment des MP3 réels et le round-trip ZEN.
+- Vérification de configuration live : `@nossen/zen` est résolvable, mais `JUKEBOX_ZEN_KEY` et `JUKEBOX_MASTER_SECRET` sont absentes. **La livraison publique chiffrée n'est pas activée et aucune clé n'est créée ou publiée.** Choisir la conservation et la remise des clés avant de brancher le téléchargement.
+
+Déploiement et traitement historique : résultat effectif à compléter après contrôle de la release active.
