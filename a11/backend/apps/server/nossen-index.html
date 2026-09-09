@@ -159,6 +159,9 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   var POLL_FULL_MAX_MS = 8 * 60 * 60 * 1000;
   var POLL_STORAGE_KEY = "nossen.activeClipJob.v1";
   var AUDIO_START_TIMEOUT_MS = 20000;
+  var REFRESH_MARGIN_MS = 10 * 60 * 1000;
+  var sessionExpiresAt = null;
+  var refreshInFlight = false;
 
   var SC = {
     live: [{n:"Ouverture",v:"Wide concert arena lights fog lasers crowd anticipation blue purple"},{n:"Voix",v:"Female singer long purple-cyan hair microphone golden spotlight emotional white violet outfit"},{n:"Climax",v:"Stage erupts holographics singer arms spread crowd hands confetti energy"},{n:"Pont",v:"Singer alone blue light eyes closed crowd phone lights stars emotional"},{n:"Final",v:"Full stage fireworks singer triumphant arms raised holographic wings purple gold"},{n:"Fermeture",v:"Singer bows confetti smile wave lights dim single spotlight camera back"}],
@@ -385,15 +388,50 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     document.getElementById("file-name").textContent = "";
   }
 
+  function parseSessionExpiry(session) {
+    if (!session || !session.expiresAt) return null;
+    var ts = Date.parse(session.expiresAt);
+    return Number.isFinite(ts) ? ts : null;
+  }
+
+  // Silent session refresh: while a Full Clip job is being tracked, re-issue the
+  // a11_session cookie before its JWT expires so long generations do not drop the
+  // status polling with a 401. Guarded so at most one refresh runs at a time and
+  // it only fires when a job is active and the token is close to expiry.
+  function maybeRefreshSession() {
+    if (!activeJobId) return;
+    if (refreshInFlight) return;
+    if (!sessionExpiresAt) return;
+    if (sessionExpiresAt - Date.now() >= REFRESH_MARGIN_MS) return;
+    refreshInFlight = true;
+    try {
+      api("/api/auth/refresh", {}).then(function(d) {
+        if (d && d.ok && d.session) {
+          var next = parseSessionExpiry(d.session);
+          if (next) sessionExpiresAt = next;
+        }
+      }).catch(function() {
+        // Best effort: a failed silent refresh must not be more aggressive than
+        // the existing 401 handling in checkStatus(). Leave polling untouched.
+      }).then(function() {
+        refreshInFlight = false;
+      });
+    } catch (_) {
+      refreshInFlight = false;
+    }
+  }
+
   function checkAuth() {
     return api("/api/auth/me").then(function(d) {
       if (d && d.authenticated && d.user) {
         userEmail = d.user.email || d.user.displayName || null;
         isAdmin = ADMIN_EMAILS.indexOf((userEmail || "").toLowerCase()) !== -1;
+        sessionExpiresAt = parseSessionExpiry(d.session);
         document.getElementById("user-badge").textContent = "\uD83D\uDD13 " + (userEmail || "Connecté");
       } else {
         userEmail = null;
         isAdmin = false;
+        sessionExpiresAt = null;
         document.getElementById("user-badge").innerHTML = '<a href="/login" style="color:var(--muted);text-decoration:underline;font-size:.6rem">Se connecter pour accéder aux clips</a>';
       }
       updateFullClipButton();
@@ -725,6 +763,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 
         var detail = truncate(d.message || d.stage || status, 160);
         document.getElementById("msg").textContent = label + " : " + detail + " " + progress + "%";
+        maybeRefreshSession();
         return true;
       }).catch(function(error) {
         if (activeJobId !== id) return false;
