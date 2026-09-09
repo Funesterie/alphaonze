@@ -6,6 +6,7 @@ const { execFileSync, spawn } = require('node:child_process');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
+const { historyDirectory, readHistoryTracks, rememberHistoryTracks, summarizeHistoryTrack, applyHistoryEnhancements } = require('../music/jukebox-history.cjs');
 const { clearUserEpisodes } = require('../../lib/episodic-memory.cjs');
 const {
   createVivyStreamNossenRunner,
@@ -860,6 +861,7 @@ function buildSongShareHtml(song = {}, options = {}) {
 function createVivyStreamStore(options = {}) {
   const runtimeRoot = options.runtimeRoot || getCanonicalRuntimeRoot(process.env);
   const statePath = options.statePath || path.join(runtimeRoot, 'vivy-stream', 'state.json');
+  const archiveDirectory = historyDirectory(statePath);
   const clients = new Set();
   const onRoundLocked = typeof options.onRoundLocked === 'function' ? options.onRoundLocked : null;
   const idleJukeboxEnabled = options.idleJukeboxEnabled !== false
@@ -873,6 +875,8 @@ function createVivyStreamStore(options = {}) {
       if (fs.existsSync(statePath)) {
         const parsed = JSON.parse(fs.readFileSync(statePath, 'utf8'));
         if (parsed?.schema === STREAM_SCHEMA) {
+          // Archive before applying the live working-set cap.
+          rememberHistoryTracks([...(parsed.songs || []), ...(parsed.jukebox?.tracks || [])], archiveDirectory);
           const initial = createInitialState();
           state = {
             ...initial,
@@ -1010,9 +1014,22 @@ function createVivyStreamStore(options = {}) {
     return state.songs;
   }
 
+  function getSongsArchive() {
+    const archived = readHistoryTracks(archiveDirectory);
+    // Keep the existing public live contract (covers, ratings, permitted live URLs).
+    // Only the explicitly recovered historical records pass through the stricter serializer.
+    for (const song of ensureSongs()) {
+      const index = archived.findIndex(item => item.id === song.id || item.trackUrl === song.trackUrl);
+      if (index < 0) archived.push({ ...song, available: Boolean(song.trackUrl) });
+      else archived[index] = { ...archived[index], ...song, available: Boolean(song.trackUrl) };
+    }
+    return applyHistoryEnhancements(archived, archiveDirectory).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  }
+
   function addLiveSong(input = {}) {
     const song = normalizeJukeboxTrack(input);
     if (!song) return null;
+    rememberHistoryTracks([song], archiveDirectory);
     const songs = ensureSongs();
     const existingIndex = songs.findIndex((entry) => entry.id === song.id || entry.trackUrl === song.trackUrl);
     if (existingIndex >= 0) {
@@ -1054,8 +1071,9 @@ function createVivyStreamStore(options = {}) {
     const allTracks = [
       ...ensureSongs(),
       ...ensureJukebox().tracks,
+      ...readHistoryTracks(archiveDirectory),
     ].filter((track) => !isProviderOnlyTrackUrl(track?.trackUrl));
-    return allTracks.find((track) => {
+    return applyHistoryEnhancements(allTracks, archiveDirectory).find((track) => {
       const shareSlug = String(track.sharePath || '').split('/').pop();
       return shareSlug === needle || track.id === needle;
     }) || null;
@@ -1900,6 +1918,7 @@ function createVivyStreamStore(options = {}) {
   load();
   return {
     getState: () => publicState(state),
+    getSongsArchive,
     addChatMessage,
     startRound,
     lockRound,
@@ -2114,15 +2133,22 @@ function createVivyStreamRouter(options = {}) {
 
   router.get('/songs', (_req, res) => {
     res.set('Cache-Control', 'public, max-age=30');
-    res.type('html').send(buildSongsArchiveHtml(store.getState()));
+    const state = store.getState();
+    res.type('html').send(buildSongsArchiveHtml({ ...state, songs: store.getSongsArchive ? store.getSongsArchive() : state.songs }));
   });
 
-  router.get('/songs.json', (_req, res) => {
+  router.get('/songs.json', (req, res) => {
     const state = store.getState();
+    const songs = store.getSongsArchive ? store.getSongsArchive() : (state.songs || []);
     res.set('Cache-Control', 'public, max-age=15');
     res.json({
       ok: true,
-      songs: Array.isArray(state.songs) ? state.songs : [],
+      songs: req.query.summary === '1' ? songs.map(summarizeHistoryTrack) : songs,
+      total: songs.length,
+      playable: songs.filter(song => song.trackUrl).length,
+      unavailable: songs.filter(song => !song.trackUrl).length,
+      mastered: songs.filter(song => song.mastering === 'V11 Pan').length,
+      titledByClaude: songs.filter(song => song.titleBy === 'Claude').length,
       current: state.current || {},
       serverNow: state.serverNow || nowIso(),
     });

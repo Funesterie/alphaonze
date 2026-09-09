@@ -237,7 +237,7 @@ test('api rejette un statut HTTP JSON et borne une requete silencieuse', async (
   assert.equal(seenSignal.aborted, true);
 });
 
-test('loadSongs utilise le fallback 401, garde les routes locales et met les recentes en tete', async () => {
+test('loadSongs charge tout l historique public sans dépendre de la session et garde le tri', async () => {
   let publicSongs = [
     { title: 'Ancien', trackUrl: '/media/old.mp3', createdAt: '2026-07-01T00:00:00Z', durationSeconds: 61 },
     { title: '<img src=x onerror=alert(1)>', trackUrl: '/media/recent.mp3', createdAt: '2026-09-01T00:00:00Z', durationSeconds: 87 },
@@ -252,7 +252,7 @@ test('loadSongs utilise le fallback 401, garde les routes locales et met les rec
   });
 
   await page.hooks.loadSongs();
-  assert.deepEqual(calls, ['/api/nossen/my-songs', '/api/vivy/stream/songs.json']);
+  assert.deepEqual(calls, ['/api/vivy/stream/songs.json']);
   assert.equal(page.hooks.state().songs[0].audioUrl, '/media/recent.mp3');
   assert.equal(page.hooks.state().songs[0].playUrl, 'https://a11.funesterie.me/media/recent.mp3');
   assert.ok(page.elements.get('list').innerHTML.indexOf('&lt;img') < page.elements.get('list').innerHTML.indexOf('Ancien'));
@@ -276,6 +276,16 @@ test('les URL absolues ne sont jamais doublement prefixees', () => {
   );
   assert.equal(page.hooks.normalizeSongSource('/api/mcp-bridge/play/track.mp3'), '/api/mcp-bridge/play/track.mp3');
   assert.equal(page.hooks.resolveHttpUrl('javascript:alert(1)'), '');
+});
+
+test('un ancien morceau sans audio reste visible mais ne peut pas lancer de lecture ou de clip', async () => {
+  const page = createHarness(async () => jsonResponse(200, { songs: [{ title: 'Archive perdue', trackUrl: '', available: false, createdAt: '2026-06-01' }] }));
+  await page.hooks.loadSongs();
+  assert.equal(page.hooks.state().songs[0].available, false);
+  assert.match(page.elements.get('list').innerHTML, /Audio non récupéré/);
+  assert.match(page.elements.get('list').innerHTML, /data-idx="0" disabled/);
+  assert.match(page.elements.get('list').innerHTML, /data-pick="0" disabled/);
+  assert.match(page.elements.get('song').innerHTML, /value="0" disabled/);
 });
 
 test('pollJob ne chevauche pas les appels et arrete explicitement un 404', async () => {

@@ -119,7 +119,8 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 </div>
 
 <div class="card">
-  <h2>🎤 Mes chansons <span class="badge badge-gold" id="song-count">0</span></h2>
+  <h2>🎤 Jukebox — historique <span class="badge badge-gold" id="song-count">0</span></h2>
+  <div class="meta" id="mastering-progress"></div>
   <div id="list" class="songs"></div>
 </div>
 
@@ -784,12 +785,15 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     var sourceUrl = normalizeSongSource(s && s.trackUrl);
     return {
       title: (s && (s.trackTitle || s.title)) || "Sans titre",
+      available: Boolean(sourceUrl) && (!s || s.available !== false),
       playUrl: resolveHttpUrl(sourceUrl),
+      originalUrl: resolveHttpUrl(normalizeSongSource(s && s.originalTrackUrl)),
+      mastering: (s && s.mastering) || "",
       audioUrl: sourceUrl,
       date: s && s.createdAt ? String(s.createdAt).slice(0, 10) : "",
       createdAt: s && s.createdAt ? String(s.createdAt) : "",
       duration: s && Number.isFinite(Number(s.durationSeconds)) ? Math.round(Number(s.durationSeconds)) + "s" : "",
-      source: (s && s.source) || fallbackSource || "vivy",
+      source: [(s && s.source) || fallbackSource || "vivy", s && s.variant, s && s.mastering, s && s.titleBy ? "Titre : " + s.titleBy : "", s && s.available === false ? "Audio non récupéré" : ""].filter(Boolean).join(" · "),
       requestedBy: String((s && s.requestedBy) || "").toLowerCase()
     };
   }
@@ -819,15 +823,9 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   }
 
   function loadSongs() {
-    // Utiliser le endpoint serveur qui filtre, déduplique et corrige les titres
-    return api("/api/nossen/my-songs").then(function(d) {
+    // Historique public demandé par Djeff : ne dépend ni du compte ni des 120 titres du direct.
+    return api("/api/vivy/stream/songs.json?summary=1").then(function(d) {
       replaceSongs((d.songs || []).map(function(s) { return mapSong(s, "vivy"); }));
-    }).catch(function(error) {
-      if (!error || (error.status !== 401 && error.status !== 403)) throw error;
-      // Fallback explicite si la session n'est pas authentifiée.
-      return api("/api/vivy/stream/songs.json").then(function(d) {
-        replaceSongs((d.songs || []).map(function(s) { return mapSong(s, "vivy"); }));
-      });
     }).catch(function() {
       if (!songs.length) renderSongs("");
     });
@@ -836,8 +834,9 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   function renderSongs(selectedKey) {
     var audio = document.getElementById("audio");
     document.getElementById("song-count").textContent = songs.length;
+    document.getElementById("mastering-progress").textContent = songs.filter(function(s) { return s.mastering === "V11 Pan"; }).length + " / " + songs.length + " versions V11 Pan disponibles · originaux conservés";
     document.getElementById("song").innerHTML = '<option value="">Choisir une chanson…</option>' +
-      songs.map(function(s, i) { return '<option value="' + i + '">' + escapeHtml(truncate(s.title, 45)) + '</option>'; }).join("");
+      songs.map(function(s, i) { return '<option value="' + i + '"' + (s.available === false ? ' disabled' : '') + '>' + escapeHtml(truncate(s.title, 45)) + '</option>'; }).join("");
 
     if (selectedKey && !importedFile && !document.getElementById("import-url").value.trim()) {
       var selectedIndex = songs.findIndex(function(song) { return songKey(song) === selectedKey; });
@@ -848,12 +847,12 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       ? songs.map(function(s, i) {
           var active = i === currentIdx;
           return '<div class="s">' +
-            '<button class="play' + (active ? ' active' : '') + '" data-idx="' + i + '" aria-label="' + escapeHtml("Lire " + s.title) + '">' + (active && !audio.paused ? "\u23F8" : "\u25B6") + '</button>' +
+            '<button class="play' + (active ? ' active' : '') + '" data-idx="' + i + '"' + (s.available === false ? ' disabled title="Audio non récupéré"' : '') + ' aria-label="' + escapeHtml("Lire " + s.title) + '">' + (active && !audio.paused ? "\u23F8" : "\u25B6") + '</button>' +
             '<div class="info"><div class="title">' + escapeHtml(truncate(s.title, 50)) + '</div>' +
-            '<div class="meta">' + escapeHtml([s.date, s.duration, s.source].filter(Boolean).join(" \u00B7 ")) + '</div></div>' +
-            '<button class="use" data-pick="' + i + '">utiliser</button></div>';
+            '<div class="meta">' + escapeHtml([s.date, s.duration, s.source].filter(Boolean).join(" \u00B7 ")) + (s.originalUrl ? ' · <a href="' + escapeHtml(s.originalUrl) + '" target="_blank" rel="noopener">Original</a>' : '') + '</div></div>' +
+            '<button class="use" data-pick="' + i + '"' + (s.available === false ? ' disabled' : '') + '>utiliser</button></div>';
         }).join("")
-      : '<div class="empty">' + (userEmail ? "Aucune chanson trouvée pour ton compte" : "Connecte-toi pour voir tes chansons") + '</div>';
+      : '<div class="empty">Aucune chanson disponible pour le moment</div>';
   }
 
   function init() {

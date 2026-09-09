@@ -12301,6 +12301,10 @@ function createVivyStudioRouter({
       const contentTypes = {
         '.wav': 'audio/wav',
         '.mp3': 'audio/mpeg',
+        '.flac': 'audio/flac',
+        '.ogg': 'audio/ogg',
+        '.m4a': 'audio/mp4',
+        '.aac': 'audio/aac',
         '.mp4': 'video/mp4',
         '.png': 'image/png',
         '.jpg': 'image/jpeg',
