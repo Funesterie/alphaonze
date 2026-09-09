@@ -321,6 +321,60 @@ test('pollJob ne chevauche pas les appels et arrete explicitement un 404', async
   assert.equal(page.scheduler.size(), 0);
 });
 
+test('pollJob suit tous les etats actifs du serveur jusqu a la livraison sans reactiver Clip', async () => {
+  const { ACTIVE_STATUSES } = require('../src/clips/clip-jobs.cjs');
+  const statuses = [...ACTIVE_STATUSES, 'done'];
+  let statusCalls = 0;
+  let listCalls = 0;
+  const page = createHarness(async (url) => {
+    if (new URL(url).pathname.includes('/status/')) {
+      const status = statuses[statusCalls++];
+      return jsonResponse(200, {
+        ok: true, status, stage: status, progress: statusCalls * 15,
+        ...(status === 'done' ? { outputFilename: 'existing-clip.mp4' } : {}),
+      });
+    }
+    listCalls += 1;
+    return jsonResponse(200, { ok: true, clips: [] });
+  });
+
+  page.hooks.pollJob('job-lifecycle', 'clip');
+  for (const status of ACTIVE_STATUSES) {
+    page.scheduler.runNext();
+    await settle();
+    assert.equal(page.hooks.state().activeJobId, 'job-lifecycle', status);
+    assert.equal(page.elements.get('go-clip').disabled, true, status);
+    assert.equal(page.elements.get('go-full').disabled, true, status);
+    assert.deepEqual(page.scheduler.delays(), [8000], status);
+    assert.doesNotMatch(page.elements.get('msg').textContent, /invalide|absent/);
+    assert.equal(listCalls, 0, 'un etat valide ne doit pas abandonner le suivi');
+  }
+  page.scheduler.runNext();
+  await settle();
+  assert.equal(statusCalls, statuses.length);
+  assert.match(page.elements.get('msg').textContent, /Clip prêt/);
+  assert.equal(page.elements.get('go-clip').disabled, false);
+  assert.equal(page.hooks.state().activeJobId, null);
+  assert.equal(page.scheduler.size(), 0);
+  assert.equal(listCalls, 1);
+});
+
+test('pollJob continue de refuser un etat absent ou inconnu', async () => {
+  for (const status of [undefined, 'unexpected-state']) {
+    const page = createHarness(async (url) => jsonResponse(200,
+      new URL(url).pathname.includes('/status/')
+        ? { ok: true, status, progress: 5 }
+        : { ok: true, clips: [] }
+    ));
+    page.hooks.pollJob('job-invalid', 'clip');
+    page.scheduler.runNext();
+    await settle();
+    assert.match(page.elements.get('msg').textContent, /Statut de génération invalide ou absent/);
+    assert.equal(page.hooks.state().activeJobId, null);
+    assert.equal(page.scheduler.size(), 0);
+  }
+});
+
 test('pollJob refuse un faux succes sans sortie et distingue un resultat partiel', async () => {
   let response = { ok: true, status: 'done', progress: 100 };
   const page = createHarness(async (url) => {

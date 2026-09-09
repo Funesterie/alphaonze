@@ -649,7 +649,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     var maxDuration = mode === "full" ? POLL_FULL_MAX_MS : POLL_CLIP_MAX_MS;
     var startedAt = Number(previousStartedAt) || Date.now();
     var consecutiveFailures = 0;
-    var ongoingStates = ["pending", "queued", "generating", "processing", "assembling", "running"];
+    var ongoingStates = ["pending", "queued", "validating", "directing", "generating", "processing", "assembling", "running"];
     var successStates = ["done", "completed", "success", "succeeded"];
     var errorStates = ["error", "failed", "cancelled", "canceled"];
 

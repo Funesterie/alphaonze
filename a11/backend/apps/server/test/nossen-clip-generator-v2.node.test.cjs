@@ -45,6 +45,83 @@ test('les réponses Comfy structurées priment sur le texte décoratif', () => {
   assert.equal(extractComfyOutputUrl(response), signed);
 });
 
+test('le polling lit le statut courant, jamais completed dans une consigne Comfy', () => {
+  const advice = 'The job has not finished yet (status: in_progress), so its outputs are not ready. Poll get_job_status (or call wait_for_job) until it reports completed, then retry get_output.';
+  const liveInProgress = 'Job is in progress (in_progress)...\n{"status":"in_progress","completed":false,"raw_status":"in_progress"}';
+  assert.equal(extractComfyJobStatus(bridge(null, liveInProgress)), 'pending');
+  assert.equal(extractComfyJobStatus(bridge(null, advice)), 'pending');
+  assert.equal(extractComfyJobStatus(bridge(null, 'Poll until completed, then call get_output.')), 'pending');
+  assert.equal(extractComfyJobStatus(bridge(null, JSON.stringify({ status: 'in_progress', next_step: 'Wait until completed' }))), 'pending');
+  assert.equal(extractComfyJobStatus(bridge({ job_status: 'in_progress', result: { status: 'succeeded' } }, 'completed')), 'pending');
+  assert.equal(extractComfyJobStatus(bridge(null, JSON.stringify({ status: 'failed', message: 'No output completed' }))), 'failed');
+  assert.equal(extractComfyJobStatus(bridge(null, 'Status: in_progress\nNext: wait until completed')), 'pending');
+  assert.equal(extractComfyJobStatus(bridge(null, 'Status: completed')), 'completed');
+  assert.equal(extractComfyJobStatus(bridge(null, '```json\n{"job_status":"completed"}\n```')), 'completed');
+});
+
+test('in_progress textuel reste en polling sans demander de sortie prématurée', async () => {
+  const calls = [];
+  const promptId = 'existing-provider-job';
+  const signed = 'https://storage.googleapis.com/comfy-cloud-assets/ready.mp4';
+  const responses = [
+    bridge({ prompt_id: promptId }),
+    bridge(null, 'Job is in progress (in_progress)...\n{"status":"in_progress","completed":false,"raw_status":"in_progress"}'),
+    bridge(null, JSON.stringify({ job_status: 'completed' })),
+    bridge({ results: [{ url: signed }] }),
+  ];
+  const result = await generateOneVideo('A cinematic scene', 0, 1000, null, {
+    postJsonImpl: async (_url, body) => { calls.push(body); assert.ok(responses.length); return responses.shift(); },
+    sleepImpl: async () => {},
+    pollIntervalMs: 1,
+  });
+  assert.equal(result, signed);
+  assert.deepEqual(calls.map((call) => call.tool), ['comfy__partner_generate', 'comfy__get_job_status', 'comfy__get_job_status', 'comfy__get_output']);
+  assert.ok(calls.slice(1).every((call) => call.args.prompt_id === promptId));
+});
+
+test('une sortie pas encore prête reprend le même job sans deuxième débit', async () => {
+  for (const isError of [false, true]) {
+    const calls = [];
+    const progress = [];
+    const promptId = 'existing-provider-job';
+    const signed = 'https://storage.googleapis.com/comfy-cloud-assets/ready.mp4';
+    const notReady = bridge(null, 'The job has not finished yet (status: in_progress), so its outputs are not ready. Poll get_job_status (or call wait_for_job) until it reports completed, then retry get_output.');
+    notReady.result.isError = isError;
+    const responses = [
+      bridge({ prompt_id: promptId }),
+      bridge({ job_status: 'completed' }),
+      notReady,
+      bridge({ job_status: 'completed' }),
+      bridge({ results: [{ url: signed }] }),
+    ];
+    const result = await generateOneVideo('A cinematic scene', 0, 1000, null, {
+      postJsonImpl: async (_url, body) => { calls.push(body); assert.ok(responses.length); return responses.shift(); },
+      sleepImpl: async () => {},
+      onProgress: (event) => progress.push(event),
+      pollIntervalMs: 1,
+    });
+    assert.equal(result, signed);
+    assert.deepEqual(calls.map((call) => call.tool), ['comfy__partner_generate', 'comfy__get_job_status', 'comfy__get_output', 'comfy__get_job_status', 'comfy__get_output']);
+    assert.ok(calls.slice(1).every((call) => call.args.prompt_id === promptId));
+    assert.ok(progress.some((event) => event.stage === 'video:polling' && event.promptId === promptId));
+  }
+});
+
+test('une vraie erreur de sortie ou un résultat vide restent terminaux', async () => {
+  for (const [output, errorPattern] of [
+    [{ ok: true, result: { isError: true, content: [{ type: 'text', text: 'Permission denied (403)' }] } }, /clip_video_output_failed: Permission denied/],
+    [bridge({ results: [] }), /clip_video_output_url_missing/],
+  ]) {
+    const calls = [];
+    const responses = [bridge({ prompt_id: 'provider-job' }), bridge({ job_status: 'completed' }), output];
+    await assert.rejects(generateOneVideo('A cinematic scene', 0, 1000, null, {
+      postJsonImpl: async (_url, body) => { calls.push(body.tool); assert.ok(responses.length); return responses.shift(); },
+      sleepImpl: async () => {},
+    }), errorPattern);
+    assert.deepEqual(calls, ['comfy__partner_generate', 'comfy__get_job_status', 'comfy__get_output']);
+  }
+});
+
 test('un segment fait exactement une soumission payante et lit status/output structurés', async () => {
   const calls = [];
   const promptId = '5097f8f3-4c78-498e-a417-b2b562862887';

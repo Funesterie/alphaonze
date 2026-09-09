@@ -166,25 +166,60 @@ function extractComfyPromptId(response) {
   return match ? match[1] : '';
 }
 
-function extractComfyJobStatus(response) {
-  const structured = getBridgeStructuredContent(response);
-  const statuses = [];
-  const collectStatuses = (value, depth = 0) => {
-    if (!value || typeof value !== 'object' || depth > 6) return;
-    for (const [key, candidate] of Object.entries(value)) {
-      if (['job_status', 'status', 'state'].includes(String(key).toLowerCase())
-        && (typeof candidate === 'string' || typeof candidate === 'number')) {
-        statuses.push(String(candidate));
-      } else if (candidate && typeof candidate === 'object') {
-        collectStatuses(candidate, depth + 1);
+function normalizeComfyJobStatus(value) {
+  const status = String(value || '').trim().toLowerCase().replace(/[ -]+/g, '_');
+  if (['succeeded', 'completed', 'complete', 'success', 'done'].includes(status)) return 'completed';
+  if (['failed', 'failure', 'error', 'cancelled', 'canceled', 'rejected'].includes(status)) return 'failed';
+  if (['pending', 'queued', 'waiting', 'in_progress', 'running', 'processing', 'executing', 'generating'].includes(status)) return 'pending';
+  return null;
+}
+
+function readExplicitComfyJobStatus(response) {
+  const readStatus = (value, depth = 0) => {
+    if (!value || typeof value !== 'object' || depth > 6) return null;
+    // Le statut du job prime sur les sous-resultats et messages explicatifs.
+    for (const wantedKey of ['job_status', 'status', 'state']) {
+      for (const [key, candidate] of Object.entries(value)) {
+        if (key.toLowerCase() !== wantedKey || typeof candidate !== 'string') continue;
+        const status = normalizeComfyJobStatus(candidate);
+        if (status) return status;
       }
     }
+    for (const candidate of Object.values(value)) {
+      const status = readStatus(candidate, depth + 1);
+      if (status) return status;
+    }
+    return null;
   };
-  collectStatuses(structured);
-  const raw = (statuses.join(' ') || getBridgeText(response)).toLowerCase();
-  if (/\b(succeeded|completed|complete|success|done)\b/.test(raw)) return 'completed';
-  if (/\b(failed|failure|error|cancelled|canceled|rejected)\b/.test(raw)) return 'failed';
-  return 'pending';
+  const structuredStatus = readStatus(getBridgeStructuredContent(response));
+  if (structuredStatus) return structuredStatus;
+
+  const text = getBridgeText(response);
+  // Certains outils MCP ne renvoient le JSON que dans content[].text.
+  const jsonText = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  try {
+    const status = readStatus(JSON.parse(jsonText));
+    if (status) return status;
+  } catch {}
+  const literalStatus = normalizeComfyJobStatus(text);
+  if (literalStatus) return literalStatus;
+  const matches = text.matchAll(/(?:^|[\n{,(])\s*["']?(?:job[_ ]?status|status|state)["']?\s*[:=]\s*["']?([a-z]+(?:[_ -][a-z]+)?)/gi);
+  for (const match of matches) {
+    const status = normalizeComfyJobStatus(match[1]);
+    if (status) return status;
+  }
+  // Ne jamais prendre « wait until completed » pour un statut courant.
+  return null;
+}
+
+function extractComfyJobStatus(response) {
+  return readExplicitComfyJobStatus(response) || 'pending';
+}
+
+function isComfyOutputPending(response) {
+  const status = readExplicitComfyJobStatus(response);
+  if (status) return status === 'pending';
+  return /\b(?:job has not finished yet|outputs? (?:are|is) not ready)\b/i.test(getBridgeText(response));
 }
 
 function extractComfyOutputUrl(response) {
@@ -335,11 +370,15 @@ async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = nu
     if (state === 'completed') {
       // Télécharger
       const output = await postJsonImpl(BRIDGE_URL, { tool: 'comfy__get_output', args: { prompt_id: promptId, client_os: 'linux' } });
-      const outputFailure = describeBridgeFailure(output);
-      if (outputFailure) throw new Error(`clip_video_output_failed: ${outputFailure}`);
-      const outputUrl = extractComfyOutputUrl(output);
-      if (outputUrl) return outputUrl;
-      throw new Error(`clip_video_output_url_missing: ${sanitizeDiagnostic(getBridgeText(output), 300) || 'reponse vide'}`);
+      // Le statut et la disponibilite des sorties peuvent etre decales. Dans
+      // ce cas on suit le MEME prompt_id, sans resoumettre de video payante.
+      if (!isComfyOutputPending(output)) {
+        const outputFailure = describeBridgeFailure(output);
+        if (outputFailure) throw new Error(`clip_video_output_failed: ${outputFailure}`);
+        const outputUrl = extractComfyOutputUrl(output);
+        if (outputUrl) return outputUrl;
+        throw new Error(`clip_video_output_url_missing: ${sanitizeDiagnostic(getBridgeText(output), 300) || 'reponse vide'}`);
+      }
     }
     if (state === 'failed') {
       throw new Error(`clip_video_generation_failed: ${sanitizeDiagnostic(getBridgeText(status), 300) || 'statut amont en echec'}`);
