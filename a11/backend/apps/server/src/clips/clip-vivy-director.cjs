@@ -39,11 +39,11 @@ const CLAUDE_URL = "https://api.anthropic.com/v1/messages";
 const CLAUDE_KEY = process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY || "";
 const LYRICS_MODEL = process.env.NOSSEN_LYRICS_MODEL || "claude-sonnet-4-5-20250929";
 
-function callClaude(prompt, maxTokens) {
+function callClaude(prompt, maxTokens, model) {
   if (!CLAUDE_KEY) return Promise.reject(new Error("CLAUDE_API_KEY manquante"));
   return new Promise(function(resolve, reject) {
     var body = JSON.stringify({
-      model: LYRICS_MODEL,
+      model: model || LYRICS_MODEL,
       max_tokens: maxTokens || 1500,
       messages: [{ role: "user", content: prompt }],
     });
@@ -771,6 +771,28 @@ async function directClip(config) {
  * Si c'est trop mou, trop générique, ou si ça ne colle pas au morceau,
  * il corrige. Son critère : brillance > -9 dB, pas de plafond artificiel.
  */
+// Djeff Engine relit en cloud par defaut.
+//
+// Le modele local "djeff-engine" est qwen2.5:32b (32,8 milliards de parametres,
+// 19,9 Go) et la machine de prod n'a AUCUN GPU: 20 coeurs CPU. A 1 a 3 jetons
+// par seconde, les 1200 jetons demandes prennent 10 a 30 minutes pour un delai
+// accorde de 45 s. La relecture ne pouvait donc jamais aboutir -- constate le
+// 09/09/2026, "delai de 45 s depasse" puis ECONNRESET, sur deux clips.
+//
+// Rien n'est perdu a partir en cloud: `ollama show` confirme qu'il n'y a ni
+// ADAPTER ni LoRA. "djeff-engine" est qwen2.5:32b plus un prompt systeme, pas un
+// fine-tune. Seul le prompt fait la persona, et il voyage.
+//
+// Le modele cloud est volontairement DIFFERENT de Sol et de K44: un relecteur qui
+// partage le cerveau de l'auteur relit ses propres angles morts. Sol ecrit en
+// GPT, K44 relit en Grok, Djeff Engine relit en Claude.
+const DJEFF_ENGINE_CLOUD_MODEL = process.env.DJEFF_ENGINE_CLOUD_MODEL || "claude-opus-4-5-20251101";
+
+function resolveDjeffEngineMode(env) {
+  var mode = String((env || {}).DJEFF_ENGINE_MODE || "cloud").trim().toLowerCase();
+  return ["local", "cloud", "auto"].indexOf(mode) >= 0 ? mode : "cloud";
+}
+
 async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood) {
   if (!scenes || scenes.length < 2) return scenes;
   try {
@@ -791,9 +813,27 @@ async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood) {
       + "- Renvoie UNIQUEMENT le JSON array des plans corrigés : [{\"name\":\"...\",\"visual\":\"...\"}]\n"
       + "- Si tout est bon, renvoie le même array sans changement.";
 
+    var mode = resolveDjeffEngineMode(process.env);
+    var text = "";
+
+    if (mode !== "local") {
+      try {
+        text = await callClaude(prompt, 1200, DJEFF_ENGINE_CLOUD_MODEL);
+        if (text) console.log("[clip-director] Djeff Engine (" + DJEFF_ENGINE_CLOUD_MODEL + ") a relu les plans.");
+      } catch (error) {
+        console.warn("[clip-director] Djeff Engine cloud indisponible: " + (error.message || "erreur"));
+      }
+      // En mode "cloud" on ne retombe pas sur le local: sur une machine sans GPU
+      // il ne fera qu'ajouter 45 s d'attente avant le meme abandon.
+      if (!text && mode === "cloud") {
+        console.log("[clip-director] Djeff Engine non disponible, plans inchangés.");
+        return scenes;
+      }
+    }
+
     var body = JSON.stringify({ model: MODEL, messages: [{ role: "user", content: prompt }], stream: false, options: { temperature: 0.8, num_predict: 1200 } });
 
-    var text = await new Promise(function(resolve, reject) {
+    if (!text) text = await new Promise(function(resolve, reject) {
       var req = http.request(OLLAMA + "/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
@@ -848,6 +888,8 @@ async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood) {
 }
 
 module.exports = {
+  DJEFF_ENGINE_CLOUD_MODEL,
+  resolveDjeffEngineMode,
   directClip,
   directClipScenes,
   resolveClipIdentity,
