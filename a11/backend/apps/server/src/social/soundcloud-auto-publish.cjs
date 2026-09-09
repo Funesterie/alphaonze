@@ -78,12 +78,23 @@ function registryPath(env = process.env) {
 }
 
 function readRegistry(fichier = registryPath()) {
+  let raw;
   try {
-    const donnees = JSON.parse(fs.readFileSync(fichier, 'utf8'));
-    return donnees && typeof donnees === 'object' && donnees.entries ? donnees : { schema: REGISTRE_SCHEMA, entries: {} };
-  } catch {
-    return { schema: REGISTRE_SCHEMA, entries: {} };
+    raw = fs.readFileSync(fichier, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return { schema: REGISTRE_SCHEMA, entries: {} };
+    throw new Error('soundcloud_registry_unreadable');
   }
+  let donnees;
+  try { donnees = JSON.parse(raw); } catch { throw new Error('soundcloud_registry_invalid'); }
+  if (!donnees || donnees.schema !== REGISTRE_SCHEMA || !donnees.entries
+    || typeof donnees.entries !== 'object' || Array.isArray(donnees.entries)
+    || Object.entries(donnees.entries).some(([hash, entry]) => !/^[a-f0-9]{64}$/.test(hash)
+      || !entry || typeof entry !== 'object' || Array.isArray(entry)
+      || (entry.status && !['pending', 'published', 'ambiguous', 'failed'].includes(entry.status)))) {
+    throw new Error('soundcloud_registry_invalid');
+  }
+  return donnees;
 }
 
 function writeRegistry(registre, fichier = registryPath()) {
@@ -127,61 +138,86 @@ async function publishTrackIfNew({
   if (typeof upload !== 'function') throw new Error('upload_function_requise');
   if (!autoPublishEnabled(env)) return { published: false, reason: 'auto_publish_desactive', fingerprint: '' };
 
-  let titreFinal = String(title || '').trim();
-  let titrage = null;
-  if (!isPublishableTitle(titreFinal)) {
-    if (typeof titleTrack !== 'function' || !String(lyrics || '').trim()) {
-      // Un morceau sans paroles ne peut pas etre titre par le parolier: 181 des
-      // 836 morceaux de l'archive sont dans ce cas. On les laisse en attente
-      // plutot que de publier « Session principale ».
-      // Deux raisons distinctes, parce qu'elles se corrigent differemment: un nom
-      // de fichier trahit un appelant qui n'a pas transmis de titre, un titre
-      // generique trahit un morceau qui attend encore son parolier.
-      return {
-        published: false,
-        reason: looksLikeMachineTitle(titreFinal) ? 'titre_machine_refuse' : 'titre_indisponible',
-        fingerprint: '',
-      };
-    }
-    titrage = await titleTrack({ lyrics: String(lyrics).trim() });
-    titreFinal = String(titrage?.title || '').trim();
-    if (!isPublishableTitle(titreFinal)) {
-      return { published: false, reason: 'titrage_refuse', fingerprint: '' };
-    }
-  }
-
   const integrite = await fingerprintOf(filePath, { env });
   const fingerprint = String(integrite?.sha256 || '');
   if (!/^[a-f0-9]{64}$/.test(fingerprint)) throw new Error('empreinte_flux_invalide');
-  const registre = readRegistry(registryFile);
-  if (registre.entries[fingerprint]) {
-    return { published: false, reason: 'deja_publie', fingerprint, upload: registre.entries[fingerprint] };
+  fs.mkdirSync(path.dirname(registryFile), { recursive: true });
+  const lock = `${registryFile}.lock`;
+  let lockFd;
+  try { lockFd = fs.openSync(lock, 'wx', 0o600); }
+  catch (error) {
+    if (error.code === 'EEXIST') throw new Error('soundcloud_registry_locked');
+    throw error;
   }
+  // Un seul appelant titre/publie a la fois. Un verrou laisse apres crash exige
+  // une reconciliation explicite, pas une reprise aveugle d'un upload payant.
+  try {
+    const registre = readRegistry(registryFile);
+    const existing = registre.entries[fingerprint];
+    if (existing) {
+      const reason = !existing.status || existing.status === 'published' ? 'deja_publie'
+        : existing.status === 'pending' ? 'publication_pending'
+        : existing.status === 'ambiguous' ? 'publication_ambigue' : 'publication_a_verifier';
+      return { published: false, reason, fingerprint, upload: existing };
+    }
 
-  const resultat = await upload({
-    audioPath: filePath,
-    title: titreFinal,
-    description,
-    genre,
-    tagList,
-    sharing: resolveSharing(env),
-  });
+    let titreFinal = String(title || '').trim();
+    let titrage = null;
+    if (!isPublishableTitle(titreFinal)) {
+      if (typeof titleTrack !== 'function' || !String(lyrics || '').trim()) {
+        // Un morceau sans paroles ne peut pas etre titre par le parolier: 181 des
+        // 836 morceaux de l'archive sont dans ce cas. On les laisse en attente
+        // plutot que de publier « Session principale ».
+        // Deux raisons distinctes, parce qu'elles se corrigent differemment: un nom
+        // de fichier trahit un appelant qui n'a pas transmis de titre, un titre
+        // generique trahit un morceau qui attend encore son parolier.
+        return {
+          published: false,
+          reason: looksLikeMachineTitle(titreFinal) ? 'titre_machine_refuse' : 'titre_indisponible',
+          fingerprint: '',
+        };
+      }
+      titrage = await titleTrack({ lyrics: String(lyrics).trim() });
+      titreFinal = String(titrage?.title || '').trim();
+      if (!isPublishableTitle(titreFinal)) {
+        return { published: false, reason: 'titrage_refuse', fingerprint: '' };
+      }
+    }
 
-  registre.schema = REGISTRE_SCHEMA;
-  registre.entries[fingerprint] = {
-    title: titreFinal,
-    titledBy: titrage ? (titrage.model || 'anthropic') : 'source',
-    titlingCostUsd: titrage ? Number(titrage.costUsd || 0) : 0,
-    trackId: resultat?.id || null,
-    permalinkUrl: resultat?.permalinkUrl || '',
-    sharing: resultat?.sharing || resolveSharing(env),
-    codec: integrite.codec,
-    sampleRate: integrite.sampleRate,
-    channels: integrite.channels,
-    publishedAt: new Date().toISOString(),
-  };
-  writeRegistry(registre, registryFile);
-  return { published: true, fingerprint, upload: resultat };
+    registre.entries[fingerprint] = {
+      status: 'pending',
+      title: titreFinal,
+      titledBy: titrage ? (titrage.model || 'anthropic') : 'source',
+      titlingCostUsd: titrage ? Number(titrage.costUsd || 0) : 0,
+      sharing: resolveSharing(env),
+      codec: integrite.codec,
+      sampleRate: integrite.sampleRate,
+      channels: integrite.channels,
+      attemptedAt: new Date().toISOString(),
+    };
+    // Persister AVANT le POST : meme sans reponse, la reprise ne reposte pas.
+    writeRegistry(registre, registryFile);
+    let resultat;
+    try {
+      resultat = await upload({ audioPath: filePath, title: titreFinal, description, genre, tagList, sharing: resolveSharing(env) });
+      if (!resultat?.id || resultat.ok === false) throw new Error('soundcloud_upload_receipt_missing');
+    } catch (error) {
+      const status = Number(error.status);
+      registre.entries[fingerprint].status = [401, 403].includes(status) ? 'failed' : 'ambiguous';
+      registre.entries[fingerprint].error = [401, 403].includes(status) ? `soundcloud_http_${status}` : 'soundcloud_upload_outcome_unknown';
+      writeRegistry(registre, registryFile);
+      throw error;
+    }
+    Object.assign(registre.entries[fingerprint], {
+      status: 'published', trackId: resultat.id, permalinkUrl: resultat.permalinkUrl || '',
+      sharing: resultat.sharing || resolveSharing(env), publishedAt: new Date().toISOString(),
+    });
+    writeRegistry(registre, registryFile);
+    return { published: true, fingerprint, upload: resultat };
+  } finally {
+    fs.closeSync(lockFd);
+    fs.unlinkSync(lock);
+  }
 }
 
 module.exports = {

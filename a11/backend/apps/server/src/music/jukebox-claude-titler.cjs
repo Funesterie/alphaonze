@@ -20,6 +20,7 @@ const DEFAULT_MODEL = 'claude-sonnet-4-5-20250929';
 const MAX_LYRICS_CHARS = 1400;
 const PRIX_ENTREE_USD_PAR_MTOK = 3;
 const PRIX_SORTIE_USD_PAR_MTOK = 15;
+const MAX_OUTPUT_TOKENS = 200;
 
 /** Meme liste que le titreur en lot: un titre qui n'en est pas un. */
 const GENERIC_TITLE = /^(vivy[-_]|djeff-vivy-|[a-f0-9]{8}-variant|session principale|sans titre|archive vivy|titre non|untitled|test\b)/i;
@@ -59,25 +60,53 @@ async function titleFromLyrics({
   model = DEFAULT_MODEL,
   fetchFn = globalThis.fetch,
   timeoutMs = 90000,
+  maxCostUsd = Infinity,
+  reserveCost = null,
 } = {}) {
   const texte = String(lyrics || '').trim();
   if (!texte) throw new Error('titrage_paroles_absentes');
   if (!apiKey) throw new Error('claude_key_missing');
+  if (maxCostUsd !== Infinity && (!Number.isFinite(maxCostUsd) || maxCostUsd < 0)) throw new Error('invalid_titling_budget');
 
   const content = JSON.stringify([{ id: 0, lyrics: texte.slice(0, MAX_LYRICS_CHARS) }]);
+  const headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' };
+  const request = { model, max_tokens: MAX_OUTPUT_TOKENS, system: SYSTEM_PROMPT, messages: [{ role: 'user', content }] };
+  let reservedCostUsd = 0;
+  if (Number.isFinite(maxCostUsd)) {
+    if (maxCostUsd <= 0) throw new Error('budget_titrage_atteint');
+    if (model !== DEFAULT_MODEL) throw new Error('titrage_model_price_unknown');
+    // Le comptage ne genere aucun titre. Sans estimation fiable on n'appelle
+    // pas Messages : le budget est reserve avant la requete facturable.
+    const { max_tokens: _maxTokens, ...countRequest } = request;
+    const countResponse = await fetchFn('https://api.anthropic.com/v1/messages/count_tokens', {
+      method: 'POST', headers, body: JSON.stringify(countRequest), signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!countResponse.ok) throw new Error('titrage_count_http_' + countResponse.status);
+    const counted = await countResponse.json();
+    if (!Number.isInteger(counted.input_tokens) || counted.input_tokens < 0) throw new Error('provider_token_count_missing');
+    // Le compteur est une estimation. Reserver aussi une borne pessimiste
+    // UTF-8 + enveloppe evite de consommer les derniers cents sur cet arrondi.
+    const inputUpperBound = Math.max(counted.input_tokens + 1024, Buffer.byteLength(JSON.stringify(countRequest), 'utf8') + 1024);
+    reservedCostUsd = estimateCostUsd({ input_tokens: inputUpperBound, output_tokens: MAX_OUTPUT_TOKENS });
+    if (reservedCostUsd > maxCostUsd) throw new Error('budget_titrage_atteint');
+    if (typeof reserveCost === 'function') await reserveCost(reservedCostUsd);
+  }
   const response = await fetchFn('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model, max_tokens: 200, system: SYSTEM_PROMPT, messages: [{ role: 'user', content }] }),
+    headers,
+    body: JSON.stringify(request),
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) throw new Error('titrage_provider_http_' + response.status);
   const result = await response.json();
 
   const usage = result?.usage || {};
-  if (!Number.isFinite(Number(usage.input_tokens)) || !Number.isFinite(Number(usage.output_tokens))) {
+  if (!Number.isInteger(usage.input_tokens) || usage.input_tokens < 0
+    || !Number.isInteger(usage.output_tokens) || usage.output_tokens < 0) {
     throw new Error('provider_usage_missing');
   }
+  const costUsd = estimateCostUsd(usage);
+  if (reservedCostUsd && costUsd > reservedCostUsd) throw new Error('provider_cost_exceeded_reservation');
   const answer = (result.content || []).filter((x) => x?.type === 'text').map((x) => x.text).join('') || '';
   let titres;
   try { titres = JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { throw new Error('invalid_provider_json'); }
@@ -86,9 +115,10 @@ async function titleFromLyrics({
   }
   return {
     title: assertSafeTitle(titres[0].title),
-    costUsd: estimateCostUsd(usage),
+    costUsd,
     model,
     requestId: String(result.id || ''),
+    reservedCostUsd,
   };
 }
 
