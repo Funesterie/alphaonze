@@ -98,8 +98,8 @@ const IDENTITY_DEFINITIONS = [
       'https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-05',
     ],
     prompt: [
-      'Référence visuelle créateur humain: homme adulte méditerranéen réel à peau olive, yeux brun foncé, sourcils marqués, cheveux courts brun foncé avec parfois une mèche claire devant, barbe courte noire et moustache, visage naturel, t-shirt sombre ou veste bleue, énergie de créateur.',
-      'Si ce créateur apparaît, préserver son visage, son teint olive, ses yeux foncés, sa barbe, sa moustache et sa forme de cheveux depuis les photos de référence; ne pas changer son origine visuelle, ne pas le rendre noir, imberbe, personnage motard bêta ou acteur générique.',
+      'Référence visuelle créateur humain: homme adulte méditerranéen réel, peau olive, visage large à mâchoire carrée et marquée, joues pleines, yeux brun foncé au regard direct, sourcils épais et fournis très rapprochés, coupe très courte dégradée net sur les côtés et courte sur le dessus, cheveux brun foncé, barbe courte noire et moustache, carrure large et épaules solides, t-shirt sombre ou veste bleue, énergie de créateur.',
+      'Si ce créateur apparaît, préserver ces traits: teint olive, visage large et mâchoire marquée, yeux foncés, sourcils épais, coupe très courte dégradée, barbe courte et moustache, carrure large. Ces traits suffisent seuls: aucune image de référence n est transmise au generateur video, la description porte donc toute la ressemblance. Ne pas changer son origine visuelle, ne pas le rendre noir, imberbe, personnage motard bêta ou acteur générique.',
     ].join(' '),
     negative: [
       'black Djeff',
