@@ -98,5 +98,7 @@ test('legacy archives stay readable but never claim measured stream integrity', 
   const legacy = jukebox.encodeTrack({ audioBuffer: sourceBuffer }, { key: KEY });
   const decoded = await jukebox.decodeTrackVerified(legacy, { key: KEY });
   assert.equal(decoded.integrityOk, true); assert.equal(decoded.streamIntegrityOk, null);
+  assert.throws(() => jukebox.decodeTrack(legacy, { key: KEY, maxRawBytes: 16 * 1024 ** 3 }), /zen_decode_limit_invalid/);
+  assert.throws(() => jukebox.decodeTrack(legacy, { key: KEY, maxRawBytes: 100 }), /ZEN_ERR_LIMIT|maxRawBytes/);
   await assert.rejects(jukebox.encodeTrackVerified({ audioBuffer: sourceBuffer, masters: Array.from({ length: 9 }, () => ({ buffer: masterBuffer })) }, { key: KEY }), /size_limit/);
 });

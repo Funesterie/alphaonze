@@ -44,3 +44,5 @@ Correctif préparé dans le dépôt, testé sur des fichiers réels ; **pas enco
 - Vérification de configuration live : `@nossen/zen` est résolvable, mais `JUKEBOX_ZEN_KEY` et `JUKEBOX_MASTER_SECRET` sont absentes. **La livraison publique chiffrée n'est pas activée et aucune clé n'est créée ou publiée.** Choisir la conservation et la remise des clés avant de brancher le téléchargement.
 
 Déploiement et traitement historique : résultat effectif à compléter après contrôle de la release active.
+
+Le premier essai de l'image Linux a trouvé un défaut supplémentaire antérieur : `@nossen/zen@0.1.3` donne par défaut 16 Gio à `brotliDecompressSync.maxOutputLength`, supérieur au maximum Buffer de Node 20 (4 Gio). Un minuscule fichier valide échoue avec `ERR_OUT_OF_RANGE`, retraduit trompeusement en `ZEN exceeded maxRawBytes`. Le lecteur jukebox applique maintenant des plafonds explicites : 96 Mio de conteneur/payload, 1 Mio d'en-tête et 128 Mio décompressés. Les limites inférieures restent respectées ; une demande supérieure est refusée, pas contournée.

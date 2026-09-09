@@ -23,6 +23,20 @@ const { readAudioStreamIntegrity, validateAudioStreamIntegrity } = require('../m
 const { buildGoldenThread } = require('../music/jukebox-stream-integrity.cjs');
 
 const TRACK_SCHEMA = 'funesterie.jukebox.zen-track.v1';
+// @nossen/zen 0.1.3 defaults to 16 GiB raw, beyond Node 20's Buffer limit:
+// Brotli rejects even tiny valid files with ERR_OUT_OF_RANGE. Bound this media
+// use case explicitly rather than weakening archive decompression protections.
+const DECODE_LIMITS = { maxContainerBytes: 96 * 1024 * 1024, maxPayloadBytes: 96 * 1024 * 1024, maxHeaderBytes: 1024 * 1024, maxRawBytes: 128 * 1024 * 1024 };
+
+function boundedDecodeOptions(options) {
+  const bounded = { ...options };
+  for (const [name, maximum] of Object.entries(DECODE_LIMITS)) {
+    const value = options[name] === undefined ? maximum : Number(options[name]);
+    if (!Number.isSafeInteger(value) || value <= 0 || value > maximum) throw Error('zen_decode_limit_invalid');
+    bounded[name] = value;
+  }
+  return bounded;
+}
 
 function loadZen() {
   // Chemins possibles : monorepo local, puis conteneur.
@@ -154,7 +168,7 @@ function encodeTrack(track, options = {}) {
 function decodeTrack(input, options = {}) {
   const zen = loadZen();
   const key = resolveKey(options.key);
-  const decoded = zen.decodeZenContainer(input, { ...options, key });
+  const decoded = zen.decodeZenContainer(input, { ...boundedDecodeOptions(options), key });
   const payload = decoded.container && decoded.container.data
     ? decoded.container.data.value
     : null;
