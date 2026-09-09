@@ -301,27 +301,123 @@ function describeBridgeFailure(response) {
 
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+// Le catalogue de modeles video du fournisseur bouge, et un identifiant ecrit en
+// dur devient faux sans prevenir. Le 09/09/2026 "byteplus/seedance-2.0-i2v" a
+// disparu: chaque clip portant un personnage nomme basculait sur l'image-to-video
+// et mourait au premier segment ("unknown model"), tandis qu'un clip anonyme
+// passait. On lit donc le catalogue, une fois par clip, au lieu de le supposer.
+const T2V_DEFAUT = 'byteplus/seedance-2.0-t2v';
+
+function estModeleVideoPartenaire(entree) {
+  return entree
+    && String(entree.source || '') === 'partner'
+    && String(entree.type || '') === 'video'
+    && typeof entree.model_name === 'string'
+    && entree.model_name.length > 0;
+}
+
+function estImageVersVideo(entree) {
+  const tags = Array.isArray(entree.tags) ? entree.tags.map((t) => String(t).toLowerCase()) : [];
+  if (tags.some((t) => t === 'image-to-video' || t === 'i2v')) return true;
+  if (tags.some((t) => t === 'text-to-video' || t === 't2v')) return false;
+  return /(?:^|[-_/])i2v(?:$|[-_])/i.test(entree.model_name);
+}
+
+/**
+ * Choisit les deux modeles a partir du catalogue. Partie pure: c'est elle qui
+ * porte la regle, donc c'est elle qu'on teste.
+ *
+ * @returns {{t2v: string, i2v: string|null}} i2v vaut null quand le fournisseur
+ *   n'en propose aucun -- l'appelant doit alors renoncer a la reference image
+ *   plutot que de soumettre un modele inexistant.
+ */
+function pickVideoModels(catalogue = [], env = process.env) {
+  const partenaires = (Array.isArray(catalogue) ? catalogue : []).filter(estModeleVideoPartenaire);
+  const noms = partenaires.map((m) => m.model_name);
+  const t2vDisponibles = partenaires.filter((m) => !estImageVersVideo(m)).map((m) => m.model_name);
+  const i2vDisponibles = partenaires.filter(estImageVersVideo).map((m) => m.model_name);
+
+  const t2vDemande = String(env.NOSSEN_CLIP_T2V_MODEL || '').trim();
+  const i2vDemande = String(env.NOSSEN_CLIP_I2V_MODEL || '').trim();
+
+  // Un modele demande explicitement n'est retenu que s'il existe vraiment.
+  const t2v = (t2vDemande && noms.includes(t2vDemande) && t2vDemande)
+    || (noms.includes(T2V_DEFAUT) && T2V_DEFAUT)
+    || t2vDisponibles[0]
+    || T2V_DEFAUT;
+  const i2v = (i2vDemande && noms.includes(i2vDemande) && i2vDemande) || i2vDisponibles[0] || null;
+  return { t2v, i2v };
+}
+
+function parseCatalogueModeles(reponse) {
+  try {
+    const texte = getBridgeText(reponse);
+    const donnees = JSON.parse(texte);
+    return Array.isArray(donnees?.data) ? donnees.data : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+/**
+ * Interroge le pont une fois par clip. Une panne de decouverte ne doit jamais
+ * empecher un clip: on retombe sur le t2v par defaut, sans reference image.
+ */
+async function resolveVideoModels({ postJsonImpl = postJson, env = process.env } = {}) {
+  try {
+    const reponse = await postJsonImpl(BRIDGE_URL, { tool: 'comfy__search_models', args: { query: 'video' } });
+    const catalogue = parseCatalogueModeles(reponse);
+    if (!catalogue.length) return { t2v: T2V_DEFAUT, i2v: null, decouvert: false };
+    return { ...pickVideoModels(catalogue, env), decouvert: true };
+  } catch (_) {
+    return { t2v: T2V_DEFAUT, i2v: null, decouvert: false };
+  }
+}
+
+
+
+
+function choisirReference(identity, env = process.env) {
+  const liste = identity && Array.isArray(identity.referenceImageUrls) ? identity.referenceImageUrls : [];
+  if (!liste.length) return null;
+  const demande = Number(env.NOSSEN_CLIP_REFERENCE_INDEX);
+  const rang = Number.isInteger(demande) && demande >= 0 && demande < liste.length ? demande : 0;
+  return liste[rang] || null;
+}
+
 // Soumettre UNE vidéo et ATTENDRE qu'elle soit prête
 async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = null, {
   postJsonImpl = postJson,
   sleepImpl = sleep,
   onProgress,
   pollIntervalMs = parseBoundedInteger(process.env.NOSSEN_CLIP_POLL_INTERVAL_MS, 11_000, 250, 60_000),
+  models = null,
 } = {}) {
   console.log(`[clip] Vidéo ${index}: ${prompt.slice(0, 60)}...`);
   emitProgress(onProgress, { stage: 'video:submitting', status: 'generating', segmentIndex: index });
 
   // Image de référence : si un personnage canonique est en jeu, on bascule sur
   // l'image-to-video pour verrouiller son visage au lieu de le redécrire.
-  const referenceImage = identity && Array.isArray(identity.referenceImageUrls)
-    ? identity.referenceImageUrls[0]
-    : null;
-  const useReference = Boolean(referenceImage) && process.env.NOSSEN_CLIP_USE_REFERENCE !== '0';
+  // Quelle reference parmi celles de l'identite. C'etait [0] en dur, sans que rien
+  // ne le dise: pour djeff les cinq references vont de 240x240 (4 Ko) a 720x720
+  // (49 Ko), et une vignette de 240 pixels ne verrouille pas un visage. Le rang
+  // se choisit donc, et un rang hors bornes retombe sur la premiere plutot que
+  // de perdre la reference en silence.
+  const referenceImage = choisirReference(identity, process.env);
+  const modeles = models && models.t2v ? models : { t2v: T2V_DEFAUT, i2v: null };
+  const referenceVoulue = Boolean(referenceImage) && process.env.NOSSEN_CLIP_USE_REFERENCE !== '0';
+  // Une reference sans modele image-to-video ne se soumet pas: on renonce a la
+  // reference, on garde le clip. Le personnage reste decrit par le texte de sa
+  // fiche d'identite, ce qui degrade la ressemblance sans tuer la generation.
+  const useReference = referenceVoulue && Boolean(modeles.i2v);
+  if (referenceVoulue && !useReference) {
+    console.log(`[clip] Vidéo ${index}: aucun modèle image-to-video au catalogue, référence abandonnée (personnage décrit en texte)`);
+  }
 
   const args = useReference
     ? {
         type: 'video',
-        model: 'byteplus/seedance-2.0-i2v',
+        model: modeles.i2v,
         prompt,
         image: referenceImage,
         client_os: 'linux',
@@ -330,7 +426,7 @@ async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = nu
       }
     : {
         type: 'video',
-        model: 'byteplus/seedance-2.0-t2v',
+        model: modeles.t2v,
         prompt,
         client_os: 'linux',
         confirm: true,
@@ -420,6 +516,7 @@ async function generateClip(config = {}, {
   materializeMedia = materializeClipMedia,
   loadDirectorImpl = loadClipDirector,
   generateVideoImpl = generateOneVideo,
+  resolveVideoModelsImpl = resolveVideoModels,
   execFileSyncImpl = execFileSync,
   sleepImpl = sleep,
   nowImpl = Date.now,
@@ -507,6 +604,12 @@ async function generateClip(config = {}, {
     numSegments = Math.min(6, Math.ceil(audioDuration / SEGMENT_SECONDS));
   }
   console.log(`[clip] ${numSegments} vidéos à générer (${fullDuration ? 'full' : 'normal'})`);
+
+  // Une seule lecture du catalogue pour tout le clip: les 26 segments d'un full
+  // partagent le meme choix de modele, et une panne de decouverte n'empeche pas
+  // la generation.
+  const videoModels = await resolveVideoModelsImpl({ env: process.env });
+  console.log(`[clip] Modèles vidéo: t2v=${videoModels.t2v} i2v=${videoModels.i2v || '(aucun au catalogue)'}${videoModels.decouvert ? '' : ' — catalogue illisible, repli sur le défaut'}`);
   emitProgress(onProgress, {
     stage: 'video:planned',
     status: 'generating',
@@ -532,7 +635,7 @@ async function generateClip(config = {}, {
     const prompt = `${section.visual}.${lieuBrief} Cinematic anime quality, volumetric lighting, smooth camera movement. ${style}${identityBrief}`.trim();
 
     try {
-      const videoUrl = await generateVideoImpl(prompt, i, 600000, identity, { onProgress });
+      const videoUrl = await generateVideoImpl(prompt, i, 600000, identity, { onProgress, models: videoModels });
       const dest = path.join(clipDir, `scene_${String(i).padStart(2, '0')}.mp4`);
       emitProgress(onProgress, { stage: 'video:downloading', status: 'generating', segmentIndex: i });
       await materializeMedia(videoUrl, dest, { kind: 'video' });
@@ -662,7 +765,12 @@ function mountClipRoutes(app) {
 }
 
 module.exports = {
+  T2V_DEFAUT,
+  choisirReference,
   describeBridgeFailure,
+  estImageVersVideo,
+  pickVideoModels,
+  resolveVideoModels,
   extractComfyJobStatus,
   extractComfyOutputUrl,
   extractComfyPromptId,
