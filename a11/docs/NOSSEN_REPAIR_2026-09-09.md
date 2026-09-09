@@ -46,3 +46,14 @@ Le fichier d'état conserve 120 chansons ; un ancien backup n'en ajoute que deux
 - Progression par étape, état partiel explicite, comportement du lecteur et du suivi de tâches testé.
 
 La présence de ces modifications dans le dépôt ne prouve pas leur déploiement. La livraison doit être accompagnée du commit, de la couleur active, des empreintes des fichiers du conteneur, de tests HTTP réels et d'un média final inspecté.
+
+## Livraison vérifiée — 9 septembre, 11 h 38 CEST
+
+- Code livré et poussé : `7686143de52195fca886aac6cac094ecaa7decc6`. Release `/home/deploy/a11-prod/releases/20260909-113103`, image `funesterie-nossen-repair:20260909-113103`, couleur active green. Blue porte la même image en secours, sans les workers du lanceur principal. K44, Caddy et les services annexes n'ont pas été recréés.
+- Nouvelle clé installée dans les deux emplacements OpenAI des fichiers secrets `compose.env` et `a11.env`, avec sauvegardes privées et contrôle de la clé effective. Le séquençage reste `gpt-4o` direct. OpenAI et xAI répondent 200 aux consultations de modèles ; aucune génération payante supplémentaire pendant cette livraison.
+- Tests : 58 réussis localement, un test de symlink ignoré sous Windows ; 64/64 réussis dans l'image Linux, dont le contrôle symlink et Sharingan. Les tests Full Clip de l'autre interface web ont été exécutés localement seulement. Les 15 fichiers du correctif ont été contrôlés par SHA-256.
+- `/api/build` public annonce le commit livré ; `/nossen/` public correspond exactement au HTML corrigé. L'import MP3 historique et l'asset studio renvoient 206 aux requêtes Range, avec signature ID3. L'import a aussi une longueur HEAD correcte (3 183 639 octets). Le démontage audio du Director retrouve 199,92 s dans la racine canonique.
+- Rendu Comfy déjà terminé récupéré, puis aperçu assemblé localement : `/clips/nossen-recovered-20260907-clip-1788803589271-z865.mp4`, 7,059 s, 5 545 673 octets, H.264 + AAC. Décodage FFmpeg réussi, accès public 206, aperçu présent au listing. Ce n'est pas un Full Clip complet ; le lien avec l'ancien job reste temporel, donc son ancien statut n'a pas été artificiellement marqué réussi.
+- La nouvelle génération complète depuis une session utilisateur authentifiée n'a pas été relancée pour préserver les crédits. L'historique exhaustif du jukebox et la reconnexion Twitch restent distincts de cette réparation.
+
+Retour arrière possible : remettre `current` sur `20260907-164342`, puis recréer seulement `a11-backend-green` avec le compose de cette release et `--no-deps --no-build`. L'ancienne image `server-a11-backend-green` est conservée. Les clés valides restent installées ; ne pas rétablir les anciennes clés refusées sans raison explicite. Les déploiements suivants doivent réutiliser les secrets distants actualisés (`-ReuseRemoteSecrets`) ou actualiser leur source de secrets avant de la recopier.
