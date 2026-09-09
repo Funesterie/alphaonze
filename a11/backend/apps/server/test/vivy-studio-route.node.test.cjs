@@ -580,6 +580,7 @@ test('Vivy mastering appends a silent tail and writes a signed Funesterie sideca
       generatedAt: '2026-08-11T17:30:00.000Z',
       silentTailSeconds: 1,
       provenanceKeyPair: keyPair,
+      readAudioStreamIntegrity: async (file) => ({ schema: 'funesterie.audio.stream-integrity.v1', algorithm: 'sha256', representation: 'demuxed-encoded-audio-packets', selection: '0:a:0', streamIndex: 0, codec: 'mp3', sampleRate: 48000, channels: 2, sha256: crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') }),
       runFfmpeg: async (args) => {
         calls.push(args);
         if (args.at(-1) !== '-') fs.writeFileSync(args.at(-1), Buffer.from('ID3-mastered-funesterie'));
@@ -593,6 +594,9 @@ test('Vivy mastering appends a silent tail and writes a signed Funesterie sideca
     assert.match(calls[1].join(' '), new RegExp(`funesterie_provenance_id=${result.provenanceId}`));
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
     assert.equal(manifest.brand, 'Funesterie');
+    assert.equal(manifest.schema, 'funesterie.audio.provenance.v2');
+    assert.equal(manifest.goldenThread.relationship, 'derived-from');
+    assert.equal(manifest.goldenThread.sameEncodedStream, false);
     assert.equal(manifest.assetSha256, crypto.createHash('sha256').update(fs.readFileSync(sourcePath)).digest('hex'));
     const { verifyAudioProvenanceManifest } = require('../src/music/funesterie-audio-provenance.cjs');
     assert.equal(verifyAudioProvenanceManifest(manifest), true);

@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { validateAudioStreamIntegrity } = require('./audio-stream-integrity.cjs');
 const {
   canonicalJson,
   resolveSigningKey,
@@ -41,6 +42,7 @@ function createAudioProvenancePlan(filePath, options = {}) {
     .update(`${AUDIO_PROVENANCE_SCHEMA}\0${generatedAt}\0${sourceSha256}`)
     .digest('hex')
     .slice(0, 32);
+  const streamIntegrity = options.sourceStreamIntegrity ? validateAudioStreamIntegrity(options.sourceStreamIntegrity) : null;
   return {
     schema: AUDIO_PROVENANCE_SCHEMA,
     brand: 'Funesterie',
@@ -48,6 +50,7 @@ function createAudioProvenancePlan(filePath, options = {}) {
     generatedAt,
     silentTailSeconds,
     sourceSha256,
+    ...(streamIntegrity ? { sourceStreamIntegrity: streamIntegrity } : {}),
   };
 }
 
@@ -63,8 +66,13 @@ function buildAudioProvenanceMetadataArgs(plan = {}) {
 
 function buildSignedAudioProvenanceManifest(audioPath, plan, options = {}) {
   const keyPair = options.keyPair || resolveSigningKey(options.env);
+  if (Boolean(plan.sourceStreamIntegrity) !== Boolean(options.assetStreamIntegrity)) throw Error('audio_provenance_stream_pair_required');
+  const streams = plan.sourceStreamIntegrity ? {
+    source: validateAudioStreamIntegrity(plan.sourceStreamIntegrity),
+    asset: validateAudioStreamIntegrity(options.assetStreamIntegrity),
+  } : null;
   const manifest = {
-    schema: AUDIO_PROVENANCE_SCHEMA,
+    schema: streams ? 'funesterie.audio.provenance.v2' : AUDIO_PROVENANCE_SCHEMA,
     brand: 'Funesterie',
     provenanceId: plan.provenanceId,
     generatedAt: plan.generatedAt,
@@ -72,6 +80,7 @@ function buildSignedAudioProvenanceManifest(audioPath, plan, options = {}) {
     sourceSha256: plan.sourceSha256,
     assetSha256: sha256File(audioPath),
     assetBytes: fs.statSync(audioPath).size,
+    ...(streams ? { streamIntegrity: streams, goldenThread: { sourceStreamSha256: streams.source.sha256, assetStreamSha256: streams.asset.sha256, relationship: 'derived-from', sameEncodedStream: streams.source.sha256 === streams.asset.sha256 && streams.source.codec === streams.asset.codec } } : {}),
     audioFile: String(options.audioFileName || path.basename(audioPath)),
     embeddedMetadata: {
       encodedBy: 'Funesterie',
@@ -121,6 +130,7 @@ function verifyAudioProvenanceManifest(manifest) {
 module.exports = {
   AUDIO_PROVENANCE_SCHEMA,
   DEFAULT_SILENT_TAIL_SECONDS,
+  sha256File,
   resolveSilentTailSeconds,
   createAudioProvenancePlan,
   buildAudioProvenanceMetadataArgs,

@@ -100,9 +100,11 @@ const {
   listRevivableVoices,
 } = require('../music/persona-revival-runner.cjs');
 const { probeAudioDurationSeconds } = require('../audio/probe-audio-duration.cjs');
+const { readAudioStreamIntegrity } = require('../music/audio-stream-integrity.cjs');
 const { buildSongcraftGraphContext, buildChatGraphContext } = require('../music/songcraft-graph-context.cjs');
 const {
   resolveSilentTailSeconds,
+  sha256File: sha256ProvenanceFile,
   createAudioProvenancePlan,
   buildAudioProvenanceMetadataArgs,
   buildSignedAudioProvenanceManifest,
@@ -9791,9 +9793,12 @@ async function masterVivyMusicFile(filePath, options = {}) {
   const runFfmpeg = options.runFfmpeg || runVivyFfmpeg;
   try {
     const originalSize = fs.statSync(targetPath).size;
+    const inspectStream = options.readAudioStreamIntegrity || readAudioStreamIntegrity;
+    const sourceStreamIntegrity = await inspectStream(targetPath, options);
     const provenancePlan = createAudioProvenancePlan(targetPath, {
       env: options.env || process.env,
       generatedAt: options.generatedAt,
+      sourceStreamIntegrity,
       silentTailSeconds: options.silentTailSeconds || resolveSilentTailSeconds(options.env || process.env),
     });
     const config = {
@@ -9815,10 +9820,12 @@ async function masterVivyMusicFile(filePath, options = {}) {
     if (!fs.existsSync(tempPath) || fs.statSync(tempPath).size <= 0) {
       throw new Error('vivy_music_master_empty_output');
     }
+    if (sha256ProvenanceFile(targetPath) !== provenancePlan.sourceSha256) throw new Error('vivy_music_master_source_changed');
     const provenanceManifest = buildSignedAudioProvenanceManifest(tempPath, provenancePlan, {
       env: options.env || process.env,
       keyPair: options.provenanceKeyPair,
       audioFileName: path.basename(targetPath),
+      assetStreamIntegrity: await inspectStream(tempPath, options),
     });
     const manifestPath = `${targetPath}.funesterie.provenance.json`;
     const tempManifestPath = `${tempPath}.funesterie.provenance.json`;
