@@ -16,6 +16,12 @@ const {
 
 const ACTIF = { SOUNDCLOUD_AUTO_PUBLISH_ENABLED: 'true' };
 const registreTemporaire = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sc-pub-')), 'publies.json');
+/** Ce que rend readAudioStreamIntegrity: une empreinte ET la forme du flux. */
+const integrite = (lettre) => ({
+  schema: 'funesterie.audio.stream-integrity.v1', algorithm: 'sha256',
+  representation: 'demuxed-encoded-audio-packets', selection: '0:a:0',
+  streamIndex: 0, codec: 'mp3', sampleRate: 44100, channels: 2, sha256: lettre.repeat(64),
+});
 const fauxAudio = () => {
   const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sc-audio-')), 'morceau.mp3');
   fs.writeFileSync(f, 'pas-du-vrai-audio');
@@ -42,7 +48,7 @@ test('rien ne part tant que le drapeau n est pas leve', async () => {
   const r = await publishTrackIfNew({
     filePath: fauxAudio(), title: 'Le Cadre', env: {}, registryFile: registreTemporaire(),
     upload: async () => { appels += 1; return {}; },
-    fingerprintOf: async () => 'a'.repeat(64),
+    fingerprintOf: async () => integrite('a'),
   });
   assert.equal(r.published, false);
   assert.equal(r.reason, 'auto_publish_desactive');
@@ -55,7 +61,7 @@ test('un titre de machine ne monte jamais, meme drapeau leve', async () => {
     filePath: fauxAudio(), title: 'vivy-music-suno-c9a1b3bf79ff8451.mp3',
     env: ACTIF, registryFile: registreTemporaire(),
     upload: async () => { appels += 1; return {}; },
-    fingerprintOf: async () => 'b'.repeat(64),
+    fingerprintOf: async () => integrite('b'),
   });
   assert.equal(r.published, false);
   assert.equal(r.reason, 'titre_machine_refuse');
@@ -65,14 +71,14 @@ test('un titre de machine ne monte jamais, meme drapeau leve', async () => {
 test('deux passages sur le meme flux ne publient qu une fois', async () => {
   const registryFile = registreTemporaire();
   const filePath = fauxAudio();
-  const empreinte = 'c'.repeat(64);
+  const empreinte = integrite('c');
   let appels = 0;
   const upload = async () => { appels += 1; return { id: 42, permalinkUrl: 'https://soundcloud.com/x/le-cadre', sharing: 'public' }; };
   const options = { filePath, title: 'Le Cadre', env: ACTIF, registryFile, upload, fingerprintOf: async () => empreinte };
 
   const premier = await publishTrackIfNew(options);
   assert.equal(premier.published, true);
-  assert.equal(premier.fingerprint, empreinte);
+  assert.equal(premier.fingerprint, empreinte.sha256);
 
   const second = await publishTrackIfNew(options);
   assert.equal(second.published, false);
@@ -83,7 +89,7 @@ test('deux passages sur le meme flux ne publient qu une fois', async () => {
 
 test('le meme morceau retagge garde son empreinte de flux et reste un doublon', async () => {
   const registryFile = registreTemporaire();
-  const empreinte = 'd'.repeat(64);
+  const empreinte = integrite('d');
   let appels = 0;
   const upload = async () => { appels += 1; return { id: 7 }; };
   // Deux fichiers differents (tags differents), un seul et meme flux audio.
@@ -107,4 +113,30 @@ test('la portee de publication est bornee et le drapeau ne repond qu a des valeu
   assert.equal(autoPublishEnabled({}), false);
   assert.equal(autoPublishEnabled({ SOUNDCLOUD_AUTO_PUBLISH_ENABLED: 'false' }), false);
   assert.equal(autoPublishEnabled({ SOUNDCLOUD_AUTO_PUBLISH_ENABLED: '1' }), true);
+});
+
+test('une empreinte qui ne ressemble pas a un sha256 fait echouer plutot que publier', async () => {
+  let appels = 0;
+  await assert.rejects(
+    publishTrackIfNew({
+      filePath: fauxAudio(), title: 'Le Cadre', env: ACTIF, registryFile: registreTemporaire(),
+      upload: async () => { appels += 1; return {}; },
+      fingerprintOf: async () => ({ sha256: 'pas-une-empreinte' }),
+    }),
+    /empreinte_flux_invalide/
+  );
+  assert.equal(appels, 0);
+});
+
+test('le registre garde la forme du flux, pas seulement son empreinte', async () => {
+  const registryFile = registreTemporaire();
+  await publishTrackIfNew({
+    filePath: fauxAudio(), title: 'Tempête', env: ACTIF, registryFile,
+    upload: async () => ({ id: 9, sharing: 'public' }),
+    fingerprintOf: async () => integrite('e'),
+  });
+  const entree = readRegistry(registryFile).entries['e'.repeat(64)];
+  assert.equal(entree.codec, 'mp3');
+  assert.equal(entree.sampleRate, 44100);
+  assert.equal(entree.channels, 2);
 });

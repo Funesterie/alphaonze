@@ -20,13 +20,21 @@
  *    tag change le hash du fichier (mesure: 4 320 885 -> 4 320 912 octets, hash
  *    different) mais laisse le flux identique. Un hash de fichier laisserait donc
  *    repasser le meme morceau des qu'il a ete retagge ou remis en conteneur.
+ *
+ * L'empreinte n'est PAS recalculee ici: readAudioStreamIntegrity
+ * (src/music/audio-stream-integrity.cjs) la produit deja, et mieux -- streamhash
+ * dedie, -map_metadata -1 pour que les tags ne puissent pas peser, liste blanche
+ * de protocoles, rejet du hash de flux vide, et relecture des stats du fichier
+ * pour detecter une modification pendant la lecture. C'est le meme fil d'or que
+ * celui des sidecars history-streams. Une seconde implementation serait une
+ * seconde verite.
  */
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { execFile } = require('node:child_process');
 const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
+const { readAudioStreamIntegrity } = require('../music/audio-stream-integrity.cjs');
 
 const REGISTRE_SCHEMA = 'funesterie.social.soundcloud-published.v1';
 const EMPREINTE_TIMEOUT_MS = 60000;
@@ -47,28 +55,11 @@ function looksLikeMachineTitle(titre = '') {
   return TITRES_MACHINE.some((motif) => motif.test(valeur));
 }
 
-/**
- * Le fil d'or: sha256 des paquets du flux audio, sans reencodage (-c copy).
- * Insensible aux tags, a l'ordre des chunks et au conteneur; ne bouge que si
- * l'audio lui-meme change.
- */
-function audioStreamSha256(filePath, options = {}) {
-  return new Promise((resolve, reject) => {
-    const cible = String(filePath || '').trim();
-    if (!cible || !fs.existsSync(cible)) return reject(new Error('empreinte_fichier_absent'));
-    const binaire = String(options.ffmpegBin || process.env.FFMPEG_BIN || 'ffmpeg').trim() || 'ffmpeg';
-    execFile(
-      binaire,
-      ['-nostdin', '-v', 'error', '-i', cible, '-map', '0:a:0', '-c', 'copy', '-f', 'hash', '-hash', 'sha256', '-'],
-      { timeout: Number(options.timeoutMs || EMPREINTE_TIMEOUT_MS), windowsHide: true, encoding: 'utf8' },
-      (error, stdout) => {
-        if (error) return reject(new Error('empreinte_flux_illisible'));
-        const trouve = String(stdout || '').trim().match(/SHA256=([0-9a-f]{64})/i);
-        if (!trouve) return reject(new Error('empreinte_flux_illisible'));
-        resolve(trouve[1].toLowerCase());
-      }
-    );
-  });
+/** Le fil d'or, delegue a l'implementation de reference. */
+async function audioStreamIntegrity(filePath, options = {}) {
+  const cible = String(filePath || '').trim();
+  if (!cible || !fs.existsSync(cible)) throw new Error('empreinte_fichier_absent');
+  return readAudioStreamIntegrity(cible, options);
 }
 
 function registryPath(env = process.env) {
@@ -116,7 +107,7 @@ async function publishTrackIfNew({
   env = process.env,
   registryFile = registryPath(env),
   // Injectable pour les tests: la logique de garde se verifie sans ffmpeg.
-  fingerprintOf = audioStreamSha256,
+  fingerprintOf = audioStreamIntegrity,
 } = {}) {
   if (typeof upload !== 'function') throw new Error('upload_function_requise');
   if (!autoPublishEnabled(env)) return { published: false, reason: 'auto_publish_desactive', fingerprint: '' };
@@ -124,7 +115,9 @@ async function publishTrackIfNew({
     return { published: false, reason: 'titre_machine_refuse', fingerprint: '' };
   }
 
-  const fingerprint = await fingerprintOf(filePath, env);
+  const integrite = await fingerprintOf(filePath, { env });
+  const fingerprint = String(integrite?.sha256 || '');
+  if (!/^[a-f0-9]{64}$/.test(fingerprint)) throw new Error('empreinte_flux_invalide');
   const registre = readRegistry(registryFile);
   if (registre.entries[fingerprint]) {
     return { published: false, reason: 'deja_publie', fingerprint, upload: registre.entries[fingerprint] };
@@ -145,6 +138,9 @@ async function publishTrackIfNew({
     trackId: resultat?.id || null,
     permalinkUrl: resultat?.permalinkUrl || '',
     sharing: resultat?.sharing || resolveSharing(env),
+    codec: integrite.codec,
+    sampleRate: integrite.sampleRate,
+    channels: integrite.channels,
     publishedAt: new Date().toISOString(),
   };
   writeRegistry(registre, registryFile);
@@ -153,7 +149,7 @@ async function publishTrackIfNew({
 
 module.exports = {
   REGISTRE_SCHEMA,
-  audioStreamSha256,
+  audioStreamIntegrity,
   autoPublishEnabled,
   looksLikeMachineTitle,
   publishTrackIfNew,
