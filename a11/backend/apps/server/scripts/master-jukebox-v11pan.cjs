@@ -25,7 +25,7 @@ function atomic(file, value) {
 }
 
 async function measure(file) {
-  const { stdout } = await execFile('ffprobe', ['-v', 'error', '-show_entries', 'format=duration:stream=codec_type,channels', '-of', 'json', file], { timeout: 30000 });
+  const { stdout } = await execFile('ffprobe', ['-v', 'error', '-show_entries', 'format=duration:stream=codec_type,channels,sample_rate', '-of', 'json', file], { timeout: 30000 });
   const probe = JSON.parse(stdout), duration = Number(probe.format?.duration);
   if (!(duration > 0) || !probe.streams?.some(s => s.codec_type === 'audio')) throw Error('invalid_audio');
   const { stderr } = await execFile('ffmpeg', ['-nostdin', '-hide_banner', '-threads', '1', '-i', file, '-filter_complex_threads', '1', '-filter_complex', 'aformat=channel_layouts=stereo,asplit=2[st][mo];[st]volumedetect[sto];[mo]pan=mono|c0=0.5*c0+0.5*c1,volumedetect[moo]', '-map', '[sto]', '-map', '[moo]', '-f', 'null', '-'], { timeout: 240000, maxBuffer: 2000000 });
@@ -33,9 +33,17 @@ async function measure(file) {
   for (const match of stderr.matchAll(/\[Parsed_volumedetect_(\d+)[^\]]*\]\s+(mean|max)_volume: ([-\w.]+) dB/g)) {
     const index = match[1]; (values[index] ||= {})[match[2]] = match[3] === '-inf' ? -120 : Number(match[3]);
   }
+  for (const match of stderr.matchAll(/\[Parsed_volumedetect_(\d+)[^\]]*\]\s+n_samples: (\d+)/g)) (values[match[1]] ||= {}).samples = Number(match[2]);
   const [stereo, mono] = Object.keys(values).sort((a,b) => Number(a)-Number(b)).map(k => values[k]);
   if (!stereo || !mono || !Number.isFinite(stereo.max) || !Number.isFinite(mono.mean)) throw Error('missing_audio_metrics');
-  return { durationSeconds: duration, stereoPeakDb: stereo.max, stereoRmsDb: stereo.mean, monoPeakDb: mono.max, monoRmsDb: mono.mean, monoFoldLossDb: mono.mean - stereo.mean };
+  const decodedDuration = decodedDurationSeconds(stereo.samples, probe.streams.find(s => s.codec_type === 'audio').sample_rate);
+  return { durationSeconds: decodedDuration, containerDurationSeconds: duration, stereoPeakDb: stereo.max, stereoRmsDb: stereo.mean, monoPeakDb: mono.max, monoRmsDb: mono.mean, monoFoldLossDb: mono.mean - stereo.mean };
+}
+
+function decodedDurationSeconds(stereoSamples, sampleRate) {
+  const duration = Number(stereoSamples) / (2 * Number(sampleRate));
+  if (!(Number(stereoSamples) > 0) || !(Number(sampleRate) > 0) || !Number.isFinite(duration)) throw Error('missing_decoded_duration');
+  return duration;
 }
 
 async function main() {
@@ -49,11 +57,14 @@ async function main() {
   const active = new Set();
   const save = () => { stats.current = [...active]; stats.updatedAt = new Date().toISOString(); atomic(reportFile, stats); };
   const concurrency = Math.min(3, Math.max(1, Number(process.env.JUKEBOX_MASTER_CONCURRENCY) || 2));
+  let stopping = false;
+  process.once('SIGTERM', () => { stopping = true; });
+  process.once('SIGINT', () => { stopping = true; });
   let position = 0;
   try {
     save();
     await Promise.all(Array.from({ length: concurrency }, async () => {
-      while (position < tracks.length) {
+      while (position < tracks.length && !stopping) {
         const track = tracks[position++], key = hash(track.trackUrl);
         active.add(track.id); save();
         let temporary = '';
@@ -88,10 +99,10 @@ async function main() {
         }
       }
     }));
-    stats.state = stats.failed ? 'completed_with_errors' : 'complete'; save();
+    stats.state = stopping ? 'paused' : (stats.failed ? 'completed_with_errors' : 'complete'); save();
     console.log(JSON.stringify(stats));
   } finally { fs.unlinkSync(lock); }
 }
 
 if (require.main === module) main().catch(error => { console.error(String(error.code || error.message)); process.exitCode = 1; });
-module.exports = { measure, atomic, RECIPE };
+module.exports = { measure, atomic, RECIPE, decodedDurationSeconds };

@@ -56,6 +56,13 @@ test('seuls les audios disponibles sont publics, les traces manquantes restent c
   assert.equal(applyHistoryEnhancements(readHistoryTracks(directory), directory).length, 1);
 });
 
+test('V11 compare la durée réellement décodée, pas une estimation MP3 sans index Xing', () => {
+  const { decodedDurationSeconds } = require('../scripts/master-jukebox-v11pan.cjs');
+  assert.equal(decodedDurationSeconds(48000 * 2 * 205, 48000), 205);
+  assert.equal(decodedDurationSeconds(44100 * 2 * 30, 44100), 30);
+  for (const args of [[0, 48000], [42, 0], [undefined, 44100], [Infinity, 44100]]) assert.throws(() => decodedDurationSeconds(...args), /missing_decoded_duration/);
+});
+
 test('Claude et V11 ne remplacent ni la source ni les originaux et exigent une sortie vérifiée présente', () => {
   const directory = path.join(root, 'enhanced'), item = track(2);
   const key = require('node:crypto').createHash('sha256').update(item.trackUrl).digest('hex');
