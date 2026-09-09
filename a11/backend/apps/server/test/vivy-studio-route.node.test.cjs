@@ -660,6 +660,7 @@ test('Vivy materializes completed Suno media as a repaired local MP3 asset', asy
       audioUrl: sourceUrl,
       url: sourceUrl,
     }, {
+      probeAudioDurationSeconds: async () => 123,
       fetchImpl: async () => ({
         ok: true,
         status: 200,
@@ -700,6 +701,7 @@ test('Vivy retries Suno MP3 materialization after a transient timeout', async ()
       audioUrl: sourceUrl,
       url: sourceUrl,
     }, {
+      probeAudioDurationSeconds: async () => 124,
       retryDelayMs: 0,
       fetchImpl: async () => {
         fetchCalls += 1;
@@ -2066,7 +2068,7 @@ test('POST /api/vivy/studio/produce reports Suno API rejection instead of task m
   }
 });
 
-test('GET /api/vivy/studio/jobs/:taskId returns completed Suno audio when ready', async () => {
+test('GET /api/vivy/studio/jobs/:taskId returns provider metadata for an explicit non-local preview', async () => {
   const previousEnv = {
     VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
     VIVY_SUNO_BASE_URL: process.env.VIVY_SUNO_BASE_URL,
@@ -2116,7 +2118,7 @@ test('GET /api/vivy/studio/jobs/:taskId returns completed Suno audio when ready'
     await withServer((app) => {
       app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT: founderAuth }));
     }, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/vivy/studio/jobs/suno-task-123`, {
+      const response = await fetch(`${baseUrl}/api/vivy/studio/jobs/suno-task-123?requireLocalSunoAudio=0`, {
         headers: { Authorization: 'Bearer vivy-founder-token' },
       });
       const json = await response.json();
@@ -2465,7 +2467,7 @@ test('GET /api/vivy/studio/jobs/:taskId accepts personal Suno session key for no
     await withServer((app) => {
       app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT: basicAuth }));
     }, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/vivy/studio/jobs/personal-suno-task`, {
+      const response = await fetch(`${baseUrl}/api/vivy/studio/jobs/personal-suno-task?requireLocalSunoAudio=0`, {
         headers: {
           Authorization: 'Bearer vivy-basic-token',
           'X-Vivy-Suno-Key': 'session-suno-test-key',
@@ -2533,7 +2535,7 @@ test('GET /api/vivy/studio/jobs/:taskId recognizes Suno media returned as url fi
     await withServer((app) => {
       app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT: founderAuth }));
     }, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/vivy/studio/jobs/sunourlfieldtask`, {
+      const response = await fetch(`${baseUrl}/api/vivy/studio/jobs/sunourlfieldtask?requireLocalSunoAudio=0`, {
         headers: { Authorization: 'Bearer vivy-founder-token' },
       });
       const json = await response.json();

@@ -9306,8 +9306,16 @@ function findSunoStatus(payload) {
     payload?.data?.response?.status,
     payload?.response?.status,
     payload?.response?.state,
+    payload?.data?.callbackType,
+    payload?.callbackType,
   ].map((value) => cleanOneLine(value, '', 80)).filter(Boolean);
   return candidates[0] || '';
+}
+
+function isSunoGenerationPending(payload = {}) {
+  // FIRST_SUCCESS/first is not the final two-track result. In particular, Suno
+  // exposes streamAudioUrl before the downloadable MP3 or its duration exists.
+  return /^(?:pending|queued|processing|submitted|text_success|first_success|text|first)$/i.test(findSunoStatus(payload));
 }
 
 function findSunoApiCode(payload = {}) {
@@ -9383,12 +9391,8 @@ function collectSunoTracks(value, tracks = []) {
   const audioUrl = cleanOneLine(
     value.audioUrl
       || value.audio_url
-      || value.streamAudioUrl
-      || value.stream_audio_url
       || value.sourceAudioUrl
       || value.source_audio_url
-      || value.sourceStreamAudioUrl
-      || value.source_stream_audio_url
       || value.downloadUrl
       || value.download_url
       || value.musicUrl
@@ -9401,7 +9405,9 @@ function collectSunoTracks(value, tracks = []) {
     '',
     1000
   );
-  if (audioUrl && /^https?:\/\//i.test(audioUrl)) {
+  const streamingUrls = [value.streamAudioUrl, value.stream_audio_url, value.sourceStreamAudioUrl, value.source_stream_audio_url].filter(Boolean);
+  const isProvisionalStream = streamingUrls.includes(audioUrl) || /^https?:\/\/audiostream\.api\.box\//i.test(audioUrl);
+  if (audioUrl && /^https?:\/\//i.test(audioUrl) && !isProvisionalStream) {
     tracks.push({
       kind: 'audio',
       provider: 'suno',
@@ -9523,6 +9529,7 @@ function selectVivySunoDirectorTrack(tracks = [], options = {}) {
 }
 
 function extractSunoMedia(payload = {}, options = {}) {
+  if (isSunoGenerationPending(payload)) return null;
   const tracks = collectSunoTracks(payload, []);
   return selectVivySunoDirectorTrack(tracks, options);
 }
@@ -9605,6 +9612,7 @@ async function selectVivySunoDirectorTrackWithAudio(tracks = [], options = {}) {
 }
 
 async function extractSunoMediaWithAudio(payload = {}, options = {}) {
+  if (isSunoGenerationPending(payload)) return null;
   const tracks = collectSunoTracks(payload, []);
   return selectVivySunoDirectorTrackWithAudio(tracks, options);
 }
@@ -11597,9 +11605,24 @@ async function materializeVivyPreviewInstrumentalPath(value = '', options = {}) 
 
 async function materializeVivySunoMedia(media = {}, options = {}) {
   const sourceUrl = cleanOneLine(media.audioUrl || media.audio_url || media.url, '', 1000);
-  if (!sourceUrl || !/^https?:\/\//i.test(sourceUrl)) return media;
-  if (envFlag('VIVY_SUNO_LOCAL_MP3_DISABLED')) return media;
-  if (!isAllowedVivyRemoteInstrumentalUrl(sourceUrl)) return media;
+  const requireLocal = requiresLocalVivySunoAudio(options) || options.throwOnFailure === true;
+  const fail = (reason) => {
+    const error = new Error('vivy_suno_local_materialization_failed:' + reason);
+    error.code = 'vivy_suno_local_materialization_failed';
+    throw error;
+  };
+  // Never let an early return bypass the local-file requirement. A provisional
+  // URL formerly escaped here and became state=done with duration=0.
+  const localPath = /^\/api\/vivy\/studio\/assets\/[^/?#]+\.mp3$/i.test(sourceUrl)
+    ? resolveVivyPreviewInstrumentalPath(sourceUrl) : '';
+  if (!sourceUrl || (!localPath && !/^https?:\/\//i.test(sourceUrl))) {
+    if (requireLocal) fail('audio_source_missing_or_invalid');
+    return media;
+  }
+  if (!localPath && (envFlag('VIVY_SUNO_LOCAL_MP3_DISABLED') || !isAllowedVivyRemoteInstrumentalUrl(sourceUrl))) {
+    if (requireLocal) fail('audio_source_not_localizable');
+    return media;
+  }
 
   const attempts = Math.max(1, Math.min(6, Number(options.attempts || process.env.VIVY_SUNO_AUDIO_FETCH_ATTEMPTS || 3) || 3));
   const retryDelayMs = Math.max(0, Number(options.retryDelayMs ?? process.env.VIVY_SUNO_AUDIO_RETRY_DELAY_MS ?? 1200) || 0);
@@ -11612,14 +11635,15 @@ async function materializeVivySunoMedia(media = {}, options = {}) {
   let lastError = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      const filePath = await materializeVivyPreviewInstrumentalPath(sourceUrl, sunoOptions);
+      const filePath = localPath || await materializeVivyPreviewInstrumentalPath(sourceUrl, sunoOptions);
       const filename = path.basename(filePath);
       const url = `/api/vivy/studio/assets/${encodeURIComponent(filename)}`;
       // Longueur mesuree sur le fichier, pas celle annoncee par le fournisseur: c'est
       // la seule qui dise ce qui a vraiment ete rendu. 0 signifie « non mesuree »
       // (ffprobe absent ou illisible), jamais « morceau vide » -- d'ou le champ
       // separe `durationMeasured` pour que l'appelant distingue les deux.
-      const durationSeconds = await probeAudioDurationSeconds(filePath);
+      const durationSeconds = await (options.probeAudioDurationSeconds || probeAudioDurationSeconds)(filePath);
+      if (!(durationSeconds > 0) && requireLocal) fail('audio_duration_unmeasurable');
       return {
         ...media,
         filename,
@@ -11646,7 +11670,7 @@ async function materializeVivySunoMedia(media = {}, options = {}) {
     }
   }
   const detail = cleanOneLine(lastError?.message || lastError, 'unknown', 240);
-  if (options.throwOnFailure === true || options.requireLocalSunoAudio === true || options.sunoLocalAudioRequired === true) {
+  if (requireLocal) {
     const error = new Error(`vivy_suno_local_materialization_failed:${detail}`);
     error.code = 'vivy_suno_local_materialization_failed';
     error.sourceUrl = sourceUrl;
