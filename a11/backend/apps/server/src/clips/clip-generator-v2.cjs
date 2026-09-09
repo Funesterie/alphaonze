@@ -301,6 +301,38 @@ function describeBridgeFailure(response) {
 
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+// Le fournisseur video enfouit la vraie cause. Le premier bloc qu'il rend est une
+// notice generique -- "the specific cause is in error.message" -- et c'est ELLE
+// qu'on affichait, tronquee a 300 caracteres. Il fallait interroger le job a la
+// main pour lire le code reel. On le remonte, en partant du dernier bloc.
+function extractComfyErrorDetail(response) {
+  try {
+    const inner = getBridgeToolResult(response);
+    const items = Array.isArray(inner && inner.content) ? inner.content : [];
+    for (let i = items.length - 1; i >= 0; i -= 1) {
+      const brut = String((items[i] && items[i].text) || '').trim();
+      if (brut.charAt(0) !== '{') continue;
+      let objet;
+      try { objet = JSON.parse(brut); } catch (e) { continue; }
+      const err = objet && objet.error;
+      if (err && (err.code || err.message)) {
+        return [err.code, err.message].filter(Boolean).join(' : ').slice(0, 300);
+      }
+    }
+  } catch (e) { /* un diagnostic ne doit jamais casser la generation */ }
+  return '';
+}
+
+// Un refus de politique de contenu est deterministe POUR CE PLAN, pas pour le
+// clip: le 09/09/2026, sur un meme clip, le plan 0 est passe et le plan 1 a ete
+// refuse, avec la meme identite et le meme style. S'arreter au premier refus
+// condamne donc un clip de 26 plans a n'en rendre qu'un seul.
+function estRefusDePolitique(message) {
+  return /PolicyViolation|SensitiveContent|copyright restriction/i.test(String(message || ''));
+}
+
+// Garde-fou de cout: si le filtre refuse tout, on ne paie pas 26 refus d'affilee.
+const PLAFOND_REFUS_POLITIQUE = Math.max(1, Number(process.env.NOSSEN_CLIP_MAX_POLICY_REFUSALS) || 4);
 // Soumettre UNE vidéo et ATTENDRE qu'elle soit prête
 async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = null, {
   postJsonImpl = postJson,
@@ -365,7 +397,7 @@ async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = nu
     firstPoll = false;
     const status = await postJsonImpl(BRIDGE_URL, { tool: 'comfy__get_job_status', args: { prompt_id: promptId } });
     const statusFailure = describeBridgeFailure(status);
-    if (statusFailure) throw new Error(`clip_video_status_failed: ${statusFailure}`);
+    if (statusFailure) throw new Error(`clip_video_status_failed: ${extractComfyErrorDetail(status) || statusFailure}`);
     const state = extractComfyJobStatus(status);
     if (state === 'completed') {
       // Télécharger
@@ -381,7 +413,7 @@ async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = nu
       }
     }
     if (state === 'failed') {
-      throw new Error(`clip_video_generation_failed: ${sanitizeDiagnostic(getBridgeText(status), 300) || 'statut amont en echec'}`);
+      throw new Error(`clip_video_generation_failed: ${extractComfyErrorDetail(status) || sanitizeDiagnostic(getBridgeText(status), 300) || 'statut amont en echec'}`);
     }
     console.log(`[clip] Vidéo ${index} en cours... (${Math.round((Date.now() - startTime) / 1000)}s)`);
     emitProgress(onProgress, {
@@ -527,6 +559,7 @@ async function generateClip(config = {}, {
   const videoPaths = [];
   // Le motif du dernier segment rate : c'est lui qui explique un clip vide.
   let dernierEchec = '';
+  let refusPolitique = 0;
   for (let i = 0; i < numSegments; i++) {
     const section = sections[i % sections.length];
     const prompt = `${section.visual}.${lieuBrief} Cinematic anime quality, volumetric lighting, smooth camera movement. ${style}${identityBrief}`.trim();
@@ -548,8 +581,17 @@ async function generateClip(config = {}, {
       });
     } catch (error) {
       dernierEchec = error.message;
-      console.warn(`[clip] Vidéo ${i} échouée sans resoumission: ${error.message}`);
-      break;
+      if (estRefusDePolitique(error.message)) {
+        refusPolitique += 1;
+        console.warn(`[clip] Vidéo ${i} refusée par le filtre de contenu (${refusPolitique}/${PLAFOND_REFUS_POLITIQUE}), on passe au plan suivant.`);
+        if (refusPolitique >= PLAFOND_REFUS_POLITIQUE) {
+          console.warn('[clip] Trop de refus du filtre, on arrête pour ne pas payer davantage.');
+          break;
+        }
+      } else {
+        console.warn(`[clip] Vidéo ${i} échouée sans resoumission: ${error.message}`);
+        break;
+      }
     }
 
     // Petit délai entre les soumissions
@@ -662,6 +704,9 @@ function mountClipRoutes(app) {
 }
 
 module.exports = {
+  PLAFOND_REFUS_POLITIQUE,
+  estRefusDePolitique,
+  extractComfyErrorDetail,
   describeBridgeFailure,
   extractComfyJobStatus,
   extractComfyOutputUrl,
