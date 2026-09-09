@@ -708,7 +708,14 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
           return false;
         }
         if (errorStates.indexOf(status) !== -1) {
-          terminalMessage("❌ " + (d.error || (status === "cancelled" || status === "canceled" ? "Génération annulée" : "Génération échouée")), "error", true);
+          var fallbackError = d.error || (status === "cancelled" || status === "canceled" ? "Génération annulée" : "Génération échouée");
+          if (d.errorInfo && d.errorInfo.node_type) {
+            var nodeTag = escapeHtml(truncate(String(d.errorInfo.node_type), 80));
+            var detailMsg = truncate(escapeHtml(String(d.errorInfo.message || fallbackError)), 300);
+            terminalMessage("❌ [" + nodeTag + "] " + detailMsg, "error", true);
+          } else {
+            terminalMessage("❌ " + fallbackError, "error", true);
+          }
           return false;
         }
         if (ongoingStates.indexOf(status) === -1) {
