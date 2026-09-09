@@ -30,7 +30,7 @@ Les quatre MP3 cités par Djeff ont été retrouvés sur le volume de production
 
 La suite locale studio/provenance initiale donne 287/288 tests réussis. L'échec est un test du frontend préexistant, sur `launchVivyVideoClip({ dream: true })`, extérieur aux fichiers modifiés. Les essais ciblés de flux et de signature passent sous Windows et Linux. Ne pas présenter la suite globale comme entièrement verte.
 
-## État de livraison
+## État intermédiaire, avant activation
 
 Correctif préparé dans le dépôt, testé sur des fichiers réels ; **pas encore déployé dans le backend actif**. La production web reste au commit `261536d30987368f819a95776df9ac0c4d7742ac`. Le batch V11 en cours n'a pas été modifié ni redémarré par ce travail. L'ajout ne résout pas à lui seul une URL fournisseur vide ou refusée : la récupération réseau et le contrôle d'intégrité sont deux étapes distinctes.
 
@@ -43,6 +43,19 @@ Correctif préparé dans le dépôt, testé sur des fichiers réels ; **pas enco
 - Validation locale : 432 tests passent ; le test frontend préexistant `Vivy frontend keeps download` est explicitement exclu. Les 25 tests ciblés couvrent notamment des MP3 réels et le round-trip ZEN.
 - Vérification de configuration live : `@nossen/zen` est résolvable, mais `JUKEBOX_ZEN_KEY` et `JUKEBOX_MASTER_SECRET` sont absentes. **La livraison publique chiffrée n'est pas activée et aucune clé n'est créée ou publiée.** Choisir la conservation et la remise des clés avant de brancher le téléchargement.
 
-Déploiement et traitement historique : résultat effectif à compléter après contrôle de la release active.
+Les résultats effectifs du déploiement et du traitement historique sont consignés ci-dessous.
 
 Le premier essai de l'image Linux a trouvé un défaut supplémentaire antérieur : `@nossen/zen@0.1.3` donne par défaut 16 Gio à `brotliDecompressSync.maxOutputLength`, supérieur au maximum Buffer de Node 20 (4 Gio). Un minuscule fichier valide échoue avec `ERR_OUT_OF_RANGE`, retraduit trompeusement en `ZEN exceeded maxRawBytes`. Le lecteur jukebox applique maintenant des plafonds explicites : 96 Mio de conteneur/payload, 1 Mio d'en-tête et 128 Mio décompressés. Les limites inférieures restent respectées ; une demande supérieure est refusée, pas contournée.
+
+## Activation vérifiée le 9 septembre 2026
+
+- Code actif : `5a6f25940105beba024e9b53d04752dbb79f5ac6` (commits de filiation `409414efe`, `e9620434c` et correction Linux `5a6f25940`), poussé sur `master`.
+- Release `/home/deploy/a11-prod/releases/20260909-140700`, `current` dessus, couleur verte. Image `funesterie-nossen-repair:20260909-140700`, SHA `41e93010f3cb971ff6540acf50b8107c471d88eab96aab9b81093554707c565d`. Green et blue sains ; blue lance uniquement `node server-a11.cjs`, sans les workers du launcher.
+- Retour arrière conservé : release `20260909-121341`. Aucun changement K44/Caddy/services annexes. Garde avant promotion : Twitch `idle`, 40 anciens jobs clip en erreur, aucun actif.
+- Les 18 fichiers du manifeste correspondent exactement dans les deux conteneurs. Le `/api/build` public confirme le commit ; `/nossen/` et le catalogue répondent 200 ; un MP3 du catalogue répond 206 avec une plage de bytes valide.
+- Image Linux Node 20.20.2/FFmpeg 5.1.9 : 25/25 tests ciblés, plus le test studio de manifeste signé (1 exécuté, 279 hors sélection).
+- Aller-retour réel, en conteneur isolé avec médias montés en lecture seule : source `vivy-layer-suno-c449575641.mp3`, master `vivy-music-jukebox-v11pan-9ff501a8f42d3595658f.mp3`, conteneur ZEN de 9 996 984 octets. Buffers source/master identiques après décodage, deux flux validés, filiation distincte, SHA des fichiers disque inchangés. Clé de test éphémère en mémoire, non conservée, aucun fichier ZEN public ajouté.
+- Premier passage historique achevé à `2026-09-09T12:07:14.492Z` : **625 couples inspectés, zéro erreur**. Ce passage a laissé tous les médias et toutes les fiches de masters inchangés.
+- Le processus `jukebox-stream-integrity-20260909` suit ensuite les nouveaux masters avec `--follow-master` ; 1 CPU, 768 Mio, aucun réseau, médias en lecture seule, seuls le dossier `vivy-stream` et ses fiches annexes sont inscriptibles. Il s'arrête quand le lot V11 termine/s'arrête ; ce n'est pas un abonnement ni une génération IA. Les preuves sont visibles dans `goldenThread` du catalogue JSON public.
+- Le lot V11 original continue séparément, sans redémarrage ni nouveau rendu demandé par ce travail. Les prochains lancements du script mis à jour inscriront aussi les empreintes directement dans `sourceMetrics`/`outputMetrics` de `history-masters/` ; le processus déjà en cours reste couvert par les fiches `history-streams/`.
+- **Reste à faire : choisir conservation/remise des clés, puis brancher la route de téléchargement ZEN.** Le module est corrigé et vérifié en production, mais aucune route publique ZEN n'est activée. Les MP3 restent publics. Aucun crédit de génération IA consommé par cette intervention.
