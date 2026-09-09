@@ -482,6 +482,21 @@ function buildArtistDirection(lieu, direction) {
     + "Si elles contredisent la texture annoncée, suis les consignes.\n\n";
 }
 
+// Le filtre de sortie du generateur video refuse un rendu qui ressemble a une
+// oeuvre protegee, APRES generation -- le calcul est donc consomme pour rien.
+// Constate deux fois le 09/09/2026 sur "FIGHTERZ CLUB": Sol a transforme le titre
+// en lieu "underground fight club", et les 26 plans ont herite de ce lieu unique.
+// Le declencheur etait le TITRE, pas le style: reecrire le style ne change rien
+// tant que la consigne ne l'interdit pas. Djeff Engine reecrit les plans apres
+// Sol, il recoit donc la meme contrainte, sinon il reintroduit ce que Sol evite.
+const CONSIGNE_ANTI_FRANCHISE = `INTERDIT, sous peine de rejet par le fournisseur :
+- Ne reprends JAMAIS les mots du titre pour nommer un lieu ou un groupe. Le titre est un indice d'ambiance, pas un decor.
+- Aucun nom de film, de jeu, de serie, de marque, d'equipe ou de personnage existant, meme detourne ou traduit.
+- Aucun logo, aucune enseigne, aucun texte lisible a l'image.
+- Aucun costume ni maquillage identifiable a un personnage connu. Decris des vetements et des visages ordinaires.
+
+`;
+
 async function generateVisualScenes(title, lyrics, style, mood, cast, signature, lieu, direction, arcSteps) {
   var etat = signature && signature.color
     ? "ETAT DU PERSONA : " + signature.color.name + " — " + signature.color.function
@@ -495,6 +510,7 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature,
   // toit, champ... Sur douze segments ca donne un diaporama, pas un clip, et le
   // modele video n'a aucune continuite a tenir.
   var prompt = "Tu es chef opérateur. Tu découpes UN clip musical en plans.\n\n" +
+    CONSIGNE_ANTI_FRANCHISE +
     "CHANSON : \"" + (title || "sans titre") + "\"\n" +
     (lyrics ? "PAROLES :\n" + lyrics.slice(0, 1500) + "\n\n" : "Base-toi sur le titre.\n\n") +
     etat +
@@ -850,7 +866,8 @@ async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood) {
       + "Lieu: " + (lieu || "non défini") + "\n"
       + (lyrics ? "Paroles:\n" + lyrics.slice(0, 600) + "\n\n" : "")
       + "Plans actuels:\n" + scenes.map(function(s, i) { return (i + 1) + ". " + s.visual; }).join("\n")
-      + "\n\nRÈGLES DJEFF :\n"
+      + "\n\n" + CONSIGNE_ANTI_FRANCHISE
+      + "RÈGLES DJEFF :\n"
       + "- Si un plan est générique (couloir, lumière, silhouette sans action), REMPLACE-le par quelque chose de violent, concret, qui bouge.\n"
       + "- Pas de métaphore floue. Des verbes d'action, des impacts, du mouvement.\n"
       + "- L'énergie doit MONTER, pas stagner. Chaque plan plus intense que le précédent.\n"
@@ -942,6 +959,7 @@ async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood) {
 }
 
 module.exports = {
+  CONSIGNE_ANTI_FRANCHISE,
   DJEFF_ENGINE_CLOUD_MODEL,
   DJEFF_VISUAL_MAX_CHARS,
   djeffEngineTokenBudget,
