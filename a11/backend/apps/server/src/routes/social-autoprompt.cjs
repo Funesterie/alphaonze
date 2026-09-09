@@ -116,11 +116,18 @@ function parseOauthState(value = '') {
   }
 }
 
+// The OAuth departure and callback can use different Funesterie subdomains.
+// Setting and clearing must use the same explicit, deployment-managed domain.
+function oauthCookieDomain(env = process.env) {
+  return String(env.SOCIAL_OAUTH_COOKIE_DOMAIN || '').trim() || undefined;
+}
+
 function setPkceCookie(res, payload = {}) {
   res.cookie(SOCIAL_PKCE_COOKIE, Buffer.from(JSON.stringify(payload)).toString('base64url'), {
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
+    domain: oauthCookieDomain(),
     maxAge: 15 * 60 * 1000,
   });
 }
@@ -143,6 +150,7 @@ function setOauthCookie(res, state) {
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
+    domain: oauthCookieDomain(),
     maxAge: 15 * 60 * 1000,
   });
 }
@@ -152,11 +160,13 @@ function clearOauthCookie(res) {
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
+    domain: oauthCookieDomain(),
   });
   res.clearCookie(SOCIAL_PKCE_COOKIE, {
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
+    domain: oauthCookieDomain(),
   });
 }
 

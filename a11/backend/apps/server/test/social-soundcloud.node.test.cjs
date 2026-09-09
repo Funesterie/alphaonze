@@ -10,7 +10,9 @@ const {
   buildProviderAuthUrl,
   exchangeSoundCloudCode,
   fetchSocialRssXml,
+  getFreshSocialTokens,
   parseSocialRssItems,
+  refreshSoundCloudAccount,
   resolveProviderConfig,
   uploadSoundCloudTrack,
 } = require('../src/social/social-autoprompt.cjs');
@@ -75,6 +77,77 @@ test('SoundCloud authorization code exchange posts to the official token host', 
   assert.equal(body.get('grant_type'), 'authorization_code');
   assert.equal(body.get('code_verifier'), 'verifier-123');
   assert.equal(body.get('code'), 'code-xyz');
+});
+
+test('SoundCloud refresh persists the new expiry and does not refresh again on the next read', async () => {
+  let saved = null;
+  let refreshCalls = 0;
+  const db = {
+    async query(sql, params = []) {
+      if (/INSERT INTO social_accounts\s*\(/i.test(sql)) {
+        saved = {
+          id: 572,
+          user_id: params[0],
+          provider: params[1],
+          account_label: params[2],
+          account_external_id: params[3],
+          scopes: params[4],
+          token_sealed: JSON.parse(params[5]),
+          token_hash: params[6],
+          expires_at: params[7],
+          status: 'connected',
+          reconnect_required: false,
+          metadata_json: JSON.parse(params[8]),
+        };
+        return { rows: [saved] };
+      }
+      if (/SELECT \*\s+FROM social_accounts/i.test(sql)) return { rows: [saved] };
+      return { rows: [] };
+    },
+  };
+  const fetchFn = async (_url, options) => {
+    refreshCalls += 1;
+    assert.equal(options.body.get('grant_type'), 'refresh_token');
+    assert.equal(options.body.get('refresh_token'), 'old-refresh');
+    return {
+      ok: true,
+      json: async () => ({ access_token: 'new-access', refresh_token: 'new-refresh', expires_in: 3600 }),
+    };
+  };
+  const before = Date.now();
+  const result = await refreshSoundCloudAccount(db, {
+    id: 572, user_id: '2', account_label: 'Test', account_external_id: '94427536', scopes: [],
+  }, {
+    accessToken: 'old-access',
+    refreshToken: 'old-refresh',
+    expiresAt: '2026-07-09T00:53:16.050Z',
+    expires_at: '2026-07-08T00:53:16.050Z',
+  }, env, fetchFn);
+  const after = Date.now();
+
+  assert.equal(result.ok, true);
+  const expiresAt = new Date(saved.expires_at).getTime();
+  assert.ok(expiresAt >= before + 3600000 && expiresAt <= after + 3600000);
+  const reread = await getFreshSocialTokens(db, { provider: 'soundcloud', userId: '2' }, env, fetchFn);
+  assert.equal(reread.tokens.expiresAt, saved.expires_at);
+  assert.equal(reread.tokens.accessToken, 'new-access');
+  assert.equal(reread.tokens.refreshToken, 'new-refresh');
+  assert.equal(refreshCalls, 1, 'a persisted fresh token must not rotate again on the next read');
+});
+
+test('SoundCloud refresh without a lifetime does not inherit an old expiry or duration', async () => {
+  const result = await refreshSoundCloudAccount(null, { id: 0 }, {
+    accessToken: 'old-access', refreshToken: 'old-refresh',
+    expiresAt: '2026-07-09T00:53:16.050Z', expires_at: '2026-07-08T00:53:16.050Z',
+    expiresIn: 3600, expires_in: 3600,
+  }, env, async () => ({ ok: true, json: async () => ({ access_token: 'new-access' }) }));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.tokens.expiresAt, null);
+  assert.equal(result.tokens.expires_at, undefined);
+  assert.equal(result.tokens.expiresIn, undefined);
+  assert.equal(result.tokens.expires_in, undefined);
+  assert.equal(result.tokens.refresh_token, 'old-refresh');
 });
 
 test('SoundCloud upload sends OAuth header and multipart track payload', async () => {

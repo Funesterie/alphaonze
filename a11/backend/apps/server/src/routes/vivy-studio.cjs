@@ -11138,6 +11138,29 @@ async function materializeVivySunoStatusMedia(media = {}, input = {}, options = 
   }
 }
 
+function buildSunoFailedJob(taskId, payload = {}, code = null) {
+  const detail = cleanOneLine(payload?.data?.errorMessage || payload?.errorMessage, '', 240)
+    || findSunoProviderMessage(payload);
+  const providerCode = code ?? payload?.data?.errorCode ?? payload?.errorCode ?? null;
+  const internalFailure = Number(providerCode) === 500 || /internal error/i.test(detail);
+  return {
+    ok: true,
+    provider: 'suno',
+    taskId,
+    state: 'error',
+    status: providerCode !== null ? `suno_api_${providerCode}` : (findSunoStatus(payload) || 'suno_generation_failed'),
+    upstreamStatus: findSunoStatus(payload) || undefined,
+    providerCode,
+    providerDetail: detail,
+    failureOrigin: 'provider',
+    retryable: false,
+    autoRetry: false,
+    message: internalFailure
+      ? `Le fournisseur Suno a interrompu la génération (erreur interne 500). Cette tâche a échoué ; aucune nouvelle génération n'est lancée automatiquement. Référence : ${taskId}.`
+      : detail || 'La génération Suno a échoué ou a été rejetée.',
+  };
+}
+
 async function getSunoMusicJob(taskId, input = {}, req = null) {
   const safeTaskId = sanitizeSunoTaskId(taskId);
   if (!safeTaskId) {
@@ -11148,16 +11171,10 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
   const cached = readCachedSunoCallback(safeTaskId);
   const cachedApiCode = findSunoApiCode(cached?.payload || {});
   if (cachedApiCode !== null && cachedApiCode !== 200) {
-    const detail = findSunoProviderMessage(cached?.payload || {});
-    return {
-      ok: true,
-      provider: 'suno',
-      taskId: safeTaskId,
-      state: 'error',
-      status: `suno_api_${cachedApiCode}`,
-      message: detail || `Suno a rejeté la génération avec le code ${cachedApiCode}.`,
-      providerDetail: detail,
-    };
+    return buildSunoFailedJob(safeTaskId, cached.payload, cachedApiCode);
+  }
+  if (/fail|error|reject/i.test(findSunoStatus(cached?.payload || {}))) {
+    return buildSunoFailedJob(safeTaskId, cached.payload);
   }
   const cachedMedia = await extractSunoMediaWithAudio(cached?.payload || {}, {
     preferLongForm: wantsVivySunoLongForm(input),
@@ -11205,7 +11222,7 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const statusCode = Number(response.status) || 0;
-    if ([408, 429, 502, 503, 504, 524].includes(statusCode)) {
+    if ([408, 429, 500, 502, 503, 504, 524].includes(statusCode)) {
       return {
         ok: true,
         provider: 'suno',
@@ -11220,17 +11237,12 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
   }
   const apiCode = findSunoApiCode(payload);
   if (apiCode !== null && apiCode !== 200) {
-    const detail = findSunoProviderMessage(payload);
     writeCachedSunoCallback(safeTaskId, payload);
-    return {
-      ok: true,
-      provider: 'suno',
-      taskId: safeTaskId,
-      state: 'error',
-      status: `suno_api_${apiCode}`,
-      message: detail || `Suno a rejeté la génération avec le code ${apiCode}.`,
-      providerDetail: detail,
-    };
+    return buildSunoFailedJob(safeTaskId, payload, apiCode);
+  }
+  if (/fail|error|reject/i.test(findSunoStatus(payload))) {
+    writeCachedSunoCallback(safeTaskId, payload);
+    return buildSunoFailedJob(safeTaskId, payload);
   }
   const media = await extractSunoMediaWithAudio(payload, {
     preferLongForm: wantsVivySunoLongForm(input),

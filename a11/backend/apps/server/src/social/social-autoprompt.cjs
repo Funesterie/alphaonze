@@ -1119,6 +1119,11 @@ async function refreshSoundCloudAccount(db, account, tokens = {}, env = process.
     access_token: data.access_token || tokens.accessToken,
     refresh_token: data.refresh_token || tokens.refreshToken,
     token_type: data.token_type || tokens.tokenType || 'OAuth',
+    // Une ancienne echeance explicite primerait sur le nouveau expires_in.
+    // Seule la reponse du refresh definit la duree de vie du nouveau jeton.
+    expiresAt: resolveExpiresAt(data),
+    expires_at: undefined,
+    expiresIn: undefined,
     expires_in: data.expires_in,
     scope: data.scope || tokens.scope,
   };
