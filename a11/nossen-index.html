@@ -48,6 +48,9 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 .player{position:sticky;bottom:0;background:var(--card);border-top:1px solid var(--border);padding:.5rem;display:none;flex-direction:column;gap:.3rem;border-radius:10px 10px 0 0}
 .player.on{display:flex}
 .player .now{font-size:.72rem;font-weight:700;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.player .state{font-size:.62rem;color:var(--muted);min-height:1em}
+.player .state.warn{color:var(--gold)}
+.player .state.error{color:var(--pink)}
 .player audio{width:100%;height:32px}
 .clips{max-height:200px;overflow-y:auto}
 .clips .c{padding:.3rem 0;border-bottom:1px solid rgba(255,255,255,.03)}
@@ -128,6 +131,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 
 <div class="player" id="player">
   <div class="now" id="now-playing"></div>
+  <div class="state" id="player-state" role="status" aria-live="polite"></div>
   <audio id="audio" controls></audio>
 </div>
 
@@ -138,10 +142,22 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   var songs = [];
   var currentIdx = null;
   var pollTimer = null;
+  var pollInFlight = false;
+  var activeJobId = null;
+  var audioStartTimer = null;
+  var audioStartAttempt = 0;
+  var audioPlaybackStarted = false;
   var userEmail = null;
   var isAdmin = false;
   var ADMIN_EMAILS = ["cellaurojeffrey@gmail.com"];
   var importedFile = null;
+  var API_TIMEOUT_MS = 30000;
+  var UPLOAD_TIMEOUT_MS = 120000;
+  var POLL_INTERVAL_MS = 8000;
+  var POLL_CLIP_MAX_MS = 2 * 60 * 60 * 1000;
+  var POLL_FULL_MAX_MS = 8 * 60 * 60 * 1000;
+  var POLL_STORAGE_KEY = "nossen.activeClipJob.v1";
+  var AUDIO_START_TIMEOUT_MS = 20000;
 
   var SC = {
     live: [{n:"Ouverture",v:"Wide concert arena lights fog lasers crowd anticipation blue purple"},{n:"Voix",v:"Female singer long purple-cyan hair microphone golden spotlight emotional white violet outfit"},{n:"Climax",v:"Stage erupts holographics singer arms spread crowd hands confetti energy"},{n:"Pont",v:"Singer alone blue light eyes closed crowd phone lights stars emotional"},{n:"Final",v:"Full stage fireworks singer triumphant arms raised holographic wings purple gold"},{n:"Fermeture",v:"Singer bows confetti smile wave lights dim single spotlight camera back"}],
@@ -150,29 +166,215 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     intimate: [{n:"Studio",v:"Recording studio microphone amber light vinyl wall"},{n:"Piano",v:"Piano keys close-up notes golden particles"},{n:"Voix",v:"Singer eyes closed studio mic headphones warm"},{n:"Pluie",v:"Rain window city lights contemplative"},{n:"Guitare",v:"Guitar strummed close-up warm wood"},{n:"Silence",v:"Lights dimming empty studio instruments resting"}]
   };
 
-  function api(p, b) {
-    var opts = b ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b), credentials: "include" } : { credentials: "include" };
-    return fetch(A + p, opts).then(function(r) { return r.json(); });
+  function makeRequestError(message, status, code, payload) {
+    var error = new Error(message || "Erreur réseau");
+    error.status = Number(status) || 0;
+    error.code = code || "request_failed";
+    error.payload = payload || null;
+    return error;
+  }
+
+  function resolveHttpUrl(value) {
+    var raw = String(value || "").trim();
+    if (!raw) return "";
+    try {
+      var parsed = new URL(raw, A + "/");
+      return (parsed.protocol === "http:" || parsed.protocol === "https:") ? parsed.href : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  // Le worker de clips sait copier directement les routes locales. On garde donc
+  // leur forme /api/... au lieu de les transformer en URL distante, tout en
+  // normalisant proprement les vraies URL absolues.
+  function normalizeSongSource(value) {
+    var raw = String(value || "").trim();
+    if (!raw) return "";
+    if (raw.charAt(0) === "/" && raw.charAt(1) !== "/") {
+      try {
+        var local = new URL(raw, A + "/");
+        return local.pathname + local.search + local.hash;
+      } catch (_) {
+        return "";
+      }
+    }
+    return resolveHttpUrl(raw);
+  }
+
+  function requestJson(url, opts, timeoutMs) {
+    var target = resolveHttpUrl(url);
+    if (!target) return Promise.reject(makeRequestError("URL de requête invalide", 0, "invalid_url"));
+
+    var controller = new AbortController();
+    var timeout = setTimeout(function() { controller.abort(); }, Math.max(1000, Number(timeoutMs) || API_TIMEOUT_MS));
+    var requestOptions = Object.assign({}, opts || {}, { signal: controller.signal, credentials: "include" });
+
+    return fetch(target, requestOptions).then(function(r) {
+      return r.text().then(function(raw) {
+        var data = null;
+        if (raw) {
+          try { data = JSON.parse(raw); }
+          catch (_) {
+            throw makeRequestError(
+              r.ok ? "Réponse serveur illisible" : "Erreur HTTP " + r.status,
+              r.status,
+              "invalid_json"
+            );
+          }
+        }
+        if (!r.ok) {
+          throw makeRequestError(
+            (data && (data.message || data.error)) || "Erreur HTTP " + r.status,
+            r.status,
+            (data && data.error) || "http_error",
+            data
+          );
+        }
+        if (!data || typeof data !== "object") {
+          throw makeRequestError("Réponse serveur vide", r.status, "empty_json");
+        }
+        return data;
+      });
+    }).catch(function(error) {
+      if (error && error.name === "AbortError") {
+        throw makeRequestError("Le serveur ne répond pas dans le délai prévu", 0, "request_timeout");
+      }
+      throw error;
+    }).finally(function() {
+      clearTimeout(timeout);
+    });
+  }
+
+  function api(p, b, options) {
+    var hasBody = typeof b !== "undefined";
+    var opts = hasBody
+      ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }
+      : { method: "GET" };
+    return requestJson(new URL(p, A + "/").href, opts, options && options.timeoutMs);
   }
 
   function truncate(str, max) {
-    if (!str) return "";
-    return str.length > max ? str.slice(0, max) + "\u2026" : str;
+    var value = String(str || "");
+    return value.length > max ? value.slice(0, max) + "\u2026" : value;
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function songKey(song) {
+    return song ? String(song.audioUrl || song.playUrl || "") : "";
+  }
+
+  function formatAudioTime(value) {
+    var seconds = Number(value);
+    if (!Number.isFinite(seconds) || seconds < 0) return "";
+    seconds = Math.floor(seconds);
+    var minutes = Math.floor(seconds / 60);
+    return minutes + ":" + String(seconds % 60).padStart(2, "0");
+  }
+
+  function setPlayerState(text, kind) {
+    var state = document.getElementById("player-state");
+    state.textContent = text || "";
+    state.classList.toggle("warn", kind === "warn");
+    state.classList.toggle("error", kind === "error");
+  }
+
+  function updatePlayButtons() {
+    var audio = document.getElementById("audio");
+    document.querySelectorAll(".s .play").forEach(function(btn) {
+      var idx = parseInt(btn.dataset.idx, 10);
+      var active = idx === currentIdx;
+      btn.classList.toggle("active", active);
+      btn.textContent = active && !audio.paused ? "\u23F8" : "\u25B6";
+    });
+  }
+
+  function clearAudioStartTimer() {
+    if (audioStartTimer) clearTimeout(audioStartTimer);
+    audioStartTimer = null;
+  }
+
+  function audioErrorMessage(audio, fallback) {
+    var code = audio && audio.error && Number(audio.error.code);
+    if (code === 1) return "Lecture interrompue";
+    if (code === 2) return "Le fichier audio ne répond pas correctement";
+    if (code === 3) return "Le fichier audio est illisible ou corrompu";
+    if (code === 4) return "Format audio ou lien non pris en charge";
+    return fallback || "Lecture audio impossible";
+  }
+
+  function failAudio(message) {
+    clearAudioStartTimer();
+    setPlayerState("❌ " + message, "error");
+    currentIdx = null;
+    updatePlayButtons();
+  }
+
+  function startAudioPlayback(audio, index) {
+    clearAudioStartTimer();
+    audioPlaybackStarted = false;
+    audioStartAttempt += 1;
+    var attempt = audioStartAttempt;
+    setPlayerState("Chargement du morceau…");
+    audioStartTimer = setTimeout(function() {
+      if (currentIdx === index && audioStartAttempt === attempt && !audioPlaybackStarted) {
+        try { audio.pause(); } catch (_) {}
+        failAudio("Le lecteur n'a pas démarré. Le lien ou le fichier audio est invalide.");
+      }
+    }, AUDIO_START_TIMEOUT_MS);
+
+    var result;
+    try { result = audio.play(); }
+    catch (error) {
+      failAudio(audioErrorMessage(audio, error && error.message));
+      return;
+    }
+    if (result && typeof result.then === "function") {
+      result.then(function() {
+        if (currentIdx === index && audioStartAttempt === attempt) {
+          audioPlaybackStarted = true;
+          clearAudioStartTimer();
+          updatePlayButtons();
+        }
+      }).catch(function(error) {
+        if (currentIdx === index) failAudio(audioErrorMessage(audio, error && error.message));
+      });
+    }
   }
 
   function play(i) {
     var s = songs[i];
     if (!s) return;
     var audio = document.getElementById("audio");
-    audio.src = s.playUrl;
-    audio.play();
+
+    if (currentIdx === i && audio.src) {
+      if (audio.paused) startAudioPlayback(audio, i);
+      else audio.pause();
+      updatePlayButtons();
+      return;
+    }
+
+    var playUrl = resolveHttpUrl(s.playUrl);
     document.getElementById("player").classList.add("on");
     document.getElementById("now-playing").textContent = s.title;
+    if (!playUrl) {
+      failAudio("Lien audio invalide");
+      return;
+    }
+
     currentIdx = i;
-    document.querySelectorAll(".s .play").forEach(function(btn, idx) {
-      btn.classList.toggle("active", idx === i);
-      btn.textContent = idx === i ? "\u23F8" : "\u25B6";
-    });
+    audio.src = playUrl;
+    if (typeof audio.load === "function") audio.load();
+    updatePlayButtons();
+    startAudioPlayback(audio, i);
   }
 
   function pick(i) {
@@ -216,7 +418,13 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   function getSelectedAudioSource() {
     var urlInput = document.getElementById("import-url").value.trim();
     if (urlInput && (urlInput.startsWith("http://") || urlInput.startsWith("https://"))) {
-      return { type: "url", url: urlInput, title: "Import" };
+      var normalizedUrl = resolveHttpUrl(urlInput);
+      return normalizedUrl
+        ? { type: "url", url: normalizedUrl, title: "Import" }
+        : { type: "invalid", error: "Lien audio invalide" };
+    }
+    if (urlInput) {
+      return { type: "invalid", error: "Le lien audio doit commencer par https://" };
     }
     if (importedFile) {
       return { type: "file", file: importedFile, title: importedFile.name.replace(/\.[^.]+$/, "") };
@@ -232,11 +440,10 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   function uploadFile(file) {
     var formData = new FormData();
     formData.append("file", file);
-    return fetch(A + "/api/mcp-bridge/upload-audio", {
+    return requestJson(new URL("/api/mcp-bridge/upload-audio", A + "/").href, {
       method: "POST",
-      body: formData,
-      credentials: "include"
-    }).then(function(r) { return r.json(); }).then(function(d) {
+      body: formData
+    }, UPLOAD_TIMEOUT_MS).then(function(d) {
       if (d.ok && d.url) return d.url;
       throw new Error(d.error || "Échec de l'envoi");
     });
@@ -324,6 +531,10 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       document.getElementById("msg").textContent = "Choisis une chanson ou importe un fichier audio";
       return;
     }
+    if (source.type === "invalid") {
+      document.getElementById("msg").textContent = "❌ " + source.error;
+      return;
+    }
 
     if (mode === "full" && !isAdmin) {
       document.getElementById("msg").textContent = "Full Clip réservé — bientôt disponible (5 \u20AC)";
@@ -409,95 +620,237 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     }
   }
 
-  function pollJob(id, mode) {
+  function savePollState(id, mode, startedAt) {
+    try {
+      sessionStorage.setItem(POLL_STORAGE_KEY, JSON.stringify({ id: id, mode: mode, startedAt: startedAt }));
+    } catch (_) {}
+  }
+
+  function clearPollState() {
+    try { sessionStorage.removeItem(POLL_STORAGE_KEY); } catch (_) {}
+  }
+
+  function stopPolling(options) {
+    options = options || {};
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = null;
+    pollInFlight = false;
+    activeJobId = null;
+    if (options.clearState !== false) clearPollState();
+    if (options.enableButtons !== false) {
+      document.getElementById("go-clip").disabled = false;
+      updateFullClipButton();
+    }
+  }
+
+  function pollJob(id, mode, previousStartedAt) {
     var label = mode === "full" ? "Full Clip" : "Clip";
-    if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(function() {
-      api("/api/mcp-bridge/clip/status/" + id).then(function(d) {
-        var progress = d.progress || 0;
+    var maxDuration = mode === "full" ? POLL_FULL_MAX_MS : POLL_CLIP_MAX_MS;
+    var startedAt = Number(previousStartedAt) || Date.now();
+    var consecutiveFailures = 0;
+    var ongoingStates = ["pending", "queued", "generating", "processing", "assembling", "running"];
+    var successStates = ["done", "completed", "success", "succeeded"];
+    var errorStates = ["error", "failed", "cancelled", "canceled"];
+
+    stopPolling({ clearState: true, enableButtons: false });
+    activeJobId = String(id || "");
+    if (!activeJobId) {
+      document.getElementById("msg").textContent = "❌ Identifiant de génération manquant";
+      stopPolling();
+      return;
+    }
+    document.getElementById("go-clip").disabled = true;
+    document.getElementById("go-full").disabled = true;
+    savePollState(activeJobId, mode, startedAt);
+
+    function scheduleNext(delay) {
+      if (activeJobId !== id) return;
+      pollTimer = setTimeout(checkStatus, delay);
+    }
+
+    function terminalMessage(text, kind, reloadClips) {
+      document.getElementById("msg").textContent = text;
+      stopPolling();
+      if (reloadClips) loadClips();
+    }
+
+    function checkStatus() {
+      if (activeJobId !== id || pollInFlight) return;
+      if (Date.now() - startedAt >= maxDuration) {
+        terminalMessage(
+          "⚠️ Suivi arrêté : délai maximal atteint. La génération peut encore finir côté serveur ; recharge la liste des clips.",
+          "warn",
+          true
+        );
+        return;
+      }
+
+      pollInFlight = true;
+      api("/api/mcp-bridge/clip/status/" + encodeURIComponent(id), undefined, { timeoutMs: API_TIMEOUT_MS }).then(function(d) {
+        if (activeJobId !== id) return false;
+        consecutiveFailures = 0;
+        var status = String(d.status || "").toLowerCase();
+        var numericProgress = Number(d.progress);
+        var progress = Number.isFinite(numericProgress) ? Math.max(0, Math.min(100, numericProgress)) : 0;
         document.getElementById("fill").style.width = progress + "%";
-        document.getElementById("msg").textContent = label + " : " + (d.status || "…") + " " + progress + "%";
-        if (d.status === "done") {
-          clearInterval(pollTimer);
-          document.getElementById("fill").style.width = "100%";
-          document.getElementById("msg").textContent = "\u2705 " + label + " prêt !";
-          document.getElementById("go-clip").disabled = false;
-          updateFullClipButton();
-          loadClips();
-        } else if (d.status === "error") {
-          clearInterval(pollTimer);
-          document.getElementById("msg").textContent = "\u274C " + (d.error || "Erreur");
-          document.getElementById("go-clip").disabled = false;
-          updateFullClipButton();
+
+        if (successStates.indexOf(status) !== -1) {
+          if (!d.outputUrl && !d.outputFilename) {
+            terminalMessage("❌ Génération marquée terminée, mais aucun fichier vidéo n'a été fourni.", "error", true);
+          } else if (d.partial === true) {
+            document.getElementById("fill").style.width = "100%";
+            terminalMessage("⚠️ " + label + " partiel prêt" + (d.warning ? " — " + d.warning : "."), "warn", true);
+          } else {
+            document.getElementById("fill").style.width = "100%";
+            terminalMessage("✅ " + label + " prêt !", "success", true);
+          }
+          return false;
         }
-      }).catch(function(e) {
-        // 404 = job perdu (serveur restarté pendant la génération)
-        clearInterval(pollTimer);
-        document.getElementById("msg").textContent = "\u26A0\uFE0F Génération en cours mais le suivi a été perdu (serveur redémarré). Vérifie la liste des clips dans quelques minutes.";
-        document.getElementById("go-clip").disabled = false;
-        updateFullClipButton();
-        // Reload clips in case it finished
-        setTimeout(loadClips, 5000);
+        if (errorStates.indexOf(status) !== -1) {
+          terminalMessage("❌ " + (d.error || (status === "cancelled" || status === "canceled" ? "Génération annulée" : "Génération échouée")), "error", true);
+          return false;
+        }
+        if (ongoingStates.indexOf(status) === -1) {
+          terminalMessage("❌ Statut de génération invalide ou absent", "error", true);
+          return false;
+        }
+
+        var detail = truncate(d.message || d.stage || status, 160);
+        document.getElementById("msg").textContent = label + " : " + detail + " " + progress + "%";
+        return true;
+      }).catch(function(error) {
+        if (activeJobId !== id) return false;
+        if (error && (error.status === 401 || error.status === 403)) {
+          document.getElementById("msg").textContent = "❌ Session expirée : reconnecte-toi puis actualise pour reprendre le suivi.";
+          stopPolling({ clearState: false });
+          return false;
+        }
+        if (error && error.status === 404) {
+          terminalMessage("⚠️ Job introuvable : le serveur a peut-être redémarré. Vérifie la liste des clips.", "warn", true);
+          return false;
+        }
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= 3) {
+          document.getElementById("msg").textContent = "⚠️ Suivi réseau interrompu. Actualise la page pour reprendre ce job.";
+          stopPolling({ clearState: false });
+          loadClips();
+          return false;
+        }
+        document.getElementById("msg").textContent = "⚠️ Suivi temporairement indisponible, nouvel essai…";
+        return true;
+      }).then(function(continuePolling) {
+        pollInFlight = false;
+        if (continuePolling && activeJobId === id) scheduleNext(POLL_INTERVAL_MS);
       });
-    }, 8000);
+    }
+
+    scheduleNext(0);
+  }
+
+  function resumePolling() {
+    var saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem(POLL_STORAGE_KEY) || "null"); } catch (_) {}
+    if (!saved || !saved.id || !saved.startedAt) return;
+    var maxDuration = saved.mode === "full" ? POLL_FULL_MAX_MS : POLL_CLIP_MAX_MS;
+    if (Date.now() - Number(saved.startedAt) >= maxDuration) {
+      clearPollState();
+      return;
+    }
+    document.getElementById("msg").textContent = "⏳ Reprise du suivi de la génération…";
+    document.getElementById("bar").classList.add("on");
+    pollJob(saved.id, saved.mode === "full" ? "full" : "clip", saved.startedAt);
   }
 
   function loadClips() {
-    api("/api/mcp-bridge/clip/list").then(function(c) {
+    return api("/api/mcp-bridge/clip/list").then(function(c) {
       var clips = c.clips || [];
-      document.getElementById("clips").innerHTML = clips.length
-        ? clips.map(function(x) { return '<div class="c"><a href="' + x.url + '" target="_blank">\uD83C\uDFAC ' + x.name + '</a></div>'; }).join("")
+      var rows = clips.map(function(x) {
+        var href = resolveHttpUrl(x && x.url);
+        if (!href) return "";
+        return '<div class="c"><a href="' + escapeHtml(href) + '" target="_blank" rel="noopener noreferrer">\uD83C\uDFAC ' + escapeHtml(x.name || x.filename || "Clip") + '</a></div>';
+      }).filter(Boolean);
+      document.getElementById("clips").innerHTML = rows.length
+        ? rows.join("")
         : '<div class="empty">Aucun clip pour le moment</div>';
-    }).catch(function() {});
+    }).catch(function(error) {
+      document.getElementById("clips").innerHTML = '<div class="empty">' +
+        ((error && (error.status === 401 || error.status === 403))
+          ? "Connecte-toi pour voir tes clips"
+          : "Liste des clips indisponible") + '</div>';
+    });
+  }
+
+  function mapSong(s, fallbackSource) {
+    var sourceUrl = normalizeSongSource(s && s.trackUrl);
+    return {
+      title: (s && (s.trackTitle || s.title)) || "Sans titre",
+      playUrl: resolveHttpUrl(sourceUrl),
+      audioUrl: sourceUrl,
+      date: s && s.createdAt ? String(s.createdAt).slice(0, 10) : "",
+      createdAt: s && s.createdAt ? String(s.createdAt) : "",
+      duration: s && Number.isFinite(Number(s.durationSeconds)) ? Math.round(Number(s.durationSeconds)) + "s" : "",
+      source: (s && s.source) || fallbackSource || "vivy",
+      requestedBy: String((s && s.requestedBy) || "").toLowerCase()
+    };
+  }
+
+  function newestSongsFirst(items) {
+    return (Array.isArray(items) ? items : []).map(function(song, index) {
+      return { song: song, index: index, time: Date.parse(song.createdAt || "") };
+    }).sort(function(a, b) {
+      var at = Number.isFinite(a.time) ? a.time : 0;
+      var bt = Number.isFinite(b.time) ? b.time : 0;
+      return bt === at ? a.index - b.index : bt - at;
+    }).map(function(entry) { return entry.song; });
+  }
+
+  function replaceSongs(nextSongs) {
+    var select = document.getElementById("song");
+    var oldSelectedIndex = parseInt(select.value, 10);
+    var selectedKey = Number.isInteger(oldSelectedIndex) && songs[oldSelectedIndex]
+      ? songKey(songs[oldSelectedIndex])
+      : "";
+    var playingKey = currentIdx !== null && songs[currentIdx] ? songKey(songs[currentIdx]) : "";
+
+    songs = newestSongsFirst(nextSongs);
+    currentIdx = playingKey ? songs.findIndex(function(song) { return songKey(song) === playingKey; }) : null;
+    if (currentIdx < 0) currentIdx = null;
+    renderSongs(selectedKey);
   }
 
   function loadSongs() {
     // Utiliser le endpoint serveur qui filtre, déduplique et corrige les titres
-    api("/api/nossen/my-songs").then(function(d) {
-      var vivySongs = (d.songs || []).map(function(s) {
-        return {
-          title: s.trackTitle || s.title || "Sans titre",
-          playUrl: A + (s.trackUrl || ""),
-          audioUrl: s.trackUrl ? (A + s.trackUrl) : "",
-          date: s.createdAt ? s.createdAt.slice(0, 10) : "",
-          duration: s.durationSeconds ? Math.round(s.durationSeconds) + "s" : "",
-          source: s.source || "vivy",
-          requestedBy: (s.requestedBy || "").toLowerCase()
-        };
+    return api("/api/nossen/my-songs").then(function(d) {
+      replaceSongs((d.songs || []).map(function(s) { return mapSong(s, "vivy"); }));
+    }).catch(function(error) {
+      if (!error || (error.status !== 401 && error.status !== 403)) throw error;
+      // Fallback explicite si la session n'est pas authentifiée.
+      return api("/api/vivy/stream/songs.json").then(function(d) {
+        replaceSongs((d.songs || []).map(function(s) { return mapSong(s, "vivy"); }));
       });
-
-      songs = vivySongs;
-      renderSongs();
     }).catch(function() {
-      // Fallback si non authentifié : endpoint public sans filtre
-      api("/api/vivy/stream/songs.json").then(function(d) {
-        songs = (d.songs || []).slice(0, 10).map(function(s) {
-          return {
-            title: s.trackTitle || s.title || "Sans titre",
-            playUrl: A + (s.trackUrl || ""),
-            audioUrl: s.trackUrl ? (A + s.trackUrl) : "",
-            date: s.createdAt ? s.createdAt.slice(0, 10) : "",
-            duration: s.durationSeconds ? Math.round(s.durationSeconds) + "s" : "",
-            source: "vivy",
-            requestedBy: ""
-          };
-        });
-        renderSongs();
-      }).catch(function() { songs = []; renderSongs(); });
+      if (!songs.length) renderSongs("");
     });
   }
 
-  function renderSongs() {
+  function renderSongs(selectedKey) {
+    var audio = document.getElementById("audio");
     document.getElementById("song-count").textContent = songs.length;
     document.getElementById("song").innerHTML = '<option value="">Choisir une chanson…</option>' +
-      songs.map(function(s, i) { return '<option value="' + i + '">' + truncate(s.title, 45) + '</option>'; }).join("");
+      songs.map(function(s, i) { return '<option value="' + i + '">' + escapeHtml(truncate(s.title, 45)) + '</option>'; }).join("");
+
+    if (selectedKey && !importedFile && !document.getElementById("import-url").value.trim()) {
+      var selectedIndex = songs.findIndex(function(song) { return songKey(song) === selectedKey; });
+      if (selectedIndex >= 0) document.getElementById("song").value = String(selectedIndex);
+    }
 
     document.getElementById("list").innerHTML = songs.length
       ? songs.map(function(s, i) {
+          var active = i === currentIdx;
           return '<div class="s">' +
-            '<button class="play" data-idx="' + i + '">\u25B6</button>' +
-            '<div class="info"><div class="title">' + truncate(s.title, 50) + '</div>' +
-            '<div class="meta">' + [s.date, s.duration, s.source].filter(Boolean).join(" \u00B7 ") + '</div></div>' +
+            '<button class="play' + (active ? ' active' : '') + '" data-idx="' + i + '" aria-label="' + escapeHtml("Lire " + s.title) + '">' + (active && !audio.paused ? "\u23F8" : "\u25B6") + '</button>' +
+            '<div class="info"><div class="title">' + escapeHtml(truncate(s.title, 50)) + '</div>' +
+            '<div class="meta">' + escapeHtml([s.date, s.duration, s.source].filter(Boolean).join(" \u00B7 ")) + '</div></div>' +
             '<button class="use" data-pick="' + i + '">utiliser</button></div>';
         }).join("")
       : '<div class="empty">' + (userEmail ? "Aucune chanson trouvée pour ton compte" : "Connecte-toi pour voir tes chansons") + '</div>';
@@ -508,7 +861,10 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       document.getElementById("st").textContent = (h.upstreams && h.upstreams.comfy && h.upstreams.comfy.ok) ? "\u2705 En ligne" : "\u26A0\uFE0F Partiel";
     }).catch(function() { document.getElementById("st").textContent = "\u274C Hors ligne"; });
 
-    checkAuth().then(function() { loadSongs(); });
+    checkAuth().then(function() {
+      loadSongs();
+      resumePolling();
+    });
     loadClips();
   }
 
@@ -549,12 +905,56 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     }
   });
 
-  document.getElementById("audio").addEventListener("ended", function() {
-    document.querySelectorAll(".s .play").forEach(function(btn) {
-      btn.classList.remove("active");
-      btn.textContent = "\u25B6";
-    });
+  function updateAudioProgress(prefix) {
+    var audio = document.getElementById("audio");
+    if (currentIdx === null) return;
+    var elapsed = formatAudioTime(audio.currentTime) || "0:00";
+    var duration = Number(audio.duration);
+    if (Number.isFinite(duration) && duration > 0) {
+      setPlayerState(prefix + " · " + elapsed + " / " + formatAudioTime(duration));
+    } else {
+      setPlayerState(prefix + " · " + elapsed + " · durée indéterminée", "warn");
+    }
+  }
+
+  var audioElement = document.getElementById("audio");
+  audioElement.addEventListener("loadstart", function() {
+    if (currentIdx !== null) setPlayerState("Chargement du morceau…");
+  });
+  audioElement.addEventListener("loadedmetadata", function() {
+    updateAudioProgress("Prêt");
+  });
+  audioElement.addEventListener("durationchange", function() {
+    if (currentIdx !== null && audioElement.paused) updateAudioProgress("Prêt");
+  });
+  audioElement.addEventListener("playing", function() {
+    audioPlaybackStarted = true;
+    clearAudioStartTimer();
+    updatePlayButtons();
+    updateAudioProgress("Lecture");
+  });
+  audioElement.addEventListener("waiting", function() {
+    if (currentIdx !== null) setPlayerState("Mise en mémoire tampon…", "warn");
+  });
+  audioElement.addEventListener("stalled", function() {
+    if (currentIdx !== null) setPlayerState("Le flux audio ne progresse plus", "warn");
+  });
+  audioElement.addEventListener("timeupdate", function() {
+    if (currentIdx !== null) updateAudioProgress(audioElement.paused ? "Pause" : "Lecture");
+  });
+  audioElement.addEventListener("pause", function() {
+    clearAudioStartTimer();
+    if (currentIdx !== null && !audioElement.ended) updateAudioProgress("Pause");
+    updatePlayButtons();
+  });
+  audioElement.addEventListener("ended", function() {
+    clearAudioStartTimer();
+    setPlayerState("Terminé");
     currentIdx = null;
+    updatePlayButtons();
+  });
+  audioElement.addEventListener("error", function() {
+    failAudio(audioErrorMessage(audioElement));
   });
 
   init();

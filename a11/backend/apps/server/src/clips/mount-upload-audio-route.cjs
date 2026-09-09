@@ -3,18 +3,19 @@
  * Route: POST /api/mcp-bridge/upload-audio
  * Accepts multipart/form-data with a "file" field (audio).
  * Saves to /app/runtime/uploads/ and returns the URL.
- * Requires multer (bundled in the backend).
  */
 const fs = require("fs");
 const path = require("path");
+const { randomUUID } = require("crypto");
 
-const UPLOAD_DIR = "/app/runtime/uploads";
+const UPLOAD_DIR = path.join(process.env.A11_RUNTIME_ROOT || "/app/runtime", "uploads");
 const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
+const AUDIO_EXTENSIONS = new Set([".mp3", ".m4a", ".aac", ".wav", ".ogg", ".flac"]);
 
-function mountUploadAudioRoute(app) {
+function mountUploadAudioRoute(app, { uploadDir = UPLOAD_DIR } = {}) {
   // Ensure upload dir exists
-  if (!fs.existsSync(UPLOAD_DIR)) {
-    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
   }
 
   // Simple multipart handler without multer (raw buffer approach)
@@ -30,20 +31,23 @@ function mountUploadAudioRoute(app) {
     req.on("data", (chunk) => {
       size += chunk.length;
       if (size > MAX_SIZE) {
-        req.destroy();
+        chunks.length = 0;
+        if (!res.headersSent) res.status(413).json({ ok: false, error: "Fichier trop volumineux (max 50 Mo)" });
         return;
       }
       chunks.push(chunk);
     });
 
     req.on("end", () => {
+      if (res.headersSent) return;
       if (size > MAX_SIZE) {
         return res.status(413).json({ ok: false, error: "Fichier trop volumineux (max 50 Mo)" });
       }
 
       const buffer = Buffer.concat(chunks);
       // Parse multipart boundary
-      const boundary = contentType.split("boundary=")[1];
+      const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;\s]+))/i);
+      const boundary = boundaryMatch && (boundaryMatch[1] || boundaryMatch[2]);
       if (!boundary) {
         return res.status(400).json({ ok: false, error: "Boundary multipart manquant" });
       }
@@ -88,10 +92,23 @@ function mountUploadAudioRoute(app) {
         return res.status(400).json({ ok: false, error: "Aucun fichier audio trouvé dans la requête" });
       }
 
+      if (!AUDIO_EXTENSIONS.has(path.extname(filename).toLowerCase())) {
+        return res.status(415).json({ ok: false, error: "Format audio requis : mp3, m4a, aac, wav, ogg ou flac" });
+      }
+      // Une page d'erreur sauvegardée en .mp3 ne devient pas un fichier audio.
+      if (/^\s*(?:<!doctype\s+html|<html\b|<head\b|<body\b|\{\s*"(?:error|message)")/i.test(fileBuffer.subarray(0, 512).toString("utf8"))) {
+        return res.status(415).json({ ok: false, error: "Ce fichier contient une page d'erreur, pas du son. Télécharge à nouveau le fichier audio." });
+      }
+
       // Save
-      const safeName = Date.now() + "-" + filename;
-      const filePath = path.join(UPLOAD_DIR, safeName);
-      fs.writeFileSync(filePath, fileBuffer);
+      const safeName = Date.now() + "-" + randomUUID().slice(0, 8) + "-" + filename;
+      const filePath = path.join(uploadDir, safeName);
+      try {
+        fs.writeFileSync(filePath, fileBuffer, { flag: "wx", mode: 0o600 });
+      } catch (err) {
+        console.error("[upload-audio] Stockage impossible:", err.code || "unknown");
+        return res.status(500).json({ ok: false, error: "Impossible de sauvegarder le fichier audio" });
+      }
 
       const publicUrl = "/api/mcp-bridge/play-upload/" + safeName;
       console.log("[upload-audio] Saved:", safeName, "(" + Math.round(fileBuffer.length / 1024) + " Ko)");
@@ -100,22 +117,29 @@ function mountUploadAudioRoute(app) {
     });
 
     req.on("error", (err) => {
-      res.status(500).json({ ok: false, error: "Erreur réseau : " + err.message });
+      if (!res.headersSent && !res.destroyed) res.status(500).json({ ok: false, error: "Erreur réseau pendant l'import audio" });
     });
   });
 
   // Serve uploaded audio files
   app.get("/api/mcp-bridge/play-upload/:filename", (req, res) => {
-    const filename = (req.params.filename || "").replace(/[^a-zA-Z0-9._-]/g, "");
-    const filePath = path.join(UPLOAD_DIR, filename);
-    if (!fs.existsSync(filePath)) {
+    const filename = req.params.filename || "";
+    if (!/^[a-zA-Z0-9_-][a-zA-Z0-9._-]*$/.test(filename) || !AUDIO_EXTENSIONS.has(path.extname(filename).toLowerCase())) {
+      return res.status(404).json({ error: "Fichier introuvable" });
+    }
+    const filePath = path.join(uploadDir, filename);
+    if (!fs.existsSync(filePath) || !fs.lstatSync(filePath).isFile()) {
       return res.status(404).json({ error: "Fichier introuvable" });
     }
     const ext = path.extname(filename).toLowerCase();
-    const mimeMap = { ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".wav": "audio/wav", ".ogg": "audio/ogg", ".flac": "audio/flac" };
+    const mimeMap = { ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".aac": "audio/aac", ".wav": "audio/wav", ".ogg": "audio/ogg", ".flac": "audio/flac" };
     res.set("Content-Type", mimeMap[ext] || "audio/mpeg");
     res.set("Cache-Control", "public, max-age=3600");
-    fs.createReadStream(filePath).pipe(res);
+    // Content-Length et Range permettent au lecteur de calculer la durée et
+    // de chercher dans le morceau. Le flux brut laissait certains MP3 à Infinity.
+    res.sendFile(path.resolve(filePath), { acceptRanges: true }, (err) => {
+      if (err && !res.headersSent) res.status(err.statusCode || 500).end();
+    });
   });
 
   console.log("[upload-audio] Route montée : POST /api/mcp-bridge/upload-audio + GET /api/mcp-bridge/play-upload/:filename");

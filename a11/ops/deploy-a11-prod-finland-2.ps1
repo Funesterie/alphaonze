@@ -959,6 +959,8 @@ services:
       # que personne ne la revoque cote Stripe. Le garde refuse desormais toute
       # URL Stripe ici et n'accepte que funesterie.me.
       NOSSEN_CLIP_LANDING_URL: ${NOSSEN_CLIP_LANDING_URL:-https://funesterie.me/}
+      # Routage explicite et configurable du séquençage NOSSEN.
+      NOSSEN_SEQUENCE_MODEL: ${NOSSEN_SEQUENCE_MODEL:-gpt-4o}
       # Tout gratuit -- decision de Djeff du 18/08/2026. Le defaut est a 1
       # volontairement: la valeur porte la decision, pas la session de
       # deploiement. Un export oublie ne doit pas remettre le produit payant en

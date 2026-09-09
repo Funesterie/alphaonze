@@ -85,12 +85,13 @@ function getTextInternal(url) {
   return new Promise(function(resolve, reject) {
     var parsed = new URL(url);
     var mod = parsed.protocol === "https:" ? https : http;
-    mod.get(parsed, { headers: { "x-internal-service": "a11-internal" }, timeout: 10000 }, function(res) {
+    var req = mod.get(parsed, { timeout: 10000 }, function(res) {
       if (res.statusCode >= 400) { res.resume(); return resolve(null); }
       var chunks = [];
       res.on("data", function(c) { chunks.push(c); });
       res.on("end", function() { resolve(Buffer.concat(chunks).toString("utf8")); });
     }).on("error", reject);
+    req.on("timeout", function() { req.destroy(new Error("Catalogue audio indisponible (timeout)")); });
   });
 }
 
@@ -103,14 +104,14 @@ function getJsonInternal(url) {
   });
 }
 
-function callOpenRouter(model, messages) {
+function callOpenRouter(model, messages, maxTokens = 800) {
   // Sol utilise l'API OpenAI directe, Grok utilise OpenRouter
   var isOpenAI = !model.includes("/"); // "chatgpt-4o-latest" vs "xai/grok-3"
   var url = isOpenAI ? OPENAI_URL : OPENROUTER_URL;
   var key = isOpenAI ? OPENAI_KEY : OPENROUTER_KEY;
   if (!key) return Promise.reject(new Error(isOpenAI ? "NOSSEN_OPENAI_API_KEY manquante" : "OPENROUTER_API_KEY manquante"));
   return new Promise(function(resolve, reject) {
-    var body = JSON.stringify({ model: model, messages: messages, max_tokens: 800, temperature: 0.7 });
+    var body = JSON.stringify({ model: model, messages: messages, max_tokens: maxTokens, temperature: 0.7 });
     var parsed = new URL(url);
     var req = https.request(parsed, {
       method: "POST",
@@ -127,6 +128,7 @@ function callOpenRouter(model, messages) {
         if (res.statusCode !== 200) {
           var detail = "";
           try { var err = JSON.parse(body); detail = (err.error && (err.error.message || err.error.code)) || ""; } catch (e) {}
+          if (res.statusCode === 401 || res.statusCode === 403) detail = "accès refusé : vérifier la clé et les crédits du fournisseur";
           return reject(new Error("HTTP " + res.statusCode + " sur " + model + (detail ? " : " + String(detail).slice(0, 160) : "")));
         }
         try {
@@ -267,23 +269,18 @@ function buildCastBlock(cast = []) {
  * demontage ne trouve jamais rien et la chaine se remet a deviner.
  */
 function resolveLocalAudioPath(songUrl) {
-  var url = String(songUrl || "");
-  if (!url) return null;
-  var candidates = [];
-  if (url.startsWith("/api/mcp-bridge/play-upload/")) {
-    candidates.push("/app/runtime/uploads/" + url.split("/").pop());
-  } else if (url.startsWith("/api/mcp-bridge/play/")) {
-    candidates.push("/app/runtime/double-harmonic-d40/" + url.split("/").pop());
-  } else if (url.startsWith("/api/vivy/studio/assets/")) {
-    candidates.push("/app/runtime/vivy-studio-assets/" + url.split("/").pop());
-  } else if (url.startsWith("/")) {
-    candidates.push(url);
-  }
-  for (var i = 0; i < candidates.length; i += 1) {
-    try {
-      if (require("fs").existsSync(candidates[i])) return candidates[i];
-    } catch (e) {}
-  }
+  try {
+    var raw = String(songUrl || "");
+    if (/^https:\/\//i.test(raw)) {
+      var parsed = new URL(raw);
+      if (!["a11.funesterie.me", "vivy.funesterie.me", "music.funesterie.me", "files.funesterie.me"].includes(parsed.hostname) || parsed.username || parsed.password || parsed.port) return null;
+      raw = parsed.pathname;
+    }
+    var resolved = require("./clip-input.cjs").resolveLocalClipMedia(raw);
+    var fs = require("fs");
+    var stat = fs.lstatSync(resolved.path);
+    if (stat.isFile() && stat.size > 0 && fs.realpathSync(resolved.path) === require("path").resolve(resolved.path)) return resolved.path;
+  } catch (e) {}
   return null;
 }
 
@@ -292,8 +289,9 @@ function resolveLocalAudioPath(songUrl) {
  * Sans lui, tout le reste deduit l'ambiance du titre -- c'est ce qui avait
  * envoye un morceau de club dans un studio feutre.
  */
-function resolveTeardown(songUrl) {
-  var localPath = resolveLocalAudioPath(songUrl);
+function resolveTeardown(songUrl, materializedAudioPath) {
+  // audioPath vient uniquement du générateur, après validation/téléchargement.
+  var localPath = materializedAudioPath || resolveLocalAudioPath(songUrl);
   if (!localPath) {
     console.log("[clip-director] Audio introuvable sur disque, démontage sauté.");
     return null;
@@ -493,11 +491,13 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature,
     "\"plans\":[{\"name\":\"Nom du plan\",\"visual\":\"English shot description\"}]}";
 
   try {
-    var text = await callOpenRouter(SEQUENCE_MODEL, [{ role: "user", content: prompt }]);
+    var text = await callOpenRouter(SEQUENCE_MODEL, [{ role: "user", content: prompt }], 1800);
     var jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       var parsed = JSON.parse(jsonMatch[0]);
-      var plans = Array.isArray(parsed.plans) ? parsed.plans : [];
+      var plans = Array.isArray(parsed.plans)
+        ? parsed.plans.filter(function(plan) { return plan && typeof plan.visual === "string" && plan.visual.trim().length >= 10; })
+        : [];
       var lieu = String(parsed.lieu || "").slice(0, 300);
       if (plans.length >= 3) {
         console.log("[clip-director] Sol (" + SEQUENCE_MODEL + ") — lieu unique : " + lieu.slice(0, 80));
@@ -514,11 +514,11 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature,
         return scenes;
       }
     }
-    console.warn("[clip-director] Sol réponse inutilisable:", text.slice(0, 80));
+    throw new Error("réponse de séquençage sans au moins trois plans exploitables");
   } catch (e) {
     console.warn("[clip-director] Sol erreur:", e.message);
+    throw new Error("Scénarisation " + SEQUENCE_MODEL + " impossible : " + e.message);
   }
-  return null;
 }
 
 /**
@@ -700,6 +700,10 @@ async function directClipScenes(config) {
  */
 async function directClip(config) {
   var cfg = config || {};
+  var progress = function(stage, message) {
+    if (typeof cfg.onProgress === "function") cfg.onProgress({ stage: "director:" + stage, message: message });
+  };
+  progress("lyrics", "Recherche des paroles et analyse du morceau");
   // Des paroles fournies a l'appel priment sur la recherche au catalogue : sans
   // ca, un morceau qu'on vient d'ecrire et qui n'est pas encore indexe passait
   // pour "paroles non trouvees", et toute la decortication etait sautee.
@@ -714,16 +718,19 @@ async function directClip(config) {
     style: cfg.style || "",
   });
   var signature = resolveSonicColor(cfg.title || "", lyrics, cfg.style || "");
+  progress("mood", "Direction émotionnelle du clip");
   var mood = await generateMood(cfg.title || "", lyrics, signature);
 
   // Claude decoupe le texte; ses sections priment sur le squelette par defaut.
   // On ecoute le morceau avant d'en parler.
-  var teardown = cfg.teardown !== undefined ? cfg.teardown : resolveTeardown(cfg.songUrl || "");
+  var teardown = cfg.teardown !== undefined ? cfg.teardown : resolveTeardown(cfg.songUrl || "", cfg.audioPath);
+  progress("lyrics", "Découpage des paroles par Claude");
   var lyricsSections = cfg.lyricsSections !== undefined
     ? cfg.lyricsSections
     : await decorticateLyrics(cfg.title || "", lyrics, teardown);
   var arcSteps = resolveVivyArc(lyrics, lyricsSections);
 
+  progress("sequencing", "Écriture des plans et du scénario");
   var scenes = await directClipScenes(Object.assign({}, cfg, {
     lyrics: lyrics,
     mood: mood,
@@ -738,8 +745,11 @@ async function directClip(config) {
   // Relecture : A11 sur le montage, K44 sur le scenario. Les deux peuvent ne
   // rien corriger, c'est le cas nominal quand le decoupage tient.
   if (Array.isArray(scenes) && scenes.length && cfg.review !== false) {
+    progress("reviews", "Relecture du montage par A11");
     scenes = await reviewMontageA11(scenes, lieu, teardown, arcSteps);
+    progress("reviews", "Relecture du scénario par K44");
     scenes = await reviewScenarioK44(scenes, lieu, cfg.title || "", lyricsSections);
+    progress("reviews", "Relecture finale par Djeff Engine");
     scenes = await reviewDjeffEngine(scenes, lieu, cfg.title || "", lyrics, mood);
   }
 
@@ -792,12 +802,22 @@ async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood) {
         var chunks = [];
         res.on("data", function(c) { chunks.push(c); });
         res.on("end", function() {
+          if (res.statusCode !== 200) {
+            console.warn("[clip-director] Djeff Engine HTTP " + res.statusCode + " (" + MODEL + ")");
+            return resolve("");
+          }
           try { var d = JSON.parse(Buffer.concat(chunks).toString()); resolve(d.message ? d.message.content : ""); }
           catch (e) { resolve(""); }
         });
       });
-      req.on("error", function() { resolve(""); });
-      req.on("timeout", function() { req.destroy(); resolve(""); });
+      req.on("error", function(error) {
+        console.warn("[clip-director] Djeff Engine transport indisponible: " + (error.code || "network_error"));
+        resolve("");
+      });
+      req.on("timeout", function() {
+        console.warn("[clip-director] Djeff Engine délai de 45 s dépassé (" + MODEL + "), relecture facultative ignorée.");
+        req.destroy(); resolve("");
+      });
       req.write(body);
       req.end();
     });
@@ -844,6 +864,7 @@ module.exports = {
   MONTAGE_MODEL,
   SCENARIO_MODEL,
   resolveTeardown,
+  resolveLocalAudioPath,
   reviewMontageA11,
   reviewScenarioK44,
   MOOD_MODEL,

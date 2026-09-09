@@ -8,7 +8,8 @@
  *   - Nombre de segments adapté à la durée (pas 24 vidéos, plutôt 4-8)
  *   - Le Vivy Director donne LE thème, pas 6 thèmes différents
  */
-const { execSync } = require('child_process');
+const crypto = require('node:crypto');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
@@ -17,9 +18,44 @@ const http = require('http');
 const { CLIPS_DIR } = require('./clip-storage.cjs');
 const { materializeClipMedia } = require('./clip-input.cjs');
 const BRIDGE_URL = 'http://127.0.0.1:3000/api/mcp-bridge/call';
+const BRIDGE_RESPONSE_MAX_BYTES = 1024 * 1024;
 if (!fs.existsSync(CLIPS_DIR)) fs.mkdirSync(CLIPS_DIR, { recursive: true });
 
-function postJson(url, data) {
+function parseBoundedInteger(value, fallback, min, max) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.round(parsed))) : fallback;
+}
+
+function sanitizeDiagnostic(value, maxLength = 400) {
+  let text = String(value || '');
+  text = text.replace(/https?:\/\/[^\s"'<>]+/gi, (raw) => {
+    try {
+      const url = new URL(raw.replace(/[),.;]+$/, ''));
+      url.search = '';
+      url.hash = '';
+      return url.toString();
+    } catch {
+      return '[url masquée]';
+    }
+  });
+  text = text
+    .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[masqué]')
+    .replace(/\b(api[_ -]?key|authorization|token|secret)\s*[:=]\s*[^\s,;]+/gi, '$1=[masqué]');
+  return text.trim().slice(0, maxLength);
+}
+
+function bridgeError(code, detail = '', { ambiguous = false } = {}) {
+  const safeDetail = sanitizeDiagnostic(detail, 300);
+  const error = new Error(safeDetail ? `${code}: ${safeDetail}` : code);
+  error.code = code;
+  error.ambiguous = ambiguous;
+  return error;
+}
+
+function postJson(url, data, {
+  timeoutMs = parseBoundedInteger(process.env.NOSSEN_CLIP_BRIDGE_TIMEOUT_MS, 120_000, 1_000, 180_000),
+  maxResponseBytes = BRIDGE_RESPONSE_MAX_BYTES,
+} = {}) {
   return new Promise((resolve, reject) => {
     const internalKey = String(process.env.MCP_BRIDGE_INTERNAL_KEY || '');
     if (Buffer.byteLength(internalKey, 'utf8') < 32) {
@@ -29,18 +65,180 @@ function postJson(url, data) {
     const body = JSON.stringify(data);
     const parsed = new URL(url);
     const mod = parsed.protocol === 'https:' ? https : http;
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      callback(value);
+    };
     const req = mod.request(parsed, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-internal-service': internalKey, 'content-length': Buffer.byteLength(body) }
     }, (res) => {
       let chunks = [];
-      res.on('data', c => chunks.push(c));
-      res.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString())); } catch (e) { resolve({ raw: Buffer.concat(chunks).toString() }); } });
+      let total = 0;
+      res.on('data', (chunk) => {
+        total += chunk.length;
+        if (total > maxResponseBytes) {
+          req.destroy(bridgeError('mcp_bridge_response_too_large'));
+          return;
+        }
+        chunks.push(Buffer.from(chunk));
+      });
+      res.on('end', () => {
+        if (settled) return;
+        const raw = Buffer.concat(chunks, total).toString('utf8');
+        if (Number(res.statusCode || 0) < 200 || Number(res.statusCode || 0) >= 300) {
+          finish(reject, bridgeError(`mcp_bridge_http_${Number(res.statusCode) || 'failed'}`, raw.slice(0, 300)));
+          return;
+        }
+        try {
+          finish(resolve, JSON.parse(raw));
+        } catch {
+          finish(reject, bridgeError('mcp_bridge_response_invalid', raw.slice(0, 200)));
+        }
+      });
+      res.on('aborted', () => finish(reject, bridgeError('mcp_bridge_response_aborted')));
+      res.on('error', (error) => finish(reject, bridgeError('mcp_bridge_response_failed', error.message)));
     });
-    req.on('error', reject);
+    req.setTimeout(timeoutMs, () => req.destroy(bridgeError('mcp_bridge_timeout', '', { ambiguous: true })));
+    const deadline = setTimeout(() => {
+      req.destroy(bridgeError('mcp_bridge_timeout', '', { ambiguous: true }));
+    }, timeoutMs);
+    deadline.unref?.();
+    req.on('error', (error) => {
+      if (!error.code) error.code = 'mcp_bridge_request_failed';
+      // Once the request body is written, a transport failure cannot prove
+      // that a paid provider submission was not accepted upstream.
+      if (req.writableEnded) error.ambiguous = true;
+      finish(reject, error);
+    });
     req.write(body);
     req.end();
   });
+}
+
+function getBridgeToolResult(response) {
+  return response && typeof response === 'object' && response.result && typeof response.result === 'object'
+    ? response.result
+    : response;
+}
+
+function getBridgeText(response) {
+  const inner = getBridgeToolResult(response);
+  const content = Array.isArray(inner?.content) ? inner.content : [];
+  return content.filter((item) => item?.type === 'text' || typeof item?.text === 'string')
+    .map((item) => String(item.text || ''))
+    .join('\n')
+    .trim();
+}
+
+function getBridgeStructuredContent(response) {
+  const inner = getBridgeToolResult(response);
+  return inner?.structuredContent && typeof inner.structuredContent === 'object'
+    ? inner.structuredContent
+    : null;
+}
+
+function findStructuredValue(value, wantedKeys, depth = 0) {
+  if (!value || typeof value !== 'object' || depth > 6) return null;
+  for (const [key, candidate] of Object.entries(value)) {
+    if (wantedKeys.has(String(key).toLowerCase()) && (typeof candidate === 'string' || typeof candidate === 'number')) {
+      const normalized = String(candidate).trim();
+      if (normalized) return normalized;
+    }
+  }
+  for (const candidate of Object.values(value)) {
+    if (candidate && typeof candidate === 'object') {
+      const found = findStructuredValue(candidate, wantedKeys, depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function extractComfyPromptId(response) {
+  const structured = getBridgeStructuredContent(response);
+  const fromStructured = findStructuredValue(structured, new Set(['prompt_id', 'promptid']));
+  if (fromStructured) return fromStructured;
+  const match = getBridgeText(response).match(/prompt_id\s*[:=]\s*([a-z0-9-]+)/i);
+  return match ? match[1] : '';
+}
+
+function extractComfyJobStatus(response) {
+  const structured = getBridgeStructuredContent(response);
+  const statuses = [];
+  const collectStatuses = (value, depth = 0) => {
+    if (!value || typeof value !== 'object' || depth > 6) return;
+    for (const [key, candidate] of Object.entries(value)) {
+      if (['job_status', 'status', 'state'].includes(String(key).toLowerCase())
+        && (typeof candidate === 'string' || typeof candidate === 'number')) {
+        statuses.push(String(candidate));
+      } else if (candidate && typeof candidate === 'object') {
+        collectStatuses(candidate, depth + 1);
+      }
+    }
+  };
+  collectStatuses(structured);
+  const raw = (statuses.join(' ') || getBridgeText(response)).toLowerCase();
+  if (/\b(succeeded|completed|complete|success|done)\b/.test(raw)) return 'completed';
+  if (/\b(failed|failure|error|cancelled|canceled|rejected)\b/.test(raw)) return 'failed';
+  return 'pending';
+}
+
+function extractComfyOutputUrl(response) {
+  const structured = getBridgeStructuredContent(response);
+  const candidates = [];
+  const resultCollections = [
+    structured?.results,
+    structured?.result?.results,
+    structured?.data?.results,
+  ].filter(Array.isArray);
+  for (const results of resultCollections) {
+    for (const result of results) {
+      if (typeof result?.url === 'string') candidates.push(result.url.trim());
+      if (typeof result?.inline_url === 'string') candidates.push(result.inline_url.trim());
+    }
+  }
+  const collect = (value, depth = 0) => {
+    if (!value || typeof value !== 'object' || depth > 6) return;
+    for (const preferredKey of ['url', 'inline_url']) {
+      const candidate = value[preferredKey];
+      if (typeof candidate === 'string') candidates.push(candidate.trim());
+    }
+    for (const nested of Object.values(value)) {
+      if (nested && typeof nested === 'object') collect(nested, depth + 1);
+    }
+  };
+  collect(structured);
+  for (const candidate of candidates) {
+    if (/^https?:\/\//i.test(candidate)) {
+      try {
+        if (/\.(mp4|webm|mov|mkv)$/i.test(new URL(candidate).pathname)) return candidate;
+      } catch {}
+    }
+    if (/^\/api\/s\//i.test(candidate)) return `https://cloud.comfy.org${candidate}`;
+  }
+
+  const text = getBridgeText(response);
+  const absolute = [...text.matchAll(/https:\/\/[^\s"'<>]+/gi)]
+    .map((match) => match[0].replace(/[),.;]+$/, ''))
+    .find((candidate) => {
+      try { return /\.(mp4|webm|mov|mkv)$/i.test(new URL(candidate).pathname); }
+      catch { return false; }
+    });
+  if (absolute) return absolute;
+  const short = text.match(/\/api\/s\/[^\s"'<>]+/i)?.[0]?.replace(/[),.;]+$/, '');
+  return short ? `https://cloud.comfy.org${short}` : '';
+}
+
+function emitProgress(callback, event) {
+  if (typeof callback !== 'function') return;
+  // Le callback persiste aussi le prompt_id du fournisseur. S'il échoue, on
+  // arrête avant toute nouvelle soumission plutôt que de créer un job payant
+  // devenu impossible à récupérer après un crash.
+  callback(Object.freeze({ ...event }));
 }
 
 /**
@@ -56,12 +254,12 @@ function postJson(url, data) {
  */
 function describeBridgeFailure(response) {
   if (!response) return 'reponse vide du pont MCP';
-  if (response.ok === false) return String(response.error || 'appel du pont refuse');
-  const inner = response.result;
+  if (response.ok === false) return sanitizeDiagnostic(response.error || 'appel du pont refuse');
+  const inner = getBridgeToolResult(response);
   if (inner && inner.isError) {
-    const texte = String((inner.content && inner.content[0] && inner.content[0].text) || '').trim();
+    const texte = getBridgeText(response);
     // Plafonne : ce motif finit affiche dans la page, il doit rester lisible.
-    return texte ? texte.slice(0, 400) : 'echec amont sans message';
+    return texte ? sanitizeDiagnostic(texte) : 'echec amont sans message';
   }
   return null;
 }
@@ -69,8 +267,14 @@ function describeBridgeFailure(response) {
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // Soumettre UNE vidéo et ATTENDRE qu'elle soit prête
-async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = null) {
+async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = null, {
+  postJsonImpl = postJson,
+  sleepImpl = sleep,
+  onProgress,
+  pollIntervalMs = parseBoundedInteger(process.env.NOSSEN_CLIP_POLL_INTERVAL_MS, 11_000, 250, 60_000),
+} = {}) {
   console.log(`[clip] Vidéo ${index}: ${prompt.slice(0, 60)}...`);
+  emitProgress(onProgress, { stage: 'video:submitting', status: 'generating', segmentIndex: index });
 
   // Image de référence : si un personnage canonique est en jeu, on bascule sur
   // l'image-to-video pour verrouiller son visage au lieu de le redécrire.
@@ -100,91 +304,138 @@ async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = nu
   if (identity && identity.negativePrompt) args.negative_prompt = identity.negativePrompt;
   if (useReference) console.log(`[clip] Vidéo ${index}: référence ${referenceImage.slice(0, 60)}`);
 
-  // Submit — si l'i2v n'est pas accepté par le partenaire, on retombe en t2v
-  // plutôt que de perdre le segment.
-  let result = await postJson(BRIDGE_URL, { tool: 'comfy__partner_generate', args });
-  if (describeBridgeFailure(result) && useReference) {
-    console.warn(`[clip] Vidéo ${index}: i2v refusé, repli t2v`);
-    result = await postJson(BRIDGE_URL, {
-      tool: 'comfy__partner_generate',
-      args: {
-        type: 'video',
-        model: 'byteplus/seedance-2.0-t2v',
-        prompt,
-        client_os: 'linux',
-        confirm: true,
-        params: { model: 'Seedance 2.0 Fast' },
-        negative_prompt: identity?.negativePrompt || undefined,
-      },
-    });
+  // Une soumission vidéo peut être facturée même si la réponse réseau se perd.
+  // Elle n'est donc jamais répétée automatiquement, ni remplacée silencieusement
+  // par un second modèle : un seul appel payant par segment.
+  let result;
+  try {
+    result = await postJsonImpl(BRIDGE_URL, { tool: 'comfy__partner_generate', args });
+  } catch (error) {
+    const prefix = error?.ambiguous ? 'clip_video_submission_ambiguous' : 'clip_video_submission_failed';
+    throw new Error(`${prefix}: ${error.message}`);
   }
   const echecAmont = describeBridgeFailure(result);
   if (echecAmont) throw new Error(echecAmont);
-  const text = result.result?.content?.[0]?.text || '';
-  const match = text.match(/prompt_id:\s*([a-f0-9-]+)/);
+  const text = getBridgeText(result);
+  const promptId = extractComfyPromptId(result);
   // Sans prompt_id, on cite la reponse : c'est elle qui dit pourquoi.
-  if (!match) throw new Error('Pas de prompt_id dans la reponse : ' + (text.slice(0, 300) || 'reponse vide'));
-  const promptId = match[1];
+  if (!promptId) throw new Error('Pas de prompt_id dans la reponse : ' + (sanitizeDiagnostic(text, 300) || 'reponse vide'));
+  emitProgress(onProgress, { stage: 'video:accepted', status: 'generating', segmentIndex: index, promptId });
 
   // Attendre
   const startTime = Date.now();
+  let firstPoll = true;
   while (Date.now() - startTime < maxWaitMs) {
-    await sleep(11000);
-    const status = await postJson(BRIDGE_URL, { tool: 'comfy__get_job_status', args: { prompt_id: promptId } });
-    const st = status?.result?.content?.[0]?.text || '';
-    if (st.includes('completed')) {
+    if (!firstPoll) await sleepImpl(pollIntervalMs);
+    firstPoll = false;
+    const status = await postJsonImpl(BRIDGE_URL, { tool: 'comfy__get_job_status', args: { prompt_id: promptId } });
+    const statusFailure = describeBridgeFailure(status);
+    if (statusFailure) throw new Error(`clip_video_status_failed: ${statusFailure}`);
+    const state = extractComfyJobStatus(status);
+    if (state === 'completed') {
       // Télécharger
-      const output = await postJson(BRIDGE_URL, { tool: 'comfy__get_output', args: { prompt_id: promptId, client_os: 'linux' } });
-      const outText = output?.result?.content?.[0]?.text || '';
-      const urlMatch = outText.match(/https:\/\/[^\s"]+\.mp4[^\s"]*/);
-      if (urlMatch) return urlMatch[0];
-      const shortMatch = outText.match(/\/api\/s\/[^\s"]+/);
-      if (shortMatch) return 'https://cloud.comfy.org' + shortMatch[0];
-      throw new Error('No download URL in output');
+      const output = await postJsonImpl(BRIDGE_URL, { tool: 'comfy__get_output', args: { prompt_id: promptId, client_os: 'linux' } });
+      const outputFailure = describeBridgeFailure(output);
+      if (outputFailure) throw new Error(`clip_video_output_failed: ${outputFailure}`);
+      const outputUrl = extractComfyOutputUrl(output);
+      if (outputUrl) return outputUrl;
+      throw new Error(`clip_video_output_url_missing: ${sanitizeDiagnostic(getBridgeText(output), 300) || 'reponse vide'}`);
     }
-    if (st.includes('error') || st.includes('failed')) {
-      throw new Error('Video generation failed');
+    if (state === 'failed') {
+      throw new Error(`clip_video_generation_failed: ${sanitizeDiagnostic(getBridgeText(status), 300) || 'statut amont en echec'}`);
     }
     console.log(`[clip] Vidéo ${index} en cours... (${Math.round((Date.now() - startTime) / 1000)}s)`);
+    emitProgress(onProgress, {
+      stage: 'video:polling',
+      status: 'generating',
+      segmentIndex: index,
+      promptId,
+      elapsedMs: Date.now() - startTime,
+    });
   }
-  throw new Error('Timeout waiting for video ' + index);
+  throw new Error(`clip_video_wait_timeout: segment ${index}`);
+}
+
+function loadClipDirector() {
+  try { return require('./clip-vivy-director.cjs'); }
+  catch (_) { return require('/app/clip-vivy-director.cjs'); }
+}
+
+function requireDirectedScenes(directed) {
+  if (!Array.isArray(directed?.scenes) || directed.scenes.length === 0) {
+    throw new Error('clip_director_scenes_missing');
+  }
+  return directed.scenes.map((scene, index) => {
+    const visual = String(scene?.visual || '').trim();
+    if (!visual) throw new Error(`clip_director_scene_visual_missing: scene ${index + 1}`);
+    return { ...scene, visual };
+  });
+}
+
+function createClipId(nowImpl = Date.now, randomBytesImpl = crypto.randomBytes) {
+  return `clip-${nowImpl()}-${randomBytesImpl(4).toString('hex')}`;
 }
 
 // Point d'entrée principal
-async function generateClip(config) {
-  let { songUrl, title, sections, style = '', fullDuration } = config;
-
-  // Vivy Director : scènes issues des paroles + identité visuelle des personnages
-  let identity = { identityIds: [], prompt: '', negativePrompt: '', referenceImageUrls: [] };
-  let lieu = '';
-  const loadDirector = () => {
-    try { return require('./clip-vivy-director.cjs'); }
-    catch (e) { return require('/app/clip-vivy-director.cjs'); }
-  };
-  try {
-    const director = loadDirector();
-    const directed = await director.directClip({ title, songUrl, style, sections });
-    if (directed?.scenes?.length > 0) {
-      sections = directed.scenes;
-      console.log(`[clip] Director: ${sections.length} plans`);
-    }
-    if (directed?.identity) identity = directed.identity;
-    if (directed?.lieu) {
-      lieu = directed.lieu;
-      console.log(`[clip] Lieu unique: ${lieu.slice(0, 70)}`);
-    }
-  } catch (e) {
-    console.warn('[clip] Director skip:', e.message);
-  }
-
-  const clipId = 'clip-' + Date.now();
+async function generateClip(config = {}, {
+  materializeMedia = materializeClipMedia,
+  loadDirectorImpl = loadClipDirector,
+  generateVideoImpl = generateOneVideo,
+  execFileSyncImpl = execFileSync,
+  sleepImpl = sleep,
+  nowImpl = Date.now,
+  randomBytesImpl = crypto.randomBytes,
+} = {}) {
+  let { songUrl, title, sections, style = '', fullDuration, onProgress } = config;
+  const clipId = createClipId(nowImpl, randomBytesImpl);
   const clipDir = path.join(CLIPS_DIR, clipId);
   fs.mkdirSync(clipDir, { recursive: true });
 
-  // 1. Télécharger l'audio
+  // 1. Valider et matérialiser l'audio AVANT le Director et avant tout appel
+  // vidéo payant. Une page HTML ou un lien mort s'arrête donc sans crédit perdu.
   const audioPath = path.join(clipDir, 'audio.mp3');
-  await materializeClipMedia(songUrl, audioPath, { kind: 'audio' });
+  emitProgress(onProgress, { stage: 'audio:validating', status: 'validating', progress: 2 });
+  try {
+    await materializeMedia(songUrl, audioPath, { kind: 'audio' });
+  } catch (error) {
+    fs.rmSync(clipDir, { recursive: true, force: true });
+    throw new Error(`clip_audio_preflight_failed: ${error.message}`);
+  }
   console.log('[clip] Audio prêt');
+  emitProgress(onProgress, { stage: 'audio:ready', status: 'validating', progress: 8 });
+
+  // Vivy Director : scènes issues des paroles + identité visuelle des personnages.
+  // Une erreur de modèle ou une réponse mal formée est propagée : on ne masque
+  // plus un échec de scénarisation sous six plans génériques.
+  let identity = { identityIds: [], prompt: '', negativePrompt: '', referenceImageUrls: [] };
+  let lieu = '';
+  const directorProgress = (event, details = {}) => {
+    const payload = typeof event === 'string' ? { ...details, stage: event } : { ...(event || {}) };
+    const substage = String(payload.stage || 'working').replace(/^director:/, '');
+    emitProgress(onProgress, {
+      ...payload,
+      stage: `director:${substage}`,
+      status: 'directing',
+      progress: Number.isFinite(Number(payload.progress)) ? Number(payload.progress) : 12,
+    });
+  };
+  emitProgress(onProgress, { stage: 'director:starting', status: 'directing', progress: 10 });
+  let directed;
+  try {
+    const director = loadDirectorImpl();
+    if (!director || typeof director.directClip !== 'function') throw new Error('directClip indisponible');
+    directed = await director.directClip({ title, songUrl, audioPath, style, sections, onProgress: directorProgress });
+    sections = requireDirectedScenes(directed);
+  } catch (error) {
+    throw new Error(`clip_director_failed: ${error.message}`);
+  }
+  console.log(`[clip] Director: ${sections.length} plans`);
+  if (directed?.identity) identity = directed.identity;
+  if (directed?.lieu) {
+    lieu = directed.lieu;
+    console.log(`[clip] Lieu unique: ${lieu.slice(0, 70)}`);
+  }
+  emitProgress(onProgress, { stage: 'director:ready', status: 'directing', progress: 18 });
 
   // 2. Mesurer la durée
   // Le repli de 180 s ne survit que si la mesure est un nombre. Avant, l'affectation
@@ -194,7 +445,12 @@ async function generateClip(config) {
   // finale disait « Aucune vidéo générée » sans que rien n'ait ete tente.
   let audioDuration = 180;
   try {
-    const brut = execSync(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`, { timeout: 10000 }).toString().trim();
+    const brut = execFileSyncImpl('ffprobe', [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      audioPath,
+    ], { timeout: 10_000, windowsHide: true }).toString().trim();
     const mesure = Math.ceil(parseFloat(brut));
     if (Number.isFinite(mesure) && mesure > 0) audioDuration = mesure;
     else console.warn(`[clip] Durée illisible (${brut || 'sortie vide'}), repli sur ${audioDuration}s`);
@@ -212,11 +468,13 @@ async function generateClip(config) {
     numSegments = Math.min(6, Math.ceil(audioDuration / SEGMENT_SECONDS));
   }
   console.log(`[clip] ${numSegments} vidéos à générer (${fullDuration ? 'full' : 'normal'})`);
-
-  // 4. Préparer les prompts (un par segment, en cyclant les sections)
-  if (!sections || sections.length === 0) {
-    sections = [{ name: 'Scene', visual: 'Cinematic anime scene, dynamic camera movement, atmospheric lighting, detailed environment' }];
-  }
+  emitProgress(onProgress, {
+    stage: 'video:planned',
+    status: 'generating',
+    progress: 20,
+    segments: 0,
+    totalSegments: numSegments,
+  });
 
   // 5. Générer les vidéos UNE PAR UNE (séquentiel)
   // L'identité des personnages est répétée sur CHAQUE segment : c'est ce qui
@@ -234,31 +492,29 @@ async function generateClip(config) {
     const section = sections[i % sections.length];
     const prompt = `${section.visual}.${lieuBrief} Cinematic anime quality, volumetric lighting, smooth camera movement. ${style}${identityBrief}`.trim();
 
-    let videoUrl;
-    let retries = 2;
-    while (retries > 0) {
-      try {
-        videoUrl = await generateOneVideo(prompt, i, 600000, identity);
-        break;
-      } catch (e) {
-        retries--;
-        dernierEchec = e.message;
-        console.warn(`[clip] Vidéo ${i} échouée: ${e.message}${retries > 0 ? ', retry...' : ''}`);
-        if (retries > 0) await sleep(5000);
-      }
-    }
-
-    if (videoUrl) {
+    try {
+      const videoUrl = await generateVideoImpl(prompt, i, 600000, identity, { onProgress });
       const dest = path.join(clipDir, `scene_${String(i).padStart(2, '0')}.mp4`);
-      await materializeClipMedia(videoUrl, dest, { kind: 'video' });
+      emitProgress(onProgress, { stage: 'video:downloading', status: 'generating', segmentIndex: i });
+      await materializeMedia(videoUrl, dest, { kind: 'video' });
       videoPaths.push(dest);
       console.log(`[clip] Vidéo ${i} prête (${videoPaths.length}/${numSegments})`);
-    } else {
-      console.warn(`[clip] Vidéo ${i} abandonnée après 2 essais`);
+      emitProgress(onProgress, {
+        stage: 'video:ready',
+        status: 'generating',
+        progress: 20 + Math.round((videoPaths.length / numSegments) * 70),
+        segments: videoPaths.length,
+        totalSegments: numSegments,
+        segmentIndex: i,
+      });
+    } catch (error) {
+      dernierEchec = error.message;
+      console.warn(`[clip] Vidéo ${i} échouée sans resoumission: ${error.message}`);
+      break;
     }
 
     // Petit délai entre les soumissions
-    if (i < numSegments - 1) await sleep(2000);
+    if (i < numSegments - 1) await sleepImpl(2000);
   }
 
   // « Aucune vidéo générée » seul est vrai mais muet : il a fallu une journee pour
@@ -268,7 +524,19 @@ async function generateClip(config) {
       ? `Aucune vidéo générée — dernier échec : ${dernierEchec}`
       : `Aucune vidéo générée — aucun segment demandé (durée ${audioDuration}s, ${numSegments} segments)`);
   }
+  const partial = videoPaths.length < numSegments;
+  const warning = partial
+    ? `clip_partial: ${videoPaths.length}/${numSegments} segments; arrêt sans resoumission — ${dernierEchec}`
+    : null;
   console.log(`[clip] ${videoPaths.length}/${numSegments} vidéos prêtes, assemblage FFmpeg...`);
+  emitProgress(onProgress, {
+    stage: 'assembling',
+    status: 'assembling',
+    progress: 92,
+    segments: videoPaths.length,
+    totalSegments: numSegments,
+    ...(warning ? { message: warning } : {}),
+  });
 
   // 6. Assembler avec FFmpeg
   const safeName = (title || 'clip').replace(/[^a-zA-Z0-9àâéèêëïîôùûüç -]/gi, '').replace(/\s+/g, '-').slice(0, 40) || 'clip';
@@ -279,20 +547,54 @@ async function generateClip(config) {
   fs.writeFileSync(concatFile, videoPaths.map(p => `file '${p}'`).join('\n'));
 
   // Concat vidéos + audio
-  execSync(`ffmpeg -y -f concat -safe 0 -i "${concatFile}" -i "${audioPath}" -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 192k -shortest -movflags +faststart "${outputPath}"`, { timeout: 300000 });
+  execFileSyncImpl('ffmpeg', [
+    '-y',
+    '-f', 'concat',
+    '-safe', '0',
+    '-i', concatFile,
+    '-i', audioPath,
+    '-c:v', 'libx264',
+    '-preset', 'fast',
+    '-crf', '23',
+    '-c:a', 'aac',
+    '-b:a', '192k',
+    '-shortest',
+    '-movflags', '+faststart',
+    outputPath,
+  ], { timeout: 300_000, windowsHide: true });
+
+  const outputStats = fs.statSync(outputPath, { throwIfNoEntry: false });
+  if (!outputStats?.isFile() || outputStats.size <= 0) throw new Error('clip_output_missing_or_empty');
+  try {
+    const outputProbe = execFileSyncImpl('ffprobe', [
+      '-v', 'error',
+      '-select_streams', 'v:0',
+      '-show_entries', 'stream=codec_type',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      outputPath,
+    ], { timeout: 10_000, windowsHide: true }).toString().trim().toLowerCase();
+    if (!outputProbe.split(/\s+/).includes('video')) throw new Error('flux vidéo absent');
+  } catch (error) {
+    throw new Error(`clip_output_probe_failed: ${sanitizeDiagnostic(error.message, 160)}`);
+  }
 
   // Copier à la racine pour le listing
-  const publicPath = path.join(CLIPS_DIR, safeName + '.mp4');
+  const publicFilename = `${safeName}-${clipId.slice('clip-'.length)}.mp4`;
+  const publicPath = path.join(CLIPS_DIR, publicFilename);
   fs.copyFileSync(outputPath, publicPath);
 
   console.log(`[clip] Terminé: ${safeName}.mp4`);
+  emitProgress(onProgress, { stage: 'complete', status: 'done', progress: 100 });
   return {
     ok: true,
-    filename: safeName + '.mp4',
-    url: 'https://a11.funesterie.me/clips/' + safeName + '.mp4',
+    filename: publicFilename,
+    url: 'https://a11.funesterie.me/clips/' + encodeURIComponent(publicFilename),
     path: publicPath,
     segments: videoPaths.length,
-    duration: audioDuration
+    requestedSegments: numSegments,
+    duration: audioDuration,
+    partial,
+    warning,
   };
 }
 
@@ -320,4 +622,15 @@ function mountClipRoutes(app) {
   console.log('[clip-gen] V2 routes: /clips, /api/mcp-bridge/clip/{generate,list}');
 }
 
-module.exports = { generateClip, mountClipRoutes, describeBridgeFailure };
+module.exports = {
+  describeBridgeFailure,
+  extractComfyJobStatus,
+  extractComfyOutputUrl,
+  extractComfyPromptId,
+  generateClip,
+  generateOneVideo,
+  mountClipRoutes,
+  postJson,
+  requireDirectedScenes,
+  sanitizeDiagnostic,
+};

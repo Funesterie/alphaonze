@@ -57,19 +57,19 @@ test('une reponse exploitable ne declenche aucun faux echec', () => {
 });
 
 test('le generateur consulte ce motif au lieu de regarder seulement result.ok', () => {
-  // La soumission et le repli i2v -> t2v doivent tous deux passer par le helper :
-  // avec `!result.ok`, le repli etait mort pour toute erreur d outil.
+  // La soumission doit lire l'erreur imbriquée, puis s'arrêter : répéter une
+  // requête vidéo ambiguë peut débiter deux fois le même segment.
   assert.match(source, /const echecAmont = describeBridgeFailure\(result\);/);
   assert.match(source, /if \(echecAmont\) throw new Error\(echecAmont\);/);
-  assert.match(source, /if \(describeBridgeFailure\(result\) && useReference\)/);
-  assert.doesNotMatch(source, /if \(!result\.ok && useReference\)/);
+  assert.doesNotMatch(source, /repli t2v|let retries = 2|retry\.\.\./i);
+  assert.match(source, /un seul appel payant par segment/i);
   // Sans prompt_id, la reponse doit etre citee, pas resumee a un constat.
   assert.match(source, /Pas de prompt_id dans la reponse/);
 });
 
 test('un clip vide dit pourquoi il est vide', () => {
   assert.match(source, /let dernierEchec = '';/);
-  assert.match(source, /dernierEchec = e\.message;/);
+  assert.match(source, /dernierEchec = error\.message;/);
   assert.match(source, /Aucune vidéo générée — dernier échec/);
   // Le cas « zero segment demande » se distingue de « tous les segments ont rate ».
   assert.match(source, /aucun segment demandé/);

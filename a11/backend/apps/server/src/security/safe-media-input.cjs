@@ -302,6 +302,7 @@ function requestRemoteMediaPinned(url, addresses, {
 async function downloadRemoteMedia(value, {
   fetchImpl,
   lookupImpl = dns.lookup,
+  validateUrl,
   allowHttp = false,
   allowedHosts = [],
   allowedContentTypes = [],
@@ -315,6 +316,10 @@ async function downloadRemoteMedia(value, {
   for (let hop = 0; hop <= redirects; hop += 1) {
     const resolved = await resolveSafeRemoteUrl(current, { allowHttp, allowedHosts, lookupImpl });
     const { url } = resolved;
+    // Optional caller policy (for example, an exact object-storage bucket) is
+    // evaluated on every hop, after the standard host/DNS checks and before a
+    // byte is requested. Existing callers keep the exact same behaviour.
+    if (typeof validateUrl === 'function') await validateUrl(url, { hop });
     if (typeof fetchImpl !== 'function') {
       const response = await requestRemoteMediaPinned(url, resolved.addresses, {
         allowedContentTypes,

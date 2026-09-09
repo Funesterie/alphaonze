@@ -9,9 +9,36 @@
  *   GET  /api/mcp-bridge/clip/my-jobs → jobs de l'utilisateur
  */
 const express = require('express');
-const { createJob, updateJob, getJob, listJobs, listPublicClips, CLIPS_DIR } = require('./clip-jobs.cjs');
+const {
+  claimJob,
+  createJob,
+  createWorkerId,
+  getJob,
+  heartbeatJob,
+  listJobs,
+  listPublicClips,
+  recordProviderPromptId,
+} = require('./clip-jobs.cjs');
 
-function createClipRouter({ verifyJWT, isAdmin } = {}) {
+const CLIP_WORKER_ID = createWorkerId();
+
+function sanitizeJobDiagnostic(value, maxLength = 500) {
+  return String(value || '')
+    .replace(/https?:\/\/[^\s"'<>]+/gi, (raw) => {
+      try {
+        const url = new URL(raw.replace(/[),.;]+$/, ''));
+        url.search = '';
+        url.hash = '';
+        return url.toString();
+      } catch { return '[url masquée]'; }
+    })
+    .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[masqué]')
+    .replace(/\b(api[_ -]?key|authorization|token|secret)\s*[:=]\s*[^\s,;]+/gi, '$1=[masqué]')
+    .trim()
+    .slice(0, maxLength);
+}
+
+function createClipRouter({ verifyJWT, isAdmin, generateClipImpl } = {}) {
   const router = express.Router();
 
   // Lancer un clip (authentification requise)
@@ -31,9 +58,11 @@ function createClipRouter({ verifyJWT, isAdmin } = {}) {
 
     // Lancer la génération en arrière-plan
     setImmediate(() => {
-      runClipGeneration(job.id, { songUrl, title, style, fullDuration, sections }).catch(err => {
-        console.error('[clip-router] Job', job.id, 'erreur:', err.message);
-        updateJob(job.id, { status: 'error', error: err.message });
+      runClipGeneration(job.id, { songUrl, title, style, fullDuration, sections }, {
+        workerId: CLIP_WORKER_ID,
+        generateClipImpl,
+      }).catch((error) => {
+        console.error('[clip-router] Job', job.id, 'erreur:', sanitizeJobDiagnostic(error.message));
       });
     });
 
@@ -48,13 +77,19 @@ function createClipRouter({ verifyJWT, isAdmin } = {}) {
       ok: true,
       id: job.id,
       status: job.status,
+      stage: job.stage,
+      message: job.message || null,
       progress: job.progress,
       segments: job.segments,
       totalSegments: job.totalSegments,
+      providerSegments: Array.isArray(job.providerSegments) ? job.providerSegments : [],
       title: job.title,
       error: job.error,
       outputUrl: job.outputUrl,
       outputFilename: job.outputFilename,
+      partial: Boolean(job.partial),
+      warning: job.warning || null,
+      stale: Boolean(job.stale),
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,
     });
@@ -82,57 +117,76 @@ function createClipRouter({ verifyJWT, isAdmin } = {}) {
 /**
  * Exécute la génération d'un clip (appelé en arrière-plan).
  */
-async function runClipGeneration(jobId, config) {
-  updateJob(jobId, { status: 'generating' });
+async function runClipGeneration(jobId, config, {
+  workerId = CLIP_WORKER_ID,
+  generateClipImpl,
+} = {}) {
+  const claimed = claimJob(jobId, workerId);
+  if (!claimed) return { claimed: false };
 
   try {
     // Charger le générateur V2
-    let generateClip;
-    try {
-      generateClip = require('./clip-generator-v2.cjs').generateClip;
-    } catch (_) {
+    let generateClip = generateClipImpl;
+    if (typeof generateClip !== 'function') {
       try {
-        generateClip = require('/app/src/clips/clip-generator-v2.cjs').generateClip;
-      } catch (_2) {
-        generateClip = require('/app/clip-generator-v2.cjs').generateClip;
+        generateClip = require('./clip-generator-v2.cjs').generateClip;
+      } catch (_) {
+        try {
+          generateClip = require('/app/src/clips/clip-generator-v2.cjs').generateClip;
+        } catch (_2) {
+          generateClip = require('/app/clip-generator-v2.cjs').generateClip;
+        }
       }
     }
 
-    // Hook de progression : on écrit dans le job à chaque étape
-    const originalConsoleLog = console.log;
-    const progressRegex = /\[clip\] Vidéo (\d+) prête \((\d+)\/(\d+)\)/;
-    console.log = function(...args) {
-      originalConsoleLog.apply(console, args);
-      const msg = args.join(' ');
-      const match = msg.match(progressRegex);
-      if (match) {
-        const current = parseInt(match[2], 10);
-        const total = parseInt(match[3], 10);
-        updateJob(jobId, {
-          status: 'generating',
-          segments: current,
-          totalSegments: total,
-          progress: Math.round((current / total) * 90),
-        });
+    // Callback explicite : aucune mutation globale de console, et chaque
+    // événement renouvelle le lease du worker qui possède réellement ce job.
+    const reportProgress = (event = {}) => {
+      const payload = typeof event === 'string' ? { stage: event } : event;
+      const stage = sanitizeJobDiagnostic(payload.stage || 'working', 80);
+      let status = payload.status;
+      if (!['validating', 'directing', 'generating', 'assembling'].includes(status)) {
+        if (stage.startsWith('audio:')) status = 'validating';
+        else if (stage.startsWith('director:')) status = 'directing';
+        else if (stage === 'assembling') status = 'assembling';
+        else status = 'generating';
       }
+      const updates = { stage, status };
+      if (Number.isFinite(Number(payload.progress))) {
+        updates.progress = Math.max(0, Math.min(99, Math.round(Number(payload.progress))));
+      }
+      if (Number.isFinite(Number(payload.segments))) updates.segments = Math.max(0, Math.round(Number(payload.segments)));
+      if (Number.isFinite(Number(payload.totalSegments))) {
+        updates.totalSegments = Math.max(0, Math.round(Number(payload.totalSegments)));
+      }
+      if (payload.message) updates.message = sanitizeJobDiagnostic(payload.message);
+      const persisted = payload.promptId !== undefined
+        ? recordProviderPromptId(jobId, workerId, Number(payload.segmentIndex), payload.promptId, updates)
+        : heartbeatJob(jobId, workerId, updates);
+      if (!persisted) throw new Error('clip_job_lease_lost');
     };
 
-    const result = await generateClip(config);
+    const result = await generateClip({ ...config, onProgress: reportProgress });
 
-    console.log = originalConsoleLog;
-
-    updateJob(jobId, {
+    const completed = heartbeatJob(jobId, workerId, {
       status: 'done',
+      stage: result.partial ? 'complete:partial' : 'complete',
       progress: 100,
       outputUrl: result.url || null,
       outputFilename: result.filename || null,
       segments: result.segments || 0,
+      totalSegments: result.requestedSegments || result.segments || 0,
+      partial: Boolean(result.partial),
+      warning: result.warning ? sanitizeJobDiagnostic(result.warning) : null,
+      message: null,
     });
-  } catch (err) {
-    console.log = console.log; // restore
-    updateJob(jobId, { status: 'error', error: err.message });
-    throw err;
+    if (!completed) throw new Error('clip_job_lease_lost');
+    return { claimed: true, result };
+  } catch (error) {
+    const safeError = sanitizeJobDiagnostic(error.message) || 'clip_generation_failed';
+    heartbeatJob(jobId, workerId, { status: 'error', stage: 'error', error: safeError });
+    throw new Error(safeError);
   }
 }
 
-module.exports = { createClipRouter };
+module.exports = { CLIP_WORKER_ID, createClipRouter, runClipGeneration, sanitizeJobDiagnostic };
