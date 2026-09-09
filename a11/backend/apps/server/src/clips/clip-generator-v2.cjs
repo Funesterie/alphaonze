@@ -376,6 +376,15 @@ async function resolveVideoModels({ postJsonImpl = postJson, env = process.env }
 
 
 
+
+function choisirReference(identity, env = process.env) {
+  const liste = identity && Array.isArray(identity.referenceImageUrls) ? identity.referenceImageUrls : [];
+  if (!liste.length) return null;
+  const demande = Number(env.NOSSEN_CLIP_REFERENCE_INDEX);
+  const rang = Number.isInteger(demande) && demande >= 0 && demande < liste.length ? demande : 0;
+  return liste[rang] || null;
+}
+
 // Soumettre UNE vidéo et ATTENDRE qu'elle soit prête
 async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = null, {
   postJsonImpl = postJson,
@@ -389,9 +398,12 @@ async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = nu
 
   // Image de référence : si un personnage canonique est en jeu, on bascule sur
   // l'image-to-video pour verrouiller son visage au lieu de le redécrire.
-  const referenceImage = identity && Array.isArray(identity.referenceImageUrls)
-    ? identity.referenceImageUrls[0]
-    : null;
+  // Quelle reference parmi celles de l'identite. C'etait [0] en dur, sans que rien
+  // ne le dise: pour djeff les cinq references vont de 240x240 (4 Ko) a 720x720
+  // (49 Ko), et une vignette de 240 pixels ne verrouille pas un visage. Le rang
+  // se choisit donc, et un rang hors bornes retombe sur la premiere plutot que
+  // de perdre la reference en silence.
+  const referenceImage = choisirReference(identity, process.env);
   const modeles = models && models.t2v ? models : { t2v: T2V_DEFAUT, i2v: null };
   const referenceVoulue = Boolean(referenceImage) && process.env.NOSSEN_CLIP_USE_REFERENCE !== '0';
   // Une reference sans modele image-to-video ne se soumet pas: on renonce a la
@@ -754,6 +766,7 @@ function mountClipRoutes(app) {
 
 module.exports = {
   T2V_DEFAUT,
+  choisirReference,
   describeBridgeFailure,
   estImageVersVideo,
   pickVideoModels,

@@ -76,3 +76,23 @@ test('sans i2v, la soumission part en t2v et ne porte aucune image', async () =>
   assert.equal(envoye.model, 'byteplus/seedance-2.0-t2v');
   assert.equal(envoye.image, undefined, 'aucune image ne doit accompagner un modele text-to-video');
 });
+
+// Les cinq references de djeff vont de 240x240 (4 Ko) a 720x720 (49 Ko). Le rang
+// etait fige a [0] sans que rien ne le documente: pour une autre identite, cela
+// peut designer une vignette incapable de verrouiller un visage.
+test('le rang de la reference se choisit, et un rang absurde ne perd pas la reference', () => {
+  const { choisirReference } = require('../src/clips/clip-generator-v2.cjs');
+  const identite = { referenceImageUrls: ['r01', 'r02', 'r03', 'r04', 'r05'] };
+  assert.equal(choisirReference(identite, {}), 'r01', 'par defaut, la premiere');
+  assert.equal(choisirReference(identite, { NOSSEN_CLIP_REFERENCE_INDEX: '3' }), 'r04');
+  for (const absurde of ['9', '-1', 'abc', '', undefined]) {
+    assert.equal(choisirReference(identite, { NOSSEN_CLIP_REFERENCE_INDEX: absurde }), 'r01', String(absurde));
+  }
+});
+
+test('une identite sans reference ne fabrique pas d image fantome', () => {
+  const { choisirReference } = require('../src/clips/clip-generator-v2.cjs');
+  assert.equal(choisirReference({ referenceImageUrls: [] }, {}), null);
+  assert.equal(choisirReference(null, {}), null);
+  assert.equal(choisirReference({}, {}), null);
+});
