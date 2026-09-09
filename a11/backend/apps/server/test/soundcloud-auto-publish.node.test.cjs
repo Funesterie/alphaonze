@@ -140,3 +140,54 @@ test('le registre garde la forme du flux, pas seulement son empreinte', async ()
   assert.equal(entree.sampleRate, 44100);
   assert.equal(entree.channels, 2);
 });
+
+test('« Session principale » ne se publie jamais tel quel', async () => {
+  let appels = 0;
+  const r = await publishTrackIfNew({
+    filePath: fauxAudio(), title: 'Session principale', env: ACTIF, registryFile: registreTemporaire(),
+    upload: async () => { appels += 1; return {}; },
+    fingerprintOf: async () => integrite('f'),
+  });
+  assert.equal(r.published, false);
+  assert.equal(r.reason, 'titre_indisponible', 'sans paroles ni titreur, on attend au lieu de publier');
+  assert.equal(appels, 0);
+});
+
+test('un morceau generique AVEC paroles est titre puis publie sous son vrai titre', async () => {
+  let publie = null;
+  const r = await publishTrackIfNew({
+    filePath: fauxAudio(), title: 'Session principale', lyrics: 'Dans le tunnel je trouve ma couronne',
+    env: ACTIF, registryFile: registreTemporaire(),
+    upload: async (arg) => { publie = arg; return { id: 11, sharing: 'public' }; },
+    titleTrack: async () => ({ title: 'La Couronne du Tunnel', costUsd: 0.0021, model: 'claude-sonnet-4-5-20250929' }),
+    fingerprintOf: async () => integrite('a'),
+  });
+  assert.equal(r.published, true);
+  assert.equal(publie.title, 'La Couronne du Tunnel', 'c est le titre du parolier qui part, pas celui de Suno');
+});
+
+test('un titreur qui rend encore un titre generique ne debloque rien', async () => {
+  let appels = 0;
+  const r = await publishTrackIfNew({
+    filePath: fauxAudio(), title: 'Session principale', lyrics: 'des paroles bien reelles',
+    env: ACTIF, registryFile: registreTemporaire(),
+    upload: async () => { appels += 1; return {}; },
+    titleTrack: async () => ({ title: 'Sans titre' }),
+    fingerprintOf: async () => integrite('b'),
+  });
+  assert.equal(r.reason, 'titrage_refuse');
+  assert.equal(appels, 0);
+});
+
+test('le registre dit qui a titre et ce que ca a coute', async () => {
+  const registryFile = registreTemporaire();
+  await publishTrackIfNew({
+    filePath: fauxAudio(), title: 'Session principale', lyrics: 'paroles', env: ACTIF, registryFile,
+    upload: async () => ({ id: 12 }),
+    titleTrack: async () => ({ title: 'Le Cadre', costUsd: 0.0021, model: 'claude-sonnet-4-5-20250929' }),
+    fingerprintOf: async () => integrite('c'),
+  });
+  const entree = readRegistry(registryFile).entries['c'.repeat(64)];
+  assert.equal(entree.titledBy, 'claude-sonnet-4-5-20250929');
+  assert.equal(entree.titlingCostUsd, 0.0021);
+});

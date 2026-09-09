@@ -35,6 +35,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
 const { readAudioStreamIntegrity } = require('../music/audio-stream-integrity.cjs');
+const { isGenericTitle } = require('../music/jukebox-claude-titler.cjs');
 
 const REGISTRE_SCHEMA = 'funesterie.social.soundcloud-published.v1';
 const EMPREINTE_TIMEOUT_MS = 60000;
@@ -53,6 +54,16 @@ function looksLikeMachineTitle(titre = '') {
   const valeur = String(titre || '').trim();
   if (!valeur) return true;
   return TITRES_MACHINE.some((motif) => motif.test(valeur));
+}
+
+/**
+ * Deux familles de non-titres, deux origines. « vivy-music-suno-... » vient du
+ * repli sur le nom de fichier cote upload; « Session principale » vient de Suno,
+ * qui nomme ainsi toute generation. Le second est plus dangereux: il ressemble a
+ * un titre, donc il passe l'oeil et se publie.
+ */
+function isPublishableTitle(titre = '') {
+  return !looksLikeMachineTitle(titre) && !isGenericTitle(titre);
 }
 
 /** Le fil d'or, delegue a l'implementation de reference. */
@@ -103,7 +114,11 @@ async function publishTrackIfNew({
   description = '',
   genre = '',
   tagList = '',
+  lyrics = '',
   upload,
+  // Titrage a la demande: appele seulement si le morceau n'a pas de vrai titre
+  // et qu'il a des paroles. Absent => on ne publie pas, on ne devine pas.
+  titleTrack = null,
   env = process.env,
   registryFile = registryPath(env),
   // Injectable pour les tests: la logique de garde se verifie sans ffmpeg.
@@ -111,8 +126,28 @@ async function publishTrackIfNew({
 } = {}) {
   if (typeof upload !== 'function') throw new Error('upload_function_requise');
   if (!autoPublishEnabled(env)) return { published: false, reason: 'auto_publish_desactive', fingerprint: '' };
-  if (looksLikeMachineTitle(title)) {
-    return { published: false, reason: 'titre_machine_refuse', fingerprint: '' };
+
+  let titreFinal = String(title || '').trim();
+  let titrage = null;
+  if (!isPublishableTitle(titreFinal)) {
+    if (typeof titleTrack !== 'function' || !String(lyrics || '').trim()) {
+      // Un morceau sans paroles ne peut pas etre titre par le parolier: 181 des
+      // 836 morceaux de l'archive sont dans ce cas. On les laisse en attente
+      // plutot que de publier « Session principale ».
+      // Deux raisons distinctes, parce qu'elles se corrigent differemment: un nom
+      // de fichier trahit un appelant qui n'a pas transmis de titre, un titre
+      // generique trahit un morceau qui attend encore son parolier.
+      return {
+        published: false,
+        reason: looksLikeMachineTitle(titreFinal) ? 'titre_machine_refuse' : 'titre_indisponible',
+        fingerprint: '',
+      };
+    }
+    titrage = await titleTrack({ lyrics: String(lyrics).trim() });
+    titreFinal = String(titrage?.title || '').trim();
+    if (!isPublishableTitle(titreFinal)) {
+      return { published: false, reason: 'titrage_refuse', fingerprint: '' };
+    }
   }
 
   const integrite = await fingerprintOf(filePath, { env });
@@ -125,7 +160,7 @@ async function publishTrackIfNew({
 
   const resultat = await upload({
     audioPath: filePath,
-    title: String(title).trim(),
+    title: titreFinal,
     description,
     genre,
     tagList,
@@ -134,7 +169,9 @@ async function publishTrackIfNew({
 
   registre.schema = REGISTRE_SCHEMA;
   registre.entries[fingerprint] = {
-    title: String(title).trim(),
+    title: titreFinal,
+    titledBy: titrage ? (titrage.model || 'anthropic') : 'source',
+    titlingCostUsd: titrage ? Number(titrage.costUsd || 0) : 0,
     trackId: resultat?.id || null,
     permalinkUrl: resultat?.permalinkUrl || '',
     sharing: resultat?.sharing || resolveSharing(env),
@@ -151,6 +188,7 @@ module.exports = {
   REGISTRE_SCHEMA,
   audioStreamIntegrity,
   autoPublishEnabled,
+  isPublishableTitle,
   looksLikeMachineTitle,
   publishTrackIfNew,
   readRegistry,
