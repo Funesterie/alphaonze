@@ -45,7 +45,9 @@ test('nossen-index.html rend d.errorInfo.node_type dans le bandeau terminal', ()
   assert.match(htmlSource, /d\.errorInfo && d\.errorInfo\.node_type/);
   // Il doit rendre le node_type comme tag et le message borné à ~300 chars.
   assert.match(htmlSource, /escapeHtml\(truncate\(String\(d\.errorInfo\.node_type\)/);
-  assert.match(htmlSource, /truncate\(escapeHtml\(String\(d\.errorInfo\.message[\s\S]*?\), 300\)/);
+  // Message : truncate AVANT escape (comme le tag node_type), pour ne pas couper une
+  // entité HTML multi-caractères (&amp;) en plein milieu au niveau de la borne ~300.
+  assert.match(htmlSource, /escapeHtml\(truncate\(String\(d\.errorInfo\.message[\s\S]*?\), 300\)\)/);
   // Il doit conserver le repli sur la chaîne d.error legacy.
   assert.match(htmlSource, /terminalMessage\("❌ " \+ fallbackError, "error", true\)/);
 });

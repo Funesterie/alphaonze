@@ -159,6 +159,13 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   var POLL_FULL_MAX_MS = 8 * 60 * 60 * 1000;
   var POLL_STORAGE_KEY = "nossen.activeClipJob.v1";
   var AUDIO_START_TIMEOUT_MS = 20000;
+  // Silent-refresh assumption: the a11_session refresh only works while the JWT is
+  // still valid. An already-expired token is rejected 401 by design (the refresh
+  // route cannot revive a dead token), so this 10-minute margin against the ~8s
+  // poll cadence is what keeps the refresh firing BEFORE expiry. Caveat: if the tab
+  // is backgrounded through the entire window (Safari freezes timers), the token can
+  // still expire until a foreground poll (the Point B visibilitychange/pageshow
+  // handler) fires the next refresh.
   var REFRESH_MARGIN_MS = 10 * 60 * 1000;
   var sessionExpiresAt = null;
   var refreshInFlight = false;
@@ -749,7 +756,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
           var fallbackError = d.error || (status === "cancelled" || status === "canceled" ? "Génération annulée" : "Génération échouée");
           if (d.errorInfo && d.errorInfo.node_type) {
             var nodeTag = escapeHtml(truncate(String(d.errorInfo.node_type), 80));
-            var detailMsg = truncate(escapeHtml(String(d.errorInfo.message || fallbackError)), 300);
+            var detailMsg = escapeHtml(truncate(String(d.errorInfo.message || fallbackError), 300));
             terminalMessage("❌ [" + nodeTag + "] " + detailMsg, "error", true);
           } else {
             terminalMessage("❌ " + fallbackError, "error", true);

@@ -134,8 +134,13 @@ test('POST /api/auth/refresh with an expired token returns 401 and clears the co
     assert.equal(response.status, 401);
     assert.equal(json.error, 'A11_JWT_Invalid');
     const cleared = getSetCookies(response).find((c) => c.startsWith('a11_session='));
-    // A clear sets an empty value / past expiry.
-    assert.ok(cleared && /a11_session=;/.test(cleared) === false ? true : true);
+    // express clearCookie serializes as `a11_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT`.
+    // Assert the cookie is actually cleared: present, empty value, and a past-Expires (or Max-Age=0).
+    assert.ok(cleared, 'a Set-Cookie clearing a11_session must be present');
+    assert.match(cleared, /^a11_session=;/, 'a11_session must be reset to an empty value');
+    const clearedByExpires = /Expires=Thu, 01 Jan 1970 00:00:00 GMT/i.test(cleared);
+    const clearedByMaxAge = /Max-Age=0\b/i.test(cleared);
+    assert.ok(clearedByExpires || clearedByMaxAge, 'a11_session clear must expire the cookie (past Expires or Max-Age=0)');
   });
 });
 
