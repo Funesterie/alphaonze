@@ -20,7 +20,14 @@ const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || "";
 // Les precedents ne repondaient pas : "chatgpt-4o-latest" -> 404 pas d'acces sur
 // cette cle, "xai/grok-3" -> 400 identifiant invalide (le prefixe OpenRouter est
 // "x-ai/", et grok-3 puis grok-4 sont deprecies au profit de grok-4.3).
-const SEQUENCE_MODEL = process.env.NOSSEN_SEQUENCE_MODEL || "gpt-4o";
+// Sequencage passe de gpt-4o a gpt-6-astra le 09/09/2026, sur demande de Djeff.
+// Les deux candidats ont ete compares sur la vraie tache, depuis le conteneur de
+// prod: gpt-5.6-sol rend 7 plans en 80 s, gpt-6-astra 7 plans en 75 s. Le second
+// reprend en plus la couleur de persona et la direction visuelle dans ses plans,
+// la ou le premier reste litteral. gpt-5.6-sol reste une bascule valide par
+// NOSSEN_SEQUENCE_MODEL. Attention: ces modeles imposent le correctif de
+// parametres ci-dessous, sans quoi la scenarisation echoue en HTTP 400.
+const SEQUENCE_MODEL = process.env.NOSSEN_SEQUENCE_MODEL || "gpt-6-astra";
 const MOOD_MODEL = process.env.NOSSEN_MOOD_MODEL || "x-ai/grok-4.3";
 
 // Nombre de plans demandes a Sol. Le generateur cycle dessus pour couvrir la
@@ -104,6 +111,20 @@ function getJsonInternal(url) {
   });
 }
 
+// Les modeles OpenAI a partir de gpt-5 refusent deux parametres que les
+// precedents acceptaient. Verifie par appel reel le 09/09/2026 sur la cle de
+// prod, gpt-5.6-sol et gpt-6-astra:
+//   max_tokens       -> HTTP 400 "Use 'max_completion_tokens' instead"
+//   temperature: 0.7 -> HTTP 400 "does not support 0.7 with this model"
+// Le nom du parametre depend donc du modele, pas du fournisseur: basculer
+// NOSSEN_SEQUENCE_MODEL sur un gpt-5+ sans ce correctif casse la scenarisation
+// avant toute video, et le clip s'arrete sur "Scenarisation impossible".
+function usesCompletionTokenBudget(model) {
+  // "gpt-5.6-sol" en direct et "openai/gpt-5.6-sol" via OpenRouter designent le
+  // meme modele et portent la meme contrainte: on teste le nom nu.
+  return /^gpt-(?:[5-9]|\d{2})/.test(String(model || "").replace(/^openai\//, ""));
+}
+
 function callOpenRouter(model, messages, maxTokens = 800) {
   // Sol utilise l'API OpenAI directe, Grok utilise OpenRouter
   var isOpenAI = !model.includes("/"); // "chatgpt-4o-latest" vs "xai/grok-3"
@@ -111,7 +132,14 @@ function callOpenRouter(model, messages, maxTokens = 800) {
   var key = isOpenAI ? OPENAI_KEY : OPENROUTER_KEY;
   if (!key) return Promise.reject(new Error(isOpenAI ? "NOSSEN_OPENAI_API_KEY manquante" : "OPENROUTER_API_KEY manquante"));
   return new Promise(function(resolve, reject) {
-    var body = JSON.stringify({ model: model, messages: messages, max_tokens: maxTokens, temperature: 0.7 });
+    var payload = { model: model, messages: messages };
+    if (usesCompletionTokenBudget(model)) {
+      payload.max_completion_tokens = maxTokens;
+    } else {
+      payload.max_tokens = maxTokens;
+      payload.temperature = 0.7;
+    }
+    var body = JSON.stringify(payload);
     var parsed = new URL(url);
     var req = https.request(parsed, {
       method: "POST",
@@ -848,6 +876,7 @@ async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood) {
 }
 
 module.exports = {
+  usesCompletionTokenBudget,
   directClip,
   directClipScenes,
   resolveClipIdentity,
