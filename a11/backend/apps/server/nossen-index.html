@@ -762,6 +762,35 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     pollJob(saved.id, saved.mode === "full" ? "full" : "clip", saved.startedAt);
   }
 
+  // Safari iOS gèle le setTimeout récursif et coupe les fetch en cours quand
+  // l'onglet passe en arrière-plan : au retour au premier plan on relance
+  // immédiatement le suivi du job persisté au lieu d'attendre POLL_INTERVAL_MS.
+  // Idempotent : on réutilise resumePolling()/pollJob() (qui appelle stopPolling
+  // avant de repartir), on respecte activeJobId + pollInFlight et la fenêtre max.
+  function resumePollingFromForeground() {
+    var saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem(POLL_STORAGE_KEY) || "null"); } catch (_) { return; }
+    if (!saved || !saved.id || !saved.startedAt) return;
+    var maxDuration = saved.mode === "full" ? POLL_FULL_MAX_MS : POLL_CLIP_MAX_MS;
+    if (Date.now() - Number(saved.startedAt) >= maxDuration) {
+      clearPollState();
+      return;
+    }
+    if (pollInFlight) return;
+    if (!activeJobId || !pollTimer) {
+      // Aucun suivi actif (ou timer figé par la mise en arrière-plan) : (re)démarre.
+      resumePolling();
+      return;
+    }
+    // Un suivi est déjà armé mais le prochain check pouvait attendre jusqu'à
+    // POLL_INTERVAL_MS : force une vérification immédiate en réamorçant pollJob
+    // via resumePolling() (stopPolling puis scheduleNext(0)), sans dupliquer la
+    // machine à états de polling.
+    if (clearTimeout) { clearTimeout(pollTimer); }
+    pollTimer = null;
+    resumePolling();
+  }
+
   function loadClips() {
     return api("/api/mcp-bridge/clip/list").then(function(c) {
       var clips = c.clips || [];
@@ -901,6 +930,23 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       importedFile = null;
       document.getElementById("import-url").value = "";
       document.getElementById("file-name").textContent = "";
+    }
+  });
+
+  // Reprise du suivi au retour au premier plan (Safari iOS arrière-plan / bfcache).
+  document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === "visible") {
+      try { resumePollingFromForeground(); } catch (_) {}
+    }
+  });
+  window.addEventListener("pageshow", function(event) {
+    // event.persisted => restauration depuis le bfcache Safari iOS.
+    if (event && event.persisted) {
+      try { resumePollingFromForeground(); } catch (_) {}
+      return;
+    }
+    if (document.visibilityState === "visible") {
+      try { resumePollingFromForeground(); } catch (_) {}
     }
   });
 
