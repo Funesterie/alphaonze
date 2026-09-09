@@ -46,11 +46,11 @@ const CLAUDE_URL = "https://api.anthropic.com/v1/messages";
 const CLAUDE_KEY = process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY || "";
 const LYRICS_MODEL = process.env.NOSSEN_LYRICS_MODEL || "claude-sonnet-4-5-20250929";
 
-function callClaude(prompt, maxTokens) {
+function callClaude(prompt, maxTokens, model) {
   if (!CLAUDE_KEY) return Promise.reject(new Error("CLAUDE_API_KEY manquante"));
   return new Promise(function(resolve, reject) {
     var body = JSON.stringify({
-      model: LYRICS_MODEL,
+      model: model || LYRICS_MODEL,
       max_tokens: maxTokens || 1500,
       messages: [{ role: "user", content: prompt }],
     });
@@ -799,6 +799,45 @@ async function directClip(config) {
  * Si c'est trop mou, trop générique, ou si ça ne colle pas au morceau,
  * il corrige. Son critère : brillance > -9 dB, pas de plafond artificiel.
  */
+// Djeff Engine relit en cloud par defaut.
+//
+// Le modele local "djeff-engine" est qwen2.5:32b (32,8 milliards de parametres,
+// 19,9 Go) et la machine de prod n'a AUCUN GPU: 20 coeurs CPU. A 1 a 3 jetons
+// par seconde, les 1200 jetons demandes prennent 10 a 30 minutes pour un delai
+// accorde de 45 s. La relecture ne pouvait donc jamais aboutir -- constate le
+// 09/09/2026, "delai de 45 s depasse" puis ECONNRESET, sur deux clips.
+//
+// Rien n'est perdu a partir en cloud: `ollama show` confirme qu'il n'y a ni
+// ADAPTER ni LoRA. "djeff-engine" est qwen2.5:32b plus un prompt systeme, pas un
+// fine-tune. Seul le prompt fait la persona, et il voyage.
+//
+// Le modele cloud est volontairement DIFFERENT de Sol et de K44: un relecteur qui
+// partage le cerveau de l'auteur relit ses propres angles morts. Sol ecrit en
+// GPT, K44 relit en Grok, Djeff Engine relit en Claude.
+const DJEFF_ENGINE_CLOUD_MODEL = process.env.DJEFF_ENGINE_CLOUD_MODEL || "claude-opus-5";
+
+// Combien de jetons laisser a Djeff Engine pour reecrire les plans.
+//
+// C'etait 1200, fixe. Un clip full compte 26 plans: a ~90 jetons de prompt visuel
+// par plan, la reponse etait coupee en plein JSON, le tableau devenait
+// impossible a parser, et TOUT son travail partait a la poubelle en silence
+// ("reponse non parsable, plans inchanges"). Le budget suit donc le nombre de
+// plans, avec de la marge pour la ponctuation JSON.
+function djeffEngineTokenBudget(sceneCount) {
+  var n = Number(sceneCount) > 0 ? Number(sceneCount) : 6;
+  return Math.min(16000, 600 + n * 260);
+}
+
+// Longueur d'un prompt visuel. 300 caracteres coupaient les plans les plus
+// travailles au milieu d'une phrase -- on lui demande de prompter, autant le
+// laisser finir sa phrase.
+const DJEFF_VISUAL_MAX_CHARS = Number(process.env.NOSSEN_VISUAL_MAX_CHARS || 600);
+
+function resolveDjeffEngineMode(env) {
+  var mode = String((env || {}).DJEFF_ENGINE_MODE || "cloud").trim().toLowerCase();
+  return ["local", "cloud", "auto"].indexOf(mode) >= 0 ? mode : "cloud";
+}
+
 async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood) {
   if (!scenes || scenes.length < 2) return scenes;
   try {
@@ -819,9 +858,31 @@ async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood) {
       + "- Renvoie UNIQUEMENT le JSON array des plans corrigés : [{\"name\":\"...\",\"visual\":\"...\"}]\n"
       + "- Si tout est bon, renvoie le même array sans changement.";
 
+    var mode = resolveDjeffEngineMode(process.env);
+    var text = "";
+    var moteurUtilise = MODEL;
+
+    if (mode !== "local") {
+      try {
+        text = await callClaude(prompt, djeffEngineTokenBudget(scenes.length), DJEFF_ENGINE_CLOUD_MODEL);
+        if (text) {
+          moteurUtilise = DJEFF_ENGINE_CLOUD_MODEL;
+          console.log("[clip-director] Djeff Engine (" + DJEFF_ENGINE_CLOUD_MODEL + ") a relu les plans.");
+        }
+      } catch (error) {
+        console.warn("[clip-director] Djeff Engine cloud indisponible: " + (error.message || "erreur"));
+      }
+      // En mode "cloud" on ne retombe pas sur le local: sur une machine sans GPU
+      // il ne fera qu'ajouter 45 s d'attente avant le meme abandon.
+      if (!text && mode === "cloud") {
+        console.log("[clip-director] Djeff Engine non disponible, plans inchangés.");
+        return scenes;
+      }
+    }
+
     var body = JSON.stringify({ model: MODEL, messages: [{ role: "user", content: prompt }], stream: false, options: { temperature: 0.8, num_predict: 1200 } });
 
-    var text = await new Promise(function(resolve, reject) {
+    if (!text) text = await new Promise(function(resolve, reject) {
       var req = http.request(OLLAMA + "/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
@@ -852,23 +913,28 @@ async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood) {
 
     if (!text) { console.log("[clip-director] Djeff Engine non disponible, plans inchangés."); return scenes; }
 
-    var jsonMatch = text.match(/\[[\s\S]*?\]/);
+    // Gourmand a dessein: en non gourmand, un "]" ecrit dans un plan fermait le
+    // tableau trop tot et faisait perdre les plans suivants.
+    var jsonMatch = text.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
       var corrected = JSON.parse(jsonMatch[0]);
       if (Array.isArray(corrected) && corrected.length >= 3) {
         var changed = 0;
         for (var i = 0; i < Math.min(corrected.length, scenes.length); i++) {
           if (corrected[i].visual && corrected[i].visual !== scenes[i].visual) {
-            scenes[i].visual = String(corrected[i].visual).slice(0, 300);
+            scenes[i].visual = String(corrected[i].visual).slice(0, DJEFF_VISUAL_MAX_CHARS);
             if (corrected[i].name) scenes[i].name = String(corrected[i].name).slice(0, 30);
             changed++;
           }
         }
-        console.log("[clip-director] Djeff Engine (" + MODEL + ") — " + changed + " plan(s) corrigé(s) sur " + scenes.length);
+        console.log("[clip-director] Djeff Engine (" + moteurUtilise + ") — " + changed + " plan(s) corrigé(s) sur " + scenes.length);
         return scenes;
       }
     }
-    console.log("[clip-director] Djeff Engine — réponse non parsable, plans inchangés.");
+    // Une reponse coupee ne doit pas ressembler a "il n'avait rien a dire".
+    var tronquee = text.indexOf("[") >= 0 && text.lastIndexOf("]") < text.indexOf("[");
+    console.log("[clip-director] Djeff Engine — réponse " + (tronquee ? "tronquée (budget de jetons trop court)" : "non parsable")
+      + ", plans inchangés. " + text.length + " caractères reçus.");
   } catch (e) {
     console.warn("[clip-director] Djeff Engine review skip:", e.message);
   }
@@ -876,6 +942,10 @@ async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood) {
 }
 
 module.exports = {
+  DJEFF_ENGINE_CLOUD_MODEL,
+  DJEFF_VISUAL_MAX_CHARS,
+  djeffEngineTokenBudget,
+  resolveDjeffEngineMode,
   usesCompletionTokenBudget,
   directClip,
   directClipScenes,
