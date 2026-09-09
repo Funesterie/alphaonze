@@ -34,6 +34,8 @@ Un test réel et isolé du Director avec le séquençage explicitement routé ve
 
 ## Limite de récupération de l'historique
 
+Mise à jour : l'autorisation de publication a ensuite été donnée, puis limitée aux audios disponibles. Voir [la récupération du jukebox](JUKEBOX_RECOVERY_2026-09-09.md) pour le nouvel inventaire de 834 audios, les titres Claude et le traitement V11 Pan. Le paragraphe suivant décrit l'état antérieur à cette autorisation.
+
 Le fichier d'état conserve 120 chansons ; un ancien backup n'en ajoute que deux uniques. Les MP3 et callbacks restants n'ont pas de propriétaire/session fiable, et les callbacks contiennent plusieurs candidats par tâche. Ils ne doivent pas être publiés en bloc ni arbitrairement attribués à un utilisateur. Il manque un inventaire historique fiable pour reconstituer un catalogue exhaustif. Les identifiants de génération Comfy n'étaient pas non plus persistés dans les anciens jobs : leur corrélation avec les vidéos du 7 septembre est temporelle, pas une correspondance d'identifiants prouvée.
 
 ## Corrections à vérifier en livraison
