@@ -960,7 +960,10 @@ services:
       # URL Stripe ici et n'accepte que funesterie.me.
       NOSSEN_CLIP_LANDING_URL: ${NOSSEN_CLIP_LANDING_URL:-https://funesterie.me/}
       # Routage explicite et configurable du séquençage NOSSEN.
-      NOSSEN_SEQUENCE_MODEL: ${NOSSEN_SEQUENCE_MODEL:-gpt-4o}
+      # 12/09/2026: gpt-6-astra remplace gpt-4o (plans juges trop pauvres par Djeff).
+      # Les modeles gpt-5+ refusent max_tokens et toute temperature non par defaut:
+      # ce changement suppose le correctif livre dans clip-vivy-director.cjs.
+      NOSSEN_SEQUENCE_MODEL: ${NOSSEN_SEQUENCE_MODEL:-gpt-6-astra}
       # Tout gratuit -- decision de Djeff du 18/08/2026. Le defaut est a 1
       # volontairement: la valeur porte la decision, pas la session de
       # deploiement. Un export oublie ne doit pas remettre le produit payant en
