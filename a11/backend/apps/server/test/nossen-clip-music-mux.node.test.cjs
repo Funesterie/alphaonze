@@ -10,7 +10,11 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clip-music-mux-'));
 process.env.NOSSEN_CLIPS_DIR = root;
 const { generateClip } = require('../src/clips/clip-generator-v2.cjs');
 
-test('le clip garde la musique meme si la scene contient sa propre piste stereo', async () => {
+// Le runner GitHub n'a pas ffmpeg : le test est ignore la-bas, jamais maquille en succes.
+let ffmpegDisponible = true;
+try { execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' }); } catch (_) { ffmpegDisponible = false; }
+
+test('le clip garde la musique meme si la scene contient sa propre piste stereo', { skip: ffmpegDisponible ? false : 'ffmpeg absent sur cette machine' }, async () => {
   const scene = path.join(root, 'input.mp4');
   const song = path.join(root, 'song.mp3');
   execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=64x64:r=10:d=2',

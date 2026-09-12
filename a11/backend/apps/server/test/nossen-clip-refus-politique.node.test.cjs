@@ -2,7 +2,12 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
+// Le module cree son dossier de clips au chargement ; /app n'existe pas en CI.
+process.env.NOSSEN_CLIPS_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'clip-refus-politique-'));
 const {
   PLAFOND_REFUS_POLITIQUE,
   estRefusDePolitique,
