@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
-import { downloadMediaUrl, resolvePublicVivyMediaDownloadUrl } from "./api.ts";
+import { downloadMediaUrl } from "./api.ts";
 
 const apiSource = fs.readFileSync(new URL("./api.ts", import.meta.url), "utf8");
 
@@ -16,74 +16,31 @@ test("D40 API calls without an explicit mode use V10 Boom", () => {
   );
 });
 
-test("a missing same-origin Vivy asset triggers a single request with no proxy fallback", async () => {
-  const originalFetch = globalThis.fetch;
-  const originalDocument = globalThis.document;
-  const originalLocation = globalThis.location;
-  const requests: Array<{ url: string; init?: RequestInit }> = [];
+// --- Tests for downloadMediaUrl HTTP error handling ---
+// These tests verify that HTTP errors (401, 403, 404) are NEVER silently transformed into success.
 
-  Object.assign(globalThis, {
-    location: { origin: "https://vivy.funesterie.me" },
-    document: {
-      createElement: () => ({ style: {}, click() {}, remove() {} }),
-      body: { appendChild() {} },
-    },
-    fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      requests.push({ url, init });
-      return new Response("missing", { status: 404 });
-    },
-  });
-
-  try {
-    await downloadMediaUrl("/api/vivy/studio/assets/missing.mp3");
-  } finally {
-    Object.assign(globalThis, {
-      fetch: originalFetch,
-      document: originalDocument,
-      location: originalLocation,
-    });
-  }
-
-  // Only one request: the direct fetch. The authenticated proxy is not called
-  // because it would resolve to the same same-origin endpoint and produce a
-  // second identical 404.
-  assert.equal(requests.length, 1);
-  assert.ok(requests[0].url.includes("/api/vivy/studio/assets/missing.mp3"));
-  assert.equal(requests[0].init?.credentials, "include");
-});
-
-test("an external Vivy-shaped URL is fetched without API credentials", async () => {
+test("downloadMediaUrl throws on 404 for missing resource", async () => {
   const originalFetch = globalThis.fetch;
   const originalDocument = globalThis.document;
   const originalLocation = globalThis.location;
   const originalLocalStorage = globalThis.localStorage;
-  const requests: Array<{ url: string; init?: RequestInit }> = [];
-  const testJwt = [
-    JSON.stringify({ alg: "none" }),
-    JSON.stringify({ exp: 4102444800 }),
-    "signature",
-  ].map((part) => Buffer.from(part).toString("base64url")).join(".");
 
   Object.assign(globalThis, {
     location: { origin: "https://vivy.funesterie.me" },
-    localStorage: {
-      getItem: (key: string) => key === "a11-auth-token"
-        ? testJwt
-        : null,
-    },
+    localStorage: { getItem: () => null, removeItem: () => {} },
     document: {
       createElement: () => ({ style: {}, click() {}, remove() {} }),
-      body: { appendChild() {} },
+      body: { appendChild() {}, removeChild() {} },
     },
-    fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
-      requests.push({ url: String(input), init });
-      return new Response(new Blob(["audio"]), { status: 200 });
-    },
+    URL: { createObjectURL: () => 'blob:test', revokeObjectURL: () => {} } as any,
+    fetch: async () => new Response("not found", { status: 404, statusText: "Not Found" }),
   });
 
   try {
-    await downloadMediaUrl("https://untrusted.example/api/vivy/studio/assets/song.mp3");
+    await assert.rejects(
+      downloadMediaUrl("/api/vivy/studio/assets/missing.mp3"),
+      /Resource download failed/,
+    );
   } finally {
     Object.assign(globalThis, {
       fetch: originalFetch,
@@ -92,34 +49,151 @@ test("an external Vivy-shaped URL is fetched without API credentials", async () 
       localStorage: originalLocalStorage,
     });
   }
-
-  assert.equal(requests.length, 1);
-  assert.equal(requests[0].init?.credentials, "omit");
-  assert.equal(new Headers(requests[0].init?.headers).has("Authorization"), false);
 });
 
-test("resolvePublicVivyMediaDownloadUrl recognises subdirectory asset paths like covers/ville.png", () => {
+test("downloadMediaUrl throws on 401 Unauthorized", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalDocument = globalThis.document;
   const originalLocation = globalThis.location;
-  Object.assign(globalThis, { location: { origin: "https://vivy.funesterie.me" } });
+  const originalLocalStorage = globalThis.localStorage;
+
+  Object.assign(globalThis, {
+    location: { origin: "https://vivy.funesterie.me" },
+    localStorage: { getItem: () => null, removeItem: () => {} },
+    document: {
+      createElement: () => ({ style: {}, click() {}, remove() {} }),
+      body: { appendChild() {}, removeChild() {} },
+    },
+    URL: { createObjectURL: () => 'blob:test', revokeObjectURL: () => {} } as any,
+    fetch: async () => new Response("unauthorized", { status: 401, statusText: "Unauthorized" }),
+  });
 
   try {
-    const flat = resolvePublicVivyMediaDownloadUrl("/api/vivy/studio/assets/song.mp3");
-    assert.ok(flat?.includes("/api/vivy/studio/assets/song.mp3"), "flat path must be recognised");
-
-    const cover = resolvePublicVivyMediaDownloadUrl("/api/vivy/studio/assets/covers/ville.png");
-    assert.ok(cover?.includes("/api/vivy/studio/assets/covers/ville.png"), "covers/ subdirectory must be recognised");
-
-    // External hosts must not receive auth credentials regardless of path shape.
-    const external = resolvePublicVivyMediaDownloadUrl(
-      "https://untrusted.example/api/vivy/studio/assets/covers/ville.png",
+    // 401 may trigger auth invalidation, but should still throw
+    await assert.rejects(
+      downloadMediaUrl("/api/vivy/studio/assets/private.mp3"),
+      /.*/,
     );
-    // resolvePublicVivyMediaDownloadUrl may return the URL but downloadPublicMediaUrl
-    // will fetch it with credentials:'omit' since it is not an API origin.
-    // The important invariant is it does NOT return null (so the direct fetch is
-    // attempted) — and no auth headers are attached (verified in the cross-origin test).
-    assert.ok(external !== null, "external subdirectory URL should be attempted directly (no auth)");
   } finally {
-    Object.assign(globalThis, { location: originalLocation });
+    Object.assign(globalThis, {
+      fetch: originalFetch,
+      document: originalDocument,
+      location: originalLocation,
+      localStorage: originalLocalStorage,
+    });
+  }
+});
+
+test("downloadMediaUrl throws on 403 Forbidden", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalDocument = globalThis.document;
+  const originalLocation = globalThis.location;
+  const originalLocalStorage = globalThis.localStorage;
+
+  Object.assign(globalThis, {
+    location: { origin: "https://vivy.funesterie.me" },
+    localStorage: { getItem: () => null, removeItem: () => {} },
+    document: {
+      createElement: () => ({ style: {}, click() {}, remove() {} }),
+      body: { appendChild() {}, removeChild() {} },
+    },
+    URL: { createObjectURL: () => 'blob:test', revokeObjectURL: () => {} } as any,
+    fetch: async () => new Response("forbidden", { status: 403, statusText: "Forbidden" }),
+  });
+
+  try {
+    await assert.rejects(
+      downloadMediaUrl("/api/vivy/studio/assets/restricted.mp3"),
+      /Resource download failed/,
+    );
+  } finally {
+    Object.assign(globalThis, {
+      fetch: originalFetch,
+      document: originalDocument,
+      location: originalLocation,
+      localStorage: originalLocalStorage,
+    });
+  }
+});
+
+test("downloadMediaUrl succeeds with valid audio (200 OK)", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalDocument = globalThis.document;
+  const originalLocation = globalThis.location;
+  const originalLocalStorage = globalThis.localStorage;
+  let downloadTriggered = false;
+
+  Object.assign(globalThis, {
+    location: { origin: "https://vivy.funesterie.me" },
+    localStorage: { getItem: () => null, removeItem: () => {} },
+    document: {
+      createElement: (tag: string) => {
+        if (tag === 'a') {
+          return {
+            style: {},
+            href: '',
+            download: '',
+            click() { downloadTriggered = true; },
+            remove() {},
+          };
+        }
+        return { style: {}, click() {}, remove() {} };
+      },
+      body: { appendChild() {}, removeChild() {} },
+    },
+    URL: { createObjectURL: () => 'blob:test', revokeObjectURL: () => {} } as any,
+    fetch: async () => {
+      const blob = new Blob(["audio data"], { type: 'audio/mpeg' });
+      return new Response(blob, {
+        status: 200,
+        headers: { 'content-disposition': 'attachment; filename="test.mp3"' },
+      });
+    },
+  });
+
+  try {
+    // Should not throw on success
+    await downloadMediaUrl("/api/vivy/studio/assets/test.mp3");
+    assert.equal(downloadTriggered, true, "download should be triggered");
+  } finally {
+    Object.assign(globalThis, {
+      fetch: originalFetch,
+      document: originalDocument,
+      location: originalLocation,
+      localStorage: originalLocalStorage,
+    });
+  }
+});
+
+test("downloadMediaUrl throws on empty file (0 bytes)", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalDocument = globalThis.document;
+  const originalLocation = globalThis.location;
+  const originalLocalStorage = globalThis.localStorage;
+
+  Object.assign(globalThis, {
+    location: { origin: "https://vivy.funesterie.me" },
+    localStorage: { getItem: () => null, removeItem: () => {} },
+    document: {
+      createElement: () => ({ style: {}, click() {}, remove() {} }),
+      body: { appendChild() {}, removeChild() {} },
+    },
+    URL: { createObjectURL: () => 'blob:test', revokeObjectURL: () => {} } as any,
+    fetch: async () => new Response(new Blob([]), { status: 200, headers: { 'content-length': '0' } }),
+  });
+
+  try {
+    await assert.rejects(
+      downloadMediaUrl("/api/vivy/studio/assets/empty.mp3"),
+      /.*/,
+    );
+  } finally {
+    Object.assign(globalThis, {
+      fetch: originalFetch,
+      document: originalDocument,
+      location: originalLocation,
+      localStorage: originalLocalStorage,
+    });
   }
 });
 

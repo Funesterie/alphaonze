@@ -1213,18 +1213,8 @@ const LOCAL_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
 ];
 
 const DEFAULT_REMOTE_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
-  {
-    value: "groq:llama-3.3-70b-versatile",
-    label: "Groq - Llama 3.3 70B rapide",
-    provider: "groq",
-    model: "llama-3.3-70b-versatile",
-  },
-  {
-    value: "openai:meta-llama/llama-3.3-70b-instruct",
-    label: "OpenRouter secours - Llama 3.3 70B",
-    provider: "openai",
-    model: "meta-llama/llama-3.3-70b-instruct",
-  },
+  // Groq est opt-in : pas de modele par defaut dans les choix
+  // Les modeles Groq doivent etre configures explicitement
 ];
 
 function buildChatModelChoices(remoteProfiles: RemoteProviderProfile[]) {
