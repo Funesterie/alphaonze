@@ -14,6 +14,7 @@ const {
   extractRequestAuthTokenCandidates,
   parseCookieHeader,
 } = require('../middleware/jwt-auth.cjs');
+const { buildRefreshExtra } = require('../auth/refresh-claims.cjs');
 const {
   createAuthSessionRegistry,
   normalizeSurface,
@@ -2049,6 +2050,59 @@ function createAuthRouter({
         message: error?.message || 'Session invalide',
       });
     }
+  });
+
+  router.post('/api/auth/refresh', async (req, res) => {
+    const token = extractRequestAuthToken(req);
+    if (!token) {
+      // Nothing to refresh and nothing to clear.
+      return res.status(401).json({ ok: false, error: 'A11_JWT_Missing' });
+    }
+
+    let decoded;
+    try {
+      decoded = await decodeRequestAuthClaims(req);
+    } catch (error) {
+      // A dead / revoked token must NOT be turned into a fresh session.
+      clearSessionCookies(req, res);
+      if (error?.code === 'A11_SESSION_REVOKED') {
+        return res.status(401).json({
+          ok: false,
+          error: 'A11_SESSION_REVOKED',
+          message: 'Session révoquée. Reconnecte-toi.',
+        });
+      }
+      return res.status(401).json({
+        ok: false,
+        error: 'A11_JWT_Invalid',
+        message: error?.message || 'Session invalide',
+      });
+    }
+
+    // Re-sign a JWT that PRESERVES the existing sid + current sessionGeneration
+    // (and surface/client/provider) so assertTokenCurrent stays satisfied and no
+    // new session row is created. Only iat/exp are refreshed by jwt.sign().
+    const extra = buildRefreshExtra(decoded);
+    const newToken = signUserToken({ jwt, jwtSecret, jwtExpiry, user: decoded, extra });
+    if (typeof registerIssuedToken === 'function') {
+      registerIssuedToken(newToken);
+    }
+    res.cookie(
+      A11_SESSION_COOKIE,
+      newToken,
+      resolveCookieOptions(req, normalizePublicAppUrl, Number(process.env.A11_SESSION_COOKIE_MAX_AGE_MS || 7 * 24 * 60 * 60 * 1000))
+    );
+    const decodedNew = (typeof jwt.decode === 'function' ? jwt.decode(newToken) : null) || {};
+    return res.json({
+      ok: true,
+      expiresIn: jwtExpiry,
+      session: {
+        id: decodedNew.sid || null,
+        version: decodedNew.sv ?? decodedNew.sessionGeneration ?? 0,
+        surface: decodedNew.surface || undefined,
+        expiresAt: decodedNew.exp ? new Date(decodedNew.exp * 1000).toISOString() : null,
+      },
+    });
   });
 
   router.get('/api/auth/connectors', async (req, res) => {

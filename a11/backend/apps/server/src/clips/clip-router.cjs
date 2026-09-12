@@ -19,6 +19,7 @@ const {
   listPublicClips,
   recordProviderPromptId,
 } = require('./clip-jobs.cjs');
+const { buildClipErrorInfo } = require('./clip-error-info.cjs');
 
 const CLIP_WORKER_ID = createWorkerId();
 
@@ -111,6 +112,7 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl } = {}) {
       providerSegments: Array.isArray(job.providerSegments) ? job.providerSegments : [],
       title: job.title,
       error: job.error,
+      errorInfo: job.errorInfo || null,
       outputUrl: job.outputUrl,
       outputFilename: job.outputFilename,
       partial: Boolean(job.partial),
@@ -210,9 +212,12 @@ async function runClipGeneration(jobId, config, {
     return { claimed: true, result };
   } catch (error) {
     const safeError = sanitizeJobDiagnostic(error.message) || 'clip_generation_failed';
-    heartbeatJob(jobId, workerId, { status: 'error', stage: 'error', error: safeError });
+    // Champ structuré ADDITIF (rétrocompatible) : le bandeau mobile expose
+    // node_type + message lisible. On conserve `error` (chaîne) inchangé.
+    const errorInfo = buildClipErrorInfo(safeError, { sanitize: (value) => sanitizeJobDiagnostic(value) });
+    heartbeatJob(jobId, workerId, { status: 'error', stage: 'error', error: safeError, errorInfo });
     throw new Error(safeError);
   }
 }
 
-module.exports = { CLIP_WORKER_ID, createClipRouter, normaliserCasting, normaliserDistribution, runClipGeneration, sanitizeJobDiagnostic };
+module.exports = { CLIP_WORKER_ID, buildClipErrorInfo, createClipRouter, normaliserCasting, normaliserDistribution, runClipGeneration, sanitizeJobDiagnostic };
