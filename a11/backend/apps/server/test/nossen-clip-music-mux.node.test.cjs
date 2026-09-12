@@ -48,11 +48,13 @@ test('un plan refuse pour son audio est rejoue une fois avec une ambiance neutre
   }
   if (!fs.existsSync(song)) execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=2', song]);
   const prompts = [];
+  const optionsRecues = [];
   const result = await generateClip({ songUrl: song, title: 'Refus audio' }, {
     materializeMedia: async (source, destination) => fs.copyFileSync(source, destination),
     loadDirectorImpl: () => ({ directClip: async () => ({ scenes: [{ visual: 'Blue scene' }] }) }),
-    generateVideoImpl: async (prompt) => {
+    generateVideoImpl: async (prompt, _index, _attente, _identite, options = {}) => {
       prompts.push(prompt);
+      optionsRecues.push(options);
       if (prompts.length === 1) throw new Error('clip_video_generation_failed: Task failed: {"error": {"code": "OutputAudioSensitiveContentDetected"}}');
       return scene;
     },
@@ -60,6 +62,8 @@ test('un plan refuse pour son audio est rejoue une fois avec une ambiance neutre
     sleepImpl: async () => {},
   });
   assert.equal(prompts.length, 2, 'un seul second essai');
+  assert.ok(!optionsRecues[0].sansAudio, 'le premier essai garde le son du modele');
+  assert.equal(optionsRecues[1].sansAudio, true, 'le second essai demande une video silencieuse');
   assert.ok(!prompts[0].includes('ambient room tone'), 'le premier essai garde le prompt d origine');
   assert.ok(prompts[1].includes('ambient room tone'), 'le second essai decrit une ambiance neutre');
   assert.ok(fs.existsSync(result.path), 'le clip est livre');

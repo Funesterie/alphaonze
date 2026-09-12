@@ -67,3 +67,30 @@ test('un refus sur le SON de la scene est reconnu a part, et reste un refus de p
   assert.equal(estRefusAudio('InputTextSensitiveContentDetected: PolicyViolation'), false, 'un refus sur l image ou le texte ne se rejoue pas');
   assert.equal(estRefusAudio(''), false);
 });
+
+test('la formulation Comfy du refus audio (Full Clip du 12/09) est reconnue et ne coupe plus le clip', () => {
+  const { estRefusAudio } = require('../src/clips/clip-generator-v2.cjs');
+  // Message reel : ce refus n etait pas reconnu, le Full Clip s est arrete a 14/26.
+  const refus = 'clip_video_generation_failed: The provider rejected the audio track this model generated for the video (possible copyright match). The video itself was fine. Turn off generate_audio to get a silent video, or adjust the prompt and try again.';
+  assert.equal(estRefusDePolitique(refus), true, 'un refus de politique : on passe au plan suivant');
+  assert.equal(estRefusAudio(refus), true, 'un refus audio : second essai sans son');
+});
+
+test('generate_audio=false n est envoye qu au second essai, jamais au premier', async () => {
+  const { generateOneVideo } = require('../src/clips/clip-generator-v2.cjs');
+  const envois = [];
+  const pont = async (_url, corps) => { envois.push(corps.args); throw new Error('arret du test apres la soumission'); };
+  await assert.rejects(generateOneVideo('plan', 0, 1000, null, { postJsonImpl: pont, sleepImpl: async () => {} }));
+  await assert.rejects(generateOneVideo('plan', 0, 1000, null, { postJsonImpl: pont, sleepImpl: async () => {}, sansAudio: true }));
+  assert.equal(envois[0].params.generate_audio, undefined, 'premier essai inchange');
+  assert.equal(envois[1].params.generate_audio, false, 'second essai silencieux');
+  assert.equal(envois[1].params.model, 'Seedance 2.0 Fast', 'le palier reste le meme');
+});
+
+test('le rendu par defaut est un film en prises de vue reelles, l anime reste un choix explicite', () => {
+  const { renduVisuel } = require('../src/clips/clip-generator-v2.cjs');
+  assert.match(renduVisuel({}), /Live-action/);
+  assert.doesNotMatch(renduVisuel({}), /anime/i);
+  assert.match(renduVisuel({ NOSSEN_CLIP_RENDER: 'anime' }), /anime/i);
+  assert.match(renduVisuel({ NOSSEN_CLIP_RENDER: 'nimporte' }), /Live-action/, 'valeur inconnue : film');
+});

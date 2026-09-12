@@ -412,19 +412,34 @@ function extractComfyErrorDetail(response) {
 // refuse, avec la meme identite et le meme style. S'arreter au premier refus
 // condamne donc un clip de 26 plans a n'en rendre qu'un seul.
 function estRefusDePolitique(message) {
-  return /PolicyViolation|SensitiveContent|copyright restriction/i.test(String(message || ''));
+  return /PolicyViolation|SensitiveContent|copyright restriction|possible copyright match|rejected the audio track/i.test(String(message || ''));
 }
 
 // Le 12/09/2026 (clip normal depuis le telephone), Seedance a refuse un plan pour
 // son AUDIO : "OutputAudioSensitiveContentDetected". Or la piste son des scenes
 // est jetee au montage, la chanson la remplace. Ce refus ne dit donc rien de
 // l'image : le plan merite un second essai, avec une ambiance sonore neutre
-// decrite en positif. Le catalogue Comfy ne documente aucun moyen de couper
-// l'audio de Seedance, d'ou la consigne plutot qu'un parametre invente.
+// decrite en positif. Le meme jour, sur un Full Clip, Comfy a formule le refus
+// autrement ("rejected the audio track ... Turn off generate_audio to get a
+// silent video") : c'est le fournisseur lui-meme qui designe generate_audio, que
+// le catalogue ne documente pas pour Seedance. Il n'est donc envoye qu'au second
+// essai d'un plan deja refuse, jamais au premier.
 function estRefusAudio(message) {
-  return /OutputAudioSensitiveContent|output audio may contain sensitive/i.test(String(message || ''));
+  return /OutputAudioSensitiveContent|output audio may contain sensitive|rejected the audio track/i.test(String(message || ''));
 }
 const CONSIGNE_AUDIO_NEUTRE = ' Sound: soft ambient room tone and distant wind only.';
+
+// Rendu de l'image. C'etait "Cinematic anime quality" en dur ; le 12/09/2026
+// Djeff a vu son Full Clip sortir en manga et le veut en film. Le film est donc le
+// defaut, l'anime reste possible par NOSSEN_CLIP_RENDER=anime.
+const RENDUS_VISUELS = {
+  film: 'Live-action cinematic film, photorealistic, shot on 35mm with natural film grain and real skin texture, volumetric lighting, smooth camera movement.',
+  anime: 'Cinematic anime quality, volumetric lighting, smooth camera movement.',
+};
+function renduVisuel(env = process.env) {
+  const choix = String(env?.NOSSEN_CLIP_RENDER || '').trim().toLowerCase();
+  return RENDUS_VISUELS[choix] || RENDUS_VISUELS.film;
+}
 
 // Garde-fou de cout: si le filtre refuse tout, on ne paie pas 26 refus d'affilee.
 const PLAFOND_REFUS_POLITIQUE = Math.max(1, Number(process.env.NOSSEN_CLIP_MAX_POLICY_REFUSALS) || 4);
@@ -449,8 +464,9 @@ async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = nu
   onProgress,
   pollIntervalMs = parseBoundedInteger(process.env.NOSSEN_CLIP_POLL_INTERVAL_MS, 11_000, 250, 60_000),
   models = null,
+  sansAudio = false,
 } = {}) {
-  console.log(`[clip] Vidéo ${index}: ${prompt.slice(0, 60)}...`);
+  console.log(`[clip] Vidéo ${index}: ${prompt.slice(0, 60)}...${sansAudio ? ' (generate_audio=false)' : ''}`);
   emitProgress(onProgress, { stage: 'video:submitting', status: 'generating', segmentIndex: index });
 
   // Image de référence : si un personnage canonique est en jeu, on bascule sur
@@ -490,6 +506,7 @@ async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = nu
         params: { model: 'Seedance 2.0 Fast' },
       };
   if (identity && identity.negativePrompt) args.negative_prompt = identity.negativePrompt;
+  if (sansAudio) args.params.generate_audio = false;
   if (useReference) console.log(`[clip] Vidéo ${index}: référence ${referenceImage.slice(0, 60)}`);
 
   // Une soumission vidéo peut être facturée même si la réponse réseau se perd.
@@ -695,7 +712,7 @@ async function generateClip(config = {}, {
   let refusPolitique = 0;
   for (let i = 0; i < numSegments; i++) {
     const section = sections[i % sections.length];
-    const prompt = `${section.visual}.${lieuBrief} Cinematic anime quality, volumetric lighting, smooth camera movement. ${style}${identityBrief}`.trim();
+    const prompt = `${section.visual}.${lieuBrief} ${renduVisuel(process.env)} ${style}${identityBrief}`.trim();
 
     try {
       let videoUrl;
@@ -707,7 +724,7 @@ async function generateClip(config = {}, {
           // Le premier refus compte dans le plafond : le second essai est payant lui aussi.
           refusPolitique += 1;
           console.warn(`[clip] Vidéo ${i}: son de la scène refusé par le filtre (${refusPolitique}/${PLAFOND_REFUS_POLITIQUE}), nouvel essai avec une ambiance neutre.`);
-          videoUrl = await generateVideoImpl(`${prompt}${CONSIGNE_AUDIO_NEUTRE}`, i, 600000, identity, { onProgress, models: videoModels });
+          videoUrl = await generateVideoImpl(`${prompt}${CONSIGNE_AUDIO_NEUTRE}`, i, 600000, identity, { onProgress, models: videoModels, sansAudio: true });
         } else if (estRefusAutorisation(motif)) {
           console.warn(`[clip] Vidéo ${i}: autorisation Comfy refusée, nouvel essai dans ${Math.round(PAUSE_REPRISE_AUTORISATION_MS / 1000)} s.`);
           await sleepImpl(PAUSE_REPRISE_AUTORISATION_MS);
@@ -865,6 +882,7 @@ module.exports = {
   PLAFOND_REFUS_POLITIQUE,
   PAUSE_REPRISE_AUTORISATION_MS,
   estRefusAudio,
+  renduVisuel,
   estRefusAutorisation,
   estRefusDePolitique,
   extractComfyErrorDetail,

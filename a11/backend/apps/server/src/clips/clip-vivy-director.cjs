@@ -542,7 +542,9 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature,
     "4. Décris chaque plan comme une consigne de tournage, pas comme un nouveau décor. " +
     "Rappelle brièvement le lieu dans chaque plan pour la continuité.\n\n" +
     "Chaque plan = 1 phrase anglaise.\n" +
-    "Style anime cinématique.\n\n" +
+    (String(process.env.NOSSEN_CLIP_RENDER || "").trim().toLowerCase() === "anime"
+      ? "Style anime cinématique.\n\n"
+      : "Style : film en prises de vue réelles, photoréaliste, acteurs réels, grain 35 mm.\n\n") +
     "JSON strict :\n" +
     "{\"lieu\":\"description courte du décor unique, en anglais\"," +
     "\"plans\":[{\"name\":\"Nom du plan\",\"visual\":\"English shot description\"}]}";

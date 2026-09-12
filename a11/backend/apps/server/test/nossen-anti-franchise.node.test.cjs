@@ -12,7 +12,9 @@ const { CONSIGNE_ANTI_FRANCHISE } = require('../src/clips/clip-vivy-director.cjs
 // fight club" a partir du titre. Reecrire le style ne corrigeait rien.
 test('la consigne interdit les quatre sources de rejet constatees', () => {
   const c = CONSIGNE_ANTI_FRANCHISE.toLowerCase();
-  assert.match(c, /mots du titre/, 'le titre est ce qui a contamine les 26 plans');
+  // Formulation revue le 12/09 (a05698f55) : le titre garde son sujet mais ne
+  // devient jamais un nom de franchise ou d'enseigne.
+  assert.match(c, /titre comme nom de franchise/, 'le titre est ce qui a contamine les 26 plans');
   assert.match(c, /film|jeu|serie|marque/, 'les franchises');
   assert.match(c, /logo|texte lisible/, 'le texte a l ecran');
   assert.match(c, /personnage connu/, 'les costumes identifiables');
