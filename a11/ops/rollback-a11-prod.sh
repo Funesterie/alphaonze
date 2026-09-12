@@ -5,6 +5,12 @@
 #   tr -d '\r' < a11/ops/rollback-a11-prod.sh | ssh -o IdentitiesOnly=yes -o BatchMode=yes \
 #     -i ~/.ssh/codex-a11-hetzner-20260627_ed25519 deploy@37.27.63.109 'bash -s -- [couleur] [--apply]'
 #
+# Usage (PowerShell -- `<` n'y existe pas, « ParserError » le 12/09/2026) :
+#   (Get-Content -Raw a11/ops/rollback-a11-prod.sh) -replace "`r", "" | ssh -o IdentitiesOnly=yes -o BatchMode=yes `
+#     -i $HOME/.ssh/codex-a11-hetzner-20260627_ed25519 deploy@37.27.63.109 'bash -s -- [couleur] [--apply]'
+#
+# Jamais pendant un deploiement en cours : il reecrit le Caddyfile a la fin.
+#
 # Sans --apply : simulation, affiche le diff du Caddyfile et ne touche a rien.
 # Sans couleur : prend le repli immediat, c'est-a-dire la deuxieme couleur du Caddyfile.
 #
