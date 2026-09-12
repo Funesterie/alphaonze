@@ -2,7 +2,13 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
+// Un test de ce fichier charge clip-generator-v2, qui cree son dossier de clips au
+// chargement ; /app n'existe pas sur le runner GitHub (EACCES, rouge en CI).
+process.env.NOSSEN_CLIPS_DIR = process.env.NOSSEN_CLIPS_DIR || fs.mkdtempSync(path.join(os.tmpdir(), 'clip-casting-'));
 const { normaliserCasting, normaliserDistribution } = require('../src/clips/clip-router.cjs');
 const { resolveClipIdentity } = require('../src/clips/clip-vivy-director.cjs');
 
