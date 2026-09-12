@@ -494,10 +494,18 @@ function buildArtistDirection(lieu, direction) {
 // tant que la consigne ne l'interdit pas. Djeff Engine reecrit les plans apres
 // Sol, il recoit donc la meme contrainte, sinon il reintroduit ce que Sol evite.
 const CONSIGNE_ANTI_FRANCHISE = `INTERDIT, sous peine de rejet par le fournisseur :
-- Ne reprends JAMAIS les mots du titre pour nommer un lieu ou un groupe. Le titre est un indice d'ambiance, pas un decor.
+- N'utilise pas un titre comme nom de franchise ou d'enseigne. Conserve son sujet et les situations concretes des paroles.
 - Aucun nom de film, de jeu, de serie, de marque, d'equipe ou de personnage existant, meme detourne ou traduit.
 - Aucun logo, aucune enseigne, aucun texte lisible a l'image.
 - Aucun costume ni maquillage identifiable a un personnage connu. Decris des vetements et des visages ordinaires.
+
+`;
+
+const CONSIGNE_FIDELITE_CHANSON = `FIDELITE A CE MORCEAU :
+- Les paroles, leurs actions et leur interprete determinent le sujet du clip. La couleur et l'energie ne remplacent pas ce sujet.
+- Montre des objets et des gestes precis issus de la chanson. Ne transforme pas une chanson de danse ou d'ecrans en affrontement.
+- Aucun decor de prison, salle de beton, combat ou menace par defaut : ces choix exigent une justification explicite dans les paroles ou la direction artistique.
+- L'energie suit le morceau, avec ses respirations. Mouvement ne signifie pas violence et intensite ne signifie pas agressivite.
 
 `;
 
@@ -515,6 +523,7 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature,
   // modele video n'a aucune continuite a tenir.
   var prompt = "Tu es chef opérateur. Tu découpes UN clip musical en plans.\n\n" +
     CONSIGNE_ANTI_FRANCHISE +
+    CONSIGNE_FIDELITE_CHANSON +
     "CHANSON : \"" + (title || "sans titre") + "\"\n" +
     (lyrics ? "PAROLES :\n" + lyrics.slice(0, 1500) + "\n\n" : "Base-toi sur le titre.\n\n") +
     etat +
@@ -525,7 +534,7 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature,
     "RÈGLE DE TOURNAGE, la plus importante :\n" +
     (lieu
       ? "1. Le lieu est déjà fixé ci-dessus. Reprends-le tel quel dans le champ lieu.\n"
-      : "1. Choisis UN SEUL lieu, cohérent avec la chanson. Un club, un studio, un toit, une salle — un seul.\n") +
+      : "1. Choisis un lieu tire des situations concretes des paroles, avec des objets qui rendent le sujet reconnaissable. Ne choisis pas une salle de performance generique.\n") +
     "2. TOUS les plans se tournent dans ce lieu unique. On ne change jamais d'endroit.\n" +
     "3. Ce qui varie, c'est le PLAN : échelle (large, moyen, gros plan, très gros plan), " +
     "angle (face, profil, contre-plongée, plongée, dos), mouvement de caméra (fixe, travelling, " +
@@ -707,6 +716,11 @@ function resolveClipIdentity(config) {
   var casting = String((config && config.casting) || "").trim().toLowerCase();
   var artists = Array.isArray(config && config.castArtists) ? config.castArtists : [];
   var auto = !casting || casting === "auto";
+  if (auto && !artists.length) {
+    var labels = String(config.lyrics || '').matchAll(/^\s*\[([^\]\r\n]+)\]\s*$/gm);
+    var aliases = { kaen44: 'kaen44', k44: 'kaen44', djeff: 'djeff', vivy: 'vivy', a11: 'a11', marvin: 'marvin' };
+    artists = [...new Set(Array.from(labels, function(m) { return aliases[m[1].trim().toLowerCase()]; }).filter(Boolean))];
+  }
   try {
     var mod = require("../vivy/visual-identities.cjs");
     var pack = construirePackIdentite(mod, config, artists);
@@ -900,11 +914,11 @@ async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood) {
       + (lyrics ? "Paroles:\n" + lyrics.slice(0, 600) + "\n\n" : "")
       + "Plans actuels:\n" + scenes.map(function(s, i) { return (i + 1) + ". " + s.visual; }).join("\n")
       + "\n\n" + CONSIGNE_ANTI_FRANCHISE
+      + CONSIGNE_FIDELITE_CHANSON
       + "RÈGLES DJEFF :\n"
-      + "- Si un plan est générique (couloir, lumière, silhouette sans action), REMPLACE-le par quelque chose de violent, concret, qui bouge.\n"
-      + "- Pas de métaphore floue. Des verbes d'action, des impacts, du mouvement.\n"
-      + "- L'énergie doit MONTER, pas stagner. Chaque plan plus intense que le précédent.\n"
-      + "- Si le titre parle de combat/rap/game, les plans doivent taper.\n"
+      + "- Si un plan est generique, remplace-le par une action precise ancree dans les paroles et adapte le jeu a leur emotion.\n"
+      + "- Preserve le sujet, le casting et le decor choisi pour CE morceau. Le rap ou le jeu video n'imposent aucun combat.\n"
+      + "- Respecte les variations d'energie et les moments calmes de la chanson.\n"
       + "- Renvoie UNIQUEMENT le JSON array des plans corrigés : [{\"name\":\"...\",\"visual\":\"...\"}]\n"
       + "- Si tout est bon, renvoie le même array sans changement.";
 

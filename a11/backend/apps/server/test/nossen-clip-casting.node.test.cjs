@@ -33,6 +33,11 @@ test('auto, le vide et un random-lead non resolu laissent choisir le Director', 
 });
 
 const ids = (config) => resolveClipIdentity(config).identityIds.slice().sort();
+test('le chanteur balise dans les paroles prime sur le casting auto de Djeff', () => {
+  const lyrics = '[Intro]\n[Kaen44]\nHello le Tik Tok, mon reflet dans le verre\n[Chorus]\n[Kaen44]\nJe danse';
+  assert.deepEqual(ids({ title: 'Hello le Tik Tok', lyrics, casting: 'auto' }), ['k44']);
+  assert.deepEqual(ids({ title: 'Hello le Tik Tok', lyrics, casting: 'djeff', castArtists: ['djeff'] }), ['djeff']);
+});
 const SANS_NOM = { title: 'FIGHTERZ CLUB', lyrics: 'des paroles qui ne nomment personne', style: 'nuit, neons' };
 
 function avecDefaut(valeur, fn) {

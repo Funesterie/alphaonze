@@ -617,7 +617,8 @@ async function generateClip(config = {}, {
   try {
     const director = loadDirectorImpl();
     if (!director || typeof director.directClip !== 'function') throw new Error('directClip indisponible');
-    directed = await director.directClip({ title, songUrl, audioPath, style, sections, casting, castArtists, onProgress: directorProgress });
+    directed = await director.directClip({ title, songUrl, audioPath, style, sections, casting, castArtists,
+      lyrics: config.lyrics, lieu: config.lieu, direction: config.direction, onProgress: directorProgress });
     sections = requireDirectedScenes(directed);
   } catch (error) {
     throw new Error(`clip_director_failed: ${error.message}`);
@@ -628,6 +629,10 @@ async function generateClip(config = {}, {
     lieu = directed.lieu;
     console.log(`[clip] Lieu unique: ${lieu.slice(0, 70)}`);
   }
+  // Conserver le scenario propre a ce morceau pour diagnostiquer une derive avant/apres generation.
+  fs.writeFileSync(path.join(clipDir, 'storyboard.json'), JSON.stringify({
+    title, songUrl, lieu, identityIds: directed?.identity?.identityIds || [], scenes: directed?.scenes,
+  }, null, 2));
   emitProgress(onProgress, { stage: 'director:ready', status: 'directing', progress: 18 });
 
   // 2. Mesurer la durée
