@@ -762,6 +762,9 @@ async function generateClip(config = {}, {
     '-safe', '0',
     '-i', concatFile,
     '-i', audioPath,
+    // Le son des scenes ne doit jamais remplacer la chanson par selection automatique.
+    '-map', '0:v:0',
+    '-map', '1:a:0',
     '-c:v', 'libx264',
     '-preset', 'fast',
     '-crf', '23',
