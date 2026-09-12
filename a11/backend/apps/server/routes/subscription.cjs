@@ -564,6 +564,19 @@ function createSubscriptionRouter({ verifyJWT, db }) {
       switch (event.type) {
         case 'checkout.session.completed': {
           const session = event.data.object;
+          // Un pack de crédits clips n'est pas un abonnement : sans cette branche,
+          // l'achat activerait un abonnement premium au lieu de créditer le compte.
+          if (session.metadata?.kind === 'clip_credits') {
+            const clipCredits = require('../src/clips/clip-credits.cjs');
+            const credit = clipCredits.creditDepuisSessionStripe(session);
+            if (!credit) {
+              console.warn(`[Stripe] Pack de crédits refusé (session ${session.id}) : pack, paiement ou montant incohérent`);
+              break;
+            }
+            const sortie = await clipCredits.crediter(clipCredits.creerMagasinPostgres(db), credit);
+            console.log(`[Stripe] Crédits clips ${sortie.insere ? 'ajoutés' : 'déjà comptés'} : +${credit.credits} pour ${credit.userId}`);
+            break;
+          }
           const userId = session.metadata?.userId || session.client_reference_id;
           const customerId = session.customer || null;
           const subscriptionId = typeof session.subscription === 'string'

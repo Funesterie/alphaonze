@@ -78,3 +78,14 @@ test('le defaut se desactive sans toucher au code', () => {
     assert.deepEqual(ids({ ...SANS_NOM, casting: 'auto', castArtists: [] }), []);
   });
 });
+
+test('le rendu choisi sur la page (film ou manga) voyage jusqu au prompt de chaque plan', () => {
+  const { normaliserRendu } = require('../src/clips/clip-router.cjs');
+  const { renduVisuel } = require('../src/clips/clip-generator-v2.cjs');
+  assert.equal(normaliserRendu('anime'), 'anime');
+  assert.equal(normaliserRendu('Manga'), 'anime', 'le mot de Djeff');
+  assert.equal(normaliserRendu(''), 'film', 'defaut : film');
+  assert.equal(normaliserRendu('<script>'), 'film', 'rien du navigateur n est repris tel quel');
+  assert.match(renduVisuel({}, 'anime'), /anime/i, 'le choix du clip prime');
+  assert.match(renduVisuel({ NOSSEN_CLIP_RENDER: 'anime' }, 'film'), /Live-action/, 'meme contre la variable de defaut');
+});

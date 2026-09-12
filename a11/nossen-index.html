@@ -35,6 +35,10 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 .msg{font-size:.65rem;color:var(--muted);min-height:1em;margin-top:.3rem}
 .produce-row{display:flex;gap:.4rem;margin-top:.5rem;flex-wrap:wrap;align-items:center}
 .produce-info{font-size:.55rem;color:var(--muted);margin-top:.3rem;line-height:1.4}
+.credits{font-size:.65rem;color:var(--cyan);margin-top:.4rem;display:flex;gap:.4rem;align-items:center;flex-wrap:wrap}
+.credits button,.packs button{font-size:.62rem;padding:.25rem .5rem;border-radius:5px;border:1px solid rgba(0,245,212,.35);background:rgba(0,245,212,.08);color:var(--cyan);cursor:pointer}
+.packs{display:flex;gap:.3rem;flex-wrap:wrap;margin-top:.3rem}
+.packs[hidden]{display:none}
 .songs{max-height:320px;overflow-y:auto}
 .s{display:flex;align-items:center;padding:.4rem 0;border-bottom:1px solid rgba(255,255,255,.03);gap:.4rem}
 .s .play{width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;border:none;font-size:.65rem;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:background .15s}
@@ -106,12 +110,19 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     <option value="trio">🎤💜⚡ Trio (Djeff + Vivy + Grok)</option>
     <option value="full">🌟 Full cast (toutes les voix)</option>
   </select>
+
+  <select id="rendu">
+    <option value="film">🎬 Clip film (prises de vue réelles)</option>
+    <option value="anime">🎌 Clip manga (anime)</option>
+  </select>
   <div class="produce-row">
     <button class="btn btn-clip" id="go-clip">Clip</button>
     <button class="btn btn-full" id="go-full">Full Clip ✨</button>
   </div>
+  <div class="credits" id="credits"></div>
+  <div class="packs" id="packs" hidden></div>
   <div class="produce-info">
-    Clip = aperçu vidéo court (gratuit) · Full Clip = clip vidéo complet sur toute la chanson (réservé admin)<br>
+    Clip = aperçu vidéo court · Full Clip = clip vidéo complet sur toute la chanson · payés en crédits (seuls les plans livrés sont facturés)<br>
     Mode libre : l'IA analyse les paroles et choisit le thème visuel.
   </div>
   <div class="bar" id="bar"><div id="fill" style="width:0%"></div></div>
@@ -448,16 +459,72 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     });
   }
 
+  // Crédits clips (12/09/2026) : les admins sont gratuits, les autres paient en
+  // crédits achetés par packs Stripe. Le serveur fait foi, la page ne fait qu'afficher.
+  var creditsState = null;
+  function renderCredits() {
+    var box = document.getElementById("credits");
+    var packsBox = document.getElementById("packs");
+    if (!box) return;
+    box.textContent = "";
+    if (!creditsState) return;
+    var line = document.createElement("span");
+    if (creditsState.admin) {
+      line.textContent = "👑 Admin : clips gratuits";
+      box.appendChild(line);
+    } else {
+      var t = creditsState.tarif || {};
+      line.textContent = "💳 " + (creditsState.solde == null ? "?" : creditsState.solde) + " crédits · Clip ≈ " + t.clip
+        + " · Full ≈ " + t.fullParMinute + "/min (1 crédit = " + String(t.eurParCredit).replace(".", ",") + " €)";
+      box.appendChild(line);
+      if (creditsState.achatPossible) {
+        var buy = document.createElement("button");
+        buy.type = "button";
+        buy.textContent = "Recharger";
+        buy.addEventListener("click", function() { if (packsBox) packsBox.hidden = !packsBox.hidden; });
+        box.appendChild(buy);
+      }
+    }
+    if (packsBox) {
+      packsBox.textContent = "";
+      (creditsState.packs || []).forEach(function(p) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.textContent = p.label + " — " + (p.eurCents / 100).toFixed(2).replace(".", ",") + " €";
+        b.addEventListener("click", function() { buyPack(p.id, b); });
+        packsBox.appendChild(b);
+      });
+    }
+  }
+  function refreshCredits() {
+    if (!userEmail) { creditsState = null; renderCredits(); return; }
+    api("/api/mcp-bridge/clip/credits").then(function(d) {
+      creditsState = d && d.ok ? d : null;
+      renderCredits();
+    }).catch(function() { /* solde inconnu : le serveur tranchera au lancement */ });
+  }
+  function buyPack(packId, button) {
+    if (button) button.disabled = true;
+    api("/api/mcp-bridge/clip/credits/checkout", { pack: packId, returnUrl: location.origin + location.pathname }).then(function(d) {
+      if (d && d.ok && d.url) { location.href = d.url; return; }
+      throw new Error("paiement indisponible");
+    }).catch(function() {
+      document.getElementById("msg").textContent = "❌ Paiement indisponible pour le moment.";
+      if (button) button.disabled = false;
+    });
+  }
+
   function updateFullClipButton() {
     var btn = document.getElementById("go-full");
-    if (isAdmin) {
+    refreshCredits();
+    if (isAdmin || userEmail) {
       btn.classList.remove("locked");
       btn.disabled = false;
       btn.title = "Full Clip — vidéo générée sur toute la durée de la chanson";
     } else {
       btn.classList.add("locked");
       btn.disabled = true;
-      btn.title = "Bientôt disponible (5 \u20AC) — réservé admin pour l'instant";
+      btn.title = "Connecte-toi pour lancer un Full Clip";
     }
   }
 
@@ -495,9 +562,11 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     });
   }
 
-  function buildStylePrompt(vibe, title) {
+  function buildStylePrompt(vibe, title, rendu) {
     if (vibe === "auto") {
-      return "Live-action cinematic music video inspired by the song, photorealistic, real actors. Analyze the mood of: " + (title || "music") + ". Choose colors, lighting and camera movement that match the emotion. Rich detail, volumetric lighting.";
+      return (rendu === "anime"
+        ? "Cinematic anime style inspired by the song. Analyze the mood of: "
+        : "Live-action cinematic music video inspired by the song, photorealistic, real actors. Analyze the mood of: ") + (title || "music") + ". Choose colors, lighting and camera movement that match the emotion. Rich detail, volumetric lighting.";
     }
     if (vibe === "live") return "Professional anime live concert, singer with long purple-cyan hair white violet outfit dramatic lighting";
     if (vibe === "cyberpunk") return "Cinematic anime cyberpunk style neon city volumetric lighting rich detail";
@@ -597,7 +666,8 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     document.getElementById("fill").style.width = "5%";
 
     var vibe = document.getElementById("vibe").value;
-    var stylePrompt = buildStylePrompt(vibe, source.title);
+    var rendu = document.getElementById("rendu") ? document.getElementById("rendu").value : "film";
+    var stylePrompt = buildStylePrompt(vibe, source.title, rendu);
     var sections;
     if (vibe === "auto") {
       // Mode libre : pas de sections, le Vivy Director côté serveur décide
@@ -626,6 +696,8 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
         sections: sections,
         fullDuration: isFullClip,
         casting: effectiveCasting,
+        render: rendu,
+        durationSeconds: Number(source.duration || source.durationSeconds || 0) || undefined,
         preserveSelectedVoice: true,
         voiceCatalogName: effectiveCasting === "auto" ? "" : (effectiveCasting === "full" ? "djeff" : effectiveCasting),
         multiVoice: effectiveCasting === "duo-djeff-vivy" ? ["djeff", "vivy"]
@@ -639,13 +711,21 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
         if (d.ok) {
           document.getElementById("msg").textContent = label + " en cours…";
           pollJob(d.jobId, mode);
+          refreshCredits();
         } else {
-          document.getElementById("msg").textContent = "\u274C " + (d.error || "Erreur inconnue");
+          document.getElementById("msg").textContent = "\u274C " + (d.message || d.error || "Erreur inconnue");
           goClip.disabled = false;
           updateFullClipButton();
         }
       }).catch(function(e) {
-        document.getElementById("msg").textContent = "\u274C " + e.message;
+        // requestJson rejette tout statut non 2xx : le 402 des cr\u00E9dits arrive ici.
+        if (e && e.code === "CREDITS_INSUFFISANTS") {
+          document.getElementById("msg").textContent = "\uD83D\uDCB3 " + e.message + " Recharge ci-dessous.";
+          var packsBox = document.getElementById("packs");
+          if (packsBox) packsBox.hidden = false;
+        } else {
+          document.getElementById("msg").textContent = "\u274C " + e.message;
+        }
         goClip.disabled = false;
         updateFullClipButton();
       });

@@ -114,7 +114,7 @@ function createWorkerId() {
   return `${os.hostname()}:${process.pid}:${crypto.randomUUID()}`;
 }
 
-function createJob({ songUrl, title, style, fullDuration, casting, userId, email }) {
+function createJob({ songUrl, title, style, fullDuration, casting, render, creditsReserves = 0, creditRef = null, userId, email }) {
   return mutateJobs((jobs) => {
     const now = new Date().toISOString();
     const id = `clip-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
@@ -130,6 +130,11 @@ function createJob({ songUrl, title, style, fullDuration, casting, userId, email
       // Distribution demandee par la page, gardee pour pouvoir dire apres coup
       // quel casting a produit quel clip.
       casting: String(casting || '').slice(0, 40),
+      render: render === 'anime' ? 'anime' : 'film',
+      // Credits reserves au lancement (0 pour un admin) et reference du registre,
+      // pour retrouver un remboursement manque si le processus meurt en route.
+      creditsReserves: Math.max(0, Math.floor(Number(creditsReserves) || 0)),
+      creditRef: creditRef ? String(creditRef).slice(0, 80) : null,
       userId: userId || null,
       email: email || null,
       createdAt: now,

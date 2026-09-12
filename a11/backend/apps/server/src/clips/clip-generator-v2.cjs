@@ -436,8 +436,9 @@ const RENDUS_VISUELS = {
   film: 'Live-action cinematic film, photorealistic, shot on 35mm with natural film grain and real skin texture, volumetric lighting, smooth camera movement.',
   anime: 'Cinematic anime quality, volumetric lighting, smooth camera movement.',
 };
-function renduVisuel(env = process.env) {
-  const choix = String(env?.NOSSEN_CLIP_RENDER || '').trim().toLowerCase();
+// Le choix fait sur la page pour CE clip prime ; la variable ne regle que le defaut.
+function renduVisuel(env = process.env, choixDuClip = '') {
+  const choix = String(choixDuClip || env?.NOSSEN_CLIP_RENDER || '').trim().toLowerCase();
   return RENDUS_VISUELS[choix] || RENDUS_VISUELS.film;
 }
 
@@ -596,7 +597,7 @@ async function generateClip(config = {}, {
   nowImpl = Date.now,
   randomBytesImpl = crypto.randomBytes,
 } = {}) {
-  let { songUrl, title, sections, style = '', fullDuration, onProgress, casting = '', castArtists = [] } = config;
+  let { songUrl, title, sections, style = '', fullDuration, onProgress, casting = '', castArtists = [], render = '' } = config;
   const clipId = createClipId(nowImpl, randomBytesImpl);
   const clipDir = path.join(CLIPS_DIR, clipId);
   fs.mkdirSync(clipDir, { recursive: true });
@@ -634,7 +635,7 @@ async function generateClip(config = {}, {
   try {
     const director = loadDirectorImpl();
     if (!director || typeof director.directClip !== 'function') throw new Error('directClip indisponible');
-    directed = await director.directClip({ title, songUrl, audioPath, style, sections, casting, castArtists,
+    directed = await director.directClip({ title, songUrl, audioPath, style, sections, casting, castArtists, render,
       lyrics: config.lyrics, lieu: config.lieu, direction: config.direction, onProgress: directorProgress });
     sections = requireDirectedScenes(directed);
   } catch (error) {
@@ -712,7 +713,7 @@ async function generateClip(config = {}, {
   let refusPolitique = 0;
   for (let i = 0; i < numSegments; i++) {
     const section = sections[i % sections.length];
-    const prompt = `${section.visual}.${lieuBrief} ${renduVisuel(process.env)} ${style}${identityBrief}`.trim();
+    const prompt = `${section.visual}.${lieuBrief} ${renduVisuel(process.env, render)} ${style}${identityBrief}`.trim();
 
     try {
       let videoUrl;

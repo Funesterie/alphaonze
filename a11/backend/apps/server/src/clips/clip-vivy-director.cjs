@@ -509,7 +509,7 @@ const CONSIGNE_FIDELITE_CHANSON = `FIDELITE A CE MORCEAU :
 
 `;
 
-async function generateVisualScenes(title, lyrics, style, mood, cast, signature, lieu, direction, arcSteps) {
+async function generateVisualScenes(title, lyrics, style, mood, cast, signature, lieu, direction, arcSteps, render) {
   var etat = signature && signature.color
     ? "ETAT DU PERSONA : " + signature.color.name + " — " + signature.color.function
       + " (complement " + signature.color.complement + "). "
@@ -542,7 +542,7 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature,
     "4. Décris chaque plan comme une consigne de tournage, pas comme un nouveau décor. " +
     "Rappelle brièvement le lieu dans chaque plan pour la continuité.\n\n" +
     "Chaque plan = 1 phrase anglaise.\n" +
-    (String(process.env.NOSSEN_CLIP_RENDER || "").trim().toLowerCase() === "anime"
+    (String(render || process.env.NOSSEN_CLIP_RENDER || "").trim().toLowerCase() === "anime"
       ? "Style anime cinématique.\n\n"
       : "Style : film en prises de vue réelles, photoréaliste, acteurs réels, grain 35 mm.\n\n") +
     "JSON strict :\n" +
@@ -771,7 +771,7 @@ async function directClipScenes(config) {
   var signature = config.signature !== undefined ? config.signature : resolveSonicColor(title, lyrics, style);
   var mood = config.mood !== undefined ? config.mood : await generateMood(title, lyrics, signature);
   var arcSteps = config.arcSteps !== undefined ? config.arcSteps : resolveVivyArc(lyrics, null);
-  var scenes = await generateVisualScenes(title, lyrics, style, mood, config.cast, signature, config.lieu, config.direction, arcSteps);
+  var scenes = await generateVisualScenes(title, lyrics, style, mood, config.cast, signature, config.lieu, config.direction, arcSteps, config.render);
   if (scenes && scenes.length >= 3) return scenes;
 
   console.log("[clip-director] Fallback génériques");

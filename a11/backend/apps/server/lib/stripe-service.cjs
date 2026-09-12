@@ -442,7 +442,59 @@ function getAvailableClipProducts() {
   }));
 }
 
+// Packs de crédits clips NOSSEN (12/09/2026). Le montant vient de clip-credits.cjs,
+// en price_data : aucun identifiant de prix à créer dans le tableau de bord, et le
+// navigateur ne choisit qu'un nom de pack, jamais un montant.
+function isCreditCheckoutEnabled() {
+  return stripe !== null;
+}
+
+function adresseRetourCredits(valeur) {
+  try {
+    const url = new URL(String(valeur || ''));
+    const hote = url.hostname.toLowerCase();
+    const autorise = url.protocol === 'https:' && (hote === 'funesterie.me' || hote.endsWith('.funesterie.me'));
+    if (!autorise) return null;
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+async function createCreditPackSession(userId, userEmail, options = {}) {
+  if (!stripe) throw new Error('Stripe non configuré');
+  const { PACKS } = require('../src/clips/clip-credits.cjs');
+  const pack = PACKS[String(options.pack || '')];
+  if (!pack) throw new Error('Pack de crédits inconnu');
+  if (!userId) throw new Error('Compte requis pour acheter des crédits');
+  const retour = adresseRetourCredits(options.returnUrl) || `${DEFAULT_PUBLIC_BASE_URL}/`;
+  const metadata = { kind: 'clip_credits', userId: String(userId), pack: pack.id, credits: String(pack.credits) };
+  const session = await stripe.checkout.sessions.create({
+    mode: 'payment',
+    line_items: [{
+      quantity: 1,
+      price_data: {
+        currency: 'eur',
+        unit_amount: pack.eurCents,
+        product_data: { name: `NOSSEN — ${pack.label} clip` },
+      },
+    }],
+    success_url: `${retour}?credits=ok`,
+    cancel_url: `${retour}?credits=annule`,
+    client_reference_id: String(userId),
+    ...(userEmail ? { customer_email: userEmail } : {}),
+    metadata,
+    payment_intent_data: { metadata },
+  });
+  return { sessionId: session.id, url: session.url, pack: pack.id };
+}
+
 module.exports = {
+  adresseRetourCredits,
+  isCreditCheckoutEnabled,
+  createCreditPackSession,
   SUBSCRIPTION_PLANS,
   CLIP_PRODUCTS,
   normalizeClipProduct,

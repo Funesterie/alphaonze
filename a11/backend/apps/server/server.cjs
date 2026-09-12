@@ -7198,7 +7198,7 @@ console.log('[Server] Zen Gate mount attempted');
 
 // --- NOSSEN: Pipeline de clips (jobs persistants, statut durable) ---
 const { createClipRouter } = require('./src/clips/clip-router.cjs');
-app.use('/api/mcp-bridge/clip', verifyJWT, createClipRouter({ verifyJWT }));
+app.use('/api/mcp-bridge/clip', verifyJWT, createClipRouter({ verifyJWT, db, isAdminRequest }));
 console.log('[Server] NOSSEN clip pipeline mounted at /api/mcp-bridge/clip/{start,status,list,my-jobs}');
 
 // --- NOSSEN: Upload audio pour les clips ---

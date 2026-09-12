@@ -72,6 +72,8 @@ test('GET /status/:id expose errorInfo {node_type, message} pour un job échoué
   await withServer(
     (app) => {
       const router = createClipRouter({
+        // Lance en admin : ce test porte sur errorInfo, pas sur les credits.
+        isAdminRequest: () => true,
         generateClipImpl: async () => {
           throw new Error('clip_video_generation_failed: API key is invalid or expired');
         },
@@ -98,6 +100,7 @@ test('GET /status/:id retombe sur node_type clip_generation_failed pour une erre
   await withServer(
     (app) => {
       const router = createClipRouter({
+        isAdminRequest: () => true,
         generateClipImpl: async () => {
           throw new Error('Aucune vidéo générée — dernier échec : timeout');
         },
