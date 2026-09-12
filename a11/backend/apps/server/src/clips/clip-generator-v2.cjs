@@ -436,6 +436,29 @@ const RENDUS_VISUELS = {
   film: 'Live-action cinematic film, photorealistic, shot on 35mm with natural film grain and real skin texture, volumetric lighting, smooth camera movement.',
   anime: 'Cinematic anime quality, volumetric lighting, smooth camera movement.',
 };
+// Le style envoyé par la page est une consigne pour le Director, pas pour la
+// caméra. Audit du 12/09/2026 : « Analyze the mood of: <titre>. Choose colors… »
+// partait tel quel dans CHAQUE plan envoyé à Seedance -- des ordres qu'un modèle
+// vidéo ne sait pas exécuter, et surtout le TITRE, qui déclenche le filtre
+// copyright sur tout le clip (FIGHTERZ CLUB, 09/09). Sol reçoit toujours le style
+// complet ; la caméra n'en garde que la description visuelle, sans titre.
+function styleVideo(style, title) {
+  const phrases = String(style || '')
+    .split(/(?<=[.!?])\s+/)
+    .filter((phrase) => !/^(analy[sz]e|choose|pick|describe|match)\b/i.test(phrase.trim()));
+  let s = phrases.join(' ');
+  const t = String(title || '').replace(/…$/, '').trim();
+  if (t.length >= 3) {
+    const bas = t.toLowerCase();
+    let i = s.toLowerCase().indexOf(bas);
+    while (i >= 0) {
+      s = s.slice(0, i) + s.slice(i + t.length);
+      i = s.toLowerCase().indexOf(bas);
+    }
+  }
+  return s.replace(/\s{2,}/g, ' ').trim().slice(0, 300);
+}
+
 // Le choix fait sur la page pour CE clip prime ; la variable ne regle que le defaut.
 function renduVisuel(env = process.env, choixDuClip = '') {
   const choix = String(choixDuClip || env?.NOSSEN_CLIP_RENDER || '').trim().toLowerCase();
@@ -718,7 +741,7 @@ async function generateClip(config = {}, {
   let refusPolitique = 0;
   for (let i = 0; i < numSegments; i++) {
     const section = sections[i % sections.length];
-    const prompt = `${section.visual}.${lieuBrief} ${renduVisuel(process.env, render)} ${style}${identityBrief}`.trim();
+    const prompt = `${section.visual}.${lieuBrief} ${renduVisuel(process.env, render)} ${styleVideo(style, title)}${identityBrief}`.trim();
 
     try {
       let videoUrl;
@@ -889,6 +912,7 @@ module.exports = {
   PAUSE_REPRISE_AUTORISATION_MS,
   estRefusAudio,
   renduVisuel,
+  styleVideo,
   estRefusAutorisation,
   estRefusDePolitique,
   extractComfyErrorDetail,

@@ -252,7 +252,9 @@ async function generateMood(title, lyrics, signature) {
       + (signature.mouvement ? "- mouvement : " + signature.mouvement + "\n" : "")
       + "\n"
     : "";
-  var prompt = "Tu traduis l'etat emotionnel d'une interprete en direction de jeu pour un clip.\n\n" +
+  // « d'une interprete » supposait une chanteuse ; la distribution par défaut est
+  // Djeff. Le genre vient du casting, pas de la consigne d'humeur.
+  var prompt = "Tu traduis l'etat emotionnel de l'interprete en direction de jeu pour un clip.\n\n" +
     "TITRE : \"" + (title || "sans titre") + "\"\n" +
     (lyrics ? "PAROLES :\n" + lyrics.slice(0, 1200) + "\n\n" : "") +
     etat +
@@ -702,9 +704,16 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature,
  * plan cible ni remplacement est ignoree. Elles peuvent -- et doivent -- rendre
  * une liste vide quand le decoupage tient.
  */
+// Audit du 12/09/2026 : depuis que l'arc est étiré (26 plans pour 7 sections),
+// A11 recevait les intensités PAR SECTION et des plans sans leur section -- il ne
+// pouvait pas savoir quel plan juger contre quelle intensité. Chaque plan porte
+// maintenant sa section et le thème des paroles qu'il joue.
 function formatPlansForReview(scenes, lieu) {
   return (lieu ? "LIEU : " + lieu + "\n\n" : "")
-    + scenes.map(function(s, i) { return i + ". [" + s.name + "] " + s.visual; }).join("\n");
+    + scenes.map(function(s, i) {
+      return i + ". [" + s.name + (s.section ? " — section " + s.section : "") + "] " + s.visual
+        + (s.acte ? "\n     thème des paroles : " + s.acte : "");
+    }).join("\n");
 }
 
 function applyReview(scenes, corrections, who) {
@@ -960,7 +969,7 @@ async function directClip(config) {
     progress("reviews", "Relecture du scénario par K44");
     scenes = await reviewScenarioK44(scenes, lieu, cfg.title || "", lyricsSections);
     progress("reviews", "Relecture finale par Djeff Engine");
-    scenes = await reviewDjeffEngine(scenes, lieu, cfg.title || "", lyrics, mood);
+    scenes = await reviewDjeffEngine(scenes, lieu, cfg.title || "", lyrics, mood, cfg.render);
   }
 
   return {
@@ -1021,7 +1030,7 @@ function resolveDjeffEngineMode(env) {
   return ["local", "cloud", "auto"].indexOf(mode) >= 0 ? mode : "cloud";
 }
 
-async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood) {
+async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood, render) {
   if (!scenes || scenes.length < 2) return scenes;
   try {
     var http = require("http");
@@ -1031,15 +1040,23 @@ async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood) {
     var prompt = "Tu es Djeff Engine. Tu relis les plans d'un clip pour \"" + title + "\".\n"
       + "Mood: " + (mood || "non défini") + "\n"
       + "Lieu: " + (lieu || "non défini") + "\n"
-      + (lyrics ? "Paroles:\n" + lyrics.slice(0, 600) + "\n\n" : "")
-      + "Plans actuels:\n" + scenes.map(function(s, i) { return (i + 1) + ". " + s.visual; }).join("\n")
+      // Audit du 12/09/2026 : il relisait 26 plans en ne voyant que les 600
+      // premiers caractères des paroles, sans le rendu ni le thème de chaque plan,
+      // et pouvait donc tirer tout le clip vers le premier couplet.
+      + "Rendu: " + (String(render || process.env.NOSSEN_CLIP_RENDER || "").toLowerCase() === "anime"
+        ? "anime cinématique" : "film en prises de vue réelles, photoréaliste") + "\n"
+      + (lyrics ? "Paroles:\n" + lyrics.slice(0, 2500) + "\n\n" : "")
+      + "Plans actuels:\n" + scenes.map(function(s, i) {
+        return (i + 1) + ". " + (s.section ? "[" + s.section + (s.acte ? " — thème : " + s.acte : "") + "] " : "") + s.visual;
+      }).join("\n")
       + "\n\n" + CONSIGNE_ANTI_FRANCHISE
       + CONSIGNE_FIDELITE_CHANSON
       + "RÈGLES DJEFF :\n"
       + "- Si un plan est generique, remplace-le par une action precise ancree dans les paroles et adapte le jeu a leur emotion.\n"
       + "- Preserve le sujet, le casting et le decor choisi pour CE morceau. Le rap ou le jeu video n'imposent aucun combat.\n"
       + "- Respecte les variations d'energie et les moments calmes de la chanson.\n"
-      + "- Renvoie UNIQUEMENT le JSON array des plans corrigés : [{\"name\":\"...\",\"visual\":\"...\"}]\n"
+      + "- Chaque plan garde le thème indiqué entre crochets : il se joue, il ne s'illustre pas mot pour mot.\n"
+      + "- Renvoie UNIQUEMENT le JSON array des " + scenes.length + " plans corrigés, dans le même ordre : [{\"name\":\"...\",\"visual\":\"...\"}]\n"
       + "- Si tout est bon, renvoie le même array sans changement.";
 
     var mode = resolveDjeffEngineMode(process.env);
@@ -1151,6 +1168,7 @@ module.exports = {
   SCENARIO_MODEL,
   etirerArc,
   buildBeatsBlock,
+  formatPlansForReview,
   resolveTeardown,
   resolveLocalAudioPath,
   reviewMontageA11,

@@ -562,16 +562,23 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     });
   }
 
+  // Audit du 12/09/2026 : chaque ambiance disait « anime » en dur (le menu Film /
+  // Manga ne valait que pour le Mode libre), « Concert live » imposait les cheveux
+  // violet-cyan de Vivy quel que soit le casting, et le Mode libre envoyait le
+  // TITRE, qui déclenche le filtre copyright. Le style ne décrit plus que le rendu
+  // et l'ambiance ; le casting et les paroles font le reste côté serveur.
   function buildStylePrompt(vibe, title, rendu) {
-    if (vibe === "auto") {
-      return (rendu === "anime"
-        ? "Cinematic anime style inspired by the song. Analyze the mood of: "
-        : "Live-action cinematic music video inspired by the song, photorealistic, real actors. Analyze the mood of: ") + (title || "music") + ". Choose colors, lighting and camera movement that match the emotion. Rich detail, volumetric lighting.";
-    }
-    if (vibe === "live") return "Professional anime live concert, singer with long purple-cyan hair white violet outfit dramatic lighting";
-    if (vibe === "cyberpunk") return "Cinematic anime cyberpunk style neon city volumetric lighting rich detail";
-    if (vibe === "cosmic") return "Cinematic anime cosmic space style nebulae energy volumetric lighting";
-    return "Cinematic anime intimate studio style warm amber lighting rich detail";
+    var base = rendu === "anime"
+      ? "Cinematic anime style"
+      : "Live-action cinematic music video, photorealistic, real actors";
+    var ambiances = {
+      auto: "colors, lighting and camera movement drawn from the song's emotion",
+      live: "live concert stage, dramatic stage lighting, crowd energy",
+      cyberpunk: "cyberpunk neon city at night, rain, holographic light",
+      cosmic: "cosmic space, nebulae, floating energy",
+      intimate: "intimate studio, warm amber lighting, close and quiet"
+    };
+    return base + ", " + (ambiances[vibe] || ambiances.auto) + ". Rich detail, volumetric lighting.";
   }
 
   function buildAutoSections(title) {
@@ -668,15 +675,10 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     var vibe = document.getElementById("vibe").value;
     var rendu = document.getElementById("rendu") ? document.getElementById("rendu").value : "film";
     var stylePrompt = buildStylePrompt(vibe, source.title, rendu);
-    var sections;
-    if (vibe === "auto") {
-      // Mode libre : pas de sections, le Vivy Director côté serveur décide
-      sections = [];
-    } else {
-      sections = (SC[vibe] || SC.live).map(function(x) {
-        return { name: x.n, visual: x.v, duration: 15 };
-      });
-    }
+    // Toutes les ambiances passent par le Director (12/09/2026) : les six plans
+    // préfabriqués de SC ignoraient les paroles, le casting et la durée, et un Full
+    // Clip les repassait en boucle. L'ambiance ne voyage plus que dans le style.
+    var sections = [];
 
     // Full Clip : multiplier les sections pour couvrir toute la chanson
     // Une chanson typique = 2-4 min. Seedance fait ~8-10s par vidéo.
