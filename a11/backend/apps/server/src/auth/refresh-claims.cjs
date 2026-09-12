@@ -12,6 +12,19 @@
 // This module intentionally requires NOTHING (no express, no jsonwebtoken) so
 // it can be unit-tested in isolation.
 
+// Date de connexion d origine d une session, en secondes : le premier candidat
+// numerique et positif parmi auth_time, authTime puis iat. Une valeur illisible ne
+// masque pas les suivantes ; tout jeton signe par jwt.sign porte au moins iat.
+function resolveSessionOrigin(claims = {}) {
+  const source = claims && typeof claims === 'object' ? claims : {};
+  for (const candidat of [source.auth_time, source.authTime, source.iat]) {
+    if (candidat === null || candidat === undefined || candidat === '' || typeof candidat === 'boolean') continue;
+    const valeur = Number(candidat);
+    if (Number.isFinite(valeur) && valeur > 0) return Math.floor(valeur);
+  }
+  return null;
+}
+
 function buildRefreshExtra(decoded = {}) {
   const claims = decoded && typeof decoded === 'object' ? decoded : {};
   const generation = Number(
@@ -33,7 +46,11 @@ function buildRefreshExtra(decoded = {}) {
   if (claims.surface) extra.surface = claims.surface;
   if (claims.client) extra.client = claims.client;
   if (claims.provider) extra.provider = claims.provider;
+  // La date de connexion d origine traverse le rafraichissement : c est elle qui
+  // plafonne la duree de vie absolue. Jeton anterieur a ce champ : sa date d emission.
+  const origine = resolveSessionOrigin(claims);
+  if (origine) extra.auth_time = origine;
   return extra;
 }
 
-module.exports = { buildRefreshExtra };
+module.exports = { buildRefreshExtra, resolveSessionOrigin };

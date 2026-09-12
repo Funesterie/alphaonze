@@ -95,3 +95,11 @@ test('nossen-index.html calls /api/auth/refresh and defines REFRESH_MARGIN_MS', 
   assert.match(html, /refreshInFlight/);
   assert.match(html, /sessionExpiresAt/);
 });
+
+test('buildRefreshExtra fait voyager la date de connexion d origine', () => {
+  const { buildRefreshExtra: construire } = require('../src/auth/refresh-claims.cjs');
+  assert.equal(construire({ auth_time: 100, iat: 200 }).auth_time, 100, 'auth_time prime sur iat');
+  assert.equal(construire({ iat: 200 }).auth_time, 200, 'jeton ancien : sa date d emission');
+  assert.equal(construire({}).auth_time, undefined, 'rien a propager');
+  assert.equal(construire({ auth_time: 'pas un nombre', iat: 300 }).auth_time, 300);
+});

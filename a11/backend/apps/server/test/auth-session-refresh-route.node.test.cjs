@@ -160,3 +160,59 @@ test('POST /api/auth/refresh with a revoked session returns 401 A11_SESSION_REVO
     assert.equal(json.error, 'A11_SESSION_REVOKED');
   });
 });
+
+// Duree de vie absolue (ajout du 12/09/2026). Sans elle, chaque rafraichissement
+// repartait pour une duree pleine : un jeton vole, ou celui d un compte retrograde,
+// pouvait vivre indefiniment en gardant ses droits.
+const HUIT_JOURS_S = 8 * 24 * 60 * 60;
+const UN_JOUR_S = 24 * 60 * 60;
+
+async function jetonDeSession(registry, id, champs) {
+  const user = { id, username: id };
+  const session = await registry.createSession({ user, surface: 'a11' });
+  return jwt.sign(Object.assign({ id, username: id, sid: session.sessionId, sv: session.sessionGeneration }, champs || {}), JWT_SECRET, { expiresIn: '1h' });
+}
+
+test('POST /api/auth/refresh refuse une session plus vieille que le plafond absolu', async () => {
+  await withServer(async (baseUrl, registry) => {
+    const vieux = await jetonDeSession(registry, 'trop-vieux', { auth_time: Math.floor(Date.now() / 1000) - HUIT_JOURS_S });
+    const { response, json } = await postRefresh(baseUrl, vieux);
+    assert.equal(response.status, 401);
+    assert.equal(json.error, 'A11_SESSION_TOO_OLD');
+    const efface = getSetCookies(response).find((c) => c.startsWith('a11_session='));
+    assert.ok(efface, 'le cookie de session doit etre efface');
+  });
+});
+
+test('POST /api/auth/refresh conserve la date de connexion d origine', async () => {
+  await withServer(async (baseUrl, registry) => {
+    const origine = Math.floor(Date.now() / 1000) - UN_JOUR_S;
+    const jeton = await jetonDeSession(registry, 'garde-origine', { auth_time: origine });
+    const { response } = await postRefresh(baseUrl, jeton);
+    assert.equal(response.status, 200);
+    const nouveau = jwt.decode(getCookieValue(getSetCookies(response), 'a11_session'));
+    assert.equal(nouveau.auth_time, origine, 'un rafraichissement ne doit jamais rajeunir la session');
+  });
+});
+
+test('un jeton anterieur a auth_time prend sa date d emission comme origine', async () => {
+  await withServer(async (baseUrl, registry) => {
+    const ancien = await jetonDeSession(registry, 'jeton-ancien');
+    const iat = jwt.decode(ancien).iat;
+    const { response } = await postRefresh(baseUrl, ancien);
+    assert.equal(response.status, 200);
+    assert.equal(jwt.decode(getCookieValue(getSetCookies(response), 'a11_session')).auth_time, iat);
+  });
+});
+
+test('POST /api/auth/refresh echoue ferme pour un jeton sans aucune date d origine', async () => {
+  await withServer(async (baseUrl, registry) => {
+    const user = { id: 'sans-origine', username: 'sans-origine' };
+    const session = await registry.createSession({ user, surface: 'a11' });
+    const jeton = jwt.sign({ id: user.id, username: user.username, sid: session.sessionId, sv: session.sessionGeneration }, JWT_SECRET, { expiresIn: '1h', noTimestamp: true });
+    assert.equal(jwt.decode(jeton).iat, undefined, 'le jeton de test ne doit porter aucune date');
+    const { response, json } = await postRefresh(baseUrl, jeton);
+    assert.equal(response.status, 401);
+    assert.equal(json.error, 'A11_SESSION_TOO_OLD');
+  });
+});

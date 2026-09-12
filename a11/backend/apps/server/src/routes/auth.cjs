@@ -14,7 +14,7 @@ const {
   extractRequestAuthTokenCandidates,
   parseCookieHeader,
 } = require('../middleware/jwt-auth.cjs');
-const { buildRefreshExtra } = require('../auth/refresh-claims.cjs');
+const { buildRefreshExtra, resolveSessionOrigin } = require('../auth/refresh-claims.cjs');
 const {
   createAuthSessionRegistry,
   normalizeSurface,
@@ -312,6 +312,16 @@ function buildAuthClaims(user = {}, extra = {}) {
   }
   if (hasFullAccess({ ...user, ...extra, email, role })) {
     claims.fullAccess = true;
+  }
+  // Date de connexion d origine, conservee d un jeton a l autre. C est elle qui
+  // borne la duree de vie absolue d une session rafraichie par POST /api/auth/refresh :
+  // sans elle, chaque rafraichissement repartait pour 24 h pleines et un jeton
+  // pouvait vivre indefiniment en gardant ses droits. Absente a la connexion : on
+  // la pose maintenant.
+  {
+    const origine = resolveSessionOrigin({ auth_time: extra.auth_time, authTime: extra.authTime })
+      || resolveSessionOrigin(user);
+    claims.auth_time = origine || Math.floor(Date.now() / 1000);
   }
 
   return claims;
@@ -2082,6 +2092,23 @@ function createAuthRouter({
     // Re-sign a JWT that PRESERVES the existing sid + current sessionGeneration
     // (and surface/client/provider) so assertTokenCurrent stays satisfied and no
     // new session row is created. Only iat/exp are refreshed by jwt.sign().
+    // Duree de vie absolue : au-dela, on refuse de rafraichir et on force une
+    // nouvelle connexion. Un jeton anterieur a auth_time prend sa date d emission
+    // comme origine. Plafond par defaut = duree du cookie de session (7 jours).
+    const origineSession = resolveSessionOrigin(decoded);
+    const plafondSessionMs = Math.max(
+      60 * 60 * 1000,
+      Number(process.env.A11_SESSION_ABSOLUTE_MAX_MS || process.env.A11_SESSION_COOKIE_MAX_AGE_MS || 7 * 24 * 60 * 60 * 1000) || 7 * 24 * 60 * 60 * 1000
+    );
+    // Echec ferme : un jeton sans aucune date d origine ne doit pas echapper au plafond.
+    if (!origineSession || Date.now() - origineSession * 1000 > plafondSessionMs) {
+      clearSessionCookies(req, res);
+      return res.status(401).json({
+        ok: false,
+        error: 'A11_SESSION_TOO_OLD',
+        message: 'Session trop ancienne. Reconnecte-toi.',
+      });
+    }
     const extra = buildRefreshExtra(decoded);
     const newToken = signUserToken({ jwt, jwtSecret, jwtExpiry, user: decoded, extra });
     if (typeof registerIssuedToken === 'function') {
