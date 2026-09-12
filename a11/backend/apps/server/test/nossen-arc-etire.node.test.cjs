@@ -51,11 +51,13 @@ test('un Clip court de 6 plans parcourt quand meme tout l arc, dans l ordre', ()
   assert.equal(beats[0].section, 'intro');
 });
 
-test('la consigne demande exactement N plans et interdit d inventer une autre action', () => {
+test('la consigne demande exactement N plans, fait jouer le theme sans mot pour mot ni hors sujet', () => {
   const bloc = buildBeatsBlock(etirerArc(ARC, PAROLES, 26, 205, null));
   assert.match(bloc, /EXACTEMENT 26 plans/);
-  assert.match(bloc, /ACTE : acte 3 des paroles/);
-  assert.match(bloc, /N'invente pas d'autre action/);
+  assert.match(bloc, /THÈME : acte 3 des paroles/);
+  assert.match(bloc, /pas mot pour mot/, 'les paroles vagues s interpretent');
+  assert.match(bloc, /sujet de la chanson/, 'mais on ne part pas hors sujet');
+  assert.match(bloc, /piste visuelle \(facultative\)/);
   assert.match(bloc, /\(1\/\d\)/, 'les plans d une meme section sont numerotes pour progresser');
   assert.equal(buildBeatsBlock(null), '');
   assert.equal(etirerArc(ARC, PAROLES, 0, 205, null), null);

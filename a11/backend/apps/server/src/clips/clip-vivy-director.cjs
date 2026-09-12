@@ -542,16 +542,20 @@ function buildBeatsBlock(beats) {
   var lignes = beats.map(function(b, i) {
     return "  " + (i + 1) + ". [" + formatTemps(b.debut) + "-" + formatTemps(b.fin) + "] " + b.section
       + (b.sur > 1 ? " (" + b.rang + "/" + b.sur + ")" : "")
-      + (b.acte ? " — ACTE : " + b.acte : "")
-      + (b.image ? " — image des paroles : " + b.image : "")
+      + (b.acte ? " — THÈME : " + b.acte : "")
+      + (b.image ? " — piste visuelle (facultative) : " + b.image : "")
       + " — intensité " + Number(b.intensity).toFixed(2) + ", lumière " + b.color + ", matière " + b.matiere;
   });
   return "DÉCOUPAGE DU CLIP SUR TOUTE LA DURÉE DU MORCEAU (" + beats.length + " plans d'environ 8 s).\n"
-    + "Vivy donne l'arc (intensité, lumière, matière) ; les paroles donnent l'ACTE de chaque section :\n"
+    + "Vivy donne l'arc (intensité, lumière, matière) ; les paroles donnent le THÈME de chaque section :\n"
     + lignes.join("\n") + "\n"
     + "Fais EXACTEMENT " + beats.length + " plans, un par ligne ci-dessus, dans cet ordre.\n"
-    + "Chaque plan MONTRE l'acte de sa section : ce que racontent les paroles à ce moment-là, avec leurs objets et leurs gestes. N'invente pas d'autre action.\n"
-    + "Quand une section a plusieurs plans (1/3, 2/3, 3/3), ils font PROGRESSER ce même acte : mise en place, développement, bascule. Jamais deux fois le même plan.\n"
+    // Djeff, 12/09/2026 : « mot pour mot ça risque de faire des trucs bizarres, des
+    // fois les paroles sont vagues et faut surfer dessus ».
+    + "Le thème se JOUE, il ne s'illustre pas mot pour mot : surfe sur les paroles. Une métaphore devient une situation filmable, "
+    + "une parole vague se lit par l'émotion et le sujet général du morceau. Chaque plan reste dans le sujet de la chanson, "
+    + "sans action qui n'a rien à voir avec elle.\n"
+    + "Quand une section a plusieurs plans (1/3, 2/3, 3/3), ils font PROGRESSER ce même thème : mise en place, développement, bascule. Jamais deux fois le même plan.\n"
     + "L'échelle et le mouvement suivent l'intensité : basse (< 0,45) → plan serré, caméra posée ; moyenne → plan moyen, léger mouvement ; haute (> 0,80) → plan large ou contre-plongée, mouvement ample.\n\n";
 }
 
