@@ -861,7 +861,9 @@ function resolveClipIdentity(config) {
     return {
       identityIds: ids,
       castLabels: (pack.identities || []).map(function(i) { return i.label || i.id; }),
-      prompt: pack.prompt || "",
+      // La fiche anglaise courte (12/09/2026) : la francaise faisait ~870
+      // caracteres dans chaque plan pour 300 de description du plan lui-meme.
+      prompt: pack.videoPrompt || pack.prompt || "",
       negativePrompt: pack.negativePrompt || "",
       referenceImageUrls: pack.referenceImageUrls || [],
     };

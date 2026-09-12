@@ -40,3 +40,37 @@ test('les relecteurs voient la section et le theme de chaque plan', () => {
   assert.match(texte, /thème des paroles : il se prepare au combat/);
   assert.match(texte, /1\. \[P2\] Wide shot/, 'un plan sans section reste lisible');
 });
+
+test('la fiche d identite envoyee a la camera est en anglais et courte', () => {
+  const { resolveClipIdentity } = require('../src/clips/clip-vivy-director.cjs');
+  const djeff = resolveClipIdentity({ title: 'FIGHTERZ CLUB', lyrics: '', style: '', casting: 'auto', castArtists: [] });
+  assert.deepEqual(djeff.identityIds, ['djeff']);
+  assert.ok(djeff.prompt.length < 450, 'etait ~870 caracteres : ' + djeff.prompt.length);
+  assert.match(djeff.prompt, /square jaw/, 'les traits de ressemblance restent');
+  assert.match(djeff.prompt, /beard and moustache/);
+  assert.doesNotMatch(djeff.prompt, /[éèàçù]|Référence/, 'plus de francais melange a un prompt anglais');
+  assert.match(djeff.negativePrompt, /clean shaven Djeff/, 'les interdits restent dans le negatif');
+});
+
+test('chaque personnage a sa fiche video, et les autres usages gardent la fiche francaise', () => {
+  const ids = require('../src/vivy/visual-identities.cjs');
+  for (const def of ids.IDENTITY_DEFINITIONS) {
+    assert.ok(def.videoPrompt && def.videoPrompt.length < 400, def.id + ' : fiche video presente et courte');
+    assert.doesNotMatch(def.videoPrompt, /[éèàçù]/, def.id + ' : en anglais');
+  }
+  const pack = ids.buildVivyVisualIdentityPack({ artists: ['djeff'], forceVocalCastVisualIdentity: true });
+  assert.match(pack.prompt, /Référence visuelle/, 'Twitch et images gardent la fiche complete');
+  assert.match(pack.videoPrompt, /Djeff, the creator/);
+});
+
+test('le duo Djeff x Vivy garde deux personnages distincts, en anglais', () => {
+  const { resolveClipIdentity } = require('../src/clips/clip-vivy-director.cjs');
+  const duo = resolveClipIdentity({ title: 'T', lyrics: '', style: '', casting: 'duo-djeff-vivy', castArtists: ['djeff', 'vivy'] });
+  assert.deepEqual([...duo.identityIds].sort(), ['djeff', 'vivy']);
+  assert.match(duo.prompt, /Two distinct characters/);
+  assert.match(duo.prompt, /Djeff, the creator/);
+  assert.match(duo.prompt, /Vivy, the AI singer/);
+  assert.doesNotMatch(duo.prompt, /[éèàçù]/);
+  assert.ok(duo.prompt.length < 900, 'duo complet : ' + duo.prompt.length);
+  assert.match(duo.negativePrompt, /Vivy clone/);
+});

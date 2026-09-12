@@ -69,6 +69,10 @@ const IDENTITY_DEFINITIONS = [
       'Référence visuelle chanteuse IA: jeune femme adulte à peau claire, longs cheveux noirs en couettes avec reflets magenta sombre, frange droite noire, yeux gris-verts expressifs, pinces et boucles d’oreilles en forme d’étoile, tenue gothic electro-pop noire, choker noir, présence micro ou studio, palette néon magenta et noir.',
       'Si cette chanteuse IA apparaît, garder exactement cette identité studio gothic magenta sombre; ne jamais la rendre blonde, pastel, idole générique, cheveux bleus, enfantine ou sans rapport avec la référence.',
     ].join(' '),
+    // Fiche pour le generateur video (12/09/2026) : anglais, courte, affirmative.
+    // La fiche francaise ci-dessus faisait ~870 caracteres dans CHAQUE plan et
+    // noyait la description du plan ; les interdits restent dans `negative`.
+    videoPrompt: 'Vivy, the AI singer: young adult woman, fair skin, long black hair in twin tails with dark magenta highlights, straight black bangs, expressive grey-green eyes, star-shaped hair clips and earrings, black gothic electro-pop outfit, black choker, neon magenta and black palette.',
     negative: [
       'blonde Vivy',
       'blonde singer as Vivy',
@@ -101,6 +105,7 @@ const IDENTITY_DEFINITIONS = [
       'Référence visuelle créateur humain: homme adulte méditerranéen réel, peau olive, visage large à mâchoire carrée et marquée, joues pleines, yeux brun foncé au regard direct, sourcils épais et fournis très rapprochés, coupe très courte dégradée net sur les côtés et courte sur le dessus, cheveux brun foncé, barbe courte noire et moustache, carrure large et épaules solides, t-shirt sombre ou veste bleue, énergie de créateur.',
       'Si ce créateur apparaît, préserver ces traits: teint olive, visage large et mâchoire marquée, yeux foncés, sourcils épais, coupe très courte dégradée, barbe courte et moustache, carrure large. Ces traits suffisent seuls: aucune image de référence n est transmise au generateur video, la description porte donc toute la ressemblance. Ne pas changer son origine visuelle, ne pas le rendre noir, imberbe, personnage motard bêta ou acteur générique.',
     ].join(' '),
+    videoPrompt: 'Djeff, the creator: real Mediterranean adult man, olive skin, broad face with a strong square jaw, full cheeks, dark brown eyes with a direct gaze, thick close-set eyebrows, very short dark brown hair faded on the sides, short black beard and moustache, broad shoulders, dark t-shirt or blue jacket.',
     negative: [
       'black Djeff',
       'wrong Djeff ethnicity',
@@ -132,6 +137,7 @@ const IDENTITY_DEFINITIONS = [
       'Si ce frère/père apparaît, préserver son visage, son teint, ses yeux foncés, sa barbe courte, sa moustache et sa présence protectrice depuis les photos de référence; sur les photos entre frères il est l’homme à droite, sur la référence familiale il est l’homme tout à gauche avec Charlène, Léna et Elio.',
       'Ne pas confondre le frère/père avec le créateur: garder les deux personnages distincts s’ils apparaissent ensemble.',
     ].join(' '),
+    videoPrompt: 'Marvin, his brother: real Mediterranean adult man, olive skin, short dark hair, dark eyes, short dark beard and moustache, natural face, calm and protective presence, a different man from Djeff.',
     negative: [
       'generic Marvin',
       'different man as Marvin',
@@ -161,6 +167,7 @@ const IDENTITY_DEFINITIONS = [
       'Référence visuelle Jean: homme adulte méditerranéen réel, peau claire à olive, cheveux courts foncés, lunettes de soleil possibles, tee-shirt noir, présence calme de père et de vedette de cinéma familiale, associé à une Porsche Boxster grise avec intérieur rouge. ',
       'Si Jean apparaît avec Djeff, garder deux générations distinctes: Djeff est le fils/créateur plus jeune, Jean est le père/passager ou pilote selon la demande. Ne jamais fusionner Jean avec Djeff, ne jamais le remplacer par un acteur générique, un homme blond, une femme, un vieillard caricatural ou une seconde Vivy.',
     ].join(' '),
+    videoPrompt: 'Jean, Djeff\'s father: real Mediterranean man of the older generation, light olive skin, short dark hair, sometimes sunglasses, black t-shirt, calm fatherly presence, clearly older than Djeff.',
     negative: [
       'generic Jean',
       'wrong Jean face',
@@ -192,6 +199,7 @@ const IDENTITY_DEFINITIONS = [
       'Référence visuelle agent média: silhouette noire encapuchonnée, masque sombre sous capuche noire, yeux cyan lumineux, circuits et symboles média cyan/teal, veste streetwear tactique noire, ville néon violet et cyan ou interface studio, présence d’opérateur numérique mystérieux.',
       'Si cet agent média apparaît, garder cette identité encapuchonnée aux yeux cyan; ne jamais le transformer en homme normal sans masque, chanteur aléatoire, cartoon gentil, enfant, chevalier ou personnage anime sans rapport.',
     ].join(' '),
+    videoPrompt: 'A11, the media agent: black hooded silhouette, dark mask under the hood, glowing cyan eyes, cyan and teal circuit and media symbols, black tactical streetwear jacket, violet and cyan neon city or studio interface.',
     negative: [
       'random A11 singer',
       'unhooded A11',
@@ -219,6 +227,7 @@ const IDENTITY_DEFINITIONS = [
       'Référence visuelle copilote quotidienne: jeune femme aux cheveux foncés, avatar circulaire violet, combinaison futuriste noire et violette, cockpit néon bleu-violet, décor de cyber-ville, parfois avec moto élancée, énergie d’assistante précise.',
       'Si cette copilote apparaît, garder cette identité cyber/moto féminine et la palette violet-bleu; ne jamais la rendre rappeur homme, clone de l’agent encapuchonné, animal, motard aléatoire ou personnage anime sans rapport.',
     ].join(' '),
+    videoPrompt: 'K44, the co-pilot: young woman with dark hair, black and violet futuristic suit, blue-violet neon cockpit, cyber-city backdrop, sometimes a sleek motorbike, precise and focused energy.',
     negative: [
       'random K44 rapper',
       'male K44',
@@ -323,6 +332,7 @@ function resolveVivyVisualCasting(input = {}) {
       id: '',
       requiredIdentityIds: [],
       prompt: '',
+      videoPrompt: '',
       negativePrompt: '',
     };
   }
@@ -337,6 +347,9 @@ function resolveVivyVisualCasting(input = {}) {
       'Les deux personnages ne fusionnent jamais: la chanteuse IA n’est pas le créateur, le créateur n’est pas une femme, et aucun plan ne doit remplacer le créateur par une seconde chanteuse IA.',
       'Composer le duo comme une scène créateur + IA: créateur côté code/station de travail, chanteuse IA côté micro/lumière/musique, deux silhouettes différentes, deux visages différents, une relation de réponse musicale.',
     ].join(' '),
+    // Version video (12/09/2026) : les fiches de Djeff et de Vivy decrivent deja
+    // leurs visages ; ici seulement la relation, en anglais et en positif.
+    videoPrompt: 'Two distinct characters share the scene: Djeff at the code workstation or console, Vivy at the microphone in the light; two different faces and silhouettes answering each other musically.',
     negativePrompt: [
       'two Vivy',
       'duplicate Vivy',
@@ -388,6 +401,7 @@ function buildVivyVisualIdentityPack(input = {}) {
       id: definition.id,
       label: definition.label,
       prompt: definition.prompt,
+      videoPrompt: definition.videoPrompt || definition.prompt,
       negative: definition.negative || [],
       referenceImageUrls: referencesForIdentity(definition, env),
     }));
@@ -400,6 +414,15 @@ function buildVivyVisualIdentityPack(input = {}) {
       casting.prompt,
       explicitReferencePrompt,
     ].filter(Boolean).join(' '), '', 4200),
+    // Version courte et anglaise pour les modeles video (clips NOSSEN) ; `prompt`
+    // reste la fiche francaise complete des autres usages (Twitch, images).
+    videoPrompt: cleanText([
+      identities.map((identity) => identity.videoPrompt).join(' '),
+      casting.videoPrompt || casting.prompt,
+      explicitReferenceImageUrls.length
+        ? 'Match the reliable features of the user reference image; never copy its text, signs, plates or logos.'
+        : '',
+    ].filter(Boolean).join(' '), '', 1600),
     negativePrompt: cleanText([
       identities.flatMap((identity) => identity.negative).join(', '),
       casting.negativePrompt,
