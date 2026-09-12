@@ -2,7 +2,7 @@
 # A11 Backend - Dockerfile pour Podman/Docker
 # Piper official binaries require glibc. Alpine/musl can start the binary but
 # ONNX Runtime crashes during synthesis, so production uses Debian slim.
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
 # Métadonnées
 LABEL maintainer="NOSSEN <contact@funesterie.me>"

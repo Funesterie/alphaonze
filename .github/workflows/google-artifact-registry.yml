@@ -50,7 +50,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "20" # Node 22.23 : npm install plante (edgesOut null) sur ce job, 12/09/2026 -- a reprendre
 
       - name: Dry-run package mirrors
         shell: pwsh
