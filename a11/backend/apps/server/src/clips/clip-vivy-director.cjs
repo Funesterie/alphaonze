@@ -129,7 +129,8 @@ function usesCompletionTokenBudget(model) {
   return /^gpt-(?:[5-9]|\d{2})/.test(String(model || "").replace(/^openai\//, ""));
 }
 
-function callOpenRouter(model, messages, maxTokens = 800) {
+// timeoutMs : 45 s suffisent a une relecture ; 26 plans d'un Full Clip non.
+function callOpenRouter(model, messages, maxTokens = 800, timeoutMs = TIMEOUT_MS) {
   // Sol utilise l'API OpenAI directe, Grok utilise OpenRouter
   var isOpenAI = !model.includes("/"); // "chatgpt-4o-latest" vs "xai/grok-3"
   var url = isOpenAI ? OPENAI_URL : OPENROUTER_URL;
@@ -148,7 +149,7 @@ function callOpenRouter(model, messages, maxTokens = 800) {
     var req = https.request(parsed, {
       method: "POST",
       headers: { "content-type": "application/json", "authorization": "Bearer " + key, "content-length": Buffer.byteLength(body) },
-      timeout: TIMEOUT_MS
+      timeout: timeoutMs
     }, function(res) {
       var chunks = [];
       res.on("data", function(c) { chunks.push(c); });
@@ -461,6 +462,100 @@ function buildArcBlock(steps) {
 }
 
 /**
+ * L'arc de Vivy étiré sur toute la durée du clip (demande de Djeff, 12/09/2026).
+ *
+ * Avant, un plan par section de l'arc : ~7 plans. Un Full Clip de 3 min 25 en
+ * demande 26, et le générateur repassait les 7 mêmes quatre fois. Désormais on
+ * écrit EXACTEMENT un plan par segment, réparti sur les sections au prorata de
+ * leur durée mesurée (parts égales si l'audio ne l'a pas donnée), et chaque plan
+ * porte l'ACTE de sa section : ce que Claude a lu dans les paroles. Sol illustre
+ * ce que le morceau raconte au lieu d'inventer une action -- c'est ainsi qu'un
+ * « audit logiciel dans un sous-sol » était apparu sur FIGHTERZ CLUB.
+ *
+ * Moins de plans que de sections (Clip court de 6 plans) : on échantillonne les
+ * sections régulièrement, pour que le clip court parcoure quand même tout l'arc.
+ */
+function repartirPlans(n, poids) {
+  var counts = poids.map(function() { return 0; });
+  if (n < poids.length) {
+    for (var j = 0; j < n; j++) {
+      counts[Math.min(poids.length - 1, Math.floor((j + 0.5) * poids.length / n))] += 1;
+    }
+    return counts;
+  }
+  var reste = n - poids.length;
+  var total = poids.reduce(function(a, b) { return a + b; }, 0) || 1;
+  var parts = poids.map(function(w) { return reste * w / total; });
+  var entiers = parts.map(function(x) { return Math.floor(x); });
+  var alloue = entiers.reduce(function(a, b) { return a + b; }, 0);
+  var ordre = parts
+    .map(function(x, i) { return { i: i, f: x - Math.floor(x) }; })
+    .sort(function(a, b) { return (b.f - a.f) || (a.i - b.i); });
+  for (var r = 0; r < reste - alloue; r++) entiers[ordre[r].i] += 1;
+  return entiers.map(function(e) { return e + 1; });
+}
+
+function etirerArc(arcSteps, lyricsSections, planCount, dureeSecondes, teardown) {
+  var n = Math.max(0, Math.floor(Number(planCount) || 0));
+  var steps = Array.isArray(arcSteps) ? arcSteps : [];
+  if (!n || !steps.length) return null;
+  var paroles = Array.isArray(lyricsSections) ? lyricsSections : [];
+  var bornes = teardown && Array.isArray(teardown.sections) && teardown.sections.length === steps.length
+    ? teardown.sections
+    : null;
+  var poids = steps.map(function(_, i) {
+    if (!bornes) return 1;
+    var d = Number(bornes[i].endSeconds) - Number(bornes[i].startSeconds);
+    return d > 0 ? d : 1;
+  });
+  var alloc = repartirPlans(n, poids);
+  var duree = Number(dureeSecondes) > 0 ? Number(dureeSecondes) : n * 8;
+  var pas = duree / n;
+  var beats = [];
+  steps.forEach(function(step, i) {
+    var p = paroles[i] || {};
+    for (var k = 0; k < alloc[i]; k++) {
+      beats.push({
+        section: step.label,
+        acte: String(p.intention || "").slice(0, 240),
+        image: String(p.image || "").slice(0, 240),
+        intensity: step.intensity,
+        color: step.color,
+        matiere: step.matiere,
+        rang: k + 1,
+        sur: alloc[i],
+        debut: Math.round(beats.length * pas),
+        fin: Math.round((beats.length + 1) * pas),
+      });
+    }
+  });
+  return beats;
+}
+
+function formatTemps(secondes) {
+  var s = Math.max(0, Math.round(Number(secondes) || 0));
+  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+}
+
+function buildBeatsBlock(beats) {
+  if (!Array.isArray(beats) || !beats.length) return "";
+  var lignes = beats.map(function(b, i) {
+    return "  " + (i + 1) + ". [" + formatTemps(b.debut) + "-" + formatTemps(b.fin) + "] " + b.section
+      + (b.sur > 1 ? " (" + b.rang + "/" + b.sur + ")" : "")
+      + (b.acte ? " — ACTE : " + b.acte : "")
+      + (b.image ? " — image des paroles : " + b.image : "")
+      + " — intensité " + Number(b.intensity).toFixed(2) + ", lumière " + b.color + ", matière " + b.matiere;
+  });
+  return "DÉCOUPAGE DU CLIP SUR TOUTE LA DURÉE DU MORCEAU (" + beats.length + " plans d'environ 8 s).\n"
+    + "Vivy donne l'arc (intensité, lumière, matière) ; les paroles donnent l'ACTE de chaque section :\n"
+    + lignes.join("\n") + "\n"
+    + "Fais EXACTEMENT " + beats.length + " plans, un par ligne ci-dessus, dans cet ordre.\n"
+    + "Chaque plan MONTRE l'acte de sa section : ce que racontent les paroles à ce moment-là, avec leurs objets et leurs gestes. N'invente pas d'autre action.\n"
+    + "Quand une section a plusieurs plans (1/3, 2/3, 3/3), ils font PROGRESSER ce même acte : mise en place, développement, bascule. Jamais deux fois le même plan.\n"
+    + "L'échelle et le mouvement suivent l'intensité : basse (< 0,45) → plan serré, caméra posée ; moyenne → plan moyen, léger mouvement ; haute (> 0,80) → plan large ou contre-plongée, mouvement ample.\n\n";
+}
+
+/**
  * Consigne de l'artiste.
  *
  * La signature derive du TITRE, pas du son : pour un morceau de club sans
@@ -509,7 +604,8 @@ const CONSIGNE_FIDELITE_CHANSON = `FIDELITE A CE MORCEAU :
 
 `;
 
-async function generateVisualScenes(title, lyrics, style, mood, cast, signature, lieu, direction, arcSteps, render) {
+async function generateVisualScenes(title, lyrics, style, mood, cast, signature, lieu, direction, arcSteps, render, beats) {
+  var nbVoulus = Array.isArray(beats) && beats.length ? beats.length : 0;
   var etat = signature && signature.color
     ? "ETAT DU PERSONA : " + signature.color.name + " — " + signature.color.function
       + " (complement " + signature.color.complement + "). "
@@ -530,7 +626,7 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature,
     (mood ? "HUMEUR DE L'INTERPRÈTE (à incarner) :\n" + mood + "\n\n" : "") +
     buildCastBlock(cast) +
     buildArtistDirection(lieu, direction) +
-    buildArcBlock(arcSteps) +
+    (nbVoulus ? buildBeatsBlock(beats) : buildArcBlock(arcSteps)) +
     "RÈGLE DE TOURNAGE, la plus importante :\n" +
     (lieu
       ? "1. Le lieu est déjà fixé ci-dessus. Reprends-le tel quel dans le champ lieu.\n"
@@ -550,7 +646,11 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature,
     "\"plans\":[{\"name\":\"Nom du plan\",\"visual\":\"English shot description\"}]}";
 
   try {
-    var text = await callOpenRouter(SEQUENCE_MODEL, [{ role: "user", content: prompt }], 1800);
+    // ~160 jetons par plan en plus : 26 plans coupes a 1800 jetons rendaient un
+    // JSON tronque. Le delai suit pour la meme raison.
+    var text = await callOpenRouter(SEQUENCE_MODEL, [{ role: "user", content: prompt }],
+      nbVoulus ? Math.min(16000, 1800 + 160 * nbVoulus) : 1800,
+      nbVoulus > 8 ? 240000 : undefined);
     var jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       var parsed = JSON.parse(jsonMatch[0]);
@@ -561,12 +661,18 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature,
       if (plans.length >= 3) {
         console.log("[clip-director] Sol (" + SEQUENCE_MODEL + ") — lieu unique : " + lieu.slice(0, 80));
         console.log("[clip-director] " + plans.length + " plans dans ce lieu");
-        var maxPlans = Array.isArray(arcSteps) && arcSteps.length ? arcSteps.length : PLAN_COUNT;
-        var scenes = plans.slice(0, maxPlans).map(function(s) {
+        var maxPlans = nbVoulus || (Array.isArray(arcSteps) && arcSteps.length ? arcSteps.length : PLAN_COUNT);
+        if (nbVoulus && plans.length < nbVoulus) {
+          console.warn("[clip-director] Sol a rendu " + plans.length + " plans sur " + nbVoulus + " demandés : les derniers segments reprendront les premiers.");
+        }
+        var scenes = plans.slice(0, maxPlans).map(function(s, i) {
+          var beat = nbVoulus ? beats[i] : null;
           return {
             name: String(s.name || "Plan").slice(0, 24),
             visual: String(s.visual || "").slice(0, 300),
             duration: 15,
+            section: beat ? beat.section : undefined,
+            acte: beat ? beat.acte : undefined,
           };
         });
         scenes.lieu = lieu;
@@ -771,7 +877,7 @@ async function directClipScenes(config) {
   var signature = config.signature !== undefined ? config.signature : resolveSonicColor(title, lyrics, style);
   var mood = config.mood !== undefined ? config.mood : await generateMood(title, lyrics, signature);
   var arcSteps = config.arcSteps !== undefined ? config.arcSteps : resolveVivyArc(lyrics, null);
-  var scenes = await generateVisualScenes(title, lyrics, style, mood, config.cast, signature, config.lieu, config.direction, arcSteps, config.render);
+  var scenes = await generateVisualScenes(title, lyrics, style, mood, config.cast, signature, config.lieu, config.direction, arcSteps, config.render, config.beats);
   if (scenes && scenes.length >= 3) return scenes;
 
   console.log("[clip-director] Fallback génériques");
@@ -822,6 +928,12 @@ async function directClip(config) {
     ? cfg.lyricsSections
     : await decorticateLyrics(cfg.title || "", lyrics, teardown);
   var arcSteps = resolveVivyArc(lyrics, lyricsSections);
+  // L'arc de Vivy étiré sur tous les segments, chaque plan portant l'acte des paroles.
+  var beats = etirerArc(arcSteps, lyricsSections, cfg.planCount, cfg.durationSeconds, teardown);
+  if (beats) {
+    console.log("[clip-director] Vivy — arc étiré sur " + beats.length + " plans ("
+      + (Array.isArray(lyricsSections) && lyricsSections.length ? "actes lus dans les paroles" : "sans paroles découpées") + ")");
+  }
 
   progress("sequencing", "Écriture des plans et du scénario");
   var scenes = await directClipScenes(Object.assign({}, cfg, {
@@ -829,6 +941,7 @@ async function directClip(config) {
     mood: mood,
     signature: signature,
     arcSteps: arcSteps,
+    beats: beats,
     cast: identity.castLabels,
     lieu: cfg.lieu || '',
     direction: cfg.direction || '',
@@ -853,6 +966,7 @@ async function directClip(config) {
     lyrics: lyrics,
     lyricsSections: lyricsSections,
     arcSteps: arcSteps,
+    beats: beats,
     teardown: teardown,
     mood: mood,
     signature: signature,
@@ -1031,6 +1145,8 @@ module.exports = {
   LYRICS_MODEL,
   MONTAGE_MODEL,
   SCENARIO_MODEL,
+  etirerArc,
+  buildBeatsBlock,
   resolveTeardown,
   resolveLocalAudioPath,
   reviewMontageA11,

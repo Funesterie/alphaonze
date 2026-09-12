@@ -615,45 +615,9 @@ async function generateClip(config = {}, {
   console.log('[clip] Audio prêt');
   emitProgress(onProgress, { stage: 'audio:ready', status: 'validating', progress: 8 });
 
-  // Vivy Director : scènes issues des paroles + identité visuelle des personnages.
-  // Une erreur de modèle ou une réponse mal formée est propagée : on ne masque
-  // plus un échec de scénarisation sous six plans génériques.
-  let identity = { identityIds: [], prompt: '', negativePrompt: '', referenceImageUrls: [] };
-  let lieu = '';
-  const directorProgress = (event, details = {}) => {
-    const payload = typeof event === 'string' ? { ...details, stage: event } : { ...(event || {}) };
-    const substage = String(payload.stage || 'working').replace(/^director:/, '');
-    emitProgress(onProgress, {
-      ...payload,
-      stage: `director:${substage}`,
-      status: 'directing',
-      progress: Number.isFinite(Number(payload.progress)) ? Number(payload.progress) : 12,
-    });
-  };
-  emitProgress(onProgress, { stage: 'director:starting', status: 'directing', progress: 10 });
-  let directed;
-  try {
-    const director = loadDirectorImpl();
-    if (!director || typeof director.directClip !== 'function') throw new Error('directClip indisponible');
-    directed = await director.directClip({ title, songUrl, audioPath, style, sections, casting, castArtists, render,
-      lyrics: config.lyrics, lieu: config.lieu, direction: config.direction, onProgress: directorProgress });
-    sections = requireDirectedScenes(directed);
-  } catch (error) {
-    throw new Error(`clip_director_failed: ${error.message}`);
-  }
-  console.log(`[clip] Director: ${sections.length} plans`);
-  if (directed?.identity) identity = directed.identity;
-  if (directed?.lieu) {
-    lieu = directed.lieu;
-    console.log(`[clip] Lieu unique: ${lieu.slice(0, 70)}`);
-  }
-  // Conserver le scenario propre a ce morceau pour diagnostiquer une derive avant/apres generation.
-  fs.writeFileSync(path.join(clipDir, 'storyboard.json'), JSON.stringify({
-    title, songUrl, lieu, identityIds: directed?.identity?.identityIds || [], scenes: directed?.scenes,
-  }, null, 2));
-  emitProgress(onProgress, { stage: 'director:ready', status: 'directing', progress: 18 });
-
-  // 2. Mesurer la durée
+  // 2. Mesurer la durée -- AVANT le Director (12/09/2026) : c'est elle qui dit
+  // combien de plans écrire. Avant, Sol écrivait un plan par section de l'arc
+  // (~7) et un Full Clip de 26 segments repassait ces 7 plans quatre fois.
   // Le repli de 180 s ne survit que si la mesure est un nombre. Avant, l'affectation
   // se faisait AVANT toute verification : un ffprobe qui reussit en imprimant « N/A »
   // ou rien donnait NaN, sans exception, donc sans passer par le catch. numSegments
@@ -675,7 +639,7 @@ async function generateClip(config = {}, {
   }
   console.log(`[clip] Durée audio: ${audioDuration}s`);
 
-  // 3. Calculer le nombre de segments (1 vidéo = ~8s, max 8 vidéos pour un clip normal, illimité pour full)
+  // 3. Calculer le nombre de segments (1 vidéo = ~8s, max 6 vidéos pour un clip normal, toute la durée pour full)
   const SEGMENT_SECONDS = 8;
   let numSegments;
   if (fullDuration) {
@@ -684,6 +648,47 @@ async function generateClip(config = {}, {
     numSegments = Math.min(6, Math.ceil(audioDuration / SEGMENT_SECONDS));
   }
   console.log(`[clip] ${numSegments} vidéos à générer (${fullDuration ? 'full' : 'normal'})`);
+
+  // Vivy Director : scènes issues des paroles + identité visuelle des personnages.
+  // Une erreur de modèle ou une réponse mal formée est propagée : on ne masque
+  // plus un échec de scénarisation sous six plans génériques.
+  let identity = { identityIds: [], prompt: '', negativePrompt: '', referenceImageUrls: [] };
+  let lieu = '';
+  const directorProgress = (event, details = {}) => {
+    const payload = typeof event === 'string' ? { ...details, stage: event } : { ...(event || {}) };
+    const substage = String(payload.stage || 'working').replace(/^director:/, '');
+    emitProgress(onProgress, {
+      ...payload,
+      stage: `director:${substage}`,
+      status: 'directing',
+      progress: Number.isFinite(Number(payload.progress)) ? Number(payload.progress) : 12,
+    });
+  };
+  emitProgress(onProgress, { stage: 'director:starting', status: 'directing', progress: 10 });
+  let directed;
+  try {
+    const director = loadDirectorImpl();
+    if (!director || typeof director.directClip !== 'function') throw new Error('directClip indisponible');
+    directed = await director.directClip({ title, songUrl, audioPath, style, sections, casting, castArtists, render,
+      planCount: numSegments, durationSeconds: audioDuration,
+      lyrics: config.lyrics, lieu: config.lieu, direction: config.direction, onProgress: directorProgress });
+    sections = requireDirectedScenes(directed);
+  } catch (error) {
+    throw new Error(`clip_director_failed: ${error.message}`);
+  }
+  console.log(`[clip] Director: ${sections.length} plans`);
+  if (directed?.identity) identity = directed.identity;
+  if (directed?.lieu) {
+    lieu = directed.lieu;
+    console.log(`[clip] Lieu unique: ${lieu.slice(0, 70)}`);
+  }
+  // Conserver le scenario propre a ce morceau pour diagnostiquer une derive avant/apres generation.
+  fs.writeFileSync(path.join(clipDir, 'storyboard.json'), JSON.stringify({
+    title, songUrl, lieu, identityIds: directed?.identity?.identityIds || [], scenes: directed?.scenes,
+  }, null, 2));
+  emitProgress(onProgress, { stage: 'director:ready', status: 'directing', progress: 18 });
+
+  // (La durée et le nombre de plans sont mesurés avant le Director, plus haut.)
 
   // Une seule lecture du catalogue pour tout le clip: les 26 segments d'un full
   // partagent le meme choix de modele, et une panne de decouverte n'empeche pas
