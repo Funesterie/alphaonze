@@ -675,25 +675,52 @@ async function reviewScenarioK44(scenes, lieu, title, lyricsSections) {
  * Un personnage n'est injecté que s'il est réellement nommé dans le titre ou les
  * paroles : une chanson qui ne parle pas de Vivy ne la fait pas apparaître.
  */
-function resolveClipIdentity(config) {
+// Distribution par defaut quand la page dit "auto" et que ni le titre, ni le
+// style, ni les paroles ne nomment personne. NOSSEN est le projet de Djeff : sans
+// elle, un clip "auto" n a aucun personnage et chaque plan reinvente un visage
+// different. Lue a l appel, reglable sans redemarrer ; "aucun" la desactive.
+function castParDefaut() {
+  var v = String(process.env.NOSSEN_CLIP_DEFAULT_CAST || "djeff").trim().toLowerCase();
+  return (v === "aucun" || v === "none") ? "" : v;
+}
+
+function construirePackIdentite(mod, config, artists) {
   var input = {
     title: config.title || "",
     songTitle: config.title || "",
     text: [config.title || "", config.lyrics || "", config.style || ""].join(" "),
   };
+  // Sans ce drapeau le module ignore la distribution : mesure le 12/09/2026,
+  // artists ["djeff"] seul ne rend aucune identite, avec le drapeau il rend djeff.
+  if (artists && artists.length) {
+    input.artists = artists;
+    input.forceVocalCastVisualIdentity = true;
+  }
+  return mod.buildVivyVisualIdentityPack(input);
+}
+
+function resolveClipIdentity(config) {
+  var casting = String((config && config.casting) || "").trim().toLowerCase();
+  var artists = Array.isArray(config && config.castArtists) ? config.castArtists : [];
+  var auto = !casting || casting === "auto";
   try {
     var mod = require("../vivy/visual-identities.cjs");
-    var pack = mod.buildVivyVisualIdentityPack(input);
+    var pack = construirePackIdentite(mod, config, artists);
+    var origine = artists.length ? "casting " + (casting || artists.join("+")) : "titre, style et paroles";
+    var defaut = castParDefaut();
+    if (!(pack.identities || []).length && auto && defaut) {
+      pack = construirePackIdentite(mod, config, [defaut]);
+      origine = "distribution par defaut (" + defaut + ")";
+    }
     var ids = (pack.identities || []).map(function(i) { return i.id; });
     if (ids.length) {
-      console.log("[clip-director] Identités visuelles: " + ids.join(", ")
+      console.log("[clip-director] Identités visuelles: " + ids.join(", ") + " — " + origine
         + " (" + (pack.referenceImageUrls || []).length + " réf. images)");
     } else {
-      console.log("[clip-director] Aucun personnage nommé, pas d'identité forcée.");
+      console.log("[clip-director] Aucun personnage : " + origine + " sans visage humain connu.");
     }
     return {
       identityIds: ids,
-      // Noms lisibles a donner a Sol pour qu'il ecrive des plans habites.
       castLabels: (pack.identities || []).map(function(i) { return i.label || i.id; }),
       prompt: pack.prompt || "",
       negativePrompt: pack.negativePrompt || "",
@@ -760,6 +787,8 @@ async function directClip(config) {
     title: cfg.title || "",
     lyrics: lyrics || "",
     style: cfg.style || "",
+    casting: cfg.casting || "",
+    castArtists: Array.isArray(cfg.castArtists) ? cfg.castArtists : [],
   });
   var signature = resolveSonicColor(cfg.title || "", lyrics, cfg.style || "");
   progress("mood", "Direction émotionnelle du clip");

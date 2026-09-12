@@ -114,7 +114,7 @@ function createWorkerId() {
   return `${os.hostname()}:${process.pid}:${crypto.randomUUID()}`;
 }
 
-function createJob({ songUrl, title, style, fullDuration, userId, email }) {
+function createJob({ songUrl, title, style, fullDuration, casting, userId, email }) {
   return mutateJobs((jobs) => {
     const now = new Date().toISOString();
     const id = `clip-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
@@ -127,6 +127,9 @@ function createJob({ songUrl, title, style, fullDuration, userId, email }) {
       title: title || 'Sans titre',
       style: style || '',
       fullDuration: Boolean(fullDuration),
+      // Distribution demandee par la page, gardee pour pouvoir dire apres coup
+      // quel casting a produit quel clip.
+      casting: String(casting || '').slice(0, 40),
       userId: userId || null,
       email: email || null,
       createdAt: now,

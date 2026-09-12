@@ -417,6 +417,20 @@ function estRefusDePolitique(message) {
 
 // Garde-fou de cout: si le filtre refuse tout, on ne paie pas 26 refus d'affilee.
 const PLAFOND_REFUS_POLITIQUE = Math.max(1, Number(process.env.NOSSEN_CLIP_MAX_POLICY_REFUSALS) || 4);
+
+// Un refus d'autorisation du compte Comfy est intermittent : le 11/09/2026, sur
+// FIGHTERZ CLUB, quatre plans sont passes avec la meme cle, puis le cinquieme a
+// recu "Unauthorized: Please login first to use this node" ; le 09/09, un clip
+// normal est mort ainsi des son premier plan. Le noeud refuse AVANT de generer :
+// un seul nouvel essai apres une pause, puis on s'arrete en le disant.
+function estRefusAutorisation(message) {
+  return /Unauthorized|Please login first|Unable to verify account access/i.test(String(message || ''));
+}
+const PAUSE_REPRISE_AUTORISATION_MS = (() => {
+  const brut = process.env.NOSSEN_CLIP_AUTH_RETRY_PAUSE_MS;
+  const v = brut === undefined || brut === '' ? NaN : Number(brut);
+  return Number.isFinite(v) && v >= 0 ? Math.min(v, 300000) : 30000;
+})();
 // Soumettre UNE vidéo et ATTENDRE qu'elle soit prête
 async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = null, {
   postJsonImpl = postJson,
@@ -554,7 +568,7 @@ async function generateClip(config = {}, {
   nowImpl = Date.now,
   randomBytesImpl = crypto.randomBytes,
 } = {}) {
-  let { songUrl, title, sections, style = '', fullDuration, onProgress } = config;
+  let { songUrl, title, sections, style = '', fullDuration, onProgress, casting = '', castArtists = [] } = config;
   const clipId = createClipId(nowImpl, randomBytesImpl);
   const clipDir = path.join(CLIPS_DIR, clipId);
   fs.mkdirSync(clipDir, { recursive: true });
@@ -592,7 +606,7 @@ async function generateClip(config = {}, {
   try {
     const director = loadDirectorImpl();
     if (!director || typeof director.directClip !== 'function') throw new Error('directClip indisponible');
-    directed = await director.directClip({ title, songUrl, audioPath, style, sections, onProgress: directorProgress });
+    directed = await director.directClip({ title, songUrl, audioPath, style, sections, casting, castArtists, onProgress: directorProgress });
     sections = requireDirectedScenes(directed);
   } catch (error) {
     throw new Error(`clip_director_failed: ${error.message}`);
@@ -668,7 +682,15 @@ async function generateClip(config = {}, {
     const prompt = `${section.visual}.${lieuBrief} Cinematic anime quality, volumetric lighting, smooth camera movement. ${style}${identityBrief}`.trim();
 
     try {
-      const videoUrl = await generateVideoImpl(prompt, i, 600000, identity, { onProgress, models: videoModels });
+      let videoUrl;
+      try {
+        videoUrl = await generateVideoImpl(prompt, i, 600000, identity, { onProgress, models: videoModels });
+      } catch (premiereErreur) {
+        if (!estRefusAutorisation(premiereErreur && premiereErreur.message)) throw premiereErreur;
+        console.warn(`[clip] Vidéo ${i}: autorisation Comfy refusée, nouvel essai dans ${Math.round(PAUSE_REPRISE_AUTORISATION_MS / 1000)} s.`);
+        await sleepImpl(PAUSE_REPRISE_AUTORISATION_MS);
+        videoUrl = await generateVideoImpl(prompt, i, 600000, identity, { onProgress, models: videoModels });
+      }
       const dest = path.join(clipDir, `scene_${String(i).padStart(2, '0')}.mp4`);
       emitProgress(onProgress, { stage: 'video:downloading', status: 'generating', segmentIndex: i });
       await materializeMedia(videoUrl, dest, { kind: 'video' });
@@ -692,7 +714,10 @@ async function generateClip(config = {}, {
           break;
         }
       } else {
-        console.warn(`[clip] Vidéo ${i} échouée sans resoumission: ${error.message}`);
+        const cause = estRefusAutorisation(error.message)
+          ? 'compte Comfy toujours non autorisé après un nouvel essai (crédits ou accès partenaire)'
+          : 'échouée sans resoumission';
+        console.warn(`[clip] Vidéo ${i} ${cause}: ${error.message}`);
         break;
       }
     }
@@ -810,6 +835,8 @@ module.exports = {
   T2V_DEFAUT,
   choisirReference,
   PLAFOND_REFUS_POLITIQUE,
+  PAUSE_REPRISE_AUTORISATION_MS,
+  estRefusAutorisation,
   estRefusDePolitique,
   extractComfyErrorDetail,
   describeBridgeFailure,

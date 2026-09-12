@@ -38,12 +38,37 @@ function sanitizeJobDiagnostic(value, maxLength = 500) {
     .slice(0, maxLength);
 }
 
+// Valeurs du menu casting de la page NOSSEN. "auto" et le vide laissent le
+// Director choisir ; tout le reste est une distribution explicite. Rien de ce qui
+// arrive du navigateur n est repris tel quel.
+function normaliserCasting(valeur) {
+  const v = String(valeur == null ? '' : valeur).trim().toLowerCase().slice(0, 40);
+  return /^[a-z0-9-]+$/.test(v) ? v : '';
+}
+
+function normaliserDistribution(multiVoice, casting) {
+  const propres = (Array.isArray(multiVoice) ? multiVoice : [])
+    .map((x) => String(x == null ? '' : x).trim().toLowerCase().slice(0, 30))
+    .filter((x) => /^[a-z0-9-]+$/.test(x));
+  if (propres.length) return [...new Set(propres)].slice(0, 16);
+  // random-lead est tire au sort par la page avant l envoi : s il arrive tel
+  // quel, il n a pas ete resolu, et on laisse le Director choisir.
+  if (casting && casting !== 'auto' && casting !== 'random-lead') return [casting];
+  return [];
+}
+
 function createClipRouter({ verifyJWT, isAdmin, generateClipImpl } = {}) {
   const router = express.Router();
 
   // Lancer un clip (authentification requise)
   router.post('/start', express.json({ limit: '512kb' }), async (req, res) => {
     const { songUrl, title, style, fullDuration, sections } = req.body;
+    // La page NOSSEN envoie la distribution choisie (casting + multiVoice). Elle
+    // etait jetee ici : aucun clip lance depuis le site ou le telephone ne recevait
+    // d identite, et chaque plan reinventait le visage du personnage (constate par
+    // Djeff le 12/09/2026 sur trois clips d affilee).
+    const casting = normaliserCasting(req.body && req.body.casting);
+    const castArtists = normaliserDistribution(req.body && req.body.multiVoice, casting);
     if (!songUrl) return res.status(400).json({ ok: false, error: 'songUrl requis' });
 
     const user = req.user || (req.session && req.session.user) || {};
@@ -52,13 +77,14 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl } = {}) {
       title,
       style,
       fullDuration,
+      casting,
       userId: user.id || user.sub || null,
       email: user.email || null,
     });
 
     // Lancer la génération en arrière-plan
     setImmediate(() => {
-      runClipGeneration(job.id, { songUrl, title, style, fullDuration, sections }, {
+      runClipGeneration(job.id, { songUrl, title, style, fullDuration, sections, casting, castArtists }, {
         workerId: CLIP_WORKER_ID,
         generateClipImpl,
       }).catch((error) => {
@@ -189,4 +215,4 @@ async function runClipGeneration(jobId, config, {
   }
 }
 
-module.exports = { CLIP_WORKER_ID, createClipRouter, runClipGeneration, sanitizeJobDiagnostic };
+module.exports = { CLIP_WORKER_ID, createClipRouter, normaliserCasting, normaliserDistribution, runClipGeneration, sanitizeJobDiagnostic };
