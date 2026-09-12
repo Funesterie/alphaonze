@@ -39,6 +39,9 @@ jobs:
           cache: npm
           cache-dependency-path: a11/backend/apps/server/package-lock.json
 
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg
+
       - name: Install backend dependencies
         working-directory: a11/backend/apps/server
         run: npm ci

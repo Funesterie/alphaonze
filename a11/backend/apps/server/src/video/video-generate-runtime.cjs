@@ -2370,16 +2370,25 @@ async function resolveInitialReferenceFrame({
   ).trim();
   if (explicitImagePath && fs.existsSync(explicitImagePath)) {
     const absolutePath = path.resolve(explicitImagePath);
-    const publishedUrl = await publishLocalOrUploadedAsset({
-      req,
-      absolutePath,
-      uploadBufferToR2,
-      uploadFilename: path.basename(absolutePath),
-      contentType: guessContentTypeFromPath(absolutePath),
-    });
+    const crossPlatformFilename = String(explicitImagePath).replace(/\\/g, '/').split('/').filter(Boolean).pop()
+      || path.basename(absolutePath);
+    if (hasSdProxyConfigured(process.env)) {
+      const publishedUrl = await publishLocalOrUploadedAsset({
+        req,
+        absolutePath,
+        uploadBufferToR2,
+        uploadFilename: crossPlatformFilename,
+        contentType: guessContentTypeFromPath(absolutePath),
+      });
+      return {
+        initImageUrl: publishedUrl || '',
+        initImagePath: absolutePath,
+        sourceMode: 'image_path',
+      };
+    }
     return {
-      initImageUrl: publishedUrl,
-      initImagePath: absolutePath,
+      initImageUrl: '',
+      initImagePath: explicitImagePath,
       sourceMode: 'image_path',
     };
   }
@@ -2742,14 +2751,17 @@ function buildFfmpegAssemblyArgs({
 }
 
 function shouldRetryFfmpegWithCpu(error_, codec = '') {
-  if (!/_nvenc$/i.test(String(codec || '').trim())) {
-    return false;
-  }
   const message = String(error_?.message || error_ || '').toLowerCase();
-  return message.includes('libcuda.so.1')
+  const errorIsNvenc = message.includes('[h264_nvenc]')
+    || message.includes('[hevc_nvenc]')
+    || message.includes('libcuda.so.1')
     || message.includes('cannot load libcuda')
     || message.includes('cuda')
     || message.includes('nvenc');
+  if (!/_nvenc$/i.test(String(codec || '').trim()) && !errorIsNvenc) {
+    return false;
+  }
+  return errorIsNvenc || /_nvenc$/i.test(String(codec || '').trim());
 }
 
 function buildCpuFallbackFfmpegConfig(config = {}) {
@@ -2999,6 +3011,7 @@ function createGenerateVideoHandler(overrides = {}) {
   const resolveImageReferencePack = overrides.resolveImageReferencePack;
   const resolveImageWebDraft = overrides.resolveImageWebDraft;
   const usesCustomFfmpegRunner = typeof overrides.runFfmpeg === 'function';
+  const overriddenCapabilities = overrides.ffmpegCapabilities || null;
 
   return async function generateVideoInternal({ req, prompt, body = null }) {
     if (typeof generateSd !== 'function') {
@@ -3014,6 +3027,16 @@ function createGenerateVideoHandler(overrides = {}) {
 
     const requestBody = body || req?.body || {};
     const request = normalizeVideoRequest(requestBody, prompt);
+    if (overriddenCapabilities) {
+      const caps = overriddenCapabilities;
+      const resolvedCodec = caps.h264Nvenc ? 'h264_nvenc' : (caps.hevcNvenc ? 'hevc_nvenc' : 'libx264');
+      request.config = {
+        ...request.config,
+        mp4Codec: resolvedCodec,
+        mp4Preset: caps.h264Nvenc ? 'p5' : 'medium',
+        ffmpegCapabilities: caps,
+      };
+    }
     const audioRequest = resolveVideoAudioRequest(requestBody, request.prompt);
     const sdRequestOverrides = resolveVideoSdRequestOverrides(requestBody);
     const hasExplicitSource = hasExplicitVideoVisualSource(request);

@@ -2218,6 +2218,7 @@ test('createGenerateVideoHandler falls back to libx264 when NVENC is unavailable
   const ffmpegCalls = [];
 
   const generateVideo = createGenerateVideoHandler({
+    ffmpegCapabilities: { h264Nvenc: true, hevcNvenc: false },
     generateSd: async () => ({
       ok: true,
       image_url: 'https://files.example.com/frame-1.png',

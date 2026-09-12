@@ -103,6 +103,9 @@ function resolveJanusPythonBin() {
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) return candidate;
   }
+  if (!explicit && isLocalRuntime(process.env)) {
+    return DEFAULT_VISION_PYTHON;
+  }
   return explicit || (process.platform === 'win32' ? 'python' : 'python3');
 }
 
