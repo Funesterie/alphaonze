@@ -157,7 +157,16 @@ function createHarness(fetchImpl) {
   elements.get('casting').value = 'auto';
 
   const playButtons = [];
+  // Un vrai navigateur a addEventListener sur document et window ; la page mobile
+  // s en sert des le chargement (reprise au retour de Safari iOS). Sans eux, le
+  // script plantait avant la premiere assertion.
+  const documentListeners = new Map();
   const document = {
+    visibilityState: 'visible',
+    addEventListener(type, listener) {
+      if (!documentListeners.has(type)) documentListeners.set(type, []);
+      documentListeners.get(type).push(listener);
+    },
     getElementById(id) {
       if (!elements.has(id)) elements.set(id, createElement(id));
       return elements.get(id);
@@ -188,10 +197,18 @@ function createHarness(fetchImpl) {
     setInterval: scheduler.setTimeout,
     clearInterval: scheduler.clearTimeout,
   };
+  const windowListeners = new Map();
+  context.addEventListener = (type, listener) => {
+    if (!windowListeners.has(type)) windowListeners.set(type, []);
+    windowListeners.get(type).push(listener);
+  };
   context.window = context;
   vm.runInNewContext(readPageScript(), context, { filename: serverPagePath });
 
   return {
+    document,
+    documentListeners,
+    windowListeners,
     hooks: context.__NOSSEN_TEST_HOOKS__,
     elements,
     playButtons,
@@ -464,4 +481,64 @@ test('le lecteur arrete un demarrage bloque meme si paused passe deja a false', 
   assert.equal(page.elements.get('player-state').classList.contains('error'), true);
   assert.equal(page.hooks.state().currentIdx, null);
   assert.equal(audio.paused, true);
+});
+
+// Reprise au retour de Safari iOS (branche mobile). Les tests d origine de cette
+// branche ne faisaient que chercher des motifs dans le HTML ; ceux-ci executent
+// vraiment la reprise, comme elle se produira sur le telephone.
+const CLE_SUIVI = 'nossen.activeClipJob.v1';
+
+test('au retour au premier plan, un Full Clip memorise reprend son suivi aussitot', async () => {
+  let appelsStatut = 0;
+  const page = createHarness(async (url) => {
+    if (new URL(url).pathname.includes('/status/job-retour')) {
+      appelsStatut += 1;
+      return jsonResponse(200, { ok: true, status: 'generating', stage: 'video:polling', progress: 40 });
+    }
+    return jsonResponse(200, { ok: true, clips: [] });
+  });
+  page.sessionStorage.setItem(CLE_SUIVI, JSON.stringify({ id: 'job-retour', mode: 'full', startedAt: Date.now() }));
+  assert.ok(!page.hooks.state().activeJobId, 'aucun suivi actif avant le retour');
+  const ecouteurs = page.documentListeners.get('visibilitychange') || [];
+  assert.equal(ecouteurs.length, 1, 'la page doit ecouter visibilitychange');
+  page.document.visibilityState = 'visible';
+  ecouteurs[0]();
+  page.scheduler.runNext();
+  await settle();
+  assert.equal(page.hooks.state().activeJobId, 'job-retour');
+  assert.ok(appelsStatut >= 1, 'le statut du job doit etre redemande au serveur');
+});
+
+test('une page restauree par le bfcache de Safari reprend aussi le suivi', async () => {
+  let appelsStatut = 0;
+  const page = createHarness(async (url) => {
+    if (new URL(url).pathname.includes('/status/job-bfcache')) {
+      appelsStatut += 1;
+      return jsonResponse(200, { ok: true, status: 'generating', stage: 'video:polling', progress: 20 });
+    }
+    return jsonResponse(200, { ok: true, clips: [] });
+  });
+  page.sessionStorage.setItem(CLE_SUIVI, JSON.stringify({ id: 'job-bfcache', mode: 'clip', startedAt: Date.now() }));
+  const ecouteurs = page.windowListeners.get('pageshow') || [];
+  assert.equal(ecouteurs.length, 1, 'la page doit ecouter pageshow');
+  ecouteurs[0]({ persisted: true });
+  page.scheduler.runNext();
+  await settle();
+  assert.equal(page.hooks.state().activeJobId, 'job-bfcache');
+  assert.ok(appelsStatut >= 1);
+});
+
+test('un suivi memorise hors de sa fenetre est oublie au lieu d etre relance', async () => {
+  let appelsStatut = 0;
+  const page = createHarness(async (url) => {
+    if (new URL(url).pathname.includes('/status/')) appelsStatut += 1;
+    return jsonResponse(200, { ok: true, clips: [] });
+  });
+  page.sessionStorage.setItem(CLE_SUIVI, JSON.stringify({ id: 'job-perime', mode: 'full', startedAt: 1 }));
+  page.document.visibilityState = 'visible';
+  (page.documentListeners.get('visibilitychange') || [])[0]();
+  try { page.scheduler.runNext(); } catch (_) { /* rien de planifie : attendu */ }
+  await settle();
+  assert.equal(appelsStatut, 0, 'aucun appel pour un job hors fenetre');
+  assert.ok(!page.sessionStorage.getItem(CLE_SUIVI), 'l etat perime doit etre efface');
 });

@@ -159,6 +159,16 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   var POLL_FULL_MAX_MS = 8 * 60 * 60 * 1000;
   var POLL_STORAGE_KEY = "nossen.activeClipJob.v1";
   var AUDIO_START_TIMEOUT_MS = 20000;
+  // Silent-refresh assumption: the a11_session refresh only works while the JWT is
+  // still valid. An already-expired token is rejected 401 by design (the refresh
+  // route cannot revive a dead token), so this 10-minute margin against the ~8s
+  // poll cadence is what keeps the refresh firing BEFORE expiry. Caveat: if the tab
+  // is backgrounded through the entire window (Safari freezes timers), the token can
+  // still expire until a foreground poll (the Point B visibilitychange/pageshow
+  // handler) fires the next refresh.
+  var REFRESH_MARGIN_MS = 10 * 60 * 1000;
+  var sessionExpiresAt = null;
+  var refreshInFlight = false;
 
   var SC = {
     live: [{n:"Ouverture",v:"Wide concert arena lights fog lasers crowd anticipation blue purple"},{n:"Voix",v:"Female singer long purple-cyan hair microphone golden spotlight emotional white violet outfit"},{n:"Climax",v:"Stage erupts holographics singer arms spread crowd hands confetti energy"},{n:"Pont",v:"Singer alone blue light eyes closed crowd phone lights stars emotional"},{n:"Final",v:"Full stage fireworks singer triumphant arms raised holographic wings purple gold"},{n:"Fermeture",v:"Singer bows confetti smile wave lights dim single spotlight camera back"}],
@@ -385,15 +395,50 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     document.getElementById("file-name").textContent = "";
   }
 
+  function parseSessionExpiry(session) {
+    if (!session || !session.expiresAt) return null;
+    var ts = Date.parse(session.expiresAt);
+    return Number.isFinite(ts) ? ts : null;
+  }
+
+  // Silent session refresh: while a Full Clip job is being tracked, re-issue the
+  // a11_session cookie before its JWT expires so long generations do not drop the
+  // status polling with a 401. Guarded so at most one refresh runs at a time and
+  // it only fires when a job is active and the token is close to expiry.
+  function maybeRefreshSession() {
+    if (!activeJobId) return;
+    if (refreshInFlight) return;
+    if (!sessionExpiresAt) return;
+    if (sessionExpiresAt - Date.now() >= REFRESH_MARGIN_MS) return;
+    refreshInFlight = true;
+    try {
+      api("/api/auth/refresh", {}).then(function(d) {
+        if (d && d.ok && d.session) {
+          var next = parseSessionExpiry(d.session);
+          if (next) sessionExpiresAt = next;
+        }
+      }).catch(function() {
+        // Best effort: a failed silent refresh must not be more aggressive than
+        // the existing 401 handling in checkStatus(). Leave polling untouched.
+      }).then(function() {
+        refreshInFlight = false;
+      });
+    } catch (_) {
+      refreshInFlight = false;
+    }
+  }
+
   function checkAuth() {
     return api("/api/auth/me").then(function(d) {
       if (d && d.authenticated && d.user) {
         userEmail = d.user.email || d.user.displayName || null;
         isAdmin = ADMIN_EMAILS.indexOf((userEmail || "").toLowerCase()) !== -1;
+        sessionExpiresAt = parseSessionExpiry(d.session);
         document.getElementById("user-badge").textContent = "\uD83D\uDD13 " + (userEmail || "Connecté");
       } else {
         userEmail = null;
         isAdmin = false;
+        sessionExpiresAt = null;
         document.getElementById("user-badge").innerHTML = '<a href="/login" style="color:var(--muted);text-decoration:underline;font-size:.6rem">Se connecter pour accéder aux clips</a>';
       }
       updateFullClipButton();
@@ -708,7 +753,14 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
           return false;
         }
         if (errorStates.indexOf(status) !== -1) {
-          terminalMessage("❌ " + (d.error || (status === "cancelled" || status === "canceled" ? "Génération annulée" : "Génération échouée")), "error", true);
+          var fallbackError = d.error || (status === "cancelled" || status === "canceled" ? "Génération annulée" : "Génération échouée");
+          if (d.errorInfo && d.errorInfo.node_type) {
+            var nodeTag = escapeHtml(truncate(String(d.errorInfo.node_type), 80));
+            var detailMsg = escapeHtml(truncate(String(d.errorInfo.message || fallbackError), 300));
+            terminalMessage("❌ [" + nodeTag + "] " + detailMsg, "error", true);
+          } else {
+            terminalMessage("❌ " + fallbackError, "error", true);
+          }
           return false;
         }
         if (ongoingStates.indexOf(status) === -1) {
@@ -718,6 +770,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 
         var detail = truncate(d.message || d.stage || status, 160);
         document.getElementById("msg").textContent = label + " : " + detail + " " + progress + "%";
+        maybeRefreshSession();
         return true;
       }).catch(function(error) {
         if (activeJobId !== id) return false;
@@ -760,6 +813,35 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     document.getElementById("msg").textContent = "⏳ Reprise du suivi de la génération…";
     document.getElementById("bar").classList.add("on");
     pollJob(saved.id, saved.mode === "full" ? "full" : "clip", saved.startedAt);
+  }
+
+  // Safari iOS gèle le setTimeout récursif et coupe les fetch en cours quand
+  // l'onglet passe en arrière-plan : au retour au premier plan on relance
+  // immédiatement le suivi du job persisté au lieu d'attendre POLL_INTERVAL_MS.
+  // Idempotent : on réutilise resumePolling()/pollJob() (qui appelle stopPolling
+  // avant de repartir), on respecte activeJobId + pollInFlight et la fenêtre max.
+  function resumePollingFromForeground() {
+    var saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem(POLL_STORAGE_KEY) || "null"); } catch (_) { return; }
+    if (!saved || !saved.id || !saved.startedAt) return;
+    var maxDuration = saved.mode === "full" ? POLL_FULL_MAX_MS : POLL_CLIP_MAX_MS;
+    if (Date.now() - Number(saved.startedAt) >= maxDuration) {
+      clearPollState();
+      return;
+    }
+    if (pollInFlight) return;
+    if (!activeJobId || !pollTimer) {
+      // Aucun suivi actif (ou timer figé par la mise en arrière-plan) : (re)démarre.
+      resumePolling();
+      return;
+    }
+    // Un suivi est déjà armé mais le prochain check pouvait attendre jusqu'à
+    // POLL_INTERVAL_MS : force une vérification immédiate en réamorçant pollJob
+    // via resumePolling() (stopPolling puis scheduleNext(0)), sans dupliquer la
+    // machine à états de polling.
+    if (clearTimeout) { clearTimeout(pollTimer); }
+    pollTimer = null;
+    resumePolling();
   }
 
   function loadClips() {
@@ -901,6 +983,23 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       importedFile = null;
       document.getElementById("import-url").value = "";
       document.getElementById("file-name").textContent = "";
+    }
+  });
+
+  // Reprise du suivi au retour au premier plan (Safari iOS arrière-plan / bfcache).
+  document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === "visible") {
+      try { resumePollingFromForeground(); } catch (_) {}
+    }
+  });
+  window.addEventListener("pageshow", function(event) {
+    // event.persisted => restauration depuis le bfcache Safari iOS.
+    if (event && event.persisted) {
+      try { resumePollingFromForeground(); } catch (_) {}
+      return;
+    }
+    if (document.visibilityState === "visible") {
+      try { resumePollingFromForeground(); } catch (_) {}
     }
   });
 
