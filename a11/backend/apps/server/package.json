@@ -180,7 +180,7 @@
   "overrides": {
     "body-parser": "2.3.0",
     "postcss": "8.5.25",
-    "sharp": "0.35.4"
+    "sharp": "$sharp"
   },
   "funesterieSupport": {
     "paypal": "https://paypal.me/funeste38",
