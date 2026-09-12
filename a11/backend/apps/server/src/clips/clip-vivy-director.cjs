@@ -35,7 +35,11 @@ const MOOD_MODEL = process.env.NOSSEN_MOOD_MODEL || "x-ai/grok-4.3";
 const PLAN_COUNT = 6;
 
 // A11 relit le montage, K44 le scenario. Modeles verifies par appel reel.
-const MONTAGE_MODEL = process.env.NOSSEN_MONTAGE_MODEL || "openai/gpt-4o";
+// 12/09/2026, decision de Djeff : plus de gpt-4o nulle part. A11 relit le montage
+// sur gpt-5.6-terra, volontairement distinct de Sol (gpt-6-astra) : un relecteur
+// qui partage le cerveau de l auteur relit ses propres angles morts. Sans "/",
+// l appel part en OpenAI direct, avec les parametres gpt-5+.
+const MONTAGE_MODEL = process.env.NOSSEN_MONTAGE_MODEL || "gpt-5.6-terra";
 const SCENARIO_MODEL = process.env.NOSSEN_SCENARIO_MODEL || "x-ai/grok-4.3";
 
 // Claude decortique les paroles. Identifiants verifies par appel reel le
@@ -989,6 +993,8 @@ async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood) {
 
 module.exports = {
   CONSIGNE_ANTI_FRANCHISE,
+  MONTAGE_MODEL,
+  SEQUENCE_MODEL,
   DJEFF_ENGINE_CLOUD_MODEL,
   DJEFF_VISUAL_MAX_CHARS,
   djeffEngineTokenBudget,
