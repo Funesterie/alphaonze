@@ -104,7 +104,7 @@ RUN set -eu; \
 COPY . .
 
 # NOSSEN: Le package mcp-bridge-tunnel est copié dans le contexte Docker
-# par le script de release (redeploy-green.sh ou CI).
+# par a11/ops/deploy-a11-prod-finland-2.ps1 (ou la CI).
 # mount-zen-gate.cjs le cherche à /app/packages/mcp-bridge-tunnel/index.cjs
 
 # Optional Pink Ward / Janus runtime for GPU-enabled production images.

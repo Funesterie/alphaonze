@@ -20,6 +20,10 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# -Quaternion est une extension de la bascule blue/green : seul, il laissait
+# $BlueGreen a faux et le deploiement partait en mono-couleur sans le dire.
+if ($Quaternion) { $BlueGreen = [switch]$true }
+
 $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
 
 # --- Une seule source de verite ---
@@ -549,9 +553,15 @@ function Get-ProchaineCouleur($active, $couleurs) {
 }
 
 function Get-OrdreDepuis($tete, $couleurs) {
+  # Du plus recent au plus ancien : on remonte la rotation A REBOURS. La couleur
+  # deployee juste avant la tete est la precedente dans la liste, pas la suivante.
+  # Avant le 12/09/2026 cette boucle avancait (i + n) : apres un deploiement de
+  # blue, le repli immediat etait yellow -- la plus ancienne des quatre -- et
+  # green, qui servait le trafic une minute plus tot, passait en dernier.
   $i = [array]::IndexOf($couleurs, $tete)
   if ($i -lt 0) { return $couleurs }
-  return @(0..($couleurs.Count - 1) | ForEach-Object { $couleurs[($i + $_) % $couleurs.Count] })
+  $n = $couleurs.Count
+  return @(0..($n - 1) | ForEach-Object { $couleurs[($i - $_ + $n) % $n] })
 }
 
 $ActiveBlueGreenColor = "none"
@@ -607,7 +617,7 @@ key='__KEY__'
 secret_file='__REMOTE_ROOT__/secrets/a11.env'
 active_color="$(cat '__REMOTE_ROOT__/bluegreen/active-color' 2>/dev/null || true)"
 case "$active_color" in
-  blue|green)
+  blue|green|yellow|purple)
     containers="a11-backend-${active_color} kaen44-backend-${active_color}"
     ;;
   *)
@@ -1512,7 +1522,8 @@ $caddyKaen44BackendService = $Kaen44BackendService
 # contrat: couleur candidate en tete, couleur precedente en repli sonde par /health.
 # lb_policy first garde un routage deterministe -- ce n'est pas de la repartition de
 # charge, la seconde adresse ne sert que si la premiere echoue sa sonde.
-# Yellow n'est deliberement jamais expose ici.
+# En mode -Quaternion, toutes les couleurs vivantes sont listees (bloc suivant).
+# Revenir en arriere sans deployer : a11/ops/rollback-a11-prod.sh.
 $caddyA11Upstreams = "${caddyA11BackendService}:3000"
 $caddyKaen44Upstreams = "${caddyKaen44BackendService}:3001"
 $caddyFallbackBlock = ""
@@ -2873,6 +2884,60 @@ ensure_compose_named_container_owner "a11-stt-whisper" "a11-stt-whisper"
 '@
 $remoteComposeOwnershipStep = $remoteComposeOwnershipStep.Replace('__REMOTE_ROOT__', $RemoteRoot)
 
+# --- Menage des releases, apres une bascule blue/green reussie ---
+#
+# Seule la branche mono-couleur faisait le menage : en blue/green rien n'etait
+# jamais supprime (67 dossiers et 62 archives, 6,5 Go, constate le 12/09/2026).
+#
+# Une release n'est supprimable que si AUCUN conteneur vivant ne la monte.
+# `docker inspect` ne suffit pas : il garde le chemin du symlink `current`, alors
+# que le noyau l'a resolu a la creation du conteneur. On lit donc
+# /proc/<pid>/mountinfo cote hote. Le meme jour, a11-mcp et
+# a11-agent-dialogue-worker montaient encore des releases du 16 et du 18/08 : un
+# simple « garder les N dernieres » leur aurait vide leurs repertoires sans un
+# bruit. Au moindre doute ce menage ne supprime rien, et il ne fait jamais
+# echouer un deploiement deja bascule.
+$remotePruneStep = @'
+prune_releases() {
+  root='__REMOTE_ROOT__'
+  keep_recent=6
+  current_stamp="$(basename "$(readlink -f "$root/current")")"
+  pinned=""
+  total=0
+  lus=0
+  for id in $(docker ps -q); do
+    total=$((total + 1))
+    pid="$(docker inspect -f '{{.State.Pid}}' "$id" 2>/dev/null || echo 0)"
+    if [ "$pid" -gt 0 ] && [ -r "/proc/$pid/mountinfo" ]; then
+      lus=$((lus + 1))
+      pinned="$pinned $(awk '{print $4}' "/proc/$pid/mountinfo" | grep -oE 'releases/[0-9]{8}-[0-9]{6}' | sed 's|^releases/||' | sort -u | tr '\n' ' ' || true)"
+    fi
+  done
+  if [ "$total" -eq 0 ] || [ "$lus" -ne "$total" ]; then
+    echo "menage des releases saute : montages lus pour $lus conteneur(s) sur $total"
+    return 0
+  fi
+  case " $pinned " in
+    *" $current_stamp "*) ;;
+    *) echo "menage des releases saute : la release courante $current_stamp n'apparait dans aucun montage"; return 0 ;;
+  esac
+  supprimees=0
+  for dir in $(ls -1d "$root"/releases/20[0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9] 2>/dev/null | sort | head -n -"$keep_recent"); do
+    stamp="$(basename "$dir")"
+    case " $pinned $current_stamp " in *" $stamp "*) continue ;; esac
+    rm -rf -- "$dir" && supprimees=$((supprimees + 1))
+  done
+  for archive in "$root"/releases/*.tar.gz "$root"/releases/*.tgz; do
+    [ -e "$archive" ] || continue
+    case "$archive" in */"$current_stamp".tar.gz) continue ;; esac
+    rm -f -- "$archive"
+  done
+  echo "menage des releases : $supprimees dossier(s) supprime(s) ; gardees : les $keep_recent plus recentes + montees ($(printf '%s\n' $pinned | sort -u | tr '\n' ' '))"
+}
+prune_releases || echo "AVERTISSEMENT: menage des releases en echec, deploiement non affecte"
+'@
+$remotePruneStep = $remotePruneStep.Replace('__REMOTE_ROOT__', $RemoteRoot)
+
 if ($BlueGreen) {
   $cleanOldFlag = if ($CleanOldBlueGreen) { "1" } else { "0" }
   $remoteDeploy = @"
@@ -2955,6 +3020,9 @@ echo "`$next_color" > $RemoteRoot/bluegreen/active-color
 if [ "`$clean_old" = "1" ] && [ "`$old_color" != "none" ] && [ "`$old_color" != "`$next_color" ]; then
   docker rm -f "a11-backend-`$old_color" "kaen44-backend-`$old_color" 2>/dev/null || true
 fi
+echo "__A11_PRUNE__"
+$remotePruneStep
+echo "__A11_PRUNE_DONE__"
 "@
 } else {
   $remoteDeploy = @"

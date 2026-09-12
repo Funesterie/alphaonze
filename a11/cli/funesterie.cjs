@@ -152,7 +152,7 @@ const COMMANDS = {
   },
 
   '/deploy': () => {
-    return `  ${VIOLET}Pour déployer :${RESET}\n  bash /home/deploy/a11-prod/current/server/ops/redeploy-green.sh`;
+    return `  ${VIOLET}Pour déployer (depuis D:\\projets\\funesterie) :${RESET}\n  .\\a11\\ops\\deploy-a11-prod-finland-2.ps1 -Quaternion -ReuseRemoteSecrets\n  ${VIOLET}Revenir en arrière :${RESET} a11/ops/rollback-a11-prod.sh`;
   },
 };
 

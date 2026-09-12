@@ -44,8 +44,9 @@ reconstruction approximative serait pire que leur absence.
 - **Forces** : review statique, PR slice, risques UX/auth, réponses MCP concises
 - **Limites** : pas de règles globales, pas d'édits config sans validation, pas de secrets, pas de dumps inline
 - **Deploy** : sur demande explicite de Djeff seulement. Procédure et pièges :
-  `a11/ops/deploy-a11-prod-finland-2.ps1 -BlueGreen -ReuseRemoteSecrets`. Relever le
-  point de rollback (`readlink current` + `active-color`) avant, vérifier la phase
+  `a11/ops/deploy-a11-prod-finland-2.ps1 -Quaternion -ReuseRemoteSecrets`. Relever le
+  point de rollback (`readlink current` + `active-color`) avant ; revenir en arrière =
+  `a11/ops/rollback-a11-prod.sh` (écrire `active-color` seul ne change pas Caddy). Vérifier la phase
   Twitch `idle`, et contrôler après coup que le **processus qui tourne** a bien le
   nouveau code — pas seulement que les fichiers sont partis.
 - **Ton** : direct, humble, utile
