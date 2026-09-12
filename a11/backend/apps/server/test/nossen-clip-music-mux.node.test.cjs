@@ -39,3 +39,29 @@ test('le clip garde la musique meme si la scene contient sa propre piste stereo'
   }
   assert.ok(energy(440) > energy(1800) * 1000, 'la chanson doit dominer et le son de scene etre absent');
 });
+
+test('un plan refuse pour son audio est rejoue une fois avec une ambiance neutre, puis livre', { skip: ffmpegDisponible ? false : 'ffmpeg absent sur cette machine' }, async () => {
+  const scene = path.join(root, 'input.mp4');
+  const song = path.join(root, 'song.mp3');
+  if (!fs.existsSync(scene)) {
+    execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=64x64:r=10:d=2', '-c:v', 'libx264', scene]);
+  }
+  if (!fs.existsSync(song)) execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=2', song]);
+  const prompts = [];
+  const result = await generateClip({ songUrl: song, title: 'Refus audio' }, {
+    materializeMedia: async (source, destination) => fs.copyFileSync(source, destination),
+    loadDirectorImpl: () => ({ directClip: async () => ({ scenes: [{ visual: 'Blue scene' }] }) }),
+    generateVideoImpl: async (prompt) => {
+      prompts.push(prompt);
+      if (prompts.length === 1) throw new Error('clip_video_generation_failed: Task failed: {"error": {"code": "OutputAudioSensitiveContentDetected"}}');
+      return scene;
+    },
+    resolveVideoModelsImpl: async () => ({ t2v: 'fixture', decouvert: true }),
+    sleepImpl: async () => {},
+  });
+  assert.equal(prompts.length, 2, 'un seul second essai');
+  assert.ok(!prompts[0].includes('ambient room tone'), 'le premier essai garde le prompt d origine');
+  assert.ok(prompts[1].includes('ambient room tone'), 'le second essai decrit une ambiance neutre');
+  assert.ok(fs.existsSync(result.path), 'le clip est livre');
+  assert.ok(!String(result.warning || '').includes('clip_partial'), 'aucun plan perdu');
+});

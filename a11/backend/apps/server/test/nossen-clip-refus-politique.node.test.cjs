@@ -57,3 +57,13 @@ test('le nombre de refus tolerés est borné, pour ne pas payer 26 refus', () =>
   assert.ok(PLAFOND_REFUS_POLITIQUE >= 1);
   assert.ok(PLAFOND_REFUS_POLITIQUE <= 10, 'au-dela, le garde-fou de cout ne garde plus rien');
 });
+
+test('un refus sur le SON de la scene est reconnu a part, et reste un refus de politique', () => {
+  const { estRefusAudio } = require('../src/clips/clip-generator-v2.cjs');
+  // Message reel du 12/09/2026, clip normal lance depuis le telephone.
+  const refusAudio = 'clip_video_generation_failed: Polling aborted due to error: Task failed: {"id": "cgt-20260912183112-6z66q", "model": "dreamina-seedance-2-0-fast-260128", "status": "failed", "error": {"code": "OutputAudioSensitiveContentDetected", "message": "The request failed because the output audio may contain sensitive information."}}';
+  assert.equal(estRefusAudio(refusAudio), true);
+  assert.equal(estRefusDePolitique(refusAudio), true, 'toujours compte dans le plafond de refus');
+  assert.equal(estRefusAudio('InputTextSensitiveContentDetected: PolicyViolation'), false, 'un refus sur l image ou le texte ne se rejoue pas');
+  assert.equal(estRefusAudio(''), false);
+});

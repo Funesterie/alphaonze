@@ -415,6 +415,17 @@ function estRefusDePolitique(message) {
   return /PolicyViolation|SensitiveContent|copyright restriction/i.test(String(message || ''));
 }
 
+// Le 12/09/2026 (clip normal depuis le telephone), Seedance a refuse un plan pour
+// son AUDIO : "OutputAudioSensitiveContentDetected". Or la piste son des scenes
+// est jetee au montage, la chanson la remplace. Ce refus ne dit donc rien de
+// l'image : le plan merite un second essai, avec une ambiance sonore neutre
+// decrite en positif. Le catalogue Comfy ne documente aucun moyen de couper
+// l'audio de Seedance, d'ou la consigne plutot qu'un parametre invente.
+function estRefusAudio(message) {
+  return /OutputAudioSensitiveContent|output audio may contain sensitive/i.test(String(message || ''));
+}
+const CONSIGNE_AUDIO_NEUTRE = ' Sound: soft ambient room tone and distant wind only.';
+
 // Garde-fou de cout: si le filtre refuse tout, on ne paie pas 26 refus d'affilee.
 const PLAFOND_REFUS_POLITIQUE = Math.max(1, Number(process.env.NOSSEN_CLIP_MAX_POLICY_REFUSALS) || 4);
 
@@ -686,10 +697,19 @@ async function generateClip(config = {}, {
       try {
         videoUrl = await generateVideoImpl(prompt, i, 600000, identity, { onProgress, models: videoModels });
       } catch (premiereErreur) {
-        if (!estRefusAutorisation(premiereErreur && premiereErreur.message)) throw premiereErreur;
-        console.warn(`[clip] Vidéo ${i}: autorisation Comfy refusée, nouvel essai dans ${Math.round(PAUSE_REPRISE_AUTORISATION_MS / 1000)} s.`);
-        await sleepImpl(PAUSE_REPRISE_AUTORISATION_MS);
-        videoUrl = await generateVideoImpl(prompt, i, 600000, identity, { onProgress, models: videoModels });
+        const motif = premiereErreur && premiereErreur.message;
+        if (estRefusAudio(motif) && refusPolitique + 1 < PLAFOND_REFUS_POLITIQUE) {
+          // Le premier refus compte dans le plafond : le second essai est payant lui aussi.
+          refusPolitique += 1;
+          console.warn(`[clip] Vidéo ${i}: son de la scène refusé par le filtre (${refusPolitique}/${PLAFOND_REFUS_POLITIQUE}), nouvel essai avec une ambiance neutre.`);
+          videoUrl = await generateVideoImpl(`${prompt}${CONSIGNE_AUDIO_NEUTRE}`, i, 600000, identity, { onProgress, models: videoModels });
+        } else if (estRefusAutorisation(motif)) {
+          console.warn(`[clip] Vidéo ${i}: autorisation Comfy refusée, nouvel essai dans ${Math.round(PAUSE_REPRISE_AUTORISATION_MS / 1000)} s.`);
+          await sleepImpl(PAUSE_REPRISE_AUTORISATION_MS);
+          videoUrl = await generateVideoImpl(prompt, i, 600000, identity, { onProgress, models: videoModels });
+        } else {
+          throw premiereErreur;
+        }
       }
       const dest = path.join(clipDir, `scene_${String(i).padStart(2, '0')}.mp4`);
       emitProgress(onProgress, { stage: 'video:downloading', status: 'generating', segmentIndex: i });
@@ -839,6 +859,7 @@ module.exports = {
   choisirReference,
   PLAFOND_REFUS_POLITIQUE,
   PAUSE_REPRISE_AUTORISATION_MS,
+  estRefusAudio,
   estRefusAutorisation,
   estRefusDePolitique,
   extractComfyErrorDetail,
