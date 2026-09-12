@@ -65,7 +65,7 @@ test('chaque personnage a sa fiche video, et les autres usages gardent la fiche 
 
 test('le duo Djeff x Vivy garde deux personnages distincts, en anglais', () => {
   const { resolveClipIdentity } = require('../src/clips/clip-vivy-director.cjs');
-  const duo = resolveClipIdentity({ title: 'T', lyrics: '', style: '', casting: 'duo-djeff-vivy', castArtists: ['djeff', 'vivy'] });
+  const duo = resolveClipIdentity({ title: 'T', lyrics: '', style: '', casting: 'duo-djeff-vivy', castArtists: ['djeff', 'vivy'], render: 'anime' });
   assert.deepEqual([...duo.identityIds].sort(), ['djeff', 'vivy']);
   assert.match(duo.prompt, /Two distinct characters/);
   assert.match(duo.prompt, /Djeff, the creator/);
@@ -73,4 +73,25 @@ test('le duo Djeff x Vivy garde deux personnages distincts, en anglais', () => {
   assert.doesNotMatch(duo.prompt, /[éèàçù]/);
   assert.ok(duo.prompt.length < 900, 'duo complet : ' + duo.prompt.length);
   assert.match(duo.negativePrompt, /Vivy clone/);
+});
+
+test('en film, Vivy est une actrice reelle et son nom ne part pas a la camera', () => {
+  const { resolveClipIdentity } = require('../src/clips/clip-vivy-director.cjs');
+  const { effacerNomsFilm } = require('../src/clips/clip-generator-v2.cjs');
+  const film = resolveClipIdentity({ title: 'T', lyrics: '', style: '', casting: 'auto', castArtists: ['vivy'], render: 'film' });
+  assert.deepEqual(film.identityIds, ['vivy']);
+  assert.match(film.prompt, /real human actress/);
+  assert.match(film.prompt, /twin tails with dark magenta highlights/, 'le costume reste');
+  assert.doesNotMatch(film.prompt, /AI singer|\bVivy\b/, 'le nom et « AI singer » tirent vers l anime');
+  assert.deepEqual(film.nomsFilm, { Vivy: 'the singer' });
+  const plan = effacerNomsFilm("Close shot of Vivy at the desk, Vivy's hands on the keys.", film.nomsFilm);
+  assert.equal(plan, "Close shot of the singer at the desk, the singer's hands on the keys.");
+
+  const defaut = resolveClipIdentity({ title: 'T', lyrics: '', style: '', casting: 'auto', castArtists: ['vivy'] });
+  assert.match(defaut.prompt, /real human actress/, 'sans rendu precise, le film est le defaut');
+
+  const manga = resolveClipIdentity({ title: 'T', lyrics: '', style: '', casting: 'auto', castArtists: ['vivy'], render: 'anime' });
+  assert.match(manga.prompt, /Vivy, the AI singer/, 'le clip manga garde la fiche d origine');
+  assert.deepEqual(manga.nomsFilm, {});
+  assert.equal(effacerNomsFilm('Vivy sings.', manga.nomsFilm), 'Vivy sings.');
 });

@@ -858,12 +858,18 @@ function resolveClipIdentity(config) {
     } else {
       console.log("[clip-director] Aucun personnage : " + origine + " sans visage humain connu.");
     }
+    // Meme regle que le rendu des plans : l'anime se demande, le film est le defaut.
+    var anime = String((config && config.render) || process.env.NOSSEN_CLIP_RENDER || "").trim().toLowerCase() === "anime";
     return {
       identityIds: ids,
       castLabels: (pack.identities || []).map(function(i) { return i.label || i.id; }),
       // La fiche anglaise courte (12/09/2026) : la francaise faisait ~870
       // caracteres dans chaque plan pour 300 de description du plan lui-meme.
-      prompt: pack.videoPrompt || pack.prompt || "",
+      // En film, la fiche « actrice reelle » : le nom et le design de Vivy
+      // suffisaient a faire sortir un clip film en anime.
+      prompt: (anime ? pack.videoPrompt : (pack.videoPromptFilm || pack.videoPrompt)) || pack.prompt || "",
+      // Noms a remplacer dans le prompt camera en film ({ Vivy: "the singer" }).
+      nomsFilm: anime ? {} : (pack.nomsFilm || {}),
       negativePrompt: pack.negativePrompt || "",
       referenceImageUrls: pack.referenceImageUrls || [],
     };
@@ -930,6 +936,7 @@ async function directClip(config) {
     style: cfg.style || "",
     casting: cfg.casting || "",
     castArtists: Array.isArray(cfg.castArtists) ? cfg.castArtists : [],
+    render: cfg.render || "",
   });
   var signature = resolveSonicColor(cfg.title || "", lyrics, cfg.style || "");
   progress("mood", "Direction émotionnelle du clip");

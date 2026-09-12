@@ -465,6 +465,19 @@ function renduVisuel(env = process.env, choixDuClip = '') {
   return RENDUS_VISUELS[choix] || RENDUS_VISUELS.film;
 }
 
+// En film, le nom d'un personnage d'anime (Vivy) suffit a faire basculer le
+// modele video en anime, meme quand tout le reste du prompt dit « live action ».
+// Sol l'ecrit dans ses plans ; on le remplace dans le prompt camera seulement.
+function effacerNomsFilm(texte, nomsFilm) {
+  let s = String(texte || '');
+  for (const [nom, remplacement] of Object.entries(nomsFilm || {})) {
+    if (!nom || !remplacement) continue;
+    const motif = new RegExp(`\\b${nom.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+    s = s.replace(motif, remplacement);
+  }
+  return s;
+}
+
 // Garde-fou de cout: si le filtre refuse tout, on ne paie pas 26 refus d'affilee.
 const PLAFOND_REFUS_POLITIQUE = Math.max(1, Number(process.env.NOSSEN_CLIP_MAX_POLICY_REFUSALS) || 4);
 
@@ -529,7 +542,8 @@ async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = nu
         confirm: true,
         params: { model: 'Seedance 2.0 Fast' },
       };
-  if (identity && identity.negativePrompt) args.negative_prompt = identity.negativePrompt;
+  // Pas de `negative_prompt` : Seedance n'a pas ce champ, le pont Comfy le
+  // transmettait sans effet. Les interdits d'une fiche ne protegeaient rien.
   if (sansAudio) args.params.generate_audio = false;
   if (useReference) console.log(`[clip] Vidéo ${index}: référence ${referenceImage.slice(0, 60)}`);
 
@@ -741,7 +755,10 @@ async function generateClip(config = {}, {
   let refusPolitique = 0;
   for (let i = 0; i < numSegments; i++) {
     const section = sections[i % sections.length];
-    const prompt = `${section.visual}.${lieuBrief} ${renduVisuel(process.env, render)} ${styleVideo(style, title)}${identityBrief}`.trim();
+    const prompt = effacerNomsFilm(
+      `${section.visual}.${lieuBrief} ${renduVisuel(process.env, render)} ${styleVideo(style, title)}${identityBrief}`.trim(),
+      identity.nomsFilm,
+    );
 
     try {
       let videoUrl;
@@ -912,6 +929,7 @@ module.exports = {
   PAUSE_REPRISE_AUTORISATION_MS,
   estRefusAudio,
   renduVisuel,
+  effacerNomsFilm,
   styleVideo,
   estRefusAutorisation,
   estRefusDePolitique,

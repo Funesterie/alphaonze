@@ -73,6 +73,15 @@ const IDENTITY_DEFINITIONS = [
     // La fiche francaise ci-dessus faisait ~870 caracteres dans CHAQUE plan et
     // noyait la description du plan ; les interdits restent dans `negative`.
     videoPrompt: 'Vivy, the AI singer: young adult woman, fair skin, long black hair in twin tails with dark magenta highlights, straight black bangs, expressive grey-green eyes, star-shaped hair clips and earrings, black gothic electro-pop outfit, black choker, neon magenta and black palette.',
+    // Clip en film (12/09/2026) : un clip « film » avec Vivy sortait en anime, alors
+    // que le rendu, le style de la page et les 12 plans de Sol disaient tous
+    // « photorealistic live action ». Pour le modele video, « Vivy, the AI singer »
+    // avec couettes et barrettes etoiles EST l'heroine de l'anime du meme nom : le
+    // personnage reconnu l'emporte sur la consigne de rendu. En film, on decrit donc
+    // une actrice reelle portant le meme costume, et le nom est remplace dans tout le
+    // prompt camera (`nomFilm`). Pas de negatif : Seedance n'a pas ce champ.
+    videoPromptFilm: 'A real human actress, young adult woman with fair skin and natural skin texture, long black hair in twin tails with dark magenta highlights, straight black bangs, grey-green eyes, small star-shaped hair clips and earrings, black gothic electro-pop stage outfit, black choker, neon magenta and black palette.',
+    nomFilm: 'the singer',
     negative: [
       'blonde Vivy',
       'blonde singer as Vivy',
@@ -402,6 +411,8 @@ function buildVivyVisualIdentityPack(input = {}) {
       label: definition.label,
       prompt: definition.prompt,
       videoPrompt: definition.videoPrompt || definition.prompt,
+      videoPromptFilm: definition.videoPromptFilm || definition.videoPrompt || definition.prompt,
+      nomFilm: definition.nomFilm || '',
       negative: definition.negative || [],
       referenceImageUrls: referencesForIdentity(definition, env),
     }));
@@ -423,6 +434,18 @@ function buildVivyVisualIdentityPack(input = {}) {
         ? 'Match the reliable features of the user reference image; never copy its text, signs, plates or logos.'
         : '',
     ].filter(Boolean).join(' '), '', 1600),
+    // Meme chose pour un clip en prises de vue reelles, et les noms a effacer du
+    // prompt camera (voir `videoPromptFilm` de Vivy).
+    videoPromptFilm: cleanText([
+      identities.map((identity) => identity.videoPromptFilm).join(' '),
+      casting.videoPrompt || casting.prompt,
+      explicitReferenceImageUrls.length
+        ? 'Match the reliable features of the user reference image; never copy its text, signs, plates or logos.'
+        : '',
+    ].filter(Boolean).join(' '), '', 1600),
+    nomsFilm: Object.fromEntries(identities
+      .filter((identity) => identity.nomFilm)
+      .map((identity) => [identity.label, identity.nomFilm])),
     negativePrompt: cleanText([
       identities.flatMap((identity) => identity.negative).join(', '),
       casting.negativePrompt,
