@@ -470,7 +470,10 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     if (!creditsState) return;
     var line = document.createElement("span");
     if (creditsState.admin) {
-      line.textContent = "👑 Admin : clips gratuits";
+      var rc = creditsState.reserveComfy;
+      line.textContent = "👑 Admin : clips gratuits" + (rc
+        ? " · 🎞️ Réserve Comfy : " + Number(rc.credits).toLocaleString("fr-FR") + " crédits ≈ " + rc.plans + " plans (~" + Math.floor(rc.plans * 7 / 60) + " min de clip)"
+        : "");
       box.appendChild(line);
     } else {
       var t = creditsState.tarif || {};
@@ -663,6 +666,36 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       return;
     }
 
+    // Réserve vidéo (13/09/2026) : on estime AVANT de lancer. Réserve vide = on
+    // n'envoie rien ; réserve basse = on prévient et on demande. Estimation
+    // indisponible = on lance comme avant, le serveur tranchera.
+    var nomMode = mode === "full" ? "Full Clip" : "Clip";
+    var duree = Number(source.duration || source.durationSeconds || 0) || 0;
+    document.getElementById("msg").textContent = "⏳ Estimation " + nomMode + "…";
+    api("/api/mcp-bridge/clip/estimation?full=" + (mode === "full" ? "1" : "0") + (duree ? "&durationSeconds=" + Math.round(duree) : ""))
+      .then(function(e) { return e; }, function() { return null; })
+      .then(function(e) {
+        var r = e && e.reserve;
+        if (r && r.connue && !r.suffisant) {
+          if (r.plansPossibles < 1) {
+            document.getElementById("msg").textContent = "⛔ La réserve vidéo du studio est vide pour le moment. Réessaie plus tard, rien ne t'a été pris.";
+            return;
+          }
+          var question = "⚠️ La réserve vidéo du studio est basse.\n\n"
+            + "Ce " + nomMode + " demande environ " + e.plans + " plans" + (duree ? "" : " (durée inconnue)") + ", "
+            + "il en reste de quoi faire " + r.plansPossibles + ".\n"
+            + "Le clip risque de s'arrêter en route : seuls les plans livrés sont facturés.\n\n"
+            + "Lancer quand même ?";
+          if (!window.confirm(question)) {
+            document.getElementById("msg").textContent = "Lancement annulé.";
+            return;
+          }
+        }
+        lancerClip(mode, source);
+      });
+  }
+
+  function lancerClip(mode, source) {
     var goClip = document.getElementById("go-clip");
     var goFull = document.getElementById("go-full");
     goClip.disabled = true;

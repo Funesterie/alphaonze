@@ -10,6 +10,7 @@
  */
 const express = require('express');
 const {
+  ACTIVE_STATUSES,
   claimJob,
   createJob,
   createWorkerId,
@@ -60,6 +61,7 @@ function normaliserDistribution(multiVoice, casting) {
 
 const nodeCrypto = require('node:crypto');
 const clipCredits = require('./clip-credits.cjs');
+const comfySolde = require('./comfy-solde.cjs');
 
 // Rendu choisi sur la page : "film" (prises de vue reelles, le defaut depuis le
 // 12/09/2026) ou "anime" (clip manga). Toute autre valeur retombe sur le film.
@@ -68,7 +70,7 @@ function normaliserRendu(valeur) {
   return v === 'anime' || v === 'manga' ? 'anime' : 'film';
 }
 
-function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isAdminRequest = null, magasinCredits = null, stripeService = null, palierUtilisateur = null } = {}) {
+function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isAdminRequest = null, magasinCredits = null, stripeService = null, palierUtilisateur = null, lireSoldeComfy = null } = {}) {
   const router = express.Router();
   // Registre des crédits (clip-credits.cjs). Sans base, un non-admin ne lance
   // rien : on échoue fermé plutôt que d'offrir des clips que Comfy facture.
@@ -112,6 +114,52 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
     }).catch((error) => console.error('[clip-router] Remboursement crédits impossible', reservation.ref, error.message));
   };
 
+  // Réserve Comfy (13/09/2026) : le 12/09 un Full Clip s'est arrêté à 2/28 sur
+  // « Payment Required », après avoir fait travailler Sol pour rien. On lit le
+  // solde réel (comfy-solde.cjs) et on déduit ce que les clips en cours vont
+  // encore consommer. Solde illisible = on ne sait pas, on ne bloque rien.
+  const lireSolde = lireSoldeComfy || comfySolde.creerLecteurSolde();
+  const plansEnCours = () => {
+    try {
+      return listJobs({ limit: 200, raw: true })
+        .filter((job) => ACTIVE_STATUSES.has(job.status))
+        .reduce((total, job) => {
+          const prevus = Number(job.totalSegments) || clipCredits.plansEstimes({ fullDuration: job.fullDuration });
+          return total + Math.max(0, prevus - (Number(job.segments) || 0));
+        }, 0);
+    } catch (_) {
+      return 0;
+    }
+  };
+  const etatReserve = async (plans) => {
+    let solde = null;
+    try { solde = await lireSolde(); } catch (_) { solde = null; }
+    if (!solde || !Number.isFinite(Number(solde.credits))) return null;
+    return comfySolde.couverture({ plans, soldeCredits: solde.credits, plansEnCours: plansEnCours() });
+  };
+
+  // Avant un lancement : combien de plans, et la réserve Comfy suffit-elle ?
+  // Le solde exact n'est montré qu'aux admins.
+  router.get('/estimation', async (req, res) => {
+    const fullDuration = req.query.full === '1' || req.query.full === 'true';
+    const plans = clipCredits.plansEstimes({ fullDuration, dureeSecondes: Number(req.query.durationSeconds) || undefined });
+    const admin = estAdmin(req);
+    const reserve = await etatReserve(plans);
+    res.json({
+      ok: true,
+      plans,
+      creditsSite: admin ? 0 : clipCredits.creditsPourPlans(plans),
+      reserve: reserve
+        ? {
+          connue: true,
+          suffisant: reserve.suffisant,
+          plansPossibles: reserve.plansPossibles,
+          ...(admin ? { creditsDisponibles: reserve.creditsDisponibles, creditsNecessaires: reserve.creditsNecessaires } : {}),
+        }
+        : { connue: false },
+    });
+  });
+
   // Solde et tarifs, pour la page.
   router.get('/credits', async (req, res) => {
     const admin = estAdmin(req);
@@ -123,10 +171,12 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
         return res.status(503).json({ ok: false, error: 'CREDITS_INDISPONIBLES' });
       }
     }
+    const reserveAdmin = admin ? await etatReserve(1) : null;
     res.json({
       ok: true,
       admin,
       solde,
+      ...(reserveAdmin ? { reserveComfy: { credits: reserveAdmin.creditsDisponibles, plans: reserveAdmin.plansPossibles } } : {}),
       tarif: {
         clip: clipCredits.creditsPourPlans(clipCredits.PLANS_CLIP_NORMAL),
         parPlan: clipCredits.creditsPourPlans(1),
@@ -173,6 +223,18 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
     const castArtists = normaliserDistribution(req.body && req.body.multiVoice, casting);
     const render = normaliserRendu(req.body && req.body.render);
     if (!songUrl) return res.status(400).json({ ok: false, error: 'songUrl requis' });
+
+    // Réserve vide : on refuse AVANT de réserver des crédits et de faire
+    // travailler le Director. Réserve basse : on lance, et on le dit.
+    const plansDemandes = clipCredits.plansEstimes({ fullDuration, dureeSecondes: req.body && req.body.durationSeconds });
+    const reserve = await etatReserve(plansDemandes);
+    if (reserve && reserve.plansPossibles < 1) {
+      return res.status(503).json({
+        ok: false,
+        error: 'RESERVE_VIDEO_VIDE',
+        message: 'La réserve vidéo du studio est vide pour le moment : aucun clip ne peut être généré, et aucun crédit ne t’a été pris.',
+      });
+    }
 
     const user = req.user || (req.session && req.session.user) || {};
 
@@ -236,6 +298,9 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
       jobId: job.id,
       status: 'pending',
       ...(reservation ? { credits: { reserves: reservation.credits, solde: reservation.solde } } : {}),
+      ...(reserve && !reserve.suffisant
+        ? { avertissement: { code: 'RESERVE_VIDEO_BASSE', plans: reserve.plans, plansPossibles: reserve.plansPossibles } }
+        : {}),
     });
   });
 
