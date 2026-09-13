@@ -130,7 +130,7 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
       tarif: {
         clip: clipCredits.creditsPourPlans(clipCredits.PLANS_CLIP_NORMAL),
         parPlan: clipCredits.creditsPourPlans(1),
-        fullParMinute: clipCredits.creditsPourPlans(Math.ceil(60 / 8)),
+        fullParMinute: clipCredits.creditsPourPlans(clipCredits.plansEstimes({ fullDuration: true, dureeSecondes: 60 })),
         eurParCredit: clipCredits.EUR_PAR_CREDIT,
         fondateurParMois: clipCredits.creditsFondateurParMois(),
       },

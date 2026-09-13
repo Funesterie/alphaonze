@@ -199,7 +199,8 @@ test('un arrêt après un segment assemble un clip explicitement partiel sans re
     fs.writeFileSync(destination, options.kind === 'audio' ? 'ID3audio' : 'video');
   };
   const execFileSyncImpl = (command, args) => {
-    if (command === 'ffprobe') return Buffer.from(args.includes('stream=codec_type') ? 'video\n' : '16.0\n');
+    // 14 s = 2 plans de 7 s (c'etait 16 s avec des plans comptes 8 s).
+    if (command === 'ffprobe') return Buffer.from(args.includes('stream=codec_type') ? 'video\n' : '14.0\n');
     if (command === 'ffmpeg') {
       fs.writeFileSync(args.at(-1), 'assembled');
       return Buffer.alloc(0);

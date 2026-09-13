@@ -22,7 +22,10 @@ test('le prix suit le vrai cout Comfy x2 : Clip 6 plans, Full Clip au prorata de
 
 test('les plans estimes : 6 pour un Clip, duree/8 pour un Full Clip, large sans duree', () => {
   assert.equal(credits.plansEstimes({ fullDuration: false, dureeSecondes: 400 }), 6);
-  assert.equal(credits.plansEstimes({ fullDuration: true, dureeSecondes: 205 }), 26);
+  // Plans de 7,1 s reels, comptes 7 (13/09/2026) : 205 s -> 30 plans (c'etait 26 a 8 s).
+  assert.equal(credits.plansEstimes({ fullDuration: true, dureeSecondes: 205 }), 30);
+  assert.equal(credits.secondesParPlan({}), 7);
+  assert.equal(credits.secondesParPlan({ NOSSEN_CLIP_SECONDES_PAR_PLAN: '8' }), 8, 'reglable par variable');
   assert.equal(credits.plansEstimes({ fullDuration: true }), 30);
   assert.equal(credits.plansEstimes({ fullDuration: true, dureeSecondes: 99999 }), 45, 'plafonne');
 });

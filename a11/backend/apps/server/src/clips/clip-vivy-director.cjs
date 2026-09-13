@@ -511,7 +511,7 @@ function etirerArc(arcSteps, lyricsSections, planCount, dureeSecondes, teardown)
     return d > 0 ? d : 1;
   });
   var alloc = repartirPlans(n, poids);
-  var duree = Number(dureeSecondes) > 0 ? Number(dureeSecondes) : n * 8;
+  var duree = Number(dureeSecondes) > 0 ? Number(dureeSecondes) : n * require("./clip-credits.cjs").secondesParPlan();
   var pas = duree / n;
   var beats = [];
   steps.forEach(function(step, i) {

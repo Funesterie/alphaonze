@@ -17,6 +17,7 @@ const http = require('http');
 
 const { CLIPS_DIR } = require('./clip-storage.cjs');
 const { materializeClipMedia } = require('./clip-input.cjs');
+const clipCredits = require('./clip-credits.cjs');
 const BRIDGE_URL = 'http://127.0.0.1:3000/api/mcp-bridge/call';
 const BRIDGE_RESPONSE_MAX_BYTES = 1024 * 1024;
 if (!fs.existsSync(CLIPS_DIR)) fs.mkdirSync(CLIPS_DIR, { recursive: true });
@@ -681,8 +682,13 @@ async function generateClip(config = {}, {
   }
   console.log(`[clip] Durée audio: ${audioDuration}s`);
 
-  // 3. Calculer le nombre de segments (1 vidéo = ~8s, max 6 vidéos pour un clip normal, toute la durée pour full)
-  const SEGMENT_SECONDS = 8;
+  // 3. Calculer le nombre de segments (max 6 vidéos pour un clip normal, toute la durée pour full)
+  // Seedance livre des plans de 7,1 s, pas 8 : mesure du 13/09/2026, 28 plans =
+  // 198,9 s pour une chanson de 224 s. Le montage coupe au plus court (-shortest),
+  // donc chaque Full Clip perdait la fin du morceau (25 s ici). On compte 7 s par
+  // plan : un peu sous le reel, pour que les plans couvrent toujours toute la
+  // chanson ; le surplus d'image est coupe a la fin de l'audio.
+  const SEGMENT_SECONDS = clipCredits.secondesParPlan();
   let numSegments;
   if (fullDuration) {
     numSegments = Math.ceil(audioDuration / SEGMENT_SECONDS);

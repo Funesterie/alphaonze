@@ -11,7 +11,7 @@
  *
  * Un plan = une génération Seedance 2.0 Fast de 8 s, ~0,14 USD relevés sur le
  * compte. Le prix d'un clip est donc proportionnel à ses plans : 6 pour un Clip,
- * durée/8 pour un Full Clip. La marge x2 couvre les plans refusés puis relancés
+ * durée/7 pour un Full Clip (plans de 7,1 s réels). La marge x2 couvre les plans refusés puis relancés
  * (payés à Comfy, jamais facturés ici) et les frais Stripe, et laisse de quoi
  * renflouer le compte Comfy. Tout est réglable par variable, rien n'est figé.
  *
@@ -38,7 +38,13 @@ function nombre(valeur, defaut) {
 }
 
 const EUR_PAR_CREDIT = 0.10;
-const SECONDES_PAR_PLAN = 8;
+// Duree reelle d'un plan Seedance : 7,1 s mesurees le 13/09/2026 (on en compte 7
+// pour couvrir toute la chanson). C'etait 8 : les Full Clips perdaient leur fin.
+// Source unique, lue aussi par clip-generator-v2.cjs.
+const SECONDES_PAR_PLAN_DEFAUT = 7;
+function secondesParPlan(env = process.env) {
+  return nombre(env.NOSSEN_CLIP_SECONDES_PAR_PLAN, SECONDES_PAR_PLAN_DEFAUT);
+}
 const PLANS_CLIP_NORMAL = 6;
 // Full Clip sans durée connue : on réserve large (4 min), la différence revient.
 const PLANS_FULL_SANS_DUREE = 30;
@@ -66,7 +72,7 @@ function plansEstimes({ fullDuration, dureeSecondes } = {}) {
   if (!fullDuration) return PLANS_CLIP_NORMAL;
   const d = Number(dureeSecondes);
   if (!Number.isFinite(d) || d <= 0) return PLANS_FULL_SANS_DUREE;
-  return Math.max(1, Math.min(PLANS_MAX, Math.ceil(Math.min(d, 900) / SECONDES_PAR_PLAN)));
+  return Math.max(1, Math.min(PLANS_MAX, Math.ceil(Math.min(d, 900) / secondesParPlan())));
 }
 
 // Packs vendus. Le prix est calculé ici, jamais lu dans une requête du navigateur.
@@ -246,5 +252,6 @@ module.exports = {
   packsPublics,
   plansEstimes,
   reserver,
+  secondesParPlan,
   tarif,
 };
