@@ -42,6 +42,29 @@ function creditsDepuisReponse(reponse) {
   return Math.floor((cents / 100) * CREDITS_PAR_USD);
 }
 
+function centsEnCredits(valeur) {
+  const cents = Number(valeur);
+  return Number.isFinite(cents) && cents >= 0 ? Math.floor((cents / 100) * CREDITS_PAR_USD) : null;
+}
+
+/**
+ * Les deux réserves du compte (lu le 13/09/2026) : `cloud_credit_balance_micros`,
+ * les crédits MENSUELS de l'abonnement Comfy Cloud (0 ce jour-là), et
+ * `prepaid_balance_micros`, les crédits BONUS achetés à part (965). C'est Comfy qui
+ * choisit laquelle il débite ; le 12/09, un « Payment Required » est tombé alors
+ * que l'une des deux avait encore de quoi payer.
+ */
+function detailDepuisReponse(reponse) {
+  const credits = creditsDepuisReponse(reponse);
+  if (credits == null) return null;
+  return {
+    credits,
+    mensuel: centsEnCredits(reponse.cloud_credit_balance_micros),
+    bonus: centsEnCredits(reponse.prepaid_balance_micros),
+    enAttente: centsEnCredits(reponse.pending_charges_micros),
+  };
+}
+
 /**
  * Lecteur avec cache. Un échec est mis en cache lui aussi : une page ouverte
  * ne doit pas marteler Comfy. Sans clé, on ne tente rien (tests, dev local).
@@ -59,8 +82,8 @@ function creerLecteurSolde({ fetchImpl = globalThis.fetch, env = process.env, no
         signal: AbortSignal.timeout(8000),
       });
       if (r.ok) {
-        const credits = creditsDepuisReponse(await r.json());
-        if (credits != null) valeur = { credits, luA: new Date(nowImpl()).toISOString() };
+        const detail = detailDepuisReponse(await r.json());
+        if (detail) valeur = { ...detail, luA: new Date(nowImpl()).toISOString() };
       }
     } catch (_) {
       valeur = null;
@@ -98,4 +121,5 @@ module.exports = {
   creditsComfyParPlan,
   creditsDepuisReponse,
   creerLecteurSolde,
+  detailDepuisReponse,
 };

@@ -480,6 +480,9 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       var rc = creditsState.reserveComfy;
       line.textContent = "👑 Admin : clips gratuits" + (rc
         ? " · 🎞️ Réserve Comfy : " + Number(rc.credits).toLocaleString("fr-FR") + " crédits ≈ " + rc.plans + " plans (~" + Math.floor(rc.plans * 7 / 60) + " min de clip)"
+          + (rc.mensuel != null || rc.bonus != null
+            ? " (mensuel " + Number(rc.mensuel || 0).toLocaleString("fr-FR") + " · bonus " + Number(rc.bonus || 0).toLocaleString("fr-FR") + ")"
+            : "")
         : "");
       box.appendChild(line);
     } else {

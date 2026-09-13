@@ -138,7 +138,12 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
     let solde = null;
     try { solde = await lireSolde(); } catch (_) { solde = null; }
     if (!solde || !Number.isFinite(Number(solde.credits))) return null;
-    return comfySolde.couverture({ plans, soldeCredits: solde.credits, plansEnCours: plansEnCours() });
+    // Les deux reserves voyagent avec la couverture : l'admin voit laquelle se vide.
+    return {
+      ...comfySolde.couverture({ plans, soldeCredits: solde.credits, plansEnCours: plansEnCours() }),
+      mensuel: solde.mensuel ?? null,
+      bonus: solde.bonus ?? null,
+    };
   };
 
   // Avant un lancement : combien de plans, et la réserve Comfy suffit-elle ?
@@ -179,7 +184,12 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
       ok: true,
       admin,
       solde,
-      ...(reserveAdmin ? { reserveComfy: { credits: reserveAdmin.creditsDisponibles, plans: reserveAdmin.plansPossibles } } : {}),
+      ...(reserveAdmin ? { reserveComfy: {
+        credits: reserveAdmin.creditsDisponibles,
+        plans: reserveAdmin.plansPossibles,
+        mensuel: reserveAdmin.mensuel,
+        bonus: reserveAdmin.bonus,
+      } } : {}),
       tarif: {
         clip: clipCredits.creditsPourPlans(clipCredits.PLANS_CLIP_NORMAL),
         parPlan: clipCredits.creditsPourPlans(1),

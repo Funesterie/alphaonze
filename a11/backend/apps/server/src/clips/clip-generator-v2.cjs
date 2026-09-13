@@ -490,6 +490,22 @@ const PLAFOND_REFUS_POLITIQUE = Math.max(1, Number(process.env.NOSSEN_CLIP_MAX_P
 function estRefusAutorisation(message) {
   return /Unauthorized|Please login first|Unable to verify account access/i.test(String(message || ''));
 }
+// « Payment Required » (12/09/2026, Funesterie va Briller arrete a 2/28) : Comfy a
+// deux reserves, les credits mensuels de l'abonnement et les credits bonus achetes
+// a part, et c'est lui qui choisit laquelle debiter. Le refus est tombe alors que
+// l'une des deux pouvait encore payer. Le noeud refuse AVANT de generer : un nouvel
+// essai ne coute rien. On relit donc le solde : s'il reste de quoi payer un plan,
+// on laisse a Comfy le temps de basculer de reserve et on reessaie le meme plan ;
+// si les deux sont vides, on s'arrete tout de suite en le disant.
+function estRefusPaiement(message) {
+  return /Payment Required|add credits to your account|insufficient (credits|balance)|comfy_credits_epuises/i.test(String(message || ''));
+}
+const PAUSES_REPRISE_PAIEMENT_MS = (() => {
+  const brut = String(process.env.NOSSEN_CLIP_PAYMENT_RETRY_PAUSES_MS || '60000,180000');
+  const pauses = brut.split(',').map((x) => Number(x.trim())).filter((v) => Number.isFinite(v) && v >= 0)
+    .map((v) => Math.min(v, 600000)).slice(0, 3);
+  return pauses.length ? pauses : [60000, 180000];
+})();
 const PAUSE_REPRISE_AUTORISATION_MS = (() => {
   const brut = process.env.NOSSEN_CLIP_AUTH_RETRY_PAUSE_MS;
   const v = brut === undefined || brut === '' ? NaN : Number(brut);
@@ -635,6 +651,7 @@ async function generateClip(config = {}, {
   loadDirectorImpl = loadClipDirector,
   generateVideoImpl = generateOneVideo,
   resolveVideoModelsImpl = resolveVideoModels,
+  lireSoldeImpl = null,
   execFileSyncImpl = execFileSync,
   sleepImpl = sleep,
   nowImpl = Date.now,
@@ -760,11 +777,40 @@ async function generateClip(config = {}, {
   // Le lieu est rappele sur chaque segment, comme l'identite : c'est ce qui
   // empeche le clip de partir dans six endroits differents.
   const lieuBrief = lieu ? ` The entire clip is shot in one single location: ${lieu}. Never change location.` : '';
+  // Refus de paiement : bascule entre credits mensuels et bonus (voir estRefusPaiement).
+  const lireSoldeReprise = typeof lireSoldeImpl === 'function'
+    ? lireSoldeImpl
+    : require('./comfy-solde.cjs').creerLecteurSolde({ cacheMs: 0 });
+  const reessayerApresRefusPaiement = async (i, prompt, premiereErreur) => {
+    const parPlan = require('./comfy-solde.cjs').creditsComfyParPlan(process.env);
+    let derniere = premiereErreur;
+    for (let essai = 1; essai <= PAUSES_REPRISE_PAIEMENT_MS.length; essai++) {
+      let solde = null;
+      try { solde = await lireSoldeReprise(); } catch (_) { solde = null; }
+      const detail = solde ? `${solde.credits} crédits (mensuel ${solde.mensuel ?? '?'}, bonus ${solde.bonus ?? '?'})` : 'solde illisible';
+      if (solde && Number.isFinite(Number(solde.credits)) && Number(solde.credits) < parPlan) {
+        throw new Error(`comfy_credits_epuises: ${detail}, il en faut ${parPlan} par plan — ${derniere && derniere.message}`);
+      }
+      const pause = PAUSES_REPRISE_PAIEMENT_MS[essai - 1];
+      console.warn(`[clip] Vidéo ${i}: Comfy refuse le paiement, il reste ${detail} ; bascule de réserve, nouvel essai ${essai}/${PAUSES_REPRISE_PAIEMENT_MS.length} dans ${Math.round(pause / 1000)} s.`);
+      emitProgress(onProgress, { stage: 'video:credits-switch', status: 'generating', segmentIndex: i });
+      await sleepImpl(pause);
+      try {
+        return await generateVideoImpl(prompt, i, 600000, identity, { onProgress, models: videoModels });
+      } catch (error) {
+        if (!estRefusPaiement(error && error.message)) throw error;
+        derniere = error;
+      }
+    }
+    throw derniere;
+  };
+
   const videoPaths = [];
   // Le motif du dernier segment rate : c'est lui qui explique un clip vide.
   let dernierEchec = '';
   let refusPolitique = 0;
   let arretPlafond = false;
+  let arretPaiement = false;
   for (let i = 0; i < numSegments; i++) {
     const section = sections[i % sections.length];
     const prompt = effacerNomsFilm(
@@ -787,6 +833,8 @@ async function generateClip(config = {}, {
           console.warn(`[clip] Vidéo ${i}: autorisation Comfy refusée, nouvel essai dans ${Math.round(PAUSE_REPRISE_AUTORISATION_MS / 1000)} s.`);
           await sleepImpl(PAUSE_REPRISE_AUTORISATION_MS);
           videoUrl = await generateVideoImpl(prompt, i, 600000, identity, { onProgress, models: videoModels });
+        } else if (estRefusPaiement(motif)) {
+          videoUrl = await reessayerApresRefusPaiement(i, prompt, premiereErreur);
         } else {
           throw premiereErreur;
         }
@@ -817,7 +865,10 @@ async function generateClip(config = {}, {
       } else {
         const cause = estRefusAutorisation(error.message)
           ? 'compte Comfy toujours non autorisé après un nouvel essai (crédits ou accès partenaire)'
-          : 'échouée sans resoumission';
+          : estRefusPaiement(error.message)
+            ? 'réserve Comfy épuisée (crédits mensuels et bonus)'
+            : 'échouée sans resoumission';
+        arretPaiement = estRefusPaiement(error.message);
         console.warn(`[clip] Vidéo ${i} ${cause}: ${error.message}`);
         break;
       }
@@ -840,7 +891,9 @@ async function generateClip(config = {}, {
     // resoumission » s'affichait aussi quand c'etait le plafond qui avait arrete.
     ? `clip_partial: ${videoPaths.length}/${numSegments} segments; ${arretPlafond
       ? `arrêté après ${refusPolitique} refus du filtre de contenu`
-      : 'arrêt sans resoumission'} — ${dernierEchec}`
+      : arretPaiement
+        ? 'réserve Comfy épuisée (crédits mensuels et bonus)'
+        : 'arrêt sans resoumission'} — ${dernierEchec}`
     : null;
   console.log(`[clip] ${videoPaths.length}/${numSegments} vidéos prêtes, assemblage FFmpeg...`);
   emitProgress(onProgress, {
@@ -950,6 +1003,8 @@ module.exports = {
   styleVideo,
   estRefusAutorisation,
   estRefusDePolitique,
+  estRefusPaiement,
+  PAUSES_REPRISE_PAIEMENT_MS,
   extractComfyErrorDetail,
   describeBridgeFailure,
   estImageVersVideo,

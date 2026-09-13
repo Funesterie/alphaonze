@@ -84,6 +84,8 @@ test('l estimation d un Full Clip previent quand la reserve ne couvre pas toute 
     assert.equal(e.reserve.suffisant, false);
     assert.equal(e.reserve.plansPossibles, 8);
     assert.equal(e.reserve.creditsDisponibles, undefined, 'le solde exact reste reserve aux admins');
+    assert.equal(e.reserve.mensuel, undefined, 'les reserves mensuelle et bonus aussi');
+    assert.equal(e.reserve.bonus, undefined);
     assert.equal(e.creditsSite, credits.creditsPourPlans(41));
   });
   await avecServeur({ admin: true, soldeCredits: 1000 }, async ({ base }) => {
@@ -91,7 +93,8 @@ test('l estimation d un Full Clip previent quand la reserve ne couvre pas toute 
     assert.equal(e.reserve.creditsDisponibles, 1000);
     assert.equal(e.creditsSite, 0);
     const c = await (await fetch(`${base}/credits`)).json();
-    assert.deepEqual(c.reserveComfy, { credits: 1000, plans: 8 });
+    // Le lecteur de test ne donne que le total : les deux reserves restent inconnues.
+    assert.deepEqual(c.reserveComfy, { credits: 1000, plans: 8, mensuel: null, bonus: null });
   });
 });
 
