@@ -65,7 +65,9 @@ resolve_backend_container() {
   fi
   local candidates=()
   case "$active_color" in
-    blue|green) candidates+=("a11-backend-$active_color" "kaen44-backend-$active_color") ;;
+    # Quaternion (13/09/2026) : quatre couleurs. Avec yellow actif, la sauvegarde
+    # s'arretait sur « no running backend matches active color yellow ».
+    blue|green|yellow|purple) candidates+=("a11-backend-$active_color" "kaen44-backend-$active_color") ;;
   esac
   candidates+=(a11-backend kaen44-backend)
   local candidate
