@@ -64,7 +64,14 @@ const IDENTITY_DEFINITIONS = [
     // Portrait detoure, pas la carte "Presence musicale" : celle-ci porte un
     // titre, un paragraphe, un logo et une barre de navigation que les modeles
     // video recopiaient en texte illisible dans les clips.
-    defaultRefs: ['https://vivy.funesterie.me/api/vivy/stream/identity/vivy-reference-portrait'],
+    // Remplacé le 13/09/2026 : l'ancien portrait (vivy-reference-portrait) faisait
+    // gamine gothique. Premier = référence principale (NOSSEN_CLIP_REFERENCE_INDEX).
+    defaultRefs: [
+      'https://vivy.funesterie.me/api/vivy/stream/identity/vivy-reference-studio',
+      'https://vivy.funesterie.me/api/vivy/stream/identity/vivy-reference-realiste',
+      'https://vivy.funesterie.me/api/vivy/stream/identity/vivy-reference-micro',
+      'https://vivy.funesterie.me/api/vivy/stream/identity/vivy-reference-ondulee',
+    ],
     prompt: [
       // Allure revue le 13/09/2026 sur les images choisies par Djeff : l'ancienne
       // (couettes, pinces étoiles, « gothic electro-pop ») faisait gamine gothique.

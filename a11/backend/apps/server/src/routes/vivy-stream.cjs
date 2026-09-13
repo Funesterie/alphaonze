@@ -2069,6 +2069,13 @@ const VIVY_STREAM_IDENTITY_ASSETS = {
   // qui sert de reference aux generateurs video — la carte complete faisait
   // recopier sa mise en page et son texte (illisible) dans les clips.
   'vivy-reference-portrait': 'vivy-reference-portrait.png',
+  // Allure adulte (13/09/2026), choisie par Djeff parmi ses images : recadrées sans
+  // titre, sans paroles, sans logo ni barre de menu -- tout texte visible finit
+  // recopié, illisible, par les générateurs.
+  'vivy-reference-studio': 'vivy-reference-studio.jpg',
+  'vivy-reference-realiste': 'vivy-reference-realiste.jpg',
+  'vivy-reference-micro': 'vivy-reference-micro.jpg',
+  'vivy-reference-ondulee': 'vivy-reference-ondulee.jpg',
 };
 
 function createVivyStreamRouter(options = {}) {
