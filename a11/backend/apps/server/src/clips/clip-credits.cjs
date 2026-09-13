@@ -9,8 +9,8 @@
  *
  * LE PRIX VIENT DU COUT REEL, PAS D'UNE GRILLE
  *
- * Un plan = une génération Seedance 2.0 Fast de 8 s, ~0,14 USD relevés sur le
- * compte. Le prix d'un clip est donc proportionnel à ses plans : 6 pour un Clip,
+ * Un plan = une génération Seedance 2.0 Fast (~7 s), facturée 119,5 crédits
+ * Comfy et comptée 200 (~0,95 USD) pour garder une marge de sécurité. Le prix d'un clip est donc proportionnel à ses plans : 6 pour un Clip,
  * durée/7 pour un Full Clip (plans de 7,1 s réels). La marge x2 couvre les plans refusés puis relancés
  * (payés à Comfy, jamais facturés ici) et les frais Stripe, et laisse de quoi
  * renflouer le compte Comfy. Tout est réglable par variable, rien n'est figé.
@@ -50,9 +50,17 @@ const PLANS_CLIP_NORMAL = 6;
 const PLANS_FULL_SANS_DUREE = 30;
 const PLANS_MAX = 45;
 
+// Prix de revient d'un plan, arrondi au-dessus (13/09/2026). Comfy facture 119,5
+// crédits un plan Seedance 2.0 Fast (activité de facturation du compte) ; on en
+// compte 200, décision de Djeff, pour ne jamais vendre à perte : plans refusés
+// puis relancés, hausse de prix. 211 crédits Comfy = 1 USD (voir comfy-solde.cjs).
+// C'était 0,14 USD par plan : quatre fois sous le coût réel, chaque clip vendu à perte.
+const CREDITS_COMFY_FACTURES_PAR_PLAN = 200;
+const CREDITS_COMFY_PAR_USD = 211;
+
 function tarif(env = process.env) {
   return {
-    usdParPlan: nombre(env.NOSSEN_CLIP_USD_PAR_PLAN, 0.14),
+    usdParPlan: nombre(env.NOSSEN_CLIP_USD_PAR_PLAN, CREDITS_COMFY_FACTURES_PAR_PLAN / CREDITS_COMFY_PAR_USD),
     marge: nombre(env.NOSSEN_CLIP_MARGE, 2),
     eurParUsd: nombre(env.NOSSEN_CLIP_EUR_PAR_USD, 0.92),
     eurParCredit: EUR_PAR_CREDIT,

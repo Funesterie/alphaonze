@@ -12,12 +12,15 @@ const credits = require('../src/clips/clip-credits.cjs');
 const ENV_DEFAUT = {};
 
 test('le prix suit le vrai cout Comfy x2 : Clip 6 plans, Full Clip au prorata des plans', () => {
-  // 6 x 0,14 USD x 0,92 x 2 = 1,55 EUR -> 16 credits de 0,10 EUR
-  assert.equal(credits.creditsPourPlans(6, ENV_DEFAUT), 16);
-  assert.equal(credits.creditsPourPlans(26, ENV_DEFAUT), 67);
+  // Un plan compte 200 credits Comfy (119,5 factures, arrondi au-dessus) = 200/211 USD.
+  // 6 x 0,948 USD x 0,92 x 2 = 10,46 EUR -> 105 credits de 0,10 EUR (c'etait 16 a 0,14 USD).
+  assert.equal(credits.creditsPourPlans(6, ENV_DEFAUT), 105);
+  assert.equal(credits.creditsPourPlans(26, ENV_DEFAUT), 454);
   assert.equal(credits.creditsPourPlans(0, ENV_DEFAUT), 0);
   assert.equal(credits.creditsPourPlans(-3, ENV_DEFAUT), 0);
-  assert.ok(credits.creditsPourPlans(6, { NOSSEN_CLIP_MARGE: '3' }) > 16, 'la marge se regle par variable');
+  assert.ok(credits.creditsPourPlans(6, { NOSSEN_CLIP_MARGE: '3' }) > 105, 'la marge se regle par variable');
+  // Jamais sous le cout reel mesure, meme sans marge : 119,5 credits Comfy par plan.
+  assert.ok(credits.tarif({}).usdParPlan >= 119.5 / 211, 'le prix de revient couvre la facture Comfy');
 });
 
 test('les plans estimes : 6 pour un Clip, duree/8 pour un Full Clip, large sans duree', () => {
@@ -58,9 +61,9 @@ test('deux clips lances en meme temps ne depensent pas deux fois le meme solde',
 });
 
 test('on ne facture que les plans livres : echec rembourse, partiel au prorata', () => {
-  const reservation = { credits: 16 };
-  assert.equal(credits.aRembourser(reservation, 0, ENV_DEFAUT), 16);
-  assert.equal(credits.aRembourser(reservation, 5, ENV_DEFAUT), 16 - credits.creditsPourPlans(5, ENV_DEFAUT));
+  const reservation = { credits: credits.creditsPourPlans(6, ENV_DEFAUT) };
+  assert.equal(credits.aRembourser(reservation, 0, ENV_DEFAUT), reservation.credits);
+  assert.equal(credits.aRembourser(reservation, 5, ENV_DEFAUT), reservation.credits - credits.creditsPourPlans(5, ENV_DEFAUT));
   assert.equal(credits.aRembourser(reservation, 6, ENV_DEFAUT), 0);
   assert.equal(credits.aRembourser(reservation, 40, ENV_DEFAUT), 0, 'jamais de debit au-dela de la reservation');
 });
@@ -118,19 +121,19 @@ test('un non-admin sans credits recoit 402, rien n est lance', async () => {
     assert.equal(r.status, 402);
     const d = await r.json();
     assert.equal(d.error, 'CREDITS_INSUFFISANTS');
-    assert.equal(d.requis, 16);
+    assert.equal(d.requis, credits.creditsPourPlans(6));
   });
 });
 
 test('un non-admin paie les plans livres et recupere le reste', async () => {
   await avecServeur({ admin: false }, async ({ base, magasin }) => {
-    await credits.crediter(magasin, { userId: 'u1', credits: 100, ref: 'stripe:t', reason: 'achat' });
+    await credits.crediter(magasin, { userId: 'u1', credits: 200, ref: 'stripe:t', reason: 'achat' });
     const r = await post(`${base}/start`, { songUrl: 'https://example.com/a.mp3', title: 'T' });
     assert.equal(r.status, 200);
     const d = await r.json();
-    assert.equal(d.credits.reserves, 16);
+    assert.equal(d.credits.reserves, credits.creditsPourPlans(6));
     // 2 plans livres sur 6 : on garde le prix de 2 plans, le reste revient.
-    const attendu = 100 - credits.creditsPourPlans(2);
+    const attendu = 200 - credits.creditsPourPlans(2);
     assert.ok(await attendre(async () => (await magasin.solde('u1')) === attendu), 'remboursement des plans non livres');
   });
 });
@@ -163,11 +166,21 @@ test('Fondateur : 50 credits clip par mois, verses une seule fois ; Premium : au
 });
 
 test('un Fondateur voit sa mensualite et lance son clip sans achat', async () => {
-  await avecServeur({ admin: false, palier: { subscription_plan: 'founder', subscription_active: true } }, async ({ base }) => {
-    const c = await (await fetch(`${base}/credits`)).json();
-    assert.equal(c.solde, 50);
-    assert.equal(c.tarif.fondateurParMois, 50);
-    const r = await post(`${base}/start`, { songUrl: 'https://example.com/a.mp3', title: 'T' });
-    assert.equal(r.status, 200);
-  });
+  // Depuis le prix au cout reel (13/09/2026), un Clip de 6 plans coute 105 credits :
+  // la mensualite par defaut (50) ne le paie plus. Son montant reste une decision de
+  // Djeff (NOSSEN_CLIP_CREDITS_FONDATEUR) ; ce test verifie le mecanisme, pas le montant.
+  const avant = process.env.NOSSEN_CLIP_CREDITS_FONDATEUR;
+  process.env.NOSSEN_CLIP_CREDITS_FONDATEUR = '200';
+  try {
+    await avecServeur({ admin: false, palier: { subscription_plan: 'founder', subscription_active: true } }, async ({ base }) => {
+      const c = await (await fetch(`${base}/credits`)).json();
+      assert.equal(c.solde, 200);
+      assert.equal(c.tarif.fondateurParMois, 200);
+      const r = await post(`${base}/start`, { songUrl: 'https://example.com/a.mp3', title: 'T' });
+      assert.equal(r.status, 200);
+    });
+  } finally {
+    if (avant === undefined) delete process.env.NOSSEN_CLIP_CREDITS_FONDATEUR;
+    else process.env.NOSSEN_CLIP_CREDITS_FONDATEUR = avant;
+  }
 });
