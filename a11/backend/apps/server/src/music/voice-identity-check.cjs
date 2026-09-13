@@ -29,8 +29,11 @@ const SEUIL_CIBLE = 0.10;
 const SEUIL_AUTRE = -0.05;
 const CONTROLE_PERIME_MS = 15 * 60 * 1000;
 
+// Djeff : son timbre de reference, designe par lui le 13/09 (« essence pure eclat »),
+// voix isolee par Demucs, secondes 7 a 37. Il separe mieux que vagues-psy : temoins
+// +0.43 / +0.39, chanson de Vivy -0.41.
 const REFERENCES_PAR_DEFAUT = {
-  djeff: { cible: 'djeff-vagues-psy-vocals.wav', contraste: 'vivy-voix-reference.mp3' },
+  djeff: { cible: 'djeff-timbre-essence-vocals.wav', contraste: 'vivy-voix-reference.mp3' },
 };
 
 function flag(env, key, defaut) {

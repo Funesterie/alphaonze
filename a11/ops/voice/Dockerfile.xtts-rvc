@@ -27,9 +27,10 @@ RUN pip install --no-cache-dir "pip<24.1" "setuptools<70" wheel \
     && pip install --no-cache-dir -r /app/requirements.xtts-rvc.txt
 
 # Identification de la voix chantee (/api/voice/identify) : Demucs isole la voix.
-# --no-deps : demucs 4.0.1 tirerait un torchaudio d'une autre epoque. Jeu valide le
-# 13/09/2026 dans un conteneur jetable de cette meme image.
-RUN pip install --no-cache-dir --no-deps demucs==4.0.1 dora-search openunmix \
+# --no-deps : demucs tirerait un torchaudio d'une autre epoque. Jeu valide le
+# 13/09/2026 dans un conteneur jetable de cette meme image (demucs 4.1.0 ; sphn,
+# submitit et treetable manquent, inutiles pour get_model + apply_model).
+RUN pip install --no-cache-dir --no-deps demucs==4.1.0 dora-search openunmix \
     && pip install --no-cache-dir einops julius lameenc omegaconf retrying
 
 # Modeles telecharges au premier usage, dans le volume persistant /app/models.

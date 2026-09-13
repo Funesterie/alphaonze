@@ -16,7 +16,7 @@ const {
 } = require('../src/music/voice-identity-check.cjs');
 
 const ENV = { A11_VOICE_XTTS_RVC_URL: 'http://pont.test' };
-const REFS = { cible: 'djeff-vagues-psy-vocals.wav', contraste: 'vivy-voix-reference.mp3' };
+const REFS = { cible: 'djeff-timbre-essence-vocals.wav', contraste: 'vivy-voix-reference.mp3' };
 const PISTES = [
   { id: 'v1', audioUrl: 'https://cdn.test/v1.mp3' },
   { id: 'v2', audioUrl: 'https://cdn.test/v2.mp3' },
