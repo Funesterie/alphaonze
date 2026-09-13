@@ -88,7 +88,7 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
     if (!magasin || !lirePalier || !uid) return;
     try {
       if (clipCredits.estFondateurActif(await lirePalier(uid))) {
-        await clipCredits.attribuerMoisFondateur(magasin, { userId: uid });
+        await clipCredits.attribuerTrimestreFondateur(magasin, { userId: uid });
       }
     } catch (error) {
       console.warn('[clip-router] Mensualité Fondateur non attribuée:', sanitizeJobDiagnostic(error.message));
@@ -182,7 +182,7 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
         parPlan: clipCredits.creditsPourPlans(1),
         fullParMinute: clipCredits.creditsPourPlans(clipCredits.plansEstimes({ fullDuration: true, dureeSecondes: 60 })),
         eurParCredit: clipCredits.EUR_PAR_CREDIT,
-        fondateurParMois: clipCredits.creditsFondateurParMois(),
+        fondateurParTrimestre: clipCredits.creditsFondateurParTrimestre(),
       },
       packs: clipCredits.packsPublics(),
       achatPossible: Boolean(stripeServiceOuDefaut() && stripeServiceOuDefaut().isCreditCheckoutEnabled()),

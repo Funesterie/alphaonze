@@ -212,8 +212,18 @@ async function crediter(magasin, { userId, credits, ref, reason }) {
 // ET Comfy : sa part Comfy devient 50 crédits clip par mois (~5 EUR sur ~10 EUR
 // mensuels). La mensualité est versée au premier passage du mois, une seule fois
 // grâce à sa référence ; les crédits non dépensés restent acquis.
-function creditsFondateurParMois(env = process.env) {
-  return Math.floor(nombre(env.NOSSEN_CLIP_CREDITS_FONDATEUR, 50));
+/**
+ * Fondateur (13/09/2026, décision de Djeff) : UN Clip offert par trimestre -- un
+ * clip simple, film ou manga, pas un Full Clip. Versé en crédits, exactement le
+ * prix d'un Clip : il ne paie donc jamais un Full Clip. C'était 50 crédits par
+ * mois, qui ne payaient plus rien une fois le prix aligné sur le coût réel.
+ */
+function creditsFondateurParTrimestre(env = process.env) {
+  return Math.floor(nombre(env.NOSSEN_CLIP_CREDITS_FONDATEUR, creditsPourPlans(PLANS_CLIP_NORMAL, env)));
+}
+
+function trimestre(date) {
+  return `${date.getUTCFullYear()}-T${Math.floor(date.getUTCMonth() / 3) + 1}`;
 }
 
 function estFondateurActif(palier, maintenant = new Date()) {
@@ -227,13 +237,14 @@ function estFondateurActif(palier, maintenant = new Date()) {
   return !Number.isNaN(fin.getTime()) && fin > maintenant;
 }
 
-async function attribuerMoisFondateur(magasin, { userId, maintenant = new Date(), env = process.env }) {
-  const mois = maintenant.toISOString().slice(0, 7);
+// Une référence par trimestre civil : le clip offert est versé une seule fois,
+// même si la page est rechargée cent fois.
+async function attribuerTrimestreFondateur(magasin, { userId, maintenant = new Date(), env = process.env }) {
   return crediter(magasin, {
     userId,
-    credits: creditsFondateurParMois(env),
-    ref: `fondateur:${userId}:${mois}`,
-    reason: 'mensualite_fondateur',
+    credits: creditsFondateurParTrimestre(env),
+    ref: `fondateur:${userId}:${trimestre(maintenant)}`,
+    reason: 'clip_offert_fondateur',
   });
 }
 
@@ -249,8 +260,8 @@ module.exports = {
   PACKS,
   PLANS_CLIP_NORMAL,
   aRembourser,
-  attribuerMoisFondateur,
-  creditsFondateurParMois,
+  attribuerTrimestreFondateur,
+  creditsFondateurParTrimestre,
   estFondateurActif,
   creditDepuisSessionStripe,
   creditsPourPlans,

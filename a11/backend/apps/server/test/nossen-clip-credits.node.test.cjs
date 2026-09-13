@@ -150,37 +150,34 @@ test('un admin lance gratuitement', async () => {
   });
 });
 
-test('Fondateur : 50 credits clip par mois, verses une seule fois ; Premium : aucun', async () => {
+test('Fondateur : un Clip offert par trimestre, verse une seule fois ; Premium : aucun', async () => {
   const m = credits.creerMagasinMemoire();
   const palier = { subscription_plan: 'founder', subscription_active: true, subscription_end_date: null };
   assert.equal(credits.estFondateurActif(palier), true);
   assert.equal(credits.estFondateurActif({ ...palier, subscription_active: false }), false);
   assert.equal(credits.estFondateurActif({ subscription_plan: 'premium', subscription_active: true }), false, 'Premium renfloue Suno, pas Comfy');
   assert.equal(credits.estFondateurActif({ ...palier, subscription_end_date: '2000-01-01' }), false, 'abonnement expire');
+  const unClip = credits.creditsPourPlans(credits.PLANS_CLIP_NORMAL, {});
+  assert.equal(credits.creditsFondateurParTrimestre({}), unClip, 'exactement le prix d un Clip');
+  assert.ok(unClip < credits.creditsPourPlans(credits.plansEstimes({ fullDuration: true, dureeSecondes: 120 }), {}), 'jamais de quoi payer un Full Clip');
+  const juillet = new Date('2026-07-02T10:00:00Z');
   const sept = new Date('2026-09-12T10:00:00Z');
-  await credits.attribuerMoisFondateur(m, { userId: 'f1', maintenant: sept, env: {} });
-  await credits.attribuerMoisFondateur(m, { userId: 'f1', maintenant: sept, env: {} });
-  assert.equal(await m.solde('f1'), 50);
-  await credits.attribuerMoisFondateur(m, { userId: 'f1', maintenant: new Date('2026-10-01T00:00:00Z'), env: {} });
-  assert.equal(await m.solde('f1'), 100, 'nouveau mois, nouvelle mensualite');
+  await credits.attribuerTrimestreFondateur(m, { userId: 'f1', maintenant: juillet, env: {} });
+  await credits.attribuerTrimestreFondateur(m, { userId: 'f1', maintenant: sept, env: {} });
+  assert.equal(await m.solde('f1'), unClip, 'juillet et septembre : meme trimestre, un seul clip');
+  await credits.attribuerTrimestreFondateur(m, { userId: 'f1', maintenant: new Date('2026-10-01T00:00:00Z'), env: {} });
+  assert.equal(await m.solde('f1'), 2 * unClip, 'nouveau trimestre, nouveau clip offert');
 });
 
-test('un Fondateur voit sa mensualite et lance son clip sans achat', async () => {
-  // Depuis le prix au cout reel (13/09/2026), un Clip de 6 plans coute 105 credits :
-  // la mensualite par defaut (50) ne le paie plus. Son montant reste une decision de
-  // Djeff (NOSSEN_CLIP_CREDITS_FONDATEUR) ; ce test verifie le mecanisme, pas le montant.
-  const avant = process.env.NOSSEN_CLIP_CREDITS_FONDATEUR;
-  process.env.NOSSEN_CLIP_CREDITS_FONDATEUR = '200';
-  try {
-    await avecServeur({ admin: false, palier: { subscription_plan: 'founder', subscription_active: true } }, async ({ base }) => {
-      const c = await (await fetch(`${base}/credits`)).json();
-      assert.equal(c.solde, 200);
-      assert.equal(c.tarif.fondateurParMois, 200);
-      const r = await post(`${base}/start`, { songUrl: 'https://example.com/a.mp3', title: 'T' });
-      assert.equal(r.status, 200);
-    });
-  } finally {
-    if (avant === undefined) delete process.env.NOSSEN_CLIP_CREDITS_FONDATEUR;
-    else process.env.NOSSEN_CLIP_CREDITS_FONDATEUR = avant;
-  }
+test('un Fondateur recoit son clip offert et lance un Clip sans achat, pas un Full Clip', async () => {
+  await avecServeur({ admin: false, palier: { subscription_plan: 'founder', subscription_active: true } }, async ({ base }) => {
+    const unClip = credits.creditsPourPlans(credits.PLANS_CLIP_NORMAL);
+    const c = await (await fetch(`${base}/credits`)).json();
+    assert.equal(c.solde, unClip);
+    assert.equal(c.tarif.fondateurParTrimestre, unClip);
+    const full = await post(`${base}/start`, { songUrl: 'https://example.com/a.mp3', title: 'T', fullDuration: true, durationSeconds: 200 });
+    assert.equal(full.status, 402, 'le clip offert ne paie pas un Full Clip');
+    const r = await post(`${base}/start`, { songUrl: 'https://example.com/a.mp3', title: 'T', render: 'anime' });
+    assert.equal(r.status, 200, 'un Clip manga passe');
+  });
 });
