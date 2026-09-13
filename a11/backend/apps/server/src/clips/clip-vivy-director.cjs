@@ -879,6 +879,22 @@ function resolveClipIdentity(config) {
   }
 }
 
+// Casting « Moi » (13/09/2026) : la fiche du compte (src/fiche/fiche-compte.cjs),
+// tirée de sa photo, remplace les fiches maison. Libellé neutre pour Sol : un
+// pseudo peut être le nom d'une personne connue, que Seedance refuserait.
+function identiteDepuisFiche(fiche) {
+  var texte = String((fiche && fiche.videoPrompt) || "").trim();
+  if (!texte) return { identityIds: [], castLabels: [], prompt: "", negativePrompt: "", referenceImageUrls: [], nomsFilm: {} };
+  return {
+    identityIds: ["moi"],
+    castLabels: [String((fiche && fiche.label) || "the lead performer")],
+    prompt: texte,
+    negativePrompt: "",
+    referenceImageUrls: [],
+    nomsFilm: {},
+  };
+}
+
 async function directClipScenes(config) {
   var title = config.title || "";
   var songUrl = config.songUrl || "";
@@ -930,14 +946,16 @@ async function directClip(config) {
     : await findLyrics(cfg.title || "", cfg.songUrl || "");
   // L'identite est resolue AVANT le sequencage : Sol doit savoir qui est
   // distribue pour ecrire des plans habites plutot que des paysages vides.
-  var identity = resolveClipIdentity({
-    title: cfg.title || "",
-    lyrics: lyrics || "",
-    style: cfg.style || "",
-    casting: cfg.casting || "",
-    castArtists: Array.isArray(cfg.castArtists) ? cfg.castArtists : [],
-    render: cfg.render || "",
-  });
+  var identity = cfg.identiteCompte
+    ? identiteDepuisFiche(cfg.identiteCompte)
+    : resolveClipIdentity({
+      title: cfg.title || "",
+      lyrics: lyrics || "",
+      style: cfg.style || "",
+      casting: cfg.casting || "",
+      castArtists: Array.isArray(cfg.castArtists) ? cfg.castArtists : [],
+      render: cfg.render || "",
+    });
   var signature = resolveSonicColor(cfg.title || "", lyrics, cfg.style || "");
   progress("mood", "Direction émotionnelle du clip");
   var mood = await generateMood(cfg.title || "", lyrics, signature);
@@ -1163,6 +1181,7 @@ module.exports = {
   directClip,
   directClipScenes,
   resolveClipIdentity,
+  identiteDepuisFiche,
   resolveSonicColor,
   findLyrics,
   generateMood,

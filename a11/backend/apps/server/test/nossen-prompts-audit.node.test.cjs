@@ -81,7 +81,8 @@ test('en film, Vivy est une actrice reelle et son nom ne part pas a la camera', 
   const film = resolveClipIdentity({ title: 'T', lyrics: '', style: '', casting: 'auto', castArtists: ['vivy'], render: 'film' });
   assert.deepEqual(film.identityIds, ['vivy']);
   assert.match(film.prompt, /real human actress/);
-  assert.match(film.prompt, /twin tails with dark magenta highlights/, 'le costume reste');
+  assert.match(film.prompt, /long wavy black hair with magenta streaks/, 'le costume reste');
+  assert.doesNotMatch(film.prompt, /twin tails|hair clips|gothic electro-pop/, 'allure adulte (13/09/2026) : plus de gamine gothique');
   assert.doesNotMatch(film.prompt, /AI singer|\bVivy\b/, 'le nom et « AI singer » tirent vers l anime');
   assert.deepEqual(film.nomsFilm, { Vivy: 'the singer' });
   const plan = effacerNomsFilm("Close shot of Vivy at the desk, Vivy's hands on the keys.", film.nomsFilm);

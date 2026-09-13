@@ -7201,6 +7201,11 @@ const { createClipRouter } = require('./src/clips/clip-router.cjs');
 app.use('/api/mcp-bridge/clip', verifyJWT, createClipRouter({ verifyJWT, db, isAdminRequest }));
 console.log('[Server] NOSSEN clip pipeline mounted at /api/mcp-bridge/clip/{start,status,list,my-jobs}');
 
+// --- Fiche personnelle de chaque compte : pseudo et avatar tiré d'une photo (13/09/2026) ---
+const { createFicheRouter } = require('./src/routes/fiche.cjs');
+app.use('/api/fiche', verifyJWT, createFicheRouter());
+console.log('[Server] Fiche perso mounted at /api/fiche (GET, PUT, photo)');
+
 // --- NOSSEN: Upload audio pour les clips ---
 const { mountUploadAudioRoute } = require('./src/clips/mount-upload-audio-route.cjs');
 mountUploadAudioRoute(app);

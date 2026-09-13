@@ -105,6 +105,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     <option value="a11">🤖 Solo A11</option>
     <option value="kaen44">🔥 Solo Kaen44</option>
     <option value="claude">🧠 Solo Claude</option>
+    <option value="moi">🙋 Moi (ma fiche)</option>
     <option value="duo-djeff-vivy">🎤💜 Duo Djeff × Vivy</option>
     <option value="duo-djeff-grok">🎤⚡ Duo Djeff × Grok</option>
     <option value="trio">🎤💜⚡ Trio (Djeff + Vivy + Grok)</option>
@@ -127,6 +128,11 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   </div>
   <div class="bar" id="bar"><div id="fill" style="width:0%"></div></div>
   <div class="msg" id="msg"></div>
+</div>
+
+<div class="card">
+  <h2>🙋 Ma fiche</h2>
+  <div id="fiche"><div class="empty">Connecte-toi pour créer ta fiche.</div></div>
 </div>
 
 <div class="card">
@@ -453,6 +459,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
         document.getElementById("user-badge").innerHTML = '<a href="/login" style="color:var(--muted);text-decoration:underline;font-size:.6rem">Se connecter pour accéder aux clips</a>';
       }
       updateFullClipButton();
+      loadFiche();
     }).catch(function() {
       document.getElementById("user-badge").innerHTML = '<a href="/login" style="color:var(--muted);text-decoration:underline;font-size:.6rem">Se connecter</a>';
       updateFullClipButton();
@@ -515,6 +522,77 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       document.getElementById("msg").textContent = "❌ Paiement indisponible pour le moment.";
       if (button) button.disabled = false;
     });
+  }
+
+  // Ma fiche (13/09/2026) : un avatar tiré d'une photo, pour le casting « Moi ».
+  // La voix Suno reste dans voice-learning (Premium et plus) : on n'en montre ici
+  // que l'état. Rien n'est demandé tant que le compte n'est pas connecté.
+  function texteVoix(v) {
+    if (!v) return "🎙️ Voix Suno : état indisponible";
+    if (v.sunoVoiceLinked) return "🎙️ Voix Suno personnelle : liée ✓";
+    if (v.canCapture) return "🎙️ Voix Suno personnelle : à lier dans le studio A11";
+    return "🎙️ Voix Suno personnelle : réservée aux comptes Premium, Fondateur et Famille";
+  }
+  function ficheRequete(chemin, opts) {
+    return requestJson(new URL(chemin, A + "/").href, opts || { method: "GET" }, 60000);
+  }
+  function ficheMessage(texte) {
+    var m = document.getElementById("fiche-msg");
+    if (m) m.textContent = texte;
+  }
+  function renderFiche(d, voix) {
+    var box = document.getElementById("fiche");
+    if (!box) return;
+    if (!userEmail) { box.innerHTML = '<div class="empty">Connecte-toi pour créer ta fiche.</div>'; return; }
+    var f = (d && d.fiche) || {};
+    var a = f.avatar;
+    var html = a
+      ? '<div class="meta">🙋 Ton avatar pour les clips (en anglais, tu peux le corriger) :</div>'
+        + '<textarea id="fiche-desc" class="input-url" rows="4" maxlength="400">' + escapeHtml(a.videoPrompt) + '</textarea>'
+        + '<div class="produce-row"><button type="button" class="btn btn-clip" id="fiche-save">Enregistrer</button>'
+        + '<button type="button" class="use" id="fiche-del">Supprimer ma photo et mon avatar</button></div>'
+      : '<div class="meta">🙋 Crée ton avatar : envoie une photo de toi, de face et bien éclairée. Il jouera dans tes clips avec le casting « Moi ».</div>';
+    html += '<label class="file-label">📷 ' + (a ? "Changer de photo" : "Choisir une photo")
+      + '<input class="file-input" type="file" id="fiche-photo" accept="image/jpeg,image/png,image/webp"></label>'
+      + '<label class="produce-info"><input type="checkbox" id="fiche-consent"> C’est moi sur la photo. Elle est analysée par Google Gemini pour écrire mon avatar, puis gardée dans mon espace privé ; je peux la supprimer à tout moment.</label>'
+      + '<div class="produce-info">' + escapeHtml(texteVoix(voix)) + (f.analysesRestantesAujourdhui != null ? " · " + f.analysesRestantesAujourdhui + " analyse(s) de photo restante(s) aujourd’hui" : "") + '</div>'
+      + '<div class="msg" id="fiche-msg"></div>';
+    box.innerHTML = html;
+
+    var photo = document.getElementById("fiche-photo");
+    if (photo && photo.addEventListener) photo.addEventListener("change", function() {
+      var fichier = photo.files && photo.files[0];
+      if (!fichier) return;
+      var consent = document.getElementById("fiche-consent");
+      if (!consent || !consent.checked) { ficheMessage("Coche d’abord la case de consentement."); photo.value = ""; return; }
+      var fd = new FormData();
+      fd.append("consentement", (d && d.consentement) || "avatar-photo-v1");
+      fd.append("photo", fichier);
+      ficheMessage("⏳ Analyse de ta photo…");
+      ficheRequete("/api/fiche/photo", { method: "POST", body: fd }).then(function() { loadFiche(); }, function(e) {
+        ficheMessage("❌ " + ((e && e.message) || "Analyse impossible"));
+      });
+    });
+    var save = document.getElementById("fiche-save");
+    if (save && save.addEventListener) save.addEventListener("click", function() {
+      var desc = document.getElementById("fiche-desc");
+      ficheRequete("/api/fiche", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ videoPrompt: desc ? desc.value : "" }) })
+        .then(function() { ficheMessage("✅ Avatar enregistré."); }, function(e) { ficheMessage("❌ " + ((e && e.message) || "Enregistrement impossible")); });
+    });
+    var del = document.getElementById("fiche-del");
+    if (del && del.addEventListener) del.addEventListener("click", function() {
+      if (!window.confirm("Supprimer ta photo et ton avatar ?")) return;
+      ficheRequete("/api/fiche/photo", { method: "DELETE" }).then(function() { loadFiche(); }, function(e) {
+        ficheMessage("❌ " + ((e && e.message) || "Suppression impossible"));
+      });
+    });
+  }
+  function loadFiche() {
+    if (!userEmail) { renderFiche(null, null); return; }
+    Promise.all([
+      api("/api/fiche").then(function(x) { return x; }, function() { return null; }),
+      api("/api/voice-learning/status?persona=personal").then(function(x) { return x; }, function() { return null; })
+    ]).then(function(r) { renderFiche(r[0], r[1]); });
   }
 
   function updateFullClipButton() {

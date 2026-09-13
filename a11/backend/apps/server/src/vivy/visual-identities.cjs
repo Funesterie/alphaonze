@@ -66,13 +66,15 @@ const IDENTITY_DEFINITIONS = [
     // video recopiaient en texte illisible dans les clips.
     defaultRefs: ['https://vivy.funesterie.me/api/vivy/stream/identity/vivy-reference-portrait'],
     prompt: [
-      'Référence visuelle chanteuse IA: jeune femme adulte à peau claire, longs cheveux noirs en couettes avec reflets magenta sombre, frange droite noire, yeux gris-verts expressifs, pinces et boucles d’oreilles en forme d’étoile, tenue gothic electro-pop noire, choker noir, présence micro ou studio, palette néon magenta et noir.',
-      'Si cette chanteuse IA apparaît, garder exactement cette identité studio gothic magenta sombre; ne jamais la rendre blonde, pastel, idole générique, cheveux bleus, enfantine ou sans rapport avec la référence.',
+      // Allure revue le 13/09/2026 sur les images choisies par Djeff : l'ancienne
+      // (couettes, pinces étoiles, « gothic electro-pop ») faisait gamine gothique.
+      'Référence visuelle chanteuse IA: femme adulte d’environ vingt-cinq ans à peau claire, longs cheveux noirs ondulés à mèches magenta, en demi-queue lâche, frange noire droite, maquillage charbonneux, boucles d’oreilles étoiles, veste en cuir noir sur un haut noir, choker clouté à anneau, pendentif argent, présence micro ou studio, palette néon magenta et violet.',
+      'Si cette chanteuse IA apparaît, garder exactement cette identité rock adulte magenta sombre; ne jamais la rendre blonde, pastel, idole générique, cheveux bleus, enfantine ou sans rapport avec la référence.',
     ].join(' '),
     // Fiche pour le generateur video (12/09/2026) : anglais, courte, affirmative.
     // La fiche francaise ci-dessus faisait ~870 caracteres dans CHAQUE plan et
     // noyait la description du plan ; les interdits restent dans `negative`.
-    videoPrompt: 'Vivy, the AI singer: young adult woman, fair skin, long black hair in twin tails with dark magenta highlights, straight black bangs, expressive grey-green eyes, star-shaped hair clips and earrings, black gothic electro-pop outfit, black choker, neon magenta and black palette.',
+    videoPrompt: 'Vivy, the AI singer: grown woman in her mid-twenties, fair skin, long wavy black hair with magenta streaks worn loosely half-up, straight black bangs, smoky dark eye makeup, star earrings, black leather jacket over a black top, studded choker with a ring, silver pendant necklace, neon magenta and violet palette.',
     // Clip en film (12/09/2026) : un clip « film » avec Vivy sortait en anime, alors
     // que le rendu, le style de la page et les 12 plans de Sol disaient tous
     // « photorealistic live action ». Pour le modele video, « Vivy, the AI singer »
@@ -80,7 +82,7 @@ const IDENTITY_DEFINITIONS = [
     // personnage reconnu l'emporte sur la consigne de rendu. En film, on decrit donc
     // une actrice reelle portant le meme costume, et le nom est remplace dans tout le
     // prompt camera (`nomFilm`). Pas de negatif : Seedance n'a pas ce champ.
-    videoPromptFilm: 'A real human actress, young adult woman with fair skin and natural skin texture, long black hair in twin tails with dark magenta highlights, straight black bangs, grey-green eyes, small star-shaped hair clips and earrings, black gothic electro-pop stage outfit, black choker, neon magenta and black palette.',
+    videoPromptFilm: 'A real human actress in her mid-twenties, fair skin and natural skin texture, long wavy black hair with magenta streaks worn loosely half-up, straight black bangs, smoky dark eye makeup, star earrings, black leather jacket over a black top, studded choker with a ring, silver pendant necklace, neon magenta and violet palette.',
     nomFilm: 'the singer',
     negative: [
       'blonde Vivy',

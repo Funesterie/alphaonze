@@ -640,7 +640,7 @@ async function generateClip(config = {}, {
   nowImpl = Date.now,
   randomBytesImpl = crypto.randomBytes,
 } = {}) {
-  let { songUrl, title, sections, style = '', fullDuration, onProgress, casting = '', castArtists = [], render = '' } = config;
+  let { songUrl, title, sections, style = '', fullDuration, onProgress, casting = '', castArtists = [], render = '', identiteCompte = null } = config;
   const clipId = createClipId(nowImpl, randomBytesImpl);
   const clipDir = path.join(CLIPS_DIR, clipId);
   fs.mkdirSync(clipDir, { recursive: true });
@@ -717,7 +717,7 @@ async function generateClip(config = {}, {
   try {
     const director = loadDirectorImpl();
     if (!director || typeof director.directClip !== 'function') throw new Error('directClip indisponible');
-    directed = await director.directClip({ title, songUrl, audioPath, style, sections, casting, castArtists, render,
+    directed = await director.directClip({ title, songUrl, audioPath, style, sections, casting, castArtists, render, identiteCompte,
       planCount: numSegments, durationSeconds: audioDuration,
       lyrics: config.lyrics, lieu: config.lieu, direction: config.direction, onProgress: directorProgress });
     sections = requireDirectedScenes(directed);

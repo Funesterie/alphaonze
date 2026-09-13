@@ -3137,7 +3137,7 @@ test('Vivy Twitch cover prompts stay visual and image generation can return a pu
     lyrics: '[Djeff]\nJe rallume la console\n[Vivy]\nJe réponds dans la lumière',
   });
   assert.match(identityPrompt, /Référence visuelle chanteuse IA/i);
-  assert.match(identityPrompt, /cheveux noirs en couettes/i);
+  assert.match(identityPrompt, /cheveux noirs ondulés à mèches magenta/i);
   assert.match(identityPrompt, /ne jamais la rendre blonde/i);
   assert.match(identityPrompt, /Référence visuelle créateur humain/i);
   assert.match(identityPrompt, /peau olive/i);

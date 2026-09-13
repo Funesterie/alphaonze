@@ -71,7 +71,7 @@ function normaliserRendu(valeur) {
   return v === 'anime' || v === 'manga' ? 'anime' : 'film';
 }
 
-function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isAdminRequest = null, magasinCredits = null, stripeService = null, palierUtilisateur = null, lireSoldeComfy = null } = {}) {
+function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isAdminRequest = null, magasinCredits = null, stripeService = null, palierUtilisateur = null, lireSoldeComfy = null, lireIdentiteCompte = null } = {}) {
   const router = express.Router();
   // Registre des crédits (clip-credits.cjs). Sans base, un non-admin ne lance
   // rien : on échoue fermé plutôt que d'offrir des clips que Comfy facture.
@@ -120,6 +120,8 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
   // solde réel (comfy-solde.cjs) et on déduit ce que les clips en cours vont
   // encore consommer. Solde illisible = on ne sait pas, on ne bloque rien.
   const lireSolde = lireSoldeComfy || comfySolde.creerLecteurSolde();
+  // Casting « Moi » : la fiche vidéo tirée de la photo du compte (fiche-compte.cjs).
+  const lireIdentite = lireIdentiteCompte || ((user) => require('../fiche/fiche-compte.cjs').identiteClipDuCompte(user));
   const plansEnCours = () => {
     try {
       return listJobs({ limit: 200, raw: true })
@@ -225,6 +227,20 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
     const render = normaliserRendu(req.body && req.body.render);
     if (!songUrl) return res.status(400).json({ ok: false, error: 'songUrl requis' });
 
+    // Casting « Moi » (13/09/2026) : l'avatar de la fiche du compte joue le rôle
+    // principal. Sans avatar, on refuse avant toute réservation.
+    let identiteCompte = null;
+    if (casting === 'moi') {
+      try { identiteCompte = lireIdentite(req.user || (req.session && req.session.user) || null); } catch (_) { identiteCompte = null; }
+      if (!identiteCompte) {
+        return res.status(400).json({
+          ok: false,
+          error: 'AVATAR_MANQUANT',
+          message: 'Crée d’abord ton avatar dans « Ma fiche » : une photo de toi suffit.',
+        });
+      }
+    }
+
     // Réserve vide : on refuse AVANT de réserver des crédits et de faire
     // travailler le Director. Réserve basse : on lance, et on le dit.
     const plansDemandes = clipCredits.plansEstimes({ fullDuration, dureeSecondes: req.body && req.body.durationSeconds });
@@ -283,7 +299,7 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
 
     // Lancer la génération en arrière-plan
     setImmediate(() => {
-      runClipGeneration(job.id, { songUrl, title, style, fullDuration, sections, casting, castArtists, render }, {
+      runClipGeneration(job.id, { songUrl, title, style, fullDuration, sections, casting, castArtists, render, identiteCompte }, {
         workerId: CLIP_WORKER_ID,
         generateClipImpl,
       }).then((sortie) => {
