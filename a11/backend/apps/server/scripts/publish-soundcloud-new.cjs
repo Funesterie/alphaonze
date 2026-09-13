@@ -13,13 +13,87 @@ const { readHistoryTracks, historyDirectory, applyHistoryEnhancements } = requir
 const { resolveJukeboxAsset } = require('../src/music/jukebox-stream-integrity.cjs');
 const { publishTrackIfNew, autoPublishEnabled, resolveSharing, normaliserTitre } = require('../src/social/soundcloud-auto-publish.cjs');
 const { titleFromLyrics } = require('../src/music/jukebox-claude-titler.cjs');
-const { getSoundCloudAccountIdentity, listSoundCloudTracks, uploadSoundCloudTrack } = require('../src/social/social-autoprompt.cjs');
+const { getFreshSocialTokens, getSoundCloudAccountIdentity, listSoundCloudTracks, uploadSoundCloudTrack } = require('../src/social/social-autoprompt.cjs');
 const { atomic } = require('./master-jukebox-v11pan.cjs');
 
 const argument = (nom, defaut) => {
   const trouve = process.argv.find((a) => a.startsWith(`--${nom}=`));
   return trouve ? trouve.slice(nom.length + 3) : defaut;
 };
+
+// Depuis le 13/09/2026, seuls les sons crees APRES le dernier envoi public du lot
+// historique (23/08/2026 14:35) partent. Le jukebox a ete renomme depuis juillet :
+// seuls 21 de ses titres correspondent encore a SoundCloud, donc le garde par titre
+// ne protege PAS les morceaux plus anciens -- les publier reposterait les chansons
+// de juillet sous un autre nom.
+const SINCE_DEFAUT = '2026-08-23T14:35:00Z';
+
+function estVersionMaster(track) {
+  return /v11|pan|master|d40/i.test([track.mastering, track.variant, track.trackUrl].join(' ')) ? 1 : 0;
+}
+
+/** Candidats d'un passage : recents, non exclus, du plus recent au plus ancien, master d'abord. */
+function selectionnerCandidats(tracks, { since = SINCE_DEFAUT, exclusions = new Set() } = {}) {
+  const seuil = Date.parse(since);
+  if (!Number.isFinite(seuil)) throw Error('invalid_since');
+  return (tracks || [])
+    .filter((t) => {
+      const d = Date.parse(t && t.createdAt);
+      return Number.isFinite(d) && d > seuil && !exclusions.has(String(t.id));
+    })
+    .sort((a, b) => (Date.parse(b.createdAt) - Date.parse(a.createdAt)) || (estVersionMaster(b) - estVersionMaster(a)));
+}
+
+/**
+ * Sons ecartes a la main (les deux chansons « factures », 13/09/2026).
+ * Fichier absent = aucune exclusion ; fichier illisible = on refuse de publier.
+ */
+function lireExclusions(root) {
+  const fichier = path.join(root, 'social', 'soundcloud-exclusions.json');
+  let brut;
+  try { brut = fs.readFileSync(fichier, 'utf8'); }
+  catch (error) {
+    if (error.code === 'ENOENT') return new Set();
+    throw Error('soundcloud_exclusions_unreadable');
+  }
+  let donnees;
+  try { donnees = JSON.parse(brut); } catch { throw Error('soundcloud_exclusions_invalid'); }
+  if (!donnees || !Array.isArray(donnees.entries)) throw Error('soundcloud_exclusions_invalid');
+  return new Set(donnees.entries.map((e) => String((e && e.id) || '')).filter(Boolean));
+}
+
+/**
+ * Le jeton, par ordre : stdin, puis le coffre des comptes sociaux -- la ou la
+ * reconnexion OAuth range un jeton frais, que l'application renouvelle et
+ * enregistre -- puis l'environnement. Avant le 13/09/2026 le runner ne lisait que
+ * l'environnement, dont le jeton avait expire : il ne pouvait plus rien publier.
+ */
+async function jetonSoundCloud({ credentials = {}, env = process.env, chargerDepuisCoffre = chargerJetonDuCoffre } = {}) {
+  if (credentials.SOUNDCLOUD_ACCESS_TOKEN) return credentials.SOUNDCLOUD_ACCESS_TOKEN;
+  if (env.DATABASE_URL && typeof chargerDepuisCoffre === 'function') {
+    try {
+      const jeton = await chargerDepuisCoffre(env);
+      if (jeton) return jeton;
+    } catch (error) {
+      console.error('coffre SoundCloud indisponible, repli sur l environnement :', String(error.message || error).slice(0, 120));
+    }
+  }
+  const jeton = env.SOCIAL_SOUNDCLOUD_ACCESS_TOKEN || env.SOUNDCLOUD_ACCESS_TOKEN;
+  if (!jeton) throw Error('soundcloud_access_token_missing');
+  return jeton;
+}
+
+// Compte admin (user_id 2) qui a reconnecte SoundCloud le 13/09/2026.
+async function chargerJetonDuCoffre(env) {
+  const { Pool } = require('pg');
+  const pool = new Pool({ connectionString: env.DATABASE_URL, max: 1 });
+  try {
+    const compte = await getFreshSocialTokens(pool, { provider: 'soundcloud', userId: env.SOUNDCLOUD_PUBLISH_USER_ID || '2' }, env);
+    return (compte && compte.tokens && compte.tokens.accessToken) || '';
+  } finally {
+    await pool.end();
+  }
+}
 
 function createBudgetedTitler({ apiKey, budgetUsd, stats, save, titleImpl = titleFromLyrics }) {
   if (!Number.isFinite(budgetUsd) || budgetUsd < 0) throw Error('invalid_titling_budget');
@@ -89,14 +163,15 @@ async function main() {
   // Les secrets arrivent par stdin, jamais par argv: une ligne de commande se
   // retrouve dans ps, dans l'historique du shell et dans les journaux.
   const credentials = process.argv.includes('--key-stdin') ? JSON.parse(fs.readFileSync(0, 'utf8')) : {};
-  const accessToken = credentials.SOUNDCLOUD_ACCESS_TOKEN || process.env.SOCIAL_SOUNDCLOUD_ACCESS_TOKEN || process.env.SOUNDCLOUD_ACCESS_TOKEN;
-  if (!accessToken) throw Error('soundcloud_access_token_missing');
+  const accessToken = await jetonSoundCloud({ credentials, env: process.env });
   const claudeKey = credentials.CLAUDE_API_KEY || process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY || '';
 
   const limite = Number(argument('limit', '1'));
   const budgetUsd = Number(argument('budget-usd', '0.10'));
   if (!Number.isInteger(limite) || limite < 1 || limite > 1000) throw Error('invalid_publish_limit');
   if (!Number.isFinite(budgetUsd) || budgetUsd < 0) throw Error('invalid_titling_budget');
+  const since = argument('since', process.env.SOUNDCLOUD_AUTO_PUBLISH_SINCE || SINCE_DEFAUT);
+  if (!Number.isFinite(Date.parse(since))) throw Error('invalid_since');
   // Lecture seule : un OAuth deja refuse ne doit pas consommer de titrage.
   await getSoundCloudAccountIdentity(accessToken);
   // Ce qui est deja en ligne (13/09/2026) : le registre ne connait pas le lot de
@@ -113,7 +188,7 @@ async function main() {
   const stats = {
     schema: 'funesterie.social.soundcloud-publish-run.v1',
     startedAt: new Date().toISOString(), state: 'running',
-    sharing: resolveSharing(process.env), limit: limite, budgetUsd,
+    sharing: resolveSharing(process.env), limit: limite, budgetUsd, since,
     candidats: 0, publies: 0, ignores: 0, echecs: 0,
     titrages: 0, coutTitrageUsd: 0, coutTitrageReserveUsd: 0, raisons: {}, publications: [], erreurs: [],
   };
@@ -131,7 +206,9 @@ async function main() {
   const titleTrack = claudeKey ? createBudgetedTitler({ apiKey: claudeKey, budgetUsd, stats, save }) : null;
 
   try {
-    const tracks = applyHistoryEnhancements(readHistoryTracks(directory), directory);
+    const tracks = selectionnerCandidats(applyHistoryEnhancements(readHistoryTracks(directory), directory), {
+      since, exclusions: lireExclusions(root),
+    });
     stats.candidats = tracks.length;
     save();
     await runPublicationBatch({ tracks, stats, save, isStopping: () => stopping, publish: async (track) => {
@@ -152,4 +229,6 @@ async function main() {
 }
 
 if (require.main === module) main().catch((error) => { console.error(String(error.code || error.message)); process.exitCode = 1; });
-module.exports = { createBudgetedTitler, isAuthError, main, runPublicationBatch };
+module.exports = {
+  SINCE_DEFAUT, createBudgetedTitler, isAuthError, jetonSoundCloud, lireExclusions, main, runPublicationBatch, selectionnerCandidats,
+};

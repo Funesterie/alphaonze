@@ -2,13 +2,55 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { createBudgetedTitler, main, runPublicationBatch } = require('../scripts/publish-soundcloud-new.cjs');
+const {
+  SINCE_DEFAUT, createBudgetedTitler, jetonSoundCloud, lireExclusions, main, runPublicationBatch, selectionnerCandidats,
+} = require('../scripts/publish-soundcloud-new.cjs');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { titleFromLyrics } = require('../src/music/jukebox-claude-titler.cjs');
 
 function newStats() {
   return { state: 'running', limit: 1, publies: 0, ignores: 0, echecs: 0, titrages: 0,
     coutTitrageUsd: 0, coutTitrageReserveUsd: 0, raisons: {}, publications: [], erreurs: [] };
 }
+
+// --- 13/09/2026 : seuls les sons recents partent, exclusions, jeton du coffre ---
+
+test('la selection ne garde que les sons apres la coupure, hors exclusions, recents et masters d abord', () => {
+  const tracks = [
+    { id: 'ancien', createdAt: '2026-07-01T10:00:00Z', mastering: 'V11 Pan' },
+    { id: 'a-orig', createdAt: '2026-09-07T18:40:00Z', variant: 'version-1' },
+    { id: 'a-master', createdAt: '2026-09-07T18:40:00Z', mastering: 'V11 Pan', variant: 'version-2' },
+    { id: 'plus-recent', createdAt: '2026-09-09T12:16:00Z' },
+    { id: 'facture', createdAt: '2026-09-06T19:27:00Z' },
+    { id: 'sans-date' },
+  ];
+  const ids = selectionnerCandidats(tracks, { since: SINCE_DEFAUT, exclusions: new Set(['facture']) }).map((t) => t.id);
+  assert.deepEqual(ids, ['plus-recent', 'a-master', 'a-orig']);
+  assert.equal(SINCE_DEFAUT, '2026-08-23T14:35:00Z', 'dernier envoi public du lot historique');
+  assert.throws(() => selectionnerCandidats(tracks, { since: 'hier' }), /invalid_since/);
+});
+
+test('le fichier d exclusions : absent = rien, valide = ses ids, illisible = refus', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sc-exclus-'));
+  assert.equal(lireExclusions(root).size, 0);
+  fs.mkdirSync(path.join(root, 'social'));
+  fs.writeFileSync(path.join(root, 'social', 'soundcloud-exclusions.json'), JSON.stringify({ entries: [{ id: 'x1' }, { id: 'x2' }] }));
+  assert.deepEqual([...lireExclusions(root)].sort(), ['x1', 'x2']);
+  fs.writeFileSync(path.join(root, 'social', 'soundcloud-exclusions.json'), '{pas du json');
+  assert.throws(() => lireExclusions(root), /soundcloud_exclusions_invalid/);
+});
+
+test('le jeton vient de stdin, puis du coffre, puis de l environnement', async () => {
+  const coffre = async () => 'jeton-du-coffre';
+  assert.equal(await jetonSoundCloud({ credentials: { SOUNDCLOUD_ACCESS_TOKEN: 'stdin' }, env: { DATABASE_URL: 'x' }, chargerDepuisCoffre: coffre }), 'stdin');
+  assert.equal(await jetonSoundCloud({ env: { DATABASE_URL: 'x', SOUNDCLOUD_ACCESS_TOKEN: 'expire' }, chargerDepuisCoffre: coffre }), 'jeton-du-coffre');
+  const enPanne = async () => { throw new Error('base injoignable'); };
+  assert.equal(await jetonSoundCloud({ env: { DATABASE_URL: 'x', SOUNDCLOUD_ACCESS_TOKEN: 'env' }, chargerDepuisCoffre: enPanne }), 'env');
+  assert.equal(await jetonSoundCloud({ env: { SOUNDCLOUD_ACCESS_TOKEN: 'env' }, chargerDepuisCoffre: coffre }), 'env', 'sans base, pas de coffre');
+  await assert.rejects(jetonSoundCloud({ env: {}, chargerDepuisCoffre: coffre }), /soundcloud_access_token_missing/);
+});
 
 test('le préflight OAuth refuse avant titrage, verrou ou publication', async () => {
   const originalArgv = process.argv, originalFetch = globalThis.fetch;

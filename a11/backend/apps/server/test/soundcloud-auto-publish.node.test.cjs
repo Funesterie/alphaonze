@@ -23,6 +23,9 @@ test('une URL, du HTML ou un titre-fleuve ne se publient jamais, meme venus de l
   assert.equal(looksLikeMachineTitle('Titre <b>gras</b>'), true);
   assert.equal(looksLikeMachineTitle('x'.repeat(121)), true);
   assert.equal(looksLikeMachineTitle('Sous la Pluie de Néons Roses'), false);
+  assert.equal(looksLikeMachineTitle('User: .NET: Project GitHub Copilot: Optimized tool selection'), true, 'fragment de chat');
+  assert.equal(looksLikeMachineTitle('Assistant : voici ta chanson'), true);
+  assert.equal(looksLikeMachineTitle('Utilisateur du futur'), false, 'un vrai mot n est pas un fragment');
   assert.equal(normaliserTitre('  Éclat d’Étincelle ! '), 'eclat d etincelle');
 });
 

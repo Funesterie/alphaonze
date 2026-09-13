@@ -53,6 +53,9 @@ const TITRES_MACHINE = [
   // que les titres proposés par le modèle, pas ceux venus de la source.
   /https?:|www\./i,
   /[<>\r\n]/,
+  // Un fragment de conversation devenu titre (13/09/2026) : « User: .NET: Project
+  // GitHub Copilot: Optimized tool selection... ». Il passait le garde anti-URL.
+  /\b(user|assistant|system)\s*:/i,
 ];
 
 function looksLikeMachineTitle(titre = '') {
