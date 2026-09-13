@@ -5,7 +5,23 @@ const test = require('node:test');
 
 const { parserLexique, entreesPour, blocLexique, lireLexique } = require('../src/knowledge/djeff-lexicon.cjs');
 const { buildChatGraphContext, buildSongcraftGraphContext } = require('../src/music/songcraft-graph-context.cjs');
-const { buildVivyGraphSourceManifest } = require('../src/knowledge/vivy-graph-access.cjs');
+const { buildVivyGraphSourceManifest, markStaleVivyGraphFiles } = require('../src/knowledge/vivy-graph-access.cjs');
+
+test('une synchro depuis le conteneur ne desactive pas la doctrine absente de ce disque', async () => {
+  // La prod n'embarque pas a11/docs : ces fichiers sont listes mais introuvables.
+  const appels = [];
+  const session = { run: async (requete, params) => { appels.push(params); } };
+  await markStaleVivyGraphFiles(session, {
+    id: 'pack',
+    generatedAt: '2026-09-13T00:00:00Z',
+    files: [{ id: 'vivy-file:lexique' }],
+    manifest: { files: [
+      { id: 'vivy-file:lexique', exists: true },
+      { id: 'vivy-file:doc-absente-ici', exists: false },
+    ] },
+  });
+  assert.deepEqual(appels[0].activeFileIds.sort(), ['vivy-file:doc-absente-ici', 'vivy-file:lexique']);
+});
 
 // Aucun graphe ni historique joignable : le lexique doit tenir seul.
 const SANS_MEMOIRE = {

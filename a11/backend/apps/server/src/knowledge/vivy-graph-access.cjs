@@ -506,7 +506,19 @@ async function upsertVivyGraphFile(session, corpus, file, fileChunks, sanitizePr
   }
 }
 
+/**
+ * Retire du paquet les fichiers qui n'en font plus partie.
+ *
+ * Un fichier ABSENT de cette machine n'est pas un fichier retire : le conteneur de
+ * prod n'embarque pas a11/docs, et une synchro lancee depuis lui desactivait donc
+ * toute la doctrine qui en vient. Seuls les fichiers sortis de la liste des sources
+ * sont retires ; ceux qui sont listes mais introuvables ici gardent leur etat.
+ */
 async function markStaleVivyGraphFiles(session, corpus) {
+  const keepIds = [
+    ...corpus.files.map((file) => file.id),
+    ...(corpus.manifest?.files || []).filter((file) => !file.exists).map((file) => file.id),
+  ];
   await session.run(`
     MATCH (pack:VivyGraphPack {id: $packId})-[r:VIVY_GRAPH_INCLUDES]->(file:VivyGraphFile)
     WHERE NOT file.id IN $activeFileIds
@@ -515,7 +527,7 @@ async function markStaleVivyGraphFiles(session, corpus) {
     DELETE r
   `, {
     packId: corpus.id,
-    activeFileIds: corpus.files.map((file) => file.id),
+    activeFileIds: keepIds,
     now: corpus.generatedAt,
   });
 }
@@ -600,6 +612,7 @@ module.exports = {
   DEFAULT_PACK_ID,
   buildVivyGraphCorpus,
   buildVivyGraphSourceManifest,
+  markStaleVivyGraphFiles,
   resolveVivyGraphRoots,
   searchVivyGraph,
   syncVivyGraphCorpus,
