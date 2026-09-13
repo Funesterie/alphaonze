@@ -46,8 +46,11 @@ test('la fiche d identite envoyee a la camera est en anglais et courte', () => {
   const djeff = resolveClipIdentity({ title: 'FIGHTERZ CLUB', lyrics: '', style: '', casting: 'auto', castArtists: [] });
   assert.deepEqual(djeff.identityIds, ['djeff']);
   assert.ok(djeff.prompt.length < 450, 'etait ~870 caracteres : ' + djeff.prompt.length);
-  assert.match(djeff.prompt, /square jaw/, 'les traits de ressemblance restent');
-  assert.match(djeff.prompt, /beard and moustache/);
+  // Traits relus sur la photo choisie par Djeff le 13/09/2026.
+  assert.match(djeff.prompt, /fair skin/, 'les traits de ressemblance restent');
+  assert.match(djeff.prompt, /pointed chin/);
+  assert.match(djeff.prompt, /light stubble/);
+  assert.doesNotMatch(djeff.prompt, /Mediterranean|olive skin|broad face/, 'l ancienne fiche inventait un autre homme');
   assert.doesNotMatch(djeff.prompt, /[éèàçù]|Référence/, 'plus de francais melange a un prompt anglais');
   assert.match(djeff.negativePrompt, /clean shaven Djeff/, 'les interdits restent dans le negatif');
 });

@@ -2052,6 +2052,8 @@ function buildOverlayHtml() {
 const VIVY_STREAM_IDENTITY_ASSETS = {
   'a11-agent-media-avatar': 'a11-agent-media-avatar.png',
   'a11-agent-media-card': 'a11-agent-media-card.png',
+  // Photo choisie par Djeff le 13/09/2026 : sa reference principale.
+  'djeff-reference-photo': 'djeff-reference-photo.jpg',
   'djeff-reference-01': 'djeff-reference-01.jpg',
   'djeff-reference-02': 'djeff-reference-02.jpg',
   'djeff-reference-03': 'djeff-reference-03.jpg',

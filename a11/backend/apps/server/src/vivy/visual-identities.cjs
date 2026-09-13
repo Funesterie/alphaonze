@@ -113,6 +113,7 @@ const IDENTITY_DEFINITIONS = [
     ],
     envRefs: ['VIVY_DJEFF_REFERENCE_IMAGE_URL', 'DJEFF_REFERENCE_IMAGE_URL'],
     defaultRefs: [
+      'https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-photo',
       'https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-01',
       'https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-02',
       'https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-03',
@@ -121,9 +122,12 @@ const IDENTITY_DEFINITIONS = [
     ],
     prompt: [
       'Référence visuelle créateur humain: homme adulte méditerranéen réel, peau olive, visage large à mâchoire carrée et marquée, joues pleines, yeux brun foncé au regard direct, sourcils épais et fournis très rapprochés, coupe très courte dégradée net sur les côtés et courte sur le dessus, cheveux brun foncé, barbe courte noire et moustache, carrure large et épaules solides, t-shirt sombre ou veste bleue, énergie de créateur.',
-      'Si ce créateur apparaît, préserver ces traits: teint olive, visage large et mâchoire marquée, yeux foncés, sourcils épais, coupe très courte dégradée, barbe courte et moustache, carrure large. Ces traits suffisent seuls: aucune image de référence n est transmise au generateur video, la description porte donc toute la ressemblance. Ne pas changer son origine visuelle, ne pas le rendre noir, imberbe, personnage motard bêta ou acteur générique.',
+      'Si ce créateur apparaît, préserver ces traits: jeune homme à peau claire, visage ovale, mâchoire nette et menton pointu, yeux marron foncé, sourcils épais et droits, coupe très courte dégradée brun foncé, barbe de quelques jours le long de la mâchoire, silhouette fine, casquette foncée à motifs, tee-shirt blanc, fine chaîne dorée à croix. Ces traits suffisent seuls: aucune image de référence n est transmise au generateur video, la description porte donc toute la ressemblance. Ne pas changer son origine visuelle, ne pas le rendre noir, imberbe, personnage motard bêta ou acteur générique.',
     ].join(' '),
-    videoPrompt: 'Djeff, the creator: real Mediterranean adult man, olive skin, broad face with a strong square jaw, full cheeks, dark brown eyes with a direct gaze, thick close-set eyebrows, very short dark brown hair faded on the sides, short black beard and moustache, broad shoulders, dark t-shirt or blue jacket.',
+    // Refait le 13/09/2026 sur la photo choisie par Djeff : « Mediterranean, olive
+    // skin, broad face, full cheeks, black beard and moustache, broad shoulders »
+    // faisait inventer un autre homme au generateur (clip « Essence Pure Eclat »).
+    videoPrompt: 'Djeff, the creator: young adult man with fair skin, oval face with a defined jaw and a pointed chin, dark brown eyes under thick straight dark eyebrows, straight nose, very short dark brown hair faded on the sides, light stubble along the jaw and chin, slim build, calm serious expression; dark patterned baseball cap, white t-shirt, thin gold chain with a small cross pendant.',
     negative: [
       'black Djeff',
       'wrong Djeff ethnicity',
