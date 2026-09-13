@@ -27,8 +27,16 @@ test('la selection ne garde que les sons apres la coupure, hors exclusions, rece
     { id: 'sans-date' },
   ];
   const ids = selectionnerCandidats(tracks, { since: SINCE_DEFAUT, exclusions: new Set(['facture']) }).map((t) => t.id);
-  assert.deepEqual(ids, ['plus-recent', 'a-master', 'a-orig']);
+  // a-orig et a-master : meme generation (meme date, pas de paroles) -> la master seule.
+  assert.deepEqual(ids, ['plus-recent', 'a-master']);
   assert.equal(SINCE_DEFAUT, '2026-08-23T14:35:00Z', 'dernier envoi public du lot historique');
+  // Deux versions d'une meme generation (memes paroles) : une seule, la master.
+  const jumelles = [
+    { id: 'v1', createdAt: '2026-09-09T12:16:00.100Z', title: 'Session principale', lyrics: 'La batte perce le noir', variant: 'version-1' },
+    { id: 'v2', createdAt: '2026-09-09T12:16:00.200Z', title: 'Session principale', lyrics: 'La batte  perce le noir', mastering: 'V11 Pan' },
+    { id: 'autre', createdAt: '2026-09-08T10:00:00Z', title: 'Session principale', lyrics: 'Une autre chanson' },
+  ];
+  assert.deepEqual(selectionnerCandidats(jumelles).map((t) => t.id), ['v2', 'autre']);
   assert.throws(() => selectionnerCandidats(tracks, { since: 'hier' }), /invalid_since/);
 });
 

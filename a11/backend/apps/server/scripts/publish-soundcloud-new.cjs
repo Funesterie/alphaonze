@@ -36,12 +36,23 @@ function estVersionMaster(track) {
 function selectionnerCandidats(tracks, { since = SINCE_DEFAUT, exclusions = new Set() } = {}) {
   const seuil = Date.parse(since);
   if (!Number.isFinite(seuil)) throw Error('invalid_since');
-  return (tracks || [])
+  const tries = (tracks || [])
     .filter((t) => {
       const d = Date.parse(t && t.createdAt);
       return Number.isFinite(d) && d > seuil && !exclusions.has(String(t.id));
     })
     .sort((a, b) => (Date.parse(b.createdAt) - Date.parse(a.createdAt)) || (estVersionMaster(b) - estVersionMaster(a)));
+  // Une generation Suno rend deux versions aux paroles identiques : on n'en garde
+  // qu'une, la master. Sans ca, la jumelle d'un son au titre generique etait
+  // retitree autrement que celle deja en ligne, echappait au garde par titre et
+  // repartait en doublon (cas « Session principale » / « La Batte Perce le Noir »).
+  const vus = new Set();
+  return tries.filter((t) => {
+    const cle = String(t.lyrics || '').replace(/\s+/g, ' ').trim().slice(0, 240) || `date:${t.createdAt}`;
+    if (vus.has(cle)) return false;
+    vus.add(cle);
+    return true;
+  });
 }
 
 /**
