@@ -305,6 +305,44 @@ test('un ancien morceau sans audio reste visible mais ne peut pas lancer de lect
   assert.match(page.elements.get('song').innerHTML, /value="0" disabled/);
 });
 
+test('la recherche filtre les chansons par initiale ou par mots, sans accents ni majuscules', async () => {
+  // 13/09/2026 : plus de 800 titres, Djeff veut chercher par lettre ou par mot.
+  const page = createHarness(async () => jsonResponse(200, { songs: [
+    { title: 'Essence Pure Éclat', trackUrl: '/media/a.mp3', createdAt: '2026-09-13T00:00:00Z' },
+    { title: 'La Batte Perce le Noir', trackUrl: '/media/b.mp3', createdAt: '2026-09-09T00:00:00Z' },
+    { title: 'Djeff Est de Retour', trackUrl: '/media/c.mp3', createdAt: '2026-09-04T00:00:00Z' },
+    { title: 'Éclipse Rose', trackUrl: '/media/d.mp3', createdAt: '2026-08-01T00:00:00Z' },
+  ] }));
+  await page.hooks.loadSongs();
+  const recherche = page.elements.get('song-search');
+  const taper = (texte) => { recherche.value = texte; recherche.dispatch('input'); };
+  const liste = () => page.elements.get('list').innerHTML;
+
+  taper('e');
+  assert.equal(page.elements.get('song-count').textContent, '2 / 4', 'une lettre = initiale : Essence et Éclipse');
+  assert.match(liste(), /Essence Pure/);
+  assert.match(liste(), /Éclipse Rose/);
+  assert.doesNotMatch(liste(), /La Batte/);
+
+  taper('ECLAT pure');
+  assert.equal(page.elements.get('song-count').textContent, '1 / 4', 'des mots, sans accent ni majuscule');
+  assert.match(liste(), /data-idx="0"/, 'chaque chanson garde son indice d origine');
+  assert.match(page.elements.get('song').innerHTML, /1 résultat/);
+
+  taper('zzz');
+  assert.match(liste(), /Aucune chanson ne correspond à « zzz »/);
+  assert.match(page.elements.get('song').innerHTML, /Aucun titre ne correspond/);
+
+  taper('retour');
+  recherche.dispatch('keydown', { key: 'Enter' });
+  assert.equal(page.elements.get('song').value, 2, 'Entree choisit le premier resultat');
+
+  taper('batte');
+  assert.match(page.elements.get('song').innerHTML, /value="2"/, 'la chanson choisie reste choisissable meme filtree');
+  taper('');
+  assert.equal(page.elements.get('song-count').textContent, 4, 'sans recherche, le compteur redevient le total');
+});
+
 test('pollJob ne chevauche pas les appels et arrete explicitement un 404', async () => {
   let statusCalls = 0;
   let resolveFirst;

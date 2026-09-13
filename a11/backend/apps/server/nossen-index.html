@@ -78,6 +78,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 
 <div class="card">
   <h2>🎬 Produire un clip</h2>
+  <input class="input-url" type="search" id="song-search" placeholder="🔎 Rechercher : une lettre (initiale) ou des mots du titre" autocomplete="off" aria-label="Rechercher une chanson">
   <select id="song"><option value="">Choisir une chanson ou importer…</option></select>
 
   <div class="or">— ou importer ta musique —</div>
@@ -1144,20 +1145,49 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     });
   }
 
+  // Recherche dans les chansons (13/09/2026, demande de Djeff : plus de 800 titres).
+  // Une lettre seule = titres qui commencent par elle ; des mots = titres qui les
+  // contiennent tous. Accents, majuscules et ponctuation ignores. Le filtre porte sur
+  // la liste deroulante ET l'historique ; chaque chanson garde son indice d'origine.
+  var songQuery = "";
+  function plierTexte(texte) {
+    var base = String(texte || "").toLowerCase().normalize("NFD");
+    var sortie = "";
+    for (var k = 0; k < base.length; k++) {
+      var code = base.charCodeAt(k);
+      if (code >= 0x300 && code <= 0x36f) continue;
+      sortie += base[k];
+    }
+    return sortie.replace(/[^a-z0-9]+/g, " ").trim();
+  }
+  function chansonCorrespond(s, requete) {
+    if (!requete) return true;
+    var titre = plierTexte(s.title);
+    if (requete.length === 1) return titre.charAt(0) === requete;
+    var botte = titre + " " + plierTexte([s.date, s.source].filter(Boolean).join(" "));
+    return requete.split(" ").every(function(mot) { return botte.indexOf(mot) >= 0; });
+  }
+
   function renderSongs(selectedKey) {
     var audio = document.getElementById("audio");
-    document.getElementById("song-count").textContent = songs.length;
+    var requete = plierTexte(songQuery);
+    var selectedIndex = selectedKey ? songs.findIndex(function(song) { return songKey(song) === selectedKey; }) : -1;
+    var visibles = [];
+    songs.forEach(function(s, i) { if (chansonCorrespond(s, requete)) visibles.push(i); });
+    // La chanson choisie reste dans la liste deroulante meme si le filtre la masque.
+    var dansLeChoix = selectedIndex >= 0 && visibles.indexOf(selectedIndex) < 0 ? [selectedIndex].concat(visibles) : visibles;
+    document.getElementById("song-count").textContent = requete ? visibles.length + " / " + songs.length : songs.length;
     document.getElementById("mastering-progress").textContent = songs.filter(function(s) { return s.mastering === "V11 Pan"; }).length + " / " + songs.length + " versions V11 Pan disponibles · originaux conservés";
-    document.getElementById("song").innerHTML = '<option value="">Choisir une chanson…</option>' +
-      songs.map(function(s, i) { return '<option value="' + i + '"' + (s.available === false ? ' disabled' : '') + '>' + escapeHtml(truncate(s.title, 45)) + '</option>'; }).join("");
+    document.getElementById("song").innerHTML = '<option value="">' + (requete ? (visibles.length ? visibles.length + ' résultat' + (visibles.length > 1 ? 's' : '') + ' — choisir…' : 'Aucun titre ne correspond') : 'Choisir une chanson…') + '</option>' +
+      dansLeChoix.map(function(i) { var s = songs[i]; return '<option value="' + i + '"' + (s.available === false ? ' disabled' : '') + '>' + escapeHtml(truncate(s.title, 45)) + '</option>'; }).join("");
 
     if (selectedKey && !importedFile && !document.getElementById("import-url").value.trim()) {
-      var selectedIndex = songs.findIndex(function(song) { return songKey(song) === selectedKey; });
       if (selectedIndex >= 0) document.getElementById("song").value = String(selectedIndex);
     }
 
-    document.getElementById("list").innerHTML = songs.length
-      ? songs.map(function(s, i) {
+    document.getElementById("list").innerHTML = visibles.length
+      ? visibles.map(function(i) {
+          var s = songs[i];
           var active = i === currentIdx;
           return '<div class="s">' +
             '<button class="play' + (active ? ' active' : '') + '" data-idx="' + i + '"' + (s.available === false ? ' disabled title="Audio non récupéré"' : '') + ' aria-label="' + escapeHtml("Lire " + s.title) + '">' + (active && !audio.paused ? "\u23F8" : "\u25B6") + '</button>' +
@@ -1165,7 +1195,9 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
             '<div class="meta">' + escapeHtml([s.date, s.duration, s.source].filter(Boolean).join(" \u00B7 ")) + (s.originalUrl ? ' · <a href="' + escapeHtml(s.originalUrl) + '" target="_blank" rel="noopener">Original</a>' : '') + '</div></div>' +
             '<button class="use" data-pick="' + i + '"' + (s.available === false ? ' disabled' : '') + '>utiliser</button></div>';
         }).join("")
-      : '<div class="empty">Aucune chanson disponible pour le moment</div>';
+      : (requete && songs.length
+        ? '<div class="empty">Aucune chanson ne correspond à « ' + escapeHtml(songQuery.trim()) + ' »</div>'
+        : '<div class="empty">Aucune chanson disponible pour le moment</div>');
   }
 
   function init() {
@@ -1215,6 +1247,20 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       document.getElementById("import-url").value = "";
       document.getElementById("file-name").textContent = "";
     }
+  });
+
+  // Recherche : filtre a chaque frappe ; Entree choisit le premier titre disponible.
+  document.getElementById("song-search").addEventListener("input", function() {
+    songQuery = this.value || "";
+    var choisi = parseInt(document.getElementById("song").value, 10);
+    renderSongs(Number.isInteger(choisi) && songs[choisi] ? songKey(songs[choisi]) : "");
+  });
+  document.getElementById("song-search").addEventListener("keydown", function(e) {
+    if (!e || e.key !== "Enter") return;
+    if (typeof e.preventDefault === "function") e.preventDefault();
+    var requete = plierTexte(songQuery);
+    var premier = songs.findIndex(function(s) { return s.available !== false && chansonCorrespond(s, requete); });
+    if (premier >= 0) pick(premier);
   });
 
   // Reprise du suivi au retour au premier plan (Safari iOS arrière-plan / bfcache).
