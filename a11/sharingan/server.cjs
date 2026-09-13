@@ -44,7 +44,7 @@ function saveJukebox(data) {
 function addToJukebox(entry) {
   const jukebox = loadJukebox();
   jukebox.tracks.unshift(entry);
-  jukebox.tracks = jukebox.tracks.slice(0, 100);
+  jukebox.tracks = jukebox.tracks.slice(0, 300);
   jukebox.totalPirates++;
   saveJukebox(jukebox);
   return jukebox;

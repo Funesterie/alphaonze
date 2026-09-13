@@ -4,7 +4,7 @@ function resolveProviderConfig(env = process.env) {
   return {
     groq: {
       apiKey: String(env.VIVY_GROQ_API_KEY || env.GROQ_API_KEY || '').trim(),
-      model: String(env.VIVY_SONG_GROQ_MODEL || env.VIVY_GROQ_MODEL || 'llama-3.3-70b-versatile').trim(),
+      model: String(env.VIVY_SONG_GROQ_MODEL || env.VIVY_GROQ_MODEL || '').trim(),
     },
     elevenlabs: {
       apiKey: String(

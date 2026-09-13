@@ -48,9 +48,11 @@ A11_LLM_FALLBACK_PROVIDER=groq
 # OPENAI_API_KEY is configured via the deployment secret store.
 OPENAI_MODEL=gpt-4o-mini
 
-# Groq (optionnel)
+# Groq (optionnel, opt-in)
 # GROQ_API_KEY is configured via the deployment secret store.
-GROQ_MODEL=llama-3.3-70b-versatile
+# GROQ_MODEL must be explicitly set (no default).
+# Recommended: GROQ_MODEL=openai/gpt-oss-120b or GROQ_MODEL=qwen/qwen3.6-27b
+#GROQ_MODEL=
 
 # DeepSeek (optionnel)
 DEEPSEEK_API_KEY=sk-...
