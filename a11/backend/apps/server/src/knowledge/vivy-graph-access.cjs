@@ -5,6 +5,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const DEFAULT_PACK_ID = 'vivy-funesterie-graph-v1';
+const MOTS_VIDES = new Set([
+  'les', 'des', 'une', 'deux', 'pour', 'avec', 'dans', 'est', 'que', 'qui', 'pas', 'sur',
+  'mes', 'tes', 'ses', 'nos', 'vos', 'leur', 'aux', 'par', 'mais', 'ou', 'the', 'and', 'for',
+]);
 const DEFAULT_CHUNK_CHARS = 1800;
 const DEFAULT_MAX_FILE_BYTES = 900 * 1024;
 const DEFAULT_MAX_CHUNKS_PER_FILE = 180;
@@ -50,6 +54,7 @@ const DEFAULT_SOURCE_FILES = [
   ['a11/backend/apps/server/test/vivy-studio-route.node.test.cjs', 'tests', 'Contrats Vivy Studio et regressions de prompt.'],
   ['a11/backend/apps/server/test/vivy-stream-route.node.test.cjs', 'tests', 'Contrats Vivy Stream/Twitch.'],
   ['a11/backend/apps/server/test/mcp-server.node.test.cjs', 'tests', 'Contrats MCP local A11.'],
+  ['a11/backend/apps/server/src/knowledge/djeff-lexique.md', 'lore', 'Lexique de Djeff: le sens exact de ses mots (Double Excalibur = ses deux Beretta 92FS).'],
 ];
 
 function hashText(value, length = 24) {
@@ -545,7 +550,9 @@ async function searchVivyGraph(options = {}) {
       .replace(/[\u0300-\u036f]/g, '')
       .split(/[^a-z0-9]+/)
       .map((term) => term.trim())
-      .filter((term) => term.length >= 2)
+      // « deux », « les », « des » : presents dans tous les fichiers, ils faisaient
+      // sortir 00_README et PRODUCTION_STATUS pour « double excalibur deux 92fs ».
+      .filter((term) => term.length >= 3 && !MOTS_VIDES.has(term))
   )).slice(0, 8);
   if (terms.length === 0) terms.push(query.toLowerCase());
   const source = String(options.source || 'aura').toLowerCase();
@@ -553,21 +560,24 @@ async function searchVivyGraph(options = {}) {
   const config = resolveRouterConfig(process.env);
   const endpoint = source === 'local' ? config.local : config.aura;
   return withSession(endpoint, 'read', async (session) => {
+    // Classement par nombre de termes trouves : trier par chemin rendait les fichiers
+    // dans l'ordre alphabetique, pas par pertinence.
     const result = await session.run(`
       MATCH (chunk:VivyGraphChunk)
       WHERE chunk.active = true
-        AND (
-          any(term IN $terms WHERE toLower(chunk.text) CONTAINS term)
-          OR any(term IN $terms WHERE toLower(chunk.title) CONTAINS term)
-          OR any(term IN $terms WHERE toLower(chunk.path) CONTAINS term)
-          OR any(term IN $terms WHERE toLower(chunk.keywordsText) CONTAINS term)
-        )
+      WITH chunk, size([term IN $terms WHERE
+          toLower(coalesce(chunk.text, '')) CONTAINS term
+          OR toLower(coalesce(chunk.title, '')) CONTAINS term
+          OR toLower(coalesce(chunk.path, '')) CONTAINS term
+          OR toLower(coalesce(chunk.keywordsText, '')) CONTAINS term]) AS score
+      WHERE score > 0
       RETURN chunk.path AS path,
              chunk.title AS title,
              chunk.kind AS kind,
              chunk.chunkIndex AS chunkIndex,
-             substring(chunk.text, 0, 900) AS preview
-      ORDER BY chunk.path ASC, chunk.chunkIndex ASC
+             substring(chunk.text, 0, 900) AS preview,
+             score
+      ORDER BY score DESC, chunk.path ASC, chunk.chunkIndex ASC
       LIMIT $limit
     `, { query, terms, limit: neo4j.int(limit) });
     return {

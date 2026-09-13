@@ -77,14 +77,34 @@ function formatChatGptExtracts(query, env = process.env) {
 }
 
 /**
+ * Lexique de Djeff (djeff-lexique.md) : le sens exact de ses mots, que la recherche
+ * ne peut pas deviner (« Double Excalibur » = ses deux Beretta 92FS, pas deux epees).
+ * Injecte meme quand le graphe et l'historique ne rendent rien. Ne leve jamais.
+ */
+function lexiqueDjeff(texte = '', env = process.env) {
+  if (String(env.A11_DJEFF_LEXICON || '1') === '0') return '';
+  try {
+    return require('../knowledge/djeff-lexicon.cjs').blocLexique(texte);
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Renvoie un bloc de matiere pret a coller dans le prompt, ou une chaine vide.
  * Ne leve jamais.
  */
 async function buildSongcraftGraphContext(input = {}, env = process.env) {
   if (String(env.A11_SONGCRAFT_GRAPH_CONTEXT || '1') === '0') return '';
 
+  // Le lexique lit tout ce que la personne a donne (message compris), pas seulement
+  // la requete tronquee a 300 caracteres.
+  const lexique = lexiqueDjeff([
+    input.message, input.songTitle || input.title, input.theme, input.songMood,
+    String(input.songText || input.lyrics || '').slice(0, 6000),
+  ].filter(Boolean).join('\n'), env);
   const query = buildSearchQuery(input);
-  if (query.length < 8) return '';
+  if (query.length < 8) return lexique;
 
   // Les deux sources sont independantes: le graphe peut tomber sans priver Vivy de la
   // memoire ChatGPT, et inversement. Les coupler ferait perdre les deux d'un coup.
@@ -108,15 +128,16 @@ async function buildSongcraftGraphContext(input = {}, env = process.env) {
   // dans le graphe. Recherche locale et synchrone, donc sans risque de latence.
   const memoire = formatChatGptExtracts(query, env);
 
-  if (!lines.length && !memoire.length) return '';
+  if (!lines.length && !memoire.length) return lexique;
 
   return [
+    lexique,
     'MATIERE FUNESTERIE (pour nourrir ton ecriture):',
     ...lines,
     ...memoire,
     'Sers-t-en comme reference de ton, de lore et de vocabulaire. Ne cite jamais ces',
     'lignes telles quelles dans les paroles: elles t informent, elles ne se chantent pas.',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 /**
@@ -161,9 +182,10 @@ function buildChatSearchQuery(message = '') {
 async function buildChatGraphContext(message = '', env = process.env) {
   if (String(env.A11_CHAT_GRAPH_CONTEXT || '1') === '0') return '';
 
+  const lexique = lexiqueDjeff(message, env);
   const query = buildChatSearchQuery(message);
   // Sous trois termes utiles, une recherche plein texte ne discrimine rien.
-  if (query.split(' ').filter(Boolean).length < 3) return '';
+  if (query.split(' ').filter(Boolean).length < 3) return lexique;
 
   let lines = [];
   try {
@@ -182,15 +204,21 @@ async function buildChatGraphContext(message = '', env = process.env) {
     lines = [];
   }
 
-  if (!lines.length) return '';
+  // L'historique ChatGPT n'etait lu qu'en ecriture de chanson : en conversation, Vivy
+  // ignorait tout ce que Djeff avait raconte (13/09/2026, les 92FS de Revy).
+  const memoire = String(env.A11_CHAT_CHATGPT_CONTEXT || '1') === '0' ? [] : formatChatGptExtracts(query, env);
+
+  if (!lines.length && !memoire.length) return lexique;
 
   return [
+    lexique,
     'MEMOIRE FUNESTERIE (echanges et documents deja indexes):',
     ...lines,
+    ...memoire,
     "Tu PEUX t'y referer explicitement et citer ce qui s'y trouve: c'est la memoire",
     'partagee de Funesterie, pas une source externe. Si un element contredit ce que dit',
     "la personne, dis-le sans trancher a sa place -- une note peut etre perimee.",
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 module.exports = {

@@ -8030,7 +8030,7 @@ async function buildVivyAiChat(input, req) {
     // fonctions. Avant le 11/08/2026 la branche « sinon » rendait une chaine vide et
     // Vivy etait amnesique des qu'on ne composait pas.
     const songcraftGraphContext = mode === 'song'
-      ? await buildSongcraftGraphContext(input, process.env)
+      ? await buildSongcraftGraphContext({ ...input, message: intentMessage || message }, process.env)
       : await buildChatGraphContext(intentMessage || message, process.env);
     const systemPrompt = buildVivySystemPrompt(mode, language, input, songcraftGraphContext);
     const messages = [
