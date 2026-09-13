@@ -116,8 +116,21 @@ function parseOauthState(value = '') {
   }
 }
 
-// The OAuth departure and callback can use different Funesterie subdomains.
-// Setting and clearing must use the same explicit, deployment-managed domain.
+/**
+ * Portee des cookies OAuth social.
+ *
+ * Le depart (`/start`) et le retour (`/callback`) ne vivent pas forcement sur le
+ * meme sous-domaine: l'admin est servi depuis SOCIAL_PUBLIC_BASE_URL
+ * (funesterie.me) tandis que SOUNDCLOUD_REDIRECT_URI pointe sur
+ * vivy.funesterie.me. Sans `domain`, ces cookies sont host-only: poses au depart,
+ * ils n'accompagnent jamais le retour. Le callback recoit alors un `state` valide
+ * mais ni son jumeau en cookie ni le codeVerifier PKCE, et repond
+ * « OAuth invalide ou expire » -- a tous les coups, pas par intermittence.
+ *
+ * Rester sur undefined par defaut: le comportement ne change qu'une fois
+ * SOCIAL_OAUTH_COOKIE_DOMAIN renseigne (ex: .funesterie.me), ce qui permet de
+ * livrer le correctif sans modifier le comportement au deploiement.
+ */
 function oauthCookieDomain(env = process.env) {
   return String(env.SOCIAL_OAUTH_COOKIE_DOMAIN || '').trim() || undefined;
 }
