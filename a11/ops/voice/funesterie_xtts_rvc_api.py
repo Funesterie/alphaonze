@@ -986,6 +986,147 @@ def convert_generated_audio(
     }
 
 
+# --- Identification de la voix chantee -------------------------------------------
+# Une chanson Suno demandee avec la voix de Djeff peut sortir chantee par une autre
+# voix, sans aucune erreur cote Suno. On isole la voix (Demucs), puis on compare son
+# empreinte WavLM a des references de VOICES_DIR. L'empreinte XTTS a ete essayee le
+# 13/09 : elle ne separe pas les chanteurs sur de la musique (0.12 a 0.19 partout),
+# WavLM si (temoins Djeff +0.38, chansons de Vivy -0.15 a -0.37 en ecart).
+IDENTIFY_MODEL = os.getenv("A11_VOICE_IDENTIFY_MODEL", "microsoft/wavlm-base-plus-sv")
+IDENTIFY_SEPARATOR = os.getenv("A11_VOICE_IDENTIFY_SEPARATOR", "htdemucs")
+IDENTIFY_LOCK = threading.Lock()
+_IDENTIFY = {"fe": None, "wm": None, "sep": None, "refs": {}}
+
+
+def _identify_embedder():
+    if _IDENTIFY["wm"] is None:
+        from transformers import AutoFeatureExtractor, WavLMForXVector
+        _IDENTIFY["fe"] = AutoFeatureExtractor.from_pretrained(IDENTIFY_MODEL)
+        _IDENTIFY["wm"] = WavLMForXVector.from_pretrained(IDENTIFY_MODEL).eval()
+    return _IDENTIFY["fe"], _IDENTIFY["wm"]
+
+
+def _identify_separator():
+    if _IDENTIFY["sep"] is None:
+        from demucs.pretrained import get_model
+        # Poids officiels de Demucs : torch >= 2.6 refuse leur format par defaut.
+        previous = os.environ.get("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD")
+        os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
+        try:
+            model = get_model(IDENTIFY_SEPARATOR)
+        finally:
+            if previous is None:
+                os.environ.pop("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", None)
+            else:
+                os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = previous
+        model.eval()
+        _IDENTIFY["sep"] = model
+    return _IDENTIFY["sep"]
+
+
+def _identify_embed(samples_16k):
+    import numpy as np
+    fe, wm = _identify_embedder()
+    with torch.no_grad():
+        vector = wm(**fe(samples_16k, sampling_rate=16000, return_tensors="pt")).embeddings[0].numpy()
+    return vector / (np.linalg.norm(vector) + 1e-9)
+
+
+def _identify_reference_path(name: str) -> Path:
+    clean = (name or "").strip()
+    if not clean or Path(clean).name != clean:
+        raise HTTPException(status_code=400, detail=f"reference_invalid:{clean[:60]}")
+    candidate = VOICES_DIR / clean
+    if not candidate.is_file():
+        raise HTTPException(status_code=404, detail=f"reference_missing:{clean[:60]}")
+    return candidate
+
+
+def _identify_reference_embedding(name: str):
+    import librosa
+    path = _identify_reference_path(name)
+    key = (name, path.stat().st_mtime)
+    cached = _IDENTIFY["refs"].get(name)
+    if cached and cached[0] == key:
+        return cached[1]
+    samples, _ = librosa.load(str(path), sr=16000, mono=True, duration=30)
+    vector = _identify_embed(samples)
+    _IDENTIFY["refs"][name] = (key, vector)
+    return vector
+
+
+def _identify_vocals(path: Path, offset: float, duration: float, separate: bool):
+    import librosa
+    import numpy as np
+    if not separate:
+        samples, _ = librosa.load(str(path), sr=16000, mono=True, offset=offset, duration=duration)
+        if samples.size == 0 and offset > 0:
+            samples, _ = librosa.load(str(path), sr=16000, mono=True, duration=duration)
+        return samples
+    from demucs.apply import apply_model
+    separator = _identify_separator()
+    rate = separator.samplerate
+    audio, _ = librosa.load(str(path), sr=rate, mono=False, offset=offset, duration=duration)
+    if audio.size == 0 and offset > 0:
+        audio, _ = librosa.load(str(path), sr=rate, mono=False, duration=duration)
+    if audio.ndim == 1:
+        audio = np.stack([audio, audio])
+    mix = torch.tensor(audio[:2], dtype=torch.float32)
+    mono = mix.mean(0)
+    mean, std = mono.mean(), mono.std() + 1e-8
+    with torch.no_grad():
+        stems = apply_model(separator, ((mix - mean) / std)[None], device="cpu", progress=False)[0]
+    vocals = (stems[separator.sources.index("vocals")] * std + mean).mean(0).numpy()
+    return librosa.resample(vocals, orig_sr=rate, target_sr=16000)
+
+
+@app.post("/api/voice/identify")
+def identify_voice(
+    audio: UploadFile = File(...),
+    references: str = Form(default=""),
+    separate: bool = Form(default=True),
+    offsetSeconds: float = Form(default=30.0),
+    maxSeconds: float = Form(default=60.0),
+):
+    names = [item.strip() for item in (references or "").split(",") if item.strip()]
+    if not names:
+        raise HTTPException(status_code=400, detail="references_missing")
+    suffix = Path(audio.filename or "audio.mp3").suffix.lower()
+    if suffix not in {".wav", ".mp3", ".flac", ".ogg", ".m4a"}:
+        suffix = ".mp3"
+    started = time.time()
+    input_path = OUT_DIR / f"identify-input-{int(started * 1000)}-{threading.get_ident()}{suffix}"
+    try:
+        data = audio.file.read()
+        if not data:
+            raise HTTPException(status_code=400, detail="audio_empty")
+        input_path.write_bytes(data)
+        with IDENTIFY_LOCK:
+            vocals = _identify_vocals(
+                input_path,
+                max(0.0, float(offsetSeconds)),
+                min(120.0, max(10.0, float(maxSeconds))),
+                bool(separate),
+            )
+            if vocals.size < 16000 * 3:
+                raise HTTPException(status_code=422, detail="audio_too_short")
+            vector = _identify_embed(vocals)
+            scores = {name: round(float(vector @ _identify_reference_embedding(name)), 4) for name in names}
+        return {
+            "ok": True,
+            "model": IDENTIFY_MODEL,
+            "separated": bool(separate),
+            "seconds": round(vocals.size / 16000, 1),
+            "scores": scores,
+            "elapsedMs": int((time.time() - started) * 1000),
+        }
+    finally:
+        try:
+            input_path.unlink()
+        except OSError:
+            pass
+
+
 @app.get("/health")
 def health():
     voices = sorted(item.name for item in VOICES_DIR.glob("*") if item.is_file())

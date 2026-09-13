@@ -99,6 +99,12 @@ const {
   runExpiredPersonaRevival,
   listRevivableVoices,
 } = require('../music/persona-revival-runner.cjs');
+const {
+  enregistrerTache: enregistrerTacheVoix,
+  lireTache: lireTacheVoix,
+  controlerTache: controlerTacheVoix,
+  listerControles: listerControlesVoix,
+} = require('../music/voice-identity-check.cjs');
 const { probeAudioDurationSeconds } = require('../audio/probe-audio-duration.cjs');
 const { readAudioStreamIntegrity } = require('../music/audio-stream-integrity.cjs');
 const { buildSongcraftGraphContext, buildChatGraphContext } = require('../music/songcraft-graph-context.cjs');
@@ -9234,6 +9240,63 @@ function getVivySunoCallbackDir() {
   return path.join(root, 'vivy-suno-callbacks');
 }
 
+// --- Controle de la voix chantee (voice-identity-check.cjs) ---
+// Une chanson demandee avec une voix suivie du catalogue (Djeff) est ecoutee a son
+// arrivee : si aucune variante n'a la bonne voix, une relance, puis la persona est
+// marquee a refaire. Rien ici ne doit jamais bloquer ni retarder une chanson.
+
+function getVivyVoiceCheckDir() {
+  return path.join(getCanonicalRuntimeRoot(process.env), 'vivy-voice-checks');
+}
+
+function resolveCheckedCatalogVoice(input = {}) {
+  const demande = cleanOneLine(input.voiceCatalogName || input.catalogVoiceName, '', 80);
+  if (!demande) return '';
+  return findVoiceInCatalog(demande)?.name || '';
+}
+
+async function relancerChansonSuno(body) {
+  const access = getSunoAccess({}, null);
+  if (!access?.apiKey) throw new Error('suno_music_key_missing');
+  const reponse = await fetch(`${getSunoBaseUrl()}/generate`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${access.apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60000),
+  });
+  const payload = await reponse.json().catch(() => ({}));
+  const apiCode = findSunoApiCode(payload);
+  if (!reponse.ok || (apiCode !== null && apiCode !== 200)) {
+    throw new Error(`suno_retry_${apiCode || reponse.status}`);
+  }
+  return findSunoTaskId(payload);
+}
+
+function declencherControleVoix(taskId, payload = {}) {
+  try {
+    const dir = getVivyVoiceCheckDir();
+    if (!lireTacheVoix(dir, taskId)) return false;
+    // Seulement la sortie finale : « FIRST_SUCCESS » n'a qu'une piste en cours d'ecriture.
+    const termine = String(payload?.data?.callbackType || '').toLowerCase() === 'complete'
+      || /^(SUCCESS|COMPLETE)$/i.test(String(findSunoStatus(payload) || '').trim());
+    if (!termine) return false;
+    const tracks = collectSunoTracks(payload, []);
+    setImmediate(() => {
+      controlerTacheVoix({
+        dir,
+        taskId,
+        tracks,
+        relancer: relancerChansonSuno,
+        marquerDerive: (voix, detail) => markPersonaExpired(voix, detail),
+      }).catch((error) => console.warn('[VoiceCheck] controle interrompu: %s', String(error?.message || error).slice(0, 160)));
+    });
+    return true;
+  } catch (error) {
+    console.warn('[VoiceCheck] declenchement impossible: %s', String(error?.message || error).slice(0, 160));
+    return false;
+  }
+}
+
 function sanitizeSunoTaskId(value = '') {
   return cleanOneLine(value, '', 120).replace(/[^a-zA-Z0-9_.:-]/g, '').slice(0, 120);
 }
@@ -10787,6 +10850,12 @@ async function requestSunoMusic(input = {}, req = null) {
   }
 
   const taskId = findSunoTaskId(payload);
+  // Persona encore envoyee (donc vivante) : la chanson sera ecoutee a son arrivee.
+  if (taskId && body.personaId) {
+    try {
+      enregistrerTacheVoix({ dir: getVivyVoiceCheckDir(), taskId, voice: resolveCheckedCatalogVoice(input), body });
+    } catch { /* le controle de voix ne doit jamais bloquer une chanson */ }
+  }
   const readyMedia = await extractSunoMediaWithAudio(payload, {
     preferLongForm: wantsVivySunoLongForm(input),
     targetDurationSeconds: normalizeVivySunoTargetDuration(input),
@@ -11251,6 +11320,7 @@ async function getSunoMusicJob(taskId, input = {}, req = null) {
   const status = findSunoStatus(payload) || 'processing';
   if (media?.url) {
     writeCachedSunoCallback(safeTaskId, payload);
+    declencherControleVoix(safeTaskId, payload);
     const materialized = await materializeVivySunoStatusMedia(media, input, {
       taskId: safeTaskId,
       preferLongForm: wantsVivySunoLongForm(input),
@@ -12322,6 +12392,14 @@ function createVivyStudioRouter({
     }
   });
 
+  // Derniers controles de voix chantee : verdict, ecarts, relance, persona a refaire.
+  router.get('/voice-checks', requireAuth, (req, res) => {
+    if (!isVivyFounderUser(req.user || {})) {
+      return res.status(403).json({ ok: false, error: 'voice_catalog_forbidden' });
+    }
+    return res.json({ ok: true, checks: listerControlesVoix(getVivyVoiceCheckDir(), Number(req.query?.limit) || 20) });
+  });
+
   router.delete('/voice-catalog/:name', requireAuth, (req, res) => {
     if (!isVivyFounderUser(req.user || {})) {
       return res.status(403).json({ ok: false, error: 'voice_catalog_forbidden' });
@@ -12772,6 +12850,8 @@ function createVivyStudioRouter({
       const taskId = findSunoTaskId(req.body || {});
       if (!taskId) return res.status(400).json({ ok: false, error: 'suno_task_missing' });
       const stored = writeCachedSunoCallback(taskId, req.body || {});
+      // Seul chemin qui voit arriver une relance : personne ne la suit par statut.
+      declencherControleVoix(taskId, req.body || {});
       return res.json({ ok: true, taskId, stored });
     } catch (error) {
       return res.status(500).json({
