@@ -76,15 +76,17 @@ test('la formulation Comfy du refus audio (Full Clip du 12/09) est reconnue et n
   assert.equal(estRefusAudio(refus), true, 'un refus audio : second essai sans son');
 });
 
-test('generate_audio=false n est envoye qu au second essai, jamais au premier', async () => {
+test('aucun son n est jamais demande a Seedance, des le premier essai', async () => {
+  // Decision de Djeff le 13/09/2026 : la piste des plans est jetee au montage, et
+  // la generer ne faisait que declencher des refus « possible copyright match ».
   const { generateOneVideo } = require('../src/clips/clip-generator-v2.cjs');
   const envois = [];
   const pont = async (_url, corps) => { envois.push(corps.args); throw new Error('arret du test apres la soumission'); };
   await assert.rejects(generateOneVideo('plan', 0, 1000, null, { postJsonImpl: pont, sleepImpl: async () => {} }));
   await assert.rejects(generateOneVideo('plan', 0, 1000, null, { postJsonImpl: pont, sleepImpl: async () => {}, sansAudio: true }));
-  assert.equal(envois[0].params.generate_audio, undefined, 'premier essai inchange');
+  assert.equal(envois[0].params.generate_audio, false, 'premier essai deja silencieux');
   assert.equal(envois[1].params.generate_audio, false, 'second essai silencieux');
-  assert.equal(envois[1].params.model, 'Seedance 2.0 Fast', 'le palier reste le meme');
+  assert.equal(envois[0].params.model, 'Seedance 2.0 Fast', 'le palier reste le meme');
 });
 
 test('le rendu par defaut est un film en prises de vue reelles, l anime reste un choix explicite', () => {

@@ -228,6 +228,31 @@ test('un arrêt après un segment assemble un clip explicitement partiel sans re
   assert.match(result.warning, /clip_partial: 1\/2.*provider_failed/);
   assert.equal(videoSubmissions, 2, 'un seul appel par segment, arrêt immédiat après l’échec');
   assert.deepEqual(order.slice(0, 2), ['audio', 'director-after-audio']);
+  assert.match(result.warning, /arrêt sans resoumission/, 'une panne reste une panne');
+});
+
+test('un arret par le plafond de refus le dit, au lieu de « arret sans resoumission »', async () => {
+  const { PLAFOND_REFUS_POLITIQUE } = require('../src/clips/clip-generator-v2.cjs');
+  const result = await generateClip({ songUrl: '/audio.mp3', title: 'Plafond' }, {
+    materializeMedia: async (_value, destination, options) => {
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      fs.writeFileSync(destination, options.kind === 'audio' ? 'ID3audio' : 'video');
+    },
+    loadDirectorImpl: () => ({ directClip: async () => ({ scenes: [{ name: 'Plan', visual: 'A precise cinematic visual' }] }) }),
+    generateVideoImpl: async (_prompt, index) => {
+      if (index === 0) return 'https://cloud.comfy.org/api/s/first';
+      throw new Error('clip_video_generation_failed: PolicyViolation');
+    },
+    execFileSyncImpl: (command, args) => {
+      if (command === 'ffprobe') return Buffer.from(args.includes('stream=codec_type') ? 'video\n' : '48.0\n');
+      fs.writeFileSync(args.at(-1), 'assembled');
+      return Buffer.alloc(0);
+    },
+    sleepImpl: async () => {},
+  });
+  assert.equal(result.segments, 1);
+  assert.match(result.warning, new RegExp(`arrêté après ${PLAFOND_REFUS_POLITIQUE} refus du filtre de contenu`));
+  assert.doesNotMatch(result.warning, /arrêt sans resoumission/);
 });
 
 test('deux clips simultanés du même titre gardent des sorties distinctes et vérifiées', async () => {

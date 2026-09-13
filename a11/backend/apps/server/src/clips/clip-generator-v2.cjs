@@ -544,7 +544,12 @@ async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = nu
       };
   // Pas de `negative_prompt` : Seedance n'a pas ce champ, le pont Comfy le
   // transmettait sans effet. Les interdits d'une fiche ne protegeaient rien.
-  if (sansAudio) args.params.generate_audio = false;
+  // Jamais de son genere (13/09/2026) : la piste des plans est jetee au montage,
+  // seule la chanson reste. La generer ne servait qu'a declencher des refus
+  // « possible copyright match » -- quatre dans « oui tu lui a repondu ? », qui ont
+  // vide le plafond de refus et coupe le clip a 18/36 alors que chaque image etait
+  // bonne. Comfy estime le plan au meme prix avec ou sans son (136 credits).
+  args.params.generate_audio = false;
   if (useReference) console.log(`[clip] Vidéo ${index}: référence ${referenceImage.slice(0, 60)}`);
 
   // Une soumission vidéo peut être facturée même si la réponse réseau se perd.
@@ -753,6 +758,7 @@ async function generateClip(config = {}, {
   // Le motif du dernier segment rate : c'est lui qui explique un clip vide.
   let dernierEchec = '';
   let refusPolitique = 0;
+  let arretPlafond = false;
   for (let i = 0; i < numSegments; i++) {
     const section = sections[i % sections.length];
     const prompt = effacerNomsFilm(
@@ -799,6 +805,7 @@ async function generateClip(config = {}, {
         console.warn(`[clip] Vidéo ${i} refusée par le filtre de contenu (${refusPolitique}/${PLAFOND_REFUS_POLITIQUE}), on passe au plan suivant.`);
         if (refusPolitique >= PLAFOND_REFUS_POLITIQUE) {
           console.warn('[clip] Trop de refus du filtre, on arrête pour ne pas payer davantage.');
+          arretPlafond = true;
           break;
         }
       } else {
@@ -823,7 +830,11 @@ async function generateClip(config = {}, {
   }
   const partial = videoPaths.length < numSegments;
   const warning = partial
-    ? `clip_partial: ${videoPaths.length}/${numSegments} segments; arrêt sans resoumission — ${dernierEchec}`
+    // Le plafond de refus et une panne ne se lisent pas pareil : « arret sans
+    // resoumission » s'affichait aussi quand c'etait le plafond qui avait arrete.
+    ? `clip_partial: ${videoPaths.length}/${numSegments} segments; ${arretPlafond
+      ? `arrêté après ${refusPolitique} refus du filtre de contenu`
+      : 'arrêt sans resoumission'} — ${dernierEchec}`
     : null;
   console.log(`[clip] ${videoPaths.length}/${numSegments} vidéos prêtes, assemblage FFmpeg...`);
   emitProgress(onProgress, {
