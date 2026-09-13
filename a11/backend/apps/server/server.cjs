@@ -7214,7 +7214,35 @@ const {
 } = require('./src/partners/partenaires.cjs');
 const { createSharinganClipsGuard } = require('./src/clips/sharingan-clips-guard.cjs');
 const sharinganGuard = createSharinganClipsGuard({ clipsDir: CLIPS_DIR });
-app.get('/clips/:filename', sharinganGuard, (req, res) => {
+// Espace privé (13/09/2026) : le garde ne sépare que connecté / anonyme, donc
+// n'importe quel compte ouvrait n'importe quel clip. Un compte ne voit plus que
+// ses clips, la vitrine, ou tout s'il est admin (src/clips/clip-acces.cjs).
+// Le jeton est lu SANS bloquer -- cookie a11_session, qui suit les liens : un
+// jeton absent ou périmé laisse l'anonyme continuer vers le paywall habituel.
+const { peutVoirClip } = require('./src/clips/clip-acces.cjs');
+function identifierSansBloquer(req, res, next) {
+  if (!extractRequestAuthToken(req)) return next();
+  let suite = false;
+  const continuer = () => { if (!suite) { suite = true; next(); } };
+  const reponseMuette = {
+    headersSent: false,
+    status() { return this; },
+    set() { return this; },
+    setHeader() {},
+    json() { req.user = undefined; continuer(); return this; },
+  };
+  Promise.resolve(verifyJWT(req, reponseMuette, continuer)).catch(() => { req.user = undefined; continuer(); });
+}
+function garderClipPrive(req, res, next) {
+  if (req.internalService) return next();
+  let nom = '';
+  try { nom = decodeURIComponent(req.params.filename || ''); } catch (_) { return res.status(400).json({ error: 'Invalid filename' }); }
+  const admin = Boolean(req.user) && Boolean(isAdminRequest(req));
+  if (peutVoirClip({ filename: nom, user: req.user || null, admin })) return next();
+  // 404 et non 403 : on ne confirme pas qu'un clip d'un autre compte existe.
+  return res.status(404).json({ error: 'Not found' });
+}
+app.get('/clips/:filename', identifierSansBloquer, sharinganGuard, garderClipPrive, (req, res) => {
   const decoded = decodeURIComponent(req.params.filename || '');
   if (!decoded || /[\/\\]/.test(decoded)) return res.status(400).json({ error: 'Invalid filename' });
   const ext = path.extname(decoded).toLowerCase();

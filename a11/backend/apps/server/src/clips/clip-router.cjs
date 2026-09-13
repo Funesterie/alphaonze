@@ -62,6 +62,7 @@ function normaliserDistribution(multiVoice, casting) {
 const nodeCrypto = require('node:crypto');
 const clipCredits = require('./clip-credits.cjs');
 const comfySolde = require('./comfy-solde.cjs');
+const clipAcces = require('./clip-acces.cjs');
 
 // Rendu choisi sur la page : "film" (prises de vue reelles, le defaut depuis le
 // 12/09/2026) ou "anime" (clip manga). Toute autre valeur retombe sur le film.
@@ -331,9 +332,29 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
     });
   });
 
-  // Liste des clips terminés (public)
-  router.get('/list', (_req, res) => {
-    res.json({ ok: true, clips: listPublicClips() });
+  // Espace privé (13/09/2026) : cette liste publiait les clips de tout le monde.
+  // Elle ne montre plus que la vitrine ; l'admin voit tout, avec l'auteur, pour
+  // choisir ce qu'il y met (clip-acces.cjs).
+  router.get('/list', (req, res) => {
+    const admin = estAdmin(req);
+    res.json({ ok: true, admin, clips: clipAcces.clipsVisibles({ admin }) });
+  });
+
+  // Les clips du compte connecté, visibles par lui seul.
+  router.get('/mes-clips', (req, res) => {
+    const user = req.user || (req.session && req.session.user) || null;
+    res.json({ ok: true, clips: clipAcces.clipsDuCompte(user) });
+  });
+
+  // Vitrine : l'admin publie ou retire un clip.
+  router.post('/vitrine', express.json({ limit: '4kb' }), (req, res) => {
+    if (!estAdmin(req)) return res.status(403).json({ ok: false, error: 'ADMIN_REQUIS' });
+    try {
+      const vitrine = clipAcces.publierDansVitrine(req.body && req.body.filename, !(req.body && req.body.publier === false));
+      res.json({ ok: true, vitrine: [...vitrine] });
+    } catch (_) {
+      res.status(400).json({ ok: false, error: 'NOM_INVALIDE' });
+    }
   });
 
   // Mes jobs (authentifié)

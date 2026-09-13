@@ -343,6 +343,7 @@ test('pollJob suit tous les etats actifs du serveur jusqu a la livraison sans re
   const statuses = [...ACTIVE_STATUSES, 'done'];
   let statusCalls = 0;
   let listCalls = 0;
+  let mesClipsCalls = 0;
   const page = createHarness(async (url) => {
     if (new URL(url).pathname.includes('/status/')) {
       const status = statuses[statusCalls++];
@@ -350,6 +351,11 @@ test('pollJob suit tous les etats actifs du serveur jusqu a la livraison sans re
         ok: true, status, stage: status, progress: statusCalls * 15,
         ...(status === 'done' ? { outputFilename: 'existing-clip.mp4' } : {}),
       });
+    }
+    // Espace privé (13/09/2026) : la page rafraîchit « Mes clips » ET la vitrine.
+    if (new URL(url).pathname.endsWith('/mes-clips')) {
+      mesClipsCalls += 1;
+      return jsonResponse(200, { ok: true, clips: [] });
     }
     listCalls += 1;
     return jsonResponse(200, { ok: true, clips: [] });
@@ -374,6 +380,7 @@ test('pollJob suit tous les etats actifs du serveur jusqu a la livraison sans re
   assert.equal(page.hooks.state().activeJobId, null);
   assert.equal(page.scheduler.size(), 0);
   assert.equal(listCalls, 1);
+  assert.equal(mesClipsCalls, 1, 'mes clips rafraichis une fois, a la livraison');
 });
 
 test('pollJob continue de refuser un etat absent ou inconnu', async () => {

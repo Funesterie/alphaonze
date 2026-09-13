@@ -136,7 +136,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 </div>
 
 <div class="card">
-  <h2>📁 Clips produits</h2>
+  <h2>📁 Clips</h2>
   <div id="clips" class="clips"></div>
 </div>
 </div>
@@ -959,24 +959,59 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     resumePolling();
   }
 
+  // Espace priv\u00E9 (13/09/2026) : chaque compte voit ses clips, visibles par lui
+  // seul ; la vitrine est choisie par l'admin, qui voit tout et publie ou
+  // retire d'un clic. Tout nom de clip passe par escapeHtml.
+  function ligneClip(x, admin) {
+    var href = resolveHttpUrl(x && x.url);
+    if (!href) return "";
+    var nom = (x.name || x.filename || "Clip") + (x.partial ? " (partiel)" : "");
+    var html = '<div class="c"><a href="' + escapeHtml(href) + '" target="_blank" rel="noopener noreferrer">\uD83C\uDFAC ' + escapeHtml(nom) + '</a>';
+    if (admin && x.filename) {
+      if (x.auteur) html += '<span class="meta"> \u00B7 ' + escapeHtml(x.auteur) + '</span>';
+      html += ' <button type="button" class="use" data-vitrine="' + escapeHtml(x.filename) + '" data-publier="' + (x.enVitrine ? "0" : "1") + '">'
+        + (x.enVitrine ? "Retirer de la vitrine" : "Mettre en vitrine") + '</button>';
+    }
+    return html + '</div>';
+  }
+  function sectionClips(titre, lignes, vide) {
+    return '<div class="meta">' + escapeHtml(titre) + '</div>'
+      + (lignes.length ? lignes.join("") : '<div class="empty">' + escapeHtml(vide) + '</div>');
+  }
   function loadClips() {
-    return api("/api/mcp-bridge/clip/list").then(function(c) {
-      var clips = c.clips || [];
-      var rows = clips.map(function(x) {
-        var href = resolveHttpUrl(x && x.url);
-        if (!href) return "";
-        return '<div class="c"><a href="' + escapeHtml(href) + '" target="_blank" rel="noopener noreferrer">\uD83C\uDFAC ' + escapeHtml(x.name || x.filename || "Clip") + '</a></div>';
-      }).filter(Boolean);
-      document.getElementById("clips").innerHTML = rows.length
-        ? rows.join("")
-        : '<div class="empty">Aucun clip pour le moment</div>';
-    }).catch(function(error) {
-      document.getElementById("clips").innerHTML = '<div class="empty">' +
-        ((error && (error.status === 401 || error.status === 403))
-          ? "Connecte-toi pour voir tes clips"
-          : "Liste des clips indisponible") + '</div>';
+    var box = document.getElementById("clips");
+    var enErreur = function(e) { return { erreur: e || true }; };
+    return Promise.all([
+      api("/api/mcp-bridge/clip/mes-clips").then(function(d) { return d; }, enErreur),
+      api("/api/mcp-bridge/clip/list").then(function(d) { return d; }, enErreur)
+    ]).then(function(r) {
+      var mes = r[0] || {};
+      var vitrine = r[1] || {};
+      var admin = vitrine.admin === true;
+      var e = mes.erreur;
+      var html = (e && (e.status === 401 || e.status === 403))
+        ? sectionClips("\uD83D\uDD12 Mes clips", [], "Connecte-toi pour voir tes clips")
+        : sectionClips("\uD83D\uDD12 Mes clips \u2014 visibles par toi seul",
+          (mes.clips || []).map(function(x) { return ligneClip(x, false); }).filter(Boolean),
+          e ? "Liste indisponible" : "Aucun clip pour le moment");
+      html += sectionClips(admin ? "\uD83D\uDDC2\uFE0F Tous les clips (admin) \u2014 la vitrine est visible de tous" : "\u2728 Vitrine",
+        (vitrine.clips || []).map(function(x) { return ligneClip(x, admin); }).filter(Boolean),
+        vitrine.erreur ? "Vitrine indisponible" : "Rien en vitrine pour le moment");
+      box.innerHTML = html;
     });
   }
+  // Un seul \u00E9couteur pour les boutons de vitrine (admin), pos\u00E9 une fois.
+  (function() {
+    var boite = document.getElementById("clips");
+    if (!boite || typeof boite.addEventListener !== "function") return;
+    boite.addEventListener("click", function(ev) {
+      var b = ev.target && ev.target.closest ? ev.target.closest("button[data-vitrine]") : null;
+      if (!b) return;
+      b.disabled = true;
+      api("/api/mcp-bridge/clip/vitrine", { filename: b.getAttribute("data-vitrine"), publier: b.getAttribute("data-publier") === "1" })
+        .then(loadClips, function() { b.disabled = false; });
+    });
+  })();
 
   function mapSong(s, fallbackSource) {
     var sourceUrl = normalizeSongSource(s && s.trackUrl);
