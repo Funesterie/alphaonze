@@ -24,7 +24,9 @@ test('la direction de timbre du cast officiel disparait', () => {
   const style = stripCastTimbreForCatalogVoice(STYLE_VIVY, 'Djeff', 'homme');
   assert.doesNotMatch(style, /clear female vocal/i, 'la voix feminine de Vivy ne doit plus etre commandee');
   assert.doesNotMatch(style, /\bvivy\b/i);
-  assert.match(style, /authorized custom voice direction Djeff/);
+  // Suno refuse (403) un nom d'artiste dans le style : le nom vit dans personaId.
+  assert.doesNotMatch(style, /\bDjeff\b/);
+  assert.match(style, /authorized original custom vocal/);
   assert.match(style, /male lead vocal/);
 });
 

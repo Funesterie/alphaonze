@@ -39,6 +39,11 @@ jobs:
           cache: npm
           cache-dependency-path: a11/backend/apps/server/package-lock.json
 
+      # Les tests audio (fil d'or, completion Suno, polissage TTS) mesurent de vrais
+      # fichiers : sans ffmpeg ils tombent en ENOENT. La prod l'a dans l'image.
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg
+
       - name: Install backend dependencies
         working-directory: a11/backend/apps/server
         run: npm ci

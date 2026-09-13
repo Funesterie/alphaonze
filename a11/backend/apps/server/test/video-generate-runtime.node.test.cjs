@@ -2214,8 +2214,16 @@ test('createGenerateVideoHandler adopts compiled portrait render sizing when pro
   }
 });
 
-test('createGenerateVideoHandler falls back to libx264 when NVENC is unavailable at runtime', async () => {
+test('createGenerateVideoHandler falls back to libx264 when NVENC is unavailable at runtime', async (t) => {
   const ffmpegCalls = [];
+  // Le codec « auto » depend du ffmpeg de la machine (sans nvenc en CI) : on impose
+  // NVENC pour tester le repli, pas la sonde.
+  const previousCodec = process.env.A11_VIDEO_MP4_CODEC;
+  process.env.A11_VIDEO_MP4_CODEC = 'h264_nvenc';
+  t.after(() => {
+    if (previousCodec === undefined) delete process.env.A11_VIDEO_MP4_CODEC;
+    else process.env.A11_VIDEO_MP4_CODEC = previousCodec;
+  });
 
   const generateVideo = createGenerateVideoHandler({
     generateSd: async () => ({
@@ -2281,8 +2289,7 @@ test('createGenerateVideoHandler falls back to libx264 when NVENC is unavailable
 
 test('createGenerateVideoHandler reuses a local source image path without republishing between frames', async () => {
   const calls = [];
-  const sourceImagePath = 'D:\\funesterie\\a11\\backend\\apps\\server\\tmp\\video-source-test.png';
-  fs.mkdirSync('D:\\funesterie\\a11\\backend\\apps\\server\\tmp', { recursive: true });
+  const sourceImagePath = path.join(os.tmpdir(), 'video-source-test.png');
   fs.writeFileSync(sourceImagePath, TINY_PNG);
 
   try {
@@ -2345,8 +2352,7 @@ test('createGenerateVideoHandler reuses a local source image path without republ
 test('createGenerateVideoHandler prefers remotely accessible frame references when an SD proxy is configured', async () => {
   const previousProxyEnv = process.env.A11_SD_PROXY_URL;
   const calls = [];
-  const sourceImagePath = 'D:\\funesterie\\a11\\backend\\apps\\server\\tmp\\video-source-proxy-test.png';
-  fs.mkdirSync('D:\\funesterie\\a11\\backend\\apps\\server\\tmp', { recursive: true });
+  const sourceImagePath = path.join(os.tmpdir(), 'video-source-proxy-test.png');
   fs.writeFileSync(sourceImagePath, TINY_PNG);
   process.env.A11_SD_PROXY_URL = 'https://sd.funesterie.me/api/tools/generate_sd';
 

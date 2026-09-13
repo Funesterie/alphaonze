@@ -16,7 +16,8 @@ test('Djeff CosyVoice3 renderer defaults to instruct mode for French diction', (
   assert.equal(normalizeMode('cross-lingual'), 'cross');
 });
 
-test('Djeff CosyVoice3 renderer uses isolated local runtime and short prompt', () => {
+// Outil du poste Windows (D:\agent-bus) : sous Linux le chemin par defaut n'a pas de sens.
+test('Djeff CosyVoice3 renderer uses isolated local runtime and short prompt', { skip: process.platform !== 'win32' && 'outil local Windows' }, () => {
   assert.equal(resolvePython(), DEFAULT_COSY_PYTHON);
   assert.match(DEFAULT_PROMPT_AUDIO, /djeff-ref-pignon-5s\.wav$/i);
 });

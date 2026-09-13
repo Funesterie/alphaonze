@@ -56,7 +56,8 @@ test('resolveJanusVisionConfig keeps Janus on the cpu-safe 1B profile by default
   }, () => {
     const config = resolveJanusVisionConfig({});
     assert.match(String(config.modelRef || ''), /Janus-Pro-1B|deepseek-ai\/Janus-Pro-1B/i);
-    assert.match(String(config.pythonBin || ''), /(tools[\\/](vision|sd)[\\/]venv|[\\/]opt[\\/]janus-venv)/i);
+    // Sans aucun venv installe (CI), le resolveur retombe sur l'interpreteur du PATH.
+    assert.match(String(config.pythonBin || ''), /(tools[\\/](vision|sd)[\\/]venv|[\\/]opt[\\/]janus-venv|^python3?$)/i);
     assert.equal(config.provider, 'janus');
     assert.equal(config.device, 'cpu');
   });

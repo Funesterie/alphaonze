@@ -342,6 +342,10 @@ function _getDangerLevel(skill) {
  */
 function _isPathInWorkspaceRoots(filePath) {
   if (typeof filePath !== 'string' || !filePath) return false;
+  // Sous Linux, « C:\Windows » ou « \\serveur\partage » n'est pas absolu : path.resolve
+  // le recollait sous le workspace et le chemin passait. Une forme Windows hors Windows
+  // est une intention d'en sortir, on la refuse.
+  if (path.sep === '/' && /^([a-zA-Z]:[\\/]|\\\\)/.test(filePath)) return false;
 
   let resolved;
   try {

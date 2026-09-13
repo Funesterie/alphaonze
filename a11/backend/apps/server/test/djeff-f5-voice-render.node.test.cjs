@@ -28,6 +28,8 @@ test('Djeff F5 renderer builds the official reference-driven CLI call', () => {
   assert.ok(args.includes('Bonjour Djeff.'));
 });
 
-test('Djeff F5 renderer resolves isolated local runtime by default', () => {
+// Le rendu F5 est un outil du poste Windows (D:\agent-bus) : sous Linux le chemin
+// par defaut n'a pas de sens, il n'y a rien a verifier.
+test('Djeff F5 renderer resolves isolated local runtime by default', { skip: process.platform !== 'win32' && 'outil local Windows' }, () => {
   assert.match(resolveF5Cli(), /D:\\agent-bus\\voice\\F5-TTS\\\.venv\\Scripts\\f5-tts_infer-cli\.exe$/i);
 });
