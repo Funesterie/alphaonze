@@ -92,14 +92,19 @@ async function main() {
     let titres;
     try { titres = JSON.parse(texte.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { stats.state = 'invalid_provider_json'; sauver(); throw Error(stats.state); }
     if (!Array.isArray(titres) || titres.length !== lot.length || new Set(titres.map((x) => x.id)).size !== lot.length) { stats.state = 'invalid_provider_titles'; sauver(); throw Error(stats.state); }
+    // Un titre refuse (trop long, lien, allure de titre par defaut) est ecarte seul :
+    // le 13/09, un seul titre douteux jetait tout le lot deja paye et arretait la passe.
+    // La chanson ecartee garde son ancien titre et sera reprise au passage suivant.
+    stats.rejected = stats.rejected || [];
     for (const item of titres) {
       const t = typeof item.title === 'string' ? item.title.trim() : '';
-      if (!Number.isInteger(item.id) || !lot[item.id] || !t || t.length > 120 || /https?:|[<>\r\n]/i.test(t) || titreGenerique(t)) {
-        stats.state = 'unsafe_provider_title'; sauver(); throw Error(stats.state);
+      const groupe = Number.isInteger(item.id) ? lot[item.id] : null;
+      if (!groupe || !t || t.length > 120 || /https?:|[<>\r\n]/i.test(t) || titreGenerique(t)) {
+        stats.rejected.push({ ancien: groupe ? groupe.titreActuel.slice(0, 60) : '?', propose: String(item.title || '').slice(0, 80) });
+        console.log(`  ecarte : ${JSON.stringify(String(item.title || '').slice(0, 80))}`);
+        continue;
       }
-    }
-    for (const item of titres) {
-      const groupe = lot[item.id];
+      item.title = t;
       for (const piste of groupe.pistes) {
         const source = piste.originalTrackUrl || piste.trackUrl;
         ecrireAtomique(path.join(sortie, clePiste(piste) + '.json'), {
