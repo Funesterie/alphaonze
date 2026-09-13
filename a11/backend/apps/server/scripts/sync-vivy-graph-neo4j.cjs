@@ -46,6 +46,8 @@ function parseArgs(argv = process.argv.slice(2)) {
     dryRun: flags.has('--dry-run'),
     writeFiles: !flags.has('--no-write-files'),
     pretty: flags.has('--pretty'),
+    // Sans --prune, la synchro ajoute et met a jour, elle ne desactive rien.
+    prune: flags.has('--prune'),
     target: readValue('target', process.env.VIVY_GRAPH_NEO4J_TARGET || 'aura'),
     runtimeRoot: readValue('runtime-root', process.env.A11_RUNTIME_ROOT || ''),
   };

@@ -362,6 +362,7 @@ async function syncVivyGraphCorpus(options = {}) {
         .map((file) => file.path),
     };
   }
+  const prune = options.prune === true || String(process.env.VIVY_GRAPH_PRUNE || '').trim() === '1';
   const config = resolveRouterConfig(process.env);
   const endpoints = endpointListFromTarget(config, target);
   const results = [];
@@ -376,7 +377,11 @@ async function syncVivyGraphCorpus(options = {}) {
           const fileChunks = corpus.chunks.filter((chunk) => chunk.fileId === file.id);
           await upsertVivyGraphFile(session, corpus, file, fileChunks, sanitizePropertyMap);
         }
-        await markStaleVivyGraphFiles(session, corpus);
+        // Menage sur demande seulement (--prune / VIVY_GRAPH_PRUNE=1). Au 13/09/2026 le
+        // paquet porte 252 fichiers ecrits par un autre indexeur (chemins absolus
+        // D:/projets/...) que cette liste de 25 sources ne connait pas : un menage par
+        // defaut en aurait desactive environ 240 d'un coup.
+        if (prune) await markStaleVivyGraphFiles(session, corpus);
         return countVivyGraphPack(session, corpus.id);
       });
       results.push({
@@ -403,6 +408,7 @@ async function syncVivyGraphCorpus(options = {}) {
   return {
     ok: results.some((result) => result.ok),
     target,
+    prune,
     corpus: corpus.summary,
     endpoints: results,
   };

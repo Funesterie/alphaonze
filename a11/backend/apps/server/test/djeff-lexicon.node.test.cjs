@@ -7,6 +7,16 @@ const { parserLexique, entreesPour, blocLexique, lireLexique } = require('../src
 const { buildChatGraphContext, buildSongcraftGraphContext } = require('../src/music/songcraft-graph-context.cjs');
 const { buildVivyGraphSourceManifest, markStaleVivyGraphFiles } = require('../src/knowledge/vivy-graph-access.cjs');
 
+test('la synchro ne fait le menage que sur demande explicite (--prune)', () => {
+  // 13/09/2026 : le paquet Neo4j portait 252 fichiers d'un autre indexeur ; un menage
+  // par defaut en aurait desactive ~240 pour y ajouter le lexique.
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '../src/knowledge/vivy-graph-access.cjs'), 'utf8');
+  assert.match(src, /if \(prune\) await markStaleVivyGraphFiles\(session, corpus\);/);
+  assert.match(src, /const prune = options\.prune === true \|\| String\(process\.env\.VIVY_GRAPH_PRUNE/);
+  const script = require('node:fs').readFileSync(require('node:path').join(__dirname, '../scripts/sync-vivy-graph-neo4j.cjs'), 'utf8');
+  assert.match(script, /prune: flags\.has\('--prune'\)/);
+});
+
 test('une synchro depuis le conteneur ne desactive pas la doctrine absente de ce disque', async () => {
   // La prod n'embarque pas a11/docs : ces fichiers sont listes mais introuvables.
   const appels = [];
