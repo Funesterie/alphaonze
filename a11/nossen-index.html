@@ -138,6 +138,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 
 <div class="card">
   <h2>🎤 Jukebox — historique <span class="badge badge-gold" id="song-count">0</span></h2>
+  <input class="input-url" type="search" id="jukebox-search" placeholder="🔎 Chercher dans le jukebox : une lettre ou des mots (Entrée pour écouter)" autocomplete="off" aria-label="Chercher dans le jukebox">
   <div class="meta" id="mastering-progress"></div>
   <div id="list" class="songs"></div>
 </div>
@@ -1249,18 +1250,33 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     }
   });
 
-  // Recherche : filtre a chaque frappe ; Entree choisit le premier titre disponible.
-  document.getElementById("song-search").addEventListener("input", function() {
-    songQuery = this.value || "";
+  // Recherche : deux champs, une seule requete. Celui du clip (en haut) et celui du
+  // jukebox (13/09/2026, Djeff : 600 chansons, on ne s'y retrouve plus) se recopient
+  // l'un l'autre et filtrent les deux listes a chaque frappe. Entree choisit le
+  // premier titre disponible : pour le clip en haut, a l'ecoute dans le jukebox.
+  function appliquerRecherche(valeur, depuis) {
+    songQuery = valeur || "";
+    var autre = document.getElementById(depuis === "song-search" ? "jukebox-search" : "song-search");
+    if (autre && autre.value !== songQuery) autre.value = songQuery;
     var choisi = parseInt(document.getElementById("song").value, 10);
     renderSongs(Number.isInteger(choisi) && songs[choisi] ? songKey(songs[choisi]) : "");
-  });
-  document.getElementById("song-search").addEventListener("keydown", function(e) {
-    if (!e || e.key !== "Enter") return;
-    if (typeof e.preventDefault === "function") e.preventDefault();
+  }
+  function premierResultat() {
     var requete = plierTexte(songQuery);
-    var premier = songs.findIndex(function(s) { return s.available !== false && chansonCorrespond(s, requete); });
-    if (premier >= 0) pick(premier);
+    return songs.findIndex(function(s) { return s.available !== false && chansonCorrespond(s, requete); });
+  }
+  ["song-search", "jukebox-search"].forEach(function(id) {
+    var champ = document.getElementById(id);
+    if (!champ) return;
+    champ.addEventListener("input", function() { appliquerRecherche(this.value, id); });
+    champ.addEventListener("keydown", function(e) {
+      if (!e || e.key !== "Enter") return;
+      if (typeof e.preventDefault === "function") e.preventDefault();
+      var premier = premierResultat();
+      if (premier < 0) return;
+      if (id === "jukebox-search") play(premier);
+      else pick(premier);
+    });
   });
 
   // Reprise du suivi au retour au premier plan (Safari iOS arrière-plan / bfcache).

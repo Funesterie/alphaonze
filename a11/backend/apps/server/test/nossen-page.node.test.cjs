@@ -341,6 +341,16 @@ test('la recherche filtre les chansons par initiale ou par mots, sans accents ni
   assert.match(page.elements.get('song').innerHTML, /value="2"/, 'la chanson choisie reste choisissable meme filtree');
   taper('');
   assert.equal(page.elements.get('song-count').textContent, 4, 'sans recherche, le compteur redevient le total');
+
+  // Le champ du jukebox (carte « historique ») partage la meme recherche.
+  const jukebox = page.elements.get('jukebox-search');
+  jukebox.value = 'batte';
+  jukebox.dispatch('input');
+  assert.equal(page.elements.get('song-count').textContent, '1 / 4', 'le jukebox filtre aussi');
+  assert.equal(recherche.value, 'batte', 'les deux champs se recopient');
+  assert.match(liste(), /La Batte Perce le Noir/);
+  jukebox.dispatch('keydown', { key: 'Enter' });
+  assert.match(page.elements.get('audio').src, /\/media\/b\.mp3$/, 'Entree dans le jukebox lance la lecture du premier resultat');
 });
 
 test('pollJob ne chevauche pas les appels et arrete explicitement un 404', async () => {
