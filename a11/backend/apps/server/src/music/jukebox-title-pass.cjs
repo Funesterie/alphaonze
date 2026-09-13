@@ -21,8 +21,10 @@ const hash = (valeur) => crypto.createHash('sha256').update(String(valeur)).dige
 
 // Noms par defaut des generateurs (repris du titreur historique).
 const GENERIQUE = /^(vivy[-_]|djeff-vivy-|[a-f0-9]{8}-variant|session principale|sans titre|archive vivy|titre non|untitled|test\b)/i;
-// Debut d'une consigne ou d'une etiquette de section, pas d'un titre.
-const DEBUT_DE_CONSIGNE = /^(oui\b|non\b|je (voudrais|veux|vais)\b|fais\b|fait\b|[ée]cris\b|title\b|titre\s*:|couplet\b|refrain\b|verse\b|chorus\b|hook\b|prompt\b)/i;
+// Debut d'une consigne ou d'une etiquette de section, pas d'un titre. « Oui », « Non »,
+// « Fais » n'y sont plus : ils ecartaient de vrais titres (« Fais vibrer la lumiere »,
+// 13/09) ; les consignes qui commencent ainsi depassent 48 caracteres et restent prises.
+const DEBUT_DE_CONSIGNE = /^(je (voudrais|veux|vais)\b|[ée]cris\b|title\b|titre\s*:|couplet\b|refrain\b|verse\b|chorus\b|hook\b|prompt\b)/i;
 // Au-dela, c'est une phrase de consigne tronquee (les vrais titres du jukebox
 // tiennent sous 45 caracteres ; les consignes coupees font 68 a 70).
 const LONGUEUR_MAX_TITRE = 48;

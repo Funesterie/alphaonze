@@ -14,7 +14,9 @@ test('les titres par defaut et les bouts de consigne sont reperes, pas les vrais
     assert.ok(titreGenerique(t), `aurait du etre repere : ${t}`);
   }
   for (const t of ['La Batte Perce le Noir', 'De la joie, de l’aventure et de l’amour', 'Bon Contact / Danger Constant',
-    'Essence Pure Éclat', 'Cette voix est la mienne', 'Jessy Tient Debout']) {
+    'Essence Pure Éclat', 'Cette voix est la mienne', 'Jessy Tient Debout',
+    // Ecartes a tort par la premiere passe du 13/09 (regles « fais » et « oui »).
+    'Fais vibrer la lumière', 'Oui Tu Lui as Répondu']) {
     assert.equal(titreGenerique(t), '', `vrai titre pris pour du generique : ${t}`);
   }
 });

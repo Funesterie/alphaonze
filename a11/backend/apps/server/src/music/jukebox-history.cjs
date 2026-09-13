@@ -156,8 +156,14 @@ function applyHistoryEnhancements(tracks, directory = historyDirectory()) {
   const masters = readEnhancements(directory + '-masters');
   const titles = readEnhancements(directory + '-titles');
   const streams = readEnhancements(directory + '-streams');
+  // Pistes retirees du jukebox (13/09/2026, Djeff : 181 archives sans paroles au titre
+  // technique). Un fichier <sha256 de l'URL source>.json dans `<historique>-retired`
+  // suffit ; l'audio et la fiche restent sur le disque, effacer le fichier la rend.
+  // Le drapeau `available` ne peut pas servir : il est recalcule a chaque lecture.
+  const retired = readEnhancements(directory + '-retired');
   return tracks.filter(track => {
     if (!track.trackUrl || track.available === false) return false;
+    if (retired[hash(track.trackUrl)]) return false;
     const url = localAudioUrl(track.trackUrl);
     // Recovered files were probed and hashed. Hide one if its disk asset vanishes.
     if (track.audioSha256 && url.startsWith('/api/vivy/studio/assets/')) return fs.existsSync(path.join(getCanonicalRuntimeRoot(), 'files/generated/vivy', decodeURIComponent(url.split('/').pop())));
