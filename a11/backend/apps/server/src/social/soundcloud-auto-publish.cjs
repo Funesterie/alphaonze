@@ -48,12 +48,27 @@ const TITRES_MACHINE = [
   /\.(mp3|wav|flac|m4a|ogg|aac)$/i,
   /-(d40|v10boom|v11pan|v9electrolysis)\b/i,
   /^[0-9a-f]{16,}$/i,
+  // Une URL collée comme titre (13/09/2026) : deux morceaux du jukebox portaient
+  // « https://console.neo4j.io/org/.../billing ». Le garde du parolier ne couvrait
+  // que les titres proposés par le modèle, pas ceux venus de la source.
+  /https?:|www\./i,
+  /[<>\r\n]/,
 ];
 
 function looksLikeMachineTitle(titre = '') {
   const valeur = String(titre || '').trim();
-  if (!valeur) return true;
+  if (!valeur || valeur.length > 120) return true;
   return TITRES_MACHINE.some((motif) => motif.test(valeur));
+}
+
+/** Pour comparer deux titres : sans casse, sans accents, sans ponctuation. */
+function normaliserTitre(titre = '') {
+  return String(titre || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 }
 
 /**
@@ -134,6 +149,9 @@ async function publishTrackIfNew({
   registryFile = registryPath(env),
   // Injectable pour les tests: la logique de garde se verifie sans ffmpeg.
   fingerprintOf = audioStreamIntegrity,
+  // Un titre deja en ligne sur le compte (lot de juillet, ou autre version du
+  // meme son publiee dans ce passage) : on saute, avant tout ecrit au registre.
+  titleAlreadyPublished = null,
 } = {}) {
   if (typeof upload !== 'function') throw new Error('upload_function_requise');
   if (!autoPublishEnabled(env)) return { published: false, reason: 'auto_publish_desactive', fingerprint: '' };
@@ -184,6 +202,10 @@ async function publishTrackIfNew({
       }
     }
 
+    if (typeof titleAlreadyPublished === 'function' && titleAlreadyPublished(titreFinal)) {
+      return { published: false, reason: 'titre_deja_sur_soundcloud', fingerprint: '', title: titreFinal };
+    }
+
     registre.entries[fingerprint] = {
       status: 'pending',
       title: titreFinal,
@@ -213,7 +235,7 @@ async function publishTrackIfNew({
       sharing: resultat.sharing || resolveSharing(env), publishedAt: new Date().toISOString(),
     });
     writeRegistry(registre, registryFile);
-    return { published: true, fingerprint, upload: resultat };
+    return { published: true, fingerprint, upload: resultat, title: titreFinal };
   } finally {
     fs.closeSync(lockFd);
     fs.unlinkSync(lock);
@@ -226,6 +248,7 @@ module.exports = {
   autoPublishEnabled,
   isPublishableTitle,
   looksLikeMachineTitle,
+  normaliserTitre,
   publishTrackIfNew,
   readRegistry,
   registryPath,

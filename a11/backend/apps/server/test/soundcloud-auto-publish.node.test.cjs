@@ -8,11 +8,62 @@ const path = require('node:path');
 
 const {
   looksLikeMachineTitle,
+  normaliserTitre,
   publishTrackIfNew,
   readRegistry,
   resolveSharing,
   autoPublishEnabled,
 } = require('../src/social/soundcloud-auto-publish.cjs');
+
+// --- Gardes du 13/09/2026 : URL comme titre, lot de juillet deja en ligne -----
+
+test('une URL, du HTML ou un titre-fleuve ne se publient jamais, meme venus de la source', () => {
+  assert.equal(looksLikeMachineTitle('https://console.neo4j.io/org/f81a5f35/billing'), true);
+  assert.equal(looksLikeMachineTitle('www.exemple.fr'), true);
+  assert.equal(looksLikeMachineTitle('Titre <b>gras</b>'), true);
+  assert.equal(looksLikeMachineTitle('x'.repeat(121)), true);
+  assert.equal(looksLikeMachineTitle('Sous la Pluie de Néons Roses'), false);
+  assert.equal(normaliserTitre('  Éclat d’Étincelle ! '), 'eclat d etincelle');
+});
+
+test('un titre deja en ligne est saute avant tout ecrit au registre, et rien ne part', async () => {
+  const registryFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sc-deja-')), 'publies.json');
+  let uploads = 0;
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sc-deja-audio-')), 'm.mp3');
+  fs.writeFileSync(f, 'audio');
+  const r = await publishTrackIfNew({
+    filePath: f, title: 'Dans la Nuit Je Cours', env: { SOUNDCLOUD_AUTO_PUBLISH_ENABLED: 'true' }, registryFile,
+    fingerprintOf: async () => ({ sha256: 'd'.repeat(64), codec: 'mp3', sampleRate: 44100, channels: 2 }),
+    upload: async () => { uploads += 1; return { id: 1 }; },
+    titleAlreadyPublished: (t) => normaliserTitre(t) === 'dans la nuit je cours',
+  });
+  assert.equal(r.published, false);
+  assert.equal(r.reason, 'titre_deja_sur_soundcloud');
+  assert.equal(uploads, 0);
+  assert.deepEqual(readRegistry(registryFile).entries, {}, 'aucun pending pose');
+});
+
+test('la liste du compte suit la pagination de l API seulement, et refuse si elle est incomplete', async () => {
+  const { listSoundCloudTracks } = require('../src/social/social-autoprompt.cjs');
+  const reponse = (data) => ({ ok: true, status: 200, json: async () => data });
+  const pages = {
+    '/me': { id: 7, track_count: 3 },
+    '/me/tracks': { collection: [{ id: 1, title: 'Un' }, { id: 2, title: 'Deux' }], next_href: 'https://api.soundcloud.com/me/tracks?page=2' },
+  };
+  const fetchOk = async (url) => {
+    const u = new URL(url);
+    if (u.pathname === '/me/tracks' && u.searchParams.get('page') === '2') return reponse({ collection: [{ id: 3, title: 'Trois' }] });
+    return reponse(pages[u.pathname]);
+  };
+  const liste = await listSoundCloudTracks('jeton', {}, fetchOk);
+  assert.deepEqual(liste.map((t) => t.title), ['Un', 'Deux', 'Trois']);
+
+  const fetchIncomplet = async (url) => reponse(new URL(url).pathname === '/me' ? { track_count: 326 } : { collection: [] });
+  await assert.rejects(listSoundCloudTracks('jeton', {}, fetchIncomplet), /soundcloud_listing_incomplete/);
+
+  const fetchHorsApi = async (url) => reponse(new URL(url).pathname === '/me' ? { track_count: 0 } : { collection: [], next_href: 'https://evil.example/steal' });
+  await assert.rejects(listSoundCloudTracks('jeton', {}, fetchHorsApi), /soundcloud_pagination_hors_api/);
+});
 
 const ACTIF = { SOUNDCLOUD_AUTO_PUBLISH_ENABLED: 'true' };
 const registreTemporaire = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sc-pub-')), 'publies.json');

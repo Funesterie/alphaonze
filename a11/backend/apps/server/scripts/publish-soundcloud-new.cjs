@@ -11,9 +11,9 @@ const path = require('node:path');
 const { getCanonicalRuntimeRoot } = require('../lib/runtime-root.cjs');
 const { readHistoryTracks, historyDirectory, applyHistoryEnhancements } = require('../src/music/jukebox-history.cjs');
 const { resolveJukeboxAsset } = require('../src/music/jukebox-stream-integrity.cjs');
-const { publishTrackIfNew, autoPublishEnabled, resolveSharing } = require('../src/social/soundcloud-auto-publish.cjs');
+const { publishTrackIfNew, autoPublishEnabled, resolveSharing, normaliserTitre } = require('../src/social/soundcloud-auto-publish.cjs');
 const { titleFromLyrics } = require('../src/music/jukebox-claude-titler.cjs');
-const { getSoundCloudAccountIdentity, uploadSoundCloudTrack } = require('../src/social/social-autoprompt.cjs');
+const { getSoundCloudAccountIdentity, listSoundCloudTracks, uploadSoundCloudTrack } = require('../src/social/social-autoprompt.cjs');
 const { atomic } = require('./master-jukebox-v11pan.cjs');
 
 const argument = (nom, defaut) => {
@@ -99,6 +99,10 @@ async function main() {
   if (!Number.isFinite(budgetUsd) || budgetUsd < 0) throw Error('invalid_titling_budget');
   // Lecture seule : un OAuth deja refuse ne doit pas consommer de titrage.
   await getSoundCloudAccountIdentity(accessToken);
+  // Ce qui est deja en ligne (13/09/2026) : le registre ne connait pas le lot de
+  // juillet (326 morceaux). Sans cette liste, le premier passage le republiait.
+  // Une liste incomplete fait echouer ici, avant tout upload.
+  const enLigne = new Set((await listSoundCloudTracks(accessToken)).map((t) => normaliserTitre(t.title)).filter(Boolean));
   const root = getCanonicalRuntimeRoot(), directory = historyDirectory();
   const assetDir = path.join(root, 'files/generated/vivy');
   const lock = path.join(root, 'vivy-stream/soundcloud-publish.lock');
@@ -134,8 +138,11 @@ async function main() {
       const filePath = resolveJukeboxAsset(track.trackUrl, assetDir);
       const resultat = await publishTrackIfNew({
         filePath, title: track.title, lyrics: track.lyrics || '', upload, titleTrack,
+        titleAlreadyPublished: (titre) => enLigne.has(normaliserTitre(titre)),
       });
       if (resultat.published) {
+        // L'autre version du meme son (original / master) ne repart pas.
+        enLigne.add(normaliserTitre(resultat.title));
         console.log(JSON.stringify({ publie: stats.publies + 1, titre: resultat.upload?.title, url: resultat.upload?.permalinkUrl }));
       }
       return resultat;

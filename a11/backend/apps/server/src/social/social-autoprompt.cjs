@@ -1232,6 +1232,30 @@ async function getSoundCloudAccountIdentity(accessToken, fetchFn = globalThis.fe
   };
 }
 
+// Les morceaux déjà sur le compte (13/09/2026). Le registre du fil d'or démarre
+// vide : il ignore les 326 morceaux du lot de juillet, que le premier passage
+// aurait donc tous republiés. Une liste incomplète fait refuser, jamais deviner.
+async function listSoundCloudTracks(accessToken, { maxPages = 25 } = {}, fetchFn = globalThis.fetch) {
+  const me = await soundCloudApi('/me', accessToken, {}, fetchFn);
+  const attendus = Number(me.track_count) || 0;
+  const tracks = [];
+  let data = await soundCloudApi('/me/tracks', accessToken, { query: { limit: 200, linked_partitioning: true } }, fetchFn);
+  for (let page = 0; page < maxPages; page += 1) {
+    const collection = Array.isArray(data) ? data : (Array.isArray(data.collection) ? data.collection : []);
+    for (const track of collection) {
+      tracks.push({ id: track.id, title: cleanText(track.title || '', 300), createdAt: track.created_at || '' });
+    }
+    const suivant = Array.isArray(data) ? '' : String(data.next_href || '');
+    if (!suivant) break;
+    const url = new URL(suivant);
+    // Le jeton ne suit jamais une page hors de l'API SoundCloud.
+    if (url.origin !== SOUNDCLOUD_API_BASE) throw new Error('soundcloud_pagination_hors_api');
+    data = await soundCloudApi(url.pathname, accessToken, { query: Object.fromEntries(url.searchParams) }, fetchFn);
+  }
+  if (tracks.length < attendus) throw new Error('soundcloud_listing_incomplete');
+  return tracks;
+}
+
 function contentTypeForAudioPath(audioPath = '') {
   const ext = String(audioPath || '').split('.').pop().toLowerCase();
   if (ext === 'flac') return 'audio/flac';
@@ -2148,6 +2172,7 @@ module.exports = {
   formatSocialContextForPrompt,
   getFreshSocialTokens,
   getSoundCloudAccountIdentity,
+  listSoundCloudTracks,
   fetchSocialRssXml,
   fetchYoutubePublicFeedVideoIds,
   fetchYoutubePublicVideoItems,
