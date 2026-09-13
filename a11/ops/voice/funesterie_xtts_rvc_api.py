@@ -1055,9 +1055,27 @@ def _identify_reference_embedding(name: str):
     return vector
 
 
+def _identify_window(path: Path, offset: float, duration: float):
+    """Fenetre de lecture adaptee a la duree reelle du morceau.
+
+    13/09/2026 : la chanson test de Djeff durait 32 s ; lue a partir de 30 s, il ne
+    restait que 2 s de voix et le controle rendait « audio_too_short ». Un morceau trop
+    court pour le decalage demande est lu depuis le debut (au moins 15 s si possible).
+    """
+    import librosa
+    try:
+        total = float(librosa.get_duration(path=str(path)))
+    except Exception:
+        return offset, duration
+    if total <= 0 or total - offset >= 15:
+        return offset, duration
+    return max(0.0, total - max(15.0, min(total, duration))), duration
+
+
 def _identify_vocals(path: Path, offset: float, duration: float, separate: bool):
     import librosa
     import numpy as np
+    offset, duration = _identify_window(path, offset, duration)
     if not separate:
         samples, _ = librosa.load(str(path), sr=16000, mono=True, offset=offset, duration=duration)
         if samples.size == 0 and offset > 0:
