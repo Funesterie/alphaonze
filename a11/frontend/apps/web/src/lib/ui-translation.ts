@@ -1,5 +1,6 @@
 import type { FunesterieLanguageCode } from "./language";
 import { UI_TEXT_JA_ZH } from "./ui-translation-asie";
+import { UI_TEXT_PAGES } from "./ui-translation-pages";
 
 export type UiLanguageCode = FunesterieLanguageCode;
 
@@ -381,18 +382,123 @@ function shouldSkipTextElement(element: Element | null): boolean {
   return shouldSkipElement(element) || isOptionUsingTextValue(element);
 }
 
+// Dictionnaire des pages (ui-translation-pages.ts), fusionné sans écraser l'ancien.
+// Les clés à emplacements {0} deviennent des modèles.
+const PAGE_LANGUAGES: UiLanguageCode[] = ["en", "es", "it", "de", "ja", "zh"];
+type ParsedTemplate = { parts: string[]; slots: number[] };
+// `variants` : chaque langue analysée une fois au chargement, pas à chaque texte.
+type UiTemplate = ParsedTemplate & { translations: TranslationSet; variants: ParsedTemplate[] };
+const UI_TEMPLATES: UiTemplate[] = [];
+
+function parseTemplate(text: string): { parts: string[]; slots: number[] } | null {
+  const parts: string[] = [];
+  const slots: number[] = [];
+  let literal = "";
+  for (let i = 0; i < text.length; i += 1) {
+    const close = text.indexOf("}", i);
+    const digits = text.charAt(i) === "{" && close > i + 1 ? text.slice(i + 1, close) : "";
+    if (digits && /^[0-9]+$/.test(digits)) {
+      parts.push(literal);
+      slots.push(Number(digits));
+      literal = "";
+      i = close;
+    } else {
+      literal += text.charAt(i);
+    }
+  }
+  parts.push(literal);
+  return slots.length ? { parts, slots } : null;
+}
+
+for (const [source, row] of Object.entries(UI_TEXT_PAGES)) {
+  const translations: TranslationSet = { fr: source };
+  PAGE_LANGUAGES.forEach((language, index) => { translations[language] = row[index]; });
+  const template = parseTemplate(source);
+  if (template) {
+    const variants = Object.values(translations)
+      .map((variant) => (variant ? parseTemplate(variant) : null))
+      .filter((parsed): parsed is ParsedTemplate => Boolean(parsed));
+    UI_TEMPLATES.push({ ...template, translations, variants });
+    continue;
+  }
+  const key = normalizeLookupText(source);
+  if (LEGACY_UI_TEXT[key]) continue;
+  LEGACY_UI_TEXT[key] = translations;
+  for (const value of Object.values(translations)) {
+    const reverse = normalizeLookupText(value);
+    if (!LEGACY_UI_TEXT[reverse]) LEGACY_UI_TEXT[reverse] = translations;
+  }
+}
+
+// Le modèle le plus précis d'abord : « Voix : {0} · NOSSEN : {1} » avant « Voix : {0} »,
+// sinon le court avale tout le reste de la phrase dans son emplacement.
+UI_TEMPLATES.sort((a, b) => b.parts.join("").length - a.parts.join("").length);
+
+// Valeurs capturées par un modèle, dans l'ordre des emplacements ; null si le texte
+// ne correspond pas. Le dernier morceau littéral doit terminer le texte.
+function matchTemplate(template: { parts: string[]; slots: number[] }, text: string): string[] | null {
+  if (!text.startsWith(template.parts[0])) return null;
+  let position = template.parts[0].length;
+  const values: string[] = [];
+  for (let i = 0; i < template.slots.length; i += 1) {
+    const next = template.parts[i + 1];
+    const last = i === template.slots.length - 1;
+    const end = last ? (next ? text.length - next.length : text.length) : text.indexOf(next, position + 1);
+    if (end <= position || (last && next && !text.endsWith(next))) return null;
+    values[template.slots[i]] = text.slice(position, end);
+    position = end + next.length;
+  }
+  return position === text.length ? values : null;
+}
+
+function fillTemplate(pattern: string, values: string[], language: UiLanguageCode): string {
+  const parsed = parseTemplate(pattern);
+  if (!parsed) return pattern;
+  return parsed.parts.reduce((out, part, i) => {
+    if (i >= parsed.slots.length) return out + part;
+    const value = values[parsed.slots[i]] ?? "";
+    // La valeur capturée peut être elle-même un texte ou un modèle connu (message
+    // d'erreur imbriqué) ; elle est strictement plus courte, la récursion s'arrête.
+    return out + part + (translatedWhole(language, normalizeLookupText(value)) || value);
+  }, "");
+}
+
+// Texte entier du dictionnaire, puis modèles. Sans découpage.
+function translatedWhole(language: UiLanguageCode, key: string): string | null {
+  const entry = LEGACY_UI_TEXT[key];
+  if (entry?.[language]) return entry[language] as string;
+  for (const template of UI_TEMPLATES) {
+    for (const parsed of template.variants) {
+      const values = matchTemplate(parsed, key);
+      if (values) return fillTemplate(template.translations[language] || template.translations.fr || key, values, language);
+    }
+  }
+  return null;
+}
+
 function translated(language: UiLanguageCode, source: string): string {
   const key = normalizeLookupText(source);
-  const entry = LEGACY_UI_TEXT[key];
-  return entry?.[language] || source;
+  const whole = translatedWhole(language, key);
+  if (whole) return whole;
+  // Liaison du graphe « A -[verbe]-> B » : chaque morceau séparément.
+  const open = key.indexOf(" -[");
+  const close = open > 0 ? key.indexOf("]-> ", open) : -1;
+  if (close > open) {
+    const piece = (value: string) => translatedWhole(language, value) || value;
+    return `${piece(key.slice(0, open))} -[${piece(key.slice(open + 3, close))}]-> ${piece(key.slice(close + 4))}`;
+  }
+  // Segments séparés par « · » (« API privée · security »).
+  if (key.includes(" · ")) {
+    const pieces = key.split(" · ").map((value) => translatedWhole(language, value) || value);
+    return pieces.join(" · ");
+  }
+  return source;
 }
 
 function isRenderedVariant(source: string, current: string): boolean {
-  const key = normalizeLookupText(source);
   const normalizedCurrent = normalizeLookupText(current);
-  const entry = LEGACY_UI_TEXT[key];
-  if (!entry) return key === normalizedCurrent;
-  return Object.values(entry).some((value) => normalizeLookupText(value) === normalizedCurrent);
+  if (normalizeLookupText(source) === normalizedCurrent) return true;
+  return Array.from(UI_LANGUAGES).some((language) => normalizeLookupText(translated(language, source)) === normalizedCurrent);
 }
 
 function translateTextNode(node: Text, language: UiLanguageCode) {
@@ -473,6 +579,41 @@ export function translateLegacyStaticDocumentTitle(languageValue: unknown) {
   const source = normalizeLookupText(document.title);
   const next = translated(language, source);
   if (next !== document.title) document.title = next;
+}
+
+// Outil de développement : les textes visibles (et attributs traduisibles) que le
+// dictionnaire ne connaît pas. Sert à retrouver les phrases restées en français.
+export function collectUntranslatedUiTexts(root: ParentNode = document.body): string[] {
+  const found = new Set<string>();
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      if (shouldSkipTextElement(parent)) return NodeFilter.FILTER_REJECT;
+      return hasLetter(node.textContent) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    },
+  });
+  const check = (value: string | null) => {
+    const key = normalizeLookupText(value);
+    if (!key || !hasLetter(key)) return;
+    const known = Boolean(LEGACY_UI_TEXT[key]) || translated("ja", key) !== key;
+    if (!known) found.add(key);
+  };
+  let node = walker.nextNode();
+  while (node) {
+    const stored = textNodeSources.get(node as Text);
+    check(stored || node.textContent);
+    node = walker.nextNode();
+  }
+  const elements = root instanceof Element ? [root, ...Array.from(root.querySelectorAll("*"))] : Array.from(root.querySelectorAll("*"));
+  for (const element of elements) {
+    if (shouldSkipElement(element)) continue;
+    for (const attribute of TRANSLATABLE_ATTRIBUTES) {
+      const stored = attributeSources.get(element)?.get(attribute);
+      const value = stored || element.getAttribute(attribute);
+      if (value) check(value);
+    }
+  }
+  return Array.from(found).sort();
 }
 
 // Langue courante partagée : le bouton de langue la change sans attendre que chaque

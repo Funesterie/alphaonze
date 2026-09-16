@@ -2,6 +2,12 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { App, isKaen44Experience } from "./App";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
+import { collectUntranslatedUiTexts } from "./lib/ui-translation";
+
+if (import.meta.env.DEV) {
+  // Développement seulement : relever les textes que le dictionnaire ne traduit pas.
+  (window as any).__A11_UNTRANSLATED__ = collectUntranslatedUiTexts;
+}
 import "./index.css";
 import "./mobile.css";
 import { registerA11ServiceWorker } from "./pwa";

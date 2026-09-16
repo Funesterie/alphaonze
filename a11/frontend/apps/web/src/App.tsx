@@ -9802,7 +9802,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         </div>
       ) : null}
       <div className={`vivy-chat-reference ${awaitingVoiceReference ? "is-needed" : ""}`}>
-        <span>{`Voix: ${voiceReferenceName || "Vivy par défaut"} · NOSSEN: ${nossenMusicProviderLabel}`}</span>
+        <span>{`Voix : ${voiceReferenceName || "Vivy par défaut"} · NOSSEN : ${nossenMusicProviderLabel}`}</span>
         <div>
           <button type="button" disabled={!hasSession} onClick={useDefaultVivyChatVoice}>
             Défaut
@@ -12697,8 +12697,10 @@ function FunesterieAccountPage({
               <span>Récap</span>
             </header>
             <p>
-              {conversationTotal} conversation{conversationTotal > 1 ? "s" : ""} serveur,
-              {messageTotal ? ` ${messageTotal} message${messageTotal > 1 ? "s" : ""}.` : " aucun message serveur détaillé."}
+              {/* Une seule chaîne par phrase : le traducteur reconnaît le modèle (16/09/2026). */}
+              {messageTotal
+                ? `Conversations serveur : ${conversationTotal} · messages : ${messageTotal}.`
+                : `Conversations serveur : ${conversationTotal} · aucun message serveur détaillé.`}
             </p>
             <div className="fun-account-mini-list" aria-label="Conversations par agent">
               <span>A11: {inventory.conversations.a11.length}</span>
@@ -12709,13 +12711,13 @@ function FunesterieAccountPage({
               {conversationRecap.slice(0, 6).map((entry) => (
                 <li key={`${entry.surface}-${entry.id || entry.name}`}>
                   <strong>{entry.name || "Conversation"}</strong>
-                  <span>{entry.label} · {entry.messageCount || 0} message{entry.messageCount > 1 ? "s" : ""}{entry.updated ? ` · ${formatAccountDate(entry.updated)}` : ""}</span>
+                  <span>{`${entry.label} · messages : ${entry.messageCount || 0}${entry.updated ? ` · ${formatAccountDate(entry.updated)}` : ""}`}</span>
                 </li>
               ))}
               {!conversationRecap.length && (
                 <li>
                   <strong>Aucune conversation serveur chargée</strong>
-                  <span>Le cache local indique {overview.conversations} conversation{overview.conversations > 1 ? "s" : ""}.</span>
+                  <span>{`Conversations en cache local : ${overview.conversations}.`}</span>
                 </li>
               )}
             </ul>
@@ -12736,7 +12738,7 @@ function FunesterieAccountPage({
               <span>Médias</span>
             </header>
             <p>
-              {inventoryFiles.length} élément{inventoryFiles.length > 1 ? "s" : ""} disponible{inventoryFiles.length > 1 ? "s" : ""}: images, audio, vidéos et fichiers de conversation.
+              {`Éléments disponibles : ${inventoryFiles.length} (images, audio, vidéos et fichiers de conversation).`}
             </p>
             <ul className="fun-media-inventory-list" aria-label="Inventaire des médias et fichiers">
               {inventoryFiles.map((item) => {
@@ -12813,7 +12815,7 @@ function FunesterieAccountPage({
                     <span className="fun-media-inventory-badge">vide</span>
                     <span>
                       <strong>Aucun fichier serveur chargé</strong>
-                      <small>{overview.files} élément{overview.files > 1 ? "s" : ""} local{overview.files > 1 ? "aux" : ""}; Vivy: {overview.vivyMessages} message{overview.vivyMessages > 1 ? "s" : ""}</small>
+                      <small>{`Éléments locaux : ${overview.files} · messages Vivy : ${overview.vivyMessages}`}</small>
                     </span>
                   </div>
                 </li>
@@ -12837,8 +12839,8 @@ function FunesterieAccountPage({
             </header>
             <p>{subscriptionText}</p>
             <div className="fun-account-mini-list">
-              <span>Voix: {overview.voiceReference}</span>
-              <span>Plan: {subscriptionLabel}</span>
+              <span>{`Voix : ${overview.voiceReference}`}</span>
+              <span>{`Plan : ${subscriptionLabel}`}</span>
             </div>
             {/* Virement Qonto en tête, avant la carte.
                 Le virement arrive directement sur le compte : pas d'intermédiaire,
@@ -17993,7 +17995,7 @@ export function App() {
                       ))}
                     </select>
                     <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.35 }}>
-                      Chat, micro, transcription audio et voix {productName} utilisent cette langue.
+                      {`Chat, micro, transcription audio et voix ${productName} utilisent cette langue.`}
                     </div>
                     <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#cbd5e1", fontWeight: 800 }}>
                       Voix IA
