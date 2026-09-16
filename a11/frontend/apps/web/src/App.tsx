@@ -288,7 +288,7 @@ type ChatModelChoice = {
 };
 
 type TtsProviderMode = "official" | "auto" | "piper" | "openai" | "elevenlabs" | "cartesia";
-type A11LanguageCode = "fr" | "en" | "it" | "es" | "de";
+type A11LanguageCode = "fr" | "en" | "it" | "es" | "de" | "ja" | "zh";
 
 const TTS_PROVIDER_MODE_VALUES = new Set<TtsProviderMode>([
   "official",
@@ -369,6 +369,11 @@ const A11_LANGUAGE_CHOICES: Array<{
     { code: "it", label: "Italiano", speechLang: "it-IT", sttCode: "it", ttsVoice: "it_IT-paola-medium" },
     { code: "es", label: "Español", speechLang: "es-ES", sttCode: "es", ttsVoice: "es_ES-sharvard-medium" },
     { code: "de", label: "Deutsch", speechLang: "de-DE", sttCode: "de", ttsVoice: "de_DE-thorsten-medium" },
+    // Japonais et chinois (16/09/2026) : aucune voix Piper japonaise ou chinoise n'est
+    // installée sur le serveur ; ttsVoice vide = voix locale par défaut, les voix
+    // cloud et d'identité suivent la langue du texte.
+    { code: "ja", label: "日本語", speechLang: "ja-JP", sttCode: "ja", ttsVoice: "" },
+    { code: "zh", label: "中文", speechLang: "zh-CN", sttCode: "zh", ttsVoice: "" },
   ];
 
 function normalizeA11LanguageCode(value: unknown): A11LanguageCode {

@@ -1,10 +1,11 @@
 import type { FunesterieLanguageCode } from "./language";
+import { UI_TEXT_JA_ZH } from "./ui-translation-asie";
 
-export type UiLanguageCode = Extract<FunesterieLanguageCode, "fr" | "en" | "it" | "es" | "de">;
+export type UiLanguageCode = FunesterieLanguageCode;
 
 type TranslationSet = Partial<Record<UiLanguageCode, string>>;
 
-const UI_LANGUAGES = new Set<UiLanguageCode>(["fr", "en", "it", "es", "de"]);
+const UI_LANGUAGES = new Set<UiLanguageCode>(["fr", "en", "it", "es", "de", "ja", "zh"]);
 
 const textNodeSources = new WeakMap<Text, string>();
 const attributeSources = new WeakMap<Element, Map<string, string>>();
@@ -332,7 +333,10 @@ const LEGACY_UI_TEXT_ENTRIES: Array<[string, TranslationSet]> = [
 ];
 
 const LEGACY_UI_TEXT: Record<string, TranslationSet> = LEGACY_UI_TEXT_ENTRIES.reduce<Record<string, TranslationSet>>(
-  (dictionary, [source, translations]) => {
+  (dictionary, [source, europeennes]) => {
+    // Japonais et chinois vivent à part (ui-translation-asie.ts), indexés par la
+    // phrase française : les tr() existants gardent leurs cinq colonnes.
+    const translations: TranslationSet = { ...europeennes, ...(UI_TEXT_JA_ZH[source] || {}) };
     dictionary[normalizeLookupText(source)] = translations;
     for (const value of Object.values(translations)) {
       dictionary[normalizeLookupText(value)] = translations;
