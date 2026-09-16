@@ -1221,10 +1221,11 @@ const LOCAL_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
 
 const DEFAULT_REMOTE_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
   {
-    value: "groq:llama-3.3-70b-versatile",
-    label: "Groq - Llama 3.3 70B rapide",
+    // Llama 3.3 70B a été retiré par Groq (404 model_not_found, vérifié le 16/09/2026).
+    value: "groq:openai/gpt-oss-120b",
+    label: "Groq - GPT-OSS 120B",
     provider: "groq",
-    model: "llama-3.3-70b-versatile",
+    model: "openai/gpt-oss-120b",
   },
   {
     value: "openai:meta-llama/llama-3.3-70b-instruct",
@@ -1249,11 +1250,11 @@ const DEFAULT_REMOTE_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
 // compte y a droit.
 type LanguageAiPreset = { model: string; cloudVoice: boolean };
 const LANGUAGE_AI_PRESETS: Record<A11LanguageCode, LanguageAiPreset> = {
-  fr: { model: "groq:llama-3.3-70b-versatile", cloudVoice: false },
-  en: { model: "groq:llama-3.3-70b-versatile", cloudVoice: false },
-  es: { model: "groq:llama-3.3-70b-versatile", cloudVoice: false },
-  it: { model: "groq:llama-3.3-70b-versatile", cloudVoice: false },
-  de: { model: "groq:llama-3.3-70b-versatile", cloudVoice: false },
+  fr: { model: "groq:openai/gpt-oss-120b", cloudVoice: false },
+  en: { model: "groq:openai/gpt-oss-120b", cloudVoice: false },
+  es: { model: "groq:openai/gpt-oss-120b", cloudVoice: false },
+  it: { model: "groq:openai/gpt-oss-120b", cloudVoice: false },
+  de: { model: "groq:openai/gpt-oss-120b", cloudVoice: false },
   ja: { model: "groq:qwen/qwen3.8-27b", cloudVoice: true },
   zh: { model: "groq:qwen/qwen3.8-27b", cloudVoice: true },
 };
@@ -1264,7 +1265,10 @@ function readLanguageAiOverride(language: A11LanguageCode): LanguageAiOverride {
   try {
     const raw = localStorage.getItem(`a11:ai-override:${language}`);
     const parsed = raw ? JSON.parse(raw) : null;
-    return parsed && typeof parsed === "object" ? parsed : {};
+    if (!parsed || typeof parsed !== "object") return {};
+    // Un réglage gardé sur un modèle retiré par Groq ne doit pas survivre.
+    if (parsed.model === "groq:llama-3.3-70b-versatile") delete parsed.model;
+    return parsed;
   } catch {
     return {};
   }

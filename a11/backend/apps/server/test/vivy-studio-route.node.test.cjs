@@ -5800,7 +5800,7 @@ test('Vivy song writing prefers Groq OSS when xAI and Groq are both available', 
     assert.equal(config.provider, 'groq');
     assert.equal(config.source, 'groq-openai-compatible');
     assert.equal(config.baseURL, 'https://api.groq.com/openai/v1');
-    assert.equal(config.model, 'llama-3.3-70b-versatile');
+    assert.equal(config.model, 'openai/gpt-oss-120b');
     assert.equal(config.apiKey, 'test-groq-fallback-key');
   } finally {
     for (const [key, value] of Object.entries(previous)) {
@@ -6411,7 +6411,7 @@ test('Hetzner deploy wires local-first Ollama with a cloud provider domino', () 
   assert.match(deploySource, /VIVY_SONG_PROVIDER:\s*\$\{VIVY_SONG_PROVIDER:-ollama\}/);
   assert.match(deploySource, /VIVY_SONG_PROVIDER\s*=\s*\$\(if \(\$env:VIVY_SONG_PROVIDER\)/);
   assert.match(deploySource, /VIVY_SONG_GROQ_MODEL\s*=\s*\$\(if \(\$env:VIVY_SONG_GROQ_MODEL\)/);
-  assert.match(deploySource, /llama-3\.3-70b-versatile/);
+  assert.match(deploySource, /openai.gpt-oss-120b/);
   assert.match(deploySource, /VIVY_STREAM_FREESTYLE_MAX_TOKENS:\s*\$\{VIVY_STREAM_FREESTYLE_MAX_TOKENS:-10000\}/);
   assert.match(deploySource, /VIVY_STREAM_FREESTYLE_MAX_CHARS\s*=\s*\$\(if \(\$env:VIVY_STREAM_FREESTYLE_MAX_CHARS\)/);
   assert.match(deploySource, /OLLAMA_CLOUD_ENABLED:\s*\$\{OLLAMA_CLOUD_ENABLED:-1\}/);

@@ -22,7 +22,7 @@ function buildGroqCallStructuredLlmJson(env = process.env) {
   if (!shouldUseGroqDirect(env)) return null;
   const groqKey = String(env.GROQ_API_KEY || '').trim();
   if (!groqKey) return null;
-  const groqModel = String(env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim();
+  const groqModel = String(env.GROQ_MODEL || 'openai/gpt-oss-120b').trim();
   const groqUrl = 'https://api.groq.com/openai/v1/chat/completions';
   return async function callGroqStructuredJson({ text, systemPrompt, maxTokens = 600, temperature = 0.2, responseFormat, timeoutMs = 25000, stage = 'image_pipeline_groq' } = {}) {
     const body = {
@@ -36,6 +36,7 @@ function buildGroqCallStructuredLlmJson(env = process.env) {
       // llama-3.3-70b-versatile doesn't support json_schema — use json_object which all Groq models support
       response_format: { type: 'json_object' },
     };
+    Object.assign(body, groqJsonCallTuning(groqModel, body.messages));
     const ctrl = new AbortController();
     const tid = setTimeout(() => ctrl.abort(), Math.max(5000, Number(timeoutMs) || 25000));
     try {
@@ -67,6 +68,19 @@ const {
 const {
   translateImagePromptToEnglish,
 } = require('../mask/build-sd-prompt-bundle.cjs');
+
+// gpt-oss (défaut Groq depuis le 16/09/2026) raisonne avant de répondre, et ce
+// raisonnement consomme max_tokens : effort « low » pour garder le budget au JSON.
+// Groq refuse aussi json_object si le mot « json » n'apparaît dans aucun message.
+function groqJsonCallTuning(model, messages) {
+  const tuning = {};
+  if (/^openai\/gpt-oss/i.test(String(model || ''))) tuning.reasoning_effort = 'low';
+  const mentionsJson = (messages || []).some((m) => /json/i.test(String(m && m.content || '')));
+  if (!mentionsJson && messages && messages[0]) {
+    tuning.messages = [{ ...messages[0], content: `${messages[0].content}\nRespond with a JSON object.` }, ...messages.slice(1)];
+  }
+  return tuning;
+}
 
 // json_schema not supported by llama-3.3-70b-versatile on Groq — use json_object universally
 const IMAGE_PIPELINE_RESPONSE_FORMAT = Object.freeze({ type: 'json_object' });
@@ -422,4 +436,5 @@ module.exports = {
   shouldUseGroqDirect,
   IMAGE_PIPELINE_SYSTEM_PROMPT,
   IMAGE_PIPELINE_RESPONSE_FORMAT,
+  groqJsonCallTuning,
 };

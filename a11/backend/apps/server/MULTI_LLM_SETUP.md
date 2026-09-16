@@ -12,7 +12,7 @@ A11 supporte maintenant plusieurs providers LLM avec un système de fallback int
 
 ### 2. **Groq** (Cloud, gratuit)
 
-- **Modèle par défaut** : `llama-3.3-70b-versatile`
+- **Modèle par défaut** : `openai/gpt-oss-120b`
 - **Avantages** : Ultra rapide (500+ tokens/s), gratuit, excellent pour les tâches moyennes
 - **Inconvénients** : Rate limits sur le plan gratuit
 - **API Key** : https://console.groq.com/keys
@@ -50,7 +50,7 @@ OPENAI_MODEL=gpt-4o-mini
 
 # Groq (optionnel)
 # GROQ_API_KEY is configured via the deployment secret store.
-GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_MODEL=openai/gpt-oss-120b
 
 # DeepSeek (optionnel)
 DEEPSEEK_API_KEY=sk-...

@@ -411,7 +411,7 @@ function buildGroqVideoLlmFn(env = process.env) {
     : isTruthyEnv(env.A11_IMAGE_DIRECT_GROQ_ENABLED);
   if (!isEnabled) return null;
 
-  const groqModel = String(env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim();
+  const groqModel = String(env.GROQ_MODEL || 'openai/gpt-oss-120b').trim();
   const groqUrl = 'https://api.groq.com/openai/v1/chat/completions';
 
   return async function callGroqVideoJson({ text, systemPrompt, maxTokens = 300, temperature = 0.2, timeoutMs = 15000 } = {}) {
@@ -425,6 +425,9 @@ function buildGroqVideoLlmFn(env = process.env) {
       ],
       response_format: { type: 'json_object' },
     };
+    // Même réglage que le pipeline image : effort de raisonnement bas pour gpt-oss,
+    // et le mot « json » garanti dans les messages (exigé par Groq en json_object).
+    Object.assign(body, require('../image/image-pipeline-direct.cjs').groqJsonCallTuning(groqModel, body.messages));
     const ctrl = new AbortController();
     const tid = setTimeout(() => ctrl.abort(), Math.max(5000, Number(timeoutMs) || 15000));
     try {

@@ -1082,8 +1082,8 @@ function getVivyOpenAIConfig(options = {}) {
       : (process.env.VIVY_OPENAI_API_KEY || process.env.OPENAI_API_KEY || process.env.A11_OPENAI_API_KEY)));
   const defaultModel = /groq/i.test(normalizedBaseUrl)
     ? (mode === 'song'
-      ? (process.env.VIVY_SONG_GROQ_MODEL || process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile')
-      : (process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'))
+      ? (process.env.VIVY_SONG_GROQ_MODEL || process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'openai/gpt-oss-120b')
+      : (process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'openai/gpt-oss-120b'))
     : (/x\.ai|grok/i.test(normalizedBaseUrl)
       ? (process.env.VIVY_XAI_MODEL || process.env.XAI_MODEL || 'grok-4.3')
     : (/openrouter\.ai/i.test(normalizedBaseUrl)
@@ -1132,8 +1132,8 @@ function getVivyCloudProviderConfig(provider, options = {}) {
         ? (process.env.VIVY_SONG_GROQ_API_KEY || process.env.VIVY_GROQ_API_KEY || process.env.GROQ_API_KEY)
         : (process.env.VIVY_GROQ_API_KEY || process.env.GROQ_API_KEY),
       model: songMode
-        ? (process.env.VIVY_SONG_GROQ_MODEL || process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile')
-        : (process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'),
+        ? (process.env.VIVY_SONG_GROQ_MODEL || process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'openai/gpt-oss-120b')
+        : (process.env.VIVY_GROQ_MODEL || process.env.GROQ_MODEL || 'openai/gpt-oss-120b'),
       // Groq refuse en 413 des que le prompt depasse sa limite, et c'est arrive a
       // chaque chanson dans les journaux du 27/07. Le mecanisme de budget existait
       // (fitVivyChatRequestForBundle lit bundle.maxPromptChars), Groq n'avait
