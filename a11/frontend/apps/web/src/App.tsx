@@ -1232,7 +1232,52 @@ const DEFAULT_REMOTE_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
     provider: "openai",
     model: "meta-llama/llama-3.3-70b-instruct",
   },
+  // Qwen écrit bien le chinois et le japonais, là où Llama dérive (16/09/2026).
+  // Disponible chez Groq avec la clé de prod, vérifié par la liste des modèles.
+  {
+    value: "groq:qwen/qwen3.8-27b",
+    label: "Groq - Qwen 3.8 27B (chinois, japonais)",
+    provider: "groq",
+    model: "qwen/qwen3.8-27b",
+  },
 ];
+
+// Réglages IA calés sur la langue (16/09/2026, demande de Djeff). Quand la langue
+// change, le modèle du chat et la route voix prennent ceux de la langue ; un
+// réglage fait à la main est gardé POUR CETTE LANGUE et repris la fois suivante.
+// Aucune voix Piper japonaise ou chinoise : la voix cloud y est préférée quand le
+// compte y a droit.
+type LanguageAiPreset = { model: string; cloudVoice: boolean };
+const LANGUAGE_AI_PRESETS: Record<A11LanguageCode, LanguageAiPreset> = {
+  fr: { model: "groq:llama-3.3-70b-versatile", cloudVoice: false },
+  en: { model: "groq:llama-3.3-70b-versatile", cloudVoice: false },
+  es: { model: "groq:llama-3.3-70b-versatile", cloudVoice: false },
+  it: { model: "groq:llama-3.3-70b-versatile", cloudVoice: false },
+  de: { model: "groq:llama-3.3-70b-versatile", cloudVoice: false },
+  ja: { model: "groq:qwen/qwen3.8-27b", cloudVoice: true },
+  zh: { model: "groq:qwen/qwen3.8-27b", cloudVoice: true },
+};
+
+type LanguageAiOverride = { model?: string; ttsProviderMode?: TtsProviderMode };
+
+function readLanguageAiOverride(language: A11LanguageCode): LanguageAiOverride {
+  try {
+    const raw = localStorage.getItem(`a11:ai-override:${language}`);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeLanguageAiOverride(language: A11LanguageCode, patch: LanguageAiOverride) {
+  try {
+    const next = { ...readLanguageAiOverride(language), ...patch };
+    localStorage.setItem(`a11:ai-override:${language}`, JSON.stringify(next));
+  } catch {
+    // stockage indisponible : le réglage vaut pour la page ouverte
+  }
+}
 
 function buildChatModelChoices(remoteProfiles: RemoteProviderProfile[]) {
   const remoteChoices = remoteProfiles.map((profile) => ({
@@ -14925,7 +14970,33 @@ export function App() {
     textarea.style.height = "";
     textarea.style.overflowY = "";
   }, []);
-  const [model, setModel] = useState(DEFAULT_REMOTE_CHAT_MODEL_CHOICES[0].value);
+  const [model, setModel] = useState(() => {
+    try {
+      const language = normalizeA11LanguageCode(getAuthAccountLanguage(localStorage.getItem("a11:language") || "fr"));
+      return readLanguageAiOverride(language).model || LANGUAGE_AI_PRESETS[language].model;
+    } catch {
+      return DEFAULT_REMOTE_CHAT_MODEL_CHOICES[0].value;
+    }
+  });
+  // À chaque changement de langue : réglage à la main de cette langue s'il existe,
+  // sinon celui de la langue. La voix n'est touchée que là où la langue l'exige.
+  const aiLanguageRef = useRef<A11LanguageCode | null>(null);
+  useEffect(() => {
+    if (aiLanguageRef.current === a11Language) return;
+    const firstRender = aiLanguageRef.current === null;
+    aiLanguageRef.current = a11Language;
+    const override = readLanguageAiOverride(a11Language);
+    const preset = LANGUAGE_AI_PRESETS[a11Language];
+    if (!firstRender) setModel(override.model || preset.model);
+    if (override.ttsProviderMode) {
+      setTtsProviderMode(normalizeTtsProviderMode(override.ttsProviderMode, getDefaultTtsProviderMode(surfaceKind)));
+    } else if (preset.cloudVoice && canUseReadyMadeVoiceProviders) {
+      setTtsProviderMode("openai");
+    } else if (!firstRender && !preset.cloudVoice) {
+      // Pas la voix enregistrée : elle peut être celle imposée par la langue d'avant.
+      setTtsProviderMode(getDefaultTtsProviderMode(surfaceKind));
+    }
+  }, [a11Language, canUseReadyMadeVoiceProviders, surfaceKind]);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [remoteProviderProfiles, setRemoteProviderProfiles] = useState<RemoteProviderProfile[]>([]);
   const [loadingRemoteProviders, setLoadingRemoteProviders] = useState(false);
@@ -17967,7 +18038,11 @@ export function App() {
                       id="a11-chat-model"
                       name="chatModel"
                       value={model}
-                      onChange={(e) => setModel(e.target.value)}
+                      onChange={(e) => {
+                        setModel(e.target.value);
+                        // Réglage à la main : gardé pour cette langue.
+                        writeLanguageAiOverride(a11Language, { model: e.target.value });
+                      }}
                       style={{ ...headerSelectStyle, width: "100%", maxWidth: "100%" }}
                     >
                       {chatModelChoices.map((choice) => (
@@ -17997,13 +18072,20 @@ export function App() {
                     <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.35 }}>
                       {`Chat, micro, transcription audio et voix ${productName} utilisent cette langue.`}
                     </div>
+                    <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.35 }}>
+                      Le modèle et la voix se calent sur la langue choisie ; un réglage fait à la main est gardé pour cette langue.
+                    </div>
                     <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#cbd5e1", fontWeight: 800 }}>
                       Voix IA
                       <select
                         id="a11-tts-provider-mode"
                         name="ttsProviderMode"
                         value={ttsProviderMode}
-                        onChange={(e) => setTtsProviderMode(normalizeTtsProviderMode(e.target.value, getDefaultTtsProviderMode(surfaceKind)))}
+                        onChange={(e) => {
+                          const next = normalizeTtsProviderMode(e.target.value, getDefaultTtsProviderMode(surfaceKind));
+                          setTtsProviderMode(next);
+                          writeLanguageAiOverride(a11Language, { ttsProviderMode: next });
+                        }}
                         style={{ ...headerSelectStyle, width: "100%", maxWidth: "100%" }}
                         title="Choisir la route voix pour cette IA"
                       >
