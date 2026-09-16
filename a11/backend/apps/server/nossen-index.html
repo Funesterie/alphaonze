@@ -22,6 +22,11 @@ nav a:hover{color:var(--cyan)}
 .btn-clip{background:linear-gradient(135deg,var(--accent),var(--pink));color:#fff}
 .btn-full{background:linear-gradient(135deg,var(--gold),#f59e0b);color:#111;font-weight:800}
 .btn-full.locked{opacity:.3;cursor:not-allowed}
+.btn-manga{background:linear-gradient(135deg,#7c3aed,#db2777);color:#fff;font-weight:800}
+.manga-script{margin:.4rem 0}
+.manga-script textarea{resize:vertical;min-height:4rem;font-family:inherit;line-height:1.4}
+.manga-scenes{display:flex;align-items:center;gap:.4rem;font-size:.65rem;color:var(--muted);margin-top:.3rem}
+.manga-scenes input{width:5rem;padding:.3rem;background:#0a0a12;border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.75rem}
 select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.78rem}
 .input-url::placeholder{color:var(--muted)}
 .or{text-align:center;font-size:.6rem;color:var(--muted);margin:.2rem 0}
@@ -136,10 +141,20 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
   <select id="rendu">
     <option value="film" data-i18n="render.film">🎬 Clip film (prises de vue réelles)</option>
     <option value="anime" data-i18n="render.anime">🎌 Clip manga (anime)</option>
+    <option value="manga" data-i18n="render.manga">📖 Planches manga (depuis un script)</option>
   </select>
+  <div class="manga-script" id="manga-script-box" hidden>
+    <div class="or" data-i18n="manga.scriptHint">— écris ton scénario, K44 l'étoffe et A11 le découpe en planches —</div>
+    <textarea class="input-url" id="manga-script" rows="5" placeholder="Écris ton idée, ton synopsis ou ton scénario ici… (ex : Djeff explore une station spatiale abandonnée et trouve un signal mystérieux)" data-i18n-placeholder="manga.scriptPlaceholder"></textarea>
+    <label class="manga-scenes">
+      <span data-i18n="manga.scenes">Nombre de planches</span>
+      <input type="number" id="manga-scenes" min="3" max="40" value="8">
+    </label>
+  </div>
   <div class="produce-row">
     <button class="btn btn-clip" id="go-clip">Clip</button>
     <button class="btn btn-full" id="go-full">Full Clip ✨</button>
+    <button class="btn btn-manga" id="go-manga" hidden>📖 Générer les planches</button>
   </div>
   <div class="credits" id="credits"></div>
   <div class="packs" id="packs" hidden></div>
@@ -237,6 +252,11 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "cast.full": "🌟 Full cast (toutes les voix)",
       "render.film": "🎬 Clip film (prises de vue réelles)",
       "render.anime": "🎌 Clip manga (anime)",
+      "render.manga": "📖 Planches manga (depuis un script)",
+      "manga.scriptHint": "— écris ton scénario, K44 l'étoffe et A11 le découpe en planches —",
+      "manga.scriptPlaceholder": "Écris ton idée, ton synopsis ou ton scénario ici… (ex : Djeff explore une station spatiale abandonnée et trouve un signal mystérieux)",
+      "manga.scenes": "Nombre de planches",
+      "manga.scriptTooShort": "✍️ Écris au moins un synopsis (une ou deux phrases) pour lancer les planches.",
       "produce.info1": "Clip = aperçu vidéo court · Full Clip = clip vidéo complet sur toute la chanson · payés en crédits (seuls les plans livrés sont facturés)",
       "produce.info2": "Mode libre : l'IA analyse les paroles et choisit le thème visuel.",
       "fiche.title": "🙋 Ma fiche",
@@ -378,6 +398,11 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "cast.full": "🌟 Full cast (all voices)",
       "render.film": "🎬 Film video (live action)",
       "render.anime": "🎌 Manga video (anime)",
+      "render.manga": "📖 Manga panels (from a script)",
+      "manga.scriptHint": "— write your storyline, K44 fleshes it out and A11 cuts it into panels —",
+      "manga.scriptPlaceholder": "Write your idea, synopsis or script here… (e.g. Djeff explores an abandoned space station and finds a mysterious signal)",
+      "manga.scenes": "Number of panels",
+      "manga.scriptTooShort": "✍️ Write at least a synopsis (a sentence or two) to generate the panels.",
       "produce.info1": "Clip = short video preview · Full Clip = complete video over the whole song · paid in credits (only delivered shots are charged)",
       "produce.info2": "Free mode: the AI reads the lyrics and picks the visual theme.",
       "fiche.title": "🙋 My profile",
@@ -519,6 +544,11 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "cast.full": "🌟 Reparto completo (todas las voces)",
       "render.film": "🎬 Videoclip de película (imagen real)",
       "render.anime": "🎌 Videoclip manga (anime)",
+      "render.manga": "📖 Láminas manga (desde un guion)",
+      "manga.scriptHint": "— escribe tu guion, K44 lo desarrolla y A11 lo divide en láminas —",
+      "manga.scriptPlaceholder": "Escribe tu idea, sinopsis o guion aquí… (ej.: Djeff explora una estación espacial abandonada y encuentra una señal misteriosa)",
+      "manga.scenes": "Número de láminas",
+      "manga.scriptTooShort": "✍️ Escribe al menos una sinopsis (una o dos frases) para generar las láminas.",
       "produce.info1": "Clip = vista previa corta · Full Clip = videoclip completo de toda la canción · se paga en créditos (solo se cobran los planos entregados)",
       "produce.info2": "Modo libre: la IA analiza la letra y elige el tema visual.",
       "fiche.title": "🙋 Mi ficha",
@@ -660,6 +690,11 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "cast.full": "🌟 Cast completo (tutte le voci)",
       "render.film": "🎬 Videoclip film (riprese reali)",
       "render.anime": "🎌 Videoclip manga (anime)",
+      "render.manga": "📖 Tavole manga (da un copione)",
+      "manga.scriptHint": "— scrivi la tua sceneggiatura, K44 la sviluppa e A11 la divide in tavole —",
+      "manga.scriptPlaceholder": "Scrivi la tua idea, la sinossi o la sceneggiatura qui… (es.: Djeff esplora una stazione spaziale abbandonata e trova un segnale misterioso)",
+      "manga.scenes": "Numero di tavole",
+      "manga.scriptTooShort": "✍️ Scrivi almeno una sinossi (una o due frasi) per generare le tavole.",
       "produce.info1": "Clip = anteprima video breve · Full Clip = videoclip completo su tutta la canzone · pagati in crediti (si pagano solo le inquadrature consegnate)",
       "produce.info2": "Modalità libera: l'IA analizza il testo e sceglie il tema visivo.",
       "fiche.title": "🙋 La mia scheda",
@@ -801,6 +836,11 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "cast.full": "🌟 Volle Besetzung (alle Stimmen)",
       "render.film": "🎬 Film-Video (Realaufnahmen)",
       "render.anime": "🎌 Manga-Video (Anime)",
+      "render.manga": "📖 Manga-Seiten (aus einem Skript)",
+      "manga.scriptHint": "— schreib deine Story, K44 baut sie aus und A11 schneidet sie in Seiten —",
+      "manga.scriptPlaceholder": "Schreib hier deine Idee, Synopsis oder dein Skript… (z. B. Djeff erkundet eine verlassene Raumstation und findet ein mysteriöses Signal)",
+      "manga.scenes": "Anzahl der Seiten",
+      "manga.scriptTooShort": "✍️ Schreib mindestens eine Synopsis (ein bis zwei Sätze), um die Seiten zu erzeugen.",
       "produce.info1": "Clip = kurze Videovorschau · Full Clip = komplettes Video über den ganzen Song · Bezahlung mit Credits (nur gelieferte Einstellungen werden berechnet)",
       "produce.info2": "Freier Modus: Die KI analysiert den Songtext und wählt das visuelle Thema.",
       "fiche.title": "🙋 Mein Profil",
@@ -942,6 +982,11 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "cast.full": "🌟 フルキャスト（全ボイス）",
       "render.film": "🎬 実写ビデオ",
       "render.anime": "🎌 マンガビデオ（アニメ）",
+      "render.manga": "📖 マンガのページ（脚本から）",
+      "manga.scriptHint": "— あらすじを書けば、K44 が膨らませ、A11 がページに分割します —",
+      "manga.scriptPlaceholder": "アイデア、あらすじ、脚本をここに書いてください…（例：Djeff が廃棄された宇宙ステーションを探索し、謎の信号を見つける）",
+      "manga.scenes": "ページ数",
+      "manga.scriptTooShort": "✍️ ページを生成するには、少なくともあらすじ（1〜2文）を書いてください。",
       "produce.info1": "Clip＝短いプレビュー動画 · Full Clip＝曲全体の完全なビデオ · クレジットで支払い（納品されたカットのみ課金）",
       "produce.info2": "おまかせ：AIが歌詞を読み、映像のテーマを選びます。",
       "fiche.title": "🙋 マイプロフィール",
@@ -1083,6 +1128,11 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "cast.full": "🌟 全体阵容（所有声音）",
       "render.film": "🎬 电影视频（真人实拍）",
       "render.anime": "🎌 漫画视频（动画）",
+      "render.manga": "📖 漫画分镜（来自剧本）",
+      "manga.scriptHint": "— 写下你的剧情，K44 充实它，A11 把它切分成分镜 —",
+      "manga.scriptPlaceholder": "在此写下你的想法、梗概或剧本……（例如：Djeff 探索一座废弃的空间站，发现了一个神秘信号）",
+      "manga.scenes": "分镜数量",
+      "manga.scriptTooShort": "✍️ 请至少写一段梗概（一两句话）来生成分镜。",
       "produce.info1": "Clip＝短视频预览 · Full Clip＝覆盖整首歌的完整视频 · 使用积分支付（只对交付的镜头收费）",
       "produce.info2": "自由模式：AI 会分析歌词并选择视觉主题。",
       "fiche.title": "🙋 我的档案",
@@ -1818,6 +1868,21 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
   }
 
   function startClip(mode) {
+    // Mode manga (16/09/2026) : planches depuis un script, pas de chanson ni de
+    // réserve à estimer. On lance directement avec le texte du scénario.
+    if (mode === "manga") {
+      var scriptEl = document.getElementById("manga-script");
+      var scriptTxt = scriptEl ? String(scriptEl.value || "").trim() : "";
+      if (scriptTxt.length < 20) {
+        document.getElementById("msg").textContent = t("manga.scriptTooShort");
+        return;
+      }
+      var scenesEl = document.getElementById("manga-scenes");
+      var nbScenes = scenesEl ? Math.max(3, Math.min(40, Number(scenesEl.value) || 8)) : 8;
+      lancerClip("manga", { type: "script", scriptText: scriptTxt, sceneCount: nbScenes, title: scriptTxt.slice(0, 40) });
+      return;
+    }
+
     var source = getSelectedAudioSource();
     if (!source) {
       document.getElementById("msg").textContent = t("clip.chooseSong");
@@ -1861,12 +1926,51 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
   function lancerClip(mode, source) {
     var goClip = document.getElementById("go-clip");
     var goFull = document.getElementById("go-full");
+    var goManga = document.getElementById("go-manga");
     goClip.disabled = true;
     goFull.disabled = true;
-    var label = mode === "full" ? "Full Clip" : "Clip";
+    if (goManga) goManga.disabled = true;
+    var label = mode === "manga" ? "Manga" : (mode === "full" ? "Full Clip" : "Clip");
     document.getElementById("msg").textContent = "\u23F3 " + t("clip.launching", label);
     document.getElementById("bar").classList.add("on");
     document.getElementById("fill").style.width = "5%";
+
+    // Mode manga : payload script (K44 scénario + A11 planches), pas d'audio.
+    if (mode === "manga") {
+      var castingM = document.getElementById("casting").value;
+      var allVoicesM = ["djeff", "vivy", "grok", "a11", "kaen44", "claude", "chatgpt", "kiro", "codex", "gemini", "deepseek", "mistral"];
+      var leadM = castingM === "random-lead" ? allVoicesM[Math.floor(Math.random() * allVoicesM.length)] : null;
+      var castM = leadM || castingM;
+      var payloadM = {
+        mode: "script",
+        render: "manga",
+        scriptText: source.scriptText,
+        sceneCount: source.sceneCount || 8,
+        title: truncate(source.title || "manga", 40),
+        casting: castM,
+        preserveSelectedVoice: true,
+        voiceCatalogName: castM === "auto" ? "" : (castM === "full" ? "djeff" : castM),
+        multiVoice: castM === "auto" || castM === "full" ? [] : [castM]
+      };
+      api("/api/mcp-bridge/clip/start", payloadM).then(function(d) {
+        if (d.ok) {
+          document.getElementById("msg").textContent = t("clip.running", label);
+          pollJob(d.jobId, mode);
+          refreshCredits();
+        } else {
+          document.getElementById("msg").textContent = "\u274C " + (d.message || d.error || t("clip.unknownError"));
+          goClip.disabled = false;
+          if (goManga) goManga.disabled = false;
+          updateFullClipButton();
+        }
+      }).catch(function(e) {
+        document.getElementById("msg").textContent = "\u274C " + ((e && e.message) || t("clip.unknownError"));
+        goClip.disabled = false;
+        if (goManga) goManga.disabled = false;
+        updateFullClipButton();
+      });
+      return;
+    }
 
     var vibe = document.getElementById("vibe").value;
     var rendu = document.getElementById("rendu") ? document.getElementById("rendu").value : "film";
@@ -1963,12 +2067,14 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
     if (options.clearState !== false) clearPollState();
     if (options.enableButtons !== false) {
       document.getElementById("go-clip").disabled = false;
+      var gm = document.getElementById("go-manga");
+      if (gm) gm.disabled = false;
       updateFullClipButton();
     }
   }
 
   function pollJob(id, mode, previousStartedAt) {
-    var label = mode === "full" ? "Full Clip" : "Clip";
+    var label = mode === "manga" ? "Manga" : (mode === "full" ? "Full Clip" : "Clip");
     var maxDuration = mode === "full" ? POLL_FULL_MAX_MS : POLL_CLIP_MAX_MS;
     var startedAt = Number(previousStartedAt) || Date.now();
     var consecutiveFailures = 0;
@@ -2330,6 +2436,26 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
 
   document.getElementById("go-clip").addEventListener("click", function() { startClip("clip"); });
   document.getElementById("go-full").addEventListener("click", function() { startClip("full"); });
+  var goManga = document.getElementById("go-manga");
+  if (goManga) goManga.addEventListener("click", function() { startClip("manga"); });
+
+  // Mode manga : le rendu "manga" cache la partie chanson (planches muettes,
+  // depuis un script) et montre la zone de texte + le bouton dédié.
+  function majModeManga() {
+    var rendu = document.getElementById("rendu");
+    var estManga = rendu && rendu.value === "manga";
+    var box = document.getElementById("manga-script-box");
+    var btnManga = document.getElementById("go-manga");
+    var btnClip = document.getElementById("go-clip");
+    var btnFull = document.getElementById("go-full");
+    if (box) box.hidden = !estManga;
+    if (btnManga) btnManga.hidden = !estManga;
+    if (btnClip) btnClip.hidden = estManga;
+    if (btnFull) btnFull.hidden = estManga;
+  }
+  var renduSelect = document.getElementById("rendu");
+  if (renduSelect) renduSelect.addEventListener("change", majModeManga);
+  majModeManga();
 
   document.getElementById("import-file").addEventListener("change", function(e) {
     var file = e.target.files[0];
