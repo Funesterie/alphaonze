@@ -13,7 +13,7 @@ const {
   buildVoicePersonaInstruction,
   getDefaultVoiceProviderForPersona,
   getReadyVoiceProfile,
-  IDENTITIES_WITHOUT_SPEAKING_VOICE,
+  getAgentVoiceProfile,
   isLegacyCloudTtsProvider,
   isLegacyCloudTtsProviderEnabled,
   isProviderRuntimeConfigured,
@@ -1057,20 +1057,65 @@ function enforceBasicTtsCostPolicy(req = {}, body = {}) {
   };
 }
 
-// `surface` n'est pas lu ici : c'est un nom d'écran, pas une demande de voix.
-function getIdentityPersonaWithoutVoice(body = {}) {
-  const raw = String(body?.voicePersona || body?.ttsPersona || body?.persona || '').trim().toLowerCase();
-  return IDENTITIES_WITHOUT_SPEAKING_VOICE.has(raw) ? raw : '';
+// Voix des agents du casting (Kiro, Codex, Soleil...). `surface` n'est pas lu :
+// c'est un nom d'écran, pas une demande de voix.
+function getAgentVoicePersonaFromBody(body = {}) {
+  return getAgentVoiceProfile(body?.voicePersona || body?.ttsPersona || body?.persona || '');
 }
 
-function buildIdentityVoiceMissingPayload(persona) {
+// Pourquoi la voix d'un agent ne peut pas être produite, ou '' si elle le peut.
+function getAgentVoiceUnavailableReason(body = {}) {
+  if (!allowsPaidTtsVoiceForBody(body)) return 'agent_voice_not_allowed';
+  const flag = String(process.env.A11_OPENAI_TTS_ENABLED || process.env.OPENAI_TTS_ENABLED || '').trim().toLowerCase();
+  if (flag === '0' || flag === 'false' || flag === 'off') return 'agent_voice_provider_disabled';
+  if (!getOpenAiTtsApiKey()) return 'agent_voice_provider_missing';
+  return '';
+}
+
+function buildAgentVoiceUnavailablePayload(profile, reason, detail = '') {
+  const messages = {
+    agent_voice_not_allowed: `La voix de ${profile.label} est réservée aux comptes Premium et plus.`,
+    agent_voice_provider_disabled: `La voix de ${profile.label} est coupée sur ce serveur (OpenAI TTS désactivé).`,
+    agent_voice_provider_missing: `La voix de ${profile.label} n'est pas configurée sur ce serveur (clé OpenAI TTS absente).`,
+    agent_voice_failed: `La voix de ${profile.label} n'a pas pu être produite.`,
+  };
   return {
     ok: false,
-    error: 'identity_voice_missing',
-    message: `${persona} n'a pas encore de voix parlée. Aucune voix de remplacement n'est utilisée.`,
-    persona,
-    diagnostic: 'identity_voice_missing',
+    error: 'identity_voice_unavailable',
+    message: `${messages[reason] || messages.agent_voice_failed} Aucune voix de remplacement n'est utilisée.`,
+    persona: profile.persona,
+    provider: PROVIDERS.OPENAI,
+    diagnostic: reason,
+    ...(detail ? { detail } : {}),
   };
+}
+
+// Chemin direct : la voix de l'agent, sinon un refus. Ni conversion RVC (qui
+// rendrait le timbre d'A11), ni Piper, ni référence WAV d'une autre persona.
+async function respondWithAgentVoice(req, res, body, profile) {
+  const reason = getAgentVoiceUnavailableReason(body);
+  if (reason) return res.status(424).json(buildAgentVoiceUnavailablePayload(profile, reason));
+  const vocalMode = normalizeVocalMode(body);
+  const readableText = shapeTextForVocalMode(buildTtsReadableText(String(body?.text || '').trim()), vocalMode);
+  if (!readableText) return res.status(400).json({ ok: false, error: 'text_missing' });
+  try {
+    const spoken = await requestOpenAiTts(readableText, { ...body, openAiVoice: profile.openAiVoice }, {
+      vocalMode,
+      user: req.user || null,
+      agentVoice: profile,
+    });
+    const payload = await polishTtsPayloadAudio({
+      ...spoken,
+      persona: profile.persona,
+      text: readableText,
+      vocalMode,
+    }, req, vocalMode);
+    return sendTtsPayloadResponse(req, res, payload);
+  } catch (error_) {
+    const detail = String(error_?.message || error_).slice(0, 160);
+    console.warn(`[TTS][agent:${profile.persona}] voix indisponible:`, detail);
+    return res.status(424).json(buildAgentVoiceUnavailablePayload(profile, 'agent_voice_failed', detail));
+  }
 }
 
 function shouldRejectBlockedOfficialIdentityRequest(body = {}) {
@@ -3567,7 +3612,8 @@ async function requestOpenAiTts(text, body = {}, options = {}) {
   const explicitPersona = getExplicitTtsPersonaFromBody(body || {});
   const readyVoice = getReadyVoiceProfile(persona, PROVIDERS.OPENAI);
   const preferredVoiceStyle = getPreferredVoiceReferenceLabelFromBody(body || {}, persona);
-  const reference = resolveVoiceReferenceForRequest({
+  const agentVoice = options.agentVoice || null;
+  const reference = agentVoice ? null : resolveVoiceReferenceForRequest({
     user: options.user || null,
     requestedId: String(body?.voiceReferenceId || body?.voiceRefId || body?.referenceId || '').trim(),
     preferredLabel: preferredVoiceStyle,
@@ -3602,7 +3648,9 @@ async function requestOpenAiTts(text, body = {}, options = {}) {
         model: candidateModel,
         voice,
         input: String(text || '').slice(0, 4096),
-        instructions: buildOpenAiTtsInstructions({ vocalMode, reference, persona }),
+        instructions: agentVoice
+          ? agentVoice.prompt
+          : buildOpenAiTtsInstructions({ vocalMode, reference, persona }),
         response_format: responseFormat,
       }),
       signal: AbortSignal.timeout(Number(process.env.OPENAI_TTS_TIMEOUT_MS || 18000) || 18000),
@@ -4921,9 +4969,9 @@ async function handleTtsSpeakRequest(req, res) {
     if (shouldRejectBlockedOfficialIdentityRequest(requestBody)) {
       return res.status(424).json(buildBlockedOfficialIdentityPayload(requestBody));
     }
-    const identityWithoutVoice = getIdentityPersonaWithoutVoice(requestBody);
-    if (identityWithoutVoice) {
-      return res.status(424).json(buildIdentityVoiceMissingPayload(identityWithoutVoice));
+    const agentVoice = getAgentVoicePersonaFromBody(requestBody);
+    if (agentVoice) {
+      return respondWithAgentVoice(req, res, requestBody, agentVoice);
     }
     const text = String(requestBody?.text || '').trim();
     const vocalMode = normalizeVocalMode(requestBody || {});
@@ -5335,9 +5383,12 @@ function startTtsAsyncJob(req, res, options = {}) {
   if (shouldRejectBlockedOfficialIdentityRequest(requestBody)) {
     return res.status(424).json(buildBlockedOfficialIdentityPayload(requestBody));
   }
-  const identityWithoutVoice = getIdentityPersonaWithoutVoice(requestBody);
-  if (identityWithoutVoice) {
-    return res.status(424).json(buildIdentityVoiceMissingPayload(identityWithoutVoice));
+  const agentVoice = getAgentVoicePersonaFromBody(requestBody);
+  if (agentVoice) {
+    const agentVoiceReason = getAgentVoiceUnavailableReason(requestBody);
+    if (agentVoiceReason) return res.status(424).json(buildAgentVoiceUnavailablePayload(agentVoice, agentVoiceReason));
+    // Le worker GPU local ne porte que les références WAV d'A11/K44/Vivy.
+    requestBody.disableLocalGpuWorker = true;
   }
   const body = buildAsyncTtsJobBody(requestBody);
   const routeToLocalGpu = shouldRouteTtsJobToLocalGpuWorker(body);
@@ -5662,9 +5713,9 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
   if (shouldRejectBlockedOfficialIdentityRequest(requestBody)) {
     return res.status(424).json(buildBlockedOfficialIdentityPayload(requestBody));
   }
-  const identityWithoutVoice = getIdentityPersonaWithoutVoice(requestBody);
-  if (identityWithoutVoice) {
-    return res.status(424).json(buildIdentityVoiceMissingPayload(identityWithoutVoice));
+  const agentVoice = getAgentVoicePersonaFromBody(requestBody);
+  if (agentVoice && !(wantsAsyncTtsJob(requestBody) && String(req.headers?.['x-a11-internal-tts-job'] || '') !== '1')) {
+    return respondWithAgentVoice(req, res, requestBody, agentVoice);
   }
   if (wantsAsyncTtsJob(requestBody) && String(req.headers?.['x-a11-internal-tts-job'] || '') !== '1') {
     return startTtsAsyncJob(req, res);

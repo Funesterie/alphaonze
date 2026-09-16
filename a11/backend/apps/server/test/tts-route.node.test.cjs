@@ -4866,17 +4866,48 @@ test('tts route blocks neutral Piper fallback for official Vivy identity voice',
   }
 });
 
-test('tts speak route refuses a cast identity without its own voice instead of lending A11 voice', async () => {
+test('tts speak route gives each cast agent its own voice and never lends A11 voice', async () => {
+  const envKeys = [
+    'OPENAI_TTS_API_KEY', 'A11_OPENAI_TTS_API_KEY', 'OPENAI_API_KEY', 'A11_OPENAI_API_KEY',
+    'OPENAI_TTS_BASE_URL', 'A11_OPENAI_TTS_ENABLED', 'OPENAI_TTS_ENABLED',
+  ];
+  const previousEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
   const previousFetch = global.fetch;
-  const outboundCalls = [];
+  const wav = createPcm16Wav();
+  const openAiBodies = [];
+  const otherCalls = [];
+  let openAiStatus = 200;
+
+  for (const key of envKeys) delete process.env[key];
+  process.env.OPENAI_TTS_API_KEY = 'test-openai-tts-key';
+  process.env.OPENAI_TTS_BASE_URL = 'https://api.openai.test/v1';
+
   global.fetch = async (url, options = {}) => {
     const value = String(url);
+    if (value === 'https://api.openai.test/v1/audio/speech') {
+      openAiBodies.push(JSON.parse(String(options.body || '{}')));
+      return {
+        ok: openAiStatus === 200,
+        status: openAiStatus,
+        async arrayBuffer() { return wav; },
+      };
+    }
     if (!value.startsWith('http://127.0.0.1:')) {
-      outboundCalls.push(value);
+      otherCalls.push(value);
       throw new Error(`unexpected_tts_call:${value}`);
     }
     return previousFetch(url, options);
   };
+
+  const speak = (baseUrl, route, persona, extra = {}) => postJson(baseUrl, route, {
+    text: 'Build vert, on envoie.',
+    persona,
+    voicePersona: persona,
+    identityVoice: true,
+    useIdentityVoice: true,
+    voicePolish: false,
+    ...extra,
+  });
 
   try {
     await withServer(
@@ -4885,34 +4916,60 @@ test('tts speak route refuses a cast identity without its own voice instead of l
         app.use('/api', ttsRouter);
       },
       async (baseUrl) => {
-        for (const persona of ['kiro', 'chatgpt', 'Kiro']) {
+        const expected = { kiro: 'ash', codex: 'cedar', soleil: 'marin', Grok: 'verse' };
+        for (const [persona, voice] of Object.entries(expected)) {
           for (const route of ['/api/tts/speak', '/api/tts/piper']) {
-            const result = await postJson(baseUrl, route, {
-              text: 'Build vert, on envoie.',
-              persona,
-              voicePersona: persona,
-              identityVoice: true,
-              useIdentityVoice: true,
-            });
-            assert.equal(result.response.status, 424, `${route} ${persona}`);
-            assert.equal(result.json.error, 'identity_voice_missing');
-            assert.equal(result.json.persona, persona.toLowerCase());
+            openAiBodies.length = 0;
+            const result = await speak(baseUrl, route, persona);
+            assert.equal(result.response.status, 200, `${route} ${persona}`);
+            assert.equal(openAiBodies.length, 1);
+            assert.equal(openAiBodies[0].voice, voice);
+            assert.notEqual(openAiBodies[0].voice, 'onyx');
+            assert.doesNotMatch(openAiBodies[0].instructions, /A11/);
           }
         }
+        assert.match(openAiBodies[0].instructions, /Grok/);
 
-        assert.deepEqual(outboundCalls, []);
+        // Le fournisseur tombe : refus explicite, pas de Piper ni de conversion.
+        openAiStatus = 500;
+        const failed = await speak(baseUrl, '/api/tts/speak', 'kiro');
+        assert.equal(failed.response.status, 424);
+        assert.equal(failed.json.error, 'identity_voice_unavailable');
+        assert.equal(failed.json.diagnostic, 'agent_voice_failed');
+        openAiStatus = 200;
 
-        // Un nom d'écran dans `surface` ne doit pas déclencher le refus.
+        // Pas de clé : refus avant tout appel.
+        delete process.env.OPENAI_TTS_API_KEY;
+        openAiBodies.length = 0;
+        const missing = await speak(baseUrl, '/api/tts/speak', 'codex');
+        assert.equal(missing.response.status, 424);
+        assert.equal(missing.json.diagnostic, 'agent_voice_provider_missing');
+        assert.equal(missing.json.persona, 'codex');
+        assert.equal(openAiBodies.length, 0);
+
+        // Compte Basic : la voix d'un agent est une voix cloud payante.
+        process.env.OPENAI_TTS_API_KEY = 'test-openai-tts-key';
+        const basic = await speak(baseUrl, '/api/tts/speak', 'kiro', { allowPaidTtsVoice: false });
+        assert.equal(basic.response.status, 424);
+        assert.equal(basic.json.diagnostic, 'agent_voice_not_allowed');
+
+        assert.deepEqual(otherCalls, []);
+
+        // Un nom d'écran dans `surface` ne déclenche pas la voix d'agent.
         const bySurface = await postJson(baseUrl, '/api/tts/speak', {
           text: 'Salut.',
           surface: 'claude',
           provider: 'piper',
           neutralVoice: true,
         });
-        assert.notEqual(bySurface.json?.error, 'identity_voice_missing');
+        assert.notEqual(bySurface.json?.error, 'identity_voice_unavailable');
       }
     );
   } finally {
     global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });

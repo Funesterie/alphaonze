@@ -350,3 +350,23 @@ describe('voice-provider-manifest', () => {
     });
   });
 });
+
+it('each cast agent has its own speaking voice, never shared with A11, K44 or Vivy', () => {
+  const {
+    AGENT_VOICE_PROFILES,
+    OFFICIAL_READY_VOICE_PROFILES,
+    normalizeAgentVoicePersona,
+    getAgentVoiceProfile,
+  } = require('../src/tts/voice-provider-manifest.cjs');
+  const officialVoices = new Set(Object.values(OFFICIAL_READY_VOICE_PROFILES).map((profile) => profile.openAiVoice));
+  const agentVoices = Object.values(AGENT_VOICE_PROFILES).map((profile) => profile.openAiVoice);
+  assert.equal(new Set(agentVoices).size, agentVoices.length, 'deux agents partagent une voix');
+  for (const voice of agentVoices) assert.ok(!officialVoices.has(voice), `${voice} appartient deja a A11/K44/Vivy`);
+  for (const profile of Object.values(AGENT_VOICE_PROFILES)) {
+    assert.ok(profile.prompt.length > 40, `${profile.persona} sans consigne de jeu`);
+  }
+  assert.equal(normalizeAgentVoicePersona('Soleil'), 'chatgpt');
+  assert.equal(normalizeAgentVoicePersona('a11'), '');
+  assert.equal(normalizeAgentVoicePersona('kaen44'), '');
+  assert.equal(getAgentVoiceProfile('vivy'), null);
+});

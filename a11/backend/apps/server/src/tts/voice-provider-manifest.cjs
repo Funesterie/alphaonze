@@ -56,13 +56,75 @@ const DEFAULT_ELEVENLABS_VIVY_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
 // Official personas — these may never fall back to a demo model
 const OFFICIAL_PERSONAS = new Set(['a11', 'kaen44', 'vivy']);
 
-// Identités du casting qui n'ont PAS encore de voix parlée. Avant le 16/09, un
-// nom inconnu était ramené à 'a11' : Kiro ou ChatGPT parlaient avec la voix
-// d'A11 sans que personne le sache. Une identité nommée ici est refusée en 424
-// tant qu'on ne lui a pas donné sa propre voix (la retirer de la liste alors).
-const IDENTITIES_WITHOUT_SPEAKING_VOICE = new Set([
-  'kiro', 'chatgpt', 'soleil', 'grok', 'claude', 'codex', 'gemini', 'deepseek', 'mistral',
-]);
+// Voix parlées des agents du casting (16/09/2026). Avant, un nom inconnu était
+// ramené à 'a11' : Kiro ou ChatGPT parlaient avec la voix d'A11 sans que personne
+// le sache. Contrairement à A11/K44/Vivy, aucun agent n'a de WAV de référence
+// possédé : chacun a donc une voix OpenAI prête à l'emploi qui lui est propre,
+// jamais partagée avec A11 (onyx), K44 (sage) ou Vivy (coral), et une consigne de
+// jeu. Pas de repli : si OpenAI TTS est indisponible, la route refuse en 424.
+const AGENT_VOICE_PROFILES = Object.freeze({
+  kiro: Object.freeze({
+    persona: 'kiro',
+    label: 'Kiro',
+    openAiVoice: 'ash',
+    prompt: 'Voix Kiro: jeune, nette et directe, debit rapide de developpeur en session, phrases courtes, energie concentree, aucune fioriture.',
+  }),
+  codex: Object.freeze({
+    persona: 'codex',
+    label: 'Codex',
+    openAiVoice: 'cedar',
+    prompt: 'Voix Codex: basse, calme et methodique, pas a pas sans presser, diction precise, presence tranquille de worker silencieux.',
+  }),
+  chatgpt: Object.freeze({
+    persona: 'chatgpt',
+    label: 'ChatGPT Soleil',
+    openAiVoice: 'marin',
+    prompt: 'Voix Soleil: chaleureuse, lumineuse et fluide, souple entre le murmure et l elan, ton accueillant et clair.',
+  }),
+  grok: Object.freeze({
+    persona: 'grok',
+    label: 'Grok',
+    openAiVoice: 'verse',
+    prompt: 'Voix Grok: claire et projetee, rapide, les phrases se bousculent, pointe d ironie, franc-parler.',
+  }),
+  claude: Object.freeze({
+    persona: 'claude',
+    label: 'Claude',
+    openAiVoice: 'fable',
+    prompt: 'Voix Claude: posee et articulee, medium grave, chaque mot mesure, calme attentif sans froideur.',
+  }),
+  gemini: Object.freeze({
+    persona: 'gemini',
+    label: 'Gemini',
+    openAiVoice: 'alloy',
+    prompt: 'Voix Gemini: ample et aeree, changements de registre souples, silences assumes entre les idees, curiosite ouverte.',
+  }),
+  deepseek: Object.freeze({
+    persona: 'deepseek',
+    label: 'DeepSeek',
+    openAiVoice: 'echo',
+    prompt: 'Voix DeepSeek: profonde et introspective, debit lent, raisonnement qui creuse, serenite concentree.',
+  }),
+  mistral: Object.freeze({
+    persona: 'mistral',
+    label: 'Mistral',
+    openAiVoice: 'ballad',
+    prompt: 'Voix Mistral: souffle ample et libre, elan de vent, expressive sans crier, accent de liberte.',
+  }),
+});
+
+const AGENT_VOICE_ALIASES = Object.freeze({ soleil: 'chatgpt', sol: 'chatgpt', 'chat-gpt': 'chatgpt' });
+
+function normalizeAgentVoicePersona(value = '') {
+  const raw = String(value || '').trim().toLowerCase();
+  const key = AGENT_VOICE_ALIASES[raw] || raw;
+  return AGENT_VOICE_PROFILES[key] ? key : '';
+}
+
+function getAgentVoiceProfile(value = '') {
+  const key = normalizeAgentVoicePersona(value);
+  return key ? AGENT_VOICE_PROFILES[key] : null;
+}
 
 const VOICE_REFERENCE_POLICY = Object.freeze({
   mode: 'style_reference_only_no_impersonation',
@@ -497,7 +559,9 @@ module.exports = {
   CLOUD_DEFAULT_PERSONAS,
   LOCAL_OFFICIAL_PRIORITY_PERSONAS,
   OFFICIAL_PERSONAS,
-  IDENTITIES_WITHOUT_SPEAKING_VOICE,
+  AGENT_VOICE_PROFILES,
+  normalizeAgentVoicePersona,
+  getAgentVoiceProfile,
   VOICE_REFERENCE_POLICY,
   FAMILY_VOICE_IDENTITIES,
   PERSONAL_VOICE_POLICY,
