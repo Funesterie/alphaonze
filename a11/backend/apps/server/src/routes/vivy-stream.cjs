@@ -2049,6 +2049,19 @@ function buildOverlayHtml() {
   }
 }
 
+function buildControlDeckHtml() {
+  const controlPath = path.join(__dirname, '../../public/vivy-live-control.html');
+  try {
+    return fs.readFileSync(controlPath, 'utf8');
+  } catch {
+    return '<!doctype html><meta charset="utf-8"><title>Regie Vivy Live</title>'
+      + '<body style="font-family:system-ui;background:#060409;color:#fff8ff;padding:24px">'
+      + '<h1>Regie Vivy Live</h1>'
+      + '<p>Le fichier <code>public/vivy-live-control.html</code> est introuvable sur ce serveur.</p>'
+      + '<p>Redeployer le backend pour installer la regie.</p></body>';
+  }
+}
+
 const VIVY_STREAM_IDENTITY_ASSETS = {
   'a11-agent-media-avatar': 'a11-agent-media-avatar.png',
   'a11-agent-media-card': 'a11-agent-media-card.png',
@@ -2305,6 +2318,13 @@ function createVivyStreamRouter(options = {}) {
     res.type('html').send(buildOverlayHtml());
   });
 
+  router.get('/control-deck', (_req, res) => {
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    res.type('html').send(buildControlDeckHtml());
+  });
+
   router.get('/overlay/background', (_req, res) => {
     const backgroundPath = path.join(__dirname, '../../public/assets/vivy-presence-musicale.png');
     res.set('Cache-Control', 'public, max-age=86400, immutable');
@@ -2428,6 +2448,7 @@ module.exports = {
   buildSongsArchiveHtml,
   buildStreamDownloadPath,
   buildOverlayHtml,
+  buildControlDeckHtml,
   buildNossenSeedFromRound,
   createVivyStreamRouter,
   createVivyStreamStore,

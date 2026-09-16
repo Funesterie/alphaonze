@@ -204,6 +204,124 @@ Fond transparent activé. L’overlay se met à jour par Server-Sent Events.
 Le fond `vivy-presence-musicale.png` est embarque dans l'image backend: OBS ne depend d'aucun fichier local.
 Pendant la lecture, si une jaquette a été générée, l’overlay bascule en diaporama entre Vivy et l’image du morceau. Pendant les votes, l’overlay affiche seulement un titre court et le compteur de votes ; le prompt complet reste dans le chat Twitch.
 
+## Régie web (control deck)
+
+Une page de régie permet de piloter tout le live à la souris, sans envoyer de requêtes à la main :
+
+```text
+https://vivy.funesterie.me/api/vivy/stream/control-deck
+```
+
+À ouvrir dans un navigateur normal (pas dans OBS), sur un second écran ou un téléphone. Au premier lancement, coller le `VIVY_STREAM_SECRET` dans le champ « Secret live » puis cliquer « Enregistrer le secret » : il est gardé dans le `localStorage` du navigateur et envoyé uniquement au serveur via l’en-tête `x-vivy-stream-secret`. Un champ « Base API » optionnel permet de pointer vers un autre domaine ; laissé vide, la régie tape le même domaine qu’elle.
+
+La régie affiche l’état live en temps réel (SSE `/events`) : phase courante, titre, message, suggestions du chat avec votes/étoiles, état Twitch (live/offline), compteurs. Les boutons couvrent :
+
+- Round & vote : `Nouveau round` (`/round/start`), `Verrouiller le gagnant` (`/round/lock`), `Lancer la génération` (`/round/generate`).
+- Média du round : `Estimer le coût`, `Armer ce mode`, `Désarmer` (`/round/clip-mode`, modes `image` / `clip` / `dream`, one-shot sur le prochain round). « Estimer » ne dépense rien.
+- Contrôle direct de l’overlay (`/control`) : `Publier le morceau (ready)` avec titre + URL MP3 + durée, `Lecture (play)`, `Afficher la jaquette (cover)`, `Afficher le clip (clip)`, `Ouvrir les étoiles (rating)`, `Jukebox (interlude)`, `Round suivant (next)`, `Erreur (error)`, et `Publier la progression (progress)` avec étape (`analysis`/`lyrics`/`composition`/`mix`) et pourcentage.
+- Session : `Réinitialiser la session live` (`/reset`, avec confirmation) — vide le round, messages récents, votes/étoiles et mémoire épisodique Twitch ; l’historique des morceaux reste conservé.
+
+Toutes ces actions sont les mêmes que les appels `Invoke-RestMethod` documentés plus bas ; la régie n’ajoute aucune route serveur d’écriture nouvelle et reste protégée par le même `VIVY_STREAM_SECRET`.
+
+## Setup OBS Studio pas à pas
+
+Objectif : un OBS qui diffuse l’overlay Vivy en direct, piloté par la régie web, avec Twitch en sortie et TikTok en option.
+
+### 1. Scène de base
+
+1. Dans OBS, panneau « Scènes » : créer une scène `Vivy Live`.
+2. Panneau « Sources » → `+` → `Source navigateur` (Browser Source), nommée `Overlay Vivy`.
+3. URL :
+
+   ```text
+   https://vivy.funesterie.me/api/vivy/stream/overlay
+   ```
+
+4. Largeur `1920`, Hauteur `1080`. Cocher « Actualiser le navigateur quand la scène devient active ».
+5. Laisser la CSS personnalisée vide : l’overlay gère déjà son fond transparent et ses animations. Le fond est embarqué dans le backend, aucun fichier local requis.
+
+Optionnel : ajouter une source `Source multimédia` ou `Capture audio` si la lecture audio du morceau doit passer par OBS. Sinon l’overlay lit déjà l’audio du morceau publié.
+
+#### Overlay StreamElements (alertes + dons)
+
+Comme le compte n’est pas encore éligible au LIVE TikTok, la monétisation passe par Twitch + StreamElements (tips/dons, alertes follows/abos). L’overlay StreamElements se superpose à l’overlay Vivy : ce sont deux Browser Sources distinctes dans la même scène.
+
+1. Panneau « Sources » → `+` → `Source navigateur`, nommée `Alertes StreamElements`.
+2. URL (overlay perso StreamElements du compte) :
+
+   ```text
+   https://streamelements.com/overlay/<OVERLAY_ID>/<OVERLAY_TOKEN>
+   ```
+
+3. Largeur `1920`, Hauteur `1080`, fond transparent.
+4. Placer cette source **au-dessus** de `Overlay Vivy` dans la liste des sources, pour que les alertes s’affichent par-dessus le contenu du live.
+
+Cette URL est un lien overlay privé : ne pas la publier ni la commiter dans le dépôt. Les tips et le module de dons se configurent côté dashboard StreamElements (`streamelements.com` → Tip Page / Overlays), pas côté backend Funesterie.
+
+### 2. Réglages vidéo
+
+Paramètres → Vidéo :
+
+```text
+Résolution de base (canevas)   : 1920x1080
+Résolution de sortie (mise à l'échelle) : 1920x1080  (ou 1280x720 si upload limité)
+Filtre de mise à l'échelle     : Lanczos
+FPS                            : 30
+```
+
+Paramètres → Sortie (mode Avancé), onglet Diffusion :
+
+```text
+Encodeur      : NVENC H.264 (si GPU Nvidia) sinon x264
+Contrôle débit: CBR
+Débit         : 6000 Kbps (Twitch 1080p30) — 4500 Kbps si connexion limitée
+Intervalle images clés : 2 s
+Préréglage    : Quality (NVENC) / veryfast (x264)
+Profil        : high
+```
+
+### 3. Sortie Twitch (déjà en place)
+
+Paramètres → Diffusion :
+
+```text
+Service    : Twitch
+Serveur    : Auto (Recommandé)
+Clé de flux: (Twitch → Creator Dashboard → Paramètres → Flux → Clé de flux principale)
+```
+
+Cliquer « Démarrer le streaming ». Le worker Twitch (`npm run worker:vivy:twitch`) détecte le passage live via l’API Helix et ouvre le chat ; quand OBS coupe, il repasse la session Vivy en veille (voir section Worker Twitch).
+
+### 4. Sortie TikTok LIVE (option)
+
+Prérequis côté TikTok, non contournables :
+
+- Compte éligible au **LIVE** (en général ≥ 1000 abonnés) et en règle.
+- Accès à une **clé RTMP** : soit via TikTok LIVE Studio (desktop), soit via une demande d’accès « LIVE via des outils tiers / streaming software » dans l’app mobile. Sans clé RTMP délivrée par TikTok, aucun logiciel ne peut pousser le flux.
+
+Une fois la clé obtenue, TikTok fournit une **URL de serveur** (`rtmp://...`) et une **Stream Key**. OBS ne liste pas TikTok comme service natif : utiliser « Personnalisé… ».
+
+Paramètres → Diffusion :
+
+```text
+Service    : Personnalisé…
+Serveur    : rtmp://<serveur-fourni-par-tiktok>/live
+Clé de flux: <stream key fournie par TikTok>
+```
+
+Attention : OBS ne diffuse que vers **une** destination à la fois en natif. Pour Twitch **et** TikTok en simultané, deux options :
+
+- **Plugin multi-sorties** : installer le plugin OBS `Multiple RTMP outputs` (aussi appelé « Multiple Output »), puis y ajouter Twitch et TikTok comme deux cibles RTMP, chacune avec son URL + clé. Le service natif (Paramètres → Diffusion) peut rester sur Twitch, le plugin gère les cibles supplémentaires.
+- **Service de restream** (Restream.io, etc.) : OBS pousse un seul flux vers le restreamer, qui redistribue vers Twitch + TikTok. Plus simple, mais dépend d’un tiers et de sa latence.
+
+### 5. Pilotage pendant le live
+
+1. Lancer OBS → « Démarrer le streaming » (Twitch, + TikTok si configuré).
+2. Ouvrir la régie sur un autre écran : `https://vivy.funesterie.me/api/vivy/stream/control-deck`.
+3. Le chat Twitch propose des thèmes (`!nossen …`), vote (`!vote S1`), note (`!etoiles 5 S1`). En autogénération (`VIVY_STREAM_AUTOGENERATE_ENABLED=1`), le round se verrouille et lance la production tout seul.
+4. Sinon, piloter à la main depuis la régie : `Nouveau round` → laisser voter → `Verrouiller le gagnant` → `Lancer la génération`, puis suivre `progress`, et à la fin `Publier le morceau (ready)` puis `Lecture (play)`.
+5. Pour un clip complet sur un round précis, choisir `dream` dans « Média du round », cliquer `Estimer le coût`, puis `Armer ce mode` avant de générer.
+
 ## Clips et montage
 
 Vivy peut produire une vidéo complète sans dépendre d’une vidéo unique coûteuse. La stratégie recommandée est la débrouille contrôlée :

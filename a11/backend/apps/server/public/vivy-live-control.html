@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Régie Vivy Live</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --bg: #060409;
+      --panel: rgba(10,6,16,.82);
+      --border: rgba(240,122,217,.32);
+      --accent: #f07ad9;
+      --cyan: #5fe0e6;
+      --ok: #46d17f;
+      --warn: #ffb84d;
+      --err: #ff5470;
+      --ink: #fff8ff;
+      --muted: #cbb9d1;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; color: var(--ink);
+      background: radial-gradient(circle at 15% 6%, rgba(240,122,217,.16), transparent 36%),
+                  radial-gradient(circle at 92% 12%, rgba(95,224,230,.12), transparent 40%), var(--bg);
+    }
+    main { width: min(1120px, calc(100% - 28px)); margin: 0 auto; padding: 26px 0 80px; }
+    header { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 22px; }
+    .eyebrow { margin: 0; color: var(--cyan); font-size: 12px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
+    h1 { margin: 2px 0 0; font-size: clamp(26px, 4vw, 40px); line-height: 1; }
+    .badge { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; font-weight: 700; background: var(--panel); }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: #666; box-shadow: 0 0 8px rgba(0,0,0,.6); }
+    .dot.on { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+    .dot.off { background: var(--err); box-shadow: 0 0 10px var(--err); }
+    .grid { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; }
+    @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+    .card { border: 1px solid var(--border); background: var(--panel); border-radius: 16px; padding: 16px 16px 18px; }
+    .card h2 { margin: 0 0 12px; font-size: 15px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+    .row { display: flex; flex-wrap: wrap; gap: 9px; margin-bottom: 9px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 4px; }
+    input, textarea, select {
+      width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.14);
+      background: rgba(4,2,8,.7); color: var(--ink); font: inherit; font-size: 14px;
+    }
+    textarea { min-height: 74px; resize: vertical; }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(240,122,217,.22); }
+    .field { margin-bottom: 10px; }
+    button {
+      appearance: none; cursor: pointer; border: 1px solid var(--border); border-radius: 10px;
+      background: rgba(240,122,217,.12); color: var(--ink); font: inherit; font-weight: 700;
+      padding: 10px 14px; transition: transform .06s ease, background .15s ease, border-color .15s ease;
+    }
+    button:hover { background: rgba(240,122,217,.24); border-color: var(--accent); }
+    button:active { transform: translateY(1px); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    button.cyan { background: rgba(95,224,230,.12); }
+    button.cyan:hover { background: rgba(95,224,230,.26); border-color: var(--cyan); }
+    button.warn { background: rgba(255,184,77,.12); }
+    button.warn:hover { background: rgba(255,184,77,.26); border-color: var(--warn); }
+    button.danger { background: rgba(255,84,112,.12); }
+    button.danger:hover { background: rgba(255,84,112,.26); border-color: var(--err); }
+    .pill-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .state-line { font-size: 13px; color: var(--muted); margin: 2px 0; }
+    .state-line b { color: var(--ink); }
+    .phase-tag { display: inline-block; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); font-weight: 800; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+    #log { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; max-height: 220px; overflow: auto; background: rgba(3,2,6,.7); border: 1px solid rgba(255,255,255,.1); border-radius: 10px; padding: 10px 12px; white-space: pre-wrap; word-break: break-word; }
+    .log-ok { color: var(--ok); }
+    .log-err { color: var(--err); }
+    .log-info { color: var(--cyan); }
+    .hint { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+    .full { grid-column: 1 / -1; }
+    .suggestions { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+    .suggestions li { display: flex; gap: 8px; align-items: baseline; padding: 7px 10px; border: 1px solid rgba(255,255,255,.1); border-radius: 8px; background: rgba(4,2,8,.5); font-size: 13px; }
+    .suggestions .sid { font-weight: 900; color: var(--accent); }
+    .suggestions .svotes { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    @media (max-width: 520px) { .split { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">Funesterie · NOSSEN</p>
+        <h1>Régie Vivy Live</h1>
+      </div>
+      <span class="badge"><span id="connDot" class="dot"></span><span id="connLabel">déconnecté</span></span>
+      <span class="badge"><span id="twitchDot" class="dot"></span>Twitch <span id="twitchLabel">?</span></span>
+      <span class="badge">Phase: <span id="phaseTag" class="phase-tag">idle</span></span>
+    </header>
+
+    <div class="grid">
+      <!-- Connexion -->
+      <section class="card full">
+        <h2>Connexion</h2>
+        <div class="split">
+          <div class="field">
+            <label for="secret">Secret live (VIVY_STREAM_SECRET)</label>
+            <input id="secret" type="password" autocomplete="off" placeholder="colle le secret partagé">
+          </div>
+          <div class="field">
+            <label for="base">Base API</label>
+            <input id="base" type="text" value="" placeholder="(vide = même domaine)">
+          </div>
+        </div>
+        <div class="row">
+          <button id="saveSecret" class="cyan">Enregistrer le secret</button>
+          <button id="ping">Tester la connexion</button>
+          <button id="refresh">Rafraîchir l'état</button>
+        </div>
+        <p class="hint">Le secret reste dans ton navigateur (localStorage), il n'est jamais affiché en clair et n'est envoyé qu'au serveur via l'en-tête <code>x-vivy-stream-secret</code>.</p>
+      </section>
+
+      <!-- Round -->
+      <section class="card">
+        <h2>Round & vote</h2>
+        <div class="field">
+          <label for="roundTitle">Titre du round</label>
+          <input id="roundTitle" type="text" value="Vivy Live" placeholder="Vivy Live">
+        </div>
+        <div class="pill-row">
+          <button data-act="round-start" class="cyan">▶ Nouveau round</button>
+          <button data-act="round-lock" class="warn">🔒 Verrouiller le gagnant</button>
+          <button data-act="round-generate">⚙ Lancer la génération</button>
+        </div>
+        <p class="hint">Verrouiller fige la graine NOSSEN sur le gagnant. « Lancer la génération » relance un round verrouillé resté bloqué.</p>
+        <h2 style="margin-top:16px">Suggestions en cours</h2>
+        <ul id="suggestions" class="suggestions"><li>en attente…</li></ul>
+      </section>
+
+      <!-- Clip / média -->
+      <section class="card">
+        <h2>Média du round</h2>
+        <div class="field">
+          <label for="clipMode">Mode clip (one-shot, prochain round)</label>
+          <select id="clipMode">
+            <option value="image">image (jaquette fixe)</option>
+            <option value="clip">clip (mini animation)</option>
+            <option value="dream">dream (clip complet, cher)</option>
+          </select>
+        </div>
+        <div class="pill-row">
+          <button data-act="clipmode-estimate">💰 Estimer le coût</button>
+          <button data-act="clipmode-arm" class="warn">🎬 Armer ce mode</button>
+          <button data-act="clipmode-disarm">↩ Désarmer</button>
+        </div>
+        <p class="hint">« Estimer » ne dépense rien. « Armer » applique le mode au prochain round uniquement, puis retour au mode par défaut.</p>
+      </section>
+
+      <!-- Contrôle live direct -->
+      <section class="card full">
+        <h2>Contrôle direct de l'overlay</h2>
+        <div class="split">
+          <div class="field">
+            <label for="trackTitle">Titre du morceau (pour « ready »)</label>
+            <input id="trackTitle" type="text" placeholder="Néons Moto">
+          </div>
+          <div class="field">
+            <label for="durationSeconds">Durée (secondes)</label>
+            <input id="durationSeconds" type="number" min="0" placeholder="256">
+          </div>
+        </div>
+        <div class="field">
+          <label for="trackUrl">URL du morceau MP3 (pour « ready »)</label>
+          <input id="trackUrl" type="text" placeholder="https://vivy.funesterie.me/api/double-harmonic/out/…mp3">
+        </div>
+        <div class="pill-row">
+          <button data-act="ctl-ready" class="cyan">✅ Publier le morceau (ready)</button>
+          <button data-act="ctl-play">▶ Lecture (play)</button>
+          <button data-act="ctl-cover">🖼 Afficher la jaquette (cover)</button>
+          <button data-act="ctl-clip">🎞 Afficher le clip (clip)</button>
+          <button data-act="ctl-rating" class="warn">⭐ Ouvrir les étoiles (rating)</button>
+          <button data-act="ctl-interlude">🎵 Jukebox (interlude)</button>
+          <button data-act="ctl-next" class="cyan">⏭ Round suivant (next)</button>
+          <button data-act="ctl-error" class="danger">⚠ Erreur (error)</button>
+        </div>
+        <div class="split" style="margin-top:12px">
+          <div class="field">
+            <label for="progStage">Progression — étape</label>
+            <select id="progStage">
+              <option value="analysis">analysis</option>
+              <option value="lyrics">lyrics</option>
+              <option value="composition">composition</option>
+              <option value="mix">mix</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="progValue">Progression — % (0-100)</label>
+            <input id="progValue" type="number" min="0" max="100" value="50">
+          </div>
+        </div>
+        <div class="pill-row">
+          <button data-act="ctl-progress">📈 Publier la progression (progress)</button>
+        </div>
+      </section>
+
+      <!-- Reset -->
+      <section class="card">
+        <h2>Session</h2>
+        <div class="pill-row">
+          <button data-act="reset" class="danger">🧹 Réinitialiser la session live</button>
+        </div>
+        <p class="hint">Vide le round, messages récents, votes/étoiles et la mémoire épisodique Twitch. L'historique des morceaux est conservé.</p>
+      </section>
+
+      <!-- État -->
+      <section class="card">
+        <h2>État live</h2>
+        <p class="state-line">Titre: <b id="stTitle">—</b></p>
+        <p class="state-line">Message: <b id="stMessage">—</b></p>
+        <p class="state-line">Piste: <b id="stTrack">—</b></p>
+        <p class="state-line">Messages: <b id="stMessages">0</b> · Étoiles moy.: <b id="stStars">0</b>/5</p>
+        <p class="state-line">Maj: <b id="stUpdated">—</b></p>
+      </section>
+
+      <!-- Journal -->
+      <section class="card full">
+        <h2>Journal</h2>
+        <div id="log">Prêt.</div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      var LS_SECRET = 'vivy.stream.secret';
+      var LS_BASE = 'vivy.stream.base';
+      var $ = function (id) { return document.getElementById(id); };
+
+      var secretInput = $('secret');
+      var baseInput = $('base');
+      secretInput.value = localStorage.getItem(LS_SECRET) || '';
+      baseInput.value = localStorage.getItem(LS_BASE) || '';
+
+      function base() { return (baseInput.value || '').trim().replace(/\/+$/, ''); }
+      function apiUrl(path) { return base() + path; }
+      function secret() { return (secretInput.value || '').trim(); }
+
+      function log(msg, kind) {
+        var el = $('log');
+        var stamp = new Date().toLocaleTimeString();
+        var cls = kind === 'ok' ? 'log-ok' : kind === 'err' ? 'log-err' : 'log-info';
+        el.innerHTML = '<span class="' + cls + '">[' + stamp + '] ' + escapeHtml(msg) + '</span>\n' + el.innerHTML;
+      }
+      function escapeHtml(s) {
+        return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+
+      function post(path, body) {
+        var sec = secret();
+        if (!sec) { log('Secret manquant — enregistre-le d\u2019abord.', 'err'); return Promise.reject(new Error('no-secret')); }
+        return fetch(apiUrl(path), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-vivy-stream-secret': sec },
+          body: JSON.stringify(body || {})
+        }).then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (j) {
+            if (r.ok && (j.ok === undefined || j.ok)) { log(path + ' → ' + (summarize(j)), 'ok'); }
+            else { log(path + ' → ' + r.status + ' ' + (j.error || summarize(j)), 'err'); }
+            return j;
+          });
+        }).catch(function (e) { log(path + ' → échec réseau: ' + e.message, 'err'); throw e; });
+      }
+
+      function summarize(j) {
+        if (!j || typeof j !== 'object') return String(j);
+        if (j.estimate) return 'estimation: ' + JSON.stringify(j.estimate);
+        if (j.message) return j.message;
+        if (j.nextClipMode !== undefined) return 'mode: ' + (j.nextClipMode || 'aucun');
+        if (j.started !== undefined) return j.started ? 'génération lancée' : 'non lancé (' + (j.error || '?') + ')';
+        return 'ok';
+      }
+
+      // ---- state rendering ----
+      function renderState(state) {
+        if (!state || typeof state !== 'object') return;
+        var cur = state.current || {};
+        $('phaseTag').textContent = cur.phase || 'idle';
+        $('stTitle').textContent = cur.title || '—';
+        $('stMessage').textContent = cur.message || '—';
+        $('stTrack').textContent = cur.trackTitle || cur.trackUrl || '—';
+        $('stMessages').textContent = (state.stats && state.stats.messages) || 0;
+        $('stStars').textContent = (state.learning && state.learning.averageStars) || 0;
+        $('stUpdated').textContent = state.updatedAt ? new Date(state.updatedAt).toLocaleTimeString() : '—';
+        var tw = state.twitch || {};
+        var twDot = $('twitchDot'), twLabel = $('twitchLabel');
+        if (tw.online === true) { twDot.className = 'dot on'; twLabel.textContent = 'live'; }
+        else if (tw.online === false) { twDot.className = 'dot off'; twLabel.textContent = 'offline'; }
+        else { twDot.className = 'dot'; twLabel.textContent = '?'; }
+        var round = state.round || {};
+        var list = $('suggestions');
+        var items = (round.suggestions || []).slice(0, 8);
+        if (!items.length) { list.innerHTML = '<li>aucune suggestion</li>'; return; }
+        list.innerHTML = '';
+        items.forEach(function (entry) {
+          var li = document.createElement('li');
+          var sid = document.createElement('span'); sid.className = 'sid'; sid.textContent = entry.id || '';
+          var txt = document.createElement('span'); txt.textContent = entry.text || '';
+          var votes = document.createElement('span'); votes.className = 'svotes';
+          votes.textContent = (entry.votes || 0) + ' votes' + (entry.starAverage ? ' · ' + entry.starAverage + '/5' : '');
+          li.appendChild(sid); li.appendChild(txt); li.appendChild(votes);
+          list.appendChild(li);
+        });
+      }
+
+      function fetchState() {
+        return fetch(apiUrl('/api/vivy/stream/state')).then(function (r) { return r.json(); })
+          .then(function (j) { renderState(j); return j; })
+          .catch(function (e) { log('état: ' + e.message, 'err'); });
+      }
+
+      // ---- SSE live ----
+      var es = null;
+      function connectSse() {
+        if (es) { es.close(); es = null; }
+        try {
+          es = new EventSource(apiUrl('/api/vivy/stream/events'));
+          es.addEventListener('state', function (ev) {
+            $('connDot').className = 'dot on'; $('connLabel').textContent = 'connecté';
+            try { renderState(JSON.parse(ev.data)); } catch (e) {}
+          });
+          es.onopen = function () { $('connDot').className = 'dot on'; $('connLabel').textContent = 'connecté'; };
+          es.onerror = function () { $('connDot').className = 'dot off'; $('connLabel').textContent = 'reconnexion…'; };
+        } catch (e) { log('SSE indisponible: ' + e.message, 'err'); }
+      }
+
+      // ---- actions ----
+      var actions = {
+        'round-start': function () { return post('/api/vivy/stream/round/start', { title: ($('roundTitle').value || 'Vivy Live') }); },
+        'round-lock': function () { return post('/api/vivy/stream/round/lock', {}); },
+        'round-generate': function () { return post('/api/vivy/stream/round/generate', {}); },
+        'clipmode-estimate': function () { return post('/api/vivy/stream/round/clip-mode', { mode: $('clipMode').value }); },
+        'clipmode-arm': function () { return post('/api/vivy/stream/round/clip-mode', { mode: $('clipMode').value, confirm: true }); },
+        'clipmode-disarm': function () { return post('/api/vivy/stream/round/clip-mode', { mode: 'off', confirm: true }); },
+        'ctl-ready': function () {
+          var body = { action: 'ready' };
+          if ($('trackTitle').value) body.title = $('trackTitle').value;
+          if ($('trackUrl').value) body.trackUrl = $('trackUrl').value;
+          var d = Number($('durationSeconds').value); if (d > 0) body.durationSeconds = d;
+          return post('/api/vivy/stream/control', body);
+        },
+        'ctl-play': function () { return post('/api/vivy/stream/control', { action: 'play' }); },
+        'ctl-cover': function () { return post('/api/vivy/stream/control', { action: 'cover' }); },
+        'ctl-clip': function () { return post('/api/vivy/stream/control', { action: 'clip' }); },
+        'ctl-rating': function () { return post('/api/vivy/stream/control', { action: 'rating' }); },
+        'ctl-interlude': function () { return post('/api/vivy/stream/control', { action: 'interlude' }); },
+        'ctl-next': function () { return post('/api/vivy/stream/control', { action: 'next' }); },
+        'ctl-error': function () { return post('/api/vivy/stream/control', { action: 'error' }); },
+        'ctl-progress': function () {
+          return post('/api/vivy/stream/control', { action: 'progress', stage: $('progStage').value, progress: Number($('progValue').value) || 0 });
+        },
+        'reset': function () {
+          if (!confirm('Réinitialiser la session live ? Le round, les votes et la mémoire épisodique seront vidés (l\u2019historique des morceaux est conservé).')) return Promise.resolve();
+          return post('/api/vivy/stream/reset', {});
+        }
+      };
+
+      document.body.addEventListener('click', function (ev) {
+        var btn = ev.target.closest('button[data-act]');
+        if (!btn) return;
+        var act = btn.getAttribute('data-act');
+        if (actions[act]) { actions[act]().then(fetchState).catch(function () {}); }
+      });
+
+      $('saveSecret').addEventListener('click', function () {
+        localStorage.setItem(LS_SECRET, secret());
+        localStorage.setItem(LS_BASE, base());
+        log('Secret et base enregistrés.', 'ok');
+      });
+      $('ping').addEventListener('click', function () {
+        fetch(apiUrl('/api/vivy/stream/health')).then(function (r) { return r.json(); })
+          .then(function (j) { log('health → ' + JSON.stringify(j), 'ok'); })
+          .catch(function (e) { log('health → ' + e.message, 'err'); });
+      });
+      $('refresh').addEventListener('click', fetchState);
+
+      // boot
+      connectSse();
+      fetchState();
+      log('Régie prête. Enregistre le secret puis pilote le live.', 'info');
+    })();
+  </script>
+</body>
+</html>
