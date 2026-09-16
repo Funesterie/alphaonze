@@ -56,6 +56,14 @@ const DEFAULT_ELEVENLABS_VIVY_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
 // Official personas — these may never fall back to a demo model
 const OFFICIAL_PERSONAS = new Set(['a11', 'kaen44', 'vivy']);
 
+// Identités du casting qui n'ont PAS encore de voix parlée. Avant le 16/09, un
+// nom inconnu était ramené à 'a11' : Kiro ou ChatGPT parlaient avec la voix
+// d'A11 sans que personne le sache. Une identité nommée ici est refusée en 424
+// tant qu'on ne lui a pas donné sa propre voix (la retirer de la liste alors).
+const IDENTITIES_WITHOUT_SPEAKING_VOICE = new Set([
+  'kiro', 'chatgpt', 'soleil', 'grok', 'claude', 'codex', 'gemini', 'deepseek', 'mistral',
+]);
+
 const VOICE_REFERENCE_POLICY = Object.freeze({
   mode: 'style_reference_only_no_impersonation',
   trainingDataRule: 'Only use owned, licensed, or explicitly consented audio for training/import.',
@@ -489,6 +497,7 @@ module.exports = {
   CLOUD_DEFAULT_PERSONAS,
   LOCAL_OFFICIAL_PRIORITY_PERSONAS,
   OFFICIAL_PERSONAS,
+  IDENTITIES_WITHOUT_SPEAKING_VOICE,
   VOICE_REFERENCE_POLICY,
   FAMILY_VOICE_IDENTITIES,
   PERSONAL_VOICE_POLICY,

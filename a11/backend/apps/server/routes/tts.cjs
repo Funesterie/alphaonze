@@ -13,6 +13,7 @@ const {
   buildVoicePersonaInstruction,
   getDefaultVoiceProviderForPersona,
   getReadyVoiceProfile,
+  IDENTITIES_WITHOUT_SPEAKING_VOICE,
   isLegacyCloudTtsProvider,
   isLegacyCloudTtsProviderEnabled,
   isProviderRuntimeConfigured,
@@ -1053,6 +1054,22 @@ function enforceBasicTtsCostPolicy(req = {}, body = {}) {
     allowLegacyVoiceBridge: false,
     xttsRvcOptIn: false,
     ttsCostPolicy: 'basic_siwis_only',
+  };
+}
+
+// `surface` n'est pas lu ici : c'est un nom d'écran, pas une demande de voix.
+function getIdentityPersonaWithoutVoice(body = {}) {
+  const raw = String(body?.voicePersona || body?.ttsPersona || body?.persona || '').trim().toLowerCase();
+  return IDENTITIES_WITHOUT_SPEAKING_VOICE.has(raw) ? raw : '';
+}
+
+function buildIdentityVoiceMissingPayload(persona) {
+  return {
+    ok: false,
+    error: 'identity_voice_missing',
+    message: `${persona} n'a pas encore de voix parlée. Aucune voix de remplacement n'est utilisée.`,
+    persona,
+    diagnostic: 'identity_voice_missing',
   };
 }
 
@@ -4904,6 +4921,10 @@ async function handleTtsSpeakRequest(req, res) {
     if (shouldRejectBlockedOfficialIdentityRequest(requestBody)) {
       return res.status(424).json(buildBlockedOfficialIdentityPayload(requestBody));
     }
+    const identityWithoutVoice = getIdentityPersonaWithoutVoice(requestBody);
+    if (identityWithoutVoice) {
+      return res.status(424).json(buildIdentityVoiceMissingPayload(identityWithoutVoice));
+    }
     const text = String(requestBody?.text || '').trim();
     const vocalMode = normalizeVocalMode(requestBody || {});
     const readableText = shapeTextForVocalMode(buildTtsReadableText(text), vocalMode);
@@ -5314,6 +5335,10 @@ function startTtsAsyncJob(req, res, options = {}) {
   if (shouldRejectBlockedOfficialIdentityRequest(requestBody)) {
     return res.status(424).json(buildBlockedOfficialIdentityPayload(requestBody));
   }
+  const identityWithoutVoice = getIdentityPersonaWithoutVoice(requestBody);
+  if (identityWithoutVoice) {
+    return res.status(424).json(buildIdentityVoiceMissingPayload(identityWithoutVoice));
+  }
   const body = buildAsyncTtsJobBody(requestBody);
   const routeToLocalGpu = shouldRouteTtsJobToLocalGpuWorker(body);
   const priorityLane = resolveTtsPriorityLane(req, body);
@@ -5636,6 +5661,10 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
   req.body = requestBody;
   if (shouldRejectBlockedOfficialIdentityRequest(requestBody)) {
     return res.status(424).json(buildBlockedOfficialIdentityPayload(requestBody));
+  }
+  const identityWithoutVoice = getIdentityPersonaWithoutVoice(requestBody);
+  if (identityWithoutVoice) {
+    return res.status(424).json(buildIdentityVoiceMissingPayload(identityWithoutVoice));
   }
   if (wantsAsyncTtsJob(requestBody) && String(req.headers?.['x-a11-internal-tts-job'] || '') !== '1') {
     return startTtsAsyncJob(req, res);

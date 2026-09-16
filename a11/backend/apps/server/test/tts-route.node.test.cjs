@@ -4865,3 +4865,54 @@ test('tts route blocks neutral Piper fallback for official Vivy identity voice',
     }
   }
 });
+
+test('tts speak route refuses a cast identity without its own voice instead of lending A11 voice', async () => {
+  const previousFetch = global.fetch;
+  const outboundCalls = [];
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (!value.startsWith('http://127.0.0.1:')) {
+      outboundCalls.push(value);
+      throw new Error(`unexpected_tts_call:${value}`);
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        for (const persona of ['kiro', 'chatgpt', 'Kiro']) {
+          for (const route of ['/api/tts/speak', '/api/tts/piper']) {
+            const result = await postJson(baseUrl, route, {
+              text: 'Build vert, on envoie.',
+              persona,
+              voicePersona: persona,
+              identityVoice: true,
+              useIdentityVoice: true,
+            });
+            assert.equal(result.response.status, 424, `${route} ${persona}`);
+            assert.equal(result.json.error, 'identity_voice_missing');
+            assert.equal(result.json.persona, persona.toLowerCase());
+          }
+        }
+
+        assert.deepEqual(outboundCalls, []);
+
+        // Un nom d'écran dans `surface` ne doit pas déclencher le refus.
+        const bySurface = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'Salut.',
+          surface: 'claude',
+          provider: 'piper',
+          neutralVoice: true,
+        });
+        assert.notEqual(bySurface.json?.error, 'identity_voice_missing');
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+  }
+});
