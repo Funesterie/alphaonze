@@ -121,7 +121,10 @@ const IDENTITY_DEFINITIONS = [
       'https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-05',
     ],
     prompt: [
-      'Référence visuelle créateur humain: homme adulte méditerranéen réel, peau olive, visage large à mâchoire carrée et marquée, joues pleines, yeux brun foncé au regard direct, sourcils épais et fournis très rapprochés, coupe très courte dégradée net sur les côtés et courte sur le dessus, cheveux brun foncé, barbe courte noire et moustache, carrure large et épaules solides, t-shirt sombre ou veste bleue, énergie de créateur.',
+      // 16/09/2026 : la phrase qui ouvrait ce tableau décrivait encore l'ancien
+      // visage (« méditerranéen, peau olive, visage large, barbe noire ») que le
+      // 13/09 a déclaré faux ; elle contredisait la suivante dans le même prompt.
+      'Référence visuelle créateur humain, énergie de créateur.',
       'Si ce créateur apparaît, préserver ces traits: jeune homme à peau claire, visage ovale, mâchoire nette et menton pointu, yeux marron foncé, sourcils épais et droits, coupe très courte dégradée brun foncé, barbe de quelques jours le long de la mâchoire, silhouette fine, casquette foncée à motifs, tee-shirt blanc, fine chaîne dorée à croix. Ces traits suffisent seuls: aucune image de référence n est transmise au generateur video, la description porte donc toute la ressemblance. Ne pas changer son origine visuelle, ne pas le rendre noir, imberbe, personnage motard bêta ou acteur générique.',
     ].join(' '),
     // Refait le 13/09/2026 sur la photo choisie par Djeff : « Mediterranean, olive
@@ -364,8 +367,12 @@ function resolveVivyVisualCasting(input = {}) {
     requiredIdentityIds: ['djeff', 'vivy'],
     prompt: [
       'Casting visuel obligatoire: deux personnages distincts et lisibles, pas deux variantes du même personnage.',
-      'Le créateur humain est un homme adulte méditerranéen réel: peau olive, yeux foncés, sourcils marqués, barbe courte et moustache, cheveux courts bruns avec parfois une mèche claire; il représente la fatigue, les bugs, le clavier ou la console.',
-      'La chanteuse IA est séparée de lui: jeune femme aux cheveux noirs en couettes avec reflets magenta, clips étoiles, tenue gothic electro-pop noire, micro ou présence studio lumineuse.',
+      // 16/09/2026 : ces deux phrases redécrivaient les visages avec l'allure
+      // abandonnée le 13/09 (Djeff « méditerranéen, peau olive », Vivy « couettes,
+      // gothic electro-pop ») et contredisaient les fiches du même prompt. Les
+      // visages vivent dans les fiches de Djeff et de Vivy ; ici, les rôles seuls.
+      'Le créateur humain, homme adulte avec les traits de sa fiche, représente la fatigue, les bugs, le clavier ou la console.',
+      'La chanteuse IA, femme adulte avec les traits de sa fiche, est séparée de lui: micro ou présence studio lumineuse.',
       'Les deux personnages ne fusionnent jamais: la chanteuse IA n’est pas le créateur, le créateur n’est pas une femme, et aucun plan ne doit remplacer le créateur par une seconde chanteuse IA.',
       'Composer le duo comme une scène créateur + IA: créateur côté code/station de travail, chanteuse IA côté micro/lumière/musique, deux silhouettes différentes, deux visages différents, une relation de réponse musicale.',
     ].join(' '),

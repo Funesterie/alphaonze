@@ -770,8 +770,23 @@ async function reviewMontageA11(scenes, lieu, teardown, arcSteps) {
   }
 }
 
-async function reviewScenarioK44(scenes, lieu, title, lyricsSections) {
+// Fiches longues (16/09/2026) : le plan video ne recoit qu'un condense, mais la
+// relecture du scenario est un texte, elle peut porter la fiche entiere. C'est ici
+// qu'une K44 decrite en homme ou un Marvin fusionne avec Djeff doit etre vu.
+function fichesPersonnages(castIds) {
+  if (!Array.isArray(castIds) || !castIds.length) return "";
+  try {
+    var fiches = require("../vivy/character-sheets.cjs").renderCharacterSheets(castIds);
+    return fiches ? "FICHES DES PERSONNAGES (source de vérité) :\n" + fiches + "\n\n" : "";
+  } catch (e) {
+    console.warn("[clip-director] Fiches personnages indisponibles:", e.message);
+    return "";
+  }
+}
+
+async function reviewScenarioK44(scenes, lieu, title, lyricsSections, castIds) {
   if (!Array.isArray(scenes) || !scenes.length) return scenes;
+  var fiches = fichesPersonnages(castIds);
   var intentions = Array.isArray(lyricsSections) && lyricsSections.length
     ? "CE QUE DIT LA CHANSON, SECTION PAR SECTION :\n" + lyricsSections.map(function(s, i) {
       return "  " + i + ". " + s.label + " — " + s.intention;
@@ -779,11 +794,15 @@ async function reviewScenarioK44(scenes, lieu, title, lyricsSections) {
     : "";
   var prompt = "Tu es K44, garante du scénario et de la clarté pour le public.\n\n"
     + "CHANSON : \"" + (title || "sans titre") + "\"\n\n"
-    + formatPlansForReview(scenes, lieu) + "\n\n" + intentions
-    + "Vérifie deux choses, et rien d'autre :\n"
+    + formatPlansForReview(scenes, lieu) + "\n\n" + intentions + fiches
+    + "Vérifie ces points, et rien d'autre :\n"
     + "1. la suite des plans raconte quelque chose de lisible pour quelqu'un qui "
     + "découvre le morceau, avec un début et une fin qui se répondent;\n"
-    + "2. aucun plan ne contredit ce que dit la chanson à ce moment-là.\n\n"
+    + "2. aucun plan ne contredit ce que dit la chanson à ce moment-là"
+    + (fiches
+      ? ";\n3. aucun plan ne contredit les fiches des personnages (genre, apparence, rôle, "
+        + "relations); ce qu'une fiche dit non fixé, ne l'invente pas.\n\n"
+      : ".\n\n")
     + "Ne réécris que ce qui casse la lecture. Si ça se tient, rends une liste vide.\n\n"
     + "JSON strict :\n{\"corrections\":[{\"plan\":0,\"raison\":\"en français, court\","
     + "\"remplacement\":\"English shot description\"}]}";
@@ -994,7 +1013,7 @@ async function directClip(config) {
     progress("reviews", "Relecture du montage par A11");
     scenes = await reviewMontageA11(scenes, lieu, teardown, arcSteps);
     progress("reviews", "Relecture du scénario par K44");
-    scenes = await reviewScenarioK44(scenes, lieu, cfg.title || "", lyricsSections);
+    scenes = await reviewScenarioK44(scenes, lieu, cfg.title || "", lyricsSections, identity.identityIds);
     progress("reviews", "Relecture finale par Djeff Engine");
     scenes = await reviewDjeffEngine(scenes, lieu, cfg.title || "", lyrics, mood, cfg.render);
   }

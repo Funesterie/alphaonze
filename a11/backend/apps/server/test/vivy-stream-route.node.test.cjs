@@ -3140,8 +3140,10 @@ test('Vivy Twitch cover prompts stay visual and image generation can return a pu
   assert.match(identityPrompt, /cheveux noirs ondulés à mèches magenta/i);
   assert.match(identityPrompt, /ne jamais la rendre blonde/i);
   assert.match(identityPrompt, /Référence visuelle créateur humain/i);
-  assert.match(identityPrompt, /peau olive/i);
-  assert.match(identityPrompt, /mèche claire/i);
+  // Visage refait sur la photo choisie par Djeff le 13/09/2026 : l'ancien
+  // « méditerranéen, peau olive » faisait inventer un autre homme.
+  assert.match(identityPrompt, /peau claire, visage ovale/i);
+  assert.doesNotMatch(identityPrompt, /peau olive|visage large|mèche claire|couettes|gothic electro-pop/i);
   assert.match(identityPrompt, /ne pas le rendre noir/i);
   const marvinPack = buildVivyVisualIdentityPack({
     publicTitle: 'Marvin Bip Bip 30 ans',
