@@ -16,6 +16,7 @@ const MESSAGES = {
   fr: {
     'clip.songUrlRequired': 'Choisis une chanson ou importe un fichier audio.',
     'clip.scriptRequired': 'Écris un script ou colle le lien vers ton scénario.',
+    'manga.animateSourceRequired': 'Choisis d’abord un manga à animer.',
     'clip.avatarMissing': 'Crée d’abord ton avatar dans « Ma fiche » : une photo de toi suffit.',
     'clip.reserveEmpty': 'La réserve vidéo du studio est vide pour le moment : aucun clip ne peut être généré, et aucun crédit ne t’a été pris.',
     'clip.loginRequired': 'Connecte-toi pour lancer un clip.',
@@ -45,6 +46,7 @@ const MESSAGES = {
   en: {
     'clip.songUrlRequired': 'Choose a song or import an audio file.',
     'clip.scriptRequired': 'Write a script or paste the link to your screenplay.',
+    'manga.animateSourceRequired': 'Pick a manga to animate first.',
     'clip.avatarMissing': 'Create your avatar in “My profile” first: one photo of yourself is enough.',
     'clip.reserveEmpty': 'The studio’s video reserve is empty for now: no video can be generated, and no credits were taken.',
     'clip.loginRequired': 'Sign in to start a video.',
@@ -74,6 +76,7 @@ const MESSAGES = {
   es: {
     'clip.songUrlRequired': 'Elige una canción o importa un archivo de audio.',
     'clip.scriptRequired': 'Escribe un guion o pega el enlace a tu guion.',
+    'manga.animateSourceRequired': 'Elige primero un manga para animar.',
     'clip.avatarMissing': 'Crea primero tu avatar en «Mi ficha»: basta con una foto tuya.',
     'clip.reserveEmpty': 'La reserva de vídeo del estudio está vacía por ahora: no se puede generar ningún videoclip y no se te ha cobrado ningún crédito.',
     'clip.loginRequired': 'Inicia sesión para lanzar un videoclip.',
@@ -103,6 +106,7 @@ const MESSAGES = {
   it: {
     'clip.songUrlRequired': 'Scegli una canzone o importa un file audio.',
     'clip.scriptRequired': 'Scrivi una sceneggiatura o incolla il link al tuo copione.',
+    'manga.animateSourceRequired': 'Scegli prima un manga da animare.',
     'clip.avatarMissing': 'Crea prima il tuo avatar in «La mia scheda»: basta una tua foto.',
     'clip.reserveEmpty': 'La riserva video dello studio è vuota per ora: nessun videoclip può essere generato e non ti è stato addebitato alcun credito.',
     'clip.loginRequired': 'Accedi per avviare un videoclip.',
@@ -132,6 +136,7 @@ const MESSAGES = {
   de: {
     'clip.songUrlRequired': 'Wähle einen Song oder importiere eine Audiodatei.',
     'clip.scriptRequired': 'Schreibe ein Skript oder füge den Link zu deinem Drehbuch ein.',
+    'manga.animateSourceRequired': 'Wähle zuerst einen Manga zum Animieren.',
     'clip.avatarMissing': 'Erstelle zuerst deinen Avatar unter „Mein Profil“: Ein Foto von dir genügt.',
     'clip.reserveEmpty': 'Die Videoreserve des Studios ist derzeit leer: Es kann kein Video erstellt werden, und es wurden keine Credits abgebucht.',
     'clip.loginRequired': 'Melde dich an, um ein Video zu starten.',
@@ -160,6 +165,7 @@ const MESSAGES = {
   },
   ja: {
     'clip.scriptRequired': '脚本を書くか、シナリオのリンクを貼ってください。',
+    'manga.animateSourceRequired': 'まず動かすマンガを選んでください。',
     'clip.songUrlRequired': '曲を選ぶか、音声ファイルを読み込んでください。',
     'clip.avatarMissing': '先に「マイプロフィール」でアバターを作ってください。自分の写真1枚で十分です。',
     'clip.reserveEmpty': 'スタジオの映像リザーブは現在空です。ビデオは生成できず、クレジットも引かれていません。',
@@ -190,6 +196,7 @@ const MESSAGES = {
   zh: {
     'clip.songUrlRequired': '请选择歌曲或导入音频文件。',
     'clip.scriptRequired': '请写一个剧本或粘贴你的剧本链接。',
+    'manga.animateSourceRequired': '请先选择要动画化的漫画。',
     'clip.avatarMissing': '请先在“我的档案”中创建头像：一张本人照片就够了。',
     'clip.reserveEmpty': '工作室的视频储备目前已用完：无法生成视频，也没有扣除任何积分。',
     'clip.loginRequired': '登录后才能开始制作视频。',

@@ -683,7 +683,9 @@ async function generateOnePanel(prompt, index, maxWaitMs = 300_000, identity = {
         const outputFailure = describeBridgeFailure(output);
         if (outputFailure) throw new Error(`manga_panel_output_failed: ${outputFailure}`);
         const outputUrl = extractComfyOutputUrl(output);
-        if (outputUrl) return outputUrl;
+        // On renvoie l'URL ET le prompt_id : le prompt_id permet d'animer la
+        // planche plus tard (manga → animé) via i2v Seedance sans re-héberger l'image.
+        if (outputUrl) return { url: outputUrl, promptId };
         throw new Error(`manga_panel_output_url_missing: ${sanitizeDiagnostic(getBridgeText(output), 300) || 'reponse vide'}`);
       }
     }
@@ -699,6 +701,175 @@ async function generateOnePanel(prompt, index, maxWaitMs = 300_000, identity = {
 function loadClipDirector() {
   try { return require('./clip-vivy-director.cjs'); }
   catch (_) { return require('/app/clip-vivy-director.cjs'); }
+}
+
+// Modèle i2v par défaut pour animer une planche manga. Seedance anime l'image
+// de départ ; réglable sans redémarrer.
+const I2V_ANIME_DEFAUT = process.env.NOSSEN_MANGA_ANIMATE_MODEL || 'byteplus/seedance-2.0-t2v';
+
+// animateOnePanel — anime UNE planche manga (image) en vidéo via i2v Seedance.
+// La planche est fournie par son prompt_id Comfy (medias role:image) : pas besoin
+// de la ré-héberger. Le prompt décrit le mouvement à insuffler à l'image.
+async function animateOnePanel(prompt, panelPromptId, index, maxWaitMs = 600_000, {
+  postJsonImpl = postJson,
+  sleepImpl = sleep,
+  onProgress,
+  pollIntervalMs = parseBoundedInteger(process.env.NOSSEN_CLIP_POLL_INTERVAL_MS, 11_000, 250, 60_000),
+  model = null,
+} = {}) {
+  console.log(`[animate] Scène ${index} depuis planche ${panelPromptId}: ${prompt.slice(0, 50)}...`);
+  emitProgress(onProgress, { stage: 'animate:submitting', status: 'generating', segmentIndex: index });
+
+  const args = {
+    type: 'video',
+    model: model || I2V_ANIME_DEFAUT,
+    prompt,
+    medias: [{ role: 'image', prompt_id: panelPromptId, output_index: 0 }],
+    client_os: 'linux',
+    confirm: true,
+    params: { model: 'Seedance 2.0 Fast', generate_audio: false },
+  };
+
+  let result;
+  try {
+    result = await postJsonImpl(BRIDGE_URL, { tool: 'comfy__partner_generate', args });
+  } catch (error) {
+    const prefix = error?.ambiguous ? 'manga_animate_submission_ambiguous' : 'manga_animate_submission_failed';
+    throw new Error(`${prefix}: ${error.message}`);
+  }
+  const echecAmont = describeBridgeFailure(result);
+  if (echecAmont) throw new Error(echecAmont);
+  const text = getBridgeText(result);
+  const promptId = extractComfyPromptId(result);
+  if (!promptId) throw new Error('Pas de prompt_id dans la reponse : ' + (sanitizeDiagnostic(text, 300) || 'reponse vide'));
+  emitProgress(onProgress, { stage: 'animate:accepted', status: 'generating', segmentIndex: index, promptId });
+
+  const startTime = Date.now();
+  let firstPoll = true;
+  while (Date.now() - startTime < maxWaitMs) {
+    if (!firstPoll) await sleepImpl(pollIntervalMs);
+    firstPoll = false;
+    const status = await postJsonImpl(BRIDGE_URL, { tool: 'comfy__get_job_status', args: { prompt_id: promptId } });
+    const statusFailure = describeBridgeFailure(status);
+    if (statusFailure) throw new Error(`manga_animate_status_failed: ${extractComfyErrorDetail(status) || statusFailure}`);
+    const state = extractComfyJobStatus(status);
+    if (state === 'completed') {
+      const output = await postJsonImpl(BRIDGE_URL, { tool: 'comfy__get_output', args: { prompt_id: promptId, client_os: 'linux' } });
+      if (!isComfyOutputPending(output)) {
+        const outputFailure = describeBridgeFailure(output);
+        if (outputFailure) throw new Error(`manga_animate_output_failed: ${outputFailure}`);
+        const outputUrl = extractComfyOutputUrl(output);
+        if (outputUrl) return outputUrl;
+        throw new Error(`manga_animate_output_url_missing: ${sanitizeDiagnostic(getBridgeText(output), 300) || 'reponse vide'}`);
+      }
+    }
+    if (state === 'failed') {
+      throw new Error(`manga_animate_generation_failed: ${extractComfyErrorDetail(status) || sanitizeDiagnostic(getBridgeText(status), 300) || 'statut amont en echec'}`);
+    }
+    console.log(`[animate] Scène ${index} en cours... (${Math.round((Date.now() - startTime) / 1000)}s)`);
+    emitProgress(onProgress, { stage: 'animate:polling', status: 'generating', segmentIndex: index, promptId, elapsedMs: Date.now() - startTime });
+  }
+  throw new Error(`manga_animate_wait_timeout: scène ${index}`);
+}
+
+// animateMangaClip — anime un manga existant en clip vidéo. Lit le manifeste
+// des planches (manga-panels.json), anime chaque planche en i2v, assemble en mp4.
+async function animateMangaClip(config = {}, {
+  materializeMedia = materializeClipMedia,
+  animatePanelImpl = animateOnePanel,
+  execFileSyncImpl = execFileSync,
+  sleepImpl = sleep,
+  nowImpl = Date.now,
+  randomBytesImpl = crypto.randomBytes,
+} = {}) {
+  const { sourcePng, onProgress } = config;
+  // On retrouve le manifeste : <planche>.panels.json à côté du .png public.
+  const decoded = decodeURIComponent(String(sourcePng || '').replace(/^.*\/clips\//, ''));
+  if (!decoded || /[/\\]/.test(decoded)) throw new Error('manga_animate_bad_source');
+  const manifestPublic = path.join(CLIPS_DIR, decoded.replace(/\.png$/i, '.panels.json'));
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(manifestPublic, 'utf8'));
+  } catch (e) {
+    throw new Error('manga_animate_manifest_missing: ' + e.message);
+  }
+  const panels = (manifest.panels || []).filter((p) => p && p.promptId);
+  if (!panels.length) throw new Error('manga_animate_no_prompt_ids: les planches de ce manga ne sont pas animables (générées avant le suivi des prompt_id).');
+
+  const clipId = createClipId(nowImpl, randomBytesImpl);
+  const clipDir = path.join(CLIPS_DIR, clipId);
+  fs.mkdirSync(clipDir, { recursive: true });
+  const identityBrief = manifest.identityPrompt
+    ? ` Keep the character identity consistent: ${manifest.identityPrompt}`
+    : '';
+  const lieuBrief = manifest.lieu ? ` Same setting throughout: ${manifest.lieu}.` : '';
+
+  const videoPaths = [];
+  let dernierEchec = '';
+  emitProgress(onProgress, { stage: 'animate:planned', status: 'generating', progress: 10, totalSegments: panels.length });
+  for (let i = 0; i < panels.length; i++) {
+    const p = panels[i];
+    // On anime la case : mouvement de caméra léger, personnages qui bougent,
+    // en gardant la composition de la planche.
+    const prompt = `Animate this manga panel into a moving anime shot. ${p.visual || ''}${lieuBrief}${identityBrief} Cinematic anime motion, subtle camera movement, characters come alive, smooth animation.`.trim();
+    try {
+      const videoUrl = await animatePanelImpl(prompt, p.promptId, i, 600_000, { onProgress });
+      const dest = path.join(clipDir, `scene_${String(i).padStart(2, '0')}.mp4`);
+      emitProgress(onProgress, { stage: 'animate:downloading', status: 'generating', segmentIndex: i });
+      await materializeMedia(videoUrl, dest, { kind: 'video' });
+      videoPaths.push(dest);
+      console.log(`[animate] Scène ${i} prête (${videoPaths.length}/${panels.length})`);
+      emitProgress(onProgress, {
+        stage: 'animate:ready', status: 'generating',
+        progress: 15 + Math.round((videoPaths.length / panels.length) * 75),
+        segments: videoPaths.length, totalSegments: panels.length,
+      });
+    } catch (error) {
+      dernierEchec = sanitizeDiagnostic(error.message, 200);
+      console.warn(`[animate] Scène ${i} échouée: ${dernierEchec}`);
+    }
+    if (i < panels.length - 1) await sleepImpl(2000);
+  }
+  if (!videoPaths.length) {
+    fs.rmSync(clipDir, { recursive: true, force: true });
+    throw new Error(`manga_animate_no_scenes: aucune scène animée — ${dernierEchec || 'cause inconnue'}`);
+  }
+  const partial = videoPaths.length < panels.length;
+  const warning = partial ? `manga_animate_partial: ${videoPaths.length}/${panels.length} scènes` : null;
+  emitProgress(onProgress, { stage: 'assembling', status: 'assembling', progress: 92, segments: videoPaths.length, totalSegments: panels.length, ...(warning ? { message: warning } : {}) });
+
+  // Assemblage : concat vidéo, muet (pas d'audio pour un manga animé).
+  const baseName = (manifest.title || 'anime').replace(/[^a-zA-Z0-9àâéèêëïîôùûüç -]/gi, '').replace(/\s+/g, '-').slice(0, 40) || 'anime';
+  const safeName = `${baseName}-anime`;
+  const outputPath = path.join(clipDir, safeName + '.mp4');
+  const concatFile = path.join(clipDir, 'concat.txt');
+  fs.writeFileSync(concatFile, videoPaths.map((p) => `file '${p}'`).join('\n'));
+  execFileSyncImpl('ffmpeg', [
+    '-y', '-f', 'concat', '-safe', '0', '-i', concatFile,
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+    '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart',
+    outputPath,
+  ], { timeout: 300_000, windowsHide: true });
+  const outputStats = fs.statSync(outputPath, { throwIfNoEntry: false });
+  if (!outputStats?.isFile() || outputStats.size <= 0) throw new Error('manga_animate_output_missing');
+
+  const publicFilename = `${safeName}-${clipId.slice('clip-'.length)}.mp4`;
+  const publicPath = path.join(CLIPS_DIR, publicFilename);
+  fs.copyFileSync(outputPath, publicPath);
+  console.log(`[animate] Terminé: ${publicFilename} (${videoPaths.length} scènes)`);
+  emitProgress(onProgress, { stage: 'complete', status: 'done', progress: 100 });
+  return {
+    ok: true,
+    filename: publicFilename,
+    url: 'https://a11.funesterie.me/clips/' + encodeURIComponent(publicFilename),
+    path: publicPath,
+    kind: 'anime',
+    fromManga: decoded,
+    scenes: videoPaths.length,
+    requestedScenes: panels.length,
+    partial,
+    warning,
+  };
 }
 
 function requireDirectedScenes(directed) {
@@ -862,6 +1033,9 @@ async function generateClip(config = {}, {
       : '';
     const mangaLieuBrief = lieu ? ` Same setting across the whole story: ${lieu}.` : '';
     const panelPaths = [];
+    // Chaque planche garde son prompt_id Comfy + le prompt de la scène : c'est
+    // ce qui permet d'ANIMER le manga plus tard (manga → animé) en i2v Seedance.
+    const panelsMeta = [];
     let dernierEchecPanel = '';
     for (let i = 0; i < numSegments; i++) {
       const section = sections[i % sections.length];
@@ -870,11 +1044,22 @@ async function generateClip(config = {}, {
         identity.nomsFilm,
       );
       try {
-        const panelUrl = await generateOnePanel(prompt, i, 300_000, identity, { onProgress });
+        const panelRes = await generateOnePanel(prompt, i, 300_000, identity, { onProgress });
+        // Rétrocompat : ancien format = URL string, nouveau = { url, promptId }.
+        const panelUrl = typeof panelRes === 'string' ? panelRes : panelRes.url;
+        const panelPromptId = typeof panelRes === 'string' ? null : panelRes.promptId;
         const dest = path.join(clipDir, `panel_${String(i).padStart(2, '0')}.png`);
         emitProgress(onProgress, { stage: 'panel:downloading', status: 'generating', segmentIndex: i });
         await materializeMedia(panelUrl, dest, { kind: 'image' });
         panelPaths.push(dest);
+        panelsMeta.push({
+          index: i,
+          promptId: panelPromptId,
+          file: path.basename(dest),
+          name: section.name || `Plan ${i + 1}`,
+          visual: section.visual || '',
+          acte: section.acte || '',
+        });
         console.log(`[manga] Planche ${i} prête (${panelPaths.length}/${numSegments})`);
         emitProgress(onProgress, {
           stage: 'panel:ready', status: 'generating',
@@ -891,6 +1076,15 @@ async function generateClip(config = {}, {
       fs.rmSync(clipDir, { recursive: true, force: true });
       throw new Error(`manga_no_panels: aucune planche générée — ${dernierEchecPanel || 'cause inconnue'}`);
     }
+    // Manifeste des planches : réutilisé pour animer le manga (manga → animé).
+    try {
+      fs.writeFileSync(path.join(clipDir, 'manga-panels.json'), JSON.stringify({
+        title, lieu, render: 'manga',
+        identityIds: identity.identityIds || [],
+        identityPrompt: identity.prompt || '',
+        panels: panelsMeta,
+      }, null, 2));
+    } catch (e) { console.warn('[manga] manifeste planches non écrit:', e.message); }
     const partial = panelPaths.length < numSegments;
     const warning = partial ? `manga_partial: ${panelPaths.length}/${numSegments} planches` : null;
     emitProgress(onProgress, { stage: 'assembling', status: 'assembling', progress: 92, segments: panelPaths.length, totalSegments: numSegments, ...(warning ? { message: warning } : {}) });
@@ -924,6 +1118,11 @@ async function generateClip(config = {}, {
     const publicFilename = `${safeName}-${clipId.slice('clip-'.length)}.png`;
     const publicPath = path.join(CLIPS_DIR, publicFilename);
     fs.copyFileSync(boardPath, publicPath);
+    // Manifeste public : <planche>.panels.json à côté du .png, pour animer plus tard.
+    const publicPanelsManifest = publicPath.replace(/\.png$/i, '.panels.json');
+    try {
+      fs.copyFileSync(path.join(clipDir, 'manga-panels.json'), publicPanelsManifest);
+    } catch (e) { console.warn('[manga] manifeste public non copié:', e.message); }
     console.log(`[manga] Terminé: ${publicFilename} (${panelPaths.length} planches)`);
     emitProgress(onProgress, { stage: 'complete', status: 'done', progress: 100 });
     return {
@@ -932,8 +1131,10 @@ async function generateClip(config = {}, {
       url: 'https://a11.funesterie.me/clips/' + encodeURIComponent(publicFilename),
       path: publicPath,
       kind: 'manga',
+      clipId,
       panels: panelPaths.length,
       requestedPanels: numSegments,
+      panelPromptIds: panelsMeta.map((p) => p.promptId).filter(Boolean),
       partial,
       warning,
     };
@@ -1218,6 +1419,8 @@ module.exports = {
   generateClip,
   generateOneVideo,
   generateOnePanel,
+  animateOnePanel,
+  animateMangaClip,
   mountClipRoutes,
   postJson,
   requireDirectedScenes,

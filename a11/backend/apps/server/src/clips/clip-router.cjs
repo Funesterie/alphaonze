@@ -351,6 +351,79 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
     });
   });
 
+  // Animer un manga existant en clip vidéo (manga → animé). On reprend les
+  // planches déjà générées (leurs prompt_id Comfy) et on les anime en i2v.
+  router.post('/animate-manga', express.json({ limit: '16kb' }), async (req, res) => {
+    const sourcePng = String((req.body && (req.body.sourcePng || req.body.source || req.body.filename)) || '').trim();
+    if (!sourcePng) return res.status(400).json({ ok: false, error: 'source requise', message: messageServeur(req, 'manga.animateSourceRequired') });
+
+    const user = req.user || (req.session && req.session.user) || {};
+
+    // Crédits : comme un clip vidéo, tout le monde paie sauf les admins.
+    let reservation = null;
+    if (!estAdmin(req)) {
+      const uid = idUtilisateur(req);
+      if (!uid) return res.status(401).json({ ok: false, error: 'CONNEXION_REQUISE', message: messageServeur(req, 'clip.loginRequired') });
+      if (!magasin) return res.status(503).json({ ok: false, error: 'CREDITS_INDISPONIBLES', message: messageServeur(req, 'clip.creditsUnavailable') });
+      await attribuerFondateur(uid);
+      const plans = clipCredits.plansEstimes({ fullDuration: false });
+      const credits = clipCredits.creditsPourPlans(plans);
+      const ref = `manga-animate:${nodeCrypto.randomUUID()}`;
+      let sortie;
+      try {
+        sortie = await clipCredits.reserver(magasin, { userId: uid, credits, ref });
+      } catch (error) {
+        console.error('[clip-router] Réservation crédits (animate) impossible:', sanitizeJobDiagnostic(error.message));
+        return res.status(503).json({ ok: false, error: 'CREDITS_INDISPONIBLES', message: messageServeur(req, 'clip.creditsUnavailable') });
+      }
+      if (!sortie.ok) {
+        return res.status(402).json({ ok: false, error: 'CREDITS_INSUFFISANTS', message: messageServeur(req, 'clip.creditsInsufficient', credits, sortie.solde), requis: credits, solde: sortie.solde });
+      }
+      reservation = { userId: uid, credits, ref, plans, solde: sortie.solde };
+    }
+
+    const job = createJob({
+      songUrl: 'manga://' + sourcePng,
+      title: sourcePng.replace(/\.png$/i, ''),
+      style: '',
+      fullDuration: false,
+      casting: 'auto',
+      render: 'anime',
+      mode: 'animate-manga',
+      creditsReserves: reservation ? reservation.credits : 0,
+      creditRef: reservation ? reservation.ref : null,
+      userId: user.id || user.sub || null,
+      email: user.email || null,
+    });
+
+    // On route vers animateMangaClip via l'impl passée à runClipGeneration.
+    const animateImpl = (cfg) => {
+      let gen;
+      try { gen = require('./clip-generator-v2.cjs'); }
+      catch (_) {
+        try { gen = require('/app/src/clips/clip-generator-v2.cjs'); }
+        catch (_2) { gen = require('/app/clip-generator-v2.cjs'); }
+      }
+      return gen.animateMangaClip({ sourcePng, onProgress: cfg.onProgress });
+    };
+
+    setImmediate(() => {
+      runClipGeneration(job.id, { sourcePng }, { workerId: CLIP_WORKER_ID, generateClipImpl: animateImpl })
+        .then((sortie) => { reglerCredits(reservation, sortie && sortie.result); },
+          (error) => {
+            console.error('[clip-router] Animate job', job.id, 'erreur:', sanitizeJobDiagnostic(error.message));
+            reglerCredits(reservation, null);
+          });
+    });
+
+    res.json({
+      ok: true,
+      jobId: job.id,
+      status: 'pending',
+      ...(reservation ? { credits: { reserves: reservation.credits, solde: reservation.solde } } : {}),
+    });
+  });
+
   // Statut d'un job
   router.get('/status/:id', (req, res) => {
     const job = getJob(req.params.id);

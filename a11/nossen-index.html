@@ -23,6 +23,7 @@ nav a:hover{color:var(--cyan)}
 .btn-full{background:linear-gradient(135deg,var(--gold),#f59e0b);color:#111;font-weight:800}
 .btn-full.locked{opacity:.3;cursor:not-allowed}
 .btn-manga{background:linear-gradient(135deg,#7c3aed,#db2777);color:#fff;font-weight:800}
+.btn-animate{background:linear-gradient(135deg,#0ea5e9,#7c3aed)!important;color:#fff!important;border:none!important}
 .manga-script{margin:.4rem 0}
 .manga-script textarea{resize:vertical;min-height:4rem;font-family:inherit;line-height:1.4}
 .manga-scenes{display:flex;align-items:center;gap:.4rem;font-size:.65rem;color:var(--muted);margin-top:.3rem}
@@ -257,6 +258,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "manga.scriptPlaceholder": "Écris ton idée, ton synopsis ou ton scénario ici… (ex : Djeff explore une station spatiale abandonnée et trouve un signal mystérieux)",
       "manga.scenes": "Nombre de planches",
       "manga.scriptTooShort": "✍️ Écris au moins un synopsis (une ou deux phrases) pour lancer les planches.",
+      "manga.animate": "🎬 Animer",
+      "manga.animating": "Animation des planches en cours…",
       "produce.info1": "Clip = aperçu vidéo court · Full Clip = clip vidéo complet sur toute la chanson · payés en crédits (seuls les plans livrés sont facturés)",
       "produce.info2": "Mode libre : l'IA analyse les paroles et choisit le thème visuel.",
       "fiche.title": "🙋 Ma fiche",
@@ -403,6 +406,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "manga.scriptPlaceholder": "Write your idea, synopsis or script here… (e.g. Djeff explores an abandoned space station and finds a mysterious signal)",
       "manga.scenes": "Number of panels",
       "manga.scriptTooShort": "✍️ Write at least a synopsis (a sentence or two) to generate the panels.",
+      "manga.animate": "🎬 Animate",
+      "manga.animating": "Animating the panels…",
       "produce.info1": "Clip = short video preview · Full Clip = complete video over the whole song · paid in credits (only delivered shots are charged)",
       "produce.info2": "Free mode: the AI reads the lyrics and picks the visual theme.",
       "fiche.title": "🙋 My profile",
@@ -549,6 +554,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "manga.scriptPlaceholder": "Escribe tu idea, sinopsis o guion aquí… (ej.: Djeff explora una estación espacial abandonada y encuentra una señal misteriosa)",
       "manga.scenes": "Número de láminas",
       "manga.scriptTooShort": "✍️ Escribe al menos una sinopsis (una o dos frases) para generar las láminas.",
+      "manga.animate": "🎬 Animar",
+      "manga.animating": "Animando las láminas…",
       "produce.info1": "Clip = vista previa corta · Full Clip = videoclip completo de toda la canción · se paga en créditos (solo se cobran los planos entregados)",
       "produce.info2": "Modo libre: la IA analiza la letra y elige el tema visual.",
       "fiche.title": "🙋 Mi ficha",
@@ -695,6 +702,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "manga.scriptPlaceholder": "Scrivi la tua idea, la sinossi o la sceneggiatura qui… (es.: Djeff esplora una stazione spaziale abbandonata e trova un segnale misterioso)",
       "manga.scenes": "Numero di tavole",
       "manga.scriptTooShort": "✍️ Scrivi almeno una sinossi (una o due frasi) per generare le tavole.",
+      "manga.animate": "🎬 Anima",
+      "manga.animating": "Animazione delle tavole in corso…",
       "produce.info1": "Clip = anteprima video breve · Full Clip = videoclip completo su tutta la canzone · pagati in crediti (si pagano solo le inquadrature consegnate)",
       "produce.info2": "Modalità libera: l'IA analizza il testo e sceglie il tema visivo.",
       "fiche.title": "🙋 La mia scheda",
@@ -841,6 +850,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "manga.scriptPlaceholder": "Schreib hier deine Idee, Synopsis oder dein Skript… (z. B. Djeff erkundet eine verlassene Raumstation und findet ein mysteriöses Signal)",
       "manga.scenes": "Anzahl der Seiten",
       "manga.scriptTooShort": "✍️ Schreib mindestens eine Synopsis (ein bis zwei Sätze), um die Seiten zu erzeugen.",
+      "manga.animate": "🎬 Animieren",
+      "manga.animating": "Die Seiten werden animiert…",
       "produce.info1": "Clip = kurze Videovorschau · Full Clip = komplettes Video über den ganzen Song · Bezahlung mit Credits (nur gelieferte Einstellungen werden berechnet)",
       "produce.info2": "Freier Modus: Die KI analysiert den Songtext und wählt das visuelle Thema.",
       "fiche.title": "🙋 Mein Profil",
@@ -987,6 +998,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "manga.scriptPlaceholder": "アイデア、あらすじ、脚本をここに書いてください…（例：Djeff が廃棄された宇宙ステーションを探索し、謎の信号を見つける）",
       "manga.scenes": "ページ数",
       "manga.scriptTooShort": "✍️ ページを生成するには、少なくともあらすじ（1〜2文）を書いてください。",
+      "manga.animate": "🎬 動かす",
+      "manga.animating": "ページをアニメ化しています…",
       "produce.info1": "Clip＝短いプレビュー動画 · Full Clip＝曲全体の完全なビデオ · クレジットで支払い（納品されたカットのみ課金）",
       "produce.info2": "おまかせ：AIが歌詞を読み、映像のテーマを選びます。",
       "fiche.title": "🙋 マイプロフィール",
@@ -1133,6 +1146,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "manga.scriptPlaceholder": "在此写下你的想法、梗概或剧本……（例如：Djeff 探索一座废弃的空间站，发现了一个神秘信号）",
       "manga.scenes": "分镜数量",
       "manga.scriptTooShort": "✍️ 请至少写一段梗概（一两句话）来生成分镜。",
+      "manga.animate": "🎬 动画化",
+      "manga.animating": "正在把分镜动画化…",
       "produce.info1": "Clip＝短视频预览 · Full Clip＝覆盖整首歌的完整视频 · 使用积分支付（只对交付的镜头收费）",
       "produce.info2": "自由模式：AI 会分析歌词并选择视觉主题。",
       "fiche.title": "🙋 我的档案",
@@ -2235,7 +2250,14 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
     var href = resolveHttpUrl(x && x.url);
     if (!href) return "";
     var nom = (x.name || x.filename || "Clip") + (x.partial ? t("clips.partial") : "");
-    var html = '<div class="c"><a href="' + escapeHtml(href) + '" target="_blank" rel="noopener noreferrer">\uD83C\uDFAC ' + escapeHtml(nom) + '</a>';
+    // Un manga est un .png : icône planche + bouton "Animer" (manga → animé).
+    var estManga = /\.png$/i.test(String(x.filename || x.url || ""));
+    var icone = estManga ? "\uD83D\uDCD6 " : "\uD83C\uDFAC ";
+    var html = '<div class="c"><a href="' + escapeHtml(href) + '" target="_blank" rel="noopener noreferrer">' + icone + escapeHtml(nom) + '</a>';
+    if (estManga && x.filename) {
+      html += ' <button type="button" class="use btn-animate" data-animate="' + escapeHtml(x.filename) + '">'
+        + escapeHtml(t("manga.animate")) + '</button>';
+    }
     if (admin && x.filename) {
       if (x.auteur) html += '<span class="meta"> \u00B7 ' + escapeHtml(x.auteur) + '</span>';
       html += ' <button type="button" class="use" data-vitrine="' + escapeHtml(x.filename) + '" data-publier="' + (x.enVitrine ? "0" : "1") + '">'
@@ -2274,6 +2296,29 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
     var boite = document.getElementById("clips");
     if (!boite || typeof boite.addEventListener !== "function") return;
     boite.addEventListener("click", function(ev) {
+      // Bouton "Animer" (manga → animé) : lance l'animation des planches.
+      var anim = ev.target && ev.target.closest ? ev.target.closest("button[data-animate]") : null;
+      if (anim) {
+        anim.disabled = true;
+        var src = anim.getAttribute("data-animate");
+        document.getElementById("msg").textContent = "\u23F3 " + t("manga.animating");
+        document.getElementById("bar").classList.add("on");
+        document.getElementById("fill").style.width = "5%";
+        api("/api/mcp-bridge/clip/animate-manga", { sourcePng: src }).then(function(d) {
+          if (d && d.ok) {
+            document.getElementById("msg").textContent = t("clip.running", "Animé");
+            pollJob(d.jobId, "anime");
+            refreshCredits();
+          } else {
+            document.getElementById("msg").textContent = "\u274C " + ((d && (d.message || d.error)) || t("clip.unknownError"));
+            anim.disabled = false;
+          }
+        }).catch(function(e) {
+          document.getElementById("msg").textContent = "\u274C " + ((e && e.message) || t("clip.unknownError"));
+          anim.disabled = false;
+        });
+        return;
+      }
       var b = ev.target && ev.target.closest ? ev.target.closest("button[data-vitrine]") : null;
       if (!b) return;
       b.disabled = true;
