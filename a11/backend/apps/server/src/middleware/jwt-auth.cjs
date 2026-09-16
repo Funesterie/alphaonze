@@ -1,4 +1,8 @@
 const crypto = require('node:crypto');
+const {
+  verifyQuinteNezToken,
+  quinteNezTokenStatus,
+} = require('../security/quinte-nez-token.cjs');
 
 function getNezServiceTokens(env = process.env) {
   return [
@@ -16,18 +20,55 @@ function timingSafeEqualStrings(left, right) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+function serviceUser(mode) {
+  return {
+    id: 'a11-mcp-service',
+    username: 'a11-mcp',
+    email: 'a11-mcp-service@funesterie.local',
+    role: 'admin',
+    permissions: ['admin'],
+    isAdmin: true,
+    fullAccess: true,
+    isService: true,
+    serviceMode: mode,
+  };
+}
+
 // Identite service pour les appels server-to-server et l'outil MCP a11_chat.
-// L'outil a11_chat envoie un X-NEZ-TOKEN (secret statique) a /api/chat, mais
-// verifyJWT n'acceptait qu'un JWT HMAC: l'appel tombait en 401 A11_JWT_Missing
-// alors que le moteur tournait. On accepte ici le token NEZ configure -- jamais
-// le defaut faible 'nez:a11-client-funesterie-pro' -- exactement comme la route
-// MCP publique, et on synthetise un req.user service marque isService/admin.
+//
+// Deux rails sont supportes :
+//  1. NEZ statique historique, tant que la migration Quinté ne l'interdit pas ;
+//  2. token journalier RubixGate/Quinté × NEZ (nezq1.*), dont la preuve HMAC
+//     est verifiee avec le secret Fortress local sans exposer ce secret.
+//
+// Le resultat hippique reste public. La preuve vient du croisement avec
+// STEGO_SALT/A11_NEZ_TOKEN et d'une enveloppe signee a duree bornee.
 function resolveNezServiceIdentity(req, env = process.env) {
   const candidates = [
     String(req?.headers?.['x-nez-token'] || '').trim(),
     String(req?.headers?.authorization || '').replace(/^Bearer\s+/i, '').trim(),
   ].filter(Boolean);
   if (!candidates.length) return null;
+
+  const quinteStatus = quinteNezTokenStatus(env);
+  if (quinteStatus.enabled) {
+    for (const token of candidates) {
+      const result = verifyQuinteNezToken(token, env);
+      if (result.valid) {
+        return {
+          token,
+          mode: 'nez-quinte-daily',
+          keyHint: result.keyHint,
+          validUntil: result.validUntil,
+          user: serviceUser('nez-quinte-daily'),
+        };
+      }
+    }
+    // En mode REQUIRED, un ancien token statique ne doit jamais contourner
+    // l'expiration ou l'ordre du Quinté courant.
+    if (quinteStatus.required) return null;
+  }
+
   const allowed = getNezServiceTokens(env);
   if (!allowed.length) return null;
   for (const token of candidates) {
@@ -35,17 +76,7 @@ function resolveNezServiceIdentity(req, env = process.env) {
       return {
         token,
         mode: 'nez-service',
-        user: {
-          id: 'a11-mcp-service',
-          username: 'a11-mcp',
-          email: 'a11-mcp-service@funesterie.local',
-          role: 'admin',
-          permissions: ['admin'],
-          isAdmin: true,
-          fullAccess: true,
-          isService: true,
-          serviceMode: 'nez',
-        },
+        user: serviceUser('nez'),
       };
     }
   }
@@ -214,15 +245,17 @@ function createVerifyJWT({ jwt, jwtSecret, logger = console, logSuccess = false,
         message: 'Session révoquée. Reconnecte-toi.',
       });
     }
-    // Aucun JWT valide: dernier recours, l'identite service NEZ/MCP (outil
-    // a11_chat et appels server-to-server). On ne l'accepte que si un token
-    // NEZ est configure -- jamais le defaut faible -- pour ne pas laisser le
-    // chat derriere une porte fermee (401 A11_JWT_Missing).
+    // Aucun JWT valide: dernier recours, l'identite service NEZ/MCP. Le token
+    // journalier est essaye avant le statique et REQUIRED interdit le repli.
     const serviceIdentity = resolveNezServiceIdentity(req);
     if (serviceIdentity) {
       req.user = serviceIdentity.user;
       req.authToken = serviceIdentity.token;
-      req.serviceAuth = { mode: serviceIdentity.mode };
+      req.serviceAuth = {
+        mode: serviceIdentity.mode,
+        ...(serviceIdentity.keyHint ? { keyHint: serviceIdentity.keyHint } : {}),
+        ...(serviceIdentity.validUntil ? { validUntil: serviceIdentity.validUntil } : {}),
+      };
       if (logSuccess) {
         logger?.log?.(`[JWT] ✅ Identité service ${serviceIdentity.mode} acceptée`);
       }
