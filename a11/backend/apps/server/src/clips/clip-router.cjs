@@ -66,10 +66,14 @@ const comfySolde = require('./comfy-solde.cjs');
 const clipAcces = require('./clip-acces.cjs');
 
 // Rendu choisi sur la page : "film" (prises de vue reelles, le defaut depuis le
-// 12/09/2026) ou "anime" (clip manga). Toute autre valeur retombe sur le film.
+// 12/09/2026) ou "anime" (clip vidéo style anime). "manga" (16/09/2026) est un
+// rendu distinct : planches images fixes (mode script image-par-image), pas une
+// vidéo. Toute autre valeur retombe sur le film.
 function normaliserRendu(valeur) {
   const v = String(valeur == null ? '' : valeur).trim().toLowerCase();
-  return v === 'anime' || v === 'manga' ? 'anime' : 'film';
+  if (v === 'manga') return 'manga';
+  if (v === 'anime') return 'anime';
+  return 'film';
 }
 
 function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isAdminRequest = null, magasinCredits = null, stripeService = null, palierUtilisateur = null, lireSoldeComfy = null, lireIdentiteCompte = null } = {}) {
@@ -229,9 +233,12 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
   // Lancer un clip (authentification requise)
   router.post('/start', express.json({ limit: '512kb' }), async (req, res) => {
     const { songUrl, title, style, fullDuration, sections } = req.body;
+    const render = normaliserRendu(req.body && req.body.render);
     // Mode script (16/09/2026) : au lieu d'un MP3, on soumet un SCRIPT (texte ou
     // lien). K44 écrit le scénario, A11 le découpe en scènes → manga/film muet.
-    const mode = String((req.body && req.body.mode) || '').trim().toLowerCase() === 'script' ? 'script' : 'song';
+    // Le rendu "manga" (planches images) vient toujours d'un script : on force
+    // le mode script dans ce cas, il n'a pas d'audio.
+    const mode = (String((req.body && req.body.mode) || '').trim().toLowerCase() === 'script' || render === 'manga') ? 'script' : 'song';
     const scriptText = mode === 'script' ? String((req.body && (req.body.scriptText || req.body.script)) || '').trim() : '';
     const scriptUrl = mode === 'script' ? String((req.body && req.body.scriptUrl) || '').trim() : '';
     const sceneCount = req.body && req.body.sceneCount;
@@ -241,7 +248,6 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
     // Djeff le 12/09/2026 sur trois clips d affilee).
     const casting = normaliserCasting(req.body && req.body.casting);
     const castArtists = normaliserDistribution(req.body && req.body.multiVoice, casting);
-    const render = normaliserRendu(req.body && req.body.render);
     if (mode === 'script') {
       if (!scriptText && !scriptUrl) {
         return res.status(400).json({ ok: false, error: 'script requis', message: messageServeur(req, 'clip.scriptRequired') });

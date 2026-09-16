@@ -436,6 +436,9 @@ const CONSIGNE_AUDIO_NEUTRE = ' Sound: soft ambient room tone and distant wind o
 const RENDUS_VISUELS = {
   film: 'Live-action cinematic film, photorealistic, shot on 35mm with natural film grain and real skin texture, volumetric lighting, smooth camera movement.',
   anime: 'Cinematic anime quality, volumetric lighting, smooth camera movement.',
+  // Manga : planche fixe, pas de mouvement de caméra. Encre noire, trames,
+  // cases nettes. Utilisé par le mode image-par-image (une planche par scène).
+  manga: 'Black and white manga panel, clean ink lines, screentone shading, dynamic paneling, expressive line art, high contrast, comic book composition.',
 };
 // Le style envoyé par la page est une consigne pour le Director, pas pour la
 // caméra. Audit du 12/09/2026 : « Analyze the mood of: <titre>. Choose colors… »
@@ -625,6 +628,74 @@ async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = nu
   throw new Error(`clip_video_wait_timeout: segment ${index}`);
 }
 
+// Modèle image par défaut pour les planches manga. Réglable sans redémarrer.
+// Un modèle t2i au catalogue Comfy ; on part sur un modèle rapide et fiable.
+const T2I_DEFAUT = process.env.NOSSEN_MANGA_IMAGE_MODEL || 'bytedance/seedream-4.0-t2i';
+
+// generateOnePanel — une PLANCHE (image) pour une scène, via le même pont Comfy
+// que la vidéo mais en type:'image'. Pas de son, pas de mouvement : une case.
+// Renvoie l'URL de l'image générée. Calqué sur generateOneVideo pour la robustesse
+// (un seul appel payant, poll du même prompt_id, pas de resoumission auto).
+async function generateOnePanel(prompt, index, maxWaitMs = 300_000, identity = {}, {
+  postJsonImpl = postJson,
+  sleepImpl = sleep,
+  onProgress,
+  pollIntervalMs = parseBoundedInteger(process.env.NOSSEN_CLIP_POLL_INTERVAL_MS, 8_000, 250, 60_000),
+  model = null,
+} = {}) {
+  console.log(`[manga] Planche ${index}: ${prompt.slice(0, 60)}...`);
+  emitProgress(onProgress, { stage: 'panel:submitting', status: 'generating', segmentIndex: index });
+
+  const args = {
+    type: 'image',
+    model: model || T2I_DEFAUT,
+    prompt,
+    client_os: 'linux',
+    confirm: true,
+  };
+
+  let result;
+  try {
+    result = await postJsonImpl(BRIDGE_URL, { tool: 'comfy__partner_generate', args });
+  } catch (error) {
+    const prefix = error?.ambiguous ? 'manga_panel_submission_ambiguous' : 'manga_panel_submission_failed';
+    throw new Error(`${prefix}: ${error.message}`);
+  }
+  const echecAmont = describeBridgeFailure(result);
+  if (echecAmont) throw new Error(echecAmont);
+  const text = getBridgeText(result);
+  const promptId = extractComfyPromptId(result);
+  if (!promptId) throw new Error('Pas de prompt_id dans la reponse : ' + (sanitizeDiagnostic(text, 300) || 'reponse vide'));
+  emitProgress(onProgress, { stage: 'panel:accepted', status: 'generating', segmentIndex: index, promptId });
+
+  const startTime = Date.now();
+  let firstPoll = true;
+  while (Date.now() - startTime < maxWaitMs) {
+    if (!firstPoll) await sleepImpl(pollIntervalMs);
+    firstPoll = false;
+    const status = await postJsonImpl(BRIDGE_URL, { tool: 'comfy__get_job_status', args: { prompt_id: promptId } });
+    const statusFailure = describeBridgeFailure(status);
+    if (statusFailure) throw new Error(`manga_panel_status_failed: ${extractComfyErrorDetail(status) || statusFailure}`);
+    const state = extractComfyJobStatus(status);
+    if (state === 'completed') {
+      const output = await postJsonImpl(BRIDGE_URL, { tool: 'comfy__get_output', args: { prompt_id: promptId, client_os: 'linux' } });
+      if (!isComfyOutputPending(output)) {
+        const outputFailure = describeBridgeFailure(output);
+        if (outputFailure) throw new Error(`manga_panel_output_failed: ${outputFailure}`);
+        const outputUrl = extractComfyOutputUrl(output);
+        if (outputUrl) return outputUrl;
+        throw new Error(`manga_panel_output_url_missing: ${sanitizeDiagnostic(getBridgeText(output), 300) || 'reponse vide'}`);
+      }
+    }
+    if (state === 'failed') {
+      throw new Error(`manga_panel_generation_failed: ${extractComfyErrorDetail(status) || sanitizeDiagnostic(getBridgeText(status), 300) || 'statut amont en echec'}`);
+    }
+    console.log(`[manga] Planche ${index} en cours... (${Math.round((Date.now() - startTime) / 1000)}s)`);
+    emitProgress(onProgress, { stage: 'panel:polling', status: 'generating', segmentIndex: index, promptId, elapsedMs: Date.now() - startTime });
+  }
+  throw new Error(`manga_panel_wait_timeout: planche ${index}`);
+}
+
 function loadClipDirector() {
   try { return require('./clip-vivy-director.cjs'); }
   catch (_) { return require('/app/clip-vivy-director.cjs'); }
@@ -780,6 +851,93 @@ async function generateClip(config = {}, {
     title, songUrl, lieu, identityIds: directed?.identity?.identityIds || [], scenes: directed?.scenes,
   }, null, 2));
   emitProgress(onProgress, { stage: 'director:ready', status: 'directing', progress: 18 });
+
+  // --- MODE MANGA : planches images, pas de vidéo. Une image par scène, puis
+  // on assemble une planche-contact verticale (webtoon) + on garde les cases.
+  // C'est le chemin le plus simple/économe : pas de Seedance vidéo, pas d'audio.
+  const isManga = String(render || '').trim().toLowerCase() === 'manga';
+  if (isManga) {
+    const mangaIdentityBrief = identity.prompt
+      ? ` Character identity to preserve exactly across every panel: ${identity.prompt}`
+      : '';
+    const mangaLieuBrief = lieu ? ` Same setting across the whole story: ${lieu}.` : '';
+    const panelPaths = [];
+    let dernierEchecPanel = '';
+    for (let i = 0; i < numSegments; i++) {
+      const section = sections[i % sections.length];
+      const prompt = effacerNomsFilm(
+        `${section.visual}.${mangaLieuBrief} ${renduVisuel(process.env, 'manga')} ${styleVideo(style, title)}${mangaIdentityBrief}`.trim(),
+        identity.nomsFilm,
+      );
+      try {
+        const panelUrl = await generateOnePanel(prompt, i, 300_000, identity, { onProgress });
+        const dest = path.join(clipDir, `panel_${String(i).padStart(2, '0')}.png`);
+        emitProgress(onProgress, { stage: 'panel:downloading', status: 'generating', segmentIndex: i });
+        await materializeMedia(panelUrl, dest, { kind: 'image' });
+        panelPaths.push(dest);
+        console.log(`[manga] Planche ${i} prête (${panelPaths.length}/${numSegments})`);
+        emitProgress(onProgress, {
+          stage: 'panel:ready', status: 'generating',
+          progress: 20 + Math.round((panelPaths.length / numSegments) * 70),
+          segments: panelPaths.length, totalSegments: numSegments,
+        });
+      } catch (error) {
+        dernierEchecPanel = sanitizeDiagnostic(error.message, 200);
+        console.warn(`[manga] Planche ${i} échouée: ${dernierEchecPanel}`);
+      }
+      if (i < numSegments - 1) await sleepImpl(1500);
+    }
+    if (!panelPaths.length) {
+      fs.rmSync(clipDir, { recursive: true, force: true });
+      throw new Error(`manga_no_panels: aucune planche générée — ${dernierEchecPanel || 'cause inconnue'}`);
+    }
+    const partial = panelPaths.length < numSegments;
+    const warning = partial ? `manga_partial: ${panelPaths.length}/${numSegments} planches` : null;
+    emitProgress(onProgress, { stage: 'assembling', status: 'assembling', progress: 92, segments: panelPaths.length, totalSegments: numSegments, ...(warning ? { message: warning } : {}) });
+
+    // Assemblage : une planche verticale (style webtoon) qui empile les cases.
+    // FFmpeg vstack met les images bout à bout ; largeur uniforme d'abord.
+    const safeName = (title || 'manga').replace(/[^a-zA-Z0-9àâéèêëïîôùûüç -]/gi, '').replace(/\s+/g, '-').slice(0, 40) || 'manga';
+    const boardPath = path.join(clipDir, safeName + '.png');
+    try {
+      const inputs = [];
+      panelPaths.forEach((p) => { inputs.push('-i', p); });
+      const n = panelPaths.length;
+      // Normalise chaque case à 1024px de large puis empile verticalement.
+      const scaleChain = panelPaths.map((_, i) => `[${i}:v]scale=1024:-1[p${i}]`).join(';');
+      const stackChain = panelPaths.map((_, i) => `[p${i}]`).join('') + `vstack=inputs=${n}[out]`;
+      execFileSyncImpl('ffmpeg', [
+        '-y', ...inputs,
+        '-filter_complex', `${scaleChain};${stackChain}`,
+        '-map', '[out]',
+        boardPath,
+      ], { timeout: 180_000, windowsHide: true });
+    } catch (error) {
+      // Si l'empilage échoue (une seule case, ou tailles incompatibles), on garde
+      // au moins la première planche comme sortie.
+      console.warn(`[manga] Assemblage planche échoué (${sanitizeDiagnostic(error.message, 120)}), première case servie seule.`);
+      fs.copyFileSync(panelPaths[0], boardPath);
+    }
+    const boardStats = fs.statSync(boardPath, { throwIfNoEntry: false });
+    if (!boardStats?.isFile() || boardStats.size <= 0) throw new Error('manga_board_missing_or_empty');
+
+    const publicFilename = `${safeName}-${clipId.slice('clip-'.length)}.png`;
+    const publicPath = path.join(CLIPS_DIR, publicFilename);
+    fs.copyFileSync(boardPath, publicPath);
+    console.log(`[manga] Terminé: ${publicFilename} (${panelPaths.length} planches)`);
+    emitProgress(onProgress, { stage: 'complete', status: 'done', progress: 100 });
+    return {
+      ok: true,
+      filename: publicFilename,
+      url: 'https://a11.funesterie.me/clips/' + encodeURIComponent(publicFilename),
+      path: publicPath,
+      kind: 'manga',
+      panels: panelPaths.length,
+      requestedPanels: numSegments,
+      partial,
+      warning,
+    };
+  }
 
   // (La durée et le nombre de plans sont mesurés avant le Director, plus haut.)
 
@@ -1059,6 +1217,7 @@ module.exports = {
   extractComfyPromptId,
   generateClip,
   generateOneVideo,
+  generateOnePanel,
   mountClipRoutes,
   postJson,
   requireDirectedScenes,

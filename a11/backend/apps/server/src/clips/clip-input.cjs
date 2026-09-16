@@ -33,9 +33,15 @@ const LOCAL_ROUTE_PREFIXES = Object.freeze([
 ]);
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.m4a', '.aac', '.wav', '.ogg', '.flac']);
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.mkv', '.mov']);
+// Planches manga : images générées par Comfy (mêmes hosts que la vidéo).
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 const execFileAsync = promisify(execFile);
 
 function getAllowedHosts(kind, env = process.env) {
+  if (kind === 'image') {
+    const cfg = splitList(env?.NOSSEN_CLIP_IMAGE_ALLOWED_HOSTS);
+    return cfg.length ? cfg : [...DEFAULT_VIDEO_HOSTS];
+  }
   const configured = splitList(kind === 'video'
     ? env?.NOSSEN_CLIP_VIDEO_ALLOWED_HOSTS
     : env?.NOSSEN_CLIP_AUDIO_ALLOWED_HOSTS);
@@ -43,6 +49,9 @@ function getAllowedHosts(kind, env = process.env) {
 }
 
 function getMaxBytes(kind, env = process.env) {
+  if (kind === 'image') {
+    return parsePositiveInteger(env?.NOSSEN_CLIP_IMAGE_MAX_BYTES, 32 * 1024 * 1024, 1024, 1024 * 1024 * 1024);
+  }
   return parsePositiveInteger(
     kind === 'video' ? env?.NOSSEN_CLIP_VIDEO_MAX_BYTES : env?.NOSSEN_CLIP_AUDIO_MAX_BYTES,
     kind === 'video' ? 512 * 1024 * 1024 : 50 * 1024 * 1024,
@@ -52,10 +61,12 @@ function getMaxBytes(kind, env = process.env) {
 }
 
 function getAllowedExtensions(kind) {
+  if (kind === 'image') return IMAGE_EXTENSIONS;
   return kind === 'video' ? VIDEO_EXTENSIONS : AUDIO_EXTENSIONS;
 }
 
 function getAllowedContentTypes(kind) {
+  if (kind === 'image') return ['image/*', 'application/octet-stream'];
   return kind === 'video'
     ? ['video/*', 'application/octet-stream']
     : ['audio/*', 'application/ogg'];
@@ -194,6 +205,16 @@ function assertClipMediaSignature(buffer, kind = 'audio') {
     return true;
   }
 
+  if (kind === 'image') {
+    // PNG (89 50 4E 47), JPEG (FF D8 FF), WebP (RIFF....WEBP).
+    const valid = (head.length >= 8 && head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47)
+      || (head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff)
+      || (head.length >= 12 && head.subarray(0, 4).toString('ascii') === 'RIFF'
+        && head.subarray(8, 12).toString('ascii') === 'WEBP');
+    if (!valid) throw new Error('clip_image_signature_invalid');
+    return true;
+  }
+
   const valid = (head.length >= 12 && head.subarray(4, 8).toString('ascii') === 'ftyp')
     || (head.length >= 4 && head[0] === 0x1a && head[1] === 0x45 && head[2] === 0xdf && head[3] === 0xa3);
   if (!valid) throw new Error('clip_video_signature_invalid');
@@ -236,7 +257,11 @@ async function validateMaterializedClipMedia(filename, { kind = 'audio', probeIm
   } finally {
     await handle.close();
   }
-  await probeClipMediaFile(filename, { kind, probeImpl });
+  // Une image n'a ni flux audio ni flux vidéo : la signature magique suffit,
+  // ffprobe n'a rien à valider.
+  if (kind !== 'image') {
+    await probeClipMediaFile(filename, { kind, probeImpl });
+  }
   return true;
 }
 

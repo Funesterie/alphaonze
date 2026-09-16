@@ -7251,7 +7251,8 @@ app.get('/clips/:filename', identifierSansBloquer, sharinganGuard, garderClipPri
   const decoded = decodeURIComponent(req.params.filename || '');
   if (!decoded || /[\/\\]/.test(decoded)) return res.status(400).json({ error: 'Invalid filename' });
   const ext = path.extname(decoded).toLowerCase();
-  if (!['.mp4', '.webm', '.mkv'].includes(ext)) return res.status(403).json({ error: 'Unsupported format' });
+  // .png/.jpg/.webp : planches manga (mode script image-par-image).
+  if (!['.mp4', '.webm', '.mkv', '.png', '.jpg', '.jpeg', '.webp'].includes(ext)) return res.status(403).json({ error: 'Unsupported format' });
   // Try both clip directories (agent-bus for shared, runtime for local)
   const filePath = path.join(CLIPS_DIR, decoded);
   const fallbackPath = path.join('/app/runtime/clips', decoded);
