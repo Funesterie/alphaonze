@@ -112,6 +112,20 @@
         <p class="hint">Le secret reste dans ton navigateur (localStorage), il n'est jamais affiché en clair et n'est envoyé qu'au serveur via l'en-tête <code>x-vivy-stream-secret</code>.</p>
       </section>
 
+      <!-- Composer un thème (solo, sans chat Twitch) -->
+      <section class="card full">
+        <h2>Composer un thème</h2>
+        <div class="field">
+          <label for="composeTheme">Sujet / thème de la chanson</label>
+          <textarea id="composeTheme" placeholder="Ex: SAO, Kirito et Asuna, opening anime épique en japonais, refrain mémorable"></textarea>
+        </div>
+        <div class="pill-row">
+          <button data-act="compose-now" class="cyan">🎼 Composer maintenant</button>
+          <button data-act="compose-suggest">➕ Juste proposer (sans lancer)</button>
+        </div>
+        <p class="hint">« Composer maintenant » ouvre un round, injecte ton thème, le verrouille et lance la génération — sans passer par le chat Twitch. Idéal depuis le téléphone.</p>
+      </section>
+
       <!-- Round -->
       <section class="card">
         <h2>Round & vote</h2>
@@ -327,6 +341,35 @@
 
       // ---- actions ----
       var actions = {
+        'compose-suggest': function () {
+          var theme = ($('composeTheme').value || '').trim();
+          if (!theme) { log('Entre un thème avant de proposer.', 'err'); return Promise.resolve(); }
+          return post('/api/vivy/stream/round/start', { title: theme.slice(0, 110) })
+            .then(function () { return post('/api/vivy/stream/chat', { message: '!nossen ' + theme, username: 'Régie', source: 'regie' }); });
+        },
+        'compose-now': function () {
+          var theme = ($('composeTheme').value || '').trim();
+          if (!theme) { log('Entre un thème avant de composer.', 'err'); return Promise.resolve(); }
+          log('Composition: ouverture round + injection du thème…', 'info');
+          return post('/api/vivy/stream/round/start', { title: theme.slice(0, 110) })
+            .then(function () { return post('/api/vivy/stream/chat', { message: '!nossen ' + theme, username: 'Régie', source: 'regie' }); })
+            .then(function (r) {
+              if (!r || (r.action && String(r.action).indexOf('suggestion') === -1)) {
+                log('Thème non accepté comme suggestion (action=' + (r && r.action) + '). Vérifie qu\u2019un round est ouvert.', 'err');
+              }
+              return post('/api/vivy/stream/round/lock', {});
+            })
+            .then(function (r) {
+              if (r && r.ok === false) { log('Verrouillage échoué: ' + (r.error || '?'), 'err'); throw new Error('lock-failed'); }
+              return post('/api/vivy/stream/round/generate', {});
+            })
+            .then(function (r) {
+              if (r && r.started) { log('✅ Génération lancée pour: ' + theme.slice(0, 60), 'ok'); }
+              else { log('Génération non lancée: ' + ((r && r.error) || '?'), 'err'); }
+              return r;
+            })
+            .catch(function (e) { log('Composition interrompue: ' + e.message, 'err'); });
+        },
         'round-start': function () { return post('/api/vivy/stream/round/start', { title: ($('roundTitle').value || 'Vivy Live') }); },
         'round-lock': function () { return post('/api/vivy/stream/round/lock', {}); },
         'round-generate': function () { return post('/api/vivy/stream/round/generate', {}); },
