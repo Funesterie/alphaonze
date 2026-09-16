@@ -9391,7 +9391,16 @@ function getOpenAICompletionsUrl(baseUrl = process.env.OPENAI_BASE_URL || 'https
   return base.endsWith('/v1') ? `${base}/chat/completions` : `${base}/v1/chat/completions`;
 }
 
-function getGroqCompletionsUrl(baseUrl = process.env.A11_CERBERE_GROQ_BASE_URL || process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1') {
+function getOpenRouterBaseUrl(env = process.env) {
+  const cerbere = String(env.A11_CERBERE_OPENAI_BASE_URL || '').trim();
+  return String(
+    env.OPENROUTER_BASE_URL
+    || (/openrouter\.ai/i.test(cerbere) ? cerbere : '')
+    || 'https://openrouter.ai/api/v1'
+  ).trim();
+}
+
+function getGroqCompletionsUrl(baseUrl =process.env.A11_CERBERE_GROQ_BASE_URL || process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1') {
   const base = String(baseUrl || 'https://api.groq.com/openai/v1').trim().replace(/\/$/, '');
   if (!base) {
     return 'https://api.groq.com/openai/v1/chat/completions';
@@ -11332,6 +11341,14 @@ function getCompletionsUrlForRequest(body) {
   const remoteProfileBaseUrl = String(body?.providerConfig?.baseUrl || '').trim();
   if (!remoteProfileUrl && !remoteProfileBaseUrl && provider === 'groq') {
     return getGroqCompletionsUrl();
+  }
+  // « OpenRouter secours » (16/09/2026). Il passait par le lane « openai », donc par
+  // OPENAI_BASE_URL -- absente en prod -- et partait chez api.openai.com avec un nom
+  // de modèle Llama : 404. OPENAI_BASE_URL ne peut pas simplement pointer OpenRouter,
+  // la clé OPENAI_API_KEY de prod est une vraie clé OpenAI. OpenRouter a donc son
+  // propre fournisseur ; buildOpenAIProxyHeaders choisit OPENROUTER_API_KEY d'après l'URL.
+  if (!remoteProfileUrl && !remoteProfileBaseUrl && provider === 'openrouter') {
+    return getOpenAICompletionsUrl(getOpenRouterBaseUrl());
   }
   return getOpenAICompletionsUrl(remoteProfileUrl || remoteProfileBaseUrl || undefined);
 }

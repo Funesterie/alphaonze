@@ -1228,9 +1228,10 @@ const DEFAULT_REMOTE_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
     model: "openai/gpt-oss-120b",
   },
   {
-    value: "openai:meta-llama/llama-3.3-70b-instruct",
+    // Fournisseur dédié : le lane « openai » partait chez api.openai.com (16/09/2026).
+    value: "openrouter:meta-llama/llama-3.3-70b-instruct",
     label: "OpenRouter secours - Llama 3.3 70B",
-    provider: "openai",
+    provider: "openrouter",
     model: "meta-llama/llama-3.3-70b-instruct",
   },
   // Qwen écrit bien le chinois et le japonais, là où Llama dérive (16/09/2026).
@@ -1268,6 +1269,7 @@ function readLanguageAiOverride(language: A11LanguageCode): LanguageAiOverride {
     if (!parsed || typeof parsed !== "object") return {};
     // Un réglage gardé sur un modèle retiré par Groq ne doit pas survivre.
     if (parsed.model === "groq:llama-3.3-70b-versatile") delete parsed.model;
+    if (parsed.model === "openai:meta-llama/llama-3.3-70b-instruct") parsed.model = "openrouter:meta-llama/llama-3.3-70b-instruct";
     return parsed;
   } catch {
     return {};
