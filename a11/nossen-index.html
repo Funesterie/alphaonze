@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NOSSEN — Clips musicaux</title>
+<title data-i18n="page.title">NOSSEN — Clips musicaux</title>
 <style>
 :root{--bg:#08080f;--card:#111119;--border:rgba(255,255,255,.05);--accent:#7b2ff7;--cyan:#00f5d4;--pink:#f72585;--gold:#fbbf24;--text:#eee;--muted:#777}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -73,49 +73,58 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   <a href="https://vivy.funesterie.me">Vivy</a>
   <a href="https://a11.funesterie.me">A11</a>
   <a href="https://k44.funesterie.me">K44</a>
-  <a href="https://funesterie.me">Accueil</a>
+  <a href="https://funesterie.me" data-i18n="nav.home">Accueil</a>
+  <select id="lang" aria-label="Langue" data-i18n-aria="lang.label" style="width:auto;margin:0;padding:.1rem .3rem;font-size:.65rem">
+    <option value="fr">Français</option>
+    <option value="en">English</option>
+    <option value="es">Español</option>
+    <option value="it">Italiano</option>
+    <option value="de">Deutsch</option>
+    <option value="ja">日本語</option>
+    <option value="zh">中文</option>
+  </select>
 </nav>
 
 <div class="card">
-  <h2>🎬 Produire un clip</h2>
-  <input class="input-url" type="search" id="song-search" placeholder="🔎 Rechercher : une lettre (initiale) ou des mots du titre" autocomplete="off" aria-label="Rechercher une chanson">
-  <select id="song"><option value="">Choisir une chanson ou importer…</option></select>
+  <h2 data-i18n="produce.title">🎬 Produire un clip</h2>
+  <input class="input-url" type="search" id="song-search" placeholder="🔎 Rechercher : une lettre (initiale) ou des mots du titre" data-i18n-placeholder="search.placeholder" autocomplete="off" aria-label="Rechercher une chanson" data-i18n-aria="search.aria">
+  <select id="song"><option value="" data-i18n="song.pickOrImport">Choisir une chanson ou importer…</option></select>
 
-  <div class="or">— ou importer ta musique —</div>
-  <input class="input-url" type="url" id="import-url" placeholder="Colle un lien audio (mp3, m4a…)">
+  <div class="or" data-i18n="import.or">— ou importer ta musique —</div>
+  <input class="input-url" type="url" id="import-url" placeholder="Colle un lien audio (mp3, m4a…)" data-i18n-placeholder="import.urlPlaceholder">
   <label class="file-label" id="file-label">
-    📁 Glisse ou choisis un fichier audio
+    <span data-i18n="import.file">📁 Glisse ou choisis un fichier audio</span>
     <input class="file-input" type="file" id="import-file" accept="audio/*">
   </label>
   <div class="file-name" id="file-name"></div>
 
   <select id="vibe">
-    <option value="auto">🤖 Mode libre (l'IA décide)</option>
-    <option value="live">🎤 Concert live</option>
+    <option value="auto" data-i18n="vibe.auto">🤖 Mode libre (l'IA décide)</option>
+    <option value="live" data-i18n="vibe.live">🎤 Concert live</option>
     <option value="cyberpunk">🌃 Cyberpunk</option>
-    <option value="cosmic">🌌 Cosmique</option>
-    <option value="intimate">🎹 Intimiste</option>
+    <option value="cosmic" data-i18n="vibe.cosmic">🌌 Cosmique</option>
+    <option value="intimate" data-i18n="vibe.intimate">🎹 Intimiste</option>
   </select>
 
   <select id="casting">
-    <option value="auto">🎭 Casting auto (l'auto-DJ choisit)</option>
-    <option value="random-lead">🎲 Voix principale aléatoire</option>
+    <option value="auto" data-i18n="cast.auto">🎭 Casting auto (l'auto-DJ choisit)</option>
+    <option value="random-lead" data-i18n="cast.random">🎲 Voix principale aléatoire</option>
     <option value="djeff">🎤 Solo Djeff</option>
     <option value="vivy">💜 Solo Vivy</option>
     <option value="grok">⚡ Solo Grok</option>
     <option value="a11">🤖 Solo A11</option>
     <option value="kaen44">🔥 Solo Kaen44</option>
     <option value="claude">🧠 Solo Claude</option>
-    <option value="moi">🙋 Moi (ma fiche)</option>
+    <option value="moi" data-i18n="cast.me">🙋 Moi (ma fiche)</option>
     <option value="duo-djeff-vivy">🎤💜 Duo Djeff × Vivy</option>
     <option value="duo-djeff-grok">🎤⚡ Duo Djeff × Grok</option>
     <option value="trio">🎤💜⚡ Trio (Djeff + Vivy + Grok)</option>
-    <option value="full">🌟 Full cast (toutes les voix)</option>
+    <option value="full" data-i18n="cast.full">🌟 Full cast (toutes les voix)</option>
   </select>
 
   <select id="rendu">
-    <option value="film">🎬 Clip film (prises de vue réelles)</option>
-    <option value="anime">🎌 Clip manga (anime)</option>
+    <option value="film" data-i18n="render.film">🎬 Clip film (prises de vue réelles)</option>
+    <option value="anime" data-i18n="render.anime">🎌 Clip manga (anime)</option>
   </select>
   <div class="produce-row">
     <button class="btn btn-clip" id="go-clip">Clip</button>
@@ -124,27 +133,27 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   <div class="credits" id="credits"></div>
   <div class="packs" id="packs" hidden></div>
   <div class="produce-info">
-    Clip = aperçu vidéo court · Full Clip = clip vidéo complet sur toute la chanson · payés en crédits (seuls les plans livrés sont facturés)<br>
-    Mode libre : l'IA analyse les paroles et choisit le thème visuel.
+    <span data-i18n="produce.info1">Clip = aperçu vidéo court · Full Clip = clip vidéo complet sur toute la chanson · payés en crédits (seuls les plans livrés sont facturés)</span><br>
+    <span data-i18n="produce.info2">Mode libre : l'IA analyse les paroles et choisit le thème visuel.</span>
   </div>
   <div class="bar" id="bar"><div id="fill" style="width:0%"></div></div>
   <div class="msg" id="msg"></div>
 </div>
 
 <div class="card">
-  <h2>🙋 Ma fiche</h2>
-  <div id="fiche"><div class="empty">Connecte-toi pour créer ta fiche.</div></div>
+  <h2 data-i18n="fiche.title">🙋 Ma fiche</h2>
+  <div id="fiche"><div class="empty" data-i18n="fiche.loginEmpty">Connecte-toi pour créer ta fiche.</div></div>
 </div>
 
 <div class="card">
-  <h2>🎤 Jukebox — historique <span class="badge badge-gold" id="song-count">0</span></h2>
-  <input class="input-url" type="search" id="jukebox-search" placeholder="🔎 Chercher dans le jukebox : une lettre ou des mots (Entrée pour écouter)" autocomplete="off" aria-label="Chercher dans le jukebox">
+  <h2><span data-i18n="jukebox.title">🎤 Jukebox — historique</span> <span class="badge badge-gold" id="song-count">0</span></h2>
+  <input class="input-url" type="search" id="jukebox-search" placeholder="🔎 Chercher dans le jukebox : une lettre ou des mots (Entrée pour écouter)" data-i18n-placeholder="jukebox.searchPlaceholder" autocomplete="off" aria-label="Chercher dans le jukebox" data-i18n-aria="jukebox.searchAria">
   <div class="meta" id="mastering-progress"></div>
   <div id="list" class="songs"></div>
 </div>
 
 <div class="card">
-  <h2>📁 Clips</h2>
+  <h2 data-i18n="clips.title">📁 Clips</h2>
   <div id="clips" class="clips"></div>
 </div>
 </div>
@@ -189,6 +198,1054 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   var sessionExpiresAt = null;
   var refreshInFlight = false;
 
+  // Traduction de la page (16/09/2026, demande de Djeff : le sélecteur de langue doit
+  // tout traduire). Le français est la référence et le repli de chaque clé ; les
+  // codes internes (statuts, identifiants) ne sont jamais traduits. Les messages
+  // rendus par le serveur restent dans la langue du serveur.
+  var LANGUES = ["fr", "en", "es", "it", "de", "ja", "zh"];
+  var LOCALES = { fr: "fr-FR", en: "en-US", es: "es-ES", it: "it-IT", de: "de-DE", ja: "ja-JP", zh: "zh-CN" };
+  var I18N = {
+    fr: {
+      "page.title": "NOSSEN — Clips musicaux",
+      "nav.home": "Accueil",
+      "lang.label": "Langue",
+      "produce.title": "🎬 Produire un clip",
+      "search.placeholder": "🔎 Rechercher : une lettre (initiale) ou des mots du titre",
+      "search.aria": "Rechercher une chanson",
+      "song.pickOrImport": "Choisir une chanson ou importer…",
+      "import.or": "— ou importer ta musique —",
+      "import.urlPlaceholder": "Colle un lien audio (mp3, m4a…)",
+      "import.file": "📁 Glisse ou choisis un fichier audio",
+      "vibe.auto": "🤖 Mode libre (l'IA décide)",
+      "vibe.live": "🎤 Concert live",
+      "vibe.cosmic": "🌌 Cosmique",
+      "vibe.intimate": "🎹 Intimiste",
+      "cast.auto": "🎭 Casting auto (l'auto-DJ choisit)",
+      "cast.random": "🎲 Voix principale aléatoire",
+      "cast.me": "🙋 Moi (ma fiche)",
+      "cast.full": "🌟 Full cast (toutes les voix)",
+      "render.film": "🎬 Clip film (prises de vue réelles)",
+      "render.anime": "🎌 Clip manga (anime)",
+      "produce.info1": "Clip = aperçu vidéo court · Full Clip = clip vidéo complet sur toute la chanson · payés en crédits (seuls les plans livrés sont facturés)",
+      "produce.info2": "Mode libre : l'IA analyse les paroles et choisit le thème visuel.",
+      "fiche.title": "🙋 Ma fiche",
+      "fiche.loginEmpty": "Connecte-toi pour créer ta fiche.",
+      "jukebox.title": "🎤 Jukebox — historique",
+      "jukebox.searchPlaceholder": "🔎 Chercher dans le jukebox : une lettre ou des mots (Entrée pour écouter)",
+      "jukebox.searchAria": "Chercher dans le jukebox",
+      "err.network": "Erreur réseau",
+      "err.badUrl": "URL de requête invalide",
+      "err.unreadable": "Réponse serveur illisible",
+      "err.http": "Erreur HTTP {0}",
+      "err.empty": "Réponse serveur vide",
+      "err.timeout": "Le serveur ne répond pas dans le délai prévu",
+      "audio.interrupted": "Lecture interrompue",
+      "audio.noResponse": "Le fichier audio ne répond pas correctement",
+      "audio.corrupt": "Le fichier audio est illisible ou corrompu",
+      "audio.unsupported": "Format audio ou lien non pris en charge",
+      "audio.impossible": "Lecture audio impossible",
+      "audio.loading": "Chargement du morceau…",
+      "audio.notStarted": "Le lecteur n'a pas démarré. Le lien ou le fichier audio est invalide.",
+      "audio.badLink": "Lien audio invalide",
+      "audio.httpsOnly": "Le lien audio doit commencer par https://",
+      "auth.connected": "Connecté",
+      "auth.loginForClips": "Se connecter pour accéder aux clips",
+      "auth.login": "Se connecter",
+      "credits.admin": "👑 Admin : clips gratuits",
+      "credits.reserve": " · 🎞️ Réserve Comfy : {0} crédits ≈ {1} plans (~{2} min de clip)",
+      "credits.split": " (mensuel {0} · bonus {1})",
+      "credits.balance": "💳 {0} crédits · Clip ≈ {1} · Full ≈ {2}/min (1 crédit = {3} €)",
+      "credits.buy": "Recharger",
+      "pay.unavailable": "❌ Paiement indisponible pour le moment.",
+      "voice.unknown": "🎙️ Voix Suno : état indisponible",
+      "voice.linked": "🎙️ Voix Suno personnelle : liée ✓",
+      "voice.toLink": "🎙️ Voix Suno personnelle : à lier dans le studio A11",
+      "voice.reserved": "🎙️ Voix Suno personnelle : réservée aux comptes Premium, Fondateur et Famille",
+      "fiche.label": "🙋 Ta fiche (écrite depuis ta photo, tu peux la corriger) :",
+      "fiche.pending": "Ta fiche détaillée sera écrite à ta prochaine photo, ou écris-la toi-même ici.",
+      "fiche.summary": "🎬 Résumé pour chaque plan vidéo (en anglais, court) :",
+      "fiche.save": "Enregistrer",
+      "fiche.delete": "Supprimer ma photo et mon avatar",
+      "fiche.create": "🙋 Crée ton avatar : envoie une photo de toi, de face et bien éclairée. Il jouera dans tes clips avec le casting « Moi ».",
+      "fiche.changePhoto": "Changer de photo",
+      "fiche.choosePhoto": "Choisir une photo",
+      "fiche.consent": "C’est moi sur la photo. Elle est analysée par Google Gemini pour écrire ma fiche et mon avatar, puis gardée dans mon espace privé ; je peux la supprimer à tout moment.",
+      "fiche.consentRef": "",
+      "fiche.analysesLeft": " · {0} analyse(s) de photo restante(s) aujourd’hui",
+      "fiche.consentFirst": "Coche d’abord la case de consentement.",
+      "fiche.analyzing": "⏳ Analyse de ta photo…",
+      "fiche.analysisFailed": "Analyse impossible",
+      "fiche.saved": "✅ Fiche enregistrée.",
+      "fiche.saveFailed": "Enregistrement impossible",
+      "fiche.confirmDelete": "Supprimer ta photo et ton avatar ?",
+      "fiche.deleteFailed": "Suppression impossible",
+      "full.title": "Full Clip — vidéo générée sur toute la durée de la chanson",
+      "full.loginTitle": "Connecte-toi pour lancer un Full Clip",
+      "upload.failed": "Échec de l'envoi",
+      "clip.chooseSong": "Choisis une chanson ou importe un fichier audio",
+      "clip.fullAdmin": "Full Clip réservé aux admins pour le moment",
+      "clip.estimating": "⏳ Estimation {0}…",
+      "clip.reserveEmpty": "⛔ La réserve vidéo du studio est vide pour le moment. Réessaie plus tard, rien ne t'a été pris.",
+      "clip.reserveLow": "⚠️ La réserve vidéo du studio est basse.\n\nCe {0} demande environ {1} plans{2}, il en reste de quoi faire {3}.\nLe clip risque de s'arrêter en route : seuls les plans livrés sont facturés.\n\nLancer quand même ?",
+      "clip.unknownDuration": " (durée inconnue)",
+      "clip.cancelled": "Lancement annulé.",
+      "clip.launching": "Lancement {0}…",
+      "clip.running": "{0} en cours…",
+      "clip.unknownError": "Erreur inconnue",
+      "clip.rechargeBelow": " Recharge ci-dessous.",
+      "clip.uploading": "Envoi du fichier…",
+      "clip.uploaded": "Fichier envoyé, lancement…",
+      "clip.uploadError": "Envoi : {0}",
+      "poll.missingId": "❌ Identifiant de génération manquant",
+      "poll.maxDelay": "⚠️ Suivi arrêté : délai maximal atteint. La génération peut encore finir côté serveur ; recharge la liste des clips.",
+      "poll.noFile": "❌ Génération marquée terminée, mais aucun fichier vidéo n'a été fourni.",
+      "poll.partial": "⚠️ {0} partiel prêt",
+      "poll.ready": "✅ {0} prêt !",
+      "poll.cancelled": "Génération annulée",
+      "poll.failed": "Génération échouée",
+      "poll.badStatus": "❌ Statut de génération invalide ou absent",
+      "poll.sessionExpired": "❌ Session expirée : reconnecte-toi puis actualise pour reprendre le suivi.",
+      "poll.jobNotFound": "⚠️ Job introuvable : le serveur a peut-être redémarré. Vérifie la liste des clips.",
+      "poll.networkLost": "⚠️ Suivi réseau interrompu. Actualise la page pour reprendre ce job.",
+      "poll.retrying": "⚠️ Suivi temporairement indisponible, nouvel essai…",
+      "poll.resume": "⏳ Reprise du suivi de la génération…",
+      "clips.partial": " (partiel)",
+      "clips.title": "📁 Clips",
+      "clips.unpublish": "Retirer de la vitrine",
+      "clips.publish": "Mettre en vitrine",
+      "clips.mine": "Mes clips",
+      "clips.loginToSee": "Connecte-toi pour voir tes clips",
+      "clips.minePrivate": "Mes clips — visibles par toi seul",
+      "clips.unavailable": "Liste indisponible",
+      "clips.none": "Aucun clip pour le moment",
+      "clips.allAdmin": "Tous les clips (admin) — la vitrine est visible de tous",
+      "clips.showcase": "Vitrine",
+      "clips.showcaseUnavailable": "Vitrine indisponible",
+      "clips.showcaseEmpty": "Rien en vitrine pour le moment",
+      "song.untitled": "Sans titre",
+      "song.titleBy": "Titre : {0}",
+      "song.notRetrieved": "Audio non récupéré",
+      "song.v11": "{0} / {1} versions V11 Pan disponibles · originaux conservés",
+      "song.result1": "{0} résultat — choisir…",
+      "song.resultN": "{0} résultats — choisir…",
+      "song.noMatchShort": "Aucun titre ne correspond",
+      "song.choose": "Choisir une chanson…",
+      "song.play": "Lire {0}",
+      "song.original": "Original",
+      "song.use": "utiliser",
+      "song.noMatch": "Aucune chanson ne correspond à « {0} »",
+      "song.none": "Aucune chanson disponible pour le moment",
+      "status.online": "En ligne",
+      "status.partial": "Partiel",
+      "status.offline": "Hors ligne",
+      "player.unknownDuration": "durée indéterminée",
+      "player.ready": "Prêt",
+      "player.playing": "Lecture",
+      "player.buffering": "Mise en mémoire tampon…",
+      "player.stalled": "Le flux audio ne progresse plus",
+      "player.paused": "Pause",
+      "player.ended": "Terminé"
+    },
+    en: {
+      "page.title": "NOSSEN — Music videos",
+      "nav.home": "Home",
+      "lang.label": "Language",
+      "produce.title": "🎬 Make a music video",
+      "search.placeholder": "🔎 Search: a letter (first letter) or words from the title",
+      "search.aria": "Search for a song",
+      "song.pickOrImport": "Choose a song or import…",
+      "import.or": "— or import your music —",
+      "import.urlPlaceholder": "Paste an audio link (mp3, m4a…)",
+      "import.file": "📁 Drop or choose an audio file",
+      "vibe.auto": "🤖 Free mode (the AI decides)",
+      "vibe.live": "🎤 Live concert",
+      "vibe.cosmic": "🌌 Cosmic",
+      "vibe.intimate": "🎹 Intimate",
+      "cast.auto": "🎭 Auto casting (the auto-DJ chooses)",
+      "cast.random": "🎲 Random lead voice",
+      "cast.me": "🙋 Me (my profile)",
+      "cast.full": "🌟 Full cast (all voices)",
+      "render.film": "🎬 Film video (live action)",
+      "render.anime": "🎌 Manga video (anime)",
+      "produce.info1": "Clip = short video preview · Full Clip = complete video over the whole song · paid in credits (only delivered shots are charged)",
+      "produce.info2": "Free mode: the AI reads the lyrics and picks the visual theme.",
+      "fiche.title": "🙋 My profile",
+      "fiche.loginEmpty": "Sign in to create your profile.",
+      "jukebox.title": "🎤 Jukebox — history",
+      "jukebox.searchPlaceholder": "🔎 Search the jukebox: a letter or words (Enter to listen)",
+      "jukebox.searchAria": "Search the jukebox",
+      "err.network": "Network error",
+      "err.badUrl": "Invalid request URL",
+      "err.unreadable": "Unreadable server response",
+      "err.http": "HTTP error {0}",
+      "err.empty": "Empty server response",
+      "err.timeout": "The server did not answer in time",
+      "audio.interrupted": "Playback interrupted",
+      "audio.noResponse": "The audio file is not responding properly",
+      "audio.corrupt": "The audio file is unreadable or corrupted",
+      "audio.unsupported": "Audio format or link not supported",
+      "audio.impossible": "Audio playback failed",
+      "audio.loading": "Loading the track…",
+      "audio.notStarted": "The player did not start. The audio link or file is invalid.",
+      "audio.badLink": "Invalid audio link",
+      "audio.httpsOnly": "The audio link must start with https://",
+      "auth.connected": "Signed in",
+      "auth.loginForClips": "Sign in to access the videos",
+      "auth.login": "Sign in",
+      "credits.admin": "👑 Admin: free videos",
+      "credits.reserve": " · 🎞️ Comfy reserve: {0} credits ≈ {1} shots (~{2} min of video)",
+      "credits.split": " (monthly {0} · bonus {1})",
+      "credits.balance": "💳 {0} credits · Clip ≈ {1} · Full ≈ {2}/min (1 credit = {3} €)",
+      "credits.buy": "Top up",
+      "pay.unavailable": "❌ Payment unavailable for now.",
+      "voice.unknown": "🎙️ Suno voice: status unavailable",
+      "voice.linked": "🎙️ Personal Suno voice: linked ✓",
+      "voice.toLink": "🎙️ Personal Suno voice: link it in the A11 studio",
+      "voice.reserved": "🎙️ Personal Suno voice: for Premium, Founder and Family accounts",
+      "fiche.label": "🙋 Your profile (written from your photo, you can edit it):",
+      "fiche.pending": "Your detailed profile will be written with your next photo, or write it yourself here.",
+      "fiche.summary": "🎬 Summary for each video shot (in English, short):",
+      "fiche.save": "Save",
+      "fiche.delete": "Delete my photo and my avatar",
+      "fiche.create": "🙋 Create your avatar: send a photo of yourself, facing the camera and well lit. It will star in your videos with the “Me” casting.",
+      "fiche.changePhoto": "Change photo",
+      "fiche.choosePhoto": "Choose a photo",
+      "fiche.consent": "This is me in the photo. It is analysed by Google Gemini to write my profile and my avatar, then kept in my private space; I can delete it at any time.",
+      "fiche.consentRef": " (Translation: the reference text of this consent is the French version.)",
+      "fiche.analysesLeft": " · {0} photo analysis(es) left today",
+      "fiche.consentFirst": "Tick the consent box first.",
+      "fiche.analyzing": "⏳ Analysing your photo…",
+      "fiche.analysisFailed": "Analysis failed",
+      "fiche.saved": "✅ Profile saved.",
+      "fiche.saveFailed": "Saving failed",
+      "fiche.confirmDelete": "Delete your photo and your avatar?",
+      "fiche.deleteFailed": "Deletion failed",
+      "full.title": "Full Clip — video generated over the whole song",
+      "full.loginTitle": "Sign in to start a Full Clip",
+      "upload.failed": "Upload failed",
+      "clip.chooseSong": "Choose a song or import an audio file",
+      "clip.fullAdmin": "Full Clip is reserved for admins for now",
+      "clip.estimating": "⏳ Estimating {0}…",
+      "clip.reserveEmpty": "⛔ The studio's video reserve is empty for now. Try again later, nothing was charged.",
+      "clip.reserveLow": "⚠️ The studio's video reserve is low.\n\nThis {0} needs about {1} shots{2}, and there is enough left for {3}.\nThe video may stop midway: only delivered shots are charged.\n\nStart anyway?",
+      "clip.unknownDuration": " (unknown duration)",
+      "clip.cancelled": "Launch cancelled.",
+      "clip.launching": "Starting {0}…",
+      "clip.running": "{0} in progress…",
+      "clip.unknownError": "Unknown error",
+      "clip.rechargeBelow": " Top up below.",
+      "clip.uploading": "Uploading the file…",
+      "clip.uploaded": "File uploaded, starting…",
+      "clip.uploadError": "Upload: {0}",
+      "poll.missingId": "❌ Missing generation ID",
+      "poll.maxDelay": "⚠️ Tracking stopped: maximum time reached. The generation may still finish on the server; reload the video list.",
+      "poll.noFile": "❌ Generation marked as finished, but no video file was provided.",
+      "poll.partial": "⚠️ Partial {0} ready",
+      "poll.ready": "✅ {0} ready!",
+      "poll.cancelled": "Generation cancelled",
+      "poll.failed": "Generation failed",
+      "poll.badStatus": "❌ Invalid or missing generation status",
+      "poll.sessionExpired": "❌ Session expired: sign in again, then refresh to resume tracking.",
+      "poll.jobNotFound": "⚠️ Job not found: the server may have restarted. Check the video list.",
+      "poll.networkLost": "⚠️ Network tracking interrupted. Refresh the page to resume this job.",
+      "poll.retrying": "⚠️ Tracking temporarily unavailable, retrying…",
+      "poll.resume": "⏳ Resuming generation tracking…",
+      "clips.partial": " (partial)",
+      "clips.title": "📁 Videos",
+      "clips.unpublish": "Remove from showcase",
+      "clips.publish": "Add to showcase",
+      "clips.mine": "My videos",
+      "clips.loginToSee": "Sign in to see your videos",
+      "clips.minePrivate": "My videos — visible only to you",
+      "clips.unavailable": "List unavailable",
+      "clips.none": "No videos yet",
+      "clips.allAdmin": "All videos (admin) — the showcase is visible to everyone",
+      "clips.showcase": "Showcase",
+      "clips.showcaseUnavailable": "Showcase unavailable",
+      "clips.showcaseEmpty": "Nothing in the showcase yet",
+      "song.untitled": "Untitled",
+      "song.titleBy": "Title: {0}",
+      "song.notRetrieved": "Audio not retrieved",
+      "song.v11": "{0} / {1} V11 Pan versions available · originals kept",
+      "song.result1": "{0} result — choose…",
+      "song.resultN": "{0} results — choose…",
+      "song.noMatchShort": "No matching title",
+      "song.choose": "Choose a song…",
+      "song.play": "Play {0}",
+      "song.original": "Original",
+      "song.use": "use",
+      "song.noMatch": "No song matches “{0}”",
+      "song.none": "No songs available yet",
+      "status.online": "Online",
+      "status.partial": "Partial",
+      "status.offline": "Offline",
+      "player.unknownDuration": "unknown duration",
+      "player.ready": "Ready",
+      "player.playing": "Playing",
+      "player.buffering": "Buffering…",
+      "player.stalled": "The audio stream has stopped progressing",
+      "player.paused": "Paused",
+      "player.ended": "Finished"
+    },
+    es: {
+      "page.title": "NOSSEN — Videoclips",
+      "nav.home": "Inicio",
+      "lang.label": "Idioma",
+      "produce.title": "🎬 Crear un videoclip",
+      "search.placeholder": "🔎 Buscar: una letra (inicial) o palabras del título",
+      "search.aria": "Buscar una canción",
+      "song.pickOrImport": "Elegir una canción o importar…",
+      "import.or": "— o importa tu música —",
+      "import.urlPlaceholder": "Pega un enlace de audio (mp3, m4a…)",
+      "import.file": "📁 Arrastra o elige un archivo de audio",
+      "vibe.auto": "🤖 Modo libre (la IA decide)",
+      "vibe.live": "🎤 Concierto en directo",
+      "vibe.cosmic": "🌌 Cósmico",
+      "vibe.intimate": "🎹 Íntimo",
+      "cast.auto": "🎭 Reparto automático (el auto-DJ elige)",
+      "cast.random": "🎲 Voz principal aleatoria",
+      "cast.me": "🙋 Yo (mi ficha)",
+      "cast.full": "🌟 Reparto completo (todas las voces)",
+      "render.film": "🎬 Videoclip de película (imagen real)",
+      "render.anime": "🎌 Videoclip manga (anime)",
+      "produce.info1": "Clip = vista previa corta · Full Clip = videoclip completo de toda la canción · se paga en créditos (solo se cobran los planos entregados)",
+      "produce.info2": "Modo libre: la IA analiza la letra y elige el tema visual.",
+      "fiche.title": "🙋 Mi ficha",
+      "fiche.loginEmpty": "Inicia sesión para crear tu ficha.",
+      "jukebox.title": "🎤 Jukebox — historial",
+      "jukebox.searchPlaceholder": "🔎 Buscar en el jukebox: una letra o palabras (Intro para escuchar)",
+      "jukebox.searchAria": "Buscar en el jukebox",
+      "err.network": "Error de red",
+      "err.badUrl": "URL de solicitud no válida",
+      "err.unreadable": "Respuesta del servidor ilegible",
+      "err.http": "Error HTTP {0}",
+      "err.empty": "Respuesta del servidor vacía",
+      "err.timeout": "El servidor no responde a tiempo",
+      "audio.interrupted": "Reproducción interrumpida",
+      "audio.noResponse": "El archivo de audio no responde correctamente",
+      "audio.corrupt": "El archivo de audio es ilegible o está dañado",
+      "audio.unsupported": "Formato de audio o enlace no compatible",
+      "audio.impossible": "No se puede reproducir el audio",
+      "audio.loading": "Cargando la pista…",
+      "audio.notStarted": "El reproductor no arrancó. El enlace o el archivo de audio no es válido.",
+      "audio.badLink": "Enlace de audio no válido",
+      "audio.httpsOnly": "El enlace de audio debe empezar por https://",
+      "auth.connected": "Conectado",
+      "auth.loginForClips": "Inicia sesión para acceder a los videoclips",
+      "auth.login": "Iniciar sesión",
+      "credits.admin": "👑 Admin: videoclips gratis",
+      "credits.reserve": " · 🎞️ Reserva Comfy: {0} créditos ≈ {1} planos (~{2} min de videoclip)",
+      "credits.split": " (mensual {0} · bono {1})",
+      "credits.balance": "💳 {0} créditos · Clip ≈ {1} · Full ≈ {2}/min (1 crédito = {3} €)",
+      "credits.buy": "Recargar",
+      "pay.unavailable": "❌ Pago no disponible por ahora.",
+      "voice.unknown": "🎙️ Voz Suno: estado no disponible",
+      "voice.linked": "🎙️ Voz Suno personal: vinculada ✓",
+      "voice.toLink": "🎙️ Voz Suno personal: vincúlala en el estudio A11",
+      "voice.reserved": "🎙️ Voz Suno personal: para cuentas Premium, Fundador y Familia",
+      "fiche.label": "🙋 Tu ficha (escrita a partir de tu foto, puedes corregirla):",
+      "fiche.pending": "Tu ficha detallada se escribirá con tu próxima foto, o escríbela tú aquí.",
+      "fiche.summary": "🎬 Resumen para cada plano de vídeo (en inglés, corto):",
+      "fiche.save": "Guardar",
+      "fiche.delete": "Eliminar mi foto y mi avatar",
+      "fiche.create": "🙋 Crea tu avatar: envía una foto tuya, de frente y bien iluminada. Actuará en tus videoclips con el reparto «Yo».",
+      "fiche.changePhoto": "Cambiar de foto",
+      "fiche.choosePhoto": "Elegir una foto",
+      "fiche.consent": "Soy yo en la foto. Google Gemini la analiza para escribir mi ficha y mi avatar, y luego se guarda en mi espacio privado; puedo eliminarla en cualquier momento.",
+      "fiche.consentRef": " (Traducción: el texto de referencia de este consentimiento es la versión francesa.)",
+      "fiche.analysesLeft": " · {0} análisis de foto restantes hoy",
+      "fiche.consentFirst": "Marca primero la casilla de consentimiento.",
+      "fiche.analyzing": "⏳ Analizando tu foto…",
+      "fiche.analysisFailed": "No se pudo analizar",
+      "fiche.saved": "✅ Ficha guardada.",
+      "fiche.saveFailed": "No se pudo guardar",
+      "fiche.confirmDelete": "¿Eliminar tu foto y tu avatar?",
+      "fiche.deleteFailed": "No se pudo eliminar",
+      "full.title": "Full Clip — vídeo generado durante toda la canción",
+      "full.loginTitle": "Inicia sesión para lanzar un Full Clip",
+      "upload.failed": "Error al enviar",
+      "clip.chooseSong": "Elige una canción o importa un archivo de audio",
+      "clip.fullAdmin": "Full Clip reservado a los administradores por ahora",
+      "clip.estimating": "⏳ Estimando {0}…",
+      "clip.reserveEmpty": "⛔ La reserva de vídeo del estudio está vacía por ahora. Vuelve a intentarlo más tarde, no se te ha cobrado nada.",
+      "clip.reserveLow": "⚠️ La reserva de vídeo del estudio está baja.\n\nEste {0} necesita unos {1} planos{2} y queda para hacer {3}.\nEl videoclip puede detenerse a mitad: solo se cobran los planos entregados.\n\n¿Lanzarlo de todos modos?",
+      "clip.unknownDuration": " (duración desconocida)",
+      "clip.cancelled": "Lanzamiento cancelado.",
+      "clip.launching": "Lanzando {0}…",
+      "clip.running": "{0} en curso…",
+      "clip.unknownError": "Error desconocido",
+      "clip.rechargeBelow": " Recarga abajo.",
+      "clip.uploading": "Enviando el archivo…",
+      "clip.uploaded": "Archivo enviado, lanzando…",
+      "clip.uploadError": "Envío: {0}",
+      "poll.missingId": "❌ Falta el identificador de generación",
+      "poll.maxDelay": "⚠️ Seguimiento detenido: se alcanzó el tiempo máximo. La generación aún puede terminar en el servidor; recarga la lista de videoclips.",
+      "poll.noFile": "❌ Generación marcada como terminada, pero no se entregó ningún archivo de vídeo.",
+      "poll.partial": "⚠️ {0} parcial listo",
+      "poll.ready": "✅ ¡{0} listo!",
+      "poll.cancelled": "Generación cancelada",
+      "poll.failed": "La generación falló",
+      "poll.badStatus": "❌ Estado de generación no válido o ausente",
+      "poll.sessionExpired": "❌ Sesión caducada: vuelve a iniciar sesión y actualiza para retomar el seguimiento.",
+      "poll.jobNotFound": "⚠️ Trabajo no encontrado: puede que el servidor se haya reiniciado. Revisa la lista de videoclips.",
+      "poll.networkLost": "⚠️ Seguimiento de red interrumpido. Actualiza la página para retomar este trabajo.",
+      "poll.retrying": "⚠️ Seguimiento no disponible temporalmente, reintentando…",
+      "poll.resume": "⏳ Retomando el seguimiento de la generación…",
+      "clips.partial": " (parcial)",
+      "clips.title": "📁 Videoclips",
+      "clips.unpublish": "Quitar del escaparate",
+      "clips.publish": "Poner en el escaparate",
+      "clips.mine": "Mis videoclips",
+      "clips.loginToSee": "Inicia sesión para ver tus videoclips",
+      "clips.minePrivate": "Mis videoclips — visibles solo para ti",
+      "clips.unavailable": "Lista no disponible",
+      "clips.none": "Todavía no hay videoclips",
+      "clips.allAdmin": "Todos los videoclips (admin) — el escaparate es visible para todos",
+      "clips.showcase": "Escaparate",
+      "clips.showcaseUnavailable": "Escaparate no disponible",
+      "clips.showcaseEmpty": "Nada en el escaparate por ahora",
+      "song.untitled": "Sin título",
+      "song.titleBy": "Título: {0}",
+      "song.notRetrieved": "Audio no recuperado",
+      "song.v11": "{0} / {1} versiones V11 Pan disponibles · originales conservados",
+      "song.result1": "{0} resultado — elegir…",
+      "song.resultN": "{0} resultados — elegir…",
+      "song.noMatchShort": "Ningún título coincide",
+      "song.choose": "Elegir una canción…",
+      "song.play": "Reproducir {0}",
+      "song.original": "Original",
+      "song.use": "usar",
+      "song.noMatch": "Ninguna canción coincide con «{0}»",
+      "song.none": "No hay canciones disponibles por ahora",
+      "status.online": "En línea",
+      "status.partial": "Parcial",
+      "status.offline": "Sin conexión",
+      "player.unknownDuration": "duración indeterminada",
+      "player.ready": "Listo",
+      "player.playing": "Reproduciendo",
+      "player.buffering": "Cargando en búfer…",
+      "player.stalled": "El flujo de audio ya no avanza",
+      "player.paused": "Pausa",
+      "player.ended": "Terminado"
+    },
+    it: {
+      "page.title": "NOSSEN — Videoclip musicali",
+      "nav.home": "Home",
+      "lang.label": "Lingua",
+      "produce.title": "🎬 Crea un videoclip",
+      "search.placeholder": "🔎 Cerca: una lettera (iniziale) o parole del titolo",
+      "search.aria": "Cerca una canzone",
+      "song.pickOrImport": "Scegli una canzone o importa…",
+      "import.or": "— o importa la tua musica —",
+      "import.urlPlaceholder": "Incolla un link audio (mp3, m4a…)",
+      "import.file": "📁 Trascina o scegli un file audio",
+      "vibe.auto": "🤖 Modalità libera (decide l'IA)",
+      "vibe.live": "🎤 Concerto dal vivo",
+      "vibe.cosmic": "🌌 Cosmico",
+      "vibe.intimate": "🎹 Intimo",
+      "cast.auto": "🎭 Casting automatico (sceglie l'auto-DJ)",
+      "cast.random": "🎲 Voce principale casuale",
+      "cast.me": "🙋 Io (la mia scheda)",
+      "cast.full": "🌟 Cast completo (tutte le voci)",
+      "render.film": "🎬 Videoclip film (riprese reali)",
+      "render.anime": "🎌 Videoclip manga (anime)",
+      "produce.info1": "Clip = anteprima video breve · Full Clip = videoclip completo su tutta la canzone · pagati in crediti (si pagano solo le inquadrature consegnate)",
+      "produce.info2": "Modalità libera: l'IA analizza il testo e sceglie il tema visivo.",
+      "fiche.title": "🙋 La mia scheda",
+      "fiche.loginEmpty": "Accedi per creare la tua scheda.",
+      "jukebox.title": "🎤 Jukebox — cronologia",
+      "jukebox.searchPlaceholder": "🔎 Cerca nel jukebox: una lettera o parole (Invio per ascoltare)",
+      "jukebox.searchAria": "Cerca nel jukebox",
+      "err.network": "Errore di rete",
+      "err.badUrl": "URL della richiesta non valido",
+      "err.unreadable": "Risposta del server illeggibile",
+      "err.http": "Errore HTTP {0}",
+      "err.empty": "Risposta del server vuota",
+      "err.timeout": "Il server non risponde nei tempi previsti",
+      "audio.interrupted": "Riproduzione interrotta",
+      "audio.noResponse": "Il file audio non risponde correttamente",
+      "audio.corrupt": "Il file audio è illeggibile o danneggiato",
+      "audio.unsupported": "Formato audio o link non supportato",
+      "audio.impossible": "Impossibile riprodurre l'audio",
+      "audio.loading": "Caricamento del brano…",
+      "audio.notStarted": "Il lettore non è partito. Il link o il file audio non è valido.",
+      "audio.badLink": "Link audio non valido",
+      "audio.httpsOnly": "Il link audio deve iniziare con https://",
+      "auth.connected": "Connesso",
+      "auth.loginForClips": "Accedi per vedere i videoclip",
+      "auth.login": "Accedi",
+      "credits.admin": "👑 Admin: videoclip gratuiti",
+      "credits.reserve": " · 🎞️ Riserva Comfy: {0} crediti ≈ {1} inquadrature (~{2} min di videoclip)",
+      "credits.split": " (mensile {0} · bonus {1})",
+      "credits.balance": "💳 {0} crediti · Clip ≈ {1} · Full ≈ {2}/min (1 credito = {3} €)",
+      "credits.buy": "Ricarica",
+      "pay.unavailable": "❌ Pagamento non disponibile al momento.",
+      "voice.unknown": "🎙️ Voce Suno: stato non disponibile",
+      "voice.linked": "🎙️ Voce Suno personale: collegata ✓",
+      "voice.toLink": "🎙️ Voce Suno personale: da collegare nello studio A11",
+      "voice.reserved": "🎙️ Voce Suno personale: riservata agli account Premium, Fondatore e Famiglia",
+      "fiche.label": "🙋 La tua scheda (scritta dalla tua foto, puoi correggerla):",
+      "fiche.pending": "La tua scheda dettagliata verrà scritta con la prossima foto, oppure scrivila tu qui.",
+      "fiche.summary": "🎬 Riassunto per ogni inquadratura (in inglese, breve):",
+      "fiche.save": "Salva",
+      "fiche.delete": "Elimina la mia foto e il mio avatar",
+      "fiche.create": "🙋 Crea il tuo avatar: invia una tua foto, frontale e ben illuminata. Reciterà nei tuoi videoclip con il casting «Io».",
+      "fiche.changePhoto": "Cambia foto",
+      "fiche.choosePhoto": "Scegli una foto",
+      "fiche.consent": "Sono io nella foto. Viene analizzata da Google Gemini per scrivere la mia scheda e il mio avatar, poi conservata nel mio spazio privato; posso eliminarla in qualsiasi momento.",
+      "fiche.consentRef": " (Traduzione: il testo di riferimento di questo consenso è la versione francese.)",
+      "fiche.analysesLeft": " · {0} analisi di foto rimanenti oggi",
+      "fiche.consentFirst": "Spunta prima la casella del consenso.",
+      "fiche.analyzing": "⏳ Analisi della tua foto…",
+      "fiche.analysisFailed": "Analisi non riuscita",
+      "fiche.saved": "✅ Scheda salvata.",
+      "fiche.saveFailed": "Salvataggio non riuscito",
+      "fiche.confirmDelete": "Eliminare la tua foto e il tuo avatar?",
+      "fiche.deleteFailed": "Eliminazione non riuscita",
+      "full.title": "Full Clip — video generato su tutta la durata della canzone",
+      "full.loginTitle": "Accedi per avviare un Full Clip",
+      "upload.failed": "Invio non riuscito",
+      "clip.chooseSong": "Scegli una canzone o importa un file audio",
+      "clip.fullAdmin": "Full Clip riservato agli admin per ora",
+      "clip.estimating": "⏳ Stima {0}…",
+      "clip.reserveEmpty": "⛔ La riserva video dello studio è vuota per ora. Riprova più tardi, non ti è stato addebitato nulla.",
+      "clip.reserveLow": "⚠️ La riserva video dello studio è bassa.\n\nQuesto {0} richiede circa {1} inquadrature{2}, ne resta abbastanza per {3}.\nIl videoclip potrebbe fermarsi a metà: si pagano solo le inquadrature consegnate.\n\nAvviare comunque?",
+      "clip.unknownDuration": " (durata sconosciuta)",
+      "clip.cancelled": "Avvio annullato.",
+      "clip.launching": "Avvio {0}…",
+      "clip.running": "{0} in corso…",
+      "clip.unknownError": "Errore sconosciuto",
+      "clip.rechargeBelow": " Ricarica qui sotto.",
+      "clip.uploading": "Invio del file…",
+      "clip.uploaded": "File inviato, avvio…",
+      "clip.uploadError": "Invio: {0}",
+      "poll.missingId": "❌ Identificativo di generazione mancante",
+      "poll.maxDelay": "⚠️ Monitoraggio fermato: tempo massimo raggiunto. La generazione può ancora concludersi sul server; ricarica l'elenco dei videoclip.",
+      "poll.noFile": "❌ Generazione segnata come conclusa, ma non è stato fornito alcun file video.",
+      "poll.partial": "⚠️ {0} parziale pronto",
+      "poll.ready": "✅ {0} pronto!",
+      "poll.cancelled": "Generazione annullata",
+      "poll.failed": "Generazione non riuscita",
+      "poll.badStatus": "❌ Stato di generazione non valido o assente",
+      "poll.sessionExpired": "❌ Sessione scaduta: accedi di nuovo e aggiorna per riprendere il monitoraggio.",
+      "poll.jobNotFound": "⚠️ Lavoro non trovato: il server potrebbe essere stato riavviato. Controlla l'elenco dei videoclip.",
+      "poll.networkLost": "⚠️ Monitoraggio di rete interrotto. Aggiorna la pagina per riprendere questo lavoro.",
+      "poll.retrying": "⚠️ Monitoraggio temporaneamente non disponibile, nuovo tentativo…",
+      "poll.resume": "⏳ Ripresa del monitoraggio della generazione…",
+      "clips.partial": " (parziale)",
+      "clips.title": "📁 Videoclip",
+      "clips.unpublish": "Togli dalla vetrina",
+      "clips.publish": "Metti in vetrina",
+      "clips.mine": "I miei videoclip",
+      "clips.loginToSee": "Accedi per vedere i tuoi videoclip",
+      "clips.minePrivate": "I miei videoclip — visibili solo a te",
+      "clips.unavailable": "Elenco non disponibile",
+      "clips.none": "Ancora nessun videoclip",
+      "clips.allAdmin": "Tutti i videoclip (admin) — la vetrina è visibile a tutti",
+      "clips.showcase": "Vetrina",
+      "clips.showcaseUnavailable": "Vetrina non disponibile",
+      "clips.showcaseEmpty": "Niente in vetrina per ora",
+      "song.untitled": "Senza titolo",
+      "song.titleBy": "Titolo: {0}",
+      "song.notRetrieved": "Audio non recuperato",
+      "song.v11": "{0} / {1} versioni V11 Pan disponibili · originali conservati",
+      "song.result1": "{0} risultato — scegli…",
+      "song.resultN": "{0} risultati — scegli…",
+      "song.noMatchShort": "Nessun titolo corrisponde",
+      "song.choose": "Scegli una canzone…",
+      "song.play": "Riproduci {0}",
+      "song.original": "Originale",
+      "song.use": "usa",
+      "song.noMatch": "Nessuna canzone corrisponde a «{0}»",
+      "song.none": "Nessuna canzone disponibile per ora",
+      "status.online": "Online",
+      "status.partial": "Parziale",
+      "status.offline": "Offline",
+      "player.unknownDuration": "durata indeterminata",
+      "player.ready": "Pronto",
+      "player.playing": "In riproduzione",
+      "player.buffering": "Buffering…",
+      "player.stalled": "Il flusso audio non avanza più",
+      "player.paused": "Pausa",
+      "player.ended": "Terminato"
+    },
+    de: {
+      "page.title": "NOSSEN — Musikvideos",
+      "nav.home": "Startseite",
+      "lang.label": "Sprache",
+      "produce.title": "🎬 Musikvideo erstellen",
+      "search.placeholder": "🔎 Suchen: ein Buchstabe (Anfangsbuchstabe) oder Wörter aus dem Titel",
+      "search.aria": "Einen Song suchen",
+      "song.pickOrImport": "Song auswählen oder importieren…",
+      "import.or": "— oder eigene Musik importieren —",
+      "import.urlPlaceholder": "Audio-Link einfügen (mp3, m4a…)",
+      "import.file": "📁 Audiodatei ablegen oder auswählen",
+      "vibe.auto": "🤖 Freier Modus (die KI entscheidet)",
+      "vibe.live": "🎤 Live-Konzert",
+      "vibe.cosmic": "🌌 Kosmisch",
+      "vibe.intimate": "🎹 Intim",
+      "cast.auto": "🎭 Automatische Besetzung (der Auto-DJ wählt)",
+      "cast.random": "🎲 Zufällige Leadstimme",
+      "cast.me": "🙋 Ich (mein Profil)",
+      "cast.full": "🌟 Volle Besetzung (alle Stimmen)",
+      "render.film": "🎬 Film-Video (Realaufnahmen)",
+      "render.anime": "🎌 Manga-Video (Anime)",
+      "produce.info1": "Clip = kurze Videovorschau · Full Clip = komplettes Video über den ganzen Song · Bezahlung mit Credits (nur gelieferte Einstellungen werden berechnet)",
+      "produce.info2": "Freier Modus: Die KI analysiert den Songtext und wählt das visuelle Thema.",
+      "fiche.title": "🙋 Mein Profil",
+      "fiche.loginEmpty": "Melde dich an, um dein Profil zu erstellen.",
+      "jukebox.title": "🎤 Jukebox — Verlauf",
+      "jukebox.searchPlaceholder": "🔎 In der Jukebox suchen: ein Buchstabe oder Wörter (Enter zum Anhören)",
+      "jukebox.searchAria": "In der Jukebox suchen",
+      "err.network": "Netzwerkfehler",
+      "err.badUrl": "Ungültige Anfrage-URL",
+      "err.unreadable": "Unlesbare Serverantwort",
+      "err.http": "HTTP-Fehler {0}",
+      "err.empty": "Leere Serverantwort",
+      "err.timeout": "Der Server antwortet nicht rechtzeitig",
+      "audio.interrupted": "Wiedergabe unterbrochen",
+      "audio.noResponse": "Die Audiodatei antwortet nicht korrekt",
+      "audio.corrupt": "Die Audiodatei ist unlesbar oder beschädigt",
+      "audio.unsupported": "Audioformat oder Link wird nicht unterstützt",
+      "audio.impossible": "Audiowiedergabe nicht möglich",
+      "audio.loading": "Titel wird geladen…",
+      "audio.notStarted": "Der Player ist nicht gestartet. Der Audio-Link oder die Datei ist ungültig.",
+      "audio.badLink": "Ungültiger Audio-Link",
+      "audio.httpsOnly": "Der Audio-Link muss mit https:// beginnen",
+      "auth.connected": "Angemeldet",
+      "auth.loginForClips": "Anmelden, um die Videos zu sehen",
+      "auth.login": "Anmelden",
+      "credits.admin": "👑 Admin: kostenlose Videos",
+      "credits.reserve": " · 🎞️ Comfy-Reserve: {0} Credits ≈ {1} Einstellungen (~{2} Min. Video)",
+      "credits.split": " (monatlich {0} · Bonus {1})",
+      "credits.balance": "💳 {0} Credits · Clip ≈ {1} · Full ≈ {2}/Min. (1 Credit = {3} €)",
+      "credits.buy": "Aufladen",
+      "pay.unavailable": "❌ Zahlung derzeit nicht verfügbar.",
+      "voice.unknown": "🎙️ Suno-Stimme: Status nicht verfügbar",
+      "voice.linked": "🎙️ Persönliche Suno-Stimme: verknüpft ✓",
+      "voice.toLink": "🎙️ Persönliche Suno-Stimme: im A11-Studio verknüpfen",
+      "voice.reserved": "🎙️ Persönliche Suno-Stimme: für Premium-, Gründer- und Familienkonten",
+      "fiche.label": "🙋 Dein Profil (aus deinem Foto geschrieben, du kannst es korrigieren):",
+      "fiche.pending": "Dein ausführliches Profil wird mit deinem nächsten Foto geschrieben, oder schreib es hier selbst.",
+      "fiche.summary": "🎬 Zusammenfassung für jede Videoeinstellung (auf Englisch, kurz):",
+      "fiche.save": "Speichern",
+      "fiche.delete": "Mein Foto und meinen Avatar löschen",
+      "fiche.create": "🙋 Erstelle deinen Avatar: Schick ein Foto von dir, frontal und gut beleuchtet. Er spielt in deinen Videos mit der Besetzung „Ich“.",
+      "fiche.changePhoto": "Foto ändern",
+      "fiche.choosePhoto": "Foto auswählen",
+      "fiche.consent": "Das bin ich auf dem Foto. Es wird von Google Gemini analysiert, um mein Profil und meinen Avatar zu schreiben, und dann in meinem privaten Bereich gespeichert; ich kann es jederzeit löschen.",
+      "fiche.consentRef": " (Übersetzung: Der Referenztext dieser Einwilligung ist die französische Fassung.)",
+      "fiche.analysesLeft": " · noch {0} Fotoanalyse(n) heute",
+      "fiche.consentFirst": "Setze zuerst das Häkchen bei der Einwilligung.",
+      "fiche.analyzing": "⏳ Dein Foto wird analysiert…",
+      "fiche.analysisFailed": "Analyse fehlgeschlagen",
+      "fiche.saved": "✅ Profil gespeichert.",
+      "fiche.saveFailed": "Speichern fehlgeschlagen",
+      "fiche.confirmDelete": "Dein Foto und deinen Avatar löschen?",
+      "fiche.deleteFailed": "Löschen fehlgeschlagen",
+      "full.title": "Full Clip — Video über die gesamte Songlänge",
+      "full.loginTitle": "Melde dich an, um einen Full Clip zu starten",
+      "upload.failed": "Hochladen fehlgeschlagen",
+      "clip.chooseSong": "Wähle einen Song oder importiere eine Audiodatei",
+      "clip.fullAdmin": "Full Clip ist vorerst Admins vorbehalten",
+      "clip.estimating": "⏳ Schätzung {0}…",
+      "clip.reserveEmpty": "⛔ Die Videoreserve des Studios ist derzeit leer. Versuch es später erneut, es wurde nichts berechnet.",
+      "clip.reserveLow": "⚠️ Die Videoreserve des Studios ist niedrig.\n\nDieser {0} braucht etwa {1} Einstellungen{2}, es reicht noch für {3}.\nDas Video könnte mittendrin abbrechen: Nur gelieferte Einstellungen werden berechnet.\n\nTrotzdem starten?",
+      "clip.unknownDuration": " (Dauer unbekannt)",
+      "clip.cancelled": "Start abgebrochen.",
+      "clip.launching": "{0} wird gestartet…",
+      "clip.running": "{0} läuft…",
+      "clip.unknownError": "Unbekannter Fehler",
+      "clip.rechargeBelow": " Unten aufladen.",
+      "clip.uploading": "Datei wird hochgeladen…",
+      "clip.uploaded": "Datei hochgeladen, Start…",
+      "clip.uploadError": "Hochladen: {0}",
+      "poll.missingId": "❌ Generierungs-ID fehlt",
+      "poll.maxDelay": "⚠️ Verfolgung gestoppt: maximale Dauer erreicht. Die Generierung kann auf dem Server noch fertig werden; lade die Videoliste neu.",
+      "poll.noFile": "❌ Generierung als fertig markiert, aber es wurde keine Videodatei geliefert.",
+      "poll.partial": "⚠️ Teilweiser {0} bereit",
+      "poll.ready": "✅ {0} bereit!",
+      "poll.cancelled": "Generierung abgebrochen",
+      "poll.failed": "Generierung fehlgeschlagen",
+      "poll.badStatus": "❌ Ungültiger oder fehlender Generierungsstatus",
+      "poll.sessionExpired": "❌ Sitzung abgelaufen: Melde dich erneut an und aktualisiere, um die Verfolgung fortzusetzen.",
+      "poll.jobNotFound": "⚠️ Job nicht gefunden: Der Server wurde vielleicht neu gestartet. Prüfe die Videoliste.",
+      "poll.networkLost": "⚠️ Netzwerkverfolgung unterbrochen. Aktualisiere die Seite, um diesen Job fortzusetzen.",
+      "poll.retrying": "⚠️ Verfolgung vorübergehend nicht verfügbar, neuer Versuch…",
+      "poll.resume": "⏳ Verfolgung der Generierung wird fortgesetzt…",
+      "clips.partial": " (teilweise)",
+      "clips.title": "📁 Videos",
+      "clips.unpublish": "Aus dem Schaufenster entfernen",
+      "clips.publish": "Ins Schaufenster stellen",
+      "clips.mine": "Meine Videos",
+      "clips.loginToSee": "Melde dich an, um deine Videos zu sehen",
+      "clips.minePrivate": "Meine Videos — nur für dich sichtbar",
+      "clips.unavailable": "Liste nicht verfügbar",
+      "clips.none": "Noch keine Videos",
+      "clips.allAdmin": "Alle Videos (Admin) — das Schaufenster ist für alle sichtbar",
+      "clips.showcase": "Schaufenster",
+      "clips.showcaseUnavailable": "Schaufenster nicht verfügbar",
+      "clips.showcaseEmpty": "Noch nichts im Schaufenster",
+      "song.untitled": "Ohne Titel",
+      "song.titleBy": "Titel: {0}",
+      "song.notRetrieved": "Audio nicht abgerufen",
+      "song.v11": "{0} / {1} V11-Pan-Versionen verfügbar · Originale erhalten",
+      "song.result1": "{0} Treffer — auswählen…",
+      "song.resultN": "{0} Treffer — auswählen…",
+      "song.noMatchShort": "Kein passender Titel",
+      "song.choose": "Song auswählen…",
+      "song.play": "{0} abspielen",
+      "song.original": "Original",
+      "song.use": "verwenden",
+      "song.noMatch": "Kein Song passt zu „{0}“",
+      "song.none": "Derzeit keine Songs verfügbar",
+      "status.online": "Online",
+      "status.partial": "Teilweise",
+      "status.offline": "Offline",
+      "player.unknownDuration": "Dauer unbekannt",
+      "player.ready": "Bereit",
+      "player.playing": "Wiedergabe",
+      "player.buffering": "Puffern…",
+      "player.stalled": "Der Audiostream kommt nicht mehr voran",
+      "player.paused": "Pause",
+      "player.ended": "Beendet"
+    },
+    ja: {
+      "page.title": "NOSSEN — ミュージックビデオ",
+      "nav.home": "ホーム",
+      "lang.label": "言語",
+      "produce.title": "🎬 ミュージックビデオを作る",
+      "search.placeholder": "🔎 検索：頭文字1文字、またはタイトルの単語",
+      "search.aria": "曲を検索",
+      "song.pickOrImport": "曲を選ぶか、読み込む…",
+      "import.or": "— または自分の音楽を読み込む —",
+      "import.urlPlaceholder": "音声リンクを貼り付け（mp3、m4a…）",
+      "import.file": "📁 音声ファイルをドロップまたは選択",
+      "vibe.auto": "🤖 おまかせ（AIが決める）",
+      "vibe.live": "🎤 ライブコンサート",
+      "vibe.cosmic": "🌌 コズミック",
+      "vibe.intimate": "🎹 しっとり",
+      "cast.auto": "🎭 自動キャスティング（オートDJが選ぶ）",
+      "cast.random": "🎲 メインボーカルをランダムに",
+      "cast.me": "🙋 自分（マイプロフィール）",
+      "cast.full": "🌟 フルキャスト（全ボイス）",
+      "render.film": "🎬 実写ビデオ",
+      "render.anime": "🎌 マンガビデオ（アニメ）",
+      "produce.info1": "Clip＝短いプレビュー動画 · Full Clip＝曲全体の完全なビデオ · クレジットで支払い（納品されたカットのみ課金）",
+      "produce.info2": "おまかせ：AIが歌詞を読み、映像のテーマを選びます。",
+      "fiche.title": "🙋 マイプロフィール",
+      "fiche.loginEmpty": "プロフィールを作るにはログインしてください。",
+      "jukebox.title": "🎤 ジュークボックス — 履歴",
+      "jukebox.searchPlaceholder": "🔎 ジュークボックスを検索：1文字または単語（Enterで再生）",
+      "jukebox.searchAria": "ジュークボックスを検索",
+      "err.network": "ネットワークエラー",
+      "err.badUrl": "リクエストURLが無効です",
+      "err.unreadable": "サーバーの応答を読み取れません",
+      "err.http": "HTTPエラー {0}",
+      "err.empty": "サーバーの応答が空です",
+      "err.timeout": "サーバーが時間内に応答しません",
+      "audio.interrupted": "再生が中断されました",
+      "audio.noResponse": "音声ファイルが正しく応答しません",
+      "audio.corrupt": "音声ファイルが読み取れないか、破損しています",
+      "audio.unsupported": "この音声形式またはリンクには対応していません",
+      "audio.impossible": "音声を再生できません",
+      "audio.loading": "曲を読み込み中…",
+      "audio.notStarted": "プレーヤーが起動しませんでした。音声リンクまたはファイルが無効です。",
+      "audio.badLink": "音声リンクが無効です",
+      "audio.httpsOnly": "音声リンクは https:// で始まる必要があります",
+      "auth.connected": "ログイン中",
+      "auth.loginForClips": "ログインしてビデオを見る",
+      "auth.login": "ログイン",
+      "credits.admin": "👑 管理者：ビデオ無料",
+      "credits.reserve": " · 🎞️ Comfyリザーブ：{0}クレジット ≈ {1}カット（約{2}分のビデオ）",
+      "credits.split": "（月間 {0} · ボーナス {1}）",
+      "credits.balance": "💳 {0}クレジット · Clip ≈ {1} · Full ≈ {2}/分（1クレジット = {3} €）",
+      "credits.buy": "チャージ",
+      "pay.unavailable": "❌ 現在お支払いはご利用いただけません。",
+      "voice.unknown": "🎙️ Sunoボイス：状態を取得できません",
+      "voice.linked": "🎙️ 個人のSunoボイス：連携済み ✓",
+      "voice.toLink": "🎙️ 個人のSunoボイス：A11スタジオで連携してください",
+      "voice.reserved": "🎙️ 個人のSunoボイス：Premium・Founder・Familyアカウント向け",
+      "fiche.label": "🙋 あなたのプロフィール（写真から作成、修正できます）：",
+      "fiche.pending": "詳しいプロフィールは次の写真で作成されます。ここに自分で書くこともできます。",
+      "fiche.summary": "🎬 各カット用の要約（英語、短く）：",
+      "fiche.save": "保存",
+      "fiche.delete": "写真とアバターを削除",
+      "fiche.create": "🙋 アバターを作ろう：正面から明るく写った自分の写真を送ってください。「自分」キャスティングであなたのビデオに登場します。",
+      "fiche.changePhoto": "写真を変更",
+      "fiche.choosePhoto": "写真を選ぶ",
+      "fiche.consent": "写真に写っているのは私です。私のプロフィールとアバターを作成するために Google Gemini が分析し、その後は私の非公開スペースに保存されます。いつでも削除できます。",
+      "fiche.consentRef": "（翻訳：この同意の基準となる文章はフランス語版です。）",
+      "fiche.analysesLeft": " · 本日あと{0}回の写真分析",
+      "fiche.consentFirst": "先に同意のチェックボックスにチェックしてください。",
+      "fiche.analyzing": "⏳ 写真を分析中…",
+      "fiche.analysisFailed": "分析できませんでした",
+      "fiche.saved": "✅ プロフィールを保存しました。",
+      "fiche.saveFailed": "保存できませんでした",
+      "fiche.confirmDelete": "写真とアバターを削除しますか？",
+      "fiche.deleteFailed": "削除できませんでした",
+      "full.title": "Full Clip — 曲全体の長さで生成されるビデオ",
+      "full.loginTitle": "Full Clip を始めるにはログインしてください",
+      "upload.failed": "送信に失敗しました",
+      "clip.chooseSong": "曲を選ぶか、音声ファイルを読み込んでください",
+      "clip.fullAdmin": "Full Clip は現在、管理者専用です",
+      "clip.estimating": "⏳ {0}を見積もり中…",
+      "clip.reserveEmpty": "⛔ スタジオの映像リザーブは現在空です。後でもう一度お試しください。料金は発生していません。",
+      "clip.reserveLow": "⚠️ スタジオの映像リザーブが残りわずかです。\n\nこの{0}には約{1}カットが必要です{2}。残りは{3}カット分です。\n途中で止まる可能性があります。納品されたカットのみ課金されます。\n\nそれでも開始しますか？",
+      "clip.unknownDuration": "（長さ不明）",
+      "clip.cancelled": "開始をキャンセルしました。",
+      "clip.launching": "{0}を開始中…",
+      "clip.running": "{0}を生成中…",
+      "clip.unknownError": "不明なエラー",
+      "clip.rechargeBelow": " 下からチャージしてください。",
+      "clip.uploading": "ファイルを送信中…",
+      "clip.uploaded": "ファイルを送信しました。開始中…",
+      "clip.uploadError": "送信：{0}",
+      "poll.missingId": "❌ 生成IDがありません",
+      "poll.maxDelay": "⚠️ 追跡を停止しました：最大時間に達しました。サーバー側で生成が完了する場合があります。ビデオ一覧を再読み込みしてください。",
+      "poll.noFile": "❌ 生成は完了扱いですが、動画ファイルが提供されませんでした。",
+      "poll.partial": "⚠️ 一部の{0}ができました",
+      "poll.ready": "✅ {0}ができました！",
+      "poll.cancelled": "生成はキャンセルされました",
+      "poll.failed": "生成に失敗しました",
+      "poll.badStatus": "❌ 生成ステータスが無効か、ありません",
+      "poll.sessionExpired": "❌ セッションの有効期限が切れました：再度ログインし、ページを更新して追跡を再開してください。",
+      "poll.jobNotFound": "⚠️ ジョブが見つかりません：サーバーが再起動した可能性があります。ビデオ一覧を確認してください。",
+      "poll.networkLost": "⚠️ ネットワーク追跡が中断されました。ページを更新してこのジョブを再開してください。",
+      "poll.retrying": "⚠️ 追跡が一時的に利用できません。再試行中…",
+      "poll.resume": "⏳ 生成の追跡を再開中…",
+      "clips.partial": "（一部）",
+      "clips.title": "📁 ビデオ",
+      "clips.unpublish": "ショーケースから外す",
+      "clips.publish": "ショーケースに載せる",
+      "clips.mine": "マイビデオ",
+      "clips.loginToSee": "ログインして自分のビデオを見る",
+      "clips.minePrivate": "マイビデオ — あなただけに表示",
+      "clips.unavailable": "一覧を取得できません",
+      "clips.none": "まだビデオはありません",
+      "clips.allAdmin": "すべてのビデオ（管理者）— ショーケースは全員に表示されます",
+      "clips.showcase": "ショーケース",
+      "clips.showcaseUnavailable": "ショーケースを取得できません",
+      "clips.showcaseEmpty": "ショーケースにはまだ何もありません",
+      "song.untitled": "無題",
+      "song.titleBy": "タイトル：{0}",
+      "song.notRetrieved": "音声を取得できていません",
+      "song.v11": "V11 Pan版 {0} / {1} 曲 · オリジナルも保存",
+      "song.result1": "{0}件 — 選ぶ…",
+      "song.resultN": "{0}件 — 選ぶ…",
+      "song.noMatchShort": "一致するタイトルはありません",
+      "song.choose": "曲を選ぶ…",
+      "song.play": "{0}を再生",
+      "song.original": "オリジナル",
+      "song.use": "使う",
+      "song.noMatch": "「{0}」に一致する曲はありません",
+      "song.none": "現在利用できる曲はありません",
+      "status.online": "オンライン",
+      "status.partial": "一部稼働",
+      "status.offline": "オフライン",
+      "player.unknownDuration": "長さ不明",
+      "player.ready": "準備完了",
+      "player.playing": "再生中",
+      "player.buffering": "バッファリング中…",
+      "player.stalled": "音声ストリームが進んでいません",
+      "player.paused": "一時停止",
+      "player.ended": "終了"
+    },
+    zh: {
+      "page.title": "NOSSEN — 音乐视频",
+      "nav.home": "首页",
+      "lang.label": "语言",
+      "produce.title": "🎬 制作音乐视频",
+      "search.placeholder": "🔎 搜索：一个首字母或标题中的词",
+      "search.aria": "搜索歌曲",
+      "song.pickOrImport": "选择歌曲或导入…",
+      "import.or": "— 或导入你的音乐 —",
+      "import.urlPlaceholder": "粘贴音频链接（mp3、m4a…）",
+      "import.file": "📁 拖放或选择音频文件",
+      "vibe.auto": "🤖 自由模式（由 AI 决定）",
+      "vibe.live": "🎤 现场演唱会",
+      "vibe.cosmic": "🌌 宇宙",
+      "vibe.intimate": "🎹 温馨",
+      "cast.auto": "🎭 自动选角（由自动 DJ 选择）",
+      "cast.random": "🎲 随机主唱",
+      "cast.me": "🙋 我（我的档案）",
+      "cast.full": "🌟 全体阵容（所有声音）",
+      "render.film": "🎬 电影视频（真人实拍）",
+      "render.anime": "🎌 漫画视频（动画）",
+      "produce.info1": "Clip＝短视频预览 · Full Clip＝覆盖整首歌的完整视频 · 使用积分支付（只对交付的镜头收费）",
+      "produce.info2": "自由模式：AI 会分析歌词并选择视觉主题。",
+      "fiche.title": "🙋 我的档案",
+      "fiche.loginEmpty": "登录后即可创建你的档案。",
+      "jukebox.title": "🎤 点唱机 — 历史",
+      "jukebox.searchPlaceholder": "🔎 在点唱机中搜索：一个字母或词语（按回车播放）",
+      "jukebox.searchAria": "在点唱机中搜索",
+      "err.network": "网络错误",
+      "err.badUrl": "请求 URL 无效",
+      "err.unreadable": "服务器响应无法读取",
+      "err.http": "HTTP 错误 {0}",
+      "err.empty": "服务器响应为空",
+      "err.timeout": "服务器未在规定时间内响应",
+      "audio.interrupted": "播放已中断",
+      "audio.noResponse": "音频文件响应异常",
+      "audio.corrupt": "音频文件无法读取或已损坏",
+      "audio.unsupported": "不支持该音频格式或链接",
+      "audio.impossible": "无法播放音频",
+      "audio.loading": "正在加载曲目…",
+      "audio.notStarted": "播放器未能启动。音频链接或文件无效。",
+      "audio.badLink": "音频链接无效",
+      "audio.httpsOnly": "音频链接必须以 https:// 开头",
+      "auth.connected": "已登录",
+      "auth.loginForClips": "登录以查看视频",
+      "auth.login": "登录",
+      "credits.admin": "👑 管理员：视频免费",
+      "credits.reserve": " · 🎞️ Comfy 储备：{0} 积分 ≈ {1} 个镜头（约 {2} 分钟视频）",
+      "credits.split": "（每月 {0} · 奖励 {1}）",
+      "credits.balance": "💳 {0} 积分 · Clip ≈ {1} · Full ≈ {2}/分钟（1 积分 = {3} €）",
+      "credits.buy": "充值",
+      "pay.unavailable": "❌ 暂时无法付款。",
+      "voice.unknown": "🎙️ Suno 声音：状态不可用",
+      "voice.linked": "🎙️ 个人 Suno 声音：已关联 ✓",
+      "voice.toLink": "🎙️ 个人 Suno 声音：请在 A11 工作室中关联",
+      "voice.reserved": "🎙️ 个人 Suno 声音：仅限 Premium、创始人和家庭账户",
+      "fiche.label": "🙋 你的档案（根据照片撰写，可以修改）：",
+      "fiche.pending": "详细档案将在你下次上传照片时撰写，你也可以在这里自己填写。",
+      "fiche.summary": "🎬 每个视频镜头的摘要（英文，简短）：",
+      "fiche.save": "保存",
+      "fiche.delete": "删除我的照片和头像",
+      "fiche.create": "🙋 创建你的头像：上传一张正面、光线充足的本人照片。它将以“我”的选角出演你的视频。",
+      "fiche.changePhoto": "更换照片",
+      "fiche.choosePhoto": "选择照片",
+      "fiche.consent": "照片中的人是我。照片由 Google Gemini 分析，用于撰写我的档案和头像，之后保存在我的私人空间；我可以随时删除。",
+      "fiche.consentRef": "（译文：本同意书以法语版本为准。）",
+      "fiche.analysesLeft": " · 今天还剩 {0} 次照片分析",
+      "fiche.consentFirst": "请先勾选同意框。",
+      "fiche.analyzing": "⏳ 正在分析你的照片…",
+      "fiche.analysisFailed": "分析失败",
+      "fiche.saved": "✅ 档案已保存。",
+      "fiche.saveFailed": "保存失败",
+      "fiche.confirmDelete": "删除你的照片和头像？",
+      "fiche.deleteFailed": "删除失败",
+      "full.title": "Full Clip — 按整首歌时长生成的视频",
+      "full.loginTitle": "登录后才能开始 Full Clip",
+      "upload.failed": "上传失败",
+      "clip.chooseSong": "请选择歌曲或导入音频文件",
+      "clip.fullAdmin": "Full Clip 目前仅限管理员使用",
+      "clip.estimating": "⏳ 正在估算 {0}…",
+      "clip.reserveEmpty": "⛔ 工作室的视频储备目前已用完。请稍后再试，未产生任何费用。",
+      "clip.reserveLow": "⚠️ 工作室的视频储备不足。\n\n这个 {0} 大约需要 {1} 个镜头{2}，剩余储备可制作 {3} 个。\n视频可能中途停止：只对交付的镜头收费。\n\n仍要开始吗？",
+      "clip.unknownDuration": "（时长未知）",
+      "clip.cancelled": "已取消开始。",
+      "clip.launching": "正在开始 {0}…",
+      "clip.running": "{0} 生成中…",
+      "clip.unknownError": "未知错误",
+      "clip.rechargeBelow": " 请在下方充值。",
+      "clip.uploading": "正在上传文件…",
+      "clip.uploaded": "文件已上传，正在开始…",
+      "clip.uploadError": "上传：{0}",
+      "poll.missingId": "❌ 缺少生成 ID",
+      "poll.maxDelay": "⚠️ 已停止跟踪：达到最长时间。服务器上的生成可能仍会完成；请重新加载视频列表。",
+      "poll.noFile": "❌ 生成已标记为完成，但未提供任何视频文件。",
+      "poll.partial": "⚠️ 部分 {0} 已就绪",
+      "poll.ready": "✅ {0} 已就绪！",
+      "poll.cancelled": "生成已取消",
+      "poll.failed": "生成失败",
+      "poll.badStatus": "❌ 生成状态无效或缺失",
+      "poll.sessionExpired": "❌ 会话已过期：请重新登录并刷新页面以继续跟踪。",
+      "poll.jobNotFound": "⚠️ 找不到任务：服务器可能已重启。请查看视频列表。",
+      "poll.networkLost": "⚠️ 网络跟踪已中断。刷新页面即可继续此任务。",
+      "poll.retrying": "⚠️ 跟踪暂时不可用，正在重试…",
+      "poll.resume": "⏳ 正在恢复生成跟踪…",
+      "clips.partial": "（部分）",
+      "clips.title": "📁 视频",
+      "clips.unpublish": "从展示区移除",
+      "clips.publish": "放入展示区",
+      "clips.mine": "我的视频",
+      "clips.loginToSee": "登录以查看你的视频",
+      "clips.minePrivate": "我的视频 — 仅你可见",
+      "clips.unavailable": "列表不可用",
+      "clips.none": "暂无视频",
+      "clips.allAdmin": "所有视频（管理员）— 展示区对所有人可见",
+      "clips.showcase": "展示区",
+      "clips.showcaseUnavailable": "展示区不可用",
+      "clips.showcaseEmpty": "展示区暂无内容",
+      "song.untitled": "无标题",
+      "song.titleBy": "标题：{0}",
+      "song.notRetrieved": "音频未获取",
+      "song.v11": "V11 Pan 版本 {0} / {1} 首 · 原版已保留",
+      "song.result1": "{0} 个结果 — 选择…",
+      "song.resultN": "{0} 个结果 — 选择…",
+      "song.noMatchShort": "没有匹配的标题",
+      "song.choose": "选择歌曲…",
+      "song.play": "播放 {0}",
+      "song.original": "原版",
+      "song.use": "使用",
+      "song.noMatch": "没有与“{0}”匹配的歌曲",
+      "song.none": "暂无可用歌曲",
+      "status.online": "在线",
+      "status.partial": "部分可用",
+      "status.offline": "离线",
+      "player.unknownDuration": "时长未知",
+      "player.ready": "就绪",
+      "player.playing": "正在播放",
+      "player.buffering": "缓冲中…",
+      "player.stalled": "音频流已停止推进",
+      "player.paused": "已暂停",
+      "player.ended": "已结束"
+    }
+  };
+
+  function normaliserLangue(valeur) {
+    var brut = String(valeur || "").trim().toLowerCase().replace(/_/g, "-").split("-")[0];
+    return LANGUES.indexOf(brut) >= 0 ? brut : "";
+  }
+  // Ordre : choix fait sur cette page, puis langue du navigateur ; la langue du
+  // compte s'applique à la connexion si rien n'a été choisi ici (voir checkAuth).
+  function langueInitiale() {
+    try {
+      if (typeof localStorage !== "undefined") {
+        var memo = normaliserLangue(localStorage.getItem("nossen.lang"));
+        if (memo) return memo;
+      }
+    } catch (_) {}
+    try {
+      if (typeof navigator !== "undefined" && navigator.language) {
+        return normaliserLangue(navigator.language) || "fr";
+      }
+    } catch (_) {}
+    return "fr";
+  }
+  var langue = langueInitiale();
+  var langueChoisieIci = false;
+  try { langueChoisieIci = typeof localStorage !== "undefined" && Boolean(normaliserLangue(localStorage.getItem("nossen.lang"))); } catch (_) {}
+
+  function t(cle) {
+    var modele = (I18N[langue] && I18N[langue][cle] != null) ? I18N[langue][cle] : I18N.fr[cle];
+    if (modele == null) return cle;
+    var args = Array.prototype.slice.call(arguments, 1);
+    return String(modele).replace(/\{(\d+)\}/g, function(tout, n) {
+      return args[n] != null ? String(args[n]) : "";
+    });
+  }
+  function localeNombres() { return LOCALES[langue] || "fr-FR"; }
+
+  function appliquerTextesFixes() {
+    if (document.documentElement) document.documentElement.lang = langue;
+    if (typeof document.querySelectorAll !== "function") return;
+    Array.prototype.forEach.call(document.querySelectorAll("[data-i18n]") || [], function(el) {
+      var texte = t(el.getAttribute("data-i18n"));
+      if (el.tagName === "TITLE") document.title = texte;
+      el.textContent = texte;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-i18n-placeholder]") || [], function(el) {
+      el.setAttribute("placeholder", t(el.getAttribute("data-i18n-placeholder")));
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-i18n-aria]") || [], function(el) {
+      el.setAttribute("aria-label", t(el.getAttribute("data-i18n-aria")));
+    });
+    var choix = document.getElementById("lang");
+    if (choix) choix.value = langue;
+  }
+
   var SC = {
     live: [{n:"Ouverture",v:"Wide concert arena lights fog lasers crowd anticipation blue purple"},{n:"Voix",v:"Female singer long purple-cyan hair microphone golden spotlight emotional white violet outfit"},{n:"Climax",v:"Stage erupts holographics singer arms spread crowd hands confetti energy"},{n:"Pont",v:"Singer alone blue light eyes closed crowd phone lights stars emotional"},{n:"Final",v:"Full stage fireworks singer triumphant arms raised holographic wings purple gold"},{n:"Fermeture",v:"Singer bows confetti smile wave lights dim single spotlight camera back"}],
     cyberpunk: [{n:"Ville",v:"Aerial cyberpunk city night neon rain holographic ads"},{n:"Code",v:"Programmer holographic workstation blue light circuit hoodie"},{n:"Portail",v:"Woman materializing data purple-cyan hair particles"},{n:"Énergie",v:"Energy rings pulsing constellation patterns sky"},{n:"Duo",v:"Two figures rooftop light bridge between city below"},{n:"Aube",v:"Dawn skyscraper edge golden light cyan hair morning"}],
@@ -197,7 +1254,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   };
 
   function makeRequestError(message, status, code, payload) {
-    var error = new Error(message || "Erreur réseau");
+    var error = new Error(message || t("err.network"));
     error.status = Number(status) || 0;
     error.code = code || "request_failed";
     error.payload = payload || null;
@@ -234,7 +1291,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 
   function requestJson(url, opts, timeoutMs) {
     var target = resolveHttpUrl(url);
-    if (!target) return Promise.reject(makeRequestError("URL de requête invalide", 0, "invalid_url"));
+    if (!target) return Promise.reject(makeRequestError(t("err.badUrl"), 0, "invalid_url"));
 
     var controller = new AbortController();
     var timeout = setTimeout(function() { controller.abort(); }, Math.max(1000, Number(timeoutMs) || API_TIMEOUT_MS));
@@ -247,7 +1304,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
           try { data = JSON.parse(raw); }
           catch (_) {
             throw makeRequestError(
-              r.ok ? "Réponse serveur illisible" : "Erreur HTTP " + r.status,
+              r.ok ? t("err.unreadable") : t("err.http", r.status),
               r.status,
               "invalid_json"
             );
@@ -255,20 +1312,20 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
         }
         if (!r.ok) {
           throw makeRequestError(
-            (data && (data.message || data.error)) || "Erreur HTTP " + r.status,
+            (data && (data.message || data.error)) || t("err.http", r.status),
             r.status,
             (data && data.error) || "http_error",
             data
           );
         }
         if (!data || typeof data !== "object") {
-          throw makeRequestError("Réponse serveur vide", r.status, "empty_json");
+          throw makeRequestError(t("err.empty"), r.status, "empty_json");
         }
         return data;
       });
     }).catch(function(error) {
       if (error && error.name === "AbortError") {
-        throw makeRequestError("Le serveur ne répond pas dans le délai prévu", 0, "request_timeout");
+        throw makeRequestError(t("err.timeout"), 0, "request_timeout");
       }
       throw error;
     }).finally(function() {
@@ -334,11 +1391,11 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 
   function audioErrorMessage(audio, fallback) {
     var code = audio && audio.error && Number(audio.error.code);
-    if (code === 1) return "Lecture interrompue";
-    if (code === 2) return "Le fichier audio ne répond pas correctement";
-    if (code === 3) return "Le fichier audio est illisible ou corrompu";
-    if (code === 4) return "Format audio ou lien non pris en charge";
-    return fallback || "Lecture audio impossible";
+    if (code === 1) return t("audio.interrupted");
+    if (code === 2) return t("audio.noResponse");
+    if (code === 3) return t("audio.corrupt");
+    if (code === 4) return t("audio.unsupported");
+    return fallback || t("audio.impossible");
   }
 
   function failAudio(message) {
@@ -353,11 +1410,11 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     audioPlaybackStarted = false;
     audioStartAttempt += 1;
     var attempt = audioStartAttempt;
-    setPlayerState("Chargement du morceau…");
+    setPlayerState(t("audio.loading"));
     audioStartTimer = setTimeout(function() {
       if (currentIdx === index && audioStartAttempt === attempt && !audioPlaybackStarted) {
         try { audio.pause(); } catch (_) {}
-        failAudio("Le lecteur n'a pas démarré. Le lien ou le fichier audio est invalide.");
+        failAudio(t("audio.notStarted"));
       }
     }, AUDIO_START_TIMEOUT_MS);
 
@@ -396,7 +1453,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     document.getElementById("player").classList.add("on");
     document.getElementById("now-playing").textContent = s.title;
     if (!playUrl) {
-      failAudio("Lien audio invalide");
+      failAudio(t("audio.badLink"));
       return;
     }
 
@@ -453,17 +1510,20 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
         userEmail = d.user.email || d.user.displayName || null;
         isAdmin = ADMIN_EMAILS.indexOf((userEmail || "").toLowerCase()) !== -1;
         sessionExpiresAt = parseSessionExpiry(d.session);
-        document.getElementById("user-badge").textContent = "\uD83D\uDD13 " + (userEmail || "Connecté");
+        document.getElementById("user-badge").textContent = "\uD83D\uDD13 " + (userEmail || t("auth.connected"));
+        // Langue du compte, si rien n'a été choisi sur cette page.
+        var langueCompte = normaliserLangue(d.user.language || d.user.locale);
+        if (langueCompte && !langueChoisieIci && langueCompte !== langue) changerLangue(langueCompte, false);
       } else {
         userEmail = null;
         isAdmin = false;
         sessionExpiresAt = null;
-        document.getElementById("user-badge").innerHTML = '<a href="/login" style="color:var(--muted);text-decoration:underline;font-size:.6rem">Se connecter pour accéder aux clips</a>';
+        document.getElementById("user-badge").innerHTML = '<a href="/login" style="color:var(--muted);text-decoration:underline;font-size:.6rem">' + escapeHtml(t("auth.loginForClips")) + '</a>';
       }
       updateFullClipButton();
       loadFiche();
     }).catch(function() {
-      document.getElementById("user-badge").innerHTML = '<a href="/login" style="color:var(--muted);text-decoration:underline;font-size:.6rem">Se connecter</a>';
+      document.getElementById("user-badge").innerHTML = '<a href="/login" style="color:var(--muted);text-decoration:underline;font-size:.6rem">' + escapeHtml(t("auth.login")) + '</a>';
       updateFullClipButton();
     });
   }
@@ -480,22 +1540,23 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     var line = document.createElement("span");
     if (creditsState.admin) {
       var rc = creditsState.reserveComfy;
-      line.textContent = "👑 Admin : clips gratuits" + (rc
-        ? " · 🎞️ Réserve Comfy : " + Number(rc.credits).toLocaleString("fr-FR") + " crédits ≈ " + rc.plans + " plans (~" + Math.floor(rc.plans * 7 / 60) + " min de clip)"
+      var loc = localeNombres();
+      line.textContent = t("credits.admin") + (rc
+        ? t("credits.reserve", Number(rc.credits).toLocaleString(loc), rc.plans, Math.floor(rc.plans * 7 / 60))
           + (rc.mensuel != null || rc.bonus != null
-            ? " (mensuel " + Number(rc.mensuel || 0).toLocaleString("fr-FR") + " · bonus " + Number(rc.bonus || 0).toLocaleString("fr-FR") + ")"
+            ? t("credits.split", Number(rc.mensuel || 0).toLocaleString(loc), Number(rc.bonus || 0).toLocaleString(loc))
             : "")
         : "");
       box.appendChild(line);
     } else {
-      var t = creditsState.tarif || {};
-      line.textContent = "💳 " + (creditsState.solde == null ? "?" : creditsState.solde) + " crédits · Clip ≈ " + t.clip
-        + " · Full ≈ " + t.fullParMinute + "/min (1 crédit = " + String(t.eurParCredit).replace(".", ",") + " €)";
+      var tarif = creditsState.tarif || {};
+      line.textContent = t("credits.balance", creditsState.solde == null ? "?" : creditsState.solde, tarif.clip,
+        tarif.fullParMinute, Number(tarif.eurParCredit).toLocaleString(localeNombres()));
       box.appendChild(line);
       if (creditsState.achatPossible) {
         var buy = document.createElement("button");
         buy.type = "button";
-        buy.textContent = "Recharger";
+        buy.textContent = t("credits.buy");
         buy.addEventListener("click", function() { if (packsBox) packsBox.hidden = !packsBox.hidden; });
         box.appendChild(buy);
       }
@@ -505,7 +1566,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       (creditsState.packs || []).forEach(function(p) {
         var b = document.createElement("button");
         b.type = "button";
-        b.textContent = p.label + " — " + (p.eurCents / 100).toFixed(2).replace(".", ",") + " €";
+        b.textContent = p.label + " — " + (p.eurCents / 100).toLocaleString(localeNombres(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
         b.addEventListener("click", function() { buyPack(p.id, b); });
         packsBox.appendChild(b);
       });
@@ -524,7 +1585,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       if (d && d.ok && d.url) { location.href = d.url; return; }
       throw new Error("paiement indisponible");
     }).catch(function() {
-      document.getElementById("msg").textContent = "❌ Paiement indisponible pour le moment.";
+      document.getElementById("msg").textContent = t("pay.unavailable");
       if (button) button.disabled = false;
     });
   }
@@ -533,10 +1594,10 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   // La voix Suno reste dans voice-learning (Premium et plus) : on n'en montre ici
   // que l'état. Rien n'est demandé tant que le compte n'est pas connecté.
   function texteVoix(v) {
-    if (!v) return "🎙️ Voix Suno : état indisponible";
-    if (v.sunoVoiceLinked) return "🎙️ Voix Suno personnelle : liée ✓";
-    if (v.canCapture) return "🎙️ Voix Suno personnelle : à lier dans le studio A11";
-    return "🎙️ Voix Suno personnelle : réservée aux comptes Premium, Fondateur et Famille";
+    if (!v) return t("voice.unknown");
+    if (v.sunoVoiceLinked) return t("voice.linked");
+    if (v.canCapture) return t("voice.toLink");
+    return t("voice.reserved");
   }
   function ficheRequete(chemin, opts) {
     return requestJson(new URL(chemin, A + "/").href, opts || { method: "GET" }, 60000);
@@ -548,22 +1609,22 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   function renderFiche(d, voix) {
     var box = document.getElementById("fiche");
     if (!box) return;
-    if (!userEmail) { box.innerHTML = '<div class="empty">Connecte-toi pour créer ta fiche.</div>'; return; }
+    if (!userEmail) { box.innerHTML = '<div class="empty">' + escapeHtml(t("fiche.loginEmpty")) + '</div>'; return; }
     var f = (d && d.fiche) || {};
     var a = f.avatar;
     var html = a
-      ? '<div class="meta">🙋 Ta fiche (écrite depuis ta photo, tu peux la corriger) :</div>'
+      ? '<div class="meta">' + escapeHtml(t("fiche.label")) + '</div>'
         + '<textarea id="fiche-longue" class="input-url" rows="9" maxlength="2000">' + escapeHtml(a.description || "") + '</textarea>'
-        + (a.description ? '' : '<div class="produce-info">Ta fiche détaillée sera écrite à ta prochaine photo, ou écris-la toi-même ici.</div>')
-        + '<div class="meta">🎬 Résumé pour chaque plan vidéo (en anglais, court) :</div>'
+        + (a.description ? '' : '<div class="produce-info">' + escapeHtml(t("fiche.pending")) + '</div>')
+        + '<div class="meta">' + escapeHtml(t("fiche.summary")) + '</div>'
         + '<textarea id="fiche-desc" class="input-url" rows="4" maxlength="600">' + escapeHtml(a.videoPrompt) + '</textarea>'
-        + '<div class="produce-row"><button type="button" class="btn btn-clip" id="fiche-save">Enregistrer</button>'
-        + '<button type="button" class="use" id="fiche-del">Supprimer ma photo et mon avatar</button></div>'
-      : '<div class="meta">🙋 Crée ton avatar : envoie une photo de toi, de face et bien éclairée. Il jouera dans tes clips avec le casting « Moi ».</div>';
-    html += '<label class="file-label">📷 ' + (a ? "Changer de photo" : "Choisir une photo")
+        + '<div class="produce-row"><button type="button" class="btn btn-clip" id="fiche-save">' + escapeHtml(t("fiche.save")) + '</button>'
+        + '<button type="button" class="use" id="fiche-del">' + escapeHtml(t("fiche.delete")) + '</button></div>'
+      : '<div class="meta">' + escapeHtml(t("fiche.create")) + '</div>';
+    html += '<label class="file-label">📷 ' + escapeHtml(a ? t("fiche.changePhoto") : t("fiche.choosePhoto"))
       + '<input class="file-input" type="file" id="fiche-photo" accept="image/jpeg,image/png,image/webp"></label>'
-      + '<label class="produce-info"><input type="checkbox" id="fiche-consent"> C’est moi sur la photo. Elle est analysée par Google Gemini pour écrire ma fiche et mon avatar, puis gardée dans mon espace privé ; je peux la supprimer à tout moment.</label>'
-      + '<div class="produce-info">' + escapeHtml(texteVoix(voix)) + (f.analysesRestantesAujourdhui != null ? " · " + f.analysesRestantesAujourdhui + " analyse(s) de photo restante(s) aujourd’hui" : "") + '</div>'
+      + '<label class="produce-info"><input type="checkbox" id="fiche-consent"> ' + escapeHtml(t("fiche.consent") + t("fiche.consentRef")) + '</label>'
+      + '<div class="produce-info">' + escapeHtml(texteVoix(voix)) + (f.analysesRestantesAujourdhui != null ? escapeHtml(t("fiche.analysesLeft", f.analysesRestantesAujourdhui)) : "") + '</div>'
       + '<div class="msg" id="fiche-msg"></div>';
     box.innerHTML = html;
 
@@ -572,13 +1633,13 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       var fichier = photo.files && photo.files[0];
       if (!fichier) return;
       var consent = document.getElementById("fiche-consent");
-      if (!consent || !consent.checked) { ficheMessage("Coche d’abord la case de consentement."); photo.value = ""; return; }
+      if (!consent || !consent.checked) { ficheMessage(t("fiche.consentFirst")); photo.value = ""; return; }
       var fd = new FormData();
       fd.append("consentement", (d && d.consentement) || "avatar-photo-v1");
       fd.append("photo", fichier);
-      ficheMessage("⏳ Analyse de ta photo…");
+      ficheMessage(t("fiche.analyzing"));
       ficheRequete("/api/fiche/photo", { method: "POST", body: fd }).then(function() { loadFiche(); }, function(e) {
-        ficheMessage("❌ " + ((e && e.message) || "Analyse impossible"));
+        ficheMessage("❌ " + ((e && e.message) || t("fiche.analysisFailed")));
       });
     });
     var save = document.getElementById("fiche-save");
@@ -588,13 +1649,13 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       var corps = { videoPrompt: desc ? desc.value : "" };
       if (longue) corps.description = longue.value;
       ficheRequete("/api/fiche", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) })
-        .then(function() { ficheMessage("✅ Avatar enregistré."); }, function(e) { ficheMessage("❌ " + ((e && e.message) || "Enregistrement impossible")); });
+        .then(function() { ficheMessage(t("fiche.saved")); }, function(e) { ficheMessage("❌ " + ((e && e.message) || t("fiche.saveFailed"))); });
     });
     var del = document.getElementById("fiche-del");
     if (del && del.addEventListener) del.addEventListener("click", function() {
-      if (!window.confirm("Supprimer ta photo et ton avatar ?")) return;
+      if (!window.confirm(t("fiche.confirmDelete"))) return;
       ficheRequete("/api/fiche/photo", { method: "DELETE" }).then(function() { loadFiche(); }, function(e) {
-        ficheMessage("❌ " + ((e && e.message) || "Suppression impossible"));
+        ficheMessage("❌ " + ((e && e.message) || t("fiche.deleteFailed")));
       });
     });
   }
@@ -612,11 +1673,11 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     if (isAdmin || userEmail) {
       btn.classList.remove("locked");
       btn.disabled = false;
-      btn.title = "Full Clip — vidéo générée sur toute la durée de la chanson";
+      btn.title = t("full.title");
     } else {
       btn.classList.add("locked");
       btn.disabled = true;
-      btn.title = "Connecte-toi pour lancer un Full Clip";
+      btn.title = t("full.loginTitle");
     }
   }
 
@@ -626,10 +1687,10 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       var normalizedUrl = resolveHttpUrl(urlInput);
       return normalizedUrl
         ? { type: "url", url: normalizedUrl, title: "Import" }
-        : { type: "invalid", error: "Lien audio invalide" };
+        : { type: "invalid", error: t("audio.badLink") };
     }
     if (urlInput) {
-      return { type: "invalid", error: "Le lien audio doit commencer par https://" };
+      return { type: "invalid", error: t("audio.httpsOnly") };
     }
     if (importedFile) {
       return { type: "file", file: importedFile, title: importedFile.name.replace(/\.[^.]+$/, "") };
@@ -650,7 +1711,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       body: formData
     }, UPLOAD_TIMEOUT_MS).then(function(d) {
       if (d.ok && d.url) return d.url;
-      throw new Error(d.error || "Échec de l'envoi");
+      throw new Error(d.error || t("upload.failed"));
     });
   }
 
@@ -675,13 +1736,14 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 
   function buildAutoSections(title) {
     // Mode libre : on génère des sections basées sur le titre
-    var t = (title || "musique").toLowerCase();
+    // `titreBas` et non `t` : `t` est la fonction de traduction de la page.
+    var titreBas = (title || "musique").toLowerCase();
     var mood = "energetic";
-    if (/triste|sombre|nuit|pluie|mélanc|alone|sad/.test(t)) mood = "melancholic";
-    if (/cosmic|espace|star|galaxy|univers/.test(t)) mood = "cosmic";
-    if (/amour|love|coeur|heart|doux/.test(t)) mood = "romantic";
-    if (/rage|fight|combat|war|colère/.test(t)) mood = "intense";
-    if (/libre|free|vent|wind|road|route/.test(t)) mood = "freedom";
+    if (/triste|sombre|nuit|pluie|mélanc|alone|sad/.test(titreBas)) mood = "melancholic";
+    if (/cosmic|espace|star|galaxy|univers/.test(titreBas)) mood = "cosmic";
+    if (/amour|love|coeur|heart|doux/.test(titreBas)) mood = "romantic";
+    if (/rage|fight|combat|war|colère/.test(titreBas)) mood = "intense";
+    if (/libre|free|vent|wind|road|route/.test(titreBas)) mood = "freedom";
 
     var moodSections = {
       energetic: [
@@ -742,7 +1804,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   function startClip(mode) {
     var source = getSelectedAudioSource();
     if (!source) {
-      document.getElementById("msg").textContent = "Choisis une chanson ou importe un fichier audio";
+      document.getElementById("msg").textContent = t("clip.chooseSong");
       return;
     }
     if (source.type === "invalid") {
@@ -751,7 +1813,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     }
 
     if (mode === "full" && !isAdmin) {
-      document.getElementById("msg").textContent = "Full Clip réservé aux admins pour le moment";
+      document.getElementById("msg").textContent = t("clip.fullAdmin");
       return;
     }
 
@@ -760,23 +1822,19 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     // indisponible = on lance comme avant, le serveur tranchera.
     var nomMode = mode === "full" ? "Full Clip" : "Clip";
     var duree = Number(source.duration || source.durationSeconds || 0) || 0;
-    document.getElementById("msg").textContent = "⏳ Estimation " + nomMode + "…";
+    document.getElementById("msg").textContent = t("clip.estimating", nomMode);
     api("/api/mcp-bridge/clip/estimation?full=" + (mode === "full" ? "1" : "0") + (duree ? "&durationSeconds=" + Math.round(duree) : ""))
       .then(function(e) { return e; }, function() { return null; })
       .then(function(e) {
         var r = e && e.reserve;
         if (r && r.connue && !r.suffisant) {
           if (r.plansPossibles < 1) {
-            document.getElementById("msg").textContent = "⛔ La réserve vidéo du studio est vide pour le moment. Réessaie plus tard, rien ne t'a été pris.";
+            document.getElementById("msg").textContent = t("clip.reserveEmpty");
             return;
           }
-          var question = "⚠️ La réserve vidéo du studio est basse.\n\n"
-            + "Ce " + nomMode + " demande environ " + e.plans + " plans" + (duree ? "" : " (durée inconnue)") + ", "
-            + "il en reste de quoi faire " + r.plansPossibles + ".\n"
-            + "Le clip risque de s'arrêter en route : seuls les plans livrés sont facturés.\n\n"
-            + "Lancer quand même ?";
+          var question = t("clip.reserveLow", nomMode, e.plans, duree ? "" : t("clip.unknownDuration"), r.plansPossibles);
           if (!window.confirm(question)) {
-            document.getElementById("msg").textContent = "Lancement annulé.";
+            document.getElementById("msg").textContent = t("clip.cancelled");
             return;
           }
         }
@@ -790,7 +1848,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     goClip.disabled = true;
     goFull.disabled = true;
     var label = mode === "full" ? "Full Clip" : "Clip";
-    document.getElementById("msg").textContent = "\u23F3 Lancement " + label + "…";
+    document.getElementById("msg").textContent = "\u23F3 " + t("clip.launching", label);
     document.getElementById("bar").classList.add("on");
     document.getElementById("fill").style.width = "5%";
 
@@ -833,18 +1891,18 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 
       api("/api/mcp-bridge/clip/start", payload).then(function(d) {
         if (d.ok) {
-          document.getElementById("msg").textContent = label + " en cours…";
+          document.getElementById("msg").textContent = t("clip.running", label);
           pollJob(d.jobId, mode);
           refreshCredits();
         } else {
-          document.getElementById("msg").textContent = "\u274C " + (d.message || d.error || "Erreur inconnue");
+          document.getElementById("msg").textContent = "\u274C " + (d.message || d.error || t("clip.unknownError"));
           goClip.disabled = false;
           updateFullClipButton();
         }
       }).catch(function(e) {
         // requestJson rejette tout statut non 2xx : le 402 des cr\u00E9dits arrive ici.
         if (e && e.code === "CREDITS_INSUFFISANTS") {
-          document.getElementById("msg").textContent = "\uD83D\uDCB3 " + e.message + " Recharge ci-dessous.";
+          document.getElementById("msg").textContent = "\uD83D\uDCB3 " + e.message + t("clip.rechargeBelow");
           var packsBox = document.getElementById("packs");
           if (packsBox) packsBox.hidden = false;
         } else {
@@ -856,12 +1914,12 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     }
 
     if (source.type === "file") {
-      document.getElementById("msg").textContent = "\u23F3 Envoi du fichier…";
+      document.getElementById("msg").textContent = "\u23F3 " + t("clip.uploading");
       uploadFile(source.file).then(function(url) {
-        document.getElementById("msg").textContent = "\u23F3 Fichier envoyé, lancement…";
+        document.getElementById("msg").textContent = "\u23F3 " + t("clip.uploaded");
         doCall(url);
       }).catch(function(e) {
-        document.getElementById("msg").textContent = "\u274C Envoi : " + e.message;
+        document.getElementById("msg").textContent = "\u274C " + t("clip.uploadError", e.message);
         goClip.disabled = false;
         updateFullClipButton();
       });
@@ -905,7 +1963,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     stopPolling({ clearState: true, enableButtons: false });
     activeJobId = String(id || "");
     if (!activeJobId) {
-      document.getElementById("msg").textContent = "❌ Identifiant de génération manquant";
+      document.getElementById("msg").textContent = t("poll.missingId");
       stopPolling();
       return;
     }
@@ -928,7 +1986,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       if (activeJobId !== id || pollInFlight) return;
       if (Date.now() - startedAt >= maxDuration) {
         terminalMessage(
-          "⚠️ Suivi arrêté : délai maximal atteint. La génération peut encore finir côté serveur ; recharge la liste des clips.",
+          t("poll.maxDelay"),
           "warn",
           true
         );
@@ -946,18 +2004,18 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 
         if (successStates.indexOf(status) !== -1) {
           if (!d.outputUrl && !d.outputFilename) {
-            terminalMessage("❌ Génération marquée terminée, mais aucun fichier vidéo n'a été fourni.", "error", true);
+            terminalMessage(t("poll.noFile"), "error", true);
           } else if (d.partial === true) {
             document.getElementById("fill").style.width = "100%";
-            terminalMessage("⚠️ " + label + " partiel prêt" + (d.warning ? " — " + d.warning : "."), "warn", true);
+            terminalMessage(t("poll.partial", label) + (d.warning ? " — " + d.warning : "."), "warn", true);
           } else {
             document.getElementById("fill").style.width = "100%";
-            terminalMessage("✅ " + label + " prêt !", "success", true);
+            terminalMessage(t("poll.ready", label), "success", true);
           }
           return false;
         }
         if (errorStates.indexOf(status) !== -1) {
-          var fallbackError = d.error || (status === "cancelled" || status === "canceled" ? "Génération annulée" : "Génération échouée");
+          var fallbackError = d.error || (status === "cancelled" || status === "canceled" ? t("poll.cancelled") : t("poll.failed"));
           if (d.errorInfo && d.errorInfo.node_type) {
             var nodeTag = escapeHtml(truncate(String(d.errorInfo.node_type), 80));
             var detailMsg = escapeHtml(truncate(String(d.errorInfo.message || fallbackError), 300));
@@ -968,7 +2026,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
           return false;
         }
         if (ongoingStates.indexOf(status) === -1) {
-          terminalMessage("❌ Statut de génération invalide ou absent", "error", true);
+          terminalMessage(t("poll.badStatus"), "error", true);
           return false;
         }
 
@@ -979,22 +2037,22 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       }).catch(function(error) {
         if (activeJobId !== id) return false;
         if (error && (error.status === 401 || error.status === 403)) {
-          document.getElementById("msg").textContent = "❌ Session expirée : reconnecte-toi puis actualise pour reprendre le suivi.";
+          document.getElementById("msg").textContent = t("poll.sessionExpired");
           stopPolling({ clearState: false });
           return false;
         }
         if (error && error.status === 404) {
-          terminalMessage("⚠️ Job introuvable : le serveur a peut-être redémarré. Vérifie la liste des clips.", "warn", true);
+          terminalMessage(t("poll.jobNotFound"), "warn", true);
           return false;
         }
         consecutiveFailures += 1;
         if (consecutiveFailures >= 3) {
-          document.getElementById("msg").textContent = "⚠️ Suivi réseau interrompu. Actualise la page pour reprendre ce job.";
+          document.getElementById("msg").textContent = t("poll.networkLost");
           stopPolling({ clearState: false });
           loadClips();
           return false;
         }
-        document.getElementById("msg").textContent = "⚠️ Suivi temporairement indisponible, nouvel essai…";
+        document.getElementById("msg").textContent = t("poll.retrying");
         return true;
       }).then(function(continuePolling) {
         pollInFlight = false;
@@ -1014,7 +2072,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       clearPollState();
       return;
     }
-    document.getElementById("msg").textContent = "⏳ Reprise du suivi de la génération…";
+    document.getElementById("msg").textContent = t("poll.resume");
     document.getElementById("bar").classList.add("on");
     pollJob(saved.id, saved.mode === "full" ? "full" : "clip", saved.startedAt);
   }
@@ -1054,12 +2112,12 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   function ligneClip(x, admin) {
     var href = resolveHttpUrl(x && x.url);
     if (!href) return "";
-    var nom = (x.name || x.filename || "Clip") + (x.partial ? " (partiel)" : "");
+    var nom = (x.name || x.filename || "Clip") + (x.partial ? t("clips.partial") : "");
     var html = '<div class="c"><a href="' + escapeHtml(href) + '" target="_blank" rel="noopener noreferrer">\uD83C\uDFAC ' + escapeHtml(nom) + '</a>';
     if (admin && x.filename) {
       if (x.auteur) html += '<span class="meta"> \u00B7 ' + escapeHtml(x.auteur) + '</span>';
       html += ' <button type="button" class="use" data-vitrine="' + escapeHtml(x.filename) + '" data-publier="' + (x.enVitrine ? "0" : "1") + '">'
-        + (x.enVitrine ? "Retirer de la vitrine" : "Mettre en vitrine") + '</button>';
+        + escapeHtml(x.enVitrine ? t("clips.unpublish") : t("clips.publish")) + '</button>';
     }
     return html + '</div>';
   }
@@ -1079,13 +2137,13 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       var admin = vitrine.admin === true;
       var e = mes.erreur;
       var html = (e && (e.status === 401 || e.status === 403))
-        ? sectionClips("\uD83D\uDD12 Mes clips", [], "Connecte-toi pour voir tes clips")
-        : sectionClips("\uD83D\uDD12 Mes clips \u2014 visibles par toi seul",
+        ? sectionClips("🔒 " + t("clips.mine"), [], t("clips.loginToSee"))
+        : sectionClips("🔒 " + t("clips.minePrivate"),
           (mes.clips || []).map(function(x) { return ligneClip(x, false); }).filter(Boolean),
-          e ? "Liste indisponible" : "Aucun clip pour le moment");
-      html += sectionClips(admin ? "\uD83D\uDDC2\uFE0F Tous les clips (admin) \u2014 la vitrine est visible de tous" : "\u2728 Vitrine",
+          e ? t("clips.unavailable") : t("clips.none"));
+      html += sectionClips(admin ? "🗂️ " + t("clips.allAdmin") : "✨ " + t("clips.showcase"),
         (vitrine.clips || []).map(function(x) { return ligneClip(x, admin); }).filter(Boolean),
-        vitrine.erreur ? "Vitrine indisponible" : "Rien en vitrine pour le moment");
+        vitrine.erreur ? t("clips.showcaseUnavailable") : t("clips.showcaseEmpty"));
       box.innerHTML = html;
     });
   }
@@ -1105,7 +2163,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   function mapSong(s, fallbackSource) {
     var sourceUrl = normalizeSongSource(s && s.trackUrl);
     return {
-      title: (s && (s.trackTitle || s.title)) || "Sans titre",
+      title: (s && (s.trackTitle || s.title)) || t("song.untitled"),
       available: Boolean(sourceUrl) && (!s || s.available !== false),
       playUrl: resolveHttpUrl(sourceUrl),
       originalUrl: resolveHttpUrl(normalizeSongSource(s && s.originalTrackUrl)),
@@ -1114,7 +2172,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
       date: s && s.createdAt ? String(s.createdAt).slice(0, 10) : "",
       createdAt: s && s.createdAt ? String(s.createdAt) : "",
       duration: s && Number.isFinite(Number(s.durationSeconds)) ? Math.round(Number(s.durationSeconds)) + "s" : "",
-      source: [(s && s.source) || fallbackSource || "vivy", s && s.variant, s && s.mastering, s && s.titleBy ? "Titre : " + s.titleBy : "", s && s.available === false ? "Audio non récupéré" : ""].filter(Boolean).join(" · "),
+      source: [(s && s.source) || fallbackSource || "vivy", s && s.variant, s && s.mastering, s && s.titleBy ? t("song.titleBy", s.titleBy) : "", s && s.available === false ? t("song.notRetrieved") : ""].filter(Boolean).join(" · "),
       requestedBy: String((s && s.requestedBy) || "").toLowerCase()
     };
   }
@@ -1184,8 +2242,8 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     // La chanson choisie reste dans la liste deroulante meme si le filtre la masque.
     var dansLeChoix = selectedIndex >= 0 && visibles.indexOf(selectedIndex) < 0 ? [selectedIndex].concat(visibles) : visibles;
     document.getElementById("song-count").textContent = requete ? visibles.length + " / " + songs.length : songs.length;
-    document.getElementById("mastering-progress").textContent = songs.filter(function(s) { return s.mastering === "V11 Pan"; }).length + " / " + songs.length + " versions V11 Pan disponibles · originaux conservés";
-    document.getElementById("song").innerHTML = '<option value="">' + (requete ? (visibles.length ? visibles.length + ' résultat' + (visibles.length > 1 ? 's' : '') + ' — choisir…' : 'Aucun titre ne correspond') : 'Choisir une chanson…') + '</option>' +
+    document.getElementById("mastering-progress").textContent = t("song.v11", songs.filter(function(s) { return s.mastering === "V11 Pan"; }).length, songs.length);
+    document.getElementById("song").innerHTML = '<option value="">' + escapeHtml(requete ? (visibles.length ? t(visibles.length > 1 ? "song.resultN" : "song.result1", visibles.length) : t("song.noMatchShort")) : t("song.choose")) + '</option>' +
       dansLeChoix.map(function(i) { var s = songs[i]; return '<option value="' + i + '"' + (s.available === false ? ' disabled' : '') + '>' + escapeHtml(truncate(s.title, 45)) + '</option>'; }).join("");
 
     if (selectedKey && !importedFile && !document.getElementById("import-url").value.trim()) {
@@ -1197,20 +2255,47 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
           var s = songs[i];
           var active = i === currentIdx;
           return '<div class="s">' +
-            '<button class="play' + (active ? ' active' : '') + '" data-idx="' + i + '"' + (s.available === false ? ' disabled title="Audio non récupéré"' : '') + ' aria-label="' + escapeHtml("Lire " + s.title) + '">' + (active && !audio.paused ? "\u23F8" : "\u25B6") + '</button>' +
+            '<button class="play' + (active ? ' active' : '') + '" data-idx="' + i + '"' + (s.available === false ? ' disabled title="' + escapeHtml(t("song.notRetrieved")) + '"' : '') + ' aria-label="' + escapeHtml(t("song.play", s.title)) + '">' + (active && !audio.paused ? "\u23F8" : "\u25B6") + '</button>' +
             '<div class="info"><div class="title">' + escapeHtml(truncate(s.title, 50)) + '</div>' +
-            '<div class="meta">' + escapeHtml([s.date, s.duration, s.source].filter(Boolean).join(" \u00B7 ")) + (s.originalUrl ? ' · <a href="' + escapeHtml(s.originalUrl) + '" target="_blank" rel="noopener">Original</a>' : '') + '</div></div>' +
-            '<button class="use" data-pick="' + i + '"' + (s.available === false ? ' disabled' : '') + '>utiliser</button></div>';
+            '<div class="meta">' + escapeHtml([s.date, s.duration, s.source].filter(Boolean).join(" \u00B7 ")) + (s.originalUrl ? ' · <a href="' + escapeHtml(s.originalUrl) + '" target="_blank" rel="noopener">' + escapeHtml(t("song.original")) + '</a>' : '') + '</div></div>' +
+            '<button class="use" data-pick="' + i + '"' + (s.available === false ? ' disabled' : '') + '>' + escapeHtml(t("song.use")) + '</button></div>';
         }).join("")
       : (requete && songs.length
-        ? '<div class="empty">Aucune chanson ne correspond à « ' + escapeHtml(songQuery.trim()) + ' »</div>'
-        : '<div class="empty">Aucune chanson disponible pour le moment</div>');
+        ? '<div class="empty">' + escapeHtml(t("song.noMatch", songQuery.trim())) + '</div>'
+        : '<div class="empty">' + escapeHtml(t("song.none")) + '</div>');
   }
 
+  // Change la langue et redessine tout ce qui a déjà été affiché. `memoriser` : le
+  // choix fait sur la page est gardé ; la langue du compte, elle, ne l'écrase pas.
+  function changerLangue(code, memoriser) {
+    var suivante = normaliserLangue(code);
+    if (!suivante) return;
+    langue = suivante;
+    if (memoriser) {
+      langueChoisieIci = true;
+      try { if (typeof localStorage !== "undefined") localStorage.setItem("nossen.lang", langue); } catch (_) {}
+    }
+    appliquerTextesFixes();
+    var choisi = parseInt(document.getElementById("song").value, 10);
+    renderSongs(Number.isInteger(choisi) && songs[choisi] ? songKey(songs[choisi]) : "");
+    renderCredits();
+    updateFullClipButton();
+    loadFiche();
+    loadClips();
+    loadSongs();
+  }
+  (function() {
+    var choix = document.getElementById("lang");
+    if (choix && typeof choix.addEventListener === "function") {
+      choix.addEventListener("change", function() { changerLangue(this.value, true); });
+    }
+  })();
+
   function init() {
+    appliquerTextesFixes();
     api("/api/mcp-bridge/health").then(function(h) {
-      document.getElementById("st").textContent = (h.upstreams && h.upstreams.comfy && h.upstreams.comfy.ok) ? "\u2705 En ligne" : "\u26A0\uFE0F Partiel";
-    }).catch(function() { document.getElementById("st").textContent = "\u274C Hors ligne"; });
+      document.getElementById("st").textContent = (h.upstreams && h.upstreams.comfy && h.upstreams.comfy.ok) ? "\u2705 " + t("status.online") : "\u26A0\uFE0F " + t("status.partial");
+    }).catch(function() { document.getElementById("st").textContent = "\u274C " + t("status.offline"); });
 
     checkAuth().then(function() {
       loadSongs();
@@ -1310,43 +2395,43 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     if (Number.isFinite(duration) && duration > 0) {
       setPlayerState(prefix + " · " + elapsed + " / " + formatAudioTime(duration));
     } else {
-      setPlayerState(prefix + " · " + elapsed + " · durée indéterminée", "warn");
+      setPlayerState(prefix + " · " + elapsed + " · " + t("player.unknownDuration"), "warn");
     }
   }
 
   var audioElement = document.getElementById("audio");
   audioElement.addEventListener("loadstart", function() {
-    if (currentIdx !== null) setPlayerState("Chargement du morceau…");
+    if (currentIdx !== null) setPlayerState(t("audio.loading"));
   });
   audioElement.addEventListener("loadedmetadata", function() {
-    updateAudioProgress("Prêt");
+    updateAudioProgress(t("player.ready"));
   });
   audioElement.addEventListener("durationchange", function() {
-    if (currentIdx !== null && audioElement.paused) updateAudioProgress("Prêt");
+    if (currentIdx !== null && audioElement.paused) updateAudioProgress(t("player.ready"));
   });
   audioElement.addEventListener("playing", function() {
     audioPlaybackStarted = true;
     clearAudioStartTimer();
     updatePlayButtons();
-    updateAudioProgress("Lecture");
+    updateAudioProgress(t("player.playing"));
   });
   audioElement.addEventListener("waiting", function() {
-    if (currentIdx !== null) setPlayerState("Mise en mémoire tampon…", "warn");
+    if (currentIdx !== null) setPlayerState(t("player.buffering"), "warn");
   });
   audioElement.addEventListener("stalled", function() {
-    if (currentIdx !== null) setPlayerState("Le flux audio ne progresse plus", "warn");
+    if (currentIdx !== null) setPlayerState(t("player.stalled"), "warn");
   });
   audioElement.addEventListener("timeupdate", function() {
-    if (currentIdx !== null) updateAudioProgress(audioElement.paused ? "Pause" : "Lecture");
+    if (currentIdx !== null) updateAudioProgress(audioElement.paused ? t("player.paused") : t("player.playing"));
   });
   audioElement.addEventListener("pause", function() {
     clearAudioStartTimer();
-    if (currentIdx !== null && !audioElement.ended) updateAudioProgress("Pause");
+    if (currentIdx !== null && !audioElement.ended) updateAudioProgress(t("player.paused"));
     updatePlayButtons();
   });
   audioElement.addEventListener("ended", function() {
     clearAudioStartTimer();
-    setPlayerState("Terminé");
+    setPlayerState(t("player.ended"));
     currentIdx = null;
     updatePlayButtons();
   });

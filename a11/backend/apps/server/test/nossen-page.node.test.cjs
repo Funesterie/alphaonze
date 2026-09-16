@@ -144,7 +144,7 @@ function jsonResponse(status, payload) {
   };
 }
 
-function createHarness(fetchImpl) {
+function createHarness(fetchImpl, extraGlobals = {}) {
   const scheduler = createScheduler();
   const elements = new Map();
   const ids = [
@@ -203,6 +203,7 @@ function createHarness(fetchImpl) {
     windowListeners.get(type).push(listener);
   };
   context.window = context;
+  Object.assign(context, extraGlobals);
   vm.runInNewContext(readPageScript(), context, { filename: serverPagePath });
 
   return {
@@ -596,4 +597,45 @@ test('un suivi memorise hors de sa fenetre est oublie au lieu d etre relance', a
   await settle();
   assert.equal(appelsStatut, 0, 'aucun appel pour un job hors fenetre');
   assert.ok(!page.sessionStorage.getItem(CLE_SUIVI), 'l etat perime doit etre efface');
+});
+
+test('traduction (16/09) : les sept langues ont les memes cles et les memes emplacements', () => {
+  const html = fs.readFileSync(serverPagePath, 'utf8');
+  const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const debut = script.indexOf('var I18N = {') + 'var I18N = '.length;
+  const fin = script.indexOf('function normaliserLangue');
+  const I18N = new Function(`return ${script.slice(debut, fin).trim().replace(/;\s*$/, '')}`)();
+  const cles = Object.keys(I18N.fr).sort();
+  assert.deepEqual(Object.keys(I18N).sort(), ['de', 'en', 'es', 'fr', 'it', 'ja', 'zh']);
+  const emplacements = (texte) => (String(texte).match(/\{\d\}/g) || []).sort().join('');
+  for (const [langue, textes] of Object.entries(I18N)) {
+    assert.deepEqual(Object.keys(textes).sort(), cles, `${langue} : cles differentes du francais`);
+    for (const cle of cles) {
+      assert.equal(emplacements(textes[cle]), emplacements(I18N.fr[cle]), `${langue} ${cle} : emplacements {n}`);
+    }
+  }
+  // Toute cle utilisee par la page existe.
+  const utilisees = [...html.matchAll(/(?:\bt\(|data-i18n(?:-placeholder|-aria)?=)["']([a-z]+\.[A-Za-z0-9]+)["']/g)].map((m) => m[1]);
+  for (const cle of utilisees) assert.ok(I18N.fr[cle] != null, `cle absente : ${cle}`);
+});
+
+test('traduction : la page choisie en japonais affiche ses messages en japonais', async () => {
+  const page = createHarness(async (url) => {
+    const pathname = new URL(url).pathname;
+    if (pathname === '/api/vivy/stream/songs.json') return jsonResponse(200, { ok: true, songs: [] });
+    if (pathname.includes('/status/')) return jsonResponse(404, { error: 'not_found' });
+    return jsonResponse(200, { ok: true });
+  }, {
+    localStorage: { getItem: (cle) => (cle === 'nossen.lang' ? 'ja' : null), setItem() {} },
+  });
+
+  await page.hooks.loadSongs();
+  await settle();
+  assert.match(page.elements.get('list').innerHTML, /現在利用できる曲はありません/);
+  assert.doesNotMatch(page.elements.get('list').innerHTML, /Aucune chanson/);
+
+  page.hooks.pollJob('job-ja', 'clip');
+  page.scheduler.runNext();
+  await settle();
+  assert.match(page.elements.get('msg').textContent, /ジョブが見つかりません/);
 });
