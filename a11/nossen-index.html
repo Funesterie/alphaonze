@@ -62,6 +62,10 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 .badge{font-size:.55rem;padding:.1rem .3rem;border-radius:3px;font-weight:700;text-transform:uppercase}
 .badge-gold{background:rgba(251,191,36,.15);color:var(--gold);border:1px solid rgba(251,191,36,.3)}
 .empty{color:var(--muted);font-size:.7rem;text-align:center;padding:1rem}
+.langue-fixe{position:fixed;left:max(12px,env(safe-area-inset-left));bottom:max(12px,env(safe-area-inset-bottom));z-index:1000;display:inline-flex;align-items:center;gap:.35rem;padding:.35rem .6rem;border-radius:999px;background:rgba(8,8,15,.94);border:1px solid rgba(0,245,212,.4);box-shadow:0 6px 18px rgba(0,0,0,.45);font-size:.95rem;transition:bottom .2s}
+.langue-fixe select{width:auto;margin:0;padding:.25rem .3rem;border:0;background:transparent;color:var(--text);font-size:.9rem;font-weight:700;cursor:pointer}
+.langue-fixe select option{background:#0a0a12;color:var(--text)}
+body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom)) + 110px)}
 </style>
 </head>
 <body>
@@ -74,7 +78,14 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
   <a href="https://a11.funesterie.me">A11</a>
   <a href="https://k44.funesterie.me">K44</a>
   <a href="https://funesterie.me" data-i18n="nav.home">Accueil</a>
-  <select id="lang" aria-label="Langue" data-i18n-aria="lang.label" style="width:auto;margin:0;padding:.1rem .3rem;font-size:.65rem">
+</nav>
+
+<!-- Bouton de langue toujours visible (16/09/2026) : le menu était caché dans la
+     navigation. Chaque langue est écrite dans sa propre langue ; le nom du bouton
+     est donné dans toutes les langues, lisible avant d'avoir choisi. -->
+<label class="langue-fixe" title="Langue / Language / Idioma / Lingua / Sprache / 言語 / 语言">
+  <span aria-hidden="true">🌐</span>
+  <select id="lang" aria-label="Langue / Language / Idioma / Lingua / Sprache / 言語 / 语言">
     <option value="fr">Français</option>
     <option value="en">English</option>
     <option value="es">Español</option>
@@ -83,7 +94,7 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     <option value="ja">日本語</option>
     <option value="zh">中文</option>
   </select>
-</nav>
+</label>
 
 <div class="card">
   <h2 data-i18n="produce.title">🎬 Produire un clip</h2>
@@ -1454,6 +1465,8 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 
     var playUrl = resolveHttpUrl(s.playUrl);
     document.getElementById("player").classList.add("on");
+    // Le lecteur colle au bas de l'écran : le bouton de langue remonte au-dessus.
+    if (document.body && document.body.classList) document.body.classList.add("lecteur-ouvert");
     document.getElementById("now-playing").textContent = s.title;
     if (!playUrl) {
       failAudio(t("audio.badLink"));

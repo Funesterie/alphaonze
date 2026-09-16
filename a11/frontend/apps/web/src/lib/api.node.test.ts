@@ -123,3 +123,37 @@ test("resolvePublicVivyMediaDownloadUrl recognises subdirectory asset paths like
   }
 });
 
+
+test("langue : le choix fait avec le bouton passe avant la langue du compte", async () => {
+  const { chooseInterfaceLanguage, getAuthAccountLanguage, hasChosenInterfaceLanguage, INTERFACE_LANGUAGE_EVENT } = await import("./api.ts");
+  const store = new Map<string, string>();
+  const originalStorage = (globalThis as any).localStorage;
+  const originalWindow = (globalThis as any).window;
+  const events: string[] = [];
+  (globalThis as any).localStorage = {
+    getItem: (key: string) => (store.has(key) ? store.get(key)! : null),
+    setItem: (key: string, value: string) => { store.set(key, String(value)); },
+    removeItem: (key: string) => { store.delete(key); },
+  };
+  (globalThis as any).window = {
+    dispatchEvent: (event: any) => { events.push(`${event.type}:${event.detail?.language}`); return true; },
+  };
+  try {
+    const authKey = apiSource.match(/const AUTH_USER_STORAGE_KEY = ['"]([^'"]+)['"]/)?.[1];
+    assert.ok(authKey, "cle du profil stocke introuvable");
+    // Compte en français, personne qui veut le chinois.
+    store.set(authKey!, JSON.stringify({ language: "fr" }));
+    assert.equal(hasChosenInterfaceLanguage(), false);
+    assert.equal(getAuthAccountLanguage("fr"), "fr");
+
+    assert.equal(chooseInterfaceLanguage("zh"), "zh");
+    assert.equal(hasChosenInterfaceLanguage(), true);
+    assert.equal(getAuthAccountLanguage("fr"), "zh");
+    assert.deepEqual(events, [`${INTERFACE_LANGUAGE_EVENT}:zh`]);
+
+    assert.equal(chooseInterfaceLanguage("xx"), "fr", "une langue inconnue retombe sur le francais");
+  } finally {
+    (globalThis as any).localStorage = originalStorage;
+    (globalThis as any).window = originalWindow;
+  }
+});

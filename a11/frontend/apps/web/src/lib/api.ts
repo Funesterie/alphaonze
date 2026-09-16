@@ -959,7 +959,38 @@ export function normalizeAccountLanguage(value: unknown, fallback = 'fr') {
   return normalizedFallback;
 }
 
+// Choix explicite de langue (16/09/2026). Avant, la langue du compte écrasait tout :
+// une personne chinoise dont le compte est en français qui choisissait 中文 était
+// ramenée au français. Le choix fait avec le bouton de langue passe désormais avant.
+const CHOSEN_LANGUAGE_FLAG = 'a11:language:chosen';
+export const INTERFACE_LANGUAGE_EVENT = 'funesterie:language';
+
+export function hasChosenInterfaceLanguage(): boolean {
+  try {
+    return localStorage.getItem(CHOSEN_LANGUAGE_FLAG) === '1' && Boolean(localStorage.getItem('a11:language'));
+  } catch {
+    return false;
+  }
+}
+
+export function chooseInterfaceLanguage(code: unknown) {
+  const language = normalizeAccountLanguage(code, 'fr');
+  try {
+    localStorage.setItem('a11:language', language);
+    localStorage.setItem(CHOSEN_LANGUAGE_FLAG, '1');
+  } catch {
+    // stockage indisponible : le changement vaut pour la page ouverte
+  }
+  try {
+    window.dispatchEvent(new CustomEvent(INTERFACE_LANGUAGE_EVENT, { detail: { language } }));
+  } catch {
+    // pas de fenêtre (tests)
+  }
+  return language;
+}
+
 export function getAuthAccountLanguage(fallback = 'fr') {
+  if (hasChosenInterfaceLanguage()) return normalizeAccountLanguage(localStorage.getItem('a11:language'), fallback);
   if (hasLocalDevBypassSession()) return normalizeAccountLanguage(localStorage.getItem('a11:language'), fallback);
 
   const payload = decodeJwtPayload(getAuthToken()) || {};

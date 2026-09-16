@@ -11048,3 +11048,69 @@ body {
   gap: 6px;
   align-items: center;
 }
+
+/* Bouton de langue toujours visible (16/09/2026). En bas à gauche, au-dessus du
+   contenu, hors des barres de saisie qui sont en bas au centre. */
+.fun-language-switcher {
+  position: fixed;
+  left: max(12px, env(safe-area-inset-left));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  z-index: 2147483000;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+}
+.fun-language-switcher-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(7, 16, 33, 0.92);
+  color: #e5e7eb;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.fun-language-switcher-button:hover,
+.fun-language-switcher-button:focus-visible {
+  border-color: #22d3ee;
+  outline: none;
+}
+.fun-language-switcher-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(7, 16, 33, 0.97);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  min-width: 150px;
+}
+.fun-language-switcher-list button {
+  display: block;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #e5e7eb;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+.fun-language-switcher-list button:hover,
+.fun-language-switcher-list button:focus-visible {
+  background: rgba(34, 211, 238, 0.14);
+  outline: none;
+}
+.fun-language-switcher-list button.is-current {
+  color: #22d3ee;
+  font-weight: 700;
+}

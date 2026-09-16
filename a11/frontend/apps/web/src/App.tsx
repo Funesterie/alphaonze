@@ -63,6 +63,8 @@ import {
   emailConversationResource,
   clearAuthToken,
   getAuthAccountLanguage,
+  chooseInterfaceLanguage,
+  INTERFACE_LANGUAGE_EVENT,
   getAuthDisplayName,
   getLegacyAuthStorageScopes,
   getAuthStorageScope,
@@ -9912,6 +9914,16 @@ function VivyPublicPage({ authenticated, displayName, diagnosticsAllowed = false
     if (nextHasSession) setVivyMenuLanguage(normalizeA11LanguageCode(getAuthAccountLanguage("fr")));
   }, [authenticated, displayName]);
 
+  // Le bouton de langue global (LanguageSwitcher) annonce son choix par un événement.
+  useEffect(() => {
+    const onLanguage = (event: Event) => {
+      const next = (event as CustomEvent<{ language?: string }>).detail?.language;
+      if (next) setVivyMenuLanguage(normalizeA11LanguageCode(next));
+    };
+    window.addEventListener(INTERFACE_LANGUAGE_EVENT, onLanguage);
+    return () => window.removeEventListener(INTERFACE_LANGUAGE_EVENT, onLanguage);
+  }, []);
+
   useEffect(() => {
     try {
       localStorage.setItem("a11:language", vivyMenuLanguage);
@@ -9972,7 +9984,7 @@ function VivyPublicPage({ authenticated, displayName, diagnosticsAllowed = false
                   className="vivy-agent-menu-select"
                   aria-label="Langue Vivy"
                   value={vivyMenuLanguage}
-                  onChange={(event) => setVivyMenuLanguage(normalizeA11LanguageCode(event.target.value))}
+                  onChange={(event) => setVivyMenuLanguage(normalizeA11LanguageCode(chooseInterfaceLanguage(event.target.value)))}
                 >
                   {A11_LANGUAGE_CHOICES.map((choice) => (
                     <option key={choice.code} value={choice.code}>
@@ -14812,6 +14824,15 @@ export function App() {
     const accountLanguage = normalizeA11LanguageCode(getAuthAccountLanguage(a11Language));
     if (accountLanguage !== a11Language) setA11Language(accountLanguage);
   }, [a11Language, hasPrivateSession]);
+  // Le bouton de langue global annonce son choix : chat, micro et voix suivent.
+  useEffect(() => {
+    const onLanguage = (event: Event) => {
+      const next = (event as CustomEvent<{ language?: string }>).detail?.language;
+      if (next) setA11Language(normalizeA11LanguageCode(next));
+    };
+    window.addEventListener(INTERFACE_LANGUAGE_EVENT, onLanguage);
+    return () => window.removeEventListener(INTERFACE_LANGUAGE_EVENT, onLanguage);
+  }, []);
   const defaultVoiceReferenceLabel = useMemo(
     () => getDefaultVoiceReferenceLabel(surfaceKind),
     [surfaceKind]
@@ -17961,7 +17982,7 @@ export function App() {
                       id="a11-chat-language"
                       name="a11Language"
                       value={a11Language}
-                      onChange={(e) => setA11Language(normalizeA11LanguageCode(e.target.value))}
+                      onChange={(e) => setA11Language(normalizeA11LanguageCode(chooseInterfaceLanguage(e.target.value)))}
                       style={{ ...headerSelectStyle, width: "100%", maxWidth: "100%" }}
                       title="Langue du chat, du micro, de la transcription et de la voix"
                     >

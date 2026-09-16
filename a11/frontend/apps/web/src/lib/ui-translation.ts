@@ -15,6 +15,13 @@ function normalizeUiLanguage(value: unknown): UiLanguageCode {
   return UI_LANGUAGES.has(raw as UiLanguageCode) ? (raw as UiLanguageCode) : "fr";
 }
 
+// Toute lettre, quel que soit l'alphabet (16/09/2026). Le filtre était latin
+// seulement : une page passée en chinois ou en japonais n'avait plus aucun texte
+// « traduisible », et le retour au français ne se faisait qu'en rechargeant.
+function hasLetter(value: unknown): boolean {
+  return /\p{L}/u.test(String(value ?? ""));
+}
+
 function normalizeLookupText(value: unknown): string {
   return String(value ?? "")
     .replace(/\u00a0/g, " ")
@@ -392,7 +399,7 @@ function translateTextNode(node: Text, language: UiLanguageCode) {
   const current = normalizeLookupText(node.data);
   const storedSource = textNodeSources.get(node);
   const source = storedSource && isRenderedVariant(storedSource, current) ? storedSource : current;
-  if (!source || !/[A-Za-zÀ-ÿ]/.test(source)) return;
+  if (!source || !hasLetter(source)) return;
   textNodeSources.set(node, source);
   const next = translated(language, source);
   if (current !== normalizeLookupText(next)) {
@@ -414,7 +421,7 @@ function translateElementAttributes(element: Element, language: UiLanguageCode) 
     const storedSource = sources.get("label");
     const normalizedCurrent = normalizeLookupText(current);
     const source = storedSource && isRenderedVariant(storedSource, normalizedCurrent) ? storedSource : normalizeLookupText(element.textContent || current);
-    if (!source || !/[A-Za-zÀ-ÿ]/.test(source)) return;
+    if (!source || !hasLetter(source)) return;
     sources.set("label", source);
     const next = translated(language, source);
     if (normalizeLookupText(current) !== normalizeLookupText(next)) element.setAttribute("label", next);
@@ -422,7 +429,7 @@ function translateElementAttributes(element: Element, language: UiLanguageCode) 
   }
   for (const attribute of TRANSLATABLE_ATTRIBUTES) {
     const current = element.getAttribute(attribute);
-    if (!current || !/[A-Za-zÀ-ÿ]/.test(current)) continue;
+    if (!current || !hasLetter(current)) continue;
     let sources = attributeSources.get(element);
     if (!sources) {
       sources = new Map();
@@ -444,7 +451,7 @@ export function translateLegacyStaticUi(root: ParentNode, languageValue: unknown
       const parent = node.parentElement;
       if (shouldSkipTextElement(parent)) return NodeFilter.FILTER_REJECT;
       const text = normalizeLookupText(node.textContent);
-      if (!text || !/[A-Za-zÀ-ÿ]/.test(text)) return NodeFilter.FILTER_REJECT;
+      if (!text || !hasLetter(text)) return NodeFilter.FILTER_REJECT;
       return NodeFilter.FILTER_ACCEPT;
     },
   });
@@ -468,14 +475,26 @@ export function translateLegacyStaticDocumentTitle(languageValue: unknown) {
   if (next !== document.title) document.title = next;
 }
 
+// Langue courante partagée : le bouton de langue la change sans attendre que chaque
+// composant se ré-attache, et les observateurs traduisent les nouveaux nœuds dans
+// la langue du moment, pas dans celle de leur création.
+let currentUiLanguage: UiLanguageCode = "fr";
+
+export function applyInterfaceLanguage(languageValue: unknown) {
+  if (typeof document === "undefined") return;
+  currentUiLanguage = normalizeUiLanguage(languageValue);
+  translateLegacyStaticUi(document.getElementById("root") || document.body, currentUiLanguage);
+  translateLegacyStaticDocumentTitle(currentUiLanguage);
+}
+
 export function attachLegacyStaticUiTranslator(languageValue: unknown) {
   if (typeof document === "undefined") return () => {};
-  const language = normalizeUiLanguage(languageValue);
+  currentUiLanguage = normalizeUiLanguage(languageValue);
   const root = document.getElementById("root") || document.body;
 
   const translateAll = () => {
-    translateLegacyStaticUi(root, language);
-    translateLegacyStaticDocumentTitle(language);
+    translateLegacyStaticUi(root, currentUiLanguage);
+    translateLegacyStaticDocumentTitle(currentUiLanguage);
   };
 
   translateAll();
@@ -484,17 +503,17 @@ export function attachLegacyStaticUiTranslator(languageValue: unknown) {
       for (const node of Array.from(mutation.addedNodes)) {
         if (node.nodeType === Node.TEXT_NODE) {
           const parent = (node as Text).parentElement;
-          if (!shouldSkipTextElement(parent)) translateTextNode(node as Text, language);
+          if (!shouldSkipTextElement(parent)) translateTextNode(node as Text, currentUiLanguage);
         } else if (node.nodeType === Node.ELEMENT_NODE) {
-          translateLegacyStaticUi(node as Element, language);
+          translateLegacyStaticUi(node as Element, currentUiLanguage);
         }
       }
       if (mutation.type === "characterData" && mutation.target.nodeType === Node.TEXT_NODE) {
         const node = mutation.target as Text;
-        if (!shouldSkipTextElement(node.parentElement)) translateTextNode(node, language);
+        if (!shouldSkipTextElement(node.parentElement)) translateTextNode(node, currentUiLanguage);
       }
       if (mutation.type === "attributes" && mutation.target instanceof Element) {
-        translateElementAttributes(mutation.target, language);
+        translateElementAttributes(mutation.target, currentUiLanguage);
       }
     }
   });

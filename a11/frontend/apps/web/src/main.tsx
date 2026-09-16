@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { App, isKaen44Experience } from "./App";
+import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import "./index.css";
 import "./mobile.css";
 import { registerA11ServiceWorker } from "./pwa";
@@ -90,6 +91,7 @@ reactRoot.render(
   <React.StrictMode>
     <BootErrorBoundary>
       <App />
+      <LanguageSwitcher />
     </BootErrorBoundary>
   </React.StrictMode>
 );
