@@ -31,6 +31,12 @@ const TYPES_PHOTO = Object.freeze({ 'image/jpeg': 'jpg', 'image/png': 'png', 'im
 // Libellé donné à Sol pour ce personnage : neutre, car un pseudo peut être le nom
 // d'une personne connue, que le filtre de Seedance refuserait.
 const LIBELLE_CLIP = 'the lead performer';
+// Tailles (16/09/2026, demande de Djeff : la fiche était trop courte). La fiche
+// française est la description complète, lue par la relecture du scénario ; le
+// résumé anglais part dans CHAQUE plan vidéo et doit rester court, sinon il noie
+// la description du plan (le cas des ~870 caractères du 12/09).
+const FICHE_MAX = 2000;
+const RESUME_PLAN_MAX = 600;
 
 function racineFiches(env = process.env) {
   return env.A11_FICHES_DIR || path.join(getCanonicalRuntimeRoot(env), 'fiches');
@@ -57,6 +63,19 @@ function nettoyer(texte, max) {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, max);
+}
+
+// La fiche longue garde ses retours à la ligne (« Visage : … », « Cheveux : … »).
+function nettoyerFiche(texte) {
+  return String(texte == null ? '' : texte)
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\u0000-\u0009\u000b-\u001f\u007f]+/g, ' ')
+    .split('\n')
+    .map((ligne) => ligne.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(0, 20)
+    .join('\n')
+    .slice(0, FICHE_MAX);
 }
 
 function ecrire(dossier, fiche) {
@@ -87,26 +106,37 @@ function lireFiche(user, { env = process.env } = {}) {
   return fiche;
 }
 
-function majFiche(user, { pseudo, videoPrompt } = {}, { env = process.env } = {}) {
+function majFiche(user, { pseudo, videoPrompt, description } = {}, { env = process.env } = {}) {
   const fiche = lireFiche(user, { env });
   if (pseudo !== undefined) fiche.pseudo = nettoyer(pseudo, 40);
-  if (videoPrompt !== undefined) {
+  if (videoPrompt !== undefined || description !== undefined) {
     if (!fiche.avatar) throw new Error('avatar_absent');
-    const texte = nettoyer(videoPrompt, 400);
-    if (texte.length < 20) throw new Error('description_trop_courte');
-    fiche.avatar.videoPrompt = texte;
+    if (videoPrompt !== undefined) {
+      const texte = nettoyer(videoPrompt, RESUME_PLAN_MAX);
+      if (texte.length < 20) throw new Error('description_trop_courte');
+      fiche.avatar.videoPrompt = texte;
+    }
+    // La fiche longue peut être vidée : le résumé des plans suffit à un clip.
+    if (description !== undefined) fiche.avatar.description = nettoyerFiche(description);
     fiche.avatar.corrigeeA = new Date().toISOString();
   }
   ecrire(dossierCompte(user, env), fiche);
   return fiche;
 }
 
+// Consigne réécrite le 16/09/2026 : plus longue, et respectueuse par construction.
+// On décrit ce qui se voit et dure, avec des mots neutres ; jamais d'origine, de
+// jugement sur le corps ou de conjecture sur la santé. « Mediterranean, olive
+// skin » avait déjà fait inventer un autre homme au générateur (fiche de Djeff).
 const CONSIGNE_VISION = [
-  'You write an identity sheet for a text-to-video model, so that a real actor matching this person can play them in a music video.',
+  'You help a person create their own character for their music videos, from a photo they chose to share. Be accurate, kind and respectful: this person will read what you write about them.',
   'Look at the photo.',
-  'If it does not clearly show exactly one real human face, or if the person could be under 18, answer {"ok": false, "raison": "<one short sentence in French>"}.',
-  'Otherwise answer {"ok": true, "videoPrompt": "<one English sentence>"}: at most 320 characters, affirmative, starting with "real adult man", "real adult woman" or "real adult person", describing only lasting physical features -- skin tone, face shape, eyes, eyebrows, hair colour, length and style, facial hair, build -- plus the clothing style if visible.',
-  'Never a name, an age number, an emotion, the background, or a negation.',
+  'If it does not clearly show exactly one real human face, or if the person could be under 18, answer {"ok": false, "raison": "<one short, polite sentence in French>"}.',
+  'Otherwise answer {"ok": true, "description": "...", "videoPrompt": "..."}.',
+  '"description": in French, 500 to 1500 characters, addressed to nobody, in short labelled parts: "Visage", "Cheveux", "Pilosité" (only if any), "Silhouette", "Tenue", "Signes distinctifs" (only visible, lasting ones such as glasses, piercings, tattoos). Plain, warm, precise vocabulary.',
+  '"videoPrompt": in English, at most 500 characters, one affirmative sentence starting with "real adult man", "real adult woman" or "real adult person", listing only lasting physical features and the clothing style, so an actor matching this person can play them.',
+  'Describe skin tone only with neutral shade words (light, medium, tan, deep; warm or cool undertone). Describe build only with neutral words (slim, medium, sturdy, broad-shouldered).',
+  'Never mention or guess origin, ethnicity, nationality, religion, health, disability, weight judgement, attractiveness, an age number, emotions, the background, or a name. Never use a negation, a joke or a comparison with a celebrity.',
 ].join('\n');
 
 async function decrireVisageGemini({ image, mimeType, fetchImpl = globalThis.fetch, env = process.env }) {
@@ -123,7 +153,8 @@ async function decrireVisageGemini({ image, mimeType, fetchImpl = globalThis.fet
       }],
       // Réflexion coupée : sans ça, Gemini 2.5 Flash consomme le budget de jetons
       // à réfléchir et rend un JSON tronqué.
-      generationConfig: { temperature: 0.2, maxOutputTokens: 512, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },
+      // 1400 jetons : la fiche française longue en plus du résumé anglais.
+      generationConfig: { temperature: 0.2, maxOutputTokens: 1400, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },
     }),
     signal: AbortSignal.timeout(30_000),
   });
@@ -142,11 +173,28 @@ function interpreterAnalyse(reponse) {
   if (!reponse || reponse.ok !== true) {
     return { ok: false, raison: nettoyer(reponse && reponse.raison, 200) || 'Photo refusée : il faut un seul visage d’adulte, bien net.' };
   }
-  const texte = nettoyer(reponse.videoPrompt, 400);
+  const texte = nettoyer(reponse.videoPrompt, RESUME_PLAN_MAX);
   if (!/^real adult (man|woman|person)\b/i.test(texte) || texte.length < 40) {
     return { ok: false, raison: 'Description inexploitable : essaie une autre photo, de face et bien éclairée.' };
   }
-  return { ok: true, videoPrompt: texte };
+  // Filet si le modèle glisse malgré la consigne : on ne garde pas un texte qui
+  // parle d'origine ou juge le corps, on laisse la personne écrire le sien.
+  const description = nettoyerFiche(reponse.description);
+  const descriptionOk = description.length >= 80 && !MOTS_NON_RESPECTUEUX.test(description);
+  return { ok: true, videoPrompt: MOTS_NON_RESPECTUEUX.test(texte) ? neutraliser(texte) : texte, description: descriptionOk ? description : '' };
+}
+
+// Ce que la consigne interdit, en français et en anglais. Liste courte et
+// volontairement précise : elle vise les dérapages, pas les mots ordinaires.
+const MOTS_NON_RESPECTUEUX = /\b(m[ée]diterran\w*|mediterranean|ethni\w*|origine\w*|arab\w*|africa\w*|asia\w*|latin[oa]s?|caucasi\w*|ob[èe]se|obese|overweight|surpoids|gros(?:se)?|fat|ugly|laid(?:e)?|moche|attractive|séduisant\w*|handicap\w*|disabled|malade|sick)\b/i;
+
+function neutraliser(texte) {
+  return texte
+    .split(',')
+    .filter((morceau) => !MOTS_NON_RESPECTUEUX.test(morceau))
+    .join(',')
+    .replace(/\s+,/g, ',')
+    .trim();
 }
 
 function supprimerFichiersPhoto(dossier) {
@@ -182,6 +230,8 @@ async function enregistrerPhoto(user, { image, mimeType, consentement } = {}, {
   fiche.avatar = {
     videoPrompt: analyse.videoPrompt,
     proposee: analyse.videoPrompt,
+    description: analyse.description,
+    descriptionProposee: analyse.description,
     photo,
     mimeType: type,
     consentement: CONSENTEMENT_PHOTO,
@@ -214,7 +264,7 @@ function vuePublique(fiche) {
   return {
     pseudo: (fiche && fiche.pseudo) || '',
     avatar: a
-      ? { videoPrompt: a.videoPrompt, proposee: a.proposee, analyseeA: a.analyseeA, corrigeeA: a.corrigeeA || null, aPhoto: Boolean(a.photo) }
+      ? { videoPrompt: a.videoPrompt, proposee: a.proposee, description: a.description || '', analyseeA: a.analyseeA, corrigeeA: a.corrigeeA || null, aPhoto: Boolean(a.photo) }
       : null,
     analysesRestantesAujourdhui: Math.max(0, ANALYSES_PAR_JOUR - ((fiche && fiche.analyses) || [])
       .filter((d) => String(d).slice(0, 10) === new Date().toISOString().slice(0, 10)).length),
@@ -226,13 +276,18 @@ function identiteClipDuCompte(user, { env = process.env } = {}) {
   if (!cleCompte(user)) return null;
   const fiche = lireFiche(user, { env });
   const texte = fiche.avatar && fiche.avatar.videoPrompt;
-  return texte ? { label: LIBELLE_CLIP, videoPrompt: texte } : null;
+  if (!texte) return null;
+  const identite = { label: LIBELLE_CLIP, videoPrompt: texte };
+  if (fiche.avatar.description) identite.description = fiche.avatar.description;
+  return identite;
 }
 
 module.exports = {
   ANALYSES_PAR_JOUR,
   CONSENTEMENT_PHOTO,
   CONSIGNE_VISION,
+  FICHE_MAX,
+  RESUME_PLAN_MAX,
   LIBELLE_CLIP,
   TAILLE_PHOTO_MAX,
   TYPES_PHOTO,

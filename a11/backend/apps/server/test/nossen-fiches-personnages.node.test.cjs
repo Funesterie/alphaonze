@@ -115,3 +115,11 @@ test('sans personnage distribué, la relecture K44 reste celle d’avant', async
   assert.doesNotMatch(prompt, /FICHES DES PERSONNAGES|3\. aucun plan/);
   assert.match(prompt, /2\. aucun plan ne contredit ce que dit la chanson à ce moment-là\./);
 });
+
+test('casting « Moi » : K44 relit avec la fiche longue du compte', async () => {
+  const { director, calls } = loadDirector('{"corrections":[]}');
+  await director.reviewScenarioK44([{ name: 'Plan 0', visual: 'The lead performer walks.' }], 'rue', 'Test', [], ['moi'], 'Visage : ovale.\nCheveux : roux.');
+  const prompt = calls[0].messages[0].content;
+  assert.match(prompt, /FICHE DU PERSONNAGE PRINCIPAL \(the lead performer\) :\nVisage : ovale\.\nCheveux : roux\./);
+  assert.match(prompt, /3\. aucun plan ne contredit les fiches/);
+});

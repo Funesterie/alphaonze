@@ -552,14 +552,17 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     var f = (d && d.fiche) || {};
     var a = f.avatar;
     var html = a
-      ? '<div class="meta">🙋 Ton avatar pour les clips (en anglais, tu peux le corriger) :</div>'
-        + '<textarea id="fiche-desc" class="input-url" rows="4" maxlength="400">' + escapeHtml(a.videoPrompt) + '</textarea>'
+      ? '<div class="meta">🙋 Ta fiche (écrite depuis ta photo, tu peux la corriger) :</div>'
+        + '<textarea id="fiche-longue" class="input-url" rows="9" maxlength="2000">' + escapeHtml(a.description || "") + '</textarea>'
+        + (a.description ? '' : '<div class="produce-info">Ta fiche détaillée sera écrite à ta prochaine photo, ou écris-la toi-même ici.</div>')
+        + '<div class="meta">🎬 Résumé pour chaque plan vidéo (en anglais, court) :</div>'
+        + '<textarea id="fiche-desc" class="input-url" rows="4" maxlength="600">' + escapeHtml(a.videoPrompt) + '</textarea>'
         + '<div class="produce-row"><button type="button" class="btn btn-clip" id="fiche-save">Enregistrer</button>'
         + '<button type="button" class="use" id="fiche-del">Supprimer ma photo et mon avatar</button></div>'
       : '<div class="meta">🙋 Crée ton avatar : envoie une photo de toi, de face et bien éclairée. Il jouera dans tes clips avec le casting « Moi ».</div>';
     html += '<label class="file-label">📷 ' + (a ? "Changer de photo" : "Choisir une photo")
       + '<input class="file-input" type="file" id="fiche-photo" accept="image/jpeg,image/png,image/webp"></label>'
-      + '<label class="produce-info"><input type="checkbox" id="fiche-consent"> C’est moi sur la photo. Elle est analysée par Google Gemini pour écrire mon avatar, puis gardée dans mon espace privé ; je peux la supprimer à tout moment.</label>'
+      + '<label class="produce-info"><input type="checkbox" id="fiche-consent"> C’est moi sur la photo. Elle est analysée par Google Gemini pour écrire ma fiche et mon avatar, puis gardée dans mon espace privé ; je peux la supprimer à tout moment.</label>'
       + '<div class="produce-info">' + escapeHtml(texteVoix(voix)) + (f.analysesRestantesAujourdhui != null ? " · " + f.analysesRestantesAujourdhui + " analyse(s) de photo restante(s) aujourd’hui" : "") + '</div>'
       + '<div class="msg" id="fiche-msg"></div>';
     box.innerHTML = html;
@@ -581,7 +584,10 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
     var save = document.getElementById("fiche-save");
     if (save && save.addEventListener) save.addEventListener("click", function() {
       var desc = document.getElementById("fiche-desc");
-      ficheRequete("/api/fiche", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ videoPrompt: desc ? desc.value : "" }) })
+      var longue = document.getElementById("fiche-longue");
+      var corps = { videoPrompt: desc ? desc.value : "" };
+      if (longue) corps.description = longue.value;
+      ficheRequete("/api/fiche", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) })
         .then(function() { ficheMessage("✅ Avatar enregistré."); }, function(e) { ficheMessage("❌ " + ((e && e.message) || "Enregistrement impossible")); });
     });
     var del = document.getElementById("fiche-del");

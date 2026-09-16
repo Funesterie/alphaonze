@@ -169,3 +169,81 @@ test('clips : le casting Moi exige un avatar, et la fiche du compte remplace les
   for (let i = 0; i < 50 && !configRecue; i += 1) await new Promise((ok) => setTimeout(ok, 20));
   assert.equal(configRecue.identiteCompte.videoPrompt, 'real adult woman, fair skin, red hair.');
 });
+
+test('fiche longue (16/09) : ecrite par l analyse, multiligne, 2000 caracteres, resume des plans a 600', async () => {
+  const u = { id: 'u-fiche-longue' };
+  const description = ['Visage : ovale, yeux marron, sourcils droits.', 'Cheveux : courts, bruns, degrades sur les cotes.', 'Tenue : casquette sombre, t-shirt blanc.'].join('\n') + ' Style sobre.'.repeat(5);
+  const ok = await fiche.enregistrerPhoto(u, { image: JPEG, mimeType: 'image/jpeg', consentement: fiche.CONSENTEMENT_PHOTO }, {
+    env: ENV,
+    decrireImpl: async () => ({ ok: true, videoPrompt: 'real adult man, light skin, short brown hair, white t-shirt, dark cap.', description }),
+  });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.fiche.avatar.description.split('\n').length, 3, 'les parties restent sur leurs lignes');
+  assert.equal(fiche.vuePublique(ok.fiche).avatar.description, ok.fiche.avatar.description);
+  assert.equal(fiche.identiteClipDuCompte(u, { env: ENV }).description, ok.fiche.avatar.description);
+
+  const longue = fiche.majFiche(u, { description: 'a'.repeat(5000), videoPrompt: 'real adult man ' + 'b'.repeat(900) }, { env: ENV });
+  assert.equal(longue.avatar.description.length, fiche.FICHE_MAX);
+  assert.equal(longue.avatar.videoPrompt.length, fiche.RESUME_PLAN_MAX);
+  assert.equal(fiche.FICHE_MAX, 2000);
+  assert.equal(fiche.RESUME_PLAN_MAX, 600);
+
+  const videe = fiche.majFiche(u, { description: '' }, { env: ENV });
+  assert.equal(videe.avatar.description, '');
+  assert.equal(fiche.identiteClipDuCompte(u, { env: ENV }).description, undefined, 'fiche videe : le resume suffit');
+});
+
+test('la consigne demande un texte respectueux, et le filet ecarte ce qui glisse quand meme', () => {
+  assert.match(fiche.CONSIGNE_VISION, /kind and respectful/);
+  assert.match(fiche.CONSIGNE_VISION, /Never mention or guess origin, ethnicity/);
+  assert.match(fiche.CONSIGNE_VISION, /"description": in French/);
+
+  const glisse = fiche.interpreterAnalyse({
+    ok: true,
+    videoPrompt: 'real adult man, Mediterranean look, light skin, short hair, grey hoodie',
+    description: 'Visage : homme d origine mediterraneenne, un peu en surpoids, cheveux courts et bruns, sweat gris.',
+  });
+  assert.equal(glisse.ok, true);
+  assert.doesNotMatch(glisse.videoPrompt, /mediterranean/i);
+  assert.match(glisse.videoPrompt, /^real adult man, light skin, short hair, grey hoodie$/);
+  assert.equal(glisse.description, '', 'une fiche qui parle d origine ou juge le corps n est pas gardee');
+
+  const propre = fiche.interpreterAnalyse({
+    ok: true,
+    videoPrompt: 'real adult woman, medium skin with warm undertone, long curly black hair, round glasses',
+    description: 'Visage : rond, yeux noirs, lunettes rondes.\nCheveux : longs, boucles, noirs.\nTenue : veste en jean.',
+  });
+  assert.match(propre.description, /lunettes rondes/);
+  assert.match(propre.videoPrompt, /warm undertone/);
+});
+
+test('route PUT : la fiche longue est enregistree avec le resume', async () => {
+  const express = require('express');
+  const { createFicheRouter } = require('../src/routes/fiche.cjs');
+  const u = { id: 'u-route-longue' };
+  await fiche.enregistrerPhoto(u, { image: JPEG, mimeType: 'image/jpeg', consentement: fiche.CONSENTEMENT_PHOTO }, { env: ENV, decrireImpl: BONNE_ANALYSE });
+  const app = express();
+  app.use((req, _res, next) => { req.user = u; next(); });
+  app.use('/api/fiche', createFicheRouter({ env: ENV }));
+  const server = app.listen(0);
+  try {
+    const base = `http://127.0.0.1:${server.address().port}/api/fiche`;
+    const put = await fetch(base, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ videoPrompt: 'real adult man, light skin, short dark hair.', description: 'Visage : ovale.\nTenue : t-shirt blanc.' }),
+    });
+    assert.equal(put.status, 200);
+    const corps = await put.json();
+    assert.equal(corps.fiche.avatar.description, 'Visage : ovale.\nTenue : t-shirt blanc.');
+  } finally {
+    server.close();
+  }
+});
+
+test('clips « Moi » : la fiche longue va a la relecture K44, jamais dans les plans', () => {
+  const { identiteDepuisFiche } = require('../src/clips/clip-vivy-director.cjs');
+  const id = identiteDepuisFiche({ label: fiche.LIBELLE_CLIP, videoPrompt: 'real adult woman, fair skin, red hair.', description: 'Visage : ovale.\nCheveux : roux.' });
+  assert.equal(id.prompt, 'real adult woman, fair skin, red hair.');
+  assert.equal(id.description, 'Visage : ovale.\nCheveux : roux.');
+});

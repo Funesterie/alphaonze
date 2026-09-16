@@ -5,7 +5,7 @@
  * derrière verifyJWT. Voir src/fiche/fiche-compte.cjs.
  *
  *   GET    /api/fiche        la fiche du compte (créée à la première visite)
- *   PUT    /api/fiche        { pseudo?, videoPrompt? } -- corriger la description
+ *   PUT    /api/fiche        { pseudo?, videoPrompt?, description? } -- corriger la fiche
  *   POST   /api/fiche/photo  multipart : photo + consentement=avatar-photo-v1
  *   GET    /api/fiche/photo  la photo, pour son propriétaire seulement
  *   DELETE /api/fiche/photo  efface la photo et l'avatar
@@ -48,7 +48,7 @@ function createFicheRouter({ env = process.env, decrireImpl = null } = {}) {
   router.put('/', express.json({ limit: '8kb' }), (req, res) => {
     try {
       const corps = req.body || {};
-      const maj = fiche.majFiche(utilisateur(req), { pseudo: corps.pseudo, videoPrompt: corps.videoPrompt }, { env });
+      const maj = fiche.majFiche(utilisateur(req), { pseudo: corps.pseudo, videoPrompt: corps.videoPrompt, description: corps.description }, { env });
       res.json({ ok: true, fiche: fiche.vuePublique(maj) });
     } catch (error) { repondreErreur(res, error); }
   });

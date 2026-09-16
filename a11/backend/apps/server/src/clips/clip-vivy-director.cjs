@@ -773,10 +773,16 @@ async function reviewMontageA11(scenes, lieu, teardown, arcSteps) {
 // Fiches longues (16/09/2026) : le plan video ne recoit qu'un condense, mais la
 // relecture du scenario est un texte, elle peut porter la fiche entiere. C'est ici
 // qu'une K44 decrite en homme ou un Marvin fusionne avec Djeff doit etre vu.
-function fichesPersonnages(castIds) {
-  if (!Array.isArray(castIds) || !castIds.length) return "";
+// `ficheCompte` : la fiche longue d'un casting « Moi », écrite depuis la photo de
+// la personne (src/fiche/fiche-compte.cjs).
+function fichesPersonnages(castIds, ficheCompte) {
+  var perso = String(ficheCompte || "").trim();
+  if ((!Array.isArray(castIds) || !castIds.length) && !perso) return "";
   try {
-    var fiches = require("../vivy/character-sheets.cjs").renderCharacterSheets(castIds);
+    var fiches = [
+      Array.isArray(castIds) ? require("../vivy/character-sheets.cjs").renderCharacterSheets(castIds) : "",
+      perso ? "FICHE DU PERSONNAGE PRINCIPAL (the lead performer) :\n" + perso : "",
+    ].filter(Boolean).join("\n\n");
     return fiches ? "FICHES DES PERSONNAGES (source de vérité) :\n" + fiches + "\n\n" : "";
   } catch (e) {
     console.warn("[clip-director] Fiches personnages indisponibles:", e.message);
@@ -784,9 +790,9 @@ function fichesPersonnages(castIds) {
   }
 }
 
-async function reviewScenarioK44(scenes, lieu, title, lyricsSections, castIds) {
+async function reviewScenarioK44(scenes, lieu, title, lyricsSections, castIds, ficheCompte) {
   if (!Array.isArray(scenes) || !scenes.length) return scenes;
-  var fiches = fichesPersonnages(castIds);
+  var fiches = fichesPersonnages(castIds, ficheCompte);
   var intentions = Array.isArray(lyricsSections) && lyricsSections.length
     ? "CE QUE DIT LA CHANSON, SECTION PAR SECTION :\n" + lyricsSections.map(function(s, i) {
       return "  " + i + ". " + s.label + " — " + s.intention;
@@ -908,6 +914,8 @@ function identiteDepuisFiche(fiche) {
     identityIds: ["moi"],
     castLabels: [String((fiche && fiche.label) || "the lead performer")],
     prompt: texte,
+    // Fiche longue : pour la relecture du scénario seulement, jamais dans un plan.
+    description: String((fiche && fiche.description) || "").trim(),
     negativePrompt: "",
     referenceImageUrls: [],
     nomsFilm: {},
@@ -1013,7 +1021,7 @@ async function directClip(config) {
     progress("reviews", "Relecture du montage par A11");
     scenes = await reviewMontageA11(scenes, lieu, teardown, arcSteps);
     progress("reviews", "Relecture du scénario par K44");
-    scenes = await reviewScenarioK44(scenes, lieu, cfg.title || "", lyricsSections, identity.identityIds);
+    scenes = await reviewScenarioK44(scenes, lieu, cfg.title || "", lyricsSections, identity.identityIds, identity.description);
     progress("reviews", "Relecture finale par Djeff Engine");
     scenes = await reviewDjeffEngine(scenes, lieu, cfg.title || "", lyrics, mood, cfg.render);
   }
