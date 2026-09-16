@@ -128,18 +128,33 @@ function majFiche(user, { pseudo, videoPrompt, description } = {}, { env = proce
 // On décrit ce qui se voit et dure, avec des mots neutres ; jamais d'origine, de
 // jugement sur le corps ou de conjecture sur la santé. « Mediterranean, olive
 // skin » avait déjà fait inventer un autre homme au générateur (fiche de Djeff).
-const CONSIGNE_VISION = [
-  'You help a person create their own character for their music videos, from a photo they chose to share. Be accurate, kind and respectful: this person will read what you write about them.',
-  'Look at the photo.',
-  'If it does not clearly show exactly one real human face, or if the person could be under 18, answer {"ok": false, "raison": "<one short, polite sentence in French>"}.',
-  'Otherwise answer {"ok": true, "description": "...", "videoPrompt": "..."}.',
-  '"description": in French, 500 to 1500 characters, addressed to nobody, in short labelled parts: "Visage", "Cheveux", "Pilosité" (only if any), "Silhouette", "Tenue", "Signes distinctifs" (only visible, lasting ones such as glasses, piercings, tattoos). Plain, warm, precise vocabulary.',
-  '"videoPrompt": in English, at most 500 characters, one affirmative sentence starting with "real adult man", "real adult woman" or "real adult person", listing only lasting physical features and the clothing style, so an actor matching this person can play them.',
-  'Describe skin tone only with neutral shade words (light, medium, tan, deep; warm or cool undertone). Describe build only with neutral words (slim, medium, sturdy, broad-shouldered).',
-  'Never mention or guess origin, ethnicity, nationality, religion, health, disability, weight judgement, attractiveness, an age number, emotions, the background, or a name. Never use a negation, a joke or a comparison with a celebrity.',
-].join('\n');
+// Langue de la personne (16/09/2026) : sa fiche et un éventuel refus sont écrits
+// dans la langue choisie sur la page ; le résumé des plans reste en anglais, pour
+// le générateur vidéo.
+const NOMS_LANGUES_CONSIGNE = Object.freeze({
+  fr: 'French', en: 'English', es: 'Spanish', it: 'Italian', de: 'German', ja: 'Japanese', zh: 'Simplified Chinese',
+});
 
-async function decrireVisageGemini({ image, mimeType, fetchImpl = globalThis.fetch, env = process.env }) {
+function consigneVision(langue = 'fr') {
+  const nom = NOMS_LANGUES_CONSIGNE[langue] || 'French';
+  const parties = nom === 'French'
+    ? 'in short labelled parts: "Visage", "Cheveux", "Pilosité" (only if any), "Silhouette", "Tenue", "Signes distinctifs" (only visible, lasting ones such as glasses, piercings, tattoos)'
+    : `in short labelled parts, labels written in ${nom}: face, hair, facial hair (only if any), build, clothing, distinctive features (only visible, lasting ones such as glasses, piercings, tattoos)`;
+  return [
+    'You help a person create their own character for their music videos, from a photo they chose to share. Be accurate, kind and respectful: this person will read what you write about them.',
+    'Look at the photo.',
+    `If it does not clearly show exactly one real human face, or if the person could be under 18, answer {"ok": false, "raison": "<one short, polite sentence in ${nom}>"}.`,
+    'Otherwise answer {"ok": true, "description": "...", "videoPrompt": "..."}.',
+    `"description": in ${nom}, 500 to 1500 characters, addressed to nobody, ${parties}. Plain, warm, precise vocabulary.`,
+    '"videoPrompt": in English, at most 500 characters, one affirmative sentence starting with "real adult man", "real adult woman" or "real adult person", listing only lasting physical features and the clothing style, so an actor matching this person can play them.',
+    'Describe skin tone only with neutral shade words (light, medium, tan, deep; warm or cool undertone). Describe build only with neutral words (slim, medium, sturdy, broad-shouldered).',
+    'Never mention or guess origin, ethnicity, nationality, religion, health, disability, weight judgement, attractiveness, an age number, emotions, the background, or a name. Never use a negation, a joke or a comparison with a celebrity.',
+  ].join('\n');
+}
+
+const CONSIGNE_VISION = consigneVision('fr');
+
+async function decrireVisageGemini({ image, mimeType, fetchImpl = globalThis.fetch, env = process.env, langue = 'fr' }) {
   const cle = env.GEMINI_API_KEY || env.GOOGLE_API_KEY || '';
   if (!cle || typeof fetchImpl !== 'function') throw new Error('vision_indisponible');
   const modele = env.A11_FICHE_VISION_MODEL || MODELE_VISION_DEFAUT;
@@ -149,7 +164,7 @@ async function decrireVisageGemini({ image, mimeType, fetchImpl = globalThis.fet
     body: JSON.stringify({
       contents: [{
         role: 'user',
-        parts: [{ text: CONSIGNE_VISION }, { inline_data: { mime_type: mimeType, data: image.toString('base64') } }],
+        parts: [{ text: consigneVision(langue) }, { inline_data: { mime_type: mimeType, data: image.toString('base64') } }],
       }],
       // Réflexion coupée : sans ça, Gemini 2.5 Flash consomme le budget de jetons
       // à réfléchir et rend un JSON tronqué.
@@ -205,6 +220,7 @@ async function enregistrerPhoto(user, { image, mimeType, consentement } = {}, {
   env = process.env,
   decrireImpl = decrireVisageGemini,
   maintenant = new Date(),
+  langue = 'fr',
 } = {}) {
   if (consentement !== CONSENTEMENT_PHOTO) throw new Error('consentement_manquant');
   const type = String(mimeType || '').toLowerCase();
@@ -221,7 +237,7 @@ async function enregistrerPhoto(user, { image, mimeType, consentement } = {}, {
   fiche.analyses = [...duJour, maintenant.toISOString()];
   ecrire(dossier, fiche);
 
-  const analyse = interpreterAnalyse(await decrireImpl({ image, mimeType: type, env }));
+  const analyse = interpreterAnalyse(await decrireImpl({ image, mimeType: type, env, langue }));
   if (!analyse.ok) return { ok: false, raison: analyse.raison, fiche };
 
   supprimerFichiersPhoto(dossier);
@@ -286,6 +302,7 @@ module.exports = {
   ANALYSES_PAR_JOUR,
   CONSENTEMENT_PHOTO,
   CONSIGNE_VISION,
+  consigneVision,
   FICHE_MAX,
   RESUME_PLAN_MAX,
   LIBELLE_CLIP,

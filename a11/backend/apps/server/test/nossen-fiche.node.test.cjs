@@ -247,3 +247,49 @@ test('clips « Moi » : la fiche longue va a la relecture K44, jamais dans les p
   assert.equal(id.prompt, 'real adult woman, fair skin, red hair.');
   assert.equal(id.description, 'Visage : ovale.\nCheveux : roux.');
 });
+
+test('messages du serveur (16/09) : la langue choisie sur la page passe avant celle du compte', async () => {
+  const { messageServeur, langueDeRequete, MESSAGES } = require('../src/i18n/messages-serveur.cjs');
+  const req = (headers = {}, user = null) => ({ headers, user });
+  assert.equal(langueDeRequete(req({ 'x-funesterie-language': 'ja' }, { language: 'fr' })), 'ja');
+  assert.equal(langueDeRequete(req({}, { language: 'es' })), 'es');
+  assert.equal(langueDeRequete(req({ 'accept-language': 'de-DE,de;q=0.9' })), 'de');
+  assert.equal(messageServeur(req({ 'x-funesterie-language': 'en' }), 'clip.creditsInsufficient', 12, 3), 'This video needs 12 credits, you have 3.');
+  assert.equal(messageServeur(req({ 'x-funesterie-language': 'zz' }), 'clip.loginRequired'), 'Connecte-toi pour lancer un clip.');
+  const cles = Object.keys(MESSAGES.fr).sort();
+  for (const [langue, textes] of Object.entries(MESSAGES)) {
+    assert.deepEqual(Object.keys(textes).sort(), cles, `${langue} : cles differentes du francais`);
+  }
+
+  // La fiche : erreurs et consigne Gemini dans la langue choisie.
+  assert.match(fiche.consigneVision('ja'), /sentence in Japanese/);
+  assert.match(fiche.consigneVision('ja'), /"description": in Japanese/);
+  assert.equal(fiche.consigneVision('fr'), fiche.CONSIGNE_VISION);
+
+  const express = require('express');
+  const { createFicheRouter } = require('../src/routes/fiche.cjs');
+  let langueRecue = null;
+  const app = express();
+  app.use((r, _res, next) => { r.user = { id: 'u-fiche-langue' }; next(); });
+  app.use('/api/fiche', createFicheRouter({
+    env: ENV,
+    decrireImpl: async ({ langue }) => { langueRecue = langue; return { ok: false, raison: '' }; },
+  }));
+  const server = app.listen(0);
+  try {
+    const base = `http://127.0.0.1:${server.address().port}/api/fiche`;
+    const put = await fetch(base, { method: 'PUT', headers: { 'content-type': 'application/json', 'x-funesterie-language': 'es' }, body: JSON.stringify({ videoPrompt: 'real adult man, light skin.' }) });
+    assert.equal(put.status, 400);
+    assert.equal((await put.json()).message, 'Crea primero tu avatar con una foto.');
+
+    const fd = new FormData();
+    fd.append('consentement', fiche.CONSENTEMENT_PHOTO);
+    fd.append('photo', new Blob([JPEG], { type: 'image/jpeg' }), 'moi.jpg');
+    const refus = await fetch(`${base}/photo`, { method: 'POST', headers: { 'x-funesterie-language': 'de' }, body: fd });
+    assert.equal(refus.status, 422);
+    assert.equal(langueRecue, 'de');
+    assert.equal((await refus.json()).message, 'Foto abgelehnt: Es braucht ein einzelnes, scharfes Gesicht eines Erwachsenen.');
+  } finally {
+    server.close();
+  }
+});

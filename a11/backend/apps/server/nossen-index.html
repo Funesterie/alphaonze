@@ -1295,7 +1295,10 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 
     var controller = new AbortController();
     var timeout = setTimeout(function() { controller.abort(); }, Math.max(1000, Number(timeoutMs) || API_TIMEOUT_MS));
-    var requestOptions = Object.assign({}, opts || {}, { signal: controller.signal, credentials: "include" });
+    // La langue choisie sur la page voyage avec chaque requête : le serveur y répond
+    // ses messages (crédits, fiche, envoi audio).
+    var headers = Object.assign({ "X-Funesterie-Language": langue }, (opts && opts.headers) || {});
+    var requestOptions = Object.assign({}, opts || {}, { headers: headers, signal: controller.signal, credentials: "include" });
 
     return fetch(target, requestOptions).then(function(r) {
       return r.text().then(function(raw) {

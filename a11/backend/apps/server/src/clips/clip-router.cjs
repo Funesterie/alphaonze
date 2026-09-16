@@ -21,6 +21,7 @@ const {
   recordProviderPromptId,
 } = require('./clip-jobs.cjs');
 const { buildClipErrorInfo } = require('./clip-error-info.cjs');
+const { messageServeur } = require('../i18n/messages-serveur.cjs');
 
 const CLIP_WORKER_ID = createWorkerId();
 
@@ -235,7 +236,7 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
     const casting = normaliserCasting(req.body && req.body.casting);
     const castArtists = normaliserDistribution(req.body && req.body.multiVoice, casting);
     const render = normaliserRendu(req.body && req.body.render);
-    if (!songUrl) return res.status(400).json({ ok: false, error: 'songUrl requis' });
+    if (!songUrl) return res.status(400).json({ ok: false, error: 'songUrl requis', message: messageServeur(req, 'clip.songUrlRequired') });
 
     // Casting « Moi » (13/09/2026) : l'avatar de la fiche du compte joue le rôle
     // principal. Sans avatar, on refuse avant toute réservation.
@@ -246,7 +247,7 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
         return res.status(400).json({
           ok: false,
           error: 'AVATAR_MANQUANT',
-          message: 'Crée d’abord ton avatar dans « Ma fiche » : une photo de toi suffit.',
+          message: messageServeur(req, 'clip.avatarMissing'),
         });
       }
     }
@@ -259,7 +260,7 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
       return res.status(503).json({
         ok: false,
         error: 'RESERVE_VIDEO_VIDE',
-        message: 'La réserve vidéo du studio est vide pour le moment : aucun clip ne peut être généré, et aucun crédit ne t’a été pris.',
+        message: messageServeur(req, 'clip.reserveEmpty'),
       });
     }
 
@@ -269,8 +270,8 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
     let reservation = null;
     if (!estAdmin(req)) {
       const uid = idUtilisateur(req);
-      if (!uid) return res.status(401).json({ ok: false, error: 'CONNEXION_REQUISE', message: 'Connecte-toi pour lancer un clip.' });
-      if (!magasin) return res.status(503).json({ ok: false, error: 'CREDITS_INDISPONIBLES', message: 'Crédits indisponibles pour le moment.' });
+      if (!uid) return res.status(401).json({ ok: false, error: 'CONNEXION_REQUISE', message: messageServeur(req, 'clip.loginRequired') });
+      if (!magasin) return res.status(503).json({ ok: false, error: 'CREDITS_INDISPONIBLES', message: messageServeur(req, 'clip.creditsUnavailable') });
       await attribuerFondateur(uid);
       const plans = clipCredits.plansEstimes({ fullDuration, dureeSecondes: req.body && req.body.durationSeconds });
       const credits = clipCredits.creditsPourPlans(plans);
@@ -280,13 +281,13 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
         sortie = await clipCredits.reserver(magasin, { userId: uid, credits, ref });
       } catch (error) {
         console.error('[clip-router] Réservation crédits impossible:', sanitizeJobDiagnostic(error.message));
-        return res.status(503).json({ ok: false, error: 'CREDITS_INDISPONIBLES', message: 'Crédits indisponibles pour le moment.' });
+        return res.status(503).json({ ok: false, error: 'CREDITS_INDISPONIBLES', message: messageServeur(req, 'clip.creditsUnavailable') });
       }
       if (!sortie.ok) {
         return res.status(402).json({
           ok: false,
           error: 'CREDITS_INSUFFISANTS',
-          message: `Il faut ${credits} crédits pour ce clip, tu en as ${sortie.solde}.`,
+          message: messageServeur(req, 'clip.creditsInsufficient', credits, sortie.solde),
           requis: credits,
           solde: sortie.solde,
         });
@@ -334,7 +335,7 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
   // Statut d'un job
   router.get('/status/:id', (req, res) => {
     const job = getJob(req.params.id);
-    if (!job) return res.status(404).json({ ok: false, error: 'Job introuvable' });
+    if (!job) return res.status(404).json({ ok: false, error: 'Job introuvable', message: messageServeur(req, 'clip.jobNotFound') });
     res.json({
       ok: true,
       id: job.id,
