@@ -2946,6 +2946,64 @@ function isVivyEnglishLanguageMode(input = {}, fallbackLang = 'fr') {
   return resolved === 'en' || resolved === 'us';
 }
 
+// Langue des chansons (16/09/2026). Le verrou était binaire : français par défaut,
+// anglais en mode ricain. Un compte en japonais ou en espagnol envoyait donc à Suno
+// « French lyrics only, no English lyrics » et la chanson sortait en français.
+// Noms ANGLAIS : ils vont dans le style Suno (« Japanese lyrics only »).
+const VIVY_SONG_LANGUAGE_NAMES = Object.freeze({
+  fr: 'French',
+  en: 'English',
+  es: 'Spanish',
+  it: 'Italian',
+  de: 'German',
+  ja: 'Japanese',
+  zh: 'Mandarin Chinese',
+});
+
+function resolveVivySongLanguage(input = {}, req = null) {
+  const responseLanguage = resolveVivyResponseLanguage(input, req);
+  if (isVivyEnglishLanguageMode(input, responseLanguage)) return 'en';
+  return VIVY_SONG_LANGUAGE_NAMES[responseLanguage] ? responseLanguage : 'fr';
+}
+
+function buildVivySongLanguageLock(language = 'fr') {
+  if (language === 'en') {
+    return {
+      style: 'English lyrics only, American English vocals, no French lyrics, no French chorus, no translated chorus',
+      negative: 'French lyrics, French vocals, French chorus, translated chorus, bilingual lyrics',
+      mood: ['English lyrics only', 'American English vocals', 'no French lyrics', 'no French chorus'],
+    };
+  }
+  const name = VIVY_SONG_LANGUAGE_NAMES[language];
+  if (!name || language === 'fr') {
+    return {
+      style: 'French lyrics only, French language vocals, no English lyrics, no English chorus',
+      negative: 'English lyrics, English vocals, English chorus, translated chorus, bilingual lyrics',
+      mood: ['paroles françaises uniquement', 'voix en français', 'aucun refrain anglais'],
+    };
+  }
+  return {
+    style: `${name} lyrics only, ${name} language vocals, no French lyrics, no English lyrics, no translated chorus`,
+    negative: 'French lyrics, French vocals, English lyrics, English chorus, translated chorus, bilingual lyrics',
+    mood: [`${name} lyrics only`, `${name} language vocals`, 'no translated chorus'],
+  };
+}
+
+// Les styles d'artistes et de sujets disent « French » ou « rap français » en dur.
+// Hors français, on les remet dans la langue de la chanson, sans toucher au reste
+// (instruments, énergie, rôles). Les « no French … » du verrou sont préservés.
+function localizeVivySongStyleLanguage(style = '', language = 'fr') {
+  const name = VIVY_SONG_LANGUAGE_NAMES[language];
+  if (!name || language === 'fr' || !style) return style;
+  return String(style)
+    .replace(/\bno French\b/g, 'no FRENCH_KEEP')
+    .replace(/\bFrench\b/g, name)
+    .replace(/\brap fran[cç]ais\b/gi, `${name} rap`)
+    .replace(/\bdiction fran[cç]aise\b/gi, 'clear diction')
+    .replace(/\bvari[ée]t[ée] fran[cç]aise\b/gi, `${name} pop`)
+    .replace(/FRENCH_KEEP/g, 'French');
+}
+
 function safeExistingPath(candidate = '') {
   const raw = String(candidate || '').trim();
   if (!raw) return '';
@@ -6246,7 +6304,10 @@ function hasVivyNossenInstrumentalSignal(material = '') {
   return /\b(?:instrumental|sans paroles|sans chant|no vocals|no lyrics|bruitages?|sfx|foley|sound design)\b/.test(folded);
 }
 
-function sanitizeVivyNossenRoutingPlanForRequest(plan = {}, material = '', fallback = null, englishMode = false) {
+// `songLanguage` : un code langue ('fr', 'ja'…) ; un booléen reste accepté (ancien
+// « mode ricain » : true = anglais).
+function sanitizeVivyNossenRoutingPlanForRequest(plan = {}, material = '', fallback = null, songLanguage = 'fr') {
+  const language = typeof songLanguage === 'string' ? songLanguage : (songLanguage ? 'en' : 'fr');
   const fallbackPlan = fallback && fallback.songMood
     ? fallback
     : strengthenVivyNossenRoutingPlan(inferVivyNossenRoutingPlan({ message: material }), material);
@@ -6285,23 +6346,14 @@ function sanitizeVivyNossenRoutingPlanForRequest(plan = {}, material = '', fallb
 
   if (!artists.length) artists = ['djeff', 'vivy'];
   if (!songMood) songMood = 'rap français NOSSEN moderne, groove clair, refrain mémorable';
-  // Mode ricain: on verrouille l'anglais; sinon on garde le verrou francais, sauf si
-  // la matiere signale explicitement de l'anglais (auquel cas Vivy a decide l'anglais).
+  // Verrou de langue : celle de la chanson (compte ou mode ricain). En français, une
+  // matière qui signale explicitement l'anglais garde la main (Vivy a décidé l'anglais).
   if (!hasVivyNossenInstrumentalSignal(material)) {
-    if (englishMode) {
+    const frenchWithEnglishMaterial = language === 'fr' && hasVivyNossenExplicitEnglishSignal(material);
+    if (!frenchWithEnglishMaterial) {
       songMood = joinVivyNossenRoutingMoodParts([
-        songMood,
-        'English lyrics only',
-        'American English vocals',
-        'no French lyrics',
-        'no French chorus',
-      ], 520);
-    } else if (!hasVivyNossenExplicitEnglishSignal(material)) {
-      songMood = joinVivyNossenRoutingMoodParts([
-        songMood,
-        'paroles françaises uniquement',
-        'voix en français',
-        'aucun refrain anglais',
+        localizeVivySongStyleLanguage(songMood, language),
+        ...buildVivySongLanguageLock(language).mood,
       ], 520);
     }
   }
@@ -6421,7 +6473,7 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
       strengthenVivyNossenRoutingPlan(inferVivyNossenRoutingPlan(input), material),
       material,
       null,
-      isVivyEnglishLanguageMode(input, resolveVivyResponseLanguage(input, req))
+      resolveVivySongLanguage(input, req)
     ),
     material
   );
@@ -6549,7 +6601,7 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
       strengthenVivyNossenRoutingPlan(plan, material),
       material,
       fallbackPlan,
-      isVivyEnglishLanguageMode(input, resolveVivyResponseLanguage(input, req))
+      resolveVivySongLanguage(input, req)
     ),
     material
   );
@@ -9059,16 +9111,16 @@ function buildVivySunoPayload(input = {}, req = null) {
   const longFormStyle = wantsVivySunoLongForm(input)
     ? 'long-form complete song arrangement with naturally developed sections, recurring hook after the bridge, complete final chorus, no forced duration and no short radio edit'
     : '';
-  const englishMode = isVivyEnglishLanguageMode(input, resolveVivyResponseLanguage(input, req));
   // Mode ricain: on verrouille l'anglais americain au lieu du francais. La bride dure
   // « French lyrics only » etait codée en dur et empechait tout album US -- meme si
   // Vivy routait du rap americain, Suno recevait « French lyrics only » et chantait
   // en francais. Djeff: « on part a la conquete des states ».
+  // 16/09/2026 : generalise a la langue du compte (japonais, espagnol...).
+  const songLanguage = resolveVivySongLanguage(input, req);
+  const languageLock = buildVivySongLanguageLock(songLanguage);
   const frenchLanguageStyle = forceInstrumental || useExternalVoiceMix
     ? ''
-    : englishMode
-      ? 'English lyrics only, American English vocals, no French lyrics, no French chorus, no translated chorus'
-      : 'French lyrics only, French language vocals, no English lyrics, no English chorus';
+    : languageLock.style;
   const vocalDeliveryStyle = singleArtistId === 'djeff'
     ? 'rap hook, rap vocals, no melodic pop singing'
     : 'melodic chorus, sung vocals';
@@ -9115,6 +9167,11 @@ function buildVivySunoPayload(input = {}, req = null) {
       720
     );
   }
+  // Les styles d'artistes et de sujets disent « French » en dur : hors français, la
+  // chanson reprend sa langue partout dans le style, pas seulement dans le verrou.
+  if (!forceInstrumental && songLanguage !== 'fr') {
+    style = sanitizeVivySunoProviderTags(localizeVivySongStyleLanguage(style, songLanguage), style, 720);
+  }
 
   const negativeTags = sanitizeVivySunoProviderTags([
     input.negativeTags || process.env.VIVY_SUNO_NEGATIVE_TAGS
@@ -9126,7 +9183,7 @@ function buildVivySunoPayload(input = {}, req = null) {
     singleArtistId === 'djeff' ? 'female vocals, female lead, romantic pop vocal, soft ballad chorus, crooner voice, airy female hook' : '',
     singleArtistId === 'marvin' ? 'female vocals, female lead, child voice, random vocalist, celebrity voice imitation, English lead vocal' : '',
     personalSunoVoice?.voiceId ? 'random vocalist, replacement singer, celebrity voice imitation, different lead timbre' : '',
-    !forceInstrumental && !useExternalVoiceMix ? (englishMode ? 'French lyrics, French vocals, French chorus, translated chorus, bilingual lyrics' : 'English lyrics, English vocals, English chorus, translated chorus, bilingual lyrics') : '',
+    !forceInstrumental && !useExternalVoiceMix ? languageLock.negative : '',
     artistCast.count > 1 ? 'single vocalist, identical vocal timbre for every singer, blended ensemble lead, unison lead vocals, choir lead, group chant replacing solos, same singer across all tags' : '',
     useExternalVoiceMix ? 'vocals, singing, spoken voice' : '',
     forceInstrumental ? 'vocals, singing, lyrics, sung words, spoken words, rap lead, narration, choir lead, group chant' : '',

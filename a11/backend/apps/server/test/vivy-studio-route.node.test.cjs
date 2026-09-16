@@ -8456,3 +8456,27 @@ test('les replis d intention creative existent et sont concrets', () => {
   assert.match(source, /Une chanson originale Funesterie guidée par Djeff Cypher/);
   assert.match(source, /Vivy dans un club nocturne réel/);
 });
+
+test('langue des chansons (16/09) : un compte en japonais ou en espagnol ne recoit plus le verrou francais', () => {
+  const input = {
+    songSource: 'NOSSEN',
+    songArtists: ['djeff'],
+    vocalCast: 'Solo Djeff',
+    songMood: 'rap français trap sombre, 808 lourdes',
+    songText: '[Verse]\nLa route brille sous la pluie\n[Chorus]\nOn roule encore cette nuit',
+  };
+  for (const [language, name] of [['ja', 'Japanese'], ['es', 'Spanish'], ['zh', 'Mandarin Chinese'], ['de', 'German']]) {
+    const payload = buildVivySunoPayload({ ...input, language });
+    assert.match(payload.style, new RegExp(`${name} lyrics only`), language);
+    assert.doesNotMatch(payload.style, /French lyrics only|French language vocals|rap fran[cç]ais|French male/, language);
+    assert.match(payload.style, /no French lyrics/, language);
+    assert.match(payload.negativeTags, /French lyrics/, language);
+    assert.doesNotMatch(payload.negativeTags, new RegExp(`${name} lyrics`), language);
+  }
+
+  // Le francais reste exactement celui d'avant.
+  const fr = buildVivySunoPayload({ ...input, language: 'fr' });
+  assert.match(fr.style, /French lyrics only, French language vocals, no English lyrics, no English chorus/);
+  assert.match(fr.style, /rap français trap sombre/);
+  assert.match(fr.negativeTags, /English lyrics/);
+});

@@ -8,6 +8,16 @@ const {
   normalizeLanguageCode,
 } = require('../../lib/language-text.cjs');
 
+const SONG_LANGUAGE_NAMES_EN = Object.freeze({
+  fr: 'French',
+  en: 'English',
+  es: 'Spanish',
+  it: 'Italian',
+  de: 'German',
+  ja: 'Japanese',
+  zh: 'Mandarin Chinese',
+});
+
 // ACE-Step accepte des paroles bien plus longues que le mode custom Suno. La
 // limite fournisseur Suno reste appliquee plus loin a 4900 caracteres; ce
 // plafond-ci protege seulement le canevas interne et ACE/Mureka.
@@ -1152,8 +1162,10 @@ function hasVivyChorusSection(value = '') {
 function buildVivySongArtistCast(input = {}) {
   const ids = normalizeVivySongArtistIds(input);
   const language = normalizeLanguageCode(input.language || input.locale || 'fr', 'fr');
-  const languageName = LANGUAGE_NAMES[language] || LANGUAGE_NAMES.fr;
-  const languageStyle = language === 'fr' ? 'French' : `${languageName}`;
+  // Noms anglais (16/09/2026) : ils partent chez Suno. LANGUAGE_NAMES donne le nom
+  // natif, ce qui écrivait « in 日本語 » dans la consigne musicale.
+  const languageName = SONG_LANGUAGE_NAMES_EN[language] || LANGUAGE_NAMES[language] || 'French';
+  const languageStyle = languageName;
   const artists = VIVY_SONG_ARTISTS.filter((artist) => ids.includes(artist.id));
   const count = Math.max(1, artists.length);
   const rawLabel = artists.map((artist) => artist.label).join(' + ') || 'Vivy';
