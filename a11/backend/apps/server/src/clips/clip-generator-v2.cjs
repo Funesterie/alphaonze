@@ -658,61 +658,75 @@ async function generateClip(config = {}, {
   randomBytesImpl = crypto.randomBytes,
 } = {}) {
   let { songUrl, title, sections, style = '', fullDuration, onProgress, casting = '', castArtists = [], render = '', identiteCompte = null } = config;
+  // Mode script (16/09/2026) : au lieu d'un MP3, on soumet un SCRIPT. K44 écrit
+  // le scénario, A11 le découpe en scènes. Pas d'audio, pas de durée mesurée :
+  // le nombre de plans vient du découpage A11. Le clip vidéo est muet.
+  const mode = String(config.mode || '').trim().toLowerCase();
+  const isScriptMode = mode === 'script';
   const clipId = createClipId(nowImpl, randomBytesImpl);
   const clipDir = path.join(CLIPS_DIR, clipId);
   fs.mkdirSync(clipDir, { recursive: true });
 
-  // 1. Valider et matérialiser l'audio AVANT le Director et avant tout appel
-  // vidéo payant. Une page HTML ou un lien mort s'arrête donc sans crédit perdu.
   const audioPath = path.join(clipDir, 'audio.mp3');
-  emitProgress(onProgress, { stage: 'audio:validating', status: 'validating', progress: 2 });
-  try {
-    await materializeMedia(songUrl, audioPath, { kind: 'audio' });
-  } catch (error) {
-    fs.rmSync(clipDir, { recursive: true, force: true });
-    throw new Error(`clip_audio_preflight_failed: ${error.message}`);
-  }
-  console.log('[clip] Audio prêt');
-  emitProgress(onProgress, { stage: 'audio:ready', status: 'validating', progress: 8 });
-
-  // 2. Mesurer la durée -- AVANT le Director (12/09/2026) : c'est elle qui dit
-  // combien de plans écrire. Avant, Sol écrivait un plan par section de l'arc
-  // (~7) et un Full Clip de 26 segments repassait ces 7 plans quatre fois.
-  // Le repli de 180 s ne survit que si la mesure est un nombre. Avant, l'affectation
-  // se faisait AVANT toute verification : un ffprobe qui reussit en imprimant « N/A »
-  // ou rien donnait NaN, sans exception, donc sans passer par le catch. numSegments
-  // valait alors NaN, la boucle `i < NaN` ne tournait pas une seule fois, et l'erreur
-  // finale disait « Aucune vidéo générée » sans que rien n'ait ete tente.
   let audioDuration = 180;
-  try {
-    const brut = execFileSyncImpl('ffprobe', [
-      '-v', 'error',
-      '-show_entries', 'format=duration',
-      '-of', 'default=noprint_wrappers=1:nokey=1',
-      audioPath,
-    ], { timeout: 10_000, windowsHide: true }).toString().trim();
-    const mesure = Math.ceil(parseFloat(brut));
-    if (Number.isFinite(mesure) && mesure > 0) audioDuration = mesure;
-    else console.warn(`[clip] Durée illisible (${brut || 'sortie vide'}), repli sur ${audioDuration}s`);
-  } catch (e) {
-    console.warn(`[clip] ffprobe indisponible (${e.message}), repli sur ${audioDuration}s`);
-  }
-  console.log(`[clip] Durée audio: ${audioDuration}s`);
-
-  // 3. Calculer le nombre de segments (max 6 vidéos pour un clip normal, toute la durée pour full)
-  // Seedance livre des plans de 7,1 s, pas 8 : mesure du 13/09/2026, 28 plans =
-  // 198,9 s pour une chanson de 224 s. Le montage coupe au plus court (-shortest),
-  // donc chaque Full Clip perdait la fin du morceau (25 s ici). On compte 7 s par
-  // plan : un peu sous le reel, pour que les plans couvrent toujours toute la
-  // chanson ; le surplus d'image est coupe a la fin de l'audio.
-  const SEGMENT_SECONDS = clipCredits.secondesParPlan();
   let numSegments;
-  if (fullDuration) {
-    numSegments = Math.ceil(audioDuration / SEGMENT_SECONDS);
+  const SEGMENT_SECONDS = clipCredits.secondesParPlan();
+
+  if (isScriptMode) {
+    // Pas de média audio : le script est la source. On borne le nombre de plans
+    // par sceneCount (ou 8 par défaut), le découpage A11 fixera le compte réel.
+    numSegments = require('./script-director.cjs').clampSceneCount(config.sceneCount || config.planCount);
+    console.log(`[clip] Mode script : ${numSegments} scènes visées (muet)`);
+    emitProgress(onProgress, { stage: 'audio:ready', status: 'validating', progress: 8 });
   } else {
-    numSegments = Math.min(6, Math.ceil(audioDuration / SEGMENT_SECONDS));
+    // 1. Valider et matérialiser l'audio AVANT le Director et avant tout appel
+    // vidéo payant. Une page HTML ou un lien mort s'arrête donc sans crédit perdu.
+    emitProgress(onProgress, { stage: 'audio:validating', status: 'validating', progress: 2 });
+    try {
+      await materializeMedia(songUrl, audioPath, { kind: 'audio' });
+    } catch (error) {
+      fs.rmSync(clipDir, { recursive: true, force: true });
+      throw new Error(`clip_audio_preflight_failed: ${error.message}`);
+    }
+    console.log('[clip] Audio prêt');
+    emitProgress(onProgress, { stage: 'audio:ready', status: 'validating', progress: 8 });
+
+    // 2. Mesurer la durée -- AVANT le Director (12/09/2026) : c'est elle qui dit
+    // combien de plans écrire. Avant, Sol écrivait un plan par section de l'arc
+    // (~7) et un Full Clip de 26 segments repassait ces 7 plans quatre fois.
+    // Le repli de 180 s ne survit que si la mesure est un nombre. Avant, l'affectation
+    // se faisait AVANT toute verification : un ffprobe qui reussit en imprimant « N/A »
+    // ou rien donnait NaN, sans exception, donc sans passer par le catch. numSegments
+    // valait alors NaN, la boucle `i < NaN` ne tournait pas une seule fois, et l'erreur
+    // finale disait « Aucune vidéo générée » sans que rien n'ait ete tente.
+    try {
+      const brut = execFileSyncImpl('ffprobe', [
+        '-v', 'error',
+        '-show_entries', 'format=duration',
+        '-of', 'default=noprint_wrappers=1:nokey=1',
+        audioPath,
+      ], { timeout: 10_000, windowsHide: true }).toString().trim();
+      const mesure = Math.ceil(parseFloat(brut));
+      if (Number.isFinite(mesure) && mesure > 0) audioDuration = mesure;
+      else console.warn(`[clip] Durée illisible (${brut || 'sortie vide'}), repli sur ${audioDuration}s`);
+    } catch (e) {
+      console.warn(`[clip] ffprobe indisponible (${e.message}), repli sur ${audioDuration}s`);
+    }
+    console.log(`[clip] Durée audio: ${audioDuration}s`);
+
+    // 3. Calculer le nombre de segments (max 6 vidéos pour un clip normal, toute la durée pour full)
+    // Seedance livre des plans de 7,1 s, pas 8 : mesure du 13/09/2026, 28 plans =
+    // 198,9 s pour une chanson de 224 s. Le montage coupe au plus court (-shortest),
+    // donc chaque Full Clip perdait la fin du morceau (25 s ici). On compte 7 s par
+    // plan : un peu sous le reel, pour que les plans couvrent toujours toute la
+    // chanson ; le surplus d'image est coupe a la fin de l'audio.
+    if (fullDuration) {
+      numSegments = Math.ceil(audioDuration / SEGMENT_SECONDS);
+    } else {
+      numSegments = Math.min(6, Math.ceil(audioDuration / SEGMENT_SECONDS));
+    }
+    console.log(`[clip] ${numSegments} vidéos à générer (${fullDuration ? 'full' : 'normal'})`);
   }
-  console.log(`[clip] ${numSegments} vidéos à générer (${fullDuration ? 'full' : 'normal'})`);
 
   // Vivy Director : scènes issues des paroles + identité visuelle des personnages.
   // Une erreur de modèle ou une réponse mal formée est propagée : on ne masque
@@ -732,12 +746,26 @@ async function generateClip(config = {}, {
   emitProgress(onProgress, { stage: 'director:starting', status: 'directing', progress: 10 });
   let directed;
   try {
-    const director = loadDirectorImpl();
-    if (!director || typeof director.directClip !== 'function') throw new Error('directClip indisponible');
-    directed = await director.directClip({ title, songUrl, audioPath, style, sections, casting, castArtists, render, identiteCompte,
-      planCount: numSegments, durationSeconds: audioDuration,
-      lyrics: config.lyrics, lieu: config.lieu, direction: config.direction, onProgress: directorProgress });
-    sections = requireDirectedScenes(directed);
+    if (isScriptMode) {
+      // K44 écrit le scénario, A11 le découpe. Même contrat de sortie (scenes[].visual).
+      const scriptDirector = require('./script-director.cjs');
+      directed = await scriptDirector.directScript({
+        title, style, sections, casting, castArtists, render, identiteCompte,
+        scriptText: config.scriptText, scriptUrl: config.scriptUrl,
+        sceneCount: numSegments, lieu: config.lieu, direction: config.direction,
+        onProgress: directorProgress,
+      });
+      sections = requireDirectedScenes(directed);
+      // Le découpage A11 fixe le vrai compte de plans (peut différer de la borne).
+      if (Array.isArray(sections) && sections.length) numSegments = sections.length;
+    } else {
+      const director = loadDirectorImpl();
+      if (!director || typeof director.directClip !== 'function') throw new Error('directClip indisponible');
+      directed = await director.directClip({ title, songUrl, audioPath, style, sections, casting, castArtists, render, identiteCompte,
+        planCount: numSegments, durationSeconds: audioDuration,
+        lyrics: config.lyrics, lieu: config.lieu, direction: config.direction, onProgress: directorProgress });
+      sections = requireDirectedScenes(directed);
+    }
   } catch (error) {
     throw new Error(`clip_director_failed: ${error.message}`);
   }
@@ -913,25 +941,41 @@ async function generateClip(config = {}, {
   const concatFile = path.join(clipDir, 'concat.txt');
   fs.writeFileSync(concatFile, videoPaths.map(p => `file '${p}'`).join('\n'));
 
-  // Concat vidéos + audio
-  execFileSyncImpl('ffmpeg', [
-    '-y',
-    '-f', 'concat',
-    '-safe', '0',
-    '-i', concatFile,
-    '-i', audioPath,
-    // Le son des scenes ne doit jamais remplacer la chanson par selection automatique.
-    '-map', '0:v:0',
-    '-map', '1:a:0',
-    '-c:v', 'libx264',
-    '-preset', 'fast',
-    '-crf', '23',
-    '-c:a', 'aac',
-    '-b:a', '192k',
-    '-shortest',
-    '-movflags', '+faststart',
-    outputPath,
-  ], { timeout: 300_000, windowsHide: true });
+  // Concat vidéos (+ audio si clip musical). En mode script il n'y a pas de
+  // piste audio : on assemble la vidéo seule, en gardant le son des scènes.
+  const ffmpegArgs = isScriptMode
+    ? [
+        '-y',
+        '-f', 'concat',
+        '-safe', '0',
+        '-i', concatFile,
+        '-c:v', 'libx264',
+        '-preset', 'fast',
+        '-crf', '23',
+        '-c:a', 'aac',
+        '-b:a', '192k',
+        '-movflags', '+faststart',
+        outputPath,
+      ]
+    : [
+        '-y',
+        '-f', 'concat',
+        '-safe', '0',
+        '-i', concatFile,
+        '-i', audioPath,
+        // Le son des scenes ne doit jamais remplacer la chanson par selection automatique.
+        '-map', '0:v:0',
+        '-map', '1:a:0',
+        '-c:v', 'libx264',
+        '-preset', 'fast',
+        '-crf', '23',
+        '-c:a', 'aac',
+        '-b:a', '192k',
+        '-shortest',
+        '-movflags', '+faststart',
+        outputPath,
+      ];
+  execFileSyncImpl('ffmpeg', ffmpegArgs, { timeout: 300_000, windowsHide: true });
 
   const outputStats = fs.statSync(outputPath, { throwIfNoEntry: false });
   if (!outputStats?.isFile() || outputStats.size <= 0) throw new Error('clip_output_missing_or_empty');

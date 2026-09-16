@@ -229,6 +229,12 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
   // Lancer un clip (authentification requise)
   router.post('/start', express.json({ limit: '512kb' }), async (req, res) => {
     const { songUrl, title, style, fullDuration, sections } = req.body;
+    // Mode script (16/09/2026) : au lieu d'un MP3, on soumet un SCRIPT (texte ou
+    // lien). K44 écrit le scénario, A11 le découpe en scènes → manga/film muet.
+    const mode = String((req.body && req.body.mode) || '').trim().toLowerCase() === 'script' ? 'script' : 'song';
+    const scriptText = mode === 'script' ? String((req.body && (req.body.scriptText || req.body.script)) || '').trim() : '';
+    const scriptUrl = mode === 'script' ? String((req.body && req.body.scriptUrl) || '').trim() : '';
+    const sceneCount = req.body && req.body.sceneCount;
     // La page NOSSEN envoie la distribution choisie (casting + multiVoice). Elle
     // etait jetee ici : aucun clip lance depuis le site ou le telephone ne recevait
     // d identite, et chaque plan reinventait le visage du personnage (constate par
@@ -236,7 +242,13 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
     const casting = normaliserCasting(req.body && req.body.casting);
     const castArtists = normaliserDistribution(req.body && req.body.multiVoice, casting);
     const render = normaliserRendu(req.body && req.body.render);
-    if (!songUrl) return res.status(400).json({ ok: false, error: 'songUrl requis', message: messageServeur(req, 'clip.songUrlRequired') });
+    if (mode === 'script') {
+      if (!scriptText && !scriptUrl) {
+        return res.status(400).json({ ok: false, error: 'script requis', message: messageServeur(req, 'clip.scriptRequired') });
+      }
+    } else if (!songUrl) {
+      return res.status(400).json({ ok: false, error: 'songUrl requis', message: messageServeur(req, 'clip.songUrlRequired') });
+    }
 
     // Casting « Moi » (13/09/2026) : l'avatar de la fiche du compte joue le rôle
     // principal. Sans avatar, on refuse avant toute réservation.
@@ -296,12 +308,13 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
     }
 
     const job = createJob({
-      songUrl,
+      songUrl: mode === 'script' ? (scriptUrl || 'script://inline') : songUrl,
       title,
       style,
       fullDuration,
       casting,
       render,
+      mode,
       creditsReserves: reservation ? reservation.credits : 0,
       creditRef: reservation ? reservation.ref : null,
       userId: user.id || user.sub || null,
@@ -310,7 +323,7 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
 
     // Lancer la génération en arrière-plan
     setImmediate(() => {
-      runClipGeneration(job.id, { songUrl, title, style, fullDuration, sections, casting, castArtists, render, identiteCompte }, {
+      runClipGeneration(job.id, { songUrl, title, style, fullDuration, sections, casting, castArtists, render, identiteCompte, mode, scriptText, scriptUrl, sceneCount }, {
         workerId: CLIP_WORKER_ID,
         generateClipImpl,
       }).then((sortie) => {
