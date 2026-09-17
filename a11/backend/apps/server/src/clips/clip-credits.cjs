@@ -42,8 +42,16 @@ const EUR_PAR_CREDIT = 0.10;
 // pour couvrir toute la chanson). C'etait 8 : les Full Clips perdaient leur fin.
 // Source unique, lue aussi par clip-generator-v2.cjs.
 const SECONDES_PAR_PLAN_DEFAUT = 7;
+// Ce que dure vraiment un plan a l'ecran (7,1 s mesurees). C'est ce chiffre qu'on
+// annonce a l'utilisateur ; le 7 ci-dessus sert au decoupage, pas a l'affichage.
+const SECONDES_REELLES_PAR_PLAN = 7.1;
 function secondesParPlan(env = process.env) {
   return nombre(env.NOSSEN_CLIP_SECONDES_PAR_PLAN, SECONDES_PAR_PLAN_DEFAUT);
+}
+/** Duree affichee d'un clip de n plans, en secondes. */
+function secondesPourPlans(plans) {
+  const n = Math.max(0, Math.floor(Number(plans) || 0));
+  return Math.round(n * SECONDES_REELLES_PAR_PLAN);
 }
 const PLANS_CLIP_NORMAL = 6;
 // Full Clip sans durée connue : on réserve large (4 min), la différence revient.
@@ -272,5 +280,7 @@ module.exports = {
   plansEstimes,
   reserver,
   secondesParPlan,
+  secondesPourPlans,
+  SECONDES_REELLES_PAR_PLAN,
   tarif,
 };

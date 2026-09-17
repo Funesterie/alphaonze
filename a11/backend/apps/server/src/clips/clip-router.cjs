@@ -173,6 +173,65 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
     });
   });
 
+  // Estimation d'un clip depuis un SCRIPT (17/09/2026, Djeff) : K44 écrit le
+  // scénario, A11 le découpe, et c'est LEUR découpage qui dit combien de plans —
+  // plus personne ne choisit un chiffre au hasard. On renvoie les scènes pour que
+  // le lancement réutilise exactement ce découpage, sans refaire travailler les
+  // modèles ni dépenser un crédit vidéo : rien n'est généré ici.
+  router.post('/script-estimation', express.json({ limit: '256kb' }), async (req, res) => {
+    if (!estAdmin(req) && !idUtilisateur(req)) {
+      return res.status(401).json({ ok: false, error: 'CONNEXION_REQUISE', message: messageServeur(req, 'clip.loginRequired') });
+    }
+    const scriptText = String((req.body && (req.body.scriptText || req.body.script)) || '').trim();
+    if (scriptText.length < 20) {
+      return res.status(400).json({ ok: false, error: 'script requis', message: messageServeur(req, 'clip.scriptRequired') });
+    }
+    const render = normaliserRendu(req.body && req.body.render);
+    const casting = normaliserCasting(req.body && req.body.casting);
+    const scriptDirector = require('./script-director.cjs');
+    const maxPlans = render === 'manga' ? 40 : 24;
+    let directed;
+    try {
+      directed = await scriptDirector.directScript({
+        title: String((req.body && req.body.title) || '').slice(0, 80),
+        style: String((req.body && req.body.style) || '').slice(0, 600),
+        casting,
+        castArtists: normaliserDistribution(req.body && req.body.multiVoice, casting),
+        render,
+        sceneCount: req.body && req.body.sceneCount,
+        lieu: String((req.body && req.body.lieu) || '').slice(0, 300),
+        direction: String((req.body && req.body.direction) || '').slice(0, 600),
+        scriptText,
+      });
+    } catch (error) {
+      console.error('[clip-router] Estimation script impossible:', sanitizeJobDiagnostic(error.message));
+      return res.status(502).json({ ok: false, error: 'SCRIPT_ESTIMATION_ECHEC', message: sanitizeJobDiagnostic(error.message) });
+    }
+    const scenes = Array.isArray(directed && directed.scenes) ? directed.scenes.slice(0, maxPlans) : [];
+    if (!scenes.length) {
+      return res.status(502).json({ ok: false, error: 'SCRIPT_SANS_PLANS', message: messageServeur(req, 'clip.scriptNoScenes') });
+    }
+    const admin = estAdmin(req);
+    const reserve = await etatReserve(scenes.length);
+    res.json({
+      ok: true,
+      plans: scenes.length,
+      secondes: clipCredits.secondesPourPlans(scenes.length),
+      secondesParPlan: clipCredits.SECONDES_REELLES_PAR_PLAN,
+      creditsSite: admin ? 0 : clipCredits.creditsPourPlans(scenes.length),
+      titre: String((directed.scenario && directed.scenario.titre) || '').slice(0, 120),
+      logline: String((directed.scenario && directed.scenario.logline) || '').slice(0, 400),
+      lieu: String(directed.lieu || '').slice(0, 300),
+      scenes: scenes.map((s) => ({
+        name: String((s && s.name) || '').slice(0, 80),
+        visual: String((s && s.visual) || '').slice(0, 1200),
+      })),
+      reserve: reserve
+        ? { connue: true, suffisant: reserve.suffisant, plansPossibles: reserve.plansPossibles }
+        : { connue: false },
+    });
+  });
+
   // Solde et tarifs, pour la page.
   router.get('/credits', async (req, res) => {
     const admin = estAdmin(req);

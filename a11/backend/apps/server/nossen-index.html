@@ -153,7 +153,7 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
     <textarea class="input-url" id="manga-script" rows="5" placeholder="Écris ton idée, ton synopsis ou ton scénario ici… (ex : Djeff explore une station spatiale abandonnée et trouve un signal mystérieux)" data-i18n-placeholder="manga.scriptPlaceholder"></textarea>
     <label class="manga-scenes">
       <span id="script-scenes-label" data-i18n="manga.scenes">Nombre de planches</span>
-      <input type="number" id="manga-scenes" min="3" max="40" value="8">
+      <input type="number" id="manga-scenes" min="3" max="40" placeholder="auto">
     </label>
   </div>
   <div class="produce-row">
@@ -265,9 +265,12 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "source.song": "🎵 Depuis une chanson",
       "source.script": "📝 Depuis un script (clip muet)",
       "script.hint": "— écris ton scénario, K44 l'étoffe et A11 le découpe en plans vidéo (clip sans musique) —",
-      "script.scenes": "Nombre de plans",
+      "script.scenes": "Nombre de plans (7,1 s chacun) — vide : A11 décide",
       "script.go": "🎬 Générer le clip depuis le script",
       "script.tooShort": "✍️ Écris au moins un synopsis (une ou deux phrases) pour lancer le clip.",
+      "script.estimating": "⏳ K44 écrit le scénario et A11 le découpe en plans…",
+      "script.confirmClip": "K44 et A11 proposent {0} plans, soit environ {1} de clip (7,1 s par plan).\n\nCoût : {2} crédits, et seuls les plans livrés sont facturés.\n\nOn lance ?",
+      "script.confirmManga": "K44 et A11 proposent {0} planches.\n\nCoût : {1} crédits, et seules les planches livrées sont facturées.\n\nOn lance ?",
       "manga.animate": "🎬 Animer",
       "manga.animating": "Animation des planches en cours…",
       "produce.info1": "Clip = aperçu vidéo court · Full Clip = clip vidéo complet sur toute la chanson · payés en crédits (seuls les plans livrés sont facturés)",
@@ -419,9 +422,12 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "source.song": "🎵 From a song",
       "source.script": "📝 From a script (silent video)",
       "script.hint": "— write your storyline, K44 fleshes it out and A11 cuts it into video shots (no music) —",
-      "script.scenes": "Number of shots",
+      "script.scenes": "Number of shots (7.1 s each) — empty: A11 decides",
       "script.go": "🎬 Generate the video from the script",
       "script.tooShort": "✍️ Write at least a synopsis (a sentence or two) to start the video.",
+      "script.estimating": "⏳ K44 is writing the screenplay and A11 is cutting it into shots…",
+      "script.confirmClip": "K44 and A11 propose {0} shots, about {1} of video (7.1 s per shot).\n\nCost: {2} credits, and only delivered shots are charged.\n\nStart?",
+      "script.confirmManga": "K44 and A11 propose {0} panels.\n\nCost: {1} credits, and only delivered panels are charged.\n\nStart?",
       "manga.animate": "🎬 Animate",
       "manga.animating": "Animating the panels…",
       "produce.info1": "Clip = short video preview · Full Clip = complete video over the whole song · paid in credits (only delivered shots are charged)",
@@ -573,9 +579,12 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "source.song": "🎵 Desde una canción",
       "source.script": "📝 Desde un guion (vídeo mudo)",
       "script.hint": "— escribe tu guion, K44 lo desarrolla y A11 lo divide en planos de vídeo (sin música) —",
-      "script.scenes": "Número de planos",
+      "script.scenes": "Número de planos (7,1 s cada uno) — vacío: decide A11",
       "script.go": "🎬 Generar el vídeo desde el guion",
       "script.tooShort": "✍️ Escribe al menos una sinopsis (una o dos frases) para lanzar el vídeo.",
+      "script.estimating": "⏳ K44 escribe el guion y A11 lo divide en planos…",
+      "script.confirmClip": "K44 y A11 proponen {0} planos, unos {1} de vídeo (7,1 s por plano).\n\nCoste: {2} créditos, y solo se cobran los planos entregados.\n\n¿Lanzamos?",
+      "script.confirmManga": "K44 y A11 proponen {0} láminas.\n\nCoste: {1} créditos, y solo se cobran las láminas entregadas.\n\n¿Lanzamos?",
       "manga.animate": "🎬 Animar",
       "manga.animating": "Animando las láminas…",
       "produce.info1": "Clip = vista previa corta · Full Clip = videoclip completo de toda la canción · se paga en créditos (solo se cobran los planos entregados)",
@@ -727,9 +736,12 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "source.song": "🎵 Da una canzone",
       "source.script": "📝 Da una sceneggiatura (video muto)",
       "script.hint": "— scrivi la tua storia, K44 la sviluppa e A11 la divide in inquadrature video (senza musica) —",
-      "script.scenes": "Numero di inquadrature",
+      "script.scenes": "Numero di inquadrature (7,1 s ciascuna) — vuoto: decide A11",
       "script.go": "🎬 Genera il video dalla sceneggiatura",
       "script.tooShort": "✍️ Scrivi almeno una sinossi (una o due frasi) per avviare il video.",
+      "script.estimating": "⏳ K44 scrive la sceneggiatura e A11 la divide in inquadrature…",
+      "script.confirmClip": "K44 e A11 propongono {0} inquadrature, circa {1} di video (7,1 s per inquadratura).\n\nCosto: {2} crediti, e si pagano solo le inquadrature consegnate.\n\nSi parte?",
+      "script.confirmManga": "K44 e A11 propongono {0} tavole.\n\nCosto: {1} crediti, e si pagano solo le tavole consegnate.\n\nSi parte?",
       "manga.animate": "🎬 Anima",
       "manga.animating": "Animazione delle tavole in corso…",
       "produce.info1": "Clip = anteprima video breve · Full Clip = videoclip completo su tutta la canzone · pagati in crediti (si pagano solo le inquadrature consegnate)",
@@ -881,9 +893,12 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "source.song": "🎵 Aus einem Song",
       "source.script": "📝 Aus einem Drehbuch (stummes Video)",
       "script.hint": "— schreib deine Geschichte, K44 baut sie aus und A11 teilt sie in Videoeinstellungen (ohne Musik) —",
-      "script.scenes": "Anzahl der Einstellungen",
+      "script.scenes": "Anzahl der Einstellungen (je 7,1 s) — leer: A11 entscheidet",
       "script.go": "🎬 Video aus dem Drehbuch erzeugen",
       "script.tooShort": "✍️ Schreib mindestens eine Synopsis (ein bis zwei Sätze), um das Video zu starten.",
+      "script.estimating": "⏳ K44 schreibt das Drehbuch und A11 teilt es in Einstellungen…",
+      "script.confirmClip": "K44 und A11 schlagen {0} Einstellungen vor, etwa {1} Video (7,1 s pro Einstellung).\n\nKosten: {2} Credits, und nur gelieferte Einstellungen werden berechnet.\n\nStarten?",
+      "script.confirmManga": "K44 und A11 schlagen {0} Seiten vor.\n\nKosten: {1} Credits, und nur gelieferte Seiten werden berechnet.\n\nStarten?",
       "manga.animate": "🎬 Animieren",
       "manga.animating": "Die Seiten werden animiert…",
       "produce.info1": "Clip = kurze Videovorschau · Full Clip = komplettes Video über den ganzen Song · Bezahlung mit Credits (nur gelieferte Einstellungen werden berechnet)",
@@ -1035,9 +1050,12 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "source.song": "🎵 曲から作る",
       "source.script": "📝 台本から作る（無音の動画）",
       "script.hint": "— 物語を書くと、K44 が膨らませ、A11 が動画のカットに分けます（音楽なし） —",
-      "script.scenes": "カット数",
+      "script.scenes": "カット数（各7.1秒）— 空欄なら A11 が決めます",
       "script.go": "🎬 台本から動画を生成",
       "script.tooShort": "✍️ 動画を始めるには、少なくともあらすじ（1〜2文）を書いてください。",
+      "script.estimating": "⏳ K44 が脚本を書き、A11 がカットに分けています…",
+      "script.confirmClip": "K44 と A11 の提案は {0} カット、動画およそ {1}（1カット7.1秒）。\n\n費用は {2} クレジットで、納品されたカットのみ課金されます。\n\n開始しますか？",
+      "script.confirmManga": "K44 と A11 の提案は {0} ページです。\n\n費用は {1} クレジットで、納品されたページのみ課金されます。\n\n開始しますか？",
       "manga.animate": "🎬 動かす",
       "manga.animating": "ページをアニメ化しています…",
       "produce.info1": "Clip＝短いプレビュー動画 · Full Clip＝曲全体の完全なビデオ · クレジットで支払い（納品されたカットのみ課金）",
@@ -1189,9 +1207,12 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "source.song": "🎵 从歌曲生成",
       "source.script": "📝 从剧本生成（无声视频）",
       "script.hint": "— 写下你的故事，K44 会丰富它，A11 会把它切分成视频镜头（无音乐） —",
-      "script.scenes": "镜头数量",
+      "script.scenes": "镜头数量（每个 7.1 秒）— 留空则由 A11 决定",
       "script.go": "🎬 根据剧本生成视频",
       "script.tooShort": "✍️ 请至少写一段梗概（一两句话）来生成视频。",
+      "script.estimating": "⏳ K44 正在写剧本，A11 正在切分镜头…",
+      "script.confirmClip": "K44 和 A11 建议 {0} 个镜头，约 {1} 的视频（每个镜头 7.1 秒）。\n\n费用 {2} 积分，只对已交付的镜头计费。\n\n开始吗？",
+      "script.confirmManga": "K44 和 A11 建议 {0} 页。\n\n费用 {1} 积分，只对已交付的页面计费。\n\n开始吗？",
       "manga.animate": "🎬 动画化",
       "manga.animating": "正在把分镜动画化…",
       "produce.info1": "Clip＝短视频预览 · Full Clip＝覆盖整首歌的完整视频 · 使用积分支付（只对交付的镜头收费）",
@@ -1932,6 +1953,9 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
     // Mode manga (16/09/2026) : planches depuis un script, pas de chanson ni de
     // réserve à estimer. On lance directement avec le texte du scénario.
     // Clip film ou animé depuis un script (17/09/2026) : même chemin, rendu vidéo muet.
+    // K44 écrit le scénario et A11 le découpe AVANT de lancer : c'est leur découpage
+    // qui donne le nombre de plans, la durée (7,1 s par plan) et le prix. Rien n'est
+    // généré à cette étape, et le lancement réutilise exactement ces plans.
     if (mode === "manga" || mode === "script") {
       var scriptEl = document.getElementById("manga-script");
       var scriptTxt = scriptEl ? String(scriptEl.value || "").trim() : "";
@@ -1941,8 +1965,47 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       }
       var scenesEl = document.getElementById("manga-scenes");
       var maxScenes = mode === "manga" ? 40 : 24;
-      var nbScenes = scenesEl ? Math.max(3, Math.min(maxScenes, Number(scenesEl.value) || 8)) : 8;
-      lancerClip(mode, { type: "script", scriptText: scriptTxt, sceneCount: nbScenes, title: scriptTxt.slice(0, 40) });
+      var demande = scenesEl && String(scenesEl.value || "").trim() ? Math.max(3, Math.min(maxScenes, Number(scenesEl.value) || 0)) : 0;
+      var castingS = document.getElementById("casting").value;
+      var renduS = document.getElementById("rendu").value;
+      document.getElementById("msg").textContent = t("script.estimating");
+      api("/api/mcp-bridge/clip/script-estimation", {
+        scriptText: scriptTxt,
+        render: mode === "manga" ? "manga" : renduS,
+        casting: castingS,
+        title: scriptTxt.slice(0, 40),
+        sceneCount: demande || undefined
+      }).then(function(e) {
+        if (!e || !e.ok || !e.plans) {
+          document.getElementById("msg").textContent = "❌ " + ((e && (e.message || e.error)) || t("clip.unknownError"));
+          return;
+        }
+        var duree = Math.round(Number(e.secondes) || 0);
+        var question = mode === "manga"
+          ? t("script.confirmManga", e.plans, e.creditsSite)
+          : t("script.confirmClip", e.plans, Math.floor(duree / 60) + "′" + ("0" + (duree % 60)).slice(-2), e.creditsSite);
+        if (e.reserve && e.reserve.connue && e.reserve.plansPossibles < e.plans) {
+          if (e.reserve.plansPossibles < 1) {
+            document.getElementById("msg").textContent = t("clip.reserveEmpty");
+            return;
+          }
+          question = question + "\n" + t("clip.reserveLow", mode === "manga" ? "Manga" : "Clip", e.plans, "", e.reserve.plansPossibles);
+        }
+        if (!window.confirm(question)) {
+          document.getElementById("msg").textContent = t("clip.cancelled");
+          return;
+        }
+        lancerClip(mode, {
+          type: "script",
+          scriptText: scriptTxt,
+          sceneCount: e.plans,
+          sections: e.scenes,
+          lieu: e.lieu || "",
+          title: (e.titre || scriptTxt.slice(0, 40))
+        });
+      }, function(err) {
+        document.getElementById("msg").textContent = "❌ " + ((err && err.message) || t("clip.unknownError"));
+      });
       return;
     }
 
@@ -2010,6 +2073,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
         render: mode === "manga" ? "manga" : (document.getElementById("rendu").value === "anime" ? "anime" : "film"),
         scriptText: source.scriptText,
         sceneCount: source.sceneCount || 8,
+        sections: Array.isArray(source.sections) ? source.sections : undefined,
+        lieu: source.lieu || undefined,
         title: truncate(source.title || (mode === "manga" ? "manga" : "clip"), 40),
         casting: castM,
         preserveSelectedVoice: true,

@@ -181,3 +181,12 @@ test('un Fondateur recoit son clip offert et lance un Clip sans achat, pas un Fu
     assert.equal(r.status, 200, 'un Clip manga passe');
   });
 });
+
+test('la duree annoncee compte 7,1 s par plan (17/09/2026)', () => {
+  assert.equal(credits.SECONDES_REELLES_PAR_PLAN, 7.1);
+  assert.equal(credits.secondesPourPlans(1), 7);
+  assert.equal(credits.secondesPourPlans(11), 78);
+  assert.equal(credits.secondesPourPlans(24), 170);
+  assert.equal(credits.secondesPourPlans(0), 0);
+  assert.equal(credits.secondesPourPlans(-2), 0);
+});
