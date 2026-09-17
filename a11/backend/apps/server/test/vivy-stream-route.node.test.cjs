@@ -1752,6 +1752,7 @@ test('Twitch NOSSEN runner writes lyrics, follows Suno and publishes the track',
 test('Twitch NOSSEN runner performs a dedicated phonetic and associative polish pass', async () => {
   const updates = [];
   const lyricRequests = [];
+  const internalFlags = [];
   let productionInput = null;
   const firstDraft = [
     '[Verse 1]',
@@ -1782,6 +1783,7 @@ test('Twitch NOSSEN runner performs a dedicated phonetic and associative polish 
     }),
     writeLyrics: async (input) => {
       lyricRequests.push(input.message);
+      internalFlags.push(input.internalSongGeneration);
       return { publicLyrics: lyricRequests.length === 1 ? firstDraft : polishedLyrics };
     },
     startMusic: async (_mode, input) => {
@@ -1817,6 +1819,8 @@ test('Twitch NOSSEN runner performs a dedicated phonetic and associative polish 
 
   assert.equal(result.ok, true);
   assert.equal(lyricRequests.length, 2);
+  // Le brouillon comme la réécriture sont des générations internes : jamais un brief Djeff Cypher.
+  assert.deepEqual(internalFlags, [true, true]);
   assert.match(lyricRequests[1], /Brouillon à transformer/i);
   assert.match(lyricRequests[1], /Test oral obligatoire/i);
   assert.match(lyricRequests[1], /seconde intention par la fin de la ligne/i);

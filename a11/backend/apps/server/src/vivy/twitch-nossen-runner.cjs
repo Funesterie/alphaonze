@@ -296,7 +296,9 @@ Jean rentre avec la pêche et le ciel sur la veste
 `, max);
   }
 
-  if (Array.isArray(artists) && artists.map((artist) => String(artist || '').toLowerCase()).includes('djeff')) {
+  const castNormalise = Array.isArray(artists) ? artists.map((artist) => String(artist || '').toLowerCase()) : [];
+  // Le gabarit « Solo Djeff » ne vaut que pour Djeff seul : en duo avec Vivy il effaçait sa voix.
+  if (castNormalise.length === 1 && castNormalise[0] === 'djeff') {
     const conflict = /\b(?:clash|cypher|battle|comp[ée]tition|rival|rivaux|ma\s+peau|tuto|tutoriel|ils\s+veulent|veulent\s+ma\s+peau)\b/.test(folded);
     const opening = conflict
       ? 'Ils veulent ma peau, mais leur lame est en carton'
@@ -442,7 +444,7 @@ function repairTwitchDjeffLyricsBeforeSuno({
     return { lyrics: cleanLyrics(lyrics, lyricScope?.maxChars || 12000), replaced: false, reason: '' };
   }
   return {
-    lyrics: buildTwitchEmergencyLyrics({ winner, routing, seed, intentPlan, lyricScope, artists: ['djeff'] }),
+    lyrics: buildTwitchEmergencyLyrics({ winner, routing, seed, intentPlan, lyricScope, artists }),
     replaced: true,
     reason: 'djeff_voice_calibration_drift',
   };
@@ -2999,6 +3001,10 @@ function createVivyStreamNossenRunner(options = {}) {
           const lyricWriteStartedAt = Date.now();
           lyricsPayload = await withTimeout(() => writeLyrics({
             mode: 'song',
+            // Sans ce drapeau, la consigne du live (« brief », « casting vocal: vivy + djeff »,
+            // « écris ») était prise pour une demande de brief Djeff Cypher : Vivy rendait un
+            // brief d'image et le live chantait les paroles de secours « cypher » de Djeff.
+            internalSongGeneration: true,
             language: 'fr',
             conversationId,
             sessionId,
@@ -3227,6 +3233,7 @@ function createVivyStreamNossenRunner(options = {}) {
             const lyricRewriteStartedAt = Date.now();
             rewritePayload = await withTimeout(() => writeLyrics({
               mode: 'song',
+              internalSongGeneration: true,
               language: 'fr',
               conversationId: rewriteConversationId,
               sessionId: rewriteSessionId,
