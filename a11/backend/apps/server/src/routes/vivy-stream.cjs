@@ -1290,7 +1290,8 @@ function createVivyStreamStore(options = {}) {
     jukebox.playsSinceClip = Number(jukebox.playsSinceClip || 0) + 1;
     // Le tirage normal melange chansons ET clips. On ne force un clip que si le
     // hasard n'en a pas sorti depuis JUKEBOX_CLIP_EVERY lectures.
-    const forcerClip = JUKEBOX_CLIP_EVERY > 0 && jukebox.playsSinceClip > JUKEBOX_CLIP_EVERY;
+    const forcerClip = options.forcerClip === true
+      || (JUKEBOX_CLIP_EVERY > 0 && jukebox.playsSinceClip > JUKEBOX_CLIP_EVERY);
     const track = (forcerClip ? selectJukeboxClipTrack() : null) || selectJukeboxTrack();
     if (!track) return publicState(state);
     const isClipShowcase = Boolean(trackVideoUrl(track));
@@ -1978,6 +1979,10 @@ function createVivyStreamStore(options = {}) {
     }
     if (action === 'rating') return { ok: true, state: beginRating() };
     if (action === 'interlude' || action === 'jukebox') return { ok: true, state: beginIdleJukebox({ rotate: true }) };
+    // Régie : passer tout de suite à un clip, sans attendre que le shuffle en sorte un.
+    if (action === 'jukebox-clip' || action === 'clip-suivant') {
+      return { ok: true, state: beginIdleJukebox({ rotate: true, forcerClip: true }) };
+    }
     if (action === 'next' || action === 'start') return { ok: true, state: startRound(input) };
     if (action === 'error') {
       const hasQueuedSuggestions = Array.isArray(state.pendingSuggestions) && state.pendingSuggestions.length > 0;

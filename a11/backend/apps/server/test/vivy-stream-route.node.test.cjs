@@ -4695,3 +4695,24 @@ test('jukebox (17/09/2026) : clips et chansons dans le meme shuffle, la video se
     assert.equal(v.clip, false, 'une chanson sans video reste un fond musical');
   }
 });
+
+test('regie : l action jukebox-clip passe directement a un clip', () => {
+  const store = createVivyStreamStore({
+    statePath: path.join(tmpRoot, 'jukebox-clip-force.json'),
+    idleJukeboxEnabled: true,
+    randomInt: () => 0,
+  });
+  store.addJukeboxTrack({ title: 'Chanson A', trackUrl: '/api/vivy/studio/assets/vivy-music-suno-a.mp3', durationSeconds: 60 });
+  store.addJukeboxTrack({ title: 'Chanson B', trackUrl: '/api/vivy/studio/assets/vivy-music-suno-b.mp3', durationSeconds: 60 });
+  store.addJukeboxTrack({
+    title: 'Le clip',
+    trackUrl: '/api/vivy/studio/assets/vivy-music-suno-c.mp3',
+    durationSeconds: 60,
+    shareVideoUrl: '/api/vivy/studio/assets/le-clip.mp4',
+  });
+  const forced = store.updateLive({ action: 'jukebox-clip' });
+  assert.equal(forced.ok, true);
+  assert.equal(forced.state.current.phase, 'interlude');
+  assert.equal(forced.state.current.trackTitle, 'Le clip');
+  assert.equal(forced.state.current.clipShowcase, true);
+});
