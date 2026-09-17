@@ -123,12 +123,12 @@ const IDENTITY_DEFINITIONS = [
       // visage (« méditerranéen, peau olive, visage large, barbe noire ») que le
       // 13/09 a déclaré faux ; elle contredisait la suivante dans le même prompt.
       'Référence visuelle créateur humain, énergie de créateur.',
-      'Si ce créateur apparaît, préserver ces traits: homme adulte d une trentaine d années à peau claire, visage large aux joues pleines, barbe brun foncé fournie et taillée courte, moustache, yeux marron, sourcils épais et foncés, cheveux brun foncé plaqués en arrière et légèrement dégarnis aux tempes, carrure solide, chemise noire ouverte au col, chaîne en or et collier de perles en bois. Ces traits suffisent seuls: aucune image de référence n est transmise au generateur video, la description porte donc toute la ressemblance. Toujours cet homme-là : la trentaine, la barbe fournie, les cheveux plaqués en arrière et la carrure solide, reconnaissable dans chaque image.',
+      'Si ce créateur apparaît, préserver ces traits: homme adulte d une trentaine d années à peau claire, visage large aux joues pleines, barbe brun foncé fournie et taillée courte, moustache, yeux marron, sourcils épais et foncés, cheveux brun foncé plaqués en arrière et légèrement dégarnis aux tempes, carrure solide, une chaîne en or avec deux pendentifs, une croix et la Sicile. Ces traits suffisent seuls: aucune image de référence n est transmise au generateur video, la description porte donc toute la ressemblance. Toujours cet homme-là : la trentaine, la barbe fournie, les cheveux plaqués en arrière et la carrure solide, reconnaissable dans chaque image.',
     ].join(' '),
     // Refait le 17/09/2026 sur les photos recentes de Djeff. Les versions « jeune
     // homme mince, coupe courte, menton pointu » (13/09 et matin du 17/09) donnaient
     // un portrait qui ne lui ressemblait pas (test « Poursuite nocturne »).
-    videoPrompt: 'Djeff, the creator: man in his thirties with light skin, a broad face with full cheeks, a short full dark brown beard and moustache, brown eyes under thick dark eyebrows, dark brown hair slicked back and slightly receding at the temples, sturdy build; black shirt open at the collar, gold chain and wooden bead necklace.',
+    videoPrompt: 'Djeff, the creator: man in his thirties with light skin, a broad face with full cheeks, a short full dark brown beard and moustache, brown eyes under thick dark eyebrows, dark brown hair slicked back and slightly receding at the temples, sturdy build; one gold chain with a small cross pendant and a Sicily-shaped pendant.',
     negative: [
       'black Djeff',
       'wrong Djeff ethnicity',
