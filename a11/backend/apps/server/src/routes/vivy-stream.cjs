@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const crypto = require('node:crypto');
 const { execFileSync, spawn } = require('node:child_process');
 const { Readable } = require('node:stream');
@@ -870,9 +871,63 @@ function createVivyStreamStore(options = {}) {
   let state = createInitialState();
   let lifecycleTimer = null;
 
+  // Plusieurs backends (blue/green/yellow/purple) partagent ce fichier (17/09/2026).
+  // Chacun gardait sa copie en memoire et la reecrivait : quand Caddy basculait sur
+  // une couleur en veille, elle ecrasait le direct avec un etat vieux de plusieurs
+  // heures, et son minuteur relancait le jukebox. Deux regles :
+  //   1. on relit le fichier des qu'une autre couleur l'a modifie, avant d'agir ;
+  //   2. seule la couleur qui recoit le trafic du direct (bail `owner.json`) fait
+  //      avancer les phases toutes seules. Les autres attendent que le bail expire.
+  const processOwnerId = options.ownerId || `${os.hostname()}:${process.pid}`;
+  const leasePath = options.leasePath || path.join(path.dirname(statePath), 'owner.json');
+  const leaseStaleMs = Math.max(1000, Number(options.leaseStaleMs || 90_000));
+  const nonOwnerRecheckMs = Math.max(50, Number(options.nonOwnerRecheckMs || 15_000));
+  let lastDiskMtimeMs = 0;
+  let lastLeaseWriteAt = 0;
+
+  function diskMtimeMs() {
+    try {
+      return fs.statSync(statePath).mtimeMs;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** Recharge l'etat si une autre couleur a ecrit le fichier. Rend true si recharge. */
+  function syncFromDisk() {
+    const mtime = diskMtimeMs();
+    if (!mtime || mtime === lastDiskMtimeMs) return false;
+    load();
+    return true;
+  }
+
+  function claimLiveOwnership() {
+    const now = Date.now();
+    if (now - lastLeaseWriteAt < 5000) return;
+    lastLeaseWriteAt = now;
+    try {
+      fs.mkdirSync(path.dirname(leasePath), { recursive: true });
+      fs.writeFileSync(leasePath, JSON.stringify({ owner: processOwnerId, at: new Date(now).toISOString() }), 'utf8');
+    } catch (error) {
+      console.warn('[vivy-stream] live lease write failed:', error?.message || String(error));
+    }
+  }
+
+  function ownsLiveLifecycle() {
+    try {
+      const lease = JSON.parse(fs.readFileSync(leasePath, 'utf8'));
+      if (!lease?.owner || lease.owner === processOwnerId) return true;
+      const at = Date.parse(lease.at);
+      return !Number.isFinite(at) || Date.now() - at > leaseStaleMs;
+    } catch {
+      return true;
+    }
+  }
+
   function load() {
     try {
       if (fs.existsSync(statePath)) {
+        lastDiskMtimeMs = diskMtimeMs();
         const parsed = JSON.parse(fs.readFileSync(statePath, 'utf8'));
         if (parsed?.schema === STREAM_SCHEMA) {
           // Archive before applying the live working-set cap.
@@ -922,6 +977,7 @@ function createVivyStreamStore(options = {}) {
     try {
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
       fs.writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf8');
+      lastDiskMtimeMs = diskMtimeMs();
     } catch (error) {
       console.warn('[vivy-stream] state save failed:', error?.message || String(error));
     }
@@ -1331,7 +1387,18 @@ function createVivyStreamStore(options = {}) {
     }
     if (!Number.isFinite(deadline) || !transition) return;
     const timerDelay = Math.max(10, Math.min(2_147_000_000, deadline - Date.now()));
-    lifecycleTimer = setTimeout(transition, timerDelay);
+    lifecycleTimer = setTimeout(() => {
+      lifecycleTimer = null;
+      if (!ownsLiveLifecycle()) {
+        // Couleur en veille : on ne touche a rien, on revient voir si le bail a expire.
+        lifecycleTimer = setTimeout(scheduleLifecycle, nonOwnerRecheckMs);
+        lifecycleTimer.unref?.();
+        return;
+      }
+      // Etat modifie ailleurs : load() a deja replanifie avec l'etat frais.
+      if (syncFromDisk()) return;
+      transition();
+    }, timerDelay);
     lifecycleTimer.unref?.();
   }
 
@@ -1983,21 +2050,28 @@ function createVivyStreamStore(options = {}) {
   }
 
   load();
+  // Toute operation venue de l'exterieur part de l'etat le plus recent du fichier.
+  const withFreshState = (fn) => (...args) => {
+    syncFromDisk();
+    return fn(...args);
+  };
   return {
-    getState: () => publicState(state),
-    getSongsArchive,
-    addChatMessage,
-    startRound,
-    lockRound,
-    updateLive,
-    resetLiveSession,
-    startIdleJukebox: beginIdleJukebox,
-    addJukeboxTrack,
-    findSongByShareSlug,
+    getState: withFreshState(() => publicState(state)),
+    getSongsArchive: withFreshState(getSongsArchive),
+    addChatMessage: withFreshState(addChatMessage),
+    startRound: withFreshState(startRound),
+    lockRound: withFreshState(lockRound),
+    updateLive: withFreshState(updateLive),
+    resetLiveSession: withFreshState(resetLiveSession),
+    startIdleJukebox: withFreshState(beginIdleJukebox),
+    addJukeboxTrack: withFreshState(addJukeboxTrack),
+    findSongByShareSlug: withFreshState(findSongByShareSlug),
     connectSse,
-    peekNextClipMode,
-    armNextClipMode,
-    consumeNextClipMode,
+    peekNextClipMode: withFreshState(peekNextClipMode),
+    armNextClipMode: withFreshState(armNextClipMode),
+    consumeNextClipMode: withFreshState(consumeNextClipMode),
+    claimLiveOwnership,
+    ownsLiveLifecycle,
   };
 }
 
@@ -2189,6 +2263,13 @@ function createVivyStreamRouter(options = {}) {
     : null);
   if (!store) store = createVivyStreamStore({ ...options, onRoundLocked });
   const writeGuard = options.writeGuard || createWriteGuard();
+
+  // La couleur qui recoit le trafic du direct (overlay, regie, worker Twitch) en
+  // devient proprietaire. Le /health de Docker ou de Caddy ne compte pas.
+  router.use((req, _res, next) => {
+    if (req.path !== '/health') store.claimLiveOwnership?.();
+    next();
+  });
 
   router.get('/health', (_req, res) => {
     res.json({ ok: true, service: 'vivy-stream', schema: STREAM_SCHEMA });

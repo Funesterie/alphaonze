@@ -4593,3 +4593,40 @@ test('Twitch NOSSEN live ne prend pas un mot courant pour une voix du catalogue'
   assert.equal(detectTwitchCatalogVoiceRequest('djeff freestyle infini', voices), null);
   assert.equal(detectTwitchCatalogVoiceRequest('voix de mathis', voices), null);
 });
+
+test('Vivy stream: deux couleurs sur le meme fichier ne se reecrasent plus', async () => {
+  const statePath = path.join(tmpRoot, 'quaternion-shared', 'state.json');
+  fs.rmSync(path.dirname(statePath), { recursive: true, force: true });
+  const active = createVivyStreamStore({ statePath, idleJukeboxEnabled: false, ownerId: 'yellow' });
+  const veille = createVivyStreamStore({ statePath, idleJukeboxEnabled: false, ownerId: 'blue' });
+
+  active.claimLiveOwnership();
+  active.addChatMessage({ username: 'funeste38', message: '!nossen Jeffrey rappe en japonais' });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  // La couleur en veille relit le fichier au lieu de servir sa vieille copie...
+  const vu = veille.getState();
+  assert.equal(vu.round.suggestions.length, 1);
+  assert.match(vu.round.suggestions[0].text, /Jeffrey/);
+
+  // ...et sa propre ecriture part de cet etat frais : rien n'est perdu.
+  veille.addChatMessage({ username: 'viewer', message: '!nossen ballade au clair de lune' });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const final = active.getState();
+  assert.deepEqual(final.round.suggestions.map((entry) => entry.id), ['S1', 'S2']);
+
+  // Seule la couleur qui recoit le trafic fait avancer le direct toute seule.
+  assert.equal(active.ownsLiveLifecycle(), true);
+  assert.equal(veille.ownsLiveLifecycle(), false);
+});
+
+test('Vivy stream: une couleur en veille reprend la main quand le bail expire', async () => {
+  const statePath = path.join(tmpRoot, 'quaternion-lease', 'state.json');
+  fs.rmSync(path.dirname(statePath), { recursive: true, force: true });
+  const ancienne = createVivyStreamStore({ statePath, idleJukeboxEnabled: false, ownerId: 'green', leaseStaleMs: 1000 });
+  const nouvelle = createVivyStreamStore({ statePath, idleJukeboxEnabled: false, ownerId: 'purple', leaseStaleMs: 1000 });
+  ancienne.claimLiveOwnership();
+  assert.equal(nouvelle.ownsLiveLifecycle(), false);
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+  assert.equal(nouvelle.ownsLiveLifecycle(), true);
+});
