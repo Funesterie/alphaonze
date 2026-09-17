@@ -984,8 +984,10 @@ function createVivyStreamStore(options = {}) {
   function ensureJukebox() {
     state.jukebox = state.jukebox && typeof state.jukebox === 'object'
       ? state.jukebox
-      : { tracks: [], lastTrackId: '', lastScanAt: null };
+      : { tracks: [], lastTrackId: '', lastScanAt: null, playedIds: [] };
     state.jukebox.tracks = Array.isArray(state.jukebox.tracks) ? state.jukebox.tracks : [];
+    // Historique du shuffle: on ne rejoue un morceau qu'une fois tout le catalogue passe.
+    state.jukebox.playedIds = Array.isArray(state.jukebox.playedIds) ? state.jukebox.playedIds : [];
     return state.jukebox;
   }
 
@@ -1139,11 +1141,29 @@ function createVivyStreamStore(options = {}) {
     const tracks = getJukeboxTracks();
     if (!tracks.length) return null;
     const jukebox = ensureJukebox();
-    const candidates = tracks.length > 1
-      ? tracks.filter((track) => track.id !== jukebox.lastTrackId)
-      : tracks;
-    const pool = candidates.length ? candidates : tracks;
-    return pool[randomInt(pool.length)];
+    if (tracks.length === 1) return tracks[0];
+    const validIds = new Set(tracks.map((track) => track.id));
+    // On purge l'historique des morceaux disparus du catalogue.
+    jukebox.playedIds = (jukebox.playedIds || []).filter((id) => validIds.has(id));
+    const played = new Set(jukebox.playedIds);
+    // Morceaux pas encore joues dans ce cycle de shuffle.
+    let remaining = tracks.filter((track) => !played.has(track.id));
+    if (!remaining.length) {
+      // Cycle termine: on remelange tout le catalogue, en evitant de rejouer
+      // immediatement le dernier morceau entendu.
+      jukebox.playedIds = [];
+      remaining = tracks.filter((track) => track.id !== jukebox.lastTrackId);
+      if (!remaining.length) remaining = tracks;
+    }
+    const picked = remaining[randomInt(remaining.length)];
+    if (picked && picked.id) {
+      jukebox.playedIds.push(picked.id);
+      // Garde-fou memoire: l'historique ne depasse jamais la taille du catalogue.
+      if (jukebox.playedIds.length > tracks.length) {
+        jukebox.playedIds = jukebox.playedIds.slice(-tracks.length);
+      }
+    }
+    return picked;
   }
 
   function shouldStartIdleJukebox({ allowInterlude = false } = {}) {
