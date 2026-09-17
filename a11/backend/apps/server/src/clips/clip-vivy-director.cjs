@@ -643,7 +643,9 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature,
     "panoramique, orbite lente), et le moment de la performance.\n" +
     "4. Décris chaque plan comme une consigne de tournage, pas comme un nouveau décor. " +
     "Rappelle brièvement le lieu dans chaque plan pour la continuité.\n\n" +
-    "Chaque plan = 1 phrase anglaise.\n" +
+    // 17/09/2026, Djeff : pas de consigne negative dans Comfy, ca ne marche pas.
+    "Chaque plan = 1 phrase anglaise, affirmative : decris seulement ce qui se voit. " +
+    "Le generateur video ne comprend pas les negations (no, never, without, not) et les prend a l'envers.\n" +
     (String(render || process.env.NOSSEN_CLIP_RENDER || "").trim().toLowerCase() === "anime"
       ? "Style anime cinématique.\n\n"
       : "Style : film en prises de vue réelles, photoréaliste, acteurs réels, grain 35 mm.\n\n") +

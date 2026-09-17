@@ -102,7 +102,7 @@ test('l element recurrent est impose au Director et repete dans chaque plan', ()
   const { elementRecurrentBrief, directionAvecElementRecurrent } = require('../src/clips/clip-generator-v2.cjs');
   const moto = 'black vintage cafe racer motorcycle with a round headlight';
   assert.match(elementRecurrentBrief({ elementRecurrent: moto }), /exact same black vintage cafe racer motorcycle/);
-  assert.match(elementRecurrentBrief({ elementRecurrent: moto }), /never change it/);
+  assert.doesNotMatch(elementRecurrentBrief({ elementRecurrent: moto }), /\b(never|no|not|without)\b/i, 'Comfy prend les negations a l envers');
   assert.equal(elementRecurrentBrief({}), '');
   assert.equal(directionAvecElementRecurrent({ direction: 'nuit pluvieuse' }), 'nuit pluvieuse');
   assert.match(directionAvecElementRecurrent({ direction: 'nuit pluvieuse', elementRecurrent: moto }), /^nuit pluvieuse Element recurrent obligatoire/);

@@ -3148,7 +3148,7 @@ test('Vivy Twitch cover prompts stay visual and image generation can return a pu
   // « méditerranéen, peau olive » faisait inventer un autre homme.
   assert.match(identityPrompt, /peau claire, visage large aux joues pleines/i);
   assert.doesNotMatch(identityPrompt, /peau olive|visage ovale|mèche claire|couettes|gothic electro-pop/i);
-  assert.match(identityPrompt, /ne pas le rajeunir/i);
+  assert.match(identityPrompt, /Toujours cet homme-là/i);
   const marvinPack = buildVivyVisualIdentityPack({
     publicTitle: 'Marvin Bip Bip 30 ans',
     winner: { text: 'clip anniversaire Marvin avec Charlène, Léna et Elio' },
@@ -3444,7 +3444,7 @@ test('Vivy Twitch clip animates the cover with the trusted asynchronous video en
     assert.equal(captured.body.visualOnly, true);
     assert.match(captured.body.negative_prompt, /ghost face/i);
     assert.match(captured.prompt, /Référence visuelle créateur humain/i);
-    assert.match(captured.prompt, /ne pas le rajeunir/i);
+    assert.match(captured.prompt, /Toujours cet homme-là/i);
     assert.equal(captured.body.referenceImageUrls[0], 'https://files.funesterie.me/covers/djeff-rebelle.webp');
     assert.ok(captured.body.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-adulte'));
     assert.ok(!captured.body.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-05'));

@@ -274,7 +274,7 @@ function extractComfyOutputUrl(response) {
 // continuite : la meme description est donnee au Director et repetee dans chaque plan.
 function elementRecurrentBrief(config = {}) {
   const element = String((config && config.elementRecurrent) || '').trim();
-  return element ? ` The exact same ${element} appears in every shot, identical model, colors and details; never change it.` : '';
+  return element ? ` The exact same ${element} appears in every shot with the identical model, colors and details.` : '';
 }
 
 function directionAvecElementRecurrent(config = {}) {
@@ -1178,7 +1178,7 @@ async function generateClip(config = {}, {
     : '';
   // Le lieu est rappele sur chaque segment, comme l'identite : c'est ce qui
   // empeche le clip de partir dans six endroits differents.
-  const lieuBrief = lieu ? ` The entire clip is shot in one single location: ${lieu}. Never change location.` : '';
+  const lieuBrief = lieu ? ` The entire clip is shot in one single location: ${lieu}. Every shot stays in this same location.` : '';
   // Refus de paiement : bascule entre credits mensuels et bonus (voir estRefusPaiement).
   const lireSoldeReprise = typeof lireSoldeImpl === 'function'
     ? lireSoldeImpl
