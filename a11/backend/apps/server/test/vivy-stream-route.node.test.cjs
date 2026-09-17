@@ -4494,3 +4494,102 @@ test('Twitch NOSSEN live transmet la langue demandee au routage, aux paroles et 
   assert.equal(seen.production, 'ja');
   assert.match(seen.messages[0], /Langue des paroles: japonais/);
 });
+
+function buildTestLyricsFr(tag = 'A') {
+  return [
+    '[Intro]', `La galaxie se fend quand je pose le premier mot ${tag}`,
+    '[Verse 1]', 'Les planètes font la queue devant le micro', 'Je rime à la vitesse où la lumière se casse', 'Chaque étoile me répond en écho',
+    'Le vide applaudit quand la mesure passe',
+    '[Chorus]', 'Freestyle infini jusqu’à la galaxie éclatée', 'Je remonte le temps sur une basse étoilée',
+    '[Verse 2]', 'Les comètes me doublent, je les rattrape au flow', 'Saturne perd ses anneaux sur un contretemps',
+    'Je signe dans la poussière un couplet de trop', 'Et la nuit me rend la monnaie en diamants',
+    '[Final Chorus]', 'Freestyle infini jusqu’à la galaxie éclatée', 'Le dernier mot brille et la boucle est bouclée',
+  ].join('\n');
+}
+
+test('Twitch NOSSEN live redonne une chance au LLM quand le redacteur rend son gabarit de secours', async () => {
+  const appels = [];
+  const logs = [];
+  let productionInput = null;
+  const runner = createVivyStreamNossenRunner({
+    routeIntent: async () => createTestVocalIntentPlan(),
+    routeComposition: async () => ({ artists: ['djeff'], songMood: 'rap cosmique' }),
+    readVoiceCatalog: () => ({ voices: [] }),
+    writeLyrics: async (input) => {
+      appels.push(input.conversationId);
+      if (appels.length === 1) {
+        return { aiMode: 'deterministic_fallback', llmError: 'vivy_song_llm_empty_output', publicLyrics: '[Verse 2 - Djeff]\nHors refrain, interdiction de reprendre la même idée ou le même moule de phrase.\n'.repeat(4) };
+      }
+      return { aiMode: 'llm', publicLyrics: buildTestLyricsFr('LLM') };
+    },
+    startMusic: async (_mode, input) => {
+      productionInput = input;
+      return { media: { url: '/api/vivy/studio/assets/retry.mp3', path: '/runtime/retry.mp3', durationSeconds: 200 } };
+    },
+    pollMusic: async () => { throw new Error('poll should not be needed'); },
+    probeDuration: async () => 200,
+    updateLive: () => {},
+    sleep: async () => {},
+    logger: { info: () => {}, warn: (...args) => logs.push(args.join(' ')), error: () => {} },
+  });
+  const result = await runner.run({
+    roundId: 'round-canned-retry',
+    winner: { id: 'S1', text: "djeff freestyle infini jusqu'a la galaxie éclatée", author: 'funeste38' },
+  });
+  assert.equal(result.ok, true);
+  assert.ok(appels.length >= 2);
+  assert.match(appels[1], /-retry$/);
+  assert.ok(logs.some((line) => /canned songcraft/.test(line) && /vivy_song_llm_empty_output/.test(line)));
+  const paroles = JSON.stringify(productionInput);
+  assert.doesNotMatch(paroles, /interdiction de reprendre/i);
+  assert.equal(productionInput.voiceCatalogName, undefined);
+});
+
+test('Twitch NOSSEN live envoie la voix Jeffrey du catalogue quand le chat la demande', async () => {
+  let productionInput = null;
+  let castParoles = null;
+  const runner = createVivyStreamNossenRunner({
+    routeIntent: async () => createTestVocalIntentPlan(),
+    routeComposition: async () => ({ artists: ['djeff', 'vivy'], songMood: 'rap français' }),
+    readVoiceCatalog: () => ({
+      voices: [
+        { name: 'ile', label: 'Ilé', gender: 'femme', active: true, voiceId: 'x'.repeat(32) },
+        { name: 'jeffrey', label: 'Jeffrey', gender: 'homme', active: true, voiceId: '35d06b48ffc9264cfdb388b0a13eefc3' },
+      ],
+    }),
+    writeLyrics: async (input) => {
+      castParoles = input.songArtists;
+      return { aiMode: 'llm', publicLyrics: buildTestLyricsFr('J') };
+    },
+    startMusic: async (_mode, input) => {
+      productionInput = input;
+      return { media: { url: '/api/vivy/studio/assets/jeffrey.mp3', path: '/runtime/jeffrey.mp3', durationSeconds: 200 } };
+    },
+    pollMusic: async () => { throw new Error('poll should not be needed'); },
+    probeDuration: async () => 200,
+    updateLive: () => {},
+    sleep: async () => {},
+  });
+  await runner.run({
+    roundId: 'round-jeffrey',
+    winner: { id: 'S1', text: 'freestyle cosmique avec la voix Jeffrey', author: 'funeste38' },
+  });
+  assert.deepEqual(castParoles, ['djeff']);
+  assert.equal(productionInput.voiceCatalogName, 'jeffrey');
+  assert.equal(productionInput.preserveSelectedVoice, true);
+  assert.deepEqual(productionInput.songArtists, ['djeff']);
+});
+
+test('Twitch NOSSEN live ne prend pas un mot courant pour une voix du catalogue', () => {
+  const { detectTwitchCatalogVoiceRequest } = require('../src/vivy/twitch-nossen-runner.cjs');
+  const voices = [
+    { name: 'ile', gender: 'femme', active: true },
+    { name: 'jeffrey', gender: 'homme', active: true },
+    { name: 'mathis', gender: 'homme', active: false },
+  ];
+  assert.equal(detectTwitchCatalogVoiceRequest('un son sur une ile deserte', voices), null);
+  assert.equal(detectTwitchCatalogVoiceRequest('ballade avec la voix ile', voices)?.name, 'ile');
+  assert.equal(detectTwitchCatalogVoiceRequest('Jeffrey rappe sur la lune', voices)?.name, 'jeffrey');
+  assert.equal(detectTwitchCatalogVoiceRequest('djeff freestyle infini', voices), null);
+  assert.equal(detectTwitchCatalogVoiceRequest('voix de mathis', voices), null);
+});

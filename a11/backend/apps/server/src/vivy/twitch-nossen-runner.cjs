@@ -26,6 +26,7 @@ const {
 const { isCoverTextStampEnabled, stampCoverText } = require('./cover-text-stamp.cjs');
 const { uploadBufferToR2 } = require('../../lib/file-storage.cjs');
 const { pickVivyOutfitBrief } = require('./wardrobe.cjs');
+const { readVoiceCatalog } = require('../music/voice-catalog.cjs');
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_TARGET_DURATION_SECONDS = 210;
@@ -2620,6 +2621,31 @@ const TWITCH_SONG_LANGUAGE_LABELS_FR = Object.freeze({
   zh: 'chinois mandarin',
 });
 
+// Voix du catalogue demandée dans le chat (17/09/2026). Les artistes officiels (Djeff,
+// Vivy…) ne reçoivent jamais d'identifiant Suno : seule une voix du catalogue nommée
+// explicitement part en persona. Djeff a appelé sa vraie voix « Jeffrey » pour ne pas
+// la confondre avec le Djeff de base. On reconnaît « voix <nom> », ou le nom seul s'il
+// est assez long pour ne pas être un mot courant.
+function detectTwitchCatalogVoiceRequest(text = '', voices = []) {
+  const folded = String(text || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+  if (!folded) return null;
+  for (const voice of Array.isArray(voices) ? voices : []) {
+    if (!voice || voice.active === false || !voice.name) continue;
+    const names = [voice.name, ...(Array.isArray(voice.aliases) ? voice.aliases : [])]
+      .map((n) => String(n || '').toLowerCase().replace(/[^a-z0-9-]/g, ''))
+      .filter(Boolean);
+    for (const name of names) {
+      const explicit = new RegExp(`\\bvoix\\s+(?:de\\s+|d')?${name}\\b`).test(folded);
+      const bare = name.length >= 6 && new RegExp(`\\b${name}\\b`).test(folded);
+      if (explicit || bare) return voice;
+    }
+  }
+  return null;
+}
+
 function detectTwitchRequestedSongLanguage(text = '') {
   const folded = String(text || '')
     .normalize('NFD')
@@ -2957,9 +2983,24 @@ function createVivyStreamNossenRunner(options = {}) {
         );
         musicProvider = 'suno';
       }
-      const artists = !instrumentalMode && Array.isArray(routing?.artists) && routing.artists.length
-        ? routing.artists.slice(0, 2)
-        : instrumentalMode ? [] : ['vivy'];
+      const catalogVoice = instrumentalMode
+        ? null
+        : detectTwitchCatalogVoiceRequest(rawWinner.text, (options.readVoiceCatalog || readVoiceCatalog)().voices);
+      // Une persona Suno porte toute la chanson : une voix du catalogue chante seule.
+      const artists = catalogVoice
+        ? [catalogVoice.gender === 'femme' ? 'vivy' : 'djeff']
+        : !instrumentalMode && Array.isArray(routing?.artists) && routing.artists.length
+          ? routing.artists.slice(0, 2)
+          : instrumentalMode ? [] : ['vivy'];
+      if (catalogVoice) {
+        routing = { ...routing, artists };
+        logger.info?.(
+          '[VivyVoiceRouting] round=%s catalog voice requested in chat=%s cast=%s',
+          roundId,
+          catalogVoice.name,
+          artists.join('+')
+        );
+      }
       const lyricScope = resolveTwitchVivyLyricScope({
         winner,
         seed,
@@ -3041,7 +3082,7 @@ function createVivyStreamNossenRunner(options = {}) {
         let lyricsPayload = null;
         try {
           const lyricWriteStartedAt = Date.now();
-          lyricsPayload = await withTimeout(() => writeLyrics({
+          const lyricsWriteInput = {
             mode: 'song',
             // Sans ce drapeau, la consigne du live (« brief », « casting vocal: vivy + djeff »,
             // « écris ») était prise pour une demande de brief Djeff Cypher : Vivy rendait un
@@ -3065,7 +3106,37 @@ function createVivyStreamNossenRunner(options = {}) {
             lyricScope,
             disableSongcraftFallback: true,
             allowEmergencySongcraftFallback: true,
-          }, req), lyricWriteTimeoutMs, 'vivy_lyrics_write');
+          };
+          lyricsPayload = await withTimeout(() => writeLyrics(lyricsWriteInput, req), lyricWriteTimeoutMs, 'vivy_lyrics_write');
+          // Gabarit de secours du rédacteur (17/09) : il fabrique des paroles à partir de la
+          // consigne elle-même, et le live a chanté « Hors refrain, interdiction de reprendre
+          // la même idée » ou « Vivy choisit une ampleur équilibrée ». L'erreur réelle était
+          // avalée : on la trace, et on redonne une chance au LLM avant de s'y résoudre.
+          if (lyricsPayload?.aiMode === 'deterministic_fallback') {
+            logger.warn?.(
+              '[vivy-twitch-nossen] round=%s lyrics writer returned its canned songcraft llmError=%s; retrying the LLM once',
+              roundId,
+              cleanText(lyricsPayload?.llmError || '', 'inconnue', 180)
+            );
+            const retryPayload = await withTimeout(() => writeLyrics({
+              ...lyricsWriteInput,
+              conversationId: `${conversationId}-retry`,
+              sessionId: `${sessionId}-retry`,
+            }, req), lyricWriteTimeoutMs, 'vivy_lyrics_write_retry');
+            if (retryPayload && retryPayload.aiMode !== 'deterministic_fallback') {
+              lyricsPayload = retryPayload;
+            } else {
+              logger.warn?.(
+                '[vivy-twitch-nossen] round=%s lyrics writer still canned llmError=%s; using contextual emergency lyrics',
+                roundId,
+                cleanText(retryPayload?.llmError || '', 'inconnue', 180)
+              );
+              usedEmergencyLyricsFallback = true;
+              lyricsPayload = {
+                publicLyrics: buildTwitchEmergencyLyrics({ winner, routing, seed, intentPlan, lyricScope, artists }),
+              };
+            }
+          }
           logger.info?.(
             '[vivy-twitch-nossen] round=%s lyrics write completed latencyMs=%s provider=%s model=%s chars=%s',
             roundId,
@@ -3338,6 +3409,15 @@ function createVivyStreamNossenRunner(options = {}) {
               cleanText(rewritePayload?.model || '', '', 120),
               cleanText(rewritePayload?.vocalLyrics || rewritePayload?.publicLyrics || rewritePayload?.assistant || rewritePayload?.content, '', lyricScope.maxChars).length
             );
+            if (rewritePayload?.aiMode === 'deterministic_fallback') {
+              // Une « réécriture » en gabarit de secours chanterait la consigne : on garde le brouillon.
+              logger.warn?.(
+                '[vivy-twitch-nossen] round=%s lyrics rewrite returned canned songcraft llmError=%s; keeping cleaned first draft',
+                roundId,
+                cleanText(rewritePayload?.llmError || '', 'inconnue', 180)
+              );
+              rewritePayload = null;
+            }
           } catch (error) {
             logger.warn?.(
               '[vivy-twitch-nossen] round=%s lyrics rewrite skipped error=%s; keeping cleaned first draft',
@@ -3797,6 +3877,7 @@ function createVivyStreamNossenRunner(options = {}) {
       const productionInput = {
         mode: 'song',
         language: songLanguage,
+        ...(catalogVoice ? { voiceCatalogName: catalogVoice.name, preserveSelectedVoice: true } : {}),
         conversationId,
         sessionId,
         sessionName: `Twitch Live - ${winner.text}`,
@@ -4335,6 +4416,7 @@ function createVivyStreamNossenRunner(options = {}) {
 }
 
 module.exports = {
+  detectTwitchCatalogVoiceRequest,
   detectTwitchRequestedSongLanguage,
   buildTwitchLyricsRequest,
   buildTwitchCoverNegativePrompt,

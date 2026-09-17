@@ -32,8 +32,11 @@ const CONTROLE_PERIME_MS = 15 * 60 * 1000;
 // Djeff : son timbre de reference, designe par lui le 13/09 (« essence pure eclat »),
 // voix isolee par Demucs, secondes 7 a 37. Il separe mieux que vagues-psy : temoins
 // +0.43 / +0.39, chanson de Vivy -0.41.
+// Jeffrey (17/09) : la vraie voix de Djeff dans le catalogue, renommee pour ne pas la
+// confondre avec le Djeff de base. Meme timbre de reference.
 const REFERENCES_PAR_DEFAUT = {
   djeff: { cible: 'djeff-timbre-essence-vocals.wav', contraste: 'vivy-voix-reference.mp3' },
+  jeffrey: { cible: 'djeff-timbre-essence-vocals.wav', contraste: 'vivy-voix-reference.mp3' },
 };
 
 function flag(env, key, defaut) {
@@ -52,7 +55,7 @@ function cleVoix(voix) {
 }
 
 function voixSuivies(env) {
-  return new Set(String(env?.A11_VOICE_CHECK_VOICES || 'djeff')
+  return new Set(String(env?.A11_VOICE_CHECK_VOICES || 'djeff,jeffrey')
     .split(/[,;\s]+/).map(cleVoix).filter(Boolean));
 }
 
