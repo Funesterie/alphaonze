@@ -8507,3 +8507,16 @@ test('Vivy connait son apparence officielle en discussion, pas en ecriture de ch
   assert.match(chat, /veste en cuir noir/);
   assert.doesNotMatch(buildVivySystemPrompt('song', 'fr', {}), /Ton apparence officielle/);
 });
+
+test('les paroles chantees par Jeffrey sont ecrites avec la plume Djeff Engine', () => {
+  const studio = require('../src/routes/vivy-studio.cjs');
+  const { buildDjeffSystemPrompt } = require('../src/persona/persona-engine.cjs');
+  const plume = studio.buildJeffreyDjeffEnginePen({ voiceCatalogName: 'jeffrey' });
+  if (buildDjeffSystemPrompt()) {
+    assert.match(plume, /plume de Djeff Engine/);
+  } else {
+    assert.equal(plume, '', 'sans profil Djeff actif, aucune plume inventee');
+  }
+  assert.equal(studio.buildJeffreyDjeffEnginePen({ voiceCatalogName: 'ile' }), '');
+  assert.equal(studio.buildJeffreyDjeffEnginePen({}), '');
+});

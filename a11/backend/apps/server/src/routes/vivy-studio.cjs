@@ -3891,6 +3891,22 @@ function buildVivyAdnEnrichment() {
     return String();
   }
 }
+// La plume de Jeffrey (17/09/2026). Jeffrey est la vraie voix de Djeff au catalogue ;
+// DJEFF_PERSONA_ENGINE (runtime/personas/djeff, valide par Djeff) est sa facon de
+// penser et d'ecrire. Les paroles d'une chanson chantee par Jeffrey etaient pourtant
+// ecrites par Vivy avec sa seule persona : Djeff demande de brancher l'une sur l'autre.
+function buildJeffreyDjeffEnginePen(input = {}) {
+  const voix = cleanOneLine(input.voiceCatalogName || input.catalogVoiceName, '', 80).toLowerCase();
+  if (voix !== 'jeffrey') return '';
+  const persona = buildDjeffSystemPrompt();
+  if (!persona) return '';
+  return [
+    "Ces paroles sont chantées par Jeffrey, la vraie voix de Djeff. Écris-les avec la plume de Djeff Engine, sa persona validée, décrite ci-dessous : son regard, son vocabulaire, sa façon de reprendre la narration.",
+    persona,
+    "Tu gardes le sujet, la langue et la structure de chanson demandés ; seule la plume change. Les secrets d'infrastructure restent hors des paroles.",
+  ].join('\n\n');
+}
+
 // Son apparence (17/09/2026) : interrogee sur son avatar, Vivy inventait « une chanteuse
 // IA japonaise, plutot abstraite » -- rien dans ses consignes ne decrivait son allure. La
 // fiche visuelle officielle, celle des pochettes et des clips, devient sa reference.
@@ -8106,8 +8122,10 @@ async function buildVivyAiChat(input, req) {
       ? await buildSongcraftGraphContext({ ...input, message: intentMessage || message }, process.env)
       : await buildChatGraphContext(intentMessage || message, process.env);
     const systemPrompt = buildVivySystemPrompt(mode, language, input, songcraftGraphContext);
+    const plumeJeffrey = mode === 'song' ? buildJeffreyDjeffEnginePen(input) : '';
     const messages = [
       { role: 'system', content: systemPrompt },
+      plumeJeffrey ? { role: 'system', content: plumeJeffrey } : null,
       memoryContext ? { role: 'system', content: `Mémoire Vivy récente, privée pour cette session:\n${memoryContext}` } : null,
       ...history,
       { role: 'user', content: userContent },
@@ -13403,6 +13421,7 @@ module.exports = {
   buildVivyMusicPrompt,
   buildVivyChat,
   buildVivyAiChat,
+  buildJeffreyDjeffEnginePen,
   buildDjeffAiChat,
   buildDjeffModeSystemPrompt,
   isDjeffCypherRequest,

@@ -3089,6 +3089,8 @@ function createVivyStreamNossenRunner(options = {}) {
             // brief d'image et le live chantait les paroles de secours « cypher » de Djeff.
             internalSongGeneration: true,
             language: songLanguage,
+            // Jeffrey demande : la plume Djeff Engine ecrit les paroles (17/09/2026).
+            ...(catalogVoice ? { voiceCatalogName: catalogVoice.name } : {}),
             conversationId,
             sessionId,
             sessionName: `Twitch Live - ${winner.text}`,
@@ -3348,6 +3350,7 @@ function createVivyStreamNossenRunner(options = {}) {
               mode: 'song',
               internalSongGeneration: true,
               language: songLanguage,
+              ...(catalogVoice ? { voiceCatalogName: catalogVoice.name } : {}),
               conversationId: rewriteConversationId,
               sessionId: rewriteSessionId,
               sessionName: `Twitch Live - ${winner.text} - rewrite`,
