@@ -4804,3 +4804,18 @@ test('telechargement : le fichier porte le titre de la chanson, pas le nom techn
   assert.ok(buildStreamDownloadPath(asset, 'audio', 'Titre clair').includes('name=Titre+clair'));
   assert.doesNotMatch(buildStreamDownloadPath(asset, 'audio'), /name=/);
 });
+
+test('round Twitch : le budget LLM ne meurt pas avant l ecriture des paroles', () => {
+  const runner = require('../src/vivy/twitch-nossen-runner.cjs');
+  const req = runner.createTrustedTwitchRequest();
+  // 17/09/2026 (« Tokyo Ghoul ») : l'echeance de 92 s etait posee sur la requete
+  // partagee par tout le round ; intention + routage l'epuisaient et les paroles
+  // tombaient sur vivy_llm_deadline_exceeded, donc sur le gabarit de secours.
+  const restant = req.__vivyRequestDeadlineAt - Date.now();
+  assert.ok(restant > 4 * 60 * 1000, 'un round de fond a un vrai budget, ici ' + Math.round(restant / 1000) + 's');
+  req.__vivyRequestDeadlineAt = Date.now() + 1000;
+  runner.refreshTwitchLlmDeadline(req);
+  assert.ok(req.__vivyRequestDeadlineAt - Date.now() > 4 * 60 * 1000, 'chaque etape longue retrouve son budget');
+  assert.equal(runner.resolveTwitchLlmBudgetMs({ VIVY_STREAM_LLM_BUDGET_MS: '120000' }), 120000);
+  assert.equal(runner.resolveTwitchLlmBudgetMs({ VIVY_STREAM_LLM_BUDGET_MS: '10' }), 60000, 'plancher');
+});

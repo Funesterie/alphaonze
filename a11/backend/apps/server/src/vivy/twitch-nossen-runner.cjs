@@ -675,8 +675,32 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Budget LLM d'un round Twitch. 17/09/2026, « Tokyo Ghoul » : le round a rendu les
+ * paroles de secours et Djeff a entendu un texte casse. Ni Suno ni une limite de
+ * paroles : l'echeance LLM (92 s par defaut) est posee sur la requete, ici partagee
+ * par TOUT le round. Intention, routage et contexte social l'avaient deja consommee,
+ * et l'ecriture des paroles mourait sur vivy_llm_deadline_exceeded a 73 s.
+ * Ce budget-la protege une page web derriere Cloudflare ; un round de fond n'en a
+ * pas besoin. Il est donc relarge ici, et RAFRAICHI avant chaque etape longue.
+ */
+const TWITCH_LLM_BUDGET_MS_DEFAULT = 8 * 60 * 1000;
+
+function resolveTwitchLlmBudgetMs(env = process.env) {
+  const brut = Number(env.VIVY_STREAM_LLM_BUDGET_MS || TWITCH_LLM_BUDGET_MS_DEFAULT);
+  return Math.max(60000, Math.min(30 * 60 * 1000, Number.isFinite(brut) && brut > 0 ? brut : TWITCH_LLM_BUDGET_MS_DEFAULT));
+}
+
+/** Redonne son budget complet a la requete avant une etape LLM longue. */
+function refreshTwitchLlmDeadline(req, env = process.env) {
+  if (!req || typeof req !== 'object') return req;
+  req.__vivyRequestDeadlineAt = Date.now() + resolveTwitchLlmBudgetMs(env);
+  return req;
+}
+
 function createTrustedTwitchRequest() {
   return {
+    __vivyRequestDeadlineAt: Date.now() + resolveTwitchLlmBudgetMs(),
     protocol: 'https',
     headers: { host: 'vivy.funesterie.me' },
     user: {
@@ -3109,7 +3133,7 @@ function createVivyStreamNossenRunner(options = {}) {
             disableSongcraftFallback: true,
             allowEmergencySongcraftFallback: true,
           };
-          lyricsPayload = await withTimeout(() => writeLyrics(lyricsWriteInput, req), lyricWriteTimeoutMs, 'vivy_lyrics_write');
+          lyricsPayload = await withTimeout(() => writeLyrics(lyricsWriteInput, refreshTwitchLlmDeadline(req)), lyricWriteTimeoutMs, 'vivy_lyrics_write');
           // Gabarit de secours du rédacteur (17/09) : il fabrique des paroles à partir de la
           // consigne elle-même, et le live a chanté « Hors refrain, interdiction de reprendre
           // la même idée » ou « Vivy choisit une ampleur équilibrée ». L'erreur réelle était
@@ -3124,7 +3148,7 @@ function createVivyStreamNossenRunner(options = {}) {
               ...lyricsWriteInput,
               conversationId: `${conversationId}-retry`,
               sessionId: `${sessionId}-retry`,
-            }, req), lyricWriteTimeoutMs, 'vivy_lyrics_write_retry');
+            }, refreshTwitchLlmDeadline(req)), lyricWriteTimeoutMs, 'vivy_lyrics_write_retry');
             if (retryPayload && retryPayload.aiMode !== 'deterministic_fallback') {
               lyricsPayload = retryPayload;
             } else {
@@ -3403,7 +3427,7 @@ function createVivyStreamNossenRunner(options = {}) {
               lyricScope,
               disableSongcraftFallback: true,
               allowEmergencySongcraftFallback: true,
-            }, req), lyricRewriteTimeoutMs, 'vivy_lyrics_rewrite');
+            }, refreshTwitchLlmDeadline(req)), lyricRewriteTimeoutMs, 'vivy_lyrics_rewrite');
             logger.info?.(
               '[vivy-twitch-nossen] round=%s lyrics rewrite completed latencyMs=%s provider=%s model=%s chars=%s',
               roundId,
@@ -4429,6 +4453,8 @@ module.exports = {
   buildVocalExtensionPrompt,
   buildTwitchEmergencyLyrics,
   createTrustedTwitchRequest,
+  refreshTwitchLlmDeadline,
+  resolveTwitchLlmBudgetMs,
   createVivyStreamNossenRunner,
   extractCleanTwitchLyricsBlock,
   extractTwitchMusicProviderDirective,
