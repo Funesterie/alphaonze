@@ -1193,6 +1193,18 @@ function createVivyStreamStore(options = {}) {
       seen.add(url);
       pool.push(normalized);
     }
+    // 17/09/2026, Djeff : « le jukebox avec TOUTES les chansons qu'on a ». L'etat
+    // live est un ensemble de travail borne (80 pistes + 120 morceaux recents) ;
+    // le catalogue complet vit dans l'archive disque, titres Claude compris. On la
+    // fusionne ici : c'est une lecture mise en cache, et l'etat reste petit.
+    for (const piste of getSongsArchive()) {
+      const url = String(piste?.trackUrl || '');
+      if (!url || !piste.available || seen.has(url) || isProviderOnlyTrackUrl(url)) continue;
+      const normalized = normalizeJukeboxTrack({ ...piste, source: piste.source || 'archive' });
+      if (!normalized) continue;
+      seen.add(url);
+      pool.push(normalized);
+    }
     return pool;
   }
 
@@ -1301,6 +1313,10 @@ function createVivyStreamStore(options = {}) {
       || (JUKEBOX_CLIP_EVERY > 0 && jukebox.playsSinceClip > JUKEBOX_CLIP_EVERY);
     const track = (forcerClip ? selectJukeboxClipTrack() : null) || selectJukeboxTrack();
     if (!track) return publicState(state);
+    // Ce que la régie doit voir : la taille reelle du melange, pas les 80 pistes
+    // gardees dans l'etat.
+    jukebox.poolCount = getJukeboxTracks().length;
+    jukebox.clipCount = getJukeboxClipTracks().length;
     const isClipShowcase = Boolean(trackVideoUrl(track));
     if (isClipShowcase) {
       jukebox.lastClipId = track.id;

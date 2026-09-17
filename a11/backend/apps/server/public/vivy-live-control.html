@@ -301,10 +301,15 @@
         $('stStars').textContent = (state.learning && state.learning.averageStars) || 0;
         var jb = state.jukebox || {};
         var pistes = Array.isArray(jb.tracks) ? jb.tracks : [];
-        var clips = pistes.filter(function (t) { return t && (t.shareVideoUrl || t.coverVideoUrl); }).length;
+        // poolCount/clipCount viennent du serveur : l'etat ne garde que 80 pistes,
+        // le melange reel couvre toute l'archive.
+        var total = Number(jb.poolCount) || pistes.length;
+        var clips = Number.isFinite(Number(jb.clipCount))
+          ? Number(jb.clipCount)
+          : pistes.filter(function (t) { return t && (t.shareVideoUrl || t.coverVideoUrl); }).length;
         var modeClips = jb.clipsOnly === true;
-        $('stJukebox').textContent = pistes.length
-          ? pistes.length + ' au shuffle dont ' + clips + ' clip' + (clips > 1 ? 's' : '')
+        $('stJukebox').textContent = total
+          ? total + ' au shuffle dont ' + clips + ' clip' + (clips > 1 ? 's' : '')
             + (modeClips ? ' · mode clips' : '')
             + (cur.clipShowcase ? ' · en cours: clip' : (cur.phase === 'interlude' ? ' · en cours: chanson' : ''))
           : '—';
