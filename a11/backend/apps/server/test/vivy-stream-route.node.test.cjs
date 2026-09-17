@@ -4445,3 +4445,52 @@ test('la forme par defaut de /state ne bouge pas', async () => {
     assert.equal(Object.prototype.hasOwnProperty.call(complet, 'songsCount'), false);
   });
 });
+
+test('Twitch NOSSEN live detecte la langue demandee sans prendre un style pour une langue', () => {
+  const { detectTwitchRequestedSongLanguage } = require('../src/vivy/twitch-nossen-runner.cjs');
+  assert.equal(detectTwitchRequestedSongLanguage('!nossen SAO, Kirito et Asuna, opening anime en japonais'), 'ja');
+  assert.equal(detectTwitchRequestedSongLanguage('une ballade in English sur la pluie'), 'en');
+  assert.equal(detectTwitchRequestedSongLanguage('chanson en espagnol sur la plage'), 'es');
+  assert.equal(detectTwitchRequestedSongLanguage('夜の東京 日本語で'), 'ja');
+  assert.equal(detectTwitchRequestedSongLanguage('rock allemand qui tape fort'), 'fr');
+  assert.equal(detectTwitchRequestedSongLanguage('opening style japonais sur les motos'), 'fr');
+  assert.equal(detectTwitchRequestedSongLanguage('Kirito et Asuna'), 'fr');
+});
+
+test('Twitch NOSSEN live transmet la langue demandee au routage, aux paroles et a Suno', async () => {
+  const seen = { routing: null, lyrics: [], production: null, messages: [] };
+  const lyrics = [
+    '[Intro]', '剣の光が夜を切る', '[Verse 1]', 'キリトは走る 風の中へ', 'アスナの声が 空に響く', '世界の果てで 手を伸ばす',
+    '[Chorus]', '二人の剣 光になれ', '夢の城を 越えていけ', '[Verse 2]', '仮想の空に 星が落ちる', '約束だけは 消えないまま',
+    '[Final Chorus]', '二人の剣 光になれ', '明日の扉 開いていけ',
+  ].join('\n');
+  const runner = createVivyStreamNossenRunner({
+    routeIntent: async () => createTestVocalIntentPlan(),
+    routeComposition: async (input) => {
+      seen.routing = input.language;
+      return { artists: ['vivy', 'djeff'], songMood: 'opening anime J-rock' };
+    },
+    writeLyrics: async (input) => {
+      seen.lyrics.push(input.language);
+      seen.messages.push(input.message);
+      return { publicLyrics: lyrics };
+    },
+    startMusic: async (_mode, input) => {
+      seen.production = input.language;
+      return { media: { url: '/api/vivy/studio/assets/ja.mp3', path: '/runtime/ja.mp3', durationSeconds: 200 } };
+    },
+    pollMusic: async () => { throw new Error('poll should not be needed'); },
+    probeDuration: async () => 200,
+    updateLive: () => {},
+    sleep: async () => {},
+  });
+  await runner.run({
+    roundId: 'round-langue-ja',
+    winner: { id: 'S1', text: 'SAO, Kirito et Asuna, opening anime en japonais', author: 'funeste38' },
+  });
+  assert.equal(seen.routing, 'ja');
+  assert.ok(seen.lyrics.length >= 1);
+  assert.ok(seen.lyrics.every((language) => language === 'ja'));
+  assert.equal(seen.production, 'ja');
+  assert.match(seen.messages[0], /Langue des paroles: japonais/);
+});

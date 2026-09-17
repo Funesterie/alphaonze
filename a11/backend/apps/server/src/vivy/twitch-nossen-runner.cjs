@@ -2597,6 +2597,41 @@ async function probeMediaDurationSeconds(media = {}) {
   }
 }
 
+// Langue demandée dans le message du chat (17/09/2026). Le live imposait le français :
+// « opening anime en japonais » partait chez Suno avec « paroles françaises uniquement ».
+// On exige une tournure de langue (« en japonais », « in English », « paroles espagnoles »)
+// ou le nom natif, pour qu'un « style japonais » ou « rock allemand » reste un style.
+const TWITCH_SONG_LANGUAGE_PATTERNS = Object.freeze([
+  ['ja', /\b(?:en|in)\s+japonais\b|\bjapanese\s+(?:lyrics|song|vocals)\b|\bin\s+japanese\b|\bparoles?\s+(?:en\s+)?japonaises?\b|日本語|\bnihongo\b/],
+  ['zh', /\b(?:en|in)\s+(?:chinois|mandarin)\b|\bin\s+(?:chinese|mandarin)\b|\bparoles?\s+(?:en\s+)?chinoises?\b|中文|普通话/],
+  ['en', /\ben\s+anglais\b|\bin\s+english\b|\benglish\s+(?:lyrics|song|vocals)\b|\bparoles?\s+(?:en\s+)?anglaises?\b/],
+  ['es', /\ben\s+espagnol\b|\bin\s+spanish\b|\ben\s+espanol\b|\bparoles?\s+(?:en\s+)?espagnoles?\b/],
+  ['it', /\ben\s+italien\b|\bin\s+italian\b|\bin\s+italiano\b|\bparoles?\s+(?:en\s+)?italiennes?\b/],
+  ['de', /\ben\s+allemand\b|\bin\s+german\b|\bauf\s+deutsch\b|\bparoles?\s+(?:en\s+)?allemandes?\b/],
+]);
+
+const TWITCH_SONG_LANGUAGE_LABELS_FR = Object.freeze({
+  fr: 'français',
+  en: 'anglais',
+  es: 'espagnol',
+  it: 'italien',
+  de: 'allemand',
+  ja: 'japonais',
+  zh: 'chinois mandarin',
+});
+
+function detectTwitchRequestedSongLanguage(text = '') {
+  const folded = String(text || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+  const nativeScript = String(text || '');
+  for (const [code, pattern] of TWITCH_SONG_LANGUAGE_PATTERNS) {
+    if (pattern.test(folded) || pattern.test(nativeScript)) return code;
+  }
+  return 'fr';
+}
+
 function buildTwitchLyricsRequest({
   winner,
   routing,
@@ -2604,6 +2639,7 @@ function buildTwitchLyricsRequest({
   lyricScope = {},
   socialPromptContextText = '',
   subjectFrame = {},
+  songLanguage = 'fr',
 }) {
   const artists = Array.isArray(routing?.artists) && routing.artists.length
     ? routing.artists.join(' + ')
@@ -2622,6 +2658,9 @@ function buildTwitchLyricsRequest({
       : '',
     `Direction sonore partagée avec la composition: ${routing?.songMood || 'moderne, précise et liée au sujet'}.`,
     `Casting vocal: ${artists}.`,
+    songLanguage && songLanguage !== 'fr'
+      ? `Langue des paroles: ${TWITCH_SONG_LANGUAGE_LABELS_FR[songLanguage] || songLanguage}. Toutes les lignes chantées sont dans cette langue, refrain compris; seules les balises de section restent en anglais. Les noms propres du sujet restent tels quels.`
+      : '',
     lyricScope?.label ? `Ampleur choisie par Vivy: ${lyricScope.label}. ${lyricScope.reason || ''}` : '',
     lyricScope?.freeStructure
       ? 'Structure libre: plusieurs longs couplets continus qui montent en intensité; refrain, pré-refrain et pont facultatifs, seulement si le sujet les appelle.'
@@ -2787,6 +2826,7 @@ function createVivyStreamNossenRunner(options = {}) {
       'suno',
       40
     ).toLowerCase();
+    const songLanguage = detectTwitchRequestedSongLanguage(rawWinner.text);
     const req = options.requestFactory ? options.requestFactory(payload) : createTrustedTwitchRequest();
     const sessionId = `twitch-${roundId}`;
     const conversationId = `vivy-twitch-${roundId}`;
@@ -2848,6 +2888,7 @@ function createVivyStreamNossenRunner(options = {}) {
       // direction instrumentale sont des consignes: melangees a la matiere, elles se
       // retrouvaient chantees. Elles passent par `notes`, qui instruit le redacteur.
       let routing = await routeComposition({
+        language: songLanguage,
         canvas: cleanText(seed.canvas || winner.text, '', 6000),
         songText: winner.text,
         message: winner.text,
@@ -2988,6 +3029,7 @@ function createVivyStreamNossenRunner(options = {}) {
       let lyrics = '';
       if (!instrumentalMode) {
         const lyricsMessage = buildTwitchLyricsRequest({
+          songLanguage,
           winner,
           routing,
           seed,
@@ -3005,7 +3047,7 @@ function createVivyStreamNossenRunner(options = {}) {
             // « écris ») était prise pour une demande de brief Djeff Cypher : Vivy rendait un
             // brief d'image et le live chantait les paroles de secours « cypher » de Djeff.
             internalSongGeneration: true,
-            language: 'fr',
+            language: songLanguage,
             conversationId,
             sessionId,
             sessionName: `Twitch Live - ${winner.text}`,
@@ -3234,7 +3276,7 @@ function createVivyStreamNossenRunner(options = {}) {
             rewritePayload = await withTimeout(() => writeLyrics({
               mode: 'song',
               internalSongGeneration: true,
-              language: 'fr',
+              language: songLanguage,
               conversationId: rewriteConversationId,
               sessionId: rewriteSessionId,
               sessionName: `Twitch Live - ${winner.text} - rewrite`,
@@ -3754,7 +3796,7 @@ function createVivyStreamNossenRunner(options = {}) {
       void fullClipPreparePromise;
       const productionInput = {
         mode: 'song',
-        language: 'fr',
+        language: songLanguage,
         conversationId,
         sessionId,
         sessionName: `Twitch Live - ${winner.text}`,
@@ -4293,6 +4335,7 @@ function createVivyStreamNossenRunner(options = {}) {
 }
 
 module.exports = {
+  detectTwitchRequestedSongLanguage,
   buildTwitchLyricsRequest,
   buildTwitchCoverNegativePrompt,
   buildTwitchCoverPrompt,
