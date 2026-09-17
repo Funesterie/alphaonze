@@ -4786,3 +4786,21 @@ test('twitch-online : un stream sans chat ne bloque plus la composition', () => 
   const passe = store.updateLive({ source: 'twitch-live', action: 'progress', stage: 'composition', progress: 10 });
   assert.notEqual(passe.error, 'twitch_stream_offline');
 });
+
+test('telechargement : le fichier porte le titre de la chanson, pas le nom technique', () => {
+  const { safeDownloadFilename, buildStreamDownloadPath } = require('../src/routes/vivy-stream.cjs');
+  const asset = '/api/vivy/studio/assets/vivy-music-suno-670dcfc08c3ddfa9.mp3';
+  // Djeff, 17/09/2026 : le nom propose etait le nom technique (vivy-music-suno-....mp3).
+  assert.equal(safeDownloadFilename(asset, 'audio', 'luffy et ace a marineford opening'), 'luffy et ace a marineford opening.mp3');
+  assert.equal(safeDownloadFilename('/clips/le-clip.mp4', 'clip', 'Riviere de lumiere'), 'Riviere de lumiere.mp4');
+  assert.equal(safeDownloadFilename('paroles.txt', 'paroles', 'Etoiles au creux du coeur - paroles'), 'Etoiles au creux du coeur - paroles.txt');
+  // Un titre hostile ne sort jamais du nom de fichier ni de l'en-tete.
+  const interdits = new RegExp('[' + String.fromCharCode(34, 13, 10, 47, 92, 58) + ']');
+  const hostile = safeDownloadFilename(asset, 'audio', ['a/b', 'c:', String.fromCharCode(34), 'd', String.fromCharCode(13, 10), 'e'].join(''));
+  assert.equal(interdits.test(hostile), false, 'aucun caractere qui casse l en-tete ou le chemin');
+  assert.match(hostile, /.mp3$/);
+  // Sans titre, on garde l'ancien comportement.
+  assert.equal(safeDownloadFilename(asset, 'audio'), 'vivy-music-suno-670dcfc08c3ddfa9.mp3');
+  assert.ok(buildStreamDownloadPath(asset, 'audio', 'Titre clair').includes('name=Titre+clair'));
+  assert.doesNotMatch(buildStreamDownloadPath(asset, 'audio'), /name=/);
+});

@@ -132,23 +132,36 @@ function inferMediaContentType(url = '', fallback = 'application/octet-stream') 
   return fallback;
 }
 
-function safeDownloadFilename(url = '', kind = 'media') {
+/**
+ * Nom du fichier telecharge. Djeff, 17/09/2026 : « le nom est toujours pas bon » —
+ * on proposait le nom technique de l'asset (vivy-music-suno-670dcfc0….mp3). Quand
+ * le titre de la chanson est connu, il devient le nom du fichier, en gardant
+ * l'extension reelle de l'URL.
+ */
+function safeDownloadFilename(url = '', kind = 'media', title = '') {
   let base = `${cleanOneLine(kind, 'media', 40)}.bin`;
+  let extension = '';
   try {
     const parsed = new URL(url, 'https://vivy.local');
     base = path.basename(decodeURIComponent(parsed.pathname)) || base;
+    extension = path.extname(base);
   } catch {}
-  return base
-    .replace(/[^\p{L}\p{N}._-]+/gu, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 160)
-    || `${cleanOneLine(kind, 'media', 40)}.bin`;
+  const propre = (valeur) => String(valeur || '')
+    .replace(/[^\p{L}\p{N}._ -]+/gu, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/^[-. ]+|[-. ]+$/g, '')
+    .slice(0, 120);
+  const titrePropre = propre(cleanOneLine(title, '', 160));
+  if (titrePropre && extension) return `${titrePropre}${extension}`;
+  return propre(base).replace(/ /g, '-') || `${cleanOneLine(kind, 'media', 40)}.bin`;
 }
 
-function buildStreamDownloadPath(url = '', kind = 'media') {
+function buildStreamDownloadPath(url = '', kind = 'media', title = '') {
   const raw = cleanOneLine(url, '', 1600);
   if (!raw) return '';
   const params = new URLSearchParams({ url: raw, kind: cleanOneLine(kind, 'media', 40) });
+  const nom = cleanOneLine(title, '', 160);
+  if (nom) params.set('name', nom);
   return `/api/vivy/stream/download?${params.toString()}`;
 }
 
@@ -735,9 +748,9 @@ function buildSongsArchiveHtml(state = {}, options = {}) {
     const directUrl = absolutizePublicUrl(song.trackUrl, publicBaseUrl);
     const coverUrl = absolutizePublicUrl(song.coverImageUrl || '', publicBaseUrl);
     const clipUrl = absolutizePublicUrl(song.coverVideoUrl || '', publicBaseUrl);
-    const downloadAudioUrl = buildStreamDownloadPath(directUrl, 'audio');
-    const downloadCoverUrl = coverUrl ? buildStreamDownloadPath(coverUrl, 'image') : '';
-    const downloadClipUrl = clipUrl ? buildStreamDownloadPath(clipUrl, 'clip') : '';
+    const downloadAudioUrl = buildStreamDownloadPath(directUrl, 'audio', title);
+    const downloadCoverUrl = coverUrl ? buildStreamDownloadPath(coverUrl, 'image', title) : '';
+    const downloadClipUrl = clipUrl ? buildStreamDownloadPath(clipUrl, 'clip', title) : '';
     const lyricsUrl = (song.lyrics || song.hasLyrics) && song.sharePath
       ? absolutizePublicUrl(`${song.sharePath}/paroles.txt`, publicBaseUrl)
       : '';
@@ -806,9 +819,9 @@ function buildSongShareHtml(song = {}, options = {}) {
   const audioUrl = absolutizePublicUrl(song.trackUrl, publicBaseUrl);
   const coverUrl = absolutizePublicUrl(song.coverImageUrl || '', publicBaseUrl);
   const clipUrl = absolutizePublicUrl(song.coverVideoUrl || '', publicBaseUrl);
-  const downloadAudioUrl = buildStreamDownloadPath(audioUrl, 'audio');
-  const downloadCoverUrl = coverUrl ? buildStreamDownloadPath(coverUrl, 'image') : '';
-  const downloadClipUrl = clipUrl ? buildStreamDownloadPath(clipUrl, 'clip') : '';
+  const downloadAudioUrl = buildStreamDownloadPath(audioUrl, 'audio', title);
+  const downloadCoverUrl = coverUrl ? buildStreamDownloadPath(coverUrl, 'image', title) : '';
+  const downloadClipUrl = clipUrl ? buildStreamDownloadPath(clipUrl, 'clip', title) : '';
   const lyricsUrl = (song.lyrics || song.hasLyrics) && song.sharePath
     ? absolutizePublicUrl(`${song.sharePath}/paroles.txt`, publicBaseUrl)
     : '';
@@ -2442,7 +2455,7 @@ function createVivyStreamRouter(options = {}) {
         });
       }
 
-      const filename = safeDownloadFilename(targetUrl, kind);
+      const filename = safeDownloadFilename(targetUrl, kind, cleanOneLine(req.query.name, '', 160));
       const contentType = upstream.headers.get('content-type') || inferMediaContentType(targetUrl);
       const contentLength = upstream.headers.get('content-length');
       res.set('Cache-Control', 'public, max-age=300');
@@ -2485,7 +2498,7 @@ function createVivyStreamRouter(options = {}) {
     const slug = cleanOneLine(req.params.slug, 'vivy', 180).replace(/[^a-z0-9-]/gi, '-');
     res.set('Cache-Control', 'public, max-age=300');
     res.set('Content-Type', 'text/plain; charset=utf-8');
-    res.set('Content-Disposition', `attachment; filename="paroles-${slug}.txt"`);
+    res.set('Content-Disposition', `attachment; filename="${safeDownloadFilename('paroles.txt', 'paroles', `${title} - paroles`)}"`);
     return res.send(`${title}\n${'='.repeat(Math.max(4, Math.min(60, title.length)))}\n\n${lyrics}\n`);
   });
 
@@ -2535,7 +2548,11 @@ function createVivyStreamRouter(options = {}) {
       });
       res.set('Cache-Control', 'public, max-age=600');
       res.set('Content-Type', format === 'flac' ? 'audio/flac' : 'audio/wav');
-      res.set('Content-Disposition', `attachment; filename="relique-${slug}.${format}"`);
+      res.set('Content-Disposition', `attachment; filename="${safeDownloadFilename(
+        `relique.${format}`,
+        'relique',
+        `${cleanTrackTitle(song.trackTitle || song.title, 'Morceau Vivy')} - relique`
+      )}"`);
       ff.stdout.pipe(res);
       await pipeline(Readable.fromWeb(upstream.body), ff.stdin).catch(() => {});
       ff.on('close', () => { if (failed && !res.headersSent) res.status(500).end(); });
@@ -2691,6 +2708,7 @@ module.exports = {
   buildSongShareHtml,
   buildSongsArchiveHtml,
   buildStreamDownloadPath,
+  safeDownloadFilename,
   buildOverlayHtml,
   buildControlDeckHtml,
   buildNossenSeedFromRound,
