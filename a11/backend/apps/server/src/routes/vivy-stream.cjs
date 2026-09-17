@@ -913,16 +913,34 @@ function createVivyStreamStore(options = {}) {
     }
   }
 
-  function ownsLiveLifecycle() {
+  function readLease() {
     try {
-      const lease = JSON.parse(fs.readFileSync(leasePath, 'utf8'));
-      if (!lease?.owner || lease.owner === processOwnerId) return true;
-      const at = Date.parse(lease.at);
-      return !Number.isFinite(at) || Date.now() - at > leaseStaleMs;
+      return JSON.parse(fs.readFileSync(leasePath, 'utf8'));
     } catch {
-      return true;
+      return null;
     }
   }
+
+  function ownsLiveLifecycle() {
+    const lease = readLease();
+    if (!lease?.owner || lease.owner === processOwnerId) return true;
+    const at = Date.parse(lease.at);
+    return !Number.isFinite(at) || Date.now() - at > leaseStaleMs;
+  }
+
+  // Le bail n'etait renouvele que par le trafic du direct : sans overlay ni regie
+  // ouverts pendant 90 s, il expirait et TOUTES les couleurs reprenaient la main en
+  // meme temps (17/09). Le proprietaire le renouvelle donc lui-meme tant qu'il tourne ;
+  // une autre couleur ne le reprend que si son proprietaire est mort.
+  function renewLeaseIfOwner() {
+    const lease = readLease();
+    if (lease?.owner !== processOwnerId) return;
+    lastLeaseWriteAt = 0;
+    claimLiveOwnership();
+  }
+  const leaseHeartbeatMs = Math.max(1000, Math.min(leaseStaleMs / 3, Number(options.leaseHeartbeatMs || 20_000)));
+  const leaseHeartbeat = setInterval(renewLeaseIfOwner, leaseHeartbeatMs);
+  leaseHeartbeat.unref?.();
 
   function load() {
     try {
@@ -1394,6 +1412,11 @@ function createVivyStreamStore(options = {}) {
         lifecycleTimer = setTimeout(scheduleLifecycle, nonOwnerRecheckMs);
         lifecycleTimer.unref?.();
         return;
+      }
+      // Bail repris (proprietaire mort) : on le signe pour que le battement le garde.
+      if (readLease()?.owner !== processOwnerId) {
+        lastLeaseWriteAt = 0;
+        claimLiveOwnership();
       }
       // Etat modifie ailleurs : load() a deja replanifie avec l'etat frais.
       if (syncFromDisk()) return;
@@ -2072,6 +2095,8 @@ function createVivyStreamStore(options = {}) {
     consumeNextClipMode: withFreshState(consumeNextClipMode),
     claimLiveOwnership,
     ownsLiveLifecycle,
+    renewLeaseIfOwner,
+    stopLeaseHeartbeat: () => clearInterval(leaseHeartbeat),
   };
 }
 

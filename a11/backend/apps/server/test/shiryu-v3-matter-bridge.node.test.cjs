@@ -179,3 +179,13 @@ test('Shiryu V3 matter bridge exposes safe status and Qflush flow fallback', asy
   assert.equal(flow.cosmicRelations.instantShift.startsWith, 'decor');
   assert.equal(flow.sourceCell.payload.cosmic.timeBasis, 'instant-decor');
 });
+
+test('Shiryu V3 matiere mille-fleurs : audio en V11 pan, plus en electrolyse V9', () => {
+  const { buildCosmicRelations } = require('../src/shiryu-v3-matter-bridge.cjs');
+  const cosmic = buildCosmicRelations({});
+  assert.equal(cosmic.audio.mode, 'v11-pan');
+  assert.equal(cosmic.audio.pan.schema, 'funesterie.audio.v11-pan');
+  assert.equal(cosmic.audio.pan.width, 1.5);
+  assert.equal(cosmic.audio.pan.spreadMs, 4);
+  assert.equal(cosmic.audio.legacyMode, 'v9-electrolysis-guitar-audio-only');
+});

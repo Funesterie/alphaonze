@@ -17,6 +17,9 @@
 
 const { prepareCubeCuda } = require('./cube-to-cuda.cjs');
 const crypto = require('node:crypto');
+// V11 pan (17/09/2026) : Djeff veut le pan stereo, pas l'electrolyse V9, comme mode audio
+// de la matiere mille-fleurs. Meme recette que le jukebox (largeur 1.5, ecart 4 ms).
+const { resolveV11Pan } = require('./audio/double-harmonic-d40.cjs');
 
 const SCHEMA = 'nossen.shiryu.v3_matter_field.v1';
 const SOURCE_CELL_SCHEMA = 'nossen.zen_source_matter_cell.v1';
@@ -604,7 +607,10 @@ function buildCosmicRelations(options = {}) {
       },
     },
     audio: {
-      mode: 'v9-electrolysis-guitar-audio-only',
+      mode: 'v11-pan',
+      pan: resolveV11Pan(),
+      // Donnees V9 gardees en secondaire : les materiaux et les relations cosmiques les lisent encore.
+      legacyMode: 'v9-electrolysis-guitar-audio-only',
       physicalElectrolysis,
       physicalElectrolysisState: physicalElectrolysis ? 'creative-resonance-enabled' : 'audio-only',
       actuatesHardware: false,
@@ -963,6 +969,9 @@ function prepareShiryuV3MatterField(input = {}, options = {}) {
       lunarIllumination: round(lunarIllumination, 9),
       tide: round(tide, 9),
       v9FrequencyHz: cosmicRelations.audio.frequencyHz,
+      audioMode: cosmicRelations.audio.mode,
+      panWidth: cosmicRelations.audio.pan.width,
+      panSpreadMs: cosmicRelations.audio.pan.spreadMs,
     },
   };
   const field = {
@@ -1034,7 +1043,9 @@ function getShiryuV3MatterSpec(env = process.env, options = {}) {
         anomalisticMonthDays: LUNAR_ANOMALISTIC_MONTH_DAYS,
       },
       audio: {
-        mode: 'v9-electrolysis-guitar-audio-only',
+        mode: 'v11-pan',
+        pan: resolveV11Pan(),
+        legacyMode: 'v9-electrolysis-guitar-audio-only',
         frequencyRangeHz: [V9_ELECTROLYSIS_MIN_HZ, V9_ELECTROLYSIS_MAX_HZ],
         physicalElectrolysis: PHYSICAL_ELECTROLYSIS_DEFAULT,
         lightVacuumVibration: LIGHT_VACUUM_VIBRATION_ENABLED,

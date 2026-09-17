@@ -4627,6 +4627,33 @@ test('Vivy stream: une couleur en veille reprend la main quand le bail expire', 
   const nouvelle = createVivyStreamStore({ statePath, idleJukeboxEnabled: false, ownerId: 'purple', leaseStaleMs: 1000 });
   ancienne.claimLiveOwnership();
   assert.equal(nouvelle.ownsLiveLifecycle(), false);
+  // Proprietaire mort : plus de battement de bail.
+  ancienne.stopLeaseHeartbeat();
+  nouvelle.stopLeaseHeartbeat();
   await new Promise((resolve) => setTimeout(resolve, 1100));
   assert.equal(nouvelle.ownsLiveLifecycle(), true);
+});
+
+test('Vivy stream: le proprietaire garde son bail sans trafic, une veille ne le vole pas', async () => {
+  const statePath = path.join(tmpRoot, 'quaternion-heartbeat', 'state.json');
+  fs.rmSync(path.dirname(statePath), { recursive: true, force: true });
+  const blue = createVivyStreamStore({ statePath, idleJukeboxEnabled: false, ownerId: 'blue', leaseStaleMs: 1200, leaseHeartbeatMs: 300 });
+  const green = createVivyStreamStore({ statePath, idleJukeboxEnabled: false, ownerId: 'green', leaseStaleMs: 1200, leaseHeartbeatMs: 300 });
+  try {
+    blue.claimLiveOwnership();
+    // Plus longtemps que le bail, sans aucune requete du direct.
+    await new Promise((resolve) => setTimeout(resolve, 1700));
+    assert.equal(blue.ownsLiveLifecycle(), true);
+    assert.equal(green.ownsLiveLifecycle(), false);
+    // Le battement de green ne vole rien : il ne renouvelle qu'un bail qui est deja le sien.
+    green.renewLeaseIfOwner();
+    assert.equal(green.ownsLiveLifecycle(), false);
+    // Proprietaire mort : son battement s'arrete, la veille reprend apres expiration.
+    blue.stopLeaseHeartbeat();
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    assert.equal(green.ownsLiveLifecycle(), true);
+  } finally {
+    blue.stopLeaseHeartbeat();
+    green.stopLeaseHeartbeat();
+  }
 });
