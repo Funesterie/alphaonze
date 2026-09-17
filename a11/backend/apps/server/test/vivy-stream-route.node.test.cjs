@@ -4716,3 +4716,20 @@ test('regie : l action jukebox-clip passe directement a un clip', () => {
   assert.equal(forced.state.current.trackTitle, 'Le clip');
   assert.equal(forced.state.current.clipShowcase, true);
 });
+
+test('stream hors ligne : l erreur passe encore, la regie ne reste pas bloquee', () => {
+  const store = createVivyStreamStore({
+    statePath: path.join(tmpRoot, 'offline-error.json'),
+    idleJukeboxEnabled: false,
+  });
+  store.resetLiveSession({ reason: 'twitch_offline' });
+  assert.equal(store.getState().twitch.online, false);
+  // Une progression du live reste refusee quand le stream est eteint.
+  const progression = store.updateLive({ source: 'twitch-live', action: 'progress', stage: 'composition', progress: 40 });
+  assert.equal(progression.error, 'twitch_stream_offline');
+  // Mais l'erreur passe : sans elle, un round lance juste avant l'extinction laissait
+  // la regie sur « composing » sans que rien ne travaille (constate le 17/09/2026).
+  const echec = store.updateLive({ source: 'twitch-live', action: 'error', message: 'NOSSEN Twitch arrete: twitch_stream_offline' });
+  assert.notEqual(echec.error, 'twitch_stream_offline');
+  assert.notEqual(store.getState().current.phase, 'composing');
+});

@@ -1779,7 +1779,12 @@ function createVivyStreamStore(options = {}) {
   function updateLive(input = {}) {
     const action = cleanOneLine(input.action || input.phase, '', 40).toLowerCase();
     const source = cleanOneLine(input.source, '', 80);
-    if (source === 'twitch-live' && state.twitch?.online === false && action !== 'next' && action !== 'start') {
+    // Stream hors ligne : on refuse les mises a jour du live, SAUF celles qui le
+    // remettent au repos. Sans 'error' dans cette liste, un round qui echoue parce
+    // que le stream vient de s'eteindre laissait la regie bloquee sur « composing »
+    // (constate le 17/09/2026 : phase composing, Twitch offline, aucun travail en cours).
+    if (source === 'twitch-live' && state.twitch?.online === false
+      && action !== 'next' && action !== 'start' && action !== 'error') {
       return { ok: false, error: 'twitch_stream_offline', state: publicState(state) };
     }
     const winner = winnerFromState();
