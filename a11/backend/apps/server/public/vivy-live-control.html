@@ -324,19 +324,21 @@
           .catch(function (e) { log('état: ' + e.message, 'err'); });
       }
 
-      // ---- SSE live ----
+      // ---- SSE live (avec repli polling pour mobile) ----
       var es = null;
+      var lastSseAt = 0;
       function connectSse() {
-        if (es) { es.close(); es = null; }
+        if (es) { try { es.close(); } catch (e) {} es = null; }
         try {
           es = new EventSource(apiUrl('/api/vivy/stream/events'));
           es.addEventListener('state', function (ev) {
+            lastSseAt = Date.now();
             $('connDot').className = 'dot on'; $('connLabel').textContent = 'connecté';
             try { renderState(JSON.parse(ev.data)); } catch (e) {}
           });
-          es.onopen = function () { $('connDot').className = 'dot on'; $('connLabel').textContent = 'connecté'; };
-          es.onerror = function () { $('connDot').className = 'dot off'; $('connLabel').textContent = 'reconnexion…'; };
-        } catch (e) { log('SSE indisponible: ' + e.message, 'err'); }
+          es.onopen = function () { lastSseAt = Date.now(); $('connDot').className = 'dot on'; $('connLabel').textContent = 'connecté'; };
+          es.onerror = function () { $('connDot').className = 'dot off'; $('connLabel').textContent = 'polling…'; };
+        } catch (e) { $('connLabel').textContent = 'polling…'; }
       }
 
       // ---- actions ----
@@ -418,6 +420,27 @@
       });
       $('refresh').addEventListener('click', fetchState);
 
+      // ---- Polling de secours: mobile coupe souvent le SSE ----
+      var POLL_MS = 4000;
+      var SSE_SILENCE_MS = 12000;
+      function pollTick() {
+        // Si le SSE n'a rien envoyé depuis SSE_SILENCE_MS, on rafraîchit via /state
+        // et on tente de relancer la connexion SSE.
+        var silent = (Date.now() - lastSseAt) > SSE_SILENCE_MS;
+        if (silent) {
+          fetchState();
+          if (!es || es.readyState === 2 /* CLOSED */) { connectSse(); }
+        }
+      }
+      setInterval(pollTick, POLL_MS);
+      // Quand on revient sur l'onglet (déverrouillage tel), refresh immédiat + reconnexion.
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') {
+          fetchState();
+          if (!es || es.readyState === 2) { connectSse(); }
+        }
+      });
+      window.addEventListener('focus', function () { fetchState(); });
       // boot
       connectSse();
       fetchState();
