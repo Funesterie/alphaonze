@@ -1070,6 +1070,23 @@ function createAuthRouter({
     }
   }
 
+  // Efface UNIQUEMENT les cookies d'etat OAuth transitoires, PAS la session utilisateur.
+  // Utilise dans les branches d'echec du callback OAuth : un flow OAuth rate (ou un
+  // callback mal route) ne doit jamais deconnecter un utilisateur deja authentifie.
+  function clearOAuthStateCookies(req, res) {
+    const options = resolveCookieOptions(req, normalizePublicAppUrl);
+    res.clearCookie(GOOGLE_OAUTH_STATE_COOKIE, options);
+    res.clearCookie(MICROSOFT_OAUTH_STATE_COOKIE, options);
+    res.clearCookie(MICROSOFT_OAUTH_PKCE_COOKIE, options);
+    if (options.domain) {
+      const hostOnly = { ...options };
+      delete hostOnly.domain;
+      res.clearCookie(GOOGLE_OAUTH_STATE_COOKIE, hostOnly);
+      res.clearCookie(MICROSOFT_OAUTH_STATE_COOKIE, hostOnly);
+      res.clearCookie(MICROSOFT_OAUTH_PKCE_COOKIE, hostOnly);
+    }
+  }
+
   async function decodeRequestAuthClaims(req) {
     const tokenCandidates = extractRequestAuthTokenCandidates(req).ordered;
     if (!tokenCandidates.length) return null;
@@ -1696,7 +1713,7 @@ function createAuthRouter({
     const frontendUrl = resolveFrontendUrl(req, normalizePublicAppUrl);
     const error = String(req.query?.error || '').trim();
     if (error) {
-      clearSessionCookies(req, res);
+      clearOAuthStateCookies(req, res);
       return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, error));
     }
 
@@ -1710,7 +1727,7 @@ function createAuthRouter({
         hasStateCookie: Boolean(stateCookie),
         stateMatchesCookie: Boolean(state && stateCookie && state === stateCookie),
       }, 'warn');
-      clearSessionCookies(req, res);
+      clearOAuthStateCookies(req, res);
       return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, 'oauth_state_invalid'));
     }
 
@@ -1722,7 +1739,7 @@ function createAuthRouter({
       logOAuthTrace('google', 'callback_state_expired_or_bad', req, normalizePublicAppUrl, {
         stateError: String(stateError?.message || stateError || 'unknown_state_error'),
       }, 'warn');
-      clearSessionCookies(req, res);
+      clearOAuthStateCookies(req, res);
       return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, 'oauth_state_expired'));
     }
 
@@ -1738,7 +1755,7 @@ function createAuthRouter({
         hasClientSecret: Boolean(clientSecret),
         hasCallbackUrl: Boolean(callbackUrl),
       }, 'warn');
-      clearSessionCookies(req, res);
+      clearOAuthStateCookies(req, res);
       return redirectOAuthErrorWithState(res, frontendUrl, statePayload, 'google_auth_not_configured');
     }
 
@@ -1756,7 +1773,7 @@ function createAuthRouter({
         || userInfoProfile?.verified_email === true
         || String(idTokenProfile?.email_verified || userInfoProfile?.verified_email || '').toLowerCase() === 'true';
       if (!email || !emailVerified) {
-        clearSessionCookies(req, res);
+        clearOAuthStateCookies(req, res);
         return redirectOAuthErrorWithState(res, frontendUrl, statePayload, 'google_email_not_verified');
       }
 
@@ -1804,7 +1821,7 @@ function createAuthRouter({
       console.log('[AUTH] Google OAuth login:', email);
       return redirectOAuthSuccess(res, frontendUrl, statePayload?.returnTo || '/auth/success', sessionToken, 'google');
     } catch (callbackError) {
-      clearSessionCookies(req, res);
+      clearOAuthStateCookies(req, res);
       const publicError = resolvePublicOAuthError('google', callbackError);
       logOAuthTrace('google', 'callback_failed', req, normalizePublicAppUrl, {
         callbackUrl,
