@@ -4819,3 +4819,17 @@ test('round Twitch : le budget LLM ne meurt pas avant l ecriture des paroles', (
   assert.equal(runner.resolveTwitchLlmBudgetMs({ VIVY_STREAM_LLM_BUDGET_MS: '120000' }), 120000);
   assert.equal(runner.resolveTwitchLlmBudgetMs({ VIVY_STREAM_LLM_BUDGET_MS: '10' }), 60000, 'plancher');
 });
+
+test('overlay : un clip qui cale reprend ou il en etait, sans anti-cache sur la video', () => {
+  const fs = require('node:fs');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'vivy-live-overlay.html'), 'utf8');
+  // 18/09/2026, Djeff : « les clips tiennent pas jusqu'a la fin ». Le gestionnaire
+  // 'stalled' rechargeait la video depuis zero, et l'anti-cache faisait retelecharger
+  // 75 Mo a chaque lecture.
+  assert.doesNotMatch(html, /coverVideoSrc = cacheBustedMediaUrl/, 'la video garde son URL nue');
+  assert.match(html, /const coverVideoSrc = publicUrl\(coverVideoUrl\)/);
+  const stalled = html.match(/addEventListener\('stalled'[\s\S]{0,1200}?\n {4}\}\);/);
+  assert.ok(stalled, 'le gestionnaire stalled existe toujours');
+  assert.match(stalled[0], /currentTime/, 'la reprise se fait a la seconde atteinte');
+  assert.doesNotMatch(stalled[0], /cacheBustedMediaUrl/, 'plus de rechargement anti-cache au calage');
+});

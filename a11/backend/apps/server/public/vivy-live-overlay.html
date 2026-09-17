@@ -786,7 +786,18 @@
         elements.trackCoverVideo.pause();
         elements.coverVideoBackdrop.pause();
         if (coverVideoUrl) {
-          const coverVideoSrc = cacheBustedMediaUrl(coverVideoUrl, state);
+          // 18/09/2026, Djeff : « les clips tiennent pas jusqu'a la fin ». Un clip
+          // porte deja un nom unique (horodatage + empreinte) : le parametre
+          // anti-cache ne sert a rien et force Cloudflare a retelecharger les 75 Mo
+          // depuis l'origine a chaque lecture, donc a caler. On garde l'URL nue.
+          const coverVideoSrc = publicUrl(coverVideoUrl);
+          // Le son doit être décidé AVANT le premier play() de cette source : un
+          // clip NOSSEN démarre non coupé dès le chargement, jamais coupé puis
+          // rétabli (certains navigateurs bloquent le rétablissement du son après
+          // coup sans geste utilisateur).
+          const audible = phase === 'interlude' && current.nossenClip === true;
+          elements.coverVideoBackdrop.muted = !audible;
+          elements.coverVideoBackdrop.volume = 1;
           elements.trackCoverVideo.src = coverVideoSrc;
           elements.coverVideoBackdrop.src = coverVideoSrc;
           elements.trackCoverVideo.load();
@@ -800,6 +811,12 @@
       }
       const fullScreenClip = Boolean(coverVideoUrl) && (phase === 'playing' || (current.clipShowcase === true && phase === 'interlude'));
       document.body.classList.toggle('clip-video-fullscreen', fullScreenClip);
+      // Clip NOSSEN de vitrine (17/09/2026) : mp4 avec son intégré, aucune piste
+      // audio séparée. On ne coupe le son que dans ce cas précis, jamais pendant
+      // 'playing' (le clip muet d'une chanson qui joue avec sa propre piste audio).
+      // Reappliqué à chaque rendu (pas seulement au changement de source) au cas où
+      // l'état bascule NOSSEN <-> chanson sans changer de source vidéo.
+      elements.coverVideoBackdrop.muted = !(phase === 'interlude' && current.nossenClip === true);
       const canShowCover = Boolean((coverUrl || coverVideoUrl) && ['presenting', 'playing', 'interlude', 'rating'].includes(phase));
       show(elements.trackCover, canShowCover && !fullScreenClip);
       const slideStartedAt = safeDate(current.playbackStartedAt || current.phaseStartedAt) || now();
@@ -814,9 +831,12 @@
         elements.trackCoverVideo.play().catch(() => {
           elements.trackCover.classList.remove('video-ready');
         });
-        elements.coverVideoBackdrop.play().catch(() => {
+        elements.coverVideoBackdrop.play().catch((error) => {
           coverVideoBackdropReady = false;
           elements.coverVideoBackdrop.classList.remove('visible');
+          // Diagnostic (17/09/2026) : un rejet ici (NotAllowedError, etc.) explique
+          // un clip NOSSEN silencieux mieux qu'un échec avalé sans trace.
+          console.warn('[vivy-overlay] lecture clip refusée:', error && error.name, error && error.message);
         });
       } else {
         elements.trackCoverVideo.pause();
@@ -850,11 +870,25 @@
       coverVideoBackdropReady = false;
       elements.coverVideoBackdrop.classList.remove('visible');
     });
+    // Un calage ne doit PAS renvoyer le clip au debut : c'est ce qui l'empechait
+    // d'aller jusqu'au bout (18/09/2026). On ne recharge que si la lecture est
+    // vraiment morte, et on reprend a la seconde ou on s'etait arrete.
     elements.coverVideoBackdrop.addEventListener('stalled', () => {
       if (!lastCoverVideoUrl || !liveState) return;
-      const src = cacheBustedMediaUrl(lastCoverVideoUrl, liveState);
-      elements.coverVideoBackdrop.src = src;
-      elements.coverVideoBackdrop.load();
+      const video = elements.coverVideoBackdrop;
+      const reprise = Number(video.currentTime) || 0;
+      window.setTimeout(() => {
+        if (!video.paused && Number(video.currentTime) > reprise) return; // reparti tout seul
+        const src = publicUrl(lastCoverVideoUrl);
+        video.src = src;
+        video.load();
+        const replacer = () => {
+          video.removeEventListener('loadedmetadata', replacer);
+          try { if (reprise > 0 && reprise < (Number(video.duration) || Infinity)) video.currentTime = reprise; } catch {}
+          video.play().catch(() => {});
+        };
+        video.addEventListener('loadedmetadata', replacer);
+      }, 2000);
     });
 
     function simulatedProduction(state) {
@@ -1019,7 +1053,7 @@
         setText(elements.leadMessage, '');
       }
       if (phase === 'interlude') {
-        setText(elements.stageKicker, 'Fond musical d’attente');
+        setText(elements.stageKicker, current.nossenClip === true ? 'Clip NOSSEN — vitrine' : 'Fond musical d’attente');
         setText(elements.leadMessage, 'Le chat peut lancer le prochain vote avec !nossen votre idée.');
       }
       if (phase === 'rating') {

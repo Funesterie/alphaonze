@@ -14,6 +14,8 @@ const {
   extractTwitchMusicProviderDirective,
 } = require('../vivy/twitch-nossen-runner.cjs');
 const { estimateTwitchFullClipCost } = require('../vivy/twitch-clip-director.cjs');
+const clipAcces = require('../clips/clip-acces.cjs');
+const { CLIPS_DIR } = require('../clips/clip-storage.cjs');
 const {
   loadWardrobe,
   offerWardrobeGift,
@@ -264,6 +266,9 @@ function createInitialState() {
       coverPrompt: '',
       coverVideoUrl: '',
       coverVideoPrompt: '',
+      // Vrai pendant un clip NOSSEN de vitrine (mp4 avec son integre) : l'overlay
+      // sait alors qu'il doit rendre le son de la video au lieu de la couper.
+      nossenClip: false,
       message: 'En attente du chat Twitch.',
     },
     round: createRound(),
@@ -1082,6 +1087,11 @@ function createVivyStreamStore(options = {}) {
     // une video. Le catalogue complet revient des qu'on le repasse a false.
     state.jukebox.clipsOnly = state.jukebox.clipsOnly === true;
     state.jukebox.lastClipId = typeof state.jukebox.lastClipId === 'string' ? state.jukebox.lastClipId : '';
+    // Mode NOSSEN (17/09/2026, regie Twitch) : shuffle dedie aux gros clips de la
+    // vitrine (mp4 avec son integre, marques "en vitrine" et non partiels sur la
+    // page NOSSEN), independant du melange chansons + clip muet ci-dessus.
+    state.jukebox.nossenOnly = state.jukebox.nossenOnly === true;
+    state.jukebox.lastNossenId = typeof state.jukebox.lastNossenId === 'string' ? state.jukebox.lastNossenId : '';
     return state.jukebox;
   }
 
@@ -1183,12 +1193,20 @@ function createVivyStreamStore(options = {}) {
     return jukebox.tracks;
   }
 
+  // Un .mp4 n'est pas une piste audio : le 17/09/2026, une entree « vallée gerudo »
+  // portait le fichier du clip comme trackUrl, donc un morceau muet et introuvable
+  // dans le shuffle. Un clip s'attache a une chanson (shareVideoUrl), il ne la remplace pas.
+  function isVideoTrackUrl(url = '') {
+    return /\.(?:mp4|mov|webm|m4v|mkv)(?:\?|#|$)/i.test(String(url || ''));
+  }
+
   function getJukeboxTracks() {
     const jukebox = ensureJukebox();
     if (!jukebox.tracks.length) refreshJukeboxFromAssets();
     // Exclure les morceaux retires (marqueur -retired) ET les provider-only du pool.
     jukebox.tracks = jukebox.tracks.filter((track) => track?.trackUrl
       && !isProviderOnlyTrackUrl(track.trackUrl)
+      && !isVideoTrackUrl(track.trackUrl)
       && !isTrackRetired(track.trackUrl, archiveDirectory));
     // Le jukebox doit tourner sur TOUT le catalogue, pas seulement les quelques
     // assets vivy-music-*. On fusionne les morceaux generes (state.songs) jouables
@@ -1197,7 +1215,7 @@ function createVivyStreamStore(options = {}) {
     const seen = new Set(pool.map((track) => String(track.trackUrl || '')));
     for (const song of ensureSongs()) {
       const url = String(song?.trackUrl || '');
-      if (!url || isProviderOnlyTrackUrl(url) || seen.has(url) || isTrackRetired(url, archiveDirectory)) continue;
+      if (!url || isProviderOnlyTrackUrl(url) || isVideoTrackUrl(url) || seen.has(url) || isTrackRetired(url, archiveDirectory)) continue;
       const normalized = normalizeJukeboxTrack({
         ...song,
         source: song.source || 'vivy-live-song',
@@ -1212,7 +1230,7 @@ function createVivyStreamStore(options = {}) {
     // fusionne ici : c'est une lecture mise en cache, et l'etat reste petit.
     for (const piste of getSongsArchive()) {
       const url = String(piste?.trackUrl || '');
-      if (!url || !piste.available || seen.has(url) || isProviderOnlyTrackUrl(url)) continue;
+      if (!url || !piste.available || seen.has(url) || isProviderOnlyTrackUrl(url) || isVideoTrackUrl(url)) continue;
       const normalized = normalizeJukeboxTrack({ ...piste, source: piste.source || 'archive' });
       if (!normalized) continue;
       seen.add(url);
@@ -1264,6 +1282,34 @@ function createVivyStreamStore(options = {}) {
     if (clips.length === 1) return clips[0];
     const jukebox = ensureJukebox();
     const pool = clips.filter((track) => track.id !== jukebox.lastClipId);
+    const from = pool.length ? pool : clips;
+    return from[randomInt(from.length)];
+  }
+  // Clips NOSSEN de vitrine : gros mp4 generes depuis la page NOSSEN, marques
+  // "en vitrine" et non partiels. On lit directement le meme registre que
+  // GET /api/mcp-bridge/clip/list (clip-acces.cjs), sans aller-retour HTTP.
+  function getNossenShowcaseClips() {
+    try {
+      return clipAcces.clipsVisibles({ admin: false })
+        .filter((clip) => clip && clip.url && clip.filename && !clip.partial);
+    } catch (error) {
+      console.warn('[vivy-stream] clips NOSSEN indisponibles:', error?.message || String(error));
+      return [];
+    }
+  }
+  function resolveNossenClipDuration(clip = {}) {
+    const mesuree = probeLocalAudioDurationSeconds(path.join(CLIPS_DIR, String(clip.filename || '')));
+    if (!(mesuree > 0)) return 90;
+    // La fin de l'interlude est decidee a la montre, pas sur la fin reelle de la
+    // video : sans marge, le moindre chargement coupe le clip avant son dernier
+    // plan (18/09/2026). On laisse 8 %, au moins 5 s, au plus 30 s.
+    return mesuree + Math.min(30, Math.max(5, mesuree * 0.08));
+  }
+  function selectNossenClip(jukebox) {
+    const clips = getNossenShowcaseClips();
+    if (!clips.length) return null;
+    if (clips.length === 1) return clips[0];
+    const pool = clips.filter((clip) => clip.filename !== jukebox.lastNossenId);
     const from = pool.length ? pool : clips;
     return from[randomInt(from.length)];
   }
@@ -1320,6 +1366,51 @@ function createVivyStreamStore(options = {}) {
     const jukebox = ensureJukebox();
     jukebox.playsCount = Number(jukebox.playsCount || 0) + 1;
     jukebox.playsSinceClip = Number(jukebox.playsSinceClip || 0) + 1;
+
+    // Mode NOSSEN (regie Twitch) : shuffle dedie aux gros clips de vitrine, avec
+    // leur propre son. Independant du melange chansons + clip muet ci-dessous.
+    if (jukebox.nossenOnly === true || options.forcerNossen === true) {
+      const clip = selectNossenClip(jukebox);
+      if (clip) {
+        jukebox.lastNossenId = clip.filename;
+        jukebox.nossenCount = getNossenShowcaseClips().length;
+        const startedAt = Date.now();
+        const durationSeconds = Math.max(1, Math.min(3600, resolveNossenClipDuration(clip)));
+        addLiveSong({
+          title: clip.name || 'Clip NOSSEN',
+          trackTitle: clip.name || 'Clip NOSSEN',
+          trackUrl: '',
+          durationSeconds,
+          source: 'nossen-vitrine',
+          requestedBy: 'Vitrine NOSSEN',
+          createdAt: nowIso(),
+        });
+        setCurrentPhase('interlude', {
+          title: clip.name || 'Clip NOSSEN',
+          trackTitle: clip.name || 'Clip NOSSEN',
+          trackUrl: '',
+          trackId: '',
+          sharePath: '',
+          coverImageUrl: '',
+          coverPrompt: '',
+          coverVideoUrl: clip.url,
+          coverVideoPrompt: '',
+          shareVideoUrl: '',
+          clipShowcase: true,
+          nossenClip: true,
+          requestedBy: 'Vitrine NOSSEN',
+          durationSeconds,
+          playbackStartedAt: new Date(startedAt).toISOString(),
+          phaseEndsAt: new Date(startedAt + (durationSeconds * 1000)).toISOString(),
+          message: 'Clip NOSSEN (vitrine) en lecture sur Twitch.',
+        });
+        save();
+        return publicState(state);
+      }
+      // Aucun clip en vitrine disponible : on retombe sur le jukebox normal
+      // plutot que sur le silence.
+    }
+
     // Le tirage normal melange chansons ET clips. On ne force un clip que si le
     // hasard n'en a pas sorti depuis JUKEBOX_CLIP_EVERY lectures.
     const forcerClip = options.forcerClip === true
@@ -1355,6 +1446,7 @@ function createVivyStreamStore(options = {}) {
       coverVideoPrompt: track.coverVideoPrompt || '',
       shareVideoUrl: track.shareVideoUrl || '',
       clipShowcase: isClipShowcase,
+      nossenClip: false,
       requestedBy: track.requestedBy || 'Vivy Live',
       durationSeconds,
       playbackStartedAt: new Date(startedAt).toISOString(),
@@ -2041,9 +2133,25 @@ function createVivyStreamStore(options = {}) {
       const jukebox = ensureJukebox();
       const demande = input.value ?? input.enabled ?? input.on;
       jukebox.clipsOnly = demande === undefined ? !jukebox.clipsOnly : demande === true || demande === 'true' || demande === 1 || demande === '1';
+      if (jukebox.clipsOnly) jukebox.nossenOnly = false;
       jukebox.playedIds = [];
       save();
       return { ok: true, clipsOnly: jukebox.clipsOnly, state: publicState(state) };
+    }
+    // Régie : basculer le jukebox en shuffle des gros clips NOSSEN de vitrine
+    // (mp4 avec son integre), et revenir au catalogue normal.
+    if (action === 'jukebox-nossen-only' || action === 'mode-nossen') {
+      const jukebox = ensureJukebox();
+      const demande = input.value ?? input.enabled ?? input.on;
+      jukebox.nossenOnly = demande === undefined ? !jukebox.nossenOnly : demande === true || demande === 'true' || demande === 1 || demande === '1';
+      if (jukebox.nossenOnly) jukebox.clipsOnly = false;
+      jukebox.playedIds = [];
+      save();
+      return { ok: true, nossenOnly: jukebox.nossenOnly, state: beginIdleJukebox({ rotate: true }) };
+    }
+    // Régie : passer tout de suite à un clip NOSSEN, sans attendre le shuffle.
+    if (action === 'jukebox-nossen-clip' || action === 'nossen-clip-suivant') {
+      return { ok: true, state: beginIdleJukebox({ rotate: true, forcerNossen: true }) };
     }
     if (action === 'next' || action === 'start') return { ok: true, state: startRound(input) };
     if (action === 'error') {
