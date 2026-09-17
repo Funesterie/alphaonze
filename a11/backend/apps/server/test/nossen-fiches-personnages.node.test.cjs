@@ -56,10 +56,10 @@ test('aucune fiche ne révèle Ghost88 ni une lecture non validée', () => {
   assert.doesNotMatch(tout, /\(lecture\)/i);
 });
 
-test('le registre de Djeff ne décrit plus l’ancien visage abandonné le 13/09', () => {
+test('le registre de Djeff decrit Djeff aujourd hui (17/09), plus le jeune homme mince', () => {
   const djeff = IDENTITY_DEFINITIONS.find((d) => d.id === 'djeff');
-  assert.doesNotMatch(djeff.prompt, /peau olive|visage large|m[ée]diterran/i);
-  assert.match(djeff.prompt, /peau claire, visage ovale/);
+  assert.doesNotMatch(djeff.prompt, /peau olive|m[ée]diterran|visage ovale|menton pointu|silhouette fine/i);
+  assert.match(djeff.prompt, /peau claire, visage large aux joues pleines/);
 });
 
 test('renderCharacterSheets ignore les inconnus et les doublons', () => {

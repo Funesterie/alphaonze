@@ -2235,6 +2235,8 @@ const VIVY_STREAM_IDENTITY_ASSETS = {
   'djeff-reference-photo': 'djeff-reference-photo.jpg',
   // Nouvelle photo choisie par Djeff le 17/09/2026 (nom neuf : l'ancienne URL est en cache 24 h).
   'djeff-reference-photo-17-09': 'djeff-reference-photo-2026-09-17.jpg',
+  // Djeff aujourd'hui (17/09/2026, apres midi), choisi par lui sur ses photos recentes.
+  'djeff-reference-adulte': 'djeff-reference-adulte-2026-09-17.jpg',
   'djeff-reference-01': 'djeff-reference-01.jpg',
   'djeff-reference-02': 'djeff-reference-02.jpg',
   'djeff-reference-03': 'djeff-reference-03.jpg',

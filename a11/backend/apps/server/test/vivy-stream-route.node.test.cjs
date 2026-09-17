@@ -3146,9 +3146,9 @@ test('Vivy Twitch cover prompts stay visual and image generation can return a pu
   assert.match(identityPrompt, /Référence visuelle créateur humain/i);
   // Visage refait sur la photo choisie par Djeff le 13/09/2026 : l'ancien
   // « méditerranéen, peau olive » faisait inventer un autre homme.
-  assert.match(identityPrompt, /peau claire, visage ovale/i);
-  assert.doesNotMatch(identityPrompt, /peau olive|visage large|mèche claire|couettes|gothic electro-pop/i);
-  assert.match(identityPrompt, /ne pas le rendre noir/i);
+  assert.match(identityPrompt, /peau claire, visage large aux joues pleines/i);
+  assert.doesNotMatch(identityPrompt, /peau olive|visage ovale|mèche claire|couettes|gothic electro-pop/i);
+  assert.match(identityPrompt, /ne pas le rajeunir/i);
   const marvinPack = buildVivyVisualIdentityPack({
     publicTitle: 'Marvin Bip Bip 30 ans',
     winner: { text: 'clip anniversaire Marvin avec Charlène, Léna et Elio' },
@@ -3285,7 +3285,7 @@ test('Vivy Twitch cover prompts stay visual and image generation can return a pu
     assert.match(identityBody.referenceVisualContext, /Référence visuelle créateur humain/i);
     assert.match(identityBody.referenceVisualContext, /Référence visuelle chanteuse IA/i);
     assert.ok(identityBody.referenceImageUrls.includes('https://files.funesterie.me/users/djeff-reference.webp'));
-    assert.ok(identityBody.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-photo-17-09'));
+    assert.ok(identityBody.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-adulte'));
     assert.ok(!identityBody.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-05'));
     // Portrait detoure et non la carte "Presence musicale" : cette derniere
     // portait du texte que les modeles video recopiaient dans les clips.
@@ -3444,9 +3444,9 @@ test('Vivy Twitch clip animates the cover with the trusted asynchronous video en
     assert.equal(captured.body.visualOnly, true);
     assert.match(captured.body.negative_prompt, /ghost face/i);
     assert.match(captured.prompt, /Référence visuelle créateur humain/i);
-    assert.match(captured.prompt, /ne pas le rendre noir/i);
+    assert.match(captured.prompt, /ne pas le rajeunir/i);
     assert.equal(captured.body.referenceImageUrls[0], 'https://files.funesterie.me/covers/djeff-rebelle.webp');
-    assert.ok(captured.body.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-photo-17-09'));
+    assert.ok(captured.body.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-adulte'));
     assert.ok(!captured.body.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-05'));
     assert.match(buildTwitchClipPrompt({ title: 'Test' }), /aucun morphing/i);
   } finally {
