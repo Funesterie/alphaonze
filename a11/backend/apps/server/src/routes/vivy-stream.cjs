@@ -2011,6 +2011,18 @@ function createVivyStreamStore(options = {}) {
     if (action === 'jukebox-clip' || action === 'clip-suivant') {
       return { ok: true, state: beginIdleJukebox({ rotate: true, forcerClip: true }) };
     }
+    // 17/09/2026 : l'état ne passait « en ligne » qu'à la première MESSAGE du chat.
+    // Stream démarré mais chat silencieux = Vivy se croyait hors ligne et refusait de
+    // composer (« twitch offline » alors que le worker voyait le live). Le worker et
+    // la régie peuvent maintenant le dire directement.
+    if (action === 'twitch-online' || action === 'live-online') {
+      state.twitch = { ...(state.twitch || {}), online: true, lastOnlineAt: nowIso() };
+      if (state.current?.phase === 'error') {
+        setCurrentPhase('listening', { phaseEndsAt: null, message: 'Twitch en ligne, Vivy écoute le chat.' });
+      }
+      save();
+      return { ok: true, online: true, state: publicState(state) };
+    }
     // Régie : basculer le jukebox en shuffle de clips vidéo, et revenir au catalogue.
     if (action === 'jukebox-clips-only' || action === 'mode-clips') {
       const jukebox = ensureJukebox();

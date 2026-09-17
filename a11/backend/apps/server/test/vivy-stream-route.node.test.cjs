@@ -4768,3 +4768,21 @@ test('mode clips : le shuffle ne sort que des videos, et revient au catalogue', 
   for (let i = 0; i < 6; i += 1) titres.add(store.startIdleJukebox({ rotate: true }).current.trackTitle);
   assert.ok(titres.has('Chanson nue'), 'le catalogue complet revient');
 });
+
+test('twitch-online : un stream sans chat ne bloque plus la composition', () => {
+  const store = createVivyStreamStore({
+    statePath: path.join(tmpRoot, 'twitch-online.json'),
+    idleJukeboxEnabled: false,
+  });
+  store.resetLiveSession({ reason: 'twitch_offline' });
+  assert.equal(store.getState().twitch.online, false);
+  // Avant : seul un message du chat remettait online a true, donc une composition
+  // lancee depuis la regie echouait sur twitch_stream_offline (17/09/2026).
+  const bloque = store.updateLive({ source: 'twitch-live', action: 'progress', stage: 'composition', progress: 10 });
+  assert.equal(bloque.error, 'twitch_stream_offline');
+  const annonce = store.updateLive({ action: 'twitch-online' });
+  assert.equal(annonce.ok, true);
+  assert.equal(annonce.state.twitch.online, true);
+  const passe = store.updateLive({ source: 'twitch-live', action: 'progress', stage: 'composition', progress: 10 });
+  assert.notEqual(passe.error, 'twitch_stream_offline');
+});

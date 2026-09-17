@@ -57,6 +57,26 @@ function normalizeTwitchBearerToken(value = '') {
   return cleanEnv(value).replace(/^oauth:/i, '');
 }
 
+// 17/09/2026 : l'etat ne passait « en ligne » qu'a la premiere message du chat.
+// Stream demarre mais chat silencieux = Vivy refusait de composer. Le worker
+// annonce donc le passage en ligne des qu'il le voit.
+function resolveStreamControlUrl(ingestUrl = '') {
+  const fallback = 'https://vivy.funesterie.me/api/vivy/stream/control';
+  const raw = cleanEnv(ingestUrl);
+  if (!raw) return fallback;
+  try {
+    const url = new URL(raw);
+    url.pathname = url.pathname.replace(/\/(?:chat|event|reset)$/i, '/control');
+    if (!/\/control$/i.test(url.pathname)) {
+      url.pathname = `${url.pathname.replace(/\/+$/g, '')}/control`;
+    }
+    url.search = '';
+    return url.toString();
+  } catch {
+    return fallback;
+  }
+}
+
 function resolveStreamResetUrl(ingestUrl = '') {
   const fallback = 'https://vivy.funesterie.me/api/vivy/stream/reset';
   const raw = cleanEnv(ingestUrl);
@@ -726,6 +746,7 @@ async function main() {
     helixStreamsUrl: cleanEnv(process.env.TWITCH_HELIX_STREAMS_URL) || TWITCH_HELIX_STREAMS_URL,
     ingestUrl,
     resetUrl: cleanEnv(process.env.VIVY_STREAM_RESET_URL) || resolveStreamResetUrl(ingestUrl),
+    controlUrl: cleanEnv(process.env.VIVY_STREAM_CONTROL_URL) || resolveStreamControlUrl(ingestUrl),
     secret: cleanEnv(process.env.VIVY_STREAM_SECRET),
     liveGateDisabled: process.env.VIVY_TWITCH_LIVE_GATE_DISABLED === '1',
     livePollIntervalMs: resolveLivePollInterval(process.env.VIVY_TWITCH_LIVE_POLL_INTERVAL_MS || process.env.TWITCH_LIVE_POLL_INTERVAL_MS),
@@ -806,6 +827,14 @@ async function main() {
       }
       if (!lastLive) {
         console.log(`[vivy-twitch] stream online, opening IRC for #${config.channel}`);
+        // Sans cette annonce, l'etat restait « offline » tant que personne n'ecrivait,
+        // et toute composition lancee depuis la regie echouait sur twitch_stream_offline.
+        try {
+          await postStreamReset(config.controlUrl, config.secret, { action: 'twitch-online' });
+          console.log('[vivy-twitch] live annonce a Vivy (twitch-online)');
+        } catch (error) {
+          console.warn('[vivy-twitch] annonce du live impossible:', error?.message || String(error));
+        }
       }
       lastLive = true;
       offlineResetSent = false;
