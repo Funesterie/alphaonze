@@ -1091,7 +1091,23 @@ function createVivyStreamStore(options = {}) {
     const jukebox = ensureJukebox();
     if (!jukebox.tracks.length) refreshJukeboxFromAssets();
     jukebox.tracks = jukebox.tracks.filter((track) => track?.trackUrl && !isProviderOnlyTrackUrl(track.trackUrl));
-    return jukebox.tracks;
+    // Le jukebox doit tourner sur TOUT le catalogue, pas seulement les quelques
+    // assets vivy-music-*. On fusionne les morceaux generes (state.songs) jouables
+    // en local, dedupliques par trackUrl, pour eviter la boucle sur 2 titres.
+    const pool = jukebox.tracks.slice();
+    const seen = new Set(pool.map((track) => String(track.trackUrl || '')));
+    for (const song of ensureSongs()) {
+      const url = String(song?.trackUrl || '');
+      if (!url || isProviderOnlyTrackUrl(url) || seen.has(url)) continue;
+      const normalized = normalizeJukeboxTrack({
+        ...song,
+        source: song.source || 'vivy-live-song',
+      });
+      if (!normalized) continue;
+      seen.add(url);
+      pool.push(normalized);
+    }
+    return pool;
   }
 
   function getLocalJukeboxTrackPath(track = {}) {
