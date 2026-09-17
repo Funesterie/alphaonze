@@ -52,7 +52,7 @@ test('invalid credentials stop scenarisation instead of silently purchasing gene
 });
 test('malformed sequence response is actionable, not a generic success', async () => {
   const { director } = loadDirector({ data: { choices: [{ message: { content: '{}' } }] } });
-  await assert.rejects(director.generateVisualScenes('Test', '', '', '', [], null, '', '', null), /trois plans exploitables/);
+  await assert.rejects(director.generateVisualScenes('Test', '', '', '', [], null, '', '', null), /assez de plans exploitables/);
 });
 test('audio teardown resolver refuses arbitrary local paths and foreign hosts', () => {
   const { director } = loadDirector({ data: {} });

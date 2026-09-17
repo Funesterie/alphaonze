@@ -666,7 +666,10 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature,
         ? parsed.plans.filter(function(plan) { return plan && typeof plan.visual === "string" && plan.visual.trim().length >= 10; })
         : [];
       var lieu = String(parsed.lieu || "").slice(0, 300);
-      if (plans.length >= 3) {
+      // Le minimum suit la demande : un extrait court de 2 plans (test du 17/09) etait
+      // refuse faute de « trois plans exploitables », alors que 2 etaient attendus.
+      var minimumPlans = nbVoulus ? Math.min(3, nbVoulus) : 3;
+      if (plans.length >= minimumPlans) {
         console.log("[clip-director] Sol (" + SEQUENCE_MODEL + ") — lieu unique : " + lieu.slice(0, 80));
         console.log("[clip-director] " + plans.length + " plans dans ce lieu");
         var maxPlans = nbVoulus || (Array.isArray(arcSteps) && arcSteps.length ? arcSteps.length : PLAN_COUNT);
@@ -687,7 +690,7 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature,
         return scenes;
       }
     }
-    throw new Error("réponse de séquençage sans au moins trois plans exploitables");
+    throw new Error("réponse de séquençage sans assez de plans exploitables");
   } catch (e) {
     console.warn("[clip-director] Sol erreur:", e.message);
     throw new Error("Scénarisation " + SEQUENCE_MODEL + " impossible : " + e.message);
