@@ -112,30 +112,22 @@ const IDENTITY_DEFINITIONS = [
       /\bcr[ée]ateur\s+humain\b/i,
     ],
     envRefs: ['VIVY_DJEFF_REFERENCE_IMAGE_URL', 'DJEFF_REFERENCE_IMAGE_URL'],
-    // 17/09/2026, apres midi : Djeff a donne ses photos recentes et choisi « Djeff
-    // aujourd'hui ». Les references jeunes (casquette, veste de survetement) donnaient
-    // un jeune homme mince : « on dirait pas moi ».
-    defaultRefs: [
-      'https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-adulte',
-    ],
+    // 17/09/2026, soir : apres deux tests (« c'est quoi cette moustache », torse nu,
+    // pas de jambes), Djeff abandonne la ressemblance : « fais un truc generique
+    // lambda ». Sans i2v chez Comfy, un visage decrit en texte donne un inconnu ;
+    // une silhouette ordinaire et une tenue FIXE tiennent mieux d'un plan a l'autre.
+    // Aucune image de reference : elle ne sert plus a rien.
+    defaultRefs: [],
     prompt: [
-      // 16/09/2026 : la phrase qui ouvrait ce tableau décrivait encore l'ancien
-      // visage (« méditerranéen, peau olive, visage large, barbe noire ») que le
-      // 13/09 a déclaré faux ; elle contredisait la suivante dans le même prompt.
       'Référence visuelle créateur humain, énergie de créateur.',
-      'Si ce créateur apparaît, préserver ces traits: homme adulte d une trentaine d années à peau claire, visage large aux joues pleines, barbe brun foncé fournie et taillée courte, moustache, yeux marron, sourcils épais et foncés, cheveux brun foncé plaqués en arrière et légèrement dégarnis aux tempes, carrure solide, une chaîne en or avec deux pendentifs, une croix et la Sicile. Ces traits suffisent seuls: aucune image de référence n est transmise au generateur video, la description porte donc toute la ressemblance. Toujours cet homme-là : la trentaine, la barbe fournie, les cheveux plaqués en arrière et la carrure solide, reconnaissable dans chaque image.',
+      'Si ce créateur apparaît : un homme ordinaire d une trentaine d années, cheveux bruns courts, barbe courte, tee-shirt noir uni, jean foncé et bottes de moto, une chaîne en or avec une petite croix. Toujours la même tenue, corps entier avec les jambes visibles quand il est sur la moto.',
     ].join(' '),
-    // Refait le 17/09/2026 sur les photos recentes de Djeff. Les versions « jeune
-    // homme mince, coupe courte, menton pointu » (13/09 et matin du 17/09) donnaient
-    // un portrait qui ne lui ressemblait pas (test « Poursuite nocturne »).
-    videoPrompt: 'Djeff, the creator: man in his thirties with light skin, a broad face with full cheeks, a short full dark brown beard and moustache, brown eyes under thick dark eyebrows, dark brown hair slicked back and slightly receding at the temples, sturdy build; one gold chain with a small cross pendant and a Sicily-shaped pendant.',
+    videoPrompt: 'Djeff, the rider: an ordinary man in his thirties with short brown hair and a short beard, wearing a plain black t-shirt, dark jeans and black riding boots, a gold chain with a small cross; the same outfit in every shot, full body with legs and boots on the foot pegs when riding.',
     negative: [
       'black Djeff',
       'wrong Djeff ethnicity',
       'afro Djeff',
       'clean shaven Djeff',
-      'slim young Djeff',
-      'buzz cut Djeff',
       'generic Djeff rider beta',
       'different actor as Djeff',
       'old nossen djeff beta asset',
