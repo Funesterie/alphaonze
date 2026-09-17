@@ -933,6 +933,8 @@ async function generateClip(config = {}, {
     // Pas de média audio : le script est la source. On borne le nombre de plans
     // par sceneCount (ou 8 par défaut), le découpage A11 fixera le compte réel.
     numSegments = require('./script-director.cjs').clampSceneCount(config.sceneCount || config.planCount);
+    // Plans vidéo (film/animé) : 24 au plus, comme la réservation de crédits de la route.
+    if (render !== 'manga') numSegments = Math.min(24, numSegments);
     console.log(`[clip] Mode script : ${numSegments} scènes visées (muet)`);
     emitProgress(onProgress, { stage: 'audio:ready', status: 'validating', progress: 8 });
   } else {
@@ -1013,7 +1015,9 @@ async function generateClip(config = {}, {
         onProgress: directorProgress,
       });
       sections = requireDirectedScenes(directed);
-      // Le découpage A11 fixe le vrai compte de plans (peut différer de la borne).
+      // Le découpage A11 fixe le vrai compte de plans, sans dépasser le nombre demandé :
+      // les crédits ont été réservés pour ce nombre-là.
+      if (Array.isArray(sections) && sections.length > numSegments) sections = sections.slice(0, numSegments);
       if (Array.isArray(sections) && sections.length) numSegments = sections.length;
     } else {
       const director = loadDirectorImpl();

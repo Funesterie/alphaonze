@@ -278,7 +278,12 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
 
     // Réserve vide : on refuse AVANT de réserver des crédits et de faire
     // travailler le Director. Réserve basse : on lance, et on le dit.
-    const plansDemandes = clipCredits.plansEstimes({ fullDuration, dureeSecondes: req.body && req.body.durationSeconds });
+    // Clip film/animé depuis un script (17/09/2026) : autant de plans vidéo que de
+    // scènes demandées (24 au plus), pas le forfait d'un clip de chanson.
+    const plansScriptVideo = mode === 'script' && render !== 'manga'
+      ? Math.min(24, require('./script-director.cjs').clampSceneCount(sceneCount))
+      : 0;
+    const plansDemandes = plansScriptVideo || clipCredits.plansEstimes({ fullDuration, dureeSecondes: req.body && req.body.durationSeconds });
     const reserve = await etatReserve(plansDemandes);
     if (reserve && reserve.plansPossibles < 1) {
       return res.status(503).json({
@@ -297,7 +302,7 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
       if (!uid) return res.status(401).json({ ok: false, error: 'CONNEXION_REQUISE', message: messageServeur(req, 'clip.loginRequired') });
       if (!magasin) return res.status(503).json({ ok: false, error: 'CREDITS_INDISPONIBLES', message: messageServeur(req, 'clip.creditsUnavailable') });
       await attribuerFondateur(uid);
-      const plans = clipCredits.plansEstimes({ fullDuration, dureeSecondes: req.body && req.body.durationSeconds });
+      const plans = plansDemandes;
       const credits = clipCredits.creditsPourPlans(plans);
       const ref = `clip:${nodeCrypto.randomUUID()}`;
       let sortie;
