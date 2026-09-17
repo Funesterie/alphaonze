@@ -112,17 +112,22 @@ const IDENTITY_DEFINITIONS = [
       /\bcr[ée]ateur\s+humain\b/i,
     ],
     envRefs: ['VIVY_DJEFF_REFERENCE_IMAGE_URL', 'DJEFF_REFERENCE_IMAGE_URL'],
-    // 17/09/2026, soir : apres deux tests (« c'est quoi cette moustache », torse nu,
-    // pas de jambes), Djeff abandonne la ressemblance : « fais un truc generique
-    // lambda ». Sans i2v chez Comfy, un visage decrit en texte donne un inconnu ;
-    // une silhouette ordinaire et une tenue FIXE tiennent mieux d'un plan a l'autre.
-    // Aucune image de reference : elle ne sert plus a rien.
-    defaultRefs: [],
+    // 17/09/2026, fin d'apres-midi : Djeff donne SA photo (selfie IMG_2134) pour
+    // Jeffrey / Djeff Engine. Chaque mot compte : « moustache », « carrure solide »,
+    // « visage large », « plaques » et « degarni » avaient produit un homme plus vieux
+    // a grosse moustache. On decrit donc ce que montre la photo, en positif : visage
+    // rond et jeune, barbe courte reguliere le long de la machoire. Les perles en bois
+    // de la photo restent hors de la fiche (demande du 17/09). Pour la video, tenue
+    // fixe et jambes visibles. La reference image sert aux pochettes ; les clips
+    // (sans i2v) l'abandonnent proprement et gardent le texte.
+    defaultRefs: [
+      'https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-selfie-17-09',
+    ],
     prompt: [
       'Référence visuelle créateur humain, énergie de créateur.',
-      'Si ce créateur apparaît : un homme ordinaire d une trentaine d années, cheveux bruns courts, barbe courte, tee-shirt noir uni, jean foncé et bottes de moto, une chaîne en or avec une petite croix. Toujours la même tenue, corps entier avec les jambes visibles quand il est sur la moto.',
+      'Si ce créateur apparaît : un homme au début de la trentaine, visage rond et jeune, peau claire, yeux marron, sourcils bruns épais, cheveux bruns mi-longs ramenés en arrière et un peu en bataille, barbe brune courte et régulière le long de la mâchoire et du menton. Il porte un tee-shirt gris clair imprimé de feuilles de palmier gris foncé, un jean foncé, des bottes de moto noires et une fine chaîne en or avec une petite croix. Toujours la même tenue, corps entier avec les jambes visibles quand il est sur la moto.',
     ].join(' '),
-    videoPrompt: 'Djeff, the rider: an ordinary man in his thirties with short brown hair and a short beard, wearing a plain black t-shirt, dark jeans and black riding boots, a gold chain with a small cross; the same outfit in every shot, full body with legs and boots on the foot pegs when riding.',
+    videoPrompt: 'Djeff, the rider: a man in his early thirties, round youthful face, brown eyes, thick dark eyebrows, medium-length dark brown hair swept back, short even dark beard along the jaw and chin; light grey t-shirt with a dark palm leaf print, dark jeans, black riding boots, thin gold chain with a small cross; same outfit in every shot, full body with legs and boots on the pegs when riding.',
     negative: [
       'black Djeff',
       'wrong Djeff ethnicity',

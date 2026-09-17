@@ -56,10 +56,13 @@ test('aucune fiche ne révèle Ghost88 ni une lecture non validée', () => {
   assert.doesNotMatch(tout, /\(lecture\)/i);
 });
 
-test('le registre de Djeff est un homme ordinaire a tenue fixe (17/09 soir)', () => {
+test('le registre de Djeff suit son selfie du 17/09, tenue fixe', () => {
   const djeff = IDENTITY_DEFINITIONS.find((d) => d.id === 'djeff');
-  assert.doesNotMatch(djeff.prompt, /peau olive|m[ée]diterran|moustache|plaqu/i);
-  assert.match(djeff.prompt, /un homme ordinaire d une trentaine d années/);
+  assert.doesNotMatch(djeff.prompt, /peau olive|m[ée]diterran|moustache|plaqu|carrure|d[ée]garni|perles|bois/i);
+  assert.match(djeff.prompt, /un homme au début de la trentaine, visage rond et jeune/);
+  assert.match(djeff.prompt, /barbe brune courte et régulière le long de la mâchoire/);
+  assert.match(djeff.prompt, /Toujours la même tenue, corps entier avec les jambes visibles/);
+  assert.deepEqual(djeff.defaultRefs, ['https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-selfie-17-09']);
 });
 
 test('renderCharacterSheets ignore les inconnus et les doublons', () => {

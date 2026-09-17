@@ -3146,7 +3146,7 @@ test('Vivy Twitch cover prompts stay visual and image generation can return a pu
   assert.match(identityPrompt, /Référence visuelle créateur humain/i);
   // Visage refait sur la photo choisie par Djeff le 13/09/2026 : l'ancien
   // « méditerranéen, peau olive » faisait inventer un autre homme.
-  assert.match(identityPrompt, /un homme ordinaire d une trentaine d années/i);
+  assert.match(identityPrompt, /un homme au début de la trentaine, visage rond et jeune/i);
   assert.doesNotMatch(identityPrompt, /peau olive|visage ovale|mèche claire|couettes|gothic electro-pop/i);
   assert.match(identityPrompt, /Toujours la même tenue/i);
   const marvinPack = buildVivyVisualIdentityPack({
