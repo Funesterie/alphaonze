@@ -189,6 +189,8 @@
           <button data-act="ctl-twitch-online" class="cyan">📡 Twitch en ligne (débloquer)</button>
           <button data-act="ctl-jukebox-clip">🎞 Clip suivant (jukebox)</button>
           <button data-act="ctl-jukebox-clips-only" id="btnClipsOnly">🎬 Mode clips (shuffle vidéo)</button>
+          <button data-act="ctl-jukebox-nossen-only" id="btnNossenOnly" class="warn">🎥 Mode clips NOSSEN (vitrine, avec son)</button>
+          <button data-act="ctl-jukebox-nossen-clip">⏭ Clip NOSSEN suivant</button>
           <button data-act="ctl-next" class="cyan">⏭ Round suivant (next)</button>
           <button data-act="ctl-error" class="danger">⚠ Erreur (error)</button>
         </div>
@@ -309,15 +311,23 @@
           ? Number(jb.clipCount)
           : pistes.filter(function (t) { return t && (t.shareVideoUrl || t.coverVideoUrl); }).length;
         var modeClips = jb.clipsOnly === true;
+        var modeNossen = jb.nossenOnly === true;
+        var nossenTotal = Number(jb.nossenCount) || 0;
         $('stJukebox').textContent = total
           ? total + ' au shuffle dont ' + clips + ' clip' + (clips > 1 ? 's' : '')
             + (modeClips ? ' · mode clips' : '')
+            + (modeNossen ? ' · mode NOSSEN (' + nossenTotal + ' en vitrine)' : '')
             + (cur.clipShowcase ? ' · en cours: clip' : (cur.phase === 'interlude' ? ' · en cours: chanson' : ''))
           : '—';
         var btnClips = $('btnClipsOnly');
         if (btnClips) {
           btnClips.textContent = modeClips ? '🎵 Revenir à tout le catalogue' : '🎬 Mode clips (shuffle vidéo)';
           btnClips.className = modeClips ? 'warn' : '';
+        }
+        var btnNossen = $('btnNossenOnly');
+        if (btnNossen) {
+          btnNossen.textContent = modeNossen ? '🎵 Revenir à tout le catalogue' : '🎥 Mode clips NOSSEN (vitrine, avec son)';
+          btnNossen.className = modeNossen ? 'danger' : 'warn';
         }
         $('stUpdated').textContent = state.updatedAt ? new Date(state.updatedAt).toLocaleTimeString() : '—';
         var tw = state.twitch || {};
@@ -420,6 +430,9 @@
         'ctl-jukebox-clip': function () { return post('/api/vivy/stream/control', { action: 'jukebox-clip' }); },
         // Bascule : shuffle de clips video seulement, ou tout le catalogue.
         'ctl-jukebox-clips-only': function () { return post('/api/vivy/stream/control', { action: 'jukebox-clips-only' }); },
+        // Bascule : shuffle des gros clips NOSSEN de vitrine (mp4 avec son), ou retour au catalogue.
+        'ctl-jukebox-nossen-only': function () { return post('/api/vivy/stream/control', { action: 'jukebox-nossen-only' }); },
+        'ctl-jukebox-nossen-clip': function () { return post('/api/vivy/stream/control', { action: 'jukebox-nossen-clip' }); },
         'ctl-next': function () { return post('/api/vivy/stream/control', { action: 'next' }); },
         'ctl-error': function () { return post('/api/vivy/stream/control', { action: 'error' }); },
         'ctl-progress': function () {

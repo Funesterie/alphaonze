@@ -55,6 +55,9 @@ select,.input-url{width:100%;padding:.4rem;margin:.2rem 0;background:#0a0a12;bor
 .s .meta{font-size:.6rem;color:var(--muted)}
 .s .use{font-size:.6rem;color:var(--accent);cursor:pointer;padding:.2rem .4rem;border-radius:3px;background:rgba(123,47,247,.1);border:none;font-weight:600}
 .s .use:hover{background:rgba(123,47,247,.2)}
+.jk-modes{display:flex;gap:.3rem;margin:.3rem 0}
+.jk-mode{font-size:.65rem;padding:.3rem .6rem;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--muted);cursor:pointer;font-weight:600}
+.jk-mode.active{background:rgba(0,245,212,.15);border-color:rgba(0,245,212,.4);color:var(--cyan)}
 .player{position:sticky;bottom:0;background:var(--card);border-top:1px solid var(--border);padding:.5rem;display:none;flex-direction:column;gap:.3rem;border-radius:10px 10px 0 0}
 .player.on{display:flex}
 .player .now{font-size:.72rem;font-weight:700;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
@@ -178,6 +181,10 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
 
 <div class="card">
   <h2><span data-i18n="jukebox.title">🎤 Jukebox — historique</span> <span class="badge badge-gold" id="song-count">0</span></h2>
+  <div class="jk-modes">
+    <button type="button" class="jk-mode active" id="jukebox-mode-normal" data-i18n="jukebox.modeNormal">🎵 Jukebox normal</button>
+    <button type="button" class="jk-mode" id="jukebox-mode-nossen" data-i18n="jukebox.modeNossen">🎬 Clips NOSSEN</button>
+  </div>
   <input class="input-url" type="search" id="jukebox-search" placeholder="🔎 Chercher dans le jukebox : une lettre ou des mots (Entrée pour écouter)" data-i18n-placeholder="jukebox.searchPlaceholder" autocomplete="off" aria-label="Chercher dans le jukebox" data-i18n-aria="jukebox.searchAria">
   <div class="meta" id="mastering-progress"></div>
   <div id="list" class="songs"></div>
@@ -278,6 +285,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "fiche.title": "🙋 Ma fiche",
       "fiche.loginEmpty": "Connecte-toi pour créer ta fiche.",
       "jukebox.title": "🎤 Jukebox — historique",
+      "jukebox.modeNormal": "🎵 Jukebox normal",
+      "jukebox.modeNossen": "🎬 Clips NOSSEN",
       "jukebox.searchPlaceholder": "🔎 Chercher dans le jukebox : une lettre ou des mots (Entrée pour écouter)",
       "jukebox.searchAria": "Chercher dans le jukebox",
       "err.network": "Erreur réseau",
@@ -435,6 +444,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "fiche.title": "🙋 My profile",
       "fiche.loginEmpty": "Sign in to create your profile.",
       "jukebox.title": "🎤 Jukebox — history",
+      "jukebox.modeNormal": "🎵 Normal jukebox",
+      "jukebox.modeNossen": "🎬 NOSSEN clips",
       "jukebox.searchPlaceholder": "🔎 Search the jukebox: a letter or words (Enter to listen)",
       "jukebox.searchAria": "Search the jukebox",
       "err.network": "Network error",
@@ -592,6 +603,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "fiche.title": "🙋 Mi ficha",
       "fiche.loginEmpty": "Inicia sesión para crear tu ficha.",
       "jukebox.title": "🎤 Jukebox — historial",
+      "jukebox.modeNormal": "🎵 Jukebox normal",
+      "jukebox.modeNossen": "🎬 Clips NOSSEN",
       "jukebox.searchPlaceholder": "🔎 Buscar en el jukebox: una letra o palabras (Intro para escuchar)",
       "jukebox.searchAria": "Buscar en el jukebox",
       "err.network": "Error de red",
@@ -749,6 +762,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "fiche.title": "🙋 La mia scheda",
       "fiche.loginEmpty": "Accedi per creare la tua scheda.",
       "jukebox.title": "🎤 Jukebox — cronologia",
+      "jukebox.modeNormal": "🎵 Jukebox normale",
+      "jukebox.modeNossen": "🎬 Clip NOSSEN",
       "jukebox.searchPlaceholder": "🔎 Cerca nel jukebox: una lettera o parole (Invio per ascoltare)",
       "jukebox.searchAria": "Cerca nel jukebox",
       "err.network": "Errore di rete",
@@ -906,6 +921,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "fiche.title": "🙋 Mein Profil",
       "fiche.loginEmpty": "Melde dich an, um dein Profil zu erstellen.",
       "jukebox.title": "🎤 Jukebox — Verlauf",
+      "jukebox.modeNormal": "🎵 Normale Jukebox",
+      "jukebox.modeNossen": "🎬 NOSSEN-Clips",
       "jukebox.searchPlaceholder": "🔎 In der Jukebox suchen: ein Buchstabe oder Wörter (Enter zum Anhören)",
       "jukebox.searchAria": "In der Jukebox suchen",
       "err.network": "Netzwerkfehler",
@@ -1063,6 +1080,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "fiche.title": "🙋 マイプロフィール",
       "fiche.loginEmpty": "プロフィールを作るにはログインしてください。",
       "jukebox.title": "🎤 ジュークボックス — 履歴",
+      "jukebox.modeNormal": "🎵 通常のジュークボックス",
+      "jukebox.modeNossen": "🎬 NOSSEN クリップ",
       "jukebox.searchPlaceholder": "🔎 ジュークボックスを検索：1文字または単語（Enterで再生）",
       "jukebox.searchAria": "ジュークボックスを検索",
       "err.network": "ネットワークエラー",
@@ -1220,6 +1239,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "fiche.title": "🙋 我的档案",
       "fiche.loginEmpty": "登录后即可创建你的档案。",
       "jukebox.title": "🎤 点唱机 — 历史",
+      "jukebox.modeNormal": "🎵 普通点唱机",
+      "jukebox.modeNossen": "🎬 NOSSEN 片段",
       "jukebox.searchPlaceholder": "🔎 在点唱机中搜索：一个字母或词语（按回车播放）",
       "jukebox.searchAria": "在点唱机中搜索",
       "err.network": "网络错误",
@@ -2361,6 +2382,16 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
   // Espace priv\u00E9 (13/09/2026) : chaque compte voit ses clips, visibles par lui
   // seul ; la vitrine est choisie par l'admin, qui voit tout et publie ou
   // retire d'un clic. Tout nom de clip passe par escapeHtml.
+  function isShowcaseClip(x) {
+    if (!x) return false;
+    if (typeof x.enVitrine === "boolean") return x.enVitrine;
+    if (typeof x.en_vitrine === "boolean") return x.en_vitrine;
+    if (typeof x.public === "boolean") return x.public;
+    if (typeof x.isPublic === "boolean") return x.isPublic;
+    if (typeof x.visible === "boolean") return x.visible;
+    return false;
+  }
+
   function ligneClip(x, admin) {
     var href = resolveHttpUrl(x && x.url);
     if (!href) return "";
@@ -2375,8 +2406,9 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
     }
     if (admin && x.filename) {
       if (x.auteur) html += '<span class="meta"> \u00B7 ' + escapeHtml(x.auteur) + '</span>';
-      html += ' <button type="button" class="use" data-vitrine="' + escapeHtml(x.filename) + '" data-publier="' + (x.enVitrine ? "0" : "1") + '">'
-        + escapeHtml(x.enVitrine ? t("clips.unpublish") : t("clips.publish")) + '</button>';
+      var isPublic = isShowcaseClip(x);
+      html += ' <button type="button" class="use" data-vitrine="' + escapeHtml(x.filename) + '" data-publier="' + (isPublic ? "0" : "1") + '">'
+        + escapeHtml(isPublic ? t("clips.unpublish") : t("clips.publish")) + '</button>';
     }
     return html + '</div>';
   }
@@ -2395,13 +2427,14 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       var vitrine = r[1] || {};
       var admin = vitrine.admin === true;
       var e = mes.erreur;
+      var showcaseItems = (vitrine.clips || []).filter(function(x) { return isShowcaseClip(x); });
       var html = (e && (e.status === 401 || e.status === 403))
         ? sectionClips("🔒 " + t("clips.mine"), [], t("clips.loginToSee"))
         : sectionClips("🔒 " + t("clips.minePrivate"),
           (mes.clips || []).map(function(x) { return ligneClip(x, false); }).filter(Boolean),
           e ? t("clips.unavailable") : t("clips.none"));
       html += sectionClips(admin ? "🗂️ " + t("clips.allAdmin") : "✨ " + t("clips.showcase"),
-        (vitrine.clips || []).map(function(x) { return ligneClip(x, admin); }).filter(Boolean),
+        showcaseItems.map(function(x) { return ligneClip(x, admin); }).filter(Boolean),
         vitrine.erreur ? t("clips.showcaseUnavailable") : t("clips.showcaseEmpty"));
       box.innerHTML = html;
     });
@@ -2483,6 +2516,25 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
     renderSongs(selectedKey);
   }
 
+  function mapClipSong(x, fallbackSource) {
+    var playable = resolveHttpUrl(x && x.url);
+    var title = (x && (x.name || x.filename || x.title)) || t("song.untitled");
+    return {
+      title: title,
+      available: Boolean(playable),
+      playUrl: playable,
+      originalUrl: "",
+      mastering: "",
+      audioUrl: playable,
+      date: x && x.createdAt ? String(x.createdAt).slice(0, 10) : "",
+      createdAt: x && x.createdAt ? String(x.createdAt) : "",
+      duration: "",
+      source: fallbackSource || "nossen",
+      requestedBy: "",
+      raw: x
+    };
+  }
+
   function loadSongs() {
     // Historique public demandé par Djeff : ne dépend ni du compte ni des 120 titres du direct.
     return api("/api/vivy/stream/songs.json?summary=1").then(function(d) {
@@ -2491,6 +2543,40 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       if (!songs.length) renderSongs("");
     });
   }
+
+  // Jukebox NOSSEN (17/09/2026) : uniquement les gros clips (non partiels) cochés
+  // en vitrine, dans le même lecteur que le jukebox normal. Bascule via jukeboxMode.
+  function loadNossenClips() {
+    return api("/api/mcp-bridge/clip/list").then(function(d) {
+      var clips = ((d && d.clips) || []).filter(function(x) { return isShowcaseClip(x) && !x.partial; });
+      replaceSongs(clips.map(function(x) { return mapClipSong(x, "nossen"); }));
+    }).catch(function() {
+      if (!songs.length) renderSongs("");
+    });
+  }
+
+  var jukeboxMode = "normal";
+  function refreshJukebox() {
+    return jukeboxMode === "nossen" ? loadNossenClips() : loadSongs();
+  }
+  function updateJukeboxModeButtons() {
+    var n = document.getElementById("jukebox-mode-normal");
+    var s = document.getElementById("jukebox-mode-nossen");
+    if (n) n.classList.toggle("active", jukeboxMode === "normal");
+    if (s) s.classList.toggle("active", jukeboxMode === "nossen");
+  }
+  function setJukeboxMode(mode) {
+    if (jukeboxMode === mode) return;
+    jukeboxMode = mode;
+    updateJukeboxModeButtons();
+    refreshJukebox();
+  }
+  (function() {
+    var n = document.getElementById("jukebox-mode-normal");
+    var s = document.getElementById("jukebox-mode-nossen");
+    if (n) n.addEventListener("click", function() { setJukeboxMode("normal"); });
+    if (s) s.addEventListener("click", function() { setJukeboxMode("nossen"); });
+  })();
 
   // Recherche dans les chansons (13/09/2026, demande de Djeff : plus de 800 titres).
   // Une lettre seule = titres qui commencent par elle ; des mots = titres qui les
@@ -2564,7 +2650,7 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
     updateFullClipButton();
     loadFiche();
     loadClips();
-    loadSongs();
+    refreshJukebox();
   }
   (function() {
     var choix = document.getElementById("lang");
@@ -2580,7 +2666,7 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
     }).catch(function() { document.getElementById("st").textContent = "\u274C " + t("status.offline"); });
 
     checkAuth().then(function() {
-      loadSongs();
+      refreshJukebox();
       resumePolling();
     });
     loadClips();
@@ -2771,7 +2857,7 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
   });
 
   init();
-  setInterval(function() { loadSongs(); }, 120000);
+  setInterval(function() { refreshJukebox(); }, 120000);
 })();
 </script>
 </body>

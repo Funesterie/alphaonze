@@ -14,7 +14,9 @@ function readPageScript(filePath = serverPagePath) {
   const match = html.match(/<script>([\s\S]*?)<\/script>/);
   assert.ok(match, `script NOSSEN absent de ${filePath}`);
 
-  const marker = /\n  init\(\);\r?\n  setInterval\(function\(\) \{ loadSongs\(\); \}, 120000\);\r?\n/;
+  // Le rafraichissement periodique s'appelle refreshJukebox depuis le mode vitrine
+  // (17/09/2026) ; il s'appelait loadSongs avant. Les deux noms restent acceptes.
+  const marker = /\n  init\(\);\r?\n  setInterval\(function\(\) \{ (?:loadSongs|refreshJukebox)\(\); \}, 120000\);\r?\n/;
   assert.match(match[1], marker, 'point d injection du banc de test absent');
   return match[1].replace(marker, `
   window.__NOSSEN_TEST_HOOKS__ = {
