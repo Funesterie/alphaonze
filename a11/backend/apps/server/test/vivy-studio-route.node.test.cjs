@@ -8480,3 +8480,20 @@ test('langue des chansons (16/09) : un compte en japonais ou en espagnol ne reco
   assert.match(fr.style, /rap français trap sombre/);
   assert.match(fr.negativeTags, /English lyrics/);
 });
+
+test('Vivy accepte des paroles de rap en structure libre sans refrain double', () => {
+  const { buildVivyPublicLyrics } = require('../src/routes/vivy-studio.cjs');
+  const paroles = [
+    '[Intro]', 'La pluie tombe sur Tokyo, la fumée monte sans un mot',
+    '[Verse 1]', 'Aki serre la cigarette, le regard froid comme un couteau', 'Il compte les jours qui restent, le futur lui parle trop tôt',
+    'Denji rit dans la cuisine, Power casse encore un bol', 'Il fait semblant de rien voir, la famille tient sur un fil',
+    '[Verse 2]', 'Le pacte a un prix, il le paie en années de vie', 'La vengeance a son visage, elle le suit jusque dans la nuit',
+    'Il range son katana, la clé tourne dans la porte', 'Un grand frère qui se tait, c’est la tendresse qui le porte',
+    '[Chorus]', 'Froid dehors, feu dedans, Aki tient la ligne', 'Même quand le futur ment, il protège sa lignée',
+    '[Outro]', 'La pluie s’arrête enfin, il reste trois bols sur la table',
+  ].join('\n');
+  const strict = buildVivyPublicLyrics({ songText: 'Aki Hayakawa' }, paroles, '', { allowDeterministicFallback: false, requireRepeatedChorus: true });
+  assert.equal(strict, '');
+  const libre = buildVivyPublicLyrics({ songText: 'Aki Hayakawa' }, paroles, '', { allowDeterministicFallback: false, requireRepeatedChorus: true, freeStructure: true });
+  assert.match(libre, /Aki serre la cigarette/);
+});

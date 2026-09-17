@@ -5721,10 +5721,14 @@ function buildVivyPublicLyrics(input = {}, rawAssistant = '', fallbackLyrics = '
   ].filter(Boolean).join('\n'), VIVY_SONG_MAX_CHARS);
   let publicLyrics = repairVivySemanticImageCoherence(sanitizeVivyPublicLyrics(rawAssistant), coherenceContext);
   if (!allowDeterministicFallback) {
+    // Structure libre (rap, freestyle : « plusieurs longs couplets, refrain seulement si
+    // le sujet l'exige ») : exiger un refrain double rejetait des paroles completes. Le
+    // live Twitch chantait alors le gabarit de secours (17/09, Aki Hayakawa, Jeffrey).
+    const freeStructure = options.freeStructure === true;
     if (!publicLyrics
       || looksLikeWeakSongwritingReply(publicLyrics)
-      || !hasVivyChorusSection(publicLyrics)
-      || (options.requireRepeatedChorus === true && countVivyChorusSections(publicLyrics) < 2)) {
+      || (!freeStructure && !hasVivyChorusSection(publicLyrics))
+      || (!freeStructure && options.requireRepeatedChorus === true && countVivyChorusSections(publicLyrics) < 2)) {
       return '';
     }
     return repairVivySemanticImageCoherence(
@@ -8287,6 +8291,7 @@ async function buildVivyAiChat(input, req) {
         {
           allowDeterministicFallback: !requiresStrongSongModel || usedSongcraftFallback,
           requireRepeatedChorus: requiresStrongSongModel && !usedSongcraftFallback,
+          freeStructure: input.lyricScope?.freeStructure === true,
         }
       )
       : sanitizeVivyPublicText(assistantCandidate, VIVY_CHAT_MAX_CHARS);
