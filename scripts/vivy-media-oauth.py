@@ -20,9 +20,12 @@ SECRET_DIR = ROOT / "secrets" / "google" / "vivy"
 DEFAULT_CLIENT_SECRET = SECRET_DIR / "client_secret_vivy_media_desktop.json"
 DEFAULT_TOKEN = SECRET_DIR / "token_vivy_media.json"
 TARGET_EMAIL = "cellaurojeffrey@gmail.com"
+VIVY_PROJECT_ID = "vivy-496507"
+# YouTube seul (17/09/2026) : Google refuse drive.file et youtube dans la meme
+# demande pour ce client (« scopes that cannot be requested together »). Le worker
+# autocast n'a besoin que de l'envoi ; l'ancien jeton qui marchait n'avait que lui.
 SCOPES = [
-    "https://www.googleapis.com/auth/drive.file",
-    "https://www.googleapis.com/auth/youtube",
+    "https://www.googleapis.com/auth/youtube.upload",
 ]
 
 
@@ -33,8 +36,11 @@ def load_client_secret(path: Path) -> dict:
     if "installed" not in data:
         raise ValueError("Expected a Desktop OAuth client JSON with an 'installed' root key.")
     installed = data["installed"]
-    if installed.get("project_id") != "alphaonze":
-        raise ValueError(f"Expected project_id alphaonze, got {installed.get('project_id')!r}.")
+    # Les scopes medias vivent sur le projet Vivy, jamais sur alphaonze (reserve au
+    # login) : a11/docs/GOOGLE_OAUTH_A11_KAEN44_VIVY.md. L'ancienne verification
+    # exigeait alphaonze et refusait le vrai client (17/09/2026).
+    if installed.get("project_id") != VIVY_PROJECT_ID:
+        raise ValueError(f"Expected project_id {VIVY_PROJECT_ID}, got {installed.get('project_id')!r}.")
     return installed
 
 
