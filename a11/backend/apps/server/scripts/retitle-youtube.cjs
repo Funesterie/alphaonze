@@ -18,6 +18,7 @@
 const { Pool } = require('/app/node_modules/pg');
 const { getFreshSocialTokens } = require('../src/social/social-autoprompt.cjs');
 const { readHistoryTracks, applyHistoryEnhancements, historyDirectory } = require('../src/music/jukebox-history.cjs');
+const { titreGenerique } = require('../src/music/jukebox-title-pass.cjs');
 
 const API = 'https://www.googleapis.com/youtube/v3';
 const argument = (nom, defaut) => {
@@ -56,11 +57,24 @@ async function main() {
     // Titres de reference : l'archive du jukebox, titres Claude appliques.
     const dossier = historyDirectory();
     const pistes = applyHistoryEnhancements(readHistoryTracks(dossier), dossier);
+    // Un ancien titre ne sert de cle que s'il designe UNE seule chanson. « Archive
+    // Vivy Live » coiffe sept videos differentes : les renommer toutes pareil serait
+    // pire que de ne rien faire. Les titres generiques sont donc ecartes, et un
+    // ancien titre qui pointe vers deux titres differents aussi.
     const parAncien = new Map();
+    const ambigus = new Set();
     for (const piste of pistes) {
       if (!piste.originalTitle || !piste.title || piste.title === piste.originalTitle) continue;
-      parAncien.set(normaliser(piste.originalTitle), piste.title);
+      const cle = normaliser(piste.originalTitle);
+      // Seuls les titres PAR DEFAUT sont ecartes ici (« Archive Vivy Live » coiffe
+      // sept videos). Une longue consigne de chat est unique : elle reste une cle.
+      const defaut = titreGenerique(piste.originalTitle);
+      if (!cle || defaut === 'generique' || defaut === 'vide') { ambigus.add(cle); continue; }
+      const connu = parAncien.get(cle);
+      if (connu && normaliser(connu) !== normaliser(piste.title)) ambigus.add(cle);
+      else parAncien.set(cle, piste.title);
     }
+    for (const cle of ambigus) parAncien.delete(cle);
 
     const chaine = await api('/channels?part=contentDetails&mine=true', jeton);
     const uploads = chaine?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
@@ -77,8 +91,11 @@ async function main() {
     } while (page);
 
     const aRenommer = [];
+    const vues = new Set();
     for (const video of videos) {
-      if (!video.id) continue;
+      // La playlist d'uploads peut lister deux fois la meme video.
+      if (!video.id || vues.has(video.id)) continue;
+      vues.add(video.id);
       // Le titre YouTube porte souvent « Titre — Artiste | Album » : on compare la tete.
       const tete = video.titre.split(/[—|–\-]/)[0].trim();
       const nouveau = parAncien.get(normaliser(tete)) || parAncien.get(normaliser(video.titre));
@@ -87,7 +104,13 @@ async function main() {
       }
     }
 
-    console.log(JSON.stringify({ videos: videos.length, titresArchive: parAncien.size, aRenommer: aRenommer.length, applique: appliquer }));
+    console.log(JSON.stringify({
+      videos: videos.length,
+      titresArchive: parAncien.size,
+      ecartesAmbigus: ambigus.size,
+      aRenommer: aRenommer.length,
+      applique: appliquer,
+    }));
     for (const v of aRenommer.slice(0, limite)) console.log(`  ${v.id} ${JSON.stringify(v.titre)} -> ${JSON.stringify(v.nouveauTitreComplet)}`);
     if (!appliquer) {
       console.log('inventaire seulement : ajouter --apply pour renommer');

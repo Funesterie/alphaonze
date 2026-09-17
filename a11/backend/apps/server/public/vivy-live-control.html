@@ -187,6 +187,7 @@
           <button data-act="ctl-rating" class="warn">⭐ Ouvrir les étoiles (rating)</button>
           <button data-act="ctl-interlude">🎵 Jukebox (interlude)</button>
           <button data-act="ctl-jukebox-clip">🎞 Clip suivant (jukebox)</button>
+          <button data-act="ctl-jukebox-clips-only" id="btnClipsOnly">🎬 Mode clips (shuffle vidéo)</button>
           <button data-act="ctl-next" class="cyan">⏭ Round suivant (next)</button>
           <button data-act="ctl-error" class="danger">⚠ Erreur (error)</button>
         </div>
@@ -301,10 +302,17 @@
         var jb = state.jukebox || {};
         var pistes = Array.isArray(jb.tracks) ? jb.tracks : [];
         var clips = pistes.filter(function (t) { return t && (t.shareVideoUrl || t.coverVideoUrl); }).length;
+        var modeClips = jb.clipsOnly === true;
         $('stJukebox').textContent = pistes.length
           ? pistes.length + ' au shuffle dont ' + clips + ' clip' + (clips > 1 ? 's' : '')
+            + (modeClips ? ' · mode clips' : '')
             + (cur.clipShowcase ? ' · en cours: clip' : (cur.phase === 'interlude' ? ' · en cours: chanson' : ''))
           : '—';
+        var btnClips = $('btnClipsOnly');
+        if (btnClips) {
+          btnClips.textContent = modeClips ? '🎵 Revenir à tout le catalogue' : '🎬 Mode clips (shuffle vidéo)';
+          btnClips.className = modeClips ? 'warn' : '';
+        }
         $('stUpdated').textContent = state.updatedAt ? new Date(state.updatedAt).toLocaleTimeString() : '—';
         var tw = state.twitch || {};
         var twDot = $('twitchDot'), twLabel = $('twitchLabel');
@@ -401,6 +409,8 @@
         'ctl-interlude': function () { return post('/api/vivy/stream/control', { action: 'interlude' }); },
         // Clips et chansons sont dans le meme shuffle : ce bouton force le prochain clip.
         'ctl-jukebox-clip': function () { return post('/api/vivy/stream/control', { action: 'jukebox-clip' }); },
+        // Bascule : shuffle de clips video seulement, ou tout le catalogue.
+        'ctl-jukebox-clips-only': function () { return post('/api/vivy/stream/control', { action: 'jukebox-clips-only' }); },
         'ctl-next': function () { return post('/api/vivy/stream/control', { action: 'next' }); },
         'ctl-error': function () { return post('/api/vivy/stream/control', { action: 'error' }); },
         'ctl-progress': function () {

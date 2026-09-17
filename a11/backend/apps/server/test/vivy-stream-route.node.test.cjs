@@ -4733,3 +4733,38 @@ test('stream hors ligne : l erreur passe encore, la regie ne reste pas bloquee',
   assert.notEqual(echec.error, 'twitch_stream_offline');
   assert.notEqual(store.getState().current.phase, 'composing');
 });
+
+test('mode clips : le shuffle ne sort que des videos, et revient au catalogue', () => {
+  const store = createVivyStreamStore({
+    statePath: path.join(tmpRoot, 'jukebox-mode-clips.json'),
+    idleJukeboxEnabled: true,
+    randomInt: (n) => n - 1,
+  });
+  store.addJukeboxTrack({ title: 'Chanson nue', trackUrl: '/api/vivy/studio/assets/vivy-music-suno-nue.mp3', durationSeconds: 60 });
+  store.addJukeboxTrack({
+    title: 'Clip un',
+    trackUrl: '/api/vivy/studio/assets/vivy-music-suno-clip1.mp3',
+    durationSeconds: 60,
+    shareVideoUrl: '/api/vivy/studio/assets/clip1.mp4',
+  });
+  store.addJukeboxTrack({
+    title: 'Clip deux',
+    trackUrl: '/api/vivy/studio/assets/vivy-music-suno-clip2.mp3',
+    durationSeconds: 60,
+    coverVideoUrl: '/api/vivy/studio/assets/clip2.mp4',
+  });
+
+  const bascule = store.updateLive({ action: 'jukebox-clips-only' });
+  assert.equal(bascule.clipsOnly, true);
+  assert.equal(bascule.state.jukebox.clipsOnly, true);
+  for (let i = 0; i < 4; i += 1) {
+    const etat = store.startIdleJukebox({ rotate: true });
+    assert.notEqual(etat.current.trackTitle, 'Chanson nue', 'en mode clips, aucune chanson sans video');
+    assert.equal(etat.current.clipShowcase, true);
+  }
+  const retour = store.updateLive({ action: 'jukebox-clips-only', value: false });
+  assert.equal(retour.clipsOnly, false);
+  const titres = new Set();
+  for (let i = 0; i < 6; i += 1) titres.add(store.startIdleJukebox({ rotate: true }).current.trackTitle);
+  assert.ok(titres.has('Chanson nue'), 'le catalogue complet revient');
+});

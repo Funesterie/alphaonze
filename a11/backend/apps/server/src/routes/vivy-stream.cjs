@@ -1065,6 +1065,9 @@ function createVivyStreamStore(options = {}) {
     // Compteur de lectures, et lectures depuis le dernier clip sorti du melange.
     state.jukebox.playsCount = Number.isFinite(Number(state.jukebox.playsCount)) ? Number(state.jukebox.playsCount) : 0;
     state.jukebox.playsSinceClip = Number.isFinite(Number(state.jukebox.playsSinceClip)) ? Number(state.jukebox.playsSinceClip) : 0;
+    // Mode clips (17/09/2026, Djeff) : le shuffle ne sort que des morceaux qui ont
+    // une video. Le catalogue complet revient des qu'on le repasse a false.
+    state.jukebox.clipsOnly = state.jukebox.clipsOnly === true;
     state.jukebox.lastClipId = typeof state.jukebox.lastClipId === 'string' ? state.jukebox.lastClipId : '';
     return state.jukebox;
   }
@@ -1240,9 +1243,13 @@ function createVivyStreamStore(options = {}) {
     return from[randomInt(from.length)];
   }
   function selectJukeboxTrack() {
-    const tracks = getJukeboxTracks();
-    if (!tracks.length) return null;
     const jukebox = ensureJukebox();
+    // En mode clips, le shuffle se fait sur les seuls morceaux qui ont une video ;
+    // s'il n'y en a aucun, on retombe sur tout le catalogue plutot que sur le silence.
+    const tracks = jukebox.clipsOnly && getJukeboxClipTracks().length
+      ? getJukeboxClipTracks()
+      : getJukeboxTracks();
+    if (!tracks.length) return null;
     if (tracks.length === 1) return tracks[0];
     const validIds = new Set(tracks.map((track) => track.id));
     // On purge l'historique des morceaux disparus du catalogue.
@@ -1987,6 +1994,15 @@ function createVivyStreamStore(options = {}) {
     // Régie : passer tout de suite à un clip, sans attendre que le shuffle en sorte un.
     if (action === 'jukebox-clip' || action === 'clip-suivant') {
       return { ok: true, state: beginIdleJukebox({ rotate: true, forcerClip: true }) };
+    }
+    // Régie : basculer le jukebox en shuffle de clips vidéo, et revenir au catalogue.
+    if (action === 'jukebox-clips-only' || action === 'mode-clips') {
+      const jukebox = ensureJukebox();
+      const demande = input.value ?? input.enabled ?? input.on;
+      jukebox.clipsOnly = demande === undefined ? !jukebox.clipsOnly : demande === true || demande === 'true' || demande === 1 || demande === '1';
+      jukebox.playedIds = [];
+      save();
+      return { ok: true, clipsOnly: jukebox.clipsOnly, state: publicState(state) };
     }
     if (action === 'next' || action === 'start') return { ok: true, state: startRound(input) };
     if (action === 'error') {
