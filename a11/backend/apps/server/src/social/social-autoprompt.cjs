@@ -31,9 +31,14 @@ const DEFAULT_SOCIAL_RSS_ALLOWED_HOSTS = ['feeds.soundcloud.com', 'soundcloud.co
  * Un jeton emis avant cet ajout ne porte pas le nouveau perimetre : il faut
  * reconsentir, sinon l'envoi echoue avec un jeton pourtant valide.
  */
+// 17/09/2026, Djeff : pouvoir corriger le titre d'une video deja en ligne.
+// videos.update n'accepte NI youtube.readonly NI youtube.upload : il lui faut le
+// perimetre de gestion de chaine. Un jeton emis avant cet ajout ne le porte pas,
+// il faut reconnecter la chaine pour reconsentir.
 const DEFAULT_YOUTUBE_SCOPES = [
   'https://www.googleapis.com/auth/youtube.readonly',
   'https://www.googleapis.com/auth/youtube.upload',
+  'https://www.googleapis.com/auth/youtube',
 ];
 
 const DEFAULT_META_SCOPES = [

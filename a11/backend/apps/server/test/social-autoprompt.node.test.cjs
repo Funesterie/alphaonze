@@ -95,10 +95,13 @@ test('YouTube ingest ne garde que les metadonnees minimales des videos publiques
   assert.equal(serialized.includes('Titre prive'), false);
 });
 
-test('YouTube social OAuth utilise exactement les deux scopes media et un client dedie', () => {
+test('YouTube social OAuth utilise exactement les scopes media et un client dedie', () => {
+  // 17/09/2026 : ajout du perimetre de gestion, seul a permettre videos.update
+  // (renommer une video en ligne). Ni readonly ni upload ne l'autorisent.
   assert.deepEqual(DEFAULT_YOUTUBE_SCOPES, [
     'https://www.googleapis.com/auth/youtube.readonly',
     'https://www.googleapis.com/auth/youtube.upload',
+    'https://www.googleapis.com/auth/youtube',
   ]);
 
   const generalOnly = resolveProviderConfig('youtube', { env: {

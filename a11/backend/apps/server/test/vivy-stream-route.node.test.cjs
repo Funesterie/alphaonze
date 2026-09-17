@@ -4657,3 +4657,41 @@ test('Vivy stream: le proprietaire garde son bail sans trafic, une veille ne le 
     green.stopLeaseHeartbeat();
   }
 });
+
+test('jukebox (17/09/2026) : clips et chansons dans le meme shuffle, la video se joue des qu elle sort', () => {
+  let tirage = 0;
+  const store = createVivyStreamStore({
+    statePath: path.join(tmpRoot, 'jukebox-shuffle-clips.json'),
+    idleJukeboxEnabled: true,
+    // Tirage deterministe : on parcourt le pool dans l'ordre.
+    randomInt: (n) => (tirage++) % n,
+  });
+  store.addJukeboxTrack({
+    title: 'Chanson seule',
+    trackUrl: '/api/vivy/studio/assets/vivy-music-suno-audio.mp3',
+    durationSeconds: 90,
+  });
+  store.addJukeboxTrack({
+    title: 'Riviere de lumiere',
+    trackUrl: '/api/vivy/studio/assets/vivy-music-suno-clip.mp3',
+    durationSeconds: 95,
+    shareVideoUrl: '/api/vivy/studio/assets/riviere-clip.mp4',
+  });
+
+  const vus = [];
+  for (let i = 0; i < 4; i += 1) {
+    const etat = store.startIdleJukebox({ rotate: true });
+    vus.push({ titre: etat.current.trackTitle, clip: etat.current.clipShowcase === true, video: etat.current.shareVideoUrl || '' });
+  }
+  // Les deux morceaux passent dans le meme cycle de shuffle, sans attendre 15 lectures.
+  assert.ok(vus.some((v) => v.titre === 'Chanson seule'), 'la chanson passe');
+  const clips = vus.filter((v) => v.titre === 'Riviere de lumiere');
+  assert.ok(clips.length >= 1, 'le clip passe dans le shuffle');
+  for (const v of clips) {
+    assert.equal(v.clip, true, 'un morceau avec video se joue en clip');
+    assert.equal(v.video, '/api/vivy/studio/assets/riviere-clip.mp4');
+  }
+  for (const v of vus.filter((x) => x.titre === 'Chanson seule')) {
+    assert.equal(v.clip, false, 'une chanson sans video reste un fond musical');
+  }
+});

@@ -1062,8 +1062,9 @@ function createVivyStreamStore(options = {}) {
     state.jukebox.tracks = Array.isArray(state.jukebox.tracks) ? state.jukebox.tracks : [];
     // Historique du shuffle: on ne rejoue un morceau qu'une fois tout le catalogue passe.
     state.jukebox.playedIds = Array.isArray(state.jukebox.playedIds) ? state.jukebox.playedIds : [];
-    // Compteur de lectures pour intercaler un clip vitrine toutes les N chansons.
+    // Compteur de lectures, et lectures depuis le dernier clip sorti du melange.
     state.jukebox.playsCount = Number.isFinite(Number(state.jukebox.playsCount)) ? Number(state.jukebox.playsCount) : 0;
+    state.jukebox.playsSinceClip = Number.isFinite(Number(state.jukebox.playsSinceClip)) ? Number(state.jukebox.playsSinceClip) : 0;
     state.jukebox.lastClipId = typeof state.jukebox.lastClipId === 'string' ? state.jukebox.lastClipId : '';
     return state.jukebox;
   }
@@ -1217,11 +1218,17 @@ function createVivyStreamStore(options = {}) {
     return DEFAULT_TRACK_SECONDS;
   }
 
-  // Toutes les JUKEBOX_CLIP_EVERY chansons, on intercale un CLIP VITRINE complet
-  // (morceau qui possede une video: shareVideoUrl de preference, sinon coverVideoUrl).
+  // 17/09/2026, Djeff : « le jukebox avec les clips, tout en shuffle ». Les clips ne
+  // sont plus une vitrine tous les N morceaux tiree d'un tirage a part : ils sont
+  // dans LE MEME melange que les chansons, et un morceau qui a une video se joue en
+  // video. JUKEBOX_CLIP_EVERY ne sert plus qu'a garantir un clip de temps en temps
+  // quand le hasard n'en sort pas (0 = jamais force).
   const JUKEBOX_CLIP_EVERY = Number(process.env.VIVY_STREAM_JUKEBOX_CLIP_EVERY || 15) || 15;
+  function trackVideoUrl(track = {}) {
+    return cleanOneLine(track.shareVideoUrl || track.coverVideoUrl, '', 1200);
+  }
   function getJukeboxClipTracks() {
-    return getJukeboxTracks().filter((track) => cleanOneLine(track.shareVideoUrl || track.coverVideoUrl, '', 1200));
+    return getJukeboxTracks().filter((track) => trackVideoUrl(track));
   }
   function selectJukeboxClipTrack() {
     const clips = getJukeboxClipTracks();
@@ -1280,13 +1287,17 @@ function createVivyStreamStore(options = {}) {
     if (!shouldStartIdleJukebox({ allowInterlude: Boolean(options.rotate) })) return publicState(state);
     const jukebox = ensureJukebox();
     jukebox.playsCount = Number(jukebox.playsCount || 0) + 1;
-    // Toutes les N lectures: clip vitrine complet si un morceau video existe.
-    const wantClip = JUKEBOX_CLIP_EVERY > 0 && (jukebox.playsCount % JUKEBOX_CLIP_EVERY === 0);
-    const clipTrack = wantClip ? selectJukeboxClipTrack() : null;
-    const track = clipTrack || selectJukeboxTrack();
+    jukebox.playsSinceClip = Number(jukebox.playsSinceClip || 0) + 1;
+    // Le tirage normal melange chansons ET clips. On ne force un clip que si le
+    // hasard n'en a pas sorti depuis JUKEBOX_CLIP_EVERY lectures.
+    const forcerClip = JUKEBOX_CLIP_EVERY > 0 && jukebox.playsSinceClip > JUKEBOX_CLIP_EVERY;
+    const track = (forcerClip ? selectJukeboxClipTrack() : null) || selectJukeboxTrack();
     if (!track) return publicState(state);
-    const isClipShowcase = Boolean(clipTrack);
-    if (isClipShowcase) jukebox.lastClipId = track.id;
+    const isClipShowcase = Boolean(trackVideoUrl(track));
+    if (isClipShowcase) {
+      jukebox.lastClipId = track.id;
+      jukebox.playsSinceClip = 0;
+    }
     const startedAt = Date.now();
     const durationSeconds = Math.max(1, Math.min(3600, Number(resolveJukeboxTrackDuration(track) || DEFAULT_TRACK_SECONDS)));
     jukebox.lastTrackId = track.id;
