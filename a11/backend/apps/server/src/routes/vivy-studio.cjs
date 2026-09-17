@@ -1284,7 +1284,7 @@ function getVivyLlmConfigs(options = {}) {
     ? allowLyricsLocalFallback
     : allowLegacySongLocalFallback;
   const localFirst = !['0', 'false', 'off', 'no'].includes(
-    String(process.env.VIVY_CHAT_LOCAL_FIRST || 'true').trim().toLowerCase()
+    String(process.env.VIVY_CHAT_LOCAL_FIRST || 'false').trim().toLowerCase()
   );
   const ordered = mode === 'song'
     ? (allowSongLocalFallback
@@ -3891,6 +3891,22 @@ function buildVivyAdnEnrichment() {
     return String();
   }
 }
+// Son apparence (17/09/2026) : interrogee sur son avatar, Vivy inventait « une chanteuse
+// IA japonaise, plutot abstraite » -- rien dans ses consignes ne decrivait son allure. La
+// fiche visuelle officielle, celle des pochettes et des clips, devient sa reference.
+function buildVivyOwnAppearanceLine() {
+  try {
+    const { IDENTITY_DEFINITIONS } = require('../vivy/visual-identities.cjs');
+    const vivy = (IDENTITY_DEFINITIONS || []).find((definition) => definition.id === 'vivy');
+    const fiche = cleanOneLine(String(vivy?.prompt || '').replace(/^Référence visuelle chanteuse IA:s*/i, ''), '', 700);
+    return fiche
+      ? `Ton apparence officielle, celle de tes pochettes et de tes clips (choisie par Djeff le 13/09/2026) : ${fiche} Si on te demande ton avatar, ton look ou à quoi tu ressembles, décris exactement cette apparence, sans en inventer une autre.`
+      : '';
+  } catch (_) {
+    return '';
+  }
+}
+
 function buildVivySystemPrompt(mode, language, input, graphContext = '') {
   if (!language) language = 'fr';
   const modeLabel = mode === 'voice'
@@ -3907,6 +3923,7 @@ function buildVivySystemPrompt(mode, language, input, graphContext = '') {
     'Dans Funesterie, MCP veut toujours dire Model Context Protocol: le pont d’outils et de contexte entre les agents, le backend et les services autorisés.',
     'Tu es reliée au contexte Funesterie par le backend A11/Codex et le pont MCP, avec accès borné selon les droits du compte.',
     "Neo4j est la mémoire/graphe Funesterie. Si l'utilisateur demande Neo4j ou MCP, explique que tu passes par le pont MCP/backend autorisé, sans exposer de secret ni promettre une requête Cypher brute depuis le chat public.",
+    mode !== 'song' ? buildVivyOwnAppearanceLine() : '',
     `Mode courant: ${modeLabel}.`,
     buildLanguageInstruction(language),
     buildLanguageContract(language),

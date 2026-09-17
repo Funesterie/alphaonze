@@ -916,7 +916,7 @@ services:
       A11_LLM_PROVIDER: ollama
       A11_OLLAMA_PRIMARY_MODEL: qwen2.5:32b
       A11_OLLAMA_FALLBACK_MODEL: qwen2.5:7b
-      VIVY_CHAT_LOCAL_FIRST: "true"
+      VIVY_CHAT_LOCAL_FIRST: "false"
       VIVY_OLLAMA_BASE_URL: http://a11-ollama:11434
       VIVY_CHAT_LOCAL_MODEL: qwen2.5:7b
       VIVY_CHAT_LOCAL_TIMEOUT_MS: ${VIVY_CHAT_LOCAL_TIMEOUT_MS:-90000}
@@ -1287,7 +1287,7 @@ services:
       A11_LLM_PROVIDER: ollama
       A11_OLLAMA_PRIMARY_MODEL: qwen2.5:32b
       A11_OLLAMA_FALLBACK_MODEL: qwen2.5:7b
-      VIVY_CHAT_LOCAL_FIRST: "true"
+      VIVY_CHAT_LOCAL_FIRST: "false"
       VIVY_OLLAMA_BASE_URL: http://a11-ollama:11434
       VIVY_CHAT_LOCAL_MODEL: qwen2.5:7b
       VIVY_CHAT_LOCAL_TIMEOUT_MS: ${VIVY_CHAT_LOCAL_TIMEOUT_MS:-90000}
@@ -1889,7 +1889,7 @@ $overrides = [ordered]@{
   A11_OLLAMA_BASE = "http://a11-ollama:11434"
   A11_OLLAMA_PRIMARY_MODEL = "qwen2.5:32b"
   A11_OLLAMA_FALLBACK_MODEL = "qwen2.5:7b"
-  VIVY_CHAT_LOCAL_FIRST = "true"
+  VIVY_CHAT_LOCAL_FIRST = "false"
   VIVY_OLLAMA_BASE_URL = "http://a11-ollama:11434"
   VIVY_CHAT_LOCAL_MODEL = "qwen2.5:7b"
   VIVY_CHAT_LOCAL_TIMEOUT_MS = "90000"
@@ -2581,7 +2581,7 @@ printf 'A11_VOICE_XTTS_RVC_FALLBACK=false\n' >> "$tmp_build"
 printf 'A11_LLM_PROVIDER=ollama\n' >> "$tmp_build"
 printf 'A11_OLLAMA_PRIMARY_MODEL=qwen2.5:32b\n' >> "$tmp_build"
 printf 'A11_OLLAMA_FALLBACK_MODEL=qwen2.5:7b\n' >> "$tmp_build"
-printf 'VIVY_CHAT_LOCAL_FIRST=true\n' >> "$tmp_build"
+printf 'VIVY_CHAT_LOCAL_FIRST=false\n' >> "$tmp_build"
 printf 'VIVY_OLLAMA_BASE_URL=http://a11-ollama:11434\n' >> "$tmp_build"
 printf 'VIVY_CHAT_LOCAL_MODEL=qwen2.5:7b\n' >> "$tmp_build"
 printf 'VIVY_CHAT_LOCAL_TIMEOUT_MS=90000\n' >> "$tmp_build"

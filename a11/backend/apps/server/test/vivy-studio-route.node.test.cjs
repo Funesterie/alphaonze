@@ -6417,7 +6417,8 @@ test('Hetzner deploy wires local-first Ollama with a cloud provider domino', () 
   assert.match(deploySource, /OLLAMA_CLOUD_ENABLED:\s*\$\{OLLAMA_CLOUD_ENABLED:-1\}/);
   assert.match(deploySource, /OLLAMA_CLOUD_LYRICS_MODEL:\s*\$\{OLLAMA_CLOUD_LYRICS_MODEL:-gpt-oss:120b\}/);
   assert.match(deploySource, /A11_OLLAMA_PRIMARY_MODEL:\s*qwen2\.5:32b/);
-  assert.match(deploySource, /VIVY_CHAT_LOCAL_FIRST:\s*"true"/);
+  // 17/09/2026 : cloud d'abord pour le chat. qwen2.5:7b mettait 60 s et epuisait le budget.
+  assert.match(deploySource, /VIVY_CHAT_LOCAL_FIRST:\s*"false"/);
   assert.match(deploySource, /VIVY_CHAT_LOCAL_MODEL:\s*qwen2\.5:7b/);
   assert.match(deploySource, /VIVY_CHAT_LOCAL_TIMEOUT_MS:\s*\$\{VIVY_CHAT_LOCAL_TIMEOUT_MS:-90000\}/);
   assert.match(deploySource, /VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS:\s*\$\{VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS:-10000\}/);
@@ -8496,4 +8497,13 @@ test('Vivy accepte des paroles de rap en structure libre sans refrain double', (
   assert.equal(strict, '');
   const libre = buildVivyPublicLyrics({ songText: 'Aki Hayakawa' }, paroles, '', { allowDeterministicFallback: false, requireRepeatedChorus: true, freeStructure: true });
   assert.match(libre, /Aki serre la cigarette/);
+});
+
+test('Vivy connait son apparence officielle en discussion, pas en ecriture de chanson', () => {
+  const { buildVivySystemPrompt } = require('../src/routes/vivy-studio.cjs');
+  const chat = buildVivySystemPrompt('chat', 'fr', {});
+  assert.match(chat, /Ton apparence officielle/);
+  assert.match(chat, /cheveux noirs ondulés à mèches magenta/);
+  assert.match(chat, /veste en cuir noir/);
+  assert.doesNotMatch(buildVivySystemPrompt('song', 'fr', {}), /Ton apparence officielle/);
 });
