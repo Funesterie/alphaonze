@@ -988,6 +988,9 @@ function createVivyStreamStore(options = {}) {
     state.jukebox.tracks = Array.isArray(state.jukebox.tracks) ? state.jukebox.tracks : [];
     // Historique du shuffle: on ne rejoue un morceau qu'une fois tout le catalogue passe.
     state.jukebox.playedIds = Array.isArray(state.jukebox.playedIds) ? state.jukebox.playedIds : [];
+    // Compteur de lectures pour intercaler un clip vitrine toutes les N chansons.
+    state.jukebox.playsCount = Number.isFinite(Number(state.jukebox.playsCount)) ? Number(state.jukebox.playsCount) : 0;
+    state.jukebox.lastClipId = typeof state.jukebox.lastClipId === 'string' ? state.jukebox.lastClipId : '';
     return state.jukebox;
   }
 
@@ -1137,6 +1140,21 @@ function createVivyStreamStore(options = {}) {
     return DEFAULT_TRACK_SECONDS;
   }
 
+  // Toutes les JUKEBOX_CLIP_EVERY chansons, on intercale un CLIP VITRINE complet
+  // (morceau qui possede une video: shareVideoUrl de preference, sinon coverVideoUrl).
+  const JUKEBOX_CLIP_EVERY = Number(process.env.VIVY_STREAM_JUKEBOX_CLIP_EVERY || 15) || 15;
+  function getJukeboxClipTracks() {
+    return getJukeboxTracks().filter((track) => cleanOneLine(track.shareVideoUrl || track.coverVideoUrl, '', 1200));
+  }
+  function selectJukeboxClipTrack() {
+    const clips = getJukeboxClipTracks();
+    if (!clips.length) return null;
+    if (clips.length === 1) return clips[0];
+    const jukebox = ensureJukebox();
+    const pool = clips.filter((track) => track.id !== jukebox.lastClipId);
+    const from = pool.length ? pool : clips;
+    return from[randomInt(from.length)];
+  }
   function selectJukeboxTrack() {
     const tracks = getJukeboxTracks();
     if (!tracks.length) return null;
@@ -1183,11 +1201,17 @@ function createVivyStreamStore(options = {}) {
       return publicState(state);
     }
     if (!shouldStartIdleJukebox({ allowInterlude: Boolean(options.rotate) })) return publicState(state);
-    const track = selectJukeboxTrack();
+    const jukebox = ensureJukebox();
+    jukebox.playsCount = Number(jukebox.playsCount || 0) + 1;
+    // Toutes les N lectures: clip vitrine complet si un morceau video existe.
+    const wantClip = JUKEBOX_CLIP_EVERY > 0 && (jukebox.playsCount % JUKEBOX_CLIP_EVERY === 0);
+    const clipTrack = wantClip ? selectJukeboxClipTrack() : null;
+    const track = clipTrack || selectJukeboxTrack();
     if (!track) return publicState(state);
+    const isClipShowcase = Boolean(clipTrack);
+    if (isClipShowcase) jukebox.lastClipId = track.id;
     const startedAt = Date.now();
     const durationSeconds = Math.max(1, Math.min(3600, Number(resolveJukeboxTrackDuration(track) || DEFAULT_TRACK_SECONDS)));
-    const jukebox = ensureJukebox();
     jukebox.lastTrackId = track.id;
     addLiveSong({
       ...track,
@@ -1204,11 +1228,15 @@ function createVivyStreamStore(options = {}) {
       coverPrompt: track.coverPrompt || '',
       coverVideoUrl: track.coverVideoUrl || '',
       coverVideoPrompt: track.coverVideoPrompt || '',
+      shareVideoUrl: track.shareVideoUrl || '',
+      clipShowcase: isClipShowcase,
       requestedBy: track.requestedBy || 'Vivy Live',
       durationSeconds,
       playbackStartedAt: new Date(startedAt).toISOString(),
       phaseEndsAt: new Date(startedAt + (durationSeconds * 1000)).toISOString(),
-      message: 'Fond musical d’attente pendant que le chat prépare la prochaine demande.',
+      message: isClipShowcase
+        ? 'Clip vitrine NOSSEN pendant que le chat prepare la prochaine demande.'
+        : 'Fond musical d’attente pendant que le chat prépare la prochaine demande.',
     });
     save();
     return publicState(state);
