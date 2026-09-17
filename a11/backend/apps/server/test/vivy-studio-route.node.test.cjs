@@ -8514,6 +8514,7 @@ test('les paroles chantees par Jeffrey sont ecrites avec la plume Djeff Engine',
   const plume = studio.buildJeffreyDjeffEnginePen({ voiceCatalogName: 'jeffrey' });
   if (buildDjeffSystemPrompt()) {
     assert.match(plume, /plume de Djeff Engine/);
+    assert.match(plume, /explicite, argot cru et insultes autoris/);
   } else {
     assert.equal(plume, '', 'sans profil Djeff actif, aucune plume inventee');
   }

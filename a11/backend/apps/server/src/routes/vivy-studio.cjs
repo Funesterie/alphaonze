@@ -3903,6 +3903,8 @@ function buildJeffreyDjeffEnginePen(input = {}) {
   return [
     "Ces paroles sont chantées par Jeffrey, la vraie voix de Djeff. Écris-les avec la plume de Djeff Engine, sa persona validée, décrite ci-dessous : son regard, son vocabulaire, sa façon de reprendre la narration.",
     persona,
+    // Decision de Djeff, 17/09/2026 : « en explicite, insultes autorisees ».
+    "Langage explicite, argot cru et insultes autorisés pour Jeffrey : écris aussi frontalement que le morceau le demande. Les cibles restent des figures (le système, eux, la blouse, les faux) ; une personne privée réelle n'est jamais nommée.",
     "Tu gardes le sujet, la langue et la structure de chanson demandés ; seule la plume change. Les secrets d'infrastructure restent hors des paroles.",
   ].join('\n\n');
 }
