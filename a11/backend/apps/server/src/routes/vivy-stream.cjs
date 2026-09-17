@@ -6,7 +6,7 @@ const { execFileSync, spawn } = require('node:child_process');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
-const { historyDirectory, readHistoryTracks, rememberHistoryTracks, summarizeHistoryTrack, applyHistoryEnhancements } = require('../music/jukebox-history.cjs');
+const { historyDirectory, readHistoryTracks, rememberHistoryTracks, summarizeHistoryTrack, applyHistoryEnhancements, isTrackRetired } = require('../music/jukebox-history.cjs');
 const { clearUserEpisodes } = require('../../lib/episodic-memory.cjs');
 const {
   createVivyStreamNossenRunner,
@@ -1095,7 +1095,10 @@ function createVivyStreamStore(options = {}) {
   function getJukeboxTracks() {
     const jukebox = ensureJukebox();
     if (!jukebox.tracks.length) refreshJukeboxFromAssets();
-    jukebox.tracks = jukebox.tracks.filter((track) => track?.trackUrl && !isProviderOnlyTrackUrl(track.trackUrl));
+    // Exclure les morceaux retires (marqueur -retired) ET les provider-only du pool.
+    jukebox.tracks = jukebox.tracks.filter((track) => track?.trackUrl
+      && !isProviderOnlyTrackUrl(track.trackUrl)
+      && !isTrackRetired(track.trackUrl, archiveDirectory));
     // Le jukebox doit tourner sur TOUT le catalogue, pas seulement les quelques
     // assets vivy-music-*. On fusionne les morceaux generes (state.songs) jouables
     // en local, dedupliques par trackUrl, pour eviter la boucle sur 2 titres.
@@ -1103,7 +1106,7 @@ function createVivyStreamStore(options = {}) {
     const seen = new Set(pool.map((track) => String(track.trackUrl || '')));
     for (const song of ensureSongs()) {
       const url = String(song?.trackUrl || '');
-      if (!url || isProviderOnlyTrackUrl(url) || seen.has(url)) continue;
+      if (!url || isProviderOnlyTrackUrl(url) || seen.has(url) || isTrackRetired(url, archiveDirectory)) continue;
       const normalized = normalizeJukeboxTrack({
         ...song,
         source: song.source || 'vivy-live-song',

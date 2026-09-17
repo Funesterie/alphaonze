@@ -198,4 +198,16 @@ function applyHistoryEnhancements(tracks, directory = historyDirectory()) {
   });
 }
 
-module.exports = { historyDirectory, localAudioUrl, normalizeHistoryTrack, mergeHistoryTracks, readHistoryTracks, rememberHistoryTracks, summarizeHistoryTrack, applyHistoryEnhancements };
+// Un morceau est retire si un marqueur <sha256(trackUrl)>.json existe dans `<historique>-retired`.
+// Sert a exclure du jukebox live les morceaux retires (le filtre applyHistoryEnhancements
+// ne couvre que l'archive publique, pas la liste live state.songs).
+function isTrackRetired(trackUrl, directory = historyDirectory()) {
+  const url = String(trackUrl || '').trim();
+  if (!url) return false;
+  try {
+    return fs.existsSync(path.join(directory + '-retired', hash(url) + '.json'));
+  } catch {
+    return false;
+  }
+}
+module.exports = { historyDirectory, localAudioUrl, normalizeHistoryTrack, mergeHistoryTracks, isTrackRetired, readHistoryTracks, rememberHistoryTracks, summarizeHistoryTrack, applyHistoryEnhancements };
