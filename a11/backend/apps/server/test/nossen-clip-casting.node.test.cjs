@@ -95,3 +95,20 @@ test('le rendu choisi sur la page (film ou manga) voyage jusqu au prompt de chaq
   assert.match(renduVisuel({}, 'anime'), /anime/i, 'le choix du clip prime');
   assert.match(renduVisuel({ NOSSEN_CLIP_RENDER: 'anime' }, 'film'), /Live-action/, 'meme contre la variable de defaut');
 });
+
+// 17/09/2026 : un clip moto changeait de moto d'un plan a l'autre, et la route /start
+// jetait le lieu et la mise en scene que le Director savait pourtant lire.
+test('l element recurrent est impose au Director et repete dans chaque plan', () => {
+  const { elementRecurrentBrief, directionAvecElementRecurrent } = require('../src/clips/clip-generator-v2.cjs');
+  const moto = 'black vintage cafe racer motorcycle with a round headlight';
+  assert.match(elementRecurrentBrief({ elementRecurrent: moto }), /exact same black vintage cafe racer motorcycle/);
+  assert.match(elementRecurrentBrief({ elementRecurrent: moto }), /never change it/);
+  assert.equal(elementRecurrentBrief({}), '');
+  assert.equal(directionAvecElementRecurrent({ direction: 'nuit pluvieuse' }), 'nuit pluvieuse');
+  assert.match(directionAvecElementRecurrent({ direction: 'nuit pluvieuse', elementRecurrent: moto }), /^nuit pluvieuse Element recurrent obligatoire/);
+});
+
+test('la route /start transmet lieu, mise en scene et element recurrent au generateur', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/clips/clip-router.cjs'), 'utf8');
+  assert.match(source, /runClipGeneration\(job\.id, \{[^}]*lieu, direction, elementRecurrent \}/);
+});

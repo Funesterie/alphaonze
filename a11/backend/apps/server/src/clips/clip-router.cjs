@@ -247,6 +247,12 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
     // d identite, et chaque plan reinventait le visage du personnage (constate par
     // Djeff le 12/09/2026 sur trois clips d affilee).
     const casting = normaliserCasting(req.body && req.body.casting);
+    // Lieu, mise en scene et element recurrent (17/09/2026). Le Director savait les lire,
+    // mais la route les jetait. L'element recurrent (la moto d'un clip moto) est repete
+    // dans CHAQUE plan : sans image de reference, le texte est la seule continuite.
+    const lieu = String((req.body && req.body.lieu) || '').trim().slice(0, 300);
+    const direction = String((req.body && req.body.direction) || '').trim().slice(0, 600);
+    const elementRecurrent = String((req.body && (req.body.elementRecurrent || req.body.recurringElement)) || '').trim().slice(0, 300);
     const castArtists = normaliserDistribution(req.body && req.body.multiVoice, casting);
     if (mode === 'script') {
       if (!scriptText && !scriptUrl) {
@@ -329,7 +335,7 @@ function createClipRouter({ verifyJWT, isAdmin, generateClipImpl, db = null, isA
 
     // Lancer la génération en arrière-plan
     setImmediate(() => {
-      runClipGeneration(job.id, { songUrl, title, style, fullDuration, sections, casting, castArtists, render, identiteCompte, mode, scriptText, scriptUrl, sceneCount }, {
+      runClipGeneration(job.id, { songUrl, title, style, fullDuration, sections, casting, castArtists, render, identiteCompte, mode, scriptText, scriptUrl, sceneCount, lieu, direction, elementRecurrent }, {
         workerId: CLIP_WORKER_ID,
         generateClipImpl,
       }).then((sortie) => {

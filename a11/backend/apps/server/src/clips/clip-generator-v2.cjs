@@ -269,6 +269,21 @@ function extractComfyOutputUrl(response) {
   return short ? `https://cloud.comfy.org${short}` : '';
 }
 
+// Element recurrent (17/09/2026) : la moto d'un clip moto changeait de modele d'un plan a
+// l'autre. Sans image de reference (aucun i2v chez Comfy), le texte est la seule
+// continuite : la meme description est donnee au Director et repetee dans chaque plan.
+function elementRecurrentBrief(config = {}) {
+  const element = String((config && config.elementRecurrent) || '').trim();
+  return element ? ` The exact same ${element} appears in every shot, identical model, colors and details; never change it.` : '';
+}
+
+function directionAvecElementRecurrent(config = {}) {
+  const element = String((config && config.elementRecurrent) || '').trim();
+  const direction = String((config && config.direction) || '').trim();
+  const imposition = element ? `Element recurrent obligatoire dans chaque plan, toujours identique : ${element}.` : '';
+  return [direction, imposition].filter(Boolean).join(' ');
+}
+
 function emitProgress(callback, event) {
   if (typeof callback !== 'function') return;
   // Le callback persiste aussi le prompt_id du fournisseur. S'il échoue, on
@@ -994,7 +1009,7 @@ async function generateClip(config = {}, {
       directed = await scriptDirector.directScript({
         title, style, sections, casting, castArtists, render, identiteCompte,
         scriptText: config.scriptText, scriptUrl: config.scriptUrl,
-        sceneCount: numSegments, lieu: config.lieu, direction: config.direction,
+        sceneCount: numSegments, lieu: config.lieu, direction: directionAvecElementRecurrent(config),
         onProgress: directorProgress,
       });
       sections = requireDirectedScenes(directed);
@@ -1005,7 +1020,7 @@ async function generateClip(config = {}, {
       if (!director || typeof director.directClip !== 'function') throw new Error('directClip indisponible');
       directed = await director.directClip({ title, songUrl, audioPath, style, sections, casting, castArtists, render, identiteCompte,
         planCount: numSegments, durationSeconds: audioDuration,
-        lyrics: config.lyrics, lieu: config.lieu, direction: config.direction, onProgress: directorProgress });
+        lyrics: config.lyrics, lieu: config.lieu, direction: directionAvecElementRecurrent(config), onProgress: directorProgress });
       sections = requireDirectedScenes(directed);
     }
   } catch (error) {
@@ -1201,7 +1216,7 @@ async function generateClip(config = {}, {
   for (let i = 0; i < numSegments; i++) {
     const section = sections[i % sections.length];
     const prompt = effacerNomsFilm(
-      `${section.visual}.${lieuBrief} ${renduVisuel(process.env, render)} ${styleVideo(style, title)}${identityBrief}`.trim(),
+      `${section.visual}.${lieuBrief}${elementRecurrentBrief(config)} ${renduVisuel(process.env, render)} ${styleVideo(style, title)}${identityBrief}`.trim(),
       identity.nomsFilm,
     );
 
@@ -1396,6 +1411,8 @@ function mountClipRoutes(app) {
 }
 
 module.exports = {
+  elementRecurrentBrief,
+  directionAvecElementRecurrent,
   T2V_DEFAUT,
   choisirReference,
   PLAFOND_REFUS_POLITIQUE,
