@@ -3285,8 +3285,8 @@ test('Vivy Twitch cover prompts stay visual and image generation can return a pu
     assert.match(identityBody.referenceVisualContext, /Référence visuelle créateur humain/i);
     assert.match(identityBody.referenceVisualContext, /Référence visuelle chanteuse IA/i);
     assert.ok(identityBody.referenceImageUrls.includes('https://files.funesterie.me/users/djeff-reference.webp'));
-    assert.ok(identityBody.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-01'));
-    assert.ok(identityBody.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-05'));
+    assert.ok(identityBody.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-photo-17-09'));
+    assert.ok(!identityBody.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-05'));
     // Portrait detoure et non la carte "Presence musicale" : cette derniere
     // portait du texte que les modeles video recopiaient dans les clips.
     // Références adultes choisies par Djeff le 13/09/2026 (l'ancien portrait faisait gamine gothique).
@@ -3446,8 +3446,8 @@ test('Vivy Twitch clip animates the cover with the trusted asynchronous video en
     assert.match(captured.prompt, /Référence visuelle créateur humain/i);
     assert.match(captured.prompt, /ne pas le rendre noir/i);
     assert.equal(captured.body.referenceImageUrls[0], 'https://files.funesterie.me/covers/djeff-rebelle.webp');
-    assert.ok(captured.body.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-01'));
-    assert.ok(captured.body.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-05'));
+    assert.ok(captured.body.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-photo-17-09'));
+    assert.ok(!captured.body.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-05'));
     assert.match(buildTwitchClipPrompt({ title: 'Test' }), /aucun morphing/i);
   } finally {
     if (previousEnabled === undefined) delete process.env.VIVY_STREAM_CLIP_ENABLED;

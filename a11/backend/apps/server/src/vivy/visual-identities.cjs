@@ -112,25 +112,22 @@ const IDENTITY_DEFINITIONS = [
       /\bcr[ée]ateur\s+humain\b/i,
     ],
     envRefs: ['VIVY_DJEFF_REFERENCE_IMAGE_URL', 'DJEFF_REFERENCE_IMAGE_URL'],
+    // 17/09/2026 : Djeff a choisi une nouvelle photo, seule reference. Les anciennes
+    // (casquette, chaine a croix) faisaient sortir un acteur generique habille comme lui.
     defaultRefs: [
-      'https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-photo',
-      'https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-01',
-      'https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-02',
-      'https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-03',
-      'https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-04',
-      'https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-05',
+      'https://vivy.funesterie.me/api/vivy/stream/identity/djeff-reference-photo-17-09',
     ],
     prompt: [
       // 16/09/2026 : la phrase qui ouvrait ce tableau décrivait encore l'ancien
       // visage (« méditerranéen, peau olive, visage large, barbe noire ») que le
       // 13/09 a déclaré faux ; elle contredisait la suivante dans le même prompt.
       'Référence visuelle créateur humain, énergie de créateur.',
-      'Si ce créateur apparaît, préserver ces traits: jeune homme à peau claire, visage ovale, mâchoire nette et menton pointu, yeux marron foncé, sourcils épais et droits, coupe très courte dégradée brun foncé, barbe de quelques jours le long de la mâchoire, silhouette fine, casquette foncée à motifs, tee-shirt blanc, fine chaîne dorée à croix. Ces traits suffisent seuls: aucune image de référence n est transmise au generateur video, la description porte donc toute la ressemblance. Ne pas changer son origine visuelle, ne pas le rendre noir, imberbe, personnage motard bêta ou acteur générique.',
+      'Si ce créateur apparaît, préserver ces traits: jeune homme à peau claire, visage ovale, mâchoire nette et menton pointu, yeux marron foncé, sourcils épais et droits, coupe très courte dégradée brun foncé, légère barbe de quelques jours, petite boucle d oreille, silhouette fine, veste de survêtement zippée bleu marine à bandes bleu clair et blanches sur un tee-shirt blanc. Ces traits suffisent seuls: aucune image de référence n est transmise au generateur video, la description porte donc toute la ressemblance. Ne pas changer son origine visuelle, ne pas le rendre noir, imberbe, personnage motard bêta ou acteur générique.',
     ].join(' '),
     // Refait le 13/09/2026 sur la photo choisie par Djeff : « Mediterranean, olive
     // skin, broad face, full cheeks, black beard and moustache, broad shoulders »
     // faisait inventer un autre homme au generateur (clip « Essence Pure Eclat »).
-    videoPrompt: 'Djeff, the creator: young adult man with fair skin, oval face with a defined jaw and a pointed chin, dark brown eyes under thick straight dark eyebrows, straight nose, very short dark brown hair faded on the sides, light stubble along the jaw and chin, slim build, calm serious expression; dark patterned baseball cap, white t-shirt, thin gold chain with a small cross pendant.',
+    videoPrompt: 'Djeff, the creator: young adult man with fair skin, oval face with a defined jaw and a pointed chin, dark brown eyes under thick straight dark eyebrows, straight nose, very short dark brown hair faded on the sides, light stubble, small stud earring, slim build, calm serious expression; navy striped zip-up track jacket over a white t-shirt.',
     negative: [
       'black Djeff',
       'wrong Djeff ethnicity',
