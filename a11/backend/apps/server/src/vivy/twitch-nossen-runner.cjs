@@ -3919,7 +3919,7 @@ function createVivyStreamNossenRunner(options = {}) {
           ? process.env.VIVY_MUREKA_MODEL || 'mureka-9'
           : musicProvider === 'elevenlabs'
             ? process.env.VIVY_ELEVENLABS_MUSIC_MODEL || 'music_v2'
-            : process.env.VIVY_SUNO_LONG_MODEL || process.env.VIVY_SUNO_MODEL || 'V5_5',
+            : process.env.VIVY_SUNO_LONG_MODEL || process.env.VIVY_SUNO_MODEL || 'V6',
         // Le scope garde une estimation pour dimensionner les paroles, mais le
         // fournisseur ne reçoit une durée chiffrée que si elle a été demandée
         // explicitement ou verrouillée par configuration. Sinon, une valeur
@@ -4056,7 +4056,7 @@ function createVivyStreamNossenRunner(options = {}) {
             audioId,
             uploadUrl: uploadUrl || undefined,
             forceUploadExtend: Boolean(uploadUrl),
-            model: productionInput.musicModel || getSunoModel(result, 'V5_5'),
+            model: productionInput.musicModel || getSunoModel(result, 'V6'),
             sourceTaskId: latestTaskId || undefined,
             sourceDurationSeconds: durationSeconds,
             continueAtSeconds: Math.max(1, Math.floor(durationSeconds - 8)),

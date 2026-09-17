@@ -205,7 +205,7 @@ async function recoverPersonaFromSample(nameOrAlias, options = {}, env = process
     apiKey,
     baseUrl,
     sampleUrl,
-    model = 'V5',
+    model = 'V6',
     fetchImpl = globalThis.fetch,
     timeoutMs = 60000,
   } = options;

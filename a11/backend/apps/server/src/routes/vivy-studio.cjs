@@ -651,10 +651,10 @@ function isMurekaMusicConfigured() {
 }
 
 function getVivySunoRuntimeStatus() {
-  const model = cleanOneLine(process.env.VIVY_SUNO_MODEL || 'V5_5', 'V5_5', 40).toUpperCase();
+  const model = cleanOneLine(process.env.VIVY_SUNO_MODEL || 'V6', 'V6', 40).toUpperCase();
   return {
     model,
-    mode: /^V(?:4|5)(?:_|$)/.test(model) ? 'production' : 'custom',
+    mode: /^V(?:4|5|6)(?:_|$)/.test(model) ? 'production' : 'custom',
     voiceEnrolled: Boolean(resolveConfiguredVivySunoPersonaVoiceId('vivy')),
     voicesEnrolled: {
       vivy: Boolean(resolveConfiguredVivySunoPersonaVoiceId('vivy')),
@@ -3904,7 +3904,8 @@ function buildJeffreyDjeffEnginePen(input = {}) {
     "Ces paroles sont chantées par Jeffrey, la vraie voix de Djeff. Écris-les avec la plume de Djeff Engine, sa persona validée, décrite ci-dessous : son regard, son vocabulaire, sa façon de reprendre la narration.",
     persona,
     // Decision de Djeff, 17/09/2026 : « en explicite, insultes autorisees ».
-    "Langage explicite, argot cru et insultes autorisés pour Jeffrey : écris aussi frontalement que le morceau le demande. Les cibles restent des figures (le système, eux, la blouse, les faux) ; une personne privée réelle n'est jamais nommée.",
+    "Langage explicite, argot cru et insultes autorisés pour Jeffrey : écris aussi frontalement que le morceau le demande. Les cibles restent des figures (le système, eux, les faux) ; une personne privée réelle n'est jamais nommée.",
+    "Les paroles ne parlent pas explicitement de psychiatrie : ni hôpital psychiatrique, ni diagnostic, ni traitement, ni internement. Le vécu passe par la rue, la route, l'atelier, la forge et la rage.",
     "Tu gardes le sujet, la langue et la structure de chanson demandés ; seule la plume change. Les secrets d'infrastructure restent hors des paroles.",
   ].join('\n\n');
 }
@@ -8891,9 +8892,9 @@ function wantsVivySunoLongForm(input = {}) {
 
 function resolveVivySunoRequestedModel(input = {}) {
   const longModel = wantsVivySunoLongForm(input)
-    ? cleanOneLine(process.env.VIVY_SUNO_LONG_MODEL || 'V5_5', 'V5_5', 40)
+    ? cleanOneLine(process.env.VIVY_SUNO_LONG_MODEL || 'V6', 'V6', 40)
     : '';
-  return cleanOneLine(input.musicModel || longModel || process.env.VIVY_SUNO_MODEL || 'V5_5', 'V5_5', 40);
+  return cleanOneLine(input.musicModel || longModel || process.env.VIVY_SUNO_MODEL || 'V6', 'V6', 40);
 }
 
 function wantsVivyInstrumentalSoundDesign(input = {}) {
@@ -11034,9 +11035,10 @@ async function requestSunoMusicExtension(input = {}, req = null) {
   // on la transmet donc, avec le modele compatible persona comme a la generation.
   const extensionVoiceId = resolveVivyCatalogVoiceIdFromInput(input)
     || resolveConfiguredVivySunoPersonaVoiceId(cleanOneLine(input.sunoPersonaArtist || input.artistId, '', 40));
-  const requestedExtensionModel = cleanOneLine(input.musicModel || input.model || input.sourceModel || process.env.VIVY_SUNO_MODEL || 'V5_5', 'V5_5', 40);
-  const model = extensionVoiceId && !/^V5(?:_5)?$/i.test(requestedExtensionModel)
-    ? 'V5_5'
+  const requestedExtensionModel = cleanOneLine(input.musicModel || input.model || input.sourceModel || process.env.VIVY_SUNO_MODEL || 'V6', 'V6', 40);
+  // Depuis le 10/09/2026 le fournisseur ne sert plus que la serie V6 (les anciens noms y sont reroutes).
+  const model = extensionVoiceId && !/^V(?:5(?:_5)?|6)$/i.test(requestedExtensionModel)
+    ? 'V6'
     : requestedExtensionModel;
   const sourceDurationSeconds = Number(
     input.sourceDurationSeconds

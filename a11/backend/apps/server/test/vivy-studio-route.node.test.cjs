@@ -3063,8 +3063,8 @@ test('Vivy deployment upgrades a reused production environment to Suno V5.5', ()
   );
   assert.match(deploySource, /managed_keys='[^']*VIVY_SUNO_MODEL/);
   assert.match(deploySource, /managed_keys='[^']*VIVY_SUNO_LONG_MODEL/);
-  assert.match(deploySource, /printf 'VIVY_SUNO_MODEL=V5_5\\n'/);
-  assert.match(deploySource, /printf 'VIVY_SUNO_LONG_MODEL=V5_5\\n'/);
+  assert.match(deploySource, /printf 'VIVY_SUNO_MODEL=V6\\n'/);
+  assert.match(deploySource, /printf 'VIVY_SUNO_LONG_MODEL=V6\\n'/);
 });
 
 test('Suno payload keeps sung Suno vocals by default when selected voice has no persona id', () => {
@@ -3079,7 +3079,7 @@ test('Suno payload keeps sung Suno vocals by default when selected voice has no 
     });
 
     assert.equal(payload.instrumental, false);
-    assert.equal(payload.model, 'V5_5');
+    assert.equal(payload.model, 'V6');
     assert.equal(payload.personaId, undefined);
     assert.equal(payload.personaModel, undefined);
     assert.match(payload.style, /sung vocals/i);
@@ -3236,7 +3236,7 @@ test('Suno payload keeps complete NOSSEN arrangements without forcing five minut
       targetDurationSeconds: 300,
     });
 
-    assert.equal(payload.model, 'V5_5');
+    assert.equal(payload.model, 'V6');
     assert.match(payload.style, /long-form complete song arrangement/i);
     assert.match(payload.style, /complete final chorus/i);
     assert.match(payload.style, /no forced duration/i);
@@ -8515,6 +8515,7 @@ test('les paroles chantees par Jeffrey sont ecrites avec la plume Djeff Engine',
   if (buildDjeffSystemPrompt()) {
     assert.match(plume, /plume de Djeff Engine/);
     assert.match(plume, /explicite, argot cru et insultes autoris/);
+    assert.match(plume, /ne parlent pas explicitement de psychiatrie/);
   } else {
     assert.equal(plume, '', 'sans profil Djeff actif, aucune plume inventee');
   }

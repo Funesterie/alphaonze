@@ -2323,7 +2323,7 @@ test('Twitch NOSSEN runner extends short Suno songs only with paid retry confirm
   assert.equal(extensionInput.audioId, 'suno-audio-short-youth');
   assert.equal(extensionInput.forceUploadExtend, true);
   assert.equal(extensionInput.uploadUrl, 'https://vivy.funesterie.me/api/vivy/studio/assets/short-youth.mp3');
-  assert.equal(extensionInput.model, 'V5_5');
+  assert.equal(extensionInput.model, 'V6');
   assert.equal(extensionInput.continueAtSeconds, 144);
   assert.equal(extensionInput.targetDurationSeconds, 240);
   assert.match(extensionInput.style, /compact continuation/i);

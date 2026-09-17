@@ -74,7 +74,7 @@ function buildSamplePayload(entry) {
       : '';
 
   return {
-    model: 'V5_5',
+    model: 'V6',
     customMode: true,
     instrumental: false,
     title: `Echantillon ${entry.label}`,
