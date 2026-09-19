@@ -2267,7 +2267,36 @@ function resolveRemoteTtsAssetFetchUrl(baseUrl, value) {
   }
 }
 
+// Piper (a11-voice) refuse au-dela de 4096 caracteres (pydantic max_length) et lit
+// ~1500 caracteres en 2,7 s sur l'EX44 (mesure du 19/09/2026). Le delai fixe de
+// 10 s tombait des qu'un long texte arrivait pendant qu'XTTS saturait le CPU.
+const PIPER_MAX_TEXT_CHARS = 4000;
+
+function fitTextForPiper(text = '') {
+  const raw = String(text || '');
+  if (raw.length <= PIPER_MAX_TEXT_CHARS) return raw;
+  const head = raw.slice(0, PIPER_MAX_TEXT_CHARS);
+  const lastStop = Math.max(head.lastIndexOf('. '), head.lastIndexOf('! '), head.lastIndexOf('? '), head.lastIndexOf('\n'));
+  return (lastStop > PIPER_MAX_TEXT_CHARS * 0.6 ? head.slice(0, lastStop + 1) : head).trim();
+}
+
+function piperTimeoutMs(text = '') {
+  return Math.min(120000, Math.max(10000, 8000 + String(text || '').length * 6));
+}
+
+// XTTS tourne sur CPU : plusieurs minutes pour un long texte, et il previent lui-meme
+// qu'au-dela de ~273 caracteres en francais l'audio peut etre tronque. Un long texte
+// part directement chez Piper au lieu d'attendre 2 min un echec (K44, 19/09/2026).
+function xttsFitsText(text = '') {
+  const max = Number(process.env.A11_VOICE_XTTS_RVC_MAX_CHARS || 600) || 600;
+  return String(text || '').length <= max;
+}
+
 async function requestRemoteTts(payload) {
+  if (payload && typeof payload.text === 'string' && payload.text.length > PIPER_MAX_TEXT_CHARS) {
+    payload = { ...payload, text: fitTextForPiper(payload.text) };
+  }
+  const piperTimeout = piperTimeoutMs(payload && payload.text);
   const ttsConfig = getLocalTtsConfig();
   const preferredPublicBaseUrl = String(ttsConfig.publicBaseUrl || ttsConfig.requestBaseUrl || ttsConfig.baseUrl || '').replace(/\/$/, '');
   const candidateBaseUrls = getRemoteTtsBaseUrls(ttsConfig);
@@ -2279,7 +2308,7 @@ async function requestRemoteTts(payload) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(piperTimeout),
       });
 
       const textBody = await response.text();
@@ -5105,7 +5134,7 @@ async function handleTtsSpeakRequest(req, res) {
       }
     };
 
-    if (cloudProviderOrder.length && shouldTryOfficialLocalIdentityFallback(preparedBody, resolvedProvider)) {
+    if (cloudProviderOrder.length && xttsFitsText(readableText) && shouldTryOfficialLocalIdentityFallback(preparedBody, resolvedProvider)) {
       const requestedCloudProvider = String(preparedBody.a11VoiceProviderRequested || cloudProviderOrder[0] || '').trim().toLowerCase();
       const localFallbackBody = buildOfficialLocalIdentityFallbackBody({
         ...preparedBody,
@@ -5158,7 +5187,10 @@ async function handleTtsSpeakRequest(req, res) {
       }
     }
 
-    if (resolvedProvider.provider === PROVIDERS.XTTS_RVC) {
+    if (resolvedProvider.provider === PROVIDERS.XTTS_RVC && !xttsFitsText(readableText)) {
+      console.warn(`[TTS][XTTS/RVC] texte de ${String(readableText || "").length} caracteres : trop long pour XTTS sur CPU, passage direct a Piper`);
+    }
+    if (resolvedProvider.provider === PROVIDERS.XTTS_RVC && xttsFitsText(readableText)) {
       try {
         const directVoice = await requestDirectXttsRvcWithRetry(readableText, preparedBody, {
           vocalMode,
@@ -5853,7 +5885,7 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
       }
     }
 
-    if (cloudProviderOrder.length && shouldTryOfficialLocalIdentityFallback(preparedBody, resolvedProvider)) {
+    if (cloudProviderOrder.length && xttsFitsText(readableText) && shouldTryOfficialLocalIdentityFallback(preparedBody, resolvedProvider)) {
       const requestedCloudProvider = String(preparedBody.a11VoiceProviderRequested || cloudProviderOrder[0] || '').trim().toLowerCase();
       const localFallbackBody = buildOfficialLocalIdentityFallbackBody({
         ...preparedBody,
@@ -5906,7 +5938,10 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
       }
     }
 
-    if (resolvedProvider.provider === PROVIDERS.XTTS_RVC) {
+    if (resolvedProvider.provider === PROVIDERS.XTTS_RVC && !xttsFitsText(readableText)) {
+      console.warn(`[TTS][XTTS/RVC] texte de ${String(readableText || "").length} caracteres : trop long pour XTTS sur CPU, passage direct a Piper`);
+    }
+    if (resolvedProvider.provider === PROVIDERS.XTTS_RVC && xttsFitsText(readableText)) {
       try {
         const directVoice = await requestDirectXttsRvcWithRetry(readableText, preparedBody, {
           vocalMode,
