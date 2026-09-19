@@ -21,7 +21,7 @@ test('la bible ne contient ni le spoiler Ghost88 ni les noms reels', () => {
 });
 
 test('la bible porte le canon de base, pas un univers invente', () => {
-  for (const attendu of ['Tera', 'Rei 33', 'Kaen 44', 'A-11', 'Vivy 55', 'Nya-22', 'M66', 'datamining', 'Gilera GSM', 'glitcher', 'ne les invente pas']) {
+  for (const attendu of ['Tera', 'Rei 33', 'Kaen 44', 'A-11', 'Vivy 55', 'Nya-22', 'M66', 'datamining', 'Gilera GSM', 'glitcher', 'ne les invente pas', 'commence par la premiere moto']) {
     assert.ok(NOSSEN_SCENARIO_BIBLE.includes(attendu), `manque : ${attendu}`);
   }
 });

@@ -482,6 +482,10 @@ Les liaisons entre ces épisodes ne sont pas établies. Ne pas les inventer.
 
 Premiers épisodes envisagés pour une production vidéo. Entièrement autobiographiques.
 
+**Ordre du récit** *(Djeff, 2026-09-19)* : « Jeff Rei 33 et Nya 22 arriveront plus
+tard, d'abord la première moto de Jeff Rei 33. » La série s'ouvre sur la première
+moto ; Rei 33 en porteur et Nya-22 n'entrent en scène qu'ensuite.
+
 ### La chronologie des motos
 
 ```
