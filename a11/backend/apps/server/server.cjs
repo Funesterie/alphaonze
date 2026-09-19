@@ -767,6 +767,7 @@ const {
 const {
   postProcessA11AssistantResponse,
 } = require('./src/chat/response-draft-rewriter.cjs');
+const { appendNossenScenarioBible } = require('./src/persona/nossen-scenario-bible.cjs');
 const createMailRouter = require('./src/routes/mail.cjs');
 const createMemoryRouter = require('./src/routes/memory.cjs');
 const {
@@ -8561,7 +8562,12 @@ function resolveRequestSystemPrompt(body = {}, user = null, req = null) {
   const surface = resolveRequestSurface(body, req);
   const requestPrompt = String(body?.systemPrompt || body?.system_prompt || '').trim();
   const connectorState = buildAccountConnectorState({ user: user || {}, req, env: process.env });
-  const withConnectorState = (prompt) => buildConnectorAwareSystemPrompt(prompt, connectorState);
+  // K44 recoit la bible NOSSEN quand on lui demande un scenario NOSSEN (19/09/2026).
+  const withConnectorState = (prompt) => appendNossenScenarioBible(
+    buildConnectorAwareSystemPrompt(prompt, connectorState),
+    body,
+    surface,
+  );
   if (requestPrompt && (hasFullAccess(user, process.env) || isTrustedSurfacePrompt(requestPrompt, surface))) {
     return withConnectorState(requestPrompt);
   }
