@@ -130,12 +130,31 @@ function usesCompletionTokenBudget(model) {
 }
 
 // timeoutMs : 45 s suffisent a une relecture ; 26 plans d'un Full Clip non.
-function callOpenRouter(model, messages, maxTokens = 800, timeoutMs = TIMEOUT_MS) {
-  // Sol utilise l'API OpenAI directe, Grok utilise OpenRouter
+// Sol utilise l'API OpenAI directe, Grok utilise OpenRouter. Si OpenAI refuse la
+// cle (401/403) ou qu'elle manque, le MEME modele est rappele via OpenRouter
+// (« openai/<modele> ») : le 19/09/2026, la cle OpenAI de prod etait revoquee et
+// chaque decoupage de planches NOSSEN finissait en 502 alors qu'OpenRouter
+// servait gpt-5.6-terra en 1 s.
+async function callOpenRouter(model, messages, maxTokens = 800, timeoutMs = TIMEOUT_MS) {
   var isOpenAI = !model.includes("/"); // "chatgpt-4o-latest" vs "xai/grok-3"
-  var url = isOpenAI ? OPENAI_URL : OPENROUTER_URL;
-  var key = isOpenAI ? OPENAI_KEY : OPENROUTER_KEY;
-  if (!key) return Promise.reject(new Error(isOpenAI ? "NOSSEN_OPENAI_API_KEY manquante" : "OPENROUTER_API_KEY manquante"));
+  if (!isOpenAI) {
+    if (!OPENROUTER_KEY) throw new Error("OPENROUTER_API_KEY manquante");
+    return requestChatOnce(OPENROUTER_URL, OPENROUTER_KEY, model, messages, maxTokens, timeoutMs);
+  }
+  if (OPENAI_KEY) {
+    try {
+      return await requestChatOnce(OPENAI_URL, OPENAI_KEY, model, messages, maxTokens, timeoutMs);
+    } catch (error) {
+      if (!OPENROUTER_KEY || !/^HTTP (401|403) /.test(String(error && error.message))) throw error;
+      console.warn("[clip-director] OpenAI refuse la cle pour " + model + " ; repli OpenRouter openai/" + model);
+    }
+  } else if (!OPENROUTER_KEY) {
+    throw new Error("NOSSEN_OPENAI_API_KEY manquante");
+  }
+  return requestChatOnce(OPENROUTER_URL, OPENROUTER_KEY, "openai/" + model, messages, maxTokens, timeoutMs);
+}
+
+function requestChatOnce(url, key, model, messages, maxTokens, timeoutMs) {
   return new Promise(function(resolve, reject) {
     var payload = { model: model, messages: messages };
     if (usesCompletionTokenBudget(model)) {

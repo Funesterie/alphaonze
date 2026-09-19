@@ -2337,6 +2337,24 @@ async function loadImageBuffer(ref, options = {}) {
 }
 
 // PDF (generate)
+// PNG (89 50 4E 47) et JPEG (FF D8 FF) passent tels quels ; le reste (WebP, AVIF,
+// GIF…) est converti en PNG. Un buffer illisible (page d'erreur HTML au lieu
+// d'une image) est signale, jamais transmis a pdfkit.
+async function toPdfEmbeddableImage(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 4) {
+    return { ok: false, detail: 'empty_buffer' };
+  }
+  const isPng = buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47;
+  const isJpeg = buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  if (isPng || isJpeg) return { ok: true, buffer };
+  try {
+    const sharp = require('sharp');
+    return { ok: true, buffer: await sharp(buffer).png().toBuffer() };
+  } catch (error) {
+    return { ok: false, detail: String(error?.message || error).slice(0, 160) };
+  }
+}
+
 async function t_generate_pdf(args = {}) {
   let { outputPath, title, content, sections, author, date } = args;
   const context = args._context || {};
@@ -2400,7 +2418,22 @@ async function t_generate_pdf(args = {}) {
         });
         continue;
       }
-      resolvedImages.push(imageResult);
+      // pdfkit ne lit que PNG et JPEG. Les images generees arrivent souvent en
+      // WebP : sans conversion, doc.image() levait « Unknown image format » et
+      // toute la reponse d'A11 tombait (constate le 19/09/2026).
+      const embeddable = await toPdfEmbeddableImage(imageResult.buffer);
+      if (!embeddable.ok) {
+        missingAssets.push({
+          sectionIndex: idx,
+          heading,
+          ref: String(ref || '').trim(),
+          error: 'image_format_unsupported',
+          resolvedPath: String(imageResult?.resolvedPath || '').trim() || null,
+          detail: embeddable.detail,
+        });
+        continue;
+      }
+      resolvedImages.push({ ...imageResult, buffer: embeddable.buffer });
     }
 
     preparedSections.push({
@@ -4278,6 +4311,7 @@ async function runActionsEnvelope(envelope, context = {}) {
 }
 
 module.exports = {
+  toPdfEmbeddableImage,
   t_a11_save_memo,
   t_a11_memory_write,
   t_a11_memory_read,

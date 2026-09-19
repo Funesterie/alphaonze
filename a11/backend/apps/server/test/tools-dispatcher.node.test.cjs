@@ -782,3 +782,15 @@ test('archive read helper returns the ordered local transcript for one Codex rol
     fs.rmSync(archiveRoot, { recursive: true, force: true });
   }
 });
+
+test("toPdfEmbeddableImage convertit le WebP en PNG pour pdfkit et refuse ce qui n est pas une image", async () => {
+  const sharp = require("sharp");
+  const { toPdfEmbeddableImage } = require("../src/a11/tools-dispatcher.cjs");
+  const webp = await sharp({ create: { width: 4, height: 4, channels: 3, background: "#ff00ff" } }).webp().toBuffer();
+  const converted = await toPdfEmbeddableImage(webp);
+  assert.equal(converted.ok, true);
+  assert.deepEqual([...converted.buffer.subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
+  const png = await sharp({ create: { width: 4, height: 4, channels: 3, background: "#000000" } }).png().toBuffer();
+  assert.equal((await toPdfEmbeddableImage(png)).buffer, png);
+  assert.equal((await toPdfEmbeddableImage(Buffer.from("<html>502 Bad Gateway</html>"))).ok, false);
+});

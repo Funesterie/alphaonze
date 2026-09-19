@@ -47,8 +47,12 @@ test('invalid credentials stop scenarisation instead of silently purchasing gene
     assert.doesNotMatch(err.message, /secret-fragment/);
     return true;
   });
-  assert.equal(calls.length, 1);
+  // Cle OpenAI refusee : UN seul repli, le MEME modele via OpenRouter (19/09/2026).
+  // S'il echoue aussi, on s'arrete — jamais de scenes generiques achetees en douce.
+  assert.equal(calls.length, 2);
   assert.equal(calls[0].url, 'https://api.openai.com/v1/chat/completions');
+  assert.equal(calls[1].url, 'https://openrouter.ai/api/v1/chat/completions');
+  assert.equal(calls[1].body.model, 'openai/gpt-4o');
 });
 test('malformed sequence response is actionable, not a generic success', async () => {
   const { director } = loadDirector({ data: { choices: [{ message: { content: '{}' } }] } });
