@@ -5019,7 +5019,19 @@ function isVivyVisualCreativeDirectionRequest(message = '') {
   const reviewSignal = /\b(?:avis|analyse|analyser|regarde|review|direction|garde|garder|evite|eviter|ameliore|ameliorer|canon|canonique|coherent|coherence|incoherent|incoherence|defaut|main|identite|angle|surveille|surveiller|utilise|utiliser|reprends|reprendre|fais|faire|cree|creer|crée|créer|genere|generer|génère|générer)\b/.test(folded);
   const explicitSongwriting = /\b(?:ecris|ecrire|compose|composer|chante|chanter|genere|generer|fais|faire)\b.{0,90}\b(?:paroles|refrain|couplet|chanson|song)\b/.test(folded)
     || /\b(?:paroles|refrain|couplet)\b.{0,60}\b(?:ecris|ecrire|compose|composer|chante|chanter|genere|generer|fais|faire)\b/.test(folded);
-  return visualSignal && reviewSignal && !explicitSongwriting;
+  if (!(visualSignal && reviewSignal && !explicitSongwriting)) return false;
+  // Une question de conversation n'est pas une commande de brief. Djeff, 19/09 :
+  // « Tu as aimé faire le clip avec les motos ? Tu as ressenti quelque chose ? »
+  // matchait « clip » + « faire », et Vivy repondait par un brief video
+  // deterministe (« adult goth cyber-pop performer… ») au lieu de parler. On garde
+  // les questions qui DEMANDENT quelque chose (« tu peux faire le clip ? ») et
+  // toute phrase a l'imperatif.
+  const isQuestion = /\?/.test(String(message || ''))
+    || /^(?:tu |t as |t es |as tu |est ce qu|dis moi|comment |pourquoi |qu est ce|c etait |c est quoi)/.test(folded);
+  if (!isQuestion) return true;
+  const imperative = /\b(?:fais|fait le|cree|genere|lance|prepare|analyse|regarde|donne|ameliore|evite|utilise|reprends|surveille|montre)\b/.test(folded);
+  const politeRequest = /\b(?:peux tu|tu peux|pourrais tu|tu pourrais|tu veux bien|tu me fais|tu nous fais|on fait|on lance)\b/.test(folded);
+  return imperative || politeRequest;
 }
 
 function isVivyGeneratedCreativeDirectionPanel(message = '') {

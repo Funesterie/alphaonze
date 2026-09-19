@@ -810,6 +810,18 @@ test('Vivy routes visual and audio review to creative direction instead of lyric
   );
 });
 
+test('une question de conversation sur un clip ne declenche pas de brief video (19/09/2026)', () => {
+  // Cas reel : Vivy repondait « Brief final video … adult goth cyber-pop » au lieu de parler.
+  assert.equal(
+    isVivyVisualCreativeDirectionRequest("Ah super tu es motivé. Tu as aimé faire le clip avec les motos ? Tu as ressenti quelque chose de spécial ?"),
+    false
+  );
+  assert.equal(isVivyVisualCreativeDirectionRequest('Tu as aimé tourner le clip en moto ?'), false);
+  // Une question qui DEMANDE, ou un imperatif, restent des commandes de brief.
+  assert.equal(isVivyVisualCreativeDirectionRequest('Tu peux faire le clip avec les motos ?'), true);
+  assert.equal(isVivyVisualCreativeDirectionRequest('Fais le clip avec les motos, garde les néons.'), true);
+});
+
 test('Vivy Studio respects explicit K44 voice even when the instruction says duo', () => {
   const result = buildVivyStudioProduction({
     mode: 'voice',
