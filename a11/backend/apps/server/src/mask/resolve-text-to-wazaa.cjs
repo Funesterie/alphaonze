@@ -199,6 +199,10 @@ function resolveTranslationConfig() {
   const apiKey = (
     normalizeEnvValue(process.env.A11_TRANSLATION_API_KEY)
     || openRouterApiKey
+    // A11_TRANSLATION_BASE_URL pointee sur Groq prend la cle Groq AVANT les cles
+    // OpenAI generiques : en prod OPENAI_API_KEY est une cle OpenRouter, que Groq
+    // refuserait (401).
+    || (/groq\.com/i.test(explicitTranslationBaseUrl) ? normalizeEnvValue(process.env.GROQ_API_KEY) : '')
     || (allowGenericOpenAiFallback
       ? (
         normalizeEnvValue(process.env.A11_OPENAI_API_KEY)
@@ -340,6 +344,18 @@ function downgradeJsonSchemaResponseFormat(responseFormat = null) {
   return { type: 'json_object' };
 }
 
+// Les modeles qui raisonnent (gpt-oss, qwen3) depensent leurs jetons de reflexion
+// dans max_tokens. Avec les 120 jetons de la detection d'intention, gpt-oss-20b
+// rendait un JSON coupe (Groq : json_validate_failed). On borne la reflexion et on
+// laisse de la marge ; les modeles classiques ne sont pas touches.
+function buildStructuredReasoningOverrides(model = '', maxTokens = 256) {
+  const name = String(model || '').trim().toLowerCase();
+  const floor = Math.max(Number(maxTokens) || 0, 1024);
+  if (/gpt-oss/.test(name)) return { reasoning_effort: 'low', max_tokens: floor };
+  if (/qwen3/.test(name)) return { reasoning_effort: 'none', max_tokens: floor };
+  return {};
+}
+
 async function callStructuredLlmJson({
   text = '',
   systemPrompt = '',
@@ -379,6 +395,7 @@ async function callStructuredLlmJson({
     ],
     ...(responseFormat ? { response_format: responseFormat } : {}),
   };
+  Object.assign(body, buildStructuredReasoningOverrides(config.model, body.max_tokens));
 
   const headers = {
     'Content-Type': 'application/json',
@@ -596,6 +613,7 @@ module.exports = {
   resolveStructuredLlmRoute,
   buildStructuredLlmTraceMeta,
   callStructuredLlmJson,
+  buildStructuredReasoningOverrides,
   mergeEnrichedWazaa,
   WAZAA_TRANSLATE_SYSTEM_PROMPT,
 };

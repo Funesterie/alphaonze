@@ -12132,9 +12132,12 @@ function resolveChatMaxTokensForProvider(provider = '', body = {}) {
     const hardMax = Number(process.env.A11_LOCAL_CHAT_MAX_TOKENS_HARD_MAX || 2048) || 2048;
     return clampChatTokenBudget(requested || fallback, 640, hardMax);
   }
-  const fallback = Number(process.env.A11_REMOTE_CHAT_MAX_TOKENS || process.env.A11_CHAT_MAX_TOKENS || 1200) || 1200;
+  // 4096 et non 1200 : gpt-oss (Groq, ollama_cloud) raisonne AVANT d ecrire et ces jetons
+  // comptent dans le budget. A 1200, un scenario de 6 planches etait coupe a la fin de la
+  // planche 1 (finish_reason=length, mesure le 19/09/2026) : K44 semblait repondre court.
+  const fallback = Number(process.env.A11_REMOTE_CHAT_MAX_TOKENS || process.env.A11_CHAT_MAX_TOKENS || 4096) || 4096;
   const hardMax = Number(process.env.A11_REMOTE_CHAT_MAX_TOKENS_HARD_MAX || 8192) || 8192;
-  return clampChatTokenBudget(requested || fallback, 1200, hardMax);
+  return clampChatTokenBudget(requested || fallback, 4096, hardMax);
 }
 
 function buildChatMessagesWithMemory(baseMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '', knowledgeGraphContext = '', episodicContext = '', options = {}) {

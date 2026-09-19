@@ -4,6 +4,7 @@ const http = require('node:http');
 
 const {
   buildStructuredLlmTraceMeta,
+  buildStructuredReasoningOverrides,
   callStructuredLlmJson,
   isLlmEnrichmentEnabled,
   resolveTranslationConfig,
@@ -575,4 +576,31 @@ test('shouldEnrichWithLlm always enriches image requests in orchestrated mode', 
     process.env.A11_WAZAA_LLM_ENRICH = previous.A11_WAZAA_LLM_ENRICH;
     process.env.A11_IMAGE_PIPELINE_MODE = previous.A11_IMAGE_PIPELINE_MODE;
   }
+});
+
+test("A11_TRANSLATION_BASE_URL sur Groq prend GROQ_API_KEY, pas la cle OpenRouter generique", () => {
+  const names = ["A11_TRANSLATION_BASE_URL", "A11_TRANSLATION_API_KEY", "A11_TRANSLATION_MODEL", "A11_TRANSLATION_ALLOW_GENERIC_OPENAI", "OPENAI_API_KEY", "A11_OPENAI_API_KEY", "GROQ_API_KEY"];
+  const previous = Object.fromEntries(names.map((n) => [n, process.env[n]]));
+  process.env.A11_TRANSLATION_BASE_URL = "https://api.groq.com/openai/v1";
+  setEnv("A11_TRANSLATION_API_KEY", "");
+  process.env.A11_TRANSLATION_MODEL = "openai/gpt-oss-20b";
+  process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI = "true";
+  process.env.OPENAI_API_KEY = "sk-or-cle-openrouter";
+  process.env.A11_OPENAI_API_KEY = "";
+  process.env.GROQ_API_KEY = "gsk-cle-groq";
+  try {
+    const config = resolveTranslationConfig();
+    assert.equal(config.url, "https://api.groq.com/openai/v1/chat/completions");
+    assert.equal(config.apiKey, "gsk-cle-groq");
+    assert.equal(config.model, "openai/gpt-oss-20b");
+  } finally {
+    for (const n of names) setEnv(n, previous[n] === undefined ? "" : previous[n]);
+  }
+});
+
+test("les modeles qui raisonnent ont une reflexion bornee et de la marge en jetons", () => {
+  assert.deepEqual(buildStructuredReasoningOverrides("openai/gpt-oss-20b", 120), { reasoning_effort: "low", max_tokens: 1024 });
+  assert.deepEqual(buildStructuredReasoningOverrides("qwen/qwen3.8-27b", 2000), { reasoning_effort: "none", max_tokens: 2000 });
+  assert.deepEqual(buildStructuredReasoningOverrides("qwen2.5:32b", 120), {});
+  assert.deepEqual(buildStructuredReasoningOverrides("", 120), {});
 });
