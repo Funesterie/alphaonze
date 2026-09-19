@@ -318,8 +318,16 @@ Require-Path $SshKey "Cle SSH"
 # ssh reste 90 minutes a 0 % de CPU, le deploiement fige, et aucune logique de reprise ne
 # peut se declencher puisque la commande ne rend jamais la main. Avec ces options, un pair
 # muet est declare mort en ~60 s, la commande sort en erreur et l'appelant peut reessayer.
+# IdentitiesOnly=yes : ne proposer QUE la cle de deploiement, jamais celles d'un
+# agent ou les cles par defaut — chaque refus compte comme un echec
+# d'authentification cote serveur. Le 19/09/2026, le troisieme deploiement de la
+# journee a ete coupe (« Connection closed by port 22 » des le premier secret, puis
+# serveur injoignable plusieurs minutes) sans agent SSH actif : la cause probable
+# est la penalite par source d'OpenSSH (trop de connexions courtes d'affilee), pas
+# les cles. Si ca recommence : attendre, ne pas relancer en boucle.
 $sshBase = @(
   "-i", $SshKey,
+  "-o", "IdentitiesOnly=yes",
   "-o", "BatchMode=yes",
   "-o", "StrictHostKeyChecking=accept-new",
   "-o", "ConnectTimeout=20",
