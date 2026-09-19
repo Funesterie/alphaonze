@@ -768,6 +768,7 @@ const {
   postProcessA11AssistantResponse,
 } = require('./src/chat/response-draft-rewriter.cjs');
 const { appendNossenScenarioBible } = require('./src/persona/nossen-scenario-bible.cjs');
+const { isSiwisStatusQuestion, isOfficialVoiceStatusQuestion } = require('./src/chat/voice-status-question.cjs');
 const createMailRouter = require('./src/routes/mail.cjs');
 const createMemoryRouter = require('./src/routes/memory.cjs');
 const {
@@ -11250,25 +11251,7 @@ async function generateDevActionReply({ messages = [], cerbere, imagePath = null
   return fallbackReply;
 }
 
-function isSiwisStatusQuestion(value) {
-  const text = String(value || '').trim().toLowerCase();
-  if (!text) return false;
-  const mentionsSiwis = /siwis|piper|ttssiwis|\btts\b/.test(text);
-  const asksStatus = /marche|fonctionne|disponible|status|etat|up|down|ok/.test(text);
-  return mentionsSiwis && asksStatus;
-}
-
-function isOfficialVoiceStatusQuestion(value) {
-  const raw = String(value || '').trim();
-  if (!raw || isSiwisStatusQuestion(raw)) return false;
-  // audio import markers ([audio:filename]) are not voice status questions
-  if (/^\[audio:/i.test(raw)) return false;
-  const text = raw.toLowerCase();
-  // exclude "audio" — too broad, matches [audio:filename] import markers
-  const mentionsVoice = /voix|voice|parle|parler|son/.test(text);
-  const asksStatus = /marche|fonctionne|disponible|status|etat|up|down|ok|cass|bug|repond|répond/.test(text);
-  return mentionsVoice && asksStatus;
-}
+// isSiwisStatusQuestion / isOfficialVoiceStatusQuestion : src/chat/voice-status-question.cjs
 
 async function getSiwisHealthSnapshot() {
   const port = Number(process.env.PORT || 3000);
