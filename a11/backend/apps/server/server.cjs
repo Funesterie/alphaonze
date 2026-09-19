@@ -769,6 +769,7 @@ const {
 } = require('./src/chat/response-draft-rewriter.cjs');
 const { appendNossenScenarioBible } = require('./src/persona/nossen-scenario-bible.cjs');
 const { isSiwisStatusQuestion, isOfficialVoiceStatusQuestion } = require('./src/chat/voice-status-question.cjs');
+const { createChunkedUploadStore } = require('./src/files/chunked-upload-store.cjs');
 const createMailRouter = require('./src/routes/mail.cjs');
 const createMemoryRouter = require('./src/routes/memory.cjs');
 const {
@@ -7258,9 +7259,19 @@ app.get('/clips/:filename', identifierSansBloquer, sharinganGuard, garderClipPri
   // Try both clip directories (agent-bus for shared, runtime for local)
   const filePath = path.join(CLIPS_DIR, decoded);
   const fallbackPath = path.join('/app/runtime/clips', decoded);
-  res.sendFile(filePath, { root: '/' }, (err) => {
+  // ?download=1 : bouton Telecharger de la page NOSSEN. Safari iOS n'enregistre
+  // un fichier que s'il arrive en piece jointe (Djeff, 19/09/2026).
+  const sendOptions = { root: '/' };
+  if (String(req.query?.download || '') === '1') {
+    const asciiName = decoded.replace(/[^A-Za-z0-9._-]/g, '_');
+    sendOptions.headers = {
+      'Content-Disposition': `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(decoded)}`,
+      'Cache-Control': 'private, no-store',
+    };
+  }
+  res.sendFile(filePath, sendOptions, (err) => {
     if (err) {
-      res.sendFile(fallbackPath, { root: '/' }, (err2) => {
+      res.sendFile(fallbackPath, sendOptions, (err2) => {
         if (err2 && !res.headersSent) res.status(404).json({ error: 'Not found' });
       });
     }
@@ -7455,6 +7466,33 @@ app.get('/api/storage/session-drive/status', verifyJWT, async (req, res) => {
   }
 });
 
+// Gros fichiers (videos d'iPhone) : envoyes en morceaux de 16 Mo pour passer sous la
+// limite de 100 Mo par requete de Cloudflare, puis repris par /api/files/upload avec
+// chunkedUploadId. Voir src/files/chunked-upload-store.cjs.
+const CHUNKED_UPLOAD_MAX_BYTES = Number(process.env.A11_CHUNKED_UPLOAD_MAX_BYTES || 500 * 1024 * 1024);
+const chunkedUploadStore = createChunkedUploadStore({ root: PUBLIC_RUNTIME_ROOT, maxBytes: CHUNKED_UPLOAD_MAX_BYTES });
+
+app.post('/api/files/upload-chunk', express.raw({ type: '*/*', limit: '20mb' }), (req, res) => {
+  const userId = String(req.user?.id || '').trim();
+  if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
+  try {
+    const result = chunkedUploadStore.appendChunk({
+      userId,
+      uploadId: String(req.headers['x-upload-id'] || ''),
+      offset: Number(req.headers['x-upload-offset']),
+      buffer: req.body,
+    });
+    return res.json({ ok: true, ...result });
+  } catch (error_) {
+    return res.status(error_.status || 500).json({
+      ok: false,
+      error: error_.code || 'chunk_failed',
+      ...(error_.received !== undefined ? { received: error_.received } : {}),
+      ...(error_.maxBytes ? { maxBytes: error_.maxBytes } : {}),
+    });
+  }
+});
+
 app.post('/api/files/upload', express.json({ limit: FILE_UPLOAD_BODY_LIMIT }), async (req, res) => {
   try {
     let userId = String(req.user?.id || '').trim();
@@ -7486,7 +7524,21 @@ app.post('/api/files/upload', express.json({ limit: FILE_UPLOAD_BODY_LIMIT }), a
       resourceKind,
       kind,
       alias,
+      chunkedUploadId,
+      chunkedTotalBytes,
     } = req.body || {};
+    let contentBuffer = null;
+    if (chunkedUploadId) {
+      try {
+        contentBuffer = chunkedUploadStore.takeAssembled({
+          userId,
+          uploadId: String(chunkedUploadId),
+          expectedBytes: Number(chunkedTotalBytes || 0),
+        });
+      } catch (error_) {
+        return res.status(error_.status || 500).json({ ok: false, error: error_.code || 'chunked_upload_failed' });
+      }
+    }
     const requestSurface = resolveRequestSurface(req.body || {}, req);
     const uploadLooksLikeImage = isImageUploadCandidate({ filename, contentType });
     const rawStoragePreference = storageTarget || storageBackend || storagePreference;
@@ -7537,7 +7589,8 @@ app.post('/api/files/upload', express.json({ limit: FILE_UPLOAD_BODY_LIMIT }), a
       filename,
       contentType,
       contentBase64,
-      maxBytes: FILE_UPLOAD_MAX_BYTES,
+      contentBuffer,
+      maxBytes: contentBuffer ? CHUNKED_UPLOAD_MAX_BYTES : FILE_UPLOAD_MAX_BYTES,
       maxZenBytes: ZEN_UPLOAD_MAX_BYTES,
       origin: 'upload',
       conversationId: normalizedConversationId,

@@ -5185,6 +5185,64 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+const CHUNKED_UPLOAD_THRESHOLD_BYTES = 40 * 1024 * 1024;
+const CHUNK_BYTES = 16 * 1024 * 1024;
+
+function newUploadId(): string {
+  const random = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+  return random.replace(/[^A-Za-z0-9-]/g, '').slice(0, 64);
+}
+
+// Envoie le fichier par morceaux de 16 Mo ; un morceau qui echoue (reseau mobile)
+// est renvoye jusqu'a 3 fois, le serveur ignorant ce qu'il a deja recu.
+async function sendFileInChunks(file: File): Promise<{ uploadId: string }> {
+  const uploadId = newUploadId();
+  let offset = 0;
+  while (offset < file.size) {
+    const chunk = file.slice(offset, Math.min(file.size, offset + CHUNK_BYTES));
+    let lastError: any = null;
+    let received = -1;
+    for (let attempt = 1; attempt <= 3 && received < 0; attempt += 1) {
+      try {
+        const res = await authFetch(getApiUrl('/api/files/upload-chunk'), {
+          method: 'POST',
+          headers: {
+            ...buildAuthHeaders('application/octet-stream'),
+            'X-Upload-Id': uploadId,
+            'X-Upload-Offset': String(offset),
+          },
+          body: chunk,
+        });
+        const data: any = await res.json().catch(() => ({}));
+        if (res.ok && data?.ok) {
+          received = Number(data.received);
+        } else if (res.status === 409 && Number.isFinite(Number(data?.received))) {
+          received = Number(data.received);
+        } else {
+          const error: Error & { status?: number; code?: string } = new Error(
+            data?.error === 'file_too_large'
+              ? `Fichier trop lourd (${Math.round(Number(data?.maxBytes || 0) / 1048576)} Mo maximum).`
+              : `Envoi interrompu (${data?.error || res.status})`
+          );
+          error.status = res.status;
+          error.code = data?.error;
+          if (res.status === 413 || res.status === 400 || res.status === 401) throw error;
+          lastError = error;
+        }
+      } catch (error_: any) {
+        if (error_?.status === 413 || error_?.status === 400 || error_?.status === 401) throw error_;
+        lastError = error_;
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+      }
+    }
+    if (received < 0) throw lastError || new Error('Envoi interrompu');
+    offset = received;
+  }
+  return { uploadId };
+}
+
 export async function uploadConversationFile(file: File, options?: {
   conversationId?: string;
   emailTo?: string;
@@ -5196,7 +5254,13 @@ export async function uploadConversationFile(file: File, options?: {
   resourceKind?: string;
   kind?: string;
 }) {
-  const contentBase64 = await readFileAsDataUrl(file);
+  // Au-dela de 40 Mo, envoi en morceaux : Cloudflare refuse toute requete de plus
+  // de 100 Mo (413), et le base64 gonfle le fichier d'un tiers — une video d'iPhone
+  // de ~75 Mo ne passait plus (Vivy, 19/09/2026).
+  const chunked = file.size > CHUNKED_UPLOAD_THRESHOLD_BYTES
+    ? await sendFileInChunks(file)
+    : null;
+  const contentBase64 = chunked ? undefined : await readFileAsDataUrl(file);
   const res = await authFetch(getApiUrl('/api/files/upload'), {
     method: 'POST',
     headers: buildAuthHeaders('application/json'),
@@ -5204,6 +5268,7 @@ export async function uploadConversationFile(file: File, options?: {
       filename: file.name,
       contentType: file.type || 'application/octet-stream',
       contentBase64,
+      ...(chunked ? { chunkedUploadId: chunked.uploadId, chunkedTotalBytes: file.size } : {}),
       conversationId: options?.conversationId,
       emailTo: options?.emailTo,
       surface: options?.surface,

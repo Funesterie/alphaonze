@@ -373,6 +373,7 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "clips.title": "📁 Clips",
       "clips.unpublish": "Retirer de la vitrine",
       "clips.publish": "Mettre en vitrine",
+      "clips.download": "Télécharger",
       "clips.mine": "Mes clips",
       "clips.loginToSee": "Connecte-toi pour voir tes clips",
       "clips.minePrivate": "Mes clips — visibles par toi seul",
@@ -532,6 +533,7 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "clips.title": "📁 Videos",
       "clips.unpublish": "Remove from showcase",
       "clips.publish": "Add to showcase",
+      "clips.download": "Download",
       "clips.mine": "My videos",
       "clips.loginToSee": "Sign in to see your videos",
       "clips.minePrivate": "My videos — visible only to you",
@@ -691,6 +693,7 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "clips.title": "📁 Videoclips",
       "clips.unpublish": "Quitar del escaparate",
       "clips.publish": "Poner en el escaparate",
+      "clips.download": "Descargar",
       "clips.mine": "Mis videoclips",
       "clips.loginToSee": "Inicia sesión para ver tus videoclips",
       "clips.minePrivate": "Mis videoclips — visibles solo para ti",
@@ -850,6 +853,7 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "clips.title": "📁 Videoclip",
       "clips.unpublish": "Togli dalla vetrina",
       "clips.publish": "Metti in vetrina",
+      "clips.download": "Scarica",
       "clips.mine": "I miei videoclip",
       "clips.loginToSee": "Accedi per vedere i tuoi videoclip",
       "clips.minePrivate": "I miei videoclip — visibili solo a te",
@@ -1009,6 +1013,7 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "clips.title": "📁 Videos",
       "clips.unpublish": "Aus dem Schaufenster entfernen",
       "clips.publish": "Ins Schaufenster stellen",
+      "clips.download": "Herunterladen",
       "clips.mine": "Meine Videos",
       "clips.loginToSee": "Melde dich an, um deine Videos zu sehen",
       "clips.minePrivate": "Meine Videos — nur für dich sichtbar",
@@ -1168,6 +1173,7 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "clips.title": "📁 ビデオ",
       "clips.unpublish": "ショーケースから外す",
       "clips.publish": "ショーケースに載せる",
+      "clips.download": "ダウンロード",
       "clips.mine": "マイビデオ",
       "clips.loginToSee": "ログインして自分のビデオを見る",
       "clips.minePrivate": "マイビデオ — あなただけに表示",
@@ -1327,6 +1333,7 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "clips.title": "📁 视频",
       "clips.unpublish": "从展示区移除",
       "clips.publish": "放入展示区",
+      "clips.download": "下载",
       "clips.mine": "我的视频",
       "clips.loginToSee": "登录以查看你的视频",
       "clips.minePrivate": "我的视频 — 仅你可见",
@@ -2404,6 +2411,10 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
     var estManga = /\.png$/i.test(String(x.filename || x.url || ""));
     var icone = estManga ? "\uD83D\uDCD6 " : "\uD83C\uDFAC ";
     var html = '<div class="c"><a href="' + escapeHtml(href) + '" target="_blank" rel="noopener noreferrer">' + icone + escapeHtml(nom) + '</a>';
+    // Telechargement depuis le telephone (Djeff, 19/09/2026) : ?download=1 fait
+    // repondre le serveur en piece jointe, ce qu il faut a Safari iOS pour enregistrer.
+    html += ' <a class="use" href="' + escapeHtml(href + (href.indexOf("?") >= 0 ? "&" : "?") + "download=1") + '" download>'
+      + "⬇ " + escapeHtml(t("clips.download")) + '</a>';
     if (estManga && x.filename) {
       html += ' <button type="button" class="use btn-animate" data-animate="' + escapeHtml(x.filename) + '">'
         + escapeHtml(t("manga.animate")) + '</button>';

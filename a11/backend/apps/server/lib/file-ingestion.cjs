@@ -36,6 +36,8 @@ async function ingestUploadedFile({
   filename,
   contentType,
   contentBase64,
+  // Envoi en morceaux (/api/files/upload-chunk) : le fichier arrive deja en binaire.
+  contentBuffer,
   maxBytes,
   maxZenBytes,
   origin = 'upload',
@@ -61,7 +63,9 @@ async function ingestUploadedFile({
 
   const safeFilename = sanitizeFileName(filename || 'generated-file.bin');
   let normalizedContentType = String(contentType || 'application/octet-stream').trim() || 'application/octet-stream';
-  const buffer = decodeBase64Content(contentBase64);
+  const buffer = Buffer.isBuffer(contentBuffer) && contentBuffer.length
+    ? contentBuffer
+    : decodeBase64Content(contentBase64);
 
   if (buffer.length > Number(maxBytes || 0)) {
     const error = new Error('file_too_large');
