@@ -34,7 +34,11 @@ function hasResponseDraftContext(basePrompt = '') {
 
 function userAskedForStructuredFormat(userMessage = '') {
   const folded = foldText(userMessage);
-  return /\b(tableau|table|csv|json|liste detaillee|liste complete|inventaire|routes?|outils?|tools?|diagnostic complet|dump)\b/.test(folded);
+  if (/\b(tableau|table|csv|json|liste detaillee|liste complete|inventaire|routes?|outils?|tools?|diagnostic complet|dump)\b/.test(folded)) return true;
+  // Une demande d'ecriture longue appelle souvent un decoupage en tableau (case par
+  // case, scene par scene). Sans ca, « ecris moi le scenario du manga » ressortait
+  // reduit a sa premiere phrase coupee a 260 caracteres (constate le 19/09/2026).
+  return /\b(scenarios?|scripts?|storyboards?|story[- ]board|planches?|decoupages?|case par case|chapitres?|synopsis|sequenciers?|scenes?)\b/.test(folded);
 }
 
 function looksLikeMarkdownTable(text = '') {
@@ -272,7 +276,10 @@ function removeOfficialVoiceTextQueryAdvice(text = '') {
     .replace(/\s*Si tu rencontres un probleme ou si tu veux ajuster le texte,[^.?!]*(?:[.?!]|$)/gi, '')
     .replace(/\s*remplace simplement le contenu après\s*\?text=[^.?!]*(?:[.?!]|$)/gi, '')
     .replace(/\s*remplace simplement le contenu apres\s*\?text=[^.?!]*(?:[.?!]|$)/gi, '')
-    .replace(/\s{2,}/g, ' ')
+    // Espaces horizontaux seulement : `\s{2,}` recollait aussi les paragraphes
+    // (« \n\n » devenait « ») sur TOUTES les reponses, et un tableau colle a la
+    // ligne du dessus ne s'affiche plus comme un tableau.
+    .replace(/[ \t]{2,}/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

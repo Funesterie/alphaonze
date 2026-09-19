@@ -226,3 +226,25 @@ test('response draft catches the We just answer leak seen in K44 history', () =>
   assert.match(processed.content, /Oui, mieux|reprends normalement/i);
   assert.doesNotMatch(processed.content, /We just answer|The user is asking|Provide short|respond in French/i);
 });
+
+test("une demande de scenario garde son decoupage en tableau au lieu d etre reduite a une phrase", () => {
+  const raw = [
+    "Scenario du manga NOSSEN - chapitre 1.",
+    "",
+    "| Case | Image | Dialogue |",
+    "|------|-------|----------|",
+    "| 1 | Djeff devant la moto | Djeff : \"Elle est a moi.\" |",
+    "| 2 | Gros plan sur le reservoir | (silence) |",
+    "",
+    "Fin de la planche 1, la suite en planche 2 avec le premier depart.",
+  ].join('\n');
+
+  const processed = postProcessA11AssistantResponse({
+    userMessage: "écrit moi le scenario du manga nossen",
+    text: raw,
+  });
+
+  assert.equal(processed.rewritten, false);
+  assert.match(processed.content, /\| 2 \| Gros plan/);
+  assert.match(processed.content, /planche 2/);
+});
