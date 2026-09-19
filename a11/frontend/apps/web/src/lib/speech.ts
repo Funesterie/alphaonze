@@ -7,7 +7,11 @@ import { buildApiUrlFromBase, getApiOriginFromBase, getAuthToken, getCurrentApiB
 
 let speechQueue: Array<{ text: string; options: any }> = [];
 let isProcessingQueue = false;
-let speechMuted = false;
+// Vocal desactive par defaut (demande de Djeff, 19/09/2026) : on ne parle que si
+// l utilisateur a allume le bouton « Vocal » (cle a11:voiceEnabled = "1").
+let speechMuted = (() => {
+  try { return globalThis.localStorage?.getItem("a11:voiceEnabled") !== "1"; } catch { return true; }
+})();
 
 function buildApiUrl(path: string): string {
   return buildApiUrlFromBase(getCurrentApiBase(), path);

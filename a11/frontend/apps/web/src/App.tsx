@@ -13360,18 +13360,11 @@ function ResetPasswordPanel() {
     </div>
   );
 }
-// MuteButton : contrôle global du son
+// MuteButton : bouton « Vocal » — lecture vocale des reponses, DESACTIVEE par defaut.
+// L ancienne cle a11:muted valait "0" pour tout le monde (ecrite a chaque chargement) :
+// on part d une cle neuve pour que le defaut « desactive » s applique vraiment.
 function MuteButton({ showLabel = false, fullWidth = false }: { showLabel?: boolean; fullWidth?: boolean }) {
   const [muted, setMuted] = useState(isSpeechMuted());
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('a11:muted');
-      if (saved === '1') setMuted(true);
-    } catch {
-      // ignore storage access errors
-    }
-  }, []);
 
   useEffect(() => {
     setSpeechMuted(muted);
@@ -13380,7 +13373,7 @@ function MuteButton({ showLabel = false, fullWidth = false }: { showLabel?: bool
     }
 
     try {
-      localStorage.setItem('a11:muted', muted ? '1' : '0');
+      localStorage.setItem("a11:voiceEnabled", muted ? "0" : "1");
     } catch {
       // ignore storage access errors
     }
@@ -13389,7 +13382,8 @@ function MuteButton({ showLabel = false, fullWidth = false }: { showLabel?: bool
   return (
     <button
       onClick={() => setMuted(m => !m)}
-      title={muted ? "Rétablir la voix d'A11" : "Couper la voix d'A11"}
+      aria-pressed={!muted}
+      title={muted ? "Vocal désactivé — cliquer pour que les réponses soient lues à voix haute" : "Vocal activé — cliquer pour couper la lecture des réponses"}
       style={{
         fontSize: showLabel ? 13 : 20,
         padding: showLabel ? "10px 12px" : 6,
@@ -13404,11 +13398,11 @@ function MuteButton({ showLabel = false, fullWidth = false }: { showLabel?: bool
       className="btn ghost"
     >
       {muted ? (
-        <span aria-label="Sortie coupée">Off</span>
+        <span aria-label="Vocal désactivé">🔇</span>
       ) : (
-        <span aria-label="Sortie automatique">On</span>
+        <span aria-label="Vocal activé">🔊</span>
       )}
-      {showLabel ? <span>{muted ? "Sortie coupée" : "Sortie auto"}</span> : null}
+      {showLabel ? <span>{muted ? "Vocal désactivé" : "Vocal activé"}</span> : null}
     </button>
   );
 }
@@ -19520,6 +19514,8 @@ export function App() {
                   >
                     {micStarting || audioTranscribing || mediaImporting ? "..." : mobileVoiceReady ? (preparingMobileAudio ? "..." : "Play") : voiceListening ? "ON" : micPermissionBlocked ? "!" : shouldUseServerPushToTalk(surfaceKind) ? "PTT" : "MIC"}
                   </button>
+
+                  <div style={{ marginLeft: 8 }}><MuteButton /></div>
                 </div>
                 <div className="hint">
                   Entrée pour envoyer - Shift+Entrée pour aller à la ligne - Ctrl+V pour coller une image
