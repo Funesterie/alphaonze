@@ -2288,7 +2288,9 @@ function piperTimeoutMs(text = '') {
 // qu'au-dela de ~273 caracteres en francais l'audio peut etre tronque. Un long texte
 // part directement chez Piper au lieu d'attendre 2 min un echec (K44, 19/09/2026).
 function xttsFitsText(text = '') {
-  const max = Number(process.env.A11_VOICE_XTTS_RVC_MAX_CHARS || 600) || 600;
+  // 250 : XTTS avertit lui-meme au-dela de ~273 caracteres en francais, et tourne a
+  // 1,5x le temps reel sur CPU (90 a 112 s pour un paragraphe, mesure le 19/09/2026).
+  const max = Number(process.env.A11_VOICE_XTTS_RVC_MAX_CHARS || 250) || 250;
   return String(text || '').length <= max;
 }
 
@@ -3602,7 +3604,10 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
 
 async function requestDirectXttsRvcWithRetry(text, body = {}, options = {}) {
   return enqueueXttsRvcWork(async () => {
-    const attempts = Math.max(1, Math.min(3, Number(process.env.A11_VOICE_XTTS_RVC_RETRIES || 2) || 2));
+    // 1 essai par defaut : XTTS continue de calculer une requete abandonnee pour
+    // timeout, donc un nouvel essai s'empile derriere elle. Le 19/09/2026 la file a
+    // gonfle jusqu'a ce que toutes les voix tombent sur le repli neutre commun.
+    const attempts = Math.max(1, Math.min(3, Number(process.env.A11_VOICE_XTTS_RVC_RETRIES || 1) || 1));
     const retryDelayMs = Math.max(0, Math.min(5000, Number(process.env.A11_VOICE_XTTS_RVC_RETRY_DELAY_MS || 1200) || 1200));
     let lastError = null;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
