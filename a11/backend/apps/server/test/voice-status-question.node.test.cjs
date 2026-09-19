@@ -24,4 +24,6 @@ test('un recit ne declenche plus le texte tout fait sur la voix (19/09/2026)', (
   // Bouts de mots qui matchaient avant : « per-son-ne », « beauco-up », « s-ok ».
   assert.equal(isOfficialVoiceStatusQuestion('les personnes sont beaucoup trop nombreuses'), false);
   assert.equal(isSiwisStatusQuestion('le tuple est ok'), false);
+  // Court ET avec le possessif « son » : vu en prod apres le premier correctif.
+  assert.equal(isOfficialVoiceStatusQuestion("Son pere l'emmene au garage pour son travail, tout est ok."), false);
 });

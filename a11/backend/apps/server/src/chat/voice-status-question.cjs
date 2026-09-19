@@ -36,7 +36,8 @@ function isOfficialVoiceStatusQuestion(value) {
   if (/^\[audio:/i.test(raw)) return false;
   const text = fold(raw);
   if (text.length > MAX_STATUS_QUESTION_CHARS) return false;
-  const mentionsVoice = /\b(?:voix|voice|vocal|parle|parler|son)\b/.test(text);
+  // Pas « son » : en francais c'est d'abord le possessif (« son pere », « son travail »).
+  const mentionsVoice = /\b(?:voix|voice|vocal|parle|parler)\b/.test(text);
   return mentionsVoice && ASKS_STATUS.test(text);
 }
 
