@@ -645,7 +645,11 @@ async function generateOneVideo(prompt, index, maxWaitMs = 600000, identity = nu
 
 // Modèle image par défaut pour les planches manga. Réglable sans redémarrer.
 // Un modèle t2i au catalogue Comfy ; on part sur un modèle rapide et fiable.
-const T2I_DEFAUT = process.env.NOSSEN_MANGA_IMAGE_MODEL || 'bytedance/seedream-4.0-t2i';
+// 19/09/2026 : Comfy a retire « bytedance/seedream-4.0-t2i » (« unknown model ») ;
+// Seedream passe par le modele partenaire « byteplus/images-generations », qui
+// exige la version interne dans params.model — meme schema que Seedance en video.
+const T2I_DEFAUT = process.env.NOSSEN_MANGA_IMAGE_MODEL || 'byteplus/images-generations';
+const T2I_VERSION_DEFAUT = process.env.NOSSEN_MANGA_IMAGE_VERSION || 'seedream-4-0-250828';
 
 // generateOnePanel — une PLANCHE (image) pour une scène, via le même pont Comfy
 // que la vidéo mais en type:'image'. Pas de son, pas de mouvement : une case.
@@ -668,6 +672,7 @@ async function generateOnePanel(prompt, index, maxWaitMs = 300_000, identity = {
     client_os: 'linux',
     confirm: true,
   };
+  if (!model && T2I_VERSION_DEFAUT) args.params = { model: T2I_VERSION_DEFAUT };
 
   let result;
   try {
