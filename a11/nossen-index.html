@@ -219,6 +219,10 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
   var ADMIN_EMAILS = ["cellaurojeffrey@gmail.com"];
   var importedFile = null;
   var API_TIMEOUT_MS = 30000;
+  // Estimation et lancement enchainent K44 (scenario) puis A11 (decoupage en plans) :
+  // souvent plus de 30 s. La page abandonnait alors que le serveur finissait son travail
+  // (« ne repond pas dans le delai prevu », 19/09/2026). Cloudflare coupe vers 100 s.
+  var SCRIPT_TIMEOUT_MS = 150000;
   var UPLOAD_TIMEOUT_MS = 120000;
   var POLL_INTERVAL_MS = 8000;
   var POLL_CLIP_MAX_MS = 2 * 60 * 60 * 1000;
@@ -1996,7 +2000,7 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
         casting: castingS,
         title: scriptTxt.slice(0, 40),
         sceneCount: demande || undefined
-      }).then(function(e) {
+      }, { timeoutMs: SCRIPT_TIMEOUT_MS }).then(function(e) {
         if (!e || !e.ok || !e.plans) {
           document.getElementById("msg").textContent = "❌ " + ((e && (e.message || e.error)) || t("clip.unknownError"));
           return;
@@ -2102,7 +2106,7 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
         voiceCatalogName: castM === "auto" ? "" : (castM === "full" ? "djeff" : castM),
         multiVoice: castM === "auto" || castM === "full" ? [] : [castM]
       };
-      api("/api/mcp-bridge/clip/start", payloadM).then(function(d) {
+      api("/api/mcp-bridge/clip/start", payloadM, { timeoutMs: SCRIPT_TIMEOUT_MS }).then(function(d) {
         if (d.ok) {
           document.getElementById("msg").textContent = t("clip.running", label);
           pollJob(d.jobId, mode);
@@ -2159,7 +2163,7 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
           : effectiveCasting === "auto" ? [] : [effectiveCasting]
       };
 
-      api("/api/mcp-bridge/clip/start", payload).then(function(d) {
+      api("/api/mcp-bridge/clip/start", payload, { timeoutMs: SCRIPT_TIMEOUT_MS }).then(function(d) {
         if (d.ok) {
           document.getElementById("msg").textContent = t("clip.running", label);
           pollJob(d.jobId, mode);
