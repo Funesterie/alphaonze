@@ -12,7 +12,19 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const FORMATS = Object.freeze({ pdf: 'application/pdf', cbz: 'application/vnd.comicbook+zip' });
+const FORMATS = Object.freeze({
+  pdf: 'application/pdf',
+  cbz: 'application/vnd.comicbook+zip',
+  // « print » : le meme chapitre sur du VRAI papier, a imprimer puis relier.
+  print: 'application/pdf',
+});
+
+// Formats de papier, en points PDF (72 par pouce).
+const PAPIERS = Object.freeze({
+  a4: [595.28, 841.89],
+  a5: [419.53, 595.28],
+  b5: [498.9, 708.66],
+});
 
 // Le nom public est <titre>-<suffixe du clip>.png, et ce suffixe contient
 // lui-meme des tirets (clip-1789871947950-a7f0fe1e) : on ne le devine pas, on
@@ -87,6 +99,92 @@ function buildMangaPdf(pages, { titre = 'manga' } = {}) {
   return fini;
 }
 
+// PDF a imprimer : des pages de papier, pas des images bout a bout.
+//
+// Djeff, 20/09/2026 : « on colle les pages et on fait un vrai manga ». Il faut
+// donc une marge de RELIURE cote pliure, qui change de cote a chaque page pour
+// que rien ne disparaisse dans le pli, une marge exterieure pour la coupe, des
+// reperes de coupe discrets, et des numeros de page. Une couverture ouvre le
+// chapitre. Deux cases par page par defaut : les cases sont carrees, une seule
+// par page gacherait la moitie du papier.
+function buildMangaPrintPdf(pages, {
+  titre = 'manga',
+  papier = 'a4',
+  parPage = 2,
+  margeExterieure = 28,
+  margeReliure = 45,
+} = {}) {
+  const PDFDocument = require('pdfkit');
+  const taille = PAPIERS[String(papier).toLowerCase()] || PAPIERS.a4;
+  const [largeurPage, hauteurPage] = taille;
+  const cases = Math.max(1, Math.min(4, Number(parPage) || 2));
+  const doc = new PDFDocument({ autoFirstPage: false, info: { Title: titre } });
+  const morceaux = [];
+  doc.on('data', (c) => morceaux.push(c));
+  const fini = new Promise((resolve, reject) => {
+    doc.on('end', () => resolve(Buffer.concat(morceaux)));
+    doc.on('error', reject);
+  });
+
+  // Couverture : titre, nombre de cases, et le mode d'emploi du pliage.
+  doc.addPage({ size: taille, margin: 0 });
+  doc.rect(0, 0, largeurPage, hauteurPage).fill('#111111');
+  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(34)
+    .text(titre.replace(/[-_]+/g, ' '), margeExterieure, hauteurPage / 2 - 80, {
+      width: largeurPage - margeExterieure * 2, align: 'center',
+    });
+  doc.font('Helvetica').fontSize(13).fillColor('#bbbbbb')
+    .text('NOSSEN', { width: largeurPage - margeExterieure * 2, align: 'center' });
+  doc.moveDown(2).fontSize(10).fillColor('#888888')
+    .text(`${pages.length} cases — imprimer recto verso, plier au milieu, coller au dos`, {
+      width: largeurPage - margeExterieure * 2, align: 'center',
+    });
+
+  const hauteurNumero = 18;
+  for (let debut = 0; debut < pages.length; debut += cases) {
+    const lot = pages.slice(debut, debut + cases);
+    const numero = Math.floor(debut / cases) + 1;
+    const reliureAGauche = numero % 2 === 1;
+    const margeGauche = reliureAGauche ? margeReliure : margeExterieure;
+    const margeDroite = reliureAGauche ? margeExterieure : margeReliure;
+    const largeurUtile = largeurPage - margeGauche - margeDroite;
+    const hauteurUtile = hauteurPage - margeExterieure * 2 - hauteurNumero;
+    const ecart = 10;
+    const hauteurCase = (hauteurUtile - ecart * (lot.length - 1)) / lot.length;
+
+    doc.addPage({ size: taille, margin: 0 });
+    // Reperes de coupe : quatre angles, discrets, pour massicoter droit.
+    doc.save().lineWidth(0.4).strokeColor('#999999');
+    for (const [x, y] of [[margeExterieure, margeExterieure], [largeurPage - margeExterieure, margeExterieure],
+      [margeExterieure, hauteurPage - margeExterieure], [largeurPage - margeExterieure, hauteurPage - margeExterieure]]) {
+      const sensX = x < largeurPage / 2 ? 1 : -1;
+      const sensY = y < hauteurPage / 2 ? 1 : -1;
+      doc.moveTo(x, y).lineTo(x + sensX * 12, y).stroke();
+      doc.moveTo(x, y).lineTo(x, y + sensY * 12).stroke();
+    }
+    doc.restore();
+
+    lot.forEach((chemin, rang) => {
+      const buffer = fs.readFileSync(chemin);
+      const mesure = dimensionsPng(buffer) || { width: 1024, height: 1024 };
+      const echelle = Math.min(largeurUtile / mesure.width, hauteurCase / mesure.height);
+      const largeur = mesure.width * echelle;
+      const hauteur = mesure.height * echelle;
+      const x = margeGauche + (largeurUtile - largeur) / 2;
+      const y = margeExterieure + rang * (hauteurCase + ecart) + (hauteurCase - hauteur) / 2;
+      doc.image(buffer, x, y, { width: largeur, height: hauteur });
+    });
+
+    doc.font('Helvetica').fontSize(9).fillColor('#444444')
+      .text(String(numero), margeGauche, hauteurPage - margeExterieure - hauteurNumero + 4, {
+        width: largeurUtile, align: 'center',
+      });
+  }
+
+  doc.end();
+  return fini;
+}
+
 // CBZ : une archive ZIP de cases numerotees, ce que lisent les liseuses de manga.
 function buildMangaCbz(pages, { titre = 'manga' } = {}) {
   const AdmZip = require('adm-zip');
@@ -101,10 +199,13 @@ async function buildMangaExport(format, pages, options = {}) {
   const normalise = String(format || '').trim().toLowerCase();
   if (!FORMATS[normalise]) throw Object.assign(new Error('format_inconnu'), { code: 'format_inconnu', status: 400 });
   if (!pages.length) throw Object.assign(new Error('manga_sans_page'), { code: 'manga_sans_page', status: 404 });
-  const buffer = normalise === 'pdf'
-    ? await buildMangaPdf(pages, options)
-    : buildMangaCbz(pages, options);
-  return { buffer, contentType: FORMATS[normalise], extension: normalise };
+  let buffer;
+  if (normalise === 'pdf') buffer = await buildMangaPdf(pages, options);
+  else if (normalise === 'print') buffer = await buildMangaPrintPdf(pages, options);
+  else buffer = buildMangaCbz(pages, options);
+  // Un PDF a imprimer reste un .pdf, avec un nom qui dit ce qu'il est.
+  const extension = normalise === 'print' ? 'a-imprimer.pdf' : normalise;
+  return { buffer, contentType: FORMATS[normalise], extension };
 }
 
 module.exports = {
@@ -114,6 +215,8 @@ module.exports = {
   listPanelFiles,
   resolveMangaSource,
   buildMangaPdf,
+  buildMangaPrintPdf,
+  PAPIERS,
   buildMangaCbz,
   buildMangaExport,
 };

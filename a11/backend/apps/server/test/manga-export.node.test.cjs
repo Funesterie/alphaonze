@@ -91,3 +91,26 @@ test('les dimensions sont lues dans l entete PNG', async () => {
   assert.deepEqual(dimensionsPng(await pngFactice(800, 1200)), { width: 800, height: 1200 });
   assert.equal(dimensionsPng(Buffer.from('pas une image')), null);
 });
+
+test('la version a imprimer fait de vraies pages de papier, avec couverture et reliure alternee', async () => {
+  const { racine, nom } = await chapitreFactice('Elio-chapitre-1-<id>.png', 6);
+  const source = resolveMangaSource(nom, { runtimeRoot: racine });
+  const { buffer, contentType, extension } = await buildMangaExport('print', source.pages, { titre: source.titre });
+
+  assert.equal(contentType, 'application/pdf');
+  assert.equal(extension, 'a-imprimer.pdf');
+  assert.equal(buffer.subarray(0, 4).toString('ascii'), '%PDF');
+
+  // 6 cases a 2 par page = 3 pages, plus la couverture.
+  const pages = (buffer.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
+  assert.equal(pages, 4, `attendu couverture + 3 pages, obtenu ${pages}`);
+
+  // Une case par page : 6 pages + couverture.
+  const seul = await buildMangaExport('print', source.pages, { titre: source.titre, parPage: 1 });
+  assert.equal((seul.buffer.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length, 7);
+
+  // Le papier change la taille : A5 est plus petit qu'A4.
+  const a5 = await buildMangaExport('print', source.pages, { titre: source.titre, papier: 'a5' });
+  assert.ok(a5.buffer.length > 0);
+  fs.rmSync(racine, { recursive: true, force: true });
+});

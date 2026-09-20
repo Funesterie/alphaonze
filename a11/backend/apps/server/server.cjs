@@ -7300,7 +7300,12 @@ app.get('/clips/:filename/export/:format', identifierSansBloquer, sharinganGuard
       runtimeRoot: PUBLIC_RUNTIME_ROOT,
       boardPath: path.join(CLIPS_DIR, decoded),
     });
-    const { buffer, contentType, extension } = await buildMangaExport(req.params.format, source.pages, { titre: source.titre });
+    const { buffer, contentType, extension } = await buildMangaExport(req.params.format, source.pages, {
+      titre: source.titre,
+      // Version a imprimer : papier et nombre de cases par page reglables.
+      papier: String(req.query?.papier || 'a4'),
+      parPage: Number(req.query?.parPage || 2),
+    });
     const nomFichier = `${source.titre || 'manga'}.${extension}`.replace(/[^A-Za-z0-9._-]/g, '_');
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${nomFichier}"`);
