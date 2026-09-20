@@ -25,7 +25,11 @@ const FICHIER_VITRINE = path.join(CLIPS_DIR, 'vitrine.json');
 
 function nomPropre(filename) {
   const nom = path.basename(String(filename || ''));
-  return /^[^/\\]+\.(mp4|webm|mkv)$/i.test(nom) && nom === String(filename || '') ? nom : '';
+  // Les planches manga (.png) comptent autant que les clips video : sans elles,
+  // un manga ne pouvait PAS etre mis en vitrine, et le mode Mangas du jukebox
+  // restait vide meme apres avoir clique sur « Mettre en vitrine » (20/09/2026).
+  // Meme liste d'extensions que la route /clips/:filename.
+  return /^[^/\\]+\.(mp4|webm|mkv|png|jpe?g|webp)$/i.test(nom) && nom === String(filename || '') ? nom : '';
 }
 
 function lireVitrine() {

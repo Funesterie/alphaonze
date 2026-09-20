@@ -94,3 +94,14 @@ test('les routes : /list ne publie plus tout, /mes-clips est personnel, la vitri
   });
   acces.publierDansVitrine('B-2.mp4', false);
 });
+
+// 20/09/2026 : le mode Mangas du jukebox restait vide. La vitrine n'acceptait que
+// des extensions video, donc une planche .png ne pouvait jamais y entrer — le
+// bouton « Mettre en vitrine » echouait en silence sur un manga.
+test('une planche manga peut entrer en vitrine, un nom qui sort du dossier non', () => {
+  assert.equal(acces.nomPropre('Elio-chapitre-1-1789871947950-a7f0fe1e.png'), 'Elio-chapitre-1-1789871947950-a7f0fe1e.png');
+  assert.equal(acces.nomPropre('planche.PNG'), 'planche.PNG');
+  assert.equal(acces.nomPropre('clip.mp4'), 'clip.mp4');
+  assert.equal(acces.nomPropre('piege/../evasion.png'), '');
+  assert.equal(acces.nomPropre('notes.txt'), '');
+});
