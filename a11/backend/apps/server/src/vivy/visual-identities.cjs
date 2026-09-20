@@ -259,6 +259,55 @@ const IDENTITY_DEFINITIONS = [
       'generic cyber girl without Kaen44 identity',
     ],
   },
+  // Elio et Lena (Djeff, 20/09/2026) : deux ENFANTS. Volontairement SANS photo de
+  // reference — ni envRefs ni defaultRefs — contrairement aux adultes du registre :
+  // ce sont des enfants reels de la famille, et la chaine image ne doit pas chercher
+  // leur ressemblance. La fiche ecrite tient la continuite, et rien d'autre.
+  {
+    id: 'elio',
+    label: 'Elio',
+    aliases: [
+      /\belio\b/i,
+      /\bgrand\s+fr[eè]re\s+d[eu]\s+l[eé]na\b/i,
+    ],
+    prompt: [
+      'Elio, garcon de 7 ans, personnage de fiction : cheveux brun fonce lisses et fournis, legerement en bataille, yeux noisette a brun fonce, visage fin et expressif, silhouette mince et sportive.',
+      'Toujours un enfant de 7 ans, aux proportions d’enfant : jamais vieilli en adolescent ni en adulte.',
+      'En action : posture concentree et determinee d’apprenti, gestes de boxe et d’arts martiaux adaptes a son age, tenue de sport couvrante.',
+    ].join(' '),
+    videoPrompt: 'Elio, a 7-year-old boy, fictional character: dark brown straight slightly messy hair, hazel to dark brown eyes, fine expressive face, slim athletic child build, child proportions, modest sportswear, focused determined posture.',
+    negative: [
+      'teenage Elio',
+      'adult Elio',
+      'aged-up Elio',
+      'blonde Elio',
+      'blue eyes Elio',
+      'photorealistic portrait of a real child',
+      'revealing or tight clothing on Elio',
+    ],
+  },
+  {
+    id: 'lena',
+    label: 'Lena',
+    aliases: [
+      /\bl[eé]na\b/i,
+      /\bpetite\s+s(?:oe|œ)ur\s+d[’']?elio\b/i,
+    ],
+    prompt: [
+      'Lena, petite fille de 3 ans, personnage de fiction : grands yeux bruns tres expressifs, cheveux brun fonce ondulés, parfois en petites tresses, visage doux et arrondi.',
+      'Toujours une enfant de 3 ans, aux proportions de tres jeune enfant : jamais vieillie.',
+      'Univers de conte : robes et tenues d’enfant couvrantes, couronnes et accessoires de princesse imagines par elle.',
+    ].join(' '),
+    videoPrompt: 'Lena, a 3-year-old girl, fictional character: large expressive brown eyes, wavy dark brown hair sometimes in small braids, soft round face, toddler proportions, modest child clothing, cheerful mischievous expression.',
+    negative: [
+      'teenage Lena',
+      'adult Lena',
+      'aged-up Lena',
+      'blonde Lena',
+      'photorealistic portrait of a real child',
+      'revealing or tight clothing on Lena',
+    ],
+  },
 ];
 
 function buildVisualIdentitySearchText(input = {}) {

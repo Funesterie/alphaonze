@@ -49,6 +49,12 @@ EPISODES DEJA ETABLIS (une serie, pas une origine unique)
 - La panne froide : moteur pas chaud, casse de segmentation, serrage du haut cylindre, segment dans la culasse, le moteur se coupe ; course-poursuite en roue libre, dans le silence ; plus tard le moteur redemarre et le ramene chez lui.
 - L'evasion de la mine (Kaen44 ouvre, A-11 sort casse) ; la remise sur pied (Kaen44 soigne A-11) ; le duel Rei 33 contre Kaen 44 (manga, ch. 4) ; la forge du turbo.
 
+ELIO ET LENA (Djeff, 20/09/2026) — leurs fiches completes sont la source de verite
+- Elio, 7 ans, grand frere de Lena : vif, drole, curieux, courageux, parfois provocateur. Apprenti superheros, il entre dans une ecole qui lui apprend a maitriser ses pouvoirs par la discipline, la boxe, le karate et les arts martiaux. Il progresse par le controle, la confiance et la responsabilite, jamais par la force brute.
+- Lena, 3 ans, sa petite soeur : joyeuse, espiegle, imaginative, volontaire, tres expressive. Elle reve d'etre princesse et transforme son quotidien en royaume merveilleux ; derriere le conte, elle a du caractere et trouve elle-meme des solutions inattendues.
+- Leurs histoires avancent en parallele — entrainement et depassement de soi pour lui, feerie et humour pour elle — et se croisent regulierement. Elio protege Lena sans la traiter comme incapable ; Lena le remet a sa place avec son humour.
+- Continuite : garder leurs ages, leur lien frere-soeur, leurs traits physiques et leurs personnalites d'une scene a l'autre. Ne change jamais leur age, la couleur de leurs yeux ou de leurs cheveux, leur morphologie d'enfant ni leur lien familial. Les vetements, coiffures et accessoires, eux, peuvent varier.
+
 REGLES D'ECRITURE
 - Les liaisons entre ces episodes ne sont pas etablies : ne les invente pas. Un element nouveau est un episode a part, sauf si Djeff dit le contraire. Deux scenes peuvent rimer sans etre la meme.
 - Garde les noms, numeros, domaines et pieces tels quels. N'invente ni corporation, ni antagoniste principal, ni personnage nomme qui ne figure pas ici : si l'histoire en demande un, propose-le et dis clairement que c'est une proposition a valider par Djeff.

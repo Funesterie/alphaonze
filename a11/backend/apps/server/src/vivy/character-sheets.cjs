@@ -105,6 +105,38 @@ const FICHES = Object.freeze({
     aValider: ['tempérament à l’écran', 'gestuelle', 'tenue'],
   }),
 
+  // Elio et Lena (Djeff, 20/09/2026) : son neveu et sa niece, donc des enfants
+  // reels. Comme pour Djeff, Marvin et Jean, le lien reel se consigne mais ne se
+  // ressort pas ; et contrairement aux adultes, leur identite visuelle ne porte
+  // AUCUNE photo de reference (voir visual-identities.cjs).
+  elio: Object.freeze({
+    id: 'elio',
+    nom: 'Elio',
+    genre: 'garçon',
+    sections: [
+      ['Identité', 'djeff', 'Garçon de 7 ans, grand frère de Léna. Apparence toujours celle d’un enfant de 7 ans, jamais vieillie en adolescent.'],
+      ['Tempérament', 'djeff', 'Vif, drôle, curieux, courageux, parfois un peu provocateur. Dans l’action : concentré et déterminé, mais il garde son côté enfantin, joueur et affectueux.'],
+      ['Récit', 'djeff', 'Apprenti superhéros. Il entre dans une école qui lui apprend à maîtriser ses pouvoirs par la discipline, la boxe, le karaté et les arts martiaux. Son évolution passe par le contrôle, la confiance et la responsabilité, pas par la force brute.'],
+      ['Relation', 'djeff', 'Protecteur envers Léna sans la traiter comme incapable. Ils se taquinent, plaisantent, fêtent leurs victoires et se racontent leurs mésaventures.'],
+      ['À l’image', 'registre', 'Proportions d’enfant, tenue de sport couvrante. Garder ses cheveux brun foncé et ses yeux noisette à brun foncé d’une scène à l’autre ; vêtements, coiffure et accessoires peuvent changer.'],
+    ],
+    aValider: ['nom de son école', 'nature exacte de ses pouvoirs', 'ses camarades et ses maîtres'],
+  }),
+
+  lena: Object.freeze({
+    id: 'lena',
+    nom: 'Léna',
+    genre: 'fille',
+    sections: [
+      ['Identité', 'djeff', 'Petite fille de 3 ans, petite sœur d’Elio. Apparence toujours celle d’une enfant de 3 ans.'],
+      ['Tempérament', 'djeff', 'Joyeuse, espiègle, imaginative, volontaire et très expressive. Derrière son univers de conte, elle a déjà beaucoup de caractère et trouve des solutions inattendues à ses propres problèmes.'],
+      ['Récit', 'djeff', 'Elle rêve de devenir princesse et transforme son quotidien en royaume merveilleux. Ses aventures sont féeriques, drôles et imaginatives.'],
+      ['Relation', 'djeff', 'Elle sait remettre son grand frère à sa place avec son humour. Leurs histoires avancent en parallèle et se croisent régulièrement.'],
+      ['À l’image', 'registre', 'Proportions de très jeune enfant, tenues d’enfant couvrantes. Garder ses grands yeux bruns et ses cheveux brun foncé ondulés ; tresses, robes et accessoires peuvent changer.'],
+    ],
+    aValider: ['nom de son royaume', 'ses compagnons imaginaires', 'la façon dont ses aventures croisent celles d’Elio'],
+  }),
+
   jean: Object.freeze({
     id: 'jean',
     nom: 'Jean',
@@ -125,6 +157,8 @@ function definitionFor(id = '') {
 function normalizeCharacterId(value = '') {
   const raw = String(value || '').trim().toLowerCase();
   if (['k44', 'kaen44', 'kaen'].includes(raw)) return 'kaen44';
+  if (['léna', 'lena'].includes(raw)) return 'lena';
+  if (raw === 'élio') return 'elio';
   return FICHES[raw] ? raw : '';
 }
 
