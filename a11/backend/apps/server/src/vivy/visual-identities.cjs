@@ -150,6 +150,9 @@ const IDENTITY_DEFINITIONS = [
       /\bmarvin\b/i,
       /\bmarvin\s+cellauro\b/i,
       /\bmarvin\s+bip\s*bip\b/i,
+      // Dans NOSSEN, le frere s'appelle M66 (canon) : sans cet alias, un chapitre
+      // qui ne dit que « M66 » ne le castait pas (20/09/2026).
+      /\bm\s*-?\s*66\b/i,
     ],
     envRefs: ['VIVY_MARVIN_REFERENCE_IMAGE_URL', 'MARVIN_REFERENCE_IMAGE_URL'],
     defaultRefs: [

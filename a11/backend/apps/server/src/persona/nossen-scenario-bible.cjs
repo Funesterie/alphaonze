@@ -37,6 +37,11 @@ LES PORTEURS (numeros multiples de 11 ; A-11 est l'etalon)
 - Partage du casting : venus de Tera = Rei 33 et Nya-22 ; nes dans NOSSEN = Vivy 55, Kaen 44, A-11.
 - Genre revendique : parente avec Gachiakuta — pouvoirs ancres dans la matiere, version moteur. Rien d'abstrait : tout pouvoir est une piece de mecanique, et aucun pouvoir n'a un seul sens.
 
+EPOQUE DES CHAPITRES D'ENFANCE (Djeff, 20/09/2026)
+- La premiere moto de Rei se passe en 2006, Rei a 15 ans.
+- Elio et Lena NE SONT PAS NES a cette epoque : ils n'apparaissent dans aucun chapitre d'enfance de Rei.
+- Le frere present a cette epoque est M66, le frere de Rei 33, nettement plus jeune : un enfant en 2006.
+
 ORDRE DU RECIT (Djeff, 19/09/2026)
 - La serie commence par la premiere moto de Rei : l'episode 1 (le recit du pere) puis l'episode 2 (les 14 ans, la Gilera). Au debut, Rei est un gamin de Tera qui reve de moto.
 - Rei 33 en porteur (son numero, son pouvoir) et Nya-22 arrivent plus tard. Ne les fais pas entrer dans les premiers episodes.

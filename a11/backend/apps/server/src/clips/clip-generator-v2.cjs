@@ -1062,6 +1062,12 @@ async function generateClip(config = {}, {
     const mangaIdentityBrief = identity.prompt
       ? ` Character identity to preserve exactly across every panel: ${identity.prompt}`
       : '';
+    // Un chapitre d'enfance a besoin de contredire la fiche visuelle, qui decrit
+    // toujours l'adulte : sans ca, « les 14 ans de Rei » se dessinait avec un
+    // homme barbu (constate le 20/09/2026). L'age passe APRES l'identite, donc
+    // il gagne, et il ne sert qu'aux chapitres qui le demandent.
+    const ageBrief = String(config.ageDesPersonnages || process.env.NOSSEN_CLIP_AGE_OVERRIDE || '').trim();
+    const mangaAgeBrief = ageBrief ? ` Ages in THIS chapter override the character sheets: ${ageBrief}` : '';
     const mangaLieuBrief = lieu ? ` Same setting across the whole story: ${lieu}.` : '';
     const panelPaths = [];
     // Chaque planche garde son prompt_id Comfy + le prompt de la scène : c'est
@@ -1071,7 +1077,7 @@ async function generateClip(config = {}, {
     for (let i = 0; i < numSegments; i++) {
       const section = sections[i % sections.length];
       const prompt = effacerNomsFilm(
-        `${section.visual}.${mangaLieuBrief} ${renduVisuel(process.env, 'manga')} ${styleVideo(style, title)}${mangaIdentityBrief}`.trim(),
+        `${section.visual}.${mangaLieuBrief} ${renduVisuel(process.env, 'manga')} ${styleVideo(style, title)}${mangaIdentityBrief}${mangaAgeBrief}`.trim(),
         identity.nomsFilm,
       );
       try {

@@ -486,6 +486,13 @@ Premiers épisodes envisagés pour une production vidéo. Entièrement autobiogr
 tard, d'abord la première moto de Jeff Rei 33. » La série s'ouvre sur la première
 moto ; Rei 33 en porteur et Nya-22 n'entrent en scène qu'ensuite.
 
+**Époque et âge** *(Djeff, 2026-09-20)* : « c'était en 2006, moi j'avais 15 ans. »
+Le chapitre de la première moto se passe donc en **2006**, Rei a **15 ans** — et non
+14 comme la note du 2026-08-04 le laissait entendre pour la Gilera. Conséquence
+directe : **Elio et Léna ne sont pas nés**, ils n'ont rien à faire dans les chapitres
+d'enfance. Le frère présent à cette époque est **M66 (Marvin)**, qui est **plus jeune** :
+un enfant en 2006 *(Djeff, 2026-09-20)*.
+
 ### La chronologie des motos
 
 ```

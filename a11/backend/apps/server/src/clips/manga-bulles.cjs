@@ -82,10 +82,24 @@ function construireBulleSvg({
     + '</svg>';
 }
 
+// « Mère : Il n'est pas question… » avec MÈRE deja ecrit au-dessus : le nom
+// sortait deux fois (constate le 20/09/2026). On retire le prefixe quand il
+// repete le locuteur, ou quand il ressemble a un nom suivi de deux points.
+function retirerPrefixeLocuteur(texte = '', locuteur = '') {
+  const replique = String(texte || '').trim();
+  const nom = String(locuteur || '').trim();
+  if (nom) {
+    const echappe = nom.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const avecNom = new RegExp(`^${echappe}\\s*[:\\-–]\\s*`, 'i');
+    if (avecNom.test(replique)) return replique.replace(avecNom, '').trim();
+  }
+  return replique.replace(/^[A-ZÀ-ÖØ-Þ][\wÀ-ÿ' -]{1,20}\s*:\s+/u, '').trim();
+}
+
 // Pose la bulle sur la case. Sans replique, la case ressort inchangee : une
 // case muette est un choix de mise en scene, pas un echec.
 async function poserBulle(cheminImage, { texte = '', locuteur = '', position = 'haut', sharpImpl = null } = {}) {
-  const replique = String(texte || '').trim();
+  const replique = retirerPrefixeLocuteur(texte, locuteur);
   if (!replique) return false;
   const sharp = sharpImpl || require('sharp');
   const image = sharp(cheminImage);
@@ -107,6 +121,7 @@ async function poserBulle(cheminImage, { texte = '', locuteur = '', position = '
 
 module.exports = {
   couperEnLignes,
+  retirerPrefixeLocuteur,
   construireBulleSvg,
   poserBulle,
 };
