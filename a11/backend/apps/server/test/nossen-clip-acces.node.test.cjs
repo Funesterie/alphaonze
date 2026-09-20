@@ -105,3 +105,23 @@ test('une planche manga peut entrer en vitrine, un nom qui sort du dossier non',
   assert.equal(acces.nomPropre('piege/../evasion.png'), '');
   assert.equal(acces.nomPropre('notes.txt'), '');
 });
+
+// 20/09/2026 : le mode Mangas restait vide meme apres publication. En plus de la
+// vitrine, la LISTE des clips ne retenait que les .mp4 : une planche n apparaissait
+// ni dans « Mes clips » ni en vitrine, donc le jukebox n avait rien a afficher.
+test('la liste des clips contient les planches manga, pas seulement les videos', () => {
+  const planche = 'Elio-chapitre-1-1789871947950-a7f0fe1e.png';
+  fs.writeFileSync(path.join(DOSSIER, planche), 'png');
+  fs.writeFileSync(path.join(DOSSIER, 'notes.txt'), 'texte');
+  fs.writeFileSync(path.join(DOSSIER, 'clip-interne-000.mp4'), 'interne');
+
+  const noms = require('../src/clips/clip-jobs.cjs').listPublicClips().map((c) => c.filename);
+  assert.ok(noms.includes(planche), 'la planche doit etre listee');
+  assert.ok(noms.includes('A-1.mp4'), 'les videos restent listees');
+  assert.equal(noms.includes('notes.txt'), false, 'un fichier texte n est pas un clip');
+  assert.equal(noms.includes('clip-interne-000.mp4'), false, 'les fichiers internes restent caches');
+
+  acces.publierDansVitrine(planche, true);
+  const vitrine = acces.clipsVisibles({ admin: false }).map((c) => c.filename);
+  assert.ok(vitrine.includes(planche), 'une planche publiee doit etre visible de tous');
+});

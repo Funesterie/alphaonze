@@ -279,15 +279,21 @@ function listJobs({ userId, email, limit = 20, raw = false } = {}) {
   return filtered.slice(-limit).reverse().map((job) => raw ? { ...job } : deriveSafeJobState(job));
 }
 
+const EXTENSIONS_PUBLIQUES = /\.(mp4|webm|mkv|png|jpe?g|webp)$/i;
+
 function listPublicClips() {
   ensureDir();
   try {
     return fs.readdirSync(CLIPS_DIR)
-      .filter((filename) => filename.endsWith('.mp4') && !filename.startsWith('clip-'))
+      // Les planches manga (.png) sont des clips comme les autres : sans elles
+      // ici, un manga n'apparaissait NI dans « Mes clips » NI en vitrine, et le
+      // mode Mangas du jukebox restait vide (20/09/2026). Meme liste
+      // d'extensions que la route /clips/:filename et que la vitrine.
+      .filter((filename) => EXTENSIONS_PUBLIQUES.test(filename) && !filename.startsWith('clip-'))
       .map((filename) => {
         const stat = fs.statSync(path.join(CLIPS_DIR, filename));
         return {
-          name: filename.replace(/\.mp4$/, ''),
+          name: filename.replace(EXTENSIONS_PUBLIQUES, ''),
           filename,
           url: '/clips/' + encodeURIComponent(filename),
           size: stat.size,
