@@ -140,11 +140,15 @@ async function splitScenesA11(scenario, options) {
     + "3. Ce qui varie : échelle (large, moyen, gros plan), angle (face, profil, plongée, dos), "
     + "mouvement de caméra (fixe, travelling, panoramique, orbite lente), et le moment de l'action.\n"
     + "4. Chaque plan reste fidèle à l'intention de son acte et ne contredit pas les personnages.\n"
-    + "5. Chaque plan = 1 phrase ANGLAISE, descriptive, filmable.\n\n"
+    + "5. Chaque plan = 1 phrase ANGLAISE, descriptive, filmable.\n"
+    + "6. DIALOGUE : au plus une replique par plan, EN FRANCAIS, 90 caracteres au maximum, "
+    + "avec le nom de qui parle. Une case muette vaut mieux qu'une replique forcee : laisse vide.\n"
+    + "   Le dessin ne porte AUCUN texte : la bulle est posee ensuite sur l'image.\n\n"
     + styleLigne + "\n"
     + "JSON strict :\n"
     + "{\"lieu\":\"description courte du décor unique, en anglais\","
-    + "\"plans\":[{\"name\":\"Nom du plan\",\"visual\":\"English shot description\",\"acte\":\"intention en une phrase\"}]}";
+    + "\"plans\":[{\"name\":\"Nom du plan\",\"visual\":\"English shot description\",\"acte\":\"intention en une phrase\","
+    + "\"dialogue\":\"replique en francais, ou chaine vide\",\"locuteur\":\"qui parle, ou chaine vide\"}]}";
 
   var text = await director.callOpenRouter(
     SCENE_MODEL,
@@ -167,6 +171,10 @@ async function splitScenesA11(scenario, options) {
       duration: 15,
       section: scenario.actes[i] ? scenario.actes[i].titre : undefined,
       acte: String(p.acte || (scenario.actes[i] ? scenario.actes[i].intention : "")).slice(0, 200) || undefined,
+      // La replique voyage jusqu'au generateur, qui POSE la bulle sur l'image :
+      // un modele d'image ecrit mal, et en anglais (constate le 20/09/2026).
+      dialogue: String(p.dialogue || "").trim().slice(0, 120) || undefined,
+      locuteur: String(p.locuteur || "").trim().slice(0, 40) || undefined,
     };
   });
   scenes.lieu = lieu;

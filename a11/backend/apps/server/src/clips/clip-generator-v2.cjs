@@ -1082,6 +1082,21 @@ async function generateClip(config = {}, {
         const dest = path.join(clipDir, `panel_${String(i).padStart(2, '0')}.png`);
         emitProgress(onProgress, { stage: 'panel:downloading', status: 'generating', segmentIndex: i });
         await materializeMedia(panelUrl, dest, { kind: 'image' });
+        // La bulle est ECRITE par nous, pas dessinee par le modele : son texte
+        // est celui de K44, donc juste, en francais et sans faute (20/09/2026).
+        // Les bulles alternent de cote pour ne pas masquer toujours le meme coin.
+        let bulle = false;
+        if (section.dialogue) {
+          try {
+            bulle = await require('./manga-bulles.cjs').poserBulle(dest, {
+              texte: section.dialogue,
+              locuteur: section.locuteur || '',
+              position: i % 2 === 0 ? 'haut' : 'droite',
+            });
+          } catch (error) {
+            console.warn(`[manga] Bulle non posee sur la planche ${i}: ${sanitizeDiagnostic(error.message, 120)}`);
+          }
+        }
         panelPaths.push(dest);
         panelsMeta.push({
           index: i,
@@ -1090,6 +1105,9 @@ async function generateClip(config = {}, {
           name: section.name || `Plan ${i + 1}`,
           visual: section.visual || '',
           acte: section.acte || '',
+          dialogue: section.dialogue || '',
+          locuteur: section.locuteur || '',
+          bulle,
         });
         console.log(`[manga] Planche ${i} prête (${panelPaths.length}/${numSegments})`);
         emitProgress(onProgress, {

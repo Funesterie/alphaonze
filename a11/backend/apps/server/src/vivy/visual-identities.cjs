@@ -109,6 +109,11 @@ const IDENTITY_DEFINITIONS = [
       /\bjeffrey\b/i,
       /\bjeff\b/i,
       /\bfunes?te38\b/i,
+      // Dans NOSSEN, Djeff s'appelle Rei 33 (canon). Sans cet alias, un chapitre
+      // qui ne nomme que « Rei » n'avait aucun personnage et retombait sur la
+      // distribution par defaut (20/09/2026).
+      /\brei\s*-?\s*33\b/i,
+      /\brei33\b/i,
       /\bcr[ée]ateur\s+humain\b/i,
     ],
     envRefs: ['VIVY_DJEFF_REFERENCE_IMAGE_URL', 'DJEFF_REFERENCE_IMAGE_URL'],
@@ -180,6 +185,7 @@ const IDENTITY_DEFINITIONS = [
       /\bjean\b/i,
       /\bp[eè]re\s+de\s+djeff\b/i,
       /\bpapa\s+de\s+djeff\b/i,
+      /\bp[eè]re\s+de\s+rei\b/i,
     ],
     envRefs: ['VIVY_JEAN_REFERENCE_IMAGE_URL', 'JEAN_REFERENCE_IMAGE_URL'],
     defaultRefs: [
