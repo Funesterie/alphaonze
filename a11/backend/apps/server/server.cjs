@@ -7287,6 +7287,46 @@ app.get('/clips/:filename', identifierSansBloquer, sharinganGuard, garderClipPri
 });
 console.log('[Server] NOSSEN clips route mounted at /clips/:filename (Sharingan Guard active)');
 
+// Lecture a l'ecran : le nombre de cases, puis chaque case allegee. La
+// planche-contact fait 36 Mo et ne s'affichait pas dans le navigateur.
+app.get('/clips/:filename/pages', identifierSansBloquer, sharinganGuard, garderClipPrive, (req, res) => {
+  const decoded = decodeURIComponent(req.params.filename || '');
+  if (!decoded || /[/\\]/.test(decoded) || !/\.png$/i.test(decoded)) {
+    return res.status(400).json({ ok: false, error: 'manga_nom_invalide' });
+  }
+  const { resolveMangaSource } = require('./src/clips/manga-export.cjs');
+  const source = resolveMangaSource(decoded, {
+    runtimeRoot: PUBLIC_RUNTIME_ROOT,
+    boardPath: path.join(CLIPS_DIR, decoded),
+  });
+  res.setHeader('Cache-Control', 'private, max-age=300');
+  return res.json({ ok: true, pages: source.pages.length, titre: source.titre });
+});
+
+app.get('/clips/:filename/page/:index', identifierSansBloquer, sharinganGuard, garderClipPrive, async (req, res) => {
+  const decoded = decodeURIComponent(req.params.filename || '');
+  const index = Number(req.params.index);
+  if (!decoded || /[/\\]/.test(decoded) || !/\.png$/i.test(decoded) || !Number.isInteger(index) || index < 1) {
+    return res.status(400).json({ ok: false, error: 'manga_page_invalide' });
+  }
+  try {
+    const { resolveMangaSource, renderPanelForWeb } = require('./src/clips/manga-export.cjs');
+    const source = resolveMangaSource(decoded, {
+      runtimeRoot: PUBLIC_RUNTIME_ROOT,
+      boardPath: path.join(CLIPS_DIR, decoded),
+    });
+    const page = source.pages[index - 1];
+    if (!page) return res.status(404).json({ ok: false, error: 'manga_page_absente' });
+    const { buffer, contentType } = await renderPanelForWeb(page, { maxWidth: Number(req.query?.w || 1000) });
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    return res.send(buffer);
+  } catch (error) {
+    console.warn('[manga][page]', error?.message);
+    return res.status(500).json({ ok: false, error: 'manga_page_echec' });
+  }
+});
+
 // Sortie manga : le meme chapitre en PDF (une case par page) ou en CBZ (liseuse).
 // Memes gardes que /clips/:filename — un manga prive le reste ici aussi.
 app.get('/clips/:filename/export/:format', identifierSansBloquer, sharinganGuard, garderClipPrive, async (req, res) => {

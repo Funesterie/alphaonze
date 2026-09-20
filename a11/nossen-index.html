@@ -207,8 +207,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
     <a class="use" id="manga-dl-print" href="#" download data-i18n="manga.print">⬇ À imprimer</a>
     <button type="button" class="use" id="manga-close" data-i18n="manga.close">✕ Fermer</button>
   </div>
-  <div id="manga-pages" style="max-height:70vh;overflow-y:auto;background:#000;border-radius:10px">
-    <img id="manga-image" alt="" style="width:100%;display:block" />
+  <div id="manga-pages" style="max-height:70vh;overflow-y:auto;background:#000;border-radius:10px;padding:6px">
+    <div id="manga-image" class="meta"></div>
   </div>
 </div>
 
@@ -310,8 +310,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "jukebox.modeManga": "📖 Mangas NOSSEN",
       "manga.pdf": "⬇ PDF",
       "manga.cbz": "⬇ CBZ",
-      "manga.print": "⬇ À imprimer",
-      "manga.close": "✕ Fermer",
+      "manga.print": "⬇ À imprimer",
+      "manga.empty": "Aucune page a afficher",      "manga.close": "✕ Fermer",
       "jukebox.searchPlaceholder": "🔎 Chercher dans le jukebox : une lettre ou des mots (Entrée pour écouter)",
       "jukebox.searchAria": "Chercher dans le jukebox",
       "err.network": "Erreur réseau",
@@ -475,8 +475,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "jukebox.modeManga": "📖 NOSSEN mangas",
       "manga.pdf": "⬇ PDF",
       "manga.cbz": "⬇ CBZ",
-      "manga.print": "⬇ Printable",
-      "manga.close": "✕ Close",
+      "manga.print": "⬇ Printable",
+      "manga.empty": "No pages to display",      "manga.close": "✕ Close",
       "jukebox.searchPlaceholder": "🔎 Search the jukebox: a letter or words (Enter to listen)",
       "jukebox.searchAria": "Search the jukebox",
       "err.network": "Network error",
@@ -640,8 +640,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "jukebox.modeManga": "📖 Mangas NOSSEN",
       "manga.pdf": "⬇ PDF",
       "manga.cbz": "⬇ CBZ",
-      "manga.print": "⬇ Para imprimir",
-      "manga.close": "✕ Cerrar",
+      "manga.print": "⬇ Para imprimir",
+      "manga.empty": "No hay paginas que mostrar",      "manga.close": "✕ Cerrar",
       "jukebox.searchPlaceholder": "🔎 Buscar en el jukebox: una letra o palabras (Intro para escuchar)",
       "jukebox.searchAria": "Buscar en el jukebox",
       "err.network": "Error de red",
@@ -805,8 +805,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "jukebox.modeManga": "📖 Manga NOSSEN",
       "manga.pdf": "⬇ PDF",
       "manga.cbz": "⬇ CBZ",
-      "manga.print": "⬇ Da stampare",
-      "manga.close": "✕ Chiudi",
+      "manga.print": "⬇ Da stampare",
+      "manga.empty": "Nessuna pagina da mostrare",      "manga.close": "✕ Chiudi",
       "jukebox.searchPlaceholder": "🔎 Cerca nel jukebox: una lettera o parole (Invio per ascoltare)",
       "jukebox.searchAria": "Cerca nel jukebox",
       "err.network": "Errore di rete",
@@ -970,8 +970,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "jukebox.modeManga": "📖 NOSSEN-Mangas",
       "manga.pdf": "⬇ PDF",
       "manga.cbz": "⬇ CBZ",
-      "manga.print": "⬇ Zum Drucken",
-      "manga.close": "✕ Schließen",
+      "manga.print": "⬇ Zum Drucken",
+      "manga.empty": "Keine Seiten anzuzeigen",      "manga.close": "✕ Schließen",
       "jukebox.searchPlaceholder": "🔎 In der Jukebox suchen: ein Buchstabe oder Wörter (Enter zum Anhören)",
       "jukebox.searchAria": "In der Jukebox suchen",
       "err.network": "Netzwerkfehler",
@@ -1135,8 +1135,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "jukebox.modeManga": "📖 NOSSEN マンガ",
       "manga.pdf": "⬇ PDF",
       "manga.cbz": "⬇ CBZ",
-      "manga.print": "⬇ 印刷用",
-      "manga.close": "✕ 閉じる",
+      "manga.print": "⬇ 印刷用",
+      "manga.empty": "表示するページがありません",      "manga.close": "✕ 閉じる",
       "jukebox.searchPlaceholder": "🔎 ジュークボックスを検索：1文字または単語（Enterで再生）",
       "jukebox.searchAria": "ジュークボックスを検索",
       "err.network": "ネットワークエラー",
@@ -1300,8 +1300,8 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "jukebox.modeManga": "📖 NOSSEN 漫画",
       "manga.pdf": "⬇ PDF",
       "manga.cbz": "⬇ CBZ",
-      "manga.print": "⬇ 打印版",
-      "manga.close": "✕ 关闭",
+      "manga.print": "⬇ 打印版",
+      "manga.empty": "没有可显示的页面",      "manga.close": "✕ 关闭",
       "jukebox.searchPlaceholder": "🔎 在点唱机中搜索：一个字母或词语（按回车播放）",
       "jukebox.searchAria": "在点唱机中搜索",
       "err.network": "网络错误",
@@ -2646,8 +2646,22 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
     if (!boite || !image) return;
     var nom = (s.raw && (s.raw.filename || s.raw.name)) || "";
     document.getElementById("manga-reader-title").textContent = s.title;
-    image.src = resolveHttpUrl(s.playUrl) || "";
-    image.alt = s.title;
+    image.innerHTML = "";
+    if (nom) {
+      var racine = "/clips/" + encodeURIComponent(nom);
+      api(racine + "/pages").then(function(d) {
+        var total = (d && d.pages) || 0;
+        if (!total) { image.textContent = t("manga.empty"); return; }
+        var html = "";
+        for (var p = 1; p <= total; p++) {
+          html += '<img src="' + racine + "/page/" + p + '?w=1000" alt="" loading="lazy" '
+            + 'style="width:100%;display:block;margin:0 0 6px" />';
+        }
+        image.innerHTML = html;
+      }).catch(function() {
+        image.innerHTML = '<img src="' + (resolveHttpUrl(s.playUrl) || "") + '" alt="" style="width:100%;display:block" />';
+      });
+    }
     var base = nom ? "/clips/" + encodeURIComponent(nom) + "/export/" : "";
     var pdf = document.getElementById("manga-dl-pdf");
     var cbz = document.getElementById("manga-dl-cbz");

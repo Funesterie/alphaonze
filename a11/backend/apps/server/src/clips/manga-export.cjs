@@ -185,6 +185,19 @@ function buildMangaPrintPdf(pages, {
   return fini;
 }
 
+// Lecture a l'ecran : une case, allegee. La planche-contact fait 36 Mo — un
+// navigateur ne l'affiche pas, ou pas avant longtemps (Djeff, 20/09/2026 :
+// « ca s'affiche pas sur le site, oblige de le telecharger »). Le lecteur
+// demande donc les cases une par une, redimensionnees.
+async function renderPanelForWeb(chemin, { maxWidth = 1000, quality = 78 } = {}) {
+  const sharp = require('sharp');
+  const buffer = await sharp(chemin)
+    .resize({ width: Math.max(200, Math.min(2000, Number(maxWidth) || 1000)), withoutEnlargement: true })
+    .jpeg({ quality: Math.max(40, Math.min(95, Number(quality) || 78)) })
+    .toBuffer();
+  return { buffer, contentType: 'image/jpeg' };
+}
+
 // CBZ : une archive ZIP de cases numerotees, ce que lisent les liseuses de manga.
 function buildMangaCbz(pages, { titre = 'manga' } = {}) {
   const AdmZip = require('adm-zip');
@@ -216,6 +229,7 @@ module.exports = {
   resolveMangaSource,
   buildMangaPdf,
   buildMangaPrintPdf,
+  renderPanelForWeb,
   PAPIERS,
   buildMangaCbz,
   buildMangaExport,

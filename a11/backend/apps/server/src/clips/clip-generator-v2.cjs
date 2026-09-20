@@ -453,7 +453,14 @@ const RENDUS_VISUELS = {
   anime: 'Cinematic anime quality, volumetric lighting, smooth camera movement.',
   // Manga : planche fixe, pas de mouvement de caméra. Encre noire, trames,
   // cases nettes. Utilisé par le mode image-par-image (une planche par scène).
-  manga: 'Black and white manga panel, clean ink lines, screentone shading, dynamic paneling, expressive line art, high contrast, comic book composition.',
+  // Trois defauts vus sur le premier vrai chapitre (Djeff, 20/09/2026) : une
+  // bulle de texte en ANGLAIS (le modele ecrit mal et dans la mauvaise langue),
+  // la tenue qui change a chaque case, et l'age qui bouge. Le texte se posera
+  // dans les bulles apres coup ; ici on demande des cases muettes et stables.
+  manga: 'Black and white manga panel, clean ink lines, screentone shading, dynamic paneling, expressive line art, high contrast, comic book composition. '
+    + 'No text, no speech bubbles, no captions, no lettering, no written words anywhere in the image. '
+    + 'Keep every character exactly the same age, face, hairstyle and outfit as described, in every panel. '
+    + 'Ordinary training footwear or bare feet on a dojo mat: never roller skates, never inline skates.',
 };
 // Le style envoyé par la page est une consigne pour le Director, pas pour la
 // caméra. Audit du 12/09/2026 : « Analyze the mood of: <titre>. Choose colors… »
