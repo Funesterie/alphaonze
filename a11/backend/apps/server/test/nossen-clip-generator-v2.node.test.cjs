@@ -336,3 +336,28 @@ test('postJson coupe une réponse locale bloquée avec une erreur ambiguë', asy
     (error) => error.code === 'mcp_bridge_timeout' && error.ambiguous === true,
   );
 });
+
+// 20/09/2026 : la fiche visuelle du registre decrit toujours l'adulte. Ajoutee a
+// un chapitre d'enfance, elle faisait dessiner l'adulte barbu ET l'adolescent
+// cote a cote dans chaque case. Une fiche de chapitre la remplace donc.
+test('une fiche de chapitre remplace la fiche du registre au lieu de s\'y ajouter', () => {
+  const { briefIdentiteManga } = require('../src/clips/clip-generator-v2.cjs');
+  const registre = 'Djeff: a man in his early thirties, short dark beard, palm leaf t-shirt, gold chain, riding boots.';
+
+  const chapitre = briefIdentiteManga({
+    fichesPersonnages: 'Rei, 15 ans, visage glabre.',
+    ageDesPersonnages: 'Rei a 15 ans',
+    identityPrompt: registre,
+  });
+  assert.ok(chapitre.mangaIdentityBrief.includes('Rei, 15 ans'));
+  assert.ok(!chapitre.mangaIdentityBrief.includes('thirties'), 'la fiche adulte ne doit plus etre envoyee');
+  assert.equal(chapitre.mangaAgeBrief, '', 'les ages sont deja dans la fiche de chapitre');
+
+  const sansFiche = briefIdentiteManga({ ageDesPersonnages: 'Rei a 15 ans', identityPrompt: registre, env: {} });
+  assert.ok(sansFiche.mangaIdentityBrief.includes('thirties'), 'sans fiche de chapitre, le registre sert encore');
+  assert.ok(sansFiche.mangaAgeBrief.includes('15 ans'));
+
+  const rien = briefIdentiteManga({ env: {} });
+  assert.equal(rien.mangaIdentityBrief, '');
+  assert.equal(rien.mangaAgeBrief, '');
+});

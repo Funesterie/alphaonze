@@ -457,10 +457,16 @@ const RENDUS_VISUELS = {
   // bulle de texte en ANGLAIS (le modele ecrit mal et dans la mauvaise langue),
   // la tenue qui change a chaque case, et l'age qui bouge. Le texte se posera
   // dans les bulles apres coup ; ici on demande des cases muettes et stables.
+  // Quatre defauts vus sur la 2e prise (Djeff, 20/09/2026) : du lettrage
+  // invente sur les reservoirs, cuisine et garage fusionnes dans une seule
+  // piece, les cheveux qui changent, les pieds nus dans un garage. Les
+  // negations ne sont pas lues par Comfy : chaque consigne est affirmative,
+  // elle dit ce qu'il faut dessiner, pas ce qu'il faut eviter.
   manga: 'Black and white manga panel, clean ink lines, screentone shading, dynamic paneling, expressive line art, high contrast, comic book composition. '
-    + 'No text, no speech bubbles, no captions, no lettering, no written words anywhere in the image. '
+    + 'Every surface is blank: bare fuel tanks, plain walls, unmarked signs, smooth clothing. The image is wordless, the lettering is added later. '
     + 'Keep every character exactly the same age, face, hairstyle and outfit as described, in every panel. '
-    + 'Ordinary training footwear or bare feet on a dojo mat: never roller skates, never inline skates.',
+    + 'One single room per panel, with only the furniture that belongs to that room. '
+    + 'Everyone wears ordinary flat-soled shoes with plain rubber soles, indoors and in the garage.',
 };
 // Le style envoyé par la page est une consigne pour le Director, pas pour la
 // caméra. Audit du 12/09/2026 : « Analyze the mood of: <titre>. Choose colors… »
@@ -486,6 +492,25 @@ function styleVideo(style, title) {
 }
 
 // Le choix fait sur la page pour CE clip prime ; la variable ne regle que le defaut.
+// Fiche des personnages d'une planche manga. Deux sources possibles : le
+// registre des identites visuelles (toujours l'adulte d'aujourd'hui) et la
+// fiche ecrite pour ce chapitre-la. Elles ne se cumulent jamais — voir le
+// commentaire du mode manga dans generateClip.
+function briefIdentiteManga({ fichesPersonnages = '', ageDesPersonnages = '', identityPrompt = '', env = process.env } = {}) {
+  const fiche = String(fichesPersonnages || '').trim();
+  const age = String(ageDesPersonnages || env?.NOSSEN_CLIP_AGE_OVERRIDE || '').trim();
+  const identiteRetenue = fiche || String(identityPrompt || '').trim();
+  return {
+    identiteRetenue,
+    mangaIdentityBrief: identiteRetenue
+      ? ` Character identity to preserve exactly across every panel: ${identiteRetenue}`
+      : '',
+    // Avec une fiche de chapitre, les ages y sont deja ecrits : les repeter
+    // apres coup redonnerait au modele deux descriptions a concilier.
+    mangaAgeBrief: (age && !fiche) ? ` Ages in THIS chapter override the character sheets: ${age}` : '',
+  };
+}
+
 function renduVisuel(env = process.env, choixDuClip = '') {
   const choix = String(choixDuClip || env?.NOSSEN_CLIP_RENDER || '').trim().toLowerCase();
   return RENDUS_VISUELS[choix] || RENDUS_VISUELS.film;
@@ -1059,15 +1084,23 @@ async function generateClip(config = {}, {
   // C'est le chemin le plus simple/économe : pas de Seedance vidéo, pas d'audio.
   const isManga = String(render || '').trim().toLowerCase() === 'manga';
   if (isManga) {
-    const mangaIdentityBrief = identity.prompt
-      ? ` Character identity to preserve exactly across every panel: ${identity.prompt}`
-      : '';
-    // Un chapitre d'enfance a besoin de contredire la fiche visuelle, qui decrit
-    // toujours l'adulte : sans ca, « les 14 ans de Rei » se dessinait avec un
-    // homme barbu (constate le 20/09/2026). L'age passe APRES l'identite, donc
-    // il gagne, et il ne sert qu'aux chapitres qui le demandent.
-    const ageBrief = String(config.ageDesPersonnages || process.env.NOSSEN_CLIP_AGE_OVERRIDE || '').trim();
-    const mangaAgeBrief = ageBrief ? ` Ages in THIS chapter override the character sheets: ${ageBrief}` : '';
+    // Un chapitre d'enfance ne peut pas recevoir la fiche visuelle : elle decrit
+    // toujours l'adulte (« un homme au debut de la trentaine, barbe courte,
+    // tee-shirt a feuilles de palmier, chaine en or, bottes de moto »). Le
+    // 20/09/2026 on a d'abord AJOUTE l'age apres la fiche, en esperant qu'il la
+    // contredise : le modele a dessine les deux, l'adulte barbu ET l'ado, cote a
+    // cote dans chaque case, et la bulle du pere sortait de la bouche de
+    // l'adulte. Une fiche de chapitre REMPLACE donc la fiche du registre ; elle
+    // n'est utilisee que par les chapitres qui en fournissent une.
+    const fichesChapitre = String(config.fichesPersonnages || '').trim();
+    const { identiteRetenue, mangaIdentityBrief, mangaAgeBrief } = briefIdentiteManga({
+      fichesPersonnages: fichesChapitre,
+      ageDesPersonnages: config.ageDesPersonnages,
+      identityPrompt: identity.prompt,
+    });
+    if (fichesChapitre && identity.prompt) {
+      console.log(`[manga] Fiche de chapitre : la fiche du registre (${(identity.identityIds || []).join(', ') || 'sans id'}) est remplacée, pas complétée.`);
+    }
     const mangaLieuBrief = lieu ? ` Same setting across the whole story: ${lieu}.` : '';
     const panelPaths = [];
     // Chaque planche garde son prompt_id Comfy + le prompt de la scène : c'est
@@ -1135,8 +1168,9 @@ async function generateClip(config = {}, {
     try {
       fs.writeFileSync(path.join(clipDir, 'manga-panels.json'), JSON.stringify({
         title, lieu, render: 'manga',
-        identityIds: identity.identityIds || [],
-        identityPrompt: identity.prompt || '',
+        identityIds: fichesChapitre ? [] : (identity.identityIds || []),
+        identityPrompt: identiteRetenue || '',
+        ficheDeChapitre: Boolean(fichesChapitre),
         panels: panelsMeta,
       }, null, 2));
     } catch (e) { console.warn('[manga] manifeste planches non écrit:', e.message); }
@@ -1459,6 +1493,7 @@ module.exports = {
   PAUSE_REPRISE_AUTORISATION_MS,
   estRefusAudio,
   renduVisuel,
+  briefIdentiteManga,
   effacerNomsFilm,
   styleVideo,
   estRefusAutorisation,
