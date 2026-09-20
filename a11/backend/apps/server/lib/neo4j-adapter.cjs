@@ -381,8 +381,14 @@ class Neo4jKnowledgeGraph {
   /**
    * Normalise un nom d'entité en ID
    */
+  // Accents transposes AVANT le filtre, comme pour les relations : sinon « Léna »
+  // donnait l'identifiant « l_na » et vivait a cote de « Lena » comme deux
+  // personnes differentes dans le graphe (constate le 20/09/2026). Le libelle
+  // affiche, lui, garde ses accents.
   _normalizeEntityId(entity) {
     return String(entity)
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
       .trim()
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '_')
