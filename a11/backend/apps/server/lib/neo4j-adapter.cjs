@@ -120,7 +120,15 @@ class Neo4jKnowledgeGraph {
   async addEdge(subject, predicate, object, metadata = {}) {
     const sourceId = this._normalizeEntityId(subject);
     const targetId = this._normalizeEntityId(object);
-    const relationshipType = String(predicate).trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+    // Les accents sont transposes AVANT le filtre : sans ca « rêve d'être » donnait
+    // « R_VE_D__TRE », illisible et impossible a chercher (20/09/2026).
+    const relationshipType = String(predicate)
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9_]+/g, '_')
+      .replace(/^_+|_+$/g, '') || 'RELATED_TO';
 
     // D'abord créer les nœuds
     await this.addNode(subject, { type: 'entity' });
