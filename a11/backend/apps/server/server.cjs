@@ -2582,13 +2582,21 @@ async function saveChatMemoryMessageWithVector(userId, role, content, conversati
         await vectorMemory.addExchange(lastUserMessage, normalizedContent);
 
         // Extraire et ajouter les triplets au graphe de connaissances
+        // En arriere-plan : le graphe ne doit pas retarder la reponse de l'agent
+        // (elle attendait l'extraction, sans delai maximum — 20/09/2026).
         try {
           const kg = createKnowledgeGraph(normalizedUserId);
           const exchangeText = `User: ${lastUserMessage}\nAssistant: ${normalizedContent}`;
-          await kg.extractAndAddFromText(exchangeText, {
+          Promise.resolve(kg.extractAndAddFromText(exchangeText, {
             conversationId: normalizedConversationId,
             timestamp: new Date().toISOString(),
-          });
+          })).then(
+            (ajoutes) => {
+              const n = Array.isArray(ajoutes) ? ajoutes.length : Number(ajoutes?.added ?? ajoutes ?? 0);
+              if (n) console.info(`[A11][KG] ${n} triplet(s) ajoutes depuis ${normalizedConversationId}`);
+            },
+            (kgError) => console.warn('[A11][KG] knowledge graph extraction failed:', kgError?.message),
+          );
         } catch (kgError) {
           console.warn('[A11][KG] knowledge graph extraction failed:', kgError?.message);
         }

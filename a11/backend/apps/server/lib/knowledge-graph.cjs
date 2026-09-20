@@ -69,15 +69,25 @@ ${normalizedText}
 Je réponds UNIQUEMENT avec le JSON array de triplets :`;
 
   try {
+    // Ollama Cloud demande une cle ; l'instance locale n'en veut pas. Et SANS
+    // delai, une extraction lente figeait la reponse du chat, qui l'attend
+    // (20/09/2026) : 20 s au maximum, puis on abandonne la mémoire du tour.
+    const headers = { 'Content-Type': 'application/json' };
+    const cleCloud = String(process.env.A11_KG_LLM_API_KEY || process.env.OLLAMA_API_KEY || '').trim();
+    if (cleCloud && /ollama\.com/i.test(String(ollamaBase))) {
+      headers.Authorization = `Bearer ${cleCloud}`;
+    }
+    const delaiMs = Math.max(2000, Number(process.env.A11_KG_TIMEOUT_MS || 20000) || 20000);
     const response = await fetch(`${ollamaBase}/api/generate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         model,
         prompt,
         stream: false,
         format: 'json',
       }),
+      signal: AbortSignal.timeout(delaiMs),
     });
 
     if (!response.ok) {
