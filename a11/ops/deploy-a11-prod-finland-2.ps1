@@ -921,7 +921,7 @@ services:
       A11_LOCAL_NEO4J_USER: ${A11_LOCAL_NEO4J_USER:-neo4j}
       A11_LOCAL_NEO4J_DATABASE: ${A11_LOCAL_NEO4J_DATABASE:-neo4j}
       VIVY_GRAPH_ALLOW_PARTIAL_SYNC: ${VIVY_GRAPH_ALLOW_PARTIAL_SYNC:-1}
-      A11_LLM_PROVIDER: ollama
+      A11_LLM_PROVIDER: ollama_cloud
       A11_OLLAMA_PRIMARY_MODEL: qwen2.5:32b
       A11_OLLAMA_FALLBACK_MODEL: qwen2.5:7b
       VIVY_CHAT_LOCAL_FIRST: "false"
@@ -939,7 +939,7 @@ services:
       OLLAMA_CLOUD_CHAT_ENABLED: ${OLLAMA_CLOUD_CHAT_ENABLED:-1}
       OLLAMA_CLOUD_CHAT_MODEL: ${OLLAMA_CLOUD_CHAT_MODEL:-gpt-oss:120b}
       OLLAMA_CLOUD_CHAT_THINK_LEVEL: ${OLLAMA_CLOUD_CHAT_THINK_LEVEL:-high}
-      OLLAMA_CLOUD_CHAT_TIMEOUT_MS: ${OLLAMA_CLOUD_CHAT_TIMEOUT_MS:-300000}
+      OLLAMA_CLOUD_CHAT_TIMEOUT_MS: ${OLLAMA_CLOUD_CHAT_TIMEOUT_MS:-60000}
       OLLAMA_CLOUD_THINK_LEVEL: ${OLLAMA_CLOUD_THINK_LEVEL:-high}
       OLLAMA_CLOUD_LYRICS_TIMEOUT_MS: ${OLLAMA_CLOUD_LYRICS_TIMEOUT_MS:-360000}
       VIVY_SONG_CERBERE_FALLBACK_ENABLED: ${VIVY_SONG_CERBERE_FALLBACK_ENABLED:-1}
@@ -1066,8 +1066,8 @@ services:
       A11_TRANSLATION_BASE_URL: ${A11_TRANSLATION_BASE_URL:-https://api.groq.com/openai/v1}
       A11_TRANSLATION_MODEL: ${A11_TRANSLATION_MODEL:-openai/gpt-oss-20b}
       LOCAL_DEFAULT_MODEL: llama3.2:3b
-      A11_LLM_FALLBACK_PROVIDER: ollama
-      A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,ollama_cloud,openai,gemini,xai,huggingface,deepseek,together,groq,openrouter
+      A11_LLM_FALLBACK_PROVIDER: groq
+      A11_LLM_RUNTIME_FALLBACK_ORDER: ollama_cloud,groq,openai,xai,gemini,deepseek,together,huggingface,openrouter,ollama
       A11_CERBERE_LOCAL_ONLY: "false"
       A11_LOCAL_CHAT_TIMEOUT_MS: "90000"
       A11_LOCAL_SONG_TIMEOUT_MS: "180000"
@@ -1293,7 +1293,7 @@ services:
       A11_PROFILE_ENV: /app/profiles/kaen44.prod.env.disabled
       KAEN44_PROFILE_ENV: /app/profiles/kaen44.prod.env.disabled
       A11_RUNTIME_ROOT: /app/runtime
-      A11_LLM_PROVIDER: ollama
+      A11_LLM_PROVIDER: ollama_cloud
       A11_OLLAMA_PRIMARY_MODEL: qwen2.5:32b
       A11_OLLAMA_FALLBACK_MODEL: qwen2.5:7b
       VIVY_CHAT_LOCAL_FIRST: "false"
@@ -1313,7 +1313,7 @@ services:
       OLLAMA_CLOUD_CHAT_ENABLED: ${OLLAMA_CLOUD_CHAT_ENABLED:-1}
       OLLAMA_CLOUD_CHAT_MODEL: ${OLLAMA_CLOUD_CHAT_MODEL:-gpt-oss:120b}
       OLLAMA_CLOUD_CHAT_THINK_LEVEL: ${OLLAMA_CLOUD_CHAT_THINK_LEVEL:-high}
-      OLLAMA_CLOUD_CHAT_TIMEOUT_MS: ${OLLAMA_CLOUD_CHAT_TIMEOUT_MS:-300000}
+      OLLAMA_CLOUD_CHAT_TIMEOUT_MS: ${OLLAMA_CLOUD_CHAT_TIMEOUT_MS:-60000}
       OLLAMA_CLOUD_THINK_LEVEL: ${OLLAMA_CLOUD_THINK_LEVEL:-high}
       OLLAMA_CLOUD_LYRICS_TIMEOUT_MS: ${OLLAMA_CLOUD_LYRICS_TIMEOUT_MS:-360000}
       VIVY_SONG_CERBERE_FALLBACK_ENABLED: ${VIVY_SONG_CERBERE_FALLBACK_ENABLED:-1}
@@ -1392,8 +1392,8 @@ services:
       ACESTEP_HEALTH_RETRY_MS: ${ACESTEP_HEALTH_RETRY_MS:-3000}
       VIVY_STREAM_FREESTYLE_MAX_CHARS: ${VIVY_STREAM_FREESTYLE_MAX_CHARS:-12000}
       VIVY_STREAM_FREESTYLE_MAX_TOKENS: ${VIVY_STREAM_FREESTYLE_MAX_TOKENS:-10000}
-      A11_LLM_FALLBACK_PROVIDER: ollama
-      A11_LLM_RUNTIME_FALLBACK_ORDER: ollama,ollama_cloud,openai,gemini,xai,huggingface,deepseek,together,groq,openrouter
+      A11_LLM_FALLBACK_PROVIDER: groq
+      A11_LLM_RUNTIME_FALLBACK_ORDER: ollama_cloud,groq,openai,xai,gemini,deepseek,together,huggingface,openrouter,ollama
       A11_CERBERE_LOCAL_ONLY: "false"
       A11_LOCAL_CHAT_TIMEOUT_MS: "90000"
       A11_LOCAL_SONG_TIMEOUT_MS: "180000"
@@ -1889,9 +1889,9 @@ $overrides = [ordered]@{
   A11_POLLINATIONS_IMAGE_MODEL = "flux"
   A11_POLLINATIONS_REFERRER = "funesterie-a11"
   OPENAI_BASE_URL = "https://openrouter.ai/api/v1"
-  OPENAI_MODEL = "meta-llama/llama-3.3-70b-instruct"
-  A11_OPENAI_MODEL = "meta-llama/llama-3.3-70b-instruct"
-  A11_LLM_PROVIDER = "ollama"
+  OPENAI_MODEL = "gpt-5.6-terra"
+  A11_OPENAI_MODEL = "gpt-5.6-terra"
+  A11_LLM_PROVIDER = "ollama_cloud"
   OLLAMA_BASE = "http://a11-ollama:11434"
   LLAMA_BASE = "http://a11-ollama:11434"
   OLLAMA_HOST = "a11-ollama"
@@ -1915,7 +1915,7 @@ $overrides = [ordered]@{
   OLLAMA_CLOUD_CHAT_ENABLED = "1"
   OLLAMA_CLOUD_CHAT_MODEL = "gpt-oss:120b"
   OLLAMA_CLOUD_CHAT_THINK_LEVEL = "high"
-  OLLAMA_CLOUD_CHAT_TIMEOUT_MS = "300000"
+  OLLAMA_CLOUD_CHAT_TIMEOUT_MS = "60000"
   OLLAMA_CLOUD_THINK_LEVEL = "high"
   OLLAMA_CLOUD_LYRICS_TIMEOUT_MS = "360000"
   VIVY_SONG_CERBERE_FALLBACK_ENABLED = "1"
@@ -2008,8 +2008,8 @@ $overrides = [ordered]@{
   # ici qu'elle est reconstruite quand on repart d'un magasin de secrets local.
   CLAUDE_API_KEY = $(if ($env:CLAUDE_API_KEY) { $env:CLAUDE_API_KEY } elseif ($mcpEnvMap.Contains("CLAUDE_API_KEY") -and -not [string]::IsNullOrWhiteSpace($mcpEnvMap["CLAUDE_API_KEY"])) { $mcpEnvMap["CLAUDE_API_KEY"] } elseif ($envMap.Contains("CLAUDE_API_KEY")) { $envMap["CLAUDE_API_KEY"] } elseif ($envMap.Contains("ANTHROPIC_API_KEY")) { $envMap["ANTHROPIC_API_KEY"] } else { "" })
   A11_CERBERE_PREFER_NON_GROQ = "false"
-  A11_LLM_FALLBACK_PROVIDER = "ollama"
-  A11_LLM_RUNTIME_FALLBACK_ORDER = "ollama,ollama_cloud,openai,gemini,xai,huggingface,deepseek,together,groq,openrouter"
+  A11_LLM_FALLBACK_PROVIDER = "groq"
+  A11_LLM_RUNTIME_FALLBACK_ORDER = "ollama_cloud,groq,openai,xai,gemini,deepseek,together,huggingface,openrouter,ollama"
   A11_CERBERE_LOCAL_ONLY = "false"
   A11_LOCAL_CHAT_TIMEOUT_MS = "90000"
   A11_LOCAL_SONG_TIMEOUT_MS = "180000"
@@ -2588,7 +2588,7 @@ printf 'A11_BUILD_COMMIT=%s\n' '__BUILD_COMMIT__' >> "$tmp_build"
 printf 'A11_BUILD_BRANCH=%s\n' '__BUILD_BRANCH__' >> "$tmp_build"
 printf 'A11_BUILD_DATE=%s\n' '__BUILD_DATE__' >> "$tmp_build"
 printf 'A11_VOICE_XTTS_RVC_FALLBACK=false\n' >> "$tmp_build"
-printf 'A11_LLM_PROVIDER=ollama\n' >> "$tmp_build"
+printf 'A11_LLM_PROVIDER=ollama_cloud\n' >> "$tmp_build"
 printf 'A11_OLLAMA_PRIMARY_MODEL=qwen2.5:32b\n' >> "$tmp_build"
 printf 'A11_OLLAMA_FALLBACK_MODEL=qwen2.5:7b\n' >> "$tmp_build"
 printf 'VIVY_CHAT_LOCAL_FIRST=false\n' >> "$tmp_build"
@@ -2605,7 +2605,7 @@ printf 'OLLAMA_CLOUD_FAST_MODEL=gpt-oss:20b\n' >> "$tmp_build"
 printf 'OLLAMA_CLOUD_CHAT_ENABLED=1\n' >> "$tmp_build"
 printf 'OLLAMA_CLOUD_CHAT_MODEL=gpt-oss:120b\n' >> "$tmp_build"
 printf 'OLLAMA_CLOUD_CHAT_THINK_LEVEL=high\n' >> "$tmp_build"
-printf 'OLLAMA_CLOUD_CHAT_TIMEOUT_MS=300000\n' >> "$tmp_build"
+printf 'OLLAMA_CLOUD_CHAT_TIMEOUT_MS=60000\n' >> "$tmp_build"
 ollama_cloud_think_level="$(awk -F= '$1 == "OLLAMA_CLOUD_THINK_LEVEL" { sub(/^[^=]*=/, ""); print; exit }' "$a11_env" 2>/dev/null || true)"
 if [ -z "$ollama_cloud_think_level" ]; then ollama_cloud_think_level="high"; fi
 printf 'OLLAMA_CLOUD_THINK_LEVEL=%s\n' "$ollama_cloud_think_level" >> "$tmp_build"
@@ -2667,8 +2667,8 @@ printf 'ACESTEP_HEALTH_RETRY_MS=3000\n' >> "$tmp_build"
 printf 'A11_TRANSLATION_BASE_URL=https://api.groq.com/openai/v1\n' >> "$tmp_build"
 printf 'A11_TRANSLATION_MODEL=openai/gpt-oss-20b\n' >> "$tmp_build"
 printf 'LOCAL_DEFAULT_MODEL=llama3.2:3b\n' >> "$tmp_build"
-printf 'A11_LLM_FALLBACK_PROVIDER=ollama\n' >> "$tmp_build"
-printf 'A11_LLM_RUNTIME_FALLBACK_ORDER=ollama,ollama_cloud,openai,gemini,xai,huggingface,deepseek,together,groq,openrouter\n' >> "$tmp_build"
+printf 'A11_LLM_FALLBACK_PROVIDER=groq\n' >> "$tmp_build"
+printf 'A11_LLM_RUNTIME_FALLBACK_ORDER=ollama_cloud,groq,openai,xai,gemini,deepseek,together,huggingface,openrouter,ollama\n' >> "$tmp_build"
 printf 'A11_CERBERE_LOCAL_ONLY=false\n' >> "$tmp_build"
 printf 'A11_LOCAL_CHAT_TIMEOUT_MS=90000\n' >> "$tmp_build"
 printf 'A11_LOCAL_SONG_TIMEOUT_MS=180000\n' >> "$tmp_build"
