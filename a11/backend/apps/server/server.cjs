@@ -7287,6 +7287,33 @@ app.get('/clips/:filename', identifierSansBloquer, sharinganGuard, garderClipPri
 });
 console.log('[Server] NOSSEN clips route mounted at /clips/:filename (Sharingan Guard active)');
 
+// Sortie manga : le meme chapitre en PDF (une case par page) ou en CBZ (liseuse).
+// Memes gardes que /clips/:filename — un manga prive le reste ici aussi.
+app.get('/clips/:filename/export/:format', identifierSansBloquer, sharinganGuard, garderClipPrive, async (req, res) => {
+  const decoded = decodeURIComponent(req.params.filename || '');
+  if (!decoded || /[/\\]/.test(decoded) || !/\.png$/i.test(decoded)) {
+    return res.status(400).json({ ok: false, error: 'manga_nom_invalide' });
+  }
+  try {
+    const { resolveMangaSource, buildMangaExport } = require('./src/clips/manga-export.cjs');
+    const source = resolveMangaSource(decoded, {
+      runtimeRoot: PUBLIC_RUNTIME_ROOT,
+      boardPath: path.join(CLIPS_DIR, decoded),
+    });
+    const { buffer, contentType, extension } = await buildMangaExport(req.params.format, source.pages, { titre: source.titre });
+    const nomFichier = `${source.titre || 'manga'}.${extension}`.replace(/[^A-Za-z0-9._-]/g, '_');
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${nomFichier}"`);
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.send(buffer);
+  } catch (error) {
+    const status = Number(error?.status) || 500;
+    console.warn('[manga][export]', error?.code || error?.message);
+    return res.status(status).json({ ok: false, error: error?.code || 'manga_export_echec' });
+  }
+});
+console.log('[Server] NOSSEN manga export mounted at /clips/:filename/export/:format (pdf, cbz)');
+
 const createDoubleHarmonicRouter = require('./src/routes/double-harmonic.cjs');
 app.use('/api/double-harmonic', createDoubleHarmonicRouter({ verifyJWT, db, runtimeRoot: PUBLIC_RUNTIME_ROOT }));
 console.log('[Server] Double Harmonic D40 routes mounted under /api/double-harmonic');

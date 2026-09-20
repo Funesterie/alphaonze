@@ -184,6 +184,7 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
   <div class="jk-modes">
     <button type="button" class="jk-mode active" id="jukebox-mode-normal" data-i18n="jukebox.modeNormal">🎵 Jukebox normal</button>
     <button type="button" class="jk-mode" id="jukebox-mode-nossen" data-i18n="jukebox.modeNossen">🎬 Clips NOSSEN</button>
+    <button type="button" class="jk-mode" id="jukebox-mode-manga" data-i18n="jukebox.modeManga">📖 Mangas NOSSEN</button>
   </div>
   <input class="input-url" type="search" id="jukebox-search" placeholder="🔎 Chercher dans le jukebox : une lettre ou des mots (Entrée pour écouter)" data-i18n-placeholder="jukebox.searchPlaceholder" autocomplete="off" aria-label="Chercher dans le jukebox" data-i18n-aria="jukebox.searchAria">
   <div class="meta" id="mastering-progress"></div>
@@ -194,6 +195,20 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
   <h2 data-i18n="clips.title">📁 Clips</h2>
   <div id="clips" class="clips"></div>
 </div>
+</div>
+
+<!-- Lecteur manga (20/09/2026) : la planche verticale se lit en defilant, la
+     musique du jukebox continue derriere. Ferme par defaut. -->
+<div class="card" id="manga-reader" style="display:none">
+  <h2><span id="manga-reader-title"></span></h2>
+  <div class="meta">
+    <a class="use" id="manga-dl-pdf" href="#" download data-i18n="manga.pdf">⬇ PDF</a>
+    <a class="use" id="manga-dl-cbz" href="#" download data-i18n="manga.cbz">⬇ CBZ</a>
+    <button type="button" class="use" id="manga-close" data-i18n="manga.close">✕ Fermer</button>
+  </div>
+  <div id="manga-pages" style="max-height:70vh;overflow-y:auto;background:#000;border-radius:10px">
+    <img id="manga-image" alt="" style="width:100%;display:block" />
+  </div>
 </div>
 
 <div class="player" id="player">
@@ -291,6 +306,10 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "jukebox.title": "🎤 Jukebox — historique",
       "jukebox.modeNormal": "🎵 Jukebox normal",
       "jukebox.modeNossen": "🎬 Clips NOSSEN",
+      "jukebox.modeManga": "📖 Mangas NOSSEN",
+      "manga.pdf": "⬇ PDF",
+      "manga.cbz": "⬇ CBZ",
+      "manga.close": "✕ Fermer",
       "jukebox.searchPlaceholder": "🔎 Chercher dans le jukebox : une lettre ou des mots (Entrée pour écouter)",
       "jukebox.searchAria": "Chercher dans le jukebox",
       "err.network": "Erreur réseau",
@@ -451,6 +470,10 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "jukebox.title": "🎤 Jukebox — history",
       "jukebox.modeNormal": "🎵 Normal jukebox",
       "jukebox.modeNossen": "🎬 NOSSEN clips",
+      "jukebox.modeManga": "📖 NOSSEN mangas",
+      "manga.pdf": "⬇ PDF",
+      "manga.cbz": "⬇ CBZ",
+      "manga.close": "✕ Close",
       "jukebox.searchPlaceholder": "🔎 Search the jukebox: a letter or words (Enter to listen)",
       "jukebox.searchAria": "Search the jukebox",
       "err.network": "Network error",
@@ -611,6 +634,10 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "jukebox.title": "🎤 Jukebox — historial",
       "jukebox.modeNormal": "🎵 Jukebox normal",
       "jukebox.modeNossen": "🎬 Clips NOSSEN",
+      "jukebox.modeManga": "📖 Mangas NOSSEN",
+      "manga.pdf": "⬇ PDF",
+      "manga.cbz": "⬇ CBZ",
+      "manga.close": "✕ Cerrar",
       "jukebox.searchPlaceholder": "🔎 Buscar en el jukebox: una letra o palabras (Intro para escuchar)",
       "jukebox.searchAria": "Buscar en el jukebox",
       "err.network": "Error de red",
@@ -771,6 +798,10 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "jukebox.title": "🎤 Jukebox — cronologia",
       "jukebox.modeNormal": "🎵 Jukebox normale",
       "jukebox.modeNossen": "🎬 Clip NOSSEN",
+      "jukebox.modeManga": "📖 Manga NOSSEN",
+      "manga.pdf": "⬇ PDF",
+      "manga.cbz": "⬇ CBZ",
+      "manga.close": "✕ Chiudi",
       "jukebox.searchPlaceholder": "🔎 Cerca nel jukebox: una lettera o parole (Invio per ascoltare)",
       "jukebox.searchAria": "Cerca nel jukebox",
       "err.network": "Errore di rete",
@@ -931,6 +962,10 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "jukebox.title": "🎤 Jukebox — Verlauf",
       "jukebox.modeNormal": "🎵 Normale Jukebox",
       "jukebox.modeNossen": "🎬 NOSSEN-Clips",
+      "jukebox.modeManga": "📖 NOSSEN-Mangas",
+      "manga.pdf": "⬇ PDF",
+      "manga.cbz": "⬇ CBZ",
+      "manga.close": "✕ Schließen",
       "jukebox.searchPlaceholder": "🔎 In der Jukebox suchen: ein Buchstabe oder Wörter (Enter zum Anhören)",
       "jukebox.searchAria": "In der Jukebox suchen",
       "err.network": "Netzwerkfehler",
@@ -1091,6 +1126,10 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "jukebox.title": "🎤 ジュークボックス — 履歴",
       "jukebox.modeNormal": "🎵 通常のジュークボックス",
       "jukebox.modeNossen": "🎬 NOSSEN クリップ",
+      "jukebox.modeManga": "📖 NOSSEN マンガ",
+      "manga.pdf": "⬇ PDF",
+      "manga.cbz": "⬇ CBZ",
+      "manga.close": "✕ 閉じる",
       "jukebox.searchPlaceholder": "🔎 ジュークボックスを検索：1文字または単語（Enterで再生）",
       "jukebox.searchAria": "ジュークボックスを検索",
       "err.network": "ネットワークエラー",
@@ -1251,6 +1290,10 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
       "jukebox.title": "🎤 点唱机 — 历史",
       "jukebox.modeNormal": "🎵 普通点唱机",
       "jukebox.modeNossen": "🎬 NOSSEN 片段",
+      "jukebox.modeManga": "📖 NOSSEN 漫画",
+      "manga.pdf": "⬇ PDF",
+      "manga.cbz": "⬇ CBZ",
+      "manga.close": "✕ 关闭",
       "jukebox.searchPlaceholder": "🔎 在点唱机中搜索：一个字母或词语（按回车播放）",
       "jukebox.searchAria": "在点唱机中搜索",
       "err.network": "网络错误",
@@ -1618,6 +1661,7 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
   function play(i) {
     var s = songs[i];
     if (!s) return;
+    if (s.source === "manga") { currentIdx = i; updatePlayButtons(); ouvrirManga(s); return; }
     var audio = document.getElementById("audio");
 
     if (currentIdx === i && audio.src) {
@@ -2570,27 +2614,75 @@ body.lecteur-ouvert .langue-fixe{bottom:calc(max(12px,env(safe-area-inset-bottom
     });
   }
 
+  // Mangas NOSSEN (20/09/2026) : les planches en vitrine, lues en defilant.
+  // Un manga est un .png ; les clips video restent dans leur mode.
+  function estManga(x) {
+    return /\.png$/i.test(String((x && (x.filename || x.url)) || ""));
+  }
+  function loadMangaBoards() {
+    return api("/api/mcp-bridge/clip/list").then(function(d) {
+      var boards = ((d && d.clips) || []).filter(function(x) { return isShowcaseClip(x) && estManga(x); });
+      replaceSongs(boards.map(function(x) { return mapClipSong(x, "manga"); }));
+    }).catch(function() {
+      if (!songs.length) renderSongs("");
+    });
+  }
+
+  function fermerManga() {
+    var boite = document.getElementById("manga-reader");
+    if (boite) boite.style.display = "none";
+  }
+  function ouvrirManga(s) {
+    var boite = document.getElementById("manga-reader");
+    var image = document.getElementById("manga-image");
+    if (!boite || !image) return;
+    var nom = (s.raw && (s.raw.filename || s.raw.name)) || "";
+    document.getElementById("manga-reader-title").textContent = s.title;
+    image.src = resolveHttpUrl(s.playUrl) || "";
+    image.alt = s.title;
+    var base = nom ? "/clips/" + encodeURIComponent(nom) + "/export/" : "";
+    var pdf = document.getElementById("manga-dl-pdf");
+    var cbz = document.getElementById("manga-dl-cbz");
+    if (pdf) { pdf.href = base ? base + "pdf" : "#"; pdf.style.display = base ? "" : "none"; }
+    if (cbz) { cbz.href = base ? base + "cbz" : "#"; cbz.style.display = base ? "" : "none"; }
+    boite.style.display = "";
+    var pages = document.getElementById("manga-pages");
+    if (pages) pages.scrollTop = 0;
+    boite.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  (function() {
+    var fermer = document.getElementById("manga-close");
+    if (fermer) fermer.addEventListener("click", fermerManga);
+  })();
+
   var jukeboxMode = "normal";
   function refreshJukebox() {
-    return jukeboxMode === "nossen" ? loadNossenClips() : loadSongs();
+    if (jukeboxMode === "nossen") return loadNossenClips();
+    if (jukeboxMode === "manga") return loadMangaBoards();
+    return loadSongs();
   }
   function updateJukeboxModeButtons() {
     var n = document.getElementById("jukebox-mode-normal");
     var s = document.getElementById("jukebox-mode-nossen");
+    var m = document.getElementById("jukebox-mode-manga");
     if (n) n.classList.toggle("active", jukeboxMode === "normal");
     if (s) s.classList.toggle("active", jukeboxMode === "nossen");
+    if (m) m.classList.toggle("active", jukeboxMode === "manga");
   }
   function setJukeboxMode(mode) {
     if (jukeboxMode === mode) return;
     jukeboxMode = mode;
+    if (mode !== "manga") fermerManga();
     updateJukeboxModeButtons();
     refreshJukebox();
   }
   (function() {
     var n = document.getElementById("jukebox-mode-normal");
     var s = document.getElementById("jukebox-mode-nossen");
+    var m = document.getElementById("jukebox-mode-manga");
     if (n) n.addEventListener("click", function() { setJukeboxMode("normal"); });
     if (s) s.addEventListener("click", function() { setJukeboxMode("nossen"); });
+    if (m) m.addEventListener("click", function() { setJukeboxMode("manga"); });
   })();
 
   // Recherche dans les chansons (13/09/2026, demande de Djeff : plus de 800 titres).
