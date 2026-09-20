@@ -106,7 +106,11 @@ function getOwnedMediaHosts(env = process.env) {
 function assertClipRemoteUrlPolicy(value, kind = 'audio') {
   const url = value instanceof URL ? value : new URL(String(value || ''));
   if (url.hostname.toLowerCase() !== COMFY_GCS_HOST) return url;
-  if (kind !== 'video'
+  // Les planches manga sortent du MEME bucket Comfy que les videos, en .png :
+  // limiter ce chemin a « video » les refusait toutes
+  // (« clip_video_storage_path_forbidden », 20/09/2026). Le bucket exact reste
+  // la seule chose autorisee ; l'audio n'a rien a faire la.
+  if (!['video', 'image'].includes(kind)
     || url.protocol !== 'https:'
     || (url.port && url.port !== '443')
     || !url.pathname.startsWith(COMFY_GCS_PREFIX)

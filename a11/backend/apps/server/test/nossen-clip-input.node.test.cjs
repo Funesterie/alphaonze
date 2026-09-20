@@ -25,6 +25,24 @@ test('la sortie Comfy GCS exacte est autorisée et garde sa signature', async ()
   assert.equal(source.url, signed);
 });
 
+test('une planche manga sort du meme bucket Comfy, en image (20/09/2026)', async () => {
+  const signed = 'https://storage.googleapis.com/comfy-cloud-assets/hash.png?X-Goog-Signature=a%2Fb';
+  const source = await inspectClipMediaSource(signed, { kind: 'image', lookupImpl: publicLookup });
+  assert.equal(source.type, 'remote');
+  assert.equal(source.url, signed);
+
+  // Le bucket reste la seule chose autorisee : ni un autre bucket, ni de l audio.
+  await assert.rejects(
+    inspectClipMediaSource('https://storage.googleapis.com/other-bucket/hash.png', { kind: 'image', lookupImpl: publicLookup }),
+    /clip_video_storage_path_forbidden/,
+  );
+  // L'audio est refuse encore plus tot, par la liste des hotes autorises.
+  await assert.rejects(
+    inspectClipMediaSource(signed, { kind: 'audio', lookupImpl: publicLookup }),
+    /clip_video_storage_path_forbidden|media_url_host_forbidden/,
+  );
+});
+
 test('un autre bucket Google Storage reste interdit', async () => {
   await assert.rejects(
     inspectClipMediaSource('https://storage.googleapis.com/other-bucket/hash.mp4?secret=1', {
