@@ -152,6 +152,28 @@ function readEnhancements(directory) {
   return items;
 }
 
+// Noms de fichiers qui SONT des sorties de masterisation, jamais des morceaux.
+//
+// Un master V11 pan s'ecrit a cote des morceaux, sous le nom
+// `vivy-music-jukebox-v11pan-<sha>.mp3`. Le balayage du dossier d'assets le
+// ramassait comme un morceau de plus et lui fabriquait un titre a partir de son
+// nom de fichier : 45 entrees intitulees « Jukebox V11pan » dans le jukebox
+// (Djeff, 20/09/2026), chacune doublant un morceau deja present sous son vrai
+// titre. Le master n'existe que comme forme masterisee d'un autre morceau :
+// applyHistoryEnhancements le substitue a sa source, il n'a pas de vie propre.
+//
+// La regle porte sur la donnee, pas sur le nom : tout fichier enregistre comme
+// sortie dans `<historique>-masters` est exclu, quelle que soit la recette.
+function masteredAssetFilenames(directory = historyDirectory()) {
+  const noms = new Set();
+  for (const master of Object.values(readEnhancements(directory + '-masters'))) {
+    const url = String(master?.trackUrl || '');
+    if (!url) continue;
+    try { noms.add(decodeURIComponent(url.split('/').pop())); } catch { noms.add(url.split('/').pop()); }
+  }
+  return noms;
+}
+
 function applyHistoryEnhancements(tracks, directory = historyDirectory()) {
   const masters = readEnhancements(directory + '-masters');
   const titles = readEnhancements(directory + '-titles');
@@ -210,4 +232,4 @@ function isTrackRetired(trackUrl, directory = historyDirectory()) {
     return false;
   }
 }
-module.exports = { historyDirectory, localAudioUrl, normalizeHistoryTrack, mergeHistoryTracks, isTrackRetired, readHistoryTracks, rememberHistoryTracks, summarizeHistoryTrack, applyHistoryEnhancements };
+module.exports = { historyDirectory, localAudioUrl, normalizeHistoryTrack, mergeHistoryTracks, isTrackRetired, readHistoryTracks, rememberHistoryTracks, summarizeHistoryTrack, applyHistoryEnhancements, masteredAssetFilenames };

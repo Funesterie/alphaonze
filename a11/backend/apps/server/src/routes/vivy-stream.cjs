@@ -7,7 +7,7 @@ const { execFileSync, spawn } = require('node:child_process');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { getCanonicalRuntimeRoot } = require('../../lib/runtime-root.cjs');
-const { historyDirectory, readHistoryTracks, rememberHistoryTracks, summarizeHistoryTrack, applyHistoryEnhancements, isTrackRetired } = require('../music/jukebox-history.cjs');
+const { historyDirectory, readHistoryTracks, rememberHistoryTracks, summarizeHistoryTrack, applyHistoryEnhancements, isTrackRetired, masteredAssetFilenames } = require('../music/jukebox-history.cjs');
 const { clearUserEpisodes } = require('../../lib/episodic-memory.cjs');
 const {
   createVivyStreamNossenRunner,
@@ -428,9 +428,15 @@ function discoverVivyJukeboxTracksFromAssets() {
   const probePath = getEmergencyMediaAssetPath('vivy-music-probe.mp3');
   const dir = probePath ? path.dirname(probePath) : '';
   if (!dir || !fs.existsSync(dir)) return [];
+  // Une sortie de masterisation n'est pas un morceau : elle est servie a la
+  // place de sa source par applyHistoryEnhancements. La ramasser ici lui
+  // fabriquait un titre a partir de son nom de fichier — « Jukebox V11pan » —
+  // et doublait le morceau d'origine dans le jukebox (Djeff, 20/09/2026).
+  let masters = new Set();
+  try { masters = masteredAssetFilenames(); } catch { /* sans index des masters, on ramasse tout comme avant */ }
   try {
     return fs.readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && /^vivy-music-.+\.mp3$/i.test(entry.name))
+      .filter((entry) => entry.isFile() && /^vivy-music-.+\.mp3$/i.test(entry.name) && !masters.has(entry.name))
       .map((entry) => {
         const filePath = path.join(dir, entry.name);
         let stats = null;

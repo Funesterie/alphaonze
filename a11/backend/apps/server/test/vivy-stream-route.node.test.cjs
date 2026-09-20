@@ -3153,7 +3153,10 @@ test('Vivy Twitch cover prompts stay visual and image generation can return a pu
     publicTitle: 'Marvin Bip Bip 30 ans',
     winner: { text: 'clip anniversaire Marvin avec Charlène, Léna et Elio' },
   });
-  assert.deepEqual(marvinPack.identities.map((identity) => identity.id), ['marvin']);
+  // Elio et Lena sont devenus des personnages du canon le 20/09/2026, avec leur
+  // propre fiche. Les nommer dans un clip les fait donc entrer, et c'est voulu :
+  // avant, ce test verifiait qu'un prenom sans fiche ne tirait rien.
+  assert.deepEqual(marvinPack.identities.map((identity) => identity.id), ['marvin', 'elio', 'lena']);
   assert.match(marvinPack.prompt, /Référence visuelle frère et père/i);
   assert.match(marvinPack.prompt, /l’homme à droite/i);
   assert.ok(marvinPack.referenceImageUrls.includes('https://vivy.funesterie.me/api/vivy/stream/identity/marvin-reference-family'));

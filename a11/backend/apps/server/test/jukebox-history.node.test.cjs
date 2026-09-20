@@ -77,3 +77,27 @@ test('Claude et V11 ne remplacent ni la source ni les originaux et exigent une s
   assert.equal(after.mastering, 'V11 Pan'); assert.equal(after.originalTrackUrl, item.trackUrl);
   assert.equal(after.originalTitle, item.title); assert.equal(item.title, 'Chanson 2');
 });
+
+// 20/09/2026 : le master V11 pan s'ecrit a cote des morceaux. Le balayage des
+// assets le ramassait comme un morceau, avec un titre tire de son nom de
+// fichier (« Jukebox V11pan »), doublant le morceau d'origine.
+test('une sortie de masterisation est reconnue comme telle, pas comme un morceau', () => {
+  const { masteredAssetFilenames } = require('../src/music/jukebox-history.cjs');
+  const dir = path.join(root, 'masters-exclus');
+  const crypto = require('node:crypto');
+  const source = '/api/vivy/studio/assets/vivy-music-dans-la-nuit-je-cours-aa11bb22.mp3';
+  const master = '/api/vivy/studio/assets/vivy-music-jukebox-v11pan-99887766.mp3';
+  fs.mkdirSync(dir + '-masters', { recursive: true });
+  fs.writeFileSync(
+    path.join(dir + '-masters', crypto.createHash('sha256').update(source).digest('hex') + '.json'),
+    JSON.stringify({ sourceTrackUrl: source, trackUrl: master, recipe: 'v11pan-v9electrolysis-blend-1.5-4-v1', verified: true }),
+  );
+
+  const noms = masteredAssetFilenames(dir);
+  assert.ok(noms.has('vivy-music-jukebox-v11pan-99887766.mp3'), 'le master doit etre reconnu');
+  assert.ok(!noms.has('vivy-music-dans-la-nuit-je-cours-aa11bb22.mp3'), 'la source reste un morceau');
+
+  // Sans dossier de masters, on ne cache rien : un jukebox vide vaut mieux
+  // qu'un jukebox ampute.
+  assert.equal(masteredAssetFilenames(path.join(root, 'inexistant')).size, 0);
+});
