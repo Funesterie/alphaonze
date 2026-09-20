@@ -11,6 +11,7 @@ const {
   resolveRemoteChatTransportLimits,
   trimRemoteChatMessagesForTransport,
   shouldSkipTargetByMismatch,
+  buildChatTargets,
 } = require('../lib/mini-cerbere.cjs');
 
 const OPENAI_SECRET_SAMPLE = `sk-${'1234567890abcdefghijklmnopqrstuvwxyz'}`;
@@ -624,4 +625,53 @@ test('mini cerbere redacts obvious secrets before multi panel calls', async () =
 test('redactSecretLikeText masks key-value secrets', () => {
   assert.equal(redactSecretLikeText('mdp=supersecret'), 'mdp=[secret:redacted]');
   assert.equal(redactSecretLikeText('client_secret: abcdef'), 'client_secret=[secret:redacted]');
+});
+
+// Djeff, 20/09/2026 : forfait Ollama Cloud pro, a utiliser en priorite. Le routeur
+// ne connaissait que l instance LOCALE, sans carte graphique donc hors delai.
+const ENV_CASCADE = {
+  A11_LLM_FALLBACK_PROVIDER: 'groq',
+  A11_LLM_RUNTIME_FALLBACK_ORDER: 'ollama_cloud,groq,openai,gemini,deepseek,together,openrouter,ollama',
+  A11_CERBERE_PREFER_NON_GROQ: 'false',
+  OLLAMA_API_KEY: 'cle-ollama',
+  OLLAMA_CLOUD_CHAT_MODEL: 'gpt-oss:120b',
+  GROQ_API_KEY: 'cle-groq',
+  GROQ_MODEL: 'openai/gpt-oss-120b',
+  OPENAI_API_KEY: 'cle-openai',
+  A11_CERBERE_OPENAI_BASE_URL: 'https://openrouter.ai/api/v1',
+  OPENAI_MODEL: 'gpt-5.6-terra',
+};
+
+function cascade(env) {
+  return buildChatTargets({
+    env,
+    provider: 'openai',
+    upstreamUrl: 'https://api.groq.com/openai/v1/chat/completions',
+    upstreamBody: { model: 'openai/gpt-oss-120b', messages: [{ role: 'user', content: 'x' }] },
+  });
+}
+
+test('Ollama Cloud passe en tete quand il est le fournisseur declare', () => {
+  const cibles = cascade({ ...ENV_CASCADE, A11_LLM_PROVIDER: 'ollama_cloud' });
+  assert.equal(cibles[0].role, 'primary-ollama-cloud');
+  assert.match(cibles[0].url, /ollama.com/);
+  assert.equal(cibles[0].model, 'gpt-oss:120b');
+  assert.equal(cibles[1].role, 'primary');
+});
+
+test('sinon Ollama Cloud reste dans la file, derriere la voie principale', () => {
+  const cibles = cascade({ ...ENV_CASCADE, A11_LLM_PROVIDER: 'openai' });
+  assert.equal(cibles[0].role, 'primary');
+  assert.equal(cibles[1].role, 'fallback-ollama-cloud');
+});
+
+test('sans cle Ollama Cloud, aucune voie fantome', () => {
+  const env = { ...ENV_CASCADE, A11_LLM_PROVIDER: 'ollama_cloud', OLLAMA_API_KEY: '' };
+  assert.equal(cascade(env).some((c) => String(c.role).includes('ollama-cloud')), false);
+});
+
+test('OpenRouter recoit un identifiant prefixe, sinon le modele est introuvable', () => {
+  const cibles = cascade({ ...ENV_CASCADE, A11_LLM_PROVIDER: 'ollama_cloud' });
+  const openrouter = cibles.find((c) => String(c.url).includes('openrouter.ai'));
+  assert.equal(openrouter.model, 'openai/gpt-5.6-terra');
 });

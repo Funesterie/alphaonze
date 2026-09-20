@@ -98,6 +98,46 @@ function shouldAddGroqFallback(env = process.env) {
   return fallbackProvider === 'groq' || order.includes('groq');
 }
 
+// Ollama Cloud (forfait pro de Djeff, gpt-oss:120b) : interface compatible OpenAI
+// sur https://ollama.com/v1, mesuree a 0,6 s le 20/09/2026. Le routeur ne la
+// connaissait pas : « ollama » ne designait que l'instance LOCALE, qui n'a pas de
+// carte graphique sur ce serveur et ne repond jamais dans les delais.
+const DEFAULT_OLLAMA_CLOUD_BASE_URL = 'https://ollama.com/v1';
+
+function getOllamaCloudApiKey(env = process.env) {
+  return String(env.OLLAMA_CLOUD_API_KEY || env.OLLAMA_API_KEY || '').trim();
+}
+
+function shouldAddOllamaCloudTarget(env = process.env) {
+  if (String(env.OLLAMA_CLOUD_ENABLED || '').trim() === '0') return false;
+  if (!getOllamaCloudApiKey(env)) return false;
+  const declare = String(env.A11_LLM_PROVIDER || '').trim().toLowerCase();
+  const repli = String(env.A11_LLM_FALLBACK_PROVIDER || '').trim().toLowerCase();
+  const order = parseProviderOrder(env.A11_LLM_RUNTIME_FALLBACK_ORDER);
+  return declare === 'ollama_cloud' || repli === 'ollama_cloud' || order.includes('ollama_cloud');
+}
+
+function addOllamaCloudTarget(targets, { env = process.env, upstreamBody = {}, role = 'fallback-ollama-cloud' } = {}) {
+  if (!shouldAddOllamaCloudTarget(env)) return;
+  addOpenAiCompatibleTarget(targets, {
+    env,
+    role,
+    baseUrl: String(env.OLLAMA_CLOUD_OPENAI_BASE_URL || DEFAULT_OLLAMA_CLOUD_BASE_URL).trim(),
+    authToken: getOllamaCloudApiKey(env),
+    model: String(env.OLLAMA_CLOUD_CHAT_MODEL || 'gpt-oss:120b').trim(),
+    upstreamBody,
+  });
+}
+
+// OpenRouter exige le prefixe du fournisseur : « gpt-4o-mini » y est introuvable,
+// il faut « openai/gpt-4o-mini ». La voie de secours partait donc dans le vide
+// (verifie le 20/09/2026).
+function adapteModelePourBase(baseUrl = '', model = '') {
+  const modele = String(model || '').trim();
+  if (!modele || modele.includes('/')) return modele;
+  return /openrouter\.ai/i.test(String(baseUrl)) ? `openai/${modele}` : modele;
+}
+
 function addGroqTarget(targets, {
   env = process.env,
   upstreamBody = {},
@@ -618,6 +658,12 @@ function buildChatTargets({
     return targets;
   }
 
+  // Ollama Cloud passe devant quand c'est le fournisseur declare (Djeff, 20/09/2026) ;
+  // sinon il reste dans la file, juste derriere la voie principale.
+  const cloudEnTete = String(env.A11_LLM_PROVIDER || '').trim().toLowerCase() === 'ollama_cloud'
+    && primaryProvider !== 'local';
+  if (cloudEnTete) addOllamaCloudTarget(targets, { env, upstreamBody, role: 'primary-ollama-cloud' });
+
   if (upstreamUrl) {
     const primaryUrl = primaryProvider === 'groq' && !isGroqLikeUrl(upstreamUrl)
       ? normalizeCompletionsUrl(env.A11_CERBERE_GROQ_BASE_URL || env.GROQ_BASE_URL || DEFAULT_GROQ_BASE_URL)
@@ -644,18 +690,27 @@ function buildChatTargets({
     || env.OPENAI_API_KEY
     || ''
   ).trim();
-  const directOpenAiModel = String(env.A11_CERBERE_OPENAI_MODEL || env.A11_AGENT_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
+  const directOpenAiModel = String(
+    env.A11_CERBERE_OPENAI_MODEL
+    || env.A11_AGENT_MODEL
+    // Le modele configure pour la voie OpenAI passe avant la valeur en dur.
+    || env.OPENAI_MODEL
+    || env.A11_OPENAI_MODEL
+    || DEFAULT_OPENAI_MODEL
+  ).trim() || DEFAULT_OPENAI_MODEL;
   const directOpenAiBaseUrl = String(env.A11_CERBERE_OPENAI_BASE_URL || DEFAULT_OPENAI_BASE_URL).trim() || DEFAULT_OPENAI_BASE_URL;
   const togetherCredential = env[`A11_CERBERE_TOGETHER_${'API_KEY'}`] || env[`TOGETHER_${'API_KEY'}`];
   const deepSeekCredential = env[`A11_CERBERE_DEEPSEEK_${'API_KEY'}`] || env[`DEEPSEEK_${'API_KEY'}`];
 
   if (primaryProvider !== 'local') {
+    if (!cloudEnTete) addOllamaCloudTarget(targets, { env, upstreamBody });
+
     addOpenAiCompatibleTarget(targets, {
       env,
       role: 'fallback-openai',
       baseUrl: directOpenAiBaseUrl,
       authToken: directOpenAiKey,
-      model: directOpenAiModel,
+      model: adapteModelePourBase(directOpenAiBaseUrl, directOpenAiModel),
       upstreamBody,
     });
 
