@@ -13,10 +13,15 @@
  *
  * Config dans .env :
  *   OAUTH_CLIENT_ID=funesterie-chatgpt
- *   OAUTH_CLIENT_SECRET=<random-secret>
+ *   OAUTH_CLIENT_SECRET=<random-secret> (optionnel — voir client public ci-dessous)
  *   OAUTH_REDIRECT_ALLOWED=https://chatgpt.com/aip/{connector}/oauth/callback,https://chat.openai.com/aip/{connector}/oauth/callback
  *   MCP_AUTH_TOKEN=<le bearer MCP actif>
  *   OAUTH_REFRESH_TOKEN_IDLE_DAYS=90 (optionnel, defaut 90)
+ *
+ * Client public (PKCE), confirme le 23/09/2026 : le connecteur ChatGPT n'envoie
+ * aucun client_secret, seulement code_challenge/code_verifier (RFC 8252). Le
+ * serveur ne demande donc un client_secret que pour un code emis SANS PKCE ;
+ * OAUTH_CLIENT_SECRET n'a pas besoin d'etre configure pour ChatGPT.
  *
  * Refresh tokens : persistes en base (table mcp_oauth_refresh_tokens, seule
  * l'empreinte SHA-256 est stockee), avec rotation a chaque usage et fenetre
@@ -460,13 +465,10 @@ async function handleToken(req, res, options = {}) {
       return res.json(await buildTokenResponse({ clientId: tokenEntry.clientId, scope: tokenEntry.scope }, process.env, db));
     }
 
-    // Validate client credentials
+    // Validate client_id (client_secret is checked further down, once we know
+    // whether this code went through PKCE).
     if (clientId !== config.clientId) {
       return res.status(401).json({ error: 'invalid_client', message: 'Unknown client_id' });
-    }
-
-    if (!timingSafeEqualString(clientSecret, config.clientSecret)) {
-      return res.status(401).json({ error: 'invalid_client', message: 'Bad client_secret' });
     }
 
     // Consume the code
@@ -478,6 +480,18 @@ async function handleToken(req, res, options = {}) {
     // Validate redirect_uri matches
     if (redirectUri && redirectUri !== codeEntry.redirectUri) {
       return res.status(400).json({ error: 'invalid_grant', message: 'redirect_uri mismatch' });
+    }
+
+    // Un code mine avec un code_challenge vient d'un client public (RFC 8252,
+    // typiquement ChatGPT/Gemini) : la preuve de possession est le code_verifier
+    // valide ci-dessous, pas un client_secret que ces connecteurs n'envoient jamais.
+    // Corrige le 23/09/2026 : sans ca, l'echange authorization_code echouait a
+    // chaque redemarrage (client_secret par defaut regenere a chaque boot, voir
+    // DEFAULT_CLIENT_SECRET plus haut), et ChatGPT devait recliquer "Autoriser" en
+    // boucle. Un client SANS PKCE reste tenu de presenter le bon client_secret.
+    const isPublicPkceClient = Boolean(codeEntry.codeChallenge);
+    if (!isPublicPkceClient && !timingSafeEqualString(clientSecret, config.clientSecret)) {
+      return res.status(401).json({ error: 'invalid_client', message: 'Bad client_secret' });
     }
 
     if (!validatePkce(codeEntry, codeVerifier)) {
@@ -506,7 +520,7 @@ function handleDiscovery(req, res) {
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     scopes_supported: ['mcp:read', 'mcp:write', 'mcp'],
-    token_endpoint_auth_methods_supported: ['client_secret_post', 'client_secret_basic'],
+    token_endpoint_auth_methods_supported: ['client_secret_post', 'client_secret_basic', 'none'],
     code_challenge_methods_supported: ['S256', 'plain'],
   });
 }

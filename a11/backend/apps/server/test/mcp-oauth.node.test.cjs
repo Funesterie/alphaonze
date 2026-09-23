@@ -299,6 +299,94 @@ test('OAuth refresh token : expire apres la fenetre d inactivite glissante', asy
   });
 });
 
+test('OAuth: un client public PKCE (ChatGPT reel) echange son code sans client_secret', async () => {
+  await withEnv({
+    OAUTH_CLIENT_ID: 'funesterie-chatgpt-test',
+    OAUTH_CLIENT_SECRET: 'test-client-secret',
+    OAUTH_JWT_SECRET: 'test-jwt-secret-64-chars-for-funesterie-oauth-contract',
+    OAUTH_ISSUER: 'https://mcp.funesterie.me',
+    OAUTH_AUDIENCE: 'https://mcp.funesterie.me',
+    OAUTH_REDIRECT_ALLOWED: 'https://chatgpt.com/aip/*/oauth/callback',
+    OAUTH_AUTO_APPROVE: 'true',
+  }, async () => {
+    await withServer(
+      (app) => app.use('/oauth', createOAuthRouter(express)),
+      async (baseUrl) => {
+        const verifier = 'public-client-no-secret-verifier';
+        const redirectUri = 'https://chatgpt.com/aip/funesterie/oauth/callback';
+        const authorizeUrl = new URL(`${baseUrl}/oauth/authorize`);
+        authorizeUrl.searchParams.set('response_type', 'code');
+        authorizeUrl.searchParams.set('client_id', 'funesterie-chatgpt-test');
+        authorizeUrl.searchParams.set('redirect_uri', redirectUri);
+        authorizeUrl.searchParams.set('code_challenge', pkceChallenge(verifier));
+        authorizeUrl.searchParams.set('code_challenge_method', 'S256');
+
+        const authResponse = await fetch(authorizeUrl, { redirect: 'manual' });
+        const code = new URL(authResponse.headers.get('location')).searchParams.get('code');
+
+        // Exactement ce que ChatGPT envoie : pas de client_secret du tout, ni dans
+        // le corps ni en Basic Auth — la preuve de possession est code_verifier.
+        const tokenResponse = await fetch(`${baseUrl}/oauth/token`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            grant_type: 'authorization_code',
+            client_id: 'funesterie-chatgpt-test',
+            redirect_uri: redirectUri,
+            code,
+            code_verifier: verifier,
+          }),
+        });
+        const tokenJson = await tokenResponse.json();
+        assert.equal(tokenResponse.status, 200);
+        assert.ok(tokenJson.access_token);
+        assert.ok(tokenJson.refresh_token);
+      }
+    );
+  });
+});
+
+test('OAuth: sans PKCE, un client_secret manquant ou faux reste refuse', async () => {
+  await withEnv({
+    OAUTH_CLIENT_ID: 'funesterie-chatgpt-test',
+    OAUTH_CLIENT_SECRET: 'test-client-secret',
+    OAUTH_JWT_SECRET: 'test-jwt-secret-64-chars-for-funesterie-oauth-contract',
+    OAUTH_ISSUER: 'https://mcp.funesterie.me',
+    OAUTH_AUDIENCE: 'https://mcp.funesterie.me',
+    OAUTH_REDIRECT_ALLOWED: 'https://chatgpt.com/aip/*/oauth/callback',
+    OAUTH_AUTO_APPROVE: 'true',
+  }, async () => {
+    await withServer(
+      (app) => app.use('/oauth', createOAuthRouter(express)),
+      async (baseUrl) => {
+        const redirectUri = 'https://chatgpt.com/aip/funesterie/oauth/callback';
+        const authorizeUrl = new URL(`${baseUrl}/oauth/authorize`);
+        authorizeUrl.searchParams.set('response_type', 'code');
+        authorizeUrl.searchParams.set('client_id', 'funesterie-chatgpt-test');
+        authorizeUrl.searchParams.set('redirect_uri', redirectUri);
+        // Pas de code_challenge : ce code n'est pas issu d'un flux PKCE.
+
+        const authResponse = await fetch(authorizeUrl, { redirect: 'manual' });
+        const code = new URL(authResponse.headers.get('location')).searchParams.get('code');
+
+        const tokenResponse = await fetch(`${baseUrl}/oauth/token`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            grant_type: 'authorization_code',
+            client_id: 'funesterie-chatgpt-test',
+            redirect_uri: redirectUri,
+            code,
+          }),
+        });
+        const tokenJson = await tokenResponse.json();
+        assert.equal(tokenResponse.status, 401);
+        assert.equal(tokenJson.error, 'invalid_client');
+      }
+    );
+  });
+});
+
 test('OAuth token endpoint rejects invalid PKCE verifiers', async () => {
   await withEnv({
     OAUTH_CLIENT_ID: 'funesterie-chatgpt-test',
