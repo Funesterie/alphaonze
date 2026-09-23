@@ -24,7 +24,7 @@ async function withServer(registerRoutes, runAssertions) {
   const baseUrl = `http://127.0.0.1:${port}`;
 
   try {
-    await runAssertions(baseUrl);
+    return await runAssertions(baseUrl);
   } finally {
     await new Promise((resolve, reject) => {
       server.close((error_) => (error_ ? reject(error_) : resolve()));
@@ -114,6 +114,186 @@ test('OAuth code flow returns a signed JWT access token with PKCE', async () => 
         assert.equal(payload.sub, 'chatgpt-enterprise');
         assert.equal(payload.scope, 'mcp:read mcp:write');
         assert.equal(payload.token_use, 'access');
+      }
+    );
+  });
+});
+
+// Fausse base Postgres pour la table mcp_oauth_refresh_tokens : assez pour couvrir
+// exactement les requetes emises par oauth-server.cjs (INSERT ... ON CONFLICT,
+// DELETE ... RETURNING avec fenetre glissante). `rows` est expose pour que les
+// tests puissent antidater un last_used_at (simuler l'inactivite).
+function createFakeOAuthDb() {
+  const rows = new Map();
+  return {
+    rows,
+    async query(sql, params = []) {
+      const text = String(sql);
+      if (text.includes('CREATE TABLE') || text.includes('CREATE INDEX')) return { rows: [] };
+      if (text.startsWith('INSERT INTO mcp_oauth_refresh_tokens')) {
+        const [tokenHash, clientId, scope] = params;
+        const existing = rows.get(tokenHash);
+        rows.set(tokenHash, {
+          client_id: clientId,
+          scope,
+          created_at: existing?.created_at || new Date(),
+          last_used_at: new Date(),
+        });
+        return { rows: [] };
+      }
+      if (text.startsWith('DELETE FROM mcp_oauth_refresh_tokens')) {
+        const [tokenHash, idleDays] = params;
+        const row = rows.get(tokenHash);
+        if (!row) return { rows: [] };
+        const idleMs = Number(idleDays) * 24 * 60 * 60 * 1000;
+        if (Date.now() - row.last_used_at.getTime() > idleMs) return { rows: [] };
+        rows.delete(tokenHash);
+        return { rows: [{ client_id: row.client_id, scope: row.scope }] };
+      }
+      throw new Error('unexpected query in fake oauth db: ' + text);
+    },
+  };
+}
+
+async function obtainRefreshToken(baseUrl, redirectUri) {
+  const verifier = 'db-backed-verifier';
+  const authorizeUrl = new URL(`${baseUrl}/oauth/authorize`);
+  authorizeUrl.searchParams.set('response_type', 'code');
+  authorizeUrl.searchParams.set('client_id', 'funesterie-chatgpt-test');
+  authorizeUrl.searchParams.set('redirect_uri', redirectUri);
+  authorizeUrl.searchParams.set('code_challenge', pkceChallenge(verifier));
+  authorizeUrl.searchParams.set('code_challenge_method', 'S256');
+  const authResponse = await fetch(authorizeUrl, { redirect: 'manual' });
+  const code = new URL(authResponse.headers.get('location')).searchParams.get('code');
+  const tokenResponse = await fetch(`${baseUrl}/oauth/token`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      grant_type: 'authorization_code',
+      client_id: 'funesterie-chatgpt-test',
+      client_secret: 'test-client-secret',
+      redirect_uri: redirectUri,
+      code,
+      code_verifier: verifier,
+    }),
+  });
+  assert.equal(tokenResponse.status, 200);
+  return tokenResponse.json();
+}
+
+test('OAuth refresh token survit a un redemarrage simule (stocke en base, pas en RAM)', async () => {
+  await withEnv({
+    OAUTH_CLIENT_ID: 'funesterie-chatgpt-test',
+    OAUTH_CLIENT_SECRET: 'test-client-secret',
+    OAUTH_JWT_SECRET: 'test-jwt-secret-64-chars-for-funesterie-oauth-contract',
+    OAUTH_ISSUER: 'https://mcp.funesterie.me',
+    OAUTH_AUDIENCE: 'https://mcp.funesterie.me',
+    OAUTH_REDIRECT_ALLOWED: 'https://chatgpt.com/aip/*/oauth/callback',
+    OAUTH_AUTO_APPROVE: 'true',
+  }, async () => {
+    const db = createFakeOAuthDb();
+    const redirectUri = 'https://chatgpt.com/aip/funesterie/oauth/callback';
+
+    const firstTokens = await withServer(
+      (app) => app.use('/oauth', createOAuthRouter(express, { db })),
+      (baseUrl) => obtainRefreshToken(baseUrl, redirectUri)
+    );
+    assert.ok(firstTokens.refresh_token);
+
+    // Un deuxieme routeur = un deuxieme process/conteneur : la Map RAM d'avant le
+    // correctif serait vide ici. Avec la base partagee, le refresh token doit
+    // continuer a marcher.
+    await withServer(
+      (app) => app.use('/oauth', createOAuthRouter(express, { db })),
+      async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/oauth/token`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: firstTokens.refresh_token }),
+        });
+        const payload = await response.json();
+        assert.equal(response.status, 200);
+        assert.ok(payload.access_token);
+        assert.ok(payload.refresh_token);
+      }
+    );
+  });
+});
+
+test('OAuth refresh token : rotation, l ancien devient invalide des qu il sert une fois', async () => {
+  await withEnv({
+    OAUTH_CLIENT_ID: 'funesterie-chatgpt-test',
+    OAUTH_CLIENT_SECRET: 'test-client-secret',
+    OAUTH_JWT_SECRET: 'test-jwt-secret-64-chars-for-funesterie-oauth-contract',
+    OAUTH_ISSUER: 'https://mcp.funesterie.me',
+    OAUTH_AUDIENCE: 'https://mcp.funesterie.me',
+    OAUTH_REDIRECT_ALLOWED: 'https://chatgpt.com/aip/*/oauth/callback',
+    OAUTH_AUTO_APPROVE: 'true',
+  }, async () => {
+    const db = createFakeOAuthDb();
+    const redirectUri = 'https://chatgpt.com/aip/funesterie/oauth/callback';
+
+    await withServer(
+      (app) => app.use('/oauth', createOAuthRouter(express, { db })),
+      async (baseUrl) => {
+        const firstTokens = await obtainRefreshToken(baseUrl, redirectUri);
+
+        const renewed = await fetch(`${baseUrl}/oauth/token`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: firstTokens.refresh_token }),
+        });
+        assert.equal(renewed.status, 200);
+        const renewedTokens = await renewed.json();
+        assert.notEqual(renewedTokens.refresh_token, firstTokens.refresh_token);
+
+        // Rejouer l'ancien refresh token doit maintenant echouer.
+        const replay = await fetch(`${baseUrl}/oauth/token`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: firstTokens.refresh_token }),
+        });
+        const replayJson = await replay.json();
+        assert.equal(replay.status, 400);
+        assert.equal(replayJson.error, 'invalid_grant');
+      }
+    );
+  });
+});
+
+test('OAuth refresh token : expire apres la fenetre d inactivite glissante', async () => {
+  await withEnv({
+    OAUTH_CLIENT_ID: 'funesterie-chatgpt-test',
+    OAUTH_CLIENT_SECRET: 'test-client-secret',
+    OAUTH_JWT_SECRET: 'test-jwt-secret-64-chars-for-funesterie-oauth-contract',
+    OAUTH_ISSUER: 'https://mcp.funesterie.me',
+    OAUTH_AUDIENCE: 'https://mcp.funesterie.me',
+    OAUTH_REDIRECT_ALLOWED: 'https://chatgpt.com/aip/*/oauth/callback',
+    OAUTH_AUTO_APPROVE: 'true',
+    OAUTH_REFRESH_TOKEN_IDLE_DAYS: '3',
+  }, async () => {
+    const db = createFakeOAuthDb();
+    const redirectUri = 'https://chatgpt.com/aip/funesterie/oauth/callback';
+
+    await withServer(
+      (app) => app.use('/oauth', createOAuthRouter(express, { db })),
+      async (baseUrl) => {
+        const firstTokens = await obtainRefreshToken(baseUrl, redirectUri);
+
+        // Personne ne s'en est servi depuis 4 jours (> les 3 jours de fenetre) : le
+        // simple fait de rester inactif au-dela de la fenetre doit invalider.
+        for (const row of db.rows.values()) {
+          row.last_used_at = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000);
+        }
+
+        const response = await fetch(`${baseUrl}/oauth/token`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: firstTokens.refresh_token }),
+        });
+        const payload = await response.json();
+        assert.equal(response.status, 400);
+        assert.equal(payload.error, 'invalid_grant');
       }
     );
   });

@@ -7372,7 +7372,7 @@ const createQflushFlowRouter = require('./src/routes/qflush-flow.cjs');
 app.use('/api/qflush/admin', verifyJWT); // admin routes nécessitent JWT
 app.use('/api/qflush', createQflushFlowRouter({ workspaceRoot: QFLUSH_WORKSPACE_ROOT, runtimeRoot: PUBLIC_RUNTIME_ROOT }));
 console.log('[Server] Qflush flow routes mounted under /api/qflush');
-app.use('/oauth', createOAuthRouter(express));
+app.use('/oauth', createOAuthRouter(express, { db }));
 console.log('[Server] MCP OAuth routes mounted under /oauth');
 app.use(createPublicMcpRouter({ db }));
 console.log('[Server] Public MCP routes mounted at /mcp, /.well-known/mcp and /api/mcp/status');

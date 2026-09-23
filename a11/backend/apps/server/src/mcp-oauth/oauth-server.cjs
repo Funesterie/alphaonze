@@ -16,6 +16,16 @@
  *   OAUTH_CLIENT_SECRET=<random-secret>
  *   OAUTH_REDIRECT_ALLOWED=https://chatgpt.com/aip/{connector}/oauth/callback,https://chat.openai.com/aip/{connector}/oauth/callback
  *   MCP_AUTH_TOKEN=<le bearer MCP actif>
+ *   OAUTH_REFRESH_TOKEN_IDLE_DAYS=90 (optionnel, defaut 90)
+ *
+ * Refresh tokens : persistes en base (table mcp_oauth_refresh_tokens, seule
+ * l'empreinte SHA-256 est stockee), avec rotation a chaque usage et fenetre
+ * glissante depuis le dernier usage — un redemarrage du conteneur ne deconnecte
+ * plus ChatGPT tant que le refresh token a servi dans les OAUTH_REFRESH_TOKEN_IDLE_DAYS
+ * derniers jours. Sans base (createOAuthRouter appele sans { db }, ex. tests), repli
+ * automatique sur une Map en RAM avec le meme comportement mais sans persistance.
+ * Les access tokens (JWT signes, 24h) restent stateless et survivaient deja aux
+ * redemarrages tant que OAUTH_JWT_SECRET/JWT_SECRET est stable.
  */
 
 const crypto = require('node:crypto');
@@ -28,12 +38,28 @@ const DEFAULT_CLIENT_ID = 'funesterie-chatgpt';
 const DEFAULT_CLIENT_SECRET = crypto.randomBytes(32).toString('hex');
 const CODE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const TOKEN_TTL_SECONDS = 86400; // 24h
-const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 jours
+const REFRESH_TOKEN_IDLE_DAYS_DEFAULT = 90; // fenetre glissante, renouvelee a chaque usage
 const DEFAULT_SCOPE = 'mcp:read mcp:write';
 
-// In-memory code store (codes are single-use, short-lived)
+// In-memory code store (codes are single-use, 5 min : perdre ces quelques-uns au
+// redemarrage n'est qu'un login en cours a refaire, sans consequence).
 const pendingCodes = new Map();
-const refreshTokens = new Map();
+
+// Repli sans base (tests, dev sans Postgres) pour les refresh tokens : Map en RAM,
+// TTL glissant depuis le dernier usage. Voir ensureDbSchema plus bas pour le stockage
+// durable en base, seul chemin reellement utilise en production.
+const memoryRefreshTokens = new Map();
+
+function refreshTokenIdleDays(env = process.env) {
+  const raw = Number(env.OAUTH_REFRESH_TOKEN_IDLE_DAYS);
+  return Number.isFinite(raw) && raw > 0 ? raw : REFRESH_TOKEN_IDLE_DAYS_DEFAULT;
+}
+
+// Seule l'empreinte est jamais gardee, en memoire comme en base : un refresh token
+// qui fuit une ligne de log ne doit pas etre rejouable a partir de la trace.
+function hashRefreshToken(token) {
+  return crypto.createHash('sha256').update(String(token || '')).digest('hex');
+}
 
 function getConfig(env = process.env) {
   const clientSecret = env.OAUTH_CLIENT_SECRET || DEFAULT_CLIENT_SECRET;
@@ -94,28 +120,92 @@ function generateRefreshToken() {
   return `rt_${crypto.randomBytes(32).toString('base64url')}`;
 }
 
-function storeRefreshToken(token, metadata = {}) {
-  refreshTokens.set(token, {
-    ...metadata,
-    createdAt: Date.now(),
-  });
+// ─── Stockage durable (Postgres) ───────────────────────────────────────────
+//
+// Avant ce correctif, refreshTokens vivait en Map() RAM avec un TTL fixe de 7
+// jours depuis la creation. Tout redemarrage du conteneur (deploy, fix, crash)
+// videait la Map : ChatGPT perdait sa session et devait recliquer "Autoriser",
+// meme en pleine activite. Djeff, 23/09/2026, sur un signalement ChatGPT lui-meme
+// (src/mcp-oauth/oauth-server.cjs cite avec les bons numeros de ligne).
+//
+// Le token en base est detruit et remplace a chaque usage (DELETE ... RETURNING
+// puis reinsertion via buildTokenResponse) : c'est la rotation, pas seulement la
+// persistance. La fenetre glisse avec last_used_at, donc un agent actif reste
+// connecte indefiniment ; un agent inactif expire au bout de refreshTokenIdleDays.
+let dbSchemaReady = false;
+let dbSchemaFailed = false;
 
-  const now = Date.now();
-  for (const [key, value] of refreshTokens) {
-    if (now - value.createdAt > REFRESH_TOKEN_TTL_MS) {
-      refreshTokens.delete(key);
-    }
+async function ensureDbSchema(db, logger = console) {
+  if (!db || dbSchemaFailed) return false;
+  if (dbSchemaReady) return true;
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS mcp_oauth_refresh_tokens (
+        token_hash TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL,
+        scope TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        last_used_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await db.query('CREATE INDEX IF NOT EXISTS idx_mcp_oauth_refresh_tokens_last_used ON mcp_oauth_refresh_tokens(last_used_at)');
+    dbSchemaReady = true;
+    return true;
+  } catch (error) {
+    dbSchemaFailed = true;
+    logger?.warn?.('[MCP-OAUTH] refresh token schema unavailable:', error?.message);
+    return false;
   }
 }
 
-function getRefreshToken(token) {
-  const entry = refreshTokens.get(token);
-  if (!entry) return null;
-  if (Date.now() - entry.createdAt > REFRESH_TOKEN_TTL_MS) {
-    refreshTokens.delete(token);
-    return null;
+function pruneMemoryRefreshTokens(env = process.env) {
+  const idleMs = refreshTokenIdleDays(env) * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  for (const [key, value] of memoryRefreshTokens) {
+    if (now - value.lastUsedAt > idleMs) memoryRefreshTokens.delete(key);
   }
-  return entry;
+}
+
+async function storeRefreshToken(db, token, metadata = {}, env = process.env) {
+  if (await ensureDbSchema(db)) {
+    await db.query(
+      `INSERT INTO mcp_oauth_refresh_tokens (token_hash, client_id, scope, created_at, last_used_at)
+       VALUES ($1, $2, $3, NOW(), NOW())
+       ON CONFLICT (token_hash) DO UPDATE SET last_used_at = NOW()`,
+      [hashRefreshToken(token), metadata.clientId || '', metadata.scope || DEFAULT_SCOPE]
+    );
+    return;
+  }
+  memoryRefreshTokens.set(hashRefreshToken(token), {
+    clientId: metadata.clientId || '',
+    scope: metadata.scope || DEFAULT_SCOPE,
+    lastUsedAt: Date.now(),
+  });
+  pruneMemoryRefreshTokens(env);
+}
+
+// Consomme (et donc fait tourner) le refresh token : la ligne est supprimee des
+// qu'elle est lue, le rappelant doit en stocker un nouveau via buildTokenResponse.
+// Un meme refresh token n'est donc jamais rejouable deux fois.
+async function consumeRefreshToken(db, token, env = process.env) {
+  if (await ensureDbSchema(db)) {
+    const idleDays = refreshTokenIdleDays(env);
+    const result = await db.query(
+      `DELETE FROM mcp_oauth_refresh_tokens
+       WHERE token_hash = $1 AND last_used_at > NOW() - ($2 || ' days')::interval
+       RETURNING client_id, scope`,
+      [hashRefreshToken(token), idleDays]
+    );
+    const row = result.rows?.[0];
+    return row ? { clientId: row.client_id, scope: row.scope } : null;
+  }
+  const key = hashRefreshToken(token);
+  const entry = memoryRefreshTokens.get(key);
+  memoryRefreshTokens.delete(key);
+  if (!entry) return null;
+  const idleMs = refreshTokenIdleDays(env) * 24 * 60 * 60 * 1000;
+  if (Date.now() - entry.lastUsedAt > idleMs) return null;
+  return { clientId: entry.clientId, scope: entry.scope };
 }
 
 function escapeRegExp(value) {
@@ -208,13 +298,13 @@ function verifyOAuthAccessToken(token, env = process.env) {
   }
 }
 
-function buildTokenResponse(metadata = {}, env = process.env) {
+async function buildTokenResponse(metadata = {}, env = process.env, db = null) {
   const config = getConfig(env);
   const refreshToken = generateRefreshToken();
-  storeRefreshToken(refreshToken, {
+  await storeRefreshToken(db, refreshToken, {
     clientId: metadata.clientId || config.clientId,
     scope: metadata.scope || DEFAULT_SCOPE,
-  });
+  }, env);
 
   return {
     access_token: issueAccessToken(metadata, env),
@@ -341,7 +431,8 @@ function handleApprove(req, res) {
  *
  * We return a signed OAuth JWT as the access_token.
  */
-function handleToken(req, res) {
+async function handleToken(req, res, options = {}) {
+  const db = options.db || null;
   const config = getConfig();
   const body = req.body || {};
   const basicAuth = parseBasicAuth(req.headers?.authorization);
@@ -353,49 +444,54 @@ function handleToken(req, res) {
   const redirectUri = body.redirect_uri;
   const codeVerifier = body.code_verifier;
 
-  // Validate grant type
-  if (grantType !== 'authorization_code' && grantType !== 'refresh_token') {
-    return res.status(400).json({ error: 'unsupported_grant_type' });
-  }
-
-  // Refresh token flow â€” just return the same token
-  if (grantType === 'refresh_token') {
-    const refreshToken = body.refresh_token;
-    const tokenEntry = getRefreshToken(refreshToken);
-    if (!tokenEntry || tokenEntry.clientId !== config.clientId) {
-      return res.status(400).json({ error: 'invalid_grant', message: 'Invalid refresh token' });
+  try {
+    // Validate grant type
+    if (grantType !== 'authorization_code' && grantType !== 'refresh_token') {
+      return res.status(400).json({ error: 'unsupported_grant_type' });
     }
-    return res.json(buildTokenResponse({ clientId: tokenEntry.clientId, scope: tokenEntry.scope }, process.env));
-  }
 
-  // Validate client credentials
-  if (clientId !== config.clientId) {
-    return res.status(401).json({ error: 'invalid_client', message: 'Unknown client_id' });
-  }
+    // Refresh token flow: consomme l'ancien (rotation) et en emet un nouveau.
+    if (grantType === 'refresh_token') {
+      const refreshToken = body.refresh_token;
+      const tokenEntry = refreshToken ? await consumeRefreshToken(db, refreshToken, process.env) : null;
+      if (!tokenEntry || tokenEntry.clientId !== config.clientId) {
+        return res.status(400).json({ error: 'invalid_grant', message: 'Invalid refresh token' });
+      }
+      return res.json(await buildTokenResponse({ clientId: tokenEntry.clientId, scope: tokenEntry.scope }, process.env, db));
+    }
 
-  if (!timingSafeEqualString(clientSecret, config.clientSecret)) {
-    return res.status(401).json({ error: 'invalid_client', message: 'Bad client_secret' });
-  }
+    // Validate client credentials
+    if (clientId !== config.clientId) {
+      return res.status(401).json({ error: 'invalid_client', message: 'Unknown client_id' });
+    }
 
-  // Consume the code
-  const codeEntry = consumeCode(code);
-  if (!codeEntry) {
-    return res.status(400).json({ error: 'invalid_grant', message: 'Code expired or already used' });
-  }
+    if (!timingSafeEqualString(clientSecret, config.clientSecret)) {
+      return res.status(401).json({ error: 'invalid_client', message: 'Bad client_secret' });
+    }
 
-  // Validate redirect_uri matches
-  if (redirectUri && redirectUri !== codeEntry.redirectUri) {
-    return res.status(400).json({ error: 'invalid_grant', message: 'redirect_uri mismatch' });
-  }
+    // Consume the code
+    const codeEntry = consumeCode(code);
+    if (!codeEntry) {
+      return res.status(400).json({ error: 'invalid_grant', message: 'Code expired or already used' });
+    }
 
-  if (!validatePkce(codeEntry, codeVerifier)) {
-    return res.status(400).json({ error: 'invalid_grant', message: 'PKCE verification failed' });
-  }
+    // Validate redirect_uri matches
+    if (redirectUri && redirectUri !== codeEntry.redirectUri) {
+      return res.status(400).json({ error: 'invalid_grant', message: 'redirect_uri mismatch' });
+    }
 
-  res.json(buildTokenResponse({
-    clientId: codeEntry.clientId,
-    scope: codeEntry.scope || DEFAULT_SCOPE,
-  }, process.env));
+    if (!validatePkce(codeEntry, codeVerifier)) {
+      return res.status(400).json({ error: 'invalid_grant', message: 'PKCE verification failed' });
+    }
+
+    res.json(await buildTokenResponse({
+      clientId: codeEntry.clientId,
+      scope: codeEntry.scope || DEFAULT_SCOPE,
+    }, process.env, db));
+  } catch (error) {
+    console.warn('[MCP-OAUTH] token endpoint failed:', error?.message);
+    res.status(500).json({ error: 'server_error', message: 'Token issuance failed' });
+  }
 }
 
 /**
@@ -417,12 +513,13 @@ function handleDiscovery(req, res) {
 
 // â”€â”€â”€ Express Router Factory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function createOAuthRouter(express) {
+function createOAuthRouter(express, options = {}) {
+  const db = options.db || null;
   const router = express.Router();
 
   router.get('/authorize', handleAuthorize);
   router.get('/approve', handleApprove);
-  router.post('/token', express.json(), express.urlencoded({ extended: true }), handleToken);
+  router.post('/token', express.json(), express.urlencoded({ extended: true }), (req, res) => handleToken(req, res, { db }));
   router.get('/.well-known/openid-configuration', handleDiscovery);
 
   return router;
@@ -453,4 +550,8 @@ module.exports = {
   generateCode,
   storeCode,
   consumeCode,
+  storeRefreshToken,
+  consumeRefreshToken,
+  hashRefreshToken,
+  refreshTokenIdleDays,
 };

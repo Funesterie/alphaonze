@@ -119,6 +119,15 @@ const statements = [
   `CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_key ON auth_sessions(user_key, last_seen_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_auth_sessions_revoked_at ON auth_sessions(revoked_at)`,
 
+  `CREATE TABLE IF NOT EXISTS mcp_oauth_refresh_tokens (
+    token_hash TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    scope TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    last_used_at TIMESTAMP DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_mcp_oauth_refresh_tokens_last_used ON mcp_oauth_refresh_tokens(last_used_at)`,
+
   `CREATE TABLE IF NOT EXISTS files (
     id SERIAL PRIMARY KEY,
     user_id TEXT NOT NULL,
