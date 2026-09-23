@@ -4699,6 +4699,42 @@ test('jukebox (17/09/2026) : clips et chansons dans le meme shuffle, la video se
   }
 });
 
+test('jukebox : un interlude vivy-asset-archive ne pollue plus le catalogue permanent', () => {
+  let tirage = 0;
+  const store = createVivyStreamStore({
+    statePath: path.join(tmpRoot, 'jukebox-archive-no-pollution.json'),
+    idleJukeboxEnabled: true,
+    randomInt: (n) => (tirage++) % n,
+  });
+  store.addJukeboxTrack({
+    title: 'Archive Vivy Live',
+    trackTitle: 'Archive Vivy Live',
+    trackUrl: '/api/vivy/studio/assets/vivy-music-suno-orphelin.mp3',
+    durationSeconds: 0,
+    source: 'vivy-asset-archive',
+  });
+  store.addJukeboxTrack({
+    title: 'Poursuite nocturne',
+    trackUrl: '/api/vivy/studio/assets/vivy-music-suno-poursuite.mp3',
+    durationSeconds: 120,
+    source: 'twitch-live',
+  });
+
+  for (let i = 0; i < 4; i += 1) {
+    store.startIdleJukebox({ rotate: true });
+  }
+
+  const archive = store.getSongsArchive();
+  assert.ok(
+    !archive.some((song) => song.source === 'vivy-asset-archive'),
+    'un morceau vivy-asset-archive ne doit jamais atterrir dans le catalogue permanent'
+  );
+  assert.ok(
+    archive.some((song) => song.trackUrl === '/api/vivy/studio/assets/vivy-music-suno-poursuite.mp3'),
+    'un morceau normal reste bien catalogue'
+  );
+});
+
 test('regie : l action jukebox-clip passe directement a un clip', () => {
   const store = createVivyStreamStore({
     statePath: path.join(tmpRoot, 'jukebox-clip-force.json'),

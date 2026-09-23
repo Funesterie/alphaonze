@@ -1435,11 +1435,20 @@ function createVivyStreamStore(options = {}) {
     const startedAt = Date.now();
     const durationSeconds = Math.max(1, Math.min(3600, Number(resolveJukeboxTrackDuration(track) || DEFAULT_TRACK_SECONDS)));
     jukebox.lastTrackId = track.id;
-    addLiveSong({
-      ...track,
-      source: track.source || 'vivy-interlude',
-      createdAt: nowIso(),
-    });
+    // vivy-asset-archive = un mp3 orphelin ramasse par balayage disque, sans titre
+    // recuperable (inferJukeboxTitleFromFilename retombe sur "Archive Vivy Live").
+    // Bon pour du remplissage jukebox, mauvais pour le catalogue permanent : chaque
+    // tirage en interlude l'ecrivait dans l'historique, et des centaines de doublons
+    // identiques ont fini par noyer le selecteur de chanson de la page NOSSEN. La
+    // lecture ci-dessous ne depend pas de addLiveSong (trackUrl vient de `track`),
+    // donc sauter la persistance ne casse pas l'interlude.
+    if (track.source !== 'vivy-asset-archive') {
+      addLiveSong({
+        ...track,
+        source: track.source || 'vivy-interlude',
+        createdAt: nowIso(),
+      });
+    }
     setCurrentPhase('interlude', {
       title: track.title || 'Vivy Live',
       trackTitle: track.trackTitle || track.title || 'Archive Vivy Live',
