@@ -361,3 +361,105 @@ test('une fiche de chapitre remplace la fiche du registre au lieu de s\'y ajoute
   assert.equal(rien.mangaIdentityBrief, '');
   assert.equal(rien.mangaAgeBrief, '');
 });
+
+// Malcolm (23/09/2026, Djeff : "on peut brancher un llm a malcolm avec vision
+// d'image pour detecter les incoherences ? puis le brancher") : branchement dans
+// la vraie boucle de rendu. Ces tests couvrent le CABLAGE (journal, resoumission,
+// toile, interrupteur), pas le jugement lui-meme — deja couvert par
+// malcolm-continuity.node.test.cjs.
+function malcolmClipDeps(overrides = {}) {
+  return {
+    materializeMedia: async (_value, destination) => {
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      fs.writeFileSync(destination, 'media');
+    },
+    loadDirectorImpl: () => ({ directClip: async () => ({ scenes: [{ name: 'Plan', visual: 'A precise cinematic visual' }] }) }),
+    generateVideoImpl: async () => 'https://cloud.comfy.org/video.mp4',
+    execFileSyncImpl: (command, args) => {
+      // 14 s = 2 plans de 7 s, comme le test de clip partiel plus haut.
+      if (command === 'ffprobe') return Buffer.from(args.includes('stream=codec_type') ? 'video\n' : '14.0\n');
+      fs.writeFileSync(args.at(-1), 'assembled');
+      return Buffer.alloc(0);
+    },
+    ...overrides,
+  };
+}
+
+test('Malcolm juge chaque segment réellement rendu et écrit sa toile', async () => {
+  const judged = [];
+  const deps = malcolmClipDeps({
+    judgeContinuityImpl: async (payload) => {
+      judged.push(payload);
+      return { ok: true, planIndex: payload.planIndex, verdict: { verdict: 'coherent' } };
+    },
+    buildToileSvgImpl: (entries) => `<svg data-entries="${entries.length}"></svg>`,
+    nowImpl: () => 700001,
+    randomBytesImpl: () => Buffer.from('aabbccdd', 'hex'),
+  });
+  const result = await generateClip({ title: 'Malcolm cohérent', songUrl: '/audio.mp3' }, deps);
+  assert.equal(result.segments, 2);
+  assert.equal(judged.length, 2, 'un jugement par segment réellement téléchargé');
+  assert.deepEqual(result.malcolm, { coherent: 2, rupture_acceptee: 0, rejete: 0, skipped: 0 });
+
+  const clipDir = path.join(process.env.NOSSEN_CLIPS_DIR, 'clip-700001-aabbccdd');
+  const toile = fs.readFileSync(path.join(clipDir, 'malcolm-toile.svg'), 'utf8');
+  assert.match(toile, /data-entries="2"/);
+});
+
+test('Malcolm rejette un plan, un seul nouvel essai, puis le journal garde le verdict final', async () => {
+  const videoCallsByIndex = new Map();
+  const judgeCallsByIndex = new Map();
+  const deps = malcolmClipDeps({
+    generateVideoImpl: async (_prompt, index) => {
+      videoCallsByIndex.set(index, (videoCallsByIndex.get(index) || 0) + 1);
+      return 'https://cloud.comfy.org/video.mp4';
+    },
+    judgeContinuityImpl: async (payload) => {
+      const n = (judgeCallsByIndex.get(payload.planIndex) || 0) + 1;
+      judgeCallsByIndex.set(payload.planIndex, n);
+      if (payload.planIndex === 0 && n === 1) {
+        return { ok: true, planIndex: 0, verdict: { verdict: 'rejete', raison_changement: 'le personnage a changé de veste', suite_possible: 'garder la veste noire' } };
+      }
+      return { ok: true, planIndex: payload.planIndex, verdict: { verdict: 'coherent' } };
+    },
+    buildToileSvgImpl: () => '<svg></svg>',
+  });
+  const result = await generateClip({ title: 'Malcolm rejeté puis corrigé', songUrl: '/audio.mp3' }, deps);
+  assert.equal(videoCallsByIndex.get(0), 2, 'le plan rejeté est resoumis une seule fois');
+  assert.equal(videoCallsByIndex.get(1), 1, 'un plan cohérent ne déclenche aucune resoumission');
+  assert.equal(judgeCallsByIndex.get(0), 2, 'le plan corrigé est rejugé après le nouvel essai');
+  // Après correction, le jugement final est cohérent : le journal garde ce verdict-là, pas le rejet initial.
+  assert.deepEqual(result.malcolm, { coherent: 2, rupture_acceptee: 0, rejete: 0, skipped: 0 });
+});
+
+test('Malcolm désactivé ne juge rien et n\'écrit pas de toile', async () => {
+  let judgeCalled = false;
+  const previous = process.env.NOSSEN_MALCOLM_ENABLED;
+  process.env.NOSSEN_MALCOLM_ENABLED = 'false';
+  try {
+    const deps = malcolmClipDeps({
+      judgeContinuityImpl: async () => { judgeCalled = true; return { ok: true, verdict: { verdict: 'coherent' } }; },
+      nowImpl: () => 700002,
+      randomBytesImpl: () => Buffer.from('11223344', 'hex'),
+    });
+    const result = await generateClip({ title: 'Malcolm désactivé', songUrl: '/audio.mp3' }, deps);
+    assert.equal(judgeCalled, false);
+    assert.equal(result.malcolm, null);
+    const clipDir = path.join(process.env.NOSSEN_CLIPS_DIR, 'clip-700002-11223344');
+    assert.equal(fs.existsSync(path.join(clipDir, 'malcolm-toile.svg')), false);
+  } finally {
+    if (previous === undefined) delete process.env.NOSSEN_MALCOLM_ENABLED;
+    else process.env.NOSSEN_MALCOLM_ENABLED = previous;
+  }
+});
+
+test('une panne Malcolm (extraction, vision indisponible) se journalise sans jamais casser le clip', async () => {
+  const deps = malcolmClipDeps({
+    judgeContinuityImpl: async () => { throw new Error('malcolm_vision_unavailable'); },
+    buildToileSvgImpl: () => '<svg></svg>',
+  });
+  const result = await generateClip({ title: 'Malcolm en panne', songUrl: '/audio.mp3' }, deps);
+  assert.equal(result.ok, true, 'une panne de Malcolm ne doit jamais faire échouer le clip');
+  assert.equal(result.segments, 2);
+  assert.deepEqual(result.malcolm, { coherent: 0, rupture_acceptee: 0, rejete: 0, skipped: 2 });
+});

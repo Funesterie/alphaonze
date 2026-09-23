@@ -42,6 +42,28 @@ const { callStructuredVisionJudgeJson } = require('../image/verify-generated-ima
 
 const ALLOWED_VERDICTS = new Set(['coherent', 'rupture_acceptee', 'rejete']);
 
+// Malcolm ne depend PAS du reglage vision global (A11_VISION_PROVIDER). Teste
+// en direct sur la prod le 23/09/2026 : ce reglage pointe vers Janus local, qui
+// reste muet plus de 60 s sur la machine sans GPU (meme defaut deja documente
+// pour Djeff Engine, qwen2.5:32b sur CPU, jamais resolu -- reviewDjeffEngine a
+// bascule sur le cloud pour la meme raison). Malcolm route par defaut vers
+// OpenRouter, deja utilise et fiable ailleurs dans ce meme pipeline (Sol, Grok,
+// K44), avec un modele vision rapide et peu couteux. Reglable sans toucher au
+// reglage global via NOSSEN_MALCOLM_VISION_*, pour ne jamais degrader les
+// autres consommateurs de verify-generated-image-with-llm.cjs (verification
+// d'images generees) qui restent sur leur propre config.
+const MALCOLM_VISION_MODEL_DEFAULT = 'openai/gpt-4o-mini';
+
+function resolveMalcolmVisionOverrides(env = process.env) {
+  const baseUrl = String(
+    env.NOSSEN_MALCOLM_VISION_BASE_URL || env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1'
+  ).trim();
+  const apiKey = String(env.NOSSEN_MALCOLM_VISION_API_KEY || env.OPENROUTER_API_KEY || '').trim();
+  const model = String(env.NOSSEN_MALCOLM_VISION_MODEL || MALCOLM_VISION_MODEL_DEFAULT).trim();
+  const timeoutMs = Math.max(3000, Number(env.NOSSEN_MALCOLM_VISION_TIMEOUT_MS || 20000) || 20000);
+  return { provider: 'remote', baseUrl, apiKey, model, timeoutMs };
+}
+
 // La grille exacte demandee par Djeff, traduite en questions fermees pour un
 // juge qui doit rester bref et verifiable, plus les deux questions ouvertes
 // (pourquoi, quelle suite) qui nourrissent le journal et une correction
@@ -229,7 +251,12 @@ async function judgeContinuity({
   try {
     rawResult = typeof callStructuredVisionJson === 'function'
       ? await callStructuredVisionJson({ imageUrl: normalizedImageUrl, payload, systemPrompt: MALCOLM_SYSTEM_PROMPT })
-      : await callStructuredVisionJudgeJson({ imageUrl: normalizedImageUrl, payload, systemPrompt: MALCOLM_SYSTEM_PROMPT });
+      : await callStructuredVisionJudgeJson({
+        imageUrl: normalizedImageUrl,
+        payload,
+        systemPrompt: MALCOLM_SYSTEM_PROMPT,
+        ...resolveMalcolmVisionOverrides(),
+      });
   } catch (error) {
     return { ok: false, skipped: true, reason: 'malcolm_vision_failed', message: String(error?.message || error) };
   }
@@ -347,9 +374,11 @@ function buildToileSvg(entries = [], options = {}) {
 
 module.exports = {
   MALCOLM_SYSTEM_PROMPT,
+  MALCOLM_VISION_MODEL_DEFAULT,
   ALLOWED_VERDICTS,
   buildMalcolmPayload,
   normalizeMalcolmVerdict,
+  resolveMalcolmVisionOverrides,
   judgeContinuity,
   buildToileSvg,
   TOILE_COLORS,

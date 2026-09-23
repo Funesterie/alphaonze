@@ -18,6 +18,7 @@ const http = require('http');
 const { CLIPS_DIR } = require('./clip-storage.cjs');
 const { materializeClipMedia } = require('./clip-input.cjs');
 const clipCredits = require('./clip-credits.cjs');
+const { judgeContinuity: malcolmJudgeContinuity, buildToileSvg: malcolmBuildToileSvg } = require('./malcolm-continuity.cjs');
 const BRIDGE_URL = 'http://127.0.0.1:3000/api/mcp-bridge/call';
 const BRIDGE_RESPONSE_MAX_BYTES = 1024 * 1024;
 if (!fs.existsSync(CLIPS_DIR)) fs.mkdirSync(CLIPS_DIR, { recursive: true });
@@ -43,6 +44,32 @@ function sanitizeDiagnostic(value, maxLength = 400) {
     .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[masqué]')
     .replace(/\b(api[_ -]?key|authorization|token|secret)\s*[:=]\s*[^\s,;]+/gi, '$1=[masqué]');
   return text.trim().slice(0, maxLength);
+}
+
+// ─── Malcolm : validation post-rendu ───────────────────────────────────────
+//
+// Branchement du 23/09/2026 (Djeff : "on peut brancher un llm a malcolm avec
+// vision d'image pour detecter les incoherences ? puis le brancher"). Malcolm
+// (src/clips/malcolm-continuity.cjs) regarde CE QUI A ETE REELLEMENT RENDU,
+// pas seulement le texte du plan — la couche qui manquait entierement avant
+// aujourd'hui (voir le commentaire au-dessus de generateClip). Desactivable
+// sans toucher au code (incident, cout, latence) via NOSSEN_MALCOLM_ENABLED.
+function isMalcolmEnabled(env = process.env) {
+  return !['0', 'false', 'no', 'off'].includes(String(env.NOSSEN_MALCOLM_ENABLED ?? 'true').trim().toLowerCase());
+}
+
+// Une frame representative, pas la video entiere : Malcolm juge une image,
+// comme le reste de l'infrastructure vision deja en prod (verify-generated-
+// image-with-llm.cjs). 1 s dans le segment evite la plupart des frames noires
+// d'ouverture sans avoir besoin de connaitre la duree exacte.
+function extractFrameForMalcolm(execFileSyncImpl, videoPath, outPath) {
+  try {
+    execFileSyncImpl('ffmpeg', ['-y', '-ss', '1', '-i', videoPath, '-frames:v', '1', '-q:v', '4', outPath], { timeout: 20_000, windowsHide: true });
+    return fs.existsSync(outPath) && fs.statSync(outPath).size > 0 ? outPath : null;
+  } catch (error) {
+    console.warn(`[clip] Malcolm: extraction de frame échouée (${sanitizeDiagnostic(error.message, 120)})`);
+    return null;
+  }
 }
 
 function bridgeError(code, detail = '', { ambiguous = false } = {}) {
@@ -950,6 +977,8 @@ async function generateClip(config = {}, {
   sleepImpl = sleep,
   nowImpl = Date.now,
   randomBytesImpl = crypto.randomBytes,
+  judgeContinuityImpl = malcolmJudgeContinuity,
+  buildToileSvgImpl = malcolmBuildToileSvg,
 } = {}) {
   let { songUrl, title, sections, style = '', fullDuration, onProgress, casting = '', castArtists = [], render = '', identiteCompte = null } = config;
   // Mode script (16/09/2026) : au lieu d'un MP3, on soumet un SCRIPT. K44 écrit
@@ -1287,6 +1316,9 @@ async function generateClip(config = {}, {
   let refusPolitique = 0;
   let arretPlafond = false;
   let arretPaiement = false;
+  // Malcolm : un verdict par segment reellement rendu, pour le journal et la toile.
+  const malcolmLog = [];
+  const malcolmOn = isMalcolmEnabled(process.env);
   for (let i = 0; i < numSegments; i++) {
     const section = sections[i % sections.length];
     const prompt = effacerNomsFilm(
@@ -1328,6 +1360,58 @@ async function generateClip(config = {}, {
         totalSegments: numSegments,
         segmentIndex: i,
       });
+
+      // Malcolm : regarde CE QUI A ETE RENDU, pas le texte du plan. Un seul
+      // nouvel essai si "rejete" (identite ou derive non voulue) -- jamais une
+      // boucle, jamais un blocage du clip sur son seul avis : il informe et
+      // corrige une fois, il ne fait pas foi. Tout echec ici (extraction,
+      // vision indisponible, nouvel essai rate) se journalise et n'interrompt
+      // jamais la generation.
+      if (malcolmOn) {
+        try {
+          const framePath = path.join(clipDir, `scene_${String(i).padStart(2, '0')}_malcolm.jpg`);
+          const previousSection = i > 0 ? sections[(i - 1) % sections.length] : null;
+          const judgeThisFrame = (imageUrl) => judgeContinuityImpl({
+            imageUrl,
+            planIndex: i,
+            planName: section.name,
+            planVisual: section.visual,
+            previousPlanVisual: previousSection ? previousSection.visual : '',
+            lieu,
+            mood: (directed && directed.mood) || '',
+            title,
+            castLabels: identity.castLabels || [],
+            vehicleHints: Array.isArray(config.vehicleHints) ? config.vehicleHints : [],
+          });
+
+          const frame = extractFrameForMalcolm(execFileSyncImpl, dest, framePath);
+          let jugement = frame ? await judgeThisFrame(frame) : { ok: false, skipped: true, reason: 'malcolm_frame_missing' };
+
+          if (jugement.ok && jugement.verdict.verdict === 'rejete') {
+            const motif = [jugement.verdict.raison_changement, jugement.verdict.suite_possible].filter(Boolean).join(' ');
+            console.warn(`[clip] Malcolm: plan ${i} rejeté (${sanitizeDiagnostic(motif, 160)}), un seul nouvel essai.`);
+            try {
+              const correctedUrl = await generateVideoImpl(`${prompt} ${motif}`.trim(), i, 600000, identity, { onProgress, models: videoModels });
+              await materializeMedia(correctedUrl, dest, { kind: 'video' });
+              const frame2 = extractFrameForMalcolm(execFileSyncImpl, dest, framePath);
+              if (frame2) jugement = await judgeThisFrame(frame2);
+            } catch (retryError) {
+              console.warn(`[clip] Malcolm: nouvel essai du plan ${i} échoué (${sanitizeDiagnostic(retryError.message, 120)}), premier rendu conservé.`);
+            }
+          }
+
+          malcolmLog.push({
+            planIndex: i,
+            planName: section.name,
+            skipped: !jugement.ok,
+            reason: jugement.ok ? undefined : jugement.reason,
+            verdict: jugement.ok ? jugement.verdict : null,
+          });
+        } catch (error) {
+          console.warn(`[clip] Malcolm indisponible pour le plan ${i}: ${sanitizeDiagnostic(error.message, 120)}`);
+          malcolmLog.push({ planIndex: i, planName: section.name, skipped: true, reason: 'malcolm_error' });
+        }
+      }
     } catch (error) {
       dernierEchec = error.message;
       if (estRefusDePolitique(error.message)) {
@@ -1384,6 +1468,25 @@ async function generateClip(config = {}, {
   // 6. Assembler avec FFmpeg
   const safeName = (title || 'clip').replace(/[^a-zA-Z0-9àâéèêëïîôùûüç -]/gi, '').replace(/\s+/g, '-').slice(0, 40) || 'clip';
   const outputPath = path.join(clipDir, safeName + '.mp4');
+
+  // La toile de Malcolm : un graphe par clip, garde a cote du rendu (pas encore
+  // publie sur /clips -- cette route sert tout avec Content-Type: video/mp4,
+  // il faudrait la corriger avant d'y exposer un SVG public).
+  let malcolmSummary = null;
+  if (malcolmOn && malcolmLog.length) {
+    try {
+      malcolmSummary = malcolmLog.reduce((acc, entry) => {
+        const key = entry.skipped ? 'skipped' : ((entry.verdict && entry.verdict.verdict) || 'skipped');
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, { coherent: 0, rupture_acceptee: 0, rejete: 0, skipped: 0 });
+      const toileSvg = buildToileSvgImpl(malcolmLog, { title });
+      fs.writeFileSync(path.join(clipDir, 'malcolm-toile.svg'), toileSvg);
+      console.log(`[clip] Malcolm: ${JSON.stringify(malcolmSummary)}`);
+    } catch (error) {
+      console.warn(`[clip] Malcolm: toile non générée (${sanitizeDiagnostic(error.message, 120)})`);
+    }
+  }
 
   // Créer le fichier concat
   const concatFile = path.join(clipDir, 'concat.txt');
@@ -1457,6 +1560,7 @@ async function generateClip(config = {}, {
     duration: audioDuration,
     partial,
     warning,
+    malcolm: malcolmSummary,
   };
 }
 
@@ -1517,4 +1621,6 @@ module.exports = {
   postJson,
   requireDirectedScenes,
   sanitizeDiagnostic,
+  isMalcolmEnabled,
+  extractFrameForMalcolm,
 };

@@ -7,8 +7,38 @@ const {
   normalizeMalcolmVerdict,
   buildToileSvg,
   buildMalcolmPayload,
+  resolveMalcolmVisionOverrides,
+  MALCOLM_VISION_MODEL_DEFAULT,
   ALLOWED_VERDICTS,
 } = require('../src/clips/malcolm-continuity.cjs');
+
+// 23/09/2026 : le reglage vision global (A11_VISION_PROVIDER=janus) reste muet
+// plus de 60 s sur la prod sans GPU (teste en direct). Malcolm route par defaut
+// vers OpenRouter, deja fiable ailleurs dans ce pipeline, sans toucher au
+// reglage global (qui reste utilise par verify-generated-image-with-llm.cjs
+// pour d'autres consommateurs).
+test('resolveMalcolmVisionOverrides : route vers OpenRouter par defaut, jamais vers Janus', () => {
+  const overrides = resolveMalcolmVisionOverrides({
+    OPENROUTER_API_KEY: 'test-key',
+  });
+  assert.equal(overrides.provider, 'remote');
+  assert.equal(overrides.baseUrl, 'https://openrouter.ai/api/v1');
+  assert.equal(overrides.apiKey, 'test-key');
+  assert.equal(overrides.model, MALCOLM_VISION_MODEL_DEFAULT);
+  assert.ok(overrides.timeoutMs >= 3000);
+});
+
+test('resolveMalcolmVisionOverrides : reglable sans toucher au reglage global', () => {
+  const overrides = resolveMalcolmVisionOverrides({
+    NOSSEN_MALCOLM_VISION_MODEL: 'anthropic/claude-sonnet-4.5',
+    NOSSEN_MALCOLM_VISION_API_KEY: 'dedicated-key',
+    NOSSEN_MALCOLM_VISION_BASE_URL: 'https://example.test/v1',
+    OPENROUTER_API_KEY: 'ignored-because-dedicated-key-wins',
+  });
+  assert.equal(overrides.model, 'anthropic/claude-sonnet-4.5');
+  assert.equal(overrides.apiKey, 'dedicated-key');
+  assert.equal(overrides.baseUrl, 'https://example.test/v1');
+});
 
 test('judgeContinuity : sans image, on ne fait pas semblant de juger', async () => {
   const out = await judgeContinuity({ planIndex: 0, planVisual: 'A room.' });
