@@ -706,6 +706,19 @@ async function generateVisualScenes(title, lyrics, style, mood, cast, signature,
           };
         });
         scenes.lieu = lieu;
+        // Sol est cense rendre un plan par beat, DANS L'ORDRE (buildBeatsBlock le lui
+        // demande explicitement). Rien ne verifie qu'il l'a fait : s'il saute un beat
+        // au milieu mais rend quand meme le bon compte, chaque section/acte assigne
+        // par position ci-dessus est fausse pour tous les plans suivants, en silence.
+        // On ne peut pas reconcilier semantiquement ici, mais on peut au moins arreter
+        // le mensonge : si le compte ne correspond pas exactement, le signaler plutot
+        // que de laisser croire que l'alignement position-a-position est fiable
+        // (Djeff, 23/09/2026).
+        scenes.beatsMismatch = Boolean(nbVoulus && plans.length !== nbVoulus);
+        if (scenes.beatsMismatch) {
+          console.warn("[clip-director] Sol a rendu " + plans.length + "/" + nbVoulus
+            + " plans : l'alignement section/acte par position n'est plus fiable au-dela du plus petit des deux.");
+        }
         return scenes;
       }
     }
@@ -740,10 +753,25 @@ function formatPlansForReview(scenes, lieu) {
     }).join("\n");
 }
 
+// Journal des passes de review, porte par le tableau scenes lui-meme (meme
+// pratique que scenes.lieu deja utilise ici) : rien ne casse le contrat "scenes
+// est un array" que les tests et script-director.cjs verifient deja, et le
+// journal survit d'une passe a l'autre puisque chaque review renvoie la meme
+// reference. Avant ce correctif, une review qui timeout ou dont le JSON ne
+// parse pas rendait les scenes inchangees SANS RIEN SIGNALER : un clip "revu
+// trois fois" et un clip ou les trois passes ont toutes echoue silencieusement
+// etaient indiscernables en aval (Djeff, 23/09/2026).
+function logReviewPass(scenes, pass, status, extra) {
+  if (!Array.isArray(scenes)) return scenes;
+  if (!Array.isArray(scenes.reviewLog)) scenes.reviewLog = [];
+  scenes.reviewLog.push(Object.assign({ pass: pass, status: status }, extra || {}));
+  return scenes;
+}
+
 function applyReview(scenes, corrections, who) {
   if (!Array.isArray(corrections) || !corrections.length) {
     console.log("[clip-director] " + who + " : rien à corriger.");
-    return scenes;
+    return 0;
   }
   var applied = 0;
   corrections.forEach(function(c) {
@@ -757,7 +785,7 @@ function applyReview(scenes, corrections, who) {
     applied += 1;
   });
   if (!applied) console.log("[clip-director] " + who + " : aucune correction exploitable.");
-  return scenes;
+  return applied;
 }
 
 async function reviewMontageA11(scenes, lieu, teardown, arcSteps) {
@@ -773,7 +801,14 @@ async function reviewMontageA11(scenes, lieu, teardown, arcSteps) {
       return "  " + i + ". " + s.label + " — " + Number(s.intensity).toFixed(2);
     }).join("\n") + "\n\n"
     : "";
+  // Les corrections d'A11 remplacent scenes[i].visual (applyReview) exactement
+  // comme le fait Sol : sans les memes garde-fous, une correction de montage peut
+  // silencieusement reintroduire ce qu'ils interdisent (Djeff, 23/09/2026 — la
+  // passe qui peut reecrire un plan doit recevoir les memes regles que celle qui
+  // l'a ecrit).
   var prompt = "Tu es A11, responsable du montage. Tu relis un découpage de clip.\n\n"
+    + CONSIGNE_ANTI_FRANCHISE
+    + CONSIGNE_FIDELITE_CHANSON
     + formatPlansForReview(scenes, lieu) + "\n\n" + bornes + arc
     + "Vérifie trois choses, et rien d'autre :\n"
     + "1. l'échelle de chaque plan correspond à l'intensité de sa section "
@@ -786,11 +821,12 @@ async function reviewMontageA11(scenes, lieu, teardown, arcSteps) {
   try {
     var text = await callOpenRouter(MONTAGE_MODEL, [{ role: "user", content: prompt }]);
     var match = text.match(/\{[\s\S]*\}/);
-    if (!match) return scenes;
-    return applyReview(scenes, JSON.parse(match[0]).corrections, "A11 (montage)");
+    if (!match) return logReviewPass(scenes, "A11-montage", "error", { error: "reponse sans JSON" });
+    var applied = applyReview(scenes, JSON.parse(match[0]).corrections, "A11 (montage)");
+    return logReviewPass(scenes, "A11-montage", "ok", { corrections: applied });
   } catch (e) {
     console.warn("[clip-director] A11 montage indisponible:", e.message);
-    return scenes;
+    return logReviewPass(scenes, "A11-montage", "error", { error: e.message });
   }
 }
 
@@ -823,6 +859,8 @@ async function reviewScenarioK44(scenes, lieu, title, lyricsSections, castIds, f
     }).join("\n") + "\n\n"
     : "";
   var prompt = "Tu es K44, garante du scénario et de la clarté pour le public.\n\n"
+    + CONSIGNE_ANTI_FRANCHISE
+    + CONSIGNE_FIDELITE_CHANSON
     + "CHANSON : \"" + (title || "sans titre") + "\"\n\n"
     + formatPlansForReview(scenes, lieu) + "\n\n" + intentions + fiches
     + "Vérifie ces points, et rien d'autre :\n"
@@ -839,11 +877,12 @@ async function reviewScenarioK44(scenes, lieu, title, lyricsSections, castIds, f
   try {
     var text = await callOpenRouter(SCENARIO_MODEL, [{ role: "user", content: prompt }]);
     var match = text.match(/\{[\s\S]*\}/);
-    if (!match) return scenes;
-    return applyReview(scenes, JSON.parse(match[0]).corrections, "K44 (scénario)");
+    if (!match) return logReviewPass(scenes, "K44-scenario", "error", { error: "reponse sans JSON" });
+    var applied = applyReview(scenes, JSON.parse(match[0]).corrections, "K44 (scénario)");
+    return logReviewPass(scenes, "K44-scenario", "ok", { corrections: applied });
   } catch (e) {
     console.warn("[clip-director] K44 scénario indisponible:", e.message);
-    return scenes;
+    return logReviewPass(scenes, "K44-scenario", "error", { error: e.message });
   }
 }
 
@@ -1048,6 +1087,11 @@ async function directClip(config) {
     scenes = await reviewScenarioK44(scenes, lieu, cfg.title || "", lyricsSections, identity.identityIds, identity.description);
     progress("reviews", "Relecture finale par Djeff Engine");
     scenes = await reviewDjeffEngine(scenes, lieu, cfg.title || "", lyrics, mood, cfg.render);
+  } else if (Array.isArray(scenes)) {
+    // cfg.review === false desactivait les trois passes sans que rien en aval ne
+    // puisse le voir : un clip "non relu" et un clip triple-relu rendaient le meme
+    // objet. reviewLog le rend visible desormais (Djeff, 23/09/2026).
+    logReviewPass(scenes, "all", "skipped", { reason: "cfg.review === false" });
   }
 
   return {
@@ -1061,6 +1105,11 @@ async function directClip(config) {
     teardown: teardown,
     mood: mood,
     signature: signature,
+    // Portees aussi par scenes.reviewLog / scenes.beatsMismatch (meme array), mais
+    // exposees ici au premier niveau pour la meme raison que `lieu` deja au-dessus :
+    // un appelant ne devrait pas avoir a fouiller dans les proprietes d'un array.
+    reviewLog: (Array.isArray(scenes) && scenes.reviewLog) || [],
+    beatsMismatch: Boolean(Array.isArray(scenes) && scenes.beatsMismatch),
   };
 }
 
@@ -1155,7 +1204,7 @@ async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood, render) {
       // il ne fera qu'ajouter 45 s d'attente avant le meme abandon.
       if (!text && mode === "cloud") {
         console.log("[clip-director] Djeff Engine non disponible, plans inchangés.");
-        return scenes;
+        return logReviewPass(scenes, "DjeffEngine", "error", { error: "cloud indisponible" });
       }
     }
 
@@ -1190,7 +1239,10 @@ async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood, render) {
       req.end();
     });
 
-    if (!text) { console.log("[clip-director] Djeff Engine non disponible, plans inchangés."); return scenes; }
+    if (!text) {
+      console.log("[clip-director] Djeff Engine non disponible, plans inchangés.");
+      return logReviewPass(scenes, "DjeffEngine", "error", { error: "aucune reponse" });
+    }
 
     // Gourmand a dessein: en non gourmand, un "]" ecrit dans un plan fermait le
     // tableau trop tot et faisait perdre les plans suivants.
@@ -1207,21 +1259,24 @@ async function reviewDjeffEngine(scenes, lieu, title, lyrics, mood, render) {
           }
         }
         console.log("[clip-director] Djeff Engine (" + moteurUtilise + ") — " + changed + " plan(s) corrigé(s) sur " + scenes.length);
-        return scenes;
+        return logReviewPass(scenes, "DjeffEngine", "ok", { corrections: changed, engine: moteurUtilise });
       }
     }
     // Une reponse coupee ne doit pas ressembler a "il n'avait rien a dire".
     var tronquee = text.indexOf("[") >= 0 && text.lastIndexOf("]") < text.indexOf("[");
     console.log("[clip-director] Djeff Engine — réponse " + (tronquee ? "tronquée (budget de jetons trop court)" : "non parsable")
       + ", plans inchangés. " + text.length + " caractères reçus.");
+    return logReviewPass(scenes, "DjeffEngine", "error", { error: tronquee ? "reponse tronquee" : "reponse non parsable" });
   } catch (e) {
     console.warn("[clip-director] Djeff Engine review skip:", e.message);
+    return logReviewPass(scenes, "DjeffEngine", "error", { error: e.message });
   }
-  return scenes;
 }
 
 module.exports = {
   CONSIGNE_ANTI_FRANCHISE,
+  CONSIGNE_FIDELITE_CHANSON,
+  logReviewPass,
   MONTAGE_MODEL,
   SEQUENCE_MODEL,
   DJEFF_ENGINE_CLOUD_MODEL,

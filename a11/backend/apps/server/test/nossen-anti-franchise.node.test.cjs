@@ -35,3 +35,30 @@ test('les deux etapes qui ecrivent des plans recoivent la contrainte', () => {
   assert.ok(source.slice(avantSol, avantSol + 400).includes('CONSIGNE_ANTI_FRANCHISE'), 'Sol');
   assert.ok(source.slice(avantDjeff - 400, avantDjeff).includes('CONSIGNE_ANTI_FRANCHISE'), 'Djeff Engine');
 });
+
+// 23/09/2026 : A11 (montage) et K44 (scenario) peuvent tous deux REECRIRE
+// scenes[i].visual via applyReview, exactement comme Sol et Djeff Engine — mais ne
+// recevaient pas la meme contrainte. Une correction de montage ou de scenario
+// pouvait donc reintroduire silencieusement ce que la consigne existe pour
+// empecher. Memes fonctions dans script-director.cjs (K44 et A11 y sont auteurs
+// primaires, pas relecteurs : sans la consigne des l'ecriture, rien ne les
+// protege dans ce pipeline).
+test('A11-montage et K44-scenario recoivent aussi la contrainte', () => {
+  const source = fs.readFileSync(require.resolve('../src/clips/clip-vivy-director.cjs'), 'utf8');
+  const avantA11 = source.indexOf('Tu es A11, responsable du montage. Tu relis un découpage de clip.');
+  const avantK44 = source.indexOf('Tu es K44, garante du scénario et de la clarté pour le public.');
+  assert.ok(avantA11 >= 0 && avantK44 >= 0, 'les deux prompts existent toujours');
+  assert.ok(source.slice(avantA11, avantA11 + 400).includes('CONSIGNE_ANTI_FRANCHISE'), 'A11 montage');
+  assert.ok(source.slice(avantA11, avantA11 + 400).includes('CONSIGNE_FIDELITE_CHANSON'), 'A11 montage, fidelite');
+  assert.ok(source.slice(avantK44, avantK44 + 400).includes('CONSIGNE_ANTI_FRANCHISE'), 'K44 scenario');
+  assert.ok(source.slice(avantK44, avantK44 + 400).includes('CONSIGNE_FIDELITE_CHANSON'), 'K44 scenario, fidelite');
+});
+
+test('le pipeline script/manga (K44 et A11 auteurs primaires) recoit la contrainte', () => {
+  const source = fs.readFileSync(require.resolve('../src/clips/script-director.cjs'), 'utf8');
+  const avantK44 = source.indexOf('Tu es K44, scénariste et garante de la clarté pour le public.');
+  const avantA11 = source.indexOf('Tu es A11, responsable du montage et de la cohérence.');
+  assert.ok(avantK44 >= 0 && avantA11 >= 0, 'les deux prompts existent toujours');
+  assert.ok(source.slice(avantK44, avantK44 + 200).includes('director.CONSIGNE_ANTI_FRANCHISE'), 'K44 ecrit le scenario');
+  assert.ok(source.slice(avantA11, avantA11 + 200).includes('director.CONSIGNE_ANTI_FRANCHISE'), 'A11 decoupe les plans');
+});

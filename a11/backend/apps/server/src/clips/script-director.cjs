@@ -59,7 +59,14 @@ async function writeGlobalScenarioK44(scriptText, options) {
   var medium = render === "anime" ? "un manga animé (style anime cinématique)" : "un film en prises de vue réelles";
   var sceneCount = clampSceneCount(opts.sceneCount);
 
+  // Le pipeline musique a ete durci contre les titres/decors qui se transforment
+  // en nom de franchise ou en cliche prison/combat (fiasco FIGHTERZ CLUB, rejet
+  // copyright apres paiement). K44 y est ecrivain PRIMAIRE ici, pas relecteur : sans
+  // ces memes consignes des la premiere ecriture, rien ne l'empeche derriere dans
+  // ce pipeline (Djeff, 23/09/2026 — "trop d'incoherence").
   var prompt = "Tu es K44, scénariste et garante de la clarté pour le public.\n\n"
+    + director.CONSIGNE_ANTI_FRANCHISE
+    + director.CONSIGNE_FIDELITE_CHANSON
     + "On veut tirer " + medium + " du matériau ci-dessous. Écris le SCÉNARIO.\n\n"
     + "TITRE : \"" + title + "\"\n\n"
     + "MATÉRIAU (script, synopsis, note d'intention ou idée brute) :\n"
@@ -128,6 +135,8 @@ async function splitScenesA11(scenario, options) {
   }).join("\n");
 
   var prompt = "Tu es A11, responsable du montage et de la cohérence.\n\n"
+    + director.CONSIGNE_ANTI_FRANCHISE
+    + director.CONSIGNE_FIDELITE_CHANSON
     + "Tu transformes un scénario en PLANS filmables. Un plan = une consigne de tournage.\n\n"
     + (scenario.logline ? "LOGLINE : " + scenario.logline + "\n" : "")
     + (scenario.ton ? "TON : " + scenario.ton + "\n" : "")
