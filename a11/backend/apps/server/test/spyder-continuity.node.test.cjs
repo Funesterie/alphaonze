@@ -154,3 +154,120 @@ test('buildToileSvg : liste vide rend un SVG valide, pas une exception', () => {
   const svg = buildToileSvg([]);
   assert.match(svg, /^<svg /);
 });
+
+// 23/09/2026, Djeff : "les personnages sont les meme (couleur de cheveux
+// bijoux, etc), les vehicules aussi ? pas de retro rajoute/enleve" — un
+// verdict global ne pouvait pas attraper ca. Ces tests verifient que Spyder
+// juge chaque entite et qu'une derive d'identite n'est JAMAIS traitee comme
+// une rupture de ton acceptable, meme si le modele repond "rupture_acceptee".
+
+test('judgeContinuity : cheveux de personnage qui changent = rejete, jamais une rupture acceptable', async () => {
+  const out = await judgeContinuity({
+    imageUrl: 'https://example.test/plan-3.png',
+    planIndex: 3,
+    castLabels: ['Djeff'],
+    // Le modele se trompe et propose "rupture_acceptee" : Spyder doit forcer
+    // le rejet quand meme, une identite qui change n'est pas un choix de ton.
+    callStructuredVisionJson: async () => ({
+      personnages: [{ nom: 'Djeff', coherent: false, details: 'cheveux passes de bruns a blonds sans raison' }],
+      vehicules: [],
+      autres_incoherences: [],
+      changement_normal: true,
+      coherent_avec_precedent: true,
+      suite_logique_theme: true,
+      meme_ambiance: true,
+      rupture_acceptable: true,
+      raison_changement: 'Derive du modele de rendu.',
+      suite_possible: 'Regenerer ce plan avec la fiche personnage.',
+      verdict: 'rupture_acceptee',
+      confidence: 0.6,
+    }),
+  });
+  assert.equal(out.verdict.identityIssues, true);
+  assert.equal(out.verdict.verdict, 'rejete', 'une derive d\'identite prime sur ce que dit le modele');
+  assert.equal(out.verdict.rupture_acceptable, null, 'pas applicable des qu il y a une derive d\'identite');
+  assert.equal(out.verdict.personnages[0].coherent, false);
+  assert.match(out.verdict.personnages[0].details, /blonds/);
+});
+
+test('judgeContinuity : retro de vehicule disparu = rejete', async () => {
+  const out = await judgeContinuity({
+    imageUrl: 'https://example.test/plan-4.png',
+    planIndex: 4,
+    vehicleHints: ['Beta 50 kittee 80cc rouge'],
+    callStructuredVisionJson: async ({ payload }) => {
+      assert.deepEqual(payload.vehicules_attendus, ['Beta 50 kittee 80cc rouge']);
+      return {
+        personnages: [],
+        vehicules: [{ nom: 'Beta 50', coherent: false, details: 'retroviseur droit disparu entre les deux plans' }],
+        autres_incoherences: [],
+        changement_normal: true,
+        coherent_avec_precedent: true,
+        suite_logique_theme: true,
+        meme_ambiance: true,
+        rupture_acceptable: null,
+        raison_changement: 'Piece manquante au rendu.',
+        suite_possible: 'Regenerer avec le retroviseur explicite dans le prompt.',
+        verdict: 'coherent',
+        confidence: 0.55,
+      };
+    },
+  });
+  assert.equal(out.verdict.identityIssues, true);
+  assert.equal(out.verdict.verdict, 'rejete');
+  assert.match(out.verdict.vehicules[0].details, /retroviseur/);
+});
+
+test('judgeContinuity : personnages et vehicules coherents n empechent pas une rupture de ton acceptable', async () => {
+  const out = await judgeContinuity({
+    imageUrl: 'https://example.test/plan-6.png',
+    planIndex: 6,
+    callStructuredVisionJson: async () => ({
+      personnages: [{ nom: 'Djeff', coherent: true, details: 'meme coiffure, meme blouson' }],
+      vehicules: [{ nom: 'Beta 50', coherent: true, details: 'meme moto, retroviseurs presents' }],
+      autres_incoherences: [],
+      changement_normal: true,
+      coherent_avec_precedent: true,
+      suite_logique_theme: true,
+      meme_ambiance: false,
+      rupture_acceptable: true,
+      raison_changement: 'Montee d intensite du refrain.',
+      suite_possible: 'Redescendre vers l outro.',
+      verdict: 'rupture_acceptee',
+      confidence: 0.8,
+    }),
+  });
+  assert.equal(out.verdict.identityIssues, false);
+  assert.equal(out.verdict.verdict, 'rupture_acceptee');
+  assert.equal(out.verdict.rupture_acceptable, true);
+});
+
+test('buildSpyderPayload : transmet la fiche personnages/vehicules attendus', () => {
+  const payload = buildSpyderPayload({
+    planIndex: 0,
+    planVisual: 'A shot.',
+    castLabels: ['Djeff', 'Djeff', 'Vivy'],
+    vehicleHints: ['Beta 50 rouge'],
+  });
+  assert.deepEqual(payload.personnages_attendus, ['Djeff', 'Vivy'], 'dedoublonne');
+  assert.deepEqual(payload.vehicules_attendus, ['Beta 50 rouge']);
+});
+
+test('buildToileSvg : l info-bulle nomme l entite en cause, pas juste "rejete"', () => {
+  const entries = [
+    { planIndex: 0, planName: 'Intro' },
+    {
+      planIndex: 1,
+      planName: 'Poursuite',
+      verdict: {
+        verdict: 'rejete',
+        raison_changement: 'derive du rendu',
+        personnages: [],
+        vehicules: [{ nom: 'Beta 50', coherent: false, details: 'retroviseur droit disparu' }],
+        autres_incoherences: [],
+      },
+    },
+  ];
+  const svg = buildToileSvg(entries);
+  assert.match(svg, /retroviseur droit disparu/);
+});
