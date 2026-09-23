@@ -1293,6 +1293,9 @@ services:
       A11_PROFILE_ENV: /app/profiles/kaen44.prod.env.disabled
       KAEN44_PROFILE_ENV: /app/profiles/kaen44.prod.env.disabled
       A11_RUNTIME_ROOT: /app/runtime
+      A11_LOCAL_NEO4J_URI: ${A11_LOCAL_NEO4J_URI:-bolt://a11-neo4j:7687}
+      A11_LOCAL_NEO4J_USER: ${A11_LOCAL_NEO4J_USER:-neo4j}
+      A11_LOCAL_NEO4J_DATABASE: ${A11_LOCAL_NEO4J_DATABASE:-neo4j}
       A11_LLM_PROVIDER: ollama_cloud
       A11_OLLAMA_PRIMARY_MODEL: qwen2.5:32b
       A11_OLLAMA_FALLBACK_MODEL: qwen2.5:7b

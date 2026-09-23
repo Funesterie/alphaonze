@@ -52,6 +52,19 @@ test('prod deploy injects voice module and XTTS/RVC env into both backend servic
   }
 });
 
+test('prod deploy injects the local Neo4j mirror endpoint into both backend services', () => {
+  const script = readDeployScript();
+  const requiredBackendLines = [
+    'A11_LOCAL_NEO4J_URI: ${A11_LOCAL_NEO4J_URI:-bolt://a11-neo4j:7687}',
+    'A11_LOCAL_NEO4J_USER: ${A11_LOCAL_NEO4J_USER:-neo4j}',
+    'A11_LOCAL_NEO4J_DATABASE: ${A11_LOCAL_NEO4J_DATABASE:-neo4j}',
+  ];
+
+  for (const line of requiredBackendLines) {
+    assert.ok(countNeedle(script, line) >= 2, `${line} must be present in both backend services`);
+  }
+});
+
 test('prod deploy loads the merged secret env in both backend services', () => {
   const script = readDeployScript();
 
