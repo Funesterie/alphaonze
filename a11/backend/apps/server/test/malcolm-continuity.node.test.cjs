@@ -4,11 +4,11 @@ const assert = require('node:assert/strict');
 
 const {
   judgeContinuity,
-  normalizeSpyderVerdict,
+  normalizeMalcolmVerdict,
   buildToileSvg,
-  buildSpyderPayload,
+  buildMalcolmPayload,
   ALLOWED_VERDICTS,
-} = require('../src/clips/spyder-continuity.cjs');
+} = require('../src/clips/malcolm-continuity.cjs');
 
 test('judgeContinuity : sans image, on ne fait pas semblant de juger', async () => {
   const out = await judgeContinuity({ planIndex: 0, planVisual: 'A room.' });
@@ -27,7 +27,7 @@ test('judgeContinuity : un plan coherent passe tel quel', async () => {
     lieu: 'atelier',
     callStructuredVisionJson: async ({ imageUrl, systemPrompt }) => {
       assert.equal(imageUrl, 'https://example.test/plan-1.png');
-      assert.match(systemPrompt, /Spyder/);
+      assert.match(systemPrompt, /Malcolm/);
       return {
         changement_normal: true,
         coherent_avec_precedent: true,
@@ -88,10 +88,10 @@ test('judgeContinuity : une derive non voulue est rejetee', async () => {
   assert.equal(out.verdict.rupture_acceptable, false);
 });
 
-test('normalizeSpyderVerdict : rupture_acceptable reste null si rien ne casse', () => {
+test('normalizeMalcolmVerdict : rupture_acceptable reste null si rien ne casse', () => {
   // Un juge qui repond quand meme sur rupture_acceptable alors que tout est
   // coherent : la regle dit d'ignorer ce champ, il n'y a rien a juger.
-  const verdict = normalizeSpyderVerdict({
+  const verdict = normalizeMalcolmVerdict({
     meme_ambiance: true,
     coherent_avec_precedent: true,
     rupture_acceptable: false,
@@ -100,8 +100,8 @@ test('normalizeSpyderVerdict : rupture_acceptable reste null si rien ne casse', 
   assert.equal(verdict.rupture_acceptable, null);
 });
 
-test('normalizeSpyderVerdict : un verdict inconnu retombe sur "uncertain", jamais invente', () => {
-  const verdict = normalizeSpyderVerdict({ verdict: 'nawak' });
+test('normalizeMalcolmVerdict : un verdict inconnu retombe sur "uncertain", jamais invente', () => {
+  const verdict = normalizeMalcolmVerdict({ verdict: 'nawak' });
   assert.equal(verdict.verdict, 'uncertain');
   assert.ok(ALLOWED_VERDICTS.has('coherent'));
 });
@@ -113,14 +113,14 @@ test('judgeContinuity : un echec de l appel vision se journalise, ne casse rien'
   });
   assert.equal(out.ok, false);
   assert.equal(out.skipped, true);
-  assert.equal(out.reason, 'spyder_vision_failed');
+  assert.equal(out.reason, 'malcolm_vision_failed');
   assert.match(out.message, /vision_timeout/);
 });
 
-test('buildSpyderPayload : porte le plan precedent seulement s il existe', () => {
-  const avecPrecedent = buildSpyderPayload({ planIndex: 2, planVisual: 'B', previousPlanVisual: 'A' });
+test('buildMalcolmPayload : porte le plan precedent seulement s il existe', () => {
+  const avecPrecedent = buildMalcolmPayload({ planIndex: 2, planVisual: 'B', previousPlanVisual: 'A' });
   assert.equal(avecPrecedent.plan_precedent_demande, 'A');
-  const sansPrecedent = buildSpyderPayload({ planIndex: 0, planVisual: 'A' });
+  const sansPrecedent = buildMalcolmPayload({ planIndex: 0, planVisual: 'A' });
   assert.equal(sansPrecedent.plan_precedent_demande, null);
 });
 
@@ -157,7 +157,7 @@ test('buildToileSvg : liste vide rend un SVG valide, pas une exception', () => {
 
 // 23/09/2026, Djeff : "les personnages sont les meme (couleur de cheveux
 // bijoux, etc), les vehicules aussi ? pas de retro rajoute/enleve" — un
-// verdict global ne pouvait pas attraper ca. Ces tests verifient que Spyder
+// verdict global ne pouvait pas attraper ca. Ces tests verifient que Malcolm
 // juge chaque entite et qu'une derive d'identite n'est JAMAIS traitee comme
 // une rupture de ton acceptable, meme si le modele repond "rupture_acceptee".
 
@@ -166,7 +166,7 @@ test('judgeContinuity : cheveux de personnage qui changent = rejete, jamais une 
     imageUrl: 'https://example.test/plan-3.png',
     planIndex: 3,
     castLabels: ['Djeff'],
-    // Le modele se trompe et propose "rupture_acceptee" : Spyder doit forcer
+    // Le modele se trompe et propose "rupture_acceptee" : Malcolm doit forcer
     // le rejet quand meme, une identite qui change n'est pas un choix de ton.
     callStructuredVisionJson: async () => ({
       personnages: [{ nom: 'Djeff', coherent: false, details: 'cheveux passes de bruns a blonds sans raison' }],
@@ -242,8 +242,8 @@ test('judgeContinuity : personnages et vehicules coherents n empechent pas une r
   assert.equal(out.verdict.rupture_acceptable, true);
 });
 
-test('buildSpyderPayload : transmet la fiche personnages/vehicules attendus', () => {
-  const payload = buildSpyderPayload({
+test('buildMalcolmPayload : transmet la fiche personnages/vehicules attendus', () => {
+  const payload = buildMalcolmPayload({
     planIndex: 0,
     planVisual: 'A shot.',
     castLabels: ['Djeff', 'Djeff', 'Vivy'],

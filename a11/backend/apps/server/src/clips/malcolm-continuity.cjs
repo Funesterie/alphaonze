@@ -1,27 +1,34 @@
 'use strict';
 /**
- * spyder-continuity.cjs — Spyder, l'observation post-rendu du pipeline clip.
+ * malcolm-continuity.cjs — Malcolm, l'observation post-rendu du pipeline clip.
  *
  * Chantier du 23/09/2026 (Djeff : "trop d'incoherence [...] il faut une
  * araignee au plafond, une spyder telemetrie qui se pose toutes les questions
- * des noeuds de la toile de prod"). L'investigation du pipeline (Phase 1,
- * commit dd8d85a5) a etabli un fait central : AUCUNE passe existante n'evalue
- * jamais le CONTENU reellement genere. reviewMontageA11, reviewScenarioK44 et
- * reviewDjeffEngine jugent tous un texte de plan avant tout rendu ; les seuls
- * rejets post-rendu sont des detections de refus du fournisseur (copyright,
- * audio, auth, paiement), pas un jugement de coherence ou de pertinence.
+ * des noeuds de la toile de prod"). D'abord nomme "Spyder" ; rebaptise
+ * "Malcolm" le meme jour, en reference a Malcolm (Malcolm in the Middle) :
+ * le gamin qui debarque quelque part et enumere tous les defauts qu'il voit
+ * au premier coup d'oeil, sans complaisance — jusqu'a se plaindre de la
+ * peinture qu'il a sur les fesses. C'est exactement ce que fait ce module :
+ * il regarde ce qui vient d'etre rendu et dit ce qui cloche, precisement.
  *
- * Spyder comble exactement ce trou : il regarde l'image REELLEMENT rendue
+ * L'investigation du pipeline (Phase 1, commit dd8d85a5) a etabli un fait
+ * central : AUCUNE passe existante n'evalue jamais le CONTENU reellement
+ * genere. reviewMontageA11, reviewScenarioK44 et reviewDjeffEngine jugent
+ * tous un texte de plan avant tout rendu ; les seuls rejets post-rendu sont
+ * des detections de refus du fournisseur (copyright, audio, auth, paiement),
+ * pas un jugement de coherence ou de pertinence.
+ *
+ * Malcolm comble exactement ce trou : il regarde l'image REELLEMENT rendue
  * d'un plan, la compare au plan precedent et au brief, et repond a une grille
  * fixe de questions (celle demandee par Djeff) plutot qu'un accept/reject
  * binaire. Une rupture de ton peut etre voulue (montee d'intensite, bridge) :
- * Spyder ne rejette jamais une rupture qui sert le morceau, il la nomme.
+ * Malcolm ne rejette jamais une rupture qui sert le morceau, il la nomme.
  *
  * L'appel vision reutilise l'infrastructure deja en prod dans
  * verify-generated-image-with-llm.cjs (callStructuredVisionJudgeJson) :
  * memes fournisseurs (Janus local, Ollama multimodal, OpenAI-compatible
  * distant), meme chargement d'image (URL http(s), data URL, chemin local).
- * Spyder n'a pas besoin de reinventer cette partie, seulement son propre
+ * Malcolm n'a pas besoin de reinventer cette partie, seulement son propre
  * prompt et sa propre grille de sortie.
  *
  * Ce fichier fournit le jugement (judgeContinuity) et la visualisation
@@ -47,14 +54,14 @@ const ALLOWED_VERDICTS = new Set(['coherent', 'rupture_acceptee', 'rejete']);
 // un jugement global "coherent_avec_precedent" laissait passer des derives
 // d'identite precises -- exactement le defaut documente pour
 // clip-generator-v2.cjs (elementRecurrent : une moto qui change de modele
-// entre deux plans faute de continuite i2v). Spyder verifie maintenant
+// entre deux plans faute de continuite i2v). Malcolm verifie maintenant
 // personnages et vehicules ENTITE PAR ENTITE, pas d'un bloc. Une derive
 // d'identite (cheveux, bijoux, piece de vehicule ajoutee/enlevee) n'est
 // JAMAIS une "rupture acceptable" -- contrairement a un changement d'ambiance,
 // qui peut etre voulu (montee d'intensite, bridge). Une identite ne "change
 // de ton" pas : soit c'est le meme personnage/vehicule, soit c'est une erreur
 // de rendu.
-const SPYDER_SYSTEM_PROMPT = `Tu es Spyder : tu observes la toile de production d'un clip NOSSEN, plan par plan.
+const MALCOLM_SYSTEM_PROMPT = `Tu es Malcolm : comme le gamin qui debarque quelque part et enumere aussitot tout ce qui cloche, sans complaisance, tu regardes ce plan et tu dis precisement ce qui ne colle pas. Tu observes la toile de production d'un clip NOSSEN, plan par plan.
 On te montre l'image du plan qui vient d'etre genere. On te donne le plan precedent (texte), le brief du clip, et la fiche des personnages/vehicules attendus s'il y en a.
 
 Reponds UNIQUEMENT en JSON strict :
@@ -103,7 +110,7 @@ function toShortStringList(values, max, perItemMax) {
   return [...new Set(source.map((v) => normalizeText(v, perItemMax)).filter(Boolean))].slice(0, max);
 }
 
-function buildSpyderPayload({
+function buildMalcolmPayload({
   planIndex,
   planName = '',
   planVisual = '',
@@ -123,7 +130,7 @@ function buildSpyderPayload({
     plan_actuel_demande: normalizeText(planVisual, 400),
     plan_precedent_demande: previousPlanVisual ? normalizeText(previousPlanVisual, 400) : null,
     // Personnages attendus dans CE clip (identite canonique, pas seulement ce
-    // qui se voyait dans le plan precedent) : permet a Spyder d'attraper une
+    // qui se voyait dans le plan precedent) : permet a Malcolm d'attraper une
     // derive des le premier plan, pas seulement d'un plan a l'autre.
     personnages_attendus: toShortStringList(castLabels, 6, 120),
     // Vehicules recurrents annonces par le tournage (ex: "Beta 50 kittee 80cc
@@ -145,7 +152,7 @@ function normalizeEntityList(values) {
     .slice(0, 10);
 }
 
-function normalizeSpyderVerdict(rawResult = {}) {
+function normalizeMalcolmVerdict(rawResult = {}) {
   const verdictRaw = normalizeText(rawResult?.verdict, 40).toLowerCase();
   const meme_ambiance = rawResult?.meme_ambiance !== false;
   const coherent_avec_precedent = rawResult?.coherent_avec_precedent !== false;
@@ -189,7 +196,7 @@ function normalizeSpyderVerdict(rawResult = {}) {
  * Juge la continuite d'UN plan genere contre le plan precedent et le brief.
  *
  * `imageUrl` : URL http(s), data URL, ou chemin local vers l'image/la frame
- * du plan reellement rendu (pas le prompt texte : Spyder existe justement
+ * du plan reellement rendu (pas le prompt texte : Malcolm existe justement
  * parce que rien ne regardait le rendu avant lui).
  *
  * `callStructuredVisionJson` est injectable pour les tests, comme le fait deja
@@ -214,27 +221,27 @@ async function judgeContinuity({
     return { ok: false, skipped: true, reason: 'missing_image_url' };
   }
 
-  const payload = buildSpyderPayload({
+  const payload = buildMalcolmPayload({
     planIndex, planName, planVisual, previousPlanVisual, lieu, mood, title, castLabels, vehicleHints,
   });
 
   let rawResult = null;
   try {
     rawResult = typeof callStructuredVisionJson === 'function'
-      ? await callStructuredVisionJson({ imageUrl: normalizedImageUrl, payload, systemPrompt: SPYDER_SYSTEM_PROMPT })
-      : await callStructuredVisionJudgeJson({ imageUrl: normalizedImageUrl, payload, systemPrompt: SPYDER_SYSTEM_PROMPT });
+      ? await callStructuredVisionJson({ imageUrl: normalizedImageUrl, payload, systemPrompt: MALCOLM_SYSTEM_PROMPT })
+      : await callStructuredVisionJudgeJson({ imageUrl: normalizedImageUrl, payload, systemPrompt: MALCOLM_SYSTEM_PROMPT });
   } catch (error) {
-    return { ok: false, skipped: true, reason: 'spyder_vision_failed', message: String(error?.message || error) };
+    return { ok: false, skipped: true, reason: 'malcolm_vision_failed', message: String(error?.message || error) };
   }
 
   if (!rawResult || typeof rawResult !== 'object') {
-    return { ok: false, skipped: true, reason: 'spyder_vision_unavailable' };
+    return { ok: false, skipped: true, reason: 'malcolm_vision_unavailable' };
   }
 
   return {
     ok: true,
     planIndex: Number.isInteger(planIndex) ? planIndex : null,
-    verdict: normalizeSpyderVerdict(rawResult),
+    verdict: normalizeMalcolmVerdict(rawResult),
   };
 }
 
@@ -339,10 +346,10 @@ function buildToileSvg(entries = [], options = {}) {
 }
 
 module.exports = {
-  SPYDER_SYSTEM_PROMPT,
+  MALCOLM_SYSTEM_PROMPT,
   ALLOWED_VERDICTS,
-  buildSpyderPayload,
-  normalizeSpyderVerdict,
+  buildMalcolmPayload,
+  normalizeMalcolmVerdict,
   judgeContinuity,
   buildToileSvg,
   TOILE_COLORS,
