@@ -58,6 +58,13 @@ for f in /home/deploy/a11-prod/bluegreen/active-color /srv/a11/bluegreen/active-
 done
 docker ps --format "{{.Names}}" | grep -E "^a11-backend-(green|blue|yellow|purple)$" | head -1
 '@
+  # fun.ps1 est sauvegarde en CRLF (Windows) : le heredoc ci-dessus porte donc des
+  # \r invisibles dans son contenu. Envoye tel quel au shell distant par ssh, chaque
+  # \r casse le parsing bash (erreur de syntaxe silencieuse, avalee par 2>$null) et
+  # la sortie est vide -- on tombe alors sur "Aucun conteneur en marche" alors que
+  # tout tourne. Meme piege que le transport de secrets deja rencontre : normaliser
+  # en LF avant l'envoi.
+  $script = $script -replace "`r`n", "`n"
   $nom = (& ssh @SshBase $Hote $script 2>$null | Out-String).Trim()
   if (-not $nom) { throw "Aucun conteneur a11-backend-* en marche sur $Hote." }
   return $nom
