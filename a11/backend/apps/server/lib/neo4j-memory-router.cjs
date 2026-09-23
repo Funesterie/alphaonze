@@ -66,7 +66,9 @@ function resolveRouterConfig(env = process.env) {
   const aura = {
     name: 'aura',
     uri: pick(env.KIRO_V2, env.KIRO_V2_URI, env.NEO4J_AURA_URI, env.A11_AURA_NEO4J_URI, envAuraUri),
-    username: pick(env.KIRO_V2_USER, env.NEO4J_AURA_USER, env.A11_AURA_NEO4J_USER, envAuraUri ? env.NEO4J_USERNAME : ''),
+    // NEO4J_USER (pas seulement NEO4J_USERNAME) : c'est la variable reellement
+    // definie en prod (compose.env), la branche locale l'acceptait deja.
+    username: pick(env.KIRO_V2_USER, env.NEO4J_AURA_USER, env.A11_AURA_NEO4J_USER, envAuraUri ? env.NEO4J_USERNAME : '', envAuraUri ? env.NEO4J_USER : ''),
     password: pick(env.KIRO_V2_PASSWORD, env.NEO4J_AURA_PASSWORD, env.A11_AURA_NEO4J_PASSWORD, envAuraUri ? env.NEO4J_PASSWORD : ''),
     database: pick(env.KIRO_V2_DATABASE, env.NEO4J_AURA_DATABASE, env.A11_AURA_NEO4J_DATABASE, envAuraUri ? env.NEO4J_DATABASE : '', DEFAULT_AURA_DATABASE),
     auth: 'basic',

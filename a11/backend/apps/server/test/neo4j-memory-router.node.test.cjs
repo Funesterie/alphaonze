@@ -72,6 +72,26 @@ test('memory router treats global NEO4J_URI as Aura when it points to cloud', ()
   assert.equal(config.local.auth, 'none');
 });
 
+// 23/09/2026 : Malcolm (src/clips/malcolm-checkpoints.cjs) est le PREMIER
+// appelant reel de runWrite() en prod, et il tombe sur "Missing aura
+// username" alors que NEO4J_URI, NEO4J_USER et NEO4J_PASSWORD sont tous les
+// trois definis. Cause : NEO4J_URI en prod pointe vers un hostname Docker
+// ("bolt://a11-neo4j:7687"), qu'isLocalNeo4jUri ne reconnait pas comme local
+// (elle ne matche que 127.0.0.1/localhost/::1) -- l'URI est donc traitee
+// comme "aura", mais la branche aura ne lisait que NEO4J_USERNAME, jamais
+// NEO4J_USER (contrairement a la branche local, qui accepte deja les deux).
+test('memory router accepte NEO4J_USER pour une URI non-loopback traitee comme aura', () => {
+  const config = resolveRouterConfig({
+    NEO4J_URI: 'bolt://a11-neo4j:7687',
+    NEO4J_USER: 'neo4j',
+    NEO4J_PASSWORD: 'prod-secret',
+  });
+
+  assert.equal(config.aura.uri, 'bolt://a11-neo4j:7687');
+  assert.equal(config.aura.username, 'neo4j');
+  assert.equal(config.aura.password, 'prod-secret');
+});
+
 test('memory router keeps a no-auth sync fallback for stale local config', () => {
   const config = resolveRouterConfig({
     A11_LOCAL_NEO4J_URI: 'bolt://127.0.0.1:7687',
