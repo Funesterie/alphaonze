@@ -861,6 +861,9 @@ async function animateMangaClip(config = {}, {
   sleepImpl = sleep,
   nowImpl = Date.now,
   randomBytesImpl = crypto.randomBytes,
+  judgeContinuityImpl = malcolmJudgeContinuity,
+  buildToileSvgImpl = malcolmBuildToileSvg,
+  writeMalcolmCheckpointImpl = malcolmWriteCheckpoint,
 } = {}) {
   const { sourcePng, onProgress } = config;
   // On retrouve le manifeste : <planche>.panels.json à côté du .png public.
@@ -886,6 +889,13 @@ async function animateMangaClip(config = {}, {
 
   const videoPaths = [];
   let dernierEchec = '';
+  // Malcolm : troisieme chemin de rendu, meme grille que la video et le
+  // manga statique (branchement du 23/09/2026, apres le constat qu'un clip
+  // "manga anime" n'avait jamais ete couvert). Une frame extraite par scene,
+  // comme pour la video : le rendu ici EST une video, pas une image fixe.
+  const malcolmLog = [];
+  const malcolmOn = isMalcolmEnabled(process.env);
+  const castLabels = manifest.identityPrompt ? [manifest.identityPrompt] : [];
   emitProgress(onProgress, { stage: 'animate:planned', status: 'generating', progress: 10, totalSegments: panels.length });
   for (let i = 0; i < panels.length; i++) {
     const p = panels[i];
@@ -897,6 +907,56 @@ async function animateMangaClip(config = {}, {
       const dest = path.join(clipDir, `scene_${String(i).padStart(2, '0')}.mp4`);
       emitProgress(onProgress, { stage: 'animate:downloading', status: 'generating', segmentIndex: i });
       await materializeMedia(videoUrl, dest, { kind: 'video' });
+
+      // Un seul nouvel essai si "rejete" -- jamais une boucle, jamais de
+      // blocage de la scene sur son seul avis. Tout echec ici se journalise
+      // et n'interrompt jamais la generation.
+      if (malcolmOn) {
+        try {
+          const framePath = path.join(clipDir, `scene_${String(i).padStart(2, '0')}_malcolm.jpg`);
+          const previousPanel = i > 0 ? panels[i - 1] : null;
+          const judgeThisFrame = (imageUrl) => judgeContinuityImpl({
+            imageUrl,
+            planIndex: i,
+            planName: p.name,
+            planVisual: p.visual,
+            previousPlanVisual: previousPanel ? previousPanel.visual : '',
+            lieu: manifest.lieu || '',
+            mood: '',
+            title: manifest.title || '',
+            castLabels,
+            vehicleHints: Array.isArray(config.vehicleHints) ? config.vehicleHints : [],
+          });
+
+          const frame = extractFrameForMalcolm(execFileSyncImpl, dest, framePath);
+          let jugement = frame ? await judgeThisFrame(frame) : { ok: false, skipped: true, reason: 'malcolm_frame_missing' };
+
+          if (jugement.ok && jugement.verdict.verdict === 'rejete') {
+            const motif = [jugement.verdict.raison_changement, jugement.verdict.suite_possible].filter(Boolean).join(' ');
+            console.warn(`[animate] Malcolm: scène ${i} rejetée (${sanitizeDiagnostic(motif, 160)}), un seul nouvel essai.`);
+            try {
+              const correctedUrl = await animatePanelImpl(`${prompt} ${motif}`.trim(), p.promptId, i, 600_000, { onProgress });
+              await materializeMedia(correctedUrl, dest, { kind: 'video' });
+              const frame2 = extractFrameForMalcolm(execFileSyncImpl, dest, framePath);
+              if (frame2) jugement = await judgeThisFrame(frame2);
+            } catch (retryError) {
+              console.warn(`[animate] Malcolm: nouvel essai de la scène ${i} échoué (${sanitizeDiagnostic(retryError.message, 120)}), premier rendu conservé.`);
+            }
+          }
+
+          malcolmLog.push({
+            planIndex: i,
+            planName: p.name,
+            skipped: !jugement.ok,
+            reason: jugement.ok ? undefined : jugement.reason,
+            verdict: jugement.ok ? jugement.verdict : null,
+          });
+        } catch (error) {
+          console.warn(`[animate] Malcolm indisponible pour la scène ${i}: ${sanitizeDiagnostic(error.message, 120)}`);
+          malcolmLog.push({ planIndex: i, planName: p.name, skipped: true, reason: 'malcolm_error' });
+        }
+      }
+
       videoPaths.push(dest);
       console.log(`[animate] Scène ${i} prête (${videoPaths.length}/${panels.length})`);
       emitProgress(onProgress, {
@@ -917,6 +977,28 @@ async function animateMangaClip(config = {}, {
   const partial = videoPaths.length < panels.length;
   const warning = partial ? `manga_animate_partial: ${videoPaths.length}/${panels.length} scènes` : null;
   emitProgress(onProgress, { stage: 'assembling', status: 'assembling', progress: 92, segments: videoPaths.length, totalSegments: panels.length, ...(warning ? { message: warning } : {}) });
+
+  // La toile de Malcolm, meme principe que les deux autres modes de rendu.
+  let malcolmSummary = null;
+  if (malcolmOn && malcolmLog.length) {
+    try {
+      malcolmSummary = malcolmLog.reduce((acc, entry) => {
+        const key = entry.skipped ? 'skipped' : ((entry.verdict && entry.verdict.verdict) || 'skipped');
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, { coherent: 0, rupture_acceptee: 0, rejete: 0, skipped: 0 });
+      const toileSvg = buildToileSvgImpl(malcolmLog, { title: manifest.title || 'anime' });
+      fs.writeFileSync(path.join(clipDir, 'malcolm-toile.svg'), toileSvg);
+      console.log(`[animate] Malcolm: ${JSON.stringify(malcolmSummary)}`);
+    } catch (error) {
+      console.warn(`[animate] Malcolm: toile non générée (${sanitizeDiagnostic(error.message, 120)})`);
+    }
+    try {
+      await writeMalcolmCheckpointImpl({ clipId, title: manifest.title || 'anime', render: 'manga-anime', malcolmLog, malcolmSummary });
+    } catch (error) {
+      console.warn(`[animate] Malcolm: checkpoint non écrit (${sanitizeDiagnostic(error.message, 120)})`);
+    }
+  }
 
   // Assemblage : concat vidéo, muet (pas d'audio pour un manga animé).
   const baseName = (manifest.title || 'anime').replace(/[^a-zA-Z0-9àâéèêëïîôùûüç -]/gi, '').replace(/\s+/g, '-').slice(0, 40) || 'anime';
@@ -949,6 +1031,7 @@ async function animateMangaClip(config = {}, {
     requestedScenes: panels.length,
     partial,
     warning,
+    malcolm: malcolmSummary,
   };
 }
 
