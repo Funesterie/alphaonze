@@ -19,6 +19,7 @@ const { CLIPS_DIR } = require('./clip-storage.cjs');
 const { materializeClipMedia } = require('./clip-input.cjs');
 const clipCredits = require('./clip-credits.cjs');
 const { judgeContinuity: malcolmJudgeContinuity, buildToileSvg: malcolmBuildToileSvg } = require('./malcolm-continuity.cjs');
+const { writeMalcolmCheckpoint: malcolmWriteCheckpoint } = require('./malcolm-checkpoints.cjs');
 const BRIDGE_URL = 'http://127.0.0.1:3000/api/mcp-bridge/call';
 const BRIDGE_RESPONSE_MAX_BYTES = 1024 * 1024;
 if (!fs.existsSync(CLIPS_DIR)) fs.mkdirSync(CLIPS_DIR, { recursive: true });
@@ -971,6 +972,7 @@ async function generateClip(config = {}, {
   materializeMedia = materializeClipMedia,
   loadDirectorImpl = loadClipDirector,
   generateVideoImpl = generateOneVideo,
+  generateOnePanelImpl = generateOnePanel,
   resolveVideoModelsImpl = resolveVideoModels,
   lireSoldeImpl = null,
   execFileSyncImpl = execFileSync,
@@ -979,6 +981,7 @@ async function generateClip(config = {}, {
   randomBytesImpl = crypto.randomBytes,
   judgeContinuityImpl = malcolmJudgeContinuity,
   buildToileSvgImpl = malcolmBuildToileSvg,
+  writeMalcolmCheckpointImpl = malcolmWriteCheckpoint,
 } = {}) {
   let { songUrl, title, sections, style = '', fullDuration, onProgress, casting = '', castArtists = [], render = '', identiteCompte = null } = config;
   // Mode script (16/09/2026) : au lieu d'un MP3, on soumet un SCRIPT. K44 écrit
@@ -1136,6 +1139,13 @@ async function generateClip(config = {}, {
     // ce qui permet d'ANIMER le manga plus tard (manga → animé) en i2v Seedance.
     const panelsMeta = [];
     let dernierEchecPanel = '';
+    // Malcolm : meme grille que la video (branchement du 23/09/2026), sur la
+    // planche directement -- pas d'extraction de frame necessaire, la planche
+    // EST l'image jugee. Les questions d'identite (personnages, vehicules)
+    // comptent au moins autant ici : c'est en manga que l'age et la tenue d'un
+    // personnage derivent case a case (voir le commentaire manga plus haut).
+    const malcolmLog = [];
+    const malcolmOn = isMalcolmEnabled(process.env);
     for (let i = 0; i < numSegments; i++) {
       const section = sections[i % sections.length];
       const prompt = effacerNomsFilm(
@@ -1143,13 +1153,61 @@ async function generateClip(config = {}, {
         identity.nomsFilm,
       );
       try {
-        const panelRes = await generateOnePanel(prompt, i, 300_000, identity, { onProgress });
+        const panelRes = await generateOnePanelImpl(prompt, i, 300_000, identity, { onProgress });
         // Rétrocompat : ancien format = URL string, nouveau = { url, promptId }.
-        const panelUrl = typeof panelRes === 'string' ? panelRes : panelRes.url;
-        const panelPromptId = typeof panelRes === 'string' ? null : panelRes.promptId;
+        let panelUrl = typeof panelRes === 'string' ? panelRes : panelRes.url;
+        let panelPromptId = typeof panelRes === 'string' ? null : panelRes.promptId;
         const dest = path.join(clipDir, `panel_${String(i).padStart(2, '0')}.png`);
         emitProgress(onProgress, { stage: 'panel:downloading', status: 'generating', segmentIndex: i });
         await materializeMedia(panelUrl, dest, { kind: 'image' });
+
+        // Un seul nouvel essai si "rejete" (identite ou derive non voulue) --
+        // jamais une boucle, jamais un blocage de la planche sur son seul avis.
+        // Tout echec ici se journalise et n'interrompt jamais la generation.
+        if (malcolmOn) {
+          try {
+            const previousSection = i > 0 ? sections[(i - 1) % sections.length] : null;
+            const judgeThisPanel = () => judgeContinuityImpl({
+              imageUrl: dest,
+              planIndex: i,
+              planName: section.name,
+              planVisual: section.visual,
+              previousPlanVisual: previousSection ? previousSection.visual : '',
+              lieu,
+              mood: (directed && directed.mood) || '',
+              title,
+              castLabels: identity.castLabels || [],
+              vehicleHints: Array.isArray(config.vehicleHints) ? config.vehicleHints : [],
+            });
+            let jugement = await judgeThisPanel();
+
+            if (jugement.ok && jugement.verdict.verdict === 'rejete') {
+              const motif = [jugement.verdict.raison_changement, jugement.verdict.suite_possible].filter(Boolean).join(' ');
+              console.warn(`[manga] Malcolm: planche ${i} rejetée (${sanitizeDiagnostic(motif, 160)}), un seul nouvel essai.`);
+              try {
+                const correctedRes = await generateOnePanelImpl(`${prompt} ${motif}`.trim(), i, 300_000, identity, { onProgress });
+                const correctedUrl = typeof correctedRes === 'string' ? correctedRes : correctedRes.url;
+                await materializeMedia(correctedUrl, dest, { kind: 'image' });
+                panelUrl = correctedUrl;
+                panelPromptId = typeof correctedRes === 'string' ? null : correctedRes.promptId;
+                jugement = await judgeThisPanel();
+              } catch (retryError) {
+                console.warn(`[manga] Malcolm: nouvel essai de la planche ${i} échoué (${sanitizeDiagnostic(retryError.message, 120)}), premier rendu conservé.`);
+              }
+            }
+
+            malcolmLog.push({
+              planIndex: i,
+              planName: section.name,
+              skipped: !jugement.ok,
+              reason: jugement.ok ? undefined : jugement.reason,
+              verdict: jugement.ok ? jugement.verdict : null,
+            });
+          } catch (error) {
+            console.warn(`[manga] Malcolm indisponible pour la planche ${i}: ${sanitizeDiagnostic(error.message, 120)}`);
+            malcolmLog.push({ planIndex: i, planName: section.name, skipped: true, reason: 'malcolm_error' });
+          }
+        }
         // La bulle est ECRITE par nous, pas dessinee par le modele : son texte
         // est celui de K44, donc juste, en francais et sans faute (20/09/2026).
         // Les bulles alternent de cote pour ne pas masquer toujours le meme coin.
@@ -1207,6 +1265,33 @@ async function generateClip(config = {}, {
     const warning = partial ? `manga_partial: ${panelPaths.length}/${numSegments} planches` : null;
     emitProgress(onProgress, { stage: 'assembling', status: 'assembling', progress: 92, segments: panelPaths.length, totalSegments: numSegments, ...(warning ? { message: warning } : {}) });
 
+    // La toile de Malcolm, meme principe que le mode video (voir plus bas).
+    let malcolmSummary = null;
+    if (malcolmOn && malcolmLog.length) {
+      try {
+        malcolmSummary = malcolmLog.reduce((acc, entry) => {
+          const key = entry.skipped ? 'skipped' : ((entry.verdict && entry.verdict.verdict) || 'skipped');
+          acc[key] = (acc[key] || 0) + 1;
+          return acc;
+        }, { coherent: 0, rupture_acceptee: 0, rejete: 0, skipped: 0 });
+        const toileSvg = buildToileSvgImpl(malcolmLog, { title });
+        fs.writeFileSync(path.join(clipDir, 'malcolm-toile.svg'), toileSvg);
+        console.log(`[manga] Malcolm: ${JSON.stringify(malcolmSummary)}`);
+      } catch (error) {
+        console.warn(`[manga] Malcolm: toile non générée (${sanitizeDiagnostic(error.message, 120)})`);
+      }
+      // Conseils de terrain (23/09/2026) : les verdicts problematiques
+      // (rejete, rupture_acceptee) partent en checkpoint Neo4j -- best-effort
+      // par construction (voir malcolm-checkpoints.cjs), et enveloppe ici en
+      // plus, comme le jugement Malcolm lui-meme : ne casse jamais la
+      // planche-contact, quoi que fasse l'implementation injectee.
+      try {
+        await writeMalcolmCheckpointImpl({ clipId, title, render: 'manga', malcolmLog, malcolmSummary });
+      } catch (error) {
+        console.warn(`[manga] Malcolm: checkpoint non écrit (${sanitizeDiagnostic(error.message, 120)})`);
+      }
+    }
+
     // Assemblage : une planche verticale (style webtoon) qui empile les cases.
     // FFmpeg vstack met les images bout à bout ; largeur uniforme d'abord.
     const safeName = (title || 'manga').replace(/[^a-zA-Z0-9àâéèêëïîôùûüç -]/gi, '').replace(/\s+/g, '-').slice(0, 40) || 'manga';
@@ -1255,6 +1340,7 @@ async function generateClip(config = {}, {
       panelPromptIds: panelsMeta.map((p) => p.promptId).filter(Boolean),
       partial,
       warning,
+      malcolm: malcolmSummary,
     };
   }
 
@@ -1485,6 +1571,16 @@ async function generateClip(config = {}, {
       console.log(`[clip] Malcolm: ${JSON.stringify(malcolmSummary)}`);
     } catch (error) {
       console.warn(`[clip] Malcolm: toile non générée (${sanitizeDiagnostic(error.message, 120)})`);
+    }
+    // Conseils de terrain (23/09/2026) : les verdicts problematiques (rejete,
+    // rupture_acceptee) partent en checkpoint Neo4j -- best-effort par
+    // construction (voir malcolm-checkpoints.cjs), et enveloppe ici en plus,
+    // comme le jugement Malcolm lui-meme : ne casse jamais le clip, quoi que
+    // fasse l'implementation injectee.
+    try {
+      await writeMalcolmCheckpointImpl({ clipId, title, render: render || 'video', malcolmLog, malcolmSummary });
+    } catch (error) {
+      console.warn(`[clip] Malcolm: checkpoint non écrit (${sanitizeDiagnostic(error.message, 120)})`);
     }
   }
 

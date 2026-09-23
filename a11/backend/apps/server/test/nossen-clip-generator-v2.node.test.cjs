@@ -463,3 +463,166 @@ test('une panne Malcolm (extraction, vision indisponible) se journalise sans jam
   assert.equal(result.segments, 2);
   assert.deepEqual(result.malcolm, { coherent: 0, rupture_acceptee: 0, rejete: 0, skipped: 2 });
 });
+
+// Malcolm en mode manga (23/09/2026, même demande : "fais pareil pour le mode
+// manga"). Une planche EST l'image jugée, pas de frame à extraire : la fiche
+// d'identité (personnages, vêtements, âge) dérive au moins autant case à case
+// qu'un clip vidéo — voir le commentaire manga plus haut dans le fichier.
+function malcolmMangaDeps(overrides = {}) {
+  return {
+    materializeMedia: async (_value, destination) => {
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      fs.writeFileSync(destination, 'media');
+    },
+    loadDirectorImpl: () => ({ directClip: async () => ({ scenes: [{ name: 'Case', visual: 'A precise manga panel' }] }) }),
+    generateOnePanelImpl: async () => 'https://cloud.comfy.org/panel.png',
+    execFileSyncImpl: (command, args) => {
+      // 14 s = 2 planches de 7 s, même découpage que le mode vidéo.
+      if (command === 'ffprobe') return Buffer.from(args.includes('stream=codec_type') ? 'video\n' : '14.0\n');
+      fs.writeFileSync(args.at(-1), 'assembled');
+      return Buffer.alloc(0);
+    },
+    ...overrides,
+  };
+}
+
+test('Malcolm juge chaque planche manga réellement rendue et écrit sa toile', async () => {
+  const judged = [];
+  const deps = malcolmMangaDeps({
+    judgeContinuityImpl: async (payload) => {
+      judged.push(payload);
+      return { ok: true, planIndex: payload.planIndex, verdict: { verdict: 'coherent' } };
+    },
+    buildToileSvgImpl: (entries) => `<svg data-entries="${entries.length}"></svg>`,
+    nowImpl: () => 700003,
+    randomBytesImpl: () => Buffer.from('55667788', 'hex'),
+  });
+  const result = await generateClip({ title: 'Malcolm manga cohérent', songUrl: '/audio.mp3', render: 'manga' }, deps);
+  assert.equal(result.kind, 'manga');
+  assert.equal(result.panels, 2);
+  assert.equal(judged.length, 2, 'un jugement par planche réellement téléchargée');
+  assert.deepEqual(result.malcolm, { coherent: 2, rupture_acceptee: 0, rejete: 0, skipped: 0 });
+
+  const clipDir = path.join(process.env.NOSSEN_CLIPS_DIR, 'clip-700003-55667788');
+  const toile = fs.readFileSync(path.join(clipDir, 'malcolm-toile.svg'), 'utf8');
+  assert.match(toile, /data-entries="2"/);
+});
+
+test('Malcolm rejette une planche manga, un seul nouvel essai, puis le journal garde le verdict final', async () => {
+  const panelCallsByIndex = new Map();
+  const judgeCallsByIndex = new Map();
+  const deps = malcolmMangaDeps({
+    generateOnePanelImpl: async (_prompt, index) => {
+      panelCallsByIndex.set(index, (panelCallsByIndex.get(index) || 0) + 1);
+      return { url: 'https://cloud.comfy.org/panel.png', promptId: `p-${index}-${panelCallsByIndex.get(index)}` };
+    },
+    judgeContinuityImpl: async (payload) => {
+      const n = (judgeCallsByIndex.get(payload.planIndex) || 0) + 1;
+      judgeCallsByIndex.set(payload.planIndex, n);
+      if (payload.planIndex === 0 && n === 1) {
+        return { ok: true, planIndex: 0, verdict: { verdict: 'rejete', raison_changement: 'la tenue a changé', suite_possible: 'garder la même tenue' } };
+      }
+      return { ok: true, planIndex: payload.planIndex, verdict: { verdict: 'coherent' } };
+    },
+  });
+  const result = await generateClip({ title: 'Malcolm manga rejeté puis corrigé', songUrl: '/audio.mp3', render: 'manga' }, deps);
+  assert.equal(panelCallsByIndex.get(0), 2, 'la planche rejetée est resoumise une seule fois');
+  assert.equal(panelCallsByIndex.get(1), 1, 'une planche cohérente ne déclenche aucune resoumission');
+  assert.equal(judgeCallsByIndex.get(0), 2, 'la planche corrigée est rejugée après le nouvel essai');
+  assert.deepEqual(result.malcolm, { coherent: 2, rupture_acceptee: 0, rejete: 0, skipped: 0 });
+  // Le prompt_id de la planche corrigée doit remplacer celui du premier essai (réutilisé pour animer plus tard).
+  assert.match(result.panelPromptIds[0], /p-0-2/);
+});
+
+test('Malcolm désactivé ne juge aucune planche manga et n\'écrit pas de toile', async () => {
+  let judgeCalled = false;
+  const previous = process.env.NOSSEN_MALCOLM_ENABLED;
+  process.env.NOSSEN_MALCOLM_ENABLED = 'false';
+  try {
+    const deps = malcolmMangaDeps({
+      judgeContinuityImpl: async () => { judgeCalled = true; return { ok: true, verdict: { verdict: 'coherent' } }; },
+      nowImpl: () => 700004,
+      randomBytesImpl: () => Buffer.from('99aabbcc', 'hex'),
+    });
+    const result = await generateClip({ title: 'Malcolm manga désactivé', songUrl: '/audio.mp3', render: 'manga' }, deps);
+    assert.equal(judgeCalled, false);
+    assert.equal(result.malcolm, null);
+    const clipDir = path.join(process.env.NOSSEN_CLIPS_DIR, 'clip-700004-99aabbcc');
+    assert.equal(fs.existsSync(path.join(clipDir, 'malcolm-toile.svg')), false);
+  } finally {
+    if (previous === undefined) delete process.env.NOSSEN_MALCOLM_ENABLED;
+    else process.env.NOSSEN_MALCOLM_ENABLED = previous;
+  }
+});
+
+test('une panne Malcolm en mode manga se journalise sans jamais casser la planche-contact', async () => {
+  const deps = malcolmMangaDeps({
+    judgeContinuityImpl: async () => { throw new Error('malcolm_vision_unavailable'); },
+  });
+  const result = await generateClip({ title: 'Malcolm manga en panne', songUrl: '/audio.mp3', render: 'manga' }, deps);
+  assert.equal(result.ok, true, 'une panne de Malcolm ne doit jamais faire échouer le manga');
+  assert.equal(result.panels, 2);
+  assert.deepEqual(result.malcolm, { coherent: 0, rupture_acceptee: 0, rejete: 0, skipped: 2 });
+});
+
+// Conseils de terrain (23/09/2026, Djeff : "ajoute les logs pour évaluation
+// checkpoint dans neo4j genre conseil de terrain"). Ces tests vérifient
+// seulement le BRANCHEMENT (bon clipId/title/render/log transmis, jamais
+// bloquant) — la construction des notes elle-même est couverte par
+// malcolm-checkpoints.node.test.cjs.
+test('le clip vidéo transmet le bon checkpoint à writeMalcolmCheckpointImpl', async () => {
+  const calls = [];
+  const deps = malcolmClipDeps({
+    judgeContinuityImpl: async (payload) => ({ ok: true, planIndex: payload.planIndex, verdict: { verdict: 'coherent' } }),
+    writeMalcolmCheckpointImpl: async (checkpoint) => { calls.push(checkpoint); },
+  });
+  await generateClip({ title: 'Checkpoint vidéo', songUrl: '/audio.mp3' }, deps);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].title, 'Checkpoint vidéo');
+  assert.equal(calls[0].render, 'video');
+  assert.ok(calls[0].clipId.startsWith('clip-'));
+  assert.equal(calls[0].malcolmLog.length, 2);
+  assert.deepEqual(calls[0].malcolmSummary, { coherent: 2, rupture_acceptee: 0, rejete: 0, skipped: 0 });
+});
+
+test('le manga transmet render:"manga" à writeMalcolmCheckpointImpl', async () => {
+  const calls = [];
+  const deps = malcolmMangaDeps({
+    judgeContinuityImpl: async (payload) => ({ ok: true, planIndex: payload.planIndex, verdict: { verdict: 'coherent' } }),
+    writeMalcolmCheckpointImpl: async (checkpoint) => { calls.push(checkpoint); },
+  });
+  await generateClip({ title: 'Checkpoint manga', songUrl: '/audio.mp3', render: 'manga' }, deps);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].render, 'manga');
+  assert.equal(calls[0].malcolmLog.length, 2);
+});
+
+test('un writeMalcolmCheckpointImpl qui rejette ne casse ni le clip ni le manga', async () => {
+  const throwing = async () => { throw new Error('neo4j hors ligne'); };
+
+  const videoResult = await generateClip({ title: 'Checkpoint KO vidéo', songUrl: '/audio.mp3' }, malcolmClipDeps({
+    judgeContinuityImpl: async () => ({ ok: true, verdict: { verdict: 'coherent' } }),
+    writeMalcolmCheckpointImpl: throwing,
+  }));
+  assert.equal(videoResult.ok, true);
+
+  const mangaResult = await generateClip({ title: 'Checkpoint KO manga', songUrl: '/audio.mp3', render: 'manga' }, malcolmMangaDeps({
+    judgeContinuityImpl: async () => ({ ok: true, verdict: { verdict: 'coherent' } }),
+    writeMalcolmCheckpointImpl: throwing,
+  }));
+  assert.equal(mangaResult.ok, true);
+});
+
+test('Malcolm désactivé n\'appelle jamais writeMalcolmCheckpointImpl', async () => {
+  let called = false;
+  const previous = process.env.NOSSEN_MALCOLM_ENABLED;
+  process.env.NOSSEN_MALCOLM_ENABLED = 'false';
+  try {
+    const deps = malcolmClipDeps({ writeMalcolmCheckpointImpl: async () => { called = true; } });
+    await generateClip({ title: 'Pas de checkpoint', songUrl: '/audio.mp3' }, deps);
+    assert.equal(called, false);
+  } finally {
+    if (previous === undefined) delete process.env.NOSSEN_MALCOLM_ENABLED;
+    else process.env.NOSSEN_MALCOLM_ENABLED = previous;
+  }
+});
