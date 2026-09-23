@@ -6,6 +6,7 @@ const test = require('node:test');
 const {
   CATEGORY_BY_VERDICT,
   buildCheckpointNotes,
+  resolveMalcolmNeo4jConfig,
   writeMalcolmCheckpoint,
 } = require('../src/clips/malcolm-checkpoints.cjs');
 
@@ -88,6 +89,30 @@ test('une rupture acceptée sans entité en cause devient une note "à améliore
 
 test('CATEGORY_BY_VERDICT ne couvre que les deux verdicts problématiques', () => {
   assert.deepEqual(CATEGORY_BY_VERDICT, { rejete: 'a_eviter', rupture_acceptee: 'a_ameliorer' });
+});
+
+// 23/09/2026 : premier vrai smoke test en prod, tombé sur "Graph not found:
+// aa4680d2" — resolveRouterConfig() traite un NEO4J_URI non-loopback (le cas
+// réel en prod, bolt://a11-neo4j:7687, un Neo4j auto-hébergé) comme "aura" et
+// retombe sur un ID d'instance Aura morte comme nom de base par défaut.
+test('resolveMalcolmNeo4jConfig force la base "neo4j" plutôt que la vieille instance Aura morte', () => {
+  const config = resolveMalcolmNeo4jConfig({
+    NEO4J_URI: 'bolt://a11-neo4j:7687',
+    NEO4J_USER: 'neo4j',
+    NEO4J_PASSWORD: 'prod-secret',
+  });
+  assert.equal(config.aura.database, 'neo4j');
+  assert.notEqual(config.aura.database, 'aa4680d2');
+});
+
+test('resolveMalcolmNeo4jConfig respecte NEO4J_DATABASE quand il est fourni explicitement', () => {
+  const config = resolveMalcolmNeo4jConfig({
+    NEO4J_URI: 'neo4j+s://real-instance.databases.neo4j.io',
+    NEO4J_USER: 'user',
+    NEO4J_PASSWORD: 'pass',
+    NEO4J_DATABASE: 'ma-vraie-base',
+  });
+  assert.equal(config.aura.database, 'ma-vraie-base');
 });
 
 test('writeMalcolmCheckpoint écrit un checkpoint et ses notes via runWriteImpl', async () => {

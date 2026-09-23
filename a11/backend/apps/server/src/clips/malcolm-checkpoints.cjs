@@ -25,7 +25,7 @@
  * d'un clip a cause d'un Aura ou d'un local injoignable.
  */
 
-const { Neo4jMemoryRouter, sanitizePropertyMap, hashText } = require('../../lib/neo4j-memory-router.cjs');
+const { Neo4jMemoryRouter, resolveRouterConfig, sanitizePropertyMap, hashText } = require('../../lib/neo4j-memory-router.cjs');
 
 const CATEGORY_BY_VERDICT = {
   rejete: 'a_eviter',
@@ -95,6 +95,20 @@ function withTimeout(promise, timeoutMs) {
 }
 
 /**
+ * resolveRouterConfig() retombe sur DEFAULT_AURA_DATABASE ("aa4680d2") des
+ * qu'un NEO4J_URI ne matche pas un hostname loopback -- exactement le cas de
+ * bolt://a11-neo4j:7687 en prod, un Neo4j auto-heberge, pas une instance Aura
+ * cloud. Or aa4680d2 est une ancienne instance Aura morte (voir CLAUDE.md,
+ * preflight), pas une base de ce serveur-la. Sans NEO4J_DATABASE explicite,
+ * on force donc le nom par defaut de Neo4j Community Edition ("neo4j")
+ * plutot que ce nom d'instance etranger. Un NEO4J_DATABASE explicite (vraie
+ * Aura, ou tout autre nom voulu) n'est jamais ecrase.
+ */
+function resolveMalcolmNeo4jConfig(env = process.env) {
+  return resolveRouterConfig({ ...env, NEO4J_DATABASE: env.NEO4J_DATABASE || 'neo4j' });
+}
+
+/**
  * Ecrit un checkpoint Neo4j pour le clip : un noeud MalcolmCheckpoint qui
  * resume le passage (compte par verdict), relie a une note par plan
  * problematique. Best-effort total : ne leve JAMAIS, retourne {ok:false} en
@@ -118,7 +132,7 @@ async function writeMalcolmCheckpoint({
     const checkpointId = `malcolm-checkpoint:${clipId || hashText(title + now)}`;
 
     const run = runWriteImpl || (async (cypher, params) => {
-      const router = new Neo4jMemoryRouter();
+      const router = new Neo4jMemoryRouter(resolveMalcolmNeo4jConfig(env));
       return router.runWrite(cypher, params);
     });
 
@@ -163,5 +177,6 @@ async function writeMalcolmCheckpoint({
 module.exports = {
   CATEGORY_BY_VERDICT,
   buildCheckpointNotes,
+  resolveMalcolmNeo4jConfig,
   writeMalcolmCheckpoint,
 };
