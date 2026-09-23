@@ -1109,21 +1109,42 @@ function createAuthRouter({
     throw lastError;
   }
 
-  async function mergeSessionOAuthConnector(req, provider, options = {}) {
+  function mergeSessionOAuthConnector(currentClaims, provider, options = {}) {
     let existingConnectors = {};
-    try {
-      const currentClaims = await decodeRequestAuthClaims(req);
-      existingConnectors = currentClaims?.oauthConnectors || currentClaims?.oauth_connectors || {};
-      existingConnectors = mergeOAuthConnectorState(existingConnectors, currentClaims?.provider, {
-        account: currentClaims?.email || currentClaims?.username,
-        oauthScopes: currentClaims?.oauthScopes,
-        oauthScopeProfile: currentClaims?.oauthScopeProfile,
-        connectedAt: currentClaims?.iat ? new Date(Number(currentClaims.iat) * 1000).toISOString() : undefined,
+    if (currentClaims) {
+      existingConnectors = currentClaims.oauthConnectors || currentClaims.oauth_connectors || {};
+      existingConnectors = mergeOAuthConnectorState(existingConnectors, currentClaims.provider, {
+        account: currentClaims.email || currentClaims.username,
+        oauthScopes: currentClaims.oauthScopes,
+        oauthScopeProfile: currentClaims.oauthScopeProfile,
+        connectedAt: currentClaims.iat ? new Date(Number(currentClaims.iat) * 1000).toISOString() : undefined,
       });
-    } catch {
-      existingConnectors = {};
     }
     return mergeOAuthConnectorState(existingConnectors, provider, options);
+  }
+
+  // Session deja valide sur la requete (cookie/Authorization) : renvoie ses claims,
+  // ou null si absente/invalide. Sert a distinguer un login d un ajout de connecteur.
+  async function decodeCurrentSessionClaims(req) {
+    try {
+      return await decodeRequestAuthClaims(req);
+    } catch {
+      return null;
+    }
+  }
+
+  // Relit la ligne users de la session en cours (par id), pour garder cette identite
+  // quand un callback OAuth arrive alors qu on est deja connecte : ajouter Google ou
+  // Microsoft comme connecteur ne doit jamais faire basculer la session sur le compte
+  // (potentiellement autre) associe a l email du fournisseur qu on vient d utiliser.
+  async function findUserById(id) {
+    if (!db || !id) return null;
+    const result = await db.query(
+      'SELECT id, username, email, role, subscription_active, subscription_end_date FROM users WHERE id=$1 LIMIT 1',
+      [id]
+    );
+    if (!result.rows[0]) return null;
+    return activateFullAccessUser(db, result.rows[0]);
   }
 
   async function findOrCreateGoogleUser(profile) {
@@ -1786,17 +1807,19 @@ function createAuthRouter({
         provider: 'google',
       };
 
-      const user = db
+      const currentClaims = await decodeCurrentSessionClaims(req);
+      const linkedUser = currentClaims?.id ? await findUserById(currentClaims.id) : null;
+      const user = linkedUser || (db
         ? await findOrCreateGoogleUser(profile)
         : {
             id: `google-${stableHash(profile?.sub || email, 16)}`,
             username: normalizeUsernameCandidate(profile?.name || email.split('@')[0], 'google-user'),
             email,
             provider: 'google',
-          };
+          });
 
       const bridgeOrigin = resolveOAuthBridgeOrigin(frontendUrl, statePayload?.returnTo || '/auth/success');
-      const oauthConnectors = await mergeSessionOAuthConnector(req, 'google', {
+      const oauthConnectors = mergeSessionOAuthConnector(currentClaims, 'google', {
         account: email,
         oauthScopeProfile: statePayload?.oauthScopeProfile,
         oauthScopes: tokens?.scope || statePayload?.oauthScopes,
@@ -1992,17 +2015,19 @@ function createAuthRouter({
         return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, 'microsoft_email_missing'));
       }
 
-      const user = db
+      const currentClaims = await decodeCurrentSessionClaims(req);
+      const linkedUser = currentClaims?.id ? await findUserById(currentClaims.id) : null;
+      const user = linkedUser || (db
         ? await findOrCreateMicrosoftUser(profile)
         : {
             id: `microsoft-${stableHash(profile?.id || email, 16)}`,
             username: normalizeUsernameCandidate(profile?.displayName || email.split('@')[0], 'microsoft-user'),
             email,
             provider: 'microsoft',
-          };
+          });
 
       const bridgeOrigin = resolveOAuthBridgeOrigin(frontendUrl, statePayload?.returnTo || '/auth/success');
-      const oauthConnectors = await mergeSessionOAuthConnector(req, 'microsoft', {
+      const oauthConnectors = mergeSessionOAuthConnector(currentClaims, 'microsoft', {
         account: email,
         oauthScopeProfile: statePayload?.oauthScopeProfile,
         oauthScopes: tokens?.scope || statePayload?.oauthScopes,
