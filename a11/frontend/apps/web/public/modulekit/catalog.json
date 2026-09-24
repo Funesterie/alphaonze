@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "version": "0.11.0",
-  "releaseStatus": "preview",
-  "checkoutEnabled": false,
+  "releaseStatus": "ready",
+  "checkoutEnabled": true,
   "offers": [
     {
       "id": "complete",
@@ -58,7 +58,7 @@
       },
       "saleScope": "b2b-france-only",
       "paymentLink": "https://buy.stripe.com/4gMeVdbuG5Q4d7R5ec7Re0a",
-      "checkoutEnabled": false
+      "checkoutEnabled": true
     }
   ],
   "modules": [
