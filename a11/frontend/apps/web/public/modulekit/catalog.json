@@ -1,0 +1,316 @@
+{
+  "schemaVersion": 1,
+  "version": "0.11.0",
+  "releaseStatus": "preview",
+  "checkoutEnabled": false,
+  "offers": [
+    {
+      "id": "complete",
+      "moduleIds": [
+        "logic-reduce",
+        "zen",
+        "full-mcp",
+        "allmight",
+        "bat",
+        "bat-system",
+        "beam",
+        "cf",
+        "dragon",
+        "dragon-contracts",
+        "dragon-upstream",
+        "envapt-superimg",
+        "envaptex",
+        "freeland",
+        "freeland-bros",
+        "hetzner",
+        "katana",
+        "knowledge-modules",
+        "mcp-agent-bus",
+        "mcp-chopper-mixer",
+        "mcp-cloud-assets",
+        "mcp-job-queue",
+        "mcp-media-bridge",
+        "mcp-memory-graph",
+        "mcp-public-endpoints",
+        "mcp-qflush-control",
+        "mcp-retro-session",
+        "mcp-security-preflight",
+        "mcp-tool-manifest",
+        "mcp-toolkit",
+        "mcp-web-drafts",
+        "mcp-worker-supervisor",
+        "morphing",
+        "nezlephant",
+        "qflush",
+        "qflush-runner",
+        "rome",
+        "scentgate",
+        "scream",
+        "spyder",
+        "zen-gate"
+      ],
+      "price": {
+        "amountMinor": 9900,
+        "currency": "EUR",
+        "billing": "one-time",
+        "taxDisplay": "vat-exempt-franchise-en-base",
+        "status": "launch-target"
+      },
+      "saleScope": "b2b-france-only",
+      "paymentLink": "https://buy.stripe.com/4gMeVdbuG5Q4d7R5ec7Re0a",
+      "checkoutEnabled": false
+    }
+  ],
+  "modules": [
+    {
+      "id": "logic-reduce",
+      "name": "Plans et procédures",
+      "description": "Réduit une procédure en conservant ses contrôles essentiels.",
+      "activation": "local"
+    },
+    {
+      "id": "zen",
+      "name": "Archives chiffrées",
+      "description": "Chiffre et déchiffre des textes avec une clé propre à votre installation.",
+      "activation": "local"
+    },
+    {
+      "id": "full-mcp",
+      "name": "Suite MCP complète",
+      "description": "Outils locaux de collaboration, fichiers, tâches et adaptateurs de services. Les fonctions externes nécessitent leurs connexions.",
+      "activation": "local-and-unconfigured-adapters"
+    },
+    {
+      "id": "allmight",
+      "name": "allmight",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "bat",
+      "name": "bat",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "bat-system",
+      "name": "bat-system",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "beam",
+      "name": "beam",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "cf",
+      "name": "cf",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "dragon",
+      "name": "dragon",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "dragon-contracts",
+      "name": "dragon-contracts",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "dragon-upstream",
+      "name": "dragon-upstream",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "envapt-superimg",
+      "name": "envapt-superimg",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "envaptex",
+      "name": "envaptex",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "freeland",
+      "name": "freeland",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "freeland-bros",
+      "name": "freeland-bros",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "hetzner",
+      "name": "hetzner",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "katana",
+      "name": "katana",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "knowledge-modules",
+      "name": "knowledge-modules",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "mcp-agent-bus",
+      "name": "mcp-agent-bus",
+      "description": "Client MCP embarqué. Les implémentations sont fournies par la suite MCP lorsque disponibles.",
+      "activation": "mcp-client-library"
+    },
+    {
+      "id": "mcp-chopper-mixer",
+      "name": "mcp-chopper-mixer",
+      "description": "Client MCP embarqué. Les implémentations sont fournies par la suite MCP lorsque disponibles.",
+      "activation": "mcp-client-library"
+    },
+    {
+      "id": "mcp-cloud-assets",
+      "name": "mcp-cloud-assets",
+      "description": "Client MCP embarqué. Les implémentations sont fournies par la suite MCP lorsque disponibles.",
+      "activation": "mcp-client-library"
+    },
+    {
+      "id": "mcp-job-queue",
+      "name": "mcp-job-queue",
+      "description": "Client MCP embarqué. Les implémentations sont fournies par la suite MCP lorsque disponibles.",
+      "activation": "mcp-client-library"
+    },
+    {
+      "id": "mcp-media-bridge",
+      "name": "mcp-media-bridge",
+      "description": "Client MCP embarqué. Les implémentations sont fournies par la suite MCP lorsque disponibles.",
+      "activation": "mcp-client-library"
+    },
+    {
+      "id": "mcp-memory-graph",
+      "name": "mcp-memory-graph",
+      "description": "Client MCP embarqué. Les implémentations sont fournies par la suite MCP lorsque disponibles.",
+      "activation": "mcp-client-library"
+    },
+    {
+      "id": "mcp-public-endpoints",
+      "name": "mcp-public-endpoints",
+      "description": "Client MCP embarqué. Les implémentations sont fournies par la suite MCP lorsque disponibles.",
+      "activation": "mcp-client-library"
+    },
+    {
+      "id": "mcp-qflush-control",
+      "name": "mcp-qflush-control",
+      "description": "Client MCP embarqué. Les implémentations sont fournies par la suite MCP lorsque disponibles.",
+      "activation": "mcp-client-library"
+    },
+    {
+      "id": "mcp-retro-session",
+      "name": "mcp-retro-session",
+      "description": "Client MCP embarqué. Les implémentations sont fournies par la suite MCP lorsque disponibles.",
+      "activation": "mcp-client-library"
+    },
+    {
+      "id": "mcp-security-preflight",
+      "name": "mcp-security-preflight",
+      "description": "Client MCP embarqué. Les implémentations sont fournies par la suite MCP lorsque disponibles.",
+      "activation": "mcp-client-library"
+    },
+    {
+      "id": "mcp-tool-manifest",
+      "name": "mcp-tool-manifest",
+      "description": "Client MCP embarqué. Les implémentations sont fournies par la suite MCP lorsque disponibles.",
+      "activation": "mcp-client-library"
+    },
+    {
+      "id": "mcp-toolkit",
+      "name": "mcp-toolkit",
+      "description": "Client MCP embarqué. Les implémentations sont fournies par la suite MCP lorsque disponibles.",
+      "activation": "mcp-client-library"
+    },
+    {
+      "id": "mcp-web-drafts",
+      "name": "mcp-web-drafts",
+      "description": "Client MCP embarqué. Les implémentations sont fournies par la suite MCP lorsque disponibles.",
+      "activation": "mcp-client-library"
+    },
+    {
+      "id": "mcp-worker-supervisor",
+      "name": "mcp-worker-supervisor",
+      "description": "Client MCP embarqué. Les implémentations sont fournies par la suite MCP lorsque disponibles.",
+      "activation": "mcp-client-library"
+    },
+    {
+      "id": "morphing",
+      "name": "morphing",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "nezlephant",
+      "name": "nezlephant",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "qflush",
+      "name": "qflush",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "qflush-runner",
+      "name": "qflush-runner",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "rome",
+      "name": "rome",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "scentgate",
+      "name": "scentgate",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "scream",
+      "name": "scream",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "spyder",
+      "name": "spyder",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    },
+    {
+      "id": "zen-gate",
+      "name": "zen-gate",
+      "description": "Bibliothèque embarquée ; configuration propre au module selon son usage.",
+      "activation": "library"
+    }
+  ],
+  "platforms": [
+    "windows-docker-linux",
+    "linux-docker"
+  ]
+}

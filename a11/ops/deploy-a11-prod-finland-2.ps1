@@ -1624,6 +1624,18 @@ $caddy = @"
 http://funesterie.me, http://www.funesterie.me, http://k44.funesterie.me, http://kaen44.funesterie.me, http://kaen44-hetzner-test.funesterie.me, http://vivy.funesterie.me, http://music.funesterie.me {
   encode zstd gzip
   import microsoft_identity_association
+  @moduleKitPage path /modulekit /modulekit/
+  rewrite @moduleKitPage /modulekit/index.html
+  @moduleKitDelivery path /api/modulekit/test/*
+  handle @moduleKitDelivery {
+    reverse_proxy modulekit-delivery:3092
+  }
+  @moduleKitLiveDelivery path /api/modulekit/live/*
+  handle @moduleKitLiveDelivery {
+    reverse_proxy modulekit-delivery-live:3092 {
+      header_up X-Modulekit-Client-IP {remote_host}
+    }
+  }
   @a11Path path /a11 /a11/* /api/admin/* /api/tools/run /api/runtime* /api/qflush/* /api/stt/* /api/tts /api/tts/* /api/vivy /api/vivy/* /api/ekko /api/ekko/* /api/double-harmonic /api/double-harmonic/*
   @a11PaymentApi path /api/paypal /api/paypal/* /api/subscription /api/subscription/* /subscription/success /subscription/cancel
   handle @a11Path {

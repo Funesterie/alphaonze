@@ -1,0 +1,6065 @@
+{
+  "schemaVersion": 1,
+  "kitVersion": "0.11.0",
+  "checkedAt": "2026-09-24",
+  "releaseStatus": "preview",
+  "counts": {
+    "modules": 41,
+    "dockerTools": 119,
+    "optionalDesktopTools": 3,
+    "verifiedMcpTools": 3
+  },
+  "groups": [
+    {
+      "id": "local",
+      "label": "Collaboration et fichiers locaux",
+      "status": "local"
+    },
+    {
+      "id": "graph",
+      "label": "Graphe Neo4j",
+      "status": "local"
+    },
+    {
+      "id": "graph-write",
+      "label": "Écritures encadrées du graphe",
+      "status": "local"
+    },
+    {
+      "id": "model",
+      "label": "Assistant IA",
+      "status": "connection"
+    },
+    {
+      "id": "s3",
+      "label": "Lecture S3 / R2",
+      "status": "connection"
+    },
+    {
+      "id": "cloudflare",
+      "label": "Lecture Cloudflare",
+      "status": "connection"
+    },
+    {
+      "id": "hetzner",
+      "label": "Lecture Hetzner Robot",
+      "status": "connection"
+    },
+    {
+      "id": "backend",
+      "label": "Backend intégré",
+      "status": "local"
+    },
+    {
+      "id": "backend-chat",
+      "label": "Chat du backend intégré",
+      "status": "connection"
+    },
+    {
+      "id": "second-backend",
+      "label": "Second backend métier",
+      "status": "connection"
+    },
+    {
+      "id": "host",
+      "label": "Agent de bureau et multimédia",
+      "status": "not-bundled"
+    },
+    {
+      "id": "workers",
+      "label": "Exécution des tâches par agents",
+      "status": "not-bundled"
+    },
+    {
+      "id": "restricted",
+      "label": "Mutations désactivées",
+      "status": "disabled"
+    },
+    {
+      "id": "integrations",
+      "label": "Intégrations non fournies",
+      "status": "not-bundled"
+    },
+    {
+      "id": "qualification",
+      "label": "Adaptateurs à qualifier",
+      "status": "unqualified"
+    },
+    {
+      "id": "kit",
+      "label": "Configuration du kit",
+      "status": "local"
+    },
+    {
+      "id": "plans",
+      "label": "Plans et procédures",
+      "status": "local"
+    },
+    {
+      "id": "archives",
+      "label": "Archives chiffrées",
+      "status": "local"
+    },
+    {
+      "id": "desktop",
+      "label": "Agent Windows facultatif",
+      "status": "optional"
+    }
+  ],
+  "modules": [
+    {
+      "id": "logic-reduce",
+      "name": "Plans et procédures",
+      "package": "@nossen/logic-reduce",
+      "version": "2.0.3",
+      "description": {
+        "fr": "Réduction déterministe de procédures : retire certains détours connus et conserve les étapes de contrôle. Ne comprend pas arbitrairement tous les plans et n’exécute aucune étape.",
+        "en": "Deterministic direct-path reducer for plans, runbooks, and agent handoffs."
+      },
+      "declaredTools": [
+        "plan_reduce"
+      ],
+      "status": "tested",
+      "cli": [
+        "nossen-logic-reduce"
+      ],
+      "evidence": {
+        "package": "@nossen/logic-reduce",
+        "version": "2.0.3",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "73c989078c1e3c4f8b3baa54309db85f9dbc9ca883c70185701ffc93aad9ee14"
+      }
+    },
+    {
+      "id": "zen",
+      "name": "Archives chiffrées",
+      "package": "@nossen/zen",
+      "version": "0.1.3",
+      "description": {
+        "fr": "Chiffrement et déchiffrement de textes avec la clé de l’installation. Les outils MCP limitent le texte à 64 Kio ; il ne s’agit pas d’un remplacement général de ZIP.",
+        "en": "Zero-Exposed NEZ archive encoder/decoder for .zen corpus containers."
+      },
+      "declaredTools": [
+        "archive_encode",
+        "archive_decode"
+      ],
+      "status": "tested",
+      "cli": [
+        "nossen-zen"
+      ],
+      "evidence": {
+        "package": "@nossen/zen",
+        "version": "0.1.3",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "be04bfa7083cd27d0801d88325cd7df733a1a731aaefb20ab24e060dcf4ccc41"
+      }
+    },
+    {
+      "id": "full-mcp",
+      "name": "Suite MCP complète",
+      "activation": "local-and-unconfigured-adapters",
+      "description": {
+        "fr": "Serveur MCP HTTP réunissant collaboration locale, documents, tâches, graphe et adaptateurs. Chaque outil a ses propres prérequis et restrictions, détaillés ci-dessous.",
+        "en": "HTTP MCP server for local collaboration, documents, queues and optional service adapters. Each tool has its own prerequisites and availability."
+      },
+      "declaredTools": [
+        "agent_presence",
+        "agent_heartbeat",
+        "agent_role_route",
+        "container_runtime_status",
+        "a11_context_brief",
+        "codex_remote_status",
+        "codex_task_create",
+        "codex_task_status",
+        "codex_task_result",
+        "agent_inbox_check",
+        "agent_alert_email",
+        "agent_maintenance_cycle",
+        "agent_maintenance_status",
+        "agent_call_friend",
+        "agent_general_call",
+        "agent_jobs",
+        "a11_worker_status",
+        "a11_worker_start",
+        "a11_worker_stop",
+        "a11_worker_restart",
+        "a11_task_dispatch",
+        "a11_agent_jobs_status",
+        "job_queue_schema",
+        "job_enqueue",
+        "job_worker_heartbeat",
+        "job_lease",
+        "job_start",
+        "job_heartbeat",
+        "job_complete",
+        "job_fail",
+        "job_recover_expired",
+        "job_retire",
+        "memory_governance_schema",
+        "memory_semantic_schema",
+        "memory_write_safe",
+        "web_draft_write",
+        "web_draft_index",
+        "discussion_list",
+        "discussion_open",
+        "discussion_post",
+        "discussion_read",
+        "discussion_set_status",
+        "retro_snes_index",
+        "retro_snes_training_brief",
+        "retro_snes_session_plan",
+        "ki_play",
+        "ki_state",
+        "romstation_state",
+        "romstation_mouse",
+        "romstation_keyboard",
+        "qflush_gamepad_status",
+        "qflush_gamepad_play",
+        "qflush_gamepad_pilot",
+        "qflush_keyboard_play",
+        "qflush_keyboard_macro",
+        "qflush_keyboard_pilot",
+        "qflush_mouse_click",
+        "neo4j_status",
+        "neo4j_temporal_status",
+        "neo4j_temporal_schema",
+        "neo4j_temporal_emit_event",
+        "neo4j_temporal_emit_decision",
+        "neo4j_temporal_reliability",
+        "a11_runtime_hooks_status",
+        "doctor_status",
+        "chopper_doctor_status",
+        "piccolo_repair_plan",
+        "neo4j_read_query",
+        "graph_write_safe",
+        "neo4j_write_query",
+        "a11_status",
+        "a11_llm_stats",
+        "a11_chat",
+        "kaen44_status",
+        "qflush_status",
+        "qflush_sources_status",
+        "qflush_sources_select",
+        "qflush_window_capture",
+        "qflush_janus_status",
+        "qflush_janus_analyze",
+        "qflush_vivy_audio_status",
+        "qflush_vivy_audio_analyze",
+        "qflush_media_analyze",
+        "read_backend_logs",
+        "read_qflush_logs",
+        "search",
+        "fetch",
+        "search_project",
+        "shared_context_index",
+        "cloud_roots_index",
+        "search_cloud_roots",
+        "read_cloud_doc",
+        "generated_bucket_status",
+        "generated_bucket_public_url",
+        "generated_bucket_list",
+        "generated_bucket_head",
+        "generated_bucket_read_text",
+        "generated_bucket_put_text",
+        "generated_bucket_put_base64",
+        "read_shared_doc",
+        "explain_env",
+        "cloudflare_verify_token",
+        "cloudflare_list_zones",
+        "cloudflare_list_dns_records",
+        "cloudflare_list_tunnels",
+        "cloudflare_list_access_apps",
+        "cloudflare_list_r2_buckets",
+        "hetzner_list_servers",
+        "hetzner_get_rescue",
+        "cloudflare_create_dns_record",
+        "hetzner_reboot",
+        "kit_status",
+        "kit_readiness",
+        "kit_diagnostics",
+        "kit_catalog",
+        "assistant_chat"
+      ],
+      "status": "mixed"
+    },
+    {
+      "id": "allmight",
+      "name": "allmight",
+      "package": "@nossen/allmight",
+      "version": "2.0.1",
+      "activation": "library",
+      "description": {
+        "fr": "Détection de fichiers sources identiques ou proches et rapports de regroupement pour préparer une consolidation de dépôt. Bibliothèque et CLI ; aucun nettoyage automatique vendu avec le kit.",
+        "en": "Audit-first duplicate detector and canonicalization helper for large JavaScript and TypeScript repositories."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [
+        "allmight"
+      ],
+      "evidence": {
+        "package": "@nossen/allmight",
+        "version": "2.0.1",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "74b5c4fac5644c899d3336a2b9b8c31640aaa686453139e1c7e08872e9a1e359"
+      }
+    },
+    {
+      "id": "bat",
+      "name": "bat",
+      "package": "@nossen/bat",
+      "version": "2.0.2",
+      "activation": "library",
+      "description": {
+        "fr": "Primitives de détection de signaux, routage de requêtes, santé des canaux et nouvelles tentatives. À intégrer dans votre propre code.",
+        "en": "Adaptive request-control primitives: ears for sensing, wings for routing, fangs for guarded execution."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/bat",
+        "version": "2.0.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "e8b851c937b072e8f3860e31cfb2c9690bef1c979c19e00828588be1372f9fc2"
+      }
+    },
+    {
+      "id": "bat-system",
+      "name": "bat-system",
+      "package": "@nossen/bat-system",
+      "version": "2.0.2",
+      "activation": "library",
+      "description": {
+        "fr": "Couche de compatibilité pour les anciennes primitives BAT. Préférer bat pour un nouveau développement ; ce composant n’ajoute pas de service autonome.",
+        "en": "Compatibility layer for older BAT system workflows. Prefer @nossen/bat for new code."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/bat-system",
+        "version": "2.0.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "76953fa51ea4ec6e40010ac6422248e67a4d15d229e2ee871a1bd98475ce6e2c"
+      }
+    },
+    {
+      "id": "beam",
+      "name": "beam",
+      "package": "@nossen/beam",
+      "version": "2.0.1",
+      "activation": "library",
+      "description": {
+        "fr": "Primitives pour enchaîner des étapes de traitement et des passages de relais entre modules. Nécessite de définir son propre pipeline.",
+        "en": "Pipeline orchestration primitives for routing work through Funesterie and A11 systems."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/beam",
+        "version": "2.0.1",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "d63a20a73fbba5425a646df77a015e5ac8584c7a791d3dc2134fa0e87d18231a"
+      }
+    },
+    {
+      "id": "cf",
+      "name": "cf",
+      "package": "@nossen/cf",
+      "version": "0.1.0",
+      "activation": "library",
+      "description": {
+        "fr": "Client d’API Cloudflare pour zones, DNS, tunnels, Access et R2. Nécessite les droits du compte client ; les outils MCP de mutation DNS restent désactivés.",
+        "en": "Tiny Cloudflare API client for the Funesterie AIs (zones/DNS/tunnels/Access/R2) - one CLOUDFLARE_API_TOKEN, no browser."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [
+        "nossen-cf"
+      ],
+      "evidence": {
+        "package": "@nossen/cf",
+        "version": "0.1.0",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "984cbba939a3833a88e1805ce450b46a8238a8a73a4fcd0aa8579d2ba89024d7"
+      }
+    },
+    {
+      "id": "dragon",
+      "name": "dragon",
+      "package": "@nossen/dragon",
+      "version": "2.0.2",
+      "activation": "library",
+      "description": {
+        "fr": "Programme de supervision HTTP fondé sur un manifeste de services. Inclus comme bibliothèque/programme ; aucun démon Dragon ni supervision de votre machine n’est démarré par le kit.",
+        "en": "Dragon control-plane daemon for the Funesterie ecosystem."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/dragon",
+        "version": "2.0.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "0634b29cb16e534d02eae8a72a4b2a0de3d55735a7ac8143c9a8d91be8473e76"
+      }
+    },
+    {
+      "id": "dragon-contracts",
+      "name": "dragon-contracts",
+      "package": "@nossen/dragon-contracts",
+      "version": "2.0.1",
+      "activation": "library",
+      "description": {
+        "fr": "Types et contrats TypeScript décrivant manifestes, états, actions et politiques de supervision Dragon. Ce composant ne lance aucun service.",
+        "en": "Shared Dragon contracts for the Funesterie control plane."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/dragon-contracts",
+        "version": "2.0.1",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "d7237a8944eac2a518dc84454aff7a9035fbe02a109fb0d8192341f73d194de9"
+      }
+    },
+    {
+      "id": "dragon-upstream",
+      "name": "dragon-upstream",
+      "package": "@nossen/dragon-upstream",
+      "version": "2.0.2",
+      "activation": "library",
+      "description": {
+        "fr": "Chargement de manifestes, sondes de services, journaux et cycles de rapprochement d’état pour Dragon. Les cibles et chemins doivent être adaptés à votre environnement.",
+        "en": "Dragon upstream probing, daemon policy and integration workflows."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/dragon-upstream",
+        "version": "2.0.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "cd1d139f6b3c278679a0e1e5e0b2114031d9cc9303b4cf79d8bb6bedf608a7f7"
+      }
+    },
+    {
+      "id": "envapt-superimg",
+      "name": "envapt-superimg",
+      "package": "@nossen/envapt-superimg",
+      "version": "2.0.2",
+      "activation": "library",
+      "description": {
+        "fr": "Utilitaires expérimentaux de vérification et de transport de petites charges utiles dans des supports image de type OC8. Ce n’est pas un générateur d’images.",
+        "en": "Image-oriented ENVAPT helpers for OC8-style payload verification and transport experiments."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/envapt-superimg",
+        "version": "2.0.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "3a61fda479f983af644cc3989d9acf244517c665b352def0cfcff80564259b94"
+      }
+    },
+    {
+      "id": "envaptex",
+      "name": "envaptex",
+      "package": "@nossen/envaptex",
+      "version": "2.0.1",
+      "activation": "library",
+      "description": {
+        "fr": "Chargement de profils et validation de configuration d’environnement pour vos programmes. L’intégration dans un nouveau projet reste à réaliser.",
+        "en": "Environment adapter toolkit for typed runtime configuration, profile loading and integration checks."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/envaptex",
+        "version": "2.0.1",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "5788b74658e7cfcaf1106fec41ee74d51079ba695d8650e658512be20175194a"
+      }
+    },
+    {
+      "id": "freeland",
+      "name": "freeland",
+      "package": "@nossen/freeland",
+      "version": "2.0.2",
+      "activation": "library",
+      "description": {
+        "fr": "Normalisation de valeurs et de structures échangées entre modules pour réduire le code de conversion. Bibliothèque de développement.",
+        "en": "Neutral normalization layer for values crossing Funesterie, A11 and runtime module boundaries."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [
+        "freeland"
+      ],
+      "evidence": {
+        "package": "@nossen/freeland",
+        "version": "2.0.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "ee248ced2f1a797c1dbd50465d6e98031622243b15b3586416408b63bac85ee1"
+      }
+    },
+    {
+      "id": "freeland-bros",
+      "name": "freeland-bros",
+      "package": "@nossen/freeland-bros",
+      "version": "2.0.4",
+      "activation": "library",
+      "description": {
+        "fr": "Diagnostics de structures de données et projections RGBA/cube basées sur Freeland et Morphing. Destiné à l’inspection de données de développement.",
+        "en": "Runtime diagnostics and RGBA/cube projection layer on top of Freeland and Morphing."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/freeland-bros",
+        "version": "2.0.4",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "ea0bb35aff15b5b965826d5ee4d5c0815855fc9c4f77111f52dc63b78072a4ca"
+      }
+    },
+    {
+      "id": "hetzner",
+      "name": "hetzner",
+      "package": "@nossen/hetzner",
+      "version": "0.1.0",
+      "activation": "library",
+      "description": {
+        "fr": "Client Hetzner Robot pour serveurs dédiés, état de secours et opérations d’infrastructure. Les identifiants sont ceux du client ; le redémarrage MCP reste désactivé.",
+        "en": "Hetzner Robot API client for the Funesterie AIs - manage EX44 (dedicated) over 443: server info, reboot, rescue, reverse DNS. No SSH."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [
+        "nossen-hetzner"
+      ],
+      "evidence": {
+        "package": "@nossen/hetzner",
+        "version": "0.1.0",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "4aee590b45a9c45b5ea666c6f0e2254880566fbbe8e9c5e1c1cc8db99cea61e5"
+      }
+    },
+    {
+      "id": "katana",
+      "name": "katana",
+      "package": "@nossen/katana",
+      "version": "2.0.0",
+      "activation": "library",
+      "description": {
+        "fr": "Commandes de maintenance et de vérification ciblées d’un dépôt. Le CLI inclus doit être qualifié pour votre arborescence avant utilisation.",
+        "en": "Focused CLI and library helpers for repository cuts, checks and small automation tasks."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [
+        "katana"
+      ],
+      "evidence": {
+        "package": "@nossen/katana",
+        "version": "2.0.0",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "14b28f1593da6f5564c14ce9e440648c317db0fcefdc70e6a25cae0149f9d022"
+      }
+    },
+    {
+      "id": "knowledge-modules",
+      "name": "knowledge-modules",
+      "package": "@nossen/knowledge-modules",
+      "version": "0.2.3",
+      "activation": "library",
+      "description": {
+        "fr": "Données JSON de connaissance : personas historiques, constantes et palettes de projets de recherche. Ce ne sont pas des fonctions exécutables ni des modèles scientifiques validés ; ces données ne définissent pas vos agents automatiquement.",
+        "en": "Public NOSSEN knowledge modules: persona canon, temporal gravity constants, pulsar colour palette."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/knowledge-modules",
+        "version": "0.2.3",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "c34905b4b0ad158edeebd9889b21443a7f6755d9a9870d369ef887f5aa9e7a73"
+      }
+    },
+    {
+      "id": "mcp-agent-bus",
+      "name": "mcp-agent-bus",
+      "package": "@nossen/mcp-agent-bus",
+      "version": "0.1.2",
+      "activation": "mcp-client-library",
+      "description": {
+        "fr": "Constructeurs de requêtes pour présence d’agents, boîtes de réception, discussions et passages de relais. N’installe ni modèle IA ni agent exécutant.",
+        "en": "Request builders for agent presence, inbox, discussions and bounded handoffs."
+      },
+      "declaredTools": [
+        "agent_presence",
+        "agent_heartbeat",
+        "agent_role_route",
+        "agent_inbox_check",
+        "agent_call_friend",
+        "agent_jobs",
+        "discussion_list",
+        "discussion_open",
+        "discussion_post",
+        "discussion_read",
+        "discussion_set_status"
+      ],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/mcp-agent-bus",
+        "version": "0.1.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "b3c3f42d1438169d545ebe22893b17860fb864183bcc4020cedff12508d43482"
+      }
+    },
+    {
+      "id": "mcp-chopper-mixer",
+      "name": "mcp-chopper-mixer",
+      "package": "@nossen/mcp-chopper-mixer",
+      "version": "0.1.2",
+      "activation": "mcp-client-library",
+      "description": {
+        "fr": "Contrats de requêtes de diagnostic, planification de réparation et routage de mixage. Les services historiques Chopper/mixeur ne sont pas embarqués.",
+        "en": "Read-only planning contracts for runtime hooks, doctor/chopper diagnostics and mixer routing."
+      },
+      "declaredTools": [
+        "a11_runtime_hooks_status",
+        "doctor_status",
+        "chopper_doctor_status",
+        "piccolo_repair_plan",
+        "a11_chopper_status",
+        "a11_chopper_plan",
+        "a11_chopper_rumble",
+        "a11_chopper_recipes",
+        "a11_chopper_doctor",
+        "a11_funesterie_mixer_status",
+        "a11_funesterie_mixer_route",
+        "logic_reduce"
+      ],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/mcp-chopper-mixer",
+        "version": "0.1.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "1b72dbd9357a31e06081563d3d848bdc45ea30e463ae315da3ef5efc021165ec"
+      }
+    },
+    {
+      "id": "mcp-cloud-assets",
+      "name": "mcp-cloud-assets",
+      "package": "@nossen/mcp-cloud-assets",
+      "version": "0.1.2",
+      "activation": "mcp-client-library",
+      "description": {
+        "fr": "Constructeurs de requêtes pour recherche de documents et objets S3/R2. Les comptes cloud et montages de documents doivent être fournis ; publication R2 désactivée dans le MCP.",
+        "en": "Read-only search/fetch contracts plus generated asset bucket request builders for trusted MCP profiles."
+      },
+      "declaredTools": [
+        "search",
+        "fetch",
+        "search_project",
+        "shared_context_index",
+        "cloud_roots_index",
+        "search_cloud_roots",
+        "read_cloud_doc",
+        "generated_bucket_status",
+        "generated_bucket_public_url",
+        "generated_bucket_list",
+        "generated_bucket_head",
+        "generated_bucket_read_text",
+        "generated_bucket_put_text",
+        "generated_bucket_put_base64",
+        "read_shared_doc"
+      ],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/mcp-cloud-assets",
+        "version": "0.1.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "4a607b83c2220aba685f74066d6c40d5320ad5b84dba65ce8843b2325be6157a"
+      }
+    },
+    {
+      "id": "mcp-job-queue",
+      "name": "mcp-job-queue",
+      "package": "@nossen/mcp-job-queue",
+      "version": "0.1.2",
+      "activation": "mcp-client-library",
+      "description": {
+        "fr": "Constructeurs de requêtes de file de tâches : dépôt, bail, progression, résultat et reprise. La file est locale ; les exécutants des tâches ne sont pas fournis.",
+        "en": "Safe declarative job queue builders for MCP workers: enqueue, lease, heartbeat, complete and recover."
+      },
+      "declaredTools": [
+        "job_queue_schema",
+        "job_enqueue",
+        "job_worker_heartbeat",
+        "job_lease",
+        "job_start",
+        "job_heartbeat",
+        "job_complete",
+        "job_fail",
+        "job_recover_expired"
+      ],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/mcp-job-queue",
+        "version": "0.1.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "4eb520d865af28037c86cbfa10bd3b32b8f93fb9af6ac56b9d8edac441620b00"
+      }
+    },
+    {
+      "id": "mcp-media-bridge",
+      "name": "mcp-media-bridge",
+      "package": "@nossen/mcp-media-bridge",
+      "version": "0.1.2",
+      "activation": "mcp-client-library",
+      "description": {
+        "fr": "Contrats pour capture de fenêtre et analyse image/audio via des services hôtes. Le kit Docker ne fournit pas ces ponts multimédias ni leurs modèles.",
+        "en": "Request builders for window capture, source selection, vision/audio analysis and combined media summaries."
+      },
+      "declaredTools": [
+        "qflush_sources_status",
+        "qflush_sources_select",
+        "qflush_window_capture",
+        "qflush_janus_status",
+        "qflush_janus_analyze",
+        "qflush_vivy_audio_status",
+        "qflush_vivy_audio_analyze",
+        "qflush_media_analyze"
+      ],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/mcp-media-bridge",
+        "version": "0.1.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "089c51d6e73d1a7f036cd468aec7ced41eb5df7ee3df0a431fa7b66e5dbfc8dd"
+      }
+    },
+    {
+      "id": "mcp-memory-graph",
+      "name": "mcp-memory-graph",
+      "package": "@nossen/mcp-memory-graph",
+      "version": "0.1.2",
+      "activation": "mcp-client-library",
+      "description": {
+        "fr": "Constructeurs de requêtes de mémoire, graphe et événements temporels. Le Neo4j local est fourni ; les écritures libres restent désactivées.",
+        "en": "Secret-safe memory and graph request builders for Neo4j-style MCP profiles."
+      },
+      "declaredTools": [
+        "memory_governance_schema",
+        "memory_semantic_schema",
+        "memory_write_safe",
+        "neo4j_status",
+        "neo4j_temporal_status",
+        "neo4j_temporal_schema",
+        "neo4j_temporal_emit_event",
+        "neo4j_temporal_emit_decision",
+        "neo4j_temporal_reliability",
+        "neo4j_read_query",
+        "graph_write_safe",
+        "neo4j_write_query",
+        "public_neo4j_status",
+        "public_neo4j_read_query",
+        "public_neo4j_projection_guard"
+      ],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/mcp-memory-graph",
+        "version": "0.1.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "64b3b524fcf6e26613558649bbe31a3cd3a570632d0a13e88039a058d6950b35"
+      }
+    },
+    {
+      "id": "mcp-public-endpoints",
+      "name": "mcp-public-endpoints",
+      "package": "@nossen/mcp-public-endpoints",
+      "version": "0.1.2",
+      "activation": "mcp-client-library",
+      "description": {
+        "fr": "Utilitaires de profils d’accès MCP en lecture. Ne publie pas votre instance sur Internet et ne garantit pas la compatibilité avec chaque client cloud.",
+        "en": "Endpoint profile helpers for public read-only MCP clients such as ChatGPT, Gemini, Claude and Grok."
+      },
+      "declaredTools": [
+        "search",
+        "fetch",
+        "external_agent_onboarding",
+        "a11_status",
+        "kaen44_status",
+        "ki_state",
+        "public_neo4j_status",
+        "public_neo4j_read_query",
+        "public_neo4j_projection_guard",
+        "generated_bucket_status",
+        "generated_bucket_public_url"
+      ],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/mcp-public-endpoints",
+        "version": "0.1.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "cbbd2bf39b6fad82a25289385ed1ecd77c1db491caf4e4d40322e100c50ce62e"
+      }
+    },
+    {
+      "id": "mcp-qflush-control",
+      "name": "mcp-qflush-control",
+      "package": "@nossen/mcp-qflush-control",
+      "version": "0.1.2",
+      "activation": "mcp-client-library",
+      "description": {
+        "fr": "Contrats de commandes clavier, souris et manette pour un pont QFlush. Aucun pilote ni pont de contrôle du bureau n’est fourni par ces contrats.",
+        "en": "Bounded gamepad, keyboard and mouse command contracts for Qflush-compatible controller bridges."
+      },
+      "declaredTools": [
+        "qflush_gamepad_status",
+        "qflush_gamepad_play",
+        "qflush_gamepad_pilot",
+        "qflush_keyboard_play",
+        "qflush_keyboard_macro",
+        "qflush_keyboard_pilot",
+        "qflush_mouse_click",
+        "romstation_mouse",
+        "romstation_keyboard"
+      ],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/mcp-qflush-control",
+        "version": "0.1.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "29751889cbbcec883be8127f4a04f797f22105381f1350d7c27c8eb7a0e686a9"
+      }
+    },
+    {
+      "id": "mcp-retro-session",
+      "name": "mcp-retro-session",
+      "package": "@nossen/mcp-retro-session",
+      "version": "0.1.2",
+      "activation": "mcp-client-library",
+      "description": {
+        "fr": "Contrats de préparation de sessions rétro et de commandes de contrôleur. Aucun émulateur, jeu, ROM ou pont de manette n’est inclus.",
+        "en": "Retro session contracts for SNES/KI/RomStation state and bounded controller plans."
+      },
+      "declaredTools": [
+        "retro_snes_index",
+        "retro_snes_training_brief",
+        "retro_snes_session_plan",
+        "ki_play",
+        "ki_state",
+        "romstation_state",
+        "romstation_mouse",
+        "romstation_keyboard",
+        "br_play",
+        "br_state",
+        "br_pilot"
+      ],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/mcp-retro-session",
+        "version": "0.1.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "e3c0de1da683b1430f7bcfc7d0cb844210f6118c0abd5435f76fb2b123e74e18"
+      }
+    },
+    {
+      "id": "mcp-security-preflight",
+      "name": "mcp-security-preflight",
+      "package": "@nossen/mcp-security-preflight",
+      "version": "0.1.2",
+      "activation": "mcp-client-library",
+      "description": {
+        "fr": "Utilitaires de masquage et de résumé de présence de configuration. Ce n’est pas une garantie de détection de tous les secrets ni un audit de sécurité.",
+        "en": "Secret redaction, token-presence summaries and preflight-safe helpers for MCP clients."
+      },
+      "declaredTools": [
+        "explain_env",
+        "a11_shared_mcp_status",
+        "a11_mcp_dimension_status",
+        "a11_route_map",
+        "a11_identity_route"
+      ],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/mcp-security-preflight",
+        "version": "0.1.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "5764d6b76d8d43e13465bf3896665b7ba71c11d553d6efe24f0885a62bfe03fc"
+      }
+    },
+    {
+      "id": "mcp-tool-manifest",
+      "name": "mcp-tool-manifest",
+      "package": "@nossen/mcp-tool-manifest",
+      "version": "0.1.2",
+      "activation": "mcp-client-library",
+      "description": {
+        "fr": "Manifeste regroupant des identifiants d’outils MCP. Un outil cité dans ce manifeste peut être absent ou indisponible dans le serveur livré.",
+        "en": "A grouped manifest for NOSSEN-compatible MCP tools and safe public profiles."
+      },
+      "declaredTools": [
+        "agent_presence",
+        "agent_heartbeat",
+        "agent_role_route",
+        "a11_context_brief",
+        "codex_remote_status",
+        "codex_task_create",
+        "codex_task_status",
+        "codex_task_result",
+        "agent_inbox_check",
+        "agent_alert_email",
+        "agent_maintenance_cycle",
+        "agent_maintenance_status",
+        "agent_call_friend",
+        "agent_jobs",
+        "a11_worker_status",
+        "a11_worker_start",
+        "a11_worker_stop",
+        "a11_worker_restart",
+        "a11_task_dispatch",
+        "a11_agent_jobs_status",
+        "job_queue_schema",
+        "job_enqueue",
+        "job_worker_heartbeat",
+        "job_lease",
+        "job_start",
+        "job_heartbeat",
+        "job_complete",
+        "job_fail",
+        "job_recover_expired",
+        "memory_governance_schema",
+        "memory_semantic_schema",
+        "memory_write_safe",
+        "web_draft_write",
+        "web_draft_index",
+        "discussion_list",
+        "discussion_open",
+        "discussion_post",
+        "discussion_read",
+        "discussion_set_status",
+        "retro_snes_index",
+        "retro_snes_training_brief",
+        "retro_snes_session_plan",
+        "ki_play",
+        "ki_state",
+        "romstation_state",
+        "romstation_mouse",
+        "romstation_keyboard",
+        "qflush_gamepad_status",
+        "qflush_gamepad_play",
+        "qflush_gamepad_pilot",
+        "qflush_keyboard_play",
+        "qflush_keyboard_macro",
+        "qflush_keyboard_pilot",
+        "qflush_mouse_click",
+        "br_play",
+        "br_state",
+        "br_pilot",
+        "neo4j_status",
+        "neo4j_temporal_status",
+        "neo4j_temporal_schema",
+        "neo4j_temporal_emit_event",
+        "neo4j_temporal_emit_decision",
+        "neo4j_temporal_reliability",
+        "a11_runtime_hooks_status",
+        "doctor_status",
+        "chopper_doctor_status",
+        "piccolo_repair_plan",
+        "neo4j_read_query",
+        "graph_write_safe",
+        "neo4j_write_query",
+        "a11_status",
+        "a11_llm_stats",
+        "a11_chat",
+        "kaen44_status",
+        "qflush_status",
+        "qflush_sources_status",
+        "qflush_sources_select",
+        "qflush_window_capture",
+        "qflush_janus_status",
+        "qflush_janus_analyze",
+        "qflush_vivy_audio_status",
+        "qflush_vivy_audio_analyze",
+        "qflush_media_analyze",
+        "read_backend_logs",
+        "read_qflush_logs",
+        "search",
+        "fetch",
+        "search_project",
+        "shared_context_index",
+        "cloud_roots_index",
+        "search_cloud_roots",
+        "read_cloud_doc",
+        "generated_bucket_status",
+        "generated_bucket_public_url",
+        "generated_bucket_list",
+        "generated_bucket_head",
+        "generated_bucket_read_text",
+        "generated_bucket_put_text",
+        "generated_bucket_put_base64",
+        "read_shared_doc",
+        "explain_env"
+      ],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/mcp-tool-manifest",
+        "version": "0.1.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "c07410215d952f78206e19ad6d3d45db00f7354ad02cd4a624d2aed3eccc8f6b"
+      }
+    },
+    {
+      "id": "mcp-toolkit",
+      "name": "mcp-toolkit",
+      "package": "@nossen/mcp-toolkit",
+      "version": "0.1.2",
+      "activation": "mcp-client-library",
+      "description": {
+        "fr": "Utilitaires JSON-RPC, normalisation d’adresses MCP et création de charges utiles tools/list, tools/call et ping. Bibliothèque pour développeurs.",
+        "en": "Small dependency-free helpers for JSON-RPC MCP calls, endpoint normalization and tool call payloads."
+      },
+      "declaredTools": [
+        "tools/list",
+        "tools/call",
+        "ping"
+      ],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/mcp-toolkit",
+        "version": "0.1.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "777192ed8f41ffe9d0c79d97237ca701d4582b4c2e1b09ac49968fe6b038b62d"
+      }
+    },
+    {
+      "id": "mcp-web-drafts",
+      "name": "mcp-web-drafts",
+      "package": "@nossen/mcp-web-drafts",
+      "version": "0.1.2",
+      "activation": "mcp-client-library",
+      "description": {
+        "fr": "Contrats de création et d’indexation de brouillons locaux. Aucun déploiement ou publication de site n’est déclenché.",
+        "en": "Append-only website draft contracts for MCP agents that should never deploy directly to production."
+      },
+      "declaredTools": [
+        "web_draft_write",
+        "web_draft_index"
+      ],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/mcp-web-drafts",
+        "version": "0.1.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "056731a1361816045adcf9d18df4636cfad0ddc17ddef8dc6b01063b49f7df7d"
+      }
+    },
+    {
+      "id": "mcp-worker-supervisor",
+      "name": "mcp-worker-supervisor",
+      "package": "@nossen/mcp-worker-supervisor",
+      "version": "0.1.2",
+      "activation": "mcp-client-library",
+      "description": {
+        "fr": "Contrats de supervision et d’envoi de tâches à des exécutants. Le superviseur et les exécutants historiques ne sont pas livrés comme services du kit.",
+        "en": "Contracts for bounded worker status, start/stop/restart, task dispatch and task result polling."
+      },
+      "declaredTools": [
+        "codex_remote_status",
+        "codex_task_create",
+        "codex_task_status",
+        "codex_task_result",
+        "a11_worker_status",
+        "a11_worker_start",
+        "a11_worker_stop",
+        "a11_worker_restart",
+        "a11_task_dispatch",
+        "a11_agent_jobs_status"
+      ],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/mcp-worker-supervisor",
+        "version": "0.1.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "3138f354afb2f4e6ead0d953fa18d3a840d55149bfaaa21c14a66837c9556816"
+      }
+    },
+    {
+      "id": "morphing",
+      "name": "morphing",
+      "package": "@nossen/morphing",
+      "version": "2.1.0",
+      "activation": "library",
+      "description": {
+        "fr": "Primitives de représentation compacte de valeurs sur quatre octets et conversions RGBA/cube. Bibliothèque expérimentale de transport de données.",
+        "en": "Compact 4-byte value shapes and RGBA/cube helpers for low-friction transport."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/morphing",
+        "version": "2.1.0",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "34ceb2477fad1203c59c8b516b06e7d3154762663a881ae46741acd0594c19c0"
+      }
+    },
+    {
+      "id": "nezlephant",
+      "name": "nezlephant",
+      "package": "@nossen/nezlephant",
+      "version": "2.0.2",
+      "activation": "library",
+      "description": {
+        "fr": "Encodage, décodage et inspection de petites charges utiles dans des supports image OC8. Les fonctions natives ou média restent à qualifier.",
+        "en": "OC8 image payload helper for encoding, decoding and inspecting small binary/image carriers."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/nezlephant",
+        "version": "2.0.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "7f32270d843669b3e2f7e9839a9a17c6863f35329498ae6a8eb6461350dd3815"
+      }
+    },
+    {
+      "id": "qflush",
+      "name": "qflush",
+      "package": "@nossen/qflush",
+      "version": "2.0.4",
+      "activation": "library",
+      "description": {
+        "fr": "Orchestrateur en ligne de commande pour modules, processus et workflows locaux. Inclus comme programme ; aucun contrôle clavier/souris ni superviseur hôte n’est installé automatiquement.",
+        "en": "QFlush - portable command-line orchestrator for local modules, workflows, and supervised services."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [
+        "qflush",
+        "qf"
+      ],
+      "evidence": {
+        "package": "@nossen/qflush",
+        "version": "2.0.4",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "305c7f7f9f1adf0922f6b1f5e997dd5fc11223039adf6cca980ba4c0b4a3cdfd"
+      }
+    },
+    {
+      "id": "qflush-runner",
+      "name": "qflush-runner",
+      "package": "@nossen/qflush-runner",
+      "version": "2.0.2",
+      "activation": "library",
+      "description": {
+        "fr": "Programme léger pour invoquer des tâches compatibles QFlush dans un workflow local ou de CI. L’environnement d’exécution doit être fourni et validé.",
+        "en": "Small runner package for invoking QFlush in lightweight automation contexts."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [
+        "qflush-runner"
+      ],
+      "evidence": {
+        "package": "@nossen/qflush-runner",
+        "version": "2.0.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "525c7cd5a016e46a8ae907a2625be90d83e277593362c2f4c449b7950ba12b97"
+      }
+    },
+    {
+      "id": "rome",
+      "name": "rome",
+      "package": "@nossen/rome",
+      "version": "2.0.3",
+      "activation": "library",
+      "description": {
+        "fr": "Primitives et commandes pour repérer des espaces de travail et orchestrer plusieurs processus. Les chemins, profils et commandes appartiennent au client.",
+        "en": "Runtime orchestration and command vocabulary used by QFlush, A11 and local automation flows."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [
+        "rome"
+      ],
+      "evidence": {
+        "package": "@nossen/rome",
+        "version": "2.0.3",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "2cb8824ba97240d24668a9e9342dae1a041d1c5add1dc1f847e8416687bd7868"
+      }
+    },
+    {
+      "id": "scentgate",
+      "name": "scentgate",
+      "package": "@nossen/scentgate",
+      "version": "2.2.0",
+      "activation": "library",
+      "description": {
+        "fr": "Capsules de notes et de signaux temporaires pour une investigation ou un passage de relais. Fournit aussi des contrats de notification de tâches ; aucune messagerie externe n’est connectée automatiquement.",
+        "en": "Ephemeral research capsule for structured notes, signals and short-lived investigation context."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [
+        "scentgate"
+      ],
+      "evidence": {
+        "package": "@nossen/scentgate",
+        "version": "2.2.0",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "15013ebfa3ea768ca2e86b8806dd25392756fac240a3a592f7fa83226cf0cc44"
+      }
+    },
+    {
+      "id": "scream",
+      "name": "scream",
+      "package": "@nossen/scream",
+      "version": "2.0.2",
+      "activation": "library",
+      "description": {
+        "fr": "Prototype de primitives sémantiques SCREAM, WAZAA et MASK. Bibliothèque expérimentale ; aucun moteur vocal ou service audio complet n’est promis.",
+        "en": "Small semantic prototype for SCREAM, WAZAA and MASK primitives."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/scream",
+        "version": "2.0.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "475aa56fb2077bc74e1a7adc8acbc374aee3c29b02873da7cb4b1ad17da80215"
+      }
+    },
+    {
+      "id": "spyder",
+      "name": "spyder",
+      "package": "@nossen/spyder",
+      "version": "2.0.2",
+      "activation": "library",
+      "description": {
+        "fr": "Primitives d’inspection de dépôt et de petit serveur local pour outils de développement. Aucun assistant IA autonome n’est lancé par ce module.",
+        "en": "Lightweight local assistant and scanner primitives for NOSSEN/Funesterie developer tooling."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/spyder",
+        "version": "2.0.2",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "7f54975bc8f236e2f84a66221ddee67e0cf5aeb40700d07fa46d6de84736e809"
+      }
+    },
+    {
+      "id": "zen-gate",
+      "name": "zen-gate",
+      "package": "@nossen/zen-gate",
+      "version": "0.1.0",
+      "activation": "library",
+      "description": {
+        "fr": "Transfert par blocs avec déduplication et vérification SHA-256 entre un émetteur et un récepteur. Les deux extrémités et leurs accès restent à déployer ; ce service n’est pas démarré par le kit.",
+        "en": "ZEN Gate / Stargate - chunked dedup transfer (HAVE/NEED) for PC<->EX44, built on @nossen/zen + Brotli + SHA-256."
+      },
+      "declaredTools": [],
+      "status": "library",
+      "cli": [],
+      "evidence": {
+        "package": "@nossen/zen-gate",
+        "version": "0.1.0",
+        "kind": "package-metadata-and-readme",
+        "packageJsonSha256": "d4e9f770c7aae055e3fee58f408d04cd2a07aa2ac640a3bfcc13454b27099c02"
+      }
+    }
+  ],
+  "tools": [
+    {
+      "name": "agent_presence",
+      "description": {
+        "fr": "Lit les présences et activités récentes déclarées par les agents locaux.",
+        "en": "Use this when you need the current MCP-adjacent agent presence, roles, hosts and recent activity."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "includeIdle",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "agent_heartbeat",
+      "description": {
+        "fr": "Enregistre un agent défini par le client et ses compétences. Ne lance aucun exécutant et ne sélectionne aucun personnage prédéfini.",
+        "en": "Register a customer-defined agent and capabilities locally. Names never select a vendor persona. Does not start a worker."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "agentId",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "role",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "host",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 120
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "active",
+            "idle",
+            "busy",
+            "observed",
+            "offline",
+            "error"
+          ]
+        },
+        {
+          "name": "capabilities",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "profilePreset",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "identity",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "tone",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "priority",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 100
+        },
+        {
+          "name": "memoryScope",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "riskLevel",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 240
+        },
+        {
+          "name": "checkInbox",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "autoReplyInbox",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "agent_role_route",
+      "description": {
+        "fr": "Recherche les agents récents possédant toutes les compétences demandées. Ne distribue ni n’exécute les tâches.",
+        "en": "Find recently announced customer agents with all requested capabilities. Task text is descriptive only; no hidden semantic routing or dispatch."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "task",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 240
+        },
+        {
+          "name": "requiredCapabilities",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "includeArchitecture",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "container_runtime_status",
+      "description": {
+        "fr": "Décrit les limites de l’installation autonome. Ne lit pas Docker et ne prouve pas la santé des conteneurs.",
+        "en": "Describe the standalone installation boundaries. Does not inspect Docker or report container health."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "includeCommands",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "a11_context_brief",
+      "description": {
+        "fr": "Résume les présences et nombres de tâches de cette installation, sans backend hébergé.",
+        "en": "Read this customer installation’s local agent presence and job counts. No hosted backend request."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "codex_remote_status",
+      "description": {
+        "fr": "Contrat de lecture de présence d’un exécutant Codex. Cet exécutant n’est pas fourni.",
+        "en": "Read whether a Codex presence worker is visible and which bounded coordination capabilities are available. No shell, secrets, or raw filesystem access."
+      },
+      "group": "workers",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "codex_task_create",
+      "description": {
+        "fr": "Contrat de création d’une tâche pour un exécutant Codex externe au kit. Aucun exécutant n’est fourni.",
+        "en": "Create a bounded task for the Codex presence worker through the existing Funesterie dispatcher. No raw shell, no secrets, no delete, no deploy."
+      },
+      "group": "workers",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "title",
+          "type": "string",
+          "required": true,
+          "minLength": 3,
+          "maxLength": 160
+        },
+        {
+          "name": "goal",
+          "type": "string",
+          "required": true,
+          "minLength": 5,
+          "maxLength": 1200
+        },
+        {
+          "name": "mode",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "read-only-audit",
+            "patch-proposal",
+            "test-run",
+            "diagnostic",
+            "doc-update-proposal"
+          ]
+        },
+        {
+          "name": "constraints",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "expectedOutput",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "summary",
+            "patch",
+            "test-report"
+          ]
+        },
+        {
+          "name": "priority",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "low",
+            "normal",
+            "high",
+            "urgent"
+          ]
+        },
+        {
+          "name": "dryRun",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "codex_task_status",
+      "description": {
+        "fr": "Contrat de lecture de l’état d’une tâche Codex. Nécessite le service correspondant, non fourni.",
+        "en": "Read a bounded status summary for one Codex task without exposing raw logs or secrets."
+      },
+      "group": "workers",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "taskId",
+          "type": "string",
+          "required": true,
+          "minLength": 4,
+          "maxLength": 140
+        },
+        {
+          "name": "includeSummary",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "codex_task_result",
+      "description": {
+        "fr": "Contrat de lecture du résultat d’une tâche Codex. Nécessite le service correspondant, non fourni.",
+        "en": "Read the result summary and safe artifacts for a Codex task. Returns capped, redacted log text only when available."
+      },
+      "group": "workers",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "taskId",
+          "type": "string",
+          "required": true,
+          "minLength": 4,
+          "maxLength": 140
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "agent_inbox_check",
+      "description": {
+        "fr": "Lit les présences, tâches et discussions ; peut ajouter une réponse locale selon les options.",
+        "en": "Use this on MCP connection/startup: read presence, jobs and open discussions, then optionally post a bounded check-in reply."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 1,
+          "maxLength": 80
+        },
+        {
+          "name": "agentId",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 120
+        },
+        {
+          "name": "aliases",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "autoReply",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "includeGlobal",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "maxThreads",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 50
+        },
+        {
+          "name": "cooldownMinutes",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 1440
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "agent_alert_email",
+      "description": {
+        "fr": "Adaptateur d’alerte par courriel. Le service et les identifiants du fournisseur ne sont pas fournis ; aucun envoi prêt à l’emploi.",
+        "en": "Send or dry-run a bounded, credential-safe urgent/fix/incident email through the configured provider. Use only for real blockers, production incidents or fixes needing fast attention. Disabled unless AGENT_ALERT_EMAIL_ENABLED and provider credentials are configured server-side."
+      },
+      "group": "integrations",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "severity",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "info",
+            "fix",
+            "blocked",
+            "incident",
+            "urgent"
+          ]
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 160
+        },
+        {
+          "name": "body",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 4000
+        },
+        {
+          "name": "threadId",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 160
+        },
+        {
+          "name": "jobId",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 160
+        },
+        {
+          "name": "source",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 120
+        },
+        {
+          "name": "tags",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "dryRun",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "agent_maintenance_cycle",
+      "description": {
+        "fr": "Cycle borné de contrôles et de maintenance d’agents. Adaptateur restant à qualifier dans ce kit.",
+        "en": "Run one bounded 6h-style maintenance cycle: health checks, queue audit, expired lease recovery, compact report, and optional green salon. No shell or secrets."
+      },
+      "group": "qualification",
+      "status": "unqualified",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "dryRun",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "forceReport",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "postReport",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "salonIfGreen",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "minReportIntervalHours",
+          "type": "number",
+          "required": false,
+          "minimum": 1,
+          "maximum": 24
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "agent_maintenance_status",
+      "description": {
+        "fr": "Lit le rapport de maintenance prévu par l’adaptateur. Fonction restant à qualifier.",
+        "en": "Read the latest bounded agent maintenance scheduler state and compact report."
+      },
+      "group": "qualification",
+      "status": "unqualified",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "agent_call_friend",
+      "description": {
+        "fr": "Ancien mécanisme de passage de relais entre agents. Reste à qualifier ; utiliser les parcours locaux documentés pour vos agents.",
+        "en": "Use this when an agent is blocked and needs a bounded handoff to another Funesterie agent. It opens a non-secret discussion thread and queues a declarative help job for local and/or prod friends."
+      },
+      "group": "qualification",
+      "status": "unqualified",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "scope",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "local",
+            "prod",
+            "both"
+          ]
+        },
+        {
+          "name": "friend",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "auto",
+            "codex",
+            "a11",
+            "kaen44",
+            "gemini",
+            "chatgpt",
+            "all"
+          ]
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 160
+        },
+        {
+          "name": "question",
+          "type": "string",
+          "required": true,
+          "minLength": 4,
+          "maxLength": 3000
+        },
+        {
+          "name": "context",
+          "type": "string",
+          "required": false,
+          "maxLength": 3000
+        },
+        {
+          "name": "urgency",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "low",
+            "normal",
+            "high"
+          ]
+        },
+        {
+          "name": "tags",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "relatedTool",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 80
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "agent_general_call",
+      "description": {
+        "fr": "Prévisualise ou crée une discussion locale et des tâches pour des agents nommément choisis. Aucun message externe ni travail automatique.",
+        "en": "Preview or create a local discussion and optional queued jobs for explicitly named, available customer agents. No external messaging and no automatic execution. Workers consume the returned queues."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 140
+        },
+        {
+          "name": "message",
+          "type": "string",
+          "required": true,
+          "minLength": 4,
+          "maxLength": 2800
+        },
+        {
+          "name": "targets",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "scope",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "createJobs",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "dryRun",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "sendDiscord",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "agent_jobs",
+      "description": {
+        "fr": "Lit le tableau persistant des tâches locales sans le modifier.",
+        "en": "Use this when you need the shared persistent job board without modifying it."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "status",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "queued",
+            "leased",
+            "running",
+            "done",
+            "failed",
+            "dead-letter",
+            "cancelled",
+            "archived"
+          ]
+        },
+        {
+          "name": "queue",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 80
+        },
+        {
+          "name": "workerId",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 100
+        },
+        {
+          "name": "limit",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 300
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "a11_worker_status",
+      "description": {
+        "fr": "Contrat d’état du superviseur d’exécutants. Le service de supervision n’est pas fourni.",
+        "en": "Read the controlled A11 worker supervisor: npm whitelist, locks, capped redacted logs and recent audit events."
+      },
+      "group": "workers",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "workerId",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "identity-archivist",
+            "identity-archivist-dry-run",
+            "orchestrator-once",
+            "orchestrator-loop",
+            "orchestrator-status",
+            "dispatch-agents",
+            "dispatch-status",
+            "sync-ecosystem-scope-neo4j-dry-run",
+            "sync-ecosystem-scope-neo4j",
+            "sync-ecosystem-corpus-neo4j-dry-run",
+            "sync-ecosystem-corpus-neo4j",
+            "generate-ecosystem-briefing",
+            "test-mcp"
+          ]
+        },
+        {
+          "name": "includeLogs",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "maxLogChars",
+          "type": "integer",
+          "required": false,
+          "minimum": 500,
+          "maximum": 12000
+        },
+        {
+          "name": "auditLimit",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 100
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "a11_worker_start",
+      "description": {
+        "fr": "Contrat de démarrage d’un exécutant autorisé. Superviseur et exécutant non fournis.",
+        "en": "Start one whitelisted A11 npm worker. Requires an agent id. No free shell, root, docker socket, or arbitrary command is exposed."
+      },
+      "group": "workers",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "agent",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 64
+        },
+        {
+          "name": "workerId",
+          "type": "string",
+          "required": true,
+          "enum": [
+            "identity-archivist",
+            "identity-archivist-dry-run",
+            "orchestrator-once",
+            "orchestrator-loop",
+            "orchestrator-status",
+            "dispatch-agents",
+            "dispatch-status",
+            "sync-ecosystem-scope-neo4j-dry-run",
+            "sync-ecosystem-scope-neo4j",
+            "sync-ecosystem-corpus-neo4j-dry-run",
+            "sync-ecosystem-corpus-neo4j",
+            "generate-ecosystem-briefing",
+            "test-mcp"
+          ]
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false,
+          "maxLength": 300
+        },
+        {
+          "name": "dryRun",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "a11_worker_stop",
+      "description": {
+        "fr": "Contrat d’arrêt d’un exécutant supervisé. Superviseur non fourni.",
+        "en": "Stop one worker known by the A11 worker supervisor lock. Requires an agent id."
+      },
+      "group": "workers",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "agent",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 64
+        },
+        {
+          "name": "workerId",
+          "type": "string",
+          "required": true,
+          "enum": [
+            "identity-archivist",
+            "identity-archivist-dry-run",
+            "orchestrator-once",
+            "orchestrator-loop",
+            "orchestrator-status",
+            "dispatch-agents",
+            "dispatch-status",
+            "sync-ecosystem-scope-neo4j-dry-run",
+            "sync-ecosystem-scope-neo4j",
+            "sync-ecosystem-corpus-neo4j-dry-run",
+            "sync-ecosystem-corpus-neo4j",
+            "generate-ecosystem-briefing",
+            "test-mcp"
+          ]
+        },
+        {
+          "name": "dryRun",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "a11_worker_restart",
+      "description": {
+        "fr": "Contrat de redémarrage d’un exécutant supervisé. Superviseur non fourni.",
+        "en": "Restart one whitelisted A11 npm worker through stop then start, with audit and lock checks."
+      },
+      "group": "workers",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "agent",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 64
+        },
+        {
+          "name": "workerId",
+          "type": "string",
+          "required": true,
+          "enum": [
+            "identity-archivist",
+            "identity-archivist-dry-run",
+            "orchestrator-once",
+            "orchestrator-loop",
+            "orchestrator-status",
+            "dispatch-agents",
+            "dispatch-status",
+            "sync-ecosystem-scope-neo4j-dry-run",
+            "sync-ecosystem-scope-neo4j",
+            "sync-ecosystem-corpus-neo4j-dry-run",
+            "sync-ecosystem-corpus-neo4j",
+            "generate-ecosystem-briefing",
+            "test-mcp"
+          ]
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false,
+          "maxLength": 300
+        },
+        {
+          "name": "dryRun",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "a11_task_dispatch",
+      "description": {
+        "fr": "Contrat d’envoi de tâches au distributeur historique. Service non fourni dans le kit.",
+        "en": "Create a bounded Markdown task queue and run the existing Funesterie dispatcher through the npm whitelist."
+      },
+      "group": "workers",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "agent",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 64
+        },
+        {
+          "name": "project",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 120
+        },
+        {
+          "name": "tasks",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "markdown",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 20000
+        },
+        {
+          "name": "priority",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 40
+        },
+        {
+          "name": "targetAgents",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "dryRun",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "a11_agent_jobs_status",
+      "description": {
+        "fr": "Contrat de consultation des tâches du superviseur. Service non fourni.",
+        "en": "Read the A11 supervisor job board plus known external agent caller identities."
+      },
+      "group": "workers",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "agent",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 64
+        },
+        {
+          "name": "limit",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 300
+        },
+        {
+          "name": "includeLogs",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "maxLogChars",
+          "type": "integer",
+          "required": false,
+          "minimum": 500,
+          "maximum": 12000
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "job_queue_schema",
+      "description": {
+        "fr": "Décrit le format et les règles de la file locale de tâches déclaratives.",
+        "en": "Use this before writing or leasing jobs. It describes the bounded declarative Funesterie job runtime."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "job_enqueue",
+      "description": {
+        "fr": "Dépose une tâche JSON bornée dans la file. Ne lance pas de commande shell ni de programme.",
+        "en": "Use this to enqueue one declarative, bounded, non-secret job. Payloads are JSON only; shell/root/docker execution fields are refused."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "queue",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 80
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 100
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 180
+        },
+        {
+          "name": "payload",
+          "type": "JSON",
+          "required": false
+        },
+        {
+          "name": "priority",
+          "type": "integer",
+          "required": false,
+          "minimum": -100,
+          "maximum": 100
+        },
+        {
+          "name": "risk",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        {
+          "name": "requiredCapabilities",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "runAfter",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "leaseMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 5000,
+          "maximum": 3600000
+        },
+        {
+          "name": "maxRetries",
+          "type": "integer",
+          "required": false,
+          "minimum": 0,
+          "maximum": 20
+        },
+        {
+          "name": "idempotencyKey",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 160
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "job_worker_heartbeat",
+      "description": {
+        "fr": "Permet à votre propre exécutant de déclarer ses files et compétences.",
+        "en": "Use this for a bounded worker to announce its queue/capabilities before leasing jobs."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "workerId",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 100
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 100
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "active",
+            "idle",
+            "busy",
+            "offline",
+            "error"
+          ]
+        },
+        {
+          "name": "capabilities",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "queues",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "required": false,
+          "maxLength": 240
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "job_lease",
+      "description": {
+        "fr": "Réserve atomiquement des tâches compatibles ; fournit un jeton de bail temporaire à garder privé.",
+        "en": "Use this to atomically lease queued or retry-due jobs matching a worker's capabilities. The returned leaseToken is temporary and must be used for start/heartbeat/complete/fail."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "workerId",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 100
+        },
+        {
+          "name": "workerName",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 100
+        },
+        {
+          "name": "capabilities",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "queues",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "maxJobs",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 10
+        },
+        {
+          "name": "leaseMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 5000,
+          "maximum": 3600000
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "job_start",
+      "description": {
+        "fr": "Marque le début d’une tâche disposant d’un bail valide.",
+        "en": "Use this when a worker begins executing a leased job."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "jobId",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 160
+        },
+        {
+          "name": "workerId",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 100
+        },
+        {
+          "name": "leaseToken",
+          "type": "string",
+          "required": true,
+          "minLength": 16,
+          "maxLength": 200
+        },
+        {
+          "name": "progress",
+          "type": "number",
+          "required": false,
+          "minimum": 0,
+          "maximum": 1
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "required": false,
+          "maxLength": 240
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "job_heartbeat",
+      "description": {
+        "fr": "Prolonge un bail et met à jour la progression de la tâche.",
+        "en": "Use this to extend the lease and update bounded progress for a running or leased job."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "jobId",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 160
+        },
+        {
+          "name": "workerId",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 100
+        },
+        {
+          "name": "leaseToken",
+          "type": "string",
+          "required": true,
+          "minLength": 16,
+          "maxLength": 200
+        },
+        {
+          "name": "extendLeaseMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 5000,
+          "maximum": 3600000
+        },
+        {
+          "name": "progress",
+          "type": "number",
+          "required": false,
+          "minimum": 0,
+          "maximum": 1
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "required": false,
+          "maxLength": 240
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "job_complete",
+      "description": {
+        "fr": "Termine une tâche louée avec un résultat JSON borné sans secret.",
+        "en": "Use this to complete a leased job with a bounded non-secret JSON result."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "jobId",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 160
+        },
+        {
+          "name": "workerId",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 100
+        },
+        {
+          "name": "leaseToken",
+          "type": "string",
+          "required": true,
+          "minLength": 16,
+          "maxLength": 200
+        },
+        {
+          "name": "result",
+          "type": "JSON",
+          "required": false
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "required": false,
+          "maxLength": 240
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "job_fail",
+      "description": {
+        "fr": "Enregistre l’échec d’une tâche et son éventuelle prochaine tentative.",
+        "en": "Use this to fail a leased job. Retryable failures move to failed with nextRetryAt; exhausted jobs go to dead-letter."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "jobId",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 160
+        },
+        {
+          "name": "workerId",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 100
+        },
+        {
+          "name": "leaseToken",
+          "type": "string",
+          "required": true,
+          "minLength": 16,
+          "maxLength": 200
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 1200
+        },
+        {
+          "name": "retryable",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "retryDelayMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        {
+          "name": "result",
+          "type": "JSON",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "job_recover_expired",
+      "description": {
+        "fr": "Récupère les tâches dont le bail a expiré après l’arrêt d’un exécutant.",
+        "en": "Use this to recover leased/running jobs whose lease expired after a worker crash."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "maxJobs",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 500
+        },
+        {
+          "name": "retryDelayMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 0,
+          "maximum": 86400000
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "job_retire",
+      "description": {
+        "fr": "Prévisualise puis, sur demande explicite, annule ou archive des tâches anciennes.",
+        "en": "Use this to safely cancel stale open jobs or archive old terminal jobs. It is dry-run by default; set dryRun=false to append bounded job_cancelled/job_archived events."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "action",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "cancel",
+            "archive"
+          ]
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 240
+        },
+        {
+          "name": "jobIds",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "statuses",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "queues",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "olderThanHours",
+          "type": "number",
+          "required": false,
+          "minimum": 0,
+          "maximum": 8760
+        },
+        {
+          "name": "maxJobs",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 500
+        },
+        {
+          "name": "dryRun",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "memory_governance_schema",
+      "description": {
+        "fr": "Décrit le schéma de mémoire JSONL et Neo4j avant l’écriture de notes.",
+        "en": "Use this to understand the official append-only Neo4j and JSONL memory schema before writing notes."
+      },
+      "group": "graph",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "memory_semantic_schema",
+      "description": {
+        "fr": "Décrit les contrats des notes de mémoire et des liens sémantiques.",
+        "en": "Use this to understand the semantic memory contract before writing notes or graph links."
+      },
+      "group": "graph",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "memory_write_safe",
+      "description": {
+        "fr": "Ajoute une note sans secret dans la mémoire locale et, si autorisé, un nœud encadré dans le graphe.",
+        "en": "Use this to append one non-secret memory note for shared agent coordination. Writes JSONL and, when enabled, a Neo4j draft node."
+      },
+      "group": "graph-write",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 160
+        },
+        {
+          "name": "body",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 6000
+        },
+        {
+          "name": "scope",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "lore",
+            "corpus",
+            "rgba",
+            "infra",
+            "decision",
+            "meeting",
+            "song-lab",
+            "design",
+            "general"
+          ]
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "note",
+            "lore_proposal",
+            "agent_decision",
+            "song_idea",
+            "meeting_summary",
+            "corpus_note",
+            "rgba_note",
+            "job_note"
+          ]
+        },
+        {
+          "name": "tags",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "links",
+          "type": "array",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "web_draft_write",
+      "description": {
+        "fr": "Enregistre un brouillon local pour le projet du client. Ne publie ni ne déploie de site.",
+        "en": "Save a local draft for any customer-defined project slug. No publication or deployment."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 160
+        },
+        {
+          "name": "route",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 160
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "md",
+            "html",
+            "txt",
+            "json"
+          ]
+        },
+        {
+          "name": "content",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 30000
+        },
+        {
+          "name": "tags",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "notes",
+          "type": "string",
+          "required": false,
+          "maxLength": 2000
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "web_draft_index",
+      "description": {
+        "fr": "Liste les brouillons locaux, éventuellement filtrés par projet.",
+        "en": "List locally saved drafts, optionally filtered by customer project."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "target",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "limit",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 200
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "discussion_list",
+      "description": {
+        "fr": "Liste les discussions locales disponibles pour les agents.",
+        "en": "Use this when agents need to discover open MCP discussion threads instead of asking a human to relay messages."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "status",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "open",
+            "pitching",
+            "working",
+            "blocked",
+            "done",
+            "archived"
+          ]
+        },
+        {
+          "name": "participant",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 80
+        },
+        {
+          "name": "limit",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 200
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "discussion_open",
+      "description": {
+        "fr": "Ouvre un fil de discussion persistant dans l’installation. Ne contacte aucun fournisseur d’IA.",
+        "en": "Use this to open a persistent MCP discussion thread for Codex, Kiro, Gemini, ChatGPT, A11 or Kaen44. Never include secrets."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "title",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 160
+        },
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "body",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 6000
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "open",
+            "pitching",
+            "working",
+            "blocked",
+            "done",
+            "archived"
+          ]
+        },
+        {
+          "name": "brief",
+          "type": "object",
+          "required": false
+        },
+        {
+          "name": "topic",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 120
+        },
+        {
+          "name": "participants",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "tags",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "threadId",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 120
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "discussion_post",
+      "description": {
+        "fr": "Ajoute un message à un fil local existant. Les secrets ne doivent pas y être inscrits.",
+        "en": "Use this to reply in an existing MCP discussion thread. Never include passwords, tokens, API keys or other secrets."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "threadId",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 120
+        },
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "body",
+          "type": "string",
+          "required": true,
+          "minLength": 1,
+          "maxLength": 6000
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "message",
+            "status",
+            "decision",
+            "question",
+            "answer"
+          ]
+        },
+        {
+          "name": "replyTo",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 120
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "discussion_read",
+      "description": {
+        "fr": "Lit un fil local avec une limite sur l’historique retourné.",
+        "en": "Use this to read one MCP discussion thread with capped message history."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "threadId",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 120
+        },
+        {
+          "name": "limit",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 500
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "discussion_set_status",
+      "description": {
+        "fr": "Change l’état d’un fil : proposition, travail, blocage, terminé ou archivé.",
+        "en": "Use this to mark a discussion as pitching, working, blocked, done or archived, optionally with a short status message."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "threadId",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 120
+        },
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "required": true,
+          "enum": [
+            "open",
+            "pitching",
+            "working",
+            "blocked",
+            "done",
+            "archived"
+          ]
+        },
+        {
+          "name": "body",
+          "type": "string",
+          "required": false,
+          "maxLength": 6000
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "retro_snes_index",
+      "description": {
+        "fr": "Prévoit un inventaire de ressources rétro locales. Adaptateur à qualifier ; jeux et émulateurs non fournis.",
+        "en": "Use this to list local SNES emulator, ROM metadata and helper scripts without exposing ROM bytes."
+      },
+      "group": "qualification",
+      "status": "unqualified",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "includeHashes",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "maxItems",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 200
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "retro_snes_training_brief",
+      "description": {
+        "fr": "Prépare un cadre de coaching rétro. Ne joue pas au jeu et reste à qualifier.",
+        "en": "Use this to onboard Grok or another agent as a truthful retro coach/designer without pretending to play if no live control exists."
+      },
+      "group": "qualification",
+      "status": "unqualified",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "retro_snes_session_plan",
+      "description": {
+        "fr": "Prépare un plan de session rétro. Ne fournit pas les captures ou les contrôleurs nécessaires.",
+        "en": "Use this to prepare a fair SNES play/coaching session with local capture and bounded controls."
+      },
+      "group": "qualification",
+      "status": "unqualified",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "game",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 120
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "ki_play",
+      "description": {
+        "fr": "Contrat d’entrée de manette pour un pont de jeu hôte. Pont et jeu non fournis.",
+        "en": "Use this to send a Killer Instinct SNES controller input as an AI agent. Allowed keys: up down left right a b x y l r. Max 3 keys per call. Start/select are blocked (fair-play). Returns the current game state (phase, signals) after the command is queued. A local bridge (Watch-KiCommands.ps1) must be running on the host to actually inject the inputs."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "player",
+          "type": "number | number",
+          "required": false
+        },
+        {
+          "name": "keys",
+          "type": "string",
+          "required": true,
+          "minLength": 1,
+          "maxLength": 60
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "ki_state",
+      "description": {
+        "fr": "Contrat de lecture d’analyse de jeu produite sur l’hôte. Boucle de capture non fournie.",
+        "en": "Use this to read the latest Killer Instinct frame analysis: phase (fight/versus/loading), visual signals (brightness, purple, red, center) and decision hint. Updated by the local capture loop running on the host."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "romstation_state",
+      "description": {
+        "fr": "Contrat de lecture d’état de RomStation sur l’hôte. Service non fourni.",
+        "en": "Use this to read the unified RomStation state file. It detects the launcher or the current demo window, the preferred control tool, the phase, and the safe next action hint."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "romstation_mouse",
+      "description": {
+        "fr": "Contrat de commande souris ciblée pour RomStation. Pont de contrôle non fourni.",
+        "en": "Use this to queue a bounded mouse move/click against the RomStation process. The watcher matches targetWindow against window title or process name, so targetWindow=RomStation still works when the title is a game name."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "targetWindow",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 120
+        },
+        {
+          "name": "action",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "move",
+            "click",
+            "double_click"
+          ]
+        },
+        {
+          "name": "button",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "left",
+            "right",
+            "middle"
+          ]
+        },
+        {
+          "name": "coordinateMode",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "window-normalized",
+            "window-pixels"
+          ]
+        },
+        {
+          "name": "x",
+          "type": "number",
+          "required": false,
+          "minimum": 0,
+          "maximum": 10000
+        },
+        {
+          "name": "y",
+          "type": "number",
+          "required": false,
+          "minimum": 0,
+          "maximum": 10000
+        },
+        {
+          "name": "clicks",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 2
+        },
+        {
+          "name": "holdMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 10,
+          "maximum": 500
+        },
+        {
+          "name": "waitMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 0,
+          "maximum": 3000
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "required": false,
+          "maxLength": 160
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "romstation_keyboard",
+      "description": {
+        "fr": "Contrat de navigation clavier pour RomStation. Pont de contrôle non fourni.",
+        "en": "Use this to queue keyboard navigation against the RomStation process. Use virtual buttons up/down/left/right/start/select; start maps to Enter and select maps to Backspace."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "targetWindow",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 120
+        },
+        {
+          "name": "layout",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "bloody-roar-keyboard-azerty",
+            "bloody-roar-keyboard-wasd",
+            "bloody-roar-keyboard-numpad",
+            "br-azerty",
+            "br-wasd",
+            "br-numpad"
+          ]
+        },
+        {
+          "name": "buttons",
+          "type": "string",
+          "required": true,
+          "minLength": 1,
+          "maxLength": 120
+        },
+        {
+          "name": "holdMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 15,
+          "maximum": 500
+        },
+        {
+          "name": "waitMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 0,
+          "maximum": 3000
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "required": false,
+          "maxLength": 160
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "qflush_gamepad_status",
+      "description": {
+        "fr": "Contrat de lecture du bus de commandes de manette. Pont hôte non fourni.",
+        "en": "Use this to inspect the append-only virtual gamepad bus used by local controller bridges. It reads the command file paths, allowed buttons, pilot intents, and recent queued commands."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "qflush_gamepad_play",
+      "description": {
+        "fr": "Contrat de commande de manette bornée. Ne contrôle rien sans un pont hôte, non fourni.",
+        "en": "Use this to queue a bounded virtual controller command for the RomStation demo path. The command is written to gamepad-commands.jsonl; legacy Bloody Roar targets also write br-commands.jsonl so the current ViGEm bridge can consume it. Allowed buttons: up down left right a b x y z l r start select."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "player",
+          "type": "number | number",
+          "required": false
+        },
+        {
+          "name": "buttons",
+          "type": "string",
+          "required": true,
+          "minLength": 1,
+          "maxLength": 120
+        },
+        {
+          "name": "holdMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 15,
+          "maximum": 500
+        },
+        {
+          "name": "waitMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 0,
+          "maximum": 3000
+        },
+        {
+          "name": "analyzeAfter",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "audioAnalyzeAfter",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "videoAnalyzeAfter",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "required": false,
+          "maxLength": 160
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "qflush_gamepad_pilot",
+      "description": {
+        "fr": "Contrat de plan court de commandes de manette. Pont hôte non fourni.",
+        "en": "Use this to queue a short high-level gamepad plan for demo automation through the RomStation controller path. Intents: auto, wake, advance_menu, demo_fight, beast_combo, safe_idle, reset_soft."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "player",
+          "type": "number | number",
+          "required": false
+        },
+        {
+          "name": "intent",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "auto",
+            "wake",
+            "advance_menu",
+            "demo_fight",
+            "beast_combo",
+            "safe_idle",
+            "reset_soft"
+          ]
+        },
+        {
+          "name": "loops",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 5
+        },
+        {
+          "name": "analyzeAfter",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "audioAnalyzeAfter",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "videoAnalyzeAfter",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "qflush_keyboard_play",
+      "description": {
+        "fr": "Contrat de commande clavier bornée. Exécutant hôte non fourni.",
+        "en": "Use this to queue a bounded keyboard fallback command through Qflush. Canonical layouts: bloody-roar-keyboard-azerty, bloody-roar-keyboard-wasd, bloody-roar-keyboard-numpad. Aliases: br-azerty, br-wasd, br-numpad. The local watcher refuses to inject if the target window is missing."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "targetWindow",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 120
+        },
+        {
+          "name": "layout",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "bloody-roar-keyboard-azerty",
+            "bloody-roar-keyboard-wasd",
+            "bloody-roar-keyboard-numpad",
+            "br-azerty",
+            "br-wasd",
+            "br-numpad"
+          ]
+        },
+        {
+          "name": "player",
+          "type": "number | number",
+          "required": false
+        },
+        {
+          "name": "buttons",
+          "type": "string",
+          "required": true,
+          "minLength": 1,
+          "maxLength": 120
+        },
+        {
+          "name": "holdMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 15,
+          "maximum": 500
+        },
+        {
+          "name": "waitMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 0,
+          "maximum": 3000
+        },
+        {
+          "name": "analyzeAfter",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "audioAnalyzeAfter",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "videoAnalyzeAfter",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "required": false,
+          "maxLength": 160
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "qflush_keyboard_macro",
+      "description": {
+        "fr": "Contrat de raccourcis clavier autorisés. Exécutant hôte non fourni.",
+        "en": "Use this to queue bounded keyboard shortcuts through Qflush. Examples: alt+a, ctrl+m, ctrl+shift+p, alt+enter. The local watcher focuses the target window first and refuses keys outside the allowlist."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "targetWindow",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 120
+        },
+        {
+          "name": "macro",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 240
+        },
+        {
+          "name": "chords",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "holdMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 15,
+          "maximum": 500
+        },
+        {
+          "name": "gapMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 0,
+          "maximum": 1000
+        },
+        {
+          "name": "waitMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 0,
+          "maximum": 3000
+        },
+        {
+          "name": "analyzeAfter",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "audioAnalyzeAfter",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "videoAnalyzeAfter",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "required": false,
+          "maxLength": 160
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "qflush_keyboard_pilot",
+      "description": {
+        "fr": "Contrat de plan court de navigation clavier. Exécutant hôte non fourni.",
+        "en": "Use this to queue a short high-level keyboard fallback plan for demo automation through Qflush. Intents: auto, wake, advance_menu, demo_fight, beast_combo, safe_idle, reset_soft. Use canonical layout names so other agents can reproduce the same mapping."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "targetWindow",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 120
+        },
+        {
+          "name": "layout",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "bloody-roar-keyboard-azerty",
+            "bloody-roar-keyboard-wasd",
+            "bloody-roar-keyboard-numpad",
+            "br-azerty",
+            "br-wasd",
+            "br-numpad"
+          ]
+        },
+        {
+          "name": "player",
+          "type": "number | number",
+          "required": false
+        },
+        {
+          "name": "intent",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "auto",
+            "wake",
+            "advance_menu",
+            "demo_fight",
+            "beast_combo",
+            "safe_idle",
+            "reset_soft"
+          ]
+        },
+        {
+          "name": "loops",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 5
+        },
+        {
+          "name": "analyzeAfter",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "audioAnalyzeAfter",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "videoAnalyzeAfter",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "qflush_mouse_click",
+      "description": {
+        "fr": "Contrat d’action souris ciblant une fenêtre. Pont hôte non fourni par le kit Docker.",
+        "en": "Use this to queue a local-only virtual mouse action through Qflush. Prefer coordinateMode=window-normalized with x/y from 0 to 1. The local bridge only clicks after focusing a matching target window."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "targetWindow",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 120
+        },
+        {
+          "name": "action",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "click",
+            "double_click",
+            "move"
+          ]
+        },
+        {
+          "name": "button",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "left",
+            "right",
+            "middle"
+          ]
+        },
+        {
+          "name": "coordinateMode",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "window-normalized",
+            "window-pixels"
+          ]
+        },
+        {
+          "name": "x",
+          "type": "number",
+          "required": false,
+          "minimum": 0,
+          "maximum": 10000
+        },
+        {
+          "name": "y",
+          "type": "number",
+          "required": false,
+          "minimum": 0,
+          "maximum": 10000
+        },
+        {
+          "name": "clicks",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 2
+        },
+        {
+          "name": "holdMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 10,
+          "maximum": 500
+        },
+        {
+          "name": "waitMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 0,
+          "maximum": 3000
+        },
+        {
+          "name": "analyzeAfter",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "audioAnalyzeAfter",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "videoAnalyzeAfter",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "required": false,
+          "maxLength": 160
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "neo4j_status",
+      "description": {
+        "fr": "Vérifie la connexion à Neo4j sans retourner les identifiants.",
+        "en": "Use this to verify the optional Neo4j memory connection without exposing credentials."
+      },
+      "group": "graph",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "neo4j_temporal_status",
+      "description": {
+        "fr": "Inspecte la configuration des événements, décisions et exécutions du graphe.",
+        "en": "Use this to inspect the Event/Decision/Run temporal graph wiring without exposing credentials."
+      },
+      "group": "graph",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "neo4j_temporal_schema",
+      "description": {
+        "fr": "Prépare ou applique les contraintes et index temporels ; l’application exige les droits d’écriture correspondants.",
+        "en": "Use this to prepare or apply the Event/Decision/Run/Module constraints and indexes. Writes require ALLOW_NEO4J_TEMPORAL_WRITES=true."
+      },
+      "group": "graph",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "dryRun",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "neo4j_temporal_emit_event",
+      "description": {
+        "fr": "Ajoute un événement borné au graphe local autorisé, sans secret.",
+        "en": "Use this to append a sanitized Event emitted by a runtime module. No raw secrets are stored. Writes require ALLOW_NEO4J_TEMPORAL_WRITES=true."
+      },
+      "group": "graph-write",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "type",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "module",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 120
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "ok",
+            "error",
+            "timeout",
+            "skipped",
+            "running",
+            "failed",
+            "partial"
+          ]
+        },
+        {
+          "name": "durationMs",
+          "type": "integer | null",
+          "required": false
+        },
+        {
+          "name": "error",
+          "type": "string | null",
+          "required": false
+        },
+        {
+          "name": "payload",
+          "type": "object",
+          "required": false
+        },
+        {
+          "name": "triggeredBy",
+          "type": "string | null",
+          "required": false
+        },
+        {
+          "name": "runId",
+          "type": "string | null",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "neo4j_temporal_emit_decision",
+      "description": {
+        "fr": "Ajoute une décision et une exécution au graphe local autorisé.",
+        "en": "Use this to append a sanitized Decision and Run for orchestration choices. Writes require ALLOW_NEO4J_TEMPORAL_WRITES=true."
+      },
+      "group": "graph-write",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "agent",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "query",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 1000
+        },
+        {
+          "name": "chosenModules",
+          "type": "array",
+          "required": true
+        },
+        {
+          "name": "alternatives",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 1000
+        },
+        {
+          "name": "score",
+          "type": "number",
+          "required": false,
+          "minimum": 0,
+          "maximum": 1
+        },
+        {
+          "name": "runId",
+          "type": "string",
+          "required": false,
+          "maxLength": 160
+        },
+        {
+          "name": "triggeredBy",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "user",
+            "cron",
+            "agent",
+            "recovery"
+          ]
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "neo4j_temporal_reliability",
+      "description": {
+        "fr": "Résume les succès et échecs enregistrés dans le graphe pour les modules.",
+        "en": "Use this to rank runtime modules by Event success/failure history, optionally for a taskType payload."
+      },
+      "group": "graph",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "taskType",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 120
+        },
+        {
+          "name": "limit",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 50
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "a11_runtime_hooks_status",
+      "description": {
+        "fr": "Indique que le manifeste des extensions métier historiques n’est pas fourni. Une URL de backend ne remplace pas ce manifeste.",
+        "en": "Report that a vendor-specific runtime hooks manifest is not bundled. Configuring a customer backend URL does not supply this capability."
+      },
+      "group": "integrations",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "includeMarkdown",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "doctor_status",
+      "description": {
+        "fr": "Contrat de lecture de diagnostics historiques. Adaptateur à qualifier ; ne répare rien.",
+        "en": "Use this to inspect the Doctor/Docteur diagnostic side of Chopper exposed by the A11 runtime manifest. Read-only: no repair is launched."
+      },
+      "group": "qualification",
+      "status": "unqualified",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "chopper_doctor_status",
+      "description": {
+        "fr": "Contrat de bilan et de conseil de diagnostic. Adaptateur à qualifier ; aucune réparation lancée.",
+        "en": "Use this to inspect Chopper as the runtime doctor: diagnostics, health checks and repair advice. Read-only: no repair is launched."
+      },
+      "group": "qualification",
+      "status": "unqualified",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "piccolo_repair_plan",
+      "description": {
+        "fr": "Prépare un plan de réparation à partir d’un manifeste. Fonction à qualifier ; aucun changement appliqué.",
+        "en": "Use this to prepare a Piccolo safe-repair plan from the runtime hooks manifest. Read-only: returns a plan and requires validation before writes."
+      },
+      "group": "qualification",
+      "status": "unqualified",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "problem",
+          "type": "string",
+          "required": false,
+          "maxLength": 1000
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "neo4j_read_query",
+      "description": {
+        "fr": "Exécute une requête Cypher de lecture, avec limites sur les résultats.",
+        "en": "Use this to run a capped read-only Cypher query against the optional Neo4j memory graph."
+      },
+      "group": "graph",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "query",
+          "type": "string",
+          "required": true,
+          "minLength": 5,
+          "maxLength": 4000
+        },
+        {
+          "name": "params",
+          "type": "object",
+          "required": false
+        },
+        {
+          "name": "limit",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 100
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "graph_write_safe",
+      "description": {
+        "fr": "Crée ou met à jour un nœud d’un type autorisé dans le graphe local. Les propriétés ne doivent pas contenir de secrets.",
+        "en": "Use this to safely MERGE one allowlisted graph node with non-secret properties. Writes require ALLOW_NEO4J_GRAPH_WRITES=true."
+      },
+      "group": "graph-write",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "label",
+          "type": "string",
+          "required": true,
+          "enum": [
+            "Agent",
+            "AgentDecision",
+            "A11Kind",
+            "Badge",
+            "Capability",
+            "Cluster",
+            "Compression",
+            "ContextWindow",
+            "CorpusZone",
+            "Database",
+            "Decision",
+            "Domain",
+            "Discussion",
+            "Endpoint",
+            "Event",
+            "Host",
+            "Job",
+            "KiroMemory",
+            "MemoryBus",
+            "MemoryEvent",
+            "MemoryFlow",
+            "MemoryNote",
+            "MemoryScope",
+            "Permission",
+            "Policy",
+            "Role",
+            "Run",
+            "Service",
+            "Summary",
+            "Team",
+            "Trigger",
+            "TrustProfile",
+            "XPEvent",
+            "XPPost",
+            "XPTopic"
+          ]
+        },
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "minLength": 1,
+          "maxLength": 160
+        },
+        {
+          "name": "props",
+          "type": "object",
+          "required": false
+        },
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 240
+        },
+        {
+          "name": "dryRun",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "neo4j_write_query",
+      "description": {
+        "fr": "Contrat d’écriture Cypher générique. Les écritures de ce parcours sont désactivées dans le kit.",
+        "en": "Use this only for bounded allowlisted Cypher writes. Requires from/reason and ALLOW_NEO4J_WRITE_QUERY=true unless dryRun=true."
+      },
+      "group": "restricted",
+      "status": "disabled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "query",
+          "type": "string",
+          "required": true,
+          "minLength": 10,
+          "maxLength": 5000
+        },
+        {
+          "name": "params",
+          "type": "object",
+          "required": false
+        },
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 240
+        },
+        {
+          "name": "dryRun",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "readbackQuery",
+          "type": "string",
+          "required": false,
+          "minLength": 5,
+          "maxLength": 2000
+        },
+        {
+          "name": "readbackParams",
+          "type": "object",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "a11_status",
+      "description": {
+        "fr": "Vérifie le backend intégré ou le backend client configuré. Ne certifie pas la connexion à un modèle.",
+        "en": "Read the bundled backend health without network access, or GET /health on an explicitly configured external backend. A healthy local backend does not certify its model connection."
+      },
+      "group": "backend",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "a11_llm_stats",
+      "description": {
+        "fr": "Lit les compteurs de requêtes du processus ou du backend client. Aucun accès à la facturation fournisseur.",
+        "en": "Read process-local model request counters, reset on restart, or GET /api/llm/stats from the configured external backend. No billing or account lookup."
+      },
+      "group": "backend",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "a11_chat",
+      "description": {
+        "fr": "Envoie un message au modèle configuré via le backend intégré ou client. Peut être facturé ; le mode intégré ne conserve pas d’historique.",
+        "en": "Send one message through the bundled backend to the configured model, or POST /api/chat to an explicitly configured external backend. Bundled mode is stateless and rejects conversationId and model overrides. No retry or worker. Calls may incur provider charges."
+      },
+      "group": "backend-chat",
+      "status": "connection",
+      "requiredConfiguration": [
+        "llmBaseUrl",
+        "llmModel"
+      ],
+      "parameters": [
+        {
+          "name": "message",
+          "type": "string",
+          "required": true,
+          "minLength": 1,
+          "maxLength": 10000
+        },
+        {
+          "name": "conversationId",
+          "type": "string",
+          "required": false,
+          "maxLength": 160
+        },
+        {
+          "name": "model",
+          "type": "string",
+          "required": false,
+          "maxLength": 80
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "kaen44_status",
+      "description": {
+        "fr": "Vérifie le second backend du client via son endpoint de santé et son accès propre.",
+        "en": "Check GET /health on the customer-configured secondary backend with its own optional Bearer token. No shared credentials with the primary backend."
+      },
+      "group": "second-backend",
+      "status": "connection",
+      "requiredConfiguration": [
+        "kaen44BackendUrl"
+      ],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "qflush_status",
+      "description": {
+        "fr": "Contrat d’état d’un service QFlush hôte ou distant. Ce service n’est pas fourni.",
+        "en": "Use this when you need the optional remote Qflush health endpoint status. If no remote URL is configured, Qflush is treated as an A11-integrated module."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "qflush_sources_status",
+      "description": {
+        "fr": "Contrat d’inventaire de sources image/audio. Services hôtes non fournis ; ne capture ni n’enregistre.",
+        "en": "Use this before vision/audio work to see which window Qflush can look at and which mic/loopback source Vivy should listen to. It never captures pixels or records audio."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "includeWindows",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "includeAudioDevices",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "limit",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 100
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "qflush_sources_select",
+      "description": {
+        "fr": "Contrat de sélection des sources image/audio d’un pont hôte, non fourni.",
+        "en": "Use this to persist the window/audio sources Qflush and Vivy should use. This only writes a small source profile; it does not click, capture, or record."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 80
+        },
+        {
+          "name": "visionMode",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "selected-window",
+            "latest-capture",
+            "off"
+          ]
+        },
+        {
+          "name": "titleLike",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 160
+        },
+        {
+          "name": "processName",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 80
+        },
+        {
+          "name": "id",
+          "type": "integer",
+          "required": false,
+          "minimum": 0,
+          "maximum": 999999
+        },
+        {
+          "name": "label",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 120
+        },
+        {
+          "name": "audioMode",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "off",
+            "mic",
+            "loopback",
+            "both"
+          ]
+        },
+        {
+          "name": "micDevice",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 220
+        },
+        {
+          "name": "loopbackDevice",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 220
+        },
+        {
+          "name": "chunksDir",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 260
+        },
+        {
+          "name": "language",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 12
+        },
+        {
+          "name": "provider",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 40
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "qflush_window_capture",
+      "description": {
+        "fr": "Contrat de capture d’une fenêtre via le pont QFlush. Ce pont n’est pas livré avec Docker.",
+        "en": "Use this to capture only the selected/explicit window into the agent bus. It refuses full-screen capture by default and can optionally send that frame to Janus."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "titleLike",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 160
+        },
+        {
+          "name": "processName",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 80
+        },
+        {
+          "name": "id",
+          "type": "integer",
+          "required": false,
+          "minimum": 0,
+          "maximum": 999999
+        },
+        {
+          "name": "label",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 120
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 260
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "analyze",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "focusBefore",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "required": false,
+          "maxLength": 2000
+        },
+        {
+          "name": "includeStale",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "save",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "qflush_janus_status",
+      "description": {
+        "fr": "Contrat d’état du service d’analyse visuelle Janus. Service non fourni.",
+        "en": "Use this to inspect the local Qflush/Janus frame-analysis bridge without sending any image."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "qflush_janus_analyze",
+      "description": {
+        "fr": "Contrat d’analyse d’une capture récente avec Janus. Service et capture non fournis.",
+        "en": "Use this to send the freshest local RomStation capture to Janus and get a compact play/demo analysis. By default stale frames are refused so agents do not hallucinate live gameplay."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "target",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "framePath",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 260
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "required": false,
+          "maxLength": 2000
+        },
+        {
+          "name": "includeStale",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "maxAgeMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 1000,
+          "maximum": 3600000
+        },
+        {
+          "name": "save",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "qflush_vivy_audio_status",
+      "description": {
+        "fr": "Contrat d’état du service de transcription/analyse audio. Service non fourni.",
+        "en": "Use this to inspect the optional Vivy/STT audio-analysis bridge without sending any audio."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "qflush_vivy_audio_analyze",
+      "description": {
+        "fr": "Contrat d’analyse d’un clip audio récent via un service hôte, non fourni.",
+        "en": "Use this to send the freshest local RomStation/Vivy audio clip to the A11 STT/audio path. By default stale audio is refused so agents do not hallucinate live sound."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "target",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "audioPath",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 260
+        },
+        {
+          "name": "includeStale",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "maxAgeMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 1000,
+          "maximum": 3600000
+        },
+        {
+          "name": "language",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 12
+        },
+        {
+          "name": "provider",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 40
+        },
+        {
+          "name": "save",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "qflush_media_analyze",
+      "description": {
+        "fr": "Contrat d’analyse combinée image et audio. Les services et captures nécessaires ne sont pas fournis.",
+        "en": "Use this when a client asks for video-style analysis: it combines the freshest frame via Janus and the freshest audio via Vivy/STT, while keeping the same stale-frame/stale-audio guard rails."
+      },
+      "group": "host",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "target",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 80
+        },
+        {
+          "name": "mode",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "vision",
+            "audio",
+            "video"
+          ]
+        },
+        {
+          "name": "includeStale",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "maxAgeMs",
+          "type": "integer",
+          "required": false,
+          "minimum": 1000,
+          "maximum": 3600000
+        },
+        {
+          "name": "language",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 12
+        },
+        {
+          "name": "provider",
+          "type": "string",
+          "required": false,
+          "minLength": 2,
+          "maxLength": 40
+        },
+        {
+          "name": "save",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "read_backend_logs",
+      "description": {
+        "fr": "Lit une portion des journaux backend accessibles dans les racines locales autorisées ; aucun journal de production n’est fourni.",
+        "en": "Use this when you need the tail of A11 backend logs from the read-only log mount."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "lines",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 200
+        },
+        {
+          "name": "file",
+          "type": "string",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "read_qflush_logs",
+      "description": {
+        "fr": "Lit une portion des journaux QFlush accessibles localement ; leur présence dépend de votre installation.",
+        "en": "Use this when you need the tail of Qflush logs from the read-only log mount."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "lines",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 200
+        },
+        {
+          "name": "file",
+          "type": "string",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "search",
+      "description": {
+        "fr": "Recherche du texte littéral dans les documents et la mémoire locaux, avec limites et exclusion de chemins liés ou sensibles.",
+        "en": "Bounded literal text search in this installation’s workspace, shared documents and memory. Linked paths and private-looking filenames are excluded. Results may be partial."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "query",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 200
+        },
+        {
+          "name": "scope",
+          "type": "string",
+          "required": false,
+          "enum": [
+            "workspace",
+            "shared",
+            "memory",
+            "all"
+          ]
+        },
+        {
+          "name": "maxResults",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 50
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "fetch",
+      "description": {
+        "fr": "Lit un document local désigné par une URL retournée par la recherche. Ne télécharge pas de page Internet.",
+        "en": "Read a bounded local document using a workspace://, project://, shared:// or memory:// URL. URLs are returned by search. No Internet download."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "url",
+          "type": "string",
+          "required": true,
+          "minLength": 1,
+          "maxLength": 800
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "search_project",
+      "description": {
+        "fr": "Recherche du texte littéral dans l’espace de travail client ; les résultats peuvent être partiels.",
+        "en": "Bounded literal text search in the customer workspace. Linked paths and private-looking filenames are excluded. Results may be partial."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "query",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 200
+        },
+        {
+          "name": "maxResults",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 50
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "shared_context_index",
+      "description": {
+        "fr": "Liste les fichiers locaux de contexte partagé accessibles. Aucun compte Drive n’est connecté automatiquement.",
+        "en": "Use this when ChatGPT, Gemini, Codex, A11 or Kaen44 need the safe shared Drive/MCP handoff file list."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "maxItems",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 200
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "cloud_roots_index",
+      "description": {
+        "fr": "Contrat d’inventaire de dossiers cloud synchronisés. Ces montages ne sont pas fournis par le kit.",
+        "en": "Use this to list safe text files from explicitly mounted Google Drive, OneDrive or SharePoint sync roots."
+      },
+      "group": "integrations",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "root",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "maxItems",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 200
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "search_cloud_roots",
+      "description": {
+        "fr": "Contrat de recherche dans des dossiers cloud explicitement montés. Ces montages ne sont pas fournis.",
+        "en": "Use this to search text across explicitly mounted Google Drive, OneDrive or SharePoint sync roots. Results are capped and secret-looking files are skipped."
+      },
+      "group": "integrations",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "query",
+          "type": "string",
+          "required": true,
+          "minLength": 2,
+          "maxLength": 200
+        },
+        {
+          "name": "root",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "maxResults",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 50
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "read_cloud_doc",
+      "description": {
+        "fr": "Contrat de lecture d’un document dans un montage cloud. Montage et synchronisation non fournis.",
+        "en": "Use this to read one safe text document from an explicitly mounted Google Drive, OneDrive or SharePoint sync root."
+      },
+      "group": "integrations",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "root",
+          "type": "string",
+          "required": true,
+          "minLength": 1,
+          "maxLength": 80
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "required": true,
+          "minLength": 1,
+          "maxLength": 500
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "generated_bucket_status",
+      "description": {
+        "fr": "Vérifie le bucket S3/R2 du client sans révéler ses accès.",
+        "en": "Use this to verify the generated assets bucket without exposing R2 secrets. This is the MCP bridge for public generated files."
+      },
+      "group": "s3",
+      "status": "connection",
+      "requiredConfiguration": [
+        "r2Endpoint",
+        "r2AccessKeyId",
+        "r2SecretAccessKey",
+        "r2Bucket"
+      ],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "generated_bucket_public_url",
+      "description": {
+        "fr": "Contrat de création d’une adresse publique d’objet. Cette configuration de publication n’est pas fournie.",
+        "en": "Use this to build the public URL for a generated asset key under an allowed R2 prefix."
+      },
+      "group": "integrations",
+      "status": "not-bundled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "key",
+          "type": "string",
+          "required": true,
+          "minLength": 1,
+          "maxLength": 900
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "generated_bucket_list",
+      "description": {
+        "fr": "Liste les objets autorisés du bucket S3/R2 configuré par le client.",
+        "en": "Use this to list generated assets from R2. Disabled unless ALLOW_R2_BUCKET_READS=true on a trusted/private MCP profile."
+      },
+      "group": "s3",
+      "status": "connection",
+      "requiredConfiguration": [
+        "r2Endpoint",
+        "r2AccessKeyId",
+        "r2SecretAccessKey",
+        "r2Bucket"
+      ],
+      "parameters": [
+        {
+          "name": "prefix",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 300
+        },
+        {
+          "name": "limit",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 200
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "generated_bucket_head",
+      "description": {
+        "fr": "Lit les métadonnées d’un objet S3/R2 sans télécharger son contenu.",
+        "en": "Use this to inspect one generated R2 asset by key without downloading the body."
+      },
+      "group": "s3",
+      "status": "connection",
+      "requiredConfiguration": [
+        "r2Endpoint",
+        "r2AccessKeyId",
+        "r2SecretAccessKey",
+        "r2Bucket"
+      ],
+      "parameters": [
+        {
+          "name": "key",
+          "type": "string",
+          "required": true,
+          "minLength": 1,
+          "maxLength": 900
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "generated_bucket_read_text",
+      "description": {
+        "fr": "Lit un petit objet texte dans le bucket S3/R2 autorisé.",
+        "en": "Use this to read one small text object from R2. Disabled unless ALLOW_R2_BUCKET_READS=true on a trusted/private MCP profile."
+      },
+      "group": "s3",
+      "status": "connection",
+      "requiredConfiguration": [
+        "r2Endpoint",
+        "r2AccessKeyId",
+        "r2SecretAccessKey",
+        "r2Bucket"
+      ],
+      "parameters": [
+        {
+          "name": "key",
+          "type": "string",
+          "required": true,
+          "minLength": 1,
+          "maxLength": 900
+        },
+        {
+          "name": "maxBytes",
+          "type": "integer",
+          "required": false,
+          "minimum": 1024,
+          "maximum": 1048576
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "generated_bucket_put_text",
+      "description": {
+        "fr": "Contrat de publication d’un texte dans un bucket. Écritures désactivées dans ce kit.",
+        "en": "Use this to publish a small generated text artifact to R2 and return its public URL. Disabled unless ALLOW_R2_BUCKET_WRITES=true on an authenticated MCP profile."
+      },
+      "group": "restricted",
+      "status": "disabled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "text",
+          "type": "string",
+          "required": true,
+          "minLength": 1,
+          "maxLength": 1048576
+        },
+        {
+          "name": "key",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 900
+        },
+        {
+          "name": "prefix",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 300
+        },
+        {
+          "name": "filename",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 160
+        },
+        {
+          "name": "contentType",
+          "type": "string",
+          "required": false,
+          "minLength": 3,
+          "maxLength": 120
+        },
+        {
+          "name": "source",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 120
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "generated_bucket_put_base64",
+      "description": {
+        "fr": "Contrat de publication d’un fichier binaire dans un bucket. Écritures désactivées dans ce kit.",
+        "en": "Use this to publish a generated binary artifact such as an image to R2 and return its public URL. Disabled unless ALLOW_R2_BUCKET_WRITES=true on an authenticated MCP profile."
+      },
+      "group": "restricted",
+      "status": "disabled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "base64",
+          "type": "string",
+          "required": true,
+          "minLength": 4,
+          "maxLength": 83886080
+        },
+        {
+          "name": "key",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 900
+        },
+        {
+          "name": "prefix",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 300
+        },
+        {
+          "name": "filename",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 160
+        },
+        {
+          "name": "contentType",
+          "type": "string",
+          "required": false,
+          "minLength": 3,
+          "maxLength": 120
+        },
+        {
+          "name": "source",
+          "type": "string",
+          "required": false,
+          "minLength": 1,
+          "maxLength": 120
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "read_shared_doc",
+      "description": {
+        "fr": "Lit un document texte dans une racine locale de partage ou de mémoire autorisée.",
+        "en": "Use this when you need one safe text document from the shared handoff or A11 memory roots."
+      },
+      "group": "local",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "namespace",
+          "type": "string",
+          "required": true,
+          "enum": [
+            "shared",
+            "memory"
+          ]
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "required": true,
+          "minLength": 1,
+          "maxLength": 500
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "explain_env",
+      "description": {
+        "fr": "Prévoit un résumé masqué de présence de configuration. Adaptateur restant à qualifier.",
+        "en": "Use this when you need to verify configuration presence without revealing secret values."
+      },
+      "group": "qualification",
+      "status": "unqualified",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "cloudflare_verify_token",
+      "description": {
+        "fr": "Vérifie la validité et la portée du jeton Cloudflare fourni par le client, sans le retourner.",
+        "en": "Use this to check that the Cloudflare API token is valid and what scope it carries. Never reveals the token itself."
+      },
+      "group": "cloudflare",
+      "status": "connection",
+      "requiredConfiguration": [
+        "cloudflareToken",
+        "cloudflareAccountId"
+      ],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "cloudflare_list_zones",
+      "description": {
+        "fr": "Liste les domaines accessibles avec le jeton Cloudflare du client.",
+        "en": "Use this to list the Cloudflare zones (domains) reachable with the current token."
+      },
+      "group": "cloudflare",
+      "status": "connection",
+      "requiredConfiguration": [
+        "cloudflareToken",
+        "cloudflareAccountId"
+      ],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "cloudflare_list_dns_records",
+      "description": {
+        "fr": "Liste les enregistrements DNS d’une zone Cloudflare accessible.",
+        "en": "Use this to list the DNS records of one zone. Get the zoneId from cloudflare_list_zones first."
+      },
+      "group": "cloudflare",
+      "status": "connection",
+      "requiredConfiguration": [
+        "cloudflareToken",
+        "cloudflareAccountId"
+      ],
+      "parameters": [
+        {
+          "name": "zoneId",
+          "type": "string",
+          "required": true,
+          "minLength": 8
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "cloudflare_list_tunnels",
+      "description": {
+        "fr": "Liste les tunnels Cloudflare du compte client.",
+        "en": "Use this to inspect the cloudflared tunnels of the account, for example the customer tunnel."
+      },
+      "group": "cloudflare",
+      "status": "connection",
+      "requiredConfiguration": [
+        "cloudflareToken",
+        "cloudflareAccountId"
+      ],
+      "parameters": [
+        {
+          "name": "accountId",
+          "type": "string",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "cloudflare_list_access_apps",
+      "description": {
+        "fr": "Liste les applications Cloudflare Access du compte client.",
+        "en": "Use this to review the Cloudflare Access applications protecting the exposed services."
+      },
+      "group": "cloudflare",
+      "status": "connection",
+      "requiredConfiguration": [
+        "cloudflareToken",
+        "cloudflareAccountId"
+      ],
+      "parameters": [
+        {
+          "name": "accountId",
+          "type": "string",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "cloudflare_list_r2_buckets",
+      "description": {
+        "fr": "Liste les buckets R2 du compte client. La lecture des objets utilise les outils generated_bucket.",
+        "en": "Use this to list the R2 buckets of the account. For reading or writing objects, use the generated_bucket_* tools instead."
+      },
+      "group": "cloudflare",
+      "status": "connection",
+      "requiredConfiguration": [
+        "cloudflareToken",
+        "cloudflareAccountId"
+      ],
+      "parameters": [
+        {
+          "name": "accountId",
+          "type": "string",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "hetzner_list_servers",
+      "description": {
+        "fr": "Liste les serveurs dédiés du compte client via Hetzner Robot, et non Hetzner Cloud.",
+        "en": "Use this to list the Hetzner dedicated servers, EX44 included. Goes through the Robot API over 443, so it works where SSH is blocked."
+      },
+      "group": "hetzner",
+      "status": "connection",
+      "requiredConfiguration": [
+        "hetznerUser",
+        "hetznerPassword"
+      ],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "hetzner_get_rescue",
+      "description": {
+        "fr": "Vérifie l’état du mode secours d’un serveur dédié sans retourner son mot de passe.",
+        "en": "Use this to check whether rescue mode is armed on a dedicated server. The rescue root password is deliberately stripped from the answer."
+      },
+      "group": "hetzner",
+      "status": "connection",
+      "requiredConfiguration": [
+        "hetznerUser",
+        "hetznerPassword"
+      ],
+      "parameters": [
+        {
+          "name": "serverNumber",
+          "type": "string",
+          "required": true,
+          "minLength": 1
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "cloudflare_create_dns_record",
+      "description": {
+        "fr": "Contrat d’ajout d’un enregistrement DNS public. Mutations d’infrastructure désactivées.",
+        "en": "Use this to add one DNS record to a zone. This changes public DNS, so it requires ALLOW_INFRA_WRITES=true on the server."
+      },
+      "group": "restricted",
+      "status": "disabled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "zoneId",
+          "type": "string",
+          "required": true,
+          "minLength": 8
+        },
+        {
+          "name": "type",
+          "type": "string",
+          "required": true,
+          "minLength": 1
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "minLength": 1
+        },
+        {
+          "name": "content",
+          "type": "string",
+          "required": true,
+          "minLength": 1
+        },
+        {
+          "name": "ttl",
+          "type": "integer",
+          "required": false,
+          "minimum": 60,
+          "maximum": 86400
+        },
+        {
+          "name": "proxied",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "hetzner_reboot",
+      "description": {
+        "fr": "Contrat de redémarrage matériel d’un serveur dédié via Hetzner Robot. Action désactivée dans le kit.",
+        "en": "Request a hardware reset through Hetzner Robot. Infrastructure mutations are disabled in the standalone kit."
+      },
+      "group": "restricted",
+      "status": "disabled",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "serverNumber",
+          "type": "string",
+          "required": true,
+          "minLength": 1
+        },
+        {
+          "name": "confirm",
+          "type": "string",
+          "required": true,
+          "minLength": 1
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "kit_status",
+      "description": {
+        "fr": "Lit la version locale et la liste des modules activés, sans retourner de clés.",
+        "en": "Read the local kit version and enabled modules. Never returns credentials."
+      },
+      "group": "kit",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "kit_readiness",
+      "description": {
+        "fr": "Liste les prérequis et configurations manquantes sans contacter les fournisseurs. Configuration ne signifie pas validation.",
+        "en": "List tool prerequisites and missing configuration without exposing secrets or contacting providers. Configured never means verified."
+      },
+      "group": "kit",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "kit_diagnostics",
+      "description": {
+        "fr": "Teste localement une réduction de procédure, un aller-retour chiffré et une lecture authentifiée du graphe.",
+        "en": "Check local plan reduction, archive encryption and the local graph with an authenticated read. Never calls an external provider or changes graph data."
+      },
+      "group": "kit",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "kit_catalog",
+      "description": {
+        "fr": "Liste les paquets installés et leur mode d’activation. Ne prouve pas la disponibilité des connexions externes.",
+        "en": "List installed packages and their activation requirements. Installed does not imply an external connection is configured."
+      },
+      "group": "kit",
+      "status": "local",
+      "requiredConfiguration": [],
+      "parameters": [],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "assistant_chat",
+      "description": {
+        "fr": "Envoie un texte à l’API de modèle configurée par le client. Configuration, accès réseau et éventuels crédits fournisseur requis.",
+        "en": "Send a prompt to the customer-configured model API. Requires a configured provider; usage may incur provider charges."
+      },
+      "group": "model",
+      "status": "connection",
+      "requiredConfiguration": [
+        "llmBaseUrl",
+        "llmModel"
+      ],
+      "parameters": [
+        {
+          "name": "prompt",
+          "type": "string",
+          "required": true,
+          "minLength": 1,
+          "maxLength": 12000
+        }
+      ],
+      "evidence": "runtime-schema-and-kit-readiness",
+      "scope": "docker"
+    },
+    {
+      "name": "plan_reduce",
+      "description": {
+        "fr": "Réduit une procédure textuelle par règles déterministes en conservant les contrôles identifiés. N’exécute pas le plan.",
+        "en": "Reduce a procedure while retaining authentication, tests and safety checks."
+      },
+      "group": "plans",
+      "status": "tested",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "steps",
+          "type": "string",
+          "required": true,
+          "minLength": 1,
+          "maxLength": 12000
+        },
+        {
+          "name": "objective",
+          "type": "string",
+          "required": false,
+          "maxLength": 1000
+        }
+      ],
+      "evidence": "mcp-call-verified-2026-09-24",
+      "scope": "docker"
+    },
+    {
+      "name": "archive_encode",
+      "description": {
+        "fr": "Chiffre au plus 64 Kio de texte avec la clé privée de l’installation et retourne une archive encodée en base64.",
+        "en": "Encrypt up to 64 KiB of text using this installation’s private archive key."
+      },
+      "group": "archives",
+      "status": "tested",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "text",
+          "type": "string",
+          "required": true,
+          "maxLength": 65536
+        }
+      ],
+      "evidence": "mcp-call-verified-2026-09-24",
+      "scope": "docker"
+    },
+    {
+      "name": "archive_decode",
+      "description": {
+        "fr": "Déchiffre une archive avec la clé de la même installation. Ne lit ni n’écrit de fichier.",
+        "en": "Decrypt an archive created with the same installation key. Does not access files."
+      },
+      "group": "archives",
+      "status": "tested",
+      "requiredConfiguration": [],
+      "parameters": [
+        {
+          "name": "archive",
+          "type": "string",
+          "required": true,
+          "minLength": 4,
+          "maxLength": 262144
+        }
+      ],
+      "evidence": "mcp-call-verified-2026-09-24",
+      "scope": "docker"
+    },
+    {
+      "name": "desktop_status",
+      "description": {
+        "fr": "Lit la plateforme et les processus autorisés, sans parcourir les fenêtres.",
+        "en": "Read the host platform and allowed processes without enumerating windows."
+      },
+      "parameters": [],
+      "group": "desktop",
+      "status": "optional",
+      "requiredConfiguration": [
+        "Windows",
+        "Node.js 24",
+        "process allowlist",
+        "separate stdio MCP configuration"
+      ],
+      "scope": "windows-host",
+      "evidence": "desktop-agent-source-and-documentation"
+    },
+    {
+      "name": "desktop_windows",
+      "description": {
+        "fr": "Liste la première fenêtre visible de chaque processus explicitement autorisé.",
+        "en": "List the first visible window for each explicitly allowed process."
+      },
+      "parameters": [],
+      "group": "desktop",
+      "status": "optional",
+      "requiredConfiguration": [
+        "Windows",
+        "Node.js 24",
+        "process allowlist",
+        "separate stdio MCP configuration"
+      ],
+      "scope": "windows-host",
+      "evidence": "desktop-agent-source-and-documentation"
+    },
+    {
+      "name": "desktop_capture",
+      "description": {
+        "fr": "Capture la première fenêtre visible du processus autorisé indiqué. Retourne un PNG au client MCP ; aucune capture plein écran de repli.",
+        "en": "Capture the first visible window of the selected allowed process. Returns a PNG to the MCP client; no full-screen fallback."
+      },
+      "parameters": [
+        {
+          "name": "processId",
+          "type": "integer",
+          "required": true
+        }
+      ],
+      "group": "desktop",
+      "status": "optional",
+      "requiredConfiguration": [
+        "Windows",
+        "Node.js 24",
+        "process allowlist",
+        "separate stdio MCP configuration"
+      ],
+      "scope": "windows-host",
+      "evidence": "desktop-agent-source-and-documentation"
+    }
+  ]
+}
