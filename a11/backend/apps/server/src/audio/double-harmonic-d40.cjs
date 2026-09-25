@@ -2,6 +2,7 @@
 
 const { execFile } = require('node:child_process');
 const path = require('node:path');
+const { archiveLocalSongBestEffort } = require('./storage-box-archive.cjs');
 
 const D40_SOURCE_DENSITY = 0.292;
 const D40_SOURCE_N = 40.0005;
@@ -272,6 +273,17 @@ async function processProtectMixD40({ inputPath, outputPath, profile = 'blend', 
   if (!outputPath) throw new Error('missing_output_path');
   const { built, args } = buildProtectMixD40Args({ inputPath, outputPath, profile, intensity, panWidth });
   await runFfmpeg(args, { timeoutMs });
+
+  // Le master existe d'abord sur le disque local. Son archivage Storage Box est
+  // best-effort et asynchrone: une panne d'archive ne doit jamais casser le mix ni
+  // renvoyer NOSSEN vers R2 pour verifier un fichier qu'il vient de produire ici.
+  void archiveLocalSongBestEffort(outputPath)
+    .then((archive) => {
+      if (archive?.ok) console.info('[D40] master archive Storage Box OK:', archive.remotePath);
+      else if (archive && !archive.skipped) console.warn('[D40] master archive Storage Box skipped:', archive.reason || 'unknown');
+    })
+    .catch((error) => console.warn('[D40] master archive Storage Box error:', error?.message || String(error)));
+
   return {
     method: 'dry-master-plus-adaptive-d40-harmonic-overlay-v1',
     profile: built.envelope.profile,
