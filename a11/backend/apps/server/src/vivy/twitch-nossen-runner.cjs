@@ -9,7 +9,14 @@ const {
   getVivyMusicJob,
   requestSunoMusicExtension,
   masterVivyMusicFile,
+  buildJeffreyDjeffEnginePen,
+  writeSongPartsWithPen,
 } = require('../routes/vivy-studio.cjs');
+const {
+  composeSingerParts,
+  describeSongAuthors,
+  resolveSongAuthors,
+} = require('../music/song-author-pens.cjs');
 const {
   buildTwitchStreamClipEnv,
   canAffordTwitchDreamClip,
@@ -2711,13 +2718,14 @@ function buildTwitchLyricsRequest({
     songLanguage && songLanguage !== 'fr'
       ? `Langue des paroles: ${TWITCH_SONG_LANGUAGE_LABELS_FR[songLanguage] || songLanguage}. Toutes les lignes chantées sont dans cette langue, refrain compris; seules les balises de section restent en anglais. Les noms propres du sujet restent tels quels.`
       : '',
-    lyricScope?.label ? `Ampleur choisie par Vivy: ${lyricScope.label}. ${lyricScope.reason || ''}` : '',
+    lyricScope?.label ? `Ampleur choisie: ${lyricScope.label}. ${lyricScope.reason || ''}` : '',
+    'Chaque voix du casting écrit elle-même les lignes qu’elle chante, avec sa propre plume: personne n’écrit pour une autre voix.',
     lyricScope?.freeStructure
       ? 'Structure libre: plusieurs longs couplets continus qui montent en intensité; refrain, pré-refrain et pont facultatifs, seulement si le sujet les appelle.'
       : '',
     lyricScope?.chaseDuration && lyricScope?.targetDurationSeconds
-      ? `Vivy décide la longueur: vise une forme adaptée à environ ${Math.round(lyricScope.targetDurationSeconds)} secondes de chanson, sans remplir artificiellement.`
-      : 'Vivy décide librement la longueur selon l’histoire et l’énergie du sujet.',
+      ? `Décide la longueur: vise une forme adaptée à environ ${Math.round(lyricScope.targetDurationSeconds)} secondes de chanson, sans remplir artificiellement.`
+      : 'Décide librement la longueur selon l’histoire et l’énergie du sujet.',
     buildShortTwitchIdeaExpansionGuidance({ winner, routing, seed }),
     lyricScope?.minLyricsChars
       ? `Écris assez de matière pour que la chanson respire; vise au moins ${lyricScope.minLyricsChars} caractères utiles seulement si les scènes l’exigent, avec des sections qui avancent.`
@@ -2779,6 +2787,13 @@ function createVivyStreamNossenRunner(options = {}) {
   const routeIntent = options.routeIntent || buildVivyNossenIntentPlan;
   const routeComposition = options.routeComposition || buildVivyNossenRoutingPlan;
   const writeLyrics = options.writeLyrics || buildVivyAiChat;
+  // Passe par chanteur : coupée par VIVY_STREAM_SINGER_PENS=0. Un rédacteur injecté
+  // (tests) sans rédacteur de parties ne déclenche jamais d'appel LLM réel.
+  const writeSingerParts = options.writeSingerParts !== undefined
+    ? options.writeSingerParts
+    : options.writeLyrics || String(process.env.VIVY_STREAM_SINGER_PENS || '1').trim() === '0'
+      ? null
+      : writeSongPartsWithPen;
   const startMusic = options.startMusic || buildRealMusicForProduction;
   const pollMusic = options.pollMusic || getVivyMusicJob;
   const extendMusic = options.extendMusic || requestSunoMusicExtension;
@@ -3089,7 +3104,7 @@ function createVivyStreamNossenRunner(options = {}) {
         title: publicTitle,
         message: instrumentalMode
           ? 'Vivy prépare une scène instrumentale avec bruitages.'
-          : `Vivy écrit pour ${artists.join(' + ')} (${lyricScope.label === 'ample' ? 'format ample' : lyricScope.label}).`,
+          : `${describeSongAuthors(artists)} (${lyricScope.label === 'ample' ? 'format ample' : lyricScope.label}).`,
       });
       let lyrics = '';
       if (!instrumentalMode) {
@@ -3182,6 +3197,7 @@ function createVivyStreamNossenRunner(options = {}) {
             publicLyrics: buildTwitchEmergencyLyrics({ winner, routing, seed, intentPlan, lyricScope, artists }),
           };
         }
+        let draftIsEmergency = false;
         let rawLyrics = extractCleanTwitchLyricsBlock(
           lyricsPayload?.vocalLyrics
           || lyricsPayload?.publicLyrics
@@ -3191,6 +3207,44 @@ function createVivyStreamNossenRunner(options = {}) {
         );
         if (!rawLyrics) {
           rawLyrics = buildTwitchEmergencyLyrics({ winner, routing, seed, intentPlan, lyricScope, artists });
+          draftIsEmergency = true;
+        }
+        // Chaque voix réécrit ses propres sections dans son propre appel (25/09/2026) :
+        // Vivy ne compose plus pour tout le monde. Djeff accepte que ce soit plus long.
+        if (writeSingerParts && !usedEmergencyLyricsFallback && !draftIsEmergency && resolveSongAuthors(artists).length > 1) {
+          await update({
+            action: 'progress',
+            stage: 'lyrics',
+            progress: 12,
+            title: publicTitle,
+            message: `${describeSongAuthors(artists)}, chacun dans son propre jet.`,
+          });
+          const singerPassStartedAt = Date.now();
+          try {
+            const singerPass = await withTimeout(() => composeSingerParts({
+              lyrics: rawLyrics,
+              artists,
+              writeParts: writeSingerParts,
+              jeffreyPen: catalogVoice ? buildJeffreyDjeffEnginePen({ voiceCatalogName: catalogVoice.name }) : '',
+              subject: winner.text,
+              language: songLanguage,
+              logger,
+            }), lyricRewriteTimeoutMs, 'vivy_singer_parts');
+            rawLyrics = cleanText(singerPass.lyrics, '', lyricScope.maxChars) || rawLyrics;
+            logger.info?.(
+              '[SongAuthorPens] round=%s rewritten=%s kept=%s latencyMs=%s',
+              roundId,
+              singerPass.rewritten.join('+') || 'aucun',
+              singerPass.kept.length,
+              Date.now() - singerPassStartedAt
+            );
+          } catch (error) {
+            logger.warn?.(
+              '[SongAuthorPens] round=%s passe par chanteur abandonnée, premier jet gardé error=%s',
+              roundId,
+              cleanText(error?.message || String(error), '', 160)
+            );
+          }
         }
         const subjectContext = [
           routing?.songMood,

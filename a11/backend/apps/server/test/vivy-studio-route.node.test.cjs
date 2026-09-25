@@ -951,7 +951,7 @@ test('Vivy Studio song handoff supports selected Djeff A11 K44 Vivy singers', ()
   assert.match(result.brief, /Nombre de chanteurs: 4/i);
   assert.match(result.brief, /Djeff: couplets rap techniques/i);
   assert.match(result.brief, /A11: pont grave synthétique/i);
-  assert.match(result.brief, /K44: contre-chant posé/i);
+  assert.match(result.brief, /K44: voix grave et féminine, récit, contre-chant posé/i);
   assert.match(result.brief, /Vivy: refrain clair/i);
   assert.match(result.brief, /\[Verse 1 - Djeff\]/);
   assert.match(result.brief, /\[Verse 2 - A11\]/);
@@ -1331,10 +1331,11 @@ test('Suno payload carries explicit multi-singer cast tags', () => {
   assert.match(payload.style, /rough male rap lead/i);
   assert.match(payload.style, /bright female melodic lead/i);
   assert.match(payload.style, /low robotic baritone/i);
-  assert.match(payload.style, /calm male counter-vocal/i);
+  assert.match(payload.style, /deep calm female counter-vocal/i);
+  assert.doesNotMatch(payload.style, /calm male counter-vocal/i);
   assert.match(payload.prompt, /\[Verse 1 - Male Rap Lead solo\]/);
   assert.match(payload.prompt, /\[Verse 2 - Low Robotic Vocal solo\]/);
-  assert.match(payload.prompt, /\[Bridge - Calm Male Counter Vocal solo\]/);
+  assert.match(payload.prompt, /\[Bridge - Deep Female Counter Vocal solo\]/);
   assert.match(payload.prompt, /\[Chorus - Call and Response Hook\]/);
 });
 
@@ -4397,7 +4398,8 @@ test('Vivy NOSSEN router avoids classical defaults without forcing Vivy as lead'
 
   assert.match(routeBlock, /Le mot !vivy est le nom d’une commande Twitch, pas une demande de voix Vivy/);
   assert.match(routeBlock, /Un refrain mélodique ne force jamais Vivy/);
-  assert.match(routeBlock, /Pour un protagoniste masculin nommé ou un métier masculin central, choisis Djeff ou K44/);
+  assert.match(routeBlock, /Pour un protagoniste masculin nommé ou un métier masculin central, choisis Djeff ou Marvin/);
+  assert.match(routeBlock, /K44 est une voix féminine grave/);
   assert.match(routeBlock, /Ne remplace jamais une voix mélodique par deux voix graves ou synthétiques/);
   assert.match(routeBlock, /Ne propose jamais de trio ou quatuor pour NOSSEN/);
   assert.match(routeBlock, /Évite le duo Djeff \+ A11|Evite le duo Djeff \+ A11/);

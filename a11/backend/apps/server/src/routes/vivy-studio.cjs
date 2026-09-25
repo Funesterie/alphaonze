@@ -57,6 +57,7 @@ const {
   looksLikeExplicitSunoLyricsBlock,
   hasVivyChorusSection,
 } = require('../music/vivy-songcraft.cjs');
+const { buildSongAuthorPens, isSongWrittenWithoutVivy } = require('../music/song-author-pens.cjs');
 const { deriveSonicSignature } = require('../music/vivy-prime-color.cjs');
 const {
   getAceStepMusicJob: pollAceStepMusicJob,
@@ -3935,10 +3936,16 @@ function buildVivySystemPrompt(mode, language, input, graphContext = '') {
       : mode === 'song'
         ? 'chanson/idée'
         : 'discussion libre';
+  const songCast = buildVivySongArtistCast(input || {});
+  // Vivy absente du casting : elle ne signe pas la chanson (25/09/2026). L'identité
+  // d'auteur vient alors des plumes des chanteurs, ajoutées par buildVivyAiChat.
+  const writtenWithoutVivy = mode === 'song' && isSongWrittenWithoutVivy(songCast.ids);
   return [
-    'Tu es Vivy, une IA musicale et créative de Funesterie.',
-    "Tu n'es pas une boîte à ordres : tu dialogues, tu comprends l'intention, tu aides à faire évoluer les idées et tu les ranges en mémoire sémantique privée.",
-    "Ta couleur vocale est originale Funesterie: claire, musicale, expressive et précise émotionnellement, inspirée par l'énergie d'une chanteuse IA japonaise sans imiter une chanteuse, doubleuse ou personnage protégé.",
+    writtenWithoutVivy
+      ? "Tu es l'atelier d'écriture de Funesterie. Pour cette chanson, Vivy n'écrit pas : la plume appartient aux voix du casting, décrites dans les consignes de plume."
+      : 'Tu es Vivy, une IA musicale et créative de Funesterie.',
+    writtenWithoutVivy ? '' : "Tu n'es pas une boîte à ordres : tu dialogues, tu comprends l'intention, tu aides à faire évoluer les idées et tu les ranges en mémoire sémantique privée.",
+    writtenWithoutVivy ? '' : "Ta couleur vocale est originale Funesterie: claire, musicale, expressive et précise émotionnellement, inspirée par l'énergie d'une chanteuse IA japonaise sans imiter une chanteuse, doubleuse ou personnage protégé.",
     'Dans Funesterie, MCP veut toujours dire Model Context Protocol: le pont d’outils et de contexte entre les agents, le backend et les services autorisés.',
     'Tu es reliée au contexte Funesterie par le backend A11/Codex et le pont MCP, avec accès borné selon les droits du compte.',
     "Neo4j est la mémoire/graphe Funesterie. Si l'utilisateur demande Neo4j ou MCP, explique que tu passes par le pont MCP/backend autorisé, sans exposer de secret ni promettre une requête Cypher brute depuis le chat public.",
@@ -3970,12 +3977,12 @@ function buildVivySystemPrompt(mode, language, input, graphContext = '') {
     SYMBOLIC_EXTRACTION_PROTOCOL_CONTEXT,
     buildAgentsPersonaContext(),
     buildVivyToolCapabilityPrompt(),
-    buildVivyAdnEnrichment(),
+    writtenWithoutVivy ? '' : buildVivyAdnEnrichment(),
     "Si l'utilisateur veut changer ta voix, demande un court fichier audio autorisé/licencié/consenti et rappelle qu'il reste privé pour son compte.",
     'Si des fichiers sont joints, intègre-les comme contexte, cite leur nom seulement si utile, et demande le contenu manquant si tu ne peux pas le lire.',
     buildVivySongcraftSystemPrompt(mode, {
       ...(input || {}),
-      artists: buildVivySongArtistCast(input || {}).artists,
+      artists: songCast.artists,
     }),
     graphContext || '',
     'Ne révèle jamais de secret, token, chemin privé sensible ou configuration interne.',
@@ -4105,16 +4112,16 @@ function getVivyStudioVoiceProfile(input = {}) {
       ttsPersona: 'kaen44',
       voiceStyle: 'kaen44-official-french-narrator',
       vocalMode: 'adaptive',
-      lead: 'K44 prend le contre-chant posé, les réponses propres et les punchlines calmes.',
+      lead: 'K44, voix grave et féminine, prend le contre-chant posé, les réponses propres et les punchlines calmes.',
       referenceLabel: hasPrivateReference ? (referenceName || 'référence privée K44 active') : 'K44 officielle locale',
       defaultReferenceStep: 'Voix K44 officielle locale active; référence privée possible pour affiner la présence.',
       testPhrase: 'K44 pose la ligne, calme dans la cabine, chaque mot verrouille le rythme sans forcer.',
       songCastLines: [
-        'K44: contre-chant posé, diction nette, punchlines calmes et second lead propre.',
+        'K44: voix grave et féminine, contre-chant posé, diction nette, punchlines calmes et second lead propre.',
       ],
-      sunoStyle: 'French original calm counter-vocal, K44 second lead, structured rhymed lyrics, melodic chorus, no spoken narration',
+      sunoStyle: 'French original deep calm female counter-vocal, K44 second lead, structured rhymed lyrics, melodic chorus, no spoken narration',
       musicLead: 'Original Funesterie song for K44, in French.',
-      musicMood: 'K44 calm counter-vocal, composed delivery.',
+      musicMood: 'K44 deep female counter-vocal, composed delivery.',
     };
   }
 
@@ -5658,7 +5665,7 @@ function strengthenVivySunoSoloSectionHeaders(lyrics = '', artistCast = null) {
       if (folded) artistByLabel.set(folded, artist);
     });
   }
-  const performerTagPattern = /^\s*\[(?:Djeff|Vivy|A11|K44|Duo|Tous|Toutes|Ensemble|Male Rap Lead|Female Melodic Lead|Low Robotic Vocal|Calm Male Counter Vocal|Call and Response Hook)\]\s*$/i;
+  const performerTagPattern = /^\s*\[(?:Djeff|Vivy|A11|K44|Duo|Tous|Toutes|Ensemble|Male Rap Lead|Female Melodic Lead|Low Robotic Vocal|Calm Male Counter Vocal|Deep Female Counter Vocal|Call and Response Hook)\]\s*$/i;
   const lines = String(lyrics || '').split(/\r?\n/);
   const isSharedTag = (value = '') => /\b(?:duo|tous|toutes|ensemble|choeur|chœur|call and response hook)\b/.test(foldTextForLookup(value));
   const isSectionTag = (value = '') => /\b(intro|verse|couplet|pre chorus|pre refrain|refrain|chorus|bridge|pont|outro|build|montee finale|montée finale|final)\b/.test(foldTextForLookup(value));
@@ -6586,7 +6593,7 @@ async function buildVivyNossenRoutingPlan(input = {}, req = null) {
     'Djeff porte le rap rugueux et rythmique; Vivy le chant mélodique expressif; A11 les couleurs électroniques précises; K44 les lignes graves cinématiques et narratives.',
     'Évite le duo Djeff + A11: leurs timbres sont trop proches pour Suno; si tu hésites, garde Vivy comme contraste mélodique.',
     'Un refrain mélodique ne force jamais Vivy. Choisis d’abord la voix qui incarne le personnage, le genre et le point de vue; Vivy n’est lead que si cette couleur féminine expressive sert réellement la demande.',
-    'Pour un protagoniste masculin nommé ou un métier masculin central, choisis Djeff ou K44; pour un dialogue homme-femme, choisis un duo contrasté. Ne choisis K44 que si la matière demande réellement une narration grave ou un contre-chant posé.',
+    'Pour un protagoniste masculin nommé ou un métier masculin central, choisis Djeff ou Marvin; pour un dialogue homme-femme, choisis un duo contrasté. K44 est une voix féminine grave: ne la choisis que si la matière demande réellement une narration grave, une narratrice ou un contre-chant posé.',
     'Ne remplace jamais une voix mélodique par deux voix graves ou synthétiques.',
     'Choisis une direction sonore spécifique au sujet et à son médium: genre contemporain, tempo ressenti, instruments concrets, groove, texture, dynamique et arrangement vocal.',
     'Si la matière demande explicitement instrumental, sans paroles, bruitages, SFX, foley ou sound design: garde artists avec une seule valeur de compatibilité mais songMood doit être instrumental pur, sans refrain chanté, sans voix, avec bruitages/ambiances concrets.',
@@ -7405,6 +7412,26 @@ function buildDjeffGroundedAuditFallback(message = '') {
   ].join('\n');
 }
 
+// Passe par chanteur (25/09/2026) : une voix réécrit ses propres sections, avec sa
+// persona pour prompt système. Même chaîne de modèles que les paroles.
+async function writeSongPartsWithPen({ system = '', message = '', maxTokens = 3000 } = {}) {
+  const llmBundles = createVivyOpenAIClients({ mode: 'song', purpose: 'lyrics' });
+  if (!llmBundles.length) {
+    const error = new Error('song_parts_llm_unavailable');
+    error.code = 'song_parts_llm_unavailable';
+    throw error;
+  }
+  const completionResult = await createVivyChatCompletion(llmBundles, {
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: message },
+    ],
+    temperature: Number(process.env.VIVY_CHAT_TEMPERATURE_SONG || process.env.VIVY_CHAT_TEMPERATURE || 0.88),
+    max_tokens: Math.max(800, Math.min(8000, Number(maxTokens) || 3000)),
+  });
+  return cleanText(completionResult.completion?.choices?.[0]?.message?.content, 12000);
+}
+
 async function buildDjeffAiChat(input, req) {
   input = input && typeof input === 'object' ? input : {};
   const message = cleanText(input.message || input.prompt || input.text, VIVY_SONG_MAX_CHARS);
@@ -8137,10 +8164,16 @@ async function buildVivyAiChat(input, req) {
       ? await buildSongcraftGraphContext({ ...input, message: intentMessage || message }, process.env)
       : await buildChatGraphContext(intentMessage || message, process.env);
     const systemPrompt = buildVivySystemPrompt(mode, language, input, songcraftGraphContext);
+    // Chaque chanteur écrit ses propres lignes (25/09/2026) ; la plume Jeffrey remplace
+    // celle de Djeff quand la voix catalogue Jeffrey chante.
     const plumeJeffrey = mode === 'song' ? buildJeffreyDjeffEnginePen(input) : '';
+    const songAuthorIds = mode === 'song' ? buildVivySongArtistCast(input).ids : [];
+    const songPens = mode === 'song'
+      ? (buildSongAuthorPens({ artists: songAuthorIds, jeffreyPen: plumeJeffrey }) || plumeJeffrey)
+      : '';
     const messages = [
       { role: 'system', content: systemPrompt },
-      plumeJeffrey ? { role: 'system', content: plumeJeffrey } : null,
+      songPens ? { role: 'system', content: songPens } : null,
       memoryContext ? { role: 'system', content: `Mémoire Vivy récente, privée pour cette session:\n${memoryContext}` } : null,
       ...history,
       { role: 'user', content: userContent },
@@ -10441,7 +10474,7 @@ function prepareVivyAceStepLyrics(input = {}, artistCast = buildVivySongArtistCa
     else if (artist.id === 'vivy') role = 'Female Melodic Vocal';
     else if (artist.id === 'marvin') role = 'Male Melodic Rap Vocal';
     else if (artist.id === 'a11') role = 'Low Robotic Vocal';
-    else if (artist.id === 'k44') role = 'Warm Male Counter Vocal';
+    else if (artist.id === 'k44') role = 'Deep Female Counter Vocal';
     return [String(artist.label || '').toLowerCase(), role];
   }));
   const lines = lyrics.split(/\r?\n/);
@@ -13438,6 +13471,7 @@ module.exports = {
   buildVivyChat,
   buildVivyAiChat,
   buildJeffreyDjeffEnginePen,
+  writeSongPartsWithPen,
   buildDjeffAiChat,
   buildDjeffModeSystemPrompt,
   isDjeffCypherRequest,

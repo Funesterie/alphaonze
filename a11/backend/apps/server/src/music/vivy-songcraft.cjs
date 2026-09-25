@@ -1078,11 +1078,13 @@ const VIVY_SONG_ARTISTS = [
     id: 'k44',
     label: 'K44',
     tag: '[K44]',
-    role: 'contre-chant posé, punchlines calmes, second lead propre',
-    grammar: 'masculin singulier; accords et pronoms il/lui',
-    style: 'calm male counter-vocal, steady warm second lead',
-    sunoTag: '[Calm Male Counter Vocal]',
-    sunoRole: 'calm male counter-vocal with steady warm tone',
+    // K44 est une femme : voix grave et féminine (Djeff, 25/09/2026). La fiche la
+    // déclarait au masculin et le chant contredisait sa persona.
+    role: 'voix grave et féminine, récit, contre-chant posé, punchlines calmes, second lead propre',
+    grammar: 'féminin singulier; accords et pronoms elle',
+    style: 'deep calm female counter-vocal, steady warm second lead',
+    sunoTag: '[Deep Female Counter Vocal]',
+    sunoRole: 'deep calm female counter-vocal with steady warm tone',
   },
 ];
 
