@@ -162,14 +162,22 @@ function deriveSonicSignature(matiere, options = {}) {
     }
   }
 
-  const texture = TEXTURES[seed % TEXTURES.length];
-  const mouvement = MOUVEMENTS[(seed >> 3) % MOUVEMENTS.length];
+  // Grain de la voix (27/09/2026) : la meme matiere chantee par Vivy ou par Djeff ne
+  // recoit plus la meme texture ni le meme mouvement. Sans voix unique, la matiere decide
+  // seule, comme avant.
+  const { grainChoix } = require('../persona/persona-grain.cjs');
+  const parGrain = (cle, liste, repli) => {
+    const index = options.persona ? grainChoix(options.persona, `${cle}:${seed}`, liste.length) : null;
+    return liste[index === null ? repli % liste.length : index];
+  };
+  const texture = parGrain('texture', TEXTURES, seed);
+  const mouvement = parGrain('mouvement', MOUVEMENTS, seed >> 3);
 
   const line = [texture, mouvement, couleur ? `poids ${couleur.name.toLowerCase()}` : '']
     .filter(Boolean)
     .join(', ');
 
-  return { seed, s, normalized, color: couleur, texture, mouvement, line, chosenBy: 'derive' };
+  return { seed, s, normalized, color: couleur, texture, mouvement, line, chosenBy: 'derive', grain: options.persona || '' };
 }
 
 // --- Choix, plutot que derivation ---------------------------------------------

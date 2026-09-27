@@ -25,6 +25,7 @@ const {
 } = require('../media/emergency-media.cjs');
 const { buildAgentsPersonaContext, buildDjeffSystemPrompt } = require('../persona/persona-engine.cjs');
 const { buildDjeffMemoryContext } = require('../persona/djeff-memory.cjs');
+const { grainTemperature, decrireGrain, decalerGrain, GRAINS_CANONIQUES } = require('../persona/persona-grain.cjs');
 const {
   addEpisode,
   getEpisodes,
@@ -7513,7 +7514,8 @@ async function buildDjeffAiChat(input, req) {
       ...history,
       { role: 'user', content: message },
     ].filter(Boolean),
-    temperature: technicalAudit ? 0.1 : 0.7,
+    // Un audit technique reste froid ; sinon le grain de Djeff fait respirer sa temperature.
+    temperature: technicalAudit ? 0.1 : grainTemperature('djeff', message, 0.7, 0.08),
     max_tokens: budget.maxTokens,
   });
   const rawReply = cleanText(completionResult.completion?.choices?.[0]?.message?.content, 12000);
@@ -8245,9 +8247,11 @@ async function buildVivyAiChat(input, req) {
     const songMaxTokens = resolveVivySongMaxTokens(input);
     const completionRequest = {
       messages,
+      // En conversation, le grain de Vivy fait respirer sa temperature (± 0,06) : meme
+      // message, meme souffle ; les paroles gardent leur temperature fixe.
       temperature: mode === 'song'
         ? Number(process.env.VIVY_CHAT_TEMPERATURE_SONG || process.env.VIVY_CHAT_TEMPERATURE || 0.88)
-        : Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74),
+        : grainTemperature('vivy', message, Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74)),
       max_tokens: mode === 'song' ? songMaxTokens : Number(process.env.VIVY_CHAT_MAX_TOKENS || 5000),
     };
     const nossenLlmBudgetMs = Math.max(30000, Math.min(
@@ -9186,7 +9190,8 @@ function buildVivySunoPayload(input = {}, req = null) {
   let complementStyle = '';
   try {
     const plafond = resolveVivyEnergyCeiling(couleurDemandee);
-    const signature = deriveSonicSignature(buildVivySunoStyleMaterial(input), { ceiling: plafond });
+    // Une voix seule signe la texture et le mouvement avec son grain (persona-grain.cjs).
+    const signature = deriveSonicSignature(buildVivySunoStyleMaterial(input), { ceiling: plafond, persona: singleArtistId });
     const sections = extractSectionLabels(input.cleanLyrics || input.songText || '');
     const arc = buildVivyDynamicArc(sections, { direction: couleurDemandee });
     complementStyle = [signature.line, arc.compact].filter(Boolean).join(', ');
@@ -13269,6 +13274,22 @@ function createVivyStudioRouter({
         error: error?.code || 'vivy_chat_failed',
         message: error?.message || String(error),
       });
+    }
+  });
+
+  // Grains transcendants des personas (persona-grain.cjs). Lecture pour tout compte connecte ;
+  // la naissance d'une nouvelle IA par decalage est reservee au fondateur.
+  router.get('/persona-grains', requireAuth, (req, res) => {
+    res.json({ ok: true, grains: Object.keys(GRAINS_CANONIQUES).map((persona) => decrireGrain(persona)) });
+  });
+
+  router.post('/persona-grains/decaler', requireAuth, express.json({ limit: '8kb' }), (req, res) => {
+    if (!isVivyFounderUser(req.user || {})) return res.status(403).json({ ok: false, error: 'founder_only' });
+    try {
+      const ne = decalerGrain(req.body?.persona);
+      res.json({ ok: true, ...ne, grain: decrireGrain(ne.persona) });
+    } catch (error) {
+      res.status(400).json({ ok: false, error: error?.message || 'grain_decalage_impossible' });
     }
   });
 
