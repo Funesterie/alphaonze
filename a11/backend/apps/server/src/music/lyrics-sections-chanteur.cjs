@@ -47,6 +47,8 @@ function nommerSectionsParChanteur(texte = '') {
     const court = nbVers(bloc) <= 2;
     if (court && i === 0) return 'Intro';
     if (court && i === blocs.length - 1) return 'Outro';
+    // Dernier bloc, apres un refrain, trop court pour un couplet (4 vers ou moins) : l'outro.
+    if (i === blocs.length - 1 && nbVers(bloc) <= 4 && indexRefrains.some((r) => r < i)) return 'Outro';
     const entreRefrains = indexRefrains.some((r) => r < i) && indexRefrains.some((r) => r > i);
     if (nbVers(bloc) <= 4 && entreRefrains && couplet >= 2) return 'Bridge';
     couplet += 1;

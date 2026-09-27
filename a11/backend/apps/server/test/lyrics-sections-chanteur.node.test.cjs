@@ -33,3 +33,11 @@ test('sections deduites : un texte qui a deja ses sections ne bouge pas', () => 
   assert.equal(nommerSectionsParChanteur(deja), deja);
   assert.equal(nommerSectionsParChanteur('[Djeff]\nun\n[Djeff]\ndeux'), '[Djeff]\nun\n[Djeff]\ndeux');
 });
+
+test('sections deduites : un dernier bloc court apres le refrain est une outro, pas un couplet', () => {
+  const { nommerSectionsParChanteur } = require('../src/music/lyrics-sections-chanteur.cjs');
+  const v = (n) => Array.from({ length: n }, (_, i) => `vers ${n}-${i} de la nuit`).join('\n');
+  const brut = ['[Djeff]', v(8), '[Djeff]', REFRAIN, '[Djeff]', v(6), '[Djeff]', REFRAIN, '[Djeff]', 'Le moteur s\'arrête\nLe silence retombe\nLa ville s\'éveille'].join('\n');
+  const balises = nommerSectionsParChanteur(brut).split('\n').filter((l) => /^\[/.test(l));
+  assert.deepEqual(balises, ['[Verse 1 - Djeff]', '[Chorus - Djeff]', '[Verse 2 - Djeff]', '[Chorus - Djeff]', '[Outro - Djeff]']);
+});
