@@ -7722,7 +7722,13 @@ async function buildVivyAiChat(input, req) {
   // Plume de Djeff (27/09/2026, demande de Djeff) : quand Jeffrey chante, Djeff Engine ecrit
   // d'abord avec son propre modele local ; la chaine forte reste en secours. Avant, la plume
   // n'etait qu'une consigne confiee au premier modele disponible (deepseek ce jour-la).
-  const plumeLocaleDjeff = mode === 'song' && buildJeffreyDjeffEnginePen(input)
+  // Declencheur : Djeff chante seul. La page NOSSEN n'envoie pas le nom de la voix a l'etape
+  // des paroles, seulement les chanteurs : attendre « jeffrey » ne se declenchait jamais.
+  const soloDjeff = mode === 'song' && (() => {
+    const ids = buildVivySongArtistCast(input).ids;
+    return ids.length === 1 && ids[0] === 'djeff';
+  })();
+  const plumeLocaleDjeff = mode === 'song' && (soloDjeff || buildJeffreyDjeffEnginePen(input))
     ? createVivyOpenAIClientFromConfig(getDjeffEngineLocalSongConfig())
     : null;
   const llmBundles = [
