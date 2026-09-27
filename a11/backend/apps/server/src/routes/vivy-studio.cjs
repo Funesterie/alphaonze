@@ -1479,6 +1479,7 @@ function createVivyOpenAIClientFromConfig(config) {
     maxPromptChars: Number(config.maxPromptChars || 0) || 0,
     maxOutputTokens: Number(config.maxOutputTokens || 0) || 0,
     attemptTimeoutMs: Number(config.attemptTimeoutMs || 0) || 0,
+    requestExtras: config.requestExtras && typeof config.requestExtras === 'object' ? config.requestExtras : null,
   };
 }
 
@@ -1652,6 +1653,9 @@ async function createVivyBundleCompletion(bundle, request, options = {}) {
   try {
     const completionPromise = bundle.client.chat.completions.create({
       ...bundleRequest,
+      // Reglages propres a un modele (ex. reasoning_effort « none » pour un modele qui
+      // reflechit avant d'ecrire : sans lui, gemma4 depense tout son budget a penser).
+      ...(bundle.requestExtras || {}),
       model: bundle.model,
     }, {
       timeout: attemptTimeoutMs,
@@ -7599,6 +7603,10 @@ function getDjeffEngineLocalConfig(budget = {}) {
     maxPromptChars: Math.max(6000, Number(process.env.DJEFF_ENGINE_LOCAL_MAX_PROMPT_CHARS || 22000) || 22000),
     // Fenetre de 8k jetons : la sortie doit laisser la place au profil et a la memoire.
     maxOutputTokens: Math.min(Number(budget.maxTokens || 900) || 900, 1500),
+    // DJEFF_ENGINE_LOCAL_REASONING=none : pour une base qui reflechit avant d'ecrire (gemma4).
+    ...(cleanOneLine(process.env.DJEFF_ENGINE_LOCAL_REASONING, '', 12)
+      ? { requestExtras: { reasoning_effort: cleanOneLine(process.env.DJEFF_ENGINE_LOCAL_REASONING, '', 12).toLowerCase() } }
+      : {}),
   };
 }
 
