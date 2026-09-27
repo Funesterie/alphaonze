@@ -17,9 +17,43 @@ function plier(ligne = '') {
   return String(ligne).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
+// En-tetes ecrits hors crochets (27/09 : avec le brief NOSSEN, gemma4 ecrit « [Djeff] » une
+// fois puis « (Couplet 1) », « (Refrain) », « (Pont) », « (Montée finale) »). Une ligne qui
+// n'est QU'UN nom de section, entre parentheses, en gras ou suivie de deux-points, devient
+// une balise ; « (Bruit de clé à choc) » n'est pas un nom de section et ne bouge pas.
+const NOMS_SECTION = [
+  [/^(?:couplet|verse)$/, 'Verse'],
+  [/^(?:pre[\s-]?refrain|pre[\s-]?chorus)$/, 'Pre-Chorus'],
+  [/^(?:refrain(?: final)?|chorus|final chorus|dernier refrain)$/, 'Chorus'],
+  [/^(?:pont|bridge)$/, 'Bridge'],
+  [/^(?:montee(?: finale| en tension)?|build(?:[\s-]?up)?)$/, 'Pre-Chorus'],
+  [/^intro$/, 'Intro'],
+  [/^outro$/, 'Outro'],
+];
+
+function normaliserEnTetes(lignes) {
+  const balisesChanteur = lignes.filter((l) => BALISE.test(l) && !SECTION.test(l));
+  const chanteurUnique = balisesChanteur.length === 1 ? balisesChanteur[0].match(BALISE)[1].trim() : '';
+  let converties = 0;
+  const sortie = lignes.map((ligne) => {
+    const m = String(ligne).trim().match(/^(?:\(\s*([^()]{2,30}?)\s*\)|\*\*\s*([^*]{2,30}?)\s*\*\*|([^:()[\]*]{2,30}?)\s*:)\s*$/);
+    if (!m) return ligne;
+    const brut = (m[1] || m[2] || m[3] || '').trim();
+    const numero = (brut.match(/\s(\d+)$/) || [])[1] || '';
+    const nom = plier(brut.replace(/\s\d+$/, ''));
+    const trouve = NOMS_SECTION.find(([motif]) => motif.test(nom));
+    if (!trouve) return ligne;
+    converties += 1;
+    return `[${trouve[1]}${numero ? ` ${numero}` : ''}${chanteurUnique ? ` - ${chanteurUnique}` : ''}]`;
+  });
+  if (!converties) return lignes;
+  // La balise de chanteur orpheline (« [Djeff] » en tete) est portee par chaque section.
+  return chanteurUnique ? sortie.filter((l) => !(BALISE.test(l) && !SECTION.test(l))) : sortie;
+}
+
 function nommerSectionsParChanteur(texte = '') {
-  const lignes = String(texte || '').split(/\r?\n/);
-  if (lignes.some((l) => SECTION.test(l))) return texte;
+  const lignes = normaliserEnTetes(String(texte || '').split(/\r?\n/));
+  if (lignes.some((l) => SECTION.test(l))) return lignes.join('\n');
   const blocs = [];
   let courant = null;
   const avant = [];

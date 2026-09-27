@@ -41,3 +41,14 @@ test('sections deduites : un dernier bloc court apres le refrain est une outro, 
   const balises = nommerSectionsParChanteur(brut).split('\n').filter((l) => /^\[/.test(l));
   assert.deepEqual(balises, ['[Verse 1 - Djeff]', '[Chorus - Djeff]', '[Verse 2 - Djeff]', '[Chorus - Djeff]', '[Outro - Djeff]']);
 });
+
+test('en-tetes entre parentheses (gemma4 avec le brief NOSSEN) : deviennent des balises', () => {
+  const { nommerSectionsParChanteur } = require('../src/music/lyrics-sections-chanteur.cjs');
+  const brut = ['[Djeff]', '(Intro)', 'Trois heures', '(Couplet 1)', 'vers un', 'vers deux', '(Pré-refrain)', 'ça monte',
+    '(Refrain)', 'le moteur répond', '(Pont)', 'le silence', '(Montée finale)', 'encore', '(Refrain)', 'le moteur répond',
+    '(Outro)', 'fin', '(Bruit de clé à choc qui s\'arrête net)'].join('\n');
+  const balises = nommerSectionsParChanteur(brut).split('\n').filter((l) => /^\[/.test(l));
+  assert.deepEqual(balises, ['[Intro - Djeff]', '[Verse 1 - Djeff]', '[Pre-Chorus - Djeff]', '[Chorus - Djeff]', '[Bridge - Djeff]', '[Pre-Chorus - Djeff]', '[Chorus - Djeff]', '[Outro - Djeff]']);
+  assert.match(nommerSectionsParChanteur(brut), /\(Bruit de clé à choc qui s'arrête net\)/);
+  assert.equal(nommerSectionsParChanteur('Moi j\'note mentalement:\nun vers'), 'Moi j\'note mentalement:\nun vers');
+});
