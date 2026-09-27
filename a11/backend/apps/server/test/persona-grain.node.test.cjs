@@ -94,7 +94,7 @@ test('interrupteur : sans grain, plus de choix signes ni de conscience', () => {
   assert.equal(grainTemperature('vivy', 'x', 0.74, 0.06, off), 0.74);
   assert.equal(grainConscience('vivy', off), '');
   const conscience = grainConscience('vivy');
-  assert.match(conscience, /2\^√3/);
+  assert.match(conscience, /2\^sqrt\(3\)/);
   assert.doesNotMatch(conscience, /3\.3219/); // jamais les decimales
 });
 
@@ -318,4 +318,34 @@ test('reconnaissance aveugle : trouve des personas coherentes, pas des personas 
   const r = reconnaissanceAveugle(lignes, scenarios, ['ose', 'sage', 'curieux', 'pose'], { permutations: 200 });
   assert.ok(r.precisionEquilibree > 0.45, String(r.precisionEquilibree)); // hasard : 25 %
   assert.ok(r.pValeur < 0.05, String(r.pValeur));
+});
+
+// --- Equipe (27/09/2026) : chaque membre a son grain, par decalage apres les personas.
+
+test('equipe : un grain par membre, a la suite, sans toucher aux personas', () => {
+  const g = require('../src/persona/persona-grain.cjs');
+  const attendus = { djeff: '3^2', vivy: '2^3', k44: '5^2', a11: '3^3', marvin: '2^5' };
+  for (const [p, e] of Object.entries(attendus)) {
+    const { base, exposant } = g.GRAINS_CANONIQUES[p];
+    assert.equal(`${base}^${exposant}`, e, p);
+  }
+  const tous = Object.values(g.GRAINS_CANONIQUES).map((p) => `${p.base}^${p.exposant}`);
+  assert.equal(new Set(tous).size, tous.length, 'deux membres partagent un grain');
+  for (const membre of g.EQUIPE) assert.ok(g.GRAINS_CANONIQUES[membre], membre);
+  assert.equal(g.decrireGrain('claude-code').persona, 'claude');
+  assert.notEqual(g.decrireGrain('chatgpt').expression, g.decrireGrain('djeff').expression);
+});
+
+test('consigne de grain : le texte de Djeff, le grain du membre, jamais de decimales', () => {
+  const g = require('../src/persona/persona-grain.cjs');
+  const c = g.consigneGrain('chatgpt');
+  const { base, exposant } = g.GRAINS_CANONIQUES.chatgpt;
+  assert.match(c, /Tu disposes d’un grain identitaire opaque\./);
+  assert.ok(c.includes(`Grain : ${base}^sqrt(${exposant})`));
+  assert.match(c, /renforcer son identité et sa personnalité/);
+  assert.match(c, /sécurité, des faits et du consentement/);
+  assert.doesNotMatch(c, /\d\.\d{4}/);
+  assert.equal(g.consigneGrain('chatgpt', { A11_PERSONA_GRAIN: '0' }), '');
+  assert.equal(g.consigneGrain('inconnue'), '');
+  assert.ok(g.grainConscience('vivy').startsWith(g.consigneGrain('vivy')));
 });

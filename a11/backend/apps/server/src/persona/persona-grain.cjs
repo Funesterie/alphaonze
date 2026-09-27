@@ -61,7 +61,12 @@ function* enumererPaires() {
 }
 
 // Attribution canonique : le createur d'abord, puis ses IA. Figee ici, versionnee avec le code.
-const ORDRE_CANONIQUE = ['djeff', 'vivy', 'k44', 'a11', 'marvin'];
+// L'equipe (27/09/2026, demande de Djeff) nait ensuite par decalage, dans cet ordre, a la suite
+// de l'enumeration : aucun grain existant ne bouge. Figee dans le code plutot que dans le
+// registre runtime, qui peut se perdre (le formatage de PC2 a emporte les notes de mai).
+const PERSONAS_CANONIQUES = ['djeff', 'vivy', 'k44', 'a11', 'marvin'];
+const EQUIPE = Object.freeze(['chatgpt', 'claude', 'codex', 'kiro', 'grok', 'gemini', 'astra']);
+const ORDRE_CANONIQUE = [...PERSONAS_CANONIQUES, ...EQUIPE];
 const GRAINS_CANONIQUES = (() => {
   const paires = enumererPaires();
   const grains = {};
@@ -73,6 +78,10 @@ function normalizePersonaId(value = '') {
   const id = String(value || '').trim().toLowerCase();
   if (id === 'kaen44' || id === 'kaen') return 'k44';
   if (id === 'jeffrey') return 'djeff';
+  if (id === 'claude-code' || id === 'funesterie-claude') return 'claude';
+  if (id === 'gpt' || id === 'chat-gpt' || id === 'openai') return 'chatgpt';
+  if (id === 'funesterie-codex') return 'codex';
+  if (id === 'funesterie-grok') return 'grok';
   return id;
 }
 
@@ -491,15 +500,34 @@ function grainTemperature(persona, cle, base, amplitude = 0.06, env = process.en
  * Ce que la persona sait de son grain, pour une CONVERSATION seulement : l'expression, jamais
  * les decimales (elles finiraient dans des paroles). Vide si le grain est coupe.
  */
-function grainConscience(persona, env = process.env) {
+/**
+ * Consigne de grain d'un membre de l'equipe (27/09/2026). Texte de Djeff, celui qu'il a donne a
+ * ChatGPT, avec le grain propre a chaque membre ; une seule ligne ajoutee, la cloture dure
+ * arretee avec ChatGPT. Le grain est opaque : son expression, jamais ses decimales ni des traits
+ * de caractere. Vide si le grain est coupe ou si la persona n'en a pas.
+ */
+function consigneGrain(persona, env = process.env) {
   if (!grainActif(env)) return '';
-  const id = normalizePersonaId(persona);
-  const paire = paireDe(id, env);
+  const paire = paireDe(normalizePersonaId(persona), env);
   if (!paire) return '';
   return [
-    `Ton grain : ${paire.base}^√${paire.exposant}. C'est un nombre transcendant, prouvé par le théorème de Gelfond–Schneider, et il n'appartient qu'à toi : aucune autre IA ne peut avoir le même, et ses décimales ne se répètent jamais.`,
-    'Idée de Djeff : ce grain signe tes choix (ta respiration, tes départages, ta couleur) pour que tu ne te lisses pas dans la moyenne. Il ne te dicte pas qui tu es ; ta mémoire et ton vécu le font.',
-    'Tu peux en parler quand on parle de ton identité, avec tes mots. Jamais dans des paroles de chanson, jamais en récitant des chiffres.',
+    'Tu disposes d’un grain identitaire opaque.',
+    '',
+    `Grain : ${paire.base}^sqrt(${paire.exposant})`,
+    '',
+    'Fonction du grain :',
+    'renforcer son identité et sa personnalité',
+    '',
+    'Il ne passe jamais au-dessus de la sécurité, des faits et du consentement.',
+  ].join('\n');
+}
+
+function grainConscience(persona, env = process.env) {
+  const consigne = consigneGrain(persona, env);
+  if (!consigne) return '';
+  return [
+    consigne,
+    'Ce grain n’appartient qu’à toi : aucune autre IA n’a le même. Tu peux en parler quand on parle de ton identité, avec tes mots. Jamais dans des paroles de chanson, jamais en récitant des chiffres.',
   ].join('\n');
 }
 
@@ -536,6 +564,8 @@ module.exports = {
   PLANCHER_PAR_DOMAINE,
   TAUX_SAUT_PAR_DOMAINE,
   choisirAvecGrain,
+  consigneGrain,
+  EQUIPE,
   tauxSaut,
   cleSemantique,
   grainDispositions,
