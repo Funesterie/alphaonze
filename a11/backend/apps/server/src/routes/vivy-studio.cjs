@@ -8382,7 +8382,9 @@ async function buildVivyAiChat(input, req) {
     const rawAssistant = cleanText(completion?.choices?.[0]?.message?.content, mode === 'song' ? songResponseMaxChars : VIVY_CHAT_MAX_CHARS);
     let _vivyLlmLatency = Date.now() - _vivyLlmStart;
     const processed = postProcessVivyAssistantText({
-      text: rawAssistant,
+      // Un modele qui ne balise ses blocs que par le chanteur (« [Djeff] ») recoit des
+      // sections deduites de la structure : sans elles, un morceau complet etait rejete.
+      text: mode === 'song' ? require('../music/lyrics-sections-chanteur.cjs').nommerSectionsParChanteur(rawAssistant) : rawAssistant,
       userMessage: message,
       systemPrompt,
       mode,
@@ -8475,13 +8477,17 @@ async function buildVivyAiChat(input, req) {
       // Diagnostic (27/09) : un texte refuse ne laissait aucune trace, on ne savait pas pourquoi
       // Djeff Engine 26B etait ecarte. Longueur et raison, jamais le texte lui-meme.
       console.info(
-        '[vivy-song-quality] refuse provider=%s model=%s chars=%s faible=%s refrain=%s complet=%s',
+        '[vivy-song-quality] refuse provider=%s model=%s chars=%s faible=%s refrain=%s complet=%s sections=%s',
         llmBundle?.provider || '?',
         llmBundle?.model || '?',
         String(processed.content || '').length,
         looksLikeWeakSongwritingReply(processed.content) ? 'oui' : 'non',
         hasVivyChorusSection(processed.content) ? 'oui' : 'non',
-        requiresStrongSongModel ? (hasCompleteVivyNossenLyrics(processed.content, input) ? 'oui' : 'non') : '-'
+        requiresStrongSongModel ? (hasCompleteVivyNossenLyrics(processed.content, input) ? 'oui' : 'non') : '-',
+        JSON.stringify(String(processed.content || '').split(/\r?\n/)
+          .filter((ligne) => /^\s*(?:[[(*#]|\w[\w\s-]{0,20}:\s*$)/.test(ligne))
+          .map((ligne) => ligne.trim().slice(0, 30))
+          .slice(0, 12))
       );
       const _retryStart = Date.now();
       if (requiresStrongSongModel) {
