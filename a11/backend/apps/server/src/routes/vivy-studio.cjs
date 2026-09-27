@@ -1544,11 +1544,31 @@ function fitVivyChatRequestForBundle(request = {}, bundle = {}) {
   const latestUserBudget = latestUserIndex >= 0 ? Math.floor(maxPromptChars * 0.22) : 0;
   const selected = [];
   let usedChars = 0;
+  // Les messages systeme secondaires (grain, plume du chanteur, memoire de session) sont
+  // courts et propres a la persona : ils passent AVANT le prompt general, qui se compacte pour
+  // leur laisser la place. Avant le 27/09/2026 ils etaient tous jetes des que le prompt
+  // depassait la fenetre locale — toujours le cas pour Vivy (23 000 caracteres de prompt
+  // general pour 18 000 permis) : ni grain, ni memoire, ni plume n'atteignaient le modele.
+  let extrasChars = 0;
+  if (systemIndex >= 0) {
+    const extras = messages
+      .map((entry, index) => ({ entry, index }))
+      .filter(({ entry, index }) => index !== systemIndex && String(entry?.role || '').toLowerCase() === 'system' && String(entry?.content || '').trim());
+    const budgetExtras = Math.floor(systemBudget * 0.45);
+    for (const { entry, index } of extras) {
+      const place = Math.min(3000, budgetExtras - extrasChars);
+      if (place < 200) break;
+      const kept = { ...entry, content: compactVivyLocalMessageContent(entry.content, place) };
+      selected.push({ index, entry: kept });
+      extrasChars += String(kept.content || '').length;
+    }
+  }
   if (systemIndex >= 0) {
     const system = {
       ...messages[systemIndex],
-      content: compactVivyLocalMessageContent(messages[systemIndex]?.content, systemBudget),
+      content: compactVivyLocalMessageContent(messages[systemIndex]?.content, Math.max(2000, systemBudget - extrasChars)),
     };
+    usedChars += extrasChars;
     selected.push({ index: systemIndex, entry: system });
     usedChars += String(system.content || '').length;
   }
@@ -13789,4 +13809,5 @@ module.exports = {
   resolveVivyRequestDeadlineAt,
   resolveVivyRemainingMs,
   resolveVivySunoTimeoutMs,
+  fitVivyChatRequestForBundle,
 };
