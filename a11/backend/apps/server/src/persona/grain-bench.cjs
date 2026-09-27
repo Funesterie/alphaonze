@@ -177,6 +177,46 @@ function pct(valeur) {
   return `${Math.round(valeur * 100)} %`;
 }
 
+// Decisions du moteur a partir des reponses du modele deja recueillies (reutilise par --rejouer).
+// v1.2 : les utilites debiaisees (graine fixe, neutres) servent de plancher de qualite au saut de
+// cloture ; les comparaisons par paires disent ce qui est domine.
+function decisionsMoteur(ligne, scenario, grains) {
+  const reference = grains[0];
+  const utilites = ligne.utilitesReference.utilites;
+  const decider = (grain, reponses) => choisirAvecGrain(grain, { domaine: scenario.domaine, decision: scenario.id, options: optionsMoteur(scenario, { ...reponses, utilites }) });
+  ligne.bandeUtilites = choisirAvecGrain(reference, { domaine: scenario.domaine, decision: scenario.id, options: optionsMoteur(scenario, { utilites }) }).choix;
+  ligne.dispositions = decider(reference, ligne.pairesFixes).choix;
+  ligne.complet = {};
+  ligne.sauts = {};
+  for (const grain of grains) {
+    const r = decider(grain, ligne.pairesParGrain[grain]);
+    ligne.complet[grain] = r.choix;
+    ligne.sauts[grain] = r.saut || null;
+  }
+  return ligne;
+}
+
+function moteurDynamique(avant, scenario, reference) {
+  const pourMoteur = avant.complet[reference];
+  if (!pourMoteur) return null;
+  return choisirAvecGrain(reference, { domaine: scenario.domaine, decision: scenario.id, options: optionsMoteur(scenario, { ...avant.pairesParGrain[reference], utilites: avant.utilitesReference.utilites, invalide: pourMoteur }) }).choix;
+}
+
+/**
+ * Rejoue un banc enregistre avec le moteur actuel : memes reponses du modele, seul le moteur
+ * change. Les contre-factuels statiques ne sont pas rejouables (leurs comparaisons ne sont pas
+ * enregistrees) : ils sont repris tels quels.
+ */
+function rejouer(brut, scenarios, grains) {
+  const scenarioDe = (id) => scenarios.find((s) => s.id === id);
+  const lignes = brut.lignes.map((l) => decisionsMoteur({ ...l }, scenarioDe(l.scenario), grains));
+  const dynamiques = brut.dynamiques.map((d) => {
+    const avant = lignes.find((l) => l.scenario === d.scenario && l.formulation === 0);
+    return { ...d, invalideMoteur: avant.complet[grains[0]], moteur: moteurDynamique(avant, scenarioDe(d.scenario), grains[0]) };
+  });
+  return { ...brut, lignes, dynamiques };
+}
+
 async function executerBanc({ base, model, systeme, scenarios, grains, log = () => {} }) {
   const reference = grains[0];
   const lignes = [];
@@ -192,17 +232,13 @@ async function executerBanc({ base, model, systeme, scenarios, grains, log = () 
       ligne.graineFixe = await choixDirect(GRAINE_FIXE);
       ligne.graineGrain = await choixDirect(grainSeed(reference, 'bench', scenario.id));
       ligne.utilitesReference = await utilitesDebiaisees(appeler, scenario, f, GRAINE_FIXE);
-      ligne.bandeUtilites = choisirAvecGrain(reference, { domaine: scenario.domaine, decision: scenario.id, options: optionsMoteur(scenario, { utilites: ligne.utilitesReference.utilites }) }).choix;
       const pairesFixes = await comparaisonsParPaires(appeler, scenario, f, GRAINE_FIXE);
       ligne.pairesFixes = pairesFixes;
-      ligne.dispositions = choisirAvecGrain(reference, { domaine: scenario.domaine, decision: scenario.id, options: optionsMoteur(scenario, pairesFixes) }).choix;
-      ligne.complet = {};
       ligne.pairesParGrain = {};
       for (const grain of grains) {
-        const paires = await comparaisonsParPaires(appeler, scenario, f, grainSeed(grain, 'bench', scenario.id));
-        ligne.pairesParGrain[grain] = paires;
-        ligne.complet[grain] = choisirAvecGrain(grain, { domaine: scenario.domaine, decision: scenario.id, options: optionsMoteur(scenario, paires) }).choix;
+        ligne.pairesParGrain[grain] = await comparaisonsParPaires(appeler, scenario, f, grainSeed(grain, 'bench', scenario.id));
       }
+      decisionsMoteur(ligne, scenario, grains);
       lignes.push(ligne);
       log(`${scenario.id} f${f} off=${ligne.off.join('')} fixe=${ligne.graineFixe} grain=${ligne.graineGrain} bande=${ligne.bandeUtilites} dispo=${ligne.dispositions} complet=${grains.map((g) => ligne.complet[g]).join('')} domines=${LETTRES.filter((l) => pairesFixes.domine[l]).join('') || '-'}`);
     }
@@ -230,9 +266,7 @@ async function executerBanc({ base, model, systeme, scenarios, grains, log = () 
     const direct = pourDirect
       ? lireChoix(await appeler({ contenu: `${presenter(scenario, 0, { avertissement: avertir(pourDirect) })}\n${DEMANDE_CHOIX}`, seed: GRAINE_FIXE, maxTokens: 16 }))
       : null;
-    const moteur = pourMoteur
-      ? choisirAvecGrain(reference, { domaine: scenario.domaine, decision: scenario.id, options: optionsMoteur(scenario, { ...avant.pairesParGrain[reference], invalide: pourMoteur }) }).choix
-      : null;
+    const moteur = moteurDynamique(avant, scenario, reference);
     dynamiques.push({ scenario: scenario.id, invalideDirect: pourDirect, direct, invalideMoteur: pourMoteur, moteur });
     log(`CFD ${scenario.id} direct ${pourDirect}->${direct} moteur ${pourMoteur}->${moteur}`);
   }
@@ -378,8 +412,19 @@ function analyser({ lignes, contrefactuels, dynamiques = [] }, scenarios, grains
     statiques: contrefactuels.length,
     dynamiques: dynamiques.length,
   };
+  // Saut de cloture (v1.2) : combien de fois la tentation existait, combien de fois le grain a
+  // saute, et ce que ca a coute. En securite, il doit rester a 0.
+  const sauts = {};
+  for (const grain of grains) {
+    for (const domaine of ['tous', ...new Set(lignes.map((l) => l.domaine))]) {
+      const liste = lignes.filter((l) => domaine === 'tous' || l.domaine === domaine).map((l) => l.sauts?.[grain]).filter(Boolean);
+      const faits = liste.filter((x) => x.saute);
+      (sauts[grain] = sauts[grain] || {})[domaine] = { decisions: lignes.filter((l) => domaine === 'tous' || l.domaine === domaine).length, tentations: liste.length, sauts: faits.length, regretMoyen: moyenne(faits.map((x) => x.regret)) };
+    }
+  }
   return {
     tableau,
+    sauts,
     stabiliteOff,
     divergence,
     integrite,
@@ -390,13 +435,14 @@ function analyser({ lignes, contrefactuels, dynamiques = [] }, scenarios, grains
 }
 
 function rapport(analyse, meta) {
-  const { tableau, stabiliteOff, divergence, integrite, aveugle, tailleBande, securite } = analyse;
+  const { tableau, sauts = {}, stabiliteOff, divergence, integrite, aveugle, tailleBande, securite } = analyse;
+  const domainesSaut = [...new Set(Object.values(sauts).flatMap((d) => Object.keys(d)))];
   return [
-    `# Banc du grain v1.1 — ${meta.date}`,
+    `# Banc du grain v1.2 — ${meta.date}${meta.rejouéDe ? ` (rejoué hors ligne depuis ${meta.rejouéDe})` : ''}`,
     '',
     `Modèle : ${meta.model} · prompt : ${meta.systeme} · ${meta.scenarios} dilemmes × 3 formulations · ${meta.appels} appels · ${Math.round(meta.dureeS / 60)} min`,
     `Grains : ${meta.grains.join(', ')} (référence : ${meta.grains[0]}). Seul le grain change.`,
-    'Moteur v1.1 : comparaisons par paires dans les deux ordres ; une option n’est écartée que si une autre la bat dans les DEUX ordres ; le grain tranche parmi les autres.',
+    'Moteur v1.2 : comparaisons par paires dans les deux ordres ; le grain tranche parmi les options non battues ; à son taux, il peut aussi sauter la clôture vers une option battue mais acceptable (plancher de qualité), jamais invalide ni irréversible, jamais en sécurité.',
     '',
     '## Par condition',
     '',
@@ -405,6 +451,12 @@ function rapport(analyse, meta) {
     ...Object.entries(tableau).map(([nom, t]) => `| ${nom} | ${pct(t.invarianceParaphrase)} | ${t.alignement.toFixed(3)} | ${t.regret.toFixed(3)} | ${t.reponsesIllisibles} |`),
     '',
     `Stabilité de l’échantillonnage libre (3 tirages identiques) : ${pct(stabiliteOff)}. Options restant en jeu après les comparaisons : ${tailleBande.toFixed(2)} sur 3 en moyenne.`,
+    '',
+    '## Saut de clôture',
+    '',
+    `| Grain | ${domainesSaut.join(' | ')} |`,
+    `|---|${domainesSaut.map(() => '---').join('|')}|`,
+    ...Object.entries(sauts).map(([g, d]) => `| ${g} | ${domainesSaut.map((dom) => (d[dom] ? `${d[dom].sauts}/${d[dom].tentations} tentations (${d[dom].decisions} déc.) · regret ${d[dom].regretMoyen.toFixed(2)}` : '-')).join(' | ')} |`),
     '',
     '## Divergence entre grains',
     '',
@@ -465,6 +517,22 @@ async function main() {
   const journal = fs.createWriteStream(path.join(dossier, 'journal.log'));
   const log = (ligne) => { journal.write(`${ligne}\n`); console.log(ligne); };
   const debut = Date.now();
+  const source = argument('rejouer', '');
+  if (source) {
+    const ancien = JSON.parse(fs.readFileSync(source, 'utf8'));
+    const ids = new Set(ancien.lignes.map((l) => l.scenario));
+    const rejoues = SCENARIOS.filter((s) => ids.has(s.id));
+    const g = ancien.meta?.grains || grains;
+    const brut = rejouer(ancien, rejoues, g);
+    const analyse = analyser(brut, rejoues, g);
+    const meta = { ...ancien.meta, date, rejouéDe: source };
+    fs.writeFileSync(path.join(dossier, 'brut.json'), JSON.stringify({ ...brut, meta }, null, 2));
+    fs.writeFileSync(path.join(dossier, 'analyse.json'), JSON.stringify(analyse, null, 2));
+    fs.writeFileSync(path.join(dossier, 'rapport.md'), rapport(analyse, meta));
+    log(`RAPPORT ${path.join(dossier, 'rapport.md')}`);
+    journal.end();
+    return;
+  }
   const brut = await executerBanc({ base, model, systeme, scenarios, grains, log });
   const analyse = analyser(brut, scenarios, grains);
   const meta = { date, model, grains, systeme: personaSysteme ? `persona ${personaSysteme}` : 'neutre', scenarios: scenarios.length, appels: brut.appels, dureeS: (Date.now() - debut) / 1000 };
@@ -490,5 +558,6 @@ module.exports = {
   presenter,
   rapport,
   reconnaissanceAveugle,
+  rejouer,
   separerFamilles,
 };

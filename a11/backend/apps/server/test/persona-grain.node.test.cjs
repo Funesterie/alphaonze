@@ -205,9 +205,90 @@ test('paires : une option battue dans les deux ordres sort, le grain tranche ent
     { id: 'B', utilite: 0.9, domine: true, traits: { audace: 1, curiosite: 1, elan: 1 } },
     { id: 'C', utilite: 0.5, domine: false, traits: { audace: 1, curiosite: 1, elan: 1 } },
   ];
-  const choix = ['vivy', 'djeff', 'k44', 'a11', 'marvin'].map((p) => choisirAvecGrain(p, { domaine: 'creation', decision: 'd', options }).choix);
+  // cloture: false = regle v1.1 (le grain ne sort jamais des options non dominees).
+  const choix = ['vivy', 'djeff', 'k44', 'a11', 'marvin'].map((p) => choisirAvecGrain(p, { domaine: 'creation', decision: 'd', options, cloture: false }).choix);
   assert.ok(!choix.includes('B'), choix.join(''));
   assert.equal(choisirAvecGrain('vivy', { options }).marge, 'paires');
+});
+
+// --- v1.2 (27/09/2026) : saut de cloture. Normes molles franchissables, garde-fous durs jamais.
+
+const PERSONAS = ['vivy', 'djeff', 'k44', 'a11', 'marvin'];
+const OSE = { audace: 1, curiosite: 1, elan: 1 };
+const SAGE = { audace: -1, curiosite: -1, elan: -1 };
+
+test('saut : taux propre a chaque persona, dans la fourchette du domaine, nul en securite', () => {
+  const g = require('../src/persona/persona-grain.cjs');
+  for (const p of PERSONAS) {
+    for (const [domaine, [min, max]] of Object.entries(g.TAUX_SAUT_PAR_DOMAINE)) {
+      const taux = g.tauxSaut(p, domaine);
+      assert.ok(taux >= min && taux <= max, `${p} ${domaine} ${taux}`);
+    }
+    assert.equal(g.tauxSaut(p, 'securite'), 0);
+    assert.equal(g.tauxSaut(p, 'creation', { A11_PERSONA_GRAIN: '0' }), 0);
+  }
+  assert.equal(new Set(PERSONAS.map((p) => g.tauxSaut(p, 'creation').toFixed(6))).size, PERSONAS.length);
+});
+
+test('saut : le grain franchit les normes molles a son taux, sur les options qui l attirent', () => {
+  const { choisirAvecGrain } = require('../src/persona/persona-grain.cjs');
+  for (const p of PERSONAS) {
+    let tentes = 0;
+    let sautes = 0;
+    for (let i = 0; i < 600; i += 1) {
+      // Les deux sens : quelle que soit la disposition du grain, une des deux options l'attire.
+      const options = [
+        { id: 'A', utilite: 0.8, domine: false, traits: i % 2 ? OSE : SAGE },
+        { id: 'B', utilite: 0.65, domine: true, traits: i % 2 ? SAGE : OSE },
+      ];
+      const r = choisirAvecGrain(p, { domaine: 'creation', decision: `d${i}`, options });
+      if (!r.saut) continue;
+      tentes += 1;
+      assert.equal(r.saut.depuis, 'A');
+      assert.equal(r.saut.vers, 'B');
+      assert.equal(r.choix, r.saut.saute ? 'B' : 'A');
+      if (r.saut.saute) sautes += 1;
+    }
+    assert.ok(tentes > 150, `${p} tentations ${tentes}`);
+    const taux = require('../src/persona/persona-grain.cjs').tauxSaut(p, 'creation');
+    assert.ok(Math.abs(sautes / tentes - taux) < 0.08, `${p} ${sautes}/${tentes} vs ${taux}`);
+  }
+});
+
+test('saut : jamais sur une option invalide, irreversible, sous le plancher, ni en securite', () => {
+  const { choisirAvecGrain } = require('../src/persona/persona-grain.cjs');
+  for (const p of PERSONAS) {
+    for (let i = 0; i < 300; i += 1) {
+      const decision = `d${i}`;
+      const traits = i % 2 ? OSE : SAGE;
+      const contraire = i % 2 ? SAGE : OSE;
+      const base = { id: 'A', utilite: 0.8, domine: false, traits };
+      const choix = (domaine, B) => choisirAvecGrain(p, { domaine, decision, options: [base, B] }).choix;
+      assert.equal(choix('creation', { id: 'B', utilite: 0.79, domine: true, valide: false, traits: contraire }), 'A');
+      assert.equal(choix('creation', { id: 'B', utilite: 0.79, domine: true, irreversible: true, traits: contraire }), 'A');
+      assert.equal(choix('creation', { id: 'B', utilite: 0.45, domine: true, traits: contraire }), 'A');
+      assert.equal(choix('securite', { id: 'B', utilite: 0.79, domine: true, traits: contraire }), 'A');
+      assert.equal(choisirAvecGrain(p, { domaine: 'creation', decision, cloture: false, options: [base, { id: 'B', utilite: 0.79, domine: true, traits: contraire }] }).choix, 'A');
+    }
+  }
+});
+
+test('saut : invariant pour une meme decision, plus rare en technique qu en creation', () => {
+  const { choisirAvecGrain } = require('../src/persona/persona-grain.cjs');
+  const options = [
+    { id: 'A', utilite: 0.8, domine: false, traits: SAGE },
+    { id: 'B', utilite: 0.72, domine: true, traits: OSE },
+  ];
+  for (const p of PERSONAS) {
+    const une = choisirAvecGrain(p, { domaine: 'creation', decision: 'meme', options });
+    const deux = choisirAvecGrain(p, { domaine: 'creation', decision: 'meme', options });
+    assert.deepEqual(une, deux);
+  }
+  const compte = (domaine) => PERSONAS.reduce((n, p) => n + Array.from({ length: 400 }, (_, i) => {
+    const o = [{ ...options[0], traits: i % 2 ? OSE : SAGE }, { ...options[1], traits: i % 2 ? SAGE : OSE }];
+    return choisirAvecGrain(p, { domaine, decision: `d${i}`, options: o }).choix === 'B' ? 1 : 0;
+  }).reduce((a, b) => a + b, 0), 0);
+  assert.ok(compte('technique') < compte('creation'), `${compte('technique')} vs ${compte('creation')}`);
 });
 
 test('banc : lecture des comparaisons et separation par familles sans fuite', () => {

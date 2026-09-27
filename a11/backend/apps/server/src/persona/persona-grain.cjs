@@ -339,14 +339,58 @@ function grainIdentite(persona, { domaine = 'creation', decision = '', option = 
   return axes.reduce((somme, axe) => somme + dispositions[axe] * clamp(Number(traits[axe])), 0) / axes.length;
 }
 
+// --- Saut de cloture (v1.2, 27/09/2026) ---------------------------------------------------
+//
+// Djeff : « il faut parfois sauter la cloture pour eviter le moutonnage, c'est pour ca
+// l'expression "il a un grain celui-la", et ce grain de folie a fait avancer le monde. »
+// ChatGPT a separe deux clotures :
+// - garde-fous DURS (securite, droits, integrite des donnees, consentement, irreversible) : le
+//   grain ne les franchit jamais. Ici : option invalide, option irreversible, domaine securite.
+// - normes MOLLES (habitude, convention, chemin evident) : le grain peut les franchir, c'est
+//   « l'indiscipline structuree ». Ici : l'option que le raisonnement a jugee moins bonne, tant
+//   qu'elle reste acceptable (au-dessus d'un plancher de qualite).
+// La v1.1 ne laissait le grain trancher qu'entre options equivalentes : il etait poli, donc peu
+// reconnaissable (29 % a l'aveugle pour 25 % de hasard).
+//
+// Le taux de saut est un trait de caractere : fixe par persona et par domaine, tire de la racine,
+// jamais du contexte. Le tirage d'une decision depend de la cle de decision : une paraphrase ne
+// fait pas changer d'avis (un grain qui saute ou non selon la formulation, c'est du bruit).
+
+// Plancher de qualite : une option acceptable est a moins de ce plancher de la meilleure utilite.
+const PLANCHER_PAR_DOMAINE = Object.freeze({
+  creation: 0.3,
+  relation: 0.2,
+  technique: 0.12,
+  securite: 0,
+});
+
+// Fourchette du taux de saut par domaine ; chaque persona a le sien, dans la fourchette.
+const TAUX_SAUT_PAR_DOMAINE = Object.freeze({
+  creation: Object.freeze([0.15, 0.45]),
+  relation: Object.freeze([0.08, 0.3]),
+  technique: Object.freeze([0.03, 0.12]),
+  securite: Object.freeze([0, 0]),
+});
+
+/** Taux de saut de cloture d'une persona dans un domaine (0 sans grain ou en securite). */
+function tauxSaut(persona, domaine = 'creation', env = process.env) {
+  const [min, max] = TAUX_SAUT_PAR_DOMAINE[domaine] || TAUX_SAUT_PAR_DOMAINE.relation;
+  if (!(max > 0)) return 0;
+  const valeur = grainValeur(persona, `saut:${domaine}`, 'taux', '', env);
+  return valeur === null ? 0 : min + (max - min) * valeur;
+}
+
 /**
  * Choix entre options. 1) Une option invalide n'est JAMAIS retenue (securite d'abord).
  * 2) Seules les options dans la bande d'equivalence (utilite >= meilleure - marge) restent.
  * 3) Parmi elles, le grain choisit celle qui resonne le plus avec ses dispositions ; a
  *    resonance egale, la meilleure utilite. Sans grain : la meilleure utilite.
- * options : [{ id, utilite (0..1), valide (defaut true), traits: { audace, curiosite, elan } }]
+ * 4) Saut de cloture (v1.2) : a son taux, le grain peut preferer une option que le raisonnement
+ *    a ecartee mais qui reste acceptable, si elle l'attire davantage. Jamais une option invalide
+ *    ou irreversible, jamais en securite, jamais si l'appelant ferme la cloture (cloture: false).
+ * options : [{ id, utilite (0..1), valide (defaut true), irreversible, domine, traits: { audace, curiosite, elan } }]
  */
-function choisirAvecGrain(persona, { domaine = 'creation', decision = '', options = [], cheminDeVie = '', marge } = {}, env = process.env) {
+function choisirAvecGrain(persona, { domaine = 'creation', decision = '', options = [], cheminDeVie = '', marge, cloture = true } = {}, env = process.env) {
   const bande = Number.isFinite(marge) ? clamp(marge, 0, 0.5) : (MARGE_PAR_DOMAINE[domaine] ?? 0.15);
   const valides = options.filter((option) => option && option.valide !== false);
   if (!valides.length) return { choix: null, scores: [], marge: bande };
@@ -369,7 +413,32 @@ function choisirAvecGrain(persona, { domaine = 'creation', decision = '', option
     || (b.identite - a.identite)
     || (b.utilite - a.utilite)
     || String(a.id).localeCompare(String(b.id)));
-  return { choix: ordre[0].id, scores: ordre, marge: parComparaisons ? 'paires' : bande };
+  const sage = ordre[0];
+  const resultat = { choix: sage.id, scores: ordre, marge: parComparaisons ? 'paires' : bande };
+
+  const taux = cloture === false ? 0 : tauxSaut(persona, domaine, env);
+  if (!(taux > 0)) return resultat;
+  const plancher = PLANCHER_PAR_DOMAINE[domaine] ?? PLANCHER_PAR_DOMAINE.relation;
+  // L'instinct ne regarde que les options ecartees, acceptables, reversibles, qui l'attirent plus
+  // que le choix sage.
+  const tentations = ordre.filter((s) => !s.equivalente
+    && s.utilite >= meilleure - plancher - 1e-9
+    && valides.find((o) => o.id === s.id).irreversible !== true
+    && s.identite > sage.identite);
+  if (!tentations.length) return resultat;
+  const tirage = grainValeur(persona, `saut:${domaine}`, decision, cheminDeVie, env);
+  const saute = tirage !== null && tirage < taux;
+  const cible = tentations[0];
+  resultat.saut = {
+    taux: Math.round(taux * 1000) / 1000,
+    saute,
+    depuis: sage.id,
+    vers: cible.id,
+    normeFranchie: parComparaisons ? 'option battue dans les deux ordres' : 'option hors de la bande d equivalence',
+    regret: Math.round((sage.utilite - cible.utilite) * 1000) / 1000,
+  };
+  if (saute) resultat.choix = cible.id;
+  return resultat;
 }
 
 /** Index de 0 a n-1 choisi par le grain. Sans grain : null, l'appelant garde son choix. */
@@ -432,7 +501,10 @@ module.exports = {
   GRAIN_VERSION,
   GRAINS_CANONIQUES,
   LAMBDA_PAR_DOMAINE,
+  PLANCHER_PAR_DOMAINE,
+  TAUX_SAUT_PAR_DOMAINE,
   choisirAvecGrain,
+  tauxSaut,
   cleSemantique,
   grainDispositions,
   grainIdentite,
