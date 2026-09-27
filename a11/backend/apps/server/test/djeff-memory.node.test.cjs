@@ -58,3 +58,19 @@ test('Djeff Engine ouvre sa memoire au seul compte fondateur', () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/vivy-studio.cjs'), 'utf8');
   assert.match(source, /const memoire = !technicalAudit && isVivyFounderUser\(req\?\.user \|\| \{\}\)/);
 });
+
+test('les souvenirs prives transmis par Djeff arrivent en tete, avec leur garde', async () => {
+  const { dir, file } = writeIndex();
+  const prive = path.join(dir, 'djeff-memoire-privee.md');
+  fs.writeFileSync(prive, '# Memoire privee\nUn souvenir que Djeff a voulu transmettre.');
+  try {
+    const env = { A11_CHATGPT_KEYWORD_INDEX: file, A11_CHAT_GRAPH_CONTEXT: '0', A11_DJEFF_LEXICON: '0', DJEFF_PRIVATE_MEMORY_FILE: prive };
+    const memoire = await buildDjeffMemoryContext('Vivy couteau miroir memoire', env);
+    assert.ok(memoire.startsWith('# Memoire privee'));
+    assert.match(memoire, /restent entre toi et Djeff/);
+    const sans = await buildDjeffMemoryContext('Vivy couteau miroir memoire', { ...env, DJEFF_PRIVATE_MEMORY_FILE: path.join(dir, 'absent.md') });
+    assert.doesNotMatch(sans, /Memoire privee/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
