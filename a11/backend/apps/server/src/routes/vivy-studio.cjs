@@ -1478,6 +1478,7 @@ function createVivyOpenAIClientFromConfig(config) {
     timeoutMs: Number(config.timeoutMs || 0) || 0,
     maxPromptChars: Number(config.maxPromptChars || 0) || 0,
     maxOutputTokens: Number(config.maxOutputTokens || 0) || 0,
+    attemptTimeoutMs: Number(config.attemptTimeoutMs || 0) || 0,
   };
 }
 
@@ -1629,7 +1630,12 @@ async function createVivyBundleCompletion(bundle, request, options = {}) {
   const deadlineAt = Math.max(0, Number(options.deadlineAt || 0) || 0);
   const remainingMs = deadlineAt ? deadlineAt - Date.now() : Number.POSITIVE_INFINITY;
   if (remainingMs <= 500) throw buildVivyLlmDeadlineError();
-  const defaultAttemptMs = bundle.provider === 'ollama'
+  // Un modele qui declare sa propre duree d'essai la garde (Djeff Engine en chanson : un 14B
+  // local ecrit un morceau complet en une minute environ, la limite generale des modeles
+  // locaux en NOSSEN est de 40 s).
+  const defaultAttemptMs = Number(bundle.attemptTimeoutMs) > 0
+    ? Number(bundle.attemptTimeoutMs)
+    : bundle.provider === 'ollama'
     ? Math.max(1000, Number(options.localAttemptTimeoutMs || bundle.timeoutMs || 65000) || 65000)
     : bundle.provider === 'ollama_cloud'
       ? Math.max(1000, Number(options.largeLyricsAttemptTimeoutMs || options.attemptTimeoutMs || 60000) || 60000)
@@ -7596,6 +7602,20 @@ function getDjeffEngineLocalConfig(budget = {}) {
   };
 }
 
+// Djeff Engine en ecriture de chanson : fenetre de 8k jetons, donc prompt borne comme les
+// autres modeles locaux en chanson et sortie assez longue pour un morceau complet (~1 200
+// jetons pour 4 300 caracteres). Delai court : s'il n'a pas fini, la chaine forte prend le relais.
+function getDjeffEngineLocalSongConfig() {
+  const base = getDjeffEngineLocalConfig({ maxTokens: 1500 });
+  if (!base) return null;
+  return {
+    ...base,
+    timeoutMs: Math.max(20000, Number(process.env.DJEFF_ENGINE_SONG_TIMEOUT_MS || 60000) || 60000),
+    attemptTimeoutMs: Math.max(20000, Number(process.env.DJEFF_ENGINE_SONG_TIMEOUT_MS || 60000) || 60000),
+    maxPromptChars: Math.max(6000, Math.min(22000, Number(process.env.VIVY_SONG_LOCAL_MAX_PROMPT_CHARS || 16000) || 16000)),
+  };
+}
+
 async function buildVivyAiChat(input, req) {
   input = input && typeof input === 'object' ? input : {};
   const sessionContext = resolveVivyInputSession(input);
@@ -7691,7 +7711,16 @@ async function buildVivyAiChat(input, req) {
     : null;
   const localContextForResponse = serializeVivyLocalContext(localContext);
   const llmDisabled = String(process.env.VIVY_CHAT_DISABLE_LLM || '').toLowerCase() === 'true';
-  const llmBundles = createVivyOpenAIClients({ mode, purpose: mode === 'song' ? 'lyrics' : 'chat' });
+  // Plume de Djeff (27/09/2026, demande de Djeff) : quand Jeffrey chante, Djeff Engine ecrit
+  // d'abord avec son propre modele local ; la chaine forte reste en secours. Avant, la plume
+  // n'etait qu'une consigne confiee au premier modele disponible (deepseek ce jour-la).
+  const plumeLocaleDjeff = mode === 'song' && buildJeffreyDjeffEnginePen(input)
+    ? createVivyOpenAIClientFromConfig(getDjeffEngineLocalSongConfig())
+    : null;
+  const llmBundles = [
+    plumeLocaleDjeff,
+    ...createVivyOpenAIClients({ mode, purpose: mode === 'song' ? 'lyrics' : 'chat' }),
+  ].filter(Boolean);
   let llmBundle = llmBundles[0] || null;
   let webResearch = null;
 
@@ -9131,19 +9160,30 @@ const VIVY_SUNO_GRAIN_TRACES = new WeakMap();
 
 // Ajoute `garanti` au style sans jamais le couper : si la place manque, l'optionnel saute,
 // puis la queue du style, coupee entre deux virgules.
-function appendVivyGuaranteedStyle(style = '', garanti = '', optionnel = '', limite = 720) {
+// Accessoires chiffres de prosodie : les seuls morceaux du style qui peuvent ceder pour laisser
+// passer la signature du grain. Les roles vocaux, les relais de duo/trio, la direction et
+// l'arrangement ne cedent jamais (27/09 : une premiere version coupait la queue du style et
+// perdait « bright female melodic lead », « solo handoff »… cinq tests l'ont attrape).
+const VIVY_STYLE_ACCESSOIRES = [
+  /^avg pace/i,
+  /^avg energy/i,
+  /^d+ bpm grid$/i,
+  /^branches d+$/i,
+  /^anchors [w-]+$/i,
+  /^hidden trinary microtiming$/i,
+  /^continuous vocal phase$/i,
+];
+
+// Ajoute la signature (et l'arc s'il tient) au style. Si la place manque, seuls les accessoires
+// chiffres sautent ; si ca ne suffit toujours pas, c'est la signature qui cede, comme avant.
+function appendVivyGuaranteedStyle(style = '', signature = '', arc = '', limite = 720) {
   const joindre = (...parts) => parts.filter(Boolean).join(', ');
-  const complet = joindre(style, garanti, optionnel);
-  if (complet.length <= limite || !garanti) return complet;
-  if (joindre(style, garanti).length <= limite) return joindre(style, garanti);
-  const place = limite - garanti.length - 2;
-  let tete = '';
-  for (const part of String(style).split(/,\s*/)) {
-    const suivant = joindre(tete, part);
-    if (suivant.length > place) break;
-    tete = suivant;
-  }
-  return joindre(tete, garanti);
+  const complet = joindre(style, signature, arc);
+  if (complet.length <= limite || !signature) return complet;
+  const allege = joindre(...String(style).split(/,s*/).filter((part) => !VIVY_STYLE_ACCESSOIRES.some((motif) => motif.test(part.trim()))));
+  if (joindre(allege, signature, arc).length <= limite) return joindre(allege, signature, arc);
+  if (joindre(allege, signature).length <= limite) return joindre(allege, signature);
+  return complet;
 }
 
 function buildVivySunoPayload(input = {}, req = null) {
@@ -9405,7 +9445,7 @@ function buildVivySunoPayload(input = {}, req = null) {
   // qui cede. L'arc est garanti avec elle : s'il sautait seulement quand la signature d'un grain
   // est plus longue, deux grains differeraient aussi par l'arc (biais vu au banc d'ecoute).
   if (complementStyle && !forceInstrumental) {
-    style = sanitizeVivySunoProviderTags(appendVivyGuaranteedStyle(style, complementStyle, '', 720), style, 720);
+    style = sanitizeVivySunoProviderTags(appendVivyGuaranteedStyle(style, signatureStyle, arcStyle, 720), style, 720);
   }
 
   // Une voix premium chante: le style ne doit plus diriger le timbre d'un autre.
@@ -9486,6 +9526,10 @@ function buildVivySunoPayload(input = {}, req = null) {
     serverVoiceId ? `${serverVoiceId.slice(0, 4)}...` : 'non',
     useVerifiedSunoVoice ? `${String(verifiedVoiceId).slice(0, 4)}...` : 'aucune'
   );
+  // Prononciation : seul le texte qui part chez Suno change, jamais ce que la plume a ecrit.
+  if (typeof payload.prompt === 'string' && payload.prompt) {
+    payload.prompt = require('../music/suno-prononciation.cjs').prononcerPourSuno(payload.prompt);
+  }
   if (traceGrain && !forceInstrumental) {
     VIVY_SUNO_GRAIN_TRACES.set(payload, { ...traceGrain, voix: singleArtistId || artistCast.ids.join('+'), banc: cleanOneLine(input.grainBanc, '', 80) || null });
   }
