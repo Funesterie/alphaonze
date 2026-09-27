@@ -25,7 +25,7 @@ const {
 } = require('../media/emergency-media.cjs');
 const { buildAgentsPersonaContext, buildDjeffSystemPrompt } = require('../persona/persona-engine.cjs');
 const { buildDjeffMemoryContext } = require('../persona/djeff-memory.cjs');
-const { grainTemperature, decrireGrain, decalerGrain, GRAINS_CANONIQUES } = require('../persona/persona-grain.cjs');
+const { grainTemperature, grainConscience, decrireGrain, decalerGrain, GRAINS_CANONIQUES } = require('../persona/persona-grain.cjs');
 const {
   addEpisode,
   getEpisodes,
@@ -7506,16 +7506,21 @@ async function buildDjeffAiChat(input, req) {
   const memoire = !technicalAudit && isVivyFounderUser(req?.user || {})
     ? await buildDjeffMemoryContext(message, process.env)
     : '';
+  // Grain de Djeff : conscience en conversation, respiration de la temperature.
+  // `grain: false` (fondateur seulement) le coupe pour comparer avec et sans.
+  const grainEnv = resolveGrainEnv(input, req);
+  const grainDjeff = technicalAudit ? '' : grainConscience('djeff', grainEnv);
   const completionResult = await createVivyChatCompletion(llmBundles, {
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'system', content: buildDjeffModeSystemPrompt(message, input) },
+      grainDjeff ? { role: 'system', content: grainDjeff } : null,
       memoire ? { role: 'system', content: memoire } : null,
       ...history,
       { role: 'user', content: message },
     ].filter(Boolean),
     // Un audit technique reste froid ; sinon le grain de Djeff fait respirer sa temperature.
-    temperature: technicalAudit ? 0.1 : grainTemperature('djeff', message, 0.7, 0.08),
+    temperature: technicalAudit ? 0.1 : grainTemperature('djeff', message, 0.7, 0.08, grainEnv),
     max_tokens: budget.maxTokens,
   });
   const rawReply = cleanText(completionResult.completion?.choices?.[0]?.message?.content, 12000);
@@ -7535,6 +7540,14 @@ async function buildDjeffAiChat(input, req) {
     grounding: technicalAudit ? (groundingFallback ? 'fallback' : 'verified') : 'not_applicable',
     memory: memoire ? 'on' : 'off',
   };
+}
+
+// Le fondateur peut couper le grain le temps d'une requete (`grain: false`) pour comparer une
+// meme question avec et sans ; pour tout autre compte, le grain reste tel que configure.
+function resolveGrainEnv(input = {}, req = null) {
+  return input?.grain === false && isVivyFounderUser(req?.user || {})
+    ? { ...process.env, A11_PERSONA_GRAIN: '0' }
+    : process.env;
 }
 
 // Modele local propre a Djeff Engine. Le prompt systeme reste celui du backend (profil
@@ -8231,9 +8244,14 @@ async function buildVivyAiChat(input, req) {
     const songPens = mode === 'song'
       ? (buildSongAuthorPens({ artists: songAuthorIds, jeffreyPen: plumeJeffrey }) || plumeJeffrey)
       : '';
+    // Grain de Vivy (persona-grain.cjs) : elle le connait en conversation, jamais en chanson.
+    // `grain: false` (fondateur seulement) le coupe pour comparer avec et sans.
+    const grainEnv = resolveGrainEnv(input, req);
+    const grainVivy = mode !== 'song' ? grainConscience('vivy', grainEnv) : '';
     const messages = [
       { role: 'system', content: systemPrompt },
       songPens ? { role: 'system', content: songPens } : null,
+      grainVivy ? { role: 'system', content: grainVivy } : null,
       memoryContext ? { role: 'system', content: `Mémoire Vivy récente, privée pour cette session:\n${memoryContext}` } : null,
       ...history,
       { role: 'user', content: userContent },
@@ -8251,7 +8269,7 @@ async function buildVivyAiChat(input, req) {
       // message, meme souffle ; les paroles gardent leur temperature fixe.
       temperature: mode === 'song'
         ? Number(process.env.VIVY_CHAT_TEMPERATURE_SONG || process.env.VIVY_CHAT_TEMPERATURE || 0.88)
-        : grainTemperature('vivy', message, Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74)),
+        : grainTemperature('vivy', message, Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74), 0.06, grainEnv),
       max_tokens: mode === 'song' ? songMaxTokens : Number(process.env.VIVY_CHAT_MAX_TOKENS || 5000),
     };
     const nossenLlmBudgetMs = Math.max(30000, Math.min(

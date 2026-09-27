@@ -195,15 +195,26 @@ function genomeToPrompt(genome, options = {}) {
   return sections.join('\n\n');
 }
 
+// Tirage signe par le grain de la persona (27/09/2026) : meme persona, meme cle, meme tirage.
+// Sans persona (ou grain coupe), hasard pur comme avant.
+function tirage(grain, cle) {
+  if (grain && grain.persona) {
+    const { grainUnite } = require('./persona-grain.cjs');
+    const unite = grainUnite(grain.persona, `${grain.cle || 'adn'}:${cle}`);
+    if (unite !== null) return unite;
+  }
+  return Math.random();
+}
+
 // ─── Splicing: combiner deux personas ──────────────────────────────────
 
-function spliceGenomes(genomeA, genomeB, ratio = 0.5) {
+function spliceGenomes(genomeA, genomeB, ratio = 0.5, grain = null) {
   const spliced = {};
   
   for (const chr of Object.values(CHROMOSOMES)) {
     if (chr === CHROMOSOMES.ACTIVATION) {
       // L'activation est toujours celle du genome dominant
-      spliced[chr] = Math.random() < ratio ? genomeA[chr] : genomeB[chr];
+      spliced[chr] = tirage(grain, `splice:${chr}`) < ratio ? genomeA[chr] : genomeB[chr];
       continue;
     }
     
@@ -212,7 +223,7 @@ function spliceGenomes(genomeA, genomeB, ratio = 0.5) {
     const splicedGenes = {};
     
     for (const geneName of new Set([...Object.keys(genesA), ...Object.keys(genesB)])) {
-      splicedGenes[geneName] = Math.random() < ratio ? genesA[geneName] : genesB[geneName];
+      splicedGenes[geneName] = tirage(grain, `splice:${chr}:${geneName}`) < ratio ? genesA[geneName] : genesB[geneName];
     }
     
     spliced[chr] = splicedGenes;
@@ -223,7 +234,7 @@ function spliceGenomes(genomeA, genomeB, ratio = 0.5) {
 
 // ─── Mutation: variation aleatoire ─────────────────────────────────────
 
-function mutateGenome(genome, intensity = 0.15) {
+function mutateGenome(genome, intensity = 0.15, grain = null) {
   const mutated = JSON.parse(JSON.stringify(genome));
   
   for (const chr of Object.values(CHROMOSOMES)) {
@@ -232,12 +243,12 @@ function mutateGenome(genome, intensity = 0.15) {
     if (!genes) continue;
     
     for (const geneName of Object.keys(genes)) {
-      if (Math.random() < intensity) {
+      if (tirage(grain, `mutation:${chr}:${geneName}`) < intensity) {
         const pool = GENE_POOL[geneName];
         if (pool) {
           const altValues = pool.values.filter(v => v !== genes[geneName]);
           if (altValues.length > 0) {
-            genes[geneName] = altValues[Math.floor(Math.random() * altValues.length)];
+            genes[geneName] = altValues[Math.floor(tirage(grain, `allele:${chr}:${geneName}`) * altValues.length)];
           }
         }
       }
@@ -257,12 +268,12 @@ function buildPromptADN(persona, options = {}) {
   
   // Splicing
   if (spliceWith && PERSONA_GENOMES[spliceWith]) {
-    workingGenome = spliceGenomes(genome, PERSONA_GENOMES[spliceWith], spliceRatio);
+    workingGenome = spliceGenomes(genome, PERSONA_GENOMES[spliceWith], spliceRatio, { persona, cle: `adn:${spliceWith}` });
   }
   
   // Mutation
   if (mutationRate > 0) {
-    workingGenome = mutateGenome(workingGenome, mutationRate);
+    workingGenome = mutateGenome(workingGenome, mutationRate, { persona, cle: 'adn' });
   }
   
   // Sel epigenetique (defragmentation relationnelle)

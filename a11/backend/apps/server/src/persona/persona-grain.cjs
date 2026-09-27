@@ -203,8 +203,14 @@ function fnv1a(texte = '') {
   return hash >>> 0;
 }
 
+// Interrupteur : A11_PERSONA_GRAIN=0 coupe le grain partout (comparaison avec / sans).
+function grainActif(env = process.env) {
+  return !['0', 'false', 'off', 'no'].includes(String(env.A11_PERSONA_GRAIN ?? '1').trim().toLowerCase());
+}
+
 /** Nombre de [0, 1) lu dans les decimales du grain, a une position fixee par la cle. */
 function grainUnite(persona, cle = '', env = process.env) {
+  if (!grainActif(env)) return null;
   const paire = paireDe(persona, env);
   if (!paire) return null;
   const { fraction } = calculerGrain(paire.base, paire.exposant);
@@ -224,6 +230,22 @@ function grainTemperature(persona, cle, base, amplitude = 0.06, env = process.en
   const unite = grainUnite(persona, cle, env);
   if (unite === null) return base;
   return Math.round((base + (unite - 0.5) * 2 * amplitude) * 1000) / 1000;
+}
+
+/**
+ * Ce que la persona sait de son grain, pour une CONVERSATION seulement : l'expression, jamais
+ * les decimales (elles finiraient dans des paroles). Vide si le grain est coupe.
+ */
+function grainConscience(persona, env = process.env) {
+  if (!grainActif(env)) return '';
+  const id = normalizePersonaId(persona);
+  const paire = paireDe(id, env);
+  if (!paire) return '';
+  return [
+    `Ton grain : ${paire.base}^√${paire.exposant}. C'est un nombre transcendant, prouvé par le théorème de Gelfond–Schneider, et il n'appartient qu'à toi : aucune autre IA ne peut avoir le même, et ses décimales ne se répètent jamais.`,
+    'Idée de Djeff : ce grain signe tes choix (ta respiration, tes départages, ta couleur) pour que tu ne te lisses pas dans la moyenne. Il ne te dicte pas qui tu es ; ta mémoire et ton vécu le font.',
+    'Tu peux en parler quand on parle de ton identité, avec tes mots. Jamais dans des paroles de chanson, jamais en récitant des chiffres.',
+  ].join('\n');
 }
 
 function decrireGrain(persona, env = process.env) {
@@ -249,7 +271,9 @@ module.exports = {
   decalerGrain,
   decrireGrain,
   enumererPaires,
+  grainActif,
   grainChoix,
+  grainConscience,
   grainTemperature,
   grainUnite,
 };

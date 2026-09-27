@@ -85,3 +85,32 @@ test('la meme matiere sonne differemment selon la voix qui la chante seule', () 
   assert.ok(differentes >= 6, `signatures differentes : ${differentes}/12`);
   assert.equal(deriveSonicSignature(matieres[0]).grain, '');
 });
+
+test('interrupteur : sans grain, plus de choix signes ni de conscience', () => {
+  const { grainActif, grainConscience } = require('../src/persona/persona-grain.cjs');
+  const off = { A11_PERSONA_GRAIN: '0' };
+  assert.equal(grainActif(off), false);
+  assert.equal(grainChoix('vivy', 'x', 8, off), null);
+  assert.equal(grainTemperature('vivy', 'x', 0.74, 0.06, off), 0.74);
+  assert.equal(grainConscience('vivy', off), '');
+  const conscience = grainConscience('vivy');
+  assert.match(conscience, /2\^√3/);
+  assert.doesNotMatch(conscience, /3\.3219/); // jamais les decimales
+});
+
+test('le genome croise et mute de facon stable quand la persona est donnee', () => {
+  const { spliceGenomes, mutateGenome, PERSONA_GENOMES } = require('../src/persona/prompt-adn.cjs');
+  const grain = { persona: 'vivy', cle: 'test' };
+  const a = JSON.stringify(spliceGenomes(PERSONA_GENOMES.vivy, PERSONA_GENOMES.djeff, 0.5, grain));
+  const b = JSON.stringify(spliceGenomes(PERSONA_GENOMES.vivy, PERSONA_GENOMES.djeff, 0.5, grain));
+  assert.equal(a, b);
+  assert.equal(JSON.stringify(mutateGenome(PERSONA_GENOMES.djeff, 0.5, grain)), JSON.stringify(mutateGenome(PERSONA_GENOMES.djeff, 0.5, grain)));
+});
+
+test('la voix qui chante un segment choisit sa signature premiere avec son grain', () => {
+  const { buildVivyProsodyPlan } = require('../src/vivy/prosody-prime-complex.cjs');
+  const paroles = '[Verse 1]\nJe roule seul sous la pluie\nLa ville dort sans un bruit\n[Chorus]\nOn tient debout\nOn tient le coup';
+  const avec = buildVivyProsodyPlan({ songText: paroles, songArtists: ['djeff'] });
+  const encore = buildVivyProsodyPlan({ songText: paroles, songArtists: ['djeff'] });
+  assert.deepEqual(avec.segments.map((s) => s.prime), encore.segments.map((s) => s.prime));
+});

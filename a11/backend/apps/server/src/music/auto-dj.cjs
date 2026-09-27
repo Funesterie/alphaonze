@@ -288,7 +288,12 @@ function choisirVoix({ sections = [], voix = [], presents = [], mode = 'timbre',
       // d'affilee tant qu'il reste quelqu'un d'autre. Pas de mesure de timbre ici,
       // on assume le tirage — c'est le mode « surprise » demande.
       const pool = eligibles.length > 1 ? eligibles.filter((v) => v.name !== precedent) : eligibles;
-      const v = pool[Math.floor(rng() * pool.length)] || pool[0];
+      // Le DJ, c'est Vivy : son grain tire la voix (27/09/2026), toujours rejouable. Le
+      // PRNG avance quand meme, pour que la suite reste identique si le grain est coupe.
+      const tirageRng = rng();
+      const { grainUnite } = require('../persona/persona-grain.cjs');
+      const tirageGrain = grainUnite('vivy', `dj:${index}:${tirageRng}`);
+      const v = pool[Math.floor((tirageGrain ?? tirageRng) * pool.length)] || pool[0];
       const absent = presentSet.size > 0 && !presentSet.has(String(v.name).toLowerCase());
       gagnante = { voix: v, ecart: null, bonusFaim: 0, absent };
     } else {

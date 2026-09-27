@@ -579,8 +579,14 @@ function buildVivyProsodyPlan(input = {}) {
   const total = sections.length;
   const segments = sections.map((section, index) => {
     const segmentSeed = `${planHash}:${index}:${section.label}:${section.text}`;
-    const prime = PRIME_SIGNATURE[(index + (hashNumber(segmentSeed) % PRIME_SIGNATURE.length)) % PRIME_SIGNATURE.length];
     const roleId = roleFromCastAndSection(castIds, section, index);
+    // La voix qui chante le segment choisit sa signature premiere avec son grain (27/09/2026) ;
+    // un duo ou un segment sans voix connue garde l'empreinte du texte.
+    const { grainChoix } = require('../persona/persona-grain.cjs');
+    const choixGrain = grainChoix(roleId, `prosodie:${segmentSeed}`, PRIME_SIGNATURE.length);
+    const prime = PRIME_SIGNATURE[choixGrain !== null
+      ? choixGrain
+      : (index + (hashNumber(segmentSeed) % PRIME_SIGNATURE.length)) % PRIME_SIGNATURE.length];
     const roleLabel = roleId === 'duo' ? 'Duo' : roleId === 'tous' ? 'Tous' : cleanOneLine(roleId, 'vivy', 32).replace(/^./, (letter) => letter.toUpperCase());
     const prosody = deriveSegmentProsody({ section, roleId, prime, seed: planHash, index, total });
     const id = `vivy-prosody-segment:${planHash}:${String(index + 1).padStart(2, '0')}`;

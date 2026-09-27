@@ -191,6 +191,18 @@ function pickVivyOutfit({ subjectText = '', mood = '' } = {}, env = process.env)
     .map((outfit) => ({ outfit, score: scoreOutfitAffinity(outfit, foldedSubject) }))
     .sort((a, b) => b.score - a.score);
   if (!scored.length || scored[0].score <= 0) return null;
+  // A egalite, c'etait toujours la premiere tenue de la liste. Le grain de Vivy departage
+  // (27/09/2026) : son choix, stable pour un meme sujet.
+  const exAequo = scored.filter((entry) => entry.score === scored[0].score);
+  if (exAequo.length > 1) {
+    const { grainChoix } = require('../persona/persona-grain.cjs');
+    const index = grainChoix('vivy', `tenue:${foldedSubject}`, exAequo.length, env);
+    if (index !== null && index > 0) {
+      const choisie = exAequo[index];
+      scored.splice(scored.indexOf(choisie), 1);
+      scored.unshift(choisie);
+    }
+  }
   const main = scored[0].outfit;
   const accessories = scored
     .slice(1)
