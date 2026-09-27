@@ -9177,14 +9177,25 @@ function buildVivySunoPayload(input = {}, req = null) {
   const castRoleSummary = artistCast.count > 1
     ? `vocal roles: ${castRoles}; never merge them into one voice; ${artistCast.count} clearly different vocal timbres; solo handoff; one vocalist at a time; switch singer timbre at every role tag; brief call-and-response hook only`
     : '';
+  // Djeff seul rappe par defaut. Quand la couleur demande du chant (opening anime,
+  // J-rock, refrain qui s'envole), lui imposer « rap vocals, no melodic pop singing »
+  // sabordait la demande (27/09/2026, album opening anime de Jeffrey). Les « no ... »
+  // sont retires avant le test : « no melodic chorus » garde le rap.
+  const djeffChante = singleArtistId === 'djeff'
+    && /\b(?:sung\s+vocals?|singing|melodic\s+(?:chorus|vocals?|lead)|anthemic\s+chorus|soaring\s+chorus|anime|j-?rock|j-?pop|ballad|chant[ée]e?s?|m[ée]lodique)\b/i
+      .test(String(couleurDemandee || '').replace(/\bno\s+[^,.;]+/gi, ''));
   const castStyle = artistCast.count > 1
     ? ''
-    : `${artistCast.label} vocal lead: ${artistCast.artists[0]?.style || artistCast.label}`;
+    : djeffChante
+      ? `${artistCast.label} vocal lead: French male lead singing with full melodic phrasing`
+      : `${artistCast.label} vocal lead: ${artistCast.artists[0]?.style || artistCast.label}`;
   const personalSunoVoiceStyle = personalSunoVoice?.voiceId
     ? 'selected account Suno voice persona as the only lead vocal, preserve the linked personal timbre, no random replacement singer'
     : '';
   const soloDjeffStyle = singleArtistId === 'djeff'
-    ? 'Solo Djeff only, Djeff Cypher voice persona, dry gritty French male rap lead, close-mic punchline delivery, nervous controlled technical flow, concept-first source-driven production, instrumental palette and hook shape follow the current material, preserve its distinctive nouns and strange imagery, no female vocal, no random replacement singer'
+    ? djeffChante
+      ? 'Solo Djeff only, sung French male lead, clear diction, melodic phrasing, concept-first source-driven production, preserve its distinctive nouns and strange imagery, no female vocal, no random replacement singer'
+      : 'Solo Djeff only, Djeff Cypher voice persona, dry gritty French male rap lead, close-mic punchline delivery, nervous controlled technical flow, concept-first source-driven production, instrumental palette and hook shape follow the current material, preserve its distinctive nouns and strange imagery, no female vocal, no random replacement singer'
     : '';
   const soloMarvinStyle = singleArtistId === 'marvin'
     ? 'Solo Marvin only, Marvin family Suno voice persona, natural French male lead, close-mic melodic rap tone, confident brother energy, clear French diction, no female vocal, no random replacement singer'
@@ -9210,7 +9221,7 @@ function buildVivySunoPayload(input = {}, req = null) {
   const frenchLanguageStyle = forceInstrumental || useExternalVoiceMix
     ? ''
     : languageLock.style;
-  const vocalDeliveryStyle = singleArtistId === 'djeff'
+  const vocalDeliveryStyle = singleArtistId === 'djeff' && !djeffChante
     ? 'rap hook, rap vocals, no melodic pop singing'
     : 'melodic chorus, sung vocals';
   let style = /structured rhymed lyrics|rimes|paroles structur/i.test(styleBase)
