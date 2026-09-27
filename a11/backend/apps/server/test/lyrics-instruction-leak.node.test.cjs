@@ -86,3 +86,22 @@ test('la dernière barrière avant Suno retire les consignes et le couplet qui n
   assert.match(payload.prompt, /\[Instrumental Break\]/);
   assert.match(payload.prompt, /Je roule seul sous la pluie/);
 });
+
+test('consignes du 27/09 chantees par Suno : adresses au moteur et consignes de reparation', () => {
+  const { isLyricInstructionLine } = require('../src/music/lyrics-instruction-leak.cjs');
+  for (const ligne of [
+    'Composition originale Funesterie, plume de Djeff',
+    'Djeff Engine, c\'est toi qui choisis le thème, la couleur et chaque mot',
+    'Jeffrey chante seul',
+    'Jette entièrement les sorties précédentes et recommence depuis le sujet utilisateur',
+    'Aucune section vide, aucune règle, aucun contrat NOSSEN',
+    'aucune phrase d\'opérateur dans les paroles',
+  ]) assert.equal(isLyricInstructionLine(ligne), true, ligne);
+  for (const vers of [
+    'Je garde la plume et le feu dans la main',
+    'On a tout recommencé depuis la cendre',
+    'Jette tes clés, la route est à nous',
+    'Le moteur tourne encore, la nuit tombe j\'accélère',
+    'Ils voulaient un rouage, j\'ai livré un vivant',
+  ]) assert.equal(isLyricInstructionLine(vers), false, vers);
+});

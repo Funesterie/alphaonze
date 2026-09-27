@@ -31,7 +31,7 @@ function foldLine(value = '') {
 // Vocabulaire d'atelier : les mots avec lesquels on parle d'une chanson en train de
 // se faire. « voix », « chanson », « image » ou « sujet » n'y sont pas : les
 // paroles s'en servent tout le temps.
-const WORKSHOP_JARGON = /\b(?:couplets?|refrains?|pre[\s-]?refrains?|sections?|tags?|casting|flow|debit|rimes?|punchlines?|multisyllabiques?|structure|style|blocs?|duo|trio|timbres?|morceau|album|lead|hook|prosodie|consignes?|brief|relais)\b/g;
+const WORKSHOP_JARGON = /\b(?:couplets?|refrains?|pre[\s-]?refrains?|sections?|tags?|casting|flow|debit|rimes?|punchlines?|multisyllabiques?|structure|style|blocs?|duo|trio|timbres?|morceau|album|lead|hook|prosodie|consignes?|brief|relais|regles?|contrat|composition|plume|operateur|sorties?)\b/g;
 
 // Étiquettes internes qu'un brief met en tête de ligne avant deux-points, ou
 // étiquette qui se termine par un qualificatif de brief (« Hook obligatoire: »).
@@ -40,7 +40,13 @@ const INTERNAL_LABEL_SUFFIX = /\b(?:obligatoires?|verrouille(?:e|s|es)?|choisie?
 
 const PRESCRIPTIVE = /\b(?:obligatoires?|verrouille(?:e|s|es)?|en alternance si possible|sert seulement a|au moins (?:un|une|deux|trois|quatre|cinq))\b|\bdoi(?:t|vent)\s+(?:etre|rester|contenir|commencer|garder|porter|s entendre|apparaitre|revenir|changer|avoir)\b/;
 
-const IMPERATIVE_START = /^(?:n\s+)?(?:ecris|utilise|ancre|evite|varie|place|repartis|ajoute|termine|commence|insere|construis|reprends|alterne|respecte|conserve)\b/;
+const IMPERATIVE_START = /^(?:n\s+)?(?:ecris|utilise|ancre|evite|varie|place|repartis|ajoute|termine|commence|insere|construis|reprends|alterne|respecte|conserve|jette|recommence)\b/;
+
+// Adresses au systeme, jamais des paroles : elles nomment un moteur, un contrat ou un role
+// de production (27/09 : « Djeff Engine, c'est toi qui choisis le theme… », « Jeffrey chante
+// seul », « Jette entierement les sorties precedentes… » ont ete chantes par Suno ; le
+// « c'est toi » les faisait passer pour une parole).
+const SYSTEM_ADDRESS = /\b(?:djeff engine|contrat nossen|nossen contract|phrases? d operateur|sorties? precedentes?|sujet utilisateur|composition originale funesterie)\b|\b(?:jeffrey|djeff|vivy|k44|a11|marvin) chante (?:seule?|en solo)\b|\bplume de (?:djeff|vivy|jeffrey)$/;
 
 // Quelqu'un parle : une parole a un « je », un « tu », un « on »… Une consigne non.
 const SPEAKER = /\b(?:je|j|tu|t|il|elle|on|nous|vous|ils|elles|me|m|te|mon|ma|mes|ton|ta|tes|son|sa|ses|notre|nos|votre|vos|leur|leurs|moi|toi|lui|y a|c est)\b/;
@@ -59,6 +65,7 @@ function isLyricInstructionLine(line = '') {
   const folded = foldLine(raw);
   if (!folded) return false;
   if (/^production musicale\b/.test(folded)) return true;
+  if (SYSTEM_ADDRESS.test(folded)) return true;
   // « Moi j'note mentalement: il porte des Crocs » est une parole : quelqu'un parle
   // dans l'étiquette. « Sujet original verrouillé: … » n'en a pas.
   const label = folded.match(/^([^:]{2,45}):/)?.[1]?.trim() || '';

@@ -8472,6 +8472,17 @@ async function buildVivyAiChat(input, req) {
       || (requiresStrongSongModel && !hasCompleteVivyNossenLyrics(processed.content, input))
     );
     if (songNeedsRetry) {
+      // Diagnostic (27/09) : un texte refuse ne laissait aucune trace, on ne savait pas pourquoi
+      // Djeff Engine 26B etait ecarte. Longueur et raison, jamais le texte lui-meme.
+      console.info(
+        '[vivy-song-quality] refuse provider=%s model=%s chars=%s faible=%s refrain=%s complet=%s',
+        llmBundle?.provider || '?',
+        llmBundle?.model || '?',
+        String(processed.content || '').length,
+        looksLikeWeakSongwritingReply(processed.content) ? 'oui' : 'non',
+        hasVivyChorusSection(processed.content) ? 'oui' : 'non',
+        requiresStrongSongModel ? (hasCompleteVivyNossenLyrics(processed.content, input) ? 'oui' : 'non') : '-'
+      );
       const _retryStart = Date.now();
       if (requiresStrongSongModel) {
         const providerFallback = await tryNextStrongSongProvider();
