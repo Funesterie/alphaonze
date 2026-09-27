@@ -58,6 +58,7 @@ const {
   hasVivyChorusSection,
 } = require('../music/vivy-songcraft.cjs');
 const { buildSongAuthorPens, isSongWrittenWithoutVivy } = require('../music/song-author-pens.cjs');
+const { isLyricInstructionLine } = require('../music/lyrics-instruction-leak.cjs');
 const { deriveSonicSignature } = require('../music/vivy-prime-color.cjs');
 const {
   getAceStepMusicJob: pollAceStepMusicJob,
@@ -10318,7 +10319,10 @@ function isVivyProviderTechnicalLyricLine(line = '') {
     || /^chaque\s+(?:section|couplet\s+et\s+chaque\s+refrain)\s+doit\b/.test(folded)
     || /^(?:origine\s+de\s+matiere|sujet\s+original\s+verrouille|casting\s+verrouille|regles\s+communes|ce\s+bloc\s+est\s+l\s+autorite\s+commune)\b/.test(folded)
     || /\b(?:contrat[_\s-]?composition|composition[_\s-]?nossen)\b/.test(folded)
-    || /\b(?:ne\s+decris\s+jamais|fabrication\s+du\s+morceau)\b/.test(folded);
+    || /\b(?:ne\s+decris\s+jamais|fabrication\s+du\s+morceau)\b/.test(folded)
+    // La liste ci-dessus ne connait que des phrases deja vues ; chaque nouveau brief
+    // en inventait une autre. Detection par la forme d'une consigne (27/09/2026).
+    || isLyricInstructionLine(line);
 }
 
 function stripVivyProviderInstructionLeakTail(line = '') {
@@ -10343,12 +10347,44 @@ function sanitizeVivyProviderCleanLyrics(value = '', maxChars = VIVY_SONG_MAX_CH
   // parole francaise ne ressemble a ca.
   const estSchemaDeRimes = (line) => /^\s*[A-H]{2,}(?:\s+[A-H]{1,4})*\s*$/.test(String(line || ''));
 
-  const lines = source.split(/\n/)
+  const marked = source.split(/\n/)
     // Derniere barriere avant Suno/Mureka: si le fallback a colle un morceau de
     // contrat apres une vraie punchline, on conserve la punchline et coupe la fuite.
     .map(stripVivyProviderInstructionLeakTail)
-    .filter((line) => !isVivyProviderTechnicalLyricLine(line))
-    .filter((line) => !estSchemaDeRimes(line))
+    .map((line) => (isVivyProviderTechnicalLyricLine(line) || estSchemaDeRimes(line) ? null : line));
+  // Une section dont TOUTES les lignes etaient des consignes part avec ses balises :
+  // un [Verse 1] vide, Suno le remplit a sa facon. Les sections vides d'origine
+  // ([Instrumental Break], [Solo]) n'ont rien perdu et restent.
+  const isSectionHeader = (line) => typeof line === 'string' && /^\s*\[[^\]]+\]\s*$/.test(line);
+  // Balises vides par nature : collees au couplet vide, elles ne partent pas avec lui.
+  const isInstrumentalHeader = (line) => /\b(?:intro|instrumental|break|solo|interlude|drop|build|fade|silence)\b/i.test(String(line || ''));
+  const droppedHeaders = new Set();
+  let sectionHeaders = [];
+  let sungLines = 0;
+  let removedLines = 0;
+  const closeSection = () => {
+    if (sectionHeaders.length && removedLines > 0 && sungLines === 0) {
+      sectionHeaders
+        .filter((index) => !isInstrumentalHeader(marked[index]))
+        .forEach((index) => droppedHeaders.add(index));
+    }
+    sectionHeaders = [];
+    sungLines = 0;
+    removedLines = 0;
+  };
+  marked.forEach((line, index) => {
+    if (isSectionHeader(line)) {
+      if (sungLines || removedLines) closeSection();
+      sectionHeaders.push(index);
+    } else if (line === null) {
+      removedLines += 1;
+    } else if (line.trim()) {
+      sungLines += 1;
+    }
+  });
+  closeSection();
+  const lines = marked
+    .filter((line, index) => line !== null && !droppedHeaders.has(index))
     .map((line) => {
       if (/^\s*\[[^\]]+\]\s*$/.test(line)) return line;
       return String(line || '')

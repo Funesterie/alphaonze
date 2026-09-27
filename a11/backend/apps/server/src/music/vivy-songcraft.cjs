@@ -8,6 +8,7 @@ const {
   normalizeLanguageCode,
 } = require('../../lib/language-text.cjs');
 const { LYRICS_TELL_THE_SUBJECT_RULE } = require('./lyrics-production-talk.cjs');
+const { stripLyricInstructionLines } = require('./lyrics-instruction-leak.cjs');
 
 const SONG_LANGUAGE_NAMES_EN = Object.freeze({
   fr: 'French',
@@ -1681,7 +1682,12 @@ function buildVivyStructuredLyrics(input = {}) {
       VIVY_SONG_MAX_CHARS
     );
   }
-  const material = repairVivySemanticImageCoherence(splitVivyArrangementCues(publicMaterial).lyrics, coherenceContext);
+  // Les gabarits de secours piochent leurs vers dans cette matiere, qui contient
+  // souvent le brief de production : sans ce tri, « Relais vocal obligatoire: ... »
+  // devenait un couplet (27/09/2026).
+  const material = stripLyricInstructionLines(
+    repairVivySemanticImageCoherence(splitVivyArrangementCues(publicMaterial).lyrics, coherenceContext)
+  ).lyrics;
   const fullSource = cleanText([material, input.prompt, input.message, input.theme, input.instruction].filter(Boolean).join('\n'), VIVY_SONG_MAX_CHARS);
 
   if (isValentinoRossiTheme(fullSource)) {

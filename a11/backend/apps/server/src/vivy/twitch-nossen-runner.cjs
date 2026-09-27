@@ -21,6 +21,7 @@ const {
   buildProductionTalkRewriteInstruction,
   findProductionTalkLines,
 } = require('../music/lyrics-production-talk.cjs');
+const { isLyricInstructionLine } = require('../music/lyrics-instruction-leak.cjs');
 const {
   buildTwitchStreamClipEnv,
   canAffordTwitchDreamClip,
@@ -1966,7 +1967,7 @@ function sanitizeTwitchLyricsForPromptLeakage(lyrics = '') {
       continue;
     }
     const isSectionTag = /^\[[^\]]+\]$/.test(trimmed);
-    if (!isSectionTag && forbidden.some((pattern) => pattern.test(trimmed))) {
+    if (!isSectionTag && (forbidden.some((pattern) => pattern.test(trimmed)) || isLyricInstructionLine(trimmed))) {
       removed += 1;
       continue;
     }
