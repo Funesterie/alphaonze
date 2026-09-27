@@ -38,3 +38,10 @@ test('parler du web n\'est pas demander une recherche', () => {
   assert.equal(shouldVivyAutoWebSearch('regarde sur internet si Suno a sorti un nouveau modèle', 'chat'), true);
   assert.equal(shouldVivyAutoWebSearch("c'est quoi le site officiel de Suno ?", 'chat'), true);
 });
+
+test('une excuse « mal réglé, c\'est corrigé » n\'est pas une demande de réglage', () => {
+  const { isVivyInternalTuningRequest } = require('../src/routes/vivy-studio.cjs');
+  assert.equal(isVivyInternalTuningRequest({ history: [] }, "Vivy, désolé pour les liens, c'était un réflexe mal réglé, c'est corrigé. Ta mémoire de Djeff te rend plus libre ?"), false);
+  assert.equal(isVivyInternalTuningRequest({ history: [{ role: 'user', content: 'tes reglages sont trop hauts' }] }, 'on en reparle demain, corrige rien'), false);
+  assert.equal(isVivyInternalTuningRequest({ history: [] }, 'baisse ta sensibilité, elle est trop haute'), true);
+});

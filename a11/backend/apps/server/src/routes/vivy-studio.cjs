@@ -5372,14 +5372,16 @@ function buildVivyFreeformChatReply({ message = '', files = [], history = [] } =
 
 function isVivyInternalTuningRequest(input = {}, message = '') {
   const current = foldTextForLookup(message);
-  const recent = foldTextForLookup(getVivyHistoryText(input.history));
-  const combined = `${current}\n${recent}`;
-  const settingsPattern = /\b(intent|intention|reglage|reglages|parametre|parametres|sensibilite|seuil|heuristique|r2gl2|regle|regler|bidouille|bidouiller)\b/;
-  const mentionsSettings = settingsPattern.test(combined);
+  // Le mot de reglage doit etre dans le message lui-meme, et une demande de reglage est
+  // courte. « un reflexe mal regle, c'est corrige » (une excuse, pas une consigne) sortait
+  // la fiche des reglages au milieu d'une discussion de philosophie (27/09/2026) : « regle »
+  // venait du participe, et l'historique suffisait a fournir le mot de reglage.
+  if (current.length > 220) return false;
+  const settingsPattern = /\b(intent|intention|reglage|reglages|parametre|parametres|sensibilite|seuil|heuristique|r2gl2|regler|bidouille|bidouiller)\b/;
   const currentMentionsSettings = settingsPattern.test(current);
-  const asksAdjustment = /\b(ajuste|ajuster|baisse|baisser|descend|descendre|calme|corrige|corriger|regle|regler|modifie|modifier|bidouille|bidouiller)\b/.test(current)
+  const asksAdjustment = /\b(ajuste|ajuster|baisse|baisser|descend|descendre|calme|corriger|regler|modifie|modifier|bidouille|bidouiller)\b/.test(current)
     || (currentMentionsSettings && /\btrop\s+(haut|haute|sensible|fort|forte)\b/.test(current));
-  return mentionsSettings && asksAdjustment;
+  return currentMentionsSettings && asksAdjustment;
 }
 
 function buildVivyInternalTuningReply({ message = '', history = [], language = 'fr' } = {}) {
@@ -13655,6 +13657,7 @@ module.exports = {
   saveVivyWorkspaceForUser,
   isVivyMcpNeo4jQuestion,
   isVivyGitMergeBoundaryQuestion,
+  isVivyInternalTuningRequest,
   isVivyToolCapabilityQuestion,
   isVivyZenSelfManagementQuestion,
   buildVivyZenSelfManagementReply,
