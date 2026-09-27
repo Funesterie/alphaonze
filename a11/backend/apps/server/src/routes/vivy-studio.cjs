@@ -9105,6 +9105,10 @@ function clampVivySunoLyricsLength(lyrics = '', maxChars = SUNO_CUSTOM_MODE_MAX_
   return kept.trim();
 }
 
+// Trace du grain d'un payload Suno, lue a l'envoi reel pour le journal de trajectoire. Hors du
+// payload : rien ne part chez le fournisseur.
+const VIVY_SUNO_GRAIN_TRACES = new WeakMap();
+
 // Ajoute `garanti` au style sans jamais le couper : si la place manque, l'optionnel saute,
 // puis la queue du style, coupee entre deux virgules.
 function appendVivyGuaranteedStyle(style = '', garanti = '', optionnel = '', limite = 720) {
@@ -9237,6 +9241,7 @@ function buildVivySunoPayload(input = {}, req = null) {
   let complementStyle = '';
   let signatureStyle = '';
   let arcStyle = '';
+  let traceGrain = null;
   try {
     const plafond = resolveVivyEnergyCeiling(couleurDemandee);
     // Une voix seule signe la texture et le mouvement avec son grain (persona-grain.cjs).
@@ -9248,6 +9253,12 @@ function buildVivySunoPayload(input = {}, req = null) {
     const arc = buildVivyDynamicArc(sections, { direction: couleurDemandee });
     signatureStyle = signature.line || '';
     arcStyle = arc.compact || '';
+    traceGrain = {
+      grain: grainSignature || 'off',
+      texture: signature.texture,
+      mouvement: signature.mouvement,
+      contexte: couleurDemandee || '',
+    };
     complementStyle = [signatureStyle, arcStyle].filter(Boolean).join(', ');
   } catch (error) {
     // Une signature manquante ne doit jamais empecher une chanson de partir.
@@ -9454,6 +9465,9 @@ function buildVivySunoPayload(input = {}, req = null) {
     serverVoiceId ? `${serverVoiceId.slice(0, 4)}...` : 'non',
     useVerifiedSunoVoice ? `${String(verifiedVoiceId).slice(0, 4)}...` : 'aucune'
   );
+  if (traceGrain && !forceInstrumental) {
+    VIVY_SUNO_GRAIN_TRACES.set(payload, { ...traceGrain, voix: singleArtistId || artistCast.ids.join('+'), banc: cleanOneLine(input.grainBanc, '', 80) || null });
+  }
   return payload;
 }
 
@@ -11162,6 +11176,30 @@ async function requestSunoMusic(input = {}, req = null) {
   }
 
   const taskId = findSunoTaskId(payload);
+  const traceGrain = VIVY_SUNO_GRAIN_TRACES.get(body);
+  if (taskId && traceGrain) {
+    try {
+      const { journaliserTrajectoire } = require('../persona/grain-trajectoire.cjs');
+      const { GRAIN_VERSION, DERIVATION } = require('../persona/persona-grain.cjs');
+      journaliserTrajectoire({
+        decisionId: taskId,
+        persona: traceGrain.voix,
+        voix: traceGrain.voix,
+        grain: traceGrain.grain,
+        grainVersion: GRAIN_VERSION,
+        derivation: DERIVATION,
+        contexte: traceGrain.contexte,
+        titre: body.title,
+        texture: traceGrain.texture,
+        mouvement: traceGrain.mouvement,
+        fournisseur: 'suno',
+        modele: body.model,
+        banc: traceGrain.banc,
+      });
+    } catch (error) {
+      console.warn('[grain-trajectoire] journal indisponible:', error?.message || error);
+    }
+  }
   // Persona encore envoyee (donc vivante) : la chanson sera ecoutee a son arrivee.
   if (taskId && body.personaId) {
     try {
