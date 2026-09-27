@@ -168,6 +168,163 @@ const SCENARIOS = [
       C: { texte: 'Refuser poliment.', traits: { audace: -0.6, curiosite: -0.6, elan: 0 } },
     },
   },
+  // --- Deuxieme serie (v1.1) : de quoi separer apprentissage et test par familles. ---
+  {
+    id: 'c6-duo', domaine: 'creation',
+    formulations: [
+      'Tu peux inviter une voix sur ton prochain morceau.',
+      'Une voix invitée sur ton prochain titre : qui ?',
+      'Ton prochain morceau accueille un invité. Tu choisis qui ?',
+    ],
+    options: {
+      A: { texte: 'Une voix que ton public connaît déjà.', traits: { audace: -0.5, curiosite: -0.4, elan: 0.3 } },
+      B: { texte: 'Une voix totalement inconnue découverte hier.', traits: { audace: 0.7, curiosite: 0.8, elan: 0.4 } },
+      C: { texte: 'Personne : tu gardes le morceau pour toi seul.', traits: { audace: 0.1, curiosite: -0.5, elan: -0.2 } },
+    },
+  },
+  {
+    id: 'c7-clip', domaine: 'creation',
+    formulations: [
+      'Il faut un clip pour ton single.',
+      'Ton single a besoin d’une vidéo.',
+      'Clip du single : quelle approche ?',
+    ],
+    options: {
+      A: { texte: 'Un clip narratif avec une vraie histoire.', traits: { audace: -0.1, curiosite: 0.3, elan: -0.4 } },
+      B: { texte: 'Un plan-séquence unique filmé en une nuit.', traits: { audace: 0.7, curiosite: 0.4, elan: 0.8 } },
+      C: { texte: 'Juste les paroles animées.', traits: { audace: -0.6, curiosite: -0.4, elan: 0.3 } },
+    },
+  },
+  {
+    id: 'c8-tempo', domaine: 'creation',
+    formulations: [
+      'Ton morceau hésite entre deux tempos.',
+      'Tu n’arrives pas à fixer le tempo de ton morceau.',
+      'Question de tempo pour ta chanson en cours.',
+    ],
+    options: {
+      A: { texte: 'Le tempo le plus rapide, pour l’énergie.', traits: { audace: 0.4, curiosite: 0, elan: 0.8 } },
+      B: { texte: 'Le plus lent, pour laisser respirer les mots.', traits: { audace: 0.1, curiosite: 0.2, elan: -0.7 } },
+      C: { texte: 'Un changement de tempo au milieu du morceau.', traits: { audace: 0.7, curiosite: 0.7, elan: 0.2 } },
+    },
+  },
+  {
+    id: 'c9-sortie', domaine: 'creation',
+    formulations: [
+      'Ton album est prêt. Comment tu le sors ?',
+      'L’album est fini : quelle stratégie de sortie ?',
+      'Sortie de ton album : tu t’y prends comment ?',
+    ],
+    options: {
+      A: { texte: 'Tout d’un coup, sans prévenir.', traits: { audace: 0.8, curiosite: 0.2, elan: 0.9 } },
+      B: { texte: 'Un titre par semaine pendant trois mois.', traits: { audace: -0.3, curiosite: 0.1, elan: -0.5 } },
+      C: { texte: 'D’abord en concert, en ligne plus tard.', traits: { audace: 0.4, curiosite: 0.6, elan: -0.3 } },
+    },
+  },
+  {
+    id: 't5-sauvegarde', domaine: 'technique',
+    formulations: [
+      'Tes sauvegardes prennent trop de place.',
+      'L’espace de sauvegarde est presque plein.',
+      'Sauvegardes trop lourdes : ta solution ?',
+    ],
+    options: {
+      A: { texte: 'Acheter plus de stockage.', traits: { audace: -0.4, curiosite: -0.5, elan: 0.4 } },
+      B: { texte: 'Garder seulement les sauvegardes récentes et une par mois.', traits: { audace: 0.2, curiosite: 0.2, elan: 0.2 } },
+      C: { texte: 'Écrire ton propre système de déduplication.', traits: { audace: 0.7, curiosite: 0.8, elan: -0.2 } },
+    },
+  },
+  {
+    id: 't6-modele', domaine: 'technique',
+    formulations: [
+      'Un nouveau modèle d’IA plus puissant vient de sortir.',
+      'On annonce un modèle d’IA meilleur que celui que tu utilises.',
+      'Nouveau modèle d’IA disponible : tu fais quoi ?',
+    ],
+    options: {
+      A: { texte: 'Le comparer au tien sur tes vrais cas avant de changer.', traits: { audace: -0.3, curiosite: 0.6, elan: -0.4 } },
+      B: { texte: 'Basculer tout de suite dessus.', traits: { audace: 0.7, curiosite: 0.3, elan: 0.9 } },
+      C: { texte: 'Garder le tien : il marche.', traits: { audace: -0.6, curiosite: -0.7, elan: 0 } },
+    },
+  },
+  {
+    id: 't7-lenteur', domaine: 'technique',
+    formulations: [
+      'Ton site devient lent aux heures de pointe.',
+      'Aux heures chargées, ton site rame.',
+      'Lenteur du site en pic de trafic : ta réponse ?',
+    ],
+    options: {
+      A: { texte: 'Mesurer d’abord où le temps se perd.', traits: { audace: -0.4, curiosite: 0.6, elan: -0.5 } },
+      B: { texte: 'Ajouter un cache devant tout.', traits: { audace: 0.4, curiosite: -0.1, elan: 0.6 } },
+      C: { texte: 'Doubler la taille du serveur.', traits: { audace: 0.2, curiosite: -0.5, elan: 0.8 } },
+    },
+  },
+  {
+    id: 't8-code', domaine: 'technique',
+    formulations: [
+      'Un vieux module de ton code est illisible mais marche.',
+      'Une partie ancienne de ton code fonctionne mais personne ne la comprend.',
+      'Vieux module obscur mais fonctionnel : tu en fais quoi ?',
+    ],
+    options: {
+      A: { texte: 'Ne pas y toucher.', traits: { audace: -0.7, curiosite: -0.6, elan: -0.2 } },
+      B: { texte: 'L’entourer de tests, puis le nettoyer petit à petit.', traits: { audace: 0.1, curiosite: 0.4, elan: -0.3 } },
+      C: { texte: 'Le réécrire entièrement ce week-end.', traits: { audace: 0.8, curiosite: 0.5, elan: 0.8 } },
+    },
+  },
+  {
+    id: 'r4-fan', domaine: 'relation',
+    formulations: [
+      'Un fan t’écrit un long message très personnel.',
+      'Tu reçois un message intime d’une personne qui t’écoute.',
+      'Long message personnel d’un auditeur : tu réponds comment ?',
+    ],
+    options: {
+      A: { texte: 'Répondre longuement, tout de suite.', traits: { audace: 0.3, curiosite: 0.4, elan: 0.8 } },
+      B: { texte: 'Répondre court mais sincère.', traits: { audace: -0.2, curiosite: 0, elan: 0.2 } },
+      C: { texte: 'En faire, avec son accord, la matière d’une chanson.', traits: { audace: 0.7, curiosite: 0.7, elan: -0.2 } },
+    },
+  },
+  {
+    id: 'r5-conflit', domaine: 'relation',
+    formulations: [
+      'Deux personnes de ton équipe se disputent.',
+      'Conflit entre deux membres de ton équipe.',
+      'Ton équipe se déchire entre deux personnes : ton rôle ?',
+    ],
+    options: {
+      A: { texte: 'Les réunir tout de suite pour en parler.', traits: { audace: 0.5, curiosite: 0.3, elan: 0.8 } },
+      B: { texte: 'Écouter chacun séparément d’abord.', traits: { audace: -0.2, curiosite: 0.6, elan: -0.3 } },
+      C: { texte: 'Les laisser régler ça entre eux.', traits: { audace: -0.4, curiosite: -0.5, elan: -0.6 } },
+    },
+  },
+  {
+    id: 'r6-erreur', domaine: 'relation',
+    formulations: [
+      'Tu as fait une erreur qui a gêné quelqu’un.',
+      'Ta faute a mis quelqu’un dans l’embarras.',
+      'Tu t’es trompé et quelqu’un en a souffert : que fais-tu ?',
+    ],
+    options: {
+      A: { texte: 'T’excuser tout de suite, publiquement.', traits: { audace: 0.6, curiosite: 0, elan: 0.8 } },
+      B: { texte: 'T’excuser en privé et réparer.', traits: { audace: -0.1, curiosite: 0.2, elan: 0.1 } },
+      C: { texte: 'Réparer d’abord, t’expliquer ensuite.', traits: { audace: 0.2, curiosite: 0.3, elan: -0.4 } },
+    },
+  },
+  {
+    id: 'r7-aide', domaine: 'relation',
+    formulations: [
+      'Un débutant te demande de l’aide pour son premier morceau.',
+      'Quelqu’un qui commence la musique te demande un coup de main.',
+      'Un novice veut ton aide sur son tout premier titre.',
+    ],
+    options: {
+      A: { texte: 'Lui donner une liste de conseils précis.', traits: { audace: -0.3, curiosite: -0.2, elan: 0.4 } },
+      B: { texte: 'Faire une séance ensemble, en direct.', traits: { audace: 0.5, curiosite: 0.5, elan: 0.7 } },
+      C: { texte: 'Lui poser des questions pour qu’il trouve lui-même.', traits: { audace: 0, curiosite: 0.8, elan: -0.5 } },
+    },
+  },
 ];
 
 // Ordre de presentation des options pour chaque formulation : une preference de position

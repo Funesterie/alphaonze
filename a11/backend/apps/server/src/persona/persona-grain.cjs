@@ -195,16 +195,20 @@ function decalerGrain(persona, env = process.env) {
 // --- Derivation v1 (27/09/2026, revue avec ChatGPT a la demande de Djeff) --------------
 //
 // Le transcendant est la RACINE de l'identite, pas une banque de hasard : on ne lit plus des
-// positions dans ses decimales (rien ne prouve qu'elles soient uniformes). La racine hache
-// l'expression, la persona et les 256 premieres decimales ; chaque valeur de decision est une
-// HMAC-SHA256 de cette racine sur « espace de decision + contexte + chemin de vie ».
+// positions dans ses decimales (rien ne prouve qu'elles soient uniformes). Chaque valeur de
+// decision est une HMAC-SHA256 de la racine sur « espace de decision + contexte + chemin de vie ».
 // Versionnee : un meilleur moteur plus tard ne reecrira jamais en silence l'arbre de vie d'une
-// IA — elle garde sa GRAIN_VERSION.
+// IA — elle garde sa version, et chaque version reste recalculable.
+//   v1 : racine = expression + persona + 256 decimales.
+//   v2 : racine = expression canonique + persona + version. Les decimales ne servent plus que
+//        d'empreinte de verification : un changement de precision ou d'arrondi ne doit jamais
+//        changer l'identite alors que le nombre, lui, n'a pas change (revue ChatGPT, 27/09).
 
 const crypto = require('node:crypto');
 
-const GRAIN_VERSION = 1;
-const DERIVATION = 'hmac-sha256-v1';
+const GRAIN_VERSION = 2;
+const DERIVATIONS = Object.freeze({ 1: 'hmac-sha256-v1', 2: 'hmac-sha256-v2' });
+const DERIVATION = DERIVATIONS[GRAIN_VERSION];
 
 // Interrupteur : A11_PERSONA_GRAIN=0 coupe le grain partout (comparaison avec / sans).
 function grainActif(env = process.env) {
@@ -213,17 +217,33 @@ function grainActif(env = process.env) {
 
 const RACINES = new Map();
 
+/** Expression canonique du grain, cle stable de l'identite : « 3^sqrt(2) ». */
+function expressionCanonique(paire) {
+  return `${paire.base}^sqrt(${paire.exposant})`;
+}
+
+/** Empreinte des 256 premieres decimales : verification, jamais identite (v2). */
+function empreinteGrain(paire) {
+  const { entier, fraction } = calculerGrain(paire.base, paire.exposant, 256);
+  return crypto.createHash('sha256').update(`${entier}.${fraction}`).digest('hex').slice(0, 16);
+}
+
 /** Racine d'identite d'une persona (Buffer de 32 octets), ou null sans grain. */
 function grainRacine(persona, env = process.env) {
   const id = normalizePersonaId(persona);
   const paire = paireDe(id, env);
   if (!paire) return null;
-  const cle = `${id}|${paire.base}|${paire.exposant}`;
+  const version = Number(paire.grainVersion) || GRAIN_VERSION;
+  const cle = `${id}|${paire.base}|${paire.exposant}|v${version}`;
   if (!RACINES.has(cle)) {
-    const { entier, fraction } = calculerGrain(paire.base, paire.exposant, 256);
-    RACINES.set(cle, crypto.createHash('sha256')
-      .update(`funesterie-grain|v${GRAIN_VERSION}|${paire.base}^sqrt(${paire.exposant})|${id}|${entier}.${fraction}`)
-      .digest());
+    let materiau;
+    if (version === 1) {
+      const { entier, fraction } = calculerGrain(paire.base, paire.exposant, 256);
+      materiau = `funesterie-grain|v1|${expressionCanonique(paire)}|${id}|${entier}.${fraction}`;
+    } else {
+      materiau = `funesterie-grain|${expressionCanonique(paire)}|${id}|v${version}`;
+    }
+    RACINES.set(cle, crypto.createHash('sha256').update(materiau).digest());
   }
   return RACINES.get(cle);
 }
@@ -335,13 +355,21 @@ function choisirAvecGrain(persona, { domaine = 'creation', decision = '', option
     utilite: clamp(Number(option.utilite ?? 0.5), 0, 1),
     identite: Math.round(grainIdentite(persona, { domaine, decision, option, cheminDeVie }, env) * 1000) / 1000,
   }));
+  // Comparaisons par paires (v1.1) : si l'appelant a marque les options dominees de facon
+  // robuste (battues dans les deux ordres de presentation), la bande est l'ensemble des options
+  // non dominees : le grain tranche exactement la ou le raisonnement objectif n'y arrive pas.
+  const parComparaisons = valides.some((option) => typeof option.domine === 'boolean');
   const meilleure = Math.max(...scores.map((s) => s.utilite));
-  for (const s of scores) s.equivalente = s.utilite >= meilleure - bande - 1e-9;
+  for (const s of scores) {
+    const option = valides.find((o) => o.id === s.id);
+    s.equivalente = parComparaisons ? option.domine !== true : s.utilite >= meilleure - bande - 1e-9;
+  }
+  if (!scores.some((s) => s.equivalente)) for (const s of scores) s.equivalente = s.utilite >= meilleure - 1e-9;
   const ordre = [...scores].sort((a, b) => (Number(b.equivalente) - Number(a.equivalente))
     || (b.identite - a.identite)
     || (b.utilite - a.utilite)
     || String(a.id).localeCompare(String(b.id)));
-  return { choix: ordre[0].id, scores: ordre, marge: bande };
+  return { choix: ordre[0].id, scores: ordre, marge: parComparaisons ? 'paires' : bande };
 }
 
 /** Index de 0 a n-1 choisi par le grain. Sans grain : null, l'appelant garde son choix. */
@@ -389,13 +417,18 @@ function decrireGrain(persona, env = process.env) {
     preuve: 'Gelfond–Schneider : a algebrique ≠ 0, 1 et √n algebrique irrationnel ⇒ a^√n transcendant',
     canonique: Boolean(GRAINS_CANONIQUES[id]),
     grainVersion: paire.grainVersion || GRAIN_VERSION,
-    derivation: paire.derivation || DERIVATION,
+    derivation: paire.derivation || DERIVATIONS[paire.grainVersion || GRAIN_VERSION],
+    expressionCanonique: expressionCanonique(paire),
+    empreinte: empreinteGrain(paire),
   };
 }
 
 module.exports = {
   AXES,
   DERIVATION,
+  DERIVATIONS,
+  expressionCanonique,
+  empreinteGrain,
   GRAIN_VERSION,
   GRAINS_CANONIQUES,
   LAMBDA_PAR_DOMAINE,

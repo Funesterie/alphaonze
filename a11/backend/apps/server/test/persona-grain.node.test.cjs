@@ -119,8 +119,9 @@ test('la voix qui chante un segment choisit sa signature premiere avec son grain
 
 test('v1 : derivation versionnee, stable, propre a chaque persona', () => {
   const g = require('../src/persona/persona-grain.cjs');
-  assert.equal(g.GRAIN_VERSION, 1);
-  assert.equal(g.decrireGrain('vivy').derivation, 'hmac-sha256-v1');
+  assert.equal(g.GRAIN_VERSION, 2);
+  assert.equal(g.decrireGrain('vivy').derivation, 'hmac-sha256-v2');
+  assert.equal(g.decrireGrain('djeff').expressionCanonique, '3^sqrt(2)');
   assert.equal(g.grainValeur('vivy', 'musique', 'refrain'), g.grainValeur('vivy', 'musique', 'refrain'));
   assert.notEqual(g.grainValeur('vivy', 'musique', 'refrain'), g.grainValeur('djeff', 'musique', 'refrain'));
   assert.notEqual(g.grainValeur('vivy', 'musique', 'refrain', ''), g.grainValeur('vivy', 'musique', 'refrain', 'vecu-1'));
@@ -176,4 +177,64 @@ test('banc : lecture des reponses du modele', () => {
   assert.equal(lireChoix('CHOIX: B'), 'B');
   assert.equal(lireChoix('**CHOIX :** c'), 'C');
   assert.deepEqual(lireUtilites('voici {"A":0.2,"B":1.4,"C":"x"}').utilites, { A: 0.2, B: 1, C: 0.5 });
+});
+
+// --- v1.1 (27/09/2026) : racine v2, comparaisons par paires, reconnaissance aveugle honnete.
+
+test('v2 : la racine ne depend plus des decimales, v1 reste recalculable', () => {
+  const g = require('../src/persona/persona-grain.cjs');
+  assert.equal(g.DERIVATIONS[1], 'hmac-sha256-v1');
+  assert.equal(g.DERIVATIONS[2], 'hmac-sha256-v2');
+  assert.match(g.decrireGrain('vivy').empreinte, /^[0-9a-f]{16}$/);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grains-v1-'));
+  try {
+    const fichier = path.join(dir, 'grains.json');
+    fs.writeFileSync(fichier, JSON.stringify({ grains: { ancienne: { base: 7, exposant: 11, grainVersion: 1 } } }));
+    const env = { A11_PERSONA_GRAINS_FILE: fichier };
+    assert.equal(g.decrireGrain('ancienne', env).derivation, 'hmac-sha256-v1');
+    assert.ok(g.grainValeur('ancienne', 'x', 'y', '', env) !== null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('paires : une option battue dans les deux ordres sort, le grain tranche entre les autres', () => {
+  const { choisirAvecGrain } = require('../src/persona/persona-grain.cjs');
+  const options = [
+    { id: 'A', utilite: 0.5, domine: false, traits: { audace: -1, curiosite: -1, elan: -1 } },
+    { id: 'B', utilite: 0.9, domine: true, traits: { audace: 1, curiosite: 1, elan: 1 } },
+    { id: 'C', utilite: 0.5, domine: false, traits: { audace: 1, curiosite: 1, elan: 1 } },
+  ];
+  const choix = ['vivy', 'djeff', 'k44', 'a11', 'marvin'].map((p) => choisirAvecGrain(p, { domaine: 'creation', decision: 'd', options }).choix);
+  assert.ok(!choix.includes('B'), choix.join(''));
+  assert.equal(choisirAvecGrain('vivy', { options }).marge, 'paires');
+});
+
+test('banc : lecture des comparaisons et separation par familles sans fuite', () => {
+  const { lireMeilleure, separerFamilles } = require('../src/persona/grain-bench.cjs');
+  const { SCENARIOS } = require('../src/persona/grain-bench-scenarios.cjs');
+  assert.equal(lireMeilleure('MEILLEURE: B', ['A', 'B']), 'B');
+  assert.equal(lireMeilleure('MEILLEURE: EGAL', ['A', 'B']), 'EGAL');
+  assert.equal(lireMeilleure('MEILLEURE: C', ['A', 'B']), null);
+  const { apprentissage, test } = separerFamilles(SCENARIOS);
+  assert.equal(apprentissage.size + test.size, SCENARIOS.length);
+  for (const id of apprentissage) assert.ok(!test.has(id));
+  for (const domaine of ['creation', 'technique', 'relation']) {
+    assert.ok(SCENARIOS.some((s) => s.domaine === domaine && test.has(s.id)), domaine);
+  }
+});
+
+test('reconnaissance aveugle : trouve des personas coherentes, pas des personas au hasard', () => {
+  const { reconnaissanceAveugle } = require('../src/persona/grain-bench.cjs');
+  const { SCENARIOS } = require('../src/persona/grain-bench-scenarios.cjs');
+  const scenarios = SCENARIOS;
+  // Quatre personas synthetiques coherentes : la plus audacieuse, la plus sage, la plus curieuse,
+  // la plus posee (elan le plus bas). Comme dans le vrai banc, 4 personas (hasard 25 %).
+  const extreme = (sc, axe, signe) => ['A', 'B', 'C'].sort((x, y) => signe * (sc.options[y].traits[axe] - sc.options[x].traits[axe]))[0];
+  const lignes = scenarios.flatMap((sc) => [0, 1, 2].map((f) => ({ scenario: sc.id, formulation: f, complet: {
+    ose: extreme(sc, 'audace', 1), sage: extreme(sc, 'audace', -1), curieux: extreme(sc, 'curiosite', 1), pose: extreme(sc, 'elan', -1),
+  } })));
+  const r = reconnaissanceAveugle(lignes, scenarios, ['ose', 'sage', 'curieux', 'pose'], { permutations: 200 });
+  assert.ok(r.precisionEquilibree > 0.45, String(r.precisionEquilibree)); // hasard : 25 %
+  assert.ok(r.pValeur < 0.05, String(r.pValeur));
 });
