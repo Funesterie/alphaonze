@@ -2253,7 +2253,14 @@ function shouldVivyAutoWebSearch(message = '', mode = 'chat') {
 
   const explicitWebLookup = /\b(cherche|chercher|recherche|trouve|trouver|verifie|verifier|consulte|regarde)\b.{0,90}\b(web|internet|google|en ligne|source|sources|site|site officiel|documentation|docs|github|npm|docker|docker hub|actualite|actualites)\b/.test(normalized)
     || /\b(web|internet|google|source officielle|sources officielles|site officiel|documentation officielle|docs officielles|github|docker hub|npm)\b/.test(normalized);
-  const freshnessLookup = /\b(aujourd hui|maintenant|en ce moment|actuel|actuelle|actuels|actuelles|dernier|derniere|dernieres|latest|recent|recente|recents|recentes|nouveau|nouvelle|news|actualite|actualites|prix|tarif|version|release|mise a jour|changelog|status|statut|ci|workflow)\b/.test(normalized);
+  // Un mot de fraicheur ne suffit plus : « tu recois maintenant ton cadre complet » lancait
+  // une recherche web sur tout le message et Vivy recrachait des liens Google Traduction
+  // au milieu d'une discussion (27/09/2026). Il faut une vraie question, courte. « ci »
+  // (« celle-ci ») ne compte plus : seulement « ci/cd ».
+  const freshnessWord = /\b(aujourd hui|maintenant|en ce moment|actuel|actuelle|actuels|actuelles|dernier|derniere|dernieres|latest|recent|recente|recents|recentes|nouveau|nouvelle|news|actualite|actualites|prix|tarif|version|release|mise a jour|changelog|status|statut|ci cd|workflow)\b/.test(normalized);
+  const asksSomething = /\?/.test(searchableMessage)
+    || /\b(quel|quelle|quels|quelles|combien|c est quoi|qu est ce que|ou en est|donne moi|dis moi|what|which|how much)\b/.test(normalized);
+  const freshnessLookup = freshnessWord && asksSomething && normalized.length <= 280;
   return explicitWebLookup || freshnessLookup;
 }
 

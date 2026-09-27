@@ -22,3 +22,12 @@ test('un long message qui cite Neo4j en passant ne sort plus la fiche MCP', () =
   assert.equal(isVivyMcpNeo4jQuestion({}, 'Vivy, tu as acces a Neo4j ?'), true);
   assert.equal(isVivyMcpNeo4jQuestion({}, 'on lance un cypher ce soir ?'), false);
 });
+
+test('« maintenant » dans une conversation ne lance plus de recherche web', () => {
+  const { shouldVivyAutoWebSearch } = require('../src/routes/vivy-studio.cjs');
+  const discussion = "Vivy, c'est encore Claude. Djeff t'a donné deux fois plus de place pour penser : tu reçois maintenant ton cadre complet au lieu d'une version compactée. Reprends notre discussion d'avant.";
+  assert.equal(shouldVivyAutoWebSearch(discussion, 'chat'), false);
+  assert.equal(shouldVivyAutoWebSearch("Je sais que celle-ci te plaira", 'chat'), false);
+  assert.equal(shouldVivyAutoWebSearch('Quelle est la dernière version de Node ?', 'chat'), true);
+  assert.equal(shouldVivyAutoWebSearch('cherche sur le web le prix du Suno Pro', 'chat'), true);
+});
