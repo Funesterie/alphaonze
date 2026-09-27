@@ -3523,6 +3523,19 @@ export async function extendVivyStudioSunoMusic(input: {
   return payload as VivyStudioProductionResult;
 }
 
+/**
+ * Echec passager de l'ecriture des paroles : la tentative suivante peut reussir.
+ *
+ * 27/09/2026 : « NOSSEN stoppé: vivy_song_llm_weak_output ». La chaine de modeles
+ * s'etait videe (ollama_cloud 502, deux modeles coupes a 22 s) et le serveur rendait
+ * une 502. La boucle NOSSEN prevoit trois tentatives -- la troisieme avec les paroles
+ * de secours -- mais une erreur levee la quittait des la premiere.
+ */
+export function isTransientVivyLyricsFailure(error: unknown): boolean {
+  const message = String((error as { message?: unknown })?.message ?? error ?? "");
+  return /vivy_song_llm_weak_output|vivy_song_llm_timeout|\((?:502|503|504|524)\)|failed to fetch|networkerror|load failed|timeout|timed out/i.test(message);
+}
+
 export async function chatWithVivy(
   input: {
     message?: string;

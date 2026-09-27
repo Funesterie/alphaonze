@@ -52,6 +52,7 @@ import {
   hasAdminApiAccess,
   hasAuthenticatedAdminApiAccess,
   isAuthInvalidError,
+  isTransientVivyLyricsFailure,
   chatWithVivy,
   createCheckoutSession,
   createCustomerPortal,
@@ -9192,38 +9193,48 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
               "Renvoie uniquement une chanson complète de vingt lignes chantées minimum: au moins deux couplets pleins, trois refrains pleins, un pont et une outro.",
               "Aucune section vide, aucune règle, aucun contrat NOSSEN, aucune phrase d'opérateur dans les paroles.",
             ].join(" ");
-        lyricsPayload = await chatWithVivy({
-          mode: "song",
-          language: songLanguage,
-          americanMode,
-          conversationId,
-          sessionId: activeChatSessionId,
-          sessionName: activeSessionName,
-          files: apiFiles,
-          history: productionHistory,
-          message: [buildVivyNossenLyricsRequest(routedReadiness, artists, sharedCompositionContract, routedMood), repairInstruction].filter(Boolean).join("\n\n"),
-          songText: launchReadiness.source,
-          songMood: routedMood || undefined,
-          songArtists: artists,
-          artistCount: artists.length,
-          singerCount: artists.length,
-          vocalCast: castLabel,
-          workspace: useCompositionWorkspace ? {
-            canvas: songWorkspace.canvas,
-            notes: songWorkspace.notes,
+        try {
+          lyricsPayload = await chatWithVivy({
+            mode: "song",
+            language: songLanguage,
+            americanMode,
+            conversationId,
             sessionId: activeChatSessionId,
             sessionName: activeSessionName,
-            conversationId,
-          } : undefined,
-          useWorkspaceForSong: useCompositionWorkspace,
-          disableSongcraftFallback: true,
-          // Le qwen 32b local etait bride a 560 jetons par le deploiement: assez
-          // pour un extrait, pas pour 2 couplets + 3 refrains + pont + outro.
-          songMaxTokens: 2200,
-          songResponseMaxChars: VIVY_STUDIO_SONG_MAX_CHARS,
-          allowEmergencySongcraftFallback: lyricsAttempt === 3,
-          internalSongGeneration: true,
-        });
+            files: apiFiles,
+            history: productionHistory,
+            message: [buildVivyNossenLyricsRequest(routedReadiness, artists, sharedCompositionContract, routedMood), repairInstruction].filter(Boolean).join("\n\n"),
+            songText: launchReadiness.source,
+            songMood: routedMood || undefined,
+            songArtists: artists,
+            artistCount: artists.length,
+            singerCount: artists.length,
+            vocalCast: castLabel,
+            workspace: useCompositionWorkspace ? {
+              canvas: songWorkspace.canvas,
+              notes: songWorkspace.notes,
+              sessionId: activeChatSessionId,
+              sessionName: activeSessionName,
+              conversationId,
+            } : undefined,
+            useWorkspaceForSong: useCompositionWorkspace,
+            disableSongcraftFallback: true,
+            // Le qwen 32b local etait bride a 560 jetons par le deploiement: assez
+            // pour un extrait, pas pour 2 couplets + 3 refrains + pont + outro.
+            songMaxTokens: 2200,
+            songResponseMaxChars: VIVY_STUDIO_SONG_MAX_CHARS,
+            allowEmergencySongcraftFallback: lyricsAttempt === 3,
+            internalSongGeneration: true,
+          });
+        } catch (error) {
+          // Une panne passagere des modeles consomme la tentative, pas toute la production :
+          // la suivante repart, et la troisieme a droit aux paroles de secours.
+          if (lyricsAttempt < 3 && isTransientVivyLyricsFailure(error)) {
+            setStatus(`${productionLabel}: les modèles n'ont pas répondu, Vivy relance l'écriture (${lyricsAttempt + 1}/3)...`);
+            continue;
+          }
+          throw error;
+        }
         vocalLyricsForProduction = strengthenVivyNossenSoloSectionLabels(sanitizeVivyNossenSongSeed(toUnicodeText(
           lyricsPayload.vocalLyrics || lyricsPayload.publicLyrics || "",
           VIVY_STUDIO_SONG_MAX_CHARS

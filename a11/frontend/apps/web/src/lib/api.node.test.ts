@@ -157,3 +157,20 @@ test("langue : le choix fait avec le bouton passe avant la langue du compte", as
     (globalThis as any).window = originalWindow;
   }
 });
+
+test("an exhausted model chain retries the NOSSEN lyrics instead of stopping production", async () => {
+  const { isTransientVivyLyricsFailure } = await import("./api.ts");
+  for (const message of [
+    "vivy_song_llm_weak_output",
+    "Chat Vivy indisponible (502)",
+    "Chat Vivy indisponible (504)",
+    "Failed to fetch",
+  ]) {
+    assert.equal(isTransientVivyLyricsFailure(new Error(message)), true, message);
+  }
+  for (const message of ["Chat Vivy indisponible (401)", "paroles_vivy_hors_theme", "quota_depasse"]) {
+    assert.equal(isTransientVivyLyricsFailure(new Error(message)), false, message);
+  }
+  const appSource = fs.readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
+  assert.match(appSource, /lyricsAttempt < 3 && isTransientVivyLyricsFailure\(error\)[\s\S]{0,200}continue;/);
+});
