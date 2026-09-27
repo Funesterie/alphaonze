@@ -72,7 +72,7 @@ function foldQuery(query) {
  * Cherche les passages qui contiennent le plus de termes de la requete.
  * Renvoie une liste vide plutot que d'echouer si l'index n'existe pas.
  */
-function searchChatGptHistory(query = '', { limit = 6, env = process.env } = {}) {
+function searchChatGptHistory(query = '', { limit = 6, role = '', env = process.env } = {}) {
   const data = loadIndex(env);
   if (!data) return { ok: false, reason: 'index_absent', results: [] };
 
@@ -92,6 +92,9 @@ function searchChatGptHistory(query = '', { limit = 6, env = process.env } = {})
     if (postings.length > total * 0.5) continue;
     const weight = Math.log(total / postings.length);
     for (const id of postings) {
+      // Filtre par role AVANT le classement : les reponses de ChatGPT, longues, noient
+      // les messages de Djeff (28 sur 30 en tete, 27/09/2026). Sa memoire, ce sont ses mots.
+      if (role && data.passages_meta[id]?.role !== role) continue;
       scores.set(id, (scores.get(id) || 0) + weight);
       matched.set(id, (matched.get(id) || 0) + 1);
     }

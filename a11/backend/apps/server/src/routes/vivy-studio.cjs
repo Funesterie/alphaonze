@@ -24,6 +24,7 @@ const {
   getEmergencyMediaAssetSubpath,
 } = require('../media/emergency-media.cjs');
 const { buildAgentsPersonaContext, buildDjeffSystemPrompt } = require('../persona/persona-engine.cjs');
+const { buildDjeffMemoryContext } = require('../persona/djeff-memory.cjs');
 const {
   addEpisode,
   getEpisodes,
@@ -928,8 +929,12 @@ function getVivyLocalOllamaConfigs(options = {}) {
     : fastNossenLocalOnly
       ? Math.max(1000, Number(process.env.VIVY_NOSSEN_LYRICS_LOCAL_TIMEOUT_MS || 40000) || 40000)
       : Math.max(1000, Number(process.env.A11_LOCAL_SONG_TIMEOUT_MS || 180000) || 180000);
+  // Le plafond suit la fenetre du modele local, reglee par VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS.
+  // Il etait bloque a 14 000 caracteres dans le code : passer le modele de 4k a 8k jetons
+  // (27/09/2026, qwen14b-8k, cache KV q8_0) ne donnait rien de plus a Vivy, qui recevait
+  // toujours un prompt systeme compacte. Compter environ 3,5 caracteres par jeton en francais.
   const chatMaxPromptChars = Math.max(6000, Math.min(
-    14000,
+    60000,
     Number(process.env.VIVY_CHAT_LOCAL_MAX_PROMPT_CHARS || 10000) || 10000
   ));
   const chatMaxOutputTokens = Math.max(256, Math.min(
@@ -3840,7 +3845,10 @@ function buildVivyHardwareActuationReply({ language = 'fr' } = {}) {
 function isVivyGitMergeBoundaryQuestion(input = {}, message = '') {
   const current = normalizeVivyCapabilityText(message);
   if (!current || looksLikeCompleteLyrics(message)) return false;
-  const mentionsGit = /\b(git|pull|merge|master|main|branche|branch|fork|repo|depot|dépôt|conflit|fichiers?)\b/.test(current);
+  // Il faut un vrai mot de git. « main », « master », « branche » ou « fichiers » seuls
+  // sont du francais courant : « la main sur le levier » + « plein » sortait la fiche
+  // merge au milieu d'une discussion de philosophie (27/09/2026).
+  const mentionsGit = /\b(git|pull|merge|rebase|fork|repo|depot|dépôt|commit)\b/.test(current);
   const riskyMerge = /\b(merge|pull|master|main|branche|branch)\b/.test(current)
     && /\b(20000|20\s*000|beaucoup|plein|bug|conflit|fichiers?)\b/.test(current);
   return mentionsGit && (riskyMerge || /\bgit\s+pull\b/.test(current));
@@ -6819,12 +6827,17 @@ function isVivyMcpNeo4jQuestion(input = {}, message = '') {
   if (isVivyMcpCodexRelayRequest(message)) return false;
 
   const mentionsMcp = /\bmcp\b|model context protocol/.test(current);
-  const mentionsNeo4j = /\bneo4j\b|\bcypher\b|\bgraphe\b|\bgraph\b/.test(current);
+  // « cypher » seul est un mot de rap ici ; il ne compte que comme requete (« requete cypher »).
+  const mentionsNeo4j = /\bneo4j\b|\bgraphe\b|\bgraph\b|\b(?:requete|query)\s+cypher\b/.test(current);
   const recentMentionsNeo4j = /\bneo4j\b|\bcypher\b|\bgraphe\b|\bgraph\b/.test(recent);
   if (!mentionsMcp && !mentionsNeo4j) return false;
 
   if (/^avec\s+le\s+mcp\b/.test(current) && recentMentionsNeo4j) return true;
-  return /(acces|access|connect|branche|relie|utilise|utiliser|outil|tools?|peux|peut|sais|apprend|apprendre|comment|requete|query|chercher|lire|consulter|\?)/.test(current);
+  // Une question d'acces tient en une phrase ou deux. Un long message qui cite la memoire
+  // en passant est une conversation : il sortait la fiche MCP au milieu d'un debat
+  // (27/09/2026). Et un simple « ? » ne fait pas d'une phrase une question technique.
+  if (current.length > 280) return false;
+  return /(acces|access|connect|branche|relie|utilise|utiliser|outil|tools?|peux|peut|sais|apprend|apprendre|comment|requete|query|chercher|lire|consulter)/.test(current);
 }
 
 function isVivyMcpCodexRelayRequest(message = '') {
@@ -7456,9 +7469,15 @@ async function buildDjeffAiChat(input, req) {
       .slice(-budget.historyDepth)
       .map((entry) => ({ role: entry.role, content: cleanText(entry.content, budget.historyCharCap) }))
     : [];
-  // Djeff Engine pense avec la chaîne forte 120B de Vivy. Les petits modèles
-  // locaux restent hors du miroir stratégique tant qu'un 120B répond.
-  const llmBundles = createVivyOpenAIClients({ mode: 'song', purpose: 'lyrics' });
+  // Djeff Engine passe d'abord par son propre modele local (DJEFF_ENGINE_LOCAL_MODEL,
+  // un Modelfile qu'on peut retoucher), puis par la chaine forte de Vivy en secours.
+  // Djeff, 27/09/2026 : « le 120b oss est trop surmene, il vaut mieux des modeles moins
+  // generiques et plus personnalises ». Sans la variable, rien ne change.
+  const localDjeffBundle = createVivyOpenAIClientFromConfig(getDjeffEngineLocalConfig(budget));
+  const llmBundles = [
+    localDjeffBundle,
+    ...createVivyOpenAIClients({ mode: 'song', purpose: 'lyrics' }),
+  ].filter(Boolean);
   if (!llmBundles.length) {
     const error = new Error('djeff_llm_unavailable');
     error.code = 'djeff_llm_unavailable';
@@ -7467,13 +7486,19 @@ async function buildDjeffAiChat(input, req) {
   }
   const technicalAudit = isDjeffTechnicalAuditRequest(message, input)
     && !isDjeffCypherRequest(message, input);
+  // Sa memoire (lexique, graphe, ses propres mots) n'est ouverte qu'a son compte :
+  // « le vecu de Djeff = matiere d'art, deverrouillee par le patron ».
+  const memoire = !technicalAudit && isVivyFounderUser(req?.user || {})
+    ? await buildDjeffMemoryContext(message, process.env)
+    : '';
   const completionResult = await createVivyChatCompletion(llmBundles, {
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'system', content: buildDjeffModeSystemPrompt(message, input) },
+      memoire ? { role: 'system', content: memoire } : null,
       ...history,
       { role: 'user', content: message },
-    ],
+    ].filter(Boolean),
     temperature: technicalAudit ? 0.1 : 0.7,
     max_tokens: budget.maxTokens,
   });
@@ -7492,6 +7517,24 @@ async function buildDjeffAiChat(input, req) {
     provider: completionResult.bundle.provider || getVivyProviderFromBaseUrl(completionResult.bundle.baseURL || ''),
     model: completionResult.bundle.model,
     grounding: technicalAudit ? (groundingFallback ? 'fallback' : 'verified') : 'not_applicable',
+    memory: memoire ? 'on' : 'off',
+  };
+}
+
+// Modele local propre a Djeff Engine. Le prompt systeme reste celui du backend (profil
+// + memoire) ; le Modelfile porte la base et les reglages qu'on veut pouvoir retoucher.
+function getDjeffEngineLocalConfig(budget = {}) {
+  const model = cleanOneLine(process.env.DJEFF_ENGINE_LOCAL_MODEL, '', 120);
+  if (!model) return null;
+  const [local] = getVivyLocalOllamaConfigs({ mode: 'chat' });
+  if (!local?.baseURL) return null;
+  return {
+    ...local,
+    model,
+    timeoutMs: Math.max(15000, Number(process.env.DJEFF_ENGINE_LOCAL_TIMEOUT_MS || 90000) || 90000),
+    maxPromptChars: Math.max(6000, Number(process.env.DJEFF_ENGINE_LOCAL_MAX_PROMPT_CHARS || 22000) || 22000),
+    // Fenetre de 8k jetons : la sortie doit laisser la place au profil et a la memoire.
+    maxOutputTokens: Math.min(Number(budget.maxTokens || 900) || 900, 1500),
   };
 }
 
@@ -13599,6 +13642,7 @@ module.exports = {
   getVivyWorkspaceForUser,
   saveVivyWorkspaceForUser,
   isVivyMcpNeo4jQuestion,
+  isVivyGitMergeBoundaryQuestion,
   isVivyToolCapabilityQuestion,
   isVivyZenSelfManagementQuestion,
   buildVivyZenSelfManagementReply,
