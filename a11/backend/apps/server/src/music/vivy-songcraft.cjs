@@ -7,6 +7,7 @@ const {
   foldTextForLookup,
   normalizeLanguageCode,
 } = require('../../lib/language-text.cjs');
+const { LYRICS_TELL_THE_SUBJECT_RULE } = require('./lyrics-production-talk.cjs');
 
 const SONG_LANGUAGE_NAMES_EN = Object.freeze({
   fr: 'French',
@@ -972,8 +973,11 @@ function buildVivySongcraftSystemPrompt(mode, context) {
   //
   // La ligne est emise en tete de reponse et retiree des paroles a l'extraction :
   // "Direction sonore" fait deja partie des etiquettes internes filtrees.
+  //
+  // Jusqu'au 27/09/2026 : "Incarne-la dans les images". La direction nomme des
+  // instruments et la plume les chantait ("le synthe hurle, les basses cognent").
   var moodInstruction = songMood
-    ? 'Direction sonore imposee: ' + songMood + '. Incarne-la dans les images et le rythme des vers - ne l\u2019explique pas, montre-la.'
+    ? 'Direction sonore imposee: ' + songMood + '. La musique la joue; les vers la traduisent en energie, en debit et en images du sujet, sans nommer ses instruments.'
     : [
         'Aucune couleur sonore n\u2019est imposee: choisis-la toi-meme, c\u2019est ton role.',
         'Commence ta reponse par UNE seule ligne, avant toute parole:',
@@ -981,7 +985,7 @@ function buildVivySongcraftSystemPrompt(mode, context) {
         'Sois concret et musical: un genre nommable, deux ou trois instruments, une allure.',
         'Varie selon le sujet et l\u2019emotion du morceau - deux chansons differentes ne doivent',
         'pas recevoir la meme couleur. Evite le reflexe piano-ballade si rien ne l\u2019appelle.',
-        'Ecris ensuite les paroles normalement, sans repeter cette ligne.',
+        'Ecris ensuite les paroles normalement, sans repeter cette ligne: les instruments restent dans cette ligne, les vers parlent du sujet.',
       ].join('\n');
   // Le routage vocal decide dans le studio doit remonter jusqu'ici: sans lui Vivy
   // repartit des couplets entre des artistes qui ne chanteront pas.
@@ -1007,6 +1011,7 @@ function buildVivySongcraftSystemPrompt(mode, context) {
     'Posologie textuelle: peu de pivots dans une forme courte, davantage dans une forme ample; au maximum deux retours significatifs du même pivot hors refrain, avec une transformation nette au refrain final.',
     'Pour une parodie, identifie le format social imité avant d’écrire: concours, jury, audition, émission, reportage, battle, tutoriel ou cérémonie. Garde le format crédible et fais rire par contraste, escalade, surinterprétation, gimmick et chute, sans expliquer la parodie.',
     'Travaille la phonétique: assonances, allitérations, rimes internes, pivots de sons et mots à plusieurs tranchants. La technique doit sonner naturelle, pas scolaire.',
+    LYRICS_TELL_THE_SUBJECT_RULE,
     'Cohérence des images obligatoire: vérifie sujet, action et objet avant chaque vers. Une image forte doit rester physiquement crédible dans le monde demandé.',
     'Si le thème contient moto, casque, visière, guidon ou poursuite nocturne: écrire au guidon, jamais au volant; casque intégral, pas intégrale; l’hélico poursuit, éclaire, tourne ou rase le ciel, il ne dérape pas.',
     'Pour une poursuite 5 étoiles NOSSEN: éviter les phrases GTA génériques; garder des détails précis comme gyros dans le rétro, sirènes, néons, visière fumée, moto noire, radio qui grésille, trajectoire et fuite.',
@@ -1467,7 +1472,7 @@ function buildDjeffRapSoloLyrics(input = {}, material = '') {
       ]
     : [
         'Je coupe les phrases molles, je garde le nerf vivant,',
-        'la basse fait le cadre, le kick garde le temps.',
+        'je tiens la ligne droite, je ne perds pas de temps.',
         'Pas de masque sur la prise, pas de refrain placebo,',
         'le couplet prend la route et revient plus haut.',
       ];
@@ -1482,7 +1487,7 @@ function buildDjeffRapSoloLyrics(input = {}, material = '') {
       ]
     : [
         `${shortSingableHook(title, motif)} — je garde le grain brut,`,
-        'la voix dans le kick, les mots dans la chute.',
+        'le regard dans la foule, les mots dans la chute.',
         'Solo Djeff dans la pièce, le couplet reste net,',
         'chaque rime fait son trou, chaque silence complète.',
       ];
@@ -1492,7 +1497,7 @@ function buildDjeffRapSoloLyrics(input = {}, material = '') {
     '',
     '[Intro - Djeff]',
     '[Djeff]',
-    hasConflict ? 'Micro proche, sourire de coin, je rentre sans demander.' : `${title} — je cale la voix au ras du beat.`,
+    hasConflict ? 'Micro proche, sourire de coin, je rentre sans demander.' : `${title} — je rentre sans frapper, je pose le décor.`,
     hasConflict ? 'S’ils veulent ma peau, qu’ils apprennent déjà à viser.' : 'Pas de voix témoin, pas de masque, seulement le grain.',
     '',
     '[Verse 1 - Djeff]',
@@ -1509,7 +1514,7 @@ function buildDjeffRapSoloLyrics(input = {}, material = '') {
     '',
     '[Bridge - Djeff]',
     '[Djeff]',
-    'Je laisse un blanc, le kick revient compter les preuves,',
+    'Je laisse un blanc, le silence revient compter les preuves,',
     'la salle comprend sans panneau, le regard fait l’épreuve.',
     '',
     '[Final Chorus - Djeff]',

@@ -18,6 +18,10 @@ const {
   resolveSongAuthors,
 } = require('../music/song-author-pens.cjs');
 const {
+  buildProductionTalkRewriteInstruction,
+  findProductionTalkLines,
+} = require('../music/lyrics-production-talk.cjs');
+const {
   buildTwitchStreamClipEnv,
   canAffordTwitchDreamClip,
   finalizeTwitchFullSongClip,
@@ -323,7 +327,7 @@ ${answer}
 [Verse 1 - Djeff]
 [Djeff]
 Je pose le pied dans le cypher, regard fixe, phrase sèche
-Le beat garde la trace, la basse remonte en flèche
+La rue garde la trace, la colère part en flèche
 Pas de voix de secours, pas de refrain en vitrine
 Solo Djeff dans la pièce, chaque rime fait discipline
 ${firstImage}
@@ -340,14 +344,14 @@ Si le cypher prend feu, c'est que j'ai fermé le tour
 [Djeff]
 Leur menace fait du bruit, ma réponse fait du poids
 Je baisse le ton, justement pour qu'on entende mieux la loi
-Le kick coupe la fumée, les mots restent dans l'axe
+Ma phrase coupe la fumée, les mots restent dans l'axe
 J'écris sans décor mou, sans romance, sans syntaxe qui se casse
 Ils confondent la course avec la notice de montage
 J'ai déjà pris le virage pendant qu'ils lisent la page
 
 [Bridge - Djeff]
 [Djeff]
-Je laisse un blanc, le kick revient compter les preuves
+Je laisse un blanc, le silence revient compter les preuves
 La salle comprend sans panneau, le regard fait l'épreuve
 
 [Final Chorus - Djeff]
@@ -382,7 +386,7 @@ Même les erreurs finissent par ouvrir le ciel
 
 [Verse 2]
 La scène se précise, chaque détail choisit sa place
-Le cœur prend le tempo, la peur perd sa menace
+Le cœur reprend sa course, la peur perd sa menace
 Un geste devient promesse, un silence devient feu
 On transforme le détour en chemin lumineux
 
@@ -1823,7 +1827,7 @@ function buildShortTwitchIdeaExpansionGuidance({ winner = {}, routing = {}, seed
     `Brief Twitch court détecté: le viewer a donné surtout un titre/axe ("${title}")${styleText ? ` et une couleur ("${cleanText(styleText, '', 180)}")` : ''}.`,
     'Vivy doit enrichir elle-même: choisir une scène forte, un conflit, une progression et un refrain mémorable sans attendre un long brief utilisateur.',
     'L’enrichissement reste strictement dans le titre et le style demandés: ne pas importer d’ancien thème, de contexte Twitch, de moto, de gamin, de visière ou de vocabulaire recyclé si ce n’est pas dans la demande.',
-    'Si un style précis est nommé, il devient une contrainte sonore prioritaire et doit guider les images, le débit, l’énergie et le vocabulaire de la chanson.',
+    'Si un style précis est nommé, il devient une contrainte sonore prioritaire: il guide le débit, l’énergie et le choix des images du sujet; ses instruments sont joués par la musique, pas nommés dans les paroles.',
   ].join('\n');
 }
 
@@ -3367,6 +3371,18 @@ function createVivyStreamNossenRunner(options = {}) {
             loopAssessment.verseLineCount
           );
         }
+        // Vers qui décrivent l'arrangement (« le synthé hurle, les basses cognent ») :
+        // Suno joue déjà ces sons. Contrôlé contre le sujet seul, jamais contre la
+        // direction sonore, qui nomme toujours des instruments.
+        let productionTalk = findProductionTalkLines(lyrics, winner.text);
+        if (productionTalk.flagged) {
+          logger.warn?.(
+            '[VivyProductionTalk] round=%s lyrics describe the arrangement lines=%s terms=%s',
+            roundId,
+            productionTalk.lines.length,
+            productionTalk.terms.join(',')
+          );
+        }
         let hookAssessment = hookMechanicRequested
           ? assessTwitchHookMechanic(lyrics, winner.text)
           : { valid: true, reasons: [] };
@@ -3400,7 +3416,8 @@ function createVivyStreamNossenRunner(options = {}) {
         const rhymeNeedsRewrite = strictRhymeRequested && !rhymeAssessment.valid && lyrics.length >= 600;
         const hookNeedsRewrite = hookMechanicRequested && !hookAssessment.valid && lyrics.length >= 600;
         const loopNeedsRewrite = !loopAssessment.valid && lyrics.length >= 400;
-        if (humorNeedsRewrite || wordplayNeedsPolish || invalidLyricsNeedRewrite || lyricsTooShortForScope || rhymeNeedsRewrite || hookNeedsRewrite || loopNeedsRewrite) {
+        const productionTalkNeedsRewrite = productionTalk.flagged && lyrics.length >= 400;
+        if (humorNeedsRewrite || wordplayNeedsPolish || invalidLyricsNeedRewrite || lyricsTooShortForScope || rhymeNeedsRewrite || hookNeedsRewrite || loopNeedsRewrite || productionTalkNeedsRewrite) {
           await update({
             action: 'progress',
             stage: 'lyrics',
@@ -3417,6 +3434,8 @@ function createVivyStreamNossenRunner(options = {}) {
               ? 'Vivy renforce les rimes avant composition.'
               : loopNeedsRewrite
               ? 'Vivy casse une boucle d’images et réécrit les couplets avant Suno.'
+              : productionTalkNeedsRewrite
+              ? 'Vivy retire les vers qui décrivent la musique et les remplace par le sujet.'
               : 'Vivy resserre les malentendus et réécrit les paroles avant Suno.',
           });
           const rewriteSessionId = `${sessionId}-lyrics-rewrite`;
@@ -3451,7 +3470,12 @@ function createVivyStreamNossenRunner(options = {}) {
                   ? `Réécriture obligatoire: le hook est trop statique (${hookAssessment.reasons.join(',')}). Le refrain ne doit pas seulement nommer le concept; il doit voler, rendre, déformer, retourner ou transformer une matière du couplet. Change le dernier refrain pour révéler un second sens.`
                   : loopNeedsRewrite
                   ? `Réécriture obligatoire: les couplets bouclent sur les mêmes lignes ou la même image (${loopAssessment.reasons.join(',')}, ligne dominante x${loopAssessment.topLineCount}). Garde l’énergie, mais remplace chaque répétition hors refrain par une scène, une image ou une punchline neuve.`
+                  : productionTalkNeedsRewrite
+                  ? ''
                   : 'Réécriture obligatoire: la version précédente était trop courte ou récitait les consignes.',
+                // Ajoutée quelle que soit la raison principale : une réécriture pour les
+                // rimes ne doit pas garder « les basses cognent ».
+                productionTalk.flagged ? buildProductionTalkRewriteInstruction(productionTalk) : '',
                 hookMechanicRequested
                   ? 'Test hook obligatoire: chaque couplet doit fournir une image ou une phrase que le refrain récupère ensuite. Le refrain doit varier à chaque retour; évite “je suis le/la [titre]” comme simple slogan répété. Le dernier refrain doit payer le prix du concept ou retourner son sens.'
                   : '',
@@ -3576,6 +3600,15 @@ function createVivyStreamNossenRunner(options = {}) {
           lyricAssessment = assessTwitchSongLyrics(lyrics);
           rhymeAssessment = assessTwitchRhymeSignals(lyrics);
           loopAssessment = assessTwitchLyricLoopiness(lyrics);
+          productionTalk = findProductionTalkLines(lyrics, winner.text);
+          if (productionTalk.flagged) {
+            logger.warn?.(
+              '[VivyProductionTalk] round=%s rewritten lyrics still describe the arrangement lines=%s terms=%s',
+              roundId,
+              productionTalk.lines.length,
+              productionTalk.terms.join(',')
+            );
+          }
           if (!loopAssessment.valid) {
             logger.warn?.(
               '[VivyLoopCheck] round=%s rewritten verses still loopy reasons=%s topLine=%s duplicateRatio=%s',

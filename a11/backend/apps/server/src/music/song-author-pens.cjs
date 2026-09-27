@@ -16,6 +16,7 @@ const {
   getPersonaBrief,
 } = require('../persona/persona-engine.cjs');
 const { getGenome } = require('../persona/prompt-adn.cjs');
+const { LYRICS_TELL_THE_SUBJECT_RULE } = require('./lyrics-production-talk.cjs');
 
 const SONG_AUTHOR_LABELS = Object.freeze({
   vivy: 'Vivy',
@@ -170,6 +171,7 @@ function buildSingerPen(id, { jeffreyPen = '', env = process.env } = {}) {
     `Tu es ${label}. Tu écris toi-même, à la première personne, les lignes que tu chantes dans cette chanson.`,
     identity,
     'Les identités guident la plume, pas le sujet : ni infrastructure, ni coûts, ni journaux, ni outils dans les paroles, sauf si le sujet le demande. Aucun secret.',
+    LYRICS_TELL_THE_SUBJECT_RULE,
   ].filter(Boolean).join('\n\n');
 }
 
