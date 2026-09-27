@@ -9382,9 +9382,10 @@ function buildVivySunoPayload(input = {}, req = null) {
   // La signature porte le grain : elle ne doit jamais etre coupee. Le style solo de Djeff
   // depassait deja 720 caracteres, la signature ajoutee en queue etait tronquee et son grain
   // n'atteignait jamais Suno (mesure du 27/09). C'est la queue du style (chiffres de prosodie)
-  // qui cede d'abord, puis l'arc.
+  // qui cede. L'arc est garanti avec elle : s'il sautait seulement quand la signature d'un grain
+  // est plus longue, deux grains differeraient aussi par l'arc (biais vu au banc d'ecoute).
   if (complementStyle && !forceInstrumental) {
-    style = sanitizeVivySunoProviderTags(appendVivyGuaranteedStyle(style, signatureStyle, arcStyle, 720), style, 720);
+    style = sanitizeVivySunoProviderTags(appendVivyGuaranteedStyle(style, complementStyle, '', 720), style, 720);
   }
 
   // Une voix premium chante: le style ne doit plus diriger le timbre d'un autre.
