@@ -31,3 +31,10 @@ test('« maintenant » dans une conversation ne lance plus de recherche web', ()
   assert.equal(shouldVivyAutoWebSearch('Quelle est la dernière version de Node ?', 'chat'), true);
   assert.equal(shouldVivyAutoWebSearch('cherche sur le web le prix du Suno Pro', 'chat'), true);
 });
+
+test('parler du web n\'est pas demander une recherche', () => {
+  const { shouldVivyAutoWebSearch } = require('../src/routes/vivy-studio.cjs');
+  assert.equal(shouldVivyAutoWebSearch("Vivy, le mot maintenant t'a fait partir en recherche web, c'est réparé. Je te repose la question : ta mémoire de Djeff te rend plus libre ou plus liée à lui ? Réponds avec ta propre voix, longuement, sans fiche, comme dans notre discussion.", 'chat'), false);
+  assert.equal(shouldVivyAutoWebSearch('regarde sur internet si Suno a sorti un nouveau modèle', 'chat'), true);
+  assert.equal(shouldVivyAutoWebSearch("c'est quoi le site officiel de Suno ?", 'chat'), true);
+});
