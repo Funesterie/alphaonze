@@ -25,7 +25,15 @@ const {
 } = require('../media/emergency-media.cjs');
 const { buildAgentsPersonaContext, buildDjeffSystemPrompt } = require('../persona/persona-engine.cjs');
 const { buildDjeffMemoryContext } = require('../persona/djeff-memory.cjs');
-const { grainTemperature, grainConscience, decrireGrain, decalerGrain, GRAINS_CANONIQUES } = require('../persona/persona-grain.cjs');
+const {
+  grainTemperature,
+  grainConscience,
+  grainSeed,
+  cleSemantique,
+  decrireGrain,
+  decalerGrain,
+  GRAINS_CANONIQUES,
+} = require('../persona/persona-grain.cjs');
 const {
   addEpisode,
   getEpisodes,
@@ -7521,6 +7529,7 @@ async function buildDjeffAiChat(input, req) {
     ].filter(Boolean),
     // Un audit technique reste froid ; sinon le grain de Djeff fait respirer sa temperature.
     temperature: technicalAudit ? 0.1 : grainTemperature('djeff', message, 0.7, 0.08, grainEnv),
+    seed: grainSeed('djeff', 'chat', cleSemantique(message), '', grainEnv) ?? undefined,
     max_tokens: budget.maxTokens,
   });
   const rawReply = cleanText(completionResult.completion?.choices?.[0]?.message?.content, 12000);
@@ -8270,6 +8279,9 @@ async function buildVivyAiChat(input, req) {
       temperature: mode === 'song'
         ? Number(process.env.VIVY_CHAT_TEMPERATURE_SONG || process.env.VIVY_CHAT_TEMPERATURE || 0.88)
         : grainTemperature('vivy', message, Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74), 0.06, grainEnv),
+      // Graine d'echantillonnage signee par le grain, sur le SENS du message (cle semantique),
+      // pas son orthographe : meme persona, meme question, meme inclination.
+      ...(mode !== 'song' ? { seed: grainSeed('vivy', 'chat', cleSemantique(message), '', grainEnv) ?? undefined } : {}),
       max_tokens: mode === 'song' ? songMaxTokens : Number(process.env.VIVY_CHAT_MAX_TOKENS || 5000),
     };
     const nossenLlmBudgetMs = Math.max(30000, Math.min(

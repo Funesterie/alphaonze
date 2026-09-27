@@ -183,7 +183,7 @@ function decalerGrain(persona, env = process.env) {
   ].map((p) => `${p.base}^${p.exposant}`));
   for (const paire of enumererPaires()) {
     if (prises.has(`${paire.base}^${paire.exposant}`)) continue;
-    registre.grains[id] = { ...paire, neLe: new Date().toISOString() };
+    registre.grains[id] = { ...paire, grainVersion: GRAIN_VERSION, derivation: DERIVATION, neLe: new Date().toISOString() };
     const file = resolveRegistryFile(env);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify({ schema: 'funesterie.persona.grains.v1', ...registre }, null, 2));
@@ -192,30 +192,156 @@ function decalerGrain(persona, env = process.env) {
   throw new Error('enumeration_epuisee');
 }
 
-// --- Choix signes par le grain ----------------------------------------------------------
+// --- Derivation v1 (27/09/2026, revue avec ChatGPT a la demande de Djeff) --------------
+//
+// Le transcendant est la RACINE de l'identite, pas une banque de hasard : on ne lit plus des
+// positions dans ses decimales (rien ne prouve qu'elles soient uniformes). La racine hache
+// l'expression, la persona et les 256 premieres decimales ; chaque valeur de decision est une
+// HMAC-SHA256 de cette racine sur « espace de decision + contexte + chemin de vie ».
+// Versionnee : un meilleur moteur plus tard ne reecrira jamais en silence l'arbre de vie d'une
+// IA — elle garde sa GRAIN_VERSION.
 
-function fnv1a(texte = '') {
-  let hash = 0x811c9dc5;
-  for (const char of String(texte)) {
-    hash ^= char.codePointAt(0);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash >>> 0;
-}
+const crypto = require('node:crypto');
+
+const GRAIN_VERSION = 1;
+const DERIVATION = 'hmac-sha256-v1';
 
 // Interrupteur : A11_PERSONA_GRAIN=0 coupe le grain partout (comparaison avec / sans).
 function grainActif(env = process.env) {
   return !['0', 'false', 'off', 'no'].includes(String(env.A11_PERSONA_GRAIN ?? '1').trim().toLowerCase());
 }
 
-/** Nombre de [0, 1) lu dans les decimales du grain, a une position fixee par la cle. */
-function grainUnite(persona, cle = '', env = process.env) {
-  if (!grainActif(env)) return null;
-  const paire = paireDe(persona, env);
+const RACINES = new Map();
+
+/** Racine d'identite d'une persona (Buffer de 32 octets), ou null sans grain. */
+function grainRacine(persona, env = process.env) {
+  const id = normalizePersonaId(persona);
+  const paire = paireDe(id, env);
   if (!paire) return null;
-  const { fraction } = calculerGrain(paire.base, paire.exposant);
-  const position = fnv1a(`${normalizePersonaId(persona)}|${cle}`) % (fraction.length - 12);
-  return Number(`0.${fraction.slice(position, position + 12)}`);
+  const cle = `${id}|${paire.base}|${paire.exposant}`;
+  if (!RACINES.has(cle)) {
+    const { entier, fraction } = calculerGrain(paire.base, paire.exposant, 256);
+    RACINES.set(cle, crypto.createHash('sha256')
+      .update(`funesterie-grain|v${GRAIN_VERSION}|${paire.base}^sqrt(${paire.exposant})|${id}|${entier}.${fraction}`)
+      .digest());
+  }
+  return RACINES.get(cle);
+}
+
+function grainDigest(persona, espace = '', contexte = '', cheminDeVie = '', env = process.env) {
+  if (!grainActif(env)) return null;
+  const racine = grainRacine(persona, env);
+  if (!racine) return null;
+  return crypto.createHmac('sha256', racine).update(`${espace}|${contexte}|${cheminDeVie}`).digest();
+}
+
+/** Valeur de [0, 1) pour une decision : espace (domaine), contexte, chemin de vie (NUMA plus tard). */
+function grainValeur(persona, espace = '', contexte = '', cheminDeVie = '', env = process.env) {
+  const digest = grainDigest(persona, espace, contexte, cheminDeVie, env);
+  if (!digest) return null;
+  // 52 bits : toute la precision d'un double.
+  return (digest.readUInt32BE(0) * 2 ** 20 + (digest.readUInt32BE(4) >>> 12)) / 2 ** 52;
+}
+
+/** Nombre de [0, 1) signe par le grain pour une cle (interface historique). */
+function grainUnite(persona, cle = '', env = process.env) {
+  return grainValeur(persona, 'choix', cle, '', env);
+}
+
+/**
+ * Cle quasi semantique d'un texte : les mots porteurs, sans accents, dedoublonnes et tries.
+ * Elle resiste a l'ordre des mots, aux accents, a la ponctuation et aux petits mots : « Pochette
+ * du single : noire ou abstraite ? » et « Abstraite ou noire, la pochette du single ? » gardent
+ * la meme cle, la ou un hachage de la chaine brute en ferait deux. Elle ne resiste PAS aux
+ * synonymes : une vraie cle semantique demanderait un identifiant de decision (comme le banc).
+ */
+function cleSemantique(texte = '') {
+  const mots = String(texte || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter((mot) => mot.length >= 4);
+  return [...new Set(mots)].sort().join(' ');
+}
+
+/** Graine d'echantillonnage (entier 32 bits) : meme persona, meme decision, meme vecu = meme tirage. */
+function grainSeed(persona, espace = '', contexte = '', cheminDeVie = '', env = process.env) {
+  const digest = grainDigest(persona, `seed:${espace}`, contexte, cheminDeVie, env);
+  return digest ? digest.readUInt32BE(0) % 2147483647 : null;
+}
+
+// --- Dispositions contextuelles et choix pondere par l'identite ---------------------------
+//
+// Pas des stats de jeu de role figees (audace = 0,82) : une disposition depend du DOMAINE et,
+// dans une moindre mesure, du contexte. Djeff peut etre audacieux en creation et prudent sur
+// une migration de donnees en gardant la meme identite. Elles ne sont JAMAIS ecrites dans un
+// prompt (le modele jouerait le trait, on mesurerait le prompt) : elles ponderent des options
+// cote moteur.
+
+const AXES = Object.freeze(['audace', 'curiosite', 'elan']);
+
+// Bande d'equivalence par domaine : les options a moins de cette marge de la meilleure utilite
+// sont « raisonnablement equivalentes », et c'est parmi elles seulement que le grain choisit. Il
+// ne fait donc jamais gagner une option nettement moins bonne : le regret est borne par la marge.
+// Premier banc (27/09/2026) : un poids additif (utilite + lambda·identite) etait ecrase par le
+// bruit des utilites estimees par le modele (± 0,5 selon la formulation).
+const MARGE_PAR_DOMAINE = Object.freeze({
+  creation: 0.2,
+  relation: 0.15,
+  technique: 0.1,
+  securite: 0,
+});
+const LAMBDA_PAR_DOMAINE = MARGE_PAR_DOMAINE;
+
+function clamp(value, min = -1, max = 1) {
+  return Math.max(min, Math.min(max, value));
+}
+
+/** Dispositions de [-1, 1] sur chaque axe, pour un domaine (et un contexte, a 20 %). */
+function grainDispositions(persona, domaine = 'creation', contexte = '', cheminDeVie = '', env = process.env) {
+  const dispositions = {};
+  for (const axe of AXES) {
+    const fond = grainValeur(persona, `disposition:${domaine}`, axe, cheminDeVie, env);
+    if (fond === null) return null;
+    const touche = contexte ? grainValeur(persona, `disposition:${domaine}:contexte`, `${axe}|${contexte}`, cheminDeVie, env) : 0.5;
+    dispositions[axe] = clamp(0.8 * (2 * fond - 1) + 0.2 * (2 * touche - 1));
+  }
+  return dispositions;
+}
+
+/** Resonance de [-1, 1] entre la persona et une option decrite par ses traits (-1..1 par axe). */
+function grainIdentite(persona, { domaine = 'creation', decision = '', option = {}, cheminDeVie = '' } = {}, env = process.env) {
+  const dispositions = grainDispositions(persona, domaine, decision, cheminDeVie, env);
+  if (!dispositions) return 0;
+  const traits = option.traits || {};
+  const axes = AXES.filter((axe) => Number.isFinite(Number(traits[axe])));
+  if (!axes.length) return 0;
+  return axes.reduce((somme, axe) => somme + dispositions[axe] * clamp(Number(traits[axe])), 0) / axes.length;
+}
+
+/**
+ * Choix entre options. 1) Une option invalide n'est JAMAIS retenue (securite d'abord).
+ * 2) Seules les options dans la bande d'equivalence (utilite >= meilleure - marge) restent.
+ * 3) Parmi elles, le grain choisit celle qui resonne le plus avec ses dispositions ; a
+ *    resonance egale, la meilleure utilite. Sans grain : la meilleure utilite.
+ * options : [{ id, utilite (0..1), valide (defaut true), traits: { audace, curiosite, elan } }]
+ */
+function choisirAvecGrain(persona, { domaine = 'creation', decision = '', options = [], cheminDeVie = '', marge } = {}, env = process.env) {
+  const bande = Number.isFinite(marge) ? clamp(marge, 0, 0.5) : (MARGE_PAR_DOMAINE[domaine] ?? 0.15);
+  const valides = options.filter((option) => option && option.valide !== false);
+  if (!valides.length) return { choix: null, scores: [], marge: bande };
+  const scores = valides.map((option) => ({
+    id: option.id,
+    utilite: clamp(Number(option.utilite ?? 0.5), 0, 1),
+    identite: Math.round(grainIdentite(persona, { domaine, decision, option, cheminDeVie }, env) * 1000) / 1000,
+  }));
+  const meilleure = Math.max(...scores.map((s) => s.utilite));
+  for (const s of scores) s.equivalente = s.utilite >= meilleure - bande - 1e-9;
+  const ordre = [...scores].sort((a, b) => (Number(b.equivalente) - Number(a.equivalente))
+    || (b.identite - a.identite)
+    || (b.utilite - a.utilite)
+    || String(a.id).localeCompare(String(b.id)));
+  return { choix: ordre[0].id, scores: ordre, marge: bande };
 }
 
 /** Index de 0 a n-1 choisi par le grain. Sans grain : null, l'appelant garde son choix. */
@@ -262,11 +388,24 @@ function decrireGrain(persona, env = process.env) {
     decimalesCalculees: fraction.length,
     preuve: 'Gelfond–Schneider : a algebrique ≠ 0, 1 et √n algebrique irrationnel ⇒ a^√n transcendant',
     canonique: Boolean(GRAINS_CANONIQUES[id]),
+    grainVersion: paire.grainVersion || GRAIN_VERSION,
+    derivation: paire.derivation || DERIVATION,
   };
 }
 
 module.exports = {
+  AXES,
+  DERIVATION,
+  GRAIN_VERSION,
   GRAINS_CANONIQUES,
+  LAMBDA_PAR_DOMAINE,
+  choisirAvecGrain,
+  cleSemantique,
+  grainDispositions,
+  grainIdentite,
+  grainRacine,
+  grainSeed,
+  grainValeur,
   calculerGrain,
   decalerGrain,
   decrireGrain,

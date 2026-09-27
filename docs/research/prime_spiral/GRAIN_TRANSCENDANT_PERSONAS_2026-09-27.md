@@ -51,8 +51,50 @@ mpmath à 2 060 chiffres le 27/09/2026. Une IA née par décalage est inscrite d
 
 ## 4. Ce que le grain décide
 
-Une clé (le contexte d'une décision) désigne une position dans les décimales ; les 12 chiffres
-lus là donnent un nombre de [0, 1). Même clé, même choix, toujours ; deux personas, deux choix.
+**Dérivation v1** (revue à deux avec ChatGPT, 27/09) : on ne lit plus des positions dans les
+décimales. La racine d'identité hache l'expression, la persona et les 256 premières décimales ;
+chaque valeur de décision est une HMAC-SHA256 de cette racine sur « espace de décision +
+contexte + chemin de vie ». Versionnée (`grainVersion: 1`, `derivation: hmac-sha256-v1`) : un
+moteur futur ne réécrira jamais en silence l'arbre de vie d'une IA. Même clé, même choix,
+toujours ; deux personas, deux choix.
+
+Canon technique (formulation de ChatGPT, reprise ici) : *le grain ne dicte pas ce que la persona
+doit être. Il introduit une courbure stable dans sa manière de choisir entre plusieurs futurs
+valides. Le vécu transforme ensuite cette courbure en trajectoire.*
+
+- **Dispositions contextuelles** (audace, curiosité, élan) : dérivées par domaine (création,
+  technique, relation), touchées à 20 % par le contexte. Djeff peut être audacieux en création
+  et prudent sur une migration. Jamais écrites dans un prompt : elles pondèrent les options côté
+  moteur (sinon on mesure le prompt, pas le grain).
+- **Choix** (`choisirAvecGrain`) : 1) une option invalide perd toujours ; 2) seules restent les
+  options dans la bande d'équivalence du domaine (création 0,2 · relation 0,15 · technique 0,1 ·
+  sécurité 0) ; 3) le grain choisit parmi elles. Le regret est borné par la marge.
+- **Graine d'échantillonnage** : dérivée du grain sur une clé quasi sémantique (mots porteurs
+  triés), pas sur la chaîne brute.
+
+## 4 bis. Banc de test (27/09, `persona/grain-bench.cjs`)
+
+Protocole arrêté avec Djeff et ChatGPT : 12 dilemmes × 3 formulations, même modèle
+(qwen14b-8k), même prompt neutre, seul le grain change ; utilités notées dans deux ordres puis
+moyennées (le modèle note selon la position). 555 appels, 3 min, résultats reproductibles.
+
+| Mesure | Choix direct du modèle | Moteur à grain |
+|---|---|---|
+| Décisions différentes entre 4 grains | 0 % | 11 à 36 % |
+| Alignement sur les dispositions | ≈ 0 | +0,03 à +0,05 |
+| Regret (qualité perdue) | 0,08 à 0,09 | 0,017 à 0,025 |
+| Option invalide choisie | 20 % | 0 % |
+| Change d'avis si son choix devient impossible | 100 % | 100 % |
+| Invariance aux paraphrases | 58 à 67 % | 58 à 75 % |
+
+- Une graine seule ne crée aucune identité : graine fixe et graine du grain donnent les mêmes
+  choix que le hasard libre. Sans grain côté moteur, les personas décident toutes pareil.
+- Reconnaissance à l'aveugle : les choix de Vivy, Djeff et K44 sont attribués à leur grain ;
+  A11 est confondu avec Djeff (11 % de décisions différentes seulement).
+- Limite : l'invariance aux paraphrases dépend surtout de la stabilité des utilités estimées
+  par le modèle, faible avec un 14B.
+- Restent à faire : portabilité entre modèles, trajectoire longue (centaines de bifurcations
+  avec mémoire cumulative, distance D(t) entre arbres de vie).
 
 - **Signature sonore** (`vivy-prime-color.cjs`) : quand une voix chante seule, son grain choisit
   la texture et le mouvement. La même matière chantée par Vivy ou par Djeff ne sonne plus pareil.

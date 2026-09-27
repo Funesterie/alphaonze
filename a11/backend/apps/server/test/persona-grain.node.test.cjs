@@ -114,3 +114,66 @@ test('la voix qui chante un segment choisit sa signature premiere avec son grain
   const encore = buildVivyProsodyPlan({ songText: paroles, songArtists: ['djeff'] });
   assert.deepEqual(avec.segments.map((s) => s.prime), encore.segments.map((s) => s.prime));
 });
+
+// --- v1 (27/09/2026) : derivation HMAC versionnee, dispositions contextuelles, bande d'equivalence.
+
+test('v1 : derivation versionnee, stable, propre a chaque persona', () => {
+  const g = require('../src/persona/persona-grain.cjs');
+  assert.equal(g.GRAIN_VERSION, 1);
+  assert.equal(g.decrireGrain('vivy').derivation, 'hmac-sha256-v1');
+  assert.equal(g.grainValeur('vivy', 'musique', 'refrain'), g.grainValeur('vivy', 'musique', 'refrain'));
+  assert.notEqual(g.grainValeur('vivy', 'musique', 'refrain'), g.grainValeur('djeff', 'musique', 'refrain'));
+  assert.notEqual(g.grainValeur('vivy', 'musique', 'refrain', ''), g.grainValeur('vivy', 'musique', 'refrain', 'vecu-1'));
+  const seed = g.grainSeed('djeff', 'chat', 'x');
+  assert.ok(Number.isInteger(seed) && seed >= 0 && seed < 2147483647);
+  assert.equal(g.grainSeed('djeff', 'chat', 'x', '', { A11_PERSONA_GRAIN: '0' }), null);
+});
+
+test('cle quasi semantique : ordre, accents et ponctuation ne comptent pas', () => {
+  const { cleSemantique } = require('../src/persona/persona-grain.cjs');
+  assert.equal(cleSemantique('Pochette du single : noire ou abstraite ?'), cleSemantique('Abstraite ou noire, la pochette du single ?'));
+  assert.notEqual(cleSemantique('Pochette noire'), cleSemantique('Pochette blanche'));
+});
+
+test('dispositions : differentes selon le domaine pour une meme persona', () => {
+  const { grainDispositions } = require('../src/persona/persona-grain.cjs');
+  const creation = grainDispositions('djeff', 'creation');
+  const technique = grainDispositions('djeff', 'technique');
+  assert.notDeepEqual(creation, technique);
+  for (const valeur of Object.values(creation)) assert.ok(valeur >= -1 && valeur <= 1);
+});
+
+test('choix : securite d\'abord, bande d\'equivalence, puis le grain departage', () => {
+  const { choisirAvecGrain } = require('../src/persona/persona-grain.cjs');
+  const traitsOse = { audace: 1, curiosite: 1, elan: 1 };
+  const traitsSage = { audace: -1, curiosite: -1, elan: -1 };
+  // Une option invalide perd toujours, meme si elle est la meilleure et la plus « identitaire ».
+  const invalide = choisirAvecGrain('vivy', { domaine: 'creation', options: [
+    { id: 'A', utilite: 1, valide: false, traits: traitsOse },
+    { id: 'B', utilite: 0.4, traits: traitsSage },
+  ] });
+  assert.equal(invalide.choix, 'B');
+  // Hors de la bande (0,2 en creation), une option nettement moins bonne ne gagne jamais.
+  const horsBande = choisirAvecGrain('vivy', { domaine: 'creation', options: [
+    { id: 'A', utilite: 0.9, traits: traitsSage },
+    { id: 'B', utilite: 0.5, traits: traitsOse },
+  ] });
+  assert.equal(horsBande.choix, 'A');
+  // Dans la bande, deux grains peuvent choisir differemment ; aucun ne sort de la bande.
+  const options = [
+    { id: 'A', utilite: 0.8, traits: traitsSage },
+    { id: 'B', utilite: 0.75, traits: traitsOse },
+    { id: 'C', utilite: 0.2, traits: { audace: 0, curiosite: 1, elan: -1 } },
+  ];
+  const choix = ['vivy', 'djeff', 'k44', 'a11', 'marvin'].map((p) => choisirAvecGrain(p, { domaine: 'creation', decision: 'd', options }).choix);
+  assert.ok(choix.every((c) => c === 'A' || c === 'B'), choix.join(''));
+  // Securite : marge nulle, le grain ne departage plus rien.
+  assert.equal(choisirAvecGrain('vivy', { domaine: 'securite', options }).choix, 'A');
+});
+
+test('banc : lecture des reponses du modele', () => {
+  const { lireChoix, lireUtilites } = require('../src/persona/grain-bench.cjs');
+  assert.equal(lireChoix('CHOIX: B'), 'B');
+  assert.equal(lireChoix('**CHOIX :** c'), 'C');
+  assert.deepEqual(lireUtilites('voici {"A":0.2,"B":1.4,"C":"x"}').utilites, { A: 0.2, B: 1, C: 0.5 });
+});
