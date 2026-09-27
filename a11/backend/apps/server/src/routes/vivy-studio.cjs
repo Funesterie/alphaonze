@@ -9105,6 +9105,23 @@ function clampVivySunoLyricsLength(lyrics = '', maxChars = SUNO_CUSTOM_MODE_MAX_
   return kept.trim();
 }
 
+// Ajoute `garanti` au style sans jamais le couper : si la place manque, l'optionnel saute,
+// puis la queue du style, coupee entre deux virgules.
+function appendVivyGuaranteedStyle(style = '', garanti = '', optionnel = '', limite = 720) {
+  const joindre = (...parts) => parts.filter(Boolean).join(', ');
+  const complet = joindre(style, garanti, optionnel);
+  if (complet.length <= limite || !garanti) return complet;
+  if (joindre(style, garanti).length <= limite) return joindre(style, garanti);
+  const place = limite - garanti.length - 2;
+  let tete = '';
+  for (const part of String(style).split(/,\s*/)) {
+    const suivant = joindre(tete, part);
+    if (suivant.length > place) break;
+    tete = suivant;
+  }
+  return joindre(tete, garanti);
+}
+
 function buildVivySunoPayload(input = {}, req = null) {
   const artistCast = buildVivySongArtistCast(input);
   const forceInstrumental = input.instrumental === true || input.forceInstrumental === true || input.previewInstrumental === true;
@@ -9218,13 +9235,20 @@ function buildVivySunoPayload(input = {}, req = null) {
   // singularite, sa direction apporte la pertinence. Sans ce garde-fou, une berceuse
   // pouvait recevoir une texture de combat.
   let complementStyle = '';
+  let signatureStyle = '';
+  let arcStyle = '';
   try {
     const plafond = resolveVivyEnergyCeiling(couleurDemandee);
     // Une voix seule signe la texture et le mouvement avec son grain (persona-grain.cjs).
-    const signature = deriveSonicSignature(buildVivySunoStyleMaterial(input), { ceiling: plafond, persona: singleArtistId });
+    // grainPersona (banc d'ecoute, 27/09) : meme voix, grain different ; « off » = sans grain.
+    const grainDemande = cleanOneLine(input.grainPersona, '', 40).toLowerCase();
+    const grainSignature = grainDemande === 'off' ? '' : (grainDemande || singleArtistId);
+    const signature = deriveSonicSignature(buildVivySunoStyleMaterial(input), { ceiling: plafond, persona: grainSignature });
     const sections = extractSectionLabels(input.cleanLyrics || input.songText || '');
     const arc = buildVivyDynamicArc(sections, { direction: couleurDemandee });
-    complementStyle = [signature.line, arc.compact].filter(Boolean).join(', ');
+    signatureStyle = signature.line || '';
+    arcStyle = arc.compact || '';
+    complementStyle = [signatureStyle, arcStyle].filter(Boolean).join(', ');
   } catch (error) {
     // Une signature manquante ne doit jamais empecher une chanson de partir.
     console.warn('[vivy-studio] signature/arc indisponibles:', error?.message || error);
@@ -9344,8 +9368,12 @@ function buildVivySunoPayload(input = {}, req = null) {
   // Signature et arc ajoutes APRES la resolution complete du style, jamais avant :
   // les verser dans requestedStyleBase rendait celui-ci non vide et supprimait le
   // repli par mots-cles. On complete ici, sans rien remplacer.
+  // La signature porte le grain : elle ne doit jamais etre coupee. Le style solo de Djeff
+  // depassait deja 720 caracteres, la signature ajoutee en queue etait tronquee et son grain
+  // n'atteignait jamais Suno (mesure du 27/09). C'est la queue du style (chiffres de prosodie)
+  // qui cede d'abord, puis l'arc.
   if (complementStyle && !forceInstrumental) {
-    style = sanitizeVivySunoProviderTags([style, complementStyle].filter(Boolean).join(', '), style, 720);
+    style = sanitizeVivySunoProviderTags(appendVivyGuaranteedStyle(style, signatureStyle, arcStyle, 720), style, 720);
   }
 
   // Une voix premium chante: le style ne doit plus diriger le timbre d'un autre.

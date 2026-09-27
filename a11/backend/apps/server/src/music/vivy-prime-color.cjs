@@ -165,9 +165,11 @@ function deriveSonicSignature(matiere, options = {}) {
   // Grain de la voix (27/09/2026) : la meme matiere chantee par Vivy ou par Djeff ne
   // recoit plus la meme texture ni le meme mouvement. Sans voix unique, la matiere decide
   // seule, comme avant.
-  const { grainChoix } = require('../persona/persona-grain.cjs');
+  // v1.2 (27/09) : le grain penche vers ses affinites stables (grainPrefere) au lieu de tirer
+  // uniformement a chaque morceau ; sinon aucune voix n'avait de signature d'un genre a l'autre.
+  const { grainPrefere } = require('../persona/persona-grain.cjs');
   const parGrain = (cle, liste, repli) => {
-    const index = options.persona ? grainChoix(options.persona, `${cle}:${seed}`, liste.length) : null;
+    const index = options.persona ? grainPrefere(options.persona, `sonore:${cle}`, liste, seed) : null;
     return liste[index === null ? repli % liste.length : index];
   };
   const texture = parGrain('texture', TEXTURES, seed);

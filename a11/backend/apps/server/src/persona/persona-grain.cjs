@@ -448,6 +448,38 @@ function grainChoix(persona, cle, n, env = process.env) {
   return Math.min(n - 1, Math.floor(unite * n));
 }
 
+/**
+ * Affinite stable de [0, 1) d'une persona pour un element d'un espace (une texture, un
+ * mouvement…). Aucun axe nomme : c'est une courbure sans nom, que l'on ne lit qu'a posteriori
+ * (revue ChatGPT du 27/09 : ne pas predefinir audace ou curiosite).
+ */
+function grainAffinite(persona, espace, element, env = process.env) {
+  return grainValeur(persona, `affinite:${espace}`, String(element), '', env);
+}
+
+/**
+ * Choix d'un element d'une liste, penche vers les affinites de la persona. grainChoix tirait
+ * uniformement a chaque morceau : aucune persona n'avait de preference d'un morceau a l'autre,
+ * donc aucune signature reconnaissable a travers les genres. Ici le tirage du morceau (contexte)
+ * reste deterministe, mais pondere par exp(concentration · affinite) : les elements preferes
+ * reviennent souvent, les autres restent possibles (le grain ne s'enferme pas).
+ * Renvoie l'index, ou null sans grain.
+ */
+function grainPrefere(persona, espace, elements, contexte = '', { concentration = 6 } = {}, env = process.env) {
+  const n = Array.isArray(elements) ? elements.length : 0;
+  if (!n) return null;
+  const tirage = grainValeur(persona, `prefere:${espace}`, String(contexte), '', env);
+  if (tirage === null) return null;
+  const poids = elements.map((element) => Math.exp(concentration * grainAffinite(persona, espace, element, env)));
+  const total = poids.reduce((s, p) => s + p, 0);
+  let cumul = 0;
+  for (let i = 0; i < n; i += 1) {
+    cumul += poids[i] / total;
+    if (tirage < cumul) return i;
+  }
+  return n - 1;
+}
+
 /** Respiration de la temperature : base ± amplitude, propre a chaque persona. */
 function grainTemperature(persona, cle, base, amplitude = 0.06, env = process.env) {
   const unite = grainUnite(persona, cle, env);
@@ -516,7 +548,9 @@ module.exports = {
   decrireGrain,
   enumererPaires,
   grainActif,
+  grainAffinite,
   grainChoix,
+  grainPrefere,
   grainConscience,
   grainTemperature,
   grainUnite,
