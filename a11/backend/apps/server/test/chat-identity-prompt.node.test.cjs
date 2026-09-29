@@ -271,3 +271,12 @@ test('/api/chat recognizes runtime module access questions and answers as bounde
   assert.doesNotMatch(reply, /je n'ai pas.*acc[eè]s direct/i);
   assert.doesNotMatch(reply, /\bNon\b/i);
 });
+
+test('/api/chat local prompt keeps the K44 or Vivy surface carried by the full prompt', () => {
+  // Le chat local recoit le prompt complet sans options : K44 repondait « Comme agent A11 ».
+  for (const [surface, attendu] of [['k44', /Surface active: K44/], ['vivy', /Surface active: Vivy/], ['a11', /Surface active: A11/]]) {
+    const complet = chatRouter.buildA11ChatSystemPrompt('x'.repeat(1200), { surface });
+    const messages = chatRouter.buildOllamaMessages('la gourmandise ?', complet);
+    assert.match(messages[0].content, attendu);
+  }
+});

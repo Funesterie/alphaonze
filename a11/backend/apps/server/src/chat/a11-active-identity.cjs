@@ -252,13 +252,18 @@ function buildA11ChatSystemPrompt(systemPrompt = '', options = {}) {
 }
 
 function buildA11CompactLocalSystemPrompt(systemPrompt = '', options = {}) {
+  const basePrompt = String(systemPrompt || '').trim();
+  // Les appelants passent le prompt complet, deja tranche par buildSurfaceIdentityContext,
+  // sans options. Trop long, il n'est pas repris ici : sans relire sa surface, K44 et Vivy
+  // retombaient en A11 sur le modele local (« Comme agent A11… » repondu par K44, 29/09/2026).
+  const surfaceDuPrompt = (basePrompt.match(/Surface active: (K44|Vivy|A11)\./) || [])[1] || '';
   const surface = normalizeAgentSurface(
     options.surface
     || options.persona
     || options.voicePersona
     || options.agent
+    || surfaceDuPrompt
   ) || 'a11';
-  const basePrompt = String(systemPrompt || '').trim();
   const shortBase = basePrompt && basePrompt.length <= 900
     ? basePrompt
     : '';
