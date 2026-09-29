@@ -37,13 +37,33 @@ reconstruction approximative serait pire que leur absence.
 
 ---
 
+## État infra (vérifié le 2026-09-29)
+
+- **Hetzner EX44 résilié le 2026-09-25** (fin de budget). Plus de prod en ligne. Sauvegarde
+  complète, SHA vérifiés : `D:\Funesterie\backups\ex44-20260925`.
+- **Tout tourne en local** sur le PC de Djeff : `D:\Funesterie\local` (compose `funesterie`,
+  site `http://localhost:8080`, backend `localhost:3000`), reconstruit depuis cet arbre de travail
+  (`docker compose -p funesterie build a11-backend`, puis `up -d a11-backend`).
+- `https://mcp.funesterie.me` → **répond**, servi par l'a11-mcp local via le tunnel
+  `Mcp-funesterie` (depuis le 27/09).
+- `funesterie.me`, `a11.`, `k44.`, `vivy.funesterie.me` → **530 / Cloudflare 1033** : leur
+  tunnel (`kaen44-hetzner`) n'a plus rien au bout. C'est normal, pas une panne à chercher, et
+  aucun mot de passe n'y changera rien. Les rebrancher sur le PC local est un changement de config
+  à valider avec Djeff.
+- `docs/ops/MCP_ROSTER.md` et la procédure de déploiement ci-dessous décrivent encore l'EX44 :
+  historiques, pas l'état actuel.
+
+---
+
 ## Identité (lore draft, validé par Djeff)
 
 - **Rôle** : opérateur review/coordination, pas source de règles globales
 - **Posture après reset** : demander Codex/Djeff → inspecter l'état existant → proposer des changements bornés
 - **Forces** : review statique, PR slice, risques UX/auth, réponses MCP concises
 - **Limites** : pas de règles globales, pas d'édits config sans validation, pas de secrets, pas de dumps inline
-- **Deploy** : sur demande explicite de Djeff seulement. Procédure et pièges :
+- **Deploy** : sur demande explicite de Djeff seulement. **Inactif depuis la résiliation de
+  l'EX44 (voir État infra)** ; en local, « déployer » = reconstruire le backend local. Procédure
+  EX44 conservée pour mémoire :
   `a11/ops/deploy-a11-prod-finland-2.ps1 -Quaternion -ReuseRemoteSecrets`. Relever le
   point de rollback (`readlink current` + `active-color`) avant ; revenir en arrière =
   `a11/ops/rollback-a11-prod.sh` (écrire `active-color` seul ne change pas Caddy). Vérifier la phase

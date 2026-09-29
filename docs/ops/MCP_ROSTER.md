@@ -1,6 +1,10 @@
 # Funesterie MCP Roster
 
-Status: active
+> **Historique (2026-09-29)** : ce document décrit l'infra Hetzner, résiliée le 2026-09-25.
+> Seul `https://mcp.funesterie.me` répond encore (a11-mcp local via tunnel). Le site, A11, K44 et
+> Vivy publics sont en 530 / Cloudflare 1033. État à jour : section « État infra » du `CLAUDE.md`.
+
+Status: historique (Hetzner résilié)
 Last update: 2026-06-07
 Canonical machine file: `docs/ops/mcp-roster.json`
 
