@@ -1643,6 +1643,19 @@ async function createVivyBundleCompletion(bundle, request, options = {}) {
     : Math.max(1000, Number(options.attemptTimeoutMs || 20000) || 20000);
   const attemptTimeoutMs = Math.max(500, Math.floor(Math.min(defaultAttemptMs, remainingMs)));
   const bundleRequest = fitVivyChatRequestForBundle(request, bundle);
+  // Diagnostic opt-in (VIVY_DUMP_LLM_DIR, local seulement) : la requete exacte envoyee a un
+  // modele, pour trouver d'ou vient un texte qu'il recopie. Desactive par defaut.
+  if (process.env.VIVY_DUMP_LLM_DIR) {
+    try {
+      const fsDump = require('node:fs');
+      const pathDump = require('node:path');
+      fsDump.mkdirSync(process.env.VIVY_DUMP_LLM_DIR, { recursive: true });
+      fsDump.writeFileSync(
+        pathDump.join(process.env.VIVY_DUMP_LLM_DIR, `${Date.now()}-${String(bundle.model || 'modele').replace(/[^\w.-]+/g, '_')}.json`),
+        JSON.stringify({ provider: bundle.provider, model: bundle.model, ...bundleRequest }, null, 2)
+      );
+    } catch (_) { /* le diagnostic ne doit jamais bloquer un appel */ }
+  }
   const controller = typeof AbortController === 'function' ? new AbortController() : null;
   let rejectTimeout = null;
   const timeoutPromise = new Promise((_, reject) => { rejectTimeout = reject; });
@@ -7714,7 +7727,12 @@ async function buildVivyAiChat(input, req) {
       internalNossenDraft: requiresStrongSongModel,
     })
     : { stored: false };
-  const localContext = shouldVivyUseLocalContext(intentMessage || message)
+  // Jamais en chanson (29/09/2026) : le brief NOSSEN contient « module », « corpus »… et
+  // declenchait une fouille des fichiers locaux. Elle tombait sur qflush-ephemeral-memory.json,
+  // qui garde le resume du DERNIER morceau : Djeff Engine en recopiait l'intro, mot pour mot,
+  // morceau apres morceau (boucle). La matiere de chanson a son propre contexte, choisi
+  // (buildSongcraftGraphContext).
+  const localContext = mode !== 'song' && shouldVivyUseLocalContext(intentMessage || message)
     ? buildVivyLocalContextSnapshot(intentMessage || message)
     : null;
   const localContextForResponse = serializeVivyLocalContext(localContext);
