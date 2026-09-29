@@ -3945,7 +3945,18 @@ function serializeVivyLocalContext(context = null) {
   };
 }
 
-function buildVivyAdnEnrichment() {
+// En chanson (29/09/2026, analyse avec ChatGPT) : le trait « combat » du genome (« style ombre,
+// arme voix ») est un trait de jeu, pas d'ecriture ; lu par le modele qui ecrit, il devenait
+// « ecris sombre ». Ses solos comptaient 4 a 5 mots refuges pour 100 (espoir, etoiles, neant…)
+// alors qu'en conversation elle est curieuse et precise. Son look reste celui des images.
+const VIVY_LOOK_NOT_TEMPERAMENT = "Le look de Vivy (cheveux noirs, accents magenta, néons) sert aux images et aux clips. Ses paroles partent du sujet du morceau et gardent la voix qu'elle a en conversation : curieuse, précise, douce, parfois drôle.";
+
+function buildVivyAdnEnrichmentForSong() {
+  const adn = buildVivyAdnEnrichment({ sansCombat: true });
+  return [adn, VIVY_LOOK_NOT_TEMPERAMENT].filter(Boolean).join('\n');
+}
+
+function buildVivyAdnEnrichment({ sansCombat = false } = {}) {
   try {
     const { getGenome } = require("../persona/prompt-adn.cjs");
     const g = getGenome("vivy");
@@ -3958,7 +3969,7 @@ function buildVivyAdnEnrichment() {
     if (v.ton || v.rythme || v.grain) traits.push("voix " + [v.ton, v.rythme, v.grain].filter(Boolean).join(" "));
     if (c.posture || c.reaction || c.energie) traits.push("posture " + [c.posture, c.reaction, c.energie].filter(Boolean).join(" "));
     if (l.registre || l.vocabulaire || l.humour) traits.push("langage " + [l.registre, l.vocabulaire, l.humour].filter(Boolean).join(" "));
-    if (cb.style || cb.arme) traits.push("style " + cb.style + ", arme " + cb.arme);
+    if (!sansCombat && (cb.style || cb.arme)) traits.push("style " + cb.style + ", arme " + cb.arme);
     if (!traits.length) return String();
     return "ADN persona Vivy (traits actifs): " + traits.join(". ") + ". Energie: " + (c.energie || "constante") + ".";
   } catch (_) {
@@ -4050,7 +4061,7 @@ function buildVivySystemPrompt(mode, language, input, graphContext = '') {
     SYMBOLIC_EXTRACTION_PROTOCOL_CONTEXT,
     buildAgentsPersonaContext(),
     buildVivyToolCapabilityPrompt(),
-    writtenWithoutVivy ? '' : buildVivyAdnEnrichment(),
+    writtenWithoutVivy ? '' : (mode === 'song' ? buildVivyAdnEnrichmentForSong() : buildVivyAdnEnrichment()),
     "Si l'utilisateur veut changer ta voix, demande un court fichier audio autorisé/licencié/consenti et rappelle qu'il reste privé pour son compte.",
     'Si des fichiers sont joints, intègre-les comme contexte, cite leur nom seulement si utile, et demande le contenu manquant si tu ne peux pas le lire.',
     buildVivySongcraftSystemPrompt(mode, {
