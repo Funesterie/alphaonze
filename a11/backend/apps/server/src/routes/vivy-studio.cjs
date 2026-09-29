@@ -7627,14 +7627,38 @@ function getDjeffEngineLocalConfig(budget = {}) {
 // autres modeles locaux en chanson et sortie assez longue pour un morceau complet (~1 200
 // jetons pour 4 300 caracteres). Delai court : s'il n'a pas fini, la chaine forte prend le relais.
 function getDjeffEngineLocalSongConfig() {
-  const base = getDjeffEngineLocalConfig({ maxTokens: 1500 });
-  if (!base) return null;
+  return getPersonaEngineLocalSongConfig('djeff');
+}
+
+// Moteur attitre d'une persona en ecriture de chanson (29/09/2026) : Djeff Engine, puis Vivy
+// Engine, a la demande de Djeff (« sa plume n'etait qu'une consigne confiee au premier modele
+// disponible »). Variables : <PERSONA>_ENGINE_LOCAL_MODEL, _REASONING, _SONG_TIMEOUT_MS.
+function getPersonaEngineLocalSongConfig(persona = 'djeff') {
+  const prefixe = String(persona).toUpperCase();
+  const model = cleanOneLine(process.env[`${prefixe}_ENGINE_LOCAL_MODEL`], '', 120);
+  if (!model) return null;
+  const [local] = getVivyLocalOllamaConfigs({ mode: 'chat' });
+  if (!local?.baseURL) return null;
+  const delai = Math.max(20000, Number(process.env[`${prefixe}_ENGINE_SONG_TIMEOUT_MS`] || 60000) || 60000);
+  const raisonnement = cleanOneLine(process.env[`${prefixe}_ENGINE_LOCAL_REASONING`], '', 12).toLowerCase();
   return {
-    ...base,
-    timeoutMs: Math.max(20000, Number(process.env.DJEFF_ENGINE_SONG_TIMEOUT_MS || 60000) || 60000),
-    attemptTimeoutMs: Math.max(20000, Number(process.env.DJEFF_ENGINE_SONG_TIMEOUT_MS || 60000) || 60000),
+    ...local,
+    model,
+    timeoutMs: delai,
+    attemptTimeoutMs: delai,
     maxPromptChars: Math.max(6000, Math.min(22000, Number(process.env.VIVY_SONG_LOCAL_MAX_PROMPT_CHARS || 16000) || 16000)),
+    maxOutputTokens: 1500,
+    ...(raisonnement ? { requestExtras: { reasoning_effort: raisonnement } } : {}),
   };
+}
+
+// Qui tient le stylo d'une chanson : Djeff s'il chante (seul ou en duo), sinon Vivy si elle
+// chante. Sert au moteur attitre et au grain de l'ecriture.
+function resolveSongWriterPersona(input = {}) {
+  const ids = buildVivySongArtistCast(input).ids;
+  if (ids.includes('djeff') || buildJeffreyDjeffEnginePen(input)) return 'djeff';
+  if (ids.includes('vivy')) return 'vivy';
+  return '';
 }
 
 async function buildVivyAiChat(input, req) {
@@ -7745,12 +7769,13 @@ async function buildVivyAiChat(input, req) {
   // 29/09 : aussi quand Djeff chante en duo. Le duo « 3h du mat' au studio » (Djeff + Vivy)
   // avait ete ecrit par gpt-oss-120b : Djeff a entendu que « les textes sont pas les memes ».
   // Djeff Engine ecrit tout le morceau ; la plume de Vivy (message systeme) guide ses lignes.
-  const soloDjeff = mode === 'song' && buildVivySongArtistCast(input).ids.includes('djeff');
-  const plumeLocaleDjeff = mode === 'song' && (soloDjeff || buildJeffreyDjeffEnginePen(input))
-    ? createVivyOpenAIClientFromConfig(getDjeffEngineLocalSongConfig())
+  // Vivy Engine (29/09) : quand Vivy chante sans Djeff, son propre modele ecrit d'abord.
+  const ecrivain = mode === 'song' ? resolveSongWriterPersona(input) : '';
+  const plumeLocale = ecrivain
+    ? createVivyOpenAIClientFromConfig(getPersonaEngineLocalSongConfig(ecrivain))
     : null;
   const llmBundles = [
-    plumeLocaleDjeff,
+    plumeLocale,
     ...createVivyOpenAIClients({ mode, purpose: mode === 'song' ? 'lyrics' : 'chat' }),
   ].filter(Boolean);
   let llmBundle = llmBundles[0] || null;
@@ -8353,16 +8378,29 @@ async function buildVivyAiChat(input, req) {
       Number(input.songResponseMaxChars || input.lyricResponseMaxChars || 0) || 0
     );
     const songMaxTokens = resolveVivySongMaxTokens(input);
+    // Grain de l'ecriture (29/09/2026, demande de Djeff) : en chanson, la temperature et la graine
+    // sont celles du grain de qui tient le stylo (Djeff ou Vivy). Sa consigne, elle, reste hors
+    // des paroles. Le chemin de vie est le rang du morceau dans sa trajectoire : deux morceaux sur
+    // le meme sujet ne ressortent pas identiques, et chaque tirage reste rejouable.
+    const cheminEcriture = mode === 'song' && ecrivain ? (() => {
+      try {
+        const { lireTrajectoire } = require('../persona/grain-trajectoire.cjs');
+        return `rang:${lireTrajectoire().filter((e) => e.grain === ecrivain).length}`;
+      } catch { return ''; }
+    })() : '';
+    const temperatureChanson = Number(process.env.VIVY_CHAT_TEMPERATURE_SONG || process.env.VIVY_CHAT_TEMPERATURE || 0.88);
     const completionRequest = {
       messages,
       // En conversation, le grain de Vivy fait respirer sa temperature (± 0,06) : meme
-      // message, meme souffle ; les paroles gardent leur temperature fixe.
+      // message, meme souffle.
       temperature: mode === 'song'
-        ? Number(process.env.VIVY_CHAT_TEMPERATURE_SONG || process.env.VIVY_CHAT_TEMPERATURE || 0.88)
+        ? (ecrivain ? grainTemperature(ecrivain, message, temperatureChanson, 0.06, grainEnv) : temperatureChanson)
         : grainTemperature('vivy', message, Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74), 0.06, grainEnv),
       // Graine d'echantillonnage signee par le grain, sur le SENS du message (cle semantique),
       // pas son orthographe : meme persona, meme question, meme inclination.
-      ...(mode !== 'song' ? { seed: grainSeed('vivy', 'chat', cleSemantique(message), '', grainEnv) ?? undefined } : {}),
+      ...(mode !== 'song'
+        ? { seed: grainSeed('vivy', 'chat', cleSemantique(message), '', grainEnv) ?? undefined }
+        : ecrivain ? { seed: grainSeed(ecrivain, 'chanson', cleSemantique(message), cheminEcriture, grainEnv) ?? undefined } : {}),
       max_tokens: mode === 'song' ? songMaxTokens : Number(process.env.VIVY_CHAT_MAX_TOKENS || 5000),
     };
     const nossenLlmBudgetMs = Math.max(30000, Math.min(
