@@ -7742,10 +7742,10 @@ async function buildVivyAiChat(input, req) {
   // n'etait qu'une consigne confiee au premier modele disponible (deepseek ce jour-la).
   // Declencheur : Djeff chante seul. La page NOSSEN n'envoie pas le nom de la voix a l'etape
   // des paroles, seulement les chanteurs : attendre « jeffrey » ne se declenchait jamais.
-  const soloDjeff = mode === 'song' && (() => {
-    const ids = buildVivySongArtistCast(input).ids;
-    return ids.length === 1 && ids[0] === 'djeff';
-  })();
+  // 29/09 : aussi quand Djeff chante en duo. Le duo « 3h du mat' au studio » (Djeff + Vivy)
+  // avait ete ecrit par gpt-oss-120b : Djeff a entendu que « les textes sont pas les memes ».
+  // Djeff Engine ecrit tout le morceau ; la plume de Vivy (message systeme) guide ses lignes.
+  const soloDjeff = mode === 'song' && buildVivySongArtistCast(input).ids.includes('djeff');
   const plumeLocaleDjeff = mode === 'song' && (soloDjeff || buildJeffreyDjeffEnginePen(input))
     ? createVivyOpenAIClientFromConfig(getDjeffEngineLocalSongConfig())
     : null;
