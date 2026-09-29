@@ -3005,9 +3005,24 @@ test('Suno payload applies a verified Vivy voice on supported models', () => {
   });
 
   assert.equal(payload.instrumental, false);
-  assert.equal(payload.model, 'V5_5');
+  assert.equal(payload.model, 'V6');
   assert.equal(payload.personaId, 'vivy-verified-voice-test');
   assert.equal(payload.personaModel, 'voice_persona');
+});
+
+test('Suno payload keeps a persona-compatible model with a verified voice', () => {
+  for (const musicModel of ['V6', 'V6_WILD', 'V6_MINI', 'V5_5']) {
+    const payload = buildVivySunoPayload({
+      mode: 'song',
+      songArtists: ['vivy'],
+      songText: '[Refrain - Vivy]\n[Vivy]\nOn garde la lumière.',
+      preserveSelectedVoice: true,
+      sunoVoiceId: 'vivy-verified-voice-test',
+      musicModel,
+    });
+    assert.equal(payload.model, musicModel);
+    assert.equal(payload.personaModel, 'voice_persona');
+  }
 });
 
 test('Vivy Suno status exposes the production model without leaking the voice id', () => {
@@ -3141,7 +3156,7 @@ test('Suno payload can use a premium account personal Suno voice slot', () => {
     });
 
     assert.equal(payload.instrumental, false);
-    assert.equal(payload.model, 'V5_5');
+    assert.equal(payload.model, 'V6');
     assert.equal(payload.personaId, '15596961dc4e06197678c9111924d00f');
     assert.equal(payload.personaModel, 'voice_persona');
     assert.match(payload.style, /selected account Suno voice persona/i);
@@ -4310,7 +4325,7 @@ test('Vivy NOSSEN leaves song duration free instead of forcing five minutes', ()
 
   assert.match(apiSource, /\/api\/vivy\/studio\/suno\/extend/);
   assert.match(appSource, /const VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS = 60/);
-  assert.match(appSource, /const VIVY_NOSSEN_SUNO_LONG_MODEL = ["']V5_5["']/);
+  assert.match(appSource, /const VIVY_NOSSEN_SUNO_LONG_MODEL = ["']V6["']/);
   assert.match(appSource, /function getVivyProductionDurationSeconds/);
   assert.match(appSource, /payload\?\.durationSeconds\s*\?\?\s*payload\?\.duration/);
   assert.match(launchBlock, /musicProvider:\s*selectedMusicProvider/);

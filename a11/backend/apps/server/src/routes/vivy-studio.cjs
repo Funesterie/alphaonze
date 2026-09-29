@@ -9646,7 +9646,9 @@ function buildVivySunoPayload(input = {}, req = null) {
     ? rawPrompt
     : clampVivySunoLyricsLength(sanitizeVivyProviderCleanLyrics(rawPrompt, VIVY_SONG_MAX_CHARS));
   const payload = {
-    model: useVerifiedSunoVoice && !/^V5(?:_5)?$/i.test(requestedModel) ? 'V5_5' : requestedModel,
+    // Voix perso Suno : acceptees par V5, V5_5, V6, V6_MINI et V6_WILD (doc sunoapi.org, 29/09/2026).
+    // V5 et V5_5 y sont marquees abandonnees ; tout autre modele demande part donc en V6.
+    model: useVerifiedSunoVoice && !/^V(?:5(?:_5)?|6(?:_MINI|_WILD)?)$/i.test(requestedModel) ? 'V6' : requestedModel,
     customMode: true,
     instrumental: forceInstrumental || useExternalVoiceMix,
     title,

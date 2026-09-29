@@ -517,7 +517,7 @@ const NOSSEN_DJEFF_BETA_SRC = buildPublicAssetPath("assets/nossen-djeff-beta.png
 const NOSSEN_CREW_SRC = buildPublicAssetPath("assets/nossen-crew.webp");
 const VIVY_NOSSEN_BANGER_CALL_SRC = buildPublicAssetPath("assets/vivy-banger-call.wav");
 const VIVY_NOSSEN_SUNO_MIN_ACCEPTABLE_SECONDS = 60;
-const VIVY_NOSSEN_SUNO_LONG_MODEL = "V5_5";
+const VIVY_NOSSEN_SUNO_LONG_MODEL = "V6";
 
 type FunesterieSurface = "a11" | "kaen44" | "vivy";
 
