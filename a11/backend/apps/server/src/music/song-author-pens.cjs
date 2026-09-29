@@ -172,6 +172,8 @@ function buildSingerPen(id, { jeffreyPen = '', env = process.env } = {}) {
     identity,
     'Les identités guident la plume, pas le sujet : ni infrastructure, ni coûts, ni journaux, ni outils dans les paroles, sauf si le sujet le demande. Aucun secret.',
     LYRICS_TELL_THE_SUBJECT_RULE,
+    // 29/09/2026 : « éclat » sur huit lignes chez Vivy Engine. Formule affirmative.
+    'Chaque image forte ne sert qu\'une fois : quand un mot fort revient, trouve un autre détail concret de la scène (un objet, une matière, un geste, un son). Seul le refrain se répète tel quel.',
   ].filter(Boolean).join('\n\n');
 }
 

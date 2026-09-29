@@ -8594,6 +8594,53 @@ async function buildVivyAiChat(input, req) {
       }
     }
 
+    // Tics d'ecriture (29/09/2026) : un mot porteur sur quatre lignes differentes ou plus
+    // (« éclat » x8 chez Vivy Engine). Le meme modele reecrit seulement ces lignes ; on ne garde
+    // la reecriture que si le morceau reste complet, le tic baisse et la longueur tient.
+    if (mode === 'song' && !usedSongcraftFallback && assistantCandidate && llmBundle) {
+      try {
+        const { findLyricTics, buildTicRewriteInstruction } = require('../music/lyrics-tics.cjs');
+        const sujetTics = [input.songTitle, input.songText, intentMessage || message].filter(Boolean).join(' ').slice(0, 2000);
+        const tics = findLyricTics(assistantCandidate, { sujet: sujetTics });
+        const restantMs = nossenLlmCeilingAt ? nossenLlmCeilingAt - VIVY_SUNO_RESERVE_MS - Date.now() : 90000;
+        if (tics.length && restantMs > 20000) {
+          const debutTic = Date.now();
+          const correction = await createVivyBundleCompletion(llmBundle, {
+            ...completionRequest,
+            messages: [
+              ...completionRequest.messages,
+              { role: 'assistant', content: assistantCandidate },
+              { role: 'user', content: buildTicRewriteInstruction(tics) },
+            ],
+          }, { deadlineAt: Date.now() + Math.min(restantMs, 90000) });
+          const brutCorrige = require('../music/lyrics-sections-chanteur.cjs').nommerSectionsParChanteur(
+            cleanText(correction?.choices?.[0]?.message?.content, songResponseMaxChars)
+          );
+          const corrige = postProcessVivyAssistantText({ text: brutCorrige, userMessage: message, systemPrompt, mode, maxChars: songResponseMaxChars }).content;
+          const ticsApres = findLyricTics(corrige, { sujet: sujetTics });
+          const pire = (liste) => (liste[0]?.lignes || 0);
+          const lignesAvant = assistantCandidate.split(/\r?\n/).filter(Boolean).length;
+          const lignesApres = String(corrige || '').split(/\r?\n/).filter(Boolean).length;
+          const garde = corrige
+            && isUsableStrongSongContent(corrige)
+            && pire(ticsApres) < pire(tics)
+            && Math.abs(lignesApres - lignesAvant) <= Math.max(3, Math.round(lignesAvant * 0.15));
+          console.info(
+            '[vivy-song-tics] %s avant=%s apres=%s lignes=%s->%s en %sms',
+            garde ? 'corrige' : 'garde_original',
+            tics.map((t) => `${t.mot}x${t.lignes}`).join(','),
+            ticsApres.map((t) => `${t.mot}x${t.lignes}`).join(',') || '-',
+            lignesAvant,
+            lignesApres,
+            Date.now() - debutTic
+          );
+          if (garde) assistantCandidate = corrige;
+        }
+      } catch (error) {
+        console.warn('[vivy-song-tics] correction indisponible:', error?.message || error);
+      }
+    }
+
     const assistant = mode === 'song'
       ? buildVivyPublicLyrics(
         { ...input, message, files, history },

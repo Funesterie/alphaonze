@@ -52,3 +52,15 @@ test('en-tetes entre parentheses (gemma4 avec le brief NOSSEN) : deviennent des 
   assert.match(nommerSectionsParChanteur(brut), /\(Bruit de clé à choc qui s'arrête net\)/);
   assert.equal(nommerSectionsParChanteur('Moi j\'note mentalement:\nun vers'), 'Moi j\'note mentalement:\nun vers');
 });
+
+test('fautes de frappe dans un nom de section : (Refrance), [Coupelt 2] deviennent des balises', () => {
+  const { nommerSectionsParChanteur } = require('../src/music/lyrics-sections-chanteur.cjs');
+  const brut = ['[Verse 1]', 'un vers', '(Refrance)', 'le refrain', '[Coupelt 2]', 'un autre vers', '[Refrain]', 'le refrain', '(Intro - Drone grave, pulsations lentes)', '[Djeff]', '(Bruit de clé à choc)'].join('\n');
+  const sortie = nommerSectionsParChanteur(brut).split('\n');
+  assert.ok(sortie.some((l) => /^\[Chorus( - Djeff)?\]$/.test(l)), sortie.join(' | '));
+  assert.ok(sortie.some((l) => /^\[Verse 2( - Djeff)?\]$/.test(l)), sortie.join(' | '));
+  assert.ok(sortie.includes('[Refrain]'), 'un nom juste entre crochets ne bouge pas');
+  assert.ok(sortie.includes('(Intro - Drone grave, pulsations lentes)'), 'une indication sonore ne bouge pas');
+  assert.ok(sortie.includes('(Bruit de clé à choc)'));
+  assert.ok(!sortie.some((l) => /refrance|coupelt/i.test(l)));
+});

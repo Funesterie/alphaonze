@@ -31,17 +31,47 @@ const NOMS_SECTION = [
   [/^outro$/, 'Outro'],
 ];
 
+// Fautes de frappe d'un nom de section (29/09 : Vivy Engine a ecrit « (Refrance) », parti tel
+// quel chez Suno). Un seul mot, a une ou deux lettres pres d'un nom connu, selon sa longueur.
+const NOMS_CANONIQUES = { couplet: 'Verse', verse: 'Verse', refrain: 'Chorus', chorus: 'Chorus', pont: 'Bridge', bridge: 'Bridge', intro: 'Intro', outro: 'Outro' };
+
+function distance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...new Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j += 1) d[0][j] = j;
+  for (let i = 1; i <= a.length; i += 1) {
+    for (let j = 1; j <= b.length; j += 1) {
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+  }
+  return d[a.length][b.length];
+}
+
+function nomApproche(nom = '') {
+  if (!/^[a-z]{4,12}$/.test(nom)) return null;
+  const tolerance = nom.length >= 8 ? 3 : nom.length >= 6 ? 2 : 1;
+  let meilleur = null;
+  for (const [canon, section] of Object.entries(NOMS_CANONIQUES)) {
+    const ecart = distance(nom, canon);
+    if (ecart <= tolerance && (!meilleur || ecart < meilleur.ecart)) meilleur = { section, ecart };
+  }
+  return meilleur ? [null, meilleur.section] : null;
+}
+
 function normaliserEnTetes(lignes) {
-  const balisesChanteur = lignes.filter((l) => BALISE.test(l) && !SECTION.test(l));
+  const balisesChanteur = lignes.filter((l) => BALISE.test(l) && !SECTION.test(l) && !nomApproche(plier(l.match(BALISE)[1]).replace(/\s\d+$/, '')));
   const chanteurUnique = balisesChanteur.length === 1 ? balisesChanteur[0].match(BALISE)[1].trim() : '';
   let converties = 0;
   const sortie = lignes.map((ligne) => {
-    const m = String(ligne).trim().match(/^(?:\(\s*([^()]{2,30}?)\s*\)|\*\*\s*([^*]{2,30}?)\s*\*\*|([^:()[\]*]{2,30}?)\s*:)\s*$/);
+    const m = String(ligne).trim().match(/^(?:\(\s*([^()]{2,30}?)\s*\)|\*\*\s*([^*]{2,30}?)\s*\*\*|\[\s*([^\]]{2,30}?)\s*\]|([^:()[\]*]{2,30}?)\s*:)\s*$/);
     if (!m) return ligne;
-    const brut = (m[1] || m[2] || m[3] || '').trim();
+    const brut = (m[1] || m[2] || m[3] || m[4] || '').trim();
     const numero = (brut.match(/\s(\d+)$/) || [])[1] || '';
     const nom = plier(brut.replace(/\s\d+$/, ''));
-    const trouve = NOMS_SECTION.find(([motif]) => motif.test(nom));
+    const entreCrochets = Boolean(m[3]);
+    // Entre crochets, seules les fautes de frappe sont reprises : « [Refrain] » est deja juste.
+    const trouve = entreCrochets
+      ? (NOMS_CANONIQUES[nom] ? null : nomApproche(nom))
+      : (NOMS_SECTION.find(([motif]) => motif.test(nom)) || nomApproche(nom));
     if (!trouve) return ligne;
     converties += 1;
     return `[${trouve[1]}${numero ? ` ${numero}` : ''}${chanteurUnique ? ` - ${chanteurUnique}` : ''}]`;
