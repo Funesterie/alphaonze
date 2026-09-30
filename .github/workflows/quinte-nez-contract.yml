@@ -1,0 +1,36 @@
+name: Quinté NEZ Auth Contract
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - "a11/backend/apps/server/src/middleware/jwt-auth.cjs"
+      - "a11/backend/apps/server/src/security/quinte-nez-token.cjs"
+      - "a11/backend/apps/server/test/jwt-nez-service-identity.node.test.cjs"
+      - ".github/workflows/quinte-nez-contract.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  quinte-nez-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: a11/backend/apps/server/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: a11/backend/apps/server
+        run: npm ci
+
+      - name: Run Quinté x NEZ service-auth contract
+        working-directory: a11/backend/apps/server
+        run: node --test ./test/jwt-nez-service-identity.node.test.cjs
