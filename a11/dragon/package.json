@@ -50,12 +50,12 @@
   "homepage": "https://github.com/Funesterie/funesterie/tree/master/a11/dragon#readme",
   "devDependencies": {
     "@types/node": "^25.9.0",
-    "concurrently": "^10.0.3",
+    "concurrently": "^10.0.5",
     "tsx": "^4.22.1",
     "typescript": "^6.0.3"
   },
   "overrides": {
-    "qs": "^6.15.2"
+    "qs": "^6.16.0"
   },
   "funesterieSupport": {
     "paypal": "https://paypal.me/funeste38",
