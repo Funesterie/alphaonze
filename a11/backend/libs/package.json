@@ -72,7 +72,7 @@
     "nossen"
   ],
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.9.0"
   },
   "dependencies": {
     "@nossen/bat": "^2.0.2",
@@ -81,20 +81,20 @@
     "@nossen/nezlephant": "^2.0.2",
     "@nossen/rome": "^2.0.3",
     "csv-stringify": "^6.7.0",
-    "js-yaml": "^4.1.1",
+    "js-yaml": "^4.3.2",
     "node-fetch": "^3.3.2",
     "play-sound": "^1.1.6",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.4",
     "tail": "^2.2.6",
     "vitest": "^4.1.8"
   },
   "devDependencies": {
     "@types/jsdom": "^28.0.3",
-    "@types/node": "^25.9.1",
+    "@types/node": "^26.1.2",
     "eslint": "^10.4.1",
     "rimraf": "^6.1.3",
     "ts-node": "^10.9.2",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.8"
   },
   "overrides": {
