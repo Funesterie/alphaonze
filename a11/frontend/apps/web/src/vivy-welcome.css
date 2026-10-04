@@ -1,0 +1,37 @@
+/* Keep the welcome artwork scoped to the public home page. */
+.fun-home-shell--landing .fun-home-hero.fun-home-hero--vivy {
+  width: min(1120px, 100%);
+  max-width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  align-items: center;
+  gap: clamp(18px, 3vw, 40px);
+  margin: clamp(20px, 4vh, 48px) auto;
+}
+.fun-vivy-welcome-art {
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+.fun-vivy-welcome-art img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 4;
+}
+.fun-home-shell--landing .fun-home-hero--vivy .fun-hero-core {
+  min-width: 0;
+  border-radius: 20px;
+}
+@media (max-width: 700px) {
+  .fun-home-shell--landing .fun-home-hero.fun-home-hero--vivy {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+  .fun-home-hero--vivy .fun-vivy-welcome-art {
+    width: min(100%, 360px);
+    justify-self: center;
+  }
+}
