@@ -1,3 +1,4 @@
+import "./vivy-welcome.css";
 import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import {
   clearA11History,
@@ -10719,10 +10720,19 @@ function FunesterieHomeIntro({
   return (
     <section
       id="accueil"
-      className="fun-home-hero fun-home-hero--nossen fun-home-hero--single"
+      className="fun-home-hero fun-home-hero--nossen fun-home-hero--single fun-home-hero--vivy"
       aria-label="Accueil NOSSEN Funesterie"
-      style={{ width: "min(760px, calc(100vw - 20px))", maxWidth: "calc(100vw - 20px)" }}
     >
+      <figure className="fun-vivy-welcome-art">
+        <img
+          src="/assets/vivy-tempete.webp"
+          alt="Vivy au-dessus des vagues, entourée de notes lumineuses. Le bruit de la tempête qui flotte."
+          width={1008}
+          height={1344}
+          fetchPriority="high"
+          decoding="async"
+        />
+      </figure>
       <div className="fun-hero-core">
         <img
           src={FUNESTERIE_LOGO_SRC}
