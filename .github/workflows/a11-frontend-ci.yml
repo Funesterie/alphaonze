@@ -1,0 +1,45 @@
+name: A11 Frontend CI
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - "a11/frontend/apps/web/**"
+      - "a11/frontend/apps/web/package-lock.json"
+      - ".github/workflows/a11-frontend-ci.yml"
+  push:
+    branches: [master]
+    paths:
+      - "a11/frontend/apps/web/**"
+      - "a11/frontend/apps/web/package-lock.json"
+      - ".github/workflows/a11-frontend-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: a11/frontend/apps/web/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --no-audit
+        working-directory: a11/frontend/apps/web
+
+      - name: Typecheck A11 frontend
+        run: npm run typecheck
+        working-directory: a11/frontend/apps/web
+
+      - name: Build A11 frontend
+        run: npm run build
+        working-directory: a11/frontend/apps/web

@@ -166,6 +166,7 @@ import { RenameConversationModal } from "./components/RenameConversationModal";
 import { SubscriptionPanel } from "./components/SubscriptionPanel";
 import { AdBanner } from "./components/AdBanner";
 import { CasinoHub } from "./components/CasinoHub";
+import { GameHelpPanel } from "./components/GameHelpPanel";
 import ReactMarkdown from "react-markdown";
 import "./index.css";
 import {
@@ -14340,7 +14341,7 @@ function PersonaDashboard({
 
 export function App() {
   type AdminSection = "cockpit" | "arena" | "memory" | "runtime" | "console" | "ai" | "subscription";
-  type AppView = "chat" | "admin" | "casino";
+  type AppView = "chat" | "admin" | "casino" | "game-help";
   const surfaceKind = getCurrentSurfaceKind();
   syncStoredSurface(surfaceKind);
   const isKaen44 = surfaceKind === "kaen44";
@@ -15080,7 +15081,9 @@ export function App() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [activeView, setActiveView] = useState<AppView>(() => {
     try {
-      return window.location.pathname.toLowerCase().includes("/casino") ? "casino" : "chat";
+      const pathname = window.location.pathname.toLowerCase();
+      if (pathname.includes("/game-help")) return "game-help";
+      return pathname.includes("/casino") ? "casino" : "chat";
     } catch {
       return "chat";
     }
@@ -17145,7 +17148,7 @@ export function App() {
   useEffect(() => {
     const onPopState = () => {
       const pathname = window.location.pathname.toLowerCase();
-      setActiveView(pathname.includes("/casino") ? "casino" : "chat");
+      setActiveView(pathname.includes("/game-help") ? "game-help" : pathname.includes("/casino") ? "casino" : "chat");
       setSettingsMenuOpen(false);
       setSidebarOpen(false);
       setInspectorOpen(false);
@@ -17443,6 +17446,14 @@ export function App() {
     setSidebarOpen(false);
     setInspectorOpen(false);
     pushA11Path(buildSurfacePath(isKaen44 ? "kaen44" : "a11", "/casino"));
+  }
+
+  function openGameHelpView() {
+    setActiveView("game-help");
+    setSettingsMenuOpen(false);
+    setSidebarOpen(false);
+    setInspectorOpen(false);
+    pushA11Path(buildSurfacePath("a11", "/game-help"));
   }
 
   function focusComposerSoon() {
@@ -18211,6 +18222,17 @@ export function App() {
                     {!isKaen44 ? (
                       <button
                         type="button"
+                        onClick={openGameHelpView}
+                        className="btn ghost"
+                        style={menuActionStackStyle}
+                      >
+                        <span>Aide au jeu</span>
+                        <span style={menuActionSubLabelStyle}>OBS + radio</span>
+                      </button>
+                    ) : null}
+                    {!isKaen44 ? (
+                      <button
+                        type="button"
                         onClick={() => {
                           setActiveView("admin");
                           setAdminSection("ai");
@@ -18489,7 +18511,9 @@ export function App() {
         ) : null}
 
         <main className="main" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {activeView === 'casino' ? (
+          {activeView === 'game-help' ? (
+            <GameHelpPanel isCompactLayout={isCompactLayout} onBack={openChatView} />
+          ) : activeView === 'casino' ? (
             <CasinoHub
               isCompactLayout={isCompactLayout}
               onBackToChat={openChatView}
