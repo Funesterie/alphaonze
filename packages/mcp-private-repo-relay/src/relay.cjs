@@ -103,7 +103,7 @@ class PrivateRepoRelay {
     const listed = await this.github.listJson(session.repoName, 'messages');
     // Never silently ignore an unrecognized file that could contain an
     // unacknowledged message when deciding whether cleanup is safe.
-    if (listed.some(n => !/^(request|response)-[0-9a-f-]{36}\\.json$/.test(n))) {
+    if (listed.some(n => !/^(request|response)-[0-9a-f-]{36}\.json$/.test(n))) {
       throw new Error('Unexpected message filename in relay mailbox');
     }
     const names = listed.filter(n => n.startsWith(direction + '-')).sort();
