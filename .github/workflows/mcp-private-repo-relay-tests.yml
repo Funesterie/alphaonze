@@ -1,0 +1,24 @@
+name: Private Repo MCP Relay Tests
+on:
+  push:
+    paths:
+      - 'packages/mcp-private-repo-relay/**'
+      - '.github/workflows/mcp-private-repo-relay-tests.yml'
+  pull_request:
+    paths:
+      - 'packages/mcp-private-repo-relay/**'
+      - '.github/workflows/mcp-private-repo-relay-tests.yml'
+permissions:
+  contents: read
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/mcp-private-repo-relay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
