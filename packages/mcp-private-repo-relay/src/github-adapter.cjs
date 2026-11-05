@@ -77,7 +77,13 @@ class GitHubAdapter {
     const entries = await this.request('GET', this.repoPath(repoName) + '/contents/' + safePath(directory), undefined, { allow404: true });
     if (entries === null) return [];
     if (!Array.isArray(entries)) throw new Error('Unexpected GitHub directory listing');
-    return entries.filter(x => x.type === 'file' && x.name.endsWith('.json')).map(x => x.name);
+    // GitHub's contents API stops at 1,000 entries. Never mistake a
+    // truncated listing for a fully acknowledged relay session.
+    if (entries.length >= 1000) throw new Error('GitHub listing may be truncated; cleanup unsafe');
+    if (entries.some(x => x.type !== 'file' || typeof x.name !== 'string' || !x.name.endsWith('.json'))) {
+      throw new Error('Unexpected entry in private relay mailbox');
+    }
+    return entries.map(x => x.name);
   }
 
   async deleteRepo(repoName) {
