@@ -1,1 +1,10 @@
-The requested file reference is not currently visible. Use files.search or files.list to rediscover the file, then retry with a returned ref_id or file_id.
+{
+  "name": "@nossen/mcp-private-repo-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Experimental asynchronous MCP mailbox over short-lived private GitHub repositories",
+  "main": "src/index.cjs",
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test test/*.test.cjs" },
+  "license": "UNLICENSED"
+}
