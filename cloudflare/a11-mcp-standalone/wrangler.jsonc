@@ -1,0 +1,7 @@
+{
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "a11-mcp-standalone",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true
+}
