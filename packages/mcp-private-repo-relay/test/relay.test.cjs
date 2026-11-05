@@ -76,7 +76,8 @@ test('cleanup is blocked unless acknowledged, aged, opted in and exact repositor
   const s = setup({ allowDelete: true });
   const session = await s.relay.createSession();
   await assert.rejects(s.relay.cleanup(session), /no recipient acknowledgment/);
-  const request = await s.relay.sendMcpRequest(session, 'ping');
+  const request = await s.relay.sendMcpRequest(session, 'ping', {}, 'ping-1');
+  await s.relay.sendMcpResponse(session, 'ping-1', { result: { ok: true } });
   await s.relay.acknowledge(session, [request.messageId]);
   await assert.rejects(s.relay.cleanup(session), /minimum retention/);
   s.advance(MIN_RETENTION_MS + 1);
@@ -94,7 +95,8 @@ test('cleanup is blocked unless acknowledged, aged, opted in and exact repositor
 test('deletion remains disabled by default even with confirmation', async () => {
   const s = setup();
   const session = await s.relay.createSession();
-  const request = await s.relay.sendMcpRequest(session, 'ping');
+  const request = await s.relay.sendMcpRequest(session, 'ping', {}, 'ping-1');
+  await s.relay.sendMcpResponse(session, 'ping-1', { result: { ok: true } });
   await s.relay.acknowledge(session, [request.messageId]);
   s.advance(MIN_RETENTION_MS + 1);
   await assert.rejects(s.relay.cleanup(session, {
@@ -114,9 +116,46 @@ test('refuses private-to-public downgrade, marker swap or different process dele
   await assert.rejects(s.relay.sendMcpRequest(session, 'ping'), /marker mismatch/);
   repo.files.get('.a11-relay/session.json').repoId = session.repoId;
   const newRelay = new PrivateRepoRelay({ github: s.github, sharedKey: s.key, now: () => session.createdAt + MIN_RETENTION_MS + 1, allowDelete: true });
-  const request = await s.relay.sendMcpRequest(session, 'ping');
+  const request = await s.relay.sendMcpRequest(session, 'ping', {}, 'ping-1');
+  await s.relay.sendMcpResponse(session, 'ping-1', { result: { ok: true } });
   await s.relay.acknowledge(session, [request.messageId]);
   await assert.rejects(newRelay.cleanup(session), /not created by this relay process/);
+});
+
+test('acknowledgment requires actual responses and rejects unknown or duplicate message IDs', async () => {
+  const s = setup({ allowDelete: true });
+  const session = await s.relay.createSession();
+  const first = await s.relay.sendMcpRequest(session, 'ping', {}, 'p1');
+  await assert.rejects(s.relay.acknowledge(session, [first.messageId]), /without matching responses/);
+  await s.relay.sendMcpResponse(session, 'p1', { result: { ok: true } });
+  await assert.rejects(s.relay.acknowledge(session, ['00000000-0000-0000-0000-000000000000']), /every request message/);
+  await assert.rejects(s.relay.acknowledge(session, [first.messageId, first.messageId]), /every request message/);
+  await s.relay.acknowledge(session, [first.messageId]);
+  s.advance(MIN_RETENTION_MS + 1);
+  const preview = await s.relay.cleanup(session);
+  assert.equal(preview.eligible, true);
+});
+
+test('cleanup fails closed when new messages appear after acknowledgment', async () => {
+  const s = setup({ allowDelete: true });
+  const session = await s.relay.createSession();
+  const first = await s.relay.sendMcpRequest(session, 'ping', {}, 'p1');
+  await s.relay.sendMcpResponse(session, 'p1', { result: {} });
+  await s.relay.acknowledge(session, [first.messageId]);
+  await s.relay.sendMcpRequest(session, 'ping', {}, 'p2');
+  s.advance(MIN_RETENTION_MS + 1);
+  await assert.rejects(s.relay.cleanup(session, {
+    dryRun: false, confirmation: `DELETE ${session.owner}/${session.repoName}`
+  }), /every request message/);
+  assert.deepEqual(s.github.deleted, []);
+});
+
+test('response correlation rejects unknown and duplicated RPC responses', async () => {
+  const s = setup({ allowDelete: true });
+  const session = await s.relay.createSession();
+  const first = await s.relay.sendMcpRequest(session, 'ping', {}, 'p1');
+  await s.relay.sendMcpResponse(session, 'unknown', { result: {} });
+  await assert.rejects(s.relay.acknowledge(session, [first.messageId]), /Unexpected or duplicate/);
 });
 
 test('GitHub adapter creates private repositories using server-side authentication', async () => {
