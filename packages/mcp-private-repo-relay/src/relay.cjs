@@ -79,6 +79,8 @@ class PrivateRepoRelay {
   }
 
   async sendMcpRequest(session, method, params = {}, id = crypto.randomUUID()) {
+    if (!['string', 'number'].includes(typeof id) ||
+        (typeof id === 'number' && !Number.isFinite(id))) throw new Error('MCP request ID must be a string or finite number');
     if (!MCP_METHODS.has(method)) throw new Error('MCP method not allowed in relay');
     if (method === 'tools/call' && (!params || !this.allowedTools.has(params.name))) {
       throw new Error('MCP tool is not explicitly allowed');
@@ -95,9 +97,9 @@ class PrivateRepoRelay {
     });
   }
 
-  async listMessages(session, direction) {
+  async listMessages(session, direction, { permitExpired = false } = {}) {
     if (!['request', 'response'].includes(direction)) throw new Error('Invalid direction');
-    await this.verifiedSession(session);
+    await this.verifiedSession(session, { permitExpired });
     const names = (await this.github.listJson(session.repoName, 'messages'))
       .filter(n => new RegExp(`^${direction}-[0-9a-f-]{36}\\.json$`).test(n)).sort();
     const messages = [];
@@ -110,12 +112,52 @@ class PrivateRepoRelay {
     return messages;
   }
 
+  // A cleanup receipt is valid only if it covers the entire current session
+  // and every request has exactly one matching JSON-RPC response. The check
+  // is repeated just before cleanup to reject newly arrived messages.
+  async assertCompleteExchange(session, processedIds, { permitExpired = false } = {}) {
+    const requests = await this.listMessages(session, 'request', { permitExpired });
+    const responses = await this.listMessages(session, 'response', { permitExpired });
+    if (!requests.length) throw new Error('No requests to acknowledge');
+    const messageIds = new Set(requests.map(m => m.messageId));
+    const acknowledged = new Set(processedIds);
+    if (acknowledged.size !== processedIds.length || acknowledged.size !== messageIds.size ||
+        [...messageIds].some(id => !acknowledged.has(id))) {
+      throw new Error('Acknowledgment must cover every request message exactly once');
+    }
+    const requestRpcIds = new Set();
+    for (const { payload } of requests) {
+      if (payload?.jsonrpc !== '2.0' || !MCP_METHODS.has(payload.method) ||
+          !['string', 'number'].includes(typeof payload.id) ||
+          (typeof payload.id === 'number' && !Number.isFinite(payload.id))) {
+        throw new Error('Invalid MCP request in session');
+      }
+      const key = JSON.stringify(payload.id);
+      if (requestRpcIds.has(key)) throw new Error('Duplicate MCP request ID');
+      requestRpcIds.add(key);
+    }
+    const responseRpcIds = new Set();
+    for (const { payload } of responses) {
+      const key = JSON.stringify(payload?.id);
+      if (payload?.jsonrpc !== '2.0' || !requestRpcIds.has(key) ||
+          (payload.result === undefined) === (payload.error === undefined) ||
+          responseRpcIds.has(key)) {
+        throw new Error('Unexpected or duplicate MCP response in session');
+      }
+      responseRpcIds.add(key);
+    }
+    if (responseRpcIds.size !== requestRpcIds.size) {
+      throw new Error('Cannot acknowledge requests without matching responses');
+    }
+  }
+
   async acknowledge(session, processedIds) {
     if (!Array.isArray(processedIds) || !processedIds.length ||
         processedIds.some(x => typeof x !== 'string' || !/^[a-f0-9-]{36}$/.test(x))) {
       throw new Error('Expected non-empty list of message IDs');
     }
     await this.verifiedSession(session);
+    await this.assertCompleteExchange(session, processedIds);
     const ack = encrypt(this.key, { done: true, processedIds, at: this.now() },
       { sessionId: session.sessionId, direction: 'ack' });
     await this.github.putJson(session.repoName, 'acks/done.json', ack);
@@ -133,6 +175,7 @@ class PrivateRepoRelay {
     if (payload.done !== true || !Array.isArray(payload.processedIds) || !payload.processedIds.length) {
       throw new Error('Deletion forbidden: acknowledgment invalid');
     }
+    await this.assertCompleteExchange(session, payload.processedIds, { permitExpired: true });
     if (this.now() - session.createdAt < MIN_RETENTION_MS) {
       throw new Error('Deletion forbidden: minimum retention is 10 minutes');
     }
