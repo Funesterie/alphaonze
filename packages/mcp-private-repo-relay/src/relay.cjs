@@ -100,8 +100,13 @@ class PrivateRepoRelay {
   async listMessages(session, direction, { permitExpired = false } = {}) {
     if (!['request', 'response'].includes(direction)) throw new Error('Invalid direction');
     await this.verifiedSession(session, { permitExpired });
-    const names = (await this.github.listJson(session.repoName, 'messages'))
-      .filter(n => new RegExp(`^${direction}-[0-9a-f-]{36}\\.json$`).test(n)).sort();
+    const listed = await this.github.listJson(session.repoName, 'messages');
+    // Never silently ignore an unrecognized file that could contain an
+    // unacknowledged message when deciding whether cleanup is safe.
+    if (listed.some(n => !/^(request|response)-[0-9a-f-]{36}\\.json$/.test(n))) {
+      throw new Error('Unexpected message filename in relay mailbox');
+    }
+    const names = listed.filter(n => n.startsWith(direction + '-')).sort();
     const messages = [];
     for (const name of names) {
       const env = await this.github.getJson(session.repoName, 'messages/' + name);
